@@ -46,6 +46,11 @@ add_executable(uve_core_tests
     ProjectCheck/project_checker_uve_tests.cpp
     Input/input_system_uve_tests.cpp
     RHI/null_render_device_uve_tests.cpp
+    RHI/Shader/shader_binary_cache_uve_tests.cpp
+    RHI/Shader/shader_diagnostics_parser_uve_tests.cpp
+    RHI/Shader/shader_manager_uve_tests.cpp
+    RHI/Shader/shader_preprocessor_uve_tests.cpp
+    RHI/Shader/shader_program_uve_tests.cpp
     Window/adaptive_render_resolution_uve_tests.cpp
     Window/display_mode_validation_uve_tests.cpp
     Window/framebuffer_size_validation_uve_tests.cpp
@@ -76,6 +81,7 @@ target_link_libraries(uve_core_tests PRIVATE
     uve_rhi
     uve_rhi_opengl
     uve_rhi_null
+    uve_rhi_shader
     uve_commandline
     uve_config
     uve_network
@@ -87,6 +93,13 @@ target_link_libraries(uve_core_tests PRIVATE
 target_compile_features(uve_core_tests PRIVATE cxx_std_20)
 target_compile_definitions(uve_core_tests PRIVATE UVE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 uve_set_warnings(uve_core_tests)
+
+# shader_binary_cache_uve_tests.cpp/shader_diagnostics_parser_uve_tests.cpp/
+# shader_preprocessor_uve_tests.cpp unit-test uve_rhi_shader's module-private classes directly -
+# this include path exposes only those module-private headers, never anything from
+# Engine/Runtime/RHI/Shader/src as part of uve_rhi_shader's own public interface (matching
+# uve_integration_tests' identical need for Engine/Runtime/Entity/src below).
+target_include_directories(uve_core_tests PRIVATE ${CMAKE_SOURCE_DIR}/Engine/Runtime/RHI/Shader/src)
 
 include(GoogleTest)
 gtest_discover_tests(uve_core_tests)
