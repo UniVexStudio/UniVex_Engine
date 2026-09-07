@@ -127,6 +127,15 @@ add_executable(uve_integration_tests
     Save/save_game_system_uve_tests.cpp
     Save/save_payload_compression_uve_tests.cpp
     Save/save_revision_policy_uve_tests.cpp
+    Audio/audio_attenuation_model_uve_tests.cpp
+    Audio/audio_listener_orientation_validation_uve_tests.cpp
+    Audio/audio_mixer_group_uve_tests.cpp
+    Audio/audio_source_system_uve_tests.cpp
+    Audio/audio_system_uve_tests.cpp
+    Audio/null_audio_device_uve_tests.cpp
+    Audio/pcm_gain_effect_uve_tests.cpp
+    Audio/wav_metadata_uve_tests.cpp
+    Audio/wav_pcm16_decoder_uve_tests.cpp
 )
 target_link_libraries(uve_integration_tests PRIVATE
     nlohmann_json::nlohmann_json
@@ -138,6 +147,7 @@ target_link_libraries(uve_integration_tests PRIVATE
     uve_object
     uve_physics
     uve_save
+    uve_audio
     GTest::gtest
     GTest::gtest_main
 )
