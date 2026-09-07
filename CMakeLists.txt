@@ -25,6 +25,21 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Engine/CMake")
 include(UveCompilerWarnings)
 include(UveBuildConfiguration)
 
+include(FetchContent)
+set(JSON_BuildTests OFF CACHE INTERNAL "")
+set(JSON_Install OFF CACHE INTERNAL "")
+set(JSON_Examples OFF CACHE INTERNAL "")
+FetchContent_Declare(
+    nlohmann_json
+    GIT_REPOSITORY https://github.com/nlohmann/json.git
+    GIT_TAG v3.11.3
+    GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(nlohmann_json)
+
+add_subdirectory(Engine/Runtime/Platform)
+
 if(UVE_BUILD_TESTS)
     enable_testing()
+    add_subdirectory(Test)
 endif()
