@@ -82,6 +82,7 @@ add_executable(uve_integration_tests
     Integration/Animation/time_pose_contract_uve_tests.cpp
     Integration/Animation/animation_clip_uve_tests.cpp
     Integration/Animation/animation_tree_uve_tests.cpp
+    Integration/World/world_uve_tests.cpp
 )
 target_link_libraries(uve_integration_tests PRIVATE
     nlohmann_json::nlohmann_json
@@ -89,6 +90,7 @@ target_link_libraries(uve_integration_tests PRIVATE
     uve_entity
     uve_scene
     uve_animation
+    uve_world
     GTest::gtest
     GTest::gtest_main
 )

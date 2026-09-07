@@ -50,6 +50,7 @@ add_subdirectory(Engine/Runtime/Component)
 add_subdirectory(Engine/Runtime/Entity)
 add_subdirectory(Engine/Runtime/Animation)
 add_subdirectory(Engine/Runtime/Scene)
+add_subdirectory(Engine/Runtime/World)
 
 if(UVE_BUILD_TESTS)
     enable_testing()
