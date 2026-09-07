@@ -10,9 +10,7 @@
 #include "uve/scene/nodes/bone_attachment_3d_node_uve.h"
 #include "uve/scene/nodes/box_mesh_3d_node_uve.h"
 #include "uve/scene/nodes/camera_3d_node_uve.h"
-// character_body_3d_node_uve.h omitted here: it depends on uve/physics/character_controller_uve.h,
-// and Physics is explicitly out of scope for this restructuring slice (see the restructuring
-// plan). Restore this include once Physics is ported.
+#include "uve/scene/nodes/character_body_3d_node_uve.h"
 #include "uve/scene/nodes/decal_node_uve.h"
 #include "uve/scene/nodes/collision_shape_3d_node_uve.h"
 #include "uve/scene/nodes/empty_node_uve.h"

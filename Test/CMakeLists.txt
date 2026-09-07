@@ -99,6 +99,20 @@ add_executable(uve_integration_tests
     Integration/World/world_uve_tests.cpp
     Integration/Object/type_metadata_uve_tests.cpp
     Integration/Object/property_accessor_uve_tests.cpp
+    Physics/angular_dynamics_uve_tests.cpp
+    Physics/area_overlap_lifecycle_tracker_uve_tests.cpp
+    Physics/area_overlap_system_uve_tests.cpp
+    Physics/character_controller_uve_tests.cpp
+    Physics/collider_shape_uve_tests.cpp
+    Physics/collision_system_uve_tests.cpp
+    Physics/hinge_motor_limit_uve_tests.cpp
+    Physics/physics_constraint_system_uve_tests.cpp
+    Physics/physics_material_uve_tests.cpp
+    Physics/physics_query_system_uve_tests.cpp
+    Physics/physics_system_uve_tests.cpp
+    Physics/raycast_system_uve_tests.cpp
+    Physics/shape_cast_system_uve_tests.cpp
+    Physics/trajectory_collision_prediction_uve_tests.cpp
 )
 target_link_libraries(uve_integration_tests PRIVATE
     nlohmann_json::nlohmann_json
@@ -108,6 +122,7 @@ target_link_libraries(uve_integration_tests PRIVATE
     uve_animation
     uve_world
     uve_object
+    uve_physics
     GTest::gtest
     GTest::gtest_main
 )
