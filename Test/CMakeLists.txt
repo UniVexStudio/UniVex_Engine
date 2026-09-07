@@ -66,12 +66,23 @@ gtest_discover_tests(uve_core_tests)
 
 add_executable(uve_integration_tests
     Integration/Component/expanded_3d_node_components_uve_tests.cpp
+    Integration/Entity/archetype_uve_tests.cpp
+    Integration/Entity/chunk_uve_tests.cpp
+    Integration/Entity/entity_manager_uve_tests.cpp
 )
 target_link_libraries(uve_integration_tests PRIVATE
     uve_component
+    uve_entity
     GTest::gtest
     GTest::gtest_main
 )
 target_compile_features(uve_integration_tests PRIVATE cxx_std_20)
 uve_set_warnings(uve_integration_tests)
+
+# archetype_uve_tests.cpp and chunk_uve_tests.cpp unit-test the module-private
+# ArchetypeUVE/ChunkUVE Detail:: classes directly - this include path exposes only those
+# module-private headers, never anything from Engine/Runtime/Entity/src as part of uve_entity's
+# own public interface.
+target_include_directories(uve_integration_tests PRIVATE ${CMAKE_SOURCE_DIR}/Engine/Runtime/Entity/src)
+
 gtest_discover_tests(uve_integration_tests)
