@@ -57,3 +57,21 @@ uve_set_warnings(uve_core_tests)
 
 include(GoogleTest)
 gtest_discover_tests(uve_core_tests)
+
+#
+# uve_integration_tests covers Entity/Component/Scene/World - the node system - since the
+# scratch-rebuild architecture's Test/ tree has no dedicated Entity/Component/Scene/World
+# folders, only Test/Integration (their behavior is inherently cross-module: hierarchy +
+# ticking + serialization).
+
+add_executable(uve_integration_tests
+    Integration/Component/expanded_3d_node_components_uve_tests.cpp
+)
+target_link_libraries(uve_integration_tests PRIVATE
+    uve_component
+    GTest::gtest
+    GTest::gtest_main
+)
+target_compile_features(uve_integration_tests PRIVATE cxx_std_20)
+uve_set_warnings(uve_integration_tests)
+gtest_discover_tests(uve_integration_tests)

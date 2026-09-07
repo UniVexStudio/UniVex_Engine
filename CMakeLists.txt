@@ -45,6 +45,8 @@ add_subdirectory(Engine/Runtime/Core/Threading)
 add_subdirectory(Engine/Runtime/Core/Math)
 add_subdirectory(Engine/Runtime/Core/Utilities)
 add_subdirectory(Engine/Runtime/Events)
+add_subdirectory(Engine/Runtime/Asset)
+add_subdirectory(Engine/Runtime/Component)
 
 if(UVE_BUILD_TESTS)
     enable_testing()
