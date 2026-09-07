@@ -59,6 +59,7 @@ add_subdirectory(Engine/Runtime/Animation)
 add_subdirectory(Engine/Runtime/Scene)
 add_subdirectory(Engine/Runtime/World)
 add_subdirectory(Engine/Editor/Viewport)
+add_subdirectory(Engine/Editor/EditorApp)
 
 if(UVE_BUILD_TESTS)
     add_subdirectory(Test)
