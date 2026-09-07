@@ -33,6 +33,9 @@ add_executable(uve_core_tests
     Core/Events/event_system_uve_tests.cpp
     Core/Asset/uve_file_envelope_uve_tests.cpp
     Core/Asset/asset_database_uve_tests.cpp
+    Commandline/command_line_uve_tests.cpp
+    Config/config_manager_uve_tests.cpp
+    ProjectCheck/project_checker_uve_tests.cpp
     Input/input_system_uve_tests.cpp
     RHI/null_render_device_uve_tests.cpp
     Window/adaptive_render_resolution_uve_tests.cpp
@@ -65,6 +68,9 @@ target_link_libraries(uve_core_tests PRIVATE
     uve_rhi
     uve_rhi_opengl
     uve_rhi_null
+    uve_commandline
+    uve_config
+    uve_project_check_lib
     GTest::gtest
     GTest::gtest_main
 )
