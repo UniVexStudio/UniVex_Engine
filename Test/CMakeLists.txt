@@ -34,6 +34,7 @@ add_executable(uve_core_tests
     Core/Asset/uve_file_envelope_uve_tests.cpp
     Core/Asset/asset_database_uve_tests.cpp
     Input/input_system_uve_tests.cpp
+    RHI/null_render_device_uve_tests.cpp
     Window/adaptive_render_resolution_uve_tests.cpp
     Window/display_mode_validation_uve_tests.cpp
     Window/framebuffer_size_validation_uve_tests.cpp
@@ -61,6 +62,9 @@ target_link_libraries(uve_core_tests PRIVATE
     uve_asset
     uve_input
     uve_window
+    uve_rhi
+    uve_rhi_opengl
+    uve_rhi_null
     GTest::gtest
     GTest::gtest_main
 )
