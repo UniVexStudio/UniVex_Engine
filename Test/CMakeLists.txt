@@ -123,6 +123,10 @@ add_executable(uve_integration_tests
     Physics/raycast_system_uve_tests.cpp
     Physics/shape_cast_system_uve_tests.cpp
     Physics/trajectory_collision_prediction_uve_tests.cpp
+    Save/checkpoint_manager_uve_tests.cpp
+    Save/save_game_system_uve_tests.cpp
+    Save/save_payload_compression_uve_tests.cpp
+    Save/save_revision_policy_uve_tests.cpp
 )
 target_link_libraries(uve_integration_tests PRIVATE
     nlohmann_json::nlohmann_json
@@ -133,6 +137,7 @@ target_link_libraries(uve_integration_tests PRIVATE
     uve_world
     uve_object
     uve_physics
+    uve_save
     GTest::gtest
     GTest::gtest_main
 )
