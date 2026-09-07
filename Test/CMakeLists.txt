@@ -30,6 +30,7 @@ add_executable(uve_core_tests
     Core/Threading/job_graph_uve_tests.cpp
     Core/Threading/thread_pool_uve_tests.cpp
     Core/Utilities/timer_uve_tests.cpp
+    Core/Events/event_system_uve_tests.cpp
     Math/vector2_uve_tests.cpp
     Math/vector3_uve_tests.cpp
     Math/quaternion_uve_tests.cpp
@@ -46,6 +47,7 @@ target_link_libraries(uve_core_tests PRIVATE
     uve_threading
     uve_math
     uve_utilities
+    uve_events
     GTest::gtest
     GTest::gtest_main
 )
