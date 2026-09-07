@@ -1,0 +1,110 @@
+// Copyright (c) 2026 UniVex Studios. All Rights Reserved.
+
+#include <algorithm>
+#include <string_view>
+#include <type_traits>
+#include <unordered_set>
+
+#include <gtest/gtest.h>
+
+#include "uve/scene/nodes/animation_player_node_uve.h"
+#include "uve/scene/nodes/animation_tree_node_uve.h"
+#include "uve/scene/nodes/audio_source_3d_node_uve.h"
+#include "uve/scene/nodes/box_mesh_3d_node_uve.h"
+#include "uve/scene/nodes/camera_3d_node_uve.h"
+// character_body_3d_node_uve.h omitted: it depends on uve/physics/character_controller_uve.h,
+// and Physics is explicitly out of scope for this restructuring slice (see the restructuring
+// plan) - only its facade-alias static_asserts below are trimmed, not the node registry itself.
+#include "uve/scene/nodes/collision_shape_3d_node_uve.h"
+#include "uve/scene/nodes/empty_node_uve.h"
+#include "uve/scene/nodes/light_3d_node_uve.h"
+#include "uve/scene/nodes/mesh_instance_3d_node_uve.h"
+#include "uve/scene/nodes/particle_emitter_3d_node_uve.h"
+#include "uve/scene/nodes/plane_mesh_3d_node_uve.h"
+#include "uve/scene/nodes/rigid_body_3d_node_uve.h"
+#include "uve/scene/nodes/scene_node_uve.h"
+#include "uve/scene/nodes/sphere_mesh_3d_node_uve.h"
+#include "uve/scene/nodes/script_node_uve.h"
+#include "uve/scene/nodes/transform_node_uve.h"
+
+namespace UVE::Scene::Nodes::Tests {
+namespace {
+
+TEST(SceneNodeRegistryUVETest, BuiltInDescriptorsUVE_AreStableUniqueAndRuntimeBound) {
+    const std::span<const SceneNodeDescriptorUVE> descriptors = GetSceneNodeDescriptorsUVE();
+    ASSERT_EQ(descriptors.size(), 38U);
+
+    std::unordered_set<std::string_view> ids;
+    for (const SceneNodeDescriptorUVE& descriptor : descriptors) {
+        EXPECT_TRUE(ids.insert(descriptor.typeId).second);
+        EXPECT_FALSE(descriptor.typeId.empty());
+        EXPECT_FALSE(descriptor.displayName.empty());
+        EXPECT_FALSE(descriptor.category.empty());
+        EXPECT_FALSE(descriptor.runtimeOwner.empty());
+        EXPECT_LE(descriptor.authoredContracts.size(), 8U);
+        if (descriptor.kind == SceneNodeKindUVE::AnimationTree) {
+            EXPECT_FALSE(descriptor.libraryCreatable);
+        } else {
+            EXPECT_TRUE(descriptor.libraryCreatable);
+        }
+        EXPECT_EQ(FindSceneNodeDescriptorUVE(descriptor.kind), &descriptor);
+        EXPECT_EQ(FindSceneNodeDescriptorUVE(descriptor.typeId), &descriptor);
+        EXPECT_EQ(GetSceneNodeTypeIdUVE(descriptor.kind), descriptor.typeId);
+    }
+}
+
+TEST(SceneNodeRegistryUVETest, NodeFacadeAliasesUVE_ExposeExistingRuntimeContracts) {
+    static_assert(std::is_same_v<AnimationTreeNodeUVE, Core::AnimationTreeUVE>);
+    static_assert(std::is_same_v<AnimationTreeNodeFacadeUVE, Core::AnimationTreeUVE>);
+    static_assert(std::is_same_v<AnimationPlayerNodeUVE, AnimationPlayerComponentUVE>);
+    static_assert(std::is_same_v<AnimationPlayerNodeFacadeUVE, AnimationPlayerComponentUVE>);
+    static_assert(std::is_same_v<Camera3DNodeUVE, CameraComponentUVE>);
+    static_assert(std::is_same_v<Camera3DNodeFacadeUVE, CameraComponentUVE>);
+    // CharacterBody3DNodeUVE/CharacterBody3DNodeFacadeUVE alias checks omitted - Physics is out
+    // of scope for this slice (see the include-list comment above).
+    static_assert(std::is_same_v<CollisionShape3DNodeUVE, ColliderComponentUVE>);
+    static_assert(std::is_same_v<Collider3DNodeFacadeUVE, ColliderComponentUVE>);
+    static_assert(std::is_same_v<MeshInstance3DNodeUVE, MeshComponentUVE>);
+    static_assert(std::is_same_v<BoxMesh3DNodeUVE, PrimitiveMeshComponentUVE>);
+    static_assert(std::is_same_v<SphereMesh3DNodeUVE, PrimitiveMeshComponentUVE>);
+    static_assert(std::is_same_v<PlaneMesh3DNodeUVE, PrimitiveMeshComponentUVE>);
+    static_assert(std::is_same_v<Light3DNodeUVE, LightComponentUVE>);
+    static_assert(std::is_same_v<RigidBody3DNodeUVE, RigidBodyComponentUVE>);
+    static_assert(std::is_same_v<AudioSource3DNodeUVE, AudioSourceComponentUVE>);
+    static_assert(std::is_same_v<ParticleEmitter3DNodeUVE, ParticleEmitterComponentUVE>);
+    static_assert(std::is_same_v<ScriptNodeUVE, ScriptComponentUVE>);
+    static_assert(std::is_same_v<TransformNodeUVE, TransformComponentUVE>);
+    static_assert(std::is_same_v<Area3DNodeUVE, AreaComponentUVE>);
+    static_assert(std::is_same_v<RayCast3DNodeUVE, RayCast3DNodeComponentUVE>);
+    static_assert(std::is_same_v<StaticBody3DNodeUVE, ColliderComponentUVE>);
+    static_assert(std::is_same_v<AnimatableBody3DNodeUVE, AnimatableBody3DNodeComponentUVE>);
+    static_assert(std::is_same_v<NavigationRegion3DNodeUVE, NavigationRegion3DNodeComponentUVE>);
+    static_assert(std::is_same_v<NavigationAgent3DNodeUVE, NavigationAgent3DNodeComponentUVE>);
+    static_assert(std::is_same_v<Skeleton3DNodeUVE, Skeleton3DNodeComponentUVE>);
+    static_assert(std::is_same_v<BoneAttachment3DNodeUVE, BoneAttachment3DNodeComponentUVE>);
+    static_assert(std::is_same_v<SpringArm3DNodeUVE, SpringArm3DNodeComponentUVE>);
+    static_assert(std::is_same_v<Marker3DNodeUVE, Marker3DNodeComponentUVE>);
+    static_assert(std::is_same_v<Hitbox3DNodeUVE, Hitbox3DNodeComponentUVE>);
+    static_assert(std::is_same_v<Hurtbox3DNodeUVE, Hurtbox3DNodeComponentUVE>);
+    static_assert(std::is_same_v<Projectile3DNodeUVE, Projectile3DNodeComponentUVE>);
+    static_assert(std::is_same_v<InteractionArea3DNodeUVE, InteractionArea3DNodeComponentUVE>);
+    static_assert(std::is_same_v<WorldEnvironment3DNodeUVE, WorldEnvironment3DNodeComponentUVE>);
+    static_assert(std::is_same_v<ReflectionProbe3DNodeUVE, ReflectionProbe3DNodeComponentUVE>);
+    static_assert(std::is_same_v<Decal3DNodeUVE, Decal3DNodeComponentUVE>);
+    static_assert(std::is_same_v<LODGroup3DNodeUVE, LodGroup3DNodeComponentUVE>);
+    static_assert(std::is_same_v<Occluder3DNodeUVE, Occluder3DNodeComponentUVE>);
+    static_assert(std::is_same_v<VisibilityRegion3DNodeUVE, VisibilityRegion3DNodeComponentUVE>);
+    static_assert(std::is_same_v<SpawnPoint3DNodeUVE, SpawnPoint3DNodeComponentUVE>);
+    static_assert(std::is_same_v<LevelStreamer3DNodeUVE, LevelStreamer3DNodeComponentUVE>);
+    static_assert(std::is_same_v<WorldPartition3DNodeUVE, WorldPartition3DNodeComponentUVE>);
+    static_assert(std::is_same_v<EmptyNodeUVE, EntityUVE>);
+    SUCCEED();
+}
+
+TEST(SceneNodeRegistryUVETest, UnknownLookupUVE_ReturnsEmptyOrNull) {
+    EXPECT_EQ(FindSceneNodeDescriptorUVE(std::string_view{"missing_node"}), nullptr);
+    EXPECT_EQ(GetSceneNodeTypeIdUVE(static_cast<SceneNodeKindUVE>(255U)), std::string_view{});
+}
+
+} // namespace
+} // namespace UVE::Scene::Nodes::Tests

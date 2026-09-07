@@ -31,6 +31,8 @@ add_executable(uve_core_tests
     Core/Threading/thread_pool_uve_tests.cpp
     Core/Utilities/timer_uve_tests.cpp
     Core/Events/event_system_uve_tests.cpp
+    Core/Asset/uve_file_envelope_uve_tests.cpp
+    Core/Asset/asset_database_uve_tests.cpp
     Math/vector2_uve_tests.cpp
     Math/vector3_uve_tests.cpp
     Math/quaternion_uve_tests.cpp
@@ -48,6 +50,7 @@ target_link_libraries(uve_core_tests PRIVATE
     uve_math
     uve_utilities
     uve_events
+    uve_asset
     GTest::gtest
     GTest::gtest_main
 )
@@ -69,10 +72,23 @@ add_executable(uve_integration_tests
     Integration/Entity/archetype_uve_tests.cpp
     Integration/Entity/chunk_uve_tests.cpp
     Integration/Entity/entity_manager_uve_tests.cpp
+    Integration/Scene/scene_graph_uve_tests.cpp
+    Integration/Scene/scene_serializer_uve_tests.cpp
+    Integration/Scene/prefab_system_uve_tests.cpp
+    Integration/Scene/prefab_maturity_uve_tests.cpp
+    Integration/Scene/prefab_revision_policy_uve_tests.cpp
+    Integration/Scene/particle_runtime_uve_tests.cpp
+    Integration/Scene/scene_node_registry_uve_tests.cpp
+    Integration/Animation/time_pose_contract_uve_tests.cpp
+    Integration/Animation/animation_clip_uve_tests.cpp
+    Integration/Animation/animation_tree_uve_tests.cpp
 )
 target_link_libraries(uve_integration_tests PRIVATE
+    nlohmann_json::nlohmann_json
     uve_component
     uve_entity
+    uve_scene
+    uve_animation
     GTest::gtest
     GTest::gtest_main
 )

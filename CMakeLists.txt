@@ -48,6 +48,8 @@ add_subdirectory(Engine/Runtime/Events)
 add_subdirectory(Engine/Runtime/Asset)
 add_subdirectory(Engine/Runtime/Component)
 add_subdirectory(Engine/Runtime/Entity)
+add_subdirectory(Engine/Runtime/Animation)
+add_subdirectory(Engine/Runtime/Scene)
 
 if(UVE_BUILD_TESTS)
     enable_testing()
