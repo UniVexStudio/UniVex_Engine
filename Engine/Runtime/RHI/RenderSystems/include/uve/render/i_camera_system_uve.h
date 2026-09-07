@@ -1,0 +1,81 @@
+// Copyright (c) 2026 UniVex Studios. All Rights Reserved.
+
+
+#pragma once
+
+#include <array>
+
+#include "uve/math/frustum_uve.h"
+#include "uve/math/matrix4x4_uve.h"
+#include "uve/math/vector3_uve.h"
+#include "uve/scene/entity_uve.h"
+#include "uve/scene/i_entity_manager_uve.h"
+
+namespace UVE::Render {
+
+/// The eight world-space corners of a perspective camera frustum, ordered as near-plane
+/// bottom-left/bottom-right/top-left/top-right followed by the matching far-plane corners.
+/// This is a value type shared by camera-frustum fitting and directional-shadow culling.
+using CameraFrustumCornersUVE = std::array<Math::Vector3UVE, 8>;
+
+/// ICameraSystemUVE computes view/projection matrices from a camera entity's ECS data and
+/// extracts a culling frustum from them (the spec's `CameraSystemUVE`, Part 7.2 — "Camera
+/// management, frustum culling, occlusion queries"; occlusion queries are future work, deferred
+/// until a real GPU backend exists to query). Every method reads `cameraEntity`'s
+/// `Scene::WorldTransformComponentUVE` (position/rotation) and/or `Scene::CameraComponentUVE`
+/// (fov/near/far) — the entity must have both, exactly the same contract
+/// `IEntityManagerUVE::GetComponentUVE<T>()` already enforces (asserts alive + has the
+/// component). There is no graceful-missing-component fallback: entities reach `CameraSystemUVE`
+/// only via `SceneGraphUVE::AttachTransformUVE()`, which always adds `WorldTransformComponentUVE`
+/// alongside the authored `TransformComponentUVE` in one call, so a camera entity missing its
+/// world transform shouldn't occur in practice.
+/// Thread-safety: implementations should be stateless (holding no members) and thread-safe,
+/// matching `SceneGraphUVE`'s contract — every method only reads the `IEntityManagerUVE` passed
+/// in.
+class ICameraSystemUVE {
+public:
+    virtual ~ICameraSystemUVE() = default;
+
+    /// The world-to-view transform for `cameraEntity`, built directly from its world position and
+    /// rotation (see `Math::Matrix4x4UVE::ViewFromPositionAndRotationUVE`).
+    [[nodiscard]] virtual Math::Matrix4x4UVE ComputeViewMatrixUVE(const Scene::IEntityManagerUVE& entityManager,
+                                                                   Scene::EntityUVE cameraEntity) const = 0;
+
+    /// The view-to-clip perspective projection for `cameraEntity`, built from its
+    /// `CameraComponentUVE` fov/near/far and the caller-supplied `aspectRatio` (width / height of
+    /// the target being rendered into — not itself part of any component, since the same camera
+    /// entity may render into differently-shaped targets, e.g. an editor viewport vs. the game
+    /// window).
+    [[nodiscard]] virtual Math::Matrix4x4UVE ComputeProjectionMatrixUVE(const Scene::IEntityManagerUVE& entityManager,
+                                                                         Scene::EntityUVE cameraEntity,
+                                                                         float aspectRatio) const = 0;
+
+    /// Convenience combining `ComputeProjectionMatrixUVE(...) * ComputeViewMatrixUVE(...)` — the
+    /// single matrix most callers (e.g. frustum extraction, a future `Renderer3DUVE`) actually
+    /// need.
+    [[nodiscard]] virtual Math::Matrix4x4UVE ComputeViewProjectionUVE(const Scene::IEntityManagerUVE& entityManager,
+                                                                       Scene::EntityUVE cameraEntity,
+                                                                       float aspectRatio) const = 0;
+
+    /// Extracts the 6-plane culling frustum from a combined view-projection matrix (thin
+    /// pass-through to `Math::FrustumUVE::FromViewProjectionUVE`, kept as a method here so
+    /// callers can go straight from a camera entity to a usable frustum without reaching into
+    /// `UVE::Math` directly).
+    [[nodiscard]] virtual Math::FrustumUVE ExtractFrustumUVE(const Math::Matrix4x4UVE& viewProjection) const = 0;
+
+    /// Reconstructs `cameraEntity`'s eight world-space perspective-frustum corners directly from
+    /// its transform, FOV, near/far planes, and the caller-supplied render-target aspect ratio.
+    /// This avoids a generic projection-matrix inverse while retaining the exact camera convention
+    /// used by ComputeProjectionMatrixUVE().
+    [[nodiscard]] virtual CameraFrustumCornersUVE ComputeFrustumCornersUVE(
+        const Scene::IEntityManagerUVE& entityManager, Scene::EntityUVE cameraEntity, float aspectRatio) const = 0;
+
+    /// `cameraEntity`'s raw world position (`WorldTransformComponentUVE::worldPosition`) — the
+    /// view vector callers (e.g. `Renderer3DUVE`'s specular lighting uniform, Increment 24) need
+    /// but that `ComputeViewMatrixUVE`'s returned matrix doesn't expose directly. Same
+    /// missing-component contract as every other method here: no graceful fallback.
+    [[nodiscard]] virtual Math::Vector3UVE GetWorldPositionUVE(const Scene::IEntityManagerUVE& entityManager,
+                                                                 Scene::EntityUVE cameraEntity) const = 0;
+};
+
+} // namespace UVE::Render

@@ -155,6 +155,18 @@ add_executable(uve_integration_tests
     Audio/pcm_gain_effect_uve_tests.cpp
     Audio/wav_metadata_uve_tests.cpp
     Audio/wav_pcm16_decoder_uve_tests.cpp
+    RHI/RenderSystems/camera_system_uve_tests.cpp
+    RHI/RenderSystems/light_system_uve_tests.cpp
+    RHI/RenderSystems/mesh_renderer_uve_tests.cpp
+    RHI/RenderSystems/mesh_render_eligibility_uve_tests.cpp
+    RHI/RenderSystems/primitive_geometry_uve_tests.cpp
+    RHI/RenderSystems/render_graph_uve_tests.cpp
+    RHI/RenderSystems/render_queue_uve_tests.cpp
+    RHI/RenderSystems/render_system_uve_tests.cpp
+    RHI/RenderSystems/renderer_3d_uve_tests.cpp
+    RHI/RenderSystems/viewport_manager_uve_tests.cpp
+    RHI/RenderSystems/particle_render_bridge_uve_tests.cpp
+    RHI/RenderSystems/particle_draw_command_uve_tests.cpp
 )
 target_link_libraries(uve_integration_tests PRIVATE
     nlohmann_json::nlohmann_json
@@ -167,6 +179,8 @@ target_link_libraries(uve_integration_tests PRIVATE
     uve_physics
     uve_save
     uve_audio
+    uve_render_systems
+    uve_rhi_null
     GTest::gtest
     GTest::gtest_main
 )
