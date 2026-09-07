@@ -83,6 +83,8 @@ add_executable(uve_integration_tests
     Integration/Animation/animation_clip_uve_tests.cpp
     Integration/Animation/animation_tree_uve_tests.cpp
     Integration/World/world_uve_tests.cpp
+    Integration/Object/type_metadata_uve_tests.cpp
+    Integration/Object/property_accessor_uve_tests.cpp
 )
 target_link_libraries(uve_integration_tests PRIVATE
     nlohmann_json::nlohmann_json
@@ -91,6 +93,7 @@ target_link_libraries(uve_integration_tests PRIVATE
     uve_scene
     uve_animation
     uve_world
+    uve_object
     GTest::gtest
     GTest::gtest_main
 )
