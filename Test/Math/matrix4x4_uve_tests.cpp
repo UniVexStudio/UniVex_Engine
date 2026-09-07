@@ -1,0 +1,411 @@
+// Copyright (c) 2026 UniVex Studios. All Rights Reserved.
+
+
+#include "uve/math/matrix4x4_uve.h"
+
+#include <cmath>
+#include <limits>
+#include <numbers>
+#include <string>
+
+#include <gtest/gtest.h>
+
+namespace UVE::Math::Tests {
+namespace {
+
+constexpr float kEpsilon = 1e-4F;
+
+struct Vec4UVE {
+    float x = 0.0F;
+    float y = 0.0F;
+    float z = 0.0F;
+    float w = 0.0F;
+};
+
+// Full 4-component multiply, used only for testing PerspectiveUVE's clip-space output (unlike
+// TransformPointUVE, this deliberately keeps `w` instead of assuming an affine w=1 matrix).
+[[nodiscard]] Vec4UVE MultiplyHomogeneousUVE(const Matrix4x4UVE& matrix, Vec4UVE vector) {
+    Vec4UVE result{};
+    result.x = matrix.m[0][0] * vector.x + matrix.m[0][1] * vector.y + matrix.m[0][2] * vector.z +
+               matrix.m[0][3] * vector.w;
+    result.y = matrix.m[1][0] * vector.x + matrix.m[1][1] * vector.y + matrix.m[1][2] * vector.z +
+               matrix.m[1][3] * vector.w;
+    result.z = matrix.m[2][0] * vector.x + matrix.m[2][1] * vector.y + matrix.m[2][2] * vector.z +
+               matrix.m[2][3] * vector.w;
+    result.w = matrix.m[3][0] * vector.x + matrix.m[3][1] * vector.y + matrix.m[3][2] * vector.z +
+               matrix.m[3][3] * vector.w;
+    return result;
+}
+
+TEST(Matrix4x4UVETest, IdentityUVE_IsIdentityMatrix) {
+    constexpr Matrix4x4UVE identity = Matrix4x4UVE::IdentityUVE();
+    for (int row = 0; row < 4; ++row) {
+        for (int col = 0; col < 4; ++col) {
+            EXPECT_EQ(identity.m[row][col], row == col ? 1.0F : 0.0F);
+        }
+    }
+}
+
+TEST(Matrix4x4UVETest, ComposeTrsUVE_TranslationOnly_TransformsOriginToTranslation) {
+    const Matrix4x4UVE matrix = Matrix4x4UVE::ComposeTrsUVE(Vector3UVE{5.0F, -2.0F, 3.0F}, QuaternionUVE{},
+                                                              Vector3UVE{1.0F, 1.0F, 1.0F});
+
+    const Vector3UVE transformed = TransformPointUVE(matrix, Vector3UVE{0.0F, 0.0F, 0.0F});
+
+    EXPECT_NEAR(transformed.x, 5.0F, kEpsilon);
+    EXPECT_NEAR(transformed.y, -2.0F, kEpsilon);
+    EXPECT_NEAR(transformed.z, 3.0F, kEpsilon);
+}
+
+TEST(Matrix4x4UVETest, ComposeTrsUVE_ScaleOnly_ScalesPoint) {
+    const Matrix4x4UVE matrix = Matrix4x4UVE::ComposeTrsUVE(Vector3UVE{}, QuaternionUVE{}, Vector3UVE{2.0F, 3.0F, 4.0F});
+
+    const Vector3UVE transformed = TransformPointUVE(matrix, Vector3UVE{1.0F, 1.0F, 1.0F});
+
+    EXPECT_NEAR(transformed.x, 2.0F, kEpsilon);
+    EXPECT_NEAR(transformed.y, 3.0F, kEpsilon);
+    EXPECT_NEAR(transformed.z, 4.0F, kEpsilon);
+}
+
+TEST(Matrix4x4UVETest, ComposeTrsUVE_NinetyDegreesAboutZ_RotatesXAxisToYAxis) {
+    const float halfNinety = std::sqrt(2.0F) / 2.0F;
+    const QuaternionUVE ninetyAboutZ{0.0F, 0.0F, halfNinety, halfNinety};
+    const Matrix4x4UVE matrix = Matrix4x4UVE::ComposeTrsUVE(Vector3UVE{}, ninetyAboutZ, Vector3UVE{1.0F, 1.0F, 1.0F});
+
+    const Vector3UVE transformed = TransformPointUVE(matrix, Vector3UVE{1.0F, 0.0F, 0.0F});
+
+    EXPECT_NEAR(transformed.x, 0.0F, kEpsilon);
+    EXPECT_NEAR(transformed.y, 1.0F, kEpsilon);
+    EXPECT_NEAR(transformed.z, 0.0F, kEpsilon);
+}
+
+TEST(Matrix4x4UVETest, PerspectiveUVE_MapsNearPlaneToDepthZero) {
+    const Matrix4x4UVE projection =
+        Matrix4x4UVE::PerspectiveUVE(std::numbers::pi_v<float> / 2.0F, 1.0F, 1.0F, 100.0F);
+
+    const Vec4UVE clip = MultiplyHomogeneousUVE(projection, Vec4UVE{0.0F, 0.0F, -1.0F, 1.0F});
+
+    EXPECT_NEAR(clip.z / clip.w, 0.0F, kEpsilon);
+}
+
+TEST(Matrix4x4UVETest, PerspectiveUVE_PreservesFiniteExtremeFarPlaneTranslation) {
+    const float maximum = std::numeric_limits<float>::max();
+
+    const Matrix4x4UVE projection = Matrix4x4UVE::PerspectiveUVE(
+        std::numbers::pi_v<float> / 2.0F, 1.0F, 2.0F, maximum);
+
+    EXPECT_TRUE(std::isfinite(projection.m[2][3]));
+    EXPECT_FLOAT_EQ(projection.m[2][3], -2.0F);
+}
+
+TEST(Matrix4x4UVETest, PerspectiveUVE_MapsFarPlaneToDepthOne) {
+    const Matrix4x4UVE projection =
+        Matrix4x4UVE::PerspectiveUVE(std::numbers::pi_v<float> / 2.0F, 1.0F, 1.0F, 100.0F);
+
+    const Vec4UVE clip = MultiplyHomogeneousUVE(projection, Vec4UVE{0.0F, 0.0F, -100.0F, 1.0F});
+
+    EXPECT_NEAR(clip.z / clip.w, 1.0F, kEpsilon);
+}
+
+TEST(Matrix4x4UVETest, OrthographicUVE_PreservesFiniteExtremeExtentScale) {
+    const float maximum = std::numeric_limits<float>::max();
+
+    const Matrix4x4UVE projection = Matrix4x4UVE::OrthographicUVE(
+        -maximum, maximum, -1.0F, 1.0F, 1.0F, 2.0F);
+    const float expectedScale = static_cast<float>(2.0 / (2.0 * static_cast<double>(maximum)));
+
+    EXPECT_TRUE(std::isfinite(projection.m[0][0]));
+    EXPECT_GT(projection.m[0][0], 0.0F);
+    EXPECT_FLOAT_EQ(projection.m[0][0], expectedScale);
+}
+
+TEST(Matrix4x4UVETest, OrthographicUVE_PreservesFiniteExtremeExtentOffset) {
+    const float maximum = std::numeric_limits<float>::max();
+    const float left = maximum * 0.5F;
+
+    const Matrix4x4UVE projection = Matrix4x4UVE::OrthographicUVE(
+        left, maximum, -1.0F, 1.0F, 1.0F, 2.0F);
+
+    EXPECT_TRUE(std::isfinite(projection.m[0][3]));
+    EXPECT_FLOAT_EQ(projection.m[0][3], -3.0F);
+}
+
+TEST(Matrix4x4UVETest, OrthographicUVE_PreservesFiniteExtremeVerticalExtentOffset) {
+    const float maximum = std::numeric_limits<float>::max();
+    const float bottom = maximum * 0.5F;
+
+    const Matrix4x4UVE projection = Matrix4x4UVE::OrthographicUVE(
+        -1.0F, 1.0F, bottom, maximum, 1.0F, 2.0F);
+
+    EXPECT_TRUE(std::isfinite(projection.m[1][3]));
+    EXPECT_FLOAT_EQ(projection.m[1][3], -3.0F);
+}
+
+TEST(Matrix4x4UVETest, OrthographicUVE_PreservesFiniteExtremeVerticalExtentScale) {
+    const float maximum = std::numeric_limits<float>::max();
+
+    const Matrix4x4UVE projection = Matrix4x4UVE::OrthographicUVE(
+        -1.0F, 1.0F, -maximum, maximum, 1.0F, 2.0F);
+    const float expectedScale = static_cast<float>(2.0 / (2.0 * static_cast<double>(maximum)));
+
+    EXPECT_TRUE(std::isfinite(projection.m[1][1]));
+    EXPECT_GT(projection.m[1][1], 0.0F);
+    EXPECT_FLOAT_EQ(projection.m[1][1], expectedScale);
+}
+
+TEST(Matrix4x4UVETest, OrthographicUVE_MapsNearPlaneToDepthZero) {
+    const Matrix4x4UVE projection = Matrix4x4UVE::OrthographicUVE(-10.0F, 10.0F, -10.0F, 10.0F, 1.0F, 100.0F);
+
+    const Vec4UVE clip = MultiplyHomogeneousUVE(projection, Vec4UVE{0.0F, 0.0F, -1.0F, 1.0F});
+
+    EXPECT_NEAR(clip.z / clip.w, 0.0F, kEpsilon);
+}
+
+TEST(Matrix4x4UVETest, OrthographicUVE_MapsFarPlaneToDepthOne) {
+    const Matrix4x4UVE projection = Matrix4x4UVE::OrthographicUVE(-10.0F, 10.0F, -10.0F, 10.0F, 1.0F, 100.0F);
+
+    const Vec4UVE clip = MultiplyHomogeneousUVE(projection, Vec4UVE{0.0F, 0.0F, -100.0F, 1.0F});
+
+    EXPECT_NEAR(clip.z / clip.w, 1.0F, kEpsilon);
+}
+
+TEST(Matrix4x4UVETest, OrthographicUVE_MapsBoxCornersToPlusMinusOne) {
+    const Matrix4x4UVE projection = Matrix4x4UVE::OrthographicUVE(-10.0F, 10.0F, -5.0F, 5.0F, 1.0F, 100.0F);
+
+    const Vec4UVE minCorner = MultiplyHomogeneousUVE(projection, Vec4UVE{-10.0F, -5.0F, -50.0F, 1.0F});
+    const Vec4UVE maxCorner = MultiplyHomogeneousUVE(projection, Vec4UVE{10.0F, 5.0F, -50.0F, 1.0F});
+
+    EXPECT_NEAR(minCorner.x / minCorner.w, -1.0F, kEpsilon);
+    EXPECT_NEAR(minCorner.y / minCorner.w, -1.0F, kEpsilon);
+    EXPECT_NEAR(maxCorner.x / maxCorner.w, 1.0F, kEpsilon);
+    EXPECT_NEAR(maxCorner.y / maxCorner.w, 1.0F, kEpsilon);
+}
+
+TEST(Matrix4x4UVETest, OrthographicUVE_UnlikePerspective_DoesNotScaleWithDepth) {
+    // Orthographic projection is depth-independent: a point directly above the origin maps to the
+    // same NDC x/y regardless of how far along -Z it sits (no perspective divide changes the ratio).
+    const Matrix4x4UVE projection = Matrix4x4UVE::OrthographicUVE(-10.0F, 10.0F, -10.0F, 10.0F, 1.0F, 100.0F);
+
+    const Vec4UVE near = MultiplyHomogeneousUVE(projection, Vec4UVE{5.0F, 0.0F, -1.0F, 1.0F});
+    const Vec4UVE far = MultiplyHomogeneousUVE(projection, Vec4UVE{5.0F, 0.0F, -99.0F, 1.0F});
+
+    EXPECT_NEAR(near.x / near.w, far.x / far.w, kEpsilon);
+    EXPECT_NEAR(near.w, 1.0F, kEpsilon);
+    EXPECT_NEAR(far.w, 1.0F, kEpsilon);
+}
+
+TEST(Matrix4x4UVETest, ViewFromPositionAndRotationUVE_IdentityRotation_TransformsWorldPointRelativeToEye) {
+    const Matrix4x4UVE view = Matrix4x4UVE::ViewFromPositionAndRotationUVE(Vector3UVE{0.0F, 0.0F, 5.0F}, QuaternionUVE{});
+
+    const Vector3UVE viewSpacePoint = TransformPointUVE(view, Vector3UVE{0.0F, 0.0F, 0.0F});
+
+    EXPECT_NEAR(viewSpacePoint.x, 0.0F, kEpsilon);
+    EXPECT_NEAR(viewSpacePoint.y, 0.0F, kEpsilon);
+    EXPECT_NEAR(viewSpacePoint.z, -5.0F, kEpsilon);
+}
+
+TEST(Matrix4x4UVETest, ViewFromPositionAndRotationUVE_NinetyDegreeYaw_PointAheadOfNewForwardIsStraightAhead) {
+    const float halfNinety = std::sqrt(2.0F) / 2.0F;
+    const QuaternionUVE ninetyAboutY{0.0F, halfNinety, 0.0F, halfNinety};
+    const Matrix4x4UVE view = Matrix4x4UVE::ViewFromPositionAndRotationUVE(Vector3UVE{0.0F, 0.0F, 0.0F}, ninetyAboutY);
+
+    // After a 90-degree yaw, the camera's new world-space forward direction is (-1, 0, 0), so a
+    // point 5 units along that direction should land straight ahead in view space: (0, 0, -5).
+    const Vector3UVE viewSpacePoint = TransformPointUVE(view, Vector3UVE{-5.0F, 0.0F, 0.0F});
+
+    EXPECT_NEAR(viewSpacePoint.x, 0.0F, kEpsilon);
+    EXPECT_NEAR(viewSpacePoint.y, 0.0F, kEpsilon);
+    EXPECT_NEAR(viewSpacePoint.z, -5.0F, kEpsilon);
+}
+
+TEST(Matrix4x4UVETest, ViewFromPositionAndRotationUVE_PreservesFiniteExtremePositionCancellation) {
+    const float oneOverRootThree = 1.0F / std::sqrt(3.0F);
+    const float normalization = std::sqrt(2.0F * (1.0F + oneOverRootThree));
+    const QuaternionUVE rotation{
+        0.0F,
+        -oneOverRootThree / normalization,
+        oneOverRootThree / normalization,
+        (1.0F + oneOverRootThree) / normalization,
+    };
+    const float maximum = std::numeric_limits<float>::max();
+
+    const Matrix4x4UVE view = Matrix4x4UVE::ViewFromPositionAndRotationUVE(
+        Vector3UVE{maximum, maximum, -maximum}, rotation);
+
+    EXPECT_TRUE(std::isfinite(view.m[0][3]));
+    EXPECT_LT(std::fabs(view.m[0][3]), maximum);
+    EXPECT_LT(view.m[0][3], 0.0F);
+}
+
+TEST(Matrix4x4UVETest, MatrixMultiply_WithIdentity_IsUnchanged) {
+    const Matrix4x4UVE matrix = Matrix4x4UVE::ComposeTrsUVE(Vector3UVE{1.0F, 2.0F, 3.0F}, QuaternionUVE{},
+                                                              Vector3UVE{1.0F, 1.0F, 1.0F});
+    constexpr Matrix4x4UVE identity = Matrix4x4UVE::IdentityUVE();
+
+    EXPECT_EQ(matrix * identity, matrix);
+    EXPECT_EQ(identity * matrix, matrix);
+}
+
+TEST(Matrix4x4UVETest, MatrixMultiply_ComposesInRightToLeftOrder) {
+    const Matrix4x4UVE translateX = Matrix4x4UVE::ComposeTrsUVE(Vector3UVE{10.0F, 0.0F, 0.0F}, QuaternionUVE{},
+                                                                  Vector3UVE{1.0F, 1.0F, 1.0F});
+    const Matrix4x4UVE translateY = Matrix4x4UVE::ComposeTrsUVE(Vector3UVE{0.0F, 5.0F, 0.0F}, QuaternionUVE{},
+                                                                  Vector3UVE{1.0F, 1.0F, 1.0F});
+
+    const Matrix4x4UVE combined = translateX * translateY;
+    const Vector3UVE transformed = TransformPointUVE(combined, Vector3UVE{0.0F, 0.0F, 0.0F});
+
+    EXPECT_NEAR(transformed.x, 10.0F, kEpsilon);
+    EXPECT_NEAR(transformed.y, 5.0F, kEpsilon);
+    EXPECT_NEAR(transformed.z, 0.0F, kEpsilon);
+}
+
+TEST(Matrix4x4UVETest, MatrixMultiply_PreservesFiniteCancellationAtFloatBoundary) {
+    constexpr float maximum = std::numeric_limits<float>::max();
+    Matrix4x4UVE lhs{};
+    lhs.m[0][0] = 1.0F;
+    lhs.m[0][1] = 1.0F;
+    lhs.m[0][2] = -1.0F;
+    lhs.m[0][3] = 0.0F;
+
+    Matrix4x4UVE rhs{};
+    rhs.m[0][0] = maximum;
+    rhs.m[1][0] = maximum;
+    rhs.m[2][0] = maximum;
+    rhs.m[3][0] = 0.0F;
+
+    const Matrix4x4UVE product = lhs * rhs;
+
+    EXPECT_TRUE(std::isfinite(product.m[0][0]));
+    EXPECT_FLOAT_EQ(product.m[0][0], maximum);
+}
+
+TEST(Matrix4x4UVETest, EqualityOperators_CompareAllSixteenComponents) {
+    constexpr Matrix4x4UVE a = Matrix4x4UVE::IdentityUVE();
+    constexpr Matrix4x4UVE b = Matrix4x4UVE::IdentityUVE();
+    Matrix4x4UVE c = Matrix4x4UVE::IdentityUVE();
+    c.m[0][3] = 1.0F;
+
+    EXPECT_TRUE(a == b);
+    EXPECT_FALSE(a != b);
+    EXPECT_TRUE(a != c);
+    EXPECT_FALSE(a == c);
+}
+
+TEST(Matrix4x4UVETest, ToStringUVE_FormatsAllFourRows) {
+    constexpr Matrix4x4UVE identity = Matrix4x4UVE::IdentityUVE();
+    const std::string text = ToStringUVE(identity);
+
+    EXPECT_NE(text.find("1.000000"), std::string::npos);
+    EXPECT_NE(text.find(";"), std::string::npos);
+}
+
+TEST(Matrix4x4UVETest, TransposeUVE_Identity_IsUnchanged) {
+    constexpr Matrix4x4UVE identity = Matrix4x4UVE::IdentityUVE();
+
+    EXPECT_EQ(TransposeUVE(identity), identity);
+}
+
+TEST(Matrix4x4UVETest, TransposeUVE_SwapsRowsAndColumns) {
+    Matrix4x4UVE matrix = Matrix4x4UVE::IdentityUVE();
+    matrix.m[0][3] = 5.0F;
+    matrix.m[1][2] = 7.0F;
+
+    const Matrix4x4UVE transposed = TransposeUVE(matrix);
+
+    EXPECT_FLOAT_EQ(transposed.m[3][0], 5.0F);
+    EXPECT_FLOAT_EQ(transposed.m[2][1], 7.0F);
+    EXPECT_FLOAT_EQ(transposed.m[0][3], 0.0F);
+    EXPECT_FLOAT_EQ(transposed.m[1][2], 0.0F);
+}
+
+TEST(Matrix4x4UVETest, TransposeUVE_AppliedTwice_RestoresOriginal) {
+    const Matrix4x4UVE matrix = Matrix4x4UVE::ComposeTrsUVE(
+        Vector3UVE{1.0F, -2.0F, 3.5F}, QuaternionUVE{}, Vector3UVE{2.0F, 3.0F, 4.0F});
+
+    const Matrix4x4UVE roundTripped = TransposeUVE(TransposeUVE(matrix));
+
+    EXPECT_EQ(roundTripped, matrix);
+}
+
+TEST(Matrix4x4UVETest, TryInverseUVE_Identity_ReturnsIdentity) {
+    constexpr Matrix4x4UVE identity = Matrix4x4UVE::IdentityUVE();
+    Matrix4x4UVE inverse{};
+
+    ASSERT_TRUE(TryInverseUVE(identity, inverse));
+    EXPECT_EQ(inverse, identity);
+}
+
+TEST(Matrix4x4UVETest, TryInverseUVE_UniformScaleTrs_MultipliesBackToIdentity) {
+    const Matrix4x4UVE matrix = Matrix4x4UVE::ComposeTrsUVE(
+        Vector3UVE{3.0F, -4.0F, 5.0F}, QuaternionUVE{0.0F, 0.0F, std::numbers::sqrt2_v<float> / 2.0F,
+                                                        std::numbers::sqrt2_v<float> / 2.0F},
+        Vector3UVE{2.0F, 2.0F, 2.0F});
+    Matrix4x4UVE inverse{};
+
+    ASSERT_TRUE(TryInverseUVE(matrix, inverse));
+    const Matrix4x4UVE roundTripped = matrix * inverse;
+    for (int row = 0; row < 4; ++row) {
+        for (int col = 0; col < 4; ++col) {
+            EXPECT_NEAR(roundTripped.m[row][col], Matrix4x4UVE::IdentityUVE().m[row][col], kEpsilon);
+        }
+    }
+}
+
+TEST(Matrix4x4UVETest, TryInverseUVE_NonUniformScaleTrs_MultipliesBackToIdentity) {
+    const Matrix4x4UVE matrix = Matrix4x4UVE::ComposeTrsUVE(
+        Vector3UVE{-1.0F, 2.0F, -3.0F}, QuaternionUVE{}, Vector3UVE{2.0F, 0.5F, 4.0F});
+    Matrix4x4UVE inverse{};
+
+    ASSERT_TRUE(TryInverseUVE(matrix, inverse));
+    const Matrix4x4UVE roundTripped = matrix * inverse;
+    for (int row = 0; row < 4; ++row) {
+        for (int col = 0; col < 4; ++col) {
+            EXPECT_NEAR(roundTripped.m[row][col], Matrix4x4UVE::IdentityUVE().m[row][col], kEpsilon);
+        }
+    }
+}
+
+TEST(Matrix4x4UVETest, TryInverseUVE_SingularMatrix_ReturnsFalse) {
+    Matrix4x4UVE singular{};
+    singular.m[0][0] = 0.0F;
+    singular.m[1][1] = 0.0F;
+    singular.m[2][2] = 0.0F;
+    singular.m[3][3] = 0.0F;
+    Matrix4x4UVE inverse{};
+
+    EXPECT_FALSE(TryInverseUVE(singular, inverse));
+}
+
+TEST(Matrix4x4UVETest, TryInverseUVE_NonFiniteMatrix_ReturnsFalse) {
+    Matrix4x4UVE matrix = Matrix4x4UVE::IdentityUVE();
+    matrix.m[1][2] = std::numeric_limits<float>::infinity();
+    Matrix4x4UVE inverse{};
+
+    EXPECT_FALSE(TryInverseUVE(matrix, inverse));
+}
+
+TEST(Matrix4x4UVETest, TryInverseUVE_NonUniformScale_NormalMatrixTransformsNormalPerpendicularToSurface) {
+    // Regression for the normal-matrix bug: a plane through the origin with normal +Y, scaled 4x
+    // along X. The tangent-plane vectors (+X, +Z) get carried by the model matrix directly; the
+    // transformed normal must stay perpendicular to both, which mat3(model) alone would not
+    // guarantee for a non-uniform scale in the direction perpendicular to the normal it's applied to.
+    const Matrix4x4UVE model = Matrix4x4UVE::ComposeTrsUVE(Vector3UVE{0.0F, 0.0F, 0.0F}, QuaternionUVE{},
+                                                             Vector3UVE{4.0F, 1.0F, 1.0F});
+    Matrix4x4UVE inverse{};
+    ASSERT_TRUE(TryInverseUVE(model, inverse));
+    const Matrix4x4UVE normalMatrix = TransposeUVE(inverse);
+
+    const Vector3UVE tangentX = TransformPointUVE(model, Vector3UVE{1.0F, 0.0F, 0.0F}) -
+                                TransformPointUVE(model, Vector3UVE{0.0F, 0.0F, 0.0F});
+    const Vector3UVE tangentZ = TransformPointUVE(model, Vector3UVE{0.0F, 0.0F, 1.0F}) -
+                                TransformPointUVE(model, Vector3UVE{0.0F, 0.0F, 0.0F});
+    const Vector3UVE transformedNormal = TransformPointUVE(normalMatrix, Vector3UVE{0.0F, 1.0F, 0.0F}) -
+                                         TransformPointUVE(normalMatrix, Vector3UVE{0.0F, 0.0F, 0.0F});
+
+    EXPECT_NEAR(DotUVE(transformedNormal, tangentX), 0.0F, kEpsilon);
+    EXPECT_NEAR(DotUVE(transformedNormal, tangentZ), 0.0F, kEpsilon);
+}
+
+} // namespace
+} // namespace UVE::Math::Tests
