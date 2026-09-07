@@ -33,6 +33,12 @@ add_executable(uve_core_tests
     Core/Events/event_system_uve_tests.cpp
     Core/Asset/uve_file_envelope_uve_tests.cpp
     Core/Asset/asset_database_uve_tests.cpp
+    Core/Asset/asset_manager_uve_tests.cpp
+    Core/Asset/file_system_uve_tests.cpp
+    Core/Asset/mesh_asset_uve_tests.cpp
+    Core/Asset/texture_asset_uve_tests.cpp
+    Core/Asset/shader_asset_uve_tests.cpp
+    Core/Asset/material_asset_uve_tests.cpp
     Commandline/command_line_uve_tests.cpp
     Config/config_manager_uve_tests.cpp
     Network/reliable_packet_window_uve_tests.cpp
