@@ -24,6 +24,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Engine/CMake")
 
 include(UveCompilerWarnings)
 include(UveBuildConfiguration)
+include(UveFormatSupport)
 
 include(FetchContent)
 set(JSON_BuildTests OFF CACHE INTERNAL "")
@@ -38,6 +39,11 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(nlohmann_json)
 
 add_subdirectory(Engine/Runtime/Platform)
+add_subdirectory(Engine/Runtime/Core/Logging)
+add_subdirectory(Engine/Runtime/Core/Memory)
+add_subdirectory(Engine/Runtime/Core/Threading)
+add_subdirectory(Engine/Runtime/Core/Math)
+add_subdirectory(Engine/Runtime/Core/Utilities)
 
 if(UVE_BUILD_TESTS)
     enable_testing()

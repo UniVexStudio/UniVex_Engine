@@ -18,10 +18,34 @@ FetchContent_MakeAvailable(googletest)
 
 add_executable(uve_core_tests
     Core/Platform/editor_project_package_uve_tests.cpp
+    Core/Logging/logger_uve_tests.cpp
+    Core/Logging/log_format_uve_tests.cpp
+    Core/Memory/heap_allocator_uve_tests.cpp
+    Core/Memory/pool_allocator_uve_tests.cpp
+    Core/Memory/stack_allocator_uve_tests.cpp
+    Core/Memory/memory_manager_uve_tests.cpp
+    Core/Memory/allocator_utils_uve_tests.cpp
+    Core/Memory/memory_alignment_uve_tests.cpp
+    Core/Threading/job_counter_uve_tests.cpp
+    Core/Threading/job_graph_uve_tests.cpp
+    Core/Threading/thread_pool_uve_tests.cpp
+    Core/Utilities/timer_uve_tests.cpp
+    Math/vector2_uve_tests.cpp
+    Math/vector3_uve_tests.cpp
+    Math/quaternion_uve_tests.cpp
+    Math/matrix4x4_uve_tests.cpp
+    Math/aabb_uve_tests.cpp
+    Math/plane_uve_tests.cpp
+    Math/frustum_uve_tests.cpp
 )
 target_link_libraries(uve_core_tests PRIVATE
     nlohmann_json::nlohmann_json
     uve_platform
+    uve_debug
+    uve_memory
+    uve_threading
+    uve_math
+    uve_utilities
     GTest::gtest
     GTest::gtest_main
 )
