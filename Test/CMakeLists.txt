@@ -33,6 +33,14 @@ add_executable(uve_core_tests
     Core/Events/event_system_uve_tests.cpp
     Core/Asset/uve_file_envelope_uve_tests.cpp
     Core/Asset/asset_database_uve_tests.cpp
+    Input/input_system_uve_tests.cpp
+    Window/adaptive_render_resolution_uve_tests.cpp
+    Window/display_mode_validation_uve_tests.cpp
+    Window/framebuffer_size_validation_uve_tests.cpp
+    Window/monitor_info_validation_uve_tests.cpp
+    Window/null_window_manager_uve_tests.cpp
+    Window/window_desc_validation_uve_tests.cpp
+    Window/window_manager_uve_tests.cpp
     Math/vector2_uve_tests.cpp
     Math/vector3_uve_tests.cpp
     Math/quaternion_uve_tests.cpp
@@ -51,6 +59,8 @@ target_link_libraries(uve_core_tests PRIVATE
     uve_utilities
     uve_events
     uve_asset
+    uve_input
+    uve_window
     GTest::gtest
     GTest::gtest_main
 )
