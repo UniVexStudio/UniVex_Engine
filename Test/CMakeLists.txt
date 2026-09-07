@@ -125,6 +125,9 @@ add_executable(uve_integration_tests
     Integration/Animation/time_pose_contract_uve_tests.cpp
     Integration/Animation/animation_clip_uve_tests.cpp
     Integration/Animation/animation_tree_uve_tests.cpp
+    Integration/Animation/animation_state_machine_uve_tests.cpp
+    Integration/Animation/animation_retargeting_uve_tests.cpp
+    Integration/Animation/retarget_map_uve_tests.cpp
     Integration/World/world_uve_tests.cpp
     Integration/Object/type_metadata_uve_tests.cpp
     Integration/Object/property_accessor_uve_tests.cpp
@@ -185,6 +188,7 @@ target_link_libraries(uve_integration_tests PRIVATE
     GTest::gtest_main
 )
 target_compile_features(uve_integration_tests PRIVATE cxx_std_20)
+target_compile_definitions(uve_integration_tests PRIVATE UVE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 uve_set_warnings(uve_integration_tests)
 
 # archetype_uve_tests.cpp and chunk_uve_tests.cpp unit-test the module-private
