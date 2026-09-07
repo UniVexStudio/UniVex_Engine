@@ -12,9 +12,7 @@
 #include "uve/scene/nodes/audio_source_3d_node_uve.h"
 #include "uve/scene/nodes/box_mesh_3d_node_uve.h"
 #include "uve/scene/nodes/camera_3d_node_uve.h"
-// character_body_3d_node_uve.h omitted: it depends on uve/physics/character_controller_uve.h,
-// and Physics is explicitly out of scope for this restructuring slice (see the restructuring
-// plan) - only its facade-alias static_asserts below are trimmed, not the node registry itself.
+#include "uve/scene/nodes/character_body_3d_node_uve.h"
 #include "uve/scene/nodes/collision_shape_3d_node_uve.h"
 #include "uve/scene/nodes/empty_node_uve.h"
 #include "uve/scene/nodes/light_3d_node_uve.h"
@@ -60,8 +58,8 @@ TEST(SceneNodeRegistryUVETest, NodeFacadeAliasesUVE_ExposeExistingRuntimeContrac
     static_assert(std::is_same_v<AnimationPlayerNodeFacadeUVE, AnimationPlayerComponentUVE>);
     static_assert(std::is_same_v<Camera3DNodeUVE, CameraComponentUVE>);
     static_assert(std::is_same_v<Camera3DNodeFacadeUVE, CameraComponentUVE>);
-    // CharacterBody3DNodeUVE/CharacterBody3DNodeFacadeUVE alias checks omitted - Physics is out
-    // of scope for this slice (see the include-list comment above).
+    static_assert(std::is_same_v<CharacterBody3DNodeUVE, Physics::CharacterControllerInputUVE>);
+    static_assert(std::is_same_v<CharacterBody3DNodeFacadeUVE, Physics::CharacterControllerInputUVE>);
     static_assert(std::is_same_v<CollisionShape3DNodeUVE, ColliderComponentUVE>);
     static_assert(std::is_same_v<Collider3DNodeFacadeUVE, ColliderComponentUVE>);
     static_assert(std::is_same_v<MeshInstance3DNodeUVE, MeshComponentUVE>);
