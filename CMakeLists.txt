@@ -19,6 +19,7 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 option(UVE_BUILD_TESTS "Build UniVex test suites" ON)
+enable_testing()
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Engine/CMake")
 
@@ -52,8 +53,8 @@ add_subdirectory(Engine/Runtime/Entity)
 add_subdirectory(Engine/Runtime/Animation)
 add_subdirectory(Engine/Runtime/Scene)
 add_subdirectory(Engine/Runtime/World)
+add_subdirectory(Engine/Editor/Viewport)
 
 if(UVE_BUILD_TESTS)
-    enable_testing()
     add_subdirectory(Test)
 endif()
