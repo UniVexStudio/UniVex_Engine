@@ -862,12 +862,20 @@ void EditorUVE::DrawViewportPanelUVE() {
                                            mainViewport->WorkSize.y - menuBarHeight - (m_bottomDockVisible ? kAssetsPanelHeightUVE : 0.0F));
     const float scenePanelWidth = std::clamp(mainViewport->WorkSize.x * 0.19F, 208.0F, 292.0F);
     const float inspectorPanelWidth = std::clamp(mainViewport->WorkSize.x * 0.22F, 264.0F, 356.0F);
+    // Always, not FirstUseEver: this is one of the 5 core structural panels that must tile the
+    // screen with zero gaps/overlaps on every single launch, regardless of any stale imgui.ini
+    // from a previous version of this layout (see the other 4 core panels' own identical comment
+    // and the checkpoint that root-caused this - FirstUseEver only applies a fresh position/size
+    // the very first time a window ID has ever existed in a saved layout file, so any old ini
+    // permanently freezes a panel at a since-outdated position/size). Only secondary/optional
+    // windows (Plugin Tools, the Scripting canvas) keep FirstUseEver, since those are genuinely
+    // meant to be user-repositionable extras rather than part of the fixed chrome.
     ImGui::SetNextWindowPos(ImVec2{mainViewport->WorkPos.x + scenePanelWidth, mainViewport->WorkPos.y + menuBarHeight},
-                            ImGuiCond_FirstUseEver);
+                            ImGuiCond_Always);
     ImGui::SetNextWindowSize(
         ImVec2{std::max(kMinimumViewportHeightUVE, mainViewport->WorkSize.x - scenePanelWidth - inspectorPanelWidth),
                workspaceHeight},
-        ImGuiCond_FirstUseEver);
+        ImGuiCond_Always);
     if (!ImGui::Begin(kPanelLabelViewportUVE, &m_viewportPanelVisible, ImGuiWindowFlags_NoCollapse)) {
         ImGui::End();
         return;
@@ -3853,12 +3861,14 @@ void EditorUVE::DrawBottomDockContentUVE() {
 
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
     const float contentHeight = kAssetsPanelHeightUVE;
-    // FirstUseEver, not Always - see DrawHierarchyPanelUVE()'s comment on the same change.
+    // Always, not FirstUseEver - see DrawHierarchyPanelUVE()'s comment on the same change. This
+    // window is the Filesystem+Contents pair's mutually-exclusive alternate, so it needs the same
+    // deterministic re-tiling guarantee they get.
     ImGui::SetNextWindowPos(
         ImVec2{mainViewport->WorkPos.x, mainViewport->WorkPos.y + mainViewport->WorkSize.y -
                                       kAssetsPanelHeightUVE},
-        ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2{mainViewport->WorkSize.x, contentHeight}, ImGuiCond_FirstUseEver);
+        ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2{mainViewport->WorkSize.x, contentHeight}, ImGuiCond_Always);
     constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse;
     ImGui::Begin("Debug##lower-workspace", nullptr, flags);
     switch (m_activeBottomDock) {
@@ -3956,14 +3966,20 @@ void EditorUVE::DrawHierarchyPanelUVE() {
     const float menuBarHeight = kEditorTopChromeHeightUVE;
     const float workspaceHeight = std::max(kMinimumViewportHeightUVE,
                                                   mainViewport->WorkSize.y - menuBarHeight - (m_bottomDockVisible ? kAssetsPanelHeightUVE : 0.0F));
-    // ImGuiCond_FirstUseEver, not Always: this is the panel's default floating position/size
-    // (matching the pre-docking layout exactly) for a fresh session with no saved imgui.ini
-    // layout - once docking is enabled, forcing it every frame would fight the user's own
-    // drag/resize/dock placement and ImGui's own persisted layout on subsequent launches.
+    // Always, not FirstUseEver: this is one of the 5 core structural panels that must tile the
+    // screen with zero gaps/overlaps on every single launch, regardless of any stale imgui.ini
+    // from a previous version of this layout - an earlier version of this code used FirstUseEver
+    // reasoning about a real docking system that was never actually built (this editor's panels
+    // are independently-positioned floating windows arranged to look tiled, not a real
+    // DockSpace/DockBuilder tree), so a stale ini entry from any prior layout formula change
+    // permanently froze this panel at an outdated position/size - exactly the "sira at di align"
+    // seams reported against a live build. Only secondary/optional windows (Plugin Tools, the
+    // Scripting canvas) keep FirstUseEver, since those are genuinely meant to be
+    // user-repositionable extras rather than part of the fixed chrome.
     ImGui::SetNextWindowPos(ImVec2{mainViewport->WorkPos.x, mainViewport->WorkPos.y + menuBarHeight},
-                            ImGuiCond_FirstUseEver);
+                            ImGuiCond_Always);
     const float scenePanelWidth = std::clamp(mainViewport->WorkSize.x * 0.19F, 208.0F, 292.0F);
-    ImGui::SetNextWindowSize(ImVec2{scenePanelWidth, workspaceHeight}, ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2{scenePanelWidth, workspaceHeight}, ImGuiCond_Always);
     ImGui::Begin(kPanelLabelSceneUVE);
     std::array<char, 256> filterBuffer{};
     m_hierarchyFilter.copy(filterBuffer.data(), filterBuffer.size() - 1U);
@@ -4176,11 +4192,11 @@ void EditorUVE::DrawInspectorPanelUVE() {
     const float workspaceHeight = std::max(kMinimumViewportHeightUVE,
                                            mainViewport->WorkSize.y - menuBarHeight - (m_bottomDockVisible ? kAssetsPanelHeightUVE : 0.0F));
     const float inspectorPanelWidth = std::clamp(mainViewport->WorkSize.x * 0.22F, 264.0F, 356.0F);
-    // FirstUseEver, not Always - see DrawHierarchyPanelUVE()'s comment on the same change.
+    // Always, not FirstUseEver - see DrawHierarchyPanelUVE()'s comment on the same change.
     ImGui::SetNextWindowPos(
         ImVec2{mainViewport->WorkPos.x + mainViewport->WorkSize.x - inspectorPanelWidth,
-               mainViewport->WorkPos.y + menuBarHeight}, ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2{inspectorPanelWidth, workspaceHeight}, ImGuiCond_FirstUseEver);
+               mainViewport->WorkPos.y + menuBarHeight}, ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2{inspectorPanelWidth, workspaceHeight}, ImGuiCond_Always);
     // NoTitleBar dropped (was the only flag actually blocking dragging - dockable/draggable
     // windows need a title bar as their default drag handle) and given a real title: an internal
     // Inspector/Import/Signals tab strip already exists below via Selectable(), so the window
@@ -4965,12 +4981,12 @@ void EditorUVE::DrawFolderContentsPanelUVE() {
     const float contentHeight = kAssetsPanelHeightUVE;
     const float projectWidth = std::clamp(mainViewport->WorkSize.x * 0.60F, 420.0F, mainViewport->WorkSize.x - 280.0F);
     const float contentsWidth = std::max(280.0F, mainViewport->WorkSize.x - projectWidth);
-    // FirstUseEver, not Always - see DrawHierarchyPanelUVE()'s comment on the same change.
+    // Always, not FirstUseEver - see DrawHierarchyPanelUVE()'s comment on the same change.
     ImGui::SetNextWindowPos(
         ImVec2{mainViewport->WorkPos.x + projectWidth,
                mainViewport->WorkPos.y + mainViewport->WorkSize.y - kAssetsPanelHeightUVE},
-        ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2{contentsWidth, contentHeight}, ImGuiCond_FirstUseEver);
+        ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2{contentsWidth, contentHeight}, ImGuiCond_Always);
     // NoTitleBar dropped (see DrawInspectorPanelUVE()'s comment) and given a real title.
     constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse;
     ImGui::Begin(kPanelLabelContentsUVE, nullptr, flags);
@@ -5247,12 +5263,12 @@ void EditorUVE::DrawAssetsPanelUVE() {
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
     const float contentHeight = kAssetsPanelHeightUVE;
     const float projectWidth = std::clamp(mainViewport->WorkSize.x * 0.60F, 420.0F, mainViewport->WorkSize.x - 280.0F);
-    // FirstUseEver, not Always - see DrawHierarchyPanelUVE()'s comment on the same change.
+    // Always, not FirstUseEver - see DrawHierarchyPanelUVE()'s comment on the same change.
     ImGui::SetNextWindowPos(
         ImVec2{mainViewport->WorkPos.x,
                mainViewport->WorkPos.y + mainViewport->WorkSize.y - kAssetsPanelHeightUVE},
-        ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2{projectWidth, contentHeight}, ImGuiCond_FirstUseEver);
+        ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2{projectWidth, contentHeight}, ImGuiCond_Always);
     // NoTitleBar dropped (see DrawInspectorPanelUVE()'s comment) and given a real title. The
     // panel's own "FILESYSTEM" text label a few lines below is unrelated in-content chrome, not
     // this window's identifying title, so both can coexist without looking redundant.
@@ -5273,7 +5289,15 @@ void EditorUVE::DrawAssetsPanelUVE() {
         if (ImGui::MenuItem("Debug")) {
             m_activeBottomDock = EditorBottomDockUVE::Debugger;
         }
-        if (ImGui::MenuItem("Hide dock")) {
+        // Named "Close" to match the real menu item Godot's own FileSystem "..." overflow shows
+        // (per the user's reference screenshots) - functionally this already was "hide the dock",
+        // just under a name that didn't say so. A literal "Make Floating"/Dock-Position-grid pair
+        // like Godot's is not added here: this editor's panels are independently-positioned
+        // floating ImGui windows arranged to look tiled, not a real DockSpace/DockBuilder tree, so
+        // there is no docking-slot concept for "Dock Position" to move a panel between, and every
+        // panel is already un-parented (no ImGuiWindowFlags_NoMove) - a "Make Floating" item would
+        // be a no-op button. Building real dock-slot infrastructure is a separate, larger effort.
+        if (ImGui::MenuItem("Close")) {
             m_bottomDockVisible = false;
         }
         ImGui::EndPopup();

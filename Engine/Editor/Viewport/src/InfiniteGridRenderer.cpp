@@ -114,6 +114,7 @@ void InfiniteGridRenderer::Draw(const GridFrameParams& frame) const {
     program_.SetFloat("uThickIntensity", settings_.thickIntensity);
 
     program_.SetVec3("uAxisColorX", settings_.axisColorX.r, settings_.axisColorX.g, settings_.axisColorX.b);
+    program_.SetVec3("uAxisColorY", settings_.axisColorY.r, settings_.axisColorY.g, settings_.axisColorY.b);
     program_.SetVec3("uAxisColorZ", settings_.axisColorZ.r, settings_.axisColorZ.g, settings_.axisColorZ.b);
 
     const float reference = frame.referenceDistance > 1e-4f ? frame.referenceDistance : 1e-4f;

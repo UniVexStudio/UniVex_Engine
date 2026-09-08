@@ -50,6 +50,7 @@ uniform float uMidIntensity;
 uniform float uThickIntensity;
 
 uniform vec3  uAxisColorX;        // line along world X (at z = 0)
+uniform vec3  uAxisColorY;        // vertical line through the origin (x = 0, z = 0)
 uniform vec3  uAxisColorZ;        // line along world Z (at x = 0)
 
 uniform float uFadeStart;         // world-space ground distance where the fade begins
@@ -111,6 +112,25 @@ void main() {
     );
     float pixelWorld = max(max(worldPerPixel.x, worldPerPixel.y), 1e-9);
 
+    // ---- vertical Y axis line (perpendicular to the ground plane) ---------
+    // The ground-plane intersection above only touches this line at the single
+    // point x=0,z=0 - a vertical line isn't "on" the y=0 plane, so it needs its
+    // own ray-vs-line closest-approach test, independent of whether this
+    // pixel's ray even hits the ground. Minimizing horizontal (XZ) distance
+    // along the ray is a 1D quadratic in the ray parameter t, since the
+    // line's own direction is (0,1,0) and only rayDir.xz enters this at all.
+    // Same "guard the division, take derivatives unconditionally" discipline
+    // as the ground-plane t above - the final t>0 gate is a branchless
+    // multiply, not an `if`, so it never disturbs the 2x2 derivative quad
+    // dFdx/dFdy below need to stay valid across.
+    float axisYDenom = max(dot(rayDir.xz, rayDir.xz), 1e-9);
+    float axisYT = clamp(-dot(vNearPoint.xz, rayDir.xz) / axisYDenom, -1e6, 1e6);
+    vec3 axisYClosestPoint = vNearPoint + axisYT * rayDir;
+    float axisYDist = length(axisYClosestPoint.xz);
+    vec2 axisYDistPerPixel = vec2(dFdx(axisYDist), dFdy(axisYDist));
+    float axisYWorldPerPixel = max(length(axisYDistPerPixel), 1e-9);
+    float axisY = AxisCoverage(axisYDist, axisYWorldPerPixel, uAxisWidthPixels) * (axisYT > 0.0 ? 1.0 : 0.0);
+
     // ---- pick the decade of spacing, and how far through it we are --------
     // The upper clamp keeps pow(10, floor(lod)) finite for the stretched
     // pixels right at the horizon; 10^20 world units is far past any scene,
@@ -146,6 +166,7 @@ void main() {
     float axisZ = AxisCoverage(worldPos.x, worldPerPixel.x, uAxisWidthPixels);
     accum = Over(accum, uAxisColorX, axisX);
     accum = Over(accum, uAxisColorZ, axisZ);
+    accum = Over(accum, uAxisColorY, axisY);
 
     // ---- horizon fade -----------------------------------------------------
     float groundDist = length(worldPos.xz - uCameraPos.xz);

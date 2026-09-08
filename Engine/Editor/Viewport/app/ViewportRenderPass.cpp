@@ -13,7 +13,6 @@ using univex::gizmo::NavViewHalfExtent;
 using univex::math::Normalize;
 using univex::math::Vec3;
 using univex::render::GizmoDrawParams;
-using univex::render::GridSettings;
 
 namespace {
 
@@ -161,64 +160,6 @@ void ViewportRenderPass::DrawBackground() const {
     glBindVertexArray(0);
 }
 
-void ViewportRenderPass::DrawWorldYAxis(const OrbitCamera& camera, int width, int height) const {
-    // The ground grid's own shader (InfiniteGridRenderer) only evaluates the XZ plane, so it has
-    // no notion of a vertical Y line at all - completing the grid to the usual red/green/blue
-    // 3-axis convention needs a real 3D line drawn through the origin, not a grid-shader tweak.
-    // Reuses the same line-drawing pass already proven for the transform/nav gizmos (GizmoRenderer)
-    // with depth testing turned on, but deliberately matches the ground grid's own red/blue axis
-    // lines in the two ways that actually make it read as part of the same grid rather than a
-    // separate overlay pasted on top of it:
-    //   - same pixel width (GridSettings::axisWidthPixels, not the transform gizmo's own unrelated
-    //     axisLineWidthPx - those two were previously different values by coincidence, not design)
-    //   - the same kind of distance fade the ground grid's own horizon fade uses (smoothstep over
-    //     fadeStartDistanceScale/fadeEndDistanceScale * the camera's orbit distance), approximated
-    //     here as several short segments each drawn with a lower GizmoDrawParams::opacity the
-    //     further they are from the camera - GizmoLine itself has no per-segment alpha, so this
-    //     is genuine alpha blending against whatever is actually behind it (gradient background or
-    //     scene geometry) rather than a guess at a flat color to fade toward.
-    using univex::gizmo::GizmoLine;
-    using univex::gizmo::GizmoMesh;
-    using univex::math::Length;
-
-    const GridSettings& gridSettings = grid_.Settings();
-    const float axisWidthPixels = gridSettings.axisWidthPixels;
-    const float halfLength = std::max(50.f, camera.Distance() * 3.f);
-    const float fadeStart = camera.Distance() * gridSettings.fadeStartDistanceScale;
-    const float fadeEnd = std::max(fadeStart + 1e-3f, camera.Distance() * gridSettings.fadeEndDistanceScale);
-
-    GizmoDrawParams params;
-    params.viewProjection = camera.ViewProjection(static_cast<float>(width) / static_cast<float>(height));
-    params.origin = Vec3{0.f, 0.f, 0.f};
-    params.scale = 1.f; // authored directly in world units, not gizmo units
-    params.viewportWidth = static_cast<float>(width);
-    params.viewportHeight = static_cast<float>(height);
-    params.depthTest = true;
-    params.depthWrite = false; // test against the scene, but never occlude it - matches the grid
-
-    constexpr int kSegmentsPerSideUVE = 10;
-    for (const float side : {-1.f, 1.f}) {
-        for (int index = 0; index < kSegmentsPerSideUVE; ++index) {
-            const float t0 = static_cast<float>(index) / static_cast<float>(kSegmentsPerSideUVE);
-            const float t1 = static_cast<float>(index + 1) / static_cast<float>(kSegmentsPerSideUVE);
-            const Vec3 pointA{0.f, side * halfLength * t0, 0.f};
-            const Vec3 pointB{0.f, side * halfLength * t1, 0.f};
-            const Vec3 midpoint{0.f, side * halfLength * (t0 + t1) * 0.5f, 0.f};
-            const float distanceFromCamera = Length(midpoint - camera.Eye());
-            const float fadeRatio = std::clamp((distanceFromCamera - fadeStart) / (fadeEnd - fadeStart), 0.f, 1.f);
-            const float smoothFade = fadeRatio * fadeRatio * (3.f - 2.f * fadeRatio); // smoothstep
-            const float opacity = 1.f - smoothFade;
-            if (opacity < 0.01f) {
-                continue;
-            }
-            GizmoMesh mesh;
-            mesh.lines.push_back(GizmoLine{pointA, pointB, style_.axisColorY, axisWidthPixels});
-            params.opacity = opacity;
-            gizmos_.Draw(mesh, params);
-        }
-    }
-}
-
 void ViewportRenderPass::DrawTransformGizmo(const OrbitCamera& camera, int width, int height) const {
     const Vec3 viewDirection = Normalize(camera.Target() - camera.Eye());
     const float scale = univex::render::GizmoRenderer::ScaleForPixelRadius(camera, height,
@@ -304,8 +245,11 @@ void ViewportRenderPass::RenderFrame(const OrbitCamera& camera,
         }
     }
     if (settings_.viewGrid) {
+        // The vertical Y axis line is drawn inside the grid's own shader now (InfiniteGridRenderer /
+        // infinite_grid.frag) rather than as a separate GizmoRenderer pass, so it shares the exact
+        // same per-pixel anti-aliasing and distance fade as the X/Z axis lines instead of visibly
+        // seaming against them.
         grid_.Draw(camera, framebufferWidth, framebufferHeight);
-        DrawWorldYAxis(camera, framebufferWidth, framebufferHeight);
     }
     if (settings_.viewTransformGizmo && gizmoMode_ != GizmoMode::Select) {
         DrawTransformGizmo(camera, framebufferWidth, framebufferHeight);

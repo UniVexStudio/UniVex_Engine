@@ -43,6 +43,7 @@ struct GridSettings {
     float thickIntensity = 0.95f;
 
     GridColor axisColorX{1.000f, 0.365f, 0.365f}; // #ff5d5d
+    GridColor axisColorY{0.373f, 0.878f, 0.541f}; // #5fe08a - matches GizmoStyle::axisColorY
     GridColor axisColorZ{0.357f, 0.616f, 1.000f}; // #5b9dff
 
     // Horizon fade, as multiples of the camera's orbit distance. Keeping
