@@ -285,3 +285,40 @@ target_compile_definitions(uve_engine_tests PRIVATE UVE_SOURCE_DIR="${CMAKE_SOUR
 uve_set_warnings(uve_engine_tests)
 
 gtest_discover_tests(uve_engine_tests)
+
+#
+# uve_editor_tests covers Engine/Editor/EditorCore - EditorUVE, EditorBridgeUVE/
+# EditorBridgeStdioUVE, DeveloperConsoleUVE, EditorToolSessionUVE, InspectorDrawerRegistryUVE,
+# RegressionHarnessUVE. Every test in this suite either runs EngineCoreUVE in headlessUVE mode
+# (no real GL/GLFW/ImGui context needed - EditorUVE skips ImGui init when the window manager
+# isn't valid) or tests a standalone class with no EngineCoreUVE dependency at all
+# (DeveloperConsoleUVE/EditorToolSessionUVE/InspectorDrawerRegistryUVE/RegressionHarnessUVE), so
+# this doesn't need Xvfb or any GL/GLFW link wiring the way uve_engine_tests and
+# gl_render_device_uve_tests.cpp do. Linking uve_editor is sufficient for every dependency - it
+# PUBLIC-links uve_core, uve_scripting, and uve_plugins, which propagate transitively.
+add_executable(uve_editor_tests
+    Editor/editor_bridge_stdio_uve_tests.cpp
+    Editor/editor_bridge_uve_tests.cpp
+    Editor/developer_console_uve_tests.cpp
+    Editor/developer_console_bridge_uve_tests.cpp
+    Editor/editor_tool_session_uve_tests.cpp
+    Editor/editor_uve_tests.cpp
+    Editor/inspector_drawer_registry_uve_tests.cpp
+    Editor/regression_harness_uve_tests.cpp
+    Editor/data_table_registry_bridge_uve_tests.cpp
+    Editor/prefab_maturity_editor_uve_tests.cpp
+    Editor/scene_component_authoring_uve_tests.cpp
+    Editor/scene_node_editor_uve_tests.cpp
+)
+target_link_libraries(uve_editor_tests PRIVATE
+    nlohmann_json::nlohmann_json
+    uve_editor
+    uve_math
+    GTest::gtest
+    GTest::gtest_main
+)
+target_compile_features(uve_editor_tests PRIVATE cxx_std_20)
+target_compile_definitions(uve_editor_tests PRIVATE UVE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+uve_set_warnings(uve_editor_tests)
+
+gtest_discover_tests(uve_editor_tests)
