@@ -30,6 +30,8 @@ add_executable(uve_core_tests
     Core/Threading/job_graph_uve_tests.cpp
     Core/Threading/thread_pool_uve_tests.cpp
     Core/Utilities/timer_uve_tests.cpp
+    Core/Scheduling/frame_scheduler_uve_tests.cpp
+    Core/Diagnostics/profiler_diagnostics_uve_tests.cpp
     Core/Events/event_system_uve_tests.cpp
     Core/Asset/uve_file_envelope_uve_tests.cpp
     Core/Asset/asset_database_uve_tests.cpp
@@ -106,6 +108,8 @@ target_link_libraries(uve_core_tests PRIVATE
     uve_debug
     uve_memory
     uve_threading
+    uve_scheduling
+    uve_diagnostics
     uve_math
     uve_utilities
     uve_events
@@ -232,3 +236,41 @@ uve_set_warnings(uve_integration_tests)
 target_include_directories(uve_integration_tests PRIVATE ${CMAKE_SOURCE_DIR}/Engine/Runtime/Entity/src)
 
 gtest_discover_tests(uve_integration_tests)
+
+#
+# uve_engine_tests covers Engine/Runtime/Engine - EngineCoreUVE (the whole-engine bootstrap),
+# EngineServicesUVE, VersionUVE, and EngineStateUVE. Kept as its own executable rather than
+# folded into uve_core_tests or uve_integration_tests since EngineCoreUVE's own test suite
+# exercises literally every already-ported subsystem at once (Asset/Audio/Input/Physics/Render/
+# Save/Scene/Window) through one bootstrap object - it doesn't belong to either bucket, it sits
+# on top of both. Linking uve_core is sufficient for every other dependency: uve_core PUBLIC-links
+# the full set its own header/source files need (uve_platform, uve_debug, uve_utilities,
+# uve_events, uve_memory, uve_threading, uve_commandline, uve_config, uve_asset, uve_scene,
+# uve_physics, uve_input, uve_audio, uve_save, uve_window, uve_rhi, uve_rhi_shader,
+# uve_rhi_opengl, uve_rhi_null, uve_render_systems), so all of those propagate transitively.
+#
+# engine_core_uve_tests.cpp includes <GL/gl.h> directly and calls raw glFinish/glReadBuffer/
+# glReadPixels/glGetError in the handful of tests that exercise the real (non-headless) GL
+# rendering path - this resolves the same way window_manager_uve_tests.cpp's own direct
+# <GLFW/glfw3.h> use already does elsewhere in this file with no explicit glfw/OpenGL entry here:
+# the actual link requirement (OpenGL::GL, glfw) propagates through the static-library dependency
+# chain regardless of PRIVATE/PUBLIC (CMake still needs it to link the final executable), and the
+# system GL/GLFW headers are already on the default compiler include path.
+add_executable(uve_engine_tests
+    Engine/engine_state_uve_tests.cpp
+    Engine/version_uve_tests.cpp
+    Engine/engine_services_uve_tests.cpp
+    Engine/engine_core_uve_tests.cpp
+)
+target_link_libraries(uve_engine_tests PRIVATE
+    nlohmann_json::nlohmann_json
+    uve_core
+    uve_math
+    GTest::gtest
+    GTest::gtest_main
+)
+target_compile_features(uve_engine_tests PRIVATE cxx_std_20)
+target_compile_definitions(uve_engine_tests PRIVATE UVE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+uve_set_warnings(uve_engine_tests)
+
+gtest_discover_tests(uve_engine_tests)

@@ -27,6 +27,16 @@
 
 # This now covers every file in the reference engine/asset/ module - the full ~12,098-line
 # system is ported.
+#
+# audio_asset_uve.cpp (LoadAudioAssetUVE/SaveAudioAssetUVE) moved here from Audio's own local
+# include/uve/asset/ tree while porting EngineCoreUVE - Audio previously only needed the header
+# (the AudioAssetUVE value type) for WavImporterUVE::RegisterWavImporterUVE(), but EngineCoreUVE's
+# own asset-loader registration path calls LoadAudioAssetUVE/SaveAudioAssetUVE directly, which
+# were never actually defined anywhere in this repo until now - a genuine missing-definition
+# link error, not a design choice, caught by the linker rather than by dependency-closure review.
+# audio_asset_uve.h's own reference include path was always uve/asset/, matching every other
+# asset model here (MeshAssetUVE, TextureAssetUVE, ShaderAssetUVE) - Audio still gets it through
+# its existing uve_asset PUBLIC link, unchanged.
 
 find_package(ZLIB REQUIRED)
 if(NOT ANDROID)
@@ -35,6 +45,7 @@ endif()
 
 add_library(uve_asset STATIC
     src/asset_guid_uve.cpp
+    src/audio_asset_uve.cpp
     src/uve_file_envelope_uve.cpp
     src/asset_database_uve.cpp
     src/asset_content_fingerprint_uve.cpp
