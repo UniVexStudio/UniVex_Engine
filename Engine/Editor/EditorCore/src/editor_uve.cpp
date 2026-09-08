@@ -116,7 +116,10 @@ constexpr float kAssetsPanelHeightUVE = 176.0F;
 constexpr float kBottomDockTabHeightUVE = 24.0F;
 constexpr float kEditorTitleBarHeightUVE = 24.0F;
 constexpr float kEditorMenuBarHeightUVE = 24.0F;
-constexpr float kEditorToolbarHeightUVE = 30.0F;
+// Shrunk from 30 now that this row also hosts the Play/Pause/Stop transport buttons (moved out of
+// the menu row below) alongside the Scene/Scripting/Game workspace tabs, decluttering both rows
+// instead of leaving a tall strip that only ever held two small tab buttons.
+constexpr float kEditorToolbarHeightUVE = 26.0F;
 constexpr float kEditorViewportToolCanvasHeightUVE = 30.0F;
 constexpr float kFilesystemLongPressThresholdSecondsUVE = 0.60F;
 /// Square resolution rendered for each Content Browser mesh thumbnail (see
@@ -502,6 +505,8 @@ bool EditorUVE::EnterPlayModeUVE() {
 
     m_playModeSession = std::move(session);
     m_playModeState = EditorPlayModeStateUVE::Playing;
+    m_workspaceBeforePlayMode = m_activeWorkspace;
+    m_activeWorkspace = EditorWorkspaceUVE::Game;
     return true;
 }
 
@@ -571,6 +576,9 @@ bool EditorUVE::StopPlayModeUVE() {
 
     m_playModeSession.reset();
     m_playModeState = EditorPlayModeStateUVE::Edit;
+    if (m_activeWorkspace == EditorWorkspaceUVE::Game) {
+        m_activeWorkspace = m_workspaceBeforePlayMode;
+    }
     return true;
 }
 
@@ -631,6 +639,7 @@ void EditorUVE::DrawViewportPanelUVE() {
     }
     const ImVec2 availableRegion = ImGui::GetContentRegionAvail();
     if (m_viewportPanelRenderer && availableRegion.x > 0.0F && availableRegion.y > 0.0F) {
+        m_viewportOverlayState.gameWorkspaceActive = m_activeWorkspace == EditorWorkspaceUVE::Game;
         const Math::Vector2UVE available{availableRegion.x, availableRegion.y};
         Math::Vector2UVE used{0.0F, 0.0F};
         // Whatever the overlay bubbles below changed last frame - the renderer applies it to its
@@ -645,8 +654,13 @@ void EditorUVE::DrawViewportPanelUVE() {
             // displays elsewhere in this file - flip the V axis so the image displays right-side up.
             ImGui::Image(static_cast<ImTextureID>(textureId), ImVec2{used.x, used.y}, ImVec2{0.0F, 1.0F},
                          ImVec2{1.0F, 0.0F});
-            DrawViewportOverlayBubblesUVE(Math::Vector2UVE{cursorBeforeImage.x, cursorBeforeImage.y},
-                                          Math::Vector2UVE{used.x, used.y});
+            // The projection/gizmo-mode overlay bubbles are editor-authoring chrome - hidden while
+            // the Game workspace tab is active, matching Unity's own Scene/Game split where the
+            // Game view previews what a player would see with no editor overlays on top.
+            if (!m_viewportOverlayState.gameWorkspaceActive) {
+                DrawViewportOverlayBubblesUVE(Math::Vector2UVE{cursorBeforeImage.x, cursorBeforeImage.y},
+                                              Math::Vector2UVE{used.x, used.y});
+            }
         }
     }
     ImGui::End();
@@ -3329,6 +3343,7 @@ void EditorUVE::DrawMenuBarUVE() {
             case EditorWorkspaceUVE::Scripting: workspaceLabel = "Scripting"; break;
             case EditorWorkspaceUVE::Debug: workspaceLabel = "Debug"; break;
             case EditorWorkspaceUVE::Plugin: workspaceLabel = "Plugin"; break;
+            case EditorWorkspaceUVE::Game: workspaceLabel = "Game"; break;
         }
         ImGui::TextDisabled("| %s", workspaceLabel);
         ImGui::SameLine();
@@ -3437,57 +3452,6 @@ void EditorUVE::DrawMenuBarUVE() {
             ImGui::EndMenu();
         }
         ImGui::EndMenuBar();
-        const float playbackGroupWidth = 2.0F * 58.0F + 4.0F;
-        ImGui::SetCursorScreenPos(ImVec2{menuMin.x + (ImGui::GetWindowWidth() - playbackGroupWidth) * 0.5F,
-                                       menuMin.y + 1.0F});
-        const auto drawMenuPlaybackButton = [](const char* const id, const char* const label, const int iconKind,
-                                                const bool enabled) {
-            ImGui::BeginDisabled(!enabled);
-            ImGui::PushID(id);
-            const bool pressed = ImGui::Button("##menu-playback", ImVec2{58.0F, 22.0F});
-            const ImVec2 minimum = ImGui::GetItemRectMin();
-            const ImVec2 maximum = ImGui::GetItemRectMax();
-            const float centerY = (minimum.y + maximum.y) * 0.5F;
-            ImDrawList* const iconDrawList = ImGui::GetWindowDrawList();
-            const ImU32 iconColor = ImGui::GetColorU32(ImGuiCol_Text);
-            if (iconKind == 0) {
-                iconDrawList->AddTriangleFilled(ImVec2{minimum.x + 7.0F, centerY - 6.0F},
-                                                ImVec2{minimum.x + 7.0F, centerY + 6.0F},
-                                                ImVec2{minimum.x + 17.0F, centerY}, iconColor);
-            } else if (iconKind == 1) {
-                iconDrawList->AddRectFilled(ImVec2{minimum.x + 7.0F, centerY - 6.0F},
-                                            ImVec2{minimum.x + 11.0F, centerY + 6.0F}, iconColor);
-                iconDrawList->AddRectFilled(ImVec2{minimum.x + 13.0F, centerY - 6.0F},
-                                            ImVec2{minimum.x + 17.0F, centerY + 6.0F}, iconColor);
-            } else {
-                iconDrawList->AddRectFilled(ImVec2{minimum.x + 7.0F, centerY - 5.0F},
-                                            ImVec2{minimum.x + 17.0F, centerY + 5.0F}, iconColor);
-            }
-            iconDrawList->AddText(ImVec2{minimum.x + 23.0F, minimum.y + 4.0F}, iconColor, label);
-            ImGui::PopID();
-            ImGui::EndDisabled();
-            return pressed;
-        };
-        const bool menuCanEnterPlayMode = m_simulationControl != nullptr &&
-                                           m_playModeState == EditorPlayModeStateUVE::Edit;
-        const char* const playLabel = m_playModeState == EditorPlayModeStateUVE::Playing ? "Pause" :
-                                      (m_playModeState == EditorPlayModeStateUVE::Paused ? "Resume" : "Play");
-        const int playIconKind = m_playModeState == EditorPlayModeStateUVE::Playing ? 1 : 0;
-        const bool playEnabled = m_playModeState == EditorPlayModeStateUVE::Edit ? menuCanEnterPlayMode : true;
-        if (drawMenuPlaybackButton("##menu-playback-play", playLabel, playIconKind, playEnabled)) {
-            if (m_playModeState == EditorPlayModeStateUVE::Edit) {
-                static_cast<void>(EnterPlayModeUVE());
-            } else if (m_playModeState == EditorPlayModeStateUVE::Playing) {
-                static_cast<void>(PausePlayModeUVE());
-            } else {
-                static_cast<void>(ResumePlayModeUVE());
-            }
-        }
-        ImGui::SameLine(0.0F, 4.0F);
-        if (drawMenuPlaybackButton("##menu-playback-stop", "Stop", 2,
-                                  m_playModeState != EditorPlayModeStateUVE::Edit)) {
-            static_cast<void>(StopPlayModeUVE());
-        }
         ImGui::End();
     }
 
@@ -3515,6 +3479,86 @@ void EditorUVE::DrawMenuBarUVE() {
         };
         drawWorkspace("Scene", EditorWorkspaceUVE::Library);
         drawWorkspace("Scripting", EditorWorkspaceUVE::Scripting);
+        drawWorkspace("Game", EditorWorkspaceUVE::Game);
+
+        // ---- Play/Pause/Stop transport, relocated here from the menu row and right-aligned ----
+        constexpr float kTransportButtonWidthUVE = 40.0F;
+        constexpr float kTransportButtonHeightUVE = 20.0F;
+        constexpr float kTransportButtonGapUVE = 4.0F;
+        const float transportGroupWidth = 2.0F * kTransportButtonWidthUVE + kTransportButtonGapUVE;
+        ImGui::SetCursorScreenPos(
+            ImVec2{toolbarMax.x - transportGroupWidth - 8.0F,
+                   toolbarMin.y + (kEditorToolbarHeightUVE - kTransportButtonHeightUVE) * 0.5F});
+        const auto drawTransportButton = [](const char* const id, const bool enabled, const auto& drawIcon) {
+            ImGui::BeginDisabled(!enabled);
+            ImGui::PushID(id);
+            const bool pressed =
+                ImGui::Button("##transport", ImVec2{kTransportButtonWidthUVE, kTransportButtonHeightUVE});
+            const ImVec2 minimum = ImGui::GetItemRectMin();
+            const ImVec2 maximum = ImGui::GetItemRectMax();
+            const ImVec2 center{(minimum.x + maximum.x) * 0.5F, (minimum.y + maximum.y) * 0.5F};
+            drawIcon(*ImGui::GetWindowDrawList(), center);
+            ImGui::PopID();
+            ImGui::EndDisabled();
+            return pressed;
+        };
+
+        const bool canEnterPlayModeNow =
+            m_simulationControl != nullptr && m_playModeState == EditorPlayModeStateUVE::Edit;
+        const bool playEnabled = m_playModeState == EditorPlayModeStateUVE::Edit ? canEnterPlayModeNow : true;
+        // Eased toward 0 (plain Play triangle) or 1 (Pause bars) each frame instead of an instant
+        // swap, so the icon genuinely animates from one shape into the other on toggle.
+        const float morphTarget = m_playModeState == EditorPlayModeStateUVE::Playing ? 1.0F : 0.0F;
+        constexpr float kPlayButtonMorphSpeedUVE = 8.0F; // full swing in ~125ms
+        const float morphStep = ImGui::GetIO().DeltaTime * kPlayButtonMorphSpeedUVE;
+        if (m_playButtonMorphProgress < morphTarget) {
+            m_playButtonMorphProgress = std::min(morphTarget, m_playButtonMorphProgress + morphStep);
+        } else if (m_playButtonMorphProgress > morphTarget) {
+            m_playButtonMorphProgress = std::max(morphTarget, m_playButtonMorphProgress - morphStep);
+        }
+        const float morph = m_playButtonMorphProgress;
+        if (drawTransportButton(
+                "##transport-play", playEnabled, [morph](ImDrawList& drawList, const ImVec2 center) {
+                    const ImU32 baseColor = ImGui::GetColorU32(ImGuiCol_Text);
+                    // Triangle (Play) crossfades into two bars (Pause): the triangle fades out while
+                    // its apex pulls inward, and the bars fade in while sliding apart, so the two
+                    // shapes read as one continuous motion rather than an instant swap.
+                    if (morph < 1.0F) {
+                        const ImU32 triColor =
+                            (baseColor & 0x00FFFFFFU) |
+                            (static_cast<ImU32>((1.0F - morph) * 255.0F) << IM_COL32_A_SHIFT);
+                        const float apexPull = morph * 4.0F;
+                        drawList.AddTriangleFilled(ImVec2{center.x - 5.0F, center.y - 6.0F},
+                                                   ImVec2{center.x - 5.0F, center.y + 6.0F},
+                                                   ImVec2{center.x + 5.0F - apexPull, center.y}, triColor);
+                    }
+                    if (morph > 0.0F) {
+                        const ImU32 barColor = (baseColor & 0x00FFFFFFU) |
+                                               (static_cast<ImU32>(morph * 255.0F) << IM_COL32_A_SHIFT);
+                        const float spread = morph * 2.0F;
+                        drawList.AddRectFilled(ImVec2{center.x - 6.0F - spread, center.y - 6.0F},
+                                               ImVec2{center.x - 2.0F - spread, center.y + 6.0F}, barColor);
+                        drawList.AddRectFilled(ImVec2{center.x + 2.0F + spread, center.y - 6.0F},
+                                               ImVec2{center.x + 6.0F + spread, center.y + 6.0F}, barColor);
+                    }
+                })) {
+            if (m_playModeState == EditorPlayModeStateUVE::Edit) {
+                static_cast<void>(EnterPlayModeUVE());
+            } else if (m_playModeState == EditorPlayModeStateUVE::Playing) {
+                static_cast<void>(PausePlayModeUVE());
+            } else {
+                static_cast<void>(ResumePlayModeUVE());
+            }
+        }
+        ImGui::SameLine(0.0F, kTransportButtonGapUVE);
+        if (drawTransportButton("##transport-stop", m_playModeState != EditorPlayModeStateUVE::Edit,
+                                [](ImDrawList& drawList, const ImVec2 center) {
+                                    drawList.AddRectFilled(ImVec2{center.x - 5.0F, center.y - 5.0F},
+                                                           ImVec2{center.x + 5.0F, center.y + 5.0F},
+                                                           ImGui::GetColorU32(ImGuiCol_Text));
+                                })) {
+            static_cast<void>(StopPlayModeUVE());
+        }
         ImGui::End();
     }
 }

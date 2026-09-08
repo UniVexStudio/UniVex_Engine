@@ -189,7 +189,9 @@ private:
         auto& settings = renderPass_->Settings();
         settings.projection = overlayState.orthographic ? univex::viewport::ProjectionMode::Orthographic
                                                         : univex::viewport::ProjectionMode::Perspective;
-        settings.viewGrid = overlayState.gridVisible;
+        // The Game workspace tab previews what a player would see - no editor-only grid overlay.
+        settings.viewGrid = overlayState.gridVisible && !overlayState.gameWorkspaceActive;
+        gameWorkspaceActive_ = overlayState.gameWorkspaceActive;
         using UVE::Editor::EditorUVE;
         switch (overlayState.gizmoMode) {
             case EditorUVE::ViewportGizmoModeUVE::Move:
@@ -218,7 +220,7 @@ private:
         const UVE::Scene::EntityUVE selected = editor_.GetSelectedEntityUVE();
         const bool hasSelection = selected != UVE::Scene::kInvalidEntityUVE &&
                                   entityManager_.HasComponentUVE<UVE::Scene::WorldTransformComponentUVE>(selected);
-        renderPass_->Settings().viewTransformGizmo = hasSelection;
+        renderPass_->Settings().viewTransformGizmo = hasSelection && !gameWorkspaceActive_;
         if (hasSelection) {
             const auto& worldTransform =
                 entityManager_.GetComponentUVE<UVE::Scene::WorldTransformComponentUVE>(selected);
@@ -258,6 +260,11 @@ private:
     UVE::Scene::IEntityManagerUVE& entityManager_;
     univex::integration::EntityManagerEntitySource entitySource_;
     std::optional<univex::app::ViewportRenderPass> renderPass_;
+    // Set each frame by ApplyOverlayStateUVE(), read by UpdateSelectionGizmoUVE() so it can force
+    // the transform gizmo off while the Game workspace tab is active (see ApplyOverlayStateUVE's
+    // own comment - it already forces the grid off directly, but the gizmo's visibility is decided
+    // later in the same frame by selection state, so it needs this stored flag instead).
+    bool gameWorkspaceActive_ = false;
     univex::camera::OrbitCamera camera_;
     bool glewInitialized_ = false;
     GLuint msaaFbo_ = 0U;
