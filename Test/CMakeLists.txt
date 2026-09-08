@@ -196,6 +196,7 @@ add_executable(uve_integration_tests
     Audio/pcm_gain_effect_uve_tests.cpp
     Audio/wav_metadata_uve_tests.cpp
     Audio/wav_pcm16_decoder_uve_tests.cpp
+    Audio/wav_importer_uve_tests.cpp
     RHI/RenderSystems/camera_system_uve_tests.cpp
     RHI/RenderSystems/light_system_uve_tests.cpp
     RHI/RenderSystems/mesh_renderer_uve_tests.cpp
