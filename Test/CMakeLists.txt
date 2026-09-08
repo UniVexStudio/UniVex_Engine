@@ -30,6 +30,8 @@ add_executable(uve_core_tests
     Core/Threading/job_graph_uve_tests.cpp
     Core/Threading/thread_pool_uve_tests.cpp
     Core/Utilities/timer_uve_tests.cpp
+    Core/Scheduling/frame_scheduler_uve_tests.cpp
+    Core/Diagnostics/profiler_diagnostics_uve_tests.cpp
     Core/Events/event_system_uve_tests.cpp
     Core/Asset/uve_file_envelope_uve_tests.cpp
     Core/Asset/asset_database_uve_tests.cpp
@@ -76,7 +78,11 @@ add_executable(uve_core_tests
     Plugins/plugin_registry_uve_tests.cpp
     ProjectCheck/project_checker_uve_tests.cpp
     Input/input_system_uve_tests.cpp
+    Input/mobile_input_system_uve_tests.cpp
+    Input/mobile_gesture_system_uve_tests.cpp
+    Input/mobile_gesture_recognizer_uve_tests.cpp
     RHI/null_render_device_uve_tests.cpp
+    RHI/OpenGL/gl_render_device_uve_tests.cpp
     RHI/Shader/shader_binary_cache_uve_tests.cpp
     RHI/Shader/shader_diagnostics_parser_uve_tests.cpp
     RHI/Shader/shader_manager_uve_tests.cpp
@@ -103,6 +109,8 @@ target_link_libraries(uve_core_tests PRIVATE
     uve_debug
     uve_memory
     uve_threading
+    uve_scheduling
+    uve_diagnostics
     uve_math
     uve_utilities
     uve_events
@@ -162,6 +170,12 @@ add_executable(uve_integration_tests
     Integration/World/world_uve_tests.cpp
     Integration/Object/type_metadata_uve_tests.cpp
     Integration/Object/property_accessor_uve_tests.cpp
+    Integration/Scripting/script_asset_loader_uve_tests.cpp
+    Integration/Scripting/script_graph_uve_tests.cpp
+    Integration/Scripting/script_rotation_value_uve_tests.cpp
+    Integration/Scripting/script_source_mapping_uve_tests.cpp
+    Integration/Scripting/script_transform_value_uve_tests.cpp
+    Integration/Scripting/script_vector3_value_uve_tests.cpp
     Physics/angular_dynamics_uve_tests.cpp
     Physics/area_overlap_lifecycle_tracker_uve_tests.cpp
     Physics/area_overlap_system_uve_tests.cpp
@@ -189,6 +203,7 @@ add_executable(uve_integration_tests
     Audio/pcm_gain_effect_uve_tests.cpp
     Audio/wav_metadata_uve_tests.cpp
     Audio/wav_pcm16_decoder_uve_tests.cpp
+    Audio/wav_importer_uve_tests.cpp
     RHI/RenderSystems/camera_system_uve_tests.cpp
     RHI/RenderSystems/light_system_uve_tests.cpp
     RHI/RenderSystems/mesh_renderer_uve_tests.cpp
@@ -207,6 +222,9 @@ target_link_libraries(uve_integration_tests PRIVATE
     uve_component
     uve_entity
     uve_scene
+    uve_scripting
+    uve_asset
+    uve_memory
     uve_animation
     uve_world
     uve_object
@@ -229,3 +247,78 @@ uve_set_warnings(uve_integration_tests)
 target_include_directories(uve_integration_tests PRIVATE ${CMAKE_SOURCE_DIR}/Engine/Runtime/Entity/src)
 
 gtest_discover_tests(uve_integration_tests)
+
+#
+# uve_engine_tests covers Engine/Runtime/Engine - EngineCoreUVE (the whole-engine bootstrap),
+# EngineServicesUVE, VersionUVE, and EngineStateUVE. Kept as its own executable rather than
+# folded into uve_core_tests or uve_integration_tests since EngineCoreUVE's own test suite
+# exercises literally every already-ported subsystem at once (Asset/Audio/Input/Physics/Render/
+# Save/Scene/Window) through one bootstrap object - it doesn't belong to either bucket, it sits
+# on top of both. Linking uve_core is sufficient for every other dependency: uve_core PUBLIC-links
+# the full set its own header/source files need (uve_platform, uve_debug, uve_utilities,
+# uve_events, uve_memory, uve_threading, uve_commandline, uve_config, uve_asset, uve_scene,
+# uve_physics, uve_input, uve_audio, uve_save, uve_window, uve_rhi, uve_rhi_shader,
+# uve_rhi_opengl, uve_rhi_null, uve_render_systems), so all of those propagate transitively.
+#
+# engine_core_uve_tests.cpp includes <GL/gl.h> directly and calls raw glFinish/glReadBuffer/
+# glReadPixels/glGetError in the handful of tests that exercise the real (non-headless) GL
+# rendering path - this resolves the same way window_manager_uve_tests.cpp's own direct
+# <GLFW/glfw3.h> use already does elsewhere in this file with no explicit glfw/OpenGL entry here:
+# the actual link requirement (OpenGL::GL, glfw) propagates through the static-library dependency
+# chain regardless of PRIVATE/PUBLIC (CMake still needs it to link the final executable), and the
+# system GL/GLFW headers are already on the default compiler include path.
+add_executable(uve_engine_tests
+    Engine/engine_state_uve_tests.cpp
+    Engine/version_uve_tests.cpp
+    Engine/engine_services_uve_tests.cpp
+    Engine/engine_core_uve_tests.cpp
+)
+target_link_libraries(uve_engine_tests PRIVATE
+    nlohmann_json::nlohmann_json
+    uve_core
+    uve_math
+    GTest::gtest
+    GTest::gtest_main
+)
+target_compile_features(uve_engine_tests PRIVATE cxx_std_20)
+target_compile_definitions(uve_engine_tests PRIVATE UVE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+uve_set_warnings(uve_engine_tests)
+
+gtest_discover_tests(uve_engine_tests)
+
+#
+# uve_editor_tests covers Engine/Editor/EditorCore - EditorUVE, EditorBridgeUVE/
+# EditorBridgeStdioUVE, DeveloperConsoleUVE, EditorToolSessionUVE, InspectorDrawerRegistryUVE,
+# RegressionHarnessUVE. Every test in this suite either runs EngineCoreUVE in headlessUVE mode
+# (no real GL/GLFW/ImGui context needed - EditorUVE skips ImGui init when the window manager
+# isn't valid) or tests a standalone class with no EngineCoreUVE dependency at all
+# (DeveloperConsoleUVE/EditorToolSessionUVE/InspectorDrawerRegistryUVE/RegressionHarnessUVE), so
+# this doesn't need Xvfb or any GL/GLFW link wiring the way uve_engine_tests and
+# gl_render_device_uve_tests.cpp do. Linking uve_editor is sufficient for every dependency - it
+# PUBLIC-links uve_core, uve_scripting, and uve_plugins, which propagate transitively.
+add_executable(uve_editor_tests
+    Editor/editor_bridge_stdio_uve_tests.cpp
+    Editor/editor_bridge_uve_tests.cpp
+    Editor/developer_console_uve_tests.cpp
+    Editor/developer_console_bridge_uve_tests.cpp
+    Editor/editor_tool_session_uve_tests.cpp
+    Editor/editor_uve_tests.cpp
+    Editor/inspector_drawer_registry_uve_tests.cpp
+    Editor/regression_harness_uve_tests.cpp
+    Editor/data_table_registry_bridge_uve_tests.cpp
+    Editor/prefab_maturity_editor_uve_tests.cpp
+    Editor/scene_component_authoring_uve_tests.cpp
+    Editor/scene_node_editor_uve_tests.cpp
+)
+target_link_libraries(uve_editor_tests PRIVATE
+    nlohmann_json::nlohmann_json
+    uve_editor
+    uve_math
+    GTest::gtest
+    GTest::gtest_main
+)
+target_compile_features(uve_editor_tests PRIVATE cxx_std_20)
+target_compile_definitions(uve_editor_tests PRIVATE UVE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+uve_set_warnings(uve_editor_tests)
+
+gtest_discover_tests(uve_editor_tests)

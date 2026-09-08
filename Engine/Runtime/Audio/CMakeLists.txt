@@ -4,14 +4,10 @@
 # Backend-agnostic audio device/source system (AudioSystemUVE, AudioSourceSystemUVE,
 # NullAudioDeviceUVE, WAV/PCM16 import) ported from the reference engine's Audio module.
 #
-# WavImporterUVE::RegisterWavImporterUVE() only needs the small IAssetImporterUVE interface
-# (117 lines) and the AudioAssetUVE value type (31 lines) - both ported here at
-# include/uve/asset/, their original reference include path, since neither has any dependency
-# beyond the already-ported AssetGuidUVE/IAssetDatabaseUVE. The concrete AssetImporterUVE that
-# registers WAV alongside every other format (bmp/gltf/jpeg/mtl/obj/png/tga/shader-source, ~413
-# lines) is NOT ported - it needs the full reference Asset pipeline (~12,000 lines), well beyond
-# this slice's scope. Its own dedicated test (wav_importer_uve_tests.cpp) is excluded for the
-# same reason - see Test/Audio's own note.
+# WavImporterUVE::RegisterWavImporterUVE() uses the AudioAssetUVE value type and its
+# LoadAudioAssetUVE/SaveAudioAssetUVE free functions, both now provided by uve_asset (moved there
+# from this module's own include/uve/asset/ tree while porting EngineCoreUVE - the concrete
+# AssetImporterUVE and the full Asset pipeline are fully ported there now).
 #
 # uve_scene: AudioSourceSystemUVE walks WorldTransformComponentUVE + AudioSourceComponentUVE via
 # Scene::IEntityManagerUVE (mirrors uve_render's own uve_scene dependency for MeshRendererUVE).

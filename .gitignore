@@ -3,3 +3,7 @@ build-*/
 *.o
 *.obj
 compile_commands.json
+shader_cache/
+*.uveassetdb
+*.uvesettings
+uve_engine_core_tests.log

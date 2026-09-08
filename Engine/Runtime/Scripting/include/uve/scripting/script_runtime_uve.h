@@ -1,0 +1,206 @@
+// Copyright (c) 2026 UniVex Studios. All Rights Reserved.
+#pragma once
+
+#include "uve/scene/entity_uve.h"
+#include "uve/scripting/script_vector3_value_uve.h"
+#include "uve/scripting/script_vm_uve.h"
+#include "uve/scripting/script_entity_query_adapter_uve.h"
+
+#include <cstddef>
+#include <cstdint>
+#include <optional>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+namespace UVE::Scripting {
+
+struct ScriptRuntimeStateUVE final {
+    // Legacy scalar slots remain stable until typed VM lowering consumes the typed stores.
+    std::vector<std::int64_t> values;
+    std::vector<ScriptVector3ValueUVE> vector3Values;
+    ScriptVmExecutionContextUVE executionContext;
+
+    [[nodiscard]] bool operator==(const ScriptRuntimeStateUVE&) const = default;
+};
+
+enum class ScriptRuntimeAttachCodeUVE : std::uint8_t {
+    Accepted = 0,
+    InvalidEntity,
+    InvalidProgram,
+    CapacityExceeded,
+    DuplicateInstance,
+};
+
+struct ScriptRuntimeAttachResultUVE final {
+    ScriptRuntimeAttachCodeUVE code = ScriptRuntimeAttachCodeUVE::InvalidProgram;
+    std::vector<ScriptBytecodeDiagnosticUVE> diagnostics;
+    std::string message;
+
+    [[nodiscard]] bool IsAcceptedUVE() const noexcept {
+        return code == ScriptRuntimeAttachCodeUVE::Accepted;
+    }
+};
+
+enum class ScriptRuntimeDetachCodeUVE : std::uint8_t {
+    Applied = 0,
+    NoActiveInstance,
+};
+
+struct ScriptRuntimeDetachResultUVE final {
+    ScriptRuntimeDetachCodeUVE code = ScriptRuntimeDetachCodeUVE::Applied;
+    std::string message;
+
+    [[nodiscard]] bool IsAcceptedUVE() const noexcept {
+        return code == ScriptRuntimeDetachCodeUVE::Applied;
+    }
+};
+
+enum class ScriptRuntimeStateUpdateCodeUVE : std::uint8_t {
+    Applied = 0,
+    Unchanged,
+    NoActiveInstance,
+    CapacityExceeded,
+    NonFiniteVector3,
+    InvalidVmBinding,
+};
+
+struct ScriptRuntimeStateUpdateResultUVE final {
+    ScriptRuntimeStateUpdateCodeUVE code = ScriptRuntimeStateUpdateCodeUVE::Applied;
+    std::string message;
+
+    [[nodiscard]] bool IsAcceptedUVE() const noexcept {
+        return code == ScriptRuntimeStateUpdateCodeUVE::Applied ||
+               code == ScriptRuntimeStateUpdateCodeUVE::Unchanged;
+    }
+};
+
+enum class ScriptRuntimeEnabledUpdateCodeUVE : std::uint8_t {
+    Applied = 0,
+    Unchanged,
+    NoActiveInstance,
+};
+
+struct ScriptRuntimeEnabledUpdateResultUVE final {
+    ScriptRuntimeEnabledUpdateCodeUVE code = ScriptRuntimeEnabledUpdateCodeUVE::Applied;
+    std::string message;
+
+    [[nodiscard]] bool IsAcceptedUVE() const noexcept {
+        return code == ScriptRuntimeEnabledUpdateCodeUVE::Applied ||
+               code == ScriptRuntimeEnabledUpdateCodeUVE::Unchanged;
+    }
+};
+
+struct ScriptRuntimeInstanceUVE final {
+    Scene::EntityUVE entity;
+    ScriptBytecodeProgramUVE program;
+    ScriptRuntimeStateUVE state;
+    std::uint64_t generation = 1U;
+    bool enabled = true;
+};
+
+struct ScriptRuntimeTickResultUVE final {
+    Scene::EntityUVE entity;
+    ScriptVmExecutionResultUVE execution;
+};
+
+struct ScriptRuntimeTickSummaryUVE final {
+    std::size_t enabledInstanceCount = 0U;
+    std::size_t completedCount = 0U;
+    std::size_t instructionBudgetExceededCount = 0U;
+    std::size_t invalidInstructionCount = 0U;
+    std::size_t nodeExecutionFailedCount = 0U;
+    std::size_t diagnosticCount = 0U;
+
+    [[nodiscard]] bool IsSuccessUVE() const noexcept {
+        return instructionBudgetExceededCount == 0U && invalidInstructionCount == 0U &&
+               nodeExecutionFailedCount == 0U && diagnosticCount == 0U;
+    }
+
+    [[nodiscard]] bool operator==(const ScriptRuntimeTickSummaryUVE&) const = default;
+};
+
+struct ScriptRuntimeTickBatchResultUVE final {
+    std::vector<ScriptRuntimeTickResultUVE> results;
+    ScriptRuntimeTickSummaryUVE summary;
+
+    [[nodiscard]] bool IsSuccessUVE() const noexcept {
+        return summary.IsSuccessUVE();
+    }
+};
+
+struct ScriptRuntimeInstanceSnapshotUVE final {
+    Scene::EntityUVE entity;
+    std::uint64_t generation = 0U;
+    std::uint32_t programVersion = 0U;
+    std::size_t instructionCount = 0U;
+    std::size_t stateValueCount = 0U;
+    std::size_t stateLocalVariableCount = 0U;
+    bool enabled = false;
+};
+
+enum class ScriptRuntimeReloadCodeUVE : std::uint8_t {
+    Accepted = 0,
+    RejectedInvalidProgram,
+    NoActiveInstance,
+};
+
+struct ScriptRuntimeReloadResultUVE final {
+    ScriptRuntimeReloadCodeUVE code = ScriptRuntimeReloadCodeUVE::RejectedInvalidProgram;
+    std::uint64_t activeGeneration = 0U;
+    bool lastKnownGoodRetained = false;
+    bool compatibleStatePreserved = false;
+    std::vector<ScriptBytecodeDiagnosticUVE> diagnostics;
+    std::string message;
+
+    [[nodiscard]] bool IsAcceptedUVE() const noexcept {
+        return code == ScriptRuntimeReloadCodeUVE::Accepted;
+    }
+};
+
+class ScriptRuntimeUVE final {
+public:
+    static constexpr std::size_t kMaximumInstancesUVE = 4096U;
+    static constexpr std::size_t kMaximumStateValuesUVE = 256U;
+    static constexpr std::size_t kMaximumStateVector3ValuesUVE = 256U;
+    static constexpr std::size_t kMaximumStateVmBindingsUVE = ScriptVmExecutionContextUVE::kMaximumBindingsUVE;
+
+    ScriptRuntimeUVE() = default;
+    ScriptRuntimeUVE(const ScriptRuntimeUVE&) = delete;
+    ScriptRuntimeUVE& operator=(const ScriptRuntimeUVE&) = delete;
+
+    [[nodiscard]] ScriptRuntimeAttachResultUVE AttachDetailedUVE(Scene::EntityUVE entity,
+                                                                  ScriptBytecodeProgramUVE program);
+    [[nodiscard]] bool AttachUVE(Scene::EntityUVE entity, ScriptBytecodeProgramUVE program);
+    [[nodiscard]] ScriptRuntimeReloadResultUVE ReloadUVE(Scene::EntityUVE entity,
+                                                          ScriptBytecodeProgramUVE program);
+    [[nodiscard]] ScriptRuntimeDetachResultUVE DetachDetailedUVE(Scene::EntityUVE entity) noexcept;
+    [[nodiscard]] bool DetachUVE(Scene::EntityUVE entity) noexcept;
+    [[nodiscard]] ScriptRuntimeEnabledUpdateResultUVE SetEnabledDetailedUVE(Scene::EntityUVE entity,
+                                                                              bool enabled) noexcept;
+    [[nodiscard]] bool SetEnabledUVE(Scene::EntityUVE entity, bool enabled) noexcept;
+    [[nodiscard]] ScriptRuntimeStateUpdateResultUVE SetStateDetailedUVE(Scene::EntityUVE entity,
+                                                                         ScriptRuntimeStateUVE state);
+    [[nodiscard]] bool SetStateUVE(Scene::EntityUVE entity, ScriptRuntimeStateUVE state);
+    [[nodiscard]] std::optional<ScriptRuntimeStateUVE> GetStateUVE(Scene::EntityUVE entity) const;
+    [[nodiscard]] std::vector<ScriptRuntimeInstanceSnapshotUVE> GetSnapshotUVE() const;
+    [[nodiscard]] bool HasInstanceUVE(Scene::EntityUVE entity) const noexcept;
+    [[nodiscard]] std::size_t GetInstanceCountUVE() const noexcept;
+    [[nodiscard]] ScriptRuntimeTickBatchResultUVE TickDetailedUVE(
+        ScriptVmExecutionOptionsUVE options = {});
+    [[nodiscard]] std::vector<ScriptRuntimeTickResultUVE> TickUVE(
+        ScriptVmExecutionOptionsUVE options = {});
+    [[nodiscard]] ScriptRuntimeTickBatchResultUVE TickWithEntityQueryDetailedUVE(
+        const Scene::IEntityManagerUVE& entityManager,
+        const std::vector<ScriptEntityComponentTypeBindingUVE>& bindings,
+        ScriptVmExecutionOptionsUVE options = {});
+    [[nodiscard]] std::vector<ScriptRuntimeTickResultUVE> TickWithEntityQueryUVE(
+        const Scene::IEntityManagerUVE& entityManager,
+        const std::vector<ScriptEntityComponentTypeBindingUVE>& bindings,
+        ScriptVmExecutionOptionsUVE options = {});
+
+private:
+    std::unordered_map<Scene::EntityUVE, ScriptRuntimeInstanceUVE> m_instances;
+};
+
+} // namespace UVE::Scripting
