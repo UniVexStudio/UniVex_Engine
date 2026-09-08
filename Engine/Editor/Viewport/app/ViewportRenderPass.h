@@ -98,6 +98,7 @@ public:
 
 private:
     void DrawBackground() const;
+    void DrawWorldYAxis(const OrbitCamera& camera, int width, int height) const;
     void DrawTransformGizmo(const OrbitCamera& camera, int width, int height) const;
     void DrawNavGizmo(const OrbitCamera& camera, int width, int height) const;
     void Destroy() noexcept;

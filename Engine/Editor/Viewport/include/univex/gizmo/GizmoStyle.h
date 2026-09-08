@@ -86,7 +86,7 @@ struct GizmoStyle {
     float centerCubeSize = 0.20f;
 
     // ---- orientation (nav) gizmo -----------------------------------------
-    float navPixelSize = 100.f;   // side of the square corner viewport, px
+    float navPixelSize = 72.f;    // side of the square corner viewport, px
     float navMarginPx = 16.f;
     float navCubeSize = 1.10f;    // in nav-gizmo units
     float navAxisLineWidthPx = 2.6f;

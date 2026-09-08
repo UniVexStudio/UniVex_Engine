@@ -54,12 +54,19 @@ namespace {
 constexpr float kVectorEpsilonUVE = 0.00001F;
 constexpr float kMinimumLocalScaleUVE = 0.001F;
 
+// Subsetted Liberation Sans Regular (SIL OFL 1.1 licensed; see
+// engine/editor/assets/fonts/THIRD_PARTY_NOTICES.md), the editor's main UI text font - replaces
+// ImGui::AddFontDefault()'s built-in low-resolution bitmap font with a real, legible sans-serif.
+#include "uve_ui_font_bytes.inc"
+
 // Subsetted Tabler Icons glyphs (MIT licensed; see
 // engine/editor/assets/fonts/THIRD_PARTY_NOTICES.md) merged into the default ImGui font. These
 // back the menu bar and dock-panel titles below: ImGui::BeginMenu()/ImGui::Begin() only accept a
 // plain text label, so an inline ImGui::Image() glyph is not an option there the way it is for the
 // editor's existing RGBA-texture ImageButton icons (gizmo modes, Snap, node/component add popups).
 #include "uve_icon_font_bytes.inc"
+
+constexpr float kUiFontSizePixelsUVE = 16.0F;
 
 constexpr ImWchar kIconFontGlyphRangesUVE[] = {
     0xEA03, 0xEA03, // Inspector (adjustments)
@@ -253,7 +260,7 @@ void DrawNativeIconLabelUVE(const std::uintptr_t textureId, const char* const la
 // playback buttons (AddTriangleFilled/AddRectFilled for Play/Pause/Stop) - kept vector-drawn
 // rather than adding new bitmap/SVG icon assets, both for consistency with that existing
 // precedent and because it needs no asset-pipeline regeneration.
-constexpr float kViewportBubbleIconRadiusUVE = 13.0F;
+constexpr float kViewportBubbleIconRadiusUVE = 10.0F;
 
 void DrawMoveIconUVE(ImDrawList& drawList, const ImVec2 center, const float radius, const ImU32 color) {
     const float armLength = radius * 0.62F;
@@ -324,6 +331,196 @@ void DrawGridIconUVE(ImDrawList& drawList, const ImVec2 center, const float radi
                          color, 1.0F);
     }
 }
+
+// Folder rows in the Filesystem/Contents browser previously rendered with no icon at all
+// (ClassifyContentBrowserEntryUVE() -> Folder resolved straight to a null texture) - a real,
+// confirmed gap, not a stylistic choice. Drawn procedurally (tab + body rectangles), matching this
+// file's own established icon convention rather than adding a new SVG asset for one glyph.
+void DrawFolderIconUVE(ImDrawList& drawList, const ImVec2 center, const float radius, const ImU32 color) {
+    const float halfWidth = radius * 0.72F;
+    const float halfHeight = radius * 0.52F;
+    const float tabWidth = halfWidth * 0.55F;
+    const float tabHeight = radius * 0.20F;
+    const float rounding = radius * 0.12F;
+    const ImVec2 bodyMin{center.x - halfWidth, center.y - halfHeight + tabHeight};
+    const ImVec2 bodyMax{center.x + halfWidth, center.y + halfHeight};
+    drawList.AddRectFilled(bodyMin, bodyMax, color, rounding);
+    const ImVec2 tabMin{center.x - halfWidth, center.y - halfHeight};
+    const ImVec2 tabMax{tabMin.x + tabWidth, tabMin.y + tabHeight};
+    drawList.AddRectFilled(tabMin, tabMax, color, rounding * 0.6F);
+}
+
+// ---- Scene Hierarchy per-node icons ---------------------------------------------------------
+// The editor's own recognized entity components are exactly the 10 EditorSceneComponentKindUVE
+// values (see editor_uve.h) - the "Add Component" popup's own master list. Rather than 37 bespoke
+// icons for every Scene::Nodes::SceneNodeKindUVE preset (most of which just add one of these same
+// 10 components to a plain entity), one procedural icon is drawn per actual component the entity
+// carries, checked in the same priority order a user would expect to identify it visually first
+// (Camera/Light/Mesh before the more generic Physics/Script/Animation) - Empty (a plain ring,
+// matching Godot's own bare Node3D icon) when none of the 10 match.
+enum class HierarchyNodeIconKindUVE {
+    Empty,
+    Mesh,
+    Camera,
+    Light,
+    Environment,
+    Physics,
+    Audio,
+    Particle,
+    Script,
+    Animation,
+};
+
+void DrawNodeMeshIconUVE(ImDrawList& drawList, const ImVec2 center, const float radius, const ImU32 color) {
+    const float half = radius * 0.5F;
+    drawList.AddRect(ImVec2{center.x - half, center.y - half}, ImVec2{center.x + half, center.y + half}, color,
+                     radius * 0.12F, 0, 1.3F);
+}
+
+void DrawNodeCameraIconUVE(ImDrawList& drawList, const ImVec2 center, const float radius, const ImU32 color) {
+    const float bodyHalfWidth = radius * 0.48F;
+    const float bodyHalfHeight = radius * 0.34F;
+    drawList.AddRect(ImVec2{center.x - bodyHalfWidth, center.y - bodyHalfHeight},
+                     ImVec2{center.x + bodyHalfWidth * 0.3F, center.y + bodyHalfHeight}, color, radius * 0.1F, 0,
+                     1.3F);
+    const std::array<ImVec2, 3> lens{
+        ImVec2{center.x + bodyHalfWidth * 0.3F, center.y - bodyHalfHeight * 0.7F},
+        ImVec2{center.x + bodyHalfWidth * 0.3F, center.y + bodyHalfHeight * 0.7F},
+        ImVec2{center.x + bodyHalfWidth * 1.15F, center.y}};
+    drawList.AddTriangle(lens[0], lens[1], lens[2], color, 1.3F);
+}
+
+void DrawNodePhysicsIconUVE(ImDrawList& drawList, const ImVec2 center, const float radius, const ImU32 color) {
+    drawList.AddCircle(center, radius * 0.5F, color, 16, 1.3F);
+    drawList.AddLine(ImVec2{center.x - radius * 0.5F, center.y}, ImVec2{center.x + radius * 0.5F, center.y}, color,
+                     1.1F);
+}
+
+void DrawNodeAudioIconUVE(ImDrawList& drawList, const ImVec2 center, const float radius, const ImU32 color) {
+    const float coneDepth = radius * 0.32F;
+    const std::array<ImVec2, 4> cone{
+        ImVec2{center.x - radius * 0.55F, center.y - coneDepth * 0.55F},
+        ImVec2{center.x - radius * 0.15F, center.y - coneDepth * 0.55F},
+        ImVec2{center.x + radius * 0.25F, center.y - coneDepth},
+        ImVec2{center.x + radius * 0.25F, center.y + coneDepth}};
+    drawList.AddLine(cone[0], cone[1], color, 1.2F);
+    drawList.AddLine(cone[1], cone[2], color, 1.2F);
+    drawList.AddLine(cone[0], ImVec2{cone[0].x, center.y + coneDepth * 0.55F}, color, 1.2F);
+    drawList.AddLine(ImVec2{cone[0].x, center.y + coneDepth * 0.55F}, ImVec2{cone[1].x, center.y + coneDepth * 0.55F},
+                     color, 1.2F);
+    drawList.AddLine(ImVec2{cone[1].x, center.y + coneDepth * 0.55F}, cone[3], color, 1.2F);
+    for (int arc = 1; arc <= 2; ++arc) {
+        const float arcRadius = radius * (0.35F + 0.22F * static_cast<float>(arc));
+        drawList.PathArcTo(ImVec2{cone[2].x, center.y}, arcRadius, -0.6F, 0.6F, 8);
+        drawList.PathStroke(color, 0, 1.1F);
+    }
+}
+
+void DrawNodeParticleIconUVE(ImDrawList& drawList, const ImVec2 center, const float radius, const ImU32 color) {
+    drawList.AddCircleFilled(center, radius * 0.18F, color, 10);
+    const std::array<ImVec2, 3> sparkOffsets{ImVec2{0.5F, -0.55F}, ImVec2{-0.55F, 0.15F}, ImVec2{0.3F, 0.55F}};
+    for (const ImVec2& offset : sparkOffsets) {
+        drawList.AddCircleFilled(ImVec2{center.x + offset.x * radius, center.y + offset.y * radius}, radius * 0.1F,
+                                 color, 8);
+    }
+}
+
+void DrawNodeScriptIconUVE(ImDrawList& drawList, const ImVec2 center, const float radius, const ImU32 color) {
+    const float armX = radius * 0.22F;
+    const float armY = radius * 0.32F;
+    const float tipX = radius * 0.5F;
+    drawList.AddLine(ImVec2{center.x - armX, center.y - armY}, ImVec2{center.x - tipX, center.y}, color, 1.3F);
+    drawList.AddLine(ImVec2{center.x - tipX, center.y}, ImVec2{center.x - armX, center.y + armY}, color, 1.3F);
+    drawList.AddLine(ImVec2{center.x + armX, center.y - armY}, ImVec2{center.x + tipX, center.y}, color, 1.3F);
+    drawList.AddLine(ImVec2{center.x + tipX, center.y}, ImVec2{center.x + armX, center.y + armY}, color, 1.3F);
+}
+
+void DrawNodeAnimationIconUVE(ImDrawList& drawList, const ImVec2 center, const float radius, const ImU32 color) {
+    drawList.AddCircle(center, radius * 0.5F, color, 20, 1.2F);
+    const float triHalf = radius * 0.2F;
+    drawList.AddTriangleFilled(ImVec2{center.x - triHalf * 0.5F, center.y - triHalf},
+                               ImVec2{center.x - triHalf * 0.5F, center.y + triHalf},
+                               ImVec2{center.x + triHalf * 0.9F, center.y}, color);
+}
+
+void DrawNodeEmptyIconUVE(ImDrawList& drawList, const ImVec2 center, const float radius, const ImU32 color) {
+    drawList.AddCircle(center, radius * 0.42F, color, 16, 1.2F);
+}
+
+[[nodiscard]] HierarchyNodeIconKindUVE ClassifyHierarchyNodeIconUVE(Scene::IEntityManagerUVE& entityManager,
+                                                                     const Scene::EntityUVE entity) noexcept {
+    if (entityManager.HasComponentUVE<Scene::CameraComponentUVE>(entity)) {
+        return HierarchyNodeIconKindUVE::Camera;
+    }
+    if (entityManager.HasComponentUVE<Scene::LightComponentUVE>(entity)) {
+        return HierarchyNodeIconKindUVE::Light;
+    }
+    if (entityManager.HasComponentUVE<Scene::MeshComponentUVE>(entity) ||
+        entityManager.HasComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity)) {
+        return HierarchyNodeIconKindUVE::Mesh;
+    }
+    if (entityManager.HasComponentUVE<Scene::WorldEnvironment3DNodeComponentUVE>(entity)) {
+        return HierarchyNodeIconKindUVE::Environment;
+    }
+    if (entityManager.HasComponentUVE<Scene::AudioSourceComponentUVE>(entity)) {
+        return HierarchyNodeIconKindUVE::Audio;
+    }
+    if (entityManager.HasComponentUVE<Scene::ParticleEmitterComponentUVE>(entity)) {
+        return HierarchyNodeIconKindUVE::Particle;
+    }
+    if (entityManager.HasComponentUVE<Scene::ScriptComponentUVE>(entity)) {
+        return HierarchyNodeIconKindUVE::Script;
+    }
+    if (entityManager.HasComponentUVE<Scene::AnimationPlayerComponentUVE>(entity)) {
+        return HierarchyNodeIconKindUVE::Animation;
+    }
+    // Checked after Mesh: primitives (Cube/UVSphere/Plane) also carry a ColliderComponentUVE, and
+    // should read as their mesh, not as a generic physics body.
+    if (entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(entity) ||
+        entityManager.HasComponentUVE<Scene::RigidBodyComponentUVE>(entity)) {
+        return HierarchyNodeIconKindUVE::Physics;
+    }
+    return HierarchyNodeIconKindUVE::Empty;
+}
+
+// Light/Environment reuse the existing "sun"/"environment" general icon textures (already used
+// elsewhere in this file) rather than new procedural glyphs - takes the texture ids as parameters
+// so this stays a free function; the caller (a EditorUVE member) is the one with m_uiAssets access.
+void DrawHierarchyNodeIconUVE(ImDrawList& drawList, const ImVec2 center, const float radius,
+                              const HierarchyNodeIconKindUVE kind, const std::uintptr_t sunTextureId,
+                              const std::uintptr_t environmentTextureId) {
+    const ImU32 color = ImGui::GetColorU32(ImGuiCol_Text);
+    switch (kind) {
+        case HierarchyNodeIconKindUVE::Mesh: DrawNodeMeshIconUVE(drawList, center, radius, color); break;
+        case HierarchyNodeIconKindUVE::Camera: DrawNodeCameraIconUVE(drawList, center, radius, color); break;
+        case HierarchyNodeIconKindUVE::Light:
+            if (sunTextureId != 0U) {
+                const float half = radius * 0.55F;
+                drawList.AddImage(static_cast<ImTextureID>(sunTextureId), ImVec2{center.x - half, center.y - half},
+                                  ImVec2{center.x + half, center.y + half});
+            } else {
+                DrawNodeEmptyIconUVE(drawList, center, radius, color);
+            }
+            break;
+        case HierarchyNodeIconKindUVE::Environment:
+            if (environmentTextureId != 0U) {
+                const float half = radius * 0.55F;
+                drawList.AddImage(static_cast<ImTextureID>(environmentTextureId),
+                                  ImVec2{center.x - half, center.y - half}, ImVec2{center.x + half, center.y + half});
+            } else {
+                DrawNodeEmptyIconUVE(drawList, center, radius, color);
+            }
+            break;
+        case HierarchyNodeIconKindUVE::Physics: DrawNodePhysicsIconUVE(drawList, center, radius, color); break;
+        case HierarchyNodeIconKindUVE::Audio: DrawNodeAudioIconUVE(drawList, center, radius, color); break;
+        case HierarchyNodeIconKindUVE::Particle: DrawNodeParticleIconUVE(drawList, center, radius, color); break;
+        case HierarchyNodeIconKindUVE::Script: DrawNodeScriptIconUVE(drawList, center, radius, color); break;
+        case HierarchyNodeIconKindUVE::Animation: DrawNodeAnimationIconUVE(drawList, center, radius, color); break;
+        case HierarchyNodeIconKindUVE::Empty: default: DrawNodeEmptyIconUVE(drawList, center, radius, color); break;
+    }
+}
+
+constexpr float kHierarchyNodeIconRadiusUVE = 7.0F;
 
 // Draws one circular toggle button (filled background, blue-highlighted when `active`) at the
 // cursor's current screen position and advances the cursor past it via ImGui::SameLine() - `drawIcon`
@@ -417,7 +614,13 @@ void EditorUVE::InitUVE() {
         // uploads the font atlas texture immediately, so any fonts merged in afterward would be
         // silently missing from what actually gets rendered.
         ImGuiIO& io = ImGui::GetIO();
-        io.Fonts->AddFontDefault();
+        ImFontConfig uiFontConfig{};
+        // Same "static storage duration for the life of the process" reasoning as the icon font
+        // below - the .inc byte array must outlive the atlas and must not be freed by it.
+        uiFontConfig.FontDataOwnedByAtlas = false;
+        io.Fonts->AddFontFromMemoryTTF(const_cast<std::uint8_t*>(uve_ui_font_ttf_bytes.data()),
+                                       static_cast<int>(uve_ui_font_ttf_bytes.size()),
+                                       kUiFontSizePixelsUVE, &uiFontConfig);
         ImFontConfig iconFontConfig{};
         iconFontConfig.MergeMode = true;
         iconFontConfig.PixelSnapH = true;
@@ -677,28 +880,47 @@ void EditorUVE::DrawViewportOverlayBubblesUVE(const Math::Vector2UVE imageOrigin
     // would force every consumer of editor_uve.h (including Test/Editor's own test executable,
     // which never links uve_editor_imgui) to have ImGui's include path just to parse the class.
     const ImVec2 imageOrigin{imageOriginUVE.x, imageOriginUVE.y};
-    const ImVec2 imageSize{imageSizeUVE.x, imageSizeUVE.y};
+    static_cast<void>(imageSizeUVE);
     constexpr float kBubbleMarginUVE = 10.0F;
-    constexpr float kBubblePaddingXUVE = 8.0F;
-    constexpr float kBubblePaddingYUVE = 5.0F;
-    constexpr float kBubbleSpacingUVE = 4.0F;
+    constexpr float kBubblePaddingXUVE = 6.0F;
+    constexpr float kBubblePaddingYUVE = 4.0F;
+    constexpr float kBubbleSpacingUVE = 3.0F;
+    // Gap between the gizmo-mode bubble and the projection pill, now that both sit side by side
+    // at the top of the viewport (matching Godot's own top-left toolbar-strip placement) instead
+    // of scattered bottom-left/bottom-center - a single visual row reads as one toolbar, not two.
+    constexpr float kBubbleGapUVE = 8.0F;
     ImDrawList* const drawList = ImGui::GetWindowDrawList();
-    const float bottomY = imageOrigin.y + imageSize.y - kBubbleMarginUVE;
+    const float topY = imageOrigin.y + kBubbleMarginUVE;
 
-    // ---- gizmo-mode + snap + grid bubble, bottom-left --------------------------------------
+    // A vertical-dots glyph (U+22EE) drawn as text came out as "?" - the current base UI font
+    // has no glyph for it. Drawn procedurally instead, matching every other icon in this toolbar -
+    // reliable regardless of font coverage.
+    const char* const projectionLabel = m_viewportOverlayState.orthographic ? "Orthographic" : "Perspective";
+    const ImVec2 textSize = ImGui::CalcTextSize(projectionLabel);
+    constexpr float kDotsWidthUVE = 10.0F;
+    constexpr float kDotsToTextGapUVE = 5.0F;
+    const float pillWidth = kDotsWidthUVE + kDotsToTextGapUVE + textSize.x + kBubblePaddingXUVE * 2.0F;
+
+    constexpr int kButtonCount = 6;
+    const float diameter = kViewportBubbleIconRadiusUVE * 2.0F;
+    const float gizmoBubbleWidth = kBubblePaddingXUVE * 2.0F + diameter * static_cast<float>(kButtonCount) +
+                                   kBubbleSpacingUVE * static_cast<float>(kButtonCount - 1);
+
+    // Both bubbles share one height - the taller of the two contents (icon diameter vs. text) plus
+    // padding - so the pair reads as a single consistent toolbar strip rather than two mismatched
+    // pills; this is also what naturally makes the (previously shorter) projection pill bigger.
+    const float unifiedHeight =
+        std::max(kBubblePaddingYUVE * 2.0F + diameter, kBubblePaddingYUVE * 2.0F + textSize.y);
+
+    // ---- gizmo-mode + snap + grid bubble, top-left ------------------------------------------
+    const ImVec2 gizmoBubbleMin{imageOrigin.x + kBubbleMarginUVE, topY};
+    const ImVec2 gizmoBubbleMax{gizmoBubbleMin.x + gizmoBubbleWidth, gizmoBubbleMin.y + unifiedHeight};
     {
-        constexpr int kButtonCount = 6;
-        const float diameter = kViewportBubbleIconRadiusUVE * 2.0F;
-        const float bubbleWidth =
-            kBubblePaddingXUVE * 2.0F + diameter * static_cast<float>(kButtonCount) +
-            kBubbleSpacingUVE * static_cast<float>(kButtonCount - 1);
-        const float bubbleHeight = kBubblePaddingYUVE * 2.0F + diameter;
-        const ImVec2 bubbleMin{imageOrigin.x + kBubbleMarginUVE, bottomY - bubbleHeight};
-        const ImVec2 bubbleMax{bubbleMin.x + bubbleWidth, bubbleMin.y + bubbleHeight};
-        drawList->AddRectFilled(bubbleMin, bubbleMax, IM_COL32(18, 21, 28, 200), bubbleHeight * 0.5F);
-        drawList->AddRect(bubbleMin, bubbleMax, IM_COL32(255, 255, 255, 24), bubbleHeight * 0.5F);
+        drawList->AddRectFilled(gizmoBubbleMin, gizmoBubbleMax, IM_COL32(18, 21, 28, 200), unifiedHeight * 0.5F);
+        drawList->AddRect(gizmoBubbleMin, gizmoBubbleMax, IM_COL32(255, 255, 255, 24), unifiedHeight * 0.5F);
 
-        ImGui::SetCursorScreenPos(ImVec2{bubbleMin.x + kBubblePaddingXUVE, bubbleMin.y + kBubblePaddingYUVE});
+        const float iconY = gizmoBubbleMin.y + (unifiedHeight - diameter) * 0.5F;
+        ImGui::SetCursorScreenPos(ImVec2{gizmoBubbleMin.x + kBubblePaddingXUVE, iconY});
         const auto drawGizmoModeButton = [this](const char* const id, const ViewportGizmoModeUVE mode,
                                                 const auto& drawIcon) {
             if (DrawViewportBubbleIconButtonUVE(id, m_viewportOverlayState.gizmoMode == mode, drawIcon)) {
@@ -732,30 +954,20 @@ void EditorUVE::DrawViewportOverlayBubblesUVE(const Math::Vector2UVE imageOrigin
         }
     }
 
-    // ---- projection mode pill, bottom-center -----------------------------------------------
+    // ---- projection mode pill, top-left (right after the gizmo bubble) ---------------------
     {
-        // A vertical-dots glyph (U+22EE) drawn as text came out as "?" - the current base UI font
-        // is ImGui's own built-in bitmap font (AddFontDefault(), replaced properly in a later
-        // phase of this same polish pass) and has no glyph for it. Drawn procedurally instead,
-        // matching every other icon in this toolbar - reliable regardless of font coverage.
-        const char* const label = m_viewportOverlayState.orthographic ? "Orthographic" : "Perspective";
-        const ImVec2 textSize = ImGui::CalcTextSize(label);
-        constexpr float kDotsWidthUVE = 12.0F;
-        constexpr float kDotsToTextGapUVE = 6.0F;
-        const float pillWidth = kDotsWidthUVE + kDotsToTextGapUVE + textSize.x + kBubblePaddingXUVE * 2.0F;
-        const float pillHeight = textSize.y + kBubblePaddingYUVE * 2.0F;
-        const ImVec2 pillMin{imageOrigin.x + (imageSize.x - pillWidth) * 0.5F, bottomY - pillHeight};
-        const ImVec2 pillMax{pillMin.x + pillWidth, pillMin.y + pillHeight};
+        const ImVec2 pillMin{gizmoBubbleMax.x + kBubbleGapUVE, topY};
+        const ImVec2 pillMax{pillMin.x + pillWidth, pillMin.y + unifiedHeight};
         ImGui::SetCursorScreenPos(pillMin);
         ImGui::PushID("##viewport-projection-toggle");
-        const bool pressed = ImGui::InvisibleButton("##pill", ImVec2{pillWidth, pillHeight});
+        const bool pressed = ImGui::InvisibleButton("##pill", ImVec2{pillWidth, unifiedHeight});
         const bool hovered = ImGui::IsItemHovered();
         ImGui::PopID();
         drawList->AddRectFilled(pillMin, pillMax, hovered ? IM_COL32(30, 34, 44, 220) : IM_COL32(18, 21, 28, 200),
-                                pillHeight * 0.5F);
-        drawList->AddRect(pillMin, pillMax, IM_COL32(255, 255, 255, 24), pillHeight * 0.5F);
-        const float dotsCenterX = pillMin.x + kBubblePaddingXUVE + kDotsWidthUVE * 0.5F;
+                                unifiedHeight * 0.5F);
+        drawList->AddRect(pillMin, pillMax, IM_COL32(255, 255, 255, 24), unifiedHeight * 0.5F);
         const float pillCenterY = (pillMin.y + pillMax.y) * 0.5F;
+        const float dotsCenterX = pillMin.x + kBubblePaddingXUVE + kDotsWidthUVE * 0.5F;
         constexpr float kDotRadiusUVE = 1.4F;
         constexpr float kDotSpacingUVE = 5.0F;
         const ImU32 dotColor = IM_COL32(224, 228, 236, 255);
@@ -764,8 +976,8 @@ void EditorUVE::DrawViewportOverlayBubblesUVE(const Math::Vector2UVE imageOrigin
                                       kDotRadiusUVE, dotColor, 8);
         }
         drawList->AddText(ImVec2{pillMin.x + kBubblePaddingXUVE + kDotsWidthUVE + kDotsToTextGapUVE,
-                                 pillMin.y + kBubblePaddingYUVE},
-                          dotColor, label);
+                                 pillCenterY - textSize.y * 0.5F},
+                          dotColor, projectionLabel);
         if (pressed) {
             m_viewportOverlayState.orthographic = !m_viewportOverlayState.orthographic;
         }
@@ -3329,12 +3541,23 @@ void EditorUVE::DrawMenuBarUVE() {
         titleDrawList->AddRectFilled(titleMin, titleMax, IM_COL32(17, 21, 26, 255));
         titleDrawList->AddLine(ImVec2{titleMin.x, titleMax.y - 1.0F}, ImVec2{titleMax.x, titleMax.y - 1.0F},
                                IM_COL32(48, 55, 64, 235), 1.0F);
-        if (m_uiAssets.IsReadyUVE()) {
-            ImGui::Image(static_cast<ImTextureID>(m_uiAssets.GetLogoTextureIdUVE()), ImVec2{20.0F, 20.0F});
+        // "UVE" wordmark badge + version, replacing the old bitmap logo image - our logo IS the
+        // "UVE" name itself now, drawn procedurally (matching this file's own established
+        // icon-drawing convention) rather than a separate texture asset to keep in sync.
+        {
+            constexpr float kLogoBadgeWidthUVE = 38.0F;
+            constexpr float kLogoBadgeHeightUVE = 20.0F;
+            const ImVec2 badgeMin = ImGui::GetCursorScreenPos();
+            const ImVec2 badgeMax{badgeMin.x + kLogoBadgeWidthUVE, badgeMin.y + kLogoBadgeHeightUVE};
+            titleDrawList->AddRectFilled(badgeMin, badgeMax, IM_COL32(66, 120, 184, 255), 4.0F);
+            const ImVec2 logoTextSize = ImGui::CalcTextSize("UVE");
+            titleDrawList->AddText(ImVec2{badgeMin.x + (kLogoBadgeWidthUVE - logoTextSize.x) * 0.5F,
+                                          badgeMin.y + (kLogoBadgeHeightUVE - logoTextSize.y) * 0.5F},
+                                   IM_COL32(255, 255, 255, 255), "UVE");
+            ImGui::Dummy(ImVec2{kLogoBadgeWidthUVE, kLogoBadgeHeightUVE});
+            ImGui::SameLine(0.0F, 5.0F);
+            ImGui::TextDisabled("0.1");
             ImGui::SameLine(0.0F, 6.0F);
-        } else {
-            ImGui::TextUnformatted("UVE");
-            ImGui::SameLine();
         }
         const char* workspaceLabel = "Library";
         switch (m_activeWorkspace) {
@@ -3822,6 +4045,21 @@ void EditorUVE::DrawHierarchyNodeUVE(const Scene::EntityUVE entity) {
     const bool open = ImGui::TreeNodeEx(nodeLabel.c_str(), flags);
     if (active) {
         ImGui::PopStyleColor(3);
+    }
+    if (!renaming) {
+        // Draws into the gap the row's own 4-space label prefix already reserves before the name,
+        // so the icon lines up with the name the same way every other icon+name pair in this file
+        // does, without needing a second ImGui column or child window just for one glyph.
+        const ImVec2 itemMin = ImGui::GetItemRectMin();
+        const ImVec2 itemMax = ImGui::GetItemRectMax();
+        const float iconCenterY = (itemMin.y + itemMax.y) * 0.5F;
+        const float iconCenterX =
+            itemMin.x + ImGui::GetTreeNodeToLabelSpacing() + kHierarchyNodeIconRadiusUVE + 2.0F;
+        const HierarchyNodeIconKindUVE iconKind = ClassifyHierarchyNodeIconUVE(entityManager, entity);
+        DrawHierarchyNodeIconUVE(*ImGui::GetWindowDrawList(), ImVec2{iconCenterX, iconCenterY},
+                                kHierarchyNodeIconRadiusUVE, iconKind,
+                                m_uiAssets.GetGeneralIconTextureIdUVE("sun"),
+                                m_uiAssets.GetGeneralIconTextureIdUVE("environment"));
     }
     if (ImGui::IsItemClicked() && !renaming) {
         if (ImGui::GetIO().KeyCtrl) {
@@ -4801,6 +5039,11 @@ void EditorUVE::DrawFolderContentsPanelUVE() {
                 const float iconX = cardMin.x + (kCardWidthUVE - kCardIconSizeUVE) * 0.5F;
                 gridDrawList->AddImage(static_cast<ImTextureID>(iconTexture), ImVec2{iconX, cardMin.y + 4.0F},
                                        ImVec2{iconX + kCardIconSizeUVE, cardMin.y + 4.0F + kCardIconSizeUVE});
+            } else if (type == ContentBrowserItemTypeUVE::Folder) {
+                const ImVec2 folderCenter{cardMin.x + kCardWidthUVE * 0.5F,
+                                          cardMin.y + 4.0F + kCardIconSizeUVE * 0.5F};
+                DrawFolderIconUVE(*gridDrawList, folderCenter, kCardIconSizeUVE * 0.5F,
+                                  IM_COL32(224, 196, 122, 255));
             }
             const std::string truncatedLabel = truncateLabelUVE(displayLabel, kCardWidthUVE - kCardPaddingUVE);
             const float labelWidth = ImGui::CalcTextSize(truncatedLabel.c_str()).x;

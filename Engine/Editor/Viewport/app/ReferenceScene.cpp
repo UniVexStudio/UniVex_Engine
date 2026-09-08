@@ -20,11 +20,12 @@ out vec3 vColor;
 
 void main() {
     vColor = aColor;
-    // The cube sits on the ground plane (y = 0) rather than centred on it,
-    // so the grid passes visibly behind and in front of it. uModel places
-    // this local offset at an arbitrary world position (identity for the
-    // original single-cube-at-origin behavior).
-    vec3 local = aPosition * uHalfExtent + vec3(0.0, uHalfExtent, 0.0);
+    // Centred on its own local origin, matching the transform gizmo's pivot (the entity's actual
+    // world position, per SetGizmoPivotOverride()) - previously shifted up by uHalfExtent so a
+    // single origin-relative demo cube would visually "sit on" the ground plane, but that put the
+    // mesh's own visual center out of sync with where its gizmo (and its real transform) actually
+    // is once uModel carries a real per-entity world matrix instead of the identity.
+    vec3 local = aPosition * uHalfExtent;
     gl_Position = uViewProj * uModel * vec4(local, 1.0);
 }
 )GLSL";
