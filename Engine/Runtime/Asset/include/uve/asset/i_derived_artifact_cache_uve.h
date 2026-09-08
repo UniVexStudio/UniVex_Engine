@@ -1,0 +1,70 @@
+// Copyright (c) 2026 UniVex Studios. All Rights Reserved.
+
+#pragma once
+
+#include <cstddef>
+#include <cstdint>
+#include <filesystem>
+#include <optional>
+#include <string>
+
+#include "uve/asset/asset_content_fingerprint_uve.h"
+#include "uve/asset/asset_guid_uve.h"
+
+namespace UVE::Asset {
+
+/// Bump this value whenever the persisted import-cache metadata schema changes incompatibly.
+inline constexpr std::uint32_t kDerivedArtifactCacheSchemaVersionUVE = 1U;
+
+/// Persistent metadata proving that one importer result matches a complete source byte stream,
+/// complete destination byte stream, importer settings version, and registered asset identity.
+/// The cache remains metadata-only: it never becomes a second AssetDatabase GUID registry.
+struct DerivedArtifactCacheRecordUVE final {
+    std::uint32_t schemaVersion = kDerivedArtifactCacheSchemaVersionUVE;
+    std::filesystem::path sourcePath{};
+    std::filesystem::path destinationPath{};
+    AssetContentFingerprintUVE sourceFingerprint{};
+    AssetContentFingerprintUVE destinationFingerprint{};
+    std::string settingsVersion{};
+    AssetGuidUVE assetGuid{};
+
+    /// Set only by targeted project-change invalidation. A stale record is retained for
+    /// diagnostics but must never satisfy an import-cache hit until a successful explicit import
+    /// overwrites it with fresh fingerprints and `stale == false`.
+    bool stale = false;
+};
+
+/// I/O abstraction for project-local generated import metadata. Implementations accept only
+/// `destinationPath` as an identity key and must retain artifacts exclusively under their configured
+/// cache root; a caller can never make them write beside sources, destinations, or arbitrary paths.
+class IDerivedArtifactCacheUVE {
+public:
+    virtual ~IDerivedArtifactCacheUVE() = default;
+
+    /// Returns a copied, fully parsed record for the destination identity, or std::nullopt for a
+    /// missing, unreadable, malformed, unsupported-schema, or otherwise invalid artifact. A cache
+    /// miss is ordinary control flow and must not mutate files or AssetDatabaseUVE.
+    [[nodiscard]] virtual std::optional<DerivedArtifactCacheRecordUVE>
+    LoadImportRecordUVE(const std::filesystem::path& destinationPath) const = 0;
+
+    /// Persists one fresh metadata record at the deterministic artifact location associated with
+    /// `destinationPath`. Generic stores reject `record.stale == true`; stale state is created only
+    /// by targeted MarkStaleForSourceUVE() invalidation and remains until a successful fresh import
+    /// overwrites it. Implementations may create only their own configured cache directories.
+    /// Returns false without modifying the previous valid artifact when the record is invalid or
+    /// cannot be written atomically.
+    [[nodiscard]] virtual bool StoreImportRecordUVE(const std::filesystem::path& destinationPath,
+                                                     const DerivedArtifactCacheRecordUVE& record) = 0;
+
+    /// Marks every valid artifact whose normalized source path equals `sourcePath` as stale,
+    /// preserving its prior metadata and destination bytes for diagnostics. Returns the number of
+    /// records successfully marked. This operation must not create cache directories, import,
+    /// reload, delete user content, or alter AssetDatabaseUVE.
+    [[nodiscard]] virtual std::size_t MarkStaleForSourceUVE(const std::filesystem::path& sourcePath) = 0;
+
+    /// Exposes the normalized configured cache root for diagnostics and tests. Returning a value
+    /// does not imply that the root currently exists; it is created lazily only on successful store.
+    [[nodiscard]] virtual std::filesystem::path GetCacheRootUVE() const = 0;
+};
+
+} // namespace UVE::Asset

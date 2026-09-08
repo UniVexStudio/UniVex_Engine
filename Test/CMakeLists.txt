@@ -57,6 +57,19 @@ add_executable(uve_core_tests
     Core/Asset/mtl_importer_uve_tests.cpp
     Core/Asset/mtl_material_converter_uve_tests.cpp
     Core/Asset/mtl_metadata_uve_tests.cpp
+    Core/Asset/hot_reload_uve_tests.cpp
+    Core/Asset/asset_import_queue_uve_tests.cpp
+    Core/Asset/project_change_watcher_uve_tests.cpp
+    Core/Asset/project_file_index_uve_tests.cpp
+    Core/Asset/resource_dependency_graph_uve_tests.cpp
+    Core/Asset/animation_clip_asset_uve_tests.cpp
+    Core/Asset/data_table_uve_tests.cpp
+    Core/Asset/data_table_asset_uve_tests.cpp
+    Core/Asset/data_table_asset_manager_uve_tests.cpp
+    Core/Asset/data_table_asset_registration_uve_tests.cpp
+    Core/Asset/data_table_importer_uve_tests.cpp
+    Core/Asset/data_table_pipeline_uve_tests.cpp
+    Core/Asset/data_table_registry_uve_tests.cpp
     Commandline/command_line_uve_tests.cpp
     Config/config_manager_uve_tests.cpp
     Network/reliable_packet_window_uve_tests.cpp
