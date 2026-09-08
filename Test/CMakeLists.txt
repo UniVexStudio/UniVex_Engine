@@ -170,6 +170,12 @@ add_executable(uve_integration_tests
     Integration/World/world_uve_tests.cpp
     Integration/Object/type_metadata_uve_tests.cpp
     Integration/Object/property_accessor_uve_tests.cpp
+    Integration/Scripting/script_asset_loader_uve_tests.cpp
+    Integration/Scripting/script_graph_uve_tests.cpp
+    Integration/Scripting/script_rotation_value_uve_tests.cpp
+    Integration/Scripting/script_source_mapping_uve_tests.cpp
+    Integration/Scripting/script_transform_value_uve_tests.cpp
+    Integration/Scripting/script_vector3_value_uve_tests.cpp
     Physics/angular_dynamics_uve_tests.cpp
     Physics/area_overlap_lifecycle_tracker_uve_tests.cpp
     Physics/area_overlap_system_uve_tests.cpp
@@ -216,6 +222,9 @@ target_link_libraries(uve_integration_tests PRIVATE
     uve_component
     uve_entity
     uve_scene
+    uve_scripting
+    uve_asset
+    uve_memory
     uve_animation
     uve_world
     uve_object
