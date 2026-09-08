@@ -211,6 +211,10 @@ public:
         ViewportGizmoModeUVE gizmoMode = ViewportGizmoModeUVE::Universal;
         bool snapEnabled = false;
         bool gridVisible = true;
+        // True while the Game workspace tab is active (see EditorWorkspaceUVE::Game): the concrete
+        // renderer should hide editor-only overlays (grid, transform gizmo) in this mode, matching
+        // Unity's own Scene/Game split, since Game is meant to preview what a player would see.
+        bool gameWorkspaceActive = false;
     };
 
     /// Render callback for the dockable "Viewport" panel: given the panel's current available
@@ -440,6 +444,7 @@ private:
         Scripting,
         Debug,
         Plugin,
+        Game,
     };
 
     /// Selects the visible content inside the fixed right-side editor panel.
@@ -740,6 +745,12 @@ private:
     EditorStateUVE m_state = EditorStateUVE::Uninitialized;
     EditorPlayModeStateUVE m_playModeState = EditorPlayModeStateUVE::Edit;
     std::optional<PlayModeSessionUVE> m_playModeSession;
+    // Which workspace tab was active before EnterPlayModeUVE() switched to Game, so StopPlayModeUVE()
+    // can restore it - mirrors Unity's own Scene<->Game auto-switch on Play/Stop.
+    EditorWorkspaceUVE m_workspaceBeforePlayMode = EditorWorkspaceUVE::Library;
+    // 0 = plain Play triangle, 1 = Pause bars; eased toward the target each frame in
+    // DrawMenuBarUVE() so the icon animates instead of instantly swapping shape.
+    float m_playButtonMorphProgress = 0.0F;
     std::vector<Scene::EntityUVE> m_selectedEntities;
     Scene::EntityUVE m_selectedEntity = Scene::kInvalidEntityUVE;
     std::filesystem::path m_activeScenePath;
