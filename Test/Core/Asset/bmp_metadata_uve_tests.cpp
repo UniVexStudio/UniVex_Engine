@@ -1,0 +1,820 @@
+// Copyright (c) 2026 UniVex Studios. All Rights Reserved.
+
+#include "uve/asset/bmp_metadata_uve.h"
+
+#include <cstddef>
+#include <cstdint>
+#include <iterator>
+#include <vector>
+
+#include <gtest/gtest.h>
+
+namespace UVE::Asset::Tests {
+namespace {
+
+void AppendU16LittleEndianUVE(std::vector<std::byte>& bytes, const std::uint16_t value) {
+    bytes.push_back(std::byte{static_cast<unsigned char>(value & 0xFFU)});
+    bytes.push_back(std::byte{static_cast<unsigned char>((value >> 8U) & 0xFFU)});
+}
+
+void AppendU32LittleEndianUVE(std::vector<std::byte>& bytes, const std::uint32_t value) {
+    for (unsigned int shift = 0U; shift < 32U; shift += 8U) {
+        bytes.push_back(std::byte{static_cast<unsigned char>((value >> shift) & 0xFFU)});
+    }
+}
+
+[[nodiscard]] std::vector<std::byte> MakeBmp24TwoByTwoUVE() {
+    std::vector<std::byte> bmp;
+    bmp.reserve(70U);
+    bmp.push_back(std::byte{'B'});
+    bmp.push_back(std::byte{'M'});
+    AppendU32LittleEndianUVE(bmp, 70U);
+    AppendU16LittleEndianUVE(bmp, 0U);
+    AppendU16LittleEndianUVE(bmp, 0U);
+    AppendU32LittleEndianUVE(bmp, 54U);
+    AppendU32LittleEndianUVE(bmp, 40U);
+    AppendU32LittleEndianUVE(bmp, 2U);
+    AppendU32LittleEndianUVE(bmp, 2U);
+    AppendU16LittleEndianUVE(bmp, 1U);
+    AppendU16LittleEndianUVE(bmp, 24U);
+    AppendU32LittleEndianUVE(bmp, 0U);
+    AppendU32LittleEndianUVE(bmp, 16U);
+    AppendU32LittleEndianUVE(bmp, 2835U);
+    AppendU32LittleEndianUVE(bmp, 2835U);
+    AppendU32LittleEndianUVE(bmp, 0U);
+    AppendU32LittleEndianUVE(bmp, 0U);
+    // Bottom-up storage: blue, white, then top red, green. Each 24-bit row has two pad bytes.
+    const std::byte pixels[] = {
+        // Bottom row: blue, white, then two bytes of row padding.
+        std::byte{0xFF}, std::byte{0x00}, std::byte{0x00}, std::byte{0xFF}, std::byte{0xFF}, std::byte{0xFF},
+        std::byte{0x00}, std::byte{0x00},
+        // Top row: red, green, then two bytes of row padding.
+        std::byte{0x00}, std::byte{0x00}, std::byte{0xFF}, std::byte{0x00}, std::byte{0xFF}, std::byte{0x00},
+        std::byte{0x00}, std::byte{0x00}};
+    bmp.insert(bmp.end(), std::begin(pixels), std::end(pixels));
+    return bmp;
+}
+
+[[nodiscard]] std::vector<std::byte> MakeBmp8IndexedThreeByTwoUVE() {
+    std::vector<std::byte> bmp;
+    bmp.reserve(70U);
+    bmp.push_back(std::byte{'B'});
+    bmp.push_back(std::byte{'M'});
+    AppendU32LittleEndianUVE(bmp, 70U);
+    AppendU16LittleEndianUVE(bmp, 0U);
+    AppendU16LittleEndianUVE(bmp, 0U);
+    AppendU32LittleEndianUVE(bmp, 62U);
+    AppendU32LittleEndianUVE(bmp, 40U);
+    AppendU32LittleEndianUVE(bmp, 3U);
+    AppendU32LittleEndianUVE(bmp, 2U);
+    AppendU16LittleEndianUVE(bmp, 1U);
+    AppendU16LittleEndianUVE(bmp, 8U);
+    AppendU32LittleEndianUVE(bmp, 0U);
+    AppendU32LittleEndianUVE(bmp, 8U);
+    AppendU32LittleEndianUVE(bmp, 2835U);
+    AppendU32LittleEndianUVE(bmp, 2835U);
+    AppendU32LittleEndianUVE(bmp, 2U);
+    AppendU32LittleEndianUVE(bmp, 0U);
+    // BGRA palette entries: index 0 red, index 1 blue; each row has one pad byte.
+    const std::byte paletteAndPixels[] = {
+        std::byte{0x00}, std::byte{0x00}, std::byte{0xFF}, std::byte{0x00},
+        std::byte{0xFF}, std::byte{0x00}, std::byte{0x00}, std::byte{0x00},
+        // Bottom row: blue, red, blue, then one byte of row padding.
+        std::byte{0x01}, std::byte{0x00}, std::byte{0x01}, std::byte{0x00},
+        // Top row: red, blue, red, then one byte of row padding.
+        std::byte{0x00}, std::byte{0x01}, std::byte{0x00}, std::byte{0x00}};
+    bmp.insert(bmp.end(), std::begin(paletteAndPixels), std::end(paletteAndPixels));
+    return bmp;
+}
+
+[[nodiscard]] std::vector<std::byte> MakeBmp8RleTwoByFourUVE() {
+    std::vector<std::byte> bmp;
+    bmp.reserve(82U);
+    bmp.push_back(std::byte{'B'});
+    bmp.push_back(std::byte{'M'});
+    AppendU32LittleEndianUVE(bmp, 82U);
+    AppendU16LittleEndianUVE(bmp, 0U);
+    AppendU16LittleEndianUVE(bmp, 0U);
+    AppendU32LittleEndianUVE(bmp, 62U);
+    AppendU32LittleEndianUVE(bmp, 40U);
+    AppendU32LittleEndianUVE(bmp, 4U);
+    AppendU32LittleEndianUVE(bmp, 2U);
+    AppendU16LittleEndianUVE(bmp, 1U);
+    AppendU16LittleEndianUVE(bmp, 8U);
+    AppendU32LittleEndianUVE(bmp, 1U);
+    AppendU32LittleEndianUVE(bmp, 20U);
+    AppendU32LittleEndianUVE(bmp, 2835U);
+    AppendU32LittleEndianUVE(bmp, 2835U);
+    AppendU32LittleEndianUVE(bmp, 2U);
+    AppendU32LittleEndianUVE(bmp, 0U);
+    // BGRA palette entries 0..1 are black and red.
+    const std::byte paletteAndRle[] = {
+        std::byte{0x00}, std::byte{0x00}, std::byte{0x00}, std::byte{0x00},
+        std::byte{0x00}, std::byte{0x00}, std::byte{0xFF}, std::byte{0x00},
+        // Bottom row: encoded 2 red, delta over one black pixel, encoded one red, then end-of-line.
+        std::byte{0x02}, std::byte{0x01}, std::byte{0x00}, std::byte{0x02}, std::byte{0x01}, std::byte{0x00},
+        std::byte{0x01}, std::byte{0x01}, std::byte{0x00}, std::byte{0x00},
+        // Top row: absolute 0,1,1,0, then end-of-line and end-of-bitmap.
+        std::byte{0x00}, std::byte{0x04}, std::byte{0x00}, std::byte{0x01}, std::byte{0x01}, std::byte{0x00},
+        std::byte{0x00}, std::byte{0x00}, std::byte{0x00}, std::byte{0x01}};
+    bmp.insert(bmp.end(), std::begin(paletteAndRle), std::end(paletteAndRle));
+    return bmp;
+}
+
+[[nodiscard]] std::vector<std::byte> MakeBmp4RleFiveByTwoUVE() {
+    std::vector<std::byte> bmp;
+    bmp.reserve(90U);
+    bmp.push_back(std::byte{'B'});
+    bmp.push_back(std::byte{'M'});
+    AppendU32LittleEndianUVE(bmp, 90U);
+    AppendU16LittleEndianUVE(bmp, 0U);
+    AppendU16LittleEndianUVE(bmp, 0U);
+    AppendU32LittleEndianUVE(bmp, 70U);
+    AppendU32LittleEndianUVE(bmp, 40U);
+    AppendU32LittleEndianUVE(bmp, 5U);
+    AppendU32LittleEndianUVE(bmp, 2U);
+    AppendU16LittleEndianUVE(bmp, 1U);
+    AppendU16LittleEndianUVE(bmp, 4U);
+    AppendU32LittleEndianUVE(bmp, 2U);
+    AppendU32LittleEndianUVE(bmp, 24U);
+    AppendU32LittleEndianUVE(bmp, 2835U);
+    AppendU32LittleEndianUVE(bmp, 2835U);
+    AppendU32LittleEndianUVE(bmp, 4U);
+    AppendU32LittleEndianUVE(bmp, 0U);
+    // BGRA palette entries 0..3 are red, green, blue, white.
+    const std::byte paletteAndRle[] = {
+        std::byte{0x00}, std::byte{0x00}, std::byte{0xFF}, std::byte{0x00},
+        std::byte{0x00}, std::byte{0xFF}, std::byte{0x00}, std::byte{0x00},
+        std::byte{0xFF}, std::byte{0x00}, std::byte{0x00}, std::byte{0x00},
+        std::byte{0xFF}, std::byte{0xFF}, std::byte{0xFF}, std::byte{0x00},
+        // Bottom row: encoded 1,2; delta over palette index 0; encoded 3,0; then EOL.
+        std::byte{0x02}, std::byte{0x12}, std::byte{0x00}, std::byte{0x02}, std::byte{0x01}, std::byte{0x00},
+        std::byte{0x02}, std::byte{0x30}, std::byte{0x00}, std::byte{0x00},
+        // Top row: absolute 0,1,2,3,0 (three data bytes plus one alignment byte), then EOL/EOB.
+        std::byte{0x00}, std::byte{0x05}, std::byte{0x01}, std::byte{0x23}, std::byte{0x00}, std::byte{0x00},
+        std::byte{0x00}, std::byte{0x00}, std::byte{0x00}, std::byte{0x01}};
+    bmp.insert(bmp.end(), std::begin(paletteAndRle), std::end(paletteAndRle));
+    return bmp;
+}
+
+[[nodiscard]] std::vector<std::byte> MakeBmp1IndexedTenByTwoUVE() {
+    std::vector<std::byte> bmp;
+    bmp.reserve(70U);
+    bmp.push_back(std::byte{'B'});
+    bmp.push_back(std::byte{'M'});
+    AppendU32LittleEndianUVE(bmp, 70U);
+    AppendU16LittleEndianUVE(bmp, 0U);
+    AppendU16LittleEndianUVE(bmp, 0U);
+    AppendU32LittleEndianUVE(bmp, 62U);
+    AppendU32LittleEndianUVE(bmp, 40U);
+    AppendU32LittleEndianUVE(bmp, 10U);
+    AppendU32LittleEndianUVE(bmp, 2U);
+    AppendU16LittleEndianUVE(bmp, 1U);
+    AppendU16LittleEndianUVE(bmp, 1U);
+    AppendU32LittleEndianUVE(bmp, 0U);
+    AppendU32LittleEndianUVE(bmp, 8U);
+    AppendU32LittleEndianUVE(bmp, 2835U);
+    AppendU32LittleEndianUVE(bmp, 2835U);
+    AppendU32LittleEndianUVE(bmp, 2U);
+    AppendU32LittleEndianUVE(bmp, 0U);
+    // BGRA palette entries 0..1 are black and white; each row has two pad bytes.
+    const std::byte paletteAndPixels[] = {
+        std::byte{0x00}, std::byte{0x00}, std::byte{0x00}, std::byte{0x00},
+        std::byte{0xFF}, std::byte{0xFF}, std::byte{0xFF}, std::byte{0x00},
+        // Bottom row: 10110010 10, then two bytes of row padding.
+        std::byte{0xB2}, std::byte{0x80}, std::byte{0xAA}, std::byte{0xBB},
+        // Top row: 01001101 01, then two bytes of row padding.
+        std::byte{0x4D}, std::byte{0x40}, std::byte{0xCC}, std::byte{0xDD}};
+    bmp.insert(bmp.end(), std::begin(paletteAndPixels), std::end(paletteAndPixels));
+    return bmp;
+}
+
+[[nodiscard]] std::vector<std::byte> MakeBmp4IndexedFiveByTwoUVE() {
+    std::vector<std::byte> bmp;
+    bmp.reserve(78U);
+    bmp.push_back(std::byte{'B'});
+    bmp.push_back(std::byte{'M'});
+    AppendU32LittleEndianUVE(bmp, 78U);
+    AppendU16LittleEndianUVE(bmp, 0U);
+    AppendU16LittleEndianUVE(bmp, 0U);
+    AppendU32LittleEndianUVE(bmp, 70U);
+    AppendU32LittleEndianUVE(bmp, 40U);
+    AppendU32LittleEndianUVE(bmp, 5U);
+    AppendU32LittleEndianUVE(bmp, 2U);
+    AppendU16LittleEndianUVE(bmp, 1U);
+    AppendU16LittleEndianUVE(bmp, 4U);
+    AppendU32LittleEndianUVE(bmp, 0U);
+    AppendU32LittleEndianUVE(bmp, 8U);
+    AppendU32LittleEndianUVE(bmp, 2835U);
+    AppendU32LittleEndianUVE(bmp, 2835U);
+    AppendU32LittleEndianUVE(bmp, 4U);
+    AppendU32LittleEndianUVE(bmp, 0U);
+    // BGRA palette entries 0..3 are red, green, blue, white; each 4-bit row has one pad byte.
+    const std::byte paletteAndPixels[] = {
+        std::byte{0x00}, std::byte{0x00}, std::byte{0xFF}, std::byte{0x00},
+        std::byte{0x00}, std::byte{0xFF}, std::byte{0x00}, std::byte{0x00},
+        std::byte{0xFF}, std::byte{0x00}, std::byte{0x00}, std::byte{0x00},
+        std::byte{0xFF}, std::byte{0xFF}, std::byte{0xFF}, std::byte{0x00},
+        // Bottom row: blue, white, red, green, blue, then one byte of row padding.
+        std::byte{0x23}, std::byte{0x01}, std::byte{0x20}, std::byte{0xAA},
+        // Top row: red, green, blue, white, red, then one byte of row padding.
+        std::byte{0x01}, std::byte{0x23}, std::byte{0x00}, std::byte{0xBB}};
+    bmp.insert(bmp.end(), std::begin(paletteAndPixels), std::end(paletteAndPixels));
+    return bmp;
+}
+
+[[nodiscard]] std::vector<std::byte> MakeBmp16TwoByOneUVE() {
+    std::vector<std::byte> bmp;
+    bmp.reserve(58U);
+    bmp.push_back(std::byte{'B'});
+    bmp.push_back(std::byte{'M'});
+    AppendU32LittleEndianUVE(bmp, 58U);
+    AppendU16LittleEndianUVE(bmp, 0U);
+    AppendU16LittleEndianUVE(bmp, 0U);
+    AppendU32LittleEndianUVE(bmp, 54U);
+    AppendU32LittleEndianUVE(bmp, 40U);
+    AppendU32LittleEndianUVE(bmp, 2U);
+    AppendU32LittleEndianUVE(bmp, 1U);
+    AppendU16LittleEndianUVE(bmp, 1U);
+    AppendU16LittleEndianUVE(bmp, 16U);
+    AppendU32LittleEndianUVE(bmp, 0U);
+    AppendU32LittleEndianUVE(bmp, 4U);
+    AppendU32LittleEndianUVE(bmp, 2835U);
+    AppendU32LittleEndianUVE(bmp, 2835U);
+    AppendU32LittleEndianUVE(bmp, 0U);
+    AppendU32LittleEndianUVE(bmp, 0U);
+    // Bottom-up BI_RGB BGR555: opaque red followed by opaque blue.
+    bmp.insert(bmp.end(), {std::byte{0x00}, std::byte{0x7C}, std::byte{0x1F}, std::byte{0x00}});
+    return bmp;
+}
+
+[[nodiscard]] std::vector<std::byte> MakeBmp32BitfieldsTwoByOneUVE() {
+    std::vector<std::byte> bmp;
+    bmp.reserve(74U);
+    bmp.push_back(std::byte{'B'});
+    bmp.push_back(std::byte{'M'});
+    AppendU32LittleEndianUVE(bmp, 74U);
+    AppendU16LittleEndianUVE(bmp, 0U);
+    AppendU16LittleEndianUVE(bmp, 0U);
+    AppendU32LittleEndianUVE(bmp, 66U);
+    AppendU32LittleEndianUVE(bmp, 40U);
+    AppendU32LittleEndianUVE(bmp, 2U);
+    AppendU32LittleEndianUVE(bmp, 1U);
+    AppendU16LittleEndianUVE(bmp, 1U);
+    AppendU16LittleEndianUVE(bmp, 32U);
+    AppendU32LittleEndianUVE(bmp, 3U);
+    AppendU32LittleEndianUVE(bmp, 8U);
+    AppendU32LittleEndianUVE(bmp, 2835U);
+    AppendU32LittleEndianUVE(bmp, 2835U);
+    AppendU32LittleEndianUVE(bmp, 0U);
+    AppendU32LittleEndianUVE(bmp, 0U);
+    // BI_BITFIELDS BGRX masks followed by bottom-up opaque red and green pixels.
+    AppendU32LittleEndianUVE(bmp, 0x00FF0000U);
+    AppendU32LittleEndianUVE(bmp, 0x0000FF00U);
+    AppendU32LittleEndianUVE(bmp, 0x000000FFU);
+    bmp.insert(bmp.end(), {std::byte{0x00}, std::byte{0x00}, std::byte{0xFF}, std::byte{0x7A},
+                           std::byte{0x00}, std::byte{0xFF}, std::byte{0x00}, std::byte{0x85}});
+    return bmp;
+}
+
+[[nodiscard]] std::vector<std::byte> MakeBmp32AlphaBitfieldsTwoByOneUVE() {
+    std::vector<std::byte> bmp;
+    bmp.reserve(78U);
+    bmp.push_back(std::byte{'B'});
+    bmp.push_back(std::byte{'M'});
+    AppendU32LittleEndianUVE(bmp, 78U);
+    AppendU16LittleEndianUVE(bmp, 0U);
+    AppendU16LittleEndianUVE(bmp, 0U);
+    AppendU32LittleEndianUVE(bmp, 70U);
+    AppendU32LittleEndianUVE(bmp, 40U);
+    AppendU32LittleEndianUVE(bmp, 2U);
+    AppendU32LittleEndianUVE(bmp, 1U);
+    AppendU16LittleEndianUVE(bmp, 1U);
+    AppendU16LittleEndianUVE(bmp, 32U);
+    AppendU32LittleEndianUVE(bmp, 6U);
+    AppendU32LittleEndianUVE(bmp, 8U);
+    AppendU32LittleEndianUVE(bmp, 2835U);
+    AppendU32LittleEndianUVE(bmp, 2835U);
+    AppendU32LittleEndianUVE(bmp, 0U);
+    AppendU32LittleEndianUVE(bmp, 0U);
+    // BI_ALPHABITFIELDS exact BGRA masks followed by bottom-up red/green pixels with source alpha.
+    AppendU32LittleEndianUVE(bmp, 0x00FF0000U);
+    AppendU32LittleEndianUVE(bmp, 0x0000FF00U);
+    AppendU32LittleEndianUVE(bmp, 0x000000FFU);
+    AppendU32LittleEndianUVE(bmp, 0xFF000000U);
+    bmp.insert(bmp.end(), {std::byte{0x00}, std::byte{0x00}, std::byte{0xFF}, std::byte{0x40},
+                           std::byte{0x00}, std::byte{0xFF}, std::byte{0x00}, std::byte{0xA0}});
+    return bmp;
+}
+
+[[nodiscard]] std::vector<std::byte> MakeBmp32V4AlphaBitfieldsTwoByOneUVE() {
+    std::vector<std::byte> bmp;
+    bmp.reserve(130U);
+    bmp.push_back(std::byte{'B'});
+    bmp.push_back(std::byte{'M'});
+    AppendU32LittleEndianUVE(bmp, 130U);
+    AppendU16LittleEndianUVE(bmp, 0U);
+    AppendU16LittleEndianUVE(bmp, 0U);
+    AppendU32LittleEndianUVE(bmp, 122U);
+    AppendU32LittleEndianUVE(bmp, 108U);
+    AppendU32LittleEndianUVE(bmp, 2U);
+    AppendU32LittleEndianUVE(bmp, 1U);
+    AppendU16LittleEndianUVE(bmp, 1U);
+    AppendU16LittleEndianUVE(bmp, 32U);
+    AppendU32LittleEndianUVE(bmp, 3U);
+    AppendU32LittleEndianUVE(bmp, 8U);
+    AppendU32LittleEndianUVE(bmp, 2835U);
+    AppendU32LittleEndianUVE(bmp, 2835U);
+    AppendU32LittleEndianUVE(bmp, 0U);
+    AppendU32LittleEndianUVE(bmp, 0U);
+    // BITMAPV4 exact BGRA masks embedded after the 40-byte base header.
+    AppendU32LittleEndianUVE(bmp, 0x00FF0000U);
+    AppendU32LittleEndianUVE(bmp, 0x0000FF00U);
+    AppendU32LittleEndianUVE(bmp, 0x000000FFU);
+    AppendU32LittleEndianUVE(bmp, 0xFF000000U);
+    bmp.insert(bmp.end(), 52U, std::byte{0x00});
+    bmp.insert(bmp.end(), {std::byte{0x00}, std::byte{0x00}, std::byte{0xFF}, std::byte{0x35},
+                           std::byte{0x00}, std::byte{0xFF}, std::byte{0x00}, std::byte{0xC5}});
+    return bmp;
+}
+
+[[nodiscard]] std::vector<std::byte> MakeBmp32V5AlphaBitfieldsTwoByOneUVE() {
+    std::vector<std::byte> bmp = MakeBmp32V4AlphaBitfieldsTwoByOneUVE();
+    bmp[2] = std::byte{0x92};
+    bmp[3] = std::byte{0x00};
+    bmp[4] = std::byte{0x00};
+    bmp[5] = std::byte{0x00};
+    bmp[10] = std::byte{0x8A};
+    bmp[11] = std::byte{0x00};
+    bmp[12] = std::byte{0x00};
+    bmp[13] = std::byte{0x00};
+    bmp[14] = std::byte{0x7C};
+    bmp[15] = std::byte{0x00};
+    bmp[16] = std::byte{0x00};
+    bmp[17] = std::byte{0x00};
+    bmp.insert(bmp.begin() + 122, 16U, std::byte{0x00});
+    return bmp;
+}
+
+[[nodiscard]] std::vector<std::byte> MakeBmp16V4Bgr565BitfieldsTwoByOneUVE() {
+    std::vector<std::byte> bmp;
+    bmp.reserve(126U);
+    bmp.push_back(std::byte{'B'});
+    bmp.push_back(std::byte{'M'});
+    AppendU32LittleEndianUVE(bmp, 126U);
+    AppendU16LittleEndianUVE(bmp, 0U);
+    AppendU16LittleEndianUVE(bmp, 0U);
+    AppendU32LittleEndianUVE(bmp, 122U);
+    AppendU32LittleEndianUVE(bmp, 108U);
+    AppendU32LittleEndianUVE(bmp, 2U);
+    AppendU32LittleEndianUVE(bmp, 1U);
+    AppendU16LittleEndianUVE(bmp, 1U);
+    AppendU16LittleEndianUVE(bmp, 16U);
+    AppendU32LittleEndianUVE(bmp, 3U);
+    AppendU32LittleEndianUVE(bmp, 4U);
+    AppendU32LittleEndianUVE(bmp, 2835U);
+    AppendU32LittleEndianUVE(bmp, 2835U);
+    AppendU32LittleEndianUVE(bmp, 0U);
+    AppendU32LittleEndianUVE(bmp, 0U);
+    // BITMAPV4 exact BGR565 masks embedded after the 40-byte base header.
+    AppendU32LittleEndianUVE(bmp, 0xF800U);
+    AppendU32LittleEndianUVE(bmp, 0x07E0U);
+    AppendU32LittleEndianUVE(bmp, 0x001FU);
+    AppendU32LittleEndianUVE(bmp, 0U);
+    bmp.insert(bmp.end(), 52U, std::byte{0x00});
+    bmp.insert(bmp.end(), {std::byte{0x00}, std::byte{0xF8}, std::byte{0xE0}, std::byte{0x07}});
+    return bmp;
+}
+
+[[nodiscard]] std::vector<std::byte> MakeBmp16V5Bgr565BitfieldsTwoByOneUVE() {
+    std::vector<std::byte> bmp = MakeBmp16V4Bgr565BitfieldsTwoByOneUVE();
+    bmp[2] = std::byte{0x8E};
+    bmp[3] = std::byte{0x00};
+    bmp[4] = std::byte{0x00};
+    bmp[5] = std::byte{0x00};
+    bmp[10] = std::byte{0x8A};
+    bmp[11] = std::byte{0x00};
+    bmp[12] = std::byte{0x00};
+    bmp[13] = std::byte{0x00};
+    bmp[14] = std::byte{0x7C};
+    bmp[15] = std::byte{0x00};
+    bmp[16] = std::byte{0x00};
+    bmp[17] = std::byte{0x00};
+    bmp.insert(bmp.begin() + 122, 16U, std::byte{0x00});
+    return bmp;
+}
+
+[[nodiscard]] std::vector<std::byte> MakeBmp16Bgr555BitfieldsTwoByOneUVE() {
+    std::vector<std::byte> bmp;
+    bmp.reserve(70U);
+    bmp.push_back(std::byte{'B'});
+    bmp.push_back(std::byte{'M'});
+    AppendU32LittleEndianUVE(bmp, 70U);
+    AppendU16LittleEndianUVE(bmp, 0U);
+    AppendU16LittleEndianUVE(bmp, 0U);
+    AppendU32LittleEndianUVE(bmp, 66U);
+    AppendU32LittleEndianUVE(bmp, 40U);
+    AppendU32LittleEndianUVE(bmp, 2U);
+    AppendU32LittleEndianUVE(bmp, 1U);
+    AppendU16LittleEndianUVE(bmp, 1U);
+    AppendU16LittleEndianUVE(bmp, 16U);
+    AppendU32LittleEndianUVE(bmp, 3U);
+    AppendU32LittleEndianUVE(bmp, 4U);
+    AppendU32LittleEndianUVE(bmp, 2835U);
+    AppendU32LittleEndianUVE(bmp, 2835U);
+    AppendU32LittleEndianUVE(bmp, 0U);
+    AppendU32LittleEndianUVE(bmp, 0U);
+    // BI_BITFIELDS BGR555 masks followed by bottom-up opaque red and green pixels.
+    AppendU32LittleEndianUVE(bmp, 0x7C00U);
+    AppendU32LittleEndianUVE(bmp, 0x03E0U);
+    AppendU32LittleEndianUVE(bmp, 0x001FU);
+    bmp.insert(bmp.end(), {std::byte{0x00}, std::byte{0x7C}, std::byte{0xE0}, std::byte{0x03}});
+    return bmp;
+}
+
+[[nodiscard]] std::vector<std::byte> MakeBmp16BitfieldsTwoByOneUVE() {
+    std::vector<std::byte> bmp;
+    bmp.reserve(70U);
+    bmp.push_back(std::byte{'B'});
+    bmp.push_back(std::byte{'M'});
+    AppendU32LittleEndianUVE(bmp, 70U);
+    AppendU16LittleEndianUVE(bmp, 0U);
+    AppendU16LittleEndianUVE(bmp, 0U);
+    AppendU32LittleEndianUVE(bmp, 66U);
+    AppendU32LittleEndianUVE(bmp, 40U);
+    AppendU32LittleEndianUVE(bmp, 2U);
+    AppendU32LittleEndianUVE(bmp, 1U);
+    AppendU16LittleEndianUVE(bmp, 1U);
+    AppendU16LittleEndianUVE(bmp, 16U);
+    AppendU32LittleEndianUVE(bmp, 3U);
+    AppendU32LittleEndianUVE(bmp, 4U);
+    AppendU32LittleEndianUVE(bmp, 2835U);
+    AppendU32LittleEndianUVE(bmp, 2835U);
+    AppendU32LittleEndianUVE(bmp, 0U);
+    AppendU32LittleEndianUVE(bmp, 0U);
+    // BI_BITFIELDS BGR565 masks followed by bottom-up opaque red and blue pixels.
+    AppendU32LittleEndianUVE(bmp, 0xF800U);
+    AppendU32LittleEndianUVE(bmp, 0x07E0U);
+    AppendU32LittleEndianUVE(bmp, 0x001FU);
+    bmp.insert(bmp.end(), {std::byte{0x00}, std::byte{0xF8}, std::byte{0x1F}, std::byte{0x00}});
+    return bmp;
+}
+
+[[nodiscard]] std::vector<std::byte> MakeBmp32TopDownOneByTwoUVE() {
+    std::vector<std::byte> bmp;
+    bmp.reserve(62U);
+    bmp.push_back(std::byte{'B'});
+    bmp.push_back(std::byte{'M'});
+    AppendU32LittleEndianUVE(bmp, 62U);
+    AppendU16LittleEndianUVE(bmp, 0U);
+    AppendU16LittleEndianUVE(bmp, 0U);
+    AppendU32LittleEndianUVE(bmp, 54U);
+    AppendU32LittleEndianUVE(bmp, 40U);
+    AppendU32LittleEndianUVE(bmp, 1U);
+    AppendU32LittleEndianUVE(bmp, static_cast<std::uint32_t>(-2));
+    AppendU16LittleEndianUVE(bmp, 1U);
+    AppendU16LittleEndianUVE(bmp, 32U);
+    AppendU32LittleEndianUVE(bmp, 0U);
+    AppendU32LittleEndianUVE(bmp, 8U);
+    AppendU32LittleEndianUVE(bmp, 2835U);
+    AppendU32LittleEndianUVE(bmp, 2835U);
+    AppendU32LittleEndianUVE(bmp, 0U);
+    AppendU32LittleEndianUVE(bmp, 0U);
+    // Top-down storage: source alpha is intentionally ignored for canonical opaque RGBA8 output.
+    const std::byte pixels[] = {std::byte{0x00}, std::byte{0x00}, std::byte{0xFF}, std::byte{0x12},
+                                std::byte{0xFF}, std::byte{0x00}, std::byte{0x00}, std::byte{0x34}};
+    bmp.insert(bmp.end(), std::begin(pixels), std::end(pixels));
+    return bmp;
+}
+
+TEST(BmpMetadataUVETest, DecodeBmpRgba8ImageUVE_DecodesBottomUp24BitRowsToTopDownRgba) {
+    BmpRgba8ImageUVE image;
+    ASSERT_TRUE(DecodeBmpRgba8ImageUVE(MakeBmp24TwoByTwoUVE(), image));
+    EXPECT_EQ(image.width, 2U);
+    EXPECT_EQ(image.height, 2U);
+    EXPECT_EQ(image.pixels, (std::vector<std::byte>{
+                                 std::byte{0xFF}, std::byte{0x00}, std::byte{0x00}, std::byte{0xFF},
+                                 std::byte{0x00}, std::byte{0xFF}, std::byte{0x00}, std::byte{0xFF},
+                                 std::byte{0x00}, std::byte{0x00}, std::byte{0xFF}, std::byte{0xFF},
+                                 std::byte{0xFF}, std::byte{0xFF}, std::byte{0xFF}, std::byte{0xFF}}));
+}
+
+TEST(BmpMetadataUVETest, DecodeBmpRgba8ImageUVE_Decodes8BitIndexedRowsWithPaletteAndPadding) {
+    BmpRgba8ImageUVE image;
+    ASSERT_TRUE(DecodeBmpRgba8ImageUVE(MakeBmp8IndexedThreeByTwoUVE(), image));
+    EXPECT_EQ(image.width, 3U);
+    EXPECT_EQ(image.height, 2U);
+    EXPECT_EQ(image.pixels, (std::vector<std::byte>{
+                                 std::byte{0xFF}, std::byte{0x00}, std::byte{0x00}, std::byte{0xFF},
+                                 std::byte{0x00}, std::byte{0x00}, std::byte{0xFF}, std::byte{0xFF},
+                                 std::byte{0xFF}, std::byte{0x00}, std::byte{0x00}, std::byte{0xFF},
+                                 std::byte{0x00}, std::byte{0x00}, std::byte{0xFF}, std::byte{0xFF},
+                                 std::byte{0xFF}, std::byte{0x00}, std::byte{0x00}, std::byte{0xFF},
+                                 std::byte{0x00}, std::byte{0x00}, std::byte{0xFF}, std::byte{0xFF}}));
+}
+
+TEST(BmpMetadataUVETest, DecodeBmpRgba8ImageUVE_Decodes8BitRleRowsToTopDownRgba) {
+    BmpRgba8ImageUVE image;
+    ASSERT_TRUE(DecodeBmpRgba8ImageUVE(MakeBmp8RleTwoByFourUVE(), image));
+    EXPECT_EQ(image.width, 4U);
+    EXPECT_EQ(image.height, 2U);
+    EXPECT_EQ(image.pixels, (std::vector<std::byte>{
+                                 std::byte{0x00}, std::byte{0x00}, std::byte{0x00}, std::byte{0xFF},
+                                 std::byte{0xFF}, std::byte{0x00}, std::byte{0x00}, std::byte{0xFF},
+                                 std::byte{0xFF}, std::byte{0x00}, std::byte{0x00}, std::byte{0xFF},
+                                 std::byte{0x00}, std::byte{0x00}, std::byte{0x00}, std::byte{0xFF},
+                                 std::byte{0xFF}, std::byte{0x00}, std::byte{0x00}, std::byte{0xFF},
+                                 std::byte{0xFF}, std::byte{0x00}, std::byte{0x00}, std::byte{0xFF},
+                                 std::byte{0x00}, std::byte{0x00}, std::byte{0x00}, std::byte{0xFF},
+                                 std::byte{0xFF}, std::byte{0x00}, std::byte{0x00}, std::byte{0xFF}}));
+}
+
+TEST(BmpMetadataUVETest, DecodeBmpRgba8ImageUVE_Decodes4BitRleRowsToTopDownRgba) {
+    BmpRgba8ImageUVE image;
+    ASSERT_TRUE(DecodeBmpRgba8ImageUVE(MakeBmp4RleFiveByTwoUVE(), image));
+    EXPECT_EQ(image.width, 5U);
+    EXPECT_EQ(image.height, 2U);
+    EXPECT_EQ(image.pixels, (std::vector<std::byte>{
+                                 std::byte{0xFF}, std::byte{0x00}, std::byte{0x00}, std::byte{0xFF},
+                                 std::byte{0x00}, std::byte{0xFF}, std::byte{0x00}, std::byte{0xFF},
+                                 std::byte{0x00}, std::byte{0x00}, std::byte{0xFF}, std::byte{0xFF},
+                                 std::byte{0xFF}, std::byte{0xFF}, std::byte{0xFF}, std::byte{0xFF},
+                                 std::byte{0xFF}, std::byte{0x00}, std::byte{0x00}, std::byte{0xFF},
+                                 std::byte{0x00}, std::byte{0xFF}, std::byte{0x00}, std::byte{0xFF},
+                                 std::byte{0x00}, std::byte{0x00}, std::byte{0xFF}, std::byte{0xFF},
+                                 std::byte{0xFF}, std::byte{0x00}, std::byte{0x00}, std::byte{0xFF},
+                                 std::byte{0xFF}, std::byte{0xFF}, std::byte{0xFF}, std::byte{0xFF},
+                                 std::byte{0xFF}, std::byte{0x00}, std::byte{0x00}, std::byte{0xFF}}));
+}
+
+TEST(BmpMetadataUVETest, DecodeBmpRgba8ImageUVE_Decodes1BitIndexedRowsWithPaletteAndPadding) {
+    BmpRgba8ImageUVE image;
+    ASSERT_TRUE(DecodeBmpRgba8ImageUVE(MakeBmp1IndexedTenByTwoUVE(), image));
+    EXPECT_EQ(image.width, 10U);
+    EXPECT_EQ(image.height, 2U);
+    EXPECT_EQ(image.pixels, (std::vector<std::byte>{
+                                 std::byte{0x00}, std::byte{0x00}, std::byte{0x00}, std::byte{0xFF},
+                                 std::byte{0xFF}, std::byte{0xFF}, std::byte{0xFF}, std::byte{0xFF},
+                                 std::byte{0x00}, std::byte{0x00}, std::byte{0x00}, std::byte{0xFF},
+                                 std::byte{0x00}, std::byte{0x00}, std::byte{0x00}, std::byte{0xFF},
+                                 std::byte{0xFF}, std::byte{0xFF}, std::byte{0xFF}, std::byte{0xFF},
+                                 std::byte{0xFF}, std::byte{0xFF}, std::byte{0xFF}, std::byte{0xFF},
+                                 std::byte{0x00}, std::byte{0x00}, std::byte{0x00}, std::byte{0xFF},
+                                 std::byte{0xFF}, std::byte{0xFF}, std::byte{0xFF}, std::byte{0xFF},
+                                 std::byte{0x00}, std::byte{0x00}, std::byte{0x00}, std::byte{0xFF},
+                                 std::byte{0xFF}, std::byte{0xFF}, std::byte{0xFF}, std::byte{0xFF},
+                                 std::byte{0xFF}, std::byte{0xFF}, std::byte{0xFF}, std::byte{0xFF},
+                                 std::byte{0x00}, std::byte{0x00}, std::byte{0x00}, std::byte{0xFF},
+                                 std::byte{0xFF}, std::byte{0xFF}, std::byte{0xFF}, std::byte{0xFF},
+                                 std::byte{0xFF}, std::byte{0xFF}, std::byte{0xFF}, std::byte{0xFF},
+                                 std::byte{0x00}, std::byte{0x00}, std::byte{0x00}, std::byte{0xFF},
+                                 std::byte{0x00}, std::byte{0x00}, std::byte{0x00}, std::byte{0xFF},
+                                 std::byte{0xFF}, std::byte{0xFF}, std::byte{0xFF}, std::byte{0xFF},
+                                 std::byte{0x00}, std::byte{0x00}, std::byte{0x00}, std::byte{0xFF},
+                                 std::byte{0xFF}, std::byte{0xFF}, std::byte{0xFF}, std::byte{0xFF},
+                                 std::byte{0x00}, std::byte{0x00}, std::byte{0x00}, std::byte{0xFF}}));
+}
+
+TEST(BmpMetadataUVETest, DecodeBmpRgba8ImageUVE_Decodes4BitIndexedRowsWithPaletteAndPadding) {
+    BmpRgba8ImageUVE image;
+    ASSERT_TRUE(DecodeBmpRgba8ImageUVE(MakeBmp4IndexedFiveByTwoUVE(), image));
+    EXPECT_EQ(image.width, 5U);
+    EXPECT_EQ(image.height, 2U);
+    EXPECT_EQ(image.pixels, (std::vector<std::byte>{
+                                 std::byte{0xFF}, std::byte{0x00}, std::byte{0x00}, std::byte{0xFF},
+                                 std::byte{0x00}, std::byte{0xFF}, std::byte{0x00}, std::byte{0xFF},
+                                 std::byte{0x00}, std::byte{0x00}, std::byte{0xFF}, std::byte{0xFF},
+                                 std::byte{0xFF}, std::byte{0xFF}, std::byte{0xFF}, std::byte{0xFF},
+                                 std::byte{0xFF}, std::byte{0x00}, std::byte{0x00}, std::byte{0xFF},
+                                 std::byte{0x00}, std::byte{0x00}, std::byte{0xFF}, std::byte{0xFF},
+                                 std::byte{0xFF}, std::byte{0xFF}, std::byte{0xFF}, std::byte{0xFF},
+                                 std::byte{0xFF}, std::byte{0x00}, std::byte{0x00}, std::byte{0xFF},
+                                 std::byte{0x00}, std::byte{0xFF}, std::byte{0x00}, std::byte{0xFF},
+                                 std::byte{0x00}, std::byte{0x00}, std::byte{0xFF}, std::byte{0xFF}}));
+}
+
+TEST(BmpMetadataUVETest, DecodeBmpRgba8ImageUVE_Decodes16BitBgr555RowsToOpaqueRgba) {
+    BmpRgba8ImageUVE image;
+    ASSERT_TRUE(DecodeBmpRgba8ImageUVE(MakeBmp16TwoByOneUVE(), image));
+    EXPECT_EQ(image.width, 2U);
+    EXPECT_EQ(image.height, 1U);
+    EXPECT_EQ(image.pixels, (std::vector<std::byte>{
+                                 std::byte{0xFF}, std::byte{0x00}, std::byte{0x00}, std::byte{0xFF},
+                                 std::byte{0x00}, std::byte{0x00}, std::byte{0xFF}, std::byte{0xFF}}));
+}
+
+TEST(BmpMetadataUVETest, DecodeBmpRgba8ImageUVE_Decodes16BitBitfieldsBgr555RowsToOpaqueRgba) {
+    BmpRgba8ImageUVE image;
+    ASSERT_TRUE(DecodeBmpRgba8ImageUVE(MakeBmp16Bgr555BitfieldsTwoByOneUVE(), image));
+    EXPECT_EQ(image.width, 2U);
+    EXPECT_EQ(image.height, 1U);
+    EXPECT_EQ(image.pixels, (std::vector<std::byte>{
+                                 std::byte{0xFF}, std::byte{0x00}, std::byte{0x00}, std::byte{0xFF},
+                                 std::byte{0x00}, std::byte{0xFF}, std::byte{0x00}, std::byte{0xFF}}));
+}
+
+TEST(BmpMetadataUVETest, DecodeBmpRgba8ImageUVE_Decodes16BitBitfieldsBgr565RowsToOpaqueRgba) {
+    BmpRgba8ImageUVE image;
+    ASSERT_TRUE(DecodeBmpRgba8ImageUVE(MakeBmp16BitfieldsTwoByOneUVE(), image));
+    EXPECT_EQ(image.width, 2U);
+    EXPECT_EQ(image.height, 1U);
+    EXPECT_EQ(image.pixels, (std::vector<std::byte>{
+                                 std::byte{0xFF}, std::byte{0x00}, std::byte{0x00}, std::byte{0xFF},
+                                 std::byte{0x00}, std::byte{0x00}, std::byte{0xFF}, std::byte{0xFF}}));
+}
+
+TEST(BmpMetadataUVETest, DecodeBmpRgba8ImageUVE_Decodes32BitBitfieldsBgrxRowsToOpaqueRgba) {
+    BmpRgba8ImageUVE image;
+    ASSERT_TRUE(DecodeBmpRgba8ImageUVE(MakeBmp32BitfieldsTwoByOneUVE(), image));
+    EXPECT_EQ(image.width, 2U);
+    EXPECT_EQ(image.height, 1U);
+    EXPECT_EQ(image.pixels, (std::vector<std::byte>{
+                                 std::byte{0xFF}, std::byte{0x00}, std::byte{0x00}, std::byte{0xFF},
+                                 std::byte{0x00}, std::byte{0xFF}, std::byte{0x00}, std::byte{0xFF}}));
+}
+
+TEST(BmpMetadataUVETest, DecodeBmpRgba8ImageUVE_Decodes32BitAlphaBitfieldsRowsWithSourceAlpha) {
+    BmpRgba8ImageUVE image;
+    ASSERT_TRUE(DecodeBmpRgba8ImageUVE(MakeBmp32AlphaBitfieldsTwoByOneUVE(), image));
+    EXPECT_EQ(image.width, 2U);
+    EXPECT_EQ(image.height, 1U);
+    EXPECT_EQ(image.pixels, (std::vector<std::byte>{
+                                 std::byte{0xFF}, std::byte{0x00}, std::byte{0x00}, std::byte{0x40},
+                                 std::byte{0x00}, std::byte{0xFF}, std::byte{0x00}, std::byte{0xA0}}));
+}
+
+TEST(BmpMetadataUVETest, DecodeBmpRgba8ImageUVE_RejectsMalformedAlphaBitfieldsAtomically) {
+    std::vector<std::byte> malformed = MakeBmp32AlphaBitfieldsTwoByOneUVE();
+    malformed[66] = std::byte{0x00};
+    malformed[67] = std::byte{0x00};
+    malformed[68] = std::byte{0x00};
+    malformed[69] = std::byte{0x80};
+    BmpRgba8ImageUVE image{3U, 4U, {std::byte{0x11}, std::byte{0x22}, std::byte{0x33}, std::byte{0x44}}};
+    EXPECT_FALSE(DecodeBmpRgba8ImageUVE(malformed, image));
+    EXPECT_EQ(image.width, 3U);
+    EXPECT_EQ(image.height, 4U);
+    EXPECT_EQ(image.pixels, std::vector<std::byte>({std::byte{0x11}, std::byte{0x22}, std::byte{0x33}, std::byte{0x44}}));
+}
+
+TEST(BmpMetadataUVETest, DecodeBmpRgba8ImageUVE_Decodes16BitV4Bgr565RowsToOpaqueRgba) {
+    BmpRgba8ImageUVE image;
+    ASSERT_TRUE(DecodeBmpRgba8ImageUVE(MakeBmp16V4Bgr565BitfieldsTwoByOneUVE(), image));
+    EXPECT_EQ(image.width, 2U);
+    EXPECT_EQ(image.height, 1U);
+    EXPECT_EQ(image.pixels, (std::vector<std::byte>{
+                                 std::byte{0xFF}, std::byte{0x00}, std::byte{0x00}, std::byte{0xFF},
+                                 std::byte{0x00}, std::byte{0xFF}, std::byte{0x00}, std::byte{0xFF}}));
+}
+
+TEST(BmpMetadataUVETest, DecodeBmpRgba8ImageUVE_Decodes16BitV5Bgr565RowsToOpaqueRgba) {
+    BmpRgba8ImageUVE image;
+    ASSERT_TRUE(DecodeBmpRgba8ImageUVE(MakeBmp16V5Bgr565BitfieldsTwoByOneUVE(), image));
+    EXPECT_EQ(image.width, 2U);
+    EXPECT_EQ(image.height, 1U);
+    EXPECT_EQ(image.pixels, (std::vector<std::byte>{
+                                 std::byte{0xFF}, std::byte{0x00}, std::byte{0x00}, std::byte{0xFF},
+                                 std::byte{0x00}, std::byte{0xFF}, std::byte{0x00}, std::byte{0xFF}}));
+}
+
+TEST(BmpMetadataUVETest, DecodeBmpRgba8ImageUVE_RejectsMalformedV5Bgr565MaskAtomically) {
+    std::vector<std::byte> malformed = MakeBmp16V5Bgr565BitfieldsTwoByOneUVE();
+    malformed[58] = std::byte{0xC0};
+    malformed[59] = std::byte{0x07};
+    BmpRgba8ImageUVE image{3U, 4U, {std::byte{0x11}, std::byte{0x22}, std::byte{0x33}, std::byte{0x44}}};
+    EXPECT_FALSE(DecodeBmpRgba8ImageUVE(malformed, image));
+    EXPECT_EQ(image.width, 3U);
+    EXPECT_EQ(image.height, 4U);
+    EXPECT_EQ(image.pixels, std::vector<std::byte>({std::byte{0x11}, std::byte{0x22}, std::byte{0x33}, std::byte{0x44}}));
+}
+
+TEST(BmpMetadataUVETest, DecodeBmpRgba8ImageUVE_Decodes32BitV4AlphaBitfieldsRowsWithSourceAlpha) {
+    BmpRgba8ImageUVE image;
+    ASSERT_TRUE(DecodeBmpRgba8ImageUVE(MakeBmp32V4AlphaBitfieldsTwoByOneUVE(), image));
+    EXPECT_EQ(image.width, 2U);
+    EXPECT_EQ(image.height, 1U);
+    EXPECT_EQ(image.pixels, (std::vector<std::byte>{
+                                 std::byte{0xFF}, std::byte{0x00}, std::byte{0x00}, std::byte{0x35},
+                                 std::byte{0x00}, std::byte{0xFF}, std::byte{0x00}, std::byte{0xC5}}));
+}
+
+TEST(BmpMetadataUVETest, DecodeBmpRgba8ImageUVE_Decodes32BitV5AlphaBitfieldsRowsWithSourceAlpha) {
+    BmpRgba8ImageUVE image;
+    ASSERT_TRUE(DecodeBmpRgba8ImageUVE(MakeBmp32V5AlphaBitfieldsTwoByOneUVE(), image));
+    EXPECT_EQ(image.width, 2U);
+    EXPECT_EQ(image.height, 1U);
+    EXPECT_EQ(image.pixels, (std::vector<std::byte>{
+                                 std::byte{0xFF}, std::byte{0x00}, std::byte{0x00}, std::byte{0x35},
+                                 std::byte{0x00}, std::byte{0xFF}, std::byte{0x00}, std::byte{0xC5}}));
+}
+
+TEST(BmpMetadataUVETest, DecodeBmpRgba8ImageUVE_RejectsMalformedV4AlphaMaskAtomically) {
+    std::vector<std::byte> malformed = MakeBmp32V4AlphaBitfieldsTwoByOneUVE();
+    malformed[66] = std::byte{0x00};
+    malformed[67] = std::byte{0x00};
+    malformed[68] = std::byte{0x00};
+    malformed[69] = std::byte{0x80};
+    BmpRgba8ImageUVE image{3U, 4U, {std::byte{0x11}, std::byte{0x22}, std::byte{0x33}, std::byte{0x44}}};
+    EXPECT_FALSE(DecodeBmpRgba8ImageUVE(malformed, image));
+    EXPECT_EQ(image.width, 3U);
+    EXPECT_EQ(image.height, 4U);
+    EXPECT_EQ(image.pixels, std::vector<std::byte>({std::byte{0x11}, std::byte{0x22}, std::byte{0x33}, std::byte{0x44}}));
+}
+
+TEST(BmpMetadataUVETest, DecodeBmpRgba8ImageUVE_DecodesTopDown32BitRowsWithOpaqueAlpha) {
+    BmpRgba8ImageUVE image;
+    ASSERT_TRUE(DecodeBmpRgba8ImageUVE(MakeBmp32TopDownOneByTwoUVE(), image));
+    EXPECT_EQ(image.width, 1U);
+    EXPECT_EQ(image.height, 2U);
+    EXPECT_EQ(image.pixels, (std::vector<std::byte>{std::byte{0xFF}, std::byte{0x00}, std::byte{0x00}, std::byte{0xFF},
+                                                      std::byte{0x00}, std::byte{0x00}, std::byte{0xFF}, std::byte{0xFF}}));
+}
+
+TEST(BmpMetadataUVETest, DecodeBmpRgba8ImageUVE_RejectsMalformedInputAtomically) {
+    const BmpRgba8ImageUVE original{1U, 1U, {std::byte{0x11}, std::byte{0x22}, std::byte{0x33}, std::byte{0x44}}};
+    BmpRgba8ImageUVE image = original;
+    const std::vector<std::byte> valid = MakeBmp24TwoByTwoUVE();
+    std::vector<std::byte> truncated = valid;
+    truncated.resize(53U);
+    EXPECT_FALSE(DecodeBmpRgba8ImageUVE(truncated, image));
+    EXPECT_EQ(image.width, original.width);
+    EXPECT_EQ(image.height, original.height);
+    EXPECT_EQ(image.pixels, original.pixels);
+    EXPECT_FALSE(DecodeBmpRgba8ImageUVE({std::byte{'N'}, std::byte{'O'}}, image));
+    EXPECT_EQ(image.pixels, original.pixels);
+    const std::vector<std::byte> valid1BitIndexed = MakeBmp1IndexedTenByTwoUVE();
+    std::vector<std::byte> excessive1BitPalette = valid1BitIndexed;
+    excessive1BitPalette[46] = std::byte{0x03};
+    excessive1BitPalette[47] = std::byte{0x00};
+    excessive1BitPalette[48] = std::byte{0x00};
+    excessive1BitPalette[49] = std::byte{0x00};
+    EXPECT_FALSE(DecodeBmpRgba8ImageUVE(excessive1BitPalette, image));
+    const std::vector<std::byte> valid4BitIndexed = MakeBmp4IndexedFiveByTwoUVE();
+    std::vector<std::byte> excessive4BitPalette = valid4BitIndexed;
+    excessive4BitPalette[46] = std::byte{0x11};
+    excessive4BitPalette[47] = std::byte{0x00};
+    excessive4BitPalette[48] = std::byte{0x00};
+    excessive4BitPalette[49] = std::byte{0x00};
+    EXPECT_FALSE(DecodeBmpRgba8ImageUVE(excessive4BitPalette, image));
+    const std::vector<std::byte> validIndexed = MakeBmp8IndexedThreeByTwoUVE();
+    std::vector<std::byte> excessivePalette = validIndexed;
+    excessivePalette[46] = std::byte{0x01};
+    excessivePalette[47] = std::byte{0x01};
+    excessivePalette[48] = std::byte{0x00};
+    excessivePalette[49] = std::byte{0x00};
+    EXPECT_FALSE(DecodeBmpRgba8ImageUVE(excessivePalette, image));
+    std::vector<std::byte> truncatedPalette = validIndexed;
+    truncatedPalette.resize(61U);
+    EXPECT_FALSE(DecodeBmpRgba8ImageUVE(truncatedPalette, image));
+    std::vector<std::byte> earlyPixelOffset = validIndexed;
+    earlyPixelOffset[10] = std::byte{0x3A};
+    earlyPixelOffset[11] = std::byte{0x00};
+    earlyPixelOffset[12] = std::byte{0x00};
+    earlyPixelOffset[13] = std::byte{0x00};
+    EXPECT_FALSE(DecodeBmpRgba8ImageUVE(earlyPixelOffset, image));
+    std::vector<std::byte> invalidPaletteIndex = validIndexed;
+    invalidPaletteIndex[62] = std::byte{0x02};
+    EXPECT_FALSE(DecodeBmpRgba8ImageUVE(invalidPaletteIndex, image));
+    const std::vector<std::byte> validRle4 = MakeBmp4RleFiveByTwoUVE();
+    std::vector<std::byte> invalidRle4Index = validRle4;
+    invalidRle4Index[71] = std::byte{0x42};
+    EXPECT_FALSE(DecodeBmpRgba8ImageUVE(invalidRle4Index, image));
+    std::vector<std::byte> overflowingRle4Run = validRle4;
+    overflowingRle4Run[70] = std::byte{0x06};
+    EXPECT_FALSE(DecodeBmpRgba8ImageUVE(overflowingRle4Run, image));
+    std::vector<std::byte> missingRle4End = validRle4;
+    missingRle4End[89] = std::byte{0x00};
+    EXPECT_FALSE(DecodeBmpRgba8ImageUVE(missingRle4End, image));
+    const std::vector<std::byte> validRle8 = MakeBmp8RleTwoByFourUVE();
+    std::vector<std::byte> invalidRle8Index = validRle8;
+    invalidRle8Index[63] = std::byte{0x02};
+    EXPECT_FALSE(DecodeBmpRgba8ImageUVE(invalidRle8Index, image));
+    std::vector<std::byte> overflowingRle8Run = validRle8;
+    overflowingRle8Run[62] = std::byte{0x05};
+    EXPECT_FALSE(DecodeBmpRgba8ImageUVE(overflowingRle8Run, image));
+    std::vector<std::byte> missingRle8End = validRle8;
+    missingRle8End[81] = std::byte{0x00};
+    EXPECT_FALSE(DecodeBmpRgba8ImageUVE(missingRle8End, image));
+    const std::vector<std::byte> valid32Bitfields = MakeBmp32BitfieldsTwoByOneUVE();
+    std::vector<std::byte> invalid32BitfieldsMasks = valid32Bitfields;
+    invalid32BitfieldsMasks[56] = std::byte{0x00};
+    EXPECT_FALSE(DecodeBmpRgba8ImageUVE(invalid32BitfieldsMasks, image));
+    const std::vector<std::byte> validBitfields = MakeBmp16BitfieldsTwoByOneUVE();
+    std::vector<std::byte> invalidBitfieldsMasks = validBitfields;
+    invalidBitfieldsMasks[55] = std::byte{0x00};
+    EXPECT_FALSE(DecodeBmpRgba8ImageUVE(invalidBitfieldsMasks, image));
+    std::vector<std::byte> truncatedBitfields = validBitfields;
+    truncatedBitfields.resize(65U);
+    EXPECT_FALSE(DecodeBmpRgba8ImageUVE(truncatedBitfields, image));
+    std::vector<std::byte> earlyBitfieldsPixelOffset = validBitfields;
+    earlyBitfieldsPixelOffset[10] = std::byte{0x41};
+    earlyBitfieldsPixelOffset[11] = std::byte{0x00};
+    earlyBitfieldsPixelOffset[12] = std::byte{0x00};
+    earlyBitfieldsPixelOffset[13] = std::byte{0x00};
+    EXPECT_FALSE(DecodeBmpRgba8ImageUVE(earlyBitfieldsPixelOffset, image));
+    EXPECT_EQ(image.width, original.width);
+    EXPECT_EQ(image.height, original.height);
+    EXPECT_EQ(image.pixels, original.pixels);
+}
+
+} // namespace
+} // namespace UVE::Asset::Tests

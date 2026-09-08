@@ -39,6 +39,24 @@ add_executable(uve_core_tests
     Core/Asset/texture_asset_uve_tests.cpp
     Core/Asset/shader_asset_uve_tests.cpp
     Core/Asset/material_asset_uve_tests.cpp
+    Core/Asset/asset_importer_uve_tests.cpp
+    Core/Asset/bmp_importer_uve_tests.cpp
+    Core/Asset/bmp_metadata_uve_tests.cpp
+    Core/Asset/tga_importer_uve_tests.cpp
+    Core/Asset/tga_metadata_uve_tests.cpp
+    Core/Asset/png_importer_uve_tests.cpp
+    Core/Asset/png_metadata_uve_tests.cpp
+    Core/Asset/jpeg_importer_uve_tests.cpp
+    Core/Asset/jpeg_metadata_uve_tests.cpp
+    Core/Asset/obj_importer_uve_tests.cpp
+    Core/Asset/obj_mesh_converter_uve_tests.cpp
+    Core/Asset/obj_metadata_uve_tests.cpp
+    Core/Asset/gltf_importer_uve_tests.cpp
+    Core/Asset/gltf_mesh_converter_uve_tests.cpp
+    Core/Asset/gltf_metadata_uve_tests.cpp
+    Core/Asset/mtl_importer_uve_tests.cpp
+    Core/Asset/mtl_material_converter_uve_tests.cpp
+    Core/Asset/mtl_metadata_uve_tests.cpp
     Commandline/command_line_uve_tests.cpp
     Config/config_manager_uve_tests.cpp
     Network/reliable_packet_window_uve_tests.cpp
