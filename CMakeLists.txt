@@ -72,6 +72,7 @@ add_subdirectory(Engine/Runtime/Physics)
 add_subdirectory(Engine/Runtime/Engine)
 add_subdirectory(Engine/Runtime/World)
 add_subdirectory(Engine/Runtime/ProjectCheck)
+add_subdirectory(Engine/Editor/EditorCore)
 add_subdirectory(Engine/Editor/Viewport)
 add_subdirectory(Engine/Editor/EditorApp)
 
