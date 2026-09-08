@@ -255,6 +255,21 @@ void DrawNativeIconLabelUVE(const std::uintptr_t textureId, const char* const la
     ImGui::TextUnformatted(label);
 }
 
+// Same icon-before-name convention as DrawNativeIconLabelUVE(), for Inspector sections that need a
+// procedurally-drawn glyph (no bitmap/SVG asset) rather than one of the few existing general icon
+// textures - `drawIcon` matches every DrawNode*IconUVE/DrawHierarchyNodeIconUVE signature already
+// established for the Scene Hierarchy, reused here rather than duplicated.
+template <typename DrawIconUVE>
+void DrawProceduralIconLabelUVE(const float radius, const char* const label, DrawIconUVE&& drawIcon) {
+    ImDrawList* const drawList = ImGui::GetWindowDrawList();
+    const ImVec2 cursor = ImGui::GetCursorScreenPos();
+    ImGui::Dummy(ImVec2{radius * 2.0F, radius * 2.0F});
+    const ImVec2 center{cursor.x + radius, cursor.y + radius};
+    drawIcon(*drawList, center, radius, ImGui::GetColorU32(ImGuiCol_Text));
+    ImGui::SameLine(0.0F, 5.0F);
+    ImGui::TextUnformatted(label);
+}
+
 // ---- Viewport overlay toolbar - procedurally-drawn gizmo-mode icons -------------------------
 // Same "invisible hit-area button + custom ImDrawList paint" technique as DrawMenuBarUVE()'s own
 // playback buttons (AddTriangleFilled/AddRectFilled for Play/Pause/Stop) - kept vector-drawn
@@ -518,6 +533,23 @@ void DrawHierarchyNodeIconUVE(ImDrawList& drawList, const ImVec2 center, const f
         case HierarchyNodeIconKindUVE::Animation: DrawNodeAnimationIconUVE(drawList, center, radius, color); break;
         case HierarchyNodeIconKindUVE::Empty: default: DrawNodeEmptyIconUVE(drawList, center, radius, color); break;
     }
+}
+
+[[nodiscard]] constexpr HierarchyNodeIconKindUVE ClassifySceneComponentKindIconUVE(
+    const EditorSceneComponentKindUVE kind) noexcept {
+    switch (kind) {
+        case EditorSceneComponentKindUVE::Camera: return HierarchyNodeIconKindUVE::Camera;
+        case EditorSceneComponentKindUVE::Mesh: return HierarchyNodeIconKindUVE::Mesh;
+        case EditorSceneComponentKindUVE::Light: return HierarchyNodeIconKindUVE::Light;
+        case EditorSceneComponentKindUVE::Collider:
+        case EditorSceneComponentKindUVE::RigidBody: return HierarchyNodeIconKindUVE::Physics;
+        case EditorSceneComponentKindUVE::AudioSource: return HierarchyNodeIconKindUVE::Audio;
+        case EditorSceneComponentKindUVE::ParticleEmitter: return HierarchyNodeIconKindUVE::Particle;
+        case EditorSceneComponentKindUVE::Script: return HierarchyNodeIconKindUVE::Script;
+        case EditorSceneComponentKindUVE::AnimationPlayer: return HierarchyNodeIconKindUVE::Animation;
+        case EditorSceneComponentKindUVE::WorldEnvironment: return HierarchyNodeIconKindUVE::Environment;
+    }
+    return HierarchyNodeIconKindUVE::Empty;
 }
 
 constexpr float kHierarchyNodeIconRadiusUVE = 7.0F;
@@ -4456,7 +4488,7 @@ void EditorUVE::DrawTransformInspectorDrawerUVE(const Scene::EntityUVE entity) {
 
     Scene::TransformComponentUVE edited = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(entity);
     ImGui::Separator();
-    DrawNativeIconLabelUVE(0U, "Transform");
+    DrawProceduralIconLabelUVE(8.0F, "Transform", DrawMoveIconUVE);
     float position[3]{edited.localPosition.x, edited.localPosition.y, edited.localPosition.z};
     float rotation[4]{edited.localRotation.x, edited.localRotation.y, edited.localRotation.z, edited.localRotation.w};
     float scale[3]{edited.localScale.x, edited.localScale.y, edited.localScale.z};
@@ -4483,7 +4515,7 @@ void EditorUVE::DrawPrimitiveMeshInspectorDrawerUVE(const Scene::EntityUVE entit
     }
 
     ImGui::Separator();
-    DrawNativeIconLabelUVE(0U, "Primitive");
+    DrawProceduralIconLabelUVE(8.0F, "Primitive", DrawNodeMeshIconUVE);
     const Scene::PrimitiveMeshComponentUVE current =
         entityManager.GetComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity);
     int kindIndex = static_cast<int>(current.kind);
@@ -4613,7 +4645,12 @@ void EditorUVE::DrawSceneComponentInspectorDrawerUVE(const Scene::EntityUVE enti
         case EditorSceneComponentKindUVE::WorldEnvironment: title = "World Environment"; break;
     }
     ImGui::Separator();
-    DrawNativeIconLabelUVE(0U, title);
+    DrawProceduralIconLabelUVE(8.0F, title, [this, kind](ImDrawList& drawList, const ImVec2 center,
+                                                         const float radius, const ImU32) {
+        DrawHierarchyNodeIconUVE(drawList, center, radius, ClassifySceneComponentKindIconUVE(kind),
+                                 m_uiAssets.GetGeneralIconTextureIdUVE("sun"),
+                                 m_uiAssets.GetGeneralIconTextureIdUVE("environment"));
+    });
     ImGui::TextDisabled("Authored component state is validated and persisted by EditorUVE.");
     if (ImGui::Button((std::string("Remove ") + title).c_str())) {
         static_cast<void>(RemoveSelectedSceneComponentUVE(kind));
@@ -4635,7 +4672,7 @@ void EditorUVE::DrawPrefabInspectorDrawerUVE(const Scene::EntityUVE entity) {
     const std::optional<std::uint64_t> observedRevision =
         Scene::ComputePrefabSourceRevisionUVE(sourcePath);
     ImGui::Separator();
-    DrawNativeIconLabelUVE(0U, "Prefab Instance");
+    DrawProceduralIconLabelUVE(8.0F, "Prefab Instance", DrawFolderIconUVE);
     ImGui::Text("Source GUID: %llu", static_cast<unsigned long long>(instance.sourcePrefabGuid.value));
     ImGui::Text("Instance revision: %llu", static_cast<unsigned long long>(instance.instanceRevision));
     ImGui::Text("Source revision: %s", observedRevision.has_value() ? "available" : "unavailable");
