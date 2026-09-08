@@ -28,6 +28,7 @@
 #include "uve/editor/editor_bridge_stdio_uve.h"
 #include "uve/editor/editor_uve.h"
 #include "uve/math/vector2_uve.h"
+#include "uve/scene/components/world_transform_component_uve.h"
 #include "uve/scene/i_entity_manager_uve.h"
 
 namespace {
@@ -45,8 +46,8 @@ namespace {
 // a GLFW framebuffer-resize callback.
 class ViewportPanelBackendUVE final {
 public:
-    explicit ViewportPanelBackendUVE(UVE::Scene::IEntityManagerUVE& entityManager)
-        : entitySource_(entityManager) {}
+    ViewportPanelBackendUVE(UVE::Editor::EditorUVE& editor, UVE::Scene::IEntityManagerUVE& entityManager)
+        : editor_(editor), entityManager_(entityManager), entitySource_(entityManager) {}
 
     ~ViewportPanelBackendUVE() { DestroyFramebuffersUVE(); }
 
@@ -65,6 +66,7 @@ public:
             return 0U;
         }
 
+        UpdateSelectionGizmoUVE();
         UpdateCameraFromMouseUVE(height);
 
         GLint previousFbo = 0;
@@ -176,6 +178,29 @@ private:
         framebufferWidth_ = framebufferHeight_ = 0;
     }
 
+    // Only shows the transform gizmo (and its center pivot cube) while a real entity is selected
+    // in EditorUVE, like a Node3D-style engine - the reference standalone demo always draws it at
+    // the camera's own orbit target since it has no independent "selected object" concept, which
+    // read as a stray gizmo floating with nothing selected once wired into a real editor.
+    // Repositions the gizmo to the selected entity's actual world transform via
+    // SetGizmoPivotOverride() (see that method's own comment on why camera.Target() alone isn't
+    // enough - orbiting the camera must not drag a selected object's gizmo along with it).
+    void UpdateSelectionGizmoUVE() {
+        const UVE::Scene::EntityUVE selected = editor_.GetSelectedEntityUVE();
+        const bool hasSelection = selected != UVE::Scene::kInvalidEntityUVE &&
+                                  entityManager_.HasComponentUVE<UVE::Scene::WorldTransformComponentUVE>(selected);
+        renderPass_->Settings().viewTransformGizmo = hasSelection;
+        if (hasSelection) {
+            const auto& worldTransform =
+                entityManager_.GetComponentUVE<UVE::Scene::WorldTransformComponentUVE>(selected);
+            renderPass_->SetGizmoPivotOverride(
+                univex::math::Vec3{worldTransform.worldPosition.x, worldTransform.worldPosition.y,
+                                   worldTransform.worldPosition.z});
+        } else {
+            renderPass_->SetGizmoPivotOverride(std::nullopt);
+        }
+    }
+
     // Mirrors app/main.cpp's own GLFW mouse-button/scroll wiring (left-drag orbits, middle/right
     // drag pans, wheel dollies) but sourced from ImGui's IO instead of GLFW callbacks, since input
     // flows through ImGui while the viewport is docked. Called from inside EditorUVE's own
@@ -200,6 +225,8 @@ private:
         }
     }
 
+    UVE::Editor::EditorUVE& editor_;
+    UVE::Scene::IEntityManagerUVE& entityManager_;
     univex::integration::EntityManagerEntitySource entitySource_;
     std::optional<univex::app::ViewportRenderPass> renderPass_;
     univex::camera::OrbitCamera camera_;
@@ -344,7 +371,7 @@ int main(const int argc, char** argv) {
         // which headless mode's NullRenderDeviceUVE never creates.
         std::optional<ViewportPanelBackendUVE> viewportBackend;
         if (!options.headless) {
-            viewportBackend.emplace(engine.GetServicesUVE().GetEntityManagerUVE());
+            viewportBackend.emplace(editor, engine.GetServicesUVE().GetEntityManagerUVE());
             editor.SetViewportPanelRendererUVE(
                 [&backend = *viewportBackend](const UVE::Math::Vector2UVE& availableSize,
                                               UVE::Math::Vector2UVE& outUsedSize) {

@@ -59,7 +59,8 @@ ViewportRenderPass::ViewportRenderPass(ViewportRenderPass&& other) noexcept
       style_(other.style_),
       gizmoMode_(other.gizmoMode_),
       cubeHalfExtent_(other.cubeHalfExtent_),
-      entitySource_(other.entitySource_) {}
+      entitySource_(other.entitySource_),
+      gizmoPivotOverride_(other.gizmoPivotOverride_) {}
 
 ViewportRenderPass& ViewportRenderPass::operator=(ViewportRenderPass&& other) noexcept {
     if (this != &other) {
@@ -75,6 +76,7 @@ ViewportRenderPass& ViewportRenderPass::operator=(ViewportRenderPass&& other) no
         gizmoMode_ = other.gizmoMode_;
         cubeHalfExtent_ = other.cubeHalfExtent_;
         entitySource_ = other.entitySource_;
+        gizmoPivotOverride_ = other.gizmoPivotOverride_;
     }
     return *this;
 }
@@ -169,7 +171,7 @@ void ViewportRenderPass::DrawTransformGizmo(const OrbitCamera& camera, int width
 
     GizmoDrawParams params;
     params.viewProjection = camera.ViewProjection(static_cast<float>(width) / static_cast<float>(height));
-    params.origin = camera.Target();
+    params.origin = gizmoPivotOverride_.value_or(camera.Target());
     params.scale = scale;
     params.viewportWidth = static_cast<float>(width);
     params.viewportHeight = static_cast<float>(height);
