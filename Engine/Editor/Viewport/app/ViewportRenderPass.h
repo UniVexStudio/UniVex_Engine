@@ -33,6 +33,7 @@ using univex::camera::OrbitCamera;
 using univex::gizmo::GizmoMode;
 using univex::gizmo::GizmoStyle;
 using univex::math::Mat4;
+using univex::math::Vec3;
 
 // Where the orientation gizmo lives, in OpenGL viewport coordinates
 // (origin bottom-left).
@@ -80,6 +81,13 @@ public:
         entitySource_ = source;
     }
 
+    // The transform gizmo's world-space pivot defaults to the camera's own orbit target - fine
+    // for this module's own standalone demo (there is no independent "selected object" concept
+    // there), but wrong once a host editor drives selection: orbiting the camera must not drag
+    // the gizmo along with it. When set, the gizmo draws at `pivot` regardless of where the
+    // camera is currently looking; pass nullopt to restore the original camera-target behavior.
+    void SetGizmoPivotOverride(std::optional<Vec3> pivot) { gizmoPivotOverride_ = pivot; }
+
     // ---- nav gizmo geometry, shared with input handling -------------------
     // The nav gizmo's own camera: the main camera's rotation, no translation.
     [[nodiscard]] static Mat4 NavViewMatrix(const OrbitCamera& camera);
@@ -106,6 +114,7 @@ private:
     GizmoMode gizmoMode_ = GizmoMode::Universal;
     float cubeHalfExtent_ = 0.75f;
     const univex::integration::IEntityTransformSourceUVE* entitySource_ = nullptr;
+    std::optional<Vec3> gizmoPivotOverride_;
 };
 
 } // namespace univex::app
