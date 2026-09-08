@@ -55,7 +55,8 @@ public:
     ViewportPanelBackendUVE& operator=(const ViewportPanelBackendUVE&) = delete;
 
     [[nodiscard]] std::uint64_t RenderUVE(const UVE::Math::Vector2UVE& availableSize,
-                                          UVE::Math::Vector2UVE& outUsedSize) {
+                                          UVE::Math::Vector2UVE& outUsedSize,
+                                          const UVE::Editor::EditorUVE::ViewportOverlayStateUVE& overlayState) {
         if (!EnsureGlewInitializedUVE() || !EnsureRenderPassUVE()) {
             return 0U;
         }
@@ -66,6 +67,7 @@ public:
             return 0U;
         }
 
+        ApplyOverlayStateUVE(overlayState);
         UpdateSelectionGizmoUVE();
         UpdateCameraFromMouseUVE(height);
 
@@ -176,6 +178,33 @@ private:
         }
         resolveColorTexture_ = resolveFbo_ = msaaColorRb_ = msaaDepthRb_ = msaaFbo_ = 0U;
         framebufferWidth_ = framebufferHeight_ = 0;
+    }
+
+    // Applies EditorUVE's own generic overlay-toolbar state (see ViewportOverlayStateUVE's doc
+    // comment on why it's plain enums/bools rather than any Viewport-module type) to the real
+    // ViewportRenderPass each frame. Snap is stored and reflected in the bubble's highlight but
+    // has no behavioral effect yet: there is no drag-to-move gizmo interaction implemented in this
+    // slice for it to snap - the gizmo is currently a visual overlay only, not yet draggable.
+    void ApplyOverlayStateUVE(const UVE::Editor::EditorUVE::ViewportOverlayStateUVE& overlayState) {
+        auto& settings = renderPass_->Settings();
+        settings.projection = overlayState.orthographic ? univex::viewport::ProjectionMode::Orthographic
+                                                        : univex::viewport::ProjectionMode::Perspective;
+        settings.viewGrid = overlayState.gridVisible;
+        using UVE::Editor::EditorUVE;
+        switch (overlayState.gizmoMode) {
+            case EditorUVE::ViewportGizmoModeUVE::Move:
+                renderPass_->SetGizmoMode(univex::gizmo::GizmoMode::Move);
+                break;
+            case EditorUVE::ViewportGizmoModeUVE::Rotate:
+                renderPass_->SetGizmoMode(univex::gizmo::GizmoMode::Rotate);
+                break;
+            case EditorUVE::ViewportGizmoModeUVE::Scale:
+                renderPass_->SetGizmoMode(univex::gizmo::GizmoMode::Scale);
+                break;
+            case EditorUVE::ViewportGizmoModeUVE::Universal:
+                renderPass_->SetGizmoMode(univex::gizmo::GizmoMode::Universal);
+                break;
+        }
     }
 
     // Only shows the transform gizmo (and its center pivot cube) while a real entity is selected
@@ -373,9 +402,10 @@ int main(const int argc, char** argv) {
         if (!options.headless) {
             viewportBackend.emplace(editor, engine.GetServicesUVE().GetEntityManagerUVE());
             editor.SetViewportPanelRendererUVE(
-                [&backend = *viewportBackend](const UVE::Math::Vector2UVE& availableSize,
-                                              UVE::Math::Vector2UVE& outUsedSize) {
-                    return backend.RenderUVE(availableSize, outUsedSize);
+                [&backend = *viewportBackend](
+                    const UVE::Math::Vector2UVE& availableSize, UVE::Math::Vector2UVE& outUsedSize,
+                    const UVE::Editor::EditorUVE::ViewportOverlayStateUVE& overlayState) {
+                    return backend.RenderUVE(availableSize, outUsedSize, overlayState);
                 });
         }
         engine.SetPostRenderCallbackUVE([&editor] { editor.RenderOverlayUVE(); });
