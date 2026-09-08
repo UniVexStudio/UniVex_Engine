@@ -191,17 +191,41 @@ public:
     /// before PresentUVE(), after the HDR scene has passed through the standard tone-mapping path.
     void RenderOverlayUVE();
 
+    /// The 4 standard transform-tool modes a Viewport overlay toolbar exposes, named generically
+    /// (not tied to any specific renderer's own enum) so EditorCore stays engine/viewport-agnostic
+    /// - see ViewportPanelRendererUVE's own doc comment below for why.
+    enum class ViewportGizmoModeUVE {
+        Move,
+        Rotate,
+        Scale,
+        Universal,
+    };
+
+    /// Current state of the Viewport panel's own overlay toolbar (projection mode, active gizmo
+    /// tool, snap, grid) - owned and mutated by EditorUVE's own overlay-drawing code
+    /// (DrawViewportPanelUVE()), then handed to ViewportPanelRendererUVE each frame so the
+    /// concrete renderer can apply it to its own real projection/gizmo-mode/grid state. Kept as
+    /// plain enums/bools with no viewport-module type in sight, for the same reason.
+    struct ViewportOverlayStateUVE final {
+        bool orthographic = false;
+        ViewportGizmoModeUVE gizmoMode = ViewportGizmoModeUVE::Universal;
+        bool snapEnabled = false;
+        bool gridVisible = true;
+    };
+
     /// Render callback for the dockable "Viewport" panel: given the panel's current available
-    /// content-region size, renders into the caller's own framebuffer at (at most) that size and
-    /// returns an ImGui texture ID (ImTextureID is ImU64 in the vendored ImGui version) to display
-    /// via ImGui::Image(), writing the actual rendered size back through outUsedSize. Returning 0
+    /// content-region size and the overlay toolbar's current state (see ViewportOverlayStateUVE),
+    /// renders into the caller's own framebuffer at (at most) that size and returns an ImGui
+    /// texture ID (ImTextureID is ImU64 in the vendored ImGui version) to display via
+    /// ImGui::Image(), writing the actual rendered size back through outUsedSize. Returning 0
     /// means "not ready yet" - nothing is drawn that frame. Deliberately free of any ImGui/GL/
     /// viewport-module types so EditorCore stays engine/viewport-agnostic (this is an upper-layer
     /// module that may compose Engine/Runtime, not something that should link a sibling
     /// Engine/Editor module directly) - see Engine/App/src/editor/main.cpp for the concrete
     /// Engine/Editor/Viewport-backed implementation.
     using ViewportPanelRendererUVE =
-        std::function<std::uint64_t(const Math::Vector2UVE& availableSize, Math::Vector2UVE& outUsedSize)>;
+        std::function<std::uint64_t(const Math::Vector2UVE& availableSize, Math::Vector2UVE& outUsedSize,
+                                    const ViewportOverlayStateUVE& overlayState)>;
 
     /// Registers (or clears, with an empty std::function) the Viewport panel's render callback.
     /// Called once per frame from RenderOverlayUVE() while the panel is visible.
@@ -659,6 +683,7 @@ private:
     void ApplyLayoutPresetUVE(EditorLayoutPresetUVE preset) noexcept;
     void DrawMenuBarUVE();
     void DrawViewportPanelUVE();
+    void DrawViewportOverlayBubblesUVE(Math::Vector2UVE imageOrigin, Math::Vector2UVE imageSize);
     void DrawPluginWindowUVE();
     void DrawBottomDockUVE();
     void DrawBottomDockContentUVE();
@@ -788,6 +813,7 @@ private:
     bool m_bottomDockVisible = true;
     bool m_viewportPanelVisible = true;
     ViewportPanelRendererUVE m_viewportPanelRenderer;
+    ViewportOverlayStateUVE m_viewportOverlayState;
     bool m_sceneDirty = false;
     bool m_uiInitialized = false;
     EditorUiAssetsUVE m_uiAssets;
