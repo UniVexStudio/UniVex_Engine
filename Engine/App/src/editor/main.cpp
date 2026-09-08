@@ -1,5 +1,12 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
+// GL/glew.h (pulled in via GlApi.h) must be included before anything that might transitively pull
+// <GLFW/glfw3.h>, or GLFW's own bundled GL header conflicts with GLEW's - see GlApi.h's own
+// comment. Nothing else in this file currently drags in GLFW, but this ordering is cheap
+// insurance and matches every other translation unit in Engine/Editor/Viewport that mixes the two.
+#include "univex/render/GlApi.h"
+
+#include <algorithm>
 #include <charconv>
 #include <cstdint>
 #include <exception>
@@ -10,12 +17,201 @@
 #include <string_view>
 #include <vector>
 
+#include <imgui.h>
+
+#include "ViewportRenderPass.h"
+#include "integration/EntityManagerEntitySource.h"
+#include "univex/camera/OrbitCamera.h"
+
 #include "uve/core/engine_core_uve.h"
 #include "uve/debug/logging_macros_uve.h"
 #include "uve/editor/editor_bridge_stdio_uve.h"
 #include "uve/editor/editor_uve.h"
+#include "uve/math/vector2_uve.h"
+#include "uve/scene/i_entity_manager_uve.h"
 
 namespace {
+
+// Bridges Engine/Editor/Viewport's real GL renderer (grid + orbit camera + transform/orientation
+// gizmos + one proxy cube per live scene entity) into EditorUVE's generic, viewport-agnostic
+// "Viewport" panel hook (EditorUVE::SetViewportPanelRendererUVE) - see that method's own doc
+// comment in editor_uve.h for why EditorCore itself stays free of any Viewport-module/GL/ImGui
+// types. Renders off-screen into an MSAA framebuffer, resolves into a plain 2D texture
+// ImGui::Image() can sample, and recreates both whenever the panel's reported size changes -
+// the same multisample-then-resolve shape tools/headless_capture.cpp already uses (that file's
+// own comment explains why: the solid gizmo/cube geometry has nothing but MSAA to soften its
+// silhouettes) and the same resize-on-demand shape app/main.cpp's interactive demo already uses
+// for its own window-sized framebuffer, just driven by the ImGui panel's reported size instead of
+// a GLFW framebuffer-resize callback.
+class ViewportPanelBackendUVE final {
+public:
+    explicit ViewportPanelBackendUVE(UVE::Scene::IEntityManagerUVE& entityManager)
+        : entitySource_(entityManager) {}
+
+    ~ViewportPanelBackendUVE() { DestroyFramebuffersUVE(); }
+
+    ViewportPanelBackendUVE(const ViewportPanelBackendUVE&) = delete;
+    ViewportPanelBackendUVE& operator=(const ViewportPanelBackendUVE&) = delete;
+
+    [[nodiscard]] std::uint64_t RenderUVE(const UVE::Math::Vector2UVE& availableSize,
+                                          UVE::Math::Vector2UVE& outUsedSize) {
+        if (!EnsureGlewInitializedUVE() || !EnsureRenderPassUVE()) {
+            return 0U;
+        }
+
+        const int width = std::max(1, static_cast<int>(availableSize.x));
+        const int height = std::max(1, static_cast<int>(availableSize.y));
+        if (!EnsureFramebuffersUVE(width, height)) {
+            return 0U;
+        }
+
+        UpdateCameraFromMouseUVE(height);
+
+        GLint previousFbo = 0;
+        glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previousFbo);
+        glBindFramebuffer(GL_FRAMEBUFFER, msaaFbo_);
+        glEnable(GL_MULTISAMPLE);
+        renderPass_->RenderFrame(camera_, width, height);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, msaaFbo_);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, resolveFbo_);
+        glBlitFramebuffer(0, 0, width, height, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+        glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(previousFbo));
+
+        outUsedSize = UVE::Math::Vector2UVE{static_cast<float>(width), static_cast<float>(height)};
+        return static_cast<std::uint64_t>(resolveColorTexture_);
+    }
+
+private:
+    [[nodiscard]] bool EnsureGlewInitializedUVE() {
+        if (glewInitialized_) {
+            return true;
+        }
+        glewExperimental = GL_TRUE;
+        if (const GLenum status = glewInit(); status != GLEW_OK) {
+            UVE_ERROR("uve_editor_app: glewInit failed for the viewport panel: {}",
+                      reinterpret_cast<const char*>(glewGetErrorString(status)));
+            return false;
+        }
+        glGetError(); // discard GLEW's benign core-profile extension-probe error
+        glewInitialized_ = true;
+        return true;
+    }
+
+    [[nodiscard]] bool EnsureRenderPassUVE() {
+        if (renderPass_.has_value()) {
+            return true;
+        }
+        std::string error;
+        renderPass_ = univex::app::ViewportRenderPass::Create(error);
+        if (!renderPass_.has_value()) {
+            UVE_ERROR("uve_editor_app: viewport render pass init failed: {}", error);
+            return false;
+        }
+        renderPass_->SetEntitySource(&entitySource_);
+        return true;
+    }
+
+    [[nodiscard]] bool EnsureFramebuffersUVE(const int width, const int height) {
+        if (width == framebufferWidth_ && height == framebufferHeight_ && resolveFbo_ != 0U) {
+            return true;
+        }
+        DestroyFramebuffersUVE();
+        framebufferWidth_ = width;
+        framebufferHeight_ = height;
+
+        GLint maxSamples = 0;
+        glGetIntegerv(GL_MAX_SAMPLES, &maxSamples);
+        const GLsizei samples = std::min(maxSamples, 8);
+
+        glGenFramebuffers(1, &msaaFbo_);
+        glBindFramebuffer(GL_FRAMEBUFFER, msaaFbo_);
+        glGenRenderbuffers(1, &msaaColorRb_);
+        glBindRenderbuffer(GL_RENDERBUFFER, msaaColorRb_);
+        glRenderbufferStorageMultisample(GL_RENDERBUFFER, samples, GL_RGBA8, width, height);
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, msaaColorRb_);
+        glGenRenderbuffers(1, &msaaDepthRb_);
+        glBindRenderbuffer(GL_RENDERBUFFER, msaaDepthRb_);
+        glRenderbufferStorageMultisample(GL_RENDERBUFFER, samples, GL_DEPTH24_STENCIL8, width, height);
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, msaaDepthRb_);
+        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+            UVE_ERROR("uve_editor_app: viewport MSAA framebuffer incomplete");
+            return false;
+        }
+
+        glGenFramebuffers(1, &resolveFbo_);
+        glBindFramebuffer(GL_FRAMEBUFFER, resolveFbo_);
+        glGenTextures(1, &resolveColorTexture_);
+        glBindTexture(GL_TEXTURE_2D, resolveColorTexture_);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, resolveColorTexture_, 0);
+        const bool complete = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+        if (!complete) {
+            UVE_ERROR("uve_editor_app: viewport resolve framebuffer incomplete");
+        }
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        return complete;
+    }
+
+    void DestroyFramebuffersUVE() {
+        if (resolveColorTexture_ != 0U) {
+            glDeleteTextures(1, &resolveColorTexture_);
+        }
+        if (resolveFbo_ != 0U) {
+            glDeleteFramebuffers(1, &resolveFbo_);
+        }
+        if (msaaColorRb_ != 0U) {
+            glDeleteRenderbuffers(1, &msaaColorRb_);
+        }
+        if (msaaDepthRb_ != 0U) {
+            glDeleteRenderbuffers(1, &msaaDepthRb_);
+        }
+        if (msaaFbo_ != 0U) {
+            glDeleteFramebuffers(1, &msaaFbo_);
+        }
+        resolveColorTexture_ = resolveFbo_ = msaaColorRb_ = msaaDepthRb_ = msaaFbo_ = 0U;
+        framebufferWidth_ = framebufferHeight_ = 0;
+    }
+
+    // Mirrors app/main.cpp's own GLFW mouse-button/scroll wiring (left-drag orbits, middle/right
+    // drag pans, wheel dollies) but sourced from ImGui's IO instead of GLFW callbacks, since input
+    // flows through ImGui while the viewport is docked. Called from inside EditorUVE's own
+    // ImGui::Begin("Viewport")/End() block (via the render callback this class provides to
+    // SetViewportPanelRendererUVE), so ImGui::IsWindowHovered() here correctly reports hover over
+    // the Viewport panel specifically. Known simplification versus the GLFW demo: a drag that
+    // began inside the panel stops orbiting the moment the cursor leaves it, rather than
+    // continuing to track a global drag - acceptable for this integration slice.
+    void UpdateCameraFromMouseUVE(const int framebufferHeight) {
+        if (!ImGui::IsWindowHovered()) {
+            return;
+        }
+        const ImGuiIO& io = ImGui::GetIO();
+        if (ImGui::IsMouseDragging(ImGuiMouseButton_Left, 0.0F)) {
+            camera_.Orbit(io.MouseDelta.x, io.MouseDelta.y);
+        } else if (ImGui::IsMouseDragging(ImGuiMouseButton_Middle, 0.0F) ||
+                   ImGui::IsMouseDragging(ImGuiMouseButton_Right, 0.0F)) {
+            camera_.Pan(io.MouseDelta.x, io.MouseDelta.y, framebufferHeight);
+        }
+        if (io.MouseWheel != 0.0F) {
+            camera_.Dolly(io.MouseWheel);
+        }
+    }
+
+    univex::integration::EntityManagerEntitySource entitySource_;
+    std::optional<univex::app::ViewportRenderPass> renderPass_;
+    univex::camera::OrbitCamera camera_;
+    bool glewInitialized_ = false;
+    GLuint msaaFbo_ = 0U;
+    GLuint msaaColorRb_ = 0U;
+    GLuint msaaDepthRb_ = 0U;
+    GLuint resolveFbo_ = 0U;
+    GLuint resolveColorTexture_ = 0U;
+    int framebufferWidth_ = 0;
+    int framebufferHeight_ = 0;
+};
 
 struct EditorLaunchOptionsUVE final {
     std::filesystem::path scenePath = "editor_scene.uvescene";
@@ -140,9 +336,21 @@ int main(const int argc, char** argv) {
             return result;
         }
 
-        // The editor no longer owns a camera (Phase 2 removed the viewport/gizmo layer): with no
-        // active camera set, EngineCoreUVE's documented no-op path clears and presents an empty
-        // frame every tick, which is the intended appearance until the viewport is rebuilt.
+        // EngineCoreUVE's own scene render stays a documented no-op (the editor doesn't own a
+        // gameplay camera), so the Viewport panel's real content comes entirely from
+        // ViewportPanelBackendUVE below - grid, orbit camera, gizmos, and one proxy cube per live
+        // scene entity, composited via ImGui::Image() rather than EngineCoreUVE's own render
+        // target. Only constructed in real windowed mode: it needs an actual current GL context,
+        // which headless mode's NullRenderDeviceUVE never creates.
+        std::optional<ViewportPanelBackendUVE> viewportBackend;
+        if (!options.headless) {
+            viewportBackend.emplace(engine.GetServicesUVE().GetEntityManagerUVE());
+            editor.SetViewportPanelRendererUVE(
+                [&backend = *viewportBackend](const UVE::Math::Vector2UVE& availableSize,
+                                              UVE::Math::Vector2UVE& outUsedSize) {
+                    return backend.RenderUVE(availableSize, outUsedSize);
+                });
+        }
         engine.SetPostRenderCallbackUVE([&editor] { editor.RenderOverlayUVE(); });
 
         int framesRun = 0;
@@ -154,6 +362,10 @@ int main(const int argc, char** argv) {
         }
 
         engine.SetPostRenderCallbackUVE({});
+        editor.SetViewportPanelRendererUVE({});
+        // Destroyed here, before engine.Shutdown() tears down the window/GL context below - its
+        // destructor deletes real GL objects (framebuffers/textures) that must still be valid.
+        viewportBackend.reset();
         editor.ShutdownUVE();
         engine.Shutdown();
         return 0;
