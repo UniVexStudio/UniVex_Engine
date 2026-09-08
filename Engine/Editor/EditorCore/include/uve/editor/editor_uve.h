@@ -5,8 +5,10 @@
 #include <map>
 #include <memory>
 #include <cstddef>
+#include <cstdint>
 #include <deque>
 #include <filesystem>
+#include <functional>
 #include <optional>
 #include <string>
 #include <variant>
@@ -188,6 +190,22 @@ public:
     /// Draws the private editor overlay. EngineCoreUVE invokes this from its post-render callback
     /// before PresentUVE(), after the HDR scene has passed through the standard tone-mapping path.
     void RenderOverlayUVE();
+
+    /// Render callback for the dockable "Viewport" panel: given the panel's current available
+    /// content-region size, renders into the caller's own framebuffer at (at most) that size and
+    /// returns an ImGui texture ID (ImTextureID is ImU64 in the vendored ImGui version) to display
+    /// via ImGui::Image(), writing the actual rendered size back through outUsedSize. Returning 0
+    /// means "not ready yet" - nothing is drawn that frame. Deliberately free of any ImGui/GL/
+    /// viewport-module types so EditorCore stays engine/viewport-agnostic (this is an upper-layer
+    /// module that may compose Engine/Runtime, not something that should link a sibling
+    /// Engine/Editor module directly) - see Engine/App/src/editor/main.cpp for the concrete
+    /// Engine/Editor/Viewport-backed implementation.
+    using ViewportPanelRendererUVE =
+        std::function<std::uint64_t(const Math::Vector2UVE& availableSize, Math::Vector2UVE& outUsedSize)>;
+
+    /// Registers (or clears, with an empty std::function) the Viewport panel's render callback.
+    /// Called once per frame from RenderOverlayUVE() while the panel is visible.
+    void SetViewportPanelRendererUVE(ViewportPanelRendererUVE renderer);
 
     /// Saves every document root except the editor camera to the active .uvescene path. Dirty state
     /// is cleared only after the scene serializer reports success.
@@ -640,6 +658,7 @@ private:
     [[nodiscard]] bool SaveSessionSettingsUVE();
     void ApplyLayoutPresetUVE(EditorLayoutPresetUVE preset) noexcept;
     void DrawMenuBarUVE();
+    void DrawViewportPanelUVE();
     void DrawPluginWindowUVE();
     void DrawBottomDockUVE();
     void DrawBottomDockContentUVE();
@@ -767,6 +786,8 @@ private:
     bool m_scenePanelVisible = true;
     bool m_inspectorPanelVisible = true;
     bool m_bottomDockVisible = true;
+    bool m_viewportPanelVisible = true;
+    ViewportPanelRendererUVE m_viewportPanelRenderer;
     bool m_sceneDirty = false;
     bool m_uiInitialized = false;
     EditorUiAssetsUVE m_uiAssets;

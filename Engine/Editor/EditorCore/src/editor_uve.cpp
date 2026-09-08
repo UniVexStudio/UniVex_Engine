@@ -493,11 +493,56 @@ void EditorUVE::RenderOverlayUVE() {
         DrawScriptingWorkspaceUVE();
     } else {
         DrawHierarchyPanelUVE();
+        DrawViewportPanelUVE();
         DrawInspectorPanelUVE();
         DrawBottomDockContentUVE();
     }
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+}
+
+void EditorUVE::SetViewportPanelRendererUVE(ViewportPanelRendererUVE renderer) {
+    m_viewportPanelRenderer = std::move(renderer);
+}
+
+void EditorUVE::DrawViewportPanelUVE() {
+    if (!m_viewportPanelVisible) {
+        return;
+    }
+    // Same "fixed default position/size for a fresh session, never fought on later frames" shape
+    // as DrawHierarchyPanelUVE()/DrawInspectorPanelUVE() (see their own comments) - this panel
+    // fills the gap those two leave between them, matching the space actually visible on screen
+    // rather than an arbitrary default ImGui would otherwise cascade this window into.
+    const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
+    const float menuBarHeight = kEditorTopChromeHeightUVE;
+    const float workspaceHeight = std::max(kMinimumViewportHeightUVE,
+                                           mainViewport->WorkSize.y - menuBarHeight - (m_bottomDockVisible ? kAssetsPanelHeightUVE : 0.0F));
+    const float scenePanelWidth = std::clamp(mainViewport->WorkSize.x * 0.19F, 208.0F, 292.0F);
+    const float inspectorPanelWidth = std::clamp(mainViewport->WorkSize.x * 0.22F, 264.0F, 356.0F);
+    ImGui::SetNextWindowPos(ImVec2{mainViewport->WorkPos.x + scenePanelWidth, mainViewport->WorkPos.y + menuBarHeight},
+                            ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(
+        ImVec2{std::max(kMinimumViewportHeightUVE, mainViewport->WorkSize.x - scenePanelWidth - inspectorPanelWidth),
+               workspaceHeight},
+        ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin(kPanelLabelViewportUVE, &m_viewportPanelVisible, ImGuiWindowFlags_NoCollapse)) {
+        ImGui::End();
+        return;
+    }
+    const ImVec2 availableRegion = ImGui::GetContentRegionAvail();
+    if (m_viewportPanelRenderer && availableRegion.x > 0.0F && availableRegion.y > 0.0F) {
+        const Math::Vector2UVE available{availableRegion.x, availableRegion.y};
+        Math::Vector2UVE used{0.0F, 0.0F};
+        const std::uint64_t textureId = m_viewportPanelRenderer(available, used);
+        if (textureId != 0U && used.x > 0.0F && used.y > 0.0F) {
+            // The viewport renderer's framebuffer texture is a normal OpenGL render target
+            // (bottom-up texel origin), unlike the top-down icon textures DrawNativeIconLabelUVE
+            // displays elsewhere in this file - flip the V axis so the image displays right-side up.
+            ImGui::Image(static_cast<ImTextureID>(textureId), ImVec2{used.x, used.y}, ImVec2{0.0F, 1.0F},
+                         ImVec2{1.0F, 0.0F});
+        }
+    }
+    ImGui::End();
 }
 
 bool EditorUVE::SaveSceneUVE() {
@@ -2917,6 +2962,7 @@ void EditorUVE::ApplyLayoutPresetUVE(const EditorLayoutPresetUVE preset) noexcep
     switch (preset) {
         case EditorLayoutPresetUVE::Default:
             m_scenePanelVisible = true;
+            m_viewportPanelVisible = true;
             m_inspectorPanelVisible = true;
             m_bottomDockVisible = true;
             m_activeRightPanelTab = EditorRightPanelTabUVE::Inspector;
@@ -2924,11 +2970,13 @@ void EditorUVE::ApplyLayoutPresetUVE(const EditorLayoutPresetUVE preset) noexcep
             break;
         case EditorLayoutPresetUVE::FocusViewport:
             m_scenePanelVisible = false;
+            m_viewportPanelVisible = true;
             m_inspectorPanelVisible = false;
             m_bottomDockVisible = false;
             break;
         case EditorLayoutPresetUVE::ContentReview:
             m_scenePanelVisible = true;
+            m_viewportPanelVisible = true;
             m_inspectorPanelVisible = true;
             m_bottomDockVisible = true;
             m_activeRightPanelTab = EditorRightPanelTabUVE::Import;
@@ -2949,6 +2997,7 @@ void EditorUVE::LoadSessionSettingsUVE() {
         return value >= 0 && value <= maximum ? value : fallback;
     };
     m_scenePanelVisible = config.GetBoolUVE("editor.panels.sceneVisible", true);
+    m_viewportPanelVisible = config.GetBoolUVE("editor.panels.viewportVisible", true);
     m_inspectorPanelVisible = config.GetBoolUVE("editor.panels.inspectorVisible", true);
     m_bottomDockVisible = config.GetBoolUVE("editor.panels.bottomDockVisible", true);
     m_activeWorkspace = static_cast<EditorWorkspaceUVE>(getEnum("editor.workspace.active", 0, 4));
@@ -2989,6 +3038,7 @@ bool EditorUVE::SaveSessionSettingsUVE() {
     config.SetIntUVE("editor.rightPanel.activeTab", static_cast<std::int64_t>(m_activeRightPanelTab));
     config.SetIntUVE("editor.bottomDock.active", static_cast<std::int64_t>(m_activeBottomDock));
     config.SetBoolUVE("editor.panels.sceneVisible", m_scenePanelVisible);
+    config.SetBoolUVE("editor.panels.viewportVisible", m_viewportPanelVisible);
     config.SetBoolUVE("editor.panels.inspectorVisible", m_inspectorPanelVisible);
     config.SetBoolUVE("editor.panels.bottomDockVisible", m_bottomDockVisible);
     config.SetBoolUVE("editor.viewport.snap.enabled", m_transformSnappingSettings.enabled);
@@ -3145,6 +3195,7 @@ void EditorUVE::DrawMenuBarUVE() {
         }
         if (ImGui::BeginMenu(kMenuLabelWindowUVE)) {
             ImGui::MenuItem("Scene", nullptr, &m_scenePanelVisible);
+            ImGui::MenuItem("Viewport", nullptr, &m_viewportPanelVisible);
             ImGui::MenuItem("Inspector", nullptr, &m_inspectorPanelVisible);
             ImGui::MenuItem("Filesystem + Debug Dock", nullptr, &m_bottomDockVisible);
             ImGui::MenuItem("Plugin Tools", nullptr, &m_pluginWindowVisible);
