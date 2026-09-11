@@ -8,10 +8,17 @@
 # real engine entity" instead of always the single demo cube - see EntityTransformSource.h and
 # WorldUveEntitySource.h/.cpp for why and how.
 #
+# EntityManagerEntitySource.h/.cpp (added when this module was wired into the real
+# EngineCoreUVE/EditorUVE editor) implements the same IEntityTransformSourceUVE interface directly
+# over Scene::IEntityManagerUVE& - WorldUveEntitySource can't be reused there since WorldUVE
+# constructs its own internal EntityManagerUVE rather than wrapping an externally-owned one, and
+# EngineCoreUVE's real entity manager is never inside a WorldUVE.
+#
 # The library splits in three deliberately: univex_viewport_core is pure CPU (math, camera, LOD)
 # and links nothing; univex_viewport_gl adds the GL renderer; univex_viewport_engine_bridge (new)
-# is the only target in this module that depends on the host UniVex engine (uve_world) - core/gl
-# stay engine-agnostic so this module keeps working if dropped into a different engine.
+# is the only target in this module that depends on the host UniVex engine (uve_world, which
+# PUBLIC-links uve_entity - enough for EntityManagerEntitySource too) - core/gl stay engine-agnostic
+# so this module keeps working if dropped into a different engine.
 
 option(UNIVEX_VIEWPORT_BUILD_APP "Build the interactive GLFW demo" ON)
 option(UNIVEX_VIEWPORT_BUILD_TOOLS "Build the headless capture tool" ON)
@@ -87,7 +94,8 @@ target_compile_options(univex_viewport_app_support PRIVATE -Wall -Wextra -Wpedan
 # Engine bridge: the only target here that depends on the host UniVex engine.
 # ---------------------------------------------------------------------------
 add_library(univex_viewport_engine_bridge STATIC
-    src/integration/WorldUveEntitySource.cpp)
+    src/integration/WorldUveEntitySource.cpp
+    src/integration/EntityManagerEntitySource.cpp)
 target_include_directories(univex_viewport_engine_bridge PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(univex_viewport_engine_bridge PUBLIC univex_viewport_app_support uve_world)
 target_compile_options(univex_viewport_engine_bridge PRIVATE -Wall -Wextra -Wpedantic)

@@ -105,9 +105,13 @@ void AddSolidCube(GizmoMesh& mesh, const Vec3& center, float size,
 }
 
 // Arrow head: a cone of real triangles, capped so it stays solid when seen
-// from behind.
+// from behind. The base-circle outline (same darkened-edge convention as
+// AddSolidCube's own 12 edges) gives the flat-shaded cone a defined
+// silhouette instead of reading as a featureless colored blob - previously
+// the only shape in this file with zero outline treatment at all.
 void AddCone(GizmoMesh& mesh, const Vec3& baseCenter, const Vec3& axis,
-             float length, float radius, int segments, const Vec3& color) {
+             float length, float radius, int segments, const Vec3& color,
+             float edgeWidthPx) {
     Vec3 u, v;
     PerpBasis(axis, u, v);
     const Vec3 tip = baseCenter + axis * length;
@@ -115,6 +119,10 @@ void AddCone(GizmoMesh& mesh, const Vec3& baseCenter, const Vec3& axis,
     for (std::size_t i = 0; i + 1 < ring.size(); ++i) {
         AddTriangle(mesh, tip, ring[i], ring[i + 1], color, 1.f);
         AddTriangle(mesh, baseCenter, ring[i + 1], ring[i], color, 1.f);
+    }
+    const Vec3 edgeColor = color * 0.55f;
+    for (std::size_t i = 0; i + 1 < ring.size(); ++i) {
+        AddLine(mesh, ring[i], ring[i + 1], edgeColor, edgeWidthPx);
     }
 }
 
@@ -124,7 +132,7 @@ void AddMoveArrow(GizmoMesh& mesh, const Axis& axis, const GizmoStyle& style,
     AddLine(mesh, axis.direction * shaftStart, axis.direction * shaftEnd,
             axis.color, lineWidthPx);
     AddCone(mesh, axis.direction * shaftEnd, axis.direction,
-            coneLength, coneRadius, style.moveConeSegments, axis.color);
+            coneLength, coneRadius, style.moveConeSegments, axis.color, style.cubeEdgeWidthPx);
 }
 
 // A ring drawn as a solid annulus: two concentric circles joined by quads.

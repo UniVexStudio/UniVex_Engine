@@ -22,16 +22,23 @@ void PerpBasis(const Vec3& axis, Vec3& outU, Vec3& outV) {
     outV = Normalize(Cross(a, outU));
 }
 
-// A disc that always faces the camera, built from real triangles.
+// A disc that always faces the camera, built from real triangles. Also
+// strokes its own rim with a darkened outline (same `color * 0.5` convention
+// GizmoGeometry.cpp's cube edges and cone base already use) so each ball
+// reads as a defined shape against the grid instead of a flat colored dot -
+// previously the only gizmo piece with no outline treatment at all.
 void AddFacingDisc(GizmoMesh& mesh, const Vec3& center, float radius,
-                   const Vec3& viewDirection, const Vec3& color, float alpha, int segments) {
+                   const Vec3& viewDirection, const Vec3& color, float alpha, int segments,
+                   float outlineWidthPx = 1.2f) {
     Vec3 u, v;
     PerpBasis(viewDirection, u, v);
+    const Vec3 edgeColor = color * 0.5f;
     Vec3 previous = center + u * radius;
     for (int i = 1; i <= segments; ++i) {
         const float t = (2.f * kPi * static_cast<float>(i)) / static_cast<float>(segments);
         const Vec3 current = center + u * (std::cos(t) * radius) + v * (std::sin(t) * radius);
         mesh.triangles.push_back(GizmoTriangle{center, previous, current, color, alpha});
+        mesh.lines.push_back(GizmoLine{previous, current, edgeColor, outlineWidthPx});
         previous = current;
     }
 }

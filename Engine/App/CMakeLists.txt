@@ -18,6 +18,15 @@
 # boundary that mirrors RunUVE()'s documented one. `--bridge-stdio` runs a framed JSON-RPC bridge
 # server instead of native ImGui/GLFW presentation - the mode this project's own tooling drives
 # the editor through non-interactively.
+#
+# This target also wires the real Viewport panel: EditorUVE (Engine/Editor/EditorCore) exposes only
+# a generic, GL/ImGui-agnostic render-callback hook (SetViewportPanelRendererUVE) - the concrete
+# rendering lives here, since Engine/App is the top-level layer allowed to depend on the
+# Engine/Editor/Viewport sibling module directly (EditorCore itself must not, per its own
+# upper-layer-but-not-cross-editor-module boundary). Links univex_viewport_engine_bridge (grid +
+# orbit camera + gizmos + real-entity proxy cubes, transitively pulling in GLEW/OpenGL) and
+# uve_editor_imgui directly (not just through uve_editor's own PRIVATE link of it) so this file's
+# own <imgui.h> calls - reading mouse input for the orbit camera - have their include path.
 
 add_executable(uve_runtime src/main.cpp)
 target_link_libraries(uve_runtime PRIVATE uve_core)
@@ -26,6 +35,6 @@ uve_set_warnings(uve_runtime)
 
 add_executable(uve_editor_app src/editor/main.cpp)
 set_target_properties(uve_editor_app PROPERTIES OUTPUT_NAME uve_editor)
-target_link_libraries(uve_editor_app PRIVATE uve_editor)
+target_link_libraries(uve_editor_app PRIVATE uve_editor univex_viewport_engine_bridge uve_editor_imgui)
 target_compile_features(uve_editor_app PRIVATE cxx_std_20)
 uve_set_warnings(uve_editor_app)

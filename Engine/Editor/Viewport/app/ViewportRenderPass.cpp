@@ -1,5 +1,6 @@
 #include "ViewportRenderPass.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <utility>
@@ -59,7 +60,8 @@ ViewportRenderPass::ViewportRenderPass(ViewportRenderPass&& other) noexcept
       style_(other.style_),
       gizmoMode_(other.gizmoMode_),
       cubeHalfExtent_(other.cubeHalfExtent_),
-      entitySource_(other.entitySource_) {}
+      entitySource_(other.entitySource_),
+      gizmoPivotOverride_(other.gizmoPivotOverride_) {}
 
 ViewportRenderPass& ViewportRenderPass::operator=(ViewportRenderPass&& other) noexcept {
     if (this != &other) {
@@ -75,6 +77,7 @@ ViewportRenderPass& ViewportRenderPass::operator=(ViewportRenderPass&& other) no
         gizmoMode_ = other.gizmoMode_;
         cubeHalfExtent_ = other.cubeHalfExtent_;
         entitySource_ = other.entitySource_;
+        gizmoPivotOverride_ = other.gizmoPivotOverride_;
     }
     return *this;
 }
@@ -169,7 +172,7 @@ void ViewportRenderPass::DrawTransformGizmo(const OrbitCamera& camera, int width
 
     GizmoDrawParams params;
     params.viewProjection = camera.ViewProjection(static_cast<float>(width) / static_cast<float>(height));
-    params.origin = camera.Target();
+    params.origin = gizmoPivotOverride_.value_or(camera.Target());
     params.scale = scale;
     params.viewportWidth = static_cast<float>(width);
     params.viewportHeight = static_cast<float>(height);
@@ -242,6 +245,10 @@ void ViewportRenderPass::RenderFrame(const OrbitCamera& camera,
         }
     }
     if (settings_.viewGrid) {
+        // The vertical Y axis line is drawn inside the grid's own shader now (InfiniteGridRenderer /
+        // infinite_grid.frag) rather than as a separate GizmoRenderer pass, so it shares the exact
+        // same per-pixel anti-aliasing and distance fade as the X/Z axis lines instead of visibly
+        // seaming against them.
         grid_.Draw(camera, framebufferWidth, framebufferHeight);
     }
     if (settings_.viewTransformGizmo && gizmoMode_ != GizmoMode::Select) {
