@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Copyright (c) 2026 UniVex Studios. All Rights Reserved.
+
+    The first slice of the C#/ImGui.NET editor migration (Phase 0, see the plan checkpoint titled
+    "C# (ImGui.NET) editor migration - Phase 0"). Built as a plain framework-dependent class
+    library - no PublishAot needed, since Engine/App/src/editor_cs's native host loads it through
+    hostfxr's `load_assembly_and_get_function_pointer` API, which works against an ordinary
+    managed assembly plus its own `.deps.json`/`.runtimeconfig.json` (produced by `dotnet publish`,
+    wired into the CMake build via a custom target - see Engine/Editor/EditorCoreCs's own
+    build-integration comment in Engine/App/CMakeLists.txt).
+
+    This phase does not reference ImGui.NET yet - it only proves the native-hosting call path and
+    the shared-GL-context viewport texture handoff work end-to-end (see EditorHostEntry.cs). The
+    ImGui.NET-based rendering itself is the next slice (Phase 0b).
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>UniVex.EditorCoreCs</RootNamespace>
+    <AssemblyName>EditorCoreCs</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+  </PropertyGroup>
+
+</Project>
