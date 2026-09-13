@@ -26,7 +26,11 @@
 #include <backends/imgui_impl_glfw.h>
 #include <backends/imgui_impl_opengl3.h>
 
+#include "uve/asset/bmp_metadata_uve.h"
+#include "uve/asset/jpeg_metadata_uve.h"
 #include "uve/asset/mesh_asset_uve.h"
+#include "uve/asset/png_metadata_uve.h"
+#include "uve/asset/tga_metadata_uve.h"
 #include "uve/asset/texture_asset_uve.h"
 #include "uve/asset/uve_file_envelope_uve.h"
 #include "uve/config/i_config_manager_uve.h"
@@ -4787,6 +4791,15 @@ EditorUVE::ContentBrowserItemTypeUVE EditorUVE::ClassifyContentBrowserEntryUVE(
     if (extension == ".uvetex") {
         return ContentBrowserItemTypeUVE::Texture;
     }
+    // Raw, not-yet-imported source images. Godot-style engines preview these directly rather than
+    // requiring an import step first; this repo already has standalone decoders for all four
+    // (uve/asset/{png,jpeg,bmp,tga}_metadata_uve.h) that GetTextureThumbnailUVE() falls back to
+    // when the file isn't a `.uvetex` envelope. Reusing Texture rather than adding a new enum value
+    // since both content-browser call sites already dispatch thumbnails on this exact type.
+    if (extension == ".png" || extension == ".jpg" || extension == ".jpeg" || extension == ".bmp" ||
+        extension == ".tga") {
+        return ContentBrowserItemTypeUVE::Texture;
+    }
     if (extension == ".uveshader") {
         return ContentBrowserItemTypeUVE::Shader;
     }
@@ -4925,6 +4938,57 @@ void EditorUVE::ToggleProjectPathFavoriteUVE(const std::filesystem::path& relati
     }
 }
 
+namespace {
+
+// Reads `absolutePath` and decodes it as a raw, not-yet-imported source image using this engine's
+// own standalone codec primitives (the same decoders the real import pipeline uses, called directly
+// rather than through the full AssetImporterUVE registry/metadata-sidecar machinery, since a
+// thumbnail only ever needs pixels). Returns false for an unrecognized extension or malformed file -
+// each decoder already bounds/validates its own input, so no extra size/sanity checks are needed here.
+bool DecodeRawImageThumbnailPixelsUVE(const std::filesystem::path& absolutePath, std::uint32_t& outWidth,
+                                       std::uint32_t& outHeight, std::vector<std::byte>& outPixels) {
+    std::ifstream file(absolutePath, std::ios::binary);
+    if (!file) {
+        return false;
+    }
+    const std::vector<char> rawBytes((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    std::vector<std::byte> bytes(rawBytes.size());
+    std::transform(rawBytes.begin(), rawBytes.end(), bytes.begin(),
+                   [](const char byte) { return static_cast<std::byte>(byte); });
+
+    std::string extension = absolutePath.extension().generic_string();
+    std::transform(extension.begin(), extension.end(), extension.begin(),
+                   [](const unsigned char character) { return static_cast<char>(std::tolower(character)); });
+
+    if (extension == ".png") {
+        Asset::PngRgba8ImageUVE image;
+        if (!Asset::DecodePngRgba8ImageUVE(bytes, image)) return false;
+        outWidth = image.width; outHeight = image.height; outPixels = std::move(image.pixels);
+        return true;
+    }
+    if (extension == ".jpg" || extension == ".jpeg") {
+        Asset::JpegRgba8ImageUVE image;
+        if (!Asset::DecodeJpegRgba8ImageUVE(bytes, image)) return false;
+        outWidth = image.width; outHeight = image.height; outPixels = std::move(image.pixels);
+        return true;
+    }
+    if (extension == ".bmp") {
+        Asset::BmpRgba8ImageUVE image;
+        if (!Asset::DecodeBmpRgba8ImageUVE(bytes, image)) return false;
+        outWidth = image.width; outHeight = image.height; outPixels = std::move(image.pixels);
+        return true;
+    }
+    if (extension == ".tga") {
+        Asset::TgaRgba8ImageUVE image;
+        if (!Asset::DecodeTgaRgba8ImageUVE(bytes, image)) return false;
+        outWidth = image.width; outHeight = image.height; outPixels = std::move(image.pixels);
+        return true;
+    }
+    return false;
+}
+
+} // namespace
+
 std::uintptr_t EditorUVE::GetTextureThumbnailUVE(const std::filesystem::path& relativePath) {
     const std::string cacheKey = relativePath.generic_string();
     const auto cachedIt = m_textureThumbnailCache.find(cacheKey);
@@ -4933,13 +4997,24 @@ std::uintptr_t EditorUVE::GetTextureThumbnailUVE(const std::filesystem::path& re
     }
     const Asset::ProjectFileSnapshotUVE snapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
     const std::filesystem::path absolutePath = snapshot.contentRoot / relativePath;
-    Asset::TextureAssetUVE texture;
     std::uintptr_t textureId = 0U;
+    Asset::TextureAssetUVE texture;
     if (Asset::LoadTextureAssetUVE(absolutePath, texture) && texture.width > 0U && texture.height > 0U &&
         texture.format == Asset::TextureFormatUVE::RGBA8Unorm) {
         textureId = EditorUiAssetsUVE::UploadDynamicTextureUVE(reinterpret_cast<const std::uint8_t*>(texture.pixels.data()),
                                                                 static_cast<int>(texture.width),
                                                                 static_cast<int>(texture.height));
+    } else {
+        // Not a `.uvetex` envelope - it may still be a raw, un-imported source image.
+        std::uint32_t rawWidth = 0U;
+        std::uint32_t rawHeight = 0U;
+        std::vector<std::byte> rawPixels;
+        if (DecodeRawImageThumbnailPixelsUVE(absolutePath, rawWidth, rawHeight, rawPixels) && rawWidth > 0U &&
+            rawHeight > 0U) {
+            textureId = EditorUiAssetsUVE::UploadDynamicTextureUVE(reinterpret_cast<const std::uint8_t*>(rawPixels.data()),
+                                                                    static_cast<int>(rawWidth),
+                                                                    static_cast<int>(rawHeight));
+        }
     }
     m_textureThumbnailCache.emplace(cacheKey, textureId);
     return textureId;
@@ -5464,12 +5539,18 @@ void EditorUVE::DrawAssetsPanelUVE() {
                                          (ImGui::IsMouseClicked(ImGuiMouseButton_Right) ||
                                           ImGui::IsMouseReleased(ImGuiMouseButton_Right));
             ImDrawList* const rowDrawList = ImGui::GetWindowDrawList();
+            const std::uintptr_t thumbnailTexture =
+                type == ContentBrowserItemTypeUVE::Texture ? GetTextureThumbnailUVE(entry->relativePath)
+                : type == ContentBrowserItemTypeUVE::Mesh  ? GetMeshThumbnailUVE(entry->relativePath)
+                                                            : 0U;
             const std::uintptr_t rowIconTexture =
-                m_uiAssets.IsReadyUVE() ? (type == ContentBrowserItemTypeUVE::Folder
-                                               ? 0U
-                                               : m_uiAssets.GetContentTypeIconTextureIdUVE(
-                                                     GetContentBrowserItemTypeLabelUVE(type)))
-                                        : 0U;
+                thumbnailTexture != 0U
+                    ? thumbnailTexture
+                    : (m_uiAssets.IsReadyUVE() ? (type == ContentBrowserItemTypeUVE::Folder
+                                                      ? 0U
+                                                      : m_uiAssets.GetContentTypeIconTextureIdUVE(
+                                                            GetContentBrowserItemTypeLabelUVE(type)))
+                                               : 0U);
             const float textOffset = rowIconTexture != 0U ? 27.0F : 4.0F;
             if (rowIconTexture != 0U) {
                 const float iconY = rowMin.y + std::max(0.0F, (rowHeight - 16.0F) * 0.5F);
