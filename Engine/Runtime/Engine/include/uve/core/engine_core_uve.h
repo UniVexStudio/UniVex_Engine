@@ -15,6 +15,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <unordered_set>
 
 #include "uve/asset/i_asset_bundle_uve.h"
 #include "uve/asset/i_asset_database_uve.h"
@@ -37,6 +38,7 @@
 #include "uve/core/i_simulation_control_uve.h"
 #include "uve/core/engine_state_uve.h"
 #include "uve/core/frame_stats_uve.h"
+#include "uve/core/script_gameplay_bindings_uve.h"
 #include "uve/core/version_uve.h"
 #include "uve/debug/i_logger_uve.h"
 #include "uve/events/i_event_system_uve.h"
@@ -66,6 +68,8 @@
 #include "uve/scene/i_prefab_system_uve.h"
 #include "uve/scene/i_scene_graph_uve.h"
 #include "uve/scene/i_scene_serializer_uve.h"
+#include "uve/scripting/script_graph_uve.h"
+#include "uve/scripting/script_runtime_uve.h"
 #include "uve/threading/i_thread_pool_uve.h"
 #include "uve/utilities/i_timer_uve.h"
 #include "uve/window/i_window_manager_uve.h"
@@ -267,6 +271,12 @@ public:
     /// current frame completes, without running further frames.
     void RequestQuitUVE() noexcept;
 
+    /// Diagnostic hook (mirrors GlRenderDeviceUVE::GetLiveResourceCountUVE()'s own role): how many
+    /// ScriptComponentUVE entities currently have a live, attached ScriptRuntimeUVE instance -
+    /// i.e. were successfully loaded/compiled by SyncScriptRuntimeUVE(). Useful for tests and future
+    /// editor diagnostics alike, not just tests.
+    [[nodiscard]] std::size_t GetActiveScriptInstanceCountUVE() const noexcept;
+
     /// Transitions Running -> ShuttingDown -> Shutdown, tearing down
     /// ConfigManager, then CheckpointManager, then SaveGameSystem, then AudioSourceSystem, then AudioSystem, then AudioDevice, then InputSystem, then RaycastSystem, then PhysicsSystem, then CollisionSystem, then Renderer3D, then LightSystem, then MeshRenderer, then CameraSystem, then RenderSystem, then ShaderManager, then
     /// RenderDevice, then WindowManager (in that order — every GL object RenderDevice owns must
@@ -397,6 +407,15 @@ private:
     /// runtime, simulates one frame under configured gravity, and leaves renderer extraction read-only.
     void SyncParticleRuntimeUVE();
 
+    /// Attaches a compiled ScriptGraphUVE to ScriptRuntimeUVE for every live ScriptComponentUVE
+    /// entity that isn't already reconciled, then ticks every attached instance once against the
+    /// real, engine-owned ScriptEngineCallBindingsUVE (see script_gameplay_bindings_uve.h - only
+    /// keyboard/mouse input is wired for real so far). An entity whose script fails to load/compile
+    /// is remembered in m_scriptReconcileFailedEntities so a broken script logs once, not every
+    /// frame; editing the component's path again is not yet a supported way to retry within the
+    /// same run (a real follow-up, not a silent limitation).
+    void SyncScriptRuntimeUVE();
+
     /// Recomputes the bounded aspect-preserving render target from the live drawable size and
     /// transactionally resizes Renderer3DUVE before the frame's scene work begins.
     void SyncAdaptiveRenderResolutionUVE();
@@ -483,6 +502,11 @@ private:
     std::unique_ptr<Audio::IAudioDeviceUVE> m_audioDevice;
     std::unique_ptr<Audio::IAudioSystemUVE> m_audioSystem;
     std::unique_ptr<Audio::IAudioSourceSystemUVE> m_audioSourceSystem;
+    Scripting::ScriptNodeRegistryUVE m_scriptNodeRegistry;
+    Scripting::ScriptRuntimeUVE m_scriptRuntime;
+    ScriptGameplayBindingContextUVE m_scriptBindingContext;
+    Scripting::ScriptEngineCallBindingsUVE m_scriptEngineCallBindings;
+    std::unordered_set<Scene::EntityUVE> m_scriptReconcileFailedEntities;
     std::unique_ptr<Save::ISaveGameSystemUVE> m_saveGameSystem;
     std::unique_ptr<Save::ICheckpointManagerUVE> m_checkpointManager;
     std::unique_ptr<Config::IConfigManagerUVE> m_configManager;

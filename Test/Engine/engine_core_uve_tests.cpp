@@ -56,8 +56,11 @@
 #include "uve/scene/components/particle_emitter_component_uve.h"
 #include "uve/scene/components/primitive_mesh_component_uve.h"
 #include "uve/scene/components/rigid_body_component_uve.h"
+#include "uve/scene/components/script_component_uve.h"
 #include "uve/scene/components/transform_component_uve.h"
 #include "uve/scene/components/world_transform_component_uve.h"
+#include "uve/scripting/script_graph_persistence_uve.h"
+#include "uve/scripting/script_graph_uve.h"
 #include "uve/window/i_window_manager_uve.h"
 
 namespace UVE::Core::Tests {
@@ -744,6 +747,52 @@ TEST(EngineCoreUVETest, FileSystem_ReachableAndReadWriteRoundTripAfterInit) {
     const std::optional<std::vector<std::byte>> readBack = fileSystem.ReadFileUVE("notes.txt");
     ASSERT_TRUE(readBack.has_value());
     EXPECT_EQ(std::string(reinterpret_cast<const char*>(readBack->data()), readBack->size()), text);
+
+    std::filesystem::remove_all(mountDirectory);
+    engine.Shutdown();
+}
+
+TEST(EngineCoreUVETest, ScriptComponentEntity_ReconcilesAndTicksAgainstScriptRuntimeUVE) {
+    EngineCoreUVE engine(MakeTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    Asset::IFileSystemUVE& fileSystem = engine.GetServicesUVE().GetFileSystemUVE();
+    const std::filesystem::path mountDirectory = "uve_engine_core_tests_script_vfs_mount";
+    std::filesystem::remove_all(mountDirectory);
+    std::filesystem::create_directories(mountDirectory);
+    fileSystem.MountDirectoryUVE("", mountDirectory, 0);
+
+    // The simplest real graph that exercises SyncScriptRuntimeUVE()'s full production path (real
+    // asset load -> real compile -> real ScriptRuntimeUVE attach -> real per-frame tick against the
+    // real engine-owned bindings): one standalone data-producer node reading real keyboard state.
+    // input.key_down is a pure query node (no execution-flow pins), so it needs no execution entry
+    // point to compile - confirmed against CompileScriptGraphToIrUVE's own existing test coverage
+    // for standalone input query nodes in Test/Integration/Scripting/script_graph_uve_tests.cpp.
+    Scripting::ScriptGraphSchemaUVE schema;
+    ASSERT_TRUE(schema.graph.AddNodeUVE({1U, "input.key_down"}));
+    std::vector<Scripting::ScriptPersistenceDiagnosticUVE> encodeDiagnostics;
+    const std::string encoded = Scripting::EncodeScriptGraphSchemaUVE(schema, encodeDiagnostics);
+    ASSERT_TRUE(encodeDiagnostics.empty());
+    ASSERT_FALSE(encoded.empty());
+
+    const auto* const encodedBytes = reinterpret_cast<const std::byte*>(encoded.data());
+    const std::vector<std::byte> encodedData(encodedBytes, encodedBytes + encoded.size());
+    ASSERT_TRUE(fileSystem.WriteFileUVE("test_script.uvescript", encodedData));
+
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
+    entityManager.AddComponentUVE<Scene::ScriptComponentUVE>(
+        entity, Scene::ScriptComponentUVE{"test_script.uvescript"});
+
+    EXPECT_EQ(engine.GetActiveScriptInstanceCountUVE(), 0U);
+    engine.TickFrameUVE();
+    EXPECT_EQ(engine.GetActiveScriptInstanceCountUVE(), 1U);
+
+    // A second frame must not re-reconcile (ReconcileUVE rejects a duplicate attach) or regress the
+    // attached instance count - proves SyncScriptRuntimeUVE()'s HasInstanceUVE() guard works.
+    engine.TickFrameUVE();
+    EXPECT_EQ(engine.GetActiveScriptInstanceCountUVE(), 1U);
 
     std::filesystem::remove_all(mountDirectory);
     engine.Shutdown();

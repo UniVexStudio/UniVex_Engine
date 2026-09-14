@@ -69,11 +69,15 @@
 #include "uve/save/checkpoint_manager_uve.h"
 #include "uve/save/save_game_system_uve.h"
 #include "uve/scene/components/particle_emitter_component_uve.h"
+#include "uve/scene/components/script_component_uve.h"
 #include "uve/scene/components/world_transform_component_uve.h"
 #include "uve/scene/entity_manager_uve.h"
 #include "uve/scene/prefab_system_uve.h"
 #include "uve/scene/scene_graph_uve.h"
 #include "uve/scene/scene_serializer_uve.h"
+#include "uve/scripting/script_asset_loader_uve.h"
+#include "uve/scripting/script_builtin_nodes_uve.h"
+#include "uve/scripting/script_component_runtime_ownership_uve.h"
 #include "uve/threading/thread_pool_uve.h"
 #include "uve/utilities/timer_uve.h"
 #include "uve/window/adaptive_render_resolution_uve.h"
@@ -426,6 +430,19 @@ void EngineCoreUVE::Init() {
     // MeshRendererUVE::ExtractRenderQueueUVE().
     m_audioSourceSystem = std::make_unique<Audio::AudioSourceSystemUVE>();
 
+    // ScriptNodeRegistry/ScriptRuntime thirty-second: needs InputSystem to already exist so the
+    // real gameplay bindings below have something to wire (Scripting itself has no InputSystem
+    // dependency of its own - EngineCoreUVE is what closes that loop). RegisterBuiltInScriptNodesUVE
+    // populates the full ~161 built-in node-type descriptor set (same call EditorUVE's own
+    // m_visualScriptRegistry already makes) - without it every ScriptComponentUVE's graph would
+    // fail compilation with "unknown node type" for every single node.
+    if (!Scripting::RegisterBuiltInScriptNodesUVE(m_scriptNodeRegistry)) {
+        UVE_ERROR("EngineCoreUVE: failed to register built-in Scripting node types - "
+                  "ScriptComponentUVE entities will not run this session");
+    }
+    m_scriptBindingContext.inputSystem = m_inputSystem.get();
+    m_scriptEngineCallBindings = MakeScriptGameplayBindingsUVE(m_scriptBindingContext);
+
     // SaveGameSystem thirty-second: needs SceneSerializer (composed by reference) and
     // EngineConfigUVE::saveDirectoryPath.
     m_saveGameSystem = std::make_unique<Save::SaveGameSystemUVE>(*m_sceneSerializer, m_config.saveDirectoryPath);
@@ -526,6 +543,41 @@ void EngineCoreUVE::SyncParticleRuntimeUVE() {
     }
 }
 
+void EngineCoreUVE::SyncScriptRuntimeUVE() {
+    m_entityManager->ForEachUVE<Scene::ScriptComponentUVE>(
+        [this](const Scene::EntityUVE entity, const Scene::ScriptComponentUVE& component) {
+            if (m_scriptRuntime.HasInstanceUVE(entity) ||
+                m_scriptReconcileFailedEntities.contains(entity)) {
+                return;
+            }
+            const Scripting::ScriptAssetLoadResultUVE loaded = Scripting::ScriptAssetLoaderUVE::LoadSchemaUVE(
+                component, *m_fileSystem, Scripting::ScriptGraphPersistenceLimitsUVE{});
+            if (loaded.IsNoScriptUVE()) {
+                // No script assigned yet - a normal authoring state, not a failure. Skip silently
+                // and re-check next frame in case a path gets assigned later.
+                return;
+            }
+            if (!loaded.IsLoadedUVE()) {
+                m_scriptReconcileFailedEntities.insert(entity);
+                UVE_ERROR("EngineCoreUVE: ScriptComponentUVE on entity failed to load its script asset "
+                          "\"{}\": {}",
+                          component.scriptAssetPath, loaded.message);
+                return;
+            }
+            const Scripting::ScriptComponentRuntimeOwnershipResultUVE reconciled =
+                Scripting::ScriptComponentRuntimeOwnershipUVE::ReconcileUVE(
+                    component, loaded.schema->graph, m_scriptNodeRegistry, m_scriptRuntime, entity);
+            if (!reconciled.IsAcceptedUVE()) {
+                m_scriptReconcileFailedEntities.insert(entity);
+                UVE_ERROR("EngineCoreUVE: ScriptComponentUVE on entity failed to attach to ScriptRuntimeUVE: {}",
+                          reconciled.message);
+            }
+        });
+
+    static_cast<void>(m_scriptRuntime.TickUVE(
+        Scripting::ScriptVmExecutionOptionsUVE{.engineCallBindings = &m_scriptEngineCallBindings}));
+}
+
 void EngineCoreUVE::SyncAdaptiveRenderResolutionUVE() {
     if (!m_windowedRenderingActiveUVE || !m_presentationSurfaceReadyUVE || !m_renderDevice->IsUsableUVE()) {
         return;
@@ -615,6 +667,7 @@ void EngineCoreUVE::Update() {
 
     m_sceneGraph->UpdateUVE(*m_entityManager);
     SyncParticleRuntimeUVE();
+    SyncScriptRuntimeUVE();
 
     if (m_config.hotReloadEnabledUVE) {
         m_hotReload->PollUVE(*m_assetManager, *m_assetDatabase, m_timer->GetDeltaTimeUVE());
@@ -790,6 +843,10 @@ int EngineCoreUVE::RunUVE(int frameCount) {
 
 void EngineCoreUVE::RequestQuitUVE() noexcept {
     m_quitRequested = true;
+}
+
+std::size_t EngineCoreUVE::GetActiveScriptInstanceCountUVE() const noexcept {
+    return m_scriptRuntime.GetInstanceCountUVE();
 }
 
 void EngineCoreUVE::Shutdown() {
