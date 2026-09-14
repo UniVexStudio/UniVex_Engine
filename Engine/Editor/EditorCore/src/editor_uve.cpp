@@ -210,6 +210,87 @@ constexpr const char* kHierarchyEntityPayloadUVE = "UVE_SCENE_HIERARCHY_ENTITY";
     return ScriptPinColorUVE(pin.role, pin.type);
 }
 
+// Per-category node header color, matching a design mockup's own per-category header tint
+// convention (Blueprint-style visual scripting). Node headers previously ignored `node.category`
+// entirely and rendered a uniform gray regardless of node type - the 13 categories here match the
+// ones already documented across this engine's built-in node library
+// (Engine/Runtime/Scripting/src/script_builtin_nodes_uve.cpp). Unrecognized/"Uncategorized"
+// categories fall back to the prior uniform gray so nothing regresses for a node type this table
+// doesn't yet name.
+[[nodiscard]] ImU32 ScriptNodeCategoryColorUVE(const std::string& category) noexcept {
+    if (category == "Flow") return IM_COL32(158, 158, 158, 255);
+    if (category == "Conversion") return IM_COL32(120, 140, 160, 255);
+    if (category == "Math") return IM_COL32(74, 124, 168, 255);
+    if (category == "Logic") return IM_COL32(140, 92, 168, 255);
+    if (category == "Engine") return IM_COL32(96, 108, 122, 255);
+    if (category == "Variable") return IM_COL32(60, 130, 110, 255);
+    if (category == "Entity") return IM_COL32(178, 122, 56, 255);
+    if (category == "Input") return IM_COL32(168, 96, 96, 255);
+    if (category == "Camera") return IM_COL32(96, 130, 168, 255);
+    if (category == "Animation") return IM_COL32(150, 110, 150, 255);
+    if (category == "Physics") return IM_COL32(96, 148, 96, 255);
+    if (category == "Audio") return IM_COL32(168, 140, 76, 255);
+    if (category == "Debug") return IM_COL32(180, 90, 90, 255);
+    return IM_COL32(70, 82, 94, 255); // prior uniform header color, unchanged fallback
+}
+
+// Draws one small procedural glyph (matching the ImDrawList icon convention already established
+// for the Scene Hierarchy/Inspector panels) representing a node's category, before its title text.
+// One glyph per category (13 total), not per exact node iconId - the built-in node library has 161
+// distinct iconId strings, and a unique glyph per node type is unbounded scope for hand-drawn icons
+// (the same reasoning already applied to the Scene Hierarchy's per-category, not per-node, icons).
+void DrawScriptNodeCategoryIconUVE(ImDrawList* const drawList, const ImVec2 center, const float radius,
+                                    const std::string& category, const ImU32 color) {
+    if (category == "Flow") {
+        // A small right-pointing triangle (play/flow arrow).
+        drawList->AddTriangleFilled(ImVec2{center.x - radius * 0.5F, center.y - radius * 0.7F},
+                                    ImVec2{center.x - radius * 0.5F, center.y + radius * 0.7F},
+                                    ImVec2{center.x + radius * 0.7F, center.y}, color);
+    } else if (category == "Math") {
+        drawList->AddLine(ImVec2{center.x - radius, center.y}, ImVec2{center.x + radius, center.y}, color, 1.6F);
+        drawList->AddLine(ImVec2{center.x, center.y - radius}, ImVec2{center.x, center.y + radius}, color, 1.6F);
+    } else if (category == "Logic") {
+        drawList->AddCircle(center, radius * 0.75F, color, 0, 1.6F);
+    } else if (category == "Variable") {
+        drawList->AddRectFilled(ImVec2{center.x - radius * 0.7F, center.y - radius * 0.5F},
+                                ImVec2{center.x + radius * 0.7F, center.y + radius * 0.5F}, color, 2.0F);
+    } else if (category == "Entity") {
+        drawList->AddRect(ImVec2{center.x - radius * 0.7F, center.y - radius * 0.7F},
+                          ImVec2{center.x + radius * 0.7F, center.y + radius * 0.7F}, color, 1.0F, 0, 1.6F);
+    } else if (category == "Input") {
+        drawList->AddRectFilled(ImVec2{center.x - radius * 0.75F, center.y - radius * 0.4F},
+                                ImVec2{center.x + radius * 0.75F, center.y + radius * 0.4F}, color, 2.0F);
+    } else if (category == "Camera") {
+        drawList->AddRectFilled(ImVec2{center.x - radius * 0.6F, center.y - radius * 0.45F},
+                                ImVec2{center.x + radius * 0.3F, center.y + radius * 0.45F}, color, 1.0F);
+        drawList->AddTriangleFilled(ImVec2{center.x + radius * 0.3F, center.y - radius * 0.3F},
+                                    ImVec2{center.x + radius * 0.3F, center.y + radius * 0.3F},
+                                    ImVec2{center.x + radius * 0.85F, center.y}, color);
+    } else if (category == "Animation") {
+        drawList->AddBezierCubic(ImVec2{center.x - radius, center.y}, ImVec2{center.x - radius * 0.3F, center.y - radius},
+                                 ImVec2{center.x + radius * 0.3F, center.y + radius}, ImVec2{center.x + radius, center.y},
+                                 color, 1.6F);
+    } else if (category == "Physics") {
+        drawList->AddCircleFilled(center, radius * 0.75F, color);
+    } else if (category == "Audio") {
+        drawList->AddTriangleFilled(ImVec2{center.x - radius * 0.2F, center.y - radius * 0.5F},
+                                    ImVec2{center.x - radius * 0.2F, center.y + radius * 0.5F},
+                                    ImVec2{center.x - radius * 0.8F, center.y}, color);
+        drawList->AddCircle(center, radius * 0.9F, color, 0, 1.3F);
+    } else if (category == "Debug") {
+        drawList->AddText(ImVec2{center.x - radius * 0.35F, center.y - radius * 0.7F}, color, "!");
+    } else if (category == "Conversion") {
+        drawList->AddLine(ImVec2{center.x - radius, center.y - radius * 0.4F},
+                          ImVec2{center.x + radius, center.y + radius * 0.4F}, color, 1.6F);
+        drawList->AddLine(ImVec2{center.x - radius, center.y + radius * 0.4F},
+                          ImVec2{center.x + radius, center.y - radius * 0.4F}, color, 1.6F);
+    } else {
+        // Engine and any unrecognized category: a plain dot, matching the Scene Hierarchy's own
+        // fallback glyph for base/uncategorized node types.
+        drawList->AddCircleFilled(center, radius * 0.55F, color);
+    }
+}
+
 [[nodiscard]] ImVec2 ScriptCanvasToScreenUVE(const Scripting::ScriptGraphCanvasPointUVE point,
                                               const ImVec2 origin,
                                               const Scripting::ScriptGraphCanvasViewUVE view) noexcept {
@@ -5877,20 +5958,49 @@ void EditorUVE::DrawScriptingWorkspaceUVE() {
                 const ImVec2 nodeMax{nodeMin.x + nodeWidth, nodeMin.y + nodeHeightPixels};
                 const bool selected = std::find(snapshot.selectedNodeIds.cbegin(), snapshot.selectedNodeIds.cend(), node.id) !=
                                       snapshot.selectedNodeIds.cend();
+                // Header fill is now per-category (matching a design mockup's own header-tint
+                // convention) instead of a uniform gray - a lighter tint of the category color
+                // when selected, the plain category color otherwise. Body/border rounding bumped
+                // 4px->6px to match the same mockup's node corner radius.
+                const ImU32 categoryColor = ScriptNodeCategoryColorUVE(node.category);
                 const ImU32 bodyColor = selected ? IM_COL32(58, 65, 72, 255) : IM_COL32(46, 50, 56, 255);
-                drawList->AddRectFilled(nodeMin, nodeMax, bodyColor, 4.0F);
-                drawList->AddRectFilled(nodeMin, ImVec2{nodeMax.x, nodeMin.y + headerHeight},
-                                        selected ? IM_COL32(96, 112, 128, 255) : IM_COL32(70, 82, 94, 255), 4.0F,
+                const ImU32 headerColor = selected ? ImGui::ColorConvertFloat4ToU32(ImVec4{
+                    std::min(1.0F, static_cast<float>(categoryColor & 0xFFU) / 255.0F + 0.18F),
+                    std::min(1.0F, static_cast<float>((categoryColor >> 8U) & 0xFFU) / 255.0F + 0.18F),
+                    std::min(1.0F, static_cast<float>((categoryColor >> 16U) & 0xFFU) / 255.0F + 0.18F), 1.0F})
+                    : categoryColor;
+                drawList->AddRectFilled(nodeMin, nodeMax, bodyColor, 6.0F);
+                drawList->AddRectFilled(nodeMin, ImVec2{nodeMax.x, nodeMin.y + headerHeight}, headerColor, 6.0F,
                                         ImDrawFlags_RoundCornersTop);
                 drawList->AddRect(nodeMin, nodeMax, selected ? IM_COL32(205, 180, 108, 255) : IM_COL32(105, 112, 120, 255),
-                                  4.0F, 0, selected ? 2.0F : 1.0F);
+                                  6.0F, 0, selected ? 2.0F : 1.0F);
+                const float categoryIconRadius = 6.0F;
+                const ImVec2 categoryIconCenter{nodeMin.x + 14.0F, nodeMin.y + headerHeight * 0.5F};
+                DrawScriptNodeCategoryIconUVE(drawList, categoryIconCenter, categoryIconRadius, node.category,
+                                              IM_COL32(255, 255, 255, 235));
                 const std::string title = node.displayName.empty() ? node.typeId : node.displayName;
-                drawList->AddText(ImVec2{nodeMin.x + 10.0F, nodeMin.y + 6.0F}, IM_COL32(226, 241, 252, 255), title.c_str());
+                drawList->AddText(ImVec2{nodeMin.x + 24.0F, nodeMin.y + 6.0F}, IM_COL32(226, 241, 252, 255), title.c_str());
                 for (std::size_t pinIndex = 0U; pinIndex < node.pins.size(); ++pinIndex) {
                     const auto& pin = node.pins[pinIndex];
                     const ImVec2 pinPosition = pinScreenPosition(node, pin);
-                    drawList->AddCircleFilled(pinPosition, 5.0F * std::clamp(view.zoom, 0.75F, 1.25F),
-                                              ScriptPinColorUVE(pin));
+                    const float pinRadius = 5.0F * std::clamp(view.zoom, 0.75F, 1.25F);
+                    const bool isExecutionPin = pin.role == Scripting::ScriptPinRoleUVE::Execution ||
+                                                pin.type == Scripting::ScriptValueTypeUVE::Execution;
+                    if (isExecutionPin) {
+                        // A small right-pointing diamond/arrow silhouette distinguishes flow pins
+                        // from data pins, matching a design mockup's own exec-pin shape convention
+                        // (data pins stay plain filled circles, unchanged below).
+                        const ImVec2 points[5] = {
+                            ImVec2{pinPosition.x - pinRadius, pinPosition.y - pinRadius},
+                            ImVec2{pinPosition.x + pinRadius * 0.1F, pinPosition.y - pinRadius},
+                            ImVec2{pinPosition.x + pinRadius * 1.1F, pinPosition.y},
+                            ImVec2{pinPosition.x + pinRadius * 0.1F, pinPosition.y + pinRadius},
+                            ImVec2{pinPosition.x - pinRadius, pinPosition.y + pinRadius},
+                        };
+                        drawList->AddConvexPolyFilled(points, 5, ScriptPinColorUVE(pin));
+                    } else {
+                        drawList->AddCircleFilled(pinPosition, pinRadius, ScriptPinColorUVE(pin));
+                    }
                     const float textX = pin.direction == Scripting::ScriptPinDirectionUVE::Input
                         ? nodeMin.x + 17.0F : nodeMin.x + 14.0F;
                     const ImVec2 textPosition{pin.direction == Scripting::ScriptPinDirectionUVE::Input
