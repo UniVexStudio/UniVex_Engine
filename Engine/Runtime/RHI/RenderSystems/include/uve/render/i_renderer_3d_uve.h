@@ -124,6 +124,22 @@ public:
         RenderFrameUVE(entityManager, cameraEntity);
     }
 
+    /// Renders exactly like RenderFrameUVE(), except the final tone-mapped image is written into
+    /// `colorTarget`/`depthTarget` (caller-owned offscreen textures) instead of the backend's
+    /// presentation surface - an editor viewport (or any other host compositing the result itself,
+    /// e.g. via ImGui::Image()) rather than a real on-screen window region (that case is
+    /// RenderFrameToRegionUVE() above). Both targets must be valid, matching-size textures created
+    /// through this renderer's own IRenderDeviceUVE; PresentUVE() is never implied by this call.
+    /// The default implementation ignores both targets and falls back to a full-frame
+    /// RenderFrameUVE(), matching this interface's existing safe-no-op-default convention for test
+    /// doubles/lightweight renderers with no offscreen-target concept.
+    virtual void RenderFrameToTargetUVE(Scene::IEntityManagerUVE& entityManager, Scene::EntityUVE cameraEntity,
+                                        TextureHandleUVE colorTarget, TextureHandleUVE depthTarget) {
+        static_cast<void>(colorTarget);
+        static_cast<void>(depthTarget);
+        RenderFrameUVE(entityManager, cameraEntity);
+    }
+
     /// Updates the Phase 2b post-process quality-tier toggles for later render frames. The default
     /// implementation is intentionally a no-op so non-Renderer3D test doubles need not own
     /// post-process state.

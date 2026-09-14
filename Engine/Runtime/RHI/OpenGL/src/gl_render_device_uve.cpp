@@ -747,4 +747,9 @@ std::size_t GlRenderDeviceUVE::GetLiveResourceCountUVE() const noexcept {
            m_impl->state.pipelines.size();
 }
 
+std::uint32_t GlRenderDeviceUVE::GetNativeTextureIdUVE(const TextureHandleUVE texture) const noexcept {
+    const auto it = m_impl->state.textures.find(texture.value);
+    return it == m_impl->state.textures.end() ? 0U : it->second.glTexture;
+}
+
 } // namespace UVE::Render

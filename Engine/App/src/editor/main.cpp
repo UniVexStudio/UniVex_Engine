@@ -20,18 +20,57 @@
 #include <imgui.h>
 
 #include "ViewportRenderPass.h"
+#include "integration/EditorMeshLayer.h"
 #include "integration/EntityManagerEntitySource.h"
 #include "univex/camera/OrbitCamera.h"
+#include "univex/render/ShaderProgram.h"
 
+#include "uve/asset/i_asset_database_uve.h"
+#include "uve/asset/i_asset_manager_uve.h"
+#include "uve/asset/material_asset_uve.h"
+#include "uve/asset/mesh_asset_uve.h"
+#include "uve/asset/shader_asset_uve.h"
 #include "uve/core/engine_core_uve.h"
 #include "uve/debug/logging_macros_uve.h"
 #include "uve/editor/editor_bridge_stdio_uve.h"
 #include "uve/editor/editor_uve.h"
 #include "uve/math/vector2_uve.h"
+#include "uve/render/primitive_geometry_uve.h"
+#include "uve/render/shader/built_in_shaders_uve.h"
+#include "uve/scene/components/mesh_component_uve.h"
+#include "uve/scene/components/transform_component_uve.h"
 #include "uve/scene/components/world_transform_component_uve.h"
 #include "uve/scene/i_entity_manager_uve.h"
+#include "uve/scene/i_scene_graph_uve.h"
 
 namespace {
+
+// Fullscreen-triangle compositing pass: layers EditorMeshLayerUVE's real mesh/material render on
+// top of ViewportRenderPass's grid/gizmo image, using the mesh layer's own depth buffer (cleared
+// to the far value, 1.0) as the per-pixel test for "was real geometry drawn here" - avoids needing
+// to reconcile the two renderers' independent camera/projection depth conventions, since only the
+// mesh layer's own depth is ever read. No vertex buffer needed (same gl_VertexID trick already
+// used by Renderer3DUVE's own internal tonemap/fullscreen-quad shader).
+constexpr std::string_view kCompositeVertexShaderUVE = R"(#version 330 core
+void main() {
+    vec2 pos = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
+    gl_Position = vec4(pos * 2.0 - 1.0, 0.0, 1.0);
+}
+)";
+
+constexpr std::string_view kCompositeFragmentShaderUVE = R"(#version 330 core
+uniform sampler2D uGridColor;
+uniform sampler2D uMeshColor;
+uniform sampler2D uMeshDepth;
+out vec4 FragColor;
+void main() {
+    ivec2 coord = ivec2(gl_FragCoord.xy);
+    float meshDepth = texelFetch(uMeshDepth, coord, 0).r;
+    vec4 meshColor = texelFetch(uMeshColor, coord, 0);
+    vec4 gridColor = texelFetch(uGridColor, coord, 0);
+    FragColor = meshDepth < 1.0 ? meshColor : gridColor;
+}
+)";
 
 // Bridges Engine/Editor/Viewport's real GL renderer (grid + orbit camera + transform/orientation
 // gizmos + one proxy cube per live scene entity) into EditorUVE's generic, viewport-agnostic
@@ -46,10 +85,16 @@ namespace {
 // a GLFW framebuffer-resize callback.
 class ViewportPanelBackendUVE final {
 public:
-    ViewportPanelBackendUVE(UVE::Editor::EditorUVE& editor, UVE::Scene::IEntityManagerUVE& entityManager)
-        : editor_(editor), entityManager_(entityManager), entitySource_(entityManager) {}
+    ViewportPanelBackendUVE(UVE::Editor::EditorUVE& editor, UVE::Core::EngineServicesUVE& services)
+        : editor_(editor), entityManager_(services.GetEntityManagerUVE()), entitySource_(entityManager_),
+          meshLayer_(services) {}
 
-    ~ViewportPanelBackendUVE() { DestroyFramebuffersUVE(); }
+    ~ViewportPanelBackendUVE() {
+        DestroyFramebuffersUVE();
+        if (compositeVao_ != 0U) {
+            glDeleteVertexArrays(1, &compositeVao_);
+        }
+    }
 
     ViewportPanelBackendUVE(const ViewportPanelBackendUVE&) = delete;
     ViewportPanelBackendUVE& operator=(const ViewportPanelBackendUVE&) = delete;
@@ -81,8 +126,17 @@ public:
         glBlitFramebuffer(0, 0, width, height, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
         glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(previousFbo));
 
+        // Real MeshComponentUVE-carrying scene entities, rendered via the same lit/shaded pipeline
+        // EngineCoreUVE itself uses at runtime (Renderer3DUVE::RenderFrameToTargetUVE), layered on
+        // top of the grid/gizmo image above - see EditorMeshLayerUVE's own header comment.
+        const univex::integration::EditorMeshLayerResultUVE meshResult =
+            meshLayer_.RenderUVE(camera_, static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height));
         outUsedSize = UVE::Math::Vector2UVE{static_cast<float>(width), static_cast<float>(height)};
-        return static_cast<std::uint64_t>(resolveColorTexture_);
+        if (meshResult.colorTextureId == 0U || !EnsureCompositeResourcesUVE(width, height)) {
+            return static_cast<std::uint64_t>(resolveColorTexture_);
+        }
+        CompositeMeshOverGridUVE(meshResult, width, height, static_cast<GLuint>(previousFbo));
+        return static_cast<std::uint64_t>(compositeColorTexture_);
     }
 
 private:
@@ -178,6 +232,85 @@ private:
         }
         resolveColorTexture_ = resolveFbo_ = msaaColorRb_ = msaaDepthRb_ = msaaFbo_ = 0U;
         framebufferWidth_ = framebufferHeight_ = 0;
+        if (compositeColorTexture_ != 0U) {
+            glDeleteTextures(1, &compositeColorTexture_);
+        }
+        if (compositeFbo_ != 0U) {
+            glDeleteFramebuffers(1, &compositeFbo_);
+        }
+        compositeColorTexture_ = compositeFbo_ = 0U;
+        compositeWidth_ = compositeHeight_ = 0;
+    }
+
+    // Lazily builds the compositing shader/VAO once (not size-dependent) and (re)creates the
+    // composite FBO+color-texture pair whenever the panel's reported size changes - same shape as
+    // EnsureFramebuffersUVE above, kept separate since this pair's lifetime is independent of the
+    // MSAA/resolve pair (this one only needs recreating, never touched by the grid render pass).
+    [[nodiscard]] bool EnsureCompositeResourcesUVE(const int width, const int height) {
+        if (!compositeProgram_.has_value()) {
+            std::string error;
+            compositeProgram_ = univex::render::ShaderProgram::Build(kCompositeVertexShaderUVE,
+                                                                      kCompositeFragmentShaderUVE, error);
+            if (!compositeProgram_.has_value()) {
+                UVE_ERROR("uve_editor_app: viewport composite shader build failed: {}", error);
+                return false;
+            }
+            glGenVertexArrays(1, &compositeVao_);
+        }
+        if (width == compositeWidth_ && height == compositeHeight_ && compositeFbo_ != 0U) {
+            return true;
+        }
+        if (compositeColorTexture_ != 0U) {
+            glDeleteTextures(1, &compositeColorTexture_);
+        }
+        if (compositeFbo_ != 0U) {
+            glDeleteFramebuffers(1, &compositeFbo_);
+        }
+        compositeWidth_ = width;
+        compositeHeight_ = height;
+
+        glGenFramebuffers(1, &compositeFbo_);
+        glBindFramebuffer(GL_FRAMEBUFFER, compositeFbo_);
+        glGenTextures(1, &compositeColorTexture_);
+        glBindTexture(GL_TEXTURE_2D, compositeColorTexture_);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, compositeColorTexture_, 0);
+        const bool complete = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+        if (!complete) {
+            UVE_ERROR("uve_editor_app: viewport composite framebuffer incomplete");
+        }
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        return complete;
+    }
+
+    // Draws the fullscreen depth-tested composite pass: `resolveColorTexture_` (grid/gizmos) under
+    // `meshResult`'s color, selected per-pixel by `meshResult`'s own depth (see the shader source
+    // above for why only the mesh layer's depth is ever read).
+    void CompositeMeshOverGridUVE(const univex::integration::EditorMeshLayerResultUVE& meshResult, const int width,
+                                  const int height, const GLuint restoreFbo) {
+        glBindFramebuffer(GL_FRAMEBUFFER, compositeFbo_);
+        glViewport(0, 0, width, height);
+        glDisable(GL_DEPTH_TEST);
+        glDisable(GL_BLEND);
+        compositeProgram_->Use();
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, resolveColorTexture_);
+        glUniform1i(compositeProgram_->UniformLocation("uGridColor"), 0);
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, meshResult.colorTextureId);
+        glUniform1i(compositeProgram_->UniformLocation("uMeshColor"), 1);
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D, meshResult.depthTextureId);
+        glUniform1i(compositeProgram_->UniformLocation("uMeshDepth"), 2);
+        glBindVertexArray(compositeVao_);
+        glDrawArrays(GL_TRIANGLES, 0, 3);
+        glBindVertexArray(0);
+        glActiveTexture(GL_TEXTURE0);
+        glBindFramebuffer(GL_FRAMEBUFFER, restoreFbo);
     }
 
     // Applies EditorUVE's own generic overlay-toolbar state (see ViewportOverlayStateUVE's doc
@@ -259,6 +392,7 @@ private:
     UVE::Editor::EditorUVE& editor_;
     UVE::Scene::IEntityManagerUVE& entityManager_;
     univex::integration::EntityManagerEntitySource entitySource_;
+    univex::integration::EditorMeshLayerUVE meshLayer_;
     std::optional<univex::app::ViewportRenderPass> renderPass_;
     // Set each frame by ApplyOverlayStateUVE(), read by UpdateSelectionGizmoUVE() so it can force
     // the transform gizmo off while the Game workspace tab is active (see ApplyOverlayStateUVE's
@@ -274,6 +408,12 @@ private:
     GLuint resolveColorTexture_ = 0U;
     int framebufferWidth_ = 0;
     int framebufferHeight_ = 0;
+    std::optional<univex::render::ShaderProgram> compositeProgram_;
+    GLuint compositeVao_ = 0U;
+    GLuint compositeFbo_ = 0U;
+    GLuint compositeColorTexture_ = 0U;
+    int compositeWidth_ = 0;
+    int compositeHeight_ = 0;
 };
 
 struct EditorLaunchOptionsUVE final {
@@ -343,6 +483,54 @@ struct EditorLaunchOptionsUVE final {
     return options;
 }
 
+// Authors one real MeshComponentUVE-carrying entity at the origin so EditorMeshLayerUVE's newly
+// wired rendering has something real to draw and verify (not another flat proxy cube) - reuses the
+// engine's own canonical cube geometry (GetPrimitiveGeometryUVE) and its real production
+// lit/shadowed shader source (Shader::BuiltIn::kLitShadowed3DSource) rather than hand-authoring new
+// geometry or GLSL, and registers all three asset loaders the same supported way test fixtures
+// already do (IAssetManagerUVE::RegisterLoaderUVE<T>() - a real, non-test-only API). Windowed-mode
+// verification fixture only, not an authored project asset - a future increment (real content
+// authoring/import) replaces this.
+void CreateMeshRenderingFixtureEntityUVE(UVE::Core::EngineServicesUVE& services) {
+    UVE::Asset::IAssetDatabaseUVE& assetDatabase = services.GetAssetDatabaseUVE();
+    UVE::Asset::IAssetManagerUVE& assetManager = services.GetAssetManagerUVE();
+
+    const UVE::Asset::AssetGuidUVE shaderGuid = assetDatabase.RegisterUVE("editor_fixture_lit_shadowed_3d.uveshader");
+    const UVE::Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("editor_fixture_cube.uvemodel");
+    const UVE::Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("editor_fixture_cube.uvemat");
+
+    assetManager.RegisterLoaderUVE<UVE::Asset::ShaderAssetUVE>(
+        [](const std::filesystem::path&, UVE::Asset::ShaderAssetUVE& shader) {
+            shader.sourceCode = std::string(UVE::Render::Shader::BuiltIn::kLitShadowed3DSource);
+            shader.entryPointName = "main";
+            return true;
+        });
+    assetManager.RegisterLoaderUVE<UVE::Asset::MeshAssetUVE>(
+        [](const std::filesystem::path&, UVE::Asset::MeshAssetUVE& mesh) {
+            const UVE::Render::PrimitiveGeometryUVE& cube =
+                UVE::Render::GetPrimitiveGeometryUVE(UVE::Scene::PrimitiveMeshKindUVE::Cube);
+            mesh.vertices = cube.vertices;
+            mesh.indices = cube.indices;
+            mesh.localBounds = cube.localBounds;
+            return true;
+        });
+    assetManager.RegisterLoaderUVE<UVE::Asset::MaterialAssetUVE>(
+        [shaderGuid](const std::filesystem::path&, UVE::Asset::MaterialAssetUVE& material) {
+            material.vertexShader = shaderGuid;
+            material.fragmentShader = shaderGuid;
+            material.albedoColor = UVE::Math::Vector3UVE{0.75F, 0.32F, 0.24F};
+            material.metallic = 0.1F;
+            material.roughness = 0.55F;
+            return true;
+        });
+
+    UVE::Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
+    const UVE::Scene::EntityUVE entity = entityManager.CreateEntityUVE();
+    services.GetSceneGraphUVE().AttachTransformUVE(entityManager, entity, UVE::Scene::TransformComponentUVE{});
+    entityManager.AddComponentUVE<UVE::Scene::MeshComponentUVE>(
+        entity, UVE::Scene::MeshComponentUVE{meshGuid, materialGuid});
+}
+
 } // namespace
 
 /// Starts the standalone UniVex Editor Foundation v1. `--scene <path>` selects the `.uvescene`
@@ -407,7 +595,8 @@ int main(const int argc, char** argv) {
         // which headless mode's NullRenderDeviceUVE never creates.
         std::optional<ViewportPanelBackendUVE> viewportBackend;
         if (!options.headless) {
-            viewportBackend.emplace(editor, engine.GetServicesUVE().GetEntityManagerUVE());
+            CreateMeshRenderingFixtureEntityUVE(engine.GetServicesUVE());
+            viewportBackend.emplace(editor, engine.GetServicesUVE());
             editor.SetViewportPanelRendererUVE(
                 [&backend = *viewportBackend](
                     const UVE::Math::Vector2UVE& availableSize, UVE::Math::Vector2UVE& outUsedSize,

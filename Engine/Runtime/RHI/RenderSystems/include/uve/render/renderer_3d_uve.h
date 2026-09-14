@@ -62,6 +62,8 @@ public:
     void RenderFrameToRegionUVE(Scene::IEntityManagerUVE& entityManager, Scene::EntityUVE cameraEntity,
                                 const ViewportRectUVE& region,
                                 const Scene::ParticleRuntimeUVE* particleRuntime = nullptr) override;
+    void RenderFrameToTargetUVE(Scene::IEntityManagerUVE& entityManager, Scene::EntityUVE cameraEntity,
+                                TextureHandleUVE colorTarget, TextureHandleUVE depthTarget) override;
     void SetPostProcessSettingsUVE(const PostProcessSettingsUVE& settings) override;
     [[nodiscard]] Renderer3DFrameDiagnosticsUVE GetLastFrameDiagnosticsUVE() const noexcept override;
 
