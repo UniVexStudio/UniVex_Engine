@@ -94,6 +94,24 @@ hostfxr_get_runtime_delegate_fn g_hostfxrGetRuntimeDelegateUVE = nullptr;
     return tickFrame;
 }
 
+// Bundles the state the post-render trampoline needs, since a plain C function pointer cannot
+// capture. Registered via uve_capi_set_post_render_callback so the managed TickFrame export runs
+// immediately before the window back buffer is presented each frame (see that function's own doc
+// comment in uve_engine_capi.h for why timing matters here) - calling it from the outer loop
+// instead would mean whatever it drew into the default framebuffer gets clobbered by the next
+// frame's own clear before ever reaching the screen.
+struct PostRenderContextUVE final {
+    UveEngineHandleUVE* handle = nullptr;
+    TickFrameManagedFnUVE tickFrame = nullptr;
+    int frameNumber = 0;
+};
+
+void PostRenderTrampolineUVE(void* const userdataRaw) {
+    auto* const context = static_cast<PostRenderContextUVE*>(userdataRaw);
+    context->tickFrame(context->handle, 960.0F, 600.0F, context->frameNumber);
+    ++context->frameNumber;
+}
+
 } // namespace
 
 int main(const int argc, char** argv) {
@@ -118,15 +136,18 @@ int main(const int argc, char** argv) {
         }
     }
 
-    int frameNumber = 0;
-    while (frameLimit < 0 || frameNumber < frameLimit) {
+    PostRenderContextUVE postRenderContext{handle, tickFrame, 0};
+    uve_capi_set_post_render_callback(handle, &PostRenderTrampolineUVE, &postRenderContext);
+
+    int framesRun = 0;
+    while (frameLimit < 0 || framesRun < frameLimit) {
         if (uve_capi_tick_frame(handle) == 0) {
             break;
         }
-        tickFrame(handle, 960.0F, 600.0F, frameNumber);
-        ++frameNumber;
+        ++framesRun;
     }
 
+    uve_capi_set_post_render_callback(handle, nullptr, nullptr);
     uve_capi_destroy(handle);
     return 0;
 }
