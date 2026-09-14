@@ -792,6 +792,14 @@ private:
     /// (the remainder goes to the right thumbnail grid); adjusted by dragging the splitter between
     /// them. Matches the ~35% left / ~65% right proportions of the design this panel was built to.
     float m_contentBrowserSplitRatio = 0.35F;
+    /// Whether the Content Browser shows its left folder tree beside the grid (split mode, default)
+    /// or the grid alone at full width (single mode). Toggled by clicking the divider handle between
+    /// the two panes - the "filesystem flip mode" the design calls for, mirroring Godot's own
+    /// FileSystem dock split toggle.
+    bool m_contentBrowserSplitModeUVE = true;
+    /// Transient: set while the divider handle is being dragged so the release that ends a drag is
+    /// not mistaken for a click that would flip the split mode.
+    bool m_contentBrowserSplitterDraggingUVE = false;
     /// Content-derived thumbnail textures for Content Browser entries (currently texture assets
     /// only), keyed by project-relative generic path. A cached 0 means a prior load attempt
     /// failed (not a texture, corrupt, or unsupported format) and callers should fall back to the

@@ -5277,6 +5277,56 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
     }
 
     ImGui::Separator();
+
+    // ---- Unreal-style "Add" / "Import" toolbar ----
+    // "Add" opens the exact categorized node-descriptor menu the Scene panel's "+" uses, so it
+    // creates real scene nodes grouped by category (Node3D / Camera / Light / Physics / Audio / ...)
+    // - matching the requested "pindot ng Add -> Node3D-like" behavior with a real backing action,
+    // not a placeholder button.
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{0.357F, 0.478F, 0.600F, 1.0F});
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{0.443F, 0.573F, 0.706F, 1.0F});
+    const bool addClicked = ImGui::SmallButton("+ Add");
+    ImGui::PopStyleColor(2);
+    if (addClicked) {
+        ImGui::OpenPopup("content-add-node-popup");
+    }
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+        ImGui::SetTooltip("Create a new object (Node3D, Camera, Light, Physics, Audio, ...)");
+    }
+    if (ImGui::BeginPopup("content-add-node-popup")) {
+        ImGui::TextDisabled("Add");
+        ImGui::Separator();
+        std::string_view lastCategory;
+        for (const Scene::Nodes::SceneNodeDescriptorUVE& descriptor : Scene::Nodes::GetSceneNodeDescriptorsUVE()) {
+            if (descriptor.category != lastCategory) {
+                if (!lastCategory.empty()) {
+                    ImGui::Separator();
+                }
+                ImGui::TextUnformatted(descriptor.category.data());
+                lastCategory = descriptor.category;
+            }
+            ImGui::BeginDisabled(!descriptor.libraryCreatable || !IsAuthoringCommandAllowedUVE());
+            if (ImGui::MenuItem(descriptor.displayName.data())) {
+                static_cast<void>(CreateDocumentSceneNodeUVE(descriptor.kind));
+            }
+            ImGui::EndDisabled();
+        }
+        ImGui::EndPopup();
+    }
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Import")) {
+        m_projectFileSnapshotInitialized = false;
+        m_projectFileRefreshAttemptedForRescan = false;
+        RefreshProjectFileIndexUVE();
+    }
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+        ImGui::SetTooltip("Rescan the content folder to pick up newly added files");
+    }
+    ImGui::SameLine();
+    ImGui::TextDisabled("|");
+    ImGui::SameLine();
+
+    // ---- breadcrumb: main > folder > sub (each segment clickable to navigate up) ----
     const bool showingMainRoot = !m_contentBrowserShowingFavorites && m_contentBrowserDirectory.empty();
     if (showingMainRoot) {
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{0.20F, 0.21F, 0.23F, 1.0F});
@@ -5290,6 +5340,23 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
     if (showingMainRoot) {
         ImGui::PopStyleColor();
     }
+    if (!m_contentBrowserShowingFavorites && !m_contentBrowserDirectory.empty()) {
+        std::filesystem::path accumulated;
+        for (const std::filesystem::path& segment : m_contentBrowserDirectory) {
+            accumulated /= segment;
+            ImGui::SameLine(0.0F, 4.0F);
+            ImGui::TextDisabled(">");
+            ImGui::SameLine(0.0F, 4.0F);
+            const std::string crumbLabel = segment.generic_string() + "##crumb-" + accumulated.generic_string();
+            if (ImGui::SmallButton(crumbLabel.c_str())) {
+                m_contentBrowserDirectory = accumulated;
+                m_selectedProjectFile.reset();
+                m_selectedAsset.reset();
+            }
+        }
+    }
+    ImGui::SameLine();
+    ImGui::TextDisabled("|");
     ImGui::SameLine();
     if (m_contentBrowserShowingFavorites) {
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{0.20F, 0.21F, 0.23F, 1.0F});
@@ -5383,7 +5450,10 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
         }
     };
 
-    // ---- left flat list | draggable splitter | right thumbnail grid ----
+    // ---- left folder list | divider (resize + flip toggle) | right thumbnail grid ----
+    // The divider doubles as the "filesystem flip mode" control: dragging it resizes the two panes;
+    // a plain click (no drag) flips between split mode (list + grid) and single mode (grid only at
+    // full width) - Godot's FileSystem dock split toggle.
     const float bodyHeight = std::max(36.0F, ImGui::GetContentRegionAvail().y);
     const float bodyWidth = std::max(1.0F, ImGui::GetContentRegionAvail().x);
     constexpr float kSplitterWidthUVE = 4.0F;
@@ -5393,6 +5463,7 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
         std::clamp(bodyWidth * m_contentBrowserSplitRatio, kMinimumListWidthUVE,
                    std::max(kMinimumListWidthUVE, bodyWidth - kMinimumGridWidthUVE - kSplitterWidthUVE));
 
+    if (m_contentBrowserSplitModeUVE) {
     ImGui::BeginChild("##content-browser-list", ImVec2{listWidth, bodyHeight}, true,
                       ImGuiWindowFlags_AlwaysVerticalScrollbar);
     {
@@ -5487,24 +5558,46 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
         }
     }
     ImGui::EndChild();
-
-    // Draggable splitter: dragging adjusts m_contentBrowserSplitRatio, clamped the same way
-    // listWidth's own minimums above already keep the resulting layout usable at either extreme.
     ImGui::SameLine(0.0F, 0.0F);
-    ImGui::InvisibleButton("##content-browser-splitter", ImVec2{kSplitterWidthUVE, bodyHeight});
-    if (ImGui::IsItemActive()) {
+    } // end split-mode left list
+
+    // Divider handle: drag to resize (split mode only), click (no drag) to flip split<->single mode.
+    // The hit target is wider than the thin visual bar so the flip-click is easy to land (a 4px
+    // strip is too small to reliably click); the grip is drawn centered inside it.
+    constexpr float kSplitterHitWidthUVE = 10.0F;
+    ImGui::InvisibleButton("##content-browser-splitter", ImVec2{kSplitterHitWidthUVE, bodyHeight});
+    // A real drag moves more than a click's sub-pixel jitter; only then treat it as a resize (and
+    // suppress the flip-on-release). Anything smaller is a click that flips the split mode.
+    if (ImGui::IsItemActive() && m_contentBrowserSplitModeUVE &&
+        std::abs(ImGui::GetIO().MouseDelta.x) > 1.0F) {
         m_contentBrowserSplitRatio = std::clamp((listWidth + ImGui::GetIO().MouseDelta.x) / bodyWidth, 0.15F, 0.7F);
+        m_contentBrowserSplitterDraggingUVE = true;
+    }
+    if (ImGui::IsItemDeactivated()) {
+        if (!m_contentBrowserSplitterDraggingUVE) {
+            m_contentBrowserSplitModeUVE = !m_contentBrowserSplitModeUVE;
+        }
+        m_contentBrowserSplitterDraggingUVE = false;
     }
     if (ImGui::IsItemHovered() || ImGui::IsItemActive()) {
-        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+        ImGui::SetMouseCursor(m_contentBrowserSplitModeUVE ? ImGuiMouseCursor_ResizeEW
+                                                           : ImGuiMouseCursor_Hand);
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+            ImGui::SetTooltip(m_contentBrowserSplitModeUVE
+                                  ? "Drag to resize - click to hide the folder list"
+                                  : "Click to show the folder list");
+        }
     }
     {
-        const ImVec2 splitterMin = ImGui::GetItemRectMin();
-        const ImVec2 splitterMax = ImGui::GetItemRectMax();
+        const ImVec2 hitMin = ImGui::GetItemRectMin();
+        const ImVec2 hitMax = ImGui::GetItemRectMax();
+        const float dotX = (hitMin.x + hitMax.x) * 0.5F;
+        const float centerY = (hitMin.y + hitMax.y) * 0.5F;
+        // Thin visual bar (kSplitterWidthUVE) centered inside the wider hit target.
+        const ImVec2 splitterMin{dotX - kSplitterWidthUVE * 0.5F, hitMin.y};
+        const ImVec2 splitterMax{dotX + kSplitterWidthUVE * 0.5F, hitMax.y};
         ImDrawList* const splitterDrawList = ImGui::GetWindowDrawList();
         splitterDrawList->AddRectFilled(splitterMin, splitterMax, IM_COL32(28, 32, 39, 255));
-        const float dotX = (splitterMin.x + splitterMax.x) * 0.5F;
-        const float centerY = (splitterMin.y + splitterMax.y) * 0.5F;
         for (int dotIndex = -1; dotIndex <= 1; ++dotIndex) {
             splitterDrawList->AddCircleFilled(ImVec2{dotX, centerY + static_cast<float>(dotIndex) * 4.0F}, 1.1F,
                                               IM_COL32(107, 113, 131, 255));
