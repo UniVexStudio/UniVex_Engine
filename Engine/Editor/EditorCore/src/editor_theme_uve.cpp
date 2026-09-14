@@ -32,16 +32,19 @@ void ApplyEditorVisualThemeUVE() noexcept {
     ImVec4* const colors = style.Colors;
     colors[ImGuiCol_Text] = ImVec4{0.91F, 0.92F, 0.94F, 1.0F};
     colors[ImGuiCol_TextDisabled] = ImVec4{0.56F, 0.59F, 0.64F, 1.0F};
-    colors[ImGuiCol_WindowBg] = ImVec4{0.051F, 0.059F, 0.071F, 0.90F};
-    colors[ImGuiCol_ChildBg] = ImVec4{0.082F, 0.094F, 0.110F, 0.86F};
+    // rgb retargeted to Cowork's mockup --app-bg #0a0c0f / --panel-bg rgba(22,25,30,.94) - the
+    // exact hex values delivered for this editor's own real theme, ported verbatim.
+    colors[ImGuiCol_WindowBg] = ImVec4{0.039F, 0.047F, 0.059F, 0.90F};
+    colors[ImGuiCol_ChildBg] = ImVec4{0.086F, 0.098F, 0.118F, 0.94F};
     colors[ImGuiCol_PopupBg] = ImVec4{0.106F, 0.125F, 0.149F, 0.94F};
     colors[ImGuiCol_MenuBarBg] = ImVec4{0.106F, 0.125F, 0.149F, 0.94F};
     colors[ImGuiCol_TitleBg] = ImVec4{0.067F, 0.078F, 0.094F, 0.94F};
     colors[ImGuiCol_TitleBgActive] = ImVec4{0.137F, 0.165F, 0.196F, 0.96F};
-    // A brighter, more visible edge than before (0.90 -> full alpha, slightly lighter tone) is
-    // most of what actually sells the "glass" read on a semi-transparent panel - it stands in for
-    // the specular highlight a true glass surface would catch along its rim.
-    colors[ImGuiCol_Border] = ImVec4{0.298F, 0.337F, 0.396F, 1.0F};
+    // Retargeted to Cowork's mockup --border-soft #2b3037 - the common seam color used for most
+    // panel/frame edges in the mockup (the brighter --border #454e5c is reserved there only for
+    // dropdown/popup outlines, a single-color distinction ImGui's one Border slot can't express
+    // without extra per-widget PushStyleColor calls - accepted as an honest simplification).
+    colors[ImGuiCol_Border] = ImVec4{0.169F, 0.188F, 0.216F, 1.0F};
     colors[ImGuiCol_BorderShadow] = ImVec4{0.0F, 0.0F, 0.0F, 0.55F};
     colors[ImGuiCol_FrameBg] = ImVec4{0.106F, 0.125F, 0.149F, 0.92F};
     colors[ImGuiCol_FrameBgHovered] = ImVec4{0.165F, 0.196F, 0.231F, 0.96F};
@@ -51,10 +54,12 @@ void ApplyEditorVisualThemeUVE() noexcept {
     colors[ImGuiCol_HeaderActive] = ImVec4{0.384F, 0.494F, 0.596F, 1.0F};
     colors[ImGuiCol_Button] = ImVec4{0.122F, 0.145F, 0.173F, 0.92F};
     colors[ImGuiCol_ButtonHovered] = ImVec4{0.200F, 0.239F, 0.286F, 0.96F};
-    colors[ImGuiCol_ButtonActive] = ImVec4{0.318F, 0.416F, 0.506F, 1.0F};
-    colors[ImGuiCol_CheckMark] = ImVec4{0.68F, 0.82F, 0.94F, 1.0F};
+    // Accent-driven active states retargeted to Cowork's mockup --accent #5b7a99 / --accent-bright
+    // #8fb4d8 exact hex.
+    colors[ImGuiCol_ButtonActive] = ImVec4{0.357F, 0.478F, 0.600F, 1.0F};
+    colors[ImGuiCol_CheckMark] = ImVec4{0.561F, 0.706F, 0.847F, 1.0F};
     colors[ImGuiCol_SliderGrab] = ImVec4{0.43F, 0.52F, 0.62F, 1.0F};
-    colors[ImGuiCol_SliderGrabActive] = ImVec4{0.62F, 0.74F, 0.86F, 1.0F};
+    colors[ImGuiCol_SliderGrabActive] = ImVec4{0.561F, 0.706F, 0.847F, 1.0F};
     colors[ImGuiCol_Separator] = ImVec4{0.188F, 0.216F, 0.255F, 0.76F};
     colors[ImGuiCol_SeparatorHovered] = ImVec4{0.48F, 0.55F, 0.63F, 0.88F};
     colors[ImGuiCol_SeparatorActive] = ImVec4{0.64F, 0.72F, 0.82F, 1.0F};

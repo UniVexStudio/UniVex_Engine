@@ -70,7 +70,21 @@ constexpr float kMinimumLocalScaleUVE = 0.001F;
 // editor's existing RGBA-texture ImageButton icons (gizmo modes, Snap, node/component add popups).
 #include "uve_icon_font_bytes.inc"
 
+// Subsetted Liberation Mono Regular (SIL OFL 1.1 licensed; see
+// engine/editor/assets/fonts/THIRD_PARTY_NOTICES.md) - a separate, non-merged font applied only to
+// the Inspector's numeric Transform fields, matching a design mockup's own use of a monospace font
+// for numeric values. Not merged into the main UI font's glyph atlas since it's selected per-widget
+// via ImGui::PushFont()/PopFont(), not blended into every string the main font already renders.
+#include "uve_mono_font_bytes.inc"
+
 constexpr float kUiFontSizePixelsUVE = 16.0F;
+
+// Set once in InitUVE() after the atlas is built; has static storage duration for the life of the
+// process like the byte arrays above, so no lifetime/ownership tracking is needed beyond that.
+// A plain file-scope pointer (not a class member) keeps every ImGui type - ImFont included -
+// confined to this translation unit, matching editor_uve.h's own "no Dear ImGui type in this
+// public interface" design (see that header's own class-level doc comment).
+ImFont* g_monoFontUVE = nullptr;
 
 constexpr ImWchar kIconFontGlyphRangesUVE[] = {
     0xEA03, 0xEA03, // Inspector (adjustments)
@@ -666,6 +680,14 @@ void EditorUVE::InitUVE() {
         io.Fonts->AddFontFromMemoryTTF(const_cast<std::uint8_t*>(uve_icon_font_ttf_bytes.data()),
                                        static_cast<int>(uve_icon_font_ttf_bytes.size()), 0.0F,
                                        &iconFontConfig, kIconFontGlyphRangesUVE);
+
+        ImFontConfig monoFontConfig{};
+        // Same "static storage duration for the life of the process" reasoning as the other two
+        // fonts above - the .inc byte array must outlive the atlas and must not be freed by it.
+        monoFontConfig.FontDataOwnedByAtlas = false;
+        g_monoFontUVE = io.Fonts->AddFontFromMemoryTTF(const_cast<std::uint8_t*>(uve_mono_font_ttf_bytes.data()),
+                                                        static_cast<int>(uve_mono_font_ttf_bytes.size()),
+                                                        kUiFontSizePixelsUVE, &monoFontConfig);
 
         auto* const nativeWindow = static_cast<GLFWwindow*>(windowManager.GetNativeWindowHandleUVE());
         // Install the backend's chained GLFW callbacks so the interactive overlay receives cursor
@@ -3612,9 +3634,20 @@ void EditorUVE::DrawMenuBarUVE() {
             case EditorWorkspaceUVE::Plugin: workspaceLabel = "Plugin"; break;
             case EditorWorkspaceUVE::Game: workspaceLabel = "Game"; break;
         }
-        ImGui::TextDisabled("| %s", workspaceLabel);
+        ImGui::TextDisabled("| %s |", workspaceLabel);
         ImGui::SameLine();
-        ImGui::TextDisabled("| %s | %zu selected | %s", m_sceneDirty ? "unsaved" : "saved",
+        {
+            // A small colored status dot before the saved/unsaved label, matching Cowork's
+            // mockup `.tb-dot.saved`/`.tb-dot.unsaved` (--success #5fc98a / --warning #e0b13f
+            // exact hex) - ImGui's plain TextDisabled call here previously had no color coding.
+            const ImVec2 dotOrigin = ImGui::GetCursorScreenPos();
+            const ImVec2 dotCenter{dotOrigin.x + 5.0F, dotOrigin.y + ImGui::GetTextLineHeight() * 0.5F};
+            ImGui::GetWindowDrawList()->AddCircleFilled(
+                dotCenter, 2.5F, m_sceneDirty ? IM_COL32(224, 177, 63, 255) : IM_COL32(95, 201, 138, 255));
+            ImGui::Dummy(ImVec2{11.0F, ImGui::GetTextLineHeight()});
+        }
+        ImGui::SameLine(0.0F, 4.0F);
+        ImGui::TextDisabled("%s | %zu selected | %s", m_sceneDirty ? "unsaved" : "saved",
                             m_selectedEntities.size(),
                             m_playModeState == EditorPlayModeStateUVE::Edit
                                 ? "edit"
@@ -4513,9 +4546,18 @@ void EditorUVE::DrawTransformInspectorDrawerUVE(const Scene::EntityUVE entity) {
     float rotation[4]{edited.localRotation.x, edited.localRotation.y, edited.localRotation.z, edited.localRotation.w};
     float scale[3]{edited.localScale.x, edited.localScale.y, edited.localScale.z};
 
+    // Cowork's mockup uses a monospace font for numeric fields (`--font-mono`); PushFont() here
+    // only around these three widgets, not the whole panel, since everything else (labels,
+    // section headers) stays on the main UI font.
+    if (g_monoFontUVE != nullptr) {
+        ImGui::PushFont(g_monoFontUVE);
+    }
     const bool positionChanged = ImGui::InputFloat3("Local Position", position);
     const bool rotationChanged = ImGui::InputFloat4("Local Rotation (xyzw)", rotation);
     const bool scaleChanged = ImGui::InputFloat3("Local Scale", scale);
+    if (g_monoFontUVE != nullptr) {
+        ImGui::PopFont();
+    }
     if (positionChanged || rotationChanged || scaleChanged) {
         edited.localPosition = Math::Vector3UVE{position[0], position[1], position[2]};
         edited.localRotation = Math::QuaternionUVE{rotation[0], rotation[1], rotation[2], rotation[3]};
