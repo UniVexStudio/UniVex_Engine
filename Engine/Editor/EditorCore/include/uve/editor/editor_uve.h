@@ -488,7 +488,6 @@ private:
         Shader,
         Material,
         Save,
-        MotionQuery,
         Registered,
         OtherFiles,
     };
@@ -505,7 +504,6 @@ private:
         Shader,
         Material,
         Save,
-        MotionQuery,
         File,
     };
 

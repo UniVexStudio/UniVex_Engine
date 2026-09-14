@@ -37,7 +37,7 @@ constexpr std::array<IconSourceUVE, 4U> kGeneralIconSourcesUVE{{
 }};
 
 // Keyed by the exact GetContentBrowserItemTypeLabelUVE() strings (editor_uve.cpp).
-constexpr std::array<IconSourceUVE, 10U> kContentTypeIconSourcesUVE{{
+constexpr std::array<IconSourceUVE, 9U> kContentTypeIconSourcesUVE{{
     {"Scene", uve_content_type_icon_scene_content_type_rgba.data()},
     {"Prefab", uve_content_type_icon_prefab_content_type_rgba.data()},
     {"Bundle", uve_content_type_icon_bundle_content_type_rgba.data()},
@@ -46,7 +46,6 @@ constexpr std::array<IconSourceUVE, 10U> kContentTypeIconSourcesUVE{{
     {"Shader", uve_content_type_icon_shader_content_type_rgba.data()},
     {"Material", uve_content_type_icon_material_content_type_rgba.data()},
     {"Save", uve_content_type_icon_save_content_type_rgba.data()},
-    {"Motion Query", uve_content_type_icon_motion_query_content_type_rgba.data()},
     {"File", uve_content_type_icon_file_content_type_rgba.data()},
 }};
 

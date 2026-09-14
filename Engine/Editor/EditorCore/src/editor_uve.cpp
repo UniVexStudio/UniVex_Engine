@@ -5426,9 +5426,6 @@ EditorUVE::ContentBrowserItemTypeUVE EditorUVE::ClassifyContentBrowserEntryUVE(
     if (extension == ".uvesave") {
         return ContentBrowserItemTypeUVE::Save;
     }
-    if (extension == ".uvemotionquery") {
-        return ContentBrowserItemTypeUVE::MotionQuery;
-    }
     return ContentBrowserItemTypeUVE::File;
 }
 
@@ -5452,8 +5449,6 @@ const char* EditorUVE::GetContentBrowserItemTypeLabelUVE(const ContentBrowserIte
             return "Material";
         case ContentBrowserItemTypeUVE::Save:
             return "Save";
-        case ContentBrowserItemTypeUVE::MotionQuery:
-            return "Motion Query";
         case ContentBrowserItemTypeUVE::File:
             return "File";
     }
@@ -5482,8 +5477,6 @@ const char* EditorUVE::GetContentBrowserFocusLabelUVE(const ContentBrowserTypeFo
             return "Material";
         case ContentBrowserTypeFocusUVE::Save:
             return "Save";
-        case ContentBrowserTypeFocusUVE::MotionQuery:
-            return "Motion Query";
         case ContentBrowserTypeFocusUVE::Registered:
             return "Registered";
         case ContentBrowserTypeFocusUVE::OtherFiles:
@@ -5515,8 +5508,6 @@ bool EditorUVE::DoesContentBrowserEntryMatchFocusUVE(const Asset::ProjectFileEnt
             return type == ContentBrowserItemTypeUVE::Material;
         case ContentBrowserTypeFocusUVE::Save:
             return type == ContentBrowserItemTypeUVE::Save;
-        case ContentBrowserTypeFocusUVE::MotionQuery:
-            return type == ContentBrowserItemTypeUVE::MotionQuery;
         case ContentBrowserTypeFocusUVE::Registered:
             return entry.kind == Asset::ProjectFileEntryKindUVE::File && entry.registeredAssetGuid.has_value();
         case ContentBrowserTypeFocusUVE::OtherFiles:

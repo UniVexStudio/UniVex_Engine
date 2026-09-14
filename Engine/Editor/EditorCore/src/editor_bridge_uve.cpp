@@ -1372,9 +1372,6 @@ std::optional<EditorUVE::ContentBrowserTypeFocusUVE> EditorBridgeUVE::ParseConte
     if (focus == "save") {
         return Focus::Save;
     }
-    if (focus == "motionQuery") {
-        return Focus::MotionQuery;
-    }
     if (focus == "registered") {
         return Focus::Registered;
     }

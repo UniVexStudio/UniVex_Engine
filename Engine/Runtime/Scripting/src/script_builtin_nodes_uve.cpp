@@ -1013,10 +1013,7 @@ struct BuiltInNodeDefinitionUVE final {
                typeId == "animation.play" || typeId == "animation.stop" || typeId == "animation.pause" ||
                typeId == "animation.blend" || typeId == "animation.blend_space" ||
                typeId == "animation.set_speed" || typeId == "animation.set_weight" || typeId == "animation.montage" ||
-               typeId == "motion.query.set_trajectory" || typeId == "motion.query.set_pose" ||
-               typeId == "motion.query.set_velocity" || typeId == "motion.query.set_facing" ||
-               typeId == "motion.query.set_yaw" || typeId == "motion.query.transition" ||
-               typeId == "motion.query.motion_warp" || typeId == "physics.apply_force" ||
+               typeId == "physics.apply_force" ||
                typeId == "physics.apply_impulse" || typeId == "physics.set_velocity" ||
                typeId == "physics.enable_gravity" || typeId == "audio.set_volume" ||
                typeId == "audio.set_pitch" || typeId == "audio.set_3d_position" ||
