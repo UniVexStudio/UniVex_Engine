@@ -26,11 +26,13 @@
 #include "uve/asset/uve_file_envelope_uve.h"
 #include "uve/debug/logging_macros_uve.h"
 #include "uve/math/quaternion_uve.h"
+#include "uve/math/vector2_uve.h"
 #include "uve/math/vector3_uve.h"
 #include "uve/scene/components/animation_player_component_uve.h"
 #include "uve/scene/components/area_component_uve.h"
 #include "uve/scene/components/audio_source_component_uve.h"
 #include "uve/scene/components/camera_component_uve.h"
+#include "uve/scene/components/canvas_component_uve.h"
 #include "uve/scene/components/character_controller_component_uve.h"
 #include "uve/scene/components/collider_component_uve.h"
 #include "uve/scene/components/expanded_3d_node_components_uve.h"
@@ -44,6 +46,9 @@
 #include "uve/scene/components/rigid_body_component_uve.h"
 #include "uve/scene/components/script_component_uve.h"
 #include "uve/scene/components/transform_component_uve.h"
+#include "uve/scene/components/ui_button_component_uve.h"
+#include "uve/scene/components/ui_image_component_uve.h"
+#include "uve/scene/components/ui_text_component_uve.h"
 #include "uve/scene/components/world_transform_component_uve.h"
 
 namespace UVE::Scene {
@@ -58,6 +63,14 @@ namespace {
 
 [[nodiscard]] Math::Vector3UVE Vector3FromJsonUVE(const nlohmann::json& json) {
     return Math::Vector3UVE{json.at(0).get<float>(), json.at(1).get<float>(), json.at(2).get<float>()};
+}
+
+[[nodiscard]] nlohmann::json ToJsonUVE(const Math::Vector2UVE& vector) {
+    return nlohmann::json::array({vector.x, vector.y});
+}
+
+[[nodiscard]] Math::Vector2UVE Vector2FromJsonUVE(const nlohmann::json& json) {
+    return Math::Vector2UVE{json.at(0).get<float>(), json.at(1).get<float>()};
 }
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const Math::QuaternionUVE& rotation) {
@@ -159,6 +172,36 @@ namespace {
             {"gravityScale", component.gravityScale},
             {"verticalVelocity", component.verticalVelocity},
             {"isGrounded", component.isGrounded}};
+}
+
+[[nodiscard]] nlohmann::json ToJsonUVE(const CanvasComponentUVE& component) {
+    return {{"visible", component.visible}, {"sortOrder", component.sortOrder}};
+}
+
+[[nodiscard]] nlohmann::json ToJsonUVE(const UITextComponentUVE& component) {
+    return {{"text", component.text},
+            {"positionPixels", ToJsonUVE(component.positionPixels)},
+            {"fontSize", component.fontSize},
+            {"color", ToJsonUVE(component.color)},
+            {"alpha", component.alpha}};
+}
+
+[[nodiscard]] nlohmann::json ToJsonUVE(const UIImageComponentUVE& component) {
+    return {{"textureAssetGuid", component.textureAssetGuid.value},
+            {"positionPixels", ToJsonUVE(component.positionPixels)},
+            {"sizePixels", ToJsonUVE(component.sizePixels)},
+            {"tintColor", ToJsonUVE(component.tintColor)},
+            {"alpha", component.alpha}};
+}
+
+[[nodiscard]] nlohmann::json ToJsonUVE(const UIButtonComponentUVE& component) {
+    return {{"positionPixels", ToJsonUVE(component.positionPixels)},
+            {"sizePixels", ToJsonUVE(component.sizePixels)},
+            {"normalColor", ToJsonUVE(component.normalColor)},
+            {"hoverColor", ToJsonUVE(component.hoverColor)},
+            {"pressedColor", ToJsonUVE(component.pressedColor)},
+            {"isHovered", component.isHovered},
+            {"wasClickedThisFrame", component.wasClickedThisFrame}};
 }
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const AudioSourceComponentUVE& component) {
@@ -937,6 +980,64 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                           }
                           return characterController;
                       }, IsCharacterControllerComponentValidUVE));
+        table.emplace("CanvasComponentUVE", MakeRegistrationUVE<CanvasComponentUVE>([](const nlohmann::json& json) {
+                          CanvasComponentUVE canvas;
+                          canvas.visible = json.value("visible", true);
+                          canvas.sortOrder = json.value("sortOrder", 0);
+                          if (!IsCanvasComponentValidUVE(canvas)) {
+                              throw std::runtime_error("Invalid CanvasComponentUVE payload");
+                          }
+                          return canvas;
+                      }, IsCanvasComponentValidUVE));
+        table.emplace("UITextComponentUVE", MakeRegistrationUVE<UITextComponentUVE>([](const nlohmann::json& json) {
+                          UITextComponentUVE text;
+                          text.text = json.value("text", std::string{});
+                          text.positionPixels = json.contains("positionPixels")
+                              ? Vector2FromJsonUVE(json.at("positionPixels")) : Math::Vector2UVE{};
+                          text.fontSize = json.value("fontSize", 16.0F);
+                          text.color = json.contains("color") ? Vector3FromJsonUVE(json.at("color"))
+                                                               : Math::Vector3UVE{1.0F, 1.0F, 1.0F};
+                          text.alpha = json.value("alpha", 1.0F);
+                          if (!IsUITextComponentValidUVE(text)) {
+                              throw std::runtime_error("Invalid UITextComponentUVE payload");
+                          }
+                          return text;
+                      }, IsUITextComponentValidUVE));
+        table.emplace("UIImageComponentUVE", MakeRegistrationUVE<UIImageComponentUVE>([](const nlohmann::json& json) {
+                          UIImageComponentUVE image;
+                          image.textureAssetGuid = Asset::AssetGuidUVE{json.value("textureAssetGuid", std::uint64_t{0})};
+                          image.positionPixels = json.contains("positionPixels")
+                              ? Vector2FromJsonUVE(json.at("positionPixels")) : Math::Vector2UVE{};
+                          image.sizePixels = json.contains("sizePixels") ? Vector2FromJsonUVE(json.at("sizePixels"))
+                                                                          : Math::Vector2UVE{64.0F, 64.0F};
+                          image.tintColor = json.contains("tintColor") ? Vector3FromJsonUVE(json.at("tintColor"))
+                                                                        : Math::Vector3UVE{1.0F, 1.0F, 1.0F};
+                          image.alpha = json.value("alpha", 1.0F);
+                          if (!IsUIImageComponentValidUVE(image)) {
+                              throw std::runtime_error("Invalid UIImageComponentUVE payload");
+                          }
+                          return image;
+                      }, IsUIImageComponentValidUVE));
+        table.emplace("UIButtonComponentUVE",
+                      MakeRegistrationUVE<UIButtonComponentUVE>([](const nlohmann::json& json) {
+                          UIButtonComponentUVE button;
+                          button.positionPixels = json.contains("positionPixels")
+                              ? Vector2FromJsonUVE(json.at("positionPixels")) : Math::Vector2UVE{};
+                          button.sizePixels = json.contains("sizePixels") ? Vector2FromJsonUVE(json.at("sizePixels"))
+                                                                           : Math::Vector2UVE{120.0F, 32.0F};
+                          button.normalColor = json.contains("normalColor")
+                              ? Vector3FromJsonUVE(json.at("normalColor")) : Math::Vector3UVE{0.25F, 0.25F, 0.28F};
+                          button.hoverColor = json.contains("hoverColor")
+                              ? Vector3FromJsonUVE(json.at("hoverColor")) : Math::Vector3UVE{0.35F, 0.35F, 0.40F};
+                          button.pressedColor = json.contains("pressedColor")
+                              ? Vector3FromJsonUVE(json.at("pressedColor")) : Math::Vector3UVE{0.18F, 0.18F, 0.20F};
+                          button.isHovered = json.value("isHovered", false);
+                          button.wasClickedThisFrame = json.value("wasClickedThisFrame", false);
+                          if (!IsUIButtonComponentValidUVE(button)) {
+                              throw std::runtime_error("Invalid UIButtonComponentUVE payload");
+                          }
+                          return button;
+                      }, IsUIButtonComponentValidUVE));
         table.emplace("AudioSourceComponentUVE",
                       MakeRegistrationUVE<AudioSourceComponentUVE>([](const nlohmann::json& json) {
                           AudioSourceComponentUVE source;

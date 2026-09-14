@@ -25,6 +25,7 @@
 #include "uve/scene/components/area_component_uve.h"
 #include "uve/scene/components/audio_source_component_uve.h"
 #include "uve/scene/components/camera_component_uve.h"
+#include "uve/scene/components/canvas_component_uve.h"
 #include "uve/scene/components/character_controller_component_uve.h"
 #include "uve/scene/components/collider_component_uve.h"
 #include "uve/scene/components/expanded_3d_node_components_uve.h"
@@ -38,6 +39,9 @@
 #include "uve/scene/components/rigid_body_component_uve.h"
 #include "uve/scene/components/script_component_uve.h"
 #include "uve/scene/components/transform_component_uve.h"
+#include "uve/scene/components/ui_button_component_uve.h"
+#include "uve/scene/components/ui_image_component_uve.h"
+#include "uve/scene/components/ui_text_component_uve.h"
 #include "uve/scene/components/world_transform_component_uve.h"
 #include "uve/scene/entity_manager_uve.h"
 #include "uve/scene/scene_graph_uve.h"
@@ -746,6 +750,74 @@ TEST_F(SceneSerializerUVETest, SaveThenLoad_CharacterControllerComponentUVE_Roun
     EXPECT_FLOAT_EQ(loadedController.gravityScale, 1.5F);
     EXPECT_FLOAT_EQ(loadedController.verticalVelocity, -3.0F);
     EXPECT_TRUE(loadedController.isGrounded);
+
+    std::filesystem::remove(path);
+}
+
+TEST_F(SceneSerializerUVETest, SaveThenLoad_UIComponentsUVE_RoundTripExactly) {
+    const EntityUVE entity = entityManager.CreateEntityUVE();
+    CanvasComponentUVE canvas{};
+    canvas.visible = false;
+    canvas.sortOrder = -5;
+    entityManager.AddComponentUVE<CanvasComponentUVE>(entity, canvas);
+
+    UITextComponentUVE text{};
+    text.text = "Lives: 3";
+    text.positionPixels = Math::Vector2UVE{10.0F, 20.0F};
+    text.fontSize = 18.0F;
+    text.color = Math::Vector3UVE{0.2F, 0.4F, 0.6F};
+    text.alpha = 0.75F;
+    entityManager.AddComponentUVE<UITextComponentUVE>(entity, text);
+
+    UIImageComponentUVE image{};
+    image.textureAssetGuid = Asset::AssetGuidUVE{0x4040U};
+    image.positionPixels = Math::Vector2UVE{5.0F, 6.0F};
+    image.sizePixels = Math::Vector2UVE{128.0F, 64.0F};
+    image.tintColor = Math::Vector3UVE{0.9F, 0.1F, 0.5F};
+    image.alpha = 0.5F;
+    entityManager.AddComponentUVE<UIImageComponentUVE>(entity, image);
+
+    UIButtonComponentUVE button{};
+    button.positionPixels = Math::Vector2UVE{1.0F, 2.0F};
+    button.sizePixels = Math::Vector2UVE{150.0F, 40.0F};
+    button.normalColor = Math::Vector3UVE{0.1F, 0.1F, 0.1F};
+    button.hoverColor = Math::Vector3UVE{0.2F, 0.2F, 0.2F};
+    button.pressedColor = Math::Vector3UVE{0.3F, 0.3F, 0.3F};
+    button.isHovered = true;
+    button.wasClickedThisFrame = false;
+    entityManager.AddComponentUVE<UIButtonComponentUVE>(entity, button);
+
+    const std::filesystem::path path = "uve_scene_serializer_tests_ui_components.uvescene";
+    std::filesystem::remove(path);
+    ASSERT_TRUE(serializer.SaveUVE(entityManager, {entity}, path, SceneAssetTypeUVE::Scene));
+
+    EntityManagerUVE loadedManager(memoryManager.GetDefaultAllocatorUVE(), eventSystem);
+    const std::vector<EntityUVE> roots = serializer.LoadUVE(loadedManager, path);
+    ASSERT_EQ(roots.size(), 1U);
+    const EntityUVE loaded = roots[0];
+
+    const CanvasComponentUVE& loadedCanvas = loadedManager.GetComponentUVE<CanvasComponentUVE>(loaded);
+    EXPECT_FALSE(loadedCanvas.visible);
+    EXPECT_EQ(loadedCanvas.sortOrder, -5);
+
+    const UITextComponentUVE& loadedText = loadedManager.GetComponentUVE<UITextComponentUVE>(loaded);
+    EXPECT_EQ(loadedText.text, "Lives: 3");
+    EXPECT_FLOAT_EQ(loadedText.positionPixels.x, 10.0F);
+    EXPECT_FLOAT_EQ(loadedText.fontSize, 18.0F);
+    EXPECT_FLOAT_EQ(loadedText.color.z, 0.6F);
+    EXPECT_FLOAT_EQ(loadedText.alpha, 0.75F);
+
+    const UIImageComponentUVE& loadedImage = loadedManager.GetComponentUVE<UIImageComponentUVE>(loaded);
+    EXPECT_EQ(loadedImage.textureAssetGuid.value, 0x4040U);
+    EXPECT_FLOAT_EQ(loadedImage.sizePixels.y, 64.0F);
+    EXPECT_FLOAT_EQ(loadedImage.tintColor.y, 0.1F);
+    EXPECT_FLOAT_EQ(loadedImage.alpha, 0.5F);
+
+    const UIButtonComponentUVE& loadedButton = loadedManager.GetComponentUVE<UIButtonComponentUVE>(loaded);
+    EXPECT_FLOAT_EQ(loadedButton.sizePixels.x, 150.0F);
+    EXPECT_FLOAT_EQ(loadedButton.hoverColor.x, 0.2F);
+    EXPECT_TRUE(loadedButton.isHovered);
+    EXPECT_FALSE(loadedButton.wasClickedThisFrame);
 
     std::filesystem::remove(path);
 }

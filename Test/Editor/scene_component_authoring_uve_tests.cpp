@@ -18,6 +18,10 @@
 #include "uve/scene/components/particle_emitter_component_uve.h"
 #include "uve/scene/components/rigid_body_component_uve.h"
 #include "uve/scene/components/script_component_uve.h"
+#include "uve/scene/components/canvas_component_uve.h"
+#include "uve/scene/components/ui_button_component_uve.h"
+#include "uve/scene/components/ui_image_component_uve.h"
+#include "uve/scene/components/ui_text_component_uve.h"
 
 namespace UVE::Editor::Tests {
 namespace {
@@ -139,6 +143,52 @@ TEST(SceneComponentAuthoringUVETest, SetSelectedSceneComponentUVE_CharacterContr
             entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(entity).jumpHeight, 2.0F);
         ASSERT_TRUE(editor.RedoUVE());
         EXPECT_FALSE(entityManager.HasComponentUVE<Scene::CharacterControllerComponentUVE>(entity));
+
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
+TEST(SceneComponentAuthoringUVETest, SetSelectedSceneComponentUVE_UIComponentsAddEditRemoveUndoRedo) {
+    Core::EngineCoreUVE engine(MakeSceneComponentAuthoringTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_scene_component_authoring_ui.uvescene");
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        const Scene::EntityUVE entity = editor.CreateDocumentEntityUVE(EditorEntityKindUVE::Empty);
+        ASSERT_TRUE(entityManager.IsAliveUVE(entity));
+
+        Scene::CanvasComponentUVE canvas{};
+        canvas.sortOrder = 3;
+        ASSERT_TRUE(editor.SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::Canvas, canvas));
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::CanvasComponentUVE>(entity).sortOrder, 3);
+
+        Scene::UITextComponentUVE text{};
+        text.text = "Score: 0";
+        text.fontSize = 24.0F;
+        ASSERT_TRUE(editor.SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::UIText, text));
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::UITextComponentUVE>(entity).text, "Score: 0");
+
+        Scene::UIImageComponentUVE image{};
+        image.textureAssetGuid = Asset::AssetGuidUVE{0x3030U};
+        ASSERT_TRUE(editor.SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::UIImage, image));
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::UIImageComponentUVE>(entity).textureAssetGuid.value, 0x3030U);
+
+        Scene::UIButtonComponentUVE button{};
+        button.sizePixels = Math::Vector2UVE{200.0F, 48.0F};
+        ASSERT_TRUE(editor.SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::UIButton, button));
+        EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Scene::UIButtonComponentUVE>(entity).sizePixels.x, 200.0F);
+
+        ASSERT_TRUE(editor.RemoveSelectedSceneComponentUVE(EditorSceneComponentKindUVE::UIButton));
+        EXPECT_FALSE(entityManager.HasComponentUVE<Scene::UIButtonComponentUVE>(entity));
+        ASSERT_TRUE(editor.UndoUVE());
+        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::UIButtonComponentUVE>(entity));
+        EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Scene::UIButtonComponentUVE>(entity).sizePixels.x, 200.0F);
+        ASSERT_TRUE(editor.RedoUVE());
+        EXPECT_FALSE(entityManager.HasComponentUVE<Scene::UIButtonComponentUVE>(entity));
 
         editor.ShutdownUVE();
     }

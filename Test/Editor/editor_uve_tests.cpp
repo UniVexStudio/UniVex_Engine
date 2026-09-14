@@ -336,7 +336,7 @@ TEST(EditorUVETest, InspectorDrawerRegistrationUVE_IncludesStableHierarchyDrawer
 
     {
         EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_hierarchy_drawer_registration.uvescene");
-        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorDrawerCountUVE(editor), 16U);
+        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorDrawerCountUVE(editor), 20U);
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "name"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "hierarchy"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "transform"));
@@ -353,6 +353,10 @@ TEST(EditorUVETest, InspectorDrawerRegistrationUVE_IncludesStableHierarchyDrawer
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "world-environment"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "character-controller"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "prefab-instance"));
+        EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "canvas"));
+        EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "ui-text"));
+        EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "ui-image"));
+        EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "ui-button"));
         editor.ShutdownUVE();
     }
 

@@ -706,6 +706,10 @@ void DrawHierarchyNodeIconUVE(ImDrawList& drawList, const ImVec2 center, const f
         case EditorSceneComponentKindUVE::AnimationPlayer: return HierarchyNodeIconKindUVE::Animation;
         case EditorSceneComponentKindUVE::WorldEnvironment: return HierarchyNodeIconKindUVE::Environment;
         case EditorSceneComponentKindUVE::CharacterController: return HierarchyNodeIconKindUVE::Physics;
+        case EditorSceneComponentKindUVE::Canvas:
+        case EditorSceneComponentKindUVE::UIText:
+        case EditorSceneComponentKindUVE::UIImage:
+        case EditorSceneComponentKindUVE::UIButton: return HierarchyNodeIconKindUVE::Empty;
     }
     return HierarchyNodeIconKindUVE::Empty;
 }
@@ -1436,6 +1440,14 @@ bool EditorUVE::IsSceneComponentValueValidUVE(
             } else if constexpr (std::is_same_v<ValueType, Scene::CharacterControllerComponentUVE>) {
                 return kind == EditorSceneComponentKindUVE::CharacterController &&
                        Scene::IsCharacterControllerComponentValidUVE(typedValue);
+            } else if constexpr (std::is_same_v<ValueType, Scene::CanvasComponentUVE>) {
+                return kind == EditorSceneComponentKindUVE::Canvas && Scene::IsCanvasComponentValidUVE(typedValue);
+            } else if constexpr (std::is_same_v<ValueType, Scene::UITextComponentUVE>) {
+                return kind == EditorSceneComponentKindUVE::UIText && Scene::IsUITextComponentValidUVE(typedValue);
+            } else if constexpr (std::is_same_v<ValueType, Scene::UIImageComponentUVE>) {
+                return kind == EditorSceneComponentKindUVE::UIImage && Scene::IsUIImageComponentValidUVE(typedValue);
+            } else if constexpr (std::is_same_v<ValueType, Scene::UIButtonComponentUVE>) {
+                return kind == EditorSceneComponentKindUVE::UIButton && Scene::IsUIButtonComponentValidUVE(typedValue);
             } else {
                 return false;
             }
@@ -1492,6 +1504,19 @@ bool EditorUVE::AreSceneComponentValuesEqualUVE(const EditorSceneComponentValueU
             } else if constexpr (std::is_same_v<LeftType, Scene::CharacterControllerComponentUVE>) {
                 return left.moveSpeed == right.moveSpeed && left.jumpHeight == right.jumpHeight &&
                        left.gravityScale == right.gravityScale;
+            } else if constexpr (std::is_same_v<LeftType, Scene::CanvasComponentUVE>) {
+                return left.visible == right.visible && left.sortOrder == right.sortOrder;
+            } else if constexpr (std::is_same_v<LeftType, Scene::UITextComponentUVE>) {
+                return left.text == right.text && left.positionPixels == right.positionPixels &&
+                       left.fontSize == right.fontSize && left.color == right.color && left.alpha == right.alpha;
+            } else if constexpr (std::is_same_v<LeftType, Scene::UIImageComponentUVE>) {
+                return left.textureAssetGuid == right.textureAssetGuid &&
+                       left.positionPixels == right.positionPixels && left.sizePixels == right.sizePixels &&
+                       left.tintColor == right.tintColor && left.alpha == right.alpha;
+            } else if constexpr (std::is_same_v<LeftType, Scene::UIButtonComponentUVE>) {
+                return left.positionPixels == right.positionPixels && left.sizePixels == right.sizePixels &&
+                       left.normalColor == right.normalColor && left.hoverColor == right.hoverColor &&
+                       left.pressedColor == right.pressedColor;
             } else {
                 return false;
             }
@@ -1551,6 +1576,14 @@ bool EditorUVE::ApplySceneComponentStateUVE(
             return apply.template operator()<Scene::WorldEnvironment3DNodeComponentUVE>();
         case EditorSceneComponentKindUVE::CharacterController:
             return apply.template operator()<Scene::CharacterControllerComponentUVE>();
+        case EditorSceneComponentKindUVE::Canvas:
+            return apply.template operator()<Scene::CanvasComponentUVE>();
+        case EditorSceneComponentKindUVE::UIText:
+            return apply.template operator()<Scene::UITextComponentUVE>();
+        case EditorSceneComponentKindUVE::UIImage:
+            return apply.template operator()<Scene::UIImageComponentUVE>();
+        case EditorSceneComponentKindUVE::UIButton:
+            return apply.template operator()<Scene::UIButtonComponentUVE>();
     }
     return false;
 }
@@ -1620,6 +1653,26 @@ bool EditorUVE::SetSelectedSceneComponentUVE(const EditorSceneComponentKindUVE k
                 before = entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(m_selectedEntity);
             }
             break;
+        case EditorSceneComponentKindUVE::Canvas:
+            if (entityManager.HasComponentUVE<Scene::CanvasComponentUVE>(m_selectedEntity)) {
+                before = entityManager.GetComponentUVE<Scene::CanvasComponentUVE>(m_selectedEntity);
+            }
+            break;
+        case EditorSceneComponentKindUVE::UIText:
+            if (entityManager.HasComponentUVE<Scene::UITextComponentUVE>(m_selectedEntity)) {
+                before = entityManager.GetComponentUVE<Scene::UITextComponentUVE>(m_selectedEntity);
+            }
+            break;
+        case EditorSceneComponentKindUVE::UIImage:
+            if (entityManager.HasComponentUVE<Scene::UIImageComponentUVE>(m_selectedEntity)) {
+                before = entityManager.GetComponentUVE<Scene::UIImageComponentUVE>(m_selectedEntity);
+            }
+            break;
+        case EditorSceneComponentKindUVE::UIButton:
+            if (entityManager.HasComponentUVE<Scene::UIButtonComponentUVE>(m_selectedEntity)) {
+                before = entityManager.GetComponentUVE<Scene::UIButtonComponentUVE>(m_selectedEntity);
+            }
+            break;
     }
     if (before.has_value() && AreSceneComponentValuesEqualUVE(*before, value)) {
         return false;
@@ -1676,6 +1729,18 @@ bool EditorUVE::RemoveSelectedSceneComponentUVE(const EditorSceneComponentKindUV
             break;
         case EditorSceneComponentKindUVE::CharacterController:
             if (entityManager.HasComponentUVE<Scene::CharacterControllerComponentUVE>(m_selectedEntity)) before = entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(m_selectedEntity);
+            break;
+        case EditorSceneComponentKindUVE::Canvas:
+            if (entityManager.HasComponentUVE<Scene::CanvasComponentUVE>(m_selectedEntity)) before = entityManager.GetComponentUVE<Scene::CanvasComponentUVE>(m_selectedEntity);
+            break;
+        case EditorSceneComponentKindUVE::UIText:
+            if (entityManager.HasComponentUVE<Scene::UITextComponentUVE>(m_selectedEntity)) before = entityManager.GetComponentUVE<Scene::UITextComponentUVE>(m_selectedEntity);
+            break;
+        case EditorSceneComponentKindUVE::UIImage:
+            if (entityManager.HasComponentUVE<Scene::UIImageComponentUVE>(m_selectedEntity)) before = entityManager.GetComponentUVE<Scene::UIImageComponentUVE>(m_selectedEntity);
+            break;
+        case EditorSceneComponentKindUVE::UIButton:
+            if (entityManager.HasComponentUVE<Scene::UIButtonComponentUVE>(m_selectedEntity)) before = entityManager.GetComponentUVE<Scene::UIButtonComponentUVE>(m_selectedEntity);
             break;
     }
     if (!before.has_value()) {
@@ -4578,6 +4643,14 @@ void EditorUVE::RegisterBuiltInInspectorDrawersUVE() {
                         return entityManager.HasComponentUVE<Scene::WorldEnvironment3DNodeComponentUVE>(entity);
                     case EditorSceneComponentKindUVE::CharacterController:
                         return entityManager.HasComponentUVE<Scene::CharacterControllerComponentUVE>(entity);
+                    case EditorSceneComponentKindUVE::Canvas:
+                        return entityManager.HasComponentUVE<Scene::CanvasComponentUVE>(entity);
+                    case EditorSceneComponentKindUVE::UIText:
+                        return entityManager.HasComponentUVE<Scene::UITextComponentUVE>(entity);
+                    case EditorSceneComponentKindUVE::UIImage:
+                        return entityManager.HasComponentUVE<Scene::UIImageComponentUVE>(entity);
+                    case EditorSceneComponentKindUVE::UIButton:
+                        return entityManager.HasComponentUVE<Scene::UIButtonComponentUVE>(entity);
                 }
                 return false;
             },
@@ -4608,6 +4681,38 @@ void EditorUVE::RegisterBuiltInInspectorDrawersUVE() {
                    m_services->GetEntityManagerUVE().HasComponentUVE<Scene::CharacterControllerComponentUVE>(entity);
         },
         [this](const Scene::EntityUVE entity) { DrawCharacterControllerInspectorDrawerUVE(entity); },
+    }));
+    static_cast<void>(m_inspectorDrawerRegistry.RegisterDrawerUVE(InspectorDrawerEntryUVE{
+        "canvas",
+        [this](const Scene::EntityUVE entity) {
+            return IsDocumentEntityUVE(entity) &&
+                   m_services->GetEntityManagerUVE().HasComponentUVE<Scene::CanvasComponentUVE>(entity);
+        },
+        [this](const Scene::EntityUVE entity) { DrawCanvasInspectorDrawerUVE(entity); },
+    }));
+    static_cast<void>(m_inspectorDrawerRegistry.RegisterDrawerUVE(InspectorDrawerEntryUVE{
+        "ui-text",
+        [this](const Scene::EntityUVE entity) {
+            return IsDocumentEntityUVE(entity) &&
+                   m_services->GetEntityManagerUVE().HasComponentUVE<Scene::UITextComponentUVE>(entity);
+        },
+        [this](const Scene::EntityUVE entity) { DrawUITextInspectorDrawerUVE(entity); },
+    }));
+    static_cast<void>(m_inspectorDrawerRegistry.RegisterDrawerUVE(InspectorDrawerEntryUVE{
+        "ui-image",
+        [this](const Scene::EntityUVE entity) {
+            return IsDocumentEntityUVE(entity) &&
+                   m_services->GetEntityManagerUVE().HasComponentUVE<Scene::UIImageComponentUVE>(entity);
+        },
+        [this](const Scene::EntityUVE entity) { DrawUIImageInspectorDrawerUVE(entity); },
+    }));
+    static_cast<void>(m_inspectorDrawerRegistry.RegisterDrawerUVE(InspectorDrawerEntryUVE{
+        "ui-button",
+        [this](const Scene::EntityUVE entity) {
+            return IsDocumentEntityUVE(entity) &&
+                   m_services->GetEntityManagerUVE().HasComponentUVE<Scene::UIButtonComponentUVE>(entity);
+        },
+        [this](const Scene::EntityUVE entity) { DrawUIButtonInspectorDrawerUVE(entity); },
     }));
     static_cast<void>(m_inspectorDrawerRegistry.RegisterDrawerUVE(InspectorDrawerEntryUVE{
         "prefab-instance",
@@ -4915,6 +5020,205 @@ void EditorUVE::DrawCharacterControllerInspectorDrawerUVE(const Scene::EntityUVE
     }
 }
 
+void EditorUVE::DrawCanvasInspectorDrawerUVE(const Scene::EntityUVE entity) {
+    if (!IsDocumentEntityUVE(entity) || entity != m_selectedEntity) {
+        return;
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (!entityManager.HasComponentUVE<Scene::CanvasComponentUVE>(entity)) {
+        return;
+    }
+
+    const Scene::CanvasComponentUVE current = entityManager.GetComponentUVE<Scene::CanvasComponentUVE>(entity);
+    Scene::CanvasComponentUVE edited = current;
+    bool changed = false;
+
+    ImGui::Separator();
+    DrawProceduralIconLabelUVE(8.0F, "Canvas", DrawNodeEmptyIconUVE);
+    ImGui::TextDisabled(
+        "A screen-space UI root - UIText/UIImage/UIButton entities render in window pixel "
+        "coordinates regardless of Canvas nesting; world-space canvases are not supported yet.");
+
+    bool visible = edited.visible;
+    if (ImGui::Checkbox("Visible", &visible)) {
+        edited.visible = visible;
+        changed = true;
+    }
+    int sortOrder = edited.sortOrder;
+    if (ImGui::DragInt("Sort Order", &sortOrder, 1.0F, -1000, 1000)) {
+        edited.sortOrder = sortOrder;
+        changed = true;
+    }
+
+    if (changed && !SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::Canvas, edited)) {
+        ImGui::TextDisabled("Input was rejected by the authored-value validator.");
+    }
+    if (ImGui::Button("Remove Canvas")) {
+        static_cast<void>(RemoveSelectedSceneComponentUVE(EditorSceneComponentKindUVE::Canvas));
+    }
+}
+
+void EditorUVE::DrawUITextInspectorDrawerUVE(const Scene::EntityUVE entity) {
+    if (!IsDocumentEntityUVE(entity) || entity != m_selectedEntity) {
+        return;
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (!entityManager.HasComponentUVE<Scene::UITextComponentUVE>(entity)) {
+        return;
+    }
+
+    const Scene::UITextComponentUVE current = entityManager.GetComponentUVE<Scene::UITextComponentUVE>(entity);
+    Scene::UITextComponentUVE edited = current;
+    bool changed = false;
+
+    ImGui::Separator();
+    DrawProceduralIconLabelUVE(8.0F, "UI Text", DrawNodeEmptyIconUVE);
+
+    std::array<char, Scene::kMaximumUITextBytesUVE + 1U> textBuffer{};
+    current.text.copy(textBuffer.data(), std::min(current.text.size(), textBuffer.size() - 1U));
+    if (ImGui::InputText("Text", textBuffer.data(), textBuffer.size())) {
+        edited.text = textBuffer.data();
+        changed = true;
+    }
+    float position[2]{edited.positionPixels.x, edited.positionPixels.y};
+    if (ImGui::DragFloat2("Position (px)", position, 1.0F)) {
+        edited.positionPixels = Math::Vector2UVE{position[0], position[1]};
+        changed = true;
+    }
+    float fontSize = edited.fontSize;
+    if (ImGui::DragFloat("Font Size", &fontSize, 0.5F, Scene::kMinimumUIFontSizeUVE, Scene::kMaximumUIFontSizeUVE, "%.1f")) {
+        edited.fontSize = fontSize;
+        changed = true;
+    }
+    float color[3]{edited.color.x, edited.color.y, edited.color.z};
+    if (ImGui::ColorEdit3("Color", color, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_DisplayRGB)) {
+        edited.color = Math::Vector3UVE{color[0], color[1], color[2]};
+        changed = true;
+    }
+    float alpha = edited.alpha;
+    if (ImGui::DragFloat("Alpha", &alpha, 0.01F, 0.0F, 1.0F, "%.3f")) {
+        edited.alpha = alpha;
+        changed = true;
+    }
+
+    if (changed && !SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::UIText, edited)) {
+        ImGui::TextDisabled("Input was rejected by the authored-value validator.");
+    }
+    if (ImGui::Button("Remove UI Text")) {
+        static_cast<void>(RemoveSelectedSceneComponentUVE(EditorSceneComponentKindUVE::UIText));
+    }
+}
+
+void EditorUVE::DrawUIImageInspectorDrawerUVE(const Scene::EntityUVE entity) {
+    if (!IsDocumentEntityUVE(entity) || entity != m_selectedEntity) {
+        return;
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (!entityManager.HasComponentUVE<Scene::UIImageComponentUVE>(entity)) {
+        return;
+    }
+
+    const Scene::UIImageComponentUVE current = entityManager.GetComponentUVE<Scene::UIImageComponentUVE>(entity);
+    Scene::UIImageComponentUVE edited = current;
+    bool changed = false;
+
+    ImGui::Separator();
+    DrawProceduralIconLabelUVE(8.0F, "UI Image", DrawNodeMeshIconUVE);
+    ImGui::TextDisabled("An unset (zero) Texture Asset GUID renders as a flat tint-colored quad.");
+
+    std::uint64_t guidValue = edited.textureAssetGuid.value;
+    if (ImGui::InputScalar("Texture Asset GUID", ImGuiDataType_U64, &guidValue)) {
+        edited.textureAssetGuid = Asset::AssetGuidUVE{guidValue};
+        changed = true;
+    }
+    float position[2]{edited.positionPixels.x, edited.positionPixels.y};
+    if (ImGui::DragFloat2("Position (px)", position, 1.0F)) {
+        edited.positionPixels = Math::Vector2UVE{position[0], position[1]};
+        changed = true;
+    }
+    float size[2]{edited.sizePixels.x, edited.sizePixels.y};
+    if (ImGui::DragFloat2("Size (px)", size, 1.0F, Scene::kMinimumUIImageSizePixelsUVE,
+                         Scene::kMaximumUIImageSizePixelsUVE)) {
+        edited.sizePixels = Math::Vector2UVE{size[0], size[1]};
+        changed = true;
+    }
+    float tintColor[3]{edited.tintColor.x, edited.tintColor.y, edited.tintColor.z};
+    if (ImGui::ColorEdit3("Tint Color", tintColor, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_DisplayRGB)) {
+        edited.tintColor = Math::Vector3UVE{tintColor[0], tintColor[1], tintColor[2]};
+        changed = true;
+    }
+    float alpha = edited.alpha;
+    if (ImGui::DragFloat("Alpha", &alpha, 0.01F, 0.0F, 1.0F, "%.3f")) {
+        edited.alpha = alpha;
+        changed = true;
+    }
+
+    if (changed && !SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::UIImage, edited)) {
+        ImGui::TextDisabled("Input was rejected by the authored-value validator.");
+    }
+    if (ImGui::Button("Remove UI Image")) {
+        static_cast<void>(RemoveSelectedSceneComponentUVE(EditorSceneComponentKindUVE::UIImage));
+    }
+}
+
+void EditorUVE::DrawUIButtonInspectorDrawerUVE(const Scene::EntityUVE entity) {
+    if (!IsDocumentEntityUVE(entity) || entity != m_selectedEntity) {
+        return;
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (!entityManager.HasComponentUVE<Scene::UIButtonComponentUVE>(entity)) {
+        return;
+    }
+
+    const Scene::UIButtonComponentUVE current = entityManager.GetComponentUVE<Scene::UIButtonComponentUVE>(entity);
+    Scene::UIButtonComponentUVE edited = current;
+    bool changed = false;
+
+    ImGui::Separator();
+    DrawProceduralIconLabelUVE(8.0F, "UI Button", DrawNodeMeshIconUVE);
+    ImGui::TextDisabled("Hit-tested every tick by UIRuntimeUVE against the real mouse position/button state.");
+
+    float position[2]{edited.positionPixels.x, edited.positionPixels.y};
+    if (ImGui::DragFloat2("Position (px)", position, 1.0F)) {
+        edited.positionPixels = Math::Vector2UVE{position[0], position[1]};
+        changed = true;
+    }
+    float size[2]{edited.sizePixels.x, edited.sizePixels.y};
+    if (ImGui::DragFloat2("Size (px)", size, 1.0F, Scene::kMinimumUIButtonSizePixelsUVE,
+                         Scene::kMaximumUIButtonSizePixelsUVE)) {
+        edited.sizePixels = Math::Vector2UVE{size[0], size[1]};
+        changed = true;
+    }
+    float normalColor[3]{edited.normalColor.x, edited.normalColor.y, edited.normalColor.z};
+    if (ImGui::ColorEdit3("Normal Color", normalColor, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_DisplayRGB)) {
+        edited.normalColor = Math::Vector3UVE{normalColor[0], normalColor[1], normalColor[2]};
+        changed = true;
+    }
+    float hoverColor[3]{edited.hoverColor.x, edited.hoverColor.y, edited.hoverColor.z};
+    if (ImGui::ColorEdit3("Hover Color", hoverColor, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_DisplayRGB)) {
+        edited.hoverColor = Math::Vector3UVE{hoverColor[0], hoverColor[1], hoverColor[2]};
+        changed = true;
+    }
+    float pressedColor[3]{edited.pressedColor.x, edited.pressedColor.y, edited.pressedColor.z};
+    if (ImGui::ColorEdit3("Pressed Color", pressedColor, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_DisplayRGB)) {
+        edited.pressedColor = Math::Vector3UVE{pressedColor[0], pressedColor[1], pressedColor[2]};
+        changed = true;
+    }
+    ImGui::BeginDisabled();
+    bool isHovered = edited.isHovered;
+    ImGui::Checkbox("Hovered (runtime)", &isHovered);
+    bool wasClicked = edited.wasClickedThisFrame;
+    ImGui::Checkbox("Clicked This Frame (runtime)", &wasClicked);
+    ImGui::EndDisabled();
+
+    if (changed && !SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::UIButton, edited)) {
+        ImGui::TextDisabled("Input was rejected by the authored-value validator.");
+    }
+    if (ImGui::Button("Remove UI Button")) {
+        static_cast<void>(RemoveSelectedSceneComponentUVE(EditorSceneComponentKindUVE::UIButton));
+    }
+}
+
 void EditorUVE::DrawSceneComponentInspectorDrawerUVE(const Scene::EntityUVE entity,
                                                         const EditorSceneComponentKindUVE kind) {
     if (!IsDocumentEntityUVE(entity) || entity != m_selectedEntity) {
@@ -4934,6 +5238,10 @@ void EditorUVE::DrawSceneComponentInspectorDrawerUVE(const Scene::EntityUVE enti
         case EditorSceneComponentKindUVE::AnimationPlayer: title = "Animation Player"; break;
         case EditorSceneComponentKindUVE::WorldEnvironment: title = "World Environment"; break;
         case EditorSceneComponentKindUVE::CharacterController: title = "Character Controller"; break;
+        case EditorSceneComponentKindUVE::Canvas: title = "Canvas"; break;
+        case EditorSceneComponentKindUVE::UIText: title = "UI Text"; break;
+        case EditorSceneComponentKindUVE::UIImage: title = "UI Image"; break;
+        case EditorSceneComponentKindUVE::UIButton: title = "UI Button"; break;
     }
     ImGui::Separator();
     DrawProceduralIconLabelUVE(8.0F, title, [this, kind](ImDrawList& drawList, const ImVec2 center,
@@ -5061,6 +5369,15 @@ void EditorUVE::DrawSceneComponentAddPanelUVE() {
         ImGui::EndDisabled();
         ImGui::TableSetColumnIndex(1);
         ImGui::TextDisabled(hasCharacterController ? "Attached" : "Available");
+
+        addIfMissing("Canvas", EditorSceneComponentKindUVE::Canvas, Scene::CanvasComponentUVE{},
+                     entityManager.HasComponentUVE<Scene::CanvasComponentUVE>(m_selectedEntity));
+        addIfMissing("UI Text", EditorSceneComponentKindUVE::UIText, Scene::UITextComponentUVE{},
+                     entityManager.HasComponentUVE<Scene::UITextComponentUVE>(m_selectedEntity));
+        addIfMissing("UI Image", EditorSceneComponentKindUVE::UIImage, Scene::UIImageComponentUVE{},
+                     entityManager.HasComponentUVE<Scene::UIImageComponentUVE>(m_selectedEntity));
+        addIfMissing("UI Button", EditorSceneComponentKindUVE::UIButton, Scene::UIButtonComponentUVE{},
+                     entityManager.HasComponentUVE<Scene::UIButtonComponentUVE>(m_selectedEntity));
 
         ImGui::EndTable();
     }
@@ -5937,6 +6254,10 @@ void EditorUVE::DrawFilesystemContextPopupUVE() {
                     Scene::WorldEnvironment3DNodeComponentUVE{});
     componentAction("Character Controller", EditorSceneComponentKindUVE::CharacterController,
                     Scene::CharacterControllerComponentUVE{});
+    componentAction("Canvas", EditorSceneComponentKindUVE::Canvas, Scene::CanvasComponentUVE{});
+    componentAction("UI Text", EditorSceneComponentKindUVE::UIText, Scene::UITextComponentUVE{});
+    componentAction("UI Image", EditorSceneComponentKindUVE::UIImage, Scene::UIImageComponentUVE{});
+    componentAction("UI Button", EditorSceneComponentKindUVE::UIButton, Scene::UIButtonComponentUVE{});
     if (!IsDocumentEntityUVE(m_selectedEntity)) {
         ImGui::TextDisabled("Select a Scene node to attach a component.");
     }

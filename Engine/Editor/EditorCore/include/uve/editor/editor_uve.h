@@ -29,6 +29,7 @@
 #include "uve/scene/components/animation_player_component_uve.h"
 #include "uve/scene/components/audio_source_component_uve.h"
 #include "uve/scene/components/camera_component_uve.h"
+#include "uve/scene/components/canvas_component_uve.h"
 #include "uve/scene/components/character_controller_component_uve.h"
 #include "uve/scene/components/collider_component_uve.h"
 #include "uve/scene/components/expanded_3d_node_components_uve.h"
@@ -39,6 +40,9 @@
 #include "uve/scene/components/rigid_body_component_uve.h"
 #include "uve/scene/components/script_component_uve.h"
 #include "uve/scene/components/transform_component_uve.h"
+#include "uve/scene/components/ui_button_component_uve.h"
+#include "uve/scene/components/ui_image_component_uve.h"
+#include "uve/scene/components/ui_text_component_uve.h"
 #include "uve/scene/nodes/scene_node_registry_uve.h"
 #include "uve/scene/entity_uve.h"
 #include "uve/scene/i_scene_serializer_uve.h"
@@ -131,6 +135,10 @@ enum class EditorSceneComponentKindUVE : std::uint8_t {
     AnimationPlayer,
     WorldEnvironment,
     CharacterController,
+    Canvas,
+    UIText,
+    UIImage,
+    UIButton,
 };
 
 using EditorSceneComponentValueUVE =
@@ -138,7 +146,8 @@ using EditorSceneComponentValueUVE =
                  Scene::ColliderComponentUVE, Scene::RigidBodyComponentUVE, Scene::AudioSourceComponentUVE,
                  Scene::ParticleEmitterComponentUVE, Scene::ScriptComponentUVE,
                  Scene::AnimationPlayerComponentUVE, Scene::WorldEnvironment3DNodeComponentUVE,
-                 Scene::CharacterControllerComponentUVE>;
+                 Scene::CharacterControllerComponentUVE, Scene::CanvasComponentUVE, Scene::UITextComponentUVE,
+                 Scene::UIImageComponentUVE, Scene::UIButtonComponentUVE>;
 
 enum class EditorEntityKindUVE {
     Empty,
@@ -707,6 +716,10 @@ private:
     void DrawPrimitiveMeshInspectorDrawerUVE(Scene::EntityUVE entity);
     void DrawWorldEnvironmentInspectorDrawerUVE(Scene::EntityUVE entity);
     void DrawCharacterControllerInspectorDrawerUVE(Scene::EntityUVE entity);
+    void DrawCanvasInspectorDrawerUVE(Scene::EntityUVE entity);
+    void DrawUITextInspectorDrawerUVE(Scene::EntityUVE entity);
+    void DrawUIImageInspectorDrawerUVE(Scene::EntityUVE entity);
+    void DrawUIButtonInspectorDrawerUVE(Scene::EntityUVE entity);
     void DrawSceneComponentInspectorDrawerUVE(Scene::EntityUVE entity, EditorSceneComponentKindUVE kind);
     void DrawSceneComponentAddPanelUVE();
     void DrawPrefabInspectorDrawerUVE(Scene::EntityUVE entity);
