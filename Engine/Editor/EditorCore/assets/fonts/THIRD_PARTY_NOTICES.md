@@ -127,6 +127,31 @@ FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM OTHER
 DEALINGS IN THE FONT SOFTWARE.
 ```
 
+## Liberation Mono (subsetted)
+
+`liberation-mono-subset.ttf` is a subset of Liberation Mono Regular (same
+`fonts-liberation` Debian package as Liberation Sans above), used for the
+editor's numeric fields (Inspector Transform X/Y/Z) in place of the main
+UI text font, matching a design mockup's own use of a monospace font
+(`"JetBrains Mono"`) for numeric values. JetBrains Mono itself is not
+installed anywhere in this build environment and was never fetched or
+verified, so Liberation Mono was chosen instead as an honest substitute
+that could actually be checked before use: same type family, same SIL
+Open Font License, and already vendored for Liberation Sans above.
+Upstream project: <https://github.com/liberationfonts>.
+
+Subsetted identically to Liberation Sans (same glyph range, same
+`pyftsubset` invocation with `LiberationMono-Regular.ttf` as input and
+`liberation-mono-subset.ttf` as output), then compiled into
+`engine/editor/src/uve_mono_font_bytes.inc` following the exact same
+byte-array convention as `uve_ui_font_bytes.inc`.
+
+### License
+
+Same SIL Open Font License 1.1 text as the Liberation Sans entry above
+(both fonts ship under the same license file in the `fonts-liberation`
+package) - not repeated here.
+
 ## Tabler Icons (subsetted)
 
 `tabler-icons-subset.ttf` is a subset of the Tabler Icons webfont, built from

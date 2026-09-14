@@ -95,9 +95,13 @@ target_compile_options(univex_viewport_app_support PRIVATE -Wall -Wextra -Wpedan
 # ---------------------------------------------------------------------------
 add_library(univex_viewport_engine_bridge STATIC
     src/integration/WorldUveEntitySource.cpp
-    src/integration/EntityManagerEntitySource.cpp)
+    src/integration/EntityManagerEntitySource.cpp
+    src/integration/EditorMeshLayer.cpp)
 target_include_directories(univex_viewport_engine_bridge PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(univex_viewport_engine_bridge PUBLIC univex_viewport_app_support uve_world)
+# uve_core additionally brings in EngineServicesUVE/Renderer3DUVE/GlRenderDeviceUVE/Scene for
+# EditorMeshLayerUVE, which renders the live scene's real mesh/material entities into the
+# Viewport panel - the other two bridge files only ever read entity transforms.
+target_link_libraries(univex_viewport_engine_bridge PUBLIC univex_viewport_app_support uve_world uve_core)
 target_compile_options(univex_viewport_engine_bridge PRIVATE -Wall -Wextra -Wpedantic)
 uve_set_warnings(univex_viewport_engine_bridge)
 

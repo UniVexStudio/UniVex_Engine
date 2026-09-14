@@ -25,6 +25,7 @@
 #include "uve/scene/components/area_component_uve.h"
 #include "uve/scene/components/audio_source_component_uve.h"
 #include "uve/scene/components/camera_component_uve.h"
+#include "uve/scene/components/character_controller_component_uve.h"
 #include "uve/scene/components/collider_component_uve.h"
 #include "uve/scene/components/expanded_3d_node_components_uve.h"
 #include "uve/scene/components/hierarchy_component_uve.h"
@@ -715,6 +716,36 @@ TEST_F(SceneSerializerUVETest, SaveThenLoad_SingleEntityWithMultipleComponents_R
     EXPECT_TRUE(loadedManager.GetComponentUVE<LightComponentUVE>(loaded).color == expectedColor);
     EXPECT_FLOAT_EQ(loadedManager.GetComponentUVE<RigidBodyComponentUVE>(loaded).mass, 5.0F);
     EXPECT_TRUE(loadedManager.GetComponentUVE<RigidBodyComponentUVE>(loaded).isKinematic);
+
+    std::filesystem::remove(path);
+}
+
+TEST_F(SceneSerializerUVETest, SaveThenLoad_CharacterControllerComponentUVE_RoundTripsExactly) {
+    const EntityUVE entity = entityManager.CreateEntityUVE();
+    CharacterControllerComponentUVE characterController{};
+    characterController.moveSpeed = 6.5F;
+    characterController.jumpHeight = 2.25F;
+    characterController.gravityScale = 1.5F;
+    characterController.verticalVelocity = -3.0F;
+    characterController.isGrounded = true;
+    entityManager.AddComponentUVE<CharacterControllerComponentUVE>(entity, characterController);
+
+    const std::filesystem::path path = "uve_scene_serializer_tests_character_controller.uvescene";
+    std::filesystem::remove(path);
+    ASSERT_TRUE(serializer.SaveUVE(entityManager, {entity}, path, SceneAssetTypeUVE::Scene));
+
+    EntityManagerUVE loadedManager(memoryManager.GetDefaultAllocatorUVE(), eventSystem);
+    const std::vector<EntityUVE> roots = serializer.LoadUVE(loadedManager, path);
+    ASSERT_EQ(roots.size(), 1U);
+    const EntityUVE loaded = roots[0];
+
+    const CharacterControllerComponentUVE& loadedController =
+        loadedManager.GetComponentUVE<CharacterControllerComponentUVE>(loaded);
+    EXPECT_FLOAT_EQ(loadedController.moveSpeed, 6.5F);
+    EXPECT_FLOAT_EQ(loadedController.jumpHeight, 2.25F);
+    EXPECT_FLOAT_EQ(loadedController.gravityScale, 1.5F);
+    EXPECT_FLOAT_EQ(loadedController.verticalVelocity, -3.0F);
+    EXPECT_TRUE(loadedController.isGrounded);
 
     std::filesystem::remove(path);
 }

@@ -11,6 +11,7 @@
 #include "uve/scene/components/animation_player_component_uve.h"
 #include "uve/scene/components/audio_source_component_uve.h"
 #include "uve/scene/components/camera_component_uve.h"
+#include "uve/scene/components/character_controller_component_uve.h"
 #include "uve/scene/components/collider_component_uve.h"
 #include "uve/scene/components/light_component_uve.h"
 #include "uve/scene/components/mesh_component_uve.h"
@@ -104,6 +105,40 @@ TEST(SceneComponentAuthoringUVETest, SetSelectedSceneComponentUVE_AddsAllSupport
         EXPECT_EQ(entityManager.GetComponentUVE<Scene::AnimationPlayerComponentUVE>(entity).playbackSpeed, 1.25F);
         ASSERT_TRUE(editor.RedoUVE());
         EXPECT_FALSE(entityManager.HasComponentUVE<Scene::AnimationPlayerComponentUVE>(entity));
+
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
+TEST(SceneComponentAuthoringUVETest, SetSelectedSceneComponentUVE_CharacterControllerAddEditRemoveUndoRedo) {
+    Core::EngineCoreUVE engine(MakeSceneComponentAuthoringTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_scene_component_authoring_character_controller.uvescene");
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        const Scene::EntityUVE entity = editor.CreateDocumentEntityUVE(EditorEntityKindUVE::Empty);
+        ASSERT_TRUE(entityManager.IsAliveUVE(entity));
+
+        Scene::CharacterControllerComponentUVE characterController{};
+        characterController.moveSpeed = 7.5F;
+        characterController.jumpHeight = 2.0F;
+        ASSERT_TRUE(editor.SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::CharacterController,
+                                                        characterController));
+        EXPECT_FLOAT_EQ(
+            entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(entity).moveSpeed, 7.5F);
+
+        ASSERT_TRUE(editor.RemoveSelectedSceneComponentUVE(EditorSceneComponentKindUVE::CharacterController));
+        EXPECT_FALSE(entityManager.HasComponentUVE<Scene::CharacterControllerComponentUVE>(entity));
+        ASSERT_TRUE(editor.UndoUVE());
+        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::CharacterControllerComponentUVE>(entity));
+        EXPECT_FLOAT_EQ(
+            entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(entity).jumpHeight, 2.0F);
+        ASSERT_TRUE(editor.RedoUVE());
+        EXPECT_FALSE(entityManager.HasComponentUVE<Scene::CharacterControllerComponentUVE>(entity));
 
         editor.ShutdownUVE();
     }

@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <memory>
 
 #include "uve/render/i_render_device_uve.h"
@@ -72,6 +73,15 @@ public:
     /// resources are currently alive — mirrors NullRenderDeviceUVE::GetLiveResourceCountUVE()'s
     /// role so tests can confirm cleanup the same way regardless of backend.
     [[nodiscard]] std::size_t GetLiveResourceCountUVE() const noexcept;
+
+    /// Editor-integration-only hook (not part of IRenderDeviceUVE, and not exposed on any other
+    /// backend): returns the raw GL texture object name behind `texture`, or 0 if the handle is
+    /// unknown. Every other IRenderDeviceUVE consumer only ever sees the backend-agnostic
+    /// TextureHandleUVE (per this class's own doc comment above) - this is a deliberate, narrowly
+    /// scoped exception for the one caller that must hand a real GLuint to ImGui::Image() to
+    /// display a Renderer3DUVE::RenderFrameToTargetUVE() result inside an editor panel; it must
+    /// never be used to justify leaking native GL types anywhere else.
+    [[nodiscard]] std::uint32_t GetNativeTextureIdUVE(TextureHandleUVE texture) const noexcept;
 
 private:
     struct ImplUVE;

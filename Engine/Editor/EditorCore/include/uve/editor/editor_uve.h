@@ -29,6 +29,7 @@
 #include "uve/scene/components/animation_player_component_uve.h"
 #include "uve/scene/components/audio_source_component_uve.h"
 #include "uve/scene/components/camera_component_uve.h"
+#include "uve/scene/components/character_controller_component_uve.h"
 #include "uve/scene/components/collider_component_uve.h"
 #include "uve/scene/components/expanded_3d_node_components_uve.h"
 #include "uve/scene/components/light_component_uve.h"
@@ -129,13 +130,15 @@ enum class EditorSceneComponentKindUVE : std::uint8_t {
     Script,
     AnimationPlayer,
     WorldEnvironment,
+    CharacterController,
 };
 
 using EditorSceneComponentValueUVE =
     std::variant<Scene::CameraComponentUVE, Scene::MeshComponentUVE, Scene::LightComponentUVE,
                  Scene::ColliderComponentUVE, Scene::RigidBodyComponentUVE, Scene::AudioSourceComponentUVE,
                  Scene::ParticleEmitterComponentUVE, Scene::ScriptComponentUVE,
-                 Scene::AnimationPlayerComponentUVE, Scene::WorldEnvironment3DNodeComponentUVE>;
+                 Scene::AnimationPlayerComponentUVE, Scene::WorldEnvironment3DNodeComponentUVE,
+                 Scene::CharacterControllerComponentUVE>;
 
 enum class EditorEntityKindUVE {
     Empty,
@@ -703,6 +706,7 @@ private:
     void DrawTransformInspectorDrawerUVE(Scene::EntityUVE entity);
     void DrawPrimitiveMeshInspectorDrawerUVE(Scene::EntityUVE entity);
     void DrawWorldEnvironmentInspectorDrawerUVE(Scene::EntityUVE entity);
+    void DrawCharacterControllerInspectorDrawerUVE(Scene::EntityUVE entity);
     void DrawSceneComponentInspectorDrawerUVE(Scene::EntityUVE entity, EditorSceneComponentKindUVE kind);
     void DrawSceneComponentAddPanelUVE();
     void DrawPrefabInspectorDrawerUVE(Scene::EntityUVE entity);
@@ -731,11 +735,13 @@ private:
     /// generic per-type icon in that case.
     [[nodiscard]] std::uintptr_t GetMeshThumbnailUVE(const std::filesystem::path& relativePath);
     void ClearMeshThumbnailCacheUVE() noexcept;
-    void DrawAssetsPanelUVE();
+    /// Draws the merged Content Browser panel (folder/file list on the left, thumbnail grid on the
+    /// right, separated by a draggable splitter) - replaces the former separate Filesystem and
+    /// Contents panels, which showed the same underlying directory from two windows.
+    void DrawContentBrowserPanelUVE();
     /// Refreshes the read-only project index after the engine-owned watcher observes a new
     /// filesystem baseline. It never schedules imports or mutates project files.
     void RefreshProjectFileIndexUVE();
-    void DrawFolderContentsPanelUVE();
     void DrawFilesystemContextPopupUVE();
     [[nodiscard]] Scripting::ScriptGraphCanvasUVE& ActiveVisualScriptCanvasUVE() noexcept;
     [[nodiscard]] const Scripting::ScriptGraphCanvasUVE& ActiveVisualScriptCanvasUVE() const noexcept;
@@ -786,6 +792,18 @@ private:
     /// True while the Filesystem panel shows the flattened Favorites list instead of the direct
     /// children of m_contentBrowserDirectory.
     bool m_contentBrowserShowingFavorites = false;
+    /// Fraction of the merged Content Browser panel's width given to its left file/folder list
+    /// (the remainder goes to the right thumbnail grid); adjusted by dragging the splitter between
+    /// them. Matches the ~35% left / ~65% right proportions of the design this panel was built to.
+    float m_contentBrowserSplitRatio = 0.35F;
+    /// Whether the Content Browser shows its left folder tree beside the grid (split mode, default)
+    /// or the grid alone at full width (single mode). Toggled by clicking the divider handle between
+    /// the two panes - the "filesystem flip mode" the design calls for, mirroring Godot's own
+    /// FileSystem dock split toggle.
+    bool m_contentBrowserSplitModeUVE = true;
+    /// Transient: set while the divider handle is being dragged so the release that ends a drag is
+    /// not mistaken for a click that would flip the split mode.
+    bool m_contentBrowserSplitterDraggingUVE = false;
     /// Content-derived thumbnail textures for Content Browser entries (currently texture assets
     /// only), keyed by project-relative generic path. A cached 0 means a prior load attempt
     /// failed (not a texture, corrupt, or unsupported format) and callers should fall back to the

@@ -272,6 +272,7 @@ add_executable(uve_engine_tests
     Engine/version_uve_tests.cpp
     Engine/engine_services_uve_tests.cpp
     Engine/engine_core_uve_tests.cpp
+    Engine/script_gameplay_bindings_uve_tests.cpp
 )
 target_link_libraries(uve_engine_tests PRIVATE
     nlohmann_json::nlohmann_json

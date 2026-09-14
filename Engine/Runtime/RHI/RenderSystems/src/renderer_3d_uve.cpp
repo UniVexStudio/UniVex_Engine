@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstdint>
 #include <optional>
+#include <utility>
 #include <span>
 #include <string>
 #include <unordered_map>
@@ -568,6 +569,13 @@ struct Renderer3DUVE::ImplUVE {
     /// above. The ToneMapping pass reads this when building its RenderPassDescUVE, so a full-frame
     /// RenderFrameUVE() call (this field left nullopt) is unaffected.
     std::optional<ViewportRectUVE> destinationViewportOverride;
+
+    /// Set only for the duration of a RenderFrameToTargetUVE() call, mirroring
+    /// destinationViewportOverride's own scoped-field pattern directly above. The ToneMapping pass
+    /// reads this when building its RenderPassDescUVE's colorAttachment/depthAttachment, so a
+    /// full-frame RenderFrameUVE() call (this field left nullopt) still targets the presentation
+    /// surface exactly as before.
+    std::optional<std::pair<TextureHandleUVE, TextureHandleUVE>> destinationTextureOverride;
 
     ImplUVE(IRenderDeviceUVE& renderDeviceIn, IRenderSystemUVE& renderSystemIn, IMeshRendererUVE& meshRendererIn,
             ICameraSystemUVE& cameraSystemIn, ILightSystemUVE& lightSystemIn,
@@ -1730,8 +1738,12 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             }
             m_impl->lastFrameDiagnostics.toneMappingPassRecorded = true;
             RenderPassDescUVE passDesc;
-            passDesc.colorAttachment = kInvalidTextureHandleUVE;
-            passDesc.depthAttachment = kInvalidTextureHandleUVE;
+            passDesc.colorAttachment = m_impl->destinationTextureOverride.has_value()
+                                           ? m_impl->destinationTextureOverride->first
+                                           : kInvalidTextureHandleUVE;
+            passDesc.depthAttachment = m_impl->destinationTextureOverride.has_value()
+                                           ? m_impl->destinationTextureOverride->second
+                                           : kInvalidTextureHandleUVE;
             passDesc.viewportOverride = m_impl->destinationViewportOverride;
             commandBuffer.BeginRenderPassUVE(passDesc);
             m_impl->toneMappingProgram->SetIntUVE("uSourceTexture", 0);
@@ -1779,6 +1791,20 @@ void Renderer3DUVE::RenderFrameToRegionUVE(Scene::IEntityManagerUVE& entityManag
         const Scene::ParticleRuntimeUVE* previous;
         ~RuntimeFrameScopeUVE() { slot = previous; }
     } runtimeScope{m_impl->particleRuntimeForFrame, previousRuntime};
+
+    RenderFrameUVE(entityManager, cameraEntity);
+}
+
+void Renderer3DUVE::RenderFrameToTargetUVE(Scene::IEntityManagerUVE& entityManager, Scene::EntityUVE cameraEntity,
+                                            const TextureHandleUVE colorTarget, const TextureHandleUVE depthTarget) {
+    const std::optional<std::pair<TextureHandleUVE, TextureHandleUVE>> previousOverride =
+        m_impl->destinationTextureOverride;
+    m_impl->destinationTextureOverride = std::make_pair(colorTarget, depthTarget);
+    struct TargetScopeUVE final {
+        std::optional<std::pair<TextureHandleUVE, TextureHandleUVE>>& slot;
+        std::optional<std::pair<TextureHandleUVE, TextureHandleUVE>> previous;
+        ~TargetScopeUVE() { slot = previous; }
+    } targetScope{m_impl->destinationTextureOverride, previousOverride};
 
     RenderFrameUVE(entityManager, cameraEntity);
 }
