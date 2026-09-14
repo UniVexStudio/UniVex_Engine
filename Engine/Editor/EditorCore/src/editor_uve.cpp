@@ -1031,8 +1031,15 @@ void EditorUVE::DrawViewportPanelUVE() {
     // meant to be user-repositionable extras rather than part of the fixed chrome.
     ImGui::SetNextWindowPos(layout.viewportPos, ImGuiCond_Always);
     ImGui::SetNextWindowSize(layout.viewportSize, ImGuiCond_Always);
+    // Zero interior padding for the viewport window so the rendered 3D image fills the panel
+    // edge-to-edge (the reference has the grid reaching all four edges with the toolbar floating on
+    // top); with the theme's default WindowPadding the GL image is inset ~8px all around, leaving an
+    // empty border band. Only this window opts out - the overlay bubbles still float on top since
+    // they anchor off the image origin, which now sits flush in the panel corner.
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{0.0F, 0.0F});
     if (!ImGui::Begin(kPanelLabelViewportUVE, &m_viewportPanelVisible, ImGuiWindowFlags_NoCollapse)) {
         ImGui::End();
+        ImGui::PopStyleVar();
         return;
     }
     const ImVec2 availableRegion = ImGui::GetContentRegionAvail();
@@ -1062,6 +1069,7 @@ void EditorUVE::DrawViewportPanelUVE() {
         }
     }
     ImGui::End();
+    ImGui::PopStyleVar();
 }
 
 void EditorUVE::DrawViewportOverlayBubblesUVE(const Math::Vector2UVE imageOriginUVE,

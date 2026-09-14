@@ -6,9 +6,12 @@ namespace UVE::Editor {
 
 void ApplyEditorVisualThemeUVE() noexcept {
     ImGuiStyle& style = ImGui::GetStyle();
-    style.WindowPadding = ImVec2{8.0F, 6.0F};
+    // Tightened interior padding and row spacing so panel content sits closer to the panel edges
+    // and list/tree/inspector rows are denser - the earlier looser values wasted vertical space
+    // against the reference's tight rows.
+    style.WindowPadding = ImVec2{6.0F, 4.0F};
     style.FramePadding = ImVec2{5.0F, 3.0F};
-    style.ItemSpacing = ImVec2{5.0F, 3.0F};
+    style.ItemSpacing = ImVec2{5.0F, 2.0F};
     style.ItemInnerSpacing = ImVec2{4.0F, 3.0F};
     // Square corners throughout - the earlier "glass" look (8px/6px/4px rounding) read as soft
     // and inconsistent against real reference editors; every panel, popup, and control now shares
