@@ -136,7 +136,7 @@ constexpr float kTrackballRadiusPixelsUVE = 42.0F;
 constexpr float kTrackballAntipodalDotThresholdUVE = -0.999F;
 constexpr float kMinimumViewportWidthUVE = 64.0F;
 constexpr float kMinimumViewportHeightUVE = 64.0F;
-constexpr float kAssetsPanelHeightUVE = 176.0F;
+constexpr float kAssetsPanelHeightUVE = 192.0F;
 constexpr float kBottomDockTabHeightUVE = 24.0F;
 constexpr float kEditorTitleBarHeightUVE = 24.0F;
 // Shrunk from 30 now that this row also hosts the Play/Pause/Stop transport buttons (moved out of
@@ -165,6 +165,65 @@ constexpr float kViewportNavigationPlateRadiusPixelsUVE = 47.0F;
 constexpr float kMinimum2DCanvasZoomUVE = 0.10F;
 constexpr float kMaximum2DCanvasZoomUVE = 4.00F;
 constexpr const char* kHierarchyEntityPayloadUVE = "UVE_SCENE_HIERARCHY_ENTITY";
+
+// Side-panel widths derived from the editor's visual reference (a 1280px-wide window shows the
+// Scene panel at ~216px and the Inspector at ~256px): the proportional term hits those exact
+// values at 1280, and the clamps keep both sensible on very small and very large windows. Narrower
+// than the previous 0.19/0.22 (243/281 at 1280) so the center viewport - the primary workspace -
+// keeps the majority of the width instead of being squeezed by the side panels.
+constexpr float kScenePanelWidthFractionUVE = 0.17F;
+constexpr float kScenePanelWidthMinUVE = 200.0F;
+constexpr float kScenePanelWidthMaxUVE = 280.0F;
+constexpr float kInspectorPanelWidthFractionUVE = 0.20F;
+constexpr float kInspectorPanelWidthMinUVE = 240.0F;
+constexpr float kInspectorPanelWidthMaxUVE = 320.0F;
+
+// One place that lays out the four core structural panels (Scene / Viewport / Inspector / Content
+// Browser) from a single set of constants, so they can never drift out of alignment. Each
+// Draw*PanelUVE() asks here instead of recomputing its own width/height clamps (which had been
+// copy-pasted into four separate functions and were free to desync). The center viewport takes
+// whatever horizontal space the two side panels leave.
+struct EditorChromeLayoutUVE {
+    ImVec2 scenePos;
+    ImVec2 sceneSize;
+    ImVec2 viewportPos;
+    ImVec2 viewportSize;
+    ImVec2 inspectorPos;
+    ImVec2 inspectorSize;
+    ImVec2 contentBrowserPos;
+    ImVec2 contentBrowserSize;
+};
+
+[[nodiscard]] inline EditorChromeLayoutUVE ComputeEditorChromeLayoutUVE(const ImGuiViewport& viewport,
+                                                                        const bool bottomDockVisible) {
+    const float originX = viewport.WorkPos.x;
+    const float originY = viewport.WorkPos.y;
+    const float totalWidth = viewport.WorkSize.x;
+    const float totalHeight = viewport.WorkSize.y;
+
+    const float chromeHeight = kEditorTopChromeHeightUVE;
+    const float reservedBottom = bottomDockVisible ? kAssetsPanelHeightUVE : 0.0F;
+    const float workspaceHeight =
+        std::max(kMinimumViewportHeightUVE, totalHeight - chromeHeight - reservedBottom);
+
+    const float sceneWidth =
+        std::clamp(totalWidth * kScenePanelWidthFractionUVE, kScenePanelWidthMinUVE, kScenePanelWidthMaxUVE);
+    const float inspectorWidth = std::clamp(totalWidth * kInspectorPanelWidthFractionUVE,
+                                            kInspectorPanelWidthMinUVE, kInspectorPanelWidthMaxUVE);
+    const float viewportWidth =
+        std::max(kMinimumViewportWidthUVE, totalWidth - sceneWidth - inspectorWidth);
+
+    EditorChromeLayoutUVE layout{};
+    layout.scenePos = ImVec2{originX, originY + chromeHeight};
+    layout.sceneSize = ImVec2{sceneWidth, workspaceHeight};
+    layout.viewportPos = ImVec2{originX + sceneWidth, originY + chromeHeight};
+    layout.viewportSize = ImVec2{viewportWidth, workspaceHeight};
+    layout.inspectorPos = ImVec2{originX + totalWidth - inspectorWidth, originY + chromeHeight};
+    layout.inspectorSize = ImVec2{inspectorWidth, workspaceHeight};
+    layout.contentBrowserPos = ImVec2{originX, originY + totalHeight - kAssetsPanelHeightUVE};
+    layout.contentBrowserSize = ImVec2{totalWidth, kAssetsPanelHeightUVE};
+    return layout;
+}
 
 [[nodiscard]] const char* ScriptValueTypeLabelUVE(const Scripting::ScriptValueTypeUVE type) noexcept {
     switch (type) {
@@ -961,11 +1020,7 @@ void EditorUVE::DrawViewportPanelUVE() {
     // fills the gap those two leave between them, matching the space actually visible on screen
     // rather than an arbitrary default ImGui would otherwise cascade this window into.
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
-    const float menuBarHeight = kEditorTopChromeHeightUVE;
-    const float workspaceHeight = std::max(kMinimumViewportHeightUVE,
-                                           mainViewport->WorkSize.y - menuBarHeight - (m_bottomDockVisible ? kAssetsPanelHeightUVE : 0.0F));
-    const float scenePanelWidth = std::clamp(mainViewport->WorkSize.x * 0.19F, 208.0F, 292.0F);
-    const float inspectorPanelWidth = std::clamp(mainViewport->WorkSize.x * 0.22F, 264.0F, 356.0F);
+    const EditorChromeLayoutUVE layout = ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible);
     // Always, not FirstUseEver: this is one of the 5 core structural panels that must tile the
     // screen with zero gaps/overlaps on every single launch, regardless of any stale imgui.ini
     // from a previous version of this layout (see the other 4 core panels' own identical comment
@@ -974,12 +1029,8 @@ void EditorUVE::DrawViewportPanelUVE() {
     // permanently freezes a panel at a since-outdated position/size). Only secondary/optional
     // windows (Plugin Tools, the Scripting canvas) keep FirstUseEver, since those are genuinely
     // meant to be user-repositionable extras rather than part of the fixed chrome.
-    ImGui::SetNextWindowPos(ImVec2{mainViewport->WorkPos.x + scenePanelWidth, mainViewport->WorkPos.y + menuBarHeight},
-                            ImGuiCond_Always);
-    ImGui::SetNextWindowSize(
-        ImVec2{std::max(kMinimumViewportHeightUVE, mainViewport->WorkSize.x - scenePanelWidth - inspectorPanelWidth),
-               workspaceHeight},
-        ImGuiCond_Always);
+    ImGui::SetNextWindowPos(layout.viewportPos, ImGuiCond_Always);
+    ImGui::SetNextWindowSize(layout.viewportSize, ImGuiCond_Always);
     if (!ImGui::Begin(kPanelLabelViewportUVE, &m_viewportPanelVisible, ImGuiWindowFlags_NoCollapse)) {
         ImGui::End();
         return;
@@ -3981,15 +4032,12 @@ void EditorUVE::DrawBottomDockContentUVE() {
     }
 
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
-    const float contentHeight = kAssetsPanelHeightUVE;
+    const EditorChromeLayoutUVE layout = ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible);
     // Always, not FirstUseEver - see DrawHierarchyPanelUVE()'s comment on the same change. This
-    // window is the Filesystem+Contents pair's mutually-exclusive alternate, so it needs the same
-    // deterministic re-tiling guarantee they get.
-    ImGui::SetNextWindowPos(
-        ImVec2{mainViewport->WorkPos.x, mainViewport->WorkPos.y + mainViewport->WorkSize.y -
-                                      kAssetsPanelHeightUVE},
-        ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2{mainViewport->WorkSize.x, contentHeight}, ImGuiCond_Always);
+    // window is the Content Browser's mutually-exclusive alternate, so it shares the exact same
+    // bottom rect (via the centralized layout helper) and re-tiling guarantee.
+    ImGui::SetNextWindowPos(layout.contentBrowserPos, ImGuiCond_Always);
+    ImGui::SetNextWindowSize(layout.contentBrowserSize, ImGuiCond_Always);
     constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse;
     ImGui::Begin("Debug##lower-workspace", nullptr, flags);
     switch (m_activeBottomDock) {
@@ -4084,9 +4132,7 @@ void EditorUVE::DrawHierarchyPanelUVE() {
         return;
     }
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
-    const float menuBarHeight = kEditorTopChromeHeightUVE;
-    const float workspaceHeight = std::max(kMinimumViewportHeightUVE,
-                                                  mainViewport->WorkSize.y - menuBarHeight - (m_bottomDockVisible ? kAssetsPanelHeightUVE : 0.0F));
+    const EditorChromeLayoutUVE layout = ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible);
     // Always, not FirstUseEver: this is one of the 5 core structural panels that must tile the
     // screen with zero gaps/overlaps on every single launch, regardless of any stale imgui.ini
     // from a previous version of this layout - an earlier version of this code used FirstUseEver
@@ -4097,10 +4143,8 @@ void EditorUVE::DrawHierarchyPanelUVE() {
     // seams reported against a live build. Only secondary/optional windows (Plugin Tools, the
     // Scripting canvas) keep FirstUseEver, since those are genuinely meant to be
     // user-repositionable extras rather than part of the fixed chrome.
-    ImGui::SetNextWindowPos(ImVec2{mainViewport->WorkPos.x, mainViewport->WorkPos.y + menuBarHeight},
-                            ImGuiCond_Always);
-    const float scenePanelWidth = std::clamp(mainViewport->WorkSize.x * 0.19F, 208.0F, 292.0F);
-    ImGui::SetNextWindowSize(ImVec2{scenePanelWidth, workspaceHeight}, ImGuiCond_Always);
+    ImGui::SetNextWindowPos(layout.scenePos, ImGuiCond_Always);
+    ImGui::SetNextWindowSize(layout.sceneSize, ImGuiCond_Always);
     ImGui::Begin(kPanelLabelSceneUVE);
     std::array<char, 256> filterBuffer{};
     m_hierarchyFilter.copy(filterBuffer.data(), filterBuffer.size() - 1U);
@@ -4309,15 +4353,10 @@ void EditorUVE::DrawInspectorPanelUVE() {
         return;
     }
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
-    const float menuBarHeight = kEditorTopChromeHeightUVE;
-    const float workspaceHeight = std::max(kMinimumViewportHeightUVE,
-                                           mainViewport->WorkSize.y - menuBarHeight - (m_bottomDockVisible ? kAssetsPanelHeightUVE : 0.0F));
-    const float inspectorPanelWidth = std::clamp(mainViewport->WorkSize.x * 0.22F, 264.0F, 356.0F);
+    const EditorChromeLayoutUVE layout = ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible);
     // Always, not FirstUseEver - see DrawHierarchyPanelUVE()'s comment on the same change.
-    ImGui::SetNextWindowPos(
-        ImVec2{mainViewport->WorkPos.x + mainViewport->WorkSize.x - inspectorPanelWidth,
-               mainViewport->WorkPos.y + menuBarHeight}, ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2{inspectorPanelWidth, workspaceHeight}, ImGuiCond_Always);
+    ImGui::SetNextWindowPos(layout.inspectorPos, ImGuiCond_Always);
+    ImGui::SetNextWindowSize(layout.inspectorSize, ImGuiCond_Always);
     // NoTitleBar dropped (was the only flag actually blocking dragging - dockable/draggable
     // windows need a title bar as their default drag handle) and given a real title: an internal
     // Inspector/Import/Signals tab strip already exists below via Selectable(), so the window
@@ -5179,48 +5218,24 @@ void EditorUVE::ClearMeshThumbnailCacheUVE() noexcept {
 
 void EditorUVE::DrawContentBrowserPanelUVE() {
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
-    const float contentHeight = kAssetsPanelHeightUVE;
+    const EditorChromeLayoutUVE layout = ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible);
     // Always, not FirstUseEver - see DrawHierarchyPanelUVE()'s comment on the same change.
-    ImGui::SetNextWindowPos(
-        ImVec2{mainViewport->WorkPos.x,
-               mainViewport->WorkPos.y + mainViewport->WorkSize.y - kAssetsPanelHeightUVE},
-        ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2{mainViewport->WorkSize.x, contentHeight}, ImGuiCond_Always);
-    // NoTitleBar dropped (see DrawInspectorPanelUVE()'s comment) and given a real title. The
-    // panel's own "CONTENT BROWSER" text label a few lines below is unrelated in-content chrome,
-    // not this window's identifying title, so both can coexist without looking redundant.
+    ImGui::SetNextWindowPos(layout.contentBrowserPos, ImGuiCond_Always);
+    ImGui::SetNextWindowSize(layout.contentBrowserSize, ImGuiCond_Always);
+    // NoTitleBar dropped (see DrawInspectorPanelUVE()'s comment) and given a real title. The window
+    // title bar already names this panel "Content Browser" - like every other panel - so no
+    // redundant in-content caps label is drawn; the single toolbar row below (main / Favorites /
+    // Search, plus the "..." overflow right-aligned) is the only chrome above the list/grid body,
+    // matching the reference's one-header layout.
     constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse;
     ImGui::Begin(kPanelLabelContentBrowserUVE, nullptr, flags);
 
     Asset::IProjectFileIndexUVE& projectFileIndex = m_services->GetProjectFileIndexUVE();
     const Asset::ProjectChangeSnapshotUVE changeSnapshot = m_services->GetProjectChangeWatcherUVE().GetSnapshotUVE();
     const Asset::ProjectFileSnapshotUVE snapshot = projectFileIndex.GetSnapshotUVE();
-    ImGui::TextDisabled("CONTENT BROWSER");
-    ImGui::SameLine(ImGui::GetContentRegionAvail().x - 18.0F);
-    if (ImGui::SmallButton("...##filesystem-menu")) {
-        ImGui::OpenPopup("filesystem-overflow-menu");
-    }
-    if (ImGui::BeginPopup("filesystem-overflow-menu")) {
-        ImGui::TextDisabled("Content Browser dock");
-        ImGui::Separator();
-        if (ImGui::MenuItem("Debug")) {
-            m_activeBottomDock = EditorBottomDockUVE::Debugger;
-        }
-        // Named "Close" to match the real menu item Godot's own FileSystem "..." overflow shows
-        // (per the user's reference screenshots) - functionally this already was "hide the dock",
-        // just under a name that didn't say so. A literal "Make Floating"/Dock-Position-grid pair
-        // like Godot's is not added here: this editor's panels are independently-positioned
-        // floating ImGui windows arranged to look tiled, not a real DockSpace/DockBuilder tree, so
-        // there is no docking-slot concept for "Dock Position" to move a panel between, and every
-        // panel is already un-parented (no ImGuiWindowFlags_NoMove) - a "Make Floating" item would
-        // be a no-op button. Building real dock-slot infrastructure is a separate, larger effort.
-        if (ImGui::MenuItem("Close")) {
-            m_bottomDockVisible = false;
-        }
-        ImGui::EndPopup();
-    }
+    // Rare, conditional status lines (only when a scan failed or a rescan is pending) get their own
+    // row above the toolbar so they never collide with it - normally nothing is drawn here.
     if (!m_projectFileLastRefreshSucceeded) {
-        ImGui::SameLine();
         if (ImGui::SmallButton("Retry")) {
             m_projectFileSnapshotInitialized = false;
             m_projectFileRefreshAttemptedForRescan = false;
@@ -5230,10 +5245,8 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
         ImGui::TextColored(ImVec4{0.95F, 0.55F, 0.35F, 1.0F}, "scan failed");
     }
     if (changeSnapshot.rescanRequired) {
-        ImGui::SameLine();
         ImGui::TextColored(ImVec4{0.95F, 0.72F, 0.30F, 1.0F}, "rescan required");
     }
-    ImGui::Separator();
     ReconcileContentBrowserDirectoryUVE(snapshot);
 
     if (m_selectedProjectFile.has_value()) {
@@ -5289,6 +5302,33 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
     ImGui::SetNextItemWidth(std::max(90.0F, ImGui::GetContentRegionAvail().x * 0.3F));
     if (ImGui::InputTextWithHint("##content-filter", "Search", filterBuffer.data(), filterBuffer.size())) {
         m_assetFilter = filterBuffer.data();
+    }
+
+    // "..." overflow menu, right-aligned at the end of this single toolbar row (the panel name
+    // lives in the window title bar, so the overflow sits here rather than on a second header row).
+    ImGui::SameLine();
+    ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(), ImGui::GetWindowContentRegionMax().x - 26.0F));
+    if (ImGui::SmallButton("...##filesystem-menu")) {
+        ImGui::OpenPopup("filesystem-overflow-menu");
+    }
+    if (ImGui::BeginPopup("filesystem-overflow-menu")) {
+        ImGui::TextDisabled("Content Browser dock");
+        ImGui::Separator();
+        if (ImGui::MenuItem("Debug")) {
+            m_activeBottomDock = EditorBottomDockUVE::Debugger;
+        }
+        // Named "Close" to match the real menu item Godot's own FileSystem "..." overflow shows
+        // (per the user's reference screenshots) - functionally this already was "hide the dock",
+        // just under a name that didn't say so. A literal "Make Floating"/Dock-Position-grid pair
+        // like Godot's is not added here: this editor's panels are independently-positioned
+        // floating ImGui windows arranged to look tiled, not a real DockSpace/DockBuilder tree, so
+        // there is no docking-slot concept for "Dock Position" to move a panel between, and every
+        // panel is already un-parented (no ImGuiWindowFlags_NoMove) - a "Make Floating" item would
+        // be a no-op button. Building real dock-slot infrastructure is a separate, larger effort.
+        if (ImGui::MenuItem("Close")) {
+            m_bottomDockVisible = false;
+        }
+        ImGui::EndPopup();
     }
     const bool hasActiveFilters = !m_assetFilter.empty();
 
