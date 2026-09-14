@@ -116,8 +116,7 @@ constexpr const char* kMenuLabelWindowUVE = "\xEE\xB6\xBA Window";
 constexpr const char* kMenuLabelHelpUVE = "\xEF\xA4\x9D Help";
 constexpr const char* kPanelLabelSceneUVE = "\xEF\xAB\xBA Scene##scene-panel";
 constexpr const char* kPanelLabelInspectorUVE = "\xEE\xA8\x83 Inspector##right-panel";
-constexpr const char* kPanelLabelFilesystemUVE = "\xEE\xAA\xAD Filesystem##project-panel";
-constexpr const char* kPanelLabelContentsUVE = "\xEF\xAB\xB7 Contents##folder-contents-panel";
+constexpr const char* kPanelLabelContentBrowserUVE = "\xEE\xAA\xAD Content Browser##content-browser-panel";
 constexpr const char* kPanelLabelViewportUVE = "\xEE\xA9\x94 Viewport##viewport";
 constexpr const char* kIconStarUVE = "\xEE\xAC\xAE";
 
@@ -3776,7 +3775,7 @@ void EditorUVE::DrawMenuBarUVE() {
                 ImGui::MenuItem("Scene", nullptr, &m_scenePanelVisible);
                 ImGui::MenuItem("Viewport", nullptr, &m_viewportPanelVisible);
                 ImGui::MenuItem("Inspector", nullptr, &m_inspectorPanelVisible);
-                ImGui::MenuItem("Filesystem + Debug Dock", nullptr, &m_bottomDockVisible);
+                ImGui::MenuItem("Content Browser + Debug Dock", nullptr, &m_bottomDockVisible);
                 ImGui::MenuItem("Plugin Tools", nullptr, &m_pluginWindowVisible);
                 ImGui::Separator();
                 if (ImGui::MenuItem("Default Layout")) {
@@ -3976,8 +3975,7 @@ void EditorUVE::DrawBottomDockContentUVE() {
         return;
     }
     if (m_activeBottomDock == EditorBottomDockUVE::FileSystem) {
-        DrawAssetsPanelUVE();
-        DrawFolderContentsPanelUVE();
+        DrawContentBrowserPanelUVE();
         DrawFilesystemContextPopupUVE();
         return;
     }
@@ -5179,33 +5177,138 @@ void EditorUVE::ClearMeshThumbnailCacheUVE() noexcept {
     m_meshThumbnailCache.clear();
 }
 
-void EditorUVE::DrawFolderContentsPanelUVE() {
+void EditorUVE::DrawContentBrowserPanelUVE() {
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
     const float contentHeight = kAssetsPanelHeightUVE;
-    const float projectWidth = std::clamp(mainViewport->WorkSize.x * 0.60F, 420.0F, mainViewport->WorkSize.x - 280.0F);
-    const float contentsWidth = std::max(280.0F, mainViewport->WorkSize.x - projectWidth);
     // Always, not FirstUseEver - see DrawHierarchyPanelUVE()'s comment on the same change.
     ImGui::SetNextWindowPos(
-        ImVec2{mainViewport->WorkPos.x + projectWidth,
+        ImVec2{mainViewport->WorkPos.x,
                mainViewport->WorkPos.y + mainViewport->WorkSize.y - kAssetsPanelHeightUVE},
         ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2{contentsWidth, contentHeight}, ImGuiCond_Always);
-    // NoTitleBar dropped (see DrawInspectorPanelUVE()'s comment) and given a real title.
+    ImGui::SetNextWindowSize(ImVec2{mainViewport->WorkSize.x, contentHeight}, ImGuiCond_Always);
+    // NoTitleBar dropped (see DrawInspectorPanelUVE()'s comment) and given a real title. The
+    // panel's own "CONTENT BROWSER" text label a few lines below is unrelated in-content chrome,
+    // not this window's identifying title, so both can coexist without looking redundant.
     constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse;
-    ImGui::Begin(kPanelLabelContentsUVE, nullptr, flags);
+    ImGui::Begin(kPanelLabelContentBrowserUVE, nullptr, flags);
 
-    const Asset::ProjectFileSnapshotUVE snapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-    std::filesystem::path selectedDirectory = m_contentBrowserDirectory;
+    Asset::IProjectFileIndexUVE& projectFileIndex = m_services->GetProjectFileIndexUVE();
+    const Asset::ProjectChangeSnapshotUVE changeSnapshot = m_services->GetProjectChangeWatcherUVE().GetSnapshotUVE();
+    const Asset::ProjectFileSnapshotUVE snapshot = projectFileIndex.GetSnapshotUVE();
+    ImGui::TextDisabled("CONTENT BROWSER");
+    ImGui::SameLine(ImGui::GetContentRegionAvail().x - 18.0F);
+    if (ImGui::SmallButton("...##filesystem-menu")) {
+        ImGui::OpenPopup("filesystem-overflow-menu");
+    }
+    if (ImGui::BeginPopup("filesystem-overflow-menu")) {
+        ImGui::TextDisabled("Content Browser dock");
+        ImGui::Separator();
+        if (ImGui::MenuItem("Debug")) {
+            m_activeBottomDock = EditorBottomDockUVE::Debugger;
+        }
+        // Named "Close" to match the real menu item Godot's own FileSystem "..." overflow shows
+        // (per the user's reference screenshots) - functionally this already was "hide the dock",
+        // just under a name that didn't say so. A literal "Make Floating"/Dock-Position-grid pair
+        // like Godot's is not added here: this editor's panels are independently-positioned
+        // floating ImGui windows arranged to look tiled, not a real DockSpace/DockBuilder tree, so
+        // there is no docking-slot concept for "Dock Position" to move a panel between, and every
+        // panel is already un-parented (no ImGuiWindowFlags_NoMove) - a "Make Floating" item would
+        // be a no-op button. Building real dock-slot infrastructure is a separate, larger effort.
+        if (ImGui::MenuItem("Close")) {
+            m_bottomDockVisible = false;
+        }
+        ImGui::EndPopup();
+    }
+    if (!m_projectFileLastRefreshSucceeded) {
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Retry")) {
+            m_projectFileSnapshotInitialized = false;
+            m_projectFileRefreshAttemptedForRescan = false;
+            RefreshProjectFileIndexUVE();
+        }
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4{0.95F, 0.55F, 0.35F, 1.0F}, "scan failed");
+    }
+    if (changeSnapshot.rescanRequired) {
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4{0.95F, 0.72F, 0.30F, 1.0F}, "rescan required");
+    }
+    ImGui::Separator();
+    ReconcileContentBrowserDirectoryUVE(snapshot);
+
+    if (m_selectedProjectFile.has_value()) {
+        const auto selectedIt = std::find_if(
+            snapshot.entries.begin(), snapshot.entries.end(), [this](const Asset::ProjectFileEntryUVE& entry) {
+                return entry.relativePath == m_selectedProjectFile->relativePath && entry.kind == m_selectedProjectFile->kind;
+            });
+        if (selectedIt == snapshot.entries.end()) {
+            m_selectedProjectFile.reset();
+            m_selectedAsset.reset();
+        } else {
+            m_selectedProjectFile = *selectedIt;
+            if (selectedIt->registeredAssetGuid.has_value()) {
+                m_selectedAsset = Asset::AssetRecordUVE{*selectedIt->registeredAssetGuid,
+                                                         snapshot.contentRoot / selectedIt->relativePath};
+            } else {
+                m_selectedAsset.reset();
+            }
+        }
+    }
+
+    ImGui::Separator();
+    const bool showingMainRoot = !m_contentBrowserShowingFavorites && m_contentBrowserDirectory.empty();
+    if (showingMainRoot) {
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{0.20F, 0.21F, 0.23F, 1.0F});
+    }
+    if (ImGui::SmallButton("main##content-root")) {
+        m_contentBrowserShowingFavorites = false;
+        m_contentBrowserDirectory.clear();
+        m_selectedProjectFile.reset();
+        m_selectedAsset.reset();
+    }
+    if (showingMainRoot) {
+        ImGui::PopStyleColor();
+    }
+    ImGui::SameLine();
+    if (m_contentBrowserShowingFavorites) {
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{0.20F, 0.21F, 0.23F, 1.0F});
+    }
+    const std::string favoritesButtonLabel = std::string(kIconStarUVE) + " Favorites##favorites-root";
+    if (ImGui::SmallButton(favoritesButtonLabel.c_str())) {
+        m_contentBrowserShowingFavorites = true;
+        m_selectedProjectFile.reset();
+        m_selectedAsset.reset();
+    }
+    if (m_contentBrowserShowingFavorites) {
+        ImGui::PopStyleColor();
+    }
+
+    std::array<char, 256> filterBuffer{};
+    const std::size_t copiedCharacters = std::min(m_assetFilter.size(), filterBuffer.size() - 1U);
+    m_assetFilter.copy(filterBuffer.data(), copiedCharacters);
+    ImGui::SetNextItemWidth(std::max(90.0F, ImGui::GetContentRegionAvail().x * 0.3F));
+    if (ImGui::InputTextWithHint("##content-filter", "Search", filterBuffer.data(), filterBuffer.size())) {
+        m_assetFilter = filterBuffer.data();
+    }
+    const bool hasActiveFilters = !m_assetFilter.empty();
+
+    // Directory the right-hand grid shows: the selected entry if it's itself a directory,
+    // otherwise the current browse directory - same resolution rule the pre-merge Contents panel
+    // used, preserved as-is.
+    std::filesystem::path gridDirectory = m_contentBrowserDirectory;
     if (m_selectedProjectFile.has_value() &&
         m_selectedProjectFile->kind == Asset::ProjectFileEntryKindUVE::Directory) {
-        selectedDirectory = m_selectedProjectFile->relativePath;
+        gridDirectory = m_selectedProjectFile->relativePath;
     }
-    const std::string directoryLabel = selectedDirectory.empty() ? "main" : selectedDirectory.generic_string();
-    ImGui::TextDisabled("CONTENTS");
-    ImGui::SameLine();
-    ImGui::TextUnformatted(directoryLabel.c_str());
-    ImGui::Separator();
 
+    const auto selectEntry = [this, &snapshot](const Asset::ProjectFileEntryUVE& entry) {
+        m_selectedProjectFile = entry;
+        if (entry.registeredAssetGuid.has_value()) {
+            m_selectedAsset = Asset::AssetRecordUVE{*entry.registeredAssetGuid, snapshot.contentRoot / entry.relativePath};
+        } else {
+            m_selectedAsset.reset();
+        }
+    };
     const auto openContext = [this](const Asset::ProjectFileEntryUVE& entry) {
         m_filesystemContextEntry = entry;
         m_filesystemContextFilter.clear();
@@ -5232,6 +5335,135 @@ void EditorUVE::DrawFolderContentsPanelUVE() {
         }
     };
 
+    // ---- left flat list | draggable splitter | right thumbnail grid ----
+    const float bodyHeight = std::max(36.0F, ImGui::GetContentRegionAvail().y);
+    const float bodyWidth = std::max(1.0F, ImGui::GetContentRegionAvail().x);
+    constexpr float kSplitterWidthUVE = 6.0F;
+    constexpr float kMinimumListWidthUVE = 180.0F;
+    constexpr float kMinimumGridWidthUVE = 280.0F;
+    const float listWidth =
+        std::clamp(bodyWidth * m_contentBrowserSplitRatio, kMinimumListWidthUVE,
+                   std::max(kMinimumListWidthUVE, bodyWidth - kMinimumGridWidthUVE - kSplitterWidthUVE));
+
+    ImGui::BeginChild("##content-browser-list", ImVec2{listWidth, bodyHeight}, true,
+                      ImGuiWindowFlags_AlwaysVerticalScrollbar);
+    {
+        std::vector<const Asset::ProjectFileEntryUVE*> visibleEntries;
+        for (const Asset::ProjectFileEntryUVE& entry : snapshot.entries) {
+            if (m_contentBrowserShowingFavorites) {
+                if (!IsProjectPathFavoritedUVE(entry.relativePath)) {
+                    continue;
+                }
+            } else if (entry.relativePath.parent_path() != m_contentBrowserDirectory) {
+                continue;
+            }
+            const std::string entryPath = entry.relativePath.generic_string();
+            if (ContainsCaseInsensitiveUVE(entryPath, m_assetFilter)) {
+                visibleEntries.push_back(&entry);
+            }
+        }
+        if (!m_projectFileLastRefreshSucceeded && snapshot.refreshGeneration == 0U) {
+            ImGui::TextUnformatted("Project content root could not be scanned. Correct the root; the next automatic scan will retry.");
+        } else if (!snapshot.contentRootExists) {
+            ImGui::TextUnformatted("Project content root does not exist yet. Add content; the next automatic scan will index it.");
+        } else if (snapshot.entries.empty()) {
+            ImGui::TextUnformatted("Project content root is empty.");
+        } else if (visibleEntries.empty()) {
+            if (m_contentBrowserShowingFavorites) {
+                ImGui::TextUnformatted("No favorites yet. Right-click a file or folder and choose \"Add to Favorites\".");
+            } else if (hasActiveFilters) {
+                ImGui::TextUnformatted("No entries in this folder match the active filters.");
+            } else {
+                ImGui::TextUnformatted("This folder has no direct entries.");
+            }
+        } else {
+            for (const Asset::ProjectFileEntryUVE* const entry : visibleEntries) {
+                const bool selected = m_selectedProjectFile.has_value() &&
+                                      m_selectedProjectFile->relativePath == entry->relativePath &&
+                                      m_selectedProjectFile->kind == entry->kind;
+                const ContentBrowserItemTypeUVE type = ClassifyContentBrowserEntryUVE(*entry);
+                const std::string displayLabel = entry->relativePath.filename().generic_string();
+
+                const std::string rowId = "content-browser-entry-" + entry->relativePath.generic_string();
+                ImGui::PushID(rowId.c_str());
+                const ImVec2 rowMin = ImGui::GetCursorScreenPos();
+                const float rowHeight = ImGui::GetTextLineHeight() + 4.0F;
+                const bool clicked = ImGui::Selectable("##entry", selected, ImGuiSelectableFlags_AllowDoubleClick,
+                                                       ImVec2{0.0F, rowHeight});
+                const bool rowHovered = ImGui::IsItemHovered();
+                if (rowHovered) {
+                    const char* const registeredSuffix = entry->registeredAssetGuid.has_value() ? " (Registered)" : "";
+                    ImGui::SetTooltip("Type: %s%s", GetContentBrowserItemTypeLabelUVE(type), registeredSuffix);
+                }
+                const bool contextClicked = rowHovered &&
+                                             (ImGui::IsMouseClicked(ImGuiMouseButton_Right) ||
+                                              ImGui::IsMouseReleased(ImGuiMouseButton_Right));
+                ImDrawList* const rowDrawList = ImGui::GetWindowDrawList();
+                const std::uintptr_t thumbnailTexture =
+                    type == ContentBrowserItemTypeUVE::Texture ? GetTextureThumbnailUVE(entry->relativePath)
+                    : type == ContentBrowserItemTypeUVE::Mesh  ? GetMeshThumbnailUVE(entry->relativePath)
+                                                                : 0U;
+                const std::uintptr_t rowIconTexture =
+                    thumbnailTexture != 0U
+                        ? thumbnailTexture
+                        : (m_uiAssets.IsReadyUVE() ? (type == ContentBrowserItemTypeUVE::Folder
+                                                          ? 0U
+                                                          : m_uiAssets.GetContentTypeIconTextureIdUVE(
+                                                                GetContentBrowserItemTypeLabelUVE(type)))
+                                                   : 0U);
+                const float textOffset = rowIconTexture != 0U ? 27.0F : 4.0F;
+                if (rowIconTexture != 0U) {
+                    const float iconY = rowMin.y + std::max(0.0F, (rowHeight - 16.0F) * 0.5F);
+                    rowDrawList->AddImage(static_cast<ImTextureID>(rowIconTexture), ImVec2{rowMin.x + 4.0F, iconY},
+                                          ImVec2{rowMin.x + 22.0F, iconY + 16.0F});
+                }
+                const float textY = rowMin.y + std::max(0.0F, (rowHeight - ImGui::GetTextLineHeight()) * 0.5F);
+                rowDrawList->AddText(ImVec2{rowMin.x + textOffset, textY}, ImGui::GetColorU32(ImGuiCol_Text),
+                                     displayLabel.c_str());
+                ImGui::PopID();
+                if (clicked) {
+                    selectEntry(*entry);
+                    if (entry->kind == Asset::ProjectFileEntryKindUVE::Directory &&
+                        ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                        m_contentBrowserDirectory = entry->relativePath;
+                        m_contentBrowserShowingFavorites = false;
+                    }
+                }
+                if (contextClicked) {
+                    selectEntry(*entry);
+                    openContext(*entry);
+                } else {
+                    trackLongPress(*entry, rowHovered);
+                }
+            }
+        }
+    }
+    ImGui::EndChild();
+
+    // Draggable splitter: dragging adjusts m_contentBrowserSplitRatio, clamped the same way
+    // listWidth's own minimums above already keep the resulting layout usable at either extreme.
+    ImGui::SameLine(0.0F, 0.0F);
+    ImGui::InvisibleButton("##content-browser-splitter", ImVec2{kSplitterWidthUVE, bodyHeight});
+    if (ImGui::IsItemActive()) {
+        m_contentBrowserSplitRatio = std::clamp((listWidth + ImGui::GetIO().MouseDelta.x) / bodyWidth, 0.15F, 0.7F);
+    }
+    if (ImGui::IsItemHovered() || ImGui::IsItemActive()) {
+        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+    }
+    {
+        const ImVec2 splitterMin = ImGui::GetItemRectMin();
+        const ImVec2 splitterMax = ImGui::GetItemRectMax();
+        ImDrawList* const splitterDrawList = ImGui::GetWindowDrawList();
+        splitterDrawList->AddRectFilled(splitterMin, splitterMax, IM_COL32(28, 32, 39, 255));
+        const float dotX = (splitterMin.x + splitterMax.x) * 0.5F;
+        const float centerY = (splitterMin.y + splitterMax.y) * 0.5F;
+        for (int dotIndex = -1; dotIndex <= 1; ++dotIndex) {
+            splitterDrawList->AddCircleFilled(ImVec2{dotX, centerY + static_cast<float>(dotIndex) * 5.0F}, 1.4F,
+                                              IM_COL32(107, 113, 131, 255));
+        }
+    }
+    ImGui::SameLine(0.0F, 0.0F);
+
     constexpr float kCardWidthUVE = 76.0F;
     constexpr float kCardHeightUVE = 82.0F;
     constexpr float kCardIconSizeUVE = 44.0F;
@@ -5248,8 +5480,7 @@ void EditorUVE::DrawFolderContentsPanelUVE() {
         return truncated.empty() ? truncated : truncated + "...";
     };
 
-    const float contentItemsHeight = std::max(36.0F, ImGui::GetContentRegionAvail().y);
-    if (ImGui::BeginChild("##folder-contents-items", ImVec2{0.0F, contentItemsHeight}, true,
+    if (ImGui::BeginChild("##content-browser-grid", ImVec2{0.0F, bodyHeight}, true,
                            ImGuiWindowFlags_AlwaysVerticalScrollbar)) {
         const float availableWidth = std::max(kCardWidthUVE, ImGui::GetContentRegionAvail().x);
         const int columns = std::max(1, static_cast<int>(availableWidth / kCardWidthUVE));
@@ -5257,7 +5488,7 @@ void EditorUVE::DrawFolderContentsPanelUVE() {
         ImDrawList* const gridDrawList = ImGui::GetWindowDrawList();
         std::size_t visibleCount = 0U;
         for (const Asset::ProjectFileEntryUVE& entry : snapshot.entries) {
-            if (entry.relativePath.parent_path() != selectedDirectory) {
+            if (entry.relativePath.parent_path() != gridDirectory) {
                 continue;
             }
             const std::string entryPath = entry.relativePath.generic_string();
@@ -5338,7 +5569,7 @@ void EditorUVE::DrawFolderContentsPanelUVE() {
         }
         if (visibleCount == 0U) {
             ImGui::SetCursorPos(gridOrigin);
-            ImGui::TextDisabled(selectedDirectory.empty() ? "main is empty." : "This folder is empty.");
+            ImGui::TextDisabled(gridDirectory.empty() ? "main is empty." : "This folder is empty.");
         } else {
             const int totalRows = (static_cast<int>(visibleCount) + columns - 1) / columns;
             ImGui::SetCursorPos(
@@ -5460,254 +5691,6 @@ void EditorUVE::RefreshProjectFileIndexUVE() {
     } else {
         m_projectFileRefreshAttemptedForRescan = changesBeforeRefresh.rescanRequired;
     }
-}
-
-void EditorUVE::DrawAssetsPanelUVE() {
-    const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
-    const float contentHeight = kAssetsPanelHeightUVE;
-    const float projectWidth = std::clamp(mainViewport->WorkSize.x * 0.60F, 420.0F, mainViewport->WorkSize.x - 280.0F);
-    // Always, not FirstUseEver - see DrawHierarchyPanelUVE()'s comment on the same change.
-    ImGui::SetNextWindowPos(
-        ImVec2{mainViewport->WorkPos.x,
-               mainViewport->WorkPos.y + mainViewport->WorkSize.y - kAssetsPanelHeightUVE},
-        ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2{projectWidth, contentHeight}, ImGuiCond_Always);
-    // NoTitleBar dropped (see DrawInspectorPanelUVE()'s comment) and given a real title. The
-    // panel's own "FILESYSTEM" text label a few lines below is unrelated in-content chrome, not
-    // this window's identifying title, so both can coexist without looking redundant.
-    constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse;
-    ImGui::Begin(kPanelLabelFilesystemUVE, nullptr, flags);
-
-    Asset::IProjectFileIndexUVE& projectFileIndex = m_services->GetProjectFileIndexUVE();
-    const Asset::ProjectChangeSnapshotUVE changeSnapshot = m_services->GetProjectChangeWatcherUVE().GetSnapshotUVE();
-    const Asset::ProjectFileSnapshotUVE snapshot = projectFileIndex.GetSnapshotUVE();
-    ImGui::TextDisabled("FILESYSTEM");
-    ImGui::SameLine(ImGui::GetContentRegionAvail().x - 18.0F);
-    if (ImGui::SmallButton("...##filesystem-menu")) {
-        ImGui::OpenPopup("filesystem-overflow-menu");
-    }
-    if (ImGui::BeginPopup("filesystem-overflow-menu")) {
-        ImGui::TextDisabled("Filesystem dock");
-        ImGui::Separator();
-        if (ImGui::MenuItem("Debug")) {
-            m_activeBottomDock = EditorBottomDockUVE::Debugger;
-        }
-        // Named "Close" to match the real menu item Godot's own FileSystem "..." overflow shows
-        // (per the user's reference screenshots) - functionally this already was "hide the dock",
-        // just under a name that didn't say so. A literal "Make Floating"/Dock-Position-grid pair
-        // like Godot's is not added here: this editor's panels are independently-positioned
-        // floating ImGui windows arranged to look tiled, not a real DockSpace/DockBuilder tree, so
-        // there is no docking-slot concept for "Dock Position" to move a panel between, and every
-        // panel is already un-parented (no ImGuiWindowFlags_NoMove) - a "Make Floating" item would
-        // be a no-op button. Building real dock-slot infrastructure is a separate, larger effort.
-        if (ImGui::MenuItem("Close")) {
-            m_bottomDockVisible = false;
-        }
-        ImGui::EndPopup();
-    }
-    if (!m_projectFileLastRefreshSucceeded) {
-        ImGui::SameLine();
-        if (ImGui::SmallButton("Retry")) {
-            m_projectFileSnapshotInitialized = false;
-            m_projectFileRefreshAttemptedForRescan = false;
-            RefreshProjectFileIndexUVE();
-        }
-        ImGui::SameLine();
-        ImGui::TextColored(ImVec4{0.95F, 0.55F, 0.35F, 1.0F}, "scan failed");
-    }
-    if (changeSnapshot.rescanRequired) {
-        ImGui::SameLine();
-        ImGui::TextColored(ImVec4{0.95F, 0.72F, 0.30F, 1.0F}, "rescan required");
-    }
-    ImGui::Separator();
-    ReconcileContentBrowserDirectoryUVE(snapshot);
-
-    if (m_selectedProjectFile.has_value()) {
-        const auto selectedIt = std::find_if(
-            snapshot.entries.begin(), snapshot.entries.end(), [this](const Asset::ProjectFileEntryUVE& entry) {
-                return entry.relativePath == m_selectedProjectFile->relativePath && entry.kind == m_selectedProjectFile->kind;
-            });
-        if (selectedIt == snapshot.entries.end()) {
-            m_selectedProjectFile.reset();
-            m_selectedAsset.reset();
-        } else {
-            m_selectedProjectFile = *selectedIt;
-            if (selectedIt->registeredAssetGuid.has_value()) {
-                m_selectedAsset = Asset::AssetRecordUVE{*selectedIt->registeredAssetGuid,
-                                                         snapshot.contentRoot / selectedIt->relativePath};
-            } else {
-                m_selectedAsset.reset();
-            }
-        }
-    }
-
-    ImGui::Separator();
-    const bool showingMainRoot = !m_contentBrowserShowingFavorites && m_contentBrowserDirectory.empty();
-    if (showingMainRoot) {
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{0.20F, 0.21F, 0.23F, 1.0F});
-    }
-    if (ImGui::SmallButton("main##content-root")) {
-        m_contentBrowserShowingFavorites = false;
-        m_contentBrowserDirectory.clear();
-        m_selectedProjectFile.reset();
-        m_selectedAsset.reset();
-    }
-    if (showingMainRoot) {
-        ImGui::PopStyleColor();
-    }
-    ImGui::SameLine();
-    if (m_contentBrowserShowingFavorites) {
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{0.20F, 0.21F, 0.23F, 1.0F});
-    }
-    const std::string favoritesButtonLabel = std::string(kIconStarUVE) + " Favorites##favorites-root";
-    if (ImGui::SmallButton(favoritesButtonLabel.c_str())) {
-        m_contentBrowserShowingFavorites = true;
-        m_selectedProjectFile.reset();
-        m_selectedAsset.reset();
-    }
-    if (m_contentBrowserShowingFavorites) {
-        ImGui::PopStyleColor();
-    }
-
-    std::array<char, 256> filterBuffer{};
-    const std::size_t copiedCharacters = std::min(m_assetFilter.size(), filterBuffer.size() - 1U);
-    m_assetFilter.copy(filterBuffer.data(), copiedCharacters);
-    ImGui::SetNextItemWidth(std::max(90.0F, ImGui::GetContentRegionAvail().x * 0.42F));
-    if (ImGui::InputTextWithHint("##content-filter", "Search", filterBuffer.data(), filterBuffer.size())) {
-        m_assetFilter = filterBuffer.data();
-    }
-    const bool hasActiveFilters = !m_assetFilter.empty();
-
-    const auto selectEntry = [this, &snapshot](const Asset::ProjectFileEntryUVE& entry) {
-        m_selectedProjectFile = entry;
-        if (entry.registeredAssetGuid.has_value()) {
-            m_selectedAsset = Asset::AssetRecordUVE{*entry.registeredAssetGuid, snapshot.contentRoot / entry.relativePath};
-        } else {
-            m_selectedAsset.reset();
-        }
-    };
-    const auto openContext = [this](const Asset::ProjectFileEntryUVE& entry) {
-        m_filesystemContextEntry = entry;
-        m_filesystemContextFilter.clear();
-        m_filesystemContextVisible = true;
-    };
-    const auto trackLongPress = [this, &openContext](const Asset::ProjectFileEntryUVE& entry,
-                                                       const bool hovered) {
-        if (!hovered || !ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
-            if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
-                m_filesystemLongPressPath.clear();
-                m_filesystemLongPressSeconds = 0.0F;
-            }
-            return;
-        }
-        if (m_filesystemLongPressPath != entry.relativePath) {
-            m_filesystemLongPressPath = entry.relativePath;
-            m_filesystemLongPressSeconds = 0.0F;
-        }
-        m_filesystemLongPressSeconds += std::max(0.0F, ImGui::GetIO().DeltaTime);
-        if (m_filesystemLongPressSeconds >= kFilesystemLongPressThresholdSecondsUVE) {
-            openContext(entry);
-            m_filesystemLongPressSeconds = 0.0F;
-            m_filesystemLongPressPath.clear();
-        }
-    };
-
-    std::vector<const Asset::ProjectFileEntryUVE*> visibleEntries;
-    for (const Asset::ProjectFileEntryUVE& entry : snapshot.entries) {
-        if (m_contentBrowserShowingFavorites) {
-            if (!IsProjectPathFavoritedUVE(entry.relativePath)) {
-                continue;
-            }
-        } else if (entry.relativePath.parent_path() != m_contentBrowserDirectory) {
-            continue;
-        }
-        const std::string entryPath = entry.relativePath.generic_string();
-        if (ContainsCaseInsensitiveUVE(entryPath, m_assetFilter)) {
-            visibleEntries.push_back(&entry);
-        }
-    }
-
-    const float itemsHeight = std::max(36.0F, ImGui::GetContentRegionAvail().y);
-    ImGui::BeginChild("##content-browser-items", ImVec2{0.0F, itemsHeight}, true,
-                      ImGuiWindowFlags_AlwaysVerticalScrollbar);
-    if (!m_projectFileLastRefreshSucceeded && snapshot.refreshGeneration == 0U) {
-        ImGui::TextUnformatted("Project content root could not be scanned. Correct the root; the next automatic scan will retry.");
-    } else if (!snapshot.contentRootExists) {
-        ImGui::TextUnformatted("Project content root does not exist yet. Add content; the next automatic scan will index it.");
-    } else if (snapshot.entries.empty()) {
-        ImGui::TextUnformatted("Project content root is empty.");
-    } else if (visibleEntries.empty()) {
-        if (m_contentBrowserShowingFavorites) {
-            ImGui::TextUnformatted("No favorites yet. Right-click a file or folder and choose \"Add to Favorites\".");
-        } else if (hasActiveFilters) {
-            ImGui::TextUnformatted("No entries in this folder match the active filters.");
-        } else {
-            ImGui::TextUnformatted("This folder has no direct entries.");
-        }
-    } else {
-        for (const Asset::ProjectFileEntryUVE* const entry : visibleEntries) {
-            const bool selected = m_selectedProjectFile.has_value() &&
-                                  m_selectedProjectFile->relativePath == entry->relativePath &&
-                                  m_selectedProjectFile->kind == entry->kind;
-            const ContentBrowserItemTypeUVE type = ClassifyContentBrowserEntryUVE(*entry);
-            const std::string displayLabel = entry->relativePath.filename().generic_string();
-
-            const std::string rowId = "content-browser-entry-" + entry->relativePath.generic_string();
-            ImGui::PushID(rowId.c_str());
-            const ImVec2 rowMin = ImGui::GetCursorScreenPos();
-            const float rowHeight = ImGui::GetTextLineHeight() + 4.0F;
-            const bool clicked = ImGui::Selectable("##entry", selected, ImGuiSelectableFlags_AllowDoubleClick,
-                                                   ImVec2{0.0F, rowHeight});
-            const bool rowHovered = ImGui::IsItemHovered();
-            if (rowHovered) {
-                const char* const registeredSuffix = entry->registeredAssetGuid.has_value() ? " (Registered)" : "";
-                ImGui::SetTooltip("Type: %s%s", GetContentBrowserItemTypeLabelUVE(type), registeredSuffix);
-            }
-            const bool contextClicked = rowHovered &&
-                                         (ImGui::IsMouseClicked(ImGuiMouseButton_Right) ||
-                                          ImGui::IsMouseReleased(ImGuiMouseButton_Right));
-            ImDrawList* const rowDrawList = ImGui::GetWindowDrawList();
-            const std::uintptr_t thumbnailTexture =
-                type == ContentBrowserItemTypeUVE::Texture ? GetTextureThumbnailUVE(entry->relativePath)
-                : type == ContentBrowserItemTypeUVE::Mesh  ? GetMeshThumbnailUVE(entry->relativePath)
-                                                            : 0U;
-            const std::uintptr_t rowIconTexture =
-                thumbnailTexture != 0U
-                    ? thumbnailTexture
-                    : (m_uiAssets.IsReadyUVE() ? (type == ContentBrowserItemTypeUVE::Folder
-                                                      ? 0U
-                                                      : m_uiAssets.GetContentTypeIconTextureIdUVE(
-                                                            GetContentBrowserItemTypeLabelUVE(type)))
-                                               : 0U);
-            const float textOffset = rowIconTexture != 0U ? 27.0F : 4.0F;
-            if (rowIconTexture != 0U) {
-                const float iconY = rowMin.y + std::max(0.0F, (rowHeight - 16.0F) * 0.5F);
-                rowDrawList->AddImage(static_cast<ImTextureID>(rowIconTexture), ImVec2{rowMin.x + 4.0F, iconY},
-                                      ImVec2{rowMin.x + 22.0F, iconY + 16.0F});
-            }
-            const float textY = rowMin.y + std::max(0.0F, (rowHeight - ImGui::GetTextLineHeight()) * 0.5F);
-            rowDrawList->AddText(ImVec2{rowMin.x + textOffset, textY}, ImGui::GetColorU32(ImGuiCol_Text),
-                                 displayLabel.c_str());
-            ImGui::PopID();
-            if (clicked) {
-                selectEntry(*entry);
-                if (entry->kind == Asset::ProjectFileEntryKindUVE::Directory &&
-                    ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
-                    m_contentBrowserDirectory = entry->relativePath;
-                    m_contentBrowserShowingFavorites = false;
-                }
-            }
-            if (contextClicked) {
-                selectEntry(*entry);
-                openContext(*entry);
-            } else {
-                trackLongPress(*entry, rowHovered);
-            }
-        }
-    }
-    ImGui::EndChild();
-
-    ImGui::End();
 }
 
 void EditorUVE::CompileVisualScriptUVE() {

@@ -731,11 +731,13 @@ private:
     /// generic per-type icon in that case.
     [[nodiscard]] std::uintptr_t GetMeshThumbnailUVE(const std::filesystem::path& relativePath);
     void ClearMeshThumbnailCacheUVE() noexcept;
-    void DrawAssetsPanelUVE();
+    /// Draws the merged Content Browser panel (folder/file list on the left, thumbnail grid on the
+    /// right, separated by a draggable splitter) - replaces the former separate Filesystem and
+    /// Contents panels, which showed the same underlying directory from two windows.
+    void DrawContentBrowserPanelUVE();
     /// Refreshes the read-only project index after the engine-owned watcher observes a new
     /// filesystem baseline. It never schedules imports or mutates project files.
     void RefreshProjectFileIndexUVE();
-    void DrawFolderContentsPanelUVE();
     void DrawFilesystemContextPopupUVE();
     [[nodiscard]] Scripting::ScriptGraphCanvasUVE& ActiveVisualScriptCanvasUVE() noexcept;
     [[nodiscard]] const Scripting::ScriptGraphCanvasUVE& ActiveVisualScriptCanvasUVE() const noexcept;
@@ -786,6 +788,10 @@ private:
     /// True while the Filesystem panel shows the flattened Favorites list instead of the direct
     /// children of m_contentBrowserDirectory.
     bool m_contentBrowserShowingFavorites = false;
+    /// Fraction of the merged Content Browser panel's width given to its left file/folder list
+    /// (the remainder goes to the right thumbnail grid); adjusted by dragging the splitter between
+    /// them. Matches the ~35% left / ~65% right proportions of the design this panel was built to.
+    float m_contentBrowserSplitRatio = 0.35F;
     /// Content-derived thumbnail textures for Content Browser entries (currently texture assets
     /// only), keyed by project-relative generic path. A cached 0 means a prior load attempt
     /// failed (not a texture, corrupt, or unsupported format) and callers should fall back to the
