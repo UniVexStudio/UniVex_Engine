@@ -12,6 +12,7 @@
 #include <sstream>
 #include <functional>
 #include <limits>
+#include <map>
 #include <numbers>
 #include <string>
 #include <string_view>
@@ -5405,8 +5406,6 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
         }
         ImGui::EndPopup();
     }
-    const bool hasActiveFilters = !m_assetFilter.empty();
-
     // Directory the right-hand grid shows: the selected entry if it's itself a directory,
     // otherwise the current browse directory - same resolution rule the pre-merge Contents panel
     // used, preserved as-is.
@@ -5467,80 +5466,31 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
     ImGui::BeginChild("##content-browser-list", ImVec2{listWidth, bodyHeight}, true,
                       ImGuiWindowFlags_AlwaysVerticalScrollbar);
     {
-        std::vector<const Asset::ProjectFileEntryUVE*> visibleEntries;
-        for (const Asset::ProjectFileEntryUVE& entry : snapshot.entries) {
-            if (m_contentBrowserShowingFavorites) {
-                if (!IsProjectPathFavoritedUVE(entry.relativePath)) {
-                    continue;
-                }
-            } else if (entry.relativePath.parent_path() != m_contentBrowserDirectory) {
-                continue;
-            }
-            const std::string entryPath = entry.relativePath.generic_string();
-            if (ContainsCaseInsensitiveUVE(entryPath, m_assetFilter)) {
-                visibleEntries.push_back(&entry);
-            }
-        }
         if (!m_projectFileLastRefreshSucceeded && snapshot.refreshGeneration == 0U) {
             ImGui::TextUnformatted("Project content root could not be scanned. Correct the root; the next automatic scan will retry.");
         } else if (!snapshot.contentRootExists) {
             ImGui::TextUnformatted("Project content root does not exist yet. Add content; the next automatic scan will index it.");
         } else if (snapshot.entries.empty()) {
             ImGui::TextUnformatted("Project content root is empty.");
-        } else if (visibleEntries.empty()) {
-            if (m_contentBrowserShowingFavorites) {
-                ImGui::TextUnformatted("No favorites yet. Right-click a file or folder and choose \"Add to Favorites\".");
-            } else if (hasActiveFilters) {
-                ImGui::TextUnformatted("No entries in this folder match the active filters.");
-            } else {
-                ImGui::TextUnformatted("This folder has no direct entries.");
+        } else if (m_contentBrowserShowingFavorites) {
+            // Favorites view stays a flat list of the favorited entries.
+            std::vector<const Asset::ProjectFileEntryUVE*> favoriteEntries;
+            for (const Asset::ProjectFileEntryUVE& entry : snapshot.entries) {
+                if (IsProjectPathFavoritedUVE(entry.relativePath) &&
+                    ContainsCaseInsensitiveUVE(entry.relativePath.generic_string(), m_assetFilter)) {
+                    favoriteEntries.push_back(&entry);
+                }
             }
-        } else {
-            for (const Asset::ProjectFileEntryUVE* const entry : visibleEntries) {
+            if (favoriteEntries.empty()) {
+                ImGui::TextUnformatted("No favorites yet. Right-click a file or folder and choose \"Add to Favorites\".");
+            }
+            for (const Asset::ProjectFileEntryUVE* const entry : favoriteEntries) {
                 const bool selected = m_selectedProjectFile.has_value() &&
                                       m_selectedProjectFile->relativePath == entry->relativePath &&
                                       m_selectedProjectFile->kind == entry->kind;
-                const ContentBrowserItemTypeUVE type = ClassifyContentBrowserEntryUVE(*entry);
-                const std::string displayLabel = entry->relativePath.filename().generic_string();
-
-                const std::string rowId = "content-browser-entry-" + entry->relativePath.generic_string();
-                ImGui::PushID(rowId.c_str());
-                const ImVec2 rowMin = ImGui::GetCursorScreenPos();
-                const float rowHeight = ImGui::GetTextLineHeight() + 4.0F;
-                const bool clicked = ImGui::Selectable("##entry", selected, ImGuiSelectableFlags_AllowDoubleClick,
-                                                       ImVec2{0.0F, rowHeight});
-                const bool rowHovered = ImGui::IsItemHovered();
-                if (rowHovered) {
-                    const char* const registeredSuffix = entry->registeredAssetGuid.has_value() ? " (Registered)" : "";
-                    ImGui::SetTooltip("Type: %s%s", GetContentBrowserItemTypeLabelUVE(type), registeredSuffix);
-                }
-                const bool contextClicked = rowHovered &&
-                                             (ImGui::IsMouseClicked(ImGuiMouseButton_Right) ||
-                                              ImGui::IsMouseReleased(ImGuiMouseButton_Right));
-                ImDrawList* const rowDrawList = ImGui::GetWindowDrawList();
-                const std::uintptr_t thumbnailTexture =
-                    type == ContentBrowserItemTypeUVE::Texture ? GetTextureThumbnailUVE(entry->relativePath)
-                    : type == ContentBrowserItemTypeUVE::Mesh  ? GetMeshThumbnailUVE(entry->relativePath)
-                                                                : 0U;
-                const std::uintptr_t rowIconTexture =
-                    thumbnailTexture != 0U
-                        ? thumbnailTexture
-                        : (m_uiAssets.IsReadyUVE() ? (type == ContentBrowserItemTypeUVE::Folder
-                                                          ? 0U
-                                                          : m_uiAssets.GetContentTypeIconTextureIdUVE(
-                                                                GetContentBrowserItemTypeLabelUVE(type)))
-                                                   : 0U);
-                const float textOffset = rowIconTexture != 0U ? 27.0F : 4.0F;
-                if (rowIconTexture != 0U) {
-                    const float iconY = rowMin.y + std::max(0.0F, (rowHeight - 16.0F) * 0.5F);
-                    rowDrawList->AddImage(static_cast<ImTextureID>(rowIconTexture), ImVec2{rowMin.x + 4.0F, iconY},
-                                          ImVec2{rowMin.x + 22.0F, iconY + 16.0F});
-                }
-                const float textY = rowMin.y + std::max(0.0F, (rowHeight - ImGui::GetTextLineHeight()) * 0.5F);
-                rowDrawList->AddText(ImVec2{rowMin.x + textOffset, textY}, ImGui::GetColorU32(ImGuiCol_Text),
-                                     displayLabel.c_str());
-                ImGui::PopID();
-                if (clicked) {
+                const std::string favLabel =
+                    entry->relativePath.generic_string() + "##fav-" + entry->relativePath.generic_string();
+                if (ImGui::Selectable(favLabel.c_str(), selected, ImGuiSelectableFlags_AllowDoubleClick)) {
                     selectEntry(*entry);
                     if (entry->kind == Asset::ProjectFileEntryKindUVE::Directory &&
                         ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
@@ -5548,13 +5498,65 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
                         m_contentBrowserShowingFavorites = false;
                     }
                 }
-                if (contextClicked) {
+                if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
                     selectEntry(*entry);
                     openContext(*entry);
-                } else {
-                    trackLongPress(*entry, rowHovered);
                 }
             }
+        } else {
+            // Nested, indented folder tree (directories only) - Unreal's Sources panel / Godot's
+            // FileSystem tree. Selecting a folder drives the right-hand grid; files live in the grid.
+            std::map<std::string, std::vector<const Asset::ProjectFileEntryUVE*>> directoryChildren;
+            for (const Asset::ProjectFileEntryUVE& entry : snapshot.entries) {
+                if (entry.kind == Asset::ProjectFileEntryKindUVE::Directory) {
+                    directoryChildren[entry.relativePath.parent_path().generic_string()].push_back(&entry);
+                }
+            }
+            // "main" root row: always click back to the content root.
+            const bool rootSelected = m_contentBrowserDirectory.empty();
+            if (ImGui::Selectable("main##content-tree-root", rootSelected)) {
+                m_contentBrowserDirectory.clear();
+                m_selectedProjectFile.reset();
+                m_selectedAsset.reset();
+            }
+            std::function<void(const std::string&)> renderDirectory = [&](const std::string& parentKey) {
+                const auto childrenIt = directoryChildren.find(parentKey);
+                if (childrenIt == directoryChildren.end()) {
+                    return;
+                }
+                for (const Asset::ProjectFileEntryUVE* const dirEntry : childrenIt->second) {
+                    const std::string childKey = dirEntry->relativePath.generic_string();
+                    const bool hasSubdirectories = directoryChildren.count(childKey) > 0U;
+                    ImGuiTreeNodeFlags treeFlags = ImGuiTreeNodeFlags_OpenOnArrow |
+                                                   ImGuiTreeNodeFlags_OpenOnDoubleClick |
+                                                   ImGuiTreeNodeFlags_SpanAvailWidth;
+                    if (!hasSubdirectories) {
+                        treeFlags |= ImGuiTreeNodeFlags_Leaf;
+                    }
+                    if (m_contentBrowserDirectory == dirEntry->relativePath) {
+                        treeFlags |= ImGuiTreeNodeFlags_Selected;
+                    }
+                    ImGui::PushID(childKey.c_str());
+                    const std::string nodeLabel = dirEntry->relativePath.filename().generic_string();
+                    const bool open = ImGui::TreeNodeEx(nodeLabel.c_str(), treeFlags);
+                    if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
+                        m_contentBrowserDirectory = dirEntry->relativePath;
+                        selectEntry(*dirEntry);
+                    }
+                    if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+                        selectEntry(*dirEntry);
+                        openContext(*dirEntry);
+                    }
+                    if (open) {
+                        if (hasSubdirectories) {
+                            renderDirectory(childKey);
+                        }
+                        ImGui::TreePop();
+                    }
+                    ImGui::PopID();
+                }
+            };
+            renderDirectory("");
         }
     }
     ImGui::EndChild();
