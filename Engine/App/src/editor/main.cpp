@@ -25,22 +25,12 @@
 #include "univex/camera/OrbitCamera.h"
 #include "univex/render/ShaderProgram.h"
 
-#include "uve/asset/i_asset_database_uve.h"
-#include "uve/asset/i_asset_manager_uve.h"
-#include "uve/asset/material_asset_uve.h"
-#include "uve/asset/mesh_asset_uve.h"
-#include "uve/asset/shader_asset_uve.h"
 #include "uve/core/engine_core_uve.h"
 #include "uve/debug/logging_macros_uve.h"
 #include "uve/editor/editor_bridge_stdio_uve.h"
 #include "uve/editor/editor_uve.h"
 #include "uve/math/vector2_uve.h"
-#include "uve/render/primitive_geometry_uve.h"
-#include "uve/render/shader/built_in_shaders_uve.h"
 #include "uve/scene/components/camera_component_uve.h"
-#include "uve/scene/components/editor_internal_entity_component_uve.h"
-#include "uve/scene/components/mesh_component_uve.h"
-#include "uve/scene/components/transform_component_uve.h"
 #include "uve/scene/components/world_transform_component_uve.h"
 #include "uve/scene/i_entity_manager_uve.h"
 #include "uve/scene/i_scene_graph_uve.h"
@@ -512,60 +502,6 @@ struct EditorLaunchOptionsUVE final {
     return options;
 }
 
-// Authors one real MeshComponentUVE-carrying entity at the origin so EditorMeshLayerUVE's newly
-// wired rendering has something real to draw and verify (not another flat proxy cube) - reuses the
-// engine's own canonical cube geometry (GetPrimitiveGeometryUVE) and its real production
-// lit/shadowed shader source (Shader::BuiltIn::kLitShadowed3DSource) rather than hand-authoring new
-// geometry or GLSL, and registers all three asset loaders the same supported way test fixtures
-// already do (IAssetManagerUVE::RegisterLoaderUVE<T>() - a real, non-test-only API). Windowed-mode
-// verification fixture only, not an authored project asset - a future increment (real content
-// authoring/import) replaces this.
-void CreateMeshRenderingFixtureEntityUVE(UVE::Core::EngineServicesUVE& services) {
-    UVE::Asset::IAssetDatabaseUVE& assetDatabase = services.GetAssetDatabaseUVE();
-    UVE::Asset::IAssetManagerUVE& assetManager = services.GetAssetManagerUVE();
-
-    const UVE::Asset::AssetGuidUVE shaderGuid = assetDatabase.RegisterUVE("editor_fixture_lit_shadowed_3d.uveshader");
-    const UVE::Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("editor_fixture_cube.uvemodel");
-    const UVE::Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("editor_fixture_cube.uvemat");
-
-    assetManager.RegisterLoaderUVE<UVE::Asset::ShaderAssetUVE>(
-        [](const std::filesystem::path&, UVE::Asset::ShaderAssetUVE& shader) {
-            shader.sourceCode = std::string(UVE::Render::Shader::BuiltIn::kLitShadowed3DSource);
-            shader.entryPointName = "main";
-            return true;
-        });
-    assetManager.RegisterLoaderUVE<UVE::Asset::MeshAssetUVE>(
-        [](const std::filesystem::path&, UVE::Asset::MeshAssetUVE& mesh) {
-            const UVE::Render::PrimitiveGeometryUVE& cube =
-                UVE::Render::GetPrimitiveGeometryUVE(UVE::Scene::PrimitiveMeshKindUVE::Cube);
-            mesh.vertices = cube.vertices;
-            mesh.indices = cube.indices;
-            mesh.localBounds = cube.localBounds;
-            return true;
-        });
-    assetManager.RegisterLoaderUVE<UVE::Asset::MaterialAssetUVE>(
-        [shaderGuid](const std::filesystem::path&, UVE::Asset::MaterialAssetUVE& material) {
-            material.vertexShader = shaderGuid;
-            material.fragmentShader = shaderGuid;
-            material.albedoColor = UVE::Math::Vector3UVE{0.75F, 0.32F, 0.24F};
-            material.metallic = 0.1F;
-            material.roughness = 0.55F;
-            return true;
-        });
-
-    UVE::Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
-    const UVE::Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-    services.GetSceneGraphUVE().AttachTransformUVE(entityManager, entity, UVE::Scene::TransformComponentUVE{});
-    entityManager.AddComponentUVE<UVE::Scene::MeshComponentUVE>(
-        entity, UVE::Scene::MeshComponentUVE{meshGuid, materialGuid});
-    // Marks this as internal tooling infrastructure, not real document content - see the
-    // component's own header comment. Makes this function's own doc comment above ("not an
-    // authored project asset") actually true: excluded from EditorUVE::GetDocumentRootsUVE(), so
-    // it's never churned through Play-mode's snapshot capture/restore and never shows up as a
-    // stray unnamed row in the Scene Hierarchy panel.
-    entityManager.AddComponentUVE<UVE::Scene::EditorInternalEntityComponentUVE>(entity);
-}
-
 } // namespace
 
 /// Starts the standalone UniVex Editor Foundation v1. `--scene <path>` selects the `.uvescene`
@@ -630,7 +566,6 @@ int main(const int argc, char** argv) {
         // which headless mode's NullRenderDeviceUVE never creates.
         std::optional<ViewportPanelBackendUVE> viewportBackend;
         if (!options.headless) {
-            CreateMeshRenderingFixtureEntityUVE(engine.GetServicesUVE());
             viewportBackend.emplace(editor, engine.GetServicesUVE());
             editor.SetViewportPanelRendererUVE(
                 [&backend = *viewportBackend](
