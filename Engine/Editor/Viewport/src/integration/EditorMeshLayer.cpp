@@ -10,7 +10,9 @@
 #include "uve/render/i_renderer_3d_uve.h"
 #include "uve/render/render_resource_descs_uve.h"
 #include "uve/scene/components/camera_component_uve.h"
+#include "uve/scene/components/editor_internal_entity_component_uve.h"
 #include "uve/scene/components/transform_component_uve.h"
+#include "uve/scene/components/world_transform_component_uve.h"
 #include "uve/scene/i_entity_manager_uve.h"
 #include "uve/scene/i_scene_graph_uve.h"
 
@@ -28,13 +30,22 @@ namespace {
 } // namespace
 
 EditorMeshLayerUVE::EditorMeshLayerUVE(UVE::Core::EngineServicesUVE& services) : services_(services) {
+    cameraEntity_ = CreateCameraProxyEntityUVE();
+}
+
+UVE::Scene::EntityUVE EditorMeshLayerUVE::CreateCameraProxyEntityUVE() {
     UVE::Scene::IEntityManagerUVE& entityManager = services_.GetEntityManagerUVE();
-    cameraEntity_ = entityManager.CreateEntityUVE();
+    const UVE::Scene::EntityUVE entity = entityManager.CreateEntityUVE();
     // Identity placeholder - SyncCameraFromOrbitUVE() overwrites this every RenderUVE() call
     // before it is ever read by the renderer. AttachTransformUVE() also wires up this entity's
     // WorldTransformComponentUVE/HierarchyComponentUVE, which SetLocalTransformUVE() needs later.
-    services_.GetSceneGraphUVE().AttachTransformUVE(entityManager, cameraEntity_, UVE::Scene::TransformComponentUVE{});
-    entityManager.AddComponentUVE<UVE::Scene::CameraComponentUVE>(cameraEntity_);
+    services_.GetSceneGraphUVE().AttachTransformUVE(entityManager, entity, UVE::Scene::TransformComponentUVE{});
+    entityManager.AddComponentUVE<UVE::Scene::CameraComponentUVE>(entity);
+    // Marks this as internal tooling infrastructure, not real document content - see the component's
+    // own header comment for why (EditorUVE::GetDocumentRootsUVE() excludes it, so Play-mode's
+    // snapshot capture/restore never touches it, and it never shows up in the Scene Hierarchy).
+    entityManager.AddComponentUVE<UVE::Scene::EditorInternalEntityComponentUVE>(entity);
+    return entity;
 }
 
 EditorMeshLayerUVE::~EditorMeshLayerUVE() {
@@ -48,6 +59,13 @@ void EditorMeshLayerUVE::SyncCameraFromOrbitUVE(const univex::camera::OrbitCamer
                                                 const float aspectRatio) {
     static_cast<void>(aspectRatio); // CameraSystemUVE derives aspect from the render target itself.
     UVE::Scene::IEntityManagerUVE& entityManager = services_.GetEntityManagerUVE();
+    // Defensive self-heal: cameraEntity_ is a member cached across frames, so if something ever
+    // destroys it out from under this layer (the EditorInternalEntityComponentUVE tag above is the
+    // real fix for the one known way that happened - see that component's own doc comment - but a
+    // cached handle should never be trusted blindly), recreate it instead of crashing.
+    if (!entityManager.IsAliveUVE(cameraEntity_)) {
+        cameraEntity_ = CreateCameraProxyEntityUVE();
+    }
 
     UVE::Scene::CameraComponentUVE& cameraComponent =
         entityManager.GetComponentUVE<UVE::Scene::CameraComponentUVE>(cameraEntity_);
@@ -117,13 +135,22 @@ void EditorMeshLayerUVE::DestroyTargetsUVE() {
 }
 
 EditorMeshLayerResultUVE EditorMeshLayerUVE::RenderUVE(const univex::camera::OrbitCamera& camera,
-                                                       const std::uint32_t width, const std::uint32_t height) {
+                                                       const std::uint32_t width, const std::uint32_t height,
+                                                       const std::optional<UVE::Scene::EntityUVE> gameCameraOverride) {
     if (width == 0U || height == 0U || !EnsureTargetsUVE(width, height)) {
         return {};
     }
 
-    const float aspectRatio = static_cast<float>(width) / static_cast<float>(height);
-    SyncCameraFromOrbitUVE(camera, aspectRatio);
+    UVE::Scene::IEntityManagerUVE& entityManager = services_.GetEntityManagerUVE();
+    const bool overrideUsable =
+        gameCameraOverride.has_value() && *gameCameraOverride != UVE::Scene::kInvalidEntityUVE &&
+        entityManager.HasComponentUVE<UVE::Scene::WorldTransformComponentUVE>(*gameCameraOverride) &&
+        entityManager.HasComponentUVE<UVE::Scene::CameraComponentUVE>(*gameCameraOverride);
+    const UVE::Scene::EntityUVE renderCameraEntity = overrideUsable ? *gameCameraOverride : cameraEntity_;
+    if (!overrideUsable) {
+        const float aspectRatio = static_cast<float>(width) / static_cast<float>(height);
+        SyncCameraFromOrbitUVE(camera, aspectRatio);
+    }
 
     UVE::Render::IRenderer3DUVE& renderer = services_.GetRenderer3DUVE();
     // Keeps this call's own output correctly sized regardless of EngineCoreUVE's own, unrelated
@@ -134,7 +161,7 @@ EditorMeshLayerResultUVE EditorMeshLayerUVE::RenderUVE(const univex::camera::Orb
     if (!renderer.ResizeTargetsUVE(width, height)) {
         return {};
     }
-    renderer.RenderFrameToTargetUVE(services_.GetEntityManagerUVE(), cameraEntity_, colorTarget_, depthTarget_);
+    renderer.RenderFrameToTargetUVE(entityManager, renderCameraEntity, colorTarget_, depthTarget_);
 
     auto* const glRenderDevice = dynamic_cast<UVE::Render::GlRenderDeviceUVE*>(&services_.GetRenderDeviceUVE());
     if (glRenderDevice == nullptr) {

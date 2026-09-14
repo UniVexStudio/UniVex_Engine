@@ -37,6 +37,8 @@
 #include "uve/math/vector2_uve.h"
 #include "uve/render/primitive_geometry_uve.h"
 #include "uve/render/shader/built_in_shaders_uve.h"
+#include "uve/scene/components/camera_component_uve.h"
+#include "uve/scene/components/editor_internal_entity_component_uve.h"
 #include "uve/scene/components/mesh_component_uve.h"
 #include "uve/scene/components/transform_component_uve.h"
 #include "uve/scene/components/world_transform_component_uve.h"
@@ -71,6 +73,26 @@ void main() {
     FragColor = meshDepth < 1.0 ? meshColor : gridColor;
 }
 )";
+
+// Chooses "the" scene camera to render through while the Game workspace tab is active - a player
+// preview, per UpdateSelectionGizmoUVE/ApplyOverlayStateUVE's own established "what a player would
+// see" convention for that state. CameraComponentUVE (Component/include/.../camera_component_uve.h)
+// has no priority/"main camera" tag of any kind yet, so this is deliberately the simplest honest
+// rule - the first entity found (stable ECS storage order) carrying both a real world transform and
+// a camera - documented here rather than silently assumed; a future increment can add a real
+// "main camera" flag once more than one scene camera is a real authoring scenario.
+[[nodiscard]] std::optional<UVE::Scene::EntityUVE> FindGameCameraEntityUVE(
+    UVE::Scene::IEntityManagerUVE& entityManager) {
+    std::optional<UVE::Scene::EntityUVE> found;
+    entityManager.ForEachUVE<UVE::Scene::WorldTransformComponentUVE, UVE::Scene::CameraComponentUVE>(
+        [&found](const UVE::Scene::EntityUVE entity, const UVE::Scene::WorldTransformComponentUVE&,
+                 const UVE::Scene::CameraComponentUVE&) {
+            if (!found.has_value()) {
+                found = entity;
+            }
+        });
+    return found;
+}
 
 // Bridges Engine/Editor/Viewport's real GL renderer (grid + orbit camera + transform/orientation
 // gizmos + one proxy cube per live scene entity) into EditorUVE's generic, viewport-agnostic
@@ -128,9 +150,16 @@ public:
 
         // Real MeshComponentUVE-carrying scene entities, rendered via the same lit/shaded pipeline
         // EngineCoreUVE itself uses at runtime (Renderer3DUVE::RenderFrameToTargetUVE), layered on
-        // top of the grid/gizmo image above - see EditorMeshLayerUVE's own header comment.
-        const univex::integration::EditorMeshLayerResultUVE meshResult =
-            meshLayer_.RenderUVE(camera_, static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height));
+        // top of the grid/gizmo image above - see EditorMeshLayerUVE's own header comment. While the
+        // Game workspace tab is active, render through the scene's own camera instead of the
+        // editor's free-look OrbitCamera - see FindGameCameraEntityUVE's own comment for the "first
+        // camera found" convention; EditorMeshLayerUVE itself falls back to the OrbitCamera-synced
+        // view if the scene has no usable camera, so a Play session with no authored camera still
+        // shows something instead of a blank panel.
+        const std::optional<UVE::Scene::EntityUVE> gameCameraOverride =
+            gameWorkspaceActive_ ? FindGameCameraEntityUVE(entityManager_) : std::nullopt;
+        const univex::integration::EditorMeshLayerResultUVE meshResult = meshLayer_.RenderUVE(
+            camera_, static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height), gameCameraOverride);
         outUsedSize = UVE::Math::Vector2UVE{static_cast<float>(width), static_cast<float>(height)};
         if (meshResult.colorTextureId == 0U || !EnsureCompositeResourcesUVE(width, height)) {
             return static_cast<std::uint64_t>(resolveColorTexture_);
@@ -529,6 +558,12 @@ void CreateMeshRenderingFixtureEntityUVE(UVE::Core::EngineServicesUVE& services)
     services.GetSceneGraphUVE().AttachTransformUVE(entityManager, entity, UVE::Scene::TransformComponentUVE{});
     entityManager.AddComponentUVE<UVE::Scene::MeshComponentUVE>(
         entity, UVE::Scene::MeshComponentUVE{meshGuid, materialGuid});
+    // Marks this as internal tooling infrastructure, not real document content - see the
+    // component's own header comment. Makes this function's own doc comment above ("not an
+    // authored project asset") actually true: excluded from EditorUVE::GetDocumentRootsUVE(), so
+    // it's never churned through Play-mode's snapshot capture/restore and never shows up as a
+    // stray unnamed row in the Scene Hierarchy panel.
+    entityManager.AddComponentUVE<UVE::Scene::EditorInternalEntityComponentUVE>(entity);
 }
 
 } // namespace

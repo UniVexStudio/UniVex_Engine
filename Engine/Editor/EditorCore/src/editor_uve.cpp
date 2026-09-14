@@ -47,6 +47,7 @@
 #include "uve/scene/components/expanded_3d_node_components_uve.h"
 #include "uve/scene/components/hierarchy_component_uve.h"
 #include "uve/scene/components/light_component_uve.h"
+#include "uve/scene/components/editor_internal_entity_component_uve.h"
 #include "uve/scene/components/name_component_uve.h"
 #include "uve/scene/components/primitive_mesh_component_uve.h"
 #include "uve/scene/components/prefab_instance_component_uve.h"
@@ -3050,7 +3051,20 @@ bool EditorUVE::RedoHistoryEntryUVE(HistoryEntryUVE& entry) {
 
 std::vector<Scene::EntityUVE> EditorUVE::GetDocumentRootsUVE() {
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    return m_services->GetSceneGraphUVE().GetChildrenUVE(entityManager, Scene::kInvalidEntityUVE);
+    std::vector<Scene::EntityUVE> roots =
+        m_services->GetSceneGraphUVE().GetChildrenUVE(entityManager, Scene::kInvalidEntityUVE);
+    // Internal engine/editor infrastructure entities (e.g. the Viewport's hidden free-look-camera
+    // proxy) are also scene roots (AttachTransformUVE always creates one), but must never be
+    // treated as document content - this is the one place that decision needs to be made, since
+    // every other document-root consumer (Play-mode snapshot capture/restore, the Scene Hierarchy
+    // panel, ClearDocumentSceneUVE, etc.) already reaches roots exclusively through this function.
+    roots.erase(std::remove_if(roots.begin(), roots.end(),
+                               [&entityManager](const Scene::EntityUVE entity) {
+                                   return entityManager.HasComponentUVE<Scene::EditorInternalEntityComponentUVE>(
+                                       entity);
+                               }),
+               roots.end());
+    return roots;
 }
 
 EditorStateUVE EditorUVE::GetStateUVE() const noexcept {

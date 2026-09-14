@@ -18,6 +18,7 @@
 #include "uve/editor/editor_uve.h"
 #include "uve/scene/components/camera_component_uve.h"
 #include "uve/scene/components/collider_component_uve.h"
+#include "uve/scene/components/editor_internal_entity_component_uve.h"
 #include "uve/scene/components/light_component_uve.h"
 #include "uve/scene/components/mesh_component_uve.h"
 #include "uve/scene/components/name_component_uve.h"
@@ -2562,6 +2563,52 @@ TEST(EditorUVETest, PlayModeSandbox_RestoresSnapshotRejectsAuthoringAndPreserves
         const Scene::TransformComponentUVE& restored =
             entityManager.GetComponentUVE<Scene::TransformComponentUVE>(restoredRoots.front());
         EXPECT_EQ(restored.localPosition, authored.localPosition);
+
+        editor.ShutdownUVE();
+    }
+
+    engine.Shutdown();
+}
+
+TEST(EditorUVETest, GetDocumentRootsUVE_ExcludesEditorInternalEntitiesAndTheySurvivePlayStop) {
+    // Regression test for a real, reproducible crash: entities tagged EditorInternalEntityComponentUVE
+    // (e.g. the editor Viewport's own hidden free-look-camera proxy) are scene roots just like real
+    // document content (AttachTransformUVE always creates a root), but must never be swept up by
+    // Play-mode's destroy/recreate snapshot cycle in StopPlayModeUVE() - before this fix, they were,
+    // which left a cached EntityUVE elsewhere pointing at a destroyed entity and crashed the next
+    // time it was dereferenced. See GetDocumentRootsUVE()'s own comment for the fix.
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_internal_entity.uvescene", 100U, &engine);
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+
+        const Scene::EntityUVE documentRoot = entityManager.CreateEntityUVE();
+        AttachRootUVE(engine, documentRoot, Scene::TransformComponentUVE{});
+
+        const Scene::EntityUVE internalEntity = entityManager.CreateEntityUVE();
+        AttachRootUVE(engine, internalEntity, Scene::TransformComponentUVE{});
+        entityManager.AddComponentUVE<Scene::EditorInternalEntityComponentUVE>(internalEntity);
+
+        const std::vector<Scene::EntityUVE> roots = editor.GetDocumentRootsUVE();
+        ASSERT_EQ(roots.size(), 1U);
+        EXPECT_EQ(roots.front(), documentRoot);
+
+        editor.SelectEntityUVE(documentRoot);
+        ASSERT_TRUE(editor.EnterPlayModeUVE());
+        ASSERT_TRUE(editor.StopPlayModeUVE());
+
+        // The actual bug: confirm the internal entity is untouched (still alive, same handle) by
+        // the destroy/recreate cycle that just ran on every *document* root.
+        EXPECT_TRUE(entityManager.IsAliveUVE(internalEntity));
+        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::EditorInternalEntityComponentUVE>(internalEntity));
+
+        const std::vector<Scene::EntityUVE> rootsAfterStop = editor.GetDocumentRootsUVE();
+        ASSERT_EQ(rootsAfterStop.size(), 1U);
+        EXPECT_NE(rootsAfterStop.front(), documentRoot); // restored as a fresh handle, like every real root
 
         editor.ShutdownUVE();
     }
