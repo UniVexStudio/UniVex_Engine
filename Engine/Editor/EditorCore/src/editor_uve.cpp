@@ -5887,28 +5887,52 @@ void EditorUVE::DrawScriptingWorkspaceUVE() {
             const ImVec2 canvasOrigin = ImGui::GetCursorScreenPos();
             const ImVec2 canvasSize = ImGui::GetContentRegionAvail();
             const Scripting::ScriptGraphCanvasViewUVE view = snapshot.view;
+            // AllowOverlap: this button spans the whole canvas and is submitted before the zoom
+            // pill drawn later in this same scope - without it, this button greedily claims
+            // ActiveId on every click anywhere in the canvas (including over the pill), which
+            // silently blocks the pill's own InvisibleButtons from ever registering a press even
+            // though plain hover still highlights them correctly.
             ImGui::InvisibleButton("##script-canvas-input", canvasSize,
                                    ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight |
-                                       ImGuiButtonFlags_MouseButtonMiddle);
-            const bool canvasHovered = ImGui::IsItemHovered();
+                                       ImGuiButtonFlags_MouseButtonMiddle | ImGuiButtonFlags_AllowOverlap);
+            const bool canvasButtonHovered = ImGui::IsItemHovered();
             const ImVec2 mouse = ImGui::GetMousePos();
             const ImVec2 mouseLocal{mouse.x - canvasOrigin.x, mouse.y - canvasOrigin.y};
             ImDrawList* const drawList = ImGui::GetWindowDrawList();
+            // Zoom pill geometry (drawn near the end of this scope), computed early so the
+            // canvas's own click/pan/deselect handling below can treat it as outside the canvas -
+            // it visually sits inside the canvas's hit-test rect, so without this exclusion a
+            // click on it would also register as an "empty canvas" click and deselect the current
+            // node/start a pan, on top of whatever the pill button itself does.
+            constexpr float kZoomPillPaddingUVE = 3.0F;
+            constexpr float kZoomButtonDiameterUVE = 20.0F;
+            const std::string zoomLabel = std::to_string(static_cast<int>(view.zoom * 100.0F + 0.5F)) + "%";
+            const float zoomLabelWidth = std::max(34.0F, ImGui::CalcTextSize(zoomLabel.c_str()).x);
+            const float zoomFitWidth = ImGui::CalcTextSize("Fit").x + 16.0F;
+            const float zoomPillHeight = kZoomButtonDiameterUVE + kZoomPillPaddingUVE * 2.0F;
+            const float zoomPillWidth = kZoomPillPaddingUVE + kZoomButtonDiameterUVE + zoomLabelWidth +
+                                        kZoomButtonDiameterUVE + zoomFitWidth + kZoomPillPaddingUVE;
+            const ImVec2 zoomPillMin{canvasOrigin.x + 10.0F, canvasOrigin.y + canvasSize.y - zoomPillHeight - 10.0F};
+            const ImVec2 zoomPillMax{zoomPillMin.x + zoomPillWidth, zoomPillMin.y + zoomPillHeight};
+            const bool mouseOverZoomPill = mouse.x >= zoomPillMin.x && mouse.x <= zoomPillMax.x &&
+                                           mouse.y >= zoomPillMin.y && mouse.y <= zoomPillMax.y;
+            const bool canvasHovered = canvasButtonHovered && !mouseOverZoomPill;
             drawList->AddRectFilled(canvasOrigin,
                                     ImVec2{canvasOrigin.x + canvasSize.x, canvasOrigin.y + canvasSize.y},
                                     IM_COL32(20, 22, 25, 255));
             drawList->AddText(ImVec2{canvasOrigin.x + 16.0F, canvasOrigin.y + 12.0F},
                               IM_COL32(166, 172, 180, 235), "GRAPH CANVAS");
+            // A dot at each grid intersection, matching a design mockup's own
+            // `radial-gradient(rgba(255,255,255,.055) 1px, transparent 1px)` canvas background,
+            // rather than the previous crossed-line grid - approximated with small low-alpha
+            // filled circles since ImDrawList has no radial-gradient/repeating-pattern primitive.
             constexpr float gridSpacing = 24.0F;
             const float gridOffsetX = std::fmod(-view.pan.x * view.zoom, gridSpacing);
             const float gridOffsetY = std::fmod(-view.pan.y * view.zoom, gridSpacing);
-            for (float x = canvasOrigin.x + gridOffsetX; x < canvasOrigin.x + canvasSize.x; x += gridSpacing) {
-                drawList->AddLine(ImVec2{x, canvasOrigin.y}, ImVec2{x, canvasOrigin.y + canvasSize.y},
-                                  IM_COL32(42, 45, 50, 220));
-            }
             for (float y = canvasOrigin.y + gridOffsetY; y < canvasOrigin.y + canvasSize.y; y += gridSpacing) {
-                drawList->AddLine(ImVec2{canvasOrigin.x, y}, ImVec2{canvasOrigin.x + canvasSize.x, y},
-                                  IM_COL32(42, 45, 50, 220));
+                for (float x = canvasOrigin.x + gridOffsetX; x < canvasOrigin.x + canvasSize.x; x += gridSpacing) {
+                    drawList->AddCircleFilled(ImVec2{x, y}, 1.3F, IM_COL32(255, 255, 255, 22));
+                }
             }
 
             const auto nodePosition = [this](const Scripting::ScriptGraphCanvasNodeSnapshotUVE& node) {
@@ -6201,6 +6225,62 @@ void EditorUVE::DrawScriptingWorkspaceUVE() {
                 }
                 ImGui::EndChild();
                 ImGui::EndPopup();
+            }
+
+            // Zoom-percentage + fit-to-view pill, bottom-left of the canvas - matches a design
+            // mockup's own `.graph-zoom-ov` control, reusing the exact rounded-pill "bubble" style
+            // already established for the 3D Viewport panel's own overlay toolbar
+            // (DrawViewportOverlayBubblesUVE) so the two read as the same visual language.
+            {
+                drawList->AddRectFilled(zoomPillMin, zoomPillMax, IM_COL32(18, 21, 28, 200), zoomPillHeight * 0.5F);
+                drawList->AddRect(zoomPillMin, zoomPillMax, IM_COL32(255, 255, 255, 24), zoomPillHeight * 0.5F);
+
+                float cursorX = zoomPillMin.x + kZoomPillPaddingUVE;
+                const float buttonY = zoomPillMin.y + kZoomPillPaddingUVE;
+                const auto zoomPillButton = [&](const char* const id, const char* const label) {
+                    ImGui::SetCursorScreenPos(ImVec2{cursorX, buttonY});
+                    const bool pressed = ImGui::InvisibleButton(id, ImVec2{kZoomButtonDiameterUVE, kZoomButtonDiameterUVE});
+                    const bool hovered = ImGui::IsItemHovered();
+                    const ImVec2 center{cursorX + kZoomButtonDiameterUVE * 0.5F, buttonY + kZoomButtonDiameterUVE * 0.5F};
+                    if (hovered) {
+                        drawList->AddCircleFilled(center, kZoomButtonDiameterUVE * 0.5F, IM_COL32(255, 255, 255, 20));
+                    }
+                    const ImVec2 labelSize = ImGui::CalcTextSize(label);
+                    drawList->AddText(ImVec2{center.x - labelSize.x * 0.5F, center.y - labelSize.y * 0.5F},
+                                      IM_COL32(214, 220, 227, 255), label);
+                    cursorX += kZoomButtonDiameterUVE;
+                    return pressed;
+                };
+                const auto applyZoom = [&](const float newZoom) {
+                    Scripting::ScriptGraphCanvasViewUVE nextView = view;
+                    nextView.zoom = std::clamp(newZoom, Scripting::kMinimumScriptGraphCanvasZoomUVE,
+                                               Scripting::kMaximumScriptGraphCanvasZoomUVE);
+                    static_cast<void>(ActiveVisualScriptCanvasUVE().SetViewUVE(nextView));
+                };
+                if (zoomPillButton("##script-zoom-out", "-")) {
+                    applyZoom(view.zoom / 1.2F);
+                }
+                ImGui::SetCursorScreenPos(ImVec2{cursorX, buttonY});
+                ImGui::Dummy(ImVec2{zoomLabelWidth, kZoomButtonDiameterUVE});
+                drawList->AddText(ImVec2{cursorX + (zoomLabelWidth - ImGui::CalcTextSize(zoomLabel.c_str()).x) * 0.5F,
+                                          buttonY + (kZoomButtonDiameterUVE - ImGui::GetTextLineHeight()) * 0.5F},
+                                  IM_COL32(166, 172, 180, 235), zoomLabel.c_str());
+                cursorX += zoomLabelWidth;
+                if (zoomPillButton("##script-zoom-in", "+")) {
+                    applyZoom(view.zoom * 1.2F);
+                }
+                ImGui::SetCursorScreenPos(ImVec2{cursorX, buttonY});
+                const bool fitPressed = ImGui::InvisibleButton("##script-zoom-fit", ImVec2{zoomFitWidth, kZoomButtonDiameterUVE});
+                const ImVec2 fitLabelSize = ImGui::CalcTextSize("Fit");
+                drawList->AddText(ImVec2{cursorX + (zoomFitWidth - fitLabelSize.x) * 0.5F,
+                                          buttonY + (kZoomButtonDiameterUVE - fitLabelSize.y) * 0.5F},
+                                  IM_COL32(214, 220, 227, 255), "Fit");
+                if (fitPressed) {
+                    Scripting::ScriptGraphCanvasViewUVE nextView = view;
+                    nextView.zoom = 1.0F;
+                    nextView.pan = Scripting::ScriptGraphCanvasPointUVE{0.0F, 0.0F};
+                    static_cast<void>(ActiveVisualScriptCanvasUVE().SetViewUVE(nextView));
+                }
             }
         }
         ImGui::EndChild();
