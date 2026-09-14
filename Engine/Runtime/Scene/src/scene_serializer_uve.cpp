@@ -31,6 +31,7 @@
 #include "uve/scene/components/area_component_uve.h"
 #include "uve/scene/components/audio_source_component_uve.h"
 #include "uve/scene/components/camera_component_uve.h"
+#include "uve/scene/components/character_controller_component_uve.h"
 #include "uve/scene/components/collider_component_uve.h"
 #include "uve/scene/components/expanded_3d_node_components_uve.h"
 #include "uve/scene/components/hierarchy_component_uve.h"
@@ -150,6 +151,14 @@ namespace {
             {"inverseInertia", ToJsonUVE(component.inverseInertia)},
             {"drag", component.drag},
             {"gravityScale", component.gravityScale}};
+}
+
+[[nodiscard]] nlohmann::json ToJsonUVE(const CharacterControllerComponentUVE& component) {
+    return {{"moveSpeed", component.moveSpeed},
+            {"jumpHeight", component.jumpHeight},
+            {"gravityScale", component.gravityScale},
+            {"verticalVelocity", component.verticalVelocity},
+            {"isGrounded", component.isGrounded}};
 }
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const AudioSourceComponentUVE& component) {
@@ -915,6 +924,19 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                           }
                           return rigidBody;
                       }, IsRigidBodyComponentValidUVE));
+        table.emplace("CharacterControllerComponentUVE",
+                      MakeRegistrationUVE<CharacterControllerComponentUVE>([](const nlohmann::json& json) {
+                          CharacterControllerComponentUVE characterController;
+                          characterController.moveSpeed = json.value("moveSpeed", 5.0F);
+                          characterController.jumpHeight = json.value("jumpHeight", 1.5F);
+                          characterController.gravityScale = json.value("gravityScale", 1.0F);
+                          characterController.verticalVelocity = json.value("verticalVelocity", 0.0F);
+                          characterController.isGrounded = json.value("isGrounded", false);
+                          if (!IsCharacterControllerComponentValidUVE(characterController)) {
+                              throw std::runtime_error("Invalid CharacterControllerComponentUVE payload");
+                          }
+                          return characterController;
+                      }, IsCharacterControllerComponentValidUVE));
         table.emplace("AudioSourceComponentUVE",
                       MakeRegistrationUVE<AudioSourceComponentUVE>([](const nlohmann::json& json) {
                           AudioSourceComponentUVE source;

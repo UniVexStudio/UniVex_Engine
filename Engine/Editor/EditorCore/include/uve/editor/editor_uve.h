@@ -29,6 +29,7 @@
 #include "uve/scene/components/animation_player_component_uve.h"
 #include "uve/scene/components/audio_source_component_uve.h"
 #include "uve/scene/components/camera_component_uve.h"
+#include "uve/scene/components/character_controller_component_uve.h"
 #include "uve/scene/components/collider_component_uve.h"
 #include "uve/scene/components/expanded_3d_node_components_uve.h"
 #include "uve/scene/components/light_component_uve.h"
@@ -129,13 +130,15 @@ enum class EditorSceneComponentKindUVE : std::uint8_t {
     Script,
     AnimationPlayer,
     WorldEnvironment,
+    CharacterController,
 };
 
 using EditorSceneComponentValueUVE =
     std::variant<Scene::CameraComponentUVE, Scene::MeshComponentUVE, Scene::LightComponentUVE,
                  Scene::ColliderComponentUVE, Scene::RigidBodyComponentUVE, Scene::AudioSourceComponentUVE,
                  Scene::ParticleEmitterComponentUVE, Scene::ScriptComponentUVE,
-                 Scene::AnimationPlayerComponentUVE, Scene::WorldEnvironment3DNodeComponentUVE>;
+                 Scene::AnimationPlayerComponentUVE, Scene::WorldEnvironment3DNodeComponentUVE,
+                 Scene::CharacterControllerComponentUVE>;
 
 enum class EditorEntityKindUVE {
     Empty,
@@ -703,6 +706,7 @@ private:
     void DrawTransformInspectorDrawerUVE(Scene::EntityUVE entity);
     void DrawPrimitiveMeshInspectorDrawerUVE(Scene::EntityUVE entity);
     void DrawWorldEnvironmentInspectorDrawerUVE(Scene::EntityUVE entity);
+    void DrawCharacterControllerInspectorDrawerUVE(Scene::EntityUVE entity);
     void DrawSceneComponentInspectorDrawerUVE(Scene::EntityUVE entity, EditorSceneComponentKindUVE kind);
     void DrawSceneComponentAddPanelUVE();
     void DrawPrefabInspectorDrawerUVE(Scene::EntityUVE entity);

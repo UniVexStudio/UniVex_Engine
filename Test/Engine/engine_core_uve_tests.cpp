@@ -51,6 +51,7 @@
 #include "uve/scene/components/area_component_uve.h"
 #include "uve/scene/components/audio_source_component_uve.h"
 #include "uve/scene/components/camera_component_uve.h"
+#include "uve/scene/components/character_controller_component_uve.h"
 #include "uve/scene/components/collider_component_uve.h"
 #include "uve/scene/components/mesh_component_uve.h"
 #include "uve/scene/components/particle_emitter_component_uve.h"
@@ -1215,6 +1216,60 @@ TEST(EngineCoreUVETest, FallingRigidBody_TickFrameUVEDrivenPhysicsStep_MovesEnti
     const Scene::WorldTransformComponentUVE& world =
         entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
     EXPECT_LT(world.worldPosition.y, 10.0F);
+
+    engine.Shutdown();
+}
+
+TEST(EngineCoreUVETest, CharacterController_FallsUnderGravityLandsOnGroundThenJumpsOnSpace) {
+    // Same 1kHz fixed-update / short real-sleep discipline as FallingRigidBody_* above, so
+    // EngineCoreUVE::Update()'s new SyncCharacterControllersUVE() wiring gets exercised end-to-end
+    // (gravity accumulation -> Physics::CharacterControllerUVE::MoveWithToIUVE -> ground contact),
+    // not just PhysicsSystemUVE's own already-covered per-step math.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    config.fixedUpdateFps = 1000.0;
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    // Static ground: a flat box collider with no RigidBodyComponentUVE, top surface at y=0.5.
+    const Scene::EntityUVE ground = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, ground, Scene::TransformComponentUVE{});
+    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(
+        ground, Scene::ColliderComponentUVE{Math::Vector3UVE{10.0F, 0.5F, 10.0F}});
+
+    // Character controller entity starting 1 unit above its expected resting height (ground top
+    // 0.5 + the default box collider's own 0.5 half-extent = 1.0).
+    const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE local;
+    local.localPosition = Math::Vector3UVE{0.0F, 2.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, entity, local);
+    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(entity, Scene::ColliderComponentUVE{});
+    entityManager.AddComponentUVE<Scene::CharacterControllerComponentUVE>(entity);
+
+    for (int frame = 0; frame < 400; ++frame) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        engine.TickFrameUVE();
+    }
+
+    const Scene::CharacterControllerComponentUVE& afterFall =
+        entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(entity);
+    EXPECT_TRUE(afterFall.isGrounded);
+    const Scene::WorldTransformComponentUVE& worldAfterFall =
+        entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
+    EXPECT_NEAR(worldAfterFall.worldPosition.y, 1.0F, 0.35F);
+
+    Input::IInputSystemUVE& inputSystem = engine.GetServicesUVE().GetInputSystemUVE();
+    inputSystem.SetKeyStateUVE(Input::KeyCodeUVE::Space, true);
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    engine.TickFrameUVE();
+
+    const Scene::CharacterControllerComponentUVE& afterJump =
+        entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(entity);
+    EXPECT_GT(afterJump.verticalVelocity, 0.0F);
+    EXPECT_FALSE(afterJump.isGrounded);
 
     engine.Shutdown();
 }

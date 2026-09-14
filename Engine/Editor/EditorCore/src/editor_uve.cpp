@@ -705,6 +705,7 @@ void DrawHierarchyNodeIconUVE(ImDrawList& drawList, const ImVec2 center, const f
         case EditorSceneComponentKindUVE::Script: return HierarchyNodeIconKindUVE::Script;
         case EditorSceneComponentKindUVE::AnimationPlayer: return HierarchyNodeIconKindUVE::Animation;
         case EditorSceneComponentKindUVE::WorldEnvironment: return HierarchyNodeIconKindUVE::Environment;
+        case EditorSceneComponentKindUVE::CharacterController: return HierarchyNodeIconKindUVE::Physics;
     }
     return HierarchyNodeIconKindUVE::Empty;
 }
@@ -1432,6 +1433,9 @@ bool EditorUVE::IsSceneComponentValueValidUVE(
             } else if constexpr (std::is_same_v<ValueType, Scene::WorldEnvironment3DNodeComponentUVE>) {
                 return kind == EditorSceneComponentKindUVE::WorldEnvironment &&
                        Scene::IsWorldEnvironment3DNodeComponentValidUVE(typedValue);
+            } else if constexpr (std::is_same_v<ValueType, Scene::CharacterControllerComponentUVE>) {
+                return kind == EditorSceneComponentKindUVE::CharacterController &&
+                       Scene::IsCharacterControllerComponentValidUVE(typedValue);
             } else {
                 return false;
             }
@@ -1485,6 +1489,9 @@ bool EditorUVE::AreSceneComponentValuesEqualUVE(const EditorSceneComponentValueU
                        left.exposure == right.exposure && left.fogDensity == right.fogDensity &&
                        left.fogEnabled == right.fogEnabled &&
                        left.postProcessingEnabled == right.postProcessingEnabled;
+            } else if constexpr (std::is_same_v<LeftType, Scene::CharacterControllerComponentUVE>) {
+                return left.moveSpeed == right.moveSpeed && left.jumpHeight == right.jumpHeight &&
+                       left.gravityScale == right.gravityScale;
             } else {
                 return false;
             }
@@ -1542,6 +1549,8 @@ bool EditorUVE::ApplySceneComponentStateUVE(
             return apply.template operator()<Scene::AnimationPlayerComponentUVE>();
         case EditorSceneComponentKindUVE::WorldEnvironment:
             return apply.template operator()<Scene::WorldEnvironment3DNodeComponentUVE>();
+        case EditorSceneComponentKindUVE::CharacterController:
+            return apply.template operator()<Scene::CharacterControllerComponentUVE>();
     }
     return false;
 }
@@ -1606,6 +1615,11 @@ bool EditorUVE::SetSelectedSceneComponentUVE(const EditorSceneComponentKindUVE k
                 before = entityManager.GetComponentUVE<Scene::WorldEnvironment3DNodeComponentUVE>(m_selectedEntity);
             }
             break;
+        case EditorSceneComponentKindUVE::CharacterController:
+            if (entityManager.HasComponentUVE<Scene::CharacterControllerComponentUVE>(m_selectedEntity)) {
+                before = entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(m_selectedEntity);
+            }
+            break;
     }
     if (before.has_value() && AreSceneComponentValuesEqualUVE(*before, value)) {
         return false;
@@ -1659,6 +1673,9 @@ bool EditorUVE::RemoveSelectedSceneComponentUVE(const EditorSceneComponentKindUV
             break;
         case EditorSceneComponentKindUVE::WorldEnvironment:
             if (entityManager.HasComponentUVE<Scene::WorldEnvironment3DNodeComponentUVE>(m_selectedEntity)) before = entityManager.GetComponentUVE<Scene::WorldEnvironment3DNodeComponentUVE>(m_selectedEntity);
+            break;
+        case EditorSceneComponentKindUVE::CharacterController:
+            if (entityManager.HasComponentUVE<Scene::CharacterControllerComponentUVE>(m_selectedEntity)) before = entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(m_selectedEntity);
             break;
     }
     if (!before.has_value()) {
@@ -4559,6 +4576,8 @@ void EditorUVE::RegisterBuiltInInspectorDrawersUVE() {
                         return entityManager.HasComponentUVE<Scene::AnimationPlayerComponentUVE>(entity);
                     case EditorSceneComponentKindUVE::WorldEnvironment:
                         return entityManager.HasComponentUVE<Scene::WorldEnvironment3DNodeComponentUVE>(entity);
+                    case EditorSceneComponentKindUVE::CharacterController:
+                        return entityManager.HasComponentUVE<Scene::CharacterControllerComponentUVE>(entity);
                 }
                 return false;
             },
@@ -4581,6 +4600,14 @@ void EditorUVE::RegisterBuiltInInspectorDrawersUVE() {
                    m_services->GetEntityManagerUVE().HasComponentUVE<Scene::WorldEnvironment3DNodeComponentUVE>(entity);
         },
         [this](const Scene::EntityUVE entity) { DrawWorldEnvironmentInspectorDrawerUVE(entity); },
+    }));
+    static_cast<void>(m_inspectorDrawerRegistry.RegisterDrawerUVE(InspectorDrawerEntryUVE{
+        "character-controller",
+        [this](const Scene::EntityUVE entity) {
+            return IsDocumentEntityUVE(entity) &&
+                   m_services->GetEntityManagerUVE().HasComponentUVE<Scene::CharacterControllerComponentUVE>(entity);
+        },
+        [this](const Scene::EntityUVE entity) { DrawCharacterControllerInspectorDrawerUVE(entity); },
     }));
     static_cast<void>(m_inspectorDrawerRegistry.RegisterDrawerUVE(InspectorDrawerEntryUVE{
         "prefab-instance",
@@ -4833,6 +4860,61 @@ void EditorUVE::DrawWorldEnvironmentInspectorDrawerUVE(const Scene::EntityUVE en
     }
 }
 
+void EditorUVE::DrawCharacterControllerInspectorDrawerUVE(const Scene::EntityUVE entity) {
+    if (!IsDocumentEntityUVE(entity) || entity != m_selectedEntity) {
+        return;
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (!entityManager.HasComponentUVE<Scene::CharacterControllerComponentUVE>(entity)) {
+        return;
+    }
+
+    const Scene::CharacterControllerComponentUVE current =
+        entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(entity);
+    Scene::CharacterControllerComponentUVE edited = current;
+    bool changed = false;
+
+    ImGui::Separator();
+    DrawProceduralIconLabelUVE(8.0F, "Character Controller",
+                               [this](ImDrawList& drawList, const ImVec2 center, const float radius, const ImU32) {
+                                   DrawHierarchyNodeIconUVE(drawList, center, radius, HierarchyNodeIconKindUVE::Physics,
+                                                           m_uiAssets.GetGeneralIconTextureIdUVE("sun"),
+                                                           m_uiAssets.GetGeneralIconTextureIdUVE("environment"));
+                               });
+    ImGui::TextDisabled(
+        "Driven every fixed step by EngineCoreUVE's real gravity/jump/ground-state stepping - requires a "
+        "Collider (and, if present, a kinematic Rigid Body).");
+
+    float moveSpeed = edited.moveSpeed;
+    if (ImGui::DragFloat("Move Speed", &moveSpeed, 0.05F, 0.0F, 100.0F, "%.3f")) {
+        edited.moveSpeed = moveSpeed;
+        changed = true;
+    }
+    float jumpHeight = edited.jumpHeight;
+    if (ImGui::DragFloat("Jump Height", &jumpHeight, 0.02F, 0.0F, 50.0F, "%.3f")) {
+        edited.jumpHeight = jumpHeight;
+        changed = true;
+    }
+    float gravityScale = edited.gravityScale;
+    if (ImGui::DragFloat("Gravity Scale", &gravityScale, 0.02F, 0.0F, 10.0F, "%.3f")) {
+        edited.gravityScale = gravityScale;
+        changed = true;
+    }
+    ImGui::BeginDisabled();
+    float verticalVelocity = edited.verticalVelocity;
+    ImGui::DragFloat("Vertical Velocity (runtime)", &verticalVelocity, 0.0F);
+    bool isGrounded = edited.isGrounded;
+    ImGui::Checkbox("Grounded (runtime)", &isGrounded);
+    ImGui::EndDisabled();
+
+    if (changed && !SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::CharacterController, edited)) {
+        ImGui::TextDisabled("Input was rejected by the authored-value validator.");
+    }
+    if (ImGui::Button("Remove Character Controller")) {
+        static_cast<void>(RemoveSelectedSceneComponentUVE(EditorSceneComponentKindUVE::CharacterController));
+    }
+}
+
 void EditorUVE::DrawSceneComponentInspectorDrawerUVE(const Scene::EntityUVE entity,
                                                         const EditorSceneComponentKindUVE kind) {
     if (!IsDocumentEntityUVE(entity) || entity != m_selectedEntity) {
@@ -4851,6 +4933,7 @@ void EditorUVE::DrawSceneComponentInspectorDrawerUVE(const Scene::EntityUVE enti
         case EditorSceneComponentKindUVE::Script: title = "Script"; break;
         case EditorSceneComponentKindUVE::AnimationPlayer: title = "Animation Player"; break;
         case EditorSceneComponentKindUVE::WorldEnvironment: title = "World Environment"; break;
+        case EditorSceneComponentKindUVE::CharacterController: title = "Character Controller"; break;
     }
     ImGui::Separator();
     DrawProceduralIconLabelUVE(8.0F, title, [this, kind](ImDrawList& drawList, const ImVec2 center,
@@ -4950,6 +5033,35 @@ void EditorUVE::DrawSceneComponentAddPanelUVE() {
         addIfMissing("World Environment", EditorSceneComponentKindUVE::WorldEnvironment,
                      Scene::WorldEnvironment3DNodeComponentUVE{},
                      entityManager.HasComponentUVE<Scene::WorldEnvironment3DNodeComponentUVE>(m_selectedEntity));
+
+        // Character Controller needs its own row (not the shared addIfMissing lambda) because
+        // attaching it also auto-attaches a Collider + kinematic Rigid Body if either is missing -
+        // the same precondition CharacterControllerUVE::MoveUVE/MoveWithToIUVE already enforce, and
+        // the same auto-attach behavior the Library's CharacterBody3D node already establishes.
+        const bool hasCharacterController =
+            entityManager.HasComponentUVE<Scene::CharacterControllerComponentUVE>(m_selectedEntity);
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        ImGui::BeginDisabled(hasCharacterController);
+        if (ImGui::SmallButton("Character Controller") && !hasCharacterController) {
+            if (!entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(m_selectedEntity)) {
+                entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(m_selectedEntity,
+                                                                           Scene::ColliderComponentUVE{});
+            }
+            if (entityManager.HasComponentUVE<Scene::RigidBodyComponentUVE>(m_selectedEntity)) {
+                entityManager.GetComponentUVE<Scene::RigidBodyComponentUVE>(m_selectedEntity).isKinematic = true;
+            } else {
+                Scene::RigidBodyComponentUVE body{};
+                body.isKinematic = true;
+                entityManager.AddComponentUVE<Scene::RigidBodyComponentUVE>(m_selectedEntity, body);
+            }
+            static_cast<void>(SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::CharacterController,
+                                                            Scene::CharacterControllerComponentUVE{}));
+        }
+        ImGui::EndDisabled();
+        ImGui::TableSetColumnIndex(1);
+        ImGui::TextDisabled(hasCharacterController ? "Attached" : "Available");
+
         ImGui::EndTable();
     }
 }
@@ -5823,6 +5935,8 @@ void EditorUVE::DrawFilesystemContextPopupUVE() {
                     Scene::AnimationPlayerComponentUVE{});
     componentAction("World Environment", EditorSceneComponentKindUVE::WorldEnvironment,
                     Scene::WorldEnvironment3DNodeComponentUVE{});
+    componentAction("Character Controller", EditorSceneComponentKindUVE::CharacterController,
+                    Scene::CharacterControllerComponentUVE{});
     if (!IsDocumentEntityUVE(m_selectedEntity)) {
         ImGui::TextDisabled("Select a Scene node to attach a component.");
     }

@@ -416,6 +416,16 @@ private:
     /// same run (a real follow-up, not a silent limitation).
     void SyncScriptRuntimeUVE();
 
+    /// Steps every live CharacterControllerComponentUVE entity once per fixed step: reads WASD/Space
+    /// via the real IInputSystemUVE, accumulates vertical velocity under this engine's own configured
+    /// gravity (m_config.gravity, matching PhysicsSystemUVE's own construction and
+    /// SyncParticleRuntimeUVE's own precedent), and moves the entity via the stateless
+    /// Physics::CharacterControllerUVE::MoveWithToIUVE utility - writing the resolved
+    /// verticalVelocity/isGrounded back into the component afterward. An entity missing a
+    /// ColliderComponentUVE, or whose optional RigidBodyComponentUVE isn't kinematic, is skipped
+    /// (MoveWithToIUVE's own precondition - this function never adds/removes components).
+    void SyncCharacterControllersUVE(float fixedDeltaTimeSeconds);
+
     /// Recomputes the bounded aspect-preserving render target from the live drawable size and
     /// transactionally resizes Renderer3DUVE before the frame's scene work begins.
     void SyncAdaptiveRenderResolutionUVE();

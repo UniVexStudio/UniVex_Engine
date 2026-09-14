@@ -12,6 +12,7 @@
 #include "uve/core/engine_core_uve.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <exception>
 #include <string>
@@ -54,6 +55,7 @@
 #include "uve/math/matrix4x4_uve.h"
 #include "uve/math/quaternion_uve.h"
 #include "uve/memory/memory_manager_uve.h"
+#include "uve/physics/character_controller_uve.h"
 #include "uve/physics/collision_system_uve.h"
 #include "uve/physics/physics_system_uve.h"
 #include "uve/physics/raycast_system_uve.h"
@@ -68,7 +70,10 @@
 #include "uve/render/shader/shader_manager_uve.h"
 #include "uve/save/checkpoint_manager_uve.h"
 #include "uve/save/save_game_system_uve.h"
+#include "uve/scene/components/character_controller_component_uve.h"
+#include "uve/scene/components/collider_component_uve.h"
 #include "uve/scene/components/particle_emitter_component_uve.h"
+#include "uve/scene/components/rigid_body_component_uve.h"
 #include "uve/scene/components/script_component_uve.h"
 #include "uve/scene/components/world_transform_component_uve.h"
 #include "uve/scene/entity_manager_uve.h"
@@ -578,6 +583,83 @@ void EngineCoreUVE::SyncScriptRuntimeUVE() {
         Scripting::ScriptVmExecutionOptionsUVE{.engineCallBindings = &m_scriptEngineCallBindings}));
 }
 
+void EngineCoreUVE::SyncCharacterControllersUVE(const float fixedDeltaTimeSeconds) {
+    if (fixedDeltaTimeSeconds <= 0.0F) {
+        return;
+    }
+
+    Math::Vector3UVE horizontalInput{};
+    if (m_inputSystem->IsKeyDownUVE(Input::KeyCodeUVE::W)) {
+        horizontalInput.z -= 1.0F;
+    }
+    if (m_inputSystem->IsKeyDownUVE(Input::KeyCodeUVE::S)) {
+        horizontalInput.z += 1.0F;
+    }
+    if (m_inputSystem->IsKeyDownUVE(Input::KeyCodeUVE::A)) {
+        horizontalInput.x -= 1.0F;
+    }
+    if (m_inputSystem->IsKeyDownUVE(Input::KeyCodeUVE::D)) {
+        horizontalInput.x += 1.0F;
+    }
+    const float horizontalInputLengthSquared =
+        horizontalInput.x * horizontalInput.x + horizontalInput.z * horizontalInput.z;
+    if (horizontalInputLengthSquared > 1.0F) {
+        const float inverseLength = 1.0F / std::sqrt(horizontalInputLengthSquared);
+        horizontalInput.x *= inverseLength;
+        horizontalInput.z *= inverseLength;
+    }
+    const bool jumpRequested = m_inputSystem->WasKeyPressedThisFrameUVE(Input::KeyCodeUVE::Space);
+
+    m_entityManager->ForEachUVE<Scene::CharacterControllerComponentUVE>(
+        [this, &horizontalInput, jumpRequested, fixedDeltaTimeSeconds](
+            const Scene::EntityUVE entity, Scene::CharacterControllerComponentUVE& characterController) {
+            if (!m_entityManager->HasComponentUVE<Scene::ColliderComponentUVE>(entity)) {
+                return;
+            }
+            if (m_entityManager->HasComponentUVE<Scene::RigidBodyComponentUVE>(entity) &&
+                !m_entityManager->GetComponentUVE<Scene::RigidBodyComponentUVE>(entity).isKinematic) {
+                return;
+            }
+
+            if (jumpRequested && characterController.isGrounded) {
+                characterController.verticalVelocity =
+                    std::sqrt(2.0F * std::abs(m_config.gravity.y) * characterController.gravityScale *
+                              characterController.jumpHeight);
+                characterController.isGrounded = false;
+            } else {
+                characterController.verticalVelocity +=
+                    m_config.gravity.y * characterController.gravityScale * fixedDeltaTimeSeconds;
+            }
+
+            const Math::Vector3UVE desiredDisplacement{
+                horizontalInput.x * characterController.moveSpeed * fixedDeltaTimeSeconds,
+                characterController.verticalVelocity * fixedDeltaTimeSeconds,
+                horizontalInput.z * characterController.moveSpeed * fixedDeltaTimeSeconds};
+
+            Physics::CharacterControllerInputUVE controllerInput{};
+            controllerInput.entity = entity;
+            controllerInput.desiredDisplacement = desiredDisplacement;
+            controllerInput.maximumStepHeight = 0.3F;
+            const Physics::CharacterControllerMoveResultUVE result = Physics::CharacterControllerUVE::MoveWithToIUVE(
+                *m_entityManager, *m_sceneGraph, *m_collisionSystem, controllerInput);
+            if (!result.IsAcceptedUVE()) {
+                return;
+            }
+
+            characterController.isGrounded = result.grounded;
+            if (result.grounded && characterController.verticalVelocity < 0.0F) {
+                // A small, consistent downward "stick to ground" velocity (rather than exactly
+                // zero) keeps every subsequent step's displacement driving slightly into the
+                // surface - otherwise a resting controller's next-step displacement can shrink to
+                // whatever one frame of gravity alone produces, which is sometimes too small for
+                // MoveWithToIUVE's own contact detection to register consistently, flickering
+                // isGrounded true/false every other fixed step even though the position never
+                // visibly moves.
+                characterController.verticalVelocity = -0.5F;
+            }
+        });
+}
+
 void EngineCoreUVE::SyncAdaptiveRenderResolutionUVE() {
     if (!m_windowedRenderingActiveUVE || !m_presentationSurfaceReadyUVE || !m_renderDevice->IsUsableUVE()) {
         return;
@@ -663,6 +745,7 @@ void EngineCoreUVE::Update() {
         m_config.fixedUpdateFps > 0.0 ? static_cast<float>(1.0 / m_config.fixedUpdateFps) : 0.0F;
     for (int step = 0; step < fixedStep.stepsToRun; ++step) {
         m_physicsSystem->StepUVE(*m_entityManager, *m_sceneGraph, fixedDeltaTimeSeconds);
+        SyncCharacterControllersUVE(fixedDeltaTimeSeconds);
     }
 
     m_sceneGraph->UpdateUVE(*m_entityManager);
