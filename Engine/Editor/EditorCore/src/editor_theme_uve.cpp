@@ -10,9 +10,12 @@ void ApplyEditorVisualThemeUVE() noexcept {
     // and list/tree/inspector rows are denser - the earlier looser values wasted vertical space
     // against the reference's tight rows.
     style.WindowPadding = ImVec2{6.0F, 4.0F};
-    style.FramePadding = ImVec2{5.0F, 3.0F};
+    style.FramePadding = ImVec2{5.0F, 2.0F};
     style.ItemSpacing = ImVec2{5.0F, 2.0F};
     style.ItemInnerSpacing = ImVec2{4.0F, 3.0F};
+    // Thinner scrollbars (ImGui defaults to a chunky 14px) so they read as a slim gutter, not a
+    // heavy bar eating panel width - matching the reference editors' slim scrollbars.
+    style.ScrollbarSize = 9.0F;
     // Square corners throughout - the earlier "glass" look (8px/6px/4px rounding) read as soft
     // and inconsistent against real reference editors; every panel, popup, and control now shares
     // one flat, sharp-cornered language instead.

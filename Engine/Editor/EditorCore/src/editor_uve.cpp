@@ -171,12 +171,12 @@ constexpr const char* kHierarchyEntityPayloadUVE = "UVE_SCENE_HIERARCHY_ENTITY";
 // values at 1280, and the clamps keep both sensible on very small and very large windows. Narrower
 // than the previous 0.19/0.22 (243/281 at 1280) so the center viewport - the primary workspace -
 // keeps the majority of the width instead of being squeezed by the side panels.
-constexpr float kScenePanelWidthFractionUVE = 0.17F;
-constexpr float kScenePanelWidthMinUVE = 200.0F;
-constexpr float kScenePanelWidthMaxUVE = 280.0F;
-constexpr float kInspectorPanelWidthFractionUVE = 0.20F;
-constexpr float kInspectorPanelWidthMinUVE = 240.0F;
-constexpr float kInspectorPanelWidthMaxUVE = 320.0F;
+constexpr float kScenePanelWidthFractionUVE = 0.15F;
+constexpr float kScenePanelWidthMinUVE = 184.0F;
+constexpr float kScenePanelWidthMaxUVE = 264.0F;
+constexpr float kInspectorPanelWidthFractionUVE = 0.18F;
+constexpr float kInspectorPanelWidthMinUVE = 220.0F;
+constexpr float kInspectorPanelWidthMaxUVE = 300.0F;
 
 // One place that lays out the four core structural panels (Scene / Viewport / Inspector / Content
 // Browser) from a single set of constants, so they can never drift out of alignment. Each
@@ -5386,7 +5386,7 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
     // ---- left flat list | draggable splitter | right thumbnail grid ----
     const float bodyHeight = std::max(36.0F, ImGui::GetContentRegionAvail().y);
     const float bodyWidth = std::max(1.0F, ImGui::GetContentRegionAvail().x);
-    constexpr float kSplitterWidthUVE = 6.0F;
+    constexpr float kSplitterWidthUVE = 4.0F;
     constexpr float kMinimumListWidthUVE = 180.0F;
     constexpr float kMinimumGridWidthUVE = 280.0F;
     const float listWidth =
@@ -5506,7 +5506,7 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
         const float dotX = (splitterMin.x + splitterMax.x) * 0.5F;
         const float centerY = (splitterMin.y + splitterMax.y) * 0.5F;
         for (int dotIndex = -1; dotIndex <= 1; ++dotIndex) {
-            splitterDrawList->AddCircleFilled(ImVec2{dotX, centerY + static_cast<float>(dotIndex) * 5.0F}, 1.4F,
+            splitterDrawList->AddCircleFilled(ImVec2{dotX, centerY + static_cast<float>(dotIndex) * 4.0F}, 1.1F,
                                               IM_COL32(107, 113, 131, 255));
         }
     }
