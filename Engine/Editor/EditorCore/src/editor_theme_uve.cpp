@@ -10,17 +10,16 @@ void ApplyEditorVisualThemeUVE() noexcept {
     style.FramePadding = ImVec2{5.0F, 3.0F};
     style.ItemSpacing = ImVec2{5.0F, 3.0F};
     style.ItemInnerSpacing = ImVec2{4.0F, 3.0F};
-    // Rounded, semi-transparent panels with a soft bright border approximate a "glass" look - an
-    // honest approximation (alpha + rounding + a highlighted edge), not true background blur,
-    // which ImGui's immediate-mode renderer has no pass for. Previously a flat 2px rounding with
-    // near-opaque (0.98-1.0) backgrounds, which read as solid cards rather than glass.
-    style.WindowRounding = 8.0F;
-    style.ChildRounding = 8.0F;
-    style.FrameRounding = 4.0F;
-    style.PopupRounding = 8.0F;
-    style.ScrollbarRounding = 6.0F;
-    style.GrabRounding = 4.0F;
-    style.TabRounding = 6.0F;
+    // Square corners throughout - the earlier "glass" look (8px/6px/4px rounding) read as soft
+    // and inconsistent against real reference editors; every panel, popup, and control now shares
+    // one flat, sharp-cornered language instead.
+    style.WindowRounding = 0.0F;
+    style.ChildRounding = 0.0F;
+    style.FrameRounding = 0.0F;
+    style.PopupRounding = 0.0F;
+    style.ScrollbarRounding = 0.0F;
+    style.GrabRounding = 0.0F;
+    style.TabRounding = 0.0F;
     style.WindowBorderSize = 1.0F;
     style.ChildBorderSize = 1.0F;
     style.FrameBorderSize = 1.0F;
