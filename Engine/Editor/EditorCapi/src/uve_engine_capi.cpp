@@ -254,18 +254,6 @@ void uve_capi_destroy(UveEngineHandleUVE* const handle) {
     delete handle;
 }
 
-void uve_capi_set_post_render_callback(UveEngineHandleUVE* const handle, const UvePostRenderCallbackUVE callback,
-                                       void* const userdata) {
-    if (handle == nullptr) {
-        return;
-    }
-    if (callback == nullptr) {
-        handle->engine->SetPostRenderCallbackUVE({});
-        return;
-    }
-    handle->engine->SetPostRenderCallbackUVE([callback, userdata] { callback(userdata); });
-}
-
 int uve_capi_tick_frame(UveEngineHandleUVE* const handle) {
     if (handle == nullptr) {
         return 0;

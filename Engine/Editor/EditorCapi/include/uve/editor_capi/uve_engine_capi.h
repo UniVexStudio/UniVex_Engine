@@ -63,19 +63,6 @@ typedef struct {
 [[nodiscard]] UveViewportFrameUVE uve_capi_render_viewport(UveEngineHandleUVE* handle, float avail_width,
                                                             float avail_height);
 
-/// A native trampoline invoked once per frame, immediately before the window back buffer is
-/// presented (see EngineCoreUVE::SetPostRenderCallbackUVE's own doc comment) - the correct place
-/// for managed code to render into the default framebuffer, since anything drawn after the next
-/// frame's own clear+present cycle begins would never reach the screen. `userdata` is passed back
-/// unchanged; ownership stays with the caller.
-typedef void (*UvePostRenderCallbackUVE)(void* userdata);
-
-/// Registers (or clears, by passing callback == nullptr) the post-render callback. Only one
-/// callback may be registered at a time, matching EngineCoreUVE::SetPostRenderCallbackUVE's own
-/// single-callback contract.
-void uve_capi_set_post_render_callback(UveEngineHandleUVE* handle, UvePostRenderCallbackUVE callback,
-                                        void* userdata);
-
 /// Writes one line to this process's own engine log (UVE_INFO) so activity originating from
 /// managed code is visible in the same log stream as native diagnostics, without exposing any
 /// native logging type across the boundary. utf8_message must be a null-terminated UTF-8 string;
