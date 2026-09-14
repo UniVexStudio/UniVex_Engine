@@ -268,6 +268,8 @@ using ScriptPhysicsGravityFunctionUVE = bool (*) (
     void* userData, Scene::EntityUVE body, bool enabled, bool* outResult) noexcept;
 using ScriptPhysicsCollisionQueryFunctionUVE = bool (*) (
     void* userData, Scene::EntityUVE body, bool* outResult) noexcept;
+using ScriptPhysicsCollisionLifecycleQueryFunctionUVE = bool (*) (
+    void* userData, Scene::EntityUVE body, Scene::EntityUVE* outOther, bool* outResult) noexcept;
 using ScriptAudioScalarControlFunctionUVE = bool (*) (
     void* userData, Scene::EntityUVE source, float value, bool* outResult) noexcept;
 using ScriptAudioPositionControlFunctionUVE = bool (*) (
@@ -327,6 +329,8 @@ struct ScriptEngineCallBindingsUVE final {
     ScriptPhysicsBodyVectorGetFunctionUVE physicsGetVelocity = nullptr;
     ScriptPhysicsGravityFunctionUVE physicsEnableGravity = nullptr;
     ScriptPhysicsCollisionQueryFunctionUVE physicsIsColliding = nullptr;
+    ScriptPhysicsCollisionLifecycleQueryFunctionUVE physicsCollisionEnter = nullptr;
+    ScriptPhysicsCollisionLifecycleQueryFunctionUVE physicsCollisionExit = nullptr;
     ScriptAudioScalarControlFunctionUVE audioSetVolume = nullptr;
     ScriptAudioScalarControlFunctionUVE audioSetPitch = nullptr;
     ScriptAudioPositionControlFunctionUVE audioSet3dPosition = nullptr;

@@ -181,6 +181,7 @@ add_executable(uve_integration_tests
     Physics/area_overlap_system_uve_tests.cpp
     Physics/character_controller_uve_tests.cpp
     Physics/collider_shape_uve_tests.cpp
+    Physics/collision_lifecycle_tracker_uve_tests.cpp
     Physics/collision_system_uve_tests.cpp
     Physics/hinge_motor_limit_uve_tests.cpp
     Physics/physics_constraint_system_uve_tests.cpp

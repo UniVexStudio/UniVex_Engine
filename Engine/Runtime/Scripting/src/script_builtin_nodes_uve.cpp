@@ -18,8 +18,8 @@ struct BuiltInNodeDefinitionUVE final {
     bool executionRequired = false;
 };
 
-[[nodiscard]] std::array<BuiltInNodeDefinitionUVE, 161U> MakeBuiltInDefinitionsUVE() {
-    auto definitions = std::array<BuiltInNodeDefinitionUVE, 161U>{
+[[nodiscard]] std::array<BuiltInNodeDefinitionUVE, 163U> MakeBuiltInDefinitionsUVE() {
+    auto definitions = std::array<BuiltInNodeDefinitionUVE, 163U>{
         BuiltInNodeDefinitionUVE{
             "flow.sequence", "Sequence",
             {ScriptPinDescriptorUVE{"In", ScriptPinDirectionUVE::Input, ScriptValueTypeUVE::Execution},
@@ -937,6 +937,18 @@ struct BuiltInNodeDefinitionUVE final {
              ScriptPinDescriptorUVE{"Result", ScriptPinDirectionUVE::Output, ScriptValueTypeUVE::Boolean}},
             "Physics", "node.physics", 1050U},
         BuiltInNodeDefinitionUVE{
+            "physics.on_collision_enter", "On Collision Enter",
+            {ScriptPinDescriptorUVE{"Body", ScriptPinDirectionUVE::Input, ScriptValueTypeUVE::Entity},
+             ScriptPinDescriptorUVE{"Result", ScriptPinDirectionUVE::Output, ScriptValueTypeUVE::Boolean},
+             ScriptPinDescriptorUVE{"Other", ScriptPinDirectionUVE::Output, ScriptValueTypeUVE::Entity}},
+            "Physics", "node.physics", 1051U},
+        BuiltInNodeDefinitionUVE{
+            "physics.on_collision_exit", "On Collision Exit",
+            {ScriptPinDescriptorUVE{"Body", ScriptPinDirectionUVE::Input, ScriptValueTypeUVE::Entity},
+             ScriptPinDescriptorUVE{"Result", ScriptPinDirectionUVE::Output, ScriptValueTypeUVE::Boolean},
+             ScriptPinDescriptorUVE{"Other", ScriptPinDirectionUVE::Output, ScriptValueTypeUVE::Entity}},
+            "Physics", "node.physics", 1052U},
+        BuiltInNodeDefinitionUVE{
             "audio.set_volume", "Set Volume",
             {ScriptPinDescriptorUVE{"Source", ScriptPinDirectionUVE::Input, ScriptValueTypeUVE::Entity},
              ScriptPinDescriptorUVE{"Volume", ScriptPinDirectionUVE::Input, ScriptValueTypeUVE::Number},
@@ -1027,7 +1039,7 @@ struct BuiltInNodeDefinitionUVE final {
 } // namespace
 
 bool RegisterBuiltInScriptNodesUVE(ScriptNodeRegistryUVE& registry) {
-    std::array<BuiltInNodeDefinitionUVE, 161U> definitions = MakeBuiltInDefinitionsUVE();
+    std::array<BuiltInNodeDefinitionUVE, 163U> definitions = MakeBuiltInDefinitionsUVE();
     for (const BuiltInNodeDefinitionUVE& definition : definitions) {
         if (registry.FindNodeTypeUVE(definition.typeId) != nullptr) {
             return false;

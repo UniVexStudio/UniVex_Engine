@@ -48,6 +48,7 @@
 #include "uve/input/i_mobile_input_system_uve.h"
 #include "uve/memory/i_memory_manager_uve.h"
 #include "uve/physics/area_overlap_lifecycle_tracker_uve.h"
+#include "uve/physics/collision_lifecycle_tracker_uve.h"
 #include "uve/physics/i_collision_system_uve.h"
 #include "uve/physics/i_physics_system_uve.h"
 #include "uve/physics/i_physics_query_system_uve.h"
@@ -277,6 +278,13 @@ public:
     /// editor diagnostics alike, not just tests.
     [[nodiscard]] std::size_t GetActiveScriptInstanceCountUVE() const noexcept;
 
+    /// Diagnostic/test hook: the collision enter/exit transitions computed by
+    /// SyncCollisionLifecycleUVE() on the most recent Update() call - the same report the
+    /// `physics.on_collision_enter`/`physics.on_collision_exit` script bindings read from.
+    [[nodiscard]] const Physics::CollisionLifecycleReportUVE& GetLastCollisionLifecycleReportUVE() const noexcept {
+        return m_collisionLifecycleReport;
+    }
+
     /// Transitions Running -> ShuttingDown -> Shutdown, tearing down
     /// ConfigManager, then CheckpointManager, then SaveGameSystem, then AudioSourceSystem, then AudioSystem, then AudioDevice, then InputSystem, then RaycastSystem, then PhysicsSystem, then CollisionSystem, then Renderer3D, then LightSystem, then MeshRenderer, then CameraSystem, then RenderSystem, then ShaderManager, then
     /// RenderDevice, then WindowManager (in that order — every GL object RenderDevice owns must
@@ -426,6 +434,14 @@ private:
     /// (MoveWithToIUVE's own precondition - this function never adds/removes components).
     void SyncCharacterControllersUVE(float fixedDeltaTimeSeconds);
 
+    /// Diffs a fresh Physics::ICollisionSystemUVE::DetectCollisionsUVE() snapshot against the
+    /// previous tick's via m_collisionLifecycleTracker, storing the resulting enter/exit
+    /// transitions in m_collisionLifecycleReport and pointing m_scriptBindingContext at them -
+    /// called before SyncScriptRuntimeUVE() (not from LateUpdate(), unlike
+    /// PublishAreaOverlapLifecycleEventsUVE()) so the same tick's script bindings see zero-latency
+    /// results, since a poll-based binding has no event-queue drain delay to wait out.
+    void SyncCollisionLifecycleUVE();
+
     /// Recomputes the bounded aspect-preserving render target from the live drawable size and
     /// transactionally resizes Renderer3DUVE before the frame's scene work begins.
     void SyncAdaptiveRenderResolutionUVE();
@@ -505,6 +521,8 @@ private:
     std::unique_ptr<Physics::IRaycastSystemUVE> m_raycastSystem;
     std::unique_ptr<Scene::ParticleRuntimeUVE> m_particleRuntime;
     Physics::AreaOverlapLifecycleTrackerUVE m_areaOverlapLifecycleTracker;
+    Physics::CollisionLifecycleTrackerUVE m_collisionLifecycleTracker;
+    Physics::CollisionLifecycleReportUVE m_collisionLifecycleReport;
     std::unique_ptr<Input::IInputSystemUVE> m_inputSystem;
     std::unique_ptr<Input::IGamepadInputSystemUVE> m_gamepadInputSystem;
     std::unique_ptr<Input::IMobileInputSystemUVE> m_mobileInputSystem;

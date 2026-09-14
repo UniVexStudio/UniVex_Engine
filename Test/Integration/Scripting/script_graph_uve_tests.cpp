@@ -218,10 +218,10 @@ TEST(ScriptNodeRegistryUVETest, BuiltInVector3Catalog_RegistersDeterministicDesc
 
     ASSERT_TRUE(RegisterBuiltInScriptNodesUVE(registry));
     EXPECT_FALSE(RegisterBuiltInScriptNodesUVE(registry));
-    EXPECT_EQ(registry.GetNodeTypeCountUVE(), 161U);
+    EXPECT_EQ(registry.GetNodeTypeCountUVE(), 163U);
 
     const std::vector<ScriptNodeTypeDescriptorUVE> descriptors = registry.GetNodeTypeDescriptorsUVE();
-    ASSERT_EQ(descriptors.size(), 161U);
+    ASSERT_EQ(descriptors.size(), 163U);
     const std::vector<std::string> expectedIds{
         "flow.sequence", "flow.branch", "flow.return", "flow.do_once", "flow.gate", "flow.switch",
         "flow.event", "flow.loop", "flow.for_loop", "flow.while_loop", "flow.delay",
@@ -262,7 +262,8 @@ TEST(ScriptNodeRegistryUVETest, BuiltInVector3Catalog_RegistersDeterministicDesc
         "animation.is_playing",
         "physics.raycast", "physics.sphere_cast", "physics.box_cast", "physics.capsule_cast", "physics.overlap",
         "physics.apply_force", "physics.apply_impulse", "physics.set_velocity", "physics.get_velocity",
-        "physics.enable_gravity", "physics.is_colliding", "audio.set_volume", "audio.set_pitch",
+        "physics.enable_gravity", "physics.is_colliding", "physics.on_collision_enter", "physics.on_collision_exit",
+        "audio.set_volume", "audio.set_pitch",
         "audio.set_3d_position", "audio.play_sound", "audio.stop_sound", "audio.is_playing",
         "audio.set_attenuation", "debug.print", "debug.warning", "debug.error"};
     ASSERT_EQ(expectedIds.size(), descriptors.size());
@@ -329,17 +330,33 @@ TEST(ScriptNodeRegistryUVETest, BuiltInVector3Catalog_RegistersDeterministicDesc
         EXPECT_EQ(descriptors[index].category, "Animation");
         EXPECT_EQ(descriptors[index].iconId, "node.animation");
     }
-    for (std::size_t index = 140U; index < 151U; ++index) {
+    for (std::size_t index = 140U; index < 153U; ++index) {
         EXPECT_EQ(descriptors[index].category, "Physics");
         EXPECT_EQ(descriptors[index].iconId, "node.physics");
     }
-    for (std::size_t index = 151U; index < 158U; ++index) {
+    for (std::size_t index = 153U; index < 160U; ++index) {
         EXPECT_EQ(descriptors[index].category, "Audio");
         EXPECT_EQ(descriptors[index].iconId, "node.audio");
     }
-    for (std::size_t index = 158U; index < 161U; ++index) {
+    for (std::size_t index = 160U; index < 163U; ++index) {
         EXPECT_EQ(descriptors[index].category, "Debug");
         EXPECT_EQ(descriptors[index].iconId, "node.debug");
+    }
+
+    for (const char* typeId : {"physics.on_collision_enter", "physics.on_collision_exit"}) {
+        const ScriptNodeTypeDescriptorUVE* onCollision = registry.FindNodeTypeUVE(typeId);
+        ASSERT_NE(onCollision, nullptr);
+        ASSERT_EQ(onCollision->pins.size(), 3U);
+        EXPECT_FALSE(onCollision->executionRequired);
+        EXPECT_EQ(onCollision->pins[0].name, "Body");
+        EXPECT_EQ(onCollision->pins[0].direction, ScriptPinDirectionUVE::Input);
+        EXPECT_EQ(onCollision->pins[0].type, ScriptValueTypeUVE::Entity);
+        EXPECT_EQ(onCollision->pins[1].name, "Result");
+        EXPECT_EQ(onCollision->pins[1].direction, ScriptPinDirectionUVE::Output);
+        EXPECT_EQ(onCollision->pins[1].type, ScriptValueTypeUVE::Boolean);
+        EXPECT_EQ(onCollision->pins[2].name, "Other");
+        EXPECT_EQ(onCollision->pins[2].direction, ScriptPinDirectionUVE::Output);
+        EXPECT_EQ(onCollision->pins[2].type, ScriptValueTypeUVE::Entity);
     }
 
     const ScriptNodeTypeDescriptorUVE* lerp = registry.FindNodeTypeUVE("math.float.lerp");
@@ -6191,6 +6208,8 @@ struct PhysicsCaptureUVE final {
     std::size_t getVelocityCount = 0U;
     std::size_t gravityCount = 0U;
     std::size_t collisionCount = 0U;
+    std::size_t collisionEnterCount = 0U;
+    std::size_t collisionExitCount = 0U;
 };
 
 bool CapturePhysicsRaycastUVE(void* userData, const ScriptVector3ValueUVE& origin,
@@ -6311,6 +6330,26 @@ bool CapturePhysicsCollisionUVE(void* userData, Scene::EntityUVE body, bool* out
     return true;
 }
 
+bool CapturePhysicsCollisionEnterUVE(void* userData, Scene::EntityUVE body, Scene::EntityUVE* outOther,
+                                     bool* outResult) noexcept {
+    auto* capture = static_cast<PhysicsCaptureUVE*>(userData);
+    if (capture == nullptr || outOther == nullptr || outResult == nullptr || body != capture->body) return false;
+    ++capture->collisionEnterCount;
+    *outResult = true;
+    *outOther = Scene::EntityUVE{42U, 1U};
+    return true;
+}
+
+bool CapturePhysicsCollisionExitUVE(void* userData, Scene::EntityUVE body, Scene::EntityUVE* outOther,
+                                    bool* outResult) noexcept {
+    auto* capture = static_cast<PhysicsCaptureUVE*>(userData);
+    if (capture == nullptr || outOther == nullptr || outResult == nullptr || body != capture->body) return false;
+    ++capture->collisionExitCount;
+    *outResult = true;
+    *outOther = Scene::EntityUVE{43U, 1U};
+    return true;
+}
+
 ScriptEngineCallBindingsUVE MakePhysicsBindingsUVE(PhysicsCaptureUVE& capture) {
     ScriptEngineCallBindingsUVE bindings{};
     bindings.userData = &capture;
@@ -6325,6 +6364,8 @@ ScriptEngineCallBindingsUVE MakePhysicsBindingsUVE(PhysicsCaptureUVE& capture) {
     bindings.physicsGetVelocity = CapturePhysicsGetVelocityUVE;
     bindings.physicsEnableGravity = CapturePhysicsGravityUVE;
     bindings.physicsIsColliding = CapturePhysicsCollisionUVE;
+    bindings.physicsCollisionEnter = CapturePhysicsCollisionEnterUVE;
+    bindings.physicsCollisionExit = CapturePhysicsCollisionExitUVE;
     return bindings;
 }
 
@@ -6445,13 +6486,33 @@ TEST(ScriptVmUVETest, CallbackBackedPhysicsQueryNodesRejectOutputCapacityBeforeC
     EXPECT_EQ(overlapCapture.overlapCount, 0U);
     EXPECT_EQ(overlapContext.outputs.size(), ScriptVmExecutionContextUVE::kMaximumBindingsUVE);
     EXPECT_FALSE(overlapContext.FindOutputUVE(1U, "Count").has_value());
+
+    ScriptBytecodeProgramUVE onCollisionEnterProgram;
+    onCollisionEnterProgram.instructions.push_back({ScriptIrInstructionKindUVE::ExecuteNode, 1U, 0U,
+                                                    "physics.on_collision_enter", {}, {}});
+    ScriptVmExecutionContextUVE onCollisionEnterContext;
+    ASSERT_TRUE(SetPhysicsInputsUVE(onCollisionEnterContext, 1U, 11U));
+    FillVmOutputCapacityExceptNodeOneUVE(onCollisionEnterContext);
+    PhysicsCaptureUVE onCollisionEnterCapture;
+    ScriptEngineCallBindingsUVE onCollisionEnterBindings = MakePhysicsBindingsUVE(onCollisionEnterCapture);
+    ScriptVmExecutionOptionsUVE onCollisionEnterOptions;
+    onCollisionEnterOptions.engineCallBindings = &onCollisionEnterBindings;
+
+    const ScriptVmExecutionResultUVE onCollisionEnterResult =
+        ExecuteScriptBytecodeUVE(onCollisionEnterProgram, onCollisionEnterContext, onCollisionEnterOptions);
+
+    EXPECT_EQ(onCollisionEnterResult.status, ScriptVmStatusUVE::NodeExecutionFailed);
+    EXPECT_EQ(onCollisionEnterCapture.collisionEnterCount, 0U);
+    EXPECT_EQ(onCollisionEnterContext.outputs.size(), ScriptVmExecutionContextUVE::kMaximumBindingsUVE);
+    EXPECT_FALSE(onCollisionEnterContext.FindOutputUVE(1U, "Result").has_value());
+    EXPECT_FALSE(onCollisionEnterContext.FindOutputUVE(1U, "Other").has_value());
 }
 
 TEST(ScriptVmUVETest, ExecuteScriptBytecodeUVE_ExecutesPhysicsFamilyWithCopiedValues) {
-    const std::array<const char*, 11U> nodeTypes{
+    const std::array<const char*, 13U> nodeTypes{
         "physics.raycast", "physics.sphere_cast", "physics.box_cast", "physics.capsule_cast", "physics.overlap",
         "physics.apply_force", "physics.apply_impulse", "physics.set_velocity", "physics.get_velocity",
-        "physics.enable_gravity", "physics.is_colliding"};
+        "physics.enable_gravity", "physics.is_colliding", "physics.on_collision_enter", "physics.on_collision_exit"};
     ScriptBytecodeProgramUVE program;
     ScriptVmExecutionContextUVE context;
     for (std::size_t index = 0U; index < nodeTypes.size(); ++index) {
@@ -6465,7 +6526,7 @@ TEST(ScriptVmUVETest, ExecuteScriptBytecodeUVE_ExecutesPhysicsFamilyWithCopiedVa
     options.engineCallBindings = &bindings;
     const ScriptVmExecutionResultUVE result = ExecuteScriptBytecodeUVE(program, context, options);
     ASSERT_TRUE(result.IsSuccessUVE());
-    EXPECT_EQ(result.instructionsExecuted, 11U);
+    EXPECT_EQ(result.instructionsExecuted, 13U);
     EXPECT_EQ(capture.raycastCount, 1U);
     EXPECT_EQ(capture.sphereCastCount, 1U);
     EXPECT_EQ(capture.boxCastCount, 1U);
@@ -6474,12 +6535,20 @@ TEST(ScriptVmUVETest, ExecuteScriptBytecodeUVE_ExecutesPhysicsFamilyWithCopiedVa
     EXPECT_EQ(capture.getVelocityCount, 1U);
     EXPECT_EQ(capture.gravityCount, 1U);
     EXPECT_EQ(capture.collisionCount, 1U);
+    EXPECT_EQ(capture.collisionEnterCount, 1U);
+    EXPECT_EQ(capture.collisionExitCount, 1U);
     EXPECT_TRUE(std::get<bool>(*context.FindOutputUVE(1U, "Hit")));
     EXPECT_EQ(std::get<ScriptEntityValueUVE>(*context.FindOutputUVE(1U, "Entity")).entity, capture.body);
     EXPECT_FLOAT_EQ(std::get<float>(*context.FindOutputUVE(5U, "Count")), 3.0F);
     EXPECT_EQ(std::get<ScriptVector3ValueUVE>(*context.FindOutputUVE(9U, "Velocity")).value,
               (Math::Vector3UVE{6.0F, 7.0F, 8.0F}));
     EXPECT_TRUE(std::get<bool>(*context.FindOutputUVE(11U, "Result")));
+    EXPECT_TRUE(std::get<bool>(*context.FindOutputUVE(12U, "Result")));
+    EXPECT_EQ(std::get<ScriptEntityValueUVE>(*context.FindOutputUVE(12U, "Other")).entity,
+              (Scene::EntityUVE{42U, 1U}));
+    EXPECT_TRUE(std::get<bool>(*context.FindOutputUVE(13U, "Result")));
+    EXPECT_EQ(std::get<ScriptEntityValueUVE>(*context.FindOutputUVE(13U, "Other")).entity,
+              (Scene::EntityUVE{43U, 1U}));
 }
 
 TEST(ScriptVmUVETest, ExecuteScriptBytecodeUVE_PhysicsSchedulerUsesCopiedContext) {
@@ -6499,10 +6568,10 @@ TEST(ScriptVmUVETest, ExecuteScriptBytecodeUVE_PhysicsSchedulerUsesCopiedContext
 }
 
 TEST(ScriptVmUVETest, ExecuteScriptBytecodeUVE_PhysicsNodesFailClosedWithoutBindings) {
-    const std::array<const char*, 11U> nodeTypes{
+    const std::array<const char*, 13U> nodeTypes{
         "physics.raycast", "physics.sphere_cast", "physics.box_cast", "physics.capsule_cast", "physics.overlap",
         "physics.apply_force", "physics.apply_impulse", "physics.set_velocity", "physics.get_velocity",
-        "physics.enable_gravity", "physics.is_colliding"};
+        "physics.enable_gravity", "physics.is_colliding", "physics.on_collision_enter", "physics.on_collision_exit"};
     for (std::size_t index = 0U; index < nodeTypes.size(); ++index) {
         const std::uint32_t nodeId = static_cast<std::uint32_t>(index + 1U);
         ScriptBytecodeProgramUVE program;

@@ -660,6 +660,12 @@ void EngineCoreUVE::SyncCharacterControllersUVE(const float fixedDeltaTimeSecond
         });
 }
 
+void EngineCoreUVE::SyncCollisionLifecycleUVE() {
+    const std::vector<Physics::CollisionPairUVE> pairs = m_collisionSystem->DetectCollisionsUVE(*m_entityManager);
+    m_collisionLifecycleReport = m_collisionLifecycleTracker.UpdateUVE(pairs);
+    m_scriptBindingContext.collisionTransitionsThisTick = &m_collisionLifecycleReport.transitions;
+}
+
 void EngineCoreUVE::SyncAdaptiveRenderResolutionUVE() {
     if (!m_windowedRenderingActiveUVE || !m_presentationSurfaceReadyUVE || !m_renderDevice->IsUsableUVE()) {
         return;
@@ -750,6 +756,7 @@ void EngineCoreUVE::Update() {
 
     m_sceneGraph->UpdateUVE(*m_entityManager);
     SyncParticleRuntimeUVE();
+    SyncCollisionLifecycleUVE();
     SyncScriptRuntimeUVE();
 
     if (m_config.hotReloadEnabledUVE) {

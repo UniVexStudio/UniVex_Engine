@@ -21,6 +21,8 @@ struct CollisionPairUVE {
     Math::Vector3UVE separationAxis;
     /// Minimum-translation-vector depth along separationAxis.
     float penetrationDepth = 0.0F;
+
+    [[nodiscard]] bool operator==(const CollisionPairUVE&) const noexcept = default;
 };
 
 } // namespace UVE::Physics

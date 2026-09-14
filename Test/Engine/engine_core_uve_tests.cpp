@@ -254,6 +254,48 @@ TEST(EngineCoreUVETest, AreaOverlapLifecycle_QueuesEnteredAndExitedEvents) {
     engine.Shutdown();
 }
 
+TEST(EngineCoreUVETest, CollisionLifecycle_UpdatesReportBeforeScriptTickEachFrame) {
+    // Contrasts directly against AreaOverlapLifecycle_QueuesEnteredAndExitedEvents above: that
+    // event-queued path only surfaces a transition on the TickFrameUVE() call *after* the one
+    // where the overlap actually began, since QueueEvent()'d events aren't drained until the next
+    // frame's Update(). SyncCollisionLifecycleUVE() has no such queue - it's a poll-based binding
+    // updated synchronously before SyncScriptRuntimeUVE() runs the same frame - so this test proves
+    // the very same TickFrameUVE() call that makes two colliders overlap already reports the
+    // transition, with zero added frame of latency.
+    EngineCoreUVE engine(MakeTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    auto& services = engine.GetServicesUVE();
+    auto& entityManager = services.GetEntityManagerUVE();
+    auto& sceneGraph = services.GetSceneGraphUVE();
+
+    const Scene::EntityUVE bodyA = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE transformA;
+    transformA.localPosition = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, bodyA, transformA);
+    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(bodyA, Scene::ColliderComponentUVE{});
+
+    const Scene::EntityUVE bodyB = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE transformB;
+    transformB.localPosition = Math::Vector3UVE{10.0F, 0.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, bodyB, transformB);
+    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(bodyB, Scene::ColliderComponentUVE{});
+
+    engine.TickFrameUVE();
+    EXPECT_TRUE(engine.GetLastCollisionLifecycleReportUVE().transitions.empty());
+
+    transformB.localPosition = Math::Vector3UVE{0.2F, 0.0F, 0.0F};
+    sceneGraph.SetLocalTransformUVE(entityManager, bodyB, transformB);
+    engine.TickFrameUVE();
+
+    const Physics::CollisionLifecycleReportUVE& report = engine.GetLastCollisionLifecycleReportUVE();
+    ASSERT_EQ(report.transitions.size(), 1U);
+    EXPECT_EQ(report.transitions.front().kind, Physics::CollisionTransitionKindUVE::Entered);
+
+    engine.Shutdown();
+}
+
 TEST(EngineCoreUVETest, FrameStats_PopulatedAfterFrames) {
     EngineCoreUVE engine(MakeTestConfigUVE());
     engine.Init();

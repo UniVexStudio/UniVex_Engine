@@ -87,6 +87,46 @@ bool ScriptInputMouseButtonUVE(void* const userData, const float buttonToken, bo
     return true;
 }
 
+bool ScriptPhysicsCollisionTransitionUVE(void* const userData, const Scene::EntityUVE body,
+                                          Scene::EntityUVE* const outOther, bool* const outResult,
+                                          const Physics::CollisionTransitionKindUVE kind) noexcept {
+    auto* const context = static_cast<ScriptGameplayBindingContextUVE*>(userData);
+    if (context == nullptr || context->collisionTransitionsThisTick == nullptr || outOther == nullptr ||
+        outResult == nullptr || body == Scene::kInvalidEntityUVE) {
+        return false;
+    }
+    *outResult = false;
+    *outOther = Scene::kInvalidEntityUVE;
+    for (const Physics::CollisionTransitionUVE& transition : *context->collisionTransitionsThisTick) {
+        if (transition.kind != kind) {
+            continue;
+        }
+        if (transition.pair.first == body) {
+            *outResult = true;
+            *outOther = transition.pair.second;
+            break;
+        }
+        if (transition.pair.second == body) {
+            *outResult = true;
+            *outOther = transition.pair.first;
+            break;
+        }
+    }
+    return true;
+}
+
+bool ScriptPhysicsCollisionEnterUVE(void* const userData, const Scene::EntityUVE body,
+                                     Scene::EntityUVE* const outOther, bool* const outResult) noexcept {
+    return ScriptPhysicsCollisionTransitionUVE(userData, body, outOther, outResult,
+                                                Physics::CollisionTransitionKindUVE::Entered);
+}
+
+bool ScriptPhysicsCollisionExitUVE(void* const userData, const Scene::EntityUVE body,
+                                    Scene::EntityUVE* const outOther, bool* const outResult) noexcept {
+    return ScriptPhysicsCollisionTransitionUVE(userData, body, outOther, outResult,
+                                                Physics::CollisionTransitionKindUVE::Exited);
+}
+
 } // namespace
 
 Scripting::ScriptEngineCallBindingsUVE MakeScriptGameplayBindingsUVE(
@@ -98,6 +138,8 @@ Scripting::ScriptEngineCallBindingsUVE MakeScriptGameplayBindingsUVE(
     bindings.inputKeyDown = &ScriptInputKeyDownUVE;
     bindings.inputMousePosition = &ScriptInputMousePositionUVE;
     bindings.inputMouseButton = &ScriptInputMouseButtonUVE;
+    bindings.physicsCollisionEnter = &ScriptPhysicsCollisionEnterUVE;
+    bindings.physicsCollisionExit = &ScriptPhysicsCollisionExitUVE;
     return bindings;
 }
 

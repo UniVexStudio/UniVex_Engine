@@ -294,7 +294,7 @@ struct EditorChromeLayoutUVE {
 
 // Draws one small procedural glyph (matching the ImDrawList icon convention already established
 // for the Scene Hierarchy/Inspector panels) representing a node's category, before its title text.
-// One glyph per category (13 total), not per exact node iconId - the built-in node library has 161
+// One glyph per category (13 total), not per exact node iconId - the built-in node library has 163
 // distinct iconId strings, and a unique glyph per node type is unbounded scope for hand-drawn icons
 // (the same reasoning already applied to the Scene Hierarchy's per-category, not per-node, icons).
 void DrawScriptNodeCategoryIconUVE(ImDrawList* const drawList, const ImVec2 center, const float radius,

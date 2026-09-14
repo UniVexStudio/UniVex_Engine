@@ -633,8 +633,8 @@ TEST(EditorBridgeUVETest, SnapshotUVE_CopiesHierarchyInspectorAndNativePanelSess
         EXPECT_EQ(snapshot.visualScripting.linkCount, 0U);
         EXPECT_EQ(snapshot.visualScripting.canvas.nodes.size(), 0U);
         EXPECT_EQ(snapshot.visualScripting.canvas.links.size(), 0U);
-        ASSERT_EQ(snapshot.visualScripting.canvas.paletteNodeTypeIds.size(), 161U);
-        ASSERT_EQ(snapshot.visualScripting.canvas.paletteDescriptors.size(), 161U);
+        ASSERT_EQ(snapshot.visualScripting.canvas.paletteNodeTypeIds.size(), 163U);
+        ASSERT_EQ(snapshot.visualScripting.canvas.paletteDescriptors.size(), 163U);
         EXPECT_EQ(snapshot.visualScripting.canvas.paletteNodeTypeIds[0], "flow.sequence");
         EXPECT_EQ(snapshot.visualScripting.canvas.paletteNodeTypeIds[1], "flow.branch");
         EXPECT_EQ(snapshot.visualScripting.canvas.paletteNodeTypeIds[2], "flow.return");
@@ -767,9 +767,11 @@ TEST(EditorBridgeUVETest, SnapshotUVE_CopiesHierarchyInspectorAndNativePanelSess
         EXPECT_EQ(snapshot.visualScripting.canvas.paletteNodeTypeIds[148], "physics.get_velocity");
         EXPECT_EQ(snapshot.visualScripting.canvas.paletteNodeTypeIds[149], "physics.enable_gravity");
         EXPECT_EQ(snapshot.visualScripting.canvas.paletteNodeTypeIds[150], "physics.is_colliding");
-        EXPECT_EQ(snapshot.visualScripting.canvas.paletteNodeTypeIds[158], "debug.print");
-        EXPECT_EQ(snapshot.visualScripting.canvas.paletteNodeTypeIds[159], "debug.warning");
-        EXPECT_EQ(snapshot.visualScripting.canvas.paletteNodeTypeIds[160], "debug.error");
+        EXPECT_EQ(snapshot.visualScripting.canvas.paletteNodeTypeIds[151], "physics.on_collision_enter");
+        EXPECT_EQ(snapshot.visualScripting.canvas.paletteNodeTypeIds[152], "physics.on_collision_exit");
+        EXPECT_EQ(snapshot.visualScripting.canvas.paletteNodeTypeIds[160], "debug.print");
+        EXPECT_EQ(snapshot.visualScripting.canvas.paletteNodeTypeIds[161], "debug.warning");
+        EXPECT_EQ(snapshot.visualScripting.canvas.paletteNodeTypeIds[162], "debug.error");
         EXPECT_FALSE(snapshot.visualScripting.canvas.nodesTruncated);
         EXPECT_FALSE(snapshot.visualScripting.canvas.linksTruncated);
 
