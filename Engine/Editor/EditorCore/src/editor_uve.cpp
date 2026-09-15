@@ -5113,6 +5113,10 @@ void EditorUVE::DrawUITextInspectorDrawerUVE(const Scene::EntityUVE entity) {
     Scene::UITextComponentUVE edited = current;
     bool changed = false;
 
+    // UIText/UIImage/UIButton can all be attached to the same entity at once and share several
+    // field names (Position/Size/Alpha) - PushID scopes this drawer's widget IDs so they can never
+    // collide with a sibling UI drawer's identically-named fields in the same Inspector frame.
+    ImGui::PushID("ui-text-inspector");
     ImGui::Separator();
     DrawProceduralIconLabelUVE(8.0F, "UI Text", DrawNodeEmptyIconUVE);
 
@@ -5154,6 +5158,7 @@ void EditorUVE::DrawUITextInspectorDrawerUVE(const Scene::EntityUVE entity) {
     if (ImGui::Button("Remove UI Text")) {
         static_cast<void>(RemoveSelectedSceneComponentUVE(EditorSceneComponentKindUVE::UIText));
     }
+    ImGui::PopID();
 }
 
 void EditorUVE::DrawUIImageInspectorDrawerUVE(const Scene::EntityUVE entity) {
@@ -5169,6 +5174,9 @@ void EditorUVE::DrawUIImageInspectorDrawerUVE(const Scene::EntityUVE entity) {
     Scene::UIImageComponentUVE edited = current;
     bool changed = false;
 
+    // See DrawUITextInspectorDrawerUVE's own comment - PushID prevents this drawer's field IDs
+    // (Position/Size/Alpha) from colliding with a sibling UI drawer's identically-named ones.
+    ImGui::PushID("ui-image-inspector");
     ImGui::Separator();
     DrawProceduralIconLabelUVE(8.0F, "UI Image", DrawNodeMeshIconUVE);
     ImGui::TextDisabled("An unset (zero) Texture Asset GUID renders as a flat tint-colored quad.");
@@ -5211,6 +5219,7 @@ void EditorUVE::DrawUIImageInspectorDrawerUVE(const Scene::EntityUVE entity) {
     if (ImGui::Button("Remove UI Image")) {
         static_cast<void>(RemoveSelectedSceneComponentUVE(EditorSceneComponentKindUVE::UIImage));
     }
+    ImGui::PopID();
 }
 
 void EditorUVE::DrawUIButtonInspectorDrawerUVE(const Scene::EntityUVE entity) {
@@ -5226,6 +5235,9 @@ void EditorUVE::DrawUIButtonInspectorDrawerUVE(const Scene::EntityUVE entity) {
     Scene::UIButtonComponentUVE edited = current;
     bool changed = false;
 
+    // See DrawUITextInspectorDrawerUVE's own comment - PushID prevents this drawer's field IDs
+    // (Position/Size) from colliding with a sibling UI drawer's identically-named ones.
+    ImGui::PushID("ui-button-inspector");
     ImGui::Separator();
     DrawProceduralIconLabelUVE(8.0F, "UI Button", DrawNodeMeshIconUVE);
     ImGui::TextDisabled("Hit-tested every tick by UIRuntimeUVE against the real mouse position/button state.");
@@ -5276,6 +5288,7 @@ void EditorUVE::DrawUIButtonInspectorDrawerUVE(const Scene::EntityUVE entity) {
     if (ImGui::Button("Remove UI Button")) {
         static_cast<void>(RemoveSelectedSceneComponentUVE(EditorSceneComponentKindUVE::UIButton));
     }
+    ImGui::PopID();
 }
 
 void EditorUVE::DrawSceneComponentInspectorDrawerUVE(const Scene::EntityUVE entity,
