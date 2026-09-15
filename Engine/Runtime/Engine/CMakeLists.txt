@@ -38,7 +38,7 @@ target_include_directories(uve_core PUBLIC include)
 target_link_libraries(uve_core
     PUBLIC uve_platform uve_debug uve_utilities uve_events uve_memory uve_threading uve_commandline
            uve_config uve_asset uve_scene uve_physics uve_input uve_audio uve_save uve_window
-           uve_rhi uve_rhi_shader uve_rhi_opengl uve_rhi_null uve_render_systems uve_scripting
+           uve_rhi uve_rhi_shader uve_rhi_opengl uve_rhi_null uve_render_systems uve_scripting uve_ui
     PRIVATE nlohmann_json::nlohmann_json
 )
 target_compile_features(uve_core PUBLIC cxx_std_20)

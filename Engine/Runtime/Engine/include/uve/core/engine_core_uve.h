@@ -48,6 +48,7 @@
 #include "uve/input/i_mobile_input_system_uve.h"
 #include "uve/memory/i_memory_manager_uve.h"
 #include "uve/physics/area_overlap_lifecycle_tracker_uve.h"
+#include "uve/physics/collision_lifecycle_tracker_uve.h"
 #include "uve/physics/i_collision_system_uve.h"
 #include "uve/physics/i_physics_system_uve.h"
 #include "uve/physics/i_physics_query_system_uve.h"
@@ -71,6 +72,7 @@
 #include "uve/scripting/script_graph_uve.h"
 #include "uve/scripting/script_runtime_uve.h"
 #include "uve/threading/i_thread_pool_uve.h"
+#include "uve/ui/ui_runtime_uve.h"
 #include "uve/utilities/i_timer_uve.h"
 #include "uve/window/i_window_manager_uve.h"
 
@@ -271,11 +273,26 @@ public:
     /// current frame completes, without running further frames.
     void RequestQuitUVE() noexcept;
 
+    /// True once RequestQuitUVE() has been called (directly, or internally because
+    /// IWindowManagerUVE::IsCloseRequestedUVE() went true - see TickFrameUVE()'s own per-frame
+    /// check). RunUVE()'s own loop already honors this internally; this accessor exists for a
+    /// caller driving its own manual Init()/Load()/TickFrameUVE() loop instead of RunUVE() (e.g. a
+    /// packaged project's standalone runtime, which needs to load a scene between Load() and the
+    /// first tick) to still exit correctly when the user closes the window.
+    [[nodiscard]] bool IsQuitRequestedUVE() const noexcept { return m_quitRequested; }
+
     /// Diagnostic hook (mirrors GlRenderDeviceUVE::GetLiveResourceCountUVE()'s own role): how many
     /// ScriptComponentUVE entities currently have a live, attached ScriptRuntimeUVE instance -
     /// i.e. were successfully loaded/compiled by SyncScriptRuntimeUVE(). Useful for tests and future
     /// editor diagnostics alike, not just tests.
     [[nodiscard]] std::size_t GetActiveScriptInstanceCountUVE() const noexcept;
+
+    /// Diagnostic/test hook: the collision enter/exit transitions computed by
+    /// SyncCollisionLifecycleUVE() on the most recent Update() call - the same report the
+    /// `physics.on_collision_enter`/`physics.on_collision_exit` script bindings read from.
+    [[nodiscard]] const Physics::CollisionLifecycleReportUVE& GetLastCollisionLifecycleReportUVE() const noexcept {
+        return m_collisionLifecycleReport;
+    }
 
     /// Transitions Running -> ShuttingDown -> Shutdown, tearing down
     /// ConfigManager, then CheckpointManager, then SaveGameSystem, then AudioSourceSystem, then AudioSystem, then AudioDevice, then InputSystem, then RaycastSystem, then PhysicsSystem, then CollisionSystem, then Renderer3D, then LightSystem, then MeshRenderer, then CameraSystem, then RenderSystem, then ShaderManager, then
@@ -354,6 +371,13 @@ public:
     /// than dereferencing an empty std::optional.
     [[nodiscard]] EngineServicesUVE& GetServicesUVE();
 
+    /// Returns the current UI draw batch/font atlas (SyncUIRuntimeUVE() ticks it once per real
+    /// frame during Update()) - for a host that wants to composite authored Canvas/UIText/UIImage/
+    /// UIButton content itself (the editor's own Viewport panel draws it via ImGui's overlay draw
+    /// list, since UIQuadUVE positions are authored in real window pixel space, not any one
+    /// render target's local space - see EditorMeshLayerUVE::RenderUVE()'s own doc comment).
+    [[nodiscard]] const UI::UIRuntimeUVE& GetUIRuntimeUVE() const noexcept { return m_uiRuntime; }
+
     /// Returns this build's engine version — the single source of truth
     /// future systems (assets, plugins, projects, crash reports, Hub
     /// integration) are expected to read.
@@ -407,6 +431,12 @@ private:
     /// runtime, simulates one frame under configured gravity, and leaves renderer extraction read-only.
     void SyncParticleRuntimeUVE();
 
+    /// Ticks UIRuntimeUVE once per real frame (not the fixed-step loop, so UI responsiveness tracks
+    /// real input latency): hit-tests every live UIButtonComponentUVE against the real
+    /// IInputSystemUVE mouse state and rebuilds the CPU-side UIDrawBatchUVE snapshot. No GPU
+    /// resource is touched here - rendering that batch is a later phase.
+    void SyncUIRuntimeUVE();
+
     /// Attaches a compiled ScriptGraphUVE to ScriptRuntimeUVE for every live ScriptComponentUVE
     /// entity that isn't already reconciled, then ticks every attached instance once against the
     /// real, engine-owned ScriptEngineCallBindingsUVE (see script_gameplay_bindings_uve.h - only
@@ -425,6 +455,14 @@ private:
     /// ColliderComponentUVE, or whose optional RigidBodyComponentUVE isn't kinematic, is skipped
     /// (MoveWithToIUVE's own precondition - this function never adds/removes components).
     void SyncCharacterControllersUVE(float fixedDeltaTimeSeconds);
+
+    /// Diffs a fresh Physics::ICollisionSystemUVE::DetectCollisionsUVE() snapshot against the
+    /// previous tick's via m_collisionLifecycleTracker, storing the resulting enter/exit
+    /// transitions in m_collisionLifecycleReport and pointing m_scriptBindingContext at them -
+    /// called before SyncScriptRuntimeUVE() (not from LateUpdate(), unlike
+    /// PublishAreaOverlapLifecycleEventsUVE()) so the same tick's script bindings see zero-latency
+    /// results, since a poll-based binding has no event-queue drain delay to wait out.
+    void SyncCollisionLifecycleUVE();
 
     /// Recomputes the bounded aspect-preserving render target from the live drawable size and
     /// transactionally resizes Renderer3DUVE before the frame's scene work begins.
@@ -504,7 +542,10 @@ private:
     std::unique_ptr<Physics::IPhysicsQuerySystemUVE> m_physicsQuerySystem;
     std::unique_ptr<Physics::IRaycastSystemUVE> m_raycastSystem;
     std::unique_ptr<Scene::ParticleRuntimeUVE> m_particleRuntime;
+    UI::UIRuntimeUVE m_uiRuntime;
     Physics::AreaOverlapLifecycleTrackerUVE m_areaOverlapLifecycleTracker;
+    Physics::CollisionLifecycleTrackerUVE m_collisionLifecycleTracker;
+    Physics::CollisionLifecycleReportUVE m_collisionLifecycleReport;
     std::unique_ptr<Input::IInputSystemUVE> m_inputSystem;
     std::unique_ptr<Input::IGamepadInputSystemUVE> m_gamepadInputSystem;
     std::unique_ptr<Input::IMobileInputSystemUVE> m_mobileInputSystem;

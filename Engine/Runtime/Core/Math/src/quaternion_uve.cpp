@@ -244,6 +244,34 @@ bool TryMakeEulerUVE(const Vector3UVE& radians, QuaternionUVE& outRotation) noex
     }, outRotation);
 }
 
+bool TryToEulerUVE(const QuaternionUVE& rotation, Vector3UVE& outRadians) noexcept {
+    QuaternionUVE q{};
+    if (!TryNormalizeUVE(rotation, q)) {
+        return false;
+    }
+
+    // Matches TryMakeEulerUVE()'s exact composition (verified by direct symbolic expansion:
+    // q = qz(z) * qy(y) * qx(x)) - the standard closed-form quaternion-to-Euler extraction for
+    // that ordering.
+    const float sinXCosY = 2.0F * (q.w * q.x + q.y * q.z);
+    const float cosXCosY = 1.0F - 2.0F * (q.x * q.x + q.y * q.y);
+    const float angleX = std::atan2(sinXCosY, cosXCosY);
+
+    const float sinY = std::clamp(2.0F * (q.w * q.y - q.z * q.x), -1.0F, 1.0F);
+    const float angleY = std::asin(sinY);
+
+    const float sinZCosY = 2.0F * (q.w * q.z + q.x * q.y);
+    const float cosZCosY = 1.0F - 2.0F * (q.y * q.y + q.z * q.z);
+    const float angleZ = std::atan2(sinZCosY, cosZCosY);
+
+    const Vector3UVE candidate{angleX, angleY, angleZ};
+    if (!IsFiniteVectorUVE(candidate)) {
+        return false;
+    }
+    outRadians = candidate;
+    return true;
+}
+
 bool TryMakeLookAtUVE(const Vector3UVE& direction, const Vector3UVE& up,
                       QuaternionUVE& outRotation) noexcept {
     if (!IsFiniteVectorUVE(direction) || !IsFiniteVectorUVE(up)) {

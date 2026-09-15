@@ -49,4 +49,7 @@ extern const std::string_view kFullscreenCopySource;
 inline constexpr std::string_view kSsaoVirtualPath = "shaders/ssao.glsl";
 extern const std::string_view kSsaoSource;
 
+inline constexpr std::string_view kUIOverlayVirtualPath = "shaders/ui_overlay.glsl";
+extern const std::string_view kUIOverlaySource;
+
 } // namespace UVE::Render::Shader::BuiltIn

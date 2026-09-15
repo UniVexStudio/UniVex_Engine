@@ -3,7 +3,10 @@
 
 #pragma once
 
+#include <vector>
+
 #include "uve/input/i_input_system_uve.h"
+#include "uve/physics/collision_lifecycle_tracker_uve.h"
 #include "uve/scripting/script_vm_uve.h"
 
 namespace UVE::Core {
@@ -13,9 +16,12 @@ namespace UVE::Core {
 /// `void* userData` and reads whichever subsystem pointer it needs. EngineCoreUVE holds one of
 /// these for its whole lifetime and keeps `inputSystem` pointed at its own real InputSystemUVE, so
 /// the bindings struct's userData pointer stays valid for as long as ScriptRuntimeUVE::TickUVE()
-/// might call back into it.
+/// might call back into it. `collisionTransitionsThisTick` is refreshed in place every frame by
+/// EngineCoreUVE::SyncCollisionLifecycleUVE() before the VM runs, so the physics collision-enter/
+/// exit bindings below always scan the current tick's transitions, not a stale copy.
 struct ScriptGameplayBindingContextUVE final {
     Input::IInputSystemUVE* inputSystem = nullptr;
+    const std::vector<Physics::CollisionTransitionUVE>* collisionTransitionsThisTick = nullptr;
 };
 
 /// Builds a real ScriptEngineCallBindingsUVE wired to `context`'s subsystem pointers - the first
@@ -23,16 +29,17 @@ struct ScriptGameplayBindingContextUVE final {
 /// Test/Integration/Scripting/script_graph_uve_tests.cpp ever populated real function bodies for
 /// this struct; every production call site left the whole struct null).
 ///
-/// Only the keyboard/mouse input bindings are wired this increment (inputKeyPressed/Released/Down,
-/// inputMousePosition, inputMouseButton). Every other field (gamepad/action-layer input, entity
-/// spawn/component mutation, camera, animation, physics queries, audio) is deliberately left
-/// nullptr: script_vm_uve.cpp's node executors already treat an individually-unset binding as
-/// "that one node type fails cleanly, every other node still runs" (see ExecuteInputNodeUVE's own
-/// per-field null checks), so leaving a field unset is an honest "not wired yet," not a silent
-/// false capability. Gamepad/action bindings need a numeric-token<->name mapping this increment
-/// doesn't define; entity/camera/animation/physics/audio bindings need real accessors (e.g. an
-/// entity-to-voice-handle lookup for audio) that don't exist publicly yet - real, scoped follow-up
-/// work, not an oversight.
+/// Wired this increment: the keyboard/mouse input bindings (inputKeyPressed/Released/Down,
+/// inputMousePosition, inputMouseButton), and the physics collision-lifecycle bindings
+/// (physicsCollisionEnter/Exit). Every other field (gamepad/action-layer input, entity
+/// spawn/component mutation, camera, animation, physics raycast/force/velocity queries, audio) is
+/// deliberately left nullptr: script_vm_uve.cpp's node executors already treat an
+/// individually-unset binding as "that one node type fails cleanly, every other node still runs"
+/// (see ExecuteInputNodeUVE's own per-field null checks), so leaving a field unset is an honest
+/// "not wired yet," not a silent false capability. Gamepad/action bindings need a
+/// numeric-token<->name mapping this increment doesn't define; the remaining physics/camera/
+/// animation/audio bindings need real accessors (e.g. an entity-to-voice-handle lookup for audio)
+/// that don't exist publicly yet - real, scoped follow-up work, not an oversight.
 [[nodiscard]] Scripting::ScriptEngineCallBindingsUVE MakeScriptGameplayBindingsUVE(
     ScriptGameplayBindingContextUVE& context) noexcept;
 

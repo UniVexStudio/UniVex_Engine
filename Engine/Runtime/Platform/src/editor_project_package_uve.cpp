@@ -74,6 +74,9 @@ using JsonUVE = nlohmann::json;
     package.contentRoot = json.at("contentRoot").get<std::string>();
     package.assetDatabasePath = json.at("assetDatabasePath").get<std::string>();
     package.settingsPath = json.at("settingsPath").get<std::string>();
+    // value(...) rather than at(...): older .uveditor files predate this field and have no
+    // "startupScenePath" key at all - they must still load, just with no startup scene configured.
+    package.startupScenePath = json.value("startupScenePath", std::string{});
     return package;
 }
 
@@ -89,7 +92,8 @@ using JsonUVE = nlohmann::json;
                                        {"build", package.engineVersion.build}}},
                    {"contentRoot", package.contentRoot.generic_string()},
                    {"assetDatabasePath", package.assetDatabasePath.generic_string()},
-                   {"settingsPath", package.settingsPath.generic_string()}};
+                   {"settingsPath", package.settingsPath.generic_string()},
+                   {"startupScenePath", package.startupScenePath.generic_string()}};
 }
 
 [[nodiscard]] EditorProjectPackageResultUVE WriteJsonAtomicallyUVE(
@@ -155,6 +159,13 @@ EditorProjectPackageResultUVE EditorProjectPackageCodecUVE::ValidateUVE(
         !IsRelativePathUVE(package.settingsPath)) {
         return MakeResultUVE(EditorProjectPackageCodeUVE::InvalidPath,
                              "The .uveditor paths must be bounded, relative, normalized, and traversal-free.");
+    }
+    // startupScenePath is allowed to be empty (no startup scene configured yet), unlike the three
+    // paths above which every project always has - but once set, it must be just as safe.
+    if (!package.startupScenePath.empty() && !IsRelativePathUVE(package.startupScenePath)) {
+        return MakeResultUVE(EditorProjectPackageCodeUVE::InvalidPath,
+                             "The .uveditor startup scene path must be bounded, relative, normalized, and "
+                             "traversal-free.");
     }
     return MakeResultUVE(EditorProjectPackageCodeUVE::Applied, "The .uveditor package is valid.");
 }

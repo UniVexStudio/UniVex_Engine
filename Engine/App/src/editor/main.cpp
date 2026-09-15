@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <cmath>
 #include <cstdint>
 #include <exception>
 #include <filesystem>
@@ -25,27 +26,24 @@
 #include "univex/camera/OrbitCamera.h"
 #include "univex/render/ShaderProgram.h"
 
-#include "uve/asset/i_asset_database_uve.h"
-#include "uve/asset/i_asset_manager_uve.h"
-#include "uve/asset/material_asset_uve.h"
-#include "uve/asset/mesh_asset_uve.h"
-#include "uve/asset/shader_asset_uve.h"
 #include "uve/core/engine_core_uve.h"
 #include "uve/debug/logging_macros_uve.h"
 #include "uve/editor/editor_bridge_stdio_uve.h"
+#include "uve/ui/ui_draw_batch_uve.h"
+#include "uve/ui/ui_font_atlas_uve.h"
 #include "uve/editor/editor_uve.h"
 #include "uve/math/vector2_uve.h"
-#include "uve/render/primitive_geometry_uve.h"
-#include "uve/render/shader/built_in_shaders_uve.h"
 #include "uve/scene/components/camera_component_uve.h"
-#include "uve/scene/components/editor_internal_entity_component_uve.h"
-#include "uve/scene/components/mesh_component_uve.h"
-#include "uve/scene/components/transform_component_uve.h"
 #include "uve/scene/components/world_transform_component_uve.h"
 #include "uve/scene/i_entity_manager_uve.h"
 #include "uve/scene/i_scene_graph_uve.h"
 
 namespace {
+
+// How far the pointer may travel on the nav gizmo (accumulated since the button went down, in
+// ImGui points) and still count as a click rather than a drag - mirrors app/main.cpp's own
+// kNavClickSlopPixels for the standalone demo.
+constexpr float kNavClickSlopPixelsUVE = 4.0F;
 
 // Fullscreen-triangle compositing pass: layers EditorMeshLayerUVE's real mesh/material render on
 // top of ViewportRenderPass's grid/gizmo image, using the mesh layer's own depth buffer (cleared
@@ -107,14 +105,17 @@ void main() {
 // a GLFW framebuffer-resize callback.
 class ViewportPanelBackendUVE final {
 public:
-    ViewportPanelBackendUVE(UVE::Editor::EditorUVE& editor, UVE::Core::EngineServicesUVE& services)
-        : editor_(editor), entityManager_(services.GetEntityManagerUVE()), entitySource_(entityManager_),
-          meshLayer_(services) {}
+    ViewportPanelBackendUVE(UVE::Editor::EditorUVE& editor, UVE::Core::EngineCoreUVE& engine)
+        : editor_(editor), engine_(engine), entityManager_(engine.GetServicesUVE().GetEntityManagerUVE()),
+          entitySource_(entityManager_), meshLayer_(engine.GetServicesUVE()) {}
 
     ~ViewportPanelBackendUVE() {
         DestroyFramebuffersUVE();
         if (compositeVao_ != 0U) {
             glDeleteVertexArrays(1, &compositeVao_);
+        }
+        if (uiFontAtlasTexture_ != 0U) {
+            glDeleteTextures(1, &uiFontAtlasTexture_);
         }
     }
 
@@ -136,7 +137,13 @@ public:
 
         ApplyOverlayStateUVE(overlayState);
         UpdateSelectionGizmoUVE();
-        UpdateCameraFromMouseUVE(height);
+        const bool navGizmoOwnsGesture = UpdateNavGizmoInteractionUVE(width, height);
+        UpdateCameraFromMouseUVE(height, navGizmoOwnsGesture);
+        // Advances the eased snap-to-axis animation SnapToDirection() starts (a manual orbit/pan
+        // cancels it instead - see OrbitCamera.cpp) - without this the camera would flag itself
+        // "animating" and then never actually move, since nothing else ticks it forward. Mirrors
+        // app/main.cpp's own per-frame state.camera.Update(deltaSeconds) call in the standalone demo.
+        camera_.Update(ImGui::GetIO().DeltaTime);
 
         GLint previousFbo = 0;
         glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previousFbo);
@@ -161,6 +168,15 @@ public:
         const univex::integration::EditorMeshLayerResultUVE meshResult = meshLayer_.RenderUVE(
             camera_, static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height), gameCameraOverride);
         outUsedSize = UVE::Math::Vector2UVE{static_cast<float>(width), static_cast<float>(height)};
+
+        // Player-facing HUD content only shows during the Game workspace tab's "what a player
+        // would see" preview (matching the grid/transform-gizmo hiding above) - drawn via ImGui's
+        // own foreground overlay rather than baked into meshResult's texture; see this method's own
+        // DrawUIOverlayUVE() comment for why.
+        if (gameWorkspaceActive_) {
+            DrawUIOverlayUVE();
+        }
+
         if (meshResult.colorTextureId == 0U || !EnsureCompositeResourcesUVE(width, height)) {
             return static_cast<std::uint64_t>(resolveColorTexture_);
         }
@@ -342,6 +358,58 @@ private:
         glBindFramebuffer(GL_FRAMEBUFFER, restoreFbo);
     }
 
+    // Uploads UI::UIFontAtlasUVE's baked RGBA8 bitmap once (it never changes after construction),
+    // for AddImage()'s glyph quads below.
+    void EnsureUIFontAtlasTextureUVE(const UVE::UI::UIFontAtlasUVE& fontAtlas) {
+        if (uiFontAtlasTexture_ != 0U || !fontAtlas.IsValidUVE()) {
+            return;
+        }
+        glGenTextures(1, &uiFontAtlasTexture_);
+        glBindTexture(GL_TEXTURE_2D, uiFontAtlasTexture_);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, UVE::UI::UIFontAtlasUVE::kAtlasWidthUVE,
+                     UVE::UI::UIFontAtlasUVE::kAtlasHeightUVE, 0, GL_RGBA, GL_UNSIGNED_BYTE,
+                     fontAtlas.GetBitmapUVE().data());
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
+
+    // Draws UIRuntimeUVE's current draw batch directly via ImGui's own foreground overlay draw
+    // list, in the same real-window pixel coordinates UIQuadUVE is authored in (matching
+    // IInputSystemUVE::GetMousePositionUVE()'s own convention - confirmed directly: hovering the
+    // real cursor at a button's authored positionPixels correctly sets isHovered, proving that
+    // space really is the whole application window, not this one panel's local render-target
+    // space). This is why UI content is NOT baked into meshLayer_'s own offscreen texture (see
+    // EditorMeshLayerUVE::RenderUVE()'s own call site comment) - a per-pixel depth-based compositor
+    // could never distinguish "UI was drawn here" from "nothing was drawn here" without real
+    // OpenGL depth WRITES, which require depth TESTING to also be enabled - exactly what a
+    // screen-space overlay must never have (it always draws on top, regardless of the 3D scene).
+    // Image quads referencing a real (non-zero) texture asset guid fall back to a flat tint here
+    // (this preview path does not resolve/upload arbitrary imported textures) - an honest, stated
+    // limitation, not a silent gap.
+    void DrawUIOverlayUVE() {
+        const UVE::UI::UIDrawBatchUVE& batch = engine_.GetUIRuntimeUVE().GetDrawBatchUVE();
+        if (batch.quads.empty()) {
+            return;
+        }
+        EnsureUIFontAtlasTextureUVE(engine_.GetUIRuntimeUVE().GetFontAtlasUVE());
+        ImDrawList* const drawList = ImGui::GetForegroundDrawList();
+        for (const UVE::UI::UIQuadUVE& quad : batch.quads) {
+            const ImVec2 pMin{quad.positionPixels.x, quad.positionPixels.y};
+            const ImVec2 pMax{quad.positionPixels.x + quad.sizePixels.x, quad.positionPixels.y + quad.sizePixels.y};
+            const ImU32 tint = ImGui::ColorConvertFloat4ToU32(
+                ImVec4{quad.color.x, quad.color.y, quad.color.z, quad.alpha});
+            if (quad.kind == UVE::UI::UIDrawItemKindUVE::Glyph && uiFontAtlasTexture_ != 0U) {
+                drawList->AddImage(static_cast<ImTextureID>(static_cast<std::uintptr_t>(uiFontAtlasTexture_)), pMin,
+                                   pMax, ImVec2{quad.u0, quad.v0}, ImVec2{quad.u1, quad.v1}, tint);
+            } else {
+                drawList->AddRectFilled(pMin, pMax, tint);
+            }
+        }
+    }
+
     // Applies EditorUVE's own generic overlay-toolbar state (see ViewportOverlayStateUVE's doc
     // comment on why it's plain enums/bools rather than any Viewport-module type) to the real
     // ViewportRenderPass each frame. Snap is stored and reflected in the bubble's highlight but
@@ -402,12 +470,17 @@ private:
     // the Viewport panel specifically. Known simplification versus the GLFW demo: a drag that
     // began inside the panel stops orbiting the moment the cursor leaves it, rather than
     // continuing to track a global drag - acceptable for this integration slice.
-    void UpdateCameraFromMouseUVE(const int framebufferHeight) {
+    //
+    // `suppressOrbit` is true while UpdateNavGizmoInteractionUVE() below owns the current left-
+    // button gesture (it started on the nav gizmo) - without it, this method's own
+    // IsMouseDragging(Left) check would ALSO orbit the camera from the same drag, double-applying
+    // the same mouse delta on top of the nav gizmo's own orbit-while-dragging behavior.
+    void UpdateCameraFromMouseUVE(const int framebufferHeight, const bool suppressOrbit) {
         if (!ImGui::IsWindowHovered()) {
             return;
         }
         const ImGuiIO& io = ImGui::GetIO();
-        if (ImGui::IsMouseDragging(ImGuiMouseButton_Left, 0.0F)) {
+        if (!suppressOrbit && ImGui::IsMouseDragging(ImGuiMouseButton_Left, 0.0F)) {
             camera_.Orbit(io.MouseDelta.x, io.MouseDelta.y);
         } else if (ImGui::IsMouseDragging(ImGuiMouseButton_Middle, 0.0F) ||
                    ImGui::IsMouseDragging(ImGuiMouseButton_Right, 0.0F)) {
@@ -418,7 +491,100 @@ private:
         }
     }
 
+    // Returns true and fills the nav-local position if the cursor is over the orientation gizmo -
+    // ports app/main.cpp's own CursorOverNavGizmo() (the standalone GLFW demo, where this already
+    // works) into the ImGui-hosted real editor. `fbX`/`fbY` are pixel coordinates relative to the
+    // Viewport panel's own rendered image top-left, matching NavViewportRectFor()'s own convention.
+    [[nodiscard]] bool CursorOverNavGizmoUVE(int width, int height, float fbX, float fbY,
+                                            float& outLocalX, float& outLocalY) const {
+        if (!renderPass_.has_value() || !renderPass_->Settings().viewGizmos) {
+            return false;
+        }
+        const univex::app::NavViewportRect rect =
+            univex::app::ViewportRenderPass::NavViewportRectFor(renderPass_->Style(), width, height);
+        if (rect.size <= 0) {
+            return false;
+        }
+        // rect.y is a GL viewport origin (bottom-left); convert to top-left, matching fbY's own
+        // top-left-origin convention (the same one IInputSystemUVE::GetMousePositionUVE() uses).
+        const float top = static_cast<float>(height - rect.y - rect.size);
+        const float left = static_cast<float>(rect.x);
+        if (fbX < left || fbX > left + static_cast<float>(rect.size)) {
+            return false;
+        }
+        if (fbY < top || fbY > top + static_cast<float>(rect.size)) {
+            return false;
+        }
+        outLocalX = fbX - left;
+        outLocalY = fbY - top;
+        return true;
+    }
+
+    // Handles both nav-gizmo gestures - drag-anywhere-on-it orbits exactly like dragging the scene,
+    // click-a-ball snaps the camera to look down that axis - mirroring app/main.cpp's own
+    // OnMouseButton()/OnCursorPos() handling for the standalone demo, just driven by ImGui's per-
+    // frame IO instead of GLFW press/release/move callbacks. Returns true while this gesture owns
+    // the left mouse button, so UpdateCameraFromMouseUVE() knows to suppress its own generic orbit.
+    [[nodiscard]] bool UpdateNavGizmoInteractionUVE(const int width, const int height) {
+        if (!ImGui::IsWindowHovered() && !navDragging_) {
+            return false;
+        }
+        const ImGuiIO& io = ImGui::GetIO();
+        const ImVec2 imageOrigin = ImGui::GetCursorScreenPos();
+        const float fbX = io.MousePos.x - imageOrigin.x;
+        const float fbY = io.MousePos.y - imageOrigin.y;
+
+        if (!navDragging_) {
+            if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+                float localX = 0.0F;
+                float localY = 0.0F;
+                if (CursorOverNavGizmoUVE(width, height, fbX, fbY, localX, localY)) {
+                    navDragging_ = true;
+                    navDragMoved_ = false;
+                    navPressX_ = localX;
+                    navPressY_ = localY;
+                    camera_.CancelAnimation();
+                }
+            }
+            return false;
+        }
+
+        // A gesture that started on the gizmo: still deciding click vs. drag, or already
+        // committed to orbiting. GetMouseDragDelta accumulates from the original press position,
+        // matching the demo's own "press-relative slop" check exactly (not per-frame delta, which
+        // would never exceed the threshold for a series of tiny frame-to-frame movements).
+        if (!navDragMoved_) {
+            const ImVec2 dragDelta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Left, 0.0F);
+            if ((std::fabs(dragDelta.x) + std::fabs(dragDelta.y)) > kNavClickSlopPixelsUVE) {
+                navDragMoved_ = true;
+            }
+        }
+        if (navDragMoved_) {
+            camera_.Orbit(io.MouseDelta.x, io.MouseDelta.y);
+        }
+
+        if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+            if (!navDragMoved_) {
+                const univex::gizmo::NavPickResult pick = univex::gizmo::PickNavGizmo(
+                    renderPass_->Style(), univex::app::ViewportRenderPass::NavViewMatrix(camera_),
+                    navPressX_, navPressY_, static_cast<float>(renderPass_->Style().navPixelSize));
+                if (pick.hit) {
+                    camera_.SnapToDirection(pick.direction);
+                    auto& settings = renderPass_->Settings();
+                    settings.standardView = univex::viewport::StandardView::User;
+                    if (settings.autoOrthogonal) {
+                        camera_.SetOrthographic(true);
+                    }
+                }
+            }
+            navDragging_ = false;
+            navDragMoved_ = false;
+        }
+        return true;
+    }
+
     UVE::Editor::EditorUVE& editor_;
+    UVE::Core::EngineCoreUVE& engine_;
     UVE::Scene::IEntityManagerUVE& entityManager_;
     univex::integration::EntityManagerEntitySource entitySource_;
     univex::integration::EditorMeshLayerUVE meshLayer_;
@@ -429,6 +595,11 @@ private:
     // later in the same frame by selection state, so it needs this stored flag instead).
     bool gameWorkspaceActive_ = false;
     univex::camera::OrbitCamera camera_;
+    // Nav-gizmo click-vs-drag state - see UpdateNavGizmoInteractionUVE()'s own comment.
+    bool navDragging_ = false;
+    bool navDragMoved_ = false;
+    float navPressX_ = 0.0F;
+    float navPressY_ = 0.0F;
     bool glewInitialized_ = false;
     GLuint msaaFbo_ = 0U;
     GLuint msaaColorRb_ = 0U;
@@ -443,6 +614,11 @@ private:
     GLuint compositeColorTexture_ = 0U;
     int compositeWidth_ = 0;
     int compositeHeight_ = 0;
+    // Uploaded lazily on first use by DrawUIOverlayUVE() - see that method's own comment for why
+    // the editor keeps its own copy of this texture rather than reading Renderer3DUVE's internal
+    // one (created only inside its "UIOverlay" render-graph pass, which this panel deliberately
+    // never runs - see EditorMeshLayerUVE::RenderUVE()'s own call site comment).
+    GLuint uiFontAtlasTexture_ = 0U;
 };
 
 struct EditorLaunchOptionsUVE final {
@@ -512,60 +688,6 @@ struct EditorLaunchOptionsUVE final {
     return options;
 }
 
-// Authors one real MeshComponentUVE-carrying entity at the origin so EditorMeshLayerUVE's newly
-// wired rendering has something real to draw and verify (not another flat proxy cube) - reuses the
-// engine's own canonical cube geometry (GetPrimitiveGeometryUVE) and its real production
-// lit/shadowed shader source (Shader::BuiltIn::kLitShadowed3DSource) rather than hand-authoring new
-// geometry or GLSL, and registers all three asset loaders the same supported way test fixtures
-// already do (IAssetManagerUVE::RegisterLoaderUVE<T>() - a real, non-test-only API). Windowed-mode
-// verification fixture only, not an authored project asset - a future increment (real content
-// authoring/import) replaces this.
-void CreateMeshRenderingFixtureEntityUVE(UVE::Core::EngineServicesUVE& services) {
-    UVE::Asset::IAssetDatabaseUVE& assetDatabase = services.GetAssetDatabaseUVE();
-    UVE::Asset::IAssetManagerUVE& assetManager = services.GetAssetManagerUVE();
-
-    const UVE::Asset::AssetGuidUVE shaderGuid = assetDatabase.RegisterUVE("editor_fixture_lit_shadowed_3d.uveshader");
-    const UVE::Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("editor_fixture_cube.uvemodel");
-    const UVE::Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("editor_fixture_cube.uvemat");
-
-    assetManager.RegisterLoaderUVE<UVE::Asset::ShaderAssetUVE>(
-        [](const std::filesystem::path&, UVE::Asset::ShaderAssetUVE& shader) {
-            shader.sourceCode = std::string(UVE::Render::Shader::BuiltIn::kLitShadowed3DSource);
-            shader.entryPointName = "main";
-            return true;
-        });
-    assetManager.RegisterLoaderUVE<UVE::Asset::MeshAssetUVE>(
-        [](const std::filesystem::path&, UVE::Asset::MeshAssetUVE& mesh) {
-            const UVE::Render::PrimitiveGeometryUVE& cube =
-                UVE::Render::GetPrimitiveGeometryUVE(UVE::Scene::PrimitiveMeshKindUVE::Cube);
-            mesh.vertices = cube.vertices;
-            mesh.indices = cube.indices;
-            mesh.localBounds = cube.localBounds;
-            return true;
-        });
-    assetManager.RegisterLoaderUVE<UVE::Asset::MaterialAssetUVE>(
-        [shaderGuid](const std::filesystem::path&, UVE::Asset::MaterialAssetUVE& material) {
-            material.vertexShader = shaderGuid;
-            material.fragmentShader = shaderGuid;
-            material.albedoColor = UVE::Math::Vector3UVE{0.75F, 0.32F, 0.24F};
-            material.metallic = 0.1F;
-            material.roughness = 0.55F;
-            return true;
-        });
-
-    UVE::Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
-    const UVE::Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-    services.GetSceneGraphUVE().AttachTransformUVE(entityManager, entity, UVE::Scene::TransformComponentUVE{});
-    entityManager.AddComponentUVE<UVE::Scene::MeshComponentUVE>(
-        entity, UVE::Scene::MeshComponentUVE{meshGuid, materialGuid});
-    // Marks this as internal tooling infrastructure, not real document content - see the
-    // component's own header comment. Makes this function's own doc comment above ("not an
-    // authored project asset") actually true: excluded from EditorUVE::GetDocumentRootsUVE(), so
-    // it's never churned through Play-mode's snapshot capture/restore and never shows up as a
-    // stray unnamed row in the Scene Hierarchy panel.
-    entityManager.AddComponentUVE<UVE::Scene::EditorInternalEntityComponentUVE>(entity);
-}
-
 } // namespace
 
 /// Starts the standalone UniVex Editor Foundation v1. `--scene <path>` selects the `.uvescene`
@@ -630,8 +752,7 @@ int main(const int argc, char** argv) {
         // which headless mode's NullRenderDeviceUVE never creates.
         std::optional<ViewportPanelBackendUVE> viewportBackend;
         if (!options.headless) {
-            CreateMeshRenderingFixtureEntityUVE(engine.GetServicesUVE());
-            viewportBackend.emplace(editor, engine.GetServicesUVE());
+            viewportBackend.emplace(editor, engine);
             editor.SetViewportPanelRendererUVE(
                 [&backend = *viewportBackend](
                     const UVE::Math::Vector2UVE& availableSize, UVE::Math::Vector2UVE& outUsedSize,

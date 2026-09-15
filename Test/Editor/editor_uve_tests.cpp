@@ -65,10 +65,6 @@ struct EditorUVEAccessUVE final {
         editor.m_contentBrowserTypeFocus = EditorUVE::ContentBrowserTypeFocusUVE::Registered;
     }
 
-    static void SelectContentBrowserMotionQueryFocusUVE(EditorUVE& editor) {
-        editor.m_contentBrowserTypeFocus = EditorUVE::ContentBrowserTypeFocusUVE::MotionQuery;
-    }
-
     [[nodiscard]] static bool DoesContentBrowserEntryMatchFocusUVE(const EditorUVE& editor,
                                                                      const Asset::ProjectFileEntryUVE& entry) {
         return editor.DoesContentBrowserEntryMatchFocusUVE(entry);
@@ -336,7 +332,7 @@ TEST(EditorUVETest, InspectorDrawerRegistrationUVE_IncludesStableHierarchyDrawer
 
     {
         EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_hierarchy_drawer_registration.uvescene");
-        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorDrawerCountUVE(editor), 16U);
+        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorDrawerCountUVE(editor), 20U);
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "name"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "hierarchy"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "transform"));
@@ -353,6 +349,10 @@ TEST(EditorUVETest, InspectorDrawerRegistrationUVE_IncludesStableHierarchyDrawer
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "world-environment"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "character-controller"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "prefab-instance"));
+        EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "canvas"));
+        EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "ui-text"));
+        EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "ui-image"));
+        EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "ui-button"));
         editor.ShutdownUVE();
     }
 
@@ -502,11 +502,6 @@ TEST(EditorUVETest, ContentBrowserWorkflowUVE_UsesPrimaryExtensionTagAndIndepend
         ordinaryFile.relativePath = "Notes/readme.txt";
         ordinaryFile.kind = Asset::ProjectFileEntryKindUVE::File;
 
-        Asset::ProjectFileEntryUVE motionQuery;
-        motionQuery.relativePath = "Queries/Locomotion.UVEMOTIONQUERY";
-        motionQuery.kind = Asset::ProjectFileEntryKindUVE::File;
-        motionQuery.registeredAssetGuid = Asset::AssetGuidUVE{84U};
-
         Asset::ProjectFileEntryUVE directory;
         directory.relativePath = "Characters";
         directory.kind = Asset::ProjectFileEntryKindUVE::Directory;
@@ -514,13 +509,7 @@ TEST(EditorUVETest, ContentBrowserWorkflowUVE_UsesPrimaryExtensionTagAndIndepend
         // A registered file keeps its semantic extension tag; registration remains an independent badge/focus.
         EXPECT_EQ(EditorUVEAccessUVE::GetContentBrowserItemTypeLabelUVE(registeredMesh), "Mesh");
         EXPECT_EQ(EditorUVEAccessUVE::GetContentBrowserItemTypeLabelUVE(ordinaryFile), "File");
-        EXPECT_EQ(EditorUVEAccessUVE::GetContentBrowserItemTypeLabelUVE(motionQuery), "Motion Query");
         EXPECT_EQ(EditorUVEAccessUVE::GetContentBrowserItemTypeLabelUVE(directory), "Folder");
-
-        EditorUVEAccessUVE::SelectContentBrowserMotionQueryFocusUVE(editor);
-        EXPECT_TRUE(EditorUVEAccessUVE::DoesContentBrowserEntryMatchFocusUVE(editor, motionQuery));
-        EXPECT_FALSE(EditorUVEAccessUVE::DoesContentBrowserEntryMatchFocusUVE(editor, registeredMesh));
-        EXPECT_FALSE(EditorUVEAccessUVE::DoesContentBrowserEntryMatchFocusUVE(editor, ordinaryFile));
 
         EditorUVEAccessUVE::SelectContentBrowserMeshFocusUVE(editor);
         EXPECT_TRUE(EditorUVEAccessUVE::DoesContentBrowserEntryMatchFocusUVE(editor, registeredMesh));

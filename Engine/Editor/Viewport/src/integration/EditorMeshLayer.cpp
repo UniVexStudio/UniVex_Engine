@@ -161,6 +161,16 @@ EditorMeshLayerResultUVE EditorMeshLayerUVE::RenderUVE(const univex::camera::Orb
     if (!renderer.ResizeTargetsUVE(width, height)) {
         return {};
     }
+    // Deliberately omits RenderFrameToTargetUVE's own width/height (UI-overlay) parameters: that
+    // path bakes UI directly into this mesh layer's own offscreen texture using depth to signal
+    // "something was drawn here" to a compositor, but authored UI never writes depth (by design -
+    // see uiOverlayProgramDesc's own comment, and real OpenGL depth-write requires depth TESTING to
+    // also be enabled, which a screen-space overlay correctly never wants), so a depth-based
+    // compositor could never see it there. The Viewport panel instead draws the same shared
+    // UI::UIRuntimeUVE batch directly via ImGui's own overlay draw list (see main.cpp's
+    // DrawUIOverlayUVE()) - the correct approach anyway, since UIQuadUVE positions are authored in
+    // real window pixel space (matching IInputSystemUVE::GetMousePositionUVE()'s own convention),
+    // not this panel's own local render-target space.
     renderer.RenderFrameToTargetUVE(entityManager, renderCameraEntity, colorTarget_, depthTarget_);
 
     auto* const glRenderDevice = dynamic_cast<UVE::Render::GlRenderDeviceUVE*>(&services_.GetRenderDeviceUVE());

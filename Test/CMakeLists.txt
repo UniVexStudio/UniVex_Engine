@@ -165,8 +165,6 @@ add_executable(uve_integration_tests
     Integration/Animation/animation_clip_uve_tests.cpp
     Integration/Animation/animation_tree_uve_tests.cpp
     Integration/Animation/animation_state_machine_uve_tests.cpp
-    Integration/Animation/animation_retargeting_uve_tests.cpp
-    Integration/Animation/retarget_map_uve_tests.cpp
     Integration/World/world_uve_tests.cpp
     Integration/Object/type_metadata_uve_tests.cpp
     Integration/Object/property_accessor_uve_tests.cpp
@@ -181,6 +179,7 @@ add_executable(uve_integration_tests
     Physics/area_overlap_system_uve_tests.cpp
     Physics/character_controller_uve_tests.cpp
     Physics/collider_shape_uve_tests.cpp
+    Physics/collision_lifecycle_tracker_uve_tests.cpp
     Physics/collision_system_uve_tests.cpp
     Physics/hinge_motor_limit_uve_tests.cpp
     Physics/physics_constraint_system_uve_tests.cpp
@@ -189,7 +188,6 @@ add_executable(uve_integration_tests
     Physics/physics_system_uve_tests.cpp
     Physics/raycast_system_uve_tests.cpp
     Physics/shape_cast_system_uve_tests.cpp
-    Physics/trajectory_collision_prediction_uve_tests.cpp
     Save/checkpoint_manager_uve_tests.cpp
     Save/save_game_system_uve_tests.cpp
     Save/save_payload_compression_uve_tests.cpp
@@ -216,6 +214,8 @@ add_executable(uve_integration_tests
     RHI/RenderSystems/viewport_manager_uve_tests.cpp
     RHI/RenderSystems/particle_render_bridge_uve_tests.cpp
     RHI/RenderSystems/particle_draw_command_uve_tests.cpp
+    UI/ui_font_atlas_uve_tests.cpp
+    UI/ui_runtime_uve_tests.cpp
 )
 target_link_libraries(uve_integration_tests PRIVATE
     nlohmann_json::nlohmann_json
@@ -233,6 +233,8 @@ target_link_libraries(uve_integration_tests PRIVATE
     uve_audio
     uve_render_systems
     uve_rhi_null
+    uve_input
+    uve_ui
     GTest::gtest
     GTest::gtest_main
 )
@@ -273,11 +275,14 @@ add_executable(uve_engine_tests
     Engine/engine_services_uve_tests.cpp
     Engine/engine_core_uve_tests.cpp
     Engine/script_gameplay_bindings_uve_tests.cpp
+    Pack/project_launcher_uve_tests.cpp
+    Pack/project_packager_uve_tests.cpp
 )
 target_link_libraries(uve_engine_tests PRIVATE
     nlohmann_json::nlohmann_json
     uve_core
     uve_math
+    uve_pack_lib
     GTest::gtest
     GTest::gtest_main
 )

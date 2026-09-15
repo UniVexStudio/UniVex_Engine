@@ -7,6 +7,7 @@ shader_cache/
 *.uveassetdb
 *.uvesettings
 *.log
+imgui.ini
 DerivedData/
 
 # .NET build output (Engine/Editor/EditorCoreCs and any future C# project) - dotnet publish's own

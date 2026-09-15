@@ -13,6 +13,7 @@
 #include "uve/scene/entity_uve.h"
 #include "uve/scene/i_entity_manager_uve.h"
 #include "uve/scene/particle_runtime_uve.h"
+#include "uve/ui/ui_runtime_uve.h"
 
 namespace UVE::Render {
 
@@ -130,13 +131,21 @@ public:
     /// e.g. via ImGui::Image()) rather than a real on-screen window region (that case is
     /// RenderFrameToRegionUVE() above). Both targets must be valid, matching-size textures created
     /// through this renderer's own IRenderDeviceUVE; PresentUVE() is never implied by this call.
-    /// The default implementation ignores both targets and falls back to a full-frame
-    /// RenderFrameUVE(), matching this interface's existing safe-no-op-default convention for test
-    /// doubles/lightweight renderers with no offscreen-target concept.
+    /// `width`/`height` name that matching size in pixels - TextureHandleUVE has no queryable size
+    /// on IRenderDeviceUVE, so the caller (which just created these textures) supplies it directly;
+    /// this is also what sizes the "UIOverlay" pass's orthographic projection for this target, so a
+    /// zero width/height (the default, for callers that don't need UI overlaid) skips that pass
+    /// exactly like the pre-Phase-U3b behavior. The default implementation ignores every parameter
+    /// and falls back to a full-frame RenderFrameUVE(), matching this interface's existing
+    /// safe-no-op-default convention for test doubles/lightweight renderers with no offscreen-target
+    /// concept.
     virtual void RenderFrameToTargetUVE(Scene::IEntityManagerUVE& entityManager, Scene::EntityUVE cameraEntity,
-                                        TextureHandleUVE colorTarget, TextureHandleUVE depthTarget) {
+                                        TextureHandleUVE colorTarget, TextureHandleUVE depthTarget,
+                                        std::uint32_t width = 0U, std::uint32_t height = 0U) {
         static_cast<void>(colorTarget);
         static_cast<void>(depthTarget);
+        static_cast<void>(width);
+        static_cast<void>(height);
         RenderFrameUVE(entityManager, cameraEntity);
     }
 
@@ -145,6 +154,15 @@ public:
     /// post-process state.
     virtual void SetPostProcessSettingsUVE(const PostProcessSettingsUVE& settings) {
         static_cast<void>(settings);
+    }
+
+    /// Points the renderer at UI::UIRuntimeUVE's latest draw batch/font atlas, drawn by a
+    /// "UIOverlay" pass added right after tone-mapping in every RenderFrame* variant. Pass nullptr
+    /// (the default) to draw no UI this frame. The pointer is read fresh each RenderFrame* call,
+    /// never copied - the caller must keep it valid at least that long. The default implementation
+    /// is a no-op so non-Renderer3D test doubles need not own UI-overlay state.
+    virtual void SetUIRuntimeUVE(const UI::UIRuntimeUVE* uiRuntime) noexcept {
+        static_cast<void>(uiRuntime);
     }
 
     /// Returns the last frame's copied renderer evidence snapshot. The snapshot intentionally does

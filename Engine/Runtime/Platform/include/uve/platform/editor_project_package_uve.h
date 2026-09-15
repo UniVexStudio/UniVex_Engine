@@ -32,6 +32,14 @@ struct EditorProjectPackageUVE final {
     std::filesystem::path assetDatabasePath;
     std::filesystem::path settingsPath;
 
+    /// Path, relative to `contentRoot`, of the scene a packaged/standalone run of this project
+    /// should load and play first (roadmap item #7's own "manifest naming the startup scene").
+    /// Empty means "not configured yet" - a project with no startup scene can still be authored
+    /// and saved, it just cannot be packaged/launched standalone until one is set (see
+    /// `ProjectPackagerUVE`/`LoadAndActivateProjectSceneUVE`). Absent from older `.uveditor` files
+    /// written before this field existed; the codec defaults it to empty on load for those.
+    std::filesystem::path startupScenePath;
+
     [[nodiscard]] bool operator==(const EditorProjectPackageUVE&) const = default;
 };
 

@@ -40,7 +40,7 @@ public:
 private:
     std::uintptr_t m_logoTextureId = 0U;
     std::array<std::uintptr_t, 4U> m_generalIconTextureIds{};
-    std::array<std::uintptr_t, 10U> m_contentTypeIconTextureIds{};
+    std::array<std::uintptr_t, 9U> m_contentTypeIconTextureIds{};
 };
 
 } // namespace UVE::Editor

@@ -22,7 +22,6 @@ a glyph or color needs to change.
 | `shader_content_type.svg` | `code.svg` | `#9B59B6` |
 | `material_content_type.svg` | `palette.svg` | `#E85D9E` |
 | `save_content_type.svg` | `device-floppy.svg` | `#6B7785` |
-| `motion_query_content_type.svg` | `walk.svg` | `#E8735D` |
 | `file_content_type.svg` | `file.svg` | `#8A939E` |
 
 ### License

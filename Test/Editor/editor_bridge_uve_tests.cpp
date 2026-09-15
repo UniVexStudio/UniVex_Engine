@@ -194,63 +194,6 @@ TEST(EditorBridgeUVETest, ContentBrowserAnimationEnvelopeUVE_ReportsTypedImporte
     std::filesystem::remove_all(contentRoot);
 }
 
-TEST(EditorBridgeUVETest, ContentBrowserMotionQueryFocusUVE_ParsesFocusAndCopiesTypedEntry) {
-    const std::filesystem::path contentRoot = "uve_editor_bridge_motion_query_focus";
-    std::filesystem::remove_all(contentRoot);
-    std::filesystem::create_directories(contentRoot / "Queries");
-    {
-        std::ofstream fixture(contentRoot / "Queries" / "Locomotion.uvemotionquery", std::ios::binary);
-        ASSERT_TRUE(fixture.is_open());
-        fixture << "typed motion query asset placeholder";
-    }
-
-    Core::EngineConfigUVE config = MakeBridgeTestConfigUVE();
-    config.projectContentRootUVE = contentRoot;
-    Core::EngineCoreUVE engine(config);
-    engine.Init();
-    ASSERT_TRUE(engine.Load());
-    {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_bridge_motion_query_focus.uvescene");
-        editor.InitUVE();
-        EditorBridgeUVE bridge(editor);
-        const EditorBridgeSnapshotUVE initial = bridge.GetSnapshotUVE();
-
-        EditorBridgeRequestUVE refresh{};
-        refresh.protocolVersion = kEditorBridgeProtocolVersionUVE;
-        refresh.requestId = 1U;
-        refresh.expectedRevision = initial.revision;
-        refresh.kind = EditorBridgeRequestKindUVE::RefreshContentBrowser;
-        const EditorBridgeResponseUVE refreshed = bridge.DispatchUVE(refresh);
-        ASSERT_TRUE(refreshed.applied);
-
-        EditorBridgeRequestUVE directory{};
-        directory.protocolVersion = kEditorBridgeProtocolVersionUVE;
-        directory.requestId = 2U;
-        directory.expectedRevision = refreshed.snapshot.revision;
-        directory.kind = EditorBridgeRequestKindUVE::SetContentBrowserDirectory;
-        directory.contentDirectory = "Queries";
-        const EditorBridgeResponseUVE navigated = bridge.DispatchUVE(directory);
-        ASSERT_TRUE(navigated.applied);
-
-        EditorBridgeRequestUVE focus{};
-        focus.protocolVersion = kEditorBridgeProtocolVersionUVE;
-        focus.requestId = 3U;
-        focus.expectedRevision = navigated.snapshot.revision;
-        focus.kind = EditorBridgeRequestKindUVE::SetContentBrowserFocus;
-        focus.contentFocus = "motionQuery";
-        const EditorBridgeResponseUVE focused = bridge.DispatchUVE(focus);
-        ASSERT_TRUE(focused.applied);
-        EXPECT_EQ(focused.snapshot.contentBrowser.typeFocus, "Motion Query");
-        ASSERT_EQ(focused.snapshot.contentBrowser.entries.size(), 1U);
-        EXPECT_EQ(focused.snapshot.contentBrowser.entries.front().relativePath, "Queries/Locomotion.uvemotionquery");
-        EXPECT_EQ(focused.snapshot.contentBrowser.entries.front().typeLabel, "Motion Query");
-
-        editor.ShutdownUVE();
-    }
-    engine.Shutdown();
-    std::filesystem::remove_all(contentRoot);
-}
-
 TEST(EditorBridgeUVETest, EntityRefUVE_ValidatesTheFullGenerationalIdentity) {
     const EditorBridgeEntityRefUVE invalid{};
     EXPECT_FALSE(invalid.IsValidUVE());
@@ -633,8 +576,8 @@ TEST(EditorBridgeUVETest, SnapshotUVE_CopiesHierarchyInspectorAndNativePanelSess
         EXPECT_EQ(snapshot.visualScripting.linkCount, 0U);
         EXPECT_EQ(snapshot.visualScripting.canvas.nodes.size(), 0U);
         EXPECT_EQ(snapshot.visualScripting.canvas.links.size(), 0U);
-        ASSERT_EQ(snapshot.visualScripting.canvas.paletteNodeTypeIds.size(), 161U);
-        ASSERT_EQ(snapshot.visualScripting.canvas.paletteDescriptors.size(), 161U);
+        ASSERT_EQ(snapshot.visualScripting.canvas.paletteNodeTypeIds.size(), 163U);
+        ASSERT_EQ(snapshot.visualScripting.canvas.paletteDescriptors.size(), 163U);
         EXPECT_EQ(snapshot.visualScripting.canvas.paletteNodeTypeIds[0], "flow.sequence");
         EXPECT_EQ(snapshot.visualScripting.canvas.paletteNodeTypeIds[1], "flow.branch");
         EXPECT_EQ(snapshot.visualScripting.canvas.paletteNodeTypeIds[2], "flow.return");
@@ -767,9 +710,11 @@ TEST(EditorBridgeUVETest, SnapshotUVE_CopiesHierarchyInspectorAndNativePanelSess
         EXPECT_EQ(snapshot.visualScripting.canvas.paletteNodeTypeIds[148], "physics.get_velocity");
         EXPECT_EQ(snapshot.visualScripting.canvas.paletteNodeTypeIds[149], "physics.enable_gravity");
         EXPECT_EQ(snapshot.visualScripting.canvas.paletteNodeTypeIds[150], "physics.is_colliding");
-        EXPECT_EQ(snapshot.visualScripting.canvas.paletteNodeTypeIds[158], "debug.print");
-        EXPECT_EQ(snapshot.visualScripting.canvas.paletteNodeTypeIds[159], "debug.warning");
-        EXPECT_EQ(snapshot.visualScripting.canvas.paletteNodeTypeIds[160], "debug.error");
+        EXPECT_EQ(snapshot.visualScripting.canvas.paletteNodeTypeIds[151], "physics.on_collision_enter");
+        EXPECT_EQ(snapshot.visualScripting.canvas.paletteNodeTypeIds[152], "physics.on_collision_exit");
+        EXPECT_EQ(snapshot.visualScripting.canvas.paletteNodeTypeIds[160], "debug.print");
+        EXPECT_EQ(snapshot.visualScripting.canvas.paletteNodeTypeIds[161], "debug.warning");
+        EXPECT_EQ(snapshot.visualScripting.canvas.paletteNodeTypeIds[162], "debug.error");
         EXPECT_FALSE(snapshot.visualScripting.canvas.nodesTruncated);
         EXPECT_FALSE(snapshot.visualScripting.canvas.linksTruncated);
 

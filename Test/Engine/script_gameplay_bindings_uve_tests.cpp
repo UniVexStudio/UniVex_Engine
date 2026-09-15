@@ -3,10 +3,18 @@
 
 #include "uve/core/script_gameplay_bindings_uve.h"
 
+#include <vector>
+
 #include <gtest/gtest.h>
 
 #include "uve/events/event_system_uve.h"
 #include "uve/input/input_system_uve.h"
+#include "uve/memory/memory_manager_uve.h"
+#include "uve/physics/collision_system_uve.h"
+#include "uve/scene/components/collider_component_uve.h"
+#include "uve/scene/components/transform_component_uve.h"
+#include "uve/scene/entity_manager_uve.h"
+#include "uve/scene/scene_graph_uve.h"
 
 namespace UVE::Core::Tests {
 namespace {
@@ -105,6 +113,99 @@ TEST_F(ScriptGameplayBindingsUVETest, UnwiredBindingsStayNullThisIncrement) {
     EXPECT_EQ(bindings.spawnEntity, nullptr);
     EXPECT_EQ(bindings.cameraGet, nullptr);
     EXPECT_EQ(bindings.audioPlaySound, nullptr);
+}
+
+class ScriptGameplayBindingsCollisionUVETest : public ::testing::Test {
+protected:
+    Memory::MemoryManagerUVE memoryManager;
+    Events::EventSystemUVE eventSystem;
+    Scene::EntityManagerUVE entityManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
+    Scene::SceneGraphUVE sceneGraph;
+    Physics::CollisionSystemUVE collisionSystem;
+    Physics::CollisionLifecycleTrackerUVE tracker;
+    Physics::CollisionLifecycleReportUVE report;
+    ScriptGameplayBindingContextUVE context{};
+    Scripting::ScriptEngineCallBindingsUVE bindings = MakeScriptGameplayBindingsUVE(context);
+
+    [[nodiscard]] Scene::EntityUVE MakeColliderEntityUVE(const Math::Vector3UVE& position) {
+        const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
+        Scene::TransformComponentUVE transform;
+        transform.localPosition = position;
+        sceneGraph.AttachTransformUVE(entityManager, entity, transform);
+        entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(entity, Scene::ColliderComponentUVE{});
+        return entity;
+    }
+
+    // Mirrors EngineCoreUVE::SyncCollisionLifecycleUVE() exactly: a fresh DetectCollisionsUVE()
+    // snapshot diffed through the tracker, with the context re-pointed at this tick's transitions.
+    void TickUVE() {
+        sceneGraph.UpdateUVE(entityManager);
+        const std::vector<Physics::CollisionPairUVE> pairs = collisionSystem.DetectCollisionsUVE(entityManager);
+        report = tracker.UpdateUVE(pairs);
+        context.collisionTransitionsThisTick = &report.transitions;
+    }
+};
+
+TEST_F(ScriptGameplayBindingsCollisionUVETest, CollisionEnterReflectsRealOverlappingCollidersOnFirstTouchingFrame) {
+    ASSERT_NE(bindings.physicsCollisionEnter, nullptr);
+    const Scene::EntityUVE bodyA = MakeColliderEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F});
+    const Scene::EntityUVE bodyB = MakeColliderEntityUVE(Math::Vector3UVE{10.0F, 0.0F, 0.0F});
+    TickUVE();
+
+    Scene::EntityUVE other = bodyB;
+    bool result = true;
+    ASSERT_TRUE(bindings.physicsCollisionEnter(bindings.userData, bodyA, &other, &result));
+    EXPECT_FALSE(result);
+    EXPECT_EQ(other, Scene::kInvalidEntityUVE);
+
+    Scene::TransformComponentUVE moved;
+    moved.localPosition = Math::Vector3UVE{0.2F, 0.0F, 0.0F};
+    sceneGraph.SetLocalTransformUVE(entityManager, bodyB, moved);
+    TickUVE();
+
+    ASSERT_TRUE(bindings.physicsCollisionEnter(bindings.userData, bodyA, &other, &result));
+    EXPECT_TRUE(result);
+    EXPECT_EQ(other, bodyB);
+
+    // Stable overlap on the following tick is no longer a fresh "enter".
+    TickUVE();
+    ASSERT_TRUE(bindings.physicsCollisionEnter(bindings.userData, bodyA, &other, &result));
+    EXPECT_FALSE(result);
+}
+
+TEST_F(ScriptGameplayBindingsCollisionUVETest, CollisionExitReflectsRealCollidersSeparatingOnLeavingFrame) {
+    ASSERT_NE(bindings.physicsCollisionExit, nullptr);
+    const Scene::EntityUVE bodyA = MakeColliderEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F});
+    const Scene::EntityUVE bodyB = MakeColliderEntityUVE(Math::Vector3UVE{0.2F, 0.0F, 0.0F});
+    TickUVE();
+
+    Scene::TransformComponentUVE separated;
+    separated.localPosition = Math::Vector3UVE{10.0F, 0.0F, 0.0F};
+    sceneGraph.SetLocalTransformUVE(entityManager, bodyB, separated);
+    TickUVE();
+
+    Scene::EntityUVE other = Scene::kInvalidEntityUVE;
+    bool result = false;
+    ASSERT_TRUE(bindings.physicsCollisionExit(bindings.userData, bodyA, &other, &result));
+    EXPECT_TRUE(result);
+    EXPECT_EQ(other, bodyB);
+
+    // Already apart on the following tick is no longer a fresh "exit".
+    TickUVE();
+    ASSERT_TRUE(bindings.physicsCollisionExit(bindings.userData, bodyA, &other, &result));
+    EXPECT_FALSE(result);
+}
+
+TEST_F(ScriptGameplayBindingsCollisionUVETest, CollisionBindingsRejectInvalidEntityAndNullOutputs) {
+    const Scene::EntityUVE bodyA = MakeColliderEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F});
+    TickUVE();
+
+    Scene::EntityUVE other = Scene::kInvalidEntityUVE;
+    bool result = false;
+    EXPECT_FALSE(bindings.physicsCollisionEnter(bindings.userData, Scene::kInvalidEntityUVE, &other, &result));
+    EXPECT_FALSE(bindings.physicsCollisionEnter(bindings.userData, bodyA, nullptr, &result));
+    EXPECT_FALSE(bindings.physicsCollisionEnter(bindings.userData, bodyA, &other, nullptr));
+    EXPECT_FALSE(bindings.physicsCollisionEnter(nullptr, bodyA, &other, &result));
 }
 
 } // namespace

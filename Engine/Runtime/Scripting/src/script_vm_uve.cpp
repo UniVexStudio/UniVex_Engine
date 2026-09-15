@@ -1284,6 +1284,29 @@ namespace {
         }
         return {};
     }
+    if (instruction.nodeTypeId == "physics.on_collision_enter" ||
+        instruction.nodeTypeId == "physics.on_collision_exit") {
+        // Two outputs (Result + Other), so this deliberately does its own capacity pre-check
+        // instead of routing through the single-pin `publishesResult` pre-check above -
+        // both pins must be checked BEFORE the callback runs, preserving the same
+        // capacity-before-callback ordering every other physics node already guarantees.
+        if (!CanSetNodeOutputUVE(context, nodeId, "Result") || !CanSetNodeOutputUVE(context, nodeId, "Other")) {
+            return MakeNodeFailureUVE(instructionIndex,
+                                      "On Collision node rejected its bounded output capacity before callback.");
+        }
+        const ScriptPhysicsCollisionLifecycleQueryFunctionUVE callback =
+            instruction.nodeTypeId == "physics.on_collision_enter" ? bindings->physicsCollisionEnter
+                                                                    : bindings->physicsCollisionExit;
+        Scene::EntityUVE other = Scene::kInvalidEntityUVE;
+        bool occurred = false;
+        if (callback == nullptr || !callback(bindings->userData, body->entity, &other, &occurred) ||
+            !SetNodeOutputUVE(context, nodeId, "Result", occurred) ||
+            !SetNodeOutputUVE(context, nodeId, "Other",
+                              ScriptEntityValueUVE{occurred ? other : Scene::kInvalidEntityUVE})) {
+            return MakeNodeFailureUVE(instructionIndex, "On Collision callback rejected its copied query or output capacity.");
+        }
+        return {};
+    }
     return MakeNodeFailureUVE(instructionIndex, "Unknown Physics node type.");
 }
 
@@ -2174,7 +2197,8 @@ namespace {
                                                  FindVector3InputUVE(context, nodeId, "Impulse") != nullptr;
     if (type == "physics.set_velocity") return FindEntityInputUVE(context, nodeId, "Body") != nullptr &&
                                                  FindVector3InputUVE(context, nodeId, "Velocity") != nullptr;
-    if (type == "physics.get_velocity" || type == "physics.is_colliding") {
+    if (type == "physics.get_velocity" || type == "physics.is_colliding" ||
+        type == "physics.on_collision_enter" || type == "physics.on_collision_exit") {
         return FindEntityInputUVE(context, nodeId, "Body") != nullptr;
     }
     if (type == "physics.enable_gravity") {

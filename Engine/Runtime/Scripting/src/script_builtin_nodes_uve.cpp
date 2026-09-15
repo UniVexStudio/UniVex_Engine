@@ -18,8 +18,8 @@ struct BuiltInNodeDefinitionUVE final {
     bool executionRequired = false;
 };
 
-[[nodiscard]] std::array<BuiltInNodeDefinitionUVE, 161U> MakeBuiltInDefinitionsUVE() {
-    auto definitions = std::array<BuiltInNodeDefinitionUVE, 161U>{
+[[nodiscard]] std::array<BuiltInNodeDefinitionUVE, 163U> MakeBuiltInDefinitionsUVE() {
+    auto definitions = std::array<BuiltInNodeDefinitionUVE, 163U>{
         BuiltInNodeDefinitionUVE{
             "flow.sequence", "Sequence",
             {ScriptPinDescriptorUVE{"In", ScriptPinDirectionUVE::Input, ScriptValueTypeUVE::Execution},
@@ -937,6 +937,18 @@ struct BuiltInNodeDefinitionUVE final {
              ScriptPinDescriptorUVE{"Result", ScriptPinDirectionUVE::Output, ScriptValueTypeUVE::Boolean}},
             "Physics", "node.physics", 1050U},
         BuiltInNodeDefinitionUVE{
+            "physics.on_collision_enter", "On Collision Enter",
+            {ScriptPinDescriptorUVE{"Body", ScriptPinDirectionUVE::Input, ScriptValueTypeUVE::Entity},
+             ScriptPinDescriptorUVE{"Result", ScriptPinDirectionUVE::Output, ScriptValueTypeUVE::Boolean},
+             ScriptPinDescriptorUVE{"Other", ScriptPinDirectionUVE::Output, ScriptValueTypeUVE::Entity}},
+            "Physics", "node.physics", 1051U},
+        BuiltInNodeDefinitionUVE{
+            "physics.on_collision_exit", "On Collision Exit",
+            {ScriptPinDescriptorUVE{"Body", ScriptPinDirectionUVE::Input, ScriptValueTypeUVE::Entity},
+             ScriptPinDescriptorUVE{"Result", ScriptPinDirectionUVE::Output, ScriptValueTypeUVE::Boolean},
+             ScriptPinDescriptorUVE{"Other", ScriptPinDirectionUVE::Output, ScriptValueTypeUVE::Entity}},
+            "Physics", "node.physics", 1052U},
+        BuiltInNodeDefinitionUVE{
             "audio.set_volume", "Set Volume",
             {ScriptPinDescriptorUVE{"Source", ScriptPinDirectionUVE::Input, ScriptValueTypeUVE::Entity},
              ScriptPinDescriptorUVE{"Volume", ScriptPinDirectionUVE::Input, ScriptValueTypeUVE::Number},
@@ -1001,10 +1013,7 @@ struct BuiltInNodeDefinitionUVE final {
                typeId == "animation.play" || typeId == "animation.stop" || typeId == "animation.pause" ||
                typeId == "animation.blend" || typeId == "animation.blend_space" ||
                typeId == "animation.set_speed" || typeId == "animation.set_weight" || typeId == "animation.montage" ||
-               typeId == "motion.query.set_trajectory" || typeId == "motion.query.set_pose" ||
-               typeId == "motion.query.set_velocity" || typeId == "motion.query.set_facing" ||
-               typeId == "motion.query.set_yaw" || typeId == "motion.query.transition" ||
-               typeId == "motion.query.motion_warp" || typeId == "physics.apply_force" ||
+               typeId == "physics.apply_force" ||
                typeId == "physics.apply_impulse" || typeId == "physics.set_velocity" ||
                typeId == "physics.enable_gravity" || typeId == "audio.set_volume" ||
                typeId == "audio.set_pitch" || typeId == "audio.set_3d_position" ||
@@ -1027,7 +1036,7 @@ struct BuiltInNodeDefinitionUVE final {
 } // namespace
 
 bool RegisterBuiltInScriptNodesUVE(ScriptNodeRegistryUVE& registry) {
-    std::array<BuiltInNodeDefinitionUVE, 161U> definitions = MakeBuiltInDefinitionsUVE();
+    std::array<BuiltInNodeDefinitionUVE, 163U> definitions = MakeBuiltInDefinitionsUVE();
     for (const BuiltInNodeDefinitionUVE& definition : definitions) {
         if (registry.FindNodeTypeUVE(definition.typeId) != nullptr) {
             return false;

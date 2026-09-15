@@ -22,25 +22,41 @@ void PerpBasis(const Vec3& axis, Vec3& outU, Vec3& outV) {
     outV = Normalize(Cross(a, outU));
 }
 
-// A disc that always faces the camera, built from real triangles. Also
-// strokes its own rim with a darkened outline (same `color * 0.5` convention
-// GizmoGeometry.cpp's cube edges and cone base already use) so each ball
-// reads as a defined shape against the grid instead of a flat colored dot -
-// previously the only gizmo piece with no outline treatment at all.
+// A disc that always faces the camera, built from real triangles. No rim
+// stroke here - an earlier version added one as a per-segment GizmoLine
+// around the circumference, but that is exactly the "gear teeth" failure
+// AddFacingAnnulus's own comment below already warns about (a stroke built
+// from independent per-segment quads leaves visible spikes/gaps at each
+// vertex joint whenever the chord is short relative to the stroke width,
+// which a small nav-gizmo ball always is) - it read as a "hairy" fringe
+// around every ball instead of a clean rim. Callers that want a defined
+// edge use the same seamless double-disc technique AddFacingAnnulus already
+// relies on (see AddFacingDiscWithRim below) instead of a stroke.
 void AddFacingDisc(GizmoMesh& mesh, const Vec3& center, float radius,
-                   const Vec3& viewDirection, const Vec3& color, float alpha, int segments,
-                   float outlineWidthPx = 1.2f) {
+                   const Vec3& viewDirection, const Vec3& color, float alpha, int segments) {
     Vec3 u, v;
     PerpBasis(viewDirection, u, v);
-    const Vec3 edgeColor = color * 0.5f;
     Vec3 previous = center + u * radius;
     for (int i = 1; i <= segments; ++i) {
         const float t = (2.f * kPi * static_cast<float>(i)) / static_cast<float>(segments);
         const Vec3 current = center + u * (std::cos(t) * radius) + v * (std::sin(t) * radius);
         mesh.triangles.push_back(GizmoTriangle{center, previous, current, color, alpha});
-        mesh.lines.push_back(GizmoLine{previous, current, edgeColor, outlineWidthPx});
         previous = current;
     }
+}
+
+// A filled disc with a clean, seamless dark rim - the same "slightly larger
+// disc behind a smaller one" trick AddFacingAnnulus uses, just with the roles
+// swapped (a mostly-color disc with a thin dark ring showing at its edge,
+// rather than a mostly-hole ring). Used for the positive (filled) nav balls,
+// which is the shape that previously grew the "hairy" stroke artifact.
+void AddFacingDiscWithRim(GizmoMesh& mesh, const Vec3& center, float radius,
+                          const Vec3& viewDirection, const Vec3& color, int segments,
+                          float rimFraction = 0.12f) {
+    const Vec3 towardCamera = viewDirection * -0.002f;
+    AddFacingDisc(mesh, center, radius, viewDirection, color * 0.45f, 1.f, segments);
+    AddFacingDisc(mesh, center + towardCamera, radius * (1.f - rimFraction), viewDirection, color, 1.f,
+                 segments);
 }
 
 // A hollow ball is drawn as a coloured disc with a smaller dark disc laid on
@@ -151,8 +167,8 @@ NavGizmoMeshes BuildNavGizmoMeshes(const GizmoStyle& style, const Vec3& viewDire
     for (const NavHandle* handle : sorted) {
         const Vec3 center = handle->direction;
         if (handle->positive) {
-            AddFacingDisc(mesh, center, style.navBallRadius, view, handle->color, 1.f,
-                          style.navBallSegments);
+            AddFacingDiscWithRim(mesh, center, style.navBallRadius, view, handle->color,
+                                 style.navBallSegments);
             // Only the positive ends are labelled: putting a letter in the
             // hollow negative rings as well doubles the clutter without adding
             // anything, since the ring already says which end it is.
