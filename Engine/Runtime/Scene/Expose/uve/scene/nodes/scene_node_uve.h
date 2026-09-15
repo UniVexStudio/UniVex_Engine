@@ -2,33 +2,30 @@
 
 #pragma once
 
-#include "uve/scene/nodes/animation_player_node_uve.h"
-#include "uve/scene/nodes/animation_tree_node_uve.h"
-#include "uve/scene/nodes/area_3d_node_uve.h"
-#include "uve/scene/nodes/audio_source_3d_node_uve.h"
-#include "uve/scene/nodes/box_mesh_3d_node_uve.h"
-#include "uve/scene/nodes/camera_3d_node_uve.h"
-#include "uve/scene/nodes/character_body_3d_node_uve.h"
-#include "uve/scene/nodes/collision_shape_3d_node_uve.h"
-#include "uve/scene/nodes/empty_node_uve.h"
-#include "uve/scene/nodes/light_3d_node_uve.h"
-#include "uve/scene/nodes/mesh_instance_3d_node_uve.h"
-#include "uve/scene/nodes/particle_emitter_3d_node_uve.h"
-#include "uve/scene/nodes/plane_mesh_3d_node_uve.h"
-#include "uve/scene/nodes/rigid_body_3d_node_uve.h"
-#include "uve/scene/nodes/static_body_3d_node_uve.h"
-#include "uve/scene/nodes/script_node_uve.h"
-#include "uve/scene/nodes/sphere_mesh_3d_node_uve.h"
-#include "uve/scene/nodes/transform_node_uve.h"
+// Every scene node kind's real backing type, reachable from one include - no compatibility-alias
+// facade layer anymore. That layer (a "using XNodeUVE = XComponentUVE;" file per node type) was
+// removed once it was confirmed nothing in the codebase actually used the alias names: every real
+// consumer already reaches for the component/type name directly (LightComponentUVE, not
+// Light3DNodeUVE). Keeping this single aggregate header instead - it documents which real type
+// backs every UVE::Scene::Nodes::SceneNodeKindUVE, matching scene_node_registry_uve.cpp's own
+// runtimeOwner field, without inventing a second name for anything.
+#include "uve/core/animation_tree_uve.h"
+#include "uve/physics/character_controller_uve.h"
+#include "uve/scene/components/animation_player_component_uve.h"
+#include "uve/scene/components/area_component_uve.h"
+#include "uve/scene/components/audio_source_component_uve.h"
+#include "uve/scene/components/camera_component_uve.h"
+#include "uve/scene/components/collider_component_uve.h"
+#include "uve/scene/components/light_component_uve.h"
+#include "uve/scene/components/mesh_component_uve.h"
+#include "uve/scene/components/particle_emitter_component_uve.h"
+#include "uve/scene/components/primitive_mesh_component_uve.h"
+#include "uve/scene/components/rigid_body_component_uve.h"
+#include "uve/scene/components/script_component_uve.h"
+#include "uve/scene/components/transform_component_uve.h"
+#include "uve/scene/entity_uve.h"
 #include "uve/scene/nodes/scene_node_registry_uve.h"
 // The 21 node types that used to live behind their own thin compatibility-alias facade here
-// (RayCast3D, Skeleton3D, Hitbox3D, WorldEnvironment3D, etc.) now have their real struct
-// definitions directly in Engine/Runtime/Nodes/3D - nothing in this module aliases them anymore,
-// consumers use the real type names from this one aggregate header instead.
+// (RayCast3D, Skeleton3D, Hitbox3D, WorldEnvironment3D, etc.) have their real struct definitions
+// directly in Engine/Runtime/Nodes/3D.
 #include "uve/nodes/3d/all_nodes_3d_uve.h"
-
-namespace UVE::Scene::Nodes {
-
-// Each concrete user-facing node and its compatibility façade alias is defined by its own
-// discoverable header in this folder; this header remains the aggregate include surface.
-} // namespace UVE::Scene::Nodes

@@ -7,23 +7,7 @@
 
 #include <gtest/gtest.h>
 
-#include "uve/scene/nodes/animation_player_node_uve.h"
-#include "uve/scene/nodes/animation_tree_node_uve.h"
-#include "uve/scene/nodes/audio_source_3d_node_uve.h"
-#include "uve/scene/nodes/box_mesh_3d_node_uve.h"
-#include "uve/scene/nodes/camera_3d_node_uve.h"
-#include "uve/scene/nodes/character_body_3d_node_uve.h"
-#include "uve/scene/nodes/collision_shape_3d_node_uve.h"
-#include "uve/scene/nodes/empty_node_uve.h"
-#include "uve/scene/nodes/light_3d_node_uve.h"
-#include "uve/scene/nodes/mesh_instance_3d_node_uve.h"
-#include "uve/scene/nodes/particle_emitter_3d_node_uve.h"
-#include "uve/scene/nodes/plane_mesh_3d_node_uve.h"
-#include "uve/scene/nodes/rigid_body_3d_node_uve.h"
 #include "uve/scene/nodes/scene_node_uve.h"
-#include "uve/scene/nodes/sphere_mesh_3d_node_uve.h"
-#include "uve/scene/nodes/script_node_uve.h"
-#include "uve/scene/nodes/transform_node_uve.h"
 
 namespace UVE::Scene::Nodes::Tests {
 namespace {
@@ -51,60 +35,48 @@ TEST(SceneNodeRegistryUVETest, BuiltInDescriptorsUVE_AreStableUniqueAndRuntimeBo
     }
 }
 
-TEST(SceneNodeRegistryUVETest, NodeFacadeAliasesUVE_ExposeExistingRuntimeContracts) {
-    static_assert(std::is_same_v<AnimationTreeNodeUVE, Core::AnimationTreeUVE>);
-    static_assert(std::is_same_v<AnimationTreeNodeFacadeUVE, Core::AnimationTreeUVE>);
-    static_assert(std::is_same_v<AnimationPlayerNodeUVE, AnimationPlayerComponentUVE>);
-    static_assert(std::is_same_v<AnimationPlayerNodeFacadeUVE, AnimationPlayerComponentUVE>);
-    static_assert(std::is_same_v<Camera3DNodeUVE, CameraComponentUVE>);
-    static_assert(std::is_same_v<Camera3DNodeFacadeUVE, CameraComponentUVE>);
-    static_assert(std::is_same_v<CharacterBody3DNodeUVE, Physics::CharacterControllerInputUVE>);
-    static_assert(std::is_same_v<CharacterBody3DNodeFacadeUVE, Physics::CharacterControllerInputUVE>);
-    static_assert(std::is_same_v<CollisionShape3DNodeUVE, ColliderComponentUVE>);
-    static_assert(std::is_same_v<Collider3DNodeFacadeUVE, ColliderComponentUVE>);
-    static_assert(std::is_same_v<MeshInstance3DNodeUVE, MeshComponentUVE>);
-    static_assert(std::is_same_v<BoxMesh3DNodeUVE, PrimitiveMeshComponentUVE>);
-    static_assert(std::is_same_v<SphereMesh3DNodeUVE, PrimitiveMeshComponentUVE>);
-    static_assert(std::is_same_v<PlaneMesh3DNodeUVE, PrimitiveMeshComponentUVE>);
-    static_assert(std::is_same_v<Light3DNodeUVE, LightComponentUVE>);
-    static_assert(std::is_same_v<RigidBody3DNodeUVE, RigidBodyComponentUVE>);
-    static_assert(std::is_same_v<AudioSource3DNodeUVE, AudioSourceComponentUVE>);
-    static_assert(std::is_same_v<ParticleEmitter3DNodeUVE, ParticleEmitterComponentUVE>);
-    static_assert(std::is_same_v<ScriptNodeUVE, ScriptComponentUVE>);
-    static_assert(std::is_same_v<TransformNodeUVE, TransformComponentUVE>);
-    static_assert(std::is_same_v<Area3DNodeUVE, AreaComponentUVE>);
-    static_assert(std::is_same_v<StaticBody3DNodeUVE, ColliderComponentUVE>);
-    static_assert(std::is_same_v<EmptyNodeUVE, EntityUVE>);
-    SUCCEED();
-}
-
-// The 21 node types below (RayCast3D, Skeleton3D, Hitbox3D, WorldEnvironment3D, etc.) used to be
-// reached only through a thin compatibility-alias facade in this module; they now have their real
-// struct definitions directly in Engine/Runtime/Nodes/3D, so there is no alias left to assert
-// equivalence against - this test just confirms the real types are reachable from the one
-// aggregate include (scene_node_uve.h, included above via uve/nodes/3d/all_nodes_3d_uve.h).
+// Every one of the 38 registered SceneNodeKindUVE values has a real backing type, reachable
+// directly from scene_node_uve.h's one aggregate include - no compatibility-alias facade layer
+// exists anymore (it was removed once confirmed nothing in the codebase used the alias names;
+// every real consumer already reaches for the component/type name directly). This test just
+// confirms every real type is a genuine, complete class - i.e. actually defined, not merely
+// forward-declared - matching what scene_node_registry_uve.cpp's own runtimeOwner field claims.
 TEST(SceneNodeRegistryUVETest, RealNodeTypesUVE_AreReachableFromTheAggregateHeader) {
-    static_assert(std::is_class_v<RayCast3DNodeComponentUVE>);
-    static_assert(std::is_class_v<AnimatableBody3DNodeComponentUVE>);
-    static_assert(std::is_class_v<NavigationRegion3DNodeComponentUVE>);
-    static_assert(std::is_class_v<NavigationAgent3DNodeComponentUVE>);
-    static_assert(std::is_class_v<Skeleton3DNodeComponentUVE>);
-    static_assert(std::is_class_v<BoneAttachment3DNodeComponentUVE>);
-    static_assert(std::is_class_v<SpringArm3DNodeComponentUVE>);
-    static_assert(std::is_class_v<Marker3DNodeComponentUVE>);
-    static_assert(std::is_class_v<Hitbox3DNodeComponentUVE>);
-    static_assert(std::is_class_v<Hurtbox3DNodeComponentUVE>);
-    static_assert(std::is_class_v<Projectile3DNodeComponentUVE>);
-    static_assert(std::is_class_v<InteractionArea3DNodeComponentUVE>);
-    static_assert(std::is_class_v<WorldEnvironment3DNodeComponentUVE>);
-    static_assert(std::is_class_v<ReflectionProbe3DNodeComponentUVE>);
-    static_assert(std::is_class_v<Decal3DNodeComponentUVE>);
-    static_assert(std::is_class_v<LodGroup3DNodeComponentUVE>);
-    static_assert(std::is_class_v<Occluder3DNodeComponentUVE>);
-    static_assert(std::is_class_v<VisibilityRegion3DNodeComponentUVE>);
-    static_assert(std::is_class_v<SpawnPoint3DNodeComponentUVE>);
-    static_assert(std::is_class_v<LevelStreamer3DNodeComponentUVE>);
-    static_assert(std::is_class_v<WorldPartition3DNodeComponentUVE>);
+    static_assert(std::is_class_v<EntityUVE>);                                 // Empty
+    static_assert(std::is_class_v<AreaComponentUVE>);                          // Area3D
+    static_assert(std::is_class_v<RayCast3DNodeComponentUVE>);                 // RayCast3D
+    static_assert(std::is_class_v<ColliderComponentUVE>);                      // StaticBody3D, Collider3D
+    static_assert(std::is_class_v<AnimatableBody3DNodeComponentUVE>);          // AnimatableBody3D
+    static_assert(std::is_class_v<NavigationRegion3DNodeComponentUVE>);        // NavigationRegion3D
+    static_assert(std::is_class_v<NavigationAgent3DNodeComponentUVE>);         // NavigationAgent3D
+    static_assert(std::is_class_v<Skeleton3DNodeComponentUVE>);                // Skeleton3D
+    static_assert(std::is_class_v<BoneAttachment3DNodeComponentUVE>);          // BoneAttachment3D
+    static_assert(std::is_class_v<SpringArm3DNodeComponentUVE>);               // SpringArm3D
+    static_assert(std::is_class_v<Marker3DNodeComponentUVE>);                  // Marker3D
+    static_assert(std::is_class_v<Hitbox3DNodeComponentUVE>);                  // Hitbox3D
+    static_assert(std::is_class_v<Hurtbox3DNodeComponentUVE>);                 // Hurtbox3D
+    static_assert(std::is_class_v<Projectile3DNodeComponentUVE>);              // Projectile3D
+    static_assert(std::is_class_v<InteractionArea3DNodeComponentUVE>);         // InteractionArea3D
+    static_assert(std::is_class_v<WorldEnvironment3DNodeComponentUVE>);        // WorldEnvironment3D
+    static_assert(std::is_class_v<ReflectionProbe3DNodeComponentUVE>);         // ReflectionProbe3D
+    static_assert(std::is_class_v<Decal3DNodeComponentUVE>);                   // Decal3D
+    static_assert(std::is_class_v<LodGroup3DNodeComponentUVE>);                // LODGroup3D
+    static_assert(std::is_class_v<Occluder3DNodeComponentUVE>);                // Occluder3D
+    static_assert(std::is_class_v<VisibilityRegion3DNodeComponentUVE>);        // VisibilityRegion3D
+    static_assert(std::is_class_v<SpawnPoint3DNodeComponentUVE>);              // SpawnPoint3D
+    static_assert(std::is_class_v<LevelStreamer3DNodeComponentUVE>);           // LevelStreamer3D
+    static_assert(std::is_class_v<WorldPartition3DNodeComponentUVE>);          // WorldPartition3D
+    static_assert(std::is_class_v<Core::AnimationTreeUVE>);                    // AnimationTree
+    static_assert(std::is_class_v<AnimationPlayerComponentUVE>);               // AnimationPlayer
+    static_assert(std::is_class_v<Physics::CharacterControllerInputUVE>);      // CharacterBody3D
+    static_assert(std::is_class_v<CameraComponentUVE>);                       // Camera3D
+    static_assert(std::is_class_v<MeshComponentUVE>);                         // MeshInstance3D
+    static_assert(std::is_class_v<PrimitiveMeshComponentUVE>);                // BoxMesh3D, SphereMesh3D, PlaneMesh3D
+    static_assert(std::is_class_v<LightComponentUVE>);                        // Light3D
+    static_assert(std::is_class_v<RigidBodyComponentUVE>);                    // RigidBody3D
+    static_assert(std::is_class_v<AudioSourceComponentUVE>);                  // AudioSource3D
+    static_assert(std::is_class_v<ParticleEmitterComponentUVE>);              // ParticleEmitter3D
+    static_assert(std::is_class_v<ScriptComponentUVE>);                       // Script
     SUCCEED();
 }
 
