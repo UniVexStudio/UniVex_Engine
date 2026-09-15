@@ -73,29 +73,38 @@ TEST(SceneNodeRegistryUVETest, NodeFacadeAliasesUVE_ExposeExistingRuntimeContrac
     static_assert(std::is_same_v<ScriptNodeUVE, ScriptComponentUVE>);
     static_assert(std::is_same_v<TransformNodeUVE, TransformComponentUVE>);
     static_assert(std::is_same_v<Area3DNodeUVE, AreaComponentUVE>);
-    static_assert(std::is_same_v<RayCast3DNodeUVE, RayCast3DNodeComponentUVE>);
     static_assert(std::is_same_v<StaticBody3DNodeUVE, ColliderComponentUVE>);
-    static_assert(std::is_same_v<AnimatableBody3DNodeUVE, AnimatableBody3DNodeComponentUVE>);
-    static_assert(std::is_same_v<NavigationRegion3DNodeUVE, NavigationRegion3DNodeComponentUVE>);
-    static_assert(std::is_same_v<NavigationAgent3DNodeUVE, NavigationAgent3DNodeComponentUVE>);
-    static_assert(std::is_same_v<Skeleton3DNodeUVE, Skeleton3DNodeComponentUVE>);
-    static_assert(std::is_same_v<BoneAttachment3DNodeUVE, BoneAttachment3DNodeComponentUVE>);
-    static_assert(std::is_same_v<SpringArm3DNodeUVE, SpringArm3DNodeComponentUVE>);
-    static_assert(std::is_same_v<Marker3DNodeUVE, Marker3DNodeComponentUVE>);
-    static_assert(std::is_same_v<Hitbox3DNodeUVE, Hitbox3DNodeComponentUVE>);
-    static_assert(std::is_same_v<Hurtbox3DNodeUVE, Hurtbox3DNodeComponentUVE>);
-    static_assert(std::is_same_v<Projectile3DNodeUVE, Projectile3DNodeComponentUVE>);
-    static_assert(std::is_same_v<InteractionArea3DNodeUVE, InteractionArea3DNodeComponentUVE>);
-    static_assert(std::is_same_v<WorldEnvironment3DNodeUVE, WorldEnvironment3DNodeComponentUVE>);
-    static_assert(std::is_same_v<ReflectionProbe3DNodeUVE, ReflectionProbe3DNodeComponentUVE>);
-    static_assert(std::is_same_v<Decal3DNodeUVE, Decal3DNodeComponentUVE>);
-    static_assert(std::is_same_v<LODGroup3DNodeUVE, LodGroup3DNodeComponentUVE>);
-    static_assert(std::is_same_v<Occluder3DNodeUVE, Occluder3DNodeComponentUVE>);
-    static_assert(std::is_same_v<VisibilityRegion3DNodeUVE, VisibilityRegion3DNodeComponentUVE>);
-    static_assert(std::is_same_v<SpawnPoint3DNodeUVE, SpawnPoint3DNodeComponentUVE>);
-    static_assert(std::is_same_v<LevelStreamer3DNodeUVE, LevelStreamer3DNodeComponentUVE>);
-    static_assert(std::is_same_v<WorldPartition3DNodeUVE, WorldPartition3DNodeComponentUVE>);
     static_assert(std::is_same_v<EmptyNodeUVE, EntityUVE>);
+    SUCCEED();
+}
+
+// The 21 node types below (RayCast3D, Skeleton3D, Hitbox3D, WorldEnvironment3D, etc.) used to be
+// reached only through a thin compatibility-alias facade in this module; they now have their real
+// struct definitions directly in Engine/Runtime/Nodes/3D, so there is no alias left to assert
+// equivalence against - this test just confirms the real types are reachable from the one
+// aggregate include (scene_node_uve.h, included above via uve/nodes/3d/all_nodes_3d_uve.h).
+TEST(SceneNodeRegistryUVETest, RealNodeTypesUVE_AreReachableFromTheAggregateHeader) {
+    static_assert(std::is_class_v<RayCast3DNodeComponentUVE>);
+    static_assert(std::is_class_v<AnimatableBody3DNodeComponentUVE>);
+    static_assert(std::is_class_v<NavigationRegion3DNodeComponentUVE>);
+    static_assert(std::is_class_v<NavigationAgent3DNodeComponentUVE>);
+    static_assert(std::is_class_v<Skeleton3DNodeComponentUVE>);
+    static_assert(std::is_class_v<BoneAttachment3DNodeComponentUVE>);
+    static_assert(std::is_class_v<SpringArm3DNodeComponentUVE>);
+    static_assert(std::is_class_v<Marker3DNodeComponentUVE>);
+    static_assert(std::is_class_v<Hitbox3DNodeComponentUVE>);
+    static_assert(std::is_class_v<Hurtbox3DNodeComponentUVE>);
+    static_assert(std::is_class_v<Projectile3DNodeComponentUVE>);
+    static_assert(std::is_class_v<InteractionArea3DNodeComponentUVE>);
+    static_assert(std::is_class_v<WorldEnvironment3DNodeComponentUVE>);
+    static_assert(std::is_class_v<ReflectionProbe3DNodeComponentUVE>);
+    static_assert(std::is_class_v<Decal3DNodeComponentUVE>);
+    static_assert(std::is_class_v<LodGroup3DNodeComponentUVE>);
+    static_assert(std::is_class_v<Occluder3DNodeComponentUVE>);
+    static_assert(std::is_class_v<VisibilityRegion3DNodeComponentUVE>);
+    static_assert(std::is_class_v<SpawnPoint3DNodeComponentUVE>);
+    static_assert(std::is_class_v<LevelStreamer3DNodeComponentUVE>);
+    static_assert(std::is_class_v<WorldPartition3DNodeComponentUVE>);
     SUCCEED();
 }
 
