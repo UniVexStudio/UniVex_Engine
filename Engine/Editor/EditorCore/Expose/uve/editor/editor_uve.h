@@ -865,6 +865,11 @@ private:
     bool m_scriptCanvasDragging = false;
     std::uint32_t m_scriptCanvasLinkSourceNodeId = 0U;
     std::string m_scriptCanvasLinkSourcePin;
+    // True only while the node-search popup is open because a dragged wire was released without a
+    // valid target (Unreal's own "drop a wire into empty space to search+connect" convention) -
+    // distinguishes that state from an ordinary in-progress drag (popup not open yet) so the popup's
+    // own dismiss/close path knows whether to auto-link a freshly picked node back to the source pin.
+    bool m_scriptCanvasLinkAwaitingPick = false;
     std::uint32_t m_scriptCanvasDefaultEditNodeId = 0U;
     std::string m_scriptCanvasDefaultEditPin;
     std::string m_scriptCanvasDefaultEditBuffer;

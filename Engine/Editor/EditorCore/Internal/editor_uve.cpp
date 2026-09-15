@@ -6875,20 +6875,15 @@ void EditorUVE::DrawScriptingWorkspaceUVE() {
                 if (node != nullptr) {
                     const auto* const pin = findPinAt(mouse, *node);
                     static_cast<void>(ActiveVisualScriptCanvasUVE().SetSelectionUVE({node->id}));
-                    if (pin != nullptr) {
-                        if (pin->direction == Scripting::ScriptPinDirectionUVE::Output) {
-                            m_scriptCanvasLinkSourceNodeId = node->id;
-                            m_scriptCanvasLinkSourcePin = pin->name;
-                        } else if (m_scriptCanvasLinkSourceNodeId != 0U) {
-                            const auto result = ActiveVisualScriptCanvasUVE().AddLinkUVE(
-                                Scripting::ScriptLinkUVE{{m_scriptCanvasLinkSourceNodeId, m_scriptCanvasLinkSourcePin},
-                                                         {node->id, pin->name}});
-                            if (result.IsAppliedUVE()) {
-                                m_scriptCanvasLinkSourceNodeId = 0U;
-                                m_scriptCanvasLinkSourcePin.clear();
-                            }
-                        }
-                    } else {
+                    // Wiring is a real press-hold-drag-release gesture (matching Unreal), not two
+                    // separate clicks: pressing an Output pin here just arms the source: the actual
+                    // connect-or-search decision happens on release, in the standalone
+                    // IsMouseReleased block below - see its own comment for why a second click can
+                    // never legally observe an already-armed source under this model.
+                    if (pin != nullptr && pin->direction == Scripting::ScriptPinDirectionUVE::Output) {
+                        m_scriptCanvasLinkSourceNodeId = node->id;
+                        m_scriptCanvasLinkSourcePin = pin->name;
+                    } else if (pin == nullptr) {
                         const Scripting::ScriptGraphCanvasPointUVE graphPosition =
                             ScreenToScriptCanvasUVE(mouse, canvasOrigin, view);
                         m_scriptCanvasDragging = true;
@@ -6900,8 +6895,6 @@ void EditorUVE::DrawScriptingWorkspaceUVE() {
                     }
                 } else {
                     static_cast<void>(ActiveVisualScriptCanvasUVE().SetSelectionUVE({}));
-                    m_scriptCanvasLinkSourceNodeId = 0U;
-                    m_scriptCanvasLinkSourcePin.clear();
                 }
             } else if (!openedLongPressPopup && canvasHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
                 if (findNodeAt(mouse) == nullptr) {
@@ -6930,6 +6923,40 @@ void EditorUVE::DrawScriptingWorkspaceUVE() {
                 nextView.pan.y = graphUnderPointer.y - mouseLocal.y / nextView.zoom;
                 static_cast<void>(ActiveVisualScriptCanvasUVE().SetViewUVE(nextView));
             }
+            // Wire drag release: completes the link if dropped on a compatible pin on a different
+            // node, otherwise opens the same node-search popup used for right-click/long-press at
+            // the drop point - picking a node there attempts to auto-wire it back to the source pin
+            // (see the popup body below), matching Unreal's "drop a wire into empty space to
+            // search+connect" convention. Only IsMouseReleased (not a second click) can ever observe
+            // an armed source here: once a press arms it, the button is down, and ImGui can't emit
+            // another IsMouseClicked for the same button without an intervening release firing this
+            // block first.
+            if (m_scriptCanvasLinkSourceNodeId != 0U && !m_scriptCanvasLinkAwaitingPick &&
+                ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+                const auto* const sourceNode = findNode(m_scriptCanvasLinkSourceNodeId);
+                bool connected = false;
+                if (sourceNode != nullptr) {
+                    const auto* const targetNode = findNodeAt(mouse);
+                    if (targetNode != nullptr && targetNode->id != sourceNode->id) {
+                        const auto* const targetPin = findPinAt(mouse, *targetNode);
+                        if (targetPin != nullptr) {
+                            const auto result = ActiveVisualScriptCanvasUVE().AddLinkUVE(
+                                Scripting::ScriptLinkUVE{{m_scriptCanvasLinkSourceNodeId, m_scriptCanvasLinkSourcePin},
+                                                         {targetNode->id, targetPin->name}});
+                            connected = result.IsAppliedUVE();
+                        }
+                    }
+                }
+                if (connected) {
+                    m_scriptCanvasLinkSourceNodeId = 0U;
+                    m_scriptCanvasLinkSourcePin.clear();
+                } else {
+                    m_scriptCanvasContextMenuPosition = ScreenToScriptCanvasUVE(mouse, canvasOrigin, view);
+                    m_scriptCanvasContextFilter.clear();
+                    m_scriptCanvasLinkAwaitingPick = true;
+                    ImGui::OpenPopup("script-node-search-popup");
+                }
+            }
             if (m_scriptCanvasLinkSourceNodeId != 0U && !m_scriptCanvasLinkSourcePin.empty()) {
                 const auto* const sourceNode = findNode(m_scriptCanvasLinkSourceNodeId);
                 if (sourceNode != nullptr) {
@@ -6945,6 +6972,15 @@ void EditorUVE::DrawScriptingWorkspaceUVE() {
                                   IM_COL32(184, 184, 188, 255),
                                   "Right-click or long-press to search and add a registered node.");
             }
+            // Deliberate exception to the editor's own square-corners-everywhere rule: a floating,
+            // transient search/pick surface (not a docked panel) reads as a genuinely different kind
+            // of UI element - matches the same rounded, dark-gray-transparent treatment already
+            // established for the zoom pill immediately below, and the reference shape of Unreal's
+            // own right-click/drop-a-wire node search.
+            ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, 10.0F);
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{10.0F, 10.0F});
+            ImGui::PushStyleColor(ImGuiCol_PopupBg, ImVec4{18.0F / 255.0F, 21.0F / 255.0F, 28.0F / 255.0F, 0.86F});
+            ImGui::PushStyleColor(ImGuiCol_Border, ImVec4{1.0F, 1.0F, 1.0F, 24.0F / 255.0F});
             if (ImGui::BeginPopup("script-node-search-popup")) {
                 std::array<char, 257> contextFilterBuffer{};
                 std::strncpy(contextFilterBuffer.data(), m_scriptCanvasContextFilter.c_str(),
@@ -6963,15 +6999,54 @@ void EditorUVE::DrawScriptingWorkspaceUVE() {
                         continue;
                     }
                     ++visibleContextNodes;
+                    // Name-only: no icon, no category label - a clean flat list, distinct from the
+                    // persistent palette sidebar's own icon+category-grouped presentation.
                     const std::string label = (entry.displayName.empty() ? entry.typeId : entry.displayName) +
                                               "##context-node-" + entry.typeId;
                     if (ImGui::Selectable(label.c_str())) {
-                        static_cast<void>(ActiveVisualScriptCanvasUVE().AddNodeTypeUVE(
-                            entry.typeId, m_scriptCanvasContextMenuPosition, snapshot.revision));
+                        const auto addResult = ActiveVisualScriptCanvasUVE().AddNodeTypeUVE(
+                            entry.typeId, m_scriptCanvasContextMenuPosition, snapshot.revision);
+                        // A wire was dropped into empty space to reach this popup (not a plain
+                        // right-click/long-press add) - try to auto-wire the source pin to the first
+                        // compatible pin on the freshly added node, matching Unreal's own
+                        // drop-to-search-and-connect behavior. The new node's id isn't returned by
+                        // AddNodeTypeUVE, so it's found as the one id present in a fresh snapshot but
+                        // absent from the snapshot this frame started with. A silent no-op (node
+                        // stays, just unwired) if no pin on it accepts the link - AddLinkUVE already
+                        // owns every real type/direction/duplicate rule, not duplicated here.
+                        if (addResult.IsAppliedUVE() && m_scriptCanvasLinkAwaitingPick &&
+                            m_scriptCanvasLinkSourceNodeId != 0U) {
+                            const Scripting::ScriptGraphCanvasSnapshotUVE freshSnapshot =
+                                ActiveVisualScriptCanvasUVE().GetSnapshotUVE();
+                            const Scripting::ScriptGraphCanvasNodeSnapshotUVE* newNode = nullptr;
+                            for (const auto& candidate : freshSnapshot.nodes) {
+                                const bool existedBefore = std::any_of(
+                                    snapshot.nodes.cbegin(), snapshot.nodes.cend(),
+                                    [&candidate](const auto& old) { return old.id == candidate.id; });
+                                if (!existedBefore) {
+                                    newNode = &candidate;
+                                    break;
+                                }
+                            }
+                            if (newNode != nullptr) {
+                                for (const auto& candidatePin : newNode->pins) {
+                                    if (candidatePin.direction != Scripting::ScriptPinDirectionUVE::Input) {
+                                        continue;
+                                    }
+                                    const auto linkResult = ActiveVisualScriptCanvasUVE().AddLinkUVE(
+                                        Scripting::ScriptLinkUVE{{m_scriptCanvasLinkSourceNodeId, m_scriptCanvasLinkSourcePin},
+                                                                 {newNode->id, candidatePin.name}});
+                                    if (linkResult.IsAppliedUVE()) {
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        m_scriptCanvasLinkSourceNodeId = 0U;
+                        m_scriptCanvasLinkSourcePin.clear();
+                        m_scriptCanvasLinkAwaitingPick = false;
                         ImGui::CloseCurrentPopup();
                     }
-                    ImGui::SameLine(ImGui::GetWindowWidth() - 76.0F);
-                    ImGui::TextDisabled("%s", entry.category.c_str());
                 }
                 if (visibleContextNodes == 0U) {
                     ImGui::TextDisabled(m_scriptCanvasContextFilter.empty()
@@ -6980,7 +7055,15 @@ void EditorUVE::DrawScriptingWorkspaceUVE() {
                 }
                 ImGui::EndChild();
                 ImGui::EndPopup();
+            } else if (m_scriptCanvasLinkAwaitingPick) {
+                // Popup dismissed (Escape, click-away) without picking a node - drop the pending
+                // link source instead of leaving it silently armed for whatever gesture comes next.
+                m_scriptCanvasLinkSourceNodeId = 0U;
+                m_scriptCanvasLinkSourcePin.clear();
+                m_scriptCanvasLinkAwaitingPick = false;
             }
+            ImGui::PopStyleColor(2);
+            ImGui::PopStyleVar(2);
 
             // Zoom-percentage + fit-to-view pill, bottom-left of the canvas - matches a design
             // mockup's own `.graph-zoom-ov` control, reusing the exact rounded-pill "bubble" style
