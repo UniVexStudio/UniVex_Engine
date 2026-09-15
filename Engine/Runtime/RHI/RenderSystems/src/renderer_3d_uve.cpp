@@ -595,6 +595,15 @@ struct Renderer3DUVE::ImplUVE {
     /// surface exactly as before.
     std::optional<std::pair<TextureHandleUVE, TextureHandleUVE>> destinationTextureOverride;
 
+    /// Set only alongside destinationTextureOverride, from RenderFrameToTargetUVE()'s own
+    /// width/height parameters - TextureHandleUVE has no queryable size on IRenderDeviceUVE, so the
+    /// UIOverlay pass's orthographic projection needs this supplied directly rather than read from
+    /// targetWidth/targetHeight (which describe this renderer's own internal color/depth targets,
+    /// not the caller-supplied destination texture pair). A zero width/height in either slot means
+    /// "not usable for UI" (see the UIOverlay pass's own gating), matching the interface's
+    /// documented default of skipping UI when the size is unknown.
+    std::optional<std::pair<std::uint32_t, std::uint32_t>> destinationTextureSizeOverride;
+
     /// Set via SetUIRuntimeUVE(); read fresh by the "UIOverlay" pass every RenderFrame* call.
     const UI::UIRuntimeUVE* uiRuntimeForFrame = nullptr;
     /// Built-in UI overlay program (engine/render/shader/built_in/ui_overlay.glsl) - position +
@@ -1870,14 +1879,20 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             commandBuffer.EndRenderPassUVE();
         });
 
-    // Phase U3a scope: UI overlay renders only when the frame's destination size is known - the
-    // plain presentation surface (targetWidth/targetHeight) or an explicit sub-region
-    // (destinationViewportOverride). RenderFrameToTargetUVE's caller-supplied texture has no
-    // queryable size on IRenderDeviceUVE, so it's deliberately excluded here (Phase U3b).
-    if (m_impl->uiRuntimeForFrame != nullptr && !m_impl->destinationTextureOverride.has_value()) {
-        const std::uint32_t uiWidth =
-            m_impl->destinationViewportOverride.has_value() ? m_impl->destinationViewportOverride->width : m_impl->targetWidth;
-        const std::uint32_t uiHeight = m_impl->destinationViewportOverride.has_value()
+    // UI overlay renders whenever the frame's destination size is known - the plain presentation
+    // surface (targetWidth/targetHeight), an explicit sub-region (destinationViewportOverride), or
+    // (Phase U3b) a RenderFrameToTargetUVE() caller-supplied texture whose size it passed directly
+    // (destinationTextureSizeOverride) - TextureHandleUVE itself has no queryable size on
+    // IRenderDeviceUVE, which is why that call must supply it explicitly.
+    if (m_impl->uiRuntimeForFrame != nullptr) {
+        const std::uint32_t uiWidth = m_impl->destinationTextureSizeOverride.has_value()
+                                           ? m_impl->destinationTextureSizeOverride->first
+                                       : m_impl->destinationViewportOverride.has_value()
+                                           ? m_impl->destinationViewportOverride->width
+                                           : m_impl->targetWidth;
+        const std::uint32_t uiHeight = m_impl->destinationTextureSizeOverride.has_value()
+                                            ? m_impl->destinationTextureSizeOverride->second
+                                        : m_impl->destinationViewportOverride.has_value()
                                             ? m_impl->destinationViewportOverride->height
                                             : m_impl->targetHeight;
         if (uiWidth > 0U && uiHeight > 0U) {
@@ -1896,9 +1911,25 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                     }
 
                     RenderPassDescUVE passDesc;
-                    passDesc.colorAttachment = kInvalidTextureHandleUVE;
-                    passDesc.depthAttachment = kInvalidTextureHandleUVE;
+                    // Mirrors the ToneMapping pass's own destinationTextureOverride handling just
+                    // above: when RenderFrameToTargetUVE() is the caller, ToneMapping already wrote
+                    // into that caller-owned texture pair rather than the presentation surface, so
+                    // this pass must draw into the same place - kInvalidTextureHandleUVE here would
+                    // otherwise bind FBO 0 (the real window) and silently misdirect the UI overlay.
+                    passDesc.colorAttachment = m_impl->destinationTextureOverride.has_value()
+                                                    ? m_impl->destinationTextureOverride->first
+                                                    : kInvalidTextureHandleUVE;
+                    passDesc.depthAttachment = m_impl->destinationTextureOverride.has_value()
+                                                    ? m_impl->destinationTextureOverride->second
+                                                    : kInvalidTextureHandleUVE;
                     passDesc.colorLoadOp = LoadOpUVE::Load;
+                    // Must preserve MainColor's real depth values (RenderPassDescUVE's own default
+                    // is Clear->1.0) - this pass now writes its own 0.0 depth for visible UI pixels
+                    // (see uiOverlayProgramDesc's own comment), and clearing first would wipe every
+                    // 3D mesh's real depth back to "nothing drawn here" for any host compositing
+                    // against this depth buffer, exactly as colorLoadOp = Load already preserves the
+                    // color buffer's own prior content.
+                    passDesc.depthLoadOp = LoadOpUVE::Load;
                     passDesc.viewportOverride = m_impl->destinationViewportOverride;
                     commandBuffer.BeginRenderPassUVE(passDesc);
                     const Math::Matrix4x4UVE uiProjection = Math::Matrix4x4UVE::OrthographicUVE(
@@ -1953,7 +1984,8 @@ void Renderer3DUVE::RenderFrameToRegionUVE(Scene::IEntityManagerUVE& entityManag
 }
 
 void Renderer3DUVE::RenderFrameToTargetUVE(Scene::IEntityManagerUVE& entityManager, Scene::EntityUVE cameraEntity,
-                                            const TextureHandleUVE colorTarget, const TextureHandleUVE depthTarget) {
+                                            const TextureHandleUVE colorTarget, const TextureHandleUVE depthTarget,
+                                            const std::uint32_t width, const std::uint32_t height) {
     const std::optional<std::pair<TextureHandleUVE, TextureHandleUVE>> previousOverride =
         m_impl->destinationTextureOverride;
     m_impl->destinationTextureOverride = std::make_pair(colorTarget, depthTarget);
@@ -1962,6 +1994,16 @@ void Renderer3DUVE::RenderFrameToTargetUVE(Scene::IEntityManagerUVE& entityManag
         std::optional<std::pair<TextureHandleUVE, TextureHandleUVE>> previous;
         ~TargetScopeUVE() { slot = previous; }
     } targetScope{m_impl->destinationTextureOverride, previousOverride};
+
+    const std::optional<std::pair<std::uint32_t, std::uint32_t>> previousSizeOverride =
+        m_impl->destinationTextureSizeOverride;
+    m_impl->destinationTextureSizeOverride =
+        (width > 0U && height > 0U) ? std::make_optional(std::make_pair(width, height)) : std::nullopt;
+    struct TargetSizeScopeUVE final {
+        std::optional<std::pair<std::uint32_t, std::uint32_t>>& slot;
+        std::optional<std::pair<std::uint32_t, std::uint32_t>> previous;
+        ~TargetSizeScopeUVE() { slot = previous; }
+    } targetSizeScope{m_impl->destinationTextureSizeOverride, previousSizeOverride};
 
     RenderFrameUVE(entityManager, cameraEntity);
 }

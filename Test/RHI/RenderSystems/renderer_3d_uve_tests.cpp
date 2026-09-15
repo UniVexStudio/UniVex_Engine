@@ -28,6 +28,7 @@
 #include "uve/asset/shader_asset_uve.h"
 #include "uve/asset/texture_asset_uve.h"
 #include "uve/events/event_system_uve.h"
+#include "uve/input/input_system_uve.h"
 #include "uve/memory/memory_manager_uve.h"
 #include "uve/render/camera_system_uve.h"
 #include "uve/render/light_system_uve.h"
@@ -41,10 +42,12 @@
 #include "uve/scene/components/mesh_component_uve.h"
 #include "uve/scene/components/primitive_mesh_component_uve.h"
 #include "uve/scene/components/transform_component_uve.h"
+#include "uve/scene/components/ui_button_component_uve.h"
 #include "uve/scene/components/world_transform_component_uve.h"
 #include "uve/scene/entity_manager_uve.h"
 #include "uve/scene/scene_graph_uve.h"
 #include "uve/threading/thread_pool_uve.h"
+#include "uve/ui/ui_runtime_uve.h"
 
 namespace UVE::Render::Tests {
 namespace {
@@ -1455,6 +1458,69 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_NonFiniteShadowTuningUsesFiniteReleaseD
     }
 }
 #endif
+
+// Phase U3b regression coverage: RenderFrameToTargetUVE's own destination color/depth textures
+// must be exactly what the UIOverlay pass draws into when a width/height is supplied - not
+// kInvalidTextureHandleUVE (which BeginRenderPassUVE maps to the real backend framebuffer). Before
+// this fix, the UIOverlay pass ignored destinationTextureOverride entirely, so an editor viewport
+// compositing a RenderFrameToTargetUVE() result would have had its UI silently misdirected onto
+// the actual application window instead of the caller's offscreen texture.
+TEST_F(Renderer3DUVETest, RenderFrameToTargetUVE_UIOverlayPassTargetsTheSameDestinationTextureAsToneMapping) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+
+    const Scene::EntityUVE buttonEntity = entityManager.CreateEntityUVE();
+    entityManager.AddComponentUVE<Scene::UIButtonComponentUVE>(buttonEntity);
+
+    Events::EventSystemUVE inputEventSystem;
+    Input::InputSystemUVE inputSystem(inputEventSystem);
+    UI::UIRuntimeUVE uiRuntime;
+    uiRuntime.TickUVE(entityManager, inputSystem);
+    renderer3D->SetUIRuntimeUVE(&uiRuntime);
+
+    const TextureHandleUVE colorTarget = renderDevice.CreateTextureUVE(
+        TextureDescUVE{kTargetWidthUVE, kTargetHeightUVE, TextureFormatUVE::RGBA8Unorm, 1});
+    const TextureHandleUVE depthTarget = renderDevice.CreateTextureUVE(
+        TextureDescUVE{kTargetWidthUVE, kTargetHeightUVE, TextureFormatUVE::Depth32Float, 1});
+    ASSERT_NE(colorTarget, kInvalidTextureHandleUVE);
+    ASSERT_NE(depthTarget, kInvalidTextureHandleUVE);
+
+    // ToneMapping's own pass callback returns early (recording nothing) until its built-in program
+    // has finished async compilation - a first frame right after construction can genuinely skip
+    // it, so prime it exactly like PrimeMaterialProgramUVE() primes per-material programs, before
+    // relying on ToneMapping's own BeginRenderPassCommandUVE existing at all.
+    renderer3D->RenderFrameToTargetUVE(entityManager, cameraEntity, colorTarget, depthTarget, kTargetWidthUVE,
+                                        kTargetHeightUVE);
+    for (int iteration = 0; iteration < kMaxPollIterationsUVE; ++iteration) {
+        shaderManager.UpdateUVE(0.0);
+        if (shaderManager.GetPendingJobCountUVE() == 0U) {
+            break;
+        }
+        std::this_thread::yield();
+    }
+    ASSERT_EQ(shaderManager.GetPendingJobCountUVE(), 0U);
+
+    renderer3D->RenderFrameToTargetUVE(entityManager, cameraEntity, colorTarget, depthTarget, kTargetWidthUVE,
+                                        kTargetHeightUVE);
+
+    const std::vector<RecordedCommandUVE>& commands = renderDevice.GetLastSubmittedCommandsUVE();
+    std::vector<RenderPassDescUVE> beginRenderPassDescs;
+    for (const RecordedCommandUVE& command : commands) {
+        if (std::holds_alternative<BeginRenderPassCommandUVE>(command)) {
+            beginRenderPassDescs.push_back(std::get<BeginRenderPassCommandUVE>(command).desc);
+        }
+    }
+    // ToneMapping and UIOverlay are the frame's final two passes (in that order); both must target
+    // the same caller-supplied destination texture pair.
+    ASSERT_GE(beginRenderPassDescs.size(), 2U);
+    const RenderPassDescUVE& toneMappingDesc = beginRenderPassDescs[beginRenderPassDescs.size() - 2U];
+    const RenderPassDescUVE& uiOverlayDesc = beginRenderPassDescs.back();
+    EXPECT_EQ(toneMappingDesc.colorAttachment, colorTarget);
+    EXPECT_EQ(toneMappingDesc.depthAttachment, depthTarget);
+    EXPECT_EQ(uiOverlayDesc.colorAttachment, colorTarget);
+    EXPECT_EQ(uiOverlayDesc.depthAttachment, depthTarget);
+
+    renderer3D->SetUIRuntimeUVE(nullptr);
+}
 
 } // namespace
 } // namespace UVE::Render::Tests

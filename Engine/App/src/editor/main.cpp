@@ -28,6 +28,8 @@
 #include "uve/core/engine_core_uve.h"
 #include "uve/debug/logging_macros_uve.h"
 #include "uve/editor/editor_bridge_stdio_uve.h"
+#include "uve/ui/ui_draw_batch_uve.h"
+#include "uve/ui/ui_font_atlas_uve.h"
 #include "uve/editor/editor_uve.h"
 #include "uve/math/vector2_uve.h"
 #include "uve/scene/components/camera_component_uve.h"
@@ -97,14 +99,17 @@ void main() {
 // a GLFW framebuffer-resize callback.
 class ViewportPanelBackendUVE final {
 public:
-    ViewportPanelBackendUVE(UVE::Editor::EditorUVE& editor, UVE::Core::EngineServicesUVE& services)
-        : editor_(editor), entityManager_(services.GetEntityManagerUVE()), entitySource_(entityManager_),
-          meshLayer_(services) {}
+    ViewportPanelBackendUVE(UVE::Editor::EditorUVE& editor, UVE::Core::EngineCoreUVE& engine)
+        : editor_(editor), engine_(engine), entityManager_(engine.GetServicesUVE().GetEntityManagerUVE()),
+          entitySource_(entityManager_), meshLayer_(engine.GetServicesUVE()) {}
 
     ~ViewportPanelBackendUVE() {
         DestroyFramebuffersUVE();
         if (compositeVao_ != 0U) {
             glDeleteVertexArrays(1, &compositeVao_);
+        }
+        if (uiFontAtlasTexture_ != 0U) {
+            glDeleteTextures(1, &uiFontAtlasTexture_);
         }
     }
 
@@ -151,6 +156,15 @@ public:
         const univex::integration::EditorMeshLayerResultUVE meshResult = meshLayer_.RenderUVE(
             camera_, static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height), gameCameraOverride);
         outUsedSize = UVE::Math::Vector2UVE{static_cast<float>(width), static_cast<float>(height)};
+
+        // Player-facing HUD content only shows during the Game workspace tab's "what a player
+        // would see" preview (matching the grid/transform-gizmo hiding above) - drawn via ImGui's
+        // own foreground overlay rather than baked into meshResult's texture; see this method's own
+        // DrawUIOverlayUVE() comment for why.
+        if (gameWorkspaceActive_) {
+            DrawUIOverlayUVE();
+        }
+
         if (meshResult.colorTextureId == 0U || !EnsureCompositeResourcesUVE(width, height)) {
             return static_cast<std::uint64_t>(resolveColorTexture_);
         }
@@ -332,6 +346,58 @@ private:
         glBindFramebuffer(GL_FRAMEBUFFER, restoreFbo);
     }
 
+    // Uploads UI::UIFontAtlasUVE's baked RGBA8 bitmap once (it never changes after construction),
+    // for AddImage()'s glyph quads below.
+    void EnsureUIFontAtlasTextureUVE(const UVE::UI::UIFontAtlasUVE& fontAtlas) {
+        if (uiFontAtlasTexture_ != 0U || !fontAtlas.IsValidUVE()) {
+            return;
+        }
+        glGenTextures(1, &uiFontAtlasTexture_);
+        glBindTexture(GL_TEXTURE_2D, uiFontAtlasTexture_);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, UVE::UI::UIFontAtlasUVE::kAtlasWidthUVE,
+                     UVE::UI::UIFontAtlasUVE::kAtlasHeightUVE, 0, GL_RGBA, GL_UNSIGNED_BYTE,
+                     fontAtlas.GetBitmapUVE().data());
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
+
+    // Draws UIRuntimeUVE's current draw batch directly via ImGui's own foreground overlay draw
+    // list, in the same real-window pixel coordinates UIQuadUVE is authored in (matching
+    // IInputSystemUVE::GetMousePositionUVE()'s own convention - confirmed directly: hovering the
+    // real cursor at a button's authored positionPixels correctly sets isHovered, proving that
+    // space really is the whole application window, not this one panel's local render-target
+    // space). This is why UI content is NOT baked into meshLayer_'s own offscreen texture (see
+    // EditorMeshLayerUVE::RenderUVE()'s own call site comment) - a per-pixel depth-based compositor
+    // could never distinguish "UI was drawn here" from "nothing was drawn here" without real
+    // OpenGL depth WRITES, which require depth TESTING to also be enabled - exactly what a
+    // screen-space overlay must never have (it always draws on top, regardless of the 3D scene).
+    // Image quads referencing a real (non-zero) texture asset guid fall back to a flat tint here
+    // (this preview path does not resolve/upload arbitrary imported textures) - an honest, stated
+    // limitation, not a silent gap.
+    void DrawUIOverlayUVE() {
+        const UVE::UI::UIDrawBatchUVE& batch = engine_.GetUIRuntimeUVE().GetDrawBatchUVE();
+        if (batch.quads.empty()) {
+            return;
+        }
+        EnsureUIFontAtlasTextureUVE(engine_.GetUIRuntimeUVE().GetFontAtlasUVE());
+        ImDrawList* const drawList = ImGui::GetForegroundDrawList();
+        for (const UVE::UI::UIQuadUVE& quad : batch.quads) {
+            const ImVec2 pMin{quad.positionPixels.x, quad.positionPixels.y};
+            const ImVec2 pMax{quad.positionPixels.x + quad.sizePixels.x, quad.positionPixels.y + quad.sizePixels.y};
+            const ImU32 tint = ImGui::ColorConvertFloat4ToU32(
+                ImVec4{quad.color.x, quad.color.y, quad.color.z, quad.alpha});
+            if (quad.kind == UVE::UI::UIDrawItemKindUVE::Glyph && uiFontAtlasTexture_ != 0U) {
+                drawList->AddImage(static_cast<ImTextureID>(static_cast<std::uintptr_t>(uiFontAtlasTexture_)), pMin,
+                                   pMax, ImVec2{quad.u0, quad.v0}, ImVec2{quad.u1, quad.v1}, tint);
+            } else {
+                drawList->AddRectFilled(pMin, pMax, tint);
+            }
+        }
+    }
+
     // Applies EditorUVE's own generic overlay-toolbar state (see ViewportOverlayStateUVE's doc
     // comment on why it's plain enums/bools rather than any Viewport-module type) to the real
     // ViewportRenderPass each frame. Snap is stored and reflected in the bubble's highlight but
@@ -409,6 +475,7 @@ private:
     }
 
     UVE::Editor::EditorUVE& editor_;
+    UVE::Core::EngineCoreUVE& engine_;
     UVE::Scene::IEntityManagerUVE& entityManager_;
     univex::integration::EntityManagerEntitySource entitySource_;
     univex::integration::EditorMeshLayerUVE meshLayer_;
@@ -433,6 +500,11 @@ private:
     GLuint compositeColorTexture_ = 0U;
     int compositeWidth_ = 0;
     int compositeHeight_ = 0;
+    // Uploaded lazily on first use by DrawUIOverlayUVE() - see that method's own comment for why
+    // the editor keeps its own copy of this texture rather than reading Renderer3DUVE's internal
+    // one (created only inside its "UIOverlay" render-graph pass, which this panel deliberately
+    // never runs - see EditorMeshLayerUVE::RenderUVE()'s own call site comment).
+    GLuint uiFontAtlasTexture_ = 0U;
 };
 
 struct EditorLaunchOptionsUVE final {
@@ -566,7 +638,7 @@ int main(const int argc, char** argv) {
         // which headless mode's NullRenderDeviceUVE never creates.
         std::optional<ViewportPanelBackendUVE> viewportBackend;
         if (!options.headless) {
-            viewportBackend.emplace(editor, engine.GetServicesUVE());
+            viewportBackend.emplace(editor, engine);
             editor.SetViewportPanelRendererUVE(
                 [&backend = *viewportBackend](
                     const UVE::Math::Vector2UVE& availableSize, UVE::Math::Vector2UVE& outUsedSize,

@@ -63,7 +63,8 @@ public:
                                 const ViewportRectUVE& region,
                                 const Scene::ParticleRuntimeUVE* particleRuntime = nullptr) override;
     void RenderFrameToTargetUVE(Scene::IEntityManagerUVE& entityManager, Scene::EntityUVE cameraEntity,
-                                TextureHandleUVE colorTarget, TextureHandleUVE depthTarget) override;
+                                TextureHandleUVE colorTarget, TextureHandleUVE depthTarget,
+                                std::uint32_t width = 0U, std::uint32_t height = 0U) override;
     void SetPostProcessSettingsUVE(const PostProcessSettingsUVE& settings) override;
     void SetUIRuntimeUVE(const UI::UIRuntimeUVE* uiRuntime) noexcept override;
     [[nodiscard]] Renderer3DFrameDiagnosticsUVE GetLastFrameDiagnosticsUVE() const noexcept override;

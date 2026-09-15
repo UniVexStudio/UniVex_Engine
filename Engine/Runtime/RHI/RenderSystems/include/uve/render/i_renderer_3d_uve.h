@@ -131,13 +131,21 @@ public:
     /// e.g. via ImGui::Image()) rather than a real on-screen window region (that case is
     /// RenderFrameToRegionUVE() above). Both targets must be valid, matching-size textures created
     /// through this renderer's own IRenderDeviceUVE; PresentUVE() is never implied by this call.
-    /// The default implementation ignores both targets and falls back to a full-frame
-    /// RenderFrameUVE(), matching this interface's existing safe-no-op-default convention for test
-    /// doubles/lightweight renderers with no offscreen-target concept.
+    /// `width`/`height` name that matching size in pixels - TextureHandleUVE has no queryable size
+    /// on IRenderDeviceUVE, so the caller (which just created these textures) supplies it directly;
+    /// this is also what sizes the "UIOverlay" pass's orthographic projection for this target, so a
+    /// zero width/height (the default, for callers that don't need UI overlaid) skips that pass
+    /// exactly like the pre-Phase-U3b behavior. The default implementation ignores every parameter
+    /// and falls back to a full-frame RenderFrameUVE(), matching this interface's existing
+    /// safe-no-op-default convention for test doubles/lightweight renderers with no offscreen-target
+    /// concept.
     virtual void RenderFrameToTargetUVE(Scene::IEntityManagerUVE& entityManager, Scene::EntityUVE cameraEntity,
-                                        TextureHandleUVE colorTarget, TextureHandleUVE depthTarget) {
+                                        TextureHandleUVE colorTarget, TextureHandleUVE depthTarget,
+                                        std::uint32_t width = 0U, std::uint32_t height = 0U) {
         static_cast<void>(colorTarget);
         static_cast<void>(depthTarget);
+        static_cast<void>(width);
+        static_cast<void>(height);
         RenderFrameUVE(entityManager, cameraEntity);
     }
 
