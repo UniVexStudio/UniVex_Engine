@@ -77,7 +77,6 @@ add_subdirectory(Engine/Runtime/Pack)
 add_subdirectory(Engine/Editor/EditorCore)
 add_subdirectory(Engine/Editor/Viewport)
 add_subdirectory(Engine/Editor/EditorApp)
-add_subdirectory(Engine/Editor/EditorCapi)
 add_subdirectory(Engine/App)
 
 if(UVE_BUILD_TESTS)
