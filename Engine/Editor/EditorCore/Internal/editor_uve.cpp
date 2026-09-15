@@ -6495,6 +6495,11 @@ void EditorUVE::DrawScriptingWorkspaceUVE() {
                             GetActiveVisualScriptBranchNameUVE().c_str(),
                             static_cast<unsigned long long>(snapshot.revision));
         ImGui::SameLine();
+        // Without an explicit width, BeginCombo defaults to consuming most of the row's remaining
+        // space, starving every sibling button after it (Rename/Save/Load/Undo/Compiler/Redo and the
+        // hint text) - they were being pushed off the right edge of the toolbar with no scrollbar to
+        // reach them, silently hiding real, working buttons rather than an actual missing feature.
+        ImGui::SetNextItemWidth(160.0F);
         if (ImGui::BeginCombo("##script-branch-combo", GetActiveVisualScriptBranchNameUVE().c_str(),
                               ImGuiComboFlags_HeightSmall)) {
             for (const std::string& branchName : GetVisualScriptBranchNamesUVE()) {
