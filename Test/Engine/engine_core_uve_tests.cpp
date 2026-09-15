@@ -54,6 +54,7 @@
 #include "uve/scene/components/camera_component_uve.h"
 #include "uve/scene/components/character_controller_component_uve.h"
 #include "uve/scene/components/collider_component_uve.h"
+#include "uve/nodes/3d/ray_cast_3d_uve.h"
 #include "uve/scene/components/mesh_component_uve.h"
 #include "uve/scene/components/particle_emitter_component_uve.h"
 #include "uve/scene/components/primitive_mesh_component_uve.h"
@@ -1316,6 +1317,56 @@ TEST(EngineCoreUVETest, CharacterController_FallsUnderGravityLandsOnGroundThenJu
         entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(entity);
     EXPECT_GT(afterJump.verticalVelocity, 0.0F);
     EXPECT_FALSE(afterJump.isGrounded);
+
+    engine.Shutdown();
+}
+
+TEST(EngineCoreUVETest, RayCast3DNode_HitsRealGroundColliderExcludesItselfAndMissesBeyondLength) {
+    // EngineCoreUVE::SyncRayCast3DNodesUVE() is new wiring: previously RayCast3DNodeComponentUVE
+    // was pure authored data with nothing evaluating it. This proves a real per-frame raycast
+    // against a real Physics::RaycastSystemUVE + real colliders, not a mocked query.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    // Static ground: a flat box collider centered at the origin, top surface at y=0.5.
+    const Scene::EntityUVE ground = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, ground, Scene::TransformComponentUVE{});
+    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(
+        ground, Scene::ColliderComponentUVE{Math::Vector3UVE{10.0F, 0.5F, 10.0F}});
+
+    // The raycasting entity sits 5 units above the ground, has its own collider (to prove
+    // self-exclusion really works - without it, the closest "hit" would be itself at distance 0),
+    // and casts a local-space "-Y" ray far enough to reach the ground.
+    const Scene::EntityUVE caster = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE casterTransform;
+    casterTransform.localPosition = Math::Vector3UVE{0.0F, 5.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, caster, casterTransform);
+    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(caster, Scene::ColliderComponentUVE{});
+    Scene::RayCast3DNodeComponentUVE rayCast;
+    rayCast.direction = Math::Vector3UVE{0.0F, -1.0F, 0.0F};
+    rayCast.length = 10.0F;
+    entityManager.AddComponentUVE<Scene::RayCast3DNodeComponentUVE>(caster, rayCast);
+
+    engine.TickFrameUVE();
+
+    const Scene::RayCast3DNodeComponentUVE& afterHit =
+        entityManager.GetComponentUVE<Scene::RayCast3DNodeComponentUVE>(caster);
+    EXPECT_TRUE(afterHit.hit);
+    EXPECT_EQ(afterHit.hitEntity, ground);
+    EXPECT_NEAR(afterHit.hitPosition.y, 0.5F, 0.01F);
+    EXPECT_NEAR(afterHit.hitNormal.y, 1.0F, 0.01F);
+
+    // Shortening the ray so it can't reach the ground (top at y=0.5, caster at y=5, so a length of
+    // 1.0 falls well short) must report a clean miss, not a stale hit from the previous frame.
+    Scene::RayCast3DNodeComponentUVE& live = entityManager.GetComponentUVE<Scene::RayCast3DNodeComponentUVE>(caster);
+    live.length = 1.0F;
+    engine.TickFrameUVE();
+    EXPECT_FALSE(entityManager.GetComponentUVE<Scene::RayCast3DNodeComponentUVE>(caster).hit);
 
     engine.Shutdown();
 }

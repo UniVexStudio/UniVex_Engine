@@ -3,7 +3,8 @@
 #
 # One real .h + .cpp pair per 3D scene-node data type (RayCast3D, Skeleton3D, Hitbox3D, etc.) —
 # each type's struct definition and validator live in their own discoverable file here, instead of
-# being crammed together in one shared header. Depends only on Core Math.
+# being crammed together in one shared header. uve_component is needed only for EntityUVE
+# (RayCast3D's real hit-result field); everything else here only needs Core Math.
 
 add_library(uve_nodes_3d STATIC
     Internal/node_3d_common_uve.cpp
@@ -30,6 +31,6 @@ add_library(uve_nodes_3d STATIC
     Internal/world_partition_3d_uve.cpp
 )
 target_include_directories(uve_nodes_3d PUBLIC Expose)
-target_link_libraries(uve_nodes_3d PUBLIC uve_math)
+target_link_libraries(uve_nodes_3d PUBLIC uve_math uve_component)
 target_compile_features(uve_nodes_3d PUBLIC cxx_std_20)
 uve_set_warnings(uve_nodes_3d)

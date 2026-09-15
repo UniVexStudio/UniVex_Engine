@@ -41,10 +41,16 @@ worse than no checklist.
 - [x] Area3D — real overlap-detection trigger volume.
 - [x] WorldEnvironment3D — real, feeds ambient color/energy into the renderer.
 - [x] Script — real, ticked by the script VM/runtime, with real input/collision bindings.
+- [x] RayCast3D — real per-frame raycast against the actual RaycastSystemUVE (`direction` is
+  local-space, rotated by the entity's world rotation), correctly excludes its own entity, and
+  writes `hit`/`hitPosition`/`hitNormal`/`hitEntity` back every tick. One authored field is still
+  not honored: `exclusions` (skip additional specific entities) does nothing yet - the query API
+  only supports ignoring one entity per call (already spent on self), and this engine has no
+  persistent, save/load-stable way to reference another node to extend that with. Real, separate
+  follow-up, not silently faked.
 
 ### Authored data only, not yet wired to a system
 
-- [~] RayCast3D — has direction/length/hit fields, but nothing performs the raycast or fills them in automatically each frame (the underlying raycast *query* system exists, it just isn't hooked to this node type yet).
 - [~] AnimatableBody3D — target-velocity fields exist, no system drives a kinematic body from them.
 - [~] NavigationRegion3D — bounds + navmesh path fields exist, no navmesh baking/pathfinding system exists yet.
 - [~] NavigationAgent3D — target/path fields exist, no pathfinding/steering system exists yet.
@@ -181,10 +187,12 @@ system behind them.
    future systems have a clean, discoverable home to attach real behavior to. This was purely a
    structural move: no `[~]` entry above changed status from it, since organizing where a stub's
    data lives is not the same as giving it a real backing system.
-2. Wire up the highest-value already-authored 3D stubs first: RayCast3D (query system already
-   exists, just needs connecting), Skeleton3D + AnimationPlayer + AnimationTree (blocked on the
-   same missing skinning/clip-sampling pipeline — see `ROADMAP.md`), Hitbox3D/Hurtbox3D (needed for
-   any combat gameplay), NavigationRegion3D/NavigationAgent3D (needed for any AI movement).
+2. **RayCast3D done** (real per-frame raycast against the actual query system, self-exclusion
+   correct; the `exclusions` list is a stated follow-up, not yet wired - see the entry above).
+   Wire up the remaining highest-value already-authored 3D stubs next: Skeleton3D + AnimationPlayer
+   + AnimationTree (blocked on the same missing skinning/clip-sampling pipeline — see
+   `ROADMAP.md`), Hitbox3D/Hurtbox3D (needed for any combat gameplay), NavigationRegion3D/
+   NavigationAgent3D (needed for any AI movement).
 3. Only after 3D nodes are in good shape, start a real 2D pipeline (rendering + physics + nav) —
    right now 2D is 100% unstarted, not partially built.
 4. Promote Canvas/UI Text/UI Image/UI Button into the Scene node registry so 2D/UI authoring has

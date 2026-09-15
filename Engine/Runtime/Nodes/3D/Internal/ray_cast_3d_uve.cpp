@@ -21,8 +21,8 @@ bool IsRayCast3DNodeComponentValidUVE(const RayCast3DNodeComponentUVE& value) no
             }
         }
     }
-    return !value.hit || (value.colliderLocalId != std::numeric_limits<std::uint32_t>::max() &&
-                           IsFinite3DNodeVectorUVE(value.hitPosition) && IsFinite3DNodeVectorUVE(value.hitNormal));
+    return !value.hit || (value.hitEntity != kInvalidEntityUVE && IsFinite3DNodeVectorUVE(value.hitPosition) &&
+                           IsFinite3DNodeVectorUVE(value.hitNormal));
 }
 
 } // namespace UVE::Scene

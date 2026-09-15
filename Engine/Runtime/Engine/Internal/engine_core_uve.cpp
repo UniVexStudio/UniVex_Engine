@@ -55,6 +55,7 @@
 #include "uve/math/matrix4x4_uve.h"
 #include "uve/math/quaternion_uve.h"
 #include "uve/memory/memory_manager_uve.h"
+#include "uve/nodes/3d/ray_cast_3d_uve.h"
 #include "uve/physics/character_controller_uve.h"
 #include "uve/physics/collision_system_uve.h"
 #include "uve/physics/physics_system_uve.h"
@@ -673,6 +674,35 @@ void EngineCoreUVE::SyncCollisionLifecycleUVE() {
     m_scriptBindingContext.collisionTransitionsThisTick = &m_collisionLifecycleReport.transitions;
 }
 
+void EngineCoreUVE::SyncRayCast3DNodesUVE() {
+    m_entityManager->ForEachUVE<Scene::RayCast3DNodeComponentUVE>(
+        [this](const Scene::EntityUVE entity, Scene::RayCast3DNodeComponentUVE& rayCast) {
+            if (!rayCast.enabled || !m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(entity)) {
+                rayCast.hit = false;
+                return;
+            }
+
+            const auto& worldTransform = m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
+            Physics::RaycastQueryUVE query{};
+            query.ray.origin = worldTransform.worldPosition;
+            query.ray.direction = Math::RotateVectorUVE(worldTransform.worldRotation, rayCast.direction);
+            query.maxDistance = rayCast.length;
+            query.layerMask = rayCast.collisionMask;
+            query.ignoreEntity = entity;
+
+            const std::optional<Physics::RaycastHitUVE> result = m_raycastSystem->RaycastUVE(*m_entityManager, query);
+            if (!result.has_value()) {
+                rayCast.hit = false;
+                return;
+            }
+
+            rayCast.hit = true;
+            rayCast.hitPosition = result->point;
+            rayCast.hitNormal = result->normal;
+            rayCast.hitEntity = result->entity;
+        });
+}
+
 void EngineCoreUVE::SyncAdaptiveRenderResolutionUVE() {
     if (!m_windowedRenderingActiveUVE || !m_presentationSurfaceReadyUVE || !m_renderDevice->IsUsableUVE()) {
         return;
@@ -765,6 +795,7 @@ void EngineCoreUVE::Update() {
     SyncParticleRuntimeUVE();
     SyncUIRuntimeUVE();
     SyncCollisionLifecycleUVE();
+    SyncRayCast3DNodesUVE();
     SyncScriptRuntimeUVE();
 
     if (m_config.hotReloadEnabledUVE) {

@@ -464,6 +464,18 @@ private:
     /// results, since a poll-based binding has no event-queue drain delay to wait out.
     void SyncCollisionLifecycleUVE();
 
+    /// Casts a real ray for every live, enabled RayCast3DNodeComponentUVE entity (that also has a
+    /// WorldTransformComponentUVE) through IRaycastSystemUVE, writing the closest result back into
+    /// hit/hitPosition/hitNormal/hitEntity - previously this node type existed only as authored
+    /// data with nothing evaluating it. The authored `direction` is treated as local-space and
+    /// rotated by the entity's world rotation (Math::RotateVectorUVE), matching
+    /// LightSystemUVE's own local-to-world direction convention. `exclusions` is intentionally not
+    /// consumed yet: IRaycastSystemUVE::RaycastUVE() only supports ignoring one entity per query
+    /// (already spent on the ray's own origin entity), and this engine has no persistent,
+    /// save/load-stable way to reference another node yet - a real, separate follow-up, not
+    /// silently faked here.
+    void SyncRayCast3DNodesUVE();
+
     /// Recomputes the bounded aspect-preserving render target from the live drawable size and
     /// transactionally resizes Renderer3DUVE before the frame's scene work begins.
     void SyncAdaptiveRenderResolutionUVE();
