@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include "uve/scene/components/expanded_3d_node_components_uve.h"
+#include "uve/nodes/3d/visibility_region_3d_uve.h"
 
 namespace UVE::Scene::Nodes {
 

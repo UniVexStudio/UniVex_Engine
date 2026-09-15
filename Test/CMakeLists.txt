@@ -150,7 +150,7 @@ gtest_discover_tests(uve_core_tests)
 # ticking + serialization).
 
 add_executable(uve_integration_tests
-    Integration/Component/expanded_3d_node_components_uve_tests.cpp
+    Nodes/3D/nodes_3d_uve_tests.cpp
     Integration/Entity/archetype_uve_tests.cpp
     Integration/Entity/chunk_uve_tests.cpp
     Integration/Entity/entity_manager_uve_tests.cpp

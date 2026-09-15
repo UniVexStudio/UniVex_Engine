@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include "uve/scene/components/expanded_3d_node_components_uve.h"
+#include "uve/nodes/3d/animatable_body_3d_uve.h"
 
 namespace UVE::Scene::Nodes {
 

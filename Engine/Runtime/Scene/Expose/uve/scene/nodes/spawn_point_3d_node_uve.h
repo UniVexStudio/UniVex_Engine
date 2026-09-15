@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include "uve/scene/components/expanded_3d_node_components_uve.h"
+#include "uve/nodes/3d/spawn_point_3d_uve.h"
 
 namespace UVE::Scene::Nodes {
 

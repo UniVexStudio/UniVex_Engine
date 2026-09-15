@@ -1,0 +1,25 @@
+// Copyright (c) 2026 UniVex Studios. All Rights Reserved.
+
+#pragma once
+
+#include "uve/nodes/3d/animatable_body_3d_uve.h"
+#include "uve/nodes/3d/bone_attachment_3d_uve.h"
+#include "uve/nodes/3d/decal_3d_uve.h"
+#include "uve/nodes/3d/hitbox_3d_uve.h"
+#include "uve/nodes/3d/hurtbox_3d_uve.h"
+#include "uve/nodes/3d/interaction_area_3d_uve.h"
+#include "uve/nodes/3d/level_streamer_3d_uve.h"
+#include "uve/nodes/3d/lod_group_3d_uve.h"
+#include "uve/nodes/3d/marker_3d_uve.h"
+#include "uve/nodes/3d/navigation_agent_3d_uve.h"
+#include "uve/nodes/3d/navigation_region_3d_uve.h"
+#include "uve/nodes/3d/occluder_3d_uve.h"
+#include "uve/nodes/3d/projectile_3d_uve.h"
+#include "uve/nodes/3d/ray_cast_3d_uve.h"
+#include "uve/nodes/3d/reflection_probe_3d_uve.h"
+#include "uve/nodes/3d/skeleton_3d_uve.h"
+#include "uve/nodes/3d/spawn_point_3d_uve.h"
+#include "uve/nodes/3d/spring_arm_3d_uve.h"
+#include "uve/nodes/3d/visibility_region_3d_uve.h"
+#include "uve/nodes/3d/world_environment_3d_uve.h"
+#include "uve/nodes/3d/world_partition_3d_uve.h"

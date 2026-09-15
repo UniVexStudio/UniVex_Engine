@@ -37,7 +37,7 @@
 #include "uve/render/shader/shader_program_desc_uve.h"
 #include "uve/render/shader/shader_program_uve.h"
 #include "uve/scene/components/camera_component_uve.h"
-#include "uve/scene/components/expanded_3d_node_components_uve.h"
+#include "uve/nodes/3d/all_nodes_3d_uve.h"
 #include "uve/scene/components/primitive_mesh_component_uve.h"
 #include "uve/scene/components/world_transform_component_uve.h"
 #include "uve/ui/ui_runtime_uve.h"

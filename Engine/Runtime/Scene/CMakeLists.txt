@@ -19,7 +19,7 @@ add_library(uve_scene STATIC
 )
 target_include_directories(uve_scene PUBLIC Expose)
 target_link_libraries(uve_scene
-    PUBLIC uve_platform uve_debug uve_memory uve_events uve_math uve_asset uve_component uve_entity uve_animation
+    PUBLIC uve_platform uve_debug uve_memory uve_events uve_math uve_asset uve_component uve_entity uve_animation uve_nodes_3d
     PRIVATE nlohmann_json::nlohmann_json
 )
 target_compile_features(uve_scene PUBLIC cxx_std_20)
