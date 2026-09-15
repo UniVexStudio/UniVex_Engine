@@ -456,6 +456,16 @@ private:
     /// (MoveWithToIUVE's own precondition - this function never adds/removes components).
     void SyncCharacterControllersUVE(float fixedDeltaTimeSeconds);
 
+    /// Simple kinematic integration for every active Projectile3DNodeComponentUVE entity (that
+    /// also has a TransformComponentUVE): accumulates `velocity` by `acceleration * dt`, moves the
+    /// entity's authored local position by `velocity * dt` via SceneGraphUVE::SetLocalTransformUVE
+    /// (so world-transform propagation stays correct), and counts `remainingLifetime` down to zero,
+    /// clearing `active` once it expires. Deliberately does not perform collision detection or
+    /// destroy the entity itself - `collisionMask` and `radius` are authored but not yet consumed
+    /// by anything, since resolving a projectile hit needs real gameplay decisions (does it stop,
+    /// bounce, apply damage, spawn an effect) this component's own fields don't specify.
+    void SyncProjectile3DNodesUVE(float fixedDeltaTimeSeconds);
+
     /// Diffs a fresh Physics::ICollisionSystemUVE::DetectCollisionsUVE() snapshot against the
     /// previous tick's via m_collisionLifecycleTracker, storing the resulting enter/exit
     /// transitions in m_collisionLifecycleReport and pointing m_scriptBindingContext at them -

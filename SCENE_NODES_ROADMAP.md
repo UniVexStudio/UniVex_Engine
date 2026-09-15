@@ -48,6 +48,13 @@ worse than no checklist.
   only supports ignoring one entity per call (already spent on self), and this engine has no
   persistent, save/load-stable way to reference another node to extend that with. Real, separate
   follow-up, not silently faked.
+- [x] Projectile3D — real per-fixed-step kinematic integration: `velocity` accumulates
+  `acceleration`, the entity's authored local position advances by `velocity`, and
+  `remainingLifetime` counts down to zero, clearing `active`. Two authored fields are still not
+  honored: `radius` and `collisionMask` — this component has no hit-result field of its own (unlike
+  RayCast3D), so resolving what a projectile hits and what should happen (stop, bounce, apply
+  damage, spawn an effect) needs real gameplay decisions this struct doesn't specify. Real,
+  separate follow-up.
 
 ### Authored data only, not yet wired to a system
 
@@ -60,7 +67,6 @@ worse than no checklist.
 - [~] Marker3D — a plain position/orientation hint, has no behavior by design (this one may never need a "system" — it's meant to be read by other tools/scripts, not ticked itself).
 - [~] Hitbox3D — extents/damage-channel fields exist, no combat/damage system consumes them.
 - [~] Hurtbox3D — same as Hitbox3D, other side of the interaction.
-- [~] Projectile3D — velocity/lifetime fields exist, no system moves it or expires it.
 - [~] InteractionArea3D — candidate-tracking fields exist, no interact/prompt system consumes it.
 - [~] ReflectionProbe3D — size/update-mode fields exist, no reflection-probe capture/render system exists.
 - [~] Decal3D — material/size/lifetime fields exist, no decal-projection rendering exists.
@@ -187,10 +193,11 @@ system behind them.
    future systems have a clean, discoverable home to attach real behavior to. This was purely a
    structural move: no `[~]` entry above changed status from it, since organizing where a stub's
    data lives is not the same as giving it a real backing system.
-2. **RayCast3D done** (real per-frame raycast against the actual query system, self-exclusion
-   correct; the `exclusions` list is a stated follow-up, not yet wired - see the entry above).
-   Wire up the remaining highest-value already-authored 3D stubs next: Skeleton3D + AnimationPlayer
-   + AnimationTree (blocked on the same missing skinning/clip-sampling pipeline — see
+2. **RayCast3D and Projectile3D done** (real per-frame raycast against the actual query system with
+   correct self-exclusion; real kinematic integration + lifetime expiry for projectiles - see both
+   entries above for their stated, honest follow-up gaps). Wire up the remaining highest-value
+   already-authored 3D stubs next: Skeleton3D + AnimationPlayer + AnimationTree (blocked on the
+   same missing skinning/clip-sampling pipeline — see
    `ROADMAP.md`), Hitbox3D/Hurtbox3D (needed for any combat gameplay), NavigationRegion3D/
    NavigationAgent3D (needed for any AI movement).
 3. Only after 3D nodes are in good shape, start a real 2D pipeline (rendering + physics + nav) —

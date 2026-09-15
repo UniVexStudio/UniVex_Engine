@@ -54,6 +54,7 @@
 #include "uve/scene/components/camera_component_uve.h"
 #include "uve/scene/components/character_controller_component_uve.h"
 #include "uve/scene/components/collider_component_uve.h"
+#include "uve/nodes/3d/projectile_3d_uve.h"
 #include "uve/nodes/3d/ray_cast_3d_uve.h"
 #include "uve/scene/components/mesh_component_uve.h"
 #include "uve/scene/components/particle_emitter_component_uve.h"
@@ -1367,6 +1368,59 @@ TEST(EngineCoreUVETest, RayCast3DNode_HitsRealGroundColliderExcludesItselfAndMis
     live.length = 1.0F;
     engine.TickFrameUVE();
     EXPECT_FALSE(entityManager.GetComponentUVE<Scene::RayCast3DNodeComponentUVE>(caster).hit);
+
+    engine.Shutdown();
+}
+
+TEST(EngineCoreUVETest, Projectile3DNode_IntegratesVelocityAccelerationAndExpiresAfterLifetime) {
+    // EngineCoreUVE::SyncProjectile3DNodesUVE() is new wiring: previously
+    // Projectile3DNodeComponentUVE was pure authored data with nothing moving it or expiring it.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    config.fixedUpdateFps = 1000.0;
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, entity, Scene::TransformComponentUVE{});
+    Scene::Projectile3DNodeComponentUVE projectile;
+    projectile.velocity = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+    projectile.acceleration = Math::Vector3UVE{0.0F, -1.0F, 0.0F};
+    projectile.maxLifetime = 0.05F;
+    projectile.remainingLifetime = 0.05F;
+    entityManager.AddComponentUVE<Scene::Projectile3DNodeComponentUVE>(entity, projectile);
+
+    // A few fixed steps at 1kHz (~6ms of simulated time) - enough to move and to have accumulated
+    // some deceleration from `acceleration`, nowhere near the 50ms lifetime yet.
+    for (int frame = 0; frame < 3; ++frame) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        engine.TickFrameUVE();
+    }
+
+    {
+        const Scene::TransformComponentUVE& transform =
+            entityManager.GetComponentUVE<Scene::TransformComponentUVE>(entity);
+        EXPECT_GT(transform.localPosition.y, 0.0F);
+        const Scene::Projectile3DNodeComponentUVE& live =
+            entityManager.GetComponentUVE<Scene::Projectile3DNodeComponentUVE>(entity);
+        EXPECT_LT(live.velocity.y, 1.0F);
+        EXPECT_TRUE(live.active);
+    }
+
+    // Far more real time than the 50ms lifetime, so it must have fully expired by now regardless
+    // of scheduling jitter.
+    for (int frame = 0; frame < 100; ++frame) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        engine.TickFrameUVE();
+    }
+
+    const Scene::Projectile3DNodeComponentUVE& afterExpiry =
+        entityManager.GetComponentUVE<Scene::Projectile3DNodeComponentUVE>(entity);
+    EXPECT_FALSE(afterExpiry.active);
+    EXPECT_FLOAT_EQ(afterExpiry.remainingLifetime, 0.0F);
 
     engine.Shutdown();
 }

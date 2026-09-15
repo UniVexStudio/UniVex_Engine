@@ -55,6 +55,7 @@
 #include "uve/math/matrix4x4_uve.h"
 #include "uve/math/quaternion_uve.h"
 #include "uve/memory/memory_manager_uve.h"
+#include "uve/nodes/3d/projectile_3d_uve.h"
 #include "uve/nodes/3d/ray_cast_3d_uve.h"
 #include "uve/physics/character_controller_uve.h"
 #include "uve/physics/collision_system_uve.h"
@@ -76,6 +77,7 @@
 #include "uve/scene/components/particle_emitter_component_uve.h"
 #include "uve/scene/components/rigid_body_component_uve.h"
 #include "uve/scene/components/script_component_uve.h"
+#include "uve/scene/components/transform_component_uve.h"
 #include "uve/scene/components/world_transform_component_uve.h"
 #include "uve/scene/entity_manager_uve.h"
 #include "uve/scene/prefab_system_uve.h"
@@ -668,6 +670,32 @@ void EngineCoreUVE::SyncCharacterControllersUVE(const float fixedDeltaTimeSecond
         });
 }
 
+void EngineCoreUVE::SyncProjectile3DNodesUVE(const float fixedDeltaTimeSeconds) {
+    if (fixedDeltaTimeSeconds <= 0.0F) {
+        return;
+    }
+
+    m_entityManager->ForEachUVE<Scene::Projectile3DNodeComponentUVE>(
+        [this, fixedDeltaTimeSeconds](const Scene::EntityUVE entity, Scene::Projectile3DNodeComponentUVE& projectile) {
+            if (!projectile.active || !m_entityManager->HasComponentUVE<Scene::TransformComponentUVE>(entity)) {
+                return;
+            }
+
+            projectile.velocity += projectile.acceleration * fixedDeltaTimeSeconds;
+
+            Scene::TransformComponentUVE localTransform =
+                m_entityManager->GetComponentUVE<Scene::TransformComponentUVE>(entity);
+            localTransform.localPosition += projectile.velocity * fixedDeltaTimeSeconds;
+            m_sceneGraph->SetLocalTransformUVE(*m_entityManager, entity, localTransform);
+
+            projectile.remainingLifetime -= fixedDeltaTimeSeconds;
+            if (projectile.remainingLifetime <= 0.0F) {
+                projectile.remainingLifetime = 0.0F;
+                projectile.active = false;
+            }
+        });
+}
+
 void EngineCoreUVE::SyncCollisionLifecycleUVE() {
     const std::vector<Physics::CollisionPairUVE> pairs = m_collisionSystem->DetectCollisionsUVE(*m_entityManager);
     m_collisionLifecycleReport = m_collisionLifecycleTracker.UpdateUVE(pairs);
@@ -789,6 +817,7 @@ void EngineCoreUVE::Update() {
     for (int step = 0; step < fixedStep.stepsToRun; ++step) {
         m_physicsSystem->StepUVE(*m_entityManager, *m_sceneGraph, fixedDeltaTimeSeconds);
         SyncCharacterControllersUVE(fixedDeltaTimeSeconds);
+        SyncProjectile3DNodesUVE(fixedDeltaTimeSeconds);
     }
 
     m_sceneGraph->UpdateUVE(*m_entityManager);
