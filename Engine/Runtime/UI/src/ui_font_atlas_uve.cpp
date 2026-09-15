@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cstdint>
+#include <vector>
 
 // Declarations only - the implementation is generated once, in stb_truetype_impl.cpp, compiled
 // with relaxed warnings (this repo's strict -Werror set flags plenty of legitimate vendored-code
@@ -40,15 +41,28 @@ namespace {
 } // namespace
 
 UIFontAtlasUVE::UIFontAtlasUVE() {
-    m_bitmap.assign(static_cast<std::size_t>(kAtlasWidthUVE) * static_cast<std::size_t>(kAtlasHeightUVE), 0U);
+    // stbtt_BakeFontBitmap only ever writes a single-channel (alpha) bitmap; this engine's
+    // TextureFormatUVE has no single-channel option (RGBA8Unorm/RGBA16Float/Depth32Float only), so
+    // the baked coverage is expanded into RGBA8 (opaque white, coverage in alpha) once here rather
+    // than at every GPU-upload call site.
+    std::vector<std::uint8_t> coverage(static_cast<std::size_t>(kAtlasWidthUVE) * static_cast<std::size_t>(kAtlasHeightUVE),
+                                        0U);
 
     std::array<stbtt_bakedchar, kCharCountUVE> bakedChars{};
     const int bakeResult =
-        stbtt_BakeFontBitmap(uve_ui_runtime_font_ttf_bytes.data(), 0, kBakedFontPixelHeightUVE, m_bitmap.data(),
+        stbtt_BakeFontBitmap(uve_ui_runtime_font_ttf_bytes.data(), 0, kBakedFontPixelHeightUVE, coverage.data(),
                               kAtlasWidthUVE, kAtlasHeightUVE, kFirstCharUVE, kCharCountUVE, bakedChars.data());
     if (bakeResult <= 0) {
         m_valid = false;
         return;
+    }
+
+    m_bitmap.resize(coverage.size() * 4U);
+    for (std::size_t texel = 0U; texel < coverage.size(); ++texel) {
+        m_bitmap[texel * 4U + 0U] = 0xFFU;
+        m_bitmap[texel * 4U + 1U] = 0xFFU;
+        m_bitmap[texel * 4U + 2U] = 0xFFU;
+        m_bitmap[texel * 4U + 3U] = coverage[texel];
     }
 
     for (int index = 0; index < kCharCountUVE; ++index) {

@@ -17,11 +17,16 @@ TEST(UIFontAtlasUVETest, ConstructionBakesAValidNonEmptyBitmap) {
     const std::vector<std::uint8_t>& bitmap = atlas.GetBitmapUVE();
     EXPECT_EQ(bitmap.size(),
               static_cast<std::size_t>(UIFontAtlasUVE::kAtlasWidthUVE) *
-                  static_cast<std::size_t>(UIFontAtlasUVE::kAtlasHeightUVE));
-    const bool hasNonZeroTexel = std::any_of(bitmap.begin(), bitmap.end(), [](const std::uint8_t texel) {
-        return texel != 0U;
-    });
-    EXPECT_TRUE(hasNonZeroTexel);
+                  static_cast<std::size_t>(UIFontAtlasUVE::kAtlasHeightUVE) * 4U);
+    const bool hasNonZeroAlphaTexel = [&bitmap] {
+        for (std::size_t index = 3U; index < bitmap.size(); index += 4U) {
+            if (bitmap[index] != 0U) {
+                return true;
+            }
+        }
+        return false;
+    }();
+    EXPECT_TRUE(hasNonZeroAlphaTexel);
 }
 
 TEST(UIFontAtlasUVETest, FindGlyphUVE_CoversPrintableAsciiAndRejectsOutOfRange) {

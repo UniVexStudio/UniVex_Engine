@@ -34,6 +34,7 @@
 #include "uve/debug/log_sink_uve.h"
 #include "uve/debug/logger_uve.h"
 #include "uve/input/i_input_system_uve.h"
+#include "uve/input/mouse_button_uve.h"
 #include "uve/math/aabb_uve.h"
 #include "uve/math/vector3_uve.h"
 #include "uve/physics/area_overlap_events_uve.h"
@@ -59,6 +60,9 @@
 #include "uve/scene/components/rigid_body_component_uve.h"
 #include "uve/scene/components/script_component_uve.h"
 #include "uve/scene/components/transform_component_uve.h"
+#include "uve/scene/components/ui_button_component_uve.h"
+#include "uve/scene/components/ui_image_component_uve.h"
+#include "uve/scene/components/ui_text_component_uve.h"
 #include "uve/scene/components/world_transform_component_uve.h"
 #include "uve/scripting/script_graph_persistence_uve.h"
 #include "uve/scripting/script_graph_uve.h"
@@ -1593,6 +1597,158 @@ TEST(EngineCoreUVETest, WindowedMode_PresentsDeterministicPrimitiveFixtureToDefa
                                                                         << ',' << static_cast<int>(sphere[1]) << ','
                                                                         << static_cast<int>(sphere[2]);
     EXPECT_EQ(postRenderGlError, GL_NO_ERROR);
+
+    engine.Shutdown();
+}
+
+// Phase U3a coverage: proves UIRuntimeUVE's authored screen-space UI (image/button/text) actually
+// reaches real pixels on the default framebuffer through Renderer3DUVE's new "UIOverlay" pass, and
+// that a real mouse click (via IInputSystemUVE's real Set*StateUVE() live-state model, exactly like
+// a real GLFW callback would drive it) flips UIButtonComponentUVE::wasClickedThisFrame and visibly
+// changes the button's rendered color - the exact end-to-end claim Phase U3a's own plan requires.
+// Real (non-headless) GLFW/GL backend under Xvfb, matching every other WindowedMode_*/UI-adjacent
+// test in this file. glReadPixels uses GL's bottom-left-origin convention; UIRuntimeUVE/UIOverlay
+// use top-left-origin, y-down pixel space (matching GetMousePositionUVE()'s own convention), so
+// sample rows are converted via `windowHeight - uiY`.
+TEST(EngineCoreUVETest, WindowedMode_UIOverlayRendersAuthoredUIAndRegistersARealButtonClick) {
+    EngineConfigUVE config = MakeTestConfigUVE();
+    config.headlessUVE = false;
+    config.windowWidth = 160U;
+    config.windowHeight = 120U;
+    config.renderTargetWidth = 160U;
+    config.renderTargetHeight = 120U;
+    config.vsyncEnabledUVE = false;
+    config.windowGlVersionMajor = 4U;
+    config.windowGlVersionMinor = 5U;
+
+    EngineCoreUVE engine(config);
+    engine.Init();
+    if (!engine.GetServicesUVE().GetWindowManagerUVE().IsValidUVE()) {
+        GTEST_SKIP() << "No display available for windowed EngineCoreUVE - skipping (run under "
+                        "xvfb-run to exercise this test)";
+    }
+    ASSERT_TRUE(engine.Load());
+
+    EngineServicesUVE& services = engine.GetServicesUVE();
+    Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = services.GetSceneGraphUVE();
+    Input::IInputSystemUVE& inputSystem = services.GetInputSystemUVE();
+    // WindowManagerUVE re-polls the *real* OS cursor/button state every frame (matching real
+    // gameplay use) and would otherwise overwrite this test's directly-injected mouse state on the
+    // very next TickFrameUVE() - detaching it here is what lets IInputSystemUVE's live-state model
+    // (the same Set*StateUVE() calls a real GLFW callback would make) drive input deterministically
+    // against this still-real GL window/context.
+    services.GetWindowManagerUVE().AttachInputSystemUVE(nullptr);
+
+    const Scene::EntityUVE camera = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, camera, Scene::TransformComponentUVE{});
+    entityManager.AddComponentUVE<Scene::CameraComponentUVE>(camera);
+    engine.SetActiveCameraUVE(camera);
+
+    const Scene::EntityUVE imageEntity = entityManager.CreateEntityUVE();
+    entityManager.AddComponentUVE<Scene::UIImageComponentUVE>(
+        imageEntity, Scene::UIImageComponentUVE{Asset::AssetGuidUVE{}, Math::Vector2UVE{10.0F, 10.0F},
+                                                 Math::Vector2UVE{20.0F, 20.0F}, Math::Vector3UVE{0.90F, 0.10F, 0.10F},
+                                                 1.0F});
+
+    const Scene::EntityUVE buttonEntity = entityManager.CreateEntityUVE();
+    Scene::UIButtonComponentUVE buttonComponent{};
+    buttonComponent.positionPixels = Math::Vector2UVE{60.0F, 10.0F};
+    buttonComponent.sizePixels = Math::Vector2UVE{40.0F, 20.0F};
+    buttonComponent.normalColor = Math::Vector3UVE{0.10F, 0.85F, 0.10F};
+    buttonComponent.hoverColor = Math::Vector3UVE{0.10F, 0.10F, 0.85F};
+    buttonComponent.pressedColor = Math::Vector3UVE{0.85F, 0.85F, 0.10F};
+    entityManager.AddComponentUVE<Scene::UIButtonComponentUVE>(buttonEntity, buttonComponent);
+
+    const Scene::EntityUVE textEntity = entityManager.CreateEntityUVE();
+    Scene::UITextComponentUVE textComponent{};
+    textComponent.text = "Hi";
+    textComponent.positionPixels = Math::Vector2UVE{10.0F, 60.0F};
+    textComponent.fontSize = 24.0F;
+    textComponent.color = Math::Vector3UVE{1.0F, 1.0F, 1.0F};
+    entityManager.AddComponentUVE<Scene::UITextComponentUVE>(textEntity, textComponent);
+
+    const auto sampleTopLeftPixelUVE = [windowHeight = config.windowHeight](float uiX, float uiY) {
+        std::array<unsigned char, 3> pixel{};
+        const int glX = static_cast<int>(uiX);
+        const int glY = static_cast<int>(windowHeight) - static_cast<int>(uiY);
+        glReadPixels(glX, glY, 1, 1, GL_RGB, GL_UNSIGNED_BYTE, pixel.data());
+        return pixel;
+    };
+
+    // Frame 1 (baseline): mouse well away from the button, nothing pressed.
+    inputSystem.SetMousePositionUVE(Math::Vector2UVE{0.0F, 0.0F});
+    std::array<unsigned char, 3> imagePixel{};
+    std::array<unsigned char, 3> buttonPixelBaseline{};
+    unsigned char maxTextBrightness = 0U;
+    engine.SetPostRenderCallbackUVE([&] {
+        glFinish();
+        glReadBuffer(GL_BACK);
+        imagePixel = sampleTopLeftPixelUVE(20.0F, 20.0F);
+        buttonPixelBaseline = sampleTopLeftPixelUVE(80.0F, 20.0F);
+        for (float sampleX = 8.0F; sampleX <= 40.0F; sampleX += 2.0F) {
+            for (float sampleY = 55.0F; sampleY <= 90.0F; sampleY += 2.0F) {
+                const std::array<unsigned char, 3> pixel = sampleTopLeftPixelUVE(sampleX, sampleY);
+                const unsigned char brightness = static_cast<unsigned char>(
+                    (static_cast<int>(pixel[0]) + static_cast<int>(pixel[1]) + static_cast<int>(pixel[2])) / 3);
+                maxTextBrightness = std::max(maxTextBrightness, brightness);
+            }
+        }
+    });
+    engine.TickFrameUVE();
+    engine.SetPostRenderCallbackUVE({});
+
+    EXPECT_FALSE(entityManager.GetComponentUVE<Scene::UIButtonComponentUVE>(buttonEntity).isHovered);
+    EXPECT_FALSE(entityManager.GetComponentUVE<Scene::UIButtonComponentUVE>(buttonEntity).wasClickedThisFrame);
+    EXPECT_GT(imagePixel[0], static_cast<unsigned char>(imagePixel[1] + 20U))
+        << "image RGB=" << static_cast<int>(imagePixel[0]) << ',' << static_cast<int>(imagePixel[1]) << ','
+        << static_cast<int>(imagePixel[2]);
+    EXPECT_GT(buttonPixelBaseline[1], static_cast<unsigned char>(buttonPixelBaseline[0] + 20U))
+        << "button(normal) RGB=" << static_cast<int>(buttonPixelBaseline[0]) << ','
+        << static_cast<int>(buttonPixelBaseline[1]) << ',' << static_cast<int>(buttonPixelBaseline[2]);
+    EXPECT_GT(maxTextBrightness, 90U) << "max sampled text-region brightness=" << static_cast<int>(maxTextBrightness);
+
+    // Frame 2: a real mouse move + press over the button - IInputSystemUVE's live-state model is
+    // exactly what a real GLFW cursor/mouse-button callback would drive.
+    inputSystem.SetMousePositionUVE(Math::Vector2UVE{80.0F, 20.0F});
+    inputSystem.SetMouseButtonStateUVE(Input::MouseButtonUVE::Left, true);
+    std::array<unsigned char, 3> buttonPixelPressed{};
+    engine.SetPostRenderCallbackUVE([&] {
+        glFinish();
+        glReadBuffer(GL_BACK);
+        buttonPixelPressed = sampleTopLeftPixelUVE(80.0F, 20.0F);
+    });
+    engine.TickFrameUVE();
+    engine.SetPostRenderCallbackUVE({});
+
+    const Scene::UIButtonComponentUVE afterClick = entityManager.GetComponentUVE<Scene::UIButtonComponentUVE>(buttonEntity);
+    EXPECT_TRUE(afterClick.isHovered);
+    EXPECT_TRUE(afterClick.wasClickedThisFrame) << "a real mouse press over the button did not register";
+    EXPECT_GT(buttonPixelPressed[0], static_cast<unsigned char>(buttonPixelPressed[2] + 20U))
+        << "button(pressed) RGB=" << static_cast<int>(buttonPixelPressed[0]) << ','
+        << static_cast<int>(buttonPixelPressed[1]) << ',' << static_cast<int>(buttonPixelPressed[2]);
+    EXPECT_GT(buttonPixelPressed[1], static_cast<unsigned char>(buttonPixelPressed[2] + 20U))
+        << "button(pressed) RGB=" << static_cast<int>(buttonPixelPressed[0]) << ','
+        << static_cast<int>(buttonPixelPressed[1]) << ',' << static_cast<int>(buttonPixelPressed[2]);
+
+    // Frame 3: release, mouse still hovering - wasClickedThisFrame must not stay latched, and the
+    // rendered color must move to the distinct hover color (not normal, not pressed).
+    inputSystem.SetMouseButtonStateUVE(Input::MouseButtonUVE::Left, false);
+    std::array<unsigned char, 3> buttonPixelHover{};
+    engine.SetPostRenderCallbackUVE([&] {
+        glFinish();
+        glReadBuffer(GL_BACK);
+        buttonPixelHover = sampleTopLeftPixelUVE(80.0F, 20.0F);
+    });
+    engine.TickFrameUVE();
+    engine.SetPostRenderCallbackUVE({});
+
+    const Scene::UIButtonComponentUVE afterRelease = entityManager.GetComponentUVE<Scene::UIButtonComponentUVE>(buttonEntity);
+    EXPECT_TRUE(afterRelease.isHovered);
+    EXPECT_FALSE(afterRelease.wasClickedThisFrame) << "a stale click latched past the frame it occurred on";
+    EXPECT_GT(buttonPixelHover[2], static_cast<unsigned char>(buttonPixelHover[0] + 20U))
+        << "button(hover) RGB=" << static_cast<int>(buttonPixelHover[0]) << ','
+        << static_cast<int>(buttonPixelHover[1]) << ',' << static_cast<int>(buttonPixelHover[2]);
 
     engine.Shutdown();
 }

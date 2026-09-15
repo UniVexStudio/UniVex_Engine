@@ -839,6 +839,7 @@ void EngineCoreUVE::Render() {
         (m_windowedRenderingActiveUVE && !m_presentationSurfaceReadyUVE)) {
         return;
     }
+    m_renderer3D->SetUIRuntimeUVE(&m_uiRuntime);
     if (m_activeCamera != Scene::kInvalidEntityUVE) {
         const bool hasParticles = m_particleRuntime != nullptr && m_particleRuntime->GetInstanceCountUVE() > 0U;
         if (m_editorViewportRegionUVE.has_value()) {

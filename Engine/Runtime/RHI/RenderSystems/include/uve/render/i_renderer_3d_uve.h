@@ -13,6 +13,7 @@
 #include "uve/scene/entity_uve.h"
 #include "uve/scene/i_entity_manager_uve.h"
 #include "uve/scene/particle_runtime_uve.h"
+#include "uve/ui/ui_runtime_uve.h"
 
 namespace UVE::Render {
 
@@ -145,6 +146,15 @@ public:
     /// post-process state.
     virtual void SetPostProcessSettingsUVE(const PostProcessSettingsUVE& settings) {
         static_cast<void>(settings);
+    }
+
+    /// Points the renderer at UI::UIRuntimeUVE's latest draw batch/font atlas, drawn by a
+    /// "UIOverlay" pass added right after tone-mapping in every RenderFrame* variant. Pass nullptr
+    /// (the default) to draw no UI this frame. The pointer is read fresh each RenderFrame* call,
+    /// never copied - the caller must keep it valid at least that long. The default implementation
+    /// is a no-op so non-Renderer3D test doubles need not own UI-overlay state.
+    virtual void SetUIRuntimeUVE(const UI::UIRuntimeUVE* uiRuntime) noexcept {
+        static_cast<void>(uiRuntime);
     }
 
     /// Returns the last frame's copied renderer evidence snapshot. The snapshot intentionally does

@@ -65,6 +65,7 @@ public:
     void RenderFrameToTargetUVE(Scene::IEntityManagerUVE& entityManager, Scene::EntityUVE cameraEntity,
                                 TextureHandleUVE colorTarget, TextureHandleUVE depthTarget) override;
     void SetPostProcessSettingsUVE(const PostProcessSettingsUVE& settings) override;
+    void SetUIRuntimeUVE(const UI::UIRuntimeUVE* uiRuntime) noexcept override;
     [[nodiscard]] Renderer3DFrameDiagnosticsUVE GetLastFrameDiagnosticsUVE() const noexcept override;
 
 private:

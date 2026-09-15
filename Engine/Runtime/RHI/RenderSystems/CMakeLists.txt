@@ -11,7 +11,9 @@
 # WorldTransform components and Scene::ParticleRuntimeUVE for particle state (mirrors
 # uve_physics's/uve_audio's own uve_scene dependency). uve_asset: mesh/texture/material/shader
 # asset loading through AssetManagerUVE/AssetHandleUVE<T> (the runtime layer added alongside this
-# slice's Asset extension), never a format importer.
+# slice's Asset extension), never a format importer. uve_ui: Renderer3DUVE's "UIOverlay" pass
+# consumes UI::UIRuntimeUVE's draw batch/font atlas exactly like it already consumes
+# Scene::ParticleRuntimeUVE above - same optional-render-input pattern, different module.
 
 add_library(uve_render_systems STATIC
     src/render_system_uve.cpp
@@ -28,6 +30,6 @@ add_library(uve_render_systems STATIC
     src/viewport_manager_uve.cpp
 )
 target_include_directories(uve_render_systems PUBLIC include)
-target_link_libraries(uve_render_systems PUBLIC uve_platform uve_debug uve_math uve_scene uve_asset uve_rhi uve_rhi_shader)
+target_link_libraries(uve_render_systems PUBLIC uve_platform uve_debug uve_math uve_scene uve_asset uve_rhi uve_rhi_shader uve_ui)
 target_compile_features(uve_render_systems PUBLIC cxx_std_20)
 uve_set_warnings(uve_render_systems)

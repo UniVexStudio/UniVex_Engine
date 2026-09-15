@@ -59,8 +59,10 @@ public:
 
     [[nodiscard]] bool IsValidUVE() const noexcept { return m_valid; }
 
-    /// The baked single-channel (alpha-only) bitmap, `kAtlasWidthUVE * kAtlasHeightUVE` bytes,
-    /// row-major - Phase U3's GPU upload target. Empty when `!IsValidUVE()`.
+    /// The baked bitmap, expanded to RGBA8 (opaque white, glyph coverage carried in alpha - this
+    /// engine's TextureFormatUVE has no single-channel option), `kAtlasWidthUVE * kAtlasHeightUVE *
+    /// 4` bytes, row-major - the GPU upload source for the UI overlay pass. Empty when
+    /// `!IsValidUVE()`.
     [[nodiscard]] const std::vector<std::uint8_t>& GetBitmapUVE() const noexcept { return m_bitmap; }
 
     /// Returns the baked glyph for `character`, or nullptr if it falls outside the covered range.

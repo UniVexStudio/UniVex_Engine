@@ -40,6 +40,7 @@
 #include "uve/scene/components/expanded_3d_node_components_uve.h"
 #include "uve/scene/components/primitive_mesh_component_uve.h"
 #include "uve/scene/components/world_transform_component_uve.h"
+#include "uve/ui/ui_runtime_uve.h"
 
 namespace UVE::Render {
 
@@ -146,9 +147,26 @@ struct ParticleVertexUVE {
     float alpha = 1.0F;
 };
 
+/// CPU-expanded vertex consumed by the built-in UI overlay pipeline (ui_overlay.glsl) - one
+/// screen-space position/texcoord pair plus a per-vertex tint, matching UI::UIQuadUVE's own field
+/// shape directly (kept as a private renderer DTO for the same reason ParticleVertexUVE is).
+struct UIVertexUVE {
+    float x = 0.0F;
+    float y = 0.0F;
+    float u = 0.0F;
+    float v = 0.0F;
+    float red = 1.0F;
+    float green = 1.0F;
+    float blue = 1.0F;
+    float alpha = 1.0F;
+};
+
 inline constexpr std::size_t kMaximumParticleGpuDrawCommandsUVE = 16'384U;
 inline constexpr std::size_t kParticleVerticesPerCommandUVE = 6U;
 inline constexpr float kParticleHalfExtentUVE = 0.05F;
+
+inline constexpr std::size_t kMaximumUIQuadsUVE = 8'192U;
+inline constexpr std::size_t kUIVerticesPerQuadUVE = 6U;
 
 /// A material's manager-owned linked program plus its resolved texture handles, cached by
 /// MaterialAssetUVE's AssetGuidUVE. `program` owns its linked pipeline through ShaderManagerUVE;
@@ -576,6 +594,18 @@ struct Renderer3DUVE::ImplUVE {
     /// full-frame RenderFrameUVE() call (this field left nullopt) still targets the presentation
     /// surface exactly as before.
     std::optional<std::pair<TextureHandleUVE, TextureHandleUVE>> destinationTextureOverride;
+
+    /// Set via SetUIRuntimeUVE(); read fresh by the "UIOverlay" pass every RenderFrame* call.
+    const UI::UIRuntimeUVE* uiRuntimeForFrame = nullptr;
+    /// Built-in UI overlay program (engine/render/shader/built_in/ui_overlay.glsl) - position +
+    /// texcoord + vertex color, alpha-blended, samples whichever texture is bound (the font atlas
+    /// for glyph quads, fallbackWhiteTexture for solid/image quads - see RecordUIOverlayItemsUVE).
+    std::shared_ptr<Shader::ShaderProgramUVE> uiOverlayProgram;
+    /// The font atlas's baked RGBA8 bitmap, uploaded to the GPU lazily on first use (the bitmap
+    /// never changes after baking, so one upload for the renderer's whole lifetime suffices).
+    TextureHandleUVE uiFontAtlasTexture = kInvalidTextureHandleUVE;
+    BufferHandleUVE uiVertexBuffer = kInvalidBufferHandleUVE;
+    std::vector<UIVertexUVE> uiVertexStaging;
 
     ImplUVE(IRenderDeviceUVE& renderDeviceIn, IRenderSystemUVE& renderSystemIn, IMeshRendererUVE& meshRendererIn,
             ICameraSystemUVE& cameraSystemIn, ILightSystemUVE& lightSystemIn,
@@ -1174,6 +1204,73 @@ struct Renderer3DUVE::ImplUVE {
         return drawCalls;
     }
 
+    /// Records the UI overlay batch as up to 2 draw calls: non-glyph quads (solid-fill buttons/
+    /// canvases, and images - which, until a real asset-texture resolution path exists, also
+    /// render as a flat tint - see UIRuntimeUVE's own kind classification) bound to
+    /// fallbackWhiteTexture, then glyph quads bound to the font atlas. This 2-pass split preserves
+    /// the exact same visual order as one interleaved draw would, since UIRuntimeUVE always
+    /// appends images/buttons before text (UIDrawBatchUVE's own doc comment) - no non-glyph quad
+    /// ever needs to render on top of a glyph that precedes it in the array, because none ever
+    /// does. Each pass is independently skippable: a missing font atlas texture (bake/upload
+    /// failure) only drops the glyph pass, not the solid-quad one.
+    [[nodiscard]] std::size_t RecordUIOverlayItemsUVE(const UI::UIDrawBatchUVE& batch,
+                                                       const Math::Matrix4x4UVE& projection,
+                                                       ICommandBufferUVE& commandBuffer) {
+        if (!uiOverlayProgram->IsValidUVE() || batch.quads.empty() || uiVertexBuffer == kInvalidBufferHandleUVE) {
+            return 0U;
+        }
+        const std::size_t maxVertices = kMaximumUIQuadsUVE * kUIVerticesPerQuadUVE;
+        const auto appendQuad = [this](const UI::UIQuadUVE& quad) {
+            const float x0 = quad.positionPixels.x;
+            const float y0 = quad.positionPixels.y;
+            const float x1 = quad.positionPixels.x + quad.sizePixels.x;
+            const float y1 = quad.positionPixels.y + quad.sizePixels.y;
+            const auto makeVertex = [&quad](const float x, const float y, const float u, const float v) {
+                return UIVertexUVE{x, y, u, v, quad.color.x, quad.color.y, quad.color.z, quad.alpha};
+            };
+            uiVertexStaging.push_back(makeVertex(x0, y0, quad.u0, quad.v0));
+            uiVertexStaging.push_back(makeVertex(x1, y0, quad.u1, quad.v0));
+            uiVertexStaging.push_back(makeVertex(x1, y1, quad.u1, quad.v1));
+            uiVertexStaging.push_back(makeVertex(x0, y0, quad.u0, quad.v0));
+            uiVertexStaging.push_back(makeVertex(x1, y1, quad.u1, quad.v1));
+            uiVertexStaging.push_back(makeVertex(x0, y1, quad.u0, quad.v1));
+        };
+        const auto drawPass = [this, &batch, &appendQuad, &projection, &commandBuffer,
+                               maxVertices](const TextureHandleUVE texture,
+                                            const auto& matchesPass) -> bool {
+            uiVertexStaging.clear();
+            for (const UI::UIQuadUVE& quad : batch.quads) {
+                if (!matchesPass(quad) || uiVertexStaging.size() + kUIVerticesPerQuadUVE > maxVertices) {
+                    continue;
+                }
+                appendQuad(quad);
+            }
+            if (uiVertexStaging.empty() ||
+                !renderDevice.UpdateBufferUVE(uiVertexBuffer, std::as_bytes(std::span(uiVertexStaging)))) {
+                return false;
+            }
+            uiOverlayProgram->SetMatrix4x4UVE("uProjection", projection);
+            uiOverlayProgram->SetIntUVE("uSourceTexture", 0);
+            uiOverlayProgram->ApplyToUVE(commandBuffer);
+            commandBuffer.BindTextureUVE(texture, 0U);
+            commandBuffer.BindVertexBufferUVE(uiVertexBuffer);
+            commandBuffer.DrawUVE(static_cast<std::uint32_t>(uiVertexStaging.size()));
+            return true;
+        };
+
+        std::size_t drawCalls = 0U;
+        if (drawPass(fallbackWhiteTexture,
+                     [](const UI::UIQuadUVE& quad) { return quad.kind != UI::UIDrawItemKindUVE::Glyph; })) {
+            ++drawCalls;
+        }
+        if (uiFontAtlasTexture != kInvalidTextureHandleUVE &&
+            drawPass(uiFontAtlasTexture,
+                     [](const UI::UIQuadUVE& quad) { return quad.kind == UI::UIDrawItemKindUVE::Glyph; })) {
+            ++drawCalls;
+        }
+        return drawCalls;
+    }
+
 };
 
 Renderer3DUVE::Renderer3DUVE(IRenderDeviceUVE& renderDevice, IRenderSystemUVE& renderSystem,
@@ -1312,6 +1409,24 @@ Renderer3DUVE::Renderer3DUVE(IRenderDeviceUVE& renderDevice, IRenderSystemUVE& r
     primitiveProgramDesc.debugNameUVE = "BuiltInPrimitiveVisual";
     m_impl->primitiveProgram = shaderManager.CreateProgramUVE(primitiveProgramDesc);
 
+    Shader::ShaderProgramDescUVE uiOverlayProgramDesc;
+    uiOverlayProgramDesc.virtualFilePath = std::string(Shader::BuiltIn::kUIOverlayVirtualPath);
+    uiOverlayProgramDesc.embeddedFallbackSourceCode = std::string(Shader::BuiltIn::kUIOverlaySource);
+    uiOverlayProgramDesc.vertexLayout = {
+        VertexAttributeUVE{"POSITION", VertexAttributeFormatUVE::Float2, offsetof(UIVertexUVE, x)},
+        VertexAttributeUVE{"TEXCOORD", VertexAttributeFormatUVE::Float2, offsetof(UIVertexUVE, u)},
+        VertexAttributeUVE{"COLOR", VertexAttributeFormatUVE::Float4, offsetof(UIVertexUVE, red)},
+    };
+    uiOverlayProgramDesc.vertexStride = static_cast<std::uint32_t>(sizeof(UIVertexUVE));
+    uiOverlayProgramDesc.depthTestEnabled = false;
+    uiOverlayProgramDesc.depthWriteEnabled = false;
+    uiOverlayProgramDesc.blendMode = PipelineBlendModeUVE::SourceAlphaOver;
+    uiOverlayProgramDesc.debugNameUVE = "UIOverlay";
+    m_impl->uiOverlayProgram = shaderManager.CreateProgramUVE(uiOverlayProgramDesc);
+    m_impl->uiVertexStaging.reserve(kMaximumUIQuadsUVE * kUIVerticesPerQuadUVE);
+    m_impl->uiVertexBuffer = renderDevice.CreateBufferUVE(
+        BufferDescUVE{sizeof(UIVertexUVE) * kMaximumUIQuadsUVE * kUIVerticesPerQuadUVE, BufferUsageUVE::Vertex});
+
     ImplUVE* const implPtr = m_impl.get();
     m_impl->reloadSubscription = eventSystem.Subscribe<Asset::AssetReloadedEventUVE>(
         [implPtr](const Asset::AssetReloadedEventUVE& event) { implPtr->OnAssetReloadedUVE(event); });
@@ -1345,6 +1460,8 @@ Renderer3DUVE::~Renderer3DUVE() {
         DestroyTextureIfValidUVE(m_impl->renderDevice, shadowMapTarget);
     }
     DestroyBufferIfValidUVE(m_impl->renderDevice, m_impl->particleVertexBuffer);
+    DestroyBufferIfValidUVE(m_impl->renderDevice, m_impl->uiVertexBuffer);
+    DestroyTextureIfValidUVE(m_impl->renderDevice, m_impl->uiFontAtlasTexture);
 }
 
 bool Renderer3DUVE::ResizeTargetsUVE(const std::uint32_t width, const std::uint32_t height) {
@@ -1753,6 +1870,46 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             commandBuffer.EndRenderPassUVE();
         });
 
+    // Phase U3a scope: UI overlay renders only when the frame's destination size is known - the
+    // plain presentation surface (targetWidth/targetHeight) or an explicit sub-region
+    // (destinationViewportOverride). RenderFrameToTargetUVE's caller-supplied texture has no
+    // queryable size on IRenderDeviceUVE, so it's deliberately excluded here (Phase U3b).
+    if (m_impl->uiRuntimeForFrame != nullptr && !m_impl->destinationTextureOverride.has_value()) {
+        const std::uint32_t uiWidth =
+            m_impl->destinationViewportOverride.has_value() ? m_impl->destinationViewportOverride->width : m_impl->targetWidth;
+        const std::uint32_t uiHeight = m_impl->destinationViewportOverride.has_value()
+                                            ? m_impl->destinationViewportOverride->height
+                                            : m_impl->targetHeight;
+        if (uiWidth > 0U && uiHeight > 0U) {
+            const std::array<RenderGraphResourceUseUVE, 1U> uiOverlayResources{
+                RenderGraphResourceUseUVE{colorResource, RenderGraphResourceAccessUVE::Read}};
+            renderGraph.AddPassUVE(
+                "UIOverlay", uiOverlayResources,
+                [this, uiWidth, uiHeight](ICommandBufferUVE& commandBuffer) {
+                    const UI::UIFontAtlasUVE& fontAtlas = m_impl->uiRuntimeForFrame->GetFontAtlasUVE();
+                    if (m_impl->uiFontAtlasTexture == kInvalidTextureHandleUVE && fontAtlas.IsValidUVE()) {
+                        m_impl->uiFontAtlasTexture = m_impl->renderDevice.CreateTextureUVE(
+                            TextureDescUVE{static_cast<std::uint32_t>(UI::UIFontAtlasUVE::kAtlasWidthUVE),
+                                           static_cast<std::uint32_t>(UI::UIFontAtlasUVE::kAtlasHeightUVE),
+                                           TextureFormatUVE::RGBA8Unorm, 1},
+                            std::as_bytes(std::span(fontAtlas.GetBitmapUVE())));
+                    }
+
+                    RenderPassDescUVE passDesc;
+                    passDesc.colorAttachment = kInvalidTextureHandleUVE;
+                    passDesc.depthAttachment = kInvalidTextureHandleUVE;
+                    passDesc.colorLoadOp = LoadOpUVE::Load;
+                    passDesc.viewportOverride = m_impl->destinationViewportOverride;
+                    commandBuffer.BeginRenderPassUVE(passDesc);
+                    const Math::Matrix4x4UVE uiProjection = Math::Matrix4x4UVE::OrthographicUVE(
+                        0.0F, static_cast<float>(uiWidth), static_cast<float>(uiHeight), 0.0F, -1.0F, 1.0F);
+                    static_cast<void>(m_impl->RecordUIOverlayItemsUVE(m_impl->uiRuntimeForFrame->GetDrawBatchUVE(),
+                                                                       uiProjection, commandBuffer));
+                    commandBuffer.EndRenderPassUVE();
+                });
+        }
+    }
+
     m_impl->renderSystem.BeginFrameUVE();
     ICommandBufferUVE& commandBuffer = m_impl->renderSystem.GetFrameCommandBufferUVE();
     const bool graphExecuted = renderGraph.ExecuteUVE(commandBuffer);
@@ -1811,6 +1968,10 @@ void Renderer3DUVE::RenderFrameToTargetUVE(Scene::IEntityManagerUVE& entityManag
 
 void Renderer3DUVE::SetPostProcessSettingsUVE(const PostProcessSettingsUVE& settings) {
     m_impl->postProcessSettings = settings;
+}
+
+void Renderer3DUVE::SetUIRuntimeUVE(const UI::UIRuntimeUVE* const uiRuntime) noexcept {
+    m_impl->uiRuntimeForFrame = uiRuntime;
 }
 
 Renderer3DFrameDiagnosticsUVE Renderer3DUVE::GetLastFrameDiagnosticsUVE() const noexcept {
