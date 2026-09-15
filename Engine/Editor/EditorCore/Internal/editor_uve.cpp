@@ -44,7 +44,7 @@
 #include "uve/scene/components/area_component_uve.h"
 #include "uve/scene/components/camera_component_uve.h"
 #include "uve/scene/components/collider_component_uve.h"
-#include "uve/scene/components/expanded_3d_node_components_uve.h"
+#include "uve/nodes/3d/all_nodes_3d_uve.h"
 #include "uve/scene/components/hierarchy_component_uve.h"
 #include "uve/scene/components/light_component_uve.h"
 #include "uve/scene/components/editor_internal_entity_component_uve.h"
