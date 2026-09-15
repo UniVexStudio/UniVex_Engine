@@ -7,23 +7,23 @@
 # nodes/scene_node_uve.h's restore note, which this module unblocks.
 
 add_library(uve_physics STATIC
-    src/area_overlap_lifecycle_tracker_uve.cpp
-    src/character_controller_uve.cpp
-    src/area_overlap_system_uve.cpp
-    src/angular_dynamics_uve.cpp
-    src/collider_world_aabb_cache_uve.cpp
-    src/collider_world_aabb_dynamic_bvh_uve.cpp
-    src/collision_lifecycle_tracker_uve.cpp
-    src/collision_system_uve.cpp
-    src/hinge_motor_limit_uve.cpp
-    src/physics_constraint_system_uve.cpp
-    src/physics_query_system_uve.cpp
-    src/physics_system_uve.cpp
-    src/raycast_system_uve.cpp
-    src/shape_cast_system_uve.cpp
-    src/shape_narrow_phase_uve.cpp
+    Internal/area_overlap_lifecycle_tracker_uve.cpp
+    Internal/character_controller_uve.cpp
+    Internal/area_overlap_system_uve.cpp
+    Internal/angular_dynamics_uve.cpp
+    Internal/collider_world_aabb_cache_uve.cpp
+    Internal/collider_world_aabb_dynamic_bvh_uve.cpp
+    Internal/collision_lifecycle_tracker_uve.cpp
+    Internal/collision_system_uve.cpp
+    Internal/hinge_motor_limit_uve.cpp
+    Internal/physics_constraint_system_uve.cpp
+    Internal/physics_query_system_uve.cpp
+    Internal/physics_system_uve.cpp
+    Internal/raycast_system_uve.cpp
+    Internal/shape_cast_system_uve.cpp
+    Internal/shape_narrow_phase_uve.cpp
 )
-target_include_directories(uve_physics PUBLIC include)
+target_include_directories(uve_physics PUBLIC Expose)
 target_link_libraries(uve_physics PUBLIC uve_platform uve_debug uve_math uve_scene)
 target_compile_features(uve_physics PUBLIC cxx_std_20)
 uve_set_warnings(uve_physics)

@@ -15,14 +15,14 @@
 find_package(glfw3 REQUIRED)
 
 add_library(uve_window STATIC
-    src/window_manager_uve.cpp
-    src/null_window_manager_uve.cpp
-    src/window_desc_validation_uve.cpp
-    src/monitor_info_validation_uve.cpp
-    src/display_mode_validation_uve.cpp
-    src/framebuffer_size_validation_uve.cpp
+    Internal/window_manager_uve.cpp
+    Internal/null_window_manager_uve.cpp
+    Internal/window_desc_validation_uve.cpp
+    Internal/monitor_info_validation_uve.cpp
+    Internal/display_mode_validation_uve.cpp
+    Internal/framebuffer_size_validation_uve.cpp
 )
-target_include_directories(uve_window PUBLIC include)
+target_include_directories(uve_window PUBLIC Expose)
 target_link_libraries(uve_window
     PUBLIC uve_platform uve_debug uve_events uve_input
     PRIVATE glfw

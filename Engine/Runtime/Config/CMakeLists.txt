@@ -6,9 +6,9 @@
 # <nlohmann/json.hpp>) - linked PRIVATE so it never leaks into consumers' include paths.
 
 add_library(uve_config STATIC
-    src/config_manager_uve.cpp
+    Internal/config_manager_uve.cpp
 )
-target_include_directories(uve_config PUBLIC include)
+target_include_directories(uve_config PUBLIC Expose)
 target_link_libraries(uve_config
     PUBLIC uve_platform uve_debug
     PRIVATE nlohmann_json::nlohmann_json

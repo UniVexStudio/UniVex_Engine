@@ -16,14 +16,14 @@
 # directly.
 
 add_library(uve_rhi_shader STATIC
-    src/built_in_shaders_uve.cpp
-    src/shader_binary_cache_uve.cpp
-    src/shader_diagnostics_parser_uve.cpp
-    src/shader_manager_uve.cpp
-    src/shader_preprocessor_uve.cpp
-    src/shader_program_uve.cpp
+    Internal/built_in_shaders_uve.cpp
+    Internal/shader_binary_cache_uve.cpp
+    Internal/shader_diagnostics_parser_uve.cpp
+    Internal/shader_manager_uve.cpp
+    Internal/shader_preprocessor_uve.cpp
+    Internal/shader_program_uve.cpp
 )
-target_include_directories(uve_rhi_shader PUBLIC include)
+target_include_directories(uve_rhi_shader PUBLIC Expose)
 target_link_libraries(uve_rhi_shader PUBLIC uve_rhi uve_debug uve_math uve_asset uve_threading uve_events)
 target_compile_features(uve_rhi_shader PUBLIC cxx_std_20)
 uve_set_warnings(uve_rhi_shader)

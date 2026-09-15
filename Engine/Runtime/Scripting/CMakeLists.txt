@@ -26,30 +26,30 @@
 # the only third-party dependency beyond stdlib, matching the reference's own PRIVATE link.
 
 add_library(uve_scripting STATIC
-    src/script_graph_uve.cpp
-    src/script_builtin_nodes_uve.cpp
-    src/script_vector3_value_uve.cpp
-    src/script_vector2_value_uve.cpp
-    src/script_rotation_value_uve.cpp
-    src/script_transform_value_uve.cpp
-    src/script_collection_value_uve.cpp
-    src/script_compiler_ir_uve.cpp
-    src/script_bytecode_uve.cpp
-    src/script_vm_uve.cpp
-    src/script_entity_query_adapter_uve.cpp
-    src/script_runtime_uve.cpp
-    src/script_graph_persistence_uve.cpp
-    src/script_graph_canvas_persistence_uve.cpp
-    src/script_graph_editor_backend_uve.cpp
-    src/script_graph_canvas_uve.cpp
-    src/script_debugger_uve.cpp
-    src/script_hot_reload_uve.cpp
-    src/script_graph_runtime_binding_uve.cpp
-    src/script_component_runtime_ownership_uve.cpp
-    src/script_asset_loader_uve.cpp
-    src/script_source_mapping_uve.cpp
+    Internal/script_graph_uve.cpp
+    Internal/script_builtin_nodes_uve.cpp
+    Internal/script_vector3_value_uve.cpp
+    Internal/script_vector2_value_uve.cpp
+    Internal/script_rotation_value_uve.cpp
+    Internal/script_transform_value_uve.cpp
+    Internal/script_collection_value_uve.cpp
+    Internal/script_compiler_ir_uve.cpp
+    Internal/script_bytecode_uve.cpp
+    Internal/script_vm_uve.cpp
+    Internal/script_entity_query_adapter_uve.cpp
+    Internal/script_runtime_uve.cpp
+    Internal/script_graph_persistence_uve.cpp
+    Internal/script_graph_canvas_persistence_uve.cpp
+    Internal/script_graph_editor_backend_uve.cpp
+    Internal/script_graph_canvas_uve.cpp
+    Internal/script_debugger_uve.cpp
+    Internal/script_hot_reload_uve.cpp
+    Internal/script_graph_runtime_binding_uve.cpp
+    Internal/script_component_runtime_ownership_uve.cpp
+    Internal/script_asset_loader_uve.cpp
+    Internal/script_source_mapping_uve.cpp
 )
-target_include_directories(uve_scripting PUBLIC include)
+target_include_directories(uve_scripting PUBLIC Expose)
 target_link_libraries(uve_scripting PUBLIC uve_scene PRIVATE nlohmann_json::nlohmann_json)
 target_compile_features(uve_scripting PUBLIC cxx_std_20)
 uve_set_warnings(uve_scripting)

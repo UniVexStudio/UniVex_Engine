@@ -9,6 +9,6 @@
 # (Engine/Runtime/Entity) can depend on this module without a cycle.
 
 add_library(uve_component INTERFACE)
-target_include_directories(uve_component INTERFACE include)
+target_include_directories(uve_component INTERFACE Expose)
 target_link_libraries(uve_component INTERFACE uve_math uve_asset)
 target_compile_features(uve_component INTERFACE cxx_std_20)

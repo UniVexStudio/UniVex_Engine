@@ -74,18 +74,18 @@ target_compile_features(uve_editor_imgui PUBLIC cxx_std_20)
 target_compile_options(uve_editor_imgui PRIVATE $<$<CXX_COMPILER_ID:GNU,Clang>:-w>)
 
 add_library(uve_editor STATIC
-    src/editor_bridge_stdio_uve.cpp
-    src/editor_bridge_uve.cpp
-    src/developer_console_uve.cpp
-    src/editor_tool_session_uve.cpp
-    src/editor_theme_uve.cpp
-    src/editor_ui_assets_uve.cpp
-    src/mesh_thumbnail_renderer_uve.cpp
-    src/editor_uve.cpp
-    src/inspector_drawer_registry_uve.cpp
-    src/regression_harness_uve.cpp
+    Internal/editor_bridge_stdio_uve.cpp
+    Internal/editor_bridge_uve.cpp
+    Internal/developer_console_uve.cpp
+    Internal/editor_tool_session_uve.cpp
+    Internal/editor_theme_uve.cpp
+    Internal/editor_ui_assets_uve.cpp
+    Internal/mesh_thumbnail_renderer_uve.cpp
+    Internal/editor_uve.cpp
+    Internal/inspector_drawer_registry_uve.cpp
+    Internal/regression_harness_uve.cpp
 )
-target_include_directories(uve_editor PUBLIC include)
+target_include_directories(uve_editor PUBLIC Expose)
 target_compile_features(uve_editor PUBLIC cxx_std_20)
 target_link_libraries(uve_editor
     PUBLIC uve_core uve_scripting uve_plugins

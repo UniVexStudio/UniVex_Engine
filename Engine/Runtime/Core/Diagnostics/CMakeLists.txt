@@ -17,8 +17,8 @@
 # Core/{Logging,Memory,Threading,Math,Utilities} split for that reason.
 
 add_library(uve_diagnostics STATIC
-    src/profiler_diagnostics_uve.cpp
+    Internal/profiler_diagnostics_uve.cpp
 )
-target_include_directories(uve_diagnostics PUBLIC include)
+target_include_directories(uve_diagnostics PUBLIC Expose)
 target_compile_features(uve_diagnostics PUBLIC cxx_std_20)
 uve_set_warnings(uve_diagnostics)
