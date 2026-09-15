@@ -175,9 +175,12 @@ system behind them.
 
 ## Suggested near-term order
 
-1. Finish separating every 3D node's data definition into its own real file (in progress — see
-   `Engine/Runtime/Nodes/3D`), so future systems have a clean, discoverable home to attach real
-   behavior to.
+1. **Done**: every 3D node's data definition now has its own real `.h`+`.cpp` under
+   `Engine/Runtime/Nodes/3D` (moved out of one shared header; the old thin compatibility-alias
+   facade layer in `Engine/Runtime/Scene` was also removed once confirmed nothing used it) — so
+   future systems have a clean, discoverable home to attach real behavior to. This was purely a
+   structural move: no `[~]` entry above changed status from it, since organizing where a stub's
+   data lives is not the same as giving it a real backing system.
 2. Wire up the highest-value already-authored 3D stubs first: RayCast3D (query system already
    exists, just needs connecting), Skeleton3D + AnimationPlayer + AnimationTree (blocked on the
    same missing skinning/clip-sampling pipeline — see `ROADMAP.md`), Hitbox3D/Hurtbox3D (needed for
