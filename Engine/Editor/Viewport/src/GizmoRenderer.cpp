@@ -13,8 +13,8 @@ namespace {
 // Per-vertex layout of the line pass: current end, other end, colour,
 // (side, widthPx). Six of these per segment — two triangles.
 constexpr GLsizei kLineStride = static_cast<GLsizei>(sizeof(float) * 11);
-// Solid pass: position + RGBA.
-constexpr GLsizei kSolidStride = static_cast<GLsizei>(sizeof(float) * 7);
+// Solid pass: position + normal + RGBA.
+constexpr GLsizei kSolidStride = static_cast<GLsizei>(sizeof(float) * 10);
 
 void PushLineVertex(std::vector<float>& out, const Vec3& current, const Vec3& other,
                     const Vec3& color, float side, float widthPx) {
@@ -85,8 +85,10 @@ std::optional<GizmoRenderer> GizmoRenderer::Create(std::string& outError) {
     glBindBuffer(GL_ARRAY_BUFFER, renderer.solidVbo_);
     glEnableVertexAttribArray(0);
     glEnableVertexAttribArray(1);
+    glEnableVertexAttribArray(2);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, kSolidStride, reinterpret_cast<void*>(0));
-    glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, kSolidStride, reinterpret_cast<void*>(sizeof(float) * 3));
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, kSolidStride, reinterpret_cast<void*>(sizeof(float) * 3));
+    glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, kSolidStride, reinterpret_cast<void*>(sizeof(float) * 6));
 
     glBindVertexArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
@@ -97,11 +99,18 @@ void GizmoRenderer::UploadAndDrawTriangles(const GizmoMesh& mesh, const GizmoDra
     if (mesh.triangles.empty()) return;
 
     std::vector<float> vertices;
-    vertices.reserve(mesh.triangles.size() * 3 * 7);
+    vertices.reserve(mesh.triangles.size() * 3 * 10);
     for (const auto& tri : mesh.triangles) {
+        // Flat (faceted) shading: one normal per triangle, replicated across
+        // its 3 vertices - matches this mesh's own immediate/expanded style
+        // (no shared vertex buffer to smooth across), and reads as the same
+        // simple low-poly look the gizmo's flat colours already have.
+        const Vec3 normal = univex::math::Normalize(
+            univex::math::Cross(tri.b - tri.a, tri.c - tri.a));
         for (const Vec3& p : {tri.a, tri.b, tri.c}) {
             vertices.insert(vertices.end(),
-                            {p.x, p.y, p.z, tri.color.x, tri.color.y, tri.color.z, tri.alpha});
+                            {p.x, p.y, p.z, normal.x, normal.y, normal.z,
+                             tri.color.x, tri.color.y, tri.color.z, tri.alpha});
         }
     }
 

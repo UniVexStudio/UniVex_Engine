@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <cmath>
 #include <cstdint>
 #include <exception>
 #include <filesystem>
@@ -38,6 +39,11 @@
 #include "uve/scene/i_scene_graph_uve.h"
 
 namespace {
+
+// How far the pointer may travel on the nav gizmo (accumulated since the button went down, in
+// ImGui points) and still count as a click rather than a drag - mirrors app/main.cpp's own
+// kNavClickSlopPixels for the standalone demo.
+constexpr float kNavClickSlopPixelsUVE = 4.0F;
 
 // Fullscreen-triangle compositing pass: layers EditorMeshLayerUVE's real mesh/material render on
 // top of ViewportRenderPass's grid/gizmo image, using the mesh layer's own depth buffer (cleared
@@ -131,7 +137,13 @@ public:
 
         ApplyOverlayStateUVE(overlayState);
         UpdateSelectionGizmoUVE();
-        UpdateCameraFromMouseUVE(height);
+        const bool navGizmoOwnsGesture = UpdateNavGizmoInteractionUVE(width, height);
+        UpdateCameraFromMouseUVE(height, navGizmoOwnsGesture);
+        // Advances the eased snap-to-axis animation SnapToDirection() starts (a manual orbit/pan
+        // cancels it instead - see OrbitCamera.cpp) - without this the camera would flag itself
+        // "animating" and then never actually move, since nothing else ticks it forward. Mirrors
+        // app/main.cpp's own per-frame state.camera.Update(deltaSeconds) call in the standalone demo.
+        camera_.Update(ImGui::GetIO().DeltaTime);
 
         GLint previousFbo = 0;
         glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previousFbo);
@@ -458,12 +470,17 @@ private:
     // the Viewport panel specifically. Known simplification versus the GLFW demo: a drag that
     // began inside the panel stops orbiting the moment the cursor leaves it, rather than
     // continuing to track a global drag - acceptable for this integration slice.
-    void UpdateCameraFromMouseUVE(const int framebufferHeight) {
+    //
+    // `suppressOrbit` is true while UpdateNavGizmoInteractionUVE() below owns the current left-
+    // button gesture (it started on the nav gizmo) - without it, this method's own
+    // IsMouseDragging(Left) check would ALSO orbit the camera from the same drag, double-applying
+    // the same mouse delta on top of the nav gizmo's own orbit-while-dragging behavior.
+    void UpdateCameraFromMouseUVE(const int framebufferHeight, const bool suppressOrbit) {
         if (!ImGui::IsWindowHovered()) {
             return;
         }
         const ImGuiIO& io = ImGui::GetIO();
-        if (ImGui::IsMouseDragging(ImGuiMouseButton_Left, 0.0F)) {
+        if (!suppressOrbit && ImGui::IsMouseDragging(ImGuiMouseButton_Left, 0.0F)) {
             camera_.Orbit(io.MouseDelta.x, io.MouseDelta.y);
         } else if (ImGui::IsMouseDragging(ImGuiMouseButton_Middle, 0.0F) ||
                    ImGui::IsMouseDragging(ImGuiMouseButton_Right, 0.0F)) {
@@ -472,6 +489,98 @@ private:
         if (io.MouseWheel != 0.0F) {
             camera_.Dolly(io.MouseWheel);
         }
+    }
+
+    // Returns true and fills the nav-local position if the cursor is over the orientation gizmo -
+    // ports app/main.cpp's own CursorOverNavGizmo() (the standalone GLFW demo, where this already
+    // works) into the ImGui-hosted real editor. `fbX`/`fbY` are pixel coordinates relative to the
+    // Viewport panel's own rendered image top-left, matching NavViewportRectFor()'s own convention.
+    [[nodiscard]] bool CursorOverNavGizmoUVE(int width, int height, float fbX, float fbY,
+                                            float& outLocalX, float& outLocalY) const {
+        if (!renderPass_.has_value() || !renderPass_->Settings().viewGizmos) {
+            return false;
+        }
+        const univex::app::NavViewportRect rect =
+            univex::app::ViewportRenderPass::NavViewportRectFor(renderPass_->Style(), width, height);
+        if (rect.size <= 0) {
+            return false;
+        }
+        // rect.y is a GL viewport origin (bottom-left); convert to top-left, matching fbY's own
+        // top-left-origin convention (the same one IInputSystemUVE::GetMousePositionUVE() uses).
+        const float top = static_cast<float>(height - rect.y - rect.size);
+        const float left = static_cast<float>(rect.x);
+        if (fbX < left || fbX > left + static_cast<float>(rect.size)) {
+            return false;
+        }
+        if (fbY < top || fbY > top + static_cast<float>(rect.size)) {
+            return false;
+        }
+        outLocalX = fbX - left;
+        outLocalY = fbY - top;
+        return true;
+    }
+
+    // Handles both nav-gizmo gestures - drag-anywhere-on-it orbits exactly like dragging the scene,
+    // click-a-ball snaps the camera to look down that axis - mirroring app/main.cpp's own
+    // OnMouseButton()/OnCursorPos() handling for the standalone demo, just driven by ImGui's per-
+    // frame IO instead of GLFW press/release/move callbacks. Returns true while this gesture owns
+    // the left mouse button, so UpdateCameraFromMouseUVE() knows to suppress its own generic orbit.
+    [[nodiscard]] bool UpdateNavGizmoInteractionUVE(const int width, const int height) {
+        if (!ImGui::IsWindowHovered() && !navDragging_) {
+            return false;
+        }
+        const ImGuiIO& io = ImGui::GetIO();
+        const ImVec2 imageOrigin = ImGui::GetCursorScreenPos();
+        const float fbX = io.MousePos.x - imageOrigin.x;
+        const float fbY = io.MousePos.y - imageOrigin.y;
+
+        if (!navDragging_) {
+            if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+                float localX = 0.0F;
+                float localY = 0.0F;
+                if (CursorOverNavGizmoUVE(width, height, fbX, fbY, localX, localY)) {
+                    navDragging_ = true;
+                    navDragMoved_ = false;
+                    navPressX_ = localX;
+                    navPressY_ = localY;
+                    camera_.CancelAnimation();
+                }
+            }
+            return false;
+        }
+
+        // A gesture that started on the gizmo: still deciding click vs. drag, or already
+        // committed to orbiting. GetMouseDragDelta accumulates from the original press position,
+        // matching the demo's own "press-relative slop" check exactly (not per-frame delta, which
+        // would never exceed the threshold for a series of tiny frame-to-frame movements).
+        if (!navDragMoved_) {
+            const ImVec2 dragDelta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Left, 0.0F);
+            if ((std::fabs(dragDelta.x) + std::fabs(dragDelta.y)) > kNavClickSlopPixelsUVE) {
+                navDragMoved_ = true;
+            }
+        }
+        if (navDragMoved_) {
+            camera_.Orbit(io.MouseDelta.x, io.MouseDelta.y);
+        }
+
+        if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+            if (!navDragMoved_) {
+                const univex::gizmo::NavPickResult pick = univex::gizmo::PickNavGizmo(
+                    renderPass_->Style(), univex::app::ViewportRenderPass::NavViewMatrix(camera_),
+                    navPressX_, navPressY_, static_cast<float>(renderPass_->Style().navPixelSize));
+                if (pick.hit) {
+                    camera_.SnapToDirection(pick.direction);
+                    auto& settings = renderPass_->Settings();
+                    settings.standardView = univex::viewport::StandardView::User;
+                    if (settings.autoOrthogonal) {
+                        camera_.SetOrthographic(true);
+                    }
+                }
+            }
+            navDragging_ = false;
+            navDragMoved_ = false;
+        }
+        return true;
     }
 
     UVE::Editor::EditorUVE& editor_;
@@ -486,6 +595,11 @@ private:
     // later in the same frame by selection state, so it needs this stored flag instead).
     bool gameWorkspaceActive_ = false;
     univex::camera::OrbitCamera camera_;
+    // Nav-gizmo click-vs-drag state - see UpdateNavGizmoInteractionUVE()'s own comment.
+    bool navDragging_ = false;
+    bool navDragMoved_ = false;
+    float navPressX_ = 0.0F;
+    float navPressY_ = 0.0F;
     bool glewInitialized_ = false;
     GLuint msaaFbo_ = 0U;
     GLuint msaaColorRb_ = 0U;

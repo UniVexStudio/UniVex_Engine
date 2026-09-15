@@ -166,18 +166,36 @@ void main() {
     float axisZ = AxisCoverage(worldPos.x, worldPerPixel.x, uAxisWidthPixels);
     accum = Over(accum, uAxisColorX, axisX);
     accum = Over(accum, uAxisColorZ, axisZ);
-    accum = Over(accum, uAxisColorY, axisY);
 
-    // ---- horizon fade -----------------------------------------------------
+    // ---- horizon fade for the ground-plane content (grid tiers + X/Z axes) -
+    // Correct for X/Z, since they truly lie on the ground plane worldPos hits.
     float groundDist = length(worldPos.xz - uCameraPos.xz);
-    float fade = 1.0 - smoothstep(uFadeStart, uFadeEnd, groundDist);
+    float groundFade = 1.0 - smoothstep(uFadeStart, uFadeEnd, groundDist);
+    float groundAlpha = accum.a * groundFade * uOpacity;
 
-    float finalAlpha = accum.a * fade * uOpacity;
+    // ---- Y axis line: its own independent fade, not the ground's ----------
+    // The vertical line isn't on the ground plane, so reusing groundDist here
+    // (as an earlier version of this shader did) fades/cuts it off wherever
+    // THIS pixel's ground ray happens to land - often unrelated to how far
+    // along the vertical line this pixel actually is, which is what made the
+    // line visibly terminate well short of the horizon while X/Z kept going.
+    // Fading by the line's own camera-space distance instead makes it dissolve
+    // at the same true visual range as X/Z, matching the "infinite" ask.
+    float axisYCameraDist = length(axisYClosestPoint - uCameraPos);
+    float axisYFade = 1.0 - smoothstep(uFadeStart, uFadeEnd, axisYCameraDist);
+    float axisYAlpha = axisY * axisYFade * uOpacity;
+
+    vec4 finalColor = Over(vec4(accum.rgb, groundAlpha), uAxisColorY, axisYAlpha);
+    float finalAlpha = finalColor.a;
     if (finalAlpha < 0.002) discard;   // nothing to show; don't touch depth either
 
     // ---- real depth, so the grid composites with scene geometry -----------
-    vec4 clip = uViewProj * vec4(worldPos, 1.0);
+    // Whichever content actually wins this pixel (the Y line or the ground)
+    // supplies the depth - using the ground's worldPos for a pixel that's
+    // really showing the Y line would write nonsense/unrelated depth there.
+    vec3 depthSourcePos = (axisYAlpha > groundAlpha) ? axisYClosestPoint : worldPos;
+    vec4 clip = uViewProj * vec4(depthSourcePos, 1.0);
     gl_FragDepth = (clip.z / clip.w) * 0.5 + 0.5;
 
-    fragColor = vec4(accum.rgb, finalAlpha);
+    fragColor = vec4(finalColor.rgb, finalAlpha);
 }
