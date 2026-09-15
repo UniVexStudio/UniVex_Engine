@@ -3,7 +3,9 @@
 
 #include "uve/math/quaternion_uve.h"
 
+#include <array>
 #include <cmath>
+#include <limits>
 #include <string>
 
 #include <gtest/gtest.h>
@@ -172,6 +174,31 @@ TEST(QuaternionUVETest, CheckedHelpers_EulerLookAtSlerpAndAxisAngleDecomposition
     ASSERT_TRUE(TrySlerpUVE(QuaternionUVE{}, euler, 0.5F, half));
     EXPECT_NEAR(LengthSquaredUVE(half), 1.0F, kEpsilon);
     EXPECT_FALSE(TryMakeLookAtUVE(Vector3UVE{0.0F, 0.0F, 0.0F}, Vector3UVE{0.0F, 1.0F, 0.0F}, half));
+}
+
+TEST(QuaternionUVETest, TryToEulerUVE_RoundTripsWithTryMakeEulerUVE) {
+    const std::array<Vector3UVE, 5> anglesRadians{
+        Vector3UVE{0.0F, 0.0F, 0.0F},
+        Vector3UVE{0.3F, 0.0F, 0.0F},
+        Vector3UVE{0.0F, -0.6F, 0.0F},
+        Vector3UVE{0.0F, 0.0F, 1.1F},
+        Vector3UVE{0.4F, -0.5F, 0.7F},
+    };
+    for (const Vector3UVE& original : anglesRadians) {
+        QuaternionUVE rotation{};
+        ASSERT_TRUE(TryMakeEulerUVE(original, rotation));
+        Vector3UVE recovered{};
+        ASSERT_TRUE(TryToEulerUVE(rotation, recovered));
+        EXPECT_NEAR(recovered.x, original.x, kEpsilon);
+        EXPECT_NEAR(recovered.y, original.y, kEpsilon);
+        EXPECT_NEAR(recovered.z, original.z, kEpsilon);
+    }
+}
+
+TEST(QuaternionUVETest, TryToEulerUVE_RejectsNonFiniteInput) {
+    Vector3UVE outRadians{};
+    const QuaternionUVE nonFinite{std::numeric_limits<float>::quiet_NaN(), 0.0F, 0.0F, 1.0F};
+    EXPECT_FALSE(TryToEulerUVE(nonFinite, outRadians));
 }
 
 TEST(QuaternionUVETest, RotateVectorUVE_PreservesFiniteExtremeHalfTurn) {

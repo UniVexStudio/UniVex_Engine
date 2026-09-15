@@ -4821,24 +4821,47 @@ void EditorUVE::DrawTransformInspectorDrawerUVE(const Scene::EntityUVE entity) {
     ImGui::Separator();
     DrawProceduralIconLabelUVE(8.0F, "Transform", DrawMoveIconUVE);
     float position[3]{edited.localPosition.x, edited.localPosition.y, edited.localPosition.z};
-    float rotation[4]{edited.localRotation.x, edited.localRotation.y, edited.localRotation.z, edited.localRotation.w};
+    // Displayed/edited as Euler degrees (Position/Scale's own 3-box shape, and the convention
+    // every other engine's Inspector uses) even though the stored/serialized rotation stays a
+    // quaternion - TryToEulerUVE()/TryMakeEulerUVE() are the display/edit-boundary conversion,
+    // never touching TransformComponentUVE's own data shape.
+    constexpr float kRadiansToDegreesUVE = 180.0F / std::numbers::pi_v<float>;
+    constexpr float kDegreesToRadiansUVE = std::numbers::pi_v<float> / 180.0F;
+    Math::Vector3UVE eulerRadians{};
+    const bool haveEuler = Math::TryToEulerUVE(edited.localRotation, eulerRadians);
+    float rotationDegrees[3]{haveEuler ? eulerRadians.x * kRadiansToDegreesUVE : 0.0F,
+                             haveEuler ? eulerRadians.y * kRadiansToDegreesUVE : 0.0F,
+                             haveEuler ? eulerRadians.z * kRadiansToDegreesUVE : 0.0F};
     float scale[3]{edited.localScale.x, edited.localScale.y, edited.localScale.z};
 
     // Cowork's mockup uses a monospace font for numeric fields (`--font-mono`); PushFont() here
     // only around these three widgets, not the whole panel, since everything else (labels,
-    // section headers) stays on the main UI font.
+    // section headers) stays on the main UI font. Each group's label sits on its own line above
+    // its row of boxes (matching Unity/Unreal's own Inspector convention) rather than ImGui's
+    // default trailing label, which used to clip off the panel's right edge.
     if (g_monoFontUVE != nullptr) {
         ImGui::PushFont(g_monoFontUVE);
     }
-    const bool positionChanged = ImGui::InputFloat3("Local Position", position);
-    const bool rotationChanged = ImGui::InputFloat4("Local Rotation (xyzw)", rotation);
-    const bool scaleChanged = ImGui::InputFloat3("Local Scale", scale);
+    ImGui::TextUnformatted("Position");
+    const bool positionChanged = ImGui::InputFloat3("##local-position", position);
+    ImGui::TextUnformatted("Rotation");
+    const bool rotationChanged = ImGui::InputFloat3("##local-rotation", rotationDegrees);
+    ImGui::TextUnformatted("Scale");
+    const bool scaleChanged = ImGui::InputFloat3("##local-scale", scale);
     if (g_monoFontUVE != nullptr) {
         ImGui::PopFont();
     }
     if (positionChanged || rotationChanged || scaleChanged) {
         edited.localPosition = Math::Vector3UVE{position[0], position[1], position[2]};
-        edited.localRotation = Math::QuaternionUVE{rotation[0], rotation[1], rotation[2], rotation[3]};
+        if (rotationChanged) {
+            Math::QuaternionUVE newRotation{};
+            const Math::Vector3UVE radians{rotationDegrees[0] * kDegreesToRadiansUVE,
+                                           rotationDegrees[1] * kDegreesToRadiansUVE,
+                                           rotationDegrees[2] * kDegreesToRadiansUVE};
+            if (Math::TryMakeEulerUVE(radians, newRotation)) {
+                edited.localRotation = newRotation;
+            }
+        }
         edited.localScale = Math::Vector3UVE{scale[0], scale[1], scale[2]};
         static_cast<void>(SetSelectedLocalTransformUVE(edited));
     }
@@ -4863,8 +4886,9 @@ void EditorUVE::DrawPrimitiveMeshInspectorDrawerUVE(const Scene::EntityUVE entit
     const bool kindChanged = ImGui::Combo("Primitive Kind", &kindIndex, kPrimitiveKinds,
                                           static_cast<int>(std::size(kPrimitiveKinds)));
     float baseColor[3]{current.baseColor.x, current.baseColor.y, current.baseColor.z};
+    ImGui::TextUnformatted("Base Color");
     const bool colorChanged =
-        ImGui::ColorEdit3("Base Color", baseColor, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_DisplayRGB);
+        ImGui::ColorEdit3("##base-color", baseColor, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_DisplayRGB);
     if (kindChanged || colorChanged) {
         Scene::PrimitiveMeshComponentUVE updated = current;
         updated.kind = static_cast<Scene::PrimitiveMeshKindUVE>(kindIndex);
@@ -4919,8 +4943,9 @@ void EditorUVE::DrawWorldEnvironmentInspectorDrawerUVE(const Scene::EntityUVE en
     }
     if (ImGui::CollapsingHeader("Ambient Light", ImGuiTreeNodeFlags_DefaultOpen)) {
         float ambientColor[3]{edited.ambientColor.x, edited.ambientColor.y, edited.ambientColor.z};
+        ImGui::TextUnformatted("Ambient Color");
         const bool colorChanged =
-            ImGui::ColorEdit3("Ambient Color", ambientColor, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_DisplayRGB);
+            ImGui::ColorEdit3("##ambient-color", ambientColor, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_DisplayRGB);
         float ambientEnergy = edited.ambientEnergy;
         const bool energyChanged = ImGui::DragFloat("Ambient Energy", &ambientEnergy, 0.05F, 0.0F, 32.0F, "%.3f");
         if (colorChanged || energyChanged) {
@@ -4949,8 +4974,9 @@ void EditorUVE::DrawWorldEnvironmentInspectorDrawerUVE(const Scene::EntityUVE en
     if (ImGui::CollapsingHeader("Fog")) {
         const bool fogEnabledChanged = ImGui::Checkbox("Enabled", &edited.fogEnabled);
         float fogColor[3]{edited.fogColor.x, edited.fogColor.y, edited.fogColor.z};
+        ImGui::TextUnformatted("Fog Color");
         const bool fogColorChanged =
-            ImGui::ColorEdit3("Fog Color", fogColor, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_DisplayRGB);
+            ImGui::ColorEdit3("##fog-color", fogColor, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_DisplayRGB);
         float fogDensity = edited.fogDensity;
         const bool fogDensityChanged = ImGui::DragFloat("Density", &fogDensity, 0.001F, 0.0F, 10.0F, "%.4f");
         if (fogEnabledChanged || fogColorChanged || fogDensityChanged) {
@@ -5081,7 +5107,8 @@ void EditorUVE::DrawUITextInspectorDrawerUVE(const Scene::EntityUVE entity) {
         changed = true;
     }
     float position[2]{edited.positionPixels.x, edited.positionPixels.y};
-    if (ImGui::DragFloat2("Position (px)", position, 1.0F)) {
+    ImGui::TextUnformatted("Position");
+    if (ImGui::DragFloat2("##position", position, 1.0F)) {
         edited.positionPixels = Math::Vector2UVE{position[0], position[1]};
         changed = true;
     }
@@ -5091,7 +5118,8 @@ void EditorUVE::DrawUITextInspectorDrawerUVE(const Scene::EntityUVE entity) {
         changed = true;
     }
     float color[3]{edited.color.x, edited.color.y, edited.color.z};
-    if (ImGui::ColorEdit3("Color", color, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_DisplayRGB)) {
+    ImGui::TextUnformatted("Color");
+    if (ImGui::ColorEdit3("##color", color, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_DisplayRGB)) {
         edited.color = Math::Vector3UVE{color[0], color[1], color[2]};
         changed = true;
     }
@@ -5132,18 +5160,21 @@ void EditorUVE::DrawUIImageInspectorDrawerUVE(const Scene::EntityUVE entity) {
         changed = true;
     }
     float position[2]{edited.positionPixels.x, edited.positionPixels.y};
-    if (ImGui::DragFloat2("Position (px)", position, 1.0F)) {
+    ImGui::TextUnformatted("Position");
+    if (ImGui::DragFloat2("##position", position, 1.0F)) {
         edited.positionPixels = Math::Vector2UVE{position[0], position[1]};
         changed = true;
     }
     float size[2]{edited.sizePixels.x, edited.sizePixels.y};
-    if (ImGui::DragFloat2("Size (px)", size, 1.0F, Scene::kMinimumUIImageSizePixelsUVE,
+    ImGui::TextUnformatted("Size");
+    if (ImGui::DragFloat2("##size", size, 1.0F, Scene::kMinimumUIImageSizePixelsUVE,
                          Scene::kMaximumUIImageSizePixelsUVE)) {
         edited.sizePixels = Math::Vector2UVE{size[0], size[1]};
         changed = true;
     }
     float tintColor[3]{edited.tintColor.x, edited.tintColor.y, edited.tintColor.z};
-    if (ImGui::ColorEdit3("Tint Color", tintColor, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_DisplayRGB)) {
+    ImGui::TextUnformatted("Tint Color");
+    if (ImGui::ColorEdit3("##tint-color", tintColor, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_DisplayRGB)) {
         edited.tintColor = Math::Vector3UVE{tintColor[0], tintColor[1], tintColor[2]};
         changed = true;
     }
@@ -5179,28 +5210,33 @@ void EditorUVE::DrawUIButtonInspectorDrawerUVE(const Scene::EntityUVE entity) {
     ImGui::TextDisabled("Hit-tested every tick by UIRuntimeUVE against the real mouse position/button state.");
 
     float position[2]{edited.positionPixels.x, edited.positionPixels.y};
-    if (ImGui::DragFloat2("Position (px)", position, 1.0F)) {
+    ImGui::TextUnformatted("Position");
+    if (ImGui::DragFloat2("##position", position, 1.0F)) {
         edited.positionPixels = Math::Vector2UVE{position[0], position[1]};
         changed = true;
     }
     float size[2]{edited.sizePixels.x, edited.sizePixels.y};
-    if (ImGui::DragFloat2("Size (px)", size, 1.0F, Scene::kMinimumUIButtonSizePixelsUVE,
+    ImGui::TextUnformatted("Size");
+    if (ImGui::DragFloat2("##size", size, 1.0F, Scene::kMinimumUIButtonSizePixelsUVE,
                          Scene::kMaximumUIButtonSizePixelsUVE)) {
         edited.sizePixels = Math::Vector2UVE{size[0], size[1]};
         changed = true;
     }
     float normalColor[3]{edited.normalColor.x, edited.normalColor.y, edited.normalColor.z};
-    if (ImGui::ColorEdit3("Normal Color", normalColor, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_DisplayRGB)) {
+    ImGui::TextUnformatted("Normal Color");
+    if (ImGui::ColorEdit3("##normal-color", normalColor, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_DisplayRGB)) {
         edited.normalColor = Math::Vector3UVE{normalColor[0], normalColor[1], normalColor[2]};
         changed = true;
     }
     float hoverColor[3]{edited.hoverColor.x, edited.hoverColor.y, edited.hoverColor.z};
-    if (ImGui::ColorEdit3("Hover Color", hoverColor, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_DisplayRGB)) {
+    ImGui::TextUnformatted("Hover Color");
+    if (ImGui::ColorEdit3("##hover-color", hoverColor, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_DisplayRGB)) {
         edited.hoverColor = Math::Vector3UVE{hoverColor[0], hoverColor[1], hoverColor[2]};
         changed = true;
     }
     float pressedColor[3]{edited.pressedColor.x, edited.pressedColor.y, edited.pressedColor.z};
-    if (ImGui::ColorEdit3("Pressed Color", pressedColor, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_DisplayRGB)) {
+    ImGui::TextUnformatted("Pressed Color");
+    if (ImGui::ColorEdit3("##pressed-color", pressedColor, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_DisplayRGB)) {
         edited.pressedColor = Math::Vector3UVE{pressedColor[0], pressedColor[1], pressedColor[2]};
         changed = true;
     }

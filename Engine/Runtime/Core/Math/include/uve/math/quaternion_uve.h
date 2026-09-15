@@ -59,6 +59,12 @@ struct QuaternionUVE {
 /// Builds a normalized XYZ Euler rotation from radians. Returns false for non-finite input.
 [[nodiscard]] bool TryMakeEulerUVE(const Vector3UVE& radians, QuaternionUVE& outRotation) noexcept;
 
+/// The inverse of TryMakeEulerUVE(): extracts the XYZ Euler angles (radians) that would rebuild
+/// `rotation` via TryMakeEulerUVE(). Returns false for a non-finite/non-normalizable input. Like
+/// every Euler-angle extraction, this is not unique at the gimbal-lock poles (pitch at +/-90
+/// degrees) - the same accepted limitation every engine's rotation Inspector field has.
+[[nodiscard]] bool TryToEulerUVE(const QuaternionUVE& rotation, Vector3UVE& outRadians) noexcept;
+
 /// Builds a rotation that points local +Z along `direction` with the supplied up reference.
 [[nodiscard]] bool TryMakeLookAtUVE(const Vector3UVE& direction, const Vector3UVE& up,
                                     QuaternionUVE& outRotation) noexcept;
