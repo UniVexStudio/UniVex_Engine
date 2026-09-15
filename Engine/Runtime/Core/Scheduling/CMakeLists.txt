@@ -9,8 +9,7 @@
 # the same uve_core static library there) purely because it was authored alongside it - direct
 # grep confirms EngineCoreUVE/EngineServicesUVE never include or reference FrameSchedulerUVE at
 # all. Same "historical colocation, not a real dependency" pattern already resolved for
-# AnimationStateMachineUVE/AnimationRetargetingUVE/RetargetMapUVE (Animation) and
-# TypeMetadataUVE (Object).
+# AnimationStateMachineUVE (Animation) and TypeMetadataUVE (Object).
 #
 # Given its own logical home instead: checked real Unreal Engine source
 # (Engine/Source/Runtime/Core/Public/Async/TaskGraph*) and confirmed frame/task scheduling

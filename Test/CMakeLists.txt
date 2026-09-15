@@ -165,8 +165,6 @@ add_executable(uve_integration_tests
     Integration/Animation/animation_clip_uve_tests.cpp
     Integration/Animation/animation_tree_uve_tests.cpp
     Integration/Animation/animation_state_machine_uve_tests.cpp
-    Integration/Animation/animation_retargeting_uve_tests.cpp
-    Integration/Animation/retarget_map_uve_tests.cpp
     Integration/World/world_uve_tests.cpp
     Integration/Object/type_metadata_uve_tests.cpp
     Integration/Object/property_accessor_uve_tests.cpp
