@@ -72,6 +72,7 @@
 #include "uve/scripting/script_graph_uve.h"
 #include "uve/scripting/script_runtime_uve.h"
 #include "uve/threading/i_thread_pool_uve.h"
+#include "uve/ui/ui_runtime_uve.h"
 #include "uve/utilities/i_timer_uve.h"
 #include "uve/window/i_window_manager_uve.h"
 
@@ -415,6 +416,12 @@ private:
     /// runtime, simulates one frame under configured gravity, and leaves renderer extraction read-only.
     void SyncParticleRuntimeUVE();
 
+    /// Ticks UIRuntimeUVE once per real frame (not the fixed-step loop, so UI responsiveness tracks
+    /// real input latency): hit-tests every live UIButtonComponentUVE against the real
+    /// IInputSystemUVE mouse state and rebuilds the CPU-side UIDrawBatchUVE snapshot. No GPU
+    /// resource is touched here - rendering that batch is a later phase.
+    void SyncUIRuntimeUVE();
+
     /// Attaches a compiled ScriptGraphUVE to ScriptRuntimeUVE for every live ScriptComponentUVE
     /// entity that isn't already reconciled, then ticks every attached instance once against the
     /// real, engine-owned ScriptEngineCallBindingsUVE (see script_gameplay_bindings_uve.h - only
@@ -520,6 +527,7 @@ private:
     std::unique_ptr<Physics::IPhysicsQuerySystemUVE> m_physicsQuerySystem;
     std::unique_ptr<Physics::IRaycastSystemUVE> m_raycastSystem;
     std::unique_ptr<Scene::ParticleRuntimeUVE> m_particleRuntime;
+    UI::UIRuntimeUVE m_uiRuntime;
     Physics::AreaOverlapLifecycleTrackerUVE m_areaOverlapLifecycleTracker;
     Physics::CollisionLifecycleTrackerUVE m_collisionLifecycleTracker;
     Physics::CollisionLifecycleReportUVE m_collisionLifecycleReport;

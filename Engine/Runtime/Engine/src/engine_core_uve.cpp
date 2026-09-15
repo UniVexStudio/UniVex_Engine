@@ -548,6 +548,13 @@ void EngineCoreUVE::SyncParticleRuntimeUVE() {
     }
 }
 
+void EngineCoreUVE::SyncUIRuntimeUVE() {
+    if (m_inputSystem == nullptr) {
+        return;
+    }
+    m_uiRuntime.TickUVE(*m_entityManager, *m_inputSystem);
+}
+
 void EngineCoreUVE::SyncScriptRuntimeUVE() {
     m_entityManager->ForEachUVE<Scene::ScriptComponentUVE>(
         [this](const Scene::EntityUVE entity, const Scene::ScriptComponentUVE& component) {
@@ -756,6 +763,7 @@ void EngineCoreUVE::Update() {
 
     m_sceneGraph->UpdateUVE(*m_entityManager);
     SyncParticleRuntimeUVE();
+    SyncUIRuntimeUVE();
     SyncCollisionLifecycleUVE();
     SyncScriptRuntimeUVE();
 

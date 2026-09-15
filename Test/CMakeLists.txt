@@ -216,6 +216,8 @@ add_executable(uve_integration_tests
     RHI/RenderSystems/viewport_manager_uve_tests.cpp
     RHI/RenderSystems/particle_render_bridge_uve_tests.cpp
     RHI/RenderSystems/particle_draw_command_uve_tests.cpp
+    UI/ui_font_atlas_uve_tests.cpp
+    UI/ui_runtime_uve_tests.cpp
 )
 target_link_libraries(uve_integration_tests PRIVATE
     nlohmann_json::nlohmann_json
@@ -233,6 +235,8 @@ target_link_libraries(uve_integration_tests PRIVATE
     uve_audio
     uve_render_systems
     uve_rhi_null
+    uve_input
+    uve_ui
     GTest::gtest
     GTest::gtest_main
 )
