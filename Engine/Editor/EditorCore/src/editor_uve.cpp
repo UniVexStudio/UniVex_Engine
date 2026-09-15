@@ -4736,7 +4736,7 @@ void EditorUVE::DrawNameInspectorDrawerUVE(const Scene::EntityUVE entity) {
         const std::string& currentName = entityManager.GetComponentUVE<Scene::NameComponentUVE>(entity).name;
         currentName.copy(nameBuffer.data(), std::min(currentName.size(), nameBuffer.size() - 1U));
     }
-    if (ImGui::InputText("Name", nameBuffer.data(), nameBuffer.size())) {
+    if (ImGui::InputText("##name", nameBuffer.data(), nameBuffer.size())) {
         static_cast<void>(SetSelectedEntityNameUVE(nameBuffer.data()));
     }
 }
@@ -4773,7 +4773,8 @@ void EditorUVE::DrawHierarchyInspectorDrawerUVE(const Scene::EntityUVE entity) {
     int reparentModeIndex =
         m_reparentTransformMode == EditorReparentTransformModeUVE::KeepWorld ? 1 : 0;
     constexpr const char* kReparentModes[] = {"Keep Local", "Keep World"};
-    if (ImGui::Combo("Reparent Transform", &reparentModeIndex, kReparentModes,
+    ImGui::TextUnformatted("Reparent Transform");
+    if (ImGui::Combo("##reparent-transform", &reparentModeIndex, kReparentModes,
                      static_cast<int>(std::size(kReparentModes)))) {
         const EditorReparentTransformModeUVE requestedMode = reparentModeIndex == 1
                                                                   ? EditorReparentTransformModeUVE::KeepWorld
@@ -4784,7 +4785,8 @@ void EditorUVE::DrawHierarchyInspectorDrawerUVE(const Scene::EntityUVE entity) {
     const std::string parentPreview = currentParent == Scene::kInvalidEntityUVE
                                           ? "Root"
                                           : GetHierarchyCandidateLabelUVE(currentParent);
-    if (ImGui::BeginCombo("New Parent", parentPreview.c_str())) {
+    ImGui::TextUnformatted("New Parent");
+    if (ImGui::BeginCombo("##new-parent", parentPreview.c_str())) {
         for (const Scene::EntityUVE candidate : GetEligibleReparentParentsUVE(entity)) {
             const bool isCurrentParent = candidate == currentParent;
             ImGui::BeginDisabled(isCurrentParent);
@@ -4883,7 +4885,8 @@ void EditorUVE::DrawPrimitiveMeshInspectorDrawerUVE(const Scene::EntityUVE entit
         entityManager.GetComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity);
     int kindIndex = static_cast<int>(current.kind);
     constexpr const char* kPrimitiveKinds[] = {"Cube", "UV Sphere", "Plane"};
-    const bool kindChanged = ImGui::Combo("Primitive Kind", &kindIndex, kPrimitiveKinds,
+    ImGui::TextUnformatted("Primitive Kind");
+    const bool kindChanged = ImGui::Combo("##primitive-kind", &kindIndex, kPrimitiveKinds,
                                           static_cast<int>(std::size(kPrimitiveKinds)));
     float baseColor[3]{current.baseColor.x, current.baseColor.y, current.baseColor.z};
     ImGui::TextUnformatted("Base Color");
@@ -4918,7 +4921,8 @@ void EditorUVE::DrawWorldEnvironmentInspectorDrawerUVE(const Scene::EntityUVE en
     if (ImGui::CollapsingHeader("Environment", ImGuiTreeNodeFlags_DefaultOpen)) {
         std::array<char, 257> skyAssetPathBuffer{};
         current.skyAssetPath.copy(skyAssetPathBuffer.data(), skyAssetPathBuffer.size() - 1U);
-        if (ImGui::InputTextWithHint("Environment Resource", "Optional sky asset path...",
+        ImGui::TextUnformatted("Environment Resource");
+        if (ImGui::InputTextWithHint("##environment-resource", "Optional sky asset path...",
                                     skyAssetPathBuffer.data(), skyAssetPathBuffer.size())) {
             edited.skyAssetPath = skyAssetPathBuffer.data();
             changed = true;
@@ -4947,7 +4951,8 @@ void EditorUVE::DrawWorldEnvironmentInspectorDrawerUVE(const Scene::EntityUVE en
         const bool colorChanged =
             ImGui::ColorEdit3("##ambient-color", ambientColor, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_DisplayRGB);
         float ambientEnergy = edited.ambientEnergy;
-        const bool energyChanged = ImGui::DragFloat("Ambient Energy", &ambientEnergy, 0.05F, 0.0F, 32.0F, "%.3f");
+        ImGui::TextUnformatted("Ambient Energy");
+        const bool energyChanged = ImGui::DragFloat("##ambient-energy", &ambientEnergy, 0.05F, 0.0F, 32.0F, "%.3f");
         if (colorChanged || energyChanged) {
             edited.ambientColor = Math::Vector3UVE{ambientColor[0], ambientColor[1], ambientColor[2]};
             edited.ambientEnergy = ambientEnergy;
@@ -4961,9 +4966,11 @@ void EditorUVE::DrawWorldEnvironmentInspectorDrawerUVE(const Scene::EntityUVE en
 
     if (ImGui::CollapsingHeader("Tonemap", ImGuiTreeNodeFlags_DefaultOpen)) {
         float exposure = edited.exposure;
-        const bool exposureChanged = ImGui::DragFloat("Exposure", &exposure, 0.05F, 0.001F, 32.0F, "%.3f");
+        ImGui::TextUnformatted("Exposure");
+        const bool exposureChanged = ImGui::DragFloat("##exposure", &exposure, 0.05F, 0.001F, 32.0F, "%.3f");
         ImGui::BeginDisabled();
-        ImGui::Checkbox("Post Processing (reserved)", &edited.postProcessingEnabled);
+        ImGui::TextUnformatted("Post Processing (reserved)");
+        ImGui::Checkbox("##post-processing", &edited.postProcessingEnabled);
         ImGui::EndDisabled();
         if (exposureChanged) {
             edited.exposure = exposure;
@@ -4972,13 +4979,15 @@ void EditorUVE::DrawWorldEnvironmentInspectorDrawerUVE(const Scene::EntityUVE en
     }
 
     if (ImGui::CollapsingHeader("Fog")) {
-        const bool fogEnabledChanged = ImGui::Checkbox("Enabled", &edited.fogEnabled);
+        ImGui::TextUnformatted("Enabled");
+        const bool fogEnabledChanged = ImGui::Checkbox("##fog-enabled", &edited.fogEnabled);
         float fogColor[3]{edited.fogColor.x, edited.fogColor.y, edited.fogColor.z};
         ImGui::TextUnformatted("Fog Color");
         const bool fogColorChanged =
             ImGui::ColorEdit3("##fog-color", fogColor, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_DisplayRGB);
         float fogDensity = edited.fogDensity;
-        const bool fogDensityChanged = ImGui::DragFloat("Density", &fogDensity, 0.001F, 0.0F, 10.0F, "%.4f");
+        ImGui::TextUnformatted("Density");
+        const bool fogDensityChanged = ImGui::DragFloat("##fog-density", &fogDensity, 0.001F, 0.0F, 10.0F, "%.4f");
         if (fogEnabledChanged || fogColorChanged || fogDensityChanged) {
             edited.fogColor = Math::Vector3UVE{fogColor[0], fogColor[1], fogColor[2]};
             edited.fogDensity = fogDensity;
@@ -5017,25 +5026,30 @@ void EditorUVE::DrawCharacterControllerInspectorDrawerUVE(const Scene::EntityUVE
         "Collider (and, if present, a kinematic Rigid Body).");
 
     float moveSpeed = edited.moveSpeed;
-    if (ImGui::DragFloat("Move Speed", &moveSpeed, 0.05F, 0.0F, 100.0F, "%.3f")) {
+    ImGui::TextUnformatted("Move Speed");
+    if (ImGui::DragFloat("##move-speed", &moveSpeed, 0.05F, 0.0F, 100.0F, "%.3f")) {
         edited.moveSpeed = moveSpeed;
         changed = true;
     }
     float jumpHeight = edited.jumpHeight;
-    if (ImGui::DragFloat("Jump Height", &jumpHeight, 0.02F, 0.0F, 50.0F, "%.3f")) {
+    ImGui::TextUnformatted("Jump Height");
+    if (ImGui::DragFloat("##jump-height", &jumpHeight, 0.02F, 0.0F, 50.0F, "%.3f")) {
         edited.jumpHeight = jumpHeight;
         changed = true;
     }
     float gravityScale = edited.gravityScale;
-    if (ImGui::DragFloat("Gravity Scale", &gravityScale, 0.02F, 0.0F, 10.0F, "%.3f")) {
+    ImGui::TextUnformatted("Gravity Scale");
+    if (ImGui::DragFloat("##gravity-scale", &gravityScale, 0.02F, 0.0F, 10.0F, "%.3f")) {
         edited.gravityScale = gravityScale;
         changed = true;
     }
     ImGui::BeginDisabled();
     float verticalVelocity = edited.verticalVelocity;
-    ImGui::DragFloat("Vertical Velocity (runtime)", &verticalVelocity, 0.0F);
+    ImGui::TextUnformatted("Vertical Velocity (runtime)");
+    ImGui::DragFloat("##vertical-velocity", &verticalVelocity, 0.0F);
     bool isGrounded = edited.isGrounded;
-    ImGui::Checkbox("Grounded (runtime)", &isGrounded);
+    ImGui::TextUnformatted("Grounded (runtime)");
+    ImGui::Checkbox("##grounded", &isGrounded);
     ImGui::EndDisabled();
 
     if (changed && !SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::CharacterController, edited)) {
@@ -5066,12 +5080,14 @@ void EditorUVE::DrawCanvasInspectorDrawerUVE(const Scene::EntityUVE entity) {
         "coordinates regardless of Canvas nesting; world-space canvases are not supported yet.");
 
     bool visible = edited.visible;
-    if (ImGui::Checkbox("Visible", &visible)) {
+    ImGui::TextUnformatted("Visible");
+    if (ImGui::Checkbox("##visible", &visible)) {
         edited.visible = visible;
         changed = true;
     }
     int sortOrder = edited.sortOrder;
-    if (ImGui::DragInt("Sort Order", &sortOrder, 1.0F, -1000, 1000)) {
+    ImGui::TextUnformatted("Sort Order");
+    if (ImGui::DragInt("##sort-order", &sortOrder, 1.0F, -1000, 1000)) {
         edited.sortOrder = sortOrder;
         changed = true;
     }
@@ -5102,7 +5118,8 @@ void EditorUVE::DrawUITextInspectorDrawerUVE(const Scene::EntityUVE entity) {
 
     std::array<char, Scene::kMaximumUITextBytesUVE + 1U> textBuffer{};
     current.text.copy(textBuffer.data(), std::min(current.text.size(), textBuffer.size() - 1U));
-    if (ImGui::InputText("Text", textBuffer.data(), textBuffer.size())) {
+    ImGui::TextUnformatted("Text");
+    if (ImGui::InputText("##text", textBuffer.data(), textBuffer.size())) {
         edited.text = textBuffer.data();
         changed = true;
     }
@@ -5113,7 +5130,8 @@ void EditorUVE::DrawUITextInspectorDrawerUVE(const Scene::EntityUVE entity) {
         changed = true;
     }
     float fontSize = edited.fontSize;
-    if (ImGui::DragFloat("Font Size", &fontSize, 0.5F, Scene::kMinimumUIFontSizeUVE, Scene::kMaximumUIFontSizeUVE, "%.1f")) {
+    ImGui::TextUnformatted("Font Size");
+    if (ImGui::DragFloat("##font-size", &fontSize, 0.5F, Scene::kMinimumUIFontSizeUVE, Scene::kMaximumUIFontSizeUVE, "%.1f")) {
         edited.fontSize = fontSize;
         changed = true;
     }
@@ -5124,7 +5142,8 @@ void EditorUVE::DrawUITextInspectorDrawerUVE(const Scene::EntityUVE entity) {
         changed = true;
     }
     float alpha = edited.alpha;
-    if (ImGui::DragFloat("Alpha", &alpha, 0.01F, 0.0F, 1.0F, "%.3f")) {
+    ImGui::TextUnformatted("Alpha");
+    if (ImGui::DragFloat("##alpha", &alpha, 0.01F, 0.0F, 1.0F, "%.3f")) {
         edited.alpha = alpha;
         changed = true;
     }
@@ -5155,7 +5174,8 @@ void EditorUVE::DrawUIImageInspectorDrawerUVE(const Scene::EntityUVE entity) {
     ImGui::TextDisabled("An unset (zero) Texture Asset GUID renders as a flat tint-colored quad.");
 
     std::uint64_t guidValue = edited.textureAssetGuid.value;
-    if (ImGui::InputScalar("Texture Asset GUID", ImGuiDataType_U64, &guidValue)) {
+    ImGui::TextUnformatted("Texture Asset GUID");
+    if (ImGui::InputScalar("##texture-asset-guid", ImGuiDataType_U64, &guidValue)) {
         edited.textureAssetGuid = Asset::AssetGuidUVE{guidValue};
         changed = true;
     }
@@ -5179,7 +5199,8 @@ void EditorUVE::DrawUIImageInspectorDrawerUVE(const Scene::EntityUVE entity) {
         changed = true;
     }
     float alpha = edited.alpha;
-    if (ImGui::DragFloat("Alpha", &alpha, 0.01F, 0.0F, 1.0F, "%.3f")) {
+    ImGui::TextUnformatted("Alpha");
+    if (ImGui::DragFloat("##alpha", &alpha, 0.01F, 0.0F, 1.0F, "%.3f")) {
         edited.alpha = alpha;
         changed = true;
     }
@@ -5242,9 +5263,11 @@ void EditorUVE::DrawUIButtonInspectorDrawerUVE(const Scene::EntityUVE entity) {
     }
     ImGui::BeginDisabled();
     bool isHovered = edited.isHovered;
-    ImGui::Checkbox("Hovered (runtime)", &isHovered);
+    ImGui::TextUnformatted("Hovered (runtime)");
+    ImGui::Checkbox("##hovered", &isHovered);
     bool wasClicked = edited.wasClickedThisFrame;
-    ImGui::Checkbox("Clicked This Frame (runtime)", &wasClicked);
+    ImGui::TextUnformatted("Clicked This Frame (runtime)");
+    ImGui::Checkbox("##clicked-this-frame", &wasClicked);
     ImGui::EndDisabled();
 
     if (changed && !SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::UIButton, edited)) {
@@ -5338,6 +5361,47 @@ void EditorUVE::DrawSceneComponentAddPanelUVE() {
         return;
     }
 
+    // This engine has no stored per-entity "node type" - every entity is a bare ECS bag of
+    // components, classified only by whichever components it currently has. Rather than list all
+    // ~15 components unconditionally on every entity, gate by what's already attached: once an
+    // entity has committed to being a UI node (Canvas/UIText/UIImage/UIButton) or a 3D node (any
+    // of the rest below), the other family's not-yet-attached rows are hidden - a freshly created
+    // Empty entity with neither yet shows everything until it picks a direction. Script is a
+    // generic behavior hook that applies to either kind, so it is never gated. An already-attached
+    // component's row always stays visible regardless of category, so the user can still see/
+    // remove it.
+    const bool hasAnyUIComponent = entityManager.HasComponentUVE<Scene::CanvasComponentUVE>(m_selectedEntity) ||
+                                   entityManager.HasComponentUVE<Scene::UITextComponentUVE>(m_selectedEntity) ||
+                                   entityManager.HasComponentUVE<Scene::UIImageComponentUVE>(m_selectedEntity) ||
+                                   entityManager.HasComponentUVE<Scene::UIButtonComponentUVE>(m_selectedEntity);
+    const bool hasAny3DComponent =
+        entityManager.HasComponentUVE<Scene::CameraComponentUVE>(m_selectedEntity) ||
+        entityManager.HasComponentUVE<Scene::MeshComponentUVE>(m_selectedEntity) ||
+        entityManager.HasComponentUVE<Scene::PrimitiveMeshComponentUVE>(m_selectedEntity) ||
+        entityManager.HasComponentUVE<Scene::LightComponentUVE>(m_selectedEntity) ||
+        entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(m_selectedEntity) ||
+        entityManager.HasComponentUVE<Scene::RigidBodyComponentUVE>(m_selectedEntity) ||
+        entityManager.HasComponentUVE<Scene::AudioSourceComponentUVE>(m_selectedEntity) ||
+        entityManager.HasComponentUVE<Scene::ParticleEmitterComponentUVE>(m_selectedEntity) ||
+        entityManager.HasComponentUVE<Scene::AnimationPlayerComponentUVE>(m_selectedEntity) ||
+        entityManager.HasComponentUVE<Scene::WorldEnvironment3DNodeComponentUVE>(m_selectedEntity) ||
+        entityManager.HasComponentUVE<Scene::CharacterControllerComponentUVE>(m_selectedEntity);
+
+    enum class ComponentCategoryUVE { Neutral, UI, ThreeD };
+    const auto shouldOfferRowUVE = [hasAnyUIComponent, hasAny3DComponent](const bool present,
+                                                                          const ComponentCategoryUVE category) {
+        if (present) {
+            return true;
+        }
+        if (category == ComponentCategoryUVE::UI) {
+            return !hasAny3DComponent;
+        }
+        if (category == ComponentCategoryUVE::ThreeD) {
+            return !hasAnyUIComponent;
+        }
+        return true;
+    };
+
     if (ImGui::BeginTable("##component-grid", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_NoBordersInBody)) {
         ImGui::TableSetupColumn("Component", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableSetupColumn("State", ImGuiTableColumnFlags_WidthFixed, 70.0F);
@@ -5354,29 +5418,52 @@ void EditorUVE::DrawSceneComponentAddPanelUVE() {
             ImGui::TextDisabled(present ? "Attached" : "Available");
         };
 
-        addIfMissing("Camera", EditorSceneComponentKindUVE::Camera, Scene::CameraComponentUVE{},
-                     entityManager.HasComponentUVE<Scene::CameraComponentUVE>(m_selectedEntity));
-        addIfMissing("Mesh", EditorSceneComponentKindUVE::Mesh, Scene::MeshComponentUVE{},
-                     entityManager.HasComponentUVE<Scene::MeshComponentUVE>(m_selectedEntity));
-        addIfMissing("Light", EditorSceneComponentKindUVE::Light, Scene::LightComponentUVE{},
-                     entityManager.HasComponentUVE<Scene::LightComponentUVE>(m_selectedEntity));
-        addIfMissing("Collider", EditorSceneComponentKindUVE::Collider, Scene::ColliderComponentUVE{},
-                     entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(m_selectedEntity));
-        addIfMissing("Rigid Body", EditorSceneComponentKindUVE::RigidBody, Scene::RigidBodyComponentUVE{},
-                     entityManager.HasComponentUVE<Scene::RigidBodyComponentUVE>(m_selectedEntity));
-        addIfMissing("Audio Source", EditorSceneComponentKindUVE::AudioSource, Scene::AudioSourceComponentUVE{},
-                     entityManager.HasComponentUVE<Scene::AudioSourceComponentUVE>(m_selectedEntity));
-        addIfMissing("Particle Emitter", EditorSceneComponentKindUVE::ParticleEmitter,
-                     Scene::ParticleEmitterComponentUVE{},
-                     entityManager.HasComponentUVE<Scene::ParticleEmitterComponentUVE>(m_selectedEntity));
+        const bool hasCamera = entityManager.HasComponentUVE<Scene::CameraComponentUVE>(m_selectedEntity);
+        if (shouldOfferRowUVE(hasCamera, ComponentCategoryUVE::ThreeD)) {
+            addIfMissing("Camera", EditorSceneComponentKindUVE::Camera, Scene::CameraComponentUVE{}, hasCamera);
+        }
+        const bool hasMesh = entityManager.HasComponentUVE<Scene::MeshComponentUVE>(m_selectedEntity);
+        if (shouldOfferRowUVE(hasMesh, ComponentCategoryUVE::ThreeD)) {
+            addIfMissing("Mesh", EditorSceneComponentKindUVE::Mesh, Scene::MeshComponentUVE{}, hasMesh);
+        }
+        const bool hasLight = entityManager.HasComponentUVE<Scene::LightComponentUVE>(m_selectedEntity);
+        if (shouldOfferRowUVE(hasLight, ComponentCategoryUVE::ThreeD)) {
+            addIfMissing("Light", EditorSceneComponentKindUVE::Light, Scene::LightComponentUVE{}, hasLight);
+        }
+        const bool hasCollider = entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(m_selectedEntity);
+        if (shouldOfferRowUVE(hasCollider, ComponentCategoryUVE::ThreeD)) {
+            addIfMissing("Collider", EditorSceneComponentKindUVE::Collider, Scene::ColliderComponentUVE{}, hasCollider);
+        }
+        const bool hasRigidBody = entityManager.HasComponentUVE<Scene::RigidBodyComponentUVE>(m_selectedEntity);
+        if (shouldOfferRowUVE(hasRigidBody, ComponentCategoryUVE::ThreeD)) {
+            addIfMissing("Rigid Body", EditorSceneComponentKindUVE::RigidBody, Scene::RigidBodyComponentUVE{},
+                         hasRigidBody);
+        }
+        const bool hasAudioSource = entityManager.HasComponentUVE<Scene::AudioSourceComponentUVE>(m_selectedEntity);
+        if (shouldOfferRowUVE(hasAudioSource, ComponentCategoryUVE::ThreeD)) {
+            addIfMissing("Audio Source", EditorSceneComponentKindUVE::AudioSource, Scene::AudioSourceComponentUVE{},
+                         hasAudioSource);
+        }
+        const bool hasParticleEmitter =
+            entityManager.HasComponentUVE<Scene::ParticleEmitterComponentUVE>(m_selectedEntity);
+        if (shouldOfferRowUVE(hasParticleEmitter, ComponentCategoryUVE::ThreeD)) {
+            addIfMissing("Particle Emitter", EditorSceneComponentKindUVE::ParticleEmitter,
+                         Scene::ParticleEmitterComponentUVE{}, hasParticleEmitter);
+        }
         addIfMissing("Script", EditorSceneComponentKindUVE::Script, Scene::ScriptComponentUVE{},
                      entityManager.HasComponentUVE<Scene::ScriptComponentUVE>(m_selectedEntity));
-        addIfMissing("Animation Player", EditorSceneComponentKindUVE::AnimationPlayer,
-                     Scene::AnimationPlayerComponentUVE{},
-                     entityManager.HasComponentUVE<Scene::AnimationPlayerComponentUVE>(m_selectedEntity));
-        addIfMissing("World Environment", EditorSceneComponentKindUVE::WorldEnvironment,
-                     Scene::WorldEnvironment3DNodeComponentUVE{},
-                     entityManager.HasComponentUVE<Scene::WorldEnvironment3DNodeComponentUVE>(m_selectedEntity));
+        const bool hasAnimationPlayer =
+            entityManager.HasComponentUVE<Scene::AnimationPlayerComponentUVE>(m_selectedEntity);
+        if (shouldOfferRowUVE(hasAnimationPlayer, ComponentCategoryUVE::ThreeD)) {
+            addIfMissing("Animation Player", EditorSceneComponentKindUVE::AnimationPlayer,
+                         Scene::AnimationPlayerComponentUVE{}, hasAnimationPlayer);
+        }
+        const bool hasWorldEnvironment =
+            entityManager.HasComponentUVE<Scene::WorldEnvironment3DNodeComponentUVE>(m_selectedEntity);
+        if (shouldOfferRowUVE(hasWorldEnvironment, ComponentCategoryUVE::ThreeD)) {
+            addIfMissing("World Environment", EditorSceneComponentKindUVE::WorldEnvironment,
+                         Scene::WorldEnvironment3DNodeComponentUVE{}, hasWorldEnvironment);
+        }
 
         // Character Controller needs its own row (not the shared addIfMissing lambda) because
         // attaching it also auto-attaches a Collider + kinematic Rigid Body if either is missing -
@@ -5384,36 +5471,47 @@ void EditorUVE::DrawSceneComponentAddPanelUVE() {
         // the same auto-attach behavior the Library's CharacterBody3D node already establishes.
         const bool hasCharacterController =
             entityManager.HasComponentUVE<Scene::CharacterControllerComponentUVE>(m_selectedEntity);
-        ImGui::TableNextRow();
-        ImGui::TableSetColumnIndex(0);
-        ImGui::BeginDisabled(hasCharacterController);
-        if (ImGui::SmallButton("Character Controller") && !hasCharacterController) {
-            if (!entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(m_selectedEntity)) {
-                entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(m_selectedEntity,
-                                                                           Scene::ColliderComponentUVE{});
+        if (shouldOfferRowUVE(hasCharacterController, ComponentCategoryUVE::ThreeD)) {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::BeginDisabled(hasCharacterController);
+            if (ImGui::SmallButton("Character Controller") && !hasCharacterController) {
+                if (!entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(m_selectedEntity)) {
+                    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(m_selectedEntity,
+                                                                               Scene::ColliderComponentUVE{});
+                }
+                if (entityManager.HasComponentUVE<Scene::RigidBodyComponentUVE>(m_selectedEntity)) {
+                    entityManager.GetComponentUVE<Scene::RigidBodyComponentUVE>(m_selectedEntity).isKinematic = true;
+                } else {
+                    Scene::RigidBodyComponentUVE body{};
+                    body.isKinematic = true;
+                    entityManager.AddComponentUVE<Scene::RigidBodyComponentUVE>(m_selectedEntity, body);
+                }
+                static_cast<void>(SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::CharacterController,
+                                                                Scene::CharacterControllerComponentUVE{}));
             }
-            if (entityManager.HasComponentUVE<Scene::RigidBodyComponentUVE>(m_selectedEntity)) {
-                entityManager.GetComponentUVE<Scene::RigidBodyComponentUVE>(m_selectedEntity).isKinematic = true;
-            } else {
-                Scene::RigidBodyComponentUVE body{};
-                body.isKinematic = true;
-                entityManager.AddComponentUVE<Scene::RigidBodyComponentUVE>(m_selectedEntity, body);
-            }
-            static_cast<void>(SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::CharacterController,
-                                                            Scene::CharacterControllerComponentUVE{}));
+            ImGui::EndDisabled();
+            ImGui::TableSetColumnIndex(1);
+            ImGui::TextDisabled(hasCharacterController ? "Attached" : "Available");
         }
-        ImGui::EndDisabled();
-        ImGui::TableSetColumnIndex(1);
-        ImGui::TextDisabled(hasCharacterController ? "Attached" : "Available");
 
-        addIfMissing("Canvas", EditorSceneComponentKindUVE::Canvas, Scene::CanvasComponentUVE{},
-                     entityManager.HasComponentUVE<Scene::CanvasComponentUVE>(m_selectedEntity));
-        addIfMissing("UI Text", EditorSceneComponentKindUVE::UIText, Scene::UITextComponentUVE{},
-                     entityManager.HasComponentUVE<Scene::UITextComponentUVE>(m_selectedEntity));
-        addIfMissing("UI Image", EditorSceneComponentKindUVE::UIImage, Scene::UIImageComponentUVE{},
-                     entityManager.HasComponentUVE<Scene::UIImageComponentUVE>(m_selectedEntity));
-        addIfMissing("UI Button", EditorSceneComponentKindUVE::UIButton, Scene::UIButtonComponentUVE{},
-                     entityManager.HasComponentUVE<Scene::UIButtonComponentUVE>(m_selectedEntity));
+        const bool hasCanvas = entityManager.HasComponentUVE<Scene::CanvasComponentUVE>(m_selectedEntity);
+        if (shouldOfferRowUVE(hasCanvas, ComponentCategoryUVE::UI)) {
+            addIfMissing("Canvas", EditorSceneComponentKindUVE::Canvas, Scene::CanvasComponentUVE{}, hasCanvas);
+        }
+        const bool hasUIText = entityManager.HasComponentUVE<Scene::UITextComponentUVE>(m_selectedEntity);
+        if (shouldOfferRowUVE(hasUIText, ComponentCategoryUVE::UI)) {
+            addIfMissing("UI Text", EditorSceneComponentKindUVE::UIText, Scene::UITextComponentUVE{}, hasUIText);
+        }
+        const bool hasUIImage = entityManager.HasComponentUVE<Scene::UIImageComponentUVE>(m_selectedEntity);
+        if (shouldOfferRowUVE(hasUIImage, ComponentCategoryUVE::UI)) {
+            addIfMissing("UI Image", EditorSceneComponentKindUVE::UIImage, Scene::UIImageComponentUVE{}, hasUIImage);
+        }
+        const bool hasUIButton = entityManager.HasComponentUVE<Scene::UIButtonComponentUVE>(m_selectedEntity);
+        if (shouldOfferRowUVE(hasUIButton, ComponentCategoryUVE::UI)) {
+            addIfMissing("UI Button", EditorSceneComponentKindUVE::UIButton, Scene::UIButtonComponentUVE{},
+                         hasUIButton);
+        }
 
         ImGui::EndTable();
     }
