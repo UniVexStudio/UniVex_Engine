@@ -6569,73 +6569,12 @@ void EditorUVE::DrawScriptingWorkspaceUVE() {
 
     const ImVec2 workspaceSize = ImGui::GetContentRegionAvail();
     if (ImGui::BeginChild("##scripting-layout", workspaceSize, false)) {
-        if (ImGui::BeginChild("##script-node-palette", ImVec2{220.0F, 0.0F}, true)) {
-            ImGui::TextDisabled("PALETTE");
-            ImGui::Separator();
-            // A real, persistent category-grouped node palette - matching a design mockup's own
-            // `.pal-cat-head`/`.pal-item` sidebar convention - replacing what used to be the Scene
-            // hierarchy tree reused in this workspace slot. Groups snapshot.paletteDescriptors by
-            // category, preserving first-seen order (matches registration order in
-            // script_builtin_nodes_uve.cpp); reuses the exact category-color/icon convention
-            // already established for node headers on the canvas itself (ScriptNodeCategoryColorUVE/
-            // DrawScriptNodeCategoryIconUVE) so the palette and the canvas read as one system.
-            // Interaction is click-to-add at the last right-click/long-press context position
-            // (m_scriptCanvasContextMenuPosition, already tracked for the existing search popup) -
-            // real drag-and-drop from the palette is a stated follow-up, not attempted here.
-            std::vector<std::string> paletteCategoryOrder;
-            std::vector<std::vector<const Scripting::ScriptGraphCanvasPaletteEntryUVE*>> paletteCategoryEntries;
-            for (const Scripting::ScriptGraphCanvasPaletteEntryUVE& entry : snapshot.paletteDescriptors) {
-                const auto orderIterator =
-                    std::find(paletteCategoryOrder.cbegin(), paletteCategoryOrder.cend(), entry.category);
-                if (orderIterator == paletteCategoryOrder.cend()) {
-                    paletteCategoryOrder.push_back(entry.category);
-                    paletteCategoryEntries.emplace_back();
-                    paletteCategoryEntries.back().push_back(&entry);
-                } else {
-                    const std::size_t categoryIndex =
-                        static_cast<std::size_t>(std::distance(paletteCategoryOrder.cbegin(), orderIterator));
-                    paletteCategoryEntries[categoryIndex].push_back(&entry);
-                }
-            }
-            ImDrawList* const paletteDrawList = ImGui::GetWindowDrawList();
-            ImGui::BeginDisabled(!IsAuthoringCommandAllowedUVE());
-            for (std::size_t categoryIndex = 0U; categoryIndex < paletteCategoryOrder.size(); ++categoryIndex) {
-                const std::string& category = paletteCategoryOrder[categoryIndex];
-                const auto& entries = paletteCategoryEntries[categoryIndex];
-                const ImU32 categoryColor = ScriptNodeCategoryColorUVE(category);
-                const std::string headerLabel =
-                    "   " + category + " (" + std::to_string(entries.size()) + ")##pal-cat-" + category;
-                const bool categoryOpen = ImGui::CollapsingHeader(headerLabel.c_str(), ImGuiTreeNodeFlags_DefaultOpen);
-                const ImVec2 headerMin = ImGui::GetItemRectMin();
-                const ImVec2 headerMax = ImGui::GetItemRectMax();
-                const float barX = headerMin.x + ImGui::GetTreeNodeToLabelSpacing();
-                paletteDrawList->AddRectFilled(ImVec2{barX, headerMin.y + 3.0F}, ImVec2{barX + 4.0F, headerMax.y - 3.0F},
-                                               categoryColor);
-                if (!categoryOpen) {
-                    continue;
-                }
-                ImGui::Indent(8.0F);
-                for (const Scripting::ScriptGraphCanvasPaletteEntryUVE* const entry : entries) {
-                    const std::string entryName = entry->displayName.empty() ? entry->typeId : entry->displayName;
-                    const std::string itemLabel = "    " + entryName + "##pal-item-" + entry->typeId;
-                    const bool clicked = ImGui::Selectable(itemLabel.c_str());
-                    const ImVec2 itemMin = ImGui::GetItemRectMin();
-                    const ImVec2 itemMax = ImGui::GetItemRectMax();
-                    DrawScriptNodeCategoryIconUVE(paletteDrawList,
-                                                  ImVec2{itemMin.x + 10.0F, (itemMin.y + itemMax.y) * 0.5F}, 6.0F,
-                                                  category, categoryColor);
-                    if (clicked) {
-                        static_cast<void>(ActiveVisualScriptCanvasUVE().AddNodeTypeUVE(
-                            entry->typeId, m_scriptCanvasContextMenuPosition, snapshot.revision));
-                    }
-                }
-                ImGui::Unindent(8.0F);
-            }
-            ImGui::EndDisabled();
-        }
-        ImGui::EndChild();
-        ImGui::SameLine();
-
+        // The persistent category-grouped node palette that used to occupy this column was removed
+        // as a deliberate redundancy cleanup: right-click/long-press/wire-drop already open the same
+        // searchable node list at the point of use (see script-node-search-popup below), so a second,
+        // always-visible copy of the same list added nothing but a duplicate surface to keep in sync.
+        // What replaces this freed column is still undecided - left for a follow-up, not guessed at
+        // here - so the canvas below simply grows into the reclaimed width for now.
         const float detailsWidth = 276.0F;
         const float canvasWidth = std::max(180.0F, ImGui::GetContentRegionAvail().x - detailsWidth - ImGui::GetStyle().ItemSpacing.x);
         if (ImGui::BeginChild("##script-canvas-frame", ImVec2{canvasWidth, 0.0F}, true)) {
