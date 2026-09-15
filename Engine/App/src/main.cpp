@@ -3,12 +3,15 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <filesystem>
+#include <iostream>
 #include <string>
 #include <vector>
 
 #include "uve/core/engine_core_uve.h"
 #include "uve/math/vector2_uve.h"
 #include "uve/math/vector3_uve.h"
+#include "uve/pack/project_launcher_uve.h"
 #include "uve/scene/components/camera_component_uve.h"
 #include "uve/scene/components/transform_component_uve.h"
 #include "uve/scene/components/ui_button_component_uve.h"
@@ -78,6 +81,46 @@ int main(int argc, char** argv) {
     UVE::Core::EngineConfigUVE config{};
     config.logFilePath = "uve_engine.log";
     config.commandLineArgs = std::vector<std::string>(argv + 1, argv + argc);
+
+    // Roadmap item #7: plays an authored/packaged project standalone - loads its .uveditor
+    // manifest's configured startup scene and activates its camera (see
+    // Pack::LoadAndActivateProjectSceneUVE), then runs until the window is closed (or,
+    // headlessly, until the safety frame cap below - there is no window-close signal to wait on
+    // without a window). This is the real "played game" entry point ProjectPackagerUVE's own
+    // packaged distributables are meant to be launched with.
+    const auto projectFlagIt =
+        std::find(config.commandLineArgs.begin(), config.commandLineArgs.end(), "--project");
+    if (projectFlagIt != config.commandLineArgs.end()) {
+        const auto projectPathIt = std::next(projectFlagIt);
+        if (projectPathIt == config.commandLineArgs.end()) {
+            std::cerr << "uve_runtime: --project requires a path to a .uveditor file\n";
+            return 1;
+        }
+        const std::filesystem::path projectPath = *projectPathIt;
+        config.commandLineArgs.erase(projectFlagIt, std::next(projectPathIt));
+
+        UVE::Core::EngineCoreUVE engine(config);
+        engine.Init();
+        if (!engine.Load()) {
+            return 1;
+        }
+        const UVE::Pack::ProjectLaunchResultUVE launchResult =
+            UVE::Pack::LoadAndActivateProjectSceneUVE(engine, projectPath);
+        if (!launchResult.IsAcceptedUVE()) {
+            std::cerr << "uve_runtime: " << launchResult.message << '\n';
+            engine.Shutdown();
+            return 1;
+        }
+        // Windowed runs exit naturally via TickFrameUVE()'s own window-close check
+        // (IsQuitRequestedUVE() then flips true); this cap only bounds a headless run, which has
+        // no window to close and would otherwise spin forever - one hour at a nominal 60 Hz.
+        constexpr int kMaxFramesUVE = 216000;
+        for (int frame = 0; frame < kMaxFramesUVE && !engine.IsQuitRequestedUVE(); ++frame) {
+            engine.TickFrameUVE();
+        }
+        engine.Shutdown();
+        return 0;
+    }
 
     const auto demoFlagIt = std::find(config.commandLineArgs.begin(), config.commandLineArgs.end(),
                                        "--ui-overlay-demo");

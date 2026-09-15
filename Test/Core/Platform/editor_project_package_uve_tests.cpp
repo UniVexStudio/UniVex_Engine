@@ -6,6 +6,7 @@
 #include <string>
 
 #include <gtest/gtest.h>
+#include <nlohmann/json.hpp>
 
 namespace UVE::Platform::Tests {
 namespace {
@@ -140,6 +141,48 @@ TEST_F(EditorProjectPackageUVETest, ApplyUpdate_RejectsNonNewerReplacementWithou
     const auto loaded = EditorProjectPackageCodecUVE::LoadUVE(packagePath);
     ASSERT_TRUE(loaded.IsAcceptedUVE());
     EXPECT_EQ(loaded.package->displayName, initial.displayName);
+}
+
+TEST_F(EditorProjectPackageUVETest, SaveAndLoad_RoundTripsStartupScenePath) {
+    EditorProjectPackageUVE expected = MakePackage();
+    expected.startupScenePath = "scenes/main.uvescene";
+
+    ASSERT_TRUE(EditorProjectPackageCodecUVE::SaveUVE(packagePath, expected).IsAcceptedUVE());
+    const EditorProjectPackageLoadResultUVE loadResult = EditorProjectPackageCodecUVE::LoadUVE(packagePath);
+
+    ASSERT_TRUE(loadResult.IsAcceptedUVE()) << loadResult.result.message;
+    EXPECT_EQ(loadResult.package->startupScenePath, "scenes/main.uvescene");
+}
+
+TEST_F(EditorProjectPackageUVETest, Load_DefaultsMissingStartupScenePathToEmptyForOlderFiles) {
+    // Simulates a .uveditor file written before startupScenePath existed - no such key at all,
+    // not merely an empty string for it.
+    const nlohmann::json legacyJson{{"format", "uveditor"},
+                                    {"schemaVersion", kCurrentEditorProjectSchemaVersionUVE},
+                                    {"revision", 1U},
+                                    {"projectId", "legacy-project"},
+                                    {"displayName", "Legacy"},
+                                    {"engineVersion", {{"major", 0U}, {"minor", 1U}, {"patch", 0U}, {"build", 1U}}},
+                                    {"contentRoot", "assets"},
+                                    {"assetDatabasePath", ".uveassetdb"},
+                                    {"settingsPath", ".uvesettings"}};
+    {
+        std::ofstream output(packagePath, std::ios::binary | std::ios::trunc);
+        output << legacyJson.dump();
+    }
+
+    const EditorProjectPackageLoadResultUVE loadResult = EditorProjectPackageCodecUVE::LoadUVE(packagePath);
+
+    ASSERT_TRUE(loadResult.IsAcceptedUVE()) << loadResult.result.message;
+    EXPECT_TRUE(loadResult.package->startupScenePath.empty());
+}
+
+TEST_F(EditorProjectPackageUVETest, Validate_RejectsTraversalStartupScenePathButAllowsEmpty) {
+    EditorProjectPackageUVE package = MakePackage();
+    EXPECT_TRUE(EditorProjectPackageCodecUVE::ValidateUVE(package).IsAcceptedUVE());
+
+    package.startupScenePath = "../outside.uvescene";
+    EXPECT_EQ(EditorProjectPackageCodecUVE::ValidateUVE(package).code, EditorProjectPackageCodeUVE::InvalidPath);
 }
 
 } // namespace

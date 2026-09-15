@@ -277,11 +277,14 @@ add_executable(uve_engine_tests
     Engine/engine_services_uve_tests.cpp
     Engine/engine_core_uve_tests.cpp
     Engine/script_gameplay_bindings_uve_tests.cpp
+    Pack/project_launcher_uve_tests.cpp
+    Pack/project_packager_uve_tests.cpp
 )
 target_link_libraries(uve_engine_tests PRIVATE
     nlohmann_json::nlohmann_json
     uve_core
     uve_math
+    uve_pack_lib
     GTest::gtest
     GTest::gtest_main
 )

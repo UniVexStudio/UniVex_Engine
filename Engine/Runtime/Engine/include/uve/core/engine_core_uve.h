@@ -273,6 +273,14 @@ public:
     /// current frame completes, without running further frames.
     void RequestQuitUVE() noexcept;
 
+    /// True once RequestQuitUVE() has been called (directly, or internally because
+    /// IWindowManagerUVE::IsCloseRequestedUVE() went true - see TickFrameUVE()'s own per-frame
+    /// check). RunUVE()'s own loop already honors this internally; this accessor exists for a
+    /// caller driving its own manual Init()/Load()/TickFrameUVE() loop instead of RunUVE() (e.g. a
+    /// packaged project's standalone runtime, which needs to load a scene between Load() and the
+    /// first tick) to still exit correctly when the user closes the window.
+    [[nodiscard]] bool IsQuitRequestedUVE() const noexcept { return m_quitRequested; }
+
     /// Diagnostic hook (mirrors GlRenderDeviceUVE::GetLiveResourceCountUVE()'s own role): how many
     /// ScriptComponentUVE entities currently have a live, attached ScriptRuntimeUVE instance -
     /// i.e. were successfully loaded/compiled by SyncScriptRuntimeUVE(). Useful for tests and future
