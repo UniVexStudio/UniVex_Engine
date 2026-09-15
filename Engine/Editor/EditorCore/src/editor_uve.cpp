@@ -4265,30 +4265,12 @@ void EditorUVE::DrawHierarchyPanelUVE() {
         ImGui::SetTooltip("Add Node");
     }
     ImGui::SameLine(0.0F, ImGui::GetStyle().ItemSpacing.x);
-    const bool hasSelectedScriptTarget = HasSingleDocumentSelectionUVE() && IsDocumentEntityUVE(m_selectedEntity);
-    const float scriptButtonWidth = hasSelectedScriptTarget ? ImGui::GetFrameHeight() : 0.0F;
-    ImGui::SetNextItemWidth(std::max(1.0F, ImGui::GetContentRegionAvail().x - scriptButtonWidth -
-                                               (hasSelectedScriptTarget ? ImGui::GetStyle().ItemSpacing.x : 0.0F)));
+    // No "Script" shortcut button here anymore - it duplicated the already-existing Scripting
+    // workspace tab (Scene / Scripting / Game) and only added clutter/clipping risk to this row.
+    ImGui::SetNextItemWidth(-1.0F);
     if (ImGui::InputTextWithHint("##hierarchy-filter", "Search Nodes", filterBuffer.data(), filterBuffer.size())) {
         m_hierarchyFilter = filterBuffer.data();
         InvalidateHierarchyFilterCacheUVE();
-    }
-    bool scriptButtonClicked = false;
-    if (hasSelectedScriptTarget) {
-        ImGui::SameLine(0.0F, ImGui::GetStyle().ItemSpacing.x);
-        ImGui::BeginDisabled(!IsAuthoringCommandAllowedUVE());
-        scriptButtonClicked = ImGui::SmallButton("Script");
-        ImGui::EndDisabled();
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
-            ImGui::SetTooltip("Open or create script branch for selected Node3D");
-        }
-    }
-    if (scriptButtonClicked && hasSelectedScriptTarget) {
-        const std::string branchName = GetEntityDisplayLabelUVE(m_selectedEntity);
-        if (!SelectVisualScriptBranchUVE(branchName)) {
-            static_cast<void>(CreateVisualScriptBranchUVE(branchName));
-        }
-        m_activeWorkspace = EditorWorkspaceUVE::Scripting;
     }
     if (ImGui::BeginPopup("scene-add-node-popup")) {
         ImGui::TextDisabled("Add Node");
@@ -4338,7 +4320,10 @@ void EditorUVE::DrawHierarchyNodeUVE(const Scene::EntityUVE entity) {
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
     const std::vector<Scene::EntityUVE> children =
         m_services->GetSceneGraphUVE().GetChildrenUVE(entityManager, entity);
-    ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick;
+    // OpenOnDoubleClick deliberately omitted: a double-click on this row now starts renaming (see
+    // below, matching Godot's own Scene dock convention) rather than toggling expand/collapse -
+    // OpenOnArrow alone still lets the arrow itself expand/collapse on click.
+    ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow;
     if (children.empty()) {
         flags |= ImGuiTreeNodeFlags_Leaf;
     }
@@ -4352,7 +4337,11 @@ void EditorUVE::DrawHierarchyNodeUVE(const Scene::EntityUVE entity) {
     }
 
     const bool renaming = entity == m_hierarchyRenameEntity;
-    const std::string visibleLabel = renaming ? "" : "    " + GetEntityDisplayLabelUVE(entity);
+    // Just enough leading space for the icon DrawHierarchyNodeIconUVE() draws into (see below) plus
+    // a small gap - was 4 spaces, which (combined with TreeNodeEx's own arrow-toggle spacing that
+    // every row reserves, leaf or not) pushed the icon+name noticeably right of the panel's left
+    // edge instead of hugging it.
+    const std::string visibleLabel = renaming ? "" : "  " + GetEntityDisplayLabelUVE(entity);
     const std::string nodeLabel = visibleLabel + "##entity-" + std::to_string(entity.index) + ":" +
                                   std::to_string(entity.generation);
     if (active) {
@@ -4386,22 +4375,16 @@ void EditorUVE::DrawHierarchyNodeUVE(const Scene::EntityUVE entity) {
             SelectEntityUVE(entity);
         }
     }
-    if (!renaming && HasSingleDocumentSelectionUVE() && entity == m_selectedEntity &&
-        IsAuthoringCommandAllowedUVE() && ImGui::IsKeyPressed(ImGuiKey_F2)) {
+    // Rename triggers the same way Godot's own Scene dock does: F2, or a double-click on an
+    // already-selected row - no separate "Rename" button cluttering the row (the button used to
+    // sit here, pushing further controls toward the panel's edge).
+    const bool canRenameSelected =
+        !renaming && HasSingleDocumentSelectionUVE() && entity == m_selectedEntity && IsAuthoringCommandAllowedUVE();
+    if (canRenameSelected && (ImGui::IsKeyPressed(ImGuiKey_F2) ||
+                              (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)))) {
         m_hierarchyRenameEntity = entity;
         m_hierarchyRenameBuffer = GetEntityDisplayLabelUVE(entity);
         m_hierarchyRenameFocusRequested = true;
-    }
-    if (!renaming && HasSingleDocumentSelectionUVE() && entity == m_selectedEntity &&
-        IsAuthoringCommandAllowedUVE()) {
-        ImGui::SameLine();
-        const std::string renameLabel = "Rename##entity-" + std::to_string(entity.index) + ":" +
-                                        std::to_string(entity.generation);
-        if (ImGui::SmallButton(renameLabel.c_str())) {
-            m_hierarchyRenameEntity = entity;
-            m_hierarchyRenameBuffer = GetEntityDisplayLabelUVE(entity);
-            m_hierarchyRenameFocusRequested = true;
-        }
     }
     if (renaming) {
         ImGui::SameLine();
