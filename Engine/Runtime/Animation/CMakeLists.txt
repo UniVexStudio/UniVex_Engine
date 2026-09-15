@@ -7,8 +7,7 @@
 # EngineCoreUVE needs: AnimationStateMachineUVE (playback scheduling over AnimationClipUVE),
 # AnimationRetargetingUVE/RetargetMapUVE (both over TimePoseContractUVE) - all three physically
 # colocated with EngineCoreUVE in the reference's engine/core/ folder despite depending on
-# nothing outside this module, the same historical-colocation pattern already resolved for
-# FutureTrajectoryContractUVE (ported alongside Physics). Depends only on uve_math.
+# nothing outside this module. Depends only on uve_math.
 
 add_library(uve_animation STATIC
     src/time_pose_contract_uve.cpp

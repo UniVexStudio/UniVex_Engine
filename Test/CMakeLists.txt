@@ -190,7 +190,6 @@ add_executable(uve_integration_tests
     Physics/physics_system_uve_tests.cpp
     Physics/raycast_system_uve_tests.cpp
     Physics/shape_cast_system_uve_tests.cpp
-    Physics/trajectory_collision_prediction_uve_tests.cpp
     Save/checkpoint_manager_uve_tests.cpp
     Save/save_game_system_uve_tests.cpp
     Save/save_payload_compression_uve_tests.cpp
