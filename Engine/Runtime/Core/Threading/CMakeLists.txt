@@ -8,11 +8,11 @@
 find_package(Threads REQUIRED)
 
 add_library(uve_threading STATIC
-    src/job_counter_uve.cpp
-    src/job_graph_uve.cpp
-    src/thread_pool_uve.cpp
+    Internal/job_counter_uve.cpp
+    Internal/job_graph_uve.cpp
+    Internal/thread_pool_uve.cpp
 )
-target_include_directories(uve_threading PUBLIC include)
+target_include_directories(uve_threading PUBLIC Expose)
 target_link_libraries(uve_threading PUBLIC uve_platform uve_debug Threads::Threads)
 target_compile_features(uve_threading PUBLIC cxx_std_20)
 uve_set_warnings(uve_threading)

@@ -21,7 +21,7 @@ pyftsubset LiberationSans-Regular.ttf \
     --notdef-glyph --notdef-outline --recommended-glyphs
 ```
 
-This was then compiled into `engine/editor/src/uve_ui_font_bytes.inc`
+This was then compiled into `Engine/Editor/EditorCore/Internal/uve_ui_font_bytes.inc`
 (a plain `std::uint8_t` byte array, matching the icon font's own
 `uve_icon_font_bytes.inc` convention below), which is what the editor
 actually links against; the `.ttf` here is the checked-in source asset.
@@ -143,7 +143,7 @@ Upstream project: <https://github.com/liberationfonts>.
 Subsetted identically to Liberation Sans (same glyph range, same
 `pyftsubset` invocation with `LiberationMono-Regular.ttf` as input and
 `liberation-mono-subset.ttf` as output), then compiled into
-`engine/editor/src/uve_mono_font_bytes.inc` following the exact same
+`Engine/Editor/EditorCore/Internal/uve_mono_font_bytes.inc` following the exact same
 byte-array convention as `uve_ui_font_bytes.inc`.
 
 ### License
@@ -171,7 +171,7 @@ pyftsubset tabler-icons.ttf \
 ```
 
 `tools/generate_icon_font_bytes.py` compiles this file into
-`engine/editor/src/uve_icon_font_bytes.inc`, which is what the editor
+`Engine/Editor/EditorCore/Internal/uve_icon_font_bytes.inc`, which is what the editor
 actually links against; the `.ttf` here is the checked-in source asset the
 generator reads, following the same source-asset-plus-generator convention
 already used for `engine/editor/assets/gizmos` and `engine/editor/assets/icons`.

@@ -29,7 +29,7 @@
 # system is ported.
 #
 # audio_asset_uve.cpp (LoadAudioAssetUVE/SaveAudioAssetUVE) moved here from Audio's own local
-# include/uve/asset/ tree while porting EngineCoreUVE - Audio previously only needed the header
+# Expose/uve/asset/ tree while porting EngineCoreUVE - Audio previously only needed the header
 # (the AudioAssetUVE value type) for WavImporterUVE::RegisterWavImporterUVE(), but EngineCoreUVE's
 # own asset-loader registration path calls LoadAudioAssetUVE/SaveAudioAssetUVE directly, which
 # were never actually defined anywhere in this repo until now - a genuine missing-definition
@@ -44,53 +44,53 @@ if(NOT ANDROID)
 endif()
 
 add_library(uve_asset STATIC
-    src/asset_guid_uve.cpp
-    src/audio_asset_uve.cpp
-    src/uve_file_envelope_uve.cpp
-    src/asset_database_uve.cpp
-    src/asset_content_fingerprint_uve.cpp
-    src/asset_manager_uve.cpp
-    src/asset_bundle_uve.cpp
-    src/file_system_uve.cpp
-    src/mesh_asset_uve.cpp
-    src/texture_asset_uve.cpp
-    src/shader_asset_uve.cpp
-    src/material_asset_uve.cpp
-    src/asset_importer_uve.cpp
-    src/bmp_importer_uve.cpp
-    src/bmp_metadata_uve.cpp
-    src/tga_importer_uve.cpp
-    src/tga_metadata_uve.cpp
-    src/png_importer_uve.cpp
-    src/png_metadata_uve.cpp
-    src/jpeg_importer_uve.cpp
-    src/jpeg_metadata_uve.cpp
-    src/obj_importer_uve.cpp
-    src/obj_mesh_converter_uve.cpp
-    src/obj_metadata_uve.cpp
-    src/gltf_importer_uve.cpp
-    src/gltf_mesh_converter_uve.cpp
-    src/gltf_metadata_uve.cpp
-    src/mtl_importer_uve.cpp
-    src/mtl_material_converter_uve.cpp
-    src/mtl_metadata_uve.cpp
-    src/shader_source_importer_uve.cpp
-    src/hot_reload_uve.cpp
-    src/asset_import_queue_uve.cpp
-    src/project_change_watcher_uve.cpp
-    src/project_file_index_uve.cpp
-    src/derived_artifact_cache_uve.cpp
-    src/resource_dependency_graph_uve.cpp
-    src/animation_clip_asset_uve.cpp
-    src/data_table_uve.cpp
-    src/data_table_asset_uve.cpp
-    src/data_table_asset_manager_uve.cpp
-    src/data_table_asset_registration_uve.cpp
-    src/data_table_importer_uve.cpp
-    src/data_table_pipeline_uve.cpp
-    src/data_table_registry_uve.cpp
+    Internal/asset_guid_uve.cpp
+    Internal/audio_asset_uve.cpp
+    Internal/uve_file_envelope_uve.cpp
+    Internal/asset_database_uve.cpp
+    Internal/asset_content_fingerprint_uve.cpp
+    Internal/asset_manager_uve.cpp
+    Internal/asset_bundle_uve.cpp
+    Internal/file_system_uve.cpp
+    Internal/mesh_asset_uve.cpp
+    Internal/texture_asset_uve.cpp
+    Internal/shader_asset_uve.cpp
+    Internal/material_asset_uve.cpp
+    Internal/asset_importer_uve.cpp
+    Internal/bmp_importer_uve.cpp
+    Internal/bmp_metadata_uve.cpp
+    Internal/tga_importer_uve.cpp
+    Internal/tga_metadata_uve.cpp
+    Internal/png_importer_uve.cpp
+    Internal/png_metadata_uve.cpp
+    Internal/jpeg_importer_uve.cpp
+    Internal/jpeg_metadata_uve.cpp
+    Internal/obj_importer_uve.cpp
+    Internal/obj_mesh_converter_uve.cpp
+    Internal/obj_metadata_uve.cpp
+    Internal/gltf_importer_uve.cpp
+    Internal/gltf_mesh_converter_uve.cpp
+    Internal/gltf_metadata_uve.cpp
+    Internal/mtl_importer_uve.cpp
+    Internal/mtl_material_converter_uve.cpp
+    Internal/mtl_metadata_uve.cpp
+    Internal/shader_source_importer_uve.cpp
+    Internal/hot_reload_uve.cpp
+    Internal/asset_import_queue_uve.cpp
+    Internal/project_change_watcher_uve.cpp
+    Internal/project_file_index_uve.cpp
+    Internal/derived_artifact_cache_uve.cpp
+    Internal/resource_dependency_graph_uve.cpp
+    Internal/animation_clip_asset_uve.cpp
+    Internal/data_table_uve.cpp
+    Internal/data_table_asset_uve.cpp
+    Internal/data_table_asset_manager_uve.cpp
+    Internal/data_table_asset_registration_uve.cpp
+    Internal/data_table_importer_uve.cpp
+    Internal/data_table_pipeline_uve.cpp
+    Internal/data_table_registry_uve.cpp
 )
-target_include_directories(uve_asset PUBLIC include)
+target_include_directories(uve_asset PUBLIC Expose)
 target_link_libraries(uve_asset
     PUBLIC uve_debug uve_math uve_threading uve_events
     PRIVATE nlohmann_json::nlohmann_json ZLIB::ZLIB

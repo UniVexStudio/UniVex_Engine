@@ -10,7 +10,7 @@
 #include "uve/scene/components/audio_source_component_uve.h"
 #include "uve/scene/components/camera_component_uve.h"
 #include "uve/scene/components/collider_component_uve.h"
-#include "uve/scene/components/expanded_3d_node_components_uve.h"
+#include "uve/nodes/3d/all_nodes_3d_uve.h"
 #include "uve/scene/components/light_component_uve.h"
 #include "uve/scene/components/mesh_component_uve.h"
 #include "uve/scene/components/name_component_uve.h"

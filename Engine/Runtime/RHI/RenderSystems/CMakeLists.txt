@@ -16,20 +16,20 @@
 # Scene::ParticleRuntimeUVE above - same optional-render-input pattern, different module.
 
 add_library(uve_render_systems STATIC
-    src/render_system_uve.cpp
-    src/render_graph_uve.cpp
-    src/camera_system_uve.cpp
-    src/render_queue_uve.cpp
-    src/particle_render_bridge_uve.cpp
-    src/particle_draw_command_uve.cpp
-    src/mesh_renderer_uve.cpp
-    src/mesh_render_eligibility_uve.cpp
-    src/primitive_geometry_uve.cpp
-    src/light_system_uve.cpp
-    src/renderer_3d_uve.cpp
-    src/viewport_manager_uve.cpp
+    Internal/render_system_uve.cpp
+    Internal/render_graph_uve.cpp
+    Internal/camera_system_uve.cpp
+    Internal/render_queue_uve.cpp
+    Internal/particle_render_bridge_uve.cpp
+    Internal/particle_draw_command_uve.cpp
+    Internal/mesh_renderer_uve.cpp
+    Internal/mesh_render_eligibility_uve.cpp
+    Internal/primitive_geometry_uve.cpp
+    Internal/light_system_uve.cpp
+    Internal/renderer_3d_uve.cpp
+    Internal/viewport_manager_uve.cpp
 )
-target_include_directories(uve_render_systems PUBLIC include)
+target_include_directories(uve_render_systems PUBLIC Expose)
 target_link_libraries(uve_render_systems PUBLIC uve_platform uve_debug uve_math uve_scene uve_asset uve_rhi uve_rhi_shader uve_ui)
 target_compile_features(uve_render_systems PUBLIC cxx_std_20)
 uve_set_warnings(uve_render_systems)

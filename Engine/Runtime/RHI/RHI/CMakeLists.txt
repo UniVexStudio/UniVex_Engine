@@ -15,9 +15,9 @@
 # top of RHI, and stays future work.
 
 add_library(uve_rhi STATIC
-    src/shader_data_type_uve.cpp
+    Internal/shader_data_type_uve.cpp
 )
-target_include_directories(uve_rhi PUBLIC include)
+target_include_directories(uve_rhi PUBLIC Expose)
 target_link_libraries(uve_rhi PUBLIC uve_math uve_debug)
 target_compile_features(uve_rhi PUBLIC cxx_std_20)
 uve_set_warnings(uve_rhi)

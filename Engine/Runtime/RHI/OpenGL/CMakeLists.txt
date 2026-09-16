@@ -22,12 +22,12 @@
 find_package(OpenGL REQUIRED)
 
 add_library(uve_rhi_opengl STATIC
-    src/gl_functions_uve.cpp
-    src/gl_error_check_uve.cpp
-    src/gl_command_buffer_uve.cpp
-    src/gl_render_device_uve.cpp
+    Internal/gl_functions_uve.cpp
+    Internal/gl_error_check_uve.cpp
+    Internal/gl_command_buffer_uve.cpp
+    Internal/gl_render_device_uve.cpp
 )
-target_include_directories(uve_rhi_opengl PUBLIC include)
+target_include_directories(uve_rhi_opengl PUBLIC Expose)
 target_link_libraries(uve_rhi_opengl
     PUBLIC uve_rhi uve_window uve_platform uve_debug
     PRIVATE glfw OpenGL::GL

@@ -56,11 +56,11 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
 # dependency on the host UniVex engine.
 # ---------------------------------------------------------------------------
 add_library(univex_viewport_core STATIC
-    src/Mat4.cpp
-    src/OrbitCamera.cpp
-    src/GizmoGeometry.cpp
-    src/NavGizmo.cpp)
-target_include_directories(univex_viewport_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    Internal/Mat4.cpp
+    Internal/OrbitCamera.cpp
+    Internal/GizmoGeometry.cpp
+    Internal/NavGizmo.cpp)
+target_include_directories(univex_viewport_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/Expose)
 target_compile_options(univex_viewport_core PRIVATE -Wall -Wextra -Wpedantic)
 
 # ---------------------------------------------------------------------------
@@ -70,11 +70,11 @@ find_package(OpenGL REQUIRED)
 find_package(GLEW REQUIRED)
 
 add_library(univex_viewport_gl STATIC
-    src/ShaderProgram.cpp
-    src/InfiniteGridRenderer.cpp
-    src/GizmoRenderer.cpp)
+    Internal/ShaderProgram.cpp
+    Internal/InfiniteGridRenderer.cpp
+    Internal/GizmoRenderer.cpp)
 target_include_directories(univex_viewport_gl PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/Expose
     ${CMAKE_CURRENT_BINARY_DIR}/generated)
 target_link_libraries(univex_viewport_gl PUBLIC univex_viewport_core OpenGL::GL GLEW::GLEW)
 target_compile_options(univex_viewport_gl PRIVATE -Wall -Wextra -Wpedantic)
@@ -94,10 +94,10 @@ target_compile_options(univex_viewport_app_support PRIVATE -Wall -Wextra -Wpedan
 # Engine bridge: the only target here that depends on the host UniVex engine.
 # ---------------------------------------------------------------------------
 add_library(univex_viewport_engine_bridge STATIC
-    src/integration/WorldUveEntitySource.cpp
-    src/integration/EntityManagerEntitySource.cpp
-    src/integration/EditorMeshLayer.cpp)
-target_include_directories(univex_viewport_engine_bridge PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    Internal/integration/WorldUveEntitySource.cpp
+    Internal/integration/EntityManagerEntitySource.cpp
+    Internal/integration/EditorMeshLayer.cpp)
+target_include_directories(univex_viewport_engine_bridge PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/Internal)
 # uve_core additionally brings in EngineServicesUVE/Renderer3DUVE/GlRenderDeviceUVE/Scene for
 # EditorMeshLayerUVE, which renders the live scene's real mesh/material entities into the
 # Viewport panel - the other two bridge files only ever read entity transforms.
@@ -127,7 +127,7 @@ endif()
 if(UNIVEX_VIEWPORT_BUILD_TESTS)
     add_executable(univex_viewport_tests tests/ViewportTests.cpp)
     target_link_libraries(univex_viewport_tests PRIVATE univex_viewport_core)
-    target_include_directories(univex_viewport_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_include_directories(univex_viewport_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Expose)
     target_compile_options(univex_viewport_tests PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME viewport_tests COMMAND univex_viewport_tests)
 endif()

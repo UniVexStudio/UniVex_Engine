@@ -136,9 +136,9 @@ uve_set_warnings(uve_core_tests)
 # shader_binary_cache_uve_tests.cpp/shader_diagnostics_parser_uve_tests.cpp/
 # shader_preprocessor_uve_tests.cpp unit-test uve_rhi_shader's module-private classes directly -
 # this include path exposes only those module-private headers, never anything from
-# Engine/Runtime/RHI/Shader/src as part of uve_rhi_shader's own public interface (matching
-# uve_integration_tests' identical need for Engine/Runtime/Entity/src below).
-target_include_directories(uve_core_tests PRIVATE ${CMAKE_SOURCE_DIR}/Engine/Runtime/RHI/Shader/src)
+# Engine/Runtime/RHI/Shader/Internal as part of uve_rhi_shader's own public interface (matching
+# uve_integration_tests' identical need for Engine/Runtime/Entity/Internal below).
+target_include_directories(uve_core_tests PRIVATE ${CMAKE_SOURCE_DIR}/Engine/Runtime/RHI/Shader/Internal)
 
 include(GoogleTest)
 gtest_discover_tests(uve_core_tests)
@@ -150,7 +150,7 @@ gtest_discover_tests(uve_core_tests)
 # ticking + serialization).
 
 add_executable(uve_integration_tests
-    Integration/Component/expanded_3d_node_components_uve_tests.cpp
+    Nodes/3D/nodes_3d_uve_tests.cpp
     Integration/Entity/archetype_uve_tests.cpp
     Integration/Entity/chunk_uve_tests.cpp
     Integration/Entity/entity_manager_uve_tests.cpp
@@ -244,9 +244,9 @@ uve_set_warnings(uve_integration_tests)
 
 # archetype_uve_tests.cpp and chunk_uve_tests.cpp unit-test the module-private
 # ArchetypeUVE/ChunkUVE Detail:: classes directly - this include path exposes only those
-# module-private headers, never anything from Engine/Runtime/Entity/src as part of uve_entity's
+# module-private headers, never anything from Engine/Runtime/Entity/Internal as part of uve_entity's
 # own public interface.
-target_include_directories(uve_integration_tests PRIVATE ${CMAKE_SOURCE_DIR}/Engine/Runtime/Entity/src)
+target_include_directories(uve_integration_tests PRIVATE ${CMAKE_SOURCE_DIR}/Engine/Runtime/Entity/Internal)
 
 gtest_discover_tests(uve_integration_tests)
 

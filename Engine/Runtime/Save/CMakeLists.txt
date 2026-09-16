@@ -9,13 +9,13 @@
 # the .uvesave envelope.
 
 add_library(uve_save STATIC
-    src/save_game_system_uve.cpp
-    src/save_payload_migration_uve.cpp
-    src/save_payload_compression_uve.cpp
-    src/save_revision_policy_uve.cpp
-    src/checkpoint_manager_uve.cpp
+    Internal/save_game_system_uve.cpp
+    Internal/save_payload_migration_uve.cpp
+    Internal/save_payload_compression_uve.cpp
+    Internal/save_revision_policy_uve.cpp
+    Internal/checkpoint_manager_uve.cpp
 )
-target_include_directories(uve_save PUBLIC include)
+target_include_directories(uve_save PUBLIC Expose)
 target_link_libraries(uve_save
     PUBLIC uve_platform uve_debug uve_scene uve_asset
     PRIVATE nlohmann_json::nlohmann_json

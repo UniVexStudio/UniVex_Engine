@@ -10,8 +10,8 @@
 # actually read or write one.
 
 add_library(uve_object STATIC
-    src/type_metadata_uve.cpp
+    Internal/type_metadata_uve.cpp
 )
-target_include_directories(uve_object PUBLIC include)
+target_include_directories(uve_object PUBLIC Expose)
 target_compile_features(uve_object PUBLIC cxx_std_20)
 uve_set_warnings(uve_object)

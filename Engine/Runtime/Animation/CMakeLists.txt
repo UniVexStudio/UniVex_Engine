@@ -13,12 +13,12 @@
 # plugin API boundary (matching the Motion Matching precedent), not as core runtime internals.
 
 add_library(uve_animation STATIC
-    src/time_pose_contract_uve.cpp
-    src/animation_clip_uve.cpp
-    src/animation_tree_uve.cpp
-    src/animation_state_machine_uve.cpp
+    Internal/time_pose_contract_uve.cpp
+    Internal/animation_clip_uve.cpp
+    Internal/animation_tree_uve.cpp
+    Internal/animation_state_machine_uve.cpp
 )
-target_include_directories(uve_animation PUBLIC include)
+target_include_directories(uve_animation PUBLIC Expose)
 target_link_libraries(uve_animation PUBLIC uve_math PRIVATE nlohmann_json::nlohmann_json)
 target_compile_features(uve_animation PUBLIC cxx_std_20)
 uve_set_warnings(uve_animation)

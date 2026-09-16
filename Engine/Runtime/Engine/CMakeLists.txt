@@ -29,12 +29,12 @@
 # uve_render_systems all replace the reference's single uve_render dependency.
 
 add_library(uve_core STATIC
-    src/version_uve.cpp
-    src/engine_services_uve.cpp
-    src/engine_core_uve.cpp
-    src/script_gameplay_bindings_uve.cpp
+    Internal/version_uve.cpp
+    Internal/engine_services_uve.cpp
+    Internal/engine_core_uve.cpp
+    Internal/script_gameplay_bindings_uve.cpp
 )
-target_include_directories(uve_core PUBLIC include)
+target_include_directories(uve_core PUBLIC Expose)
 target_link_libraries(uve_core
     PUBLIC uve_platform uve_debug uve_utilities uve_events uve_memory uve_threading uve_commandline
            uve_config uve_asset uve_scene uve_physics uve_input uve_audio uve_save uve_window

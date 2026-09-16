@@ -19,9 +19,9 @@
 # Engine/Runtime/Engine (EngineCoreUVE's own new module) for that reason.
 
 add_library(uve_scheduling STATIC
-    src/frame_scheduler_uve.cpp
+    Internal/frame_scheduler_uve.cpp
 )
-target_include_directories(uve_scheduling PUBLIC include)
+target_include_directories(uve_scheduling PUBLIC Expose)
 target_link_libraries(uve_scheduling PUBLIC uve_threading)
 target_compile_features(uve_scheduling PUBLIC cxx_std_20)
 uve_set_warnings(uve_scheduling)

@@ -141,18 +141,18 @@ its window title.
 
 | Path | What it is |
 |---|---|
-| `include/univex/math/Vec.h` | Vec2/3/4, constexpr, dependency-free |
-| `include/univex/math/Mat4.h`, `src/Mat4.cpp` | Column-major Mat4: `Perspective`, `LookAt`, `Multiply`, general `Inverse` |
-| `include/univex/camera/OrbitCamera.h`, `src/OrbitCamera.cpp` | Orbit / pan / dolly, dynamic clip planes, view-projection and its inverse |
-| `include/univex/render/GridSettings.h` | Every tunable, plus the CPU mirror of the shader's LOD (`ComputeGridLod`, `ComputeDisplayGridSpacing`) |
-| `include/univex/render/ShaderProgram.h`, `src/ShaderProgram.cpp` | Move-only RAII program; compile/link failures return the driver's info log |
-| `include/univex/render/InfiniteGridRenderer.h`, `src/InfiniteGridRenderer.cpp` | The renderer: owns the program + triangle, sets uniforms, saves and restores GL state |
-| `include/univex/render/GlApi.h` | Single GL-loader include point (GLEW by default, swappable via `UNIVEX_GL_LOADER_HEADER`) |
-| `include/univex/gizmo/GizmoStyle.h` | Every gizmo tunable — line weights in pixels, handle offsets in gizmo units |
-| `include/univex/gizmo/GizmoGeometry.h`, `src/GizmoGeometry.cpp` | Move / Rotate / Scale / Universal geometry |
-| `include/univex/gizmo/NavGizmo.h`, `src/NavGizmo.cpp` | Orientation gizmo geometry + ball picking |
-| `include/univex/render/GizmoRenderer.h`, `src/GizmoRenderer.cpp` | Screen-space line quads + solid pass; serves both gizmos |
-| `include/univex/viewport/ViewportSettings.h` | Projection / display / overlay state and the standard views |
+| `Expose/univex/math/Vec.h` | Vec2/3/4, constexpr, dependency-free |
+| `Expose/univex/math/Mat4.h`, `Internal/Mat4.cpp` | Column-major Mat4: `Perspective`, `LookAt`, `Multiply`, general `Inverse` |
+| `Expose/univex/camera/OrbitCamera.h`, `Internal/OrbitCamera.cpp` | Orbit / pan / dolly, dynamic clip planes, view-projection and its inverse |
+| `Expose/univex/render/GridSettings.h` | Every tunable, plus the CPU mirror of the shader's LOD (`ComputeGridLod`, `ComputeDisplayGridSpacing`) |
+| `Expose/univex/render/ShaderProgram.h`, `Internal/ShaderProgram.cpp` | Move-only RAII program; compile/link failures return the driver's info log |
+| `Expose/univex/render/InfiniteGridRenderer.h`, `Internal/InfiniteGridRenderer.cpp` | The renderer: owns the program + triangle, sets uniforms, saves and restores GL state |
+| `Expose/univex/render/GlApi.h` | Single GL-loader include point (GLEW by default, swappable via `UNIVEX_GL_LOADER_HEADER`) |
+| `Expose/univex/gizmo/GizmoStyle.h` | Every gizmo tunable — line weights in pixels, handle offsets in gizmo units |
+| `Expose/univex/gizmo/GizmoGeometry.h`, `Internal/GizmoGeometry.cpp` | Move / Rotate / Scale / Universal geometry |
+| `Expose/univex/gizmo/NavGizmo.h`, `Internal/NavGizmo.cpp` | Orientation gizmo geometry + ball picking |
+| `Expose/univex/render/GizmoRenderer.h`, `Internal/GizmoRenderer.cpp` | Screen-space line quads + solid pass; serves both gizmos |
+| `Expose/univex/viewport/ViewportSettings.h` | Projection / display / overlay state and the standard views |
 | `shaders/infinite_grid.vert` / `.frag` | The grid GLSL, embedded at configure time |
 | `shaders/gizmo_line.{vert,frag}` / `gizmo_solid.{vert,frag}` | The gizmo GLSL, embedded the same way |
 | `app/` | `ReferenceScene` (the cube), `ViewportRenderPass` (one frame), `main.cpp` (the GLFW demo) |

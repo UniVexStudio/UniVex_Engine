@@ -10,7 +10,7 @@ must not depend on `Engine/Editor/EditorCore`. See that notice for the full
 provenance, the `pyftsubset` invocation used to produce it, and the complete
 SIL Open Font License 1.1 text (reproduced below for this copy).
 
-Compiled into `src/ui_font_ttf_bytes.inc` (a plain `std::uint8_t` byte array),
+Compiled into `Internal/ui_font_ttf_bytes.inc` (a plain `std::uint8_t` byte array),
 which `UIFontAtlasUVE` bakes into a runtime glyph atlas via `stb_truetype.h`
 (see below) - this is the font `UITextComponentUVE` entities render with.
 
@@ -117,7 +117,7 @@ exact diffs) rather than fetched fresh, since this environment already has a
 verified, working copy of the same file and version. Upstream project:
 <https://github.com/nothings/stb>.
 
-Used by `UIFontAtlasUVE` (`src/ui_font_atlas_uve.cpp`) to bake the embedded
+Used by `UIFontAtlasUVE` (`Internal/ui_font_atlas_uve.cpp`) to bake the embedded
 Liberation Sans subset above into a fixed-size ASCII glyph bitmap once at
 startup via `stbtt_BakeFontBitmap()`/`stbtt_GetBakedQuad()` - the standard,
 documented usage pattern this header's own sample code demonstrates.
