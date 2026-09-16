@@ -75,9 +75,10 @@ publicly shipping real-time engines as of today, without naming any of them.
   reflection + refraction)
 
 ### 1.3 Renderer-adjacent modules that are currently empty placeholders
-- [ ] `Renderer` module (currently a one-line placeholder folder) — decide whether its
+- [x] `Renderer` module (currently a one-line placeholder folder) — decide whether its
   scope absorbs/renames the existing `RHI/RenderSystems` split or is genuinely a new layer,
   then design it deliberately rather than leaving two same-purpose folders
+  — **DONE 2026-09-16:** Removed duplicate empty `Engine/Runtime/Renderer` folder per user decision (keep Network, delete Renderer). Real rendering lives in `RHI/RenderSystems` (Renderer3DUVE, 2023 LOC). `RHI/README.md` updated to document container structure. Scaffolding folders kept but READMEs clarified.
 
 ---
 
@@ -188,9 +189,10 @@ real utility file) — networked multiplayer is a from-scratch, long-term projec
 - [ ] A matchmaking/lobby layer, or at minimum a clean integration point for a third-party
   one
 - [ ] Network debugging tools (packet inspector, simulated latency/loss for testing)
-- [ ] The now-redundant `Networking` placeholder folder and the real `Network` folder
+- [x] The now-redundant `Networking` placeholder folder and the real `Network` folder
   should be reconciled into one clearly-named module once real network code exists, instead
   of carrying two same-purpose folders forward
+  — **DONE 2026-09-16:** Deleted empty `Engine/Runtime/Networking` (182 bytes README only), kept `Engine/Runtime/Network` (real `reliable_packet_window_uve.cpp` 516 LOC) per user decision `keep_network`. Scaffolding policy clarified: empty folders that are true future modules (FileSystem, Gameplay, Serialization, VFX) kept but READMEs updated from generic placeholder to descriptive scaffolding docs.
 
 ---
 
