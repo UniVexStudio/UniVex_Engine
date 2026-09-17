@@ -524,4 +524,192 @@ TEST_F(VulkanRenderDeviceUVETest, DepthAndPerDrawUniformSnapshotsRenderCorrectly
     device->DestroyShaderUVE(fragmentShader);
 }
 
+
+TEST_F(VulkanRenderDeviceUVETest, TextureCreationValidationAndLifecycleAreReal) {
+    // M2c resource contract: invalid descriptors bounce through ValidateTextureUploadUVE
+    // before ANY allocation; valid ones return handles; destruction is idempotent-safe.
+    TextureDescUVE invalid{};
+    invalid.width = 0U;
+    invalid.height = 4U;
+    EXPECT_EQ(device->CreateTextureUVE(invalid), kInvalidTextureHandleUVE);
+
+    TextureDescUVE badUpload{};
+    badUpload.width = 2U;
+    badUpload.height = 2U;
+    const std::byte shortData[3] = {std::byte{0}, std::byte{0}, std::byte{0}};
+    EXPECT_EQ(device->CreateTextureUVE(badUpload, std::span<const std::byte>(shortData, 3U)),
+              kInvalidTextureHandleUVE) << "partial level-0 uploads must be rejected";
+
+    TextureDescUVE valid{};
+    valid.width = 2U;
+    valid.height = 2U;
+    const TextureHandleUVE colorTex = device->CreateTextureUVE(valid);
+    EXPECT_NE(colorTex, kInvalidTextureHandleUVE) << "empty level-0 (render-target shape) is legal";
+
+    TextureDescUVE validF16{};
+    validF16.width = 2U;
+    validF16.height = 2U;
+    validF16.format = TextureFormatUVE::RGBA16Float;
+    EXPECT_NE(device->CreateTextureUVE(validF16), kInvalidTextureHandleUVE)
+        << "R16G16B16A16_SFLOAT sampled+transfer-dst is a mandatory format feature set";
+
+    device->DestroyTextureUVE(colorTex);
+    device->DestroyTextureUVE(colorTex); // already destroyed: safe no-op, per interface contract
+    device->DestroyTextureUVE(kInvalidTextureHandleUVE); // never valid: safe no-op too
+}
+
+TEST_F(VulkanRenderDeviceUVETest, TexturedQuadRendersUploadedPixelsAndUnboundFallback) {
+    // The M2c pixel proof, three frames against one pipeline:
+    //   frame 1 - NO BindTextureUVE: every sampled fragment must be the fallback texture's
+    //             opaque white (deterministic unbound-slot contract, not undefined content).
+    //   frame 2 - checker texture bound at slot 0: the four quadrants must read back the
+    //             exact uploaded texel colors - staging upload, sampler, and the per-tuple
+    //             descriptor set all proven by pixels.
+    //   frame 3 - texture destroyed after recording the SAME bind: the destroyed handle can
+    //             no longer resolve, so the draw degrades to the fallback (white) instead of
+    //             sampling freed memory.
+    ShaderDescUVE vertexDesc{};
+    vertexDesc.stage = ShaderStageUVE::Vertex;
+    vertexDesc.sourceCode = kTexturedVertexSpirvUVE;
+    ShaderDescUVE fragmentDesc{};
+    fragmentDesc.stage = ShaderStageUVE::Fragment;
+    fragmentDesc.sourceCode = kTexturedFragmentSpirvUVE;
+    const ShaderHandleUVE vertexShader = device->CreateShaderUVE(vertexDesc);
+    const ShaderHandleUVE fragmentShader = device->CreateShaderUVE(fragmentDesc);
+    ASSERT_NE(vertexShader, kInvalidShaderHandleUVE);
+    ASSERT_NE(fragmentShader, kInvalidShaderHandleUVE);
+
+    PipelineDescUVE pipelineDesc{};
+    pipelineDesc.vertexShader = vertexShader;
+    pipelineDesc.fragmentShader = fragmentShader;
+    pipelineDesc.vertexStride = 20U; // vec3 position + vec2 uv interleaved
+    pipelineDesc.vertexLayout.push_back(VertexAttributeUVE{"POSITION", VertexAttributeFormatUVE::Float3, 0U});
+    pipelineDesc.vertexLayout.push_back(VertexAttributeUVE{"TEXCOORD", VertexAttributeFormatUVE::Float2, 12U});
+    pipelineDesc.depthTestEnabled = false;
+    pipelineDesc.depthWriteEnabled = false;
+    const PipelineHandleUVE pipeline = device->CreatePipelineUVE(pipelineDesc);
+    ASSERT_NE(pipeline, kInvalidPipelineHandleUVE)
+        << "a pipeline with a combined image sampler must now build (pre-M2c hard-fail)";
+    // Samplers are bound by SLOT, not by SetUniform* — they deliberately stay OUT of the
+    // reflected SetUniform table (GL backends bind sampler names to texture units instead).
+    EXPECT_TRUE(device->GetPipelineUniformsUVE(pipeline).empty());
+
+    const float vertices[30] = {
+        -0.5F, -0.5F, 0.0F,  0.0F, 0.0F, // screen top-left == uv(0,0)  (native orientation)
+         0.5F, -0.5F, 0.0F,  1.0F, 0.0F, // top-right == uv(1,0)
+        -0.5F,  0.5F, 0.0F,  0.0F, 1.0F, // bottom-left == uv(0,1)
+         0.5F, -0.5F, 0.0F,  1.0F, 0.0F,
+         0.5F,  0.5F, 0.0F,  1.0F, 1.0F,
+        -0.5F,  0.5F, 0.0F,  0.0F, 1.0F,
+    };
+    BufferDescUVE bufferDesc{};
+    bufferDesc.sizeBytes = sizeof(vertices);
+    bufferDesc.usage = BufferUsageUVE::Vertex;
+    const BufferHandleUVE vertexBuffer = device->CreateBufferUVE(bufferDesc,
+        std::span<const std::byte>(reinterpret_cast<const std::byte*>(vertices), sizeof(vertices)));
+    ASSERT_NE(vertexBuffer, kInvalidBufferHandleUVE);
+
+    // 2x2 checker in upload memory order: (0,0) red, (1,0) green, (0,1) blue, (1,1) yellow.
+    const std::uint8_t checkerData[16] = {
+        255U, 0U, 0U, 255U,   0U, 255U, 0U, 255U,
+        0U, 0U, 255U, 255U,   255U, 255U, 0U, 255U,
+    };
+    TextureDescUVE checkerDesc{};
+    checkerDesc.width = 2U;
+    checkerDesc.height = 2U;
+    const TextureHandleUVE checkerTexture = device->CreateTextureUVE(checkerDesc,
+        std::span<const std::byte>(reinterpret_cast<const std::byte*>(checkerData), sizeof(checkerData)));
+    ASSERT_NE(checkerTexture, kInvalidTextureHandleUVE);
+
+    const auto drawQuad = [&](const TextureHandleUVE* textureToBind,
+                              const bool destroyAfterBind) {
+        auto commandBuffer = device->CreateCommandBufferUVE();
+        RenderPassDescUVE passDesc{};
+        passDesc.colorLoadOp = LoadOpUVE::Clear;
+        passDesc.clearColor = {0.05F, 0.07F, 0.12F, 1.0F};
+        passDesc.depthLoadOp = LoadOpUVE::Clear;
+        passDesc.clearDepth = 1.0F;
+        commandBuffer->BeginRenderPassUVE(passDesc);
+        commandBuffer->BindPipelineUVE(pipeline);
+        commandBuffer->BindVertexBufferUVE(vertexBuffer);
+        if (textureToBind != nullptr) {
+            commandBuffer->BindTextureUVE(*textureToBind, 0U);
+        }
+        if (destroyAfterBind) {
+            device->DestroyTextureUVE(*textureToBind); // destroyed BEFORE this frame submits
+        }
+        commandBuffer->DrawUVE(6U);
+        commandBuffer->EndRenderPassUVE();
+        device->SubmitUVE(std::move(commandBuffer));
+        device->PresentUVE();
+        ASSERT_TRUE(device->IsUsableUVE());
+    };
+    const auto channelAt = [&](const std::vector<std::byte>& pixels, const std::uint32_t width,
+                               const float ndcX, const float ndcY) {
+        std::uint32_t height = static_cast<std::uint32_t>(pixels.size() / 4U / width);
+        const std::uint32_t x = static_cast<std::uint32_t>((ndcX + 1.0F) * 0.5F * static_cast<float>(width));
+        const std::uint32_t y = static_cast<std::uint32_t>((ndcY + 1.0F) * 0.5F * static_cast<float>(height));
+        const std::size_t base = (static_cast<std::size_t>(y) * width + x) * 4U;
+        return std::array<int, 3>{static_cast<int>(pixels[base]),
+                                  static_cast<int>(pixels[base + 1]),
+                                  static_cast<int>(pixels[base + 2])};
+    };
+
+    // Frame 1: unbound -> fallback white.
+    drawQuad(nullptr, false);
+    {
+        std::vector<std::byte> pixels(1280U * 720U * 4U);
+        std::uint32_t width = 0;
+        std::uint32_t height = 0;
+        ASSERT_TRUE(device->ReadbackLatestPresentedImageUVE(pixels, width, height));
+        if (width == 0U) { GTEST_SKIP() << "zero-sized extent; no pixels to verify"; }
+        const auto center = channelAt(pixels, width, 0.0F, 0.0F);
+        EXPECT_GT(center[0], 240);
+        EXPECT_GT(center[1], 240);
+        EXPECT_GT(center[2], 240) << "unbound sampler slot must sample the fallback white";
+    }
+
+    // Frame 2: checker bound -> exact quadrants (uv == texel centers at quadrant centers,
+    // so even LINEAR filtering yields the pure uploaded colors).
+    drawQuad(&checkerTexture, false);
+    {
+        std::vector<std::byte> pixels(1280U * 720U * 4U);
+        std::uint32_t width = 0;
+        std::uint32_t height = 0;
+        ASSERT_TRUE(device->ReadbackLatestPresentedImageUVE(pixels, width, height));
+        const auto topLeft = channelAt(pixels, width, -0.25F, -0.25F);
+        const auto topRight = channelAt(pixels, width, 0.25F, -0.25F);
+        const auto bottomLeft = channelAt(pixels, width, -0.25F, 0.25F);
+        const auto bottomRight = channelAt(pixels, width, 0.25F, 0.25F);
+        EXPECT_GT(topLeft[0], 200);
+        EXPECT_LT(topLeft[1], 60) << "top-left quadrant must be the uploaded RED texel";
+        EXPECT_GT(topRight[1], 200);
+        EXPECT_LT(topRight[0], 60) << "top-right quadrant must be the uploaded GREEN texel";
+        EXPECT_GT(bottomLeft[2], 200);
+        EXPECT_LT(bottomLeft[0], 60) << "bottom-left quadrant must be the uploaded BLUE texel";
+        EXPECT_GT(bottomRight[0], 200);
+        EXPECT_GT(bottomRight[1], 200);
+        EXPECT_LT(bottomRight[2], 60) << "bottom-right quadrant must be the uploaded YELLOW texel";
+    }
+
+    // Frame 3: bind the SAME texture, destroy it before submit -> fallback white again.
+    drawQuad(&checkerTexture, true);
+    {
+        std::vector<std::byte> pixels(1280U * 720U * 4U);
+        std::uint32_t width = 0;
+        std::uint32_t height = 0;
+        ASSERT_TRUE(device->ReadbackLatestPresentedImageUVE(pixels, width, height));
+        const auto center = channelAt(pixels, width, 0.0F, 0.0F);
+        EXPECT_GT(center[0], 240);
+        EXPECT_GT(center[1], 240);
+        EXPECT_GT(center[2], 240) << "a texture destroyed after recording must degrade to the "
+                                     "fallback, never sample freed memory";
+    }
+
+    device->DestroyBufferUVE(vertexBuffer);
+    device->DestroyPipelineUVE(pipeline);
+    device->DestroyShaderUVE(vertexShader);
+    device->DestroyShaderUVE(fragmentShader);
+}
+
 } // namespace UVE::Render::Tests

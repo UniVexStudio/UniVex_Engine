@@ -121,6 +121,13 @@ struct VkFunctionsUVE {
     PFN_vkCmdBindDescriptorSets vkCmdBindDescriptorSets = nullptr;
     PFN_vkCmdPushConstants vkCmdPushConstants = nullptr;
 
+    // M2c "textures+staging" additions: samplers, staged image uploads, and per-set frees
+    // (the texture binding cache invalidates sets when a texture is destroyed).
+    PFN_vkCreateSampler vkCreateSampler = nullptr;
+    PFN_vkDestroySampler vkDestroySampler = nullptr;
+    PFN_vkCmdCopyBufferToImage vkCmdCopyBufferToImage = nullptr;
+    PFN_vkFreeDescriptorSets vkFreeDescriptorSets = nullptr;
+
     /// Opens the platform Vulkan loader library by its conventional sonames and resolves
     /// vkGetInstanceProcAddr plus the global-level entry points above. `lsan`-clean as well:
     /// the loader handle is intentionally leaked for the process lifetime (dlclose on a

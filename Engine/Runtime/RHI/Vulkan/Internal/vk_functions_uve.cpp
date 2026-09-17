@@ -186,6 +186,10 @@ bool VkFunctionsUVE::LoadDeviceUVE(const VkDevice device) {
     allResolved &= ResolveDevice(vkUpdateDescriptorSets, gdpa, device, "vkUpdateDescriptorSets");
     allResolved &= ResolveDevice(vkCmdBindDescriptorSets, gdpa, device, "vkCmdBindDescriptorSets");
     allResolved &= ResolveDevice(vkCmdPushConstants, gdpa, device, "vkCmdPushConstants");
+    allResolved &= ResolveDevice(vkCreateSampler, gdpa, device, "vkCreateSampler");
+    allResolved &= ResolveDevice(vkDestroySampler, gdpa, device, "vkDestroySampler");
+    allResolved &= ResolveDevice(vkCmdCopyBufferToImage, gdpa, device, "vkCmdCopyBufferToImage");
+    allResolved &= ResolveDevice(vkFreeDescriptorSets, gdpa, device, "vkFreeDescriptorSets");
     return allResolved;
 }
 
