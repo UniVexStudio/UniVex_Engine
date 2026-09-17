@@ -66,13 +66,21 @@ jobs:
       - name: Prove tier-2 Vulkan device tests really ran (did not skip)
         run: |
           cd build
+          set +e
           xvfb-run -a ./Test/uve_core_tests \
             --gtest_filter='VulkanRenderDeviceUVETest.OffscreenColorPass*:VulkanRenderDeviceUVETest.InterleavedOffscreenPass*:VulkanRenderDeviceUVETest.DepthTestWorks*:VulkanRenderDeviceUVETest.NonAttachable*:VulkanRenderDeviceUVETest.DepthOnly*' \
-            2>&1 | tee /tmp/tier2.log
-          grep -q '\[       OK \] VulkanRenderDeviceUVETest.OffscreenColorPassRendersIntoTheTextureForSampling' /tmp/tier2.log
-          COUNT=$(grep -c '\[       OK \] VulkanRenderDeviceUVETest' /tmp/tier2.log)
-          echo "tier-2 M2d cases executed for real: $COUNT"
-          test "$COUNT" -ge 5
+            > /tmp/tier2.log 2>&1
+          GRC=$?
+          set -e
+          COUNT=$(grep -c '\[       OK \] VulkanRenderDeviceUVETest' /tmp/tier2.log || true)
+          echo "tier-2 M2d cases executed for real: $COUNT (gtest rc=$GRC)"
+          if [ "$COUNT" -lt 5 ] || [ "$GRC" -ne 0 ]; then
+            grep -m4 'Skipped\|SKIPPED' /tmp/tier2.log | head -4 | while read -r L; do
+              echo "::warning title=tier2-why::$L"
+            done
+            echo "::error title=tier2::M2d tier-2 device tests did not all execute (ok=$COUNT rc=$GRC)"
+            exit 1
+          fi
 
       - name: Build summary
         if: always()
