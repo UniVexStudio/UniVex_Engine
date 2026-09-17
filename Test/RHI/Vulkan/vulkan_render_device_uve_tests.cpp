@@ -161,13 +161,18 @@ TEST_F(VulkanRenderDeviceUVETest, PresentedFrameReadbackIsUniformBootstrapClear)
         ASSERT_TRUE(device->IsUsableUVE());
     }
     // Readback of the most recently presented image: the M1 bootstrap is a fixed engineering
-    // clear, so every pixel must be the same sRGB-encoded value. The expected bytes follow
-    // sRGB(0.05/0.07/0.12, 1.0) = (63, 78, 97, 255) with a small tolerance for driver rounding
-    // differences (the clears run through the swapchain's sRGB conversion, so exact linear
-    // float comparison would be wrong by design). Surface-provenance-agnostic on size: the
-    // windowed path is the 64x64 fixture window, while headless-WSI surfaces (CI's
-    // VK_EXT_headless_surface arm) are driver-extent-sized — the documented two-call readback
-    // pattern (empty span first to learn the extent, then the real buffer) covers both.
+    // clear, so every pixel must be the same encoded value. The expected bytes depend on the
+    // swapchain image's FORMAT CLASS, which the stack (not the test) picks: on an SRGB-typed
+    // 4x8 image the clear runs through sRGB conversion — sRGB(0.05/0.07/0.12, 1.0) = (63, 78,
+    // 97, 255); on a UNORM-typed one (what lavapipe's headless surface advertises, for one)
+    // the same float clear stores linearly — (13, 18, 31, 255). Both are the correct encoding
+    // of the same engineering clear; asserting a wrong-encoding failure would punish an honest
+    // driver pick, so the byte check accepts exactly the two correct encodings (uniformity and
+    // the opaque alpha are asserted unconditionally below regardless). Surface-provenance-
+    // agnostic on size: the windowed path is the 64x64 fixture window, while headless-WSI
+    // surfaces (CI's VK_EXT_headless_surface arm) are driver-extent-sized — the documented
+    // two-call readback pattern (empty span first to learn the extent, then the real buffer)
+    // covers both.
     std::vector<std::byte> pixels;
     std::uint32_t width = 0;
     std::uint32_t height = 0;
@@ -192,9 +197,12 @@ TEST_F(VulkanRenderDeviceUVETest, PresentedFrameReadbackIsUniformBootstrapClear)
     const auto near_byte = [](std::byte actual, int expected) {
         return std::abs(static_cast<int>(actual) - expected) <= 4;
     };
-    EXPECT_TRUE(near_byte(r0, 63)) << "R channel = " << static_cast<int>(r0);
-    EXPECT_TRUE(near_byte(g0, 78)) << "G channel = " << static_cast<int>(g0);
-    EXPECT_TRUE(near_byte(b0, 97)) << "B channel = " << static_cast<int>(b0);
+    const bool matchesSrgb = near_byte(r0, 63) && near_byte(g0, 78) && near_byte(b0, 97);
+    const bool matchesLinear = near_byte(r0, 13) && near_byte(g0, 18) && near_byte(b0, 31);
+    EXPECT_TRUE(matchesSrgb || matchesLinear)
+        << "clear encoded as neither sRGB(63,78,97) nor linear(13,18,31): got ("
+        << static_cast<int>(r0) << "," << static_cast<int>(g0) << "," << static_cast<int>(b0)
+        << ") — a swapchain format-class mismatch beyond the two correct encodings";
     EXPECT_EQ(a0, static_cast<std::byte>(255));
 }
 
