@@ -1,7 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 
-#include "uve/render/null_render_device_uve.h"
+#include "uve/rhi_null/null_render_device_uve.h"
 
 #include <unordered_map>
 #include <utility>

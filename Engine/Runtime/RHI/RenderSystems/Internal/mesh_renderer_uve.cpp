@@ -1,15 +1,15 @@
 
 
-#include "uve/render/mesh_renderer_uve.h"
+#include "uve/render_systems/mesh_renderer_uve.h"
 
 #include <cstddef>
 #include <utility>
 
 #include "uve/asset/asset_guid_uve.h"
 #include "uve/debug/assert_uve.h"
-#include "uve/render/mesh_render_eligibility_uve.h"
-#include "uve/scene/components/mesh_component_uve.h"
-#include "uve/scene/components/world_transform_component_uve.h"
+#include "uve/render_systems/mesh_render_eligibility_uve.h"
+#include "uve/component/mesh_component_uve.h"
+#include "uve/component/world_transform_component_uve.h"
 
 namespace UVE::Render {
 

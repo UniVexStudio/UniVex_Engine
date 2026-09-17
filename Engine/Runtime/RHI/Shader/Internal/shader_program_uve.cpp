@@ -1,7 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 
-#include "uve/render/shader/shader_program_uve.h"
+#include "uve/rhi_shader/shader_program_uve.h"
 
 #include <algorithm>
 #include <type_traits>

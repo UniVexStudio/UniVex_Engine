@@ -10,8 +10,8 @@
 #include <vector>
 
 #include "uve/asset/uve_file_envelope_uve.h"
-#include "uve/scene/entity_uve.h"
-#include "uve/scene/i_entity_manager_uve.h"
+#include "uve/component/entity_uve.h"
+#include "uve/entity/i_entity_manager_uve.h"
 
 namespace UVE::Scene {
 

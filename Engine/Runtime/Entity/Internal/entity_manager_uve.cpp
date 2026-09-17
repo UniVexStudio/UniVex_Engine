@@ -1,7 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 
-#include "uve/scene/entity_manager_uve.h"
+#include "uve/entity/entity_manager_uve.h"
 
 #include <cstdint>
 #include <unordered_map>
@@ -11,7 +11,7 @@
 #include "archetype_uve.h"
 #include "chunk_uve.h"
 #include "uve/debug/assert_uve.h"
-#include "uve/scene/entity_lifecycle_events_uve.h"
+#include "uve/entity/entity_lifecycle_events_uve.h"
 
 namespace UVE::Scene {
 

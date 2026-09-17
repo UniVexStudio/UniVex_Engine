@@ -1,7 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 
-#include "uve/render/renderer_3d_uve.h"
+#include "uve/render_systems/renderer_3d_uve.h"
 
 #include <algorithm>
 #include <array>
@@ -27,19 +27,19 @@
 #include "uve/math/frustum_uve.h"
 #include "uve/math/matrix4x4_uve.h"
 #include "uve/math/quaternion_uve.h"
-#include "uve/render/i_light_system_uve.h"
-#include "uve/render/render_graph_uve.h"
-#include "uve/render/primitive_geometry_uve.h"
-#include "uve/render/particle_render_bridge_uve.h"
-#include "uve/render/particle_draw_command_uve.h"
-#include "uve/render/render_queue_uve.h"
-#include "uve/render/shader/built_in_shaders_uve.h"
-#include "uve/render/shader/shader_program_desc_uve.h"
-#include "uve/render/shader/shader_program_uve.h"
-#include "uve/scene/components/camera_component_uve.h"
+#include "uve/render_systems/i_light_system_uve.h"
+#include "uve/render_systems/render_graph_uve.h"
+#include "uve/render_systems/primitive_geometry_uve.h"
+#include "uve/render_systems/particle_render_bridge_uve.h"
+#include "uve/render_systems/particle_draw_command_uve.h"
+#include "uve/render_systems/render_queue_uve.h"
+#include "uve/rhi_shader/built_in_shaders_uve.h"
+#include "uve/rhi_shader/shader_program_desc_uve.h"
+#include "uve/rhi_shader/shader_program_uve.h"
+#include "uve/component/camera_component_uve.h"
 #include "uve/nodes/3d/all_nodes_3d_uve.h"
-#include "uve/scene/components/primitive_mesh_component_uve.h"
-#include "uve/scene/components/world_transform_component_uve.h"
+#include "uve/component/primitive_mesh_component_uve.h"
+#include "uve/component/world_transform_component_uve.h"
 #include "uve/ui/ui_runtime_uve.h"
 
 namespace UVE::Render {

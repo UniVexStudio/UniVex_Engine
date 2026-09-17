@@ -1,6 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-#include "uve/render/primitive_geometry_uve.h"
+#include "uve/render_systems/primitive_geometry_uve.h"
 
 #include <array>
 #include <cmath>

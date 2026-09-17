@@ -10,10 +10,10 @@
 #include "uve/asset/asset_content_fingerprint_uve.h"
 
 #include "uve/debug/logging_macros_uve.h"
-#include "uve/scene/components/hierarchy_component_uve.h"
-#include "uve/scene/components/prefab_instance_component_uve.h"
-#include "uve/scene/components/transform_component_uve.h"
-#include "uve/scene/components/world_transform_component_uve.h"
+#include "uve/component/hierarchy_component_uve.h"
+#include "uve/component/prefab_instance_component_uve.h"
+#include "uve/component/transform_component_uve.h"
+#include "uve/component/world_transform_component_uve.h"
 #include "uve/scene/prefab_revision_policy_uve.h"
 
 namespace UVE::Scene {

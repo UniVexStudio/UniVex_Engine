@@ -17,9 +17,9 @@
 #include "uve/audio/null_audio_device_uve.h"
 #include "uve/events/event_system_uve.h"
 #include "uve/memory/memory_manager_uve.h"
-#include "uve/scene/components/audio_source_component_uve.h"
-#include "uve/scene/components/world_transform_component_uve.h"
-#include "uve/scene/entity_manager_uve.h"
+#include "uve/component/audio_source_component_uve.h"
+#include "uve/component/world_transform_component_uve.h"
+#include "uve/entity/entity_manager_uve.h"
 #include "uve/scene/scene_graph_uve.h"
 
 namespace UVE::Audio::Tests {

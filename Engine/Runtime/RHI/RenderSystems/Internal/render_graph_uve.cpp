@@ -1,12 +1,12 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 
-#include "uve/render/render_graph_uve.h"
+#include "uve/render_systems/render_graph_uve.h"
 
 #include <algorithm>
 
 #include "uve/debug/logging_macros_uve.h"
-#include "uve/render/i_command_buffer_uve.h"
+#include "uve/rhi/i_command_buffer_uve.h"
 
 namespace UVE::Render {
 

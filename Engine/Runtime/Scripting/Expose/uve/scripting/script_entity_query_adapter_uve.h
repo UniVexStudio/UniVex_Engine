@@ -1,7 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #pragma once
 
-#include "uve/scene/i_entity_manager_uve.h"
+#include "uve/entity/i_entity_manager_uve.h"
 #include "uve/scripting/script_vm_uve.h"
 
 #include <cstddef>

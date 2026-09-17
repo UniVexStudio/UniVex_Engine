@@ -14,7 +14,7 @@
 
 #include "uve/core/engine_core_uve.h"
 #include "uve/editor/editor_bridge_stdio_uve.h"
-#include "uve/scene/components/mesh_component_uve.h"
+#include "uve/component/mesh_component_uve.h"
 #include "uve/scripting/script_debugger_uve.h"
 
 namespace UVE::Editor::Tests {

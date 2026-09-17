@@ -34,9 +34,9 @@
 #include "uve/ui/ui_font_atlas_uve.h"
 #include "uve/editor/editor_uve.h"
 #include "uve/math/vector2_uve.h"
-#include "uve/scene/components/camera_component_uve.h"
-#include "uve/scene/components/world_transform_component_uve.h"
-#include "uve/scene/i_entity_manager_uve.h"
+#include "uve/component/camera_component_uve.h"
+#include "uve/component/world_transform_component_uve.h"
+#include "uve/entity/i_entity_manager_uve.h"
 #include "uve/scene/i_scene_graph_uve.h"
 
 namespace {

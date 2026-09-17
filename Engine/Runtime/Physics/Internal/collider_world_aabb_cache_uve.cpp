@@ -6,8 +6,8 @@
 #include <algorithm>
 #include <cmath>
 
-#include "uve/scene/components/collider_component_uve.h"
-#include "uve/scene/components/world_transform_component_uve.h"
+#include "uve/component/collider_component_uve.h"
+#include "uve/component/world_transform_component_uve.h"
 
 namespace UVE::Physics::Detail {
 namespace {

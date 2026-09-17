@@ -1,6 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-#include "uve/core/animation_state_machine_uve.h"
+#include "uve/animation/animation_state_machine_uve.h"
 
 #include <gtest/gtest.h>
 

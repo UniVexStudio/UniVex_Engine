@@ -1,7 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #pragma once
 #include <cstdint>
-#include "uve/scene/components/prefab_instance_component_uve.h"
+#include "uve/component/prefab_instance_component_uve.h"
 namespace UVE::Scene {
 enum class PrefabRevisionStatusUVE : std::uint8_t { Invalid = 0, Current, Stale };
 enum class PrefabRevisionRefreshDecisionUVE : std::uint8_t { Invalid = 0, NoOp, Refresh, MergeRequired };

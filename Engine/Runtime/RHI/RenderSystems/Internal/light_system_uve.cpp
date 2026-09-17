@@ -1,7 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 
-#include "uve/render/light_system_uve.h"
+#include "uve/render_systems/light_system_uve.h"
 
 #include <cmath>
 #include <cstddef>
@@ -9,8 +9,8 @@
 #include "uve/debug/assert_uve.h"
 #include "uve/debug/logging_macros_uve.h"
 #include "uve/math/quaternion_uve.h"
-#include "uve/scene/components/light_component_uve.h"
-#include "uve/scene/components/world_transform_component_uve.h"
+#include "uve/component/light_component_uve.h"
+#include "uve/component/world_transform_component_uve.h"
 
 namespace UVE::Render {
 

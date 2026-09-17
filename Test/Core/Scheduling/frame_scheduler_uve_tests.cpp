@@ -1,6 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-#include "uve/core/frame_scheduler_uve.h"
+#include "uve/scheduling/frame_scheduler_uve.h"
 
 #include "uve/threading/thread_pool_uve.h"
 

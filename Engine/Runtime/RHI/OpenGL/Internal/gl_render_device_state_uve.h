@@ -12,8 +12,8 @@
 #include <vector>
 
 #include "gl_functions_uve.h"
-#include "uve/render/render_resource_descs_uve.h"
-#include "uve/render/shader_data_type_uve.h"
+#include "uve/rhi/render_resource_descs_uve.h"
+#include "uve/rhi/shader_data_type_uve.h"
 #include "uve/window/i_window_manager_uve.h"
 
 namespace UVE::Render::Detail {

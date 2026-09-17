@@ -7,8 +7,8 @@
 #include <unordered_set>
 
 #include "uve/debug/logging_macros_uve.h"
-#include "uve/scene/components/audio_source_component_uve.h"
-#include "uve/scene/components/world_transform_component_uve.h"
+#include "uve/component/audio_source_component_uve.h"
+#include "uve/component/world_transform_component_uve.h"
 
 namespace UVE::Audio {
 
