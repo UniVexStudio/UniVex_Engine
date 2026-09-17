@@ -10,15 +10,26 @@
 // Slice M2a ("draw slice") added 2026-09-17: buffers (host-visible memory policy), SPIR-V
 // shaders, fixed-function pipelines built on the swapchain render pass, recorded command
 // buffers, and Draw/DrawIndexed replay inside the frame pass are all REAL implementations —
-// the device now renders actual geometry into the presented image, replaying submitted
-// command buffers exactly the way GlRenderDeviceUVE plays its recordings. Still honest "not
-// yet" areas (documented at each method, warnings emitted once, no silent lies): textures,
-// offscreen render targets, depth attachments, uniform/descriptor bindings, reflection, and
-// pipeline binaries. Those keep returning the documented invalid/false/empty results with a
-// warning naming the missing milestone, exactly as Null-render did before it.
+// the device renders actual geometry into the presented image, replaying submitted command
+// buffers exactly the way GlRenderDeviceUVE plays its recordings.
+//
+// Slice M2b ("uniforms + depth") added 2026-09-17: SPIRV-Reflect parses each pipeline's
+// SPIR-V at creation; set-0 uniform-buffer blocks become dynamic-offset descriptor bindings
+// against one shared 1 MiB-per-frame uniform ring (always-snapshot-per-draw, never per-draw
+// descriptor writes), push-constant blocks become VkPushConstantRange state, and every
+// SetUniform* op resolves by reflected member name into CPU-side shadows that the draw path
+// snapshots into the ring. The swapchain render pass grew a real depth attachment
+// (D32_SFLOAT preferred, X8_D24 fallback), so depthTestEnabled/depthWriteEnabled are honored
+// exactly as GlRenderDeviceUVE documents them (LESS_OR_EQUAL), and the caller's clearDepth
+// feeds the frame's depth clear. Still honest "not yet" areas (documented at each method,
+// warnings emitted once, no silent lies): textures/images/SSBOs (pipeline creation FAILS
+// loudly with an M2c message rather than building a broken layout), more-than-one
+// descriptor set, offscreen render targets, loadOp semantics beyond clear, per-op depth
+// compare funcs, device-local staging, pipeline binaries. Those keep returning the
+// documented invalid/false/empty results with a warning naming the missing milestone.
 //
 // Capability reporting is honest and upstream-visible: GetBackendNameUVE() says
-// "Vulkan (M2a draw slice)" — never "Vulkan" unqualified — so logs, editor overlays, and bug
+// "Vulkan (M2b uniforms+depth)" — never "Vulkan" unqualified — so logs, editor overlays, and bug
 // reports cannot mistake the current slice for the finished backend, and IsUsableUVE()
 // reflects the real instance/device/swapchain bring-up result.
 

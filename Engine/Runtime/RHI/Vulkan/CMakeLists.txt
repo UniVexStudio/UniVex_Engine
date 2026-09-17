@@ -26,6 +26,23 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(VulkanHeaders)
 
+# SPIRV-Reflect: Khronos' tiny, self-contained SPIR-V reflection library. M2b needs it to turn
+# shader resource declarations (uniform blocks / push constants) into descriptor-set layouts,
+# member offset tables for SetUniform* resolution, and real GetPipelineUniformsUVE() answers —
+# implementing all of that by hand would duplicate exactly one well-audited project. Its static
+# lib builds warnings-free upstream; linked PRIVATE so nothing leaks across the module boundary.
+set(SPIRV_REFLECT_EXECUTABLE OFF CACHE BOOL "" FORCE)
+set(SPIRV_REFLECT_STATIC_LIB ON CACHE BOOL "" FORCE)
+set(SPIRV_REFLECT_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(SPIRV_REFLECT_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    SPIRVReflect
+    GIT_REPOSITORY https://github.com/KhronosGroup/SPIRV-Reflect.git
+    GIT_TAG vulkan-sdk-1.4.321.0
+    GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(SPIRVReflect)
+
 add_library(uve_rhi_vulkan STATIC
     Internal/vk_functions_uve.cpp
     Internal/vulkan_render_device_uve.cpp
@@ -37,7 +54,5 @@ target_include_directories(uve_rhi_vulkan PUBLIC Expose)
 target_include_directories(uve_rhi_vulkan SYSTEM PRIVATE ${vulkanheaders_SOURCE_DIR}/include)
 target_link_libraries(uve_rhi_vulkan
     PUBLIC uve_rhi uve_window uve_platform uve_logging
-    PRIVATE ${CMAKE_DL_LIBS}
+    PRIVATE ${CMAKE_DL_LIBS} spirv-reflect-static
 )
-target_compile_features(uve_rhi_vulkan PUBLIC cxx_std_20)
-uve_set_warnings(uve_rhi_vulkan)

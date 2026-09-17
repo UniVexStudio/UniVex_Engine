@@ -108,6 +108,7 @@ bool VkFunctionsUVE::LoadInstanceUVE(const VkInstance instance) {
     allResolved &= ResolveInstance(vkGetPhysicalDeviceSurfaceFormatsKHR, gipa, instance, "vkGetPhysicalDeviceSurfaceFormatsKHR");
     allResolved &= ResolveInstance(vkGetPhysicalDeviceSurfacePresentModesKHR, gipa, instance, "vkGetPhysicalDeviceSurfacePresentModesKHR");
     allResolved &= ResolveInstance(vkGetPhysicalDeviceMemoryProperties, gipa, instance, "vkGetPhysicalDeviceMemoryProperties");
+    allResolved &= ResolveInstance(vkGetPhysicalDeviceFormatProperties, gipa, instance, "vkGetPhysicalDeviceFormatProperties");
     allResolved &= ResolveInstance(vkCreateDevice, gipa, instance, "vkCreateDevice");
     allResolved &= ResolveInstance(vkGetDeviceProcAddr, gipa, instance, "vkGetDeviceProcAddr");
     allResolved &= ResolveInstance(vkDestroySurfaceKHR, gipa, instance, "vkDestroySurfaceKHR");
@@ -173,6 +174,18 @@ bool VkFunctionsUVE::LoadDeviceUVE(const VkDevice device) {
     allResolved &= ResolveDevice(vkCmdDrawIndexed, gdpa, device, "vkCmdDrawIndexed");
     allResolved &= ResolveDevice(vkCmdSetViewport, gdpa, device, "vkCmdSetViewport");
     allResolved &= ResolveDevice(vkCmdSetScissor, gdpa, device, "vkCmdSetScissor");
+    allResolved &= ResolveDevice(vkCreateImage, gdpa, device, "vkCreateImage");
+    allResolved &= ResolveDevice(vkDestroyImage, gdpa, device, "vkDestroyImage");
+    allResolved &= ResolveDevice(vkGetImageMemoryRequirements, gdpa, device, "vkGetImageMemoryRequirements");
+    allResolved &= ResolveDevice(vkBindImageMemory, gdpa, device, "vkBindImageMemory");
+    allResolved &= ResolveDevice(vkCreateDescriptorSetLayout, gdpa, device, "vkCreateDescriptorSetLayout");
+    allResolved &= ResolveDevice(vkDestroyDescriptorSetLayout, gdpa, device, "vkDestroyDescriptorSetLayout");
+    allResolved &= ResolveDevice(vkCreateDescriptorPool, gdpa, device, "vkCreateDescriptorPool");
+    allResolved &= ResolveDevice(vkDestroyDescriptorPool, gdpa, device, "vkDestroyDescriptorPool");
+    allResolved &= ResolveDevice(vkAllocateDescriptorSets, gdpa, device, "vkAllocateDescriptorSets");
+    allResolved &= ResolveDevice(vkUpdateDescriptorSets, gdpa, device, "vkUpdateDescriptorSets");
+    allResolved &= ResolveDevice(vkCmdBindDescriptorSets, gdpa, device, "vkCmdBindDescriptorSets");
+    allResolved &= ResolveDevice(vkCmdPushConstants, gdpa, device, "vkCmdPushConstants");
     return allResolved;
 }
 
