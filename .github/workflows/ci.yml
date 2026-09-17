@@ -59,26 +59,29 @@ jobs:
       - name: Test (under Xvfb)
         run: xvfb-run -a ctest --test-dir build --output-on-failure
 
-      # M2d evidence step: the tier-2 Vulkan fixture skips politely on deviceless hosts,
-      # which keeps ctest green even if lavapipe/xvfb silently failed to provide a device.
-      # Re-run the Vulkan device tests verbosely and REQUIRE the M2d offscreen-RT cases to
-      # report an actual gtest OK — a skip would flip CI red and surface the regression.
+      # M2d evidence step: prior to the displayless-host clause, a silently-broken display or
+      # ICD only made the tier-2 fixture skip politely and could never flip CI red — which is
+      # exactly what happened (every M2a..M2d tier-2 device case skipped on CI since the M2a
+      # windowed fixture existed; the pixel-verified coverage lived in vkshot). The engine now
+      # owns a CI-ready headless construction (VK_EXT_headless_surface) and the fixture falls
+      # back to it automatically, so a real device run is expected on every CI host: windowed
+      # via xvfb+lavapipe, or headless via a CPU ICD. A skip from here on means the CI image
+      # lost its Vulkan story — fail loudly instead of hiding.
       - name: Prove tier-2 Vulkan device tests really ran (did not skip)
         run: |
           cd build
           set +e
-          xvfb-run -a ./Test/uve_core_tests \
-            --gtest_filter='VulkanRenderDeviceUVETest.OffscreenColorPass*:VulkanRenderDeviceUVETest.InterleavedOffscreenPass*:VulkanRenderDeviceUVETest.DepthTestWorks*:VulkanRenderDeviceUVETest.NonAttachable*:VulkanRenderDeviceUVETest.DepthOnly*' \
+          ./Test/uve_core_tests --gtest_filter='VulkanRenderDeviceUVETest.*' \
             > /tmp/tier2.log 2>&1
           GRC=$?
           set -e
           COUNT=$(grep -c '\[       OK \] VulkanRenderDeviceUVETest' /tmp/tier2.log || true)
-          echo "tier-2 M2d cases executed for real: $COUNT (gtest rc=$GRC)"
-          if [ "$COUNT" -lt 5 ] || [ "$GRC" -ne 0 ]; then
-            grep -m4 'Skipped\|SKIPPED' /tmp/tier2.log | head -4 | while read -r L; do
+          echo "tier-2 device cases executed for real: $COUNT (gtest rc=$GRC)"
+          if [ "$COUNT" -lt 17 ] || [ "$GRC" -ne 0 ]; then
+            grep -m6 'Skipped\|SKIPPED' /tmp/tier2.log | head -6 | while read -r L; do
               echo "::warning title=tier2-why::$L"
             done
-            echo "::error title=tier2::M2d tier-2 device tests did not all execute (ok=$COUNT rc=$GRC)"
+            echo "::error title=tier2::tier-2 Vulkan device tests did not all execute (ok=$COUNT expected>=17 rc=$GRC)"
             exit 1
           fi
 

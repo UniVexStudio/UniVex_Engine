@@ -155,6 +155,16 @@ struct VkFunctionsUVE {
     /// mid-cascade failure cannot leave partially-resolved entry points in use.
     [[nodiscard]] bool AreGlobalsLoadedUVE() const noexcept { return m_getInstanceProcAddr != nullptr; }
 
+    /// One-off instance-extension proc resolution *from this instance* (the canonical answer
+    /// for entry points LoadInstanceUVE does not track — e.g. WSI creators like the VK_EXT_
+    /// headless_surface one). Null when unsupported or before LoadGlobalUVE() succeeded.
+    [[nodiscard]] void* ResolveVkProcUVE(VkInstance instance, const char* name) const noexcept {
+        if (m_getInstanceProcAddr == nullptr) {
+            return nullptr;
+        }
+        return reinterpret_cast<void*>(m_getInstanceProcAddr(instance, name));
+    }
+
 private:
     PFN_vkGetInstanceProcAddr m_getInstanceProcAddr = nullptr;
 };

@@ -116,19 +116,28 @@ TEST(VulkanCapabilityUVETest, RealWindowManagerOffersVulkanSurfaceBridge) {
 class VulkanRenderDeviceUVETest : public ::testing::Test {
 protected:
     void SetUp() override {
+        // Real-device path A: a windowed device on a live OS display (GLFW + swapchain WSI).
         windowManager = std::make_unique<Window::WindowManagerUVE>(eventSystem, MakeTestWindowDescUVE());
-        if (!windowManager->IsValidUVE()) {
-            GTEST_SKIP() << "No display available for VulkanRenderDeviceUVE - skipping (run under "
-                            "Xvfb or a real display)";
+        if (windowManager->IsValidUVE()) {
+            device = VulkanRenderDeviceUVE::CreateUVE(*windowManager);
+        } else {
+            // Real-device path B: displayless host (CI without Xvfb, containers, servers) —
+            // the engine's self-contained headless factory builds the identical device over a
+            // VK_EXT_headless_surface instead of skipping. The window manager is dropped: the
+            // device owns no window in this mode, and every pixel assertion below reads the
+            // headless swapchain exactly as it would the windowed one.
+            windowManager.reset();
+            device = VulkanRenderDeviceUVE::CreateHeadlessUVE();
         }
-        device = VulkanRenderDeviceUVE::CreateUVE(*windowManager);
         if (device == nullptr) {
-            GTEST_SKIP() << "No Vulkan loader/ICD on this host - skipping (install "
-                            "mesa-vulkan-drivers/lavapipe to exercise the M1 bootstrap here)";
+            GTEST_SKIP() << "No Vulkan device path on this host - skipping (need a display for "
+                            "the windowed path, or a loader/ICD with VK_EXT_headless_surface "
+                            "like SwiftShader for the headless one)";
         }
-        // Destruction correctness is what matters most: the fixture's TearDown runs the device
-        // destructor while the window is still alive (member declaration order guarantees it —
-        // device is declared after windowManager and therefore destroyed first).
+        // Destruction correctness is what matters most in the windowed path: the fixture's
+        // TearDown runs the device destructor while the window is still alive (member
+        // declaration order guarantees it — device is declared after windowManager and
+        // therefore destroyed first). In the headless path windowManager is null already.
     }
 
     Events::EventSystemUVE eventSystem;
@@ -155,13 +164,20 @@ TEST_F(VulkanRenderDeviceUVETest, PresentedFrameReadbackIsUniformBootstrapClear)
     // clear, so every pixel must be the same sRGB-encoded value. The expected bytes follow
     // sRGB(0.05/0.07/0.12, 1.0) = (63, 78, 97, 255) with a small tolerance for driver rounding
     // differences (the clears run through the swapchain's sRGB conversion, so exact linear
-    // float comparison would be wrong by design).
-    std::vector<std::byte> pixels(64U * 64U * 4U);
+    // float comparison would be wrong by design). Surface-provenance-agnostic on size: the
+    // windowed path is the 64x64 fixture window, while headless-WSI surfaces (CI's
+    // VK_EXT_headless_surface arm) are driver-extent-sized — the documented two-call readback
+    // pattern (empty span first to learn the extent, then the real buffer) covers both.
+    std::vector<std::byte> pixels;
     std::uint32_t width = 0;
     std::uint32_t height = 0;
+    ASSERT_FALSE(device->ReadbackLatestPresentedImageUVE(pixels, width, height))
+        << "an empty span must be the documented size-query failure";
+    ASSERT_GT(width, 0U);
+    ASSERT_GT(height, 0U);
+    pixels.resize(static_cast<std::size_t>(width) * height * 4U);
     ASSERT_TRUE(device->ReadbackLatestPresentedImageUVE(pixels, width, height));
-    EXPECT_EQ(width, 64U);
-    EXPECT_EQ(height, 64U);
+    EXPECT_NE(width * height, 0U);
 
     const std::byte r0 = pixels[0];
     const std::byte g0 = pixels[1];
