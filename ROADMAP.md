@@ -151,6 +151,8 @@ and one of the highest-priority areas below.
 ## 5. Audio
 
 - [x] A real audio device abstraction with a null backend for headless use
+- [x] A production audio output backend (miniaudio) driving real hardware, with automatic
+  NullAudioDeviceUVE fallback on machines without a usable output device
 - [x] WAV import/decoding, a PCM16 decoder, and an attenuation model
 - [x] A mixer-group concept and a basic gain effect
 - [x] A source/listener system with orientation validation

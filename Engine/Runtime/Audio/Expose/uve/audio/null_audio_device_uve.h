@@ -12,13 +12,14 @@
 
 namespace UVE::Audio {
 
-/// NullAudioDeviceUVE is the only IAudioDeviceUVE backend this sandbox can build and test: it
-/// performs zero real audio output — there is no OpenAL-soft/platform audio SDK or sound hardware
-/// available here — and instead validates and bookkeeps every call, recording the exact sequence
-/// of order-sensitive calls (Play/Stop/SetVoiceParams) a real backend would have received.
-/// Existing solely so AudioSystemUVE/AudioSourceSystemUVE can be built and unit-tested against a
-/// real IAudioDeviceUVE& today; a genuine OpenAL-soft backend is future work once this environment
-/// has the SDK and audio hardware it currently lacks.
+/// NullAudioDeviceUVE is the silent IAudioDeviceUVE backend: it performs zero real audio output
+/// and instead validates and bookkeeps every call, recording the exact sequence of
+/// order-sensitive calls (Play/Stop/SetVoiceParams) a real backend would have received. Its two
+/// roles: the call-recording test double AudioSystemUVE/AudioSourceSystemUVE unit tests assert
+/// against, and the automatic fallback for machines with no usable output device (EngineCoreUVE
+/// prefers MiniaudioAudioDeviceUVE - the real hardware backend - and swaps this in when audio
+/// initialization legitimately fails, e.g. headless CI). Unlike a real backend it has no playback
+/// clock: state changes only through explicit PlayUVE/StopUVE calls.
 /// Thread-safety: not thread-safe. Every method is intended to be called only from the main
 /// engine/audio thread, matching AudioSystemUVE's own single-threaded frame contract.
 class NullAudioDeviceUVE final : public IAudioDeviceUVE {
