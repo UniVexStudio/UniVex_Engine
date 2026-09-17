@@ -5,7 +5,7 @@
 
 #include <gtest/gtest.h>
 
-#include "uve/render/primitive_geometry_uve.h"
+#include "uve/render_systems/primitive_geometry_uve.h"
 
 namespace UVE::Render::Tests {
 namespace {

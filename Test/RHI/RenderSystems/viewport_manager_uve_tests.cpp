@@ -1,7 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 
-#include "uve/render/viewport_manager_uve.h"
+#include "uve/render_systems/viewport_manager_uve.h"
 
 #include <cstdint>
 #include <memory>
@@ -20,17 +20,17 @@
 #include "uve/asset/shader_asset_uve.h"
 #include "uve/events/event_system_uve.h"
 #include "uve/memory/memory_manager_uve.h"
-#include "uve/render/camera_system_uve.h"
-#include "uve/render/light_system_uve.h"
-#include "uve/render/mesh_renderer_uve.h"
-#include "uve/render/null_render_device_uve.h"
-#include "uve/render/recorded_command_uve.h"
-#include "uve/render/render_system_uve.h"
-#include "uve/render/renderer_3d_uve.h"
-#include "uve/render/shader/shader_manager_uve.h"
-#include "uve/scene/components/camera_component_uve.h"
-#include "uve/scene/components/transform_component_uve.h"
-#include "uve/scene/entity_manager_uve.h"
+#include "uve/render_systems/camera_system_uve.h"
+#include "uve/render_systems/light_system_uve.h"
+#include "uve/render_systems/mesh_renderer_uve.h"
+#include "uve/rhi_null/null_render_device_uve.h"
+#include "uve/rhi/recorded_command_uve.h"
+#include "uve/render_systems/render_system_uve.h"
+#include "uve/render_systems/renderer_3d_uve.h"
+#include "uve/rhi_shader/shader_manager_uve.h"
+#include "uve/component/camera_component_uve.h"
+#include "uve/component/transform_component_uve.h"
+#include "uve/entity/entity_manager_uve.h"
 #include "uve/scene/scene_graph_uve.h"
 #include "uve/threading/thread_pool_uve.h"
 

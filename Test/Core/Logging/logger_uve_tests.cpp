@@ -1,7 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 
-#include "uve/debug/logger_uve.h"
+#include "uve/logging/logger_uve.h"
 
 #include <filesystem>
 #include <fstream>
@@ -12,8 +12,8 @@
 
 #include <gtest/gtest.h>
 
-#include "uve/debug/log_sink_uve.h"
-#include "uve/debug/logging_macros_uve.h"
+#include "uve/logging/log_sink_uve.h"
+#include "uve/logging/logging_macros_uve.h"
 
 namespace UVE::Debug::Tests {
 namespace {

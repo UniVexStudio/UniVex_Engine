@@ -17,8 +17,8 @@
 #include "uve/asset/asset_handle_uve.h"
 #include "uve/asset/asset_manager_uve.h"
 #include "uve/asset/uve_file_envelope_uve.h"
-#include "uve/debug/log_sink_uve.h"
-#include "uve/debug/logger_uve.h"
+#include "uve/logging/log_sink_uve.h"
+#include "uve/logging/logger_uve.h"
 #include "uve/events/event_system_uve.h"
 #include "uve/threading/thread_pool_uve.h"
 

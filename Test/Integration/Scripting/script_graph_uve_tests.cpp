@@ -28,8 +28,8 @@
 
 #include "uve/events/event_system_uve.h"
 #include "uve/memory/memory_manager_uve.h"
-#include "uve/scene/components/name_component_uve.h"
-#include "uve/scene/entity_manager_uve.h"
+#include "uve/component/name_component_uve.h"
+#include "uve/entity/entity_manager_uve.h"
 
 namespace UVE::Scripting {
 namespace {

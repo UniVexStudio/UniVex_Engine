@@ -11,7 +11,7 @@
 #include "gl_render_device_state_uve.h"
 #include "uve/math/matrix4x4_uve.h"
 #include "uve/math/vector3_uve.h"
-#include "uve/render/i_command_buffer_uve.h"
+#include "uve/rhi/i_command_buffer_uve.h"
 
 namespace UVE::Render {
 

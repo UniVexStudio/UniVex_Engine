@@ -7,7 +7,7 @@
 
 #include "uve/physics/raycast_hit_uve.h"
 #include "uve/physics/raycast_query_uve.h"
-#include "uve/scene/i_entity_manager_uve.h"
+#include "uve/entity/i_entity_manager_uve.h"
 
 namespace UVE::Physics {
 

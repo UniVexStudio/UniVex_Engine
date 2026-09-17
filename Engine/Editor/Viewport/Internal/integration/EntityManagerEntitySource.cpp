@@ -1,6 +1,6 @@
 #include "EntityManagerEntitySource.h"
 
-#include "uve/scene/components/world_transform_component_uve.h"
+#include "uve/component/world_transform_component_uve.h"
 
 namespace univex::integration {
 

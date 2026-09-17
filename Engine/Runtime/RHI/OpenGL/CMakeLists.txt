@@ -29,7 +29,7 @@ add_library(uve_rhi_opengl STATIC
 )
 target_include_directories(uve_rhi_opengl PUBLIC Expose)
 target_link_libraries(uve_rhi_opengl
-    PUBLIC uve_rhi uve_window uve_platform uve_debug
+    PUBLIC uve_rhi uve_window uve_platform uve_logging
     PRIVATE glfw OpenGL::GL
 )
 target_compile_features(uve_rhi_opengl PUBLIC cxx_std_20)

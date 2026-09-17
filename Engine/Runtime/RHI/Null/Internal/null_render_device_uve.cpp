@@ -1,14 +1,14 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 
-#include "uve/render/null_render_device_uve.h"
+#include "uve/rhi_null/null_render_device_uve.h"
 
 #include <unordered_map>
 #include <utility>
 
 #include "null_command_buffer_uve.h"
-#include "uve/debug/assert_uve.h"
-#include "uve/debug/logging_macros_uve.h"
+#include "uve/logging/assert_uve.h"
+#include "uve/logging/logging_macros_uve.h"
 
 namespace UVE::Render {
 

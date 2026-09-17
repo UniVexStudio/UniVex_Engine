@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "uve/scene/i_entity_manager_uve.h"
+#include "uve/entity/i_entity_manager_uve.h"
 #include "uve/scene/i_scene_graph_uve.h"
 
 namespace UVE::Physics {

@@ -11,8 +11,8 @@
 #include "uve/math/aabb_uve.h"
 #include "uve/physics/detail/collider_world_aabb_cache_uve.h"
 #include "uve/physics/detail/shape_narrow_phase_uve.h"
-#include "uve/scene/components/area_component_uve.h"
-#include "uve/scene/components/world_transform_component_uve.h"
+#include "uve/component/area_component_uve.h"
+#include "uve/component/world_transform_component_uve.h"
 
 namespace UVE::Physics {
 

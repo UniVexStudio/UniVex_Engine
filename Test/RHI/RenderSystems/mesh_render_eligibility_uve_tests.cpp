@@ -1,7 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 
-#include "uve/render/mesh_render_eligibility_uve.h"
+#include "uve/render_systems/mesh_render_eligibility_uve.h"
 
 #include <cmath>
 #include <limits>

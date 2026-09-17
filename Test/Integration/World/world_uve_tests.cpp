@@ -6,8 +6,8 @@
 
 #include "uve/memory/heap_allocator_uve.h"
 #include "uve/events/event_system_uve.h"
-#include "uve/scene/components/hierarchy_component_uve.h"
-#include "uve/scene/components/world_transform_component_uve.h"
+#include "uve/component/hierarchy_component_uve.h"
+#include "uve/component/world_transform_component_uve.h"
 
 namespace UVE::World::Tests {
 namespace {

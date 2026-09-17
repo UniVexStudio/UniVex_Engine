@@ -1,6 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #include "uve/scene/prefab_revision_policy_uve.h"
-#include "uve/scene/components/prefab_instance_component_uve.h"
+#include "uve/component/prefab_instance_component_uve.h"
 #include <gtest/gtest.h>
 namespace UVE::Scene::Tests {
 namespace {

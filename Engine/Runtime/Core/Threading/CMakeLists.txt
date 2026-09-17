@@ -13,6 +13,6 @@ add_library(uve_threading STATIC
     Internal/thread_pool_uve.cpp
 )
 target_include_directories(uve_threading PUBLIC Expose)
-target_link_libraries(uve_threading PUBLIC uve_platform uve_debug Threads::Threads)
+target_link_libraries(uve_threading PUBLIC uve_platform uve_logging Threads::Threads)
 target_compile_features(uve_threading PUBLIC cxx_std_20)
 uve_set_warnings(uve_threading)

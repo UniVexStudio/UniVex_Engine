@@ -8,6 +8,16 @@ editor's main UI text font in place of ImGui's own built-in low-resolution
 bitmap font (`ImGui::AddFontDefault()`). Upstream project:
 <https://github.com/liberationfonts>.
 
+> **Note (2026-09-17 audit resolution):** the file itself no longer lives in
+> this directory. Pre-dating the audit, the same subset existed four times in
+> the repo (2× `.ttf`, 2× identical byte-array `.inc`). The single canonical
+> copy now lives at `Engine/Runtime/UI/assets/fonts/liberation-sans-subset.ttf`
+> (the lower-layer runtime module owns it, because `Engine/Runtime/UI` must not
+> depend on this editor module), and the editor's embedded
+> `uve_ui_font_bytes.inc` is **generated from that file at build time** by
+> `Engine/Tools/embed_file.py` (see this module's `CMakeLists.txt`). This
+> notice remains the canonical provenance record for the font.
+
 Only Basic Latin + Latin-1 Supplement glyphs (`U+0020-007E`, `U+00A0-00FF`)
 are kept - everything the editor's own UI text actually renders - to avoid
 vendoring the full ~400 KB font for a handful of scripts this editor never
@@ -21,10 +31,12 @@ pyftsubset LiberationSans-Regular.ttf \
     --notdef-glyph --notdef-outline --recommended-glyphs
 ```
 
-This was then compiled into `Engine/Editor/EditorCore/Internal/uve_ui_font_bytes.inc`
-(a plain `std::uint8_t` byte array, matching the icon font's own
-`uve_icon_font_bytes.inc` convention below), which is what the editor
-actually links against; the `.ttf` here is the checked-in source asset.
+This subset is what the editor actually links against: the build generates
+`uve_ui_font_bytes.inc` (a plain `std::uint8_t` byte array, matching the icon
+font's own `uve_icon_font_bytes.inc` convention below) from the canonical
+`.ttf` at `Engine/Runtime/UI/assets/fonts/` via `Engine/Tools/embed_file.py`.
+Before the 2026-09-17 audit resolution (see note above), the generated `.inc`
+and a second copy of the `.ttf` were both committed here instead.
 
 Chosen over other locally-available fonts because it is a clean,
 metric-compatible sans-serif (visually similar to Arial/Helvetica) suitable

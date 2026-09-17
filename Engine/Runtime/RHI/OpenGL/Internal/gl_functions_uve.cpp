@@ -1,7 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 
-#include "gl_functions_uve.h"
+#include "uve/rhi_opengl/gl_functions_uve.h"
 
 namespace UVE::Render::Detail {
 
@@ -24,7 +24,10 @@ bool GlFunctionsUVE::IsCompleteUVE() const noexcept {
            glDeleteProgram != nullptr && glAttachShader != nullptr && glLinkProgram != nullptr &&
            glGetProgramiv != nullptr && glGetProgramInfoLog != nullptr && glUseProgram != nullptr &&
            glGenFramebuffers != nullptr && glDeleteFramebuffers != nullptr && glBindFramebuffer != nullptr &&
-           glFramebufferTexture2D != nullptr && glCheckFramebufferStatus != nullptr && glActiveTexture != nullptr &&
+           glFramebufferTexture2D != nullptr && glCheckFramebufferStatus != nullptr &&
+           glFramebufferRenderbuffer != nullptr && glGenRenderbuffers != nullptr &&
+           glDeleteRenderbuffers != nullptr && glBindRenderbuffer != nullptr && glRenderbufferStorage != nullptr &&
+           glActiveTexture != nullptr &&
            glGetUniformLocation != nullptr && glUniform1f != nullptr && glUniform1i != nullptr &&
            glUniform3fv != nullptr && glUniformMatrix4fv != nullptr && glGetActiveUniform != nullptr;
 }
@@ -69,6 +72,15 @@ GlFunctionsUVE LoadGlFunctionsUVE(void* (*getProcAddress)(const char*)) {
         LoadOneUVE<PFNGLFRAMEBUFFERTEXTURE2DPROC>(getProcAddress, "glFramebufferTexture2D");
     functions.glCheckFramebufferStatus =
         LoadOneUVE<PFNGLCHECKFRAMEBUFFERSTATUSPROC>(getProcAddress, "glCheckFramebufferStatus");
+    functions.glFramebufferRenderbuffer =
+        LoadOneUVE<PFNGLFRAMEBUFFERRENDERBUFFERPROC>(getProcAddress, "glFramebufferRenderbuffer");
+
+    functions.glGenRenderbuffers = LoadOneUVE<PFNGLGENRENDERBUFFERSPROC>(getProcAddress, "glGenRenderbuffers");
+    functions.glDeleteRenderbuffers =
+        LoadOneUVE<PFNGLDELETERENDERBUFFERSPROC>(getProcAddress, "glDeleteRenderbuffers");
+    functions.glBindRenderbuffer = LoadOneUVE<PFNGLBINDRENDERBUFFERPROC>(getProcAddress, "glBindRenderbuffer");
+    functions.glRenderbufferStorage =
+        LoadOneUVE<PFNGLRENDERBUFFERSTORAGEPROC>(getProcAddress, "glRenderbufferStorage");
 
     functions.glActiveTexture = LoadOneUVE<PFNGLACTIVETEXTUREPROC>(getProcAddress, "glActiveTexture");
 

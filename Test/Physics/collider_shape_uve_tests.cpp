@@ -1,6 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-#include "uve/scene/components/collider_component_uve.h"
+#include "uve/component/collider_component_uve.h"
 
 #include <algorithm>
 #include <cmath>
@@ -13,8 +13,8 @@
 #include "uve/memory/memory_manager_uve.h"
 #include "uve/physics/collision_system_uve.h"
 #include "uve/physics/detail/shape_narrow_phase_uve.h"
-#include "uve/scene/components/transform_component_uve.h"
-#include "uve/scene/entity_manager_uve.h"
+#include "uve/component/transform_component_uve.h"
+#include "uve/entity/entity_manager_uve.h"
 #include "uve/scene/scene_graph_uve.h"
 
 namespace UVE::Physics::Tests {

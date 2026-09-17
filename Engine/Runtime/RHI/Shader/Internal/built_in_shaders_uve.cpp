@@ -7,7 +7,7 @@
 // exact equality against the constant here). Used automatically by ShaderManagerUVE as a fallback
 // when the corresponding virtual path isn't reachable (see ShaderProgramDescUVE's doc comment).
 
-#include "uve/render/shader/built_in_shaders_uve.h"
+#include "uve/rhi_shader/built_in_shaders_uve.h"
 
 namespace UVE::Render::Shader::BuiltIn {
 

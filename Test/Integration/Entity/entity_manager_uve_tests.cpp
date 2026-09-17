@@ -1,7 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 
-#include "uve/scene/entity_manager_uve.h"
+#include "uve/entity/entity_manager_uve.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -14,7 +14,7 @@
 #include "uve/events/event_system_uve.h"
 #include "uve/memory/memory_manager_uve.h"
 #include "uve/platform/platform_uve.h"
-#include "uve/scene/entity_lifecycle_events_uve.h"
+#include "uve/entity/entity_lifecycle_events_uve.h"
 
 namespace UVE::Scene::Tests {
 namespace {

@@ -1,6 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-#include "uve/render/particle_draw_command_uve.h"
+#include "uve/render_systems/particle_draw_command_uve.h"
 
 #include <gtest/gtest.h>
 

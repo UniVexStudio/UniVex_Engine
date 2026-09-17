@@ -17,11 +17,26 @@
 #include <string>
 #include <vector>
 
-#include "uve/debug/log_level_uve.h"
+#include "uve/logging/log_level_uve.h"
 #include "uve/math/vector3_uve.h"
 #include "uve/platform/platform_uve.h"
 
 namespace UVE::Core {
+
+/// Render backend EngineCoreUVE::Init() should try first when a window is created. The engine
+/// always degrades gracefully through this fixed fallback chain — the requested backend is a
+/// starting point, never a hard requirement:
+///   Vulkan -> OpenGL -> NullRenderDeviceUVE (engine still runs headless-correct, renders nothing)
+/// so picking a backend that the host lacks (no ICD, no GLFW Vulkan support, no display) is a
+/// logged warning, never a fail-fast abort. `AutoUVE` = `OpenGLUVE` today: OpenGL remains the
+/// production-default backend and Auto exists so future milestones can flip the default without
+/// changing the meaning of persisted configurations.
+enum class RenderBackendPreferenceUVE : std::uint32_t {
+    AutoUVE = 0U,
+    OpenGLUVE,
+    VulkanUVE,
+    NullUVE, ///< Force the null swapchain device (rendering disabled) even with a window.
+};
 
 /// Configuration passed into EngineCoreUVE's constructor. Every field has a
 /// sensible default, so most callers (including tests) can construct one
@@ -259,6 +274,14 @@ struct EngineConfigUVE {
     /// ANativeWindow* supplied by NativeActivity; the engine never takes ownership or destroys it.
     /// Desktop callers leave it null and continue through the GLFW WindowManagerUVE path.
     void* nativeWindowHandleUVE = nullptr;
+
+    /// Preferred render backend when a real window is created (ignored when headlessUVE is
+    /// true — headless always uses NullRenderDeviceUVE). `AutoUVE` resolves to `OpenGLUVE`,
+    /// the production default; `VulkanUVE` opts into the milestone-1 Vulkan bootstrap device
+    /// (window surface + clear-color present; see Render::VulkanRenderDeviceUVE) with the
+    /// documented Vulkan -> OpenGL -> Null fallback chain when the host lacks it. Appended
+    /// last so existing aggregate-construction order in callers and tests is unchanged.
+    RenderBackendPreferenceUVE renderBackendPreferenceUVE = RenderBackendPreferenceUVE::AutoUVE;
 };
 
 } // namespace UVE::Core

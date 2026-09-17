@@ -2,7 +2,7 @@
 
 #include "uve/editor/editor_bridge_uve.h"
 
-#include "uve/scene/components/prefab_instance_component_uve.h"
+#include "uve/component/prefab_instance_component_uve.h"
 
 #include <algorithm>
 #include <cctype>
@@ -14,7 +14,7 @@
 #include <type_traits>
 #include <utility>
 
-#include "uve/scene/components/mesh_component_uve.h"
+#include "uve/component/mesh_component_uve.h"
 
 namespace UVE::Editor {
 namespace {

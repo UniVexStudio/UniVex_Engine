@@ -10,8 +10,8 @@
 
 #include "uve/math/aabb_uve.h"
 #include "uve/math/quaternion_uve.h"
-#include "uve/scene/components/collider_component_uve.h"
-#include "uve/scene/i_entity_manager_uve.h"
+#include "uve/component/collider_component_uve.h"
+#include "uve/entity/i_entity_manager_uve.h"
 
 namespace UVE::Physics::Detail {
 

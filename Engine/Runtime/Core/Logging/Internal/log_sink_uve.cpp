@@ -1,7 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 
-#include "uve/debug/log_sink_uve.h"
+#include "uve/logging/log_sink_uve.h"
 
 #include <ctime>
 #include <iomanip>
