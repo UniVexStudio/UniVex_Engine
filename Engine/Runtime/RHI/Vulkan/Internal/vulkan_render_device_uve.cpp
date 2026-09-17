@@ -63,6 +63,17 @@ constexpr float kBootstrapClearAlphaUVE = 1.0F;
     return std::bit_cast<VkSurfaceKHR>(bits); // both forms are exactly pointer-sized/uint64-sized
 }
 
+/// M2e: RHI load-op contract → attachment load op. The swapchain's full-frame-clear policy
+/// stays its own thing (see PresentUVE); these route the offscreen/pass-level request.
+[[nodiscard]] constexpr VkAttachmentLoadOp ToVkLoadOpUVE(const LoadOpUVE loadOp) noexcept {
+    switch (loadOp) {
+        case LoadOpUVE::Clear:    return VK_ATTACHMENT_LOAD_OP_CLEAR;
+        case LoadOpUVE::Load:     return VK_ATTACHMENT_LOAD_OP_LOAD;
+        case LoadOpUVE::DontCare: return VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    }
+    return VK_ATTACHMENT_LOAD_OP_CLEAR; // unreachable; constexpr-safe default
+}
+
 } // namespace
 
 namespace {
@@ -148,6 +159,7 @@ struct VulkanRenderDeviceUVE::ImplUVE {
     // replay lazily opens the needed rendering instance at the first BeginRenderPassUVE op
     // and closes on pass switches or at frame end. Classic mode ignores all of this (its
     // single swapchain render pass is begun upfront exactly as before M2d).
+    struct TextureRecordUVE; // fwd: FramePassStateUVE carries a pointer to it (M2e)
     struct FramePassStateUVE {
         VkClearValue clearValues[2]{}; // 0: color, 1: depth — swapchain load-CLEAR contents
         std::uint32_t swapchainImageIndex = 0U;
@@ -156,6 +168,11 @@ struct VulkanRenderDeviceUVE::ImplUVE {
         bool passOpen = false;
         bool openPassIsSwapchain = true;
         VkImage openOffscreenColorImage = VK_NULL_HANDLE; // restored to SHADER_READ at close
+        // M2e: the caller depth attached to the open offscreen pass (nullptr for scratch depth
+        // — scratch content is never kept, so no tracked restore is needed). Restored to
+        // SHADER_READ_ONLY at CloseCurrentPassDynamicUVE() alongside the color image so the
+        // depth texture's rest invariant stays "sampleable between passes".
+        TextureRecordUVE* openOffscreenDepthRecord = nullptr;
     };
     FramePassStateUVE framePassState;
 
@@ -286,13 +303,17 @@ struct VulkanRenderDeviceUVE::ImplUVE {
     // with LOAD (content preserved, matching GL's interleaved FBO semantics).
     [[nodiscard]] bool BeginSwapchainPassDynamicUVE();
     // Opens an offscreen rendering instance against `color` (+ caller `depth` or the scratch
-    // target of matching extent). Entry barriers run here; the restore barrier back to
-    // SHADER_READ_ONLY for the color image runs at CloseCurrentPassDynamicUVE().
+    // target of matching extent). Entry barriers run here; the restore barriers back to
+    // SHADER_READ_ONLY for the color (and caller-depth) images run at
+    // CloseCurrentPassDynamicUVE(). M2e: `colorLoadOp`/`depthLoadOp` are the real attachment
+    // load ops now (Clear/Load/DontCare — GL's FBO clear-once-vs-accumulate semantics).
     [[nodiscard]] bool BeginOffscreenPassDynamicUVE(TextureRecordUVE& color,
                                                     TextureRecordUVE* depth,
                                                     VkExtent2D extent,
                                                     const std::array<float, 4>& clearColor,
-                                                    float clearDepth);
+                                                    float clearDepth,
+                                                    LoadOpUVE colorLoadOp,
+                                                    LoadOpUVE depthLoadOp);
     // Closes whichever rendering instance is open (if any) and restores offscreen layouts.
     void CloseCurrentPassDynamicUVE();
     // Scratch depth lookup-or-allocate for one extent. Null on failure (logged once).
@@ -327,6 +348,7 @@ struct VulkanRenderDeviceUVE::ImplUVE {
     static constexpr std::uint32_t kWarnedOffscreenUnsupportedUVE = 1U << 13U;
     static constexpr std::uint32_t kWarnedOffscreenDepthIncompatibleUVE = 1U << 14U;
     static constexpr std::uint32_t kWarnedDepthTextureSampledUVE = 1U << 15U;
+    static constexpr std::uint32_t kWarnedOffscreenFeedbackUVE = 1U << 16U;
     std::uint32_t replayWarningsEmitted = 0U;
 
     // Replay-local pipeline binding state (valid only inside PresentUVE()'s record window).
@@ -494,7 +516,8 @@ VulkanRenderDeviceUVE::ImplUVE::GetDepthScratchUVE(const std::uint32_t width, co
 
 bool VulkanRenderDeviceUVE::ImplUVE::BeginOffscreenPassDynamicUVE(
     TextureRecordUVE& color, TextureRecordUVE* depth, const VkExtent2D extent,
-    const std::array<float, 4>& clearColor, const float clearDepth) {
+    const std::array<float, 4>& clearColor, const float clearDepth,
+    const LoadOpUVE colorLoadOp, const LoadOpUVE depthLoadOp) {
     FramePassStateUVE& state = framePassState;
     DepthScratchUVE* scratch = nullptr;
     if (depth == nullptr) {
@@ -521,7 +544,7 @@ bool VulkanRenderDeviceUVE::ImplUVE::BeginOffscreenPassDynamicUVE(
     entryBarriers[1].srcAccessMask = 0U;
     entryBarriers[1].dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
     if (depth != nullptr) {
-        entryBarriers[1].oldLayout = depth->currentLayout; // DS_ATTACHMENT by M2c invariant
+        entryBarriers[1].oldLayout = depth->currentLayout; // SHADER_READ_ONLY by M2e invariant
     } else {
         entryBarriers[1].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED; // scratch: content never kept
     }
@@ -533,11 +556,16 @@ bool VulkanRenderDeviceUVE::ImplUVE::BeginOffscreenPassDynamicUVE(
                                 VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
                             0U, 0U, nullptr, 0U, nullptr, 2U, entryBarriers);
 
+    // M2e: real load ops. The entry barriers above are layout transitions only and already
+    // preserve content (oldLayout = the record's tracked layout — never UNDEFINED-discard for
+    // caller textures), so LOAD preserves prior contents exactly like GL re-bound FBOs do,
+    // CLEAR runs the one clear the caller asked for, and DontCare is a free forward of the
+    // driver's discard prerogative.
     VkRenderingAttachmentInfo colorAttachmentInfo{};
     colorAttachmentInfo.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
     colorAttachmentInfo.imageView = color.attachmentView;
     colorAttachmentInfo.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    colorAttachmentInfo.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    colorAttachmentInfo.loadOp = ToVkLoadOpUVE(colorLoadOp);
     colorAttachmentInfo.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     colorAttachmentInfo.clearValue.color.float32[0] = clearColor[0];
     colorAttachmentInfo.clearValue.color.float32[1] = clearColor[1];
@@ -547,7 +575,7 @@ bool VulkanRenderDeviceUVE::ImplUVE::BeginOffscreenPassDynamicUVE(
     depthAttachmentInfo.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
     depthAttachmentInfo.imageView = depth != nullptr ? depth->attachmentView : scratch->view;
     depthAttachmentInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-    depthAttachmentInfo.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depthAttachmentInfo.loadOp = ToVkLoadOpUVE(depthLoadOp);
     depthAttachmentInfo.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     depthAttachmentInfo.clearValue.depthStencil = {clearDepth, 0U};
     VkRenderingInfo renderingInfo{};
@@ -575,6 +603,7 @@ bool VulkanRenderDeviceUVE::ImplUVE::BeginOffscreenPassDynamicUVE(
     state.passOpen = true;
     state.openPassIsSwapchain = false;
     state.openOffscreenColorImage = color.image;
+    state.openOffscreenDepthRecord = depth; // restored to SHADER_READ_ONLY at pass close
     return true;
 }
 
@@ -600,8 +629,30 @@ void VulkanRenderDeviceUVE::ImplUVE::CloseCurrentPassDynamicUVE() {
                                 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0U, 0U, nullptr, 0U,
                                 nullptr, 1U, &backToSample);
     }
+    if (!state.openPassIsSwapchain && state.openOffscreenDepthRecord != nullptr) {
+        // M2e symmetric restore: caller depth textures return to their sampleable rest
+        // layout, so a later pass/shader can bind them. (Scratch depth is excluded: its
+        // content is throwaway by design and it never leaves the device-internal layout
+        // rotation.)
+        VkImageMemoryBarrier depthToSample{};
+        depthToSample.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        depthToSample.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        depthToSample.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        depthToSample.oldLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        depthToSample.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        depthToSample.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        depthToSample.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        depthToSample.image = state.openOffscreenDepthRecord->image;
+        depthToSample.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0U, 1U, 0U, 1U};
+        vk.vkCmdPipelineBarrier(commandBuffer,
+                                VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+                                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0U, 0U, nullptr, 0U,
+                                nullptr, 1U, &depthToSample);
+        state.openOffscreenDepthRecord->currentLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    }
     state.passOpen = false;
     state.openOffscreenColorImage = VK_NULL_HANDLE;
+    state.openOffscreenDepthRecord = nullptr;
 }
 
 void VulkanRenderDeviceUVE::ImplUVE::DestroySwapchainResourcesUVE() {
@@ -1722,13 +1773,15 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
             break;
         case TextureFormatUVE::Depth32Float:
             // Depth textures exist so the render-target milestone can attach them; they are
-            // created attachment-ready (initial uploads of depth data are rejected — a host
-            // depth upload has no RHI consumer today, so refusing it is the honest boundary).
+            // created attachment-ready AND sampled-ready (M2e: their rest layout is the
+            // shader-readable one, and the dynamic offscreen arm transitions around attachment
+            // use — initial uploads of depth data are still rejected: a host depth upload has
+            // no RHI consumer today, so refusing it is the honest boundary).
             format = VK_FORMAT_D32_SFLOAT;
             sampledFormat = format;
             aspect = VK_IMAGE_ASPECT_DEPTH_BIT;
             usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-            finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+            finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
             bytesPerPixel = 4U;
             if (!initialData.empty()) {
                 return fail("Depth32Float initial uploads are not supported (attachment-ready "
@@ -2731,15 +2784,30 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
                     value = bound->second; // destroyed-after-bind resolves to the fallback
                 }
                 ImplUVE::TextureRecordUVE& slotRecord = impl.textures.at(value);
-                if (slotRecord.desc.format == TextureFormatUVE::Depth32Float) {
-                    // M2d boundary: depth textures are attachment-ready but SAMPLING them is
-                    // the M2e slice (the descriptor would need a special depth-comparison
-                    // declaration); they sample as the 1x1 white fallback for now.
+                if (slotRecord.desc.format == TextureFormatUVE::Depth32Float &&
+                    !impl.useDynamicRendering) {
+                    // M2e boundary, classic arm only: depth textures are sampleable for real on
+                    // the dynamic-rendering path. On pre-1.3 devices no offscreen pass can ever
+                    // run (bit13 degrades them), so no real depth content can exist there — the
+                    // 1x1-white fallback keeps the classic contract honest instead of faking a
+                    // sample of an unrenderable image.
                     impl.WarnOnceUVE(
                         VulkanRenderDeviceUVE::ImplUVE::kWarnedDepthTextureSampledUVE,
-                        "BindTextureUVE: a Depth32Float texture was bound to a sampled shader "
-                        "slot; depth-texture sampling lands in the M2e slice — the 1x1 white "
-                        "fallback is sampled instead");
+                        "BindTextureUVE: a Depth32Float texture was bound on a device without "
+                        "core dynamic rendering; depth-texture sampling needs the M2e dynamic "
+                        "arm — the 1x1 white fallback is sampled instead");
+                    value = impl.fallbackTextureValue;
+                } else if (impl.framePassState.passOpen && !impl.framePassState.openPassIsSwapchain &&
+                           (&slotRecord == impl.framePassState.openOffscreenDepthRecord ||
+                            slotRecord.image == impl.framePassState.openOffscreenColorImage)) {
+                    // M2e feedback guard: sampling a texture WHILE it is attached to the open
+                    // pass is the Vulkan-illegal/GL-undefined feedback loop. Keep the frame
+                    // deterministic: sample the fallback once, warn loudly — never corrupt.
+                    impl.WarnOnceUVE(
+                        VulkanRenderDeviceUVE::ImplUVE::kWarnedOffscreenFeedbackUVE,
+                        "BindTextureUVE: texture is attached to the currently-open offscreen "
+                        "pass (feedback loop, undefined in GL as well) — the 1x1 white fallback "
+                        "is sampled for this draw");
                     value = impl.fallbackTextureValue;
                 }
                 tupleValues.push_back(value);
@@ -2992,14 +3060,8 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
                             }
                             if (!skipPass) {
                                 const ImplUVE::TextureRecordUVE& color = foundColor->second;
-                                if (op.desc.colorLoadOp != LoadOpUVE::Clear ||
-                                    op.desc.depthLoadOp != LoadOpUVE::Clear) {
-                                    impl.WarnOnceUVE(
-                                        VulkanRenderDeviceUVE::ImplUVE::kWarnedLoadOpUnhonoredUVE,
-                                        "BeginRenderPassUVE requested Load/DontCare on an "
-                                        "offscreen pass; UVE clears such passes exactly once "
-                                        "per pass (see the swapchain contract)");
-                                }
+                                // M2e: offscreen loadOps are REAL (Clear/Load/DontCare map to
+                                // the attachment load ops; entry transitions preserve content).
                                 if (impl.framePassState.passOpen) {
                                     impl.CloseCurrentPassDynamicUVE();
                                 }
@@ -3007,7 +3069,8 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
                                         foundColor->second,
                                         degradeToScratchDepth ? nullptr : depthRecord,
                                         VkExtent2D{color.desc.width, color.desc.height},
-                                        op.desc.clearColor, op.desc.clearDepth)) {
+                                        op.desc.clearColor, op.desc.clearDepth,
+                                        op.desc.colorLoadOp, op.desc.depthLoadOp)) {
                                     passActiveForThisList = true;
                                     if (op.desc.viewportOverride.has_value()) {
                                         applyViewportOverrideUVE(*op.desc.viewportOverride,
@@ -3571,7 +3634,7 @@ bool VulkanRenderDeviceUVE::ReadbackLatestPresentedImageUVE(std::span<std::byte>
 std::string_view VulkanRenderDeviceUVE::GetBackendNameUVE() const noexcept {
     // Never the unqualified "Vulkan": the current slice must be identifiable in editor
     // overlays and bug reports (see the header's capability-reporting contract).
-    return m_impl->useDynamicRendering ? "Vulkan (M2d offscreen RT)"
+    return m_impl->useDynamicRendering ? "Vulkan (M2e depth+Load policies)"
                                        : "Vulkan (M2c textures+staging)";
 }
 
