@@ -3,6 +3,7 @@
 #include "uve/audio/wav_metadata_uve.h"
 
 #include <cmath>
+#include <cstddef>
 #include <cstring>
 #include <limits>
 

@@ -1,0 +1,60 @@
+# Copyright (c) 2026 UniVex Studios. All Rights Reserved.
+#
+# UniVex Engine CI - the one place that validates the *whole* engine, including the
+# OpenGL/GLFW/GLEW/zlib/libjpeg paths that a headless or dev-machine-only workflow
+# cannot see (the 2026-09-17 audit found 44 engine sources that are otherwise
+# "compiled by inspection" only, plus one real break that had no test).
+#
+# What this does on every push and PR:
+#   1. Installs the full native toolchain deps (GLFW3, GLEW, Mesa GL, zlib, libjpeg).
+#   2. Configures + builds the entire tree: 40+ engine/editor static libs, both app
+#      executables (uve_runtime, uve_editor), all Viewport demo/tools, and the two
+#      GoogleTest suites.
+#   3. Runs ctest under Xvfb so window/context-creating tests have a display.
+#
+# If this file is green, "the engine builds" is a fact, not an assumption.
+
+name: UniVex Engine CI
+
+on:
+  push:
+  pull_request:
+    branches: [master]
+
+jobs:
+  build-and-test:
+    name: Ubuntu GCC - full build + ctest
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libglfw3-dev \
+            libglew-dev \
+            libgl1-mesa-dev \
+            libglu1-mesa-dev \
+            zlib1g-dev \
+            libjpeg-dev \
+            xvfb
+
+      - name: Configure (Debug)
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -DUVE_BUILD_TESTS=ON
+
+      - name: Build
+        run: cmake --build build --parallel "$(nproc)"
+
+      - name: Test (under Xvfb)
+        run: xvfb-run -a ctest --test-dir build --output-on-failure
+
+      - name: Build summary
+        if: always()
+        run: |
+          echo "== Built targets =="
+          find build -maxdepth 4 -name "*.a" -type f | sort || true
+          echo "== Built executables =="
+          find build -maxdepth 5 -type f -executable \( -name "uve_*" -o -name "univex_*" \) | sort || true
