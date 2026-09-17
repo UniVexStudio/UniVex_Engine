@@ -10,7 +10,7 @@
 #include "archetype_signature_uve.h"
 #include "archetype_uve.h"
 #include "chunk_uve.h"
-#include "uve/debug/assert_uve.h"
+#include "uve/logging/assert_uve.h"
 #include "uve/entity/entity_lifecycle_events_uve.h"
 
 namespace UVE::Scene {

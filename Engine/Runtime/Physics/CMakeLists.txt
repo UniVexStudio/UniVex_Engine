@@ -24,6 +24,6 @@ add_library(uve_physics STATIC
     Internal/shape_narrow_phase_uve.cpp
 )
 target_include_directories(uve_physics PUBLIC Expose)
-target_link_libraries(uve_physics PUBLIC uve_platform uve_debug uve_math uve_scene)
+target_link_libraries(uve_physics PUBLIC uve_platform uve_logging uve_math uve_scene)
 target_compile_features(uve_physics PUBLIC cxx_std_20)
 uve_set_warnings(uve_physics)

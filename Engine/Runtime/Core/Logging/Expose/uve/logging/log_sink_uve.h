@@ -11,7 +11,7 @@
 #include <thread>
 #include <vector>
 
-#include "uve/debug/log_level_uve.h"
+#include "uve/logging/log_level_uve.h"
 
 namespace UVE::Debug {
 

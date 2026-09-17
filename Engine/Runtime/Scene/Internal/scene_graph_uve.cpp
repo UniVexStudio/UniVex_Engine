@@ -9,7 +9,7 @@
 #include <unordered_set>
 #include <vector>
 
-#include "uve/debug/assert_uve.h"
+#include "uve/logging/assert_uve.h"
 #include "uve/math/quaternion_uve.h"
 #include "uve/math/vector3_uve.h"
 #include "uve/platform/platform_uve.h"

@@ -28,7 +28,7 @@
 #include "univex/render/ShaderProgram.h"
 
 #include "uve/core/engine_core_uve.h"
-#include "uve/debug/logging_macros_uve.h"
+#include "uve/logging/logging_macros_uve.h"
 #include "uve/editor/editor_bridge_stdio_uve.h"
 #include "uve/ui/ui_draw_batch_uve.h"
 #include "uve/ui/ui_font_atlas_uve.h"

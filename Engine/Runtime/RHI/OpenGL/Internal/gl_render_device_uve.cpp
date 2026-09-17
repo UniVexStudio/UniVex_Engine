@@ -18,8 +18,8 @@
 #include "gl_command_buffer_uve.h"
 #include "gl_error_check_uve.h"
 #include "gl_render_device_state_uve.h"
-#include "uve/debug/assert_uve.h"
-#include "uve/debug/logging_macros_uve.h"
+#include "uve/logging/assert_uve.h"
+#include "uve/logging/logging_macros_uve.h"
 
 namespace UVE::Render {
 

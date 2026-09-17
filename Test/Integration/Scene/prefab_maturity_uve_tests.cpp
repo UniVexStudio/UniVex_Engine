@@ -6,7 +6,7 @@
 
 #include "uve/asset/asset_database_uve.h"
 #include "uve/asset/asset_content_fingerprint_uve.h"
-#include "uve/debug/log_sink_uve.h"
+#include "uve/logging/log_sink_uve.h"
 #include "uve/events/event_system_uve.h"
 #include "uve/memory/memory_manager_uve.h"
 #include "uve/component/mesh_component_uve.h"

@@ -12,7 +12,7 @@
 
 #include "uve/asset/mesh_asset_uve.h"
 #include "uve/asset/obj_mesh_converter_uve.h"
-#include "uve/debug/logging_macros_uve.h"
+#include "uve/logging/logging_macros_uve.h"
 
 namespace UVE::Asset {
 namespace {

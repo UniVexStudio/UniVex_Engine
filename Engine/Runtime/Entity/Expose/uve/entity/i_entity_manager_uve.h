@@ -9,7 +9,7 @@
 #include <utility>
 #include <vector>
 
-#include "uve/debug/assert_uve.h"
+#include "uve/logging/assert_uve.h"
 #include "uve/component/component_type_info_uve.h"
 #include "uve/component/entity_uve.h"
 

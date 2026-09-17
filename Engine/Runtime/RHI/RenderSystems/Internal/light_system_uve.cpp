@@ -6,8 +6,8 @@
 #include <cmath>
 #include <cstddef>
 
-#include "uve/debug/assert_uve.h"
-#include "uve/debug/logging_macros_uve.h"
+#include "uve/logging/assert_uve.h"
+#include "uve/logging/logging_macros_uve.h"
 #include "uve/math/quaternion_uve.h"
 #include "uve/component/light_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"

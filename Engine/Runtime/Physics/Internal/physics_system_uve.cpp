@@ -10,7 +10,7 @@
 #include <limits>
 #include <vector>
 
-#include "uve/debug/assert_uve.h"
+#include "uve/logging/assert_uve.h"
 #include "uve/math/quaternion_uve.h"
 #include "uve/physics/angular_dynamics_uve.h"
 #include "uve/physics/collision_pair_uve.h"

@@ -106,7 +106,7 @@ add_executable(uve_core_tests
 target_link_libraries(uve_core_tests PRIVATE
     nlohmann_json::nlohmann_json
     uve_platform
-    uve_debug
+    uve_logging
     uve_memory
     uve_threading
     uve_scheduling
@@ -257,7 +257,7 @@ gtest_discover_tests(uve_integration_tests)
 # exercises literally every already-ported subsystem at once (Asset/Audio/Input/Physics/Render/
 # Save/Scene/Window) through one bootstrap object - it doesn't belong to either bucket, it sits
 # on top of both. Linking uve_core is sufficient for every other dependency: uve_core PUBLIC-links
-# the full set its own header/source files need (uve_platform, uve_debug, uve_utilities,
+# the full set its own header/source files need (uve_platform, uve_logging, uve_utilities,
 # uve_events, uve_memory, uve_threading, uve_commandline, uve_config, uve_asset, uve_scene,
 # uve_physics, uve_input, uve_audio, uve_save, uve_window, uve_rhi, uve_rhi_shader,
 # uve_rhi_opengl, uve_rhi_null, uve_render_systems), so all of those propagate transitively.

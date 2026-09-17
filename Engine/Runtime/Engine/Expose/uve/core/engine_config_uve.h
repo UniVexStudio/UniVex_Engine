@@ -17,7 +17,7 @@
 #include <string>
 #include <vector>
 
-#include "uve/debug/log_level_uve.h"
+#include "uve/logging/log_level_uve.h"
 #include "uve/math/vector3_uve.h"
 #include "uve/platform/platform_uve.h"
 

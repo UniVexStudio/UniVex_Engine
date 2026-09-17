@@ -14,8 +14,8 @@
 #include <gtest/gtest.h>
 
 #include "uve/asset/asset_database_uve.h"
-#include "uve/debug/log_sink_uve.h"
-#include "uve/debug/logger_uve.h"
+#include "uve/logging/log_sink_uve.h"
+#include "uve/logging/logger_uve.h"
 #include "uve/events/event_system_uve.h"
 #include "uve/memory/memory_manager_uve.h"
 #include "uve/component/hierarchy_component_uve.h"

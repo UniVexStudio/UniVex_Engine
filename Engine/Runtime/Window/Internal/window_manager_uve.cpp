@@ -6,7 +6,7 @@
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 
-#include "uve/debug/logging_macros_uve.h"
+#include "uve/logging/logging_macros_uve.h"
 #include "uve/input/key_code_uve.h"
 #include "uve/input/mouse_button_uve.h"
 #include "uve/window/window_events_uve.h"

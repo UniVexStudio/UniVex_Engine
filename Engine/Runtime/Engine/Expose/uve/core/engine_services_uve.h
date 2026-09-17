@@ -26,7 +26,7 @@
 #include "uve/audio/i_audio_system_uve.h"
 #include "uve/commandline/i_command_line_uve.h"
 #include "uve/config/i_config_manager_uve.h"
-#include "uve/debug/i_logger_uve.h"
+#include "uve/logging/i_logger_uve.h"
 #include "uve/events/i_event_system_uve.h"
 #include "uve/input/i_gamepad_input_system_uve.h"
 #include "uve/input/i_input_system_uve.h"

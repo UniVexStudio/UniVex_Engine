@@ -8,6 +8,6 @@ add_library(uve_memory STATIC
     Internal/memory_manager_uve.cpp
 )
 target_include_directories(uve_memory PUBLIC Expose)
-target_link_libraries(uve_memory PUBLIC uve_platform uve_debug)
+target_link_libraries(uve_memory PUBLIC uve_platform uve_logging)
 target_compile_features(uve_memory PUBLIC cxx_std_20)
 uve_set_warnings(uve_memory)

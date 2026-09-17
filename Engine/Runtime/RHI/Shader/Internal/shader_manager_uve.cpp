@@ -16,7 +16,7 @@
 #include "shader_binary_cache_uve.h"
 #include "shader_diagnostics_parser_uve.h"
 #include "shader_preprocessor_uve.h"
-#include "uve/debug/logging_macros_uve.h"
+#include "uve/logging/logging_macros_uve.h"
 #include "uve/rhi_shader/shader_events_uve.h"
 #include "uve/threading/job_counter_uve.h"
 

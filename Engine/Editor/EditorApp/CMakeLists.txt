@@ -14,7 +14,7 @@
 #
 # univex_viewport_engine_bridge already PUBLIC-links univex_viewport_app_support
 # (-> univex_viewport_gl -> OpenGL::GL/GLEW::GLEW) and uve_world (-> uve_scene,
-# uve_entity, uve_memory, uve_events, uve_debug) transitively - only uve_window and
+# uve_entity, uve_memory, uve_events, uve_logging) transitively - only uve_window and
 # uve_input are new link dependencies this target needs directly.
 
 add_executable(univex_editor Internal/main.cpp)
