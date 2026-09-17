@@ -10,7 +10,7 @@
 |---|---|---|
 | **Compile health (engine)** | 🟡 1 confirmed break | `wav_metadata_uve.cpp` — walang `#include <cstddef>`. Pumaasa sa transitive include na hindi umiiral. |
 | **Compile health (tests)** | ✅ Malinis | Lahat ng test sources ay nagsa-compile (12 "failures" ay missing GL/zlib/jpeg dev packages lang sa audit sandbox, hindi code bug). |
-| **Hard duplicates (clone files)** | 🔴 6 pamilya, ~700+ lines | Importer cpp clone pairs, 8 identical importer headers, 4 identical RHI handle headers, Nodes3D clone pair, 2 parallel entity bridges, duvplicated font binaries. |
+| **Hard duplicates (clone files)** | 🟡 ~~6~~ 5 pamilya (1 RESOLVED post-audit) | ~~Importer cpp clone pairs~~ **(nalinis na 2026-09-17)**; 8 identical importer headers, 4 identical RHI handle headers, Nodes3D clone pair, 2 parallel entity bridges, duvplicated font binaries ang natitira. |
 | **Semantic duplicates** | 🟠 2 math libraries | Viewport may sariling `univex::math` (Mat4/Vec, OpenGL conventions) habang may full `UVE::Math` sa Core/Math (Vulkan conventions). |
 | **Scaffolding (empty)** | 🟢 OK per plan | 36 README-only folders — sinadya para sa future (per rebuild plan). **Pero** may 5 naming-collision traps. |
 | **Dead/orphan code** | ✅ Wala | Lahat ng 406 cpp ay naka-wire sa CMake; walang island modules (lahat ng module ay may consumer). |
@@ -269,4 +269,14 @@ Tatlong lugar ang may say sa "ano ang node/entity": `Component` (25 headers ng c
 - Ang full **link/integration build at executed test suite** ay hindi napatakbo dito dahil walang system GL/X11 toolchain ang sandbox (Debian mirrors blocked; GitHub lang available). Ang 236/236 engine cpp at 368/368 headers ay na-verify sa syntax+semantic level sa exact build defines; ang link-time issues (missing definitions, ODR) ay makikita lang ng isang buong build — kaya P0 ang item #2 sa itaas.
 - Ang ROADMAP progress claims (49 `[x]`) ay spot-checked, hindi bawat isa ay ni-re-verify line by line.
 
-*Prepared by Arena.ai Agent Mode — full mechanical audit; walang binagong engine source file sa paggawa nito (verification copies lang sa /tmp).*
+*Prepared by Arena.ai Agent Mode — full mechanical audit.*
+
+---
+
+## Follow-up log (changes made after this audit)
+
+- **2026-09-17 (P0 #1):** Fixed `wav_metadata_uve.cpp` — added the missing `#include <cstddef>`; verified compiles clean under GCC-12. (§4.1 — **RESOLVED**)
+- **2026-09-17 (P0 #2):** Added `.github/workflows/ci.yml` — full Ubuntu build + `ctest` under Xvfb with GLFW3/GLEW/Mesa/zlib/libjpeg installed, covering the 44 GL-dependent files this sandbox could not verify. (§4.2 — **RESOLVED, pending first CI run**)
+- **2026-09-17 (P1 #4):** Importer clone family collapsed (§5.1 — **RESOLVED**). New shared `Engine/Runtime/Asset/Internal/import_helpers_uve.{h,cpp}` owns the bounded source-read and atomic-publish steps (parameterized by importer name + temp suffix, so log strings and publication paths are behavior-identical). The 9 importer cpps now keep only genuinely format-specific logic (caps, extension policy, decode/convert, assembly). **439 lines removed, 90 added (net −349); the family's cross-file duplicate-window count went from 26 (audit §5.1) to 0.** Public `Register*ImporterUVE` API unchanged; all importer test files still compile.
+
+Remaining open items: §5.2–§5.6, §6.1–§6.3, §7 naming, and §10 (full link/test verification on a GL-capable machine — now automated by CI).

@@ -9,8 +9,11 @@
 #include <fstream>
 #include <limits>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <utility>
+
+#include "import_helpers_uve.h"
 
 #include "uve/asset/asset_importer_uve.h"
 #include "uve/asset/shader_asset_uve.h"
@@ -18,6 +21,9 @@
 
 namespace UVE::Asset {
 namespace {
+
+constexpr const char* kShaderSourceImporterNameUVE = "ShaderSourceImporterUVE";
+constexpr std::string_view kShaderTemporarySuffixUVE = ".uve_shader_tmp";
 
 [[nodiscard]] std::string NormalizeShaderExtensionUVE(std::string extension) {
     if (!extension.empty() && extension.front() == '.') {
@@ -76,34 +82,6 @@ namespace {
     return false;
 }
 
-[[nodiscard]] bool SaveShaderAssetAtomicallyUVE(const ShaderAssetUVE& shader,
-                                                 const std::filesystem::path& destinationPath) {
-    std::error_code errorCode;
-    if (const std::filesystem::path parent = destinationPath.parent_path(); !parent.empty()) {
-        std::filesystem::create_directories(parent, errorCode);
-        if (errorCode) {
-            UVE_ERROR("ShaderSourceImporterUVE: failed to create destination directory \"{}\": {}",
-                      parent.string(), errorCode.message());
-            return false;
-        }
-    }
-
-    const std::filesystem::path temporaryPath = destinationPath.string() + ".uve_shader_tmp";
-    std::filesystem::remove(temporaryPath, errorCode);
-    if (!SaveShaderAssetUVE(shader, temporaryPath)) {
-        std::filesystem::remove(temporaryPath, errorCode);
-        return false;
-    }
-    std::filesystem::rename(temporaryPath, destinationPath, errorCode);
-    if (errorCode) {
-        UVE_ERROR("ShaderSourceImporterUVE: failed to publish destination \"{}\": {}",
-                  destinationPath.string(), errorCode.message());
-        std::filesystem::remove(temporaryPath, errorCode);
-        return false;
-    }
-    return true;
-}
-
 [[nodiscard]] bool ImportShaderSourceUVE(const std::filesystem::path& sourcePath,
                                          const std::filesystem::path& destinationPath,
                                          const AssetImportSettingsUVE& /*settings*/) {
@@ -130,7 +108,11 @@ namespace {
     shader.stage = stage;
     shader.sourceCode = std::move(sourceCode);
     shader.entryPointName = "main";
-    return SaveShaderAssetAtomicallyUVE(shader, destinationPath);
+    return Detail::PublishAssetAtomicallyUVE(destinationPath, kShaderSourceImporterNameUVE,
+                                             kShaderTemporarySuffixUVE,
+                                             [&shader](const std::filesystem::path& temporaryPath) {
+                                                 return SaveShaderAssetUVE(shader, temporaryPath);
+                                             });
 }
 
 } // namespace

@@ -20,6 +20,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include "import_helpers_uve.h"
+
 #include "uve/asset/gltf_mesh_converter_uve.h"
 #include "uve/asset/gltf_metadata_uve.h"
 #include "uve/asset/mesh_asset_uve.h"
@@ -28,9 +30,11 @@
 namespace UVE::Asset {
 namespace {
 
+constexpr const char* kGltfImporterNameUVE = "GltfImporterUVE";
 constexpr std::size_t kGlbHeaderBytesUVE = 12U;
 constexpr std::size_t kGlbChunkHeaderBytesUVE = 8U;
 constexpr std::size_t kMaximumGltfSourceBytesUVE = kMaximumGltfDataUriDecodedBytesUVE;
+constexpr std::string_view kGltfTemporarySuffixUVE = ".uve_gltf_tmp";
 
 struct AccessorDefinitionUVE final {
     std::uint64_t bufferView = 0U;
@@ -69,32 +73,6 @@ struct BufferViewDefinitionUVE final {
         return std::nullopt;
     }
     return static_cast<std::uint32_t>(*value);
-}
-
-[[nodiscard]] bool ReadBoundedFileBytesUVE(const std::filesystem::path& path,
-                                           std::vector<std::byte>& outBytes) {
-    std::ifstream input(path, std::ios::binary | std::ios::ate);
-    if (!input.is_open()) {
-        UVE_ERROR("GltfImporterUVE: failed to open source \"{}\"", path.string());
-        return false;
-    }
-    const std::streamoff fileSize = input.tellg();
-    if (fileSize < 0 || static_cast<std::uint64_t>(fileSize) > kMaximumGltfSourceBytesUVE ||
-        static_cast<std::uint64_t>(fileSize) > std::numeric_limits<std::size_t>::max()) {
-        UVE_ERROR("GltfImporterUVE: source \"{}\" exceeds the bounded source-size limit", path.string());
-        return false;
-    }
-    std::vector<std::byte> bytes(static_cast<std::size_t>(fileSize));
-    input.seekg(0, std::ios::beg);
-    if (!bytes.empty()) {
-        input.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
-        if (!input) {
-            UVE_ERROR("GltfImporterUVE: source \"{}\" could not be read completely", path.string());
-            return false;
-        }
-    }
-    outBytes = std::move(bytes);
-    return true;
 }
 
 [[nodiscard]] std::uint32_t ReadU32LittleEndianUVE(const std::vector<std::byte>& bytes,
@@ -199,7 +177,8 @@ struct BufferViewDefinitionUVE final {
     } else if (uriKind == GltfResourceUriKindUVE::RelativePath) {
         std::string normalizedUri = uri;
         std::replace(normalizedUri.begin(), normalizedUri.end(), '\\', '/');
-        if (!ReadBoundedFileBytesUVE(sourcePath.parent_path() / normalizedUri, outBuffer)) {
+        if (!Detail::ReadBoundedSourceBytesUVE(sourcePath.parent_path() / normalizedUri, kGltfImporterNameUVE,
+                                               kMaximumGltfSourceBytesUVE, outBuffer)) {
             return false;
         }
     } else {
@@ -377,33 +356,6 @@ struct BufferViewDefinitionUVE final {
     return ConvertGltfPrimitiveUVE(source, outMesh);
 }
 
-[[nodiscard]] bool SaveMeshAssetAtomicallyUVE(const MeshAssetUVE& mesh,
-                                              const std::filesystem::path& destinationPath) {
-    std::error_code errorCode;
-    if (const std::filesystem::path parent = destinationPath.parent_path(); !parent.empty()) {
-        std::filesystem::create_directories(parent, errorCode);
-        if (errorCode) {
-            UVE_ERROR("GltfImporterUVE: failed to create destination directory \"{}\": {}", parent.string(),
-                      errorCode.message());
-            return false;
-        }
-    }
-    const std::filesystem::path temporaryPath = destinationPath.string() + ".uve_gltf_tmp";
-    std::filesystem::remove(temporaryPath, errorCode);
-    if (!SaveMeshAssetUVE(mesh, temporaryPath)) {
-        std::filesystem::remove(temporaryPath, errorCode);
-        return false;
-    }
-    std::filesystem::rename(temporaryPath, destinationPath, errorCode);
-    if (errorCode) {
-        UVE_ERROR("GltfImporterUVE: failed to publish destination \"{}\": {}", destinationPath.string(),
-                  errorCode.message());
-        std::filesystem::remove(temporaryPath, errorCode);
-        return false;
-    }
-    return true;
-}
-
 [[nodiscard]] bool ImportGltfSourceUVE(const std::filesystem::path& sourcePath,
                                        const std::filesystem::path& destinationPath,
                                        const AssetImportSettingsUVE& /*settings*/) {
@@ -414,7 +366,10 @@ struct BufferViewDefinitionUVE final {
             return false;
         }
         std::vector<std::byte> sourceBytes;
-        if (!ReadBoundedFileBytesUVE(sourcePath, sourceBytes)) return false;
+        if (!Detail::ReadBoundedSourceBytesUVE(sourcePath, kGltfImporterNameUVE, kMaximumGltfSourceBytesUVE,
+                                               sourceBytes)) {
+            return false;
+        }
         nlohmann::json document;
         std::vector<std::byte> buffer;
         if (!LoadGltfDocumentAndBufferUVE(sourcePath, sourceBytes, document, buffer)) {
@@ -428,7 +383,10 @@ struct BufferViewDefinitionUVE final {
                       sourcePath.string());
             return false;
         }
-        return SaveMeshAssetAtomicallyUVE(mesh, destinationPath);
+        return Detail::PublishAssetAtomicallyUVE(destinationPath, kGltfImporterNameUVE, kGltfTemporarySuffixUVE,
+                                                 [&mesh](const std::filesystem::path& temporaryPath) {
+                                                     return SaveMeshAssetUVE(mesh, temporaryPath);
+                                                 });
     } catch (const std::bad_alloc&) {
         return false;
     }
