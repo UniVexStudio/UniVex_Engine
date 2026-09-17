@@ -2,13 +2,17 @@
 
 ## Liberation Sans (subsetted)
 
-`liberation-sans-subset.ttf` is the exact same subset of Liberation Sans Regular
-already vendored (and documented in full) at
-`Engine/Editor/EditorCore/assets/fonts/THIRD_PARTY_NOTICES.md` - duplicated here,
-byte-for-byte, because `Engine/Runtime/UI` is a lower-layer runtime module and
-must not depend on `Engine/Editor/EditorCore`. See that notice for the full
-provenance, the `pyftsubset` invocation used to produce it, and the complete
-SIL Open Font License 1.1 text (reproduced below for this copy).
+`liberation-sans-subset.ttf` in this directory is **the single canonical copy** of this
+subset for the entire repository (since the 2026-09-17 audit resolution, `AUDIT.md`
+section 5.4): this is a lower-layer runtime module, so it owns the shared asset, while
+`Engine/Editor/EditorCore` embeds the byte array **generated from this very file at build
+time** by `Engine/Tools/embed_file.py` (no committed `.inc` anywhere anymore). The full
+provenance, the `pyftsubset` invocation used to produce the subset, and the complete SIL
+Open Font License 1.1 text remain recorded at
+`Engine/Editor/EditorCore/assets/fonts/THIRD_PARTY_NOTICES.md`; the license text is also
+reproduced below for this copy. Before that audit resolution, this exact file was
+duplicated byte-for-byte inside the editor module, and both modules separately committed
+hand-generated `ui_font_ttf_bytes.inc` arrays of it.
 
 Compiled into `Internal/ui_font_ttf_bytes.inc` (a plain `std::uint8_t` byte array),
 which `UIFontAtlasUVE` bakes into a runtime glyph atlas via `stb_truetype.h`

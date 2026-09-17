@@ -17,6 +17,29 @@ add_library(uve_ui STATIC
     Internal/ui_font_atlas_uve.cpp
     Internal/ui_runtime_uve.cpp
 )
+
+# ui_font_ttf_bytes.inc is generated at build time from the module's own canonical
+# assets/fonts/liberation-sans-subset.ttf (the single source of truth for this font for the
+# whole repo - Engine/Editor/EditorCore embeds the same file from here, see that module's
+# CMakeLists). Generating it here means the byte array never drifts from the checked-in
+# asset; 2026-09-17 audit section 5.4.
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+set(_uve_ui_generated_dir "${CMAKE_CURRENT_BINARY_DIR}/generated")
+set(_uve_ui_font_inc "${_uve_ui_generated_dir}/ui_font_ttf_bytes.inc")
+add_custom_command(
+    OUTPUT "${_uve_ui_font_inc}"
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/Engine/Tools/embed_file.py"
+            "${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts/liberation-sans-subset.ttf"
+            "${_uve_ui_font_inc}"
+            uve_ui_runtime_font_ttf_bytes
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts/liberation-sans-subset.ttf"
+            "${CMAKE_SOURCE_DIR}/Engine/Tools/embed_file.py"
+    COMMENT "Embedding liberation-sans-subset.ttf -> ui_font_ttf_bytes.inc"
+    VERBATIM
+)
+target_sources(uve_ui PRIVATE "${_uve_ui_font_inc}")
+target_include_directories(uve_ui PRIVATE "${_uve_ui_generated_dir}")
+
 target_include_directories(uve_ui PUBLIC Expose)
 target_include_directories(uve_ui PRIVATE thirdparty)
 target_link_libraries(uve_ui PUBLIC uve_math uve_asset uve_component uve_entity uve_input)
