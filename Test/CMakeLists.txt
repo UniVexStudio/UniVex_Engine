@@ -83,6 +83,7 @@ add_executable(uve_core_tests
     Input/mobile_gesture_recognizer_uve_tests.cpp
     RHI/null_render_device_uve_tests.cpp
     RHI/OpenGL/gl_render_device_uve_tests.cpp
+    RHI/Vulkan/vulkan_render_device_uve_tests.cpp
     RHI/Shader/shader_binary_cache_uve_tests.cpp
     RHI/Shader/shader_diagnostics_parser_uve_tests.cpp
     RHI/Shader/shader_manager_uve_tests.cpp
@@ -119,6 +120,7 @@ target_link_libraries(uve_core_tests PRIVATE
     uve_window
     uve_rhi
     uve_rhi_opengl
+    uve_rhi_vulkan
     uve_rhi_null
     uve_rhi_shader
     uve_commandline
