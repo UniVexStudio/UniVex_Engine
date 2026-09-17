@@ -90,6 +90,21 @@ struct VkFunctionsUVE {
     PFN_vkQueuePresentKHR vkQueuePresentKHR = nullptr;
     PFN_vkQueueWaitIdle vkQueueWaitIdle = nullptr;
 
+    // M2a "draw slice" additions: shader/pipeline objects and per-draw commands.
+    PFN_vkCreateShaderModule vkCreateShaderModule = nullptr;
+    PFN_vkDestroyShaderModule vkDestroyShaderModule = nullptr;
+    PFN_vkCreatePipelineLayout vkCreatePipelineLayout = nullptr;
+    PFN_vkDestroyPipelineLayout vkDestroyPipelineLayout = nullptr;
+    PFN_vkCreateGraphicsPipelines vkCreateGraphicsPipelines = nullptr;
+    PFN_vkDestroyPipeline vkDestroyPipeline = nullptr;
+    PFN_vkCmdBindPipeline vkCmdBindPipeline = nullptr;
+    PFN_vkCmdBindVertexBuffers vkCmdBindVertexBuffers = nullptr;
+    PFN_vkCmdBindIndexBuffer vkCmdBindIndexBuffer = nullptr;
+    PFN_vkCmdDraw vkCmdDraw = nullptr;
+    PFN_vkCmdDrawIndexed vkCmdDrawIndexed = nullptr;
+    PFN_vkCmdSetViewport vkCmdSetViewport = nullptr;
+    PFN_vkCmdSetScissor vkCmdSetScissor = nullptr;
+
     /// Opens the platform Vulkan loader library by its conventional sonames and resolves
     /// vkGetInstanceProcAddr plus the global-level entry points above. `lsan`-clean as well:
     /// the loader handle is intentionally leaked for the process lifetime (dlclose on a
