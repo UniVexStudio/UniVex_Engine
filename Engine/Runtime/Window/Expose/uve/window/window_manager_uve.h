@@ -6,6 +6,7 @@
 #include <memory>
 
 #include "uve/events/i_event_system_uve.h"
+#include "uve/window/i_vulkan_window_surface_uve.h"
 #include "uve/window/i_window_manager_uve.h"
 #include "uve/window/window_desc_uve.h"
 
@@ -21,7 +22,7 @@ namespace UVE::Window {
 /// glfwCreateWindow(), and glfwMakeContextCurrent() all happen inside the constructor, in that
 /// order. A render device built against this window (e.g. Render::GlRenderDeviceUVE) is
 /// constructed strictly afterward and never creates, destroys, or activates the context itself.
-class WindowManagerUVE final : public IWindowManagerUVE {
+class WindowManagerUVE final : public IWindowManagerUVE, public IVulkanWindowSurfaceUVE {
 public:
     /// `eventSystem` must outlive this WindowManagerUVE. On any GLFW failure (glfwInit or
     /// glfwCreateWindow), logs UVE_ERROR/UVE_FATAL internally and leaves IsValidUVE() == false —
@@ -46,6 +47,16 @@ public:
     [[nodiscard]] std::vector<MonitorInfoUVE> EnumerateMonitorsUVE() const override;
     [[nodiscard]] void* GetNativeWindowHandleUVE() const noexcept override;
     [[nodiscard]] std::string_view GetBackendNameUVE() const noexcept override;
+
+    // IVulkanWindowSurfaceUVE (implemented in window_manager_uve.cpp): GLFW WSI forwarding for a
+    // Vulkan backend's surface needs, expressed entirely in opaque handles — Vulkan SDK headers
+    // never enter this module, mirroring the GL-header confinement from audit finding #37.
+    // EngineCoreUVE queries this interface via dynamic_cast when a Vulkan render device is
+    // configured; NullWindowManagerUVE deliberately never implements it.
+    [[nodiscard]] std::vector<const char*> GetRequiredVulkanInstanceExtensionsUVE() const override;
+    [[nodiscard]] std::uintptr_t CreateVulkanWindowSurfaceUVE(std::uintptr_t vulkanInstance) override;
+    void DestroyVulkanWindowSurfaceUVE(std::uintptr_t vulkanInstance, std::uintptr_t vulkanSurface) override;
+    void GetVulkanFramebufferSizeUVE(std::uint32_t& outWidth, std::uint32_t& outHeight) const override;
 
 private:
     struct ImplUVE;

@@ -85,9 +85,13 @@ publicly shipping real-time engines as of today, without naming any of them.
 
 - [x] A render-hardware-interface abstraction with a real backend (OpenGL) and a null
   backend for headless/testing use
-- [ ] A modern explicit graphics API backend (the kind that supports multi-threaded command
+- [~] A modern explicit graphics API backend (the kind that supports multi-threaded command
   recording, explicit memory/barrier management) as a second real backend, so the RHI
-  abstraction is proven against more than one implementation
+  abstraction is proven against more than one implementation — **in progress:** the Vulkan
+  M1 bootstrap device shipped 2026-09-17 (instance→device→surface→swapchain→clear-present,
+  real frames presented under lavapipe in CI; dlopen-based loader, capability bridge on the
+  window manager, selection via `EngineConfigUVE::renderBackendPreferenceUVE`). Remaining for
+  full parity: resource/pipeline/draw-path milestones (M2+) behind the same interface
 - [ ] A backend for each target OS's native graphics API where OpenGL is not the best
   choice on that platform
 - [ ] Shader cross-compilation so one shader source authors once and targets every backend

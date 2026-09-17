@@ -366,4 +366,83 @@ std::string_view WindowManagerUVE::GetBackendNameUVE() const noexcept {
     return "GLFW3";
 }
 
+// ---------------------------------------------------------------------------
+// IVulkanWindowSurfaceUVE — GLFW WSI forwarding.
+// ---------------------------------------------------------------------------
+// glfw3.h is included above in GLFW_INCLUDE_NONE mode (the GL device owns GL header inclusion,
+// per the audit's #37). That mode still declares glfwGetRequiredInstanceExtensions() but NOT
+// glfwCreateWindowSurface(), which is gated on GLFW_INCLUDE_VULKAN having seen Vulkan header
+// types. In the spirit of the confinement boundary — Vulkan SDK headers stay out of the window
+// module entirely — the entry point is redeclared here in a C-ABI-exact opaque form:
+//   VkInstance (dispatchable handle)          == void*
+//   VkSurfaceKHR (non-dispatchable, 64-bit)   == unsigned long long
+//   const VkAllocationCallbacks*              == const void*
+//   VkResult                                  == int
+// These match the platform ABI of the real declaration; the linker binds by name.
+extern "C" {
+GLFWAPI int glfwCreateWindowSurface(void* /*VkInstance*/ instance,
+    GLFWwindow* window, const void* /*VkAllocationCallbacks*/ allocator,
+    unsigned long long* /*VkSurfaceKHR*/ surface);
+} // extern "C"
+
+std::vector<const char*> WindowManagerUVE::GetRequiredVulkanInstanceExtensionsUVE() const {
+    std::vector<const char*> extensions;
+    if (m_impl->window == nullptr) {
+        return extensions;
+    }
+    std::uint32_t count = 0;
+    // GLFW handles the null-platform case by returning 0 with an error logged internally —
+    // an empty vector remains the consumer's "capability unavailable" signal.
+    const char** names = glfwGetRequiredInstanceExtensions(&count);
+    if (names == nullptr || count == 0U) {
+        return extensions;
+    }
+    extensions.reserve(count);
+    for (std::uint32_t index = 0; index < count; ++index) {
+        if (names[index] != nullptr) {
+            extensions.push_back(names[index]);
+        }
+    }
+    return extensions;
+}
+
+std::uintptr_t WindowManagerUVE::CreateVulkanWindowSurfaceUVE(const std::uintptr_t vulkanInstance) {
+    if (m_impl->window == nullptr || vulkanInstance == 0U) {
+        return 0U;
+    }
+    unsigned long long surface = 0ULL; // VkSurfaceKHR bits as sized in the contract typedef.
+    const int result = glfwCreateWindowSurface(reinterpret_cast<void*>(vulkanInstance),
+        m_impl->window, nullptr, &surface);
+    if (result != 0 /*VK_SUCCESS*/ || surface == 0ULL) { // NOLINT(hicpp-signed-bitwise)
+        // VK_SUCCESS is definitively 0 per the Vulkan specification — never dependent on header
+        // availability, so the literal is documented rather than pulled from vulkan_core.h.
+        return 0U;
+    }
+    return static_cast<std::uintptr_t>(surface);
+}
+
+void WindowManagerUVE::DestroyVulkanWindowSurfaceUVE(const std::uintptr_t /*vulkanInstance*/,
+    const std::uintptr_t /*vulkanSurface*/) {
+    // No-op by design: GLFW hands surface destruction back to vkDestroySurfaceKHR, which the
+    // Vulkan render device calls through its own function table. The window module cannot own
+    // that call because it deliberately never links against (or even includes) Vulkan.
+}
+
+void WindowManagerUVE::GetVulkanFramebufferSizeUVE(std::uint32_t& outWidth,
+    std::uint32_t& outHeight) const {
+    outWidth = 0U;
+    outHeight = 0U;
+    if (m_impl->window == nullptr) {
+        return;
+    }
+    int width = 0;
+    int height = 0;
+    glfwGetFramebufferSize(m_impl->window, &width, &height);
+    // Same validation rule as the GL world: clamps stay at zero until a real size reports.
+    if (!ValidateFramebufferSizeUVE(width, height, outWidth, outHeight)) {
+        outWidth = 0U;
+        outHeight = 0U;
+    }
+}
+
 } // namespace UVE::Window
