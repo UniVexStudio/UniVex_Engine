@@ -43,6 +43,7 @@ struct VkFunctionsUVE {
     PFN_vkGetPhysicalDeviceSurfaceCapabilitiesKHR vkGetPhysicalDeviceSurfaceCapabilitiesKHR = nullptr;
     PFN_vkGetPhysicalDeviceSurfaceFormatsKHR vkGetPhysicalDeviceSurfaceFormatsKHR = nullptr;
     PFN_vkGetPhysicalDeviceSurfacePresentModesKHR vkGetPhysicalDeviceSurfacePresentModesKHR = nullptr;
+    PFN_vkGetPhysicalDeviceMemoryProperties vkGetPhysicalDeviceMemoryProperties = nullptr;
     PFN_vkCreateDevice vkCreateDevice = nullptr;
     PFN_vkGetDeviceProcAddr vkGetDeviceProcAddr = nullptr;
     PFN_vkDestroySurfaceKHR vkDestroySurfaceKHR = nullptr;
@@ -69,6 +70,16 @@ struct VkFunctionsUVE {
     PFN_vkResetCommandBuffer vkResetCommandBuffer = nullptr;
     PFN_vkCmdBeginRenderPass vkCmdBeginRenderPass = nullptr;
     PFN_vkCmdEndRenderPass vkCmdEndRenderPass = nullptr;
+    PFN_vkCmdPipelineBarrier vkCmdPipelineBarrier = nullptr;
+    PFN_vkCmdCopyImageToBuffer vkCmdCopyImageToBuffer = nullptr;
+    PFN_vkCreateBuffer vkCreateBuffer = nullptr;
+    PFN_vkDestroyBuffer vkDestroyBuffer = nullptr;
+    PFN_vkGetBufferMemoryRequirements vkGetBufferMemoryRequirements = nullptr;
+    PFN_vkAllocateMemory vkAllocateMemory = nullptr;
+    PFN_vkFreeMemory vkFreeMemory = nullptr;
+    PFN_vkBindBufferMemory vkBindBufferMemory = nullptr;
+    PFN_vkMapMemory vkMapMemory = nullptr;
+    PFN_vkUnmapMemory vkUnmapMemory = nullptr;
     PFN_vkCreateSemaphore vkCreateSemaphore = nullptr;
     PFN_vkDestroySemaphore vkDestroySemaphore = nullptr;
     PFN_vkCreateFence vkCreateFence = nullptr;
