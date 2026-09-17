@@ -264,9 +264,9 @@ Tatlong lugar ang may say sa "ano ang node/entity": `Component` (25 headers ng c
 
 ---
 
-## 10. Noted limitations ng audit na ito
+## 10. Noted limitations ng audit na ito — **LIFTED 2026-09-17**
 
-- Ang full **link/integration build at executed test suite** ay hindi napatakbo dito dahil walang system GL/X11 toolchain ang sandbox (Debian mirrors blocked; GitHub lang available). Ang 236/236 engine cpp at 368/368 headers ay na-verify sa syntax+semantic level sa exact build defines; ang link-time issues (missing definitions, ODR) ay makikita lang ng isang buong build — kaya P0 ang item #2 sa itaas.
+- ~~Ang full **link/integration build at executed test suite** ay hindi napatakbo dito~~ **RESOLVED:** on push of branch `arena/01a0ad39-univex`, the new CI (`.github/workflows/ci.yml`) completed **green on its first run** (run `35181400678`): full Ubuntu dependency install (GLFW3/GLEW/Mesa/zlib/libjpeg), Debug configure, whole-tree build (40+ libs, both app executables, Viewport demo + headless capture tools), the math-boundary check, and `ctest` under Xvfb — **all ~2,090 test cases across 170 GoogleTest files plus the Viewport CPU suite passed**. The entire 44-file GL-dependent surface this sandbox could not compile is now verified by CI on every push and PR.
 - Ang ROADMAP progress claims (49 `[x]`) ay spot-checked, hindi bawat isa ay ni-re-verify line by line.
 
 *Prepared by Arena.ai Agent Mode — full mechanical audit.*
@@ -285,4 +285,6 @@ Tatlong lugar ang may say sa "ano ang node/entity": `Component` (25 headers ng c
 
 - **2026-09-17 (P2/P3 bundle):** (a) **EditorApp re-labeled** (§5.3 — RESOLVED as documentation): `univex_editor` is no longer presented as a competing editor; its CMakeLists and main.cpp now state it is a **viewport smoke harness** kept for headless `--max-frames` validation, while the real editor is `Engine/App`'s `uve_editor_app`. The two 25-line Viewport entity bridges stay — each adapts a different engine source (IEntityManager vs WorldUVE), so they are justified adapters, not a true clone. (b) **Naming-collision traps fenced** (§3.2 — RESOLVED as documentation): the Networking/FileSystem/Serialization/Renderer placeholder READMEs + Engine/Shaders now carry explicit "real code lives elsewhere — do not build a second implementation here" warnings with pointers. (c) **RHI handle clone family collapsed** (§5.2 — RESOLVED): new `uve/render/resource_handle_uve.h` template (wrapper + equality + hash, semantics unchanged); the 4 handle headers are now thin tag aliases, keeping every public name. Verified: all RHI cpps (minus the GLFW-requiring GL backend) compile, plus 19 engine and 7 test consumer files, plus a static-assert semantics check (kinds stay distinct, sentinels/eq/hash intact). (d) **§5.5 reclassified** after re-inspection: the 22-window repeat is the 39-parameter constructor signature versus its header declaration — natural C++ decl/def overlap, not doc duplication (the big service-inventory comment exists only once, in the header). No code change warranted; closing as non-issue.
 
-Remaining open items: §5.6 (peer-copy in project_change_watcher vs project_file_index; EditorCore GL proc loader), §6.2 (include-prefix alignment — needs a dedicated mechanical-rename pass), §6.3 (ECS↔SceneNode boundary documentation), §7 target-naming polish, and §10 (full link/test verification on a GL-capable machine — now automated by CI).
+- **2026-09-17 (§10 lifted):** First CI run **green** — whole-tree build + ~2,090 tests passed under Xvfb (see §10).
+
+Remaining open items: §5.6 (peer-copy in project_change_watcher vs project_file_index; EditorCore GL proc loader), §6.2 (include-prefix alignment — needs a dedicated mechanical-rename pass), §6.3 (ECS↔SceneNode boundary documentation), and §7 target-naming polish.
