@@ -145,6 +145,11 @@ public:
                                                        std::uint32_t& outHeight);
 
 private:
+    /// Creates the 1x1 white fallback texture after device initialisation (M2c sampler
+    /// bindings always have a legal image). Returns false — with a logged reason — when
+    /// the upload path failed; both factories then abort like any other init failure.
+    [[nodiscard]] bool CreateFallbackTextureUVE();
+
     VulkanRenderDeviceUVE(Window::IWindowManagerUVE* windowManager,
                           Window::IVulkanWindowSurfaceUVE* bridge);
 

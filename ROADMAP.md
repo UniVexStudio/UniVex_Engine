@@ -88,16 +88,20 @@ publicly shipping real-time engines as of today, without naming any of them.
 - [~] A modern explicit graphics API backend (the kind that supports multi-threaded command
   recording, explicit memory/barrier management) as a second real backend, so the RHI
   abstraction is proven against more than one implementation — **in progress:** the Vulkan
-  backend reached slice M2b 2026-09-17: real buffers (host-visible policy), SPIR-V shader
+  backend reached slice M2c 2026-09-17: real buffers (host-visible policy), SPIR-V shader
   modules, fixed-function pipelines, recorded command buffers, Draw/DrawIndexed replay,
   SPIRV-Reflect-driven uniforms (set-0 UBO blocks over one shared 1 MiB/frame dynamic-offset
-  ring plus push constants, SetUniform* by reflected member name), and a real depth
-  attachment honoring depthTest/depthWrite — all verified pixel-wise locally (SwiftShader
-  offscreen harness: overlapping-triangle depth+snapshot screenshot) with the same scenes in
-  tier-2 CI tests. Remaining for full parity: textures/render-targets/samplers (descriptor
-  types beyond uniform blocks — pipeline creation already fails loudly naming M2c),
-  offscreen passes, loadOp semantics, device-local staging uploads, multi-threaded command
-  recording, and shader
+  ring plus push constants, SetUniform* by reflected member name), a real depth attachment
+  honoring depthTest/depthWrite, and TEXTURES: DEVICE_LOCAL images uploaded through
+  HOST_VISIBLE staging buffers (one-shot transfer submissions with full layout transitions),
+  GL-mirrored fixed samplers (linear/clamp-to-edge), combined-image-sampler reflection, and a
+  per-(pipeline × bound-texture tuple) descriptor-set cache with destruction-time
+  invalidation plus a 1×1 white fallback for unbound slots — all verified pixel-wise locally
+  (SwiftShader: depth-overlap and checker-quad screenshots) with the same scenes in tier-2 CI
+  tests. Remaining for full parity: offscreen render targets (texture attachments; depth
+  textures are already created attachment-ready), loadOp semantics beyond clear, SSBO /
+  separate sampler or storage image support, device-local staging for vertex/index buffers,
+  multi-threaded command recording, and shader
   cross-compilation tooling (tracked separately below)
 - [ ] A backend for each target OS's native graphics API where OpenGL is not the best
   choice on that platform
