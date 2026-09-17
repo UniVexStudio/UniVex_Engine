@@ -243,7 +243,7 @@ Tatlong lugar ang may say sa "ano ang node/entity": `Component` (25 headers ng c
 2. **Isang modern graphics backend** — OpenGL-only ngayon (Vulkan/D3D12/Metal wala pa; renderer abstraction ay naririyan na).
 3. **Empty scaffolds na kritikal:** Physics 3rd party integration o custom broad-phase perf, VFX, Gameplay framework, Networking, 2D nodes, AI, Serialization hub.
 4. **Animation physics integration** at scene-level world partition/streaming (World module ay 86 linya pa lang).
-5. **Audio output device** — null audio device + mixer; wala pang actual sound backend (OpenAL/XAudio…).
+5. ~~**Audio output device** — null audio device + mixer; wala pang actual sound backend (OpenAL/XAudio…).~~ **RESOLVED 2026-09-17:** production miniaudio backend na may automatic null fallback (see follow-up log).
 
 ---
 
@@ -300,3 +300,9 @@ Tatlong lugar ang may say sa "ano ang node/entity": `Component` (25 headers ng c
 - **2026-09-17 (#10 re-verified — closed without new code):** On inspection the requested tests already exist and predate the audit: `Test/Audio/wav_metadata_uve_tests.cpp` (3 tests), `wav_pcm16_decoder_uve_tests.cpp` (17, including bounded window/stream slices), and `wav_importer_uve_tests.cpp` (4, including the full import→publish path) — all wired into the aggregated gtest targets. Re-run locally now: 24/24 pass, and every CI run executes them. The P0 wav slip's true root cause was that *no runner ever executed the existing suite*, which is exactly what P0 #2 fixed; a missing `<cstddef>` is not something any unit test could have caught. No further tests needed.
 
 **All prioritized items (P0 #1–#3, P1, P2, P3) from §9 are now RESOLVED. Nothing remains on the audit action list.**
+
+---
+
+## Post-audit era: §8 AAA-readiness gaps (feature work)
+
+- **2026-09-17 (§8 #5 — Audio output device, first real backend):** `MiniaudioAudioDeviceUVE` lands as the second `IAudioDeviceUVE` implementation and the production default. Vendored miniaudio 0.11.25 via pinned FetchContent (single-header, zero link-time sound-system dependencies — it dlopens ALSA/PulseAudio at runtime, so CI needs no audio packages); compiled in one trimmed implementation TU (`MA_NO_DECODING/ENCODING/RESOURCE_MANAGER/NODE_GRAPH/ENGINE` — the engine keeps its own WAV pipeline) with a SYSTEM include so vendored code stays outside the `-Werror` policy. Behavior: voice-per-asset voices loaded through `LoadAudioAssetUVE`, fractional-step linear-interpolated resampling into a 48 kHz stereo mix, gain + pitch effective, looping effective, positions stored (panning deliberately deferred — attenuation is computed above the RHI today), non-looping voices auto-stop at clip end (the interface's documented addition over the null device), unknown-handle and invalid-parameter rejection matching `NullAudioDeviceUVE`'s semantics — including the engine's clip-less source contract (empty `audioAssetPath` = valid, inaudible, never auto-stopping voice shell for stream/PCM-effect sources), discovered by two pre-existing `EngineCoreUVETest` audio tests and honored explicitly. Device selection in `EngineCoreUVE`: prefer miniaudio, fall back to `NullAudioDeviceUVE` with a warning when no usable output device exists (headless CI). Tests: 7 new `MiniaudioAudioDeviceUVETest` cases running the full real-backend path on miniaudio's timer-driven null backend (hardware-free, CI-safe). Full local suite: **2,086/2086 pass**. ROADMAP §5 updated; the spec's "OpenAL-soft" name-check was intentionally not followed (single-header, zero system deps — documented in `i_audio_device_uve.h`).

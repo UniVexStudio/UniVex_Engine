@@ -38,6 +38,7 @@
 #include "uve/asset/texture_asset_uve.h"
 #include "uve/audio/audio_source_system_uve.h"
 #include "uve/audio/audio_system_uve.h"
+#include "uve/audio/miniaudio_audio_device_uve.h"
 #include "uve/audio/null_audio_device_uve.h"
 #include "uve/audio/wav_importer_uve.h"
 #include "uve/commandline/command_line_uve.h"
@@ -426,9 +427,16 @@ void EngineCoreUVE::Init() {
     m_inputSystem = std::make_unique<Input::InputSystemUVE>(*m_eventSystem, m_gamepadInputSystem.get());
     m_windowManager->AttachInputSystemUVE(m_inputSystem.get());
 
-    // AudioDevice twenty-ninth: no dependencies of its own (a NullAudioDeviceUVE — no real audio
-    // hardware/SDK is buildable in this sandbox).
-    m_audioDevice = std::make_unique<Audio::NullAudioDeviceUVE>();
+    // AudioDevice twenty-ninth: no dependencies of its own. Prefers the real miniaudio backend;
+    // falls back to NullAudioDeviceUVE (with a warning) on machines with no usable audio output
+    // (headless CI, servers) so the whole audio stack above stays functional either way.
+    if (auto miniaudioDevice = Audio::MiniaudioAudioDeviceUVE::CreateUVE()) {
+        m_audioDevice = std::move(miniaudioDevice);
+    } else {
+        UVE_WARNING("EngineCoreUVE: no usable audio output device - falling back to NullAudioDeviceUVE "
+                    "(all audio playback will be silent but functional)");
+        m_audioDevice = std::make_unique<Audio::NullAudioDeviceUVE>();
+    }
 
     // AudioSystem thirtieth: needs AudioDevice (it pushes computed gain/position through it).
     m_audioSystem = std::make_unique<Audio::AudioSystemUVE>(*m_audioDevice);

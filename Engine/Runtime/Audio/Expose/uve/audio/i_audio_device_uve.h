@@ -13,13 +13,14 @@ namespace UVE::Audio {
 
 /// IAudioDeviceUVE is the engine's backend-agnostic audio hardware interface (the spec's
 /// AudioSystemUVE's "Built-in: OpenAL-soft backend"), mirroring Render::IRenderDeviceUVE's shape:
-/// a small, explicit resource-handle RHI a real OpenAL-soft (or platform-native) backend would
-/// implement directly. The only implementation this sandbox can build and test is
-/// NullAudioDeviceUVE (engine/audio) — no audio SDK headers or sound hardware exist in this
-/// environment (see docs/CODING_STANDARDS.md); a real backend is future work once it does. Every
-/// future backend implements exactly this interface, so nothing above the RHI (AudioSystemUVE,
-/// AudioSourceSystemUVE) needs to change when one arrives.
-/// Thread-safety: implementation-defined; NullAudioDeviceUVE documents its own contract. Callers
+/// a small, explicit resource-handle RHI a real backend implements directly. Two implementations
+/// exist: MiniaudioAudioDeviceUVE (the production backend, driving real hardware through the
+/// vendored miniaudio library - chosen instead of the spec's OpenAL-soft name-check because it is
+/// a single header with zero link-time system dependencies, so CI needs no audio packages) and
+/// NullAudioDeviceUVE (the silent fallback for machines without a usable output device, and the
+/// call-recording test double). Every backend implements exactly this interface, so nothing above
+/// the RHI (AudioSystemUVE, AudioSourceSystemUVE) changes between them.
+/// Thread-safety: implementation-defined; each implementation documents its own contract. Callers
 /// should assume an audio device is only safe to use from the main engine/audio thread unless a
 /// concrete implementation states otherwise.
 class IAudioDeviceUVE {

@@ -198,6 +198,7 @@ add_executable(uve_integration_tests
     Audio/audio_source_system_uve_tests.cpp
     Audio/audio_system_uve_tests.cpp
     Audio/null_audio_device_uve_tests.cpp
+    Audio/miniaudio_audio_device_uve_tests.cpp
     Audio/pcm_gain_effect_uve_tests.cpp
     Audio/wav_metadata_uve_tests.cpp
     Audio/wav_pcm16_decoder_uve_tests.cpp
