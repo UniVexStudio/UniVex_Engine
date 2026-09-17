@@ -15,7 +15,7 @@
 
 #include <string_view>
 
-#include "gl_functions_uve.h"
+#include "uve/rhi_opengl/gl_functions_uve.h"
 #include "uve/logging/logging_macros_uve.h"
 #include "uve/platform/platform_uve.h"
 

@@ -61,7 +61,8 @@ public:
     /// free helper functions can take a `GlStateUVE&` parameter; nothing outside that .cpp can
     /// form more than a pointer/reference to this incomplete type. Keeps every GL type
     /// (function-pointer typedefs, GLuint) out of this public header, matching this codebase's
-    /// established GL-header-confinement discipline (see gl_functions_uve.h).
+    /// established GL-header-confinement discipline (see uve/rhi_opengl/gl_functions_uve.h, the
+    /// shared loader contract this renderer draws through).
     struct GlStateUVE;
 
 private:

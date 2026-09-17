@@ -11,7 +11,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "gl_functions_uve.h"
+#include "uve/rhi_opengl/gl_functions_uve.h"
 #include "uve/rhi/render_resource_descs_uve.h"
 #include "uve/rhi/shader_data_type_uve.h"
 #include "uve/window/i_window_manager_uve.h"
