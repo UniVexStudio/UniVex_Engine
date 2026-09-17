@@ -59,6 +59,21 @@ jobs:
       - name: Test (under Xvfb)
         run: xvfb-run -a ctest --test-dir build --output-on-failure
 
+      # M2d evidence step: the tier-2 Vulkan fixture skips politely on deviceless hosts,
+      # which keeps ctest green even if lavapipe/xvfb silently failed to provide a device.
+      # Re-run the Vulkan device tests verbosely and REQUIRE the M2d offscreen-RT cases to
+      # report an actual gtest OK — a skip would flip CI red and surface the regression.
+      - name: Prove tier-2 Vulkan device tests really ran (did not skip)
+        run: |
+          cd build
+          xvfb-run -a ./Test/uve_core_tests \
+            --gtest_filter='VulkanRenderDeviceUVETest.OffscreenColorPass*:VulkanRenderDeviceUVETest.InterleavedOffscreenPass*:VulkanRenderDeviceUVETest.DepthTestWorks*:VulkanRenderDeviceUVETest.NonAttachable*:VulkanRenderDeviceUVETest.DepthOnly*' \
+            2>&1 | tee /tmp/tier2.log
+          grep -q '\[       OK \] VulkanRenderDeviceUVETest.OffscreenColorPassRendersIntoTheTextureForSampling' /tmp/tier2.log
+          COUNT=$(grep -c '\[       OK \] VulkanRenderDeviceUVETest' /tmp/tier2.log)
+          echo "tier-2 M2d cases executed for real: $COUNT"
+          test "$COUNT" -ge 5
+
       - name: Build summary
         if: always()
         run: |
