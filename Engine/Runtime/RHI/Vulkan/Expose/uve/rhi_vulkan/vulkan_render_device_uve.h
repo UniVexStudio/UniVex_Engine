@@ -113,6 +113,18 @@ public:
     [[nodiscard]] static std::unique_ptr<VulkanRenderDeviceUVE> CreateFromBridgeUVE(
         Window::IVulkanWindowSurfaceUVE& surfaceBridge);
 
+    /// Fully self-contained headless construction: the device itself requests
+    /// VK_EXT_headless_surface, creates its own VkHeadlessSurfaceEXT, and sizes the swapchain
+    /// at 1280x720 — no window manager, no bridge object, no OS display needed. This is the
+    /// sanctioned factory for CI and any other execution host without X/Wayland (the tier-2
+    /// real-device tests use it whenever GLFW cannot create a window); on hosts where the
+    /// ICD does not advertise VK_EXT_headless_surface (SwiftShader does; lavapipe currently
+    /// does not) it cleanly refuses with nullptr and a one-line explanation. The rendering
+    /// and present path itself is identical to the windowed one — only surface provenance
+    /// and extent reporting differ. Failure policy is unchanged: nullptr on any host-level
+    /// failure, never throws.
+    [[nodiscard]] static std::unique_ptr<VulkanRenderDeviceUVE> CreateHeadlessUVE();
+
     ~VulkanRenderDeviceUVE() override;
 
     VulkanRenderDeviceUVE(const VulkanRenderDeviceUVE&) = delete;

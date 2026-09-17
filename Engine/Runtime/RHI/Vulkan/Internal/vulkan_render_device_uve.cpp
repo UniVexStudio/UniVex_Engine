@@ -159,6 +159,12 @@ struct VulkanRenderDeviceUVE::ImplUVE {
     };
     FramePassStateUVE framePassState;
 
+    // Headless construction (CreateHeadlessUVE): no window manager and no external bridge —
+    // the device created its own VK_EXT_headless_surface during bring-up and reports a fixed
+    // 1280x720 framebuffer wherever a windowed device would consult its bridge.
+    bool headless = false;
+    static constexpr std::uint32_t kHeadlessFramebufferWidthUVE = 1280U;
+    static constexpr std::uint32_t kHeadlessFramebufferHeightUVE = 720U;
 
     VkExtent2D swapchainExtent{0U, 0U};
     std::vector<VkImage> swapchainImages;
@@ -647,7 +653,12 @@ bool VulkanRenderDeviceUVE::ImplUVE::CreateSwapchainResourcesUVE() {
     if (extent.width == 0xFFFFFFFFU) { // VK_WHOLE_SURFACE sentinel — pick from the window.
         std::uint32_t width = 0;
         std::uint32_t height = 0;
-        bridge->GetVulkanFramebufferSizeUVE(width, height);
+        if (headless) {
+            width = kHeadlessFramebufferWidthUVE;
+            height = kHeadlessFramebufferHeightUVE;
+        } else {
+            bridge->GetVulkanFramebufferSizeUVE(width, height);
+        }
         extent.width = std::max(capabilities.minImageExtent.width,
                                 std::min(capabilities.maxImageExtent.width, width));
         extent.height = std::max(capabilities.minImageExtent.height,
@@ -777,7 +788,9 @@ bool VulkanRenderDeviceUVE::ImplUVE::CreateSwapchainResourcesUVE() {
 
 bool VulkanRenderDeviceUVE::ImplUVE::InitializeUVE() {
     // --- bridge capability: accepted directly or RTTI-queried off the window manager --------
-    if (bridge == nullptr) {
+    // (skipped entirely in headless mode: there is no bridge by design — the device drives
+    // VK_EXT_headless_surface itself)
+    if (bridge == nullptr && !headless) {
         bridge = dynamic_cast<Window::IVulkanWindowSurfaceUVE*>(windowManager);
         if (bridge == nullptr) {
             return LogBailUVE("window manager offers no IVulkanWindowSurfaceUVE capability "
@@ -805,7 +818,12 @@ bool VulkanRenderDeviceUVE::ImplUVE::InitializeUVE() {
     }
 
     // --- instance --------------------------------------------------------------------------
-    const std::vector<const char*> instanceExtensions = bridge->GetRequiredVulkanInstanceExtensionsUVE();
+    std::vector<const char*> instanceExtensions;
+    if (headless) {
+        instanceExtensions = {"VK_KHR_surface", "VK_EXT_headless_surface"};
+    } else {
+        instanceExtensions = bridge->GetRequiredVulkanInstanceExtensionsUVE();
+    }
     if (instanceExtensions.empty()) {
         return LogBailUVE("surface bridge reported no required Vulkan instance extensions — "
                           "Vulkan WSI support is unavailable on this platform");
@@ -834,8 +852,25 @@ bool VulkanRenderDeviceUVE::ImplUVE::InitializeUVE() {
     }
 
     // --- window surface --------------------------------------------------------------------
-    surface = ToVkSurfaceUVE(bridge->CreateVulkanWindowSurfaceUVE(
-        reinterpret_cast<std::uintptr_t>(instance)));
+    if (headless) {
+        // The CPU-ICD headless WSI entry point, pulled fresh from this instance (it is by
+        // definition an instance-extension function). Present but unreachable ICDs refuse
+        // with a null proc address — the honest "this ICD cannot headless" answer.
+        const auto vkCreateHeadlessSurfaceEXT = reinterpret_cast<PFN_vkCreateHeadlessSurfaceEXT>(
+            vk.ResolveVkProcUVE(instance, "vkCreateHeadlessSurfaceEXT"));
+        if (vkCreateHeadlessSurfaceEXT == nullptr) {
+            return LogBailUVE("VK_EXT_headless_surface entry point unavailable "
+                              "(ICD lacks headless WSI)");
+        }
+        VkHeadlessSurfaceCreateInfoEXT surfaceInfo{};
+        surfaceInfo.sType = VK_STRUCTURE_TYPE_HEADLESS_SURFACE_CREATE_INFO_EXT;
+        if (vkCreateHeadlessSurfaceEXT(instance, &surfaceInfo, nullptr, &surface) != VK_SUCCESS) {
+            surface = VK_NULL_HANDLE;
+        }
+    } else {
+        surface = ToVkSurfaceUVE(bridge->CreateVulkanWindowSurfaceUVE(
+            reinterpret_cast<std::uintptr_t>(instance)));
+    }
     if (surface == VK_NULL_HANDLE) {
         return LogBailUVE("window surface creation failed through the surface bridge");
     }
@@ -1413,6 +1448,19 @@ std::unique_ptr<VulkanRenderDeviceUVE> VulkanRenderDeviceUVE::CreateFromBridgeUV
     Window::IVulkanWindowSurfaceUVE& surfaceBridge) {
     auto device = std::unique_ptr<VulkanRenderDeviceUVE>(
         new VulkanRenderDeviceUVE(nullptr, &surfaceBridge));
+    if (!device->m_impl->InitializeUVE()) {
+        return nullptr; // partially-initialized state torn down by the destructor
+    }
+    if (!device->CreateFallbackTextureUVE()) {
+        return nullptr; // teardown covers anything the fallback path created
+    }
+    return device;
+}
+
+std::unique_ptr<VulkanRenderDeviceUVE> VulkanRenderDeviceUVE::CreateHeadlessUVE() {
+    auto device = std::unique_ptr<VulkanRenderDeviceUVE>(
+        new VulkanRenderDeviceUVE(nullptr, nullptr));
+    device->m_impl->headless = true; // InitializeUVE() branches on this at the WSI edges
     if (!device->m_impl->InitializeUVE()) {
         return nullptr; // partially-initialized state torn down by the destructor
     }
@@ -3107,7 +3155,12 @@ void VulkanRenderDeviceUVE::PresentUVE() {
     // changes come from the WindowResizedEventUVE poll and zero-size means "not drawable".
     std::uint32_t framebufferWidth = 0;
     std::uint32_t framebufferHeight = 0;
-    impl.bridge->GetVulkanFramebufferSizeUVE(framebufferWidth, framebufferHeight);
+    if (impl.headless) {
+        framebufferWidth = ImplUVE::kHeadlessFramebufferWidthUVE;
+        framebufferHeight = ImplUVE::kHeadlessFramebufferHeightUVE;
+    } else {
+        impl.bridge->GetVulkanFramebufferSizeUVE(framebufferWidth, framebufferHeight);
+    }
     if (framebufferWidth == 0U || framebufferHeight == 0U) {
         dropSubmissionsUVE("");
         return;
