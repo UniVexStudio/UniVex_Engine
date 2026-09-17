@@ -57,6 +57,7 @@ add_library(uve_asset STATIC
     Internal/shader_asset_uve.cpp
     Internal/material_asset_uve.cpp
     Internal/asset_importer_uve.cpp
+    Internal/import_helpers_uve.cpp
     Internal/bmp_importer_uve.cpp
     Internal/bmp_metadata_uve.cpp
     Internal/tga_importer_uve.cpp
