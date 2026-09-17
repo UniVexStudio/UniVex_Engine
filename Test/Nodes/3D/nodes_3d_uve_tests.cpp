@@ -5,7 +5,7 @@
 #include <gtest/gtest.h>
 
 #include "uve/nodes/3d/all_nodes_3d_uve.h"
-#include "uve/scene/components/area_component_uve.h"
+#include "uve/component/area_component_uve.h"
 
 namespace UVE::Scene::Tests {
 namespace {

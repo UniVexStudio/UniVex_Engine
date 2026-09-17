@@ -12,8 +12,8 @@
 
 #include "uve/memory/heap_allocator_uve.h"
 #include "uve/platform/platform_uve.h"
-#include "uve/scene/component_type_info_uve.h"
-#include "uve/scene/entity_uve.h"
+#include "uve/component/component_type_info_uve.h"
+#include "uve/component/entity_uve.h"
 
 namespace UVE::Scene::Detail::Tests {
 namespace {

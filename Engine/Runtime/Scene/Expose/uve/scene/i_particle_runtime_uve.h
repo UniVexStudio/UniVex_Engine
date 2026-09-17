@@ -7,8 +7,8 @@
 #include <vector>
 
 #include "uve/math/vector3_uve.h"
-#include "uve/scene/components/particle_emitter_component_uve.h"
-#include "uve/scene/entity_uve.h"
+#include "uve/component/particle_emitter_component_uve.h"
+#include "uve/component/entity_uve.h"
 
 namespace UVE::Scene {
 

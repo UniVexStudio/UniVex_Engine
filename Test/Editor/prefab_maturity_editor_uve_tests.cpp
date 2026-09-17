@@ -7,8 +7,8 @@
 #include "uve/core/engine_core_uve.h"
 #include "uve/editor/editor_bridge_uve.h"
 #include "uve/editor/editor_uve.h"
-#include "uve/scene/components/prefab_instance_component_uve.h"
-#include "uve/scene/components/transform_component_uve.h"
+#include "uve/component/prefab_instance_component_uve.h"
+#include "uve/component/transform_component_uve.h"
 
 namespace UVE::Editor::Tests {
 namespace {

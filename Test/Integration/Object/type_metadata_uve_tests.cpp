@@ -1,6 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-#include "uve/core/type_metadata_uve.h"
+#include "uve/object/type_metadata_uve.h"
 
 #include <gtest/gtest.h>
 

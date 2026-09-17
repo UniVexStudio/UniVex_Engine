@@ -13,8 +13,8 @@
 #include "uve/math/quaternion_uve.h"
 #include "uve/math/vector3_uve.h"
 #include "uve/platform/platform_uve.h"
-#include "uve/scene/components/hierarchy_component_uve.h"
-#include "uve/scene/components/world_transform_component_uve.h"
+#include "uve/component/hierarchy_component_uve.h"
+#include "uve/component/world_transform_component_uve.h"
 
 namespace UVE::Scene {
 

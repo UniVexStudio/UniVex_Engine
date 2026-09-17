@@ -1,7 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 
-#include "uve/render/light_system_uve.h"
+#include "uve/render_systems/light_system_uve.h"
 
 #include <cmath>
 #include <cstddef>
@@ -11,10 +11,10 @@
 
 #include "uve/events/event_system_uve.h"
 #include "uve/memory/memory_manager_uve.h"
-#include "uve/scene/components/light_component_uve.h"
-#include "uve/scene/components/mesh_component_uve.h"
-#include "uve/scene/components/world_transform_component_uve.h"
-#include "uve/scene/entity_manager_uve.h"
+#include "uve/component/light_component_uve.h"
+#include "uve/component/mesh_component_uve.h"
+#include "uve/component/world_transform_component_uve.h"
+#include "uve/entity/entity_manager_uve.h"
 #include "uve/scene/scene_graph_uve.h"
 
 namespace UVE::Render::Tests {

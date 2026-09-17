@@ -12,11 +12,11 @@
 #include "uve/math/vector2_uve.h"
 #include "uve/math/vector3_uve.h"
 #include "uve/pack/project_launcher_uve.h"
-#include "uve/scene/components/camera_component_uve.h"
-#include "uve/scene/components/transform_component_uve.h"
-#include "uve/scene/components/ui_button_component_uve.h"
-#include "uve/scene/components/ui_image_component_uve.h"
-#include "uve/scene/components/ui_text_component_uve.h"
+#include "uve/component/camera_component_uve.h"
+#include "uve/component/transform_component_uve.h"
+#include "uve/component/ui_button_component_uve.h"
+#include "uve/component/ui_image_component_uve.h"
+#include "uve/component/ui_text_component_uve.h"
 
 namespace {
 

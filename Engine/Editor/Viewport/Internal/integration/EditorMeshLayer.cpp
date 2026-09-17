@@ -7,14 +7,14 @@
 
 #include "uve/math/quaternion_uve.h"
 #include "uve/math/vector3_uve.h"
-#include "uve/render/gl_render_device_uve.h"
-#include "uve/render/i_renderer_3d_uve.h"
-#include "uve/render/render_resource_descs_uve.h"
-#include "uve/scene/components/camera_component_uve.h"
-#include "uve/scene/components/editor_internal_entity_component_uve.h"
-#include "uve/scene/components/transform_component_uve.h"
-#include "uve/scene/components/world_transform_component_uve.h"
-#include "uve/scene/i_entity_manager_uve.h"
+#include "uve/rhi_opengl/gl_render_device_uve.h"
+#include "uve/render_systems/i_renderer_3d_uve.h"
+#include "uve/rhi/render_resource_descs_uve.h"
+#include "uve/component/camera_component_uve.h"
+#include "uve/component/editor_internal_entity_component_uve.h"
+#include "uve/component/transform_component_uve.h"
+#include "uve/component/world_transform_component_uve.h"
+#include "uve/entity/i_entity_manager_uve.h"
 #include "uve/scene/i_scene_graph_uve.h"
 
 namespace univex::integration {

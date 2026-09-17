@@ -9,7 +9,7 @@
 #include <vector>
 
 #include "uve/asset/i_file_system_uve.h"
-#include "uve/scene/components/script_component_uve.h"
+#include "uve/component/script_component_uve.h"
 #include "uve/scripting/script_graph_persistence_uve.h"
 
 namespace UVE::Scripting {

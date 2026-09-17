@@ -8,9 +8,9 @@
 #include <limits>
 #include <utility>
 
-#include "uve/scene/components/rigid_body_component_uve.h"
-#include "uve/scene/components/transform_component_uve.h"
-#include "uve/scene/components/world_transform_component_uve.h"
+#include "uve/component/rigid_body_component_uve.h"
+#include "uve/component/transform_component_uve.h"
+#include "uve/component/world_transform_component_uve.h"
 
 namespace UVE::Physics {
 namespace {

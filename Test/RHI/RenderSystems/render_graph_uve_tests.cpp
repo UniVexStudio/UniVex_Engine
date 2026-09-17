@@ -1,7 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 
-#include "uve/render/render_graph_uve.h"
+#include "uve/render_systems/render_graph_uve.h"
 
 #include <memory>
 #include <string>
@@ -9,8 +9,8 @@
 
 #include <gtest/gtest.h>
 
-#include "uve/render/i_command_buffer_uve.h"
-#include "uve/render/null_render_device_uve.h"
+#include "uve/rhi/i_command_buffer_uve.h"
+#include "uve/rhi_null/null_render_device_uve.h"
 
 namespace UVE::Render::Tests {
 namespace {

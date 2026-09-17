@@ -47,7 +47,7 @@
 #include "uve/events/event_system_uve.h"
 #include "uve/input/input_system_uve.h"
 #include "uve/memory/heap_allocator_uve.h"
-#include "uve/scene/components/transform_component_uve.h"
+#include "uve/component/transform_component_uve.h"
 #include "uve/scene/scene_graph_uve.h"
 #include "uve/window/window_desc_uve.h"
 #include "uve/window/window_manager_uve.h"
