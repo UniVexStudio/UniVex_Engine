@@ -160,6 +160,19 @@ bool VkFunctionsUVE::LoadDeviceUVE(const VkDevice device) {
     allResolved &= ResolveDevice(vkQueueSubmit, gdpa, device, "vkQueueSubmit");
     allResolved &= ResolveDevice(vkQueuePresentKHR, gdpa, device, "vkQueuePresentKHR");
     allResolved &= ResolveDevice(vkQueueWaitIdle, gdpa, device, "vkQueueWaitIdle");
+    allResolved &= ResolveDevice(vkCreateShaderModule, gdpa, device, "vkCreateShaderModule");
+    allResolved &= ResolveDevice(vkDestroyShaderModule, gdpa, device, "vkDestroyShaderModule");
+    allResolved &= ResolveDevice(vkCreatePipelineLayout, gdpa, device, "vkCreatePipelineLayout");
+    allResolved &= ResolveDevice(vkDestroyPipelineLayout, gdpa, device, "vkDestroyPipelineLayout");
+    allResolved &= ResolveDevice(vkCreateGraphicsPipelines, gdpa, device, "vkCreateGraphicsPipelines");
+    allResolved &= ResolveDevice(vkDestroyPipeline, gdpa, device, "vkDestroyPipeline");
+    allResolved &= ResolveDevice(vkCmdBindPipeline, gdpa, device, "vkCmdBindPipeline");
+    allResolved &= ResolveDevice(vkCmdBindVertexBuffers, gdpa, device, "vkCmdBindVertexBuffers");
+    allResolved &= ResolveDevice(vkCmdBindIndexBuffer, gdpa, device, "vkCmdBindIndexBuffer");
+    allResolved &= ResolveDevice(vkCmdDraw, gdpa, device, "vkCmdDraw");
+    allResolved &= ResolveDevice(vkCmdDrawIndexed, gdpa, device, "vkCmdDrawIndexed");
+    allResolved &= ResolveDevice(vkCmdSetViewport, gdpa, device, "vkCmdSetViewport");
+    allResolved &= ResolveDevice(vkCmdSetScissor, gdpa, device, "vkCmdSetScissor");
     return allResolved;
 }
 

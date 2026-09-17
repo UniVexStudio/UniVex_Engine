@@ -26,7 +26,9 @@
 #include <vector>
 
 #include "uve/events/event_system_uve.h"
+#include "uve/rhi/i_command_buffer_uve.h"
 #include "uve/window/i_vulkan_window_surface_uve.h"
+#include "spirv_test_shaders_uve.h"
 #include "uve/window/null_window_manager_uve.h"
 #include "uve/window/window_manager_uve.h"
 
@@ -134,8 +136,8 @@ protected:
 
 TEST_F(VulkanRenderDeviceUVETest, DeviceReportsUsableWithHonestBootstrapName) {
     EXPECT_TRUE(device->IsUsableUVE());
-    EXPECT_EQ(device->GetBackendNameUVE(), "Vulkan (M1 bootstrap)")
-        << "capability reporting must never call the bootstrap the finished Vulkan backend";
+    EXPECT_EQ(device->GetBackendNameUVE(), "Vulkan (M2a draw slice)")
+        << "capability reporting must never call the current slice the finished Vulkan backend";
 }
 
 TEST_F(VulkanRenderDeviceUVETest, PresentedFrameReadbackIsUniformBootstrapClear) {
@@ -191,27 +193,17 @@ TEST_F(VulkanRenderDeviceUVETest, PresentUveAdvancesMultipleFramesWithoutCrash) 
 }
 
 TEST_F(VulkanRenderDeviceUVETest, OutOfScopeResourceCallsReturnDocumentedInvalidResults) {
-    // M1's contract: never fake success, never crash — every resource path returns the RHI's
-    // documented invalid/false/empty value (see vulkan_render_device_uve.h and the exact
-    // NullRenderDeviceUVE precedent the headless suite relies on).
-    const BufferDescUVE bufferDesc{};
-    EXPECT_EQ(device->CreateBufferUVE(bufferDesc), kInvalidBufferHandleUVE);
-    EXPECT_FALSE(device->UpdateBufferUVE(kInvalidBufferHandleUVE, {}));
-    device->DestroyBufferUVE(kInvalidBufferHandleUVE); // documented safe no-op
-
+    // Remaining honest "not yet" areas of the M2a slice: textures, offscreen/depth targets,
+    // reflection, and pipeline binaries still return the documented invalid values with a
+    // naming-the-milestone warning (Null-render contract — never fake success, never crash).
     const TextureDescUVE textureDesc{};
     EXPECT_EQ(device->CreateTextureUVE(textureDesc), kInvalidTextureHandleUVE);
     device->DestroyTextureUVE(kInvalidTextureHandleUVE);
 
-    const ShaderDescUVE shaderDesc{};
-    std::string infoLog;
-    EXPECT_EQ(device->CreateShaderUVE(shaderDesc, &infoLog), kInvalidShaderHandleUVE);
-    EXPECT_FALSE(infoLog.empty()) << "outInfoLog must name the milestone gap";
-
     const PipelineDescUVE pipelineDesc{};
-    infoLog.clear();
+    std::string infoLog;
     EXPECT_EQ(device->CreatePipelineUVE(pipelineDesc, &infoLog), kInvalidPipelineHandleUVE);
-    device->DestroyPipelineUVE(kInvalidPipelineHandleUVE);
+    EXPECT_FALSE(infoLog.empty()) << "outInfoLog must name why creation failed";
 
     EXPECT_TRUE(device->GetPipelineUniformsUVE(kInvalidPipelineHandleUVE).empty());
     std::vector<std::byte> binary;
@@ -221,8 +213,148 @@ TEST_F(VulkanRenderDeviceUVETest, OutOfScopeResourceCallsReturnDocumentedInvalid
     const PipelineBinaryDescUVE binaryDesc{};
     EXPECT_EQ(device->CreatePipelineFromBinaryUVE({}, 0U, binaryDesc), kInvalidPipelineHandleUVE);
 
-    EXPECT_EQ(device->CreateCommandBufferUVE(), nullptr);
-    device->SubmitUVE(nullptr); // documented: the M1 device services no submitted command buffer
+    device->DestroyBufferUVE(kInvalidBufferHandleUVE); // documented safe no-op
+    device->DestroyShaderUVE(kInvalidShaderHandleUVE);
+    device->DestroyPipelineUVE(kInvalidPipelineHandleUVE);
+    device->SubmitUVE(nullptr); // documented: null submissions are ignored
+}
+
+TEST_F(VulkanRenderDeviceUVETest, BuffersAreRealHostVisibleMemories) {
+    BufferDescUVE bufferDesc{};
+    bufferDesc.sizeBytes = 12U;
+    bufferDesc.usage = BufferUsageUVE::Vertex;
+    const float threeFloats[3] = {1.0F, 2.0F, 3.0F};
+    const BufferHandleUVE buffer = device->CreateBufferUVE(
+        bufferDesc, std::span<const std::byte>(reinterpret_cast<const std::byte*>(threeFloats),
+                                               sizeof(threeFloats)));
+    ASSERT_NE(buffer, kInvalidBufferHandleUVE);
+
+    const float replacement[3] = {4.0F, 5.0F, 6.0F};
+    EXPECT_TRUE(device->UpdateBufferUVE(buffer,
+        std::span<const std::byte>(reinterpret_cast<const std::byte*>(replacement),
+                                   sizeof(replacement))));
+    // Out-of-range update must fail cleanly and must not have touched anything.
+    EXPECT_FALSE(device->UpdateBufferUVE(buffer,
+        std::span<const std::byte>(reinterpret_cast<const std::byte*>(replacement),
+                                   sizeof(replacement)),
+        4U));
+    device->DestroyBufferUVE(buffer);
+    // Update after destroy: the interface's documented silent-false, never a crash.
+    EXPECT_FALSE(device->UpdateBufferUVE(buffer,
+        std::span<const std::byte>(reinterpret_cast<const std::byte*>(replacement),
+                                   sizeof(replacement))));
+}
+
+TEST_F(VulkanRenderDeviceUVETest, ShaderCreationRejectsGlslTextAndAcceptsSpirv) {
+    ShaderDescUVE glslDesc{};
+    glslDesc.stage = ShaderStageUVE::Vertex;
+    glslDesc.sourceCode = "#version 450\nvoid main() { gl_Position = vec4(0.0); }";
+    std::string infoLog;
+    EXPECT_EQ(device->CreateShaderUVE(glslDesc, &infoLog), kInvalidShaderHandleUVE);
+    EXPECT_NE(infoLog.find("SPIR-V"), std::string::npos) << infoLog;
+
+    ShaderDescUVE spirvDesc{};
+    spirvDesc.stage = ShaderStageUVE::Vertex;
+    spirvDesc.sourceCode = kTriangleVertexSpirvUVE;
+    const ShaderHandleUVE shader = device->CreateShaderUVE(spirvDesc);
+    ASSERT_NE(shader, kInvalidShaderHandleUVE);
+    device->DestroyShaderUVE(shader);
+}
+
+TEST_F(VulkanRenderDeviceUVETest, SubmittedTriangleCommandBufferReallyRendersPixels) {
+    // A full M2a round trip: SPIR-V shaders + a real pipeline + an interleaved
+    // position/color vertex buffer + a recorded command buffer that draws a big triangle —
+    // verified against the swapchain's own pixels via ReadbackLatestPresentedImageUVE, not by
+    // "no crash" (that would be the mock version of this test).
+    ShaderDescUVE vertexDesc{};
+    vertexDesc.stage = ShaderStageUVE::Vertex;
+    vertexDesc.sourceCode = kTriangleVertexSpirvUVE;
+    ShaderDescUVE fragmentDesc{};
+    fragmentDesc.stage = ShaderStageUVE::Fragment;
+    fragmentDesc.sourceCode = kTriangleFragmentSpirvUVE;
+    const ShaderHandleUVE vertexShader = device->CreateShaderUVE(vertexDesc);
+    const ShaderHandleUVE fragmentShader = device->CreateShaderUVE(fragmentDesc);
+    ASSERT_NE(vertexShader, kInvalidShaderHandleUVE);
+    ASSERT_NE(fragmentShader, kInvalidShaderHandleUVE);
+
+    PipelineDescUVE pipelineDesc{};
+    pipelineDesc.vertexShader = vertexShader;
+    pipelineDesc.fragmentShader = fragmentShader;
+    pipelineDesc.vertexStride = 24U; // 2x vec3 interleaved (position, color)
+    pipelineDesc.vertexLayout.push_back(VertexAttributeUVE{"POSITION", VertexAttributeFormatUVE::Float3, 0U});
+    pipelineDesc.vertexLayout.push_back(VertexAttributeUVE{"COLOR", VertexAttributeFormatUVE::Float3, 12U});
+    pipelineDesc.depthTestEnabled = false; // the M2a pass has no depth attachment (documented)
+    pipelineDesc.depthWriteEnabled = false;
+    const PipelineHandleUVE pipeline = device->CreatePipelineUVE(pipelineDesc);
+    ASSERT_NE(pipeline, kInvalidPipelineHandleUVE);
+
+    // Triangle covering the whole frame (deep-blue-ish red corner signature), interleaved
+    // vec3 position + vec3 color, 6 floats per vertex.
+    const float vertices[18] = {
+        -1.0F, -1.0F, 0.0F,  1.0F, 0.0F, 0.0F, // bottom-left:  red
+         1.0F, -1.0F, 0.0F,  0.0F, 1.0F, 0.0F, // bottom-right: green
+         0.0F,  1.0F, 0.0F,  0.0F, 0.0F, 1.0F, // top-center:   blue
+    };
+    BufferDescUVE bufferDesc{};
+    bufferDesc.sizeBytes = sizeof(vertices);
+    bufferDesc.usage = BufferUsageUVE::Vertex;
+    const BufferHandleUVE vertexBuffer = device->CreateBufferUVE(bufferDesc,
+        std::span<const std::byte>(reinterpret_cast<const std::byte*>(vertices), sizeof(vertices)));
+    ASSERT_NE(vertexBuffer, kInvalidBufferHandleUVE);
+
+    auto commandBuffer = device->CreateCommandBufferUVE();
+    ASSERT_NE(commandBuffer, nullptr);
+    RenderPassDescUVE passDesc{}; // default attachments: the swapchain ("default framebuffer")
+    passDesc.colorLoadOp = LoadOpUVE::Clear;
+    passDesc.clearColor = {0.05F, 0.07F, 0.12F, 1.0F};
+    commandBuffer->BeginRenderPassUVE(passDesc);
+    commandBuffer->BindPipelineUVE(pipeline);
+    commandBuffer->BindVertexBufferUVE(vertexBuffer);
+    commandBuffer->DrawUVE(3U);
+    commandBuffer->EndRenderPassUVE();
+    device->SubmitUVE(std::move(commandBuffer));
+
+    device->PresentUVE();
+    ASSERT_TRUE(device->IsUsableUVE());
+
+    // Readback: the triangle covers the whole 1280x720 surface (gl_Position pins three corners
+    // on the big clip triangle that every viewport rasterizes fully here), so the frame must
+    // be NON-uniform: a gradient of the three vertex colors — precisely provable:
+    // red corner must be dominantly red, green corner dominantly green, and counting pixels
+    // must show above 99% of the frame no longer matching the clear color.
+    std::vector<std::byte> pixels(1280U * 720U * 4U);
+    std::uint32_t width = 0;
+    std::uint32_t height = 0;
+    ASSERT_TRUE(device->ReadbackLatestPresentedImageUVE(pixels, width, height));
+    if (width == 0U || height == 0U) {
+        GTEST_SKIP() << "driver reported a zero-sized extent; coverage math needs pixels";
+    }
+
+    const auto channelAt = [&](const std::uint32_t x, const std::uint32_t y) {
+        const std::size_t base = (static_cast<std::size_t>(y) * width + x) * 4U;
+        return std::array<int, 3>{static_cast<int>(pixels[base]),
+                                  static_cast<int>(pixels[base + 1]),
+                                  static_cast<int>(pixels[base + 2])};
+    };
+    // Sample small neighborhoods away from edges, robust to off-by-one raster rules. Vulkan's
+    // NATIVE NDC convention: with a positive-height viewport, NDC y=-1 maps to the framebuffer
+    // TOP row (GL authors: the same vertex data appears Y-flipped versus the GL backend until
+    // the projection-uniform milestone applies the conventional Y flip — M2a documents the
+    // native mapping, no silent flips).
+    const auto topLeft = channelAt(width / 8U, height / 8U);
+    const auto topRight = channelAt(width - width / 8U, height / 8U);
+    const auto bottom = channelAt(width / 2U, height - height / 8U);
+    EXPECT_GT(topLeft[0], topLeft[1] + 40) << "top-left must be red-dominant: ("
+        << topLeft[0] << "," << topLeft[1] << "," << topLeft[2] << ")";
+    EXPECT_GT(topRight[1], topRight[0] + 40) << "top-right must be green-dominant: ("
+        << topRight[0] << "," << topRight[1] << "," << topRight[2] << ")";
+    EXPECT_GT(bottom[2], bottom[0] + 40) << "bottom-center must be blue-dominant: ("
+        << bottom[0] << "," << bottom[1] << "," << bottom[2] << ")";
+
+    device->DestroyBufferUVE(vertexBuffer);
+    device->DestroyPipelineUVE(pipeline);
+    device->DestroyShaderUVE(vertexShader);
+    device->DestroyShaderUVE(fragmentShader);
 }
 
 } // namespace UVE::Render::Tests

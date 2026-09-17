@@ -88,10 +88,12 @@ publicly shipping real-time engines as of today, without naming any of them.
 - [~] A modern explicit graphics API backend (the kind that supports multi-threaded command
   recording, explicit memory/barrier management) as a second real backend, so the RHI
   abstraction is proven against more than one implementation — **in progress:** the Vulkan
-  M1 bootstrap device shipped 2026-09-17 (instance→device→surface→swapchain→clear-present,
-  real frames presented under lavapipe in CI; dlopen-based loader, capability bridge on the
-  window manager, selection via `EngineConfigUVE::renderBackendPreferenceUVE`). Remaining for
-  full parity: resource/pipeline/draw-path milestones (M2+) behind the same interface
+  backend reached slice M2a 2026-09-17: real buffers (host-visible policy), SPIR-V shader
+  modules, fixed-function pipelines, recorded command buffers, and Draw/DrawIndexed replay
+  verified pixel-wise in CI (lavapipe) and locally (SwiftShader offscreen harness). Remaining
+  for full parity: textures/render-targets/depth, uniforms via descriptor sets + push
+  constants, device-local staging uploads, multi-threaded command recording, and shader
+  cross-compilation tooling (tracked separately below)
 - [ ] A backend for each target OS's native graphics API where OpenGL is not the best
   choice on that platform
 - [ ] Shader cross-compilation so one shader source authors once and targets every backend

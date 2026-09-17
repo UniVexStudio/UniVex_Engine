@@ -7,17 +7,20 @@
 // one frame in flight plus vkQueueWaitIdle before every swapchain teardown call — matching the
 // "small real thing over big fake thing" rule that governs this repo's milestone slicing.
 //
-// What M1 does NOT implement: every resource-bearing method (buffers, textures, shaders,
-// pipelines, reflection, pipeline binaries, command buffers). Those return the documented
-// invalid-handle/false/empty/nullptr values with an explicit UVE_WARNING naming the missing
-// milestone, exactly as Null-render did before it (and which the whole headless test-suite
-// proved safe: the engine runs end-to-end on a device that services no draw path). Higher
-// milestones will fill these in, behind the same interface, without touching callers.
+// Slice M2a ("draw slice") added 2026-09-17: buffers (host-visible memory policy), SPIR-V
+// shaders, fixed-function pipelines built on the swapchain render pass, recorded command
+// buffers, and Draw/DrawIndexed replay inside the frame pass are all REAL implementations —
+// the device now renders actual geometry into the presented image, replaying submitted
+// command buffers exactly the way GlRenderDeviceUVE plays its recordings. Still honest "not
+// yet" areas (documented at each method, warnings emitted once, no silent lies): textures,
+// offscreen render targets, depth attachments, uniform/descriptor bindings, reflection, and
+// pipeline binaries. Those keep returning the documented invalid/false/empty results with a
+// warning naming the missing milestone, exactly as Null-render did before it.
 //
 // Capability reporting is honest and upstream-visible: GetBackendNameUVE() says
-// "Vulkan (M1 bootstrap)" — never "Vulkan" unqualified — so logs, editor overlays, and bug
-// reports cannot mistake the bootstrap for the finished backend, and IsUsableUVE() reflects
-// the real instance/device/swapchain bring-up result.
+// "Vulkan (M2a draw slice)" — never "Vulkan" unqualified — so logs, editor overlays, and bug
+// reports cannot mistake the current slice for the finished backend, and IsUsableUVE()
+// reflects the real instance/device/swapchain bring-up result.
 
 
 #pragma once
@@ -28,6 +31,7 @@
 #include <vector>
 
 #include "uve/rhi/i_render_device_uve.h"
+#include "uve/rhi/recorded_command_uve.h"
 #include "uve/window/i_vulkan_window_surface_uve.h"
 #include "uve/window/i_window_manager_uve.h"
 
@@ -132,6 +136,10 @@ public:
 private:
     VulkanRenderDeviceUVE(Window::IWindowManagerUVE* windowManager,
                           Window::IVulkanWindowSurfaceUVE* bridge);
+
+    /// Replays one submitted recorded command buffer inside the frame render pass (see the
+    /// .cpp for the M2a integration contract).
+    void ReplayRecordedCommandsUVE(const std::vector<RecordedCommandUVE>& commands);
 
     struct ImplUVE;
     std::unique_ptr<ImplUVE> m_impl;
