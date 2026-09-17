@@ -17,8 +17,8 @@
 #include <optional>
 
 #include "uve/core/engine_services_uve.h"
-#include "uve/render/texture_handle_uve.h"
-#include "uve/scene/entity_uve.h"
+#include "uve/rhi/texture_handle_uve.h"
+#include "uve/component/entity_uve.h"
 
 namespace univex::camera {
 class OrbitCamera;

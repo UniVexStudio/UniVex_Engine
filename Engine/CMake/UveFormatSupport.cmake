@@ -5,8 +5,8 @@
 # supports std::format (C++20). If it does, UVE_STD_FORMAT_AVAILABLE is set
 # and no extra dependency is needed. If it does not, {fmt} is fetched via
 # FetchContent as a drop-in replacement. Either way, uve_link_format_backend()
-# gives the uve_debug target everything it needs, and
-# engine/debug/include/uve/debug/log_format_uve.h presents an identical
+# gives the uve_logging target everything it needs, and
+# Core/Logging's uve/logging/log_format_uve.h presents an identical
 # FormatLogMessageUVE() signature regardless of which backend is active — no
 # engine code outside that one header needs to know which backend was picked.
 

@@ -1,7 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 
-#include "uve/debug/logger_uve.h"
+#include "uve/logging/logger_uve.h"
 
 #include <chrono>
 #include <thread>

@@ -6,7 +6,7 @@
 
 #include "uve/events/i_event_system_uve.h"
 #include "uve/memory/i_allocator_uve.h"
-#include "uve/scene/entity_manager_uve.h"
+#include "uve/entity/entity_manager_uve.h"
 #include "uve/scene/scene_graph_uve.h"
 
 namespace UVE::World {

@@ -3,9 +3,9 @@
 #include "uve/ui/ui_runtime_uve.h"
 
 #include "uve/input/mouse_button_uve.h"
-#include "uve/scene/components/ui_button_component_uve.h"
-#include "uve/scene/components/ui_image_component_uve.h"
-#include "uve/scene/components/ui_text_component_uve.h"
+#include "uve/component/ui_button_component_uve.h"
+#include "uve/component/ui_image_component_uve.h"
+#include "uve/component/ui_text_component_uve.h"
 
 namespace UVE::UI {
 

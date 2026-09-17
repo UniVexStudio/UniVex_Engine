@@ -12,7 +12,7 @@
 
 #include <optional>
 
-#include "uve/render/render_resource_descs_uve.h"
+#include "uve/rhi/render_resource_descs_uve.h"
 
 namespace UVE::Core {
 

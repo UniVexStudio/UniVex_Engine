@@ -1,7 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 
-#include "uve/render/shader/shader_manager_uve.h"
+#include "uve/rhi_shader/shader_manager_uve.h"
 
 #include <chrono>
 #include <cstdint>
@@ -19,8 +19,8 @@
 #include "uve/asset/asset_bundle_uve.h"
 #include "uve/asset/file_system_uve.h"
 #include "uve/events/event_system_uve.h"
-#include "uve/render/null_render_device_uve.h"
-#include "uve/render/shader/built_in_shaders_uve.h"
+#include "uve/rhi_null/null_render_device_uve.h"
+#include "uve/rhi_shader/built_in_shaders_uve.h"
 #include "uve/threading/thread_pool_uve.h"
 
 namespace UVE::Render::Shader::Tests {

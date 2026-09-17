@@ -4,7 +4,7 @@
 #pragma once
 
 #include "uve/math/vector3_uve.h"
-#include "uve/scene/entity_uve.h"
+#include "uve/component/entity_uve.h"
 
 namespace UVE::Physics {
 

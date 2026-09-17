@@ -7,7 +7,7 @@
 #include <string_view>
 #include <vector>
 
-#include "uve/render/shader/shader_compile_diagnostics_uve.h"
+#include "uve/rhi_shader/shader_compile_diagnostics_uve.h"
 
 namespace UVE::Render::Shader::Detail {
 

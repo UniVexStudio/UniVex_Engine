@@ -8,7 +8,7 @@
 #include <string_view>
 #include <vector>
 
-#include "uve/scene/entity_uve.h"
+#include "uve/component/entity_uve.h"
 
 namespace UVE::Editor {
 

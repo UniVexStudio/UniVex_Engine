@@ -1,0 +1,109 @@
+# Copyright (c) 2026 UniVex Studios. All Rights Reserved.
+#
+# UniVex Engine CI - the one place that validates the *whole* engine, including the
+# OpenGL/GLFW/GLEW/zlib/libjpeg paths that a headless or dev-machine-only workflow
+# cannot see (the 2026-09-17 audit found 44 engine sources that are otherwise
+# "compiled by inspection" only, plus one real break that had no test).
+#
+# What this does on every push and PR:
+#   1. Installs the full native toolchain deps (GLFW3, GLEW, Mesa GL, zlib, libjpeg).
+#   2. Configures + builds the entire tree: 40+ engine/editor static libs, both app
+#      executables (uve_runtime, uve_editor), all Viewport demo/tools, and the two
+#      GoogleTest suites.
+#   3. Runs ctest under Xvfb so window/context-creating tests have a display.
+#
+# If this file is green, "the engine builds" is a fact, not an assumption.
+
+name: UniVex Engine CI
+
+on:
+  push:
+  pull_request:
+    branches: [master]
+
+jobs:
+  build-and-test:
+    name: Ubuntu GCC - full build + ctest
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install native dependencies
+        # M2d note: libvulkan1 + mesa-vulkan-drivers (lavapipe) let the tier-2 real-device
+        # Vulkan RHI tests execute on CI instead of skipping (they were skip-only before
+        # 2026-09-17; the headless GLFW + Xvfb path covers the swapchain).
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libglfw3-dev \
+            libglew-dev \
+            libgl1-mesa-dev \
+            libglu1-mesa-dev \
+            zlib1g-dev \
+            libjpeg-dev \
+            xvfb \
+            libvulkan1 \
+            mesa-vulkan-drivers
+
+      - name: Math boundary check (audit §6.1)
+        run: python3 Engine/Tools/check_math_boundary.py
+
+      - name: Configure (Debug)
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -DUVE_BUILD_TESTS=ON
+
+      - name: Build
+        run: cmake --build build --parallel "$(nproc)"
+
+      - name: Test (under Xvfb)
+        run: |
+          set +e
+          xvfb-run -a ctest --test-dir build --output-on-failure > /tmp/ctest.log 2>&1
+          RC=$?
+          set -e
+          if [ "$RC" -ne 0 ]; then
+            # Sandbox/CI forensics: surface the failing test names + gtest failure bodies as
+            # annotations (the log CDN is not always reachable; check-run annotations are).
+            grep -E "^ *[0-9]+/[0-9]+ Test .*(Failed|\*\*\*)" /tmp/ctest.log | head -5 | while read -r L; do
+              echo "::error title=ctest-failed-case::$L"
+            done
+            grep -E "FAILED +TEST|Value of:|Actual:|Expected:|Assertion" /tmp/ctest.log | head -5 | while read -r L; do
+              echo "::error title=ctest-detail::$(echo "$L" | cut -c1-240)"
+            done
+            exit $RC
+          fi
+
+      # M2d evidence step: prior to the displayless-host clause, a silently-broken display or
+      # ICD only made the tier-2 fixture skip politely and could never flip CI red — which is
+      # exactly what happened (every M2a..M2d tier-2 device case skipped on CI since the M2a
+      # windowed fixture existed; the pixel-verified coverage lived in vkshot). The engine now
+      # owns a CI-ready headless construction (VK_EXT_headless_surface) and the fixture falls
+      # back to it automatically, so a real device run is expected on every CI host: windowed
+      # via xvfb+lavapipe, or headless via a CPU ICD. A skip from here on means the CI image
+      # lost its Vulkan story — fail loudly instead of hiding.
+      - name: Prove tier-2 Vulkan device tests really ran (did not skip)
+        run: |
+          cd build
+          set +e
+          ./Test/uve_core_tests --gtest_filter='VulkanRenderDeviceUVETest.*' \
+            > /tmp/tier2.log 2>&1
+          GRC=$?
+          set -e
+          COUNT=$(grep -c '\[       OK \] VulkanRenderDeviceUVETest' /tmp/tier2.log || true)
+          echo "tier-2 device cases executed for real: $COUNT (gtest rc=$GRC)"
+          if [ "$COUNT" -lt 17 ] || [ "$GRC" -ne 0 ]; then
+            grep -m6 'Skipped\|SKIPPED' /tmp/tier2.log | head -6 | while read -r L; do
+              echo "::warning title=tier2-why::$L"
+            done
+            echo "::error title=tier2::tier-2 Vulkan device tests did not all execute (ok=$COUNT expected>=17 rc=$GRC)"
+            exit 1
+          fi
+
+      - name: Build summary
+        if: always()
+        run: |
+          echo "== Built targets =="
+          find build -maxdepth 4 -name "*.a" -type f | sort || true
+          echo "== Built executables =="
+          find build -maxdepth 5 -type f -executable \( -name "uve_*" -o -name "univex_*" \) | sort || true

@@ -1,6 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-#include "uve/core/time_pose_contract_uve.h"
+#include "uve/animation/time_pose_contract_uve.h"
 
 #include <algorithm>
 #include <cmath>

@@ -1,5 +1,11 @@
 // Engine/Editor/EditorApp/src/main.cpp
 // -----------------------------------------------------------------------
+// VIEWPORT SMOKE HARNESS - not the product editor (2026-09-17 audit re-label,
+// AUDIT.md section 5.3). The real, full editor is Engine/App's
+// uve_editor_app; this is the reduced interactivity predecessor, kept only
+// for automated headless validation (see --max-frames below). Do not grow
+// new editor features here.
+//
 // The editor shell's first interactive slice: a real desktop window,
 // created and owned by Engine/Runtime/Window::WindowManagerUVE (not raw
 // GLFW, unlike Engine/Editor/Viewport's own standalone demo app), driving
@@ -41,7 +47,7 @@
 #include "uve/events/event_system_uve.h"
 #include "uve/input/input_system_uve.h"
 #include "uve/memory/heap_allocator_uve.h"
-#include "uve/scene/components/transform_component_uve.h"
+#include "uve/component/transform_component_uve.h"
 #include "uve/scene/scene_graph_uve.h"
 #include "uve/window/window_desc_uve.h"
 #include "uve/window/window_manager_uve.h"

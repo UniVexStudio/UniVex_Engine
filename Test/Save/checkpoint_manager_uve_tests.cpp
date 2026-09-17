@@ -12,7 +12,7 @@
 #include "uve/events/event_system_uve.h"
 #include "uve/memory/memory_manager_uve.h"
 #include "uve/save/save_game_system_uve.h"
-#include "uve/scene/entity_manager_uve.h"
+#include "uve/entity/entity_manager_uve.h"
 #include "uve/scene/scene_serializer_uve.h"
 
 namespace UVE::Save::Tests {

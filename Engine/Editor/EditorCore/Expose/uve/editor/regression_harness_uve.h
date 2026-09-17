@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include "uve/core/animation_clip_uve.h"
+#include "uve/animation/animation_clip_uve.h"
 #include "uve/editor/editor_bridge_uve.h"
 #include "uve/scripting/script_graph_canvas_uve.h"
 

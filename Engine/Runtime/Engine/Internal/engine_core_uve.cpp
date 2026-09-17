@@ -38,14 +38,15 @@
 #include "uve/asset/texture_asset_uve.h"
 #include "uve/audio/audio_source_system_uve.h"
 #include "uve/audio/audio_system_uve.h"
+#include "uve/audio/miniaudio_audio_device_uve.h"
 #include "uve/audio/null_audio_device_uve.h"
 #include "uve/audio/wav_importer_uve.h"
 #include "uve/commandline/command_line_uve.h"
 #include "uve/config/config_manager_uve.h"
-#include "uve/debug/assert_uve.h"
-#include "uve/debug/log_sink_uve.h"
-#include "uve/debug/logger_uve.h"
-#include "uve/debug/logging_macros_uve.h"
+#include "uve/logging/assert_uve.h"
+#include "uve/logging/log_sink_uve.h"
+#include "uve/logging/logger_uve.h"
+#include "uve/logging/logging_macros_uve.h"
 #include "uve/events/event_system_uve.h"
 #include "uve/input/gamepad_input_system_uve.h"
 #include "uve/input/input_system_uve.h"
@@ -62,24 +63,25 @@
 #include "uve/physics/physics_system_uve.h"
 #include "uve/physics/raycast_system_uve.h"
 #include "uve/platform/platform_uve.h"
-#include "uve/render/camera_system_uve.h"
-#include "uve/render/gl_render_device_uve.h"
-#include "uve/render/light_system_uve.h"
-#include "uve/render/mesh_renderer_uve.h"
-#include "uve/render/null_render_device_uve.h"
-#include "uve/render/render_system_uve.h"
-#include "uve/render/renderer_3d_uve.h"
-#include "uve/render/shader/shader_manager_uve.h"
+#include "uve/render_systems/camera_system_uve.h"
+#include "uve/rhi_opengl/gl_render_device_uve.h"
+#include "uve/rhi_vulkan/vulkan_render_device_uve.h"
+#include "uve/render_systems/light_system_uve.h"
+#include "uve/render_systems/mesh_renderer_uve.h"
+#include "uve/rhi_null/null_render_device_uve.h"
+#include "uve/render_systems/render_system_uve.h"
+#include "uve/render_systems/renderer_3d_uve.h"
+#include "uve/rhi_shader/shader_manager_uve.h"
 #include "uve/save/checkpoint_manager_uve.h"
 #include "uve/save/save_game_system_uve.h"
-#include "uve/scene/components/character_controller_component_uve.h"
-#include "uve/scene/components/collider_component_uve.h"
-#include "uve/scene/components/particle_emitter_component_uve.h"
-#include "uve/scene/components/rigid_body_component_uve.h"
-#include "uve/scene/components/script_component_uve.h"
-#include "uve/scene/components/transform_component_uve.h"
-#include "uve/scene/components/world_transform_component_uve.h"
-#include "uve/scene/entity_manager_uve.h"
+#include "uve/component/character_controller_component_uve.h"
+#include "uve/component/collider_component_uve.h"
+#include "uve/component/particle_emitter_component_uve.h"
+#include "uve/component/rigid_body_component_uve.h"
+#include "uve/component/script_component_uve.h"
+#include "uve/component/transform_component_uve.h"
+#include "uve/component/world_transform_component_uve.h"
+#include "uve/entity/entity_manager_uve.h"
 #include "uve/scene/prefab_system_uve.h"
 #include "uve/scene/scene_graph_uve.h"
 #include "uve/scene/scene_serializer_uve.h"
@@ -301,26 +303,47 @@ void EngineCoreUVE::Init() {
     }
     m_windowedRenderingActiveUVE = !m_config.headlessUVE && m_windowManager->IsValidUVE();
 
-    // RenderDevice eighteenth: probe the usable OpenGL backend when a real valid window/context
-    // exists, otherwise use Render::NullRenderDeviceUVE. A context can exist while the required
-    // GL entry points are unavailable on an unusual driver; GlRenderDeviceUVE reports that state
-    // without aborting, and the engine selects NullRenderDeviceUVE before ShaderManager or any
-    // frame code can call a missing function pointer. Vulkan is not a renderer in this build, so
-    // it is never falsely selected as a fallback.
+    // RenderDevice eighteenth: backend selection ordered by EngineConfigUVE::renderBackendPreferenceUVE
+    // when a real valid window/context exists, otherwise Render::NullRenderDeviceUVE. The preference is a
+    // *starting point*, never a hard requirement — the chain is Vulkan -> OpenGL -> Null, each
+    // fall-through a logged warning, and the null device is one the entire headless test suite
+    // already proves the engine survives on. OpenGL remains the production default (AutoUVE
+    // resolves to it); VulkanUVE opts into the M1 bootstrap device. A context can exist while
+    // the required GL entry points are unavailable on an unusual driver; GlRenderDeviceUVE
+    // reports that state without aborting, and the engine selects NullRenderDeviceUVE before
+    // ShaderManager or any frame code can call a missing function pointer.
     if (m_windowedRenderingActiveUVE) {
-        auto glRenderDevice = std::make_unique<Render::GlRenderDeviceUVE>(*m_windowManager);
-        if (glRenderDevice->IsUsableUVE()) {
-            m_renderDevice = std::move(glRenderDevice);
-        } else {
+        const RenderBackendPreferenceUVE preference = m_config.renderBackendPreferenceUVE;
+        if (preference == RenderBackendPreferenceUVE::VulkanUVE) {
+            // Factory-probe create: nullptr (with reason logged) when the host lacks a loader,
+            // an ICD, or the GLFW bridge's surface capability. IsUsableUVE() is checked anyway
+            // so a future early-inert state stays load-bearing protection here.
+            auto vulkanDevice = Render::VulkanRenderDeviceUVE::CreateUVE(*m_windowManager);
+            if (vulkanDevice != nullptr && vulkanDevice->IsUsableUVE()) {
+                m_renderDevice = std::move(vulkanDevice);
+                UVE_INFO("EngineCoreUVE: render backend = {}", m_renderDevice->GetBackendNameUVE());
+            } else {
+                UVE_WARNING("EngineCoreUVE: requested Vulkan backend is unavailable on this host; trying OpenGL");
+            }
+        }
+        if (m_renderDevice == nullptr && preference != RenderBackendPreferenceUVE::NullUVE) {
+            auto glRenderDevice = std::make_unique<Render::GlRenderDeviceUVE>(*m_windowManager);
+            if (glRenderDevice->IsUsableUVE()) {
+                m_renderDevice = std::move(glRenderDevice);
+            } else {
 #if defined(__ANDROID__)
-            // Android currently ships an EGL/GLES implementation only. If that context or its
-            // required entry points are unavailable, do not guess that a Vulkan renderer exists:
-            // this build has no Vulkan RHI. Keep the engine alive on the inert RHI instead of
-            // dereferencing a partial GL function table and crashing during shader/frame startup.
-            UVE_WARNING("EngineCoreUVE: OpenGL ES backend is unavailable; Vulkan RHI is not built, using Null backend");
+                // Android currently ships an EGL/GLES implementation only. If that context or its
+                // required entry points are unavailable, do not guess that a Vulkan renderer exists:
+                // the Vulkan backend is desktop-windowed only in this build. Keep the engine alive
+                // on the inert RHI instead of dereferencing a partial GL function table and
+                // crashing during shader/frame startup.
+                UVE_WARNING("EngineCoreUVE: OpenGL ES backend is unavailable; Vulkan RHI is not built, using Null backend");
 #else
-            UVE_WARNING("EngineCoreUVE: OpenGL backend is unavailable; using Null backend");
+                UVE_WARNING("EngineCoreUVE: OpenGL backend is unavailable; using Null backend");
 #endif
+            }
+        }
+        if (m_renderDevice == nullptr) {
             m_windowedRenderingActiveUVE = false;
             m_renderDevice = std::make_unique<Render::NullRenderDeviceUVE>();
         }
@@ -426,9 +449,16 @@ void EngineCoreUVE::Init() {
     m_inputSystem = std::make_unique<Input::InputSystemUVE>(*m_eventSystem, m_gamepadInputSystem.get());
     m_windowManager->AttachInputSystemUVE(m_inputSystem.get());
 
-    // AudioDevice twenty-ninth: no dependencies of its own (a NullAudioDeviceUVE — no real audio
-    // hardware/SDK is buildable in this sandbox).
-    m_audioDevice = std::make_unique<Audio::NullAudioDeviceUVE>();
+    // AudioDevice twenty-ninth: no dependencies of its own. Prefers the real miniaudio backend;
+    // falls back to NullAudioDeviceUVE (with a warning) on machines with no usable audio output
+    // (headless CI, servers) so the whole audio stack above stays functional either way.
+    if (auto miniaudioDevice = Audio::MiniaudioAudioDeviceUVE::CreateUVE()) {
+        m_audioDevice = std::move(miniaudioDevice);
+    } else {
+        UVE_WARNING("EngineCoreUVE: no usable audio output device - falling back to NullAudioDeviceUVE "
+                    "(all audio playback will be silent but functional)");
+        m_audioDevice = std::make_unique<Audio::NullAudioDeviceUVE>();
+    }
 
     // AudioSystem thirtieth: needs AudioDevice (it pushes computed gain/position through it).
     m_audioSystem = std::make_unique<Audio::AudioSystemUVE>(*m_audioDevice);

@@ -7,7 +7,7 @@
 #include <cstring>
 #include <new>
 
-#include "uve/debug/assert_uve.h"
+#include "uve/logging/assert_uve.h"
 #include "uve/memory/alignment_utils_uve.h"
 
 namespace UVE::Memory {

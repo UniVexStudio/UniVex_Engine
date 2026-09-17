@@ -12,8 +12,8 @@
 #include "archetype_signature_uve.h"
 #include "chunk_uve.h"
 #include "uve/memory/i_allocator_uve.h"
-#include "uve/scene/component_type_info_uve.h"
-#include "uve/scene/entity_uve.h"
+#include "uve/component/component_type_info_uve.h"
+#include "uve/component/entity_uve.h"
 
 namespace UVE::Scene::Detail {
 

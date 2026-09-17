@@ -23,19 +23,20 @@
 #include "ViewportRenderPass.h"
 #include "integration/EditorMeshLayer.h"
 #include "integration/EntityManagerEntitySource.h"
+#include "integration/MathConversions.h"
 #include "univex/camera/OrbitCamera.h"
 #include "univex/render/ShaderProgram.h"
 
 #include "uve/core/engine_core_uve.h"
-#include "uve/debug/logging_macros_uve.h"
+#include "uve/logging/logging_macros_uve.h"
 #include "uve/editor/editor_bridge_stdio_uve.h"
 #include "uve/ui/ui_draw_batch_uve.h"
 #include "uve/ui/ui_font_atlas_uve.h"
 #include "uve/editor/editor_uve.h"
 #include "uve/math/vector2_uve.h"
-#include "uve/scene/components/camera_component_uve.h"
-#include "uve/scene/components/world_transform_component_uve.h"
-#include "uve/scene/i_entity_manager_uve.h"
+#include "uve/component/camera_component_uve.h"
+#include "uve/component/world_transform_component_uve.h"
+#include "uve/entity/i_entity_manager_uve.h"
 #include "uve/scene/i_scene_graph_uve.h"
 
 namespace {
@@ -455,8 +456,7 @@ private:
             const auto& worldTransform =
                 entityManager_.GetComponentUVE<UVE::Scene::WorldTransformComponentUVE>(selected);
             renderPass_->SetGizmoPivotOverride(
-                univex::math::Vec3{worldTransform.worldPosition.x, worldTransform.worldPosition.y,
-                                   worldTransform.worldPosition.z});
+                univex::integration::FromUveVector3UVE(worldTransform.worldPosition));
         } else {
             renderPass_->SetGizmoPivotOverride(std::nullopt);
         }

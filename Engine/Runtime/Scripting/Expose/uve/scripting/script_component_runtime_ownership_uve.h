@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <string>
 
-#include "uve/scene/components/script_component_uve.h"
+#include "uve/component/script_component_uve.h"
 #include "uve/scripting/script_graph_runtime_binding_uve.h"
 
 namespace UVE::Scripting {

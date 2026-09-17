@@ -11,7 +11,7 @@
 #include <vector>
 
 #include "uve/asset/asset_reloaded_event_uve.h"
-#include "uve/debug/logging_macros_uve.h"
+#include "uve/logging/logging_macros_uve.h"
 
 namespace UVE::Asset {
 
