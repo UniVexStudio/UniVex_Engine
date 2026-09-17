@@ -23,6 +23,7 @@
 #include "ViewportRenderPass.h"
 #include "integration/EditorMeshLayer.h"
 #include "integration/EntityManagerEntitySource.h"
+#include "integration/MathConversions.h"
 #include "univex/camera/OrbitCamera.h"
 #include "univex/render/ShaderProgram.h"
 
@@ -455,8 +456,7 @@ private:
             const auto& worldTransform =
                 entityManager_.GetComponentUVE<UVE::Scene::WorldTransformComponentUVE>(selected);
             renderPass_->SetGizmoPivotOverride(
-                univex::math::Vec3{worldTransform.worldPosition.x, worldTransform.worldPosition.y,
-                                   worldTransform.worldPosition.z});
+                univex::integration::FromUveVector3UVE(worldTransform.worldPosition));
         } else {
             renderPass_->SetGizmoPivotOverride(std::nullopt);
         }

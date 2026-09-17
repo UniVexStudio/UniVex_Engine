@@ -42,6 +42,9 @@ jobs:
             libjpeg-dev \
             xvfb
 
+      - name: Math boundary check (audit §6.1)
+        run: python3 Engine/Tools/check_math_boundary.py
+
       - name: Configure (Debug)
         run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -DUVE_BUILD_TESTS=ON
 
