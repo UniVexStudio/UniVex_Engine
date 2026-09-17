@@ -104,6 +104,11 @@ bool VkFunctionsUVE::LoadInstanceUVE(const VkInstance instance) {
     allResolved &= ResolveInstance(vkGetPhysicalDeviceQueueFamilyProperties, gipa, instance, "vkGetPhysicalDeviceQueueFamilyProperties");
     allResolved &= ResolveInstance(vkEnumerateDeviceExtensionProperties, gipa, instance, "vkEnumerateDeviceExtensionProperties");
     allResolved &= ResolveInstance(vkGetPhysicalDeviceSurfaceSupportKHR, gipa, instance, "vkGetPhysicalDeviceSurfaceSupportKHR");
+    // OPTIONAL M2d probe entry: core in 1.1+. A 1.0-only loader must still bring the device
+    // up (the dynamic-rendering gate then stays OFF and the M2c classic behavior persists),
+    // so its absence is NOT a bring-up failure.
+    (void)ResolveInstance(vkGetPhysicalDeviceFeatures2, gipa, instance,
+                          "vkGetPhysicalDeviceFeatures2");
     allResolved &= ResolveInstance(vkGetPhysicalDeviceSurfaceCapabilitiesKHR, gipa, instance, "vkGetPhysicalDeviceSurfaceCapabilitiesKHR");
     allResolved &= ResolveInstance(vkGetPhysicalDeviceSurfaceFormatsKHR, gipa, instance, "vkGetPhysicalDeviceSurfaceFormatsKHR");
     allResolved &= ResolveInstance(vkGetPhysicalDeviceSurfacePresentModesKHR, gipa, instance, "vkGetPhysicalDeviceSurfacePresentModesKHR");
@@ -190,6 +195,11 @@ bool VkFunctionsUVE::LoadDeviceUVE(const VkDevice device) {
     allResolved &= ResolveDevice(vkDestroySampler, gdpa, device, "vkDestroySampler");
     allResolved &= ResolveDevice(vkCmdCopyBufferToImage, gdpa, device, "vkCmdCopyBufferToImage");
     allResolved &= ResolveDevice(vkFreeDescriptorSets, gdpa, device, "vkFreeDescriptorSets");
+    // Dynamic rendering is OPTIONAL (M2d gate): resolve without failing — the device probes
+    // support/enables the feature independently and falls back to the classic render-pass
+    // path when these are absent.
+    (void)ResolveDevice(vkCmdBeginRendering, gdpa, device, "vkCmdBeginRendering");
+    (void)ResolveDevice(vkCmdEndRendering, gdpa, device, "vkCmdEndRendering");
     return allResolved;
 }
 

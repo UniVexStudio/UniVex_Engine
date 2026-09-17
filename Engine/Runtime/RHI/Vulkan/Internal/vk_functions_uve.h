@@ -128,6 +128,13 @@ struct VkFunctionsUVE {
     PFN_vkCmdCopyBufferToImage vkCmdCopyBufferToImage = nullptr;
     PFN_vkFreeDescriptorSets vkFreeDescriptorSets = nullptr;
 
+    // M2d "offscreen RT" additions: core-1.3 dynamic rendering. The instance/device gate is
+    // probed at bring-up; when unavailable the device stays fully classic (M2c behavior)
+    // and offscreen passes degrade to a documented warning instead of failing creation.
+    PFN_vkGetPhysicalDeviceFeatures2 vkGetPhysicalDeviceFeatures2 = nullptr;
+    PFN_vkCmdBeginRendering vkCmdBeginRendering = nullptr;
+    PFN_vkCmdEndRendering vkCmdEndRendering = nullptr;
+
     /// Opens the platform Vulkan loader library by its conventional sonames and resolves
     /// vkGetInstanceProcAddr plus the global-level entry points above. `lsan`-clean as well:
     /// the loader handle is intentionally leaked for the process lifetime (dlclose on a

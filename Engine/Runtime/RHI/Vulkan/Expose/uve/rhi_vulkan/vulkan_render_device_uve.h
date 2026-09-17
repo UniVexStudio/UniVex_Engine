@@ -28,10 +28,35 @@
 // compare funcs, device-local staging, pipeline binaries. Those keep returning the
 // documented invalid/false/empty results with a warning naming the missing milestone.
 //
+// Slice M2d ("offscreen render targets") added 2026-09-17: BeginRenderPassUVE with texture
+// attachments is now REAL on 1.3-capable devices. The engineering shortcut the classic
+/// render-pass route could not survive: VkRenderPass compatibility requires EXACT format
+// identity per attachment, the swapchain is sRGB-typed, and RHI RGBA8 textures are unorm —
+// so the device switches wholesale to core-1.3 dynamic rendering (probed via
+// vkGetPhysicalDeviceFeatures2 + VkPhysicalDeviceVulkan13Features::dynamicRendering, enabled
+// in the device-create feature chain; the instance apiVersion has been clamped at 1.3 since
+// bring-up). In dynamic mode there is no VkRenderPass and no framebuffers: pipelines declare
+// their one-color(RGBA8)+depth contract through VkPipelineRenderingCreateInfo, passes open
+// lazily with vkCmdBeginRendering at the first marker of a run, and interleaved
+// default/offscreen passes are legal (a re-opened swapchain instance resumes with LOAD —
+// GL's FBO semantics preserved exactly). Textures allocate in the swapchain's own format via
+// MUTABLE_FORMAT + an unorm-sibling SAMPLED view and an image-native ATTACHMENT view, so
+// every RGBA8 texture is attachable by construction; color-only offscreen passes borrow an
+// extent-keyed scratch depth image; caller Depth32Float textures attach when the device
+// depth is D32. Honest boundaries (one-shot warns + skip/degrade, never silent wrong
+// pixels): classic-mode devices (no 1.3 entry points) keep byte-identical M2c behavior and
+// skip offscreen passes; non-attachable textures (RGBA16Float; anything when the swapchain
+// is not a 4x8 RGBA format) skip their pass; D24 devices fall back to the invisible scratch
+// depth; sampling a Depth32Float texture is the M2e slice and returns the 1x1 white
+// fallback until then. The latent M1 readback-fence hazard is fixed here too: the readback
+// submission rides its own transient fence created around it (the presented-frame fence is
+// strictly PresentUVE-owned).
+//
 // Capability reporting is honest and upstream-visible: GetBackendNameUVE() says
-// "Vulkan (M2b uniforms+depth)" — never "Vulkan" unqualified — so logs, editor overlays, and bug
-// reports cannot mistake the current slice for the finished backend, and IsUsableUVE()
-// reflects the real instance/device/swapchain bring-up result.
+// "Vulkan (M2d offscreen RT)" on dynamic-rendering devices, "Vulkan (M2c textures+staging)"
+// on classic ones — never "Vulkan" unqualified — so logs, editor overlays, and bug reports
+// cannot mistake the current slice for the finished backend, and IsUsableUVE() reflects the
+// real instance/device/swapchain bring-up result.
 
 
 #pragma once

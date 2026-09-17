@@ -125,6 +125,41 @@ struct VulkanRenderDeviceUVE::ImplUVE {
 
     VkSwapchainKHR swapchain = VK_NULL_HANDLE;
     VkFormat swapchainFormat = VK_FORMAT_UNDEFINED;
+
+    // M2d: core-1.3 dynamic rendering is the offscreen-pass foundation (probed at bring-up,
+    // enabled at device creation when present). When unsupported, the device keeps its full
+    // classic M2c shape and offscreen passes degrade to a one-shot warning + skip. All goes-
+    // through-dynamic-rendering decisions branch on useDynamicRendering, never on the probe.
+    bool dynamicRenderingSupported = false;
+    bool useDynamicRendering = false;
+
+    // M2d scratch depth for color-only offscreen passes: one DEVICE_LOCAL depth image per
+    // encountered extent (same 1-frame-in-flight argument that licenses the single swapchain
+    // depth target). Layout is always DEPTH_STENCIL_ATTACHMENT_OPTIMAL between uses; entry
+    // barriers discard content with oldLayout=UNDEFINED.
+    struct DepthScratchUVE {
+        VkImage image = VK_NULL_HANDLE;
+        VkDeviceMemory memory = VK_NULL_HANDLE;
+        VkImageView view = VK_NULL_HANDLE;
+    };
+    std::map<std::uint64_t, DepthScratchUVE> offscreenDepthScratch; // key: w<<32 | h
+
+    // Current-frame pass state for the dynamic-rendering flow. PresentUVE resets it; the
+    // replay lazily opens the needed rendering instance at the first BeginRenderPassUVE op
+    // and closes on pass switches or at frame end. Classic mode ignores all of this (its
+    // single swapchain render pass is begun upfront exactly as before M2d).
+    struct FramePassStateUVE {
+        VkClearValue clearValues[2]{}; // 0: color, 1: depth — swapchain load-CLEAR contents
+        std::uint32_t swapchainImageIndex = 0U;
+        bool barrierDoneForSwapchain = false;   // per-frame image/depth entry transitions
+        bool swapchainPassBegunThisFrame = false;
+        bool passOpen = false;
+        bool openPassIsSwapchain = true;
+        VkImage openOffscreenColorImage = VK_NULL_HANDLE; // restored to SHADER_READ at close
+    };
+    FramePassStateUVE framePassState;
+
+
     VkExtent2D swapchainExtent{0U, 0U};
     std::vector<VkImage> swapchainImages;
     std::vector<VkImageView> swapchainImageViews;
@@ -229,13 +264,33 @@ struct VulkanRenderDeviceUVE::ImplUVE {
     struct TextureRecordUVE {
         VkImage image = VK_NULL_HANDLE;
         VkDeviceMemory memory = VK_NULL_HANDLE;
-        VkImageView view = VK_NULL_HANDLE;
+        VkImageView view = VK_NULL_HANDLE;           // the SAMPLING view (unorm-aliased)
+        VkImageView attachmentView = VK_NULL_HANDLE; // the image-native-format view (RT use)
         VkSampler sampler = VK_NULL_HANDLE;
+        VkFormat vkFormat = VK_FORMAT_UNDEFINED; // the IMAGE's format (may be swapchain-typed)
         TextureDescUVE desc{};
         VkImageLayout currentLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     };
     std::unordered_map<std::uint32_t, TextureRecordUVE> textures;
     std::uint32_t fallbackTextureValue = 0U; // 1x1 opaque-white; used for unbound/destroyed slots
+
+    // --- M2d dynamic-rendering pass helpers (used only when useDynamicRendering) ---------
+    // Opens the swapchain rendering instance for the frame's acquired image; the very first
+    // open of a frame runs the UNDEFINED-entry barriers, every reopened instance resumes
+    // with LOAD (content preserved, matching GL's interleaved FBO semantics).
+    [[nodiscard]] bool BeginSwapchainPassDynamicUVE();
+    // Opens an offscreen rendering instance against `color` (+ caller `depth` or the scratch
+    // target of matching extent). Entry barriers run here; the restore barrier back to
+    // SHADER_READ_ONLY for the color image runs at CloseCurrentPassDynamicUVE().
+    [[nodiscard]] bool BeginOffscreenPassDynamicUVE(TextureRecordUVE& color,
+                                                    TextureRecordUVE* depth,
+                                                    VkExtent2D extent,
+                                                    const std::array<float, 4>& clearColor,
+                                                    float clearDepth);
+    // Closes whichever rendering instance is open (if any) and restores offscreen layouts.
+    void CloseCurrentPassDynamicUVE();
+    // Scratch depth lookup-or-allocate for one extent. Null on failure (logged once).
+    [[nodiscard]] DepthScratchUVE* GetDepthScratchUVE(std::uint32_t width, std::uint32_t height);
 
     std::unordered_map<std::uint32_t, BufferRecordUVE> buffers;
     std::unordered_map<std::uint32_t, ShaderRecordUVE> shaders;
@@ -263,6 +318,9 @@ struct VulkanRenderDeviceUVE::ImplUVE {
     static constexpr std::uint32_t kWarnedUnknownTextureUVE = 1U << 10U;
     static constexpr std::uint32_t kWarnedTextureSlotOobUVE = 1U << 11U;
     static constexpr std::uint32_t kWarnedTextureSetExhaustedUVE = 1U << 12U;
+    static constexpr std::uint32_t kWarnedOffscreenUnsupportedUVE = 1U << 13U;
+    static constexpr std::uint32_t kWarnedOffscreenDepthIncompatibleUVE = 1U << 14U;
+    static constexpr std::uint32_t kWarnedDepthTextureSampledUVE = 1U << 15U;
     std::uint32_t replayWarningsEmitted = 0U;
 
     // Replay-local pipeline binding state (valid only inside PresentUVE()'s record window).
@@ -286,6 +344,259 @@ struct VulkanRenderDeviceUVE::ImplUVE {
     [[nodiscard]] bool CreateSwapchainResourcesUVE();
     [[nodiscard]] bool InitializeUVE();
 };
+
+bool VulkanRenderDeviceUVE::ImplUVE::BeginSwapchainPassDynamicUVE() {
+    FramePassStateUVE& state = framePassState;
+    if (!state.barrierDoneForSwapchain) {
+        // Per-frame entry transitions (once): the acquired image and the per-swapchain depth
+        // target enter their attachment layouts. oldLayout=UNDEFINED is always legal (it only
+        // forfeits content preservation), which frees us from per-image layout bookkeeping.
+        VkImageMemoryBarrier entryBarriers[2]{};
+        for (VkImageMemoryBarrier& barrier : entryBarriers) {
+            barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        }
+        entryBarriers[0].srcAccessMask = 0U;
+        entryBarriers[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        entryBarriers[0].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        entryBarriers[0].newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        entryBarriers[0].image = swapchainImages[state.swapchainImageIndex];
+        entryBarriers[0].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0U, 1U, 0U, 1U};
+        entryBarriers[1].srcAccessMask = 0U;
+        entryBarriers[1].dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        entryBarriers[1].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        entryBarriers[1].newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        entryBarriers[1].image = depthImage;
+        entryBarriers[1].subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0U, 1U, 0U, 1U};
+        vk.vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                                VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+                                    VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+                                0U, 0U, nullptr, 0U, nullptr, 2U, entryBarriers);
+        state.barrierDoneForSwapchain = true;
+    }
+    const bool resume = state.swapchainPassBegunThisFrame;
+    VkRenderingAttachmentInfo colorAttachmentInfo{};
+    colorAttachmentInfo.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+    colorAttachmentInfo.imageView = swapchainImageViews[state.swapchainImageIndex];
+    colorAttachmentInfo.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    colorAttachmentInfo.loadOp = resume ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_CLEAR;
+    colorAttachmentInfo.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    colorAttachmentInfo.clearValue = state.clearValues[0];
+    VkRenderingAttachmentInfo depthAttachmentInfo{};
+    depthAttachmentInfo.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+    depthAttachmentInfo.imageView = depthImageView;
+    depthAttachmentInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    depthAttachmentInfo.loadOp = resume ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depthAttachmentInfo.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    depthAttachmentInfo.clearValue = state.clearValues[1];
+    VkRenderingInfo renderingInfo{};
+    renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+    renderingInfo.renderArea = {{0, 0}, swapchainExtent};
+    renderingInfo.layerCount = 1U;
+    renderingInfo.colorAttachmentCount = 1U;
+    renderingInfo.pColorAttachments = &colorAttachmentInfo;
+    renderingInfo.pDepthAttachment = &depthAttachmentInfo;
+    vk.vkCmdBeginRendering(commandBuffer, &renderingInfo);
+
+    // Same full-extent dynamic state the classic path applies right after begin.
+    VkViewport viewport{};
+    viewport.x = 0.0F;
+    viewport.y = 0.0F;
+    viewport.width = static_cast<float>(swapchainExtent.width);
+    viewport.height = static_cast<float>(swapchainExtent.height);
+    viewport.minDepth = 0.0F;
+    viewport.maxDepth = 1.0F;
+    VkRect2D scissor{};
+    scissor.offset = {0, 0};
+    scissor.extent = swapchainExtent;
+    vk.vkCmdSetViewport(commandBuffer, 0U, 1U, &viewport);
+    vk.vkCmdSetScissor(commandBuffer, 0U, 1U, &scissor);
+
+    state.swapchainPassBegunThisFrame = true;
+    state.passOpen = true;
+    state.openPassIsSwapchain = true;
+    return true;
+}
+
+VulkanRenderDeviceUVE::ImplUVE::DepthScratchUVE*
+VulkanRenderDeviceUVE::ImplUVE::GetDepthScratchUVE(const std::uint32_t width, const std::uint32_t height) {
+    const std::uint64_t key =
+        (static_cast<std::uint64_t>(width) << 32U) | static_cast<std::uint64_t>(height);
+    const auto found = offscreenDepthScratch.find(key);
+    if (found != offscreenDepthScratch.end()) {
+        return &found->second;
+    }
+    VkImageCreateInfo imageInfo{};
+    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.imageType = VK_IMAGE_TYPE_2D;
+    imageInfo.format = depthFormat;
+    imageInfo.extent = {width, height, 1U};
+    imageInfo.mipLevels = 1U;
+    imageInfo.arrayLayers = 1U;
+    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    imageInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED; // every use re-enters via barriers
+    VkImage image = VK_NULL_HANDLE;
+    if (vk.vkCreateImage(device, &imageInfo, nullptr, &image) != VK_SUCCESS || image == VK_NULL_HANDLE) {
+        UVE_WARNING("VulkanRenderDeviceUVE: vkCreateImage failed for an offscreen scratch depth target");
+        return nullptr;
+    }
+    VkMemoryRequirements requirements{};
+    vk.vkGetImageMemoryRequirements(device, image, &requirements);
+    const std::uint32_t memoryType = FindMemoryTypeUVE(requirements.memoryTypeBits,
+                                                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    if (memoryType == UINT32_MAX) {
+        vk.vkDestroyImage(device, image, nullptr);
+        UVE_WARNING("VulkanRenderDeviceUVE: no DEVICE_LOCAL memory type for scratch depth");
+        return nullptr;
+    }
+    VkMemoryAllocateInfo allocateInfo{};
+    allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocateInfo.allocationSize = requirements.size;
+    allocateInfo.memoryTypeIndex = memoryType;
+    VkDeviceMemory memory = VK_NULL_HANDLE;
+    if (vk.vkAllocateMemory(device, &allocateInfo, nullptr, &memory) != VK_SUCCESS ||
+        vk.vkBindImageMemory(device, image, memory, 0U) != VK_SUCCESS) {
+        if (memory != VK_NULL_HANDLE) {
+            vk.vkFreeMemory(device, memory, nullptr);
+        }
+        vk.vkDestroyImage(device, image, nullptr);
+        UVE_WARNING("VulkanRenderDeviceUVE: scratch depth memory allocation/bind failed");
+        return nullptr;
+    }
+    VkImageViewCreateInfo viewInfo{};
+    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    viewInfo.image = image;
+    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.format = depthFormat;
+    viewInfo.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0U, 1U, 0U, 1U};
+    VkImageView view = VK_NULL_HANDLE;
+    if (vk.vkCreateImageView(device, &viewInfo, nullptr, &view) != VK_SUCCESS || view == VK_NULL_HANDLE) {
+        vk.vkFreeMemory(device, memory, nullptr);
+        vk.vkDestroyImage(device, image, nullptr);
+        UVE_WARNING("VulkanRenderDeviceUVE: vkCreateImageView failed for scratch depth");
+        return nullptr;
+    }
+    DepthScratchUVE scratch{image, memory, view};
+    const auto [inserted, ok] = offscreenDepthScratch.emplace(key, scratch);
+    (void)ok;
+    return &inserted->second;
+}
+
+bool VulkanRenderDeviceUVE::ImplUVE::BeginOffscreenPassDynamicUVE(
+    TextureRecordUVE& color, TextureRecordUVE* depth, const VkExtent2D extent,
+    const std::array<float, 4>& clearColor, const float clearDepth) {
+    FramePassStateUVE& state = framePassState;
+    DepthScratchUVE* scratch = nullptr;
+    if (depth == nullptr) {
+        scratch = GetDepthScratchUVE(extent.width, extent.height);
+        if (scratch == nullptr) {
+            return false;
+        }
+    }
+
+    // Entry transitions: the color image leaves its invariant SHADER_READ_ONLY (previous
+    // sampled reads ordered by the fragment-shader source scope), depth enters attachment.
+    VkImageMemoryBarrier entryBarriers[2]{};
+    for (VkImageMemoryBarrier& barrier : entryBarriers) {
+        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    }
+    entryBarriers[0].srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    entryBarriers[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    entryBarriers[0].oldLayout = color.currentLayout; // SHADER_READ_ONLY by M2c invariant
+    entryBarriers[0].newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    entryBarriers[0].image = color.image;
+    entryBarriers[0].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0U, 1U, 0U, 1U};
+    entryBarriers[1].srcAccessMask = 0U;
+    entryBarriers[1].dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    if (depth != nullptr) {
+        entryBarriers[1].oldLayout = depth->currentLayout; // DS_ATTACHMENT by M2c invariant
+    } else {
+        entryBarriers[1].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED; // scratch: content never kept
+    }
+    entryBarriers[1].newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    entryBarriers[1].image = depth != nullptr ? depth->image : scratch->image;
+    entryBarriers[1].subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0U, 1U, 0U, 1U};
+    vk.vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+                                VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+                            0U, 0U, nullptr, 0U, nullptr, 2U, entryBarriers);
+
+    VkRenderingAttachmentInfo colorAttachmentInfo{};
+    colorAttachmentInfo.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+    colorAttachmentInfo.imageView = color.attachmentView;
+    colorAttachmentInfo.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    colorAttachmentInfo.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    colorAttachmentInfo.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    colorAttachmentInfo.clearValue.color.float32[0] = clearColor[0];
+    colorAttachmentInfo.clearValue.color.float32[1] = clearColor[1];
+    colorAttachmentInfo.clearValue.color.float32[2] = clearColor[2];
+    colorAttachmentInfo.clearValue.color.float32[3] = clearColor[3];
+    VkRenderingAttachmentInfo depthAttachmentInfo{};
+    depthAttachmentInfo.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+    depthAttachmentInfo.imageView = depth != nullptr ? depth->attachmentView : scratch->view;
+    depthAttachmentInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    depthAttachmentInfo.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depthAttachmentInfo.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    depthAttachmentInfo.clearValue.depthStencil = {clearDepth, 0U};
+    VkRenderingInfo renderingInfo{};
+    renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+    renderingInfo.renderArea = {{0, 0}, extent};
+    renderingInfo.layerCount = 1U;
+    renderingInfo.colorAttachmentCount = 1U;
+    renderingInfo.pColorAttachments = &colorAttachmentInfo;
+    renderingInfo.pDepthAttachment = &depthAttachmentInfo;
+    vk.vkCmdBeginRendering(commandBuffer, &renderingInfo);
+
+    VkViewport viewport{};
+    viewport.x = 0.0F;
+    viewport.y = 0.0F;
+    viewport.width = static_cast<float>(extent.width);
+    viewport.height = static_cast<float>(extent.height);
+    viewport.minDepth = 0.0F;
+    viewport.maxDepth = 1.0F;
+    VkRect2D scissor{};
+    scissor.offset = {0, 0};
+    scissor.extent = extent;
+    vk.vkCmdSetViewport(commandBuffer, 0U, 1U, &viewport);
+    vk.vkCmdSetScissor(commandBuffer, 0U, 1U, &scissor);
+
+    state.passOpen = true;
+    state.openPassIsSwapchain = false;
+    state.openOffscreenColorImage = color.image;
+    return true;
+}
+
+void VulkanRenderDeviceUVE::ImplUVE::CloseCurrentPassDynamicUVE() {
+    FramePassStateUVE& state = framePassState;
+    if (!state.passOpen) {
+        return;
+    }
+    vk.vkCmdEndRendering(commandBuffer);
+    if (!state.openPassIsSwapchain && state.openOffscreenColorImage != VK_NULL_HANDLE) {
+        // Restore the color image's invariant sampling layout so later passes may bind it.
+        VkImageMemoryBarrier backToSample{};
+        backToSample.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        backToSample.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        backToSample.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        backToSample.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        backToSample.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        backToSample.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        backToSample.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        backToSample.image = state.openOffscreenColorImage;
+        backToSample.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0U, 1U, 0U, 1U};
+        vk.vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0U, 0U, nullptr, 0U,
+                                nullptr, 1U, &backToSample);
+    }
+    state.passOpen = false;
+    state.openOffscreenColorImage = VK_NULL_HANDLE;
+}
 
 void VulkanRenderDeviceUVE::ImplUVE::DestroySwapchainResourcesUVE() {
     // Caller guarantees the queue has been drained (vkQueueWaitIdle) before entry.
@@ -583,6 +894,20 @@ bool VulkanRenderDeviceUVE::ImplUVE::InitializeUVE() {
     UVE_INFO("VulkanRenderDeviceUVE: selected physical device \"{}\"", deviceProperties.deviceName);
 
     // --- logical device --------------------------------------------------------------------
+    // M2d probe first: is core dynamic rendering available on this physical device+instance?
+    // (Instance apiVersion was already clamped at 1.3 above; the feature query needs the
+    // 1.1+ vkGetPhysicalDeviceFeatures2 entry point, resolved optionally at instance load.)
+    dynamicRenderingSupported = false;
+    if (apiVersion >= VK_API_VERSION_1_3 && vk.vkGetPhysicalDeviceFeatures2 != nullptr) {
+        VkPhysicalDeviceVulkan13Features v13Features{};
+        v13Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+        VkPhysicalDeviceFeatures2 features2{};
+        features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+        features2.pNext = &v13Features;
+        vk.vkGetPhysicalDeviceFeatures2(physicalDevice, &features2);
+        dynamicRenderingSupported = v13Features.dynamicRendering == VK_TRUE;
+    }
+
     const float queuePriority = 1.0F;
     VkDeviceQueueCreateInfo queueInfo{};
     queueInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
@@ -591,12 +916,20 @@ bool VulkanRenderDeviceUVE::ImplUVE::InitializeUVE() {
     queueInfo.pQueuePriorities = &queuePriority;
 
     static constexpr const char* kDeviceExtensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+    VkPhysicalDeviceVulkan13Features enabledV13Features{};
+    enabledV13Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+    if (dynamicRenderingSupported) {
+        enabledV13Features.dynamicRendering = VK_TRUE;
+    }
     VkDeviceCreateInfo deviceInfo{};
     deviceInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     deviceInfo.queueCreateInfoCount = 1U;
     deviceInfo.pQueueCreateInfos = &queueInfo;
     deviceInfo.enabledExtensionCount = 1U;
     deviceInfo.ppEnabledExtensionNames = kDeviceExtensions;
+    if (dynamicRenderingSupported) {
+        deviceInfo.pNext = &enabledV13Features;
+    }
 
     if (vk.vkCreateDevice(physicalDevice, &deviceInfo, nullptr, &device) != VK_SUCCESS || device == VK_NULL_HANDLE) {
         return LogBailUVE("vkCreateDevice failed");
@@ -605,6 +938,14 @@ bool VulkanRenderDeviceUVE::ImplUVE::InitializeUVE() {
         return LogBailUVE("Vulkan device-level entry points failed to resolve");
     }
     vk.vkGetDeviceQueue(device, queueFamilyIndex, 0U, &presentQueue);
+
+    useDynamicRendering = dynamicRenderingSupported && vk.vkCmdBeginRendering != nullptr &&
+                          vk.vkCmdEndRendering != nullptr;
+    if (dynamicRenderingSupported && !useDynamicRendering) {
+        UVE_WARNING("VulkanRenderDeviceUVE: dynamic rendering was reported but its device "
+                    "entry points did not resolve; the device continues without offscreen "
+                    "render-target support (classic render-pass mode)");
+    }
 
     // --- surface format/present-mode picks ---------------------------------------------------
     std::uint32_t formatCount = 0;
@@ -652,7 +993,10 @@ bool VulkanRenderDeviceUVE::ImplUVE::InitializeUVE() {
 
     // --- render pass + swapchain -------------------------------------------------------------
     // Attachment 0: color (clear-on-load, store for present). Attachment 1: depth — per-frame
-    // transient content, so STORE is DONT_CARE (avoiding a wasted write-back).
+    // transient content, so STORE is DONT_CARE (avoiding a wasted write-back). M2d+: classic
+    // mode only — dynamic rendering needs no VkRenderPass; the declaration lives on pipelines
+    // (VkPipelineRenderingCreateInfo) and on the frame's lazy rendering instances instead.
+    if (!useDynamicRendering) {
     VkAttachmentDescription colorAttachment{};
     colorAttachment.format = swapchainFormat;
     colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -710,6 +1054,7 @@ bool VulkanRenderDeviceUVE::ImplUVE::InitializeUVE() {
     if (vk.vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderPass) != VK_SUCCESS || renderPass == VK_NULL_HANDLE) {
         return LogBailUVE("vkCreateRenderPass failed");
     }
+    } // end classic-only render pass creation
 
     if (!CreateSwapchainResourcesUVE()) {
         return false; // already logged inside
@@ -804,6 +1149,21 @@ bool VulkanRenderDeviceUVE::ImplUVE::InitializeUVE() {
 }
 
 namespace {
+
+/// The unsigned-normalized sibling of an sRGB-typed (or already-unorm) 8-bit RGBA swapchain
+/// format, used as the SAMPLED view format of M2c+: RGBA8 textures are allocated in the
+/// swapchain's exact format so pipelines and dynamic-rendering instances match, while the
+/// sampling view reads raw values (never sRGB-decoded). UNDEFINED for anything outside the
+/// 4x8 family — textures then fall back to their native format and stay sample-only in M2d.
+[[nodiscard]] VkFormat UnormSiblingFormatUVE(VkFormat format) noexcept {
+    switch (format) {
+        case VK_FORMAT_B8G8R8A8_SRGB: return VK_FORMAT_B8G8R8A8_UNORM;
+        case VK_FORMAT_R8G8B8A8_SRGB: return VK_FORMAT_R8G8B8A8_UNORM;
+        case VK_FORMAT_B8G8R8A8_UNORM: return VK_FORMAT_B8G8R8A8_UNORM;
+        case VK_FORMAT_R8G8B8A8_UNORM: return VK_FORMAT_R8G8B8A8_UNORM;
+        default: return VK_FORMAT_UNDEFINED;
+    }
+}
 
 /// Maps one reflected block member to the RHI's public ShaderDataTypeUVE; unsupported types
 /// return Unsupported and are skipped by the builder below (a shader boolean is 4 bytes in
@@ -941,6 +1301,9 @@ void VulkanRenderDeviceUVE::ImplUVE::DestroyAllResourcesUVE() {
         if (record.sampler != VK_NULL_HANDLE) {
             vk.vkDestroySampler(device, record.sampler, nullptr);
         }
+        if (record.attachmentView != VK_NULL_HANDLE) {
+            vk.vkDestroyImageView(device, record.attachmentView, nullptr);
+        }
         if (record.view != VK_NULL_HANDLE) {
             vk.vkDestroyImageView(device, record.view, nullptr);
         }
@@ -953,6 +1316,20 @@ void VulkanRenderDeviceUVE::ImplUVE::DestroyAllResourcesUVE() {
     }
     textures.clear();
     fallbackTextureValue = 0U;
+    // M2d offscreen scratch depth targets (extent-keyed; independent of the swapchain).
+    for (auto& [key, scratch] : offscreenDepthScratch) {
+        (void)key;
+        if (scratch.view != VK_NULL_HANDLE) {
+            vk.vkDestroyImageView(device, scratch.view, nullptr);
+        }
+        if (scratch.image != VK_NULL_HANDLE) {
+            vk.vkDestroyImage(device, scratch.image, nullptr);
+        }
+        if (scratch.memory != VK_NULL_HANDLE) {
+            vk.vkFreeMemory(device, scratch.memory, nullptr);
+        }
+    }
+    offscreenDepthScratch.clear();
 }
 
 VulkanRenderDeviceUVE::VulkanRenderDeviceUVE(Window::IWindowManagerUVE* windowManager,
@@ -1257,18 +1634,42 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
         UVE_WARNING("VulkanRenderDeviceUVE::CreateTextureUVE: {} mip levels requested - only level "
                     "0 is populated (GL backend documents the same policy)", desc.mipLevels);
     }
+    // M2d format policy: every RGBA8 color texture's IMAGE takes the swapchain's exact
+    // format whenever it belongs to the 4x8 RGBA family (sRGB or unorm) — pipelines and
+    // dynamic-rendering instances declare that same format, so every texture can be a legal
+    // render target. The SAMPLED view uses the unnormalized sibling (raw reads, no implicit
+    // sRGB decode); the ATTACHMENT view uses the image-native format. Everything outside the
+    // 4x8 family (and RGBA16Float) keeps its native format: still fully sampleable, but
+    // attaching it to a render pass warns and skips (documented M2d boundary). RGBA8 initial
+    // uploads are swizzled in the staging copy when the image is B,G,R,A-typed (the RHI's
+    // byte-order contract is R,G,B,A), so the stored texels are identical either way.
     VkFormat format = VK_FORMAT_UNDEFINED;
+    VkFormat sampledFormat = VK_FORMAT_UNDEFINED;
+    VkImageCreateFlags imageFlags = 0U;
     VkImageUsageFlags usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT;
     VkImageLayout finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     std::uint32_t bytesPerPixel = 0U;
     switch (desc.format) {
-        case TextureFormatUVE::RGBA8Unorm:
-            format = VK_FORMAT_R8G8B8A8_UNORM; // guaranteed-sampled optimal-tiling format
+        case TextureFormatUVE::RGBA8Unorm: {
+            const VkFormat sibling = UnormSiblingFormatUVE(impl.swapchainFormat);
+            if (sibling != VK_FORMAT_UNDEFINED) {
+                format = impl.swapchainFormat;
+                sampledFormat = sibling;
+                if (sampledFormat != format) {
+                    imageFlags = VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
+                }
+            } else {
+                format = VK_FORMAT_R8G8B8A8_UNORM;
+                sampledFormat = format;
+            }
+            usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
             bytesPerPixel = 4U;
             break;
+        }
         case TextureFormatUVE::RGBA16Float:
             format = VK_FORMAT_R16G16B16A16_SFLOAT;
+            sampledFormat = format;
             bytesPerPixel = 8U;
             break;
         case TextureFormatUVE::Depth32Float:
@@ -1276,6 +1677,7 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
             // created attachment-ready (initial uploads of depth data are rejected — a host
             // depth upload has no RHI consumer today, so refusing it is the honest boundary).
             format = VK_FORMAT_D32_SFLOAT;
+            sampledFormat = format;
             aspect = VK_IMAGE_ASPECT_DEPTH_BIT;
             usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
             finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
@@ -1292,6 +1694,9 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
         const VkFormatFeatureFlags required =
             (desc.format == TextureFormatUVE::Depth32Float)
                 ? VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT
+            : (desc.format == TextureFormatUVE::RGBA8Unorm)
+                ? (VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT |
+                   VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT)
                 : (VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT);
         if ((formatProperties.optimalTilingFeatures & required) != required) {
             return fail("device lacks required format features for the requested texture format");
@@ -1300,6 +1705,7 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
 
     VkImageCreateInfo imageInfo{};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.flags = imageFlags;
     imageInfo.imageType = VK_IMAGE_TYPE_2D;
     imageInfo.format = format;
     imageInfo.extent = {desc.width, desc.height, 1U};
@@ -1386,7 +1792,24 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
             destroyImageResources();
             return fail("staging buffer allocation/bind/map failed");
         }
-        std::memcpy(stagingMapped, initialData.data(), initialData.size());
+        if (desc.format == TextureFormatUVE::RGBA8Unorm &&
+            (format == VK_FORMAT_B8G8R8A8_SRGB || format == VK_FORMAT_B8G8R8A8_UNORM)) {
+            // The RHI's RGBA8 initial-data contract is R,G,B,A byte order (GL parity). When the
+            // swapchain-format allocation picked the B,G,R,A family (SwiftShader's pick, and
+            // the most common desktop surface class), swizzle host bytes here in the copy
+            // path; the same code already exists in the present-side readback.
+            auto* dst = static_cast<std::byte*>(stagingMapped);
+            const auto* src = initialData.data();
+            const std::size_t texelCount = initialData.size() / 4U;
+            for (std::size_t texel = 0; texel < texelCount; ++texel) {
+                dst[texel * 4U + 0U] = src[texel * 4U + 2U]; // blue channel to slot 0
+                dst[texel * 4U + 1U] = src[texel * 4U + 1U];
+                dst[texel * 4U + 2U] = src[texel * 4U + 0U]; // red channel to slot 2
+                dst[texel * 4U + 3U] = src[texel * 4U + 3U];
+            }
+        } else {
+            std::memcpy(stagingMapped, initialData.data(), initialData.size());
+        }
         impl.vk.vkUnmapMemory(impl.device, stagingMemory);
         stagingMapped = nullptr;
     }
@@ -1486,13 +1909,21 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
     viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     viewInfo.image = image;
     viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    viewInfo.format = format;
+    viewInfo.format = sampledFormat;
     viewInfo.subresourceRange = {aspect, 0U, desc.mipLevels, 0U, 1U};
     VkImageView view = VK_NULL_HANDLE;
     if (impl.vk.vkCreateImageView(impl.device, &viewInfo, nullptr, &view) != VK_SUCCESS ||
         view == VK_NULL_HANDLE) {
         destroyImageResources();
         return fail("vkCreateImageView failed for the texture");
+    }
+    viewInfo.format = format; // image-native: this is the view dynamic rendering attaches
+    VkImageView attachmentView = VK_NULL_HANDLE;
+    if (impl.vk.vkCreateImageView(impl.device, &viewInfo, nullptr, &attachmentView) != VK_SUCCESS ||
+        attachmentView == VK_NULL_HANDLE) {
+        impl.vk.vkDestroyImageView(impl.device, view, nullptr);
+        destroyImageResources();
+        return fail("vkCreateImageView failed for the texture's attachment view");
     }
 
     // Sampler state mirrors GlRenderDeviceUVE's fixed parameters exactly: linear/linear,
@@ -1512,6 +1943,7 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
     VkSampler sampler = VK_NULL_HANDLE;
     if (impl.vk.vkCreateSampler(impl.device, &samplerInfo, nullptr, &sampler) != VK_SUCCESS ||
         sampler == VK_NULL_HANDLE) {
+        impl.vk.vkDestroyImageView(impl.device, attachmentView, nullptr);
         impl.vk.vkDestroyImageView(impl.device, view, nullptr);
         destroyImageResources();
         return fail("vkCreateSampler failed for the texture");
@@ -1519,7 +1951,8 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
 
     const std::uint32_t handleValue = impl.nextHandleValue++;
     impl.textures.emplace(handleValue,
-        ImplUVE::TextureRecordUVE{image, imageMemory, view, sampler, desc, finalLayout});
+        ImplUVE::TextureRecordUVE{image, imageMemory, view, attachmentView, sampler, format,
+                                  desc, finalLayout});
     return TextureHandleUVE{handleValue};
 }
 
@@ -1555,6 +1988,9 @@ void VulkanRenderDeviceUVE::DestroyTextureUVE(const TextureHandleUVE texture) {
     // A live GL-style texture-unit binding of the destroyed texture falls back to the
     // fallback texture on the next flush rather than referencing a dead view.
     impl.vk.vkDestroySampler(impl.device, found->second.sampler, nullptr);
+    if (found->second.attachmentView != VK_NULL_HANDLE) {
+        impl.vk.vkDestroyImageView(impl.device, found->second.attachmentView, nullptr);
+    }
     impl.vk.vkDestroyImageView(impl.device, found->second.view, nullptr);
     impl.vk.vkDestroyImage(impl.device, found->second.image, nullptr);
     impl.vk.vkFreeMemory(impl.device, found->second.memory, nullptr);
@@ -2038,8 +2474,20 @@ PipelineHandleUVE VulkanRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE
         return fail("vkCreatePipelineLayout failed");
     }
 
+    // M2d: in dynamic-rendering mode the pipeline never names a VkRenderPass; instead it
+    // declares the one-color(RGBA8)-plus-depth attachment contract that every rendering
+    // instance it will ever join satisfies (swapchain pass or offscreen RT pass — the whole
+    // reason textures here allocate in the swapchain's exact format). Classic mode is
+    // byte-identical to M2c: the device render pass is bound as before.
+    VkPipelineRenderingCreateInfo renderingCreateInfo{};
+    renderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+    renderingCreateInfo.colorAttachmentCount = 1U;
+    renderingCreateInfo.pColorAttachmentFormats = &impl.swapchainFormat;
+    renderingCreateInfo.depthAttachmentFormat = impl.depthFormat;
+
     VkGraphicsPipelineCreateInfo pipelineInfo{};
     pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    pipelineInfo.pNext = impl.useDynamicRendering ? &renderingCreateInfo : nullptr;
     pipelineInfo.stageCount = 2U;
     pipelineInfo.pStages = stages;
     pipelineInfo.pVertexInputState = &vertexInput;
@@ -2051,7 +2499,8 @@ PipelineHandleUVE VulkanRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE
     pipelineInfo.pColorBlendState = &colorBlend;
     pipelineInfo.pDynamicState = &dynamicState;
     pipelineInfo.layout = pipelineLayout;
-    pipelineInfo.renderPass = impl.renderPass;
+    pipelineInfo.renderPass =
+        impl.useDynamicRendering ? VK_NULL_HANDLE : impl.renderPass;
     pipelineInfo.subpass = 0U;
 
     VkPipeline graphicsPipeline = VK_NULL_HANDLE;
@@ -2233,6 +2682,18 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
                     impl.textures.find(bound->second) != impl.textures.end()) {
                     value = bound->second; // destroyed-after-bind resolves to the fallback
                 }
+                ImplUVE::TextureRecordUVE& slotRecord = impl.textures.at(value);
+                if (slotRecord.desc.format == TextureFormatUVE::Depth32Float) {
+                    // M2d boundary: depth textures are attachment-ready but SAMPLING them is
+                    // the M2e slice (the descriptor would need a special depth-comparison
+                    // declaration); they sample as the 1x1 white fallback for now.
+                    impl.WarnOnceUVE(
+                        VulkanRenderDeviceUVE::ImplUVE::kWarnedDepthTextureSampledUVE,
+                        "BindTextureUVE: a Depth32Float texture was bound to a sampled shader "
+                        "slot; depth-texture sampling lands in the M2e slice — the 1x1 white "
+                        "fallback is sampled instead");
+                    value = impl.fallbackTextureValue;
+                }
                 tupleValues.push_back(value);
                 tupleRecords.push_back(&impl.textures.at(value));
                 tupleKey.append(std::to_string(value)).push_back('#');
@@ -2376,35 +2837,155 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
         record.uniformsDirty = true; // informational today; the draw path snapshots every draw
     };
 
+    // Shared viewport-override application (GL top-origin rect -> Vulkan positive-Y-down);
+    // `surfaceHeight` is the CURRENT pass's attachment height (swapchain or offscreen).
+    const auto applyViewportOverrideUVE = [&impl](const ViewportRectUVE& rect,
+                                                  const std::uint32_t surfaceHeight) {
+        VkViewport viewport{};
+        viewport.x = static_cast<float>(rect.x);
+        viewport.y = static_cast<float>(static_cast<std::int64_t>(surfaceHeight) -
+                                        static_cast<std::int64_t>(rect.y + rect.height));
+        viewport.width = static_cast<float>(rect.width);
+        viewport.height = static_cast<float>(rect.height);
+        viewport.minDepth = 0.0F;
+        viewport.maxDepth = 1.0F;
+        VkRect2D scissor{};
+        scissor.offset = {static_cast<std::int32_t>(rect.x),
+                          static_cast<std::int32_t>(viewport.y)};
+        scissor.extent = {rect.width, rect.height};
+        impl.vk.vkCmdSetViewport(impl.commandBuffer, 0U, 1U, &viewport);
+        impl.vk.vkCmdSetScissor(impl.commandBuffer, 0U, 1U, &scissor);
+    };
+
     for (const RecordedCommandUVE& command : commands) {
         std::visit([&](const auto& op) {
             using OpT = std::decay_t<decltype(op)>;
             if constexpr (std::is_same_v<OpT, BeginRenderPassCommandUVE>) {
-                if (op.desc.colorAttachment != kInvalidTextureHandleUVE ||
-                    op.desc.depthAttachment != kInvalidTextureHandleUVE) {
-                    impl.WarnOnceUVE(VulkanRenderDeviceUVE::ImplUVE::kWarnedOffscreenPassUVE,
-                        "BeginRenderPassUVE targeting actual texture attachments is a later "
-                        "(texture-backed RT) milestone; this submission's draws are skipped");
+                if (impl.useDynamicRendering) {
+                    // ------------- M2d dynamic-rendering pass scheduler ------------------
+                    // Pass markers lazily open the needed rendering instance: the default
+                    // pass resumes the frame's swapchain instance, an offscreen pass borrows
+                    // the command stream with its own layout transitions. Re-entering the
+                    // ALREADY-open kind is a no-op marker (matches GL's coalesced FBO reuse);
+                    // switching kinds closes the previous instance first.
+                    const bool isOffscreen =
+                        (op.desc.colorAttachment != kInvalidTextureHandleUVE ||
+                         op.desc.depthAttachment != kInvalidTextureHandleUVE);
+                    if (!isOffscreen) {
+                        if (impl.framePassState.passOpen &&
+                            !impl.framePassState.openPassIsSwapchain) {
+                            impl.CloseCurrentPassDynamicUVE();
+                        }
+                        if (!impl.framePassState.passOpen) {
+                            (void)impl.BeginSwapchainPassDynamicUVE();
+                        }
+                        // else: coalesced marker — already inside the swapchain instance.
+                        passActiveForThisList = impl.framePassState.passOpen;
+                        if (passActiveForThisList && op.desc.viewportOverride.has_value()) {
+                            applyViewportOverrideUVE(*op.desc.viewportOverride,
+                                                     impl.swapchainExtent.height);
+                        }
+                    } else {
+                        // Offscreen target: validate the contract, then swap instances.
+                        passActiveForThisList = false;
+                        if (op.desc.colorAttachment == kInvalidTextureHandleUVE) {
+                            impl.WarnOnceUVE(
+                                VulkanRenderDeviceUVE::ImplUVE::kWarnedOffscreenPassUVE,
+                                "BeginRenderPassUVE: depth-only offscreen passes are not "
+                                "supported (attach an RGBA8 color texture, or omit the depth "
+                                "attachment for a color pass; submission's draws are skipped)");
+                        } else {
+                            const auto foundColor =
+                                impl.textures.find(op.desc.colorAttachment.value);
+                            ImplUVE::TextureRecordUVE* depthRecord = nullptr;
+                            bool degradeToScratchDepth = false;
+                            bool skipPass = false;
+                            if (foundColor == impl.textures.end()) {
+                                impl.WarnOnceUVE(
+                                    VulkanRenderDeviceUVE::ImplUVE::kWarnedUnknownHandleUVE,
+                                    "BeginRenderPassUVE: unknown color texture handle; "
+                                    "submission's draws are skipped");
+                                skipPass = true;
+                            } else if (foundColor->second.vkFormat != impl.swapchainFormat) {
+                                // RGBA16Float and RGBA8 textures created while the swapchain
+                                // was not a 4x8 RGBA format cannot be attached (the device
+                                // pipeline contract is the swapchain format).
+                                impl.WarnOnceUVE(
+                                    VulkanRenderDeviceUVE::ImplUVE::kWarnedOffscreenUnsupportedUVE,
+                                    "BeginRenderPassUVE: this texture is not attachable on the "
+                                    "device (only RGBA8Unorm textures in the swapchain's format "
+                                    "can be offscreen color targets; submission's draws are "
+                                    "skipped)");
+                                skipPass = true;
+                            }
+                            if (!skipPass && op.desc.depthAttachment != kInvalidTextureHandleUVE) {
+                                const auto foundDepth =
+                                    impl.textures.find(op.desc.depthAttachment.value);
+                                if (foundDepth == impl.textures.end()) {
+                                    impl.WarnOnceUVE(
+                                        VulkanRenderDeviceUVE::ImplUVE::kWarnedUnknownHandleUVE,
+                                        "BeginRenderPassUVE: unknown depth texture handle; "
+                                        "the pass runs depth-tested on a per-extent internal "
+                                        "target instead");
+                                    degradeToScratchDepth = true;
+                                } else if (impl.depthFormat != VK_FORMAT_D32_SFLOAT) {
+                                    // Caller depth textures are D32-only; a D24 device cannot
+                                    // attach them. Scratch depth keeps the pass (test results
+                                    // are simply unobservable — documented boundary).
+                                    impl.WarnOnceUVE(
+                                        VulkanRenderDeviceUVE::ImplUVE::kWarnedOffscreenDepthIncompatibleUVE,
+                                        "BeginRenderPassUVE: caller depth textures require a "
+                                        "D32 depth device; this device is D24 — the pass runs "
+                                        "depth-tested on an internal target instead");
+                                    degradeToScratchDepth = true;
+                                } else {
+                                    depthRecord = &foundDepth->second;
+                                }
+                            }
+                            if (!skipPass) {
+                                const ImplUVE::TextureRecordUVE& color = foundColor->second;
+                                if (op.desc.colorLoadOp != LoadOpUVE::Clear ||
+                                    op.desc.depthLoadOp != LoadOpUVE::Clear) {
+                                    impl.WarnOnceUVE(
+                                        VulkanRenderDeviceUVE::ImplUVE::kWarnedLoadOpUnhonoredUVE,
+                                        "BeginRenderPassUVE requested Load/DontCare on an "
+                                        "offscreen pass; UVE clears such passes exactly once "
+                                        "per pass (see the swapchain contract)");
+                                }
+                                if (impl.framePassState.passOpen) {
+                                    impl.CloseCurrentPassDynamicUVE();
+                                }
+                                if (impl.BeginOffscreenPassDynamicUVE(
+                                        foundColor->second,
+                                        degradeToScratchDepth ? nullptr : depthRecord,
+                                        VkExtent2D{color.desc.width, color.desc.height},
+                                        op.desc.clearColor, op.desc.clearDepth)) {
+                                    passActiveForThisList = true;
+                                    if (op.desc.viewportOverride.has_value()) {
+                                        applyViewportOverrideUVE(*op.desc.viewportOverride,
+                                                                 color.desc.height);
+                                    }
+                                }
+                            }
+                        }
+                    }
                 } else {
-                    passActiveForThisList = true;
-                    if (op.desc.viewportOverride.has_value()) {
-                        const ViewportRectUVE& rect = *op.desc.viewportOverride;
-                        VkViewport viewport{};
-                        viewport.x = static_cast<float>(rect.x);
-                        // Vulkan's positive-Y-down viewport convention places the same GL-style
-                        // top-origin rect by flipping from the framebuffer's bottom edge.
-                        viewport.y = static_cast<float>(static_cast<std::int64_t>(impl.swapchainExtent.height) -
-                                                        static_cast<std::int64_t>(rect.y + rect.height));
-                        viewport.width = static_cast<float>(rect.width);
-                        viewport.height = static_cast<float>(rect.height);
-                        viewport.minDepth = 0.0F;
-                        viewport.maxDepth = 1.0F;
-                        VkRect2D scissor{};
-                        scissor.offset = {static_cast<std::int32_t>(rect.x),
-                                          static_cast<std::int32_t>(viewport.y)};
-                        scissor.extent = {rect.width, rect.height};
-                        impl.vk.vkCmdSetViewport(impl.commandBuffer, 0U, 1U, &viewport);
-                        impl.vk.vkCmdSetScissor(impl.commandBuffer, 0U, 1U, &scissor);
+                    // ------------- classic M1-M2c pass scheduling (unchanged) -------------
+                    if (op.desc.colorAttachment != kInvalidTextureHandleUVE ||
+                        op.desc.depthAttachment != kInvalidTextureHandleUVE) {
+                        impl.WarnOnceUVE(VulkanRenderDeviceUVE::ImplUVE::kWarnedOffscreenPassUVE,
+                            "BeginRenderPassUVE targeting actual texture attachments requires "
+                            "core 1.3 dynamic rendering, which this device/instance does not "
+                            "offer; this submission's draws are skipped");
+                    } else {
+                        passActiveForThisList = true;
+                        if (op.desc.viewportOverride.has_value()) {
+                            // Vulkan's positive-Y-down viewport convention places the same
+                            // GL-style top-origin rect by flipping from the framebuffer's
+                            // bottom edge.
+                            applyViewportOverrideUVE(*op.desc.viewportOverride,
+                                                     impl.swapchainExtent.height);
+                        }
                     }
                 }
             } else if constexpr (std::is_same_v<OpT, EndRenderPassCommandUVE>) {
@@ -2616,30 +3197,48 @@ void VulkanRenderDeviceUVE::PresentUVE() {
         }
     }
 
-    VkRenderPassBeginInfo renderPassBegin{};
-    renderPassBegin.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    renderPassBegin.renderPass = impl.renderPass;
-    renderPassBegin.framebuffer = impl.framebuffers[imageIndex];
-    renderPassBegin.renderArea.offset = {0, 0};
-    renderPassBegin.renderArea.extent = impl.swapchainExtent;
-    renderPassBegin.clearValueCount = 2U; // one per attachment (color + depth)
-    renderPassBegin.pClearValues = clearValues;
-    impl.vk.vkCmdBeginRenderPass(impl.commandBuffer, &renderPassBegin, VK_SUBPASS_CONTENTS_INLINE);
+    if (!impl.useDynamicRendering) {
+        // Classic M1-M2c frame shape, unchanged: ONE swapchain render pass is opened upfront
+        // and every submission replays inside it.
+        VkRenderPassBeginInfo renderPassBegin{};
+        renderPassBegin.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        renderPassBegin.renderPass = impl.renderPass;
+        renderPassBegin.framebuffer = impl.framebuffers[imageIndex];
+        renderPassBegin.renderArea.offset = {0, 0};
+        renderPassBegin.renderArea.extent = impl.swapchainExtent;
+        renderPassBegin.clearValueCount = 2U; // one per attachment (color + depth)
+        renderPassBegin.pClearValues = clearValues;
+        impl.vk.vkCmdBeginRenderPass(impl.commandBuffer, &renderPassBegin,
+                                     VK_SUBPASS_CONTENTS_INLINE);
 
-    // Dynamic viewport/scissor cover the whole surface by default; per-pass viewportOverride
-    // replays apply their own rects from here on.
-    VkViewport viewport{};
-    viewport.x = 0.0F;
-    viewport.y = 0.0F;
-    viewport.width = static_cast<float>(impl.swapchainExtent.width);
-    viewport.height = static_cast<float>(impl.swapchainExtent.height);
-    viewport.minDepth = 0.0F;
-    viewport.maxDepth = 1.0F;
-    VkRect2D scissor{};
-    scissor.offset = {0, 0};
-    scissor.extent = impl.swapchainExtent;
-    impl.vk.vkCmdSetViewport(impl.commandBuffer, 0U, 1U, &viewport);
-    impl.vk.vkCmdSetScissor(impl.commandBuffer, 0U, 1U, &scissor);
+        // Dynamic viewport/scissor cover the whole surface by default; per-pass
+        // viewportOverride replays apply their own rects from here on.
+        VkViewport viewport{};
+        viewport.x = 0.0F;
+        viewport.y = 0.0F;
+        viewport.width = static_cast<float>(impl.swapchainExtent.width);
+        viewport.height = static_cast<float>(impl.swapchainExtent.height);
+        viewport.minDepth = 0.0F;
+        viewport.maxDepth = 1.0F;
+        VkRect2D scissor{};
+        scissor.offset = {0, 0};
+        scissor.extent = impl.swapchainExtent;
+        impl.vk.vkCmdSetViewport(impl.commandBuffer, 0U, 1U, &viewport);
+        impl.vk.vkCmdSetScissor(impl.commandBuffer, 0U, 1U, &scissor);
+    } else {
+        // M2d dynamic-rendering frame: NO pass is opened here. The replay opens the correct
+        // rendering instance lazily at each pass marker (they know the chosen clear values
+        // through framePassState), the tail below closes it and transitions to PRESENT.
+        ImplUVE::FramePassStateUVE& state = impl.framePassState;
+        state.clearValues[0] = clearValues[0];
+        state.clearValues[1] = clearValues[1];
+        state.swapchainImageIndex = imageIndex;
+        state.barrierDoneForSwapchain = false;
+        state.swapchainPassBegunThisFrame = false;
+        state.passOpen = false;
+        state.openPassIsSwapchain = true;
+        state.openOffscreenColorImage = VK_NULL_HANDLE;
+    }
 
     // Replay every submitted recorded command buffer in submission order, inside THIS pass —
     // the M2a integration contract documented at ReplayRecordedCommandsUVE. Weakest-design
@@ -2652,7 +3251,33 @@ void VulkanRenderDeviceUVE::PresentUVE() {
     }
     impl.frameSubmissions.clear(); // consumed — submissions are per-frame content by contract
 
-    impl.vk.vkCmdEndRenderPass(impl.commandBuffer);
+    if (!impl.useDynamicRendering) {
+        impl.vk.vkCmdEndRenderPass(impl.commandBuffer);
+    } else {
+        // Dynamic tail: close whatever rendering instance the replay left open; guarantee
+        // the acquired image actually got an attachment instance this frame (GL parity: the
+        // swapchain is ALWAYS cleared/ready-to-present, even when no default pass posted —
+        // e.g. offscreen-only frames or empty submission streams).
+        impl.CloseCurrentPassDynamicUVE();
+        if (!impl.framePassState.swapchainPassBegunThisFrame) {
+            (void)impl.BeginSwapchainPassDynamicUVE(); // runs the per-frame entry barriers
+            impl.CloseCurrentPassDynamicUVE();
+        }
+        VkImageMemoryBarrier toPresent{};
+        toPresent.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        toPresent.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        toPresent.dstAccessMask = 0U;
+        toPresent.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        toPresent.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+        toPresent.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        toPresent.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        toPresent.image = impl.swapchainImages[imageIndex];
+        toPresent.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0U, 1U, 0U, 1U};
+        impl.vk.vkCmdPipelineBarrier(impl.commandBuffer,
+                                     VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                                     VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0U, 0U, nullptr, 0U,
+                                     nullptr, 1U, &toPresent);
+    }
     if (impl.vk.vkEndCommandBuffer(impl.commandBuffer) != VK_SUCCESS) {
         UVE_WARNING("VulkanRenderDeviceUVE::PresentUVE: vkEndCommandBuffer failed; device going inert");
         impl.usable = false;
@@ -2833,20 +3458,33 @@ bool VulkanRenderDeviceUVE::ReadbackLatestPresentedImageUVE(std::span<std::byte>
 
         ok = impl.vk.vkEndCommandBuffer(copyCommands) == VK_SUCCESS;
     }
+    VkFence readbackFence = VK_NULL_HANDLE;
     if (ok) {
-        // Drain first so the frame fence stays meaningful, then queue the readback on the
-        // same fence (the in-flight fence is stored-present-state, so reuse is deliberate:
-        // next PresentUVE() will wait on exactly this submission's completion as well).
+        // The readback rides its own TRANSIENT fence; the frame's in-flight fence stays
+        // strictly PresentUVE-owned. Reusing the presented-frame fence here was a latent M1
+        // hazard with M2c+: presenting destroys its SubmissionSync pool objects mid-wait
+        // paths and a second readback-twiddle could observe/perturb the frame fence between
+        // its reset and signal, which deadlocked the following PresentUVE's infinite wait.
         (void)impl.vk.vkQueueWaitIdle(impl.presentQueue);
-        (void)impl.vk.vkResetFences(impl.device, 1U, &impl.inFlightFence);
+        VkFenceCreateInfo fenceInfo{};
+        fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+        ok = impl.vk.vkCreateFence(impl.device, &fenceInfo, nullptr, &readbackFence) ==
+             VK_SUCCESS;
+    }
+    if (ok) {
         VkSubmitInfo submitInfo{};
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
         submitInfo.commandBufferCount = 1U;
         submitInfo.pCommandBuffers = &copyCommands;
-        ok = impl.vk.vkQueueSubmit(impl.presentQueue, 1U, &submitInfo, impl.inFlightFence) == VK_SUCCESS;
+        ok = impl.vk.vkQueueSubmit(impl.presentQueue, 1U, &submitInfo, readbackFence) ==
+             VK_SUCCESS;
     }
     if (ok) {
-        ok = impl.vk.vkWaitForFences(impl.device, 1U, &impl.inFlightFence, VK_TRUE, UINT64_MAX) == VK_SUCCESS;
+        ok = impl.vk.vkWaitForFences(impl.device, 1U, &readbackFence, VK_TRUE, UINT64_MAX) ==
+             VK_SUCCESS;
+    }
+    if (readbackFence != VK_NULL_HANDLE) {
+        impl.vk.vkDestroyFence(impl.device, readbackFence, nullptr);
     }
     if (ok) {
         void* mapped = nullptr;
@@ -2880,7 +3518,8 @@ bool VulkanRenderDeviceUVE::ReadbackLatestPresentedImageUVE(std::span<std::byte>
 std::string_view VulkanRenderDeviceUVE::GetBackendNameUVE() const noexcept {
     // Never the unqualified "Vulkan": the current slice must be identifiable in editor
     // overlays and bug reports (see the header's capability-reporting contract).
-    return "Vulkan (M2c textures+staging)";
+    return m_impl->useDynamicRendering ? "Vulkan (M2d offscreen RT)"
+                                       : "Vulkan (M2c textures+staging)";
 }
 
 } // namespace UVE::Render
