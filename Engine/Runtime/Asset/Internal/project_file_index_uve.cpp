@@ -11,36 +11,12 @@
 #include <system_error>
 #include <utility>
 
+#include "project_tree_helpers_uve.h"
+
 #include "uve/asset/i_asset_database_uve.h"
 
 namespace UVE::Asset {
 namespace {
-
-[[nodiscard]] std::optional<std::filesystem::path> MakeRootRelativePathUVE(const std::filesystem::path& path,
-                                                                             const std::filesystem::path& root) {
-    std::error_code errorCode;
-    const std::filesystem::path absolutePath = std::filesystem::absolute(path, errorCode).lexically_normal();
-    if (errorCode) {
-        return std::nullopt;
-    }
-
-    auto rootIt = root.begin();
-    auto pathIt = absolutePath.begin();
-    for (; rootIt != root.end(); ++rootIt, ++pathIt) {
-        if (pathIt == absolutePath.end() || *rootIt != *pathIt) {
-            return std::nullopt;
-        }
-    }
-
-    std::filesystem::path relativePath;
-    for (; pathIt != absolutePath.end(); ++pathIt) {
-        relativePath /= *pathIt;
-    }
-    if (relativePath.empty() || relativePath == ".") {
-        return std::nullopt;
-    }
-    return relativePath.lexically_normal();
-}
 
 [[nodiscard]] bool ProjectFileEntryLessUVE(const ProjectFileEntryUVE& left, const ProjectFileEntryUVE& right) {
     if (left.kind != right.kind) {
@@ -49,22 +25,11 @@ namespace {
     return left.relativePath.generic_string() < right.relativePath.generic_string();
 }
 
-[[nodiscard]] std::filesystem::path NormalizeProjectContentRootUVE(std::filesystem::path path) {
-    path = std::move(path).lexically_normal();
-    // `lexically_normal()` deliberately retains a trailing separator on a relative directory such
-    // as `assets/`. Remove only that empty final component so path iteration cannot mistake it for
-    // a root-boundary mismatch, while preserving absolute filesystem roots such as `/`.
-    if (path.has_relative_path() && path.filename().empty()) {
-        path = path.parent_path();
-    }
-    return path;
-}
-
 } // namespace
 
 struct ProjectFileIndexUVE::ImplUVE {
     explicit ImplUVE(std::filesystem::path configuredContentRoot)
-        : contentRoot(NormalizeProjectContentRootUVE(std::move(configuredContentRoot))) {
+        : contentRoot(Detail::NormalizeProjectContentRootUVE(std::move(configuredContentRoot))) {
         snapshot.contentRoot = contentRoot;
     }
 
@@ -115,58 +80,32 @@ bool ProjectFileIndexUVE::RefreshUVE(const IAssetDatabaseUVE& assetDatabase) {
     }
     refreshedSnapshot.contentRootExists = true;
 
-    std::map<std::string, AssetGuidUVE> registeredAssetsByRelativePath;
-    for (const AssetRecordUVE& record : assetDatabase.GetRegisteredAssetsUVE()) {
-        const std::optional<std::filesystem::path> relativePath =
-            MakeRootRelativePathUVE(record.path, absoluteContentRoot);
-        if (!relativePath.has_value()) {
-            continue;
-        }
-        registeredAssetsByRelativePath.emplace(relativePath->generic_string(), record.guid);
-    }
+    const std::map<std::string, AssetGuidUVE> registeredAssetsByRelativePath =
+        Detail::BuildRegisteredAssetsByRelativePathUVE(absoluteContentRoot, assetDatabase);
 
-    std::filesystem::recursive_directory_iterator iterator(
-        absoluteContentRoot, std::filesystem::directory_options::skip_permission_denied, errorCode);
-    if (errorCode) {
+    // The traversal itself - iterator lifecycle, symlink fencing, root-boundary checks - is
+    // shared with ProjectChangeWatcherUVE (Detail::WalkProjectContentTreeUVE); the index keeps
+    // its historical silent-failure contract and discards the diagnostic.
+    std::string walkDiagnostic;
+    const auto indexOneEntry = [&refreshedSnapshot, &registeredAssetsByRelativePath](
+                                   const std::filesystem::path& /*absoluteEntryPath*/,
+                                   const std::filesystem::path& relativePath,
+                                   const ProjectFileEntryKindUVE kind) {
+        ProjectFileEntryUVE indexedEntry;
+        indexedEntry.relativePath = relativePath;
+        indexedEntry.kind = kind;
+        if (kind == ProjectFileEntryKindUVE::File) {
+            const auto registeredIt =
+                registeredAssetsByRelativePath.find(relativePath.generic_string());
+            if (registeredIt != registeredAssetsByRelativePath.end()) {
+                indexedEntry.registeredAssetGuid = registeredIt->second;
+            }
+        }
+        refreshedSnapshot.entries.push_back(std::move(indexedEntry));
+        return true;
+    };
+    if (!Detail::WalkProjectContentTreeUVE(absoluteContentRoot, walkDiagnostic, indexOneEntry)) {
         return false;
-    }
-
-    const std::filesystem::recursive_directory_iterator end;
-    while (iterator != end) {
-        const std::filesystem::directory_entry entry = *iterator;
-        const std::filesystem::file_status entryStatus = entry.symlink_status(errorCode);
-        if (errorCode) {
-            return false;
-        }
-
-        if (std::filesystem::is_symlink(entryStatus)) {
-            iterator.disable_recursion_pending();
-        } else if (std::filesystem::is_directory(entryStatus) || std::filesystem::is_regular_file(entryStatus)) {
-            const std::optional<std::filesystem::path> relativePath =
-                MakeRootRelativePathUVE(entry.path(), absoluteContentRoot);
-            if (!relativePath.has_value()) {
-                return false;
-            }
-
-            ProjectFileEntryUVE indexedEntry;
-            indexedEntry.relativePath = *relativePath;
-            indexedEntry.kind = std::filesystem::is_directory(entryStatus) ? ProjectFileEntryKindUVE::Directory
-                                                                            : ProjectFileEntryKindUVE::File;
-            if (indexedEntry.kind == ProjectFileEntryKindUVE::File) {
-                const auto registeredIt = registeredAssetsByRelativePath.find(indexedEntry.relativePath.generic_string());
-                if (registeredIt != registeredAssetsByRelativePath.end()) {
-                    indexedEntry.registeredAssetGuid = registeredIt->second;
-                }
-            }
-            refreshedSnapshot.entries.push_back(std::move(indexedEntry));
-        } else {
-            iterator.disable_recursion_pending();
-        }
-
-        iterator.increment(errorCode);
-        if (errorCode) {
-            return false;
-        }
     }
 
     std::sort(refreshedSnapshot.entries.begin(), refreshedSnapshot.entries.end(), ProjectFileEntryLessUVE);
