@@ -44,6 +44,7 @@ struct VkFunctionsUVE {
     PFN_vkGetPhysicalDeviceSurfaceFormatsKHR vkGetPhysicalDeviceSurfaceFormatsKHR = nullptr;
     PFN_vkGetPhysicalDeviceSurfacePresentModesKHR vkGetPhysicalDeviceSurfacePresentModesKHR = nullptr;
     PFN_vkGetPhysicalDeviceMemoryProperties vkGetPhysicalDeviceMemoryProperties = nullptr;
+    PFN_vkGetPhysicalDeviceFormatProperties vkGetPhysicalDeviceFormatProperties = nullptr;
     PFN_vkCreateDevice vkCreateDevice = nullptr;
     PFN_vkGetDeviceProcAddr vkGetDeviceProcAddr = nullptr;
     PFN_vkDestroySurfaceKHR vkDestroySurfaceKHR = nullptr;
@@ -104,6 +105,21 @@ struct VkFunctionsUVE {
     PFN_vkCmdDrawIndexed vkCmdDrawIndexed = nullptr;
     PFN_vkCmdSetViewport vkCmdSetViewport = nullptr;
     PFN_vkCmdSetScissor vkCmdSetScissor = nullptr;
+
+    // M2b "uniforms+depth" additions: images (depth target), descriptor machinery (dynamic
+    // uniform buffers), and per-draw pushes.
+    PFN_vkCreateImage vkCreateImage = nullptr;
+    PFN_vkDestroyImage vkDestroyImage = nullptr;
+    PFN_vkGetImageMemoryRequirements vkGetImageMemoryRequirements = nullptr;
+    PFN_vkBindImageMemory vkBindImageMemory = nullptr;
+    PFN_vkCreateDescriptorSetLayout vkCreateDescriptorSetLayout = nullptr;
+    PFN_vkDestroyDescriptorSetLayout vkDestroyDescriptorSetLayout = nullptr;
+    PFN_vkCreateDescriptorPool vkCreateDescriptorPool = nullptr;
+    PFN_vkDestroyDescriptorPool vkDestroyDescriptorPool = nullptr;
+    PFN_vkAllocateDescriptorSets vkAllocateDescriptorSets = nullptr;
+    PFN_vkUpdateDescriptorSets vkUpdateDescriptorSets = nullptr;
+    PFN_vkCmdBindDescriptorSets vkCmdBindDescriptorSets = nullptr;
+    PFN_vkCmdPushConstants vkCmdPushConstants = nullptr;
 
     /// Opens the platform Vulkan loader library by its conventional sonames and resolves
     /// vkGetInstanceProcAddr plus the global-level entry points above. `lsan`-clean as well:

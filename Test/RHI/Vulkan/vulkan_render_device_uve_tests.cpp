@@ -19,7 +19,9 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <cstdlib>
+#include <map>
 #include <memory>
 #include <string>
 #include <type_traits>
@@ -350,6 +352,171 @@ TEST_F(VulkanRenderDeviceUVETest, SubmittedTriangleCommandBufferReallyRendersPix
         << topRight[0] << "," << topRight[1] << "," << topRight[2] << ")";
     EXPECT_GT(bottom[2], bottom[0] + 40) << "bottom-center must be blue-dominant: ("
         << bottom[0] << "," << bottom[1] << "," << bottom[2] << ")";
+
+    device->DestroyBufferUVE(vertexBuffer);
+    device->DestroyPipelineUVE(pipeline);
+    device->DestroyShaderUVE(vertexShader);
+    device->DestroyShaderUVE(fragmentShader);
+}
+
+
+TEST_F(VulkanRenderDeviceUVETest, ReflectedUniformsMatchTheSpirvLayout) {
+    // M2b: CreatePipelineUVE now parses the SPIR-V modules with SPIRV-Reflect.
+    // The depth-uniform pair declares exactly: UBO block { float uDepth; vec3 uColorTri; }
+    // plus push-constant block { float uOffsetX; float uOffsetY; } — the reflection service
+    // must report all four with matching types (location is backend-internal: not asserted).
+    ShaderDescUVE vertexDesc{};
+    vertexDesc.stage = ShaderStageUVE::Vertex;
+    vertexDesc.sourceCode = kDepthUniformVertexSpirvUVE;
+    ShaderDescUVE fragmentDesc{};
+    fragmentDesc.stage = ShaderStageUVE::Fragment;
+    fragmentDesc.sourceCode = kDepthUniformFragmentSpirvUVE;
+    const ShaderHandleUVE vertexShader = device->CreateShaderUVE(vertexDesc);
+    const ShaderHandleUVE fragmentShader = device->CreateShaderUVE(fragmentDesc);
+    ASSERT_NE(vertexShader, kInvalidShaderHandleUVE);
+    ASSERT_NE(fragmentShader, kInvalidShaderHandleUVE);
+
+    PipelineDescUVE pipelineDesc{};
+    pipelineDesc.vertexShader = vertexShader;
+    pipelineDesc.fragmentShader = fragmentShader;
+    pipelineDesc.vertexStride = 12U;
+    pipelineDesc.vertexLayout.push_back(VertexAttributeUVE{"POSITION", VertexAttributeFormatUVE::Float3, 0U});
+    pipelineDesc.depthTestEnabled = true;
+    pipelineDesc.depthWriteEnabled = true;
+    const PipelineHandleUVE pipeline = device->CreatePipelineUVE(pipelineDesc);
+    ASSERT_NE(pipeline, kInvalidPipelineHandleUVE);
+
+    const std::vector<UniformReflectionUVE> uniforms = device->GetPipelineUniformsUVE(pipeline);
+    ASSERT_EQ(uniforms.size(), 4U) << "expected uDepth, uColorTri, uOffsetX, uOffsetY";
+    std::map<std::string, ShaderDataTypeUVE> byName;
+    for (const UniformReflectionUVE& entry : uniforms) {
+        byName.emplace(entry.name, entry.type);
+    }
+    EXPECT_EQ(byName.count("uDepth"), 1U);
+    EXPECT_EQ(byName.at("uDepth"), ShaderDataTypeUVE::Float);
+    EXPECT_EQ(byName.count("uColorTri"), 1U);
+    EXPECT_EQ(byName.at("uColorTri"), ShaderDataTypeUVE::Vec3);
+    EXPECT_EQ(byName.count("uOffsetX"), 1U);
+    EXPECT_EQ(byName.at("uOffsetX"), ShaderDataTypeUVE::Float);
+    EXPECT_EQ(byName.count("uOffsetY"), 1U);
+    EXPECT_EQ(byName.at("uOffsetY"), ShaderDataTypeUVE::Float);
+
+    device->DestroyPipelineUVE(pipeline);
+    device->DestroyShaderUVE(vertexShader);
+    device->DestroyShaderUVE(fragmentShader);
+}
+
+TEST_F(VulkanRenderDeviceUVETest, DepthAndPerDrawUniformSnapshotsRenderCorrectly) {
+    // The M2b pixel proof, all three claims in one frame:
+    //   (1) DEPTH: the NEARER triangle (green, z=0.1) is drawn FIRST, the FARTHER one
+    //       (red, z=0.5) SECOND. Painter's order would leave red in the overlap; real depth
+    //       testing leaves green. center pixel green => depth attachment + state are real.
+    //   (2) PER-DRAW UBO SNAPSHOTS: one pipeline, different uDepth/uColorTri between two
+    //       draws via the dynamic-offset frame ring. The left region must be red and the
+    //       right region green simultaneously — a shared/broken snapshot would leak one
+    //       draw's uniform block into the other and produce one color for both halves.
+    //   (3) PUSH CONSTANTS: uOffsetX shifts each triangle sideways (0.15/-0.15); if the push
+    //       flush were broken, both triangles would sit centered and the overlap would
+    //       cover the whole shape — the red-only left pixel sample would then be green.
+    ShaderDescUVE vertexDesc{};
+    vertexDesc.stage = ShaderStageUVE::Vertex;
+    vertexDesc.sourceCode = kDepthUniformVertexSpirvUVE;
+    ShaderDescUVE fragmentDesc{};
+    fragmentDesc.stage = ShaderStageUVE::Fragment;
+    fragmentDesc.sourceCode = kDepthUniformFragmentSpirvUVE;
+    const ShaderHandleUVE vertexShader = device->CreateShaderUVE(vertexDesc);
+    const ShaderHandleUVE fragmentShader = device->CreateShaderUVE(fragmentDesc);
+    ASSERT_NE(vertexShader, kInvalidShaderHandleUVE);
+    ASSERT_NE(fragmentShader, kInvalidShaderHandleUVE);
+
+    PipelineDescUVE pipelineDesc{};
+    pipelineDesc.vertexShader = vertexShader;
+    pipelineDesc.fragmentShader = fragmentShader;
+    pipelineDesc.vertexStride = 12U;
+    pipelineDesc.vertexLayout.push_back(VertexAttributeUVE{"POSITION", VertexAttributeFormatUVE::Float3, 0U});
+    pipelineDesc.depthTestEnabled = true;
+    pipelineDesc.depthWriteEnabled = true;
+    const PipelineHandleUVE pipeline = device->CreatePipelineUVE(pipelineDesc);
+    ASSERT_NE(pipeline, kInvalidPipelineHandleUVE);
+
+    const float vertices[9] = {
+        -0.6F, -0.6F, 0.0F,
+         0.6F, -0.6F, 0.0F,
+         0.0F,  0.6F, 0.0F,
+    };
+    BufferDescUVE bufferDesc{};
+    bufferDesc.sizeBytes = sizeof(vertices);
+    bufferDesc.usage = BufferUsageUVE::Vertex;
+    const BufferHandleUVE vertexBuffer = device->CreateBufferUVE(bufferDesc,
+        std::span<const std::byte>(reinterpret_cast<const std::byte*>(vertices), sizeof(vertices)));
+    ASSERT_NE(vertexBuffer, kInvalidBufferHandleUVE);
+
+    auto commandBuffer = device->CreateCommandBufferUVE();
+    ASSERT_NE(commandBuffer, nullptr);
+    RenderPassDescUVE passDesc{};
+    passDesc.colorLoadOp = LoadOpUVE::Clear;
+    passDesc.clearColor = {0.05F, 0.07F, 0.12F, 1.0F};
+    passDesc.depthLoadOp = LoadOpUVE::Clear;
+    passDesc.clearDepth = 1.0F;
+    commandBuffer->BeginRenderPassUVE(passDesc);
+    commandBuffer->BindPipelineUVE(pipeline);
+    commandBuffer->BindVertexBufferUVE(vertexBuffer);
+    // Reflection-API robustness, folded in for free: unknown names and wrong value types
+    // must degrade to a logged no-op mid-recording, never crash and never corrupt state.
+    commandBuffer->SetUniformFloatUVE("uDoesNotExist", 123.0F);
+    commandBuffer->SetUniformVector3UVE("uDepth", Math::Vector3UVE{1.0F, 1.0F, 1.0F});
+    // Draw 1 — FRONT: green, nearer (z = 0.1), shifted right by push constants.
+    commandBuffer->SetUniformVector3UVE("uColorTri", Math::Vector3UVE{0.0F, 1.0F, 0.0F});
+    commandBuffer->SetUniformFloatUVE("uDepth", 0.1F);
+    commandBuffer->SetUniformFloatUVE("uOffsetX", 0.15F);
+    commandBuffer->SetUniformFloatUVE("uOffsetY", 0.0F);
+    commandBuffer->DrawUVE(3U);
+    // Draw 2 — BACK: red, farther (z = 0.5), shifted left. Drawn SECOND: if depth testing
+    // is broken, red wins the overlap by submission order; if depth works, green stays.
+    commandBuffer->SetUniformVector3UVE("uColorTri", Math::Vector3UVE{1.0F, 0.0F, 0.0F});
+    commandBuffer->SetUniformFloatUVE("uDepth", 0.5F);
+    commandBuffer->SetUniformFloatUVE("uOffsetX", -0.15F);
+    commandBuffer->SetUniformFloatUVE("uOffsetY", 0.0F);
+    commandBuffer->DrawUVE(3U);
+    commandBuffer->EndRenderPassUVE();
+    device->SubmitUVE(std::move(commandBuffer));
+
+    device->PresentUVE();
+    ASSERT_TRUE(device->IsUsableUVE());
+
+    std::vector<std::byte> pixels(1280U * 720U * 4U);
+    std::uint32_t width = 0;
+    std::uint32_t height = 0;
+    ASSERT_TRUE(device->ReadbackLatestPresentedImageUVE(pixels, width, height));
+    if (width == 0U || height == 0U) {
+        GTEST_SKIP() << "driver reported a zero-sized extent; coverage math needs pixels";
+    }
+    const auto channelAt = [&](const std::uint32_t x, const std::uint32_t y) {
+        const std::size_t base = (static_cast<std::size_t>(y) * width + x) * 4U;
+        return std::array<int, 3>{static_cast<int>(pixels[base]),
+                                  static_cast<int>(pixels[base + 1]),
+                                  static_cast<int>(pixels[base + 2])};
+    };
+    // NDC (-0.45, -0.2) / (0, -0.2) / (0.45, -0.2); Vulkan NATIVE orientation maps NDC y=-1
+    // to the framebuffer TOP row (the M2a pixel test's documented convention — the same
+    // mapping the GPU rasterizes, no hidden flips), so pixel-y = (ndc_y + 1) / 2 * height.
+    const auto pixelX = [&](const float ndcX) {
+        return static_cast<std::uint32_t>((ndcX + 1.0F) * 0.5F * static_cast<float>(width));
+    };
+    const auto pixelY = [&](const float ndcY) {
+        return static_cast<std::uint32_t>((ndcY + 1.0F) * 0.5F * static_cast<float>(height));
+    };
+    const auto redOnly = channelAt(pixelX(-0.45F), pixelY(-0.2F));
+    const auto overlap = channelAt(pixelX(0.0F), pixelY(-0.2F));
+    const auto greenOnly = channelAt(pixelX(0.45F), pixelY(-0.2F));
+    EXPECT_GT(redOnly[0], redOnly[1] + 40) << "left region must be red-dominant (push-offset "
+        "proof): (" << redOnly[0] << "," << redOnly[1] << "," << redOnly[2] << ")";
+    EXPECT_GT(overlap[1], overlap[0] + 40) << "overlap must be GREEN-dominant: nearer draw-1 "
+        "wins despite being drawn first, which painter's order cannot do (depth proof): ("
+        << overlap[0] << "," << overlap[1] << "," << overlap[2] << ")";
+    EXPECT_GT(greenOnly[1], greenOnly[0] + 40) << "right region must be green-dominant "
+        "(per-draw UBO snapshot proof): (" << greenOnly[0] << "," << greenOnly[1] << ","
+        << greenOnly[2] << ")";
 
     device->DestroyBufferUVE(vertexBuffer);
     device->DestroyPipelineUVE(pipeline);

@@ -88,11 +88,16 @@ publicly shipping real-time engines as of today, without naming any of them.
 - [~] A modern explicit graphics API backend (the kind that supports multi-threaded command
   recording, explicit memory/barrier management) as a second real backend, so the RHI
   abstraction is proven against more than one implementation — **in progress:** the Vulkan
-  backend reached slice M2a 2026-09-17: real buffers (host-visible policy), SPIR-V shader
-  modules, fixed-function pipelines, recorded command buffers, and Draw/DrawIndexed replay
-  verified pixel-wise in CI (lavapipe) and locally (SwiftShader offscreen harness). Remaining
-  for full parity: textures/render-targets/depth, uniforms via descriptor sets + push
-  constants, device-local staging uploads, multi-threaded command recording, and shader
+  backend reached slice M2b 2026-09-17: real buffers (host-visible policy), SPIR-V shader
+  modules, fixed-function pipelines, recorded command buffers, Draw/DrawIndexed replay,
+  SPIRV-Reflect-driven uniforms (set-0 UBO blocks over one shared 1 MiB/frame dynamic-offset
+  ring plus push constants, SetUniform* by reflected member name), and a real depth
+  attachment honoring depthTest/depthWrite — all verified pixel-wise locally (SwiftShader
+  offscreen harness: overlapping-triangle depth+snapshot screenshot) with the same scenes in
+  tier-2 CI tests. Remaining for full parity: textures/render-targets/samplers (descriptor
+  types beyond uniform blocks — pipeline creation already fails loudly naming M2c),
+  offscreen passes, loadOp semantics, device-local staging uploads, multi-threaded command
+  recording, and shader
   cross-compilation tooling (tracked separately below)
 - [ ] A backend for each target OS's native graphics API where OpenGL is not the best
   choice on that platform
