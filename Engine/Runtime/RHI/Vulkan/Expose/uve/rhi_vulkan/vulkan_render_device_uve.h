@@ -53,7 +53,7 @@
 // strictly PresentUVE-owned).
 //
 // Capability reporting is honest and upstream-visible: GetBackendNameUVE() says
-// "Vulkan (M2d offscreen RT)" on dynamic-rendering devices, "Vulkan (M2c textures+staging)"
+// "Vulkan (M2e depth+Load policies)" on dynamic-rendering devices, "Vulkan (M2c textures+staging)"
 // on classic ones — never "Vulkan" unqualified — so logs, editor overlays, and bug reports
 // cannot mistake the current slice for the finished backend, and IsUsableUVE() reflects the
 // real instance/device/swapchain bring-up result.
