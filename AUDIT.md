@@ -178,7 +178,7 @@ Ang isyu rito ay hindi ang 50-linyang bridge clones — kundi ang **dalawang edi
 | `project_change_watcher_uve.cpp` ↔ `project_file_index_uve.cpp` | ~80 ln (4 windows) | Directory-walk + hash logic copy. P2. |
 | `marker_3d_uve.cpp` ↔ `spawn_point_3d_uve.cpp` | 100% (12 ln) | Trivial node stubs — OK habang maliit, i-note lang. |
 | `null_render_device_uve.h` ↔ `gl_render_device_uve.h` | 3 windows | RHI backend declaration drift — expected per-backend karaniwan ito; i-double check ang API parity sa CI. |
-| `mesh_thumbnail_renderer_uve.cpp` ↔ `gl_functions_uve.h` | 3 windows | GL loader code mula EditorCore na lumabas din sa RHI/OpenGL — **two GL proc-loading paths**; ang EditorCore ay dapat humiram sa `uve_rhi_opengl` imbes na mag-openGL functions mismo. P2. |
+| `mesh_thumbnail_renderer_uve.cpp` ↔ `gl_functions_uve.h` | 3 windows | **RESOLVED 2026-09-17** — see follow-up log (§5.6). Single shared loader na ngayon. |
 
 ---
 
@@ -294,4 +294,7 @@ Tatlong lugar ang may say sa "ano ang node/entity": `Component` (25 headers ng c
 
 - **2026-09-17 (§7 target-naming polish):** `uve_debug` → `uve_logging` (Logging was the lone target whose name didn't match its module), and its include prefix `uve/debug/` → `uve/logging/` for full consistency with the §6.2 owner-per-prefix rule. `Engine/CMake/UveFormatSupport.cmake` comment re-pointed as well. Zero `uve_debug` / `uve/debug/` references remain. The `univex_*` viewport library names are deliberately kept: the Viewport is one self-consistent brand (`univex/` prefix, `univex::` namespace) and renaming only its CMake targets while the namespace stays would *add* confusion, not remove it.
 
-Remaining open item: §5.6 (EditorCore GL loader half — needs the editor↔RHI GL-loader contract; CI-only verifiable).
+- **2026-09-17 (§5.6 EditorCore GL-loader half RESOLVED — audit action list complete):** `gl_functions_uve.h` promoted from RHI-internal to a documented public contract at `uve/rhi_opengl/gl_functions_uve.h` (the GL type surface *is* the contract — documented exception to the confinement rule), extended with the five renderbuffer/FBO entry points the thumbnail renderer needs. `mesh_thumbnail_renderer_uve.cpp` deleted its entire hand-rolled loader (~45 `LoadOneUVE` sites + its own proc struct + its own `IsCompleteUVE`) and now calls `Render::Detail::LoadGlFunctionsUVE` once (with the same one-line GLFW adapter GlRenderDeviceUVE passes); **179 deletions / 120 insertions** and the duplicate-window count between the two files drops to 0. The header now documents the two sanctioned consumers (GlRenderDeviceUVE, MeshThumbnailRendererUVE) and the rule that anything larger than a tiny self-contained preview belongs behind `IRenderDeviceUVE`.
+- This change was made possible by a new sandbox capability established during this session: a full local verify stack (real GLFW with the Null platform, real zlib/libjpeg-turbo built from source, real Khronos/GLFW headers, and no-op stub archives only for link-satisfaction of `libGL`/`libGLEW`). With it the sandbox built **100% of targets including both editors and all four test executables**, and ran the **full 2,080-test suite locally** (passing; a handful of watcher/save-scratch tests flake only under `-j2` load on the emulated filesystem and pass on every rerun, matching their two consecutive green CI runs).
+
+**All prioritized items (P0 #1–#3, P1, P2, P3) from §9 are now RESOLVED. Nothing remains on the audit action list.**

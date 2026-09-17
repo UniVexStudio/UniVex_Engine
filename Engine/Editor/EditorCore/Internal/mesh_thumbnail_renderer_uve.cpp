@@ -8,13 +8,16 @@
 #include <cstddef>
 #include <cstdint>
 
-// See gl_functions_uve.h (engine/render/src/) for why glext.h is safe to include here: it only
-// supplies Khronos PFNGL*PROC typedefs and GL_* constants, never a loader library. Module-private
-// (engine/editor/src/ only) - this class's public header never includes a GL header, matching
-// this codebase's established GL-header-confinement discipline.
+// See uve/rhi_opengl/gl_functions_uve.h for why glext.h is safe to include here: it only
+// supplies Khronos PFNGL*PROC typedefs and GL_* constants, never a loader library. The GL proc
+// loading itself is NOT hand-rolled here anymore - this class shares the engine's one contract
+// loader (AUDIT 5.6, EditorCore half). The GL surface stays confined to this .cpp: the public
+// header below never includes a GL header.
 #include <GL/gl.h>
 #include <GL/glext.h>
 #include <GLFW/glfw3.h>
+
+#include "uve/rhi_opengl/gl_functions_uve.h"
 
 #include "uve/asset/mesh_asset_uve.h"
 #include "uve/math/aabb_uve.h"
@@ -60,17 +63,19 @@ void main() {
 }
 )GLSL";
 
-template <typename TFunctionPointer>
-[[nodiscard]] TFunctionPointer LoadOneUVE(const char* const name) noexcept {
-    return reinterpret_cast<TFunctionPointer>(reinterpret_cast<void*>(glfwGetProcAddress(name)));
-}
-
 void SetGlCapabilityUVE(const GLenum capability, const GLboolean enabled) noexcept {
     if (enabled == GL_TRUE) {
         glEnable(capability);
     } else {
         glDisable(capability);
     }
+}
+
+/// Bridges GLFW's proc-address lookup (GLFWglproc, a void(*)(void)) to the shared GL loader's
+/// void*-based signature - the same one-line adapter GlRenderDeviceUVE passes (see
+/// gl_render_device_uve.cpp); all actual per-function loading lives in gl_functions_uve.cpp.
+[[nodiscard]] void* GrabGlProcAddressUVE(const char* const name) noexcept {
+    return reinterpret_cast<void*>(glfwGetProcAddress(name));
 }
 
 } // namespace
@@ -80,48 +85,13 @@ void SetGlCapabilityUVE(const GLenum capability, const GLboolean enabled) noexce
 /// scoped to exactly what a single-mesh, no-material preview render needs - mirrors
 /// engine/render/src/gl_functions_uve.h's precedent rather than depending on it, since that header
 /// is private to engine/render and this class is deliberately independent of engine/render.
+/// The shared GL proc table (see uve/rhi_opengl/gl_functions_uve.h), compiled shader program, and
+/// scratch render target this renderer needs, kept out of the public header (see the header's class
+/// doc comment). Historical note: this class used to keep its own hand-rolled loader struct here -
+/// collapsed into the engine's one shared contract (AUDIT 5.6); only the genuinely preview-specific
+/// state below remains local.
 struct MeshThumbnailRendererUVE::GlStateUVE {
-    PFNGLGENBUFFERSPROC glGenBuffers = nullptr;
-    PFNGLDELETEBUFFERSPROC glDeleteBuffers = nullptr;
-    PFNGLBINDBUFFERPROC glBindBuffer = nullptr;
-    PFNGLBUFFERDATAPROC glBufferData = nullptr;
-
-    PFNGLGENVERTEXARRAYSPROC glGenVertexArrays = nullptr;
-    PFNGLDELETEVERTEXARRAYSPROC glDeleteVertexArrays = nullptr;
-    PFNGLBINDVERTEXARRAYPROC glBindVertexArray = nullptr;
-    PFNGLVERTEXATTRIBPOINTERPROC glVertexAttribPointer = nullptr;
-    PFNGLENABLEVERTEXATTRIBARRAYPROC glEnableVertexAttribArray = nullptr;
-
-    PFNGLCREATESHADERPROC glCreateShader = nullptr;
-    PFNGLDELETESHADERPROC glDeleteShader = nullptr;
-    PFNGLSHADERSOURCEPROC glShaderSource = nullptr;
-    PFNGLCOMPILESHADERPROC glCompileShader = nullptr;
-    PFNGLGETSHADERIVPROC glGetShaderiv = nullptr;
-    PFNGLGETSHADERINFOLOGPROC glGetShaderInfoLog = nullptr;
-
-    PFNGLCREATEPROGRAMPROC glCreateProgram = nullptr;
-    PFNGLDELETEPROGRAMPROC glDeleteProgram = nullptr;
-    PFNGLATTACHSHADERPROC glAttachShader = nullptr;
-    PFNGLLINKPROGRAMPROC glLinkProgram = nullptr;
-    PFNGLGETPROGRAMIVPROC glGetProgramiv = nullptr;
-    PFNGLGETPROGRAMINFOLOGPROC glGetProgramInfoLog = nullptr;
-    PFNGLUSEPROGRAMPROC glUseProgram = nullptr;
-
-    PFNGLGENFRAMEBUFFERSPROC glGenFramebuffers = nullptr;
-    PFNGLDELETEFRAMEBUFFERSPROC glDeleteFramebuffers = nullptr;
-    PFNGLBINDFRAMEBUFFERPROC glBindFramebuffer = nullptr;
-    PFNGLFRAMEBUFFERTEXTURE2DPROC glFramebufferTexture2D = nullptr;
-    PFNGLFRAMEBUFFERRENDERBUFFERPROC glFramebufferRenderbuffer = nullptr;
-    PFNGLCHECKFRAMEBUFFERSTATUSPROC glCheckFramebufferStatus = nullptr;
-
-    PFNGLGENRENDERBUFFERSPROC glGenRenderbuffers = nullptr;
-    PFNGLDELETERENDERBUFFERSPROC glDeleteRenderbuffers = nullptr;
-    PFNGLBINDRENDERBUFFERPROC glBindRenderbuffer = nullptr;
-    PFNGLRENDERBUFFERSTORAGEPROC glRenderbufferStorage = nullptr;
-
-    PFNGLGETUNIFORMLOCATIONPROC glGetUniformLocation = nullptr;
-    PFNGLUNIFORMMATRIX4FVPROC glUniformMatrix4fv = nullptr;
-    PFNGLUNIFORM3FVPROC glUniform3fv = nullptr;
+    Render::Detail::GlFunctionsUVE table;
 
     bool functionsLoaded = false;
 
@@ -135,38 +105,22 @@ struct MeshThumbnailRendererUVE::GlStateUVE {
     GLuint scratchDepthRenderbuffer = 0U;
     int scratchWidth = 0;
     int scratchHeight = 0;
-
-    [[nodiscard]] bool IsCompleteUVE() const noexcept {
-        return glGenBuffers != nullptr && glDeleteBuffers != nullptr && glBindBuffer != nullptr &&
-               glBufferData != nullptr && glGenVertexArrays != nullptr && glDeleteVertexArrays != nullptr &&
-               glBindVertexArray != nullptr && glVertexAttribPointer != nullptr &&
-               glEnableVertexAttribArray != nullptr && glCreateShader != nullptr && glDeleteShader != nullptr &&
-               glShaderSource != nullptr && glCompileShader != nullptr && glGetShaderiv != nullptr &&
-               glGetShaderInfoLog != nullptr && glCreateProgram != nullptr && glDeleteProgram != nullptr &&
-               glAttachShader != nullptr && glLinkProgram != nullptr && glGetProgramiv != nullptr &&
-               glGetProgramInfoLog != nullptr && glUseProgram != nullptr && glGenFramebuffers != nullptr &&
-               glDeleteFramebuffers != nullptr && glBindFramebuffer != nullptr && glFramebufferTexture2D != nullptr &&
-               glFramebufferRenderbuffer != nullptr && glCheckFramebufferStatus != nullptr &&
-               glGenRenderbuffers != nullptr && glDeleteRenderbuffers != nullptr && glBindRenderbuffer != nullptr &&
-               glRenderbufferStorage != nullptr && glGetUniformLocation != nullptr && glUniformMatrix4fv != nullptr &&
-               glUniform3fv != nullptr;
-    }
 };
 
 namespace {
 
 [[nodiscard]] bool CompileShaderStageUVE(MeshThumbnailRendererUVE::GlStateUVE& gl, const GLenum stage,
                                           const char* const source, GLuint& outShader) noexcept {
-    outShader = gl.glCreateShader(stage);
+    outShader = gl.table.glCreateShader(stage);
     if (outShader == 0U) {
         return false;
     }
-    gl.glShaderSource(outShader, 1, &source, nullptr);
-    gl.glCompileShader(outShader);
+    gl.table.glShaderSource(outShader, 1, &source, nullptr);
+    gl.table.glCompileShader(outShader);
     GLint compiled = GL_FALSE;
-    gl.glGetShaderiv(outShader, GL_COMPILE_STATUS, &compiled);
+    gl.table.glGetShaderiv(outShader, GL_COMPILE_STATUS, &compiled);
     if (compiled == GL_FALSE) {
-        gl.glDeleteShader(outShader);
+        gl.table.glDeleteShader(outShader);
         outShader = 0U;
         return false;
     }
@@ -182,21 +136,21 @@ namespace {
                                            const int height) noexcept {
     const bool firstTime = gl.scratchFramebuffer == 0U;
     if (firstTime) {
-        gl.glGenFramebuffers(1, &gl.scratchFramebuffer);
-        gl.glGenRenderbuffers(1, &gl.scratchDepthRenderbuffer);
+        gl.table.glGenFramebuffers(1, &gl.scratchFramebuffer);
+        gl.table.glGenRenderbuffers(1, &gl.scratchDepthRenderbuffer);
         if (gl.scratchFramebuffer == 0U || gl.scratchDepthRenderbuffer == 0U) {
             return false;
         }
     }
     if (firstTime || gl.scratchWidth != width || gl.scratchHeight != height) {
-        gl.glBindRenderbuffer(GL_RENDERBUFFER, gl.scratchDepthRenderbuffer);
-        gl.glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, width, height);
+        gl.table.glBindRenderbuffer(GL_RENDERBUFFER, gl.scratchDepthRenderbuffer);
+        gl.table.glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, width, height);
         gl.scratchWidth = width;
         gl.scratchHeight = height;
     }
     if (firstTime) {
-        gl.glBindFramebuffer(GL_FRAMEBUFFER, gl.scratchFramebuffer);
-        gl.glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER,
+        gl.table.glBindFramebuffer(GL_FRAMEBUFFER, gl.scratchFramebuffer);
+        gl.table.glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER,
                                       gl.scratchDepthRenderbuffer);
     }
     return true;
@@ -211,49 +165,8 @@ void MeshThumbnailRendererUVE::InitializeUVE() {
     m_gl = std::make_unique<GlStateUVE>();
     GlStateUVE& gl = *m_gl;
 
-    gl.glGenBuffers = LoadOneUVE<PFNGLGENBUFFERSPROC>("glGenBuffers");
-    gl.glDeleteBuffers = LoadOneUVE<PFNGLDELETEBUFFERSPROC>("glDeleteBuffers");
-    gl.glBindBuffer = LoadOneUVE<PFNGLBINDBUFFERPROC>("glBindBuffer");
-    gl.glBufferData = LoadOneUVE<PFNGLBUFFERDATAPROC>("glBufferData");
-
-    gl.glGenVertexArrays = LoadOneUVE<PFNGLGENVERTEXARRAYSPROC>("glGenVertexArrays");
-    gl.glDeleteVertexArrays = LoadOneUVE<PFNGLDELETEVERTEXARRAYSPROC>("glDeleteVertexArrays");
-    gl.glBindVertexArray = LoadOneUVE<PFNGLBINDVERTEXARRAYPROC>("glBindVertexArray");
-    gl.glVertexAttribPointer = LoadOneUVE<PFNGLVERTEXATTRIBPOINTERPROC>("glVertexAttribPointer");
-    gl.glEnableVertexAttribArray = LoadOneUVE<PFNGLENABLEVERTEXATTRIBARRAYPROC>("glEnableVertexAttribArray");
-
-    gl.glCreateShader = LoadOneUVE<PFNGLCREATESHADERPROC>("glCreateShader");
-    gl.glDeleteShader = LoadOneUVE<PFNGLDELETESHADERPROC>("glDeleteShader");
-    gl.glShaderSource = LoadOneUVE<PFNGLSHADERSOURCEPROC>("glShaderSource");
-    gl.glCompileShader = LoadOneUVE<PFNGLCOMPILESHADERPROC>("glCompileShader");
-    gl.glGetShaderiv = LoadOneUVE<PFNGLGETSHADERIVPROC>("glGetShaderiv");
-    gl.glGetShaderInfoLog = LoadOneUVE<PFNGLGETSHADERINFOLOGPROC>("glGetShaderInfoLog");
-
-    gl.glCreateProgram = LoadOneUVE<PFNGLCREATEPROGRAMPROC>("glCreateProgram");
-    gl.glDeleteProgram = LoadOneUVE<PFNGLDELETEPROGRAMPROC>("glDeleteProgram");
-    gl.glAttachShader = LoadOneUVE<PFNGLATTACHSHADERPROC>("glAttachShader");
-    gl.glLinkProgram = LoadOneUVE<PFNGLLINKPROGRAMPROC>("glLinkProgram");
-    gl.glGetProgramiv = LoadOneUVE<PFNGLGETPROGRAMIVPROC>("glGetProgramiv");
-    gl.glGetProgramInfoLog = LoadOneUVE<PFNGLGETPROGRAMINFOLOGPROC>("glGetProgramInfoLog");
-    gl.glUseProgram = LoadOneUVE<PFNGLUSEPROGRAMPROC>("glUseProgram");
-
-    gl.glGenFramebuffers = LoadOneUVE<PFNGLGENFRAMEBUFFERSPROC>("glGenFramebuffers");
-    gl.glDeleteFramebuffers = LoadOneUVE<PFNGLDELETEFRAMEBUFFERSPROC>("glDeleteFramebuffers");
-    gl.glBindFramebuffer = LoadOneUVE<PFNGLBINDFRAMEBUFFERPROC>("glBindFramebuffer");
-    gl.glFramebufferTexture2D = LoadOneUVE<PFNGLFRAMEBUFFERTEXTURE2DPROC>("glFramebufferTexture2D");
-    gl.glFramebufferRenderbuffer = LoadOneUVE<PFNGLFRAMEBUFFERRENDERBUFFERPROC>("glFramebufferRenderbuffer");
-    gl.glCheckFramebufferStatus = LoadOneUVE<PFNGLCHECKFRAMEBUFFERSTATUSPROC>("glCheckFramebufferStatus");
-
-    gl.glGenRenderbuffers = LoadOneUVE<PFNGLGENRENDERBUFFERSPROC>("glGenRenderbuffers");
-    gl.glDeleteRenderbuffers = LoadOneUVE<PFNGLDELETERENDERBUFFERSPROC>("glDeleteRenderbuffers");
-    gl.glBindRenderbuffer = LoadOneUVE<PFNGLBINDRENDERBUFFERPROC>("glBindRenderbuffer");
-    gl.glRenderbufferStorage = LoadOneUVE<PFNGLRENDERBUFFERSTORAGEPROC>("glRenderbufferStorage");
-
-    gl.glGetUniformLocation = LoadOneUVE<PFNGLGETUNIFORMLOCATIONPROC>("glGetUniformLocation");
-    gl.glUniformMatrix4fv = LoadOneUVE<PFNGLUNIFORMMATRIX4FVPROC>("glUniformMatrix4fv");
-    gl.glUniform3fv = LoadOneUVE<PFNGLUNIFORM3FVPROC>("glUniform3fv");
-
-    gl.functionsLoaded = gl.IsCompleteUVE();
+    gl.table = Render::Detail::LoadGlFunctionsUVE(&GrabGlProcAddressUVE);
+    gl.functionsLoaded = gl.table.IsCompleteUVE();
     if (!gl.functionsLoaded) {
         return;
     }
@@ -265,28 +178,28 @@ void MeshThumbnailRendererUVE::InitializeUVE() {
         vertexCompiled && CompileShaderStageUVE(gl, GL_FRAGMENT_SHADER, kFragmentShaderSourceUVE, fragmentShader);
     if (!fragmentCompiled) {
         if (vertexShader != 0U) {
-            gl.glDeleteShader(vertexShader);
+            gl.table.glDeleteShader(vertexShader);
         }
         return;
     }
 
-    gl.shaderProgram = gl.glCreateProgram();
-    gl.glAttachShader(gl.shaderProgram, vertexShader);
-    gl.glAttachShader(gl.shaderProgram, fragmentShader);
-    gl.glLinkProgram(gl.shaderProgram);
+    gl.shaderProgram = gl.table.glCreateProgram();
+    gl.table.glAttachShader(gl.shaderProgram, vertexShader);
+    gl.table.glAttachShader(gl.shaderProgram, fragmentShader);
+    gl.table.glLinkProgram(gl.shaderProgram);
     GLint linked = GL_FALSE;
-    gl.glGetProgramiv(gl.shaderProgram, GL_LINK_STATUS, &linked);
-    gl.glDeleteShader(vertexShader);
-    gl.glDeleteShader(fragmentShader);
+    gl.table.glGetProgramiv(gl.shaderProgram, GL_LINK_STATUS, &linked);
+    gl.table.glDeleteShader(vertexShader);
+    gl.table.glDeleteShader(fragmentShader);
     if (linked == GL_FALSE) {
-        gl.glDeleteProgram(gl.shaderProgram);
+        gl.table.glDeleteProgram(gl.shaderProgram);
         gl.shaderProgram = 0U;
         return;
     }
 
-    gl.viewProjectionUniform = gl.glGetUniformLocation(gl.shaderProgram, "uViewProjection");
-    gl.lightDirectionUniform = gl.glGetUniformLocation(gl.shaderProgram, "uLightDirection");
-    gl.baseColorUniform = gl.glGetUniformLocation(gl.shaderProgram, "uBaseColor");
+    gl.viewProjectionUniform = gl.table.glGetUniformLocation(gl.shaderProgram, "uViewProjection");
+    gl.lightDirectionUniform = gl.table.glGetUniformLocation(gl.shaderProgram, "uLightDirection");
+    gl.baseColorUniform = gl.table.glGetUniformLocation(gl.shaderProgram, "uBaseColor");
     gl.programLinked = true;
 }
 
@@ -297,15 +210,15 @@ void MeshThumbnailRendererUVE::ShutdownUVE() noexcept {
     GlStateUVE& gl = *m_gl;
     if (gl.functionsLoaded) {
         if (gl.scratchDepthRenderbuffer != 0U) {
-            gl.glDeleteRenderbuffers(1, &gl.scratchDepthRenderbuffer);
+            gl.table.glDeleteRenderbuffers(1, &gl.scratchDepthRenderbuffer);
             gl.scratchDepthRenderbuffer = 0U;
         }
         if (gl.scratchFramebuffer != 0U) {
-            gl.glDeleteFramebuffers(1, &gl.scratchFramebuffer);
+            gl.table.glDeleteFramebuffers(1, &gl.scratchFramebuffer);
             gl.scratchFramebuffer = 0U;
         }
         if (gl.shaderProgram != 0U) {
-            gl.glDeleteProgram(gl.shaderProgram);
+            gl.table.glDeleteProgram(gl.shaderProgram);
             gl.shaderProgram = 0U;
         }
     }
@@ -386,9 +299,9 @@ std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAss
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 
-        gl.glBindFramebuffer(GL_FRAMEBUFFER, gl.scratchFramebuffer);
-        gl.glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, colorTexture, 0);
-        succeeded = gl.glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+        gl.table.glBindFramebuffer(GL_FRAMEBUFFER, gl.scratchFramebuffer);
+        gl.table.glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, colorTexture, 0);
+        succeeded = gl.table.glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
     }
 
     GLuint vao = 0U;
@@ -404,56 +317,56 @@ std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAss
         SetGlCapabilityUVE(GL_SCISSOR_TEST, GL_FALSE);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        gl.glGenVertexArrays(1, &vao);
-        gl.glBindVertexArray(vao);
-        gl.glGenBuffers(1, &vertexBuffer);
-        gl.glBindBuffer(GL_ARRAY_BUFFER, vertexBuffer);
-        gl.glBufferData(GL_ARRAY_BUFFER,
+        gl.table.glGenVertexArrays(1, &vao);
+        gl.table.glBindVertexArray(vao);
+        gl.table.glGenBuffers(1, &vertexBuffer);
+        gl.table.glBindBuffer(GL_ARRAY_BUFFER, vertexBuffer);
+        gl.table.glBufferData(GL_ARRAY_BUFFER,
                          static_cast<GLsizeiptr>(mesh.vertices.size() * sizeof(Asset::MeshVertexUVE)),
                          mesh.vertices.data(), GL_STREAM_DRAW);
-        gl.glGenBuffers(1, &indexBuffer);
-        gl.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indexBuffer);
-        gl.glBufferData(GL_ELEMENT_ARRAY_BUFFER,
+        gl.table.glGenBuffers(1, &indexBuffer);
+        gl.table.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indexBuffer);
+        gl.table.glBufferData(GL_ELEMENT_ARRAY_BUFFER,
                          static_cast<GLsizeiptr>(mesh.indices.size() * sizeof(std::uint32_t)), mesh.indices.data(),
                          GL_STREAM_DRAW);
-        gl.glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Asset::MeshVertexUVE),
+        gl.table.glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Asset::MeshVertexUVE),
                                   reinterpret_cast<const void*>(offsetof(Asset::MeshVertexUVE, position)));
-        gl.glEnableVertexAttribArray(0);
-        gl.glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Asset::MeshVertexUVE),
+        gl.table.glEnableVertexAttribArray(0);
+        gl.table.glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Asset::MeshVertexUVE),
                                   reinterpret_cast<const void*>(offsetof(Asset::MeshVertexUVE, normal)));
-        gl.glEnableVertexAttribArray(1);
+        gl.table.glEnableVertexAttribArray(1);
 
-        gl.glUseProgram(gl.shaderProgram);
-        gl.glUniformMatrix4fv(gl.viewProjectionUniform, 1, GL_TRUE, &viewProjection.m[0][0]);
-        gl.glUniform3fv(gl.lightDirectionUniform, 1, &lightDirection.x);
-        gl.glUniform3fv(gl.baseColorUniform, 1, &kBaseColorUVE.x);
+        gl.table.glUseProgram(gl.shaderProgram);
+        gl.table.glUniformMatrix4fv(gl.viewProjectionUniform, 1, GL_TRUE, &viewProjection.m[0][0]);
+        gl.table.glUniform3fv(gl.lightDirectionUniform, 1, &lightDirection.x);
+        gl.table.glUniform3fv(gl.baseColorUniform, 1, &kBaseColorUVE.x);
 
         glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(mesh.indices.size()), GL_UNSIGNED_INT, nullptr);
         succeeded = glGetError() == GL_NO_ERROR;
 
-        gl.glBindVertexArray(0);
+        gl.table.glBindVertexArray(0);
     }
 
     if (vertexBuffer != 0U) {
-        gl.glDeleteBuffers(1, &vertexBuffer);
+        gl.table.glDeleteBuffers(1, &vertexBuffer);
     }
     if (indexBuffer != 0U) {
-        gl.glDeleteBuffers(1, &indexBuffer);
+        gl.table.glDeleteBuffers(1, &indexBuffer);
     }
     if (vao != 0U) {
-        gl.glDeleteVertexArrays(1, &vao);
+        gl.table.glDeleteVertexArrays(1, &vao);
     }
     if (colorTexture != 0U) {
-        gl.glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
+        gl.table.glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
     }
 
-    gl.glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(previousFramebuffer));
-    gl.glBindRenderbuffer(GL_RENDERBUFFER, static_cast<GLuint>(previousRenderbuffer));
+    gl.table.glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(previousFramebuffer));
+    gl.table.glBindRenderbuffer(GL_RENDERBUFFER, static_cast<GLuint>(previousRenderbuffer));
     glViewport(previousViewport[0], previousViewport[1], previousViewport[2], previousViewport[3]);
-    gl.glUseProgram(static_cast<GLuint>(previousProgram));
-    gl.glBindVertexArray(static_cast<GLuint>(previousVao));
-    gl.glBindBuffer(GL_ARRAY_BUFFER, static_cast<GLuint>(previousArrayBuffer));
-    gl.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, static_cast<GLuint>(previousElementArrayBuffer));
+    gl.table.glUseProgram(static_cast<GLuint>(previousProgram));
+    gl.table.glBindVertexArray(static_cast<GLuint>(previousVao));
+    gl.table.glBindBuffer(GL_ARRAY_BUFFER, static_cast<GLuint>(previousArrayBuffer));
+    gl.table.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, static_cast<GLuint>(previousElementArrayBuffer));
     glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previousTexture));
     SetGlCapabilityUVE(GL_DEPTH_TEST, depthTestWasEnabled);
     SetGlCapabilityUVE(GL_CULL_FACE, cullFaceWasEnabled);

@@ -15,9 +15,10 @@ namespace UVE::Render {
 /// IRenderDeviceUVE. Constructed strictly *after* an IWindowManagerUVE& that has already created
 /// its window and made its GL context current — GlRenderDeviceUVE never creates, destroys, or
 /// activates a GL context itself (see docs/CODING_STANDARDS.md, "WindowManagerUVE owns the GL
-/// context lifecycle"); it only loads GL function pointers (via a small hand-rolled loader —
-/// gl_functions_uve.h/.cpp, module-private) and issues GL calls against the context that already
-/// exists. Every GL header (`<GL/gl.h>`, `<GL/glext.h>`) and every GLuint/GLenum type is confined
+/// context lifecycle"); it only loads GL function pointers (via the engine's shared proc-table
+/// loader, uve/rhi_opengl/gl_functions_uve.h — see that header for why it is public) and issues
+/// GL calls against the context that already exists. Every GL header beyond that one contract
+/// header (`<GL/gl.h>`, `<GL/glext.h>`) and every GLuint/GLenum type is otherwise confined
 /// to engine/render/src/ — this header, like every other public IRenderDeviceUVE consumer's, only
 /// ever sees the same backend-agnostic RHI types NullRenderDeviceUVE does.
 /// Thread-safety: not thread-safe, matching IRenderDeviceUVE's own documented contract; every

@@ -5,9 +5,15 @@
 
 // GL/glext.h supplies the standard Khronos PFNGL*PROC function-pointer typedefs and GL_* enum
 // constants this loader needs; it declares types only, never links anything, so including it
-// here doesn't pull in GLEW/GLAD or any other loader library. Module-private (engine/render/src/
-// only) — no public header under include/ ever includes a GL header, matching this codebase's
-// established third-party-header confinement discipline.
+// here doesn't pull in GLEW/GLAD or any other loader library.
+//
+// PUBLIC CONTRACT, deliberately: this is the engine's one shared GL proc-table loader. The
+// codebase's rule remains that no public header includes a GL header UNLESS the GL type surface
+// is the contract itself - which is exactly the case here. There are two sanctioned consumers:
+// GlRenderDeviceUVE (the primary owner) and the editor's MeshThumbnailRendererUVE, which draws a
+// tiny self-contained preview directly with GL instead of standing up a full render device and
+// used to keep a second hand-rolled copy of this loader (AUDIT 5.6). Any future consumer must be
+// equally small and self-contained; anything larger belongs behind IRenderDeviceUVE instead.
 #if defined(__ANDROID__)
 #include <GLES3/gl3.h>
 #include <GLES2/gl2ext.h>
@@ -59,6 +65,14 @@ struct GlFunctionsUVE {
     PFNGLBINDFRAMEBUFFERPROC glBindFramebuffer = nullptr;
     PFNGLFRAMEBUFFERTEXTURE2DPROC glFramebufferTexture2D = nullptr;
     PFNGLCHECKFRAMEBUFFERSTATUSPROC glCheckFramebufferStatus = nullptr;
+    PFNGLFRAMEBUFFERRENDERBUFFERPROC glFramebufferRenderbuffer = nullptr;
+
+    // Renderbuffer block: not used by GlRenderDeviceUVE itself; MeshThumbnailRendererUVE (the
+    // contract's other sanctioned consumer) needs a depth renderbuffer for its scratch target.
+    PFNGLGENRENDERBUFFERSPROC glGenRenderbuffers = nullptr;
+    PFNGLDELETERENDERBUFFERSPROC glDeleteRenderbuffers = nullptr;
+    PFNGLBINDRENDERBUFFERPROC glBindRenderbuffer = nullptr;
+    PFNGLRENDERBUFFERSTORAGEPROC glRenderbufferStorage = nullptr;
 
     PFNGLACTIVETEXTUREPROC glActiveTexture = nullptr;
 
@@ -90,9 +104,9 @@ struct GlFunctionsUVE {
 /// reinterpret_cast-ing the result to the matching PFNGL*PROC type — the universal pattern every
 /// GL loader (hand-rolled or generated) uses, since a GL driver only exposes post-1.1 entry
 /// points through this kind of dynamic lookup. `getProcAddress` is injected rather than calling
-/// glfwGetProcAddress directly so this loader itself never includes GLFW; the one caller
-/// (GlRenderDeviceUVE, constructed only after WindowManagerUVE has already made a GL context
-/// current) passes a small wrapper around glfwGetProcAddress.
+/// glfwGetProcAddress directly so this loader itself never includes GLFW; both callers
+/// (GlRenderDeviceUVE and the editor's MeshThumbnailRendererUVE, each constructed only after a
+/// GL context has been made current) pass a small wrapper around glfwGetProcAddress.
 [[nodiscard]] GlFunctionsUVE LoadGlFunctionsUVE(void* (*getProcAddress)(const char*));
 
 } // namespace UVE::Render::Detail
