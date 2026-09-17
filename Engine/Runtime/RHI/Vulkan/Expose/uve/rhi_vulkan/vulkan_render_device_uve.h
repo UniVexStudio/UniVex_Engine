@@ -28,6 +28,7 @@
 #include <vector>
 
 #include "uve/rhi/i_render_device_uve.h"
+#include "uve/window/i_vulkan_window_surface_uve.h"
 #include "uve/window/i_window_manager_uve.h"
 
 namespace UVE::Render {
@@ -59,6 +60,18 @@ public:
     /// order from its destructor, while windowManager's window is still alive.
     [[nodiscard]] static std::unique_ptr<VulkanRenderDeviceUVE> CreateUVE(
         Window::IWindowManagerUVE& windowManager);
+
+    /// Same factory contract as the window-manager overload above (nullptr on any host-level
+    /// failure, never throws), but takes the surface capability *directly* — for Vulkan
+    /// consumers that own no OS window yet still satisfy the bridge contract: server-side
+    /// rendering, offscreen verification harnesses, CI screenshot tooling. Such callers answer
+    /// GetRequiredVulkanInstanceExtensionsUVE() with headless-appropriate extensions (e.g.
+    /// VK_KHR_surface + VK_EXT_headless_surface) and implement CreateVulkanWindowSurfaceUVE()
+    /// through the matching WSI entry points; everything else (present-support physical-device
+    /// pickup, swapchain, present loop) is identical, because the window-manager path funnels
+    /// through this same bridge on entry. `surfaceBridge` must outlive the returned device.
+    [[nodiscard]] static std::unique_ptr<VulkanRenderDeviceUVE> CreateFromBridgeUVE(
+        Window::IVulkanWindowSurfaceUVE& surfaceBridge);
 
     ~VulkanRenderDeviceUVE() override;
 
@@ -102,8 +115,23 @@ public:
     [[nodiscard]] bool IsUsableUVE() const noexcept override;
     [[nodiscard]] std::string_view GetBackendNameUVE() const noexcept override;
 
+    // --- M1 diagnostics beyond IRenderDeviceUVE (Vulkan bootstrap device only) ---
+    /// Copies the most recently presented swapchain image's pixel contents into `outRGBA8`,
+    /// byte order R,G,B,A regardless of the surface's native channel swizzle. The caller sizes
+    /// `outRGBA8` to exactly width*height*4 bytes of the current framebuffer extent; this method
+    /// fills `outWidth`/`outHeight` with that extent on success. Deliberately a cold-path API for
+    /// editor screenshots and automated visual verification — internally it drains the queue,
+    /// records a transient layout-transition + image-to-buffer copy into a host-visible staging
+    /// buffer, and CPU-swizzles B8G8R8A8 surfaces to RGBA byte order. Returns false (logging
+    /// the reason) when no frame has been presented yet, the output span is mis-sized, or any
+    /// Vulkan call fails; never throws.
+    [[nodiscard]] bool ReadbackLatestPresentedImageUVE(std::span<std::byte> outRGBA8,
+                                                       std::uint32_t& outWidth,
+                                                       std::uint32_t& outHeight);
+
 private:
-    explicit VulkanRenderDeviceUVE(Window::IWindowManagerUVE& windowManager);
+    VulkanRenderDeviceUVE(Window::IWindowManagerUVE* windowManager,
+                          Window::IVulkanWindowSurfaceUVE* bridge);
 
     struct ImplUVE;
     std::unique_ptr<ImplUVE> m_impl;

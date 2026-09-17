@@ -56,9 +56,10 @@ constexpr float kBootstrapClearAlphaUVE = 1.0F;
 } // namespace
 
 struct VulkanRenderDeviceUVE::ImplUVE {
-    explicit ImplUVE(Window::IWindowManagerUVE& windowManagerIn) : windowManager(&windowManagerIn) {}
+    ImplUVE(Window::IWindowManagerUVE* windowManagerIn, Window::IVulkanWindowSurfaceUVE* bridgeIn)
+        : windowManager(windowManagerIn), bridge(bridgeIn) {}
 
-    Window::IWindowManagerUVE* windowManager;
+    Window::IWindowManagerUVE* windowManager; // nullable: bridge-direct ("headless") construction
     Window::IVulkanWindowSurfaceUVE* bridge = nullptr;
 
     VkFunctionsUVE vk;
@@ -85,6 +86,7 @@ struct VulkanRenderDeviceUVE::ImplUVE {
     VkFence inFlightFence = VK_NULL_HANDLE;
 
     bool usable = false; // signed-off only by the very last bring-up step
+    std::uint32_t lastPresentedImageIndex = UINT32_MAX; // UINT32_MAX = no frame presented yet
 
     [[nodiscard]] bool LogBailUVE(const char* reason) {
         UVE_WARNING("VulkanRenderDeviceUVE: {}", reason);
@@ -216,13 +218,15 @@ bool VulkanRenderDeviceUVE::ImplUVE::CreateSwapchainResourcesUVE() {
 }
 
 bool VulkanRenderDeviceUVE::ImplUVE::InitializeUVE() {
-    // --- bridge capability: the RTTI query the header documents -----------------------------
-    bridge = dynamic_cast<Window::IVulkanWindowSurfaceUVE*>(windowManager);
+    // --- bridge capability: accepted directly or RTTI-queried off the window manager --------
     if (bridge == nullptr) {
-        return LogBailUVE("window manager offers no IVulkanWindowSurfaceUVE capability "
-                          "(headless or stub backend); Vulkan windowed rendering needs it");
+        bridge = dynamic_cast<Window::IVulkanWindowSurfaceUVE*>(windowManager);
+        if (bridge == nullptr) {
+            return LogBailUVE("window manager offers no IVulkanWindowSurfaceUVE capability "
+                              "(headless or stub backend); Vulkan windowed rendering needs it");
+        }
     }
-    if (!windowManager->IsValidUVE()) {
+    if (windowManager != nullptr && !windowManager->IsValidUVE()) {
         return LogBailUVE("window manager is not valid; Vulkan needs a real window first");
     }
 
@@ -245,8 +249,8 @@ bool VulkanRenderDeviceUVE::ImplUVE::InitializeUVE() {
     // --- instance --------------------------------------------------------------------------
     const std::vector<const char*> instanceExtensions = bridge->GetRequiredVulkanInstanceExtensionsUVE();
     if (instanceExtensions.empty()) {
-        return LogBailUVE("GLFW reported no required Vulkan instance extensions — "
-                          "its Vulkan WSI support is unavailable on this platform");
+        return LogBailUVE("surface bridge reported no required Vulkan instance extensions — "
+                          "Vulkan WSI support is unavailable on this platform");
     }
 
     VkApplicationInfo applicationInfo{};
@@ -275,7 +279,7 @@ bool VulkanRenderDeviceUVE::ImplUVE::InitializeUVE() {
     surface = ToVkSurfaceUVE(bridge->CreateVulkanWindowSurfaceUVE(
         reinterpret_cast<std::uintptr_t>(instance)));
     if (surface == VK_NULL_HANDLE) {
-        return LogBailUVE("window surface creation failed through the GLFW bridge");
+        return LogBailUVE("window surface creation failed through the surface bridge");
     }
 
     // --- physical device + one queue family that both draws and presents --------------------
@@ -465,8 +469,9 @@ bool VulkanRenderDeviceUVE::ImplUVE::InitializeUVE() {
     return true;
 }
 
-VulkanRenderDeviceUVE::VulkanRenderDeviceUVE(Window::IWindowManagerUVE& windowManager)
-    : m_impl(std::make_unique<ImplUVE>(windowManager)) {}
+VulkanRenderDeviceUVE::VulkanRenderDeviceUVE(Window::IWindowManagerUVE* windowManager,
+                                             Window::IVulkanWindowSurfaceUVE* bridge)
+    : m_impl(std::make_unique<ImplUVE>(windowManager, bridge)) {}
 
 VulkanRenderDeviceUVE::~VulkanRenderDeviceUVE() {
     if (m_impl->device != VK_NULL_HANDLE) {
@@ -506,11 +511,22 @@ VulkanRenderDeviceUVE::~VulkanRenderDeviceUVE() {
 
 std::unique_ptr<VulkanRenderDeviceUVE> VulkanRenderDeviceUVE::CreateUVE(
     Window::IWindowManagerUVE& windowManager) {
-    auto device = std::unique_ptr<VulkanRenderDeviceUVE>(new VulkanRenderDeviceUVE(windowManager));
+    auto device = std::unique_ptr<VulkanRenderDeviceUVE>(
+        new VulkanRenderDeviceUVE(&windowManager, nullptr));
     if (!device->m_impl->InitializeUVE()) {
         // Partially-constructed state is torn down by the destructor — every bail in
         // InitializeUVE() has already logged its own reason.
         return nullptr;
+    }
+    return device;
+}
+
+std::unique_ptr<VulkanRenderDeviceUVE> VulkanRenderDeviceUVE::CreateFromBridgeUVE(
+    Window::IVulkanWindowSurfaceUVE& surfaceBridge) {
+    auto device = std::unique_ptr<VulkanRenderDeviceUVE>(
+        new VulkanRenderDeviceUVE(nullptr, &surfaceBridge));
+    if (!device->m_impl->InitializeUVE()) {
+        return nullptr; // partially-initialized state torn down by the destructor
     }
     return device;
 }
@@ -704,6 +720,9 @@ void VulkanRenderDeviceUVE::PresentUVE() {
     presentInfo.pSwapchains = &impl.swapchain;
     presentInfo.pImageIndices = &imageIndex;
     const VkResult presentResult = impl.vk.vkQueuePresentKHR(impl.presentQueue, &presentInfo);
+    if (presentResult == VK_SUCCESS || presentResult == VK_SUBOPTIMAL_KHR) {
+        impl.lastPresentedImageIndex = imageIndex;
+    }
     if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR) {
         // Resize visible to the driver after acquire: rebuild now so next frame uses a valid
         // swapchain (the just-completed present attempt was still in sync — the fence stands).
@@ -720,6 +739,179 @@ void VulkanRenderDeviceUVE::PresentUVE() {
 
 bool VulkanRenderDeviceUVE::IsUsableUVE() const noexcept {
     return m_impl->usable;
+}
+
+bool VulkanRenderDeviceUVE::ReadbackLatestPresentedImageUVE(std::span<std::byte> outRGBA8,
+                                                            std::uint32_t& outWidth,
+                                                            std::uint32_t& outHeight) {
+    ImplUVE& impl = *m_impl;
+    outWidth = 0U;
+    outHeight = 0U;
+
+    const auto fail = [](const char* reason) {
+        UVE_WARNING("VulkanRenderDeviceUVE::ReadbackLatestPresentedImageUVE: {}", reason);
+        return false;
+    };
+
+    if (!impl.usable) {
+        return fail("device is not usable");
+    }
+    if (impl.lastPresentedImageIndex == UINT32_MAX ||
+        impl.lastPresentedImageIndex >= impl.swapchainImages.size()) {
+        return fail("no frame has been presented yet");
+    }
+    const std::size_t requiredBytes =
+        static_cast<std::size_t>(impl.swapchainExtent.width) * impl.swapchainExtent.height * 4U;
+    if (outRGBA8.size() != requiredBytes) {
+        // Fill the extent out-parameters even on this documented failure: drivers that lock the
+        // surface extent to their own pick (SwiftShader's headless surface, for one) mean the
+        // real size is only knowable here, and the two-call pattern (query with an empty span,
+        // resize, call again) must stay possible for cold-path tooling.
+        outWidth = impl.swapchainExtent.width;
+        outHeight = impl.swapchainExtent.height;
+        return fail("output span must be exactly width*height*4 bytes of the framebuffer extent");
+    }
+    outWidth = impl.swapchainExtent.width;
+    outHeight = impl.swapchainExtent.height;
+
+    const VkImage sourceImage = impl.swapchainImages[impl.lastPresentedImageIndex];
+
+    // Staging buffer: host-visible since the goal is a CPU-side pixel copy, never performance.
+    VkBufferCreateInfo bufferInfo{};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.size = requiredBytes;
+    bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    VkBuffer stagingBuffer = VK_NULL_HANDLE;
+    if (impl.vk.vkCreateBuffer(impl.device, &bufferInfo, nullptr, &stagingBuffer) != VK_SUCCESS) {
+        return fail("vkCreateBuffer for the staging buffer failed");
+    }
+    VkMemoryRequirements memoryRequirements{};
+    impl.vk.vkGetBufferMemoryRequirements(impl.device, stagingBuffer, &memoryRequirements);
+
+    VkPhysicalDeviceMemoryProperties memoryProperties{};
+    impl.vk.vkGetPhysicalDeviceMemoryProperties(impl.physicalDevice, &memoryProperties);
+    std::uint32_t memoryTypeIndex = UINT32_MAX;
+    for (std::uint32_t index = 0; index < memoryProperties.memoryTypeCount; ++index) {
+        const VkMemoryPropertyFlags wanted = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+        if ((memoryRequirements.memoryTypeBits & (1U << index)) != 0U &&
+            (memoryProperties.memoryTypes[index].propertyFlags & wanted) == wanted) {
+            memoryTypeIndex = index;
+            break;
+        }
+    }
+    if (memoryTypeIndex == UINT32_MAX) {
+        impl.vk.vkDestroyBuffer(impl.device, stagingBuffer, nullptr);
+        return fail("no host-visible+coherent memory type reported by the physical device");
+    }
+    VkMemoryAllocateInfo allocateInfo{};
+    allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocateInfo.allocationSize = memoryRequirements.size;
+    allocateInfo.memoryTypeIndex = memoryTypeIndex;
+    VkDeviceMemory stagingMemory = VK_NULL_HANDLE;
+    if (impl.vk.vkAllocateMemory(impl.device, &allocateInfo, nullptr, &stagingMemory) != VK_SUCCESS) {
+        impl.vk.vkDestroyBuffer(impl.device, stagingBuffer, nullptr);
+        return fail("vkAllocateMemory for the staging buffer failed");
+    }
+    impl.vk.vkBindBufferMemory(impl.device, stagingBuffer, stagingMemory, 0U);
+
+    // Transient command buffer: PRESENT_SRC -> TRANSFER_SRC barrier, copy, barrier back.
+    VkCommandBuffer copyCommands = VK_NULL_HANDLE;
+    VkCommandBufferAllocateInfo commandAllocateInfo{};
+    commandAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    commandAllocateInfo.commandPool = impl.commandPool;
+    commandAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    commandAllocateInfo.commandBufferCount = 1U;
+    bool ok = impl.vk.vkAllocateCommandBuffers(impl.device, &commandAllocateInfo, &copyCommands) == VK_SUCCESS;
+    if (ok) {
+        VkCommandBufferBeginInfo beginInfo{};
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        ok = impl.vk.vkBeginCommandBuffer(copyCommands, &beginInfo) == VK_SUCCESS;
+    }
+    if (ok) {
+        VkImageMemoryBarrier toTransfer{};
+        toTransfer.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        toTransfer.srcAccessMask = 0U; // queue drained below — nothing pending to order against
+        toTransfer.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        toTransfer.oldLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+        toTransfer.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        toTransfer.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        toTransfer.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        toTransfer.image = sourceImage;
+        toTransfer.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        toTransfer.subresourceRange.baseMipLevel = 0U;
+        toTransfer.subresourceRange.levelCount = 1U;
+        toTransfer.subresourceRange.baseArrayLayer = 0U;
+        toTransfer.subresourceRange.layerCount = 1U;
+        impl.vk.vkCmdPipelineBarrier(copyCommands, VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_TRANSFER_BIT, 0U, 0U, nullptr, 0U, nullptr, 1U, &toTransfer);
+
+        VkBufferImageCopy copyRegion{};
+        copyRegion.bufferOffset = 0U;
+        copyRegion.bufferRowLength = 0U;  // tightly packed
+        copyRegion.bufferImageHeight = 0U;
+        copyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        copyRegion.imageSubresource.mipLevel = 0U;
+        copyRegion.imageSubresource.baseArrayLayer = 0U;
+        copyRegion.imageSubresource.layerCount = 1U;
+        copyRegion.imageOffset = {0, 0, 0};
+        copyRegion.imageExtent = {impl.swapchainExtent.width, impl.swapchainExtent.height, 1U};
+        impl.vk.vkCmdCopyImageToBuffer(copyCommands, sourceImage,
+            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, stagingBuffer, 1U, &copyRegion);
+
+        VkImageMemoryBarrier backToPresent = toTransfer;
+        backToPresent.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        backToPresent.dstAccessMask = 0U;
+        backToPresent.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        backToPresent.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+        impl.vk.vkCmdPipelineBarrier(copyCommands, VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_TRANSFER_BIT, 0U, 0U, nullptr, 0U, nullptr, 1U, &backToPresent);
+
+        ok = impl.vk.vkEndCommandBuffer(copyCommands) == VK_SUCCESS;
+    }
+    if (ok) {
+        // Drain first so the frame fence stays meaningful, then queue the readback on the
+        // same fence (the in-flight fence is stored-present-state, so reuse is deliberate:
+        // next PresentUVE() will wait on exactly this submission's completion as well).
+        (void)impl.vk.vkQueueWaitIdle(impl.presentQueue);
+        (void)impl.vk.vkResetFences(impl.device, 1U, &impl.inFlightFence);
+        VkSubmitInfo submitInfo{};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submitInfo.commandBufferCount = 1U;
+        submitInfo.pCommandBuffers = &copyCommands;
+        ok = impl.vk.vkQueueSubmit(impl.presentQueue, 1U, &submitInfo, impl.inFlightFence) == VK_SUCCESS;
+    }
+    if (ok) {
+        ok = impl.vk.vkWaitForFences(impl.device, 1U, &impl.inFlightFence, VK_TRUE, UINT64_MAX) == VK_SUCCESS;
+    }
+    if (ok) {
+        void* mapped = nullptr;
+        if (impl.vk.vkMapMemory(impl.device, stagingMemory, 0U, requiredBytes, 0U, &mapped) == VK_SUCCESS &&
+            mapped != nullptr) {
+            std::memcpy(outRGBA8.data(), mapped, requiredBytes);
+            impl.vk.vkUnmapMemory(impl.device, stagingMemory);
+            if (impl.swapchainFormat == VK_FORMAT_B8G8R8A8_SRGB) {
+                // Surface is B,G,R,A-ordered; the contract promises R,G,B,A bytes — swap in place.
+                for (std::size_t px = 0; px + 3U < outRGBA8.size(); px += 4U) {
+                    std::swap(outRGBA8[px], outRGBA8[px + 2]);
+                }
+            }
+            outWidth = impl.swapchainExtent.width;
+            outHeight = impl.swapchainExtent.height;
+        } else {
+            ok = false;
+        }
+    }
+    if (copyCommands != VK_NULL_HANDLE) {
+        impl.vk.vkFreeCommandBuffers(impl.device, impl.commandPool, 1U, &copyCommands);
+    }
+    impl.vk.vkDestroyBuffer(impl.device, stagingBuffer, nullptr);
+    impl.vk.vkFreeMemory(impl.device, stagingMemory, nullptr);
+    if (!ok) {
+        return fail("a Vulkan call in the staging/copy path failed (see device logs)");
+    }
+    return true;
 }
 
 std::string_view VulkanRenderDeviceUVE::GetBackendNameUVE() const noexcept {

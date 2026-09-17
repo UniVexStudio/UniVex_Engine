@@ -19,6 +19,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cstdlib>
 #include <memory>
 #include <string>
 #include <type_traits>
@@ -64,6 +65,36 @@ TEST(VulkanCapabilityUVETest, CreateOnNullWindowManagerReturnsNullptr) {
     EXPECT_EQ(device, nullptr) << "the factory must cleanly refuse headless input";
 }
 
+namespace {
+
+/// Minimal stub bridge that implements the capability contract but reports "no extensions" —
+/// the deterministic refusal path for the bridge-direct factory overload on ANY host (with or
+/// without a Vulkan loader installed). The bridge methods themselves are never invoked before
+/// the extension query bails, so their bodies being minimal is honest, not mockup.
+class NoExtensionsStubBridgeUVE final : public Window::IVulkanWindowSurfaceUVE {
+public:
+    [[nodiscard]] std::vector<const char*> GetRequiredVulkanInstanceExtensionsUVE() const override {
+        return {}; // deliberate: the documented "capability unavailable" signal
+    }
+    [[nodiscard]] std::uintptr_t CreateVulkanWindowSurfaceUVE(std::uintptr_t /*vulkanInstance*/) override {
+        return 0U;
+    }
+    void DestroyVulkanWindowSurfaceUVE(std::uintptr_t /*vulkanInstance*/,
+                                       std::uintptr_t /*vulkanSurface*/) override {}
+    void GetVulkanFramebufferSizeUVE(std::uint32_t& outWidth, std::uint32_t& outHeight) const override {
+        outWidth = 64U;
+        outHeight = 64U;
+    }
+};
+
+} // namespace
+
+TEST(VulkanCapabilityUVETest, BridgeDirectCreateOnStubWithoutExtensionsReturnsNullptr) {
+    NoExtensionsStubBridgeUVE stubBridge;
+    auto device = VulkanRenderDeviceUVE::CreateFromBridgeUVE(stubBridge);
+    EXPECT_EQ(device, nullptr) << "a bridge advertising no Vulkan WSI extensions must be refused";
+}
+
 TEST(VulkanCapabilityUVETest, RealWindowManagerOffersVulkanSurfaceBridge) {
     // Interface-cast wiring only (no window needed): the real window manager class must be
     // typed against the capability interface so the factory's dynamic_cast has something to
@@ -105,6 +136,49 @@ TEST_F(VulkanRenderDeviceUVETest, DeviceReportsUsableWithHonestBootstrapName) {
     EXPECT_TRUE(device->IsUsableUVE());
     EXPECT_EQ(device->GetBackendNameUVE(), "Vulkan (M1 bootstrap)")
         << "capability reporting must never call the bootstrap the finished Vulkan backend";
+}
+
+TEST_F(VulkanRenderDeviceUVETest, PresentedFrameReadbackIsUniformBootstrapClear) {
+    for (int frame = 0; frame < 6; ++frame) {
+        device->PresentUVE();
+        ASSERT_TRUE(device->IsUsableUVE());
+    }
+    // Readback of the most recently presented image: the M1 bootstrap is a fixed engineering
+    // clear, so every pixel must be the same sRGB-encoded value. The expected bytes follow
+    // sRGB(0.05/0.07/0.12, 1.0) = (63, 78, 97, 255) with a small tolerance for driver rounding
+    // differences (the clears run through the swapchain's sRGB conversion, so exact linear
+    // float comparison would be wrong by design).
+    std::vector<std::byte> pixels(64U * 64U * 4U);
+    std::uint32_t width = 0;
+    std::uint32_t height = 0;
+    ASSERT_TRUE(device->ReadbackLatestPresentedImageUVE(pixels, width, height));
+    EXPECT_EQ(width, 64U);
+    EXPECT_EQ(height, 64U);
+
+    const std::byte r0 = pixels[0];
+    const std::byte g0 = pixels[1];
+    const std::byte b0 = pixels[2];
+    const std::byte a0 = pixels[3];
+    for (std::size_t px = 4; px + 3 < pixels.size(); px += 4) {
+        ASSERT_EQ(pixels[px], r0) << "non-uniform frame at pixel " << px / 4;
+        ASSERT_EQ(pixels[px + 1], g0);
+        ASSERT_EQ(pixels[px + 2], b0);
+        ASSERT_EQ(pixels[px + 3], a0);
+    }
+    const auto near_byte = [](std::byte actual, int expected) {
+        return std::abs(static_cast<int>(actual) - expected) <= 4;
+    };
+    EXPECT_TRUE(near_byte(r0, 63)) << "R channel = " << static_cast<int>(r0);
+    EXPECT_TRUE(near_byte(g0, 78)) << "G channel = " << static_cast<int>(g0);
+    EXPECT_TRUE(near_byte(b0, 97)) << "B channel = " << static_cast<int>(b0);
+    EXPECT_EQ(a0, static_cast<std::byte>(255));
+}
+
+TEST_F(VulkanRenderDeviceUVETest, ReadbackBeforeAnyPresentFailsCleanly) {
+    std::vector<std::byte> pixels(64U * 64U * 4U);
+    std::uint32_t width = 0;
+    std::uint32_t height = 0;
+    EXPECT_FALSE(device->ReadbackLatestPresentedImageUVE(pixels, width, height));
 }
 
 TEST_F(VulkanRenderDeviceUVETest, PresentUveAdvancesMultipleFramesWithoutCrash) {

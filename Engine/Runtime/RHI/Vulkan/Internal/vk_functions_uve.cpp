@@ -107,6 +107,7 @@ bool VkFunctionsUVE::LoadInstanceUVE(const VkInstance instance) {
     allResolved &= ResolveInstance(vkGetPhysicalDeviceSurfaceCapabilitiesKHR, gipa, instance, "vkGetPhysicalDeviceSurfaceCapabilitiesKHR");
     allResolved &= ResolveInstance(vkGetPhysicalDeviceSurfaceFormatsKHR, gipa, instance, "vkGetPhysicalDeviceSurfaceFormatsKHR");
     allResolved &= ResolveInstance(vkGetPhysicalDeviceSurfacePresentModesKHR, gipa, instance, "vkGetPhysicalDeviceSurfacePresentModesKHR");
+    allResolved &= ResolveInstance(vkGetPhysicalDeviceMemoryProperties, gipa, instance, "vkGetPhysicalDeviceMemoryProperties");
     allResolved &= ResolveInstance(vkCreateDevice, gipa, instance, "vkCreateDevice");
     allResolved &= ResolveInstance(vkGetDeviceProcAddr, gipa, instance, "vkGetDeviceProcAddr");
     allResolved &= ResolveInstance(vkDestroySurfaceKHR, gipa, instance, "vkDestroySurfaceKHR");
@@ -138,6 +139,16 @@ bool VkFunctionsUVE::LoadDeviceUVE(const VkDevice device) {
     allResolved &= ResolveDevice(vkBeginCommandBuffer, gdpa, device, "vkBeginCommandBuffer");
     allResolved &= ResolveDevice(vkEndCommandBuffer, gdpa, device, "vkEndCommandBuffer");
     allResolved &= ResolveDevice(vkResetCommandBuffer, gdpa, device, "vkResetCommandBuffer");
+    allResolved &= ResolveDevice(vkCmdPipelineBarrier, gdpa, device, "vkCmdPipelineBarrier");
+    allResolved &= ResolveDevice(vkCmdCopyImageToBuffer, gdpa, device, "vkCmdCopyImageToBuffer");
+    allResolved &= ResolveDevice(vkCreateBuffer, gdpa, device, "vkCreateBuffer");
+    allResolved &= ResolveDevice(vkDestroyBuffer, gdpa, device, "vkDestroyBuffer");
+    allResolved &= ResolveDevice(vkGetBufferMemoryRequirements, gdpa, device, "vkGetBufferMemoryRequirements");
+    allResolved &= ResolveDevice(vkAllocateMemory, gdpa, device, "vkAllocateMemory");
+    allResolved &= ResolveDevice(vkFreeMemory, gdpa, device, "vkFreeMemory");
+    allResolved &= ResolveDevice(vkBindBufferMemory, gdpa, device, "vkBindBufferMemory");
+    allResolved &= ResolveDevice(vkMapMemory, gdpa, device, "vkMapMemory");
+    allResolved &= ResolveDevice(vkUnmapMemory, gdpa, device, "vkUnmapMemory");
     allResolved &= ResolveDevice(vkCmdBeginRenderPass, gdpa, device, "vkCmdBeginRenderPass");
     allResolved &= ResolveDevice(vkCmdEndRenderPass, gdpa, device, "vkCmdEndRenderPass");
     allResolved &= ResolveDevice(vkCreateSemaphore, gdpa, device, "vkCreateSemaphore");
