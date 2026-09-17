@@ -3,7 +3,7 @@
 
 #include "uve/rhi/shader_data_type_uve.h"
 
-#include "uve/debug/assert_uve.h"
+#include "uve/logging/assert_uve.h"
 
 namespace UVE::Render {
 

@@ -5,7 +5,7 @@
 
 #include <algorithm>
 
-#include "uve/debug/logging_macros_uve.h"
+#include "uve/logging/logging_macros_uve.h"
 #include "uve/rhi/i_command_buffer_uve.h"
 
 namespace UVE::Render {

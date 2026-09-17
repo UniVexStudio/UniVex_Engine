@@ -40,7 +40,7 @@
 #include "uve/core/frame_stats_uve.h"
 #include "uve/core/script_gameplay_bindings_uve.h"
 #include "uve/core/version_uve.h"
-#include "uve/debug/i_logger_uve.h"
+#include "uve/logging/i_logger_uve.h"
 #include "uve/events/i_event_system_uve.h"
 #include "uve/input/i_gamepad_input_system_uve.h"
 #include "uve/input/i_input_system_uve.h"

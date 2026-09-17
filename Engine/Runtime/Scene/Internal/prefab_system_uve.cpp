@@ -9,7 +9,7 @@
 
 #include "uve/asset/asset_content_fingerprint_uve.h"
 
-#include "uve/debug/logging_macros_uve.h"
+#include "uve/logging/logging_macros_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/prefab_instance_component_uve.h"
 #include "uve/component/transform_component_uve.h"

@@ -24,6 +24,6 @@ add_library(uve_audio STATIC
     Internal/wav_importer_uve.cpp
 )
 target_include_directories(uve_audio PUBLIC Expose)
-target_link_libraries(uve_audio PUBLIC uve_platform uve_debug uve_math uve_scene uve_asset)
+target_link_libraries(uve_audio PUBLIC uve_platform uve_logging uve_math uve_scene uve_asset)
 target_compile_features(uve_audio PUBLIC cxx_std_20)
 uve_set_warnings(uve_audio)

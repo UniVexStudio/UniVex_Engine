@@ -15,8 +15,8 @@
 
 #include "uve/asset/asset_load_completed_event_uve.h"
 #include "uve/asset/i_hot_reload_uve.h"
-#include "uve/debug/assert_uve.h"
-#include "uve/debug/logging_macros_uve.h"
+#include "uve/logging/assert_uve.h"
+#include "uve/logging/logging_macros_uve.h"
 #include "uve/threading/job_counter_uve.h"
 
 namespace UVE::Asset {

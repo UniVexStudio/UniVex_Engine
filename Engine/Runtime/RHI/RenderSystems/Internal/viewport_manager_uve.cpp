@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <cmath>
 
-#include "uve/debug/logging_macros_uve.h"
+#include "uve/logging/logging_macros_uve.h"
 #include "uve/component/camera_component_uve.h"
 
 namespace UVE::Render {

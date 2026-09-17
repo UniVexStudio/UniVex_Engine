@@ -24,7 +24,7 @@
 
 #include "uve/asset/asset_guid_uve.h"
 #include "uve/asset/uve_file_envelope_uve.h"
-#include "uve/debug/logging_macros_uve.h"
+#include "uve/logging/logging_macros_uve.h"
 #include "uve/math/quaternion_uve.h"
 #include "uve/math/vector2_uve.h"
 #include "uve/math/vector3_uve.h"

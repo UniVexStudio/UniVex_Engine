@@ -94,7 +94,7 @@ add_library(uve_asset STATIC
 )
 target_include_directories(uve_asset PUBLIC Expose)
 target_link_libraries(uve_asset
-    PUBLIC uve_debug uve_math uve_threading uve_events
+    PUBLIC uve_logging uve_math uve_threading uve_events
     PRIVATE nlohmann_json::nlohmann_json ZLIB::ZLIB
 )
 if(NOT ANDROID)

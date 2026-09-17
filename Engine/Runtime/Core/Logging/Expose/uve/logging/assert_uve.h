@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "uve/debug/logging_macros_uve.h"
+#include "uve/logging/logging_macros_uve.h"
 #include "uve/platform/platform_uve.h"
 
 /// UVE_ASSERT(cond) checks a debug-time invariant — a condition that

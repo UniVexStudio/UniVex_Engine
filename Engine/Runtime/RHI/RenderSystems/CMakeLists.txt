@@ -30,6 +30,6 @@ add_library(uve_render_systems STATIC
     Internal/viewport_manager_uve.cpp
 )
 target_include_directories(uve_render_systems PUBLIC Expose)
-target_link_libraries(uve_render_systems PUBLIC uve_platform uve_debug uve_math uve_scene uve_asset uve_rhi uve_rhi_shader uve_ui)
+target_link_libraries(uve_render_systems PUBLIC uve_platform uve_logging uve_math uve_scene uve_asset uve_rhi uve_rhi_shader uve_ui)
 target_compile_features(uve_render_systems PUBLIC cxx_std_20)
 uve_set_warnings(uve_render_systems)

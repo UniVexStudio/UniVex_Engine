@@ -7,8 +7,8 @@
 #include <string>
 #include <string_view>
 
-#include "uve/debug/log_level_uve.h"
-#include "uve/debug/log_sink_uve.h"
+#include "uve/logging/log_level_uve.h"
+#include "uve/logging/log_sink_uve.h"
 
 namespace UVE::Debug {
 

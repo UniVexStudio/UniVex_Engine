@@ -17,8 +17,8 @@
 
 #include "uve/asset/asset_database_uve.h"
 #include "uve/asset/shader_asset_uve.h"
-#include "uve/debug/log_sink_uve.h"
-#include "uve/debug/logger_uve.h"
+#include "uve/logging/log_sink_uve.h"
+#include "uve/logging/logger_uve.h"
 
 namespace UVE::Asset::Tests {
 namespace {
