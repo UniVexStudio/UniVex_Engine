@@ -1634,5 +1634,104 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_SingleInstancingAwareObject_StillDrawsE
     EXPECT_EQ(diagnostics.instancedObjectsRecorded, 1U);
 }
 
+
+// ---------------------------------------------------------------------------
+// Cached offscreen target sets.
+//
+// ViewportManagerUVE::RenderAllPanesUVE drives ONE shared renderer across every
+// pane, resizing it to each pane's pixel size in turn. Before the cache, a
+// split view of differently-sized panes destroyed and recreated all SIX
+// size-dependent textures (color, depth, bloom bright, two blur, SSAO) per pane
+// per frame - permanently, not as a warm-up. These tests measure that directly
+// through the Null device's texture-creation counter rather than asserting
+// something vague about performance.
+// ---------------------------------------------------------------------------
+
+TEST_F(Renderer3DUVETest, ResizeTargetsUVE_RepeatedSizeAlternation_StopsReallocating) {
+    // The split-view case in miniature: two sizes, alternating, forever.
+    ASSERT_TRUE(renderer3D->ResizeTargetsUVE(320U, 240U));
+    ASSERT_TRUE(renderer3D->ResizeTargetsUVE(640U, 480U));
+    const std::uint64_t afterWarmup = renderDevice.GetTextureCreateAttemptCountUVE();
+
+    for (int frame = 0; frame < 10; ++frame) {
+        ASSERT_TRUE(renderer3D->ResizeTargetsUVE(320U, 240U));
+        ASSERT_TRUE(renderer3D->ResizeTargetsUVE(640U, 480U));
+    }
+
+    // Twenty resizes across ten frames, and not one texture created: both sizes were already
+    // cached. Before the cache this would have been 120 creations.
+    EXPECT_EQ(renderDevice.GetTextureCreateAttemptCountUVE(), afterWarmup);
+}
+
+TEST_F(Renderer3DUVETest, ResizeTargetsUVE_NewSize_AllocatesOnceAndThenIsFree) {
+    const std::uint64_t beforeNewSize = renderDevice.GetTextureCreateAttemptCountUVE();
+    ASSERT_TRUE(renderer3D->ResizeTargetsUVE(800U, 600U));
+    const std::uint64_t afterFirst = renderDevice.GetTextureCreateAttemptCountUVE();
+
+    // A genuinely new size does cost allocations - the cache removes repeat cost, it does not
+    // conjure targets. Six of them: color, depth, bloom bright, two blur, SSAO.
+    EXPECT_EQ(afterFirst - beforeNewSize, 6U);
+
+    ASSERT_TRUE(renderer3D->ResizeTargetsUVE(800U, 600U));
+    EXPECT_EQ(renderDevice.GetTextureCreateAttemptCountUVE(), afterFirst);
+}
+
+TEST_F(Renderer3DUVETest, ResizeTargetsUVE_ManyDistinctSizes_DoesNotGrowWithoutBound) {
+    // A window being dragged produces a new size every frame, and those sets are dead the moment
+    // they are made. The cache must evict rather than accumulate, or a long drag exhausts GPU
+    // memory - a slow leak is worse than the churn it replaced.
+    for (std::uint32_t index = 0U; index < 24U; ++index) {
+        ASSERT_TRUE(renderer3D->ResizeTargetsUVE(100U + index, 100U + index));
+    }
+    // Live resources are bounded by the cache limit rather than by the number of sizes seen. The
+    // exact figure is not the point; that it is far below 24 sets is.
+    EXPECT_LT(renderDevice.GetLiveResourceCountUVE(), 24U * 6U);
+}
+
+TEST_F(Renderer3DUVETest, ResizeTargetsUVE_AfterEviction_StillRendersCorrectly) {
+    // Eviction clears sets that a later resize may ask for again. The rebuilt set must be just as
+    // usable as the original - an evicted-then-recreated size that renders nothing would be a
+    // pane that goes black after the user resizes a window enough times.
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_evict.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_evict.uvemat");
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -5.0F}, meshGuid, materialGuid);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid, false);
+    PrimeMaterialProgramUVE(*renderer3D, cameraEntity);
+
+    ASSERT_TRUE(renderer3D->ResizeTargetsUVE(256U, 256U));
+    for (std::uint32_t index = 0U; index < 20U; ++index) {
+        ASSERT_TRUE(renderer3D->ResizeTargetsUVE(300U + index, 300U + index));
+    }
+    ASSERT_TRUE(renderer3D->ResizeTargetsUVE(256U, 256U));
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const Renderer3DFrameDiagnosticsUVE diagnostics = renderer3D->GetLastFrameDiagnosticsUVE();
+    EXPECT_EQ(diagnostics.renderTargetWidth, 256U);
+    EXPECT_EQ(diagnostics.renderTargetHeight, 256U);
+    EXPECT_TRUE(diagnostics.mainPassRecorded);
+    EXPECT_EQ(diagnostics.meshDrawCallsRecorded, 1U);
+}
+
+TEST_F(Renderer3DUVETest, ResizeTargetsUVE_SwitchingBackToACachedSize_RendersThatSize) {
+    // The cache must hand back the RIGHT set, not merely a valid one. A mismatch here would draw
+    // one pane's content at another pane's resolution.
+    ASSERT_TRUE(renderer3D->ResizeTargetsUVE(320U, 200U));
+    ASSERT_TRUE(renderer3D->ResizeTargetsUVE(640U, 400U));
+    ASSERT_TRUE(renderer3D->ResizeTargetsUVE(320U, 200U));
+
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const Renderer3DFrameDiagnosticsUVE diagnostics = renderer3D->GetLastFrameDiagnosticsUVE();
+    EXPECT_EQ(diagnostics.renderTargetWidth, 320U);
+    EXPECT_EQ(diagnostics.renderTargetHeight, 200U);
+}
+
+TEST_F(Renderer3DUVETest, ResizeTargetsUVE_ZeroSizeStillRejected) {
+    // Unchanged behavior, restated because the resize path was rewritten around it.
+    EXPECT_FALSE(renderer3D->ResizeTargetsUVE(0U, 480U));
+    EXPECT_FALSE(renderer3D->ResizeTargetsUVE(640U, 0U));
+}
+
 } // namespace
 } // namespace UVE::Render::Tests

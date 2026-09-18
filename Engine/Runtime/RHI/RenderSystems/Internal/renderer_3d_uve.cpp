@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cmath>
 #include <cstdint>
+#include <map>
 #include <optional>
 #include <utility>
 #include <span>
@@ -500,6 +501,36 @@ struct Renderer3DUVE::ImplUVE {
     std::uint32_t targetWidth;
     std::uint32_t targetHeight;
 
+    /// One complete set of size-dependent offscreen targets, kept so a renderer that alternates
+    /// between a few sizes can switch between them instead of reallocating.
+    ///
+    /// This exists because of ViewportManagerUVE::RenderAllPanesUVE(): it drives ONE shared
+    /// renderer across every pane, resizing it to each pane's pixel size in turn. Without a cache,
+    /// a split view of differently-sized panes destroyed and recreated all SIX of these textures
+    /// per pane per frame, forever - not a warm-up cost, a permanent one. That churn is what the
+    /// ViewportManagerUVE header documents as "a per-pane cached target pool would avoid".
+    ///
+    /// Keyed by size rather than by pane, deliberately: the renderer has no pane concept and
+    /// should not acquire one, and two panes that happen to share a size should share a set.
+    struct SizedTargetSetUVE final {
+        TextureHandleUVE colorTarget = kInvalidTextureHandleUVE;
+        TextureHandleUVE depthTarget = kInvalidTextureHandleUVE;
+        TextureHandleUVE bloomBrightTarget = kInvalidTextureHandleUVE;
+        TextureHandleUVE bloomBlurTargetA = kInvalidTextureHandleUVE;
+        TextureHandleUVE bloomBlurTargetB = kInvalidTextureHandleUVE;
+        TextureHandleUVE ssaoTarget = kInvalidTextureHandleUVE;
+    };
+
+    /// Bounded on purpose. A caller that resizes to a genuinely new size every frame - a window
+    /// being dragged - must not accumulate texture sets without limit, so the cache is cleared
+    /// once it exceeds this and rebuilt from the sizes actually in use. Small, because the case
+    /// this serves is a handful of panes, not an arbitrary set of resolutions.
+    static constexpr std::size_t kMaximumCachedTargetSetsUVE = 8U;
+
+    /// Size -> its target set. The ACTIVE set's handles are also mirrored into the colorTarget/
+    /// depthTarget/... members below, so every pass that reads them is untouched by this cache.
+    std::map<std::pair<std::uint32_t, std::uint32_t>, SizedTargetSetUVE> targetSetCache;
+
     /// Copied only through IRenderer3DUVE::GetLastFrameDiagnosticsUVE(). Recorded counts are
     /// CPU-side renderer facts; the OpenGL-issued count never asserts completed presentation.
     Renderer3DFrameDiagnosticsUVE lastFrameDiagnostics;
@@ -688,74 +719,122 @@ struct Renderer3DUVE::ImplUVE {
                                                             "shadowCascadeBlendRatio")),
           shadowPcfKernelRadius(static_cast<std::int32_t>(std::min(shadowPcfKernelRadiusIn, 2U))) {}
 
+    /// Creates a complete target set for `width`x`height`, or returns nullopt having destroyed any
+    /// partial allocation. All six are created together because a half-built set is not usable and
+    /// would only defer the failure into a pass.
+    [[nodiscard]] std::optional<SizedTargetSetUVE> CreateTargetSetUVE(const std::uint32_t width,
+                                                                      const std::uint32_t height) {
+        SizedTargetSetUVE set;
+        set.colorTarget =
+            renderDevice.CreateTextureUVE(TextureDescUVE{width, height, kSceneColorTargetFormatUVE, 1});
+        set.depthTarget =
+            renderDevice.CreateTextureUVE(TextureDescUVE{width, height, TextureFormatUVE::Depth32Float, 1});
+        const std::uint32_t halfWidth = HalfExtentUVE(width);
+        const std::uint32_t halfHeight = HalfExtentUVE(height);
+        set.bloomBrightTarget =
+            renderDevice.CreateTextureUVE(TextureDescUVE{halfWidth, halfHeight, kSceneColorTargetFormatUVE, 1});
+        set.bloomBlurTargetA =
+            renderDevice.CreateTextureUVE(TextureDescUVE{halfWidth, halfHeight, kSceneColorTargetFormatUVE, 1});
+        set.bloomBlurTargetB =
+            renderDevice.CreateTextureUVE(TextureDescUVE{halfWidth, halfHeight, kSceneColorTargetFormatUVE, 1});
+        set.ssaoTarget =
+            renderDevice.CreateTextureUVE(TextureDescUVE{halfWidth, halfHeight, TextureFormatUVE::RGBA8Unorm, 1});
+
+        // Color and depth are load-bearing: without them there is no frame at all. The
+        // post-process four are not - RenderFrameUVE() guards on their validity and skips those
+        // passes - so a set missing only those is still returned and still usable, preserving the
+        // pre-cache behavior exactly.
+        if (set.colorTarget == kInvalidTextureHandleUVE || set.depthTarget == kInvalidTextureHandleUVE) {
+            DestroyTargetSetUVE(set);
+            return std::nullopt;
+        }
+        if (set.bloomBrightTarget == kInvalidTextureHandleUVE ||
+            set.bloomBlurTargetA == kInvalidTextureHandleUVE ||
+            set.bloomBlurTargetB == kInvalidTextureHandleUVE || set.ssaoTarget == kInvalidTextureHandleUVE) {
+            DestroyTextureIfValidUVE(renderDevice, set.bloomBrightTarget);
+            DestroyTextureIfValidUVE(renderDevice, set.bloomBlurTargetA);
+            DestroyTextureIfValidUVE(renderDevice, set.bloomBlurTargetB);
+            DestroyTextureIfValidUVE(renderDevice, set.ssaoTarget);
+            set.bloomBrightTarget = kInvalidTextureHandleUVE;
+            set.bloomBlurTargetA = kInvalidTextureHandleUVE;
+            set.bloomBlurTargetB = kInvalidTextureHandleUVE;
+            set.ssaoTarget = kInvalidTextureHandleUVE;
+            UVE_WARNING("Renderer3DUVE: post-process target creation failed at {}x{}; bloom/SSAO "
+                        "passes will be skipped at this size",
+                        halfWidth, halfHeight);
+        }
+        return set;
+    }
+
+    void DestroyTargetSetUVE(const SizedTargetSetUVE& set) {
+        DestroyTextureIfValidUVE(renderDevice, set.colorTarget);
+        DestroyTextureIfValidUVE(renderDevice, set.depthTarget);
+        DestroyTextureIfValidUVE(renderDevice, set.bloomBrightTarget);
+        DestroyTextureIfValidUVE(renderDevice, set.bloomBlurTargetA);
+        DestroyTextureIfValidUVE(renderDevice, set.bloomBlurTargetB);
+        DestroyTextureIfValidUVE(renderDevice, set.ssaoTarget);
+    }
+
+    /// Points the active target members at `set`. Every render pass reads these members, so
+    /// switching sets is exactly this and nothing more - the cache is invisible to the passes.
+    void ActivateTargetSetUVE(const SizedTargetSetUVE& set, const std::uint32_t width,
+                              const std::uint32_t height) noexcept {
+        colorTarget = set.colorTarget;
+        depthTarget = set.depthTarget;
+        bloomBrightTarget = set.bloomBrightTarget;
+        bloomBlurTargetA = set.bloomBlurTargetA;
+        bloomBlurTargetB = set.bloomBlurTargetB;
+        ssaoTarget = set.ssaoTarget;
+        targetWidth = width;
+        targetHeight = height;
+    }
+
     [[nodiscard]] bool ResizeTargetsUVE(const std::uint32_t newWidth, const std::uint32_t newHeight) {
         if (newWidth == 0U || newHeight == 0U) {
             return false;
         }
-        if (targetWidth == newWidth && targetHeight == newHeight) {
+        if (targetWidth == newWidth && targetHeight == newHeight &&
+            colorTarget != kInvalidTextureHandleUVE) {
             return true;
         }
 
-        const TextureHandleUVE newColorTarget = renderDevice.CreateTextureUVE(
-            TextureDescUVE{newWidth, newHeight, kSceneColorTargetFormatUVE, 1});
-        const TextureHandleUVE newDepthTarget = renderDevice.CreateTextureUVE(
-            TextureDescUVE{newWidth, newHeight, TextureFormatUVE::Depth32Float, 1});
-        if (newColorTarget == kInvalidTextureHandleUVE || newDepthTarget == kInvalidTextureHandleUVE) {
-            DestroyTextureIfValidUVE(renderDevice, newColorTarget);
-            DestroyTextureIfValidUVE(renderDevice, newDepthTarget);
+        const std::pair<std::uint32_t, std::uint32_t> key{newWidth, newHeight};
+        const auto cachedIt = targetSetCache.find(key);
+        if (cachedIt != targetSetCache.end()) {
+            // The whole point: a size seen before costs a handful of pointer assignments, not six
+            // texture allocations. This is the path a steady-state split view takes every frame.
+            ActivateTargetSetUVE(cachedIt->second, newWidth, newHeight);
+            return true;
+        }
+
+        // A genuinely new size. Evict first if the cache has grown past its bound - a window being
+        // dragged produces a new size every frame, and those sets are dead the moment they are
+        // made. Clearing wholesale rather than evicting one entry keeps this simple and cannot
+        // free a set that is about to be reactivated, because the active set is re-created
+        // immediately below.
+        if (targetSetCache.size() >= kMaximumCachedTargetSetsUVE) {
+            for (const auto& [cachedSize, cachedSet] : targetSetCache) {
+                static_cast<void>(cachedSize);
+                DestroyTargetSetUVE(cachedSet);
+            }
+            targetSetCache.clear();
+            colorTarget = kInvalidTextureHandleUVE;
+            depthTarget = kInvalidTextureHandleUVE;
+            bloomBrightTarget = kInvalidTextureHandleUVE;
+            bloomBlurTargetA = kInvalidTextureHandleUVE;
+            bloomBlurTargetB = kInvalidTextureHandleUVE;
+            ssaoTarget = kInvalidTextureHandleUVE;
+        }
+
+        std::optional<SizedTargetSetUVE> created = CreateTargetSetUVE(newWidth, newHeight);
+        if (!created.has_value()) {
             UVE_WARNING("Renderer3DUVE: adaptive target resize rejected ({}x{}); retaining {}x{}",
                         newWidth, newHeight, targetWidth, targetHeight);
             return false;
         }
 
-        DestroyTextureIfValidUVE(renderDevice, colorTarget);
-        DestroyTextureIfValidUVE(renderDevice, depthTarget);
-        colorTarget = newColorTarget;
-        depthTarget = newDepthTarget;
-        targetWidth = newWidth;
-        targetHeight = newHeight;
-
-        // Post-process targets are not load-bearing the way color/depth are above: a failed
-        // recreation here degrades to those passes being skipped this frame (guarded by validity
-        // checks in RenderFrameUVE()) rather than rejecting the whole resize.
-        const std::uint32_t halfWidth = HalfExtentUVE(newWidth);
-        const std::uint32_t halfHeight = HalfExtentUVE(newHeight);
-        const TextureHandleUVE newBloomBrightTarget =
-            renderDevice.CreateTextureUVE(TextureDescUVE{halfWidth, halfHeight, kSceneColorTargetFormatUVE, 1});
-        const TextureHandleUVE newBloomBlurTargetA =
-            renderDevice.CreateTextureUVE(TextureDescUVE{halfWidth, halfHeight, kSceneColorTargetFormatUVE, 1});
-        const TextureHandleUVE newBloomBlurTargetB =
-            renderDevice.CreateTextureUVE(TextureDescUVE{halfWidth, halfHeight, kSceneColorTargetFormatUVE, 1});
-        const TextureHandleUVE newSsaoTarget =
-            renderDevice.CreateTextureUVE(TextureDescUVE{halfWidth, halfHeight, TextureFormatUVE::RGBA8Unorm, 1});
-        if (newBloomBrightTarget == kInvalidTextureHandleUVE || newBloomBlurTargetA == kInvalidTextureHandleUVE ||
-            newBloomBlurTargetB == kInvalidTextureHandleUVE || newSsaoTarget == kInvalidTextureHandleUVE) {
-            DestroyTextureIfValidUVE(renderDevice, newBloomBrightTarget);
-            DestroyTextureIfValidUVE(renderDevice, newBloomBlurTargetA);
-            DestroyTextureIfValidUVE(renderDevice, newBloomBlurTargetB);
-            DestroyTextureIfValidUVE(renderDevice, newSsaoTarget);
-            DestroyTextureIfValidUVE(renderDevice, bloomBrightTarget);
-            DestroyTextureIfValidUVE(renderDevice, bloomBlurTargetA);
-            DestroyTextureIfValidUVE(renderDevice, bloomBlurTargetB);
-            DestroyTextureIfValidUVE(renderDevice, ssaoTarget);
-            bloomBrightTarget = kInvalidTextureHandleUVE;
-            bloomBlurTargetA = kInvalidTextureHandleUVE;
-            bloomBlurTargetB = kInvalidTextureHandleUVE;
-            ssaoTarget = kInvalidTextureHandleUVE;
-            UVE_WARNING("Renderer3DUVE: post-process target resize failed at {}x{}; bloom/SSAO passes "
-                        "will be skipped until the next successful resize",
-                        halfWidth, halfHeight);
-        } else {
-            DestroyTextureIfValidUVE(renderDevice, bloomBrightTarget);
-            DestroyTextureIfValidUVE(renderDevice, bloomBlurTargetA);
-            DestroyTextureIfValidUVE(renderDevice, bloomBlurTargetB);
-            DestroyTextureIfValidUVE(renderDevice, ssaoTarget);
-            bloomBrightTarget = newBloomBrightTarget;
-            bloomBlurTargetA = newBloomBlurTargetA;
-            bloomBlurTargetB = newBloomBlurTargetB;
-            ssaoTarget = newSsaoTarget;
-        }
-
+        const auto inserted = targetSetCache.emplace(key, *created);
+        ActivateTargetSetUVE(inserted.first->second, newWidth, newHeight);
         UVE_INFO("Renderer3DUVE: adaptive targets resized to {}x{}", targetWidth, targetHeight);
         return true;
     }
@@ -1503,26 +1582,17 @@ Renderer3DUVE::Renderer3DUVE(IRenderDeviceUVE& renderDevice, IRenderSystemUVE& r
     // The scene is rendered to the offscreen color target first; desktop keeps HDR RGBA16F while
     // Android uses the GLES3-safe RGBA8 target, and the final fullscreen graph pass tone-maps it
     // to the default framebuffer's LDR presentation surface.
-    m_impl->colorTarget = renderDevice.CreateTextureUVE(
-        TextureDescUVE{targetWidth, targetHeight, kSceneColorTargetFormatUVE, 1});
-    m_impl->depthTarget = renderDevice.CreateTextureUVE(
-        TextureDescUVE{targetWidth, targetHeight, TextureFormatUVE::Depth32Float, 1});
-    if (m_impl->colorTarget == kInvalidTextureHandleUVE || m_impl->depthTarget == kInvalidTextureHandleUVE) {
+    // Created through the same cache path a later resize uses, rather than allocated directly:
+    // the destructor frees size-dependent targets as CACHE ENTRIES, so a set created outside the
+    // cache would simply leak. One owner for these textures, not two.
+    if (std::optional<ImplUVE::SizedTargetSetUVE> initialSet =
+            m_impl->CreateTargetSetUVE(targetWidth, targetHeight);
+        initialSet.has_value()) {
+        const auto inserted =
+            m_impl->targetSetCache.emplace(std::pair{targetWidth, targetHeight}, *initialSet);
+        m_impl->ActivateTargetSetUVE(inserted.first->second, targetWidth, targetHeight);
+    } else {
         UVE_ERROR("Renderer3DUVE: main render target creation failed; frame rendering will be skipped");
-    }
-    const std::uint32_t halfWidth = HalfExtentUVE(targetWidth);
-    const std::uint32_t halfHeight = HalfExtentUVE(targetHeight);
-    m_impl->bloomBrightTarget =
-        renderDevice.CreateTextureUVE(TextureDescUVE{halfWidth, halfHeight, kSceneColorTargetFormatUVE, 1});
-    m_impl->bloomBlurTargetA =
-        renderDevice.CreateTextureUVE(TextureDescUVE{halfWidth, halfHeight, kSceneColorTargetFormatUVE, 1});
-    m_impl->bloomBlurTargetB =
-        renderDevice.CreateTextureUVE(TextureDescUVE{halfWidth, halfHeight, kSceneColorTargetFormatUVE, 1});
-    m_impl->ssaoTarget =
-        renderDevice.CreateTextureUVE(TextureDescUVE{halfWidth, halfHeight, TextureFormatUVE::RGBA8Unorm, 1});
-    if (m_impl->bloomBrightTarget == kInvalidTextureHandleUVE || m_impl->bloomBlurTargetA == kInvalidTextureHandleUVE ||
-        m_impl->bloomBlurTargetB == kInvalidTextureHandleUVE || m_impl->ssaoTarget == kInvalidTextureHandleUVE) {
-        UVE_ERROR("Renderer3DUVE: post-process target creation failed; bloom/SSAO passes will be skipped");
     }
     m_impl->fallbackWhiteTexture = renderDevice.CreateTextureUVE(
         TextureDescUVE{1, 1, TextureFormatUVE::RGBA8Unorm, 1}, std::as_bytes(std::span(kWhitePixelUVE)));
@@ -1663,12 +1733,21 @@ Renderer3DUVE::~Renderer3DUVE() {
     DestroyBufferIfValidUVE(m_impl->renderDevice, m_impl->instanceTransformBuffer);
     DestroyBufferIfValidUVE(m_impl->renderDevice, m_impl->instanceNormalTransformBuffer);
     DestroyBufferIfValidUVE(m_impl->renderDevice, m_impl->instanceBaseBuffer);
-    DestroyTextureIfValidUVE(m_impl->renderDevice, m_impl->colorTarget);
-    DestroyTextureIfValidUVE(m_impl->renderDevice, m_impl->depthTarget);
-    DestroyTextureIfValidUVE(m_impl->renderDevice, m_impl->bloomBrightTarget);
-    DestroyTextureIfValidUVE(m_impl->renderDevice, m_impl->bloomBlurTargetA);
-    DestroyTextureIfValidUVE(m_impl->renderDevice, m_impl->bloomBlurTargetB);
-    DestroyTextureIfValidUVE(m_impl->renderDevice, m_impl->ssaoTarget);
+    // The cache owns every size-dependent target, INCLUDING the active one - colorTarget and its
+    // siblings are mirrors of a cached set's handles, not separate allocations. Destroying both
+    // would be a double free, so the mirrors are only cleared, and are destroyed exactly once here
+    // as cache entries.
+    for (const auto& [cachedSize, cachedSet] : m_impl->targetSetCache) {
+        static_cast<void>(cachedSize);
+        m_impl->DestroyTargetSetUVE(cachedSet);
+    }
+    m_impl->targetSetCache.clear();
+    m_impl->colorTarget = kInvalidTextureHandleUVE;
+    m_impl->depthTarget = kInvalidTextureHandleUVE;
+    m_impl->bloomBrightTarget = kInvalidTextureHandleUVE;
+    m_impl->bloomBlurTargetA = kInvalidTextureHandleUVE;
+    m_impl->bloomBlurTargetB = kInvalidTextureHandleUVE;
+    m_impl->ssaoTarget = kInvalidTextureHandleUVE;
     DestroyTextureIfValidUVE(m_impl->renderDevice, m_impl->fallbackWhiteTexture);
     DestroyTextureIfValidUVE(m_impl->renderDevice, m_impl->fallbackNormalTexture);
     for (const TextureHandleUVE shadowMapTarget : m_impl->shadowMapTargets) {
