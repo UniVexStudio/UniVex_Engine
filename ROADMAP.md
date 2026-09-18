@@ -189,8 +189,12 @@ publicly shipping real-time engines as of today, without naming any of them.
 - [ ] GPU compute-shader support (for culling, particle simulation, skinning, etc. on the
   GPU instead of the CPU) — RHI level completed with M5a (compute pipelines, DispatchUVE,
   SSBO write path) and M5b (STORAGE_IMAGE descriptors, GENERAL transitions + image barriers,
-  unified texture-slot space, pixel-proven on lavapipe and GL); remaining: the engine-level
-  ComputeSystemUVE consumer layer (Part 7.2)
+  unified texture-slot space, pixel-proven on lavapipe and GL); the engine-level
+  ComputeSystemUVE consumer layer (Part 7.2) has landed as its own system — compute-program
+  lifecycle over any injected IRenderDeviceUVE, a validated dispatch queue recorded outside
+  pass markers in enqueue order, diagnostics, Null-spy plus real-GL byte-verified proofs;
+  remaining: its per-frame wiring into EngineCoreUVE/Renderer3DUVE and the first GPU
+  workloads on top (particle simulation, culling, skinning)
 - [ ] Bindless/descriptor-indexing-style resource binding for reduced per-draw overhead
 
 ---
