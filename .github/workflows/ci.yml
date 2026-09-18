@@ -80,13 +80,30 @@ jobs:
           RC=$?
           set -e
           if [ "$RC" -ne 0 ]; then
-            # Sandbox/CI forensics: surface ALL failing test names + gtest failure bodies as
-            # annotations - no head cap (the log CDN is not always reachable; annotations are).
-            grep -E "^ *[0-9]+/[0-9]+ Test .*(Failed|\*\*\*)" /tmp/ctest.log | while read -r L; do
+            # Sandbox/CI forensics: the log CDN is not always reachable from the agent sandbox,
+            # so annotations are the evidence channel that always works - but GitHub keeps only
+            # the FIRST ~10 error annotations per run. Everything below is therefore ordered
+            # most-diagnostic-first, and matched precisely: an earlier revision of this block
+            # grepped for "Failed" anywhere on the line, which matched the NAMES of passing
+            # tests like LoadUVE_UnknownGuid_BecomesFailedAndLogsError and spent the whole
+            # annotation budget on noise while the real failure never appeared.
+
+            # 1. ctest's own trailing summary: the definitive list of what failed.
+            sed -n "/The following tests FAILED:/,\$p" /tmp/ctest.log | head -40 | while read -r L; do
+              echo "::error title=ctest-summary::$(echo "$L" | cut -c1-1000)"
+            done
+            # 2. gtest's own verdict lines - anchored, so only real results match.
+            grep -E "^\[  FAILED  \]" /tmp/ctest.log | sort -u | while read -r L; do
               echo "::error title=ctest-failed-case::$(echo "$L" | cut -c1-1000)"
             done
-            grep -E "FAILED +TEST|Value of:|Actual:|Expected:|Assertion|\[  FAILED  \]" /tmp/ctest.log | while read -r L; do
+            # 3. The assertion bodies that explain WHY.
+            grep -E "^(.*:[0-9]+: Failure|Value of:|  Actual:|Expected:|Which is:|Assertion)" /tmp/ctest.log | while read -r L; do
               echo "::error title=ctest-detail::$(echo "$L" | cut -c1-1000)"
+            done
+            # 4. ctest per-case lines, restricted to the ***-marked outcomes (Failed, Exception,
+            #    Timeout) so passing and skipped cases can never crowd the budget.
+            grep -E "^ *[0-9]+/[0-9]+ Test .*\*\*\*(Failed|Exception|Timeout)" /tmp/ctest.log | while read -r L; do
+              echo "::error title=ctest-case::$(echo "$L" | cut -c1-1000)"
             done
             exit $RC
           fi
