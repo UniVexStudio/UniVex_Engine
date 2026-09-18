@@ -2129,15 +2129,8 @@ Scene::EntityUVE EditorUVE::CreateDocumentSceneNodeUVE(
                                                             Scene::ApplyStaticBody3DNodeDefinitionUVE);
             break;
         case Scene::Nodes::SceneNodeKindUVE::AnimatableBody3D:
-            entity = CreateDocumentEntityInternalUVE(EditorEntityKindUVE::Empty, std::nullopt);
-            if (entity != Scene::kInvalidEntityUVE) {
-                entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(entity, Scene::ColliderComponentUVE{});
-                Scene::RigidBodyComponentUVE body{};
-                body.isKinematic = true;
-                entityManager.AddComponentUVE<Scene::RigidBodyComponentUVE>(entity, body);
-                entityManager.AddComponentUVE<Scene::AnimatableBody3DNodeComponentUVE>(
-                    entity, Scene::AnimatableBody3DNodeComponentUVE{});
-            }
+            entity = CreateNodeDefinitionEntityInternalUVE(Scene::AnimatableBody3DNodeDefinitionUVE{},
+                                                            Scene::ApplyAnimatableBody3DNodeDefinitionUVE);
             break;
         case Scene::Nodes::SceneNodeKindUVE::NavigationRegion3D:
             entity = createNodeWithComponent(Scene::NavigationRegion3DNodeComponentUVE{});

@@ -69,6 +69,7 @@ TEST_F(Node3DDefinitionsUVETest, AllDefinitionDefaultsAreValid) {
     EXPECT_TRUE(IsScriptNodeDefinitionValidUVE(ScriptNodeDefinitionUVE{}));
     EXPECT_TRUE(IsAnimationPlayerNodeDefinitionValidUVE(AnimationPlayerNodeDefinitionUVE{}));
     EXPECT_TRUE(IsAnimationTreeNodeDefinitionValidUVE(AnimationTreeNodeDefinitionUVE{}));
+    EXPECT_TRUE(IsAnimatableBody3DNodeDefinitionValidUVE(AnimatableBody3DNodeDefinitionUVE{}));
 }
 
 // The seven names the editor's legacy EditorEntityKindUVE path surfaces are locked at compile
@@ -81,6 +82,7 @@ static_assert(Collider3DNodeDefinitionUVE::defaultName == "Collision Box");
 static_assert(BoxMesh3DNodeDefinitionUVE::defaultName == "Cube");
 static_assert(SphereMesh3DNodeDefinitionUVE::defaultName == "UV Sphere");
 static_assert(PlaneMesh3DNodeDefinitionUVE::defaultName == "Plane");
+static_assert(AnimatableBody3DNodeDefinitionUVE::defaultName == "AnimatableBody3D");
 
 TEST_F(Node3DDefinitionsUVETest, DefaultNamesAreAuthoredPerKindNotGeneric) {
     // The six kinds that previously lived behind legacy EditorEntityKindUVE values keep their
@@ -102,6 +104,7 @@ TEST_F(Node3DDefinitionsUVETest, DefaultNamesAreAuthoredPerKindNotGeneric) {
     EXPECT_EQ(ScriptNodeDefinitionUVE::defaultName, "Script");
     EXPECT_EQ(AnimationPlayerNodeDefinitionUVE::defaultName, "AnimationPlayer");
     EXPECT_EQ(AnimationTreeNodeDefinitionUVE::defaultName, "AnimationTree");
+    EXPECT_EQ(AnimatableBody3DNodeDefinitionUVE::defaultName, "AnimatableBody3D");
 }
 
 TEST_F(Node3DDefinitionsUVETest, ApplyAttachesEachKindsExactComponentRecipe) {
@@ -210,6 +213,22 @@ TEST_F(Node3DDefinitionsUVETest, CharacterBodyRecipeIsKinematicByContract) {
     CharacterBody3DNodeDefinitionUVE nonKinematic{};
     nonKinematic.body.isKinematic = false;
     EXPECT_FALSE(IsCharacterBody3DNodeDefinitionValidUVE(nonKinematic));
+}
+
+TEST_F(Node3DDefinitionsUVETest, AnimatableBodyRecipeMatchesTheFormerInlineEditorRecipe) {
+    // The last inline multi-component recipe the editor's creation switch used to hardcode:
+    // collider + kinematic body + the animatable body's own component, in that spirit unchanged.
+    const EntityUVE entity = CreateEntityUVE();
+    ApplyAnimatableBody3DNodeDefinitionUVE(entityManager, entity, AnimatableBody3DNodeDefinitionUVE{});
+    ASSERT_TRUE(entityManager.HasComponentUVE<ColliderComponentUVE>(entity));
+    ASSERT_TRUE(entityManager.HasComponentUVE<RigidBodyComponentUVE>(entity));
+    ASSERT_TRUE(entityManager.HasComponentUVE<AnimatableBody3DNodeComponentUVE>(entity));
+    EXPECT_TRUE(entityManager.GetComponentUVE<RigidBodyComponentUVE>(entity).isKinematic);
+    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<AnimatableBody3DNodeComponentUVE>(entity).interpolation, 1.0F);
+
+    AnimatableBody3DNodeDefinitionUVE nonKinematic{};
+    nonKinematic.body.isKinematic = false;
+    EXPECT_FALSE(IsAnimatableBody3DNodeDefinitionValidUVE(nonKinematic));
 }
 
 TEST_F(Node3DDefinitionsUVETest, LightRecipeDefaultsToDirectionalSunLight) {
