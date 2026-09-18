@@ -2601,22 +2601,22 @@ std::string EditorUVE::GetOutlinerTypeTagUVE(const Scene::EntityUVE entity) cons
     if (entityManager.HasComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity)) {
         switch (entityManager.GetComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity).kind) {
             case Scene::PrimitiveMeshKindUVE::Plane:
-                return "Plane";
+                return std::string{Scene::PlaneMesh3DNodeDefinitionUVE::defaultName};
             case Scene::PrimitiveMeshKindUVE::UVSphere:
-                return "UV Sphere";
+                return std::string{Scene::SphereMesh3DNodeDefinitionUVE::defaultName};
             case Scene::PrimitiveMeshKindUVE::Cube:
-                return "Cube";
+                return std::string{Scene::BoxMesh3DNodeDefinitionUVE::defaultName};
         }
     }
     if (entityManager.HasComponentUVE<Scene::CameraComponentUVE>(entity)) {
-        return "Camera";
+        return std::string{Scene::Camera3DNodeDefinitionUVE::defaultName};
     }
     if (entityManager.HasComponentUVE<Scene::LightComponentUVE>(entity) &&
         entityManager.GetComponentUVE<Scene::LightComponentUVE>(entity).type == Scene::LightTypeUVE::Directional) {
-        return "Directional Light";
+        return std::string{Scene::Light3DNodeDefinitionUVE::defaultName};
     }
     if (entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(entity)) {
-        return "Collision Box";
+        return std::string{Scene::Collider3DNodeDefinitionUVE::defaultName};
     }
     return {};
 }
@@ -3505,21 +3505,23 @@ std::string EditorUVE::GetEntityDisplayLabelUVE(const Scene::EntityUVE entity) c
 }
 
 std::string EditorUVE::GetDefaultEntityNameUVE(const EditorEntityKindUVE kind) const {
+    // The names themselves live with each node kind's definition in Engine/Runtime/Nodes/3D —
+    // this legacy-kind mapper only picks which definition to ask, never authors a name itself.
     switch (kind) {
         case EditorEntityKindUVE::Empty:
-            return "Empty";
+            return std::string{Scene::EmptyNodeDefinitionUVE::defaultName};
         case EditorEntityKindUVE::Camera:
-            return "Camera";
+            return std::string{Scene::Camera3DNodeDefinitionUVE::defaultName};
         case EditorEntityKindUVE::DirectionalLight:
-            return "Directional Light";
+            return std::string{Scene::Light3DNodeDefinitionUVE::defaultName};
         case EditorEntityKindUVE::CollisionBox:
-            return "Collision Box";
+            return std::string{Scene::Collider3DNodeDefinitionUVE::defaultName};
         case EditorEntityKindUVE::Cube:
-            return "Cube";
+            return std::string{Scene::BoxMesh3DNodeDefinitionUVE::defaultName};
         case EditorEntityKindUVE::UVSphere:
-            return "UV Sphere";
+            return std::string{Scene::SphereMesh3DNodeDefinitionUVE::defaultName};
         case EditorEntityKindUVE::Plane:
-            return "Plane";
+            return std::string{Scene::PlaneMesh3DNodeDefinitionUVE::defaultName};
     }
     return {};
 }
@@ -4873,7 +4875,12 @@ void EditorUVE::DrawPrimitiveMeshInspectorDrawerUVE(const Scene::EntityUVE entit
     const Scene::PrimitiveMeshComponentUVE current =
         entityManager.GetComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity);
     int kindIndex = static_cast<int>(current.kind);
-    constexpr const char* kPrimitiveKinds[] = {"Cube", "UV Sphere", "Plane"};
+    // Combo labels sourced from the primitive node definitions' own default names — index order
+    // matches PrimitiveMeshKindUVE (Cube, UVSphere, Plane). The string literals backing
+    // defaultName are null-terminated, so data() is safe for ImGui's const char* array API.
+    constexpr const char* kPrimitiveKinds[] = {Scene::BoxMesh3DNodeDefinitionUVE::defaultName.data(),
+                                                Scene::SphereMesh3DNodeDefinitionUVE::defaultName.data(),
+                                                Scene::PlaneMesh3DNodeDefinitionUVE::defaultName.data()};
     ImGui::TextUnformatted("Primitive Kind");
     const bool kindChanged = ImGui::Combo("##primitive-kind", &kindIndex, kPrimitiveKinds,
                                           static_cast<int>(std::size(kPrimitiveKinds)));
