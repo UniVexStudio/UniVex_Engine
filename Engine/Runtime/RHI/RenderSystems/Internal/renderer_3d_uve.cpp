@@ -1814,7 +1814,11 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     Math::Matrix4x4UVE inverseProjection{};
     const bool projectionInvertible = Math::TryInverseUVE(projection, inverseProjection);
     const Math::Vector3UVE viewPosition = m_impl->cameraSystem.GetWorldPositionUVE(entityManager, cameraEntity);
-    const LightListUVE lights = m_impl->lightSystem.ExtractActiveLightsUVE(entityManager);
+    // Selected by contribution at the camera, not by whichever four the ECS happened to visit
+    // first. The old order was not merely arbitrary - it could change when an unrelated entity was
+    // created or destroyed, so a light could vanish from the player's face for no visible reason.
+    const LightListUVE lights =
+        m_impl->lightSystem.ExtractActiveLightsForViewUVE(entityManager, viewPosition);
     const Math::Vector3UVE ambientColor = ResolveWorldEnvironmentAmbientUVE(entityManager, m_impl->ambientColor);
 
     const LightDataUVE* const shadowCaster = FindShadowCasterUVE(lights);

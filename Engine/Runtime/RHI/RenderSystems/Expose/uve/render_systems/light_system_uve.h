@@ -14,6 +14,10 @@ namespace UVE::Render {
 class LightSystemUVE final : public ILightSystemUVE {
 public:
     [[nodiscard]] LightListUVE ExtractActiveLightsUVE(Scene::IEntityManagerUVE& entityManager) const override;
+
+    [[nodiscard]] LightListUVE ExtractActiveLightsForViewUVE(
+        Scene::IEntityManagerUVE& entityManager,
+        const Math::Vector3UVE& viewPosition) const override;
 };
 
 } // namespace UVE::Render

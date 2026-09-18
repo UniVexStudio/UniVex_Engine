@@ -46,8 +46,20 @@ publicly shipping real-time engines as of today, without naming any of them.
 - [ ] Cascaded shadow maps for directional lights (multiple shadow-distance bands)
 - [ ] Shadow maps for point/spot lights (cube-map and perspective shadow variants)
 - [ ] Contact shadows / screen-space shadow refinement
-- [ ] A true physically-based material model (metallic/roughness or specular/gloss,
-  energy-conserving BRDF, image-based lighting for ambient specular)
+- [x] A true physically-based material model — verified rather than assumed: lit_shadowed_3d.glsl
+  already implements real Cook-Torrance (GGX distribution, Smith geometry, Schlick Fresnel), the
+  correct (1-F)(1-metallic) energy split, mix(0.04, albedo, metallic) base reflectance, and
+  tangent-space normal mapping with Gram-Schmidt re-orthogonalization and handedness. What was
+  missing was the AMBIENT half: ambient was purely diffuse, so a metal - whose diffuse response is
+  zero by definition - rendered BLACK wherever no direct light reached it. That is the single most
+  visible way a correct BRDF still looks wrong. Ambient now carries the same diffuse/specular
+  split as the direct term, with roughness-aware Fresnel so rough surfaces do not gain a bright
+  grazing rim, and AO applied to both halves. This is not image-based lighting - there is no
+  environment probe yet, so the ambient colour stands in for average environment radiance - but
+  the energy split is now right, and a real IBL probe later replaces the source of that radiance
+  without changing the structure. Spot lights also gained a smooth cone falloff; the hard binary
+  cutoff produced an aliased cone edge that no MSAA could fix, because the edge was in the shading
+  rather than the geometry.
 - [ ] Deferred or forward+/clustered lighting path for scenes with many dynamic lights
 - [ ] Screen-space reflections
 - [ ] Real-time reflection probes (baked and/or dynamically updated cubemaps)
