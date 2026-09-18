@@ -569,6 +569,7 @@ struct VulkanRenderDeviceUVE::ImplUVE {
     static constexpr std::uint32_t kWarnedDrawWithComputeUVE = 1U << 20U; // M5a
     static constexpr std::uint32_t kWarnedStorageImageDepthUVE = 1U << 21U; // M5b
     static constexpr std::uint32_t kWarnedStorageImageTransitionUVE = 1U << 22U; // M5b
+    static constexpr std::uint32_t kWarnedIndirectBufferUVE = 1U << 23U; // CS7
     std::uint32_t replayWarningsEmitted = 0U;
 
     // Replay-local pipeline binding state (valid only inside PresentUVE()'s record window).
@@ -1895,6 +1896,9 @@ public:
     void DrawUVE(const std::uint32_t vertexCount, const std::uint32_t instanceCount) override {
         m_commands.emplace_back(DrawCommandUVE{vertexCount, instanceCount});
     }
+    void DrawIndexedIndirectUVE(const BufferHandleUVE buffer, const std::uint64_t offsetBytes) override {
+        m_commands.emplace_back(DrawIndexedIndirectCommandRecordUVE{buffer, offsetBytes});
+    }
     // M5a: recorded ungated like every other Vulkan-side command — this backend has no
     // record-time pass state; the replay decides (closing any lazily-open rendering instance
     // before dispatching, since compute inside a pass instance is illegal).
@@ -1941,6 +1945,11 @@ BufferHandleUVE VulkanRenderDeviceUVE::CreateBufferUVE(const BufferDescUVE& desc
         case BufferUsageUVE::Index:   usageFlags = VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;  break;
         case BufferUsageUVE::Uniform: usageFlags = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT; break;
         case BufferUsageUVE::Storage: usageFlags = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT; break;
+        // CS7: both bits, because an indirect buffer whose parameters compute cannot write is an
+        // indirect buffer with no reason to exist - see BufferUsageUVE's doc comment.
+        case BufferUsageUVE::IndirectStorage:
+            usageFlags = VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+            break;
     }
 
     VkBufferCreateInfo bufferInfo{};
@@ -4333,7 +4342,7 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
             } else if constexpr (std::is_same_v<OpT, BindStorageBufferCommandUVE>) {
                 const auto foundBuffer = impl.buffers.find(op.buffer.value);
                 if (foundBuffer == impl.buffers.end() ||
-                    foundBuffer->second.usage != BufferUsageUVE::Storage) {
+                    !IsStorageBindableUsageUVE(foundBuffer->second.usage)) {
                     impl.WarnOnceUVE(VulkanRenderDeviceUVE::ImplUVE::kWarnedUnknownStorageUVE,
                         "submit replay: BindStorageBufferUVE referenced an unknown handle or a "
                         "buffer not created with Storage usage; that bind is dropped (affected "
@@ -4383,6 +4392,36 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
                 } else if (flushStateForActivePipelineUVE()) {
                     impl.vk.vkCmdDrawIndexed(impl.commandBuffer, op.indexCount, op.instanceCount,
                                              0U, 0, 0U);
+                }
+            } else if constexpr (std::is_same_v<OpT, DrawIndexedIndirectCommandRecordUVE>) {
+                // CS7. Validation happens HERE rather than at record time because this backend
+                // has no record-time resource state at all - the recorder is a pure op list.
+                const auto foundIndirect = impl.buffers.find(op.buffer.value);
+                if (activePipelineIsComputeUVE()) {
+                    impl.WarnOnceUVE(VulkanRenderDeviceUVE::ImplUVE::kWarnedDrawWithComputeUVE,
+                        "submit replay: DrawIndexedIndirectUVE reached replay with a COMPUTE "
+                        "pipeline bound; the draw is skipped (bind a graphics pipeline first)");
+                } else if (foundIndirect == impl.buffers.end() ||
+                           foundIndirect->second.usage != BufferUsageUVE::IndirectStorage) {
+                    impl.WarnOnceUVE(VulkanRenderDeviceUVE::ImplUVE::kWarnedIndirectBufferUVE,
+                        "submit replay: DrawIndexedIndirectUVE needs a live IndirectStorage "
+                        "buffer; the draw is skipped");
+                } else if (op.offsetBytes > foundIndirect->second.sizeBytes ||
+                           foundIndirect->second.sizeBytes - op.offsetBytes <
+                               sizeof(DrawIndexedIndirectCommandUVE)) {
+                    // Reading parameters off the end would draw with garbage counts - and with
+                    // indirect draw nothing on the CPU ever sees those numbers, so this must be
+                    // caught here rather than left to produce inexplicable geometry.
+                    impl.WarnOnceUVE(VulkanRenderDeviceUVE::ImplUVE::kWarnedIndirectBufferUVE,
+                        "submit replay: DrawIndexedIndirectUVE offset leaves no whole command "
+                        "inside the buffer; the draw is skipped");
+                } else if (flushStateForActivePipelineUVE()) {
+                    // One command, so no stride is consulted; passing the struct's size keeps the
+                    // call honest if a future slice raises drawCount.
+                    impl.vk.vkCmdDrawIndexedIndirect(
+                        impl.commandBuffer, foundIndirect->second.buffer,
+                        static_cast<VkDeviceSize>(op.offsetBytes), 1U,
+                        static_cast<std::uint32_t>(sizeof(DrawIndexedIndirectCommandUVE)));
                 }
             }
         }, command);

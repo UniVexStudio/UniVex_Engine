@@ -22,7 +22,16 @@ namespace UVE::Render {
 /// and read/written from graphics-stage shaders (`readonly buffer`/`buffer` blocks) — and since
 /// the M5a compute slice, from compute shaders too (the classic SSBO producer/consumer pattern:
 /// dispatch writes, draws read).
-enum class BufferUsageUVE : std::uint8_t { Vertex, Index, Uniform, Storage };
+/// `IndirectStorage` (CS7) is a buffer holding DrawIndexedIndirectCommandUVE records for
+/// ICommandBufferUVE::DrawIndexedIndirectUVE() - and, deliberately, an SSBO at the same time.
+/// A separate write-only Indirect usage was considered and rejected: the entire point of indirect
+/// draw in this engine is that a COMPUTE dispatch writes the parameters (that is what lets GPU
+/// culling stop round-tripping through the CPU), so a usage the compute stage cannot bind would
+/// serve nothing the CPU could not already do with DrawIndexedUVE. Backends therefore create it
+/// with both capabilities - VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | STORAGE_BUFFER_BIT on Vulkan,
+/// and on GL it binds to both GL_DRAW_INDIRECT_BUFFER and GL_SHADER_STORAGE_BUFFER - and
+/// ReadbackBufferUVE covers it exactly as it covers Storage.
+enum class BufferUsageUVE : std::uint8_t { Vertex, Index, Uniform, Storage, IndirectStorage };
 
 [[nodiscard]] constexpr bool IsBufferUsageValidUVE(const BufferUsageUVE usage) noexcept {
     switch (usage) {
@@ -30,10 +39,35 @@ enum class BufferUsageUVE : std::uint8_t { Vertex, Index, Uniform, Storage };
         case BufferUsageUVE::Index:
         case BufferUsageUVE::Uniform:
         case BufferUsageUVE::Storage:
+        case BufferUsageUVE::IndirectStorage:
             return true;
     }
     return false;
 }
+
+/// True for the usages a shader-storage binding accepts. IndirectStorage is deliberately included:
+/// it IS an SSBO, and the compute kernel that fills it binds it as one.
+[[nodiscard]] constexpr bool IsStorageBindableUsageUVE(const BufferUsageUVE usage) noexcept {
+    return usage == BufferUsageUVE::Storage || usage == BufferUsageUVE::IndirectStorage;
+}
+
+/// One indexed indirect draw, laid out to match what every backend's indirect draw reads straight
+/// out of GPU memory: VkDrawIndexedIndirectCommand and GL's DrawElementsIndirectCommand are the
+/// same five consecutive 32-bit fields in the same order, which is what makes one struct portable
+/// here. The layout is fixed by those APIs, so it is asserted below rather than merely intended.
+struct DrawIndexedIndirectCommandUVE {
+    std::uint32_t indexCount = 0;
+    std::uint32_t instanceCount = 0;
+    std::uint32_t firstIndex = 0;
+    std::int32_t vertexOffset = 0;
+    std::uint32_t firstInstance = 0;
+};
+
+static_assert(sizeof(DrawIndexedIndirectCommandUVE) == 20U,
+              "DrawIndexedIndirectCommandUVE must be the five tightly packed 32-bit fields both "
+              "Vulkan and GL read directly out of buffer memory");
+static_assert(alignof(DrawIndexedIndirectCommandUVE) == alignof(std::uint32_t),
+              "DrawIndexedIndirectCommandUVE must not acquire padding the GPU layout lacks");
 
 /// Describes a GPU buffer to create via IRenderDeviceUVE::CreateBufferUVE(). A buffer must have
 /// positive byte capacity; zero-sized GL buffers are not useful to any supported draw/update path.

@@ -576,6 +576,7 @@ public:
     void BindUniformBufferUVE(Render::BufferHandleUVE, std::uint32_t) override {}
     void BindStorageBufferUVE(Render::BufferHandleUVE, std::uint32_t) override {}
     void DrawIndexedUVE(std::uint32_t, std::uint32_t) override {}
+    void DrawIndexedIndirectUVE(Render::BufferHandleUVE, std::uint64_t) override {}
     void DrawUVE(std::uint32_t, std::uint32_t) override {}
     void DispatchUVE(std::uint32_t, std::uint32_t, std::uint32_t) override {}
     void SetUniformFloatUVE(std::string_view, float) override {}

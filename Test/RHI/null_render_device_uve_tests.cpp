@@ -9,6 +9,7 @@
 #include <limits>
 #include <memory>
 #include <span>
+#include <type_traits>
 #include <thread>
 #include <variant>
 #include <vector>
@@ -344,6 +345,79 @@ TEST(NullRenderDeviceUVETest, CommandBufferRecordingThenSubmit_ProducesExpectedC
     EXPECT_EQ(std::get<BindIndexBufferCommandUVE>(recorded[3]).buffer, indexBuffer);
     EXPECT_EQ(std::get<DrawIndexedCommandUVE>(recorded[4]).indexCount, 3U);
     EXPECT_EQ(std::get<DrawIndexedCommandUVE>(recorded[4]).instanceCount, 1U);
+}
+
+// --- CS7: indirect indexed draw -------------------------------------------------------------
+
+TEST(NullRenderDeviceUVETest, DrawIndexedIndirectCommandUVE_MatchesTheGpuParameterLayout) {
+    // Both Vulkan's VkDrawIndexedIndirectCommand and GL's DrawElementsIndirectCommand are five
+    // 32-bit words in this order. A compute shader writes them with an std430 uvec-ish layout, so
+    // the CPU-side mirror has to agree field for field - a silent reorder here would produce
+    // draws with nonsense counts that nothing on the CPU ever observes.
+    static_assert(sizeof(DrawIndexedIndirectCommandUVE) == 20U);
+    EXPECT_EQ(offsetof(DrawIndexedIndirectCommandUVE, indexCount), 0U);
+    EXPECT_EQ(offsetof(DrawIndexedIndirectCommandUVE, instanceCount), 4U);
+    EXPECT_EQ(offsetof(DrawIndexedIndirectCommandUVE, firstIndex), 8U);
+    EXPECT_EQ(offsetof(DrawIndexedIndirectCommandUVE, vertexOffset), 12U);
+    EXPECT_EQ(offsetof(DrawIndexedIndirectCommandUVE, firstInstance), 16U);
+    // vertexOffset is the one signed field in both APIs; an unsigned mirror would turn a small
+    // negative rebase into a ~4-billion vertex index.
+    static_assert(std::is_signed_v<decltype(DrawIndexedIndirectCommandUVE::vertexOffset)>);
+}
+
+TEST(NullRenderDeviceUVETest, IndirectStorageUsage_IsValidAndStorageBindable) {
+    EXPECT_TRUE(IsBufferUsageValidUVE(BufferUsageUVE::IndirectStorage));
+    // The whole point of the usage: a compute shader must be able to bind it as an SSBO and
+    // write the draw parameters, otherwise indirect draw buys nothing over DrawIndexedUVE.
+    EXPECT_TRUE(IsStorageBindableUsageUVE(BufferUsageUVE::IndirectStorage));
+    EXPECT_TRUE(IsStorageBindableUsageUVE(BufferUsageUVE::Storage));
+    EXPECT_FALSE(IsStorageBindableUsageUVE(BufferUsageUVE::Vertex));
+    EXPECT_FALSE(IsStorageBindableUsageUVE(BufferUsageUVE::Index));
+    EXPECT_FALSE(IsStorageBindableUsageUVE(BufferUsageUVE::Uniform));
+}
+
+TEST(NullRenderDeviceUVETest, CreateBufferUVE_IndirectStorageUsage_Allocates) {
+    NullRenderDeviceUVE device;
+    const BufferHandleUVE indirect = device.CreateBufferUVE(
+        BufferDescUVE{sizeof(DrawIndexedIndirectCommandUVE), BufferUsageUVE::IndirectStorage});
+    EXPECT_NE(indirect, kInvalidBufferHandleUVE);
+}
+
+TEST(NullRenderDeviceUVETest, DrawIndexedIndirectUVE_InsideAPass_RecordsBufferAndOffset) {
+    NullRenderDeviceUVE device;
+    const TextureHandleUVE colorTarget =
+        device.CreateTextureUVE(TextureDescUVE{16, 16, TextureFormatUVE::RGBA8Unorm});
+    const BufferHandleUVE indirect = device.CreateBufferUVE(
+        BufferDescUVE{2U * sizeof(DrawIndexedIndirectCommandUVE), BufferUsageUVE::IndirectStorage});
+
+    std::unique_ptr<ICommandBufferUVE> commandBuffer = device.CreateCommandBufferUVE();
+    RenderPassDescUVE passDesc;
+    passDesc.colorAttachment = colorTarget;
+    commandBuffer->BeginRenderPassUVE(passDesc);
+    // A non-zero offset is the interesting case: it is how a single buffer holds a batch of
+    // draws, and it is the value most likely to be dropped on the way through the recorder.
+    commandBuffer->DrawIndexedIndirectUVE(indirect, sizeof(DrawIndexedIndirectCommandUVE));
+    commandBuffer->EndRenderPassUVE();
+    device.SubmitUVE(std::move(commandBuffer));
+
+    const std::vector<RecordedCommandUVE>& recorded = device.GetLastSubmittedCommandsUVE();
+    ASSERT_EQ(recorded.size(), 3U);
+    ASSERT_TRUE(std::holds_alternative<DrawIndexedIndirectCommandRecordUVE>(recorded[1]));
+    const auto& record = std::get<DrawIndexedIndirectCommandRecordUVE>(recorded[1]);
+    EXPECT_EQ(record.buffer, indirect);
+    EXPECT_EQ(record.offsetBytes, sizeof(DrawIndexedIndirectCommandUVE));
+}
+
+TEST(NullRenderDeviceUVETest, DrawIndexedIndirectUVE_OutsideAPass_RecordsNothing) {
+    NullRenderDeviceUVE device;
+    const BufferHandleUVE indirect = device.CreateBufferUVE(
+        BufferDescUVE{sizeof(DrawIndexedIndirectCommandUVE), BufferUsageUVE::IndirectStorage});
+
+    std::unique_ptr<ICommandBufferUVE> commandBuffer = device.CreateCommandBufferUVE();
+    commandBuffer->DrawIndexedIndirectUVE(indirect, 0U);
+    device.SubmitUVE(std::move(commandBuffer));
+
+    EXPECT_TRUE(device.GetLastSubmittedCommandsUVE().empty());
 }
 
 TEST(NullRenderDeviceUVETest, GetLastSubmittedCommandsUVE_BeforeAnySubmit_IsEmpty) {

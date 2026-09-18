@@ -179,6 +179,7 @@ bool VkFunctionsUVE::LoadDeviceUVE(const VkDevice device) {
     allResolved &= ResolveDevice(vkCmdBindIndexBuffer, gdpa, device, "vkCmdBindIndexBuffer");
     allResolved &= ResolveDevice(vkCmdDraw, gdpa, device, "vkCmdDraw");
     allResolved &= ResolveDevice(vkCmdDrawIndexed, gdpa, device, "vkCmdDrawIndexed");
+    allResolved &= ResolveDevice(vkCmdDrawIndexedIndirect, gdpa, device, "vkCmdDrawIndexedIndirect");
     allResolved &= ResolveDevice(vkCmdSetViewport, gdpa, device, "vkCmdSetViewport");
     allResolved &= ResolveDevice(vkCmdSetScissor, gdpa, device, "vkCmdSetScissor");
     allResolved &= ResolveDevice(vkCreateImage, gdpa, device, "vkCreateImage");
