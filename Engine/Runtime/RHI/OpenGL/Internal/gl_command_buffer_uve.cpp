@@ -694,6 +694,61 @@ void GlCommandBufferUVE::DrawIndexedUVE(std::uint32_t indexCount, std::uint32_t 
     UVE_GL_CHECK_ERROR_UVE("DrawIndexedUVE");
 }
 
+void GlCommandBufferUVE::DrawIndexedIndirectUVE(const BufferHandleUVE buffer,
+                                                const std::uint64_t offsetBytes) {
+    if (!RequireInsideRenderPassUVE(m_insideRenderPass, "DrawIndexedIndirectUVE")) {
+        return;
+    }
+    if (FindCurrentPipelineUVE() == nullptr) {
+        UVE_ERROR("GlCommandBufferUVE: DrawIndexedIndirectUVE called without a live pipeline");
+        return;
+    }
+    if (m_boundIndexBuffer == kInvalidBufferHandleUVE) {
+        UVE_ERROR("GlCommandBufferUVE: DrawIndexedIndirectUVE called without a bound index buffer");
+        return;
+    }
+    if (m_state->gl.glDrawElementsIndirect == nullptr) {
+        // GL below 4.0, or a driver that did not export it. Warn and skip rather than call
+        // through null - the same degradation the compute paths use.
+        UVE_WARNING("GlCommandBufferUVE: DrawIndexedIndirectUVE needs GL 4.0+ indirect draw, "
+                    "which this context does not provide; the draw is skipped");
+        return;
+    }
+    const auto indirectIt = m_state->buffers.find(buffer.value);
+    if (indirectIt == m_state->buffers.end()) {
+        UVE_ERROR("GlCommandBufferUVE: DrawIndexedIndirectUVE was given an unknown buffer handle");
+        return;
+    }
+    if (!IsStorageBindableUsageUVE(indirectIt->second.usage)) {
+        UVE_ERROR("GlCommandBufferUVE: DrawIndexedIndirectUVE needs an IndirectStorage buffer");
+        return;
+    }
+    // The whole command must lie inside the buffer. Reading parameters off the end would produce
+    // a draw with garbage counts, which is precisely the failure indirect draw makes invisible -
+    // nothing on the CPU would ever see the numbers.
+    if (offsetBytes > indirectIt->second.sizeBytes ||
+        indirectIt->second.sizeBytes - offsetBytes < sizeof(DrawIndexedIndirectCommandUVE)) {
+        UVE_ERROR("GlCommandBufferUVE: DrawIndexedIndirectUVE offset leaves no whole command "
+                  "inside the buffer");
+        return;
+    }
+
+    // A compute dispatch may have just written these parameters; without this barrier the
+    // indirect read is not guaranteed to see them (GL_COMMAND_BARRIER_BIT is the one that orders
+    // shader writes against indirect-draw parameter fetches specifically).
+    if (m_state->gl.glMemoryBarrier != nullptr) {
+        m_state->gl.glMemoryBarrier(GL_COMMAND_BARRIER_BIT);
+    }
+    m_state->gl.glBindBuffer(GL_DRAW_INDIRECT_BUFFER, indirectIt->second.glBuffer);
+    m_state->gl.glDrawElementsIndirect(
+        GL_TRIANGLES, GL_UNSIGNED_INT,
+        reinterpret_cast<const void*>(static_cast<std::uintptr_t>(offsetBytes)));
+    UVE_GL_CHECK_ERROR_UVE("DrawIndexedIndirectUVE");
+    // Leave no lingering indirect binding: the buffer's home target is the SSBO one, and a stale
+    // GL_DRAW_INDIRECT_BUFFER binding would silently feed the next indirect draw.
+    m_state->gl.glBindBuffer(GL_DRAW_INDIRECT_BUFFER, 0U);
+}
+
 void GlCommandBufferUVE::DrawUVE(std::uint32_t vertexCount, std::uint32_t instanceCount) {
     if (!RequireInsideRenderPassUVE(m_insideRenderPass, "DrawUVE")) {
         return;

@@ -105,6 +105,22 @@ public:
     /// the buffers it needs are bound.
     virtual void DrawUVE(std::uint32_t vertexCount, std::uint32_t instanceCount = 1) = 0;
 
+    /// Draws using the currently bound index buffer, taking the draw's PARAMETERS from GPU memory
+    /// instead of from these arguments: `buffer` must be an IndirectStorage buffer holding a
+    /// DrawIndexedIndirectCommandUVE at `offsetBytes`, and the GPU reads indexCount,
+    /// instanceCount, firstIndex, vertexOffset and firstInstance out of it at execution time.
+    ///
+    /// That indirection is the entire feature. A compute dispatch can WRITE those parameters -
+    /// the same buffer binds as an SSBO - so GPU culling can decide what to draw without the
+    /// answer ever travelling back to the CPU, which is the round trip CS5's culling still pays.
+    ///
+    /// Must be called inside a render pass, after a pipeline and the buffers it needs are bound,
+    /// exactly like DrawIndexedUVE(). An invalid handle, a buffer of the wrong usage, or an offset
+    /// that does not leave a whole command inside the buffer is a loud no-op rather than a draw
+    /// with garbage parameters. Backends without indirect-draw support (the fixed ES 3.0 baseline,
+    /// GL below 4.0) warn once and skip, the same degradation the compute paths use.
+    virtual void DrawIndexedIndirectUVE(BufferHandleUVE buffer, std::uint64_t offsetBytes = 0) = 0;
+
     /// Dispatches compute work: `groupCountX * groupCountY * groupCountZ` workgroups of the
     /// currently bound COMPUTE pipeline (created via CreateComputePipelineUVE and bound with
     /// BindPipelineUVE; zero on any axis dispatches nothing and is a recorded no-op). M5a

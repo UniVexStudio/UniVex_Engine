@@ -131,6 +131,17 @@ void NullCommandBufferUVE::DrawIndexedUVE(std::uint32_t indexCount, std::uint32_
     m_commands.emplace_back(DrawIndexedCommandUVE{indexCount, instanceCount});
 }
 
+void NullCommandBufferUVE::DrawIndexedIndirectUVE(const BufferHandleUVE buffer,
+                                                  const std::uint64_t offsetBytes) {
+    // Same inside-pass gate as DrawIndexedUVE: the indirection changes where the PARAMETERS come
+    // from, not when a draw is legal. Handle validity is the device's to judge at replay - this
+    // backend records faithfully and executes nothing.
+    if (!RequireInsideRenderPassUVE(m_insideRenderPass, "DrawIndexedIndirectUVE")) {
+        return;
+    }
+    m_commands.emplace_back(DrawIndexedIndirectCommandRecordUVE{buffer, offsetBytes});
+}
+
 void NullCommandBufferUVE::DrawUVE(std::uint32_t vertexCount, std::uint32_t instanceCount) {
     if (!RequireInsideRenderPassUVE(m_insideRenderPass, "DrawUVE")) {
         return;

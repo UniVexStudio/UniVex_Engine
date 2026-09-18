@@ -226,7 +226,12 @@ publicly shipping real-time engines as of today, without naming any of them.
   scalars (SPIR-V has no non-opaque global uniforms; glslang rejects the uniform form outright),
   are baked to SPIR-V beside their GLSL, and are selected per backend - with both workloads now
   proven against a real headless Vulkan device at the same bit-for-bit standard they meet on GL.
-  Remaining: culling whose result never returns to the CPU (needs indirect draw in the RHI),
+  CS7 then added the missing draw path itself: `ICommandBufferUVE::DrawIndexedIndirectUVE`,
+  fed by a new `BufferUsageUVE::IndirectStorage` that is deliberately BOTH an indirect buffer
+  and an SSBO - an indirect buffer the compute stage cannot write would serve nothing the CPU
+  could not already do with `DrawIndexedUVE`. Implemented on all four backends against a shared
+  `DrawIndexedIndirectCommandUVE` mirror of the five-word GPU parameter block.
+  Remaining: the GPU-only culling pass built ON that draw path,
   and skinning (needs a joints/weights data model in the mesh asset first - there is no CPU
   skinning baseline to verify a GPU one against yet)
 - [ ] Bindless/descriptor-indexing-style resource binding for reduced per-draw overhead

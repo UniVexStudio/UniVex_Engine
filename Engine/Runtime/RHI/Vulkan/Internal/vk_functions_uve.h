@@ -105,6 +105,8 @@ struct VkFunctionsUVE {
     PFN_vkCmdBindIndexBuffer vkCmdBindIndexBuffer = nullptr;
     PFN_vkCmdDraw vkCmdDraw = nullptr;
     PFN_vkCmdDrawIndexed vkCmdDrawIndexed = nullptr;
+    // CS7: core since Vulkan 1.0, so it joins the required set rather than the optional probes.
+    PFN_vkCmdDrawIndexedIndirect vkCmdDrawIndexedIndirect = nullptr;
     PFN_vkCmdSetViewport vkCmdSetViewport = nullptr;
     PFN_vkCmdSetScissor vkCmdSetScissor = nullptr;
 

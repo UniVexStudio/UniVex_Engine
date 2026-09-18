@@ -66,6 +66,10 @@ struct GlDeviceStateUVE {
         GLuint glBuffer = 0;
         GLenum target = 0;
         std::uint64_t sizeBytes = 0;
+        /// CS7: kept because `target` can no longer identify the usage on its own - an
+        /// IndirectStorage buffer's home target is GL_SHADER_STORAGE_BUFFER, exactly like a plain
+        /// Storage buffer's, and DrawIndexedIndirectUVE must be able to tell them apart.
+        BufferUsageUVE usage = BufferUsageUVE::Vertex;
     };
     std::unordered_map<std::uint32_t, BufferRecordUVE> buffers;
     std::uint32_t nextBufferHandle = 1;

@@ -59,6 +59,12 @@ void* GlfwProcAddressBridgeUVE(const char* name) {
         case BufferUsageUVE::Uniform:
             return GL_UNIFORM_BUFFER;
         case BufferUsageUVE::Storage:
+        // CS7: an IndirectStorage buffer's HOME target is the SSBO one - that is how it is
+        // created, updated and read back, and how the compute kernel that fills it binds it.
+        // GL_DRAW_INDIRECT_BUFFER is a transient bind made at draw time by
+        // DrawIndexedIndirectUVE, not the buffer's resting place; GL buffer objects are
+        // untyped, so the same name binds legally to both targets.
+        case BufferUsageUVE::IndirectStorage:
 #if !defined(__ANDROID__)
             return GL_SHADER_STORAGE_BUFFER; // M2f: desktop GL 4.3+ (gated at bind time)
 #else
@@ -343,7 +349,7 @@ BufferHandleUVE GlRenderDeviceUVE::CreateBufferUVE(const BufferDescUVE& desc, st
         UVE_ERROR("GlRenderDeviceUVE: CreateBufferUVE received an unknown buffer usage");
         return kInvalidBufferHandleUVE;
     }
-    if (desc.usage == BufferUsageUVE::Storage && !m_impl->state.supportsComputeShadersUVE) {
+    if (IsStorageBindableUsageUVE(desc.usage) && !m_impl->state.supportsComputeShadersUVE) {
         // SSBOs are desktop GL 4.3 core (the same floor as compute shaders; the fixed ES 3.0
         // Android baseline has neither). Fail before touching GL_SHADER_STORAGE_BUFFER - on an
         // older context the enum itself would raise GL_INVALID_ENUM at glBufferData time.
@@ -376,7 +382,7 @@ BufferHandleUVE GlRenderDeviceUVE::CreateBufferUVE(const BufferDescUVE& desc, st
 
     const std::uint32_t handleValue = m_impl->state.nextBufferHandle++;
     m_impl->state.buffers.emplace(handleValue,
-                                    Detail::GlDeviceStateUVE::BufferRecordUVE{glBuffer, target, desc.sizeBytes});
+                                    Detail::GlDeviceStateUVE::BufferRecordUVE{glBuffer, target, desc.sizeBytes, desc.usage});
     return BufferHandleUVE{handleValue};
 }
 

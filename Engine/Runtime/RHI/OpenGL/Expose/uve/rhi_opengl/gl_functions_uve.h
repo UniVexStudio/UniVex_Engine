@@ -47,6 +47,10 @@ struct GlFunctionsUVE {
     // CreateComputePipelineUVE()/DispatchUVE() refuse loudly instead of calling through null.
     PFNGLDISPATCHCOMPUTEPROC glDispatchCompute = nullptr;
     PFNGLMEMORYBARRIERPROC glMemoryBarrier = nullptr;
+    // CS7: indexed indirect draw (GL 4.0+). Same optional-null policy as the compute pair above -
+    // a context without it leaves this null and DrawIndexedIndirectUVE warns once and skips
+    // rather than calling through a null pointer.
+    PFNGLDRAWELEMENTSINDIRECTPROC glDrawElementsIndirect = nullptr;
     // M5b: image-unit binding for storage images (GL 4.2+), same optional-null policy as the
     // compute pair — BindTextureUVE skips the image bind when it is null.
     PFNGLBINDIMAGETEXTUREPROC glBindImageTexture = nullptr;

@@ -49,6 +49,8 @@ GlFunctionsUVE LoadGlFunctionsUVE(void* (*getProcAddress)(const char*)) {
     functions.glMemoryBarrier = LoadOneUVE<PFNGLMEMORYBARRIERPROC>(getProcAddress, "glMemoryBarrier");
     // M5b: optional image-unit binding (GL 4.2+) — null means no storage-image binds.
     functions.glBindImageTexture = LoadOneUVE<PFNGLBINDIMAGETEXTUREPROC>(getProcAddress, "glBindImageTexture");
+    functions.glDrawElementsIndirect =
+        LoadOneUVE<PFNGLDRAWELEMENTSINDIRECTPROC>(getProcAddress, "glDrawElementsIndirect");
 
     functions.glGenVertexArrays = LoadOneUVE<PFNGLGENVERTEXARRAYSPROC>(getProcAddress, "glGenVertexArrays");
     functions.glDeleteVertexArrays = LoadOneUVE<PFNGLDELETEVERTEXARRAYSPROC>(getProcAddress, "glDeleteVertexArrays");
