@@ -88,7 +88,7 @@ publicly shipping real-time engines as of today, without naming any of them.
 - [~] A modern explicit graphics API backend (the kind that supports multi-threaded command
   recording, explicit memory/barrier management) as a second real backend, so the RHI
   abstraction is proven against more than one implementation — **in progress:** the Vulkan
-  backend reached slice M2d 2026-09-17: real buffers (host-visible policy), SPIR-V shader
+  backend reached slice M2e 2026-09-18: real buffers (host-visible policy), SPIR-V shader
   modules, fixed-function pipelines, recorded command buffers, Draw/DrawIndexed replay,
   SPIRV-Reflect-driven uniforms (set-0 UBO blocks over one shared 1 MiB/frame dynamic-offset
   ring plus push constants, SetUniform* by reflected member name), a real depth attachment
@@ -103,14 +103,27 @@ publicly shipping real-time engines as of today, without naming any of them.
   vkCmdBeginRendering, textures allocate in the swapchain's own 4×8 format with an
   unorm-sibling sampling view + image-native attachment view so every RGBA8 texture is a
   legal target, re-opened swapchain instances resume with LOAD (GL's FBO semantics), and
-  color-only passes borrow a per-extent scratch depth image — all verified pixel-wise
-  locally (SwiftShader: triangle, depth-overlap, checker-quad, and offscreen
-  render-to-texture interleave screenshots) with the same scenes in tier-2 CI tests.
-  Latent M1 readback-fence hazard also fixed (the readback submission rides its own
-  transient fence now). Remaining for full parity: loadOp semantics beyond clear +
-  sampled readback of depth textures, SSBO / separate sampler or storage image support,
-  device-local staging for vertex/index buffers, multi-threaded command recording, and
-  shader cross-compilation tooling (tracked separately below)
+  color-only passes borrow a per-extent scratch depth image — and DEPTH-TEXTURE SAMPLING +
+  REAL LOAD-OP POLICIES (M2e, 2026-09-18): Depth32Float textures rest in
+  SHADER_READ_ONLY_OPTIMAL and bind real sampled views on the dynamic arm (the bit-15
+  1×1-white fallback survives only on classic pre-1.3 devices, where no offscreen pass can
+  ever produce depth content), offscreen passes honor caller colorLoadOp/depthLoadOp for
+  real (Clear/Load/DontCare → VkAttachmentLoadOp over content-preserving tracked-layout
+  entry barriers — GL's FBO clear-once-vs-accumulate semantics; the bit-6 warn is now
+  swapchain-default-pass only), and a new bit-16 feedback guard deterministically samples
+  the 1×1-white fallback (warn-once) when a draw binds the open pass's own attachment —
+  all verified pixel-wise locally (SwiftShader: triangle, depth-overlap, checker-quad, and
+  offscreen render-to-texture interleave screenshots) with the same scenes plus the four
+  M2e proofs in tier-2 CI tests (lavapipe), where the sampled-depth reconstruction byte
+  check accepts both honest software-stack dualities: an SRGB-typed swapchain stores the
+  shader's linear 0.25 as ≈137 while a UNORM-typed one stores ≈64 (both correct encodings
+  of the same sampled depth), and the depth-read swizzle alpha is spec-undefined on
+  pre-maintenance5 devices (255 or 0 both pass — the specified .g/.b zeros and the .r
+  reconstruction carry the proof). Latent M1 readback-fence hazard also fixed (the
+  readback submission rides its own transient fence now). Remaining for full parity:
+  SSBO / separate sampler or storage image support, device-local staging for vertex/index
+  buffers, multi-threaded command recording, and shader cross-compilation tooling (tracked
+  separately below)
 - [ ] A backend for each target OS's native graphics API where OpenGL is not the best
   choice on that platform
 - [ ] Shader cross-compilation so one shader source authors once and targets every backend
