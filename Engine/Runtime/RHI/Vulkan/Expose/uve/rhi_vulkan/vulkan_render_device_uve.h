@@ -92,8 +92,24 @@
 // (the explicit-API capability the roadmap names), not the replay translation. Resource
 // creation/destruction and PresentUVE remain main-thread calls.
 //
+// Slice M5a ("compute dispatch") added 2026-09-18: CreateComputePipelineUVE() builds real
+// VkPipelines at the COMPUTE bind point (compact compute-only SPIR-V reflection: uniform
+// blocks flow through the M2b ring-dynamic machinery, STORAGE_BUFFER slots through the M2f
+// slot/tuple-cache machinery; every other descriptor form refuses loudly — storage images
+// name the M5b slice), and ICommandBufferUVE::DispatchUVE() replays OUTSIDE render-pass
+// markers as Vulkan requires: the handler closes any lazily-open dynamic-rendering instance
+// first (a later Begin re-opens it with LOAD, content preserved), brackets vkCmdDispatch in
+// conservative global memory barriers (prior shader writes visible to compute; compute
+// writes visible to every later shader reader and the queue-idle readback), and flushes
+// descriptors at the COMPUTE bind point. The classic pre-1.3 arm cannot dispatch at all —
+// its whole replay is wrapped in ONE native render pass instance where compute is illegal —
+// so it warns once and skips (bit 19); draws reaching replay with a compute pipeline bound
+// skip warn-once too (bit 20). The replay's outside-pass ignore rule now relaxes while a
+// compute pipeline is bound (outside-pass storage binds and uniform writes are the dispatch
+// feed).
+//
 // Capability reporting is honest and upstream-visible: GetBackendNameUVE() says
-// "Vulkan (M4 parallel recording)" on dynamic-rendering devices, "Vulkan (M2c textures+staging)"
+// "Vulkan (M5a compute dispatch)" on dynamic-rendering devices, "Vulkan (M2c textures+staging)"
 // on classic ones — never "Vulkan" unqualified — so logs, editor overlays, and bug reports
 // cannot mistake the current slice for the finished backend, and IsUsableUVE() reflects the
 // real instance/device/swapchain bring-up result.
