@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <limits>
 #include <memory>
+#include <thread>
 #include <variant>
 #include <vector>
 
@@ -464,6 +465,61 @@ TEST(NullRenderDeviceUVETest, CommandBuffer_SetUniformCalls_AreRecordedInOrderWi
 
     ASSERT_TRUE(std::holds_alternative<SetUniformMatrix4x4CommandUVE>(recorded[5]));
     ASSERT_TRUE(std::holds_alternative<EndRenderPassCommandUVE>(recorded[6]));
+}
+
+
+TEST(NullRenderDeviceUVETest, CommandBuffer_ParallelRecordAndSubmitIsSafeAndRetainsWholeLists) {
+    // M4: Null honors the same threading contract as the Vulkan backend — N threads may each
+    // create, record, and submit their OWN command buffers concurrently (SubmitUVE stores the
+    // spy under a mutex). The spy keeps the LAST-submitted list — which thread that is, is
+    // nondeterministic — so every thread records the same STRUCTURE with thread-tagged values:
+    // whichever list lands last, it must be a complete, untorn Begin + 5 uniform sets + End
+    // whose values all carry one thread's tag.
+    NullRenderDeviceUVE device;
+    std::array<bool, 4> submitted{};
+    std::vector<std::thread> threads;
+    threads.reserve(4U);
+    for (std::int32_t worker = 0; worker < 4; ++worker) {
+        threads.emplace_back([&device, &submitted, worker]() {
+            std::unique_ptr<ICommandBufferUVE> commandBuffer = device.CreateCommandBufferUVE();
+            if (commandBuffer == nullptr) {
+                return;
+            }
+            commandBuffer->BeginRenderPassUVE(RenderPassDescUVE{});
+            for (std::int32_t uniformIndex = 0; uniformIndex < 5; ++uniformIndex) {
+                commandBuffer->SetUniformIntUVE("uInt", worker * 100 + uniformIndex);
+            }
+            commandBuffer->EndRenderPassUVE();
+            device.SubmitUVE(std::move(commandBuffer));
+            submitted[static_cast<std::size_t>(worker)] = true;
+        });
+    }
+    for (std::thread& thread : threads) {
+        thread.join();
+    }
+    for (std::size_t worker = 0; worker < 4U; ++worker) {
+        ASSERT_TRUE(submitted[worker]) << "worker " << worker << " failed to record+submit";
+    }
+
+    // All threads joined — the spy read is quiesced (the documented reader contract).
+    const std::vector<RecordedCommandUVE>& recorded = device.GetLastSubmittedCommandsUVE();
+    ASSERT_EQ(recorded.size(), 7U);
+    EXPECT_TRUE(std::holds_alternative<BeginRenderPassCommandUVE>(recorded[0]));
+    EXPECT_TRUE(std::holds_alternative<EndRenderPassCommandUVE>(recorded[6]));
+    std::int32_t workerTag = -1;
+    for (std::size_t index = 1; index <= 5; ++index) {
+        ASSERT_TRUE(std::holds_alternative<SetUniformIntCommandUVE>(recorded[index]));
+        const std::int32_t value = std::get<SetUniformIntCommandUVE>(recorded[index]).value;
+        ASSERT_GE(value, 0);
+        ASSERT_LT(value, 400);
+        const std::int32_t tag = value / 100;
+        if (workerTag < 0) {
+            workerTag = tag;
+        }
+        EXPECT_EQ(tag, workerTag) << "the retained list must be ONE thread's whole recording, "
+                                     "never an interleaved tear";
+        EXPECT_EQ(value % 100, static_cast<std::int32_t>(index) - 1);
+    }
 }
 
 TEST(NullRenderDeviceUVETest, CommandBuffer_BindStorageBufferUVE_IsRecordedWithBufferAndSlot) {

@@ -3,6 +3,7 @@
 
 #include "uve/rhi_null/null_render_device_uve.h"
 
+#include <mutex>
 #include <unordered_map>
 #include <utility>
 
@@ -22,6 +23,11 @@ struct NullRenderDeviceUVE::ImplUVE {
     std::uint32_t nextShaderHandle = 1;
     std::unordered_map<std::uint32_t, PipelineDescUVE> pipelines;
     std::uint32_t nextPipelineHandle = 1;
+    // M4: SubmitUVE may be called from any thread (the same contract the Vulkan backend
+    // honors for its submission FIFO) — the spy write happens under this lock. Readers of
+    // GetLastSubmittedCommandsUVE() get a const reference, so they must be externally
+    // quiesced (the test-spy pattern: submit, join all threads, then inspect).
+    std::mutex submissionMutex;
     std::vector<RecordedCommandUVE> lastSubmittedCommands;
     std::uint64_t presentCallCount = 0;
 };
@@ -188,6 +194,7 @@ void NullRenderDeviceUVE::SubmitUVE(std::unique_ptr<ICommandBufferUVE> commandBu
     UVE_ASSERT(commandBuffer != nullptr);
     auto* const nullCommandBuffer = dynamic_cast<NullCommandBufferUVE*>(commandBuffer.get());
     UVE_ASSERT(nullCommandBuffer != nullptr); // only this device's own CreateCommandBufferUVE() ever produces one
+    const std::lock_guard<std::mutex> submissionLock(m_impl->submissionMutex);
     m_impl->lastSubmittedCommands = nullCommandBuffer->GetRecordedCommandsUVE();
 }
 

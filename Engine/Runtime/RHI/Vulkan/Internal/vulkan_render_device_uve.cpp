@@ -29,6 +29,7 @@
 #include <cstring>
 #include <deque>
 #include <map>
+#include <mutex>
 #include <span>
 #include <string>
 #include <unordered_map>
@@ -492,6 +493,12 @@ struct VulkanRenderDeviceUVE::ImplUVE {
     // each one into this FIFO, and PresentUVE() replays the whole queue inside the frame's
     // single swapchain render pass (see the documented M2a integration contract in the same
     // method). Bounded by consumption: PresentUVE() drains it every frame.
+    // M4: this FIFO is the ONLY state shared between recording threads and the present
+    // thread — submissionMutex guards every access. Recording itself is per-command-buffer
+    // (VulkanCommandBufferUVE objects carry no device state at all), so N threads may create,
+    // record, and submit concurrently; PresentUVE() drains the FIFO into a local snapshot
+    // under the lock and replays strictly main-thread.
+    std::mutex submissionMutex;
     std::deque<std::vector<RecordedCommandUVE>> frameSubmissions;
 
     // One-shot warning bits so replay-time discoveries (not-yet-implemented paths) log exactly
@@ -3076,7 +3083,12 @@ void VulkanRenderDeviceUVE::SubmitUVE(std::unique_ptr<ICommandBufferUVE> command
     if (!m_impl->usable) {
         return;
     }
-    m_impl->frameSubmissions.push_back(vulkanCommands->TakeCommandsUVE());
+    {
+        // M4: safe to call from any thread — the FIFO push is the only shared mutation and
+        // it happens under the submission lock (PresentUVE drains under the same lock).
+        const std::lock_guard<std::mutex> submissionLock(m_impl->submissionMutex);
+        m_impl->frameSubmissions.push_back(vulkanCommands->TakeCommandsUVE());
+    }
 }
 
 /// Replays one submitted recorded command buffer's ops into the frame's already-open swapchain
@@ -3666,12 +3678,22 @@ void VulkanRenderDeviceUVE::PresentUVE() {
     // ONLY now is rewinding the bump cursor legal (M2b ring contract at the field comment).
     impl.frameUboCursor = 0U;
 
-    const auto dropSubmissionsUVE = [&impl](const char* /*why*/) {
-        if (!impl.frameSubmissions.empty()) {
+    // M4: drain the cross-thread submission FIFO under the lock. Worker threads may have
+    // created/recorded/submitted command buffers while this frame was being assembled;
+    // replay below is strictly main-thread GPU work operating on the local snapshot. A
+    // submit racing THIS PresentUVE lands in the next frame's FIFO — honest queue order.
+    std::deque<std::vector<RecordedCommandUVE>> frameSubmissions;
+    {
+        const std::lock_guard<std::mutex> submissionLock(impl.submissionMutex);
+        frameSubmissions.swap(impl.frameSubmissions);
+    }
+
+    const auto dropSubmissionsUVE = [&impl, &frameSubmissions](const char* /*why*/) {
+        if (!frameSubmissions.empty()) {
             impl.WarnOnceUVE(ImplUVE::kWarnedDroppedSubmissionsUVE,
                 "PresentUVE: recorded command buffers dropped because the frame was skipped "
                 "(minimized/resizing/acquire failure); submissions carry per-frame content");
-            impl.frameSubmissions.clear();
+            frameSubmissions.clear();
         }
     };
 
@@ -3746,7 +3768,7 @@ void VulkanRenderDeviceUVE::PresentUVE() {
     clearValues[0].color.float32[2] = kBootstrapClearBlueUVE;
     clearValues[0].color.float32[3] = kBootstrapClearAlphaUVE;
     clearValues[1].depthStencil = {1.0F, 0U}; // far plane, matching the GL depth-clear default
-    for (const std::vector<RecordedCommandUVE>& submission : impl.frameSubmissions) {
+    for (const std::vector<RecordedCommandUVE>& submission : frameSubmissions) {
         bool clearPicked = false;
         for (const RecordedCommandUVE& command : submission) {
             if (const auto* begin = std::get_if<BeginRenderPassCommandUVE>(&command)) {
@@ -3823,10 +3845,11 @@ void VulkanRenderDeviceUVE::PresentUVE() {
     // per frame against the back buffer (it matches how GlRenderDeviceUVE's FBO-0 world
     // works today); anything outside that shape is warned-about once, never silently mangled.
     impl.activePipelineValue = 0U; // pipeline binding is fresh command-buffer state each frame
-    for (const std::vector<RecordedCommandUVE>& submission : impl.frameSubmissions) {
+    for (const std::vector<RecordedCommandUVE>& submission : frameSubmissions) {
         ReplayRecordedCommandsUVE(submission);
     }
-    impl.frameSubmissions.clear(); // consumed — submissions are per-frame content by contract
+    frameSubmissions.clear(); // consumed — the local snapshot dies with this frame (M4: the
+                              // shared FIFO was already drained under the submission lock)
 
     if (!impl.useDynamicRendering) {
         impl.vk.vkCmdEndRenderPass(impl.commandBuffer);
@@ -4095,7 +4118,7 @@ bool VulkanRenderDeviceUVE::ReadbackLatestPresentedImageUVE(std::span<std::byte>
 std::string_view VulkanRenderDeviceUVE::GetBackendNameUVE() const noexcept {
     // Never the unqualified "Vulkan": the current slice must be identifiable in editor
     // overlays and bug reports (see the header's capability-reporting contract).
-    return m_impl->useDynamicRendering ? "Vulkan (M3 device-local staging)"
+    return m_impl->useDynamicRendering ? "Vulkan (M4 parallel recording)"
                                        : "Vulkan (M2c textures+staging)";
 }
 

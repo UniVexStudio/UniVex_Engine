@@ -25,6 +25,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <thread>
 #include <type_traits>
 #include <vector>
 
@@ -148,11 +149,11 @@ protected:
 
 TEST_F(VulkanRenderDeviceUVETest, DeviceReportsUsableWithHonestBootstrapName) {
     EXPECT_TRUE(device->IsUsableUVE());
-    // M3+: the reported name is capability-driven — a 1.3/dynamic-rendering device reports
-    // the current slice name (M3), anything older reports the M2c classic one. Both are
+    // M4+: the reported name is capability-driven — a 1.3/dynamic-rendering device reports
+    // the current slice name (M4), anything older reports the M2c classic one. Both are
     // milestone-tagged; neither may be the bare "Vulkan" (honest capability contract).
     const std::string_view name = device->GetBackendNameUVE();
-    EXPECT_TRUE(name == "Vulkan (M3 device-local staging)" || name == "Vulkan (M2c textures+staging)")
+    EXPECT_TRUE(name == "Vulkan (M4 parallel recording)" || name == "Vulkan (M2c textures+staging)")
         << "backend name must report the exact slice and capability gate, got: " << name;
 }
 
@@ -2837,6 +2838,133 @@ TEST_F(VulkanRenderDeviceUVETest, StagedIndexBufferDrivesRealIndexedDraw) {
     device->DestroyBufferUVE(indexBuffer);
     device->DestroyBufferUVE(vertexBuffer);
     device->DestroyTextureUVE(checkerTexture);
+    device->DestroyPipelineUVE(pipeline);
+    device->DestroyShaderUVE(vertexShader);
+    device->DestroyShaderUVE(fragmentShader);
+}
+
+
+// ---------------------------------------------------------------------------
+// M4: multi-threaded command recording. Recording is per-object and the
+// submission FIFO is mutex-guarded, so N threads may create+record+submit
+// concurrently; PresentUVE (main thread) drains and replays in submission
+// order. The pixel proof below is deliberately order-independent: each thread
+// paints its OWN quadrant, so whichever thread submits first (its pass
+// instance takes the frame's bootstrap clear before drawing, later instances
+// resume with LOAD per M2d), all four quadrant centers must end up exactly
+// their thread's palette color.
+// ---------------------------------------------------------------------------
+
+TEST_F(VulkanRenderDeviceUVETest, ParallelRecordedQuadsAllLandInOneFrame) {
+    // Four std::threads concurrently create, record, AND submit their own command buffers
+    // (thread i: quadrant i, palette color i via the ring-fed uIndex). If any thread's
+    // recording were dropped, clobbered, or raced, its quadrant could not show its color —
+    // and the frame itself must survive the concurrent submissions.
+    ShaderHandleUVE vertexShader{}, fragmentShader{};
+    const PipelineHandleUVE pipeline =
+        CreateSsboPalettePipelineUVE(*device, &vertexShader, &fragmentShader);
+    ASSERT_NE(pipeline, kInvalidPipelineHandleUVE);
+
+    const float palette[16] = {
+        1.0F, 0.0F, 0.0F, 1.0F,   0.0F, 1.0F, 0.0F, 1.0F,
+        0.0F, 0.0F, 1.0F, 1.0F,   1.0F, 1.0F, 0.0F, 1.0F,
+    };
+    BufferDescUVE paletteDesc{};
+    paletteDesc.sizeBytes = sizeof(palette);
+    paletteDesc.usage = BufferUsageUVE::Storage;
+    const BufferHandleUVE paletteBuffer = device->CreateBufferUVE(paletteDesc,
+        std::span<const std::byte>(reinterpret_cast<const std::byte*>(palette), sizeof(palette)));
+    ASSERT_NE(paletteBuffer, kInvalidBufferHandleUVE);
+
+    // Quadrant vertex data (stride 20: pos3 + uv2, uv unused by the palette fragment).
+    // Quadrant order: 0 top-left, 1 top-right, 2 bottom-left, 3 bottom-right (native y-down).
+    constexpr std::array<float, 4> kXSignUVE = {-1.0F, 1.0F, -1.0F, 1.0F};
+    constexpr std::array<float, 4> kYSignUVE = {-1.0F, -1.0F, 1.0F, 1.0F};
+    BufferHandleUVE quadrantBuffers[4] = {};
+    for (std::size_t quadrant = 0; quadrant < 4U; ++quadrant) {
+        const float xStart = kXSignUVE[quadrant] * 0.05F;
+        const float xEnd = kXSignUVE[quadrant] * 0.95F;
+        const float yStart = kYSignUVE[quadrant] * 0.05F;
+        const float yEnd = kYSignUVE[quadrant] * 0.95F;
+        const float vertices[30] = {
+            xStart, yStart, 0.0F,  0.0F, 0.0F,
+            xEnd,   yStart, 0.0F,  0.0F, 0.0F,
+            xStart, yEnd,   0.0F,  0.0F, 0.0F,
+            xEnd,   yStart, 0.0F,  0.0F, 0.0F,
+            xEnd,   yEnd,   0.0F,  0.0F, 0.0F,
+            xStart, yEnd,   0.0F,  0.0F, 0.0F,
+        };
+        BufferDescUVE quadDesc{};
+        quadDesc.sizeBytes = sizeof(vertices);
+        quadDesc.usage = BufferUsageUVE::Vertex; // DEVICE_LOCAL + staged since M3
+        quadrantBuffers[quadrant] = device->CreateBufferUVE(quadDesc,
+            std::span<const std::byte>(reinterpret_cast<const std::byte*>(vertices),
+                                       sizeof(vertices)));
+        ASSERT_NE(quadrantBuffers[quadrant], kInvalidBufferHandleUVE);
+    }
+
+    // Resources exist before the threads start (resource creation/destruction and PresentUVE
+    // stay main-thread by contract); everything below runs concurrently on four workers.
+    std::array<bool, 4> recordedAndSubmitted{};
+    std::vector<std::thread> threads;
+    threads.reserve(4U);
+    for (std::size_t quadrant = 0; quadrant < 4U; ++quadrant) {
+        threads.emplace_back([&, quadrant]() {
+            auto commandBuffer = device->CreateCommandBufferUVE();
+            if (commandBuffer == nullptr) {
+                return;
+            }
+            RenderPassDescUVE passDesc{};
+            passDesc.colorLoadOp = LoadOpUVE::Load;   // order-independent accumulation (M2d)
+            passDesc.depthLoadOp = LoadOpUVE::DontCare;
+            commandBuffer->BeginRenderPassUVE(passDesc);
+            commandBuffer->BindPipelineUVE(pipeline);
+            commandBuffer->BindVertexBufferUVE(quadrantBuffers[quadrant]);
+            commandBuffer->SetUniformIntUVE("uIndex", static_cast<std::int32_t>(quadrant));
+            commandBuffer->BindStorageBufferUVE(paletteBuffer, 0U);
+            commandBuffer->DrawUVE(6U);
+            commandBuffer->EndRenderPassUVE();
+            device->SubmitUVE(std::move(commandBuffer)); // any-thread-safe since M4
+            recordedAndSubmitted[quadrant] = true;       // distinct array elements: no race
+        });
+    }
+    for (std::thread& worker : threads) {
+        worker.join();
+    }
+    for (std::size_t quadrant = 0; quadrant < 4U; ++quadrant) {
+        ASSERT_TRUE(recordedAndSubmitted[quadrant])
+            << "worker thread " << quadrant << " failed to record+submit";
+    }
+
+    device->PresentUVE();
+    ASSERT_TRUE(device->IsUsableUVE()) << "concurrent submissions must not break the device";
+
+    std::vector<std::byte> pixels(1280U * 720U * 4U);
+    std::uint32_t width = 0;
+    std::uint32_t height = 0;
+    ASSERT_TRUE(device->ReadbackLatestPresentedImageUVE(pixels, width, height));
+    if (width == 0U || height == 0U) { GTEST_SKIP() << "zero-sized extent; no pixels"; }
+    const auto topLeft = ChannelAtNdcUVE(pixels, width, height, -0.5F, -0.5F);
+    const auto topRight = ChannelAtNdcUVE(pixels, width, height, 0.5F, -0.5F);
+    const auto bottomLeft = ChannelAtNdcUVE(pixels, width, height, -0.5F, 0.5F);
+    const auto bottomRight = ChannelAtNdcUVE(pixels, width, height, 0.5F, 0.5F);
+    EXPECT_GT(topLeft[0], 240);
+    EXPECT_LT(topLeft[1], 12);
+    EXPECT_LT(topLeft[2], 12) << "thread 0's quadrant must be its own RED recording";
+    EXPECT_LT(topRight[0], 12);
+    EXPECT_GT(topRight[1], 240);
+    EXPECT_LT(topRight[2], 12) << "thread 1's quadrant must be its own GREEN recording";
+    EXPECT_LT(bottomLeft[0], 12);
+    EXPECT_LT(bottomLeft[1], 12);
+    EXPECT_GT(bottomLeft[2], 240) << "thread 2's quadrant must be its own BLUE recording";
+    EXPECT_GT(bottomRight[0], 240);
+    EXPECT_GT(bottomRight[1], 240);
+    EXPECT_LT(bottomRight[2], 12) << "thread 3's quadrant must be its own YELLOW recording";
+
+    for (const BufferHandleUVE quadrantBuffer : quadrantBuffers) {
+        device->DestroyBufferUVE(quadrantBuffer);
+    }
+    device->DestroyBufferUVE(paletteBuffer);
     device->DestroyPipelineUVE(pipeline);
     device->DestroyShaderUVE(vertexShader);
     device->DestroyShaderUVE(fragmentShader);
