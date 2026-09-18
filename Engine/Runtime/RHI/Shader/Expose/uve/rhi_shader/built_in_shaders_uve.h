@@ -50,6 +50,13 @@ extern const std::string_view kParticleSimulateSource;
 inline constexpr std::string_view kFrustumCullVirtualPath = "shaders/frustum_cull.glsl";
 extern const std::string_view kFrustumCullSource;
 
+/// CS8's variant of the cull kernel: same test, but instead of a visibility array the host reads
+/// back, it writes an indirect draw's instanceCount and a compacted list of surviving indices
+/// straight into device memory. COMPUTE-only, like its two siblings above.
+inline constexpr std::string_view kFrustumCullIndirectVirtualPath =
+    "shaders/frustum_cull_indirect.glsl";
+extern const std::string_view kFrustumCullIndirectSource;
+
 inline constexpr std::string_view kBloomBrightPassVirtualPath = "shaders/bloom_bright_pass.glsl";
 extern const std::string_view kBloomBrightPassSource;
 

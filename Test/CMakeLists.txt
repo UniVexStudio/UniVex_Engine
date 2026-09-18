@@ -209,6 +209,7 @@ add_executable(uve_integration_tests
     RHI/RenderSystems/compute_system_uve_tests.cpp
     RHI/RenderSystems/particle_compute_simulation_uve_tests.cpp
     RHI/RenderSystems/frustum_cull_compute_uve_tests.cpp
+    RHI/RenderSystems/frustum_cull_indirect_uve_tests.cpp
     RHI/RenderSystems/compute_kernel_portability_uve_tests.cpp
     RHI/RenderSystems/compute_workloads_vulkan_uve_tests.cpp
     RHI/RenderSystems/light_system_uve_tests.cpp
