@@ -115,6 +115,10 @@ struct GlDeviceStateUVE {
             ShaderDataTypeUVE type = ShaderDataTypeUVE::Float;
             GLint location = -1;
             std::uint32_t arraySize = 1;
+            // M5b: true for GL_IMAGE_2D uniforms (imageLoad/imageStore). Reported as Int like
+            // samplers (the value is the image-unit index, settable through SetUniformIntUVE);
+            // BindTextureUVE double-binds image-using programs through glBindImageTexture.
+            bool isImageUniform = false;
         };
         std::unordered_map<std::string, UniformRecordUVE, TransparentStringHashUVE, TransparentStringEqualUVE> uniforms;
     };

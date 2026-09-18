@@ -2347,5 +2347,160 @@ TEST_F(GlRenderDeviceUVETest, DispatchUVE_RejectsGraphicsPipelineWithoutGlError)
     renderDevice->DestroyShaderUVE(fragmentShader);
 }
 
+// ---------------------------------------------------------------------------
+// M5b: storage images (GL). BindTextureUVE feeds ONE unified slot space — when the
+// current program declares GL_IMAGE_2D uniforms, the texture is ALSO bound to the
+// image unit of the same index (glBindImageTexture, GL_READ_WRITE), so imageLoad/
+// imageStore reach the caller's texture. Both proofs read the texture back with raw
+// glGetTexImage through the binding the RHI left behind (the SSBO-test precedent):
+// a ZERO-initialized texture can only turn green/red through a real image store.
+// ---------------------------------------------------------------------------
+
+constexpr std::string_view kImageFillComputeSource = R"(#version 430 core
+layout(local_size_x = 4, local_size_y = 4) in;
+layout(binding = 0, rgba8) uniform image2D uImage;
+void main() {
+    ivec2 c = ivec2(gl_GlobalInvocationID.xy);
+    imageStore(uImage, c, vec4(0.0, 1.0, 0.0, 1.0));
+}
+)";
+
+TEST_F(GlRenderDeviceUVETest, BindTextureUVE_ComputeImageStore_ProvenByGlGetTexImage) {
+    // The GL M5b compute-side proof: a zero-initialized 4x4 RGBA8 texture, one
+    // outside-pass dispatch of the image filler (bind compute pipeline → BindTextureUVE
+    // at slot 0 → DispatchUVE(1,1,1); GL executes at record time and the dispatch
+    // barrier covers shader image access), then a raw glGetTexImage readback must show
+    // all sixteen texels GREEN. Without a real glBindImageTexture + glDispatchCompute
+    // the texture stays zeroed — the green cannot be faked.
+    constexpr std::array<std::uint8_t, 4U * 4U * 4U> kZeroPixels{};
+    const TextureHandleUVE target = renderDevice->CreateTextureUVE(
+        TextureDescUVE{4U, 4U, TextureFormatUVE::RGBA8Unorm, 1U},
+        std::as_bytes(std::span(kZeroPixels)));
+    ASSERT_NE(target, kInvalidTextureHandleUVE);
+
+    const ShaderHandleUVE computeShader = renderDevice->CreateShaderUVE(
+        ShaderDescUVE{ShaderStageUVE::Compute, std::string(kImageFillComputeSource)});
+    if (computeShader == kInvalidShaderHandleUVE) {
+        renderDevice->DestroyTextureUVE(target);
+        GTEST_SKIP() << "context lacks compute shaders (GL 4.3+)";
+    }
+    ComputePipelineDescUVE pipelineDesc{};
+    pipelineDesc.computeShader = computeShader;
+    std::string infoLog;
+    const PipelineHandleUVE computePipeline =
+        renderDevice->CreateComputePipelineUVE(pipelineDesc, &infoLog);
+    if (computePipeline == kInvalidPipelineHandleUVE) {
+        renderDevice->DestroyShaderUVE(computeShader);
+        renderDevice->DestroyTextureUVE(target);
+        GTEST_SKIP() << "compute pipeline refused: " << infoLog;
+    }
+
+    std::unique_ptr<ICommandBufferUVE> commandBuffer = renderDevice->CreateCommandBufferUVE();
+    ASSERT_NE(commandBuffer, nullptr);
+    commandBuffer->BindPipelineUVE(computePipeline);
+    commandBuffer->BindTextureUVE(target, 0U); // M5b: legal outside pass while compute is bound
+    commandBuffer->DispatchUVE(1U, 1U, 1U);
+    EXPECT_EQ(glGetError(), GL_NO_ERROR);
+    renderDevice->SubmitUVE(std::move(commandBuffer));
+
+    // Readback through the unit-0 binding the RHI's glBindTexture left behind (GetTexImage
+    // implicitly flushes, so the dispatch's stores are complete).
+    GLint textureName = 0;
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &textureName);
+    ASSERT_NE(textureName, 0) << "the target texture must still be bound at unit 0";
+    std::array<std::uint8_t, 4U * 4U * 4U> readback{};
+    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, readback.data());
+    EXPECT_EQ(glGetError(), GL_NO_ERROR);
+    for (std::size_t texel = 0; texel < 16U; ++texel) {
+        EXPECT_EQ(readback[texel * 4U + 0U], 0U) << "texel " << texel << " red";
+        EXPECT_EQ(readback[texel * 4U + 1U], 255U) << "texel " << texel << " green";
+        EXPECT_EQ(readback[texel * 4U + 2U], 0U) << "texel " << texel << " blue";
+        EXPECT_EQ(readback[texel * 4U + 3U], 255U) << "texel " << texel << " alpha";
+    }
+
+    renderDevice->DestroyPipelineUVE(computePipeline);
+    renderDevice->DestroyShaderUVE(computeShader);
+    renderDevice->DestroyTextureUVE(target);
+}
+
+constexpr std::string_view kImageStoreVertexSource = R"(#version 430 core
+void main() {
+    vec2 position = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
+    gl_Position = vec4(position * 2.0 - 1.0, 0.0, 1.0);
+}
+)";
+
+constexpr std::string_view kImageStoreFragmentSource = R"(#version 430 core
+layout(binding = 0, rgba8) uniform image2D uImage;
+out vec4 FragColor;
+void main() {
+    ivec2 c = ivec2(gl_FragCoord.xy) % 4;
+    imageStore(uImage, c, vec4(1.0, 0.0, 0.0, 1.0));
+    FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+}
+)";
+
+TEST_F(GlRenderDeviceUVETest, BindTextureUVE_FragmentImageStore_ProvenByGlGetTexImage) {
+    // The GL M5b graphics-side proof: a fullscreen triangle whose fragment imageStores
+    // RED into texel (fragCoord % 4) of a zero-initialized 4x4 RGBA8 texture (full
+    // coverage therefore paints all sixteen texels) while outputting black to the default
+    // framebuffer. After the draw, the raw glGetTexImage readback must be all RED — the
+    // fragment-stage image store really reached the caller's texture through the
+    // BindTextureUVE image-unit double-bind.
+    constexpr std::array<std::uint8_t, 4U * 4U * 4U> kZeroPixels{};
+    const TextureHandleUVE target = renderDevice->CreateTextureUVE(
+        TextureDescUVE{4U, 4U, TextureFormatUVE::RGBA8Unorm, 1U},
+        std::as_bytes(std::span(kZeroPixels)));
+    ASSERT_NE(target, kInvalidTextureHandleUVE);
+
+    const ShaderHandleUVE vertexShader = renderDevice->CreateShaderUVE(
+        ShaderDescUVE{ShaderStageUVE::Vertex, std::string(kImageStoreVertexSource)});
+    const ShaderHandleUVE fragmentShader = renderDevice->CreateShaderUVE(
+        ShaderDescUVE{ShaderStageUVE::Fragment, std::string(kImageStoreFragmentSource)});
+    ASSERT_NE(vertexShader, kInvalidShaderHandleUVE);
+    ASSERT_NE(fragmentShader, kInvalidShaderHandleUVE);
+    PipelineDescUVE pipelineDesc;
+    pipelineDesc.vertexShader = vertexShader;
+    pipelineDesc.fragmentShader = fragmentShader;
+    pipelineDesc.depthTestEnabled = false;
+    pipelineDesc.depthWriteEnabled = false;
+    const PipelineHandleUVE pipeline = renderDevice->CreatePipelineUVE(pipelineDesc);
+    ASSERT_NE(pipeline, kInvalidPipelineHandleUVE)
+        << "a GL_IMAGE_2D fragment uniform must reflect and build since M5b";
+
+    std::unique_ptr<ICommandBufferUVE> commandBuffer = renderDevice->CreateCommandBufferUVE();
+    ASSERT_NE(commandBuffer, nullptr);
+    RenderPassDescUVE passDesc;
+    passDesc.colorAttachment = kInvalidTextureHandleUVE;
+    passDesc.colorLoadOp = LoadOpUVE::Clear;
+    passDesc.clearColor = {0.0F, 0.0F, 0.0F, 1.0F};
+    passDesc.depthLoadOp = LoadOpUVE::DontCare;
+    commandBuffer->BeginRenderPassUVE(passDesc);
+    commandBuffer->BindPipelineUVE(pipeline);
+    commandBuffer->BindTextureUVE(target, 0U); // sampler bind + image-unit double-bind
+    commandBuffer->DrawUVE(3U);
+    commandBuffer->EndRenderPassUVE();
+    EXPECT_EQ(glGetError(), GL_NO_ERROR);
+    renderDevice->SubmitUVE(std::move(commandBuffer));
+
+    GLint textureName = 0;
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &textureName);
+    ASSERT_NE(textureName, 0) << "the target texture must still be bound at unit 0";
+    std::array<std::uint8_t, 4U * 4U * 4U> readback{};
+    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, readback.data());
+    EXPECT_EQ(glGetError(), GL_NO_ERROR);
+    for (std::size_t texel = 0; texel < 16U; ++texel) {
+        EXPECT_EQ(readback[texel * 4U + 0U], 255U) << "texel " << texel << " red";
+        EXPECT_EQ(readback[texel * 4U + 1U], 0U) << "texel " << texel << " green";
+        EXPECT_EQ(readback[texel * 4U + 2U], 0U) << "texel " << texel << " blue";
+        EXPECT_EQ(readback[texel * 4U + 3U], 255U) << "texel " << texel << " alpha";
+    }
+
+    renderDevice->DestroyPipelineUVE(pipeline);
+    renderDevice->DestroyShaderUVE(fragmentShader);
+    renderDevice->DestroyShaderUVE(vertexShader);
+    renderDevice->DestroyTextureUVE(target);
+}
+
 } // namespace
 } // namespace UVE::Render::Tests
