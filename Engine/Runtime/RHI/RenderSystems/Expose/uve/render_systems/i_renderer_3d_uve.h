@@ -43,6 +43,13 @@ struct Renderer3DFrameDiagnosticsUVE final {
     std::size_t primitiveCandidates = 0U;
     std::size_t primitiveItemsExtracted = 0U;
     std::size_t meshDrawCallsRecorded = 0U;
+    /// How many of `meshDrawCallsRecorded` were instanced draws, and how many objects those draws
+    /// covered. Both name what instancing ACTUALLY did this frame, not what it was offered: a
+    /// scene whose materials predate the instancing contract reports zero, which is the honest
+    /// answer and the one that makes "is instancing on?" answerable from a diagnostic rather than
+    /// from reading the material assets.
+    std::size_t instancedDrawCallsRecorded = 0U;
+    std::size_t instancedObjectsRecorded = 0U;
     std::size_t primitiveDrawCallsRecorded = 0U;
     std::size_t particleItemsExtracted = 0U;
     std::size_t particleDrawCommandsRecorded = 0U;
