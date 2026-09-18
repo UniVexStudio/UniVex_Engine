@@ -418,7 +418,13 @@ void GlCommandBufferUVE::BindIndexBufferUVE(BufferHandleUVE buffer) {
 }
 
 void GlCommandBufferUVE::BindTextureUVE(TextureHandleUVE texture, std::uint32_t slot) {
-    if (!RequireInsideRenderPassUVE(m_insideRenderPass, "BindTextureUVE")) {
+    // M5b: BindTextureUVE now also feeds STORAGE-image slots (the unified texture-slot
+    // space), and the compute flow (bind compute pipeline → bind its textures → dispatch)
+    // lives entirely OUTSIDE pass markers — so while a compute pipeline is the bound one,
+    // this call passes the gate; graphics-side misuse keeps the strict inside-pass rule
+    // (the same M5a relaxation BindStorageBufferUVE and the SetUniform* calls got).
+    if (!m_insideRenderPass && !ActivePipelineIsComputeUVE()) {
+        (void)RequireInsideRenderPassUVE(m_insideRenderPass, "BindTextureUVE");
         return;
     }
     if (m_state->maxCombinedTextureImageUnits <= 0 ||
@@ -432,12 +438,53 @@ void GlCommandBufferUVE::BindTextureUVE(TextureHandleUVE texture, std::uint32_t 
         return;
     }
     const auto boundTextureIt = m_boundTextures.find(slot);
-    if (boundTextureIt != m_boundTextures.end() && boundTextureIt->second == texture) {
-        return;
+    const bool alreadyBoundToSlot =
+        boundTextureIt != m_boundTextures.end() && boundTextureIt->second == texture;
+    if (!alreadyBoundToSlot) {
+        m_state->gl.glActiveTexture(static_cast<GLenum>(GL_TEXTURE0 + slot));
+        glBindTexture(GL_TEXTURE_2D, textureIt->second.glTexture);
+        m_boundTextures[slot] = texture;
     }
-    m_state->gl.glActiveTexture(static_cast<GLenum>(GL_TEXTURE0 + slot));
-    glBindTexture(GL_TEXTURE_2D, textureIt->second.glTexture);
-    m_boundTextures[slot] = texture;
+
+    // M5b: when the CURRENT program declares image uniforms (GL_IMAGE_2D), also bind the
+    // texture to the image unit of the same index so imageLoad/imageStore see it. Image units
+    // follow the same slot==unit convention samplers do (callers point an image uniform at the
+    // slot they bound, exactly like a sampler uniform; the reflected default is unit 0).
+    // Depth textures are never image-bound by this RHI — the same M5b scope the Vulkan arm
+    // documents (color formats only).
+    if (m_state->gl.glBindImageTexture != nullptr) {
+        const auto* const pipelineRecord = FindCurrentPipelineUVE();
+        if (pipelineRecord != nullptr) {
+            bool programHasImageUniform = false;
+            for (const auto& uniformEntry : pipelineRecord->uniforms) {
+                if (uniformEntry.second.isImageUniform) {
+                    programHasImageUniform = true;
+                    break;
+                }
+            }
+            if (programHasImageUniform) {
+                GLenum imageFormat = 0;
+                switch (textureIt->second.desc.format) {
+                    case TextureFormatUVE::RGBA8Unorm:
+                        imageFormat = GL_RGBA8;
+                        break;
+                    case TextureFormatUVE::RGBA16Float:
+                        imageFormat = GL_RGBA16F;
+                        break;
+                    case TextureFormatUVE::Depth32Float:
+                        imageFormat = 0;
+                        break;
+                }
+                if (imageFormat != 0) {
+                    m_state->gl.glBindImageTexture(slot, textureIt->second.glTexture, 0, GL_FALSE,
+                                                   0, GL_READ_WRITE, imageFormat);
+                } else {
+                    UVE_ERROR("GlCommandBufferUVE: depth textures cannot be bound as storage "
+                              "images; the image unit is left unbound");
+                }
+            }
+        }
+    }
 }
 
 void GlCommandBufferUVE::BindUniformBufferUVE(BufferHandleUVE buffer, std::uint32_t slot) {

@@ -122,6 +122,7 @@ struct GlTextureFormatUVE {
 
 [[nodiscard]] bool IsSamplerUniformTypeUVE(GLenum glType) noexcept {
     switch (glType) {
+        case GL_IMAGE_2D: // M5b: image uniforms carry a unit index exactly like samplers do
         case GL_SAMPLER_2D:
         case GL_SAMPLER_3D:
         case GL_SAMPLER_CUBE:
@@ -224,7 +225,8 @@ void ReflectPipelineUniformsUVE(
         const GLint location = gl.glGetUniformLocation(glProgram, name.c_str());
         outUniforms.emplace(std::move(name), Detail::GlDeviceStateUVE::PipelineRecordUVE::UniformRecordUVE{
                                                   GlUniformTypeToShaderDataTypeUVE(glType), location,
-                                                  static_cast<std::uint32_t>(arraySize)});
+                                                  static_cast<std::uint32_t>(arraySize),
+                                                  glType == GL_IMAGE_2D});
     }
 }
 

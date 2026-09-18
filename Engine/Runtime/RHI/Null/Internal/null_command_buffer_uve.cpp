@@ -74,9 +74,12 @@ void NullCommandBufferUVE::BindIndexBufferUVE(BufferHandleUVE buffer) {
 }
 
 void NullCommandBufferUVE::BindTextureUVE(TextureHandleUVE texture, std::uint32_t slot) {
-    if (!RequireInsideRenderPassUVE(m_insideRenderPass, "BindTextureUVE")) {
-        return;
-    }
+    // M5b: texture binds no longer gate on pass state. Since M5b, BindTextureUVE feeds
+    // STORAGE_IMAGE descriptors as well (unified texture slot space), and the compute flow
+    // lives entirely OUTSIDE pass markers. NullCommandBufferUVE holds no device back-reference
+    // to tell a compute handle from a graphics one — so Null records ungated exactly like
+    // the Vulkan record side does (and like BindStorageBufferUVE does), and the executing
+    // backends keep the real kind-aware rules.
     m_commands.emplace_back(BindTextureCommandUVE{texture, slot});
 }
 

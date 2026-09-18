@@ -57,7 +57,17 @@ public:
     virtual void BindIndexBufferUVE(BufferHandleUVE buffer) = 0;
 
     /// Binds `texture` at `slot` for the active pipeline's shaders. Must be called inside a
-    /// render pass.
+    /// render pass for graphics pipelines; since M5a, binds recorded while a COMPUTE pipeline
+    /// is bound are honored outside pass markers too (the compute flow lives there).
+    /// Since M5b one slot space feeds the whole texture family: a pipeline's i-th reflected
+    /// texture-family binding (combined samplers, separate sampled images, and STORAGE_IMAGE
+    /// slots, sorted ascending by binding number) reads global slot i. Storage-image slots
+    /// imageLoad/imageStore the bound texture (Vulkan: it is transitioned to and permanently
+    /// rests in VK_IMAGE_LAYOUT_GENERAL, which stays samplable; GL: the texture is also bound
+    /// to the image unit of the same index). Depth textures are never storage-bound — such
+    /// slots deterministically fall back to a device-owned sink (warn-once). Unbound or
+    /// destroyed-after-bind storage-image slots write into the same sink; sampled slots keep
+    /// the M2c 1x1-white fallback.
     virtual void BindTextureUVE(TextureHandleUVE texture, std::uint32_t slot) = 0;
 
     /// Binds `buffer` as a uniform buffer at `slot` for the active pipeline's shaders. Must be

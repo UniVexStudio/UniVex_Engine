@@ -44,6 +44,9 @@ struct GlFunctionsUVE {
     // CreateComputePipelineUVE()/DispatchUVE() refuse loudly instead of calling through null.
     PFNGLDISPATCHCOMPUTEPROC glDispatchCompute = nullptr;
     PFNGLMEMORYBARRIERPROC glMemoryBarrier = nullptr;
+    // M5b: image-unit binding for storage images (GL 4.2+), same optional-null policy as the
+    // compute pair — BindTextureUVE skips the image bind when it is null.
+    PFNGLBINDIMAGETEXTUREPROC glBindImageTexture = nullptr;
 
     PFNGLGENVERTEXARRAYSPROC glGenVertexArrays = nullptr;
     PFNGLDELETEVERTEXARRAYSPROC glDeleteVertexArrays = nullptr;

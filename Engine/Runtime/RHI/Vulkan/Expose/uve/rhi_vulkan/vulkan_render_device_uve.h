@@ -108,8 +108,29 @@
 // compute pipeline is bound (outside-pass storage binds and uniform writes are the dispatch
 // feed).
 //
+// Slice M5b ("storage images") added 2026-09-18: STORAGE_IMAGE descriptors are accepted by
+// BOTH pipeline reflections (the M2f loud refusal is lifted) and join the ONE texture-slot
+// space — the pipeline's i-th texture-family binding (sampled and storage forms together,
+// ascending by binding number) reads global BindTextureUVE slot i. Storage slots write
+// STORAGE_IMAGE descriptors with VK_IMAGE_LAYOUT_GENERAL: the first tuple-set write
+// transitions the texture to GENERAL (a legal — if unoptimal — sampling and attachment-entry
+// layout, so it becomes the texture's permanent rest state; CloseCurrentPassDynamicUVE
+// restores pinned offscreen attachments to GENERAL instead of SHADER_READ_ONLY). The
+// transition barrier is only legal OUTSIDE a rendering instance, so the flush closes an open
+// pass and reopens it with LOAD semantics (content preserved) around the barrier — on the
+// classic pre-1.3 arm, whose single native pass spans the whole replay, storage-image draws
+// warn once (bit 22) and skip. Cached descriptor sets that baked the pre-pin layout are
+// invalidated at pin time and park in a deferred-free list (this frame's recorded binds may
+// still reference them; the next PresentUVE's post-fence point frees them). Depth textures
+// are never storage-bound: such slots deterministically write a device-owned 1x1 black sink
+// (bit 21) — imageStore into the shared white sampling fallback would corrupt its invariant,
+// and unbound/destroyed storage-image slots resolve to the same sink. Sampled descriptors of
+// a GENERAL-pinned texture rewrite with the GENERAL layout so cached sets never contradict
+// the tracked state. The M5a dispatch post-barrier widened to also publish compute writes to
+// COLOR_ATTACHMENT_OUTPUT (a storage-written texture may be ATTACHED with Load next).
+//
 // Capability reporting is honest and upstream-visible: GetBackendNameUVE() says
-// "Vulkan (M5a compute dispatch)" on dynamic-rendering devices, "Vulkan (M2c textures+staging)"
+// "Vulkan (M5b storage images)" on dynamic-rendering devices, "Vulkan (M2c textures+staging)"
 // on classic ones — never "Vulkan" unqualified — so logs, editor overlays, and bug reports
 // cannot mistake the current slice for the finished backend, and IsUsableUVE() reflects the
 // real instance/device/swapchain bring-up result.

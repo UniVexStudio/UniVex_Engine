@@ -83,7 +83,9 @@ public:
     /// contract as CreatePipelineUVE) when the shader handle is invalid, is not a compute-stage
     /// shader, or the backend cannot build the pipeline. The returned handle shares the graphics
     /// pipeline handle domain: BindPipelineUVE binds it, and ICommandBufferUVE::DispatchUVE
-    /// executes it. Backends without compute (GL contexts older than 4.3, the fixed ES 3.0
+    /// executes it. Since M5b, STORAGE_IMAGE bindings are accepted by both compute and graphics
+    /// reflection — they share the one texture-slot space fed by BindTextureUVE (see its doc).
+    /// Backends without compute (GL contexts older than 4.3, the fixed ES 3.0
     /// Android baseline) fail creation loudly rather than returning a handle that could never
     /// dispatch.
     [[nodiscard]] virtual PipelineHandleUVE CreateComputePipelineUVE(const ComputePipelineDescUVE& desc,

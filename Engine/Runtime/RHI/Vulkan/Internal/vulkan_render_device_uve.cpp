@@ -109,14 +109,20 @@ struct PushConstantBlockRefUVE {
     bool valid = false;
 };
 
-/// One reflected sampled-texture binding (M2c combined-image-sampler; M2f also accepts the
-/// separate SAMPLED_IMAGE form): RHI texture "slots" mirror GL texture units — the pipeline's
-/// i-th sampled-image binding (sorted ascending) is fed from global slot i.
+/// One reflected texture-family binding (M2c combined-image-sampler; M2f the separate
+/// SAMPLED_IMAGE form; M5b STORAGE_IMAGE): RHI texture "slots" mirror GL texture units — the
+/// pipeline's i-th texture-family binding (sorted ascending by binding number, sampled and
+/// storage forms sharing ONE slot space) is fed from global BindTextureUVE slot i.
 struct TextureSlotRefUVE {
     std::uint32_t binding = 0U;
     std::string name; // reflected sampler/image name (diagnostics only; binding is by slot)
     VkShaderStageFlags stageFlags = 0U;
     bool separateSampler = false; // M2f: SAMPLED_IMAGE form (pairs with the fixed device sampler)
+    // M5b: STORAGE_IMAGE form (imageLoad/imageStore). Such slots write a STORAGE_IMAGE
+    // descriptor with VK_IMAGE_LAYOUT_GENERAL and permanently transition their texture to
+    // GENERAL (a valid — if unoptimal — sampling layout, so cached sampled descriptors of
+    // the same texture get invalidated and rewritten with the GENERAL layout too).
+    bool isStorageImage = false;
 };
 
 /// One reflected STORAGE_BUFFER binding (M2f): slot semantics mirror the texture slots — the
@@ -187,6 +193,11 @@ struct VulkanRenderDeviceUVE::ImplUVE {
         bool passOpen = false;
         bool openPassIsSwapchain = true;
         VkImage openOffscreenColorImage = VK_NULL_HANDLE; // restored to SHADER_READ at close
+        // M5b: the color RECORD of the open offscreen pass (null while swapchain/scratch).
+        // A mid-pass storage-image layout transition has to close the instance, barrier, and
+        // REOPEN the same pass with Load semantics — the record pointer is what makes the
+        // reopen possible from inside the flush (the VkImage handle alone cannot).
+        TextureRecordUVE* openOffscreenColorRecord = nullptr;
         // M2e: the caller depth attached to the open offscreen pass (nullptr for scratch depth
         // — scratch content is never kept, so no tracked restore is needed). Restored to
         // SHADER_READ_ONLY at CloseCurrentPassDynamicUVE() alongside the color image so the
@@ -244,6 +255,13 @@ struct VulkanRenderDeviceUVE::ImplUVE {
     // for the texture binding cache (one set per pipeline × texture tuple) and added FREE bit
     // so a destroyed texture's cached sets can be returned without resetting the whole pool.
     VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
+    // M5b: cached sets invalidated MID-REPLAY (a storage-image GENERAL transition stale-ing
+    // their baked layouts) cannot be freed on the spot — this frame's already-recorded binds
+    // may still reference them, and freeing a set bound in a pending command buffer is
+    // undefined. They park here and are freed at the NEXT PresentUVE's post-fence point,
+    // when the referencing submission is provably done. (DestroyTextureUVE keeps its
+    // immediate free — it waits for queue idle first.)
+    std::vector<VkDescriptorSet> deferredDescriptorSetFreesUVE;
     static constexpr std::uint32_t kDescriptorPoolSetCapacityUVE = 256U;
     static constexpr std::uint32_t kDescriptorPoolUboCapacityUVE = 256U;
     static constexpr std::uint32_t kDescriptorPoolSamplerCapacityUVE = 256U;
@@ -251,6 +269,8 @@ struct VulkanRenderDeviceUVE::ImplUVE {
     static constexpr std::uint32_t kDescriptorPoolStorageCapacityUVE = 256U;
     static constexpr std::uint32_t kDescriptorPoolSampledImageCapacityUVE = 256U;
     static constexpr std::uint32_t kDescriptorPoolFixedSamplerCapacityUVE = 256U;
+    // M5b pool type: storage images (imageLoad/imageStore slots, GENERAL layout).
+    static constexpr std::uint32_t kDescriptorPoolStorageImageCapacityUVE = 256U;
 
     // M2f device-owned descriptor resources: one FIXED sampler (every RHI sampler is the same
     // GL-mirrored linear/clamp/maxLod-0 shape, so standalone SAMPLER bindings all get this one)
@@ -262,6 +282,11 @@ struct VulkanRenderDeviceUVE::ImplUVE {
     VkBuffer fallbackStorageBuffer = VK_NULL_HANDLE;
     VkDeviceMemory fallbackStorageMemory = VK_NULL_HANDLE;
     static constexpr std::uint64_t kFallbackStorageBytesUVE = 256U;
+    // M5b: device-owned 1x1 RGBA8 sink for unbound/destroyed/depth storage-image slots —
+    // imageStore into the SHARED 1x1-white sampling fallback would corrupt its invariant,
+    // so storage gets its own throwaway image (created as a regular texture entry; teardown
+    // reaps it with the rest of the textures map). 0 = not yet created.
+    std::uint32_t fallbackStorageImageValue = 0U;
 
     // Finds a memory type index satisfying `typeBits` and ALL `requiredPropertyFlags`;
     // UINT32_MAX when none exists. Extracted from the M2a buffer creation path (now shared by
@@ -462,6 +487,12 @@ struct VulkanRenderDeviceUVE::ImplUVE {
         VkFormat vkFormat = VK_FORMAT_UNDEFINED; // the IMAGE's format (may be swapchain-typed)
         TextureDescUVE desc{};
         VkImageLayout currentLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        // M5b: set once the texture has been transitioned to GENERAL for storage-image use.
+        // GENERAL is a permanent rest state from then on (legal — if unoptimal — for sampling
+        // and attachment entry too), cached descriptor sets referring to it are invalidated at
+        // the transition, and CloseCurrentPassDynamicUVE restores pinned textures to GENERAL
+        // instead of SHADER_READ_ONLY so tracked-layout barriers stay truthful.
+        bool pinnedGeneral = false;
     };
     std::unordered_map<std::uint32_t, TextureRecordUVE> textures;
     std::uint32_t fallbackTextureValue = 0U; // 1x1 opaque-white; used for unbound/destroyed slots
@@ -528,6 +559,8 @@ struct VulkanRenderDeviceUVE::ImplUVE {
     static constexpr std::uint32_t kWarnedStorageSlotOobUVE = 1U << 18U;
     static constexpr std::uint32_t kWarnedDispatchClassicUVE = 1U << 19U; // M5a
     static constexpr std::uint32_t kWarnedDrawWithComputeUVE = 1U << 20U; // M5a
+    static constexpr std::uint32_t kWarnedStorageImageDepthUVE = 1U << 21U; // M5b
+    static constexpr std::uint32_t kWarnedStorageImageTransitionUVE = 1U << 22U; // M5b
     std::uint32_t replayWarningsEmitted = 0U;
 
     // Replay-local pipeline binding state (valid only inside PresentUVE()'s record window).
@@ -782,6 +815,7 @@ bool VulkanRenderDeviceUVE::ImplUVE::BeginOffscreenPassDynamicUVE(
     state.passOpen = true;
     state.openPassIsSwapchain = false;
     state.openOffscreenColorImage = color.image;
+    state.openOffscreenColorRecord = &color;
     state.openOffscreenDepthRecord = depth; // restored to SHADER_READ_ONLY at pass close
     return true;
 }
@@ -794,12 +828,19 @@ void VulkanRenderDeviceUVE::ImplUVE::CloseCurrentPassDynamicUVE() {
     vk.vkCmdEndRendering(commandBuffer);
     if (!state.openPassIsSwapchain && state.openOffscreenColorImage != VK_NULL_HANDLE) {
         // Restore the color image's invariant sampling layout so later passes may bind it.
+        // M5b: storage-pinned textures rest in GENERAL instead (their cached descriptors say
+        // GENERAL; restoring SHADER_READ_ONLY would contradict the tracked layout).
+        const VkImageLayout restLayout =
+            (state.openOffscreenColorRecord != nullptr &&
+             state.openOffscreenColorRecord->pinnedGeneral)
+                ? VK_IMAGE_LAYOUT_GENERAL
+                : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         VkImageMemoryBarrier backToSample{};
         backToSample.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
         backToSample.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
         backToSample.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
         backToSample.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        backToSample.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        backToSample.newLayout = restLayout;
         backToSample.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         backToSample.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         backToSample.image = state.openOffscreenColorImage;
@@ -831,6 +872,7 @@ void VulkanRenderDeviceUVE::ImplUVE::CloseCurrentPassDynamicUVE() {
     }
     state.passOpen = false;
     state.openOffscreenColorImage = VK_NULL_HANDLE;
+    state.openOffscreenColorRecord = nullptr;
     state.openOffscreenDepthRecord = nullptr;
 }
 
@@ -1443,7 +1485,7 @@ bool VulkanRenderDeviceUVE::ImplUVE::InitializeUVE() {
     std::memset(fallbackSsboMapped, 0, static_cast<std::size_t>(kFallbackStorageBytesUVE));
     vk.vkUnmapMemory(device, fallbackStorageMemory); // written once; no persistent map needed
 
-    VkDescriptorPoolSize poolSizes[5]{};
+    VkDescriptorPoolSize poolSizes[6]{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
     poolSizes[0].descriptorCount = kDescriptorPoolUboCapacityUVE;
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -1454,11 +1496,13 @@ bool VulkanRenderDeviceUVE::ImplUVE::InitializeUVE() {
     poolSizes[3].descriptorCount = kDescriptorPoolSampledImageCapacityUVE;
     poolSizes[4].type = VK_DESCRIPTOR_TYPE_SAMPLER;
     poolSizes[4].descriptorCount = kDescriptorPoolFixedSamplerCapacityUVE;
+    poolSizes[5].type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    poolSizes[5].descriptorCount = kDescriptorPoolStorageImageCapacityUVE;
     VkDescriptorPoolCreateInfo descriptorPoolInfo{};
     descriptorPoolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     descriptorPoolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
     descriptorPoolInfo.maxSets = kDescriptorPoolSetCapacityUVE;
-    descriptorPoolInfo.poolSizeCount = 5U;
+    descriptorPoolInfo.poolSizeCount = 6U;
     descriptorPoolInfo.pPoolSizes = poolSizes;
     if (vk.vkCreateDescriptorPool(device, &descriptorPoolInfo, nullptr, &descriptorPool) != VK_SUCCESS ||
         descriptorPool == VK_NULL_HANDLE) {
@@ -1587,6 +1631,7 @@ void VulkanRenderDeviceUVE::ImplUVE::DestroyAllResourcesUVE() {
         vk.vkDestroyDescriptorPool(device, descriptorPool, nullptr);
         descriptorPool = VK_NULL_HANDLE;
     }
+    deferredDescriptorSetFreesUVE.clear(); // M5b: parked sets died with the pool above
     if (frameUbo != VK_NULL_HANDLE) {
         if (frameUboMapped != nullptr) {
             vk.vkUnmapMemory(device, frameUboMemory);
@@ -1653,6 +1698,7 @@ void VulkanRenderDeviceUVE::ImplUVE::DestroyAllResourcesUVE() {
     }
     textures.clear();
     fallbackTextureValue = 0U;
+    fallbackStorageImageValue = 0U; // M5b: reaped with the textures map above
     // M2d offscreen scratch depth targets (extent-keyed; independent of the swapchain).
     for (auto& [key, scratch] : offscreenDepthScratch) {
         (void)key;
@@ -1743,6 +1789,18 @@ bool VulkanRenderDeviceUVE::CreateFallbackTextureUVE() {
         return false;
     }
     m_impl->fallbackTextureValue = fallbackHandle.value;
+    // M5b: the storage-image sink is a SEPARATE 1x1 black image — imageStore into the shared
+    // white sampling fallback would corrupt its "unbound slots sample white" invariant. It is
+    // an ordinary texture entry (teardown reaps it with the textures map); its transition to
+    // GENERAL happens lazily at first storage-slot use, exactly like any caller texture's.
+    const std::byte blackPixel[4] = {std::byte{0}, std::byte{0}, std::byte{0}, std::byte{0}};
+    const TextureHandleUVE storageFallbackHandle =
+        CreateTextureUVE(fallbackDesc, std::span<const std::byte>(blackPixel, 4U));
+    if (storageFallbackHandle == kInvalidTextureHandleUVE) {
+        UVE_WARNING("VulkanRenderDeviceUVE: fallback storage-image creation failed");
+        return false;
+    }
+    m_impl->fallbackStorageImageValue = storageFallbackHandle.value;
     return true;
 }
 
@@ -2666,23 +2724,30 @@ PipelineHandleUVE VulkanRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE
                 // M2c: combined image samplers bind through the per-tuple set cache.
                 // M2f: the separate SAMPLED_IMAGE form joins the same slot rule (the RHI's one
                 // sampler shape is written into the pipeline's standalone SAMPLER bindings).
+                // M5b: STORAGE_IMAGE joins the SAME slot space too — one ascending-binding
+                // ordering across the whole texture family, each slot remembering its form.
                 const bool isCombinedSampler =
                     binding->descriptor_type == SPV_REFLECT_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
                 const bool isSampledImage =
                     binding->descriptor_type == SPV_REFLECT_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-                if (isCombinedSampler || isSampledImage) {
+                const bool isStorageImage =
+                    binding->descriptor_type == SPV_REFLECT_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+                if (isCombinedSampler || isSampledImage || isStorageImage) {
                     TextureSlotRefUVE& slot = textureSlotsByBinding[binding->binding];
                     if (slot.stageFlags != 0U &&
                         (slot.name != (binding->name != nullptr ? binding->name : "") ||
-                         slot.separateSampler != isSampledImage)) {
+                         slot.separateSampler != isSampledImage ||
+                         slot.isStorageImage != isStorageImage)) {
                         reflectionError = "the same texture binding carries different names or "
-                                          "descriptor kinds (combined vs separate) across stages";
+                                          "descriptor kinds (combined vs separate vs storage) "
+                                          "across stages";
                         reflectionFailed = true;
                         break;
                     }
                     slot.binding = binding->binding;
                     slot.name = binding->name != nullptr ? binding->name : "";
                     slot.separateSampler = isSampledImage;
+                    slot.isStorageImage = isStorageImage;
                     slot.stageFlags |= stageModule.flag;
                     continue;
                 }
@@ -2710,10 +2775,10 @@ PipelineHandleUVE VulkanRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE
                     binding->descriptor_type != SPV_REFLECT_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC) {
                     reflectionError = std::string("SPIR-V binding [") +
                         (binding->name != nullptr ? binding->name : "?") +
-                        "] is not a descriptor form the RHI binds: M2f accepts uniform blocks, "
-                        "combined image samplers, separate sampled-image+sampler pairs, and "
-                        "storage buffers (SSBOs); storage images land with the M5b slice of the "
-                        "compute milestone, and any other descriptor type is not bound by this RHI";
+                        "] is not a descriptor form the RHI binds: through M5b the compute "
+                        "milestone this RHI accepts uniform blocks, combined image samplers, "
+                        "separate sampled-image+sampler pairs, storage buffers (SSBOs), and "
+                        "storage images; any other descriptor type is not bound by this RHI";
                     reflectionFailed = true;
                     break;
                 }
@@ -2855,9 +2920,11 @@ PipelineHandleUVE VulkanRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE
             VkDescriptorSetLayoutBinding& layoutBinding = layoutBindings[layoutIndex++];
             layoutBinding = {};
             layoutBinding.binding = slot.binding;
-            layoutBinding.descriptorType = slot.separateSampler
-                ? VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE
-                : VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            // M5b: STORAGE_IMAGE joins the two sampled forms in the one slot space.
+            layoutBinding.descriptorType = slot.isStorageImage
+                ? VK_DESCRIPTOR_TYPE_STORAGE_IMAGE
+                : (slot.separateSampler ? VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE
+                                        : VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
             layoutBinding.descriptorCount = 1U;
             layoutBinding.stageFlags = slot.stageFlags;
         }
@@ -3059,12 +3126,12 @@ PipelineHandleUVE VulkanRenderDeviceUVE::CreateComputePipelineUVE(const ComputeP
     stage.module = shaderFound->second.module;
     stage.pName = shaderFound->second.entryPoint.c_str();
 
-    // --- M5a compute reflection ---------------------------------------------------------
+    // --- M5a/M5b compute reflection ------------------------------------------------------
     // Single stage, set-0-only, and deliberately narrower than the graphics reflection:
-    // uniform blocks (ring-dynamic) and storage buffers (slot-bound) are the descriptor
-    // forms a compute slice honestly covers today. STORAGE_IMAGE refuses loudly naming M5b
-    // (the message keeps the word "compute" — the M2f refusal test asserts it); sampled
-    // textures/samplers refuse too (compute sampling lands when a real workload needs it).
+    // uniform blocks (ring-dynamic), storage buffers (slot-bound), and — since M5b —
+    // storage images (texture-slot-bound, VK_IMAGE_LAYOUT_GENERAL) are the descriptor forms
+    // a compute slice honestly covers today. Sampled textures/samplers still refuse
+    // (compute sampling lands when a real workload needs it).
     ImplUVE::PipelineRecordUVE record;
     record.isCompute = true;
     {
@@ -3076,6 +3143,7 @@ PipelineHandleUVE VulkanRenderDeviceUVE::CreateComputePipelineUVE(const ComputeP
         }
         std::map<std::uint32_t, UniformBlockRefUVE> blocksByBinding;
         std::map<std::uint32_t, StorageSlotRefUVE> storageSlotsByBinding;
+        std::map<std::uint32_t, TextureSlotRefUVE> textureSlotsByBinding; // M5b: STORAGE_IMAGE
         bool reflectionFailed = false;
         std::string reflectionError;
         std::uint32_t bindingCount = 0;
@@ -3096,14 +3164,24 @@ PipelineHandleUVE VulkanRenderDeviceUVE::CreateComputePipelineUVE(const ComputeP
                 slot.stageFlags |= VK_SHADER_STAGE_COMPUTE_BIT;
                 continue;
             }
+            if (binding->descriptor_type == SPV_REFLECT_DESCRIPTOR_TYPE_STORAGE_IMAGE) {
+                // M5b: storage images join compute (imageLoad/imageStore sinks/sources) through
+                // the same slot space and GENERAL-layout policy as the graphics side.
+                TextureSlotRefUVE& slot = textureSlotsByBinding[binding->binding];
+                slot.binding = binding->binding;
+                slot.name = binding->name != nullptr ? binding->name : "";
+                slot.isStorageImage = true;
+                slot.stageFlags |= VK_SHADER_STAGE_COMPUTE_BIT;
+                continue;
+            }
             if (binding->descriptor_type != SPV_REFLECT_DESCRIPTOR_TYPE_UNIFORM_BUFFER &&
                 binding->descriptor_type != SPV_REFLECT_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC) {
                 reflectionError = std::string("SPIR-V binding [") +
                     (binding->name != nullptr ? binding->name : "?") +
-                    "] is not a descriptor form this RHI's compute pipelines bind: the M5a "
-                    "compute slice accepts uniform blocks and storage buffers (SSBOs); storage "
-                    "images land with M5b, and sampled textures/samplers are not bound by "
-                    "compute pipelines yet";
+                    "] is not a descriptor form this RHI's compute pipelines bind: through M5b "
+                    "the compute slice accepts uniform blocks, storage buffers (SSBOs), and "
+                    "storage images; sampled textures/samplers are not bound by compute "
+                    "pipelines yet";
                 reflectionFailed = true;
                 break;
             }
@@ -3154,20 +3232,26 @@ PipelineHandleUVE VulkanRenderDeviceUVE::CreateComputePipelineUVE(const ComputeP
         for (auto& [binding, slot] : storageSlotsByBinding) {
             record.storageSlots.push_back(std::move(slot));
         }
+        // M5b: storage-image slots follow the same ascending-binding slot rule.
+        for (auto& [binding, slot] : textureSlotsByBinding) {
+            record.textureSlots.push_back(std::move(slot));
+        }
         if (record.pushBlock.valid) {
             record.pushBlock.shadow.assign(record.pushBlock.size, std::byte{0});
         }
     }
 
-    // Descriptor set layout: dynamic-UBO bindings + STORAGE_BUFFER bindings, all set 0.
-    // Uniform-only compute pipelines get their static set right here (written once, never
-    // rewritten); storage-bearing ones allocate per-tuple sets lazily at dispatch flush —
-    // the identical M2c/M2f caching contract the graphics side uses.
+    // Descriptor set layout: dynamic-UBO bindings + STORAGE_BUFFER bindings + M5b
+    // STORAGE_IMAGE bindings, all set 0. Uniform-only compute pipelines get their static set
+    // right here (written once, never rewritten); storage/image-bearing ones allocate
+    // per-tuple sets lazily at dispatch flush — the identical M2c/M2f caching contract the
+    // graphics side uses.
     VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
     VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
-    if (!record.uniformBlocks.empty() || !record.storageSlots.empty()) {
-        std::vector<VkDescriptorSetLayoutBinding> layoutBindings(record.uniformBlocks.size() +
-                                                                 record.storageSlots.size());
+    if (!record.uniformBlocks.empty() || !record.storageSlots.empty() ||
+        !record.textureSlots.empty()) {
+        std::vector<VkDescriptorSetLayoutBinding> layoutBindings(
+            record.uniformBlocks.size() + record.storageSlots.size() + record.textureSlots.size());
         std::size_t layoutIndex = 0;
         for (const UniformBlockRefUVE& block : record.uniformBlocks) {
             VkDescriptorSetLayoutBinding& layoutBinding = layoutBindings[layoutIndex++];
@@ -3185,6 +3269,14 @@ PipelineHandleUVE VulkanRenderDeviceUVE::CreateComputePipelineUVE(const ComputeP
             layoutBinding.descriptorCount = 1U;
             layoutBinding.stageFlags = slot.stageFlags;
         }
+        for (const TextureSlotRefUVE& slot : record.textureSlots) {
+            VkDescriptorSetLayoutBinding& layoutBinding = layoutBindings[layoutIndex++];
+            layoutBinding = {};
+            layoutBinding.binding = slot.binding;
+            layoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE; // M5b: only form
+            layoutBinding.descriptorCount = 1U;                              // compute binds
+            layoutBinding.stageFlags = slot.stageFlags;
+        }
         VkDescriptorSetLayoutCreateInfo setLayoutInfo{};
         setLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
         setLayoutInfo.bindingCount = static_cast<std::uint32_t>(layoutBindings.size());
@@ -3194,7 +3286,7 @@ PipelineHandleUVE VulkanRenderDeviceUVE::CreateComputePipelineUVE(const ComputeP
             descriptorSetLayout == VK_NULL_HANDLE) {
             return fail("vkCreateDescriptorSetLayout failed");
         }
-        if (record.storageSlots.empty()) {
+        if (record.storageSlots.empty() && record.textureSlots.empty()) {
             VkDescriptorSetAllocateInfo setAllocateInfo{};
             setAllocateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
             setAllocateInfo.descriptorPool = impl.descriptorPool;
@@ -3398,8 +3490,105 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
     // (GL shader-storage binding-point semantics; validated at the command handler below).
     std::map<std::uint32_t, std::uint32_t> currentStorageValues;
 
+    // M5b: invalidate every cached descriptor set that references `textureValue` — a
+    // storage-image GENERAL transition changes the texture's layout permanently and any
+    // baked sampled/storage descriptor would contradict it. Invalidated sets park in
+    // deferredDescriptorSetFreesUVE instead of being freed here: this frame's already-
+    // recorded binds may still reference them (freeing a set bound in a pending command
+    // buffer is undefined); the next PresentUVE's post-fence point frees them.
+    const auto invalidateCachedSetsReferencingTextureUVE = [&impl](const std::uint32_t textureValue) {
+        for (auto& [pipelineValue, pipelineRecord] : impl.pipelines) {
+            (void)pipelineValue;
+            for (auto cacheIt = pipelineRecord.cachedTextureSets.begin();
+                 cacheIt != pipelineRecord.cachedTextureSets.end();) {
+                const auto mentioned = pipelineRecord.cachedTextureTextures.find(cacheIt->first);
+                if (mentioned != pipelineRecord.cachedTextureTextures.end() &&
+                    std::find(mentioned->second.begin(), mentioned->second.end(), textureValue) !=
+                        mentioned->second.end()) {
+                    impl.deferredDescriptorSetFreesUVE.push_back(cacheIt->second);
+                    pipelineRecord.cachedTextureTextures.erase(mentioned);
+                    pipelineRecord.cachedStorageBuffers.erase(cacheIt->first);
+                    cacheIt = pipelineRecord.cachedTextureSets.erase(cacheIt);
+                } else {
+                    ++cacheIt;
+                }
+            }
+        }
+    };
+
+    // M5b: transition a storage-image-bound texture to GENERAL — its permanent rest state
+    // from here on (GENERAL stays legal for later sampling/attachment; CloseCurrentPass-
+    // DynamicUVE restores pinned textures to it). The barrier must be recorded OUTSIDE any
+    // rendering instance, so an open pass is closed first and reopened with Load semantics
+    // (content preserved) afterwards. Returns false when the transition is impossible
+    // (classic arm: its one native pass spans the whole replay) or the reopen failed —
+    // callers skip the offending draw/dispatch loudly rather than record an invalid layout.
+    const auto ensureStorageImageGeneralUVE =
+        [&impl, &passActiveForThisList, &invalidateCachedSetsReferencingTextureUVE](
+            const std::uint32_t textureValue) -> bool {
+        ImplUVE::TextureRecordUVE& textureRecord = impl.textures.at(textureValue);
+        if (textureRecord.pinnedGeneral) {
+            return true; // already GENERAL — permanently
+        }
+        if (!impl.useDynamicRendering) {
+            impl.WarnOnceUVE(VulkanRenderDeviceUVE::ImplUVE::kWarnedStorageImageTransitionUVE,
+                "replay: a storage-image slot was used on a device without core 1.3 dynamic "
+                "rendering; the classic arm's single native pass spans the whole replay, so "
+                "the GENERAL transition — and the draw/dispatch needing it — is skipped");
+            return false;
+        }
+        const bool passWasOpen = impl.framePassState.passOpen;
+        const bool wasSwapchain = impl.framePassState.openPassIsSwapchain;
+        ImplUVE::TextureRecordUVE* colorRecord = impl.framePassState.openOffscreenColorRecord;
+        ImplUVE::TextureRecordUVE* depthRecord = impl.framePassState.openOffscreenDepthRecord;
+        if (passWasOpen) {
+            impl.CloseCurrentPassDynamicUVE(); // layout barriers are illegal inside an instance
+        }
+        VkImageMemoryBarrier toGeneral{};
+        toGeneral.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        toGeneral.srcAccessMask = textureRecord.currentLayout == VK_IMAGE_LAYOUT_UNDEFINED
+                                      ? VkAccessFlags{0U}
+                                      : VkAccessFlags{VK_ACCESS_SHADER_READ_BIT};
+        toGeneral.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+        toGeneral.oldLayout = textureRecord.currentLayout; // rest layouts: UNDEFINED (fresh,
+        toGeneral.newLayout = VK_IMAGE_LAYOUT_GENERAL;     // content discarded) or SHADER_READ
+        toGeneral.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        toGeneral.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        toGeneral.image = textureRecord.image;
+        toGeneral.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0U, 1U, 0U, 1U};
+        impl.vk.vkCmdPipelineBarrier(impl.commandBuffer,
+                                     VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
+                                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                     VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
+                                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                                     0U, 0U, nullptr, 0U, nullptr, 1U, &toGeneral);
+        textureRecord.currentLayout = VK_IMAGE_LAYOUT_GENERAL;
+        textureRecord.pinnedGeneral = true;
+        // Cached sets anywhere that baked this texture's old layout now contradict it.
+        invalidateCachedSetsReferencingTextureUVE(textureValue);
+        if (passWasOpen) {
+            const bool reopened =
+                wasSwapchain
+                    ? impl.BeginSwapchainPassDynamicUVE()
+                    : (colorRecord != nullptr &&
+                       impl.BeginOffscreenPassDynamicUVE(
+                           *colorRecord, depthRecord,
+                           VkExtent2D{colorRecord->desc.width, colorRecord->desc.height},
+                           {0.0F, 0.0F, 0.0F, 0.0F}, 1.0F, LoadOpUVE::Load, LoadOpUVE::Load));
+            if (!reopened) {
+                impl.WarnOnceUVE(VulkanRenderDeviceUVE::ImplUVE::kWarnedStorageImageTransitionUVE,
+                    "replay: reopening the rendering instance after a storage-image layout "
+                    "transition failed; the offending draw/dispatch is skipped and later "
+                    "in-pass commands are ignored until the next Begin marker");
+                passActiveForThisList = false;
+                return false;
+            }
+        }
+        return true;
+    };
+
     const auto flushStateForActivePipelineUVE =
-        [&impl, &currentTextureValues, &currentStorageValues]() -> bool {
+        [&impl, &currentTextureValues, &currentStorageValues, &ensureStorageImageGeneralUVE]() -> bool {
         const auto found = impl.pipelines.find(impl.activePipelineValue);
         if (found == impl.pipelines.end()) {
             return true; // no pipeline bound by this replay: nothing to flush
@@ -3446,7 +3635,12 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
             tupleValues.reserve(record.textureSlots.size());
             tupleRecords.reserve(record.textureSlots.size());
             for (std::size_t slotIndex = 0; slotIndex < record.textureSlots.size(); ++slotIndex) {
-                std::uint32_t value = impl.fallbackTextureValue;
+                // M5b: storage-image slots resolve to their OWN deterministic sink (1x1 black,
+                // write-throwaway) — imageStore into the shared white sampling fallback would
+                // corrupt its "unbound slots sample white" invariant.
+                const bool storageImageSlot = record.textureSlots[slotIndex].isStorageImage;
+                std::uint32_t value = storageImageSlot ? impl.fallbackStorageImageValue
+                                                       : impl.fallbackTextureValue;
                 const auto bound = currentTextureValues.find(static_cast<std::uint32_t>(slotIndex));
                 if (bound != currentTextureValues.end() &&
                     impl.textures.find(bound->second) != impl.textures.end()) {
@@ -3454,30 +3648,45 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
                 }
                 ImplUVE::TextureRecordUVE& slotRecord = impl.textures.at(value);
                 if (slotRecord.desc.format == TextureFormatUVE::Depth32Float &&
-                    !impl.useDynamicRendering) {
-                    // M2e boundary, classic arm only: depth textures are sampleable for real on
-                    // the dynamic-rendering path. On pre-1.3 devices no offscreen pass can ever
-                    // run (bit13 degrades them), so no real depth content can exist there — the
-                    // 1x1-white fallback keeps the classic contract honest instead of faking a
-                    // sample of an unrenderable image.
-                    impl.WarnOnceUVE(
-                        VulkanRenderDeviceUVE::ImplUVE::kWarnedDepthTextureSampledUVE,
-                        "BindTextureUVE: a Depth32Float texture was bound on a device without "
-                        "core dynamic rendering; depth-texture sampling needs the M2e dynamic "
-                        "arm — the 1x1 white fallback is sampled instead");
-                    value = impl.fallbackTextureValue;
+                    (storageImageSlot || !impl.useDynamicRendering)) {
+                    if (storageImageSlot) {
+                        // M5b scope: depth images are never storage-bound (imageStore into a
+                        // depth attachment needs a layout/aspect story this slice refuses to
+                        // fake) — writes go to the black sink, deterministically.
+                        impl.WarnOnceUVE(
+                            VulkanRenderDeviceUVE::ImplUVE::kWarnedStorageImageDepthUVE,
+                            "BindTextureUVE: a Depth32Float texture was bound to a storage-image "
+                            "slot; depth images are never storage-bound by this RHI — the 1x1 "
+                            "black storage sink receives the writes instead");
+                        value = impl.fallbackStorageImageValue;
+                    } else {
+                        // M2e boundary, classic arm only: depth textures are sampleable for real
+                        // on the dynamic-rendering path. On pre-1.3 devices no offscreen pass can
+                        // ever run (bit13 degrades them), so no real depth content can exist
+                        // there — the 1x1-white fallback keeps the classic contract honest
+                        // instead of faking a sample of an unrenderable image.
+                        impl.WarnOnceUVE(
+                            VulkanRenderDeviceUVE::ImplUVE::kWarnedDepthTextureSampledUVE,
+                            "BindTextureUVE: a Depth32Float texture was bound on a device without "
+                            "core dynamic rendering; depth-texture sampling needs the M2e dynamic "
+                            "arm — the 1x1 white fallback is sampled instead");
+                        value = impl.fallbackTextureValue;
+                    }
                 } else if (impl.framePassState.passOpen && !impl.framePassState.openPassIsSwapchain &&
                            (&slotRecord == impl.framePassState.openOffscreenDepthRecord ||
                             slotRecord.image == impl.framePassState.openOffscreenColorImage)) {
-                    // M2e feedback guard: sampling a texture WHILE it is attached to the open
-                    // pass is the Vulkan-illegal/GL-undefined feedback loop. Keep the frame
-                    // deterministic: sample the fallback once, warn loudly — never corrupt.
+                    // M2e feedback guard: sampling OR storage-writing a texture WHILE it is
+                    // attached to the open pass is the Vulkan-illegal/GL-undefined feedback
+                    // loop. Keep the frame deterministic: use the kind-matched fallback once,
+                    // warn loudly — never corrupt.
                     impl.WarnOnceUVE(
                         VulkanRenderDeviceUVE::ImplUVE::kWarnedOffscreenFeedbackUVE,
                         "BindTextureUVE: texture is attached to the currently-open offscreen "
-                        "pass (feedback loop, undefined in GL as well) — the 1x1 white fallback "
-                        "is sampled for this draw");
-                    value = impl.fallbackTextureValue;
+                        "pass (feedback loop, undefined in GL as well) — the deterministic "
+                        "fallback (1x1 white for sampling, black sink for storage writes) is "
+                        "used for this draw");
+                    value = storageImageSlot ? impl.fallbackStorageImageValue
+                                             : impl.fallbackTextureValue;
                 }
                 tupleValues.push_back(value);
                 tupleRecords.push_back(&impl.textures.at(value));
@@ -3512,6 +3721,19 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
             if (cached != record.cachedTextureSets.end()) {
                 setToBind = cached->second;
             } else {
+                // M5b: first use of this tuple — every storage-image texture must be GENERAL
+                // before its descriptor is baked. The transition records outside any rendering
+                // instance (the helper closes/reopens an open pass) and invalidates stale
+                // cached sets; on failure this flush skips the draw/dispatch loudly. (A cache
+                // HIT never needs this: pinning is permanent and happened at the set's own
+                // first-write, and any set predating the pin was invalidated then.)
+                for (std::size_t slotIndex = 0; slotIndex < record.textureSlots.size();
+                     ++slotIndex) {
+                    if (record.textureSlots[slotIndex].isStorageImage &&
+                        !ensureStorageImageGeneralUVE(tupleValues[slotIndex])) {
+                        return false;
+                    }
+                }
                 VkDescriptorSetAllocateInfo allocateInfo{};
                 allocateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
                 allocateInfo.descriptorPool = impl.descriptorPool;
@@ -3551,21 +3773,35 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
                 for (std::size_t index = 0; index < record.textureSlots.size(); ++index) {
                     VkDescriptorImageInfo& imageInfo = imageInfos[index];
                     imageInfo = {};
+                    const bool storageImageSlot = record.textureSlots[index].isStorageImage;
                     // M2f: the separate SAMPLED_IMAGE form ignores the sampler member (the
                     // standalone SAMPLER bindings below carry the fixed device sampler).
-                    imageInfo.sampler = record.textureSlots[index].separateSampler
-                        ? VK_NULL_HANDLE
-                        : tupleRecords[index]->sampler;
+                    // M5b: STORAGE_IMAGE ignores it too.
+                    imageInfo.sampler =
+                        (storageImageSlot || record.textureSlots[index].separateSampler)
+                            ? VK_NULL_HANDLE
+                            : tupleRecords[index]->sampler;
                     imageInfo.imageView = tupleRecords[index]->view;
-                    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                    // M5b: storage descriptors always say GENERAL (guaranteed by the
+                    // transitions above). Sampled descriptors must match the texture's ACTUAL
+                    // layout — a storage-pinned texture sampled through another pipeline is
+                    // GENERAL now (its stale cached sets were invalidated at pin time and
+                    // rewrite through this same branch).
+                    imageInfo.imageLayout = storageImageSlot
+                        ? VK_IMAGE_LAYOUT_GENERAL
+                        : (tupleRecords[index]->pinnedGeneral
+                               ? VK_IMAGE_LAYOUT_GENERAL
+                               : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
                     VkWriteDescriptorSet write{};
                     write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
                     write.dstSet = freshSet;
                     write.dstBinding = record.textureSlots[index].binding;
                     write.descriptorCount = 1U;
-                    write.descriptorType = record.textureSlots[index].separateSampler
-                        ? VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE
-                        : VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                    write.descriptorType = storageImageSlot
+                        ? VK_DESCRIPTOR_TYPE_STORAGE_IMAGE
+                        : (record.textureSlots[index].separateSampler
+                               ? VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE
+                               : VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
                     write.pImageInfo = &imageInfo;
                     writes.push_back(write);
                 }
@@ -3895,12 +4131,17 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
                         VkMemoryBarrier postBarrier{};
                         postBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
                         postBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+                        // M5b widening: compute writes (imageStore into a texture that a LATER
+                        // pass may ATTACH with Load semantics) must also be visible to the
+                        // color/depth attachment stage, not only to shader readers.
                         postBarrier.dstAccessMask =
-                            VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+                            VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT |
+                            VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
                         impl.vk.vkCmdPipelineBarrier(
                             impl.commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                             VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
-                                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
+                                VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
                             0U, 1U, &postBarrier, 0U, nullptr, 0U, nullptr);
                     }
                 }
@@ -4055,6 +4296,15 @@ void VulkanRenderDeviceUVE::PresentUVE() {
     // The fence proves the GPU finished the previous frame's reads of the uniform ring;
     // ONLY now is rewinding the bump cursor legal (M2b ring contract at the field comment).
     impl.frameUboCursor = 0U;
+    // M5b: same fence logic frees the mid-replay-invalidated descriptor sets — the submission
+    // whose recorded binds referenced them is provably complete, so vkFreeDescriptorSets is
+    // safe now (freeing while a pending command buffer binds them would be undefined).
+    if (!impl.deferredDescriptorSetFreesUVE.empty()) {
+        impl.vk.vkFreeDescriptorSets(impl.device, impl.descriptorPool,
+                                     static_cast<std::uint32_t>(impl.deferredDescriptorSetFreesUVE.size()),
+                                     impl.deferredDescriptorSetFreesUVE.data());
+        impl.deferredDescriptorSetFreesUVE.clear();
+    }
 
     // M4: drain the cross-thread submission FIFO under the lock. Worker threads may have
     // created/recorded/submitted command buffers while this frame was being assembled;
@@ -4215,6 +4465,7 @@ void VulkanRenderDeviceUVE::PresentUVE() {
         state.passOpen = false;
         state.openPassIsSwapchain = true;
         state.openOffscreenColorImage = VK_NULL_HANDLE;
+        state.openOffscreenColorRecord = nullptr;
     }
 
     // Replay every submitted recorded command buffer in submission order, inside THIS pass —
@@ -4496,7 +4747,7 @@ bool VulkanRenderDeviceUVE::ReadbackLatestPresentedImageUVE(std::span<std::byte>
 std::string_view VulkanRenderDeviceUVE::GetBackendNameUVE() const noexcept {
     // Never the unqualified "Vulkan": the current slice must be identifiable in editor
     // overlays and bug reports (see the header's capability-reporting contract).
-    return m_impl->useDynamicRendering ? "Vulkan (M5a compute dispatch)"
+    return m_impl->useDynamicRendering ? "Vulkan (M5b storage images)"
                                        : "Vulkan (M2c textures+staging)";
 }
 
