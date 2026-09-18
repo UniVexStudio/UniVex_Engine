@@ -846,6 +846,58 @@ TEST_F(GlRenderDeviceUVETest, UpdateBufferUVE_OverflowedOffset_ReturnsFalseWitho
     renderDevice->DestroyBufferUVE(buffer);
 }
 
+TEST_F(GlRenderDeviceUVETest, ReadbackBufferUVE_ReturnsWhatUpdateBufferWrote) {
+    // CS3: the read direction of UpdateBufferUVE against a real GL buffer object.
+    const std::array<float, 4> initial{1.5F, -2.0F, 0.25F, 8.0F};
+    const BufferHandleUVE buffer = renderDevice->CreateBufferUVE(
+        BufferDescUVE{sizeof(initial), BufferUsageUVE::Storage}, std::as_bytes(std::span(initial)));
+    if (buffer == kInvalidBufferHandleUVE) {
+        GTEST_SKIP() << "context lacks desktop GL 4.3 shader storage buffers";
+    }
+
+    std::array<float, 4> readback{};
+    ASSERT_TRUE(renderDevice->ReadbackBufferUVE(buffer, std::as_writable_bytes(std::span(readback)), 0));
+    EXPECT_FLOAT_EQ(readback[0], 1.5F);
+    EXPECT_FLOAT_EQ(readback[1], -2.0F);
+    EXPECT_FLOAT_EQ(readback[2], 0.25F);
+    EXPECT_FLOAT_EQ(readback[3], 8.0F);
+
+    const std::array<float, 2> update{42.0F, 43.0F};
+    ASSERT_TRUE(renderDevice->UpdateBufferUVE(buffer, std::as_bytes(std::span(update)), 2U * sizeof(float)));
+    ASSERT_TRUE(renderDevice->ReadbackBufferUVE(buffer, std::as_writable_bytes(std::span(readback)), 0));
+    EXPECT_FLOAT_EQ(readback[0], 1.5F); // prefix untouched by the offset write
+    EXPECT_FLOAT_EQ(readback[2], 42.0F);
+    EXPECT_FLOAT_EQ(readback[3], 43.0F);
+
+    // A windowed read at an offset sees exactly that window.
+    std::array<float, 2> window{};
+    ASSERT_TRUE(renderDevice->ReadbackBufferUVE(buffer, std::as_writable_bytes(std::span(window)),
+                                                  2U * sizeof(float)));
+    EXPECT_FLOAT_EQ(window[0], 42.0F);
+    EXPECT_FLOAT_EQ(window[1], 43.0F);
+    EXPECT_EQ(glGetError(), GL_NO_ERROR);
+
+    renderDevice->DestroyBufferUVE(buffer);
+}
+
+TEST_F(GlRenderDeviceUVETest, ReadbackBufferUVE_UnknownHandleOrOutOfRange_ReturnsFalseWithoutGlError) {
+    std::array<std::byte, 8> readback{};
+    EXPECT_FALSE(renderDevice->ReadbackBufferUVE(BufferHandleUVE{4242}, readback, 0));
+
+    const BufferHandleUVE buffer = renderDevice->CreateBufferUVE(BufferDescUVE{8, BufferUsageUVE::Vertex});
+    ASSERT_NE(buffer, kInvalidBufferHandleUVE);
+    while (glGetError() != GL_NO_ERROR) {
+    }
+    std::array<std::byte, 16> tooLarge{};
+    EXPECT_FALSE(renderDevice->ReadbackBufferUVE(buffer, tooLarge, 0));
+    EXPECT_FALSE(renderDevice->ReadbackBufferUVE(buffer, readback,
+                                                   std::numeric_limits<std::uint64_t>::max()));
+    // Range refusals must never reach the driver.
+    EXPECT_EQ(glGetError(), GL_NO_ERROR);
+
+    renderDevice->DestroyBufferUVE(buffer);
+}
+
 TEST_F(GlRenderDeviceUVETest, CreateThenDestroyTexture_UpdatesLiveResourceCount) {
     ASSERT_EQ(renderDevice->GetLiveResourceCountUVE(), 0U);
     const TextureHandleUVE texture =

@@ -37,6 +37,9 @@ struct GlFunctionsUVE {
     PFNGLBINDBUFFERPROC glBindBuffer = nullptr;
     PFNGLBUFFERDATAPROC glBufferData = nullptr;
     PFNGLBUFFERSUBDATAPROC glBufferSubData = nullptr;
+    // CS3: the read direction of glBufferSubData, backing IRenderDeviceUVE::ReadbackBufferUVE.
+    // Core since GL 1.5 like its write sibling, so it joins the IsCompleteUVE() core set.
+    PFNGLGETBUFFERSUBDATAPROC glGetBufferSubData = nullptr;
     PFNGLBINDBUFFERBASEPROC glBindBufferBase = nullptr;
 
     // M5a compute pair (GL 4.3+). Deliberately NOT part of the IsLoadedUVE() core set: contexts

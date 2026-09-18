@@ -3090,6 +3090,104 @@ TEST_F(VulkanRenderDeviceUVETest, ComputeDispatchFillsStorageBufferProvingRealCo
     device->DestroyShaderUVE(fragmentShader);
 }
 
+TEST_F(VulkanRenderDeviceUVETest, ReadbackBufferUVE_ReadsComputeWrittenPaletteDirectly) {
+    // CS3: the compute result read back as NUMBERS, not inferred from a pixel. M5a proved the
+    // dispatch by painting uColors[2] and sampling the framebuffer; this proves the same write
+    // by reading the sixteen floats the shader stored. Zero-initialized SSBO in, one
+    // outside-pass dispatch, then red/green/blue/yellow must come back exactly - without a real
+    // dispatch whose writes the readback's queue drain observes, the buffer stays zeroed.
+    ShaderHandleUVE computeShader{};
+    std::string infoLog;
+    const PipelineHandleUVE computePipeline =
+        CreateFillPaletteComputePipelineUVE(*device, &computeShader, &infoLog);
+    ASSERT_NE(computePipeline, kInvalidPipelineHandleUVE) << infoLog;
+
+    const float zeros[16] = {};
+    BufferDescUVE paletteDesc{};
+    paletteDesc.sizeBytes = sizeof(zeros);
+    paletteDesc.usage = BufferUsageUVE::Storage;
+    const BufferHandleUVE paletteBuffer = device->CreateBufferUVE(
+        paletteDesc,
+        std::span<const std::byte>(reinterpret_cast<const std::byte*>(zeros), sizeof(zeros)));
+    ASSERT_NE(paletteBuffer, kInvalidBufferHandleUVE);
+
+    // Control: before any dispatch the readback must show the zero fill it was created with.
+    float beforeDispatch[16] = {1.0F};
+    ASSERT_TRUE(device->ReadbackBufferUVE(
+        paletteBuffer, std::span<std::byte>(reinterpret_cast<std::byte*>(beforeDispatch),
+                                              sizeof(beforeDispatch))));
+    for (const float value : beforeDispatch) {
+        EXPECT_FLOAT_EQ(value, 0.0F) << "control: the palette must start zeroed";
+    }
+
+    auto commandBuffer = device->CreateCommandBufferUVE();
+    ASSERT_NE(commandBuffer, nullptr);
+    commandBuffer->BindPipelineUVE(computePipeline);
+    commandBuffer->BindStorageBufferUVE(paletteBuffer, 0U);
+    commandBuffer->DispatchUVE(1U, 1U, 1U);
+    device->SubmitUVE(std::move(commandBuffer));
+    device->PresentUVE();
+    ASSERT_TRUE(device->IsUsableUVE());
+
+    float palette[16] = {};
+    ASSERT_TRUE(device->ReadbackBufferUVE(
+        paletteBuffer, std::span<std::byte>(reinterpret_cast<std::byte*>(palette), sizeof(palette))));
+    EXPECT_FLOAT_EQ(palette[0], 1.0F);   // uColors[0] = RED
+    EXPECT_FLOAT_EQ(palette[1], 0.0F);
+    EXPECT_FLOAT_EQ(palette[2], 0.0F);
+    EXPECT_FLOAT_EQ(palette[3], 1.0F);
+    EXPECT_FLOAT_EQ(palette[4], 0.0F);   // uColors[1] = GREEN
+    EXPECT_FLOAT_EQ(palette[5], 1.0F);
+    EXPECT_FLOAT_EQ(palette[8], 0.0F);   // uColors[2] = BLUE
+    EXPECT_FLOAT_EQ(palette[10], 1.0F);
+    EXPECT_FLOAT_EQ(palette[12], 1.0F);  // uColors[3] = YELLOW
+    EXPECT_FLOAT_EQ(palette[13], 1.0F);
+    EXPECT_FLOAT_EQ(palette[14], 0.0F);
+
+    // A windowed read sees exactly its window: uColors[2] alone.
+    float blueOnly[4] = {};
+    ASSERT_TRUE(device->ReadbackBufferUVE(
+        paletteBuffer, std::span<std::byte>(reinterpret_cast<std::byte*>(blueOnly), sizeof(blueOnly)),
+        8U * sizeof(float)));
+    EXPECT_FLOAT_EQ(blueOnly[2], 1.0F);
+    EXPECT_FLOAT_EQ(blueOnly[3], 1.0F);
+
+    device->DestroyBufferUVE(paletteBuffer);
+    device->DestroyPipelineUVE(computePipeline);
+    device->DestroyShaderUVE(computeShader);
+}
+
+TEST_F(VulkanRenderDeviceUVETest, ReadbackBufferUVE_RefusesDeviceLocalAndOutOfRangeReads) {
+    // The interface guarantees readback for Uniform/Storage only. This backend places
+    // VERTEX/INDEX buffers in DEVICE_LOCAL memory with no TRANSFER_SRC usage (the M3 policy),
+    // so it must refuse loudly rather than hand back something it cannot legally read.
+    const float vertices[6] = {};
+    BufferDescUVE vertexDesc{};
+    vertexDesc.sizeBytes = sizeof(vertices);
+    vertexDesc.usage = BufferUsageUVE::Vertex;
+    const BufferHandleUVE vertexBuffer = device->CreateBufferUVE(
+        vertexDesc,
+        std::span<const std::byte>(reinterpret_cast<const std::byte*>(vertices), sizeof(vertices)));
+    ASSERT_NE(vertexBuffer, kInvalidBufferHandleUVE);
+    std::array<std::byte, sizeof(vertices)> readback{};
+    EXPECT_FALSE(device->ReadbackBufferUVE(vertexBuffer, readback));
+
+    BufferDescUVE storageDesc{};
+    storageDesc.sizeBytes = 16U;
+    storageDesc.usage = BufferUsageUVE::Storage;
+    const BufferHandleUVE storageBuffer = device->CreateBufferUVE(storageDesc);
+    ASSERT_NE(storageBuffer, kInvalidBufferHandleUVE);
+    std::array<std::byte, 32U> tooLarge{};
+    EXPECT_FALSE(device->ReadbackBufferUVE(storageBuffer, tooLarge));
+    std::array<std::byte, 8U> window{};
+    EXPECT_FALSE(device->ReadbackBufferUVE(storageBuffer, window, 12U)); // runs off the end
+    EXPECT_FALSE(device->ReadbackBufferUVE(BufferHandleUVE{4242U}, window));
+    EXPECT_TRUE(device->ReadbackBufferUVE(storageBuffer, std::span<std::byte>{})); // empty no-op
+
+    device->DestroyBufferUVE(storageBuffer);
+    device->DestroyBufferUVE(vertexBuffer);
+}
+
 TEST_F(VulkanRenderDeviceUVETest, CreateComputePipelineAcceptsStorageImagesSinceM5b) {
     // The M5a boundary is lifted in this very slice: a STORAGE_IMAGE compute shader is valid
     // SPIR-V (shader creation always succeeded) and compute pipeline creation now ACCEPTS

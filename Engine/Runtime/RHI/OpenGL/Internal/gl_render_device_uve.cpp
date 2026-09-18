@@ -418,6 +418,45 @@ bool GlRenderDeviceUVE::UpdateBufferUVE(BufferHandleUVE buffer, std::span<const 
     return true;
 }
 
+bool GlRenderDeviceUVE::ReadbackBufferUVE(BufferHandleUVE buffer, std::span<std::byte> outData,
+                                            std::uint64_t offsetBytes) {
+    const auto it = m_impl->state.buffers.find(buffer.value);
+    if (it == m_impl->state.buffers.end()) {
+        UVE_ERROR("GlRenderDeviceUVE: ReadbackBufferUVE called with an unknown handle ({})", buffer.value);
+        return false;
+    }
+    if (!ValidateBufferUpdateUVE(it->second.sizeBytes, outData.size(), offsetBytes)) {
+        UVE_ERROR("GlRenderDeviceUVE: ReadbackBufferUVE read of {} bytes at offset {} exceeds buffer size {}",
+                   outData.size(), offsetBytes, it->second.sizeBytes);
+        return false;
+    }
+    if (outData.empty()) {
+        return true;
+    }
+    const GLenum bindingQuery = BufferTargetToBindingQueryUVE(it->second.target);
+    if (bindingQuery == 0U) {
+        UVE_ERROR("GlRenderDeviceUVE: ReadbackBufferUVE resolved an unsupported GL buffer target");
+        return false;
+    }
+    // Cold-path synchronization, exactly what the interface promises. This backend executes its
+    // commands at record time, but a compute dispatch's SSBO writes become visible to a
+    // client-side read only after GL_BUFFER_UPDATE_BARRIER_BIT (writes seen by buffer queries)
+    // and GL_SHADER_STORAGE_BARRIER_BIT (the SSBO writes themselves). glGetBufferSubData below
+    // is then a blocking client read, which is itself a synchronization point - no glFinish is
+    // needed on top of it, and issuing one would only widen the stall beyond this buffer.
+    if (m_impl->state.gl.glMemoryBarrier != nullptr) {
+        m_impl->state.gl.glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT | GL_SHADER_STORAGE_BARRIER_BIT);
+    }
+    GLint previousBufferBinding = 0;
+    glGetIntegerv(bindingQuery, &previousBufferBinding);
+    m_impl->state.gl.glBindBuffer(it->second.target, it->second.glBuffer);
+    m_impl->state.gl.glGetBufferSubData(it->second.target, static_cast<GLintptr>(offsetBytes),
+                                          static_cast<GLsizeiptr>(outData.size()), outData.data());
+    UVE_GL_CHECK_ERROR_UVE("ReadbackBufferUVE");
+    m_impl->state.gl.glBindBuffer(it->second.target, static_cast<GLuint>(previousBufferBinding));
+    return true;
+}
+
 TextureHandleUVE GlRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& desc,
                                                        std::span<const std::byte> initialData) {
     if (!ValidateTextureUploadUVE(desc, initialData)) {

@@ -224,6 +224,8 @@ public:
     void DestroyBufferUVE(BufferHandleUVE buffer) override;
     [[nodiscard]] bool UpdateBufferUVE(BufferHandleUVE buffer, std::span<const std::byte> data,
                                        std::size_t offset = 0) override;
+    [[nodiscard]] bool ReadbackBufferUVE(BufferHandleUVE buffer, std::span<std::byte> outData,
+                                         std::uint64_t offsetBytes = 0) override;
     [[nodiscard]] TextureHandleUVE CreateTextureUVE(const TextureDescUVE& desc,
                                                     std::span<const std::byte> initialData = {}) override;
     void DestroyTextureUVE(TextureHandleUVE texture) override;

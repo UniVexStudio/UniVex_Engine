@@ -2095,6 +2095,43 @@ bool VulkanRenderDeviceUVE::UpdateBufferUVE(const BufferHandleUVE buffer,
     return true;
 }
 
+bool VulkanRenderDeviceUVE::ReadbackBufferUVE(const BufferHandleUVE buffer,
+                                              const std::span<std::byte> outData,
+                                              const std::uint64_t offsetBytes) {
+    ImplUVE& impl = *m_impl;
+    const auto found = impl.buffers.find(buffer.value);
+    if (found == impl.buffers.end()) {
+        UVE_WARNING("VulkanRenderDeviceUVE::ReadbackBufferUVE: unknown buffer handle ({})", buffer.value);
+        return false;
+    }
+    const ImplUVE::BufferRecordUVE& record = found->second;
+    if (!ValidateBufferUpdateUVE(record.sizeBytes, outData.size(), offsetBytes)) {
+        UVE_WARNING("VulkanRenderDeviceUVE::ReadbackBufferUVE: out-of-range read "
+                    "(buffer {} bytes, {} bytes at offset {})", record.sizeBytes, outData.size(), offsetBytes);
+        return false;
+    }
+    if (outData.empty()) {
+        return true;
+    }
+    if (record.mapped == nullptr) {
+        // M3 placement: VERTEX/INDEX buffers are DEVICE_LOCAL with no TRANSFER_SRC usage, so
+        // there is no legal way to copy out of them. Refusing loudly is the honest answer - the
+        // interface documents readback as guaranteed for Uniform/Storage only, which is exactly
+        // the set this backend keeps host-visible (and Storage is what compute writes through).
+        UVE_WARNING("VulkanRenderDeviceUVE::ReadbackBufferUVE: buffer is device-local "
+                    "(vertex/index placement) and cannot be read back; readback is supported for "
+                    "Uniform and Storage buffers");
+        return false;
+    }
+    // Cold path, as documented: drain the queue so any submitted compute/graphics work that
+    // could still be writing this buffer has completed before the host reads it. The memory is
+    // HOST_COHERENT, so no explicit invalidate is required once the queue is idle.
+    (void)impl.vk.vkQueueWaitIdle(impl.presentQueue);
+    std::memcpy(outData.data(), static_cast<const std::byte*>(record.mapped) + offsetBytes,
+                outData.size());
+    return true;
+}
+
 TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& desc,
                                                          std::span<const std::byte> initialData) {
     ImplUVE& impl = *m_impl;

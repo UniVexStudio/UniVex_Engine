@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <limits>
 #include <memory>
+#include <span>
 #include <thread>
 #include <variant>
 #include <vector>
@@ -85,6 +86,57 @@ TEST(NullRenderDeviceUVETest, DestroyBufferUVE_UnknownHandle_LogsErrorSafely) {
     EXPECT_TRUE(foundError);
 
     logger.Shutdown();
+}
+
+TEST(NullRenderDeviceUVETest, ReadbackBufferUVE_ReturnsWhatCreationAndUpdatesWrote) {
+    // CS3: the null backend models host-visible buffer CONTENTS, not just descriptors - a
+    // readback that could only ever return zeros would make headless assertions a lie.
+    NullRenderDeviceUVE device;
+    const std::array<std::byte, 4> initial{std::byte{1}, std::byte{2}, std::byte{3}, std::byte{4}};
+    const BufferHandleUVE buffer =
+        device.CreateBufferUVE(BufferDescUVE{8U, BufferUsageUVE::Storage}, initial);
+    ASSERT_NE(buffer, kInvalidBufferHandleUVE);
+
+    std::array<std::byte, 8> readback{};
+    ASSERT_TRUE(device.ReadbackBufferUVE(buffer, readback, 0));
+    EXPECT_EQ(readback[0], std::byte{1});
+    EXPECT_EQ(readback[3], std::byte{4});
+    // Bytes past the initial upload must read as the zero fill a fresh buffer has.
+    EXPECT_EQ(readback[4], std::byte{0});
+    EXPECT_EQ(readback[7], std::byte{0});
+
+    const std::array<std::byte, 2> update{std::byte{9}, std::byte{9}};
+    ASSERT_TRUE(device.UpdateBufferUVE(buffer, update, 6U));
+    ASSERT_TRUE(device.ReadbackBufferUVE(buffer, readback, 0));
+    EXPECT_EQ(readback[0], std::byte{1}); // untouched prefix survives an offset write
+    EXPECT_EQ(readback[6], std::byte{9});
+    EXPECT_EQ(readback[7], std::byte{9});
+
+    // A partial read at an offset sees exactly that window.
+    std::array<std::byte, 2> window{};
+    ASSERT_TRUE(device.ReadbackBufferUVE(buffer, window, 2U));
+    EXPECT_EQ(window[0], std::byte{3});
+    EXPECT_EQ(window[1], std::byte{4});
+
+    // An empty read is a successful no-op.
+    EXPECT_TRUE(device.ReadbackBufferUVE(buffer, std::span<std::byte>{}, 0));
+
+    device.DestroyBufferUVE(buffer);
+}
+
+TEST(NullRenderDeviceUVETest, ReadbackBufferUVE_UnknownHandleOrOutOfRange_ReturnsFalse) {
+    NullRenderDeviceUVE device;
+    std::array<std::byte, 4> readback{};
+    EXPECT_FALSE(device.ReadbackBufferUVE(BufferHandleUVE{999}, readback, 0));
+
+    const BufferHandleUVE buffer = device.CreateBufferUVE(BufferDescUVE{4U, BufferUsageUVE::Storage});
+    ASSERT_NE(buffer, kInvalidBufferHandleUVE);
+    std::array<std::byte, 8> tooLarge{};
+    EXPECT_FALSE(device.ReadbackBufferUVE(buffer, tooLarge, 0));
+    EXPECT_FALSE(device.ReadbackBufferUVE(buffer, readback, 2U));   // runs off the end
+    EXPECT_FALSE(device.ReadbackBufferUVE(buffer, readback,
+                                           std::numeric_limits<std::uint64_t>::max())); // overflowed offset
+    device.DestroyBufferUVE(buffer);
 }
 
 TEST(NullRenderDeviceUVETest, UpdateBufferUVE_UnknownHandle_ReturnsFalseAndLogsError) {
