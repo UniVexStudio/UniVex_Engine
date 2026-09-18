@@ -314,6 +314,8 @@ INSTANTIATE_TEST_SUITE_P(
                        std::pair<std::string_view, std::string_view>{"lit_shadowed_3d.glsl",
                                                                       BuiltIn::kLitShadowed3DSource},
                        std::pair<std::string_view, std::string_view>{"particle.glsl", BuiltIn::kParticleSource},
+                       std::pair<std::string_view, std::string_view>{"particle_simulate.glsl",
+                                                                      BuiltIn::kParticleSimulateSource},
                        std::pair<std::string_view, std::string_view>{"ui_overlay.glsl", BuiltIn::kUIOverlaySource}));
 
 } // namespace
