@@ -26,17 +26,6 @@ struct TransformComponentUVE final {
 /// Validates authored local transforms before scene persistence or graph propagation. Position and
 /// scale must be finite; rotation must be finite and already normalized so composition cannot
 /// silently introduce non-rotational scale or non-finite world state.
-[[nodiscard]] inline bool IsTransformComponentValidUVE(const TransformComponentUVE& transform) noexcept {
-    const auto isFiniteVector = [](const Math::Vector3UVE& value) noexcept {
-        return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
-    };
-    if (!isFiniteVector(transform.localPosition) || !isFiniteVector(transform.localScale) ||
-        !Math::IsFiniteUVE(transform.localRotation)) {
-        return false;
-    }
-    const float rotationLengthSquared = Math::LengthSquaredUVE(transform.localRotation);
-    return std::isfinite(rotationLengthSquared) &&
-           std::abs(rotationLengthSquared - 1.0F) <= 1.0e-3F;
-}
+[[nodiscard]] bool IsTransformComponentValidUVE(const TransformComponentUVE& transform) noexcept;
 
 } // namespace UVE::Scene
