@@ -67,8 +67,22 @@
 // buffers (BindUniformBufferUVE) remain the documented later-slice no-op; SetUniform* + the
 // reflected ring is the uniform path.
 //
+// Slice M3 ("device-local staging") added 2026-09-18: VERTEX and INDEX buffers now allocate
+// DEVICE_LOCAL memory (the performance shape M2a's host-visible policy explicitly deferred)
+// and carry TRANSFER_DST; their initial data and every UpdateBufferUVE re-stage through a
+// one-shot staging copy that mirrors the M2c texture-upload discipline exactly — transient
+// HOST_VISIBLE|COHERENT TRANSFER_SRC buffer, one-time command buffer on the present queue,
+// buffer barriers around vkCmdCopyBuffer (TRANSFER_WRITE published to VERTEX_ATTRIBUTE_READ /
+// INDEX_READ), full-idle wait before teardown. UNIFORM buffers stay HOST_VISIBLE with the
+// persistent map (host writes ARE the SetUniform ring mechanism) and STORAGE buffers stay
+// host-visible in this slice (SSBO traffic benefits least from device placement; the M2f
+// zero-fallback contract is untouched). The caller-visible copy-on-update contract is
+// identical for every usage — only placement/traffic differs. The memory policy is
+// arm-independent (both classic and dynamic devices get device-local vertex/index buffers);
+// the reported name follows the established rule that the badge tracks the newest slice.
+//
 // Capability reporting is honest and upstream-visible: GetBackendNameUVE() says
-// "Vulkan (M2f SSBO+separate samplers)" on dynamic-rendering devices, "Vulkan (M2c textures+staging)"
+// "Vulkan (M3 device-local staging)" on dynamic-rendering devices, "Vulkan (M2c textures+staging)"
 // on classic ones — never "Vulkan" unqualified — so logs, editor overlays, and bug reports
 // cannot mistake the current slice for the finished backend, and IsUsableUVE() reflects the
 // real instance/device/swapchain bring-up result.
