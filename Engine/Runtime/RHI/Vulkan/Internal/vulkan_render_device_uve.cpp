@@ -483,6 +483,14 @@ struct VulkanRenderDeviceUVE::ImplUVE {
         VkDeviceMemory memory = VK_NULL_HANDLE;
         VkImageView view = VK_NULL_HANDLE;           // the SAMPLING view (unorm-aliased)
         VkImageView attachmentView = VK_NULL_HANDLE; // the image-native-format view (RT use)
+        // M5b fix: the STORAGE_IMAGE descriptor view. A storage descriptor's imageView must
+        // have a format matching the SPIR-V image-format qualifier (rgba8 ⇒ R8G8B8A8_UNORM)
+        // with VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT support — and SPIR-V has NO B,G,R,A storage
+        // format at all. On devices whose swapchain-format aliasing (M2d policy) made the
+        // image B8G8R8A8-family or sRGB, this is a dedicated R8G8B8A8_UNORM alias view (legal:
+        // the image is mutable-format and every 4x8 format shares one compatibility class);
+        // VK_NULL_HANDLE when `view` already IS R8G8B8A8_UNORM (descriptor writes use `view`).
+        VkImageView storageView = VK_NULL_HANDLE;
         VkSampler sampler = VK_NULL_HANDLE;
         VkFormat vkFormat = VK_FORMAT_UNDEFINED; // the IMAGE's format (may be swapchain-typed)
         TextureDescUVE desc{};
@@ -1686,6 +1694,9 @@ void VulkanRenderDeviceUVE::ImplUVE::DestroyAllResourcesUVE() {
         if (record.attachmentView != VK_NULL_HANDLE) {
             vk.vkDestroyImageView(device, record.attachmentView, nullptr);
         }
+        if (record.storageView != VK_NULL_HANDLE) {
+            vk.vkDestroyImageView(device, record.storageView, nullptr);
+        }
         if (record.view != VK_NULL_HANDLE) {
             vk.vkDestroyImageView(device, record.view, nullptr);
         }
@@ -2111,7 +2122,14 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
     VkFormat format = VK_FORMAT_UNDEFINED;
     VkFormat sampledFormat = VK_FORMAT_UNDEFINED;
     VkImageCreateFlags imageFlags = 0U;
-    VkImageUsageFlags usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    // M5b fix: every non-depth texture is storage-capable — the unified texture-slot space
+    // lets any color texture bind into a STORAGE_IMAGE slot, and writing a storage descriptor
+    // against an image created WITHOUT VK_IMAGE_USAGE_STORAGE_BIT is undefined behavior (it
+    // crashed lavapipe at execution in the first storage-image pixel proofs). The Depth32Float
+    // arm below reassigns usage without STORAGE: depth images are never storage-bound (the
+    // deterministic black-sink substitution intercepts them at tuple resolution).
+    VkImageUsageFlags usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                              VK_IMAGE_USAGE_STORAGE_BIT;
     VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT;
     VkImageLayout finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     std::uint32_t bytesPerPixel = 0U;
@@ -2121,13 +2139,15 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
             if (sibling != VK_FORMAT_UNDEFINED) {
                 format = impl.swapchainFormat;
                 sampledFormat = sibling;
-                if (sampledFormat != format) {
-                    imageFlags = VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
-                }
             } else {
                 format = VK_FORMAT_R8G8B8A8_UNORM;
                 sampledFormat = format;
             }
+            // M5b fix: RGBA8 images are ALWAYS mutable-format — the storage alias view
+            // (R8G8B8A8_UNORM over a B,G,R,A-family or sRGB image) needs
+            // VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT even when the sampled sibling equals the
+            // image format.
+            imageFlags = VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
             usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
             bytesPerPixel = 4U;
             break;
@@ -2164,9 +2184,26 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
             : (desc.format == TextureFormatUVE::RGBA8Unorm)
                 ? (VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT |
                    VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT)
-                : (VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT);
+            : (VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT |
+               VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT);
         if ((formatProperties.optimalTilingFeatures & required) != required) {
             return fail("device lacks required format features for the requested texture format");
+        }
+        if (desc.format == TextureFormatUVE::RGBA8Unorm) {
+            // M5b fix: the storage alias format (R8G8B8A8_UNORM — the ONLY format matching
+            // SPIR-V's rgba8 image qualifier) must support storage images. Its
+            // VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT is a spec-REQUIRED format feature, so every
+            // conformant device passes — refusing loudly here beats undefined descriptor
+            // writes later. The IMAGE format itself is not checked for storage: it may be an
+            // sRGB or B,G,R,A swapchain alias, which storage access never goes through.
+            VkFormatProperties storageAliasProperties{};
+            impl.vk.vkGetPhysicalDeviceFormatProperties(
+                impl.physicalDevice, VK_FORMAT_R8G8B8A8_UNORM, &storageAliasProperties);
+            if ((storageAliasProperties.optimalTilingFeatures &
+                 VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) == 0U) {
+                return fail("device lacks VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT for "
+                            "R8G8B8A8_UNORM (storage-image slots need it since M5b)");
+            }
         }
     }
 
@@ -2392,6 +2429,28 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
         destroyImageResources();
         return fail("vkCreateImageView failed for the texture's attachment view");
     }
+    // M5b fix: the storage alias view. STORAGE_IMAGE descriptors need a view format matching
+    // the shader's SPIR-V image-format qualifier (rgba8 ⇒ R8G8B8A8_UNORM, the only 4x8
+    // storage format SPIR-V has) whose format supports VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT.
+    // When swapchain-format aliasing made this image B,G,R,A-family or sRGB, the sampled
+    // sibling view cannot serve storage descriptors (no matching qualifier exists for it, and
+    // B8G8R8A8 formats do not universally advertise storage support) — a dedicated
+    // R8G8B8A8_UNORM alias view over the mutable-format image can, and is component-name
+    // consistent: writes through it land in the same texels the BGRA-named views address by
+    // their own component names. Textures whose sampled view already IS R8G8B8A8_UNORM keep
+    // storageView null (descriptor writes fall back to `view`).
+    VkImageView storageView = VK_NULL_HANDLE;
+    if (desc.format == TextureFormatUVE::RGBA8Unorm &&
+        sampledFormat != VK_FORMAT_R8G8B8A8_UNORM) {
+        viewInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+        if (impl.vk.vkCreateImageView(impl.device, &viewInfo, nullptr, &storageView) != VK_SUCCESS ||
+            storageView == VK_NULL_HANDLE) {
+            impl.vk.vkDestroyImageView(impl.device, attachmentView, nullptr);
+            impl.vk.vkDestroyImageView(impl.device, view, nullptr);
+            destroyImageResources();
+            return fail("vkCreateImageView failed for the texture's storage alias view");
+        }
+    }
 
     // Sampler state mirrors GlRenderDeviceUVE's fixed parameters exactly: linear/linear,
     // clamp-to-edge, and effectively no mipmapping (maxLod 0 while only level 0 is populated).
@@ -2410,6 +2469,9 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
     VkSampler sampler = VK_NULL_HANDLE;
     if (impl.vk.vkCreateSampler(impl.device, &samplerInfo, nullptr, &sampler) != VK_SUCCESS ||
         sampler == VK_NULL_HANDLE) {
+        if (storageView != VK_NULL_HANDLE) {
+            impl.vk.vkDestroyImageView(impl.device, storageView, nullptr);
+        }
         impl.vk.vkDestroyImageView(impl.device, attachmentView, nullptr);
         impl.vk.vkDestroyImageView(impl.device, view, nullptr);
         destroyImageResources();
@@ -2418,8 +2480,8 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
 
     const std::uint32_t handleValue = impl.nextHandleValue++;
     impl.textures.emplace(handleValue,
-        ImplUVE::TextureRecordUVE{image, imageMemory, view, attachmentView, sampler, format,
-                                  desc, finalLayout});
+        ImplUVE::TextureRecordUVE{image, imageMemory, view, attachmentView, storageView,
+                                  sampler, format, desc, finalLayout});
     return TextureHandleUVE{handleValue};
 }
 
@@ -2455,6 +2517,9 @@ void VulkanRenderDeviceUVE::DestroyTextureUVE(const TextureHandleUVE texture) {
     // A live GL-style texture-unit binding of the destroyed texture falls back to the
     // fallback texture on the next flush rather than referencing a dead view.
     impl.vk.vkDestroySampler(impl.device, found->second.sampler, nullptr);
+    if (found->second.storageView != VK_NULL_HANDLE) {
+        impl.vk.vkDestroyImageView(impl.device, found->second.storageView, nullptr);
+    }
     if (found->second.attachmentView != VK_NULL_HANDLE) {
         impl.vk.vkDestroyImageView(impl.device, found->second.attachmentView, nullptr);
     }
@@ -3781,7 +3846,14 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
                         (storageImageSlot || record.textureSlots[index].separateSampler)
                             ? VK_NULL_HANDLE
                             : tupleRecords[index]->sampler;
-                    imageInfo.imageView = tupleRecords[index]->view;
+                    // M5b fix: storage descriptors take the rgba8-qualified alias view when
+                    // the swapchain-format policy aliased the image into the B,G,R,A or sRGB
+                    // family (the sampled view's format has no matching SPIR-V storage
+                    // qualifier); sampled descriptors keep the sampling view.
+                    imageInfo.imageView =
+                        (storageImageSlot && tupleRecords[index]->storageView != VK_NULL_HANDLE)
+                            ? tupleRecords[index]->storageView
+                            : tupleRecords[index]->view;
                     // M5b: storage descriptors always say GENERAL (guaranteed by the
                     // transitions above). Sampled descriptors must match the texture's ACTUAL
                     // layout — a storage-pinned texture sampled through another pipeline is
