@@ -69,8 +69,15 @@ publicly shipping real-time engines as of today, without naming any of them.
   undo both), and lit_shadowed_3d.glsl gained a UVE_INSTANCED variant reading per-instance model
   and normal matrices from storage buffers indexed by uInstanceBaseIndex + gl_InstanceID. One file
   behind a define rather than two shaders, so the ~240 lines of lighting cannot drift between an
-  instanced object and a non-instanced one. Remaining: Renderer3DUVE recording the instanced draw
-  itself, which is also what finally gives CS8's indirect cull a consumer.
+  instanced object and a non-instanced one. Renderer3DUVE now records those draws: it batches each
+  bucket, uploads the frame's model and inverse-transpose matrices once, and issues one
+  DrawIndexedUVE per batch with a real instanceCount. Instancing is OPT-IN PER MATERIAL and
+  DETECTED from the material's own vertex source rather than declared by a flag - a flag could
+  claim support the shader does not implement, and that lie fails silently by stacking every
+  instance on the first one's transform. A material without the contract falls back per BATCH, so
+  a scene mixing new and legacy materials still instances what it can. Remaining: pointing the
+  instanceCount at CS8's GPU-written draw command instead of a CPU-known batch size, which is the
+  last step to giving the indirect cull a consumer.
 - [ ] Frustum culling at scale (currently unverified beyond basic per-object draw calls)
 - [ ] Occlusion culling (the `occluder` scene-node kind exists as a descriptor only)
 - [ ] Level-of-detail switching (the `LOD group` scene-node kind exists as a descriptor

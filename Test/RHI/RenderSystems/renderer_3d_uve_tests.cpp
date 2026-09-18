@@ -1522,5 +1522,117 @@ TEST_F(Renderer3DUVETest, RenderFrameToTargetUVE_UIOverlayPassTargetsTheSameDest
     renderer3D->SetUIRuntimeUVE(nullptr);
 }
 
+
+// ---------------------------------------------------------------------------
+// GPU instancing. The risk this path carries is not that it fails loudly - it
+// is that it succeeds at drawing the WRONG thing: a material whose shader knows
+// nothing about gl_InstanceID, drawn with instanceCount > 1, stacks every
+// instance on the first one's transform. That reads as missing objects, not as
+// a renderer bug, so these tests care most about the opt-in staying honest.
+//
+// Note the fixture's shader loader supplies "void main() { }" - deliberately
+// NOT instancing-aware. Every pre-existing test in this file therefore stays on
+// the per-object path, which is exactly the regression guarantee wanted: adding
+// instancing must not change what a legacy material does.
+// ---------------------------------------------------------------------------
+
+/// Swaps in a vertex shader that actually implements the instancing contract. The detection is a
+/// source-text check, so the marker tokens are what matter here, not a working shader body - the
+/// Null device never compiles GLSL.
+void UseInstancingAwareShaderUVE(Asset::AssetManagerUVE& assetManager) {
+    assetManager.RegisterLoaderUVE<Asset::ShaderAssetUVE>(
+        [](const std::filesystem::path&, Asset::ShaderAssetUVE& shader) {
+            shader.sourceCode =
+                "void main() { int slot = uInstanceBaseIndex + gl_InstanceID; }";
+            return true;
+        });
+}
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_LegacyMaterial_StaysOnThePerObjectPath) {
+    // The regression case, stated explicitly rather than left implicit in the other tests: a
+    // material that predates the instancing contract must still get one draw call per object.
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_instancing_legacy.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_instancing_legacy.uvemat");
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    for (int index = 0; index < 3; ++index) {
+        MakeMeshEntityUVE(Math::Vector3UVE{static_cast<float>(index), 0.0F, -5.0F}, meshGuid, materialGuid);
+    }
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid, false);
+    PrimeMaterialProgramUVE(*renderer3D, cameraEntity);
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const Renderer3DFrameDiagnosticsUVE diagnostics = renderer3D->GetLastFrameDiagnosticsUVE();
+
+    EXPECT_EQ(diagnostics.meshDrawCallsRecorded, 3U);
+    EXPECT_EQ(diagnostics.instancedDrawCallsRecorded, 0U);
+    EXPECT_EQ(diagnostics.instancedObjectsRecorded, 0U);
+}
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_InstancingAwareMaterial_CollapsesRepeatsIntoOneDraw) {
+    UseInstancingAwareShaderUVE(assetManager);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_instancing_shared.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_instancing_shared.uvemat");
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    // Same mesh, same material, laid out along a line so they sort into one contiguous run.
+    for (int index = 0; index < 4; ++index) {
+        MakeMeshEntityUVE(Math::Vector3UVE{static_cast<float>(index) * 0.1F, 0.0F, -5.0F}, meshGuid,
+                          materialGuid);
+    }
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid, false);
+    PrimeMaterialProgramUVE(*renderer3D, cameraEntity);
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const Renderer3DFrameDiagnosticsUVE diagnostics = renderer3D->GetLastFrameDiagnosticsUVE();
+
+    // Four objects, one draw call - and the object count proves all four are still being drawn,
+    // which a draw-call count alone would not.
+    EXPECT_EQ(diagnostics.meshDrawCallsRecorded, 1U);
+    EXPECT_EQ(diagnostics.instancedDrawCallsRecorded, 1U);
+    EXPECT_EQ(diagnostics.instancedObjectsRecorded, 4U);
+}
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_InstancedDiagnosticsResetBetweenFrames) {
+    // The counters are frame-local. If they accumulated, a long-running session would report a
+    // growing instanced count for a static scene - a diagnostic that lies slowly.
+    UseInstancingAwareShaderUVE(assetManager);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_instancing_reset.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_instancing_reset.uvemat");
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    for (int index = 0; index < 3; ++index) {
+        MakeMeshEntityUVE(Math::Vector3UVE{static_cast<float>(index) * 0.1F, 0.0F, -5.0F}, meshGuid,
+                          materialGuid);
+    }
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid, false);
+    PrimeMaterialProgramUVE(*renderer3D, cameraEntity);
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const std::size_t firstFrameObjects = renderer3D->GetLastFrameDiagnosticsUVE().instancedObjectsRecorded;
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const std::size_t secondFrameObjects = renderer3D->GetLastFrameDiagnosticsUVE().instancedObjectsRecorded;
+
+    EXPECT_EQ(firstFrameObjects, 3U);
+    EXPECT_EQ(secondFrameObjects, 3U);
+}
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_SingleInstancingAwareObject_StillDrawsExactlyOnce) {
+    // A run of one goes through the instanced path as a one-instance draw rather than through a
+    // separate leftover path. Correct either way; this pins which one, so the consumer stays a
+    // single loop.
+    UseInstancingAwareShaderUVE(assetManager);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_instancing_single.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_instancing_single.uvemat");
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -5.0F}, meshGuid, materialGuid);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid, false);
+    PrimeMaterialProgramUVE(*renderer3D, cameraEntity);
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const Renderer3DFrameDiagnosticsUVE diagnostics = renderer3D->GetLastFrameDiagnosticsUVE();
+
+    EXPECT_EQ(diagnostics.meshDrawCallsRecorded, 1U);
+    EXPECT_EQ(diagnostics.instancedDrawCallsRecorded, 1U);
+    EXPECT_EQ(diagnostics.instancedObjectsRecorded, 1U);
+}
+
 } // namespace
 } // namespace UVE::Render::Tests
