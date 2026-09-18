@@ -25,6 +25,7 @@ add_library(uve_render_systems STATIC
     Internal/frustum_cull_compute_uve.cpp
     Internal/frustum_cull_indirect_uve.cpp
     Internal/mesh_skin_compute_uve.cpp
+    Internal/render_batch_uve.cpp
     Internal/render_queue_uve.cpp
     Internal/particle_render_bridge_uve.cpp
     Internal/particle_draw_command_uve.cpp

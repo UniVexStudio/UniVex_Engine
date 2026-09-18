@@ -166,21 +166,53 @@ out vec2 vTexCoord;
 out vec4 vLightSpacePosition;
 out vec4 vLightSpacePositions[3];
 
+#ifdef UVE_INSTANCED
+// The instanced variant reads its per-object transforms from a storage buffer indexed by
+// gl_InstanceID instead of from a uniform set once per draw. That is the entire difference
+// between the two variants, and it is why this is a #define rather than a second shader file:
+// the 240-odd lines of lighting below are shared verbatim, so an instanced object and a
+// non-instanced one cannot drift apart in how they are lit.
+//
+// Matrices arrive TRANSPOSED from the host (Matrix4x4UVE is row-major; std430 mat4 is
+// column-major), exactly as in mesh_skin.glsl - the same convention, deliberately, so there is
+// one rule to remember rather than two.
+//
+// uInstanceBaseIndex offsets into the frame-wide matrix buffer so every batch can share one
+// upload rather than one buffer each; gl_InstanceID restarts at 0 for each draw.
+layout(std430, binding = 0) readonly buffer InstanceTransformBlock {
+    mat4 instanceModels[];
+};
+layout(std430, binding = 1) readonly buffer InstanceNormalTransformBlock {
+    mat4 instanceNormalModels[];
+};
+layout(std430, binding = 2) readonly buffer InstanceBaseBlock {
+    int uInstanceBaseIndex;
+};
+#else
 uniform mat4 uModel;
 // Transpose(inverse(uModel)): correctly transforms normals under non-uniform scale, unlike
 // uModel itself (which only preserves normal direction for uniform scale / rigid transforms).
 // Tangents are still transformed with uModel directly - that IS the correct convention for a
 // surface-parameterization vector, unlike a normal.
 uniform mat4 uNormalMatrix;
+#endif
 uniform mat4 uViewProjection;
 uniform mat4 uLightSpaceMatrix;
 uniform mat4 uLightSpaceMatrices[3];
 
 void main() {
-    vec4 worldPosition = uModel * vec4(aPosition, 1.0);
+#ifdef UVE_INSTANCED
+    int instanceSlot = uInstanceBaseIndex + gl_InstanceID;
+    mat4 model = instanceModels[instanceSlot];
+    mat4 normalMatrix = instanceNormalModels[instanceSlot];
+#else
+    mat4 model = uModel;
+    mat4 normalMatrix = uNormalMatrix;
+#endif
+    vec4 worldPosition = model * vec4(aPosition, 1.0);
     vWorldPosition = worldPosition.xyz;
-    vWorldNormal = mat3(uNormalMatrix) * aNormal;
-    vWorldTangent = mat3(uModel) * aTangent.xyz;
+    vWorldNormal = mat3(normalMatrix) * aNormal;
+    vWorldTangent = mat3(model) * aTangent.xyz;
     vTangentHandedness = aTangent.w;
     vTexCoord = aTexCoord;
     vLightSpacePosition = uLightSpaceMatrix * worldPosition;

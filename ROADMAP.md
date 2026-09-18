@@ -62,7 +62,15 @@ publicly shipping real-time engines as of today, without naming any of them.
 - [ ] Ray-traced reflections/shadows/GI as an optional high-end path (long-term)
 
 ### 1.2 Scene scale & performance
-- [ ] GPU instancing for repeated meshes
+- [ ] GPU instancing for repeated meshes — the CPU half and the shader half have landed:
+  BuildRenderBatchesUVE groups a sorted queue's ADJACENT mesh+material runs into instanced
+  batches (never reordering, because the queue is already depth-sorted front-to-back for early-z
+  and back-to-front for correct alpha, and regrouping to chase a lower batch count would silently
+  undo both), and lit_shadowed_3d.glsl gained a UVE_INSTANCED variant reading per-instance model
+  and normal matrices from storage buffers indexed by uInstanceBaseIndex + gl_InstanceID. One file
+  behind a define rather than two shaders, so the ~240 lines of lighting cannot drift between an
+  instanced object and a non-instanced one. Remaining: Renderer3DUVE recording the instanced draw
+  itself, which is also what finally gives CS8's indirect cull a consumer.
 - [ ] Frustum culling at scale (currently unverified beyond basic per-object draw calls)
 - [ ] Occlusion culling (the `occluder` scene-node kind exists as a descriptor only)
 - [ ] Level-of-detail switching (the `LOD group` scene-node kind exists as a descriptor
