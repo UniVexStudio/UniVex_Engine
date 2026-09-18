@@ -101,7 +101,7 @@ TEST(SceneNodeEditorUVETest, CentralizedCreationUVE_CreatesEveryExpandedNodeKind
         EditorUVE editor(engine.GetServicesUVE(), "uve_scene_node_editor_expanded_tests.uvescene");
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-        constexpr std::array<Scene::Nodes::SceneNodeKindUVE, 23U> expandedKinds{
+        constexpr std::array<Scene::Nodes::SceneNodeKindUVE, 27U> expandedKinds{
             Scene::Nodes::SceneNodeKindUVE::Area3D,
             Scene::Nodes::SceneNodeKindUVE::RayCast3D,
             Scene::Nodes::SceneNodeKindUVE::StaticBody3D,
@@ -125,6 +125,10 @@ TEST(SceneNodeEditorUVETest, CentralizedCreationUVE_CreatesEveryExpandedNodeKind
             Scene::Nodes::SceneNodeKindUVE::SpawnPoint3D,
             Scene::Nodes::SceneNodeKindUVE::LevelStreamer3D,
             Scene::Nodes::SceneNodeKindUVE::WorldPartition3D,
+            Scene::Nodes::SceneNodeKindUVE::Canvas,
+            Scene::Nodes::SceneNodeKindUVE::UIText,
+            Scene::Nodes::SceneNodeKindUVE::UIImage,
+            Scene::Nodes::SceneNodeKindUVE::UIButton,
         };
         for (const Scene::Nodes::SceneNodeKindUVE kind : expandedKinds) {
             const Scene::EntityUVE entity = editor.CreateDocumentSceneNodeUVE(kind);

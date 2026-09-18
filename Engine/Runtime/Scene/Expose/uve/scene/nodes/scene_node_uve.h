@@ -33,3 +33,4 @@
 // authored defaults, default entity name), so no node kind's behavior is buried in one shared
 // header or in the editor's creation switch.
 #include "uve/nodes/3d/all_nodes_3d_uve.h"
+#include "uve/nodes/canvas_layer/all_nodes_canvas_layer_uve.h"
