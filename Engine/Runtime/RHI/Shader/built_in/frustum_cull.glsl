@@ -65,13 +65,18 @@ layout(std430, binding = 2) writeonly buffer VisibilityBlock {
     uint visible[];
 };
 
-uniform int uBoxCount;
+// Parameters travel in a storage buffer, not as a bare `uniform` scalar - SPIR-V has no
+// non-opaque global uniforms, so the uniform form cannot compile for Vulkan at all. See
+// particle_simulate.glsl for the same note.
+layout(std430, binding = 3) readonly buffer FrustumCullParams {
+    int boxCount;
+} params;
 
 void main() {
     const uint index = gl_GlobalInvocationID.x;
     // Dispatches round up to whole workgroups; the tail invocations own no box. Without this the
     // write would land inside the allocated visibility buffer and corrupt a neighbouring result.
-    if (index >= uint(uBoxCount)) {
+    if (index >= uint(params.boxCount)) {
         return;
     }
 

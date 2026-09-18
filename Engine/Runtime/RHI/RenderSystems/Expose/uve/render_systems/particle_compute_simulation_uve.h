@@ -38,6 +38,22 @@ static_assert(sizeof(ParticleGpuStateUVE) == 8U * sizeof(float),
 static_assert(alignof(ParticleGpuStateUVE) == alignof(float),
               "ParticleGpuStateUVE must not acquire alignment padding the shader does not have");
 
+/// The kernel's parameters, laid out to match its std430 ParticleSimulateParams block exactly.
+/// These travel in a storage buffer rather than as bare `uniform` scalars for a portability
+/// reason worth stating plainly: SPIR-V has no non-opaque global uniforms, so a kernel written
+/// with `uniform float uDeltaSeconds` cannot be compiled for Vulkan at all - glslang rejects it
+/// outright. A std430 block compiles unchanged for both backends.
+struct ParticleSimulateParamsGpuUVE final {
+    float deltaSeconds = 0.0F;
+    float accelerationX = 0.0F;
+    float accelerationY = 0.0F;
+    float accelerationZ = 0.0F;
+    std::int32_t particleCount = 0;
+};
+
+static_assert(sizeof(ParticleSimulateParamsGpuUVE) == 4U * sizeof(float) + sizeof(std::int32_t),
+              "ParticleSimulateParamsGpuUVE must match the kernel's std430 params block exactly");
+
 /// A lifetime-to-date account of observable ParticleComputeSimulationUVE work, in the same
 /// evidence-naming spirit as ComputeSystemDiagnosticsUVE: each counter names something the
 /// system actually did, and "simulated" means a dispatch was queued and its result read back -
@@ -133,6 +149,7 @@ private:
     IComputeSystemUVE& m_computeSystem;
     PipelineHandleUVE m_program = kInvalidPipelineHandleUVE;
     BufferHandleUVE m_buffer = kInvalidBufferHandleUVE;
+    BufferHandleUVE m_paramBuffer = kInvalidBufferHandleUVE;
     std::size_t m_bufferCapacityParticles = 0U;
     std::vector<ParticleGpuStateUVE> m_scratch;
     ParticleComputeSimulationDiagnosticsUVE m_diagnostics;

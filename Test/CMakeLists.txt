@@ -209,6 +209,8 @@ add_executable(uve_integration_tests
     RHI/RenderSystems/compute_system_uve_tests.cpp
     RHI/RenderSystems/particle_compute_simulation_uve_tests.cpp
     RHI/RenderSystems/frustum_cull_compute_uve_tests.cpp
+    RHI/RenderSystems/compute_kernel_portability_uve_tests.cpp
+    RHI/RenderSystems/compute_workloads_vulkan_uve_tests.cpp
     RHI/RenderSystems/light_system_uve_tests.cpp
     RHI/RenderSystems/mesh_renderer_uve_tests.cpp
     RHI/RenderSystems/mesh_render_eligibility_uve_tests.cpp
@@ -246,6 +248,11 @@ target_link_libraries(uve_integration_tests PRIVATE
     # The raw <GL/gl.h> calls in that file resolve the same way engine_core_uve_tests.cpp's do:
     # OpenGL::GL and glfw propagate through the static-library dependency chain.
     uve_rhi_opengl
+    # compute_workloads_vulkan_uve_tests.cpp runs CS4's particle simulation and CS5's culling
+    # against a REAL Vulkan device (headless over VK_EXT_headless_surface), which is what proves
+    # those workloads are backend-independent rather than GL-only - so this executable needs the
+    # Vulkan backend too, alongside the GL one its other compute tests use.
+    uve_rhi_vulkan
     uve_window
     uve_input
     uve_ui

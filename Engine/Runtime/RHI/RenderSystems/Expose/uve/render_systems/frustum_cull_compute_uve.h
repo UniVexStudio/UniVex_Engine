@@ -48,6 +48,13 @@ static_assert(sizeof(CullPlaneGpuUVE) == 4U * sizeof(float),
 static_assert(alignof(CullBoxGpuUVE) == alignof(float) && alignof(CullPlaneGpuUVE) == alignof(float),
               "the GPU cull structs must not acquire alignment padding the shader does not have");
 
+/// The kernel's parameters, matching its std430 FrustumCullParams block. A storage buffer rather
+/// than a bare `uniform` for the portability reason spelled out on ParticleSimulateParamsGpuUVE:
+/// SPIR-V has no non-opaque global uniforms, so the uniform form cannot compile for Vulkan.
+struct FrustumCullParamsGpuUVE final {
+    std::int32_t boxCount = 0;
+};
+
 /// A lifetime-to-date account of observable FrustumCullComputeUVE work, in the same
 /// evidence-naming spirit as ComputeSystemDiagnosticsUVE: every counter names something the system
 /// actually did. `boxesCulled` counts boxes the GPU reported invisible - a real result that was
@@ -144,6 +151,7 @@ private:
     BufferHandleUVE m_boxBuffer = kInvalidBufferHandleUVE;
     BufferHandleUVE m_planeBuffer = kInvalidBufferHandleUVE;
     BufferHandleUVE m_visibilityBuffer = kInvalidBufferHandleUVE;
+    BufferHandleUVE m_paramBuffer = kInvalidBufferHandleUVE;
     std::size_t m_bufferCapacityBoxes = 0U;
     std::vector<CullBoxGpuUVE> m_boxScratch;
     std::vector<std::uint32_t> m_visibilityScratch;

@@ -517,9 +517,18 @@ layout(std430, binding = 0) buffer ParticleBlock {
     ParticleGpuState particles[];
 };
 
-uniform float uDeltaSeconds;
-uniform vec3 uAcceleration;
-uniform int uParticleCount;
+// The kernel's parameters travel in a storage buffer rather than as bare `uniform` scalars.
+// That is a portability requirement, not a style choice: GLSL permits non-opaque uniforms at
+// global scope and the GL backend resolves them by name, but SPIR-V has no such concept - glslang
+// rejects this very file with "non-opaque uniform variables need a layout(location=L)" - so a
+// kernel written that way can never run on Vulkan. A std430 block compiles unchanged for both.
+layout(std430, binding = 1) readonly buffer ParticleSimulateParams {
+    float deltaSeconds;
+    float accelerationX;
+    float accelerationY;
+    float accelerationZ;
+    int particleCount;
+} params;
 
 void main() {
     const uint index = gl_GlobalInvocationID.x;
@@ -527,21 +536,21 @@ void main() {
     // group address particles that do not exist. Without this guard they would write past
     // the live range - the buffer is sized to the instance's capacity, so the write would
     // land inside allocated memory and silently corrupt state the CPU still owns.
-    if (index >= uint(uParticleCount)) {
+    if (index >= uint(params.particleCount)) {
         return;
     }
 
     ParticleGpuState state = particles[index];
 
-    precise float nextVelocityX = state.velocityX + uAcceleration.x * uDeltaSeconds;
-    precise float nextVelocityY = state.velocityY + uAcceleration.y * uDeltaSeconds;
-    precise float nextVelocityZ = state.velocityZ + uAcceleration.z * uDeltaSeconds;
+    precise float nextVelocityX = state.velocityX + params.accelerationX * params.deltaSeconds;
+    precise float nextVelocityY = state.velocityY + params.accelerationY * params.deltaSeconds;
+    precise float nextVelocityZ = state.velocityZ + params.accelerationZ * params.deltaSeconds;
 
-    precise float nextPositionX = state.positionX + nextVelocityX * uDeltaSeconds;
-    precise float nextPositionY = state.positionY + nextVelocityY * uDeltaSeconds;
-    precise float nextPositionZ = state.positionZ + nextVelocityZ * uDeltaSeconds;
+    precise float nextPositionX = state.positionX + nextVelocityX * params.deltaSeconds;
+    precise float nextPositionY = state.positionY + nextVelocityY * params.deltaSeconds;
+    precise float nextPositionZ = state.positionZ + nextVelocityZ * params.deltaSeconds;
 
-    precise float nextLifetime = state.remainingLifetimeSeconds - uDeltaSeconds;
+    precise float nextLifetime = state.remainingLifetimeSeconds - params.deltaSeconds;
 
     particles[index].positionX = nextPositionX;
     particles[index].positionY = nextPositionY;
@@ -620,13 +629,18 @@ layout(std430, binding = 2) writeonly buffer VisibilityBlock {
     uint visible[];
 };
 
-uniform int uBoxCount;
+// Parameters travel in a storage buffer, not as a bare `uniform` scalar - SPIR-V has no
+// non-opaque global uniforms, so the uniform form cannot compile for Vulkan at all. See
+// particle_simulate.glsl for the same note.
+layout(std430, binding = 3) readonly buffer FrustumCullParams {
+    int boxCount;
+} params;
 
 void main() {
     const uint index = gl_GlobalInvocationID.x;
     // Dispatches round up to whole workgroups; the tail invocations own no box. Without this the
     // write would land inside the allocated visibility buffer and corrupt a neighbouring result.
-    if (index >= uint(uBoxCount)) {
+    if (index >= uint(params.boxCount)) {
         return;
     }
 
