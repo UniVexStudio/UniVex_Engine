@@ -51,6 +51,20 @@ namespace {
     return std::string(glslSource);
 }
 
+
+/// Makes a just-submitted dispatch actually execute, on every backend, before its result is read.
+///
+/// This is the difference between the two backends' submission models, and it cost a red CI run to
+/// find. GlRenderDeviceUVE runs every command at RECORD time - SubmitUVE only releases the buffer -
+/// so a readback straight after submission sees finished work. VulkanRenderDeviceUVE queues the
+/// recording into frameSubmissions and replays it in PresentUVE(); reading before that point
+/// returns whatever the buffer held BEFORE the dispatch, which is exactly what the Vulkan arms of
+/// CS4 and CS5 saw. Calling PresentUVE() is what drains the queue, and it is harmless on GL (a
+/// buffer swap). CS3's readback then supplies the device synchronization on top.
+void FlushComputeSubmissionUVE(IRenderDeviceUVE& device) {
+    device.PresentUVE();
+}
+
 } // namespace
 
 ParticleComputeSimulationUVE::ParticleComputeSimulationUVE(IRenderDeviceUVE& renderDevice,
@@ -224,6 +238,7 @@ bool ParticleComputeSimulationUVE::SimulateUVE(std::vector<Scene::ParticleStateU
         return false;
     }
     m_device.SubmitUVE(std::move(commands));
+    FlushComputeSubmissionUVE(m_device);
 
     const std::span<std::byte> readback{reinterpret_cast<std::byte*>(m_scratch.data()),
                                         m_scratch.size() * sizeof(ParticleGpuStateUVE)};
