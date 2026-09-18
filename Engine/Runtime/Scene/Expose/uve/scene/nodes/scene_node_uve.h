@@ -27,5 +27,9 @@
 #include "uve/scene/nodes/scene_node_registry_uve.h"
 // The 21 node types that used to live behind their own thin compatibility-alias facade here
 // (RayCast3D, Skeleton3D, Hitbox3D, WorldEnvironment3D, etc.) have their real struct definitions
-// directly in Engine/Runtime/Nodes/3D.
+// directly in Engine/Runtime/Nodes/3D — and the 17 kinds whose data already lives in a shared
+// component (Camera3D, Light3D, the primitive meshes, the physics bodies, Script, etc.) each
+// have a NodeDefinition file there instead: the kind's creation recipe (components to attach,
+// authored defaults, default entity name), so no node kind's behavior is buried in one shared
+// header or in the editor's creation switch.
 #include "uve/nodes/3d/all_nodes_3d_uve.h"

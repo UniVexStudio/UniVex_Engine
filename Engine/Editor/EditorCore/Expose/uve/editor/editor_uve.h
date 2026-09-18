@@ -687,6 +687,16 @@ private:
     void CancelHierarchyRenameUVE() noexcept;
     [[nodiscard]] Scene::EntityUVE CreateDocumentEntityInternalUVE(
         EditorEntityKindUVE kind, const std::optional<std::string>& explicitName);
+    /// Creates the document-entity shell every scene node starts from: a live entity with a
+    /// default TransformComponentUVE and the given (already finalized) NameComponentUVE.
+    /// Node definitions (Engine/Runtime/Nodes/3D) attach their kind-specific components on top.
+    [[nodiscard]] Scene::EntityUVE CreateDocumentEntityShellInternalUVE(const std::string_view name);
+    /// Creates a document entity for one node kind from that kind's NodeDefinition: a
+    /// uniquely-named entity shell plus the definition's component recipe. Defined in
+    /// editor_uve.cpp next to its only call sites.
+    template <typename Definition, typename ApplyFunc>
+    [[nodiscard]] Scene::EntityUVE CreateNodeDefinitionEntityInternalUVE(const Definition& definition,
+                                                                         ApplyFunc applyDefinition);
     void RecordHistoryUVE(HistoryEntryUVE entry);
     void ClearHistoryUVE() noexcept;
     [[nodiscard]] bool UndoHistoryEntryUVE(HistoryEntryUVE& entry);

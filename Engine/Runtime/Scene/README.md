@@ -11,7 +11,7 @@ third corner of a triangle new contributors historically confuse:
 | **Entity + component storage (ECS)** | `Engine/Runtime/Entity` | `uve/entity/*` | `EntityUVE` is just an id; components are plain structs in archetype chunks; `IEntityManagerUVE` owns lifecycle + queries. Data-oriented. |
 | **Component definitions** | `Engine/Runtime/Component` | `uve/component/*` | Header-only struct library (Transform, Camera, Light, Mesh, ...). No behavior beyond tiny value semantics. |
 | **Hierarchy + transforms parenting** | **this module** | `uve/scene/*` (graph, serializer, prefab) | `SceneGraphUVE` parents entities and propagates `TransformComponentUVE` → `WorldTransformComponentUVE`. Hierarchy is *components*, not node objects. |
-| **Typed "Node" vocabulary** | this module (`uve/scene/nodes/`) + `Engine/Runtime/Nodes/3D` (`uve/nodes/3d/`) | registry + structs | `SceneNodeKindUVE` + the registry map a node kind to its real backing struct/components; `Nodes/3D` holds the game-facing structs (RayCast3D, Skeleton3D, etc.). A "Node3D" is a vocabulary over entities+components, **not** a parallel object tree. |
+| **Typed "Node" vocabulary** | this module (`uve/scene/nodes/`) + `Engine/Runtime/Nodes/3D` (`uve/nodes/3d/`) | registry + structs | `SceneNodeKindUVE` + the registry map a node kind to its real backing struct/components; `Nodes/3D` holds the game-facing structs (RayCast3D, Skeleton3D, etc.) plus one creation-recipe `NodeDefinition` file per component-backed kind (Camera3D, the primitive meshes, the physics bodies, ...) — a recipe, never a second copy of component storage. A "Node3D" is a vocabulary over entities+components, **not** a parallel object tree. |
 
 ## The rules that keep this triangle from duplicating itself
 
