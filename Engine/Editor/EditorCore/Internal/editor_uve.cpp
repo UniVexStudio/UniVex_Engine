@@ -2037,85 +2037,76 @@ Scene::EntityUVE EditorUVE::CreateDocumentSceneNodeUVE(
     };
 
     switch (kind) {
+        // The 17 kinds whose authored data already lives in a shared component each create from
+        // their NodeDefinition in Engine/Runtime/Nodes/3D — one .h + .cpp per kind holds the
+        // recipe (components to attach, authored defaults, default entity name). No
+        // node-kind-specific recipe is authored in this switch anymore.
         case Scene::Nodes::SceneNodeKindUVE::Empty:
-            entity = CreateDocumentEntityInternalUVE(EditorEntityKindUVE::Empty, std::nullopt);
+            entity = CreateNodeDefinitionEntityInternalUVE(Scene::EmptyNodeDefinitionUVE{},
+                                                            Scene::ApplyEmptyNodeDefinitionUVE);
             break;
         case Scene::Nodes::SceneNodeKindUVE::Camera3D:
-            entity = CreateDocumentEntityInternalUVE(EditorEntityKindUVE::Camera, std::nullopt);
+            entity = CreateNodeDefinitionEntityInternalUVE(Scene::Camera3DNodeDefinitionUVE{},
+                                                            Scene::ApplyCamera3DNodeDefinitionUVE);
             break;
         case Scene::Nodes::SceneNodeKindUVE::MeshInstance3D:
-            entity = CreateDocumentEntityInternalUVE(EditorEntityKindUVE::Empty, std::nullopt);
-            if (entity != Scene::kInvalidEntityUVE) {
-                entityManager.AddComponentUVE<Scene::MeshComponentUVE>(entity, Scene::MeshComponentUVE{});
-            }
+            entity = CreateNodeDefinitionEntityInternalUVE(Scene::MeshInstance3DNodeDefinitionUVE{},
+                                                            Scene::ApplyMeshInstance3DNodeDefinitionUVE);
             break;
         case Scene::Nodes::SceneNodeKindUVE::BoxMesh3D:
-            entity = CreateDocumentEntityInternalUVE(EditorEntityKindUVE::Cube, std::nullopt);
+            entity = CreateNodeDefinitionEntityInternalUVE(Scene::BoxMesh3DNodeDefinitionUVE{},
+                                                            Scene::ApplyBoxMesh3DNodeDefinitionUVE);
             break;
         case Scene::Nodes::SceneNodeKindUVE::SphereMesh3D:
-            entity = CreateDocumentEntityInternalUVE(EditorEntityKindUVE::UVSphere, std::nullopt);
+            entity = CreateNodeDefinitionEntityInternalUVE(Scene::SphereMesh3DNodeDefinitionUVE{},
+                                                            Scene::ApplySphereMesh3DNodeDefinitionUVE);
             break;
         case Scene::Nodes::SceneNodeKindUVE::PlaneMesh3D:
-            entity = CreateDocumentEntityInternalUVE(EditorEntityKindUVE::Plane, std::nullopt);
+            entity = CreateNodeDefinitionEntityInternalUVE(Scene::PlaneMesh3DNodeDefinitionUVE{},
+                                                            Scene::ApplyPlaneMesh3DNodeDefinitionUVE);
             break;
         case Scene::Nodes::SceneNodeKindUVE::Light3D:
-            entity = CreateDocumentEntityInternalUVE(EditorEntityKindUVE::DirectionalLight, std::nullopt);
+            entity = CreateNodeDefinitionEntityInternalUVE(Scene::Light3DNodeDefinitionUVE{},
+                                                            Scene::ApplyLight3DNodeDefinitionUVE);
             break;
         case Scene::Nodes::SceneNodeKindUVE::Collider3D:
-            entity = CreateDocumentEntityInternalUVE(EditorEntityKindUVE::CollisionBox, std::nullopt);
+            entity = CreateNodeDefinitionEntityInternalUVE(Scene::Collider3DNodeDefinitionUVE{},
+                                                            Scene::ApplyCollider3DNodeDefinitionUVE);
             break;
         case Scene::Nodes::SceneNodeKindUVE::CharacterBody3D:
-            entity = CreateDocumentEntityInternalUVE(EditorEntityKindUVE::Empty, std::nullopt);
-            if (entity != Scene::kInvalidEntityUVE) {
-                entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(entity,
-                                                                            Scene::ColliderComponentUVE{});
-                Scene::RigidBodyComponentUVE body{};
-                body.isKinematic = true;
-                entityManager.AddComponentUVE<Scene::RigidBodyComponentUVE>(entity, body);
-            }
+            entity = CreateNodeDefinitionEntityInternalUVE(Scene::CharacterBody3DNodeDefinitionUVE{},
+                                                            Scene::ApplyCharacterBody3DNodeDefinitionUVE);
             break;
         case Scene::Nodes::SceneNodeKindUVE::RigidBody3D:
-            entity = CreateDocumentEntityInternalUVE(EditorEntityKindUVE::Empty, std::nullopt);
-            if (entity != Scene::kInvalidEntityUVE) {
-                entityManager.AddComponentUVE<Scene::RigidBodyComponentUVE>(
-                    entity, Scene::RigidBodyComponentUVE{});
-            }
+            entity = CreateNodeDefinitionEntityInternalUVE(Scene::RigidBody3DNodeDefinitionUVE{},
+                                                            Scene::ApplyRigidBody3DNodeDefinitionUVE);
             break;
         case Scene::Nodes::SceneNodeKindUVE::AnimationPlayer:
-            entity = CreateDocumentEntityInternalUVE(EditorEntityKindUVE::Empty, std::nullopt);
-            if (entity != Scene::kInvalidEntityUVE) {
-                entityManager.AddComponentUVE<Scene::AnimationPlayerComponentUVE>(
-                    entity, Scene::AnimationPlayerComponentUVE{});
-            }
+            entity = CreateNodeDefinitionEntityInternalUVE(Scene::AnimationPlayerNodeDefinitionUVE{},
+                                                            Scene::ApplyAnimationPlayerNodeDefinitionUVE);
             break;
         case Scene::Nodes::SceneNodeKindUVE::AudioSource3D:
-            entity = CreateDocumentEntityInternalUVE(EditorEntityKindUVE::Empty, std::nullopt);
-            if (entity != Scene::kInvalidEntityUVE) {
-                entityManager.AddComponentUVE<Scene::AudioSourceComponentUVE>(
-                    entity, Scene::AudioSourceComponentUVE{});
-            }
+            entity = CreateNodeDefinitionEntityInternalUVE(Scene::AudioSource3DNodeDefinitionUVE{},
+                                                            Scene::ApplyAudioSource3DNodeDefinitionUVE);
             break;
         case Scene::Nodes::SceneNodeKindUVE::ParticleEmitter3D:
-            entity = CreateDocumentEntityInternalUVE(EditorEntityKindUVE::Empty, std::nullopt);
-            if (entity != Scene::kInvalidEntityUVE) {
-                entityManager.AddComponentUVE<Scene::ParticleEmitterComponentUVE>(
-                    entity, Scene::ParticleEmitterComponentUVE{});
-            }
+            entity = CreateNodeDefinitionEntityInternalUVE(Scene::ParticleEmitter3DNodeDefinitionUVE{},
+                                                            Scene::ApplyParticleEmitter3DNodeDefinitionUVE);
             break;
         case Scene::Nodes::SceneNodeKindUVE::Script:
-            entity = CreateDocumentEntityInternalUVE(EditorEntityKindUVE::Empty, std::nullopt);
-            if (entity != Scene::kInvalidEntityUVE) {
-                entityManager.AddComponentUVE<Scene::ScriptComponentUVE>(entity, Scene::ScriptComponentUVE{});
-            }
+            entity = CreateNodeDefinitionEntityInternalUVE(Scene::ScriptNodeDefinitionUVE{},
+                                                            Scene::ApplyScriptNodeDefinitionUVE);
             break;
         case Scene::Nodes::SceneNodeKindUVE::Area3D:
-            entity = createNodeWithComponent(Scene::AreaComponentUVE{});
+            entity = CreateNodeDefinitionEntityInternalUVE(Scene::Area3DNodeDefinitionUVE{},
+                                                            Scene::ApplyArea3DNodeDefinitionUVE);
             break;
         case Scene::Nodes::SceneNodeKindUVE::RayCast3D:
             entity = createNodeWithComponent(Scene::RayCast3DNodeComponentUVE{});
             break;
         case Scene::Nodes::SceneNodeKindUVE::StaticBody3D:
-            entity = createNodeWithComponent(Scene::ColliderComponentUVE{});
+            entity = CreateNodeDefinitionEntityInternalUVE(Scene::StaticBody3DNodeDefinitionUVE{},
+                                                            Scene::ApplyStaticBody3DNodeDefinitionUVE);
             break;
         case Scene::Nodes::SceneNodeKindUVE::AnimatableBody3D:
             entity = CreateDocumentEntityInternalUVE(EditorEntityKindUVE::Empty, std::nullopt);
@@ -2186,6 +2177,9 @@ Scene::EntityUVE EditorUVE::CreateDocumentSceneNodeUVE(
             entity = createNodeWithComponent(Scene::WorldPartition3DNodeComponentUVE{});
             break;
         case Scene::Nodes::SceneNodeKindUVE::AnimationTree:
+            // Not library-creatable until the real animation pipeline exists; the kind's
+            // per-file home (definition only, deliberately no Apply) is
+            // uve/nodes/3d/animation_tree_uve.h.
             return Scene::kInvalidEntityUVE;
     }
 
@@ -2841,6 +2835,31 @@ bool EditorUVE::FindSelectionPathUVE(const Scene::EntityUVE current, const Scene
     return false;
 }
 
+Scene::EntityUVE EditorUVE::CreateDocumentEntityShellInternalUVE(const std::string_view name) {
+    if (name.empty() || !IsEntityNameValidUVE(name)) {
+        return Scene::kInvalidEntityUVE;
+    }
+
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = m_services->GetSceneGraphUVE();
+    const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, entity, Scene::TransformComponentUVE{});
+    entityManager.AddComponentUVE<Scene::NameComponentUVE>(entity, Scene::NameComponentUVE{std::string{name}});
+    InvalidateHierarchyFilterCacheUVE();
+    return entity;
+}
+
+template <typename Definition, typename ApplyFunc>
+Scene::EntityUVE EditorUVE::CreateNodeDefinitionEntityInternalUVE(const Definition& definition,
+                                                                  ApplyFunc applyDefinition) {
+    Scene::EntityUVE entity = CreateDocumentEntityShellInternalUVE(
+        MakeUniqueDocumentEntityNameUVE(definition.defaultName));
+    if (entity != Scene::kInvalidEntityUVE) {
+        applyDefinition(m_services->GetEntityManagerUVE(), entity, definition);
+    }
+    return entity;
+}
+
 Scene::EntityUVE EditorUVE::CreateDocumentEntityInternalUVE(
     const EditorEntityKindUVE kind, const std::optional<std::string>& explicitName) {
     switch (kind) {
@@ -2863,52 +2882,39 @@ Scene::EntityUVE EditorUVE::CreateDocumentEntityInternalUVE(
     }
 
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = m_services->GetSceneGraphUVE();
-    const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-    sceneGraph.AttachTransformUVE(entityManager, entity, Scene::TransformComponentUVE{});
+    const Scene::EntityUVE entity = CreateDocumentEntityShellInternalUVE(name);
+    if (entity == Scene::kInvalidEntityUVE) {
+        return Scene::kInvalidEntityUVE;
+    }
 
+    // The per-kind recipes below deliberately live with their node definitions in
+    // Engine/Runtime/Nodes/3D (one .h + .cpp per kind), not inline here: these legacy editor
+    // entity kinds are alternate doors into the exact same recipes the scene-node Add-Node list
+    // uses, so a kind's defaults have one home, not two.
     switch (kind) {
         case EditorEntityKindUVE::Empty:
             break;
         case EditorEntityKindUVE::Camera:
-            entityManager.AddComponentUVE<Scene::CameraComponentUVE>(entity);
+            Scene::ApplyCamera3DNodeDefinitionUVE(entityManager, entity, Scene::Camera3DNodeDefinitionUVE{});
             break;
-        case EditorEntityKindUVE::DirectionalLight: {
-            Scene::LightComponentUVE light{};
-            light.type = Scene::LightTypeUVE::Directional;
-            entityManager.AddComponentUVE<Scene::LightComponentUVE>(entity, light);
+        case EditorEntityKindUVE::DirectionalLight:
+            Scene::ApplyLight3DNodeDefinitionUVE(entityManager, entity, Scene::Light3DNodeDefinitionUVE{});
             break;
-        }
         case EditorEntityKindUVE::CollisionBox:
-            entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(entity);
+            Scene::ApplyCollider3DNodeDefinitionUVE(entityManager, entity, Scene::Collider3DNodeDefinitionUVE{});
             break;
         case EditorEntityKindUVE::Cube:
-            entityManager.AddComponentUVE<Scene::PrimitiveMeshComponentUVE>(
-                entity, Scene::PrimitiveMeshComponentUVE{Scene::PrimitiveMeshKindUVE::Cube,
-                                                          Math::Vector3UVE{0.73F, 0.48F, 0.21F}});
-            entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(
-                entity, Scene::ColliderComponentUVE{Math::Vector3UVE{0.5F, 0.5F, 0.5F}});
+            Scene::ApplyBoxMesh3DNodeDefinitionUVE(entityManager, entity, Scene::BoxMesh3DNodeDefinitionUVE{});
             break;
         case EditorEntityKindUVE::UVSphere:
-            entityManager.AddComponentUVE<Scene::PrimitiveMeshComponentUVE>(
-                entity, Scene::PrimitiveMeshComponentUVE{Scene::PrimitiveMeshKindUVE::UVSphere,
-                                                          Math::Vector3UVE{0.22F, 0.55F, 0.88F}});
-            entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(
-                entity, Scene::ColliderComponentUVE{Math::Vector3UVE{0.5F, 0.5F, 0.5F}});
+            Scene::ApplySphereMesh3DNodeDefinitionUVE(entityManager, entity, Scene::SphereMesh3DNodeDefinitionUVE{});
             break;
         case EditorEntityKindUVE::Plane:
-            entityManager.AddComponentUVE<Scene::PrimitiveMeshComponentUVE>(
-                entity, Scene::PrimitiveMeshComponentUVE{Scene::PrimitiveMeshKindUVE::Plane,
-                                                          Math::Vector3UVE{0.32F, 0.38F, 0.30F}});
-            entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(
-                entity, Scene::ColliderComponentUVE{Math::Vector3UVE{0.5F, 0.025F, 0.5F}});
+            Scene::ApplyPlaneMesh3DNodeDefinitionUVE(entityManager, entity, Scene::PlaneMesh3DNodeDefinitionUVE{});
             break;
         default:
             return Scene::kInvalidEntityUVE;
     }
-
-    entityManager.AddComponentUVE<Scene::NameComponentUVE>(entity, Scene::NameComponentUVE{name});
-    InvalidateHierarchyFilterCacheUVE();
     return entity;
 }
 

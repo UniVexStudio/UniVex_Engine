@@ -153,6 +153,7 @@ gtest_discover_tests(uve_core_tests)
 
 add_executable(uve_integration_tests
     Nodes/3D/nodes_3d_uve_tests.cpp
+    Nodes/3D/node_definitions_3d_uve_tests.cpp
     Integration/Entity/archetype_uve_tests.cpp
     Integration/Entity/chunk_uve_tests.cpp
     Integration/Entity/entity_manager_uve_tests.cpp

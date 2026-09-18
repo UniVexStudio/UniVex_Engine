@@ -192,7 +192,15 @@ system behind them.
    facade layer in `Engine/Runtime/Scene` was also removed once confirmed nothing used it) — so
    future systems have a clean, discoverable home to attach real behavior to. This was purely a
    structural move: no `[~]` entry above changed status from it, since organizing where a stub's
-   data lives is not the same as giving it a real backing system.
+   data lives is not the same as giving it a real backing system. Follow-up, also done: the 17
+   kinds whose authored data already lives in a shared component (Empty, Camera3D, Light3D, the
+   three primitive meshes, the physics bodies, Area3D, AudioSource3D, ParticleEmitter3D, Script,
+   AnimationPlayer, AnimationTree) each got their own `NodeDefinition` `.h`+`.cpp` in the same
+   folder — the kind's creation recipe (components to attach, authored defaults, default entity
+   name) — and the editor's creation switch now sources every one of those recipes from those
+   files instead of hardcoding them inline. Still purely structural: no `[~]` entry changed
+   status, and the save format is untouched (a definition is a recipe, never a serialized
+   component).
 2. **RayCast3D and Projectile3D done** (real per-frame raycast against the actual query system with
    correct self-exclusion; real kinematic integration + lifetime expiry for projectiles - see both
    entries above for their stated, honest follow-up gaps). Wire up the remaining highest-value
