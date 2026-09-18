@@ -714,6 +714,64 @@ TEST_F(GlRenderDeviceUVETest, BindUniformBufferUVE_SlotExceedsGlLimit_DoesNotIss
     renderDevice->DestroyBufferUVE(buffer);
 }
 
+TEST_F(GlRenderDeviceUVETest, BindStorageBufferUVE_ValidationRejectsBadSlotUsageAndHandle) {
+    // M2f sister of the uniform-slot validation: every refused storage bind must be a pure
+    // engine-level rejection (UVE_ERROR + drop) that NEVER reaches GL, so the GL error flag
+    // stays clean across slot-limit, wrong-usage and unknown-handle cases; the legal bind
+    // issues exactly one glBindBufferBase.
+    const BufferHandleUVE storage = renderDevice->CreateBufferUVE(BufferDescUVE{64U, BufferUsageUVE::Storage});
+    if (storage == kInvalidBufferHandleUVE) {
+        GTEST_SKIP() << "context lacks desktop GL 4.3 shader storage buffers";
+    }
+    const BufferHandleUVE vertex = renderDevice->CreateBufferUVE(BufferDescUVE{16U, BufferUsageUVE::Vertex});
+    ASSERT_NE(vertex, kInvalidBufferHandleUVE);
+
+    std::unique_ptr<ICommandBufferUVE> commandBuffer = renderDevice->CreateCommandBufferUVE();
+    ASSERT_NE(commandBuffer, nullptr);
+    RenderPassDescUVE passDesc;
+    passDesc.colorAttachment = kInvalidTextureHandleUVE;
+    passDesc.depthLoadOp = LoadOpUVE::DontCare;
+    commandBuffer->BeginRenderPassUVE(passDesc);
+    while (glGetError() != GL_NO_ERROR) {
+    }
+
+    commandBuffer->BindStorageBufferUVE(storage, std::numeric_limits<std::uint32_t>::max());
+    EXPECT_EQ(glGetError(), GL_NO_ERROR);
+    commandBuffer->BindStorageBufferUVE(vertex, 0U);
+    EXPECT_EQ(glGetError(), GL_NO_ERROR);
+    commandBuffer->BindStorageBufferUVE(BufferHandleUVE{999999U}, 0U);
+    EXPECT_EQ(glGetError(), GL_NO_ERROR);
+    commandBuffer->BindStorageBufferUVE(storage, 0U);
+    EXPECT_EQ(glGetError(), GL_NO_ERROR);
+
+    commandBuffer->EndRenderPassUVE();
+    renderDevice->SubmitUVE(std::move(commandBuffer));
+    renderDevice->DestroyBufferUVE(vertex);
+    renderDevice->DestroyBufferUVE(storage);
+}
+
+TEST_F(GlRenderDeviceUVETest, CreateBufferUVE_StorageUsage_SupportsWholeBufferUpdate) {
+    // Storage buffers are live GL objects on the desktop path: creation on the SSBO target,
+    // a real glBufferSubData update round-trip, and clean destruction - the same lifecycle
+    // the Uniform usage already proves, on the M2f target.
+    const BufferHandleUVE storage = renderDevice->CreateBufferUVE(BufferDescUVE{64U, BufferUsageUVE::Storage});
+    if (storage == kInvalidBufferHandleUVE) {
+        GTEST_SKIP() << "context lacks desktop GL 4.3 shader storage buffers";
+    }
+
+    const std::array<std::uint8_t, 64> payload{};
+    EXPECT_TRUE(renderDevice->UpdateBufferUVE(
+        storage,
+        std::span<const std::byte>(reinterpret_cast<const std::byte*>(payload.data()), payload.size()),
+        0U));
+    EXPECT_FALSE(renderDevice->UpdateBufferUVE(
+        storage,
+        std::span<const std::byte>(reinterpret_cast<const std::byte*>(payload.data()), payload.size()),
+        32U)); // overruns the 64-byte allocation - must be refused
+
+    renderDevice->DestroyBufferUVE(storage);
+}
+
 TEST_F(GlRenderDeviceUVETest, BeginRenderPassUVE_UnknownLoadOp_LeavesStateUntouched) {
     std::unique_ptr<ICommandBufferUVE> commandBuffer = renderDevice->CreateCommandBufferUVE();
     ASSERT_NE(commandBuffer, nullptr);

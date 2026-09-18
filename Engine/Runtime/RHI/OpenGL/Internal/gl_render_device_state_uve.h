@@ -48,6 +48,12 @@ struct GlDeviceStateUVE {
     GLint maxUniformBufferBindings = 0;
     GLint maxVertexAttribs = 0;
 
+    /// GL_SHADER_STORAGE_BUFFER_BINDINGS, queried only when supportsComputeShadersUVE (SSBOs
+    /// share compute's GL 4.3 core floor; M2f binds them from GRAPHICS-stage shaders). Stays 0
+    /// on older/GLES contexts — BindStorageBufferUVE then refuses loudly instead of calling
+    /// into an enum the context doesn't know.
+    GLint maxShaderStorageBindings = 0;
+
     /// True only once the negotiated context is queried and found to be desktop OpenGL 4.3+
     /// (GL_COMPUTE_SHADER's minimum core version) - GLES contexts (compute needs ES 3.1, this
     /// engine's Android baseline is a fixed ES 3.0) are never true. Phase 2a capability gate:

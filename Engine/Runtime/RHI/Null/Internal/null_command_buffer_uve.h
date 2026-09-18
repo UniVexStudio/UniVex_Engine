@@ -31,6 +31,7 @@ public:
     void BindIndexBufferUVE(BufferHandleUVE buffer) override;
     void BindTextureUVE(TextureHandleUVE texture, std::uint32_t slot) override;
     void BindUniformBufferUVE(BufferHandleUVE buffer, std::uint32_t slot) override;
+    void BindStorageBufferUVE(BufferHandleUVE buffer, std::uint32_t slot) override;
     void SetUniformFloatUVE(std::string_view name, float value) override;
     void SetUniformIntUVE(std::string_view name, std::int32_t value) override;
     void SetUniformBoolUVE(std::string_view name, bool value) override;

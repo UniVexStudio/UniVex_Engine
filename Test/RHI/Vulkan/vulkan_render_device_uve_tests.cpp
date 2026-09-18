@@ -147,11 +147,11 @@ protected:
 
 TEST_F(VulkanRenderDeviceUVETest, DeviceReportsUsableWithHonestBootstrapName) {
     EXPECT_TRUE(device->IsUsableUVE());
-    // M2d: the reported name is capability-driven — a 1.3/dynamic-rendering device reports
-    // the offscreen-RT slice name, anything older reports the M2c classic one. Both are
+    // M2d+: the reported name is capability-driven — a 1.3/dynamic-rendering device reports
+    // the current slice name (M2f), anything older reports the M2c classic one. Both are
     // milestone-tagged; neither may be the bare "Vulkan" (honest capability contract).
     const std::string_view name = device->GetBackendNameUVE();
-    EXPECT_TRUE(name == "Vulkan (M2e depth+Load policies)" || name == "Vulkan (M2c textures+staging)")
+    EXPECT_TRUE(name == "Vulkan (M2f SSBO+separate samplers)" || name == "Vulkan (M2c textures+staging)")
         << "backend name must report the exact slice and capability gate, got: " << name;
 }
 
@@ -2097,6 +2097,486 @@ TEST_F(VulkanRenderDeviceUVETest, SamplingOpenPassAttachmentDegradesOnceAndFrame
     device->DestroyPipelineUVE(texturedPipeline);
     device->DestroyShaderUVE(quadVS);
     device->DestroyShaderUVE(quadFS);
+}
+
+
+// ---------------------------------------------------------------------------
+// M2f: SSBOs + separate samplers (descriptor-form completeness). These run on
+// BOTH device arms - the descriptor plumbing is pass-independent (only the
+// offscreen-pass machinery is dynamic-rendering-gated), and every case draws
+// into the default swapchain pass. Pixel expectations use pure 0.0/1.0 channel
+// values exclusively, which are invariant under the sRGB/UNORM swapchain
+// format-class duality the M2e reconstruction check documents.
+// ---------------------------------------------------------------------------
+
+// Full-coverage quad (native Vulkan NDC, y-down; uv spans 0..1), 20-byte stride
+// matching kTexturedVertexSpirvUVE's POSITION+TEXCOORD layout.
+const float kM2fQuadVerticesUVE[30] = {
+    -1.0F, -1.0F, 0.0F,  0.0F, 0.0F, // screen top-left == uv(0,0)
+     1.0F, -1.0F, 0.0F,  1.0F, 0.0F,
+    -1.0F,  1.0F, 0.0F,  0.0F, 1.0F,
+     1.0F, -1.0F, 0.0F,  1.0F, 0.0F,
+     1.0F,  1.0F, 0.0F,  1.0F, 1.0F,
+    -1.0F,  1.0F, 0.0F,  0.0F, 1.0F,
+};
+
+[[nodiscard]] BufferHandleUVE CreateM2fQuadBufferUVE(VulkanRenderDeviceUVE& device) {
+    BufferDescUVE quadDesc{};
+    quadDesc.sizeBytes = sizeof(kM2fQuadVerticesUVE);
+    quadDesc.usage = BufferUsageUVE::Vertex;
+    return device.CreateBufferUVE(quadDesc,
+        std::span<const std::byte>(reinterpret_cast<const std::byte*>(kM2fQuadVerticesUVE),
+                                   sizeof(kM2fQuadVerticesUVE)));
+}
+
+// The SSBO palette pipeline: kTexturedVertexSpirvUVE + the M2f palette fragment
+// (UBO { int uIndex; } at binding 0, readonly buffer { vec4 uColors[]; } at binding 1).
+[[nodiscard]] PipelineHandleUVE CreateSsboPalettePipelineUVE(VulkanRenderDeviceUVE& device,
+                                                             ShaderHandleUVE* outVertexShader,
+                                                             ShaderHandleUVE* outFragmentShader) {
+    ShaderDescUVE vertexDesc{};
+    vertexDesc.stage = ShaderStageUVE::Vertex;
+    vertexDesc.sourceCode = kTexturedVertexSpirvUVE;
+    ShaderDescUVE fragmentDesc{};
+    fragmentDesc.stage = ShaderStageUVE::Fragment;
+    fragmentDesc.sourceCode = kSsboPaletteFragmentSpirvUVE;
+    *outVertexShader = device.CreateShaderUVE(vertexDesc);
+    *outFragmentShader = device.CreateShaderUVE(fragmentDesc);
+    if (*outVertexShader == kInvalidShaderHandleUVE ||
+        *outFragmentShader == kInvalidShaderHandleUVE) {
+        return {};
+    }
+    PipelineDescUVE pipelineDesc{};
+    pipelineDesc.vertexShader = *outVertexShader;
+    pipelineDesc.fragmentShader = *outFragmentShader;
+    pipelineDesc.vertexStride = 20U;
+    pipelineDesc.vertexLayout.push_back(
+        VertexAttributeUVE{"POSITION", VertexAttributeFormatUVE::Float3, 0U});
+    pipelineDesc.vertexLayout.push_back(
+        VertexAttributeUVE{"TEXCOORD", VertexAttributeFormatUVE::Float2, 12U});
+    pipelineDesc.depthTestEnabled = false;
+    pipelineDesc.depthWriteEnabled = false;
+    return device.CreatePipelineUVE(pipelineDesc);
+}
+
+TEST_F(VulkanRenderDeviceUVETest, SsboPaletteFeedsRealPixelsThroughStorageBufferBinding) {
+    // The M2f SSBO pixel proof, three frames against one pipeline:
+    //   frame 1 - palette A bound at slot 0, ring-fed uIndex=2: the center pixel must be
+    //             A[2] (BLUE) - the STORAGE_BUFFER descriptor really points at the caller's
+    //             buffer and the fragment shader really reads it.
+    //   frame 2 - palette B bound at the same slot (a different tuple, so a different cached
+    //             descriptor set), uIndex=2: the center must be B[2] (GREEN) - the set cache
+    //             follows the bound buffer exactly like it follows bound textures.
+    //   frame 3 - palette A re-bound (tuple-cache reuse), uIndex=3: A[3] (YELLOW) - ring
+    //             uniform snapshots and cached SSBO sets stay correct across frames.
+    ShaderHandleUVE vertexShader{}, fragmentShader{};
+    const PipelineHandleUVE pipeline =
+        CreateSsboPalettePipelineUVE(*device, &vertexShader, &fragmentShader);
+    ASSERT_NE(pipeline, kInvalidPipelineHandleUVE)
+        << "a pipeline with a STORAGE_BUFFER binding must now build (pre-M2f hard-fail)";
+
+    // The reflected uniform table exposes ONLY the UBO member - SSBO data lives in the bound
+    // buffer and is deliberately not SetUniform-feedable.
+    const std::vector<UniformReflectionUVE> uniforms = device->GetPipelineUniformsUVE(pipeline);
+    ASSERT_EQ(uniforms.size(), 1U) << "expected exactly uIndex from the ring-fed UBO";
+    EXPECT_EQ(uniforms[0].name, "uIndex");
+    EXPECT_EQ(uniforms[0].type, ShaderDataTypeUVE::Int);
+
+    const BufferHandleUVE quadBuffer = CreateM2fQuadBufferUVE(*device);
+    ASSERT_NE(quadBuffer, kInvalidBufferHandleUVE);
+
+    // Pure 0/1 colors only: sRGB/UNORM swapchain format classes store them identically.
+    const float paletteA[16] = {
+        1.0F, 0.0F, 0.0F, 1.0F,   0.0F, 1.0F, 0.0F, 1.0F,
+        0.0F, 0.0F, 1.0F, 1.0F,   1.0F, 1.0F, 0.0F, 1.0F,
+    };
+    const float paletteB[16] = {
+        1.0F, 1.0F, 0.0F, 1.0F,   0.0F, 0.0F, 1.0F, 1.0F,
+        0.0F, 1.0F, 0.0F, 1.0F,   1.0F, 0.0F, 0.0F, 1.0F,
+    };
+    BufferDescUVE paletteDesc{};
+    paletteDesc.sizeBytes = sizeof(paletteA);
+    paletteDesc.usage = BufferUsageUVE::Storage;
+    const BufferHandleUVE paletteBufferA = device->CreateBufferUVE(paletteDesc,
+        std::span<const std::byte>(reinterpret_cast<const std::byte*>(paletteA), sizeof(paletteA)));
+    const BufferHandleUVE paletteBufferB = device->CreateBufferUVE(paletteDesc,
+        std::span<const std::byte>(reinterpret_cast<const std::byte*>(paletteB), sizeof(paletteB)));
+    ASSERT_NE(paletteBufferA, kInvalidBufferHandleUVE);
+    ASSERT_NE(paletteBufferB, kInvalidBufferHandleUVE);
+
+    const auto drawPaletteQuad = [&](const BufferHandleUVE palette, const std::int32_t index) {
+        auto commandBuffer = device->CreateCommandBufferUVE();
+        RenderPassDescUVE passDesc{};
+        passDesc.colorLoadOp = LoadOpUVE::Clear;
+        passDesc.clearColor = {0.05F, 0.07F, 0.12F, 1.0F};
+        passDesc.depthLoadOp = LoadOpUVE::Clear;
+        passDesc.clearDepth = 1.0F;
+        commandBuffer->BeginRenderPassUVE(passDesc);
+        commandBuffer->BindPipelineUVE(pipeline);
+        commandBuffer->BindVertexBufferUVE(quadBuffer);
+        commandBuffer->SetUniformIntUVE("uIndex", index);
+        commandBuffer->BindStorageBufferUVE(palette, 0U);
+        commandBuffer->DrawUVE(6U);
+        commandBuffer->EndRenderPassUVE();
+        device->SubmitUVE(std::move(commandBuffer));
+        device->PresentUVE();
+        ASSERT_TRUE(device->IsUsableUVE());
+    };
+
+    drawPaletteQuad(paletteBufferA, 2);
+    {
+        std::vector<std::byte> pixels(1280U * 720U * 4U);
+        std::uint32_t width = 0;
+        std::uint32_t height = 0;
+        ASSERT_TRUE(device->ReadbackLatestPresentedImageUVE(pixels, width, height));
+        if (width == 0U || height == 0U) { GTEST_SKIP() << "zero-sized extent; no pixels"; }
+        const auto center = ChannelAtNdcUVE(pixels, width, height, 0.0F, 0.0F);
+        EXPECT_LT(center[0], 12);
+        EXPECT_LT(center[1], 12);
+        EXPECT_GT(center[2], 240) << "frame 1 must show palette A[2] (BLUE) through the SSBO";
+    }
+
+    drawPaletteQuad(paletteBufferB, 2);
+    {
+        std::vector<std::byte> pixels(1280U * 720U * 4U);
+        std::uint32_t width = 0;
+        std::uint32_t height = 0;
+        ASSERT_TRUE(device->ReadbackLatestPresentedImageUVE(pixels, width, height));
+        const auto center = ChannelAtNdcUVE(pixels, width, height, 0.0F, 0.0F);
+        EXPECT_LT(center[0], 12);
+        EXPECT_GT(center[1], 240);
+        EXPECT_LT(center[2], 12) << "frame 2 must show palette B[2] (GREEN) - the descriptor "
+                                    "set must follow the newly bound buffer";
+    }
+
+    drawPaletteQuad(paletteBufferA, 3);
+    {
+        std::vector<std::byte> pixels(1280U * 720U * 4U);
+        std::uint32_t width = 0;
+        std::uint32_t height = 0;
+        ASSERT_TRUE(device->ReadbackLatestPresentedImageUVE(pixels, width, height));
+        const auto center = ChannelAtNdcUVE(pixels, width, height, 0.0F, 0.0F);
+        EXPECT_GT(center[0], 240);
+        EXPECT_GT(center[1], 240);
+        EXPECT_LT(center[2], 12) << "frame 3 must show palette A[3] (YELLOW) - cached tuple "
+                                    "reuse and the ring-fed uIndex snapshot must both hold";
+    }
+
+    device->DestroyBufferUVE(paletteBufferA);
+    device->DestroyBufferUVE(paletteBufferB);
+    device->DestroyBufferUVE(quadBuffer);
+    device->DestroyPipelineUVE(pipeline);
+    device->DestroyShaderUVE(vertexShader);
+    device->DestroyShaderUVE(fragmentShader);
+}
+
+TEST_F(VulkanRenderDeviceUVETest, SeparateSamplerAndImageSampleCheckerLikeCombined) {
+    // The M2f split-form proof: the SAME checker scene as the M2c combined-sampler test, but
+    // the fragment shader declares texture2D (binding 0, SAMPLED_IMAGE) and sampler (binding
+    // 1, SAMPLER) separately. The device writes the bound texture's sampled view into the
+    // image binding and its ONE fixed sampler (the GL-mirrored linear/clamp shape) into the
+    // sampler binding, so:
+    //   frame 1 - NO BindTextureUVE: the unbound slot resolves to the fallback white exactly
+    //             like the combined form does;
+    //   frame 2 - checker bound at slot 0: the four quadrants must read back the exact
+    //             uploaded texel colors - byte-for-byte the M2c assertions.
+    ShaderHandleUVE vertexShader{}, fragmentShader{};
+    ShaderDescUVE vertexDesc{};
+    vertexDesc.stage = ShaderStageUVE::Vertex;
+    vertexDesc.sourceCode = kTexturedVertexSpirvUVE;
+    ShaderDescUVE fragmentDesc{};
+    fragmentDesc.stage = ShaderStageUVE::Fragment;
+    fragmentDesc.sourceCode = kSeparateSamplerFragmentSpirvUVE;
+    vertexShader = device->CreateShaderUVE(vertexDesc);
+    fragmentShader = device->CreateShaderUVE(fragmentDesc);
+    ASSERT_NE(vertexShader, kInvalidShaderHandleUVE);
+    ASSERT_NE(fragmentShader, kInvalidShaderHandleUVE);
+
+    PipelineDescUVE pipelineDesc{};
+    pipelineDesc.vertexShader = vertexShader;
+    pipelineDesc.fragmentShader = fragmentShader;
+    pipelineDesc.vertexStride = 20U;
+    pipelineDesc.vertexLayout.push_back(
+        VertexAttributeUVE{"POSITION", VertexAttributeFormatUVE::Float3, 0U});
+    pipelineDesc.vertexLayout.push_back(
+        VertexAttributeUVE{"TEXCOORD", VertexAttributeFormatUVE::Float2, 12U});
+    pipelineDesc.depthTestEnabled = false;
+    pipelineDesc.depthWriteEnabled = false;
+    const PipelineHandleUVE pipeline = device->CreatePipelineUVE(pipelineDesc);
+    ASSERT_NE(pipeline, kInvalidPipelineHandleUVE)
+        << "a pipeline with a separate sampled-image+sampler pair must now build "
+           "(pre-M2f hard-fail)";
+
+    const BufferHandleUVE quadBuffer = CreateM2fQuadBufferUVE(*device);
+    ASSERT_NE(quadBuffer, kInvalidBufferHandleUVE);
+
+    // 2x2 checker in upload memory order: (0,0) red, (1,0) green, (0,1) blue, (1,1) yellow.
+    const std::uint8_t checkerData[16] = {
+        255U, 0U, 0U, 255U,   0U, 255U, 0U, 255U,
+        0U, 0U, 255U, 255U,   255U, 255U, 0U, 255U,
+    };
+    TextureDescUVE checkerDesc{};
+    checkerDesc.width = 2U;
+    checkerDesc.height = 2U;
+    const TextureHandleUVE checkerTexture = device->CreateTextureUVE(checkerDesc,
+        std::span<const std::byte>(reinterpret_cast<const std::byte*>(checkerData),
+                                   sizeof(checkerData)));
+    ASSERT_NE(checkerTexture, kInvalidTextureHandleUVE);
+
+    const auto drawQuad = [&](const TextureHandleUVE* textureToBind) {
+        auto commandBuffer = device->CreateCommandBufferUVE();
+        RenderPassDescUVE passDesc{};
+        passDesc.colorLoadOp = LoadOpUVE::Clear;
+        passDesc.clearColor = {0.05F, 0.07F, 0.12F, 1.0F};
+        passDesc.depthLoadOp = LoadOpUVE::Clear;
+        passDesc.clearDepth = 1.0F;
+        commandBuffer->BeginRenderPassUVE(passDesc);
+        commandBuffer->BindPipelineUVE(pipeline);
+        commandBuffer->BindVertexBufferUVE(quadBuffer);
+        if (textureToBind != nullptr) {
+            commandBuffer->BindTextureUVE(*textureToBind, 0U);
+        }
+        commandBuffer->DrawUVE(6U);
+        commandBuffer->EndRenderPassUVE();
+        device->SubmitUVE(std::move(commandBuffer));
+        device->PresentUVE();
+        ASSERT_TRUE(device->IsUsableUVE());
+    };
+
+    drawQuad(nullptr);
+    {
+        std::vector<std::byte> pixels(1280U * 720U * 4U);
+        std::uint32_t width = 0;
+        std::uint32_t height = 0;
+        ASSERT_TRUE(device->ReadbackLatestPresentedImageUVE(pixels, width, height));
+        if (width == 0U || height == 0U) { GTEST_SKIP() << "zero-sized extent; no pixels"; }
+        const auto center = ChannelAtNdcUVE(pixels, width, height, 0.0F, 0.0F);
+        EXPECT_GT(center[0], 240);
+        EXPECT_GT(center[1], 240);
+        EXPECT_GT(center[2], 240) << "an unbound separate-image slot must sample the fallback "
+                                     "white, exactly like the combined form";
+    }
+
+    drawQuad(&checkerTexture);
+    {
+        std::vector<std::byte> pixels(1280U * 720U * 4U);
+        std::uint32_t width = 0;
+        std::uint32_t height = 0;
+        ASSERT_TRUE(device->ReadbackLatestPresentedImageUVE(pixels, width, height));
+        // Quadrant centers hit uv (0.25/0.75, 0.25/0.75) == exact texel centers, so even
+        // LINEAR filtering yields the pure uploaded colors (same math as the M2c case).
+        const auto topLeft = ChannelAtNdcUVE(pixels, width, height, -0.5F, -0.5F);
+        const auto topRight = ChannelAtNdcUVE(pixels, width, height, 0.5F, -0.5F);
+        const auto bottomLeft = ChannelAtNdcUVE(pixels, width, height, -0.5F, 0.5F);
+        const auto bottomRight = ChannelAtNdcUVE(pixels, width, height, 0.5F, 0.5F);
+        EXPECT_GT(topLeft[0], 200);
+        EXPECT_LT(topLeft[1], 60) << "top-left quadrant must be the uploaded RED texel";
+        EXPECT_GT(topRight[1], 200);
+        EXPECT_LT(topRight[0], 60) << "top-right quadrant must be the uploaded GREEN texel";
+        EXPECT_GT(bottomLeft[2], 200);
+        EXPECT_LT(bottomLeft[0], 60) << "bottom-left quadrant must be the uploaded BLUE texel";
+        EXPECT_GT(bottomRight[0], 200);
+        EXPECT_GT(bottomRight[1], 200);
+        EXPECT_LT(bottomRight[2], 60) << "bottom-right quadrant must be the uploaded YELLOW texel";
+    }
+
+    device->DestroyTextureUVE(checkerTexture);
+    device->DestroyBufferUVE(quadBuffer);
+    device->DestroyPipelineUVE(pipeline);
+    device->DestroyShaderUVE(vertexShader);
+    device->DestroyShaderUVE(fragmentShader);
+}
+
+TEST_F(VulkanRenderDeviceUVETest, StorageImagePipelinesFailLoudlyNamingTheComputeMilestone) {
+    // The remaining M2f boundary: STORAGE_IMAGE descriptors stay refused until the compute
+    // milestone (ComputeSystemUVE, Part 7.2). The shader itself is valid SPIR-V (creation
+    // succeeds); it is pipeline creation that must fail loudly with a log naming compute -
+    // never a silently broken layout.
+    ShaderDescUVE vertexDesc{};
+    vertexDesc.stage = ShaderStageUVE::Vertex;
+    vertexDesc.sourceCode = kTexturedVertexSpirvUVE;
+    ShaderDescUVE fragmentDesc{};
+    fragmentDesc.stage = ShaderStageUVE::Fragment;
+    fragmentDesc.sourceCode = kStorageImageFragmentSpirvUVE;
+    const ShaderHandleUVE vertexShader = device->CreateShaderUVE(vertexDesc);
+    const ShaderHandleUVE fragmentShader = device->CreateShaderUVE(fragmentDesc);
+    ASSERT_NE(vertexShader, kInvalidShaderHandleUVE);
+    ASSERT_NE(fragmentShader, kInvalidShaderHandleUVE)
+        << "storage-image SPIR-V is valid bytecode; only pipeline creation may refuse it";
+
+    PipelineDescUVE pipelineDesc{};
+    pipelineDesc.vertexShader = vertexShader;
+    pipelineDesc.fragmentShader = fragmentShader;
+    pipelineDesc.vertexStride = 20U;
+    pipelineDesc.vertexLayout.push_back(
+        VertexAttributeUVE{"POSITION", VertexAttributeFormatUVE::Float3, 0U});
+    pipelineDesc.vertexLayout.push_back(
+        VertexAttributeUVE{"TEXCOORD", VertexAttributeFormatUVE::Float2, 12U});
+
+    std::string infoLog;
+    EXPECT_EQ(device->CreatePipelineUVE(pipelineDesc, &infoLog), kInvalidPipelineHandleUVE);
+    EXPECT_NE(infoLog.find("compute"), std::string::npos)
+        << "the refusal must name the compute milestone - got: " << infoLog;
+
+    device->DestroyShaderUVE(vertexShader);
+    device->DestroyShaderUVE(fragmentShader);
+}
+
+TEST_F(VulkanRenderDeviceUVETest, UnboundStorageSlotReadsDeterministicZerosAndFrameSurvives) {
+    // The SSBO analogue of the unbound-texture white fallback: a pipeline whose storage slot
+    // is never bound must read the device-owned zero-filled fallback buffer - deterministic
+    // zeros (BLACK pixels through the palette shader), never undefined memory - and the
+    // frame must present/survive normally.
+    ShaderHandleUVE vertexShader{}, fragmentShader{};
+    const PipelineHandleUVE pipeline =
+        CreateSsboPalettePipelineUVE(*device, &vertexShader, &fragmentShader);
+    ASSERT_NE(pipeline, kInvalidPipelineHandleUVE);
+    const BufferHandleUVE quadBuffer = CreateM2fQuadBufferUVE(*device);
+    ASSERT_NE(quadBuffer, kInvalidBufferHandleUVE);
+
+    {
+        auto commandBuffer = device->CreateCommandBufferUVE();
+        RenderPassDescUVE passDesc{};
+        passDesc.colorLoadOp = LoadOpUVE::Clear;
+        passDesc.clearColor = {0.05F, 0.07F, 0.12F, 1.0F};
+        passDesc.depthLoadOp = LoadOpUVE::Clear;
+        passDesc.clearDepth = 1.0F;
+        commandBuffer->BeginRenderPassUVE(passDesc);
+        commandBuffer->BindPipelineUVE(pipeline);
+        commandBuffer->BindVertexBufferUVE(quadBuffer);
+        commandBuffer->SetUniformIntUVE("uIndex", 0);
+        // Deliberately NO BindStorageBufferUVE.
+        commandBuffer->DrawUVE(6U);
+        commandBuffer->EndRenderPassUVE();
+        device->SubmitUVE(std::move(commandBuffer));
+    }
+    device->PresentUVE();
+    ASSERT_TRUE(device->IsUsableUVE());
+
+    std::vector<std::byte> pixels(1280U * 720U * 4U);
+    std::uint32_t width = 0;
+    std::uint32_t height = 0;
+    ASSERT_TRUE(device->ReadbackLatestPresentedImageUVE(pixels, width, height));
+    if (width == 0U || height == 0U) { GTEST_SKIP() << "zero-sized extent; no pixels"; }
+    const auto center = ChannelAtNdcUVE(pixels, width, height, 0.0F, 0.0F);
+    EXPECT_LT(center[0], 12);
+    EXPECT_LT(center[1], 12);
+    EXPECT_LT(center[2], 12) << "an unbound storage slot must read the zero-filled fallback "
+                                "- got (" << center[0] << "," << center[1] << "," << center[2]
+                                << ")";
+
+    device->DestroyBufferUVE(quadBuffer);
+    device->DestroyPipelineUVE(pipeline);
+    device->DestroyShaderUVE(vertexShader);
+    device->DestroyShaderUVE(fragmentShader);
+}
+
+TEST_F(VulkanRenderDeviceUVETest, NonStorageBufferBindIsDroppedAndFrameSurvives) {
+    // Usage-validation proof: binding a VERTEX-usage buffer as an SSBO is refused at replay
+    // (warn-once, bind dropped), so the draw reads the zero fallback instead of binding a
+    // buffer whose VkBufferUsageFlags lack STORAGE_BUFFER_BIT (which would be a validation
+    // error / undefined on real drivers). The frame must survive.
+    ShaderHandleUVE vertexShader{}, fragmentShader{};
+    const PipelineHandleUVE pipeline =
+        CreateSsboPalettePipelineUVE(*device, &vertexShader, &fragmentShader);
+    ASSERT_NE(pipeline, kInvalidPipelineHandleUVE);
+    const BufferHandleUVE quadBuffer = CreateM2fQuadBufferUVE(*device);
+    ASSERT_NE(quadBuffer, kInvalidBufferHandleUVE);
+
+    {
+        auto commandBuffer = device->CreateCommandBufferUVE();
+        RenderPassDescUVE passDesc{};
+        passDesc.colorLoadOp = LoadOpUVE::Clear;
+        passDesc.clearColor = {0.05F, 0.07F, 0.12F, 1.0F};
+        passDesc.depthLoadOp = LoadOpUVE::Clear;
+        passDesc.clearDepth = 1.0F;
+        commandBuffer->BeginRenderPassUVE(passDesc);
+        commandBuffer->BindPipelineUVE(pipeline);
+        commandBuffer->BindVertexBufferUVE(quadBuffer);
+        commandBuffer->SetUniformIntUVE("uIndex", 0);
+        commandBuffer->BindStorageBufferUVE(quadBuffer, 0U); // VERTEX usage - must be dropped
+        commandBuffer->DrawUVE(6U);
+        commandBuffer->EndRenderPassUVE();
+        device->SubmitUVE(std::move(commandBuffer));
+    }
+    device->PresentUVE();
+    ASSERT_TRUE(device->IsUsableUVE());
+
+    std::vector<std::byte> pixels(1280U * 720U * 4U);
+    std::uint32_t width = 0;
+    std::uint32_t height = 0;
+    ASSERT_TRUE(device->ReadbackLatestPresentedImageUVE(pixels, width, height));
+    if (width == 0U || height == 0U) { GTEST_SKIP() << "zero-sized extent; no pixels"; }
+    const auto center = ChannelAtNdcUVE(pixels, width, height, 0.0F, 0.0F);
+    EXPECT_LT(center[0], 12);
+    EXPECT_LT(center[1], 12);
+    EXPECT_LT(center[2], 12) << "a wrong-usage storage bind must be dropped to the zero "
+                                "fallback, never bound as a STORAGE_BUFFER descriptor";
+
+    device->DestroyBufferUVE(quadBuffer);
+    device->DestroyPipelineUVE(pipeline);
+    device->DestroyShaderUVE(vertexShader);
+    device->DestroyShaderUVE(fragmentShader);
+}
+
+TEST_F(VulkanRenderDeviceUVETest, DestroyedStorageBufferAfterBindResolvesToZerosAndFrameSurvives) {
+    // The SSBO analogue of the M2c destroyed-after-bind texture case: the bind is recorded,
+    // the buffer is destroyed BEFORE the submit replays it, so the handle can no longer
+    // resolve - the draw must degrade to the zero fallback instead of referencing freed
+    // VkBuffer/VkDeviceMemory, and the frame must survive.
+    ShaderHandleUVE vertexShader{}, fragmentShader{};
+    const PipelineHandleUVE pipeline =
+        CreateSsboPalettePipelineUVE(*device, &vertexShader, &fragmentShader);
+    ASSERT_NE(pipeline, kInvalidPipelineHandleUVE);
+    const BufferHandleUVE quadBuffer = CreateM2fQuadBufferUVE(*device);
+    ASSERT_NE(quadBuffer, kInvalidBufferHandleUVE);
+
+    const float palette[16] = {
+        1.0F, 0.0F, 0.0F, 1.0F,   0.0F, 1.0F, 0.0F, 1.0F,
+        0.0F, 0.0F, 1.0F, 1.0F,   1.0F, 1.0F, 0.0F, 1.0F,
+    };
+    BufferDescUVE paletteDesc{};
+    paletteDesc.sizeBytes = sizeof(palette);
+    paletteDesc.usage = BufferUsageUVE::Storage;
+    const BufferHandleUVE paletteBuffer = device->CreateBufferUVE(paletteDesc,
+        std::span<const std::byte>(reinterpret_cast<const std::byte*>(palette), sizeof(palette)));
+    ASSERT_NE(paletteBuffer, kInvalidBufferHandleUVE);
+
+    {
+        auto commandBuffer = device->CreateCommandBufferUVE();
+        RenderPassDescUVE passDesc{};
+        passDesc.colorLoadOp = LoadOpUVE::Clear;
+        passDesc.clearColor = {0.05F, 0.07F, 0.12F, 1.0F};
+        passDesc.depthLoadOp = LoadOpUVE::Clear;
+        passDesc.clearDepth = 1.0F;
+        commandBuffer->BeginRenderPassUVE(passDesc);
+        commandBuffer->BindPipelineUVE(pipeline);
+        commandBuffer->BindVertexBufferUVE(quadBuffer);
+        commandBuffer->SetUniformIntUVE("uIndex", 0);
+        commandBuffer->BindStorageBufferUVE(paletteBuffer, 0U);
+        device->DestroyBufferUVE(paletteBuffer); // destroyed BEFORE this frame submits
+        commandBuffer->DrawUVE(6U);
+        commandBuffer->EndRenderPassUVE();
+        device->SubmitUVE(std::move(commandBuffer));
+    }
+    device->PresentUVE();
+    ASSERT_TRUE(device->IsUsableUVE());
+
+    std::vector<std::byte> pixels(1280U * 720U * 4U);
+    std::uint32_t width = 0;
+    std::uint32_t height = 0;
+    ASSERT_TRUE(device->ReadbackLatestPresentedImageUVE(pixels, width, height));
+    if (width == 0U || height == 0U) { GTEST_SKIP() << "zero-sized extent; no pixels"; }
+    const auto center = ChannelAtNdcUVE(pixels, width, height, 0.0F, 0.0F);
+    EXPECT_LT(center[0], 12);
+    EXPECT_LT(center[1], 12);
+    EXPECT_LT(center[2], 12) << "a storage buffer destroyed after recording the bind must "
+                                "resolve to the zero fallback, never to freed memory";
+
+    device->DestroyBufferUVE(quadBuffer);
+    device->DestroyPipelineUVE(pipeline);
+    device->DestroyShaderUVE(vertexShader);
+    device->DestroyShaderUVE(fragmentShader);
 }
 
 } // namespace UVE::Render::Tests

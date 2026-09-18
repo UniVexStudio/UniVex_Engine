@@ -86,6 +86,13 @@ void NullCommandBufferUVE::BindUniformBufferUVE(BufferHandleUVE buffer, std::uin
     m_commands.emplace_back(BindUniformBufferCommandUVE{buffer, slot});
 }
 
+void NullCommandBufferUVE::BindStorageBufferUVE(BufferHandleUVE buffer, std::uint32_t slot) {
+    if (!RequireInsideRenderPassUVE(m_insideRenderPass, "BindStorageBufferUVE")) {
+        return;
+    }
+    m_commands.emplace_back(BindStorageBufferCommandUVE{buffer, slot});
+}
+
 void NullCommandBufferUVE::SetUniformFloatUVE(std::string_view name, float value) {
     if (!RequireInsideRenderPassUVE(m_insideRenderPass, "SetUniformFloatUVE")) {
         return;
