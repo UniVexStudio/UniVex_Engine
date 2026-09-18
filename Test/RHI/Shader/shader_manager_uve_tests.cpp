@@ -324,5 +324,57 @@ INSTANTIATE_TEST_SUITE_P(
                                                                       BuiltIn::kMeshSkinSource},
                        std::pair<std::string_view, std::string_view>{"ui_overlay.glsl", BuiltIn::kUIOverlaySource}));
 
+
+// ---------------------------------------------------------------------------
+// The instanced lit variant. lit_shadowed_3d.glsl carries both variants behind
+// UVE_INSTANCED rather than existing as two files, specifically so the ~240
+// lines of lighting cannot drift between an instanced object and a
+// non-instanced one. These tests guard the properties that arrangement depends
+// on - source-level, because a shading difference between two variants of one
+// material is exactly the kind of bug that survives a green test run and is
+// then blamed on the artist.
+// ---------------------------------------------------------------------------
+
+TEST(InstancedLitVariantUVETest, TheFragmentStageIsSharedVerbatimBetweenBothVariants) {
+    const std::string_view source = BuiltIn::kLitShadowed3DSource;
+    const std::size_t fragmentStart = source.find("#ifdef FRAGMENT_SHADER");
+    ASSERT_NE(fragmentStart, std::string_view::npos);
+    const std::string_view fragmentStage = source.substr(fragmentStart);
+
+    // If UVE_INSTANCED ever appears in the fragment stage, the two variants have begun to shade
+    // differently and the single-file arrangement has stopped buying what it was meant to buy.
+    EXPECT_EQ(fragmentStage.find("UVE_INSTANCED"), std::string_view::npos)
+        << "the instancing define must stay confined to the vertex stage";
+}
+
+TEST(InstancedLitVariantUVETest, BothVariantsComputeWorldSpaceThroughTheSameExpressions) {
+    // Whatever supplies them, `model` and `normalMatrix` must be consumed identically - the
+    // position through model, the normal through the inverse-transpose, the tangent through
+    // model (which IS the correct convention for a surface-parameterization vector, unlike a
+    // normal). One spelling of each, outside any #ifdef, is what makes that checkable at all.
+    const std::string_view source = BuiltIn::kLitShadowed3DSource;
+    EXPECT_NE(source.find("vec4 worldPosition = model * vec4(aPosition, 1.0);"), std::string_view::npos);
+    EXPECT_NE(source.find("vWorldNormal = mat3(normalMatrix) * aNormal;"), std::string_view::npos);
+    EXPECT_NE(source.find("vWorldTangent = mat3(model) * aTangent.xyz;"), std::string_view::npos);
+
+    // And the non-instanced path must still be driven by the uniforms, not quietly dropped.
+    EXPECT_NE(source.find("mat4 model = uModel;"), std::string_view::npos);
+    EXPECT_NE(source.find("mat4 normalMatrix = uNormalMatrix;"), std::string_view::npos);
+}
+
+TEST(InstancedLitVariantUVETest, TheInstancedPathIndexesByBaseIndexPlusInstanceId) {
+    // gl_InstanceID restarts at zero for every draw, so a batch that is not the first in the
+    // frame would read another batch's transforms without the base offset. This is the assertion
+    // that would have caught that.
+    const std::string_view source = BuiltIn::kLitShadowed3DSource;
+    EXPECT_NE(source.find("uInstanceBaseIndex + gl_InstanceID"), std::string_view::npos);
+    EXPECT_NE(source.find("layout(std430, binding = 0) readonly buffer InstanceTransformBlock"),
+              std::string_view::npos);
+    EXPECT_NE(source.find("layout(std430, binding = 1) readonly buffer InstanceNormalTransformBlock"),
+              std::string_view::npos);
+    EXPECT_NE(source.find("layout(std430, binding = 2) readonly buffer InstanceBaseBlock"),
+              std::string_view::npos);
+}
+
 } // namespace
 } // namespace UVE::Render::Shader::Tests
