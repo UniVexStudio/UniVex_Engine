@@ -133,7 +133,11 @@ public:
     /// condition the CPU path refuses to half-apply - `particles` is left exactly as it was and
     /// the caller can fall back to the CPU simulation with nothing to undo.
     ///
-    /// An empty array, or a zero delta, is a successful no-op.
+    /// An empty array, or a zero delta, is a successful no-op.///
+/// One consequence worth stating: this call PRESENTS the device in order to make its own dispatch
+/// execute. Vulkan replays submitted recordings in PresentUVE(), so without it the readback would
+/// return pre-dispatch contents (it did - a red CI run proved it). That makes this a step to run
+/// outside the render frame's own present, not in the middle of one.
     [[nodiscard]] bool SimulateUVE(std::vector<Scene::ParticleStateUVE>& particles, float deltaSeconds,
                                    const Math::Vector3UVE& acceleration);
 

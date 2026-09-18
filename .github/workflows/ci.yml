@@ -88,17 +88,23 @@ jobs:
             # tests like LoadUVE_UnknownGuid_BecomesFailedAndLogsError and spent the whole
             # annotation budget on noise while the real failure never appeared.
 
-            # 1. ctest's own trailing summary: the definitive list of what failed.
-            sed -n "/The following tests FAILED:/,\$p" /tmp/ctest.log | head -40 | while read -r L; do
-              echo "::error title=ctest-summary::$(echo "$L" | cut -c1-1000)"
+            # 1. The assertion bodies that explain WHY, first and budget-capped. Ordering
+            #    matters more than it looks: a previous revision led with the summary and the
+            #    failing-test names, which are the CHEAPEST information to recover (ctest
+            #    reprints them, and the names alone often identify the test), and the ~10
+            #    annotation cap was exhausted before a single "Value of:" line was emitted.
+            #    The bodies are the part that cannot be reconstructed from anywhere else.
+            grep -E "^(.*:[0-9]+: Failure|Value of:|  Actual:|Expected:|Which is:|Assertion)" /tmp/ctest.log | head -6 | while read -r L; do
+              echo "::error title=ctest-detail::$(echo "$L" | cut -c1-1000)"
             done
             # 2. gtest's own verdict lines - anchored, so only real results match.
-            grep -E "^\[  FAILED  \]" /tmp/ctest.log | sort -u | while read -r L; do
+            grep -E "^\[  FAILED  \]" /tmp/ctest.log | sort -u | head -6 | while read -r L; do
               echo "::error title=ctest-failed-case::$(echo "$L" | cut -c1-1000)"
             done
-            # 3. The assertion bodies that explain WHY.
-            grep -E "^(.*:[0-9]+: Failure|Value of:|  Actual:|Expected:|Which is:|Assertion)" /tmp/ctest.log | while read -r L; do
-              echo "::error title=ctest-detail::$(echo "$L" | cut -c1-1000)"
+            # 3. ctest's trailing summary, last: the definitive list, but also the most
+            #    redundant once the names above are known.
+            sed -n "/The following tests FAILED:/,\$p" /tmp/ctest.log | head -20 | while read -r L; do
+              echo "::error title=ctest-summary::$(echo "$L" | cut -c1-1000)"
             done
             # 4. ctest per-case lines, restricted to the ***-marked outcomes (Failed, Exception,
             #    Timeout) so passing and skipped cases can never crowd the budget.

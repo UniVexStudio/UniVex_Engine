@@ -134,7 +134,11 @@ public:
     /// which a float shader cannot reproduce - answering differently would be worse than answering
     /// honestly that this path does not cover that case, and the caller still has the CPU test.
     ///
-    /// An empty `boxes` is a successful no-op that empties `outVisible`.
+    /// An empty `boxes` is a successful no-op that empties `outVisible`.///
+/// One consequence worth stating: this call PRESENTS the device in order to make its own dispatch
+/// execute. Vulkan replays submitted recordings in PresentUVE(), so without it the readback would
+/// return pre-dispatch contents (it did - a red CI run proved it). That makes this a step to run
+/// outside the render frame's own present, not in the middle of one.
     [[nodiscard]] bool CullUVE(std::span<const Math::AabbUVE> boxes, const Math::FrustumUVE& frustum,
                                std::vector<bool>& outVisible);
 
