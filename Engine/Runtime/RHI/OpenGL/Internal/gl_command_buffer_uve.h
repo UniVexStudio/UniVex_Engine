@@ -42,6 +42,8 @@ public:
     void SetUniformMatrix4x4UVE(std::string_view name, const Math::Matrix4x4UVE& value) override;
     void DrawIndexedUVE(std::uint32_t indexCount, std::uint32_t instanceCount) override;
     void DrawUVE(std::uint32_t vertexCount, std::uint32_t instanceCount) override;
+    void DispatchUVE(std::uint32_t groupCountX, std::uint32_t groupCountY,
+                     std::uint32_t groupCountZ) override;
 
 private:
     using UniformRecordUVE = Detail::GlDeviceStateUVE::PipelineRecordUVE::UniformRecordUVE;
@@ -50,6 +52,9 @@ private:
     /// buffer intentionally stores no pointer into a pipeline record because the device may
     /// destroy a resource while recording is still in progress.
     [[nodiscard]] const Detail::GlDeviceStateUVE::PipelineRecordUVE* FindCurrentPipelineUVE() const;
+    /// M5a: true when the currently bound pipeline is a compute program — relaxes the
+    /// inside-pass gate for storage binds and SetUniform* (the compute flow is outside-pass).
+    [[nodiscard]] bool ActivePipelineIsComputeUVE() const noexcept;
 
     /// Looks `name` up in the currently bound pipeline's reflected uniform map (cached at link
     /// time - see GlRenderDeviceUVE::CreatePipelineUVE()'s ReflectPipelineUniformsUVE() call), so

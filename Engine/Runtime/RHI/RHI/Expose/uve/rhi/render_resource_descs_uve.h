@@ -19,9 +19,9 @@ namespace UVE::Render {
 
 /// What a BufferDescUVE-created buffer is used for. `Storage` (Vulkan M2f) is a shader-storage
 /// buffer (SSBO): arbitrary read/write GPU data bound via ICommandBufferUVE::BindStorageBufferUVE
-/// and read/written from GRAPHICS-stage shaders (`readonly buffer`/`buffer` blocks). Compute
-/// shaders — the other classic SSBO consumer — still belong to ComputeSystemUVE (Part 7.2),
-/// which doesn't exist yet; widening this usage to compute dispatch when that lands is additive.
+/// and read/written from graphics-stage shaders (`readonly buffer`/`buffer` blocks) — and since
+/// the M5a compute slice, from compute shaders too (the classic SSBO producer/consumer pattern:
+/// dispatch writes, draws read).
 enum class BufferUsageUVE : std::uint8_t { Vertex, Index, Uniform, Storage };
 
 [[nodiscard]] constexpr bool IsBufferUsageValidUVE(const BufferUsageUVE usage) noexcept {
@@ -101,12 +101,13 @@ struct TextureDescUVE {
     return initialData.empty() || initialData.size() == static_cast<std::size_t>(expectedBytes);
 }
 
-/// Which programmable stage a ShaderDescUVE belongs to. `Compute` is reserved for the future
-/// ComputeSystemUVE (Part 7.2) — unused by anything built so far. `Geometry` (Increment 21) is
-/// compilable standalone via Shader::ShaderSourceUVE but, like Compute, has no pipeline slot yet
-/// — PipelineDescUVE still only links a vertex+fragment pair; growing it with a geometry slot is
-/// deferred future work, not built this increment. Append-only: never renumber existing values,
-/// since ShaderStageUVE crosses the RHI boundary.
+/// Which programmable stage a ShaderDescUVE belongs to. `Compute` is real since the M5a
+/// compute slice: CreateShaderUVE accepts compute-stage shaders and CreateComputePipelineUVE
+/// links exactly one of them. `Geometry` (Increment 21) is compilable standalone via
+/// Shader::ShaderSourceUVE but still has no pipeline slot — PipelineDescUVE only links a
+/// vertex+fragment pair; growing it with a geometry slot is deferred future work, not built
+/// this increment. Append-only: never renumber existing values, since ShaderStageUVE crosses
+/// the RHI boundary.
 enum class ShaderStageUVE : std::uint8_t { Vertex, Fragment, Compute, Geometry };
 
 [[nodiscard]] constexpr bool IsShaderStageValidUVE(const ShaderStageUVE stage) noexcept {
@@ -229,6 +230,18 @@ struct PipelineDescUVE {
     /// `glVertexAttribPointer` stride parameter). `0` (the default) is only ever valid for
     /// `NullRenderDeviceUVE`, which ignores this field like every other one it merely bookkeeps.
     std::uint32_t vertexStride = 0;
+};
+
+/// Describes a COMPUTE pipeline to create via IRenderDeviceUVE::CreateComputePipelineUVE()
+/// (M5a compute slice). Deliberately its own struct: a compute pipeline has no vertex layout,
+/// no fixed-function state, and exactly one shader stage, so folding it into PipelineDescUVE
+/// would make every graphics field a lie. The resulting PipelineHandleUVE lives in the SAME
+/// handle domain as graphics pipelines — BindPipelineUVE binds either kind, and the backend
+/// selects the correct bind point internally (Vulkan GRAPHICS vs COMPUTE).
+struct ComputePipelineDescUVE {
+    /// Must reference a live shader created with ShaderStageUVE::Compute. An invalid handle,
+    /// or a shader of any other stage, is a loud creation failure on every real backend.
+    ShaderHandleUVE computeShader;
 };
 
 /// Fixed-function state accompanying a pre-compiled GL program binary passed to

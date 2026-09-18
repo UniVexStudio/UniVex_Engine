@@ -78,6 +78,17 @@ public:
     [[nodiscard]] virtual PipelineHandleUVE CreatePipelineUVE(const PipelineDescUVE& desc,
                                                                std::string* outInfoLog = nullptr) = 0;
 
+    /// Creates a COMPUTE pipeline (M5a) per `desc` — one compute-stage shader, no fixed-function
+    /// state. Returns kInvalidPipelineHandleUVE (logging the reason into `outInfoLog`, same
+    /// contract as CreatePipelineUVE) when the shader handle is invalid, is not a compute-stage
+    /// shader, or the backend cannot build the pipeline. The returned handle shares the graphics
+    /// pipeline handle domain: BindPipelineUVE binds it, and ICommandBufferUVE::DispatchUVE
+    /// executes it. Backends without compute (GL contexts older than 4.3, the fixed ES 3.0
+    /// Android baseline) fail creation loudly rather than returning a handle that could never
+    /// dispatch.
+    [[nodiscard]] virtual PipelineHandleUVE CreateComputePipelineUVE(const ComputePipelineDescUVE& desc,
+                                                                      std::string* outInfoLog = nullptr) = 0;
+
     /// Destroys `pipeline`. A handle already destroyed (or never valid) is a safe no-op (logged).
     virtual void DestroyPipelineUVE(PipelineHandleUVE pipeline) = 0;
 

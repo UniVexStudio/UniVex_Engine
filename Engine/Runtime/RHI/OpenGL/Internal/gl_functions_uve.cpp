@@ -42,6 +42,10 @@ GlFunctionsUVE LoadGlFunctionsUVE(void* (*getProcAddress)(const char*)) {
     functions.glBufferSubData = LoadOneUVE<PFNGLBUFFERSUBDATAPROC>(getProcAddress, "glBufferSubData");
     functions.glBindBufferBase = LoadOneUVE<PFNGLBINDBUFFERBASEPROC>(getProcAddress, "glBindBufferBase");
 
+    // M5a: optional compute entry points — may stay null on pre-4.3 contexts (see GlFunctionsUVE).
+    functions.glDispatchCompute = LoadOneUVE<PFNGLDISPATCHCOMPUTEPROC>(getProcAddress, "glDispatchCompute");
+    functions.glMemoryBarrier = LoadOneUVE<PFNGLMEMORYBARRIERPROC>(getProcAddress, "glMemoryBarrier");
+
     functions.glGenVertexArrays = LoadOneUVE<PFNGLGENVERTEXARRAYSPROC>(getProcAddress, "glGenVertexArrays");
     functions.glDeleteVertexArrays = LoadOneUVE<PFNGLDELETEVERTEXARRAYSPROC>(getProcAddress, "glDeleteVertexArrays");
     functions.glBindVertexArray = LoadOneUVE<PFNGLBINDVERTEXARRAYPROC>(getProcAddress, "glBindVertexArray");

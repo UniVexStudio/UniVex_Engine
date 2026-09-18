@@ -144,9 +144,29 @@ publicly shipping real-time engines as of today, without naming any of them.
   snapshot under the same lock before replaying strictly main-thread (one GPU-timeline owner;
   a submit racing a present lands in the next frame's FIFO). The Null backend mirrors the
   contract for its spy; GL stays inherently context-thread (it executes at record time) —
+  and COMPUTE DISPATCH (M5a, 2026-09-18): the RHI-level compute slice is real —
+  CreateComputePipelineUVE (ComputePipelineDescUVE, same pipeline-handle domain,
+  vkCreateComputePipelines on Vulkan, a linked GL_COMPUTE_SHADER program on desktop GL
+  4.3+, faithful Null bookkeeping with a Compute-stage check) plus DispatchUVE recorded
+  OUTSIDE render-pass markers (Vulkan forbids compute inside a rendering instance): the
+  Vulkan replay closes any lazily-open dynamic-rendering pass, brackets the dispatch in
+  conservative global memory barriers (prior shader writes visible to compute, compute
+  writes visible to every later reader), flushes descriptors at the COMPUTE bind point,
+  and dispatches — while the classic pre-1.3 arm (whole replay inside one native pass)
+  warns once (bit 19) and skips; the bind/uniform/storage gates relaxed accordingly on all
+  backends (BindPipelineUVE is kind-aware: graphics binds keep the inside-pass rule,
+  compute binds and their outside-pass SSBO binds + SetUniform* writes are legal, draws
+  against a compute-bound pipeline are skipped warn-once, bit 20). Compute SPIR-V
+  reflection accepts uniform blocks (ring-dynamic) and STORAGE_BUFFER slots — the M2f
+  SSBO machinery now feeds compute too — and refuses everything else loudly (storage
+  images name M5b). A latent M2c-era flush bug died on the way: the "no shader-bound
+  state" early-return ignored storage/sampler-only pipelines, so their descriptor sets
+  were never bound (invisible until a storage-only compute pipeline made it fatal). GL
+  executes glDispatchCompute at record time + glMemoryBarrier(GL_ALL_BARRIER_BITS); the
+  honest name rebadges to "Vulkan (M5a compute dispatch)" on dynamic devices —
   all verified pixel-wise locally (SwiftShader: triangle, depth-overlap, checker-quad, and
   offscreen render-to-texture interleave screenshots) with the same scenes plus the four
-  M2e, six M2f, two M3, and one M4 proof in tier-2 CI tests (lavapipe), where the sampled-depth
+  M2e, six M2f, two M3, one M4, and four M5a proof in tier-2 CI tests (lavapipe), where the sampled-depth
   reconstruction byte
   check accepts both honest software-stack dualities: an SRGB-typed swapchain stores the
   shader's linear 0.25 as ≈137 while a UNORM-typed one stores ≈64 (both correct encodings
@@ -157,14 +177,17 @@ publicly shipping real-time engines as of today, without naming any of them.
   names — multi-threaded command recording (M4) and explicit memory/barrier management (the
   M2c staging discipline, M2e tracked-layout barriers, M3 device-local placement) — are now
   real and pixel-proven; the remaining known gaps are tracked as their own entries below:
-  storage images land with GPU compute (ComputeSystemUVE, Part 7.2 — refused loudly until
-  then), and shader cross-compilation is its own tooling item
+  storage images land with M5b — the next slice of the compute milestone whose M5a half
+  (compute pipelines + DispatchUVE + the SSBO write path) is now real and pixel-proven
+  (refused loudly until M5b) — and shader cross-compilation is its own tooling item
 - [ ] A backend for each target OS's native graphics API where OpenGL is not the best
   choice on that platform
 - [ ] Shader cross-compilation so one shader source authors once and targets every backend
   (currently shaders are authored directly in one shading language for one backend)
 - [ ] GPU compute-shader support (for culling, particle simulation, skinning, etc. on the
-  GPU instead of the CPU)
+  GPU instead of the CPU) — RHI level landed with M5a (compute pipelines, DispatchUVE,
+  SSBO write path, pixel-proven on lavapipe); remaining: storage-image descriptors + image
+  barriers (M5b) and the engine-level ComputeSystemUVE consumer layer
 - [ ] Bindless/descriptor-indexing-style resource binding for reduced per-draw overhead
 
 ---

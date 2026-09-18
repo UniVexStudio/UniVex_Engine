@@ -576,6 +576,7 @@ public:
     void BindStorageBufferUVE(Render::BufferHandleUVE, std::uint32_t) override {}
     void DrawIndexedUVE(std::uint32_t, std::uint32_t) override {}
     void DrawUVE(std::uint32_t, std::uint32_t) override {}
+    void DispatchUVE(std::uint32_t, std::uint32_t, std::uint32_t) override {}
     void SetUniformFloatUVE(std::string_view, float) override {}
     void SetUniformIntUVE(std::string_view, std::int32_t) override {}
     void SetUniformBoolUVE(std::string_view, bool) override {}
@@ -604,6 +605,10 @@ public:
     }
     void DestroyShaderUVE(Render::ShaderHandleUVE) override {}
     [[nodiscard]] Render::PipelineHandleUVE CreatePipelineUVE(const Render::PipelineDescUVE&, std::string*) override {
+        return Render::PipelineHandleUVE{1};
+    }
+    [[nodiscard]] Render::PipelineHandleUVE CreateComputePipelineUVE(const Render::ComputePipelineDescUVE&,
+                                                                      std::string*) override {
         return Render::PipelineHandleUVE{1};
     }
     void DestroyPipelineUVE(Render::PipelineHandleUVE) override {}

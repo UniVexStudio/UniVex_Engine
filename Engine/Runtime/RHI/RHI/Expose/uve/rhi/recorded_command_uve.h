@@ -54,6 +54,11 @@ struct DrawCommandUVE {
     std::uint32_t vertexCount = 0;
     std::uint32_t instanceCount = 1;
 };
+struct DispatchCommandUVE {
+    std::uint32_t groupCountX = 0;
+    std::uint32_t groupCountY = 0;
+    std::uint32_t groupCountZ = 0;
+};
 struct SetUniformFloatCommandUVE {
     std::string name;
     float value = 0.0F;
@@ -80,7 +85,7 @@ using RecordedCommandUVE =
     std::variant<BeginRenderPassCommandUVE, EndRenderPassCommandUVE, BindPipelineCommandUVE,
                  BindVertexBufferCommandUVE, BindIndexBufferCommandUVE, BindTextureCommandUVE,
                  BindUniformBufferCommandUVE, BindStorageBufferCommandUVE, DrawIndexedCommandUVE,
-                 DrawCommandUVE, SetUniformFloatCommandUVE,
+                 DrawCommandUVE, DispatchCommandUVE, SetUniformFloatCommandUVE,
                  SetUniformIntCommandUVE, SetUniformBoolCommandUVE, SetUniformVector3CommandUVE,
                  SetUniformMatrix4x4CommandUVE>;
 

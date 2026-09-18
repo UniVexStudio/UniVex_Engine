@@ -2208,5 +2208,144 @@ void main() {
     renderDevice->DestroyShaderUVE(fragmentShader);
 }
 
+// ---------------------------------------------------------------------------
+// M5a: compute pipelines + DispatchUVE (desktop GL 4.3+; tests skip below that)
+// ---------------------------------------------------------------------------
+
+// GLSL twin of the Vulkan-side kFillPaletteComputeSpirvUVE: one workgroup of 4 invocations
+// writes red/green/blue/yellow into uColors[0..3] of the SSBO at binding 0.
+constexpr std::string_view kPaletteFillComputeSource = R"(#version 430 core
+layout(local_size_x = 4) in;
+layout(std430, binding = 0) buffer Palette {
+    vec4 uColors[];
+};
+void main() {
+    uint gid = gl_GlobalInvocationID.x;
+    vec4 c = vec4(0.0);
+    if (gid == 0u) { c = vec4(1.0, 0.0, 0.0, 1.0); }
+    else if (gid == 1u) { c = vec4(0.0, 1.0, 0.0, 1.0); }
+    else if (gid == 2u) { c = vec4(0.0, 0.0, 1.0, 1.0); }
+    else if (gid == 3u) { c = vec4(1.0, 1.0, 0.0, 1.0); }
+    uColors[gid] = c;
+}
+)";
+
+TEST_F(GlRenderDeviceUVETest, DispatchUVE_ComputeFillsStorageBuffer_ProvenByReadback) {
+    // The GL M5a proof: a ZERO-initialized Storage SSBO, one outside-pass dispatch of the
+    // palette filler (GL executes at record time and barriers with GL_ALL_BARRIER_BITS), then
+    // a client-side glGetBufferSubData readback must show red/green/blue/yellow. Without a
+    // real glDispatchCompute the buffer stays zeroed — the colors cannot be faked.
+    const float zeros[16] = {};
+    const BufferHandleUVE palette = renderDevice->CreateBufferUVE(
+        BufferDescUVE{sizeof(zeros), BufferUsageUVE::Storage}, std::as_bytes(std::span(zeros)));
+    if (palette == kInvalidBufferHandleUVE) {
+        GTEST_SKIP() << "context lacks desktop GL 4.3 shader storage buffers";
+    }
+    const ShaderHandleUVE computeShader = renderDevice->CreateShaderUVE(
+        ShaderDescUVE{ShaderStageUVE::Compute, std::string(kPaletteFillComputeSource)});
+    if (computeShader == kInvalidShaderHandleUVE) {
+        renderDevice->DestroyBufferUVE(palette);
+        GTEST_SKIP() << "context lacks compute shaders (GL 4.3+)";
+    }
+    ComputePipelineDescUVE pipelineDesc{};
+    pipelineDesc.computeShader = computeShader;
+    std::string infoLog;
+    const PipelineHandleUVE computePipeline = renderDevice->CreateComputePipelineUVE(pipelineDesc, &infoLog);
+    ASSERT_NE(computePipeline, kInvalidPipelineHandleUVE) << infoLog;
+
+    // The whole compute flow records OUTSIDE pass markers (the M5a contract) — GL executes
+    // each command at record time, including the dispatch and its memory barrier.
+    std::unique_ptr<ICommandBufferUVE> commandBuffer = renderDevice->CreateCommandBufferUVE();
+    ASSERT_NE(commandBuffer, nullptr);
+    commandBuffer->BindPipelineUVE(computePipeline);
+    commandBuffer->BindStorageBufferUVE(palette, 0U);
+    commandBuffer->DispatchUVE(1U, 1U, 1U);
+    EXPECT_EQ(glGetError(), GL_NO_ERROR);
+    renderDevice->SubmitUVE(std::move(commandBuffer));
+
+    // Readback through the indexed binding the RHI's glBindBufferBase left behind.
+    GLint storageName = 0;
+    glGetIntegeri_v(GL_SHADER_STORAGE_BUFFER_BINDING, 0, &storageName);
+    ASSERT_NE(storageName, 0) << "the storage buffer must still be bound at indexed slot 0";
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, static_cast<GLuint>(storageName));
+    float readback[16] = {};
+    glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(readback), readback);
+    EXPECT_EQ(glGetError(), GL_NO_ERROR);
+
+    EXPECT_FLOAT_EQ(readback[0], 1.0F);  // uColors[0] = RED
+    EXPECT_FLOAT_EQ(readback[1], 0.0F);
+    EXPECT_FLOAT_EQ(readback[2], 0.0F);
+    EXPECT_FLOAT_EQ(readback[3], 1.0F);
+    EXPECT_FLOAT_EQ(readback[4], 0.0F);  // uColors[1] = GREEN
+    EXPECT_FLOAT_EQ(readback[5], 1.0F);
+    EXPECT_FLOAT_EQ(readback[6], 0.0F);
+    EXPECT_FLOAT_EQ(readback[7], 1.0F);
+    EXPECT_FLOAT_EQ(readback[8], 0.0F);  // uColors[2] = BLUE
+    EXPECT_FLOAT_EQ(readback[9], 0.0F);
+    EXPECT_FLOAT_EQ(readback[10], 1.0F);
+    EXPECT_FLOAT_EQ(readback[11], 1.0F);
+    EXPECT_FLOAT_EQ(readback[12], 1.0F); // uColors[3] = YELLOW
+    EXPECT_FLOAT_EQ(readback[13], 1.0F);
+    EXPECT_FLOAT_EQ(readback[14], 0.0F);
+    EXPECT_FLOAT_EQ(readback[15], 1.0F);
+
+    renderDevice->DestroyPipelineUVE(computePipeline);
+    renderDevice->DestroyShaderUVE(computeShader);
+    renderDevice->DestroyBufferUVE(palette);
+}
+
+TEST_F(GlRenderDeviceUVETest, CreateComputePipelineUVE_ValidatesShaderHandleAndStage) {
+    std::string infoLog;
+    ComputePipelineDescUVE unknownDesc{};
+    unknownDesc.computeShader = ShaderHandleUVE{999999U};
+    EXPECT_EQ(renderDevice->CreateComputePipelineUVE(unknownDesc, &infoLog), kInvalidPipelineHandleUVE);
+
+    const ShaderHandleUVE vertexShader = renderDevice->CreateShaderUVE(
+        ShaderDescUVE{ShaderStageUVE::Vertex, std::string(kValidVertexShaderSource)});
+    ASSERT_NE(vertexShader, kInvalidShaderHandleUVE);
+    ComputePipelineDescUVE wrongStageDesc{};
+    wrongStageDesc.computeShader = vertexShader;
+    EXPECT_EQ(renderDevice->CreateComputePipelineUVE(wrongStageDesc, &infoLog), kInvalidPipelineHandleUVE);
+    EXPECT_EQ(glGetError(), GL_NO_ERROR);
+    renderDevice->DestroyShaderUVE(vertexShader);
+}
+
+TEST_F(GlRenderDeviceUVETest, DispatchUVE_RejectsGraphicsPipelineWithoutGlError) {
+    // Engine-level refusal, never a GL call: dispatching with a GRAPHICS pipeline bound must
+    // be dropped (UVE_ERROR) with the GL error flag untouched.
+    const ShaderHandleUVE vertexShader = renderDevice->CreateShaderUVE(
+        ShaderDescUVE{ShaderStageUVE::Vertex, std::string(kValidVertexShaderSource)});
+    const ShaderHandleUVE fragmentShader = renderDevice->CreateShaderUVE(
+        ShaderDescUVE{ShaderStageUVE::Fragment, std::string(kValidFragmentShaderSource)});
+    ASSERT_NE(vertexShader, kInvalidShaderHandleUVE);
+    ASSERT_NE(fragmentShader, kInvalidShaderHandleUVE);
+    PipelineDescUVE pipelineDesc;
+    pipelineDesc.vertexShader = vertexShader;
+    pipelineDesc.fragmentShader = fragmentShader;
+    pipelineDesc.vertexLayout = {VertexAttributeUVE{"POSITION", VertexAttributeFormatUVE::Float3, 0U}};
+    pipelineDesc.vertexStride = 3U * static_cast<std::uint32_t>(sizeof(float));
+    const PipelineHandleUVE graphicsPipeline = renderDevice->CreatePipelineUVE(pipelineDesc);
+    ASSERT_NE(graphicsPipeline, kInvalidPipelineHandleUVE);
+
+    std::unique_ptr<ICommandBufferUVE> commandBuffer = renderDevice->CreateCommandBufferUVE();
+    ASSERT_NE(commandBuffer, nullptr);
+    while (glGetError() != GL_NO_ERROR) {
+    }
+    commandBuffer->BindPipelineUVE(graphicsPipeline); // M5a: legal outside pass markers now
+    commandBuffer->DispatchUVE(1U, 1U, 1U);           // refused: graphics pipeline is bound
+    EXPECT_EQ(glGetError(), GL_NO_ERROR);
+    renderDevice->SubmitUVE(std::move(commandBuffer));
+
+    // Nothing bound at all: refused the same way.
+    std::unique_ptr<ICommandBufferUVE> freshBuffer = renderDevice->CreateCommandBufferUVE();
+    freshBuffer->DispatchUVE(1U, 1U, 1U);
+    EXPECT_EQ(glGetError(), GL_NO_ERROR);
+    renderDevice->SubmitUVE(std::move(freshBuffer));
+
+    renderDevice->DestroyPipelineUVE(graphicsPipeline);
+    renderDevice->DestroyShaderUVE(vertexShader);
+    renderDevice->DestroyShaderUVE(fragmentShader);
+}
+
 } // namespace
 } // namespace UVE::Render::Tests

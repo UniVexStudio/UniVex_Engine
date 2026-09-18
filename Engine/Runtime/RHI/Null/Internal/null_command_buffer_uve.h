@@ -39,6 +39,8 @@ public:
     void SetUniformMatrix4x4UVE(std::string_view name, const Math::Matrix4x4UVE& value) override;
     void DrawIndexedUVE(std::uint32_t indexCount, std::uint32_t instanceCount) override;
     void DrawUVE(std::uint32_t vertexCount, std::uint32_t instanceCount) override;
+    void DispatchUVE(std::uint32_t groupCountX, std::uint32_t groupCountY,
+                     std::uint32_t groupCountZ) override;
 
     /// Every call recorded so far, in issue order.
     [[nodiscard]] const std::vector<RecordedCommandUVE>& GetRecordedCommandsUVE() const noexcept;

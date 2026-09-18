@@ -22,6 +22,7 @@ struct NullRenderDeviceUVE::ImplUVE {
     std::unordered_map<std::uint32_t, ShaderDescUVE> shaders;
     std::uint32_t nextShaderHandle = 1;
     std::unordered_map<std::uint32_t, PipelineDescUVE> pipelines;
+    std::unordered_map<std::uint32_t, ComputePipelineDescUVE> computePipelines; // M5a, same handle domain
     std::uint32_t nextPipelineHandle = 1;
     // M4: SubmitUVE may be called from any thread (the same contract the Vulkan backend
     // honors for its submission FIFO) — the spy write happens under this lock. Readers of
@@ -135,8 +136,26 @@ PipelineHandleUVE NullRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE& 
     return PipelineHandleUVE{handleValue};
 }
 
+PipelineHandleUVE NullRenderDeviceUVE::CreateComputePipelineUVE(const ComputePipelineDescUVE& desc,
+                                                                 std::string* outInfoLog) {
+    static_cast<void>(outInfoLog); // NullRenderDeviceUVE never links anything real - nothing to log.
+    const auto shader = m_impl->shaders.find(desc.computeShader.value);
+    if (shader == m_impl->shaders.end()) {
+        UVE_ERROR("NullRenderDeviceUVE: CreateComputePipelineUVE referenced an unknown shader handle");
+        return kInvalidPipelineHandleUVE;
+    }
+    if (shader->second.stage != ShaderStageUVE::Compute) {
+        UVE_ERROR("NullRenderDeviceUVE: CreateComputePipelineUVE requires a Compute-stage shader");
+        return kInvalidPipelineHandleUVE;
+    }
+    const std::uint32_t handleValue = m_impl->nextPipelineHandle++;
+    m_impl->computePipelines.emplace(handleValue, desc);
+    return PipelineHandleUVE{handleValue};
+}
+
 void NullRenderDeviceUVE::DestroyPipelineUVE(PipelineHandleUVE pipeline) {
-    if (m_impl->pipelines.erase(pipeline.value) == 0) {
+    if (m_impl->pipelines.erase(pipeline.value) == 0 &&
+        m_impl->computePipelines.erase(pipeline.value) == 0) {
         UVE_ERROR("NullRenderDeviceUVE: DestroyPipelineUVE called with an unknown or already-destroyed handle ({})",
                    pipeline.value);
     }
@@ -215,7 +234,8 @@ const std::vector<RecordedCommandUVE>& NullRenderDeviceUVE::GetLastSubmittedComm
 }
 
 std::size_t NullRenderDeviceUVE::GetLiveResourceCountUVE() const noexcept {
-    return m_impl->buffers.size() + m_impl->textures.size() + m_impl->shaders.size() + m_impl->pipelines.size();
+    return m_impl->buffers.size() + m_impl->textures.size() + m_impl->shaders.size() +
+           m_impl->pipelines.size() + m_impl->computePipelines.size();
 }
 
 std::uint64_t NullRenderDeviceUVE::GetTextureCreateAttemptCountUVE() const noexcept {

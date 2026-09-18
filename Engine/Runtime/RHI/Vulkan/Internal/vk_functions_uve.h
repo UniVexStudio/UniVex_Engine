@@ -97,8 +97,10 @@ struct VkFunctionsUVE {
     PFN_vkCreatePipelineLayout vkCreatePipelineLayout = nullptr;
     PFN_vkDestroyPipelineLayout vkDestroyPipelineLayout = nullptr;
     PFN_vkCreateGraphicsPipelines vkCreateGraphicsPipelines = nullptr;
+    PFN_vkCreateComputePipelines vkCreateComputePipelines = nullptr; // M5a (core since Vulkan 1.0)
     PFN_vkDestroyPipeline vkDestroyPipeline = nullptr;
     PFN_vkCmdBindPipeline vkCmdBindPipeline = nullptr;
+    PFN_vkCmdDispatch vkCmdDispatch = nullptr; // M5a (core since Vulkan 1.0)
     PFN_vkCmdBindVertexBuffers vkCmdBindVertexBuffers = nullptr;
     PFN_vkCmdBindIndexBuffer vkCmdBindIndexBuffer = nullptr;
     PFN_vkCmdDraw vkCmdDraw = nullptr;

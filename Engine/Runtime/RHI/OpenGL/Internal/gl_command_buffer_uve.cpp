@@ -298,9 +298,10 @@ void GlCommandBufferUVE::EndRenderPassUVE() {
 }
 
 void GlCommandBufferUVE::BindPipelineUVE(PipelineHandleUVE pipeline) {
-    if (!RequireInsideRenderPassUVE(m_insideRenderPass, "BindPipelineUVE")) {
-        return;
-    }
+    // M5a: no inside-pass gate here anymore. Compute pipelines MUST bind outside render-pass
+    // markers (mirroring Vulkan, where binding COMPUTE inside a pass instance is illegal), and
+    // glUseProgram/glBindVertexArray are equally legal outside a pass. The real structural gates
+    // live on the consuming commands: DrawUVE (inside) and DispatchUVE (outside).
     if (pipeline == kInvalidPipelineHandleUVE) {
         UVE_ERROR("GlCommandBufferUVE: BindPipelineUVE referenced an invalid pipeline handle");
         return;
@@ -320,6 +321,9 @@ void GlCommandBufferUVE::BindPipelineUVE(PipelineHandleUVE pipeline) {
     m_boundIndexBuffer = kInvalidBufferHandleUVE;
     m_currentVertexStride = pipelineIt->second.vertexStride;
     m_state->gl.glUseProgram(m_currentProgram);
+    if (pipelineIt->second.isCompute) {
+        return; // M5a: no VAO, no depth/blend state — a compute program carries none of it.
+    }
     m_state->gl.glBindVertexArray(m_currentVao);
 
     if (pipelineIt->second.depthTestEnabled) {
@@ -458,7 +462,12 @@ void GlCommandBufferUVE::BindUniformBufferUVE(BufferHandleUVE buffer, std::uint3
 }
 
 void GlCommandBufferUVE::BindStorageBufferUVE(BufferHandleUVE buffer, std::uint32_t slot) {
-    if (!RequireInsideRenderPassUVE(m_insideRenderPass, "BindStorageBufferUVE")) {
+    // M5a: the compute flow (bind compute pipeline, bind its SSBOs, set its uniforms,
+    // dispatch) lives entirely OUTSIDE pass markers — so while a compute pipeline is the
+    // bound one, these calls pass the gate; graphics-side misuse keeps the strict inside-pass
+    // rule (GL knows the bound pipeline's kind, unlike NullCommandBufferUVE).
+    if (!m_insideRenderPass && !ActivePipelineIsComputeUVE()) {
+        (void)RequireInsideRenderPassUVE(m_insideRenderPass, "BindStorageBufferUVE");
         return;
     }
     // SSBOs are core in desktop GL 4.3 (the same floor as compute shaders); the cached gate
@@ -489,6 +498,11 @@ void GlCommandBufferUVE::BindStorageBufferUVE(BufferHandleUVE buffer, std::uint3
 #endif
 }
 
+bool GlCommandBufferUVE::ActivePipelineIsComputeUVE() const noexcept {
+    const auto* const record = FindCurrentPipelineUVE();
+    return record != nullptr && record->isCompute;
+}
+
 const Detail::GlDeviceStateUVE::PipelineRecordUVE* GlCommandBufferUVE::FindCurrentPipelineUVE() const {
     if (m_currentPipeline == kInvalidPipelineHandleUVE) {
         return nullptr;
@@ -516,7 +530,8 @@ const GlCommandBufferUVE::UniformRecordUVE* GlCommandBufferUVE::FindUniformUVE(s
 }
 
 void GlCommandBufferUVE::SetUniformFloatUVE(std::string_view name, float value) {
-    if (!RequireInsideRenderPassUVE(m_insideRenderPass, "SetUniformFloatUVE")) {
+    if (!m_insideRenderPass && !ActivePipelineIsComputeUVE()) { // M5a compute flow
+        (void)RequireInsideRenderPassUVE(m_insideRenderPass, "SetUniformFloatUVE");
         return;
     }
     const UniformRecordUVE* const uniform = FindUniformUVE(name);
@@ -531,7 +546,8 @@ void GlCommandBufferUVE::SetUniformFloatUVE(std::string_view name, float value) 
 }
 
 void GlCommandBufferUVE::SetUniformIntUVE(std::string_view name, std::int32_t value) {
-    if (!RequireInsideRenderPassUVE(m_insideRenderPass, "SetUniformIntUVE")) {
+    if (!m_insideRenderPass && !ActivePipelineIsComputeUVE()) { // M5a compute flow
+        (void)RequireInsideRenderPassUVE(m_insideRenderPass, "SetUniformIntUVE");
         return;
     }
     const UniformRecordUVE* const uniform = FindUniformUVE(name);
@@ -542,7 +558,8 @@ void GlCommandBufferUVE::SetUniformIntUVE(std::string_view name, std::int32_t va
 }
 
 void GlCommandBufferUVE::SetUniformBoolUVE(std::string_view name, bool value) {
-    if (!RequireInsideRenderPassUVE(m_insideRenderPass, "SetUniformBoolUVE")) {
+    if (!m_insideRenderPass && !ActivePipelineIsComputeUVE()) { // M5a compute flow
+        (void)RequireInsideRenderPassUVE(m_insideRenderPass, "SetUniformBoolUVE");
         return;
     }
     const UniformRecordUVE* const uniform = FindUniformUVE(name);
@@ -553,7 +570,8 @@ void GlCommandBufferUVE::SetUniformBoolUVE(std::string_view name, bool value) {
 }
 
 void GlCommandBufferUVE::SetUniformVector3UVE(std::string_view name, const Math::Vector3UVE& value) {
-    if (!RequireInsideRenderPassUVE(m_insideRenderPass, "SetUniformVector3UVE")) {
+    if (!m_insideRenderPass && !ActivePipelineIsComputeUVE()) { // M5a compute flow
+        (void)RequireInsideRenderPassUVE(m_insideRenderPass, "SetUniformVector3UVE");
         return;
     }
     const UniformRecordUVE* const uniform = FindUniformUVE(name);
@@ -568,7 +586,8 @@ void GlCommandBufferUVE::SetUniformVector3UVE(std::string_view name, const Math:
 }
 
 void GlCommandBufferUVE::SetUniformMatrix4x4UVE(std::string_view name, const Math::Matrix4x4UVE& value) {
-    if (!RequireInsideRenderPassUVE(m_insideRenderPass, "SetUniformMatrix4x4UVE")) {
+    if (!m_insideRenderPass && !ActivePipelineIsComputeUVE()) { // M5a compute flow
+        (void)RequireInsideRenderPassUVE(m_insideRenderPass, "SetUniformMatrix4x4UVE");
         return;
     }
     const UniformRecordUVE* const uniform = FindUniformUVE(name);
@@ -658,6 +677,37 @@ void GlCommandBufferUVE::DrawUVE(std::uint32_t vertexCount, std::uint32_t instan
     }
     glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(vertexCount));
     UVE_GL_CHECK_ERROR_UVE("DrawUVE");
+}
+
+void GlCommandBufferUVE::DispatchUVE(std::uint32_t groupCountX, std::uint32_t groupCountY,
+                                     std::uint32_t groupCountZ) {
+    // M5a: dispatch belongs OUTSIDE render-pass markers — the mirror image of DrawUVE's inside-pass
+    // gate (Vulkan forbids compute inside a render-pass instance, so the portable flow binds the
+    // compute pipeline and dispatches before/after pass markers).
+    UVE_ASSERT(!m_insideRenderPass);
+    if (m_insideRenderPass) {
+        UVE_ERROR("GlCommandBufferUVE: DispatchUVE must be called outside a render pass");
+        return;
+    }
+    const auto* const pipelineRecord = FindCurrentPipelineUVE();
+    if (pipelineRecord == nullptr) {
+        UVE_ERROR("GlCommandBufferUVE: DispatchUVE requires a live compute pipeline to be bound");
+        return;
+    }
+    if (!pipelineRecord->isCompute) {
+        UVE_ERROR("GlCommandBufferUVE: DispatchUVE requires a compute pipeline (a graphics pipeline is bound)");
+        return;
+    }
+    if (m_state->gl.glDispatchCompute == nullptr || m_state->gl.glMemoryBarrier == nullptr) {
+        UVE_ERROR("GlCommandBufferUVE: DispatchUVE requires an OpenGL 4.3+ context");
+        return;
+    }
+    // GL executes at record time: BindPipelineUVE already ran glUseProgram for this program.
+    m_state->gl.glDispatchCompute(groupCountX, groupCountY, groupCountZ);
+    // Conservative global barrier — makes the compute writes visible to every later reader
+    // (glGetBufferSubData readback and the fragment palette sampling in the M5a proof).
+    m_state->gl.glMemoryBarrier(GL_ALL_BARRIER_BITS);
+    UVE_GL_CHECK_ERROR_UVE("DispatchUVE");
 }
 
 } // namespace UVE::Render
