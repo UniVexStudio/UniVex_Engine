@@ -54,7 +54,20 @@ jobs:
         run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -DUVE_BUILD_TESTS=ON
 
       - name: Build
-        run: cmake --build build --parallel "$(nproc)"
+        run: |
+          set +e
+          cmake --build build --parallel "$(nproc)" > /tmp/build.log 2>&1
+          RC=$?
+          set -e
+          if [ "$RC" -ne 0 ]; then
+            # Sandbox/CI forensics: the log CDN is not always reachable, so surface the
+            # compiler/linker diagnostics as check-run annotations (mirrors the Test step).
+            grep -E "error:|Error [0-9]|undefined reference|FAILED" /tmp/build.log | head -20 | while read -r L; do
+              echo "::error title=build-error::$(echo "$L" | cut -c1-240)"
+            done
+            echo "::error title=build-tail::$(tail -25 /tmp/build.log | tr '\n' '|' | cut -c1-2000)"
+            exit $RC
+          fi
 
       - name: Test (under Xvfb)
         run: |
