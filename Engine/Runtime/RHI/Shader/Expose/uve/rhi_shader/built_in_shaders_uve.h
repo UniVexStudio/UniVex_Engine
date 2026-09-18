@@ -57,6 +57,10 @@ inline constexpr std::string_view kFrustumCullIndirectVirtualPath =
     "shaders/frustum_cull_indirect.glsl";
 extern const std::string_view kFrustumCullIndirectSource;
 
+/// CS10's skinning kernel: the GPU twin of Asset::TrySkinMeshUVE. COMPUTE-only.
+inline constexpr std::string_view kMeshSkinVirtualPath = "shaders/mesh_skin.glsl";
+extern const std::string_view kMeshSkinSource;
+
 inline constexpr std::string_view kBloomBrightPassVirtualPath = "shaders/bloom_bright_pass.glsl";
 extern const std::string_view kBloomBrightPassSource;
 

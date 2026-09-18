@@ -243,7 +243,12 @@ publicly shipping real-time engines as of today, without naming any of them.
   static mesh serializes to byte-identical output (the envelope's version field is global across
   all asset kinds, so bumping it would have invalidated scenes and textures to describe a mesh
   feature).
-  Remaining: the GPU skinning kernel itself, now that it has something to be verified against
+  CS10 then shipped the kernel: MeshSkinComputeUVE produces exactly what TrySkinMeshUVE produces,
+  bit for bit, on both backends. Reaching that standard required a real change to CS9 - the CPU
+  path now accumulates in float rather than through Math::TransformPointUVE's double, because
+  GLSL has no portable float64 and a double CPU path would have left a permanent ~1 ULP
+  disagreement on roughly one vertex in six, forcing every skinning test onto a tolerance.
+  Pose resolution stays on the CPU: walking a parent chain is serial work a dispatch cannot help.
 - [ ] Bindless/descriptor-indexing-style resource binding for reduced per-draw overhead
 
 ---
