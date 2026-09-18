@@ -55,34 +55,49 @@ constexpr Scene::EntityUVE kEmitterEntityUVE{1U};
     return particles;
 }
 
-/// The CPU authority, run through the real Scene::ParticleRuntimeUVE rather than a reimplementation
-/// of it in the test - a hand-written "expected" integrator would only prove the test agrees with
-/// itself. The runtime is loaded with exactly `particles` by emitting them one at a time, stepped,
-/// and its resulting particle array returned.
-[[nodiscard]] std::vector<Scene::ParticleStateUVE> SimulateOnCpuUVE(
-    const std::vector<Scene::ParticleStateUVE>& particles, const float deltaSeconds,
-    const Math::Vector3UVE& acceleration) {
-    Scene::ParticleRuntimeUVE runtime;
-    Scene::ParticleEmitterComponentUVE emitter;
-    emitter.maxParticles = static_cast<std::uint32_t>(particles.size());
-    EXPECT_TRUE(runtime.AttachUVE(kEmitterEntityUVE, emitter));
+/// The CPU authority, held as an object rather than a function, and backed by the real
+/// Scene::ParticleRuntimeUVE rather than a reimplementation of it in the test - a hand-written
+/// "expected" integrator would only prove the test agrees with itself.
+///
+/// It is stateful ON PURPOSE. The runtime assigns each emitted particle a sequence number, so
+/// re-emitting the survivors before every step would renumber them while the GPU side carries its
+/// originals forward; the two would then disagree on identity from the first cull onwards - a
+/// difference in the test harness, not in the engine. One runtime, loaded once, stepped
+/// repeatedly, is what actually mirrors how the GPU path is driven.
+class CpuAuthorityUVE final {
+public:
+    explicit CpuAuthorityUVE(const std::vector<Scene::ParticleStateUVE>& particles) {
+        Scene::ParticleEmitterComponentUVE emitter;
+        emitter.maxParticles = static_cast<std::uint32_t>(particles.size());
+        EXPECT_TRUE(m_runtime.AttachUVE(kEmitterEntityUVE, emitter));
 
-    for (const Scene::ParticleStateUVE& particle : particles) {
-        Scene::ParticleEmissionUVE emission;
-        emission.count = 1U;
-        emission.position = particle.position;
-        emission.velocity = particle.velocity;
-        emission.lifetimeSeconds = particle.remainingLifetimeSeconds;
-        EXPECT_TRUE(runtime.EmitDetailedUVE(kEmitterEntityUVE, emission).IsAcceptedUVE());
+        for (const Scene::ParticleStateUVE& particle : particles) {
+            Scene::ParticleEmissionUVE emission;
+            emission.count = 1U;
+            emission.position = particle.position;
+            emission.velocity = particle.velocity;
+            emission.lifetimeSeconds = particle.remainingLifetimeSeconds;
+            EXPECT_TRUE(m_runtime.EmitDetailedUVE(kEmitterEntityUVE, emission).IsAcceptedUVE());
+        }
+        // MakeAwkwardParticlesUVE() numbers its particles from one in emission order, exactly as
+        // the runtime does, so the loaded state matches the array the GPU path is handed.
+        EXPECT_EQ(GetParticlesUVE(), particles);
     }
 
-    EXPECT_TRUE(runtime.SimulateDetailedUVE(deltaSeconds, acceleration).IsAcceptedUVE());
+    void StepUVE(const float deltaSeconds, const Math::Vector3UVE& acceleration) {
+        EXPECT_TRUE(m_runtime.SimulateDetailedUVE(deltaSeconds, acceleration).IsAcceptedUVE());
+    }
 
-    const std::optional<Scene::ParticleStateSnapshotUVE> snapshot =
-        runtime.GetParticleSnapshotUVE(kEmitterEntityUVE);
-    EXPECT_TRUE(snapshot.has_value());
-    return snapshot.has_value() ? snapshot->particles : std::vector<Scene::ParticleStateUVE>{};
-}
+    [[nodiscard]] std::vector<Scene::ParticleStateUVE> GetParticlesUVE() const {
+        const std::optional<Scene::ParticleStateSnapshotUVE> snapshot =
+            m_runtime.GetParticleSnapshotUVE(kEmitterEntityUVE);
+        EXPECT_TRUE(snapshot.has_value());
+        return snapshot.has_value() ? snapshot->particles : std::vector<Scene::ParticleStateUVE>{};
+    }
+
+private:
+    Scene::ParticleRuntimeUVE m_runtime;
+};
 
 /// Compares two particle arrays EXACTLY - float equality, not a tolerance. That is the whole point
 /// of CS4: "close enough" would hide a fused multiply-add or a reordered expression in the kernel,
@@ -265,14 +280,15 @@ TEST_F(ParticleComputeSimulationGlUVETest, SimulateUVE_MatchesTheCpuRuntimeBitFo
     ASSERT_TRUE(simulation->SimulateUVE(onGpu, deltaSeconds, acceleration));
     EXPECT_EQ(glGetError(), GL_NO_ERROR);
 
-    const std::vector<Scene::ParticleStateUVE> onCpu =
-        SimulateOnCpuUVE(initial, deltaSeconds, acceleration);
+    CpuAuthorityUVE cpu(initial);
+    cpu.StepUVE(deltaSeconds, acceleration);
+    const std::vector<Scene::ParticleStateUVE> onCpu = cpu.GetParticlesUVE();
 
     // Sanity: the step must have actually moved things and culled the short-lived particles, or
     // the comparison below would be comparing two copies of the input.
     ASSERT_LT(onCpu.size(), initial.size()) << "the fixture must produce particles that expire";
     ASSERT_FALSE(onCpu.empty());
-    EXPECT_NE(onCpu.front().position, initial.front().position);
+    EXPECT_FALSE(onCpu.front().position == initial.front().position);
 
     ExpectParticlesIdenticalUVE(onGpu, onCpu);
 }
@@ -281,17 +297,16 @@ TEST_F(ParticleComputeSimulationGlUVETest, SimulateUVE_StaysIdenticalToTheCpuAcr
     // One step agreeing could be luck in the last bit; drift is what actually breaks a simulation
     // that alternates between CPU and GPU frames. Sixty steps compound any disagreement.
     std::vector<Scene::ParticleStateUVE> onGpu = MakeAwkwardParticlesUVE(257U);
-    std::vector<Scene::ParticleStateUVE> onCpu = onGpu;
+    CpuAuthorityUVE cpu(onGpu);
     const float deltaSeconds = 1.0F / 60.0F;
     const Math::Vector3UVE acceleration{0.0F, -9.81F, 0.0F};
 
     for (int step = 0; step < 60; ++step) {
         ASSERT_TRUE(simulation->SimulateUVE(onGpu, deltaSeconds, acceleration)) << "step " << step;
-        if (onCpu.empty()) {
-            break;
-        }
-        onCpu = SimulateOnCpuUVE(onCpu, deltaSeconds, acceleration);
-        ASSERT_NO_FATAL_FAILURE(ExpectParticlesIdenticalUVE(onGpu, onCpu)) << "step " << step;
+        cpu.StepUVE(deltaSeconds, acceleration);
+        ASSERT_NO_FATAL_FAILURE(ExpectParticlesIdenticalUVE(onGpu, cpu.GetParticlesUVE()))
+            << "step " << step;
+        ASSERT_FALSE(onGpu.empty()) << "the fixture must keep particles alive for sixty steps";
     }
 
     EXPECT_EQ(simulation->GetDiagnosticsUVE().readbackFailures, 0U);
@@ -308,7 +323,9 @@ TEST_F(ParticleComputeSimulationGlUVETest, SimulateUVE_SinglePartialWorkgroup_To
     ASSERT_TRUE(simulation->SimulateUVE(onGpu, deltaSeconds, acceleration));
     EXPECT_EQ(glGetError(), GL_NO_ERROR);
 
-    ExpectParticlesIdenticalUVE(onGpu, SimulateOnCpuUVE(initial, deltaSeconds, acceleration));
+    CpuAuthorityUVE cpu(initial);
+    cpu.StepUVE(deltaSeconds, acceleration);
+    ExpectParticlesIdenticalUVE(onGpu, cpu.GetParticlesUVE());
 }
 
 } // namespace
