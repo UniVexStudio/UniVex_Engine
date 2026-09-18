@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -19,7 +20,9 @@
 #include "uve/math/vector3_uve.h"
 #include "uve/render_systems/compute_system_uve.h"
 #include "uve/render_systems/frustum_cull_compute_uve.h"
+#include "uve/render_systems/frustum_cull_indirect_uve.h"
 #include "uve/render_systems/particle_compute_simulation_uve.h"
+#include "uve/rhi/render_resource_descs_uve.h"
 #include "uve/rhi_vulkan/vulkan_render_device_uve.h"
 #include "uve/component/particle_emitter_component_uve.h"
 #include "uve/scene/particle_runtime_uve.h"
@@ -236,6 +239,98 @@ TEST_F(ComputeWorkloadsVulkanUVETest, FrustumCull_AgreesOnBoxesSittingExactlyOnT
     }
     EXPECT_GT(visibleCount, 0U) << "the boundary set must contain both answers to prove anything";
     EXPECT_LT(visibleCount, boxes.size());
+}
+
+
+// --- CS8 on the second backend ----------------------------------------------------------------
+//
+// CS4 and CS5 each claimed to be backend-independent and each was wrong - in two different ways,
+// and only running the second backend found either. So the indirect cull gets its Vulkan arm in
+// the same commit as its GL one, not a commit later. The thing most likely to differ here is the
+// atomic: the GL and SPIR-V paths reach atomicAdd through different code generators, and a kernel
+// that compiled but did not actually atomically accumulate would produce a plausible-looking
+// undercount rather than an error.
+
+TEST_F(ComputeWorkloadsVulkanUVETest, FrustumCullIndirect_CompactsExactlyWhatTheCpuKeeps) {
+    FrustumCullIndirectUVE cull(*device, *computeSystem);
+    std::string infoLog;
+    ASSERT_TRUE(cull.InitializeUVE(&infoLog))
+        << "the indirect cull kernel must build on Vulkan, not just OpenGL: " << infoLog;
+
+    const std::vector<Math::AabbUVE> boxes = MakeBoxSpreadUVE(1000U);
+    const Math::FrustumUVE frustum = MakeTestFrustumUVE();
+
+    std::vector<std::uint32_t> expected;
+    for (std::size_t index = 0U; index < boxes.size(); ++index) {
+        if (frustum.IntersectsUVE(boxes[index])) {
+            expected.push_back(static_cast<std::uint32_t>(index));
+        }
+    }
+    ASSERT_GT(expected.size(), 0U) << "the fixture must produce visible boxes";
+    ASSERT_LT(expected.size(), boxes.size()) << "the fixture must produce culled boxes";
+
+    DrawIndexedIndirectCommandUVE meshParams;
+    meshParams.indexCount = 36U;
+    meshParams.instanceCount = 9999U; // the GPU owns this field and must overwrite it
+    meshParams.firstIndex = 12U;
+    meshParams.vertexOffset = -7;
+    meshParams.firstInstance = 3U;
+    ASSERT_TRUE(cull.PrepareUVE(boxes, frustum, meshParams));
+
+    // Reading back is a TEST-only act: PrepareUVE leaves all of this on the GPU, which is the
+    // point of the system.
+    DrawIndexedIndirectCommandUVE command{};
+    ASSERT_TRUE(device->ReadbackBufferUVE(
+        cull.GetDrawCommandBufferUVE(),
+        std::span<std::byte>{reinterpret_cast<std::byte*>(&command), sizeof(command)}));
+    EXPECT_EQ(command.instanceCount, expected.size());
+    EXPECT_EQ(command.indexCount, 36U);
+    EXPECT_EQ(command.firstIndex, 12U);
+    EXPECT_EQ(command.vertexOffset, -7);
+    EXPECT_EQ(command.firstInstance, 3U);
+
+    std::vector<std::uint32_t> actual(command.instanceCount, 0U);
+    ASSERT_TRUE(device->ReadbackBufferUVE(
+        cull.GetVisibleIndexBufferUVE(),
+        std::span<std::byte>{reinterpret_cast<std::byte*>(actual.data()),
+                             actual.size() * sizeof(std::uint32_t)}));
+    // Sorted: the kernel's atomic assigns compaction slots in no defined order, so this is a set
+    // comparison by construction.
+    std::sort(actual.begin(), actual.end());
+    ASSERT_EQ(actual.size(), expected.size());
+    for (std::size_t index = 0U; index < expected.size(); ++index) {
+        EXPECT_EQ(actual[index], expected[index])
+            << "compacted slot " << index << ": Vulkan kept box " << actual[index]
+            << " where the CPU kept box " << expected[index];
+    }
+}
+
+TEST_F(ComputeWorkloadsVulkanUVETest, FrustumCullIndirect_RepeatedCalls_DoNotAccumulateInstances) {
+    // The seed-to-zero step, on the backend where a missed buffer update is most likely: Vulkan
+    // queues the dispatch and replays it in PresentUVE, so the ordering of "write the seed" and
+    // "run the kernel" is not the record-time ordering GL gives.
+    FrustumCullIndirectUVE cull(*device, *computeSystem);
+    std::string infoLog;
+    ASSERT_TRUE(cull.InitializeUVE(&infoLog)) << infoLog;
+
+    const std::vector<Math::AabbUVE> boxes = MakeBoxSpreadUVE(137U);
+    const Math::FrustumUVE frustum = MakeTestFrustumUVE();
+    std::size_t expectedVisible = 0U;
+    for (const Math::AabbUVE& box : boxes) {
+        expectedVisible += frustum.IntersectsUVE(box) ? 1U : 0U;
+    }
+    ASSERT_GT(expectedVisible, 0U);
+
+    DrawIndexedIndirectCommandUVE meshParams;
+    meshParams.indexCount = 6U;
+    for (int pass = 0; pass < 3; ++pass) {
+        ASSERT_TRUE(cull.PrepareUVE(boxes, frustum, meshParams)) << "on pass " << pass;
+        DrawIndexedIndirectCommandUVE command{};
+        ASSERT_TRUE(device->ReadbackBufferUVE(
+            cull.GetDrawCommandBufferUVE(),
+            std::span<std::byte>{reinterpret_cast<std::byte*>(&command), sizeof(command)}));
+        EXPECT_EQ(command.instanceCount, expectedVisible) << "on pass " << pass;
+    }
 }
 
 } // namespace

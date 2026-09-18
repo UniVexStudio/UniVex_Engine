@@ -42,12 +42,15 @@ struct KernelUVE {
     std::size_t spirvSize;
 };
 
-[[nodiscard]] std::array<KernelUVE, 2U> AllComputeKernelsUVE() {
+[[nodiscard]] std::array<KernelUVE, 3U> AllComputeKernelsUVE() {
     return {
         KernelUVE{"particle_simulate", Shader::BuiltIn::kParticleSimulateSource,
                   BuiltInSpirv::kParticleSimulateSpirvBytesUVE, BuiltInSpirv::kParticleSimulateSpirvSizeUVE},
         KernelUVE{"frustum_cull", Shader::BuiltIn::kFrustumCullSource,
                   BuiltInSpirv::kFrustumCullSpirvBytesUVE, BuiltInSpirv::kFrustumCullSpirvSizeUVE},
+        KernelUVE{"frustum_cull_indirect", Shader::BuiltIn::kFrustumCullIndirectSource,
+                  BuiltInSpirv::kFrustumCullIndirectSpirvBytesUVE,
+                  BuiltInSpirv::kFrustumCullIndirectSpirvSizeUVE},
     };
 }
 
@@ -121,6 +124,19 @@ TEST(ComputeKernelPortabilityUVETest, GlslKernels_DeclareTheBindingsTheirHostsBi
     EXPECT_NE(cull.find("binding = 1) readonly buffer PlaneBlock"), std::string_view::npos);
     EXPECT_NE(cull.find("binding = 2) writeonly buffer VisibilityBlock"), std::string_view::npos);
     EXPECT_NE(cull.find("binding = 3) readonly buffer FrustumCullParams"), std::string_view::npos);
+
+    const std::string_view indirect = Shader::BuiltIn::kFrustumCullIndirectSource;
+    EXPECT_NE(indirect.find("binding = 0) readonly buffer BoxBlock"), std::string_view::npos);
+    EXPECT_NE(indirect.find("binding = 1) readonly buffer PlaneBlock"), std::string_view::npos);
+    EXPECT_NE(indirect.find("binding = 2) buffer DrawCommandBlock"), std::string_view::npos);
+    EXPECT_NE(indirect.find("binding = 3) writeonly buffer VisibleIndexBlock"),
+              std::string_view::npos);
+    EXPECT_NE(indirect.find("binding = 4) readonly buffer FrustumCullIndirectParams"),
+              std::string_view::npos);
+    // Deliberately NOT writeonly on binding 2: atomicAdd reads as well as writes, and a writeonly
+    // qualifier would make the kernel's one essential operation illegal. Asserted because the
+    // qualifier is easy to "tidy up" into matching its siblings.
+    EXPECT_EQ(indirect.find("binding = 2) writeonly"), std::string_view::npos);
 }
 
 TEST(ComputeKernelPortabilityUVETest, GlslKernels_KeepTheirFmaBarrier) {
