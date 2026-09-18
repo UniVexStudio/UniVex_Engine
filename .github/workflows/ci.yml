@@ -60,12 +60,16 @@ jobs:
           RC=$?
           set -e
           if [ "$RC" -ne 0 ]; then
-            # Sandbox/CI forensics: the log CDN is not always reachable, so surface the
-            # compiler/linker diagnostics as check-run annotations (mirrors the Test step).
-            grep -E "error:|Error [0-9]|undefined reference|FAILED" /tmp/build.log | head -20 | while read -r L; do
-              echo "::error title=build-error::$(echo "$L" | cut -c1-240)"
+            # Sandbox/CI forensics: the log CDN is not always reachable, so surface EVERY
+            # compiler/linker diagnostic as its own annotation - no head cap (the platform
+            # shows what it can; the full log also ships as an artifact below).
+            grep -E "error:|Error [0-9]|undefined reference|FAILED" /tmp/build.log | while read -r L; do
+              echo "::error title=build-error::$(echo "$L" | cut -c1-1000)"
             done
-            echo "::error title=build-tail::$(tail -25 /tmp/build.log | tr '\n' '|' | cut -c1-2000)"
+            # Last 8 KiB of raw log, chunked into |-separated annotations for context.
+            tail -c 8192 /tmp/build.log | tr '\n' '|' | fold -w 1800 | nl -ba | while read -r N L; do
+              echo "::error title=build-tail-$N::$L"
+            done
             exit $RC
           fi
 
@@ -76,16 +80,27 @@ jobs:
           RC=$?
           set -e
           if [ "$RC" -ne 0 ]; then
-            # Sandbox/CI forensics: surface the failing test names + gtest failure bodies as
-            # annotations (the log CDN is not always reachable; check-run annotations are).
-            grep -E "^ *[0-9]+/[0-9]+ Test .*(Failed|\*\*\*)" /tmp/ctest.log | head -5 | while read -r L; do
-              echo "::error title=ctest-failed-case::$L"
+            # Sandbox/CI forensics: surface ALL failing test names + gtest failure bodies as
+            # annotations - no head cap (the log CDN is not always reachable; annotations are).
+            grep -E "^ *[0-9]+/[0-9]+ Test .*(Failed|\*\*\*)" /tmp/ctest.log | while read -r L; do
+              echo "::error title=ctest-failed-case::$(echo "$L" | cut -c1-1000)"
             done
-            grep -E "FAILED +TEST|Value of:|Actual:|Expected:|Assertion" /tmp/ctest.log | head -5 | while read -r L; do
-              echo "::error title=ctest-detail::$(echo "$L" | cut -c1-240)"
+            grep -E "FAILED +TEST|Value of:|Actual:|Expected:|Assertion|\[  FAILED  \]" /tmp/ctest.log | while read -r L; do
+              echo "::error title=ctest-detail::$(echo "$L" | cut -c1-1000)"
             done
             exit $RC
           fi
+
+      - name: Upload failure logs (artifact)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-failure-logs
+          path: |
+            /tmp/build.log
+            /tmp/ctest.log
+          if-no-files-found: ignore
+          retention-days: 7
 
       # M2d evidence step: prior to the displayless-host clause, a silently-broken display or
       # ICD only made the tier-2 fixture skip politely and could never flip CI red — which is
