@@ -128,6 +128,17 @@
 // a GENERAL-pinned texture rewrite with the GENERAL layout so cached sets never contradict
 // the tracked state. The M5a dispatch post-barrier widened to also publish compute writes to
 // COLOR_ATTACHMENT_OUTPUT (a storage-written texture may be ATTACHED with Load next).
+// Same-day fix-forward on the slice's first red CI: the IMAGE side of the contract —
+// storage descriptors written against images created without VK_IMAGE_USAGE_STORAGE_BIT,
+// and through views whose format cannot match a SPIR-V image-format qualifier, are
+// undefined behavior that segfaulted lavapipe at execution in all three pixel proofs.
+// Every color texture now carries VK_IMAGE_USAGE_STORAGE_BIT (depth textures never
+// storage-bind — the sink substitution stands), and RGBA8 textures gain a dedicated
+// R8G8B8A8_UNORM storage alias view when the M2d swapchain-format policy aliased the
+// image into the B,G,R,A or sRGB family: a STORAGE_IMAGE descriptor's view format must
+// EXACTLY equal the shader's qualifier (rgba8), SPIR-V has no B,G,R,A storage format at
+// all, and the mutable-format 4x8 compatibility class makes the alias legal. Sampling
+// and attachment views are untouched.
 //
 // Capability reporting is honest and upstream-visible: GetBackendNameUVE() says
 // "Vulkan (M5b storage images)" on dynamic-rendering devices, "Vulkan (M2c textures+staging)"
