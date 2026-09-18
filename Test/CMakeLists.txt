@@ -206,6 +206,7 @@ add_executable(uve_integration_tests
     Audio/wav_pcm16_decoder_uve_tests.cpp
     Audio/wav_importer_uve_tests.cpp
     RHI/RenderSystems/camera_system_uve_tests.cpp
+    RHI/RenderSystems/compute_system_uve_tests.cpp
     RHI/RenderSystems/light_system_uve_tests.cpp
     RHI/RenderSystems/mesh_renderer_uve_tests.cpp
     RHI/RenderSystems/mesh_render_eligibility_uve_tests.cpp
@@ -236,6 +237,14 @@ target_link_libraries(uve_integration_tests PRIVATE
     uve_audio
     uve_render_systems
     uve_rhi_null
+    # compute_system_uve_tests.cpp proves ComputeSystemUVE against a REAL GL device (program
+    # compilation plus a byte-verified SSBO readback after a queued dispatch), skipping cleanly
+    # when no display is available - so this executable needs the GL backend and the window
+    # manager that brings up its context, exactly like uve_core_tests does for its own GL tests.
+    # The raw <GL/gl.h> calls in that file resolve the same way engine_core_uve_tests.cpp's do:
+    # OpenGL::GL and glfw propagate through the static-library dependency chain.
+    uve_rhi_opengl
+    uve_window
     uve_input
     uve_ui
     GTest::gtest
