@@ -88,7 +88,7 @@ publicly shipping real-time engines as of today, without naming any of them.
 - [~] A modern explicit graphics API backend (the kind that supports multi-threaded command
   recording, explicit memory/barrier management) as a second real backend, so the RHI
   abstraction is proven against more than one implementation — **in progress:** the Vulkan
-  backend reached slice M2f 2026-09-18: real buffers (host-visible policy), SPIR-V shader
+  backend reached slice M3 2026-09-18: real buffers (host-visible policy), SPIR-V shader
   modules, fixed-function pipelines, recorded command buffers, Draw/DrawIndexed replay,
   SPIRV-Reflect-driven uniforms (set-0 UBO blocks over one shared 1 MiB/frame dynamic-offset
   ring plus push constants, SetUniform* by reflected member name), a real depth attachment
@@ -125,18 +125,29 @@ publicly shipping real-time engines as of today, without naming any of them.
   pipeline creation naming the compute milestone (ComputeSystemUVE, Part 7.2), and the
   honest name rebadges to "Vulkan (M2f SSBO+separate samplers)" on dynamic devices (classic
   stays M2c — the descriptor work is arm-independent) —
+  and DEVICE-LOCAL STAGING (M3, 2026-09-18): vertex/index buffers now allocate DEVICE_LOCAL
+  memory with TRANSFER_DST (the performance shape M2a's host-visible policy explicitly
+  deferred), fed at creation and on every UpdateBufferUVE by one-shot staging copies that
+  mirror the M2c texture-upload discipline exactly — transient HOST_VISIBLE|COHERENT
+  TRANSFER_SRC buffer, vkCmdCopyBuffer in a one-time command buffer with buffer barriers
+  around the copy (TRANSFER_WRITE published to VERTEX_ATTRIBUTE_READ / INDEX_READ), and a
+  full-idle wait before teardown — while uniform buffers (host writes ARE the SetUniform
+  ring mechanism) and storage buffers (the M2f zero-fallback contract stays simple) remain
+  host-visible; the caller-visible copy-on-update contract is identical for every usage,
+  only placement/traffic differs, and the honest name rebadges to "Vulkan (M3 device-local
+  staging)" on dynamic devices (classic stays M2c — the memory policy is arm-independent) —
   all verified pixel-wise locally (SwiftShader: triangle, depth-overlap, checker-quad, and
   offscreen render-to-texture interleave screenshots) with the same scenes plus the four
-  M2e and six M2f proofs in tier-2 CI tests (lavapipe), where the sampled-depth reconstruction byte
+  M2e, six M2f, and two M3 proofs in tier-2 CI tests (lavapipe), where the sampled-depth
+  reconstruction byte
   check accepts both honest software-stack dualities: an SRGB-typed swapchain stores the
   shader's linear 0.25 as ≈137 while a UNORM-typed one stores ≈64 (both correct encodings
   of the same sampled depth), and the depth-read swizzle alpha is spec-undefined on
   pre-maintenance5 devices (255 or 0 both pass — the specified .g/.b zeros and the .r
   reconstruction carry the proof). Latent M1 readback-fence hazard also fixed (the
   readback submission rides its own transient fence now). Remaining for full parity:
-  storage images (refused loudly until the compute milestone below), device-local staging
-  for vertex/index buffers, multi-threaded command recording, and shader cross-compilation
-  tooling (tracked separately below)
+  storage images (refused loudly until the compute milestone below), multi-threaded command
+  recording, and shader cross-compilation tooling (tracked separately below)
 - [ ] A backend for each target OS's native graphics API where OpenGL is not the best
   choice on that platform
 - [ ] Shader cross-compilation so one shader source authors once and targets every backend

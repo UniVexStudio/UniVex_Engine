@@ -128,6 +128,11 @@ struct VkFunctionsUVE {
     PFN_vkCmdCopyBufferToImage vkCmdCopyBufferToImage = nullptr;
     PFN_vkFreeDescriptorSets vkFreeDescriptorSets = nullptr;
 
+    // M3 "device-local staging" addition: buffer→buffer copy for the one-shot staging
+    // uploads that feed DEVICE_LOCAL vertex/index buffers (create-time initial data and
+    // every UpdateBufferUVE re-stage).
+    PFN_vkCmdCopyBuffer vkCmdCopyBuffer = nullptr;
+
     // M2d "offscreen RT" additions: core-1.3 dynamic rendering. The instance/device gate is
     // probed at bring-up; when unavailable the device stays fully classic (M2c behavior)
     // and offscreen passes degrade to a documented warning instead of failing creation.
