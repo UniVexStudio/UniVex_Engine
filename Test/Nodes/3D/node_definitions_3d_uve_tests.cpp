@@ -71,6 +71,17 @@ TEST_F(Node3DDefinitionsUVETest, AllDefinitionDefaultsAreValid) {
     EXPECT_TRUE(IsAnimationTreeNodeDefinitionValidUVE(AnimationTreeNodeDefinitionUVE{}));
 }
 
+// The seven names the editor's legacy EditorEntityKindUVE path surfaces are locked at compile
+// time: the editor now sources every default name from these definitions, so any drift here
+// would silently rename what legacy creation produces.
+static_assert(EmptyNodeDefinitionUVE::defaultName == "Empty");
+static_assert(Camera3DNodeDefinitionUVE::defaultName == "Camera");
+static_assert(Light3DNodeDefinitionUVE::defaultName == "Directional Light");
+static_assert(Collider3DNodeDefinitionUVE::defaultName == "Collision Box");
+static_assert(BoxMesh3DNodeDefinitionUVE::defaultName == "Cube");
+static_assert(SphereMesh3DNodeDefinitionUVE::defaultName == "UV Sphere");
+static_assert(PlaneMesh3DNodeDefinitionUVE::defaultName == "Plane");
+
 TEST_F(Node3DDefinitionsUVETest, DefaultNamesAreAuthoredPerKindNotGeneric) {
     // The six kinds that previously lived behind legacy EditorEntityKindUVE values keep their
     // exact historical names; the kinds the editor used to name "Empty" now carry their own.
