@@ -408,18 +408,6 @@ TEST(NullRenderDeviceUVETest, DrawIndexedIndirectUVE_InsideAPass_RecordsBufferAn
     EXPECT_EQ(record.offsetBytes, sizeof(DrawIndexedIndirectCommandUVE));
 }
 
-TEST(NullRenderDeviceUVETest, DrawIndexedIndirectUVE_OutsideAPass_RecordsNothing) {
-    NullRenderDeviceUVE device;
-    const BufferHandleUVE indirect = device.CreateBufferUVE(
-        BufferDescUVE{sizeof(DrawIndexedIndirectCommandUVE), BufferUsageUVE::IndirectStorage});
-
-    std::unique_ptr<ICommandBufferUVE> commandBuffer = device.CreateCommandBufferUVE();
-    commandBuffer->DrawIndexedIndirectUVE(indirect, 0U);
-    device.SubmitUVE(std::move(commandBuffer));
-
-    EXPECT_TRUE(device.GetLastSubmittedCommandsUVE().empty());
-}
-
 TEST(NullRenderDeviceUVETest, GetLastSubmittedCommandsUVE_BeforeAnySubmit_IsEmpty) {
     NullRenderDeviceUVE device;
     EXPECT_TRUE(device.GetLastSubmittedCommandsUVE().empty());
@@ -806,6 +794,17 @@ TEST(NullRenderDeviceUVEDeathTest, CommandBuffer_DrawOutsideRenderPass_Asserts) 
     NullRenderDeviceUVE device;
     std::unique_ptr<ICommandBufferUVE> commandBuffer = device.CreateCommandBufferUVE();
     EXPECT_DEATH({ commandBuffer->DrawUVE(3); }, "");
+}
+
+TEST(NullRenderDeviceUVEDeathTest, CommandBuffer_DrawIndexedIndirectOutsideRenderPass_Asserts) {
+    // Same inside-a-pass invariant as DrawUVE above, and asserted the same way: the null backend
+    // treats a draw outside a pass as an authoring bug, not a recoverable condition, so in debug
+    // builds it traps before the error-log arm is ever reached.
+    NullRenderDeviceUVE device;
+    const BufferHandleUVE indirect = device.CreateBufferUVE(
+        BufferDescUVE{sizeof(DrawIndexedIndirectCommandUVE), BufferUsageUVE::IndirectStorage});
+    std::unique_ptr<ICommandBufferUVE> commandBuffer = device.CreateCommandBufferUVE();
+    EXPECT_DEATH({ commandBuffer->DrawIndexedIndirectUVE(indirect, 0U); }, "");
 }
 
 TEST(NullRenderDeviceUVEDeathTest, CommandBuffer_EndRenderPassWithoutBegin_Asserts) {
