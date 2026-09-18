@@ -7,12 +7,15 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <cstring>
 #include <span>
 #include <string>
 #include <vector>
 
 #include <gtest/gtest.h>
 
+#include "uve/asset/mesh_asset_uve.h"
+#include "uve/asset/mesh_skinning_uve.h"
 #include "uve/math/aabb_uve.h"
 #include "uve/math/frustum_uve.h"
 #include "uve/math/matrix4x4_uve.h"
@@ -21,6 +24,7 @@
 #include "uve/render_systems/compute_system_uve.h"
 #include "uve/render_systems/frustum_cull_compute_uve.h"
 #include "uve/render_systems/frustum_cull_indirect_uve.h"
+#include "uve/render_systems/mesh_skin_compute_uve.h"
 #include "uve/render_systems/particle_compute_simulation_uve.h"
 #include "uve/rhi/render_resource_descs_uve.h"
 #include "uve/rhi_vulkan/vulkan_render_device_uve.h"
@@ -330,6 +334,146 @@ TEST_F(ComputeWorkloadsVulkanUVETest, FrustumCullIndirect_RepeatedCalls_DoNotAcc
             cull.GetDrawCommandBufferUVE(),
             std::span<std::byte>{reinterpret_cast<std::byte*>(&command), sizeof(command)}));
         EXPECT_EQ(command.instanceCount, expectedVisible) << "on pass " << pass;
+    }
+}
+
+
+// --- CS10 on the second backend ----------------------------------------------------------------
+//
+// The bit-for-bit claim is the whole point of CS10, and the two backends reach it through entirely
+// different compilers - GLSL through the driver, SPIR-V through glslang. If a `precise` qualifier
+// were doing nothing on one of them, this is where it shows.
+
+[[nodiscard]] Asset::MeshAssetUVE MakeSkinnedMeshForVulkanUVE(const std::size_t vertexCount,
+                                                              const std::size_t jointCount) {
+    Asset::MeshAssetUVE mesh;
+    mesh.vertices.reserve(vertexCount);
+    mesh.skinningInfluences.reserve(vertexCount);
+    for (std::size_t index = 0U; index < vertexCount; ++index) {
+        const float step = static_cast<float>(index);
+        Asset::MeshVertexUVE vertex;
+        vertex.position = Math::Vector3UVE{std::fmod(step * 0.731F, 7.3F) - 3.65F,
+                                           std::fmod(step * 0.379F, 2.9F) - 1.45F,
+                                           std::fmod(step * 0.517F, 4.1F) - 2.05F};
+        vertex.normal = Math::Vector3UVE{0.577F + std::fmod(step * 0.031F, 0.4F), -0.577F,
+                                         0.577F - std::fmod(step * 0.019F, 0.3F)};
+        vertex.tangent = Math::Vector3UVE{-0.707F, std::fmod(step * 0.023F, 0.5F), 0.707F};
+        vertex.tangentHandedness = (index % 2U == 0U) ? 1.0F : -1.0F;
+        mesh.vertices.push_back(vertex);
+
+        Asset::MeshSkinningInfluenceUVE influence;
+        influence.joints[0] = static_cast<std::uint32_t>(index % jointCount);
+        influence.joints[1] = static_cast<std::uint32_t>((index + 1U) % jointCount);
+        influence.joints[2] = static_cast<std::uint32_t>((index + 2U) % jointCount);
+        influence.joints[3] = influence.joints[0];
+        if (index % 5U == 0U) {
+            influence.weights[0] = 1.0F; // rigid, exercising the zero-weight skip
+        } else {
+            const float first = 0.2F + std::fmod(step * 0.037F, 0.5F);
+            const float second = 0.3F - std::fmod(step * 0.013F, 0.25F);
+            influence.weights[0] = first;
+            influence.weights[1] = second;
+            influence.weights[2] = 1.0F - first - second;
+        }
+        mesh.skinningInfluences.push_back(influence);
+    }
+    mesh.indices = {0U, 1U, 2U};
+    mesh.joints.resize(jointCount);
+    for (std::size_t index = 0U; index < jointCount; ++index) {
+        mesh.joints[index].parentIndex = (index == 0U)
+                                             ? Asset::kInvalidJointParentUVE
+                                             : static_cast<std::uint32_t>(index - 1U);
+        mesh.joints[index].inverseBindMatrix = Math::Matrix4x4UVE::ComposeTrsUVE(
+            Math::Vector3UVE{-static_cast<float>(index), 0.0F, 0.0F}, Math::QuaternionUVE{},
+            Math::Vector3UVE{1.0F, 1.0F, 1.0F});
+    }
+    return mesh;
+}
+
+[[nodiscard]] std::vector<Math::Matrix4x4UVE> MakeAwkwardSkinPoseUVE(const std::size_t jointCount) {
+    std::vector<Math::Matrix4x4UVE> pose;
+    pose.reserve(jointCount);
+    for (std::size_t index = 0U; index < jointCount; ++index) {
+        const float step = static_cast<float>(index);
+        Math::QuaternionUVE rotation;
+        EXPECT_TRUE(Math::TryMakeAxisAngleUVE(
+            Math::Vector3UVE{0.37F, 0.81F - step * 0.03F, -0.44F + step * 0.017F},
+            0.613F + step * 0.229F, rotation));
+        pose.push_back(Math::Matrix4x4UVE::ComposeTrsUVE(
+            Math::Vector3UVE{1.0F + std::fmod(step * 0.317F, 0.9F),
+                             std::fmod(step * 0.211F, 1.3F) - 0.65F,
+                             std::fmod(step * 0.173F, 1.1F) - 0.55F},
+            rotation, Math::Vector3UVE{1.0F, 1.0F, 1.0F}));
+    }
+    return pose;
+}
+
+void ExpectFloatBitIdenticalUVE(const float actual, const float expected, const char* const what,
+                                const std::size_t index) {
+    std::uint32_t actualBits = 0U;
+    std::uint32_t expectedBits = 0U;
+    std::memcpy(&actualBits, &actual, sizeof(actualBits));
+    std::memcpy(&expectedBits, &expected, sizeof(expectedBits));
+    EXPECT_EQ(actualBits, expectedBits)
+        << "vertex " << index << " " << what << ": Vulkan " << actual << " vs CPU " << expected;
+}
+
+TEST_F(ComputeWorkloadsVulkanUVETest, MeshSkin_MatchesTheCpuBitForBit) {
+    MeshSkinComputeUVE skin(*device, *computeSystem);
+    std::string infoLog;
+    ASSERT_TRUE(skin.InitializeUVE(&infoLog))
+        << "the skinning kernel must build on Vulkan, not just OpenGL: " << infoLog;
+
+    const Asset::MeshAssetUVE mesh = MakeSkinnedMeshForVulkanUVE(1000U, 6U);
+    std::vector<Math::Matrix4x4UVE> matrices;
+    ASSERT_TRUE(Asset::TryResolvePoseUVE(mesh.joints, MakeAwkwardSkinPoseUVE(6U), matrices));
+
+    std::vector<Asset::MeshVertexUVE> onCpu;
+    ASSERT_TRUE(Asset::TrySkinMeshUVE(mesh, matrices, onCpu));
+    std::vector<Asset::MeshVertexUVE> onGpu;
+    ASSERT_TRUE(skin.SkinUVE(mesh, matrices, onGpu));
+
+    ASSERT_EQ(onGpu.size(), onCpu.size());
+    for (std::size_t index = 0U; index < onCpu.size(); ++index) {
+        ExpectFloatBitIdenticalUVE(onGpu[index].position.x, onCpu[index].position.x, "position.x", index);
+        ExpectFloatBitIdenticalUVE(onGpu[index].position.y, onCpu[index].position.y, "position.y", index);
+        ExpectFloatBitIdenticalUVE(onGpu[index].position.z, onCpu[index].position.z, "position.z", index);
+        ExpectFloatBitIdenticalUVE(onGpu[index].normal.x, onCpu[index].normal.x, "normal.x", index);
+        ExpectFloatBitIdenticalUVE(onGpu[index].normal.y, onCpu[index].normal.y, "normal.y", index);
+        ExpectFloatBitIdenticalUVE(onGpu[index].normal.z, onCpu[index].normal.z, "normal.z", index);
+        ExpectFloatBitIdenticalUVE(onGpu[index].tangent.x, onCpu[index].tangent.x, "tangent.x", index);
+        ExpectFloatBitIdenticalUVE(onGpu[index].tangentHandedness, onCpu[index].tangentHandedness,
+                                   "handedness", index);
+    }
+}
+
+TEST_F(ComputeWorkloadsVulkanUVETest, MeshSkin_BindPose_ReturnsTheSourceVerticesUnchanged) {
+    // Also the transpose check on this backend: the matrix upload order is host-side code shared
+    // by both, but only a real dispatch proves the shader reads it the way the host wrote it.
+    MeshSkinComputeUVE skin(*device, *computeSystem);
+    std::string infoLog;
+    ASSERT_TRUE(skin.InitializeUVE(&infoLog)) << infoLog;
+
+    const Asset::MeshAssetUVE mesh = MakeSkinnedMeshForVulkanUVE(200U, 5U);
+    std::vector<Math::Matrix4x4UVE> bindPose{Math::Matrix4x4UVE::IdentityUVE()};
+    for (std::size_t index = 1U; index < mesh.joints.size(); ++index) {
+        bindPose.push_back(Math::Matrix4x4UVE::ComposeTrsUVE(Math::Vector3UVE{1.0F, 0.0F, 0.0F},
+                                                             Math::QuaternionUVE{},
+                                                             Math::Vector3UVE{1.0F, 1.0F, 1.0F}));
+    }
+    std::vector<Math::Matrix4x4UVE> matrices;
+    ASSERT_TRUE(Asset::TryResolvePoseUVE(mesh.joints, bindPose, matrices));
+
+    std::vector<Asset::MeshVertexUVE> onGpu;
+    ASSERT_TRUE(skin.SkinUVE(mesh, matrices, onGpu));
+    ASSERT_EQ(onGpu.size(), mesh.vertices.size());
+    for (std::size_t index = 0U; index < onGpu.size(); ++index) {
+        ExpectFloatBitIdenticalUVE(onGpu[index].position.x, mesh.vertices[index].position.x,
+                                   "bind position.x", index);
+        ExpectFloatBitIdenticalUVE(onGpu[index].position.y, mesh.vertices[index].position.y,
+                                   "bind position.y", index);
+        ExpectFloatBitIdenticalUVE(onGpu[index].position.z, mesh.vertices[index].position.z,
+                                   "bind position.z", index);
     }
 }
 

@@ -320,6 +320,8 @@ INSTANTIATE_TEST_SUITE_P(
                                                                       BuiltIn::kFrustumCullSource},
                        std::pair<std::string_view, std::string_view>{"frustum_cull_indirect.glsl",
                                                                       BuiltIn::kFrustumCullIndirectSource},
+                       std::pair<std::string_view, std::string_view>{"mesh_skin.glsl",
+                                                                      BuiltIn::kMeshSkinSource},
                        std::pair<std::string_view, std::string_view>{"ui_overlay.glsl", BuiltIn::kUIOverlaySource}));
 
 } // namespace

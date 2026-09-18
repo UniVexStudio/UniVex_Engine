@@ -42,7 +42,7 @@ struct KernelUVE {
     std::size_t spirvSize;
 };
 
-[[nodiscard]] std::array<KernelUVE, 3U> AllComputeKernelsUVE() {
+[[nodiscard]] std::array<KernelUVE, 4U> AllComputeKernelsUVE() {
     return {
         KernelUVE{"particle_simulate", Shader::BuiltIn::kParticleSimulateSource,
                   BuiltInSpirv::kParticleSimulateSpirvBytesUVE, BuiltInSpirv::kParticleSimulateSpirvSizeUVE},
@@ -51,6 +51,8 @@ struct KernelUVE {
         KernelUVE{"frustum_cull_indirect", Shader::BuiltIn::kFrustumCullIndirectSource,
                   BuiltInSpirv::kFrustumCullIndirectSpirvBytesUVE,
                   BuiltInSpirv::kFrustumCullIndirectSpirvSizeUVE},
+        KernelUVE{"mesh_skin", Shader::BuiltIn::kMeshSkinSource,
+                  BuiltInSpirv::kMeshSkinSpirvBytesUVE, BuiltInSpirv::kMeshSkinSpirvSizeUVE},
     };
 }
 
@@ -137,6 +139,18 @@ TEST(ComputeKernelPortabilityUVETest, GlslKernels_DeclareTheBindingsTheirHostsBi
     // qualifier would make the kernel's one essential operation illegal. Asserted because the
     // qualifier is easy to "tidy up" into matching its siblings.
     EXPECT_EQ(indirect.find("binding = 2) writeonly"), std::string_view::npos);
+
+    const std::string_view skin = Shader::BuiltIn::kMeshSkinSource;
+    EXPECT_NE(skin.find("binding = 0) readonly buffer InputVertexBlock"), std::string_view::npos);
+    EXPECT_NE(skin.find("binding = 1) readonly buffer InfluenceBlock"), std::string_view::npos);
+    EXPECT_NE(skin.find("binding = 2) readonly buffer SkinningMatrixBlock"),
+              std::string_view::npos);
+    EXPECT_NE(skin.find("binding = 3) writeonly buffer OutputVertexBlock"), std::string_view::npos);
+    EXPECT_NE(skin.find("binding = 4) readonly buffer MeshSkinParams"), std::string_view::npos);
+    // The blend accumulator carries `precise` too, not just the final transform: each `acc += M*w`
+    // is itself contractible into an FMA, and qualifying only the transform would leave the
+    // subtler half of the hazard open.
+    EXPECT_NE(skin.find("precise mat4 blended"), std::string_view::npos);
 }
 
 TEST(ComputeKernelPortabilityUVETest, GlslKernels_KeepTheirFmaBarrier) {

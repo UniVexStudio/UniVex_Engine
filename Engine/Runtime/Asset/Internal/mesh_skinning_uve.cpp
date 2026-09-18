@@ -21,13 +21,39 @@ namespace {
     return true;
 }
 
+/// Transforms `point` by `matrix` as an affine point, accumulating in FLOAT.
+///
+/// Deliberately not Math::TransformPointUVE, which accumulates in double. That is the right choice
+/// for a general-purpose transform, but it is the wrong one here, for two reasons.
+///
+/// First, consistency inside a single vertex: a skinned normal has no double-precision equivalent
+/// (TransformDirectionUVE below is float, as any direction transform naturally is), so using a
+/// double path for the position and a float path for the normal would apply two different
+/// arithmetics to the same vertex under the same matrix.
+///
+/// Second, and the reason this matters beyond tidiness: a GPU skinning kernel has no float64 - it
+/// is an optional Vulkan feature absent from whole classes of hardware. Keeping the CPU on double
+/// would put a permanent ~1 ULP disagreement between the two paths on roughly one vertex in six
+/// (measured, not estimated), which would make an exact CPU/GPU comparison impossible and force
+/// every skinning test onto a tolerance. A tolerance is exactly what stops a test noticing a real
+/// defect, because a genuinely wrong weight also looks like a small error. The precision given up
+/// is on the order of 1e-7 relative on model-space positions, which is nothing; the ability to
+/// assert bit-for-bit agreement forever is worth considerably more.
+[[nodiscard]] Math::Vector3UVE TransformPointFloatUVE(const Math::Matrix4x4UVE& matrix,
+                                                      const Math::Vector3UVE& point) noexcept {
+    return Math::Vector3UVE{matrix.m[0][0] * point.x + matrix.m[0][1] * point.y +
+                                matrix.m[0][2] * point.z + matrix.m[0][3],
+                            matrix.m[1][0] * point.x + matrix.m[1][1] * point.y +
+                                matrix.m[1][2] * point.z + matrix.m[1][3],
+                            matrix.m[2][0] * point.x + matrix.m[2][1] * point.y +
+                                matrix.m[2][2] * point.z + matrix.m[2][3]};
+}
+
 /// Transforms `direction` by `matrix`'s upper-left 3x3, ignoring translation.
 ///
-/// Spelled out here rather than reusing TransformPointUVE because the difference IS the point: a
-/// normal is a direction, and running it through the point transform would displace it by the
-/// joint's translation, which on a joint far from the origin turns a unit normal into a vector
-/// pointing roughly at that joint. The arithmetic below is ordered exactly like TransformPointUVE's
-/// so the two agree on the rotational part bit for bit.
+/// The difference from the point transform above IS the point: a normal is a direction, and
+/// running it through the point transform would displace it by the joint's translation, which on
+/// a joint far from the origin turns a unit normal into a vector pointing roughly at that joint.
 [[nodiscard]] Math::Vector3UVE TransformDirectionUVE(const Math::Matrix4x4UVE& matrix,
                                                      const Math::Vector3UVE& direction) noexcept {
     return Math::Vector3UVE{
@@ -140,7 +166,7 @@ bool TrySkinMeshUVE(const MeshAssetUVE& mesh,
             BlendSkinningMatricesUVE(mesh.skinningInfluences[index], skinningMatrices);
 
         MeshVertexUVE vertex = mesh.vertices[index];
-        vertex.position = Math::TransformPointUVE(blended, vertex.position);
+        vertex.position = TransformPointFloatUVE(blended, vertex.position);
         // Directions, not points - see the helper's comment.
         vertex.normal = TransformDirectionUVE(blended, vertex.normal);
         vertex.tangent = TransformDirectionUVE(blended, vertex.tangent);
