@@ -219,8 +219,16 @@ publicly shipping real-time engines as of today, without naming any of them.
   extraction stays on the CPU (six planes is not worth a dispatch, and one authority is easier
   to keep correct), and non-finite input is refused rather than answered differently, since the
   CPU test absorbs it through a double-precision fallback a float shader cannot reproduce.
+  CS6 then closed a gap the first two workloads had hidden: their kernels existed only as GLSL,
+  so on Vulkan - which takes SPIR-V, runtime translation still being an open item below - they
+  compiled nothing and refused to initialize, making two "engine systems" quietly GL-only.
+  Both kernels now pass their parameters in std430 storage blocks instead of bare `uniform`
+  scalars (SPIR-V has no non-opaque global uniforms; glslang rejects the uniform form outright),
+  are baked to SPIR-V beside their GLSL, and are selected per backend - with both workloads now
+  proven against a real headless Vulkan device at the same bit-for-bit standard they meet on GL.
   Remaining: culling whose result never returns to the CPU (needs indirect draw in the RHI),
-  and skinning
+  and skinning (needs a joints/weights data model in the mesh asset first - there is no CPU
+  skinning baseline to verify a GPU one against yet)
 - [ ] Bindless/descriptor-indexing-style resource binding for reduced per-draw overhead
 
 ---

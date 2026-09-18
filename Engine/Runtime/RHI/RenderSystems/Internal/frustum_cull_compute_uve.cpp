@@ -6,9 +6,11 @@
 #include <array>
 #include <cmath>
 #include <memory>
+#include <string_view>
 #include <utility>
 
 #include "uve/logging/logging_macros_uve.h"
+#include "uve/rhi_shader/built_in_compute_spirv_uve.h"
 #include "uve/rhi_shader/built_in_shaders_uve.h"
 
 namespace UVE::Render {
@@ -20,6 +22,26 @@ constexpr std::size_t kFrustumPlaneCountUVE = 6U;
     return std::isfinite(vector.x) && std::isfinite(vector.y) && std::isfinite(vector.z);
 }
 
+
+/// Picks the kernel source the injected backend can actually consume. This is not a nicety: the
+/// RHI's ShaderDescUVE takes each backend's own shader language - GLSL text on OpenGL, SPIR-V
+/// bytes on Vulkan - and GLSL->SPIR-V translation at runtime remains an open ROADMAP item with no
+/// toolchain in this build. Without this selection the compute workloads compile on GL and
+/// silently refuse to initialize on Vulkan, which is a capability gap disguised as a working
+/// feature. The Null backend compiles nothing, so either payload satisfies it; it gets the GLSL
+/// so a Null-backed test reads like the GL one.
+[[nodiscard]] std::string SelectKernelSourceUVE(const IRenderDeviceUVE& device,
+                                                const std::string_view glslSource,
+                                                const char* const spirvBytes,
+                                                const std::size_t spirvSize) {
+    if (device.GetBackendNameUVE().starts_with("Vulkan")) {
+        // Length-explicit construction: SPIR-V is full of NUL bytes, and a cstring construction
+        // would truncate at the first one (the M2a lesson, in the one place it still applies).
+        return std::string(spirvBytes, spirvSize);
+    }
+    return std::string(glslSource);
+}
+
 } // namespace
 
 FrustumCullComputeUVE::FrustumCullComputeUVE(IRenderDeviceUVE& renderDevice,
@@ -29,7 +51,7 @@ FrustumCullComputeUVE::FrustumCullComputeUVE(IRenderDeviceUVE& renderDevice,
 FrustumCullComputeUVE::~FrustumCullComputeUVE() {
     // The buffers are this class's own; the program belongs to the compute system, which is why it
     // goes back through DestroyProgramUVE() rather than straight to the device.
-    for (BufferHandleUVE* const buffer : {&m_boxBuffer, &m_planeBuffer, &m_visibilityBuffer}) {
+    for (BufferHandleUVE* const buffer : {&m_boxBuffer, &m_planeBuffer, &m_visibilityBuffer, &m_paramBuffer}) {
         if (*buffer != kInvalidBufferHandleUVE) {
             m_device.DestroyBufferUVE(*buffer);
             *buffer = kInvalidBufferHandleUVE;
@@ -47,7 +69,9 @@ bool FrustumCullComputeUVE::InitializeUVE(std::string* const outInfoLog) {
     }
 
     ComputeProgramDescUVE desc;
-    desc.sourceCode = std::string(Shader::BuiltIn::kFrustumCullSource);
+    desc.sourceCode = SelectKernelSourceUVE(m_device, Shader::BuiltIn::kFrustumCullSource,
+                                            BuiltInSpirv::kFrustumCullSpirvBytesUVE,
+                                            BuiltInSpirv::kFrustumCullSpirvSizeUVE);
     desc.debugName = "FrustumCull";
     m_program = m_computeSystem.CreateProgramUVE(desc, outInfoLog);
     if (m_program == kInvalidPipelineHandleUVE) {
@@ -64,6 +88,19 @@ bool FrustumCullComputeUVE::InitializeUVE(std::string* const outInfoLog) {
     m_planeBuffer = m_device.CreateBufferUVE(planeDesc);
     if (m_planeBuffer == kInvalidBufferHandleUVE) {
         UVE_WARNING("FrustumCullComputeUVE could not allocate its frustum-plane buffer.");
+        m_computeSystem.DestroyProgramUVE(m_program);
+        m_program = kInvalidPipelineHandleUVE;
+        return false;
+    }
+
+    BufferDescUVE paramDesc;
+    paramDesc.usage = BufferUsageUVE::Storage;
+    paramDesc.sizeBytes = sizeof(FrustumCullParamsGpuUVE);
+    m_paramBuffer = m_device.CreateBufferUVE(paramDesc);
+    if (m_paramBuffer == kInvalidBufferHandleUVE) {
+        UVE_WARNING("FrustumCullComputeUVE could not allocate its parameter buffer.");
+        m_device.DestroyBufferUVE(m_planeBuffer);
+        m_planeBuffer = kInvalidBufferHandleUVE;
         m_computeSystem.DestroyProgramUVE(m_program);
         m_program = kInvalidPipelineHandleUVE;
         return false;
@@ -174,8 +211,14 @@ bool FrustumCullComputeUVE::CullUVE(const std::span<const Math::AabbUVE> boxes,
                                                m_boxScratch.size() * sizeof(CullBoxGpuUVE)};
     const std::span<const std::byte> planeUpload{reinterpret_cast<const std::byte*>(packedPlanes.data()),
                                                  packedPlanes.size() * sizeof(CullPlaneGpuUVE)};
+    FrustumCullParamsGpuUVE params;
+    params.boxCount = static_cast<std::int32_t>(boxCount);
+    const std::span<const std::byte> paramUpload{reinterpret_cast<const std::byte*>(&params),
+                                                 sizeof(params)};
+
     if (!m_device.UpdateBufferUVE(m_boxBuffer, boxUpload) ||
-        !m_device.UpdateBufferUVE(m_planeBuffer, planeUpload)) {
+        !m_device.UpdateBufferUVE(m_planeBuffer, planeUpload) ||
+        !m_device.UpdateBufferUVE(m_paramBuffer, paramUpload)) {
         ++m_diagnostics.uploadFailures;
         UVE_WARNING("FrustumCullComputeUVE could not upload its cull inputs.");
         return false;
@@ -187,7 +230,7 @@ bool FrustumCullComputeUVE::CullUVE(const std::span<const Math::AabbUVE> boxes,
     dispatch.storageBuffers.push_back(ComputeStorageBufferBindingUVE{m_boxBuffer, 0U});
     dispatch.storageBuffers.push_back(ComputeStorageBufferBindingUVE{m_planeBuffer, 1U});
     dispatch.storageBuffers.push_back(ComputeStorageBufferBindingUVE{m_visibilityBuffer, 2U});
-    dispatch.uniforms.push_back(MakeComputeUniformIntUVE("uBoxCount", static_cast<std::int32_t>(boxCount)));
+    dispatch.storageBuffers.push_back(ComputeStorageBufferBindingUVE{m_paramBuffer, 3U});
     if (!m_computeSystem.EnqueueDispatchUVE(dispatch)) {
         ++m_diagnostics.cullsRejected;
         return false;

@@ -6,10 +6,12 @@
 #include <cmath>
 #include <cstring>
 #include <memory>
+#include <string_view>
 #include <span>
 #include <utility>
 
 #include "uve/logging/logging_macros_uve.h"
+#include "uve/rhi_shader/built_in_compute_spirv_uve.h"
 #include "uve/rhi_shader/built_in_shaders_uve.h"
 
 namespace UVE::Render {
@@ -29,6 +31,26 @@ namespace {
            IsFiniteVectorUVE(acceleration);
 }
 
+
+/// Picks the kernel source the injected backend can actually consume. This is not a nicety: the
+/// RHI's ShaderDescUVE takes each backend's own shader language - GLSL text on OpenGL, SPIR-V
+/// bytes on Vulkan - and GLSL->SPIR-V translation at runtime remains an open ROADMAP item with no
+/// toolchain in this build. Without this selection the compute workloads compile on GL and
+/// silently refuse to initialize on Vulkan, which is a capability gap disguised as a working
+/// feature. The Null backend compiles nothing, so either payload satisfies it; it gets the GLSL
+/// so a Null-backed test reads like the GL one.
+[[nodiscard]] std::string SelectKernelSourceUVE(const IRenderDeviceUVE& device,
+                                                const std::string_view glslSource,
+                                                const char* const spirvBytes,
+                                                const std::size_t spirvSize) {
+    if (device.GetBackendNameUVE().starts_with("Vulkan")) {
+        // Length-explicit construction: SPIR-V is full of NUL bytes, and a cstring construction
+        // would truncate at the first one (the M2a lesson, in the one place it still applies).
+        return std::string(spirvBytes, spirvSize);
+    }
+    return std::string(glslSource);
+}
+
 } // namespace
 
 ParticleComputeSimulationUVE::ParticleComputeSimulationUVE(IRenderDeviceUVE& renderDevice,
@@ -38,9 +60,11 @@ ParticleComputeSimulationUVE::ParticleComputeSimulationUVE(IRenderDeviceUVE& ren
 ParticleComputeSimulationUVE::~ParticleComputeSimulationUVE() {
     // The buffer is this class's own; the program belongs to the compute system, which is why it
     // goes back through DestroyProgramUVE() rather than straight to the device.
-    if (m_buffer != kInvalidBufferHandleUVE) {
-        m_device.DestroyBufferUVE(m_buffer);
-        m_buffer = kInvalidBufferHandleUVE;
+    for (BufferHandleUVE* const buffer : {&m_buffer, &m_paramBuffer}) {
+        if (*buffer != kInvalidBufferHandleUVE) {
+            m_device.DestroyBufferUVE(*buffer);
+            *buffer = kInvalidBufferHandleUVE;
+        }
     }
     if (m_program != kInvalidPipelineHandleUVE) {
         m_computeSystem.DestroyProgramUVE(m_program);
@@ -54,12 +78,27 @@ bool ParticleComputeSimulationUVE::InitializeUVE(std::string* const outInfoLog) 
     }
 
     ComputeProgramDescUVE desc;
-    desc.sourceCode = std::string(Shader::BuiltIn::kParticleSimulateSource);
+    desc.sourceCode = SelectKernelSourceUVE(m_device, Shader::BuiltIn::kParticleSimulateSource,
+                                            BuiltInSpirv::kParticleSimulateSpirvBytesUVE,
+                                            BuiltInSpirv::kParticleSimulateSpirvSizeUVE);
     desc.debugName = "ParticleSimulate";
     m_program = m_computeSystem.CreateProgramUVE(desc, outInfoLog);
     if (m_program == kInvalidPipelineHandleUVE) {
         UVE_WARNING("ParticleComputeSimulationUVE could not create its simulation kernel; "
                         "callers must keep using the CPU particle simulation.");
+        return false;
+    }
+
+    // The parameter block is one small fixed-size record for the life of the system - allocate it
+    // once here rather than re-checking it on every simulation step.
+    BufferDescUVE paramDesc;
+    paramDesc.usage = BufferUsageUVE::Storage;
+    paramDesc.sizeBytes = sizeof(ParticleSimulateParamsGpuUVE);
+    m_paramBuffer = m_device.CreateBufferUVE(paramDesc);
+    if (m_paramBuffer == kInvalidBufferHandleUVE) {
+        UVE_WARNING("ParticleComputeSimulationUVE could not allocate its parameter buffer.");
+        m_computeSystem.DestroyProgramUVE(m_program);
+        m_program = kInvalidPipelineHandleUVE;
         return false;
     }
     return true;
@@ -140,7 +179,17 @@ bool ParticleComputeSimulationUVE::SimulateUVE(std::vector<Scene::ParticleStateU
 
     const std::span<const std::byte> upload{reinterpret_cast<const std::byte*>(m_scratch.data()),
                                             m_scratch.size() * sizeof(ParticleGpuStateUVE)};
-    if (!m_device.UpdateBufferUVE(m_buffer, upload)) {
+    ParticleSimulateParamsGpuUVE params;
+    params.deltaSeconds = deltaSeconds;
+    params.accelerationX = acceleration.x;
+    params.accelerationY = acceleration.y;
+    params.accelerationZ = acceleration.z;
+    params.particleCount = static_cast<std::int32_t>(particleCount);
+    const std::span<const std::byte> paramUpload{reinterpret_cast<const std::byte*>(&params),
+                                                 sizeof(params)};
+
+    if (!m_device.UpdateBufferUVE(m_buffer, upload) ||
+        !m_device.UpdateBufferUVE(m_paramBuffer, paramUpload)) {
         ++m_diagnostics.uploadFailures;
         UVE_WARNING("ParticleComputeSimulationUVE could not upload particle state; the CPU array is unchanged.");
         return false;
@@ -151,10 +200,7 @@ bool ParticleComputeSimulationUVE::SimulateUVE(std::vector<Scene::ParticleStateU
     dispatch.groupCountX =
         static_cast<std::uint32_t>((particleCount + kWorkgroupSizeUVE - 1U) / kWorkgroupSizeUVE);
     dispatch.storageBuffers.push_back(ComputeStorageBufferBindingUVE{m_buffer, 0U});
-    dispatch.uniforms.push_back(MakeComputeUniformFloatUVE("uDeltaSeconds", deltaSeconds));
-    dispatch.uniforms.push_back(MakeComputeUniformVector3UVE("uAcceleration", acceleration));
-    dispatch.uniforms.push_back(
-        MakeComputeUniformIntUVE("uParticleCount", static_cast<std::int32_t>(particleCount)));
+    dispatch.storageBuffers.push_back(ComputeStorageBufferBindingUVE{m_paramBuffer, 1U});
     if (!m_computeSystem.EnqueueDispatchUVE(dispatch)) {
         ++m_diagnostics.simulationsRejected;
         return false;
