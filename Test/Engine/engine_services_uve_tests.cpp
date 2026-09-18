@@ -596,6 +596,9 @@ public:
     [[nodiscard]] bool UpdateBufferUVE(Render::BufferHandleUVE, std::span<const std::byte>, std::uint64_t) override {
         return true;
     }
+    [[nodiscard]] bool ReadbackBufferUVE(Render::BufferHandleUVE, std::span<std::byte>, std::uint64_t) override {
+        return false; // this fake owns no memory - it never pretends to have contents to hand back
+    }
     [[nodiscard]] Render::TextureHandleUVE CreateTextureUVE(const Render::TextureDescUVE&,
                                                               std::span<const std::byte>) override {
         return Render::TextureHandleUVE{1};

@@ -16,7 +16,8 @@ template <typename TFunctionPointer>
 
 bool GlFunctionsUVE::IsCompleteUVE() const noexcept {
     return glGenBuffers != nullptr && glDeleteBuffers != nullptr && glBindBuffer != nullptr &&
-           glBufferData != nullptr && glBufferSubData != nullptr && glBindBufferBase != nullptr &&
+           glBufferData != nullptr && glBufferSubData != nullptr && glGetBufferSubData != nullptr &&
+           glBindBufferBase != nullptr &&
            glGenVertexArrays != nullptr && glDeleteVertexArrays != nullptr && glBindVertexArray != nullptr &&
            glVertexAttribPointer != nullptr && glEnableVertexAttribArray != nullptr && glCreateShader != nullptr &&
            glDeleteShader != nullptr && glShaderSource != nullptr && glCompileShader != nullptr &&
@@ -40,6 +41,7 @@ GlFunctionsUVE LoadGlFunctionsUVE(void* (*getProcAddress)(const char*)) {
     functions.glBindBuffer = LoadOneUVE<PFNGLBINDBUFFERPROC>(getProcAddress, "glBindBuffer");
     functions.glBufferData = LoadOneUVE<PFNGLBUFFERDATAPROC>(getProcAddress, "glBufferData");
     functions.glBufferSubData = LoadOneUVE<PFNGLBUFFERSUBDATAPROC>(getProcAddress, "glBufferSubData");
+    functions.glGetBufferSubData = LoadOneUVE<PFNGLGETBUFFERSUBDATAPROC>(getProcAddress, "glGetBufferSubData");
     functions.glBindBufferBase = LoadOneUVE<PFNGLBINDBUFFERBASEPROC>(getProcAddress, "glBindBufferBase");
 
     // M5a: optional compute entry points — may stay null on pre-4.3 contexts (see GlFunctionsUVE).

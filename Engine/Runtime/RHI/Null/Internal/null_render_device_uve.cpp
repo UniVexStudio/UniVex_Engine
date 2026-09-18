@@ -3,6 +3,8 @@
 
 #include "uve/rhi_null/null_render_device_uve.h"
 
+#include <algorithm>
+#include <iterator>
 #include <mutex>
 #include <unordered_map>
 #include <utility>
@@ -14,7 +16,15 @@
 namespace UVE::Render {
 
 struct NullRenderDeviceUVE::ImplUVE {
-    std::unordered_map<std::uint32_t, BufferDescUVE> buffers;
+    // CS3: the Null backend now keeps each buffer's BYTES, not just its descriptor. Without
+    // them ReadbackBufferUVE could only ever hand back zeros, which would make a headless
+    // "what did the write leave behind" assertion a lie; with them the null device models the
+    // one thing a memory-less backend can honestly model - host-visible buffer contents.
+    struct BufferRecordUVE {
+        BufferDescUVE desc;
+        std::vector<std::byte> bytes;
+    };
+    std::unordered_map<std::uint32_t, BufferRecordUVE> buffers;
     std::uint32_t nextBufferHandle = 1;
     std::unordered_map<std::uint32_t, TextureDescUVE> textures;
     std::uint32_t nextTextureHandle = 1;
@@ -43,13 +53,18 @@ BufferHandleUVE NullRenderDeviceUVE::CreateBufferUVE(const BufferDescUVE& desc,
         UVE_ERROR("NullRenderDeviceUVE: CreateBufferUVE initial data exceeds buffer size");
         return kInvalidBufferHandleUVE;
     }
-    static_cast<void>(initialData); // NullRenderDeviceUVE performs no real upload, bookkeeping only.
     if (!IsBufferUsageValidUVE(desc.usage)) {
         UVE_ERROR("NullRenderDeviceUVE: CreateBufferUVE received an unknown buffer usage");
         return kInvalidBufferHandleUVE;
     }
     const std::uint32_t handleValue = m_impl->nextBufferHandle++;
-    m_impl->buffers.emplace(handleValue, desc);
+    // Zero-filled to the declared size, then the optional initial upload on top: the same
+    // observable state a real backend leaves behind for a freshly created buffer.
+    ImplUVE::BufferRecordUVE record{desc, std::vector<std::byte>(desc.sizeBytes, std::byte{0})};
+    if (!initialData.empty()) {
+        std::copy(initialData.begin(), initialData.end(), record.bytes.begin());
+    }
+    m_impl->buffers.emplace(handleValue, std::move(record));
     return BufferHandleUVE{handleValue};
 }
 
@@ -67,11 +82,36 @@ bool NullRenderDeviceUVE::UpdateBufferUVE(BufferHandleUVE buffer, std::span<cons
         UVE_ERROR("NullRenderDeviceUVE: UpdateBufferUVE called with an unknown handle ({})", buffer.value);
         return false;
     }
-    if (!ValidateBufferUpdateUVE(iterator->second.sizeBytes, data.size(), offsetBytes)) {
+    if (!ValidateBufferUpdateUVE(iterator->second.desc.sizeBytes, data.size(), offsetBytes)) {
         UVE_ERROR("NullRenderDeviceUVE: UpdateBufferUVE write of {} bytes at offset {} exceeds buffer size {}",
-                   data.size(), offsetBytes, iterator->second.sizeBytes);
+                   data.size(), offsetBytes, iterator->second.desc.sizeBytes);
         return false;
     }
+    std::copy(data.begin(), data.end(),
+              iterator->second.bytes.begin() + static_cast<std::ptrdiff_t>(offsetBytes));
+    return true;
+}
+
+bool NullRenderDeviceUVE::ReadbackBufferUVE(BufferHandleUVE buffer, std::span<std::byte> outData,
+                                             std::uint64_t offsetBytes) {
+    const auto iterator = m_impl->buffers.find(buffer.value);
+    if (iterator == m_impl->buffers.end()) {
+        UVE_ERROR("NullRenderDeviceUVE: ReadbackBufferUVE called with an unknown handle ({})", buffer.value);
+        return false;
+    }
+    // Same range rule as the write direction - a read that runs off the end is the same
+    // authoring bug as a write that does.
+    if (!ValidateBufferUpdateUVE(iterator->second.desc.sizeBytes, outData.size(), offsetBytes)) {
+        UVE_ERROR("NullRenderDeviceUVE: ReadbackBufferUVE read of {} bytes at offset {} exceeds buffer size {}",
+                   outData.size(), offsetBytes, iterator->second.desc.sizeBytes);
+        return false;
+    }
+    if (outData.empty()) {
+        return true;
+    }
+    // No device, no synchronization needed: the null backend's "GPU memory" is this vector.
+    const auto begin = iterator->second.bytes.begin() + static_cast<std::ptrdiff_t>(offsetBytes);
+    std::copy(begin, begin + static_cast<std::ptrdiff_t>(outData.size()), outData.begin());
     return true;
 }
 

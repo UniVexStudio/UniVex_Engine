@@ -445,6 +445,59 @@ TEST_F(ComputeSystemGlUVETest, CreateProgramUVE_BrokenSource_FailsWithBackendInf
     EXPECT_EQ(computeSystem->GetDiagnosticsUVE().livePrograms, 0U);
 }
 
+TEST_F(ComputeSystemGlUVETest, ExecuteQueuedDispatchesUVE_ResultReadBackThroughTheRhi_NoRawGlCalls) {
+    // CS3's payoff: the same real dispatch, verified end to end through ENGINE APIs only -
+    // ComputeSystemUVE queues it, RenderSystemUVE's frame buffer carries it, and
+    // IRenderDeviceUVE::ReadbackBufferUVE reads the result. No glGetIntegeri_v, no
+    // glGetBufferSubData, no GL type anywhere in the assertions: this is the shape engine and
+    // game code will actually use to consume GPU compute output.
+    const float zeros[4] = {};
+    const BufferHandleUVE resultBuffer = renderDevice->CreateBufferUVE(
+        BufferDescUVE{sizeof(zeros), BufferUsageUVE::Storage}, std::as_bytes(std::span(zeros)));
+    if (resultBuffer == kInvalidBufferHandleUVE) {
+        GTEST_SKIP() << "context lacks desktop GL 4.3 shader storage buffers";
+    }
+
+    ComputeProgramDescUVE programDesc;
+    programDesc.sourceCode = std::string(kUniformWriteComputeSource);
+    programDesc.debugName = "uniform-write-kernel";
+    std::string infoLog;
+    const PipelineHandleUVE program = computeSystem->CreateProgramUVE(programDesc, &infoLog);
+    if (program == kInvalidPipelineHandleUVE) {
+        renderDevice->DestroyBufferUVE(resultBuffer);
+        GTEST_SKIP() << "context lacks compute shaders (GL 4.3+): " << infoLog;
+    }
+
+    // Control: before the dispatch the RHI readback must show the zero fill.
+    std::array<float, 4> control{1.0F, 1.0F, 1.0F, 1.0F};
+    ASSERT_TRUE(renderDevice->ReadbackBufferUVE(resultBuffer, std::as_writable_bytes(std::span(control))));
+    for (const float value : control) {
+        EXPECT_FLOAT_EQ(value, 0.0F) << "control: the result buffer must start zeroed";
+    }
+
+    ComputeDispatchDescUVE dispatch;
+    dispatch.program = program;
+    dispatch.storageBuffers.push_back(ComputeStorageBufferBindingUVE{resultBuffer, 0U});
+    dispatch.uniforms.push_back(
+        MakeComputeUniformVector3UVE("uColor", Math::Vector3UVE{0.125F, 0.375F, 0.625F}));
+    ASSERT_TRUE(computeSystem->EnqueueDispatchUVE(dispatch));
+
+    RenderSystemUVE renderSystem(*renderDevice);
+    renderSystem.BeginFrameUVE();
+    EXPECT_EQ(computeSystem->ExecuteQueuedDispatchesUVE(renderSystem.GetFrameCommandBufferUVE()), 1U);
+    renderSystem.EndFrameUVE();
+
+    std::array<float, 4> readback{};
+    ASSERT_TRUE(renderDevice->ReadbackBufferUVE(resultBuffer, std::as_writable_bytes(std::span(readback))));
+    EXPECT_FLOAT_EQ(readback[0], 0.125F);
+    EXPECT_FLOAT_EQ(readback[1], 0.375F);
+    EXPECT_FLOAT_EQ(readback[2], 0.625F);
+    EXPECT_FLOAT_EQ(readback[3], 1.0F);
+
+    computeSystem->DestroyProgramUVE(program);
+    renderDevice->DestroyBufferUVE(resultBuffer);
+}
+
 TEST_F(ComputeSystemGlUVETest, ExecuteQueuedDispatchesUVE_RealGpuCompute_ByteVerifiedByReadback) {
     // The engine-level GL proof: a ZERO-initialized Storage SSBO, one dispatch enqueued through
     // ComputeSystemUVE with a vec3 uniform write, executed into RenderSystemUVE's frame command

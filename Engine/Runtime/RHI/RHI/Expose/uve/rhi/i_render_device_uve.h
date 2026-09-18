@@ -50,6 +50,25 @@ public:
     [[nodiscard]] virtual bool UpdateBufferUVE(BufferHandleUVE buffer, std::span<const std::byte> data,
                                                 std::uint64_t offsetBytes = 0) = 0;
 
+    /// Copies `buffer`'s current contents at `offsetBytes` into `outData`, filling it exactly.
+    /// This is the read direction of UpdateBufferUVE and the only way engine code can observe
+    /// what the GPU wrote — the capability GPU compute needs to be verifiable rather than
+    /// merely dispatched (a compute result nobody can read back cannot be asserted on).
+    ///
+    /// Cold path by construction: the call synchronizes with the device (each backend drains
+    /// the work that could still be writing the buffer) before copying, so it belongs in
+    /// tooling, tests, and deliberate CPU-readback steps — never in a per-frame hot loop.
+    ///
+    /// Returns false (logging the reason) if `buffer` is unknown, the range would exceed the
+    /// buffer's size, or the backend cannot read that buffer's memory. Readback is guaranteed
+    /// only for `BufferUsageUVE::Uniform` and `BufferUsageUVE::Storage`: those are the usages
+    /// every backend keeps host-readable, and Storage is the one compute writes through.
+    /// Vertex/Index buffers may live in device-local memory with no transfer-source capability,
+    /// so a backend is free to refuse them loudly rather than pretend. An empty `outData` is a
+    /// successful no-op.
+    [[nodiscard]] virtual bool ReadbackBufferUVE(BufferHandleUVE buffer, std::span<std::byte> outData,
+                                                  std::uint64_t offsetBytes = 0) = 0;
+
     /// Creates a GPU texture per `desc`, optionally uploading `initialData`. The backend must
     /// reject invalid descriptors or partial non-empty level-0 data through
     /// `ValidateTextureUploadUVE` before allocating a resource; valid creation never returns
