@@ -39,6 +39,7 @@
 #include "uve/physics/physics_constraint_system_uve.h"
 #include "uve/physics/i_raycast_system_uve.h"
 #include "uve/render_systems/i_camera_system_uve.h"
+#include "uve/render_systems/i_compute_system_uve.h"
 #include "uve/render_systems/i_light_system_uve.h"
 #include "uve/render_systems/i_mesh_renderer_uve.h"
 #include "uve/rhi/i_render_device_uve.h"
@@ -63,11 +64,11 @@ namespace UVE::Core {
 /// (Logger, Timer, EventSystem, MemoryManager, ThreadPool, CommandLine,
 /// ConfigManager, EntityManager, SceneGraph, AssetDatabase, ProjectFileIndex, DerivedArtifactCache,
 /// ProjectChangeWatcher, SceneSerializer, PrefabSystem, HotReload, AssetManager, AssetImporter, AssetImportQueue, AssetBundle,
-/// FileSystem, RenderDevice, ShaderManager, RenderSystem, CameraSystem,
+/// FileSystem, RenderDevice, ShaderManager, RenderSystem, ComputeSystem, CameraSystem,
 /// MeshRenderer, LightSystem, Renderer3D, CollisionSystem, PhysicsSystem,
 /// PhysicsQuerySystem, RaycastSystem, PhysicsConstraintSystem, InputSystem, GamepadInputSystem, MobileInputSystem, MobileGestureSystem, AudioDevice, AudioSystem, AudioSourceSystem,
 /// SaveGameSystem, CheckpointManager, WindowManager, ParticleRuntime), built once
-/// EngineCoreUVE has constructed all thirty-nine. Any future subsystem that
+/// EngineCoreUVE has constructed all forty. Any future subsystem that
 /// needs access to one of these should receive an EngineServicesUVE&
 /// (obtained from EngineCoreUVE::GetServicesUVE()) rather than a raw global
 /// pointer — the logging macros' internal active-instance pointer remains
@@ -78,14 +79,14 @@ namespace UVE::Core {
 /// ICommandLineUVE/IConfigManagerUVE/IEntityManagerUVE/ISceneGraphUVE/
 /// IAssetDatabaseUVE/IProjectFileIndexUVE/IDerivedArtifactCacheUVE/IProjectChangeWatcherUVE/ISceneSerializerUVE/IPrefabSystemUVE/IHotReloadUVE/
 /// IAssetManagerUVE/IAssetImporterUVE/IAssetImportQueueUVE/IAssetBundleUVE/IFileSystemUVE/
-/// IRenderDeviceUVE/Shader::IShaderManagerUVE/IRenderSystemUVE/
+/// IRenderDeviceUVE/Shader::IShaderManagerUVE/IRenderSystemUVE/IComputeSystemUVE/
 /// ICameraSystemUVE/IMeshRendererUVE/ILightSystemUVE/
 /// IRenderer3DUVE/ICollisionSystemUVE/IPhysicsSystemUVE/IPhysicsQuerySystemUVE/
 /// IRaycastSystemUVE/PhysicsConstraintSystemUVE/IInputSystemUVE/IGamepadInputSystemUVE/IMobileInputSystemUVE/
 /// IMobileGestureSystemUVE/IAudioDeviceUVE/IAudioSystemUVE/IAudioSourceSystemUVE/
 /// ISaveGameSystemUVE/ICheckpointManagerUVE/IWindowManagerUVE/IParticleRuntimeUVE interfaces,
 /// not the concrete types, so a future substitute implementation of any of
-/// the thirty-nine requires no change here.
+/// the forty requires no change here.
 /// Thread-safety: EngineServicesUVE itself holds only non-owning pointers
 /// and has no mutable state of its own; the thread-safety of each accessor
 /// is whatever the referenced service documents.
@@ -115,6 +116,7 @@ public:
                        Render::IRenderDeviceUVE& renderDevice,
                        Render::Shader::IShaderManagerUVE& shaderManager,
                        Render::IRenderSystemUVE& renderSystem,
+                       Render::IComputeSystemUVE& computeSystem,
                        Render::ICameraSystemUVE& cameraSystem,
                        Render::IMeshRendererUVE& meshRenderer,
                        Render::ILightSystemUVE& lightSystem,
@@ -160,6 +162,7 @@ public:
     [[nodiscard]] Render::IRenderDeviceUVE& GetRenderDeviceUVE() const noexcept;
     [[nodiscard]] Render::Shader::IShaderManagerUVE& GetShaderManagerUVE() const noexcept;
     [[nodiscard]] Render::IRenderSystemUVE& GetRenderSystemUVE() const noexcept;
+    [[nodiscard]] Render::IComputeSystemUVE& GetComputeSystemUVE() const noexcept;
     [[nodiscard]] Render::ICameraSystemUVE& GetCameraSystemUVE() const noexcept;
     [[nodiscard]] Render::IMeshRendererUVE& GetMeshRendererUVE() const noexcept;
     [[nodiscard]] Render::ILightSystemUVE& GetLightSystemUVE() const noexcept;
@@ -206,6 +209,7 @@ private:
     Render::IRenderDeviceUVE* m_renderDevice;
     Render::Shader::IShaderManagerUVE* m_shaderManager;
     Render::IRenderSystemUVE* m_renderSystem;
+    Render::IComputeSystemUVE* m_computeSystem;
     Render::ICameraSystemUVE* m_cameraSystem;
     Render::IMeshRendererUVE* m_meshRenderer;
     Render::ILightSystemUVE* m_lightSystem;

@@ -67,6 +67,7 @@
 #include "uve/component/ui_text_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/scripting/script_graph_persistence_uve.h"
+#include "uve/rhi_null/null_render_device_uve.h"
 #include "uve/scripting/script_graph_uve.h"
 #include "uve/window/i_window_manager_uve.h"
 
@@ -2135,6 +2136,111 @@ TEST(RunUVEExceptionBoundaryHarnessUVETest, ThrowDuringFrameUpdate_RunsShutdownI
     EXPECT_EQ(framesRun, 2); // stopped exactly at the throwing frame, not all 5
     EXPECT_TRUE(harness.ShutdownRanUVE());
     EXPECT_EQ(harness.GetStateUVE(), EngineStateUVE::Shutdown);
+}
+
+
+// ---------------------------------------------------------------------------
+// CS2: ComputeSystemUVE wired into the frame loop. The queue is drained in
+// Render(), BEFORE any render pass opens, into its own submitted command
+// buffer - the RHI compute slices' outside-pass-markers contract, enforced at
+// the engine level rather than left to each caller.
+// ---------------------------------------------------------------------------
+
+// The headless engine config brings up NullRenderDeviceUVE, whose spy hook keeps the most
+// recently submitted command list - the same evidence channel RenderSystemUVE's own tests use.
+// Reached by dynamic_cast rather than a new production accessor: the engine exposes the device
+// through its interface, and inventing a test-only getter on EngineCoreUVE to see one backend's
+// spy would put test scaffolding into the engine's public surface.
+[[nodiscard]] const std::vector<Render::RecordedCommandUVE>& LastSubmittedCommandsUVE(
+    EngineCoreUVE& engine) {
+    auto* const nullDevice =
+        dynamic_cast<Render::NullRenderDeviceUVE*>(&engine.GetServicesUVE().GetRenderDeviceUVE());
+    UVE_ASSERT(nullDevice != nullptr && "headless EngineCoreUVE must run on NullRenderDeviceUVE");
+    return nullDevice->GetLastSubmittedCommandsUVE();
+}
+
+TEST(EngineCoreUVETest, ComputeSystem_ReachableThroughServicesAfterInit) {
+    EngineCoreUVE engine(MakeTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    Render::IComputeSystemUVE& computeSystem = engine.GetServicesUVE().GetComputeSystemUVE();
+    EXPECT_EQ(computeSystem.GetQueuedDispatchCountUVE(), 0U);
+    EXPECT_EQ(computeSystem.GetDiagnosticsUVE().dispatchesRecorded, 0U);
+
+    engine.Shutdown();
+}
+
+TEST(EngineCoreUVETest, TickFrame_QueuedComputeDispatch_IsSubmittedBeforeAnyRenderPass) {
+    EngineCoreUVE engine(MakeTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    Render::IComputeSystemUVE& computeSystem = engine.GetServicesUVE().GetComputeSystemUVE();
+    Render::IRenderDeviceUVE& renderDevice = engine.GetServicesUVE().GetRenderDeviceUVE();
+
+    Render::ComputeProgramDescUVE programDesc;
+    programDesc.sourceCode = "engine-frame-loop compute kernel (recorded by the Null backend)";
+    programDesc.debugName = "frame-loop-kernel";
+    const Render::PipelineHandleUVE program = computeSystem.CreateProgramUVE(programDesc);
+    ASSERT_NE(program, Render::kInvalidPipelineHandleUVE);
+
+    const Render::BufferHandleUVE storage =
+        renderDevice.CreateBufferUVE(Render::BufferDescUVE{64U, Render::BufferUsageUVE::Storage});
+    ASSERT_NE(storage, Render::kInvalidBufferHandleUVE);
+
+    Render::ComputeDispatchDescUVE dispatch;
+    dispatch.program = program;
+    dispatch.groupCountX = 3U;
+    dispatch.groupCountY = 2U;
+    dispatch.groupCountZ = 1U;
+    dispatch.storageBuffers.push_back(Render::ComputeStorageBufferBindingUVE{storage, 0U});
+    ASSERT_TRUE(computeSystem.EnqueueDispatchUVE(dispatch));
+    ASSERT_EQ(computeSystem.GetQueuedDispatchCountUVE(), 1U);
+
+    engine.TickFrameUVE();
+
+    // The queue drained through the frame loop - no test touched a command buffer directly.
+    EXPECT_EQ(computeSystem.GetQueuedDispatchCountUVE(), 0U);
+    EXPECT_EQ(computeSystem.GetDiagnosticsUVE().dispatchesRecorded, 1U);
+
+    // The compute work went out as its OWN submission, with no pass markers around it: the Null
+    // spy keeps the most recent submitted list, and with no active camera the renderer records
+    // nothing this frame, so what remains is exactly the compute buffer.
+    const auto& submitted = LastSubmittedCommandsUVE(engine);
+    ASSERT_EQ(submitted.size(), 3U);
+    ASSERT_TRUE(std::holds_alternative<Render::BindPipelineCommandUVE>(submitted[0]));
+    EXPECT_EQ(std::get<Render::BindPipelineCommandUVE>(submitted[0]).pipeline, program);
+    ASSERT_TRUE(std::holds_alternative<Render::BindStorageBufferCommandUVE>(submitted[1]));
+    EXPECT_EQ(std::get<Render::BindStorageBufferCommandUVE>(submitted[1]).buffer, storage);
+    ASSERT_TRUE(std::holds_alternative<Render::DispatchCommandUVE>(submitted[2]));
+    EXPECT_EQ(std::get<Render::DispatchCommandUVE>(submitted[2]).groupCountX, 3U);
+    EXPECT_EQ(std::get<Render::DispatchCommandUVE>(submitted[2]).groupCountY, 2U);
+
+    // No render pass command may appear in the compute submission at all.
+    for (const Render::RecordedCommandUVE& command : submitted) {
+        EXPECT_FALSE(std::holds_alternative<Render::BeginRenderPassCommandUVE>(command));
+        EXPECT_FALSE(std::holds_alternative<Render::EndRenderPassCommandUVE>(command));
+    }
+
+    computeSystem.DestroyProgramUVE(program);
+    renderDevice.DestroyBufferUVE(storage);
+    engine.Shutdown();
+}
+
+TEST(EngineCoreUVETest, TickFrame_EmptyComputeQueue_SubmitsNothingExtra) {
+    EngineCoreUVE engine(MakeTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    // A frame with no queued compute must not submit an empty compute buffer - scenes that never
+    // touch compute pay nothing observable.
+    engine.TickFrameUVE();
+
+    EXPECT_TRUE(LastSubmittedCommandsUVE(engine).empty());
+    EXPECT_EQ(engine.GetServicesUVE().GetComputeSystemUVE().GetDiagnosticsUVE().dispatchesRecorded, 0U);
+
+    engine.Shutdown();
 }
 
 #if UVE_DEBUG
