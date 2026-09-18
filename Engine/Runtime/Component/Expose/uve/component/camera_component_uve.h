@@ -21,11 +21,6 @@ struct CameraComponentUVE final {
 /// Camera values are validated before scene persistence and runtime projection use. The strict
 /// open FOV interval avoids tan(FOV/2) singularities, and the positive ordered clip planes keep
 /// perspective depth math finite and meaningful.
-[[nodiscard]] inline bool IsCameraComponentValidUVE(const CameraComponentUVE& camera) noexcept {
-    return std::isfinite(camera.fieldOfViewDegrees) &&
-           camera.fieldOfViewDegrees >= kMinimumCameraFieldOfViewDegreesUVE &&
-           camera.fieldOfViewDegrees < 180.0F && std::isfinite(camera.nearPlane) && camera.nearPlane > 0.0F &&
-           std::isfinite(camera.farPlane) && camera.farPlane > camera.nearPlane;
-}
+[[nodiscard]] bool IsCameraComponentValidUVE(const CameraComponentUVE& camera) noexcept;
 
 } // namespace UVE::Scene

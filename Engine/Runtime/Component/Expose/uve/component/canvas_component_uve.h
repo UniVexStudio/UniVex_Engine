@@ -22,8 +22,6 @@ struct CanvasComponentUVE final {
 
 /// A CanvasComponentUVE has no field combination that is ever invalid - this validator exists only
 /// to satisfy the same authored-component-validation contract every other component follows.
-[[nodiscard]] constexpr bool IsCanvasComponentValidUVE(const CanvasComponentUVE&) noexcept {
-    return true;
-}
+[[nodiscard]] bool IsCanvasComponentValidUVE(const CanvasComponentUVE&) noexcept;
 
 } // namespace UVE::Scene

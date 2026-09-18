@@ -36,17 +36,6 @@ struct RigidBodyComponentUVE final {
 /// Validates the value-only rigid-body contract before scene persistence and physics integration.
 /// Zero mass remains valid and means an immovable body under the existing inverse-mass policy;
 /// kinematic state is orthogonal to mass and remains an explicit authoring choice.
-[[nodiscard]] inline bool IsRigidBodyComponentValidUVE(const RigidBodyComponentUVE& rigidBody) noexcept {
-    return std::isfinite(rigidBody.mass) && rigidBody.mass >= 0.0F && std::isfinite(rigidBody.velocity.x) &&
-           std::isfinite(rigidBody.velocity.y) && std::isfinite(rigidBody.velocity.z) &&
-           std::isfinite(rigidBody.angularVelocity.x) && std::isfinite(rigidBody.angularVelocity.y) &&
-           std::isfinite(rigidBody.angularVelocity.z) && std::isfinite(rigidBody.torque.x) &&
-           std::isfinite(rigidBody.torque.y) && std::isfinite(rigidBody.torque.z) &&
-           std::isfinite(rigidBody.inverseInertia.x) && rigidBody.inverseInertia.x >= 0.0F &&
-           std::isfinite(rigidBody.inverseInertia.y) && rigidBody.inverseInertia.y >= 0.0F &&
-           std::isfinite(rigidBody.inverseInertia.z) && rigidBody.inverseInertia.z >= 0.0F &&
-           std::isfinite(rigidBody.drag) && rigidBody.drag >= 0.0F && std::isfinite(rigidBody.gravityScale) &&
-           rigidBody.gravityScale >= 0.0F;
-}
+[[nodiscard]] bool IsRigidBodyComponentValidUVE(const RigidBodyComponentUVE& rigidBody) noexcept;
 
 } // namespace UVE::Scene
