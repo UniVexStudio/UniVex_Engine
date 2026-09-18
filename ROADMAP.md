@@ -236,8 +236,14 @@ publicly shipping real-time engines as of today, without naming any of them.
   surviving indices, both in device memory. The CPU is never told how many objects survived -
   the diagnostics deliberately expose no visible count, because the only way to fill one would
   be the readback the pass exists to remove.
-  Remaining: skinning (needs a joints/weights data model in the mesh asset first - there is no CPU
-  skinning baseline to verify a GPU one against yet)
+  CS9 then unblocked skinning by building what was missing: MeshAssetUVE now carries per-vertex
+  joint influences and a skeleton, and TrySkinMeshUVE is the CPU linear-blend implementation a
+  GPU kernel can be verified against - the baseline whose absence was the actual blocker.
+  The skinning section is an OPTIONAL trailing part of the .uvemodel payload, so every existing
+  static mesh serializes to byte-identical output (the envelope's version field is global across
+  all asset kinds, so bumping it would have invalidated scenes and textures to describe a mesh
+  feature).
+  Remaining: the GPU skinning kernel itself, now that it has something to be verified against
 - [ ] Bindless/descriptor-indexing-style resource binding for reduced per-draw overhead
 
 ---

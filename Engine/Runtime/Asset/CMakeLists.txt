@@ -53,6 +53,7 @@ add_library(uve_asset STATIC
     Internal/asset_bundle_uve.cpp
     Internal/file_system_uve.cpp
     Internal/mesh_asset_uve.cpp
+    Internal/mesh_skinning_uve.cpp
     Internal/texture_asset_uve.cpp
     Internal/shader_asset_uve.cpp
     Internal/material_asset_uve.cpp

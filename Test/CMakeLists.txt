@@ -38,6 +38,7 @@ add_executable(uve_core_tests
     Core/Asset/asset_manager_uve_tests.cpp
     Core/Asset/file_system_uve_tests.cpp
     Core/Asset/mesh_asset_uve_tests.cpp
+    Core/Asset/mesh_skinning_uve_tests.cpp
     Core/Asset/texture_asset_uve_tests.cpp
     Core/Asset/shader_asset_uve_tests.cpp
     Core/Asset/material_asset_uve_tests.cpp

@@ -185,6 +185,93 @@ void GenerateMeshTangentsUVE(std::span<MeshVertexUVE> vertices, std::span<const 
     }
 }
 
+bool IsSkinningInfluenceNormalizedUVE(const MeshSkinningInfluenceUVE& influence,
+                                      const float tolerance) noexcept {
+    float sum = 0.0F;
+    for (const float weight : influence.weights) {
+        if (!std::isfinite(weight)) {
+            return false; // No tolerance should ever accept a NaN sum.
+        }
+        sum += weight;
+    }
+    return std::fabs(sum - 1.0F) <= tolerance;
+}
+
+bool IsSkeletonTopologicallyOrderedUVE(const std::span<const MeshJointUVE> joints) noexcept {
+    for (std::size_t index = 0U; index < joints.size(); ++index) {
+        const std::uint32_t parent = joints[index].parentIndex;
+        if (parent == kInvalidJointParentUVE) {
+            continue; // A root.
+        }
+        // Strictly less than `index`, which rules out both a forward reference and a joint that
+        // is its own parent in one comparison. That is the whole precondition a single forward
+        // resolution pass needs - a cycle cannot exist if every parent precedes its child.
+        if (parent >= index) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool IsMeshSkinningDataValidUVE(const MeshAssetUVE& mesh) {
+    // A static mesh is valid. Most meshes are static, and making every caller special-case that
+    // would guarantee somebody forgets.
+    if (mesh.skinningInfluences.empty() && mesh.joints.empty()) {
+        return true;
+    }
+    if (mesh.skinningInfluences.empty() || mesh.joints.empty()) {
+        UVE_ERROR("MeshAssetUVE: skinning data is half-present ({} influences, {} joints) - a mesh "
+                  "is either fully skinned or static",
+                  mesh.skinningInfluences.size(), mesh.joints.size());
+        return false;
+    }
+    if (mesh.skinningInfluences.size() != mesh.vertices.size()) {
+        UVE_ERROR("MeshAssetUVE: {} skinning influences for {} vertices - a partially skinned mesh "
+                  "is not representable",
+                  mesh.skinningInfluences.size(), mesh.vertices.size());
+        return false;
+    }
+    if (!IsSkeletonTopologicallyOrderedUVE(mesh.joints)) {
+        UVE_ERROR("MeshAssetUVE: the skeleton is not topologically ordered - every joint's parent "
+                  "must appear before it, which is what lets a pose resolve in one forward pass");
+        return false;
+    }
+    for (const MeshJointUVE& joint : mesh.joints) {
+        for (const auto& row : joint.inverseBindMatrix.m) {
+            for (const float value : row) {
+                if (!std::isfinite(value)) {
+                    UVE_ERROR("MeshAssetUVE: a joint's inverse bind matrix is non-finite");
+                    return false;
+                }
+            }
+        }
+    }
+    const auto jointCount = static_cast<std::uint32_t>(mesh.joints.size());
+    for (std::size_t index = 0U; index < mesh.skinningInfluences.size(); ++index) {
+        const MeshSkinningInfluenceUVE& influence = mesh.skinningInfluences[index];
+        for (std::size_t slot = 0U; slot < kMaxJointInfluencesUVE; ++slot) {
+            // Checked even when the weight is zero: an out-of-range index is a malformed asset
+            // whether or not the multiplication happens to cancel it out, and a later GPU path
+            // indexing a joint array with it would read out of bounds regardless.
+            if (influence.joints[slot] >= jointCount) {
+                UVE_ERROR("MeshAssetUVE: vertex {} references joint {} but the skeleton has {}",
+                          index, influence.joints[slot], jointCount);
+                return false;
+            }
+            if (!std::isfinite(influence.weights[slot]) || influence.weights[slot] < 0.0F) {
+                UVE_ERROR("MeshAssetUVE: vertex {} has a negative or non-finite skinning weight",
+                          index);
+                return false;
+            }
+        }
+        if (!IsSkinningInfluenceNormalizedUVE(influence)) {
+            UVE_ERROR("MeshAssetUVE: vertex {}'s skinning weights do not sum to one", index);
+            return false;
+        }
+    }
+    return true;
+}
+
 bool LoadMeshAssetUVE(const std::filesystem::path& path, MeshAssetUVE& outMesh) {
     const std::optional<std::pair<UveFileHeaderUVE, std::vector<std::byte>>> file = ReadUveFileUVE(path);
     if (!file.has_value()) {
@@ -259,13 +346,83 @@ bool LoadMeshAssetUVE(const std::filesystem::path& path, MeshAssetUVE& outMesh) 
         return false;
     }
 
+    // The skinning section is OPTIONAL and trails the bounds, which is what keeps every existing
+    // .uvemodel loadable byte for byte. The envelope's version field is global across every asset
+    // kind, so bumping it to advertise skinning would invalidate scenes, materials and textures
+    // that have nothing to do with meshes; the payload's own natural end is the honest place to
+    // detect "this file predates skinning". A file that stops here is a static mesh, not an error.
+    std::vector<MeshSkinningInfluenceUVE> skinningInfluences;
+    std::vector<MeshJointUVE> joints;
+    if (offset < payload.size()) {
+        std::uint32_t jointCount = 0;
+        if (!ReadUint32FromBufferUVE(payload, offset, jointCount)) {
+            UVE_ERROR("MeshAssetUVE: \"{}\" has a truncated joint count", path.string());
+            return false;
+        }
+        constexpr std::size_t kSerializedJointBytesUVE = sizeof(std::uint32_t) + sizeof(float) * 16U;
+        if (payload.size() < offset ||
+            jointCount > (payload.size() - offset) / kSerializedJointBytesUVE) {
+            UVE_ERROR("MeshAssetUVE: \"{}\" has an impossible joint count", path.string());
+            return false;
+        }
+        joints.reserve(jointCount);
+        for (std::uint32_t jointIndex = 0; jointIndex < jointCount; ++jointIndex) {
+            MeshJointUVE joint;
+            if (!ReadUint32FromBufferUVE(payload, offset, joint.parentIndex)) {
+                UVE_ERROR("MeshAssetUVE: \"{}\" has truncated joint data", path.string());
+                return false;
+            }
+            bool matrixComplete = true;
+            for (auto& row : joint.inverseBindMatrix.m) {
+                for (float& value : row) {
+                    matrixComplete = matrixComplete && ReadFloatFromBufferUVE(payload, offset, value);
+                }
+            }
+            if (!matrixComplete) {
+                UVE_ERROR("MeshAssetUVE: \"{}\" has a truncated inverse bind matrix", path.string());
+                return false;
+            }
+            joints.push_back(joint);
+        }
+
+        // One influence per vertex, always - the count is not re-serialized because a value other
+        // than vertices.size() would be unrepresentable anyway, and storing it would just create a
+        // second source of truth to disagree with the first.
+        skinningInfluences.reserve(vertices.size());
+        for (std::size_t vertexIndex = 0U; vertexIndex < vertices.size(); ++vertexIndex) {
+            MeshSkinningInfluenceUVE influence;
+            bool complete = true;
+            for (std::uint32_t& jointSlot : influence.joints) {
+                complete = complete && ReadUint32FromBufferUVE(payload, offset, jointSlot);
+            }
+            for (float& weight : influence.weights) {
+                complete = complete && ReadFloatFromBufferUVE(payload, offset, weight);
+            }
+            if (!complete) {
+                UVE_ERROR("MeshAssetUVE: \"{}\" has truncated skinning influences", path.string());
+                return false;
+            }
+            skinningInfluences.push_back(influence);
+        }
+    }
+
     if (!TryGenerateMeshTangentsUVE(vertices, indices)) {
         UVE_ERROR("MeshAssetUVE: \"{}\" has non-finite generated tangent data", path.string());
         return false;
     }
-    outMesh.vertices = std::move(vertices);
-    outMesh.indices = std::move(indices);
-    outMesh.localBounds = localBounds;
+    // Validate before publishing, and validate on the CANDIDATE rather than on outMesh - the
+    // loader's existing contract is that a rejected file leaves the caller's mesh untouched.
+    MeshAssetUVE candidate;
+    candidate.vertices = std::move(vertices);
+    candidate.indices = std::move(indices);
+    candidate.localBounds = localBounds;
+    candidate.skinningInfluences = std::move(skinningInfluences);
+    candidate.joints = std::move(joints);
+    if (!IsMeshSkinningDataValidUVE(candidate)) {
+        UVE_ERROR("MeshAssetUVE: \"{}\" has structurally invalid skinning data", path.string());
+        return false;
+    }
+    outMesh = std::move(candidate);
     return true;
 }
 
@@ -286,6 +443,29 @@ bool SaveMeshAssetUVE(const MeshAssetUVE& mesh, const std::filesystem::path& pat
 
     AppendVector3UVE(payload, mesh.localBounds.min);
     AppendVector3UVE(payload, mesh.localBounds.max);
+
+    // A static mesh writes nothing further, so its bytes stay identical to what previous versions
+    // of this engine produced - which is the property that makes the optional trailing section
+    // safe in both directions, not just on read.
+    if (mesh.IsSkinnedUVE()) {
+        AppendUint32UVE(payload, static_cast<std::uint32_t>(mesh.joints.size()));
+        for (const MeshJointUVE& joint : mesh.joints) {
+            AppendUint32UVE(payload, joint.parentIndex);
+            for (const auto& row : joint.inverseBindMatrix.m) {
+                for (const float value : row) {
+                    AppendFloatUVE(payload, value);
+                }
+            }
+        }
+        for (const MeshSkinningInfluenceUVE& influence : mesh.skinningInfluences) {
+            for (const std::uint32_t joint : influence.joints) {
+                AppendUint32UVE(payload, joint);
+            }
+            for (const float weight : influence.weights) {
+                AppendFloatUVE(payload, weight);
+            }
+        }
+    }
 
     return WriteUveFileUVE(path, AssetKindUVE::Mesh, payload);
 }
