@@ -58,6 +58,12 @@ void* GlfwProcAddressBridgeUVE(const char* name) {
             return GL_ELEMENT_ARRAY_BUFFER;
         case BufferUsageUVE::Uniform:
             return GL_UNIFORM_BUFFER;
+        case BufferUsageUVE::Storage:
+#if !defined(__ANDROID__)
+            return GL_SHADER_STORAGE_BUFFER; // M2f: desktop GL 4.3+ (gated at bind time)
+#else
+            return 0U; // the fixed ES 3.0 baseline has no SSBO target; creation fails loudly
+#endif
     }
     return GL_ARRAY_BUFFER;
 }
@@ -70,6 +76,10 @@ void* GlfwProcAddressBridgeUVE(const char* name) {
             return GL_ELEMENT_ARRAY_BUFFER_BINDING;
         case GL_UNIFORM_BUFFER:
             return GL_UNIFORM_BUFFER_BINDING;
+#if !defined(__ANDROID__)
+        case GL_SHADER_STORAGE_BUFFER:
+            return GL_SHADER_STORAGE_BUFFER_BINDING;
+#endif
         default:
             return 0U;
     }
@@ -274,6 +284,12 @@ GlRenderDeviceUVE::GlRenderDeviceUVE(Window::IWindowManagerUVE& windowManager)
         glGetIntegerv(GL_MINOR_VERSION, &contextMinorVersion);
         m_impl->state.supportsComputeShadersUVE =
             contextMajorVersion > 4 || (contextMajorVersion == 4 && contextMinorVersion >= 3);
+        if (m_impl->state.supportsComputeShadersUVE) {
+            // M2f: SSBO binding points share compute's GL 4.3 floor; queried once here so
+            // BindStorageBufferUVE validates slots against the real driver limit.
+            glGetIntegerv(GL_MAX_SHADER_STORAGE_BUFFER_BINDINGS,
+                          &m_impl->state.maxShaderStorageBindings);
+        }
 #endif
         Detail::RegisterGlDebugCallbackUVE(m_impl->state.gl);
         UVE_INFO("GlRenderDeviceUVE: initialized, backend GL_VERSION={}",
@@ -323,6 +339,14 @@ BufferHandleUVE GlRenderDeviceUVE::CreateBufferUVE(const BufferDescUVE& desc, st
     }
     if (!IsBufferUsageValidUVE(desc.usage)) {
         UVE_ERROR("GlRenderDeviceUVE: CreateBufferUVE received an unknown buffer usage");
+        return kInvalidBufferHandleUVE;
+    }
+    if (desc.usage == BufferUsageUVE::Storage && !m_impl->state.supportsComputeShadersUVE) {
+        // SSBOs are desktop GL 4.3 core (the same floor as compute shaders; the fixed ES 3.0
+        // Android baseline has neither). Fail before touching GL_SHADER_STORAGE_BUFFER - on an
+        // older context the enum itself would raise GL_INVALID_ENUM at glBufferData time.
+        UVE_ERROR("GlRenderDeviceUVE: CreateBufferUVE(Storage) needs a desktop GL 4.3+ context "
+                  "(shader storage buffers); this context does not offer them");
         return kInvalidBufferHandleUVE;
     }
     if (desc.sizeBytes > static_cast<std::uint64_t>(std::numeric_limits<GLsizeiptr>::max())) {

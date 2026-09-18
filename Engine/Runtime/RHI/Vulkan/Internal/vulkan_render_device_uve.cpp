@@ -108,11 +108,29 @@ struct PushConstantBlockRefUVE {
     bool valid = false;
 };
 
-/// One reflected combined-image-sampler binding (M2c): RHI texture "slots" mirror GL texture
-/// units — the pipeline's i-th sampler binding (sorted ascending) is fed from global slot i.
+/// One reflected sampled-texture binding (M2c combined-image-sampler; M2f also accepts the
+/// separate SAMPLED_IMAGE form): RHI texture "slots" mirror GL texture units — the pipeline's
+/// i-th sampled-image binding (sorted ascending) is fed from global slot i.
 struct TextureSlotRefUVE {
     std::uint32_t binding = 0U;
-    std::string name; // reflected sampler name (diagnostics only; binding is by slot)
+    std::string name; // reflected sampler/image name (diagnostics only; binding is by slot)
+    VkShaderStageFlags stageFlags = 0U;
+    bool separateSampler = false; // M2f: SAMPLED_IMAGE form (pairs with the fixed device sampler)
+};
+
+/// One reflected STORAGE_BUFFER binding (M2f): slot semantics mirror the texture slots — the
+/// i-th storage binding (sorted ascending) is fed from BindStorageBufferUVE slot i.
+struct StorageSlotRefUVE {
+    std::uint32_t binding = 0U;
+    std::string name; // reflected block name (diagnostics only; binding is by slot)
+    VkShaderStageFlags stageFlags = 0U;
+};
+
+/// One reflected standalone SAMPLER binding (M2f): always written with the device's single
+/// fixed sampler — the RHI exposes exactly one sampler shape (the GL-mirrored
+/// linear/clamp/maxLod-0 parameters every texture record already uses).
+struct SamplerSlotRefUVE {
+    std::uint32_t binding = 0U;
     VkShaderStageFlags stageFlags = 0U;
 };
 
@@ -228,6 +246,21 @@ struct VulkanRenderDeviceUVE::ImplUVE {
     static constexpr std::uint32_t kDescriptorPoolSetCapacityUVE = 256U;
     static constexpr std::uint32_t kDescriptorPoolUboCapacityUVE = 256U;
     static constexpr std::uint32_t kDescriptorPoolSamplerCapacityUVE = 256U;
+    // M2f pool types: storage buffers, split sampled images, and standalone samplers.
+    static constexpr std::uint32_t kDescriptorPoolStorageCapacityUVE = 256U;
+    static constexpr std::uint32_t kDescriptorPoolSampledImageCapacityUVE = 256U;
+    static constexpr std::uint32_t kDescriptorPoolFixedSamplerCapacityUVE = 256U;
+
+    // M2f device-owned descriptor resources: one FIXED sampler (every RHI sampler is the same
+    // GL-mirrored linear/clamp/maxLod-0 shape, so standalone SAMPLER bindings all get this one)
+    // and one zero-filled fallback storage buffer (an unbound or destroyed-after-bind SSBO slot
+    // reads deterministic zeros instead of undefined memory — the buffer analogue of the M2c
+    // 1x1-white fallback texture; sized for the small metadata-style SSBOs the RHI contract
+    // anticipates, never for bulk data).
+    VkSampler fixedSampler = VK_NULL_HANDLE;
+    VkBuffer fallbackStorageBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory fallbackStorageMemory = VK_NULL_HANDLE;
+    static constexpr std::uint64_t kFallbackStorageBytesUVE = 256U;
 
     // Finds a memory type index satisfying `typeBits` and ALL `requiredPropertyFlags`;
     // UINT32_MAX when none exists. Extracted from the M2a buffer creation path (now shared by
@@ -267,17 +300,21 @@ struct VulkanRenderDeviceUVE::ImplUVE {
         std::vector<UniformBlockRefUVE> uniformBlocks;
         PushConstantBlockRefUVE pushBlock;
         std::vector<TextureSlotRefUVE> textureSlots; // sorted by binding (slot index = position)
+        std::vector<StorageSlotRefUVE> storageSlots;  // M2f SSBOs, same slot rule
+        std::vector<SamplerSlotRefUVE> samplerBindings; // M2f standalone samplers (fixed sampler)
         std::vector<UniformReflectionUVE> reflectedUniforms; // served by GetPipelineUniformsUVE()
         bool uniformsDirty = true; // first bind of any frame flushes everything
-        // M2c: one descriptor SET per bound-texture tuple (uniformless pipelines use the
+        // M2c: one descriptor SET per bound-resource tuple (uniformless pipelines use the
         // static `descriptorSet` above; textured pipelines can never share one set across
         // differing bindings — updating a recorded set in place would retroactively change
         // already-recorded draws). Values are pool-owned; entries are freed explicitly when
-        // the tuple's texture is destroyed. Key: concatenated slot-order texture handle ids;
-        // the parallel `cachedTextureTextures` map keeps the key's tuple searchable for
-        // destruction-time invalidation.
+        // a tuple resource is destroyed. Key: concatenated slot-order texture handle ids
+        // (M2f: plus an 's'-prefixed storage-buffer section); the parallel
+        // `cachedTextureTextures`/`cachedStorageBuffers` maps keep the key's tuple searchable
+        // for destruction-time invalidation.
         std::map<std::string, VkDescriptorSet> cachedTextureSets;
         std::map<std::string, std::vector<std::uint32_t>> cachedTextureTextures;
+        std::map<std::string, std::vector<std::uint32_t>> cachedStorageBuffers;
     };
     // M2c: texture records live in DEVICE_LOCAL images, uploaded through a HOST_VISIBLE
     // staging buffer + one-shot transfer submission (upload-time queueWaitIdle keeps every
@@ -349,6 +386,8 @@ struct VulkanRenderDeviceUVE::ImplUVE {
     static constexpr std::uint32_t kWarnedOffscreenDepthIncompatibleUVE = 1U << 14U;
     static constexpr std::uint32_t kWarnedDepthTextureSampledUVE = 1U << 15U;
     static constexpr std::uint32_t kWarnedOffscreenFeedbackUVE = 1U << 16U;
+    static constexpr std::uint32_t kWarnedUnknownStorageUVE = 1U << 17U;
+    static constexpr std::uint32_t kWarnedStorageSlotOobUVE = 1U << 18U;
     std::uint32_t replayWarningsEmitted = 0U;
 
     // Replay-local pipeline binding state (valid only inside PresentUVE()'s record window).
@@ -1211,16 +1250,75 @@ bool VulkanRenderDeviceUVE::ImplUVE::InitializeUVE() {
         return LogBailUVE("vkMapMemory for the frame uniform ring failed");
     }
 
-    VkDescriptorPoolSize poolSizes[2]{};
+    // --- M2f device-owned descriptor resources -------------------------------------------
+    // The fixed sampler for standalone SAMPLER bindings: identical parameters to every texture
+    // record's sampler (the RHI's one GL-mirrored sampler shape), created once at bring-up.
+    VkSamplerCreateInfo fixedSamplerInfo{};
+    fixedSamplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    fixedSamplerInfo.magFilter = VK_FILTER_LINEAR;
+    fixedSamplerInfo.minFilter = VK_FILTER_LINEAR;
+    fixedSamplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    fixedSamplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    fixedSamplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    fixedSamplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    fixedSamplerInfo.minLod = 0.0F;
+    fixedSamplerInfo.maxLod = 0.0F;
+    fixedSamplerInfo.maxAnisotropy = 1.0F;
+    fixedSamplerInfo.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
+    if (vk.vkCreateSampler(device, &fixedSamplerInfo, nullptr, &fixedSampler) != VK_SUCCESS ||
+        fixedSampler == VK_NULL_HANDLE) {
+        return LogBailUVE("vkCreateSampler for the M2f fixed sampler failed");
+    }
+    // The zero-filled SSBO fallback: an unbound (or destroyed-after-bind) storage slot's draws
+    // read deterministic zeros from this buffer instead of undefined memory.
+    VkBufferCreateInfo fallbackSsboInfo{};
+    fallbackSsboInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    fallbackSsboInfo.size = kFallbackStorageBytesUVE;
+    fallbackSsboInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+    fallbackSsboInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    if (vk.vkCreateBuffer(device, &fallbackSsboInfo, nullptr, &fallbackStorageBuffer) != VK_SUCCESS) {
+        return LogBailUVE("vkCreateBuffer for the M2f storage fallback failed");
+    }
+    VkMemoryRequirements fallbackSsboRequirements{};
+    vk.vkGetBufferMemoryRequirements(device, fallbackStorageBuffer, &fallbackSsboRequirements);
+    const std::uint32_t fallbackSsboMemoryType = FindMemoryTypeUVE(
+        fallbackSsboRequirements.memoryTypeBits,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    if (fallbackSsboMemoryType == UINT32_MAX) {
+        return LogBailUVE("no host-visible+coherent memory type for the M2f storage fallback");
+    }
+    VkMemoryAllocateInfo fallbackSsboAllocateInfo{};
+    fallbackSsboAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    fallbackSsboAllocateInfo.allocationSize = fallbackSsboRequirements.size;
+    fallbackSsboAllocateInfo.memoryTypeIndex = fallbackSsboMemoryType;
+    if (vk.vkAllocateMemory(device, &fallbackSsboAllocateInfo, nullptr, &fallbackStorageMemory) != VK_SUCCESS) {
+        return LogBailUVE("vkAllocateMemory for the M2f storage fallback failed");
+    }
+    vk.vkBindBufferMemory(device, fallbackStorageBuffer, fallbackStorageMemory, 0U);
+    void* fallbackSsboMapped = nullptr;
+    if (vk.vkMapMemory(device, fallbackStorageMemory, 0U, kFallbackStorageBytesUVE, 0U,
+                       &fallbackSsboMapped) != VK_SUCCESS || fallbackSsboMapped == nullptr) {
+        return LogBailUVE("vkMapMemory for the M2f storage fallback failed");
+    }
+    std::memset(fallbackSsboMapped, 0, static_cast<std::size_t>(kFallbackStorageBytesUVE));
+    vk.vkUnmapMemory(device, fallbackStorageMemory); // written once; no persistent map needed
+
+    VkDescriptorPoolSize poolSizes[5]{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
     poolSizes[0].descriptorCount = kDescriptorPoolUboCapacityUVE;
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     poolSizes[1].descriptorCount = kDescriptorPoolSamplerCapacityUVE;
+    poolSizes[2].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    poolSizes[2].descriptorCount = kDescriptorPoolStorageCapacityUVE;
+    poolSizes[3].type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+    poolSizes[3].descriptorCount = kDescriptorPoolSampledImageCapacityUVE;
+    poolSizes[4].type = VK_DESCRIPTOR_TYPE_SAMPLER;
+    poolSizes[4].descriptorCount = kDescriptorPoolFixedSamplerCapacityUVE;
     VkDescriptorPoolCreateInfo descriptorPoolInfo{};
     descriptorPoolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     descriptorPoolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
     descriptorPoolInfo.maxSets = kDescriptorPoolSetCapacityUVE;
-    descriptorPoolInfo.poolSizeCount = 2U;
+    descriptorPoolInfo.poolSizeCount = 5U;
     descriptorPoolInfo.pPoolSizes = poolSizes;
     if (vk.vkCreateDescriptorPool(device, &descriptorPoolInfo, nullptr, &descriptorPool) != VK_SUCCESS ||
         descriptorPool == VK_NULL_HANDLE) {
@@ -1360,6 +1458,19 @@ void VulkanRenderDeviceUVE::ImplUVE::DestroyAllResourcesUVE() {
     if (frameUboMemory != VK_NULL_HANDLE) {
         vk.vkFreeMemory(device, frameUboMemory, nullptr);
         frameUboMemory = VK_NULL_HANDLE;
+    }
+    // M2f device-owned descriptor resources (created in InitializeUVE's bring-up tail).
+    if (fixedSampler != VK_NULL_HANDLE) {
+        vk.vkDestroySampler(device, fixedSampler, nullptr);
+        fixedSampler = VK_NULL_HANDLE;
+    }
+    if (fallbackStorageBuffer != VK_NULL_HANDLE) {
+        vk.vkDestroyBuffer(device, fallbackStorageBuffer, nullptr);
+        fallbackStorageBuffer = VK_NULL_HANDLE;
+    }
+    if (fallbackStorageMemory != VK_NULL_HANDLE) {
+        vk.vkFreeMemory(device, fallbackStorageMemory, nullptr);
+        fallbackStorageMemory = VK_NULL_HANDLE;
     }
     for (auto& [handle, record] : shaders) {
         if (record.module != VK_NULL_HANDLE) {
@@ -1551,6 +1662,9 @@ public:
     void BindUniformBufferUVE(const BufferHandleUVE buffer, const std::uint32_t slot) override {
         m_commands.emplace_back(BindUniformBufferCommandUVE{buffer, slot});
     }
+    void BindStorageBufferUVE(const BufferHandleUVE buffer, const std::uint32_t slot) override {
+        m_commands.emplace_back(BindStorageBufferCommandUVE{buffer, slot});
+    }
     void SetUniformFloatUVE(std::string_view name, const float value) override {
         m_commands.emplace_back(SetUniformFloatCommandUVE{std::string(name), value});
     }
@@ -1609,6 +1723,7 @@ BufferHandleUVE VulkanRenderDeviceUVE::CreateBufferUVE(const BufferDescUVE& desc
         case BufferUsageUVE::Vertex:  usageFlags = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT; break;
         case BufferUsageUVE::Index:   usageFlags = VK_BUFFER_USAGE_INDEX_BUFFER_BIT;  break;
         case BufferUsageUVE::Uniform: usageFlags = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT; break;
+        case BufferUsageUVE::Storage: usageFlags = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT; break;
     }
 
     VkBufferCreateInfo bufferInfo{};
@@ -1687,6 +1802,29 @@ void VulkanRenderDeviceUVE::DestroyBufferUVE(const BufferHandleUVE buffer) {
     // An in-flight submit may still read this buffer: drain first. M2a simplicity — the queue
     // is fully serialized anyway (one frame in flight), so the wait is generally a no-op.
     (void)impl.vk.vkQueueWaitIdle(impl.presentQueue);
+    // M2f: invalidate every cached descriptor set that mentions this buffer as a storage
+    // binding — after destruction their VkBuffer handles dangle, and rebinding a stale set
+    // would be undefined. Sets with older snapshots are freed back to the pool (FREE bit is
+    // set); a live GL-style binding-point bind of the destroyed buffer falls back to the
+    // zero-filled storage fallback on the next flush. (Mirrors DestroyTextureUVE's sweep.)
+    for (auto& [pipelineValue, pipelineRecord] : impl.pipelines) {
+        (void)pipelineValue;
+        for (auto cacheIt = pipelineRecord.cachedTextureSets.begin();
+             cacheIt != pipelineRecord.cachedTextureSets.end();) {
+            const auto mentioned = pipelineRecord.cachedStorageBuffers.find(cacheIt->first);
+            if (mentioned != pipelineRecord.cachedStorageBuffers.end() &&
+                std::find(mentioned->second.begin(), mentioned->second.end(), buffer.value) !=
+                    mentioned->second.end()) {
+                (void)impl.vk.vkFreeDescriptorSets(impl.device, impl.descriptorPool, 1U,
+                                                   &cacheIt->second);
+                pipelineRecord.cachedStorageBuffers.erase(mentioned);
+                pipelineRecord.cachedTextureTextures.erase(cacheIt->first);
+                cacheIt = pipelineRecord.cachedTextureSets.erase(cacheIt);
+            } else {
+                ++cacheIt;
+            }
+        }
+    }
     if (found->second.mapped != nullptr) {
         impl.vk.vkUnmapMemory(impl.device, found->second.memory);
     }
@@ -2319,6 +2457,8 @@ PipelineHandleUVE VulkanRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE
         };
         std::map<std::uint32_t, UniformBlockRefUVE> blocksByBinding; // sorted by binding by map
         std::map<std::uint32_t, TextureSlotRefUVE> textureSlotsByBinding; // same ordering rule
+        std::map<std::uint32_t, StorageSlotRefUVE> storageSlotsByBinding;  // M2f, same rule
+        std::map<std::uint32_t, SamplerSlotRefUVE> samplerSlotsByBinding;  // M2f, same rule
         // NOTE: members are extracted into an owning vector IMMEDIATELY — the SPIRV-Reflect
         // block pointers dangle the moment spvReflectDestroyShaderModule() runs at the end of
         // each stage's scope (a copied SpvReflectBlockVariable keeps a borrowed members
@@ -2352,28 +2492,57 @@ PipelineHandleUVE VulkanRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE
                     reflectionFailed = true;
                     break;
                 }
-                // M2c: combined image samplers now bind through the per-tuple set cache.
-                if (binding->descriptor_type == SPV_REFLECT_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER) {
+                // M2c: combined image samplers bind through the per-tuple set cache.
+                // M2f: the separate SAMPLED_IMAGE form joins the same slot rule (the RHI's one
+                // sampler shape is written into the pipeline's standalone SAMPLER bindings).
+                const bool isCombinedSampler =
+                    binding->descriptor_type == SPV_REFLECT_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                const bool isSampledImage =
+                    binding->descriptor_type == SPV_REFLECT_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+                if (isCombinedSampler || isSampledImage) {
                     TextureSlotRefUVE& slot = textureSlotsByBinding[binding->binding];
                     if (slot.stageFlags != 0U &&
-                        (slot.name != (binding->name != nullptr ? binding->name : ""))) {
-                        reflectionError = "the same texture binding carries different names "
-                                          "across stages";
+                        (slot.name != (binding->name != nullptr ? binding->name : "") ||
+                         slot.separateSampler != isSampledImage)) {
+                        reflectionError = "the same texture binding carries different names or "
+                                          "descriptor kinds (combined vs separate) across stages";
                         reflectionFailed = true;
                         break;
                     }
                     slot.binding = binding->binding;
                     slot.name = binding->name != nullptr ? binding->name : "";
+                    slot.separateSampler = isSampledImage;
                     slot.stageFlags |= stageModule.flag;
+                    continue;
+                }
+                if (binding->descriptor_type == SPV_REFLECT_DESCRIPTOR_TYPE_SAMPLER) {
+                    SamplerSlotRefUVE& samplerSlot = samplerSlotsByBinding[binding->binding];
+                    samplerSlot.binding = binding->binding;
+                    samplerSlot.stageFlags |= stageModule.flag;
+                    continue;
+                }
+                if (binding->descriptor_type == SPV_REFLECT_DESCRIPTOR_TYPE_STORAGE_BUFFER) {
+                    StorageSlotRefUVE& storageSlot = storageSlotsByBinding[binding->binding];
+                    if (storageSlot.stageFlags != 0U &&
+                        storageSlot.name != (binding->name != nullptr ? binding->name : "")) {
+                        reflectionError = "the same storage-buffer binding carries different "
+                                          "names across stages";
+                        reflectionFailed = true;
+                        break;
+                    }
+                    storageSlot.binding = binding->binding;
+                    storageSlot.name = binding->name != nullptr ? binding->name : "";
+                    storageSlot.stageFlags |= stageModule.flag;
                     continue;
                 }
                 if (binding->descriptor_type != SPV_REFLECT_DESCRIPTOR_TYPE_UNIFORM_BUFFER &&
                     binding->descriptor_type != SPV_REFLECT_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC) {
                     reflectionError = std::string("SPIR-V binding [") +
                         (binding->name != nullptr ? binding->name : "?") +
-                        "] is neither a uniform buffer nor a combined image sampler "
-                        "(SSBOs/storage images/separate samplers land with a later slice; "
-                        "M2c binds uniform blocks and textures only)";
+                        "] is not a descriptor form the RHI binds: M2f accepts uniform blocks, "
+                        "combined image samplers, separate sampled-image+sampler pairs, and "
+                        "storage buffers (SSBOs); storage images and any other descriptor type "
+                        "land with the compute milestone (ComputeSystemUVE, Part 7.2)";
                     reflectionFailed = true;
                     break;
                 }
@@ -2450,6 +2619,13 @@ PipelineHandleUVE VulkanRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE
         for (auto& [binding, slot] : textureSlotsByBinding) {
             record.textureSlots.push_back(std::move(slot));
         }
+        // M2f: storage-buffer slots and standalone sampler bindings follow the same rule.
+        for (auto& [binding, slot] : storageSlotsByBinding) {
+            record.storageSlots.push_back(std::move(slot));
+        }
+        for (auto& [binding, slot] : samplerSlotsByBinding) {
+            record.samplerBindings.push_back(std::move(slot));
+        }
         // Push constants: at most one block per entry point by SPIR-V rules; take the first,
         // and verify every additional range matches the same block extent across stages.
         if (!pushRanges.empty()) {
@@ -2482,15 +2658,19 @@ PipelineHandleUVE VulkanRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE
         }
     }
 
-    // Descriptor set layout: one dynamic-UBO binding per uniform block + one combined image
-    // sampler binding per texture slot (all set 0). Pipelines without texture slots allocate
-    // their single static set right here (M2b contract, never rewritten); textured pipelines
-    // allocate per bound-texture-tuple sets lazily at first draw flush instead.
+    // Descriptor set layout: one dynamic-UBO binding per uniform block, one image binding per
+    // texture slot (combined, or M2f separate sampled-image), one M2f STORAGE_BUFFER binding
+    // per storage slot, and one M2f SAMPLER binding per standalone sampler (all set 0).
+    // Pipelines without texture/storage slots allocate their single static set right here
+    // (M2b contract, never rewritten); tuple-bearing pipelines allocate per bound-resource-
+    // tuple sets lazily at first draw flush instead.
     VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
     VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
-    if (!record.uniformBlocks.empty() || !record.textureSlots.empty()) {
+    if (!record.uniformBlocks.empty() || !record.textureSlots.empty() ||
+        !record.storageSlots.empty() || !record.samplerBindings.empty()) {
         std::vector<VkDescriptorSetLayoutBinding> layoutBindings(
-            record.uniformBlocks.size() + record.textureSlots.size());
+            record.uniformBlocks.size() + record.textureSlots.size() +
+            record.storageSlots.size() + record.samplerBindings.size());
         std::size_t layoutIndex = 0;
         for (const UniformBlockRefUVE& block : record.uniformBlocks) {
             VkDescriptorSetLayoutBinding& layoutBinding = layoutBindings[layoutIndex++];
@@ -2504,7 +2684,25 @@ PipelineHandleUVE VulkanRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE
             VkDescriptorSetLayoutBinding& layoutBinding = layoutBindings[layoutIndex++];
             layoutBinding = {};
             layoutBinding.binding = slot.binding;
-            layoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            layoutBinding.descriptorType = slot.separateSampler
+                ? VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE
+                : VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            layoutBinding.descriptorCount = 1U;
+            layoutBinding.stageFlags = slot.stageFlags;
+        }
+        for (const StorageSlotRefUVE& slot : record.storageSlots) {
+            VkDescriptorSetLayoutBinding& layoutBinding = layoutBindings[layoutIndex++];
+            layoutBinding = {};
+            layoutBinding.binding = slot.binding;
+            layoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            layoutBinding.descriptorCount = 1U;
+            layoutBinding.stageFlags = slot.stageFlags;
+        }
+        for (const SamplerSlotRefUVE& slot : record.samplerBindings) {
+            VkDescriptorSetLayoutBinding& layoutBinding = layoutBindings[layoutIndex++];
+            layoutBinding = {};
+            layoutBinding.binding = slot.binding;
+            layoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
             layoutBinding.descriptorCount = 1U;
             layoutBinding.stageFlags = slot.stageFlags;
         }
@@ -2516,7 +2714,7 @@ PipelineHandleUVE VulkanRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE
             descriptorSetLayout == VK_NULL_HANDLE) {
             return fail("vkCreateDescriptorSetLayout failed");
         }
-        if (record.textureSlots.empty()) {
+        if (record.textureSlots.empty() && record.storageSlots.empty()) {
             VkDescriptorSetAllocateInfo setAllocateInfo{};
             setAllocateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
             setAllocateInfo.descriptorPool = impl.descriptorPool;
@@ -2529,16 +2727,19 @@ PipelineHandleUVE VulkanRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE
             }
             // Bind the whole frame UBO once per binding; per-draw selection happens purely
             // through vkCmdBindDescriptorSets' dynamic offsets - no per-draw descriptor writes.
-            std::vector<VkWriteDescriptorSet> writes(record.uniformBlocks.size());
+            // M2f: standalone SAMPLER bindings get the device's fixed sampler here — it never
+            // changes, so the static-set contract ("written once, never rewritten") holds.
+            std::vector<VkWriteDescriptorSet> writes;
             std::vector<VkDescriptorBufferInfo> bufferInfos(record.uniformBlocks.size());
+            std::vector<VkDescriptorImageInfo> samplerInfos(record.samplerBindings.size());
+            writes.reserve(record.uniformBlocks.size() + record.samplerBindings.size());
             for (std::size_t index = 0; index < record.uniformBlocks.size(); ++index) {
                 VkDescriptorBufferInfo& bufferInfo = bufferInfos[index];
                 bufferInfo = {};
                 bufferInfo.buffer = impl.frameUbo;
                 bufferInfo.offset = 0U;
                 bufferInfo.range = record.uniformBlocks[index].size;
-                VkWriteDescriptorSet& write = writes[index];
-                write = {};
+                VkWriteDescriptorSet write{};
                 write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
                 write.dstSet = descriptorSet;
                 write.dstBinding = record.uniformBlocks[index].binding;
@@ -2546,6 +2747,23 @@ PipelineHandleUVE VulkanRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE
                 write.descriptorCount = 1U;
                 write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
                 write.pBufferInfo = &bufferInfo;
+                writes.push_back(write);
+            }
+            for (std::size_t index = 0; index < record.samplerBindings.size(); ++index) {
+                VkDescriptorImageInfo& samplerInfo = samplerInfos[index];
+                samplerInfo = {};
+                samplerInfo.sampler = impl.fixedSampler;
+                samplerInfo.imageView = VK_NULL_HANDLE; // ignored for SAMPLER-type writes
+                samplerInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                VkWriteDescriptorSet write{};
+                write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                write.dstSet = descriptorSet;
+                write.dstBinding = record.samplerBindings[index].binding;
+                write.dstArrayElement = 0U;
+                write.descriptorCount = 1U;
+                write.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
+                write.pImageInfo = &samplerInfo;
+                writes.push_back(write);
             }
             impl.vk.vkUpdateDescriptorSets(impl.device, static_cast<std::uint32_t>(writes.size()),
                                            writes.data(), 0U, nullptr);
@@ -2734,8 +2952,12 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
     // BindTextureUVE mirrors glActiveTexture+glBindTexture — program-independent. A pipeline's
     // i-th reflected sampler binding reads slot i at draw time.
     std::map<std::uint32_t, std::uint32_t> currentTextureValues;
+    // M2f: replay-local storage-buffer binds, the SSBO analogue of currentTextureValues
+    // (GL shader-storage binding-point semantics; validated at the command handler below).
+    std::map<std::uint32_t, std::uint32_t> currentStorageValues;
 
-    const auto flushStateForActivePipelineUVE = [&impl, &currentTextureValues]() -> bool {
+    const auto flushStateForActivePipelineUVE =
+        [&impl, &currentTextureValues, &currentStorageValues]() -> bool {
         const auto found = impl.pipelines.find(impl.activePipelineValue);
         if (found == impl.pipelines.end()) {
             return true; // no pipeline bound by this replay: nothing to flush
@@ -2765,11 +2987,12 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
         }
 
         // Which descriptor set does this draw bind? Uniform-only pipelines: the static set
-        // built at creation. Textured pipelines: the set cached for THIS bound-texture tuple
-        // (allocated + fully written on first use; never rewritten in place — a recorded bind
-        // would otherwise retroactively change earlier draws).
+        // built at creation. Tuple-bearing pipelines (textures and/or M2f storage buffers):
+        // the set cached for THIS bound-resource tuple (allocated + fully written on first
+        // use; never rewritten in place — a recorded bind would otherwise retroactively
+        // change earlier draws).
         VkDescriptorSet setToBind = record.descriptorSet;
-        if (!record.textureSlots.empty()) {
+        if (!record.textureSlots.empty() || !record.storageSlots.empty()) {
             static thread_local std::vector<const ImplUVE::TextureRecordUVE*> tupleRecords;
             tupleRecords.clear();
             std::string tupleKey;
@@ -2814,6 +3037,31 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
                 tupleRecords.push_back(&impl.textures.at(value));
                 tupleKey.append(std::to_string(value)).push_back('#');
             }
+            // M2f: storage-buffer section of the tuple key ('s'-prefixed so the concatenated
+            // key stays unambiguous next to the texture section). 0 is never a live handle
+            // (nextHandleValue starts at 1): an unbound — or destroyed-after-bind — slot
+            // resolves to the deterministic zero-filled fallback buffer at write time, the
+            // buffer analogue of the white-fallback texture (the replay handler already
+            // rejected unknown handles and non-Storage usage with a warn-once, so anything
+            // still in currentStorageValues is a live Storage buffer).
+            static thread_local std::vector<const ImplUVE::BufferRecordUVE*> tupleStorageRecords;
+            tupleStorageRecords.clear();
+            std::vector<std::uint32_t> tupleStorageValues;
+            tupleStorageValues.reserve(record.storageSlots.size());
+            tupleStorageRecords.reserve(record.storageSlots.size());
+            for (std::size_t slotIndex = 0; slotIndex < record.storageSlots.size(); ++slotIndex) {
+                std::uint32_t value = 0U;
+                const auto bound = currentStorageValues.find(static_cast<std::uint32_t>(slotIndex));
+                if (bound != currentStorageValues.end() &&
+                    impl.buffers.find(bound->second) != impl.buffers.end()) {
+                    value = bound->second;
+                }
+                tupleStorageValues.push_back(value);
+                tupleStorageRecords.push_back(value != 0U ? &impl.buffers.at(value) : nullptr);
+                tupleKey.push_back('s');
+                tupleKey.append(std::to_string(value));
+                tupleKey.push_back('#');
+            }
             const auto cached = record.cachedTextureSets.find(tupleKey);
             if (cached != record.cachedTextureSets.end()) {
                 setToBind = cached->second;
@@ -2835,7 +3083,10 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
                 std::vector<VkWriteDescriptorSet> writes;
                 std::vector<VkDescriptorBufferInfo> bufferInfos(record.uniformBlocks.size());
                 std::vector<VkDescriptorImageInfo> imageInfos(record.textureSlots.size());
-                writes.reserve(record.uniformBlocks.size() + record.textureSlots.size());
+                std::vector<VkDescriptorImageInfo> samplerInfos(record.samplerBindings.size());
+                std::vector<VkDescriptorBufferInfo> storageInfos(record.storageSlots.size());
+                writes.reserve(record.uniformBlocks.size() + record.textureSlots.size() +
+                               record.samplerBindings.size() + record.storageSlots.size());
                 for (std::size_t index = 0; index < record.uniformBlocks.size(); ++index) {
                     VkDescriptorBufferInfo& bufferInfo = bufferInfos[index];
                     bufferInfo = {};
@@ -2854,7 +3105,11 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
                 for (std::size_t index = 0; index < record.textureSlots.size(); ++index) {
                     VkDescriptorImageInfo& imageInfo = imageInfos[index];
                     imageInfo = {};
-                    imageInfo.sampler = tupleRecords[index]->sampler;
+                    // M2f: the separate SAMPLED_IMAGE form ignores the sampler member (the
+                    // standalone SAMPLER bindings below carry the fixed device sampler).
+                    imageInfo.sampler = record.textureSlots[index].separateSampler
+                        ? VK_NULL_HANDLE
+                        : tupleRecords[index]->sampler;
                     imageInfo.imageView = tupleRecords[index]->view;
                     imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
                     VkWriteDescriptorSet write{};
@@ -2862,14 +3117,51 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
                     write.dstSet = freshSet;
                     write.dstBinding = record.textureSlots[index].binding;
                     write.descriptorCount = 1U;
-                    write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                    write.descriptorType = record.textureSlots[index].separateSampler
+                        ? VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE
+                        : VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
                     write.pImageInfo = &imageInfo;
+                    writes.push_back(write);
+                }
+                for (std::size_t index = 0; index < record.samplerBindings.size(); ++index) {
+                    VkDescriptorImageInfo& samplerInfo = samplerInfos[index];
+                    samplerInfo = {};
+                    samplerInfo.sampler = impl.fixedSampler;
+                    samplerInfo.imageView = VK_NULL_HANDLE; // ignored for SAMPLER-type writes
+                    samplerInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                    VkWriteDescriptorSet write{};
+                    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                    write.dstSet = freshSet;
+                    write.dstBinding = record.samplerBindings[index].binding;
+                    write.descriptorCount = 1U;
+                    write.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
+                    write.pImageInfo = &samplerInfo;
+                    writes.push_back(write);
+                }
+                for (std::size_t index = 0; index < record.storageSlots.size(); ++index) {
+                    VkDescriptorBufferInfo& storageInfo = storageInfos[index];
+                    storageInfo = {};
+                    storageInfo.buffer = tupleStorageRecords[index] != nullptr
+                        ? tupleStorageRecords[index]->buffer
+                        : impl.fallbackStorageBuffer;
+                    storageInfo.offset = 0U;
+                    storageInfo.range = tupleStorageRecords[index] != nullptr
+                        ? tupleStorageRecords[index]->sizeBytes
+                        : VulkanRenderDeviceUVE::ImplUVE::kFallbackStorageBytesUVE;
+                    VkWriteDescriptorSet write{};
+                    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                    write.dstSet = freshSet;
+                    write.dstBinding = record.storageSlots[index].binding;
+                    write.descriptorCount = 1U;
+                    write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+                    write.pBufferInfo = &storageInfo;
                     writes.push_back(write);
                 }
                 impl.vk.vkUpdateDescriptorSets(impl.device, static_cast<std::uint32_t>(writes.size()),
                                                writes.data(), 0U, nullptr);
                 record.cachedTextureSets.emplace(tupleKey, freshSet);
                 record.cachedTextureTextures.emplace(tupleKey, std::move(tupleValues));
+                record.cachedStorageBuffers.emplace(tupleKey, std::move(tupleStorageValues));
                 setToBind = freshSet;
             }
         }
@@ -3156,6 +3448,25 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
                     "submit replay: BindUniformBufferUVE (external uniform BUFFERS bound by "
                     "handle) stays a no-op in M2c: uniforms flow through SetUniform* plus the "
                     "reflected frame ring; inside-pass UBO rebinding lands with a later slice");
+            } else if constexpr (std::is_same_v<OpT, BindStorageBufferCommandUVE>) {
+                const auto foundBuffer = impl.buffers.find(op.buffer.value);
+                if (foundBuffer == impl.buffers.end() ||
+                    foundBuffer->second.usage != BufferUsageUVE::Storage) {
+                    impl.WarnOnceUVE(VulkanRenderDeviceUVE::ImplUVE::kWarnedUnknownStorageUVE,
+                        "submit replay: BindStorageBufferUVE referenced an unknown handle or a "
+                        "buffer not created with Storage usage; that bind is dropped (affected "
+                        "draws read the deterministic zero-filled fallback buffer instead)");
+                } else {
+                    currentStorageValues[op.slot] = op.buffer.value;
+                    const auto activePipeline = impl.pipelines.find(impl.activePipelineValue);
+                    if (activePipeline != impl.pipelines.end() &&
+                        op.slot >= activePipeline->second.storageSlots.size()) {
+                        impl.WarnOnceUVE(VulkanRenderDeviceUVE::ImplUVE::kWarnedStorageSlotOobUVE,
+                            "submit replay: BindStorageBufferUVE slot exceeds the bound "
+                            "pipeline's reflected storage-buffer count; the bind is recorded "
+                            "(GL binding-point semantics) but no SSBO reads it in this pipeline");
+                    }
+                }
             } else if constexpr (std::is_same_v<OpT, SetUniformFloatCommandUVE>) {
                 writeUniformUVE(op.name, ShaderDataTypeUVE::Float, &op.value, sizeof(op.value), false);
             } else if constexpr (std::is_same_v<OpT, SetUniformIntCommandUVE>) {
@@ -3634,7 +3945,7 @@ bool VulkanRenderDeviceUVE::ReadbackLatestPresentedImageUVE(std::span<std::byte>
 std::string_view VulkanRenderDeviceUVE::GetBackendNameUVE() const noexcept {
     // Never the unqualified "Vulkan": the current slice must be identifiable in editor
     // overlays and bug reports (see the header's capability-reporting contract).
-    return m_impl->useDynamicRendering ? "Vulkan (M2e depth+Load policies)"
+    return m_impl->useDynamicRendering ? "Vulkan (M2f SSBO+separate samplers)"
                                        : "Vulkan (M2c textures+staging)";
 }
 

@@ -17,16 +17,19 @@
 
 namespace UVE::Render {
 
-/// What a BufferDescUVE-created buffer is used for. `Storage` (arbitrary read/write buffers for
-/// compute shaders) is deliberately omitted — ComputeSystemUVE (Part 7.2) doesn't exist yet;
-/// adding it later is additive, not a breaking change to this enum.
-enum class BufferUsageUVE : std::uint8_t { Vertex, Index, Uniform };
+/// What a BufferDescUVE-created buffer is used for. `Storage` (Vulkan M2f) is a shader-storage
+/// buffer (SSBO): arbitrary read/write GPU data bound via ICommandBufferUVE::BindStorageBufferUVE
+/// and read/written from GRAPHICS-stage shaders (`readonly buffer`/`buffer` blocks). Compute
+/// shaders — the other classic SSBO consumer — still belong to ComputeSystemUVE (Part 7.2),
+/// which doesn't exist yet; widening this usage to compute dispatch when that lands is additive.
+enum class BufferUsageUVE : std::uint8_t { Vertex, Index, Uniform, Storage };
 
 [[nodiscard]] constexpr bool IsBufferUsageValidUVE(const BufferUsageUVE usage) noexcept {
     switch (usage) {
         case BufferUsageUVE::Vertex:
         case BufferUsageUVE::Index:
         case BufferUsageUVE::Uniform:
+        case BufferUsageUVE::Storage:
             return true;
     }
     return false;

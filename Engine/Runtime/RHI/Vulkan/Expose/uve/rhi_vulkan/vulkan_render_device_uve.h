@@ -52,8 +52,23 @@
 // submission rides its own transient fence created around it (the presented-frame fence is
 // strictly PresentUVE-owned).
 //
+// Slice M2f ("SSBOs + separate samplers") added 2026-09-18: CreatePipelineUVE reflection now
+// accepts STORAGE_BUFFER bindings (bound through the new ICommandBufferUVE::BindStorageBufferUVE
+// — GL shader-storage binding-point semantics, i-th reflected storage binding reads global slot
+// i) and separate SAMPLED_IMAGE + SAMPLER pairs (fed from the same BindTextureUVE slots as
+// combined samplers; every standalone SAMPLER binding is written with ONE device-owned fixed
+// sampler — the RHI's single GL-mirrored linear/clamp/maxLod-0 shape). Storage buffers live in
+// real per-handle VkBuffers (the M2a host-visible policy), join the per-tuple descriptor-set
+// cache under an 's'-prefixed key section, and are invalidated from it at DestroyBufferUVE
+// exactly like textures. Unbound or destroyed-after-bind storage slots read a device-owned
+// zero-filled fallback buffer — deterministic zeros, the buffer analogue of the 1x1 white
+// fallback texture. Storage IMAGES (and any other descriptor type) still fail pipeline creation
+// loudly: they land with the compute milestone (ComputeSystemUVE, Part 7.2). External uniform
+// buffers (BindUniformBufferUVE) remain the documented later-slice no-op; SetUniform* + the
+// reflected ring is the uniform path.
+//
 // Capability reporting is honest and upstream-visible: GetBackendNameUVE() says
-// "Vulkan (M2e depth+Load policies)" on dynamic-rendering devices, "Vulkan (M2c textures+staging)"
+// "Vulkan (M2f SSBO+separate samplers)" on dynamic-rendering devices, "Vulkan (M2c textures+staging)"
 // on classic ones — never "Vulkan" unqualified — so logs, editor overlays, and bug reports
 // cannot mistake the current slice for the finished backend, and IsUsableUVE() reflects the
 // real instance/device/swapchain bring-up result.

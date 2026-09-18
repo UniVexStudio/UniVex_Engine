@@ -457,6 +457,38 @@ void GlCommandBufferUVE::BindUniformBufferUVE(BufferHandleUVE buffer, std::uint3
     m_state->gl.glBindBufferBase(GL_UNIFORM_BUFFER, slot, bufferIt->second.glBuffer);
 }
 
+void GlCommandBufferUVE::BindStorageBufferUVE(BufferHandleUVE buffer, std::uint32_t slot) {
+    if (!RequireInsideRenderPassUVE(m_insideRenderPass, "BindStorageBufferUVE")) {
+        return;
+    }
+    // SSBOs are core in desktop GL 4.3 (the same floor as compute shaders); the cached gate
+    // doubles as the "this context knows GL_SHADER_STORAGE_BUFFER at all" answer - on older
+    // or GLES contexts the enum itself doesn't exist, so refuse before naming it.
+    if (!m_state->supportsComputeShadersUVE || m_state->maxShaderStorageBindings <= 0) {
+        UVE_ERROR("GlCommandBufferUVE: BindStorageBufferUVE needs a desktop GL 4.3+ context "
+                  "(shader storage buffers); this context does not offer them");
+        return;
+    }
+    if (slot >= static_cast<std::uint32_t>(m_state->maxShaderStorageBindings)) {
+        UVE_ERROR("GlCommandBufferUVE: BindStorageBufferUVE slot exceeds GL shader-storage limits");
+        return;
+    }
+    const auto bufferIt = m_state->buffers.find(buffer.value);
+    if (bufferIt == m_state->buffers.end()) {
+        UVE_ERROR("GlCommandBufferUVE: BindStorageBufferUVE referenced an unknown buffer handle");
+        return;
+    }
+#if !defined(__ANDROID__)
+    if (bufferIt->second.target != GL_SHADER_STORAGE_BUFFER) {
+        UVE_ERROR("GlCommandBufferUVE: BindStorageBufferUVE requires a Storage-usage buffer");
+        return;
+    }
+    // Whole-buffer base binding, matching the Vulkan backend's whole-buffer STORAGE_BUFFER
+    // descriptor (offset 0, range = the buffer's full size) byte for byte in semantics.
+    m_state->gl.glBindBufferBase(GL_SHADER_STORAGE_BUFFER, slot, bufferIt->second.glBuffer);
+#endif
+}
+
 const Detail::GlDeviceStateUVE::PipelineRecordUVE* GlCommandBufferUVE::FindCurrentPipelineUVE() const {
     if (m_currentPipeline == kInvalidPipelineHandleUVE) {
         return nullptr;

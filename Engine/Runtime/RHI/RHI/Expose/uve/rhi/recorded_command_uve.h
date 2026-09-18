@@ -42,6 +42,10 @@ struct BindUniformBufferCommandUVE {
     BufferHandleUVE buffer;
     std::uint32_t slot = 0;
 };
+struct BindStorageBufferCommandUVE {
+    BufferHandleUVE buffer;
+    std::uint32_t slot = 0;
+};
 struct DrawIndexedCommandUVE {
     std::uint32_t indexCount = 0;
     std::uint32_t instanceCount = 1;
@@ -75,7 +79,8 @@ struct SetUniformMatrix4x4CommandUVE {
 using RecordedCommandUVE =
     std::variant<BeginRenderPassCommandUVE, EndRenderPassCommandUVE, BindPipelineCommandUVE,
                  BindVertexBufferCommandUVE, BindIndexBufferCommandUVE, BindTextureCommandUVE,
-                 BindUniformBufferCommandUVE, DrawIndexedCommandUVE, DrawCommandUVE, SetUniformFloatCommandUVE,
+                 BindUniformBufferCommandUVE, BindStorageBufferCommandUVE, DrawIndexedCommandUVE,
+                 DrawCommandUVE, SetUniformFloatCommandUVE,
                  SetUniformIntCommandUVE, SetUniformBoolCommandUVE, SetUniformVector3CommandUVE,
                  SetUniformMatrix4x4CommandUVE>;
 

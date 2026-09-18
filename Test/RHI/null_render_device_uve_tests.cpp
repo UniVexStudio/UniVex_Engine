@@ -466,6 +466,23 @@ TEST(NullRenderDeviceUVETest, CommandBuffer_SetUniformCalls_AreRecordedInOrderWi
     ASSERT_TRUE(std::holds_alternative<EndRenderPassCommandUVE>(recorded[6]));
 }
 
+TEST(NullRenderDeviceUVETest, CommandBuffer_BindStorageBufferUVE_IsRecordedWithBufferAndSlot) {
+    // M2f: the Null spy must retain storage-buffer binds like every other bind family, so
+    // RenderSystems-level tests can assert the recorded buffer/slot without a real GPU.
+    NullRenderDeviceUVE device;
+    std::unique_ptr<ICommandBufferUVE> commandBuffer = device.CreateCommandBufferUVE();
+    commandBuffer->BeginRenderPassUVE(RenderPassDescUVE{});
+    commandBuffer->BindStorageBufferUVE(BufferHandleUVE{7U}, 2U);
+    commandBuffer->EndRenderPassUVE();
+    device.SubmitUVE(std::move(commandBuffer));
+
+    const std::vector<RecordedCommandUVE>& recorded = device.GetLastSubmittedCommandsUVE();
+    ASSERT_EQ(recorded.size(), 3U);
+    ASSERT_TRUE(std::holds_alternative<BindStorageBufferCommandUVE>(recorded[1]));
+    EXPECT_EQ(std::get<BindStorageBufferCommandUVE>(recorded[1]).buffer, BufferHandleUVE{7U});
+    EXPECT_EQ(std::get<BindStorageBufferCommandUVE>(recorded[1]).slot, 2U);
+}
+
 TEST(NullCommandBufferUVETest, BeginRenderPassUVE_UnknownLoadOp_DoesNotRecordOrEnterPass) {
     NullRenderDeviceUVE device;
     std::unique_ptr<ICommandBufferUVE> invalidCommandBuffer = device.CreateCommandBufferUVE();
@@ -517,6 +534,7 @@ TEST(NullCommandBufferUVERuntimeTest, CommandBufferLifecycleMisuseIsSafeNoOpInRe
     commandBuffer->BindIndexBufferUVE(BufferHandleUVE{1U});
     commandBuffer->BindTextureUVE(TextureHandleUVE{1U}, 0U);
     commandBuffer->BindUniformBufferUVE(BufferHandleUVE{1U}, 0U);
+    commandBuffer->BindStorageBufferUVE(BufferHandleUVE{1U}, 0U);
     commandBuffer->SetUniformFloatUVE("uFloat", 1.0F);
     commandBuffer->SetUniformIntUVE("uInt", 1);
     commandBuffer->SetUniformBoolUVE("uBool", true);
