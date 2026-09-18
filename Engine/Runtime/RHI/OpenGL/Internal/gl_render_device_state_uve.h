@@ -84,6 +84,7 @@ struct GlDeviceStateUVE {
 
     struct ShaderRecordUVE {
         GLuint glShader = 0;
+        ShaderStageUVE stage = ShaderStageUVE::Vertex; // M5a: CreateComputePipelineUVE validates it
     };
     std::unordered_map<std::uint32_t, ShaderRecordUVE> shaders;
     std::uint32_t nextShaderHandle = 1;
@@ -100,6 +101,11 @@ struct GlDeviceStateUVE {
         bool depthTestEnabled = true;
         bool depthWriteEnabled = true;
         PipelineBlendModeUVE blendMode = PipelineBlendModeUVE::Opaque;
+
+        /// M5a: true for programs linked from CreateComputePipelineUVE(). Such records carry no
+        /// VAO/vertex layout and no render state — GlCommandBufferUVE skips the graphics-side
+        /// setup for them and DispatchUVE() requires one to be the currently bound pipeline.
+        bool isCompute = false;
 
         /// Every uniform reflected right after this pipeline's program successfully linked
         /// (Increment 21) — GlCommandBufferUVE's SetUniform*UVE calls look a name up here instead

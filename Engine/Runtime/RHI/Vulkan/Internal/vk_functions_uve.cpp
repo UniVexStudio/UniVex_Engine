@@ -171,8 +171,10 @@ bool VkFunctionsUVE::LoadDeviceUVE(const VkDevice device) {
     allResolved &= ResolveDevice(vkCreatePipelineLayout, gdpa, device, "vkCreatePipelineLayout");
     allResolved &= ResolveDevice(vkDestroyPipelineLayout, gdpa, device, "vkDestroyPipelineLayout");
     allResolved &= ResolveDevice(vkCreateGraphicsPipelines, gdpa, device, "vkCreateGraphicsPipelines");
+    allResolved &= ResolveDevice(vkCreateComputePipelines, gdpa, device, "vkCreateComputePipelines");
     allResolved &= ResolveDevice(vkDestroyPipeline, gdpa, device, "vkDestroyPipeline");
     allResolved &= ResolveDevice(vkCmdBindPipeline, gdpa, device, "vkCmdBindPipeline");
+    allResolved &= ResolveDevice(vkCmdDispatch, gdpa, device, "vkCmdDispatch");
     allResolved &= ResolveDevice(vkCmdBindVertexBuffers, gdpa, device, "vkCmdBindVertexBuffers");
     allResolved &= ResolveDevice(vkCmdBindIndexBuffer, gdpa, device, "vkCmdBindIndexBuffer");
     allResolved &= ResolveDevice(vkCmdDraw, gdpa, device, "vkCmdDraw");

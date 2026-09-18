@@ -42,8 +42,11 @@ public:
     /// Ends the current render pass. Must be called exactly once per BeginRenderPassUVE().
     virtual void EndRenderPassUVE() = 0;
 
-    /// Binds `pipeline` as the active pipeline state for subsequent draw calls. Must be called
-    /// inside a render pass.
+    /// Binds `pipeline` as the active pipeline state for subsequent draw or dispatch commands.
+    /// Since M5a this is allowed both inside and outside render-pass markers: graphics pipelines
+    /// are consumed by DrawUVE() (inside a pass), while compute pipelines must be bound OUTSIDE
+    /// pass markers because DispatchUVE() is outside-pass and Vulkan forbids binding a COMPUTE
+    /// pipeline inside a render-pass instance.
     virtual void BindPipelineUVE(PipelineHandleUVE pipeline) = 0;
 
     /// Binds `buffer` as the vertex buffer at `slot`. Must be called inside a render pass.
@@ -91,6 +94,21 @@ public:
     /// Draws without an index buffer. Must be called inside a render pass, after a pipeline and
     /// the buffers it needs are bound.
     virtual void DrawUVE(std::uint32_t vertexCount, std::uint32_t instanceCount = 1) = 0;
+
+    /// Dispatches compute work: `groupCountX * groupCountY * groupCountZ` workgroups of the
+    /// currently bound COMPUTE pipeline (created via CreateComputePipelineUVE and bound with
+    /// BindPipelineUVE; zero on any axis dispatches nothing and is a recorded no-op). M5a
+    /// contract — dispatch belongs OUTSIDE render-pass markers (Vulkan compute is illegal
+    /// inside a render-pass instance), after the pipeline and any SSBOs it writes are bound:
+    /// the Vulkan dynamic arm closes a still-open pass instance before dispatching (the next
+    /// Begin marker re-opens it with Load semantics), classic pre-1.3 devices cannot dispatch
+    /// at all (their single native pass spans the frame) and warn-once + skip, GL executes
+    /// glDispatchCompute immediately followed by a conservative memory barrier (GL has no
+    /// native pass object), and Null records the command for spy tests. Writes a dispatch
+    /// makes to bound storage buffers are coherent for later draws in the same submission —
+    /// each backend inserts the barriers that guarantee it.
+    virtual void DispatchUVE(std::uint32_t groupCountX, std::uint32_t groupCountY,
+                             std::uint32_t groupCountZ) = 0;
 };
 
 } // namespace UVE::Render

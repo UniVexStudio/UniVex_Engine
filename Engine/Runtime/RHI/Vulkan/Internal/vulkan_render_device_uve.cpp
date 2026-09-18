@@ -432,6 +432,10 @@ struct VulkanRenderDeviceUVE::ImplUVE {
         std::vector<SamplerSlotRefUVE> samplerBindings; // M2f standalone samplers (fixed sampler)
         std::vector<UniformReflectionUVE> reflectedUniforms; // served by GetPipelineUniformsUVE()
         bool uniformsDirty = true; // first bind of any frame flushes everything
+        // M5a: true for pipelines from CreateComputePipelineUVE(). Chooses the
+        // VK_PIPELINE_BIND_POINT_COMPUTE side at bind/flush time; texture/sampler slots stay
+        // empty (the compute reflection accepts uniform + storage buffers only until M5b).
+        bool isCompute = false;
         // M2c: one descriptor SET per bound-resource tuple (uniformless pipelines use the
         // static `descriptorSet` above; textured pipelines can never share one set across
         // differing bindings — updating a recorded set in place would retroactively change
@@ -522,6 +526,8 @@ struct VulkanRenderDeviceUVE::ImplUVE {
     static constexpr std::uint32_t kWarnedOffscreenFeedbackUVE = 1U << 16U;
     static constexpr std::uint32_t kWarnedUnknownStorageUVE = 1U << 17U;
     static constexpr std::uint32_t kWarnedStorageSlotOobUVE = 1U << 18U;
+    static constexpr std::uint32_t kWarnedDispatchClassicUVE = 1U << 19U; // M5a
+    static constexpr std::uint32_t kWarnedDrawWithComputeUVE = 1U << 20U; // M5a
     std::uint32_t replayWarningsEmitted = 0U;
 
     // Replay-local pipeline binding state (valid only inside PresentUVE()'s record window).
@@ -1820,6 +1826,13 @@ public:
     void DrawUVE(const std::uint32_t vertexCount, const std::uint32_t instanceCount) override {
         m_commands.emplace_back(DrawCommandUVE{vertexCount, instanceCount});
     }
+    // M5a: recorded ungated like every other Vulkan-side command — this backend has no
+    // record-time pass state; the replay decides (closing any lazily-open rendering instance
+    // before dispatching, since compute inside a pass instance is illegal).
+    void DispatchUVE(const std::uint32_t groupCountX, const std::uint32_t groupCountY,
+                     const std::uint32_t groupCountZ) override {
+        m_commands.emplace_back(DispatchCommandUVE{groupCountX, groupCountY, groupCountZ});
+    }
 
     [[nodiscard]] const std::vector<RecordedCommandUVE>& GetCommandsUVE() const noexcept {
         return m_commands;
@@ -2406,9 +2419,10 @@ ShaderHandleUVE VulkanRenderDeviceUVE::CreateShaderUVE(const ShaderDescUVE& desc
     if (!impl.usable) {
         return fail("device is not usable");
     }
-    if (!IsShaderStageValidUVE(desc.stage) ||
-        desc.stage == ShaderStageUVE::Compute || desc.stage == ShaderStageUVE::Geometry) {
-        return fail("only Vertex/Fragment stages are supported by the M2a draw slice");
+    // M5a: Compute is real now (CreateComputePipelineUVE consumes it). Geometry stays rejected —
+    // it needs a tessellation/geometry pipeline-state story this RHI does not have yet.
+    if (!IsShaderStageValidUVE(desc.stage) || desc.stage == ShaderStageUVE::Geometry) {
+        return fail("only Vertex/Fragment/Compute stages are supported (Geometry needs a future slice)");
     }
     if (desc.entryPointName.empty()) {
         return fail("entry point name must not be empty");
@@ -2698,8 +2712,8 @@ PipelineHandleUVE VulkanRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE
                         (binding->name != nullptr ? binding->name : "?") +
                         "] is not a descriptor form the RHI binds: M2f accepts uniform blocks, "
                         "combined image samplers, separate sampled-image+sampler pairs, and "
-                        "storage buffers (SSBOs); storage images and any other descriptor type "
-                        "land with the compute milestone (ComputeSystemUVE, Part 7.2)";
+                        "storage buffers (SSBOs); storage images land with the M5b slice of the "
+                        "compute milestone, and any other descriptor type is not bound by this RHI";
                     reflectionFailed = true;
                     break;
                 }
@@ -3018,6 +3032,272 @@ PipelineHandleUVE VulkanRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE
     return PipelineHandleUVE{handleValue};
 }
 
+PipelineHandleUVE VulkanRenderDeviceUVE::CreateComputePipelineUVE(const ComputePipelineDescUVE& desc,
+                                                                  std::string* outInfoLog) {
+    ImplUVE& impl = *m_impl;
+    const auto fail = [outInfoLog](std::string reason) {
+        UVE_WARNING("VulkanRenderDeviceUVE::CreateComputePipelineUVE: {}", reason);
+        if (outInfoLog != nullptr) {
+            *outInfoLog = std::move(reason);
+        }
+        return kInvalidPipelineHandleUVE;
+    };
+    if (!impl.usable) {
+        return fail("device is not usable");
+    }
+    const auto shaderFound = impl.shaders.find(desc.computeShader.value);
+    if (shaderFound == impl.shaders.end()) {
+        return fail("compute shader handle does not reference a live shader");
+    }
+    if (shaderFound->second.stage != ShaderStageUVE::Compute) {
+        return fail("shader handle is bound to the wrong stage (Compute required)");
+    }
+
+    VkPipelineShaderStageCreateInfo stage{};
+    stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+    stage.module = shaderFound->second.module;
+    stage.pName = shaderFound->second.entryPoint.c_str();
+
+    // --- M5a compute reflection ---------------------------------------------------------
+    // Single stage, set-0-only, and deliberately narrower than the graphics reflection:
+    // uniform blocks (ring-dynamic) and storage buffers (slot-bound) are the descriptor
+    // forms a compute slice honestly covers today. STORAGE_IMAGE refuses loudly naming M5b
+    // (the message keeps the word "compute" — the M2f refusal test asserts it); sampled
+    // textures/samplers refuse too (compute sampling lands when a real workload needs it).
+    ImplUVE::PipelineRecordUVE record;
+    record.isCompute = true;
+    {
+        SpvReflectShaderModule reflection{};
+        if (spvReflectCreateShaderModule(shaderFound->second.spirvBytes.size(),
+                                         shaderFound->second.spirvBytes.data(),
+                                         &reflection) != SPV_REFLECT_RESULT_SUCCESS) {
+            return fail("SPIRV-Reflect could not parse the compute shader module");
+        }
+        std::map<std::uint32_t, UniformBlockRefUVE> blocksByBinding;
+        std::map<std::uint32_t, StorageSlotRefUVE> storageSlotsByBinding;
+        bool reflectionFailed = false;
+        std::string reflectionError;
+        std::uint32_t bindingCount = 0;
+        spvReflectEnumerateDescriptorBindings(&reflection, &bindingCount, nullptr);
+        std::vector<SpvReflectDescriptorBinding*> bindings(bindingCount);
+        spvReflectEnumerateDescriptorBindings(&reflection, &bindingCount, bindings.data());
+        for (const SpvReflectDescriptorBinding* binding : bindings) {
+            if (binding->set != 0U) {
+                reflectionError = "SPIR-V uses descriptor set " + std::to_string(binding->set) +
+                    " — the compute layout contract is set-0-only (same as the graphics side)";
+                reflectionFailed = true;
+                break;
+            }
+            if (binding->descriptor_type == SPV_REFLECT_DESCRIPTOR_TYPE_STORAGE_BUFFER) {
+                StorageSlotRefUVE& slot = storageSlotsByBinding[binding->binding];
+                slot.binding = binding->binding;
+                slot.name = binding->name != nullptr ? binding->name : "";
+                slot.stageFlags |= VK_SHADER_STAGE_COMPUTE_BIT;
+                continue;
+            }
+            if (binding->descriptor_type != SPV_REFLECT_DESCRIPTOR_TYPE_UNIFORM_BUFFER &&
+                binding->descriptor_type != SPV_REFLECT_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC) {
+                reflectionError = std::string("SPIR-V binding [") +
+                    (binding->name != nullptr ? binding->name : "?") +
+                    "] is not a descriptor form this RHI's compute pipelines bind: the M5a "
+                    "compute slice accepts uniform blocks and storage buffers (SSBOs); storage "
+                    "images land with M5b, and sampled textures/samplers are not bound by "
+                    "compute pipelines yet";
+                reflectionFailed = true;
+                break;
+            }
+            UniformBlockRefUVE& block = blocksByBinding[binding->binding];
+            block.binding = binding->binding;
+            block.size = binding->block.padded_size;
+            block.stageFlags |= VK_SHADER_STAGE_COMPUTE_BIT;
+            // Single stage — no cross-stage merge checks needed; members are copied out
+            // immediately (the reflection module dies at the end of this scope).
+            CollectBlockMembersUVE(binding->block, VK_SHADER_STAGE_COMPUTE_BIT, -1, block.members);
+        }
+        std::uint32_t pushCount = 0;
+        if (!reflectionFailed) {
+            spvReflectEnumeratePushConstantBlocks(&reflection, &pushCount, nullptr);
+            std::vector<SpvReflectBlockVariable*> pushBlocks(pushCount);
+            spvReflectEnumeratePushConstantBlocks(&reflection, &pushCount, pushBlocks.data());
+            for (const SpvReflectBlockVariable* pushBlock : pushBlocks) {
+                const std::uint32_t offset = pushBlock->offset;
+                const std::uint32_t size =
+                    pushBlock->padded_size != 0U ? pushBlock->padded_size : pushBlock->size;
+                if (record.pushBlock.valid &&
+                    (record.pushBlock.offset != offset || record.pushBlock.size != size)) {
+                    reflectionError = "inconsistent push-constant ranges in the compute shader";
+                    reflectionFailed = true;
+                    break;
+                }
+                record.pushBlock.valid = true;
+                record.pushBlock.offset = offset;
+                record.pushBlock.size = size;
+                record.pushBlock.stageFlags |= VK_SHADER_STAGE_COMPUTE_BIT;
+                CollectBlockMembersUVE(*pushBlock, VK_SHADER_STAGE_COMPUTE_BIT, -1,
+                                       record.pushBlock.members);
+            }
+        }
+        spvReflectDestroyShaderModule(&reflection);
+        if (reflectionFailed) {
+            return fail(reflectionError);
+        }
+        for (auto& [binding, block] : blocksByBinding) {
+            UniformBlockRefUVE finalBlock = std::move(block);
+            const std::int32_t blockIndex = static_cast<std::int32_t>(record.uniformBlocks.size());
+            for (UniformMemberRefUVE& member : finalBlock.members) {
+                member.blockIndex = blockIndex;
+            }
+            finalBlock.shadow.assign(finalBlock.size, std::byte{0});
+            record.uniformBlocks.push_back(std::move(finalBlock));
+        }
+        for (auto& [binding, slot] : storageSlotsByBinding) {
+            record.storageSlots.push_back(std::move(slot));
+        }
+        if (record.pushBlock.valid) {
+            record.pushBlock.shadow.assign(record.pushBlock.size, std::byte{0});
+        }
+    }
+
+    // Descriptor set layout: dynamic-UBO bindings + STORAGE_BUFFER bindings, all set 0.
+    // Uniform-only compute pipelines get their static set right here (written once, never
+    // rewritten); storage-bearing ones allocate per-tuple sets lazily at dispatch flush —
+    // the identical M2c/M2f caching contract the graphics side uses.
+    VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
+    VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
+    if (!record.uniformBlocks.empty() || !record.storageSlots.empty()) {
+        std::vector<VkDescriptorSetLayoutBinding> layoutBindings(record.uniformBlocks.size() +
+                                                                 record.storageSlots.size());
+        std::size_t layoutIndex = 0;
+        for (const UniformBlockRefUVE& block : record.uniformBlocks) {
+            VkDescriptorSetLayoutBinding& layoutBinding = layoutBindings[layoutIndex++];
+            layoutBinding = {};
+            layoutBinding.binding = block.binding;
+            layoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+            layoutBinding.descriptorCount = 1U;
+            layoutBinding.stageFlags = block.stageFlags;
+        }
+        for (const StorageSlotRefUVE& slot : record.storageSlots) {
+            VkDescriptorSetLayoutBinding& layoutBinding = layoutBindings[layoutIndex++];
+            layoutBinding = {};
+            layoutBinding.binding = slot.binding;
+            layoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            layoutBinding.descriptorCount = 1U;
+            layoutBinding.stageFlags = slot.stageFlags;
+        }
+        VkDescriptorSetLayoutCreateInfo setLayoutInfo{};
+        setLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        setLayoutInfo.bindingCount = static_cast<std::uint32_t>(layoutBindings.size());
+        setLayoutInfo.pBindings = layoutBindings.data();
+        if (impl.vk.vkCreateDescriptorSetLayout(impl.device, &setLayoutInfo, nullptr,
+                                                &descriptorSetLayout) != VK_SUCCESS ||
+            descriptorSetLayout == VK_NULL_HANDLE) {
+            return fail("vkCreateDescriptorSetLayout failed");
+        }
+        if (record.storageSlots.empty()) {
+            VkDescriptorSetAllocateInfo setAllocateInfo{};
+            setAllocateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+            setAllocateInfo.descriptorPool = impl.descriptorPool;
+            setAllocateInfo.descriptorSetCount = 1U;
+            setAllocateInfo.pSetLayouts = &descriptorSetLayout;
+            if (impl.vk.vkAllocateDescriptorSets(impl.device, &setAllocateInfo, &descriptorSet) !=
+                    VK_SUCCESS ||
+                descriptorSet == VK_NULL_HANDLE) {
+                impl.vk.vkDestroyDescriptorSetLayout(impl.device, descriptorSetLayout, nullptr);
+                return fail("vkAllocateDescriptorSets failed (shared pool exhausted?)");
+            }
+            std::vector<VkWriteDescriptorSet> writes;
+            std::vector<VkDescriptorBufferInfo> bufferInfos(record.uniformBlocks.size());
+            writes.reserve(record.uniformBlocks.size());
+            for (std::size_t index = 0; index < record.uniformBlocks.size(); ++index) {
+                VkDescriptorBufferInfo& bufferInfo = bufferInfos[index];
+                bufferInfo = {};
+                bufferInfo.buffer = impl.frameUbo;
+                bufferInfo.offset = 0U;
+                bufferInfo.range = record.uniformBlocks[index].size;
+                VkWriteDescriptorSet write{};
+                write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                write.dstSet = descriptorSet;
+                write.dstBinding = record.uniformBlocks[index].binding;
+                write.dstArrayElement = 0U;
+                write.descriptorCount = 1U;
+                write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+                write.pBufferInfo = &bufferInfo;
+                writes.push_back(write);
+            }
+            impl.vk.vkUpdateDescriptorSets(impl.device, static_cast<std::uint32_t>(writes.size()),
+                                           writes.data(), 0U, nullptr);
+        }
+    }
+
+    VkPipelineLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    if (descriptorSetLayout != VK_NULL_HANDLE) {
+        layoutInfo.setLayoutCount = 1U;
+        layoutInfo.pSetLayouts = &descriptorSetLayout;
+    }
+    VkPushConstantRange pushRange{};
+    if (record.pushBlock.valid) {
+        pushRange.stageFlags = record.pushBlock.stageFlags;
+        pushRange.offset = record.pushBlock.offset;
+        pushRange.size = record.pushBlock.size;
+        layoutInfo.pushConstantRangeCount = 1U;
+        layoutInfo.pPushConstantRanges = &pushRange;
+    }
+    VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
+    if (impl.vk.vkCreatePipelineLayout(impl.device, &layoutInfo, nullptr, &pipelineLayout) !=
+            VK_SUCCESS ||
+        pipelineLayout == VK_NULL_HANDLE) {
+        if (descriptorSetLayout != VK_NULL_HANDLE) {
+            impl.vk.vkDestroyDescriptorSetLayout(impl.device, descriptorSetLayout, nullptr);
+        }
+        return fail("vkCreatePipelineLayout failed");
+    }
+
+    VkComputePipelineCreateInfo pipelineInfo{};
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    pipelineInfo.stage = stage;
+    pipelineInfo.layout = pipelineLayout;
+    VkPipeline computePipeline = VK_NULL_HANDLE;
+    const VkResult pipelineResult = impl.vk.vkCreateComputePipelines(
+        impl.device, VK_NULL_HANDLE /*no pipeline cache in M5a*/, 1U, &pipelineInfo, nullptr,
+        &computePipeline);
+    if (pipelineResult != VK_SUCCESS || computePipeline == VK_NULL_HANDLE) {
+        impl.vk.vkDestroyPipelineLayout(impl.device, pipelineLayout, nullptr);
+        if (descriptorSetLayout != VK_NULL_HANDLE) {
+            impl.vk.vkDestroyDescriptorSetLayout(impl.device, descriptorSetLayout, nullptr);
+        }
+        return fail("vkCreateComputePipelines failed (driver validation error)");
+    }
+
+    // Reflection table for GetPipelineUniformsUVE() — same shape as the graphics side.
+    for (const UniformBlockRefUVE& block : record.uniformBlocks) {
+        for (const UniformMemberRefUVE& member : block.members) {
+            UniformReflectionUVE reflectionEntry{};
+            reflectionEntry.name = member.name;
+            reflectionEntry.type = member.type;
+            reflectionEntry.location = static_cast<int>(record.reflectedUniforms.size());
+            reflectionEntry.arraySize = member.arraySize;
+            record.reflectedUniforms.push_back(std::move(reflectionEntry));
+        }
+    }
+    for (const UniformMemberRefUVE& member : record.pushBlock.members) {
+        UniformReflectionUVE reflectionEntry{};
+        reflectionEntry.name = member.name;
+        reflectionEntry.type = member.type;
+        reflectionEntry.location = static_cast<int>(record.reflectedUniforms.size());
+        reflectionEntry.arraySize = member.arraySize;
+        record.reflectedUniforms.push_back(std::move(reflectionEntry));
+    }
+    record.pipeline = computePipeline;
+    record.layout = pipelineLayout;
+    record.descriptorSetLayout = descriptorSetLayout;
+    record.descriptorSet = descriptorSet;
+    const std::uint32_t handleValue = impl.nextHandleValue++;
+    impl.pipelines.emplace(handleValue, std::move(record));
+    return PipelineHandleUVE{handleValue};
+}
+
 void VulkanRenderDeviceUVE::DestroyPipelineUVE(const PipelineHandleUVE pipeline) {
     ImplUVE& impl = *m_impl;
     const auto found = impl.pipelines.find(pipeline.value);
@@ -3125,8 +3405,12 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
             return true; // no pipeline bound by this replay: nothing to flush
         }
         ImplUVE::PipelineRecordUVE& record = found->second;
+        // M5a fix: storage-only (and sampler-only) pipelines DO carry shader-bound state — the
+        // old M2c-era condition skipped their set binding entirely, which a storage-only compute
+        // pipeline (the M5a palette writer) would have turned into silent fallback-buffer reads.
         if (record.uniformBlocks.empty() && !record.pushBlock.valid &&
-            record.textureSlots.empty()) {
+            record.textureSlots.empty() && record.storageSlots.empty() &&
+            record.samplerBindings.empty()) {
             return true; // pipeline carries no shader-bound state at all
         }
         static thread_local std::vector<std::uint32_t> dynamicOffsets; // replay thread only
@@ -3328,7 +3612,11 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
             }
         }
         if (setToBind != VK_NULL_HANDLE) {
-            impl.vk.vkCmdBindDescriptorSets(impl.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+            // M5a: descriptor sets bind against the pipeline's OWN bind point — a compute
+            // pipeline's set is invisible to VK_PIPELINE_BIND_POINT_GRAPHICS and vice versa.
+            impl.vk.vkCmdBindDescriptorSets(impl.commandBuffer,
+                                            record.isCompute ? VK_PIPELINE_BIND_POINT_COMPUTE
+                                                             : VK_PIPELINE_BIND_POINT_GRAPHICS,
                                             record.layout, 0U, 1U, &setToBind,
                                             static_cast<std::uint32_t>(dynamicOffsets.size()),
                                             dynamicOffsets.data());
@@ -3425,6 +3713,14 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
         scissor.extent = {rect.width, rect.height};
         impl.vk.vkCmdSetViewport(impl.commandBuffer, 0U, 1U, &viewport);
         impl.vk.vkCmdSetScissor(impl.commandBuffer, 0U, 1U, &scissor);
+    };
+
+    // M5a: the outside-pass gate below relaxes while a compute pipeline is bound — the
+    // storage-buffer binds and uniform writes feeding a dispatch are recorded OUTSIDE pass
+    // markers (Vulkan forbids compute inside a rendering instance) and must survive replay.
+    const auto activePipelineIsComputeUVE = [&impl]() {
+        const auto found = impl.pipelines.find(impl.activePipelineValue);
+        return found != impl.pipelines.end() && found->second.isCompute;
     };
 
     for (const RecordedCommandUVE& command : commands) {
@@ -3555,20 +3851,94 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
                 }
             } else if constexpr (std::is_same_v<OpT, EndRenderPassCommandUVE>) {
                 passActiveForThisList = false;
-            } else if (!passActiveForThisList) {
-                // Anything outside an accepted pass is ignored: the same rule GL's world has,
-                // where draws outside a pass bind land nowhere meaningful.
+            } else if constexpr (std::is_same_v<OpT, DispatchCommandUVE>) {
+                // ------------- M5a compute dispatch (outside pass markers) --------------
+                if (!impl.useDynamicRendering) {
+                    impl.WarnOnceUVE(VulkanRenderDeviceUVE::ImplUVE::kWarnedDispatchClassicUVE,
+                        "compute requires core 1.3 dynamic rendering on this backend: the "
+                        "classic arm wraps the whole replay in one native render pass instance "
+                        "where vkCmdDispatch is illegal; compute commands are skipped");
+                } else {
+                    const auto found = impl.pipelines.find(impl.activePipelineValue);
+                    if (found == impl.pipelines.end() || !found->second.isCompute) {
+                        impl.WarnOnceUVE(VulkanRenderDeviceUVE::ImplUVE::kWarnedUnknownHandleUVE,
+                            "submit replay: DispatchUVE without a compute pipeline bound; the "
+                            "dispatch is skipped");
+                    } else {
+                        if (impl.framePassState.passOpen) {
+                            // A lazily-open rendering instance is still active (EndRenderPass is
+                            // only a marker) — dispatch inside one is a Vulkan error, so close it
+                            // first; a later Begin reopens with LOAD, content preserved.
+                            impl.CloseCurrentPassDynamicUVE();
+                            passActiveForThisList = false;
+                        }
+                        // Conservative global barriers around the dispatch: earlier shader
+                        // writes (graphics or compute) must be visible to the compute shader,
+                        // and its writes must be visible to every later reader — fragment SSBO
+                        // sampling in the same frame, later dispatches, and the queue-idle
+                        // host readback path.
+                        VkMemoryBarrier preBarrier{};
+                        preBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+                        preBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+                        preBarrier.dstAccessMask =
+                            VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+                        impl.vk.vkCmdPipelineBarrier(
+                            impl.commandBuffer,
+                            VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
+                                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0U, 1U, &preBarrier, 0U, nullptr,
+                            0U, nullptr);
+                        if (flushStateForActivePipelineUVE()) {
+                            impl.vk.vkCmdDispatch(impl.commandBuffer, op.groupCountX, op.groupCountY,
+                                                  op.groupCountZ);
+                        }
+                        VkMemoryBarrier postBarrier{};
+                        postBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+                        postBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+                        postBarrier.dstAccessMask =
+                            VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+                        impl.vk.vkCmdPipelineBarrier(
+                            impl.commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                            VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
+                                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                            0U, 1U, &postBarrier, 0U, nullptr, 0U, nullptr);
+                    }
+                }
             } else if constexpr (std::is_same_v<OpT, BindPipelineCommandUVE>) {
+                // M5a: handled before the inside-pass gate — compute pipelines bind OUTSIDE
+                // pass markers (a COMPUTE bind inside a rendering instance is illegal), while
+                // graphics binds keep the M2a rule (ignored outside an accepted pass).
                 const auto found = impl.pipelines.find(op.pipeline.value);
                 if (found == impl.pipelines.end()) {
                     impl.WarnOnceUVE(VulkanRenderDeviceUVE::ImplUVE::kWarnedUnknownHandleUVE,
                         "submit replay: unknown pipeline handle; draws bound to it are skipped");
                     impl.activePipelineValue = 0U;
-                } else {
+                } else if (found->second.isCompute) {
+                    if (!impl.useDynamicRendering) {
+                        impl.WarnOnceUVE(VulkanRenderDeviceUVE::ImplUVE::kWarnedDispatchClassicUVE,
+                            "compute requires core 1.3 dynamic rendering on this backend: the "
+                            "classic arm wraps the whole replay in one native render pass instance "
+                            "where vkCmdDispatch is illegal; compute commands are skipped");
+                    } else {
+                        if (impl.framePassState.passOpen) {
+                            impl.CloseCurrentPassDynamicUVE(); // COMPUTE bind inside an open
+                            passActiveForThisList = false;     // instance would be illegal
+                        }
+                        impl.vk.vkCmdBindPipeline(impl.commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE,
+                                                  found->second.pipeline);
+                        impl.activePipelineValue = op.pipeline.value;
+                    }
+                } else if (passActiveForThisList) {
                     impl.vk.vkCmdBindPipeline(impl.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                               found->second.pipeline);
                     impl.activePipelineValue = op.pipeline.value;
                 }
+                // else: graphics bind outside a pass — ignored (M2a rule, unchanged).
+            } else if (!passActiveForThisList && !activePipelineIsComputeUVE()) {
+                // Anything outside an accepted pass is ignored: the same rule GL's world has,
+                // where draws outside a pass bind land nowhere meaningful. M5a exception: while
+                // a COMPUTE pipeline is bound, outside-pass storage binds and uniform writes
+                // are real — they feed the next dispatch.
             } else if constexpr (std::is_same_v<OpT, BindVertexBufferCommandUVE>) {
                 const auto found = impl.buffers.find(op.buffer.value);
                 if (found == impl.buffers.end()) {
@@ -3648,11 +4018,19 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
                 writeUniformUVE(op.name, ShaderDataTypeUVE::Mat4, op.value.m,
                                 sizeof(op.value.m), false);
             } else if constexpr (std::is_same_v<OpT, DrawCommandUVE>) {
-                if (flushStateForActivePipelineUVE()) {
+                if (activePipelineIsComputeUVE()) {
+                    impl.WarnOnceUVE(VulkanRenderDeviceUVE::ImplUVE::kWarnedDrawWithComputeUVE,
+                        "submit replay: DrawUVE/DrawIndexedUVE reached replay with a COMPUTE "
+                        "pipeline bound; the draw is skipped (bind a graphics pipeline first)");
+                } else if (flushStateForActivePipelineUVE()) {
                     impl.vk.vkCmdDraw(impl.commandBuffer, op.vertexCount, op.instanceCount, 0U, 0U);
                 }
             } else if constexpr (std::is_same_v<OpT, DrawIndexedCommandUVE>) {
-                if (flushStateForActivePipelineUVE()) {
+                if (activePipelineIsComputeUVE()) {
+                    impl.WarnOnceUVE(VulkanRenderDeviceUVE::ImplUVE::kWarnedDrawWithComputeUVE,
+                        "submit replay: DrawUVE/DrawIndexedUVE reached replay with a COMPUTE "
+                        "pipeline bound; the draw is skipped (bind a graphics pipeline first)");
+                } else if (flushStateForActivePipelineUVE()) {
                     impl.vk.vkCmdDrawIndexed(impl.commandBuffer, op.indexCount, op.instanceCount,
                                              0U, 0, 0U);
                 }
@@ -4118,7 +4496,7 @@ bool VulkanRenderDeviceUVE::ReadbackLatestPresentedImageUVE(std::span<std::byte>
 std::string_view VulkanRenderDeviceUVE::GetBackendNameUVE() const noexcept {
     // Never the unqualified "Vulkan": the current slice must be identifiable in editor
     // overlays and bug reports (see the header's capability-reporting contract).
-    return m_impl->useDynamicRendering ? "Vulkan (M4 parallel recording)"
+    return m_impl->useDynamicRendering ? "Vulkan (M5a compute dispatch)"
                                        : "Vulkan (M2c textures+staging)";
 }
 

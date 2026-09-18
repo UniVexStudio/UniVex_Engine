@@ -555,7 +555,83 @@ TEST(NullCommandBufferUVETest, BeginRenderPassUVE_UnknownLoadOp_DoesNotRecordOrE
     EXPECT_EQ(device.GetLastSubmittedCommandsUVE().size(), 2U);
 }
 
+TEST(NullRenderDeviceUVETest, CreateComputePipelineUVE_BookkeepsAndValidatesStage) {
+    // M5a: compute pipelines live in the SAME handle domain as graphics pipelines (one
+    // DestroyPipelineUVE erases from either map) and count as live resources; the shader
+    // handle must be live AND Compute-stage.
+    NullRenderDeviceUVE device;
+    const ShaderHandleUVE computeShader = device.CreateShaderUVE(ShaderDescUVE{ShaderStageUVE::Compute, "cs"});
+    ASSERT_NE(computeShader, kInvalidShaderHandleUVE);
+    EXPECT_EQ(device.GetLiveResourceCountUVE(), 1U);
+
+    ComputePipelineDescUVE pipelineDesc;
+    pipelineDesc.computeShader = computeShader;
+    const PipelineHandleUVE pipeline = device.CreateComputePipelineUVE(pipelineDesc);
+    EXPECT_NE(pipeline, kInvalidPipelineHandleUVE);
+    EXPECT_EQ(device.GetLiveResourceCountUVE(), 2U);
+
+    device.DestroyPipelineUVE(pipeline);
+    EXPECT_EQ(device.GetLiveResourceCountUVE(), 1U);
+
+    ComputePipelineDescUVE unknownShaderDesc;
+    unknownShaderDesc.computeShader = ShaderHandleUVE{999999U};
+    EXPECT_EQ(device.CreateComputePipelineUVE(unknownShaderDesc), kInvalidPipelineHandleUVE);
+
+    const ShaderHandleUVE vertexShader = device.CreateShaderUVE(ShaderDescUVE{ShaderStageUVE::Vertex, "vs"});
+    ASSERT_NE(vertexShader, kInvalidShaderHandleUVE);
+    ComputePipelineDescUVE wrongStageDesc;
+    wrongStageDesc.computeShader = vertexShader;
+    EXPECT_EQ(device.CreateComputePipelineUVE(wrongStageDesc), kInvalidPipelineHandleUVE);
+    EXPECT_EQ(device.GetLiveResourceCountUVE(), 2U); // both shaders live, no pipeline recorded
+
+    device.DestroyShaderUVE(computeShader);
+    device.DestroyShaderUVE(vertexShader);
+    EXPECT_EQ(device.GetLiveResourceCountUVE(), 0U);
+}
+
+TEST(NullRenderDeviceUVETest, DispatchUVE_RecordsOutsidePassWithGroupCounts) {
+    // M5a recording contract: the compute flow (bind compute pipeline, bind its SSBO,
+    // dispatch) is recorded entirely OUTSIDE render-pass markers, in call order, with the
+    // exact group counts.
+    NullRenderDeviceUVE device;
+    const ShaderHandleUVE computeShader = device.CreateShaderUVE(ShaderDescUVE{ShaderStageUVE::Compute, "cs"});
+    ComputePipelineDescUVE pipelineDesc;
+    pipelineDesc.computeShader = computeShader;
+    const PipelineHandleUVE computePipeline = device.CreateComputePipelineUVE(pipelineDesc);
+    ASSERT_NE(computePipeline, kInvalidPipelineHandleUVE);
+    const BufferHandleUVE storageBuffer = device.CreateBufferUVE(BufferDescUVE{64, BufferUsageUVE::Storage});
+    ASSERT_NE(storageBuffer, kInvalidBufferHandleUVE);
+
+    std::unique_ptr<ICommandBufferUVE> commandBuffer = device.CreateCommandBufferUVE();
+    commandBuffer->BindPipelineUVE(computePipeline);
+    commandBuffer->BindStorageBufferUVE(storageBuffer, 0U);
+    commandBuffer->DispatchUVE(4U, 2U, 3U);
+    device.SubmitUVE(std::move(commandBuffer));
+
+    const std::vector<RecordedCommandUVE>& recorded = device.GetLastSubmittedCommandsUVE();
+    ASSERT_EQ(recorded.size(), 3U);
+    EXPECT_TRUE(std::holds_alternative<BindPipelineCommandUVE>(recorded[0]));
+    EXPECT_TRUE(std::holds_alternative<BindStorageBufferCommandUVE>(recorded[1]));
+    EXPECT_TRUE(std::holds_alternative<DispatchCommandUVE>(recorded[2]));
+    EXPECT_EQ(std::get<BindPipelineCommandUVE>(recorded[0]).pipeline, computePipeline);
+    const DispatchCommandUVE& dispatch = std::get<DispatchCommandUVE>(recorded[2]);
+    EXPECT_EQ(dispatch.groupCountX, 4U);
+    EXPECT_EQ(dispatch.groupCountY, 2U);
+    EXPECT_EQ(dispatch.groupCountZ, 3U);
+
+    device.DestroyBufferUVE(storageBuffer);
+    device.DestroyPipelineUVE(computePipeline);
+    device.DestroyShaderUVE(computeShader);
+}
+
 #if UVE_DEBUG
+TEST(NullRenderDeviceUVEDeathTest, CommandBuffer_DispatchInsideRenderPass_Asserts) {
+    NullRenderDeviceUVE device;
+    std::unique_ptr<ICommandBufferUVE> commandBuffer = device.CreateCommandBufferUVE();
+    commandBuffer->BeginRenderPassUVE(RenderPassDescUVE{});
+    EXPECT_DEATH({ commandBuffer->DispatchUVE(1U, 1U, 1U); }, "");
+}
+
 TEST(NullRenderDeviceUVEDeathTest, CommandBuffer_NestedBeginRenderPass_Asserts) {
     NullRenderDeviceUVE device;
     std::unique_ptr<ICommandBufferUVE> commandBuffer = device.CreateCommandBufferUVE();
@@ -598,13 +674,26 @@ TEST(NullCommandBufferUVERuntimeTest, CommandBufferLifecycleMisuseIsSafeNoOpInRe
     commandBuffer->SetUniformMatrix4x4UVE("uMatrix", Math::Matrix4x4UVE{});
     commandBuffer->DrawIndexedUVE(3U);
     commandBuffer->DrawUVE(3U);
+    commandBuffer->DispatchUVE(1U, 1U, 1U);
 
-    // The valid begin/end pair is the only legal sequence above; every misuse is a release-safe
-    // no-op and must not add a command that a later retained submission could execute.
+    // M5a contract update: pipeline binds, storage-buffer binds, SetUniform* and dispatches
+    // are LEGAL outside pass markers (the compute flow lives there), so those calls record
+    // for real. Every remaining misuse above (nested begin, double end, outside-pass
+    // vertex/index/texture/uniform-buffer binds, outside-pass draws) is still a release-safe
+    // no-op that must not add a command a later retained submission could execute.
     device.SubmitUVE(std::move(commandBuffer));
-    EXPECT_EQ(device.GetLastSubmittedCommandsUVE().size(), 2U);
-    EXPECT_TRUE(std::holds_alternative<BeginRenderPassCommandUVE>(device.GetLastSubmittedCommandsUVE()[0]));
-    EXPECT_TRUE(std::holds_alternative<EndRenderPassCommandUVE>(device.GetLastSubmittedCommandsUVE()[1]));
+    const std::vector<RecordedCommandUVE>& recorded = device.GetLastSubmittedCommandsUVE();
+    ASSERT_EQ(recorded.size(), 10U);
+    EXPECT_TRUE(std::holds_alternative<BeginRenderPassCommandUVE>(recorded[0]));
+    EXPECT_TRUE(std::holds_alternative<EndRenderPassCommandUVE>(recorded[1]));
+    EXPECT_TRUE(std::holds_alternative<BindPipelineCommandUVE>(recorded[2]));
+    EXPECT_TRUE(std::holds_alternative<BindStorageBufferCommandUVE>(recorded[3]));
+    EXPECT_TRUE(std::holds_alternative<SetUniformFloatCommandUVE>(recorded[4]));
+    EXPECT_TRUE(std::holds_alternative<SetUniformIntCommandUVE>(recorded[5]));
+    EXPECT_TRUE(std::holds_alternative<SetUniformBoolCommandUVE>(recorded[6]));
+    EXPECT_TRUE(std::holds_alternative<SetUniformVector3CommandUVE>(recorded[7]));
+    EXPECT_TRUE(std::holds_alternative<SetUniformMatrix4x4CommandUVE>(recorded[8]));
+    EXPECT_TRUE(std::holds_alternative<DispatchCommandUVE>(recorded[9]));
 }
 #endif
 

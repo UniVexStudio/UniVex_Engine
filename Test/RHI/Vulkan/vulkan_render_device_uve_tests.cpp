@@ -2970,4 +2970,220 @@ TEST_F(VulkanRenderDeviceUVETest, ParallelRecordedQuadsAllLandInOneFrame) {
     device->DestroyShaderUVE(fragmentShader);
 }
 
+// ---------------------------------------------------------------------------
+// M5a: compute pipelines + DispatchUVE
+// ---------------------------------------------------------------------------
+
+// Builds the fill_palette compute pipeline (kFillPaletteComputeSpirvUVE: one workgroup of
+// 4 invocations writes red/green/blue/yellow into uColors[0..3] of the bound SSBO).
+[[nodiscard]] PipelineHandleUVE CreateFillPaletteComputePipelineUVE(VulkanRenderDeviceUVE& device,
+                                                                    ShaderHandleUVE* outComputeShader,
+                                                                    std::string* outInfoLog) {
+    ShaderDescUVE computeDesc{};
+    computeDesc.stage = ShaderStageUVE::Compute;
+    computeDesc.sourceCode = kFillPaletteComputeSpirvUVE;
+    *outComputeShader = device.CreateShaderUVE(computeDesc, outInfoLog);
+    if (*outComputeShader == kInvalidShaderHandleUVE) {
+        return {};
+    }
+    ComputePipelineDescUVE pipelineDesc{};
+    pipelineDesc.computeShader = *outComputeShader;
+    return device.CreateComputePipelineUVE(pipelineDesc, outInfoLog);
+}
+
+TEST_F(VulkanRenderDeviceUVETest, ComputeDispatchFillsStorageBufferProvingRealCompute) {
+    // The M5a pixel proof — two frames against ONE zero-initialized palette SSBO:
+    //   frame 1 (control): no dispatch. The palette stays all-zero, so the M2f palette
+    //     quad paints uColors[2] == BLACK at the center — proving the buffer starts zeroed.
+    //   frame 2: the fill_palette compute pipeline is bound and DispatchUVE(1,1,1) runs
+    //     OUTSIDE the pass markers (4 invocations write red/green/blue/yellow), then the
+    //     same quad paints uIndex=2 — the center must be BLUE.
+    // The only difference between the frames is the dispatch, so the blue pixel is
+    // unfakeable evidence the compute stage really ran and its SSBO write really reached
+    // the fragment shader through the conservative dispatch barriers.
+    ShaderHandleUVE vertexShader{}, fragmentShader{};
+    const PipelineHandleUVE graphicsPipeline =
+        CreateSsboPalettePipelineUVE(*device, &vertexShader, &fragmentShader);
+    ASSERT_NE(graphicsPipeline, kInvalidPipelineHandleUVE);
+
+    ShaderHandleUVE computeShader{};
+    std::string infoLog;
+    const PipelineHandleUVE computePipeline =
+        CreateFillPaletteComputePipelineUVE(*device, &computeShader, &infoLog);
+    ASSERT_NE(computePipeline, kInvalidPipelineHandleUVE) << infoLog;
+    // The SSBO-only compute shader reflects no SetUniform-feedable members.
+    EXPECT_TRUE(device->GetPipelineUniformsUVE(computePipeline).empty());
+
+    const BufferHandleUVE quadBuffer = CreateM2fQuadBufferUVE(*device);
+    ASSERT_NE(quadBuffer, kInvalidBufferHandleUVE);
+
+    const float zeros[16] = {};
+    BufferDescUVE paletteDesc{};
+    paletteDesc.sizeBytes = sizeof(zeros);
+    paletteDesc.usage = BufferUsageUVE::Storage;
+    const BufferHandleUVE paletteBuffer = device->CreateBufferUVE(
+        paletteDesc,
+        std::span<const std::byte>(reinterpret_cast<const std::byte*>(zeros), sizeof(zeros)));
+    ASSERT_NE(paletteBuffer, kInvalidBufferHandleUVE);
+
+    const auto presentPaletteFrame = [&](const bool dispatchFirst) {
+        auto commandBuffer = device->CreateCommandBufferUVE();
+        ASSERT_NE(commandBuffer, nullptr);
+        if (dispatchFirst) {
+            // M5a contract: the compute bind, its SSBO bind, and the dispatch are all
+            // recorded OUTSIDE render-pass markers.
+            commandBuffer->BindPipelineUVE(computePipeline);
+            commandBuffer->BindStorageBufferUVE(paletteBuffer, 0U);
+            commandBuffer->DispatchUVE(1U, 1U, 1U);
+        }
+        RenderPassDescUVE passDesc{};
+        passDesc.colorLoadOp = LoadOpUVE::Clear;
+        passDesc.clearColor = {0.05F, 0.07F, 0.12F, 1.0F};
+        passDesc.depthLoadOp = LoadOpUVE::Clear;
+        passDesc.clearDepth = 1.0F;
+        commandBuffer->BeginRenderPassUVE(passDesc);
+        commandBuffer->BindPipelineUVE(graphicsPipeline);
+        commandBuffer->BindVertexBufferUVE(quadBuffer);
+        commandBuffer->SetUniformIntUVE("uIndex", 2);
+        commandBuffer->BindStorageBufferUVE(paletteBuffer, 0U);
+        commandBuffer->DrawUVE(6U);
+        commandBuffer->EndRenderPassUVE();
+        device->SubmitUVE(std::move(commandBuffer));
+        device->PresentUVE();
+        ASSERT_TRUE(device->IsUsableUVE());
+    };
+
+    presentPaletteFrame(false);
+    {
+        std::vector<std::byte> pixels(1280U * 720U * 4U);
+        std::uint32_t width = 0;
+        std::uint32_t height = 0;
+        ASSERT_TRUE(device->ReadbackLatestPresentedImageUVE(pixels, width, height));
+        if (width == 0U || height == 0U) { GTEST_SKIP() << "zero-sized extent; no pixels"; }
+        const auto center = ChannelAtNdcUVE(pixels, width, height, 0.0F, 0.0F);
+        EXPECT_LT(center[0], 12);
+        EXPECT_LT(center[1], 12);
+        EXPECT_LT(center[2], 12) << "control frame: the zero-initialized palette must paint BLACK";
+    }
+
+    presentPaletteFrame(true);
+    {
+        std::vector<std::byte> pixels(1280U * 720U * 4U);
+        std::uint32_t width = 0;
+        std::uint32_t height = 0;
+        ASSERT_TRUE(device->ReadbackLatestPresentedImageUVE(pixels, width, height));
+        const auto center = ChannelAtNdcUVE(pixels, width, height, 0.0F, 0.0F);
+        EXPECT_LT(center[0], 12);
+        EXPECT_LT(center[1], 12);
+        EXPECT_GT(center[2], 240)
+            << "dispatch frame: uColors[2] must be the compute-written BLUE — the compute "
+               "stage really ran and its SSBO write really reached the fragment shader";
+    }
+
+    device->DestroyBufferUVE(paletteBuffer);
+    device->DestroyBufferUVE(quadBuffer);
+    device->DestroyPipelineUVE(computePipeline);
+    device->DestroyPipelineUVE(graphicsPipeline);
+    device->DestroyShaderUVE(computeShader);
+    device->DestroyShaderUVE(vertexShader);
+    device->DestroyShaderUVE(fragmentShader);
+}
+
+TEST_F(VulkanRenderDeviceUVETest, CreateComputePipelineRefusesStorageImagesNamingM5b) {
+    // The M5a/M5b boundary, pinned exactly like the M2f graphics-side refusal: a
+    // STORAGE_IMAGE compute shader is valid SPIR-V (shader creation succeeds — the Compute
+    // stage is un-gated now), but compute pipeline creation must fail loudly with a log
+    // naming both the compute slice and M5b, never a silently broken layout.
+    ShaderDescUVE computeDesc{};
+    computeDesc.stage = ShaderStageUVE::Compute;
+    computeDesc.sourceCode = kStorageImageComputeSpirvUVE;
+    std::string infoLog;
+    const ShaderHandleUVE computeShader = device->CreateShaderUVE(computeDesc, &infoLog);
+    ASSERT_NE(computeShader, kInvalidShaderHandleUVE)
+        << "storage-image compute SPIR-V is valid bytecode; only pipeline creation may refuse "
+           "it — got: " << infoLog;
+
+    ComputePipelineDescUVE pipelineDesc{};
+    pipelineDesc.computeShader = computeShader;
+    EXPECT_EQ(device->CreateComputePipelineUVE(pipelineDesc, &infoLog), kInvalidPipelineHandleUVE);
+    EXPECT_NE(infoLog.find("compute"), std::string::npos)
+        << "the refusal must name the compute slice - got: " << infoLog;
+    EXPECT_NE(infoLog.find("M5b"), std::string::npos)
+        << "the refusal must point at M5b for storage images - got: " << infoLog;
+
+    device->DestroyShaderUVE(computeShader);
+}
+
+TEST_F(VulkanRenderDeviceUVETest, CreateComputePipelineValidatesShaderHandleAndStage) {
+    std::string infoLog;
+    ComputePipelineDescUVE unknownDesc{};
+    unknownDesc.computeShader = ShaderHandleUVE{999999U};
+    EXPECT_EQ(device->CreateComputePipelineUVE(unknownDesc, &infoLog), kInvalidPipelineHandleUVE);
+    EXPECT_NE(infoLog.find("live shader"), std::string::npos) << infoLog;
+
+    // A VERTEX-stage handle must be refused even though it references a live shader.
+    ShaderDescUVE vertexDesc{};
+    vertexDesc.stage = ShaderStageUVE::Vertex;
+    vertexDesc.sourceCode = kTexturedVertexSpirvUVE;
+    const ShaderHandleUVE vertexShader = device->CreateShaderUVE(vertexDesc, &infoLog);
+    ASSERT_NE(vertexShader, kInvalidShaderHandleUVE) << infoLog;
+    ComputePipelineDescUVE wrongStageDesc{};
+    wrongStageDesc.computeShader = vertexShader;
+    EXPECT_EQ(device->CreateComputePipelineUVE(wrongStageDesc, &infoLog), kInvalidPipelineHandleUVE);
+    EXPECT_NE(infoLog.find("wrong stage"), std::string::npos) << infoLog;
+    device->DestroyShaderUVE(vertexShader);
+}
+
+TEST_F(VulkanRenderDeviceUVETest, DispatchAndDrawMisuseWithWrongPipelineKindDegradesSafely) {
+    // Two misuse frames, both degrading to warn-once + skip with the frame fully presented:
+    //   frame 1: DispatchUVE with NO pipeline bound — skipped; the frame shows only its
+    //            pure-BLUE clear (encoding-invariant byte check).
+    //   frame 2: a COMPUTE pipeline stays bound through a pass marker into DrawUVE — the
+    //            draw is skipped (vkCmdDraw against a COMPUTE-bound pipeline would be a
+    //            validation error); the frame again shows only the clear.
+    ShaderHandleUVE computeShader{};
+    std::string infoLog;
+    const PipelineHandleUVE computePipeline =
+        CreateFillPaletteComputePipelineUVE(*device, &computeShader, &infoLog);
+    ASSERT_NE(computePipeline, kInvalidPipelineHandleUVE) << infoLog;
+
+    const auto presentBlueClearFrame = [&](const bool bindComputeAndDraw) {
+        auto commandBuffer = device->CreateCommandBufferUVE();
+        ASSERT_NE(commandBuffer, nullptr);
+        if (!bindComputeAndDraw) {
+            commandBuffer->DispatchUVE(1U, 1U, 1U); // nothing bound: skip + warn-once
+        } else {
+            commandBuffer->BindPipelineUVE(computePipeline); // binds at the COMPUTE point
+        }
+        RenderPassDescUVE passDesc{};
+        passDesc.colorLoadOp = LoadOpUVE::Clear;
+        passDesc.clearColor = {0.0F, 0.0F, 1.0F, 1.0F};
+        passDesc.depthLoadOp = LoadOpUVE::Clear;
+        passDesc.clearDepth = 1.0F;
+        commandBuffer->BeginRenderPassUVE(passDesc);
+        if (bindComputeAndDraw) {
+            commandBuffer->DrawUVE(6U); // no vertex buffer, no graphics pipeline: skipped
+        }
+        commandBuffer->EndRenderPassUVE();
+        device->SubmitUVE(std::move(commandBuffer));
+        device->PresentUVE();
+        ASSERT_TRUE(device->IsUsableUVE());
+        std::vector<std::byte> pixels(1280U * 720U * 4U);
+        std::uint32_t width = 0;
+        std::uint32_t height = 0;
+        ASSERT_TRUE(device->ReadbackLatestPresentedImageUVE(pixels, width, height));
+        if (width == 0U || height == 0U) { GTEST_SKIP() << "zero-sized extent; no pixels"; }
+        const auto center = ChannelAtNdcUVE(pixels, width, height, 0.0F, 0.0F);
+        EXPECT_LT(center[0], 12);
+        EXPECT_LT(center[1], 12);
+        EXPECT_GT(center[2], 240) << "the misuse frame must still present its pure-blue clear";
+    };
+
+    presentBlueClearFrame(false);
+    presentBlueClearFrame(true);
+
+    device->DestroyPipelineUVE(computePipeline);
+    device->DestroyShaderUVE(computeShader);
+}
+
 } // namespace UVE::Render::Tests

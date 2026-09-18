@@ -538,7 +538,8 @@ ShaderHandleUVE GlRenderDeviceUVE::CreateShaderUVE(const ShaderDescUVE& desc, st
     }
 
     const std::uint32_t handleValue = m_impl->state.nextShaderHandle++;
-    m_impl->state.shaders.emplace(handleValue, Detail::GlDeviceStateUVE::ShaderRecordUVE{glShader});
+    m_impl->state.shaders.emplace(handleValue,
+                                  Detail::GlDeviceStateUVE::ShaderRecordUVE{glShader, desc.stage});
     return ShaderHandleUVE{handleValue};
 }
 
@@ -610,7 +611,69 @@ PipelineHandleUVE GlRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE& de
 
     Detail::GlDeviceStateUVE::PipelineRecordUVE record{
         glProgram, glVao, desc.vertexLayout, desc.vertexStride, desc.depthTestEnabled, desc.depthWriteEnabled,
-        desc.blendMode, {}};
+        desc.blendMode, /*isCompute=*/false, {}};
+    ReflectPipelineUniformsUVE(m_impl->state.gl, glProgram, record.uniforms);
+
+    const std::uint32_t handleValue = m_impl->state.nextPipelineHandle++;
+    m_impl->state.pipelines.emplace(handleValue, std::move(record));
+    return PipelineHandleUVE{handleValue};
+}
+
+PipelineHandleUVE GlRenderDeviceUVE::CreateComputePipelineUVE(const ComputePipelineDescUVE& desc,
+                                                              std::string* outInfoLog) {
+    const auto shaderIt = m_impl->state.shaders.find(desc.computeShader.value);
+    if (shaderIt == m_impl->state.shaders.end()) {
+        if (outInfoLog != nullptr) {
+            *outInfoLog = "Unknown compute shader handle.";
+        }
+        UVE_ERROR("GlRenderDeviceUVE: CreateComputePipelineUVE referenced an unknown shader handle");
+        return kInvalidPipelineHandleUVE;
+    }
+    if (shaderIt->second.stage != ShaderStageUVE::Compute) {
+        if (outInfoLog != nullptr) {
+            *outInfoLog = "Shader handle is not a Compute-stage shader.";
+        }
+        UVE_ERROR("GlRenderDeviceUVE: CreateComputePipelineUVE requires a Compute-stage shader");
+        return kInvalidPipelineHandleUVE;
+    }
+    // CreateShaderUVE already gated the stage on supportsComputeShadersUVE, but the dispatch pair
+    // is loaded separately — re-check here so a Compute-stage GLSL ES shader can never slip a
+    // pre-4.3 context into a link it cannot dispatch.
+    if (m_impl->state.gl.glDispatchCompute == nullptr || m_impl->state.gl.glMemoryBarrier == nullptr) {
+        if (outInfoLog != nullptr) {
+            *outInfoLog = "Compute pipelines require an OpenGL 4.3+ context (glDispatchCompute unavailable).";
+        }
+        UVE_ERROR("GlRenderDeviceUVE: CreateComputePipelineUVE requires an OpenGL 4.3+ context");
+        return kInvalidPipelineHandleUVE;
+    }
+
+    const GLuint glProgram = m_impl->state.gl.glCreateProgram();
+    m_impl->state.gl.glAttachShader(glProgram, shaderIt->second.glShader);
+    m_impl->state.gl.glLinkProgram(glProgram);
+
+    const std::string infoLog = GetProgramInfoLogUVE(m_impl->state.gl, glProgram);
+    if (outInfoLog != nullptr) {
+        *outInfoLog = infoLog;
+    }
+
+    GLint linked = GL_FALSE;
+    m_impl->state.gl.glGetProgramiv(glProgram, GL_LINK_STATUS, &linked);
+    if (linked == GL_FALSE) {
+        UVE_ERROR("GlRenderDeviceUVE: CreateComputePipelineUVE link failed: {}", infoLog);
+#if defined(__ANDROID__)
+        LogAndroidGlFailureUVE("compute program link failed", infoLog.empty() ? "<empty driver log>" : infoLog.c_str());
+#endif
+        m_impl->state.gl.glDeleteProgram(glProgram);
+        return kInvalidPipelineHandleUVE;
+    }
+
+    // No VAO for compute records — glDeleteVertexArrays silently ignores name 0 on destroy, and
+    // GlCommandBufferUVE skips glBindVertexArray() for isCompute pipelines entirely.
+    Detail::GlDeviceStateUVE::PipelineRecordUVE record{
+        glProgram, /*glVao=*/0U, {}, /*vertexStride=*/0U, /*depthTestEnabled=*/true,
+        /*depthWriteEnabled=*/true, PipelineBlendModeUVE::Opaque, /*isCompute=*/true, {}};
+    // Active-uniform reflection works identically for compute programs, so SetUniform*UVE on a
+    // compute pipeline needs no special-casing.
     ReflectPipelineUniformsUVE(m_impl->state.gl, glProgram, record.uniforms);
 
     const std::uint32_t handleValue = m_impl->state.nextPipelineHandle++;
@@ -728,7 +791,7 @@ PipelineHandleUVE GlRenderDeviceUVE::CreatePipelineFromBinaryUVE(std::span<const
 
     Detail::GlDeviceStateUVE::PipelineRecordUVE record{
         glProgram, glVao, desc.vertexLayout, desc.vertexStride, desc.depthTestEnabled, desc.depthWriteEnabled,
-        desc.blendMode, {}};
+        desc.blendMode, /*isCompute=*/false, {}};
     // Uniform locations are not guaranteed portable across a binary load even though behavior
     // is - reflection must always be re-run here, never assumed inherited from the original
     // compile that produced this binary.

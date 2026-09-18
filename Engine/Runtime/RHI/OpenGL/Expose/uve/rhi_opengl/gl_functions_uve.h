@@ -39,6 +39,12 @@ struct GlFunctionsUVE {
     PFNGLBUFFERSUBDATAPROC glBufferSubData = nullptr;
     PFNGLBINDBUFFERBASEPROC glBindBufferBase = nullptr;
 
+    // M5a compute pair (GL 4.3+). Deliberately NOT part of the IsLoadedUVE() core set: contexts
+    // below 4.3 leave these null (state.supportsComputeShadersUVE is false there too), and
+    // CreateComputePipelineUVE()/DispatchUVE() refuse loudly instead of calling through null.
+    PFNGLDISPATCHCOMPUTEPROC glDispatchCompute = nullptr;
+    PFNGLMEMORYBARRIERPROC glMemoryBarrier = nullptr;
+
     PFNGLGENVERTEXARRAYSPROC glGenVertexArrays = nullptr;
     PFNGLDELETEVERTEXARRAYSPROC glDeleteVertexArrays = nullptr;
     PFNGLBINDVERTEXARRAYPROC glBindVertexArray = nullptr;

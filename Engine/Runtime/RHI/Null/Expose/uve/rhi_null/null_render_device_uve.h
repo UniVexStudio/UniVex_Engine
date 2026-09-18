@@ -46,6 +46,8 @@ public:
 
     [[nodiscard]] PipelineHandleUVE CreatePipelineUVE(const PipelineDescUVE& desc,
                                                        std::string* outInfoLog = nullptr) override;
+    [[nodiscard]] PipelineHandleUVE CreateComputePipelineUVE(const ComputePipelineDescUVE& desc,
+                                                              std::string* outInfoLog = nullptr) override;
     void DestroyPipelineUVE(PipelineHandleUVE pipeline) override;
 
     [[nodiscard]] std::vector<UniformReflectionUVE> GetPipelineUniformsUVE(PipelineHandleUVE pipeline) const override;
