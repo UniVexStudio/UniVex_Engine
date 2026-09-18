@@ -266,6 +266,10 @@ uniform float uShadowCascadeBlendRatio;
 
 const float kPiUVE = 3.14159265359;
 const float kBrdfEpsilonUVE = 0.0001;
+/// The spot cone's bright inner region as a fraction of its authored outer half-angle; the band
+/// between the two is where the light falls off. Derived rather than authored so a material's
+/// existing single spotAngleDegrees keeps meaning exactly what it meant.
+const float kSpotInnerConeRatioUVE = 0.85;
 
 vec3 SafeNormalizeUVE(vec3 value) {
     return value / max(length(value), kBrdfEpsilonUVE);
@@ -412,7 +416,35 @@ void main() {
     vec3 viewDirection = SafeNormalizeUVE(uViewPosition - vWorldPosition);
     float metallic = clamp(uMetallic, 0.0, 1.0);
     float roughness = clamp(uRoughness, 0.04, 1.0);
-    vec3 lighting = albedo * uAmbientColor * ambientOcclusion + uEmissiveColor;
+    // Ambient, split into diffuse and specular exactly as the direct term is.
+    //
+    // The old ambient was purely diffuse: albedo * ambient * ao. For a dielectric that is roughly
+    // right, but a metal has NO diffuse response at all - its diffuseWeight is (1-F)(1-metallic),
+    // which is zero at metallic 1 - so a metal lit only by ambient came out BLACK. That is the
+    // single most visible way a correct BRDF still looks wrong, and it is why "the PBR looks
+    // broken" usually means "there is no ambient specular".
+    //
+    // This is not image-based lighting: there is no environment cubemap here, so the ambient
+    // colour stands in for the environment's average radiance. What it does buy is the right
+    // ENERGY SPLIT - a metal reflects the ambient tinted by its own albedo, a dielectric reflects
+    // about 4% of it untinted, and both lose energy to roughness. A real IBL probe replaces the
+    // source of that radiance later without changing this structure.
+    vec3 ambientBaseReflectance = mix(vec3(0.04), albedo, metallic);
+    float normalDotViewAmbient = max(dot(normal, viewDirection), 0.0);
+    // Roughness-aware Fresnel: the standard Schlick term goes to white at grazing angles, which on
+    // a rough surface produces a bright rim that should not be there - the microfacets point in
+    // too many directions to reflect coherently. Clamping the ceiling by (1 - roughness) is the
+    // usual, cheap correction.
+    vec3 ambientFresnel =
+        ambientBaseReflectance +
+        (max(vec3(1.0 - roughness), ambientBaseReflectance) - ambientBaseReflectance) *
+            pow(1.0 - normalDotViewAmbient, 5.0);
+    vec3 ambientDiffuseWeight = (vec3(1.0) - ambientFresnel) * (1.0 - metallic);
+    vec3 ambientDiffuse = ambientDiffuseWeight * albedo * uAmbientColor;
+    vec3 ambientSpecular = ambientFresnel * uAmbientColor;
+    // AO occludes both terms. Applying it to the diffuse alone is a common shortcut, but a crevice
+    // does not stop reflecting light in a way the sky can reach either.
+    vec3 lighting = (ambientDiffuse + ambientSpecular) * ambientOcclusion + uEmissiveColor;
 
     for (int lightIndex = 0; lightIndex < 4; ++lightIndex) {
         LightUVE light = uLights[lightIndex];
@@ -433,10 +465,22 @@ void main() {
                 attenuation = 0.0;
             }
             if (light.type == 2) {
+                // Smooth cone falloff rather than a binary in/out test. A hard cutoff produces a
+                // jagged, aliased cone edge that no amount of MSAA fixes, because the edge is in
+                // the shading rather than in the geometry. The inner cone is derived from the
+                // authored outer angle rather than adding a second uniform - one authored angle
+                // stays one authored angle, and the material contract does not change.
+                float cosOuter = cos(radians(light.spotAngleDegrees));
+                float cosInner = cos(radians(light.spotAngleDegrees) * kSpotInnerConeRatioUVE);
                 float coneAlignment = dot(-lightDirection, SafeNormalizeUVE(light.direction));
-                if (coneAlignment < cos(radians(light.spotAngleDegrees))) {
-                    attenuation = 0.0;
-                }
+                // max() guards the degenerate case where the two cosines coincide (a zero-width
+                // falloff band), which would otherwise divide by zero.
+                float coneFalloff = clamp((coneAlignment - cosOuter) /
+                                              max(cosInner - cosOuter, kBrdfEpsilonUVE),
+                                          0.0, 1.0);
+                // Squared so the falloff is smooth in perceived brightness rather than linear in
+                // cosine, which reads as a visible ring at the transition.
+                attenuation *= coneFalloff * coneFalloff;
             }
         }
 

@@ -92,6 +92,28 @@ public:
     /// `const` overload (same reason `IMeshRendererUVE::ExtractRenderQueueUVE` takes a non-`const`
     /// reference too).
     [[nodiscard]] virtual LightListUVE ExtractActiveLightsUVE(Scene::IEntityManagerUVE& entityManager) const = 0;
+
+    /// Fills the same kMaxLightsUVE slots, but choosing WHICH lights when a scene has more than
+    /// fit, by their estimated contribution at `viewPosition`.
+    ///
+    /// The overload exists because first-encountered order is not merely arbitrary, it is
+    /// observably wrong: a torch beside the player and a lamp across the level are equally
+    /// eligible, so whichever the ECS happens to visit first wins. Worse, that order can change
+    /// when an entity is created or destroyed, so the light on the player's face can vanish
+    /// because something unrelated spawned. A renderer cannot be correct on top of that.
+    ///
+    /// Ranking is by a cheap radiometric estimate, not by raw distance: a bright light further
+    /// away legitimately matters more than a dim one nearby, and distance alone cannot express
+    /// that. Directional lights always rank highest - they have no position to be far from, and
+    /// they are the scene's key light and its only shadow caster.
+    ///
+    /// The default implementation ignores `viewPosition` and forwards to the unordered overload,
+    /// so existing test doubles keep compiling and keep their previous behavior.
+    [[nodiscard]] virtual LightListUVE ExtractActiveLightsForViewUVE(
+        Scene::IEntityManagerUVE& entityManager, const Math::Vector3UVE& viewPosition) const {
+        static_cast<void>(viewPosition);
+        return ExtractActiveLightsUVE(entityManager);
+    }
 };
 
 } // namespace UVE::Render
