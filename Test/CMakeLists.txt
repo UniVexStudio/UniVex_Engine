@@ -208,6 +208,7 @@ add_executable(uve_integration_tests
     RHI/RenderSystems/camera_system_uve_tests.cpp
     RHI/RenderSystems/compute_system_uve_tests.cpp
     RHI/RenderSystems/particle_compute_simulation_uve_tests.cpp
+    RHI/RenderSystems/frustum_cull_compute_uve_tests.cpp
     RHI/RenderSystems/light_system_uve_tests.cpp
     RHI/RenderSystems/mesh_renderer_uve_tests.cpp
     RHI/RenderSystems/mesh_render_eligibility_uve_tests.cpp

@@ -210,8 +210,17 @@ publicly shipping real-time engines as of today, without naming any of them.
   and sixty compounding steps (the kernel forbids fused multiply-add so that equality is real
   rather than approximate). The CPU keeps authority over WHICH particles exist; emission,
   budgets and compaction stay where they are bounded and tested. Remaining: a fully resident
-  simulation with no CPU round trip (needs GPU-side emission/compaction), plus culling and
-  skinning
+  simulation with no CPU round trip (needs GPU-side emission/compaction). CS5 added the
+  second workload, frustum culling: FrustumCullComputeUVE runs Math::FrustumUVE::IntersectsUVE
+  over many boxes at once (built-in shaders/frustum_cull.glsl) and is held to the same standard
+  - the GPU's visibility must equal the CPU test's for every box, including boxes placed to
+  touch a plane exactly and nudged one ULP either way, which is where a contracted multiply-add
+  would flip a decision and make an object pop in or out depending on which path ran. Plane
+  extraction stays on the CPU (six planes is not worth a dispatch, and one authority is easier
+  to keep correct), and non-finite input is refused rather than answered differently, since the
+  CPU test absorbs it through a double-precision fallback a float shader cannot reproduce.
+  Remaining: culling whose result never returns to the CPU (needs indirect draw in the RHI),
+  and skinning
 - [ ] Bindless/descriptor-indexing-style resource binding for reduced per-draw overhead
 
 ---
