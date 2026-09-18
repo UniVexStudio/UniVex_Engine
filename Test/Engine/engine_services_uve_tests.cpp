@@ -45,6 +45,7 @@
 #include "uve/physics/physics_query_system_uve.h"
 #include "uve/physics/i_raycast_system_uve.h"
 #include "uve/render_systems/i_camera_system_uve.h"
+#include "uve/render_systems/i_compute_system_uve.h"
 #include "uve/render_systems/i_light_system_uve.h"
 #include "uve/render_systems/i_mesh_renderer_uve.h"
 #include "uve/rhi/i_render_device_uve.h"
@@ -664,6 +665,25 @@ public:
     int beginFrameCallCount = 0;
 };
 
+class FakeComputeSystemUVE final : public Render::IComputeSystemUVE {
+public:
+    [[nodiscard]] Render::PipelineHandleUVE CreateProgramUVE(const Render::ComputeProgramDescUVE&,
+                                                              std::string*) override {
+        return Render::kInvalidPipelineHandleUVE;
+    }
+    void DestroyProgramUVE(Render::PipelineHandleUVE) override {}
+    [[nodiscard]] bool IsProgramLiveUVE(Render::PipelineHandleUVE) const noexcept override { return false; }
+    [[nodiscard]] bool EnqueueDispatchUVE(const Render::ComputeDispatchDescUVE&) override { return false; }
+    std::size_t ExecuteQueuedDispatchesUVE(Render::ICommandBufferUVE&) override { return 0U; }
+    [[nodiscard]] std::size_t GetQueuedDispatchCountUVE() const noexcept override { return 0U; }
+    void ClearQueueUVE() override {}
+    [[nodiscard]] const Render::ComputeSystemDiagnosticsUVE& GetDiagnosticsUVE() const noexcept override {
+        return diagnostics;
+    }
+
+    Render::ComputeSystemDiagnosticsUVE diagnostics;
+};
+
 class FakeCameraSystemUVE final : public Render::ICameraSystemUVE {
 public:
     [[nodiscard]] Math::Matrix4x4UVE ComputeViewMatrixUVE(const Scene::IEntityManagerUVE&,
@@ -947,6 +967,7 @@ TEST(EngineServicesUVETest, Accessors_ReturnExactSameInstancesPassedIn) {
     FakeRenderDeviceUVE renderDevice;
     FakeShaderManagerUVE shaderManager;
     FakeRenderSystemUVE renderSystem;
+    FakeComputeSystemUVE computeSystem;
     FakeCameraSystemUVE cameraSystem;
     FakeMeshRendererUVE meshRenderer;
     FakeLightSystemUVE lightSystem;
@@ -972,7 +993,7 @@ TEST(EngineServicesUVETest, Accessors_ReturnExactSameInstancesPassedIn) {
                                       assetDatabase, projectFileIndex, derivedArtifactCache, projectChangeWatcher,
                                       sceneSerializer, prefabSystem, particleRuntime,
                                       hotReload, assetManager, assetImporter, assetImportQueue, assetBundle, fileSystem,
-                                      renderDevice, shaderManager, renderSystem, cameraSystem,
+                                      renderDevice, shaderManager, renderSystem, computeSystem, cameraSystem,
                                       meshRenderer, lightSystem, renderer3D, collisionSystem, physicsSystem,
                                       physicsQuerySystem, raycastSystem, physicsConstraintSystem, inputSystem,
                                       gamepadInputSystem, mobileInputSystem, mobileGestureSystem, audioDevice, audioSystem,
@@ -1003,6 +1024,7 @@ TEST(EngineServicesUVETest, Accessors_ReturnExactSameInstancesPassedIn) {
     EXPECT_EQ(&services.GetRenderDeviceUVE(), &renderDevice);
     EXPECT_EQ(&services.GetShaderManagerUVE(), &shaderManager);
     EXPECT_EQ(&services.GetRenderSystemUVE(), &renderSystem);
+    EXPECT_EQ(&services.GetComputeSystemUVE(), &computeSystem);
     EXPECT_EQ(&services.GetCameraSystemUVE(), &cameraSystem);
     EXPECT_EQ(&services.GetMeshRendererUVE(), &meshRenderer);
     EXPECT_EQ(&services.GetLightSystemUVE(), &lightSystem);
@@ -1050,6 +1072,7 @@ TEST(EngineServicesUVETest, Accessors_ProveInterfacesAreGenuinelySubstitutable) 
     FakeRenderDeviceUVE renderDevice;
     FakeShaderManagerUVE shaderManager;
     FakeRenderSystemUVE renderSystem;
+    FakeComputeSystemUVE computeSystem;
     FakeCameraSystemUVE cameraSystem;
     FakeMeshRendererUVE meshRenderer;
     FakeLightSystemUVE lightSystem;
@@ -1074,7 +1097,7 @@ TEST(EngineServicesUVETest, Accessors_ProveInterfacesAreGenuinelySubstitutable) 
                                       assetDatabase, projectFileIndex, derivedArtifactCache, projectChangeWatcher,
                                       sceneSerializer, prefabSystem, particleRuntime,
                                       hotReload, assetManager, assetImporter, assetImportQueue, assetBundle, fileSystem,
-                                      renderDevice, shaderManager, renderSystem, cameraSystem,
+                                      renderDevice, shaderManager, renderSystem, computeSystem, cameraSystem,
                                       meshRenderer, lightSystem, renderer3D, collisionSystem, physicsSystem,
                                       physicsQuerySystem, raycastSystem, physicsConstraintSystem, inputSystem,
                                       gamepadInputSystem, mobileInputSystem, mobileGestureSystem, audioDevice, audioSystem,

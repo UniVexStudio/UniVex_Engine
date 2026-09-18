@@ -64,6 +64,7 @@
 #include "uve/physics/raycast_system_uve.h"
 #include "uve/platform/platform_uve.h"
 #include "uve/render_systems/camera_system_uve.h"
+#include "uve/render_systems/compute_system_uve.h"
 #include "uve/rhi_opengl/gl_render_device_uve.h"
 #include "uve/rhi_vulkan/vulkan_render_device_uve.h"
 #include "uve/render_systems/light_system_uve.h"
@@ -377,10 +378,15 @@ void EngineCoreUVE::Init() {
     // submits command buffers through it.
     m_renderSystem = std::make_unique<Render::RenderSystemUVE>(*m_renderDevice);
 
+    // ComputeSystem: needs RenderDevice (it creates compute programs and records dispatches
+    // through it). Constructed right after RenderSystem because Render() drains its queue into
+    // the frame's own command buffer, before any render pass opens — the outside-pass-markers
+    // contract IComputeSystemUVE documents.
+    m_computeSystem = std::make_unique<Render::ComputeSystemUVE>(*m_renderDevice);
+
     // CameraSystem twenty-first: stateless, no dependencies of its own —
     // grouped with the rest of engine/render.
     m_cameraSystem = std::make_unique<Render::CameraSystemUVE>();
-
     // MeshRenderer twenty-second: stateless, no dependencies of its own —
     // grouped with the rest of engine/render.
     m_meshRenderer = std::make_unique<Render::MeshRendererUVE>();
@@ -511,7 +517,7 @@ void EngineCoreUVE::Init() {
                          *m_prefabSystem, *m_particleRuntime, *m_hotReload, *m_assetManager, *m_assetImporter, *m_assetImportQueue,
                          *m_assetBundle, *m_fileSystem,
 
-                        *m_renderDevice, *m_shaderManager, *m_renderSystem, *m_cameraSystem,
+                        *m_renderDevice, *m_shaderManager, *m_renderSystem, *m_computeSystem, *m_cameraSystem,
                         *m_meshRenderer, *m_lightSystem, *m_renderer3D, *m_collisionSystem, *m_physicsSystem,
                         *m_physicsQuerySystem, *m_raycastSystem, *m_physicsConstraintSystem, *m_inputSystem,
                         *m_gamepadInputSystem, *m_mobileInputSystem, *m_mobileGestureSystem,
@@ -929,6 +935,36 @@ void EngineCoreUVE::Render() {
         (m_windowedRenderingActiveUVE && !m_presentationSurfaceReadyUVE)) {
         return;
     }
+    // Compute first, graphics after: any dispatch enqueued on ComputeSystemUVE this frame is
+    // recorded into its OWN command buffer and submitted before the renderer opens a single
+    // render pass. That ordering is the portable flow the RHI compute slices settled on (Vulkan
+    // forbids dispatch inside a rendering instance), and giving compute a separate buffer keeps
+    // it independent of which render path runs below — including the no-camera path, where the
+    // renderer never records anything at all. An empty queue costs one unused command buffer and
+    // no submission, so scenes that never touch compute pay nothing observable.
+    // Note the early return above: while the device is unusable (or a windowed surface is not
+    // ready yet) this is never reached, so queued dispatches WAIT rather than being recorded
+    // against a device that cannot execute them - they run on the first frame that renders
+    // again. Callers that enqueue every frame regardless should check
+    // IRenderDeviceUVE::IsUsableUVE() or call ClearQueueUVE() themselves; the engine does not
+    // silently discard work a caller explicitly asked for.
+    if (m_computeSystem->GetQueuedDispatchCountUVE() > 0U) {
+        std::unique_ptr<Render::ICommandBufferUVE> computeCommands = m_renderDevice->CreateCommandBufferUVE();
+        if (computeCommands != nullptr) {
+            const std::size_t recordedDispatches = m_computeSystem->ExecuteQueuedDispatchesUVE(*computeCommands);
+            if (recordedDispatches > 0U) {
+                m_renderDevice->SubmitUVE(std::move(computeCommands));
+            }
+        } else {
+            // No buffer, no honest way to record: drop the queue loudly rather than carrying
+            // stale work into a later frame where its resources may already be gone.
+            UVE_WARNING("EngineCoreUVE: render device returned no command buffer for {} queued "
+                        "compute dispatch(es) - dropping them",
+                        m_computeSystem->GetQueuedDispatchCountUVE());
+            m_computeSystem->ClearQueueUVE();
+        }
+    }
+
     m_renderer3D->SetUIRuntimeUVE(&m_uiRuntime);
     if (m_activeCamera != Scene::kInvalidEntityUVE) {
         const bool hasParticles = m_particleRuntime != nullptr && m_particleRuntime->GetInstanceCountUVE() > 0U;

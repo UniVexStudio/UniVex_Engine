@@ -56,6 +56,7 @@
 #include "uve/physics/physics_constraint_system_uve.h"
 #include "uve/physics/physics_query_system_uve.h"
 #include "uve/render_systems/i_camera_system_uve.h"
+#include "uve/render_systems/i_compute_system_uve.h"
 #include "uve/render_systems/i_light_system_uve.h"
 #include "uve/render_systems/i_mesh_renderer_uve.h"
 #include "uve/rhi/i_render_device_uve.h"
@@ -113,7 +114,14 @@ namespace UVE::Core {
 /// WorldTransformComponentUVE + AudioSourceComponentUVE entity (entirely
 /// data-driven, like PhysicsSystemUVE — a scene with none is a cheap no-op);
 /// then AudioSystemUVE::UpdateUVE() recomputes attenuated gain for every live
-/// source. WindowManagerUVE/GlRenderDeviceUVE (Increment 20): unless
+/// source. ComputeSystemUVE (Part 7.2's engine-level compute consumer) is driven from
+/// Render(), as its FIRST statement: any dispatch enqueued on it during this
+/// frame is recorded into its own command buffer and submitted BEFORE the
+/// renderer opens a single render pass - compute first, graphics after, which
+/// is the portable flow the RHI compute slices settled on (Vulkan forbids
+/// dispatch inside a rendering instance). A frame with an empty queue submits
+/// nothing at all, so scenes that never use compute pay nothing observable.
+/// WindowManagerUVE/GlRenderDeviceUVE (Increment 20): unless
 /// EngineConfigUVE::headlessUVE is true (also settable via the `--headless` CLI flag), Init()
 /// creates a real GLFW3 window and OpenGL 4.6 Core render device; Update()'s first statement
 /// (after InputSystemUVE::UpdateUVE()) pumps window events and checks
@@ -554,6 +562,7 @@ private:
     std::unique_ptr<Render::IRenderDeviceUVE> m_renderDevice;
     std::unique_ptr<Render::Shader::IShaderManagerUVE> m_shaderManager;
     std::unique_ptr<Render::IRenderSystemUVE> m_renderSystem;
+    std::unique_ptr<Render::IComputeSystemUVE> m_computeSystem;
     std::unique_ptr<Render::ICameraSystemUVE> m_cameraSystem;
     std::unique_ptr<Render::IMeshRendererUVE> m_meshRenderer;
     std::unique_ptr<Render::ILightSystemUVE> m_lightSystem;

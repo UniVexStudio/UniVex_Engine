@@ -192,9 +192,11 @@ publicly shipping real-time engines as of today, without naming any of them.
   unified texture-slot space, pixel-proven on lavapipe and GL); the engine-level
   ComputeSystemUVE consumer layer (Part 7.2) has landed as its own system — compute-program
   lifecycle over any injected IRenderDeviceUVE, a validated dispatch queue recorded outside
-  pass markers in enqueue order, diagnostics, Null-spy plus real-GL byte-verified proofs;
-  remaining: its per-frame wiring into EngineCoreUVE/Renderer3DUVE and the first GPU
-  workloads on top (particle simulation, culling, skinning)
+  pass markers in enqueue order, diagnostics, Null-spy plus real-GL byte-verified proofs —
+  and is wired into the frame loop: EngineCoreUVE owns it as its fortieth service and drains
+  the queue as Render()'s first statement, into its own command buffer submitted before any
+  render pass opens (an empty queue submits nothing); remaining: the first real GPU workloads
+  on top of it (particle simulation, culling, skinning)
 - [ ] Bindless/descriptor-indexing-style resource binding for reduced per-draw overhead
 
 ---
