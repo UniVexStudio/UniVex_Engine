@@ -44,6 +44,12 @@ extern const std::string_view kParticleSource;
 inline constexpr std::string_view kParticleSimulateVirtualPath = "shaders/particle_simulate.glsl";
 extern const std::string_view kParticleSimulateSource;
 
+/// The compute kernel Render::FrustumCullComputeUVE dispatches (CS5) - the GPU twin of
+/// Math::FrustumUVE::IntersectsUVE over many boxes at once. COMPUTE-only, like its
+/// particle_simulate sibling, so it carries no VERTEX/FRAGMENT split.
+inline constexpr std::string_view kFrustumCullVirtualPath = "shaders/frustum_cull.glsl";
+extern const std::string_view kFrustumCullSource;
+
 inline constexpr std::string_view kBloomBrightPassVirtualPath = "shaders/bloom_bright_pass.glsl";
 extern const std::string_view kBloomBrightPassSource;
 
