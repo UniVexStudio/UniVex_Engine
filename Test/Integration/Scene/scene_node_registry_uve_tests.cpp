@@ -14,7 +14,7 @@ namespace {
 
 TEST(SceneNodeRegistryUVETest, BuiltInDescriptorsUVE_AreStableUniqueAndRuntimeBound) {
     const std::span<const SceneNodeDescriptorUVE> descriptors = GetSceneNodeDescriptorsUVE();
-    ASSERT_EQ(descriptors.size(), 38U);
+    ASSERT_EQ(descriptors.size(), 42U);
 
     std::unordered_set<std::string_view> ids;
     for (const SceneNodeDescriptorUVE& descriptor : descriptors) {

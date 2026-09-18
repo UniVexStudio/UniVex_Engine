@@ -45,6 +45,7 @@
 #include "uve/component/camera_component_uve.h"
 #include "uve/component/collider_component_uve.h"
 #include "uve/nodes/3d/all_nodes_3d_uve.h"
+#include "uve/nodes/canvas_layer/all_nodes_canvas_layer_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/light_component_uve.h"
 #include "uve/component/editor_internal_entity_component_uve.h"
@@ -2096,6 +2097,25 @@ Scene::EntityUVE EditorUVE::CreateDocumentSceneNodeUVE(
         case Scene::Nodes::SceneNodeKindUVE::Script:
             entity = CreateNodeDefinitionEntityInternalUVE(Scene::ScriptNodeDefinitionUVE{},
                                                             Scene::ApplyScriptNodeDefinitionUVE);
+            break;
+        // CanvasLayer family — the four UI kinds promoted out of the Inspector-only world, so
+        // UI authoring uses the same Add-Node entry point (definitions live in
+        // Engine/Runtime/Nodes/CanvasLayer).
+        case Scene::Nodes::SceneNodeKindUVE::Canvas:
+            entity = CreateNodeDefinitionEntityInternalUVE(Scene::CanvasNodeDefinitionUVE{},
+                                                            Scene::ApplyCanvasNodeDefinitionUVE);
+            break;
+        case Scene::Nodes::SceneNodeKindUVE::UIText:
+            entity = CreateNodeDefinitionEntityInternalUVE(Scene::UITextNodeDefinitionUVE{},
+                                                            Scene::ApplyUITextNodeDefinitionUVE);
+            break;
+        case Scene::Nodes::SceneNodeKindUVE::UIImage:
+            entity = CreateNodeDefinitionEntityInternalUVE(Scene::UIImageNodeDefinitionUVE{},
+                                                            Scene::ApplyUIImageNodeDefinitionUVE);
+            break;
+        case Scene::Nodes::SceneNodeKindUVE::UIButton:
+            entity = CreateNodeDefinitionEntityInternalUVE(Scene::UIButtonNodeDefinitionUVE{},
+                                                            Scene::ApplyUIButtonNodeDefinitionUVE);
             break;
         case Scene::Nodes::SceneNodeKindUVE::Area3D:
             entity = CreateNodeDefinitionEntityInternalUVE(Scene::Area3DNodeDefinitionUVE{},

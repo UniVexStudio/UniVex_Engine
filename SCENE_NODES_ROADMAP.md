@@ -210,7 +210,10 @@ system behind them.
    NavigationAgent3D (needed for any AI movement).
 3. Only after 3D nodes are in good shape, start a real 2D pipeline (rendering + physics + nav) —
    right now 2D is 100% unstarted, not partially built.
-4. Promote Canvas/UI Text/UI Image/UI Button into the Scene node registry so 2D/UI authoring has
-   one consistent "Add Node" entry point instead of being Inspector-only.
+4. **Done**: Canvas/UI Text/UI Image/UI Button are promoted into the Scene node registry
+   (`canvas`/`ui_text`/`ui_image`/`ui_button`, category "UI"), each with a NodeDefinition
+   `.h`+`.cpp` in `Engine/Runtime/Nodes/CanvasLayer` following the Nodes/3D convention — 2D/UI
+   authoring now has the same single Add-Node entry point, and the Add-Component path still
+   works for adding these components to existing entities.
 5. AI nodes come last — they need real navigation (item 2/3) and real gameplay systems to act on
    before a behavior tree/blackboard has anything meaningful to drive.
