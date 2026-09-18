@@ -202,8 +202,16 @@ publicly shipping real-time engines as of today, without naming any of them.
   loudly, GL barriers then reads through glGetBufferSubData, and the Null backend now models
   real buffer CONTENTS so headless assertions are honest; a compute-written palette is read
   back as exact floats on lavapipe, and one GL test proves an engine-queued dispatch end to
-  end through engine APIs alone. Remaining: the first real GPU workloads on top of it
-  (particle simulation, culling, skinning)
+  end through engine APIs alone. CS4 is the first real GPU WORKLOAD on that foundation:
+  ParticleComputeSimulationUVE runs Scene::ParticleRuntimeUVE's per-particle integration in a
+  compute kernel (built-in shaders/particle_simulate.glsl) and is held to the strictest
+  standard available - its result must equal the CPU runtime's bit for bit, float for float,
+  including lifetime culling and compaction, proven on a real GL context over 1000 particles
+  and sixty compounding steps (the kernel forbids fused multiply-add so that equality is real
+  rather than approximate). The CPU keeps authority over WHICH particles exist; emission,
+  budgets and compaction stay where they are bounded and tested. Remaining: a fully resident
+  simulation with no CPU round trip (needs GPU-side emission/compaction), plus culling and
+  skinning
 - [ ] Bindless/descriptor-indexing-style resource binding for reduced per-draw overhead
 
 ---

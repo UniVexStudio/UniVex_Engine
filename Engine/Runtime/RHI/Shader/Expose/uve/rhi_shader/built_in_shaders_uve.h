@@ -37,6 +37,13 @@ extern const std::string_view kLitShadowed3DSource;
 inline constexpr std::string_view kParticleVirtualPath = "shaders/particle.glsl";
 extern const std::string_view kParticleSource;
 
+/// The compute kernel Render::ParticleComputeSimulationUVE dispatches (CS4) - the GPU twin of
+/// Scene::ParticleRuntimeUVE's per-particle integration. Unlike every other entry here this file
+/// holds a single COMPUTE stage, so it carries no VERTEX_SHADER/FRAGMENT_SHADER split and is
+/// compiled once, through IComputeSystemUVE::CreateProgramUVE() rather than ShaderManagerUVE.
+inline constexpr std::string_view kParticleSimulateVirtualPath = "shaders/particle_simulate.glsl";
+extern const std::string_view kParticleSimulateSource;
+
 inline constexpr std::string_view kBloomBrightPassVirtualPath = "shaders/bloom_bright_pass.glsl";
 extern const std::string_view kBloomBrightPassSource;
 
