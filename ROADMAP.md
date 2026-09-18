@@ -85,10 +85,10 @@ publicly shipping real-time engines as of today, without naming any of them.
 
 - [x] A render-hardware-interface abstraction with a real backend (OpenGL) and a null
   backend for headless/testing use
-- [~] A modern explicit graphics API backend (the kind that supports multi-threaded command
+- [x] A modern explicit graphics API backend (the kind that supports multi-threaded command
   recording, explicit memory/barrier management) as a second real backend, so the RHI
-  abstraction is proven against more than one implementation — **in progress:** the Vulkan
-  backend reached slice M3 2026-09-18: real buffers (host-visible policy), SPIR-V shader
+  abstraction is proven against more than one implementation — **delivered in slices:** the
+  Vulkan backend reached slice M4 2026-09-18: real buffers (host-visible policy), SPIR-V shader
   modules, fixed-function pipelines, recorded command buffers, Draw/DrawIndexed replay,
   SPIRV-Reflect-driven uniforms (set-0 UBO blocks over one shared 1 MiB/frame dynamic-offset
   ring plus push constants, SetUniform* by reflected member name), a real depth attachment
@@ -136,18 +136,29 @@ publicly shipping real-time engines as of today, without naming any of them.
   host-visible; the caller-visible copy-on-update contract is identical for every usage,
   only placement/traffic differs, and the honest name rebadges to "Vulkan (M3 device-local
   staging)" on dynamic devices (classic stays M2c — the memory policy is arm-independent) —
+  and MULTI-THREADED COMMAND RECORDING (M4, 2026-09-18): the capability this roadmap entry
+  itself names is now real and contract-documented — VulkanCommandBufferUVE objects carry no
+  device state (recording appends to per-object retained lists), so any number of threads may
+  create, record, and submit their own command buffers concurrently; SubmitUVE pushes into a
+  mutex-guarded submission FIFO from any thread, and PresentUVE drains that FIFO into a local
+  snapshot under the same lock before replaying strictly main-thread (one GPU-timeline owner;
+  a submit racing a present lands in the next frame's FIFO). The Null backend mirrors the
+  contract for its spy; GL stays inherently context-thread (it executes at record time) —
   all verified pixel-wise locally (SwiftShader: triangle, depth-overlap, checker-quad, and
   offscreen render-to-texture interleave screenshots) with the same scenes plus the four
-  M2e, six M2f, and two M3 proofs in tier-2 CI tests (lavapipe), where the sampled-depth
+  M2e, six M2f, two M3, and one M4 proof in tier-2 CI tests (lavapipe), where the sampled-depth
   reconstruction byte
   check accepts both honest software-stack dualities: an SRGB-typed swapchain stores the
   shader's linear 0.25 as ≈137 while a UNORM-typed one stores ≈64 (both correct encodings
   of the same sampled depth), and the depth-read swizzle alpha is spec-undefined on
   pre-maintenance5 devices (255 or 0 both pass — the specified .g/.b zeros and the .r
   reconstruction carry the proof). Latent M1 readback-fence hazard also fixed (the
-  readback submission rides its own transient fence now). Remaining for full parity:
-  storage images (refused loudly until the compute milestone below), multi-threaded command
-  recording, and shader cross-compilation tooling (tracked separately below)
+  readback submission rides its own transient fence now). Both capabilities this entry
+  names — multi-threaded command recording (M4) and explicit memory/barrier management (the
+  M2c staging discipline, M2e tracked-layout barriers, M3 device-local placement) — are now
+  real and pixel-proven; the remaining known gaps are tracked as their own entries below:
+  storage images land with GPU compute (ComputeSystemUVE, Part 7.2 — refused loudly until
+  then), and shader cross-compilation is its own tooling item
 - [ ] A backend for each target OS's native graphics API where OpenGL is not the best
   choice on that platform
 - [ ] Shader cross-compilation so one shader source authors once and targets every backend

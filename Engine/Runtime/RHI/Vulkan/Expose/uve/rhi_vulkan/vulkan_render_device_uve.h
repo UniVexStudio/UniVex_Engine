@@ -81,8 +81,19 @@
 // arm-independent (both classic and dynamic devices get device-local vertex/index buffers);
 // the reported name follows the established rule that the badge tracks the newest slice.
 //
+// Slice M4 ("parallel recording") added 2026-09-18: multi-threaded command recording is a
+// real, contract-documented capability. VulkanCommandBufferUVE objects carry NO device state
+// (recording appends to a per-object retained list), so any number of threads may create,
+// record, and submit their own command buffers concurrently; SubmitUVE() pushes into a
+// mutex-guarded submission FIFO from any thread, and PresentUVE() drains that FIFO into a
+// local snapshot under the same lock before replaying strictly main-thread (the GPU timeline
+// keeps one owner; a submit racing a present lands in the NEXT frame's FIFO — honest queue
+// order). Replay stays the M2a one-primary-buffer model: this slice parallelizes RECORDING
+// (the explicit-API capability the roadmap names), not the replay translation. Resource
+// creation/destruction and PresentUVE remain main-thread calls.
+//
 // Capability reporting is honest and upstream-visible: GetBackendNameUVE() says
-// "Vulkan (M3 device-local staging)" on dynamic-rendering devices, "Vulkan (M2c textures+staging)"
+// "Vulkan (M4 parallel recording)" on dynamic-rendering devices, "Vulkan (M2c textures+staging)"
 // on classic ones — never "Vulkan" unqualified — so logs, editor overlays, and bug reports
 // cannot mistake the current slice for the finished backend, and IsUsableUVE() reflects the
 // real instance/device/swapchain bring-up result.

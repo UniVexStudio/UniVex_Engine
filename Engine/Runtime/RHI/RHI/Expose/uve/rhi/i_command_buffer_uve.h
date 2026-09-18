@@ -21,11 +21,16 @@ namespace UVE::Render {
 /// command-list model (the spec's actual named target backends) rather than issuing draw calls
 /// immediately as the scene is walked. Obtained via IRenderDeviceUVE::CreateCommandBufferUVE(),
 /// never constructed directly.
-/// Thread-safety: not thread-safe. A command buffer is recorded by a single thread and handed to
+/// Thread-safety: a single command-buffer instance is recorded by ONE thread and handed to
 /// SubmitUVE() exactly once; recording the same instance from multiple threads concurrently, or
-/// reusing it after submission, is undefined. Parallel recording across ThreadPoolUVE workers
-/// (e.g. one secondary command buffer per worker, merged at submission) is a future increment,
-/// not built here.
+/// reusing it after submission, is undefined. Parallel recording ACROSS threads, however, is
+/// real as of M4: N threads may each create, record, and submit their OWN instances
+/// concurrently — the Vulkan backend's command buffers carry no device state at all and its
+/// submission FIFO is mutex-guarded (SubmitUVE is callable from any thread; PresentUVE drains
+/// the FIFO in submission order, main-thread), and the Null backend keeps the same discipline
+/// for its spy list. That makes the "one recording stream per worker, merged at submission"
+/// pattern available today. The GL backend executes every command during recording (an
+/// inherent GL-context property), so GL recording stays bound to the context thread.
 class ICommandBufferUVE {
 public:
     virtual ~ICommandBufferUVE() = default;

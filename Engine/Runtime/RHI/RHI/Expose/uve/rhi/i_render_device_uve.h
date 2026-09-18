@@ -108,10 +108,21 @@ public:
                                                                          const PipelineBinaryDescUVE& desc) = 0;
 
     /// Creates a new, empty ICommandBufferUVE ready for recording.
+    /// M4 threading contract: each ICommandBufferUVE is fully independent — the Vulkan and
+    /// Null backends record into per-object retained lists that touch no device state — so
+    /// distinct threads may create and record into their OWN command buffers concurrently
+    /// (one object is never shared between threads). The GL backend executes every command
+    /// during recording (an inherent GL-context property), so GL recording must happen on
+    /// the context's thread.
     [[nodiscard]] virtual std::unique_ptr<ICommandBufferUVE> CreateCommandBufferUVE() = 0;
 
     /// Submits a finished command buffer for execution. Consumes `commandBuffer` — it must not be
     /// used again after this call.
+    /// M4 threading contract: safe to call from any thread on every backend — the Vulkan
+    /// backend enqueues the recorded commands into a mutex-guarded submission FIFO that the
+    /// next PresentUVE() drains in submission order, the Null backend stores its spy list
+    /// under the same discipline, and GL simply releases the object. PresentUVE() itself
+    /// stays single-threaded (the GPU-timeline owner).
     virtual void SubmitUVE(std::unique_ptr<ICommandBufferUVE> commandBuffer) = 0;
 
     /// Presents the backend's default framebuffer (the window's back buffer), analogous to a
