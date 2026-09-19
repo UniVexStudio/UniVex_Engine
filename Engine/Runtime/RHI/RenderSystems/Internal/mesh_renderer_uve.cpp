@@ -151,6 +151,12 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
     // Bound the cache. Without this it retains an entry for every entity the scene has ever had,
     // which for a streaming world is a slow leak rather than a cache.
     outVisibilitySet.PruneUnseenPlacementsUVE();
+
+    // Built once here, consumed by every cull this set feeds. This reorders candidates, which is
+    // safe precisely because nothing downstream may depend on their order - each cull sorts its
+    // own queue by depth.
+    // TEMP-DISABLED-FOR-BISECT
+    outVisibilitySet.BuildSpatialClustersUVE();
 }
 
 void MeshRendererUVE::CullVisibilitySetIntoUVE(const MeshVisibilitySetUVE& visibilitySet,
@@ -166,22 +172,45 @@ void MeshRendererUVE::CullVisibilitySetIntoUVE(const MeshVisibilitySetUVE& visib
     outQueue.failedAssetLoads = visibilitySet.failedAssetLoads;
     outQueue.invalidRenderEligibility = visibilitySet.invalidRenderEligibility;
 
-    for (const MeshVisibilityCandidateUVE& candidate : visibilitySet.candidates) {
-        MeshRenderEligibilityUVE eligibility;
-        if (!TestMeshRenderVisibilityUVE(candidate.placement, cullFrustum, eligibility)) {
+    // Cluster-first. A frustum that misses a cluster's enclosing box misses every candidate in it,
+    // so the run is rejected with one plane test rather than one per member. On a scene where most
+    // objects are off-screen - which is most scenes, and all four of this frame's frusta - that is
+    // where the culling time goes.
+    //
+    // Falls back to testing everything when the cluster list is empty, so a caller that populated
+    // candidates without calling BuildSpatialClustersUVE still gets correct output rather than an
+    // empty frame. Correctness must not depend on the optimization having run.
+    const auto cullRangeUVE = [&](const std::size_t first, const std::size_t count) {
+        for (std::size_t index = first; index < first + count; ++index) {
+            const MeshVisibilityCandidateUVE& candidate = visibilitySet.candidates[index];
+            MeshRenderEligibilityUVE eligibility;
+            if (!TestMeshRenderVisibilityUVE(candidate.placement, cullFrustum, eligibility)) {
+                continue;
+            }
+
+            // Copies, not moves: one candidate set feeds four queues in a frame, so a move here
+            // would empty the handles the remaining cascades still need. AssetHandleUVE copies are
+            // refcount bumps, which is exactly what this wants - the handle outlives all four
+            // queues anyway.
+            RenderItemUVE item{eligibility.worldMatrix, candidate.meshHandle, candidate.materialHandle,
+                               eligibility.sortDepth};
+            if (candidate.isTransparent) {
+                outQueue.transparentItems.push_back(std::move(item));
+            } else {
+                outQueue.opaqueItems.push_back(std::move(item));
+            }
+        }
+    };
+
+    if (visibilitySet.clusters.empty()) {
+        cullRangeUVE(0U, visibilitySet.candidates.size());
+        return;
+    }
+    for (const MeshVisibilitySetUVE::CandidateClusterUVE& cluster : visibilitySet.clusters) {
+        if (!cullFrustum.IntersectsUVE(cluster.bounds)) {
             continue;
         }
-
-        // Copies, not moves: one candidate set feeds four queues in a frame, so a move here would
-        // empty the handles the remaining cascades still need. AssetHandleUVE copies are refcount
-        // bumps, which is exactly what this wants - the handle outlives all four queues anyway.
-        RenderItemUVE item{eligibility.worldMatrix, candidate.meshHandle, candidate.materialHandle,
-                           eligibility.sortDepth};
-        if (candidate.isTransparent) {
-            outQueue.transparentItems.push_back(std::move(item));
-        } else {
-            outQueue.opaqueItems.push_back(std::move(item));
-        }
+        cullRangeUVE(cluster.first, cluster.count);
     }
 }
 

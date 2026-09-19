@@ -871,5 +871,138 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_DistinctAssetsPerEntity_AreEac
     }
 }
 
+TEST_F(MeshRendererUVETest, CullVisibilitySetIntoUVE_ClusteredAndUnclustered_ProduceTheSameVisibleSet) {
+    // The whole optimization rests on one claim: rejecting a cluster rejects only candidates that
+    // were going to be rejected anyway. This is the test that checks the claim directly, by culling
+    // the same scene with clusters built and with the cluster list emptied, and demanding the same
+    // answer. A cluster box that is too tight silently drops visible geometry, which is the exact
+    // bug no rendering test with one entity in front of the camera would ever catch.
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cluster.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cluster.uvemat");
+    // Spread well past one cluster (64) and well outside the frustum, so clusters are genuinely
+    // rejected rather than all trivially accepted.
+    constexpr int kSpreadEntityCount = 400;
+    for (int index = 0; index < kSpreadEntityCount; ++index) {
+        const float x = static_cast<float>((index * 37) % 200) - 100.0F;
+        const float y = static_cast<float>((index * 53) % 200) - 100.0F;
+        const float z = -static_cast<float>((index * 29) % 200);
+        MakeMeshEntityUVE(Math::Vector3UVE{x, y, z}, meshGuid, materialGuid);
+    }
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    MeshVisibilitySetUVE clustered;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, clustered);
+    ASSERT_FALSE(clustered.clusters.empty()) << "the scene must be large enough to actually cluster";
+
+    RenderQueueUVE clusteredQueue;
+    meshRenderer.CullVisibilitySetIntoUVE(clustered, MakeTestFrustumUVE(), clusteredQueue);
+
+    // Same set, clusters removed: the documented fallback path, and the reference answer.
+    MeshVisibilitySetUVE flat;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, flat);
+    flat.clusters.clear();
+    RenderQueueUVE flatQueue;
+    meshRenderer.CullVisibilitySetIntoUVE(flat, MakeTestFrustumUVE(), flatQueue);
+
+    ASSERT_EQ(clusteredQueue.opaqueItems.size(), flatQueue.opaqueItems.size())
+        << "cluster rejection must never drop a visible candidate";
+    EXPECT_EQ(clusteredQueue.transparentItems.size(), flatQueue.transparentItems.size());
+    EXPECT_GT(clusteredQueue.opaqueItems.size(), 0U) << "a test where nothing is visible proves nothing";
+
+    // Compared after sorting, because the queues are depth-sorted by the consumer and cluster
+    // ordering legitimately changes the order equal-depth items are appended in.
+    clusteredQueue.SortUVE();
+    flatQueue.SortUVE();
+    for (std::size_t index = 0U; index < flatQueue.opaqueItems.size(); ++index) {
+        EXPECT_FLOAT_EQ(clusteredQueue.opaqueItems[index].sortDepth, flatQueue.opaqueItems[index].sortDepth)
+            << "at index " << index;
+    }
+}
+
+TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_ClustersCoverEveryCandidateExactlyOnce) {
+    // A permutation bug in the reorder - a cycle applied twice, an off-by-one in the offsets -
+    // would duplicate one candidate and lose another. Sizes alone would still add up, so this
+    // checks the ranges partition the list: contiguous, non-overlapping, covering all of it.
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_partition.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_partition.uvemat");
+    constexpr int kPartitionEntityCount = 150;
+    for (int index = 0; index < kPartitionEntityCount; ++index) {
+        MakeMeshEntityUVE(Math::Vector3UVE{static_cast<float>(index), 0.0F, -10.0F}, meshGuid, materialGuid);
+    }
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    MeshVisibilitySetUVE visibilitySet;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+
+    ASSERT_EQ(visibilitySet.candidates.size(), static_cast<std::size_t>(kPartitionEntityCount));
+    std::size_t expectedFirst = 0U;
+    for (const MeshVisibilitySetUVE::CandidateClusterUVE& cluster : visibilitySet.clusters) {
+        EXPECT_EQ(cluster.first, expectedFirst) << "clusters must be contiguous and non-overlapping";
+        EXPECT_GT(cluster.count, 0U) << "an empty cluster is a plane test that can never pay for itself";
+        expectedFirst += cluster.count;
+    }
+    EXPECT_EQ(expectedFirst, visibilitySet.candidates.size()) << "every candidate must belong to a cluster";
+}
+
+TEST_F(MeshRendererUVETest, BuildSpatialClustersUVE_ClusterBoundsEncloseEveryMember) {
+    // The rejection is only sound if the enclosing box really encloses. This asserts the invariant
+    // the cull depends on, rather than inferring it from a visible-count that happened to match.
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_enclose.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_enclose.uvemat");
+    constexpr int kEncloseEntityCount = 200;
+    for (int index = 0; index < kEncloseEntityCount; ++index) {
+        const float x = static_cast<float>((index * 17) % 90) - 45.0F;
+        const float y = static_cast<float>((index * 31) % 90) - 45.0F;
+        MakeMeshEntityUVE(Math::Vector3UVE{x, y, -20.0F}, meshGuid, materialGuid);
+    }
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    MeshVisibilitySetUVE visibilitySet;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+    ASSERT_FALSE(visibilitySet.clusters.empty());
+
+    for (const MeshVisibilitySetUVE::CandidateClusterUVE& cluster : visibilitySet.clusters) {
+        for (std::size_t offset = 0U; offset < cluster.count; ++offset) {
+            const Math::AabbUVE& member =
+                visibilitySet.candidates[cluster.first + offset].placement.worldBounds;
+            EXPECT_LE(cluster.bounds.min.x, member.min.x);
+            EXPECT_LE(cluster.bounds.min.y, member.min.y);
+            EXPECT_LE(cluster.bounds.min.z, member.min.z);
+            EXPECT_GE(cluster.bounds.max.x, member.max.x);
+            EXPECT_GE(cluster.bounds.max.y, member.max.y);
+            EXPECT_GE(cluster.bounds.max.z, member.max.z);
+        }
+    }
+}
+
+TEST_F(MeshRendererUVETest, BuildSpatialClustersUVE_ReorderingDoesNotDisturbAssetHandles) {
+    // The reorder moves candidates around, and candidates own AssetHandleUVE members. A permutation
+    // that copied instead of moved, or that left a moved-from element behind, would show up as a
+    // handle that no longer resolves - while sizes and bounds all still looked right.
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_reorder.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_reorder.uvemat");
+    constexpr int kReorderEntityCount = 100;
+    for (int index = 0; index < kReorderEntityCount; ++index) {
+        const float x = static_cast<float>((index * 41) % 60) - 30.0F;
+        MakeMeshEntityUVE(Math::Vector3UVE{x, 0.0F, -15.0F}, meshGuid, materialGuid);
+    }
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    MeshVisibilitySetUVE visibilitySet;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+
+    ASSERT_EQ(visibilitySet.candidates.size(), static_cast<std::size_t>(kReorderEntityCount));
+    for (const MeshVisibilityCandidateUVE& candidate : visibilitySet.candidates) {
+        EXPECT_EQ(candidate.meshHandle.GetGuidUVE(), meshGuid);
+        EXPECT_EQ(candidate.materialHandle.GetGuidUVE(), materialGuid);
+        EXPECT_NE(candidate.meshHandle.TryGetUVE(), nullptr) << "a reordered candidate must still resolve";
+        EXPECT_NE(candidate.materialHandle.TryGetUVE(), nullptr);
+    }
+}
+
 } // namespace
 } // namespace UVE::Render::Tests
