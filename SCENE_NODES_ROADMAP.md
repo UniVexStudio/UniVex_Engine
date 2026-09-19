@@ -18,6 +18,11 @@ product.
   runtime yet. It can be added in the editor and will save/load correctly, but it does nothing.
 - `[ ]` — the node does not exist at all yet, in any form.
 
+For every `[~]` entry (and the declared gaps of `[x]` entries), `STUB_IMPLEMENTATION_ROADMAP.md`
+is the drill-down tracker: the exact component fields/arrays awaiting work, the system each one
+needs, dependencies, and the per-item checklist ticked as implementation lands. This file keeps
+the high-level status; that file holds the working plan.
+
 Update this file in the same change that adds, fixes, or wires up any node. A stale checklist is
 worse than no checklist.
 
