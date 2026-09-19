@@ -22,21 +22,21 @@ RenderQueueUVE MeshRendererUVE::ExtractRenderQueueUVE(Scene::IEntityManagerUVE& 
     return queue;
 }
 
-void MeshRendererUVE::ExtractRenderQueueIntoUVE(Scene::IEntityManagerUVE& entityManager,
+void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityManager,
                                             Asset::IAssetManagerUVE& assetManager,
                                             Asset::IAssetDatabaseUVE& assetDatabase,
-                                            const Math::FrustumUVE& cullFrustum, RenderQueueUVE& outQueue) const {
-    outQueue.ClearUVE();
+                                            MeshVisibilitySetUVE& outVisibilitySet) const {
+    outVisibilitySet.ClearUVE();
 
     entityManager.ForEachUVE<Scene::WorldTransformComponentUVE, Scene::MeshComponentUVE>(
         [&](Scene::EntityUVE, const Scene::WorldTransformComponentUVE& worldTransform,
             const Scene::MeshComponentUVE& meshComponent) {
             UVE_ASSERT(Scene::IsMeshComponentValidUVE(meshComponent));
             if (meshComponent.meshGuid == Asset::kInvalidAssetGuidUVE) {
-                ++outQueue.invalidAssetReferences;
+                ++outVisibilitySet.invalidAssetReferences;
             }
             if (meshComponent.materialGuid == Asset::kInvalidAssetGuidUVE) {
-                ++outQueue.invalidAssetReferences;
+                ++outVisibilitySet.invalidAssetReferences;
             }
             if (meshComponent.meshGuid == Asset::kInvalidAssetGuidUVE ||
                 meshComponent.materialGuid == Asset::kInvalidAssetGuidUVE) {
@@ -49,10 +49,12 @@ void MeshRendererUVE::ExtractRenderQueueIntoUVE(Scene::IEntityManagerUVE& entity
                 assetManager.LoadUVE<Asset::MaterialAssetUVE>(meshComponent.materialGuid, assetDatabase);
             const bool meshFailed = meshHandle.HasFailedUVE();
             const bool materialFailed = materialHandle.HasFailedUVE();
-            outQueue.failedAssetLoads += static_cast<std::size_t>(meshFailed) + static_cast<std::size_t>(materialFailed);
+            outVisibilitySet.failedAssetLoads +=
+                static_cast<std::size_t>(meshFailed) + static_cast<std::size_t>(materialFailed);
             const bool meshPending = !meshFailed && !meshHandle.IsReadyUVE();
             const bool materialPending = !materialFailed && !materialHandle.IsReadyUVE();
-            outQueue.pendingAssetLoads += static_cast<std::size_t>(meshPending) + static_cast<std::size_t>(materialPending);
+            outVisibilitySet.pendingAssetLoads +=
+                static_cast<std::size_t>(meshPending) + static_cast<std::size_t>(materialPending);
             if (meshPending || materialPending || meshFailed || materialFailed) {
                 return;
             }
@@ -60,23 +62,67 @@ void MeshRendererUVE::ExtractRenderQueueIntoUVE(Scene::IEntityManagerUVE& entity
             const Asset::MeshAssetUVE* const mesh = meshHandle.TryGetUVE();
             const Asset::MaterialAssetUVE* const material = materialHandle.TryGetUVE();
 
-            MeshRenderEligibilityUVE eligibility;
-            if (!EvaluateMeshRenderEligibilityUVE(meshComponent, worldTransform, *mesh, cullFrustum, eligibility)) {
-                if (eligibility.reason == MeshRenderEligibilityReasonUVE::InvalidWorldTransform ||
-                    eligibility.reason == MeshRenderEligibilityReasonUVE::InvalidLocalBounds) {
-                    ++outQueue.invalidRenderEligibility;
+            // Placement first, then construct. MeshVisibilityCandidateUVE holds AssetHandleUVE
+            // members, which have no default constructor - the same reason RenderItemUVE is
+            // aggregate-initialized at its push site rather than built up field by field.
+            MeshRenderPlacementUVE placement;
+            if (!EvaluateMeshRenderPlacementUVE(meshComponent, worldTransform, *mesh, placement)) {
+                if (placement.reason == MeshRenderEligibilityReasonUVE::InvalidWorldTransform ||
+                    placement.reason == MeshRenderEligibilityReasonUVE::InvalidLocalBounds) {
+                    ++outVisibilitySet.invalidRenderEligibility;
                 }
                 return;
             }
 
-            RenderItemUVE item{eligibility.worldMatrix, std::move(meshHandle), std::move(materialHandle),
-                               eligibility.sortDepth};
-            if (material->isTransparent) {
-                outQueue.transparentItems.push_back(std::move(item));
-            } else {
-                outQueue.opaqueItems.push_back(std::move(item));
-            }
+            // Bucketing is decided here, not per frustum: transparency is a property of the
+            // material, and no frustum can change it.
+            outVisibilitySet.candidates.push_back(MeshVisibilityCandidateUVE{
+                std::move(meshHandle), std::move(materialHandle), placement, material->isTransparent});
         });
+}
+
+void MeshRendererUVE::CullVisibilitySetIntoUVE(const MeshVisibilitySetUVE& visibilitySet,
+                                               const Math::FrustumUVE& cullFrustum,
+                                               RenderQueueUVE& outQueue) const {
+    outQueue.ClearUVE();
+
+    // The scene-wide counters are copied onto every queue this set produces. They describe the
+    // scene rather than this view of it, so they are the same for all four frusta - a broken
+    // material is one broken material, not one per cascade.
+    outQueue.invalidAssetReferences = visibilitySet.invalidAssetReferences;
+    outQueue.pendingAssetLoads = visibilitySet.pendingAssetLoads;
+    outQueue.failedAssetLoads = visibilitySet.failedAssetLoads;
+    outQueue.invalidRenderEligibility = visibilitySet.invalidRenderEligibility;
+
+    for (const MeshVisibilityCandidateUVE& candidate : visibilitySet.candidates) {
+        MeshRenderEligibilityUVE eligibility;
+        if (!TestMeshRenderVisibilityUVE(candidate.placement, cullFrustum, eligibility)) {
+            continue;
+        }
+
+        // Copies, not moves: one candidate set feeds four queues in a frame, so a move here would
+        // empty the handles the remaining cascades still need. AssetHandleUVE copies are refcount
+        // bumps, which is exactly what this wants - the handle outlives all four queues anyway.
+        RenderItemUVE item{eligibility.worldMatrix, candidate.meshHandle, candidate.materialHandle,
+                           eligibility.sortDepth};
+        if (candidate.isTransparent) {
+            outQueue.transparentItems.push_back(std::move(item));
+        } else {
+            outQueue.opaqueItems.push_back(std::move(item));
+        }
+    }
+}
+
+void MeshRendererUVE::ExtractRenderQueueIntoUVE(Scene::IEntityManagerUVE& entityManager,
+                                            Asset::IAssetManagerUVE& assetManager,
+                                            Asset::IAssetDatabaseUVE& assetDatabase,
+                                            const Math::FrustumUVE& cullFrustum, RenderQueueUVE& outQueue) const {
+    // Kept as the single-frustum entry point, now expressed as build-then-cull rather than a
+    // second copy of the walk. A caller that culls once pays nothing for the split; a caller that
+    // culls four times calls the two halves directly and pays the walk once.
+    MeshVisibilitySetUVE visibilitySet;
+    BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+    CullVisibilitySetIntoUVE(visibilitySet, cullFrustum, outQueue);
 }
 
 } // namespace UVE::Render

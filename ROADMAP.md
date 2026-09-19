@@ -95,7 +95,14 @@ publicly shipping real-time engines as of today, without naming any of them.
   better than the main pass on the same queue. Remaining: pointing the instanceCount at CS8's
   GPU-written draw command instead of a CPU-known batch size, which is the last step to giving the
   indirect cull a consumer.
-- [ ] Frustum culling at scale (currently unverified beyond basic per-object draw calls)
+- [ ] Frustum culling at scale — the per-frame redundancy is gone: extraction is split into a
+  frustum-INDEPENDENT build (asset resolution, transform compose, world-bounds transform) and a
+  cheap per-frustum cull, so a frame that culls against four frusta (three shadow cascades plus the
+  main view) does the expensive half ONCE instead of four times. Previously all four passes
+  recomputed identical matrices and bounds to reach four different plane tests. This is also the
+  hook occlusion culling and LOD both need - each wants world bounds detached from any particular
+  frustum, and while bounds were computed inside the frustum test there was nowhere to attach.
+  Remaining: spatial acceleration so the build itself stops being a linear walk of every entity.
 - [ ] Occlusion culling (the `occluder` scene-node kind exists as a descriptor only)
 - [ ] Level-of-detail switching (the `LOD group` scene-node kind exists as a descriptor
   only; no runtime LOD selection system exists)

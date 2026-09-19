@@ -6,6 +6,7 @@
 #include "uve/asset/i_asset_database_uve.h"
 #include "uve/asset/i_asset_manager_uve.h"
 #include "uve/math/frustum_uve.h"
+#include "uve/render_systems/mesh_visibility_set_uve.h"
 #include "uve/render_systems/render_queue_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
 
@@ -33,6 +34,42 @@ public:
                                                                  Asset::IAssetManagerUVE& assetManager,
                                                                  Asset::IAssetDatabaseUVE& assetDatabase,
                                                                  const Math::FrustumUVE& cullFrustum) const = 0;
+
+    /// Builds this frame's frustum-INDEPENDENT candidate set: every entity resolved, validated and
+    /// placed in the world, with no culling applied.
+    ///
+    /// Split from extraction because a frame culls against four frusta (three shadow cascades plus
+    /// the main view) and the expensive work - asset resolution, quaternion normalization, TRS
+    /// compose, bounds transform - is identical across all four. Build once, then call
+    /// CullVisibilitySetIntoUVE per frustum.
+    ///
+    /// The default implementation is a no-op returning nothing useful, so existing test doubles
+    /// keep compiling; MeshRendererUVE implements it. A caller that gets an empty set from a
+    /// double simply sees no meshes, which is the same thing a double that renders nothing already
+    /// did.
+    virtual void BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityManager,
+                                       Asset::IAssetManagerUVE& assetManager,
+                                       Asset::IAssetDatabaseUVE& assetDatabase,
+                                       MeshVisibilitySetUVE& outVisibilitySet) const {
+        static_cast<void>(entityManager);
+        static_cast<void>(assetManager);
+        static_cast<void>(assetDatabase);
+        outVisibilitySet.ClearUVE();
+    }
+
+    /// Culls an already-built candidate set against one frustum into a queue. This is the part
+    /// that genuinely has to run per frustum, and it is deliberately just a plane test, a depth
+    /// derivation and a bucket push per candidate.
+    ///
+    /// Defaulted to the full extraction path for the same compatibility reason as above - a double
+    /// that only implements ExtractRenderQueueUVE still behaves correctly, just without the saving.
+    virtual void CullVisibilitySetIntoUVE(const MeshVisibilitySetUVE& visibilitySet,
+                                          const Math::FrustumUVE& cullFrustum,
+                                          RenderQueueUVE& outQueue) const {
+        static_cast<void>(visibilitySet);
+        static_cast<void>(cullFrustum);
+        outQueue.ClearUVE();
+    }
 
     /// Fills caller-owned queue storage. The default preserves compatibility for existing
     /// implementations/test doubles; MeshRendererUVE overrides it to reuse vector capacity.
