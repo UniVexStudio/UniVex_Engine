@@ -1,7 +1,9 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
+#include <algorithm>
 #include <array>
 
+#include <filesystem>
 #include <gtest/gtest.h>
 
 #include "uve/core/engine_core_uve.h"
@@ -18,6 +20,7 @@
 #include "uve/component/rigid_body_component_uve.h"
 #include "uve/component/script_component_uve.h"
 #include "uve/scene/nodes/scene_node_registry_uve.h"
+#include "uve/scene/nodes/scene_root_uve.h"
 
 namespace UVE::Editor::Tests {
 namespace {
@@ -204,6 +207,192 @@ TEST(SceneNodeEditorUVETest, CentralizedCreationUVE_RejectsMultiSelectionAndPlay
         ASSERT_TRUE(editor.StopPlayModeUVE());
         EXPECT_EQ(editor.GetDocumentRootsUVE().size(), rootsBefore.size());
         editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
+[[nodiscard]] bool ContainsEntityUVE(const std::vector<Scene::EntityUVE>& entities,
+                                    const Scene::EntityUVE entity) {
+    return std::find(entities.begin(), entities.end(), entity) != entities.end();
+}
+
+TEST(SceneNodeEditorUVETest, SceneRootUVE_FreshDocumentHasExactlyOneNamedRoot) {
+    Core::EngineCoreUVE engine(MakeSceneNodeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_scene_node_editor_scene_root_tests.uvescene");
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+
+        const Scene::EntityUVE root = editor.GetDocumentSceneRootUVE();
+        ASSERT_NE(root, Scene::kInvalidEntityUVE);
+        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::SceneRootComponentUVE>(root));
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::NameComponentUVE>(root).name, "SceneRoot");
+        EXPECT_EQ(editor.GetDocumentRootsUVE().size(), 1U);
+        EXPECT_EQ(editor.GetDocumentRootsUVE()[0U], root);
+
+        // The root is a library kind but never library-creatable: the Add-Node path refuses it.
+        EXPECT_EQ(editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::SceneRoot),
+                  Scene::kInvalidEntityUVE);
+
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
+TEST(SceneNodeEditorUVETest, SceneRootUVE_NewNodesJoinHierarchyUnderSelectionOrRoot) {
+    Core::EngineCoreUVE engine(MakeSceneNodeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_scene_node_editor_scene_root_join_tests.uvescene");
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+        const Scene::EntityUVE root = editor.GetDocumentSceneRootUVE();
+        ASSERT_NE(root, Scene::kInvalidEntityUVE);
+
+        // No selection: a new node becomes a CHILD of the scene root, not a new document root.
+        const Scene::EntityUVE first =
+            editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Empty);
+        ASSERT_NE(first, Scene::kInvalidEntityUVE);
+        EXPECT_EQ(editor.GetDocumentRootsUVE().size(), 1U);
+        EXPECT_TRUE(ContainsEntityUVE(sceneGraph.GetChildrenUVE(entityManager, root), first));
+
+        // With a single selection: the new node becomes that selection's child.
+        editor.SelectEntityUVE(first);
+        const Scene::EntityUVE second =
+            editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Camera3D);
+        ASSERT_NE(second, Scene::kInvalidEntityUVE);
+        EXPECT_EQ(editor.GetDocumentRootsUVE().size(), 1U);
+        EXPECT_TRUE(ContainsEntityUVE(sceneGraph.GetChildrenUVE(entityManager, first), second));
+        EXPECT_FALSE(ContainsEntityUVE(sceneGraph.GetChildrenUVE(entityManager, root), second));
+
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
+TEST(SceneNodeEditorUVETest, SceneRootUVE_RootCannotBeDeletedReparentedOrDuplicated) {
+    Core::EngineCoreUVE engine(MakeSceneNodeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_scene_node_editor_scene_root_guard_tests.uvescene");
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+
+        const Scene::EntityUVE root = editor.GetDocumentSceneRootUVE();
+        ASSERT_NE(root, Scene::kInvalidEntityUVE);
+        const Scene::EntityUVE other =
+            editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Empty);
+        ASSERT_NE(other, Scene::kInvalidEntityUVE);
+
+        editor.SelectEntityUVE(root);
+        EXPECT_FALSE(editor.DeleteSelectedEntityUVE());
+        EXPECT_EQ(editor.DuplicateSelectedEntityUVE(), Scene::kInvalidEntityUVE);
+        EXPECT_FALSE(editor.ReparentSelectedEntityUVE(other));
+        EXPECT_TRUE(entityManager.IsAliveUVE(root));
+        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::SceneRootComponentUVE>(root));
+        EXPECT_EQ(editor.GetDocumentRootsUVE().size(), 1U);
+        EXPECT_EQ(editor.GetDocumentRootsUVE()[0U], root);
+
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
+TEST(SceneNodeEditorUVETest, SceneRootUVE_UndoRedoKeepsCreatedNodeUnderItsParent) {
+    Core::EngineCoreUVE engine(MakeSceneNodeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_scene_node_editor_scene_root_history_tests.uvescene");
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+        const Scene::EntityUVE root = editor.GetDocumentSceneRootUVE();
+        ASSERT_NE(root, Scene::kInvalidEntityUVE);
+
+        const Scene::EntityUVE parent =
+            editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Empty);
+        ASSERT_NE(parent, Scene::kInvalidEntityUVE);
+        editor.SelectEntityUVE(parent);
+        const Scene::EntityUVE child =
+            editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Light3D);
+        ASSERT_NE(child, Scene::kInvalidEntityUVE);
+        ASSERT_TRUE(ContainsEntityUVE(sceneGraph.GetChildrenUVE(entityManager, parent), child));
+
+        ASSERT_TRUE(editor.UndoUVE());
+        EXPECT_FALSE(entityManager.IsAliveUVE(child));
+        ASSERT_TRUE(editor.RedoUVE());
+        const Scene::EntityUVE restored = editor.GetSelectedEntityUVE();
+        ASSERT_NE(restored, Scene::kInvalidEntityUVE);
+        // Redo must re-home the node under its ORIGINAL parent, not drop it to document top
+        // level now that documents have a single scene root.
+        EXPECT_TRUE(ContainsEntityUVE(sceneGraph.GetChildrenUVE(entityManager, parent), restored));
+        EXPECT_EQ(editor.GetDocumentRootsUVE().size(), 1U);
+
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
+TEST(SceneNodeEditorUVETest, SceneRootUVE_LegacyMultiRootSceneFileAutoMigratesUnderOneRoot) {
+    Core::EngineCoreUVE engine(MakeSceneNodeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+        // Author a legacy-style file by hand: two top-level entities, NO scene-root marker -
+        // exactly what every .uvescene saved before the root existed looks like.
+        const Scene::EntityUVE legacyA = entityManager.CreateEntityUVE();
+        sceneGraph.AttachTransformUVE(entityManager, legacyA, Scene::TransformComponentUVE{});
+        entityManager.AddComponentUVE<Scene::NameComponentUVE>(legacyA, Scene::NameComponentUVE{"LegacyA"});
+        const Scene::EntityUVE legacyB = entityManager.CreateEntityUVE();
+        sceneGraph.AttachTransformUVE(entityManager, legacyB, Scene::TransformComponentUVE{});
+        entityManager.AddComponentUVE<Scene::NameComponentUVE>(legacyB, Scene::NameComponentUVE{"LegacyB"});
+
+        const std::string path = "uve_scene_node_editor_scene_root_migrate_tests.uvescene";
+        std::filesystem::remove(path);
+        ASSERT_TRUE(engine.GetServicesUVE().GetSceneSerializerUVE().SaveUVE(
+            entityManager, {legacyA, legacyB}, path, Asset::AssetKindUVE::Scene));
+
+        {
+            EditorUVE editor(engine.GetServicesUVE(), path);
+            editor.InitUVE();
+            ASSERT_TRUE(editor.LoadSceneUVE());
+
+            // The loaded document must hold the one-root invariant: a single SceneRoot at the
+            // top with both legacy top-level entities re-parented under it.
+            const Scene::EntityUVE root = editor.GetDocumentSceneRootUVE();
+            ASSERT_NE(root, Scene::kInvalidEntityUVE);
+            EXPECT_EQ(editor.GetDocumentRootsUVE().size(), 1U);
+            EXPECT_EQ(editor.GetDocumentRootsUVE()[0U], root);
+            EXPECT_EQ(entityManager.GetComponentUVE<Scene::NameComponentUVE>(root).name, "SceneRoot");
+            // The restored entities are FRESH handles (load recreates entities from the
+            // file), so identity is checked by name, not by handle.
+            const std::vector<Scene::EntityUVE> rootChildren =
+                sceneGraph.GetChildrenUVE(entityManager, root);
+            ASSERT_EQ(rootChildren.size(), 2U);
+            std::size_t matchedNames = 0U;
+            for (const Scene::EntityUVE child : rootChildren) {
+                const std::string& name =
+                    entityManager.GetComponentUVE<Scene::NameComponentUVE>(child).name;
+                if (name == "LegacyA" || name == "LegacyB") {
+                    ++matchedNames;
+                }
+            }
+            EXPECT_EQ(matchedNames, 2U);
+            // Migration is a real document change: the in-memory doc no longer matches the file.
+            EXPECT_TRUE(editor.IsSceneDirtyUVE());
+
+            editor.ShutdownUVE();
+        }
+        std::filesystem::remove(path);
     }
     engine.Shutdown();
 }

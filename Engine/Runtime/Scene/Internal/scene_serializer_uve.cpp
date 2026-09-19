@@ -36,6 +36,7 @@
 #include "uve/component/character_controller_component_uve.h"
 #include "uve/component/collider_component_uve.h"
 #include "uve/nodes/3d/all_nodes_3d_uve.h"
+#include "uve/scene/nodes/scene_root_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/light_component_uve.h"
 #include "uve/component/mesh_component_uve.h"
@@ -223,6 +224,10 @@ namespace {
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const ParticleEmitterComponentUVE& component) {
     return {{"maxParticles", component.maxParticles}};
+}
+
+[[nodiscard]] nlohmann::json ToJsonUVE(const SceneRootComponentUVE&) {
+    return nlohmann::json::object(); // pure marker: no authored state to persist
 }
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const RayCast3DNodeComponentUVE& value) {
@@ -844,6 +849,10 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                 }
                 return value;
             }, IsMarker3DNodeComponentValidUVE));
+        table.emplace("SceneRootComponentUVE",
+                    MakeRegistrationUVE<SceneRootComponentUVE>([](const nlohmann::json&) {
+                        return SceneRootComponentUVE{};
+                    }, IsSceneRootComponentValidUVE));
         table.emplace("Hitbox3DNodeComponentUVE", MakeRegistrationUVE<Hitbox3DNodeComponentUVE>(
             [](const nlohmann::json& json) {
                 const Hitbox3DNodeComponentUVE value = Hitbox3DNodeFromJsonUVE(json);
