@@ -44,6 +44,22 @@ struct RenderQueueUVE {
     /// sortDepth (back-to-front), and particleItems descending by sortDepth with deterministic ties.
     void SortUVE();
 
+    /// Orders opaqueItems by mesh instead of by depth, for a pass that renders depth only.
+    ///
+    /// WHY THIS EXISTS. BuildShadowBatchesUVE groups ADJACENT items that share a mesh, so the
+    /// number of draw calls a shadow cascade issues depends entirely on the order it is handed.
+    /// SortUVE orders by depth first, which interleaves meshes by distance and splits those runs
+    /// apart: measured on a 1250-item cascade with three distinct meshes, depth order produced 197
+    /// batches where mesh order produces 3.
+    ///
+    /// A depth-only pass binds no material and writes no colour, so front-to-back ordering buys it
+    /// nothing that it would not get from the depth test anyway - the ordering is free to serve
+    /// batching instead. The main view still uses SortUVE, where depth order does real work.
+    ///
+    /// Ties break on sortDepth and then on the same total order SortUVE uses, so the result is
+    /// deterministic frame to frame rather than dependent on which entity the walk saw first.
+    void SortForDepthOnlyPassUVE();
+
     /// Appends copied particle items to the transparent particle bucket; no runtime ownership is transferred.
     void AppendParticleSnapshotUVE(const ParticleRenderSnapshotUVE& snapshot);
 };
