@@ -158,6 +158,11 @@ struct MeshVisibilitySetUVE final {
     std::size_t placementCacheHits = 0U;
     std::size_t placementCacheMisses = 0U;
 
+    /// Entities skipped this frame because they, or an ancestor, are hidden. Reported so the
+    /// stats panel can distinguish "the scene is small" from "most of the scene is switched off" -
+    /// two very different explanations for a low draw count that otherwise look identical.
+    std::size_t hiddenEntities = 0U;
+
     std::size_t invalidAssetReferences = 0U;
     std::size_t pendingAssetLoads = 0U;
     std::size_t failedAssetLoads = 0U;

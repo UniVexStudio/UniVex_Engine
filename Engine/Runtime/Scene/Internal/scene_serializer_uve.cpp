@@ -47,6 +47,7 @@
 #include "uve/component/rigid_body_component_uve.h"
 #include "uve/component/script_component_uve.h"
 #include "uve/component/transform_component_uve.h"
+#include "uve/component/visibility_component_uve.h"
 #include "uve/component/ui_button_component_uve.h"
 #include "uve/component/ui_image_component_uve.h"
 #include "uve/component/ui_text_component_uve.h"
@@ -134,6 +135,15 @@ namespace {
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const NameComponentUVE& component) {
     return {{"name", component.name}};
+}
+
+/// Only the authored switch is written. `visibleInHierarchy` is derived from the entity's
+/// ancestors by SceneGraphUVE::UpdateUVE, so persisting it would store an answer that the very
+/// next update recomputes - and one that is wrong the moment a node is saved under one parent and
+/// loaded under another. Storing derived state is how a file and its own contents start
+/// disagreeing.
+[[nodiscard]] nlohmann::json ToJsonUVE(const VisibilityComponentUVE& component) {
+    return {{"visible", component.visible}};
 }
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const ColliderComponentUVE& component) {
@@ -749,6 +759,19 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                           }
                           return camera;
                       }, IsCameraComponentValidUVE));
+        table.emplace("VisibilityComponentUVE",
+                      MakeRegistrationUVE<VisibilityComponentUVE>([](const nlohmann::json& json) {
+                          VisibilityComponentUVE component;
+                          // Defaults to visible when the key is absent: a document written before
+                          // this component existed, or by a tool that omits it, must load with
+                          // everything shown rather than blank.
+                          component.visible = json.value("visible", true);
+                          // Seeded to the authored value rather than left at its default, so an
+                          // entity is not briefly drawn between load and the first scene-graph
+                          // update. The update will overwrite it with the inherited answer.
+                          component.visibleInHierarchy = component.visible;
+                          return component;
+                      }, IsVisibilityComponentValidUVE));
         table.emplace("NameComponentUVE", MakeRegistrationUVE<NameComponentUVE>([](const nlohmann::json& json) {
                           const NameComponentUVE component{json.at("name").get<std::string>()};
                           if (!IsNameComponentValidUVE(component)) {

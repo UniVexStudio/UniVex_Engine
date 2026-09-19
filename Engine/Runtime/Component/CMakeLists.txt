@@ -37,6 +37,7 @@ add_library(uve_component STATIC
     Internal/rigid_body_component_uve.cpp
     Internal/script_component_uve.cpp
     Internal/transform_component_uve.cpp
+    Internal/visibility_component_uve.cpp
     Internal/ui_button_component_uve.cpp
     Internal/ui_image_component_uve.cpp
     Internal/ui_text_component_uve.cpp

@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "uve/component/transform_component_uve.h"
+#include "uve/component/visibility_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/scene/i_scene_graph_uve.h"
 
@@ -45,6 +46,11 @@ private:
     struct WorldTransformPassStateUVE final {
         bool valid = false;
         bool recomputed = false;
+        /// This entity's resolved visibility, for its children to inherit. Carried in the pass
+        /// state rather than read back off the component because the child needs the ANSWER, and
+        /// an entity with no VisibilityComponentUVE still has one - it is visible, and its
+        /// children must inherit that rather than finding no component and guessing.
+        bool visibleInHierarchy = true;
     };
 
     /// One entity awaiting processing, with its components resolved once by the initial walk
@@ -56,10 +62,23 @@ private:
         EntityUVE parent;
         TransformComponentUVE* local = nullptr;
         WorldTransformComponentUVE* world = nullptr;
+        /// Null when the entity has no VisibilityComponentUVE, which is the common case and means
+        /// "visible". Resolved during the gather walk so the sweep never has to ask the ECS
+        /// whether a component exists - the sweep runs once per entity per pass and that lookup
+        /// would be pure overhead for the many entities that will never carry one.
+        VisibilityComponentUVE* visibility = nullptr;
     };
 
     /// Per-update scratch, cleared on entry to UpdateUVE(). Retained between calls purely to keep
     /// their capacity; see the class doc comment.
+    /// Resolves one entity's inherited visibility and publishes it to its component.
+    ///
+    /// Returns the resolved value even when the entity has no VisibilityComponentUVE - in that
+    /// case the entity is visible, and its children inherit the parent's state unchanged rather
+    /// than being treated as a break in the chain. That is what makes the component optional
+    /// without putting a hole in the middle of a hierarchy.
+    [[nodiscard]] static bool ResolveVisibilityUVE(const PendingEntityUVE& item, bool parentVisible) noexcept;
+
     std::vector<PendingEntityUVE> m_pendingScratch;
     std::unordered_map<EntityUVE, WorldTransformPassStateUVE> m_passStateScratch;
 };
