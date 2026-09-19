@@ -3,6 +3,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cstddef>
 
 #include <imgui.h>
 
@@ -29,6 +30,21 @@ struct EditorChromeLayoutUVE final {
     ImVec2 contentBrowserPos;
     ImVec2 contentBrowserSize;
 };
+
+/// Shared across the editor's panel translation units.
+///
+/// These four were file-local constants while every panel lived in editor_uve.cpp. Each is used
+/// both inside and outside the hierarchy panel, so splitting that panel out means they must be
+/// reachable from two files - and a per-file copy of a drag-drop payload id or a name-length cap
+/// is the kind of duplicate that stays correct right up until someone edits one of them.
+///
+/// Payload id in particular: imgui matches drag sources to drop targets by exact string, so two
+/// copies that drift apart do not produce a compile error or a crash. Drag-and-drop simply stops
+/// working, silently.
+constexpr const char* kHierarchyEntityPayloadUVE = "UVE_SCENE_HIERARCHY_ENTITY";
+constexpr const char* kPanelLabelSceneUVE = "\xEF\xAB\xBA Scene##scene-panel";
+constexpr std::size_t kMaximumEntityNameBytesUVE = 96U;
+constexpr float kHierarchyNodeIconRadiusUVE = 7.0F;
 
 constexpr float kMinimumViewportWidthUVE = 64.0F;
 constexpr float kMinimumViewportHeightUVE = 64.0F;
