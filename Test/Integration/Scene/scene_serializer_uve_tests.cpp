@@ -1394,4 +1394,62 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_AnEntitySavedWithoutVisibilityRestores
     EXPECT_TRUE(VisibilityComponentUVE{}.visibleInHierarchy);
 }
 
+TEST_F(SceneSerializerUVETest, SaveLoadUVE_VisibilityParentIsRemappedToTheRestoredEntity) {
+    // An entity reference cannot be written as a raw EntityUVE: indices are reassigned on load, so
+    // a saved handle would point at whatever happens to occupy that slot. It goes through the same
+    // file-local id remapping HierarchyComponentUVE uses, and this proves the restored reference
+    // points at the restored TARGET rather than at a coincidence.
+    SceneGraphUVE sceneGraph;
+    const EntityUVE root = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, root, TransformComponentUVE{});
+    entityManager.AddComponentUVE<NameComponentUVE>(root, NameComponentUVE{"Root"});
+    entityManager.AddComponentUVE<VisibilityComponentUVE>(root, VisibilityComponentUVE{});
+
+    const EntityUVE target = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, target, TransformComponentUVE{});
+    entityManager.AddComponentUVE<NameComponentUVE>(target, NameComponentUVE{"Target"});
+    entityManager.AddComponentUVE<VisibilityComponentUVE>(target, VisibilityComponentUVE{});
+    sceneGraph.SetParentUVE(entityManager, target, root);
+
+    const EntityUVE follower = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, follower, TransformComponentUVE{});
+    entityManager.AddComponentUVE<NameComponentUVE>(follower, NameComponentUVE{"Follower"});
+    VisibilityComponentUVE redirect;
+    redirect.visibilityParent = target;
+    entityManager.AddComponentUVE<VisibilityComponentUVE>(follower, redirect);
+    sceneGraph.SetParentUVE(entityManager, follower, root);
+
+    const std::filesystem::path path = "uve_scene_serializer_tests_visibility_parent.uvescene";
+    std::filesystem::remove(path);
+    ASSERT_TRUE(serializer.SaveUVE(entityManager, {root}, path, Asset::AssetKindUVE::Scene));
+
+    EntityManagerUVE loadedManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
+    const std::vector<EntityUVE> restoredRoots = serializer.LoadUVE(loadedManager, path);
+    ASSERT_EQ(restoredRoots.size(), 1U);
+
+    EntityUVE restoredTarget = kInvalidEntityUVE;
+    EntityUVE restoredFollower = kInvalidEntityUVE;
+    loadedManager.ForEachUVE<NameComponentUVE>([&](const EntityUVE entity, const NameComponentUVE& name) {
+        if (name.name == "Target") {
+            restoredTarget = entity;
+        } else if (name.name == "Follower") {
+            restoredFollower = entity;
+        }
+    });
+    ASSERT_NE(restoredTarget, kInvalidEntityUVE);
+    ASSERT_NE(restoredFollower, kInvalidEntityUVE);
+    ASSERT_TRUE(loadedManager.HasComponentUVE<VisibilityComponentUVE>(restoredFollower));
+    EXPECT_EQ(loadedManager.GetComponentUVE<VisibilityComponentUVE>(restoredFollower).visibilityParent,
+              restoredTarget)
+        << "the redirect must be remapped to the restored target, not a stale index";
+
+    // And it still works: hiding the target hides the follower in the loaded scene.
+    SceneGraphUVE loadedGraph;
+    loadedManager.GetComponentUVE<VisibilityComponentUVE>(restoredTarget).visible = false;
+    loadedGraph.UpdateUVE(loadedManager);
+    EXPECT_FALSE(loadedManager.GetComponentUVE<VisibilityComponentUVE>(restoredFollower).visibleInHierarchy);
+
+    std::filesystem::remove(path);
+}
+
 } // namespace UVE::Scene::Tests

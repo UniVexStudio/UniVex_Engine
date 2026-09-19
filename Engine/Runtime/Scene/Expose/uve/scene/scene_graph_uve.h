@@ -79,6 +79,27 @@ private:
     /// without putting a hole in the middle of a hierarchy.
     [[nodiscard]] static bool ResolveVisibilityUVE(const PendingEntityUVE& item, bool parentVisible) noexcept;
 
+    /// Second visibility pass, for entities that inherit from a VisibilityComponentUVE's
+    /// `visibilityParent` instead of from their transform parent.
+    ///
+    /// Separate from the transform sweep because it cannot share its ordering. That sweep is
+    /// root-first over the transform hierarchy, which guarantees a transform parent is resolved
+    /// before its children - but a visibility parent is an arbitrary entity that may sit anywhere,
+    /// including in a branch processed much later. Resolving it inline would read a stale answer
+    /// roughly half the time, depending on nothing more meaningful than entity creation order.
+    ///
+    /// Runs only when at least one entity actually uses the redirect, so the common scene pays a
+    /// single bool check for a feature it does not use.
+    void ResolveVisibilityParentsUVE(IEntityManagerUVE& entityManager);
+
+    /// How many entities used a visibility redirect during the last gather walk.
+    ///
+    /// Counted there because that walk already touches every entity's components, so the count is
+    /// free - and it is what lets the second pass be skipped entirely by the overwhelming majority
+    /// of scenes, which use no redirects at all. It also bounds the chain-following guard: no
+    /// legitimate chain can be longer than the number of entities that have a redirect.
+    std::size_t m_visibilityRedirectCount = 0U;
+
     std::vector<PendingEntityUVE> m_pendingScratch;
     std::unordered_map<EntityUVE, WorldTransformPassStateUVE> m_passStateScratch;
 };

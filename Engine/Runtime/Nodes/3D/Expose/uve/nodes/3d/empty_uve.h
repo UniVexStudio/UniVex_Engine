@@ -10,14 +10,28 @@ namespace UVE::Scene {
 
 class IEntityManagerUVE;
 
-/// Authoring definition for the Empty scene node: the transform-only base of every scene
-/// hierarchy. Empty deliberately attaches nothing beyond the transform every node receives from
-/// its creation shell, so this definition carries no component recipe — it exists so the kind
-/// has the same per-file home (and the same name/validate/apply seam) as every other node kind,
-/// and so any future Empty-level authored defaults have one obvious place to live.
+/// Authoring definition for the Node3D scene node: the transform-only base of every scene
+/// hierarchy, and the node you reach for when you need a pivot or a grouping parent with no
+/// appearance of its own.
+///
+/// It attaches nothing beyond what the creation shell already gives every node - a
+/// TransformComponentUVE, a WorldTransformComponentUVE, a HierarchyComponentUVE and a name. That
+/// IS the recipe: every other kind is this plus its own components, so BoxMesh3D is Node3D plus a
+/// primitive mesh and a collider, Camera3D is Node3D plus a camera.
+///
+/// The capabilities people expect of it live on those shared components rather than here, which
+/// is why this file stays small while the node gets richer: position/rotation/scale and Top Level
+/// on TransformComponentUVE, Visible and Visibility Parent on VisibilityComponentUVE, notes on
+/// EditorDescriptionComponentUVE. Putting them here instead would give them to ONE kind; putting
+/// them on the components gives them to all 43.
+///
+/// NAMING. The kind enumerator and the on-disk string are still `Empty`, deliberately: every
+/// .uvescene ever saved has that string in it, and renaming the kind would either break those
+/// files or require a migration to buy nothing but a different word. Only the display name
+/// changed, which is the part an author actually reads.
 struct EmptyNodeDefinitionUVE final {
-    /// Default document-entity name for a freshly created node of this kind.
-    static constexpr std::string_view defaultName = "Empty";
+    /// Shown in the Add-Node library and used as a freshly created node's entity name.
+    static constexpr std::string_view defaultName = "Node3D";
 };
 
 [[nodiscard]] bool IsEmptyNodeDefinitionValidUVE(const EmptyNodeDefinitionUVE& value) noexcept;

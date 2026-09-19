@@ -925,5 +925,127 @@ TEST_F(SceneGraphUVETest, UpdateUVE_TopLevelOnARootEntityChangesNothing) {
     EXPECT_FALSE(world.dirty);
 }
 
+TEST_F(SceneGraphUVETest, UpdateUVE_VisibilityParentOverridesTheTransformParent) {
+    // The case the redirect exists for: a weapon parented to a hand for position, but which
+    // should disappear with the whole character rather than with the hand.
+    const EntityUVE character = entityManager.CreateEntityUVE();
+    const EntityUVE hand = entityManager.CreateEntityUVE();
+    const EntityUVE weapon = entityManager.CreateEntityUVE();
+    for (const EntityUVE entity : {character, hand, weapon}) {
+        sceneGraph.AttachTransformUVE(entityManager, entity, TransformComponentUVE{});
+        entityManager.AddComponentUVE<VisibilityComponentUVE>(entity, VisibilityComponentUVE{});
+    }
+    sceneGraph.SetParentUVE(entityManager, hand, character);
+    sceneGraph.SetParentUVE(entityManager, weapon, hand);
+    entityManager.GetComponentUVE<VisibilityComponentUVE>(weapon).visibilityParent = character;
+
+    // Hiding the intermediate hand must NOT hide the weapon - it no longer inherits from there.
+    entityManager.GetComponentUVE<VisibilityComponentUVE>(hand).visible = false;
+    sceneGraph.UpdateUVE(entityManager);
+    EXPECT_FALSE(entityManager.GetComponentUVE<VisibilityComponentUVE>(hand).visibleInHierarchy);
+    EXPECT_TRUE(entityManager.GetComponentUVE<VisibilityComponentUVE>(weapon).visibleInHierarchy)
+        << "the redirect must replace the transform-parent chain, not add to it";
+
+    // Hiding the character does hide it.
+    entityManager.GetComponentUVE<VisibilityComponentUVE>(hand).visible = true;
+    entityManager.GetComponentUVE<VisibilityComponentUVE>(character).visible = false;
+    sceneGraph.UpdateUVE(entityManager);
+    EXPECT_FALSE(entityManager.GetComponentUVE<VisibilityComponentUVE>(weapon).visibleInHierarchy);
+}
+
+TEST_F(SceneGraphUVETest, UpdateUVE_ARedirectDoesNotOverrideTheEntitysOwnHiddenState) {
+    // The redirect replaces the INHERITED half only. An entity hidden in its own right stays
+    // hidden no matter what it points at - the same rule the transform-parent path follows.
+    const EntityUVE target = entityManager.CreateEntityUVE();
+    const EntityUVE entity = entityManager.CreateEntityUVE();
+    for (const EntityUVE created : {target, entity}) {
+        sceneGraph.AttachTransformUVE(entityManager, created, TransformComponentUVE{});
+        entityManager.AddComponentUVE<VisibilityComponentUVE>(created, VisibilityComponentUVE{});
+    }
+    entityManager.GetComponentUVE<VisibilityComponentUVE>(entity).visibilityParent = target;
+    entityManager.GetComponentUVE<VisibilityComponentUVE>(entity).visible = false;
+    sceneGraph.UpdateUVE(entityManager);
+
+    EXPECT_FALSE(entityManager.GetComponentUVE<VisibilityComponentUVE>(entity).visibleInHierarchy)
+        << "pointing at a visible target must not reveal something hidden in its own right";
+}
+
+TEST_F(SceneGraphUVETest, UpdateUVE_RedirectsFollowAChainOfRedirects) {
+    // A visibility parent may itself redirect. Resolving only one hop would silently ignore
+    // everything past the first link.
+    const EntityUVE root = entityManager.CreateEntityUVE();
+    const EntityUVE middle = entityManager.CreateEntityUVE();
+    const EntityUVE leaf = entityManager.CreateEntityUVE();
+    for (const EntityUVE entity : {root, middle, leaf}) {
+        sceneGraph.AttachTransformUVE(entityManager, entity, TransformComponentUVE{});
+        entityManager.AddComponentUVE<VisibilityComponentUVE>(entity, VisibilityComponentUVE{});
+    }
+    entityManager.GetComponentUVE<VisibilityComponentUVE>(leaf).visibilityParent = middle;
+    entityManager.GetComponentUVE<VisibilityComponentUVE>(middle).visibilityParent = root;
+    entityManager.GetComponentUVE<VisibilityComponentUVE>(root).visible = false;
+    sceneGraph.UpdateUVE(entityManager);
+
+    EXPECT_FALSE(entityManager.GetComponentUVE<VisibilityComponentUVE>(leaf).visibleInHierarchy)
+        << "the chain must be followed to its end";
+}
+
+TEST_F(SceneGraphUVETest, UpdateUVE_ARedirectCycleFallsBackInsteadOfHanging) {
+    // Nothing prevents an author pointing two nodes at each other, and a .uvescene can be
+    // hand-edited into one. The resolver must terminate and must not pick an arbitrary winner:
+    // falling back to the transform-parent answer leaves the entities visible and predictable.
+    const EntityUVE first = entityManager.CreateEntityUVE();
+    const EntityUVE second = entityManager.CreateEntityUVE();
+    for (const EntityUVE entity : {first, second}) {
+        sceneGraph.AttachTransformUVE(entityManager, entity, TransformComponentUVE{});
+        entityManager.AddComponentUVE<VisibilityComponentUVE>(entity, VisibilityComponentUVE{});
+    }
+    entityManager.GetComponentUVE<VisibilityComponentUVE>(first).visibilityParent = second;
+    entityManager.GetComponentUVE<VisibilityComponentUVE>(second).visibilityParent = first;
+
+    sceneGraph.UpdateUVE(entityManager); // must return
+
+    EXPECT_TRUE(entityManager.GetComponentUVE<VisibilityComponentUVE>(first).visibleInHierarchy);
+    EXPECT_TRUE(entityManager.GetComponentUVE<VisibilityComponentUVE>(second).visibleInHierarchy);
+}
+
+TEST_F(SceneGraphUVETest, UpdateUVE_ADanglingRedirectDoesNotHideAnything) {
+    // The target was deleted, or the reference came from a file that no longer matches the scene.
+    // Losing a reference must not make geometry disappear - a vanished object with no error is
+    // far harder to diagnose than one that is simply still there.
+    const EntityUVE target = entityManager.CreateEntityUVE();
+    const EntityUVE entity = entityManager.CreateEntityUVE();
+    for (const EntityUVE created : {target, entity}) {
+        sceneGraph.AttachTransformUVE(entityManager, created, TransformComponentUVE{});
+        entityManager.AddComponentUVE<VisibilityComponentUVE>(created, VisibilityComponentUVE{});
+    }
+    entityManager.GetComponentUVE<VisibilityComponentUVE>(entity).visibilityParent = target;
+    entityManager.DestroyEntityUVE(target);
+    sceneGraph.UpdateUVE(entityManager);
+
+    EXPECT_TRUE(entityManager.GetComponentUVE<VisibilityComponentUVE>(entity).visibleInHierarchy);
+}
+
+TEST_F(SceneGraphUVETest, UpdateUVE_ARedirectPicksUpTheTargetsOwnInheritedState) {
+    // The target's answer includes ITS transform parent. Reading only the target's own `visible`
+    // switch would miss a target that is hidden because its own parent is.
+    const EntityUVE grandparent = entityManager.CreateEntityUVE();
+    const EntityUVE target = entityManager.CreateEntityUVE();
+    const EntityUVE entity = entityManager.CreateEntityUVE();
+    for (const EntityUVE created : {grandparent, target, entity}) {
+        sceneGraph.AttachTransformUVE(entityManager, created, TransformComponentUVE{});
+        entityManager.AddComponentUVE<VisibilityComponentUVE>(created, VisibilityComponentUVE{});
+    }
+    sceneGraph.SetParentUVE(entityManager, target, grandparent);
+    entityManager.GetComponentUVE<VisibilityComponentUVE>(entity).visibilityParent = target;
+
+    // The target itself is switched on; its PARENT is not.
+    entityManager.GetComponentUVE<VisibilityComponentUVE>(grandparent).visible = false;
+    sceneGraph.UpdateUVE(entityManager);
+
+    ASSERT_FALSE(entityManager.GetComponentUVE<VisibilityComponentUVE>(target).visibleInHierarchy);
+    EXPECT_FALSE(entityManager.GetComponentUVE<VisibilityComponentUVE>(entity).visibleInHierarchy)
+        << "a redirect inherits the target's resolved state, not just its own switch";
+}
+
 } // namespace
 } // namespace UVE::Scene::Tests

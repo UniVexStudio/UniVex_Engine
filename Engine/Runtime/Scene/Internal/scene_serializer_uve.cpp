@@ -809,19 +809,6 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                           }
                           return camera;
                       }, IsCameraComponentValidUVE));
-        table.emplace("VisibilityComponentUVE",
-                      MakeRegistrationUVE<VisibilityComponentUVE>([](const nlohmann::json& json) {
-                          VisibilityComponentUVE component;
-                          // Defaults to visible when the key is absent: a document written before
-                          // this component existed, or by a tool that omits it, must load with
-                          // everything shown rather than blank.
-                          component.visible = json.value("visible", true);
-                          // Seeded to the authored value rather than left at its default, so an
-                          // entity is not briefly drawn between load and the first scene-graph
-                          // update. The update will overwrite it with the inherited answer.
-                          component.visibleInHierarchy = component.visible;
-                          return component;
-                      }, IsVisibilityComponentValidUVE));
         table.emplace("NameComponentUVE", MakeRegistrationUVE<NameComponentUVE>([](const nlohmann::json& json) {
                           const NameComponentUVE component{json.at("name").get<std::string>()};
                           if (!IsNameComponentValidUVE(component)) {
@@ -1238,6 +1225,29 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
             if (type == std::type_index(typeid(WorldTransformComponentUVE))) {
                 continue; // Derived/cached state is rebuilt after restore.
             }
+            if (type == std::type_index(typeid(VisibilityComponentUVE))) {
+                // Written here rather than through the registration table for the same reason
+                // HierarchyComponentUVE is: it holds an entity reference, and only this function
+                // knows the file-local id each entity was assigned.
+                const VisibilityComponentUVE& visibility =
+                    entityManager.GetComponentUVE<VisibilityComponentUVE>(entity);
+                std::int64_t visibilityParentLocalId = -1;
+                if (visibility.visibilityParent != kInvalidEntityUVE) {
+                    const auto targetIt = entityToLocalId.find(visibility.visibilityParent);
+                    if (targetIt != entityToLocalId.end()) {
+                        visibilityParentLocalId = static_cast<std::int64_t>(targetIt->second);
+                    }
+                    // A target outside the captured subtree is dropped, exactly as an outside
+                    // transform parent becomes a restored root: saving a reference to an entity
+                    // the file does not contain would dangle on every load.
+                }
+                // visibleInHierarchy is deliberately absent - it is derived from ancestors and
+                // recomputed by the first update after load.
+                componentsJson["VisibilityComponentUVE"] = {
+                    {"visible", visibility.visible},
+                    {"visibilityParentLocalId", visibilityParentLocalId}};
+                continue;
+            }
             if (type == std::type_index(typeid(HierarchyComponentUVE))) {
                 const HierarchyComponentUVE& hierarchy = entityManager.GetComponentUVE<HierarchyComponentUVE>(entity);
                 std::int64_t parentLocalId = -1;
@@ -1309,6 +1319,32 @@ void RollbackRestoredEntitiesUVE(IEntityManagerUVE& entityManager, std::vector<E
                 return std::nullopt;
             }
             for (const auto& [componentName, componentJson] : components.items()) {
+                if (componentName == "VisibilityComponentUVE") {
+                    // Validated here and restored by the entity-aware path below, never through
+                    // the registration table: it carries an entity reference, and only this
+                    // function knows which file-local id maps to which restored entity.
+                    if (!componentJson.is_object()) {
+                        UVE_ERROR("SceneSerializerUVE: malformed visibility data in \"{}\"", sourceDescription);
+                        return std::nullopt;
+                    }
+                    if (componentJson.contains("visibilityParentLocalId")) {
+                        const auto& targetJson = componentJson.at("visibilityParentLocalId");
+                        if (!targetJson.is_number_integer()) {
+                            UVE_ERROR("SceneSerializerUVE: malformed visibility parent id in \"{}\"",
+                                      sourceDescription);
+                            return std::nullopt;
+                        }
+                        const std::int64_t targetLocalId = targetJson.get<std::int64_t>();
+                        if (targetLocalId < -1 ||
+                            (targetLocalId >= 0 && static_cast<std::uint64_t>(targetLocalId) >
+                                                       std::numeric_limits<std::uint32_t>::max())) {
+                            UVE_ERROR("SceneSerializerUVE: visibility parent local ID is outside the "
+                                      "uint32 range in \"{}\"", sourceDescription);
+                            return std::nullopt;
+                        }
+                    }
+                    continue;
+                }
                 if (componentName == "HierarchyComponentUVE") {
                     if (!componentJson.is_object() || !componentJson.contains("parentLocalId") ||
                         !componentJson.at("parentLocalId").is_number_integer()) {
@@ -1414,6 +1450,28 @@ void RollbackRestoredEntitiesUVE(IEntityManagerUVE& entityManager, std::vector<E
             bool isRoot = true;
             bool hasTransform = false;
             for (const auto& [componentName, componentJson] : entityJson.at("components").items()) {
+                if (componentName == "VisibilityComponentUVE") {
+                    VisibilityComponentUVE visibility;
+                    // Absent in documents written before the flag existed, and visible is what
+                    // they meant.
+                    visibility.visible = componentJson.value("visible", true);
+                    // Seeded from the authored value so nothing is briefly drawn between restore
+                    // and the first scene-graph update, which then computes the inherited answer.
+                    visibility.visibleInHierarchy = visibility.visible;
+                    const std::int64_t targetLocalId = componentJson.value("visibilityParentLocalId",
+                                                                           static_cast<std::int64_t>(-1));
+                    if (targetLocalId >= 0) {
+                        const auto targetIt = localIdToEntity.find(static_cast<std::uint32_t>(targetLocalId));
+                        if (targetIt != localIdToEntity.end()) {
+                            visibility.visibilityParent = targetIt->second;
+                        }
+                        // A target the file does not contain leaves the redirect unset, which
+                        // means "inherit from the transform parent" - the same fallback the
+                        // resolver uses for a dangling reference at runtime.
+                    }
+                    entityManager.AddComponentUVE<VisibilityComponentUVE>(entity, visibility);
+                    continue;
+                }
                 if (componentName == "HierarchyComponentUVE") {
                     const std::int64_t parentLocalId = componentJson.at("parentLocalId").get<std::int64_t>();
                     EntityUVE parent = kInvalidEntityUVE;

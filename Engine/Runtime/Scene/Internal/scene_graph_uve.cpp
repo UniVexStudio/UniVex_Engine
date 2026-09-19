@@ -102,6 +102,68 @@ void SceneGraphUVE::SetParentUVE(IEntityManagerUVE& entityManager, EntityUVE chi
     entityManager.GetComponentUVE<WorldTransformComponentUVE>(child).dirty = true;
 }
 
+void SceneGraphUVE::ResolveVisibilityParentsUVE(IEntityManagerUVE& entityManager) {
+    // Walk each redirect chain to its end, then apply every `visible` switch along the way.
+    //
+    // Chains are followed rather than resolved in one hop because a visibility parent may itself
+    // redirect. Depth is bounded by the number of entities carrying the component, so the guard
+    // below is what makes a cycle terminate rather than a promise that one cannot exist.
+    // Copied out before the walk: the lambda must not reach back into the object, and the bound is
+    // fixed for this pass anyway.
+    const std::size_t chainLimit = m_visibilityRedirectCount + 1U;
+    entityManager.ForEachUVE<VisibilityComponentUVE>(
+        [&entityManager, chainLimit](const EntityUVE, VisibilityComponentUVE& visibility) {
+            if (visibility.visibilityParent == kInvalidEntityUVE) {
+                return; // Transform-parent inheritance; already resolved by the main sweep.
+            }
+
+            // Start from the entity's own switch and its transform-inherited state. The redirect
+            // REPLACES the inherited half, not the entity's own choice: an object hidden in its
+            // own right stays hidden no matter what it points at.
+            bool resolved = visibility.visible;
+
+            EntityUVE current = visibility.visibilityParent;
+            std::size_t guard = 0U;
+            const std::size_t limit = chainLimit;
+            while (current != kInvalidEntityUVE && guard <= limit) {
+                ++guard;
+                if (!entityManager.IsAliveUVE(current)) {
+                    // A dangling target - the node was deleted, or the reference came from a file
+                    // that no longer matches the scene. Treated as "no redirect" rather than as
+                    // hidden: losing a reference should not make geometry silently disappear.
+                    return;
+                }
+                if (!entityManager.HasComponentUVE<VisibilityComponentUVE>(current)) {
+                    // A target with no component is visible, and has nothing further to redirect
+                    // to, so the chain ends here with the state gathered so far.
+                    break;
+                }
+                const VisibilityComponentUVE& target =
+                    entityManager.GetComponentUVE<VisibilityComponentUVE>(current);
+                if (!target.visible) {
+                    resolved = false;
+                }
+                if (target.visibilityParent == kInvalidEntityUVE) {
+                    // The end of the chain: fold in the target's own inherited state, which the
+                    // main sweep already computed from ITS transform parent.
+                    if (!target.visibleInHierarchy) {
+                        resolved = false;
+                    }
+                    break;
+                }
+                current = target.visibilityParent;
+            }
+
+            if (guard > limit) {
+                // A cycle. Falling back to the transform-parent answer keeps the entity visible
+                // and predictable instead of picking an arbitrary winner or looping - the same
+                // reasoning as the dangling case: a bad reference must not hide geometry.
+                return;
+            }
+            visibility.visibleInHierarchy = resolved;
+        });
+}
+
 bool SceneGraphUVE::ResolveVisibilityUVE(const PendingEntityUVE& item, const bool parentVisible) noexcept {
     // No component means visible, and means the parent's state passes straight through. An entity
     // without the component is not a break in the chain - hiding a parent must still hide a
@@ -134,6 +196,8 @@ void SceneGraphUVE::UpdateUVE(IEntityManagerUVE& entityManager) {
     // recomputation forcing every child to recompute, an invalid parent invalidating its subtree,
     // and a leftover remainder still meaning a cycle. Only the bookkeeping changed.
     m_pendingScratch.clear();
+    // Recounted every update: entities and their redirects change between frames.
+    m_visibilityRedirectCount = 0U;
     entityManager.ForEachUVE<HierarchyComponentUVE, TransformComponentUVE, WorldTransformComponentUVE>(
         [this, &entityManager](EntityUVE entity, HierarchyComponentUVE& hierarchy, TransformComponentUVE& local,
                                WorldTransformComponentUVE& world) {
@@ -148,6 +212,9 @@ void SceneGraphUVE::UpdateUVE(IEntityManagerUVE& entityManager) {
                 entityManager.HasComponentUVE<VisibilityComponentUVE>(entity)
                     ? &entityManager.GetComponentUVE<VisibilityComponentUVE>(entity)
                     : nullptr;
+            if (visibility != nullptr && visibility->visibilityParent != kInvalidEntityUVE) {
+                ++m_visibilityRedirectCount;
+            }
             m_pendingScratch.push_back(
                 PendingEntityUVE{entity, hierarchy.parent, &local, &world, visibility});
         });
@@ -249,6 +316,12 @@ void SceneGraphUVE::UpdateUVE(IEntityManagerUVE& entityManager) {
         }
 
         m_pendingScratch.resize(writeIndex);
+    }
+
+    // Redirects last: they need every transform-inherited answer already computed, including on
+    // entities the redirect points at from an unrelated branch.
+    if (m_visibilityRedirectCount > 0U) {
+        ResolveVisibilityParentsUVE(entityManager);
     }
 
     // A non-empty remainder here means a cycle slipped past SetParentUVE()'s guard - a genuine
