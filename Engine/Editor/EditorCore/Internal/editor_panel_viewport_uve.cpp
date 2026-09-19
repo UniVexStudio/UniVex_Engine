@@ -1,0 +1,326 @@
+// Copyright (c) 2026 UniVex Studios. All Rights Reserved.
+
+// The 3D viewport panel: the rendered image, the gizmo-mode overlay toolbar drawn on top of it,
+// and the status bubbles along its edge.
+//
+// Split out of editor_uve.cpp as the fifth panel. The gizmo icons come with it rather than
+// joining the shared icon header - they are used by nothing else, and the rule this sequence has
+// followed throughout is that only helpers with callers on both sides of a split become shared.
+// Putting single-caller code in a shared header would make the header the new dumping ground the
+// split was meant to eliminate.
+//
+// Moved verbatim. Not one line of the three functions differs from what was in editor_uve.cpp.
+
+#include "uve/editor/editor_uve.h"
+
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
+
+#include <imgui.h>
+#include <backends/imgui_impl_glfw.h>
+#include <backends/imgui_impl_opengl3.h>
+
+#include "editor_chrome_layout_uve.h"
+#include "editor_fonts_uve.h"
+#include "editor_node_icons_uve.h"
+
+namespace UVE::Editor {
+namespace {
+
+constexpr const char* kPanelLabelViewportUVE = "\xEE\xA9\x94 Viewport##viewport";
+
+// ---- Viewport overlay toolbar - procedurally-drawn gizmo-mode icons -------------------------
+// Same "invisible hit-area button + custom ImDrawList paint" technique as DrawMenuBarUVE()'s own
+// playback buttons (AddTriangleFilled/AddRectFilled for Play/Pause/Stop) - kept vector-drawn
+// rather than adding new bitmap/SVG icon assets, both for consistency with that existing
+// precedent and because it needs no asset-pipeline regeneration.
+constexpr float kViewportBubbleIconRadiusUVE = 10.0F;
+
+void DrawRotateIconUVE(ImDrawList& drawList, const ImVec2 center, const float radius, const ImU32 color) {
+    constexpr float kPi = 3.14159265F;
+    const float arcRadius = radius * 0.58F;
+    constexpr float kStartAngle = -0.35F * kPi;
+    constexpr float kEndAngle = 1.15F * kPi;
+    drawList.PathArcTo(center, arcRadius, kStartAngle, kEndAngle, 24);
+    drawList.PathStroke(color, ImDrawFlags_None, 1.5F);
+    const ImVec2 tip{center.x + std::cos(kEndAngle) * arcRadius, center.y + std::sin(kEndAngle) * arcRadius};
+    const ImVec2 tangent{-std::sin(kEndAngle), std::cos(kEndAngle)};
+    const float headSize = radius * 0.28F;
+    const ImVec2 outward{std::cos(kEndAngle), std::sin(kEndAngle)};
+    const ImVec2 baseA{tip.x - tangent.x * headSize + outward.x * headSize * 0.5F,
+                       tip.y - tangent.y * headSize + outward.y * headSize * 0.5F};
+    const ImVec2 baseB{tip.x + tangent.x * headSize + outward.x * headSize * 0.5F,
+                       tip.y + tangent.y * headSize + outward.y * headSize * 0.5F};
+    drawList.AddTriangleFilled(tip, baseA, baseB, color);
+}
+
+void DrawScaleIconUVE(ImDrawList& drawList, const ImVec2 center, const float radius, const ImU32 color) {
+    const float half = radius * 0.42F;
+    const ImVec2 topLeft{center.x - half, center.y - half};
+    const ImVec2 bottomRight{center.x + half, center.y + half};
+    drawList.AddRect(topLeft, bottomRight, color, 0.0F, 0, 1.4F);
+    const float handle = radius * 0.20F;
+    const std::array<ImVec2, 4> corners{topLeft, ImVec2{bottomRight.x, topLeft.y}, bottomRight,
+                                        ImVec2{topLeft.x, bottomRight.y}};
+    for (const ImVec2& corner : corners) {
+        drawList.AddRectFilled(ImVec2{corner.x - handle * 0.5F, corner.y - handle * 0.5F},
+                               ImVec2{corner.x + handle * 0.5F, corner.y + handle * 0.5F}, color);
+    }
+}
+
+void DrawUniversalIconUVE(ImDrawList& drawList, const ImVec2 center, const float radius, const ImU32 color) {
+    drawList.AddCircle(center, radius * 0.62F, color, 20, 1.3F);
+    const float half = radius * 0.22F;
+    drawList.AddRectFilled(ImVec2{center.x - half, center.y - half}, ImVec2{center.x + half, center.y + half},
+                           color);
+}
+
+void DrawGridIconUVE(ImDrawList& drawList, const ImVec2 center, const float radius, const ImU32 color) {
+    const float half = radius * 0.5F;
+    const float third = half * 2.0F / 3.0F;
+    drawList.AddRect(ImVec2{center.x - half, center.y - half}, ImVec2{center.x + half, center.y + half}, color,
+                     0.0F, 0, 1.2F);
+    for (int index = 1; index < 3; ++index) {
+        const float offset = -half + third * static_cast<float>(index);
+        drawList.AddLine(ImVec2{center.x - half, center.y + offset}, ImVec2{center.x + half, center.y + offset},
+                         color, 1.0F);
+        drawList.AddLine(ImVec2{center.x + offset, center.y - half}, ImVec2{center.x + offset, center.y + half},
+                         color, 1.0F);
+    }
+}
+
+// Draws one circular toggle button (filled background, blue-highlighted when `active`) at the
+// cursor's current screen position and advances the cursor past it via ImGui::SameLine() - `drawIcon`
+// paints whatever glyph belongs on top, already centered and radius-scaled.
+template <typename DrawIconUVE>
+[[nodiscard]] bool DrawViewportBubbleIconButtonUVE(const char* const id, const bool active,
+                                                   DrawIconUVE&& drawIcon) {
+    ImGui::PushID(id);
+    const float diameter = kViewportBubbleIconRadiusUVE * 2.0F;
+    const bool pressed = ImGui::InvisibleButton("##bubble-icon", ImVec2{diameter, diameter});
+    const bool hovered = ImGui::IsItemHovered();
+    const ImVec2 minimum = ImGui::GetItemRectMin();
+    const ImVec2 maximum = ImGui::GetItemRectMax();
+    const ImVec2 center{(minimum.x + maximum.x) * 0.5F, (minimum.y + maximum.y) * 0.5F};
+    ImDrawList& drawList = *ImGui::GetWindowDrawList();
+    const ImU32 backgroundColor = active ? IM_COL32(64, 132, 214, 235)
+                                         : (hovered ? IM_COL32(255, 255, 255, 28) : IM_COL32(255, 255, 255, 10));
+    drawList.AddCircleFilled(center, kViewportBubbleIconRadiusUVE, backgroundColor, 20);
+    const ImU32 iconColor = active ? IM_COL32(255, 255, 255, 255) : IM_COL32(214, 220, 230, 220);
+    drawIcon(drawList, center, kViewportBubbleIconRadiusUVE, iconColor);
+    ImGui::PopID();
+    return pressed;
+}
+} // namespace
+
+void EditorUVE::RenderOverlayUVE() {
+    if (m_state != EditorStateUVE::Running || !m_uiInitialized) {
+        return;
+    }
+
+    ImGui_ImplOpenGL3_NewFrame();
+    ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
+    DrawMenuBarUVE();
+    DrawPluginWindowUVE();
+
+    if (m_activeWorkspace == EditorWorkspaceUVE::Scripting) {
+        DrawScriptingWorkspaceUVE();
+    } else {
+        DrawHierarchyPanelUVE();
+        DrawViewportPanelUVE();
+        DrawInspectorPanelUVE();
+        DrawBottomDockContentUVE();
+    }
+    ImGui::Render();
+    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+}
+
+void EditorUVE::SetViewportPanelRendererUVE(ViewportPanelRendererUVE renderer) {
+    m_viewportPanelRenderer = std::move(renderer);
+}
+
+void EditorUVE::DrawViewportPanelUVE() {
+    if (!m_viewportPanelVisible) {
+        return;
+    }
+    // Same "fixed default position/size for a fresh session, never fought on later frames" shape
+    // as DrawHierarchyPanelUVE()/DrawInspectorPanelUVE() (see their own comments) - this panel
+    // fills the gap those two leave between them, matching the space actually visible on screen
+    // rather than an arbitrary default ImGui would otherwise cascade this window into.
+    const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
+    const EditorChromeLayoutUVE layout = ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible);
+    // Always, not FirstUseEver: this is one of the 5 core structural panels that must tile the
+    // screen with zero gaps/overlaps on every single launch, regardless of any stale imgui.ini
+    // from a previous version of this layout (see the other 4 core panels' own identical comment
+    // and the checkpoint that root-caused this - FirstUseEver only applies a fresh position/size
+    // the very first time a window ID has ever existed in a saved layout file, so any old ini
+    // permanently freezes a panel at a since-outdated position/size). Only secondary/optional
+    // windows (Plugin Tools, the Scripting canvas) keep FirstUseEver, since those are genuinely
+    // meant to be user-repositionable extras rather than part of the fixed chrome.
+    ImGui::SetNextWindowPos(layout.viewportPos, ImGuiCond_Always);
+    ImGui::SetNextWindowSize(layout.viewportSize, ImGuiCond_Always);
+    // Zero interior padding for the viewport window so the rendered 3D image fills the panel
+    // edge-to-edge (the reference has the grid reaching all four edges with the toolbar floating on
+    // top); with the theme's default WindowPadding the GL image is inset ~8px all around, leaving an
+    // empty border band. Only this window opts out - the overlay bubbles still float on top since
+    // they anchor off the image origin, which now sits flush in the panel corner.
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{0.0F, 0.0F});
+    if (!ImGui::Begin(kPanelLabelViewportUVE, &m_viewportPanelVisible, ImGuiWindowFlags_NoCollapse)) {
+        ImGui::End();
+        ImGui::PopStyleVar();
+        return;
+    }
+    const ImVec2 availableRegion = ImGui::GetContentRegionAvail();
+    if (m_viewportPanelRenderer && availableRegion.x > 0.0F && availableRegion.y > 0.0F) {
+        m_viewportOverlayState.gameWorkspaceActive = m_activeWorkspace == EditorWorkspaceUVE::Game;
+        const Math::Vector2UVE available{availableRegion.x, availableRegion.y};
+        Math::Vector2UVE used{0.0F, 0.0F};
+        // Whatever the overlay bubbles below changed last frame - the renderer applies it to its
+        // own real projection/gizmo-mode/grid state. One frame of lag between clicking a bubble
+        // and the render reflecting it is imperceptible and avoids restructuring this call to run
+        // after the image (whose rect the bubbles themselves need to position against).
+        const std::uint64_t textureId = m_viewportPanelRenderer(available, used, m_viewportOverlayState);
+        if (textureId != 0U && used.x > 0.0F && used.y > 0.0F) {
+            const ImVec2 cursorBeforeImage = ImGui::GetCursorScreenPos();
+            // The viewport renderer's framebuffer texture is a normal OpenGL render target
+            // (bottom-up texel origin), unlike the top-down icon textures DrawNativeIconLabelUVE
+            // displays elsewhere in this file - flip the V axis so the image displays right-side up.
+            ImGui::Image(static_cast<ImTextureID>(textureId), ImVec2{used.x, used.y}, ImVec2{0.0F, 1.0F},
+                         ImVec2{1.0F, 0.0F});
+            // The projection/gizmo-mode overlay bubbles are editor-authoring chrome - hidden while
+            // the Game workspace tab is active, matching Unity's own Scene/Game split where the
+            // Game view previews what a player would see with no editor overlays on top.
+            if (!m_viewportOverlayState.gameWorkspaceActive) {
+                DrawViewportOverlayBubblesUVE(Math::Vector2UVE{cursorBeforeImage.x, cursorBeforeImage.y},
+                                              Math::Vector2UVE{used.x, used.y});
+            }
+        }
+    }
+    ImGui::End();
+    ImGui::PopStyleVar();
+}
+
+void EditorUVE::DrawViewportOverlayBubblesUVE(const Math::Vector2UVE imageOriginUVE,
+                                              const Math::Vector2UVE imageSizeUVE) {
+    // Floating "bubble" toolbars over the rendered image itself (Unreal's own modern viewport
+    // overlay style), not a docked panel underneath - both bottom-anchored per the requested
+    // layout. Drawn against the main window's draw list with SetCursorScreenPos rather than a
+    // child window, so clicks land correctly without a second window stealing input focus from
+    // the Viewport panel's own scroll/hover state. Takes plain Math::Vector2UVE (not ImVec2) at
+    // the boundary since this is a private method declared in the public header - ImVec2 there
+    // would force every consumer of editor_uve.h (including Test/Editor's own test executable,
+    // which never links uve_editor_imgui) to have ImGui's include path just to parse the class.
+    const ImVec2 imageOrigin{imageOriginUVE.x, imageOriginUVE.y};
+    static_cast<void>(imageSizeUVE);
+    constexpr float kBubbleMarginUVE = 10.0F;
+    constexpr float kBubblePaddingXUVE = 6.0F;
+    constexpr float kBubblePaddingYUVE = 4.0F;
+    constexpr float kBubbleSpacingUVE = 3.0F;
+    // Gap between the gizmo-mode bubble and the projection pill, now that both sit side by side
+    // at the top of the viewport (matching Godot's own top-left toolbar-strip placement) instead
+    // of scattered bottom-left/bottom-center - a single visual row reads as one toolbar, not two.
+    constexpr float kBubbleGapUVE = 8.0F;
+    ImDrawList* const drawList = ImGui::GetWindowDrawList();
+    const float topY = imageOrigin.y + kBubbleMarginUVE;
+
+    // A vertical-dots glyph (U+22EE) drawn as text came out as "?" - the current base UI font
+    // has no glyph for it. Drawn procedurally instead, matching every other icon in this toolbar -
+    // reliable regardless of font coverage.
+    const char* const projectionLabel = m_viewportOverlayState.orthographic ? "Orthographic" : "Perspective";
+    const ImVec2 textSize = ImGui::CalcTextSize(projectionLabel);
+    constexpr float kDotsWidthUVE = 10.0F;
+    constexpr float kDotsToTextGapUVE = 5.0F;
+    const float pillWidth = kDotsWidthUVE + kDotsToTextGapUVE + textSize.x + kBubblePaddingXUVE * 2.0F;
+
+    constexpr int kButtonCount = 6;
+    const float diameter = kViewportBubbleIconRadiusUVE * 2.0F;
+    const float gizmoBubbleWidth = kBubblePaddingXUVE * 2.0F + diameter * static_cast<float>(kButtonCount) +
+                                   kBubbleSpacingUVE * static_cast<float>(kButtonCount - 1);
+
+    // Both bubbles share one height - the taller of the two contents (icon diameter vs. text) plus
+    // padding - so the pair reads as a single consistent toolbar strip rather than two mismatched
+    // pills; this is also what naturally makes the (previously shorter) projection pill bigger.
+    const float unifiedHeight =
+        std::max(kBubblePaddingYUVE * 2.0F + diameter, kBubblePaddingYUVE * 2.0F + textSize.y);
+
+    // ---- gizmo-mode + snap + grid bubble, top-left ------------------------------------------
+    const ImVec2 gizmoBubbleMin{imageOrigin.x + kBubbleMarginUVE, topY};
+    const ImVec2 gizmoBubbleMax{gizmoBubbleMin.x + gizmoBubbleWidth, gizmoBubbleMin.y + unifiedHeight};
+    {
+        drawList->AddRectFilled(gizmoBubbleMin, gizmoBubbleMax, IM_COL32(18, 21, 28, 200), unifiedHeight * 0.5F);
+        drawList->AddRect(gizmoBubbleMin, gizmoBubbleMax, IM_COL32(255, 255, 255, 24), unifiedHeight * 0.5F);
+
+        const float iconY = gizmoBubbleMin.y + (unifiedHeight - diameter) * 0.5F;
+        ImGui::SetCursorScreenPos(ImVec2{gizmoBubbleMin.x + kBubblePaddingXUVE, iconY});
+        const auto drawGizmoModeButton = [this](const char* const id, const ViewportGizmoModeUVE mode,
+                                                const auto& drawIcon) {
+            if (DrawViewportBubbleIconButtonUVE(id, m_viewportOverlayState.gizmoMode == mode, drawIcon)) {
+                m_viewportOverlayState.gizmoMode = mode;
+            }
+            ImGui::SameLine(0.0F, kBubbleSpacingUVE);
+        };
+        drawGizmoModeButton("##viewport-gizmo-move", ViewportGizmoModeUVE::Move, DrawMoveIconUVE);
+        drawGizmoModeButton("##viewport-gizmo-rotate", ViewportGizmoModeUVE::Rotate, DrawRotateIconUVE);
+        drawGizmoModeButton("##viewport-gizmo-scale", ViewportGizmoModeUVE::Scale, DrawScaleIconUVE);
+        drawGizmoModeButton("##viewport-gizmo-universal", ViewportGizmoModeUVE::Universal, DrawUniversalIconUVE);
+
+        const std::uintptr_t snapIconTextureId = m_uiAssets.GetGeneralIconTextureIdUVE("snap");
+        if (DrawViewportBubbleIconButtonUVE(
+                "##viewport-snap", m_viewportOverlayState.snapEnabled,
+                [snapIconTextureId](ImDrawList& list, const ImVec2 center, const float radius, const ImU32) {
+                    if (snapIconTextureId == 0U) {
+                        return;
+                    }
+                    const float half = radius * 0.55F;
+                    list.AddImage(static_cast<ImTextureID>(snapIconTextureId),
+                                  ImVec2{center.x - half, center.y - half}, ImVec2{center.x + half, center.y + half});
+                })) {
+            m_viewportOverlayState.snapEnabled = !m_viewportOverlayState.snapEnabled;
+        }
+        ImGui::SameLine(0.0F, kBubbleSpacingUVE);
+
+        if (DrawViewportBubbleIconButtonUVE("##viewport-grid", m_viewportOverlayState.gridVisible,
+                                            DrawGridIconUVE)) {
+            m_viewportOverlayState.gridVisible = !m_viewportOverlayState.gridVisible;
+        }
+    }
+
+    // ---- projection mode pill, top-left (right after the gizmo bubble) ---------------------
+    {
+        const ImVec2 pillMin{gizmoBubbleMax.x + kBubbleGapUVE, topY};
+        const ImVec2 pillMax{pillMin.x + pillWidth, pillMin.y + unifiedHeight};
+        ImGui::SetCursorScreenPos(pillMin);
+        ImGui::PushID("##viewport-projection-toggle");
+        const bool pressed = ImGui::InvisibleButton("##pill", ImVec2{pillWidth, unifiedHeight});
+        const bool hovered = ImGui::IsItemHovered();
+        ImGui::PopID();
+        drawList->AddRectFilled(pillMin, pillMax, hovered ? IM_COL32(30, 34, 44, 220) : IM_COL32(18, 21, 28, 200),
+                                unifiedHeight * 0.5F);
+        drawList->AddRect(pillMin, pillMax, IM_COL32(255, 255, 255, 24), unifiedHeight * 0.5F);
+        const float pillCenterY = (pillMin.y + pillMax.y) * 0.5F;
+        const float dotsCenterX = pillMin.x + kBubblePaddingXUVE + kDotsWidthUVE * 0.5F;
+        constexpr float kDotRadiusUVE = 1.4F;
+        constexpr float kDotSpacingUVE = 5.0F;
+        const ImU32 dotColor = IM_COL32(224, 228, 236, 255);
+        for (int index = -1; index <= 1; ++index) {
+            drawList->AddCircleFilled(ImVec2{dotsCenterX, pillCenterY + static_cast<float>(index) * kDotSpacingUVE},
+                                      kDotRadiusUVE, dotColor, 8);
+        }
+        drawList->AddText(ImVec2{pillMin.x + kBubblePaddingXUVE + kDotsWidthUVE + kDotsToTextGapUVE,
+                                 pillCenterY - textSize.y * 0.5F},
+                          dotColor, projectionLabel);
+        if (pressed) {
+            m_viewportOverlayState.orthographic = !m_viewportOverlayState.orthographic;
+        }
+    }
+}
+
+} // namespace UVE::Editor
