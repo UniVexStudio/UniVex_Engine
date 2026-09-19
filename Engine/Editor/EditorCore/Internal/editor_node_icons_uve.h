@@ -19,6 +19,7 @@
 #include "uve/component/rigid_body_component_uve.h"
 #include "uve/component/script_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
+#include "uve/editor/editor_uve.h" // EditorSceneComponentKindUVE, used by the classifier below
 #include "uve/nodes/3d/world_environment_3d_uve.h"
 
 namespace UVE::Editor {
