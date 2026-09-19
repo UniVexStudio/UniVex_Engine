@@ -3,6 +3,8 @@
 
 #include "uve/render_systems/mesh_renderer_uve.h"
 
+#include "uve/render_systems/mesh_visibility_set_uve.h"
+
 #include <atomic>
 #include <chrono>
 #include <limits>
@@ -286,6 +288,209 @@ TEST_F(MeshRendererUVETest, ExtractRenderQueueUVE_AssetNotReadyYet_ExcludedThenI
     EXPECT_EQ(secondAttempt.invalidAssetReferences, 0U);
     EXPECT_EQ(secondAttempt.pendingAssetLoads, 0U);
     EXPECT_EQ(secondAttempt.failedAssetLoads, 0U);
+}
+
+// ---------------------------------------------------------------------------
+// BuildVisibilitySetUVE / CullVisibilitySetIntoUVE - the frustum-independent
+// split.
+//
+// The claim this change makes is that it is a pure performance change: the
+// same scene must produce the same queue as before. So the load-bearing tests
+// here are EQUIVALENCE tests against ExtractRenderQueueIntoUVE, not tests of
+// the new functions in isolation - a new path that is merely self-consistent
+// but disagrees with the old one is exactly the failure worth catching.
+// ---------------------------------------------------------------------------
+
+TEST_F(MeshRendererUVETest, BuildAndCull_ProducesTheSameQueueAsSingleStepExtraction) {
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_equiv.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_equiv.uvemat");
+    // A mix of in-frustum and out-of-frustum entities, so the comparison covers the cull verdict
+    // rather than just agreeing that everything is visible.
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -30.0F}, meshGuid, materialGuid);
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 50.0F}, meshGuid, materialGuid);
+    MakeMeshEntityUVE(Math::Vector3UVE{500.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+    const Math::FrustumUVE frustum = MakeTestFrustumUVE();
+
+    RenderQueueUVE singleStep;
+    meshRenderer.ExtractRenderQueueIntoUVE(entityManager, assetManager, assetDatabase, frustum, singleStep);
+
+    MeshVisibilitySetUVE visibilitySet;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+    RenderQueueUVE twoStep;
+    meshRenderer.CullVisibilitySetIntoUVE(visibilitySet, frustum, twoStep);
+
+    ASSERT_EQ(twoStep.opaqueItems.size(), singleStep.opaqueItems.size());
+    ASSERT_EQ(twoStep.transparentItems.size(), singleStep.transparentItems.size());
+    for (std::size_t index = 0U; index < singleStep.opaqueItems.size(); ++index) {
+        EXPECT_EQ(twoStep.opaqueItems[index].worldMatrix, singleStep.opaqueItems[index].worldMatrix);
+        EXPECT_FLOAT_EQ(twoStep.opaqueItems[index].sortDepth, singleStep.opaqueItems[index].sortDepth);
+    }
+    EXPECT_EQ(twoStep.invalidAssetReferences, singleStep.invalidAssetReferences);
+    EXPECT_EQ(twoStep.pendingAssetLoads, singleStep.pendingAssetLoads);
+    EXPECT_EQ(twoStep.failedAssetLoads, singleStep.failedAssetLoads);
+    EXPECT_EQ(twoStep.invalidRenderEligibility, singleStep.invalidRenderEligibility);
+}
+
+TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_IsIndependentOfAnyFrustum) {
+    // The defining property. An entity far outside the main view still belongs in the candidate
+    // set, because a shadow cascade's frustum may well contain it - dropping it at build time
+    // would delete shadows cast by off-screen geometry, which is the classic version of this bug.
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_offscreen.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_offscreen.uvemat");
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 500.0F}, meshGuid, materialGuid);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    MeshVisibilitySetUVE visibilitySet;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+
+    EXPECT_EQ(visibilitySet.candidates.size(), 2U);
+    for (const MeshVisibilityCandidateUVE& candidate : visibilitySet.candidates) {
+        EXPECT_TRUE(candidate.placement.IsPlacedUVE());
+    }
+
+    // ...and the one behind the camera is the one the main view then rejects.
+    RenderQueueUVE queue;
+    meshRenderer.CullVisibilitySetIntoUVE(visibilitySet, MakeTestFrustumUVE(), queue);
+    EXPECT_EQ(queue.opaqueItems.size(), 1U);
+}
+
+TEST_F(MeshRendererUVETest, CullVisibilitySetIntoUVE_OneSetFeedsManyFrustaWithoutBeingConsumed) {
+    // The whole frame depends on this: the set is built once and culled four times, so culling
+    // must not move the handles out of it. A second cull returning fewer items would mean the
+    // shadow cascades silently lose casters after the first one runs.
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_reuse.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_reuse.uvemat");
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -20.0F}, meshGuid, materialGuid);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+    const Math::FrustumUVE frustum = MakeTestFrustumUVE();
+
+    MeshVisibilitySetUVE visibilitySet;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+
+    RenderQueueUVE first;
+    RenderQueueUVE second;
+    RenderQueueUVE third;
+    RenderQueueUVE fourth;
+    meshRenderer.CullVisibilitySetIntoUVE(visibilitySet, frustum, first);
+    meshRenderer.CullVisibilitySetIntoUVE(visibilitySet, frustum, second);
+    meshRenderer.CullVisibilitySetIntoUVE(visibilitySet, frustum, third);
+    meshRenderer.CullVisibilitySetIntoUVE(visibilitySet, frustum, fourth);
+
+    EXPECT_EQ(first.opaqueItems.size(), 2U);
+    EXPECT_EQ(fourth.opaqueItems.size(), first.opaqueItems.size());
+    EXPECT_EQ(visibilitySet.candidates.size(), 2U);
+    // The handles must still resolve after four culls - a moved-from handle would not.
+    for (const MeshVisibilityCandidateUVE& candidate : visibilitySet.candidates) {
+        EXPECT_TRUE(candidate.meshHandle.IsReadyUVE());
+        EXPECT_TRUE(candidate.materialHandle.IsReadyUVE());
+    }
+    ASSERT_EQ(fourth.opaqueItems.size(), 2U);
+    EXPECT_TRUE(fourth.opaqueItems[0].meshHandle.IsReadyUVE());
+}
+
+TEST_F(MeshRendererUVETest, CullVisibilitySetIntoUVE_DifferentFrustaSelectDifferentSubsets) {
+    // Proves the cull is genuinely per-frustum rather than baked in at build time - which is what
+    // would happen if visibility leaked into the shared step.
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_subset.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_subset.uvemat");
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 10.0F}, meshGuid, materialGuid);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    // The same frustum turned around to look down +Z instead of -Z.
+    Math::QuaternionUVE turnAround;
+    ASSERT_TRUE(Math::TryMakeAxisAngleUVE(Math::Vector3UVE{0.0F, 1.0F, 0.0F}, std::numbers::pi_v<float>,
+                                          turnAround));
+    const Math::Matrix4x4UVE behindView =
+        Math::Matrix4x4UVE::ViewFromPositionAndRotationUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, turnAround);
+    const Math::Matrix4x4UVE projection =
+        Math::Matrix4x4UVE::PerspectiveUVE(std::numbers::pi_v<float> / 2.0F, 1.0F, 1.0F, 100.0F);
+
+    MeshVisibilitySetUVE visibilitySet;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+    ASSERT_EQ(visibilitySet.candidates.size(), 2U);
+
+    RenderQueueUVE forwardQueue;
+    RenderQueueUVE backwardQueue;
+    meshRenderer.CullVisibilitySetIntoUVE(visibilitySet, MakeTestFrustumUVE(), forwardQueue);
+    meshRenderer.CullVisibilitySetIntoUVE(visibilitySet,
+                                          Math::FrustumUVE::FromViewProjectionUVE(projection * behindView),
+                                          backwardQueue);
+
+    EXPECT_EQ(forwardQueue.opaqueItems.size(), 1U);
+    EXPECT_EQ(backwardQueue.opaqueItems.size(), 1U);
+    // Different entities, from one shared candidate set.
+    EXPECT_NE(forwardQueue.opaqueItems[0].worldMatrix, backwardQueue.opaqueItems[0].worldMatrix);
+}
+
+TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_ReusedAcrossFrames_DoesNotAccumulate) {
+    // Renderer3DUVE holds one set for the lifetime of the renderer, so appending instead of
+    // clearing would re-render every frame the scene has ever had.
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_frames.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_frames.uvemat");
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    MeshVisibilitySetUVE visibilitySet;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+
+    EXPECT_EQ(visibilitySet.candidates.size(), 1U);
+    EXPECT_EQ(visibilitySet.invalidAssetReferences, 0U);
+    EXPECT_EQ(visibilitySet.failedAssetLoads, 0U);
+}
+
+TEST_F(MeshRendererUVETest, CullVisibilitySetIntoUVE_CountersDescribeTheSceneNotTheView) {
+    // An unassigned entity is one broken entity regardless of how many frusta ask, so every queue
+    // built from the set reports the same count - not one per cascade.
+    //
+    // Both guids are left invalid together, matching ExtractRenderQueueUVE_InvalidGuid_Skipped:
+    // MeshComponentUVE's invariant is that the two are assigned or unassigned TOGETHER, so a
+    // half-assigned component is a component bug and trips UVE_ASSERT before extraction sees it.
+    // Hence two counted references for the one entity.
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_counters.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_counters.uvemat");
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -12.0F}, Asset::kInvalidAssetGuidUVE,
+                      Asset::kInvalidAssetGuidUVE);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    MeshVisibilitySetUVE visibilitySet;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+    EXPECT_EQ(visibilitySet.invalidAssetReferences, 2U);
+    EXPECT_EQ(visibilitySet.candidates.size(), 1U);
+
+    RenderQueueUVE first;
+    RenderQueueUVE second;
+    meshRenderer.CullVisibilitySetIntoUVE(visibilitySet, MakeTestFrustumUVE(), first);
+    meshRenderer.CullVisibilitySetIntoUVE(visibilitySet, MakeTestFrustumUVE(), second);
+
+    EXPECT_EQ(first.invalidAssetReferences, 2U);
+    EXPECT_EQ(second.invalidAssetReferences, 2U);
+}
+
+TEST_F(MeshRendererUVETest, CullVisibilitySetIntoUVE_EmptySetClearsTheQueue) {
+    // The queue is caller-owned and reused, so a frame that culls nothing must leave an empty
+    // queue rather than last frame's contents.
+    RenderQueueUVE queue;
+    queue.opaqueItems.reserve(4U);
+
+    MeshVisibilitySetUVE visibilitySet;
+    meshRenderer.CullVisibilitySetIntoUVE(visibilitySet, MakeTestFrustumUVE(), queue);
+
+    EXPECT_TRUE(queue.opaqueItems.empty());
+    EXPECT_TRUE(queue.transparentItems.empty());
 }
 
 } // namespace

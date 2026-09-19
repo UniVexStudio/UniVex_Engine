@@ -577,6 +577,9 @@ struct Renderer3DUVE::ImplUVE {
     /// Batch scratch for the shadow cascades, one per cascade so consecutive cascades do not
     /// thrash a single set's capacity.
     std::array<RenderBatchSetUVE, kShadowCascadeCountUVE> shadowBatches;
+    /// This frame's frustum-independent candidate set, reused across frames so a scene-sized
+    /// vector is not reallocated every frame.
+    MeshVisibilitySetUVE visibilitySet;
     std::shared_ptr<Shader::ShaderProgramUVE> toneMappingProgram;
 
     /// Phase 2b post-process toggles, consulted while building each frame's render graph (see
@@ -1899,6 +1902,13 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
         m_impl->lightSystem.ExtractActiveLightsForViewUVE(entityManager, viewPosition);
     const Math::Vector3UVE ambientColor = ResolveWorldEnvironmentAmbientUVE(entityManager, m_impl->ambientColor);
 
+    // Built ONCE for the whole frame, then culled against each of the four frusta below. Before
+    // this, the full extraction walk ran per frustum - three shadow cascades plus the main view -
+    // re-resolving the same asset handles and recomputing the same world matrices and bounds four
+    // times over to reach four different plane tests. Only the plane test ever differed.
+    m_impl->meshRenderer.BuildVisibilitySetUVE(entityManager, m_impl->assetManager, m_impl->assetDatabase,
+                                               m_impl->visibilitySet);
+
     const LightDataUVE* const shadowCaster = FindShadowCasterUVE(lights);
     bool shadowsReady = shadowCaster != nullptr && m_impl->shadowProgram->IsValidUVE() &&
                         AreShadowMapTargetsValidUVE(m_impl->shadowMapTargets);
@@ -1954,8 +1964,8 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             }
             const Math::FrustumUVE lightFrustum =
                 m_impl->cameraSystem.ExtractFrustumUVE(lightSpaceMatrices[cascadeIndex]);
-            m_impl->meshRenderer.ExtractRenderQueueIntoUVE(entityManager, m_impl->assetManager, m_impl->assetDatabase,
-                                                            lightFrustum, m_impl->shadowQueues[cascadeIndex]);
+            m_impl->meshRenderer.CullVisibilitySetIntoUVE(m_impl->visibilitySet, lightFrustum,
+                                                          m_impl->shadowQueues[cascadeIndex]);
             m_impl->shadowQueues[cascadeIndex].SortUVE();
                 cascadeNearPlane = cascadeFarPlane;
             }
@@ -1973,8 +1983,7 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                                           m_impl->shadowCascadeBlendRatio};
 
     RenderQueueUVE& queue = m_impl->frameQueue;
-    m_impl->meshRenderer.ExtractRenderQueueIntoUVE(entityManager, m_impl->assetManager, m_impl->assetDatabase,
-                                                   frustum, queue);
+    m_impl->meshRenderer.CullVisibilitySetIntoUVE(m_impl->visibilitySet, frustum, queue);
     if (m_impl->particleRuntimeForFrame != nullptr) {
         const ParticleRenderSnapshotUVE particleSnapshot =
             ParticleRenderBridgeUVE::ExtractUVE(*m_impl->particleRuntimeForFrame);
