@@ -122,7 +122,6 @@ constexpr const char* kMenuLabelGameObjectUVE = "\xEF\xAA\x97 GameObject";
 constexpr const char* kMenuLabelPluginUVE = "\xEE\xAF\x99 Plugin";
 constexpr const char* kMenuLabelWindowUVE = "\xEE\xB6\xBA Window";
 constexpr const char* kMenuLabelHelpUVE = "\xEF\xA4\x9D Help";
-constexpr const char* kPanelLabelSceneUVE = "\xEF\xAB\xBA Scene##scene-panel";
 constexpr const char* kPanelLabelInspectorUVE = "\xEE\xA8\x83 Inspector##right-panel";
 constexpr const char* kPanelLabelContentBrowserUVE = "\xEE\xAA\xAD Content Browser##content-browser-panel";
 constexpr const char* kPanelLabelViewportUVE = "\xEE\xA9\x94 Viewport##viewport";
@@ -161,7 +160,6 @@ constexpr float kFilesystemLongPressThresholdSecondsUVE = 0.60F;
 constexpr int kMeshThumbnailSizeUVE = 64;
 constexpr float kScriptCanvasLongPressThresholdSecondsUVE = 0.55F;
 constexpr float kScriptCanvasLongPressMaxMovementPixelsUVE = 8.0F;
-constexpr std::size_t kMaximumEntityNameBytesUVE = 96U;
 constexpr float kMinimumViewportDistanceUVE = 0.5F;
 constexpr float kMaximumViewportDistanceUVE = 500.0F;
 constexpr float kMaximumViewportPitchRadiansUVE = 1.4835299F; // 85 degrees.
@@ -172,7 +170,6 @@ constexpr float kViewportNavigationHitRadiusPixelsUVE = 16.0F;
 constexpr float kViewportNavigationPlateRadiusPixelsUVE = 47.0F;
 constexpr float kMinimum2DCanvasZoomUVE = 0.10F;
 constexpr float kMaximum2DCanvasZoomUVE = 4.00F;
-constexpr const char* kHierarchyEntityPayloadUVE = "UVE_SCENE_HIERARCHY_ENTITY";
 
 // Side-panel widths derived from the editor's visual reference (a 1280px-wide window shows the
 // Scene panel at ~216px and the Inspector at ~256px): the proportional term hits those exact
@@ -505,7 +502,6 @@ void DrawFolderIconUVE(ImDrawList& drawList, const ImVec2 center, const float ra
     return HierarchyNodeIconKindUVE::Empty;
 }
 
-constexpr float kHierarchyNodeIconRadiusUVE = 7.0F;
 
 // Draws one circular toggle button (filled background, blue-highlighted when `active`) at the
 // cursor's current screen position and advances the cursor past it via ImGui::SameLine() - `drawIcon`
@@ -4181,194 +4177,6 @@ void EditorUVE::RebuildHierarchyFilterCacheUVE() {
     };
     for (const Scene::EntityUVE root : GetDocumentRootsUVE()) {
         static_cast<void>(visit(visit, root));
-    }
-}
-
-void EditorUVE::DrawHierarchyPanelUVE() {
-    if (!m_scenePanelVisible) {
-        return;
-    }
-    const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
-    const EditorChromeLayoutUVE layout = ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible);
-    // Always, not FirstUseEver: this is one of the 5 core structural panels that must tile the
-    // screen with zero gaps/overlaps on every single launch, regardless of any stale imgui.ini
-    // from a previous version of this layout - an earlier version of this code used FirstUseEver
-    // reasoning about a real docking system that was never actually built (this editor's panels
-    // are independently-positioned floating windows arranged to look tiled, not a real
-    // DockSpace/DockBuilder tree), so a stale ini entry from any prior layout formula change
-    // permanently froze this panel at an outdated position/size - exactly the "sira at di align"
-    // seams reported against a live build. Only secondary/optional windows (Plugin Tools, the
-    // Scripting canvas) keep FirstUseEver, since those are genuinely meant to be
-    // user-repositionable extras rather than part of the fixed chrome.
-    ImGui::SetNextWindowPos(layout.scenePos, ImGuiCond_Always);
-    ImGui::SetNextWindowSize(layout.sceneSize, ImGuiCond_Always);
-    ImGui::Begin(kPanelLabelSceneUVE);
-    std::array<char, 256> filterBuffer{};
-    m_hierarchyFilter.copy(filterBuffer.data(), filterBuffer.size() - 1U);
-    const float addNodeButtonWidth = ImGui::GetFrameHeight();
-    const bool canCreateNode = IsAuthoringCommandAllowedUVE();
-    ImGui::PushID("scene-add-node");
-    ImGui::BeginDisabled(!canCreateNode);
-    if (ImGui::Button("+", ImVec2{addNodeButtonWidth, addNodeButtonWidth})) {
-        ImGui::OpenPopup("scene-add-node-popup");
-    }
-    ImGui::EndDisabled();
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
-        ImGui::SetTooltip("Add Node");
-    }
-    ImGui::SameLine(0.0F, ImGui::GetStyle().ItemSpacing.x);
-    // No "Script" shortcut button here anymore - it duplicated the already-existing Scripting
-    // workspace tab (Scene / Scripting / Game) and only added clutter/clipping risk to this row.
-    ImGui::SetNextItemWidth(-1.0F);
-    if (ImGui::InputTextWithHint("##hierarchy-filter", "Search Nodes", filterBuffer.data(), filterBuffer.size())) {
-        m_hierarchyFilter = filterBuffer.data();
-        InvalidateHierarchyFilterCacheUVE();
-    }
-    if (ImGui::BeginPopup("scene-add-node-popup")) {
-        ImGui::TextDisabled("Add Node");
-        ImGui::Separator();
-        std::string_view lastCategory;
-        for (const Scene::Nodes::SceneNodeDescriptorUVE& descriptor :
-             Scene::Nodes::GetSceneNodeDescriptorsUVE()) {
-            if (descriptor.category != lastCategory) {
-                if (!lastCategory.empty()) {
-                    ImGui::Separator();
-                }
-                ImGui::TextUnformatted(descriptor.category.data());
-                lastCategory = descriptor.category;
-            }
-            ImGui::BeginDisabled(!descriptor.libraryCreatable);
-            if (ImGui::MenuItem(descriptor.displayName.data())) {
-                static_cast<void>(CreateDocumentSceneNodeUVE(descriptor.kind));
-            }
-            ImGui::EndDisabled();
-        }
-        ImGui::EndPopup();
-    }
-    ImGui::PopID();
-    RebuildHierarchyFilterCacheUVE();
-    const float hierarchyItemsHeight = std::max(36.0F, ImGui::GetContentRegionAvail().y);
-    if (ImGui::BeginChild("##scene-hierarchy-items", ImVec2{0.0F, hierarchyItemsHeight}, true,
-                           ImGuiWindowFlags_AlwaysVerticalScrollbar)) {
-        ImGui::BeginDisabled(!IsAuthoringCommandAllowedUVE());
-        for (const Scene::EntityUVE root : GetDocumentRootsUVE()) {
-            DrawHierarchyNodeUVE(root);
-        }
-        if (!GetDocumentRootsUVE().empty()) {
-            ImGui::Separator();
-            ImGui::TextDisabled("Drop entity here to make it a root");
-            AcceptHierarchyDropTargetUVE(Scene::kInvalidEntityUVE);
-        }
-        ImGui::EndDisabled();
-        ImGui::EndChild();
-    }
-    ImGui::End();
-}
-
-void EditorUVE::DrawHierarchyNodeUVE(const Scene::EntityUVE entity) {
-    if (!IsHierarchyEntityVisibleUVE(entity)) {
-        return;
-    }
-    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    const std::vector<Scene::EntityUVE> children =
-        m_services->GetSceneGraphUVE().GetChildrenUVE(entityManager, entity);
-    // OpenOnDoubleClick deliberately omitted: a double-click on this row now starts renaming (see
-    // below, matching Godot's own Scene dock convention) rather than toggling expand/collapse -
-    // OpenOnArrow alone still lets the arrow itself expand/collapse on click.
-    ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow;
-    if (children.empty()) {
-        flags |= ImGuiTreeNodeFlags_Leaf;
-    }
-    const bool selected = IsEntitySelectedUVE(entity);
-    const bool active = entity == m_selectedEntity;
-    if (selected) {
-        flags |= ImGuiTreeNodeFlags_Selected;
-    }
-    if (IsHierarchyFilterActiveUVE()) {
-        ImGui::SetNextItemOpen(true, ImGuiCond_Always);
-    }
-
-    const bool renaming = entity == m_hierarchyRenameEntity;
-    // Just enough leading space for the icon DrawHierarchyNodeIconUVE() draws into (see below) plus
-    // a small gap - was 4 spaces, which (combined with TreeNodeEx's own arrow-toggle spacing that
-    // every row reserves, leaf or not) pushed the icon+name noticeably right of the panel's left
-    // edge instead of hugging it.
-    const std::string visibleLabel = renaming ? "" : "  " + GetEntityDisplayLabelUVE(entity);
-    const std::string nodeLabel = visibleLabel + "##entity-" + std::to_string(entity.index) + ":" +
-                                  std::to_string(entity.generation);
-    if (active) {
-        ImGui::PushStyleColor(ImGuiCol_Header, IM_COL32(66, 84, 101, 235));
-        ImGui::PushStyleColor(ImGuiCol_HeaderActive, IM_COL32(101, 130, 154, 245));
-        ImGui::PushStyleColor(ImGuiCol_HeaderHovered, IM_COL32(88, 112, 133, 240));
-    }
-    const bool open = ImGui::TreeNodeEx(nodeLabel.c_str(), flags);
-    if (active) {
-        ImGui::PopStyleColor(3);
-    }
-    if (!renaming) {
-        // Draws into the gap the row's own 4-space label prefix already reserves before the name,
-        // so the icon lines up with the name the same way every other icon+name pair in this file
-        // does, without needing a second ImGui column or child window just for one glyph.
-        const ImVec2 itemMin = ImGui::GetItemRectMin();
-        const ImVec2 itemMax = ImGui::GetItemRectMax();
-        const float iconCenterY = (itemMin.y + itemMax.y) * 0.5F;
-        const float iconCenterX =
-            itemMin.x + ImGui::GetTreeNodeToLabelSpacing() + kHierarchyNodeIconRadiusUVE + 2.0F;
-        const HierarchyNodeIconKindUVE iconKind = ClassifyHierarchyNodeIconUVE(entityManager, entity);
-        DrawHierarchyNodeIconUVE(*ImGui::GetWindowDrawList(), ImVec2{iconCenterX, iconCenterY},
-                                kHierarchyNodeIconRadiusUVE, iconKind,
-                                m_uiAssets.GetGeneralIconTextureIdUVE("sun"),
-                                m_uiAssets.GetGeneralIconTextureIdUVE("environment"));
-    }
-    if (ImGui::IsItemClicked() && !renaming) {
-        if (ImGui::GetIO().KeyCtrl) {
-            ToggleEntitySelectionUVE(entity);
-        } else {
-            SelectEntityUVE(entity);
-        }
-    }
-    // Rename triggers the same way Godot's own Scene dock does: F2, or a double-click on an
-    // already-selected row - no separate "Rename" button cluttering the row (the button used to
-    // sit here, pushing further controls toward the panel's edge).
-    const bool canRenameSelected =
-        !renaming && HasSingleDocumentSelectionUVE() && entity == m_selectedEntity && IsAuthoringCommandAllowedUVE();
-    if (canRenameSelected && (ImGui::IsKeyPressed(ImGuiKey_F2) ||
-                              (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)))) {
-        m_hierarchyRenameEntity = entity;
-        m_hierarchyRenameBuffer = GetEntityDisplayLabelUVE(entity);
-        m_hierarchyRenameFocusRequested = true;
-    }
-    if (renaming) {
-        ImGui::SameLine();
-        std::array<char, kMaximumEntityNameBytesUVE + 1U> renameBuffer{};
-        m_hierarchyRenameBuffer.copy(renameBuffer.data(), renameBuffer.size() - 1U);
-        if (m_hierarchyRenameFocusRequested) {
-            ImGui::SetKeyboardFocusHere();
-            m_hierarchyRenameFocusRequested = false;
-        }
-        const bool committed = ImGui::InputText("##hierarchy-rename", renameBuffer.data(), renameBuffer.size(),
-                                                ImGuiInputTextFlags_EnterReturnsTrue);
-        m_hierarchyRenameBuffer = renameBuffer.data();
-        if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
-            CancelHierarchyRenameUVE();
-        } else if (committed) {
-            if (SetSelectedEntityNameUVE(m_hierarchyRenameBuffer)) {
-                InvalidateHierarchyFilterCacheUVE();
-            }
-            CancelHierarchyRenameUVE();
-        }
-    }
-    if (IsLifecycleCommandAllowedUVE() && IsDocumentEntityUVE(entity) && ImGui::BeginDragDropSource()) {
-        ImGui::SetDragDropPayload(kHierarchyEntityPayloadUVE, &entity, sizeof(entity));
-        ImGui::Text("Move %s", GetEntityDisplayLabelUVE(entity).c_str());
-        ImGui::EndDragDropSource();
-    }
-    AcceptHierarchyDropTargetUVE(entity);
-    if (open) {
-        for (const Scene::EntityUVE child : children) {
-            DrawHierarchyNodeUVE(child);
-        }
-        ImGui::TreePop();
     }
 }
 

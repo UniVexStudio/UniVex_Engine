@@ -121,6 +121,7 @@ add_library(uve_editor STATIC
     Internal/editor_ui_assets_uve.cpp
     Internal/mesh_thumbnail_renderer_uve.cpp
     Internal/editor_uve.cpp
+    Internal/editor_panel_hierarchy_uve.cpp
     Internal/inspector_drawer_registry_uve.cpp
     Internal/regression_harness_uve.cpp
     ${_uve_editor_font_incs}
