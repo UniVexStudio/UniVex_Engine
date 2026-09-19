@@ -57,8 +57,10 @@
 #include "uve/math/quaternion_uve.h"
 #include "uve/memory/memory_manager_uve.h"
 #include "uve/nodes/3d/hitbox_3d_uve.h"
+#include "uve/nodes/3d/hurtbox_3d_uve.h"
 #include "uve/nodes/3d/projectile_3d_uve.h"
 #include "uve/nodes/3d/ray_cast_3d_uve.h"
+#include "uve/physics/detail/shape_narrow_phase_uve.h"
 #include "uve/physics/character_controller_uve.h"
 #include "uve/physics/collision_system_uve.h"
 #include "uve/physics/physics_system_uve.h"
@@ -762,9 +764,92 @@ void EngineCoreUVE::SyncRayCast3DNodesUVE() {
         });
 }
 
+namespace {
+
+/// Snapshot of one hurtbox's world-space strike volume, taken once per frame by
+/// EngineCoreUVE::SyncHitbox3DNodesUVE() pass 1.
+struct HurtboxCandidateUVE final {
+    Scene::EntityUVE entity;
+    Math::Vector3UVE center;
+    Math::Vector3UVE halfExtents;
+    Math::QuaternionUVE rotation;
+    std::uint32_t collisionLayer = 1U;
+    std::uint32_t collisionMask = 0xFFFFFFFFU;
+    std::string damageChannel;
+};
+
+} // namespace
+
 void EngineCoreUVE::SyncHitbox3DNodesUVE() {
-    // All combat pairing semantics live with the node itself; this seam only provides the tick.
-    Scene::SyncHitbox3DStrikesUVE(*m_entityManager);
+    // Pass 1 (read-only): snapshot every enabled, valid hurtbox that has a world transform, so
+    // the mutation pass can evaluate every hitbox against a stable candidate set without
+    // holding ECS iteration open across a second ForEachUVE. The candidate set is deliberately
+    // unbounded - capping it would mean silently pretending hurtboxes beyond the cap do not
+    // exist; only the per-hitbox strike LIST is bounded, and it reports its own overflow.
+    std::vector<HurtboxCandidateUVE> candidates;
+    m_entityManager->ForEachUVE<Scene::WorldTransformComponentUVE, Scene::Hurtbox3DNodeComponentUVE>(
+        [&candidates](const Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE& worldTransform,
+                      const Scene::Hurtbox3DNodeComponentUVE& hurtbox) {
+            if (!hurtbox.enabled || !Scene::IsHurtbox3DNodeComponentValidUVE(hurtbox)) {
+                return;
+            }
+            HurtboxCandidateUVE candidate;
+            candidate.entity = entity;
+            candidate.center = worldTransform.worldPosition;
+            candidate.halfExtents = hurtbox.halfExtents;
+            if (!Math::TryNormalizeUVE(worldTransform.worldRotation, candidate.rotation)) {
+                candidate.rotation = {}; // degenerate rotation falls back to identity
+            }
+            candidate.collisionLayer = hurtbox.collisionLayer;
+            candidate.collisionMask = hurtbox.collisionMask;
+            candidate.damageChannel = hurtbox.damageChannel;
+            candidates.push_back(std::move(candidate));
+        });
+
+    // Pass 2: refresh every hitbox's runtime strike state against that snapshot.
+    m_entityManager->ForEachUVE<Scene::Hitbox3DNodeComponentUVE>(
+        [this, &candidates](const Scene::EntityUVE entity, Scene::Hitbox3DNodeComponentUVE& hitbox) {
+            hitbox.strikeCount = 0U;
+            hitbox.strikesTruncated = false;
+            if (!hitbox.enabled || !Scene::IsHitbox3DNodeComponentValidUVE(hitbox) ||
+                !m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(entity)) {
+                return;
+            }
+
+            const Scene::WorldTransformComponentUVE& worldTransform =
+                m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
+            Math::QuaternionUVE hitboxRotation{};
+            if (!Math::TryNormalizeUVE(worldTransform.worldRotation, hitboxRotation)) {
+                hitboxRotation = {}; // degenerate rotation falls back to identity
+            }
+
+            for (const HurtboxCandidateUVE& candidate : candidates) {
+                if (candidate.entity == entity) {
+                    continue; // a hitbox never strikes a hurtbox on its own entity
+                }
+                if ((candidate.collisionLayer & hitbox.collisionMask) == 0U ||
+                    (hitbox.collisionLayer & candidate.collisionMask) == 0U) {
+                    continue; // symmetric layer/mask acceptance, AreaOverlapSystemUVE-style
+                }
+                if (candidate.damageChannel != hitbox.damageChannel) {
+                    continue; // a strike requires matching damage channels
+                }
+                const std::optional<Math::PenetrationUVE> penetration =
+                    Physics::Detail::ComputeOrientedBoxOrientedBoxPenetrationUVE(
+                        worldTransform.worldPosition, hitbox.halfExtents, hitboxRotation,
+                        candidate.center, candidate.halfExtents, candidate.rotation);
+                if (!penetration.has_value()) {
+                    continue; // no overlap (touching boundaries are not strikes either)
+                }
+                if (hitbox.strikeCount >= Scene::kMaximumHitbox3DStrikesUVE) {
+                    hitbox.strikesTruncated = true;
+                    break;
+                }
+                hitbox.strikes[hitbox.strikeCount] =
+                    Scene::Hitbox3DStrikeUVE{candidate.entity, penetration->depth};
+                ++hitbox.strikeCount;
+            }
+        });
 }
 
 void EngineCoreUVE::SyncAdaptiveRenderResolutionUVE() {
