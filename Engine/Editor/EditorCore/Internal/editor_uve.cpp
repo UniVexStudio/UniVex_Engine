@@ -1317,6 +1317,30 @@ bool EditorUVE::LoadSceneUVE() {
     const Scene::EntityUVE sceneRoot = EnsureDocumentSceneRootUVE();
     if (sceneRoot != Scene::kInvalidEntityUVE) {
         Scene::ISceneGraphUVE& sceneGraph = m_services->GetSceneGraphUVE();
+
+        // Strip any marker other than the one root this document keeps. A .uvescene is plain JSON
+        // on disk, so a file can arrive carrying two of them - a badly resolved merge, a
+        // hand-edit, a future tool - and the loop below would then reparent the second one UNDER
+        // the first, leaving a root inside a root. That is not cosmetic: the editor refuses to
+        // delete or reparent a scene root, so the surplus would be an entity the user has no way
+        // to remove.
+        //
+        // The marker is stripped rather than the entity destroyed. The surplus root may well have
+        // children, and discarding authored content to repair a structural mistake is the wrong
+        // trade - demoted to an ordinary node it keeps its name, its transform and its subtree,
+        // and the migration below folds it under the real root like any other top-level entity.
+        std::vector<Scene::EntityUVE> surplusRoots;
+        entityManager.ForEachUVE<Scene::SceneRootComponentUVE>(
+            [&surplusRoots, sceneRoot](const Scene::EntityUVE entity, const Scene::SceneRootComponentUVE&) {
+                if (entity != sceneRoot) {
+                    surplusRoots.push_back(entity);
+                }
+            });
+        for (const Scene::EntityUVE surplus : surplusRoots) {
+            entityManager.RemoveComponentUVE<Scene::SceneRootComponentUVE>(surplus);
+            migrated = true; // the document no longer matches the bytes it was loaded from
+        }
+
         for (const Scene::EntityUVE topLevel : GetDocumentRootsUVE()) {
             if (topLevel != sceneRoot) {
                 sceneGraph.SetParentUVE(entityManager, topLevel, sceneRoot);
