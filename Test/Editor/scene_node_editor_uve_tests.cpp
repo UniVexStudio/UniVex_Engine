@@ -398,4 +398,58 @@ TEST(SceneNodeEditorUVETest, SceneRootUVE_LegacyMultiRootSceneFileAutoMigratesUn
 }
 
 } // namespace
+TEST(SceneNodeEditorUVETest, SceneRootUVE_FileCarryingTwoRootMarkersStillLoadsWithOneRoot) {
+    // The migration test above covers a LEGACY file - no marker at all. This covers the other
+    // direction: a file that carries two SceneRoot markers. That is not a file the editor can
+    // currently produce, but .uvescene is plain JSON on disk, so it is a file the editor can be
+    // handed - by a merge conflict resolved badly, a hand-edit, or a future tool.
+    //
+    // It matters more than it looks. The editor forbids deleting or reparenting a scene root, so
+    // a second root that survives load is not a cosmetic wart: it is an entity the user is
+    // structurally unable to remove.
+    Core::EngineCoreUVE engine(MakeSceneNodeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+        // Two independently-marked roots, as a badly merged file would hold.
+        const Scene::EntityUVE firstRoot = entityManager.CreateEntityUVE();
+        sceneGraph.AttachTransformUVE(entityManager, firstRoot, Scene::TransformComponentUVE{});
+        entityManager.AddComponentUVE<Scene::NameComponentUVE>(firstRoot, Scene::NameComponentUVE{"SceneRoot"});
+        entityManager.AddComponentUVE<Scene::SceneRootComponentUVE>(firstRoot, Scene::SceneRootComponentUVE{});
+        const Scene::EntityUVE secondRoot = entityManager.CreateEntityUVE();
+        sceneGraph.AttachTransformUVE(entityManager, secondRoot, Scene::TransformComponentUVE{});
+        entityManager.AddComponentUVE<Scene::NameComponentUVE>(secondRoot, Scene::NameComponentUVE{"SceneRoot"});
+        entityManager.AddComponentUVE<Scene::SceneRootComponentUVE>(secondRoot, Scene::SceneRootComponentUVE{});
+
+        const std::string path = "uve_scene_node_editor_two_root_markers_tests.uvescene";
+        std::filesystem::remove(path);
+        ASSERT_TRUE(engine.GetServicesUVE().GetSceneSerializerUVE().SaveUVE(
+            entityManager, {firstRoot, secondRoot}, path, Asset::AssetKindUVE::Scene));
+
+        {
+            EditorUVE editor(engine.GetServicesUVE(), path);
+            editor.InitUVE();
+            ASSERT_TRUE(editor.LoadSceneUVE());
+
+            // Exactly one entity may carry the marker afterwards. Counted directly rather than
+            // through GetDocumentSceneRootUVE, which returns the first hit and would report
+            // success even with a second marker buried in the hierarchy.
+            std::size_t markerCount = 0U;
+            entityManager.ForEachUVE<Scene::SceneRootComponentUVE>(
+                [&markerCount](const Scene::EntityUVE, const Scene::SceneRootComponentUVE&) { ++markerCount; });
+            EXPECT_EQ(markerCount, 1U)
+                << "a second scene-root marker survived load - the editor refuses to delete or "
+                   "reparent a root, so the user cannot remove it by hand";
+
+            EXPECT_EQ(editor.GetDocumentRootsUVE().size(), 1U);
+            editor.ShutdownUVE();
+        }
+        std::filesystem::remove(path);
+    }
+    engine.Shutdown();
+}
+
 } // namespace UVE::Editor::Tests
