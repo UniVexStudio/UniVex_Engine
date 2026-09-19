@@ -45,6 +45,7 @@
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/entity/entity_manager_uve.h"
 #include "uve/scene/scene_graph_uve.h"
+#include "uve/scene/nodes/scene_root_uve.h"
 
 namespace UVE::Scene::Tests {
 namespace {
@@ -1309,4 +1310,30 @@ TEST_F(SceneSerializerUVETest, LoadUVE_BadMagic_ReturnsEmptyAndLogsError) {
 }
 
 } // namespace
+
+TEST_F(SceneSerializerUVETest, SaveLoadUVE_SceneRootMarkerRoundTrips) {
+    // The scene root's marker component must survive a save/load cycle like every other
+    // component: a captured document root carrying it restores with the marker intact, and
+    // the restored hierarchy still has exactly one root.
+    SceneGraphUVE sceneGraph;
+    const EntityUVE root = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, root, TransformComponentUVE{});
+    entityManager.AddComponentUVE<NameComponentUVE>(root, NameComponentUVE{"SceneRoot"});
+    entityManager.AddComponentUVE<SceneRootComponentUVE>(root, SceneRootComponentUVE{});
+    const EntityUVE child = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, child, TransformComponentUVE{});
+    entityManager.AddComponentUVE<NameComponentUVE>(child, NameComponentUVE{"Empty"});
+    sceneGraph.SetParentUVE(entityManager, child, root);
+
+    const std::filesystem::path path = "uve_scene_serializer_tests_scene_root_marker.uvescene";
+    std::filesystem::remove(path);
+    ASSERT_TRUE(serializer.SaveUVE(entityManager, {root}, path, Asset::AssetKindUVE::Scene));
+
+    EntityManagerUVE loadedManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
+    const std::vector<EntityUVE> restoredRoots = serializer.LoadUVE(loadedManager, path);
+    ASSERT_EQ(restoredRoots.size(), 1U);
+    EXPECT_TRUE(loadedManager.HasComponentUVE<SceneRootComponentUVE>(restoredRoots[0U]));
+    std::filesystem::remove(path);
+}
+
 } // namespace UVE::Scene::Tests

@@ -45,7 +45,10 @@ constexpr std::array<std::string_view, 1U> kUITextContracts{"UITextComponentUVE"
 constexpr std::array<std::string_view, 1U> kUIImageContracts{"UIImageComponentUVE"};
 constexpr std::array<std::string_view, 1U> kUIButtonContracts{"UIButtonComponentUVE"};
 
-constexpr std::array<SceneNodeDescriptorUVE, 42U> kDescriptors{
+constexpr std::array<SceneNodeDescriptorUVE, 43U> kDescriptors{
+    // The document's structural root: created by the document lifecycle (new document,
+    // load-time migration), never through the Add-Node library - libraryCreatable is false.
+    SceneNodeDescriptorUVE{SceneNodeKindUVE::SceneRoot, "scene_root", "SceneRoot", "Scene", "Scene/SceneRootNodeDefinitionUVE", kNoContracts, false},
     SceneNodeDescriptorUVE{SceneNodeKindUVE::Empty, "empty", "Empty", "Scene", "Scene/ECS", kNoContracts, true},
     SceneNodeDescriptorUVE{SceneNodeKindUVE::Area3D, "area_3d", "Area3D", "Physics", "Physics/AreaOverlapSystemUVE", kAreaContracts, true},
     SceneNodeDescriptorUVE{SceneNodeKindUVE::RayCast3D, "ray_cast_3d", "RayCast3D", "Physics", "Physics/RaycastSystemUVE", kRayCastContracts, true},

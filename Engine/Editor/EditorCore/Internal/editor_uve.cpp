@@ -46,6 +46,7 @@
 #include "uve/component/collider_component_uve.h"
 #include "uve/nodes/3d/all_nodes_3d_uve.h"
 #include "uve/nodes/canvas_layer/all_nodes_canvas_layer_uve.h"
+#include "uve/scene/nodes/scene_root_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/light_component_uve.h"
 #include "uve/component/editor_internal_entity_component_uve.h"
@@ -856,6 +857,9 @@ void EditorUVE::InitUVE() {
     m_state = EditorStateUVE::Running;
     LoadSessionSettingsUVE();
     static_cast<void>(LoadVisualScriptWorkspaceUVE());
+    // A document always has exactly one scene root - the structural anchor at the top of the
+    // hierarchy. A fresh editor start is an empty document with just the root.
+    static_cast<void>(EnsureDocumentSceneRootUVE());
 }
 
 void EditorUVE::TickUVE() {
@@ -1292,13 +1296,31 @@ bool EditorUVE::LoadSceneUVE() {
         ClearDocumentSceneUVE();
         static_cast<void>(m_services->GetSceneSerializerUVE().LoadUVE(entityManager, recoveryPath));
         std::filesystem::remove(recoveryPath, error);
+        // Even a total load failure must not leave a rootless document behind.
+        static_cast<void>(EnsureDocumentSceneRootUVE());
         return false;
     }
 
     std::filesystem::remove(recoveryPath, error);
+    // Auto-migrate: a loaded document must end with exactly one scene root. Files saved before
+    // the root existed are legitimately multi-root (every Add-Node used to create a new root),
+    // so wrap their top-level entities under a fresh SceneRoot; files that already carry the
+    // root pass through untouched. Either way the in-memory document afterwards holds the
+    // one-root invariant every other document seam relies on.
+    bool migrated = false;
+    const Scene::EntityUVE sceneRoot = EnsureDocumentSceneRootUVE();
+    if (sceneRoot != Scene::kInvalidEntityUVE) {
+        Scene::ISceneGraphUVE& sceneGraph = m_services->GetSceneGraphUVE();
+        for (const Scene::EntityUVE topLevel : GetDocumentRootsUVE()) {
+            if (topLevel != sceneRoot) {
+                sceneGraph.SetParentUVE(entityManager, topLevel, sceneRoot);
+                migrated = true;
+            }
+        }
+    }
     ClearSelectionUVE();
     ClearHistoryUVE();
-    m_sceneDirty = false;
+    m_sceneDirty = migrated; // a wrapped legacy file no longer matches its bytes on disk
     InvalidateHierarchyFilterCacheUVE();
     return true;
 }
@@ -2194,10 +2216,28 @@ Scene::EntityUVE EditorUVE::CreateDocumentSceneNodeUVE(
             // per-file home (definition only, deliberately no Apply) is
             // uve/nodes/3d/animation_tree_uve.h.
             return Scene::kInvalidEntityUVE;
+        case Scene::Nodes::SceneNodeKindUVE::SceneRoot:
+            // The scene root is created by the document lifecycle
+            // (EnsureDocumentSceneRootUVE), never through the library path.
+            return Scene::kInvalidEntityUVE;
     }
 
     if (entity == Scene::kInvalidEntityUVE) {
         return Scene::kInvalidEntityUVE;
+    }
+
+    // New nodes join the hierarchy instead of becoming document roots: under the single
+    // selection when there is one, otherwise directly under the scene root.
+    Scene::EntityUVE parentNode = Scene::kInvalidEntityUVE;
+    if (m_selectedEntity != Scene::kInvalidEntityUVE && IsDocumentSubtreeUVE(m_selectedEntity)) {
+        parentNode = m_selectedEntity;
+    }
+    if (parentNode == Scene::kInvalidEntityUVE) {
+        parentNode = EnsureDocumentSceneRootUVE();
+    }
+    if (parentNode != Scene::kInvalidEntityUVE) {
+        m_services->GetSceneGraphUVE().SetParentUVE(entityManager, entity, parentNode);
+        InvalidateHierarchyFilterCacheUVE();
     }
 
     const std::optional<Scene::SceneSnapshotUVE> snapshot = CaptureSubtreeUVE(entity);
@@ -2211,12 +2251,14 @@ Scene::EntityUVE EditorUVE::CreateDocumentSceneNodeUVE(
     SelectEntityUVE(entity);
     m_sceneDirty = true;
     RecordHistoryUVE(SceneNodeCreationHistoryEntryUVE{
-        *snapshot, kind, entity, selectionBefore, CaptureSelectionSnapshotUVE(), dirtyBefore, true});
+        *snapshot, kind, entity, selectionBefore, CaptureSelectionSnapshotUVE(), dirtyBefore, true,
+        parentNode});
     return entity;
 }
 
 Scene::EntityUVE EditorUVE::DuplicateSelectedEntityUVE() {
-    if (!IsLifecycleCommandAllowedUVE() || !IsDocumentEntityUVE(m_selectedEntity)) {
+    if (!IsLifecycleCommandAllowedUVE() || !IsDocumentEntityUVE(m_selectedEntity) ||
+        IsSceneRootEntityUVE(m_selectedEntity)) {
         return Scene::kInvalidEntityUVE;
     }
 
@@ -2261,7 +2303,8 @@ Scene::EntityUVE EditorUVE::DuplicateSelectedEntityUVE() {
 }
 
 bool EditorUVE::DeleteSelectedEntityUVE() {
-    if (!IsLifecycleCommandAllowedUVE() || !IsDocumentEntityUVE(m_selectedEntity)) {
+    if (!IsLifecycleCommandAllowedUVE() || !IsDocumentEntityUVE(m_selectedEntity) ||
+        IsSceneRootEntityUVE(m_selectedEntity)) {
         return false;
     }
 
@@ -2363,7 +2406,8 @@ bool EditorUVE::ComputeKeepWorldLocalTransformUVE(const Scene::EntityUVE entity,
 }
 
 bool EditorUVE::ReparentDocumentEntityUVE(const Scene::EntityUVE entity, const Scene::EntityUVE newParent) {
-    if (!IsLifecycleCommandAllowedUVE() || !HasSceneGraphNodeUVE(entity) || !IsDocumentSubtreeUVE(entity) ||
+    if (!IsLifecycleCommandAllowedUVE() || IsSceneRootEntityUVE(entity) || !HasSceneGraphNodeUVE(entity) ||
+        !IsDocumentSubtreeUVE(entity) ||
         (newParent != Scene::kInvalidEntityUVE && !HasSceneGraphNodeUVE(newParent)) ||
         entity == newParent || DoesSubtreeContainEntityUVE(entity, newParent)) {
         return false;
@@ -2928,6 +2972,22 @@ Scene::EntityUVE EditorUVE::CreateDocumentEntityInternalUVE(
         default:
             return Scene::kInvalidEntityUVE;
     }
+
+    // Same hierarchy-joining rule as CreateDocumentSceneNodeUVE: under the single selection
+    // when there is one, otherwise directly under the scene root - never a new document root.
+    if (entity != Scene::kInvalidEntityUVE) {
+        Scene::EntityUVE parentNode = Scene::kInvalidEntityUVE;
+        if (m_selectedEntity != Scene::kInvalidEntityUVE && IsDocumentSubtreeUVE(m_selectedEntity)) {
+            parentNode = m_selectedEntity;
+        }
+        if (parentNode == Scene::kInvalidEntityUVE) {
+            parentNode = EnsureDocumentSceneRootUVE();
+        }
+        if (parentNode != Scene::kInvalidEntityUVE) {
+            m_services->GetSceneGraphUVE().SetParentUVE(entityManager, entity, parentNode);
+            InvalidateHierarchyFilterCacheUVE();
+        }
+    }
     return entity;
 }
 
@@ -3090,8 +3150,14 @@ bool EditorUVE::RedoHistoryEntryUVE(HistoryEntryUVE& entry) {
                     m_services->GetEntityManagerUVE().IsAliveUVE(typedEntry.activeEntity)) {
                     return false;
                 }
+                Scene::EntityUVE redoParent = typedEntry.createdUnderParent;
+                if (redoParent == Scene::kInvalidEntityUVE || !IsDocumentEntityUVE(redoParent)) {
+                    // The original parent is gone (deleted by later history, say) - re-home
+                    // under the scene root rather than dropping the node to document top level.
+                    redoParent = EnsureDocumentSceneRootUVE();
+                }
                 const Scene::EntityUVE restored =
-                    RestoreSubtreeUnderParentUVE(typedEntry.snapshot, Scene::kInvalidEntityUVE);
+                    RestoreSubtreeUnderParentUVE(typedEntry.snapshot, redoParent);
                 if (restored == Scene::kInvalidEntityUVE) {
                     return false;
                 }
@@ -3148,6 +3214,38 @@ bool EditorUVE::RedoHistoryEntryUVE(HistoryEntryUVE& entry) {
             }
         },
         entry);
+}
+
+bool EditorUVE::IsSceneRootEntityUVE(const Scene::EntityUVE entity) const {
+    return entity != Scene::kInvalidEntityUVE && m_services->GetEntityManagerUVE().IsAliveUVE(entity) &&
+           m_services->GetEntityManagerUVE().HasComponentUVE<Scene::SceneRootComponentUVE>(entity);
+}
+
+Scene::EntityUVE EditorUVE::GetDocumentSceneRootUVE() {
+    Scene::EntityUVE found = Scene::kInvalidEntityUVE;
+    m_services->GetEntityManagerUVE().ForEachUVE<Scene::SceneRootComponentUVE>(
+        [&found](const Scene::EntityUVE entity, const Scene::SceneRootComponentUVE&) {
+            if (found == Scene::kInvalidEntityUVE) {
+                found = entity; // markers are guarded to exactly one; first hit is THE root
+            }
+        });
+    return found;
+}
+
+Scene::EntityUVE EditorUVE::EnsureDocumentSceneRootUVE() {
+    const Scene::EntityUVE existing = GetDocumentSceneRootUVE();
+    if (existing != Scene::kInvalidEntityUVE) {
+        return existing;
+    }
+
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    const Scene::EntityUVE root =
+        CreateDocumentEntityShellInternalUVE(Scene::SceneRootNodeDefinitionUVE::defaultName);
+    if (root == Scene::kInvalidEntityUVE) {
+        return Scene::kInvalidEntityUVE;
+    }
+    Scene::ApplySceneRootNodeDefinitionUVE(entityManager, root, Scene::SceneRootNodeDefinitionUVE{});
+    return root;
 }
 
 std::vector<Scene::EntityUVE> EditorUVE::GetDocumentRootsUVE() {

@@ -53,6 +53,7 @@ enum class SceneNodeKindUVE : std::uint8_t {
     UIText,
     UIImage,
     UIButton,
+    SceneRoot,
 };
 
 struct SceneNodeDescriptorUVE final {

@@ -32,6 +32,12 @@ worse than no checklist.
 
 ### Working today
 
+- [x] SceneRoot — the document's single structural root (Godot-style one-root scene): created
+  automatically with every new document, every loaded legacy multi-root file is auto-migrated
+  under it on load, all new nodes join the hierarchy under the current selection (or the root
+  when nothing is selected), and it can never be deleted, re-parented, or duplicated. Structural
+  only by design — name + identity transform; scene-wide settings get their own authored homes
+  when the systems that consume them exist, not before.
 - [x] Empty — plain transform-only node, the base of every scene hierarchy.
 - [x] Camera3D — real camera, drives view/projection for rendering.
 - [x] MeshInstance3D — real mesh + material rendering through the lit shader pipeline.
