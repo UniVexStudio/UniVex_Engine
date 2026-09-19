@@ -65,6 +65,25 @@ struct TransformComponentUVE final {
     /// Which representation is authoritative. Switching to Quaternion is what a gizmo drag or a
     /// physics write does: it says "the quaternion is now the truth, stop replaying stale angles".
     RotationEditModeUVE rotationEditMode = RotationEditModeUVE::Euler;
+
+    /// Ignore the parent's transform: this entity's local values ARE its world values.
+    ///
+    /// The entity stays a child for every other purpose - it moves with the parent in the
+    /// outliner, it is deleted with the parent, it saves inside the parent's subtree, and it still
+    /// inherits visibility. Only the transform chain is cut.
+    ///
+    /// WHY THAT SPLIT IS THE USEFUL ONE. The cases that need this are things that belong to an
+    /// object organisationally but must not be dragged around by it: a camera parented to a rig so
+    /// it is saved and deleted with it, but aimed in world space; a projectile that keeps its
+    /// spawner as an owner after leaving the barrel; a UI marker filed under the entity it
+    /// annotates. Re-parenting to the scene root would achieve the transform part and lose all the
+    /// organisational part, which is why "just move it" is not the same answer.
+    ///
+    /// A top-level entity is also immune to a non-finite ancestor. It never reads the parent's
+    /// world transform, so a NaN above it cannot invalidate it - which is correct rather than
+    /// convenient: propagating a failure through a link the entity does not use would be inventing
+    /// a dependency.
+    bool topLevel = false;
 };
 
 /// Rebuilds `localRotation` from the authored Euler angles, when those are authoritative.

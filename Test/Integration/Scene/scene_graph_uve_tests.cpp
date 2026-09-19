@@ -768,5 +768,162 @@ TEST(TransformRotationAuthoringUVETest, NonFiniteAnglesAreRejectedWithoutTouchin
     EXPECT_FLOAT_EQ(transform.localRotation.w, good.w);
 }
 
+TEST_F(SceneGraphUVETest, UpdateUVE_TopLevelIgnoresTheParentTransform) {
+    // The whole point: local values become world values, as if the entity had no parent at all.
+    const EntityUVE parent = entityManager.CreateEntityUVE();
+    const EntityUVE child = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, parent, TransformComponentUVE{});
+    sceneGraph.AttachTransformUVE(entityManager, child, TransformComponentUVE{});
+    sceneGraph.SetParentUVE(entityManager, child, parent);
+
+    TransformComponentUVE parentLocal;
+    parentLocal.localPosition = Math::Vector3UVE{100.0F, 50.0F, -20.0F};
+    parentLocal.localScale = Math::Vector3UVE{3.0F, 3.0F, 3.0F};
+    sceneGraph.SetLocalTransformUVE(entityManager, parent, parentLocal);
+
+    TransformComponentUVE childLocal;
+    childLocal.localPosition = Math::Vector3UVE{1.0F, 2.0F, 3.0F};
+    childLocal.topLevel = true;
+    sceneGraph.SetLocalTransformUVE(entityManager, child, childLocal);
+    sceneGraph.UpdateUVE(entityManager);
+
+    const WorldTransformComponentUVE& world = entityManager.GetComponentUVE<WorldTransformComponentUVE>(child);
+    EXPECT_NEAR(world.worldPosition.x, 1.0F, kEpsilon) << "the parent's offset must not apply";
+    EXPECT_NEAR(world.worldPosition.y, 2.0F, kEpsilon);
+    EXPECT_NEAR(world.worldPosition.z, 3.0F, kEpsilon);
+    EXPECT_NEAR(world.worldScale.x, 1.0F, kEpsilon) << "nor the parent's scale";
+}
+
+TEST_F(SceneGraphUVETest, UpdateUVE_TopLevelStillInheritsVisibility) {
+    // Top level cuts the TRANSFORM chain only. If it also detached visibility there would be no
+    // way to get the organisational half - saved and deleted with the parent - without losing the
+    // ability to hide the group, which is most of why people parent things in the first place.
+    const EntityUVE parent = entityManager.CreateEntityUVE();
+    const EntityUVE child = entityManager.CreateEntityUVE();
+    for (const EntityUVE entity : {parent, child}) {
+        sceneGraph.AttachTransformUVE(entityManager, entity, TransformComponentUVE{});
+        entityManager.AddComponentUVE<VisibilityComponentUVE>(entity, VisibilityComponentUVE{});
+    }
+    sceneGraph.SetParentUVE(entityManager, child, parent);
+
+    TransformComponentUVE childLocal;
+    childLocal.topLevel = true;
+    sceneGraph.SetLocalTransformUVE(entityManager, child, childLocal);
+    entityManager.GetComponentUVE<VisibilityComponentUVE>(parent).visible = false;
+    sceneGraph.UpdateUVE(entityManager);
+
+    EXPECT_FALSE(entityManager.GetComponentUVE<VisibilityComponentUVE>(child).visibleInHierarchy)
+        << "hiding a parent must still hide a top-level child";
+}
+
+TEST_F(SceneGraphUVETest, UpdateUVE_TopLevelSurvivesANonFiniteParent) {
+    // An entity that does not read its parent's world transform cannot be corrupted by it.
+    // Invalidating it anyway would invent a dependency it deliberately does not have - and would
+    // make top level useless for the case it exists for, since a broken rig would take the
+    // detached camera down with it.
+    const EntityUVE parent = entityManager.CreateEntityUVE();
+    const EntityUVE normalChild = entityManager.CreateEntityUVE();
+    const EntityUVE topLevelChild = entityManager.CreateEntityUVE();
+    for (const EntityUVE entity : {parent, normalChild, topLevelChild}) {
+        sceneGraph.AttachTransformUVE(entityManager, entity, TransformComponentUVE{});
+    }
+    sceneGraph.SetParentUVE(entityManager, normalChild, parent);
+    sceneGraph.SetParentUVE(entityManager, topLevelChild, parent);
+
+    TransformComponentUVE detached;
+    detached.localPosition = Math::Vector3UVE{7.0F, 8.0F, 9.0F};
+    detached.topLevel = true;
+    sceneGraph.SetLocalTransformUVE(entityManager, topLevelChild, detached);
+
+    // Corrupt the parent directly - SetLocalTransformUVE would reject a non-finite transform.
+    entityManager.GetComponentUVE<TransformComponentUVE>(parent).localPosition.x =
+        std::numeric_limits<float>::quiet_NaN();
+    entityManager.GetComponentUVE<WorldTransformComponentUVE>(parent).dirty = true;
+    sceneGraph.UpdateUVE(entityManager);
+
+    // The ordinary child is invalidated, as it always was.
+    EXPECT_TRUE(entityManager.GetComponentUVE<WorldTransformComponentUVE>(normalChild).dirty);
+    // The top-level one is untouched and correct.
+    const WorldTransformComponentUVE& detachedWorld =
+        entityManager.GetComponentUVE<WorldTransformComponentUVE>(topLevelChild);
+    EXPECT_FALSE(detachedWorld.dirty) << "a NaN above must not reach an entity that never reads it";
+    EXPECT_NEAR(detachedWorld.worldPosition.x, 7.0F, kEpsilon);
+}
+
+TEST_F(SceneGraphUVETest, UpdateUVE_ClearingTopLevelReattachesToTheParentTransform) {
+    // The flag has to be reversible in place. Nothing else in the sweep is keyed on it, so a
+    // cached world transform could otherwise survive the change.
+    const EntityUVE parent = entityManager.CreateEntityUVE();
+    const EntityUVE child = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, parent, TransformComponentUVE{});
+    sceneGraph.AttachTransformUVE(entityManager, child, TransformComponentUVE{});
+    sceneGraph.SetParentUVE(entityManager, child, parent);
+
+    TransformComponentUVE parentLocal;
+    parentLocal.localPosition = Math::Vector3UVE{10.0F, 0.0F, 0.0F};
+    sceneGraph.SetLocalTransformUVE(entityManager, parent, parentLocal);
+
+    TransformComponentUVE childLocal;
+    childLocal.localPosition = Math::Vector3UVE{1.0F, 0.0F, 0.0F};
+    childLocal.topLevel = true;
+    sceneGraph.SetLocalTransformUVE(entityManager, child, childLocal);
+    sceneGraph.UpdateUVE(entityManager);
+    ASSERT_NEAR(entityManager.GetComponentUVE<WorldTransformComponentUVE>(child).worldPosition.x, 1.0F, kEpsilon);
+
+    childLocal.topLevel = false;
+    sceneGraph.SetLocalTransformUVE(entityManager, child, childLocal);
+    sceneGraph.UpdateUVE(entityManager);
+    EXPECT_NEAR(entityManager.GetComponentUVE<WorldTransformComponentUVE>(child).worldPosition.x, 11.0F, kEpsilon)
+        << "clearing the flag must restore the parent offset";
+}
+
+TEST_F(SceneGraphUVETest, UpdateUVE_TopLevelBecomesTheOriginForItsOwnChildren) {
+    // A top-level entity is a root for the subtree BELOW it: its children compose from it as
+    // normal. If they did not, the flag would flatten a whole branch instead of detaching one
+    // node, and a detached rig would come apart.
+    const EntityUVE grandparent = entityManager.CreateEntityUVE();
+    const EntityUVE detached = entityManager.CreateEntityUVE();
+    const EntityUVE grandchild = entityManager.CreateEntityUVE();
+    for (const EntityUVE entity : {grandparent, detached, grandchild}) {
+        sceneGraph.AttachTransformUVE(entityManager, entity, TransformComponentUVE{});
+    }
+    sceneGraph.SetParentUVE(entityManager, detached, grandparent);
+    sceneGraph.SetParentUVE(entityManager, grandchild, detached);
+
+    TransformComponentUVE grandparentLocal;
+    grandparentLocal.localPosition = Math::Vector3UVE{100.0F, 0.0F, 0.0F};
+    sceneGraph.SetLocalTransformUVE(entityManager, grandparent, grandparentLocal);
+
+    TransformComponentUVE detachedLocal;
+    detachedLocal.localPosition = Math::Vector3UVE{5.0F, 0.0F, 0.0F};
+    detachedLocal.topLevel = true;
+    sceneGraph.SetLocalTransformUVE(entityManager, detached, detachedLocal);
+
+    TransformComponentUVE grandchildLocal;
+    grandchildLocal.localPosition = Math::Vector3UVE{2.0F, 0.0F, 0.0F};
+    sceneGraph.SetLocalTransformUVE(entityManager, grandchild, grandchildLocal);
+    sceneGraph.UpdateUVE(entityManager);
+
+    EXPECT_NEAR(entityManager.GetComponentUVE<WorldTransformComponentUVE>(detached).worldPosition.x, 5.0F, kEpsilon);
+    EXPECT_NEAR(entityManager.GetComponentUVE<WorldTransformComponentUVE>(grandchild).worldPosition.x, 7.0F, kEpsilon)
+        << "the grandchild composes from the detached node, not from the grandparent";
+}
+
+TEST_F(SceneGraphUVETest, UpdateUVE_TopLevelOnARootEntityChangesNothing) {
+    // A root has no parent to ignore. Setting the flag there must be a no-op rather than an edge
+    // case - the Inspector shows the checkbox on every node, including roots.
+    const EntityUVE root = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, root, TransformComponentUVE{});
+    TransformComponentUVE local;
+    local.localPosition = Math::Vector3UVE{4.0F, 5.0F, 6.0F};
+    local.topLevel = true;
+    sceneGraph.SetLocalTransformUVE(entityManager, root, local);
+    sceneGraph.UpdateUVE(entityManager);
+
+    const WorldTransformComponentUVE& world = entityManager.GetComponentUVE<WorldTransformComponentUVE>(root);
+    EXPECT_NEAR(world.worldPosition.x, 4.0F, kEpsilon);
+    EXPECT_FALSE(world.dirty);
+}
+
 } // namespace
 } // namespace UVE::Scene::Tests
