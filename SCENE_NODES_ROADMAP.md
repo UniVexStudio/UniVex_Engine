@@ -65,12 +65,13 @@ worse than no checklist.
 - [~] BoneAttachment3D — attach-to-bone fields exist, nothing resolves/follows a bone transform.
 - [~] SpringArm3D — arm-length/collision fields exist, no camera-boom system consumes it.
 - [~] Marker3D — a plain position/orientation hint, has no behavior by design (this one may never need a "system" — it's meant to be read by other tools/scripts, not ticked itself).
-- [x] Hitbox3D — real per-frame strike detection: `SyncHitbox3DStrikesUVE()` (tick-driven by
-  `EngineCoreUVE::SyncHitbox3DNodesUVE()`) pairs every enabled hitbox against every enabled
-  Hurtbox3D with an exact 15-axis oriented-box-vs-oriented-box test (the same public
-  Physics::Detail helper AreaOverlapSystemUVE uses), symmetric layer/mask acceptance,
-  damage-channel equality, and self-exclusion, writing a bounded runtime-only strike list
-  (hurtbox entity + penetration depth, overflow flagged) back into the component every frame.
+- [x] Hitbox3D — real per-frame strike detection: `EngineCoreUVE::SyncHitbox3DNodesUVE()`
+  (the same engine-core home the RayCast3D/Projectile3D syncs use) pairs every enabled hitbox
+  against every enabled Hurtbox3D with an exact 15-axis oriented-box-vs-oriented-box test (the
+  same public Physics::Detail helper AreaOverlapSystemUVE uses), symmetric layer/mask
+  acceptance, damage-channel equality, and self-exclusion, writing a bounded runtime-only
+  strike list (hurtbox entity + penetration depth, overflow flagged) back into the component
+  every frame.
   One honest gap remains by design: applying what a strike *means* (damage, knockback,
   i-frames, events) is gameplay code no system owns yet — real, separate follow-up.
 - [x] Hurtbox3D — the receiving side of that same pairing: its extents/layer/mask/channel

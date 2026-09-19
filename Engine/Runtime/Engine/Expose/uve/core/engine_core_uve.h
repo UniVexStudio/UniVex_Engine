@@ -486,12 +486,22 @@ private:
     /// silently faked here.
     void SyncRayCast3DNodesUVE();
 
-    /// Thin tick wiring for the combat pairing: refreshes every Hitbox3D node's runtime strike
-    /// list against every Hurtbox3D node. The pairing contract itself (symmetric layer/mask
-    /// acceptance, damage-channel equality, self-exclusion, exact oriented-box overlap) lives
-    /// with the combat node in its own file - Scene::SyncHitbox3DStrikesUVE() - the same
-    /// one-truth-per-concept split RayCast3D/Projectile3D already follow for their behaviors.
-    /// Applying what a strike means (damage, knockback, events) is deliberately not done here.
+    /// The combat pairing, new wiring for previously unconsumed authored data: refreshes every
+    /// Hitbox3D node's runtime strike list against every Hurtbox3D node, every frame. The full
+    /// contract: only enabled, valid hitboxes and hurtboxes participate (everything else fails
+    /// closed - a disabled or invalid hitbox ends the frame with zero strikes, never stale
+    /// ones); both volumes are exact oriented boxes (world position/rotation + authored
+    /// halfExtents, world scale intentionally not applied - the ColliderComponentUVE/
+    /// AreaComponentUVE world-shape convention - degenerate rotations fall back to identity);
+    /// a strike requires symmetric layer/mask acceptance (AreaOverlapSystemUVE's rule) and
+    /// equal damage channels; a hitbox never strikes a hurtbox on its own entity; overlap is
+    /// the exact 15-axis oriented-box test from Physics::Detail, and touching boundaries are
+    /// not strikes. Like SyncRayCast3DNodesUVE()/SyncProjectile3DNodesUVE(), this lives in the
+    /// engine core tick rather than the node module so nodes stay pure authoring data (the
+    /// Physics include the exact test needs is not part of the Nodes/3D layer). The bounded
+    /// result list (kMaximumHitbox3DStrikesUVE, deterministic entity order, overflow flagged)
+    /// is runtime-only, never serialized. Applying what a strike means (damage, knockback,
+    /// events) is deliberately not done here - gameplay code no system owns yet.
     void SyncHitbox3DNodesUVE();
 
     /// Recomputes the bounded aspect-preserving render target from the live drawable size and
