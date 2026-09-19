@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "uve/component/transform_component_uve.h"
+#include "uve/component/physics_interpolation_component_uve.h"
 #include "uve/component/visibility_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/scene/i_scene_graph_uve.h"
@@ -46,6 +47,11 @@ private:
     struct WorldTransformPassStateUVE final {
         bool valid = false;
         bool recomputed = false;
+        /// This entity's resolved interpolation setting, for its children to inherit. Carried for
+        /// the same reason the visibility answer is: a child needs the ANSWER, and an entity with
+        /// no component still has one.
+        bool interpolatedInHierarchy = true;
+
         /// This entity's resolved visibility, for its children to inherit. Carried in the pass
         /// state rather than read back off the component because the child needs the ANSWER, and
         /// an entity with no VisibilityComponentUVE still has one - it is visible, and its
@@ -67,6 +73,12 @@ private:
         /// whether a component exists - the sweep runs once per entity per pass and that lookup
         /// would be pure overhead for the many entities that will never carry one.
         VisibilityComponentUVE* visibility = nullptr;
+
+        /// Null when the entity has no PhysicsInterpolationComponentUVE, which is the common case
+        /// and means "not interpolated". Resolved during the gather walk for the same reason the
+        /// visibility pointer is: the sweep can revisit an entity across several passes while it
+        /// waits for its parent, and an ECS existence check per pass would be paid for nothing.
+        PhysicsInterpolationComponentUVE* interpolation = nullptr;
     };
 
     /// Per-update scratch, cleared on entry to UpdateUVE(). Retained between calls purely to keep
@@ -78,6 +90,15 @@ private:
     /// than being treated as a break in the chain. That is what makes the component optional
     /// without putting a hole in the middle of a hierarchy.
     [[nodiscard]] static bool ResolveVisibilityUVE(const PendingEntityUVE& item, bool parentVisible) noexcept;
+
+    /// Resolves one entity's inherited interpolation setting, records this step's world pose into
+    /// the component, and publishes the resolved value.
+    ///
+    /// Recording happens here rather than in the physics system because this is the one place that
+    /// already knows a world transform has just been finalised - the physics system writes LOCAL
+    /// transforms and would have to wait for this sweep anyway.
+    static bool ResolveInterpolationUVE(const PendingEntityUVE& item, bool parentInterpolated,
+                                        const WorldTransformComponentUVE& world, bool poseChanged) noexcept;
 
     /// Second visibility pass, for entities that inherit from a VisibilityComponentUVE's
     /// `visibilityParent` instead of from their transform parent.

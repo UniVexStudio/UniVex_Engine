@@ -164,6 +164,51 @@ void SceneGraphUVE::ResolveVisibilityParentsUVE(IEntityManagerUVE& entityManager
         });
 }
 
+bool SceneGraphUVE::ResolveInterpolationUVE(const PendingEntityUVE& item, const bool parentInterpolated,
+                                            const WorldTransformComponentUVE& world,
+                                            const bool poseChanged) noexcept {
+    // No component means the entity is drawn at its simulated pose, and means the parent's answer
+    // passes straight through - an intermediate node that never opted in must not break a rig's
+    // inheritance chain, the same rule visibility follows.
+    if (item.interpolation == nullptr) {
+        return parentInterpolated;
+    }
+
+    PhysicsInterpolationComponentUVE& interpolation = *item.interpolation;
+    bool resolved = parentInterpolated;
+    if (interpolation.mode == PhysicsInterpolationModeUVE::On) {
+        resolved = true;
+    } else if (interpolation.mode == PhysicsInterpolationModeUVE::Off) {
+        resolved = false;
+    }
+    interpolation.interpolatedInHierarchy = resolved;
+
+    // Poses are recorded only when the transform actually changed. Recording on every sweep would
+    // collapse previous onto current for a stationary object, and the first frame after it began
+    // moving would then have nothing to blend from - a visible hitch at exactly the moment motion
+    // starts, which is the worst place for one.
+    if (poseChanged) {
+        if (interpolation.hasPreviousPose) {
+            interpolation.previousPosition = interpolation.currentPosition;
+            interpolation.previousRotation = interpolation.currentRotation;
+            interpolation.previousScale = interpolation.currentScale;
+        } else {
+            // First pose: seed previous to the same value so the object's first drawn frame
+            // blends from where it actually is, rather than flinging in from a default-constructed
+            // origin. hasPreviousPose stays meaningful - the blend still reports not-ready until a
+            // second, genuinely different pose has arrived.
+            interpolation.previousPosition = world.worldPosition;
+            interpolation.previousRotation = world.worldRotation;
+            interpolation.previousScale = world.worldScale;
+        }
+        interpolation.currentPosition = world.worldPosition;
+        interpolation.currentRotation = world.worldRotation;
+        interpolation.currentScale = world.worldScale;
+        interpolation.hasPreviousPose = true;
+    }
+    return resolved;
+}
+
 bool SceneGraphUVE::ResolveVisibilityUVE(const PendingEntityUVE& item, const bool parentVisible) noexcept {
     // No component means visible, and means the parent's state passes straight through. An entity
     // without the component is not a break in the chain - hiding a parent must still hide a
@@ -215,8 +260,12 @@ void SceneGraphUVE::UpdateUVE(IEntityManagerUVE& entityManager) {
             if (visibility != nullptr && visibility->visibilityParent != kInvalidEntityUVE) {
                 ++m_visibilityRedirectCount;
             }
+            PhysicsInterpolationComponentUVE* const interpolation =
+                entityManager.HasComponentUVE<PhysicsInterpolationComponentUVE>(entity)
+                    ? &entityManager.GetComponentUVE<PhysicsInterpolationComponentUVE>(entity)
+                    : nullptr;
             m_pendingScratch.push_back(
-                PendingEntityUVE{entity, hierarchy.parent, &local, &world, visibility});
+                PendingEntityUVE{entity, hierarchy.parent, &local, &world, visibility, interpolation});
         });
 
     // Level-order sweep, root-first: repeatedly process any pending entity whose parent has
@@ -268,7 +317,19 @@ void SceneGraphUVE::UpdateUVE(IEntityManagerUVE& entityManager) {
                 // a non-finite transform anywhere in a subtree quietly un-hide everything beneath
                 // a hidden ancestor.
                 const bool inherited = ResolveVisibilityUVE(item, parentIt->second.visibleInHierarchy);
-                m_passStateScratch.emplace(item.entity, WorldTransformPassStateUVE{false, false, inherited});
+                // No pose recorded on this arm: the world transform is not valid, so storing it
+                // would hand the renderer a NaN to blend towards and drag the object off over the
+                // following frames. Keeping the last good pose freezes it, which is recoverable.
+                const bool interpolated = ResolveInterpolationUVE(item, parentIt->second.interpolatedInHierarchy,
+                                                                  world, /*poseChanged=*/false);
+                // Designated initializers, deliberately: this aggregate has four same-typed bools
+                // and grew one in the middle, which silently rewired every positional call site
+                // here. Naming the fields makes the next addition a compile error instead.
+                m_passStateScratch.emplace(item.entity,
+                                           WorldTransformPassStateUVE{.valid = false,
+                                                                      .recomputed = false,
+                                                                      .interpolatedInHierarchy = interpolated,
+                                                                      .visibleInHierarchy = inherited});
                 madeProgress = true;
                 continue;
             }
@@ -309,9 +370,19 @@ void SceneGraphUVE::UpdateUVE(IEntityManagerUVE& entityManager) {
             // organisational half without the transform half.
             const bool parentVisible = !hasParent || parentIt->second.visibleInHierarchy;
             const bool inherited = ResolveVisibilityUVE(item, parentVisible);
+            // Interpolation follows the transform chain, not the hierarchy: a top-level entity
+            // simulates independently of its parent, so smoothing it against the parent's setting
+            // would describe motion it does not have.
+            const bool parentInterpolated = !composesFromParent || parentIt->second.interpolatedInHierarchy;
+            const bool interpolated =
+                ResolveInterpolationUVE(item, parentInterpolated, world,
+                                        /*poseChanged=*/shouldRecompute && publishedValid);
             m_passStateScratch.emplace(
                 item.entity,
-                WorldTransformPassStateUVE{publishedValid, shouldRecompute && publishedValid, inherited});
+                WorldTransformPassStateUVE{.valid = publishedValid,
+                                           .recomputed = shouldRecompute && publishedValid,
+                                           .interpolatedInHierarchy = interpolated,
+                                           .visibleInHierarchy = inherited});
             madeProgress = true;
         }
 

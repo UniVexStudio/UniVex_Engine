@@ -33,6 +33,7 @@ add_library(uve_component STATIC
     Internal/editor_description_component_uve.cpp
     Internal/name_component_uve.cpp
     Internal/particle_emitter_component_uve.cpp
+    Internal/physics_interpolation_component_uve.cpp
     Internal/prefab_instance_component_uve.cpp
     Internal/primitive_mesh_component_uve.cpp
     Internal/rigid_body_component_uve.cpp

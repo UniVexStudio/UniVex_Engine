@@ -1047,5 +1047,203 @@ TEST_F(SceneGraphUVETest, UpdateUVE_ARedirectPicksUpTheTargetsOwnInheritedState)
         << "a redirect inherits the target's resolved state, not just its own switch";
 }
 
+TEST_F(SceneGraphUVETest, UpdateUVE_InterpolationRecordsTwoPosesAsTheEntityMoves) {
+    // The core mechanic. One pose is not enough to blend between, so the first recorded step must
+    // NOT report itself as ready - otherwise a freshly spawned object blends in from wherever a
+    // default-constructed "previous" happens to be.
+    const EntityUVE entity = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, entity, TransformComponentUVE{});
+    entityManager.AddComponentUVE<PhysicsInterpolationComponentUVE>(
+        entity, PhysicsInterpolationComponentUVE{});
+
+    TransformComponentUVE local;
+    local.localPosition = Math::Vector3UVE{10.0F, 0.0F, 0.0F};
+    sceneGraph.SetLocalTransformUVE(entityManager, entity, local);
+    sceneGraph.UpdateUVE(entityManager);
+
+    {
+        const PhysicsInterpolationComponentUVE& interpolation =
+            entityManager.GetComponentUVE<PhysicsInterpolationComponentUVE>(entity);
+        EXPECT_NEAR(interpolation.currentPosition.x, 10.0F, kEpsilon);
+        EXPECT_NEAR(interpolation.previousPosition.x, 10.0F, kEpsilon)
+            << "the first pose must seed previous to itself, not leave it at the origin";
+    }
+
+    local.localPosition = Math::Vector3UVE{20.0F, 0.0F, 0.0F};
+    sceneGraph.SetLocalTransformUVE(entityManager, entity, local);
+    sceneGraph.UpdateUVE(entityManager);
+
+    const PhysicsInterpolationComponentUVE& interpolation =
+        entityManager.GetComponentUVE<PhysicsInterpolationComponentUVE>(entity);
+    EXPECT_NEAR(interpolation.previousPosition.x, 10.0F, kEpsilon);
+    EXPECT_NEAR(interpolation.currentPosition.x, 20.0F, kEpsilon);
+
+    Math::Vector3UVE position{};
+    Math::QuaternionUVE rotation{};
+    Math::Vector3UVE scale{};
+    ASSERT_TRUE(TryGetInterpolatedPoseUVE(interpolation, 0.5F, position, rotation, scale));
+    EXPECT_NEAR(position.x, 15.0F, kEpsilon) << "halfway between the two recorded poses";
+}
+
+TEST_F(SceneGraphUVETest, UpdateUVE_AStationaryEntityDoesNotCollapseItsTwoPoses) {
+    // If every sweep recorded a pose, a stationary object would have previous == current, and the
+    // first frame after it started moving would have nothing to blend from - a visible hitch
+    // exactly when motion begins, which is the worst possible moment for one.
+    const EntityUVE entity = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, entity, TransformComponentUVE{});
+    entityManager.AddComponentUVE<PhysicsInterpolationComponentUVE>(
+        entity, PhysicsInterpolationComponentUVE{});
+
+    TransformComponentUVE local;
+    local.localPosition = Math::Vector3UVE{1.0F, 0.0F, 0.0F};
+    sceneGraph.SetLocalTransformUVE(entityManager, entity, local);
+    sceneGraph.UpdateUVE(entityManager);
+    local.localPosition = Math::Vector3UVE{2.0F, 0.0F, 0.0F};
+    sceneGraph.SetLocalTransformUVE(entityManager, entity, local);
+    sceneGraph.UpdateUVE(entityManager);
+
+    // Several sweeps with nothing moving.
+    for (int frame = 0; frame < 5; ++frame) {
+        sceneGraph.UpdateUVE(entityManager);
+    }
+
+    const PhysicsInterpolationComponentUVE& interpolation =
+        entityManager.GetComponentUVE<PhysicsInterpolationComponentUVE>(entity);
+    EXPECT_NEAR(interpolation.previousPosition.x, 1.0F, kEpsilon)
+        << "idle sweeps must not overwrite the previous pose";
+    EXPECT_NEAR(interpolation.currentPosition.x, 2.0F, kEpsilon);
+}
+
+TEST_F(SceneGraphUVETest, UpdateUVE_InterpolationModeOffIsHonouredAndInherited) {
+    // Off must win over an inheriting ancestor, and Inherit must actually follow the parent -
+    // otherwise the three-value enum is really a two-value one.
+    const EntityUVE parent = entityManager.CreateEntityUVE();
+    const EntityUVE inheriting = entityManager.CreateEntityUVE();
+    const EntityUVE explicitlyOff = entityManager.CreateEntityUVE();
+    for (const EntityUVE entity : {parent, inheriting, explicitlyOff}) {
+        sceneGraph.AttachTransformUVE(entityManager, entity, TransformComponentUVE{});
+        entityManager.AddComponentUVE<PhysicsInterpolationComponentUVE>(
+            entity, PhysicsInterpolationComponentUVE{});
+    }
+    sceneGraph.SetParentUVE(entityManager, inheriting, parent);
+    sceneGraph.SetParentUVE(entityManager, explicitlyOff, parent);
+
+    entityManager.GetComponentUVE<PhysicsInterpolationComponentUVE>(parent).mode =
+        PhysicsInterpolationModeUVE::Off;
+    entityManager.GetComponentUVE<PhysicsInterpolationComponentUVE>(explicitlyOff).mode =
+        PhysicsInterpolationModeUVE::On;
+    sceneGraph.UpdateUVE(entityManager);
+
+    EXPECT_FALSE(entityManager.GetComponentUVE<PhysicsInterpolationComponentUVE>(parent).interpolatedInHierarchy);
+    EXPECT_FALSE(entityManager.GetComponentUVE<PhysicsInterpolationComponentUVE>(inheriting).interpolatedInHierarchy)
+        << "Inherit must follow the parent";
+    EXPECT_TRUE(entityManager.GetComponentUVE<PhysicsInterpolationComponentUVE>(explicitlyOff).interpolatedInHierarchy)
+        << "an explicit On must override an inheriting chain";
+}
+
+TEST_F(SceneGraphUVETest, UpdateUVE_AnEntityWithoutTheComponentPassesInterpolationThrough) {
+    // The component is optional, so an intermediate node usually will not have one. It must not
+    // break the chain - the same rule visibility follows.
+    const EntityUVE grandparent = entityManager.CreateEntityUVE();
+    const EntityUVE middle = entityManager.CreateEntityUVE();
+    const EntityUVE grandchild = entityManager.CreateEntityUVE();
+    for (const EntityUVE entity : {grandparent, middle, grandchild}) {
+        sceneGraph.AttachTransformUVE(entityManager, entity, TransformComponentUVE{});
+    }
+    entityManager.AddComponentUVE<PhysicsInterpolationComponentUVE>(
+        grandparent, PhysicsInterpolationComponentUVE{});
+    entityManager.AddComponentUVE<PhysicsInterpolationComponentUVE>(
+        grandchild, PhysicsInterpolationComponentUVE{});
+    sceneGraph.SetParentUVE(entityManager, middle, grandparent);
+    sceneGraph.SetParentUVE(entityManager, grandchild, middle);
+
+    entityManager.GetComponentUVE<PhysicsInterpolationComponentUVE>(grandparent).mode =
+        PhysicsInterpolationModeUVE::Off;
+    sceneGraph.UpdateUVE(entityManager);
+
+    EXPECT_FALSE(
+        entityManager.GetComponentUVE<PhysicsInterpolationComponentUVE>(grandchild).interpolatedInHierarchy)
+        << "a node without the component must pass the parent's setting through";
+}
+
+TEST_F(SceneGraphUVETest, UpdateUVE_ANonFiniteTransformDoesNotRecordAPoseToBlendTowards) {
+    // Recording a NaN pose would hand the renderer something to blend TOWARDS, dragging the object
+    // off to infinity over the following frames. Keeping the last good pose freezes it instead,
+    // which is visible and recoverable.
+    const EntityUVE entity = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, entity, TransformComponentUVE{});
+    entityManager.AddComponentUVE<PhysicsInterpolationComponentUVE>(
+        entity, PhysicsInterpolationComponentUVE{});
+
+    TransformComponentUVE local;
+    local.localPosition = Math::Vector3UVE{3.0F, 0.0F, 0.0F};
+    sceneGraph.SetLocalTransformUVE(entityManager, entity, local);
+    sceneGraph.UpdateUVE(entityManager);
+    local.localPosition = Math::Vector3UVE{4.0F, 0.0F, 0.0F};
+    sceneGraph.SetLocalTransformUVE(entityManager, entity, local);
+    sceneGraph.UpdateUVE(entityManager);
+
+    // Corrupt directly - SetLocalTransformUVE would reject a non-finite value.
+    entityManager.GetComponentUVE<TransformComponentUVE>(entity).localPosition.x =
+        std::numeric_limits<float>::quiet_NaN();
+    entityManager.GetComponentUVE<WorldTransformComponentUVE>(entity).dirty = true;
+    sceneGraph.UpdateUVE(entityManager);
+
+    const PhysicsInterpolationComponentUVE& interpolation =
+        entityManager.GetComponentUVE<PhysicsInterpolationComponentUVE>(entity);
+    EXPECT_TRUE(std::isfinite(interpolation.currentPosition.x)) << "a NaN must not reach the recorded pose";
+    EXPECT_NEAR(interpolation.currentPosition.x, 4.0F, kEpsilon);
+}
+
+TEST(PhysicsInterpolationBlendUVETest, ASingleRecordedPoseReportsNotReadyRatherThanBlendingFromTheOrigin) {
+    // The spawn bug this guards against only appears on an object's first visible frame, which is
+    // precisely when nobody is looking for it.
+    PhysicsInterpolationComponentUVE interpolation;
+    interpolation.currentPosition = Math::Vector3UVE{100.0F, 0.0F, 0.0F};
+    interpolation.hasPreviousPose = false;
+
+    Math::Vector3UVE position{7.0F, 7.0F, 7.0F};
+    Math::QuaternionUVE rotation{};
+    Math::Vector3UVE scale{};
+    EXPECT_FALSE(TryGetInterpolatedPoseUVE(interpolation, 0.5F, position, rotation, scale));
+    EXPECT_FLOAT_EQ(position.x, 7.0F) << "a rejected blend must not write its outputs";
+}
+
+TEST(PhysicsInterpolationBlendUVETest, AlphaIsClampedRatherThanRejectedAtTheBoundaries) {
+    // A timer that overshoots after a long frame should keep drawing smoothly, not stutter. And
+    // alpha 1.0 simply means "the current pose", which is a legitimate request.
+    PhysicsInterpolationComponentUVE interpolation;
+    interpolation.previousPosition = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+    interpolation.currentPosition = Math::Vector3UVE{10.0F, 0.0F, 0.0F};
+    interpolation.hasPreviousPose = true;
+
+    Math::Vector3UVE position{};
+    Math::QuaternionUVE rotation{};
+    Math::Vector3UVE scale{};
+    ASSERT_TRUE(TryGetInterpolatedPoseUVE(interpolation, 1.4F, position, rotation, scale));
+    EXPECT_NEAR(position.x, 10.0F, 1e-4F) << "an overshooting alpha must clamp to the current pose";
+    ASSERT_TRUE(TryGetInterpolatedPoseUVE(interpolation, -0.3F, position, rotation, scale));
+    EXPECT_NEAR(position.x, 0.0F, 1e-4F);
+
+    // A non-finite alpha is a different matter - there is no sensible clamp, so it is refused.
+    EXPECT_FALSE(TryGetInterpolatedPoseUVE(interpolation, std::numeric_limits<float>::quiet_NaN(), position,
+                                           rotation, scale));
+}
+
+TEST(PhysicsInterpolationBlendUVETest, TheSimulatedPoseIsUsedWhenInterpolationIsOff) {
+    // Off must actually mean off: the blend reports not-ready so the caller falls back to the
+    // world transform, rather than quietly returning a blended pose anyway.
+    PhysicsInterpolationComponentUVE interpolation;
+    interpolation.previousPosition = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+    interpolation.currentPosition = Math::Vector3UVE{10.0F, 0.0F, 0.0F};
+    interpolation.hasPreviousPose = true;
+    interpolation.interpolatedInHierarchy = false;
+
+    Math::Vector3UVE position{};
+    Math::QuaternionUVE rotation{};
+    Math::Vector3UVE scale{};
+    EXPECT_FALSE(TryGetInterpolatedPoseUVE(interpolation, 0.5F, position, rotation, scale));
+}
+
 } // namespace
 } // namespace UVE::Scene::Tests
