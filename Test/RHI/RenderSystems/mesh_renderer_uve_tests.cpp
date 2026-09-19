@@ -391,8 +391,8 @@ TEST_F(MeshRendererUVETest, CullVisibilitySetIntoUVE_OneSetFeedsManyFrustaWithou
     EXPECT_EQ(visibilitySet.candidates.size(), 2U);
     // The handles must still resolve after four culls - a moved-from handle would not.
     for (const MeshVisibilityCandidateUVE& candidate : visibilitySet.candidates) {
-        EXPECT_TRUE(candidate.meshHandle.IsReadyUVE());
-        EXPECT_TRUE(candidate.materialHandle.IsReadyUVE());
+        EXPECT_TRUE(visibilitySet.assetPairs[candidate.assetPairIndex].meshHandle.IsReadyUVE());
+        EXPECT_TRUE(visibilitySet.assetPairs[candidate.assetPairIndex].materialHandle.IsReadyUVE());
     }
     ASSERT_EQ(fourth.opaqueItems.size(), 2U);
     EXPECT_TRUE(fourth.opaqueItems[0].meshHandle.IsReadyUVE());
@@ -764,12 +764,12 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_EntitiesSharingAssets_EachOwnA
 
     ASSERT_EQ(visibilitySet.candidates.size(), static_cast<std::size_t>(kSharedEntityCount));
     for (const MeshVisibilityCandidateUVE& candidate : visibilitySet.candidates) {
-        EXPECT_EQ(candidate.meshHandle.GetGuidUVE(), meshGuid);
-        EXPECT_EQ(candidate.materialHandle.GetGuidUVE(), materialGuid);
-        EXPECT_TRUE(candidate.meshHandle.IsReadyUVE()) << "a shared resolution must not be consumed by one entity";
-        EXPECT_TRUE(candidate.materialHandle.IsReadyUVE());
-        EXPECT_NE(candidate.meshHandle.TryGetUVE(), nullptr);
-        EXPECT_NE(candidate.materialHandle.TryGetUVE(), nullptr);
+        EXPECT_EQ(visibilitySet.assetPairs[candidate.assetPairIndex].meshHandle.GetGuidUVE(), meshGuid);
+        EXPECT_EQ(visibilitySet.assetPairs[candidate.assetPairIndex].materialHandle.GetGuidUVE(), materialGuid);
+        EXPECT_TRUE(visibilitySet.assetPairs[candidate.assetPairIndex].meshHandle.IsReadyUVE()) << "a shared resolution must not be consumed by one entity";
+        EXPECT_TRUE(visibilitySet.assetPairs[candidate.assetPairIndex].materialHandle.IsReadyUVE());
+        EXPECT_NE(visibilitySet.assetPairs[candidate.assetPairIndex].meshHandle.TryGetUVE(), nullptr);
+        EXPECT_NE(visibilitySet.assetPairs[candidate.assetPairIndex].materialHandle.TryGetUVE(), nullptr);
     }
 }
 
@@ -863,7 +863,7 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_DistinctAssetsPerEntity_AreEac
     ASSERT_EQ(visibilitySet.candidates.size(), static_cast<std::size_t>(kDistinctEntityCount));
     std::vector<Asset::AssetGuidUVE> seenMeshGuids;
     for (const MeshVisibilityCandidateUVE& candidate : visibilitySet.candidates) {
-        seenMeshGuids.push_back(candidate.meshHandle.GetGuidUVE());
+        seenMeshGuids.push_back(visibilitySet.assetPairs[candidate.assetPairIndex].meshHandle.GetGuidUVE());
     }
     for (const Asset::AssetGuidUVE expected : meshGuids) {
         EXPECT_NE(std::find(seenMeshGuids.cbegin(), seenMeshGuids.cend(), expected), seenMeshGuids.cend())
@@ -997,11 +997,143 @@ TEST_F(MeshRendererUVETest, BuildSpatialClustersUVE_ReorderingDoesNotDisturbAsse
 
     ASSERT_EQ(visibilitySet.candidates.size(), static_cast<std::size_t>(kReorderEntityCount));
     for (const MeshVisibilityCandidateUVE& candidate : visibilitySet.candidates) {
-        EXPECT_EQ(candidate.meshHandle.GetGuidUVE(), meshGuid);
-        EXPECT_EQ(candidate.materialHandle.GetGuidUVE(), materialGuid);
-        EXPECT_NE(candidate.meshHandle.TryGetUVE(), nullptr) << "a reordered candidate must still resolve";
-        EXPECT_NE(candidate.materialHandle.TryGetUVE(), nullptr);
+        EXPECT_EQ(visibilitySet.assetPairs[candidate.assetPairIndex].meshHandle.GetGuidUVE(), meshGuid);
+        EXPECT_EQ(visibilitySet.assetPairs[candidate.assetPairIndex].materialHandle.GetGuidUVE(), materialGuid);
+        EXPECT_NE(visibilitySet.assetPairs[candidate.assetPairIndex].meshHandle.TryGetUVE(), nullptr) << "a reordered candidate must still resolve";
+        EXPECT_NE(visibilitySet.assetPairs[candidate.assetPairIndex].materialHandle.TryGetUVE(), nullptr);
     }
+}
+
+TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_EntitiesSharingAssets_ShareOneAssetPairEntry) {
+    // The point of the change: references are held per distinct asset pairing, not per entity.
+    // Four entities on one mesh and one material must produce exactly one entry, and every
+    // candidate must point at it.
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_onepair.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_onepair.uvemat");
+    constexpr int kSharedEntityCount = 4;
+    for (int index = 0; index < kSharedEntityCount; ++index) {
+        MakeMeshEntityUVE(Math::Vector3UVE{static_cast<float>(index), 0.0F, -10.0F}, meshGuid, materialGuid);
+    }
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    MeshVisibilitySetUVE visibilitySet;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+
+    ASSERT_EQ(visibilitySet.candidates.size(), static_cast<std::size_t>(kSharedEntityCount));
+    EXPECT_EQ(visibilitySet.assetPairs.size(), 1U)
+        << "entities sharing a mesh and material must share one reference pair, not hold one each";
+    for (const MeshVisibilityCandidateUVE& candidate : visibilitySet.candidates) {
+        EXPECT_EQ(candidate.assetPairIndex, 0U);
+    }
+    EXPECT_TRUE(visibilitySet.assetPairs[0].meshHandle.IsReadyUVE());
+    EXPECT_TRUE(visibilitySet.assetPairs[0].materialHandle.IsReadyUVE());
+}
+
+TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_SameMeshDifferentMaterials_GetSeparateAssetPairs) {
+    // The failure mode opposite to over-sharing, and the reason the key is BOTH guids. Keying on
+    // the mesh alone would hand the second entity the first one's material - and every visible
+    // check would still pass, because both entities would still draw. The material would just be
+    // silently wrong.
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_twomat.uvemodel");
+    const Asset::AssetGuidUVE firstMaterialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_twomat_a.uvemat");
+    const Asset::AssetGuidUVE secondMaterialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_twomat_b.uvemat");
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, firstMaterialGuid);
+    MakeMeshEntityUVE(Math::Vector3UVE{2.0F, 0.0F, -10.0F}, meshGuid, secondMaterialGuid);
+    WaitUntilAssetsReadyUVE(meshGuid, firstMaterialGuid);
+    WaitUntilAssetsReadyUVE(meshGuid, secondMaterialGuid);
+
+    MeshVisibilitySetUVE visibilitySet;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+
+    ASSERT_EQ(visibilitySet.candidates.size(), 2U);
+    EXPECT_EQ(visibilitySet.assetPairs.size(), 2U)
+        << "one mesh with two materials is two pairings, not one";
+    std::vector<Asset::AssetGuidUVE> seenMaterialGuids;
+    for (const MeshVisibilityCandidateUVE& candidate : visibilitySet.candidates) {
+        ASSERT_LT(candidate.assetPairIndex, visibilitySet.assetPairs.size());
+        const MeshVisibilityAssetPairUVE& pair = visibilitySet.assetPairs[candidate.assetPairIndex];
+        EXPECT_EQ(pair.meshHandle.GetGuidUVE(), meshGuid);
+        seenMaterialGuids.push_back(pair.materialHandle.GetGuidUVE());
+    }
+    EXPECT_NE(std::find(seenMaterialGuids.cbegin(), seenMaterialGuids.cend(), firstMaterialGuid),
+              seenMaterialGuids.cend());
+    EXPECT_NE(std::find(seenMaterialGuids.cbegin(), seenMaterialGuids.cend(), secondMaterialGuid),
+              seenMaterialGuids.cend());
+}
+
+TEST_F(MeshRendererUVETest, BuildSpatialClustersUVE_ReorderingKeepsEachCandidatePointingAtItsOwnAssets) {
+    // The clustering reorder moves candidates around, and they now identify their assets by index.
+    // An index that did not travel with its candidate would silently repaint geometry with another
+    // object's material - visible only as a wrong-looking frame, never as a failure. Every entity
+    // here uses a distinct mesh+material pair so a mismatch cannot hide behind shared assets.
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    constexpr int kDistinctEntityCount = 80;
+    std::vector<Asset::AssetGuidUVE> meshGuids;
+    std::vector<Asset::AssetGuidUVE> materialGuids;
+    for (int index = 0; index < kDistinctEntityCount; ++index) {
+        const std::string suffix = std::to_string(index);
+        meshGuids.push_back(assetDatabase.RegisterUVE("mesh_renderer_tests_pairtravel" + suffix + ".uvemodel"));
+        materialGuids.push_back(assetDatabase.RegisterUVE("mesh_renderer_tests_pairtravel" + suffix + ".uvemat"));
+        // Spread widely so the Morton ordering genuinely permutes them rather than leaving the
+        // creation order intact - a reorder that does nothing would not test anything.
+        const float x = static_cast<float>((index * 37) % 60) - 30.0F;
+        const float y = static_cast<float>((index * 53) % 60) - 30.0F;
+        MakeMeshEntityUVE(Math::Vector3UVE{x, y, -20.0F}, meshGuids.back(), materialGuids.back());
+    }
+    for (int index = 0; index < kDistinctEntityCount; ++index) {
+        WaitUntilAssetsReadyUVE(meshGuids[static_cast<std::size_t>(index)],
+                                materialGuids[static_cast<std::size_t>(index)]);
+    }
+
+    MeshVisibilitySetUVE visibilitySet;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+
+    ASSERT_EQ(visibilitySet.candidates.size(), static_cast<std::size_t>(kDistinctEntityCount));
+    EXPECT_EQ(visibilitySet.assetPairs.size(), static_cast<std::size_t>(kDistinctEntityCount));
+    for (const MeshVisibilityCandidateUVE& candidate : visibilitySet.candidates) {
+        ASSERT_LT(candidate.assetPairIndex, visibilitySet.assetPairs.size());
+        const MeshVisibilityAssetPairUVE& pair = visibilitySet.assetPairs[candidate.assetPairIndex];
+        // Each entity was created with matching suffixes, so a candidate whose index travelled
+        // correctly has a mesh and material from the same position in the two lists.
+        const auto meshPosition = std::find(meshGuids.cbegin(), meshGuids.cend(), pair.meshHandle.GetGuidUVE());
+        const auto materialPosition =
+            std::find(materialGuids.cbegin(), materialGuids.cend(), pair.materialHandle.GetGuidUVE());
+        ASSERT_NE(meshPosition, meshGuids.cend());
+        ASSERT_NE(materialPosition, materialGuids.cend());
+        EXPECT_EQ(std::distance(meshGuids.cbegin(), meshPosition),
+                  std::distance(materialGuids.cbegin(), materialPosition))
+            << "a candidate's asset index must survive the spatial reorder";
+    }
+}
+
+TEST_F(MeshRendererUVETest, CullVisibilitySetIntoUVE_QueueItemsOutliveTheVisibilitySet) {
+    // Candidates borrow the set's references, but RenderQueueUVE is returned by value from the
+    // public ExtractRenderQueueUVE and can outlive the set entirely - so queue items must still
+    // own theirs. This drives that directly: build a queue, destroy the set, collect garbage, and
+    // require the queue's handles to still resolve.
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_outlive.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_outlive.uvemat");
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    RenderQueueUVE queue;
+    {
+        MeshVisibilitySetUVE scopedSet;
+        meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, scopedSet);
+        meshRenderer.CullVisibilitySetIntoUVE(scopedSet, MakeTestFrustumUVE(), queue);
+        ASSERT_EQ(queue.opaqueItems.size(), 1U);
+    }
+    // The set is gone along with its references. Only the queue's own remain.
+    assetManager.CollectGarbageUVE();
+
+    EXPECT_TRUE(queue.opaqueItems[0].meshHandle.IsReadyUVE())
+        << "a queue item must hold its own reference - it can outlive the set it came from";
+    EXPECT_TRUE(queue.opaqueItems[0].materialHandle.IsReadyUVE());
+    EXPECT_NE(queue.opaqueItems[0].meshHandle.TryGetUVE(), nullptr);
+    EXPECT_NE(queue.opaqueItems[0].materialHandle.TryGetUVE(), nullptr);
 }
 
 } // namespace
