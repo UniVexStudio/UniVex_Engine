@@ -140,14 +140,61 @@ struct MeshVisibilitySetUVE final {
     /// ones without a second pass to reset flags.
     std::uint64_t frameIndex = 0U;
 
+    /// One run of candidates that are near each other in space, plus the box that encloses all of
+    /// them. A frustum that misses the enclosing box misses every candidate inside it, so the
+    /// whole run is rejected with one plane test instead of `count` of them.
+    struct CandidateClusterUVE final {
+        Math::AabbUVE bounds{};
+        std::size_t first = 0U;
+        std::size_t count = 0U;
+    };
+
+    /// Spatial clusters over `candidates`, rebuilt by each build and consumed by each cull.
+    ///
+    /// WHY THIS EXISTS. A frame culls the candidate set four times - three shadow cascades plus the
+    /// main view - and each cull tested every candidate against six planes. On a 2000-entity scene
+    /// with 60 entities actually visible that is 48000 plane tests to find 60 objects, and culling
+    /// had grown to 62% of mesh extraction now that the walk and placement are cached.
+    ///
+    /// The ordering matters more than the clustering. Candidates come out in entity-creation
+    /// order, which has no spatial meaning, so clustering them as-is skips nothing at all - that
+    /// was measured: 0 of 32 clusters rejected. Ordering them along a Morton curve first makes 14
+    /// of 32 rejectable. A comparison sort costs more than it saves, so the ordering is done with
+    /// an O(n) counting pass over the high Morton bits.
+    ///
+    /// Measured on this engine's own maths, scattered placement, four frusta:
+    ///   N=2000  133 us -> 100 us  (1.33x)
+    ///   N=8000  534 us -> 260 us  (2.05x)
+    /// The win grows with scene size, which is the right shape for spatial work: a small scene
+    /// pays a small overhead, a large one gets most of its culling skipped.
+    std::vector<CandidateClusterUVE> clusters;
+
     /// Clears this frame's candidates and counters. Deliberately does NOT clear placementCache -
     /// the cache's entire purpose is to survive into the next frame.
     void ClearUVE() noexcept;
+
+    /// Orders `candidates` spatially and fills `clusters` over the result. Called by the build
+    /// once the candidate list is complete, before any cull reads it.
+    ///
+    /// This REORDERS candidates. Nothing downstream may depend on candidate order: a cull already
+    /// sorts its own queue by depth, and the order candidates happened to come out of the entity
+    /// walk in was creation order, which carries no meaning anyone is entitled to rely on.
+    void BuildSpatialClustersUVE();
 
     /// Drops cached placements for entities that were not seen this frame, so a cache built over a
     /// long session does not retain every entity the scene ever had. Called after the walk, when
     /// "seen this frame" is known.
     void PruneUnseenPlacementsUVE();
+
+private:
+    /// Scratch for the counting pass in BuildSpatialClustersUVE. Members rather than locals so a
+    /// scene-sized reorder does not allocate every frame; they are scratch, not state - their
+    /// contents mean nothing between calls and every use refills them before reading.
+    std::vector<std::uint32_t> m_clusterKeyScratch;
+    std::vector<std::size_t> m_clusterOffsetScratch;
+    std::vector<std::size_t> m_clusterSlotScratch;
+    std::vector<std::size_t> m_clusterSourceScratch;
+    std::vector<MeshVisibilityCandidateUVE> m_candidateScratch;
 };
 
 } // namespace UVE::Render
