@@ -87,9 +87,14 @@ publicly shipping real-time engines as of today, without naming any of them.
   DETECTED from the material's own vertex source rather than declared by a flag - a flag could
   claim support the shader does not implement, and that lie fails silently by stacking every
   instance on the first one's transform. A material without the contract falls back per BATCH, so
-  a scene mixing new and legacy materials still instances what it can. Remaining: pointing the
-  instanceCount at CS8's GPU-written draw command instead of a CPU-known batch size, which is the
-  last step to giving the indirect cull a consumer.
+  a scene mixing new and legacy materials still instances what it can. The SHADOW cascades are now
+  instanced too, which is where the draw calls actually were: the shadow pass runs once per
+  cascade, so an uninstanced 200-object scene issued 600 shadow draws against 200 main-pass ones.
+  Shadow batching groups by MESH ALONE - a depth-only pass binds no material, so same-mesh objects
+  write identical depth however differently they are painted - which makes it batch strictly
+  better than the main pass on the same queue. Remaining: pointing the instanceCount at CS8's
+  GPU-written draw command instead of a CPU-known batch size, which is the last step to giving the
+  indirect cull a consumer.
 - [ ] Frustum culling at scale (currently unverified beyond basic per-object draw calls)
 - [ ] Occlusion culling (the `occluder` scene-node kind exists as a descriptor only)
 - [ ] Level-of-detail switching (the `LOD group` scene-node kind exists as a descriptor

@@ -50,4 +50,28 @@ void BuildRenderBatchesUVE(const std::span<const RenderItemUVE> items,
     }
 }
 
+void BuildShadowBatchesUVE(std::span<const RenderItemUVE> items, RenderBatchSetUVE& outBatches) {
+    outBatches.ClearUVE();
+    outBatches.instanceMatrices.reserve(items.size());
+
+    for (std::size_t index = 0U; index < items.size(); ++index) {
+        const Asset::AssetGuidUVE meshGuid = items[index].meshHandle.GetGuidUVE();
+
+        // Mesh only - see the header. No material comparison, because a depth-only draw binds no
+        // material and therefore cannot render two same-mesh objects differently.
+        if (!outBatches.batches.empty() && outBatches.batches.back().meshGuid == meshGuid) {
+            ++outBatches.batches.back().itemCount;
+        } else {
+            RenderBatchUVE batch;
+            batch.meshGuid = meshGuid;
+            batch.materialGuid = Asset::kInvalidAssetGuidUVE;
+            batch.firstItem = index;
+            batch.itemCount = 1U;
+            outBatches.batches.push_back(batch);
+        }
+
+        outBatches.instanceMatrices.push_back(items[index].worldMatrix);
+    }
+}
+
 } // namespace UVE::Render

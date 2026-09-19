@@ -60,4 +60,22 @@ struct RenderBatchSetUVE final {
 /// exactly as correct as a non-instanced one.
 void BuildRenderBatchesUVE(std::span<const RenderItemUVE> items, RenderBatchSetUVE& outBatches);
 
+/// The depth-only variant, for the shadow cascades: groups by MESH ALONE, ignoring the material.
+///
+/// The difference from BuildRenderBatchesUVE is deliberate and is not an optimisation shortcut. A
+/// shadow pass binds no material - it writes depth through a vertex shader that reads only the
+/// model matrix - so two objects sharing a mesh produce byte-identical depth however differently
+/// they are painted. Splitting them on material would cost a draw call to express a distinction
+/// this pass physically cannot observe.
+///
+/// Everything else matches its sibling exactly: adjacency-only merging, order preserved, runs of
+/// one still emitted, instanceMatrices flat and in lockstep with firstItem. Order matters here at
+/// least as much as in the main pass, because a depth-only pass is precisely where front-to-back
+/// early-z rejection pays off most.
+///
+/// `materialGuid` on the emitted batches is left invalid rather than filled with the first item's,
+/// so a consumer that wrongly tries to bind a material from a shadow batch fails loudly instead of
+/// quietly binding whichever material happened to sort first.
+void BuildShadowBatchesUVE(std::span<const RenderItemUVE> items, RenderBatchSetUVE& outBatches);
+
 } // namespace UVE::Render

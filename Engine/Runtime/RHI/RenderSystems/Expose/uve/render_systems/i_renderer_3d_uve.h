@@ -50,6 +50,10 @@ struct Renderer3DFrameDiagnosticsUVE final {
     /// from reading the material assets.
     std::size_t instancedDrawCallsRecorded = 0U;
     std::size_t instancedObjectsRecorded = 0U;
+    /// Instanced draws recorded across ALL shadow cascades this frame. Separate from the main-pass
+    /// counter because the shadow passes run once per cascade, so they - not the main pass - were
+    /// where an uninstanced scene spent most of its draw calls.
+    std::size_t shadowInstancedDrawCallsRecorded = 0U;
     std::size_t primitiveDrawCallsRecorded = 0U;
     std::size_t particleItemsExtracted = 0U;
     std::size_t particleDrawCommandsRecorded = 0U;

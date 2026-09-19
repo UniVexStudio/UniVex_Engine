@@ -571,6 +571,12 @@ struct Renderer3DUVE::ImplUVE {
     /// (IsValidUVE() == false) on any given frame; RecordShadowPassUVE() checks IsValidUVE()
     /// before every use, exactly like RenderDemoTriangleUVE() does.
     std::shared_ptr<Shader::ShaderProgramUVE> shadowProgram;
+    /// The UVE_INSTANCED build of the same shadow source. Null-checked at use; the non-instanced
+    /// program is the fallback, so a link failure costs speed rather than shadows.
+    std::shared_ptr<Shader::ShaderProgramUVE> instancedShadowProgram;
+    /// Batch scratch for the shadow cascades, one per cascade so consecutive cascades do not
+    /// thrash a single set's capacity.
+    std::array<RenderBatchSetUVE, kShadowCascadeCountUVE> shadowBatches;
     std::shared_ptr<Shader::ShaderProgramUVE> toneMappingProgram;
 
     /// Phase 2b post-process toggles, consulted while building each frame's render graph (see
@@ -625,6 +631,10 @@ struct Renderer3DUVE::ImplUVE {
     /// of legacy materials reports zero, which is the honest answer.
     std::size_t instancedDrawCallsThisFrame = 0U;
     std::size_t instancedObjectsThisFrame = 0U;
+    /// Shadow-pass instanced draws across all cascades this frame. Counted separately from the
+    /// main pass because the shadow passes are where the draw-call count was actually worst - one
+    /// per caster per cascade - and a single combined number would hide which half improved.
+    std::size_t shadowInstancedDrawCallsThisFrame = 0U;
 
     /// Built-in primitive visualization program. Its Basic3D contract contains only model,
     /// view-projection, and authored base-color uniforms; primitives intentionally do not bind
@@ -1120,8 +1130,22 @@ struct Renderer3DUVE::ImplUVE {
     /// directional caster and linked shadow program exist; otherwise the main pass receives the
     /// zero-cascade sentinel and no shadow-map work is submitted. Draws every opaque item in the
     /// cascade queue (no additional light-frustum culling beyond queue extraction).
+    /// Uploads shadow instance transforms. Only the model matrix, transposed - a depth-only pass
+    /// has no normals, so the normal-matrix buffer the main pass fills is left untouched here.
+    [[nodiscard]] bool UploadShadowInstanceTransformsUVE(
+        const std::vector<Math::Matrix4x4UVE>& modelMatrices) {
+        instanceTransposeStaging.clear();
+        instanceTransposeStaging.reserve(modelMatrices.size());
+        for (const Math::Matrix4x4UVE& model : modelMatrices) {
+            instanceTransposeStaging.push_back(Math::TransposeUVE(model));
+        }
+        return renderDevice.UpdateBufferUVE(instanceTransformBuffer,
+                                            std::as_bytes(std::span(instanceTransposeStaging)));
+    }
+
     void RecordShadowPassUVE(const std::vector<RenderItemUVE>& items, const Math::Matrix4x4UVE& lightSpaceMatrix,
-                              TextureHandleUVE shadowMapTarget, bool hasCaster, ICommandBufferUVE& commandBuffer) {
+                              TextureHandleUVE shadowMapTarget, bool hasCaster,
+                              RenderBatchSetUVE& batchSet, ICommandBufferUVE& commandBuffer) {
         RenderPassDescUVE passDesc;
         passDesc.colorAttachment = kInvalidTextureHandleUVE;
         passDesc.depthAttachment = shadowMapTarget;
@@ -1130,8 +1154,49 @@ struct Renderer3DUVE::ImplUVE {
         commandBuffer.BeginRenderPassUVE(passDesc);
 
         if (hasCaster && shadowProgram->IsValidUVE()) {
-            // The light-space transform is constant for the whole cascade; queue it once and
-            // update only the per-item model matrix inside the caster loop.
+            // Instanced where possible. This pass matters more than its low profile suggests: it
+            // runs ONCE PER CASCADE, so an uninstanced 200-object scene issued 600 shadow draws
+            // against 200 main-pass ones - the shadow passes cost more than the frame they
+            // shadow. It also batches better than the main pass does, because a depth-only draw
+            // does not care about the material: two objects sharing a mesh batch together even
+            // with completely different materials.
+            const bool instancedShadows =
+                instancedShadowProgram != nullptr && instancedShadowProgram->IsValidUVE();
+            if (instancedShadows) {
+                BuildShadowBatchesUVE(items, batchSet);
+                if (!batchSet.batches.empty() &&
+                    batchSet.instanceMatrices.size() <= kMaximumInstancesPerFrameUVE &&
+                    EnsureInstanceBufferCapacityUVE(batchSet.instanceMatrices.size()) &&
+                    UploadShadowInstanceTransformsUVE(batchSet.instanceMatrices)) {
+                    instancedShadowProgram->SetMatrix4x4UVE("uLightSpaceMatrix", lightSpaceMatrix);
+                    for (const RenderBatchUVE& batch : batchSet.batches) {
+                        const MeshGpuResourcesUVE& meshResources =
+                            ResolveMeshGpuResourcesUVE(items[batch.firstItem]);
+                        if (!IsValidMeshGpuResourcesUVE(meshResources)) {
+                            continue;
+                        }
+                        const auto baseIndex = static_cast<std::int32_t>(batch.firstItem);
+                        const std::span<const std::byte> baseBytes{
+                            reinterpret_cast<const std::byte*>(&baseIndex), sizeof(baseIndex)};
+                        if (!renderDevice.UpdateBufferUVE(instanceBaseBuffer, baseBytes)) {
+                            continue;
+                        }
+                        instancedShadowProgram->ApplyToUVE(commandBuffer);
+                        commandBuffer.BindStorageBufferUVE(instanceTransformBuffer, kInstanceTransformSlotUVE);
+                        commandBuffer.BindStorageBufferUVE(instanceBaseBuffer, kInstanceBaseSlotUVE);
+                        commandBuffer.BindVertexBufferUVE(meshResources.vertexBuffer);
+                        commandBuffer.BindIndexBufferUVE(meshResources.indexBuffer);
+                        commandBuffer.DrawIndexedUVE(meshResources.indexCount,
+                                                     static_cast<std::uint32_t>(batch.itemCount));
+                        ++shadowInstancedDrawCallsThisFrame;
+                    }
+                    commandBuffer.EndRenderPassUVE();
+                    return;
+                }
+            }
+
+            // Fallback: correct, just one draw per caster. Reached when the instanced program did
+            // not link, or a buffer step failed.
             shadowProgram->SetMatrix4x4UVE("uLightSpaceMatrix", lightSpaceMatrix);
             for (const RenderItemUVE& item : items) {
                 const MeshGpuResourcesUVE& meshResources = ResolveMeshGpuResourcesUVE(item);
@@ -1613,6 +1678,16 @@ Renderer3DUVE::Renderer3DUVE(IRenderDeviceUVE& renderDevice, IRenderSystemUVE& r
     shadowProgramDesc.debugNameUVE = "ShadowDepth";
     m_impl->shadowProgram = shaderManager.CreateProgramUVE(shadowProgramDesc);
 
+    // The instanced twin of the shadow program. Same source file, same layout, one define - so the
+    // depth a shadow map records cannot drift between the two paths. Compiled unconditionally
+    // rather than lazily: a shadow pass that stalls mid-frame waiting for a program is worse than
+    // one extra compile at startup, and the non-instanced program remains the fallback if this one
+    // fails to link.
+    Shader::ShaderProgramDescUVE instancedShadowProgramDesc = shadowProgramDesc;
+    instancedShadowProgramDesc.extraDefines.emplace_back("UVE_INSTANCED", "1");
+    instancedShadowProgramDesc.debugNameUVE = "ShadowDepthInstanced";
+    m_impl->instancedShadowProgram = shaderManager.CreateProgramUVE(instancedShadowProgramDesc);
+
     Shader::ShaderProgramDescUVE toneMappingProgramDesc;
     toneMappingProgramDesc.virtualFilePath = std::string(Shader::BuiltIn::kFullscreenQuadVirtualPath);
     toneMappingProgramDesc.embeddedFallbackSourceCode = std::string(Shader::BuiltIn::kFullscreenQuadSource);
@@ -1764,6 +1839,9 @@ bool Renderer3DUVE::ResizeTargetsUVE(const std::uint32_t width, const std::uint3
 
 void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scene::EntityUVE cameraEntity) {
     m_impl->lastFrameDiagnostics = Renderer3DFrameDiagnosticsUVE{};
+    // Reset here, not beside the main pass: the shadow cascades are recorded BEFORE it, so a reset
+    // at the main pass would discard the count this counter exists to report.
+    m_impl->shadowInstancedDrawCallsThisFrame = 0U;
     m_impl->lastFrameDiagnostics.renderTargetWidth = m_impl->targetWidth;
     m_impl->lastFrameDiagnostics.renderTargetHeight = m_impl->targetHeight;
     if (m_impl->colorTarget == kInvalidTextureHandleUVE || m_impl->depthTarget == kInvalidTextureHandleUVE) {
@@ -1944,7 +2022,7 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                     m_impl->RecordShadowPassUVE(m_impl->shadowQueues[cascadeIndex].opaqueItems,
                                                 lightSpaceMatrices[cascadeIndex],
                                                 m_impl->shadowMapTargets[cascadeIndex], shadowCaster != nullptr,
-                                                commandBuffer);
+                                                m_impl->shadowBatches[cascadeIndex], commandBuffer);
                 });
         }
     }
@@ -1977,6 +2055,8 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                 queue.transparentItems, m_impl->transparentBatches, frameUniforms, commandBuffer);
             m_impl->lastFrameDiagnostics.instancedDrawCallsRecorded = m_impl->instancedDrawCallsThisFrame;
             m_impl->lastFrameDiagnostics.instancedObjectsRecorded = m_impl->instancedObjectsThisFrame;
+            m_impl->lastFrameDiagnostics.shadowInstancedDrawCallsRecorded =
+                m_impl->shadowInstancedDrawCallsThisFrame;
             m_impl->lastFrameDiagnostics.particleDrawCommandsSubmitted =
                 m_impl->RecordParticleItemsUVE(m_impl->particleDrawRecording, frameUniforms, commandBuffer);
             m_impl->lastFrameDiagnostics.particleDrawCallsRecorded =
