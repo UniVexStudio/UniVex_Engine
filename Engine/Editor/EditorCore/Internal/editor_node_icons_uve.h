@@ -199,4 +199,100 @@ inline void DrawHierarchyNodeIconUVE(ImDrawList& drawList, const ImVec2 center, 
     }
 }
 
+/// Icon-then-label rows, shared by the hierarchy and the inspector.
+///
+/// Moved here for the same reason as the glyphs themselves: both were file-local in
+/// editor_uve.cpp and both are used from inside AND outside the inspector, so splitting that
+/// panel out would otherwise have meant a second copy. DrawNativeIconLabelUVE is inline because a
+/// non-inline definition in a header fails to link the moment a second translation unit includes
+/// it - the mistake I made and caught on the first of these headers.
+
+inline void DrawNativeIconLabelUVE(const std::uintptr_t textureId, const char* const label) {
+    if (textureId != 0U) {
+        ImGui::Image(static_cast<ImTextureID>(textureId), ImVec2{16.0F, 16.0F});
+        ImGui::SameLine(0.0F, 5.0F);
+    }
+    ImGui::TextUnformatted(label);
+}
+
+// Same icon-before-name convention as DrawNativeIconLabelUVE(), for Inspector sections that need a
+// procedurally-drawn glyph (no bitmap/SVG asset) rather than one of the few existing general icon
+// textures - `drawIcon` matches every DrawNode*IconUVE/DrawHierarchyNodeIconUVE signature already
+// established for the Scene Hierarchy, reused here rather than duplicated.
+template <typename DrawIconUVE>
+void DrawProceduralIconLabelUVE(const float radius, const char* const label, DrawIconUVE&& drawIcon) {
+    ImDrawList* const drawList = ImGui::GetWindowDrawList();
+    const ImVec2 cursor = ImGui::GetCursorScreenPos();
+    ImGui::Dummy(ImVec2{radius * 2.0F, radius * 2.0F});
+    const ImVec2 center{cursor.x + radius, cursor.y + radius};
+    drawIcon(*drawList, center, radius, ImGui::GetColorU32(ImGuiCol_Text));
+    ImGui::SameLine(0.0F, 5.0F);
+    ImGui::TextUnformatted(label);
+}
+
+inline void DrawMoveIconUVE(ImDrawList& drawList, const ImVec2 center, const float radius, const ImU32 color) {
+    const float armLength = radius * 0.62F;
+    const float headSize = radius * 0.30F;
+    const std::array<ImVec2, 4> directions{ImVec2{1.0F, 0.0F}, ImVec2{-1.0F, 0.0F}, ImVec2{0.0F, 1.0F},
+                                           ImVec2{0.0F, -1.0F}};
+    for (const ImVec2& direction : directions) {
+        const ImVec2 tip{center.x + direction.x * armLength, center.y + direction.y * armLength};
+        drawList.AddLine(center, tip, color, 1.5F);
+        const ImVec2 perpendicular{-direction.y, direction.x};
+        const ImVec2 baseA{tip.x - direction.x * headSize + perpendicular.x * headSize * 0.55F,
+                           tip.y - direction.y * headSize + perpendicular.y * headSize * 0.55F};
+        const ImVec2 baseB{tip.x - direction.x * headSize - perpendicular.x * headSize * 0.55F,
+                           tip.y - direction.y * headSize - perpendicular.y * headSize * 0.55F};
+        drawList.AddTriangleFilled(tip, baseA, baseB, color);
+    }
+}
+
+// Folder rows in the Filesystem/Contents browser previously rendered with no icon at all
+// (ClassifyContentBrowserEntryUVE() -> Folder resolved straight to a null texture) - a real,
+// confirmed gap, not a stylistic choice. Drawn procedurally (tab + body rectangles), matching this
+// file's own established icon convention rather than adding a new SVG asset for one glyph.
+inline void DrawFolderIconUVE(ImDrawList& drawList, const ImVec2 center, const float radius, const ImU32 color) {
+    const float halfWidth = radius * 0.72F;
+    const float halfHeight = radius * 0.52F;
+    const float tabWidth = halfWidth * 0.55F;
+    const float tabHeight = radius * 0.20F;
+    const float rounding = radius * 0.12F;
+    const ImVec2 bodyMin{center.x - halfWidth, center.y - halfHeight + tabHeight};
+    const ImVec2 bodyMax{center.x + halfWidth, center.y + halfHeight};
+    drawList.AddRectFilled(bodyMin, bodyMax, color, rounding);
+    const ImVec2 tabMin{center.x - halfWidth, center.y - halfHeight};
+    const ImVec2 tabMax{tabMin.x + tabWidth, tabMin.y + tabHeight};
+    drawList.AddRectFilled(tabMin, tabMax, color, rounding * 0.6F);
+}
+
+// ---- Scene Hierarchy per-node icons ---------------------------------------------------------
+// The editor's own recognized entity components are exactly the 10 EditorSceneComponentKindUVE
+// values (see editor_uve.h) - the "Add Component" popup's own master list. Rather than 37 bespoke
+// icons for every Scene::Nodes::SceneNodeKindUVE preset (most of which just add one of these same
+// 10 components to a plain entity), one procedural icon is drawn per actual component the entity
+// carries, checked in the same priority order a user would expect to identify it visually first
+// (Camera/Light/Mesh before the more generic Physics/Script/Animation) - Empty (a plain ring,
+// matching Godot's own bare Node3D icon) when none of the 10 match.
+[[nodiscard]] constexpr HierarchyNodeIconKindUVE ClassifySceneComponentKindIconUVE(
+    const EditorSceneComponentKindUVE kind) noexcept {
+    switch (kind) {
+        case EditorSceneComponentKindUVE::Camera: return HierarchyNodeIconKindUVE::Camera;
+        case EditorSceneComponentKindUVE::Mesh: return HierarchyNodeIconKindUVE::Mesh;
+        case EditorSceneComponentKindUVE::Light: return HierarchyNodeIconKindUVE::Light;
+        case EditorSceneComponentKindUVE::Collider:
+        case EditorSceneComponentKindUVE::RigidBody: return HierarchyNodeIconKindUVE::Physics;
+        case EditorSceneComponentKindUVE::AudioSource: return HierarchyNodeIconKindUVE::Audio;
+        case EditorSceneComponentKindUVE::ParticleEmitter: return HierarchyNodeIconKindUVE::Particle;
+        case EditorSceneComponentKindUVE::Script: return HierarchyNodeIconKindUVE::Script;
+        case EditorSceneComponentKindUVE::AnimationPlayer: return HierarchyNodeIconKindUVE::Animation;
+        case EditorSceneComponentKindUVE::WorldEnvironment: return HierarchyNodeIconKindUVE::Environment;
+        case EditorSceneComponentKindUVE::CharacterController: return HierarchyNodeIconKindUVE::Physics;
+        case EditorSceneComponentKindUVE::Canvas:
+        case EditorSceneComponentKindUVE::UIText:
+        case EditorSceneComponentKindUVE::UIImage:
+        case EditorSceneComponentKindUVE::UIButton: return HierarchyNodeIconKindUVE::Empty;
+    }
+    return HierarchyNodeIconKindUVE::Empty;
+}
+
 } // namespace UVE::Editor
