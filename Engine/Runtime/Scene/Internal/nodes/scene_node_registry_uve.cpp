@@ -40,8 +40,15 @@ constexpr std::array<std::string_view, 1U> kRigidBodyContracts{"RigidBodyCompone
 constexpr std::array<std::string_view, 1U> kAudioContracts{"AudioSourceComponentUVE"};
 constexpr std::array<std::string_view, 1U> kParticleContracts{"ParticleEmitterComponentUVE"};
 constexpr std::array<std::string_view, 1U> kScriptContracts{"ScriptComponentUVE"};
+constexpr std::array<std::string_view, 1U> kCanvasContracts{"CanvasComponentUVE"};
+constexpr std::array<std::string_view, 1U> kUITextContracts{"UITextComponentUVE"};
+constexpr std::array<std::string_view, 1U> kUIImageContracts{"UIImageComponentUVE"};
+constexpr std::array<std::string_view, 1U> kUIButtonContracts{"UIButtonComponentUVE"};
 
-constexpr std::array<SceneNodeDescriptorUVE, 38U> kDescriptors{
+constexpr std::array<SceneNodeDescriptorUVE, 43U> kDescriptors{
+    // The document's structural root: created by the document lifecycle (new document,
+    // load-time migration), never through the Add-Node library - libraryCreatable is false.
+    SceneNodeDescriptorUVE{SceneNodeKindUVE::SceneRoot, "scene_root", "SceneRoot", "Scene", "Scene/SceneRootNodeDefinitionUVE", kNoContracts, false},
     SceneNodeDescriptorUVE{SceneNodeKindUVE::Empty, "empty", "Empty", "Scene", "Scene/ECS", kNoContracts, true},
     SceneNodeDescriptorUVE{SceneNodeKindUVE::Area3D, "area_3d", "Area3D", "Physics", "Physics/AreaOverlapSystemUVE", kAreaContracts, true},
     SceneNodeDescriptorUVE{SceneNodeKindUVE::RayCast3D, "ray_cast_3d", "RayCast3D", "Physics", "Physics/RaycastSystemUVE", kRayCastContracts, true},
@@ -80,6 +87,10 @@ constexpr std::array<SceneNodeDescriptorUVE, 38U> kDescriptors{
     SceneNodeDescriptorUVE{SceneNodeKindUVE::AudioSource3D, "audio_source_3d", "AudioSource3D", "Audio", "Audio/AudioSourceSystemUVE", kAudioContracts, true},
     SceneNodeDescriptorUVE{SceneNodeKindUVE::ParticleEmitter3D, "particle_emitter_3d", "ParticleEmitter3D", "VFX", "Scene/ParticleRuntimeUVE", kParticleContracts, true},
     SceneNodeDescriptorUVE{SceneNodeKindUVE::Script, "script", "Script", "Logic", "Scripting/ScriptRuntimeUVE", kScriptContracts, true},
+    SceneNodeDescriptorUVE{SceneNodeKindUVE::Canvas, "canvas", "Canvas", "UI", "UI/UIRuntimeUVE", kCanvasContracts, true},
+    SceneNodeDescriptorUVE{SceneNodeKindUVE::UIText, "ui_text", "UI Text", "UI", "UI/UIRuntimeUVE", kUITextContracts, true},
+    SceneNodeDescriptorUVE{SceneNodeKindUVE::UIImage, "ui_image", "UI Image", "UI", "UI/UIRuntimeUVE", kUIImageContracts, true},
+    SceneNodeDescriptorUVE{SceneNodeKindUVE::UIButton, "ui_button", "UI Button", "UI", "UI/UIRuntimeUVE", kUIButtonContracts, true},
 };
 
 } // namespace

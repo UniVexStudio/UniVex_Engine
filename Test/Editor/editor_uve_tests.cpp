@@ -170,7 +170,9 @@ TEST(EditorUVETest, InitUVE_StartsRunningWithEmptyDocumentRootsAndSupportsHeadle
         editor.InitUVE();
 
         EXPECT_EQ(editor.GetStateUVE(), EditorStateUVE::Running);
-        EXPECT_TRUE(editor.GetDocumentRootsUVE().empty());
+        // One-root documents: an otherwise-empty document holds exactly the scene root.
+        ASSERT_EQ(editor.GetDocumentRootsUVE().size(), 1U);
+        EXPECT_EQ(editor.GetDocumentRootsUVE()[0U], editor.GetDocumentSceneRootUVE());
 
         editor.ShutdownUVE();
         EXPECT_EQ(editor.GetStateUVE(), EditorStateUVE::Shutdown);
@@ -228,7 +230,9 @@ TEST(EditorUVETest, InitUVE_DoesNotCreateAutomaticPreviewLighting) {
         Core::EngineServicesUVE& services = engine.GetServicesUVE();
         Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
 
-        EXPECT_TRUE(editor.GetDocumentRootsUVE().empty());
+        // One-root documents: an otherwise-empty document holds exactly the scene root.
+        ASSERT_EQ(editor.GetDocumentRootsUVE().size(), 1U);
+        EXPECT_EQ(editor.GetDocumentRootsUVE()[0U], editor.GetDocumentSceneRootUVE());
         std::size_t lightCount = 0U;
         entityManager.ForEachUVE<Scene::LightComponentUVE>(
             [&lightCount](Scene::EntityUVE, Scene::LightComponentUVE&) { ++lightCount; });
@@ -242,7 +246,9 @@ TEST(EditorUVETest, InitUVE_DoesNotCreateAutomaticPreviewLighting) {
         EXPECT_FALSE(editor.IsSceneDirtyUVE());
 
         editor.TickUVE();
-        EXPECT_TRUE(editor.GetDocumentRootsUVE().empty());
+        // One-root documents: an otherwise-empty document holds exactly the scene root.
+        ASSERT_EQ(editor.GetDocumentRootsUVE().size(), 1U);
+        EXPECT_EQ(editor.GetDocumentRootsUVE()[0U], editor.GetDocumentSceneRootUVE());
         lightCount = 0U;
         entityManager.ForEachUVE<Scene::LightComponentUVE>(
             [&lightCount](Scene::EntityUVE, Scene::LightComponentUVE&) { ++lightCount; });
@@ -274,7 +280,9 @@ TEST(EditorUVETest, TwoDCanvasStateUVE_IsEditorOnlyAndValidated) {
         EXPECT_FLOAT_EQ(initial.pan.y, 0.0F);
         EXPECT_TRUE(initial.gridVisible);
         EXPECT_TRUE(initial.safeAreaVisible);
-        EXPECT_TRUE(editor.GetDocumentRootsUVE().empty());
+        // One-root documents: an otherwise-empty document holds exactly the scene root.
+        ASSERT_EQ(editor.GetDocumentRootsUVE().size(), 1U);
+        EXPECT_EQ(editor.GetDocumentRootsUVE()[0U], editor.GetDocumentSceneRootUVE());
         EXPECT_FALSE(editor.IsSceneDirtyUVE());
 
         EXPECT_TRUE(editor.Set2DCanvasZoomUVE(1.25F));
@@ -289,7 +297,9 @@ TEST(EditorUVETest, TwoDCanvasStateUVE_IsEditorOnlyAndValidated) {
         EXPECT_FLOAT_EQ(reset.zoom, 0.36F);
         EXPECT_FLOAT_EQ(reset.pan.x, 0.0F);
         EXPECT_FLOAT_EQ(reset.pan.y, 0.0F);
-        EXPECT_TRUE(editor.GetDocumentRootsUVE().empty());
+        // One-root documents: an otherwise-empty document holds exactly the scene root.
+        ASSERT_EQ(editor.GetDocumentRootsUVE().size(), 1U);
+        EXPECT_EQ(editor.GetDocumentRootsUVE()[0U], editor.GetDocumentSceneRootUVE());
         EXPECT_FALSE(editor.IsSceneDirtyUVE());
 
         editor.ShutdownUVE();
@@ -478,7 +488,8 @@ TEST(EditorUVETest, OutlinerContextUVE_AncestryAndEligibleParentsExcludeSelected
         EXPECT_EQ(EditorUVEAccessUVE::GetDocumentAncestryUVE(editor, selected),
                   (std::vector<Scene::EntityUVE>{parent, selected}));
         EXPECT_EQ(EditorUVEAccessUVE::GetEligibleReparentParentsUVE(editor, selected),
-                  (std::vector<Scene::EntityUVE>{rootA, parent, rootB}));
+                  (std::vector<Scene::EntityUVE>{rootA, parent, rootB,
+                                                 editor.GetDocumentSceneRootUVE()}));
 
         editor.ShutdownUVE();
     }
@@ -1014,15 +1025,18 @@ TEST(EditorUVETest, CreateDocumentEntityUVE_CreatesSelectedDirtyRootArchetypes) 
                   (Math::Vector3UVE{0.5F, 0.025F, 0.5F}));
         EXPECT_EQ(entityManager.GetComponentUVE<Scene::NameComponentUVE>(plane).name, "Plane");
 
+        // One-root document: every created archetype lives under the scene root (chained by
+        // creation-under-selection), and the document's single root is the SceneRoot itself.
         const std::vector<Scene::EntityUVE> roots = editor.GetDocumentRootsUVE();
-        ASSERT_EQ(roots.size(), 7U);
-        EXPECT_NE(std::find(roots.begin(), roots.end(), empty), roots.end());
-        EXPECT_NE(std::find(roots.begin(), roots.end(), camera), roots.end());
-        EXPECT_NE(std::find(roots.begin(), roots.end(), directionalLight), roots.end());
-        EXPECT_NE(std::find(roots.begin(), roots.end(), collisionBox), roots.end());
-        EXPECT_NE(std::find(roots.begin(), roots.end(), cube), roots.end());
-        EXPECT_NE(std::find(roots.begin(), roots.end(), sphere), roots.end());
-        EXPECT_NE(std::find(roots.begin(), roots.end(), plane), roots.end());
+        ASSERT_EQ(roots.size(), 1U);
+        EXPECT_EQ(roots.front(), editor.GetDocumentSceneRootUVE());
+        EXPECT_TRUE(entityManager.IsAliveUVE(empty));
+        EXPECT_TRUE(entityManager.IsAliveUVE(camera));
+        EXPECT_TRUE(entityManager.IsAliveUVE(directionalLight));
+        EXPECT_TRUE(entityManager.IsAliveUVE(collisionBox));
+        EXPECT_TRUE(entityManager.IsAliveUVE(cube));
+        EXPECT_TRUE(entityManager.IsAliveUVE(sphere));
+        EXPECT_TRUE(entityManager.IsAliveUVE(plane));
 
         editor.ShutdownUVE();
     }
@@ -1087,7 +1101,9 @@ TEST(EditorUVETest, CreateDocumentEntityUVE_RejectsInvalidKindsAndNonRunningStat
         editor.InitUVE();
         EXPECT_EQ(editor.CreateDocumentEntityUVE(static_cast<EditorEntityKindUVE>(999)),
                   Scene::kInvalidEntityUVE);
-        EXPECT_TRUE(editor.GetDocumentRootsUVE().empty());
+        // One-root documents: an otherwise-empty document holds exactly the scene root.
+        ASSERT_EQ(editor.GetDocumentRootsUVE().size(), 1U);
+        EXPECT_EQ(editor.GetDocumentRootsUVE()[0U], editor.GetDocumentSceneRootUVE());
         EXPECT_FALSE(editor.IsSceneDirtyUVE());
 
         editor.ShutdownUVE();
@@ -1242,7 +1258,9 @@ TEST(EditorUVETest, EditorHistoryUVE_CreationUndoRedoRecreatesArchetypeAndName) 
         ASSERT_TRUE(editor.CanUndoUVE());
         ASSERT_TRUE(editor.UndoUVE());
         EXPECT_FALSE(entityManager.IsAliveUVE(created));
-        EXPECT_TRUE(editor.GetDocumentRootsUVE().empty());
+        // One-root documents: an otherwise-empty document holds exactly the scene root.
+        ASSERT_EQ(editor.GetDocumentRootsUVE().size(), 1U);
+        EXPECT_EQ(editor.GetDocumentRootsUVE()[0U], editor.GetDocumentSceneRootUVE());
         EXPECT_EQ(editor.GetSelectedEntityUVE(), Scene::kInvalidEntityUVE);
         EXPECT_FALSE(editor.IsSceneDirtyUVE());
 
@@ -1359,7 +1377,7 @@ TEST(EditorUVETest, DuplicateSelectedEntityUVE_RootCreatesNamedSiblingWithCopied
         EXPECT_TRUE(entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(duplicate));
 
         const std::vector<Scene::EntityUVE> roots = editor.GetDocumentRootsUVE();
-        ASSERT_EQ(roots.size(), 2U);
+        ASSERT_EQ(roots.size(), 3U); // the scene root + the raw source + its duplicate
         EXPECT_NE(std::find(roots.begin(), roots.end(), source), roots.end());
         EXPECT_NE(std::find(roots.begin(), roots.end(), duplicate), roots.end());
 
@@ -1556,7 +1574,8 @@ TEST(EditorUVETest, EditorHistoryUVE_DeleteUndoRejectsStaleParentAndClearsTimeli
         EXPECT_FALSE(editor.UndoUVE());
         EXPECT_FALSE(editor.CanUndoUVE());
         EXPECT_FALSE(editor.CanRedoUVE());
-        EXPECT_EQ(editor.GetDocumentRootsUVE().size(), 0U);
+        // The ever-present scene root is the only thing left in the document.
+        EXPECT_EQ(editor.GetDocumentRootsUVE().size(), 1U);
 
         editor.ShutdownUVE();
     }
@@ -1656,8 +1675,8 @@ TEST(EditorUVETest, ReparentSelectedEntityUVE_RootMovesBelowTargetAndPreservesLo
         EXPECT_TRUE(editor.IsSceneDirtyUVE());
         EXPECT_TRUE(editor.CanUndoUVE());
         const std::vector<Scene::EntityUVE> roots = editor.GetDocumentRootsUVE();
-        ASSERT_EQ(roots.size(), 1U);
-        EXPECT_EQ(roots.front(), target);
+        ASSERT_EQ(roots.size(), 2U); // the scene root + the still-top-level target
+        EXPECT_NE(std::find(roots.begin(), roots.end(), target), roots.end());
 
         editor.ShutdownUVE();
     }
@@ -1687,10 +1706,13 @@ TEST(EditorUVETest, ReparentSelectedEntityUVE_ChildCanReturnToRootWithoutDetachi
 
         ASSERT_TRUE(editor.ReparentSelectedEntityUVE(Scene::kInvalidEntityUVE));
         const std::vector<Scene::EntityUVE> roots = editor.GetDocumentRootsUVE();
-        ASSERT_EQ(roots.size(), 2U);
+        ASSERT_EQ(roots.size(), 2U); // the scene root + the still-top-level parent
         EXPECT_NE(std::find(roots.begin(), roots.end(), parent), roots.end());
-        EXPECT_NE(std::find(roots.begin(), roots.end(), child), roots.end());
         EXPECT_TRUE(services.GetSceneGraphUVE().GetChildrenUVE(entityManager, parent).empty());
+        // "Return to root" now means a direct child of the scene root.
+        const std::vector<Scene::EntityUVE> sceneRootChildren =
+            services.GetSceneGraphUVE().GetChildrenUVE(entityManager, editor.GetDocumentSceneRootUVE());
+        EXPECT_NE(std::find(sceneRootChildren.begin(), sceneRootChildren.end(), child), sceneRootChildren.end());
         const std::vector<Scene::EntityUVE> childChildren =
             services.GetSceneGraphUVE().GetChildrenUVE(entityManager, child);
         EXPECT_NE(std::find(childChildren.begin(), childChildren.end(), grandchild), childChildren.end());
@@ -1766,7 +1788,9 @@ TEST(EditorUVETest, ReparentSelectedEntityUVE_RejectsCyclesNoOpNonDocumentStaleA
         editor.SelectEntityUVE(root);
         EXPECT_FALSE(editor.ReparentSelectedEntityUVE(root));
         EXPECT_FALSE(editor.ReparentSelectedEntityUVE(child));
-        EXPECT_FALSE(editor.ReparentSelectedEntityUVE(Scene::kInvalidEntityUVE));
+        // kInvalidEntityUVE as the new parent now means "move under the scene root" (see
+        // ReparentDocumentEntityUVE), so rejection is exercised with a dead handle instead.
+        EXPECT_FALSE(editor.ReparentSelectedEntityUVE(Scene::EntityUVE{9999U, 1U}));
         editor.SelectEntityUVE(child);
         EXPECT_FALSE(editor.ReparentSelectedEntityUVE(root));
         const Scene::EntityUVE nonDocumentEntity = entityManager.CreateEntityUVE();
@@ -1951,12 +1975,22 @@ TEST(EditorUVETest, SaveThenLoadScene_RoundTripsDocumentRootsWithoutSerializingE
 
         const std::vector<Scene::EntityUVE> loadedRoots = editor.GetDocumentRootsUVE();
         ASSERT_EQ(loadedRoots.size(), 1U);
+        // The single root is the scene root; the authored root (with its saved transform and
+        // its own child) sits one level under it - the load wrapped the pre-root save's
+        // top-level entities beneath the one-root invariant.
+        const Scene::EntityUVE loadedSceneRoot = loadedRoots.front();
+        const std::vector<Scene::EntityUVE> loadedSceneRootChildren =
+            services.GetSceneGraphUVE().GetChildrenUVE(services.GetEntityManagerUVE(), loadedSceneRoot);
+        ASSERT_EQ(loadedSceneRootChildren.size(), 1U);
         const Scene::TransformComponentUVE& loadedTransform =
-            services.GetEntityManagerUVE().GetComponentUVE<Scene::TransformComponentUVE>(loadedRoots.front());
+            services.GetEntityManagerUVE().GetComponentUVE<Scene::TransformComponentUVE>(
+                loadedSceneRootChildren.front());
         EXPECT_EQ(loadedTransform.localPosition, rootTransform.localPosition);
-        EXPECT_EQ(services.GetSceneGraphUVE().GetChildrenUVE(services.GetEntityManagerUVE(), loadedRoots.front()).size(),
+        EXPECT_EQ(services.GetSceneGraphUVE()
+                      .GetChildrenUVE(services.GetEntityManagerUVE(), loadedSceneRootChildren.front())
+                      .size(),
                   1U);
-        EXPECT_FALSE(editor.IsSceneDirtyUVE());
+        EXPECT_TRUE(editor.IsSceneDirtyUVE()); // the load wrapped the file's top level
 
         editor.ShutdownUVE();
     }
@@ -2504,8 +2538,8 @@ TEST(EditorUVETest, LoadMissingScene_FailsWithoutDestroyingCurrentDocument) {
 
         EXPECT_FALSE(editor.LoadSceneUVE());
         const std::vector<Scene::EntityUVE> roots = editor.GetDocumentRootsUVE();
-        ASSERT_EQ(roots.size(), 1U);
-        EXPECT_EQ(roots.front(), root);
+        ASSERT_EQ(roots.size(), 2U); // the scene root + the surviving authored root
+        EXPECT_NE(std::find(roots.begin(), roots.end(), root), roots.end());
 
         editor.ShutdownUVE();
     }
@@ -2547,11 +2581,14 @@ TEST(EditorUVETest, PlayModeSandbox_RestoresSnapshotRejectsAuthoringAndPreserves
         EXPECT_EQ(editor.GetPlayModeStateUVE(), EditorPlayModeStateUVE::Edit);
         EXPECT_FALSE(engine.IsTransientSimulationSessionActiveUVE());
         const std::vector<Scene::EntityUVE> restoredRoots = editor.GetDocumentRootsUVE();
-        ASSERT_EQ(restoredRoots.size(), 1U);
-        EXPECT_NE(restoredRoots.front(), root);
-        EXPECT_EQ(editor.GetSelectedEntityUVE(), restoredRoots.front());
+        ASSERT_EQ(restoredRoots.size(), 2U); // the scene root + the restored authored root
+        const Scene::EntityUVE restoredAuthored =
+            restoredRoots.front() == editor.GetDocumentSceneRootUVE() ? restoredRoots.back()
+                                                                       : restoredRoots.front();
+        EXPECT_NE(restoredAuthored, root);
+        EXPECT_EQ(editor.GetSelectedEntityUVE(), restoredAuthored);
         const Scene::TransformComponentUVE& restored =
-            entityManager.GetComponentUVE<Scene::TransformComponentUVE>(restoredRoots.front());
+            entityManager.GetComponentUVE<Scene::TransformComponentUVE>(restoredAuthored);
         EXPECT_EQ(restored.localPosition, authored.localPosition);
 
         editor.ShutdownUVE();
@@ -2584,8 +2621,9 @@ TEST(EditorUVETest, GetDocumentRootsUVE_ExcludesEditorInternalEntitiesAndTheySur
         entityManager.AddComponentUVE<Scene::EditorInternalEntityComponentUVE>(internalEntity);
 
         const std::vector<Scene::EntityUVE> roots = editor.GetDocumentRootsUVE();
-        ASSERT_EQ(roots.size(), 1U);
-        EXPECT_EQ(roots.front(), documentRoot);
+        ASSERT_EQ(roots.size(), 2U); // the scene root + the authored document root
+        EXPECT_NE(std::find(roots.begin(), roots.end(), documentRoot), roots.end());
+        EXPECT_EQ(std::find(roots.begin(), roots.end(), internalEntity), roots.end());
 
         editor.SelectEntityUVE(documentRoot);
         ASSERT_TRUE(editor.EnterPlayModeUVE());
@@ -2597,8 +2635,8 @@ TEST(EditorUVETest, GetDocumentRootsUVE_ExcludesEditorInternalEntitiesAndTheySur
         EXPECT_TRUE(entityManager.HasComponentUVE<Scene::EditorInternalEntityComponentUVE>(internalEntity));
 
         const std::vector<Scene::EntityUVE> rootsAfterStop = editor.GetDocumentRootsUVE();
-        ASSERT_EQ(rootsAfterStop.size(), 1U);
-        EXPECT_NE(rootsAfterStop.front(), documentRoot); // restored as a fresh handle, like every real root
+        ASSERT_EQ(rootsAfterStop.size(), 2U); // the scene root + the restored authored root
+        EXPECT_NE(rootsAfterStop.back(), documentRoot); // restored as a fresh handle, like every real root
 
         editor.ShutdownUVE();
     }
@@ -2626,11 +2664,13 @@ TEST(EditorUVETest, PlayModeSandbox_RestoresOrderedMultiSelectionAndActiveEntity
         ASSERT_TRUE(editor.StopPlayModeUVE());
 
         const std::vector<Scene::EntityUVE> restoredRoots = editor.GetDocumentRootsUVE();
-        ASSERT_EQ(restoredRoots.size(), 2U);
-        EXPECT_NE(restoredRoots[0], first);
-        EXPECT_NE(restoredRoots[1], second);
-        EXPECT_EQ(editor.GetSelectedEntitiesUVE(), restoredRoots);
-        EXPECT_EQ(editor.GetSelectedEntityUVE(), restoredRoots.back());
+        ASSERT_EQ(restoredRoots.size(), 3U); // the scene root + the two restored authored roots
+        EXPECT_NE(restoredRoots[1], first);
+        EXPECT_NE(restoredRoots[2], second);
+        // The restored selection is the authored pair (the two non-scene-root restored roots,
+        // in their restored order); the scene root itself is never part of it.
+        EXPECT_EQ(editor.GetSelectedEntitiesUVE(), (std::vector<Scene::EntityUVE>{restoredRoots[0], restoredRoots[1]}));
+        EXPECT_EQ(editor.GetSelectedEntityUVE(), restoredRoots[1]);
         EXPECT_FALSE(editor.HasSingleDocumentSelectionUVE());
 
         editor.ShutdownUVE();
@@ -2652,11 +2692,15 @@ TEST(EditorUVETest, PlayModeSandbox_HandlesEmptyDocumentAndMissingControlSafely)
 
         EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_play_empty.uvescene", 100U, &engine);
         editor.InitUVE();
-        EXPECT_TRUE(editor.GetDocumentRootsUVE().empty());
+        // One-root documents: an otherwise-empty document holds exactly the scene root.
+        ASSERT_EQ(editor.GetDocumentRootsUVE().size(), 1U);
+        EXPECT_EQ(editor.GetDocumentRootsUVE()[0U], editor.GetDocumentSceneRootUVE());
         ASSERT_TRUE(editor.EnterPlayModeUVE());
         ASSERT_TRUE(editor.StopPlayModeUVE());
         EXPECT_EQ(editor.GetPlayModeStateUVE(), EditorPlayModeStateUVE::Edit);
-        EXPECT_TRUE(editor.GetDocumentRootsUVE().empty());
+        // One-root documents: an otherwise-empty document holds exactly the scene root.
+        ASSERT_EQ(editor.GetDocumentRootsUVE().size(), 1U);
+        EXPECT_EQ(editor.GetDocumentRootsUVE()[0U], editor.GetDocumentSceneRootUVE());
         editor.ShutdownUVE();
     }
 

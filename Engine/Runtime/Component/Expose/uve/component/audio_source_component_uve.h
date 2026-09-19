@@ -48,24 +48,11 @@ struct AudioSourceComponentUVE final {
     bool playOnAwake = true;
 };
 
-[[nodiscard]] inline bool IsAudioAttenuationCurveValidUVE(const AudioAttenuationCurveUVE curve) noexcept {
-    return curve == AudioAttenuationCurveUVE::Linear || curve == AudioAttenuationCurveUVE::InverseSquare;
-}
+[[nodiscard]] bool IsAudioAttenuationCurveValidUVE(const AudioAttenuationCurveUVE curve) noexcept;
 
 /// Validates source parameters before persistence and audio-source synchronization. An empty path
 /// remains valid as the existing default/no-clip source state; an optional runtime clip resolver owns
 /// any path/database policy. Distance ordering is required only for spatial sources because 2D sources ignore it.
-[[nodiscard]] inline bool IsAudioSourceComponentValidUVE(const AudioSourceComponentUVE& source) noexcept {
-    const bool spatialDistanceValid =
-        !source.spatial || (std::isfinite(source.minDistance) && source.minDistance > 0.0F &&
-                            std::isfinite(source.maxDistance) && source.maxDistance > source.minDistance);
-    const bool assetPathValid = source.audioAssetPath.size() <= kMaximumAudioAssetPathBytesUVE &&
-                                source.audioAssetPath.find('\0') == std::string::npos;
-    const bool mixerGroupValid = source.mixerGroup.size() <= kMaximumAudioMixerGroupNameBytesUVE &&
-                                 source.mixerGroup.find('\0') == std::string::npos;
-    return assetPathValid && mixerGroupValid && std::isfinite(source.volume) && source.volume >= 0.0F &&
-           std::isfinite(source.pitch) && source.pitch > 0.0F &&
-           IsAudioAttenuationCurveValidUVE(source.attenuationCurve) && spatialDistanceValid;
-}
+[[nodiscard]] bool IsAudioSourceComponentValidUVE(const AudioSourceComponentUVE& source) noexcept;
 
 } // namespace UVE::Scene

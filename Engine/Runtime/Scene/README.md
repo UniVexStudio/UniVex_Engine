@@ -9,9 +9,9 @@ third corner of a triangle new contributors historically confuse:
 | Concern | Module | Lives at / include prefix | Mental model |
 |---|---|---|---|
 | **Entity + component storage (ECS)** | `Engine/Runtime/Entity` | `uve/entity/*` | `EntityUVE` is just an id; components are plain structs in archetype chunks; `IEntityManagerUVE` owns lifecycle + queries. Data-oriented. |
-| **Component definitions** | `Engine/Runtime/Component` | `uve/component/*` | Header-only struct library (Transform, Camera, Light, Mesh, ...). No behavior beyond tiny value semantics. |
+| **Component definitions** | `Engine/Runtime/Component` | `uve/component/*` | One `.h` + `.cpp` pair per component (Transform, Camera, Light, Mesh, ...): the struct + function declarations live in the header, its validators/behavior in the matching `.cpp`. The concept, the type-info template, and the `EntityUVE` handle stay header-only (they cannot or should not leave the header). |
 | **Hierarchy + transforms parenting** | **this module** | `uve/scene/*` (graph, serializer, prefab) | `SceneGraphUVE` parents entities and propagates `TransformComponentUVE` → `WorldTransformComponentUVE`. Hierarchy is *components*, not node objects. |
-| **Typed "Node" vocabulary** | this module (`uve/scene/nodes/`) + `Engine/Runtime/Nodes/3D` (`uve/nodes/3d/`) | registry + structs | `SceneNodeKindUVE` + the registry map a node kind to its real backing struct/components; `Nodes/3D` holds the game-facing structs (RayCast3D, Skeleton3D, etc.). A "Node3D" is a vocabulary over entities+components, **not** a parallel object tree. |
+| **Typed "Node" vocabulary** | this module (`uve/scene/nodes/`) + `Engine/Runtime/Nodes/3D` (`uve/nodes/3d/`) + `Engine/Runtime/Nodes/CanvasLayer` (`uve/nodes/canvas_layer/`) | registry + structs | `SceneNodeKindUVE` + the registry map a node kind to its real backing struct/components; `Nodes/3D` holds the game-facing structs (RayCast3D, Skeleton3D, etc.) plus one creation-recipe `NodeDefinition` file per component-backed kind (Camera3D, the primitive meshes, the physics bodies, ...), and `Nodes/CanvasLayer` holds the four promoted UI kinds' definitions — a recipe, never a second copy of component storage. A "Node3D" is a vocabulary over entities+components, **not** a parallel object tree. |
 
 ## The rules that keep this triangle from duplicating itself
 

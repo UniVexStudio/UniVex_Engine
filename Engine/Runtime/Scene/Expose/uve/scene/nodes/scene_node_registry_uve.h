@@ -49,6 +49,11 @@ enum class SceneNodeKindUVE : std::uint8_t {
     AudioSource3D,
     ParticleEmitter3D,
     Script,
+    Canvas,
+    UIText,
+    UIImage,
+    UIButton,
+    SceneRoot,
 };
 
 struct SceneNodeDescriptorUVE final {

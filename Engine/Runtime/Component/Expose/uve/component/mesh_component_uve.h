@@ -20,10 +20,6 @@ struct MeshComponentUVE final {
 /// Validates the authored asset-reference pair without resolving assets. Both invalid GUIDs are
 /// the established unassigned state; a single invalid GUID would otherwise create a permanently
 /// incomplete render reference and is rejected at persistence/runtime boundaries.
-[[nodiscard]] constexpr bool IsMeshComponentValidUVE(const MeshComponentUVE& component) noexcept {
-    const bool meshUnassigned = component.meshGuid == Asset::kInvalidAssetGuidUVE;
-    const bool materialUnassigned = component.materialGuid == Asset::kInvalidAssetGuidUVE;
-    return meshUnassigned == materialUnassigned;
-}
+[[nodiscard]] bool IsMeshComponentValidUVE(const MeshComponentUVE& component) noexcept;
 
 } // namespace UVE::Scene

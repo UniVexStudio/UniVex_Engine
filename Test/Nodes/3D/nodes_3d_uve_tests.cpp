@@ -85,6 +85,19 @@ TEST(Expanded3DNodeComponentsUVETest, BoneAttachmentBecomesResolvableOnlyWithExp
     EXPECT_FALSE(IsBoneAttachment3DNodeComponentResolvableUVE(attachment));
 }
 
+TEST(Expanded3DNodeComponentsUVETest, Hitbox3DStrikeStateIsRuntimeOnlyAndNeverAuthored) {
+    Hitbox3DNodeComponentUVE hitbox;
+    EXPECT_EQ(hitbox.strikeCount, 0U);
+    EXPECT_FALSE(hitbox.strikesTruncated);
+
+    // Mid-frame runtime state must not change authoring validity - a live hitbox with fresh
+    // strikes still passes the same validation a freshly authored one does.
+    hitbox.strikeCount = 3U;
+    hitbox.strikesTruncated = true;
+    hitbox.strikes[0U] = Hitbox3DStrikeUVE{EntityUVE{}, 0.25F};
+    EXPECT_TRUE(IsHitbox3DNodeComponentValidUVE(hitbox));
+}
+
 TEST(Expanded3DNodeComponentsUVETest, BoundedContractsRejectUnsafeValues) {
     RayCast3DNodeComponentUVE ray;
     ray.exclusionCount = static_cast<std::uint8_t>(kMaximumRayCastExclusionsUVE + 1U);
