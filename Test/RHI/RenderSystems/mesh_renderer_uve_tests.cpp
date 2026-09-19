@@ -493,5 +493,254 @@ TEST_F(MeshRendererUVETest, CullVisibilitySetIntoUVE_EmptySetClearsTheQueue) {
     EXPECT_TRUE(queue.transparentItems.empty());
 }
 
+// ---------------------------------------------------------------------------
+// The placement cache.
+//
+// Placement dominates the frame - measured at roughly 29x the cost of a key
+// comparison - and most objects do not move, so the cache skips recomputing
+// answers the previous frame already had.
+//
+// A cache is the most dangerous kind of code here because its failures are
+// silent: a stale entry renders an object at last frame's position and nothing
+// crashes. So these tests care overwhelmingly about INVALIDATION - proving the
+// cache notices every input that can change - rather than about hit counts.
+// ---------------------------------------------------------------------------
+
+TEST_F(MeshRendererUVETest, PlacementCache_SecondBuildOfAStaticScene_IsAllHits) {
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_static.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_static.uvemat");
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    MakeMeshEntityUVE(Math::Vector3UVE{2.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    MakeMeshEntityUVE(Math::Vector3UVE{4.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    MeshVisibilitySetUVE visibilitySet;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+    // First frame can only miss - there is nothing to reuse yet.
+    EXPECT_EQ(visibilitySet.placementCacheHits, 0U);
+    EXPECT_EQ(visibilitySet.placementCacheMisses, 3U);
+
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+    EXPECT_EQ(visibilitySet.placementCacheHits, 3U);
+    EXPECT_EQ(visibilitySet.placementCacheMisses, 0U);
+    EXPECT_EQ(visibilitySet.candidates.size(), 3U);
+}
+
+TEST_F(MeshRendererUVETest, PlacementCache_HitProducesTheSamePlacementAsARecompute) {
+    // The claim is that a hit is indistinguishable from a recompute. Anything less and the cache
+    // is trading correctness for speed, which is not a trade worth making.
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_same.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_same.uvemat");
+    MakeMeshEntityUVE(Math::Vector3UVE{1.5F, -2.5F, -12.0F}, meshGuid, materialGuid);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    MeshVisibilitySetUVE cached;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, cached);
+    ASSERT_EQ(cached.candidates.size(), 1U);
+    const Math::Matrix4x4UVE firstMatrix = cached.candidates[0].placement.worldMatrix;
+    const Math::AabbUVE firstBounds = cached.candidates[0].placement.worldBounds;
+
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, cached);
+    ASSERT_EQ(cached.placementCacheHits, 1U);
+
+    // A completely fresh set has no cache, so its placement is necessarily recomputed.
+    MeshVisibilitySetUVE fresh;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, fresh);
+    ASSERT_EQ(fresh.placementCacheMisses, 1U);
+    ASSERT_EQ(fresh.candidates.size(), 1U);
+
+    EXPECT_EQ(cached.candidates[0].placement.worldMatrix, fresh.candidates[0].placement.worldMatrix);
+    EXPECT_EQ(cached.candidates[0].placement.worldMatrix, firstMatrix);
+    EXPECT_EQ(cached.candidates[0].placement.worldBounds.min, fresh.candidates[0].placement.worldBounds.min);
+    EXPECT_EQ(cached.candidates[0].placement.worldBounds.max, fresh.candidates[0].placement.worldBounds.max);
+    EXPECT_EQ(firstBounds.min, fresh.candidates[0].placement.worldBounds.min);
+}
+
+TEST_F(MeshRendererUVETest, PlacementCache_MovedEntity_IsRecomputedNotReused) {
+    // THE test. A stale placement renders an object at last frame's position with no error
+    // anywhere - exactly the silent failure a cache introduces if invalidation is wrong.
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_moved.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_moved.uvemat");
+    const Scene::EntityUVE entity = MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    MeshVisibilitySetUVE visibilitySet;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+    ASSERT_EQ(visibilitySet.candidates.size(), 1U);
+    const Math::AabbUVE beforeBounds = visibilitySet.candidates[0].placement.worldBounds;
+
+    Scene::TransformComponentUVE moved;
+    moved.localPosition = Math::Vector3UVE{0.0F, 0.0F, -25.0F};
+    sceneGraph.SetLocalTransformUVE(entityManager, entity, moved);
+    sceneGraph.UpdateUVE(entityManager);
+
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+
+    EXPECT_EQ(visibilitySet.placementCacheHits, 0U);
+    EXPECT_EQ(visibilitySet.placementCacheMisses, 1U);
+    ASSERT_EQ(visibilitySet.candidates.size(), 1U);
+    EXPECT_NE(visibilitySet.candidates[0].placement.worldBounds.min.z, beforeBounds.min.z);
+    EXPECT_FLOAT_EQ(visibilitySet.candidates[0].placement.worldBounds.GetCenterUVE().z, -25.0F);
+}
+
+TEST_F(MeshRendererUVETest, PlacementCache_TinyMovement_StillInvalidates) {
+    // The key is an identity test, not a tolerance test. A sub-millimetre move must still miss -
+    // a cache that rounds is a cache that drifts, and the error accumulates invisibly.
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_tiny.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_tiny.uvemat");
+    const Scene::EntityUVE entity = MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    MeshVisibilitySetUVE visibilitySet;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+
+    Scene::TransformComponentUVE nudged;
+    nudged.localPosition = Math::Vector3UVE{0.0001F, 0.0F, -10.0F};
+    sceneGraph.SetLocalTransformUVE(entityManager, entity, nudged);
+    sceneGraph.UpdateUVE(entityManager);
+
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+
+    EXPECT_EQ(visibilitySet.placementCacheHits, 0U);
+    EXPECT_EQ(visibilitySet.placementCacheMisses, 1U);
+}
+
+TEST_F(MeshRendererUVETest, PlacementCache_RotationAndScaleAreBothPartOfTheKey) {
+    // Position is the obvious field to key on and the easy one to get right. Rotation and scale
+    // change the world bounds just as much and are easy to forget.
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_rs.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_rs.uvemat");
+    const Scene::EntityUVE entity = MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    MeshVisibilitySetUVE visibilitySet;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+
+    Math::QuaternionUVE turned;
+    ASSERT_TRUE(Math::TryMakeAxisAngleUVE(Math::Vector3UVE{0.0F, 1.0F, 0.0F},
+                                          std::numbers::pi_v<float> / 4.0F, turned));
+    Scene::TransformComponentUVE rotated;
+    rotated.localPosition = Math::Vector3UVE{0.0F, 0.0F, -10.0F};
+    rotated.localRotation = turned;
+    sceneGraph.SetLocalTransformUVE(entityManager, entity, rotated);
+    sceneGraph.UpdateUVE(entityManager);
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+    EXPECT_EQ(visibilitySet.placementCacheMisses, 1U) << "rotation must be part of the key";
+
+    // Settle, so the scale check starts from a hit rather than from the rotation's miss.
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+    ASSERT_EQ(visibilitySet.placementCacheHits, 1U);
+
+    Scene::TransformComponentUVE scaled = rotated;
+    scaled.localScale = Math::Vector3UVE{3.0F, 3.0F, 3.0F};
+    sceneGraph.SetLocalTransformUVE(entityManager, entity, scaled);
+    sceneGraph.UpdateUVE(entityManager);
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+    EXPECT_EQ(visibilitySet.placementCacheMisses, 1U) << "scale must be part of the key";
+    ASSERT_EQ(visibilitySet.candidates.size(), 1U);
+    // And the recomputed bounds genuinely reflect the 3x scale, rather than merely being new.
+    const Math::AabbUVE bounds = visibilitySet.candidates[0].placement.worldBounds;
+    EXPECT_GT(bounds.max.x - bounds.min.x, 1.4F);
+}
+
+TEST_F(MeshRendererUVETest, PlacementCache_SwappedMesh_InvalidatesEvenWhenTheTransformIsIdentical) {
+    // A stationary entity whose mesh guid changes. The transform is untouched, so a transform-only
+    // key would happily serve the old mesh's bounds forever.
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE firstMesh = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_swap_a.uvemodel");
+    const Asset::AssetGuidUVE secondMesh = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_swap_b.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_swap.uvemat");
+    const Scene::EntityUVE entity = MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, firstMesh, materialGuid);
+    WaitUntilAssetsReadyUVE(firstMesh, materialGuid);
+    WaitUntilAssetsReadyUVE(secondMesh, materialGuid);
+
+    MeshVisibilitySetUVE visibilitySet;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+    ASSERT_EQ(visibilitySet.placementCacheMisses, 1U);
+
+    entityManager.GetComponentUVE<Scene::MeshComponentUVE>(entity).meshGuid = secondMesh;
+
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+    EXPECT_EQ(visibilitySet.placementCacheHits, 0U);
+    EXPECT_EQ(visibilitySet.placementCacheMisses, 1U);
+}
+
+TEST_F(MeshRendererUVETest, PlacementCache_DestroyedEntity_IsPrunedNotRetained) {
+    // Unbounded growth turns a cache into a leak. A long-running streaming world must not retain
+    // an entry for every entity it has ever shown.
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_prune.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_prune.uvemat");
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    const Scene::EntityUVE doomed = MakeMeshEntityUVE(Math::Vector3UVE{2.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    MeshVisibilitySetUVE visibilitySet;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+    EXPECT_EQ(visibilitySet.placementCache.size(), 2U);
+
+    entityManager.DestroyEntityUVE(doomed);
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+
+    EXPECT_EQ(visibilitySet.candidates.size(), 1U);
+    EXPECT_EQ(visibilitySet.placementCache.size(), 1U) << "the destroyed entity's entry must be pruned";
+}
+
+TEST_F(MeshRendererUVETest, PlacementCache_SurvivesManyFramesWithoutGrowing) {
+    // The steady state a real frame loop lives in: same scene, many frames. The cache must reach a
+    // fixed size and stay there, all hits.
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_steady.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_steady.uvemat");
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    MakeMeshEntityUVE(Math::Vector3UVE{2.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    MeshVisibilitySetUVE visibilitySet;
+    for (int frame = 0; frame < 50; ++frame) {
+        meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+    }
+
+    EXPECT_EQ(visibilitySet.placementCache.size(), 2U);
+    EXPECT_EQ(visibilitySet.placementCacheHits, 2U);
+    EXPECT_EQ(visibilitySet.placementCacheMisses, 0U);
+    EXPECT_EQ(visibilitySet.candidates.size(), 2U);
+}
+
+TEST_F(MeshRendererUVETest, PlacementCache_DoesNotChangeTheQueueAnyFrameProduces) {
+    // The end-to-end guarantee, stated where a reader will look for it: caching is invisible
+    // downstream. A frame served entirely from cache must cull to exactly the queue an uncached
+    // frame would.
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_queue.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_queue.uvemat");
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -30.0F}, meshGuid, materialGuid);
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 50.0F}, meshGuid, materialGuid);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+    const Math::FrustumUVE frustum = MakeTestFrustumUVE();
+
+    MeshVisibilitySetUVE warm;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, warm);
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, warm);
+    ASSERT_EQ(warm.placementCacheMisses, 0U);
+    RenderQueueUVE warmQueue;
+    meshRenderer.CullVisibilitySetIntoUVE(warm, frustum, warmQueue);
+
+    RenderQueueUVE coldQueue;
+    meshRenderer.ExtractRenderQueueIntoUVE(entityManager, assetManager, assetDatabase, frustum, coldQueue);
+
+    ASSERT_EQ(warmQueue.opaqueItems.size(), coldQueue.opaqueItems.size());
+    for (std::size_t index = 0U; index < coldQueue.opaqueItems.size(); ++index) {
+        EXPECT_EQ(warmQueue.opaqueItems[index].worldMatrix, coldQueue.opaqueItems[index].worldMatrix);
+        EXPECT_FLOAT_EQ(warmQueue.opaqueItems[index].sortDepth, coldQueue.opaqueItems[index].sortDepth);
+    }
+}
+
 } // namespace
 } // namespace UVE::Render::Tests

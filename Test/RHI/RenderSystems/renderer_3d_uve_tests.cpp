@@ -1755,5 +1755,27 @@ TEST_F(Renderer3DUVETest, ResizeTargetsUVE_ZeroSizeStillRejected) {
     EXPECT_FALSE(renderer3D->ResizeTargetsUVE(640U, 0U));
 }
 
+TEST_F(Renderer3DUVETest, RenderFrameUVE_StaticSceneSecondFrame_ServesPlacementsFromCache) {
+    // End-to-end confirmation that the cache is actually reached through a real frame, not just
+    // through MeshRendererUVE directly - the renderer owns the set across frames, and a set
+    // rebuilt or reset per frame would silently never hit while every unit test still passed.
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_cache_mesh.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_cache_material.uvemat");
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    MakeMeshEntityUVE(Math::Vector3UVE{2.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const Renderer3DFrameDiagnosticsUVE firstFrame = renderer3D->GetLastFrameDiagnosticsUVE();
+    EXPECT_EQ(firstFrame.placementCacheHits, 0U);
+    EXPECT_EQ(firstFrame.placementCacheMisses, 2U);
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const Renderer3DFrameDiagnosticsUVE secondFrame = renderer3D->GetLastFrameDiagnosticsUVE();
+    EXPECT_EQ(secondFrame.placementCacheHits, 2U);
+    EXPECT_EQ(secondFrame.placementCacheMisses, 0U);
+}
+
 } // namespace
 } // namespace UVE::Render::Tests
