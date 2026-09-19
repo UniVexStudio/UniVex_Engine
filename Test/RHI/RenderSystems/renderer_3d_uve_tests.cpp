@@ -1802,5 +1802,159 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_StaticSceneSecondFrame_ServesPlacements
     EXPECT_EQ(movedFrame.placementCacheHits, 1U);
 }
 
+TEST_F(Renderer3DUVETest, RenderFrameUVE_StaticPrimitives_ReachAnAllHitSteadyState) {
+    // The property that matters, stated the way the mesh-cache test states it: once the scene is
+    // static, every subsequent frame is all hits and no misses. Not asserted as a cold first frame
+    // - the fixture's own priming renders frames before this test does, and a miss count that
+    // depends on how many is a test about the fixture, not about the cache.
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Scene::EntityUVE movingEntity = MakePrimitiveEntityUVE(
+        Math::Vector3UVE{0.0F, 0.0F, -10.0F},
+        Scene::PrimitiveMeshComponentUVE{Scene::PrimitiveMeshKindUVE::Cube, Math::Vector3UVE{1.0F, 1.0F, 1.0F}});
+    MakePrimitiveEntityUVE(
+        Math::Vector3UVE{2.0F, 0.0F, -10.0F},
+        Scene::PrimitiveMeshComponentUVE{Scene::PrimitiveMeshKindUVE::UVSphere, Math::Vector3UVE{1.0F, 0.0F, 0.0F}});
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const Renderer3DFrameDiagnosticsUVE firstFrame = renderer3D->GetLastFrameDiagnosticsUVE();
+    EXPECT_EQ(firstFrame.primitivePlacementCacheHits + firstFrame.primitivePlacementCacheMisses, 2U)
+        << "every primitive candidate must be accounted for as exactly one hit or one miss";
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const Renderer3DFrameDiagnosticsUVE secondFrame = renderer3D->GetLastFrameDiagnosticsUVE();
+    EXPECT_EQ(secondFrame.primitivePlacementCacheHits, 2U);
+    EXPECT_EQ(secondFrame.primitivePlacementCacheMisses, 0U);
+
+    // A third frame, to prove the steady state is steady rather than alternating.
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const Renderer3DFrameDiagnosticsUVE thirdFrame = renderer3D->GetLastFrameDiagnosticsUVE();
+    EXPECT_EQ(thirdFrame.primitivePlacementCacheHits, 2U);
+    EXPECT_EQ(thirdFrame.primitivePlacementCacheMisses, 0U);
+
+    // Moving one primitive must cost exactly one miss - not zero (stale) and not two (the cache
+    // dropping an untouched neighbour along with the one that moved).
+    Scene::TransformComponentUVE moved;
+    moved.localPosition = Math::Vector3UVE{0.0F, 0.0F, -18.0F};
+    sceneGraph.SetLocalTransformUVE(entityManager, movingEntity, moved);
+    sceneGraph.UpdateUVE(entityManager);
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const Renderer3DFrameDiagnosticsUVE movedFrame = renderer3D->GetLastFrameDiagnosticsUVE();
+    EXPECT_EQ(movedFrame.primitivePlacementCacheMisses, 1U);
+    EXPECT_EQ(movedFrame.primitivePlacementCacheHits, 1U);
+}
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_ChangingOnlyThePrimitiveKind_InvalidatesThePlacement) {
+    // The hazard specific to this key. Kind is not part of the transform, but it selects the local
+    // bounds the world bounds are derived from, so a key that omitted it would serve a cube's
+    // bounds for a sphere with the transform sitting perfectly still. Exercised by swapping kind
+    // and nothing else.
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Scene::EntityUVE entity = MakePrimitiveEntityUVE(
+        Math::Vector3UVE{0.0F, 0.0F, -10.0F},
+        Scene::PrimitiveMeshComponentUVE{Scene::PrimitiveMeshKindUVE::Cube, Math::Vector3UVE{1.0F, 1.0F, 1.0F}});
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    ASSERT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().primitivePlacementCacheMisses, 0U)
+        << "the cache must be warm before the kind swap for the swap to prove anything";
+
+    entityManager.GetComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity).kind =
+        Scene::PrimitiveMeshKindUVE::UVSphere;
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().primitivePlacementCacheMisses, 1U)
+        << "a kind change must invalidate the cached bounds even though the transform is identical";
+}
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_MovingOnlyTheCamera_StillHitsThePlacementCache) {
+    // The split this optimization rests on: placement is entity-dependent and cached, culling and
+    // sort depth are view-dependent and are not. A camera move must therefore cost zero misses
+    // while still being free to change what is visible. If someone later folds the frustum test
+    // into the cached half, this is the test that catches it.
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    MakePrimitiveEntityUVE(
+        Math::Vector3UVE{0.0F, 0.0F, -10.0F},
+        Scene::PrimitiveMeshComponentUVE{Scene::PrimitiveMeshKindUVE::Cube, Math::Vector3UVE{1.0F, 1.0F, 1.0F}});
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    ASSERT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().primitivePlacementCacheMisses, 0U);
+    ASSERT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().primitiveItemsExtracted, 1U);
+
+    // Turn the camera away from the primitive. Same scene, different view.
+    Scene::TransformComponentUVE cameraTransform;
+    cameraTransform.localPosition = Math::Vector3UVE{0.0F, 0.0F, -400.0F};
+    sceneGraph.SetLocalTransformUVE(entityManager, cameraEntity, cameraTransform);
+    sceneGraph.UpdateUVE(entityManager);
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const Renderer3DFrameDiagnosticsUVE movedCamera = renderer3D->GetLastFrameDiagnosticsUVE();
+    EXPECT_EQ(movedCamera.primitivePlacementCacheMisses, 0U)
+        << "the camera moving must not invalidate any entity's placement";
+    EXPECT_EQ(movedCamera.primitivePlacementCacheHits, 1U);
+    EXPECT_EQ(movedCamera.primitiveItemsExtracted, 0U)
+        << "culling must still respond to the new view despite the placement being reused";
+}
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_RejectedPrimitive_IsCachedAsARejectionAndStaysRejected) {
+    // A rejection costs the same recompute to rediscover as a success, so it is cached too. The
+    // risk in caching a negative is that it is cached as a positive by accident - an entity that
+    // cannot produce finite geometry must never appear in the extracted items, on the miss frame
+    // or on any hit frame after it.
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE transform;
+    transform.localPosition = Math::Vector3UVE{std::numeric_limits<float>::max(), 0.0F, -10.0F};
+    sceneGraph.AttachTransformUVE(entityManager, entity, transform);
+    sceneGraph.UpdateUVE(entityManager);
+    entityManager.AddComponentUVE<Scene::PrimitiveMeshComponentUVE>(
+        entity,
+        Scene::PrimitiveMeshComponentUVE{Scene::PrimitiveMeshKindUVE::Cube, Math::Vector3UVE{1.0F, 1.0F, 1.0F}});
+
+    for (int frame = 0; frame < 3; ++frame) {
+        renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+        const Renderer3DFrameDiagnosticsUVE diagnostics = renderer3D->GetLastFrameDiagnosticsUVE();
+        EXPECT_EQ(diagnostics.primitiveCandidates, 1U) << "frame " << frame;
+        EXPECT_EQ(diagnostics.primitiveItemsExtracted, 0U)
+            << "a rejected primitive must stay rejected on frame " << frame;
+    }
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().primitivePlacementCacheHits, 1U)
+        << "the rejection must be served from the cache, not recomputed every frame";
+}
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_DestroyedPrimitive_IsPrunedFromThePlacementCache) {
+    // The cache outlives the frame, so it must not outlive the entity. There is no accessor for
+    // the cache's size, so this drives the prune through what is observable: after a destroy the
+    // remaining primitive must still be a hit (the prune must not evict the survivor) and the
+    // destroyed one must no longer be counted as a candidate at all.
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Scene::EntityUVE doomed = MakePrimitiveEntityUVE(
+        Math::Vector3UVE{0.0F, 0.0F, -10.0F},
+        Scene::PrimitiveMeshComponentUVE{Scene::PrimitiveMeshKindUVE::Cube, Math::Vector3UVE{1.0F, 1.0F, 1.0F}});
+    MakePrimitiveEntityUVE(
+        Math::Vector3UVE{2.0F, 0.0F, -10.0F},
+        Scene::PrimitiveMeshComponentUVE{Scene::PrimitiveMeshKindUVE::Cube, Math::Vector3UVE{1.0F, 1.0F, 1.0F}});
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    ASSERT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().primitivePlacementCacheHits, 2U);
+
+    entityManager.DestroyEntityUVE(doomed);
+    sceneGraph.UpdateUVE(entityManager);
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const Renderer3DFrameDiagnosticsUVE afterDestroy = renderer3D->GetLastFrameDiagnosticsUVE();
+    EXPECT_EQ(afterDestroy.primitiveCandidates, 1U);
+    EXPECT_EQ(afterDestroy.primitivePlacementCacheHits, 1U)
+        << "the surviving primitive must still be served from the cache";
+    EXPECT_EQ(afterDestroy.primitivePlacementCacheMisses, 0U);
+
+    // And a frame later the survivor is still a hit, proving the prune left a usable cache behind
+    // rather than one that happens to work once.
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().primitivePlacementCacheHits, 1U);
+}
+
 } // namespace
 } // namespace UVE::Render::Tests

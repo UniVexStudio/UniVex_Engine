@@ -41,6 +41,13 @@ struct Renderer3DFrameDiagnosticsUVE final {
     std::size_t failedAssetLoads = 0U;
     std::size_t textureFallbacks = 0U;
     std::size_t primitiveCandidates = 0U;
+
+    /// Primitive placement cache outcomes for the frame. Reported for the same reason the mesh
+    /// path reports its own: a cache with no visibility into its hit rate is a cache nobody can
+    /// tell is broken - a subtle key bug that misses every frame costs a comparison on top of the
+    /// original work and otherwise looks identical from the outside.
+    std::size_t primitivePlacementCacheHits = 0U;
+    std::size_t primitivePlacementCacheMisses = 0U;
     std::size_t primitiveItemsExtracted = 0U;
     std::size_t meshDrawCallsRecorded = 0U;
     /// How many of `meshDrawCallsRecorded` were instanced draws, and how many objects those draws

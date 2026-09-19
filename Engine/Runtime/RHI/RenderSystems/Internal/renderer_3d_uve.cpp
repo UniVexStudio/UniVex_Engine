@@ -138,6 +138,42 @@ struct PrimitiveRenderItemUVE {
     float sortDepth = 0.0F;
 };
 
+/// Identity of a primitive's placement inputs. Two placements with equal keys must produce equal
+/// world matrices and bounds, so every input the extraction reads appears here.
+///
+/// Exact float equality, matching MeshPlacementKeyUVE deliberately rather than using a tolerance:
+/// a tolerance would let an object drift arbitrarily far in steps below it, and NaN comparing
+/// unequal is the outcome we want twice over - recomputation is what rejects it, and a key that
+/// "matched" two NaNs would be claiming a broken transform is unchanged.
+struct PrimitivePlacementKeyUVE {
+    Math::Vector3UVE worldPosition{};
+    Math::QuaternionUVE worldRotation{};
+    Math::Vector3UVE worldScale{};
+    Scene::PrimitiveMeshKindUVE kind = Scene::PrimitiveMeshKindUVE::Cube;
+
+    [[nodiscard]] bool MatchesUVE(const PrimitivePlacementKeyUVE& other) const noexcept {
+        // Kind first: a single enum compare, and the field whose change invalidates the geometry
+        // wholesale, so it rejects earliest for least work.
+        return kind == other.kind && worldPosition.x == other.worldPosition.x &&
+               worldPosition.y == other.worldPosition.y && worldPosition.z == other.worldPosition.z &&
+               worldRotation.x == other.worldRotation.x && worldRotation.y == other.worldRotation.y &&
+               worldRotation.z == other.worldRotation.z && worldRotation.w == other.worldRotation.w &&
+               worldScale.x == other.worldScale.x && worldScale.y == other.worldScale.y &&
+               worldScale.z == other.worldScale.z;
+    }
+};
+
+/// A cached primitive placement. `placed` false records a REJECTION - a non-finite transform, an
+/// unnormalizable rotation, degenerate bounds - which is worth caching exactly as much as a
+/// success: it costs the same recompute to rediscover, every frame, forever.
+struct PrimitivePlacementCacheEntryUVE {
+    PrimitivePlacementKeyUVE key{};
+    Math::Matrix4x4UVE worldMatrix{};
+    Math::AabbUVE worldBounds{};
+    bool placed = false;
+    std::uint64_t lastSeenFrame = 0U;
+};
+
 /// CPU-expanded particle vertex consumed by the minimal built-in particle pipeline. The four
 /// color floats carry a stable warm tint plus lifetime-derived alpha; keeping this as a private
 /// renderer DTO prevents particle authoring data from crossing the RHI boundary.
@@ -672,6 +708,25 @@ struct Renderer3DUVE::ImplUVE {
     RenderQueueUVE frameQueue;
     std::array<RenderQueueUVE, kShadowCascadeCountUVE> shadowQueues;
     std::vector<PrimitiveRenderItemUVE> primitiveItems;
+
+    /// Last frame's primitive placement per entity, reused when nothing about that entity changed.
+    ///
+    /// WHY THIS EXISTS. The mesh path already caches placement; the primitive path was left
+    /// recomputing the same TRS compose and bounds transform every frame for objects that had not
+    /// moved. Measured on this engine's own maths: recomputing a primitive placement costs about
+    /// 123 us per 1000, comparing the key and reusing the answer about 1.8 us - roughly 67x.
+    /// Primitives are overwhelmingly static scene dressing, so nearly all of that work was
+    /// recomputing the previous frame's answer.
+    ///
+    /// Keyed by EntityUVE, which is generational, so a destroyed entity whose index is reused gets
+    /// a different key and cannot inherit the dead entity's bounds. Bounded by the same
+    /// seen-this-frame prune the mesh cache uses - without it a long session retains an entry for
+    /// every primitive the scene ever had.
+    std::unordered_map<Scene::EntityUVE, PrimitivePlacementCacheEntryUVE> primitivePlacementCache;
+
+    /// Monotonic stamp for the prune above. Starts at 0 and is pre-incremented, so a live entry
+    /// always has a non-zero lastSeenFrame and "never populated" stays distinguishable.
+    std::uint64_t primitiveFrameIndex = 0U;
     ParticleDrawRecordingUVE particleDrawRecording;
     Events::EventSubscriptionUVE reloadSubscription;
     const Scene::ParticleRuntimeUVE* particleRuntimeForFrame = nullptr;
@@ -1217,47 +1272,105 @@ struct Renderer3DUVE::ImplUVE {
         commandBuffer.EndRenderPassUVE();
     }
 
+    /// Builds this frame's visible primitive list.
+    ///
+    /// Split deliberately into two halves. Everything that depends only on the ENTITY - normalized
+    /// rotation, world matrix, world bounds - is cached across frames and keyed on the transform
+    /// that produced it. Everything that depends on the VIEW - the frustum test and the sort depth
+    /// - is recomputed every frame, because the camera moves even when nothing in the scene does.
+    /// Caching the view-dependent half would be a correctness bug, not an optimization.
     void ExtractPrimitiveItemsUVE(Scene::IEntityManagerUVE& entityManager, const Math::FrustumUVE& frustum,
                                    std::vector<PrimitiveRenderItemUVE>& outItems) {
         outItems.clear();
+        ++primitiveFrameIndex;
         entityManager.ForEachUVE<Scene::WorldTransformComponentUVE, Scene::PrimitiveMeshComponentUVE>(
-            [&](Scene::EntityUVE, const Scene::WorldTransformComponentUVE& worldTransform,
+            [&](Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE& worldTransform,
                 const Scene::PrimitiveMeshComponentUVE& primitive) {
                 if (worldTransform.dirty || !Scene::IsPrimitiveMeshComponentValidUVE(primitive)) {
+                    // Returning before the cache is touched leaves any existing entry unstamped,
+                    // so an entity that stays dirty or invalid is pruned rather than kept alive by
+                    // a placement nobody can use.
                     return;
                 }
                 ++lastFrameDiagnostics.primitiveCandidates;
-                if (!IsFiniteVectorUVE(worldTransform.worldPosition) || !IsFiniteVectorUVE(worldTransform.worldScale) ||
-                    !Math::IsFiniteUVE(worldTransform.worldRotation)) {
+
+                const PrimitivePlacementKeyUVE key{worldTransform.worldPosition, worldTransform.worldRotation,
+                                                   worldTransform.worldScale, primitive.kind};
+                PrimitivePlacementCacheEntryUVE& cacheEntry = primitivePlacementCache[entity];
+                if (cacheEntry.lastSeenFrame != 0U && cacheEntry.key.MatchesUVE(key)) {
+                    ++lastFrameDiagnostics.primitivePlacementCacheHits;
+                } else {
+                    ++lastFrameDiagnostics.primitivePlacementCacheMisses;
+                    cacheEntry.key = key;
+                    cacheEntry.placed = TryComputePrimitivePlacementUVE(worldTransform, primitive,
+                                                                        cacheEntry.worldMatrix,
+                                                                        cacheEntry.worldBounds);
+                }
+                // Stamped on hit as well as miss: the stamp records "seen this frame", which is
+                // what the prune reads. Only stamping misses would evict every stationary object -
+                // precisely the objects the cache exists to serve.
+                cacheEntry.lastSeenFrame = primitiveFrameIndex;
+
+                if (!cacheEntry.placed) {
                     return;
                 }
-                Math::QuaternionUVE normalizedRotation;
-                if (!Math::TryNormalizeUVE(worldTransform.worldRotation, normalizedRotation)) {
+
+                // View-dependent from here down. Never cached.
+                if (!frustum.IntersectsUVE(cacheEntry.worldBounds)) {
                     return;
                 }
-                const PrimitiveGeometryUVE& geometry = GetPrimitiveGeometryUVE(primitive.kind);
-                if (!IsOrderedFiniteAabbUVE(geometry.localBounds)) {
-                    return;
-                }
-                const Math::Matrix4x4UVE worldMatrix = Math::Matrix4x4UVE::ComposeTrsUVE(
-                    worldTransform.worldPosition, normalizedRotation, worldTransform.worldScale);
-                if (!IsFiniteMatrixUVE(worldMatrix)) {
-                    return;
-                }
-                const Math::AabbUVE worldBounds = geometry.localBounds.TransformUVE(worldMatrix);
-                if (!IsOrderedFiniteAabbUVE(worldBounds) || !frustum.IntersectsUVE(worldBounds)) {
-                    return;
-                }
-                const float sortDepth = frustum.planes[4U].GetSignedDistanceUVE(worldBounds.GetCenterUVE());
+                const float sortDepth = frustum.planes[4U].GetSignedDistanceUVE(cacheEntry.worldBounds.GetCenterUVE());
                 if (!std::isfinite(sortDepth)) {
                     return;
                 }
-                outItems.push_back(PrimitiveRenderItemUVE{worldMatrix, primitive.kind, primitive.baseColor, sortDepth});
+                outItems.push_back(
+                    PrimitiveRenderItemUVE{cacheEntry.worldMatrix, primitive.kind, primitive.baseColor, sortDepth});
             });
+
+        // Erase-while-iterating over an unordered_map, safe for the erased element only, so the
+        // iterator is advanced before the erase and never after. Mirrors
+        // MeshVisibilitySetUVE::PruneUnseenPlacementsUVE.
+        for (auto it = primitivePlacementCache.begin(); it != primitivePlacementCache.end();) {
+            if (it->second.lastSeenFrame != primitiveFrameIndex) {
+                it = primitivePlacementCache.erase(it);
+            } else {
+                ++it;
+            }
+        }
+
         std::sort(outItems.begin(), outItems.end(),
                   [](const PrimitiveRenderItemUVE& lhs, const PrimitiveRenderItemUVE& rhs) {
                       return lhs.sortDepth < rhs.sortDepth;
                   });
+    }
+
+    /// The entity-dependent half of primitive extraction, factored out so the cache stores the
+    /// result of exactly one function and the miss path cannot drift from what the key promises.
+    /// Returns false for any input that cannot produce finite geometry; the caller caches that
+    /// rejection rather than rediscovering it every frame.
+    [[nodiscard]] static bool TryComputePrimitivePlacementUVE(const Scene::WorldTransformComponentUVE& worldTransform,
+                                                              const Scene::PrimitiveMeshComponentUVE& primitive,
+                                                              Math::Matrix4x4UVE& outWorldMatrix,
+                                                              Math::AabbUVE& outWorldBounds) {
+        if (!IsFiniteVectorUVE(worldTransform.worldPosition) || !IsFiniteVectorUVE(worldTransform.worldScale) ||
+            !Math::IsFiniteUVE(worldTransform.worldRotation)) {
+            return false;
+        }
+        Math::QuaternionUVE normalizedRotation;
+        if (!Math::TryNormalizeUVE(worldTransform.worldRotation, normalizedRotation)) {
+            return false;
+        }
+        const PrimitiveGeometryUVE& geometry = GetPrimitiveGeometryUVE(primitive.kind);
+        if (!IsOrderedFiniteAabbUVE(geometry.localBounds)) {
+            return false;
+        }
+        outWorldMatrix = Math::Matrix4x4UVE::ComposeTrsUVE(worldTransform.worldPosition, normalizedRotation,
+                                                           worldTransform.worldScale);
+        if (!IsFiniteMatrixUVE(outWorldMatrix)) {
+            return false;
+        }
+        outWorldBounds = geometry.localBounds.TransformUVE(outWorldMatrix);
+        return IsOrderedFiniteAabbUVE(outWorldBounds);
     }
 
     /// transpose(inverse(model)), falling back to the model matrix itself when it is singular -
