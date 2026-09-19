@@ -1762,19 +1762,44 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_StaticSceneSecondFrame_ServesPlacements
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
     const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_cache_mesh.uvemodel");
     const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_cache_material.uvemat");
-    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    const Scene::EntityUVE movingEntity =
+        MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     MakeMeshEntityUVE(Math::Vector3UVE{2.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
 
+    // NOTE: WaitUntilAssetsReadyUVE primes the material program by rendering a frame of its own
+    // (see PrimeMaterialProgramUVE), so the cache is already warm by the time this test renders.
+    // Asserting a cold first frame here was wrong about the fixture, not about the cache. Rather
+    // than assert a miss count that depends on how many frames the fixture happened to render,
+    // this drives the property that actually matters and holds either way: once the scene is
+    // static, every subsequent frame is all hits and no misses.
     renderer3D->RenderFrameUVE(entityManager, cameraEntity);
     const Renderer3DFrameDiagnosticsUVE firstFrame = renderer3D->GetLastFrameDiagnosticsUVE();
-    EXPECT_EQ(firstFrame.placementCacheHits, 0U);
-    EXPECT_EQ(firstFrame.placementCacheMisses, 2U);
+    EXPECT_EQ(firstFrame.placementCacheHits + firstFrame.placementCacheMisses, 2U)
+        << "every mesh entity must be accounted for as exactly one hit or one miss";
 
     renderer3D->RenderFrameUVE(entityManager, cameraEntity);
     const Renderer3DFrameDiagnosticsUVE secondFrame = renderer3D->GetLastFrameDiagnosticsUVE();
     EXPECT_EQ(secondFrame.placementCacheHits, 2U);
     EXPECT_EQ(secondFrame.placementCacheMisses, 0U);
+
+    // A third frame, to prove the steady state is genuinely steady rather than alternating.
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const Renderer3DFrameDiagnosticsUVE thirdFrame = renderer3D->GetLastFrameDiagnosticsUVE();
+    EXPECT_EQ(thirdFrame.placementCacheHits, 2U);
+    EXPECT_EQ(thirdFrame.placementCacheMisses, 0U);
+
+    // And moving one entity must cost exactly one miss - not zero (stale) and not two (the cache
+    // dropping an untouched neighbour along with the one that moved).
+    Scene::TransformComponentUVE moved;
+    moved.localPosition = Math::Vector3UVE{0.0F, 0.0F, -18.0F};
+    sceneGraph.SetLocalTransformUVE(entityManager, movingEntity, moved);
+    sceneGraph.UpdateUVE(entityManager);
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const Renderer3DFrameDiagnosticsUVE movedFrame = renderer3D->GetLastFrameDiagnosticsUVE();
+    EXPECT_EQ(movedFrame.placementCacheMisses, 1U);
+    EXPECT_EQ(movedFrame.placementCacheHits, 1U);
 }
 
 } // namespace
