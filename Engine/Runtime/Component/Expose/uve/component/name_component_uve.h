@@ -18,9 +18,6 @@ struct NameComponentUVE final {
     std::string name;
 };
 
-[[nodiscard]] inline bool IsNameComponentValidUVE(const NameComponentUVE& component) noexcept {
-    return component.name.size() <= kMaximumEntityNameBytesUVE &&
-           component.name.find('\0') == std::string::npos;
-}
+[[nodiscard]] bool IsNameComponentValidUVE(const NameComponentUVE& component) noexcept;
 
 } // namespace UVE::Scene

@@ -380,6 +380,10 @@ public:
     [[nodiscard]] bool CanRedoUVE() const noexcept;
 
     [[nodiscard]] std::vector<Scene::EntityUVE> GetDocumentRootsUVE();
+
+    /// The document's single scene-root entity (the top of the hierarchy), or invalid when the
+    /// document somehow has none. Structural only by design: name + identity transform.
+    [[nodiscard]] Scene::EntityUVE GetDocumentSceneRootUVE();
     [[nodiscard]] EditorStateUVE GetStateUVE() const noexcept;
     [[nodiscard]] Scene::EntityUVE GetSelectedEntityUVE() const noexcept;
     /// Returns editor-only 2D canvas state for screen-space authoring. It is not scene data.
@@ -568,6 +572,9 @@ private:
         EditorSelectionSnapshotUVE selectionAfter;
         bool dirtyBefore = false;
         bool dirtyAfter = false;
+        /// The parent the node was created under; Redo restores the subtree back under it
+        /// (falling back to the scene root) instead of dropping it to document top level.
+        Scene::EntityUVE createdUnderParent = Scene::kInvalidEntityUVE;
     };
 
     /// A duplicated subtree is restored from a scene-envelope snapshot instead of relying on stale
@@ -687,6 +694,25 @@ private:
     void CancelHierarchyRenameUVE() noexcept;
     [[nodiscard]] Scene::EntityUVE CreateDocumentEntityInternalUVE(
         EditorEntityKindUVE kind, const std::optional<std::string>& explicitName);
+    /// Creates the document-entity shell every scene node starts from: a live entity with a
+    /// default TransformComponentUVE and the given (already finalized) NameComponentUVE.
+    /// Node definitions (Engine/Runtime/Nodes/3D) attach their kind-specific components on top.
+    [[nodiscard]] Scene::EntityUVE CreateDocumentEntityShellInternalUVE(const std::string_view name);
+
+    /// Returns whether `entity` carries the scene-root marker. The root is never deletable,
+    /// re-parentable, or duplicable - every one of those commands checks this first.
+    [[nodiscard]] bool IsSceneRootEntityUVE(Scene::EntityUVE entity) const;
+
+    /// Returns the document's scene root when one exists, else creates it (name + transform +
+    /// marker via the SceneRoot NodeDefinition). Idempotent: the one-root invariant every
+    /// document seam relies on is established or confirmed on every call.
+    [[nodiscard]] Scene::EntityUVE EnsureDocumentSceneRootUVE();
+    /// Creates a document entity for one node kind from that kind's NodeDefinition: a
+    /// uniquely-named entity shell plus the definition's component recipe. Defined in
+    /// editor_uve.cpp next to its only call sites.
+    template <typename Definition, typename ApplyFunc>
+    [[nodiscard]] Scene::EntityUVE CreateNodeDefinitionEntityInternalUVE(const Definition& definition,
+                                                                         ApplyFunc applyDefinition);
     void RecordHistoryUVE(HistoryEntryUVE entry);
     void ClearHistoryUVE() noexcept;
     [[nodiscard]] bool UndoHistoryEntryUVE(HistoryEntryUVE& entry);

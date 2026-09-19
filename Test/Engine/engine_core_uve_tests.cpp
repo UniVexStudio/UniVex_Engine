@@ -54,6 +54,8 @@
 #include "uve/component/camera_component_uve.h"
 #include "uve/component/character_controller_component_uve.h"
 #include "uve/component/collider_component_uve.h"
+#include "uve/nodes/3d/hitbox_3d_uve.h"
+#include "uve/nodes/3d/hurtbox_3d_uve.h"
 #include "uve/nodes/3d/projectile_3d_uve.h"
 #include "uve/nodes/3d/ray_cast_3d_uve.h"
 #include "uve/component/mesh_component_uve.h"
@@ -1369,6 +1371,145 @@ TEST(EngineCoreUVETest, RayCast3DNode_HitsRealGroundColliderExcludesItselfAndMis
     live.length = 1.0F;
     engine.TickFrameUVE();
     EXPECT_FALSE(entityManager.GetComponentUVE<Scene::RayCast3DNodeComponentUVE>(caster).hit);
+
+    engine.Shutdown();
+}
+
+TEST(EngineCoreUVETest, Hitbox3DNode_StrikesOverlappingHurtboxAndClearsWhenGatedOrApart) {
+    // EngineCoreUVE::SyncHitbox3DNodesUVE() is new wiring: previously Hitbox3DNodeComponentUVE
+    // and Hurtbox3DNodeComponentUVE were pure authored data with nothing evaluating them. This
+    // proves the real per-frame pairing - exact oriented-box overlap with symmetric layer/mask
+    // acceptance, damage-channel equality, and self-exclusion - and that every gate clears
+    // stale strikes instead of keeping the previous frame's list.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    // Attacker at the origin with default combat volumes (half extents 0.5, layer 1, full mask,
+    // channel "default"); victim parked 0.5 units away so the boxes overlap 0.5 units along X.
+    const Scene::EntityUVE attacker = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, attacker, Scene::TransformComponentUVE{});
+    entityManager.AddComponentUVE<Scene::Hitbox3DNodeComponentUVE>(
+        attacker, Scene::Hitbox3DNodeComponentUVE{});
+
+    const Scene::EntityUVE victim = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE victimTransform;
+    victimTransform.localPosition = Math::Vector3UVE{0.5F, 0.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, victim, victimTransform);
+    entityManager.AddComponentUVE<Scene::Hurtbox3DNodeComponentUVE>(
+        victim, Scene::Hurtbox3DNodeComponentUVE{});
+
+    engine.TickFrameUVE();
+    {
+        const Scene::Hitbox3DNodeComponentUVE& afterStrike =
+            entityManager.GetComponentUVE<Scene::Hitbox3DNodeComponentUVE>(attacker);
+        ASSERT_EQ(afterStrike.strikeCount, 1U);
+        EXPECT_EQ(afterStrike.strikes[0U].hurtboxEntity, victim);
+        EXPECT_NEAR(afterStrike.strikes[0U].penetrationDepth, 0.5F, 0.01F);
+        EXPECT_FALSE(afterStrike.strikesTruncated);
+    }
+
+    // Moving the hurtbox far out of range must clear the strike, not keep the stale one.
+    Scene::TransformComponentUVE victimLive =
+        entityManager.GetComponentUVE<Scene::TransformComponentUVE>(victim);
+    victimLive.localPosition = Math::Vector3UVE{10.0F, 0.0F, 0.0F};
+    sceneGraph.SetLocalTransformUVE(entityManager, victim, victimLive);
+    engine.TickFrameUVE();
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::Hitbox3DNodeComponentUVE>(attacker).strikeCount, 0U);
+
+    // Back in range but on a different damage channel: no strike.
+    victimLive.localPosition = Math::Vector3UVE{0.5F, 0.0F, 0.0F};
+    sceneGraph.SetLocalTransformUVE(entityManager, victim, victimLive);
+    Scene::Hurtbox3DNodeComponentUVE& hurtboxLive =
+        entityManager.GetComponentUVE<Scene::Hurtbox3DNodeComponentUVE>(victim);
+    hurtboxLive.damageChannel = "environment";
+    engine.TickFrameUVE();
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::Hitbox3DNodeComponentUVE>(attacker).strikeCount, 0U);
+
+    // Same channel again but the hurtbox's mask no longer accepts the hitbox's layer: no strike
+    // (acceptance is symmetric - both sides must accept each other).
+    hurtboxLive.damageChannel = "default";
+    hurtboxLive.collisionMask = 0U;
+    engine.TickFrameUVE();
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::Hitbox3DNodeComponentUVE>(attacker).strikeCount, 0U);
+
+    // Mask restored but the hitbox itself is disabled: no strike, and none may linger.
+    hurtboxLive.collisionMask = 0xFFFFFFFFU;
+    Scene::Hitbox3DNodeComponentUVE& hitboxLive =
+        entityManager.GetComponentUVE<Scene::Hitbox3DNodeComponentUVE>(attacker);
+    hitboxLive.enabled = false;
+    engine.TickFrameUVE();
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::Hitbox3DNodeComponentUVE>(attacker).strikeCount, 0U);
+
+    // Re-enabled: the strike returns. A hurtbox on the attacker's OWN entity must not add a
+    // second (self) strike - the victim stays the only recorded hit.
+    hitboxLive.enabled = true;
+    entityManager.AddComponentUVE<Scene::Hurtbox3DNodeComponentUVE>(
+        attacker, Scene::Hurtbox3DNodeComponentUVE{});
+    engine.TickFrameUVE();
+    {
+        const Scene::Hitbox3DNodeComponentUVE& afterStrike =
+            entityManager.GetComponentUVE<Scene::Hitbox3DNodeComponentUVE>(attacker);
+        ASSERT_EQ(afterStrike.strikeCount, 1U);
+        EXPECT_EQ(afterStrike.strikes[0U].hurtboxEntity, victim);
+    }
+
+    engine.Shutdown();
+}
+
+TEST(EngineCoreUVETest, Hitbox3DNode_HurtboxRotationIsHonoredByExactObbOverlap) {
+    // The strike test must be an exact ORIENTED-box test, not a conservative axis-aligned one.
+    // Both boxes are long thin rods along X; the hurtbox sits 2 units to the side. Unrotated it
+    // clearly overlaps (x in [0.5, 3.5] vs the hitbox's [-1.5, 1.5]); rotated 90 degrees about Z
+    // its long axis becomes vertical (x only in [1.9, 2.1]) and it must NOT strike. A pairing
+    // that ignored rotation would fail this test in the always-overlapping direction.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    const Scene::EntityUVE attacker = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, attacker, Scene::TransformComponentUVE{});
+    Scene::Hitbox3DNodeComponentUVE hitbox;
+    hitbox.halfExtents = Math::Vector3UVE{1.5F, 0.1F, 0.1F};
+    entityManager.AddComponentUVE<Scene::Hitbox3DNodeComponentUVE>(attacker, hitbox);
+
+    const Scene::EntityUVE victim = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE victimTransform;
+    victimTransform.localPosition = Math::Vector3UVE{2.0F, 0.0F, 0.0F};
+    victimTransform.localRotation =
+        Math::QuaternionUVE{0.0F, 0.0F, 0.70710678F, 0.70710678F}; // 90 degrees about +Z
+    sceneGraph.AttachTransformUVE(entityManager, victim, victimTransform);
+    Scene::Hurtbox3DNodeComponentUVE hurtbox;
+    hurtbox.halfExtents = Math::Vector3UVE{1.5F, 0.1F, 0.1F};
+    entityManager.AddComponentUVE<Scene::Hurtbox3DNodeComponentUVE>(victim, hurtbox);
+
+    engine.TickFrameUVE();
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::Hitbox3DNodeComponentUVE>(attacker).strikeCount, 0U);
+
+    // Removing the rotation turns the hurtbox back along X: it must strike. The recorded depth
+    // is the minimum-translation-axis penetration, i.e. the thinnest separating direction - for
+    // two horizontal rods stacked in Y that is the Y axis (0.1 + 0.1 extents, fully overlapped),
+    // not the 1.0-unit X overlap.
+    Scene::TransformComponentUVE victimLive =
+        entityManager.GetComponentUVE<Scene::TransformComponentUVE>(victim);
+    victimLive.localRotation = Math::QuaternionUVE{};
+    sceneGraph.SetLocalTransformUVE(entityManager, victim, victimLive);
+    engine.TickFrameUVE();
+    {
+        const Scene::Hitbox3DNodeComponentUVE& afterStrike =
+            entityManager.GetComponentUVE<Scene::Hitbox3DNodeComponentUVE>(attacker);
+        ASSERT_EQ(afterStrike.strikeCount, 1U);
+        EXPECT_EQ(afterStrike.strikes[0U].hurtboxEntity, victim);
+        EXPECT_NEAR(afterStrike.strikes[0U].penetrationDepth, 0.2F, 0.01F);
+    }
 
     engine.Shutdown();
 }

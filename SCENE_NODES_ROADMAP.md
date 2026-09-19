@@ -18,6 +18,11 @@ product.
   runtime yet. It can be added in the editor and will save/load correctly, but it does nothing.
 - `[ ]` — the node does not exist at all yet, in any form.
 
+For every `[~]` entry (and the declared gaps of `[x]` entries), `STUB_IMPLEMENTATION_ROADMAP.md`
+is the drill-down tracker: the exact component fields/arrays awaiting work, the system each one
+needs, dependencies, and the per-item checklist ticked as implementation lands. This file keeps
+the high-level status; that file holds the working plan.
+
 Update this file in the same change that adds, fixes, or wires up any node. A stale checklist is
 worse than no checklist.
 
@@ -27,6 +32,12 @@ worse than no checklist.
 
 ### Working today
 
+- [x] SceneRoot — the document's single structural root (Godot-style one-root scene): created
+  automatically with every new document, every loaded legacy multi-root file is auto-migrated
+  under it on load, all new nodes join the hierarchy under the current selection (or the root
+  when nothing is selected), and it can never be deleted, re-parented, or duplicated. Structural
+  only by design — name + identity transform; scene-wide settings get their own authored homes
+  when the systems that consume them exist, not before.
 - [x] Empty — plain transform-only node, the base of every scene hierarchy.
 - [x] Camera3D — real camera, drives view/projection for rendering.
 - [x] MeshInstance3D — real mesh + material rendering through the lit shader pipeline.
@@ -65,8 +76,19 @@ worse than no checklist.
 - [~] BoneAttachment3D — attach-to-bone fields exist, nothing resolves/follows a bone transform.
 - [~] SpringArm3D — arm-length/collision fields exist, no camera-boom system consumes it.
 - [~] Marker3D — a plain position/orientation hint, has no behavior by design (this one may never need a "system" — it's meant to be read by other tools/scripts, not ticked itself).
-- [~] Hitbox3D — extents/damage-channel fields exist, no combat/damage system consumes them.
-- [~] Hurtbox3D — same as Hitbox3D, other side of the interaction.
+- [x] Hitbox3D — real per-frame strike detection: `EngineCoreUVE::SyncHitbox3DNodesUVE()`
+  (the same engine-core home the RayCast3D/Projectile3D syncs use) pairs every enabled hitbox
+  against every enabled Hurtbox3D with an exact 15-axis oriented-box-vs-oriented-box test (the
+  same public Physics::Detail helper AreaOverlapSystemUVE uses), symmetric layer/mask
+  acceptance, damage-channel equality, and self-exclusion, writing a bounded runtime-only
+  strike list (hurtbox entity + penetration depth, overflow flagged) back into the component
+  every frame.
+  One honest gap remains by design: applying what a strike *means* (damage, knockback,
+  i-frames, events) is gameplay code no system owns yet — real, separate follow-up.
+- [x] Hurtbox3D — the receiving side of that same pairing: its extents/layer/mask/channel
+  genuinely gate which hitboxes can strike it every frame (locked by engine-core tests on both
+  sides of every gate); consequences of being struck are the same gameplay follow-up as
+  Hitbox3D's.
 - [~] InteractionArea3D — candidate-tracking fields exist, no interact/prompt system consumes it.
 - [~] ReflectionProbe3D — size/update-mode fields exist, no reflection-probe capture/render system exists.
 - [~] Decal3D — material/size/lifetime fields exist, no decal-projection rendering exists.
@@ -192,17 +214,28 @@ system behind them.
    facade layer in `Engine/Runtime/Scene` was also removed once confirmed nothing used it) — so
    future systems have a clean, discoverable home to attach real behavior to. This was purely a
    structural move: no `[~]` entry above changed status from it, since organizing where a stub's
-   data lives is not the same as giving it a real backing system.
-2. **RayCast3D and Projectile3D done** (real per-frame raycast against the actual query system with
-   correct self-exclusion; real kinematic integration + lifetime expiry for projectiles - see both
-   entries above for their stated, honest follow-up gaps). Wire up the remaining highest-value
-   already-authored 3D stubs next: Skeleton3D + AnimationPlayer + AnimationTree (blocked on the
-   same missing skinning/clip-sampling pipeline — see
-   `ROADMAP.md`), Hitbox3D/Hurtbox3D (needed for any combat gameplay), NavigationRegion3D/
-   NavigationAgent3D (needed for any AI movement).
+   data lives is not the same as giving it a real backing system. Follow-up, also done: the 17
+   kinds whose authored data already lives in a shared component (Empty, Camera3D, Light3D, the
+   three primitive meshes, the physics bodies, Area3D, AudioSource3D, ParticleEmitter3D, Script,
+   AnimationPlayer, AnimationTree) each got their own `NodeDefinition` `.h`+`.cpp` in the same
+   folder — the kind's creation recipe (components to attach, authored defaults, default entity
+   name) — and the editor's creation switch now sources every one of those recipes from those
+   files instead of hardcoding them inline. Still purely structural: no `[~]` entry changed
+   status, and the save format is untouched (a definition is a recipe, never a serialized
+   component).
+2. **RayCast3D, Projectile3D, and Hitbox3D/Hurtbox3D done** (real per-frame raycast against the
+   actual query system with correct self-exclusion; real kinematic integration + lifetime expiry
+   for projectiles; real per-frame hitbox-vs-hurtbox strike pairing — see the entries above for
+   their stated, honest follow-up gaps). Wire up the remaining highest-value already-authored 3D
+   stubs next: Skeleton3D + AnimationPlayer + AnimationTree (blocked on the same missing
+   skinning/clip-sampling pipeline — see `ROADMAP.md`), NavigationRegion3D/NavigationAgent3D
+   (needed for any AI movement).
 3. Only after 3D nodes are in good shape, start a real 2D pipeline (rendering + physics + nav) —
    right now 2D is 100% unstarted, not partially built.
-4. Promote Canvas/UI Text/UI Image/UI Button into the Scene node registry so 2D/UI authoring has
-   one consistent "Add Node" entry point instead of being Inspector-only.
+4. **Done**: Canvas/UI Text/UI Image/UI Button are promoted into the Scene node registry
+   (`canvas`/`ui_text`/`ui_image`/`ui_button`, category "UI"), each with a NodeDefinition
+   `.h`+`.cpp` in `Engine/Runtime/Nodes/CanvasLayer` following the Nodes/3D convention — 2D/UI
+   authoring now has the same single Add-Node entry point, and the Add-Component path still
+   works for adding these components to existing entities.
 5. AI nodes come last — they need real navigation (item 2/3) and real gameplay systems to act on
    before a behavior tree/blackboard has anything meaningful to drive.

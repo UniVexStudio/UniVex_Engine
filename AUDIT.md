@@ -50,7 +50,7 @@
 | Runtime/Input | `uve_input` | 16 | 6 | 1,915 | Keyboard/mouse/gamepad/mobile gesture systems |
 | Runtime/Animation | `uve_animation` | 4 | 4 | 1,410 | Clips, anim tree, state machines |
 | Runtime/Save | `uve_save` | 8 | 5 | 1,385 | Save-game + checkpoint systems |
-| Runtime/Component | `uve_component` (INTERFACE) | 25 | 0 | 1,333 | Header-only ECS component definitions |
+| Runtime/Component | `uve_component` (STATIC) | 25 | 22 | 1,333 | One .h + .cpp pair per ECS component (validators/behavior defined in .cpp; concept/template/entity-handle machinery stays header-only) — was header-only (INTERFACE, 25/0) before the per-file split |
 | Others (13 modules) | | ~16 | ~25 | ~5,0xx | Entity(ECS), Events, Window, World, Pack, Plugins, Platform, Object, Config, Commandline, Network, ProjectCheck, Nodes/3D |
 | Engine/App | `uve_runtime`, `uve_editor_app` | 0 | 2 | 960 | Shipping entry points |
 | **Test/** | `uve_core_tests`, `uve_integration_tests` | — | 170 | 51,501 | GoogleTest suites (ang ratio ng test:engine code ≈ 1:2 — matino) |
