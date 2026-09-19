@@ -39,6 +39,7 @@
 #include "uve/component/rigid_body_component_uve.h"
 #include "uve/component/script_component_uve.h"
 #include "uve/component/transform_component_uve.h"
+#include "uve/component/visibility_component_uve.h"
 #include "uve/component/ui_button_component_uve.h"
 #include "uve/component/ui_image_component_uve.h"
 #include "uve/component/ui_text_component_uve.h"
@@ -1334,6 +1335,63 @@ TEST_F(SceneSerializerUVETest, SaveLoadUVE_SceneRootMarkerRoundTrips) {
     ASSERT_EQ(restoredRoots.size(), 1U);
     EXPECT_TRUE(loadedManager.HasComponentUVE<SceneRootComponentUVE>(restoredRoots[0U]));
     std::filesystem::remove(path);
+}
+
+TEST_F(SceneSerializerUVETest, SaveLoadUVE_VisibilityRoundTripsTheAuthoredFlagOnly) {
+    // Hiding an object has to survive a save. It also has to survive WITHOUT carrying the derived
+    // field across: visibleInHierarchy depends on the entity's ancestors, so persisting it would
+    // store an answer that is wrong the moment a node is saved under one parent and loaded under
+    // another.
+    SceneGraphUVE sceneGraph;
+    const EntityUVE source = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, source, TransformComponentUVE{});
+    entityManager.AddComponentUVE<VisibilityComponentUVE>(
+        source, VisibilityComponentUVE{/*visible=*/false, /*visibleInHierarchy=*/false});
+
+    const std::filesystem::path path = "uve_scene_serializer_tests_visibility.uvescene";
+    std::filesystem::remove(path);
+    ASSERT_TRUE(serializer.SaveUVE(entityManager, {source}, path, Asset::AssetKindUVE::Scene));
+
+    EntityManagerUVE loadedManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
+    const std::vector<EntityUVE> restored = serializer.LoadUVE(loadedManager, path);
+    ASSERT_EQ(restored.size(), 1U);
+    ASSERT_TRUE(loadedManager.HasComponentUVE<VisibilityComponentUVE>(restored[0U]));
+    const VisibilityComponentUVE& loaded = loadedManager.GetComponentUVE<VisibilityComponentUVE>(restored[0U]);
+    EXPECT_FALSE(loaded.visible) << "the authored switch must survive the round trip";
+    // Seeded from the authored value so nothing is briefly drawn between load and the first
+    // scene-graph update, which then overwrites it with the inherited answer.
+    EXPECT_FALSE(loaded.visibleInHierarchy);
+
+    std::filesystem::remove(path);
+}
+
+TEST_F(SceneSerializerUVETest, RestoreUVE_AnEntitySavedWithoutVisibilityRestoresVisible) {
+    // Every scene written before this component existed carries no VisibilityComponentUVE at all.
+    // Those entities must come back visible, and specifically must come back with NO component -
+    // inventing one on load would rewrite documents behind the author's back, and an absent
+    // component already means visible everywhere that reads it.
+    //
+    // This is the migration case that matters. The "component present but its key absent" variant
+    // is handled by json.value("visible", true) in the loader; testing it would mean hand-editing
+    // the wrapped .uve container, which tests the envelope format rather than the default.
+    SceneGraphUVE sceneGraph;
+    const EntityUVE source = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, source, TransformComponentUVE{});
+    entityManager.AddComponentUVE<NameComponentUVE>(source, NameComponentUVE{"LegacyNode"});
+
+    const std::optional<SceneSnapshotUVE> snapshot =
+        serializer.CaptureUVE(entityManager, {source}, SceneAssetTypeUVE::Scene);
+    ASSERT_TRUE(snapshot.has_value());
+
+    EntityManagerUVE loadedManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
+    const std::vector<EntityUVE> restored = serializer.RestoreUVE(loadedManager, *snapshot);
+    ASSERT_EQ(restored.size(), 1U);
+    EXPECT_FALSE(loadedManager.HasComponentUVE<VisibilityComponentUVE>(restored[0U]))
+        << "loading must not invent a component the document never had";
+
+    // And the renderer's rule for that case: no component means visible.
+    EXPECT_TRUE(VisibilityComponentUVE{}.visible);
+    EXPECT_TRUE(VisibilityComponentUVE{}.visibleInHierarchy);
 }
 
 } // namespace UVE::Scene::Tests

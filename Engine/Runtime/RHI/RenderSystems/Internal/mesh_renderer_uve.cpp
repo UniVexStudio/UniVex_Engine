@@ -14,6 +14,7 @@
 #include "uve/logging/assert_uve.h"
 #include "uve/render_systems/mesh_render_eligibility_uve.h"
 #include "uve/component/mesh_component_uve.h"
+#include "uve/component/visibility_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 
 namespace UVE::Render {
@@ -131,6 +132,21 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
         [&](Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE& worldTransform,
             const Scene::MeshComponentUVE& meshComponent) {
             UVE_ASSERT(Scene::IsMeshComponentValidUVE(meshComponent));
+
+            // Hidden first, before anything is resolved or counted. A hidden mesh must cost as
+            // close to nothing as the walk allows, so this sits ahead of the asset resolution and
+            // the placement cache rather than filtering at cull time - culling a candidate that
+            // was never going to be drawn still pays to have built it.
+            //
+            // Also deliberately ahead of the diagnostics: a hidden object is not a scene problem,
+            // and counting its unresolved assets as invalid references would make the stats panel
+            // report faults for objects the author has simply switched off.
+            if (entityManager.HasComponentUVE<Scene::VisibilityComponentUVE>(entity) &&
+                !entityManager.GetComponentUVE<Scene::VisibilityComponentUVE>(entity).visibleInHierarchy) {
+                ++outVisibilitySet.hiddenEntities;
+                return;
+            }
+
             if (meshComponent.meshGuid == Asset::kInvalidAssetGuidUVE) {
                 ++outVisibilitySet.invalidAssetReferences;
             }

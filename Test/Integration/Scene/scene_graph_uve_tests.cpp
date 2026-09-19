@@ -13,6 +13,7 @@
 #include "uve/events/event_system_uve.h"
 #include "uve/memory/memory_manager_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
+#include "uve/component/visibility_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/entity/entity_manager_uve.h"
 #include "uve/platform/platform_uve.h"
@@ -480,6 +481,146 @@ TEST_F(SceneGraphUVETest, UpdateUVE_NonFiniteParent_StillInvalidatesItsSubtree) 
         << "a child of an invalid parent must stay dirty rather than publish a derived value";
     EXPECT_TRUE(std::isfinite(entityManager.GetComponentUVE<WorldTransformComponentUVE>(child).worldPosition.x))
         << "the child must keep its last good value rather than inherit the NaN";
+}
+
+TEST_F(SceneGraphUVETest, UpdateUVE_HidingAParentHidesItsWholeSubtree) {
+    // The behaviour the component exists for. A parent's switch must reach every descendant, not
+    // just its direct children - a two-level tree is the shortest case that can tell the
+    // difference between real inheritance and a single-level copy.
+    const EntityUVE parent = entityManager.CreateEntityUVE();
+    const EntityUVE child = entityManager.CreateEntityUVE();
+    const EntityUVE grandchild = entityManager.CreateEntityUVE();
+    for (const EntityUVE entity : {parent, child, grandchild}) {
+        sceneGraph.AttachTransformUVE(entityManager, entity, TransformComponentUVE{});
+        entityManager.AddComponentUVE<VisibilityComponentUVE>(entity, VisibilityComponentUVE{});
+    }
+    sceneGraph.SetParentUVE(entityManager, child, parent);
+    sceneGraph.SetParentUVE(entityManager, grandchild, child);
+
+    entityManager.GetComponentUVE<VisibilityComponentUVE>(parent).visible = false;
+    sceneGraph.UpdateUVE(entityManager);
+
+    EXPECT_FALSE(entityManager.GetComponentUVE<VisibilityComponentUVE>(parent).visibleInHierarchy);
+    EXPECT_FALSE(entityManager.GetComponentUVE<VisibilityComponentUVE>(child).visibleInHierarchy);
+    EXPECT_FALSE(entityManager.GetComponentUVE<VisibilityComponentUVE>(grandchild).visibleInHierarchy);
+
+    // The authored switch on the descendants is untouched - only the derived field moved.
+    EXPECT_TRUE(entityManager.GetComponentUVE<VisibilityComponentUVE>(child).visible);
+    EXPECT_TRUE(entityManager.GetComponentUVE<VisibilityComponentUVE>(grandchild).visible);
+}
+
+TEST_F(SceneGraphUVETest, UpdateUVE_ShowingAParentDoesNotShowAnIndependentlyHiddenChild) {
+    // The reason there are two fields instead of one. If propagation wrote the authored flag, the
+    // child's own choice would be destroyed the moment its parent was hidden, and showing the
+    // parent again would wrongly reveal it. This is the case a single-flag implementation passes
+    // every other test and fails here.
+    const EntityUVE parent = entityManager.CreateEntityUVE();
+    const EntityUVE child = entityManager.CreateEntityUVE();
+    for (const EntityUVE entity : {parent, child}) {
+        sceneGraph.AttachTransformUVE(entityManager, entity, TransformComponentUVE{});
+        entityManager.AddComponentUVE<VisibilityComponentUVE>(entity, VisibilityComponentUVE{});
+    }
+    sceneGraph.SetParentUVE(entityManager, child, parent);
+
+    entityManager.GetComponentUVE<VisibilityComponentUVE>(child).visible = false;
+    entityManager.GetComponentUVE<VisibilityComponentUVE>(parent).visible = false;
+    sceneGraph.UpdateUVE(entityManager);
+    ASSERT_FALSE(entityManager.GetComponentUVE<VisibilityComponentUVE>(child).visibleInHierarchy);
+
+    // Parent back on. The child stays hidden because it was hidden in its own right.
+    entityManager.GetComponentUVE<VisibilityComponentUVE>(parent).visible = true;
+    sceneGraph.UpdateUVE(entityManager);
+
+    EXPECT_TRUE(entityManager.GetComponentUVE<VisibilityComponentUVE>(parent).visibleInHierarchy);
+    EXPECT_FALSE(entityManager.GetComponentUVE<VisibilityComponentUVE>(child).visibleInHierarchy)
+        << "showing a parent must not override a child's own hidden state";
+}
+
+TEST_F(SceneGraphUVETest, UpdateUVE_AnEntityWithoutTheComponentPassesVisibilityThrough) {
+    // The component is optional, so most entities will not have one. An intermediate node without
+    // it must not break the chain: hiding the grandparent still has to hide the grandchild.
+    const EntityUVE grandparent = entityManager.CreateEntityUVE();
+    const EntityUVE middle = entityManager.CreateEntityUVE();
+    const EntityUVE grandchild = entityManager.CreateEntityUVE();
+    for (const EntityUVE entity : {grandparent, middle, grandchild}) {
+        sceneGraph.AttachTransformUVE(entityManager, entity, TransformComponentUVE{});
+    }
+    // Deliberately only the ends carry the component; `middle` has none.
+    entityManager.AddComponentUVE<VisibilityComponentUVE>(grandparent, VisibilityComponentUVE{});
+    entityManager.AddComponentUVE<VisibilityComponentUVE>(grandchild, VisibilityComponentUVE{});
+    sceneGraph.SetParentUVE(entityManager, middle, grandparent);
+    sceneGraph.SetParentUVE(entityManager, grandchild, middle);
+
+    entityManager.GetComponentUVE<VisibilityComponentUVE>(grandparent).visible = false;
+    sceneGraph.UpdateUVE(entityManager);
+
+    EXPECT_FALSE(entityManager.GetComponentUVE<VisibilityComponentUVE>(grandchild).visibleInHierarchy)
+        << "a node without the component must pass its parent's state through, not reset it";
+}
+
+TEST_F(SceneGraphUVETest, UpdateUVE_ReparentingRecomputesInheritedVisibility) {
+    // Moving a node between a hidden and a visible parent has to change its answer. Nothing else
+    // in the sweep is keyed on the old parent, so a cached result would survive the move.
+    const EntityUVE hiddenParent = entityManager.CreateEntityUVE();
+    const EntityUVE shownParent = entityManager.CreateEntityUVE();
+    const EntityUVE child = entityManager.CreateEntityUVE();
+    for (const EntityUVE entity : {hiddenParent, shownParent, child}) {
+        sceneGraph.AttachTransformUVE(entityManager, entity, TransformComponentUVE{});
+        entityManager.AddComponentUVE<VisibilityComponentUVE>(entity, VisibilityComponentUVE{});
+    }
+    entityManager.GetComponentUVE<VisibilityComponentUVE>(hiddenParent).visible = false;
+
+    sceneGraph.SetParentUVE(entityManager, child, hiddenParent);
+    sceneGraph.UpdateUVE(entityManager);
+    ASSERT_FALSE(entityManager.GetComponentUVE<VisibilityComponentUVE>(child).visibleInHierarchy);
+
+    sceneGraph.SetParentUVE(entityManager, child, shownParent);
+    sceneGraph.UpdateUVE(entityManager);
+    EXPECT_TRUE(entityManager.GetComponentUVE<VisibilityComponentUVE>(child).visibleInHierarchy);
+
+    // And back, so the test is not passing on a one-way transition.
+    sceneGraph.SetParentUVE(entityManager, child, hiddenParent);
+    sceneGraph.UpdateUVE(entityManager);
+    EXPECT_FALSE(entityManager.GetComponentUVE<VisibilityComponentUVE>(child).visibleInHierarchy);
+}
+
+TEST_F(SceneGraphUVETest, UpdateUVE_ANonFiniteTransformDoesNotUnhideASubtree) {
+    // Being hidden and having a broken transform are separate failures, and the sweep has a
+    // dedicated early-out arm for an invalid parent. If that arm skipped the visibility work, a
+    // single NaN anywhere in a hidden subtree would quietly reveal everything below it - a bug
+    // that needs both conditions at once to appear.
+    const EntityUVE hiddenRoot = entityManager.CreateEntityUVE();
+    const EntityUVE broken = entityManager.CreateEntityUVE();
+    const EntityUVE belowBroken = entityManager.CreateEntityUVE();
+    for (const EntityUVE entity : {hiddenRoot, broken, belowBroken}) {
+        sceneGraph.AttachTransformUVE(entityManager, entity, TransformComponentUVE{});
+        entityManager.AddComponentUVE<VisibilityComponentUVE>(entity, VisibilityComponentUVE{});
+    }
+    sceneGraph.SetParentUVE(entityManager, broken, hiddenRoot);
+    sceneGraph.SetParentUVE(entityManager, belowBroken, broken);
+
+    entityManager.GetComponentUVE<VisibilityComponentUVE>(hiddenRoot).visible = false;
+    entityManager.GetComponentUVE<TransformComponentUVE>(broken).localPosition.x =
+        std::numeric_limits<float>::quiet_NaN();
+    sceneGraph.UpdateUVE(entityManager);
+
+    EXPECT_FALSE(entityManager.GetComponentUVE<VisibilityComponentUVE>(broken).visibleInHierarchy);
+    EXPECT_FALSE(entityManager.GetComponentUVE<VisibilityComponentUVE>(belowBroken).visibleInHierarchy)
+        << "a broken transform must not cancel a hidden ancestor";
+}
+
+TEST_F(SceneGraphUVETest, UpdateUVE_DefaultVisibilityIsVisible) {
+    // The default has to be visible, or adding the component to an entity would make it vanish -
+    // which is the opposite of what someone reaching for a visibility toggle expects.
+    const EntityUVE entity = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, entity, TransformComponentUVE{});
+    entityManager.AddComponentUVE<VisibilityComponentUVE>(entity, VisibilityComponentUVE{});
+
+    sceneGraph.UpdateUVE(entityManager);
+
+    EXPECT_TRUE(entityManager.GetComponentUVE<VisibilityComponentUVE>(entity).visible);
+    EXPECT_TRUE(entityManager.GetComponentUVE<VisibilityComponentUVE>(entity).visibleInHierarchy);
+    EXPECT_TRUE(IsVisibilityComponentValidUVE(VisibilityComponentUVE{}));
 }
 
 } // namespace

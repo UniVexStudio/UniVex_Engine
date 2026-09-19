@@ -102,6 +102,22 @@ void SceneGraphUVE::SetParentUVE(IEntityManagerUVE& entityManager, EntityUVE chi
     entityManager.GetComponentUVE<WorldTransformComponentUVE>(child).dirty = true;
 }
 
+bool SceneGraphUVE::ResolveVisibilityUVE(const PendingEntityUVE& item, const bool parentVisible) noexcept {
+    // No component means visible, and means the parent's state passes straight through. An entity
+    // without the component is not a break in the chain - hiding a parent must still hide a
+    // grandchild whose intermediate node never opted into having a visibility flag.
+    if (item.visibility == nullptr) {
+        return parentVisible;
+    }
+
+    // Two fields, one derived: `visible` is the author's switch and is never written here, while
+    // `visibleInHierarchy` is the answer. Writing only the derived field is what lets a child stay
+    // hidden after its parent is shown again - the child's own choice was never overwritten.
+    const bool resolved = parentVisible && item.visibility->visible;
+    item.visibility->visibleInHierarchy = resolved;
+    return resolved;
+}
+
 void SceneGraphUVE::UpdateUVE(IEntityManagerUVE& entityManager) {
     // Rewritten for cost, not behaviour. The previous shape was measured at 1353us per frame on a
     // 5000-entity scene in which NOTHING was dirty - a completely static scene paying more than
@@ -119,13 +135,21 @@ void SceneGraphUVE::UpdateUVE(IEntityManagerUVE& entityManager) {
     // and a leftover remainder still meaning a cycle. Only the bookkeeping changed.
     m_pendingScratch.clear();
     entityManager.ForEachUVE<HierarchyComponentUVE, TransformComponentUVE, WorldTransformComponentUVE>(
-        [this](EntityUVE entity, HierarchyComponentUVE& hierarchy, TransformComponentUVE& local,
-               WorldTransformComponentUVE& world) {
+        [this, &entityManager](EntityUVE entity, HierarchyComponentUVE& hierarchy, TransformComponentUVE& local,
+                               WorldTransformComponentUVE& world) {
             // The component pointers are captured during the walk that already found them. The ECS
             // guarantees they stay valid for the rest of this function because nothing here
             // creates, destroys, or re-archetypes an entity - it only writes to existing
             // components, which never moves a row.
-            m_pendingScratch.push_back(PendingEntityUVE{entity, hierarchy.parent, &local, &world});
+            // Resolved here rather than in the sweep: the sweep may revisit an entity across
+            // several passes while waiting for its parent, and asking the ECS each time whether an
+            // optional component exists would pay that lookup repeatedly for nothing.
+            VisibilityComponentUVE* const visibility =
+                entityManager.HasComponentUVE<VisibilityComponentUVE>(entity)
+                    ? &entityManager.GetComponentUVE<VisibilityComponentUVE>(entity)
+                    : nullptr;
+            m_pendingScratch.push_back(
+                PendingEntityUVE{entity, hierarchy.parent, &local, &world, visibility});
         });
 
     // Level-order sweep, root-first: repeatedly process any pending entity whose parent has
@@ -162,7 +186,12 @@ void SceneGraphUVE::UpdateUVE(IEntityManagerUVE& entityManager) {
             WorldTransformComponentUVE& world = *item.world;
             if (!parentIsRoot && !parentIt->second.valid) {
                 world.dirty = true;
-                m_passStateScratch.emplace(item.entity, WorldTransformPassStateUVE{});
+                // Visibility is still resolved on this arm. An invalid world transform is a
+                // separate failure from being hidden, and skipping the inheritance here would let
+                // a non-finite transform anywhere in a subtree quietly un-hide everything beneath
+                // a hidden ancestor.
+                const bool inherited = ResolveVisibilityUVE(item, parentIt->second.visibleInHierarchy);
+                m_passStateScratch.emplace(item.entity, WorldTransformPassStateUVE{false, false, inherited});
                 madeProgress = true;
                 continue;
             }
@@ -195,8 +224,11 @@ void SceneGraphUVE::UpdateUVE(IEntityManagerUVE& entityManager) {
                 }
             }
 
-            m_passStateScratch.emplace(item.entity,
-                                       WorldTransformPassStateUVE{publishedValid, shouldRecompute && publishedValid});
+            const bool parentVisible = parentIsRoot || parentIt->second.visibleInHierarchy;
+            const bool inherited = ResolveVisibilityUVE(item, parentVisible);
+            m_passStateScratch.emplace(
+                item.entity,
+                WorldTransformPassStateUVE{publishedValid, shouldRecompute && publishedValid, inherited});
             madeProgress = true;
         }
 

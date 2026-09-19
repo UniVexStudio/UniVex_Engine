@@ -23,6 +23,7 @@
 #include "uve/events/event_system_uve.h"
 #include "uve/memory/memory_manager_uve.h"
 #include "uve/component/mesh_component_uve.h"
+#include "uve/component/visibility_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/entity/entity_manager_uve.h"
 #include "uve/scene/scene_graph_uve.h"
@@ -1134,6 +1135,69 @@ TEST_F(MeshRendererUVETest, CullVisibilitySetIntoUVE_QueueItemsOutliveTheVisibil
     EXPECT_TRUE(queue.opaqueItems[0].materialHandle.IsReadyUVE());
     EXPECT_NE(queue.opaqueItems[0].meshHandle.TryGetUVE(), nullptr);
     EXPECT_NE(queue.opaqueItems[0].materialHandle.TryGetUVE(), nullptr);
+}
+
+TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_HiddenEntitiesAreSkippedBeforeAnyWorkIsDone) {
+    // Hiding has to be worth something, not just look right. The gate sits ahead of the asset
+    // resolution and the placement cache, so a hidden mesh costs a component lookup and nothing
+    // else - this asserts it produces no candidate at all rather than a candidate that is later
+    // culled, which would still have paid to build it.
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_hidden.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_hidden.uvemat");
+    const Scene::EntityUVE shown = MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    const Scene::EntityUVE hidden = MakeMeshEntityUVE(Math::Vector3UVE{2.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    // Derived field, as the scene graph would have left it after an update.
+    entityManager.AddComponentUVE<Scene::VisibilityComponentUVE>(
+        hidden, Scene::VisibilityComponentUVE{/*visible=*/false, /*visibleInHierarchy=*/false});
+    static_cast<void>(shown);
+
+    MeshVisibilitySetUVE visibilitySet;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+
+    EXPECT_EQ(visibilitySet.candidates.size(), 1U) << "the hidden entity must not become a candidate";
+    EXPECT_EQ(visibilitySet.hiddenEntities, 1U);
+    EXPECT_EQ(visibilitySet.invalidAssetReferences, 0U)
+        << "a hidden object is not a scene fault and must not be reported as one";
+}
+
+TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_VisibleInHierarchyIsWhatCounts_NotTheAuthoredFlag) {
+    // The renderer reads the DERIVED field. An entity whose own switch is on but whose parent is
+    // hidden has visible == true and visibleInHierarchy == false, and reading the wrong one draws
+    // exactly the objects the author just hid.
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_inherited.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_inherited.uvemat");
+    const Scene::EntityUVE entity = MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    entityManager.AddComponentUVE<Scene::VisibilityComponentUVE>(
+        entity, Scene::VisibilityComponentUVE{/*visible=*/true, /*visibleInHierarchy=*/false});
+
+    MeshVisibilitySetUVE visibilitySet;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+
+    EXPECT_TRUE(visibilitySet.candidates.empty())
+        << "the renderer must honour the inherited answer, not the entity's own switch";
+    EXPECT_EQ(visibilitySet.hiddenEntities, 1U);
+}
+
+TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_EntitiesWithoutTheComponentStillRender) {
+    // The component is optional and most entities will never carry one. If its absence were read
+    // as hidden, every existing scene would go blank.
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_novis.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_novis.uvemat");
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    MeshVisibilitySetUVE visibilitySet;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+
+    EXPECT_EQ(visibilitySet.candidates.size(), 1U);
+    EXPECT_EQ(visibilitySet.hiddenEntities, 0U);
 }
 
 } // namespace
