@@ -173,9 +173,16 @@ void SceneGraphUVE::UpdateUVE(IEntityManagerUVE& entityManager) {
 
         for (std::size_t index = 0; index < m_pendingScratch.size(); ++index) {
             const PendingEntityUVE& item = m_pendingScratch[index];
-            const bool parentIsRoot = (item.parent == kInvalidEntityUVE);
-            const auto parentIt = parentIsRoot ? m_passStateScratch.end() : m_passStateScratch.find(item.parent);
-            const bool parentReady = parentIsRoot || parentIt != m_passStateScratch.end();
+            const bool hasParent = (item.parent != kInvalidEntityUVE);
+            // Top-level entities compose as if they had no parent. Distinct from hasParent
+            // because they still ARE children: visibility below still inherits, and the pass state
+            // is still keyed off the real parent, so only the transform chain is cut.
+            const bool composesFromParent = hasParent && !item.local->topLevel;
+            const auto parentIt = hasParent ? m_passStateScratch.find(item.parent) : m_passStateScratch.end();
+            // A top-level child still waits for its parent, even though it will ignore the
+            // parent's transform: its visibility is inherited, and inheriting from a parent that
+            // has not been processed yet would read a stale answer.
+            const bool parentReady = !hasParent || parentIt != m_passStateScratch.end();
 
             if (!parentReady) {
                 m_pendingScratch[writeIndex] = item;
@@ -184,7 +191,10 @@ void SceneGraphUVE::UpdateUVE(IEntityManagerUVE& entityManager) {
             }
 
             WorldTransformComponentUVE& world = *item.world;
-            if (!parentIsRoot && !parentIt->second.valid) {
+            // `composesFromParent`, not `hasParent`: an entity that does not read its parent's
+            // world transform cannot be invalidated by it. Propagating the failure anyway would
+            // invent a dependency the entity deliberately does not have.
+            if (composesFromParent && !parentIt->second.valid) {
                 world.dirty = true;
                 // Visibility is still resolved on this arm. An invalid world transform is a
                 // separate failure from being hidden, and skipping the inheritance here would let
@@ -196,13 +206,15 @@ void SceneGraphUVE::UpdateUVE(IEntityManagerUVE& entityManager) {
                 continue;
             }
 
-            const bool parentWasRecomputed = !parentIsRoot && parentIt->second.recomputed;
+            // Only a parent this entity actually composes from can force it to recompute.
+            const bool parentWasRecomputed = composesFromParent && parentIt->second.recomputed;
             const bool shouldRecompute = world.dirty || parentWasRecomputed;
             bool publishedValid = IsFiniteWorldTransformUVE(world);
             if (shouldRecompute) {
                 const TransformComponentUVE& local = *item.local;
                 WorldTransformComponentUVE candidate = world;
-                if (parentIsRoot) {
+                if (!composesFromParent) {
+                    // Local values ARE world values - the same arithmetic a real root gets.
                     candidate.worldPosition = local.localPosition;
                     candidate.worldRotation = local.localRotation;
                     candidate.worldScale = local.localScale;
@@ -224,7 +236,11 @@ void SceneGraphUVE::UpdateUVE(IEntityManagerUVE& entityManager) {
                 }
             }
 
-            const bool parentVisible = parentIsRoot || parentIt->second.visibleInHierarchy;
+            // Visibility uses `hasParent`, not `composesFromParent`: top level cuts the transform
+            // chain only. Hiding a parent must still hide a top-level child, or the flag would
+            // quietly become "detach from everything" and there would be no way to get the
+            // organisational half without the transform half.
+            const bool parentVisible = !hasParent || parentIt->second.visibleInHierarchy;
             const bool inherited = ResolveVisibilityUVE(item, parentVisible);
             m_passStateScratch.emplace(
                 item.entity,

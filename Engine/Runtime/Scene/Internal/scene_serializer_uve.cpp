@@ -128,6 +128,7 @@ namespace {
         {"localEulerRadians", ToJsonUVE(component.localEulerRadians)},
         {"eulerOrder", static_cast<std::uint8_t>(component.eulerOrder)},
         {"rotationEditMode", static_cast<std::uint8_t>(component.rotationEditMode)},
+        {"topLevel", component.topLevel},
     };
 }
 
@@ -735,6 +736,9 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                           // documents get the angles derived from the rotation they DO have, which
                           // is the best available answer and matches what the Inspector used to
                           // show them; from then on the angles are authored and stop drifting.
+                          // Absent in scenes written before the flag existed, and false is what
+                          // they meant: every transform in them composed from its parent.
+                          transform.topLevel = json.value("topLevel", false);
                           if (json.contains("localEulerRadians")) {
                               transform.localEulerRadians = Vector3FromJsonUVE(json.at("localEulerRadians"));
                               transform.eulerOrder = ReadEulerOrderUVE(json);
