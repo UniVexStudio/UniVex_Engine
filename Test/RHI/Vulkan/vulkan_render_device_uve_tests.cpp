@@ -748,7 +748,7 @@ TEST_F(VulkanRenderDeviceUVETest, TexturedQuadRendersUploadedPixelsAndUnboundFal
 // texture). SwiftShader/lavapipe are both 1.3+, so CI and the sandbox run the full RT path.
 // ---------------------------------------------------------------------------
 
-[[nodiscard]] std::array<int, 3> ChannelAtNdcUVE(const std::vector<std::byte>& pixels,
+[[nodiscard]] std::array<int, 4> ChannelAtNdcUVE(const std::vector<std::byte>& pixels,
                                                  const std::uint32_t width,
                                                  const std::uint32_t height,
                                                  const float ndcX, const float ndcY) {
@@ -760,7 +760,7 @@ TEST_F(VulkanRenderDeviceUVETest, TexturedQuadRendersUploadedPixelsAndUnboundFal
     const std::uint32_t clampedY = y < height ? y : height - 1U;
     const std::size_t base = (static_cast<std::size_t>(clampedY) * width + clampedX) * 4U;
     return {static_cast<int>(pixels[base]), static_cast<int>(pixels[base + 1]),
-            static_cast<int>(pixels[base + 2])};
+            static_cast<int>(pixels[base + 2]), static_cast<int>(pixels[base + 3])};
 }
 
 [[nodiscard]] PipelineHandleUVE CreateTrianglePipelineUVE(VulkanRenderDeviceUVE& device,
@@ -1570,13 +1570,31 @@ TEST_F(VulkanRenderDeviceUVETest, DepthAttachmentTextureSamplesRealDepthValues) 
         EXPECT_GT(center[1], 240);
         EXPECT_GT(center[2], 240) << "classic device must keep the depth fallback white";
     } else {
-        // Real sampled depth 0.25 -> .r byte ~= 64 (+-3 for SW driver f32->unorm rounding),
-        // .g/.b exactly 0, .a opaque - the classic white fallback is now GONE.
-        EXPECT_NEAR(static_cast<int>(center[0]), 64, 3)
-            << "sampled depth must reconstruct 0.25 - got r=" << center[0];
+        // Real sampled depth 0.25: .r reconstructs it, .g/.b are the SPECIFIED swizzle
+        // zeros, and the classic white fallback is GONE. Two honest driver choices remain,
+        // so the byte check accepts exactly the correct outcomes and nothing else (the
+        // bootstrap-clear check's philosophy - punishing one driver's honest pick is a
+        // wrong-encoding failure mode, not coverage):
+        // (a) swapchain format class: on an SRGB-typed image the shader's linear 0.25
+        //     stores sRGB-encoded (1.055*0.25^(1/2.4)-0.055 ~= 0.537 -> byte ~137, the
+        //     SwiftShader pick); on a UNORM-typed one (lavapipe's surfaces) the same
+        //     value stores linearly (byte ~64).
+        // (b) swizzle alpha: for depth/stencil views the identity A channel resolves to
+        //     VK_COMPONENT_SWIZZLE_ONE, whose texel value is spec-UNDEFINED unless the
+        //     device reports maintenance5's depthStencilSwizzleOneSupport (neither 1.3
+        //     software stack does): SwiftShader yields 1.0 -> 255, lavapipe 0.0 -> 0.
+        //     The reconstruction proof lives in .r plus the .g/.b zeros; either alpha
+        //     byte is honest.
+        const int red = center[0];
+        const bool linearStored = red >= 61 && red <= 67;  // UNORM-typed swapchain
+        const bool srgbStored = red >= 134 && red <= 140;  // SRGB-typed swapchain
+        EXPECT_TRUE(linearStored || srgbStored)
+            << "sampled depth must reconstruct 0.25 (64 linear / 137 sRGB) - got r=" << red;
         EXPECT_LT(center[1], 12);
         EXPECT_LT(center[2], 12);
-        EXPECT_EQ(center[3], 255);
+        EXPECT_TRUE(center[3] == 255 || center[3] == 0)
+            << "depth-read swizzle alpha is implementation-defined pre-maintenance5 - got a="
+            << center[3];
     }
 
     device->DestroyBufferUVE(triBuffer);
