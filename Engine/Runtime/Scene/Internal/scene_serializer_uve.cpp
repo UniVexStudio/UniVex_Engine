@@ -93,11 +93,41 @@ namespace {
 //
 // Adding a new built-in component type? Register its JSON (de)serialization here too.
 
+/// Reads an enum stored as a small integer, rejecting anything outside the known range rather
+/// than casting it through. A hand-edited or future-version scene can carry a value this build
+/// does not have, and silently reinterpreting it as XYZ would rotate the object without saying
+/// so - the same class of failure as a mismatched icon name, but with geometry.
+[[nodiscard]] Math::EulerOrderUVE ReadEulerOrderUVE(const nlohmann::json& json) {
+    const auto raw = json.value("eulerOrder", static_cast<std::uint8_t>(0));
+    switch (raw) {
+        case 0: return Math::EulerOrderUVE::XYZ;
+        case 1: return Math::EulerOrderUVE::YXZ;
+        case 2: return Math::EulerOrderUVE::ZYX;
+        case 3: return Math::EulerOrderUVE::XZY;
+        case 4: return Math::EulerOrderUVE::YZX;
+        case 5: return Math::EulerOrderUVE::ZXY;
+        default: return Math::EulerOrderUVE::XYZ;
+    }
+}
+
+[[nodiscard]] RotationEditModeUVE ReadRotationEditModeUVE(const nlohmann::json& json) {
+    const auto raw = json.value("rotationEditMode", static_cast<std::uint8_t>(0));
+    return raw == 1 ? RotationEditModeUVE::Quaternion : RotationEditModeUVE::Euler;
+}
+
 [[nodiscard]] nlohmann::json ToJsonUVE(const TransformComponentUVE& component) {
+    // localRotation is written even in Euler mode, and that is deliberate: it is what every
+    // consumer reads, and a reader that does not know about the Euler fields must still get a
+    // correct rotation out of the file. The Euler fields are the AUTHORED source beside it - the
+    // exact angles typed, including turns past 360 and the pole poses a quaternion cannot
+    // distinguish - so reopening a scene shows what was typed rather than a re-derived guess.
     return {
         {"localPosition", ToJsonUVE(component.localPosition)},
         {"localRotation", ToJsonUVE(component.localRotation)},
         {"localScale", ToJsonUVE(component.localScale)},
+        {"localEulerRadians", ToJsonUVE(component.localEulerRadians)},
+        {"eulerOrder", static_cast<std::uint8_t>(component.eulerOrder)},
+        {"rotationEditMode", static_cast<std::uint8_t>(component.rotationEditMode)},
     };
 }
 
@@ -698,9 +728,25 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
         std::unordered_map<std::string, ComponentRegistrationUVE> table;
 
         table.emplace("TransformComponentUVE", MakeRegistrationUVE<TransformComponentUVE>([](const nlohmann::json& json) {
-                          const TransformComponentUVE transform{Vector3FromJsonUVE(json.at("localPosition")),
-                                                                QuaternionFromJsonUVE(json.at("localRotation")),
-                                                                Vector3FromJsonUVE(json.at("localScale"))};
+                          TransformComponentUVE transform{Vector3FromJsonUVE(json.at("localPosition")),
+                                                          QuaternionFromJsonUVE(json.at("localRotation")),
+                                                          Vector3FromJsonUVE(json.at("localScale"))};
+                          // Absent in every scene written before Euler authoring existed. Those
+                          // documents get the angles derived from the rotation they DO have, which
+                          // is the best available answer and matches what the Inspector used to
+                          // show them; from then on the angles are authored and stop drifting.
+                          if (json.contains("localEulerRadians")) {
+                              transform.localEulerRadians = Vector3FromJsonUVE(json.at("localEulerRadians"));
+                              transform.eulerOrder = ReadEulerOrderUVE(json);
+                              transform.rotationEditMode = ReadRotationEditModeUVE(json);
+                          } else {
+                              transform.eulerOrder = Math::EulerOrderUVE::XYZ;
+                              transform.rotationEditMode = RotationEditModeUVE::Euler;
+                              if (!Math::TryToEulerOrderedUVE(transform.localRotation, Math::EulerOrderUVE::XYZ,
+                                                              transform.localEulerRadians)) {
+                                  transform.localEulerRadians = Math::Vector3UVE{};
+                              }
+                          }
                           if (!IsTransformComponentValidUVE(transform)) {
                               throw std::runtime_error("Invalid TransformComponentUVE payload");
                           }
