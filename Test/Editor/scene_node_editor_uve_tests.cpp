@@ -421,8 +421,14 @@ TEST(SceneNodeEditorUVETest, SceneRootUVE_FileCarryingTwoRootMarkersStillLoadsWi
         entityManager.AddComponentUVE<Scene::SceneRootComponentUVE>(firstRoot, Scene::SceneRootComponentUVE{});
         const Scene::EntityUVE secondRoot = entityManager.CreateEntityUVE();
         sceneGraph.AttachTransformUVE(entityManager, secondRoot, Scene::TransformComponentUVE{});
-        entityManager.AddComponentUVE<Scene::NameComponentUVE>(secondRoot, Scene::NameComponentUVE{"SceneRoot"});
+        entityManager.AddComponentUVE<Scene::NameComponentUVE>(secondRoot, Scene::NameComponentUVE{"SurplusRoot"});
         entityManager.AddComponentUVE<Scene::SceneRootComponentUVE>(secondRoot, Scene::SceneRootComponentUVE{});
+        // The surplus root owns authored content. Repairing the structure must not discard it -
+        // that would be trading the user's work for tidiness.
+        const Scene::EntityUVE surplusChild = entityManager.CreateEntityUVE();
+        sceneGraph.AttachTransformUVE(entityManager, surplusChild, Scene::TransformComponentUVE{});
+        entityManager.AddComponentUVE<Scene::NameComponentUVE>(surplusChild, Scene::NameComponentUVE{"KeepMe"});
+        sceneGraph.SetParentUVE(entityManager, surplusChild, secondRoot);
 
         const std::string path = "uve_scene_node_editor_two_root_markers_tests.uvescene";
         std::filesystem::remove(path);
@@ -445,6 +451,26 @@ TEST(SceneNodeEditorUVETest, SceneRootUVE_FileCarryingTwoRootMarkersStillLoadsWi
                    "reparent a root, so the user cannot remove it by hand";
 
             EXPECT_EQ(editor.GetDocumentRootsUVE().size(), 1U);
+
+            // The demoted root and its child both survive, as ordinary nodes. Names are used for
+            // identity because loading recreates entities with fresh handles.
+            bool foundDemoted = false;
+            bool foundGrandchild = false;
+            entityManager.ForEachUVE<Scene::NameComponentUVE>(
+                [&](const Scene::EntityUVE, const Scene::NameComponentUVE& nameComponent) {
+                    if (nameComponent.name == "SurplusRoot") {
+                        foundDemoted = true;
+                    }
+                    if (nameComponent.name == "KeepMe") {
+                        foundGrandchild = true;
+                    }
+                });
+            EXPECT_TRUE(foundDemoted) << "the surplus root must be demoted, not destroyed";
+            EXPECT_TRUE(foundGrandchild) << "authored content under the surplus root must survive";
+
+            // Repairing the file is a real document change, so the in-memory doc no longer
+            // matches its bytes - same contract the legacy-migration path holds.
+            EXPECT_TRUE(editor.IsSceneDirtyUVE());
             editor.ShutdownUVE();
         }
         std::filesystem::remove(path);
