@@ -1362,35 +1362,57 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_DirectionalLightAndReadyShadowProgram_S
     renderer3D->RenderFrameUVE(entityManager, cameraEntity);
 
     const std::vector<RecordedCommandUVE>& commands = renderDevice.GetLastSubmittedCommandsUVE();
-    // ShaderProgramUVE::ApplyToUVE() flushes its pending uniforms from an unordered_map, so
-    // uModel/uLightSpaceMatrix can appear in either order - this searches a small window instead
-    // of asserting a fixed position for either one individually.
+
+    // Rewritten when the shadow cascades became instanced. The old version asserted fixed command
+    // INDICES and the presence of a per-item "uModel" uniform, both of which were artefacts of the
+    // one-draw-per-caster loop rather than anything the pass promises. The instanced path sends
+    // model matrices through a storage buffer, so uModel legitimately disappears, and the command
+    // count per draw changes - a test pinned to either would have to be rewritten again the next
+    // time the recording changes shape. What this pass actually owes its caller is checked instead:
+    // the shadow pass comes first, it is set up with a real light-space matrix, and it draws the
+    // caster's geometry. The path taken to get there is an implementation detail.
+    const auto shadowPassEnd = std::find_if(commands.cbegin(), commands.cend(),
+        [](const RecordedCommandUVE& command) {
+            return std::holds_alternative<EndRenderPassCommandUVE>(command);
+        });
+    ASSERT_NE(shadowPassEnd, commands.cend());
+
     ASSERT_TRUE(std::holds_alternative<BeginRenderPassCommandUVE>(commands[0]));
     ASSERT_TRUE(std::holds_alternative<BindPipelineCommandUVE>(commands[1]));
 
-    bool foundModelUniform = false;
-    bool foundLightSpaceUniform = false;
-    for (std::size_t index = 2; index < 4; ++index) {
-        ASSERT_TRUE(std::holds_alternative<SetUniformMatrix4x4CommandUVE>(commands[index]));
-        const std::string& name = std::get<SetUniformMatrix4x4CommandUVE>(commands[index]).name;
-        if (name == "uModel") {
-            foundModelUniform = true;
-        } else if (name == "uLightSpaceMatrix") {
-            foundLightSpaceUniform = true;
-            EXPECT_NE(std::get<SetUniformMatrix4x4CommandUVE>(commands[index]).value, Math::Matrix4x4UVE::IdentityUVE());
-        }
-    }
-    EXPECT_TRUE(foundModelUniform);
+    // uLightSpaceMatrix is still a plain uniform on both paths - it is per-cascade, not
+    // per-instance - and it must not be identity, or the cascade is rendering from nowhere.
+    const bool foundLightSpaceUniform = std::any_of(commands.cbegin(), shadowPassEnd,
+        [](const RecordedCommandUVE& command) {
+            if (!std::holds_alternative<SetUniformMatrix4x4CommandUVE>(command)) {
+                return false;
+            }
+            const SetUniformMatrix4x4CommandUVE& uniform = std::get<SetUniformMatrix4x4CommandUVE>(command);
+            return uniform.name == "uLightSpaceMatrix" && uniform.value != Math::Matrix4x4UVE::IdentityUVE();
+        });
     EXPECT_TRUE(foundLightSpaceUniform);
 
-    EXPECT_TRUE(std::holds_alternative<BindVertexBufferCommandUVE>(commands[4]));
-    EXPECT_TRUE(std::holds_alternative<BindIndexBufferCommandUVE>(commands[5]));
-    ASSERT_TRUE(std::holds_alternative<DrawIndexedCommandUVE>(commands[6]));
-    EXPECT_EQ(std::get<DrawIndexedCommandUVE>(commands[6]).indexCount, 3U);
-    EXPECT_TRUE(std::holds_alternative<EndRenderPassCommandUVE>(commands[7]));
+    // The caster's mesh is bound and drawn. Whether that is one instanced draw or one plain draw,
+    // the single caster must be covered exactly once with its real index count.
+    const auto shadowDraw = std::find_if(commands.cbegin(), shadowPassEnd,
+        [](const RecordedCommandUVE& command) {
+            return std::holds_alternative<DrawIndexedCommandUVE>(command);
+        });
+    ASSERT_NE(shadowDraw, shadowPassEnd);
+    EXPECT_EQ(std::get<DrawIndexedCommandUVE>(*shadowDraw).indexCount, 3U);
+    EXPECT_EQ(std::get<DrawIndexedCommandUVE>(*shadowDraw).instanceCount, 1U);
+    EXPECT_EQ(std::count_if(commands.cbegin(), shadowPassEnd, [](const RecordedCommandUVE& command) {
+        return std::holds_alternative<DrawIndexedCommandUVE>(command);
+    }), 1);
+    EXPECT_TRUE(std::any_of(commands.cbegin(), shadowDraw, [](const RecordedCommandUVE& command) {
+        return std::holds_alternative<BindVertexBufferCommandUVE>(command);
+    }));
+    EXPECT_TRUE(std::any_of(commands.cbegin(), shadowDraw, [](const RecordedCommandUVE& command) {
+        return std::holds_alternative<BindIndexBufferCommandUVE>(command);
+    }));
 
     // The main pass follows immediately after the shadow pass ends.
-    EXPECT_TRUE(std::holds_alternative<BeginRenderPassCommandUVE>(commands[8]));
+    EXPECT_TRUE(std::holds_alternative<BeginRenderPassCommandUVE>(*std::next(shadowPassEnd)));
 }
 
 #if !UVE_DEBUG
