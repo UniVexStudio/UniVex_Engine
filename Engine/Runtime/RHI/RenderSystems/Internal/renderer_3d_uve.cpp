@@ -2081,7 +2081,9 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                 m_impl->cameraSystem.ExtractFrustumUVE(lightSpaceMatrices[cascadeIndex]);
             m_impl->meshRenderer.CullVisibilitySetIntoUVE(m_impl->visibilitySet, lightFrustum,
                                                           m_impl->shadowQueues[cascadeIndex]);
-            m_impl->shadowQueues[cascadeIndex].SortUVE();
+            // Mesh order, not depth order: this cascade renders depth only, and the shadow
+            // batcher merges adjacent same-mesh items. See SortForDepthOnlyPassUVE.
+            m_impl->shadowQueues[cascadeIndex].SortForDepthOnlyPassUVE();
                 cascadeNearPlane = cascadeFarPlane;
             }
             if (shadowsReady) {
