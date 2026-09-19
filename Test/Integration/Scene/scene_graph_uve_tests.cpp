@@ -23,6 +23,14 @@ namespace {
 
 constexpr float kEpsilon = 1e-4F;
 
+/// Sign-agnostic: q and -q are the same rotation.
+[[nodiscard]] bool RepresentSameRotationForTransformUVE(const Math::QuaternionUVE& lhs,
+                                                        const Math::QuaternionUVE& rhs) {
+    const float dot = lhs.x * rhs.x + lhs.y * rhs.y + lhs.z * rhs.z + lhs.w * rhs.w;
+    return std::abs(std::abs(dot) - 1.0F) <= 1e-4F;
+}
+
+
 class SceneGraphUVETest : public ::testing::Test {
 protected:
     Memory::MemoryManagerUVE memoryManager;
@@ -621,6 +629,143 @@ TEST_F(SceneGraphUVETest, UpdateUVE_DefaultVisibilityIsVisible) {
     EXPECT_TRUE(entityManager.GetComponentUVE<VisibilityComponentUVE>(entity).visible);
     EXPECT_TRUE(entityManager.GetComponentUVE<VisibilityComponentUVE>(entity).visibleInHierarchy);
     EXPECT_TRUE(IsVisibilityComponentValidUVE(VisibilityComponentUVE{}));
+}
+
+TEST(TransformRotationAuthoringUVETest, TypedAnglesSurviveGimbalLock) {
+    // Measured before this field existed: typing (90, 45, 30) and reading it back gave
+    // (60, 90, 45). The rotation was right; the numbers the author typed were gone, and there was
+    // no way to get them back because a quaternion does not record which of the infinitely many
+    // angle triples at a pole you meant.
+    constexpr float kDegreesToRadians = 3.14159265F / 180.0F;
+    TransformComponentUVE transform;
+    transform.localEulerRadians =
+        Math::Vector3UVE{90.0F * kDegreesToRadians, 45.0F * kDegreesToRadians, 30.0F * kDegreesToRadians};
+    ASSERT_TRUE(TrySyncRotationFromEulerUVE(transform));
+
+    Math::Vector3UVE shown{};
+    ASSERT_TRUE(TryGetDisplayEulerUVE(transform, shown));
+    EXPECT_NEAR(shown.x / kDegreesToRadians, 90.0F, 1e-3F);
+    EXPECT_NEAR(shown.y / kDegreesToRadians, 45.0F, 1e-3F);
+    EXPECT_NEAR(shown.z / kDegreesToRadians, 30.0F, 1e-3F);
+
+    // And the rotation itself is still correct - keeping the angles must not cost correctness.
+    EXPECT_TRUE(IsTransformComponentValidUVE(transform));
+}
+
+TEST(TransformRotationAuthoringUVETest, TurnsBeyondAFullCircleAreNotFoldedAway) {
+    // 370 degrees used to read back as 10. That is not a rounding difference: a quaternion cannot
+    // tell one turn from two, so an author animating a full spin plus a bit lost the spin.
+    constexpr float kDegreesToRadians = 3.14159265F / 180.0F;
+    TransformComponentUVE transform;
+    transform.localEulerRadians = Math::Vector3UVE{0.0F, 370.0F * kDegreesToRadians, 0.0F};
+    ASSERT_TRUE(TrySyncRotationFromEulerUVE(transform));
+
+    Math::Vector3UVE shown{};
+    ASSERT_TRUE(TryGetDisplayEulerUVE(transform, shown));
+    EXPECT_NEAR(shown.y / kDegreesToRadians, 370.0F, 1e-3F) << "the extra turn must be preserved";
+}
+
+TEST(TransformRotationAuthoringUVETest, RepeatedDisplayDoesNotDriftTheRotation) {
+    // The worst of the three, because it needs no user action at all: re-extracting Euler angles
+    // every redraw accumulated round-trip error, and a transform nobody touched drifted by up to
+    // 54 degrees over a thousand frames. Storing the authored angles makes redraw a read.
+    constexpr float kDegreesToRadians = 3.14159265F / 180.0F;
+    TransformComponentUVE transform;
+    transform.localEulerRadians = Math::Vector3UVE{23.7F * kDegreesToRadians, 41.3F * kDegreesToRadians,
+                                                   67.9F * kDegreesToRadians};
+    ASSERT_TRUE(TrySyncRotationFromEulerUVE(transform));
+
+    // A thousand draw-then-write-back cycles, which is what an Inspector left open does.
+    for (int frame = 0; frame < 1000; ++frame) {
+        Math::Vector3UVE shown{};
+        ASSERT_TRUE(TryGetDisplayEulerUVE(transform, shown));
+        transform.localEulerRadians = shown;
+        ASSERT_TRUE(TrySyncRotationFromEulerUVE(transform));
+    }
+
+    Math::Vector3UVE finalAngles{};
+    ASSERT_TRUE(TryGetDisplayEulerUVE(transform, finalAngles));
+    EXPECT_NEAR(finalAngles.x / kDegreesToRadians, 23.7F, 1e-3F);
+    EXPECT_NEAR(finalAngles.y / kDegreesToRadians, 41.3F, 1e-3F);
+    EXPECT_NEAR(finalAngles.z / kDegreesToRadians, 67.9F, 1e-3F);
+}
+
+TEST(TransformRotationAuthoringUVETest, QuaternionModeShowsTheQuaternionNotStaleAngles) {
+    // When physics or a gizmo writes the quaternion, the stored Euler angles describe a rotation
+    // the object no longer has. Showing them would be a lie, so Quaternion mode extracts instead -
+    // the one case where a derived view is the honest answer.
+    constexpr float kDegreesToRadians = 3.14159265F / 180.0F;
+    TransformComponentUVE transform;
+    transform.localEulerRadians = Math::Vector3UVE{10.0F * kDegreesToRadians, 20.0F * kDegreesToRadians,
+                                                   30.0F * kDegreesToRadians};
+    ASSERT_TRUE(TrySyncRotationFromEulerUVE(transform));
+
+    // Physics writes a rotation directly and declares the quaternion authoritative.
+    Math::QuaternionUVE fromPhysics{};
+    ASSERT_TRUE(Math::TryMakeEulerOrderedUVE(Math::Vector3UVE{45.0F * kDegreesToRadians, 0.0F, 0.0F},
+                                             Math::EulerOrderUVE::XYZ, fromPhysics));
+    transform.localRotation = fromPhysics;
+    transform.rotationEditMode = RotationEditModeUVE::Quaternion;
+
+    Math::Vector3UVE shown{};
+    ASSERT_TRUE(TryGetDisplayEulerUVE(transform, shown));
+    EXPECT_NEAR(shown.x / kDegreesToRadians, 45.0F, 1e-2F) << "must show the physics rotation";
+    EXPECT_NEAR(shown.y / kDegreesToRadians, 0.0F, 1e-2F) << "not the stale authored 20 degrees";
+
+    // And syncing must not overwrite what physics wrote.
+    ASSERT_TRUE(TrySyncRotationFromEulerUVE(transform));
+    EXPECT_TRUE(RepresentSameRotationForTransformUVE(transform.localRotation, fromPhysics))
+        << "Quaternion mode must not replay the stale Euler angles over the live rotation";
+}
+
+TEST(TransformRotationAuthoringUVETest, EachOrderGivesADifferentRotationFromTheSameAngles) {
+    // The dropdown has to mean something. Same typed angles, different order, different result -
+    // otherwise the control is decoration.
+    constexpr float kDegreesToRadians = 3.14159265F / 180.0F;
+    const Math::Vector3UVE angles{35.0F * kDegreesToRadians, 50.0F * kDegreesToRadians,
+                                  70.0F * kDegreesToRadians};
+    TransformComponentUVE xyz;
+    xyz.localEulerRadians = angles;
+    xyz.eulerOrder = Math::EulerOrderUVE::XYZ;
+    ASSERT_TRUE(TrySyncRotationFromEulerUVE(xyz));
+
+    TransformComponentUVE zxy;
+    zxy.localEulerRadians = angles;
+    zxy.eulerOrder = Math::EulerOrderUVE::ZXY;
+    ASSERT_TRUE(TrySyncRotationFromEulerUVE(zxy));
+
+    EXPECT_FALSE(RepresentSameRotationForTransformUVE(xyz.localRotation, zxy.localRotation));
+    // Both must still be valid, normalized rotations.
+    EXPECT_TRUE(IsTransformComponentValidUVE(xyz));
+    EXPECT_TRUE(IsTransformComponentValidUVE(zxy));
+}
+
+TEST(TransformRotationAuthoringUVETest, ADefaultTransformIsUnchangedByTheNewFields) {
+    // Every entity in every existing scene has a default-constructed transform. The new fields
+    // must leave it exactly as it was: identity rotation, Euler mode, XYZ order.
+    const TransformComponentUVE transform;
+    EXPECT_FLOAT_EQ(transform.localRotation.w, 1.0F);
+    EXPECT_FLOAT_EQ(transform.localEulerRadians.x, 0.0F);
+    EXPECT_EQ(transform.eulerOrder, Math::EulerOrderUVE::XYZ);
+    EXPECT_EQ(transform.rotationEditMode, RotationEditModeUVE::Euler);
+    EXPECT_TRUE(IsTransformComponentValidUVE(transform));
+
+    TransformComponentUVE synced = transform;
+    ASSERT_TRUE(TrySyncRotationFromEulerUVE(synced));
+    EXPECT_FLOAT_EQ(synced.localRotation.w, 1.0F) << "syncing a default must stay identity";
+}
+
+TEST(TransformRotationAuthoringUVETest, NonFiniteAnglesAreRejectedWithoutTouchingTheRotation) {
+    // A bad edit must not be able to teleport an object. The previous rotation stays.
+    TransformComponentUVE transform;
+    transform.localEulerRadians = Math::Vector3UVE{0.5F, 0.5F, 0.5F};
+    ASSERT_TRUE(TrySyncRotationFromEulerUVE(transform));
+    const Math::QuaternionUVE good = transform.localRotation;
+
+    transform.localEulerRadians = Math::Vector3UVE{std::numeric_limits<float>::quiet_NaN(), 0.0F, 0.0F};
+    EXPECT_FALSE(TrySyncRotationFromEulerUVE(transform));
+    EXPECT_FLOAT_EQ(transform.localRotation.x, good.x) << "a rejected edit must leave the rotation alone";
+    EXPECT_FLOAT_EQ(transform.localRotation.w, good.w);
 }
 
 } // namespace
