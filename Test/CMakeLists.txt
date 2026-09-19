@@ -337,6 +337,7 @@ add_executable(uve_editor_tests
     Editor/editor_tool_session_uve_tests.cpp
     Editor/editor_render_stats_uve_tests.cpp
     Editor/editor_chrome_layout_uve_tests.cpp
+    Editor/editor_icon_registry_uve_tests.cpp
     Editor/editor_uve_tests.cpp
     Editor/inspector_drawer_registry_uve_tests.cpp
     Editor/regression_harness_uve_tests.cpp

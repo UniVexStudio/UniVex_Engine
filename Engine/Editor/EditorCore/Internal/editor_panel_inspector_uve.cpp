@@ -35,6 +35,7 @@
 #include "editor_chrome_layout_uve.h"
 #include "editor_fonts_uve.h"
 #include "editor_entity_label_uve.h"
+#include "editor_icon_registry_uve.h"
 #include "editor_node_icons_uve.h"
 
 #include "uve/asset/asset_import_queue_uve.h"
@@ -667,9 +668,11 @@ void EditorUVE::DrawCharacterControllerInspectorDrawerUVE(const Scene::EntityUVE
     ImGui::Separator();
     DrawProceduralIconLabelUVE(8.0F, "Character Controller",
                                [this](ImDrawList& drawList, const ImVec2 center, const float radius, const ImU32) {
-                                   DrawHierarchyNodeIconUVE(drawList, center, radius, HierarchyNodeIconKindUVE::Physics,
-                                                           m_uiAssets.GetGeneralIconTextureIdUVE("sun"),
-                                                           m_uiAssets.GetGeneralIconTextureIdUVE("environment"));
+                                   // Named rather than enumerated - the texture ids beside it are
+                                   // already looked up by name, so the glyph was the odd one out.
+                                   DrawNamedIconUVE(drawList, center, radius, "physics",
+                                                    m_uiAssets.GetGeneralIconTextureIdUVE("sun"),
+                                                    m_uiAssets.GetGeneralIconTextureIdUVE("environment"));
                                });
     ImGui::TextDisabled(
         "Driven every fixed step by EngineCoreUVE's real gravity/jump/ground-state stepping - requires a "
