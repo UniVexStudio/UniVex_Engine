@@ -18,7 +18,9 @@
 #include "uve/editor/editor_uve.h"
 
 #include <algorithm>
+#include <array>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <imgui.h>
