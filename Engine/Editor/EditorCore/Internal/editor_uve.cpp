@@ -125,14 +125,20 @@ constexpr const char* kPanelLabelViewportUVE = "\xEE\xA9\x94 Viewport##viewport"
 constexpr const char* kIconStarUVE = "\xEE\xAC\xAE";
 
 [[nodiscard]] Math::Vector3UVE PrimitiveColliderHalfExtentsUVE(const Scene::PrimitiveMeshKindUVE kind) noexcept {
+    // Sourced from the node definitions rather than restated here. These half-extents are the same
+    // authored defaults BoxMesh3D/SphereMesh3D/PlaneMesh3D attach at creation, and a second copy
+    // of them is a second place to edit: changing a primitive's collider in its definition while
+    // this switch kept the old number would give an entity different collision depending on
+    // whether it was created as that kind or converted to it - a difference nothing would report.
     switch (kind) {
         case Scene::PrimitiveMeshKindUVE::Cube:
+            return Scene::BoxMesh3DNodeDefinitionUVE{}.collider.halfExtents;
         case Scene::PrimitiveMeshKindUVE::UVSphere:
-            return Math::Vector3UVE{0.5F, 0.5F, 0.5F};
+            return Scene::SphereMesh3DNodeDefinitionUVE{}.collider.halfExtents;
         case Scene::PrimitiveMeshKindUVE::Plane:
-            return Math::Vector3UVE{0.5F, 0.025F, 0.5F};
+            return Scene::PlaneMesh3DNodeDefinitionUVE{}.collider.halfExtents;
     }
-    return Math::Vector3UVE{0.5F, 0.5F, 0.5F};
+    return Scene::BoxMesh3DNodeDefinitionUVE{}.collider.halfExtents;
 }
 constexpr float kGizmoAxisLengthUVE = 1.25F;
 constexpr float kGizmoHandleRadiusPixelsUVE = 12.0F;

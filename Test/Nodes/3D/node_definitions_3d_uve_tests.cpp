@@ -250,4 +250,28 @@ TEST_F(Node3DDefinitionsUVETest, AnimationTreeStaysHonestlyNonCreatable) {
 }
 
 } // namespace
+TEST(NodeDefinitions3DUVETest, PrimitiveCollidersMatchTheKindTheyBelongTo) {
+    // The editor converts a primitive in place (Cube -> Plane and so on) and refreshes the
+    // collider to match the new kind. It reads these same definitions to do it, so this pins the
+    // pairing the conversion depends on: each primitive kind's authored collider must be the one
+    // its own definition declares, and a flat primitive must not inherit a cube's depth.
+    EXPECT_EQ(BoxMesh3DNodeDefinitionUVE{}.mesh.kind, PrimitiveMeshKindUVE::Cube);
+    EXPECT_EQ(SphereMesh3DNodeDefinitionUVE{}.mesh.kind, PrimitiveMeshKindUVE::UVSphere);
+    EXPECT_EQ(PlaneMesh3DNodeDefinitionUVE{}.mesh.kind, PrimitiveMeshKindUVE::Plane);
+
+    // The plane is the one that actually differs, and the one a duplicated constant would get
+    // wrong: it is thin on Y where the volumetric primitives are not.
+    const Math::Vector3UVE planeExtents = PlaneMesh3DNodeDefinitionUVE{}.collider.halfExtents;
+    const Math::Vector3UVE boxExtents = BoxMesh3DNodeDefinitionUVE{}.collider.halfExtents;
+    EXPECT_LT(planeExtents.y, boxExtents.y) << "a plane's collider must be flatter than a cube's";
+    EXPECT_FLOAT_EQ(planeExtents.x, boxExtents.x);
+    EXPECT_FLOAT_EQ(planeExtents.z, boxExtents.z);
+
+    // Every primitive definition must carry a collider that passes validation - an unauthored or
+    // zeroed one would make the created entity fail IsColliderComponentValidUVE downstream.
+    EXPECT_TRUE(IsBoxMesh3DNodeDefinitionValidUVE(BoxMesh3DNodeDefinitionUVE{}));
+    EXPECT_TRUE(IsSphereMesh3DNodeDefinitionValidUVE(SphereMesh3DNodeDefinitionUVE{}));
+    EXPECT_TRUE(IsPlaneMesh3DNodeDefinitionValidUVE(PlaneMesh3DNodeDefinitionUVE{}));
+}
+
 } // namespace UVE::Scene::Tests
