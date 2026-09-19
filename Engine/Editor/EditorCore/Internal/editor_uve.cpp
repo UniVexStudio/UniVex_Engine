@@ -1,6 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 #include "uve/editor/editor_uve.h"
+#include "uve/editor/editor_render_stats_uve.h"
 #include "uve/editor/editor_theme_uve.h"
 #include <algorithm>
 #include <array>
@@ -4305,14 +4306,26 @@ void EditorUVE::DrawBottomDockContentUVE() {
     switch (m_activeBottomDock) {
         case EditorBottomDockUVE::Debugger: {
             ImGui::TextUnformatted("Debug Output");
+            // Rows are built by BuildEditorRenderStatRowsUVE, which holds the formatting and the
+            // judgement of what counts as concerning. This loop only prints them: deciding what a
+            // counter means is the part worth testing, and it cannot be tested from in here.
             const Render::Renderer3DFrameDiagnosticsUVE diagnostics =
                 m_services->GetRenderer3DUVE().GetLastFrameDiagnosticsUVE();
-            ImGui::Text("Frame: primitives %zu | meshes %zu | particles %zu",
-                        diagnostics.primitiveItemsExtracted, diagnostics.meshItemsExtracted,
-                        diagnostics.particleItemsExtracted);
-            ImGui::Text("Submission: mesh draws %zu | primitive draws %zu | GL draws %zu",
-                        diagnostics.meshDrawCallsRecorded, diagnostics.primitiveDrawCallsRecorded,
-                        diagnostics.glDrawCallsIssued);
+            std::string currentSection;
+            for (const EditorRenderStatRowUVE& row : BuildEditorRenderStatRowsUVE(diagnostics)) {
+                if (row.section != currentSection) {
+                    currentSection = row.section;
+                    ImGui::TextDisabled("%s", currentSection.c_str());
+                }
+                if (row.isConcerning) {
+                    // Amber rather than red: every one of these is "worth a look", not "broken".
+                    ImGui::TextColored(ImVec4{0.95F, 0.70F, 0.25F, 1.0F}, "  %s: %s", row.label.c_str(),
+                                       row.value.c_str());
+                } else {
+                    ImGui::Text("  %s: %s", row.label.c_str(), row.value.c_str());
+                }
+            }
+            ImGui::Separator();
             ImGui::Text("Scene state: %s | Undo: %s | Redo: %s",
                         m_sceneDirty ? "unsaved" : "saved", CanUndoUVE() ? "available" : "empty",
                         CanRedoUVE() ? "available" : "empty");

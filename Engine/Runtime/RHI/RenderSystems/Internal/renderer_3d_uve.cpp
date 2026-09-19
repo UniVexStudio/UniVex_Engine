@@ -1222,6 +1222,11 @@ struct Renderer3DUVE::ImplUVE {
                 instancedShadowProgram != nullptr && instancedShadowProgram->IsValidUVE();
             if (instancedShadows) {
                 BuildShadowBatchesUVE(items, batchSet);
+                // Counted here rather than at the draw loop below, because what is being reported
+                // is how well the ORDER batched - a batch that is later skipped for an unresolved
+                // mesh still tells the truth about the merge.
+                lastFrameDiagnostics.shadowBatchesRecorded += batchSet.batches.size();
+                lastFrameDiagnostics.shadowBatchedItems += items.size();
                 if (!batchSet.batches.empty() &&
                     batchSet.instanceMatrices.size() <= kMaximumInstancesPerFrameUVE &&
                     EnsureInstanceBufferCapacityUVE(batchSet.instanceMatrices.size()) &&
@@ -2023,6 +2028,7 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                                                m_impl->visibilitySet);
     m_impl->lastFrameDiagnostics.placementCacheHits = m_impl->visibilitySet.placementCacheHits;
     m_impl->lastFrameDiagnostics.placementCacheMisses = m_impl->visibilitySet.placementCacheMisses;
+    m_impl->lastFrameDiagnostics.visibilityClusters = m_impl->visibilitySet.clusters.size();
 
     const LightDataUVE* const shadowCaster = FindShadowCasterUVE(lights);
     bool shadowsReady = shadowCaster != nullptr && m_impl->shadowProgram->IsValidUVE() &&
@@ -2100,6 +2106,14 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                                           m_impl->shadowCascadeBlendRatio};
 
     RenderQueueUVE& queue = m_impl->frameQueue;
+    // Counted before the cull rather than inside it: CullVisibilitySetIntoUVE runs four times a
+    // frame against four different frusta, and a rejection ratio averaged across a main view and
+    // three much wider cascades describes none of them. This is the main view's alone.
+    for (const MeshVisibilitySetUVE::CandidateClusterUVE& cluster : m_impl->visibilitySet.clusters) {
+        if (!frustum.IntersectsUVE(cluster.bounds)) {
+            ++m_impl->lastFrameDiagnostics.visibilityClustersRejected;
+        }
+    }
     m_impl->meshRenderer.CullVisibilitySetIntoUVE(m_impl->visibilitySet, frustum, queue);
     if (m_impl->particleRuntimeForFrame != nullptr) {
         const ParticleRenderSnapshotUVE particleSnapshot =

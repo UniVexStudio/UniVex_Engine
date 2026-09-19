@@ -67,6 +67,27 @@ struct Renderer3DFrameDiagnosticsUVE final {
     /// counter because the shadow passes run once per cascade, so they - not the main pass - were
     /// where an uninstanced scene spent most of its draw calls.
     std::size_t shadowInstancedDrawCallsRecorded = 0U;
+
+    /// Shadow batches built across ALL cascades this frame, and the items they covered.
+    ///
+    /// These two together answer "is the shadow pass actually batching?", which nothing else can:
+    /// a batch is one draw call, so `shadowBatchesRecorded` well below `shadowBatchedItems` means
+    /// the batcher is merging, and the two being equal means every item became its own draw.
+    /// Worth watching because the merging depends entirely on the ORDER the cascade queue is
+    /// handed - BuildShadowBatchesUVE merges only adjacent same-mesh runs - so a change to the
+    /// queue's sort silently multiplies draw calls while every image stays identical.
+    std::size_t shadowBatchesRecorded = 0U;
+    std::size_t shadowBatchedItems = 0U;
+
+    /// Spatial clusters the visibility set built this frame, and how many of them the MAIN view's
+    /// frustum rejected outright. A rejected cluster skips a plane test per candidate inside it,
+    /// so the ratio is the clustering's whole return: near zero rejected means the clusters are
+    /// not tight enough to be worth building, and that is a regression nothing else reports.
+    ///
+    /// Main view only. The shadow cascades cull the same set against much wider frusta and would
+    /// average the number into meaninglessness.
+    std::size_t visibilityClusters = 0U;
+    std::size_t visibilityClustersRejected = 0U;
     std::size_t primitiveDrawCallsRecorded = 0U;
     std::size_t particleItemsExtracted = 0U;
     std::size_t particleDrawCommandsRecorded = 0U;
