@@ -191,6 +191,9 @@ void MeshVisibilitySetUVE::ClearUVE() noexcept {
     // Cleared with the candidates they index into: a cluster naming a range of a list that no
     // longer exists is worse than no cluster at all.
     clusters.clear();
+    // Released with the candidates that referred to them. This is the frame's only drop of asset
+    // references - two per distinct asset, rather than two per entity as it used to be.
+    assetPairs.clear();
     placementCacheHits = 0U;
     placementCacheMisses = 0U;
     invalidAssetReferences = 0U;

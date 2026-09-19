@@ -3,7 +3,11 @@
 #include "uve/render_systems/mesh_renderer_uve.h"
 
 #include <cstddef>
+#include <cstdint>
+#include <functional>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 #include <utility>
 
 #include "uve/asset/asset_guid_uve.h"
@@ -39,6 +43,52 @@ template <typename T>
     return resolved.emplace(guid, std::move(entry)).first->second;
 }
 
+/// A mesh+material pairing, as raw GUID values. AssetGuidUVE has equality and a std::hash
+/// specialization but no ordering, so this is hashed rather than compared - and the raw values are
+/// used directly rather than adding an operator< to a type in another module purely for a local
+/// lookup table.
+struct AssetPairKeyUVE final {
+    std::uint64_t meshGuidValue = 0U;
+    std::uint64_t materialGuidValue = 0U;
+
+    [[nodiscard]] bool operator==(const AssetPairKeyUVE& other) const noexcept {
+        return meshGuidValue == other.meshGuidValue && materialGuidValue == other.materialGuidValue;
+    }
+};
+
+struct AssetPairKeyHashUVE final {
+    [[nodiscard]] std::size_t operator()(const AssetPairKeyUVE& key) const noexcept {
+        const std::size_t meshHash = std::hash<std::uint64_t>{}(key.meshGuidValue);
+        const std::size_t materialHash = std::hash<std::uint64_t>{}(key.materialGuidValue);
+        // The usual boost-style mix: the two GUIDs are independent, so a plain XOR would collide
+        // for any pairing and its reverse.
+        return meshHash ^ (materialHash + 0x9E3779B97F4A7C15ULL + (meshHash << 6U) + (meshHash >> 2U));
+    }
+};
+
+/// Returns the index of the mesh+material pairing in `assetPairs`, appending it - and taking the
+/// frame's one reference to each asset - the first time that pairing is seen.
+///
+/// Keyed on both GUIDs, not just the mesh: two entities can share a mesh while using different
+/// materials, and collapsing those would hand one of them the other's material.
+[[nodiscard]] std::size_t ResolveAssetPairIndexUVE(
+    std::unordered_map<AssetPairKeyUVE, std::size_t, AssetPairKeyHashUVE>& slots,
+    std::vector<MeshVisibilityAssetPairUVE>& assetPairs, Asset::AssetGuidUVE meshGuid,
+    Asset::AssetGuidUVE materialGuid, const Asset::AssetHandleUVE<Asset::MeshAssetUVE>& meshHandle,
+    const Asset::AssetHandleUVE<Asset::MaterialAssetUVE>& materialHandle) {
+    const AssetPairKeyUVE key{meshGuid.value, materialGuid.value};
+    const auto existing = slots.find(key);
+    if (existing != slots.end()) {
+        return existing->second;
+    }
+    const std::size_t index = assetPairs.size();
+    // The only reference-count increments in the walk. Copies rather than moves: the resolution is
+    // shared with every other entity using this GUID and must stay intact for them.
+    assetPairs.push_back(MeshVisibilityAssetPairUVE{meshHandle, materialHandle});
+    slots.emplace(key, index);
+    return index;
+}
+
 } // namespace
 
 
@@ -71,6 +121,11 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
     // frame. These die with the walk.
     std::unordered_map<Asset::AssetGuidUVE, ResolvedAssetUVE<Asset::MeshAssetUVE>> resolvedMeshes;
     std::unordered_map<Asset::AssetGuidUVE, ResolvedAssetUVE<Asset::MaterialAssetUVE>> resolvedMaterials;
+
+    // Maps a mesh+material pairing to its slot in the set's asset table, so the reference pair is
+    // created once however many entities share it. Local for the same reason the resolutions are:
+    // it describes this walk only.
+    std::unordered_map<AssetPairKeyUVE, std::size_t, AssetPairKeyHashUVE> assetPairSlots;
 
     entityManager.ForEachUVE<Scene::WorldTransformComponentUVE, Scene::MeshComponentUVE>(
         [&](Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE& worldTransform,
@@ -140,12 +195,15 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
             // Bucketing is decided here, not per frustum: transparency is a property of the
             // material, and no frustum can change it.
             //
-            // The handles are COPIED out of the shared resolution rather than moved: the
-            // resolution is shared by every entity using this GUID, and moving from it would leave
-            // the next entity holding an empty handle. The copy is a reference-count increment,
-            // which is what a candidate owning its handle has always cost.
-            outVisibilitySet.candidates.push_back(MeshVisibilityCandidateUVE{
-                resolvedMesh.handle, resolvedMaterial.handle, placement, material->isTransparent});
+            // The candidate stores an INDEX, not a pair of handles. The set holds one reference
+            // per distinct mesh+material pair and that is what keeps the assets alive across the
+            // frame; a reference per entity would be the same two records counted thousands of
+            // times, at a mutex and a hash each way.
+            const std::size_t assetPairIndex = ResolveAssetPairIndexUVE(
+                assetPairSlots, outVisibilitySet.assetPairs, meshComponent.meshGuid,
+                meshComponent.materialGuid, resolvedMesh.handle, resolvedMaterial.handle);
+            outVisibilitySet.candidates.push_back(
+                MeshVisibilityCandidateUVE{assetPairIndex, placement, material->isTransparent});
         });
 
     // Bound the cache. Without this it retains an entry for every entity the scene has ever had,
@@ -192,7 +250,13 @@ void MeshRendererUVE::CullVisibilitySetIntoUVE(const MeshVisibilitySetUVE& visib
             // would empty the handles the remaining cascades still need. AssetHandleUVE copies are
             // refcount bumps, which is exactly what this wants - the handle outlives all four
             // queues anyway.
-            RenderItemUVE item{eligibility.worldMatrix, candidate.meshHandle, candidate.materialHandle,
+            // The queue item still owns its own handles: RenderQueueUVE is returned by value from
+            // the public ExtractRenderQueueUVE, so it can outlive the visibility set that produced
+            // it and cannot borrow that set's references. This is the one place the per-item cost
+            // is genuinely load-bearing, and it is paid only for candidates that survived culling
+            // rather than for every candidate in the scene.
+            const MeshVisibilityAssetPairUVE& assetPair = visibilitySet.assetPairs[candidate.assetPairIndex];
+            RenderItemUVE item{eligibility.worldMatrix, assetPair.meshHandle, assetPair.materialHandle,
                                eligibility.sortDepth};
             if (candidate.isTransparent) {
                 outQueue.transparentItems.push_back(std::move(item));

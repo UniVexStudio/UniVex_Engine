@@ -85,9 +85,32 @@ struct ResolvedAssetUVE final {
     [[nodiscard]] bool IsUsableUVE() const noexcept { return value != nullptr && !failed && !pending; }
 };
 
-struct MeshVisibilityCandidateUVE final {
+/// One distinct mesh+material pair used by this frame, holding the references that keep both
+/// assets loaded for the whole frame.
+///
+/// WHY THIS EXISTS. Candidates used to carry their own pair of AssetHandleUVE. Each one cost two
+/// reference-count increments when it was pushed and two decrements when the set was cleared, and
+/// every one of those takes the asset manager's mutex and hashes a GUID. On a 2000-entity scene
+/// that is 8000 mutex-guarded operations per frame - and they nearly all name the SAME asset,
+/// because many entities share one mesh and one material. Measured at about 98 us per frame, which
+/// was roughly a third of the build.
+///
+/// The references are genuinely needed: CollectGarbageUVE() runs once per frame between the build
+/// and the render, so something must hold these assets alive across it. But "something" is one
+/// reference per distinct asset, not one per entity that happens to use it. Two references now do
+/// the job four thousand used to.
+struct MeshVisibilityAssetPairUVE final {
     Asset::AssetHandleUVE<Asset::MeshAssetUVE> meshHandle;
     Asset::AssetHandleUVE<Asset::MaterialAssetUVE> materialHandle;
+};
+
+struct MeshVisibilityCandidateUVE final {
+    /// Index into MeshVisibilitySetUVE::assetPairs. A plain index rather than a handle: the set
+    /// owns the reference, the candidate only needs to say which one it uses.
+    ///
+    /// Valid only against the set this candidate came from, and only until that set is rebuilt.
+    /// That is the same lifetime the candidate itself has, so it adds no new rule to remember.
+    std::size_t assetPairIndex = 0U;
     MeshRenderPlacementUVE placement;
     bool isTransparent = false;
 };
@@ -110,6 +133,10 @@ struct MeshVisibilityCandidateUVE final {
 /// promises and the storage can be reused across frames instead of reallocated.
 struct MeshVisibilitySetUVE final {
     std::vector<MeshVisibilityCandidateUVE> candidates;
+
+    /// The distinct mesh+material pairs this frame's candidates refer to, and the only place asset
+    /// references are held. Indexed by MeshVisibilityCandidateUVE::assetPairIndex.
+    std::vector<MeshVisibilityAssetPairUVE> assetPairs;
 
     /// Last frame's placement per entity, reused when nothing about that entity changed.
     ///
