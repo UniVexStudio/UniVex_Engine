@@ -24,6 +24,8 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <filesystem>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
