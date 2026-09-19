@@ -336,6 +336,7 @@ add_executable(uve_editor_tests
     Editor/developer_console_bridge_uve_tests.cpp
     Editor/editor_tool_session_uve_tests.cpp
     Editor/editor_render_stats_uve_tests.cpp
+    Editor/editor_chrome_layout_uve_tests.cpp
     Editor/editor_uve_tests.cpp
     Editor/inspector_drawer_registry_uve_tests.cpp
     Editor/regression_harness_uve_tests.cpp
@@ -351,6 +352,20 @@ target_link_libraries(uve_editor_tests PRIVATE
     GTest::gtest
     GTest::gtest_main
 )
+
+# The chrome-layout helper is shared between the editor's panel translation units but is not
+# public API - it lives in EditorCore/Internal, so the test covering it needs that directory on
+# the include path. Deliberately not promoted to Expose: nothing outside the editor has any
+# business computing panel rects.
+#
+# uve_editor_imgui is linked directly because uve_editor keeps it PRIVATE, and the layout helper's
+# signature is in ImGui's own types. Linking it here rather than making it PUBLIC on uve_editor
+# keeps imgui out of every other consumer's include path, which is why it was PRIVATE to begin
+# with - the test's need does not justify widening the library's surface.
+target_include_directories(uve_editor_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/Engine/Editor/EditorCore/Internal
+)
+target_link_libraries(uve_editor_tests PRIVATE uve_editor_imgui)
 target_compile_features(uve_editor_tests PRIVATE cxx_std_20)
 target_compile_definitions(uve_editor_tests PRIVATE UVE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 uve_set_warnings(uve_editor_tests)

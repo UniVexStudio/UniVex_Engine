@@ -2,6 +2,9 @@
 
 #include "uve/editor/editor_uve.h"
 #include "uve/editor/editor_render_stats_uve.h"
+
+#include "editor_chrome_layout_uve.h"
+#include "editor_node_icons_uve.h"
 #include "uve/editor/editor_theme_uve.h"
 #include <algorithm>
 #include <array>
@@ -145,15 +148,10 @@ constexpr float kGizmoAxisLengthUVE = 1.25F;
 constexpr float kGizmoHandleRadiusPixelsUVE = 12.0F;
 constexpr float kTrackballRadiusPixelsUVE = 42.0F;
 constexpr float kTrackballAntipodalDotThresholdUVE = -0.999F;
-constexpr float kMinimumViewportWidthUVE = 64.0F;
-constexpr float kMinimumViewportHeightUVE = 64.0F;
-constexpr float kAssetsPanelHeightUVE = 192.0F;
 constexpr float kBottomDockTabHeightUVE = 24.0F;
-constexpr float kEditorTitleBarHeightUVE = 24.0F;
 // Shrunk from 30 now that this row also hosts the Play/Pause/Stop transport buttons (moved out of
 // the old menu row) alongside the Scene/Scripting/Game workspace tabs, decluttering both rows
 // instead of leaving a tall strip that only ever held two small tab buttons.
-constexpr float kEditorToolbarHeightUVE = 26.0F;
 constexpr float kEditorViewportToolCanvasHeightUVE = 30.0F;
 constexpr float kFilesystemLongPressThresholdSecondsUVE = 0.60F;
 /// Square resolution rendered for each Content Browser mesh thumbnail (see
@@ -163,7 +161,6 @@ constexpr float kFilesystemLongPressThresholdSecondsUVE = 0.60F;
 constexpr int kMeshThumbnailSizeUVE = 64;
 constexpr float kScriptCanvasLongPressThresholdSecondsUVE = 0.55F;
 constexpr float kScriptCanvasLongPressMaxMovementPixelsUVE = 8.0F;
-constexpr float kEditorTopChromeHeightUVE = kEditorTitleBarHeightUVE + kEditorToolbarHeightUVE;
 constexpr std::size_t kMaximumEntityNameBytesUVE = 96U;
 constexpr float kMinimumViewportDistanceUVE = 0.5F;
 constexpr float kMaximumViewportDistanceUVE = 500.0F;
@@ -182,59 +179,6 @@ constexpr const char* kHierarchyEntityPayloadUVE = "UVE_SCENE_HIERARCHY_ENTITY";
 // values at 1280, and the clamps keep both sensible on very small and very large windows. Narrower
 // than the previous 0.19/0.22 (243/281 at 1280) so the center viewport - the primary workspace -
 // keeps the majority of the width instead of being squeezed by the side panels.
-constexpr float kScenePanelWidthFractionUVE = 0.15F;
-constexpr float kScenePanelWidthMinUVE = 184.0F;
-constexpr float kScenePanelWidthMaxUVE = 264.0F;
-constexpr float kInspectorPanelWidthFractionUVE = 0.18F;
-constexpr float kInspectorPanelWidthMinUVE = 220.0F;
-constexpr float kInspectorPanelWidthMaxUVE = 300.0F;
-
-// One place that lays out the four core structural panels (Scene / Viewport / Inspector / Content
-// Browser) from a single set of constants, so they can never drift out of alignment. Each
-// Draw*PanelUVE() asks here instead of recomputing its own width/height clamps (which had been
-// copy-pasted into four separate functions and were free to desync). The center viewport takes
-// whatever horizontal space the two side panels leave.
-struct EditorChromeLayoutUVE {
-    ImVec2 scenePos;
-    ImVec2 sceneSize;
-    ImVec2 viewportPos;
-    ImVec2 viewportSize;
-    ImVec2 inspectorPos;
-    ImVec2 inspectorSize;
-    ImVec2 contentBrowserPos;
-    ImVec2 contentBrowserSize;
-};
-
-[[nodiscard]] inline EditorChromeLayoutUVE ComputeEditorChromeLayoutUVE(const ImGuiViewport& viewport,
-                                                                        const bool bottomDockVisible) {
-    const float originX = viewport.WorkPos.x;
-    const float originY = viewport.WorkPos.y;
-    const float totalWidth = viewport.WorkSize.x;
-    const float totalHeight = viewport.WorkSize.y;
-
-    const float chromeHeight = kEditorTopChromeHeightUVE;
-    const float reservedBottom = bottomDockVisible ? kAssetsPanelHeightUVE : 0.0F;
-    const float workspaceHeight =
-        std::max(kMinimumViewportHeightUVE, totalHeight - chromeHeight - reservedBottom);
-
-    const float sceneWidth =
-        std::clamp(totalWidth * kScenePanelWidthFractionUVE, kScenePanelWidthMinUVE, kScenePanelWidthMaxUVE);
-    const float inspectorWidth = std::clamp(totalWidth * kInspectorPanelWidthFractionUVE,
-                                            kInspectorPanelWidthMinUVE, kInspectorPanelWidthMaxUVE);
-    const float viewportWidth =
-        std::max(kMinimumViewportWidthUVE, totalWidth - sceneWidth - inspectorWidth);
-
-    EditorChromeLayoutUVE layout{};
-    layout.scenePos = ImVec2{originX, originY + chromeHeight};
-    layout.sceneSize = ImVec2{sceneWidth, workspaceHeight};
-    layout.viewportPos = ImVec2{originX + sceneWidth, originY + chromeHeight};
-    layout.viewportSize = ImVec2{viewportWidth, workspaceHeight};
-    layout.inspectorPos = ImVec2{originX + totalWidth - inspectorWidth, originY + chromeHeight};
-    layout.inspectorSize = ImVec2{inspectorWidth, workspaceHeight};
-    layout.contentBrowserPos = ImVec2{originX, originY + totalHeight - kAssetsPanelHeightUVE};
-    layout.contentBrowserSize = ImVec2{totalWidth, kAssetsPanelHeightUVE};
-    return layout;
-}
 
 [[nodiscard]] const char* ScriptValueTypeLabelUVE(const Scripting::ScriptValueTypeUVE type) noexcept {
     switch (type) {
@@ -539,168 +483,6 @@ void DrawFolderIconUVE(ImDrawList& drawList, const ImVec2 center, const float ra
 // carries, checked in the same priority order a user would expect to identify it visually first
 // (Camera/Light/Mesh before the more generic Physics/Script/Animation) - Empty (a plain ring,
 // matching Godot's own bare Node3D icon) when none of the 10 match.
-enum class HierarchyNodeIconKindUVE {
-    Empty,
-    Mesh,
-    Camera,
-    Light,
-    Environment,
-    Physics,
-    Audio,
-    Particle,
-    Script,
-    Animation,
-};
-
-void DrawNodeMeshIconUVE(ImDrawList& drawList, const ImVec2 center, const float radius, const ImU32 color) {
-    const float half = radius * 0.5F;
-    drawList.AddRect(ImVec2{center.x - half, center.y - half}, ImVec2{center.x + half, center.y + half}, color,
-                     radius * 0.12F, 0, 1.3F);
-}
-
-void DrawNodeCameraIconUVE(ImDrawList& drawList, const ImVec2 center, const float radius, const ImU32 color) {
-    const float bodyHalfWidth = radius * 0.48F;
-    const float bodyHalfHeight = radius * 0.34F;
-    drawList.AddRect(ImVec2{center.x - bodyHalfWidth, center.y - bodyHalfHeight},
-                     ImVec2{center.x + bodyHalfWidth * 0.3F, center.y + bodyHalfHeight}, color, radius * 0.1F, 0,
-                     1.3F);
-    const std::array<ImVec2, 3> lens{
-        ImVec2{center.x + bodyHalfWidth * 0.3F, center.y - bodyHalfHeight * 0.7F},
-        ImVec2{center.x + bodyHalfWidth * 0.3F, center.y + bodyHalfHeight * 0.7F},
-        ImVec2{center.x + bodyHalfWidth * 1.15F, center.y}};
-    drawList.AddTriangle(lens[0], lens[1], lens[2], color, 1.3F);
-}
-
-void DrawNodePhysicsIconUVE(ImDrawList& drawList, const ImVec2 center, const float radius, const ImU32 color) {
-    drawList.AddCircle(center, radius * 0.5F, color, 16, 1.3F);
-    drawList.AddLine(ImVec2{center.x - radius * 0.5F, center.y}, ImVec2{center.x + radius * 0.5F, center.y}, color,
-                     1.1F);
-}
-
-void DrawNodeAudioIconUVE(ImDrawList& drawList, const ImVec2 center, const float radius, const ImU32 color) {
-    const float coneDepth = radius * 0.32F;
-    const std::array<ImVec2, 4> cone{
-        ImVec2{center.x - radius * 0.55F, center.y - coneDepth * 0.55F},
-        ImVec2{center.x - radius * 0.15F, center.y - coneDepth * 0.55F},
-        ImVec2{center.x + radius * 0.25F, center.y - coneDepth},
-        ImVec2{center.x + radius * 0.25F, center.y + coneDepth}};
-    drawList.AddLine(cone[0], cone[1], color, 1.2F);
-    drawList.AddLine(cone[1], cone[2], color, 1.2F);
-    drawList.AddLine(cone[0], ImVec2{cone[0].x, center.y + coneDepth * 0.55F}, color, 1.2F);
-    drawList.AddLine(ImVec2{cone[0].x, center.y + coneDepth * 0.55F}, ImVec2{cone[1].x, center.y + coneDepth * 0.55F},
-                     color, 1.2F);
-    drawList.AddLine(ImVec2{cone[1].x, center.y + coneDepth * 0.55F}, cone[3], color, 1.2F);
-    for (int arc = 1; arc <= 2; ++arc) {
-        const float arcRadius = radius * (0.35F + 0.22F * static_cast<float>(arc));
-        drawList.PathArcTo(ImVec2{cone[2].x, center.y}, arcRadius, -0.6F, 0.6F, 8);
-        drawList.PathStroke(color, 0, 1.1F);
-    }
-}
-
-void DrawNodeParticleIconUVE(ImDrawList& drawList, const ImVec2 center, const float radius, const ImU32 color) {
-    drawList.AddCircleFilled(center, radius * 0.18F, color, 10);
-    const std::array<ImVec2, 3> sparkOffsets{ImVec2{0.5F, -0.55F}, ImVec2{-0.55F, 0.15F}, ImVec2{0.3F, 0.55F}};
-    for (const ImVec2& offset : sparkOffsets) {
-        drawList.AddCircleFilled(ImVec2{center.x + offset.x * radius, center.y + offset.y * radius}, radius * 0.1F,
-                                 color, 8);
-    }
-}
-
-void DrawNodeScriptIconUVE(ImDrawList& drawList, const ImVec2 center, const float radius, const ImU32 color) {
-    const float armX = radius * 0.22F;
-    const float armY = radius * 0.32F;
-    const float tipX = radius * 0.5F;
-    drawList.AddLine(ImVec2{center.x - armX, center.y - armY}, ImVec2{center.x - tipX, center.y}, color, 1.3F);
-    drawList.AddLine(ImVec2{center.x - tipX, center.y}, ImVec2{center.x - armX, center.y + armY}, color, 1.3F);
-    drawList.AddLine(ImVec2{center.x + armX, center.y - armY}, ImVec2{center.x + tipX, center.y}, color, 1.3F);
-    drawList.AddLine(ImVec2{center.x + tipX, center.y}, ImVec2{center.x + armX, center.y + armY}, color, 1.3F);
-}
-
-void DrawNodeAnimationIconUVE(ImDrawList& drawList, const ImVec2 center, const float radius, const ImU32 color) {
-    drawList.AddCircle(center, radius * 0.5F, color, 20, 1.2F);
-    const float triHalf = radius * 0.2F;
-    drawList.AddTriangleFilled(ImVec2{center.x - triHalf * 0.5F, center.y - triHalf},
-                               ImVec2{center.x - triHalf * 0.5F, center.y + triHalf},
-                               ImVec2{center.x + triHalf * 0.9F, center.y}, color);
-}
-
-void DrawNodeEmptyIconUVE(ImDrawList& drawList, const ImVec2 center, const float radius, const ImU32 color) {
-    drawList.AddCircle(center, radius * 0.42F, color, 16, 1.2F);
-}
-
-[[nodiscard]] HierarchyNodeIconKindUVE ClassifyHierarchyNodeIconUVE(Scene::IEntityManagerUVE& entityManager,
-                                                                     const Scene::EntityUVE entity) noexcept {
-    if (entityManager.HasComponentUVE<Scene::CameraComponentUVE>(entity)) {
-        return HierarchyNodeIconKindUVE::Camera;
-    }
-    if (entityManager.HasComponentUVE<Scene::LightComponentUVE>(entity)) {
-        return HierarchyNodeIconKindUVE::Light;
-    }
-    if (entityManager.HasComponentUVE<Scene::MeshComponentUVE>(entity) ||
-        entityManager.HasComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity)) {
-        return HierarchyNodeIconKindUVE::Mesh;
-    }
-    if (entityManager.HasComponentUVE<Scene::WorldEnvironment3DNodeComponentUVE>(entity)) {
-        return HierarchyNodeIconKindUVE::Environment;
-    }
-    if (entityManager.HasComponentUVE<Scene::AudioSourceComponentUVE>(entity)) {
-        return HierarchyNodeIconKindUVE::Audio;
-    }
-    if (entityManager.HasComponentUVE<Scene::ParticleEmitterComponentUVE>(entity)) {
-        return HierarchyNodeIconKindUVE::Particle;
-    }
-    if (entityManager.HasComponentUVE<Scene::ScriptComponentUVE>(entity)) {
-        return HierarchyNodeIconKindUVE::Script;
-    }
-    if (entityManager.HasComponentUVE<Scene::AnimationPlayerComponentUVE>(entity)) {
-        return HierarchyNodeIconKindUVE::Animation;
-    }
-    // Checked after Mesh: primitives (Cube/UVSphere/Plane) also carry a ColliderComponentUVE, and
-    // should read as their mesh, not as a generic physics body.
-    if (entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(entity) ||
-        entityManager.HasComponentUVE<Scene::RigidBodyComponentUVE>(entity)) {
-        return HierarchyNodeIconKindUVE::Physics;
-    }
-    return HierarchyNodeIconKindUVE::Empty;
-}
-
-// Light/Environment reuse the existing "sun"/"environment" general icon textures (already used
-// elsewhere in this file) rather than new procedural glyphs - takes the texture ids as parameters
-// so this stays a free function; the caller (a EditorUVE member) is the one with m_uiAssets access.
-void DrawHierarchyNodeIconUVE(ImDrawList& drawList, const ImVec2 center, const float radius,
-                              const HierarchyNodeIconKindUVE kind, const std::uintptr_t sunTextureId,
-                              const std::uintptr_t environmentTextureId) {
-    const ImU32 color = ImGui::GetColorU32(ImGuiCol_Text);
-    switch (kind) {
-        case HierarchyNodeIconKindUVE::Mesh: DrawNodeMeshIconUVE(drawList, center, radius, color); break;
-        case HierarchyNodeIconKindUVE::Camera: DrawNodeCameraIconUVE(drawList, center, radius, color); break;
-        case HierarchyNodeIconKindUVE::Light:
-            if (sunTextureId != 0U) {
-                const float half = radius * 0.55F;
-                drawList.AddImage(static_cast<ImTextureID>(sunTextureId), ImVec2{center.x - half, center.y - half},
-                                  ImVec2{center.x + half, center.y + half});
-            } else {
-                DrawNodeEmptyIconUVE(drawList, center, radius, color);
-            }
-            break;
-        case HierarchyNodeIconKindUVE::Environment:
-            if (environmentTextureId != 0U) {
-                const float half = radius * 0.55F;
-                drawList.AddImage(static_cast<ImTextureID>(environmentTextureId),
-                                  ImVec2{center.x - half, center.y - half}, ImVec2{center.x + half, center.y + half});
-            } else {
-                DrawNodeEmptyIconUVE(drawList, center, radius, color);
-            }
-            break;
-        case HierarchyNodeIconKindUVE::Physics: DrawNodePhysicsIconUVE(drawList, center, radius, color); break;
-        case HierarchyNodeIconKindUVE::Audio: DrawNodeAudioIconUVE(drawList, center, radius, color); break;
-        case HierarchyNodeIconKindUVE::Particle: DrawNodeParticleIconUVE(drawList, center, radius, color); break;
-        case HierarchyNodeIconKindUVE::Script: DrawNodeScriptIconUVE(drawList, center, radius, color); break;
-        case HierarchyNodeIconKindUVE::Animation: DrawNodeAnimationIconUVE(drawList, center, radius, color); break;
-        case HierarchyNodeIconKindUVE::Empty: default: DrawNodeEmptyIconUVE(drawList, center, radius, color); break;
-    }
-}
-
 [[nodiscard]] constexpr HierarchyNodeIconKindUVE ClassifySceneComponentKindIconUVE(
     const EditorSceneComponentKindUVE kind) noexcept {
     switch (kind) {
