@@ -56,6 +56,7 @@
 #include "uve/math/matrix4x4_uve.h"
 #include "uve/math/quaternion_uve.h"
 #include "uve/memory/memory_manager_uve.h"
+#include "uve/nodes/3d/hitbox_3d_uve.h"
 #include "uve/nodes/3d/projectile_3d_uve.h"
 #include "uve/nodes/3d/ray_cast_3d_uve.h"
 #include "uve/physics/character_controller_uve.h"
@@ -761,6 +762,11 @@ void EngineCoreUVE::SyncRayCast3DNodesUVE() {
         });
 }
 
+void EngineCoreUVE::SyncHitbox3DNodesUVE() {
+    // All combat pairing semantics live with the node itself; this seam only provides the tick.
+    Scene::SyncHitbox3DStrikesUVE(*m_entityManager);
+}
+
 void EngineCoreUVE::SyncAdaptiveRenderResolutionUVE() {
     if (!m_windowedRenderingActiveUVE || !m_presentationSurfaceReadyUVE || !m_renderDevice->IsUsableUVE()) {
         return;
@@ -855,6 +861,7 @@ void EngineCoreUVE::Update() {
     SyncUIRuntimeUVE();
     SyncCollisionLifecycleUVE();
     SyncRayCast3DNodesUVE();
+    SyncHitbox3DNodesUVE();
     SyncScriptRuntimeUVE();
 
     if (m_config.hotReloadEnabledUVE) {
