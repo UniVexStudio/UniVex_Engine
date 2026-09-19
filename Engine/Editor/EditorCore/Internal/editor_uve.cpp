@@ -2412,8 +2412,16 @@ bool EditorUVE::ReparentDocumentEntityUVE(const Scene::EntityUVE entity, const S
         entity == newParent || DoesSubtreeContainEntityUVE(entity, newParent)) {
         return false;
     }
+    // One-root documents: "move to document root" means becoming a direct child of the
+    // scene root - nothing but the root itself may sit at top level.
+    const Scene::EntityUVE effectiveParent =
+        newParent == Scene::kInvalidEntityUVE ? EnsureDocumentSceneRootUVE() : newParent;
+    if (effectiveParent == Scene::kInvalidEntityUVE || entity == effectiveParent ||
+        DoesSubtreeContainEntityUVE(entity, effectiveParent)) {
+        return false;
+    }
     Scene::EntityUVE parentBefore = Scene::kInvalidEntityUVE;
-    if (!TryGetDocumentParentUVE(entity, parentBefore) || parentBefore == newParent) {
+    if (!TryGetDocumentParentUVE(entity, parentBefore) || parentBefore == effectiveParent) {
         return false;
     }
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
@@ -2424,12 +2432,12 @@ bool EditorUVE::ReparentDocumentEntityUVE(const Scene::EntityUVE entity, const S
         entityManager.GetComponentUVE<Scene::TransformComponentUVE>(entity);
     Scene::TransformComponentUVE localAfter = localBefore;
     if (m_reparentTransformMode == EditorReparentTransformModeUVE::KeepWorld &&
-        !ComputeKeepWorldLocalTransformUVE(entity, newParent, localAfter)) {
+        !ComputeKeepWorldLocalTransformUVE(entity, effectiveParent, localAfter)) {
         return false;
     }
     const EditorSelectionSnapshotUVE selectionBefore = CaptureSelectionSnapshotUVE();
     const bool dirtyBefore = m_sceneDirty;
-    m_services->GetSceneGraphUVE().SetParentUVE(entityManager, entity, newParent);
+    m_services->GetSceneGraphUVE().SetParentUVE(entityManager, entity, effectiveParent);
     if (!ApplyLocalTransformUVE(entity, localAfter)) {
         m_services->GetSceneGraphUVE().SetParentUVE(entityManager, entity, parentBefore);
         static_cast<void>(ApplyLocalTransformUVE(entity, localBefore));
