@@ -2,6 +2,8 @@
 
 #pragma once
 
+#include "uve/component/entity_uve.h"
+
 namespace UVE::Scene {
 
 /// Whether an entity and its subtree are drawn.
@@ -35,6 +37,23 @@ struct VisibilityComponentUVE final {
     /// consumers already run after the scene graph updates, and one that does not is reading a
     /// stale transform too.
     bool visibleInHierarchy = true;
+
+    /// Inherit visibility from this entity instead of from the transform parent.
+    ///
+    /// WHY THIS IS SEPARATE FROM THE HIERARCHY. Visibility and transforms group things for
+    /// different reasons and the groupings genuinely differ. A weapon is parented to the hand that
+    /// carries it, but it should disappear when the whole CHARACTER is hidden, not when the hand
+    /// is. A HUD marker sits under the entity it annotates and should follow that entity's
+    /// visibility, not the camera rig it happens to be attached to. Forcing one hierarchy to serve
+    /// both means re-parenting for a reason that has nothing to do with position.
+    ///
+    /// kInvalidEntityUVE - the default - means inherit from the transform parent, which is what
+    /// almost everything wants and what every existing scene does.
+    ///
+    /// The target does NOT have to be an ancestor, or related at all. What it must not be is part
+    /// of a cycle: SceneGraphUVE::UpdateUVE detects one and falls back to the transform parent for
+    /// the entities involved rather than looping or picking an arbitrary winner.
+    EntityUVE visibilityParent = kInvalidEntityUVE;
 };
 
 /// Always true: both fields are plain bools with no invalid state. Present so the component has

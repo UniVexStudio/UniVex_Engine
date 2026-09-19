@@ -75,7 +75,7 @@ TEST_F(Node3DDefinitionsUVETest, AllDefinitionDefaultsAreValid) {
 // The seven names the editor's legacy EditorEntityKindUVE path surfaces are locked at compile
 // time: the editor now sources every default name from these definitions, so any drift here
 // would silently rename what legacy creation produces.
-static_assert(EmptyNodeDefinitionUVE::defaultName == "Empty");
+static_assert(EmptyNodeDefinitionUVE::defaultName == "Node3D");
 static_assert(Camera3DNodeDefinitionUVE::defaultName == "Camera");
 static_assert(Light3DNodeDefinitionUVE::defaultName == "Directional Light");
 static_assert(Collider3DNodeDefinitionUVE::defaultName == "Collision Box");
@@ -87,7 +87,11 @@ static_assert(AnimatableBody3DNodeDefinitionUVE::defaultName == "AnimatableBody3
 TEST_F(Node3DDefinitionsUVETest, DefaultNamesAreAuthoredPerKindNotGeneric) {
     // The six kinds that previously lived behind legacy EditorEntityKindUVE values keep their
     // exact historical names; the kinds the editor used to name "Empty" now carry their own.
-    EXPECT_EQ(EmptyNodeDefinitionUVE::defaultName, "Empty");
+    //
+    // The transform-only base is displayed as Node3D. Its KIND enumerator and on-disk id are
+    // still `empty` - renaming those would break every saved .uvescene to buy a different word -
+    // so this is the one place the two deliberately differ.
+    EXPECT_EQ(EmptyNodeDefinitionUVE::defaultName, "Node3D");
     EXPECT_EQ(Camera3DNodeDefinitionUVE::defaultName, "Camera");
     EXPECT_EQ(Light3DNodeDefinitionUVE::defaultName, "Directional Light");
     EXPECT_EQ(Collider3DNodeDefinitionUVE::defaultName, "Collision Box");

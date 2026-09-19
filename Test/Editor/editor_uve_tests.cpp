@@ -961,7 +961,7 @@ TEST(EditorUVETest, CreateDocumentEntityUVE_CreatesSelectedDirtyRootArchetypes) 
         EXPECT_FALSE(entityManager.HasComponentUVE<Scene::LightComponentUVE>(empty));
         EXPECT_FALSE(entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(empty));
         ASSERT_TRUE(entityManager.HasComponentUVE<Scene::NameComponentUVE>(empty));
-        EXPECT_EQ(entityManager.GetComponentUVE<Scene::NameComponentUVE>(empty).name, "Empty");
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::NameComponentUVE>(empty).name, "Node3D");
         EXPECT_EQ(editor.GetSelectedEntityUVE(), empty);
         EXPECT_TRUE(editor.IsSceneDirtyUVE());
 

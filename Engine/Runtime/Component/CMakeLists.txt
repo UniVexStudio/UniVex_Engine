@@ -30,6 +30,7 @@ add_library(uve_component STATIC
     Internal/hierarchy_component_uve.cpp
     Internal/light_component_uve.cpp
     Internal/mesh_component_uve.cpp
+    Internal/editor_description_component_uve.cpp
     Internal/name_component_uve.cpp
     Internal/particle_emitter_component_uve.cpp
     Internal/prefab_instance_component_uve.cpp
