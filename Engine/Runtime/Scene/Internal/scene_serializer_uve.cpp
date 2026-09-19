@@ -168,15 +168,6 @@ namespace {
     return {{"name", component.name}};
 }
 
-/// Only the authored switch is written. `visibleInHierarchy` is derived from the entity's
-/// ancestors by SceneGraphUVE::UpdateUVE, so persisting it would store an answer that the very
-/// next update recomputes - and one that is wrong the moment a node is saved under one parent and
-/// loaded under another. Storing derived state is how a file and its own contents start
-/// disagreeing.
-[[nodiscard]] nlohmann::json ToJsonUVE(const VisibilityComponentUVE& component) {
-    return {{"visible", component.visible}};
-}
-
 [[nodiscard]] nlohmann::json ToJsonUVE(const ColliderComponentUVE& component) {
     return {{"halfExtents", ToJsonUVE(component.halfExtents)},
             {"collisionLayer", component.collisionLayer},
