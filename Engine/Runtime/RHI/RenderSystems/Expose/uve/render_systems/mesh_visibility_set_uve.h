@@ -58,6 +58,33 @@ struct MeshPlacementCacheEntryUVE final {
     std::uint64_t lastSeenFrame = 0U;
 };
 
+/// One frame's resolution of a single asset GUID, shared by every entity that references it.
+///
+/// WHY THIS EXISTS. Resolving an asset handle is not free: LoadUVE takes the asset manager's mutex
+/// and hashes the GUID, the returned handle takes it again to add a reference, each IsReadyUVE,
+/// HasFailedUVE and TryGetUVE takes it again, and the destructor takes it once more to release.
+/// The mesh walk did all of that per ENTITY, twice over (mesh and material), every frame - about
+/// fourteen locked lookups each, measured at roughly 83 us per 1000 meshes.
+///
+/// But entities do not reference unique assets. The whole premise of the instanced path is that
+/// many entities share one mesh and one material, so nearly all of those lookups were asking the
+/// same question about the same GUID and getting the same answer. This resolves each distinct GUID
+/// once per frame and lets every entity that references it read the result.
+///
+/// Held for the duration of one walk only, never across frames: asset state is asynchronous, so a
+/// pending load becoming ready, a hot reload replacing a pointer, or a load failing must all be
+/// observed on the very next frame. Caching this across frames would be a correctness bug.
+template <typename T>
+struct ResolvedAssetUVE final {
+    Asset::AssetHandleUVE<T> handle;
+    T* value = nullptr;
+    bool failed = false;
+    bool pending = false;
+
+    /// True when the handle is neither pending nor failed, so `value` is safe to dereference.
+    [[nodiscard]] bool IsUsableUVE() const noexcept { return value != nullptr && !failed && !pending; }
+};
+
 struct MeshVisibilityCandidateUVE final {
     Asset::AssetHandleUVE<Asset::MeshAssetUVE> meshHandle;
     Asset::AssetHandleUVE<Asset::MaterialAssetUVE> materialHandle;

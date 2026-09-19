@@ -5,11 +5,14 @@
 
 #include "uve/render_systems/mesh_visibility_set_uve.h"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <limits>
 #include <numbers>
+#include <string>
 #include <thread>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -739,6 +742,132 @@ TEST_F(MeshRendererUVETest, PlacementCache_DoesNotChangeTheQueueAnyFrameProduces
     for (std::size_t index = 0U; index < coldQueue.opaqueItems.size(); ++index) {
         EXPECT_EQ(warmQueue.opaqueItems[index].worldMatrix, coldQueue.opaqueItems[index].worldMatrix);
         EXPECT_FLOAT_EQ(warmQueue.opaqueItems[index].sortDepth, coldQueue.opaqueItems[index].sortDepth);
+    }
+}
+
+TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_EntitiesSharingAssets_EachOwnAUsableHandle) {
+    // The hazard in resolving a GUID once and sharing it: the first entity to use a resolution
+    // must not consume it. If the shared handle were moved from rather than copied, the second and
+    // later entities would receive an empty handle - which would not fail to compile, and would
+    // not fail any test that only renders one entity.
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_shared.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_shared.uvemat");
+    constexpr int kSharedEntityCount = 4;
+    for (int index = 0; index < kSharedEntityCount; ++index) {
+        MakeMeshEntityUVE(Math::Vector3UVE{static_cast<float>(index), 0.0F, -10.0F}, meshGuid, materialGuid);
+    }
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    MeshVisibilitySetUVE visibilitySet;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+
+    ASSERT_EQ(visibilitySet.candidates.size(), static_cast<std::size_t>(kSharedEntityCount));
+    for (const MeshVisibilityCandidateUVE& candidate : visibilitySet.candidates) {
+        EXPECT_EQ(candidate.meshHandle.GetGuidUVE(), meshGuid);
+        EXPECT_EQ(candidate.materialHandle.GetGuidUVE(), materialGuid);
+        EXPECT_TRUE(candidate.meshHandle.IsReadyUVE()) << "a shared resolution must not be consumed by one entity";
+        EXPECT_TRUE(candidate.materialHandle.IsReadyUVE());
+        EXPECT_NE(candidate.meshHandle.TryGetUVE(), nullptr);
+        EXPECT_NE(candidate.materialHandle.TryGetUVE(), nullptr);
+    }
+}
+
+TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_SharedFailedAsset_IsCountedOncePerEntityNotOncePerAsset) {
+    // Sharing the resolution must not change what the diagnostics mean. These counters answer "how
+    // many entities could not be drawn this frame", so three entities blocked on one broken mesh
+    // is three, not one. Folding the count into the resolution would quietly turn every one of
+    // these counters into a per-asset figure while every single-entity test kept passing.
+    //
+    // The mesh fails via a loader that returns false, matching the existing failed-load test:
+    // an unregistered GUID stays pending rather than failing, which measures something else.
+    assetManager.RegisterLoaderUVE<Asset::MeshAssetUVE>(
+        [](const std::filesystem::path&, Asset::MeshAssetUVE&) { return false; });
+    assetManager.RegisterLoaderUVE<Asset::MaterialAssetUVE>(
+        [](const std::filesystem::path&, Asset::MaterialAssetUVE&) { return true; });
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_sharedfail.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_sharedfail.uvemat");
+    constexpr int kBlockedEntityCount = 3;
+    for (int index = 0; index < kBlockedEntityCount; ++index) {
+        MakeMeshEntityUVE(Math::Vector3UVE{static_cast<float>(index), 0.0F, -10.0F}, meshGuid, materialGuid);
+    }
+
+    Asset::AssetHandleUVE<Asset::MeshAssetUVE> meshHandle =
+        assetManager.LoadUVE<Asset::MeshAssetUVE>(meshGuid, assetDatabase);
+    Asset::AssetHandleUVE<Asset::MaterialAssetUVE> materialHandle =
+        assetManager.LoadUVE<Asset::MaterialAssetUVE>(materialGuid, assetDatabase);
+    for (int iteration = 0; iteration < kMaxPollIterationsUVE &&
+                             (!(meshHandle.HasFailedUVE() || meshHandle.IsReadyUVE()) ||
+                              !(materialHandle.HasFailedUVE() || materialHandle.IsReadyUVE()));
+         ++iteration) {
+        std::this_thread::yield();
+    }
+    ASSERT_TRUE(meshHandle.HasFailedUVE());
+    ASSERT_TRUE(materialHandle.IsReadyUVE());
+
+    MeshVisibilitySetUVE visibilitySet;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+
+    EXPECT_TRUE(visibilitySet.candidates.empty());
+    EXPECT_EQ(visibilitySet.failedAssetLoads, static_cast<std::size_t>(kBlockedEntityCount))
+        << "each blocked entity must be counted, even though they share one failed mesh";
+    EXPECT_EQ(visibilitySet.pendingAssetLoads, 0U)
+        << "the shared material resolved, so nothing should be reported as still loading";
+}
+
+TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_AssetBecomingReady_IsObservedOnTheNextBuild) {
+    // The resolution memo is per walk, never across frames, because asset state is asynchronous.
+    // This is the test that fails if someone later promotes it to a member to "save more work":
+    // a mesh that was pending during one build must be drawable on the next without anything else
+    // in the scene changing.
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_becomesready.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_becomesready.uvemat");
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+
+    // Built before waiting: the loads are in flight, so this build sees them pending.
+    MeshVisibilitySetUVE visibilitySet;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+    EXPECT_EQ(visibilitySet.pendingAssetLoads, 0U)
+        << "a resolution must not outlive its walk - the completed load must be seen";
+    EXPECT_EQ(visibilitySet.candidates.size(), 1U);
+}
+
+TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_DistinctAssetsPerEntity_AreEachResolved) {
+    // The memo keys on GUID, so the failure mode opposite to over-sharing is under-resolving:
+    // every entity referencing a DIFFERENT asset must still get its own answer. A memo keyed on
+    // something coarser - or one that returned the first entry it found - would collapse these.
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    constexpr int kDistinctEntityCount = 3;
+    std::vector<Asset::AssetGuidUVE> meshGuids;
+    std::vector<Asset::AssetGuidUVE> materialGuids;
+    for (int index = 0; index < kDistinctEntityCount; ++index) {
+        const std::string suffix = std::to_string(index);
+        meshGuids.push_back(assetDatabase.RegisterUVE("mesh_renderer_tests_distinct" + suffix + ".uvemodel"));
+        materialGuids.push_back(assetDatabase.RegisterUVE("mesh_renderer_tests_distinct" + suffix + ".uvemat"));
+        MakeMeshEntityUVE(Math::Vector3UVE{static_cast<float>(index), 0.0F, -10.0F}, meshGuids.back(),
+                          materialGuids.back());
+    }
+    for (int index = 0; index < kDistinctEntityCount; ++index) {
+        WaitUntilAssetsReadyUVE(meshGuids[static_cast<std::size_t>(index)],
+                                materialGuids[static_cast<std::size_t>(index)]);
+    }
+
+    MeshVisibilitySetUVE visibilitySet;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+
+    ASSERT_EQ(visibilitySet.candidates.size(), static_cast<std::size_t>(kDistinctEntityCount));
+    std::vector<Asset::AssetGuidUVE> seenMeshGuids;
+    for (const MeshVisibilityCandidateUVE& candidate : visibilitySet.candidates) {
+        seenMeshGuids.push_back(candidate.meshHandle.GetGuidUVE());
+    }
+    for (const Asset::AssetGuidUVE expected : meshGuids) {
+        EXPECT_NE(std::find(seenMeshGuids.cbegin(), seenMeshGuids.cend(), expected), seenMeshGuids.cend())
+            << "every distinct mesh GUID must be resolved on its own, not collapsed into a neighbour's";
     }
 }
 

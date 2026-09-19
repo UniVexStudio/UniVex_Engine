@@ -3,6 +3,7 @@
 #include "uve/render_systems/mesh_renderer_uve.h"
 
 #include <cstddef>
+#include <unordered_map>
 #include <utility>
 
 #include "uve/asset/asset_guid_uve.h"
@@ -12,6 +13,34 @@
 #include "uve/component/world_transform_component_uve.h"
 
 namespace UVE::Render {
+
+namespace {
+
+/// Resolves `guid` once per walk, returning the shared entry on every subsequent call for the same
+/// GUID. Separate from the lambda so the mesh and material paths cannot drift into resolving or
+/// classifying their handles differently from one another.
+template <typename T>
+[[nodiscard]] const ResolvedAssetUVE<T>& ResolveOnceUVE(
+    std::unordered_map<Asset::AssetGuidUVE, ResolvedAssetUVE<T>>& resolved, Asset::AssetGuidUVE guid,
+    Asset::IAssetManagerUVE& assetManager, Asset::IAssetDatabaseUVE& assetDatabase) {
+    const auto existing = resolved.find(guid);
+    if (existing != resolved.end()) {
+        return existing->second;
+    }
+
+    ResolvedAssetUVE<T> entry{assetManager.template LoadUVE<T>(guid, assetDatabase), nullptr, false, false};
+    // Queried in the same order and with the same meaning as the per-entity code this replaces:
+    // failure first, then pending as "not failed and not yet ready", then the pointer.
+    entry.failed = entry.handle.HasFailedUVE();
+    entry.pending = !entry.failed && !entry.handle.IsReadyUVE();
+    if (!entry.failed && !entry.pending) {
+        entry.value = entry.handle.TryGetUVE();
+    }
+    return resolved.emplace(guid, std::move(entry)).first->second;
+}
+
+} // namespace
+
 
 RenderQueueUVE MeshRendererUVE::ExtractRenderQueueUVE(Scene::IEntityManagerUVE& entityManager,
                                                         Asset::IAssetManagerUVE& assetManager,
@@ -32,6 +61,17 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
     // the one operator[] just inserted - is told apart from a genuine hit.
     ++outVisibilitySet.frameIndex;
 
+    // Resolved once per distinct GUID for the duration of this walk, then discarded. Many
+    // entities share one mesh and one material - that is the premise the instanced path is built
+    // on - and resolving a handle costs about fourteen mutex-guarded lookups, so doing it per
+    // entity meant asking the same question about the same GUID over and over.
+    //
+    // Deliberately local, not a member: asset state is asynchronous, and a load that completes, a
+    // hot reload that replaces a pointer, or a load that fails must be visible on the very next
+    // frame. These die with the walk.
+    std::unordered_map<Asset::AssetGuidUVE, ResolvedAssetUVE<Asset::MeshAssetUVE>> resolvedMeshes;
+    std::unordered_map<Asset::AssetGuidUVE, ResolvedAssetUVE<Asset::MaterialAssetUVE>> resolvedMaterials;
+
     entityManager.ForEachUVE<Scene::WorldTransformComponentUVE, Scene::MeshComponentUVE>(
         [&](Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE& worldTransform,
             const Scene::MeshComponentUVE& meshComponent) {
@@ -47,24 +87,26 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
                 return;
             }
 
-            Asset::AssetHandleUVE<Asset::MeshAssetUVE> meshHandle =
-                assetManager.LoadUVE<Asset::MeshAssetUVE>(meshComponent.meshGuid, assetDatabase);
-            Asset::AssetHandleUVE<Asset::MaterialAssetUVE> materialHandle =
-                assetManager.LoadUVE<Asset::MaterialAssetUVE>(meshComponent.materialGuid, assetDatabase);
-            const bool meshFailed = meshHandle.HasFailedUVE();
-            const bool materialFailed = materialHandle.HasFailedUVE();
-            outVisibilitySet.failedAssetLoads +=
-                static_cast<std::size_t>(meshFailed) + static_cast<std::size_t>(materialFailed);
-            const bool meshPending = !meshFailed && !meshHandle.IsReadyUVE();
-            const bool materialPending = !materialFailed && !materialHandle.IsReadyUVE();
-            outVisibilitySet.pendingAssetLoads +=
-                static_cast<std::size_t>(meshPending) + static_cast<std::size_t>(materialPending);
-            if (meshPending || materialPending || meshFailed || materialFailed) {
+            const ResolvedAssetUVE<Asset::MeshAssetUVE>& resolvedMesh =
+                ResolveOnceUVE(resolvedMeshes, meshComponent.meshGuid, assetManager, assetDatabase);
+            const ResolvedAssetUVE<Asset::MaterialAssetUVE>& resolvedMaterial =
+                ResolveOnceUVE(resolvedMaterials, meshComponent.materialGuid, assetManager, assetDatabase);
+
+            // Counted per ENTITY, not per resolution. Sharing the resolution is an implementation
+            // detail of how the answer was obtained; the diagnostic answers "how many entities
+            // could not be drawn this frame", and ten entities blocked on one pending mesh is ten
+            // entities that did not draw. Folding these into the resolution would silently change
+            // every one of these counters to mean something else.
+            outVisibilitySet.failedAssetLoads += static_cast<std::size_t>(resolvedMesh.failed) +
+                                                 static_cast<std::size_t>(resolvedMaterial.failed);
+            outVisibilitySet.pendingAssetLoads += static_cast<std::size_t>(resolvedMesh.pending) +
+                                                  static_cast<std::size_t>(resolvedMaterial.pending);
+            if (!resolvedMesh.IsUsableUVE() || !resolvedMaterial.IsUsableUVE()) {
                 return;
             }
 
-            const Asset::MeshAssetUVE* const mesh = meshHandle.TryGetUVE();
-            const Asset::MaterialAssetUVE* const material = materialHandle.TryGetUVE();
+            const Asset::MeshAssetUVE* const mesh = resolvedMesh.value;
+            const Asset::MaterialAssetUVE* const material = resolvedMaterial.value;
 
             // The cache lookup. Placement is the frame's dominant cost - measured at roughly 29x
             // the price of comparing this key and reusing the answer - and most objects in most
@@ -86,9 +128,6 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
             // the prune reads. Only stamping misses would evict every stationary object.
             cacheEntry.lastSeenFrame = outVisibilitySet.frameIndex;
 
-            // Placement first, then construct. MeshVisibilityCandidateUVE holds AssetHandleUVE
-            // members, which have no default constructor - the same reason RenderItemUVE is
-            // aggregate-initialized at its push site rather than built up field by field.
             const MeshRenderPlacementUVE& placement = cacheEntry.placement;
             if (!placement.IsPlacedUVE()) {
                 if (placement.reason == MeshRenderEligibilityReasonUVE::InvalidWorldTransform ||
@@ -100,8 +139,13 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
 
             // Bucketing is decided here, not per frustum: transparency is a property of the
             // material, and no frustum can change it.
+            //
+            // The handles are COPIED out of the shared resolution rather than moved: the
+            // resolution is shared by every entity using this GUID, and moving from it would leave
+            // the next entity holding an empty handle. The copy is a reference-count increment,
+            // which is what a candidate owning its handle has always cost.
             outVisibilitySet.candidates.push_back(MeshVisibilityCandidateUVE{
-                std::move(meshHandle), std::move(materialHandle), placement, material->isTransparent});
+                resolvedMesh.handle, resolvedMaterial.handle, placement, material->isTransparent});
         });
 
     // Bound the cache. Without this it retains an entry for every entity the scene has ever had,
