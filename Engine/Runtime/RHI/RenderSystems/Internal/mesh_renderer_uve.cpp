@@ -27,9 +27,13 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
                                             Asset::IAssetDatabaseUVE& assetDatabase,
                                             MeshVisibilitySetUVE& outVisibilitySet) const {
     outVisibilitySet.ClearUVE();
+    // Pre-increment, so no live entry can carry the new stamp before the walk assigns it. Starting
+    // at 1 also lets 0 mean "never populated", which is how a default-constructed cache entry -
+    // the one operator[] just inserted - is told apart from a genuine hit.
+    ++outVisibilitySet.frameIndex;
 
     entityManager.ForEachUVE<Scene::WorldTransformComponentUVE, Scene::MeshComponentUVE>(
-        [&](Scene::EntityUVE, const Scene::WorldTransformComponentUVE& worldTransform,
+        [&](Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE& worldTransform,
             const Scene::MeshComponentUVE& meshComponent) {
             UVE_ASSERT(Scene::IsMeshComponentValidUVE(meshComponent));
             if (meshComponent.meshGuid == Asset::kInvalidAssetGuidUVE) {
@@ -62,11 +66,31 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
             const Asset::MeshAssetUVE* const mesh = meshHandle.TryGetUVE();
             const Asset::MaterialAssetUVE* const material = materialHandle.TryGetUVE();
 
+            // The cache lookup. Placement is the frame's dominant cost - measured at roughly 29x
+            // the price of comparing this key and reusing the answer - and most objects in most
+            // scenes do not move, so most of that cost is recomputing last frame's answer.
+            const MeshPlacementKeyUVE key{worldTransform.worldPosition, worldTransform.worldRotation,
+                                          worldTransform.worldScale, meshComponent.meshGuid, mesh->localBounds};
+
+            MeshPlacementCacheEntryUVE& cacheEntry = outVisibilitySet.placementCache[entity];
+            const bool reusable = cacheEntry.lastSeenFrame != 0U && cacheEntry.key.MatchesUVE(key);
+            if (reusable) {
+                ++outVisibilitySet.placementCacheHits;
+            } else {
+                ++outVisibilitySet.placementCacheMisses;
+                cacheEntry.key = key;
+                static_cast<void>(
+                    EvaluateMeshRenderPlacementUVE(meshComponent, worldTransform, *mesh, cacheEntry.placement));
+            }
+            // Stamped on hit as well as miss: the stamp records "seen this frame", which is what
+            // the prune reads. Only stamping misses would evict every stationary object.
+            cacheEntry.lastSeenFrame = outVisibilitySet.frameIndex;
+
             // Placement first, then construct. MeshVisibilityCandidateUVE holds AssetHandleUVE
             // members, which have no default constructor - the same reason RenderItemUVE is
             // aggregate-initialized at its push site rather than built up field by field.
-            MeshRenderPlacementUVE placement;
-            if (!EvaluateMeshRenderPlacementUVE(meshComponent, worldTransform, *mesh, placement)) {
+            const MeshRenderPlacementUVE& placement = cacheEntry.placement;
+            if (!placement.IsPlacedUVE()) {
                 if (placement.reason == MeshRenderEligibilityReasonUVE::InvalidWorldTransform ||
                     placement.reason == MeshRenderEligibilityReasonUVE::InvalidLocalBounds) {
                     ++outVisibilitySet.invalidRenderEligibility;
@@ -79,6 +103,10 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
             outVisibilitySet.candidates.push_back(MeshVisibilityCandidateUVE{
                 std::move(meshHandle), std::move(materialHandle), placement, material->isTransparent});
         });
+
+    // Bound the cache. Without this it retains an entry for every entity the scene has ever had,
+    // which for a streaming world is a slow leak rather than a cache.
+    outVisibilitySet.PruneUnseenPlacementsUVE();
 }
 
 void MeshRendererUVE::CullVisibilitySetIntoUVE(const MeshVisibilitySetUVE& visibilitySet,

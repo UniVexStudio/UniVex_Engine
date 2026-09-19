@@ -50,6 +50,12 @@ struct Renderer3DFrameDiagnosticsUVE final {
     /// from reading the material assets.
     std::size_t instancedDrawCallsRecorded = 0U;
     std::size_t instancedObjectsRecorded = 0U;
+    /// Placement-cache outcome for this frame's extraction walk. Surfaced because a cache whose
+    /// hit rate nobody can see is a cache nobody can tell is broken: a key bug that misses every
+    /// frame costs an extra comparison on top of the original work and otherwise looks identical
+    /// to a working one. In a static scene hits should be everything and misses zero.
+    std::size_t placementCacheHits = 0U;
+    std::size_t placementCacheMisses = 0U;
     /// Instanced draws recorded across ALL shadow cascades this frame. Separate from the main-pass
     /// counter because the shadow passes run once per cascade, so they - not the main pass - were
     /// where an uninstanced scene spent most of its draw calls.
