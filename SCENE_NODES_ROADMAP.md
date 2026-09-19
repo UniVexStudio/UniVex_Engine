@@ -65,8 +65,18 @@ worse than no checklist.
 - [~] BoneAttachment3D — attach-to-bone fields exist, nothing resolves/follows a bone transform.
 - [~] SpringArm3D — arm-length/collision fields exist, no camera-boom system consumes it.
 - [~] Marker3D — a plain position/orientation hint, has no behavior by design (this one may never need a "system" — it's meant to be read by other tools/scripts, not ticked itself).
-- [~] Hitbox3D — extents/damage-channel fields exist, no combat/damage system consumes them.
-- [~] Hurtbox3D — same as Hitbox3D, other side of the interaction.
+- [x] Hitbox3D — real per-frame strike detection: `SyncHitbox3DStrikesUVE()` (tick-driven by
+  `EngineCoreUVE::SyncHitbox3DNodesUVE()`) pairs every enabled hitbox against every enabled
+  Hurtbox3D with an exact 15-axis oriented-box-vs-oriented-box test (the same public
+  Physics::Detail helper AreaOverlapSystemUVE uses), symmetric layer/mask acceptance,
+  damage-channel equality, and self-exclusion, writing a bounded runtime-only strike list
+  (hurtbox entity + penetration depth, overflow flagged) back into the component every frame.
+  One honest gap remains by design: applying what a strike *means* (damage, knockback,
+  i-frames, events) is gameplay code no system owns yet — real, separate follow-up.
+- [x] Hurtbox3D — the receiving side of that same pairing: its extents/layer/mask/channel
+  genuinely gate which hitboxes can strike it every frame (locked by engine-core tests on both
+  sides of every gate); consequences of being struck are the same gameplay follow-up as
+  Hitbox3D's.
 - [~] InteractionArea3D — candidate-tracking fields exist, no interact/prompt system consumes it.
 - [~] ReflectionProbe3D — size/update-mode fields exist, no reflection-probe capture/render system exists.
 - [~] Decal3D — material/size/lifetime fields exist, no decal-projection rendering exists.
@@ -201,13 +211,13 @@ system behind them.
    files instead of hardcoding them inline. Still purely structural: no `[~]` entry changed
    status, and the save format is untouched (a definition is a recipe, never a serialized
    component).
-2. **RayCast3D and Projectile3D done** (real per-frame raycast against the actual query system with
-   correct self-exclusion; real kinematic integration + lifetime expiry for projectiles - see both
-   entries above for their stated, honest follow-up gaps). Wire up the remaining highest-value
-   already-authored 3D stubs next: Skeleton3D + AnimationPlayer + AnimationTree (blocked on the
-   same missing skinning/clip-sampling pipeline — see
-   `ROADMAP.md`), Hitbox3D/Hurtbox3D (needed for any combat gameplay), NavigationRegion3D/
-   NavigationAgent3D (needed for any AI movement).
+2. **RayCast3D, Projectile3D, and Hitbox3D/Hurtbox3D done** (real per-frame raycast against the
+   actual query system with correct self-exclusion; real kinematic integration + lifetime expiry
+   for projectiles; real per-frame hitbox-vs-hurtbox strike pairing — see the entries above for
+   their stated, honest follow-up gaps). Wire up the remaining highest-value already-authored 3D
+   stubs next: Skeleton3D + AnimationPlayer + AnimationTree (blocked on the same missing
+   skinning/clip-sampling pipeline — see `ROADMAP.md`), NavigationRegion3D/NavigationAgent3D
+   (needed for any AI movement).
 3. Only after 3D nodes are in good shape, start a real 2D pipeline (rendering + physics + nav) —
    right now 2D is 100% unstarted, not partially built.
 4. **Done**: Canvas/UI Text/UI Image/UI Button are promoted into the Scene node registry
