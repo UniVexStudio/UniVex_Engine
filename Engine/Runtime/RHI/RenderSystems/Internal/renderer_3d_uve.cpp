@@ -2529,6 +2529,17 @@ void Renderer3DUVE::SetUIRuntimeUVE(const UI::UIRuntimeUVE* const uiRuntime) noe
     m_impl->uiRuntimeForFrame = uiRuntime;
 }
 
+void Renderer3DUVE::SetPhysicsInterpolationAlphaUVE(const float alpha) noexcept {
+    // Stored on the visibility set because that is where it is consumed - the build applies the
+    // blend once, rather than each of the frame's four culls redoing it and risking the shadow
+    // cascades disagreeing with the main view about where an object is.
+    //
+    // Clamped rather than rejected: a timer that overshoots after a long frame should keep
+    // drawing, and a non-finite value would otherwise reach a matrix compose.
+    const float sanitized = std::isfinite(alpha) ? (alpha < 0.0F ? 0.0F : (alpha > 1.0F ? 1.0F : alpha)) : 0.0F;
+    m_impl->visibilitySet.physicsInterpolationAlpha = sanitized;
+}
+
 Renderer3DFrameDiagnosticsUVE Renderer3DUVE::GetLastFrameDiagnosticsUVE() const noexcept {
     return m_impl->lastFrameDiagnostics;
 }

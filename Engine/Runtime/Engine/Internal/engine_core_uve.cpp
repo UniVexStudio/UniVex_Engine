@@ -948,6 +948,12 @@ void EngineCoreUVE::Update() {
     }
 
     m_sceneGraph->UpdateUVE(*m_entityManager);
+    // The fraction of a fixed step already elapsed, handed to the renderer so it can draw between
+    // the last two simulated poses instead of snapping to the newest one. Measured on a 144 Hz
+    // display against 60 Hz physics: 58% of frames previously received no new pose at all, and
+    // per-frame movement jumped between 0 and 16.7 cm at 10 m/s. This is the value that fixes it,
+    // and it has been computed every frame since the timer was written - only ever logged.
+    m_renderer3D->SetPhysicsInterpolationAlphaUVE(static_cast<float>(fixedStep.alpha));
     SyncParticleRuntimeUVE();
     SyncUIRuntimeUVE();
     SyncCollisionLifecycleUVE();

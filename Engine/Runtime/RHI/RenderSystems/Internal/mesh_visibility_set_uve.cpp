@@ -187,6 +187,10 @@ void MeshVisibilitySetUVE::ClearUVE() noexcept {
     //
     // placementCache is deliberately NOT cleared here - it is the one piece of state meant to
     // survive into the next frame. PruneUnseenPlacementsUVE bounds it instead.
+    //
+    // physicsInterpolationAlpha is NOT cleared either, for a different reason: the caller sets it
+    // BEFORE the build, and the build begins by calling this. Zeroing it here would silently
+    // discard the value on the way in and every frame would draw unsmoothed.
     candidates.clear();
     // Cleared with the candidates they index into: a cluster naming a range of a list that no
     // longer exists is worse than no cluster at all.
@@ -197,6 +201,7 @@ void MeshVisibilitySetUVE::ClearUVE() noexcept {
     placementCacheHits = 0U;
     placementCacheMisses = 0U;
     hiddenEntities = 0U;
+    interpolatedCandidates = 0U;
     invalidAssetReferences = 0U;
     pendingAssetLoads = 0U;
     failedAssetLoads = 0U;

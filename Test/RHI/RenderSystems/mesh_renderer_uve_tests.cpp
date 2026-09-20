@@ -1200,5 +1200,138 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_EntitiesWithoutTheComponentSti
     EXPECT_EQ(visibilitySet.hiddenEntities, 0U);
 }
 
+TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_InterpolatedPoseIsDrawnBetweenTheTwoSimulatedSteps) {
+    // The payoff. At alpha 0.5 the candidate must sit halfway between the two recorded poses, not
+    // at the newest one - which is what the renderer drew before and what produced the stutter.
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_interp.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_interp.uvemat");
+    const Scene::EntityUVE entity = MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    Scene::PhysicsInterpolationComponentUVE interpolation;
+    interpolation.mode = Scene::PhysicsInterpolationModeUVE::On;
+    interpolation.interpolatedInHierarchy = true;
+    interpolation.hasPreviousPose = true;
+    interpolation.previousPosition = Math::Vector3UVE{0.0F, 0.0F, -10.0F};
+    interpolation.currentPosition = Math::Vector3UVE{10.0F, 0.0F, -10.0F};
+    entityManager.AddComponentUVE<Scene::PhysicsInterpolationComponentUVE>(entity, interpolation);
+
+    MeshVisibilitySetUVE visibilitySet;
+    visibilitySet.physicsInterpolationAlpha = 0.5F;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+
+    ASSERT_EQ(visibilitySet.candidates.size(), 1U);
+    EXPECT_EQ(visibilitySet.interpolatedCandidates, 1U);
+    const Math::Vector3UVE center = visibilitySet.candidates[0U].placement.worldBounds.GetCenterUVE();
+    EXPECT_NEAR(center.x, 5.0F, 1e-3F) << "halfway between the two simulated poses";
+}
+
+TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_AlphaZeroDrawsThePreviousPoseAndOneDrawsTheCurrent) {
+    // The two boundaries have to be exact, or an object visibly jumps at the moment a fixed step
+    // lands - which is precisely the artefact interpolation is supposed to remove.
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_interp_ends.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_interp_ends.uvemat");
+    const Scene::EntityUVE entity = MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    Scene::PhysicsInterpolationComponentUVE interpolation;
+    interpolation.mode = Scene::PhysicsInterpolationModeUVE::On;
+    interpolation.hasPreviousPose = true;
+    interpolation.previousPosition = Math::Vector3UVE{-4.0F, 0.0F, -10.0F};
+    interpolation.currentPosition = Math::Vector3UVE{6.0F, 0.0F, -10.0F};
+    entityManager.AddComponentUVE<Scene::PhysicsInterpolationComponentUVE>(entity, interpolation);
+
+    MeshVisibilitySetUVE atStart;
+    atStart.physicsInterpolationAlpha = 0.0F;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, atStart);
+    ASSERT_EQ(atStart.candidates.size(), 1U);
+    EXPECT_NEAR(atStart.candidates[0U].placement.worldBounds.GetCenterUVE().x, -4.0F, 1e-3F);
+
+    MeshVisibilitySetUVE atEnd;
+    atEnd.physicsInterpolationAlpha = 1.0F;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, atEnd);
+    ASSERT_EQ(atEnd.candidates.size(), 1U);
+    EXPECT_NEAR(atEnd.candidates[0U].placement.worldBounds.GetCenterUVE().x, 6.0F, 1e-3F);
+}
+
+TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_EntitiesWithoutInterpolationDrawAtTheSimulatedPose) {
+    // The component is optional and most entities will never carry one. They must be unaffected by
+    // a non-zero alpha, or switching interpolation on would move the whole static world.
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_interp_none.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_interp_none.uvemat");
+    MakeMeshEntityUVE(Math::Vector3UVE{3.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    MeshVisibilitySetUVE visibilitySet;
+    visibilitySet.physicsInterpolationAlpha = 0.5F;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+
+    ASSERT_EQ(visibilitySet.candidates.size(), 1U);
+    EXPECT_EQ(visibilitySet.interpolatedCandidates, 0U);
+    EXPECT_NEAR(visibilitySet.candidates[0U].placement.worldBounds.GetCenterUVE().x, 3.0F, 1e-3F);
+}
+
+TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_InterpolationDoesNotDefeatThePlacementCache) {
+    // The design constraint that decided where the blend goes. The placement cache is keyed on the
+    // SIMULATED transform and is worth about 29x; blending before the key would miss on every
+    // frame for every moving object and hand all of that back. A second build with a different
+    // alpha but the same simulated pose must still hit.
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_interp_cache.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_interp_cache.uvemat");
+    const Scene::EntityUVE entity = MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    Scene::PhysicsInterpolationComponentUVE interpolation;
+    interpolation.mode = Scene::PhysicsInterpolationModeUVE::On;
+    interpolation.hasPreviousPose = true;
+    interpolation.previousPosition = Math::Vector3UVE{0.0F, 0.0F, -10.0F};
+    interpolation.currentPosition = Math::Vector3UVE{1.0F, 0.0F, -10.0F};
+    entityManager.AddComponentUVE<Scene::PhysicsInterpolationComponentUVE>(entity, interpolation);
+
+    MeshVisibilitySetUVE visibilitySet;
+    visibilitySet.physicsInterpolationAlpha = 0.25F;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+    ASSERT_EQ(visibilitySet.placementCacheMisses, 1U) << "first build must populate the cache";
+
+    // Same simulated pose, different alpha - the frame after, in other words.
+    visibilitySet.physicsInterpolationAlpha = 0.75F;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+    EXPECT_EQ(visibilitySet.placementCacheHits, 1U)
+        << "a new alpha must not invalidate the cached placement";
+    EXPECT_EQ(visibilitySet.placementCacheMisses, 0U);
+    // And the blend still moved, so the hit is not coming from skipping the work entirely.
+    EXPECT_NEAR(visibilitySet.candidates[0U].placement.worldBounds.GetCenterUVE().x, 0.75F, 1e-3F);
+}
+
+TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_InterpolationOffUsesTheSimulatedPose) {
+    // Off must reach all the way through to the drawn position, not merely be recorded.
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_interp_off.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_interp_off.uvemat");
+    const Scene::EntityUVE entity = MakeMeshEntityUVE(Math::Vector3UVE{8.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    Scene::PhysicsInterpolationComponentUVE interpolation;
+    interpolation.mode = Scene::PhysicsInterpolationModeUVE::Off;
+    interpolation.interpolatedInHierarchy = false;
+    interpolation.hasPreviousPose = true;
+    interpolation.previousPosition = Math::Vector3UVE{-100.0F, 0.0F, -10.0F};
+    interpolation.currentPosition = Math::Vector3UVE{100.0F, 0.0F, -10.0F};
+    entityManager.AddComponentUVE<Scene::PhysicsInterpolationComponentUVE>(entity, interpolation);
+
+    MeshVisibilitySetUVE visibilitySet;
+    visibilitySet.physicsInterpolationAlpha = 0.5F;
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+
+    ASSERT_EQ(visibilitySet.candidates.size(), 1U);
+    EXPECT_EQ(visibilitySet.interpolatedCandidates, 0U);
+    EXPECT_NEAR(visibilitySet.candidates[0U].placement.worldBounds.GetCenterUVE().x, 8.0F, 1e-3F)
+        << "Off must draw the simulated pose, not a blend of the recorded ones";
+}
+
 } // namespace
 } // namespace UVE::Render::Tests
