@@ -56,6 +56,7 @@
 #include "uve/component/collider_component_uve.h"
 #include "uve/nodes/3d/hitbox_3d_uve.h"
 #include "uve/nodes/3d/hurtbox_3d_uve.h"
+#include "uve/nodes/3d/interaction_area_3d_uve.h"
 #include "uve/nodes/3d/projectile_3d_uve.h"
 #include "uve/nodes/3d/ray_cast_3d_uve.h"
 #include "uve/component/mesh_component_uve.h"
@@ -1456,6 +1457,149 @@ TEST(EngineCoreUVETest, Hitbox3DNode_StrikesOverlappingHurtboxAndClearsWhenGated
             entityManager.GetComponentUVE<Scene::Hitbox3DNodeComponentUVE>(attacker);
         ASSERT_EQ(afterStrike.strikeCount, 1U);
         EXPECT_EQ(afterStrike.strikes[0U].hurtboxEntity, victim);
+    }
+
+    engine.Shutdown();
+}
+
+TEST(EngineCoreUVETest, InteractionArea3DNode_TracksInteractorsFocusesTheNearestAndClearsWhenGated) {
+    // EngineCoreUVE::SyncInteractionArea3DNodesUVE() is new wiring: previously
+    // InteractionArea3DNodeComponentUVE was pure authored data with nothing evaluating it - a
+    // game had to hand-roll the whole "what can I interact with" loop. This proves the real
+    // per-frame behaviour: the character-controller player populates overlapping areas'
+    // interactor lists, exactly one area - the nearest - earns focusedByPrimaryInteractor,
+    // the bounded list reports its own overflow, and every gate clears stale state instead of
+    // keeping the previous frame's answers.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    // The player: a character controller with the default box collider (0.5 half extents) at the
+    // origin. Area A is one step away; area B starts out of range.
+    const Scene::EntityUVE player = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, player, Scene::TransformComponentUVE{});
+    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(player, Scene::ColliderComponentUVE{});
+    entityManager.AddComponentUVE<Scene::CharacterControllerComponentUVE>(player);
+
+    const Scene::EntityUVE areaA = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE transformA;
+    transformA.localPosition = Math::Vector3UVE{0.4F, 0.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, areaA, transformA);
+    entityManager.AddComponentUVE<Scene::InteractionArea3DNodeComponentUVE>(
+        areaA, Scene::InteractionArea3DNodeComponentUVE{});
+
+    const Scene::EntityUVE areaB = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE transformB;
+    transformB.localPosition = Math::Vector3UVE{30.0F, 0.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, areaB, transformB);
+    entityManager.AddComponentUVE<Scene::InteractionArea3DNodeComponentUVE>(
+        areaB, Scene::InteractionArea3DNodeComponentUVE{});
+
+    engine.TickFrameUVE();
+    {
+        const Scene::InteractionArea3DNodeComponentUVE& live =
+            entityManager.GetComponentUVE<Scene::InteractionArea3DNodeComponentUVE>(areaA);
+        ASSERT_EQ(live.interactorCount, 1U);
+        EXPECT_EQ(live.interactors[0U], player);
+        EXPECT_FALSE(live.interactorsTruncated);
+        EXPECT_TRUE(live.focusedByPrimaryInteractor);
+    }
+    {
+        const Scene::InteractionArea3DNodeComponentUVE& live =
+            entityManager.GetComponentUVE<Scene::InteractionArea3DNodeComponentUVE>(areaB);
+        EXPECT_EQ(live.interactorCount, 0U);
+        EXPECT_FALSE(live.focusedByPrimaryInteractor);
+    }
+
+    // Pull B barely into range (its center lands farther than A's): both list the player, but
+    // only the NEAREST one keeps the focus.
+    transformB.localPosition = Math::Vector3UVE{0.45F, 0.0F, 0.0F};
+    sceneGraph.SetLocalTransformUVE(entityManager, areaB, transformB);
+    engine.TickFrameUVE();
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::InteractionArea3DNodeComponentUVE>(areaB)
+                  .interactorCount,
+              1U);
+    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::InteractionArea3DNodeComponentUVE>(areaA)
+                    .focusedByPrimaryInteractor);
+    EXPECT_FALSE(entityManager.GetComponentUVE<Scene::InteractionArea3DNodeComponentUVE>(areaB)
+                     .focusedByPrimaryInteractor);
+
+    // B ends up the nearer of the two: the focus must MOVE to it, not stick to first-come.
+    transformB.localPosition = Math::Vector3UVE{0.1F, 0.0F, 0.0F};
+    sceneGraph.SetLocalTransformUVE(entityManager, areaB, transformB);
+    engine.TickFrameUVE();
+    EXPECT_FALSE(entityManager.GetComponentUVE<Scene::InteractionArea3DNodeComponentUVE>(areaA)
+                     .focusedByPrimaryInteractor);
+    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::InteractionArea3DNodeComponentUVE>(areaB)
+                    .focusedByPrimaryInteractor);
+
+    // Disabling B hands the focus back to A - nothing stale may survive the gate.
+    entityManager.GetComponentUVE<Scene::InteractionArea3DNodeComponentUVE>(areaB).enabled = false;
+    engine.TickFrameUVE();
+    {
+        const Scene::InteractionArea3DNodeComponentUVE& liveB =
+            entityManager.GetComponentUVE<Scene::InteractionArea3DNodeComponentUVE>(areaB);
+        EXPECT_EQ(liveB.interactorCount, 0U);
+        EXPECT_FALSE(liveB.focusedByPrimaryInteractor);
+    }
+    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::InteractionArea3DNodeComponentUVE>(areaA)
+                    .focusedByPrimaryInteractor);
+
+    // The player's collider mask stops accepting either side: participation ends, and with no
+    // interactor left the focus goes away entirely - fail-closed, not last-known.
+    entityManager.GetComponentUVE<Scene::InteractionArea3DNodeComponentUVE>(areaB).enabled = true;
+    Scene::ColliderComponentUVE& playerCollider =
+        entityManager.GetComponentUVE<Scene::ColliderComponentUVE>(player);
+    playerCollider.collisionMask = 0U;
+    engine.TickFrameUVE();
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::InteractionArea3DNodeComponentUVE>(areaA)
+                  .interactorCount,
+              0U);
+    EXPECT_FALSE(entityManager.GetComponentUVE<Scene::InteractionArea3DNodeComponentUVE>(areaA)
+                     .focusedByPrimaryInteractor);
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::InteractionArea3DNodeComponentUVE>(areaB)
+                  .interactorCount,
+              0U);
+
+    // Mask restored, plus a second controller on the same spot: with an authored candidate budget
+    // of one, the bounded list keeps exactly one entry and REPORTS its overflow instead of
+    // silently dropping the extra interactor or overwriting past the cap.
+    playerCollider.collisionMask = 0xFFFFFFFFU;
+    Scene::InteractionArea3DNodeComponentUVE& liveA =
+        entityManager.GetComponentUVE<Scene::InteractionArea3DNodeComponentUVE>(areaA);
+    liveA.maximumCandidates = 1U;
+    const Scene::EntityUVE secondPlayer = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, secondPlayer, Scene::TransformComponentUVE{});
+    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(
+        secondPlayer, Scene::ColliderComponentUVE{});
+    entityManager.AddComponentUVE<Scene::CharacterControllerComponentUVE>(secondPlayer);
+    engine.TickFrameUVE();
+    {
+        const Scene::InteractionArea3DNodeComponentUVE& afterFill =
+            entityManager.GetComponentUVE<Scene::InteractionArea3DNodeComponentUVE>(areaA);
+        EXPECT_EQ(afterFill.interactorCount, 1U);
+        EXPECT_TRUE(afterFill.interactorsTruncated);
+        // The primary interactor is the first content-ordered controller, and the focus verdict
+        // is independent of the bounded list: A is still the nearest area for that player.
+        EXPECT_TRUE(afterFill.focusedByPrimaryInteractor);
+    }
+
+    // A controller WITHOUT a collider has no overlap volume and must never appear.
+    const Scene::EntityUVE colliderless = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, colliderless, Scene::TransformComponentUVE{});
+    entityManager.AddComponentUVE<Scene::CharacterControllerComponentUVE>(colliderless);
+    engine.TickFrameUVE();
+    {
+        const Scene::InteractionArea3DNodeComponentUVE& afterFill =
+            entityManager.GetComponentUVE<Scene::InteractionArea3DNodeComponentUVE>(areaA);
+        EXPECT_EQ(afterFill.interactorCount, 1U);
+        for (std::size_t index = 0; index < afterFill.interactorCount; ++index) {
+            EXPECT_NE(afterFill.interactors[index], colliderless);
+        }
     }
 
     engine.Shutdown();

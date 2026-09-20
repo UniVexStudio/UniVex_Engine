@@ -58,6 +58,7 @@
 #include "uve/memory/memory_manager_uve.h"
 #include "uve/nodes/3d/hitbox_3d_uve.h"
 #include "uve/nodes/3d/hurtbox_3d_uve.h"
+#include "uve/nodes/3d/interaction_area_3d_uve.h"
 #include "uve/nodes/3d/projectile_3d_uve.h"
 #include "uve/nodes/3d/ray_cast_3d_uve.h"
 #include "uve/nodes/3d/spring_arm_3d_uve.h"
@@ -837,6 +838,18 @@ struct HurtboxCandidateUVE final {
     std::string damageChannel;
 };
 
+/// Snapshot of one character-controller interactor's overlap volume, taken once per frame by
+/// EngineCoreUVE::SyncInteractionArea3DNodesUVE() pass 1: world pose plus broad-phase half
+/// extents and layer/mask from the entity's own ColliderComponentUVE.
+struct InteractionInteractorCandidateUVE final {
+    Scene::EntityUVE entity;
+    Math::Vector3UVE center;
+    Math::Vector3UVE halfExtents;
+    Math::QuaternionUVE rotation;
+    std::uint32_t collisionLayer = 1U;
+    std::uint32_t collisionMask = 0xFFFFFFFFU;
+};
+
 } // namespace
 
 void EngineCoreUVE::SyncHitbox3DNodesUVE() {
@@ -909,6 +922,111 @@ void EngineCoreUVE::SyncHitbox3DNodesUVE() {
                 ++hitbox.strikeCount;
             }
         });
+}
+
+void EngineCoreUVE::SyncInteractionArea3DNodesUVE() {
+    // Pass 1 (read-only): snapshot every interactor - a character controller carrying a valid
+    // collider and a world transform - so the mutation pass evaluates every area against a
+    // stable set without holding ECS iteration open across a second ForEachUVE. The set is
+    // deliberately unbounded (same call SyncHitbox3DNodesUVE() made for hurtboxes): capping it
+    // would silently pretend interactors beyond the cap do not exist; only each area's stored
+    // list is bounded, and it reports its own overflow.
+    std::vector<InteractionInteractorCandidateUVE> interactors;
+    std::vector<Scene::EntityUVE> interactorEntities;
+    m_entityManager->ForEachUVE<Scene::WorldTransformComponentUVE,
+                                Scene::CharacterControllerComponentUVE,
+                                Scene::ColliderComponentUVE>(
+        [&interactors, &interactorEntities](
+            const Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE& worldTransform,
+            const Scene::CharacterControllerComponentUVE&, const Scene::ColliderComponentUVE& collider) {
+            if (!Scene::IsColliderComponentValidUVE(collider)) {
+                return; // an invalid collider (e.g. a zero layer) can never interact
+            }
+            InteractionInteractorCandidateUVE candidate;
+            candidate.entity = entity;
+            candidate.center = worldTransform.worldPosition;
+            candidate.halfExtents = Scene::GetColliderLocalHalfExtentsUVE(collider);
+            if (!Math::TryNormalizeUVE(worldTransform.worldRotation, candidate.rotation)) {
+                candidate.rotation = {}; // degenerate rotation falls back to identity
+            }
+            candidate.collisionLayer = collider.collisionLayer;
+            candidate.collisionMask = collider.collisionMask;
+            interactorEntities.push_back(entity);
+            interactors.push_back(std::move(candidate));
+        });
+
+    const std::optional<Scene::EntityUVE> primaryInteractor =
+        Scene::ResolvePrimaryInteractorUVE(interactorEntities);
+    const Scene::EntityUVE primaryEntity =
+        primaryInteractor.value_or(Scene::kInvalidEntityUVE);
+
+    // Pass 2: refresh every area's runtime state against that snapshot, gathering the primary
+    // interactor's focus candidates on the way. Every gate fails closed: anything that stops an
+    // area participating this frame clears its runtime state in full, never leaving a stale
+    // interactor list or focus flag behind.
+    std::vector<Scene::InteractionFocusCandidateUVE> focusCandidates;
+    m_entityManager->ForEachUVE<Scene::InteractionArea3DNodeComponentUVE>(
+        [this, &interactors, primaryEntity, &focusCandidates](
+            const Scene::EntityUVE entity, Scene::InteractionArea3DNodeComponentUVE& area) {
+            area.interactorCount = 0U;
+            area.interactorsTruncated = false;
+            area.focusedByPrimaryInteractor = false;
+            if (!area.enabled || !Scene::IsInteractionArea3DNodeComponentValidUVE(area) ||
+                !m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(entity)) {
+                return;
+            }
+
+            const Scene::WorldTransformComponentUVE& worldTransform =
+                m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
+            Math::QuaternionUVE areaRotation{};
+            if (!Math::TryNormalizeUVE(worldTransform.worldRotation, areaRotation)) {
+                areaRotation = {}; // degenerate rotation falls back to identity
+            }
+            const std::size_t candidateCap = Scene::ResolveInteractionAreaCandidateCapUVE(
+                area.maximumCandidates, Scene::kMaximumInteractionAreaCandidatesUVE);
+
+            for (const InteractionInteractorCandidateUVE& interactor : interactors) {
+                if (interactor.entity == entity) {
+                    continue; // an area never lists the interactor living on its own entity
+                }
+                if ((interactor.collisionLayer & area.collisionMask) == 0U ||
+                    (area.collisionLayer & interactor.collisionMask) == 0U) {
+                    continue; // symmetric layer/mask acceptance, AreaOverlapSystemUVE's rule
+                }
+                const std::optional<Math::PenetrationUVE> penetration =
+                    Physics::Detail::ComputeOrientedBoxOrientedBoxPenetrationUVE(
+                        worldTransform.worldPosition, area.halfExtents, areaRotation,
+                        interactor.center, interactor.halfExtents, interactor.rotation);
+                if (!penetration.has_value()) {
+                    continue; // no overlap (touching boundaries are not overlaps either)
+                }
+                if (interactor.entity == primaryEntity) {
+                    // Rank by squared center distance - nearest center is the focus candidate;
+                    // no sqrt needed for a comparison.
+                    focusCandidates.push_back(Scene::InteractionFocusCandidateUVE{
+                        entity,
+                        Math::LengthSquaredUVE(worldTransform.worldPosition - interactor.center)});
+                }
+                if (area.interactorCount >= candidateCap) {
+                    area.interactorsTruncated = true;
+                    break;
+                }
+                area.interactors[area.interactorCount] = interactor.entity;
+                ++area.interactorCount;
+            }
+        });
+
+    // Pass 3: exactly one area gets the primary interactor's focus - nearest center wins, ties
+    // deterministically by (index,generation); a scene with no eligible interactor focuses
+    // nothing (ResolvePrimaryInteractorUVE already failed closed above) and stale focus flags
+    // were all cleared in pass 2.
+    const std::optional<Scene::EntityUVE> focusedArea =
+        Scene::ResolveInteractionFocusUVE(focusCandidates);
+    if (focusedArea.has_value() &&
+        m_entityManager->HasComponentUVE<Scene::InteractionArea3DNodeComponentUVE>(*focusedArea)) {
+        m_entityManager->GetComponentUVE<Scene::InteractionArea3DNodeComponentUVE>(*focusedArea)
+            .focusedByPrimaryInteractor = true;
+    }
 }
 
 void EngineCoreUVE::SyncAdaptiveRenderResolutionUVE() {
@@ -1013,6 +1131,7 @@ void EngineCoreUVE::Update() {
     SyncCollisionLifecycleUVE();
     SyncRayCast3DNodesUVE();
     SyncHitbox3DNodesUVE();
+    SyncInteractionArea3DNodesUVE();
     SyncScriptRuntimeUVE();
 
     if (m_config.hotReloadEnabledUVE) {

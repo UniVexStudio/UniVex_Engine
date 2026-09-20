@@ -616,6 +616,78 @@ TEST_F(Node3DDefinitionsUVETest, SpawnPlayerLocalIsTheSweepInverse) {
                      .has_value());
 }
 
+TEST_F(Node3DDefinitionsUVETest, InteractionAreaCandidateCapHonoursAuthoredBudgetAndStorageBound) {
+    // The per-tick interactor list is storage-bounded AND authored-bounded; the effective cap is
+    // the smaller of the two, so an authored value above the fixed array can never scribble past
+    // it, and a tighter authored budget is respected exactly.
+    EXPECT_EQ(ResolveInteractionAreaCandidateCapUVE(4U, kMaximumInteractionAreaCandidatesUVE), 4U);
+    EXPECT_EQ(ResolveInteractionAreaCandidateCapUVE(16U, kMaximumInteractionAreaCandidatesUVE), 16U);
+    EXPECT_EQ(ResolveInteractionAreaCandidateCapUVE(4096U, kMaximumInteractionAreaCandidatesUVE),
+              kMaximumInteractionAreaCandidatesUVE);
+    EXPECT_EQ(ResolveInteractionAreaCandidateCapUVE(0U, kMaximumInteractionAreaCandidatesUVE), 0U);
+    // The bound side is honoured symmetrically for storage smaller than the authored budget.
+    EXPECT_EQ(ResolveInteractionAreaCandidateCapUVE(8U, 3U), 3U);
+}
+
+TEST_F(Node3DDefinitionsUVETest, PrimaryInteractorSelectionMatchesTheSpawnPointPlayerRule) {
+    // Same contract as SpawnPoint3D selection: content order (index, generation) decides, never
+    // ECS pool order, and an empty or garbage-only input fails closed to no value.
+    EXPECT_EQ(ResolvePrimaryInteractorUVE(std::span<const EntityUVE>{}), std::nullopt);
+    const EntityUVE sentinel = kInvalidEntityUVE;
+    {
+        const EntityUVE only[]{sentinel};
+        EXPECT_EQ(ResolvePrimaryInteractorUVE(only), std::nullopt);
+    }
+    const EntityUVE a{7U, 0U};
+    const EntityUVE b{2U, 1U};
+    const EntityUVE c{2U, 0U};
+    {
+        const EntityUVE only[]{a};
+        ASSERT_TRUE(ResolvePrimaryInteractorUVE(only).has_value());
+        EXPECT_EQ(*ResolvePrimaryInteractorUVE(only), a);
+    }
+    {
+        // Listed in "wrong" order on purpose: (2,1) and (2,0) both precede (7,0), and between the
+        // two index-2 entries the lower generation wins - identical ranking to spawn selection.
+        const EntityUVE all[]{a, b, c};
+        ASSERT_TRUE(ResolvePrimaryInteractorUVE(all).has_value());
+        EXPECT_EQ(*ResolvePrimaryInteractorUVE(all), c);
+    }
+}
+
+TEST_F(Node3DDefinitionsUVETest, InteractionFocusPicksTheNearestAreaWithDeterministicTies) {
+    // The Lyra-style best-candidate rule this engine owns so games do not re-implement it: the
+    // nearest overlapping area wins; equal distances fall back to (index,generation) ordering so
+    // the answer never depends on iteration/pool order. Empty or garbage input means no focus.
+    EXPECT_EQ(ResolveInteractionFocusUVE(std::span<const InteractionFocusCandidateUVE>{}),
+              std::nullopt);
+    const InteractionFocusCandidateUVE sentinel{kInvalidEntityUVE, 0.0F};
+    {
+        const InteractionFocusCandidateUVE only[]{sentinel};
+        EXPECT_EQ(ResolveInteractionFocusUVE(only), std::nullopt);
+    }
+    const InteractionFocusCandidateUVE near{EntityUVE{9U, 0U}, 1.0F};
+    const InteractionFocusCandidateUVE far{EntityUVE{1U, 0U}, 4.0F};
+    {
+        // A worse entity wins anyway because it is nearer; order in the span is irrelevant.
+        const InteractionFocusCandidateUVE all[]{far, near};
+        ASSERT_TRUE(ResolveInteractionFocusUVE(all).has_value());
+        EXPECT_EQ(*ResolveInteractionFocusUVE(all), near.areaEntity);
+    }
+    {
+        // The exact tie: equal distances, entities listed in REVERSE ranked order - the lower
+        // (index,generation) still wins, which is the determinism claim this test is measuring.
+        const InteractionFocusCandidateUVE tieA{EntityUVE{5U, 0U}, 2.0F};
+        const InteractionFocusCandidateUVE tieB{EntityUVE{2U, 0U}, 2.0F};
+        const InteractionFocusCandidateUVE reversed[]{tieA, tieB};
+        ASSERT_TRUE(ResolveInteractionFocusUVE(reversed).has_value());
+        EXPECT_EQ(*ResolveInteractionFocusUVE(reversed), tieB.areaEntity);
+        const InteractionFocusCandidateUVE natural[]{tieB, tieA};
+        ASSERT_TRUE(ResolveInteractionFocusUVE(natural).has_value());
+        EXPECT_EQ(*ResolveInteractionFocusUVE(natural), tieB.areaEntity);
+    }
+}
+
 TEST_F(Node3DDefinitionsUVETest, AnimationTreeStaysHonestlyNonCreatable) {
     // An empty graph is a valid placeholder definition, but the registry keeps telling the
     // truth: AnimationTree is not library-creatable until the animation pipeline exists, and
