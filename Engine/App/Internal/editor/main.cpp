@@ -514,10 +514,14 @@ private:
             }
             if (io.KeyCtrl) {
                 const univex::math::Vec3 target = camera_.Target();
-                editor_.SetViewportBookmarkUVE(
+                const bool stored = editor_.SetViewportBookmarkUVE(
                     slot, UVE::Editor::EditorViewportBookmarkUVE{
                                UVE::Math::Vector3UVE{target.x, target.y, target.z},
                                camera_.Yaw(), camera_.Pitch(), camera_.Distance()});
+                // A live OrbitCamera only ever produces well-formed poses, so failure is
+                // impossible here by construction; the bool is consumed, not ignored.
+                (void)stored;
+
                 continue;
             }
             const std::optional<UVE::Editor::EditorViewportBookmarkUVE> bookmark =
