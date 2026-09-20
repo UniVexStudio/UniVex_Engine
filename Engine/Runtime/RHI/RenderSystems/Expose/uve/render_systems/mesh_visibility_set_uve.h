@@ -187,6 +187,12 @@ struct MeshVisibilitySetUVE final {
     /// streaming-budget one.
     std::size_t regionCulledEntities = 0U;
 
+    /// Entities skipped because an Occluder3D sits strictly between them and the camera this
+    /// frame - a per-frame verdict, never persisted state, so a camera teleport can never leave
+    /// free space stuck in the shade. Counted apart from the two ownership gates because "hidden
+    /// behind a wall" says nothing about streaming or room design.
+    std::size_t occlusionCulledEntities = 0U;
+
     std::size_t invalidAssetReferences = 0U;
     std::size_t pendingAssetLoads = 0U;
     std::size_t failedAssetLoads = 0U;
