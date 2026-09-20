@@ -1452,10 +1452,10 @@ Scene::EntityUVE EditorUVE::CreateDocumentSceneNodeUVE(
     };
 
     switch (kind) {
-        // The 17 kinds whose authored data already lives in a shared component each create from
-        // their NodeDefinition in Engine/Runtime/Nodes/3D — one .h + .cpp per kind holds the
-        // recipe (components to attach, authored defaults, default entity name). No
-        // node-kind-specific recipe is authored in this switch anymore.
+        // Every case creates from its own NodeDefinition (Engine/Runtime/Nodes/3D or
+        // Nodes/CanvasLayer — one .h + .cpp per kind holds the recipe: components to attach,
+        // authored defaults, default entity name). No node-kind-specific recipe is authored in
+        // this switch anymore.
         case Scene::Nodes::SceneNodeKindUVE::Node3D:
             entity = CreateNodeDefinitionEntityInternalUVE(Scene::Node3DNodeDefinitionUVE{},
                                                             Scene::ApplyNode3DNodeDefinitionUVE);
@@ -1558,8 +1558,12 @@ Scene::EntityUVE EditorUVE::CreateDocumentSceneNodeUVE(
         case Scene::Nodes::SceneNodeKindUVE::BoneAttachment3D:
             entity = createNodeWithComponent(Scene::BoneAttachment3DNodeComponentUVE{});
             break;
+        // SpringArm3D carries its own component like its neighbours, but its recipe
+        // (Node3D baseline plus seeding currentLength to the authored armLength the same way the
+        // deserializer seeds it) is a definition's worth of behaviour, so it reads like the rest.
         case Scene::Nodes::SceneNodeKindUVE::SpringArm3D:
-            entity = createNodeWithComponent(Scene::SpringArm3DNodeComponentUVE{});
+            entity = CreateNodeDefinitionEntityInternalUVE(Scene::SpringArm3DNodeDefinitionUVE{},
+                                                            Scene::ApplySpringArm3DNodeDefinitionUVE);
             break;
         case Scene::Nodes::SceneNodeKindUVE::Marker3D:
             entity = createNodeWithComponent(Scene::Marker3DNodeComponentUVE{});

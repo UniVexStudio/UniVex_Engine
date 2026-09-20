@@ -60,6 +60,7 @@
 #include "uve/nodes/3d/hurtbox_3d_uve.h"
 #include "uve/nodes/3d/projectile_3d_uve.h"
 #include "uve/nodes/3d/ray_cast_3d_uve.h"
+#include "uve/nodes/3d/spring_arm_3d_uve.h"
 #include "uve/physics/detail/shape_narrow_phase_uve.h"
 #include "uve/physics/character_controller_uve.h"
 #include "uve/physics/collision_system_uve.h"
@@ -770,6 +771,58 @@ void EngineCoreUVE::SyncRayCast3DNodesUVE() {
         });
 }
 
+void EngineCoreUVE::SyncSpringArm3DNodesUVE(const float fixedDeltaTimeSeconds) {
+    m_entityManager->ForEachUVE<Scene::SpringArm3DNodeComponentUVE>(
+        [this, fixedDeltaTimeSeconds](const Scene::EntityUVE entity,
+                                      Scene::SpringArm3DNodeComponentUVE& springArm) {
+            if (!springArm.enabled || !Scene::IsSpringArm3DNodeComponentValidUVE(springArm) ||
+                !m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(entity)) {
+                return;
+            }
+
+            const auto& worldTransform =
+                m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
+            Physics::RaycastQueryUVE query{};
+            query.ray.origin = worldTransform.worldPosition;
+            // The arm extends along the pivot's local +Z - behind it, since the camera
+            // convention looks down -Z (same convention SyncRayCast3DNodesUVE applies to the
+            // authored ray direction).
+            query.ray.direction =
+                Math::RotateVectorUVE(worldTransform.worldRotation, {0.0F, 0.0F, 1.0F});
+            query.maxDistance = springArm.armLength;
+            query.layerMask = springArm.collisionMask;
+            query.ignoreEntity = entity;
+
+            const std::optional<Physics::RaycastHitUVE> result =
+                m_raycastSystem->RaycastUVE(*m_entityManager, query);
+            const float targetLength = Scene::ResolveSpringArm3DTargetUVE(
+                result.has_value() ? std::optional<float>{result->distance} : std::nullopt,
+                springArm.margin, springArm.armLength);
+
+            const float previousLength = springArm.currentLength;
+            springArm.currentLength = Scene::ResolveSpringArm3DLengthUVE(
+                previousLength, targetLength, springArm.smoothing, fixedDeltaTimeSeconds);
+            const float lengthDelta = springArm.currentLength - previousLength;
+            if (lengthDelta == 0.0F || !m_entityManager->HasComponentUVE<Scene::TransformComponentUVE>(entity)) {
+                return;
+            }
+
+            // Every direct child rides the delta along the arm's local Z; because the shift is
+            // the change in length and not an absolute rewrite, authored child offsets survive
+            // and an unobstructed arm restores the authored pose exactly.
+            for (const Scene::EntityUVE child :
+                 m_sceneGraph->GetChildrenUVE(*m_entityManager, entity)) {
+                if (!m_entityManager->HasComponentUVE<Scene::TransformComponentUVE>(child)) {
+                    continue;
+                }
+                Scene::TransformComponentUVE childTransform =
+                    m_entityManager->GetComponentUVE<Scene::TransformComponentUVE>(child);
+                childTransform.localPosition.z += lengthDelta;
+                m_sceneGraph->SetLocalTransformUVE(*m_entityManager, child, childTransform);
+            }
+        });
+}
+
 namespace {
 
 /// Snapshot of one hurtbox's world-space strike volume, taken once per frame by
@@ -945,6 +998,7 @@ void EngineCoreUVE::Update() {
         m_physicsSystem->StepUVE(*m_entityManager, *m_sceneGraph, fixedDeltaTimeSeconds);
         SyncCharacterControllersUVE(fixedDeltaTimeSeconds);
         SyncProjectile3DNodesUVE(fixedDeltaTimeSeconds);
+        SyncSpringArm3DNodesUVE(fixedDeltaTimeSeconds);
     }
 
     m_sceneGraph->UpdateUVE(*m_entityManager);

@@ -1,5 +1,8 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
+#include <algorithm>
+#include <cmath>
+#include <limits>
 #include <string_view>
 #include <type_traits>
 
@@ -25,7 +28,7 @@
 namespace UVE::Scene::Tests {
 namespace {
 
-// Every one of the 17 component-backed node kinds' definition is reachable from the aggregate
+// Every one of the 18 component-backed node kinds' definition is reachable from the aggregate
 // header, mirroring the registry test's guarantee for the 21 data-carrying node components:
 // no node kind's home file can be silently dropped without breaking this compile.
 static_assert(std::is_class_v<Node3DNodeDefinitionUVE>);            // Node3D
@@ -43,6 +46,7 @@ static_assert(std::is_class_v<RigidBody3DNodeDefinitionUVE>);      // RigidBody3
 static_assert(std::is_class_v<AudioSource3DNodeDefinitionUVE>);        // AudioSource3D
 static_assert(std::is_class_v<ParticleEmitter3DNodeDefinitionUVE>); // ParticleEmitter3D
 static_assert(std::is_class_v<ScriptNodeDefinitionUVE>);           // Script
+static_assert(std::is_class_v<SpringArm3DNodeDefinitionUVE>);      // SpringArm3D
 static_assert(std::is_class_v<AnimationPlayerNodeDefinitionUVE>);  // AnimationPlayer
 static_assert(std::is_class_v<AnimationTreeNodeDefinitionUVE>);    // AnimationTree
 
@@ -84,6 +88,7 @@ TEST_F(Node3DDefinitionsUVETest, AllDefinitionDefaultsAreValid) {
     EXPECT_TRUE(IsAudioSource3DNodeDefinitionValidUVE(AudioSource3DNodeDefinitionUVE{}));
     EXPECT_TRUE(IsParticleEmitter3DNodeDefinitionValidUVE(ParticleEmitter3DNodeDefinitionUVE{}));
     EXPECT_TRUE(IsScriptNodeDefinitionValidUVE(ScriptNodeDefinitionUVE{}));
+    EXPECT_TRUE(IsSpringArm3DNodeDefinitionValidUVE(SpringArm3DNodeDefinitionUVE{}));
     EXPECT_TRUE(IsAnimationPlayerNodeDefinitionValidUVE(AnimationPlayerNodeDefinitionUVE{}));
     EXPECT_TRUE(IsAnimationTreeNodeDefinitionValidUVE(AnimationTreeNodeDefinitionUVE{}));
     EXPECT_TRUE(IsAnimatableBody3DNodeDefinitionValidUVE(AnimatableBody3DNodeDefinitionUVE{}));
@@ -100,6 +105,7 @@ static_assert(BoxMesh3DNodeDefinitionUVE::defaultName == "Cube");
 static_assert(SphereMesh3DNodeDefinitionUVE::defaultName == "UV Sphere");
 static_assert(PlaneMesh3DNodeDefinitionUVE::defaultName == "Plane");
 static_assert(AnimatableBody3DNodeDefinitionUVE::defaultName == "AnimatableBody3D");
+static_assert(SpringArm3DNodeDefinitionUVE::defaultName == "SpringArm3D");
 
 TEST_F(Node3DDefinitionsUVETest, DefaultNamesAreAuthoredPerKindNotGeneric) {
     // The six kinds that previously lived behind legacy EditorEntityKindUVE values keep their
@@ -197,6 +203,18 @@ TEST_F(Node3DDefinitionsUVETest, ApplyAttachesEachKindsExactComponentRecipe) {
         ApplyAnimationPlayerNodeDefinitionUVE(entityManager, entity, AnimationPlayerNodeDefinitionUVE{});
         ExpectNode3DBaselineUVE(entityManager, entity, AnimationPlayerNodeDefinitionUVE::defaultName);
         EXPECT_TRUE(entityManager.HasComponentUVE<AnimationPlayerComponentUVE>(entity));
+    }
+    {
+        const EntityUVE entity = CreateEntityUVE();
+        ApplySpringArm3DNodeDefinitionUVE(entityManager, entity, SpringArm3DNodeDefinitionUVE{});
+        ExpectNode3DBaselineUVE(entityManager, entity, SpringArm3DNodeDefinitionUVE::defaultName);
+        ASSERT_TRUE(entityManager.HasComponentUVE<SpringArm3DNodeComponentUVE>(entity));
+        // The recipe seeds the runtime state exactly the way the deserializer does: an arm that
+        // has never been simulated reads as fully extended, valid before the first step.
+        const SpringArm3DNodeComponentUVE& arm =
+            entityManager.GetComponentUVE<SpringArm3DNodeComponentUVE>(entity);
+        EXPECT_EQ(arm.currentLength, arm.armLength);
+        EXPECT_TRUE(IsSpringArm3DNodeComponentValidUVE(arm));
     }
 }
 
@@ -362,6 +380,113 @@ TEST_F(Node3DDefinitionsUVETest, SceneRootStandsOnTheSameBaselineAsEveryNode3D) 
     ApplySceneRootNodeDefinitionUVE(entityManager, root, SceneRootNodeDefinitionUVE{});
     EXPECT_EQ(entityManager.GetComponentUVE<NameComponentUVE>(root).name,
               SceneRootNodeDefinitionUVE::defaultName);
+}
+
+TEST_F(Node3DDefinitionsUVETest, SpringArm3DIsRegisteredCreatableAsACameraNode) {
+    // The registry row and the editor switch must keep agreeing about this kind: the registry
+    // advertises it as a creatable camera node, and the switch now creates it from the same
+    // definition this test file pins.
+    const Nodes::SceneNodeDescriptorUVE* descriptor =
+        Nodes::FindSceneNodeDescriptorUVE(Nodes::SceneNodeKindUVE::SpringArm3D);
+    ASSERT_NE(descriptor, nullptr);
+    EXPECT_EQ(descriptor->typeId, "spring_arm_3d");
+    EXPECT_EQ(descriptor->displayName, "SpringArm3D");
+    EXPECT_TRUE(descriptor->libraryCreatable);
+}
+
+TEST_F(Node3DDefinitionsUVETest, SpringArmTargetResolutionMatchesTheAuthoredEnvelope) {
+    // Unobstructed: full reach.
+    EXPECT_EQ(ResolveSpringArm3DTargetUVE(std::nullopt, 0.1F, 4.0F), 4.0F);
+    // Hit reported by the raycast: distance minus margin.
+    EXPECT_NEAR(ResolveSpringArm3DTargetUVE(1.5F, 0.1F, 4.0F), 1.4F, 1.0e-6F);
+    // Hit closer than the margin itself: never negative.
+    EXPECT_EQ(ResolveSpringArm3DTargetUVE(0.05F, 0.1F, 4.0F), 0.0F);
+    // A hit report inconsistent with the arm's own envelope degrades to "unobstructed" instead
+    // of stretching the arm past its authored length.
+    EXPECT_EQ(ResolveSpringArm3DTargetUVE(9.0F, 0.1F, 4.0F), 4.0F);
+    EXPECT_EQ(ResolveSpringArm3DTargetUVE(std::numeric_limits<float>::quiet_NaN(), 0.1F, 4.0F), 4.0F);
+    // And absurd authored envelopes refuse politely the same way.
+    EXPECT_EQ(ResolveSpringArm3DTargetUVE(1.0F, -1.0F, 4.0F), 4.0F);
+    EXPECT_EQ(ResolveSpringArm3DTargetUVE(1.0F, 0.1F, 0.0F), 0.0F);
+}
+
+TEST_F(Node3DDefinitionsUVETest, SpringArmRetractionSnapsSoTheCameraNeverClips) {
+    // Obstruction appears mid-frame: the arm arrives at the target THIS step, not after a
+    // smooth glide through the wall.
+    EXPECT_EQ(ResolveSpringArm3DLengthUVE(4.0F, 1.4F, 8.0F, 1.0F / 60.0F), 1.4F);
+    // Already retracted, target deeper still: still snaps.
+    EXPECT_EQ(ResolveSpringArm3DLengthUVE(2.0F, 1.4F, 8.0F, 1.0F / 60.0F), 1.4F);
+}
+
+TEST_F(Node3DDefinitionsUVETest, SpringArmExtensionBlendsMonotonicallyAndNeverOvershoots) {
+    float current = 1.4F;
+    constexpr float kDt = 1.0F / 60.0F;
+    for (int step = 0; step < 240; ++step) {
+        const float before = current;
+        current = ResolveSpringArm3DLengthUVE(current, 4.0F, 8.0F, kDt);
+        EXPECT_LE(current, 4.0F) << "extension must never overshoot the target";
+        if (before == 4.0F) {
+            // Once the completion tolerance has settled the arm it must hold exactly - a law
+            // that kept creeping at the target is a slow camera bleed, not smoothing.
+            EXPECT_EQ(current, 4.0F);
+        } else {
+            EXPECT_GT(current, before) << "still short of target: extension must keep moving";
+        }
+    }
+    // 240 steps at 8/s is ~32 time constants: settled long ago, via the completion tolerance,
+    // so the settled read is exact rather than "close enough".
+    EXPECT_EQ(current, 4.0F);
+}
+
+TEST_F(Node3DDefinitionsUVETest, SpringArmSmoothingZeroMatchesGodotSnapBothWays) {
+    // The authored escape hatch: smoothing 0 reproduces Godot's SpringArm3D behaviour exactly
+    // (Godot ships no smoothing member at all - snap on the way out as well).
+    EXPECT_EQ(ResolveSpringArm3DLengthUVE(1.4F, 4.0F, 0.0F, 1.0F / 60.0F), 4.0F);
+}
+
+TEST_F(Node3DDefinitionsUVETest, SpringArmLengthRefusesDegenerateCallsWithoutMoving) {
+    EXPECT_EQ(ResolveSpringArm3DLengthUVE(2.0F, 4.0F, 8.0F, 0.0F), 2.0F);   // dt 0: frozen
+    EXPECT_EQ(ResolveSpringArm3DLengthUVE(2.0F, 4.0F, 8.0F, -1.0F), 2.0F);  // dt negative: frozen
+    // A NaN input stays the caller's (the validator's) problem: the law returns its own current
+    // length unchanged rather than smearing garbage through the blend. NaN never compares equal,
+    // so these check the value category directly, not EXPECT_EQ.
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    EXPECT_TRUE(std::isnan(ResolveSpringArm3DLengthUVE(nan, 4.0F, 8.0F, 1.0F / 60.0F)));
+    EXPECT_EQ(ResolveSpringArm3DLengthUVE(2.0F, nan, 8.0F, 1.0F / 60.0F), 2.0F);
+}
+
+TEST_F(Node3DDefinitionsUVETest, SpringArmObstructThenClearRestoresTheAuthoredPose) {
+    // The drift claim the whole child-delta design rests on, measured on the motion law itself:
+    // an arm that snaps to a wall and springs back home must return to EXACTLY its authored
+    // length, so the sum of every per-step child shift telescopes back to precisely zero extra
+    // offset - not asymptotically close to it.
+    float current = 4.0F;
+    float childLocalZ = 4.0F; // camera authored at full reach behind the pivot
+    constexpr float kAuthoredZ = 4.0F;
+    constexpr float kDt = 1.0F / 60.0F;
+
+    // Drive into a doorway over 5 steps; each step snaps deeper or holds, and the child rides.
+    const float doorwayTarget = ResolveSpringArm3DTargetUVE(0.6F, 0.1F, 4.0F);
+    float maximumDrift = 0.0F;
+    for (int step = 0; step < 5; ++step) {
+        const float next = ResolveSpringArm3DLengthUVE(current, doorwayTarget, 8.0F, kDt);
+        childLocalZ += next - current;
+        current = next;
+        EXPECT_LT(current, kAuthoredZ);
+    }
+    // Then 600 steps of open air: springs back, settles exactly, and the child is returned home.
+    for (int step = 0; step < 600; ++step) {
+        const float next = ResolveSpringArm3DLengthUVE(current, 4.0F, 8.0F, kDt);
+        childLocalZ += next - current;
+        current = next;
+        maximumDrift = std::max(maximumDrift, std::fabs(childLocalZ - current));
+    }
+    EXPECT_EQ(current, 4.0F);
+    // The residual measured below is pure float-association error on ~600 accumulated deltas,
+    // expected orders of magnitude below anything renderable - and the restored length itself
+    // is exact, so the arm owes the scene nothing once settled.
+    EXPECT_NEAR(childLocalZ + (4.0F - current), kAuthoredZ, 1.0e-6F);
+    EXPECT_LE(maximumDrift, 1.0e-5F);
 }
 
 TEST_F(Node3DDefinitionsUVETest, AnimationTreeStaysHonestlyNonCreatable) {
