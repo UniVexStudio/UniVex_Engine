@@ -18,6 +18,7 @@
 #include "uve/component/mesh_component_uve.h"
 #include "uve/component/physics_interpolation_component_uve.h"
 #include "uve/nodes/3d/lod_group_3d_uve.h"
+#include "uve/nodes/3d/visibility_region_3d_uve.h"
 #include "uve/nodes/3d/world_partition_3d_uve.h"
 #include "uve/component/visibility_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
@@ -234,6 +235,25 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
                 if (!Scene::ResolveWorldPartition3DMembershipLiveUVE(ownerAlive,
                                                                      membership.live)) {
                     ++outVisibilitySet.partitionCulledEntities;
+                    return;
+                }
+            }
+
+            // Visibility region, same shape as the partition gate: a dead region fails open via
+            // the pure resolver, so its last verdict can never outlive it.
+            if (entityManager.HasComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+                    entity)) {
+                const Scene::VisibilityRegion3DMembershipComponentUVE& membership =
+                    entityManager
+                        .GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(entity);
+                const bool ownerAlive =
+                    membership.region != Scene::kInvalidEntityUVE &&
+                    entityManager.IsAliveUVE(membership.region) &&
+                    entityManager.HasComponentUVE<Scene::VisibilityRegion3DNodeComponentUVE>(
+                        membership.region);
+                if (!Scene::ResolveVisibilityRegion3DMembershipLiveUVE(ownerAlive,
+                                                                       membership.live)) {
+                    ++outVisibilitySet.regionCulledEntities;
                     return;
                 }
             }

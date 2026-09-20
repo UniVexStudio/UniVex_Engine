@@ -27,6 +27,7 @@
 #include "uve/component/visibility_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/nodes/3d/lod_group_3d_uve.h"
+#include "uve/nodes/3d/visibility_region_3d_uve.h"
 #include "uve/nodes/3d/world_partition_3d_uve.h"
 #include "uve/entity/entity_manager_uve.h"
 #include "uve/scene/scene_graph_uve.h"
@@ -1478,6 +1479,59 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_PartitionCellOutsideTheBudgetI
     EXPECT_NEAR(repeat.candidates[0U].placement.worldBounds.GetCenterUVE().z, -1.0F, 1e-3F);
     EXPECT_EQ(repeat.partitionCulledEntities, 1U)
         << "the same membership verdicts answer the same gate decision every build";
+}
+
+TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_InactiveRegionSkipsItsInteriorWithItsOwnCounter) {
+    // The render half of VisibilityRegion3D: the engine-owned membership is the only runtime
+    // state the pipeline reads (SyncVisibilityRegion3DNodesUVE writes it; this test stamps it by
+    // hand to isolate the gate). live=false (no viewer inside the room) is culled and counted in
+    // regionCulledEntities - "nobody is inside" never blurs with streaming-budget or authored
+    // hiding counts.
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_vr.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_vr.uvemat");
+
+    const Scene::EntityUVE region = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE regionTransform;
+    regionTransform.localPosition = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, region, regionTransform);
+    Scene::VisibilityRegion3DNodeComponentUVE regionComponent;
+    regionComponent.halfExtents = Math::Vector3UVE{5.0F, 5.0F, 5.0F};
+    regionComponent.active = false; // the engine's verdict: nobody is inside this room
+    entityManager.AddComponentUVE<Scene::VisibilityRegion3DNodeComponentUVE>(region,
+                                                                             regionComponent);
+
+    const Scene::EntityUVE interior = MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -2.0F},
+                                                       meshGuid, materialGuid);
+    const Scene::EntityUVE corridor = MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -9.0F},
+                                                      meshGuid, materialGuid);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    // What SyncVisibilityRegion3DNodesUVE writes: only the in-room mesh is managed, with the
+    // region's inactive verdict; the corridor outside every region carries no membership.
+    entityManager.AddComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+        interior, Scene::VisibilityRegion3DMembershipComponentUVE{region, false});
+
+    MeshVisibilitySetUVE visibilitySet;
+    visibilitySet.cameraWorldPosition = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+
+    ASSERT_EQ(visibilitySet.candidates.size(), 1U) << "only the out-of-room mesh may render";
+    EXPECT_NEAR(visibilitySet.candidates[0U].placement.worldBounds.GetCenterUVE().z, -9.0F,
+                1e-3F)
+        << "and it is the corridor, not the interior";
+    EXPECT_EQ(visibilitySet.regionCulledEntities, 1U)
+        << "the region gate has its own counter - room culling is a level-design stat";
+    EXPECT_EQ(visibilitySet.partitionCulledEntities, 0U);
+
+    // A live verdict for the same room renders it: the gate is the flag, not the room.
+    entityManager.GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(interior)
+        .live = true;
+    MeshVisibilitySetUVE awake;
+    awake.cameraWorldPosition = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, awake);
+    EXPECT_EQ(awake.candidates.size(), 2U) << "viewer stepped in: everything draws again";
+    EXPECT_EQ(awake.regionCulledEntities, 0U);
 }
 
 } // namespace

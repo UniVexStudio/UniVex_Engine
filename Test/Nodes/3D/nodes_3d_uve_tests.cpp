@@ -594,4 +594,114 @@ TEST(WorldPartition3DMembershipLiveUVETest, LiveOwnerTrustsItsFlagDeadOwnerFails
     EXPECT_TRUE(ResolveWorldPartition3DMembershipLiveUVE(false, true));
 }
 
+TEST(VisibilityRegion3DContainmentUVETest, InteriorAndBoundaryPointsAreInsideTheOutsideIsNot) {
+    // The whole room-culling contract rests on one question, so measure it: where is inside?
+    // A region at the origin with half extents {2, 1, 4}; the boundary itself is INCLUDED on
+    // purpose (unlike the world partition cells, a single box's skin belongs to itself exactly
+    // once), and the outside never is.
+    VisibilityRegion3DNodeComponentUVE config;
+    config.halfExtents = Math::Vector3UVE{2.0F, 1.0F, 4.0F};
+    const Math::Vector3UVE origin{};
+
+    EXPECT_TRUE(ResolveVisibilityRegion3DContainsPointUVE(config, origin, Math::Vector3UVE{}))
+        << "the center is as inside as it gets";
+    EXPECT_TRUE(
+        ResolveVisibilityRegion3DContainsPointUVE(config, origin, Math::Vector3UVE{1.5F, 0.5F, -3.5F}))
+        << "a routine interior point";
+    EXPECT_TRUE(
+        ResolveVisibilityRegion3DContainsPointUVE(config, origin, Math::Vector3UVE{2.0F, 1.0F, 4.0F}))
+        << "the exact corner is INCLUDED - paint a mesh on the wall and it is managed";
+    EXPECT_TRUE(
+        ResolveVisibilityRegion3DContainsPointUVE(config, origin, Math::Vector3UVE{-2.0F, -1.0F, -4.0F}))
+        << "the opposite corner too";
+    EXPECT_FALSE(
+        ResolveVisibilityRegion3DContainsPointUVE(config, origin, Math::Vector3UVE{2.01F, 0.0F, 0.0F}))
+        << "one millimetre past the wall is outside - the box is not elastic";
+    EXPECT_FALSE(
+        ResolveVisibilityRegion3DContainsPointUVE(config, origin, Math::Vector3UVE{0.0F, -1.01F, 0.0F}));
+
+    // A second origin proves this is region-relative, not world-relative:
+    const Math::Vector3UVE room{100.0F, 0.0F, 0.0F};
+    EXPECT_TRUE(ResolveVisibilityRegion3DContainsPointUVE(config, room,
+                                                          Math::Vector3UVE{101.0F, 0.0F, 0.0F}));
+    EXPECT_FALSE(
+        ResolveVisibilityRegion3DContainsPointUVE(config, room, Math::Vector3UVE{}))
+        << "the origin is outside the room at x=100";
+}
+
+TEST(VisibilityRegion3DContainmentUVETest, DegenerateConfigAndNonFinitePosesContainNothing) {
+    // An unusable region manages NOTHING: zero half extent, negative extents, or a NaN pose all
+    // answer false, so a typo in the inspector can never silently absorb a corridor.
+    VisibilityRegion3DNodeComponentUVE flat;
+    flat.halfExtents = Math::Vector3UVE{0.0F, 1.0F, 1.0F};
+    EXPECT_FALSE(ResolveVisibilityRegion3DContainsPointUVE(flat, Math::Vector3UVE{},
+                                                           Math::Vector3UVE{}));
+
+    VisibilityRegion3DNodeComponentUVE negative;
+    negative.halfExtents = Math::Vector3UVE{-2.0F, 1.0F, 1.0F};
+    EXPECT_FALSE(ResolveVisibilityRegion3DContainsPointUVE(negative, Math::Vector3UVE{},
+                                                           Math::Vector3UVE{}));
+
+    VisibilityRegion3DNodeComponentUVE fine;
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    EXPECT_FALSE(ResolveVisibilityRegion3DContainsPointUVE(
+        fine, Math::Vector3UVE{}, Math::Vector3UVE{nan, 0.0F, 0.0F}));
+    EXPECT_FALSE(ResolveVisibilityRegion3DContainsPointUVE(
+        fine, Math::Vector3UVE{nan, 0.0F, 0.0F}, Math::Vector3UVE{}));
+}
+
+TEST(VisibilityRegion3DLayerGateUVETest, AnySharedBitManagesAndZeroMasksManageNothing) {
+    // Layer gating must be an unsigned mask intersection, measured on corners: default-on-
+    // default passes, disjoint masks close the gate, and a ZERO mask on either side manages
+    // nothing (a mesh on no layers is never managed - an authoring choice, not an error).
+    EXPECT_TRUE(ResolveVisibilityRegion3DLayerGateUVE(0xFFFFFFFFU, 0x00000001U))
+        << "region-everything + mesh-layer-0: the out-of-the-box behaviour";
+    EXPECT_TRUE(ResolveVisibilityRegion3DLayerGateUVE(0x00000002U, 0x00000002U))
+        << "both on layer 1 alone";
+    EXPECT_TRUE(ResolveVisibilityRegion3DLayerGateUVE(0x0000000AU, 0x00000008U))
+        << "any ONE shared bit is enough";
+    EXPECT_FALSE(ResolveVisibilityRegion3DLayerGateUVE(0x00000002U, 0x00000001U))
+        << "props-layer region does not manage an NPC on the default layer";
+    EXPECT_FALSE(ResolveVisibilityRegion3DLayerGateUVE(0U, 0xFFFFFFFFU))
+        << "a region masking zero layers manages nothing";
+    EXPECT_FALSE(ResolveVisibilityRegion3DLayerGateUVE(0xFFFFFFFFU, 0U))
+        << "a mesh on zero layers is managed by nothing";
+}
+
+TEST(VisibilityRegion3DViewerUVETest, AnyViewerInsideActivatesAndAnEmptyCloudDoesNot) {
+    // The pure half of the fail-open rule: any one viewer activates the region; an EMPTY cloud
+    // answers false here (the engine's policy turns that into "show everything" above this
+    // function, keeping the pure answer total).
+    VisibilityRegion3DNodeComponentUVE config;
+    config.halfExtents = Math::Vector3UVE{2.0F, 2.0F, 2.0F};
+    const Math::Vector3UVE origin{};
+
+    EXPECT_FALSE(ResolveVisibilityRegion3DAnyViewerInsideUVE(
+        config, origin, std::vector<Math::Vector3UVE>{}));
+    EXPECT_TRUE(ResolveVisibilityRegion3DAnyViewerInsideUVE(
+        config, origin, std::vector<Math::Vector3UVE>{Math::Vector3UVE{1.0F, 0.0F, 0.0F}}));
+    EXPECT_FALSE(ResolveVisibilityRegion3DAnyViewerInsideUVE(
+        config, origin,
+        std::vector<Math::Vector3UVE>{Math::Vector3UVE{50.0F, 0.0F, 0.0F},
+                                      Math::Vector3UVE{-50.0F, 0.0F, 0.0F}}))
+        << "two viewers, neither nearby";
+    EXPECT_TRUE(ResolveVisibilityRegion3DAnyViewerInsideUVE(
+        config, origin,
+        std::vector<Math::Vector3UVE>{Math::Vector3UVE{50.0F, 0.0F, 0.0F},
+                                      Math::Vector3UVE{0.0F, 0.0F, 0.0F}}))
+        << "one step over the room line activates for the whole party";
+}
+
+TEST(VisibilityRegion3DMembershipLiveUVETest, LiveOwnerTrustsItsFlagDeadOwnerFailsOpen) {
+    // The renderer-side contract, same shape the world partition keeps: while the region owns
+    // a membership the live flag rules; once the owner is gone nobody may hide content with its
+    // stale opinion.
+    EXPECT_FALSE(ResolveVisibilityRegion3DMembershipLiveUVE(/*regionOwnerAlive=*/true, false))
+        << "inactive region: interior content is skipped";
+    EXPECT_TRUE(ResolveVisibilityRegion3DMembershipLiveUVE(true, true));
+    EXPECT_TRUE(ResolveVisibilityRegion3DMembershipLiveUVE(/*regionOwnerAlive=*/false, false))
+        << "dead region: fail open, never leave a door closed behind a deleted room";
+    EXPECT_TRUE(ResolveVisibilityRegion3DMembershipLiveUVE(false, true));
+}
+
 } // namespace UVE::Scene::Tests

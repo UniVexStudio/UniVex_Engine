@@ -66,6 +66,7 @@
 #include "uve/nodes/3d/reflection_probe_3d_uve.h"
 #include "uve/nodes/3d/ray_cast_3d_uve.h"
 #include "uve/nodes/3d/spring_arm_3d_uve.h"
+#include "uve/nodes/3d/visibility_region_3d_uve.h"
 #include "uve/nodes/3d/world_partition_3d_uve.h"
 #include "uve/physics/detail/shape_narrow_phase_uve.h"
 #include "uve/physics/character_controller_uve.h"
@@ -1487,6 +1488,178 @@ void EngineCoreUVE::SyncWorldPartition3DNodesUVE() {
     }
 }
 
+void EngineCoreUVE::SyncVisibilityRegion3DNodesUVE() {
+    // The viewer cloud is identical to the streamer's and the world partition's: the eye plus
+    // every character controller, finite poses only. Regions activate on ANY viewer inside.
+    std::vector<Math::Vector3UVE> viewerPositions;
+    if (m_activeCamera != Scene::kInvalidEntityUVE &&
+        m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(m_activeCamera)) {
+        viewerPositions.push_back(
+            m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(m_activeCamera)
+                .worldPosition);
+    }
+    m_entityManager->ForEachUVE<Scene::WorldTransformComponentUVE,
+                                Scene::CharacterControllerComponentUVE>(
+        [&viewerPositions](const Scene::EntityUVE, const Scene::WorldTransformComponentUVE& world,
+                           const Scene::CharacterControllerComponentUVE&) {
+            viewerPositions.push_back(world.worldPosition);
+        });
+
+    struct RegionSnapshotUVE final {
+        Scene::EntityUVE entity;
+        Math::Vector3UVE origin;
+    };
+    std::vector<RegionSnapshotUVE> regions;
+    m_entityManager->ForEachUVE<Scene::VisibilityRegion3DNodeComponentUVE>(
+        [this, &regions](const Scene::EntityUVE entity,
+                         Scene::VisibilityRegion3DNodeComponentUVE&) {
+            regions.push_back(RegionSnapshotUVE{
+                entity,
+                m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(entity)
+                    ? m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(entity)
+                          .worldPosition
+                    : Math::Vector3UVE{}});
+        });
+    // NO early-out on an empty region list: Pass 1 must still sweep memberships so a region
+    // destroyed THIS tick rebrands its orphan members (live + kInvalidEntityUVE) instead of
+    // leaving the stale fade binding forever.
+
+    // active is recomputed for every region, ENABLED OR NOT: a disabled region stays dormant on
+    // its members through Pass 1, but its flag still reads honestly for the inspector, and the
+    // tick it is re-enabled the verdict is already fresh instead of one frame stale. No viewers
+    // at all means fail-open-active: an empty play-in-editor world shows everything.
+    for (const RegionSnapshotUVE& region : regions) {
+        auto& config =
+            m_entityManager->GetComponentUVE<Scene::VisibilityRegion3DNodeComponentUVE>(
+                region.entity);
+        config.active =
+            viewerPositions.empty() ||
+            Scene::ResolveVisibilityRegion3DAnyViewerInsideUVE(config, region.origin,
+                                                               viewerPositions);
+    }
+
+    // Pass 1: sweep existing memberships. The snapshot doubles as iteration stability - the ECS
+    // is not mutated here, but a by-value copy survives whatever a mid-draw Play/Stop does.
+    struct MembershipSnapshotUVE final {
+        Scene::EntityUVE entity;
+        Scene::EntityUVE region;
+    };
+    std::vector<MembershipSnapshotUVE> members;
+    m_entityManager->ForEachUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+        [&members](const Scene::EntityUVE entity,
+                   const Scene::VisibilityRegion3DMembershipComponentUVE& membership) {
+            members.push_back(MembershipSnapshotUVE{entity, membership.region});
+        });
+    for (const MembershipSnapshotUVE& member : members) {
+        if (!m_entityManager->IsAliveUVE(member.entity)) {
+            continue; // the membership dies with its mesh
+        }
+        auto& membership =
+            m_entityManager->GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+                member.entity);
+        const bool ownerAlive =
+            member.region != Scene::kInvalidEntityUVE &&
+            m_entityManager->IsAliveUVE(member.region) &&
+            m_entityManager->HasComponentUVE<Scene::VisibilityRegion3DNodeComponentUVE>(
+                member.region);
+        if (!ownerAlive) {
+            // The owner is gone or disowned its component: rebrand so Pass 2 can rehome the mesh
+            // THIS tick, and fail open exactly the way the renderer gate would anyway.
+            membership.region = Scene::kInvalidEntityUVE;
+            membership.live = true;
+            continue;
+        }
+        const Scene::VisibilityRegion3DNodeComponentUVE& ownerConfig =
+            m_entityManager->GetComponentUVE<Scene::VisibilityRegion3DNodeComponentUVE>(
+                member.region);
+        const Math::Vector3UVE ownerOrigin =
+            m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(member.region)
+                ? m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(member.region)
+                      .worldPosition
+                : Math::Vector3UVE{};
+        const bool stillManaged =
+            ownerConfig.enabled && Scene::IsVisibilityRegion3DNodeComponentValidUVE(ownerConfig) &&
+            m_entityManager->HasComponentUVE<Scene::MeshComponentUVE>(member.entity) &&
+            m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(member.entity) &&
+            Scene::ResolveVisibilityRegion3DLayerGateUVE(
+                ownerConfig.visibilityLayers,
+                m_entityManager->GetComponentUVE<Scene::MeshComponentUVE>(member.entity)
+                    .visibilityLayers) &&
+            Scene::ResolveVisibilityRegion3DContainsPointUVE(
+                ownerConfig, ownerOrigin,
+                m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(member.entity)
+                    .worldPosition);
+        // Managed: the owner's current verdict. Released (walked out, layer gate closed,
+        // disabled, mesh component removed): back to live THIS tick - no frame of stale dark.
+        membership.live = !stillManaged || ownerConfig.active;
+    }
+
+    // Pass 2: discovery. An un-owned mesh (never stamped, or Pass 1 rebranded it to kInvalid on
+    // a dead owner) inside an enabled region whose layer gate passes becomes its member. With
+    // overlapping regions the mesh stamps the NEAREST one's center; ties resolve in the
+    // iteration order the ECS hands regions over, which is ascending entity id - deterministic
+    // for content that does not overlap rooms halfway.
+    std::vector<Scene::EntityUVE> meshes;
+    m_entityManager->ForEachUVE<Scene::MeshComponentUVE, Scene::WorldTransformComponentUVE>(
+        [this, &meshes](const Scene::EntityUVE entity, const Scene::MeshComponentUVE&,
+                        const Scene::WorldTransformComponentUVE&) {
+            const bool unowned =
+                !m_entityManager->HasComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+                    entity) ||
+                m_entityManager
+                        ->GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(entity)
+                        .region == Scene::kInvalidEntityUVE;
+            if (unowned) {
+                meshes.push_back(entity);
+            }
+        });
+    for (const Scene::EntityUVE mesh : meshes) {
+        const Math::Vector3UVE position =
+            m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(mesh)
+                .worldPosition;
+        const std::uint32_t meshLayers =
+            m_entityManager->GetComponentUVE<Scene::MeshComponentUVE>(mesh).visibilityLayers;
+        float bestDistanceSquared = std::numeric_limits<float>::max();
+        Scene::EntityUVE bestRegion = Scene::kInvalidEntityUVE;
+        for (const RegionSnapshotUVE& region : regions) {
+            const Scene::VisibilityRegion3DNodeComponentUVE& config =
+                m_entityManager->GetComponentUVE<Scene::VisibilityRegion3DNodeComponentUVE>(
+                    region.entity);
+            if (!config.enabled || !Scene::IsVisibilityRegion3DNodeComponentValidUVE(config) ||
+                !Scene::ResolveVisibilityRegion3DLayerGateUVE(config.visibilityLayers,
+                                                              meshLayers) ||
+                !Scene::ResolveVisibilityRegion3DContainsPointUVE(config, region.origin,
+                                                                  position)) {
+                continue;
+            }
+            const float dx = position.x - region.origin.x;
+            const float dy = position.y - region.origin.y;
+            const float dz = position.z - region.origin.z;
+            const float distanceSquared = dx * dx + dy * dy + dz * dz;
+            if (bestRegion == Scene::kInvalidEntityUVE || distanceSquared < bestDistanceSquared) {
+                bestDistanceSquared = distanceSquared;
+                bestRegion = region.entity;
+            }
+        }
+        if (bestRegion == Scene::kInvalidEntityUVE) {
+            continue; // outside every region: the mesh stays unmanaged and renders as ever
+        }
+        const bool activeNow =
+            m_entityManager->GetComponentUVE<Scene::VisibilityRegion3DNodeComponentUVE>(bestRegion)
+                .active;
+        if (!m_entityManager->HasComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+                mesh)) {
+            m_entityManager->AddComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+                mesh, Scene::VisibilityRegion3DMembershipComponentUVE{});
+        }
+        auto& membership =
+            m_entityManager->GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+                mesh);
+        membership.region = bestRegion;
+        membership.live = activeNow;
+    }
+}
+
 void EngineCoreUVE::SyncAdaptiveRenderResolutionUVE() {
     if (!m_windowedRenderingActiveUVE || !m_presentationSurfaceReadyUVE || !m_renderDevice->IsUsableUVE()) {
         return;
@@ -1593,6 +1766,7 @@ void EngineCoreUVE::Update() {
     SyncLevelStreamer3DNodesUVE();
     SyncReflectionProbe3DNodesUVE();
     SyncWorldPartition3DNodesUVE();
+    SyncVisibilityRegion3DNodesUVE();
     SyncScriptRuntimeUVE();
 
     if (m_config.hotReloadEnabledUVE) {

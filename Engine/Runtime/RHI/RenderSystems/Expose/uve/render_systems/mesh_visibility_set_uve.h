@@ -181,6 +181,12 @@ struct MeshVisibilitySetUVE final {
     /// and from "switched off" - three different tuning knobs, one pane.
     std::size_t partitionCulledEntities = 0U;
 
+    /// Entities skipped because they stand inside an inactive VisibilityRegion3D (no viewer is
+    /// inside the room, so its contents are skipped with zero render work). Separate from the
+    /// partition count again: "nobody is in there" is a level-design observation, not a
+    /// streaming-budget one.
+    std::size_t regionCulledEntities = 0U;
+
     std::size_t invalidAssetReferences = 0U;
     std::size_t pendingAssetLoads = 0U;
     std::size_t failedAssetLoads = 0U;
