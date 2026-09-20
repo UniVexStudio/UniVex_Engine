@@ -489,6 +489,133 @@ TEST_F(Node3DDefinitionsUVETest, SpringArmObstructThenClearRestoresTheAuthoredPo
     EXPECT_LE(maximumDrift, 1.0e-5F);
 }
 
+TEST_F(Node3DDefinitionsUVETest, SpawnPointSelectionIsDeterministicContentOrder) {
+    // No candidates, no spawn.
+    EXPECT_EQ(ResolveSpawnPoint3DSelectionUVE(std::span<const SpawnPoint3DCandidateUVE>{}),
+              std::nullopt);
+    // Sentinels are filtered again at this seam too: a caller bug must not become the spawn.
+    const SpawnPoint3DCandidateUVE sentinel{kInvalidEntityUVE, false};
+    {
+        const SpawnPoint3DCandidateUVE only[]{sentinel};
+        EXPECT_EQ(ResolveSpawnPoint3DSelectionUVE(only), std::nullopt);
+    }
+
+    const SpawnPoint3DCandidateUVE a{EntityUVE{7U, 0U}, false};
+    const SpawnPoint3DCandidateUVE b{EntityUVE{2U, 1U}, true};
+    const SpawnPoint3DCandidateUVE c{EntityUVE{2U, 0U}, false};
+    {
+        const SpawnPoint3DCandidateUVE only[]{a};
+        EXPECT_EQ(ResolveSpawnPoint3DSelectionUVE(only), a.entity);
+    }
+    // Stable content order = lexicographic (index, generation): iteration order is irrelevant,
+    // the same scene spawns the same way every time.
+    {
+        const SpawnPoint3DCandidateUVE all[]{a, b, c};
+        EXPECT_EQ(ResolveSpawnPoint3DSelectionUVE(all), c.entity);
+    }
+    {
+        const SpawnPoint3DCandidateUVE reversed[]{c, b, a};
+        EXPECT_EQ(ResolveSpawnPoint3DSelectionUVE(reversed), c.entity);
+    }
+    {
+        const SpawnPoint3DCandidateUVE mixed[]{b, a, sentinel, c};
+        EXPECT_EQ(ResolveSpawnPoint3DSelectionUVE(mixed), c.entity);
+    }
+    // And `oneShot` plays no part in the ranking - it only spends the winner afterwards.
+    const SpawnPoint3DCandidateUVE d{EntityUVE{1U, 0U}, true};
+    {
+        const SpawnPoint3DCandidateUVE pair[]{c, d};
+        EXPECT_EQ(ResolveSpawnPoint3DSelectionUVE(pair), d.entity);
+    }
+}
+
+TEST_F(Node3DDefinitionsUVETest, SpawnPoseComposeAppliesTheAuthoredOffsetInNodeSpace) {
+    // Identity node: the offset is the pose.
+    const std::optional<SpawnPoint3DPoseUVE> flat =
+        ComposeSpawnPointPoseUVE({}, {}, Math::Vector3UVE{0.0F, 1.0F, 0.0F}, {});
+    ASSERT_TRUE(flat.has_value());
+    EXPECT_NEAR(flat->position.y, 1.0F, 1.0e-6F);
+
+    // Translated node: node position adds after the offset is rotated.
+    const Math::QuaternionUVE halfTurnAboutY{0.0F, 1.0F, 0.0F, 0.0F};
+    const std::optional<SpawnPoint3DPoseUVE> posed = ComposeSpawnPointPoseUVE(
+        Math::Vector3UVE{10.0F, 0.0F, 10.0F}, halfTurnAboutY, Math::Vector3UVE{1.0F, 0.0F, 0.0F},
+        {});
+    ASSERT_TRUE(posed.has_value());
+    // 180 degrees about Y maps (1,0,0) to (-1,0,0), then the node position adds.
+    EXPECT_NEAR(posed->position.x, 9.0F, 1.0e-5F);
+    EXPECT_NEAR(posed->position.z, 10.0F, 1.0e-5F);
+    // Rotation composes the same way the sweep composes parent rotation.
+    EXPECT_NEAR(posed->rotation.y, 1.0F, 1.0e-5F);
+    EXPECT_NEAR(posed->rotation.w, 0.0F, 1.0e-5F);
+
+    // Garbage in, no teleport out.
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    EXPECT_FALSE(ComposeSpawnPointPoseUVE(Math::Vector3UVE{nan, 0.0F, 0.0F}, {}, {}, {}).has_value());
+    EXPECT_FALSE(ComposeSpawnPointPoseUVE({}, Math::QuaternionUVE{0.0F, 0.0F, 0.0F, 0.0F}, {}, {})
+                     .has_value());
+}
+
+TEST_F(Node3DDefinitionsUVETest, SpawnPlayerLocalIsTheSweepInverse) {
+    const SpawnPoint3DPoseUVE worldPose{Math::Vector3UVE{9.0F, 2.0F, -2.0F}, {}};
+
+    // Root-level player (identity parent TRS): the pose falls straight through.
+    const std::optional<SpawnPoint3DPoseUVE> rootLocal =
+        ResolveSpawnPointPlayerLocalUVE(worldPose, {}, {}, Math::Vector3UVE{1.0F, 1.0F, 1.0F});
+    ASSERT_TRUE(rootLocal.has_value());
+    EXPECT_NEAR(rootLocal->position.x, 9.0F, 1.0e-6F);
+
+    // Translated parent: subtract, then divide scale component-wise.
+    const std::optional<SpawnPoint3DPoseUVE> scaled = ResolveSpawnPointPlayerLocalUVE(
+        worldPose, Math::Vector3UVE{5.0F, 1.0F, -2.0F}, {}, Math::Vector3UVE{2.0F, 1.0F, 0.5F});
+    ASSERT_TRUE(scaled.has_value());
+    EXPECT_NEAR(scaled->position.x, 2.0F, 1.0e-5F);
+    EXPECT_NEAR(scaled->position.y, 1.0F, 1.0e-5F);
+    EXPECT_NEAR(scaled->position.z, 0.0F, 1.0e-5F);
+
+    // Rotated parent (180 degrees about Y): the offset un-rotates on entry.
+    const Math::QuaternionUVE halfTurnAboutY{0.0F, 1.0F, 0.0F, 0.0F};
+    const std::optional<SpawnPoint3DPoseUVE> turned = ResolveSpawnPointPlayerLocalUVE(
+        SpawnPoint3DPoseUVE{Math::Vector3UVE{8.0F, 0.0F, 3.0F}, {}}, Math::Vector3UVE{10.0F, 0.0F, 3.0F},
+        halfTurnAboutY, Math::Vector3UVE{1.0F, 1.0F, 1.0F});
+    ASSERT_TRUE(turned.has_value());
+    EXPECT_NEAR(turned->position.x, 2.0F, 1.0e-5F);
+    // Parent rotation inverts onto the spawn rotation; with identity spawn that hands the
+    // parent's own half-turn back (180 degrees about Y maps (1,0,0) to (-1,0,0)).
+    const Math::Vector3UVE mapped = Math::RotateVectorUVE(turned->rotation, {1.0F, 0.0F, 0.0F});
+    EXPECT_NEAR(mapped.x, -1.0F, 1.0e-5F);
+
+    // The property the whole feature rests on: feed the solved local pose back through the
+    // sweep's forward formula and land on the spawn pose again - measured, not asserted away.
+    {
+        const SpawnPoint3DPoseUVE pose{Math::Vector3UVE{3.5F, -1.0F, 8.0F}, halfTurnAboutY};
+        const Math::Vector3UVE parentPos{-4.0F, 2.0F, 1.0F};
+        const Math::QuaternionUVE parentRot{0.0F, 0.0F, 1.0F, 0.0F}; // 180 degrees about Z
+        const Math::Vector3UVE parentScale{2.0F, 3.0F, 0.5F};
+        const std::optional<SpawnPoint3DPoseUVE> local =
+            ResolveSpawnPointPlayerLocalUVE(pose, parentPos, parentRot, parentScale);
+        ASSERT_TRUE(local.has_value());
+        const Math::Vector3UVE roundTrip =
+            parentPos + Math::RotateVectorUVE(parentRot, parentScale * local->position);
+        EXPECT_NEAR(roundTrip.x, pose.position.x, 1.0e-4F);
+        EXPECT_NEAR(roundTrip.y, pose.position.y, 1.0e-4F);
+        EXPECT_NEAR(roundTrip.z, pose.position.z, 1.0e-4F);
+        const Math::Vector3UVE forwardA = Math::RotateVectorUVE(
+            Math::MultiplyUVE(parentRot, local->rotation), {0.0F, 0.0F, 1.0F});
+        const Math::Vector3UVE forwardB = Math::RotateVectorUVE(pose.rotation, {0.0F, 0.0F, 1.0F});
+        EXPECT_NEAR(forwardA.x, forwardB.x, 1.0e-4F);
+        EXPECT_NEAR(forwardA.y, forwardB.y, 1.0e-4F);
+    }
+
+    // Refusals: a zero-scaled parent axis has no local pose to solve into, and garbage stays out.
+    EXPECT_FALSE(ResolveSpawnPointPlayerLocalUVE(worldPose, {}, {}, Math::Vector3UVE{0.0F, 1.0F, 1.0F})
+                     .has_value());
+    EXPECT_FALSE(ResolveSpawnPointPlayerLocalUVE(worldPose, Math::Vector3UVE{
+                                                 std::numeric_limits<float>::quiet_NaN(), 0.0F, 0.0F},
+                                                 {}, Math::Vector3UVE{1.0F, 1.0F, 1.0F})
+                     .has_value());
+}
+
 TEST_F(Node3DDefinitionsUVETest, AnimationTreeStaysHonestlyNonCreatable) {
     // An empty graph is a valid placeholder definition, but the registry keeps telling the
     // truth: AnimationTree is not library-creatable until the animation pipeline exists, and
