@@ -163,10 +163,28 @@ struct MeshVisibilitySetUVE final {
     /// two very different explanations for a low draw count that otherwise look identical.
     std::size_t hiddenEntities = 0U;
 
+    /// Candidates whose pose was blended between two simulated steps this frame. Reported so the
+    /// stats panel can answer "is interpolation actually doing anything?" - a scene where this
+    /// stays zero while objects visibly stutter means the poses are not being recorded, which is
+    /// a different fault from the blend being wrong.
+    std::size_t interpolatedCandidates = 0U;
+
     std::size_t invalidAssetReferences = 0U;
     std::size_t pendingAssetLoads = 0U;
     std::size_t failedAssetLoads = 0U;
     std::size_t invalidRenderEligibility = 0U;
+
+    /// How far this frame sits between the last two fixed physics steps, in [0, 1].
+    ///
+    /// Set by the caller BEFORE the build, because the build is where the interpolated pose is
+    /// applied. Left at zero it means "draw the simulated pose", which is what every caller that
+    /// does not know about interpolation gets - so nothing has to change to keep working.
+    ///
+    /// WHY IT IS APPLIED IN THE BUILD RATHER THAN THE CULL. The cull runs four times a frame -
+    /// three shadow cascades and the main view - against one candidate set with one alpha.
+    /// Blending there would do identical arithmetic four times and, worse, risk the cascades
+    /// disagreeing with the main view about where an object is, which puts a shadow under nothing.
+    float physicsInterpolationAlpha = 0.0F;
 
     /// Monotonic frame stamp, incremented by each build, used to tell touched entries from stale
     /// ones without a second pass to reset flags.

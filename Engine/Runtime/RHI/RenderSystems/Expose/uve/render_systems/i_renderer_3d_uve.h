@@ -213,6 +213,13 @@ public:
     /// Returns the last frame's copied renderer evidence snapshot. The snapshot intentionally does
     /// not claim a completed GPU frame or visible window pixels; use the real-GL integration tests
     /// for that stronger presentation proof.
+
+    /// How far the frame being drawn sits between the last two fixed physics steps, in [0, 1].
+    ///
+    /// Set once per frame by whoever owns the fixed-step timer, before rendering. Defaults to
+    /// zero, which means "draw the simulated pose" - so a host that never calls this keeps exactly
+    /// the behaviour it had, and nothing is required to opt in.
+    virtual void SetPhysicsInterpolationAlphaUVE(float alpha) noexcept = 0;
     [[nodiscard]] virtual Renderer3DFrameDiagnosticsUVE GetLastFrameDiagnosticsUVE() const noexcept = 0;
 };
 
