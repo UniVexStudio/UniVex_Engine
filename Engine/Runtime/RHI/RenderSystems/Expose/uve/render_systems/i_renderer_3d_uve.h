@@ -41,8 +41,58 @@ struct Renderer3DFrameDiagnosticsUVE final {
     std::size_t failedAssetLoads = 0U;
     std::size_t textureFallbacks = 0U;
     std::size_t primitiveCandidates = 0U;
+
+    /// Primitive placement cache outcomes for the frame. Reported for the same reason the mesh
+    /// path reports its own: a cache with no visibility into its hit rate is a cache nobody can
+    /// tell is broken - a subtle key bug that misses every frame costs a comparison on top of the
+    /// original work and otherwise looks identical from the outside.
+    std::size_t primitivePlacementCacheHits = 0U;
+    std::size_t primitivePlacementCacheMisses = 0U;
     std::size_t primitiveItemsExtracted = 0U;
     std::size_t meshDrawCallsRecorded = 0U;
+    /// How many of `meshDrawCallsRecorded` were instanced draws, and how many objects those draws
+    /// covered. Both name what instancing ACTUALLY did this frame, not what it was offered: a
+    /// scene whose materials predate the instancing contract reports zero, which is the honest
+    /// answer and the one that makes "is instancing on?" answerable from a diagnostic rather than
+    /// from reading the material assets.
+    std::size_t instancedDrawCallsRecorded = 0U;
+    std::size_t instancedObjectsRecorded = 0U;
+    /// Placement-cache outcome for this frame's extraction walk. Surfaced because a cache whose
+    /// hit rate nobody can see is a cache nobody can tell is broken: a key bug that misses every
+    /// frame costs an extra comparison on top of the original work and otherwise looks identical
+    /// to a working one. In a static scene hits should be everything and misses zero.
+    std::size_t placementCacheHits = 0U;
+    std::size_t placementCacheMisses = 0U;
+    /// Instanced draws recorded across ALL shadow cascades this frame. Separate from the main-pass
+    /// counter because the shadow passes run once per cascade, so they - not the main pass - were
+    /// where an uninstanced scene spent most of its draw calls.
+    std::size_t shadowInstancedDrawCallsRecorded = 0U;
+
+    /// Shadow batches built across ALL cascades this frame, and the items they covered.
+    ///
+    /// These two together answer "is the shadow pass actually batching?", which nothing else can:
+    /// a batch is one draw call, so `shadowBatchesRecorded` well below `shadowBatchedItems` means
+    /// the batcher is merging, and the two being equal means every item became its own draw.
+    /// Worth watching because the merging depends entirely on the ORDER the cascade queue is
+    /// handed - BuildShadowBatchesUVE merges only adjacent same-mesh runs - so a change to the
+    /// queue's sort silently multiplies draw calls while every image stays identical.
+    std::size_t shadowBatchesRecorded = 0U;
+    std::size_t shadowBatchedItems = 0U;
+
+    /// Spatial clusters the visibility set built this frame, and how many of them the MAIN view's
+    /// frustum rejected outright. A rejected cluster skips a plane test per candidate inside it,
+    /// so the ratio is the clustering's whole return: near zero rejected means the clusters are
+    /// not tight enough to be worth building, and that is a regression nothing else reports.
+    ///
+    /// Main view only. The shadow cascades cull the same set against much wider frusta and would
+    /// average the number into meaninglessness.
+    std::size_t visibilityClusters = 0U;
+    std::size_t visibilityClustersRejected = 0U;
+
+    /// Entities a LodGroup3D dropped for being past the end of its distance chain. Distinct from
+    /// a hidden entity: this is "too far to matter", not "the author switched it off", and a scene
+    /// that is mostly this wants its draw distances reviewed rather than its visibility flags.
+    std::size_t distanceCulledEntities = 0U;
     std::size_t primitiveDrawCallsRecorded = 0U;
     std::size_t particleItemsExtracted = 0U;
     std::size_t particleDrawCommandsRecorded = 0U;
@@ -168,6 +218,13 @@ public:
     /// Returns the last frame's copied renderer evidence snapshot. The snapshot intentionally does
     /// not claim a completed GPU frame or visible window pixels; use the real-GL integration tests
     /// for that stronger presentation proof.
+
+    /// How far the frame being drawn sits between the last two fixed physics steps, in [0, 1].
+    ///
+    /// Set once per frame by whoever owns the fixed-step timer, before rendering. Defaults to
+    /// zero, which means "draw the simulated pose" - so a host that never calls this keeps exactly
+    /// the behaviour it had, and nothing is required to opt in.
+    virtual void SetPhysicsInterpolationAlphaUVE(float alpha) noexcept = 0;
     [[nodiscard]] virtual Renderer3DFrameDiagnosticsUVE GetLastFrameDiagnosticsUVE() const noexcept = 0;
 };
 

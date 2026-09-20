@@ -13,9 +13,11 @@
 
 #include <chrono>
 #include <functional>
+#include <unordered_map>
 #include <memory>
 #include <optional>
 #include <unordered_set>
+#include <vector>
 
 #include "uve/asset/i_asset_bundle_uve.h"
 #include "uve/asset/i_asset_database_uve.h"
@@ -56,6 +58,7 @@
 #include "uve/physics/physics_constraint_system_uve.h"
 #include "uve/physics/physics_query_system_uve.h"
 #include "uve/render_systems/i_camera_system_uve.h"
+#include "uve/render_systems/i_compute_system_uve.h"
 #include "uve/render_systems/i_light_system_uve.h"
 #include "uve/render_systems/i_mesh_renderer_uve.h"
 #include "uve/rhi/i_render_device_uve.h"
@@ -113,7 +116,14 @@ namespace UVE::Core {
 /// WorldTransformComponentUVE + AudioSourceComponentUVE entity (entirely
 /// data-driven, like PhysicsSystemUVE — a scene with none is a cheap no-op);
 /// then AudioSystemUVE::UpdateUVE() recomputes attenuated gain for every live
-/// source. WindowManagerUVE/GlRenderDeviceUVE (Increment 20): unless
+/// source. ComputeSystemUVE (Part 7.2's engine-level compute consumer) is driven from
+/// Render(), as its FIRST statement: any dispatch enqueued on it during this
+/// frame is recorded into its own command buffer and submitted BEFORE the
+/// renderer opens a single render pass - compute first, graphics after, which
+/// is the portable flow the RHI compute slices settled on (Vulkan forbids
+/// dispatch inside a rendering instance). A frame with an empty queue submits
+/// nothing at all, so scenes that never use compute pay nothing observable.
+/// WindowManagerUVE/GlRenderDeviceUVE (Increment 20): unless
 /// EngineConfigUVE::headlessUVE is true (also settable via the `--headless` CLI flag), Init()
 /// creates a real GLFW3 window and OpenGL 4.6 Core render device; Update()'s first statement
 /// (after InputSystemUVE::UpdateUVE()) pumps window events and checks
@@ -486,6 +496,143 @@ private:
     /// silently faked here.
     void SyncRayCast3DNodesUVE();
 
+    /// Simulates every live, enabled, valid SpringArm3D node, one ray per arm per fixed step:
+    /// casts along the arm's local +Z (behind the pivot - the camera convention looks down -Z)
+    /// with the arm's own mask, resolves the target through Scene::ResolveSpringArm3DTargetUVE
+    /// (full length when unobstructed, hit-distance minus margin otherwise, clamped), and steps
+    /// currentLength through Scene::ResolveSpringArm3DLengthUVE - retraction snaps so a camera
+    /// never clips for one smooth frame's sake, extension blends at the authored `smoothing`
+    /// per second so the camera springs back instead of popping the way Godot's SpringArm3D
+    /// does (Godot ships no smoothing member; `smoothing = 0` restores that exact behaviour).
+    /// Direct children are then shifted along the arm's local Z by the CHANGE in length, so an
+    /// unobstructed arm hands back everything it borrowed and authored poses round-trip without
+    /// drift; children without transforms are skipped, and rotation stays the developer's to
+    /// own, as in the original design. Runs inside the fixed-step loop (with character
+    /// controllers and projectiles) because extension is dt-dependent and the raycast must see
+    /// the same simulated collider poses the physics step just produced. Like the other syncs
+    /// this lives in the engine core tick, not the node module - the Nodes/3D layer holds pure
+    /// authoring data plus the two dependency-free resolvers the tests pin directly; the Physics
+    /// include is not part of that layer.
+    void SyncSpringArm3DNodesUVE(float fixedDeltaTimeSeconds);
+
+    /// The combat pairing, new wiring for previously unconsumed authored data: refreshes every
+    /// Hitbox3D node's runtime strike list against every Hurtbox3D node, every frame. The full
+    /// contract: only enabled, valid hitboxes and hurtboxes participate (everything else fails
+    /// closed - a disabled or invalid hitbox ends the frame with zero strikes, never stale
+    /// ones); both volumes are exact oriented boxes (world position/rotation + authored
+    /// halfExtents, world scale intentionally not applied - the ColliderComponentUVE/
+    /// AreaComponentUVE world-shape convention - degenerate rotations fall back to identity);
+    /// a strike requires symmetric layer/mask acceptance (AreaOverlapSystemUVE's rule) and
+    /// equal damage channels; a hitbox never strikes a hurtbox on its own entity; overlap is
+    /// the exact 15-axis oriented-box test from Physics::Detail, and touching boundaries are
+    /// not strikes. Like SyncRayCast3DNodesUVE()/SyncProjectile3DNodesUVE(), this lives in the
+    /// engine core tick rather than the node module so nodes stay pure authoring data (the
+    /// Physics include the exact test needs is not part of the Nodes/3D layer). The bounded
+    /// result list (kMaximumHitbox3DStrikesUVE, deterministic entity order, overflow flagged)
+    /// is runtime-only, never serialized. Applying what a strike means (damage, knockback,
+    /// events) is deliberately not done here - gameplay code no system owns yet.
+    void SyncHitbox3DNodesUVE();
+
+    /// The interaction scan, new wiring for previously unconsumed authored data (the
+    /// Unreal-Lyra-style interactor/focus loop Godot leaves every game to hand-roll out of
+    /// Area3D signals): every frame, every character-controller entity that has a
+    /// ColliderComponentUVE and a world transform is an interactor, the first one in
+    /// (index,generation) order is the PRIMARY interactor (Scene::ResolvePrimaryInteractorUVE,
+    /// the same decision SpawnPoint3D selection makes), and every InteractionArea3D node's
+    /// runtime state is refreshed against them. The full contract: only enabled, valid areas
+    /// participate (everything else fails closed - a disabled or invalid area ends the frame
+    /// with zero interactors, never stale ones, SyncHitbox3DNodesUVE's discipline); both
+    /// volumes are exact oriented boxes (world position/rotation + authored halfExtents, world
+    /// scale intentionally not applied - the ColliderComponentUVE/AreaComponentUVE world-shape
+    /// convention - degenerate rotations fall back to identity); an overlap requires symmetric
+    /// layer/mask acceptance (AreaOverlapSystemUVE's rule) and an area never lists the
+    /// interactor living on its own entity; overlap is the exact 15-axis oriented-box test from
+    /// Physics::Detail, and touching boundaries do not count. Each area stores its interacting
+    /// candidates into a bounded list (the authored maximumCandidates clamped to
+    /// kMaximumInteractionAreaCandidatesUVE by Scene::ResolveInteractionAreaCandidateCapUVE,
+    /// overflow flagged) and exactly one area - the one nearest the primary interactor,
+    /// ties broken by (index,generation) via Scene::ResolveInteractionFocusUVE - is marked
+    /// focusedByPrimaryInteractor. Runtime state is never serialized. Acting on the focus
+    /// (prompt UI, an "interact" binding, focus enter/exit events) is deliberately not done
+    /// here - the gameplay layer no system owns yet; the authored interactionTag is carried
+    /// for that follow-up and intentionally does not filter anything today. Like
+    /// SyncHitbox3DNodesUVE() this lives in the engine core tick, not the node module: the
+    /// Nodes/3D layer holds pure authoring data plus the three dependency-free resolvers the
+    /// tests pin directly.
+    void SyncInteractionArea3DNodesUVE();
+
+    /// The LevelStreamer3D consumer: pure per-tick streaming verdicts on LevelStreamer3D nodes
+    /// (Godot has no built-in counterpart at all; Unreal's streaming volumes are the inspiration).
+    /// Pass 1 (read-only) collects the viewer point cloud for the tick - the active camera's world
+    /// position plus every character-controller entity's world position, finite poses only
+    /// (Frostbite's listener-model multi-source). Pass 2 applies Scene::
+    /// ResolveLevelStreamer3DStreamingActionUVE's measured verdicts per streamer: a load request
+    /// synchronously deserializes levelPath through the scene serializer and remembers the fresh
+    /// roots in m_levelStreamerLoadedRoots; an unload request destroys those remembered subtrees.
+    /// At most kMaximumLevelStreamer3DLoadsPerTickUVE loads START each tick - the rest carry over
+    /// next tick so a teleport across the map costs a bounded burst (Frostbite time-slicing; the
+    /// budget is verified by engine test). A failed load latches m_levelStreamerLoadFailures so it
+    /// is retried never again this session - fail-closed and loud, not a retry storm. Honest
+    /// boundaries: loading is synchronous today (big levels take the hit in one tick; async
+    /// streaming is real follow-up, and component.loadRequested documents the future contract);
+    /// unload bookkeeping survives Play/Stop naturally because everything is validated through
+    /// IsAliveUVE() before destruction.
+    void SyncLevelStreamer3DNodesUVE();
+
+    /// The ReflectionProbe3D consumer: the capture scheduler plus per-camera influence mixer
+    /// (Godot bakes all probes and ends at the face with a hard clip; this instead resolves a
+    /// first-class blend weight per probe every tick and time-slices expensive captures).
+    /// Pass 1 (read-only) snapshots live probes; pass 2 computes each probe's influence weight
+    /// on the active camera via Scene::ResolveReflectionProbe3DInfluenceWeightUVE (translation
+    /// undoes the probe world position, the conjugate of its world rotation undoes orientation;
+    /// world scale is deliberately NOT folded in - the weight stays the authored box's weight.
+    /// Capture requests are budgeted by kMaximumReflectionProbeCapturesPerTickUVE and serviced
+    /// oldest-waiter-first - not naive nearest-first, which measurably starves a farther probe
+    /// under continuous demand - with camera distance (squared, no sqrt) and (index,generation)
+    /// as the tie-breaks. Stragglers age their captureWaitTicks and re-request on the next tick.
+    /// A serviced capture flips capturedOnce, clears the
+    /// OnDemand latch, and bumps captureGeneration - the runtime contract a future shading pass
+    /// binds against. Honest boundary: no cubemap GPU capture exists in this engine yet, so the
+    /// sync owns the deterministic scheduler and the measurable blend weights; the imagery side
+    /// lands with the reflection BRDF pass.
+    void SyncReflectionProbe3DNodesUVE();
+
+    /// The WorldPartition3D consumer: cell-based visibility for a partition's own subtree
+    /// (Godot has no built-in equivalent at all; this is Unreal World Partition translated into
+    /// an in-document budget). Pass 1 walks each enabled, valid partition's descendants
+    /// breadth-first (a nested WorldPartition3D manages its own subtree - closest ancestor wins,
+    /// so an inner partition is never re-partitioned by an outer one), marks every descendant
+    /// carrying a MeshComponent with the engine-owned WorldPartition3DMembershipComponentUVE,
+    /// and resolves its cell. Pass 2 ranks the partition's OCCUPIED cells by the nearest member
+    /// squared distance to the nearest viewer (the same camera/controller cloud the streamer
+    /// uses - a level far away has a live floor but a dead interior), admits exactly
+    /// maximumLoadedCells of them, and flips membership.live so MeshRendererUVE drops the rest
+    /// at candidate-build time. loadedCellCount is always <= maximumLoadedCells the same tick it
+    /// is written. Honest boundary: membership stamps a derived verdict about THIS tick; the
+    /// authored scene is never rewritten for it (that is exactly why VisibilityComponentUVE's
+    /// authored `visible` is not the carrier here), and an orphan membership after a partition's
+    /// death fails OPEN through the pure resolver check in the renderer gate rather than hiding
+    /// content forever.
+    void SyncWorldPartition3DNodesUVE();
+
+    /// The VisibilityRegion3D consumer: interior culling for the meshes standing inside each
+    /// authored visibility box (Godot has no built-in equivalent at all - Godot's
+    /// VisibilityNotifier3D answers "is the box on screen", not "should this room's contents
+    /// render"). Each region's `active` is recomputed from the same viewer cloud the streamer
+    /// and world partition use: active while any viewer stands inside its box, or while there
+    /// are no viewers at all (fail-open: an empty world shows everything). Pass 1 sweeps the
+    /// existing memberships: a member that walked OUT of the box, whose layer gate closed, whose
+    /// region got disabled, or whose region died goes back to live (dead regions rebrand the
+    /// membership to kInvalidEntityUVE so Pass 2 can rehome the mesh that same tick) - released
+    /// content must never be stuck hidden a tick later. Pass 2 discovers un-owned meshes inside
+    /// an enabled region whose mesh visibilityLayers share a bit with the region mask and stamps
+    /// the engine-owned VisibilityRegion3DMembershipComponentUVE with the NEAREST containing
+    /// region (ties resolve in entity-id order, so overlapping-room scenes are deterministic).
+    /// MeshRendererUVE drops !live members at candidate-build time and counts them in
+    /// regionCulledEntities. Honest boundary: like the world partition's membership, this is a
+    /// derived verdict about THIS tick; authored VisibilityComponentUVE.visible stays untouched.
+    void SyncVisibilityRegion3DNodesUVE();
+
     /// Recomputes the bounded aspect-preserving render target from the live drawable size and
     /// transactionally resizes Renderer3DUVE before the frame's scene work begins.
     void SyncAdaptiveRenderResolutionUVE();
@@ -554,6 +701,7 @@ private:
     std::unique_ptr<Render::IRenderDeviceUVE> m_renderDevice;
     std::unique_ptr<Render::Shader::IShaderManagerUVE> m_shaderManager;
     std::unique_ptr<Render::IRenderSystemUVE> m_renderSystem;
+    std::unique_ptr<Render::IComputeSystemUVE> m_computeSystem;
     std::unique_ptr<Render::ICameraSystemUVE> m_cameraSystem;
     std::unique_ptr<Render::IMeshRendererUVE> m_meshRenderer;
     std::unique_ptr<Render::ILightSystemUVE> m_lightSystem;
@@ -589,6 +737,14 @@ private:
     std::chrono::steady_clock::time_point m_frameStartTime;
     bool m_quitRequested = false;
     Scene::EntityUVE m_activeCamera = Scene::kInvalidEntityUVE;
+
+    /// LevelStreamer3D runtime bookkeeping (never serialized, keyed by the streamer entity):
+    /// the fresh roots each loaded streamer currently owns (for subtree destruction on unload),
+    /// and the per-streamer load-failure latch that makes the fail-closed contract measured by
+    /// tests - a 3-tuple state (streamer -> roots, failure-flagged) is intentionally all the
+    /// state the synchronous path needs; the future async path will own the in-flight work set.
+    std::unordered_map<Scene::EntityUVE, std::vector<Scene::EntityUVE>> m_levelStreamerLoadedRoots;
+    std::unordered_map<Scene::EntityUVE, bool> m_levelStreamerLoadFailures;
 
     /// True iff Init() constructed a real, valid WindowManagerUVE + GlRenderDeviceUVE pair (i.e.
     /// !EngineConfigUVE::headlessUVE and window/context creation succeeded). Gates

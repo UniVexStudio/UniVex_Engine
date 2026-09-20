@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cmath>
 #include <cstdint>
+#include <map>
 #include <optional>
 #include <utility>
 #include <span>
@@ -32,6 +33,7 @@
 #include "uve/render_systems/primitive_geometry_uve.h"
 #include "uve/render_systems/particle_render_bridge_uve.h"
 #include "uve/render_systems/particle_draw_command_uve.h"
+#include "uve/render_systems/render_batch_uve.h"
 #include "uve/render_systems/render_queue_uve.h"
 #include "uve/rhi_shader/built_in_shaders_uve.h"
 #include "uve/rhi_shader/shader_program_desc_uve.h"
@@ -136,6 +138,42 @@ struct PrimitiveRenderItemUVE {
     float sortDepth = 0.0F;
 };
 
+/// Identity of a primitive's placement inputs. Two placements with equal keys must produce equal
+/// world matrices and bounds, so every input the extraction reads appears here.
+///
+/// Exact float equality, matching MeshPlacementKeyUVE deliberately rather than using a tolerance:
+/// a tolerance would let an object drift arbitrarily far in steps below it, and NaN comparing
+/// unequal is the outcome we want twice over - recomputation is what rejects it, and a key that
+/// "matched" two NaNs would be claiming a broken transform is unchanged.
+struct PrimitivePlacementKeyUVE {
+    Math::Vector3UVE worldPosition{};
+    Math::QuaternionUVE worldRotation{};
+    Math::Vector3UVE worldScale{};
+    Scene::PrimitiveMeshKindUVE kind = Scene::PrimitiveMeshKindUVE::Cube;
+
+    [[nodiscard]] bool MatchesUVE(const PrimitivePlacementKeyUVE& other) const noexcept {
+        // Kind first: a single enum compare, and the field whose change invalidates the geometry
+        // wholesale, so it rejects earliest for least work.
+        return kind == other.kind && worldPosition.x == other.worldPosition.x &&
+               worldPosition.y == other.worldPosition.y && worldPosition.z == other.worldPosition.z &&
+               worldRotation.x == other.worldRotation.x && worldRotation.y == other.worldRotation.y &&
+               worldRotation.z == other.worldRotation.z && worldRotation.w == other.worldRotation.w &&
+               worldScale.x == other.worldScale.x && worldScale.y == other.worldScale.y &&
+               worldScale.z == other.worldScale.z;
+    }
+};
+
+/// A cached primitive placement. `placed` false records a REJECTION - a non-finite transform, an
+/// unnormalizable rotation, degenerate bounds - which is worth caching exactly as much as a
+/// success: it costs the same recompute to rediscover, every frame, forever.
+struct PrimitivePlacementCacheEntryUVE {
+    PrimitivePlacementKeyUVE key{};
+    Math::Matrix4x4UVE worldMatrix{};
+    Math::AabbUVE worldBounds{};
+    bool placed = false;
+    std::uint64_t lastSeenFrame = 0U;
+};
+
 /// CPU-expanded particle vertex consumed by the minimal built-in particle pipeline. The four
 /// color floats carry a stable warm tint plus lifetime-derived alpha; keeping this as a private
 /// renderer DTO prevents particle authoring data from crossing the RHI boundary.
@@ -161,6 +199,29 @@ struct UIVertexUVE {
     float alpha = 1.0F;
 };
 
+/// SSBO slots the instanced lit variant reads its per-instance transforms from. These mirror the
+/// `layout(std430, binding = N)` lines in lit_shadowed_3d.glsl's UVE_INSTANCED block; the two must
+/// agree, and a source-level test in the shader suite pins the shader half.
+inline constexpr std::uint32_t kInstanceTransformSlotUVE = 0U;
+inline constexpr std::uint32_t kInstanceNormalTransformSlotUVE = 1U;
+inline constexpr std::uint32_t kInstanceBaseSlotUVE = 2U;
+
+/// The most instances one frame may upload. Bounds the per-frame upload the same way
+/// kMaximumParticleGpuDrawCommandsUVE bounds particles; a batch that would exceed it is recorded
+/// per-object instead, which is slower but never wrong.
+inline constexpr std::size_t kMaximumInstancesPerFrameUVE = 65'536U;
+
+/// Whether a material's vertex source actually implements the instancing contract.
+///
+/// Deliberately a source-text check rather than a flag on MaterialAssetUVE: a flag would let a
+/// material CLAIM instancing support that its shader does not implement, and the failure mode for
+/// that lie is silent (every instance drawn at the first one's transform). The source either reads
+/// the instance buffer or it does not, and that is the only thing worth trusting here.
+[[nodiscard]] bool VertexSourceSupportsInstancingUVE(const std::string_view vertexSource) noexcept {
+    return vertexSource.find("uInstanceBaseIndex") != std::string_view::npos &&
+           vertexSource.find("gl_InstanceID") != std::string_view::npos;
+}
+
 inline constexpr std::size_t kMaximumParticleGpuDrawCommandsUVE = 16'384U;
 inline constexpr std::size_t kParticleVerticesPerCommandUVE = 6U;
 inline constexpr float kParticleHalfExtentUVE = 0.05F;
@@ -177,6 +238,13 @@ inline constexpr std::size_t kUIVerticesPerQuadUVE = 6U;
 /// of Renderer3DUVE's two fallback textures (see ResolveTextureGpuHandleUVE()'s doc comment).
 struct MaterialGpuResourcesUVE {
     std::shared_ptr<Shader::ShaderProgramUVE> program;
+    /// True only when this material's own vertex source actually declares the instancing
+    /// contract. Instancing is OPT-IN per material and DETECTED, never assumed: material shaders
+    /// come from `.uveshader` assets a project authors, so most of them know nothing about
+    /// gl_InstanceID. Drawing such a material with instanceCount > 1 would not fail - it would
+    /// silently stack every instance on top of the first one's uModel, which looks like missing
+    /// objects rather than like a bug in the renderer.
+    bool supportsInstancing = false;
     Asset::AssetGuidUVE vertexShaderGuid;
     Asset::AssetGuidUVE fragmentShaderGuid;
     Asset::AssetGuidUVE albedoTextureGuid;
@@ -469,6 +537,36 @@ struct Renderer3DUVE::ImplUVE {
     std::uint32_t targetWidth;
     std::uint32_t targetHeight;
 
+    /// One complete set of size-dependent offscreen targets, kept so a renderer that alternates
+    /// between a few sizes can switch between them instead of reallocating.
+    ///
+    /// This exists because of ViewportManagerUVE::RenderAllPanesUVE(): it drives ONE shared
+    /// renderer across every pane, resizing it to each pane's pixel size in turn. Without a cache,
+    /// a split view of differently-sized panes destroyed and recreated all SIX of these textures
+    /// per pane per frame, forever - not a warm-up cost, a permanent one. That churn is what the
+    /// ViewportManagerUVE header documents as "a per-pane cached target pool would avoid".
+    ///
+    /// Keyed by size rather than by pane, deliberately: the renderer has no pane concept and
+    /// should not acquire one, and two panes that happen to share a size should share a set.
+    struct SizedTargetSetUVE final {
+        TextureHandleUVE colorTarget = kInvalidTextureHandleUVE;
+        TextureHandleUVE depthTarget = kInvalidTextureHandleUVE;
+        TextureHandleUVE bloomBrightTarget = kInvalidTextureHandleUVE;
+        TextureHandleUVE bloomBlurTargetA = kInvalidTextureHandleUVE;
+        TextureHandleUVE bloomBlurTargetB = kInvalidTextureHandleUVE;
+        TextureHandleUVE ssaoTarget = kInvalidTextureHandleUVE;
+    };
+
+    /// Bounded on purpose. A caller that resizes to a genuinely new size every frame - a window
+    /// being dragged - must not accumulate texture sets without limit, so the cache is cleared
+    /// once it exceeds this and rebuilt from the sizes actually in use. Small, because the case
+    /// this serves is a handful of panes, not an arbitrary set of resolutions.
+    static constexpr std::size_t kMaximumCachedTargetSetsUVE = 8U;
+
+    /// Size -> its target set. The ACTIVE set's handles are also mirrored into the colorTarget/
+    /// depthTarget/... members below, so every pass that reads them is untouched by this cache.
+    std::map<std::pair<std::uint32_t, std::uint32_t>, SizedTargetSetUVE> targetSetCache;
+
     /// Copied only through IRenderer3DUVE::GetLastFrameDiagnosticsUVE(). Recorded counts are
     /// CPU-side renderer facts; the OpenGL-issued count never asserts completed presentation.
     Renderer3DFrameDiagnosticsUVE lastFrameDiagnostics;
@@ -509,6 +607,15 @@ struct Renderer3DUVE::ImplUVE {
     /// (IsValidUVE() == false) on any given frame; RecordShadowPassUVE() checks IsValidUVE()
     /// before every use, exactly like RenderDemoTriangleUVE() does.
     std::shared_ptr<Shader::ShaderProgramUVE> shadowProgram;
+    /// The UVE_INSTANCED build of the same shadow source. Null-checked at use; the non-instanced
+    /// program is the fallback, so a link failure costs speed rather than shadows.
+    std::shared_ptr<Shader::ShaderProgramUVE> instancedShadowProgram;
+    /// Batch scratch for the shadow cascades, one per cascade so consecutive cascades do not
+    /// thrash a single set's capacity.
+    std::array<RenderBatchSetUVE, kShadowCascadeCountUVE> shadowBatches;
+    /// This frame's frustum-independent candidate set, reused across frames so a scene-sized
+    /// vector is not reallocated every frame.
+    MeshVisibilitySetUVE visibilitySet;
     std::shared_ptr<Shader::ShaderProgramUVE> toneMappingProgram;
 
     /// Phase 2b post-process toggles, consulted while building each frame's render graph (see
@@ -545,6 +652,29 @@ struct Renderer3DUVE::ImplUVE {
     BufferHandleUVE particleVertexBuffer;
     std::vector<ParticleVertexUVE> particleVertexStaging;
 
+    /// GPU instancing state, rebuilt every frame. Two matrix buffers rather than one because the
+    /// shader needs both the model matrix and its inverse-transpose, and computing the latter in
+    /// the vertex shader would mean inverting a matrix once per VERTEX instead of once per object.
+    /// The base-index buffer is a one-int SSBO for the same reason every compute kernel's params
+    /// are: it is the portable way to get a scalar to a shader.
+    BufferHandleUVE instanceTransformBuffer;
+    BufferHandleUVE instanceNormalTransformBuffer;
+    BufferHandleUVE instanceBaseBuffer;
+    std::size_t instanceBufferCapacity = 0U;
+    RenderBatchSetUVE opaqueBatches;
+    RenderBatchSetUVE transparentBatches;
+    std::vector<Math::Matrix4x4UVE> instanceNormalMatrixStaging;
+    std::vector<Math::Matrix4x4UVE> instanceTransposeStaging;
+    /// Reset at the top of every frame and copied into the frame diagnostics at the end. These
+    /// name what instancing actually did this frame rather than what it was asked to do: a scene
+    /// of legacy materials reports zero, which is the honest answer.
+    std::size_t instancedDrawCallsThisFrame = 0U;
+    std::size_t instancedObjectsThisFrame = 0U;
+    /// Shadow-pass instanced draws across all cascades this frame. Counted separately from the
+    /// main pass because the shadow passes are where the draw-call count was actually worst - one
+    /// per caster per cascade - and a single combined number would hide which half improved.
+    std::size_t shadowInstancedDrawCallsThisFrame = 0U;
+
     /// Built-in primitive visualization program. Its Basic3D contract contains only model,
     /// view-projection, and authored base-color uniforms; primitives intentionally do not bind
     /// material, texture, light, or shadow state.
@@ -578,6 +708,25 @@ struct Renderer3DUVE::ImplUVE {
     RenderQueueUVE frameQueue;
     std::array<RenderQueueUVE, kShadowCascadeCountUVE> shadowQueues;
     std::vector<PrimitiveRenderItemUVE> primitiveItems;
+
+    /// Last frame's primitive placement per entity, reused when nothing about that entity changed.
+    ///
+    /// WHY THIS EXISTS. The mesh path already caches placement; the primitive path was left
+    /// recomputing the same TRS compose and bounds transform every frame for objects that had not
+    /// moved. Measured on this engine's own maths: recomputing a primitive placement costs about
+    /// 123 us per 1000, comparing the key and reusing the answer about 1.8 us - roughly 67x.
+    /// Primitives are overwhelmingly static scene dressing, so nearly all of that work was
+    /// recomputing the previous frame's answer.
+    ///
+    /// Keyed by EntityUVE, which is generational, so a destroyed entity whose index is reused gets
+    /// a different key and cannot inherit the dead entity's bounds. Bounded by the same
+    /// seen-this-frame prune the mesh cache uses - without it a long session retains an entry for
+    /// every primitive the scene ever had.
+    std::unordered_map<Scene::EntityUVE, PrimitivePlacementCacheEntryUVE> primitivePlacementCache;
+
+    /// Monotonic stamp for the prune above. Starts at 0 and is pre-incremented, so a live entry
+    /// always has a non-zero lastSeenFrame and "never populated" stays distinguishable.
+    std::uint64_t primitiveFrameIndex = 0U;
     ParticleDrawRecordingUVE particleDrawRecording;
     Events::EventSubscriptionUVE reloadSubscription;
     const Scene::ParticleRuntimeUVE* particleRuntimeForFrame = nullptr;
@@ -638,74 +787,122 @@ struct Renderer3DUVE::ImplUVE {
                                                             "shadowCascadeBlendRatio")),
           shadowPcfKernelRadius(static_cast<std::int32_t>(std::min(shadowPcfKernelRadiusIn, 2U))) {}
 
+    /// Creates a complete target set for `width`x`height`, or returns nullopt having destroyed any
+    /// partial allocation. All six are created together because a half-built set is not usable and
+    /// would only defer the failure into a pass.
+    [[nodiscard]] std::optional<SizedTargetSetUVE> CreateTargetSetUVE(const std::uint32_t width,
+                                                                      const std::uint32_t height) {
+        SizedTargetSetUVE set;
+        set.colorTarget =
+            renderDevice.CreateTextureUVE(TextureDescUVE{width, height, kSceneColorTargetFormatUVE, 1});
+        set.depthTarget =
+            renderDevice.CreateTextureUVE(TextureDescUVE{width, height, TextureFormatUVE::Depth32Float, 1});
+        const std::uint32_t halfWidth = HalfExtentUVE(width);
+        const std::uint32_t halfHeight = HalfExtentUVE(height);
+        set.bloomBrightTarget =
+            renderDevice.CreateTextureUVE(TextureDescUVE{halfWidth, halfHeight, kSceneColorTargetFormatUVE, 1});
+        set.bloomBlurTargetA =
+            renderDevice.CreateTextureUVE(TextureDescUVE{halfWidth, halfHeight, kSceneColorTargetFormatUVE, 1});
+        set.bloomBlurTargetB =
+            renderDevice.CreateTextureUVE(TextureDescUVE{halfWidth, halfHeight, kSceneColorTargetFormatUVE, 1});
+        set.ssaoTarget =
+            renderDevice.CreateTextureUVE(TextureDescUVE{halfWidth, halfHeight, TextureFormatUVE::RGBA8Unorm, 1});
+
+        // Color and depth are load-bearing: without them there is no frame at all. The
+        // post-process four are not - RenderFrameUVE() guards on their validity and skips those
+        // passes - so a set missing only those is still returned and still usable, preserving the
+        // pre-cache behavior exactly.
+        if (set.colorTarget == kInvalidTextureHandleUVE || set.depthTarget == kInvalidTextureHandleUVE) {
+            DestroyTargetSetUVE(set);
+            return std::nullopt;
+        }
+        if (set.bloomBrightTarget == kInvalidTextureHandleUVE ||
+            set.bloomBlurTargetA == kInvalidTextureHandleUVE ||
+            set.bloomBlurTargetB == kInvalidTextureHandleUVE || set.ssaoTarget == kInvalidTextureHandleUVE) {
+            DestroyTextureIfValidUVE(renderDevice, set.bloomBrightTarget);
+            DestroyTextureIfValidUVE(renderDevice, set.bloomBlurTargetA);
+            DestroyTextureIfValidUVE(renderDevice, set.bloomBlurTargetB);
+            DestroyTextureIfValidUVE(renderDevice, set.ssaoTarget);
+            set.bloomBrightTarget = kInvalidTextureHandleUVE;
+            set.bloomBlurTargetA = kInvalidTextureHandleUVE;
+            set.bloomBlurTargetB = kInvalidTextureHandleUVE;
+            set.ssaoTarget = kInvalidTextureHandleUVE;
+            UVE_WARNING("Renderer3DUVE: post-process target creation failed at {}x{}; bloom/SSAO "
+                        "passes will be skipped at this size",
+                        halfWidth, halfHeight);
+        }
+        return set;
+    }
+
+    void DestroyTargetSetUVE(const SizedTargetSetUVE& set) {
+        DestroyTextureIfValidUVE(renderDevice, set.colorTarget);
+        DestroyTextureIfValidUVE(renderDevice, set.depthTarget);
+        DestroyTextureIfValidUVE(renderDevice, set.bloomBrightTarget);
+        DestroyTextureIfValidUVE(renderDevice, set.bloomBlurTargetA);
+        DestroyTextureIfValidUVE(renderDevice, set.bloomBlurTargetB);
+        DestroyTextureIfValidUVE(renderDevice, set.ssaoTarget);
+    }
+
+    /// Points the active target members at `set`. Every render pass reads these members, so
+    /// switching sets is exactly this and nothing more - the cache is invisible to the passes.
+    void ActivateTargetSetUVE(const SizedTargetSetUVE& set, const std::uint32_t width,
+                              const std::uint32_t height) noexcept {
+        colorTarget = set.colorTarget;
+        depthTarget = set.depthTarget;
+        bloomBrightTarget = set.bloomBrightTarget;
+        bloomBlurTargetA = set.bloomBlurTargetA;
+        bloomBlurTargetB = set.bloomBlurTargetB;
+        ssaoTarget = set.ssaoTarget;
+        targetWidth = width;
+        targetHeight = height;
+    }
+
     [[nodiscard]] bool ResizeTargetsUVE(const std::uint32_t newWidth, const std::uint32_t newHeight) {
         if (newWidth == 0U || newHeight == 0U) {
             return false;
         }
-        if (targetWidth == newWidth && targetHeight == newHeight) {
+        if (targetWidth == newWidth && targetHeight == newHeight &&
+            colorTarget != kInvalidTextureHandleUVE) {
             return true;
         }
 
-        const TextureHandleUVE newColorTarget = renderDevice.CreateTextureUVE(
-            TextureDescUVE{newWidth, newHeight, kSceneColorTargetFormatUVE, 1});
-        const TextureHandleUVE newDepthTarget = renderDevice.CreateTextureUVE(
-            TextureDescUVE{newWidth, newHeight, TextureFormatUVE::Depth32Float, 1});
-        if (newColorTarget == kInvalidTextureHandleUVE || newDepthTarget == kInvalidTextureHandleUVE) {
-            DestroyTextureIfValidUVE(renderDevice, newColorTarget);
-            DestroyTextureIfValidUVE(renderDevice, newDepthTarget);
+        const std::pair<std::uint32_t, std::uint32_t> key{newWidth, newHeight};
+        const auto cachedIt = targetSetCache.find(key);
+        if (cachedIt != targetSetCache.end()) {
+            // The whole point: a size seen before costs a handful of pointer assignments, not six
+            // texture allocations. This is the path a steady-state split view takes every frame.
+            ActivateTargetSetUVE(cachedIt->second, newWidth, newHeight);
+            return true;
+        }
+
+        // A genuinely new size. Evict first if the cache has grown past its bound - a window being
+        // dragged produces a new size every frame, and those sets are dead the moment they are
+        // made. Clearing wholesale rather than evicting one entry keeps this simple and cannot
+        // free a set that is about to be reactivated, because the active set is re-created
+        // immediately below.
+        if (targetSetCache.size() >= kMaximumCachedTargetSetsUVE) {
+            for (const auto& [cachedSize, cachedSet] : targetSetCache) {
+                static_cast<void>(cachedSize);
+                DestroyTargetSetUVE(cachedSet);
+            }
+            targetSetCache.clear();
+            colorTarget = kInvalidTextureHandleUVE;
+            depthTarget = kInvalidTextureHandleUVE;
+            bloomBrightTarget = kInvalidTextureHandleUVE;
+            bloomBlurTargetA = kInvalidTextureHandleUVE;
+            bloomBlurTargetB = kInvalidTextureHandleUVE;
+            ssaoTarget = kInvalidTextureHandleUVE;
+        }
+
+        std::optional<SizedTargetSetUVE> created = CreateTargetSetUVE(newWidth, newHeight);
+        if (!created.has_value()) {
             UVE_WARNING("Renderer3DUVE: adaptive target resize rejected ({}x{}); retaining {}x{}",
                         newWidth, newHeight, targetWidth, targetHeight);
             return false;
         }
 
-        DestroyTextureIfValidUVE(renderDevice, colorTarget);
-        DestroyTextureIfValidUVE(renderDevice, depthTarget);
-        colorTarget = newColorTarget;
-        depthTarget = newDepthTarget;
-        targetWidth = newWidth;
-        targetHeight = newHeight;
-
-        // Post-process targets are not load-bearing the way color/depth are above: a failed
-        // recreation here degrades to those passes being skipped this frame (guarded by validity
-        // checks in RenderFrameUVE()) rather than rejecting the whole resize.
-        const std::uint32_t halfWidth = HalfExtentUVE(newWidth);
-        const std::uint32_t halfHeight = HalfExtentUVE(newHeight);
-        const TextureHandleUVE newBloomBrightTarget =
-            renderDevice.CreateTextureUVE(TextureDescUVE{halfWidth, halfHeight, kSceneColorTargetFormatUVE, 1});
-        const TextureHandleUVE newBloomBlurTargetA =
-            renderDevice.CreateTextureUVE(TextureDescUVE{halfWidth, halfHeight, kSceneColorTargetFormatUVE, 1});
-        const TextureHandleUVE newBloomBlurTargetB =
-            renderDevice.CreateTextureUVE(TextureDescUVE{halfWidth, halfHeight, kSceneColorTargetFormatUVE, 1});
-        const TextureHandleUVE newSsaoTarget =
-            renderDevice.CreateTextureUVE(TextureDescUVE{halfWidth, halfHeight, TextureFormatUVE::RGBA8Unorm, 1});
-        if (newBloomBrightTarget == kInvalidTextureHandleUVE || newBloomBlurTargetA == kInvalidTextureHandleUVE ||
-            newBloomBlurTargetB == kInvalidTextureHandleUVE || newSsaoTarget == kInvalidTextureHandleUVE) {
-            DestroyTextureIfValidUVE(renderDevice, newBloomBrightTarget);
-            DestroyTextureIfValidUVE(renderDevice, newBloomBlurTargetA);
-            DestroyTextureIfValidUVE(renderDevice, newBloomBlurTargetB);
-            DestroyTextureIfValidUVE(renderDevice, newSsaoTarget);
-            DestroyTextureIfValidUVE(renderDevice, bloomBrightTarget);
-            DestroyTextureIfValidUVE(renderDevice, bloomBlurTargetA);
-            DestroyTextureIfValidUVE(renderDevice, bloomBlurTargetB);
-            DestroyTextureIfValidUVE(renderDevice, ssaoTarget);
-            bloomBrightTarget = kInvalidTextureHandleUVE;
-            bloomBlurTargetA = kInvalidTextureHandleUVE;
-            bloomBlurTargetB = kInvalidTextureHandleUVE;
-            ssaoTarget = kInvalidTextureHandleUVE;
-            UVE_WARNING("Renderer3DUVE: post-process target resize failed at {}x{}; bloom/SSAO passes "
-                        "will be skipped until the next successful resize",
-                        halfWidth, halfHeight);
-        } else {
-            DestroyTextureIfValidUVE(renderDevice, bloomBrightTarget);
-            DestroyTextureIfValidUVE(renderDevice, bloomBlurTargetA);
-            DestroyTextureIfValidUVE(renderDevice, bloomBlurTargetB);
-            DestroyTextureIfValidUVE(renderDevice, ssaoTarget);
-            bloomBrightTarget = newBloomBrightTarget;
-            bloomBlurTargetA = newBloomBlurTargetA;
-            bloomBlurTargetB = newBloomBlurTargetB;
-            ssaoTarget = newSsaoTarget;
-        }
-
+        const auto inserted = targetSetCache.emplace(key, *created);
+        ActivateTargetSetUVE(inserted.first->second, newWidth, newHeight);
         UVE_INFO("Renderer3DUVE: adaptive targets resized to {}x{}", targetWidth, targetHeight);
         return true;
     }
@@ -979,7 +1176,9 @@ struct Renderer3DUVE::ImplUVE {
         const std::shared_ptr<Shader::ShaderProgramUVE> program = shaderManager.CreateProgramFromStagesUVE(programDesc);
 
         const auto insertResult = materialCache.emplace(
-            guid, MaterialGpuResourcesUVE{program, material->vertexShader, material->fragmentShader,
+            guid, MaterialGpuResourcesUVE{program,
+                                          VertexSourceSupportsInstancingUVE(vertexShaderAsset->sourceCode),
+                                          material->vertexShader, material->fragmentShader,
                                           material->albedoTexture, material->normalTexture, material->aoTexture,
                                           *albedoTexture, *normalTexture, *aoTexture});
         return &insertResult.first->second;
@@ -989,8 +1188,22 @@ struct Renderer3DUVE::ImplUVE {
     /// directional caster and linked shadow program exist; otherwise the main pass receives the
     /// zero-cascade sentinel and no shadow-map work is submitted. Draws every opaque item in the
     /// cascade queue (no additional light-frustum culling beyond queue extraction).
+    /// Uploads shadow instance transforms. Only the model matrix, transposed - a depth-only pass
+    /// has no normals, so the normal-matrix buffer the main pass fills is left untouched here.
+    [[nodiscard]] bool UploadShadowInstanceTransformsUVE(
+        const std::vector<Math::Matrix4x4UVE>& modelMatrices) {
+        instanceTransposeStaging.clear();
+        instanceTransposeStaging.reserve(modelMatrices.size());
+        for (const Math::Matrix4x4UVE& model : modelMatrices) {
+            instanceTransposeStaging.push_back(Math::TransposeUVE(model));
+        }
+        return renderDevice.UpdateBufferUVE(instanceTransformBuffer,
+                                            std::as_bytes(std::span(instanceTransposeStaging)));
+    }
+
     void RecordShadowPassUVE(const std::vector<RenderItemUVE>& items, const Math::Matrix4x4UVE& lightSpaceMatrix,
-                              TextureHandleUVE shadowMapTarget, bool hasCaster, ICommandBufferUVE& commandBuffer) {
+                              TextureHandleUVE shadowMapTarget, bool hasCaster,
+                              RenderBatchSetUVE& batchSet, ICommandBufferUVE& commandBuffer) {
         RenderPassDescUVE passDesc;
         passDesc.colorAttachment = kInvalidTextureHandleUVE;
         passDesc.depthAttachment = shadowMapTarget;
@@ -999,8 +1212,54 @@ struct Renderer3DUVE::ImplUVE {
         commandBuffer.BeginRenderPassUVE(passDesc);
 
         if (hasCaster && shadowProgram->IsValidUVE()) {
-            // The light-space transform is constant for the whole cascade; queue it once and
-            // update only the per-item model matrix inside the caster loop.
+            // Instanced where possible. This pass matters more than its low profile suggests: it
+            // runs ONCE PER CASCADE, so an uninstanced 200-object scene issued 600 shadow draws
+            // against 200 main-pass ones - the shadow passes cost more than the frame they
+            // shadow. It also batches better than the main pass does, because a depth-only draw
+            // does not care about the material: two objects sharing a mesh batch together even
+            // with completely different materials.
+            const bool instancedShadows =
+                instancedShadowProgram != nullptr && instancedShadowProgram->IsValidUVE();
+            if (instancedShadows) {
+                BuildShadowBatchesUVE(items, batchSet);
+                // Counted here rather than at the draw loop below, because what is being reported
+                // is how well the ORDER batched - a batch that is later skipped for an unresolved
+                // mesh still tells the truth about the merge.
+                lastFrameDiagnostics.shadowBatchesRecorded += batchSet.batches.size();
+                lastFrameDiagnostics.shadowBatchedItems += items.size();
+                if (!batchSet.batches.empty() &&
+                    batchSet.instanceMatrices.size() <= kMaximumInstancesPerFrameUVE &&
+                    EnsureInstanceBufferCapacityUVE(batchSet.instanceMatrices.size()) &&
+                    UploadShadowInstanceTransformsUVE(batchSet.instanceMatrices)) {
+                    instancedShadowProgram->SetMatrix4x4UVE("uLightSpaceMatrix", lightSpaceMatrix);
+                    for (const RenderBatchUVE& batch : batchSet.batches) {
+                        const MeshGpuResourcesUVE& meshResources =
+                            ResolveMeshGpuResourcesUVE(items[batch.firstItem]);
+                        if (!IsValidMeshGpuResourcesUVE(meshResources)) {
+                            continue;
+                        }
+                        const auto baseIndex = static_cast<std::int32_t>(batch.firstItem);
+                        const std::span<const std::byte> baseBytes{
+                            reinterpret_cast<const std::byte*>(&baseIndex), sizeof(baseIndex)};
+                        if (!renderDevice.UpdateBufferUVE(instanceBaseBuffer, baseBytes)) {
+                            continue;
+                        }
+                        instancedShadowProgram->ApplyToUVE(commandBuffer);
+                        commandBuffer.BindStorageBufferUVE(instanceTransformBuffer, kInstanceTransformSlotUVE);
+                        commandBuffer.BindStorageBufferUVE(instanceBaseBuffer, kInstanceBaseSlotUVE);
+                        commandBuffer.BindVertexBufferUVE(meshResources.vertexBuffer);
+                        commandBuffer.BindIndexBufferUVE(meshResources.indexBuffer);
+                        commandBuffer.DrawIndexedUVE(meshResources.indexCount,
+                                                     static_cast<std::uint32_t>(batch.itemCount));
+                        ++shadowInstancedDrawCallsThisFrame;
+                    }
+                    commandBuffer.EndRenderPassUVE();
+                    return;
+                }
+            }
+
+            // Fallback: correct, just one draw per caster. Reached when the instanced program did
+            // not link, or a buffer step failed.
             shadowProgram->SetMatrix4x4UVE("uLightSpaceMatrix", lightSpaceMatrix);
             for (const RenderItemUVE& item : items) {
                 const MeshGpuResourcesUVE& meshResources = ResolveMeshGpuResourcesUVE(item);
@@ -1018,54 +1277,319 @@ struct Renderer3DUVE::ImplUVE {
         commandBuffer.EndRenderPassUVE();
     }
 
+    /// Builds this frame's visible primitive list.
+    ///
+    /// Split deliberately into two halves. Everything that depends only on the ENTITY - normalized
+    /// rotation, world matrix, world bounds - is cached across frames and keyed on the transform
+    /// that produced it. Everything that depends on the VIEW - the frustum test and the sort depth
+    /// - is recomputed every frame, because the camera moves even when nothing in the scene does.
+    /// Caching the view-dependent half would be a correctness bug, not an optimization.
     void ExtractPrimitiveItemsUVE(Scene::IEntityManagerUVE& entityManager, const Math::FrustumUVE& frustum,
                                    std::vector<PrimitiveRenderItemUVE>& outItems) {
         outItems.clear();
+        ++primitiveFrameIndex;
         entityManager.ForEachUVE<Scene::WorldTransformComponentUVE, Scene::PrimitiveMeshComponentUVE>(
-            [&](Scene::EntityUVE, const Scene::WorldTransformComponentUVE& worldTransform,
+            [&](Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE& worldTransform,
                 const Scene::PrimitiveMeshComponentUVE& primitive) {
                 if (worldTransform.dirty || !Scene::IsPrimitiveMeshComponentValidUVE(primitive)) {
+                    // Returning before the cache is touched leaves any existing entry unstamped,
+                    // so an entity that stays dirty or invalid is pruned rather than kept alive by
+                    // a placement nobody can use.
                     return;
                 }
                 ++lastFrameDiagnostics.primitiveCandidates;
-                if (!IsFiniteVectorUVE(worldTransform.worldPosition) || !IsFiniteVectorUVE(worldTransform.worldScale) ||
-                    !Math::IsFiniteUVE(worldTransform.worldRotation)) {
+
+                const PrimitivePlacementKeyUVE key{worldTransform.worldPosition, worldTransform.worldRotation,
+                                                   worldTransform.worldScale, primitive.kind};
+                PrimitivePlacementCacheEntryUVE& cacheEntry = primitivePlacementCache[entity];
+                if (cacheEntry.lastSeenFrame != 0U && cacheEntry.key.MatchesUVE(key)) {
+                    ++lastFrameDiagnostics.primitivePlacementCacheHits;
+                } else {
+                    ++lastFrameDiagnostics.primitivePlacementCacheMisses;
+                    cacheEntry.key = key;
+                    cacheEntry.placed = TryComputePrimitivePlacementUVE(worldTransform, primitive,
+                                                                        cacheEntry.worldMatrix,
+                                                                        cacheEntry.worldBounds);
+                }
+                // Stamped on hit as well as miss: the stamp records "seen this frame", which is
+                // what the prune reads. Only stamping misses would evict every stationary object -
+                // precisely the objects the cache exists to serve.
+                cacheEntry.lastSeenFrame = primitiveFrameIndex;
+
+                if (!cacheEntry.placed) {
                     return;
                 }
-                Math::QuaternionUVE normalizedRotation;
-                if (!Math::TryNormalizeUVE(worldTransform.worldRotation, normalizedRotation)) {
+
+                // View-dependent from here down. Never cached.
+                if (!frustum.IntersectsUVE(cacheEntry.worldBounds)) {
                     return;
                 }
-                const PrimitiveGeometryUVE& geometry = GetPrimitiveGeometryUVE(primitive.kind);
-                if (!IsOrderedFiniteAabbUVE(geometry.localBounds)) {
-                    return;
-                }
-                const Math::Matrix4x4UVE worldMatrix = Math::Matrix4x4UVE::ComposeTrsUVE(
-                    worldTransform.worldPosition, normalizedRotation, worldTransform.worldScale);
-                if (!IsFiniteMatrixUVE(worldMatrix)) {
-                    return;
-                }
-                const Math::AabbUVE worldBounds = geometry.localBounds.TransformUVE(worldMatrix);
-                if (!IsOrderedFiniteAabbUVE(worldBounds) || !frustum.IntersectsUVE(worldBounds)) {
-                    return;
-                }
-                const float sortDepth = frustum.planes[4U].GetSignedDistanceUVE(worldBounds.GetCenterUVE());
+                const float sortDepth = frustum.planes[4U].GetSignedDistanceUVE(cacheEntry.worldBounds.GetCenterUVE());
                 if (!std::isfinite(sortDepth)) {
                     return;
                 }
-                outItems.push_back(PrimitiveRenderItemUVE{worldMatrix, primitive.kind, primitive.baseColor, sortDepth});
+                outItems.push_back(
+                    PrimitiveRenderItemUVE{cacheEntry.worldMatrix, primitive.kind, primitive.baseColor, sortDepth});
             });
+
+        // Erase-while-iterating over an unordered_map, safe for the erased element only, so the
+        // iterator is advanced before the erase and never after. Mirrors
+        // MeshVisibilitySetUVE::PruneUnseenPlacementsUVE.
+        for (auto it = primitivePlacementCache.begin(); it != primitivePlacementCache.end();) {
+            if (it->second.lastSeenFrame != primitiveFrameIndex) {
+                it = primitivePlacementCache.erase(it);
+            } else {
+                ++it;
+            }
+        }
+
         std::sort(outItems.begin(), outItems.end(),
                   [](const PrimitiveRenderItemUVE& lhs, const PrimitiveRenderItemUVE& rhs) {
                       return lhs.sortDepth < rhs.sortDepth;
                   });
     }
 
+    /// The entity-dependent half of primitive extraction, factored out so the cache stores the
+    /// result of exactly one function and the miss path cannot drift from what the key promises.
+    /// Returns false for any input that cannot produce finite geometry; the caller caches that
+    /// rejection rather than rediscovering it every frame.
+    [[nodiscard]] static bool TryComputePrimitivePlacementUVE(const Scene::WorldTransformComponentUVE& worldTransform,
+                                                              const Scene::PrimitiveMeshComponentUVE& primitive,
+                                                              Math::Matrix4x4UVE& outWorldMatrix,
+                                                              Math::AabbUVE& outWorldBounds) {
+        if (!IsFiniteVectorUVE(worldTransform.worldPosition) || !IsFiniteVectorUVE(worldTransform.worldScale) ||
+            !Math::IsFiniteUVE(worldTransform.worldRotation)) {
+            return false;
+        }
+        Math::QuaternionUVE normalizedRotation;
+        if (!Math::TryNormalizeUVE(worldTransform.worldRotation, normalizedRotation)) {
+            return false;
+        }
+        const PrimitiveGeometryUVE& geometry = GetPrimitiveGeometryUVE(primitive.kind);
+        if (!IsOrderedFiniteAabbUVE(geometry.localBounds)) {
+            return false;
+        }
+        outWorldMatrix = Math::Matrix4x4UVE::ComposeTrsUVE(worldTransform.worldPosition, normalizedRotation,
+                                                           worldTransform.worldScale);
+        if (!IsFiniteMatrixUVE(outWorldMatrix)) {
+            return false;
+        }
+        outWorldBounds = geometry.localBounds.TransformUVE(outWorldMatrix);
+        return IsOrderedFiniteAabbUVE(outWorldBounds);
+    }
+
+    /// transpose(inverse(model)), falling back to the model matrix itself when it is singular -
+    /// the same rule the per-object path has always used, factored out so the instanced path
+    /// cannot quietly adopt a different one. A singular world matrix means the item would not
+    /// project to visible geometry anyway.
+    [[nodiscard]] static Math::Matrix4x4UVE ComputeNormalMatrixUVE(const Math::Matrix4x4UVE& worldMatrix) {
+        Math::Matrix4x4UVE inverseWorldMatrix{};
+        if (Math::TryInverseUVE(worldMatrix, inverseWorldMatrix)) {
+            return Math::TransposeUVE(inverseWorldMatrix);
+        }
+        return worldMatrix;
+    }
+
+    /// Grows the three instancing buffers to hold `instanceCount` transforms. Returns false if any
+    /// allocation fails, in which case the caller records per-object instead of instanced.
+    [[nodiscard]] bool EnsureInstanceBufferCapacityUVE(const std::size_t instanceCount) {
+        if (instanceBaseBuffer == kInvalidBufferHandleUVE) {
+            instanceBaseBuffer = renderDevice.CreateBufferUVE(
+                BufferDescUVE{sizeof(std::int32_t), BufferUsageUVE::Storage});
+            if (instanceBaseBuffer == kInvalidBufferHandleUVE) {
+                return false;
+            }
+        }
+        if (instanceTransformBuffer != kInvalidBufferHandleUVE && instanceBufferCapacity >= instanceCount) {
+            return true;
+        }
+        for (BufferHandleUVE* const buffer : {&instanceTransformBuffer, &instanceNormalTransformBuffer}) {
+            if (*buffer != kInvalidBufferHandleUVE) {
+                renderDevice.DestroyBufferUVE(*buffer);
+                *buffer = kInvalidBufferHandleUVE;
+            }
+        }
+        instanceBufferCapacity = 0U;
+        const BufferDescUVE desc{instanceCount * sizeof(Math::Matrix4x4UVE), BufferUsageUVE::Storage};
+        instanceTransformBuffer = renderDevice.CreateBufferUVE(desc);
+        instanceNormalTransformBuffer = renderDevice.CreateBufferUVE(desc);
+        if (instanceTransformBuffer == kInvalidBufferHandleUVE ||
+            instanceNormalTransformBuffer == kInvalidBufferHandleUVE) {
+            return false;
+        }
+        instanceBufferCapacity = instanceCount;
+        return true;
+    }
+
+    /// Uploads one frame's instance transforms, TRANSPOSED - Matrix4x4UVE is row-major and std430
+    /// mat4 is column-major. Same convention as mesh_skin.glsl, deliberately: one rule, not two.
+    [[nodiscard]] bool UploadInstanceTransformsUVE(const std::vector<Math::Matrix4x4UVE>& modelMatrices) {
+        instanceNormalMatrixStaging.clear();
+        instanceNormalMatrixStaging.reserve(modelMatrices.size());
+        instanceTransposeStaging.clear();
+        instanceTransposeStaging.reserve(modelMatrices.size());
+        for (const Math::Matrix4x4UVE& model : modelMatrices) {
+            instanceTransposeStaging.push_back(Math::TransposeUVE(model));
+            instanceNormalMatrixStaging.push_back(Math::TransposeUVE(ComputeNormalMatrixUVE(model)));
+        }
+        return renderDevice.UpdateBufferUVE(instanceTransformBuffer,
+                                            std::as_bytes(std::span(instanceTransposeStaging))) &&
+               renderDevice.UpdateBufferUVE(instanceNormalTransformBuffer,
+                                            std::as_bytes(std::span(instanceNormalMatrixStaging)));
+    }
+
+    /// Sets every uniform that does not vary per object. Shared verbatim by the per-object and
+    /// instanced paths so the two cannot drift in how they light a surface - the same reason the
+    /// shader keeps both variants in one file.
+    void ApplyFrameAndMaterialUniformsUVE(Shader::ShaderProgramUVE& program,
+                                          const Asset::MaterialAssetUVE& material,
+                                          const FrameUniformsUVE& frameUniforms) {
+        program.SetMatrix4x4UVE("uViewProjection", frameUniforms.viewProjection);
+        program.SetVector3UVE("uAmbientColor", frameUniforms.ambientColor);
+        program.SetVector3UVE("uViewPosition", frameUniforms.viewPosition);
+        for (std::size_t lightIndex = 0; lightIndex < kMaxLightsUVE; ++lightIndex) {
+            const LightDataUVE& light = frameUniforms.lights[lightIndex];
+            const LightUniformNamesUVE& names = uniformNames.lights[lightIndex];
+            program.SetIntUVE(names.type, static_cast<std::int32_t>(light.type));
+            program.SetVector3UVE(names.position, light.position);
+            program.SetVector3UVE(names.direction, light.direction);
+            program.SetVector3UVE(names.color, light.color);
+            program.SetFloatUVE(names.intensity, light.intensity);
+            program.SetFloatUVE(names.range, light.range);
+            program.SetFloatUVE(names.spotAngleDegrees, light.spotAngleDegrees);
+        }
+        program.SetMatrix4x4UVE(uniformNames.legacyLightSpaceMatrix, frameUniforms.lightSpaceMatrices[0]);
+        program.SetIntUVE("uShadowMapTexture", static_cast<std::int32_t>(kShadowMapTextureSlotUVE));
+        program.SetIntUVE("uShadowCascadeCount", frameUniforms.cascadeCount);
+        program.SetFloatUVE("uShadowCascadeBlendRatio", frameUniforms.cascadeBlendRatio);
+        for (std::size_t cascadeIndex = 0; cascadeIndex < kShadowCascadeCountUVE; ++cascadeIndex) {
+            const std::uint32_t textureSlot =
+                kShadowCascadeFirstTextureSlotUVE + static_cast<std::uint32_t>(cascadeIndex);
+            program.SetMatrix4x4UVE(uniformNames.lightSpaceMatrices[cascadeIndex],
+                                    frameUniforms.lightSpaceMatrices[cascadeIndex]);
+            program.SetFloatUVE(uniformNames.shadowCascadeSplits[cascadeIndex],
+                                frameUniforms.cascadeSplits[cascadeIndex]);
+            program.SetIntUVE(uniformNames.shadowMapTextures[cascadeIndex],
+                              static_cast<std::int32_t>(textureSlot));
+        }
+        program.SetIntUVE("uShadowPcfKernelRadius", shadowPcfKernelRadius);
+        program.SetVector3UVE("uAlbedoColor", material.albedoColor);
+        program.SetFloatUVE("uMetallic", material.metallic);
+        program.SetFloatUVE("uRoughness", material.roughness);
+        program.SetVector3UVE("uEmissiveColor", material.emissiveColor);
+        program.SetIntUVE("uAlbedoTexture", static_cast<std::int32_t>(kAlbedoTextureSlotUVE));
+        program.SetIntUVE("uNormalTexture", static_cast<std::int32_t>(kNormalTextureSlotUVE));
+        program.SetIntUVE("uAOTexture", static_cast<std::int32_t>(kAoTextureSlotUVE));
+    }
+
+    /// Binds the shadow cascades and the material's three textures - also shared by both paths.
+    void BindMaterialTexturesUVE(const MaterialGpuResourcesUVE& materialResources,
+                                 const FrameUniformsUVE& frameUniforms,
+                                 ICommandBufferUVE& commandBuffer) {
+        if (frameUniforms.cascadeCount > 0) {
+            commandBuffer.BindTextureUVE(shadowMapTargets[0], kShadowMapTextureSlotUVE);
+            for (std::size_t cascadeIndex = 0; cascadeIndex < kShadowCascadeCountUVE; ++cascadeIndex) {
+                commandBuffer.BindTextureUVE(
+                    shadowMapTargets[cascadeIndex],
+                    kShadowCascadeFirstTextureSlotUVE + static_cast<std::uint32_t>(cascadeIndex));
+            }
+        }
+        commandBuffer.BindTextureUVE(materialResources.albedoTexture, kAlbedoTextureSlotUVE);
+        commandBuffer.BindTextureUVE(materialResources.normalTexture, kNormalTextureSlotUVE);
+        commandBuffer.BindTextureUVE(materialResources.aoTexture, kAoTextureSlotUVE);
+    }
+
+    /// Records `items` as instanced draws where the material supports it, falling back to the
+    /// per-object path for everything else. Returns the number of draw calls recorded.
+    ///
+    /// The fallback is per BATCH, not per frame: a scene mixing instancing-aware and legacy
+    /// materials draws each with whichever path is correct for it, rather than giving up on
+    /// instancing entirely because one material is old.
+    [[nodiscard]] std::size_t RecordItemsInstancedUVE(const std::vector<RenderItemUVE>& items,
+                                                      RenderBatchSetUVE& batchSet,
+                                                      const FrameUniformsUVE& frameUniforms,
+                                                      ICommandBufferUVE& commandBuffer) {
+        BuildRenderBatchesUVE(items, batchSet);
+        if (batchSet.batches.empty()) {
+            return 0U;
+        }
+
+        // One upload for the whole bucket; each batch then reads its own window of it via
+        // uInstanceBaseIndex. Uploading per batch would be the obvious shape and the wrong one -
+        // it trades one buffer update per frame for one per batch.
+        const bool instancingUsable =
+            batchSet.instanceMatrices.size() <= kMaximumInstancesPerFrameUVE &&
+            EnsureInstanceBufferCapacityUVE(batchSet.instanceMatrices.size()) &&
+            UploadInstanceTransformsUVE(batchSet.instanceMatrices);
+
+        std::size_t drawCalls = 0U;
+        for (const RenderBatchUVE& batch : batchSet.batches) {
+            const RenderItemUVE& representative = items[batch.firstItem];
+            const MaterialGpuResourcesUVE* const materialResources =
+                ResolveMaterialGpuResourcesUVE(representative);
+            if (materialResources == nullptr) {
+                continue;
+            }
+            const MeshGpuResourcesUVE& meshResources = ResolveMeshGpuResourcesUVE(representative);
+            if (!IsValidMeshGpuResourcesUVE(meshResources)) {
+                continue;
+            }
+            const Asset::MaterialAssetUVE* const material = representative.materialHandle.TryGetUVE();
+            const std::shared_ptr<Shader::ShaderProgramUVE>& program = materialResources->program;
+            if (material == nullptr || !program->IsValidUVE()) {
+                continue; // Still compiling or invalid: never bind a stale raw material pipeline.
+            }
+
+            if (!instancingUsable || !materialResources->supportsInstancing) {
+                // Correct, just not batched. Every item in the run still gets its own uModel.
+                drawCalls += RecordItemRangeUnbatchedUVE(items, batch.firstItem, batch.itemCount,
+                                                         frameUniforms, commandBuffer);
+                continue;
+            }
+
+            const auto baseIndex = static_cast<std::int32_t>(batch.firstItem);
+            const std::span<const std::byte> baseBytes{reinterpret_cast<const std::byte*>(&baseIndex),
+                                                       sizeof(baseIndex)};
+            if (!renderDevice.UpdateBufferUVE(instanceBaseBuffer, baseBytes)) {
+                drawCalls += RecordItemRangeUnbatchedUVE(items, batch.firstItem, batch.itemCount,
+                                                         frameUniforms, commandBuffer);
+                continue;
+            }
+
+            ApplyFrameAndMaterialUniformsUVE(*program, *material, frameUniforms);
+            program->ApplyToUVE(commandBuffer);
+            BindMaterialTexturesUVE(*materialResources, frameUniforms, commandBuffer);
+            commandBuffer.BindStorageBufferUVE(instanceTransformBuffer, kInstanceTransformSlotUVE);
+            commandBuffer.BindStorageBufferUVE(instanceNormalTransformBuffer, kInstanceNormalTransformSlotUVE);
+            commandBuffer.BindStorageBufferUVE(instanceBaseBuffer, kInstanceBaseSlotUVE);
+            commandBuffer.BindVertexBufferUVE(meshResources.vertexBuffer);
+            commandBuffer.BindIndexBufferUVE(meshResources.indexBuffer);
+            commandBuffer.DrawIndexedUVE(meshResources.indexCount,
+                                         static_cast<std::uint32_t>(batch.itemCount));
+            ++drawCalls;
+            instancedDrawCallsThisFrame += 1U;
+            instancedObjectsThisFrame += batch.itemCount;
+        }
+        return drawCalls;
+    }
+
     [[nodiscard]] std::size_t RecordItemsUVE(const std::vector<RenderItemUVE>& items,
                                               const FrameUniformsUVE& frameUniforms,
                                               ICommandBufferUVE& commandBuffer) {
+        return RecordItemRangeUnbatchedUVE(items, 0U, items.size(), frameUniforms, commandBuffer);
+    }
+
+    /// The original one-draw-per-object path, now expressed over a sub-range so the instanced path
+    /// can delegate a single batch to it when that batch's material cannot be instanced. Behavior
+    /// for the whole-bucket case is unchanged.
+    [[nodiscard]] std::size_t RecordItemRangeUnbatchedUVE(const std::vector<RenderItemUVE>& items,
+                                                          const std::size_t firstItem,
+                                                          const std::size_t itemCount,
+                                                          const FrameUniformsUVE& frameUniforms,
+                                                          ICommandBufferUVE& commandBuffer) {
         std::size_t drawCalls = 0U;
-        for (const RenderItemUVE& item : items) {
+        for (std::size_t itemIndex = firstItem; itemIndex < firstItem + itemCount; ++itemIndex) {
+            const RenderItemUVE& item = items[itemIndex];
             const MaterialGpuResourcesUVE* const materialResources = ResolveMaterialGpuResourcesUVE(item);
             if (materialResources == nullptr) {
                 continue;
@@ -1081,68 +1605,12 @@ struct Renderer3DUVE::ImplUVE {
             }
 
             program->SetMatrix4x4UVE("uModel", item.worldMatrix);
-            // Normal matrix = transpose(inverse(model)): using uModel directly to transform
-            // normals (as lit_shadowed_3d.glsl previously did) only preserves normal direction
-            // under uniform scale / rigid transforms - it produces non-perpendicular, incorrectly
-            // shaded normals under non-uniform scale. Falls back to uModel itself (a no-op change
-            // for uniform-scale items) when the matrix is singular, since a singular world matrix
-            // means the item wouldn't project to visible geometry anyway.
-            Math::Matrix4x4UVE normalMatrix = item.worldMatrix;
-            Math::Matrix4x4UVE inverseWorldMatrix{};
-            if (Math::TryInverseUVE(item.worldMatrix, inverseWorldMatrix)) {
-                normalMatrix = Math::TransposeUVE(inverseWorldMatrix);
-            }
-            program->SetMatrix4x4UVE("uNormalMatrix", normalMatrix);
-            program->SetMatrix4x4UVE("uViewProjection", frameUniforms.viewProjection);
-            program->SetVector3UVE("uAmbientColor", frameUniforms.ambientColor);
-            program->SetVector3UVE("uViewPosition", frameUniforms.viewPosition);
-            for (std::size_t lightIndex = 0; lightIndex < kMaxLightsUVE; ++lightIndex) {
-                const LightDataUVE& light = frameUniforms.lights[lightIndex];
-                const LightUniformNamesUVE& names = uniformNames.lights[lightIndex];
-                program->SetIntUVE(names.type, static_cast<std::int32_t>(light.type));
-                program->SetVector3UVE(names.position, light.position);
-                program->SetVector3UVE(names.direction, light.direction);
-                program->SetVector3UVE(names.color, light.color);
-                program->SetFloatUVE(names.intensity, light.intensity);
-                program->SetFloatUVE(names.range, light.range);
-                program->SetFloatUVE(names.spotAngleDegrees, light.spotAngleDegrees);
-            }
-            // Preserve the Increment 27 single-map names for project-authored legacy shaders;
-            // the canonical Increment 30 shader consumes the bounded array uniforms below.
-            program->SetMatrix4x4UVE(uniformNames.legacyLightSpaceMatrix, frameUniforms.lightSpaceMatrices[0]);
-            program->SetIntUVE("uShadowMapTexture", static_cast<std::int32_t>(kShadowMapTextureSlotUVE));
-            program->SetIntUVE("uShadowCascadeCount", frameUniforms.cascadeCount);
-            program->SetFloatUVE("uShadowCascadeBlendRatio", frameUniforms.cascadeBlendRatio);
-            for (std::size_t cascadeIndex = 0; cascadeIndex < kShadowCascadeCountUVE; ++cascadeIndex) {
-                const std::uint32_t textureSlot = kShadowCascadeFirstTextureSlotUVE +
-                                                  static_cast<std::uint32_t>(cascadeIndex);
-                program->SetMatrix4x4UVE(uniformNames.lightSpaceMatrices[cascadeIndex],
-                                         frameUniforms.lightSpaceMatrices[cascadeIndex]);
-                program->SetFloatUVE(uniformNames.shadowCascadeSplits[cascadeIndex],
-                                     frameUniforms.cascadeSplits[cascadeIndex]);
-                program->SetIntUVE(uniformNames.shadowMapTextures[cascadeIndex],
-                                   static_cast<std::int32_t>(textureSlot));
-            }
-            program->SetIntUVE("uShadowPcfKernelRadius", shadowPcfKernelRadius);
-            program->SetVector3UVE("uAlbedoColor", material->albedoColor);
-            program->SetFloatUVE("uMetallic", material->metallic);
-            program->SetFloatUVE("uRoughness", material->roughness);
-            program->SetVector3UVE("uEmissiveColor", material->emissiveColor);
-            program->SetIntUVE("uAlbedoTexture", static_cast<std::int32_t>(kAlbedoTextureSlotUVE));
-            program->SetIntUVE("uNormalTexture", static_cast<std::int32_t>(kNormalTextureSlotUVE));
-            program->SetIntUVE("uAOTexture", static_cast<std::int32_t>(kAoTextureSlotUVE));
+            // Normal matrix = transpose(inverse(model)); see ComputeNormalMatrixUVE, which the
+            // instanced path shares so the two cannot disagree about how a normal is transformed.
+            program->SetMatrix4x4UVE("uNormalMatrix", ComputeNormalMatrixUVE(item.worldMatrix));
+            ApplyFrameAndMaterialUniformsUVE(*program, *material, frameUniforms);
             program->ApplyToUVE(commandBuffer);
-            if (frameUniforms.cascadeCount > 0) {
-                commandBuffer.BindTextureUVE(shadowMapTargets[0], kShadowMapTextureSlotUVE);
-                for (std::size_t cascadeIndex = 0; cascadeIndex < kShadowCascadeCountUVE; ++cascadeIndex) {
-                    commandBuffer.BindTextureUVE(
-                        shadowMapTargets[cascadeIndex],
-                        kShadowCascadeFirstTextureSlotUVE + static_cast<std::uint32_t>(cascadeIndex));
-                }
-            }
-            commandBuffer.BindTextureUVE(materialResources->albedoTexture, kAlbedoTextureSlotUVE);
-            commandBuffer.BindTextureUVE(materialResources->normalTexture, kNormalTextureSlotUVE);
-            commandBuffer.BindTextureUVE(materialResources->aoTexture, kAoTextureSlotUVE);
+            BindMaterialTexturesUVE(*materialResources, frameUniforms, commandBuffer);
             commandBuffer.BindVertexBufferUVE(meshResources.vertexBuffer);
             commandBuffer.BindIndexBufferUVE(meshResources.indexBuffer);
             commandBuffer.DrawIndexedUVE(meshResources.indexCount);
@@ -1300,26 +1768,17 @@ Renderer3DUVE::Renderer3DUVE(IRenderDeviceUVE& renderDevice, IRenderSystemUVE& r
     // The scene is rendered to the offscreen color target first; desktop keeps HDR RGBA16F while
     // Android uses the GLES3-safe RGBA8 target, and the final fullscreen graph pass tone-maps it
     // to the default framebuffer's LDR presentation surface.
-    m_impl->colorTarget = renderDevice.CreateTextureUVE(
-        TextureDescUVE{targetWidth, targetHeight, kSceneColorTargetFormatUVE, 1});
-    m_impl->depthTarget = renderDevice.CreateTextureUVE(
-        TextureDescUVE{targetWidth, targetHeight, TextureFormatUVE::Depth32Float, 1});
-    if (m_impl->colorTarget == kInvalidTextureHandleUVE || m_impl->depthTarget == kInvalidTextureHandleUVE) {
+    // Created through the same cache path a later resize uses, rather than allocated directly:
+    // the destructor frees size-dependent targets as CACHE ENTRIES, so a set created outside the
+    // cache would simply leak. One owner for these textures, not two.
+    if (std::optional<ImplUVE::SizedTargetSetUVE> initialSet =
+            m_impl->CreateTargetSetUVE(targetWidth, targetHeight);
+        initialSet.has_value()) {
+        const auto inserted =
+            m_impl->targetSetCache.emplace(std::pair{targetWidth, targetHeight}, *initialSet);
+        m_impl->ActivateTargetSetUVE(inserted.first->second, targetWidth, targetHeight);
+    } else {
         UVE_ERROR("Renderer3DUVE: main render target creation failed; frame rendering will be skipped");
-    }
-    const std::uint32_t halfWidth = HalfExtentUVE(targetWidth);
-    const std::uint32_t halfHeight = HalfExtentUVE(targetHeight);
-    m_impl->bloomBrightTarget =
-        renderDevice.CreateTextureUVE(TextureDescUVE{halfWidth, halfHeight, kSceneColorTargetFormatUVE, 1});
-    m_impl->bloomBlurTargetA =
-        renderDevice.CreateTextureUVE(TextureDescUVE{halfWidth, halfHeight, kSceneColorTargetFormatUVE, 1});
-    m_impl->bloomBlurTargetB =
-        renderDevice.CreateTextureUVE(TextureDescUVE{halfWidth, halfHeight, kSceneColorTargetFormatUVE, 1});
-    m_impl->ssaoTarget =
-        renderDevice.CreateTextureUVE(TextureDescUVE{halfWidth, halfHeight, TextureFormatUVE::RGBA8Unorm, 1});
-    if (m_impl->bloomBrightTarget == kInvalidTextureHandleUVE || m_impl->bloomBlurTargetA == kInvalidTextureHandleUVE ||
-        m_impl->bloomBlurTargetB == kInvalidTextureHandleUVE || m_impl->ssaoTarget == kInvalidTextureHandleUVE) {
-        UVE_ERROR("Renderer3DUVE: post-process target creation failed; bloom/SSAO passes will be skipped");
     }
     m_impl->fallbackWhiteTexture = renderDevice.CreateTextureUVE(
         TextureDescUVE{1, 1, TextureFormatUVE::RGBA8Unorm, 1}, std::as_bytes(std::span(kWhitePixelUVE)));
@@ -1339,6 +1798,16 @@ Renderer3DUVE::Renderer3DUVE(IRenderDeviceUVE& renderDevice, IRenderSystemUVE& r
     shadowProgramDesc.depthWriteEnabled = true;
     shadowProgramDesc.debugNameUVE = "ShadowDepth";
     m_impl->shadowProgram = shaderManager.CreateProgramUVE(shadowProgramDesc);
+
+    // The instanced twin of the shadow program. Same source file, same layout, one define - so the
+    // depth a shadow map records cannot drift between the two paths. Compiled unconditionally
+    // rather than lazily: a shadow pass that stalls mid-frame waiting for a program is worse than
+    // one extra compile at startup, and the non-instanced program remains the fallback if this one
+    // fails to link.
+    Shader::ShaderProgramDescUVE instancedShadowProgramDesc = shadowProgramDesc;
+    instancedShadowProgramDesc.extraDefines.emplace_back("UVE_INSTANCED", "1");
+    instancedShadowProgramDesc.debugNameUVE = "ShadowDepthInstanced";
+    m_impl->instancedShadowProgram = shaderManager.CreateProgramUVE(instancedShadowProgramDesc);
 
     Shader::ShaderProgramDescUVE toneMappingProgramDesc;
     toneMappingProgramDesc.virtualFilePath = std::string(Shader::BuiltIn::kFullscreenQuadVirtualPath);
@@ -1457,12 +1926,24 @@ Renderer3DUVE::~Renderer3DUVE() {
     for (const auto& [guid, textureHandle] : m_impl->textureCache) {
         DestroyTextureIfValidUVE(m_impl->renderDevice, textureHandle);
     }
-    DestroyTextureIfValidUVE(m_impl->renderDevice, m_impl->colorTarget);
-    DestroyTextureIfValidUVE(m_impl->renderDevice, m_impl->depthTarget);
-    DestroyTextureIfValidUVE(m_impl->renderDevice, m_impl->bloomBrightTarget);
-    DestroyTextureIfValidUVE(m_impl->renderDevice, m_impl->bloomBlurTargetA);
-    DestroyTextureIfValidUVE(m_impl->renderDevice, m_impl->bloomBlurTargetB);
-    DestroyTextureIfValidUVE(m_impl->renderDevice, m_impl->ssaoTarget);
+    DestroyBufferIfValidUVE(m_impl->renderDevice, m_impl->instanceTransformBuffer);
+    DestroyBufferIfValidUVE(m_impl->renderDevice, m_impl->instanceNormalTransformBuffer);
+    DestroyBufferIfValidUVE(m_impl->renderDevice, m_impl->instanceBaseBuffer);
+    // The cache owns every size-dependent target, INCLUDING the active one - colorTarget and its
+    // siblings are mirrors of a cached set's handles, not separate allocations. Destroying both
+    // would be a double free, so the mirrors are only cleared, and are destroyed exactly once here
+    // as cache entries.
+    for (const auto& [cachedSize, cachedSet] : m_impl->targetSetCache) {
+        static_cast<void>(cachedSize);
+        m_impl->DestroyTargetSetUVE(cachedSet);
+    }
+    m_impl->targetSetCache.clear();
+    m_impl->colorTarget = kInvalidTextureHandleUVE;
+    m_impl->depthTarget = kInvalidTextureHandleUVE;
+    m_impl->bloomBrightTarget = kInvalidTextureHandleUVE;
+    m_impl->bloomBlurTargetA = kInvalidTextureHandleUVE;
+    m_impl->bloomBlurTargetB = kInvalidTextureHandleUVE;
+    m_impl->ssaoTarget = kInvalidTextureHandleUVE;
     DestroyTextureIfValidUVE(m_impl->renderDevice, m_impl->fallbackWhiteTexture);
     DestroyTextureIfValidUVE(m_impl->renderDevice, m_impl->fallbackNormalTexture);
     for (const TextureHandleUVE shadowMapTarget : m_impl->shadowMapTargets) {
@@ -1479,6 +1960,9 @@ bool Renderer3DUVE::ResizeTargetsUVE(const std::uint32_t width, const std::uint3
 
 void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scene::EntityUVE cameraEntity) {
     m_impl->lastFrameDiagnostics = Renderer3DFrameDiagnosticsUVE{};
+    // Reset here, not beside the main pass: the shadow cascades are recorded BEFORE it, so a reset
+    // at the main pass would discard the count this counter exists to report.
+    m_impl->shadowInstancedDrawCallsThisFrame = 0U;
     m_impl->lastFrameDiagnostics.renderTargetWidth = m_impl->targetWidth;
     m_impl->lastFrameDiagnostics.renderTargetHeight = m_impl->targetHeight;
     if (m_impl->colorTarget == kInvalidTextureHandleUVE || m_impl->depthTarget == kInvalidTextureHandleUVE) {
@@ -1529,8 +2013,26 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     Math::Matrix4x4UVE inverseProjection{};
     const bool projectionInvertible = Math::TryInverseUVE(projection, inverseProjection);
     const Math::Vector3UVE viewPosition = m_impl->cameraSystem.GetWorldPositionUVE(entityManager, cameraEntity);
-    const LightListUVE lights = m_impl->lightSystem.ExtractActiveLightsUVE(entityManager);
+    // Selected by contribution at the camera, not by whichever four the ECS happened to visit
+    // first. The old order was not merely arbitrary - it could change when an unrelated entity was
+    // created or destroyed, so a light could vanish from the player's face for no visible reason.
+    const LightListUVE lights =
+        m_impl->lightSystem.ExtractActiveLightsForViewUVE(entityManager, viewPosition);
     const Math::Vector3UVE ambientColor = ResolveWorldEnvironmentAmbientUVE(entityManager, m_impl->ambientColor);
+
+    // Built ONCE for the whole frame, then culled against each of the four frusta below. Before
+    // this, the full extraction walk ran per frustum - three shadow cascades plus the main view -
+    // re-resolving the same asset handles and recomputing the same world matrices and bounds four
+    // times over to reach four different plane tests. Only the plane test ever differed.
+    // Distances for LodGroup3D are measured from here. Set before the build because the build is
+    // where the level is resolved and the far entities are dropped.
+    m_impl->visibilitySet.cameraWorldPosition = viewPosition;
+    m_impl->meshRenderer.BuildVisibilitySetUVE(entityManager, m_impl->assetManager, m_impl->assetDatabase,
+                                               m_impl->visibilitySet);
+    m_impl->lastFrameDiagnostics.placementCacheHits = m_impl->visibilitySet.placementCacheHits;
+    m_impl->lastFrameDiagnostics.placementCacheMisses = m_impl->visibilitySet.placementCacheMisses;
+    m_impl->lastFrameDiagnostics.visibilityClusters = m_impl->visibilitySet.clusters.size();
+    m_impl->lastFrameDiagnostics.distanceCulledEntities = m_impl->visibilitySet.distanceCulledEntities;
 
     const LightDataUVE* const shadowCaster = FindShadowCasterUVE(lights);
     bool shadowsReady = shadowCaster != nullptr && m_impl->shadowProgram->IsValidUVE() &&
@@ -1587,9 +2089,11 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             }
             const Math::FrustumUVE lightFrustum =
                 m_impl->cameraSystem.ExtractFrustumUVE(lightSpaceMatrices[cascadeIndex]);
-            m_impl->meshRenderer.ExtractRenderQueueIntoUVE(entityManager, m_impl->assetManager, m_impl->assetDatabase,
-                                                            lightFrustum, m_impl->shadowQueues[cascadeIndex]);
-            m_impl->shadowQueues[cascadeIndex].SortUVE();
+            m_impl->meshRenderer.CullVisibilitySetIntoUVE(m_impl->visibilitySet, lightFrustum,
+                                                          m_impl->shadowQueues[cascadeIndex]);
+            // Mesh order, not depth order: this cascade renders depth only, and the shadow
+            // batcher merges adjacent same-mesh items. See SortForDepthOnlyPassUVE.
+            m_impl->shadowQueues[cascadeIndex].SortForDepthOnlyPassUVE();
                 cascadeNearPlane = cascadeFarPlane;
             }
             if (shadowsReady) {
@@ -1606,8 +2110,15 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                                           m_impl->shadowCascadeBlendRatio};
 
     RenderQueueUVE& queue = m_impl->frameQueue;
-    m_impl->meshRenderer.ExtractRenderQueueIntoUVE(entityManager, m_impl->assetManager, m_impl->assetDatabase,
-                                                   frustum, queue);
+    // Counted before the cull rather than inside it: CullVisibilitySetIntoUVE runs four times a
+    // frame against four different frusta, and a rejection ratio averaged across a main view and
+    // three much wider cascades describes none of them. This is the main view's alone.
+    for (const MeshVisibilitySetUVE::CandidateClusterUVE& cluster : m_impl->visibilitySet.clusters) {
+        if (!frustum.IntersectsUVE(cluster.bounds)) {
+            ++m_impl->lastFrameDiagnostics.visibilityClustersRejected;
+        }
+    }
+    m_impl->meshRenderer.CullVisibilitySetIntoUVE(m_impl->visibilitySet, frustum, queue);
     if (m_impl->particleRuntimeForFrame != nullptr) {
         const ParticleRenderSnapshotUVE particleSnapshot =
             ParticleRenderBridgeUVE::ExtractUVE(*m_impl->particleRuntimeForFrame);
@@ -1655,7 +2166,7 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                     m_impl->RecordShadowPassUVE(m_impl->shadowQueues[cascadeIndex].opaqueItems,
                                                 lightSpaceMatrices[cascadeIndex],
                                                 m_impl->shadowMapTargets[cascadeIndex], shadowCaster != nullptr,
-                                                commandBuffer);
+                                                m_impl->shadowBatches[cascadeIndex], commandBuffer);
                 });
         }
     }
@@ -1680,10 +2191,16 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             passDesc.clearColor = kDefaultSceneClearColorUVE;
             m_impl->lastFrameDiagnostics.mainPassRecorded = true;
             commandBuffer.BeginRenderPassUVE(passDesc);
-            m_impl->lastFrameDiagnostics.meshDrawCallsRecorded +=
-                m_impl->RecordItemsUVE(queue.opaqueItems, frameUniforms, commandBuffer);
-            m_impl->lastFrameDiagnostics.meshDrawCallsRecorded +=
-                m_impl->RecordItemsUVE(queue.transparentItems, frameUniforms, commandBuffer);
+            m_impl->instancedDrawCallsThisFrame = 0U;
+            m_impl->instancedObjectsThisFrame = 0U;
+            m_impl->lastFrameDiagnostics.meshDrawCallsRecorded += m_impl->RecordItemsInstancedUVE(
+                queue.opaqueItems, m_impl->opaqueBatches, frameUniforms, commandBuffer);
+            m_impl->lastFrameDiagnostics.meshDrawCallsRecorded += m_impl->RecordItemsInstancedUVE(
+                queue.transparentItems, m_impl->transparentBatches, frameUniforms, commandBuffer);
+            m_impl->lastFrameDiagnostics.instancedDrawCallsRecorded = m_impl->instancedDrawCallsThisFrame;
+            m_impl->lastFrameDiagnostics.instancedObjectsRecorded = m_impl->instancedObjectsThisFrame;
+            m_impl->lastFrameDiagnostics.shadowInstancedDrawCallsRecorded =
+                m_impl->shadowInstancedDrawCallsThisFrame;
             m_impl->lastFrameDiagnostics.particleDrawCommandsSubmitted =
                 m_impl->RecordParticleItemsUVE(m_impl->particleDrawRecording, frameUniforms, commandBuffer);
             m_impl->lastFrameDiagnostics.particleDrawCallsRecorded =
@@ -2014,6 +2531,17 @@ void Renderer3DUVE::SetPostProcessSettingsUVE(const PostProcessSettingsUVE& sett
 
 void Renderer3DUVE::SetUIRuntimeUVE(const UI::UIRuntimeUVE* const uiRuntime) noexcept {
     m_impl->uiRuntimeForFrame = uiRuntime;
+}
+
+void Renderer3DUVE::SetPhysicsInterpolationAlphaUVE(const float alpha) noexcept {
+    // Stored on the visibility set because that is where it is consumed - the build applies the
+    // blend once, rather than each of the frame's four culls redoing it and risking the shadow
+    // cascades disagreeing with the main view about where an object is.
+    //
+    // Clamped rather than rejected: a timer that overshoots after a long frame should keep
+    // drawing, and a non-finite value would otherwise reach a matrix compose.
+    const float sanitized = std::isfinite(alpha) ? (alpha < 0.0F ? 0.0F : (alpha > 1.0F ? 1.0F : alpha)) : 0.0F;
+    m_impl->visibilitySet.physicsInterpolationAlpha = sanitized;
 }
 
 Renderer3DFrameDiagnosticsUVE Renderer3DUVE::GetLastFrameDiagnosticsUVE() const noexcept {

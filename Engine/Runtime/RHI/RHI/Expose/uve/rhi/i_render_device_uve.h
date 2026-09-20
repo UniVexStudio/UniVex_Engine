@@ -50,6 +50,25 @@ public:
     [[nodiscard]] virtual bool UpdateBufferUVE(BufferHandleUVE buffer, std::span<const std::byte> data,
                                                 std::uint64_t offsetBytes = 0) = 0;
 
+    /// Copies `buffer`'s current contents at `offsetBytes` into `outData`, filling it exactly.
+    /// This is the read direction of UpdateBufferUVE and the only way engine code can observe
+    /// what the GPU wrote — the capability GPU compute needs to be verifiable rather than
+    /// merely dispatched (a compute result nobody can read back cannot be asserted on).
+    ///
+    /// Cold path by construction: the call synchronizes with the device (each backend drains
+    /// the work that could still be writing the buffer) before copying, so it belongs in
+    /// tooling, tests, and deliberate CPU-readback steps — never in a per-frame hot loop.
+    ///
+    /// Returns false (logging the reason) if `buffer` is unknown, the range would exceed the
+    /// buffer's size, or the backend cannot read that buffer's memory. Readback is guaranteed
+    /// only for `BufferUsageUVE::Uniform` and `BufferUsageUVE::Storage`: those are the usages
+    /// every backend keeps host-readable, and Storage is the one compute writes through.
+    /// Vertex/Index buffers may live in device-local memory with no transfer-source capability,
+    /// so a backend is free to refuse them loudly rather than pretend. An empty `outData` is a
+    /// successful no-op.
+    [[nodiscard]] virtual bool ReadbackBufferUVE(BufferHandleUVE buffer, std::span<std::byte> outData,
+                                                  std::uint64_t offsetBytes = 0) = 0;
+
     /// Creates a GPU texture per `desc`, optionally uploading `initialData`. The backend must
     /// reject invalid descriptors or partial non-empty level-0 data through
     /// `ValidateTextureUploadUVE` before allocating a resource; valid creation never returns
@@ -77,6 +96,19 @@ public:
     /// `outInfoLog` contract as CreateShaderUVE(), but for the link step's info log.
     [[nodiscard]] virtual PipelineHandleUVE CreatePipelineUVE(const PipelineDescUVE& desc,
                                                                std::string* outInfoLog = nullptr) = 0;
+
+    /// Creates a COMPUTE pipeline (M5a) per `desc` — one compute-stage shader, no fixed-function
+    /// state. Returns kInvalidPipelineHandleUVE (logging the reason into `outInfoLog`, same
+    /// contract as CreatePipelineUVE) when the shader handle is invalid, is not a compute-stage
+    /// shader, or the backend cannot build the pipeline. The returned handle shares the graphics
+    /// pipeline handle domain: BindPipelineUVE binds it, and ICommandBufferUVE::DispatchUVE
+    /// executes it. Since M5b, STORAGE_IMAGE bindings are accepted by both compute and graphics
+    /// reflection — they share the one texture-slot space fed by BindTextureUVE (see its doc).
+    /// Backends without compute (GL contexts older than 4.3, the fixed ES 3.0
+    /// Android baseline) fail creation loudly rather than returning a handle that could never
+    /// dispatch.
+    [[nodiscard]] virtual PipelineHandleUVE CreateComputePipelineUVE(const ComputePipelineDescUVE& desc,
+                                                                      std::string* outInfoLog = nullptr) = 0;
 
     /// Destroys `pipeline`. A handle already destroyed (or never valid) is a safe no-op (logged).
     virtual void DestroyPipelineUVE(PipelineHandleUVE pipeline) = 0;
@@ -108,10 +140,21 @@ public:
                                                                          const PipelineBinaryDescUVE& desc) = 0;
 
     /// Creates a new, empty ICommandBufferUVE ready for recording.
+    /// M4 threading contract: each ICommandBufferUVE is fully independent — the Vulkan and
+    /// Null backends record into per-object retained lists that touch no device state — so
+    /// distinct threads may create and record into their OWN command buffers concurrently
+    /// (one object is never shared between threads). The GL backend executes every command
+    /// during recording (an inherent GL-context property), so GL recording must happen on
+    /// the context's thread.
     [[nodiscard]] virtual std::unique_ptr<ICommandBufferUVE> CreateCommandBufferUVE() = 0;
 
     /// Submits a finished command buffer for execution. Consumes `commandBuffer` — it must not be
     /// used again after this call.
+    /// M4 threading contract: safe to call from any thread on every backend — the Vulkan
+    /// backend enqueues the recorded commands into a mutex-guarded submission FIFO that the
+    /// next PresentUVE() drains in submission order, the Null backend stores its spy list
+    /// under the same discipline, and GL simply releases the object. PresentUVE() itself
+    /// stays single-threaded (the GPU-timeline owner).
     virtual void SubmitUVE(std::unique_ptr<ICommandBufferUVE> commandBuffer) = 0;
 
     /// Presents the backend's default framebuffer (the window's back buffer), analogous to a

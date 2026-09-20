@@ -114,6 +114,28 @@ struct EditorTransformSnappingSettingsUVE final {
     float scaleStep = 0.1F;
 };
 
+/// One stored editor-viewport pose, expressed in orbit-camera terms (pivot target, yaw/pitch,
+/// orbit distance) so the value is independent of any concrete camera implementation - the app
+/// host applies it through its OrbitCamera's SetTarget/SetYawPitch/SetDistance. Session-local and
+/// never serialized (persisting these across runs needs a settings schema this increment does not
+/// define - real, separate follow-up, the same call Unreal makes for its own Ctrl+0..9 viewport
+/// bookmarks when they are stored only in per-user editor settings anyway).
+struct EditorViewportBookmarkUVE final {
+    Math::Vector3UVE target{};
+    float yawRadians = 0.0F;
+    float pitchRadians = 0.0F;
+    float distance = 10.0F;
+};
+
+/// The numeric bookmark slots following the Unreal editor convention (Ctrl+digit stores,
+/// plain digit restores).
+inline constexpr std::size_t kEditorViewportBookmarkSlotCountUVE = 10U;
+
+/// The orbit distance fly-to-marker bookmarks are composed at: near enough to actually frame the
+/// subject the marker stares at, far enough to keep the near-clip out of trouble. A bookmark is
+/// trivially dollied afterwards, so this is only ever a starting point.
+inline constexpr float kEditorMarkerFocusDistanceUVE = 5.0F;
+
 /// A read-only oriented box for the selected collider-backed document entity. All points are in
 /// derived world space and are intended for editor feedback only; this value is never serialized.
 struct EditorSelectionBoundsUVE final {
@@ -380,10 +402,54 @@ public:
     [[nodiscard]] bool CanRedoUVE() const noexcept;
 
     [[nodiscard]] std::vector<Scene::EntityUVE> GetDocumentRootsUVE();
+
+    /// The document's single scene-root entity (the top of the hierarchy), or invalid when the
+    /// document somehow has none. Structural only by design: name + identity transform.
+    [[nodiscard]] Scene::EntityUVE GetDocumentSceneRootUVE();
     [[nodiscard]] EditorStateUVE GetStateUVE() const noexcept;
     [[nodiscard]] Scene::EntityUVE GetSelectedEntityUVE() const noexcept;
     /// Returns editor-only 2D canvas state for screen-space authoring. It is not scene data.
     [[nodiscard]] Editor2DCanvasStateUVE Get2DCanvasStateUVE() const noexcept;
+
+    /// The editor-viewport bookmark slots (Unreal-editor Ctrl+digit/digit convention). All of it
+    /// is transient session state on EditorUVE, never document data and never dirtying the scene:
+    /// Set rejects an out-of-range slot or a non-finite/badly-formed pose, Get answers no value
+    /// for an empty slot, and Clear empties one slot. The app host owns applying a pose to its
+    /// real OrbitCamera - this class deliberately has no camera type in its interface.
+    [[nodiscard]] bool SetViewportBookmarkUVE(std::size_t slot,
+                                              const EditorViewportBookmarkUVE& bookmark) noexcept;
+    [[nodiscard]] std::optional<EditorViewportBookmarkUVE> GetViewportBookmarkUVE(
+        std::size_t slot) const noexcept;
+    [[nodiscard]] bool ClearViewportBookmarkUVE(std::size_t slot) noexcept;
+
+    /// Composes the fly-to-marker bookmark for an entity: the entity must carry a valid, enabled
+    /// Marker3DNodeComponentUVE and a world transform; the marker's authored offset+rotation are
+    /// composed under the node's pose (Scene::ComposeMarker3DPoseUVE), the camera eye is placed at
+    /// the marker's position looking along its composed -Z (the camera convention), and the orbit
+    /// bookmark states that same view as target/yaw/pitch/distance so the host camera applies it
+    /// verbatim. Any missing piece answers no value - fail-closed, the caller simply does not
+    /// move the camera. This is Marker3D's live consumer: a marker is a scene-persistent named
+    /// viewpoint the viewport can fly into, not the inert gizmo it stays in Godot.
+    [[nodiscard]] std::optional<EditorViewportBookmarkUVE> ComposeMarker3DFocusBookmarkUVE(
+        Scene::EntityUVE entity) const;
+
+    /// The orbit pivot for a plain focus-on-entity (no marker): the entity's world position, or
+    /// no value when it has no world transform. Distance/yaw/pitch intentionally stay whatever
+    /// the camera already holds - bounds-aware framing needs renderer-side bounds this class does
+    /// not own today; real, separate follow-up, not silently faked.
+    [[nodiscard]] std::optional<Math::Vector3UVE> ResolveEntityFocusTargetUVE(
+        Scene::EntityUVE entity) const;
+
+    /// Inverts the editor OrbitCamera's forward offset formula (eye = target + offset(yaw,pitch) *
+    /// distance) for a requested eye/look direction: pitch = asin(-forward.y) clamped to the same
+    /// +/-1.5533 range OrbitCameraSettings itself enforces (a straight-up/down look snaps to the
+    /// pole with yaw 0 by convention), yaw = atan2(-forward.z, -forward.x), target = eye +
+    /// forward * distance. A degenerate (near-zero or non-finite) forward answers no value.
+    /// Standing alone so both ComposeMarker3DFocusBookmarkUVE above and any future caller pin the
+    /// same math; Test/Editor measures the round trip (offset formula then this inverse) back to
+    /// the original eye below 1e-4.
+    [[nodiscard]] static std::optional<EditorViewportBookmarkUVE> ResolveOrbitBookmarkFromLookUVE(
+        const Math::Vector3UVE& eye, const Math::Vector3UVE& forward, float distance) noexcept;
     /// Validates and updates the editor-only 2D canvas zoom without changing scene state/history.
     [[nodiscard]] bool Set2DCanvasZoomUVE(float zoom) noexcept;
     /// Restores the editor-only 2D canvas to its centered loading-screen design view.
@@ -448,6 +514,17 @@ private:
         bool dirtyBefore = false;
         EditorSelectionPathsUVE selectionBefore;
     };
+
+    /// Play-entry spawn semantics. Called once by EnterPlayModeUVE() after the document snapshot
+    /// is captured and the simulation is running: resolves the one spawn point that fires this
+    /// session (deterministic content order over enabled+valid SpawnPoint3D nodes), moves the
+    /// player entity (the one carrying a CharacterControllerComponentUVE) to the composed spawn
+    /// pose via the sweep's exact inverse, and disables the point when it was authored
+    /// `oneShot = true`. Every mutation sits inside the snapshot, so StopPlayModeUVE() hands
+    /// back the authored player pose and every spent one-shot. Returns false when there is
+    /// nothing to do - no player, no enabled spawn point, or a degenerate pose/ancestry the
+    /// resolvers refuse - and a false return never fails play entry.
+    [[nodiscard]] bool ApplyPlayEntrySpawnUVE();
 
     /// Editor-only workspace labels. They do not alter document data, simulation state, or history.
     enum class EditorWorkspaceUVE {
@@ -562,12 +639,15 @@ private:
     /// creation (for example CharacterBody3D plus Collider and kinematic RigidBody) is one history unit.
     struct SceneNodeCreationHistoryEntryUVE final {
         Scene::SceneSnapshotUVE snapshot;
-        Scene::Nodes::SceneNodeKindUVE kind = Scene::Nodes::SceneNodeKindUVE::Empty;
+        Scene::Nodes::SceneNodeKindUVE kind = Scene::Nodes::SceneNodeKindUVE::Node3D;
         Scene::EntityUVE activeEntity = Scene::kInvalidEntityUVE;
         EditorSelectionSnapshotUVE selectionBefore;
         EditorSelectionSnapshotUVE selectionAfter;
         bool dirtyBefore = false;
         bool dirtyAfter = false;
+        /// The parent the node was created under; Redo restores the subtree back under it
+        /// (falling back to the scene root) instead of dropping it to document top level.
+        Scene::EntityUVE createdUnderParent = Scene::kInvalidEntityUVE;
     };
 
     /// A duplicated subtree is restored from a scene-envelope snapshot instead of relying on stale
@@ -687,6 +767,25 @@ private:
     void CancelHierarchyRenameUVE() noexcept;
     [[nodiscard]] Scene::EntityUVE CreateDocumentEntityInternalUVE(
         EditorEntityKindUVE kind, const std::optional<std::string>& explicitName);
+    /// Creates the document-entity shell every scene node starts from: a live entity with a
+    /// default TransformComponentUVE and the given (already finalized) NameComponentUVE.
+    /// Node definitions (Engine/Runtime/Nodes/3D) attach their kind-specific components on top.
+    [[nodiscard]] Scene::EntityUVE CreateDocumentEntityShellInternalUVE(const std::string_view name);
+
+    /// Returns whether `entity` carries the scene-root marker. The root is never deletable,
+    /// re-parentable, or duplicable - every one of those commands checks this first.
+    [[nodiscard]] bool IsSceneRootEntityUVE(Scene::EntityUVE entity) const;
+
+    /// Returns the document's scene root when one exists, else creates it (name + transform +
+    /// marker via the SceneRoot NodeDefinition). Idempotent: the one-root invariant every
+    /// document seam relies on is established or confirmed on every call.
+    [[nodiscard]] Scene::EntityUVE EnsureDocumentSceneRootUVE();
+    /// Creates a document entity for one node kind from that kind's NodeDefinition: a
+    /// uniquely-named entity shell plus the definition's component recipe. Defined in
+    /// editor_uve.cpp next to its only call sites.
+    template <typename Definition, typename ApplyFunc>
+    [[nodiscard]] Scene::EntityUVE CreateNodeDefinitionEntityInternalUVE(const Definition& definition,
+                                                                         ApplyFunc applyDefinition);
     void RecordHistoryUVE(HistoryEntryUVE entry);
     void ClearHistoryUVE() noexcept;
     [[nodiscard]] bool UndoHistoryEntryUVE(HistoryEntryUVE& entry);
@@ -776,6 +875,10 @@ private:
     EditorTransformSnappingSettingsUVE m_transformSnappingSettings{};
     EditorToolSessionUVE m_toolSession;
     Editor2DCanvasStateUVE m_2dCanvasState{};
+    // Transient editor-viewport bookmark slots (Set/Get/ClearViewportBookmarkUVE) - session
+    // state only, intentionally NOT part of any document or settings file.
+    std::array<std::optional<EditorViewportBookmarkUVE>, kEditorViewportBookmarkSlotCountUVE>
+        m_viewportBookmarks{};
     bool m_2dCanvasPanning = false;
     std::deque<HistoryEntryUVE> m_undoHistory;
     std::deque<HistoryEntryUVE> m_redoHistory;

@@ -116,10 +116,16 @@ add_library(uve_editor STATIC
     Internal/editor_bridge_uve.cpp
     Internal/developer_console_uve.cpp
     Internal/editor_tool_session_uve.cpp
+    Internal/editor_render_stats_uve.cpp
     Internal/editor_theme_uve.cpp
     Internal/editor_ui_assets_uve.cpp
     Internal/mesh_thumbnail_renderer_uve.cpp
     Internal/editor_uve.cpp
+    Internal/editor_panel_hierarchy_uve.cpp
+    Internal/editor_panel_inspector_uve.cpp
+    Internal/editor_panel_content_browser_uve.cpp
+    Internal/editor_panel_viewport_uve.cpp
+    Internal/editor_panel_menu_dock_uve.cpp
     Internal/inspector_drawer_registry_uve.cpp
     Internal/regression_harness_uve.cpp
     ${_uve_editor_font_incs}

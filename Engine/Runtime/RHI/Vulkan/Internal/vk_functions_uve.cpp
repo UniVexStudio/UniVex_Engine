@@ -171,12 +171,15 @@ bool VkFunctionsUVE::LoadDeviceUVE(const VkDevice device) {
     allResolved &= ResolveDevice(vkCreatePipelineLayout, gdpa, device, "vkCreatePipelineLayout");
     allResolved &= ResolveDevice(vkDestroyPipelineLayout, gdpa, device, "vkDestroyPipelineLayout");
     allResolved &= ResolveDevice(vkCreateGraphicsPipelines, gdpa, device, "vkCreateGraphicsPipelines");
+    allResolved &= ResolveDevice(vkCreateComputePipelines, gdpa, device, "vkCreateComputePipelines");
     allResolved &= ResolveDevice(vkDestroyPipeline, gdpa, device, "vkDestroyPipeline");
     allResolved &= ResolveDevice(vkCmdBindPipeline, gdpa, device, "vkCmdBindPipeline");
+    allResolved &= ResolveDevice(vkCmdDispatch, gdpa, device, "vkCmdDispatch");
     allResolved &= ResolveDevice(vkCmdBindVertexBuffers, gdpa, device, "vkCmdBindVertexBuffers");
     allResolved &= ResolveDevice(vkCmdBindIndexBuffer, gdpa, device, "vkCmdBindIndexBuffer");
     allResolved &= ResolveDevice(vkCmdDraw, gdpa, device, "vkCmdDraw");
     allResolved &= ResolveDevice(vkCmdDrawIndexed, gdpa, device, "vkCmdDrawIndexed");
+    allResolved &= ResolveDevice(vkCmdDrawIndexedIndirect, gdpa, device, "vkCmdDrawIndexedIndirect");
     allResolved &= ResolveDevice(vkCmdSetViewport, gdpa, device, "vkCmdSetViewport");
     allResolved &= ResolveDevice(vkCmdSetScissor, gdpa, device, "vkCmdSetScissor");
     allResolved &= ResolveDevice(vkCreateImage, gdpa, device, "vkCreateImage");
@@ -195,6 +198,7 @@ bool VkFunctionsUVE::LoadDeviceUVE(const VkDevice device) {
     allResolved &= ResolveDevice(vkDestroySampler, gdpa, device, "vkDestroySampler");
     allResolved &= ResolveDevice(vkCmdCopyBufferToImage, gdpa, device, "vkCmdCopyBufferToImage");
     allResolved &= ResolveDevice(vkFreeDescriptorSets, gdpa, device, "vkFreeDescriptorSets");
+    allResolved &= ResolveDevice(vkCmdCopyBuffer, gdpa, device, "vkCmdCopyBuffer");
     // Dynamic rendering is OPTIONAL (M2d gate): resolve without failing — the device probes
     // support/enables the feature independently and falls back to the classic render-pass
     // path when these are absent.

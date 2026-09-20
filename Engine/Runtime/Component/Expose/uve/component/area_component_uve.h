@@ -20,10 +20,6 @@ struct AreaComponentUVE final {
     bool monitorable = true;
 };
 
-[[nodiscard]] inline bool IsAreaComponentValidUVE(const AreaComponentUVE& area) noexcept {
-    return std::isfinite(area.halfExtents.x) && std::isfinite(area.halfExtents.y) &&
-           std::isfinite(area.halfExtents.z) && area.halfExtents.x > 0.0F &&
-           area.halfExtents.y > 0.0F && area.halfExtents.z > 0.0F && area.collisionLayer != 0U;
-}
+[[nodiscard]] bool IsAreaComponentValidUVE(const AreaComponentUVE& area) noexcept;
 
 } // namespace UVE::Scene

@@ -38,6 +38,7 @@ add_executable(uve_core_tests
     Core/Asset/asset_manager_uve_tests.cpp
     Core/Asset/file_system_uve_tests.cpp
     Core/Asset/mesh_asset_uve_tests.cpp
+    Core/Asset/mesh_skinning_uve_tests.cpp
     Core/Asset/texture_asset_uve_tests.cpp
     Core/Asset/shader_asset_uve_tests.cpp
     Core/Asset/material_asset_uve_tests.cpp
@@ -153,6 +154,8 @@ gtest_discover_tests(uve_core_tests)
 
 add_executable(uve_integration_tests
     Nodes/3D/nodes_3d_uve_tests.cpp
+    Nodes/3D/node_definitions_3d_uve_tests.cpp
+    Nodes/CanvasLayer/node_definitions_canvas_layer_uve_tests.cpp
     Integration/Entity/archetype_uve_tests.cpp
     Integration/Entity/chunk_uve_tests.cpp
     Integration/Entity/entity_manager_uve_tests.cpp
@@ -206,6 +209,14 @@ add_executable(uve_integration_tests
     Audio/wav_pcm16_decoder_uve_tests.cpp
     Audio/wav_importer_uve_tests.cpp
     RHI/RenderSystems/camera_system_uve_tests.cpp
+    RHI/RenderSystems/compute_system_uve_tests.cpp
+    RHI/RenderSystems/particle_compute_simulation_uve_tests.cpp
+    RHI/RenderSystems/frustum_cull_compute_uve_tests.cpp
+    RHI/RenderSystems/frustum_cull_indirect_uve_tests.cpp
+    RHI/RenderSystems/mesh_skin_compute_uve_tests.cpp
+    RHI/RenderSystems/render_batch_uve_tests.cpp
+    RHI/RenderSystems/compute_kernel_portability_uve_tests.cpp
+    RHI/RenderSystems/compute_workloads_vulkan_uve_tests.cpp
     RHI/RenderSystems/light_system_uve_tests.cpp
     RHI/RenderSystems/mesh_renderer_uve_tests.cpp
     RHI/RenderSystems/mesh_render_eligibility_uve_tests.cpp
@@ -236,6 +247,19 @@ target_link_libraries(uve_integration_tests PRIVATE
     uve_audio
     uve_render_systems
     uve_rhi_null
+    # compute_system_uve_tests.cpp proves ComputeSystemUVE against a REAL GL device (program
+    # compilation plus a byte-verified SSBO readback after a queued dispatch), skipping cleanly
+    # when no display is available - so this executable needs the GL backend and the window
+    # manager that brings up its context, exactly like uve_core_tests does for its own GL tests.
+    # The raw <GL/gl.h> calls in that file resolve the same way engine_core_uve_tests.cpp's do:
+    # OpenGL::GL and glfw propagate through the static-library dependency chain.
+    uve_rhi_opengl
+    # compute_workloads_vulkan_uve_tests.cpp runs CS4's particle simulation and CS5's culling
+    # against a REAL Vulkan device (headless over VK_EXT_headless_surface), which is what proves
+    # those workloads are backend-independent rather than GL-only - so this executable needs the
+    # Vulkan backend too, alongside the GL one its other compute tests use.
+    uve_rhi_vulkan
+    uve_window
     uve_input
     uve_ui
     GTest::gtest
@@ -311,6 +335,9 @@ add_executable(uve_editor_tests
     Editor/developer_console_uve_tests.cpp
     Editor/developer_console_bridge_uve_tests.cpp
     Editor/editor_tool_session_uve_tests.cpp
+    Editor/editor_render_stats_uve_tests.cpp
+    Editor/editor_chrome_layout_uve_tests.cpp
+    Editor/editor_icon_registry_uve_tests.cpp
     Editor/editor_uve_tests.cpp
     Editor/inspector_drawer_registry_uve_tests.cpp
     Editor/regression_harness_uve_tests.cpp
@@ -326,6 +353,20 @@ target_link_libraries(uve_editor_tests PRIVATE
     GTest::gtest
     GTest::gtest_main
 )
+
+# The chrome-layout helper is shared between the editor's panel translation units but is not
+# public API - it lives in EditorCore/Internal, so the test covering it needs that directory on
+# the include path. Deliberately not promoted to Expose: nothing outside the editor has any
+# business computing panel rects.
+#
+# uve_editor_imgui is linked directly because uve_editor keeps it PRIVATE, and the layout helper's
+# signature is in ImGui's own types. Linking it here rather than making it PUBLIC on uve_editor
+# keeps imgui out of every other consumer's include path, which is why it was PRIVATE to begin
+# with - the test's need does not justify widening the library's surface.
+target_include_directories(uve_editor_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/Engine/Editor/EditorCore/Internal
+)
+target_link_libraries(uve_editor_tests PRIVATE uve_editor_imgui)
 target_compile_features(uve_editor_tests PRIVATE cxx_std_20)
 target_compile_definitions(uve_editor_tests PRIVATE UVE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 uve_set_warnings(uve_editor_tests)

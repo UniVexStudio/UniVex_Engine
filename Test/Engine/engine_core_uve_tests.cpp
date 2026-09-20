@@ -14,6 +14,7 @@
 #include <numbers>
 #include <limits>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -54,6 +55,19 @@
 #include "uve/component/camera_component_uve.h"
 #include "uve/component/character_controller_component_uve.h"
 #include "uve/component/collider_component_uve.h"
+#include "uve/asset/uve_file_envelope_uve.h"
+#include "uve/entity/entity_manager_uve.h"
+#include "uve/events/event_system_uve.h"
+#include "uve/memory/memory_manager_uve.h"
+#include "uve/scene/scene_graph_uve.h"
+#include "uve/scene/scene_serializer_uve.h"
+#include "uve/nodes/3d/hitbox_3d_uve.h"
+#include "uve/nodes/3d/hurtbox_3d_uve.h"
+#include "uve/nodes/3d/interaction_area_3d_uve.h"
+#include "uve/nodes/3d/level_streamer_3d_uve.h"
+#include "uve/nodes/3d/reflection_probe_3d_uve.h"
+#include "uve/nodes/3d/visibility_region_3d_uve.h"
+#include "uve/nodes/3d/world_partition_3d_uve.h"
 #include "uve/nodes/3d/projectile_3d_uve.h"
 #include "uve/nodes/3d/ray_cast_3d_uve.h"
 #include "uve/component/mesh_component_uve.h"
@@ -67,6 +81,7 @@
 #include "uve/component/ui_text_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/scripting/script_graph_persistence_uve.h"
+#include "uve/rhi_null/null_render_device_uve.h"
 #include "uve/scripting/script_graph_uve.h"
 #include "uve/window/i_window_manager_uve.h"
 
@@ -1372,6 +1387,292 @@ TEST(EngineCoreUVETest, RayCast3DNode_HitsRealGroundColliderExcludesItselfAndMis
     engine.Shutdown();
 }
 
+TEST(EngineCoreUVETest, Hitbox3DNode_StrikesOverlappingHurtboxAndClearsWhenGatedOrApart) {
+    // EngineCoreUVE::SyncHitbox3DNodesUVE() is new wiring: previously Hitbox3DNodeComponentUVE
+    // and Hurtbox3DNodeComponentUVE were pure authored data with nothing evaluating them. This
+    // proves the real per-frame pairing - exact oriented-box overlap with symmetric layer/mask
+    // acceptance, damage-channel equality, and self-exclusion - and that every gate clears
+    // stale strikes instead of keeping the previous frame's list.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    // Attacker at the origin with default combat volumes (half extents 0.5, layer 1, full mask,
+    // channel "default"); victim parked 0.5 units away so the boxes overlap 0.5 units along X.
+    const Scene::EntityUVE attacker = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, attacker, Scene::TransformComponentUVE{});
+    entityManager.AddComponentUVE<Scene::Hitbox3DNodeComponentUVE>(
+        attacker, Scene::Hitbox3DNodeComponentUVE{});
+
+    const Scene::EntityUVE victim = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE victimTransform;
+    victimTransform.localPosition = Math::Vector3UVE{0.5F, 0.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, victim, victimTransform);
+    entityManager.AddComponentUVE<Scene::Hurtbox3DNodeComponentUVE>(
+        victim, Scene::Hurtbox3DNodeComponentUVE{});
+
+    engine.TickFrameUVE();
+    {
+        const Scene::Hitbox3DNodeComponentUVE& afterStrike =
+            entityManager.GetComponentUVE<Scene::Hitbox3DNodeComponentUVE>(attacker);
+        ASSERT_EQ(afterStrike.strikeCount, 1U);
+        EXPECT_EQ(afterStrike.strikes[0U].hurtboxEntity, victim);
+        EXPECT_NEAR(afterStrike.strikes[0U].penetrationDepth, 0.5F, 0.01F);
+        EXPECT_FALSE(afterStrike.strikesTruncated);
+    }
+
+    // Moving the hurtbox far out of range must clear the strike, not keep the stale one.
+    Scene::TransformComponentUVE victimLive =
+        entityManager.GetComponentUVE<Scene::TransformComponentUVE>(victim);
+    victimLive.localPosition = Math::Vector3UVE{10.0F, 0.0F, 0.0F};
+    sceneGraph.SetLocalTransformUVE(entityManager, victim, victimLive);
+    engine.TickFrameUVE();
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::Hitbox3DNodeComponentUVE>(attacker).strikeCount, 0U);
+
+    // Back in range but on a different damage channel: no strike.
+    victimLive.localPosition = Math::Vector3UVE{0.5F, 0.0F, 0.0F};
+    sceneGraph.SetLocalTransformUVE(entityManager, victim, victimLive);
+    Scene::Hurtbox3DNodeComponentUVE& hurtboxLive =
+        entityManager.GetComponentUVE<Scene::Hurtbox3DNodeComponentUVE>(victim);
+    hurtboxLive.damageChannel = "environment";
+    engine.TickFrameUVE();
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::Hitbox3DNodeComponentUVE>(attacker).strikeCount, 0U);
+
+    // Same channel again but the hurtbox's mask no longer accepts the hitbox's layer: no strike
+    // (acceptance is symmetric - both sides must accept each other).
+    hurtboxLive.damageChannel = "default";
+    hurtboxLive.collisionMask = 0U;
+    engine.TickFrameUVE();
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::Hitbox3DNodeComponentUVE>(attacker).strikeCount, 0U);
+
+    // Mask restored but the hitbox itself is disabled: no strike, and none may linger.
+    hurtboxLive.collisionMask = 0xFFFFFFFFU;
+    Scene::Hitbox3DNodeComponentUVE& hitboxLive =
+        entityManager.GetComponentUVE<Scene::Hitbox3DNodeComponentUVE>(attacker);
+    hitboxLive.enabled = false;
+    engine.TickFrameUVE();
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::Hitbox3DNodeComponentUVE>(attacker).strikeCount, 0U);
+
+    // Re-enabled: the strike returns. A hurtbox on the attacker's OWN entity must not add a
+    // second (self) strike - the victim stays the only recorded hit.
+    hitboxLive.enabled = true;
+    entityManager.AddComponentUVE<Scene::Hurtbox3DNodeComponentUVE>(
+        attacker, Scene::Hurtbox3DNodeComponentUVE{});
+    engine.TickFrameUVE();
+    {
+        const Scene::Hitbox3DNodeComponentUVE& afterStrike =
+            entityManager.GetComponentUVE<Scene::Hitbox3DNodeComponentUVE>(attacker);
+        ASSERT_EQ(afterStrike.strikeCount, 1U);
+        EXPECT_EQ(afterStrike.strikes[0U].hurtboxEntity, victim);
+    }
+
+    engine.Shutdown();
+}
+
+TEST(EngineCoreUVETest, InteractionArea3DNode_TracksInteractorsFocusesTheNearestAndClearsWhenGated) {
+    // EngineCoreUVE::SyncInteractionArea3DNodesUVE() is new wiring: previously
+    // InteractionArea3DNodeComponentUVE was pure authored data with nothing evaluating it - a
+    // game had to hand-roll the whole "what can I interact with" loop. This proves the real
+    // per-frame behaviour: the character-controller player populates overlapping areas'
+    // interactor lists, exactly one area - the nearest - earns focusedByPrimaryInteractor,
+    // the bounded list reports its own overflow, and every gate clears stale state instead of
+    // keeping the previous frame's answers.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    // The player: a character controller with the default box collider (0.5 half extents) at the
+    // origin. Area A is one step away; area B starts out of range.
+    const Scene::EntityUVE player = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, player, Scene::TransformComponentUVE{});
+    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(player, Scene::ColliderComponentUVE{});
+    entityManager.AddComponentUVE<Scene::CharacterControllerComponentUVE>(player);
+
+    const Scene::EntityUVE areaA = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE transformA;
+    transformA.localPosition = Math::Vector3UVE{0.4F, 0.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, areaA, transformA);
+    entityManager.AddComponentUVE<Scene::InteractionArea3DNodeComponentUVE>(
+        areaA, Scene::InteractionArea3DNodeComponentUVE{});
+
+    const Scene::EntityUVE areaB = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE transformB;
+    transformB.localPosition = Math::Vector3UVE{30.0F, 0.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, areaB, transformB);
+    entityManager.AddComponentUVE<Scene::InteractionArea3DNodeComponentUVE>(
+        areaB, Scene::InteractionArea3DNodeComponentUVE{});
+
+    engine.TickFrameUVE();
+    {
+        const Scene::InteractionArea3DNodeComponentUVE& live =
+            entityManager.GetComponentUVE<Scene::InteractionArea3DNodeComponentUVE>(areaA);
+        ASSERT_EQ(live.interactorCount, 1U);
+        EXPECT_EQ(live.interactors[0U], player);
+        EXPECT_FALSE(live.interactorsTruncated);
+        EXPECT_TRUE(live.focusedByPrimaryInteractor);
+    }
+    {
+        const Scene::InteractionArea3DNodeComponentUVE& live =
+            entityManager.GetComponentUVE<Scene::InteractionArea3DNodeComponentUVE>(areaB);
+        EXPECT_EQ(live.interactorCount, 0U);
+        EXPECT_FALSE(live.focusedByPrimaryInteractor);
+    }
+
+    // Pull B barely into range (its center lands farther than A's): both list the player, but
+    // only the NEAREST one keeps the focus.
+    transformB.localPosition = Math::Vector3UVE{0.45F, 0.0F, 0.0F};
+    sceneGraph.SetLocalTransformUVE(entityManager, areaB, transformB);
+    engine.TickFrameUVE();
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::InteractionArea3DNodeComponentUVE>(areaB)
+                  .interactorCount,
+              1U);
+    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::InteractionArea3DNodeComponentUVE>(areaA)
+                    .focusedByPrimaryInteractor);
+    EXPECT_FALSE(entityManager.GetComponentUVE<Scene::InteractionArea3DNodeComponentUVE>(areaB)
+                     .focusedByPrimaryInteractor);
+
+    // B ends up the nearer of the two: the focus must MOVE to it, not stick to first-come.
+    transformB.localPosition = Math::Vector3UVE{0.1F, 0.0F, 0.0F};
+    sceneGraph.SetLocalTransformUVE(entityManager, areaB, transformB);
+    engine.TickFrameUVE();
+    EXPECT_FALSE(entityManager.GetComponentUVE<Scene::InteractionArea3DNodeComponentUVE>(areaA)
+                     .focusedByPrimaryInteractor);
+    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::InteractionArea3DNodeComponentUVE>(areaB)
+                    .focusedByPrimaryInteractor);
+
+    // Disabling B hands the focus back to A - nothing stale may survive the gate.
+    entityManager.GetComponentUVE<Scene::InteractionArea3DNodeComponentUVE>(areaB).enabled = false;
+    engine.TickFrameUVE();
+    {
+        const Scene::InteractionArea3DNodeComponentUVE& liveB =
+            entityManager.GetComponentUVE<Scene::InteractionArea3DNodeComponentUVE>(areaB);
+        EXPECT_EQ(liveB.interactorCount, 0U);
+        EXPECT_FALSE(liveB.focusedByPrimaryInteractor);
+    }
+    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::InteractionArea3DNodeComponentUVE>(areaA)
+                    .focusedByPrimaryInteractor);
+
+    // The player's collider mask stops accepting either side: participation ends, and with no
+    // interactor left the focus goes away entirely - fail-closed, not last-known.
+    entityManager.GetComponentUVE<Scene::InteractionArea3DNodeComponentUVE>(areaB).enabled = true;
+    Scene::ColliderComponentUVE& playerCollider =
+        entityManager.GetComponentUVE<Scene::ColliderComponentUVE>(player);
+    playerCollider.collisionMask = 0U;
+    engine.TickFrameUVE();
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::InteractionArea3DNodeComponentUVE>(areaA)
+                  .interactorCount,
+              0U);
+    EXPECT_FALSE(entityManager.GetComponentUVE<Scene::InteractionArea3DNodeComponentUVE>(areaA)
+                     .focusedByPrimaryInteractor);
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::InteractionArea3DNodeComponentUVE>(areaB)
+                  .interactorCount,
+              0U);
+
+    // Mask restored and B moved back out of range, plus a second controller on the same spot:
+    // with an authored candidate budget of one, the bounded list keeps exactly one entry and
+    // REPORTS its overflow instead of silently dropping the extra interactor or overwriting past
+    // the cap.
+    playerCollider.collisionMask = 0xFFFFFFFFU;
+    transformB.localPosition = Math::Vector3UVE{30.0F, 0.0F, 0.0F};
+    sceneGraph.SetLocalTransformUVE(entityManager, areaB, transformB);
+    Scene::InteractionArea3DNodeComponentUVE& liveA =
+        entityManager.GetComponentUVE<Scene::InteractionArea3DNodeComponentUVE>(areaA);
+    liveA.maximumCandidates = 1U;
+    const Scene::EntityUVE secondPlayer = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, secondPlayer, Scene::TransformComponentUVE{});
+    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(
+        secondPlayer, Scene::ColliderComponentUVE{});
+    entityManager.AddComponentUVE<Scene::CharacterControllerComponentUVE>(secondPlayer);
+    engine.TickFrameUVE();
+    {
+        const Scene::InteractionArea3DNodeComponentUVE& afterFill =
+            entityManager.GetComponentUVE<Scene::InteractionArea3DNodeComponentUVE>(areaA);
+        EXPECT_EQ(afterFill.interactorCount, 1U);
+        EXPECT_TRUE(afterFill.interactorsTruncated);
+        // The primary interactor is the first content-ordered controller, and the focus verdict
+        // is independent of the bounded list: with B out of range, A is the only area the
+        // primary overlaps, so it stays focused regardless of the truncated extra entry.
+        EXPECT_TRUE(afterFill.focusedByPrimaryInteractor);
+    }
+
+    // A controller WITHOUT a collider has no overlap volume and must never appear.
+    const Scene::EntityUVE colliderless = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, colliderless, Scene::TransformComponentUVE{});
+    entityManager.AddComponentUVE<Scene::CharacterControllerComponentUVE>(colliderless);
+    engine.TickFrameUVE();
+    {
+        const Scene::InteractionArea3DNodeComponentUVE& afterFill =
+            entityManager.GetComponentUVE<Scene::InteractionArea3DNodeComponentUVE>(areaA);
+        EXPECT_EQ(afterFill.interactorCount, 1U);
+        for (std::size_t index = 0; index < afterFill.interactorCount; ++index) {
+            EXPECT_NE(afterFill.interactors[index], colliderless);
+        }
+    }
+
+    engine.Shutdown();
+}
+
+TEST(EngineCoreUVETest, Hitbox3DNode_HurtboxRotationIsHonoredByExactObbOverlap) {
+    // The strike test must be an exact ORIENTED-box test, not a conservative axis-aligned one.
+    // Both boxes are long thin rods along X; the hurtbox sits 2 units to the side. Unrotated it
+    // clearly overlaps (x in [0.5, 3.5] vs the hitbox's [-1.5, 1.5]); rotated 90 degrees about Z
+    // its long axis becomes vertical (x only in [1.9, 2.1]) and it must NOT strike. A pairing
+    // that ignored rotation would fail this test in the always-overlapping direction.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    const Scene::EntityUVE attacker = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, attacker, Scene::TransformComponentUVE{});
+    Scene::Hitbox3DNodeComponentUVE hitbox;
+    hitbox.halfExtents = Math::Vector3UVE{1.5F, 0.1F, 0.1F};
+    entityManager.AddComponentUVE<Scene::Hitbox3DNodeComponentUVE>(attacker, hitbox);
+
+    const Scene::EntityUVE victim = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE victimTransform;
+    victimTransform.localPosition = Math::Vector3UVE{2.0F, 0.0F, 0.0F};
+    victimTransform.localRotation =
+        Math::QuaternionUVE{0.0F, 0.0F, 0.70710678F, 0.70710678F}; // 90 degrees about +Z
+    sceneGraph.AttachTransformUVE(entityManager, victim, victimTransform);
+    Scene::Hurtbox3DNodeComponentUVE hurtbox;
+    hurtbox.halfExtents = Math::Vector3UVE{1.5F, 0.1F, 0.1F};
+    entityManager.AddComponentUVE<Scene::Hurtbox3DNodeComponentUVE>(victim, hurtbox);
+
+    engine.TickFrameUVE();
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::Hitbox3DNodeComponentUVE>(attacker).strikeCount, 0U);
+
+    // Removing the rotation turns the hurtbox back along X: it must strike. The recorded depth
+    // is the minimum-translation-axis penetration, i.e. the thinnest separating direction - for
+    // two horizontal rods stacked in Y that is the Y axis (0.1 + 0.1 extents, fully overlapped),
+    // not the 1.0-unit X overlap.
+    Scene::TransformComponentUVE victimLive =
+        entityManager.GetComponentUVE<Scene::TransformComponentUVE>(victim);
+    victimLive.localRotation = Math::QuaternionUVE{};
+    sceneGraph.SetLocalTransformUVE(entityManager, victim, victimLive);
+    engine.TickFrameUVE();
+    {
+        const Scene::Hitbox3DNodeComponentUVE& afterStrike =
+            entityManager.GetComponentUVE<Scene::Hitbox3DNodeComponentUVE>(attacker);
+        ASSERT_EQ(afterStrike.strikeCount, 1U);
+        EXPECT_EQ(afterStrike.strikes[0U].hurtboxEntity, victim);
+        EXPECT_NEAR(afterStrike.strikes[0U].penetrationDepth, 0.2F, 0.01F);
+    }
+
+    engine.Shutdown();
+}
+
 TEST(EngineCoreUVETest, Projectile3DNode_IntegratesVelocityAccelerationAndExpiresAfterLifetime) {
     // EngineCoreUVE::SyncProjectile3DNodesUVE() is new wiring: previously
     // Projectile3DNodeComponentUVE was pure authored data with nothing moving it or expiring it.
@@ -2137,6 +2438,111 @@ TEST(RunUVEExceptionBoundaryHarnessUVETest, ThrowDuringFrameUpdate_RunsShutdownI
     EXPECT_EQ(harness.GetStateUVE(), EngineStateUVE::Shutdown);
 }
 
+
+// ---------------------------------------------------------------------------
+// CS2: ComputeSystemUVE wired into the frame loop. The queue is drained in
+// Render(), BEFORE any render pass opens, into its own submitted command
+// buffer - the RHI compute slices' outside-pass-markers contract, enforced at
+// the engine level rather than left to each caller.
+// ---------------------------------------------------------------------------
+
+// The headless engine config brings up NullRenderDeviceUVE, whose spy hook keeps the most
+// recently submitted command list - the same evidence channel RenderSystemUVE's own tests use.
+// Reached by dynamic_cast rather than a new production accessor: the engine exposes the device
+// through its interface, and inventing a test-only getter on EngineCoreUVE to see one backend's
+// spy would put test scaffolding into the engine's public surface.
+[[nodiscard]] const std::vector<Render::RecordedCommandUVE>& LastSubmittedCommandsUVE(
+    EngineCoreUVE& engine) {
+    auto* const nullDevice =
+        dynamic_cast<Render::NullRenderDeviceUVE*>(&engine.GetServicesUVE().GetRenderDeviceUVE());
+    UVE_ASSERT(nullDevice != nullptr && "headless EngineCoreUVE must run on NullRenderDeviceUVE");
+    return nullDevice->GetLastSubmittedCommandsUVE();
+}
+
+TEST(EngineCoreUVETest, ComputeSystem_ReachableThroughServicesAfterInit) {
+    EngineCoreUVE engine(MakeTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    Render::IComputeSystemUVE& computeSystem = engine.GetServicesUVE().GetComputeSystemUVE();
+    EXPECT_EQ(computeSystem.GetQueuedDispatchCountUVE(), 0U);
+    EXPECT_EQ(computeSystem.GetDiagnosticsUVE().dispatchesRecorded, 0U);
+
+    engine.Shutdown();
+}
+
+TEST(EngineCoreUVETest, TickFrame_QueuedComputeDispatch_IsSubmittedBeforeAnyRenderPass) {
+    EngineCoreUVE engine(MakeTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    Render::IComputeSystemUVE& computeSystem = engine.GetServicesUVE().GetComputeSystemUVE();
+    Render::IRenderDeviceUVE& renderDevice = engine.GetServicesUVE().GetRenderDeviceUVE();
+
+    Render::ComputeProgramDescUVE programDesc;
+    programDesc.sourceCode = "engine-frame-loop compute kernel (recorded by the Null backend)";
+    programDesc.debugName = "frame-loop-kernel";
+    const Render::PipelineHandleUVE program = computeSystem.CreateProgramUVE(programDesc);
+    ASSERT_NE(program, Render::kInvalidPipelineHandleUVE);
+
+    const Render::BufferHandleUVE storage =
+        renderDevice.CreateBufferUVE(Render::BufferDescUVE{64U, Render::BufferUsageUVE::Storage});
+    ASSERT_NE(storage, Render::kInvalidBufferHandleUVE);
+
+    Render::ComputeDispatchDescUVE dispatch;
+    dispatch.program = program;
+    dispatch.groupCountX = 3U;
+    dispatch.groupCountY = 2U;
+    dispatch.groupCountZ = 1U;
+    dispatch.storageBuffers.push_back(Render::ComputeStorageBufferBindingUVE{storage, 0U});
+    ASSERT_TRUE(computeSystem.EnqueueDispatchUVE(dispatch));
+    ASSERT_EQ(computeSystem.GetQueuedDispatchCountUVE(), 1U);
+
+    engine.TickFrameUVE();
+
+    // The queue drained through the frame loop - no test touched a command buffer directly.
+    EXPECT_EQ(computeSystem.GetQueuedDispatchCountUVE(), 0U);
+    EXPECT_EQ(computeSystem.GetDiagnosticsUVE().dispatchesRecorded, 1U);
+
+    // The compute work went out as its OWN submission, with no pass markers around it: the Null
+    // spy keeps the most recent submitted list, and with no active camera the renderer records
+    // nothing this frame, so what remains is exactly the compute buffer.
+    const auto& submitted = LastSubmittedCommandsUVE(engine);
+    ASSERT_EQ(submitted.size(), 3U);
+    ASSERT_TRUE(std::holds_alternative<Render::BindPipelineCommandUVE>(submitted[0]));
+    EXPECT_EQ(std::get<Render::BindPipelineCommandUVE>(submitted[0]).pipeline, program);
+    ASSERT_TRUE(std::holds_alternative<Render::BindStorageBufferCommandUVE>(submitted[1]));
+    EXPECT_EQ(std::get<Render::BindStorageBufferCommandUVE>(submitted[1]).buffer, storage);
+    ASSERT_TRUE(std::holds_alternative<Render::DispatchCommandUVE>(submitted[2]));
+    EXPECT_EQ(std::get<Render::DispatchCommandUVE>(submitted[2]).groupCountX, 3U);
+    EXPECT_EQ(std::get<Render::DispatchCommandUVE>(submitted[2]).groupCountY, 2U);
+
+    // No render pass command may appear in the compute submission at all.
+    for (const Render::RecordedCommandUVE& command : submitted) {
+        EXPECT_FALSE(std::holds_alternative<Render::BeginRenderPassCommandUVE>(command));
+        EXPECT_FALSE(std::holds_alternative<Render::EndRenderPassCommandUVE>(command));
+    }
+
+    computeSystem.DestroyProgramUVE(program);
+    renderDevice.DestroyBufferUVE(storage);
+    engine.Shutdown();
+}
+
+TEST(EngineCoreUVETest, TickFrame_EmptyComputeQueue_SubmitsNothingExtra) {
+    EngineCoreUVE engine(MakeTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    // A frame with no queued compute must not submit an empty compute buffer - scenes that never
+    // touch compute pay nothing observable.
+    engine.TickFrameUVE();
+
+    EXPECT_TRUE(LastSubmittedCommandsUVE(engine).empty());
+    EXPECT_EQ(engine.GetServicesUVE().GetComputeSystemUVE().GetDiagnosticsUVE().dispatchesRecorded, 0U);
+
+    engine.Shutdown();
+}
+
 #if UVE_DEBUG
 TEST(EngineCoreUVEDeathTest, ShutdownBeforeInit_TriggersInvalidTransitionAssert) {
     EngineCoreUVE engine(MakeTestConfigUVE());
@@ -2153,6 +2559,1047 @@ TEST(EngineCoreUVETest, GetServicesUVEBeforeInit_ThrowsBadOptionalAccessInsteadO
     EXPECT_THROW({ static_cast<void>(engine.GetServicesUVE()); }, std::bad_optional_access);
 }
 #endif
+
+// LevelStreamer3D helpers: a tiny authored level document (one transformed root) written to a
+// temp path through the production serializer, plus an enabled streamer component pointing at
+// it. Keeping the streamed content OUT of the fixture's own document is the entire point of the
+// slice, so the file is the real interchange - not an in-memory shortcut.
+namespace {
+
+const std::filesystem::path kStreamerTestLevelPath = "uve_engine_core_streamer_test_level.uvescene";
+
+// Writes `kStreamerTestLevelPath` and returns true on success. Two entities: a root at (0,0,0)
+// with a child offset at (1,2,3), so "one loaded level" is measurable as +2 entities.
+bool WriteStreamerTestLevelFileUVE() {
+    std::filesystem::remove(kStreamerTestLevelPath);
+    Memory::MemoryManagerUVE memoryManager;
+    Events::EventSystemUVE eventSystem;
+    Scene::EntityManagerUVE tempManager(memoryManager.GetDefaultAllocatorUVE(), eventSystem);
+    Scene::SceneGraphUVE tempGraph;
+    Scene::SceneSerializerUVE serializer;
+
+    const Scene::EntityUVE root = tempManager.CreateEntityUVE();
+    tempGraph.AttachTransformUVE(tempManager, root, Scene::TransformComponentUVE{});
+    const Scene::EntityUVE child = tempManager.CreateEntityUVE();
+    Scene::TransformComponentUVE childTransform;
+    childTransform.localPosition = Math::Vector3UVE{1.0F, 2.0F, 3.0F};
+    tempGraph.AttachTransformUVE(tempManager, child, childTransform);
+    tempGraph.SetParentUVE(tempManager, child, root);
+    const bool saved =
+        serializer.SaveUVE(tempManager, {root}, kStreamerTestLevelPath, Asset::AssetKindUVE::Scene);
+    if (!saved) {
+        std::filesystem::remove(kStreamerTestLevelPath);
+    }
+    return saved;
+}
+
+struct StreamerTestCleanupUVE {
+    ~StreamerTestCleanupUVE() { std::filesystem::remove(kStreamerTestLevelPath); }
+};
+
+Scene::EntityUVE CreateEnabledStreamerAtUVE(Scene::IEntityManagerUVE& entityManager,
+                                            Scene::ISceneGraphUVE& sceneGraph,
+                                            const Math::Vector3UVE& position) {
+    const Scene::EntityUVE streamer = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE transform;
+    transform.localPosition = position;
+    sceneGraph.AttachTransformUVE(entityManager, streamer, transform);
+    Scene::LevelStreamer3DNodeComponentUVE component;
+    component.levelPath = kStreamerTestLevelPath.string();
+    component.loadDistance = 10.0F;
+    component.unloadDistance = 20.0F;
+    component.enabled = true;
+    entityManager.AddComponentUVE<Scene::LevelStreamer3DNodeComponentUVE>(streamer, component);
+    return streamer;
+}
+
+Scene::EntityUVE CreateWatchingCameraAtUVE(Scene::IEntityManagerUVE& entityManager,
+                                           Scene::ISceneGraphUVE& sceneGraph,
+                                           const Math::Vector3UVE& position) {
+    const Scene::EntityUVE camera = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE transform;
+    transform.localPosition = position;
+    sceneGraph.AttachTransformUVE(entityManager, camera, transform);
+    entityManager.AddComponentUVE<Scene::CameraComponentUVE>(camera, Scene::CameraComponentUVE{});
+    return camera;
+}
+
+} // namespace
+
+TEST(EngineCoreUVETest, LevelStreamer3D_NearViewerLoadsContentFarViewerUnloadsItHysteresisHoldsBetween) {
+    // The full distance-driven contract measured end-to-end: a viewer inside the load radius
+    // pulls the level document in (+2 entities, streamer.flags flip), the hysteresis band between
+    // loadDistance and unloadDistance changes nothing, leaving the unload radius destroys the
+    // loaded subtree (-2 entities), and loadRequested is false between ticks - the synchronous
+    // model's documented invariant.
+    ASSERT_TRUE(WriteStreamerTestLevelFileUVE()) << "the streamed level document must save";
+    StreamerTestCleanupUVE cleanup;
+
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    const Scene::EntityUVE streamer =
+        CreateEnabledStreamerAtUVE(entityManager, sceneGraph, Math::Vector3UVE{0.0F, 0.0F, 0.0F});
+    const Scene::EntityUVE camera =
+        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{100.0F, 0.0F, 0.0F});
+    engine.SetActiveCameraUVE(camera);
+
+    const std::size_t baseline = entityManager.GetEntityCountUVE();
+    engine.TickFrameUVE();
+    {
+        const Scene::LevelStreamer3DNodeComponentUVE& live =
+            entityManager.GetComponentUVE<Scene::LevelStreamer3DNodeComponentUVE>(streamer);
+        EXPECT_FALSE(live.loaded) << "a viewer 100 units out must never trigger the load";
+        EXPECT_FALSE(live.loadRequested) << "loadRequested is false between ticks, always";
+    }
+    EXPECT_EQ(entityManager.GetEntityCountUVE(), baseline);
+
+    // The camera is now effectively on top of the streamer: one tick streams the level in.
+    sceneGraph.SetLocalTransformUVE(entityManager, camera, [&] {
+        Scene::TransformComponentUVE t;
+        t.localPosition = Math::Vector3UVE{0.5F, 0.0F, 0.0F};
+        return t;
+    }());
+    engine.TickFrameUVE();
+    {
+        const Scene::LevelStreamer3DNodeComponentUVE& live =
+            entityManager.GetComponentUVE<Scene::LevelStreamer3DNodeComponentUVE>(streamer);
+        EXPECT_TRUE(live.loaded) << "a viewer inside the load radius streams the level in";
+        EXPECT_FALSE(live.loadRequested);
+    }
+    EXPECT_EQ(entityManager.GetEntityCountUVE(), baseline + 2U)
+        << "the two authored entities of the level document appeared";
+
+    // Hysteresis: at 15 units (inside unload, outside load) a loaded level does nothing.
+    sceneGraph.SetLocalTransformUVE(entityManager, camera, [&] {
+        Scene::TransformComponentUVE t;
+        t.localPosition = Math::Vector3UVE{15.0F, 0.0F, 0.0F};
+        return t;
+    }());
+    engine.TickFrameUVE();
+    EXPECT_TRUE(
+        entityManager.GetComponentUVE<Scene::LevelStreamer3DNodeComponentUVE>(streamer).loaded)
+        << "the band between 10 and 20 keeps a loaded level in place";
+    EXPECT_EQ(entityManager.GetEntityCountUVE(), baseline + 2U);
+
+    // Past the unload radius the subtree is destroyed - real content lifecycle, not a hidden flag.
+    sceneGraph.SetLocalTransformUVE(entityManager, camera, [&] {
+        Scene::TransformComponentUVE t;
+        t.localPosition = Math::Vector3UVE{25.0F, 0.0F, 0.0F};
+        return t;
+    }());
+    engine.TickFrameUVE();
+    {
+        const Scene::LevelStreamer3DNodeComponentUVE& live =
+            entityManager.GetComponentUVE<Scene::LevelStreamer3DNodeComponentUVE>(streamer);
+        EXPECT_FALSE(live.loaded) << "past the unload radius the level unloads";
+        EXPECT_FALSE(live.loadRequested);
+    }
+    EXPECT_EQ(entityManager.GetEntityCountUVE(), baseline)
+        << "the streamer's two loaded entities are destroyed on unload";
+}
+
+TEST(EngineCoreUVETest, LevelStreamer3D_CharacterControllerServesAsViewerWithoutAnyCamera) {
+    // The viewer model is Frostbite listener-style: ANY character controller pulls content,
+    // even in a world no camera ever sees.
+    ASSERT_TRUE(WriteStreamerTestLevelFileUVE());
+    StreamerTestCleanupUVE cleanup;
+
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    const Scene::EntityUVE streamer =
+        CreateEnabledStreamerAtUVE(entityManager, sceneGraph, Math::Vector3UVE{});
+    const Scene::EntityUVE player = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, player, Scene::TransformComponentUVE{});
+    entityManager.AddComponentUVE<Scene::CharacterControllerComponentUVE>(player);
+
+    const std::size_t baseline = entityManager.GetEntityCountUVE();
+    engine.TickFrameUVE();
+    EXPECT_TRUE(
+        entityManager.GetComponentUVE<Scene::LevelStreamer3DNodeComponentUVE>(streamer).loaded)
+        << "a standing controller with no active camera still streams the level in";
+    EXPECT_EQ(entityManager.GetEntityCountUVE(), baseline + 2U);
+}
+
+TEST(EngineCoreUVETest, LevelStreamer3D_DisablingTheStreamerPullsItsContentWhileTheViewerWatches) {
+    // The authored toggle beats distance, matching the Unreal convention a disabled streaming
+    // volume stops holding its level - measured while the camera stands inside the load radius.
+    ASSERT_TRUE(WriteStreamerTestLevelFileUVE());
+    StreamerTestCleanupUVE cleanup;
+
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    const Scene::EntityUVE streamer =
+        CreateEnabledStreamerAtUVE(entityManager, sceneGraph, Math::Vector3UVE{});
+    const Scene::EntityUVE camera =
+        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{1.0F, 0.0F, 0.0F});
+    engine.SetActiveCameraUVE(camera);
+    engine.TickFrameUVE();
+    ASSERT_TRUE(
+        entityManager.GetComponentUVE<Scene::LevelStreamer3DNodeComponentUVE>(streamer).loaded);
+    const std::size_t loadedCount = entityManager.GetEntityCountUVE();
+
+    entityManager.GetComponentUVE<Scene::LevelStreamer3DNodeComponentUVE>(streamer).enabled = false;
+    engine.TickFrameUVE();
+    EXPECT_FALSE(
+        entityManager.GetComponentUVE<Scene::LevelStreamer3DNodeComponentUVE>(streamer).loaded)
+        << "disabling unloads even with the viewer inside the load radius";
+    EXPECT_EQ(entityManager.GetEntityCountUVE(), loadedCount - 2U)
+        << "the disabled streamer's subtree is gone the same tick";
+}
+
+TEST(EngineCoreUVETest, LevelStreamer3D_FailedLoadLatchesClosedAndNeverRetriesInSession) {
+    // The honest fail-closed path: levelPath points at a file that does not exist. The first
+    // tick attempts and fails (loaded stays false, loadRequested stays false between ticks);
+    // the latch means every later tick decides nothing either - never a retry storm - and the
+    // streamer never marks itself loaded on an empty restore.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    const Scene::EntityUVE streamer = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, streamer, Scene::TransformComponentUVE{});
+    Scene::LevelStreamer3DNodeComponentUVE component;
+    component.levelPath = "uve_engine_core_streamer_file_that_does_not_exist.uvescene";
+    component.loadDistance = 10.0F;
+    component.unloadDistance = 20.0F;
+    component.enabled = true;
+    entityManager.AddComponentUVE<Scene::LevelStreamer3DNodeComponentUVE>(streamer, component);
+    const Scene::EntityUVE camera =
+        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{1.0F, 0.0F, 0.0F});
+    engine.SetActiveCameraUVE(camera);
+
+    const std::size_t baseline = entityManager.GetEntityCountUVE();
+    for (int tick = 0; tick < 3; ++tick) {
+        engine.TickFrameUVE();
+        const Scene::LevelStreamer3DNodeComponentUVE& live =
+            entityManager.GetComponentUVE<Scene::LevelStreamer3DNodeComponentUVE>(streamer);
+        EXPECT_FALSE(live.loaded) << "tick " << tick << ": a missing file never marks loaded";
+        EXPECT_FALSE(live.loadRequested) << "tick " << tick << ": no request survives the tick";
+        EXPECT_EQ(entityManager.GetEntityCountUVE(), baseline)
+            << "tick " << tick << ": nothing materializes out of a missing file";
+    }
+
+    // The sibling with valid data is unaffected: a latch is per streamer, never global.
+    ASSERT_TRUE(WriteStreamerTestLevelFileUVE());
+    StreamerTestCleanupUVE cleanup;
+    const Scene::EntityUVE good =
+        CreateEnabledStreamerAtUVE(entityManager, sceneGraph, Math::Vector3UVE{});
+    engine.TickFrameUVE();
+    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::LevelStreamer3DNodeComponentUVE>(good).loaded)
+        << "a failed sibling never blocks an unrelated streamer";
+    EXPECT_FALSE(
+        entityManager.GetComponentUVE<Scene::LevelStreamer3DNodeComponentUVE>(streamer).loaded)
+        << "the latched streamer stays closed even alongside a success";
+}
+
+TEST(EngineCoreUVETest, LevelStreamer3D_LoadBudgetCarriesOverflowIntoTheNextTick) {
+    // The time-slicing contract: 5 identical streamers demand a load on the same tick with a
+    // budget of 4 - exactly 4 stream in on tick one, and the straggler follows on tick two with
+    // no other state stirring. This is the measurable answer to the hitch problem.
+    ASSERT_TRUE(WriteStreamerTestLevelFileUVE());
+    StreamerTestCleanupUVE cleanup;
+
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    std::array<Scene::EntityUVE, 5U> streamers;
+    for (Scene::EntityUVE& target : streamers) {
+        target = CreateEnabledStreamerAtUVE(
+            entityManager, sceneGraph, Math::Vector3UVE{100.0F, 0.0F, 0.0F});
+    }
+    const Scene::EntityUVE camera =
+        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{100.0F, 0.0F, 0.0F});
+    engine.SetActiveCameraUVE(camera);
+
+    const auto countLoaded = [&entityManager, &streamers]() -> std::size_t {
+        std::size_t loaded = 0;
+        for (const Scene::EntityUVE s : streamers) {
+            if (entityManager.GetComponentUVE<Scene::LevelStreamer3DNodeComponentUVE>(s).loaded) {
+                ++loaded;
+            }
+        }
+        return loaded;
+    };
+
+    engine.TickFrameUVE();
+    EXPECT_EQ(countLoaded(), Scene::kMaximumLevelStreamer3DLoadsPerTickUVE)
+        << "the budget capped tick one, and the overflow stayed pending instead of dropping";
+    engine.TickFrameUVE();
+    EXPECT_EQ(countLoaded(), 5U) << "tick two consumed the carry-over - the straggler loads";
+    engine.TickFrameUVE();
+    EXPECT_EQ(countLoaded(), 5U) << "a further tick sits at steady state, nothing more moved";
+}
+
+namespace {
+
+Scene::EntityUVE CreateReflectionProbeAtUVE(Scene::IEntityManagerUVE& entityManager,
+                                             Scene::ISceneGraphUVE& sceneGraph,
+                                             const Math::Vector3UVE& position,
+                                              Scene::ReflectionProbeUpdateModeUVE updateMode) {
+    const Scene::EntityUVE probe = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE transform;
+    transform.localPosition = position;
+    sceneGraph.AttachTransformUVE(entityManager, probe, transform);
+    Scene::ReflectionProbe3DNodeComponentUVE component;
+    component.updateMode = updateMode;
+    entityManager.AddComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(probe, component);
+    return probe;
+}
+
+std::uint32_t TotalProbeGenerationsUVE(Scene::IEntityManagerUVE& entityManager,
+                                       std::span<const Scene::EntityUVE> probes) {
+    std::uint32_t total = 0;
+    for (const Scene::EntityUVE probe : probes) {
+        total += entityManager.GetComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(probe)
+                     .captureGeneration;
+    }
+    return total;
+}
+
+} // namespace
+
+TEST(EngineCoreUVETest, ReflectionProbe3D_OnceCapturesOnFirstTickThenStaysSilentForever) {
+    // The measurable answer to Unreal's "capture scene on load" convention: first Tick resolves
+    // exactly one capture (capturedOnce flips, captureGeneration hits 1), every subsequent tick
+    // touches nothing - no re-capture, no latch drift, cost paid exactly once.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    const Scene::EntityUVE probe = CreateReflectionProbeAtUVE(
+        entityManager, sceneGraph, Math::Vector3UVE{}, Scene::ReflectionProbeUpdateModeUVE::Once);
+
+    engine.TickFrameUVE();
+    {
+        const Scene::ReflectionProbe3DNodeComponentUVE& live =
+            entityManager.GetComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(probe);
+        EXPECT_TRUE(live.capturedOnce) << "the first tick resolves the one-and-only capture";
+        EXPECT_EQ(live.captureGeneration, 1U);
+    }
+    engine.TickFrameUVE();
+    engine.TickFrameUVE();
+    const Scene::ReflectionProbe3DNodeComponentUVE& after =
+        entityManager.GetComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(probe);
+    EXPECT_EQ(after.captureGeneration, 1U) << "later ticks revisit nothing - once means once";
+}
+
+TEST(EngineCoreUVETest, ReflectionProbe3D_EveryFrameRecapturesOnlyWhileTheCameraIsInside) {
+    // A camera parked inside the probe sees one fresh capture per tick; walking it outside the
+    // influence box stops the churn COMPLETELY the same tick - the save Godot's Always mode
+    // cannot express, measured as captureGeneration flatlines.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    const Scene::EntityUVE probe = CreateReflectionProbeAtUVE(
+        entityManager, sceneGraph, Math::Vector3UVE{},
+        Scene::ReflectionProbeUpdateModeUVE::EveryFrame);
+    const Scene::EntityUVE camera =
+        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{});
+    engine.SetActiveCameraUVE(camera);
+
+    engine.TickFrameUVE();
+    const std::uint32_t insideOne =
+        entityManager.GetComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(probe)
+            .captureGeneration;
+    EXPECT_GE(insideOne, 1U) << "camera inside: the probe keeps its imagery current";
+    engine.TickFrameUVE();
+    const std::uint32_t insideTwo =
+        entityManager.GetComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(probe)
+            .captureGeneration;
+    EXPECT_GT(insideTwo, insideOne) << "camera inside: each tick refreshes";
+
+    // Walk out (default probe size 5 => half extent 2.5; 10 units is comfortably beyond) and the
+    // meter falls dead on the very first outside tick.
+    Scene::TransformComponentUVE farTransform;
+    farTransform.localPosition = Math::Vector3UVE{10.0F, 0.0F, 0.0F};
+    sceneGraph.SetLocalTransformUVE(entityManager, camera, farTransform);
+    engine.TickFrameUVE();
+    engine.TickFrameUVE();
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(probe)
+                  .captureGeneration,
+              insideTwo) << "camera outside: no capture at all - the eye sees nothing of it";
+    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(probe)
+                        .cameraInfluenceWeight,
+                    0.0F) << "outside the face the camera's blend weight reads exactly zero";
+}
+
+TEST(EngineCoreUVETest, ReflectionProbe3D_CameraInfluenceWeightTracksCameraPositionExactly) {
+    // The first-class blend weight: dead center reads 1.0 (perfectly influential), halfway to the
+    // face 0.5, and passing the face snaps to 0.0 - each measured through the public component
+    // state, which is exactly the number a shading pass would blend with.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    Scene::ReflectionProbe3DNodeComponentUVE probeTemplate;
+    probeTemplate.size = Math::Vector3UVE{4.0F, 4.0F, 4.0F}; // half extent 2 on every axis
+    probeTemplate.updateMode = Scene::ReflectionProbeUpdateModeUVE::EveryFrame;
+    const Scene::EntityUVE probe = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, probe, Scene::TransformComponentUVE{});
+    entityManager.AddComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(probe, probeTemplate);
+    const Scene::EntityUVE camera =
+        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{});
+    engine.SetActiveCameraUVE(camera);
+
+    engine.TickFrameUVE();
+    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(probe)
+                        .cameraInfluenceWeight,
+                    1.0F) << "dead center: completely influential";
+
+    Scene::TransformComponentUVE halfTransform;
+    halfTransform.localPosition = Math::Vector3UVE{1.0F, 0.0F, 0.0F}; // halfway: 1/2 of half-extent
+    sceneGraph.SetLocalTransformUVE(entityManager, camera, halfTransform);
+    engine.TickFrameUVE();
+    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(probe)
+                        .cameraInfluenceWeight,
+                    0.5F) << "halfway: exactly the linear falloff midpoint";
+
+    Scene::TransformComponentUVE faceTransform;
+    faceTransform.localPosition = Math::Vector3UVE{2.0F, 0.0F, 0.0F}; // exactly ON the face
+    sceneGraph.SetLocalTransformUVE(entityManager, camera, faceTransform);
+    engine.TickFrameUVE();
+    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(probe)
+                        .cameraInfluenceWeight,
+                    0.0F) << "the face itself counts as outside - no floating sliver of weight";
+}
+
+TEST(EngineCoreUVETest, ReflectionProbe3D_OnDemandServicesTheLatchThenClearsIt) {
+    // The inspector "Recapture" contract: latched, the next tick resolves exactly one capture
+    // and CLEARS the latch - second tick does nothing, until latched again.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    const Scene::EntityUVE probe = CreateReflectionProbeAtUVE(
+        entityManager, sceneGraph, Math::Vector3UVE{},
+        Scene::ReflectionProbeUpdateModeUVE::OnDemand);
+
+    engine.TickFrameUVE();
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(probe)
+                  .captureGeneration,
+              0U) << "without the latch OnDemand captures nothing";
+
+    entityManager.GetComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(probe).updateRequested =
+        true;
+    engine.TickFrameUVE();
+    {
+        const Scene::ReflectionProbe3DNodeComponentUVE& live =
+            entityManager.GetComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(probe);
+        EXPECT_EQ(live.captureGeneration, 1U) << "the latch delivered exactly one capture";
+        EXPECT_FALSE(live.updateRequested) << "and cleared itself the same tick it fired";
+    }
+
+    engine.TickFrameUVE();
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(probe)
+                  .captureGeneration,
+              1U) << "no latch, no capture - the probe waits for the next demand";
+}
+
+TEST(EngineCoreUVETest, ReflectionProbe3D_CaptureBudgetAgesOutOfStarvationNeverNearestOnly) {
+    // Three EveryFrame probes with a budget of two, all containing the camera: naive nearest-
+    // first would starve the farthest one forever under continuous demand, so priority is the
+    // WAIT AGE first, distance second. Measured: tick one takes the two nearest by tie-break,
+    // far one tick ages visibly (captureWaitTicks 1), and on tick two the aged waiter cuts the
+    // line ahead of nearer-but-fresher askers.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    // Distances 0.5 / 1.0 / 1.5 on +X keep d^2 distinct (no ties), while the default box of
+    // half extent 2.5 still contains the origin - all three demand a capture every tick.
+    const Scene::EntityUVE nearProbe = CreateReflectionProbeAtUVE(
+        entityManager, sceneGraph, Math::Vector3UVE{0.5F, 0.0F, 0.0F},
+        Scene::ReflectionProbeUpdateModeUVE::EveryFrame);
+    const Scene::EntityUVE midProbe = CreateReflectionProbeAtUVE(
+        entityManager, sceneGraph, Math::Vector3UVE{1.0F, 0.0F, 0.0F},
+        Scene::ReflectionProbeUpdateModeUVE::EveryFrame);
+    const Scene::EntityUVE farProbe = CreateReflectionProbeAtUVE(
+        entityManager, sceneGraph, Math::Vector3UVE{1.5F, 0.0F, 0.0F},
+        Scene::ReflectionProbeUpdateModeUVE::EveryFrame);
+    const Scene::EntityUVE camera =
+        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{});
+    engine.SetActiveCameraUVE(camera);
+    const std::array<Scene::EntityUVE, 3U> probes{nearProbe, midProbe, farProbe};
+
+    engine.TickFrameUVE();
+    EXPECT_EQ(TotalProbeGenerationsUVE(entityManager, probes),
+              Scene::kMaximumReflectionProbeCapturesPerTickUVE)
+        << "tick one serves exactly the budget, never the whole queue";
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(nearProbe)
+                  .captureGeneration,
+              1U);
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(midProbe)
+                  .captureGeneration,
+              1U);
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(farProbe)
+                  .captureGeneration,
+              0U) << "the farthest one waits (distances tie-free)";
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(farProbe)
+                  .captureWaitTicks,
+              1U) << "and its wait age shows in its own component state";
+
+    engine.TickFrameUVE();
+    // Tick two: far now beats both nearer probes by age and captures ahead of them.
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(farProbe)
+                  .captureGeneration,
+              1U) << "the aged waiter cuts the line - starvation is impossible";
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(farProbe)
+                  .captureWaitTicks,
+              0U) << "service resets the age";
+    EXPECT_EQ(TotalProbeGenerationsUVE(entityManager, probes),
+              2U * Scene::kMaximumReflectionProbeCapturesPerTickUVE)
+        << "every tick still stays within budget";
+}
+
+namespace {
+
+Scene::EntityUVE CreateWorldPartitionAtUVE(Scene::IEntityManagerUVE& entityManager,
+                                           Scene::ISceneGraphUVE& sceneGraph,
+                                           const Math::Vector3UVE& position,
+                                           const float cellSize,
+                                           const std::array<std::uint32_t, 3U>& counts,
+                                           const std::uint32_t maximumLoadedCells) {
+    const Scene::EntityUVE partition = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE transform;
+    transform.localPosition = position;
+    sceneGraph.AttachTransformUVE(entityManager, partition, transform);
+    Scene::WorldPartition3DNodeComponentUVE component;
+    component.cellSize = cellSize;
+    component.cellCounts = counts;
+    component.maximumLoadedCells = maximumLoadedCells;
+    entityManager.AddComponentUVE<Scene::WorldPartition3DNodeComponentUVE>(partition, component);
+    return partition;
+}
+
+Scene::EntityUVE CreatePartitionChildAtUVE(Scene::IEntityManagerUVE& entityManager,
+                                           Scene::ISceneGraphUVE& sceneGraph,
+                                           const Scene::EntityUVE parent,
+                                           const Math::Vector3UVE& position,
+                                           const bool withMesh) {
+    const Scene::EntityUVE child = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE transform;
+    transform.localPosition = position;
+    sceneGraph.AttachTransformUVE(entityManager, child, transform);
+    sceneGraph.SetParentUVE(entityManager, child, parent);
+    if (withMesh) {
+        entityManager.AddComponentUVE<Scene::MeshComponentUVE>(child, Scene::MeshComponentUVE{});
+    }
+    return child;
+}
+
+} // namespace
+
+TEST(EngineCoreUVETest, WorldPartition3D_MembershipAttachesOnlyToMeshesAndOutsideStaysUnmanaged) {
+    // The engine-owned runtime state attaches to mesh-carrying descendants only (a transform-only
+    // child must stay clean), the partition beyond its volume is nobody's business (membership
+    // there exists but its live verdict is always true - volume-rejection must never hide
+    // geometry), and loadedCellCount only counts cells actually inside the volume.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    const Scene::EntityUVE partition = CreateWorldPartitionAtUVE(
+        entityManager, sceneGraph, Math::Vector3UVE{}, 10.0F, {2U, 1U, 2U}, 2U);
+    const Scene::EntityUVE insideMesh =
+        CreatePartitionChildAtUVE(entityManager, sceneGraph, partition,
+                                  Math::Vector3UVE{5.0F, 0.0F, 5.0F}, /*withMesh=*/true);
+    const Scene::EntityUVE meshlessChild =
+        CreatePartitionChildAtUVE(entityManager, sceneGraph, partition,
+                                  Math::Vector3UVE{5.0F, 0.0F, 5.0F}, /*withMesh=*/false);
+    const Scene::EntityUVE outsideMesh =
+        CreatePartitionChildAtUVE(entityManager, sceneGraph, partition,
+                                  Math::Vector3UVE{500.0F, 0.0F, 500.0F}, /*withMesh=*/true);
+    const Scene::EntityUVE camera =
+        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{5.0F, 0.0F, 5.0F});
+    engine.SetActiveCameraUVE(camera);
+
+    engine.TickFrameUVE();
+
+    ASSERT_TRUE(entityManager.HasComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+        insideMesh));
+    const Scene::WorldPartition3DMembershipComponentUVE& insideMembership =
+        entityManager.GetComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(insideMesh);
+    EXPECT_TRUE(insideMembership.live) << "inside cell (0,0,0) with budget 2: live";
+    EXPECT_EQ(insideMembership.partition, partition) << "the engine stamps the deciding owner";
+
+    EXPECT_FALSE(entityManager.HasComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+        meshlessChild)) << "no mesh, no membership - authoritatively not every descendant";
+
+    ASSERT_TRUE(entityManager.HasComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+        outsideMesh));
+    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+                    outsideMesh)
+                    .live)
+        << "outside the partition volume: never culled by a partition that cannot see it";
+
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::WorldPartition3DNodeComponentUVE>(partition)
+                  .loadedCellCount,
+              1U) << "the unmanaged outside point creates no occupied cell";
+}
+
+TEST(EngineCoreUVETest, WorldPartition3D_BudgetAdmitsNearestCellOnlyAndCameraMoveFlipsTheVerdict) {
+    // maximumLoadedCells is the hard contract: with one slot and two occupied cells, only the
+    // serially-nearest cell's member renders - move the camera to the other cell and the verdict
+    // flips seat afterwards, deterministically (nothing depends on iteration order because the
+    // distance key breaks the tie cleanly).
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    const Scene::EntityUVE partition = CreateWorldPartitionAtUVE(
+        entityManager, sceneGraph, Math::Vector3UVE{}, 10.0F, {2U, 1U, 1U}, 1U);
+    const Scene::EntityUVE nearMesh =
+        CreatePartitionChildAtUVE(entityManager, sceneGraph, partition,
+                                  Math::Vector3UVE{5.0F, 0.0F, 0.0F}, /*withMesh=*/true);
+    const Scene::EntityUVE farMesh =
+        CreatePartitionChildAtUVE(entityManager, sceneGraph, partition,
+                                  Math::Vector3UVE{15.0F, 0.0F, 0.0F}, /*withMesh=*/true);
+    const Scene::EntityUVE camera =
+        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{});
+    engine.SetActiveCameraUVE(camera);
+
+    engine.TickFrameUVE();
+    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+                    nearMesh)
+                    .live) << "cell (0,0,0): the nearest occupied cell earns the slot";
+    EXPECT_FALSE(entityManager.GetComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+                     farMesh)
+                     .live) << "cell (1,0,0): out of budget, out of the frame";
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::WorldPartition3DNodeComponentUVE>(partition)
+                  .loadedCellCount,
+              1U);
+
+    Scene::TransformComponentUVE farCameraTransform;
+    farCameraTransform.localPosition = Math::Vector3UVE{15.0F, 0.0F, 0.0F};
+    sceneGraph.SetLocalTransformUVE(entityManager, camera, farCameraTransform);
+    engine.TickFrameUVE();
+    EXPECT_FALSE(entityManager.GetComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+                     nearMesh)
+                     .live) << "the verdict flips with the camera, not with sentiment";
+    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+                    farMesh)
+                    .live);
+}
+
+TEST(EngineCoreUVETest, WorldPartition3D_NestedPartitionsTheInnerOneOwnsItsSubtree) {
+    // Closest-ancestor-wins: a partition inside another partition manages its own subtree, and
+    // nothing the outer walk touches ever rewrites that decision - measured as the inner child's
+    // stamped owner being the INNER partition, not the outer.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    const Scene::EntityUVE outer = CreateWorldPartitionAtUVE(
+        entityManager, sceneGraph, Math::Vector3UVE{}, 50.0F, {2U, 1U, 1U}, 2U);
+    const Scene::EntityUVE inner = CreateWorldPartitionAtUVE(
+        entityManager, sceneGraph, Math::Vector3UVE{}, 10.0F, {2U, 1U, 1U}, 2U);
+    sceneGraph.SetParentUVE(entityManager, inner, outer);
+    const Scene::EntityUVE innerMesh =
+        CreatePartitionChildAtUVE(entityManager, sceneGraph, inner,
+                                  Math::Vector3UVE{5.0F, 0.0F, 0.0F}, /*withMesh=*/true);
+    const Scene::EntityUVE outerMesh =
+        CreatePartitionChildAtUVE(entityManager, sceneGraph, outer,
+                                  Math::Vector3UVE{25.0F, 0.0F, 0.0F}, /*withMesh=*/true);
+    const Scene::EntityUVE camera =
+        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{});
+    engine.SetActiveCameraUVE(camera);
+
+    engine.TickFrameUVE();
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+                  innerMesh)
+                  .partition,
+              inner) << "the inner partition decides its own subtree";
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+                  outerMesh)
+                  .partition,
+              outer) << "the outer one only ever touches its own descendants";
+}
+
+TEST(EngineCoreUVETest, WorldPartition3D_DisabledReleasesEveryMemberAndClearsTheLiveCount) {
+    // The toggle must show EVERYTHING, because leaving a stale fade behind after switching the
+    // system off is the honest failure mode exactly backwards - fail open, measured everywhere.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    const Scene::EntityUVE partition = CreateWorldPartitionAtUVE(
+        entityManager, sceneGraph, Math::Vector3UVE{}, 10.0F, {2U, 1U, 1U}, 1U);
+    const Scene::EntityUVE farMesh =
+        CreatePartitionChildAtUVE(entityManager, sceneGraph, partition,
+                                  Math::Vector3UVE{15.0F, 0.0F, 0.0F}, /*withMesh=*/true);
+    static_cast<void>(CreatePartitionChildAtUVE(entityManager, sceneGraph, partition,
+                                                Math::Vector3UVE{5.0F, 0.0F, 0.0F},
+                                                /*withMesh=*/true));
+    const Scene::EntityUVE camera =
+        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{});
+    engine.SetActiveCameraUVE(camera);
+
+    engine.TickFrameUVE();
+    ASSERT_FALSE(entityManager.GetComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+                     farMesh)
+                     .live)
+        << "setup: budget 1, far cell out of budget";
+
+    entityManager.GetComponentUVE<Scene::WorldPartition3DNodeComponentUVE>(partition).enabled =
+        false;
+    engine.TickFrameUVE();
+    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+                    farMesh)
+                    .live)
+        << "disabled: every member renders, no stale fade lingers";
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::WorldPartition3DNodeComponentUVE>(partition)
+                  .loadedCellCount,
+              0U) << "and the live cell count zeroes instead of freezing";
+}
+
+TEST(EngineCoreUVETest, WorldPartition3D_MembershipFollowsSubtreeGrowthNotStaleSnapshots) {
+    // The state lives in the sync, not in a one-shot: a mesh added between ticks earns its
+    // membership on the NEXT tick, and destroying a member mid-run leaves nothing stale behind -
+    // measured as the live-set moving exactly with the mutate-then-tick cadence.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    const Scene::EntityUVE partition = CreateWorldPartitionAtUVE(
+        entityManager, sceneGraph, Math::Vector3UVE{}, 10.0F, {2U, 1U, 1U}, 2U);
+    const Scene::EntityUVE camera =
+        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{});
+    engine.SetActiveCameraUVE(camera);
+
+    engine.TickFrameUVE();
+    const Scene::EntityUVE added =
+        CreatePartitionChildAtUVE(entityManager, sceneGraph, partition,
+                                  Math::Vector3UVE{5.0F, 0.0F, 0.0F}, /*withMesh=*/true);
+    EXPECT_FALSE(entityManager.HasComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+        added)) << "mid-tick birth: nothing attaches before the follow-up tick's sync";
+
+    engine.TickFrameUVE();
+    ASSERT_TRUE(entityManager.HasComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+        added));
+    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+                    added)
+                    .live);
+
+    // Destroy it and the partition must still tick cleanly with nothing stale behind.
+    entityManager.DestroyEntityUVE(added);
+    engine.TickFrameUVE();
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::WorldPartition3DNodeComponentUVE>(partition)
+                  .loadedCellCount,
+              0U) << "a dead member unbooks its whole cell - no ghost occupancy";
+}
+
+namespace {
+
+Scene::EntityUVE CreateVisibilityRegionAtUVE(Scene::IEntityManagerUVE& entityManager,
+                                             Scene::ISceneGraphUVE& sceneGraph,
+                                             const Math::Vector3UVE& position,
+                                             const Math::Vector3UVE& halfExtents,
+                                             const std::uint32_t layers) {
+    const Scene::EntityUVE region = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE transform;
+    transform.localPosition = position;
+    sceneGraph.AttachTransformUVE(entityManager, region, transform);
+    Scene::VisibilityRegion3DNodeComponentUVE component;
+    component.halfExtents = halfExtents;
+    component.visibilityLayers = layers;
+    entityManager.AddComponentUVE<Scene::VisibilityRegion3DNodeComponentUVE>(region, component);
+    return region;
+}
+
+Scene::EntityUVE CreateStandaloneMeshAtUVE(Scene::IEntityManagerUVE& entityManager,
+                                           Scene::ISceneGraphUVE& sceneGraph,
+                                           const Math::Vector3UVE& position,
+                                           const std::uint32_t layers) {
+    const Scene::EntityUVE mesh = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE transform;
+    transform.localPosition = position;
+    sceneGraph.AttachTransformUVE(entityManager, mesh, transform);
+    Scene::MeshComponentUVE component{};
+    component.visibilityLayers = layers;
+    entityManager.AddComponentUVE<Scene::MeshComponentUVE>(mesh, component);
+    return mesh;
+}
+
+} // namespace
+
+TEST(EngineCoreUVETest, VisibilityRegion3D_CameraOutsideTheRoomSkipsItsInteriorCameraInsideShowsIt) {
+    // The headline claim Godot cannot answer: interior contents cost zero render while nobody
+    // stands inside the room, and reappear the tick the eye enters - with the region's own
+    // active flag readable as the same verdict the membership carries.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    static_cast<void>(CreateVisibilityRegionAtUVE(entityManager, sceneGraph, Math::Vector3UVE{},
+                                                  Math::Vector3UVE{5.0F, 5.0F, 5.0F},
+                                                  0xFFFFFFFFU));
+    const Scene::EntityUVE content = CreateStandaloneMeshAtUVE(
+        entityManager, sceneGraph, Math::Vector3UVE{1.0F, 0.0F, 0.0F}, 0x00000001U);
+    const Scene::EntityUVE outside = CreateStandaloneMeshAtUVE(
+        entityManager, sceneGraph, Math::Vector3UVE{50.0F, 0.0F, 0.0F}, 0x00000001U);
+    const Scene::EntityUVE camera =
+        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{50.0F, 0.0F, 0.0F});
+    engine.SetActiveCameraUVE(camera);
+
+    engine.TickFrameUVE();
+    ASSERT_TRUE(entityManager.HasComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+        content));
+    EXPECT_FALSE(entityManager.GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+                     content)
+                     .live)
+        << "camera outside: interior content is skipped with zero render work";
+    EXPECT_FALSE(entityManager.HasComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+        outside)) << "content outside every region is not a member of anything";
+
+    Scene::TransformComponentUVE enterTransform;
+    enterTransform.localPosition = Math::Vector3UVE{1.0F, 0.0F, 0.0F};
+    sceneGraph.SetLocalTransformUVE(entityManager, camera, enterTransform);
+    engine.TickFrameUVE();
+    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+                    content)
+                    .live)
+        << "the tick the eye steps in, the room draws again - no one-frame stale dark";
+}
+
+TEST(EngineCoreUVETest, VisibilityRegion3D_LayerGateKeepsUninvitedMeshesOutOfTheRoom) {
+    // The roadmap's own phrase: the REGION's visibilityLayers gate what renders inside it. A
+    // props-layer mesh is managed by the props region; an NPC on the default layer standing in
+    // the same room is NOT, so nobody has to special-node the walk-through cases.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    static_cast<void>(CreateVisibilityRegionAtUVE(entityManager, sceneGraph, Math::Vector3UVE{},
+                                                  Math::Vector3UVE{5.0F, 5.0F, 5.0F},
+                                                  0x00000002U)); // props only
+    const Scene::EntityUVE prop = CreateStandaloneMeshAtUVE(
+        entityManager, sceneGraph, Math::Vector3UVE{1.0F, 0.0F, 0.0F}, 0x00000002U);
+    const Scene::EntityUVE npc = CreateStandaloneMeshAtUVE(
+        entityManager, sceneGraph, Math::Vector3UVE{-1.0F, 0.0F, 0.0F}, 0x00000001U);
+    const Scene::EntityUVE camera =
+        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{50.0F, 0.0F, 0.0F});
+    engine.SetActiveCameraUVE(camera);
+
+    engine.TickFrameUVE();
+    ASSERT_TRUE(entityManager.HasComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+        prop));
+    EXPECT_FALSE(entityManager.GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+                     prop)
+                     .live)
+        << "same room, right layer: skipped while the room is empty";
+    EXPECT_FALSE(entityManager.HasComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+        npc)) << "same room, wrong layer: the room simply does not claim this mesh";
+}
+
+TEST(EngineCoreUVETest, VisibilityRegion3D_WalkingOutReleasesTheVerdictOnTheVeryNextTick) {
+    // The regression that decides this slice is honest: a member that LEAVES the box must not
+    // keep last tick's fade. Membership refreshes per tick, and the live flag goes back to true
+    // the same tick the mesh crosses out of the room - never a frame of dark behind it.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    static_cast<void>(CreateVisibilityRegionAtUVE(entityManager, sceneGraph, Math::Vector3UVE{},
+                                                  Math::Vector3UVE{5.0F, 5.0F, 5.0F},
+                                                  0xFFFFFFFFU));
+    const Scene::EntityUVE content = CreateStandaloneMeshAtUVE(
+        entityManager, sceneGraph, Math::Vector3UVE{1.0F, 0.0F, 0.0F}, 0x00000001U);
+    const Scene::EntityUVE camera =
+        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{50.0F, 0.0F, 0.0F});
+    engine.SetActiveCameraUVE(camera);
+
+    engine.TickFrameUVE();
+    ASSERT_FALSE(entityManager.GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+                     content)
+                     .live)
+        << "setup: inside an inactive room, skipped";
+
+    Scene::TransformComponentUVE doorTransform;
+    doorTransform.localPosition = Math::Vector3UVE{10.0F, 0.0F, 0.0F};
+    sceneGraph.SetLocalTransformUVE(entityManager, content, doorTransform);
+    engine.TickFrameUVE();
+    ASSERT_TRUE(entityManager.HasComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+        content))
+        << "the engine leaves the marker; the VERDICT is what is released";
+    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+                    content)
+                    .live) << "out of the room: rendered again the very next tick, not someday";
+}
+
+TEST(EngineCoreUVETest, VisibilityRegion3D_DisabledReleasesAndDestroyingTheRegionRehomesItsMembers) {
+    // Two fail-open paths at once: disabling a region shows its content from the next tick, and
+    // destroying the region lets the membership rehome to ANOTHER containing region (or nobody)
+    // without a stale fade ever binding the mesh again.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    const Scene::EntityUVE roomA =
+        CreateVisibilityRegionAtUVE(entityManager, sceneGraph, Math::Vector3UVE{},
+                                    Math::Vector3UVE{5.0F, 5.0F, 5.0F}, 0xFFFFFFFFU);
+    const Scene::EntityUVE content = CreateStandaloneMeshAtUVE(
+        entityManager, sceneGraph, Math::Vector3UVE{1.0F, 0.0F, 0.0F}, 0x00000001U);
+    const Scene::EntityUVE camera =
+        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{50.0F, 0.0F, 0.0F});
+    engine.SetActiveCameraUVE(camera);
+
+    engine.TickFrameUVE();
+    ASSERT_FALSE(entityManager.GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+                     content)
+                     .live);
+
+    entityManager.GetComponentUVE<Scene::VisibilityRegion3DNodeComponentUVE>(roomA).enabled =
+        false;
+    engine.TickFrameUVE();
+    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+                    content)
+                    .live) << "disabled: released the same tick, no stale fade";
+
+    // Re-enable, then destroy: the membership rebrands to kInvalidEntityUVE and stays live.
+    entityManager.GetComponentUVE<Scene::VisibilityRegion3DNodeComponentUVE>(roomA).enabled =
+        true;
+    engine.TickFrameUVE();
+    ASSERT_FALSE(entityManager.GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+                     content)
+                     .live);
+    entityManager.DestroyEntityUVE(roomA);
+    engine.TickFrameUVE();
+    const Scene::VisibilityRegion3DMembershipComponentUVE& membership =
+        entityManager.GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(content);
+    EXPECT_TRUE(membership.live)
+        << "dead region: fail open on the render path AND in the recorded verdict";
+    EXPECT_EQ(membership.region, Scene::kInvalidEntityUVE)
+        << "ownership is reassigned - content is rehomeable, never orphan-hidden";
+}
+
+TEST(EngineCoreUVETest, VisibilityRegion3D_OverlappingRoomsTheNearestCenterOwnsTheMesh) {
+    // Overlapping rooms need ONE deterministic owner per mesh; otherwise the culling of a double-
+    // booked room was history-dependent. Measured: the nearest region center stamps it, and a
+    // second tick answers the same way without oscillation.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    static_cast<void>(CreateVisibilityRegionAtUVE(entityManager, sceneGraph, Math::Vector3UVE{},
+                                                  Math::Vector3UVE{6.0F, 6.0F, 6.0F},
+                                                  0xFFFFFFFFU)); // big, centered at 0
+    const Scene::EntityUVE small =
+        CreateVisibilityRegionAtUVE(entityManager, sceneGraph,
+                                    Math::Vector3UVE{4.0F, 0.0F, 0.0F},
+                                    Math::Vector3UVE{2.0F, 2.0F, 2.0F}, 0xFFFFFFFFU);
+    const Scene::EntityUVE content = CreateStandaloneMeshAtUVE(
+        entityManager, sceneGraph, Math::Vector3UVE{4.5F, 0.0F, 0.0F}, 0x00000001U);
+    const Scene::EntityUVE camera =
+        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{50.0F, 0.0F, 0.0F});
+    engine.SetActiveCameraUVE(camera);
+
+    engine.TickFrameUVE();
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+                  content)
+                  .region,
+              small) << "inside both rooms: the NEAREST center owns the mesh";
+    engine.TickFrameUVE();
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+                  content)
+                  .region,
+              small) << "second tick: same owner, no oscillation between overlapping rooms";
+}
+
+TEST(EngineCoreUVETest, VisibilityRegion3D_NoViewersAtAllFailsOpenWithActiveRegions) {
+    // Empty worlds show everything: with no camera and no controller, regions report active and
+    // their members report live. The fail-open belongs to the POLICY (the sync), while the pure
+    // function stays measurable - asserted separately in the node tests.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    const Scene::EntityUVE room =
+        CreateVisibilityRegionAtUVE(entityManager, sceneGraph, Math::Vector3UVE{},
+                                    Math::Vector3UVE{5.0F, 5.0F, 5.0F}, 0xFFFFFFFFU);
+    const Scene::EntityUVE content = CreateStandaloneMeshAtUVE(
+        entityManager, sceneGraph, Math::Vector3UVE{1.0F, 0.0F, 0.0F}, 0x00000001U);
+
+    engine.TickFrameUVE();
+    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::VisibilityRegion3DNodeComponentUVE>(room)
+                    .active)
+        << "no viewer anywhere: active, because managing nothing hides nothing";
+    ASSERT_TRUE(entityManager.HasComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+        content));
+    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+                    content)
+                    .live);
+}
 
 } // namespace
 } // namespace UVE::Core::Tests

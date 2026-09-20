@@ -42,6 +42,10 @@ struct BindUniformBufferCommandUVE {
     BufferHandleUVE buffer;
     std::uint32_t slot = 0;
 };
+struct BindStorageBufferCommandUVE {
+    BufferHandleUVE buffer;
+    std::uint32_t slot = 0;
+};
 struct DrawIndexedCommandUVE {
     std::uint32_t indexCount = 0;
     std::uint32_t instanceCount = 1;
@@ -49,6 +53,18 @@ struct DrawIndexedCommandUVE {
 struct DrawCommandUVE {
     std::uint32_t vertexCount = 0;
     std::uint32_t instanceCount = 1;
+};
+/// CS7: one indexed indirect draw. The buffer must be an IndirectStorage buffer holding at least
+/// one DrawIndexedIndirectCommandUVE at `offsetBytes`; the GPU reads the parameters from there at
+/// execution time, which is the whole point - nothing on the CPU need know the index count.
+struct DrawIndexedIndirectCommandRecordUVE {
+    BufferHandleUVE buffer;
+    std::uint64_t offsetBytes = 0;
+};
+struct DispatchCommandUVE {
+    std::uint32_t groupCountX = 0;
+    std::uint32_t groupCountY = 0;
+    std::uint32_t groupCountZ = 0;
 };
 struct SetUniformFloatCommandUVE {
     std::string name;
@@ -75,7 +91,9 @@ struct SetUniformMatrix4x4CommandUVE {
 using RecordedCommandUVE =
     std::variant<BeginRenderPassCommandUVE, EndRenderPassCommandUVE, BindPipelineCommandUVE,
                  BindVertexBufferCommandUVE, BindIndexBufferCommandUVE, BindTextureCommandUVE,
-                 BindUniformBufferCommandUVE, DrawIndexedCommandUVE, DrawCommandUVE, SetUniformFloatCommandUVE,
+                 BindUniformBufferCommandUVE, BindStorageBufferCommandUVE, DrawIndexedCommandUVE,
+                 DrawCommandUVE, DrawIndexedIndirectCommandRecordUVE, DispatchCommandUVE,
+                 SetUniformFloatCommandUVE,
                  SetUniformIntCommandUVE, SetUniformBoolCommandUVE, SetUniformVector3CommandUVE,
                  SetUniformMatrix4x4CommandUVE>;
 

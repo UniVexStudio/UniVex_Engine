@@ -41,19 +41,11 @@ struct LightComponentUVE final {
     float spotAngleDegrees = 45.0F;
 };
 
-[[nodiscard]] inline bool IsLightTypeValidUVE(const LightTypeUVE type) noexcept {
-    return type == LightTypeUVE::Directional || type == LightTypeUVE::Point || type == LightTypeUVE::Spot;
-}
+[[nodiscard]] bool IsLightTypeValidUVE(const LightTypeUVE type) noexcept;
 
 /// Validates the value-only lighting component before persistence or renderer extraction. Color and
 /// intensity permit HDR values but reject negatives/non-finite data; range and cone angle remain
 /// finite positive policy values even when a given light type ignores one of them.
-[[nodiscard]] inline bool IsLightComponentValidUVE(const LightComponentUVE& light) noexcept {
-    return std::isfinite(light.color.x) && std::isfinite(light.color.y) && std::isfinite(light.color.z) &&
-           light.color.x >= 0.0F && light.color.y >= 0.0F && light.color.z >= 0.0F &&
-           std::isfinite(light.intensity) && light.intensity >= 0.0F && IsLightTypeValidUVE(light.type) &&
-           std::isfinite(light.range) && light.range > 0.0F && std::isfinite(light.spotAngleDegrees) &&
-           light.spotAngleDegrees > 0.0F && light.spotAngleDegrees < 180.0F;
-}
+[[nodiscard]] bool IsLightComponentValidUVE(const LightComponentUVE& light) noexcept;
 
 } // namespace UVE::Scene

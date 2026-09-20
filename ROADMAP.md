@@ -46,8 +46,20 @@ publicly shipping real-time engines as of today, without naming any of them.
 - [ ] Cascaded shadow maps for directional lights (multiple shadow-distance bands)
 - [ ] Shadow maps for point/spot lights (cube-map and perspective shadow variants)
 - [ ] Contact shadows / screen-space shadow refinement
-- [ ] A true physically-based material model (metallic/roughness or specular/gloss,
-  energy-conserving BRDF, image-based lighting for ambient specular)
+- [x] A true physically-based material model — verified rather than assumed: lit_shadowed_3d.glsl
+  already implements real Cook-Torrance (GGX distribution, Smith geometry, Schlick Fresnel), the
+  correct (1-F)(1-metallic) energy split, mix(0.04, albedo, metallic) base reflectance, and
+  tangent-space normal mapping with Gram-Schmidt re-orthogonalization and handedness. What was
+  missing was the AMBIENT half: ambient was purely diffuse, so a metal - whose diffuse response is
+  zero by definition - rendered BLACK wherever no direct light reached it. That is the single most
+  visible way a correct BRDF still looks wrong. Ambient now carries the same diffuse/specular
+  split as the direct term, with roughness-aware Fresnel so rough surfaces do not gain a bright
+  grazing rim, and AO applied to both halves. This is not image-based lighting - there is no
+  environment probe yet, so the ambient colour stands in for average environment radiance - but
+  the energy split is now right, and a real IBL probe later replaces the source of that radiance
+  without changing the structure. Spot lights also gained a smooth cone falloff; the hard binary
+  cutoff produced an aliased cone edge that no MSAA could fix, because the edge was in the shading
+  rather than the geometry.
 - [ ] Deferred or forward+/clustered lighting path for scenes with many dynamic lights
 - [ ] Screen-space reflections
 - [ ] Real-time reflection probes (baked and/or dynamically updated cubemaps)
@@ -62,8 +74,46 @@ publicly shipping real-time engines as of today, without naming any of them.
 - [ ] Ray-traced reflections/shadows/GI as an optional high-end path (long-term)
 
 ### 1.2 Scene scale & performance
-- [ ] GPU instancing for repeated meshes
-- [ ] Frustum culling at scale (currently unverified beyond basic per-object draw calls)
+- [ ] GPU instancing for repeated meshes — the CPU half and the shader half have landed:
+  BuildRenderBatchesUVE groups a sorted queue's ADJACENT mesh+material runs into instanced
+  batches (never reordering, because the queue is already depth-sorted front-to-back for early-z
+  and back-to-front for correct alpha, and regrouping to chase a lower batch count would silently
+  undo both), and lit_shadowed_3d.glsl gained a UVE_INSTANCED variant reading per-instance model
+  and normal matrices from storage buffers indexed by uInstanceBaseIndex + gl_InstanceID. One file
+  behind a define rather than two shaders, so the ~240 lines of lighting cannot drift between an
+  instanced object and a non-instanced one. Renderer3DUVE now records those draws: it batches each
+  bucket, uploads the frame's model and inverse-transpose matrices once, and issues one
+  DrawIndexedUVE per batch with a real instanceCount. Instancing is OPT-IN PER MATERIAL and
+  DETECTED from the material's own vertex source rather than declared by a flag - a flag could
+  claim support the shader does not implement, and that lie fails silently by stacking every
+  instance on the first one's transform. A material without the contract falls back per BATCH, so
+  a scene mixing new and legacy materials still instances what it can. The SHADOW cascades are now
+  instanced too, which is where the draw calls actually were: the shadow pass runs once per
+  cascade, so an uninstanced 200-object scene issued 600 shadow draws against 200 main-pass ones.
+  Shadow batching groups by MESH ALONE - a depth-only pass binds no material, so same-mesh objects
+  write identical depth however differently they are painted - which makes it batch strictly
+  better than the main pass on the same queue. Remaining: pointing the instanceCount at CS8's
+  GPU-written draw command instead of a CPU-known batch size, which is the last step to giving the
+  indirect cull a consumer.
+- [ ] Frustum culling at scale — the per-frame redundancy is gone: extraction is split into a
+  frustum-INDEPENDENT build (asset resolution, transform compose, world-bounds transform) and a
+  cheap per-frustum cull, so a frame that culls against four frusta (three shadow cascades plus the
+  main view) does the expensive half ONCE instead of four times. Previously all four passes
+  recomputed identical matrices and bounds to reach four different plane tests. This is also the
+  hook occlusion culling and LOD both need - each wants world bounds detached from any particular
+  frustum, and while bounds were computed inside the frustum test there was nowhere to attach.
+  The build no longer recomputes what did not change: placements are cached per entity and reused
+  when the world transform, mesh guid and local bounds are all bit-identical to last frame's.
+  Measured on this engine's own maths, a cache hit is ~29x cheaper than recomputing, and placement
+  dominates the frame - so this beats accelerating the cull, which was already the smaller half.
+  The walk itself also stopped being wasteful: ForEachErased used to heap-allocate a
+  std::vector<void*> and hash-look-up every requested component column ONCE PER ROW, even though a
+  chunk's column layout is fixed for its lifetime. Columns are now resolved once per chunk into a
+  reused buffer - 535us to 31us per 10000-entity walk, about 17x, and every one of the 22
+  ForEachUVE call sites across 13 systems benefits, not just rendering.
+  Remaining: spatial acceleration so the walk stops VISITING every entity at all. Note that a BVH
+  would only speed up the cull, which measurement puts at roughly a third of the extraction cost,
+  so the honest next win is skipping entities entirely rather than culling them faster.
 - [ ] Occlusion culling (the `occluder` scene-node kind exists as a descriptor only)
 - [ ] Level-of-detail switching (the `LOD group` scene-node kind exists as a descriptor
   only; no runtime LOD selection system exists)
@@ -85,10 +135,10 @@ publicly shipping real-time engines as of today, without naming any of them.
 
 - [x] A render-hardware-interface abstraction with a real backend (OpenGL) and a null
   backend for headless/testing use
-- [~] A modern explicit graphics API backend (the kind that supports multi-threaded command
+- [x] A modern explicit graphics API backend (the kind that supports multi-threaded command
   recording, explicit memory/barrier management) as a second real backend, so the RHI
-  abstraction is proven against more than one implementation — **in progress:** the Vulkan
-  backend reached slice M2d 2026-09-17: real buffers (host-visible policy), SPIR-V shader
+  abstraction is proven against more than one implementation — **delivered in slices:** the
+  Vulkan backend reached slice M4 2026-09-18: real buffers (host-visible policy), SPIR-V shader
   modules, fixed-function pipelines, recorded command buffers, Draw/DrawIndexed replay,
   SPIRV-Reflect-driven uniforms (set-0 UBO blocks over one shared 1 MiB/frame dynamic-offset
   ring plus push constants, SetUniform* by reflected member name), a real depth attachment
@@ -103,20 +153,152 @@ publicly shipping real-time engines as of today, without naming any of them.
   vkCmdBeginRendering, textures allocate in the swapchain's own 4×8 format with an
   unorm-sibling sampling view + image-native attachment view so every RGBA8 texture is a
   legal target, re-opened swapchain instances resume with LOAD (GL's FBO semantics), and
-  color-only passes borrow a per-extent scratch depth image — all verified pixel-wise
-  locally (SwiftShader: triangle, depth-overlap, checker-quad, and offscreen
-  render-to-texture interleave screenshots) with the same scenes in tier-2 CI tests.
-  Latent M1 readback-fence hazard also fixed (the readback submission rides its own
-  transient fence now). Remaining for full parity: loadOp semantics beyond clear +
-  sampled readback of depth textures, SSBO / separate sampler or storage image support,
-  device-local staging for vertex/index buffers, multi-threaded command recording, and
-  shader cross-compilation tooling (tracked separately below)
+  color-only passes borrow a per-extent scratch depth image — and DEPTH-TEXTURE SAMPLING +
+  REAL LOAD-OP POLICIES (M2e, 2026-09-18): Depth32Float textures rest in
+  SHADER_READ_ONLY_OPTIMAL and bind real sampled views on the dynamic arm (the bit-15
+  1×1-white fallback survives only on classic pre-1.3 devices, where no offscreen pass can
+  ever produce depth content), offscreen passes honor caller colorLoadOp/depthLoadOp for
+  real (Clear/Load/DontCare → VkAttachmentLoadOp over content-preserving tracked-layout
+  entry barriers — GL's FBO clear-once-vs-accumulate semantics; the bit-6 warn is now
+  swapchain-default-pass only), and a new bit-16 feedback guard deterministically samples
+  the 1×1-white fallback (warn-once) when a draw binds the open pass's own attachment —
+  and SSBOs + SEPARATE SAMPLERS (M2f, 2026-09-18): BufferUsageUVE::Storage buffers
+  (STORAGE_BUFFER_BIT on Vulkan, whole-buffer glBindBufferBase on desktop GL 4.3+, recorded
+  faithfully by Null) bind through the new BindStorageBufferUVE command, SPIR-V reflection
+  now understands STORAGE_BUFFER slots and split SAMPLED_IMAGE+SAMPLER pairs alongside
+  combined samplers (the split form samples through the device's one fixed linear/clamp
+  sampler, so checker pixels come back byte-identical to the M2c combined case), unbound /
+  wrong-usage / destroyed-after-bind storage slots deterministically resolve to a
+  device-owned zero-filled fallback SSBO — the buffer analogue of the 1×1-white texture —
+  with warn-once replay bits 17/18 and DestroyBufferUVE invalidating every cached
+  descriptor set that references the freed buffer; storage images still fail loudly at
+  pipeline creation naming the compute milestone (ComputeSystemUVE, Part 7.2), and the
+  honest name rebadges to "Vulkan (M2f SSBO+separate samplers)" on dynamic devices (classic
+  stays M2c — the descriptor work is arm-independent) —
+  and DEVICE-LOCAL STAGING (M3, 2026-09-18): vertex/index buffers now allocate DEVICE_LOCAL
+  memory with TRANSFER_DST (the performance shape M2a's host-visible policy explicitly
+  deferred), fed at creation and on every UpdateBufferUVE by one-shot staging copies that
+  mirror the M2c texture-upload discipline exactly — transient HOST_VISIBLE|COHERENT
+  TRANSFER_SRC buffer, vkCmdCopyBuffer in a one-time command buffer with buffer barriers
+  around the copy (TRANSFER_WRITE published to VERTEX_ATTRIBUTE_READ / INDEX_READ), and a
+  full-idle wait before teardown — while uniform buffers (host writes ARE the SetUniform
+  ring mechanism) and storage buffers (the M2f zero-fallback contract stays simple) remain
+  host-visible; the caller-visible copy-on-update contract is identical for every usage,
+  only placement/traffic differs, and the honest name rebadges to "Vulkan (M3 device-local
+  staging)" on dynamic devices (classic stays M2c — the memory policy is arm-independent) —
+  and MULTI-THREADED COMMAND RECORDING (M4, 2026-09-18): the capability this roadmap entry
+  itself names is now real and contract-documented — VulkanCommandBufferUVE objects carry no
+  device state (recording appends to per-object retained lists), so any number of threads may
+  create, record, and submit their own command buffers concurrently; SubmitUVE pushes into a
+  mutex-guarded submission FIFO from any thread, and PresentUVE drains that FIFO into a local
+  snapshot under the same lock before replaying strictly main-thread (one GPU-timeline owner;
+  a submit racing a present lands in the next frame's FIFO). The Null backend mirrors the
+  contract for its spy; GL stays inherently context-thread (it executes at record time) —
+  and COMPUTE DISPATCH & STORAGE IMAGES (M5a + M5b, 2026-09-18): the RHI-level compute
+  capability is complete — CreateComputePipelineUVE (ComputePipelineDescUVE, same pipeline-handle
+  domain, vkCreateComputePipelines on Vulkan, a linked GL_COMPUTE_SHADER program on desktop GL
+  4.3+, faithful Null bookkeeping with a Compute-stage check) plus DispatchUVE recorded
+  OUTSIDE render-pass markers (Vulkan forbids compute inside a rendering instance): the
+  Vulkan replay closes any lazily-open dynamic-rendering pass, brackets the dispatch in
+  conservative global memory barriers (prior shader writes visible to compute, compute
+  writes visible to all later shader readers and COLOR_ATTACHMENT_OUTPUT), flushes
+  descriptors at the COMPUTE bind point, and dispatches — while the classic pre-1.3 arm
+  warns once (bit 19) and skips; the bind/uniform/storage gates relaxed accordingly on all
+  backends. Compute reflection accepts uniform blocks (ring-dynamic), STORAGE_BUFFER slots
+  (the M2f SSBO machinery feeds compute unchanged), and — since M5b — STORAGE_IMAGE
+  descriptors (the M2f refusal is lifted): storage images join the ONE texture-slot space
+  fed by BindTextureUVE (ascending binding index across the entire texture family). Vulkan
+  permanently transitions storage-image textures to VK_IMAGE_LAYOUT_GENERAL at first use
+  (the barrier closes/reopens an open pass with LOAD semantics; classic arm warns once bit
+  22 and skips) and sampled descriptors of pinned textures rewrite with GENERAL layout;
+  depth textures in storage slots deterministically fall back to a 1x1 black sink (bit 21);
+  GL binds GL_IMAGE_2D uniforms through glBindImageTexture(slot, ..., GL_READ_WRITE). A
+  latent M2c-era flush bug died on the way: the "no shader-bound state" early-return ignored
+  storage/sampler-only pipelines, so their descriptor sets were never bound (invisible until
+  a storage-only compute pipeline made it fatal). GL executes glDispatchCompute at record
+  time + glMemoryBarrier(GL_ALL_BARRIER_BITS); the honest name rebadges to
+  "Vulkan (M5b storage images)" on dynamic devices — all verified pixel-wise locally
+  (SwiftShader: triangle, depth-overlap, checker-quad, and offscreen render-to-texture
+  interleave screenshots) with the same scenes plus the four M2e, six M2f, two M3, one M4,
+  four M5a, and three M5b proof in tier-2 CI tests (lavapipe), where the sampled-depth
+  reconstruction byte check accepts both honest software-stack dualities: an SRGB-typed
+  swapchain stores the shader's linear 0.25 as ≈137 while a UNORM-typed one stores ≈64 (both
+  correct encodings of the same sampled depth), and the depth-read swizzle alpha is
+  spec-undefined on pre-maintenance5 devices (255 or 0 both pass — the specified .g/.b
+  zeros and the .r reconstruction carry the proof). Latent M1 readback-fence hazard also
+  fixed (the readback submission rides its own transient fence now). Both capabilities this
+  entry names — multi-threaded command recording (M4) and explicit memory/barrier management
+  (the M2c staging discipline, M2e tracked-layout barriers, M3 device-local placement, M5b
+  image barriers) — are now real and pixel-proven; the remaining known gaps are tracked as
+  their own entries below: the engine-level ComputeSystemUVE layer (Part 7.2) and shader
+  cross-compilation tooling
 - [ ] A backend for each target OS's native graphics API where OpenGL is not the best
   choice on that platform
 - [ ] Shader cross-compilation so one shader source authors once and targets every backend
   (currently shaders are authored directly in one shading language for one backend)
 - [ ] GPU compute-shader support (for culling, particle simulation, skinning, etc. on the
-  GPU instead of the CPU)
+  GPU instead of the CPU) — RHI level completed with M5a (compute pipelines, DispatchUVE,
+  SSBO write path) and M5b (STORAGE_IMAGE descriptors, GENERAL transitions + image barriers,
+  unified texture-slot space, pixel-proven on lavapipe and GL); the engine-level
+  ComputeSystemUVE consumer layer (Part 7.2) has landed as its own system — compute-program
+  lifecycle over any injected IRenderDeviceUVE, a validated dispatch queue recorded outside
+  pass markers in enqueue order, diagnostics, Null-spy plus real-GL byte-verified proofs —
+  and is wired into the frame loop: EngineCoreUVE owns it as its fortieth service and drains
+  the queue as Render()'s first statement, into its own command buffer submitted before any
+  render pass opens (an empty queue submits nothing). CS3 added the capability that makes GPU
+  compute RESULTS usable rather than merely dispatched: IRenderDeviceUVE::ReadbackBufferUVE
+  (the read direction of UpdateBufferUVE) on all three backends — Vulkan reads host-visible
+  Uniform/Storage memory after a queue drain and refuses device-local vertex/index buffers
+  loudly, GL barriers then reads through glGetBufferSubData, and the Null backend now models
+  real buffer CONTENTS so headless assertions are honest; a compute-written palette is read
+  back as exact floats on lavapipe, and one GL test proves an engine-queued dispatch end to
+  end through engine APIs alone. CS4 is the first real GPU WORKLOAD on that foundation:
+  ParticleComputeSimulationUVE runs Scene::ParticleRuntimeUVE's per-particle integration in a
+  compute kernel (built-in shaders/particle_simulate.glsl) and is held to the strictest
+  standard available - its result must equal the CPU runtime's bit for bit, float for float,
+  including lifetime culling and compaction, proven on a real GL context over 1000 particles
+  and sixty compounding steps (the kernel forbids fused multiply-add so that equality is real
+  rather than approximate). The CPU keeps authority over WHICH particles exist; emission,
+  budgets and compaction stay where they are bounded and tested. Remaining: a fully resident
+  simulation with no CPU round trip (needs GPU-side emission/compaction). CS5 added the
+  second workload, frustum culling: FrustumCullComputeUVE runs Math::FrustumUVE::IntersectsUVE
+  over many boxes at once (built-in shaders/frustum_cull.glsl) and is held to the same standard
+  - the GPU's visibility must equal the CPU test's for every box, including boxes placed to
+  touch a plane exactly and nudged one ULP either way, which is where a contracted multiply-add
+  would flip a decision and make an object pop in or out depending on which path ran. Plane
+  extraction stays on the CPU (six planes is not worth a dispatch, and one authority is easier
+  to keep correct), and non-finite input is refused rather than answered differently, since the
+  CPU test absorbs it through a double-precision fallback a float shader cannot reproduce.
+  CS6 then closed a gap the first two workloads had hidden: their kernels existed only as GLSL,
+  so on Vulkan - which takes SPIR-V, runtime translation still being an open item below - they
+  compiled nothing and refused to initialize, making two "engine systems" quietly GL-only.
+  Both kernels now pass their parameters in std430 storage blocks instead of bare `uniform`
+  scalars (SPIR-V has no non-opaque global uniforms; glslang rejects the uniform form outright),
+  are baked to SPIR-V beside their GLSL, and are selected per backend - with both workloads now
+  proven against a real headless Vulkan device at the same bit-for-bit standard they meet on GL.
+  CS7 then added the missing draw path itself: `ICommandBufferUVE::DrawIndexedIndirectUVE`,
+  fed by a new `BufferUsageUVE::IndirectStorage` that is deliberately BOTH an indirect buffer
+  and an SSBO - an indirect buffer the compute stage cannot write would serve nothing the CPU
+  could not already do with `DrawIndexedUVE`. Implemented on all four backends against a shared
+  `DrawIndexedIndirectCommandUVE` mirror of the five-word GPU parameter block.
+  CS8 then built the pass CS7 existed for: FrustumCullIndirectUVE runs the same frustum test as
+  CS5 but writes its answer as an indirect draw's instanceCount plus a compacted list of
+  surviving indices, both in device memory. The CPU is never told how many objects survived -
+  the diagnostics deliberately expose no visible count, because the only way to fill one would
+  be the readback the pass exists to remove.
+  CS9 then unblocked skinning by building what was missing: MeshAssetUVE now carries per-vertex
+  joint influences and a skeleton, and TrySkinMeshUVE is the CPU linear-blend implementation a
+  GPU kernel can be verified against - the baseline whose absence was the actual blocker.
+  The skinning section is an OPTIONAL trailing part of the .uvemodel payload, so every existing
+  static mesh serializes to byte-identical output (the envelope's version field is global across
+  all asset kinds, so bumping it would have invalidated scenes and textures to describe a mesh
+  feature).
+  CS10 then shipped the kernel: MeshSkinComputeUVE produces exactly what TrySkinMeshUVE produces,
+  bit for bit, on both backends. Reaching that standard required a real change to CS9 - the CPU
+  path now accumulates in float rather than through Math::TransformPointUVE's double, because
+  GLSL has no portable float64 and a double CPU path would have left a permanent ~1 ULP
+  disagreement on roughly one vertex in six, forcing every skinning test onto a tolerance.
+  Pose resolution stays on the CPU: walking a parent chain is serial work a dispatch cannot help.
 - [ ] Bindless/descriptor-indexing-style resource binding for reduced per-draw overhead
 
 ---

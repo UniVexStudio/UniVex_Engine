@@ -37,7 +37,23 @@ struct GlFunctionsUVE {
     PFNGLBINDBUFFERPROC glBindBuffer = nullptr;
     PFNGLBUFFERDATAPROC glBufferData = nullptr;
     PFNGLBUFFERSUBDATAPROC glBufferSubData = nullptr;
+    // CS3: the read direction of glBufferSubData, backing IRenderDeviceUVE::ReadbackBufferUVE.
+    // Core since GL 1.5 like its write sibling, so it joins the IsCompleteUVE() core set.
+    PFNGLGETBUFFERSUBDATAPROC glGetBufferSubData = nullptr;
     PFNGLBINDBUFFERBASEPROC glBindBufferBase = nullptr;
+
+    // M5a compute pair (GL 4.3+). Deliberately NOT part of the IsLoadedUVE() core set: contexts
+    // below 4.3 leave these null (state.supportsComputeShadersUVE is false there too), and
+    // CreateComputePipelineUVE()/DispatchUVE() refuse loudly instead of calling through null.
+    PFNGLDISPATCHCOMPUTEPROC glDispatchCompute = nullptr;
+    PFNGLMEMORYBARRIERPROC glMemoryBarrier = nullptr;
+    // CS7: indexed indirect draw (GL 4.0+). Same optional-null policy as the compute pair above -
+    // a context without it leaves this null and DrawIndexedIndirectUVE warns once and skips
+    // rather than calling through a null pointer.
+    PFNGLDRAWELEMENTSINDIRECTPROC glDrawElementsIndirect = nullptr;
+    // M5b: image-unit binding for storage images (GL 4.2+), same optional-null policy as the
+    // compute pair — BindTextureUVE skips the image bind when it is null.
+    PFNGLBINDIMAGETEXTUREPROC glBindImageTexture = nullptr;
 
     PFNGLGENVERTEXARRAYSPROC glGenVertexArrays = nullptr;
     PFNGLDELETEVERTEXARRAYSPROC glDeleteVertexArrays = nullptr;

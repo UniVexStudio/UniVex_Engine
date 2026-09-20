@@ -37,6 +37,7 @@ EngineServicesUVE::EngineServicesUVE(Debug::ILoggerUVE& logger, Utilities::ITime
                                       Render::IRenderDeviceUVE& renderDevice,
                                       Render::Shader::IShaderManagerUVE& shaderManager,
                                       Render::IRenderSystemUVE& renderSystem,
+                                      Render::IComputeSystemUVE& computeSystem,
                                       Render::ICameraSystemUVE& cameraSystem,
                                       Render::IMeshRendererUVE& meshRenderer,
                                       Render::ILightSystemUVE& lightSystem,
@@ -67,7 +68,7 @@ EngineServicesUVE::EngineServicesUVE(Debug::ILoggerUVE& logger, Utilities::ITime
       m_assetImporter(&assetImporter), m_assetImportQueue(&assetImportQueue), m_assetBundle(&assetBundle),
       m_fileSystem(&fileSystem),
       m_renderDevice(&renderDevice), m_shaderManager(&shaderManager), m_renderSystem(&renderSystem),
-      m_cameraSystem(&cameraSystem),
+      m_computeSystem(&computeSystem), m_cameraSystem(&cameraSystem),
       m_meshRenderer(&meshRenderer), m_lightSystem(&lightSystem), m_renderer3D(&renderer3D),
       m_collisionSystem(&collisionSystem),
       m_physicsSystem(&physicsSystem), m_physicsQuerySystem(&physicsQuerySystem),
@@ -176,6 +177,10 @@ Render::Shader::IShaderManagerUVE& EngineServicesUVE::GetShaderManagerUVE() cons
 
 Render::IRenderSystemUVE& EngineServicesUVE::GetRenderSystemUVE() const noexcept {
     return *m_renderSystem;
+}
+
+Render::IComputeSystemUVE& EngineServicesUVE::GetComputeSystemUVE() const noexcept {
+    return *m_computeSystem;
 }
 
 Render::ICameraSystemUVE& EngineServicesUVE::GetCameraSystemUVE() const noexcept {

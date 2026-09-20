@@ -503,7 +503,9 @@ TEST(EditorBridgeUVETest, DispatchUVE_RejectsUnsupportedProtocolAndInvalidEntity
         const EditorBridgeResponseUVE versionResponse = bridge.DispatchUVE(invalidVersion);
         EXPECT_FALSE(versionResponse.applied);
         EXPECT_EQ(versionResponse.code, "bridge.protocol.unsupported");
-        EXPECT_TRUE(GetRootsUVE(editor).empty());
+        // The document was not mutated: the only root is the ever-present scene root.
+        ASSERT_EQ(GetRootsUVE(editor).size(), 1U);
+        EXPECT_EQ(GetRootsUVE(editor)[0U], editor.GetDocumentSceneRootUVE());
 
         const EditorBridgeRequestUVE invalidEntity{
             kEditorBridgeProtocolVersionUVE, 8U, snapshot.revision, EditorBridgeRequestKindUVE::SelectEntity,
@@ -512,7 +514,9 @@ TEST(EditorBridgeUVETest, DispatchUVE_RejectsUnsupportedProtocolAndInvalidEntity
         EXPECT_FALSE(entityResponse.applied);
         EXPECT_EQ(entityResponse.code, "bridge.entity.invalid");
         EXPECT_TRUE(entityResponse.snapshot.selectedEntities.empty());
-        EXPECT_TRUE(GetRootsUVE(editor).empty());
+        // The document was not mutated: the only root is the ever-present scene root.
+        ASSERT_EQ(GetRootsUVE(editor).size(), 1U);
+        EXPECT_EQ(GetRootsUVE(editor)[0U], editor.GetDocumentSceneRootUVE());
 
         editor.ShutdownUVE();
     }
@@ -533,22 +537,34 @@ TEST(EditorBridgeUVETest, SnapshotUVE_CopiesHierarchyInspectorAndNativePanelSess
         ASSERT_TRUE(editor.SetSelectedEntityNameUVE("Bridge Root"));
         const Scene::EntityUVE child = editor.CreateDocumentEntityUVE(EditorEntityKindUVE::Plane);
         ASSERT_NE(child, Scene::kInvalidEntityUVE);
-        ASSERT_TRUE(editor.ReparentSelectedEntityUVE(root));
+        // No manual reparent needed anymore: creating the Plane while the Cube was selected
+        // already parented the child under it (selected-or-root creation parenting).
         ASSERT_TRUE(editor.SetSelectedEntityNameUVE("Bridge Child"));
         auto& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
         entityManager.AddComponentUVE<Scene::MeshComponentUVE>(
             child, Scene::MeshComponentUVE{Asset::AssetGuidUVE{0x1111U}, Asset::AssetGuidUVE{0x2222U}});
 
         EditorBridgeSnapshotUVE snapshot = bridge.GetSnapshotUVE();
-        ASSERT_EQ(snapshot.hierarchy.entries.size(), 2U);
-        EXPECT_EQ(snapshot.hierarchy.entries[0].entity, (EditorBridgeEntityRefUVE{root.index, root.generation}));
-        EXPECT_EQ(snapshot.hierarchy.entries[0].displayLabel, "Bridge Root");
+        // The hierarchy leads with the document's ever-present SceneRoot, so the authored pair
+        // sits one level deeper than it did before one-root documents.
+        const Scene::EntityUVE sceneRoot = editor.GetDocumentSceneRootUVE();
+        ASSERT_EQ(snapshot.hierarchy.entries.size(), 3U);
+        EXPECT_EQ(snapshot.hierarchy.entries[0].entity,
+                  (EditorBridgeEntityRefUVE{sceneRoot.index, sceneRoot.generation}));
+        EXPECT_EQ(snapshot.hierarchy.entries[0].displayLabel, "SceneRoot");
         EXPECT_EQ(snapshot.hierarchy.entries[0].depth, 0U);
         EXPECT_EQ(snapshot.hierarchy.entries[0].childCount, 1U);
-        EXPECT_EQ(snapshot.hierarchy.entries[1].entity, (EditorBridgeEntityRefUVE{child.index, child.generation}));
+        EXPECT_EQ(snapshot.hierarchy.entries[1].entity, (EditorBridgeEntityRefUVE{root.index, root.generation}));
         ASSERT_TRUE(snapshot.hierarchy.entries[1].parent.has_value());
-        EXPECT_EQ(*snapshot.hierarchy.entries[1].parent, (EditorBridgeEntityRefUVE{root.index, root.generation}));
+        EXPECT_EQ(*snapshot.hierarchy.entries[1].parent,
+                  (EditorBridgeEntityRefUVE{sceneRoot.index, sceneRoot.generation}));
+        EXPECT_EQ(snapshot.hierarchy.entries[1].displayLabel, "Bridge Root");
         EXPECT_EQ(snapshot.hierarchy.entries[1].depth, 1U);
+        EXPECT_EQ(snapshot.hierarchy.entries[1].childCount, 1U);
+        EXPECT_EQ(snapshot.hierarchy.entries[2].entity, (EditorBridgeEntityRefUVE{child.index, child.generation}));
+        ASSERT_TRUE(snapshot.hierarchy.entries[2].parent.has_value());
+        EXPECT_EQ(*snapshot.hierarchy.entries[2].parent, (EditorBridgeEntityRefUVE{root.index, root.generation}));
+        EXPECT_EQ(snapshot.hierarchy.entries[2].depth, 2U);
         ASSERT_EQ(snapshot.inspector.mode, EditorBridgeInspectorModeUVE::SingleSelection);
         ASSERT_TRUE(snapshot.inspector.activeEntity.has_value());
         EXPECT_EQ(snapshot.inspector.activeEntity->displayLabel, "Bridge Child");
@@ -756,7 +772,9 @@ TEST(EditorBridgeUVETest, SnapshotUVE_CopiesHierarchyInspectorAndNativePanelSess
         const EditorBridgeResponseUVE filtered = bridge.DispatchUVE(filterRequest);
         ASSERT_TRUE(filtered.applied);
         EXPECT_TRUE(filtered.snapshot.hierarchy.filterActive);
-        ASSERT_EQ(filtered.snapshot.hierarchy.entries.size(), 2U);
+        // The filter match plus its ancestor chain - which now includes the ever-present
+        // SceneRoot above the authored pair.
+        ASSERT_EQ(filtered.snapshot.hierarchy.entries.size(), 3U);
         EXPECT_GT(filtered.snapshot.revision, snapshot.revision);
 
         EditorBridgeRequestUVE toggleRequest{};

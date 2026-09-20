@@ -30,12 +30,7 @@ struct CharacterControllerComponentUVE final {
 
 /// Validates the value-only character-controller contract before scene persistence and stepping,
 /// mirroring `IsRigidBodyComponentValidUVE`'s own per-field style.
-[[nodiscard]] inline bool IsCharacterControllerComponentValidUVE(
-    const CharacterControllerComponentUVE& characterController) noexcept {
-    return std::isfinite(characterController.moveSpeed) && characterController.moveSpeed >= 0.0F &&
-           std::isfinite(characterController.jumpHeight) && characterController.jumpHeight >= 0.0F &&
-           std::isfinite(characterController.gravityScale) && characterController.gravityScale >= 0.0F &&
-           std::isfinite(characterController.verticalVelocity);
-}
+[[nodiscard]] bool IsCharacterControllerComponentValidUVE(
+    const CharacterControllerComponentUVE& characterController) noexcept;
 
 } // namespace UVE::Scene
