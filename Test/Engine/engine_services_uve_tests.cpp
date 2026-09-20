@@ -742,7 +742,16 @@ public:
 
 class FakeRenderer3DUVE final : public Render::IRenderer3DUVE {
 public:
+    float lastPhysicsInterpolationAlpha = -1.0F;
+
     void RenderFrameUVE(Scene::IEntityManagerUVE&, Scene::EntityUVE) override { ++renderFrameCallCount; }
+
+    void SetPhysicsInterpolationAlphaUVE(const float alpha) noexcept override {
+        // Recorded rather than ignored: a fake that silently swallows the value cannot tell a
+        // caller that forgot to set it from one that set it to zero, and this fake exists
+        // precisely to observe what the engine hands the renderer.
+        lastPhysicsInterpolationAlpha = alpha;
+    }
 
     [[nodiscard]] Render::Renderer3DFrameDiagnosticsUVE GetLastFrameDiagnosticsUVE() const noexcept override {
         ++getDiagnosticsCallCount;
