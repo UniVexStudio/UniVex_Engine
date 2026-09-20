@@ -77,7 +77,7 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
 # The three font .inc files editor_uve.cpp includes are generated at build time by
 # Engine/Tools/embed_file.py from single canonical .ttf sources, instead of being committed
-# byte-array snapshots (2026-09-17 audit section 5.4 - the sans font alone existed four
+# byte-array snapshots (the sans font alone existed four
 # times in the tree: 2x .ttf + 2x identical .inc). Sources:
 #   * liberation-sans: Engine/Runtime/UI's own assets copy is the repo-wide canonical file
 #     (Runtime must not depend on Editor, so the lower layer owns it; the editor embeds it

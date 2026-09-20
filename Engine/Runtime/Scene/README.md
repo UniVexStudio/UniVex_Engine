@@ -1,7 +1,7 @@
 # Engine/Runtime/Scene
 
 The scene-hierarchy layer: scene graph, serializer, prefabs, particle runtime, and the scene
-Node registry. Written down per the 2026-09-17 audit (section 6.3) because this module is the
+Node registry. Written down per the 2026-09-17 audit because this module is the
 third corner of a triangle new contributors historically confuse:
 
 ## The entity/scene/node boundary — who owns what

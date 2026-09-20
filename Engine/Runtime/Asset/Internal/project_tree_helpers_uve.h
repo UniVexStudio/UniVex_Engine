@@ -4,7 +4,7 @@
 // ProjectChangeWatcherUVE previously each carried their own anonymous-namespace copies of
 // MakeRootRelativePathUVE / NormalizeProjectContentRootUVE / the registered-assets-by-path
 // map builder (the watcher's copy even noted "Match ProjectFileIndexUVE:") - the
-// 2026-09-17 audit flagged that cluster in section 5.6. Both owners now share this one
+// 2026-09-17 audit flagged that cluster. Both owners now share this one
 // implementation; behavior is unchanged from the index's original copy.
 
 #pragma once
