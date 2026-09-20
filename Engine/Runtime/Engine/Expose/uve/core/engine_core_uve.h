@@ -531,6 +531,34 @@ private:
     /// events) is deliberately not done here - gameplay code no system owns yet.
     void SyncHitbox3DNodesUVE();
 
+    /// The interaction scan, new wiring for previously unconsumed authored data (the
+    /// Unreal-Lyra-style interactor/focus loop Godot leaves every game to hand-roll out of
+    /// Area3D signals): every frame, every character-controller entity that has a
+    /// ColliderComponentUVE and a world transform is an interactor, the first one in
+    /// (index,generation) order is the PRIMARY interactor (Scene::ResolvePrimaryInteractorUVE,
+    /// the same decision SpawnPoint3D selection makes), and every InteractionArea3D node's
+    /// runtime state is refreshed against them. The full contract: only enabled, valid areas
+    /// participate (everything else fails closed - a disabled or invalid area ends the frame
+    /// with zero interactors, never stale ones, SyncHitbox3DNodesUVE's discipline); both
+    /// volumes are exact oriented boxes (world position/rotation + authored halfExtents, world
+    /// scale intentionally not applied - the ColliderComponentUVE/AreaComponentUVE world-shape
+    /// convention - degenerate rotations fall back to identity); an overlap requires symmetric
+    /// layer/mask acceptance (AreaOverlapSystemUVE's rule) and an area never lists the
+    /// interactor living on its own entity; overlap is the exact 15-axis oriented-box test from
+    /// Physics::Detail, and touching boundaries do not count. Each area stores its interacting
+    /// candidates into a bounded list (the authored maximumCandidates clamped to
+    /// kMaximumInteractionAreaCandidatesUVE by Scene::ResolveInteractionAreaCandidateCapUVE,
+    /// overflow flagged) and exactly one area - the one nearest the primary interactor,
+    /// ties broken by (index,generation) via Scene::ResolveInteractionFocusUVE - is marked
+    /// focusedByPrimaryInteractor. Runtime state is never serialized. Acting on the focus
+    /// (prompt UI, an "interact" binding, focus enter/exit events) is deliberately not done
+    /// here - the gameplay layer no system owns yet; the authored interactionTag is carried
+    /// for that follow-up and intentionally does not filter anything today. Like
+    /// SyncHitbox3DNodesUVE() this lives in the engine core tick, not the node module: the
+    /// Nodes/3D layer holds pure authoring data plus the three dependency-free resolvers the
+    /// tests pin directly.
+    void SyncInteractionArea3DNodesUVE();
+
     /// Recomputes the bounded aspect-preserving render target from the live drawable size and
     /// transactionally resizes Renderer3DUVE before the frame's scene work begins.
     void SyncAdaptiveRenderResolutionUVE();
