@@ -18,11 +18,11 @@
 #include "uve/events/event_system_uve.h"
 #include "uve/memory/memory_manager_uve.h"
 #include "uve/save/save_payload_compression_uve.h"
-#include "uve/scene/components/hierarchy_component_uve.h"
-#include "uve/scene/components/light_component_uve.h"
-#include "uve/scene/components/mesh_component_uve.h"
-#include "uve/scene/components/rigid_body_component_uve.h"
-#include "uve/scene/entity_manager_uve.h"
+#include "uve/component/hierarchy_component_uve.h"
+#include "uve/component/light_component_uve.h"
+#include "uve/component/mesh_component_uve.h"
+#include "uve/component/rigid_body_component_uve.h"
+#include "uve/entity/entity_manager_uve.h"
 #include "uve/scene/scene_serializer_uve.h"
 
 namespace UVE::Save::Tests {

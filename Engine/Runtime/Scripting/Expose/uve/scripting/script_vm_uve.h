@@ -1,7 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #pragma once
 
-#include "uve/scene/entity_uve.h"
+#include "uve/component/entity_uve.h"
 #include "uve/scripting/script_bytecode_uve.h"
 #include "uve/scripting/script_vector2_value_uve.h"
 #include "uve/scripting/script_vector3_value_uve.h"

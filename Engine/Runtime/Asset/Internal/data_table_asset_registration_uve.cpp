@@ -4,7 +4,7 @@
 
 #include "uve/asset/data_table_asset_uve.h"
 #include "uve/asset/i_asset_database_uve.h"
-#include "uve/debug/logging_macros_uve.h"
+#include "uve/logging/logging_macros_uve.h"
 
 namespace UVE::Asset {
 

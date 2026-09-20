@@ -10,10 +10,10 @@
 
 #include "uve/events/event_system_uve.h"
 #include "uve/memory/memory_manager_uve.h"
-#include "uve/scene/components/area_component_uve.h"
-#include "uve/scene/components/collider_component_uve.h"
-#include "uve/scene/components/transform_component_uve.h"
-#include "uve/scene/entity_manager_uve.h"
+#include "uve/component/area_component_uve.h"
+#include "uve/component/collider_component_uve.h"
+#include "uve/component/transform_component_uve.h"
+#include "uve/entity/entity_manager_uve.h"
 #include "uve/scene/scene_graph_uve.h"
 
 namespace UVE::Physics::Tests {

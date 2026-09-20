@@ -24,6 +24,6 @@ add_library(uve_rhi_shader STATIC
     Internal/shader_program_uve.cpp
 )
 target_include_directories(uve_rhi_shader PUBLIC Expose)
-target_link_libraries(uve_rhi_shader PUBLIC uve_rhi uve_debug uve_math uve_asset uve_threading uve_events)
+target_link_libraries(uve_rhi_shader PUBLIC uve_rhi uve_logging uve_math uve_asset uve_threading uve_events)
 target_compile_features(uve_rhi_shader PUBLIC cxx_std_20)
 uve_set_warnings(uve_rhi_shader)

@@ -16,35 +16,37 @@
 
 #include "uve/asset/asset_guid_uve.h"
 #include "uve/asset/uve_file_envelope_uve.h"
-#include "uve/debug/log_sink_uve.h"
-#include "uve/debug/logger_uve.h"
+#include "uve/logging/log_sink_uve.h"
+#include "uve/logging/logger_uve.h"
 #include "uve/events/event_system_uve.h"
 #include "uve/math/vector3_uve.h"
 #include "uve/memory/memory_manager_uve.h"
-#include "uve/scene/components/animation_player_component_uve.h"
-#include "uve/scene/components/area_component_uve.h"
-#include "uve/scene/components/audio_source_component_uve.h"
-#include "uve/scene/components/camera_component_uve.h"
-#include "uve/scene/components/canvas_component_uve.h"
-#include "uve/scene/components/character_controller_component_uve.h"
-#include "uve/scene/components/collider_component_uve.h"
+#include "uve/component/animation_player_component_uve.h"
+#include "uve/component/area_component_uve.h"
+#include "uve/component/audio_source_component_uve.h"
+#include "uve/component/camera_component_uve.h"
+#include "uve/component/canvas_component_uve.h"
+#include "uve/component/character_controller_component_uve.h"
+#include "uve/component/collider_component_uve.h"
 #include "uve/nodes/3d/all_nodes_3d_uve.h"
-#include "uve/scene/components/hierarchy_component_uve.h"
-#include "uve/scene/components/light_component_uve.h"
-#include "uve/scene/components/mesh_component_uve.h"
-#include "uve/scene/components/name_component_uve.h"
-#include "uve/scene/components/particle_emitter_component_uve.h"
-#include "uve/scene/components/primitive_mesh_component_uve.h"
-#include "uve/scene/components/prefab_instance_component_uve.h"
-#include "uve/scene/components/rigid_body_component_uve.h"
-#include "uve/scene/components/script_component_uve.h"
-#include "uve/scene/components/transform_component_uve.h"
-#include "uve/scene/components/ui_button_component_uve.h"
-#include "uve/scene/components/ui_image_component_uve.h"
-#include "uve/scene/components/ui_text_component_uve.h"
-#include "uve/scene/components/world_transform_component_uve.h"
-#include "uve/scene/entity_manager_uve.h"
+#include "uve/component/hierarchy_component_uve.h"
+#include "uve/component/light_component_uve.h"
+#include "uve/component/mesh_component_uve.h"
+#include "uve/component/name_component_uve.h"
+#include "uve/component/particle_emitter_component_uve.h"
+#include "uve/component/primitive_mesh_component_uve.h"
+#include "uve/component/prefab_instance_component_uve.h"
+#include "uve/component/rigid_body_component_uve.h"
+#include "uve/component/script_component_uve.h"
+#include "uve/component/transform_component_uve.h"
+#include "uve/component/visibility_component_uve.h"
+#include "uve/component/ui_button_component_uve.h"
+#include "uve/component/ui_image_component_uve.h"
+#include "uve/component/ui_text_component_uve.h"
+#include "uve/component/world_transform_component_uve.h"
+#include "uve/entity/entity_manager_uve.h"
 #include "uve/scene/scene_graph_uve.h"
+#include "uve/scene/nodes/scene_root_uve.h"
 
 namespace UVE::Scene::Tests {
 namespace {
@@ -1309,4 +1311,145 @@ TEST_F(SceneSerializerUVETest, LoadUVE_BadMagic_ReturnsEmptyAndLogsError) {
 }
 
 } // namespace
+
+TEST_F(SceneSerializerUVETest, SaveLoadUVE_SceneRootMarkerRoundTrips) {
+    // The scene root's marker component must survive a save/load cycle like every other
+    // component: a captured document root carrying it restores with the marker intact, and
+    // the restored hierarchy still has exactly one root.
+    SceneGraphUVE sceneGraph;
+    const EntityUVE root = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, root, TransformComponentUVE{});
+    entityManager.AddComponentUVE<NameComponentUVE>(root, NameComponentUVE{"SceneRoot"});
+    entityManager.AddComponentUVE<SceneRootComponentUVE>(root, SceneRootComponentUVE{});
+    const EntityUVE child = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, child, TransformComponentUVE{});
+    entityManager.AddComponentUVE<NameComponentUVE>(child, NameComponentUVE{"Empty"});
+    sceneGraph.SetParentUVE(entityManager, child, root);
+
+    const std::filesystem::path path = "uve_scene_serializer_tests_scene_root_marker.uvescene";
+    std::filesystem::remove(path);
+    ASSERT_TRUE(serializer.SaveUVE(entityManager, {root}, path, Asset::AssetKindUVE::Scene));
+
+    EntityManagerUVE loadedManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
+    const std::vector<EntityUVE> restoredRoots = serializer.LoadUVE(loadedManager, path);
+    ASSERT_EQ(restoredRoots.size(), 1U);
+    EXPECT_TRUE(loadedManager.HasComponentUVE<SceneRootComponentUVE>(restoredRoots[0U]));
+    std::filesystem::remove(path);
+}
+
+TEST_F(SceneSerializerUVETest, SaveLoadUVE_VisibilityRoundTripsTheAuthoredFlagOnly) {
+    // Hiding an object has to survive a save. It also has to survive WITHOUT carrying the derived
+    // field across: visibleInHierarchy depends on the entity's ancestors, so persisting it would
+    // store an answer that is wrong the moment a node is saved under one parent and loaded under
+    // another.
+    SceneGraphUVE sceneGraph;
+    const EntityUVE source = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, source, TransformComponentUVE{});
+    entityManager.AddComponentUVE<VisibilityComponentUVE>(
+        source, VisibilityComponentUVE{/*visible=*/false, /*visibleInHierarchy=*/false});
+
+    const std::filesystem::path path = "uve_scene_serializer_tests_visibility.uvescene";
+    std::filesystem::remove(path);
+    ASSERT_TRUE(serializer.SaveUVE(entityManager, {source}, path, Asset::AssetKindUVE::Scene));
+
+    EntityManagerUVE loadedManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
+    const std::vector<EntityUVE> restored = serializer.LoadUVE(loadedManager, path);
+    ASSERT_EQ(restored.size(), 1U);
+    ASSERT_TRUE(loadedManager.HasComponentUVE<VisibilityComponentUVE>(restored[0U]));
+    const VisibilityComponentUVE& loaded = loadedManager.GetComponentUVE<VisibilityComponentUVE>(restored[0U]);
+    EXPECT_FALSE(loaded.visible) << "the authored switch must survive the round trip";
+    // Seeded from the authored value so nothing is briefly drawn between load and the first
+    // scene-graph update, which then overwrites it with the inherited answer.
+    EXPECT_FALSE(loaded.visibleInHierarchy);
+
+    std::filesystem::remove(path);
+}
+
+TEST_F(SceneSerializerUVETest, RestoreUVE_AnEntitySavedWithoutVisibilityRestoresVisible) {
+    // Every scene written before this component existed carries no VisibilityComponentUVE at all.
+    // Those entities must come back visible, and specifically must come back with NO component -
+    // inventing one on load would rewrite documents behind the author's back, and an absent
+    // component already means visible everywhere that reads it.
+    //
+    // This is the migration case that matters. The "component present but its key absent" variant
+    // is handled by json.value("visible", true) in the loader; testing it would mean hand-editing
+    // the wrapped .uve container, which tests the envelope format rather than the default.
+    SceneGraphUVE sceneGraph;
+    const EntityUVE source = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, source, TransformComponentUVE{});
+    entityManager.AddComponentUVE<NameComponentUVE>(source, NameComponentUVE{"LegacyNode"});
+
+    const std::optional<SceneSnapshotUVE> snapshot =
+        serializer.CaptureUVE(entityManager, {source}, SceneAssetTypeUVE::Scene);
+    ASSERT_TRUE(snapshot.has_value());
+
+    EntityManagerUVE loadedManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
+    const std::vector<EntityUVE> restored = serializer.RestoreUVE(loadedManager, *snapshot);
+    ASSERT_EQ(restored.size(), 1U);
+    EXPECT_FALSE(loadedManager.HasComponentUVE<VisibilityComponentUVE>(restored[0U]))
+        << "loading must not invent a component the document never had";
+
+    // And the renderer's rule for that case: no component means visible.
+    EXPECT_TRUE(VisibilityComponentUVE{}.visible);
+    EXPECT_TRUE(VisibilityComponentUVE{}.visibleInHierarchy);
+}
+
+TEST_F(SceneSerializerUVETest, SaveLoadUVE_VisibilityParentIsRemappedToTheRestoredEntity) {
+    // An entity reference cannot be written as a raw EntityUVE: indices are reassigned on load, so
+    // a saved handle would point at whatever happens to occupy that slot. It goes through the same
+    // file-local id remapping HierarchyComponentUVE uses, and this proves the restored reference
+    // points at the restored TARGET rather than at a coincidence.
+    SceneGraphUVE sceneGraph;
+    const EntityUVE root = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, root, TransformComponentUVE{});
+    entityManager.AddComponentUVE<NameComponentUVE>(root, NameComponentUVE{"Root"});
+    entityManager.AddComponentUVE<VisibilityComponentUVE>(root, VisibilityComponentUVE{});
+
+    const EntityUVE target = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, target, TransformComponentUVE{});
+    entityManager.AddComponentUVE<NameComponentUVE>(target, NameComponentUVE{"Target"});
+    entityManager.AddComponentUVE<VisibilityComponentUVE>(target, VisibilityComponentUVE{});
+    sceneGraph.SetParentUVE(entityManager, target, root);
+
+    const EntityUVE follower = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, follower, TransformComponentUVE{});
+    entityManager.AddComponentUVE<NameComponentUVE>(follower, NameComponentUVE{"Follower"});
+    VisibilityComponentUVE redirect;
+    redirect.visibilityParent = target;
+    entityManager.AddComponentUVE<VisibilityComponentUVE>(follower, redirect);
+    sceneGraph.SetParentUVE(entityManager, follower, root);
+
+    const std::filesystem::path path = "uve_scene_serializer_tests_visibility_parent.uvescene";
+    std::filesystem::remove(path);
+    ASSERT_TRUE(serializer.SaveUVE(entityManager, {root}, path, Asset::AssetKindUVE::Scene));
+
+    EntityManagerUVE loadedManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
+    const std::vector<EntityUVE> restoredRoots = serializer.LoadUVE(loadedManager, path);
+    ASSERT_EQ(restoredRoots.size(), 1U);
+
+    EntityUVE restoredTarget = kInvalidEntityUVE;
+    EntityUVE restoredFollower = kInvalidEntityUVE;
+    loadedManager.ForEachUVE<NameComponentUVE>([&](const EntityUVE entity, const NameComponentUVE& name) {
+        if (name.name == "Target") {
+            restoredTarget = entity;
+        } else if (name.name == "Follower") {
+            restoredFollower = entity;
+        }
+    });
+    ASSERT_NE(restoredTarget, kInvalidEntityUVE);
+    ASSERT_NE(restoredFollower, kInvalidEntityUVE);
+    ASSERT_TRUE(loadedManager.HasComponentUVE<VisibilityComponentUVE>(restoredFollower));
+    EXPECT_EQ(loadedManager.GetComponentUVE<VisibilityComponentUVE>(restoredFollower).visibilityParent,
+              restoredTarget)
+        << "the redirect must be remapped to the restored target, not a stale index";
+
+    // And it still works: hiding the target hides the follower in the loaded scene.
+    SceneGraphUVE loadedGraph;
+    loadedManager.GetComponentUVE<VisibilityComponentUVE>(restoredTarget).visible = false;
+    loadedGraph.UpdateUVE(loadedManager);
+    EXPECT_FALSE(loadedManager.GetComponentUVE<VisibilityComponentUVE>(restoredFollower).visibleInHierarchy);
+
+    std::filesystem::remove(path);
+}
+
 } // namespace UVE::Scene::Tests

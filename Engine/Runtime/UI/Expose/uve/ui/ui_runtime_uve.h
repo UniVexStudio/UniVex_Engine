@@ -3,7 +3,7 @@
 #pragma once
 
 #include "uve/input/i_input_system_uve.h"
-#include "uve/scene/i_entity_manager_uve.h"
+#include "uve/entity/i_entity_manager_uve.h"
 #include "uve/ui/ui_draw_batch_uve.h"
 #include "uve/ui/ui_font_atlas_uve.h"
 

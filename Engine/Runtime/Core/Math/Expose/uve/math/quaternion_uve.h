@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <cstdint>
+
 #include <string>
 
 #include "uve/math/vector3_uve.h"
@@ -64,6 +66,46 @@ struct QuaternionUVE {
 /// every Euler-angle extraction, this is not unique at the gimbal-lock poles (pitch at +/-90
 /// degrees) - the same accepted limitation every engine's rotation Inspector field has.
 [[nodiscard]] bool TryToEulerUVE(const QuaternionUVE& rotation, Vector3UVE& outRadians) noexcept;
+
+/// The order Euler angles are applied in, named by application sequence: `XYZ` means rotate about
+/// X first, then Y, then Z, each about the PARENT frame's axes.
+///
+/// WHY SIX. A single order cannot avoid gimbal lock - every Euler convention has a pose where one
+/// degree of freedom collapses - but the pose differs per order, so an author who hits it can
+/// switch to an order whose singularity is somewhere their rig never goes. A turret that pitches
+/// to vertical is unusable in XYZ and fine in ZXY. Offering one order and calling the limitation
+/// inherent is what forces people into quaternion fields they cannot read.
+///
+/// `XYZ` is the default and is bit-for-bit what TryMakeEulerUVE()/TryToEulerUVE() have always
+/// produced - verified by test, so no existing scene, asset or authored rotation changes meaning.
+enum class EulerOrderUVE : std::uint8_t {
+    XYZ = 0,
+    YXZ,
+    ZYX,
+    XZY,
+    YZX,
+    ZXY,
+};
+
+/// Builds a normalized rotation from Euler angles in the given order. Returns false for
+/// non-finite input or a rotation that cannot be normalized.
+///
+/// TryMakeEulerUVE(v, out) and TryMakeEulerOrderedUVE(v, EulerOrderUVE::XYZ, out) are the same
+/// function; the two-argument form is kept because most callers neither know nor care about
+/// order, and making all of them pass an enum would be noise.
+[[nodiscard]] bool TryMakeEulerOrderedUVE(const Vector3UVE& radians, EulerOrderUVE order,
+                                          QuaternionUVE& outRotation) noexcept;
+
+/// Extracts the Euler angles, in the given order, that rebuild `rotation` via
+/// TryMakeEulerOrderedUVE(). Returns false for non-finite or non-normalizable input.
+///
+/// At a gimbal-lock pose the decomposition is not unique: infinitely many angle triples describe
+/// the same rotation, and this returns one of them with the collapsed term set to zero. The
+/// ROTATION always round-trips exactly - it is only the angles that are ambiguous - which is why
+/// authored Euler values are stored rather than re-extracted every frame (see
+/// TransformComponentUVE).
+[[nodiscard]] bool TryToEulerOrderedUVE(const QuaternionUVE& rotation, EulerOrderUVE order,
+                                        Vector3UVE& outRadians) noexcept;
 
 /// Builds a rotation that points local +Z along `direction` with the supplied up reference.
 [[nodiscard]] bool TryMakeLookAtUVE(const Vector3UVE& direction, const Vector3UVE& up,

@@ -9,8 +9,8 @@
 #include <string>
 
 #include "uve/asset/i_asset_database_uve.h"
-#include "uve/scene/entity_uve.h"
-#include "uve/scene/i_entity_manager_uve.h"
+#include "uve/component/entity_uve.h"
+#include "uve/entity/i_entity_manager_uve.h"
 #include "uve/scene/i_scene_graph_uve.h"
 
 namespace UVE::Scene {

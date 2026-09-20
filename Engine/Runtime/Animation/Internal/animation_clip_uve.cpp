@@ -1,6 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-#include "uve/core/animation_clip_uve.h"
+#include "uve/animation/animation_clip_uve.h"
 
 #include <algorithm>
 #include <cmath>

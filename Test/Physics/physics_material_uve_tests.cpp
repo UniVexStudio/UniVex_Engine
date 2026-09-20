@@ -7,7 +7,7 @@
 
 #include <gtest/gtest.h>
 
-#include "uve/scene/components/collider_component_uve.h"
+#include "uve/component/collider_component_uve.h"
 
 namespace UVE::Physics::Tests {
 namespace {

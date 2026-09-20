@@ -11,9 +11,9 @@
 
 #include "uve/core/engine_core_uve.h"
 #include "uve/platform/editor_project_package_uve.h"
-#include "uve/scene/components/camera_component_uve.h"
-#include "uve/scene/components/transform_component_uve.h"
-#include "uve/scene/i_entity_manager_uve.h"
+#include "uve/component/camera_component_uve.h"
+#include "uve/component/transform_component_uve.h"
+#include "uve/entity/i_entity_manager_uve.h"
 #include "uve/scene/i_scene_graph_uve.h"
 #include "uve/scene/scene_serializer_uve.h"
 

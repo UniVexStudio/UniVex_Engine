@@ -1,7 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 
-#include "uve/render/light_system_uve.h"
+#include "uve/render_systems/light_system_uve.h"
 
 #include <cmath>
 #include <cstddef>
@@ -11,10 +11,10 @@
 
 #include "uve/events/event_system_uve.h"
 #include "uve/memory/memory_manager_uve.h"
-#include "uve/scene/components/light_component_uve.h"
-#include "uve/scene/components/mesh_component_uve.h"
-#include "uve/scene/components/world_transform_component_uve.h"
-#include "uve/scene/entity_manager_uve.h"
+#include "uve/component/light_component_uve.h"
+#include "uve/component/mesh_component_uve.h"
+#include "uve/component/world_transform_component_uve.h"
+#include "uve/entity/entity_manager_uve.h"
 #include "uve/scene/scene_graph_uve.h"
 
 namespace UVE::Render::Tests {
@@ -252,6 +252,159 @@ TEST_F(LightSystemUVETest, ExtractActiveLightsUVE_InvalidWorldTransform_SkipsWit
     }
 }
 #endif
+
+
+// ---------------------------------------------------------------------------
+// View-based light selection.
+//
+// The bug this replaces was not a performance problem, it was a correctness one:
+// with more than kMaxLightsUVE lights, the four that survived were whichever the
+// ECS visited first. A torch beside the player and a lamp across the level were
+// equally eligible, and the order could CHANGE when an unrelated entity was
+// created or destroyed - so the light on the player's face could vanish because
+// something else spawned. These tests pin the ranking, not the speed.
+// ---------------------------------------------------------------------------
+
+[[nodiscard]] Scene::LightComponentUVE MakePointLightUVE(const float intensity, const float range) {
+    Scene::LightComponentUVE light;
+    light.type = Scene::LightTypeUVE::Point;
+    light.intensity = intensity;
+    light.range = range;
+    light.color = Math::Vector3UVE{1.0F, 1.0F, 1.0F};
+    return light;
+}
+
+TEST_F(LightSystemUVETest, ExtractActiveLightsForViewUVE_PrefersTheNearerOfTwoEqualLights) {
+    static_cast<void>(MakeLightEntityUVE(Math::Vector3UVE{100.0F, 0.0F, 0.0F}, Math::QuaternionUVE{},
+                       MakePointLightUVE(10.0F, 1000.0F)));
+    static_cast<void>(MakeLightEntityUVE(Math::Vector3UVE{2.0F, 0.0F, 0.0F}, Math::QuaternionUVE{},
+                       MakePointLightUVE(10.0F, 1000.0F)));
+
+    const LightListUVE result =
+        lightSystem.ExtractActiveLightsForViewUVE(entityManager, Math::Vector3UVE{0.0F, 0.0F, 0.0F});
+
+    EXPECT_FLOAT_EQ(result[0].position.x, 2.0F);
+    EXPECT_FLOAT_EQ(result[1].position.x, 100.0F);
+}
+
+TEST_F(LightSystemUVETest, ExtractActiveLightsForViewUVE_BrightDistantLightOutranksDimNearOne) {
+    // Distance alone is the wrong metric, and this is the case that proves it: a floodlight across
+    // the room legitimately matters more than a candle at arm's length.
+    static_cast<void>(MakeLightEntityUVE(Math::Vector3UVE{2.0F, 0.0F, 0.0F}, Math::QuaternionUVE{},
+                       MakePointLightUVE(0.01F, 1000.0F)));
+    static_cast<void>(MakeLightEntityUVE(Math::Vector3UVE{20.0F, 0.0F, 0.0F}, Math::QuaternionUVE{},
+                       MakePointLightUVE(10000.0F, 1000.0F)));
+
+    const LightListUVE result =
+        lightSystem.ExtractActiveLightsForViewUVE(entityManager, Math::Vector3UVE{0.0F, 0.0F, 0.0F});
+
+    EXPECT_FLOAT_EQ(result[0].position.x, 20.0F);
+}
+
+TEST_F(LightSystemUVETest, ExtractActiveLightsForViewUVE_DirectionalLightAlwaysSurvives) {
+    // The directional light is the scene's key light AND its only shadow caster. Dropping it in
+    // favour of a close point light would remove every shadow in the frame at once, so it must
+    // outrank any point light however near.
+    for (int index = 0; index < 6; ++index) {
+        static_cast<void>(MakeLightEntityUVE(Math::Vector3UVE{0.1F * static_cast<float>(index), 0.0F, 0.0F},
+                           Math::QuaternionUVE{}, MakePointLightUVE(1000.0F, 1000.0F)));
+    }
+    Scene::LightComponentUVE directional;
+    directional.type = Scene::LightTypeUVE::Directional;
+    directional.intensity = 0.01F; // Deliberately feeble - rank must not come from intensity here.
+    static_cast<void>(MakeLightEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::QuaternionUVE{}, directional));
+
+    const LightListUVE result =
+        lightSystem.ExtractActiveLightsForViewUVE(entityManager, Math::Vector3UVE{0.0F, 0.0F, 0.0F});
+
+    EXPECT_EQ(result[0].type, Scene::LightTypeUVE::Directional);
+}
+
+TEST_F(LightSystemUVETest, ExtractActiveLightsForViewUVE_OutOfRangeLightNeverTakesASlot) {
+    // A light beyond its own range contributes exactly nothing - the shader zeroes it - so it must
+    // not hold a slot that a contributing light could use.
+    static_cast<void>(MakeLightEntityUVE(Math::Vector3UVE{5.0F, 0.0F, 0.0F}, Math::QuaternionUVE{},
+                       MakePointLightUVE(1000.0F, 1.0F))); // 5 units away, 1 unit range
+    static_cast<void>(MakeLightEntityUVE(Math::Vector3UVE{50.0F, 0.0F, 0.0F}, Math::QuaternionUVE{},
+                       MakePointLightUVE(1.0F, 1000.0F)));
+
+    const LightListUVE result =
+        lightSystem.ExtractActiveLightsForViewUVE(entityManager, Math::Vector3UVE{0.0F, 0.0F, 0.0F});
+
+    EXPECT_FLOAT_EQ(result[0].position.x, 50.0F);
+    EXPECT_FLOAT_EQ(result[1].intensity, 0.0F) << "the out-of-range light must leave the slot empty";
+}
+
+TEST_F(LightSystemUVETest, ExtractActiveLightsForViewUVE_MoreLightsThanSlots_KeepsTheStrongestFour) {
+    // Ten candidates, four slots: the survivors must be the four nearest, in order.
+    for (int index = 0; index < 10; ++index) {
+        static_cast<void>(MakeLightEntityUVE(Math::Vector3UVE{static_cast<float>(index + 1), 0.0F, 0.0F},
+                           Math::QuaternionUVE{}, MakePointLightUVE(10.0F, 1000.0F)));
+    }
+
+    const LightListUVE result =
+        lightSystem.ExtractActiveLightsForViewUVE(entityManager, Math::Vector3UVE{0.0F, 0.0F, 0.0F});
+
+    ASSERT_EQ(result.size(), 4U);
+    for (std::size_t index = 0U; index < 4U; ++index) {
+        EXPECT_FLOAT_EQ(result[index].position.x, static_cast<float>(index + 1));
+    }
+}
+
+TEST_F(LightSystemUVETest, ExtractActiveLightsForViewUVE_IsStableWhenAnUnrelatedEntityAppears) {
+    // THE regression this whole change exists for. Creating an entity that is not a light must not
+    // change which lights are chosen - under first-encountered order it could.
+    static_cast<void>(MakeLightEntityUVE(Math::Vector3UVE{1.0F, 0.0F, 0.0F}, Math::QuaternionUVE{},
+                       MakePointLightUVE(10.0F, 1000.0F)));
+    static_cast<void>(MakeLightEntityUVE(Math::Vector3UVE{50.0F, 0.0F, 0.0F}, Math::QuaternionUVE{},
+                       MakePointLightUVE(10.0F, 1000.0F)));
+    const LightListUVE before =
+        lightSystem.ExtractActiveLightsForViewUVE(entityManager, Math::Vector3UVE{0.0F, 0.0F, 0.0F});
+
+    const Scene::EntityUVE unrelated = entityManager.CreateEntityUVE();
+    entityManager.AddComponentUVE<Scene::MeshComponentUVE>(unrelated, Scene::MeshComponentUVE{});
+
+    const LightListUVE after =
+        lightSystem.ExtractActiveLightsForViewUVE(entityManager, Math::Vector3UVE{0.0F, 0.0F, 0.0F});
+
+    EXPECT_FLOAT_EQ(before[0].position.x, after[0].position.x);
+    EXPECT_FLOAT_EQ(before[1].position.x, after[1].position.x);
+}
+
+TEST_F(LightSystemUVETest, ExtractActiveLightsForViewUVE_TracksTheCameraAsItMoves) {
+    static_cast<void>(MakeLightEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::QuaternionUVE{},
+                       MakePointLightUVE(10.0F, 1000.0F)));
+    static_cast<void>(MakeLightEntityUVE(Math::Vector3UVE{100.0F, 0.0F, 0.0F}, Math::QuaternionUVE{},
+                       MakePointLightUVE(10.0F, 1000.0F)));
+
+    const LightListUVE nearOrigin =
+        lightSystem.ExtractActiveLightsForViewUVE(entityManager, Math::Vector3UVE{0.0F, 0.0F, 0.0F});
+    const LightListUVE nearFarLight =
+        lightSystem.ExtractActiveLightsForViewUVE(entityManager, Math::Vector3UVE{100.0F, 0.0F, 0.0F});
+
+    EXPECT_FLOAT_EQ(nearOrigin[0].position.x, 0.0F);
+    EXPECT_FLOAT_EQ(nearFarLight[0].position.x, 100.0F);
+}
+
+TEST_F(LightSystemUVETest, ExtractActiveLightsForViewUVE_RejectsExactlyWhatTheUnorderedOverloadDoes) {
+    // Two overloads, one definition of validity. If these ever disagree about which lights exist,
+    // switching between them would change the scene.
+    Scene::LightComponentUVE valid = MakePointLightUVE(5.0F, 100.0F);
+    static_cast<void>(MakeLightEntityUVE(Math::Vector3UVE{1.0F, 0.0F, 0.0F}, Math::QuaternionUVE{}, valid));
+
+    const Scene::EntityUVE noTransform = entityManager.CreateEntityUVE();
+    entityManager.AddComponentUVE<Scene::LightComponentUVE>(noTransform, valid);
+
+    const LightListUVE unordered = lightSystem.ExtractActiveLightsUVE(entityManager);
+    const LightListUVE selected =
+        lightSystem.ExtractActiveLightsForViewUVE(entityManager, Math::Vector3UVE{0.0F, 0.0F, 0.0F});
+
+    // One light reaches both: the component without a world transform is matched by neither.
+    EXPECT_FLOAT_EQ(unordered[0].intensity, 5.0F);
+    EXPECT_FLOAT_EQ(selected[0].intensity, 5.0F);
+    EXPECT_FLOAT_EQ(unordered[1].intensity, 0.0F);
+    EXPECT_FLOAT_EQ(selected[1].intensity, 0.0F);
+}
 
 } // namespace
 } // namespace UVE::Render::Tests

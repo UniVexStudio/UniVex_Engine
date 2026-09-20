@@ -1,6 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-#include "uve/core/profiler_diagnostics_uve.h"
+#include "uve/diagnostics/profiler_diagnostics_uve.h"
 
 #include <cmath>
 #include <utility>
