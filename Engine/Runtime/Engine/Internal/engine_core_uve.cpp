@@ -15,6 +15,7 @@
 #include <cmath>
 #include <cstddef>
 #include <exception>
+#include <filesystem>
 #include <string>
 #include <vector>
 #include <utility>
@@ -59,6 +60,7 @@
 #include "uve/nodes/3d/hitbox_3d_uve.h"
 #include "uve/nodes/3d/hurtbox_3d_uve.h"
 #include "uve/nodes/3d/interaction_area_3d_uve.h"
+#include "uve/nodes/3d/level_streamer_3d_uve.h"
 #include "uve/nodes/3d/projectile_3d_uve.h"
 #include "uve/nodes/3d/ray_cast_3d_uve.h"
 #include "uve/nodes/3d/spring_arm_3d_uve.h"
@@ -1024,8 +1026,154 @@ void EngineCoreUVE::SyncInteractionArea3DNodesUVE() {
         Scene::ResolveInteractionFocusUVE(focusCandidates);
     if (focusedArea.has_value() &&
         m_entityManager->HasComponentUVE<Scene::InteractionArea3DNodeComponentUVE>(*focusedArea)) {
-        m_entityManager->GetComponentUVE<Scene::InteractionArea3DNodeComponentUVE>(*focusedArea)
+            m_entityManager->GetComponentUVE<Scene::InteractionArea3DNodeComponentUVE>(*focusedArea)
             .focusedByPrimaryInteractor = true;
+    }
+}
+
+void EngineCoreUVE::SyncLevelStreamer3DNodesUVE() {
+    // Bookkeeping hygiene first: Play/Stop rebuilds every document handle, so a streamer entity
+    // that no longer exists must drop its remembered roots AND its failure latch before anything
+    // else looks at them - subsequent detection is always through IsAliveUVE(), never blind
+    // destruction of a possibly-recycled handle.
+    for (auto it = m_levelStreamerLoadedRoots.begin(); it != m_levelStreamerLoadedRoots.end();) {
+        if (!m_entityManager->IsAliveUVE(it->first)) {
+            it = m_levelStreamerLoadedRoots.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    for (auto it = m_levelStreamerLoadFailures.begin(); it != m_levelStreamerLoadFailures.end();) {
+        if (!m_entityManager->IsAliveUVE(it->first)) {
+            it = m_levelStreamerLoadFailures.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    // Pass 1 (read-only): the viewer point cloud for this tick. The active camera is the Unreal
+    // convention (streaming follows the eye); every character controller is a Frostbite-style
+    // listener source (split-screen clients each drag their own content in). Finite world poses
+    // only - a degenerate camera/contoller pose simply stops being a viewer, it never poisons
+    // the decision for everyone else.
+    std::vector<Math::Vector3UVE> viewerPositions;
+    if (m_activeCamera != Scene::kInvalidEntityUVE &&
+        m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(m_activeCamera)) {
+        const Scene::WorldTransformComponentUVE& cameraWorld =
+            m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(m_activeCamera);
+        viewerPositions.push_back(cameraWorld.worldPosition);
+    }
+    m_entityManager->ForEachUVE<Scene::WorldTransformComponentUVE,
+                                Scene::CharacterControllerComponentUVE>(
+        [&viewerPositions](const Scene::EntityUVE, const Scene::WorldTransformComponentUVE& world,
+                           const Scene::CharacterControllerComponentUVE&) {
+            viewerPositions.push_back(world.worldPosition);
+        });
+
+    // Pass 2 (read-only snapshot): the safe traversal. The verdict pass below can CREATE
+    // entities (levelPath restores any component mix, including another streamer) and DESTROY
+    // them (an unload), so iterating LevelStreamer3D components directly while mutating would
+    // walk over an exploding candlebox: snapshot handles + world poses here, then close the
+    // ForEachUVE before any state moves.
+    struct StreamerSnapshotUVE final {
+        Scene::EntityUVE entity;
+        Math::Vector3UVE worldPosition;
+    };
+    std::vector<StreamerSnapshotUVE> streamers;
+    m_entityManager->ForEachUVE<Scene::WorldTransformComponentUVE,
+                                Scene::LevelStreamer3DNodeComponentUVE>(
+        [&streamers](const Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE& world,
+                     const Scene::LevelStreamer3DNodeComponentUVE&) {
+            if (world.dirty) {
+                return; // a streamer whose world pose is out of date must never fake distance math
+            }
+            streamers.push_back(StreamerSnapshotUVE{entity, world.worldPosition});
+        });
+
+    // Pass 3: the verdict per streamer, then the state change it orders. Load requests are
+    // time-sliced by kMaximumLevelStreamer3DLoadsPerTickUVE - over-budget requests simply remain
+    // pending, and the same verdict re-issues next tick (Frostbite burst budgeting).
+    std::size_t loadsIssuedThisTick = 0U;
+    for (const StreamerSnapshotUVE& snapshot : streamers) {
+        if (!m_entityManager->IsAliveUVE(snapshot.entity) ||
+            !m_entityManager->HasComponentUVE<Scene::LevelStreamer3DNodeComponentUVE>(snapshot.entity)) {
+            continue; // died inside this very pass (unloaded as part of a parent streamer's subtree)
+        }
+        Scene::LevelStreamer3DNodeComponentUVE& streamer =
+            m_entityManager->GetComponentUVE<Scene::LevelStreamer3DNodeComponentUVE>(snapshot.entity);
+        if (!Scene::IsLevelStreamer3DNodeComponentValidUVE(streamer)) {
+            continue; // an invalid authoring piece never decides anything
+        }
+
+        Scene::LevelStreamer3DStreamingFrameUVE frame;
+        frame.enabled = streamer.enabled;
+        frame.loaded = streamer.loaded;
+        frame.loadRequested = streamer.loadRequested;
+        frame.loadDistance = streamer.loadDistance;
+        frame.unloadDistance = streamer.unloadDistance;
+        if (const std::optional<float> nearest =
+                Scene::ResolveLevelStreamer3DNearestViewerDistanceSquaredUVE(
+                    snapshot.worldPosition, viewerPositions);
+            nearest.has_value()) {
+            frame.hasViewer = true;
+            frame.nearestViewerDistanceSquared = *nearest;
+        }
+
+        const Scene::LevelStreamer3DActionUVE action =
+            Scene::ResolveLevelStreamer3DStreamingActionUVE(frame);
+        if (action == Scene::LevelStreamer3DActionUVE::RequestLoad) {
+            if (m_levelStreamerLoadFailures.find(snapshot.entity) != m_levelStreamerLoadFailures.end()) {
+                continue; // latched earlier failure: fail-closed, never a retry storm
+            }
+            if (loadsIssuedThisTick >= Scene::kMaximumLevelStreamer3DLoadsPerTickUVE) {
+                continue; // over budget: stay pending - the same verdict re-issues next tick
+            }
+            ++loadsIssuedThisTick;
+            streamer.loadRequested = true; // set for the duration of the synchronous call
+            const std::vector<Scene::EntityUVE> freshRoots =
+                m_sceneSerializer->LoadUVE(*m_entityManager, std::filesystem::path{streamer.levelPath});
+            if (freshRoots.empty()) {
+                streamer.loadRequested = false;
+                streamer.loaded = false;
+                m_levelStreamerLoadFailures.emplace(snapshot.entity, true);
+                UVE_ERROR("EngineCoreUVE: LevelStreamer3D could not load '{}' - latched off "
+                          "until the session restarts (fail-closed, never retried)",
+                          streamer.levelPath);
+                continue;
+            }
+            m_levelStreamerLoadedRoots[snapshot.entity] = freshRoots;
+            streamer.loaded = true;
+            streamer.loadRequested = false;
+            continue;
+        }
+        if (action == Scene::LevelStreamer3DActionUVE::RequestUnload) {
+            const auto roots = m_levelStreamerLoadedRoots.find(snapshot.entity);
+            if (roots != m_levelStreamerLoadedRoots.end()) {
+                // Destroy deepest-first so a parent's destruction never observes an already-
+                // dead child handle; IsAliveUVE() keeps possibly-recycled handles out of the way.
+                const std::function<void(Scene::EntityUVE)> destroySubtree =
+                    [this, &destroySubtree](const Scene::EntityUVE current) {
+                        if (!m_entityManager->IsAliveUVE(current)) {
+                            return;
+                        }
+                        const std::vector<Scene::EntityUVE> children =
+                            m_sceneGraph->GetChildrenUVE(*m_entityManager, current);
+                        for (const Scene::EntityUVE child : children) {
+                            destroySubtree(child);
+                        }
+                        m_entityManager->DestroyEntityUVE(current);
+                    };
+                for (const Scene::EntityUVE root : roots->second) {
+                    destroySubtree(root);
+                }
+                m_levelStreamerLoadedRoots.erase(roots);
+            }
+            m_levelStreamerLoadFailures.erase(snapshot.entity); // unloaded: a future load may retry
+            streamer.loaded = false;
+            streamer.loadRequested = false;
+            continue;
+        }
+        // LevelStreamer3DActionUVE::None - the hysteresis band holds the line, nothing moves.
     }
 }
 
@@ -1132,6 +1280,7 @@ void EngineCoreUVE::Update() {
     SyncRayCast3DNodesUVE();
     SyncHitbox3DNodesUVE();
     SyncInteractionArea3DNodesUVE();
+    SyncLevelStreamer3DNodesUVE();
     SyncScriptRuntimeUVE();
 
     if (m_config.hotReloadEnabledUVE) {

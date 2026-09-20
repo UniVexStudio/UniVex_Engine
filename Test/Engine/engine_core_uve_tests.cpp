@@ -54,9 +54,16 @@
 #include "uve/component/camera_component_uve.h"
 #include "uve/component/character_controller_component_uve.h"
 #include "uve/component/collider_component_uve.h"
+#include "uve/asset/uve_file_envelope_uve.h"
+#include "uve/entity/entity_manager_uve.h"
+#include "uve/events/event_system_uve.h"
+#include "uve/memory/memory_manager_uve.h"
+#include "uve/scene/scene_graph_uve.h"
+#include "uve/scene/scene_serializer_uve.h"
 #include "uve/nodes/3d/hitbox_3d_uve.h"
 #include "uve/nodes/3d/hurtbox_3d_uve.h"
 #include "uve/nodes/3d/interaction_area_3d_uve.h"
+#include "uve/nodes/3d/level_streamer_3d_uve.h"
 #include "uve/nodes/3d/projectile_3d_uve.h"
 #include "uve/nodes/3d/ray_cast_3d_uve.h"
 #include "uve/component/mesh_component_uve.h"
@@ -2548,6 +2555,298 @@ TEST(EngineCoreUVETest, GetServicesUVEBeforeInit_ThrowsBadOptionalAccessInsteadO
     EXPECT_THROW({ static_cast<void>(engine.GetServicesUVE()); }, std::bad_optional_access);
 }
 #endif
+
+// LevelStreamer3D helpers: a tiny authored level document (one transformed root) written to a
+// temp path through the production serializer, plus an enabled streamer component pointing at
+// it. Keeping the streamed content OUT of the fixture's own document is the entire point of the
+// slice, so the file is the real interchange - not an in-memory shortcut.
+namespace {
+
+const std::filesystem::path kStreamerTestLevelPath = "uve_engine_core_streamer_test_level.uvescene";
+
+// Writes `kStreamerTestLevelPath` and returns true on success. Two entities: a root at (0,0,0)
+// with a child offset at (1,2,3), so "one loaded level" is measurable as +2 entities.
+bool WriteStreamerTestLevelFileUVE() {
+    std::filesystem::remove(kStreamerTestLevelPath);
+    Memory::MemoryManagerUVE memoryManager;
+    Events::EventSystemUVE eventSystem;
+    Scene::EntityManagerUVE tempManager(memoryManager.GetDefaultAllocatorUVE(), eventSystem);
+    Scene::SceneGraphUVE tempGraph;
+    Scene::SceneSerializerUVE serializer;
+
+    const Scene::EntityUVE root = tempManager.CreateEntityUVE();
+    tempGraph.AttachTransformUVE(tempManager, root, Scene::TransformComponentUVE{});
+    const Scene::EntityUVE child = tempManager.CreateEntityUVE();
+    Scene::TransformComponentUVE childTransform;
+    childTransform.localPosition = Math::Vector3UVE{1.0F, 2.0F, 3.0F};
+    tempGraph.AttachTransformUVE(tempManager, child, childTransform);
+    tempGraph.SetParentUVE(tempManager, child, root);
+    const bool saved =
+        serializer.SaveUVE(tempManager, {root}, kStreamerTestLevelPath, Asset::AssetKindUVE::Scene);
+    if (!saved) {
+        std::filesystem::remove(kStreamerTestLevelPath);
+    }
+    return saved;
+}
+
+struct StreamerTestCleanupUVE {
+    ~StreamerTestCleanupUVE() { std::filesystem::remove(kStreamerTestLevelPath); }
+};
+
+Scene::EntityUVE CreateEnabledStreamerAtUVE(Scene::IEntityManagerUVE& entityManager,
+                                            Scene::ISceneGraphUVE& sceneGraph,
+                                            const Math::Vector3UVE& position) {
+    const Scene::EntityUVE streamer = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE transform;
+    transform.localPosition = position;
+    sceneGraph.AttachTransformUVE(entityManager, streamer, transform);
+    Scene::LevelStreamer3DNodeComponentUVE component;
+    component.levelPath = kStreamerTestLevelPath.string();
+    component.loadDistance = 10.0F;
+    component.unloadDistance = 20.0F;
+    component.enabled = true;
+    entityManager.AddComponentUVE<Scene::LevelStreamer3DNodeComponentUVE>(streamer, component);
+    return streamer;
+}
+
+Scene::EntityUVE CreateWatchingCameraAtUVE(Scene::IEntityManagerUVE& entityManager,
+                                           Scene::ISceneGraphUVE& sceneGraph,
+                                           const Math::Vector3UVE& position) {
+    const Scene::EntityUVE camera = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE transform;
+    transform.localPosition = position;
+    sceneGraph.AttachTransformUVE(entityManager, camera, transform);
+    entityManager.AddComponentUVE<Scene::CameraComponentUVE>(camera, Scene::CameraComponentUVE{});
+    return camera;
+}
+
+} // namespace
+
+TEST(EngineCoreUVETest, LevelStreamer3D_NearViewerLoadsContentFarViewerUnloadsItHysteresisHoldsBetween) {
+    // The full distance-driven contract measured end-to-end: a viewer inside the load radius
+    // pulls the level document in (+2 entities, streamer.flags flip), the hysteresis band between
+    // loadDistance and unloadDistance changes nothing, leaving the unload radius destroys the
+    // loaded subtree (-2 entities), and loadRequested is false between ticks - the synchronous
+    // model's documented invariant.
+    ASSERT_TRUE(WriteStreamerTestLevelFileUVE()) << "the streamed level document must save";
+    StreamerTestCleanupUVE cleanup;
+
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    const Scene::EntityUVE streamer =
+        CreateEnabledStreamerAtUVE(entityManager, sceneGraph, Math::Vector3UVE{0.0F, 0.0F, 0.0F});
+    const Scene::EntityUVE camera =
+        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{100.0F, 0.0F, 0.0F});
+    engine.SetActiveCameraUVE(camera);
+
+    const std::size_t baseline = entityManager.GetEntityCountUVE();
+    engine.TickFrameUVE();
+    {
+        const Scene::LevelStreamer3DNodeComponentUVE& live =
+            entityManager.GetComponentUVE<Scene::LevelStreamer3DNodeComponentUVE>(streamer);
+        EXPECT_FALSE(live.loaded) << "a viewer 100 units out must never trigger the load";
+        EXPECT_FALSE(live.loadRequested) << "loadRequested is false between ticks, always";
+    }
+    EXPECT_EQ(entityManager.GetEntityCountUVE(), baseline);
+
+    // The camera is now effectively on top of the streamer: one tick streams the level in.
+    sceneGraph.SetLocalTransformUVE(entityManager, camera, [&] {
+        Scene::TransformComponentUVE t;
+        t.localPosition = Math::Vector3UVE{0.5F, 0.0F, 0.0F};
+        return t;
+    }());
+    engine.TickFrameUVE();
+    {
+        const Scene::LevelStreamer3DNodeComponentUVE& live =
+            entityManager.GetComponentUVE<Scene::LevelStreamer3DNodeComponentUVE>(streamer);
+        EXPECT_TRUE(live.loaded) << "a viewer inside the load radius streams the level in";
+        EXPECT_FALSE(live.loadRequested);
+    }
+    EXPECT_EQ(entityManager.GetEntityCountUVE(), baseline + 2U)
+        << "the two authored entities of the level document appeared";
+
+    // Hysteresis: at 15 units (inside unload, outside load) a loaded level does nothing.
+    sceneGraph.SetLocalTransformUVE(entityManager, camera, [&] {
+        Scene::TransformComponentUVE t;
+        t.localPosition = Math::Vector3UVE{15.0F, 0.0F, 0.0F};
+        return t;
+    }());
+    engine.TickFrameUVE();
+    EXPECT_TRUE(
+        entityManager.GetComponentUVE<Scene::LevelStreamer3DNodeComponentUVE>(streamer).loaded)
+        << "the band between 10 and 20 keeps a loaded level in place";
+    EXPECT_EQ(entityManager.GetEntityCountUVE(), baseline + 2U);
+
+    // Past the unload radius the subtree is destroyed - real content lifecycle, not a hidden flag.
+    sceneGraph.SetLocalTransformUVE(entityManager, camera, [&] {
+        Scene::TransformComponentUVE t;
+        t.localPosition = Math::Vector3UVE{25.0F, 0.0F, 0.0F};
+        return t;
+    }());
+    engine.TickFrameUVE();
+    {
+        const Scene::LevelStreamer3DNodeComponentUVE& live =
+            entityManager.GetComponentUVE<Scene::LevelStreamer3DNodeComponentUVE>(streamer);
+        EXPECT_FALSE(live.loaded) << "past the unload radius the level unloads";
+        EXPECT_FALSE(live.loadRequested);
+    }
+    EXPECT_EQ(entityManager.GetEntityCountUVE(), baseline)
+        << "the streamer's two loaded entities are destroyed on unload";
+}
+
+TEST(EngineCoreUVETest, LevelStreamer3D_CharacterControllerServesAsViewerWithoutAnyCamera) {
+    // The viewer model is Frostbite listener-style: ANY character controller pulls content,
+    // even in a world no camera ever sees.
+    ASSERT_TRUE(WriteStreamerTestLevelFileUVE());
+    StreamerTestCleanupUVE cleanup;
+
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    const Scene::EntityUVE streamer =
+        CreateEnabledStreamerAtUVE(entityManager, sceneGraph, Math::Vector3UVE{});
+    const Scene::EntityUVE player = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, player, Scene::TransformComponentUVE{});
+    entityManager.AddComponentUVE<Scene::CharacterControllerComponentUVE>(player);
+
+    const std::size_t baseline = entityManager.GetEntityCountUVE();
+    engine.TickFrameUVE();
+    EXPECT_TRUE(
+        entityManager.GetComponentUVE<Scene::LevelStreamer3DNodeComponentUVE>(streamer).loaded)
+        << "a standing controller with no active camera still streams the level in";
+    EXPECT_EQ(entityManager.GetEntityCountUVE(), baseline + 2U);
+}
+
+TEST(EngineCoreUVETest, LevelStreamer3D_DisablingTheStreamerPullsItsContentWhileTheViewerWatches) {
+    // The authored toggle beats distance, matching the Unreal convention a disabled streaming
+    // volume stops holding its level - measured while the camera stands inside the load radius.
+    ASSERT_TRUE(WriteStreamerTestLevelFileUVE());
+    StreamerTestCleanupUVE cleanup;
+
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    const Scene::EntityUVE streamer =
+        CreateEnabledStreamerAtUVE(entityManager, sceneGraph, Math::Vector3UVE{});
+    const Scene::EntityUVE camera =
+        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{1.0F, 0.0F, 0.0F});
+    engine.SetActiveCameraUVE(camera);
+    engine.TickFrameUVE();
+    ASSERT_TRUE(
+        entityManager.GetComponentUVE<Scene::LevelStreamer3DNodeComponentUVE>(streamer).loaded);
+    const std::size_t loadedCount = entityManager.GetEntityCountUVE();
+
+    entityManager.GetComponentUVE<Scene::LevelStreamer3DNodeComponentUVE>(streamer).enabled = false;
+    engine.TickFrameUVE();
+    EXPECT_FALSE(
+        entityManager.GetComponentUVE<Scene::LevelStreamer3DNodeComponentUVE>(streamer).loaded)
+        << "disabling unloads even with the viewer inside the load radius";
+    EXPECT_EQ(entityManager.GetEntityCountUVE(), loadedCount - 2U)
+        << "the disabled streamer's subtree is gone the same tick";
+}
+
+TEST(EngineCoreUVETest, LevelStreamer3D_FailedLoadLatchesClosedAndNeverRetriesInSession) {
+    // The honest fail-closed path: levelPath points at a file that does not exist. The first
+    // tick attempts and fails (loaded stays false, loadRequested stays false between ticks);
+    // the latch means every later tick decides nothing either - never a retry storm - and the
+    // streamer never marks itself loaded on an empty restore.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    const Scene::EntityUVE streamer = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, streamer, Scene::TransformComponentUVE{});
+    Scene::LevelStreamer3DNodeComponentUVE component;
+    component.levelPath = "uve_engine_core_streamer_file_that_does_not_exist.uvescene";
+    component.loadDistance = 10.0F;
+    component.unloadDistance = 20.0F;
+    component.enabled = true;
+    entityManager.AddComponentUVE<Scene::LevelStreamer3DNodeComponentUVE>(streamer, component);
+    const Scene::EntityUVE camera =
+        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{1.0F, 0.0F, 0.0F});
+    engine.SetActiveCameraUVE(camera);
+
+    const std::size_t baseline = entityManager.GetEntityCountUVE();
+    for (int tick = 0; tick < 3; ++tick) {
+        engine.TickFrameUVE();
+        const Scene::LevelStreamer3DNodeComponentUVE& live =
+            entityManager.GetComponentUVE<Scene::LevelStreamer3DNodeComponentUVE>(streamer);
+        EXPECT_FALSE(live.loaded) << "tick " << tick << ": a missing file never marks loaded";
+        EXPECT_FALSE(live.loadRequested) << "tick " << tick << ": no request survives the tick";
+        EXPECT_EQ(entityManager.GetEntityCountUVE(), baseline)
+            << "tick " << tick << ": nothing materializes out of a missing file";
+    }
+
+    // The sibling with valid data is unaffected: a latch is per streamer, never global.
+    ASSERT_TRUE(WriteStreamerTestLevelFileUVE());
+    StreamerTestCleanupUVE cleanup;
+    const Scene::EntityUVE good =
+        CreateEnabledStreamerAtUVE(entityManager, sceneGraph, Math::Vector3UVE{});
+    engine.TickFrameUVE();
+    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::LevelStreamer3DNodeComponentUVE>(good).loaded)
+        << "a failed sibling never blocks an unrelated streamer";
+    EXPECT_FALSE(
+        entityManager.GetComponentUVE<Scene::LevelStreamer3DNodeComponentUVE>(streamer).loaded)
+        << "the latched streamer stays closed even alongside a success";
+}
+
+TEST(EngineCoreUVETest, LevelStreamer3D_LoadBudgetCarriesOverflowIntoTheNextTick) {
+    // The time-slicing contract: 5 identical streamers demand a load on the same tick with a
+    // budget of 4 - exactly 4 stream in on tick one, and the straggler follows on tick two with
+    // no other state stirring. This is the measurable answer to the hitch problem.
+    ASSERT_TRUE(WriteStreamerTestLevelFileUVE());
+    StreamerTestCleanupUVE cleanup;
+
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    std::array<Scene::EntityUVE, 5U> streamers;
+    for (Scene::EntityUVE& target : streamers) {
+        target = CreateEnabledStreamerAtUVE(
+            entityManager, sceneGraph, Math::Vector3UVE{100.0F, 0.0F, 0.0F});
+    }
+    const Scene::EntityUVE camera =
+        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{100.0F, 0.0F, 0.0F});
+    engine.SetActiveCameraUVE(camera);
+
+    const auto countLoaded = [&entityManager, &streamers]() -> std::size_t {
+        std::size_t loaded = 0;
+        for (const Scene::EntityUVE s : streamers) {
+            if (entityManager.GetComponentUVE<Scene::LevelStreamer3DNodeComponentUVE>(s).loaded) {
+                ++loaded;
+            }
+        }
+        return loaded;
+    };
+
+    engine.TickFrameUVE();
+    EXPECT_EQ(countLoaded(), Scene::kMaximumLevelStreamer3DLoadsPerTickUVE)
+        << "the budget capped tick one, and the overflow stayed pending instead of dropping";
+    engine.TickFrameUVE();
+    EXPECT_EQ(countLoaded(), 5U) << "tick two consumed the carry-over - the straggler loads";
+    engine.TickFrameUVE();
+    EXPECT_EQ(countLoaded(), 5U) << "a further tick sits at steady state, nothing more moved";
+}
 
 } // namespace
 } // namespace UVE::Core::Tests

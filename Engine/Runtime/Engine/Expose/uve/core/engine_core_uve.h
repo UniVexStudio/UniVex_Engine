@@ -13,9 +13,11 @@
 
 #include <chrono>
 #include <functional>
+#include <unordered_map>
 #include <memory>
 #include <optional>
 #include <unordered_set>
+#include <vector>
 
 #include "uve/asset/i_asset_bundle_uve.h"
 #include "uve/asset/i_asset_database_uve.h"
@@ -559,6 +561,24 @@ private:
     /// tests pin directly.
     void SyncInteractionArea3DNodesUVE();
 
+    /// The LevelStreamer3D consumer: pure per-tick streaming verdicts on LevelStreamer3D nodes
+    /// (Godot has no built-in counterpart at all; Unreal's streaming volumes are the inspiration).
+    /// Pass 1 (read-only) collects the viewer point cloud for the tick - the active camera's world
+    /// position plus every character-controller entity's world position, finite poses only
+    /// (Frostbite's listener-model multi-source). Pass 2 applies Scene::
+    /// ResolveLevelStreamer3DStreamingActionUVE's measured verdicts per streamer: a load request
+    /// synchronously deserializes levelPath through the scene serializer and remembers the fresh
+    /// roots in m_levelStreamerLoadedRoots; an unload request destroys those remembered subtrees.
+    /// At most kMaximumLevelStreamer3DLoadsPerTickUVE loads START each tick - the rest carry over
+    /// next tick so a teleport across the map costs a bounded burst (Frostbite time-slicing; the
+    /// budget is verified by engine test). A failed load latches m_levelStreamerLoadFailures so it
+    /// is retried never again this session - fail-closed and loud, not a retry storm. Honest
+    /// boundaries: loading is synchronous today (big levels take the hit in one tick; async
+    /// streaming is real follow-up, and component.loadRequested documents the future contract);
+    /// unload bookkeeping survives Play/Stop naturally because everything is validated through
+    /// IsAliveUVE() before destruction.
+    void SyncLevelStreamer3DNodesUVE();
+
     /// Recomputes the bounded aspect-preserving render target from the live drawable size and
     /// transactionally resizes Renderer3DUVE before the frame's scene work begins.
     void SyncAdaptiveRenderResolutionUVE();
@@ -663,6 +683,14 @@ private:
     std::chrono::steady_clock::time_point m_frameStartTime;
     bool m_quitRequested = false;
     Scene::EntityUVE m_activeCamera = Scene::kInvalidEntityUVE;
+
+    /// LevelStreamer3D runtime bookkeeping (never serialized, keyed by the streamer entity):
+    /// the fresh roots each loaded streamer currently owns (for subtree destruction on unload),
+    /// and the per-streamer load-failure latch that makes the fail-closed contract measured by
+    /// tests - a 3-tuple state (streamer -> roots, failure-flagged) is intentionally all the
+    /// state the synchronous path needs; the future async path will own the in-flight work set.
+    std::unordered_map<Scene::EntityUVE, std::vector<Scene::EntityUVE>> m_levelStreamerLoadedRoots;
+    std::unordered_map<Scene::EntityUVE, bool> m_levelStreamerLoadFailures;
 
     /// True iff Init() constructed a real, valid WindowManagerUVE + GlRenderDeviceUVE pair (i.e.
     /// !EngineConfigUVE::headlessUVE and window/context creation succeeded). Gates
