@@ -222,4 +222,165 @@ TEST(LodGroup3DResolveUVETest, ResolvingLeavesTheComponentValid) {
     }
 }
 
+TEST(LevelStreamer3DNearestViewerUVETest, EmptyViewerListMeansNoDistanceAtAll) {
+    // A streamer with no valid viewers must report "no distance"; the verdict function relies on
+    // that absence to never load or unload on a viewerless tick.
+    EXPECT_FALSE(ResolveLevelStreamer3DNearestViewerDistanceSquaredUVE({1.0F, 2.0F, 3.0F}, {})
+                     .has_value());
+}
+
+TEST(LevelStreamer3DNearestViewerUVETest, NearestWinsAndSquaredStaysSquared) {
+    // The three viewers sit 5, 2, and 3 units away on the X axis. The nearest (2 units) yields
+    // 4.0 - squared, matching the ordering-only discipline that needs no sqrt anywhere in the
+    // streaming path.
+    const std::array<Math::Vector3UVE, 3U> viewers{
+        Math::Vector3UVE{5.0F, 0.0F, 0.0F},
+        Math::Vector3UVE{2.0F, 0.0F, 0.0F},
+        Math::Vector3UVE{-3.0F, 0.0F, 0.0F}};
+    const std::optional<float> nearest =
+        ResolveLevelStreamer3DNearestViewerDistanceSquaredUVE({0.0F, 0.0F, 0.0F}, viewers);
+    ASSERT_TRUE(nearest.has_value());
+    EXPECT_FLOAT_EQ(*nearest, 4.0F);
+}
+
+TEST(LevelStreamer3DNearestViewerUVETest, ANonFiniteViewerSkipsRatherThanPoisons) {
+    // A camera with a degenerate world pose must not turn the whole decision NaN: it simply
+    // stops being a viewer for this tick and the surviving one decides.
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const std::array<Math::Vector3UVE, 3U> viewers{
+        Math::Vector3UVE{nan, 0.0F, 0.0F},
+        Math::Vector3UVE{4.0F, 0.0F, 0.0F},
+        Math::Vector3UVE{0.0F, nan, 0.0F}};
+    const std::optional<float> nearest =
+        ResolveLevelStreamer3DNearestViewerDistanceSquaredUVE({0.0F, 0.0F, 0.0F}, viewers);
+    ASSERT_TRUE(nearest.has_value()) << "one finite viewer must still answer";
+    EXPECT_FLOAT_EQ(*nearest, 16.0F);
+
+    // Every viewer dead -> no distance at all, as if nobody is watching.
+    const std::array<Math::Vector3UVE, 1U> onlyDead{Math::Vector3UVE{nan, nan, nan}};
+    EXPECT_FALSE(ResolveLevelStreamer3DNearestViewerDistanceSquaredUVE({0.0F, 0.0F, 0.0F}, onlyDead)
+                     .has_value());
+
+    // A streamer sitting dead-center in a NaN pose answers nothing either.
+    const std::array<Math::Vector3UVE, 1U> aliveViewer{Math::Vector3UVE{1.0F, 0.0F, 0.0F}};
+    EXPECT_FALSE(ResolveLevelStreamer3DNearestViewerDistanceSquaredUVE({nan, 0.0F, 0.0F}, aliveViewer)
+                     .has_value());
+}
+
+TEST(LevelStreamer3DActionUVETest, InvalidAuthoredConfigurationAlwaysDecidesNothing) {
+    // loadDistance <= 0, non-finite distances, or no hysteresis band at all: the verdict is a
+    // hard None no matter what the viewer does - fail-closed, measured.
+    LevelStreamer3DStreamingFrameUVE frame;
+    frame.hasViewer = true;
+    frame.nearestViewerDistanceSquared = 0.0F;
+    frame.enabled = true;
+
+    frame.loadDistance = 0.0F;
+    frame.unloadDistance = 10.0F;
+    EXPECT_EQ(ResolveLevelStreamer3DStreamingActionUVE(frame), LevelStreamer3DActionUVE::None)
+        << "a zero load distance is never a trigger";
+
+    frame.loadDistance = 10.0F;
+    frame.unloadDistance = 10.0F;
+    EXPECT_EQ(ResolveLevelStreamer3DStreamingActionUVE(frame), LevelStreamer3DActionUVE::None)
+        << "unload <= load gives no hysteresis band to believe in";
+
+    frame.loadDistance = std::numeric_limits<float>::infinity();
+    frame.unloadDistance = 100.0F;
+    EXPECT_EQ(ResolveLevelStreamer3DStreamingActionUVE(frame), LevelStreamer3DActionUVE::None)
+        << "non-finite configuration is never a trigger";
+
+    frame.loadDistance = 10.0F;
+    frame.unloadDistance = 20.0F;
+    frame.nearestViewerDistanceSquared = std::numeric_limits<float>::quiet_NaN();
+    EXPECT_EQ(ResolveLevelStreamer3DStreamingActionUVE(frame), LevelStreamer3DActionUVE::None)
+        << "a NaN viewer distance is never a trigger";
+}
+
+TEST(LevelStreamer3DActionUVETest, EnteringTheLoadRadiusRequestsLoadLeavingTheUnloadRadiusRequestsUnload) {
+    // Happy path: a viewer inside the load radius starts the stream, inside the unload radius
+    // keeps it, outside the unload radius ends it.
+    LevelStreamer3DStreamingFrameUVE frame;
+    frame.hasViewer = true;
+    frame.enabled = true;
+    frame.loadDistance = 10.0F;
+    frame.unloadDistance = 20.0F;
+
+    frame.nearestViewerDistanceSquared = 99.0F; // 9.949... < 10
+    EXPECT_EQ(ResolveLevelStreamer3DStreamingActionUVE(frame), LevelStreamer3DActionUVE::RequestLoad);
+
+    frame.loaded = true;
+    frame.nearestViewerDistanceSquared = 150.0F; // between 10 and 20: hold the line
+    EXPECT_EQ(ResolveLevelStreamer3DStreamingActionUVE(frame), LevelStreamer3DActionUVE::None)
+        << "the hysteresis band keeps a loaded level in place";
+
+    frame.nearestViewerDistanceSquared = 401.0F; // 20.02... > 20
+    EXPECT_EQ(ResolveLevelStreamer3DStreamingActionUVE(frame), LevelStreamer3DActionUVE::RequestUnload);
+}
+
+TEST(LevelStreamer3DActionUVETest, BoundariesBelongToExactlyOneVerdictEach) {
+    // loadDistance is inclusive on approach, unloadDistance is inclusive on retreat: each
+    // boundary fires exactly one transition, never both, never neither across them.
+    LevelStreamer3DStreamingFrameUVE frame;
+    frame.hasViewer = true;
+    frame.enabled = true;
+    frame.loadDistance = 10.0F;
+    frame.unloadDistance = 20.0F;
+
+    frame.nearestViewerDistanceSquared = 100.0F; // d == loadDistance exactly
+    EXPECT_EQ(ResolveLevelStreamer3DStreamingActionUVE(frame), LevelStreamer3DActionUVE::RequestLoad);
+
+    frame.loaded = true;
+    frame.nearestViewerDistanceSquared = 400.0F; // d == unloadDistance exactly
+    EXPECT_EQ(ResolveLevelStreamer3DStreamingActionUVE(frame), LevelStreamer3DActionUVE::RequestUnload);
+
+    // One epsilon INSIDE the band (d strictly between the two): hysteresis seesaws no transitions.
+    frame.nearestViewerDistanceSquared = 399.0F;
+    EXPECT_EQ(ResolveLevelStreamer3DStreamingActionUVE(frame), LevelStreamer3DActionUVE::None)
+        << "loaded and 19.97 from a 20-unload stays loaded";
+    frame.loaded = false;
+    EXPECT_EQ(ResolveLevelStreamer3DStreamingActionUVE(frame), LevelStreamer3DActionUVE::None)
+        << "unloaded and 19.97 from a 10-load stays unloaded";
+}
+
+TEST(LevelStreamer3DActionUVETest, NoViewerNeverMovesAnythingAndDisabledAlwaysUnloads) {
+    LevelStreamer3DStreamingFrameUVE frame;
+    frame.enabled = true;
+    frame.loadDistance = 10.0F;
+    frame.unloadDistance = 20.0F;
+
+    // Nobody is watching: neither the load trigger nor a stale unload verdict may move content.
+    frame.hasViewer = false;
+    frame.nearestViewerDistanceSquared = 0.0F;
+    EXPECT_EQ(ResolveLevelStreamer3DStreamingActionUVE(frame), LevelStreamer3DActionUVE::None);
+    frame.loaded = true;
+    EXPECT_EQ(ResolveLevelStreamer3DStreamingActionUVE(frame), LevelStreamer3DActionUVE::None)
+        << "a viewerless tick never unloads a loaded level (the toggle does, not silence)";
+
+    // The latch an async path would set: a pending load must not double-issue on the boundary.
+    frame.hasViewer = true;
+    frame.loaded = false;
+    frame.loadRequested = true;
+    frame.nearestViewerDistanceSquared = 99.0F;
+    EXPECT_EQ(ResolveLevelStreamer3DStreamingActionUVE(frame), LevelStreamer3DActionUVE::None)
+        << "a load already in flight never loads twice";
+    frame.loadRequested = false;
+
+    // Disabling a streamer ALWAYS pulls its content, regardless of where the viewer stands.
+    frame.enabled = false;
+    frame.loaded = true;
+    frame.nearestViewerDistanceSquared = 0.0F;
+    EXPECT_EQ(ResolveLevelStreamer3DStreamingActionUVE(frame), LevelStreamer3DActionUVE::RequestUnload)
+        << "viewer at zero distance still unloads a disabled streamer";
+}
+
+TEST(LevelStreamer3DLoadBudgetUVETest, BudgetIsPositiveAndStructurallySmall) {
+    // The per-tick load budget is the load-burst contract: greater than zero is mandatory (a
+    // zero budget would wedge streaming forever), structurally bounded so a teleport can never
+    // hitch beyond it, and deliberately finite so tests can drive past it and measure carry-over.
+    static_assert(kMaximumLevelStreamer3DLoadsPerTickUVE > 0U);
+    static_assert(kMaximumLevelStreamer3DLoadsPerTickUVE <= 16U);
+    EXPECT_EQ(kMaximumLevelStreamer3DLoadsPerTickUVE, 4U) << "the documented burst budget";
+}
+
 } // namespace UVE::Scene::Tests
