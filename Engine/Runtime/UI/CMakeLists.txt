@@ -22,7 +22,7 @@ add_library(uve_ui STATIC
 # assets/fonts/liberation-sans-subset.ttf (the single source of truth for this font for the
 # whole repo - Engine/Editor/EditorCore embeds the same file from here, see that module's
 # CMakeLists). Generating it here means the byte array never drifts from the checked-in
-# asset; 2026-09-17 audit section 5.4.
+# asset; 2026-09-17 audit.
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 set(_uve_ui_generated_dir "${CMAKE_CURRENT_BINARY_DIR}/generated")
 set(_uve_ui_font_inc "${_uve_ui_generated_dir}/ui_font_ttf_bytes.inc")
