@@ -4,7 +4,7 @@ Repo-local development and CI utilities (no longer a placeholder - each tool bel
 
 ## check_math_boundary.py
 
-Enforces the two-math-libraries boundary documented in `AUDIT.md` (section 6.1) and in
+Enforces the two-math-libraries boundary documented in
 `Engine/Editor/Viewport/Internal/integration/MathConversions.h`:
 
 - `univex/math` (the Viewport's OpenGL-facing math kit) may only be included under
@@ -21,5 +21,5 @@ Byte-embeds a binary file as a C++20 `inline constexpr std::array<std::uint8_t, 
 in this repo's established 16-hex-bytes-per-line convention. Driven by `add_custom_command`
 in `Engine/Runtime/UI/CMakeLists.txt` and `Engine/Editor/EditorCore/CMakeLists.txt` so font
 byte-arrays are generated from single canonical `.ttf` sources at build time instead of being
-committed as duplicate snapshots (see `AUDIT.md` section 5.4). Verified byte-identical against
+committed as duplicate snapshots. Verified byte-identical against
 the four hand-committed `.inc` files it replaced.

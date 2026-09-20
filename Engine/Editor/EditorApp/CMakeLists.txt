@@ -1,8 +1,7 @@
 # Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 #
-# Viewport smoke harness - NOT the editor (2026-09-17 audit re-label, AUDIT.md section
-# 5.3). The real, maintained Editor application is `uve_editor_app` in Engine/App;
+# Viewport smoke harness - NOT the editor (2026-09-17 audit re-label). The real, maintained Editor application is `uve_editor_app` in Engine/App;
 # this executable predates it: a real desktop window built on
 # Engine/Runtime/Window + Engine/Runtime/Input, driving Engine/Editor/Viewport's
 # existing ViewportRenderPass/WorldUveEntitySource bridge instead of Viewport's own

@@ -1,7 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 //
 // VulkanRenderDeviceUVE — the engine's second real IRenderDeviceUVE backend and the milestone-1
-// (M1) "bootstrap" of the approved modern-GPU path (AUDIT.md section 8, item 2). M1 scope is
+// (M1) "bootstrap" of the approved modern-GPU path. M1 scope is
 // deliberately narrow and honest: instance -> physical/logical device -> window surface ->
 // swapchain -> per-frame clear-color present. Synchronisation is the documented-simple form —
 // one frame in flight plus vkQueueWaitIdle before every swapchain teardown call — matching the

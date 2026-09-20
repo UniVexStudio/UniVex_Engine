@@ -1,6 +1,6 @@
 # Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #
-# The Vulkan M1 "bootstrap" backend for uve_rhi's IRenderDeviceUVE (AUDIT.md section 8, item 2):
+# The Vulkan M1 "bootstrap" backend for uve_rhi's IRenderDeviceUVE:
 # instance -> physical/logical device -> window surface -> swapchain -> per-frame clear-color
 # present, with every resource-bearing interface method honestly reporting "later milestone"
 # (see vulkan_render_device_uve.h for the full milestone contract).
