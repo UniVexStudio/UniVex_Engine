@@ -5,7 +5,7 @@
 
 #include <string>
 
-#include "uve/debug/assert_uve.h"
+#include "uve/logging/assert_uve.h"
 
 namespace UVE::Render {
 
@@ -52,9 +52,10 @@ void NullCommandBufferUVE::EndRenderPassUVE() {
 }
 
 void NullCommandBufferUVE::BindPipelineUVE(PipelineHandleUVE pipeline) {
-    if (!RequireInsideRenderPassUVE(m_insideRenderPass, "BindPipelineUVE")) {
-        return;
-    }
+    // M5a: no inside-pass gate anymore — compute pipelines MUST bind outside render-pass markers
+    // (Vulkan forbids binding a COMPUTE pipeline inside a pass instance), and Null only records.
+    // The structural gates live on the consuming commands: DrawUVE (inside) and DispatchUVE
+    // (outside). Kept identical to GlCommandBufferUVE so one portable stream records everywhere.
     m_commands.emplace_back(BindPipelineCommandUVE{pipeline});
 }
 
@@ -73,9 +74,12 @@ void NullCommandBufferUVE::BindIndexBufferUVE(BufferHandleUVE buffer) {
 }
 
 void NullCommandBufferUVE::BindTextureUVE(TextureHandleUVE texture, std::uint32_t slot) {
-    if (!RequireInsideRenderPassUVE(m_insideRenderPass, "BindTextureUVE")) {
-        return;
-    }
+    // M5b: texture binds no longer gate on pass state. Since M5b, BindTextureUVE feeds
+    // STORAGE_IMAGE descriptors as well (unified texture slot space), and the compute flow
+    // lives entirely OUTSIDE pass markers. NullCommandBufferUVE holds no device back-reference
+    // to tell a compute handle from a graphics one — so Null records ungated exactly like
+    // the Vulkan record side does (and like BindStorageBufferUVE does), and the executing
+    // backends keep the real kind-aware rules.
     m_commands.emplace_back(BindTextureCommandUVE{texture, slot});
 }
 
@@ -86,38 +90,37 @@ void NullCommandBufferUVE::BindUniformBufferUVE(BufferHandleUVE buffer, std::uin
     m_commands.emplace_back(BindUniformBufferCommandUVE{buffer, slot});
 }
 
+void NullCommandBufferUVE::BindStorageBufferUVE(BufferHandleUVE buffer, std::uint32_t slot) {
+    // M5a: storage binds and the SetUniform* family below no longer gate on pass state. The
+    // compute flow (bind compute pipeline, bind its SSBOs/uniforms, dispatch) lives entirely
+    // OUTSIDE pass markers, and NullCommandBufferUVE holds no device back-reference to tell a
+    // compute handle from a graphics one — so Null records ungated exactly like the Vulkan
+    // record side does, and the executing backends keep the real kind-aware rules.
+    m_commands.emplace_back(BindStorageBufferCommandUVE{buffer, slot});
+}
+
 void NullCommandBufferUVE::SetUniformFloatUVE(std::string_view name, float value) {
-    if (!RequireInsideRenderPassUVE(m_insideRenderPass, "SetUniformFloatUVE")) {
-        return;
-    }
+    // M5a: ungated — see the comment at BindStorageBufferUVE.
     m_commands.emplace_back(SetUniformFloatCommandUVE{std::string(name), value});
 }
 
 void NullCommandBufferUVE::SetUniformIntUVE(std::string_view name, std::int32_t value) {
-    if (!RequireInsideRenderPassUVE(m_insideRenderPass, "SetUniformIntUVE")) {
-        return;
-    }
+    // M5a: ungated — see the comment at BindStorageBufferUVE.
     m_commands.emplace_back(SetUniformIntCommandUVE{std::string(name), value});
 }
 
 void NullCommandBufferUVE::SetUniformBoolUVE(std::string_view name, bool value) {
-    if (!RequireInsideRenderPassUVE(m_insideRenderPass, "SetUniformBoolUVE")) {
-        return;
-    }
+    // M5a: ungated — see the comment at BindStorageBufferUVE.
     m_commands.emplace_back(SetUniformBoolCommandUVE{std::string(name), value});
 }
 
 void NullCommandBufferUVE::SetUniformVector3UVE(std::string_view name, const Math::Vector3UVE& value) {
-    if (!RequireInsideRenderPassUVE(m_insideRenderPass, "SetUniformVector3UVE")) {
-        return;
-    }
+    // M5a: ungated — see the comment at BindStorageBufferUVE.
     m_commands.emplace_back(SetUniformVector3CommandUVE{std::string(name), value});
 }
 
 void NullCommandBufferUVE::SetUniformMatrix4x4UVE(std::string_view name, const Math::Matrix4x4UVE& value) {
-    if (!RequireInsideRenderPassUVE(m_insideRenderPass, "SetUniformMatrix4x4UVE")) {
-        return;
-    }
+    // M5a: ungated — see the comment at BindStorageBufferUVE.
     m_commands.emplace_back(SetUniformMatrix4x4CommandUVE{std::string(name), value});
 }
 
@@ -128,11 +131,34 @@ void NullCommandBufferUVE::DrawIndexedUVE(std::uint32_t indexCount, std::uint32_
     m_commands.emplace_back(DrawIndexedCommandUVE{indexCount, instanceCount});
 }
 
+void NullCommandBufferUVE::DrawIndexedIndirectUVE(const BufferHandleUVE buffer,
+                                                  const std::uint64_t offsetBytes) {
+    // Same inside-pass gate as DrawIndexedUVE: the indirection changes where the PARAMETERS come
+    // from, not when a draw is legal. Handle validity is the device's to judge at replay - this
+    // backend records faithfully and executes nothing.
+    if (!RequireInsideRenderPassUVE(m_insideRenderPass, "DrawIndexedIndirectUVE")) {
+        return;
+    }
+    m_commands.emplace_back(DrawIndexedIndirectCommandRecordUVE{buffer, offsetBytes});
+}
+
 void NullCommandBufferUVE::DrawUVE(std::uint32_t vertexCount, std::uint32_t instanceCount) {
     if (!RequireInsideRenderPassUVE(m_insideRenderPass, "DrawUVE")) {
         return;
     }
     m_commands.emplace_back(DrawCommandUVE{vertexCount, instanceCount});
+}
+
+void NullCommandBufferUVE::DispatchUVE(std::uint32_t groupCountX, std::uint32_t groupCountY,
+                                       std::uint32_t groupCountZ) {
+    // M5a: dispatch belongs OUTSIDE render-pass markers — the mirror image of DrawUVE's
+    // inside-pass gate (Vulkan compute is illegal inside a render-pass instance).
+    UVE_ASSERT(!m_insideRenderPass);
+    if (m_insideRenderPass) {
+        UVE_ERROR("NullCommandBufferUVE: DispatchUVE must be called outside a render pass");
+        return;
+    }
+    m_commands.emplace_back(DispatchCommandUVE{groupCountX, groupCountY, groupCountZ});
 }
 
 const std::vector<RecordedCommandUVE>& NullCommandBufferUVE::GetRecordedCommandsUVE() const noexcept {

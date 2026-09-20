@@ -11,9 +11,9 @@
 #include <unordered_map>
 #include <vector>
 
-#include "gl_functions_uve.h"
-#include "uve/render/render_resource_descs_uve.h"
-#include "uve/render/shader_data_type_uve.h"
+#include "uve/rhi_opengl/gl_functions_uve.h"
+#include "uve/rhi/render_resource_descs_uve.h"
+#include "uve/rhi/shader_data_type_uve.h"
 #include "uve/window/i_window_manager_uve.h"
 
 namespace UVE::Render::Detail {
@@ -48,6 +48,12 @@ struct GlDeviceStateUVE {
     GLint maxUniformBufferBindings = 0;
     GLint maxVertexAttribs = 0;
 
+    /// GL_SHADER_STORAGE_BUFFER_BINDINGS, queried only when supportsComputeShadersUVE (SSBOs
+    /// share compute's GL 4.3 core floor; M2f binds them from GRAPHICS-stage shaders). Stays 0
+    /// on older/GLES contexts — BindStorageBufferUVE then refuses loudly instead of calling
+    /// into an enum the context doesn't know.
+    GLint maxShaderStorageBindings = 0;
+
     /// True only once the negotiated context is queried and found to be desktop OpenGL 4.3+
     /// (GL_COMPUTE_SHADER's minimum core version) - GLES contexts (compute needs ES 3.1, this
     /// engine's Android baseline is a fixed ES 3.0) are never true. Phase 2a capability gate:
@@ -60,6 +66,10 @@ struct GlDeviceStateUVE {
         GLuint glBuffer = 0;
         GLenum target = 0;
         std::uint64_t sizeBytes = 0;
+        /// CS7: kept because `target` can no longer identify the usage on its own - an
+        /// IndirectStorage buffer's home target is GL_SHADER_STORAGE_BUFFER, exactly like a plain
+        /// Storage buffer's, and DrawIndexedIndirectUVE must be able to tell them apart.
+        BufferUsageUVE usage = BufferUsageUVE::Vertex;
     };
     std::unordered_map<std::uint32_t, BufferRecordUVE> buffers;
     std::uint32_t nextBufferHandle = 1;
@@ -78,6 +88,7 @@ struct GlDeviceStateUVE {
 
     struct ShaderRecordUVE {
         GLuint glShader = 0;
+        ShaderStageUVE stage = ShaderStageUVE::Vertex; // M5a: CreateComputePipelineUVE validates it
     };
     std::unordered_map<std::uint32_t, ShaderRecordUVE> shaders;
     std::uint32_t nextShaderHandle = 1;
@@ -95,6 +106,11 @@ struct GlDeviceStateUVE {
         bool depthWriteEnabled = true;
         PipelineBlendModeUVE blendMode = PipelineBlendModeUVE::Opaque;
 
+        /// M5a: true for programs linked from CreateComputePipelineUVE(). Such records carry no
+        /// VAO/vertex layout and no render state — GlCommandBufferUVE skips the graphics-side
+        /// setup for them and DispatchUVE() requires one to be the currently bound pipeline.
+        bool isCompute = false;
+
         /// Every uniform reflected right after this pipeline's program successfully linked
         /// (Increment 21) — GlCommandBufferUVE's SetUniform*UVE calls look a name up here instead
         /// of calling glGetUniformLocation per draw. Empty for a pipeline created via
@@ -103,6 +119,10 @@ struct GlDeviceStateUVE {
             ShaderDataTypeUVE type = ShaderDataTypeUVE::Float;
             GLint location = -1;
             std::uint32_t arraySize = 1;
+            // M5b: true for GL_IMAGE_2D uniforms (imageLoad/imageStore). Reported as Int like
+            // samplers (the value is the image-unit index, settable through SetUniformIntUVE);
+            // BindTextureUVE double-binds image-using programs through glBindImageTexture.
+            bool isImageUniform = false;
         };
         std::unordered_map<std::string, UniformRecordUVE, TransparentStringHashUVE, TransparentStringEqualUVE> uniforms;
     };

@@ -1,20 +1,23 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 
-#include "uve/render/null_render_device_uve.h"
+#include "uve/rhi_null/null_render_device_uve.h"
 
 #include <algorithm>
 #include <array>
 #include <cstddef>
 #include <limits>
 #include <memory>
+#include <span>
+#include <type_traits>
+#include <thread>
 #include <variant>
 #include <vector>
 
 #include <gtest/gtest.h>
 
-#include "uve/debug/log_sink_uve.h"
-#include "uve/debug/logger_uve.h"
+#include "uve/logging/log_sink_uve.h"
+#include "uve/logging/logger_uve.h"
 #include "uve/math/matrix4x4_uve.h"
 #include "uve/math/vector3_uve.h"
 #include "uve/platform/platform_uve.h"
@@ -84,6 +87,57 @@ TEST(NullRenderDeviceUVETest, DestroyBufferUVE_UnknownHandle_LogsErrorSafely) {
     EXPECT_TRUE(foundError);
 
     logger.Shutdown();
+}
+
+TEST(NullRenderDeviceUVETest, ReadbackBufferUVE_ReturnsWhatCreationAndUpdatesWrote) {
+    // CS3: the null backend models host-visible buffer CONTENTS, not just descriptors - a
+    // readback that could only ever return zeros would make headless assertions a lie.
+    NullRenderDeviceUVE device;
+    const std::array<std::byte, 4> initial{std::byte{1}, std::byte{2}, std::byte{3}, std::byte{4}};
+    const BufferHandleUVE buffer =
+        device.CreateBufferUVE(BufferDescUVE{8U, BufferUsageUVE::Storage}, initial);
+    ASSERT_NE(buffer, kInvalidBufferHandleUVE);
+
+    std::array<std::byte, 8> readback{};
+    ASSERT_TRUE(device.ReadbackBufferUVE(buffer, readback, 0));
+    EXPECT_EQ(readback[0], std::byte{1});
+    EXPECT_EQ(readback[3], std::byte{4});
+    // Bytes past the initial upload must read as the zero fill a fresh buffer has.
+    EXPECT_EQ(readback[4], std::byte{0});
+    EXPECT_EQ(readback[7], std::byte{0});
+
+    const std::array<std::byte, 2> update{std::byte{9}, std::byte{9}};
+    ASSERT_TRUE(device.UpdateBufferUVE(buffer, update, 6U));
+    ASSERT_TRUE(device.ReadbackBufferUVE(buffer, readback, 0));
+    EXPECT_EQ(readback[0], std::byte{1}); // untouched prefix survives an offset write
+    EXPECT_EQ(readback[6], std::byte{9});
+    EXPECT_EQ(readback[7], std::byte{9});
+
+    // A partial read at an offset sees exactly that window.
+    std::array<std::byte, 2> window{};
+    ASSERT_TRUE(device.ReadbackBufferUVE(buffer, window, 2U));
+    EXPECT_EQ(window[0], std::byte{3});
+    EXPECT_EQ(window[1], std::byte{4});
+
+    // An empty read is a successful no-op.
+    EXPECT_TRUE(device.ReadbackBufferUVE(buffer, std::span<std::byte>{}, 0));
+
+    device.DestroyBufferUVE(buffer);
+}
+
+TEST(NullRenderDeviceUVETest, ReadbackBufferUVE_UnknownHandleOrOutOfRange_ReturnsFalse) {
+    NullRenderDeviceUVE device;
+    std::array<std::byte, 4> readback{};
+    EXPECT_FALSE(device.ReadbackBufferUVE(BufferHandleUVE{999}, readback, 0));
+
+    const BufferHandleUVE buffer = device.CreateBufferUVE(BufferDescUVE{4U, BufferUsageUVE::Storage});
+    ASSERT_NE(buffer, kInvalidBufferHandleUVE);
+    std::array<std::byte, 8> tooLarge{};
+    EXPECT_FALSE(device.ReadbackBufferUVE(buffer, tooLarge, 0));
+    EXPECT_FALSE(device.ReadbackBufferUVE(buffer, readback, 2U));   // runs off the end
+    EXPECT_FALSE(device.ReadbackBufferUVE(buffer, readback,
+                                           std::numeric_limits<std::uint64_t>::max())); // overflowed offset
+    device.DestroyBufferUVE(buffer);
 }
 
 TEST(NullRenderDeviceUVETest, UpdateBufferUVE_UnknownHandle_ReturnsFalseAndLogsError) {
@@ -293,6 +347,67 @@ TEST(NullRenderDeviceUVETest, CommandBufferRecordingThenSubmit_ProducesExpectedC
     EXPECT_EQ(std::get<DrawIndexedCommandUVE>(recorded[4]).instanceCount, 1U);
 }
 
+// --- CS7: indirect indexed draw -------------------------------------------------------------
+
+TEST(NullRenderDeviceUVETest, DrawIndexedIndirectCommandUVE_MatchesTheGpuParameterLayout) {
+    // Both Vulkan's VkDrawIndexedIndirectCommand and GL's DrawElementsIndirectCommand are five
+    // 32-bit words in this order. A compute shader writes them with an std430 uvec-ish layout, so
+    // the CPU-side mirror has to agree field for field - a silent reorder here would produce
+    // draws with nonsense counts that nothing on the CPU ever observes.
+    static_assert(sizeof(DrawIndexedIndirectCommandUVE) == 20U);
+    EXPECT_EQ(offsetof(DrawIndexedIndirectCommandUVE, indexCount), 0U);
+    EXPECT_EQ(offsetof(DrawIndexedIndirectCommandUVE, instanceCount), 4U);
+    EXPECT_EQ(offsetof(DrawIndexedIndirectCommandUVE, firstIndex), 8U);
+    EXPECT_EQ(offsetof(DrawIndexedIndirectCommandUVE, vertexOffset), 12U);
+    EXPECT_EQ(offsetof(DrawIndexedIndirectCommandUVE, firstInstance), 16U);
+    // vertexOffset is the one signed field in both APIs; an unsigned mirror would turn a small
+    // negative rebase into a ~4-billion vertex index.
+    static_assert(std::is_signed_v<decltype(DrawIndexedIndirectCommandUVE::vertexOffset)>);
+}
+
+TEST(NullRenderDeviceUVETest, IndirectStorageUsage_IsValidAndStorageBindable) {
+    EXPECT_TRUE(IsBufferUsageValidUVE(BufferUsageUVE::IndirectStorage));
+    // The whole point of the usage: a compute shader must be able to bind it as an SSBO and
+    // write the draw parameters, otherwise indirect draw buys nothing over DrawIndexedUVE.
+    EXPECT_TRUE(IsStorageBindableUsageUVE(BufferUsageUVE::IndirectStorage));
+    EXPECT_TRUE(IsStorageBindableUsageUVE(BufferUsageUVE::Storage));
+    EXPECT_FALSE(IsStorageBindableUsageUVE(BufferUsageUVE::Vertex));
+    EXPECT_FALSE(IsStorageBindableUsageUVE(BufferUsageUVE::Index));
+    EXPECT_FALSE(IsStorageBindableUsageUVE(BufferUsageUVE::Uniform));
+}
+
+TEST(NullRenderDeviceUVETest, CreateBufferUVE_IndirectStorageUsage_Allocates) {
+    NullRenderDeviceUVE device;
+    const BufferHandleUVE indirect = device.CreateBufferUVE(
+        BufferDescUVE{sizeof(DrawIndexedIndirectCommandUVE), BufferUsageUVE::IndirectStorage});
+    EXPECT_NE(indirect, kInvalidBufferHandleUVE);
+}
+
+TEST(NullRenderDeviceUVETest, DrawIndexedIndirectUVE_InsideAPass_RecordsBufferAndOffset) {
+    NullRenderDeviceUVE device;
+    const TextureHandleUVE colorTarget =
+        device.CreateTextureUVE(TextureDescUVE{16, 16, TextureFormatUVE::RGBA8Unorm});
+    const BufferHandleUVE indirect = device.CreateBufferUVE(
+        BufferDescUVE{2U * sizeof(DrawIndexedIndirectCommandUVE), BufferUsageUVE::IndirectStorage});
+
+    std::unique_ptr<ICommandBufferUVE> commandBuffer = device.CreateCommandBufferUVE();
+    RenderPassDescUVE passDesc;
+    passDesc.colorAttachment = colorTarget;
+    commandBuffer->BeginRenderPassUVE(passDesc);
+    // A non-zero offset is the interesting case: it is how a single buffer holds a batch of
+    // draws, and it is the value most likely to be dropped on the way through the recorder.
+    commandBuffer->DrawIndexedIndirectUVE(indirect, sizeof(DrawIndexedIndirectCommandUVE));
+    commandBuffer->EndRenderPassUVE();
+    device.SubmitUVE(std::move(commandBuffer));
+
+    const std::vector<RecordedCommandUVE>& recorded = device.GetLastSubmittedCommandsUVE();
+    ASSERT_EQ(recorded.size(), 3U);
+    ASSERT_TRUE(std::holds_alternative<DrawIndexedIndirectCommandRecordUVE>(recorded[1]));
+    const auto& record = std::get<DrawIndexedIndirectCommandRecordUVE>(recorded[1]);
+    EXPECT_EQ(record.buffer, indirect);
+    EXPECT_EQ(record.offsetBytes, sizeof(DrawIndexedIndirectCommandUVE));
+}
+
 TEST(NullRenderDeviceUVETest, GetLastSubmittedCommandsUVE_BeforeAnySubmit_IsEmpty) {
     NullRenderDeviceUVE device;
     EXPECT_TRUE(device.GetLastSubmittedCommandsUVE().empty());
@@ -466,6 +581,78 @@ TEST(NullRenderDeviceUVETest, CommandBuffer_SetUniformCalls_AreRecordedInOrderWi
     ASSERT_TRUE(std::holds_alternative<EndRenderPassCommandUVE>(recorded[6]));
 }
 
+
+TEST(NullRenderDeviceUVETest, CommandBuffer_ParallelRecordAndSubmitIsSafeAndRetainsWholeLists) {
+    // M4: Null honors the same threading contract as the Vulkan backend — N threads may each
+    // create, record, and submit their OWN command buffers concurrently (SubmitUVE stores the
+    // spy under a mutex). The spy keeps the LAST-submitted list — which thread that is, is
+    // nondeterministic — so every thread records the same STRUCTURE with thread-tagged values:
+    // whichever list lands last, it must be a complete, untorn Begin + 5 uniform sets + End
+    // whose values all carry one thread's tag.
+    NullRenderDeviceUVE device;
+    std::array<bool, 4> submitted{};
+    std::vector<std::thread> threads;
+    threads.reserve(4U);
+    for (std::int32_t worker = 0; worker < 4; ++worker) {
+        threads.emplace_back([&device, &submitted, worker]() {
+            std::unique_ptr<ICommandBufferUVE> commandBuffer = device.CreateCommandBufferUVE();
+            if (commandBuffer == nullptr) {
+                return;
+            }
+            commandBuffer->BeginRenderPassUVE(RenderPassDescUVE{});
+            for (std::int32_t uniformIndex = 0; uniformIndex < 5; ++uniformIndex) {
+                commandBuffer->SetUniformIntUVE("uInt", worker * 100 + uniformIndex);
+            }
+            commandBuffer->EndRenderPassUVE();
+            device.SubmitUVE(std::move(commandBuffer));
+            submitted[static_cast<std::size_t>(worker)] = true;
+        });
+    }
+    for (std::thread& thread : threads) {
+        thread.join();
+    }
+    for (std::size_t worker = 0; worker < 4U; ++worker) {
+        ASSERT_TRUE(submitted[worker]) << "worker " << worker << " failed to record+submit";
+    }
+
+    // All threads joined — the spy read is quiesced (the documented reader contract).
+    const std::vector<RecordedCommandUVE>& recorded = device.GetLastSubmittedCommandsUVE();
+    ASSERT_EQ(recorded.size(), 7U);
+    EXPECT_TRUE(std::holds_alternative<BeginRenderPassCommandUVE>(recorded[0]));
+    EXPECT_TRUE(std::holds_alternative<EndRenderPassCommandUVE>(recorded[6]));
+    std::int32_t workerTag = -1;
+    for (std::size_t index = 1; index <= 5; ++index) {
+        ASSERT_TRUE(std::holds_alternative<SetUniformIntCommandUVE>(recorded[index]));
+        const std::int32_t value = std::get<SetUniformIntCommandUVE>(recorded[index]).value;
+        ASSERT_GE(value, 0);
+        ASSERT_LT(value, 400);
+        const std::int32_t tag = value / 100;
+        if (workerTag < 0) {
+            workerTag = tag;
+        }
+        EXPECT_EQ(tag, workerTag) << "the retained list must be ONE thread's whole recording, "
+                                     "never an interleaved tear";
+        EXPECT_EQ(value % 100, static_cast<std::int32_t>(index) - 1);
+    }
+}
+
+TEST(NullRenderDeviceUVETest, CommandBuffer_BindStorageBufferUVE_IsRecordedWithBufferAndSlot) {
+    // M2f: the Null spy must retain storage-buffer binds like every other bind family, so
+    // RenderSystems-level tests can assert the recorded buffer/slot without a real GPU.
+    NullRenderDeviceUVE device;
+    std::unique_ptr<ICommandBufferUVE> commandBuffer = device.CreateCommandBufferUVE();
+    commandBuffer->BeginRenderPassUVE(RenderPassDescUVE{});
+    commandBuffer->BindStorageBufferUVE(BufferHandleUVE{7U}, 2U);
+    commandBuffer->EndRenderPassUVE();
+    device.SubmitUVE(std::move(commandBuffer));
+
+    const std::vector<RecordedCommandUVE>& recorded = device.GetLastSubmittedCommandsUVE();
+    ASSERT_EQ(recorded.size(), 3U);
+    ASSERT_TRUE(std::holds_alternative<BindStorageBufferCommandUVE>(recorded[1]));
+    EXPECT_EQ(std::get<BindStorageBufferCommandUVE>(recorded[1]).buffer, BufferHandleUVE{7U});
+    EXPECT_EQ(std::get<BindStorageBufferCommandUVE>(recorded[1]).slot, 2U);
+}
+
 TEST(NullCommandBufferUVETest, BeginRenderPassUVE_UnknownLoadOp_DoesNotRecordOrEnterPass) {
     NullRenderDeviceUVE device;
     std::unique_ptr<ICommandBufferUVE> invalidCommandBuffer = device.CreateCommandBufferUVE();
@@ -482,7 +669,120 @@ TEST(NullCommandBufferUVETest, BeginRenderPassUVE_UnknownLoadOp_DoesNotRecordOrE
     EXPECT_EQ(device.GetLastSubmittedCommandsUVE().size(), 2U);
 }
 
+TEST(NullRenderDeviceUVETest, CreateComputePipelineUVE_BookkeepsAndValidatesStage) {
+    // M5a: compute pipelines live in the SAME handle domain as graphics pipelines (one
+    // DestroyPipelineUVE erases from either map) and count as live resources; the shader
+    // handle must be live AND Compute-stage.
+    NullRenderDeviceUVE device;
+    const ShaderHandleUVE computeShader = device.CreateShaderUVE(ShaderDescUVE{ShaderStageUVE::Compute, "cs"});
+    ASSERT_NE(computeShader, kInvalidShaderHandleUVE);
+    EXPECT_EQ(device.GetLiveResourceCountUVE(), 1U);
+
+    ComputePipelineDescUVE pipelineDesc;
+    pipelineDesc.computeShader = computeShader;
+    const PipelineHandleUVE pipeline = device.CreateComputePipelineUVE(pipelineDesc);
+    EXPECT_NE(pipeline, kInvalidPipelineHandleUVE);
+    EXPECT_EQ(device.GetLiveResourceCountUVE(), 2U);
+
+    device.DestroyPipelineUVE(pipeline);
+    EXPECT_EQ(device.GetLiveResourceCountUVE(), 1U);
+
+    ComputePipelineDescUVE unknownShaderDesc;
+    unknownShaderDesc.computeShader = ShaderHandleUVE{999999U};
+    EXPECT_EQ(device.CreateComputePipelineUVE(unknownShaderDesc), kInvalidPipelineHandleUVE);
+
+    const ShaderHandleUVE vertexShader = device.CreateShaderUVE(ShaderDescUVE{ShaderStageUVE::Vertex, "vs"});
+    ASSERT_NE(vertexShader, kInvalidShaderHandleUVE);
+    ComputePipelineDescUVE wrongStageDesc;
+    wrongStageDesc.computeShader = vertexShader;
+    EXPECT_EQ(device.CreateComputePipelineUVE(wrongStageDesc), kInvalidPipelineHandleUVE);
+    EXPECT_EQ(device.GetLiveResourceCountUVE(), 2U); // both shaders live, no pipeline recorded
+
+    device.DestroyShaderUVE(computeShader);
+    device.DestroyShaderUVE(vertexShader);
+    EXPECT_EQ(device.GetLiveResourceCountUVE(), 0U);
+}
+
+TEST(NullRenderDeviceUVETest, DispatchUVE_RecordsOutsidePassWithGroupCounts) {
+    // M5a recording contract: the compute flow (bind compute pipeline, bind its SSBO,
+    // dispatch) is recorded entirely OUTSIDE render-pass markers, in call order, with the
+    // exact group counts.
+    NullRenderDeviceUVE device;
+    const ShaderHandleUVE computeShader = device.CreateShaderUVE(ShaderDescUVE{ShaderStageUVE::Compute, "cs"});
+    ComputePipelineDescUVE pipelineDesc;
+    pipelineDesc.computeShader = computeShader;
+    const PipelineHandleUVE computePipeline = device.CreateComputePipelineUVE(pipelineDesc);
+    ASSERT_NE(computePipeline, kInvalidPipelineHandleUVE);
+    const BufferHandleUVE storageBuffer = device.CreateBufferUVE(BufferDescUVE{64, BufferUsageUVE::Storage});
+    ASSERT_NE(storageBuffer, kInvalidBufferHandleUVE);
+
+    std::unique_ptr<ICommandBufferUVE> commandBuffer = device.CreateCommandBufferUVE();
+    commandBuffer->BindPipelineUVE(computePipeline);
+    commandBuffer->BindStorageBufferUVE(storageBuffer, 0U);
+    commandBuffer->DispatchUVE(4U, 2U, 3U);
+    device.SubmitUVE(std::move(commandBuffer));
+
+    const std::vector<RecordedCommandUVE>& recorded = device.GetLastSubmittedCommandsUVE();
+    ASSERT_EQ(recorded.size(), 3U);
+    EXPECT_TRUE(std::holds_alternative<BindPipelineCommandUVE>(recorded[0]));
+    EXPECT_TRUE(std::holds_alternative<BindStorageBufferCommandUVE>(recorded[1]));
+    EXPECT_TRUE(std::holds_alternative<DispatchCommandUVE>(recorded[2]));
+    EXPECT_EQ(std::get<BindPipelineCommandUVE>(recorded[0]).pipeline, computePipeline);
+    const DispatchCommandUVE& dispatch = std::get<DispatchCommandUVE>(recorded[2]);
+    EXPECT_EQ(dispatch.groupCountX, 4U);
+    EXPECT_EQ(dispatch.groupCountY, 2U);
+    EXPECT_EQ(dispatch.groupCountZ, 3U);
+
+    device.DestroyBufferUVE(storageBuffer);
+    device.DestroyPipelineUVE(computePipeline);
+    device.DestroyShaderUVE(computeShader);
+}
+
+TEST(NullRenderDeviceUVETest, DispatchUVE_RecordsOutsidePassWithStorageTextureAndGroupCounts) {
+    // M5b: BindTextureUVE feeds STORAGE_IMAGE descriptors outside pass markers as well.
+    NullRenderDeviceUVE device;
+    const ShaderHandleUVE computeShader =
+        device.CreateShaderUVE(ShaderDescUVE{ShaderStageUVE::Compute, "compute"});
+    ASSERT_NE(computeShader, kInvalidShaderHandleUVE);
+    ComputePipelineDescUVE pipelineDesc{};
+    pipelineDesc.computeShader = computeShader;
+    const PipelineHandleUVE computePipeline = device.CreateComputePipelineUVE(pipelineDesc);
+    ASSERT_NE(computePipeline, kInvalidPipelineHandleUVE);
+    const TextureHandleUVE storageTexture =
+        device.CreateTextureUVE(TextureDescUVE{4U, 4U, TextureFormatUVE::RGBA8Unorm, 1U});
+    ASSERT_NE(storageTexture, kInvalidTextureHandleUVE);
+
+    std::unique_ptr<ICommandBufferUVE> commandBuffer = device.CreateCommandBufferUVE();
+    commandBuffer->BindPipelineUVE(computePipeline);
+    commandBuffer->BindTextureUVE(storageTexture, 0U);
+    commandBuffer->DispatchUVE(2U, 2U, 1U);
+    device.SubmitUVE(std::move(commandBuffer));
+
+    const std::vector<RecordedCommandUVE>& recorded = device.GetLastSubmittedCommandsUVE();
+    ASSERT_EQ(recorded.size(), 3U);
+    EXPECT_TRUE(std::holds_alternative<BindPipelineCommandUVE>(recorded[0]));
+    EXPECT_TRUE(std::holds_alternative<BindTextureCommandUVE>(recorded[1]));
+    EXPECT_TRUE(std::holds_alternative<DispatchCommandUVE>(recorded[2]));
+    EXPECT_EQ(std::get<BindPipelineCommandUVE>(recorded[0]).pipeline, computePipeline);
+    EXPECT_EQ(std::get<BindTextureCommandUVE>(recorded[1]).texture, storageTexture);
+    const DispatchCommandUVE& dispatch = std::get<DispatchCommandUVE>(recorded[2]);
+    EXPECT_EQ(dispatch.groupCountX, 2U);
+    EXPECT_EQ(dispatch.groupCountY, 2U);
+    EXPECT_EQ(dispatch.groupCountZ, 1U);
+
+    device.DestroyTextureUVE(storageTexture);
+    device.DestroyPipelineUVE(computePipeline);
+    device.DestroyShaderUVE(computeShader);
+}
+
 #if UVE_DEBUG
+TEST(NullRenderDeviceUVEDeathTest, CommandBuffer_DispatchInsideRenderPass_Asserts) {
+    NullRenderDeviceUVE device;
+    std::unique_ptr<ICommandBufferUVE> commandBuffer = device.CreateCommandBufferUVE();
+    commandBuffer->BeginRenderPassUVE(RenderPassDescUVE{});
+    EXPECT_DEATH({ commandBuffer->DispatchUVE(1U, 1U, 1U); }, "");
+}
+
 TEST(NullRenderDeviceUVEDeathTest, CommandBuffer_NestedBeginRenderPass_Asserts) {
     NullRenderDeviceUVE device;
     std::unique_ptr<ICommandBufferUVE> commandBuffer = device.CreateCommandBufferUVE();
@@ -494,6 +794,17 @@ TEST(NullRenderDeviceUVEDeathTest, CommandBuffer_DrawOutsideRenderPass_Asserts) 
     NullRenderDeviceUVE device;
     std::unique_ptr<ICommandBufferUVE> commandBuffer = device.CreateCommandBufferUVE();
     EXPECT_DEATH({ commandBuffer->DrawUVE(3); }, "");
+}
+
+TEST(NullRenderDeviceUVEDeathTest, CommandBuffer_DrawIndexedIndirectOutsideRenderPass_Asserts) {
+    // Same inside-a-pass invariant as DrawUVE above, and asserted the same way: the null backend
+    // treats a draw outside a pass as an authoring bug, not a recoverable condition, so in debug
+    // builds it traps before the error-log arm is ever reached.
+    NullRenderDeviceUVE device;
+    const BufferHandleUVE indirect = device.CreateBufferUVE(
+        BufferDescUVE{sizeof(DrawIndexedIndirectCommandUVE), BufferUsageUVE::IndirectStorage});
+    std::unique_ptr<ICommandBufferUVE> commandBuffer = device.CreateCommandBufferUVE();
+    EXPECT_DEATH({ commandBuffer->DrawIndexedIndirectUVE(indirect, 0U); }, "");
 }
 
 TEST(NullRenderDeviceUVEDeathTest, CommandBuffer_EndRenderPassWithoutBegin_Asserts) {
@@ -517,6 +828,7 @@ TEST(NullCommandBufferUVERuntimeTest, CommandBufferLifecycleMisuseIsSafeNoOpInRe
     commandBuffer->BindIndexBufferUVE(BufferHandleUVE{1U});
     commandBuffer->BindTextureUVE(TextureHandleUVE{1U}, 0U);
     commandBuffer->BindUniformBufferUVE(BufferHandleUVE{1U}, 0U);
+    commandBuffer->BindStorageBufferUVE(BufferHandleUVE{1U}, 0U);
     commandBuffer->SetUniformFloatUVE("uFloat", 1.0F);
     commandBuffer->SetUniformIntUVE("uInt", 1);
     commandBuffer->SetUniformBoolUVE("uBool", true);
@@ -524,13 +836,27 @@ TEST(NullCommandBufferUVERuntimeTest, CommandBufferLifecycleMisuseIsSafeNoOpInRe
     commandBuffer->SetUniformMatrix4x4UVE("uMatrix", Math::Matrix4x4UVE{});
     commandBuffer->DrawIndexedUVE(3U);
     commandBuffer->DrawUVE(3U);
+    commandBuffer->DispatchUVE(1U, 1U, 1U);
 
-    // The valid begin/end pair is the only legal sequence above; every misuse is a release-safe
-    // no-op and must not add a command that a later retained submission could execute.
+    // M5b contract update: pipeline binds, texture binds (storage images), storage-buffer
+    // binds, SetUniform* and dispatches are LEGAL outside pass markers (the compute flow lives
+    // there), so those calls record for real. Every remaining misuse above (nested begin,
+    // double end, outside-pass vertex/index/uniform-buffer binds, outside-pass draws) is still
+    // a release-safe no-op that must not add a command a later retained submission could execute.
     device.SubmitUVE(std::move(commandBuffer));
-    EXPECT_EQ(device.GetLastSubmittedCommandsUVE().size(), 2U);
-    EXPECT_TRUE(std::holds_alternative<BeginRenderPassCommandUVE>(device.GetLastSubmittedCommandsUVE()[0]));
-    EXPECT_TRUE(std::holds_alternative<EndRenderPassCommandUVE>(device.GetLastSubmittedCommandsUVE()[1]));
+    const std::vector<RecordedCommandUVE>& recorded = device.GetLastSubmittedCommandsUVE();
+    ASSERT_EQ(recorded.size(), 11U);
+    EXPECT_TRUE(std::holds_alternative<BeginRenderPassCommandUVE>(recorded[0]));
+    EXPECT_TRUE(std::holds_alternative<EndRenderPassCommandUVE>(recorded[1]));
+    EXPECT_TRUE(std::holds_alternative<BindPipelineCommandUVE>(recorded[2]));
+    EXPECT_TRUE(std::holds_alternative<BindTextureCommandUVE>(recorded[3]));
+    EXPECT_TRUE(std::holds_alternative<BindStorageBufferCommandUVE>(recorded[4]));
+    EXPECT_TRUE(std::holds_alternative<SetUniformFloatCommandUVE>(recorded[5]));
+    EXPECT_TRUE(std::holds_alternative<SetUniformIntCommandUVE>(recorded[6]));
+    EXPECT_TRUE(std::holds_alternative<SetUniformBoolCommandUVE>(recorded[7]));
+    EXPECT_TRUE(std::holds_alternative<SetUniformVector3CommandUVE>(recorded[8]));
+    EXPECT_TRUE(std::holds_alternative<SetUniformMatrix4x4CommandUVE>(recorded[9]));
+    EXPECT_TRUE(std::holds_alternative<DispatchCommandUVE>(recorded[10]));
 }
 #endif
 

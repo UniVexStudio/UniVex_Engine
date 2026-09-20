@@ -1,13 +1,13 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 
-#include "uve/render/viewport_manager_uve.h"
+#include "uve/render_systems/viewport_manager_uve.h"
 
 #include <algorithm>
 #include <cmath>
 
-#include "uve/debug/logging_macros_uve.h"
-#include "uve/scene/components/camera_component_uve.h"
+#include "uve/logging/logging_macros_uve.h"
+#include "uve/component/camera_component_uve.h"
 
 namespace UVE::Render {
 

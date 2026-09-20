@@ -24,7 +24,7 @@ add_library(uve_window STATIC
 )
 target_include_directories(uve_window PUBLIC Expose)
 target_link_libraries(uve_window
-    PUBLIC uve_platform uve_debug uve_events uve_input
+    PUBLIC uve_platform uve_logging uve_events uve_input
     PRIVATE glfw
 )
 target_compile_features(uve_window PUBLIC cxx_std_20)

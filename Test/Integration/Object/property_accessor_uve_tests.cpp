@@ -1,11 +1,11 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-#include "uve/core/type_metadata_uve.h"
+#include "uve/object/type_metadata_uve.h"
 
 #include <gtest/gtest.h>
 
 #include "uve/math/vector3_uve.h"
-#include "uve/scene/components/transform_component_uve.h"
+#include "uve/component/transform_component_uve.h"
 
 namespace UVE::Core::Tests {
 namespace {

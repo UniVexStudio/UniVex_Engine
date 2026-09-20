@@ -1,7 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 
-#include "gl_functions_uve.h"
+#include "uve/rhi_opengl/gl_functions_uve.h"
 
 namespace UVE::Render::Detail {
 
@@ -16,7 +16,8 @@ template <typename TFunctionPointer>
 
 bool GlFunctionsUVE::IsCompleteUVE() const noexcept {
     return glGenBuffers != nullptr && glDeleteBuffers != nullptr && glBindBuffer != nullptr &&
-           glBufferData != nullptr && glBufferSubData != nullptr && glBindBufferBase != nullptr &&
+           glBufferData != nullptr && glBufferSubData != nullptr && glGetBufferSubData != nullptr &&
+           glBindBufferBase != nullptr &&
            glGenVertexArrays != nullptr && glDeleteVertexArrays != nullptr && glBindVertexArray != nullptr &&
            glVertexAttribPointer != nullptr && glEnableVertexAttribArray != nullptr && glCreateShader != nullptr &&
            glDeleteShader != nullptr && glShaderSource != nullptr && glCompileShader != nullptr &&
@@ -24,7 +25,10 @@ bool GlFunctionsUVE::IsCompleteUVE() const noexcept {
            glDeleteProgram != nullptr && glAttachShader != nullptr && glLinkProgram != nullptr &&
            glGetProgramiv != nullptr && glGetProgramInfoLog != nullptr && glUseProgram != nullptr &&
            glGenFramebuffers != nullptr && glDeleteFramebuffers != nullptr && glBindFramebuffer != nullptr &&
-           glFramebufferTexture2D != nullptr && glCheckFramebufferStatus != nullptr && glActiveTexture != nullptr &&
+           glFramebufferTexture2D != nullptr && glCheckFramebufferStatus != nullptr &&
+           glFramebufferRenderbuffer != nullptr && glGenRenderbuffers != nullptr &&
+           glDeleteRenderbuffers != nullptr && glBindRenderbuffer != nullptr && glRenderbufferStorage != nullptr &&
+           glActiveTexture != nullptr &&
            glGetUniformLocation != nullptr && glUniform1f != nullptr && glUniform1i != nullptr &&
            glUniform3fv != nullptr && glUniformMatrix4fv != nullptr && glGetActiveUniform != nullptr;
 }
@@ -37,7 +41,16 @@ GlFunctionsUVE LoadGlFunctionsUVE(void* (*getProcAddress)(const char*)) {
     functions.glBindBuffer = LoadOneUVE<PFNGLBINDBUFFERPROC>(getProcAddress, "glBindBuffer");
     functions.glBufferData = LoadOneUVE<PFNGLBUFFERDATAPROC>(getProcAddress, "glBufferData");
     functions.glBufferSubData = LoadOneUVE<PFNGLBUFFERSUBDATAPROC>(getProcAddress, "glBufferSubData");
+    functions.glGetBufferSubData = LoadOneUVE<PFNGLGETBUFFERSUBDATAPROC>(getProcAddress, "glGetBufferSubData");
     functions.glBindBufferBase = LoadOneUVE<PFNGLBINDBUFFERBASEPROC>(getProcAddress, "glBindBufferBase");
+
+    // M5a: optional compute entry points — may stay null on pre-4.3 contexts (see GlFunctionsUVE).
+    functions.glDispatchCompute = LoadOneUVE<PFNGLDISPATCHCOMPUTEPROC>(getProcAddress, "glDispatchCompute");
+    functions.glMemoryBarrier = LoadOneUVE<PFNGLMEMORYBARRIERPROC>(getProcAddress, "glMemoryBarrier");
+    // M5b: optional image-unit binding (GL 4.2+) — null means no storage-image binds.
+    functions.glBindImageTexture = LoadOneUVE<PFNGLBINDIMAGETEXTUREPROC>(getProcAddress, "glBindImageTexture");
+    functions.glDrawElementsIndirect =
+        LoadOneUVE<PFNGLDRAWELEMENTSINDIRECTPROC>(getProcAddress, "glDrawElementsIndirect");
 
     functions.glGenVertexArrays = LoadOneUVE<PFNGLGENVERTEXARRAYSPROC>(getProcAddress, "glGenVertexArrays");
     functions.glDeleteVertexArrays = LoadOneUVE<PFNGLDELETEVERTEXARRAYSPROC>(getProcAddress, "glDeleteVertexArrays");
@@ -69,6 +82,15 @@ GlFunctionsUVE LoadGlFunctionsUVE(void* (*getProcAddress)(const char*)) {
         LoadOneUVE<PFNGLFRAMEBUFFERTEXTURE2DPROC>(getProcAddress, "glFramebufferTexture2D");
     functions.glCheckFramebufferStatus =
         LoadOneUVE<PFNGLCHECKFRAMEBUFFERSTATUSPROC>(getProcAddress, "glCheckFramebufferStatus");
+    functions.glFramebufferRenderbuffer =
+        LoadOneUVE<PFNGLFRAMEBUFFERRENDERBUFFERPROC>(getProcAddress, "glFramebufferRenderbuffer");
+
+    functions.glGenRenderbuffers = LoadOneUVE<PFNGLGENRENDERBUFFERSPROC>(getProcAddress, "glGenRenderbuffers");
+    functions.glDeleteRenderbuffers =
+        LoadOneUVE<PFNGLDELETERENDERBUFFERSPROC>(getProcAddress, "glDeleteRenderbuffers");
+    functions.glBindRenderbuffer = LoadOneUVE<PFNGLBINDRENDERBUFFERPROC>(getProcAddress, "glBindRenderbuffer");
+    functions.glRenderbufferStorage =
+        LoadOneUVE<PFNGLRENDERBUFFERSTORAGEPROC>(getProcAddress, "glRenderbufferStorage");
 
     functions.glActiveTexture = LoadOneUVE<PFNGLACTIVETEXTUREPROC>(getProcAddress, "glActiveTexture");
 

@@ -6,7 +6,7 @@
 
 #include "uve/math/vector3_uve.h"
 #include "uve/physics/i_collision_system_uve.h"
-#include "uve/scene/i_entity_manager_uve.h"
+#include "uve/entity/i_entity_manager_uve.h"
 #include "uve/scene/i_scene_graph_uve.h"
 
 namespace UVE::Physics {

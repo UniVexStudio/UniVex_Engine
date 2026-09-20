@@ -13,8 +13,8 @@
 #include <gtest/gtest.h>
 
 #include "uve/audio/null_audio_device_uve.h"
-#include "uve/debug/log_sink_uve.h"
-#include "uve/debug/logger_uve.h"
+#include "uve/logging/log_sink_uve.h"
+#include "uve/logging/logger_uve.h"
 
 namespace UVE::Audio::Tests {
 namespace {

@@ -221,5 +221,132 @@ TEST(QuaternionUVETest, ToStringUVE_FormatsAllFourComponents) {
     EXPECT_NE(text.find("1.000000"), std::string::npos);
 }
 
+/// Sign-agnostic rotation comparison: q and -q are the same rotation, so comparing components
+/// directly reports differences that do not exist. |dot| == 1 is the honest test.
+[[nodiscard]] bool RepresentSameRotationUVE(const QuaternionUVE& lhs, const QuaternionUVE& rhs,
+                                            const float tolerance = 1e-4F) {
+    const float dot = lhs.x * rhs.x + lhs.y * rhs.y + lhs.z * rhs.z + lhs.w * rhs.w;
+    return std::abs(std::abs(dot) - 1.0F) <= tolerance;
+}
+
+constexpr std::array<EulerOrderUVE, 6U> kAllEulerOrdersUVE{
+    EulerOrderUVE::XYZ, EulerOrderUVE::YXZ, EulerOrderUVE::ZYX,
+    EulerOrderUVE::XZY, EulerOrderUVE::YZX, EulerOrderUVE::ZXY};
+
+TEST(QuaternionEulerOrderUVETest, XYZIsBitForBitTheExistingTwoArgumentForm) {
+    // The compatibility guarantee the whole feature rests on. TryMakeEulerUVE has produced every
+    // authored rotation in every saved scene; if the ordered form disagreed with it for XYZ, this
+    // change would silently rotate existing content.
+    const std::array<Vector3UVE, 6U> samples{
+        Vector3UVE{0.1F, 0.2F, 0.3F},   Vector3UVE{-0.8F, 1.0F, 0.26F},
+        Vector3UVE{1.4F, -0.5F, 2.1F},  Vector3UVE{0.0F, 0.0F, 0.0F},
+        Vector3UVE{-2.9F, 0.35F, -1.6F}, Vector3UVE{1.5708F, 0.7854F, 0.5236F}};
+
+    for (const Vector3UVE& radians : samples) {
+        QuaternionUVE viaExisting{};
+        QuaternionUVE viaOrdered{};
+        ASSERT_TRUE(TryMakeEulerUVE(radians, viaExisting));
+        ASSERT_TRUE(TryMakeEulerOrderedUVE(radians, EulerOrderUVE::XYZ, viaOrdered));
+        EXPECT_FLOAT_EQ(viaExisting.x, viaOrdered.x);
+        EXPECT_FLOAT_EQ(viaExisting.y, viaOrdered.y);
+        EXPECT_FLOAT_EQ(viaExisting.z, viaOrdered.z);
+        EXPECT_FLOAT_EQ(viaExisting.w, viaOrdered.w);
+    }
+}
+
+TEST(QuaternionEulerOrderUVETest, EveryOrderRoundTrips) {
+    const std::array<Vector3UVE, 5U> samples{
+        Vector3UVE{0.17F, 0.35F, 0.52F},  Vector3UVE{-0.79F, 1.05F, 0.26F},
+        Vector3UVE{1.40F, -0.52F, 2.09F}, Vector3UVE{0.09F, 0.09F, 0.09F},
+        Vector3UVE{-2.97F, 0.35F, -1.66F}};
+
+    for (const EulerOrderUVE order : kAllEulerOrdersUVE) {
+        for (const Vector3UVE& radians : samples) {
+            QuaternionUVE built{};
+            ASSERT_TRUE(TryMakeEulerOrderedUVE(radians, order, built))
+                << "order " << static_cast<int>(order);
+            Vector3UVE extracted{};
+            ASSERT_TRUE(TryToEulerOrderedUVE(built, order, extracted));
+            QuaternionUVE rebuilt{};
+            ASSERT_TRUE(TryMakeEulerOrderedUVE(extracted, order, rebuilt));
+            // The ROTATION must round-trip. The angles need not be the same triple - away from a
+            // singularity they will be, but asserting the rotation is what actually matters and
+            // is what stays true at the poles.
+            EXPECT_TRUE(RepresentSameRotationUVE(built, rebuilt))
+                << "order " << static_cast<int>(order);
+        }
+    }
+}
+
+TEST(QuaternionEulerOrderUVETest, EveryOrderSurvivesItsOwnGimbalLockPose) {
+    // Each order has a different singular pose - that is the entire reason six exist. At the pole
+    // the angle split is ambiguous, but the rotation must still rebuild exactly, or switching
+    // order would corrupt an object rather than just relabel its angles.
+    const std::array<Vector3UVE, 6U> singularPoses{
+        Vector3UVE{0.0F, 1.5707963F, 0.0F},  // XYZ: middle axis is Y
+        Vector3UVE{1.5707963F, 0.0F, 0.0F},  // YXZ: middle axis is X
+        Vector3UVE{0.0F, 1.5707963F, 0.0F},  // ZYX
+        Vector3UVE{0.0F, 0.0F, 1.5707963F},  // XZY
+        Vector3UVE{0.0F, 0.0F, 1.5707963F},  // YZX
+        Vector3UVE{1.5707963F, 0.0F, 0.0F}}; // ZXY
+
+    for (std::size_t index = 0U; index < kAllEulerOrdersUVE.size(); ++index) {
+        const EulerOrderUVE order = kAllEulerOrdersUVE[index];
+        QuaternionUVE built{};
+        ASSERT_TRUE(TryMakeEulerOrderedUVE(singularPoses[index], order, built));
+        Vector3UVE extracted{};
+        ASSERT_TRUE(TryToEulerOrderedUVE(built, order, extracted));
+        QuaternionUVE rebuilt{};
+        ASSERT_TRUE(TryMakeEulerOrderedUVE(extracted, order, rebuilt));
+        EXPECT_TRUE(RepresentSameRotationUVE(built, rebuilt))
+            << "order " << static_cast<int>(order) << " lost the rotation at its singular pose";
+    }
+}
+
+TEST(QuaternionEulerOrderUVETest, OrdersProduceDifferentRotationsFromTheSameAngles) {
+    // If two orders agreed on a general pose, one of them would be misimplemented and the
+    // dropdown would be decorative. Axis-aligned angles are excluded deliberately: those SHOULD
+    // agree, and using them here would make the test pass for the wrong reason.
+    const Vector3UVE radians{0.6F, 0.9F, 1.2F};
+    std::array<QuaternionUVE, 6U> built{};
+    for (std::size_t index = 0U; index < kAllEulerOrdersUVE.size(); ++index) {
+        ASSERT_TRUE(TryMakeEulerOrderedUVE(radians, kAllEulerOrdersUVE[index], built[index]));
+    }
+    for (std::size_t lhs = 0U; lhs < built.size(); ++lhs) {
+        for (std::size_t rhs = lhs + 1U; rhs < built.size(); ++rhs) {
+            EXPECT_FALSE(RepresentSameRotationUVE(built[lhs], built[rhs]))
+                << "orders " << lhs << " and " << rhs << " are indistinguishable";
+        }
+    }
+}
+
+TEST(QuaternionEulerOrderUVETest, NonFiniteInputIsRejectedForEveryOrder) {
+    const Vector3UVE notFinite{std::numeric_limits<float>::quiet_NaN(), 0.0F, 0.0F};
+    const QuaternionUVE zeroLength{0.0F, 0.0F, 0.0F, 0.0F};
+    for (const EulerOrderUVE order : kAllEulerOrdersUVE) {
+        QuaternionUVE rotation{};
+        EXPECT_FALSE(TryMakeEulerOrderedUVE(notFinite, order, rotation));
+        Vector3UVE radians{};
+        EXPECT_FALSE(TryToEulerOrderedUVE(zeroLength, order, radians))
+            << "a zero-length quaternion has no rotation to extract";
+    }
+}
+
+TEST(QuaternionEulerOrderUVETest, AnUnknownOrderValueIsRejectedRatherThanSilentlyTreatedAsXYZ) {
+    // The enum crosses a file format and an Inspector dropdown, so a value outside the six can
+    // arrive from a hand-edited scene. Falling through to XYZ would silently rotate the object;
+    // refusing leaves the caller's output untouched and the failure visible.
+    const auto bogus = static_cast<EulerOrderUVE>(200);
+    QuaternionUVE rotation{1.0F, 0.0F, 0.0F, 0.0F};
+    const QuaternionUVE before = rotation;
+    EXPECT_FALSE(TryMakeEulerOrderedUVE(Vector3UVE{0.1F, 0.2F, 0.3F}, bogus, rotation));
+    EXPECT_FLOAT_EQ(rotation.x, before.x) << "a rejected call must not write its output";
+
+    Vector3UVE radians{7.0F, 7.0F, 7.0F};
+    const Vector3UVE radiansBefore = radians;
+    EXPECT_FALSE(TryToEulerOrderedUVE(QuaternionUVE{0.0F, 0.0F, 0.0F, 1.0F}, bogus, radians));
+    EXPECT_FLOAT_EQ(radians.x, radiansBefore.x);
+}
+
 } // namespace
 } // namespace UVE::Math::Tests

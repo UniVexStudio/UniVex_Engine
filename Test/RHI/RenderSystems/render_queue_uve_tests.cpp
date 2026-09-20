@@ -1,17 +1,19 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 
-#include "uve/render/render_queue_uve.h"
+#include "uve/render_systems/render_queue_uve.h"
 
 #include <cmath>
 #include <filesystem>
 #include <limits>
 #include <string>
+#include <vector>
 #include <utility>
 
 #include <gtest/gtest.h>
 
 #include "uve/asset/asset_database_uve.h"
+#include "uve/render_systems/render_batch_uve.h"
 #include "uve/asset/asset_manager_uve.h"
 #include "uve/asset/material_asset_uve.h"
 #include "uve/asset/mesh_asset_uve.h"
@@ -45,6 +47,22 @@ protected:
             assetDatabase.RegisterUVE("render_queue_tests_mesh_" + std::to_string(nextPathSuffix++) + ".uvemodel");
         const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE(
             "render_queue_tests_material_" + std::to_string(nextPathSuffix++) + ".uvemat");
+        Asset::AssetHandleUVE<Asset::MeshAssetUVE> meshHandle =
+            assetManager.LoadUVE<Asset::MeshAssetUVE>(meshGuid, assetDatabase);
+        Asset::AssetHandleUVE<Asset::MaterialAssetUVE> materialHandle =
+            assetManager.LoadUVE<Asset::MaterialAssetUVE>(materialGuid, assetDatabase);
+        return RenderItemUVE{Math::Matrix4x4UVE::IdentityUVE(), std::move(meshHandle), std::move(materialHandle),
+                              sortDepth};
+    }
+
+    /// An item on a CHOSEN mesh rather than a fresh one, so a test can build a queue where several
+    /// items share a mesh - which is the situation batching exists for and MakeItemUVE cannot
+    /// produce, since it registers a new asset every call.
+    [[nodiscard]] RenderItemUVE MakeItemOnMeshUVE(float sortDepth, int meshIndex) {
+        const Asset::AssetGuidUVE meshGuid =
+            assetDatabase.RegisterUVE("render_queue_tests_shared_mesh_" + std::to_string(meshIndex) + ".uvemodel");
+        const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE(
+            "render_queue_tests_shared_material_" + std::to_string(meshIndex) + ".uvemat");
         Asset::AssetHandleUVE<Asset::MeshAssetUVE> meshHandle =
             assetManager.LoadUVE<Asset::MeshAssetUVE>(meshGuid, assetDatabase);
         Asset::AssetHandleUVE<Asset::MaterialAssetUVE> materialHandle =
@@ -177,4 +195,89 @@ TEST_F(RenderQueueUVETest, ClearUVE_ClearsFrameStateAndPreservesCapacity) {
 }
 
 } // namespace
+TEST_F(RenderQueueUVETest, SortForDepthOnlyPassUVE_GroupsItemsByMeshSoTheShadowBatcherCanMergeThem) {
+    // The reason this function exists. BuildShadowBatchesUVE merges only ADJACENT same-mesh items,
+    // so the batch count is decided by the ordering it is handed, and depth order interleaves
+    // meshes by distance. This asserts the batch count directly rather than the ordering, because
+    // the batch count is what costs draw calls.
+    RenderQueueUVE queue;
+    constexpr std::size_t kItemCount = 300U;
+    constexpr int kDistinctMeshes = 3;
+    for (std::size_t index = 0U; index < kItemCount; ++index) {
+        // Depth deliberately uncorrelated with mesh, which is the case that splits runs apart.
+        const float depth = static_cast<float>((index * 7919U) % 1000U) * 0.1F;
+        queue.opaqueItems.push_back(MakeItemOnMeshUVE(depth, static_cast<int>(index) % kDistinctMeshes));
+    }
+
+    RenderQueueUVE depthOrdered;
+    depthOrdered.opaqueItems = queue.opaqueItems;
+    depthOrdered.SortUVE();
+    RenderBatchSetUVE depthBatches;
+    BuildShadowBatchesUVE(depthOrdered.opaqueItems, depthBatches);
+
+    queue.SortForDepthOnlyPassUVE();
+    RenderBatchSetUVE meshBatches;
+    BuildShadowBatchesUVE(queue.opaqueItems, meshBatches);
+
+    EXPECT_EQ(meshBatches.batches.size(), static_cast<std::size_t>(kDistinctMeshes))
+        << "mesh ordering must collapse to one batch per distinct mesh";
+    EXPECT_LT(meshBatches.batches.size(), depthBatches.batches.size())
+        << "if depth ordering batched just as well there would be no reason for this function";
+    EXPECT_EQ(queue.opaqueItems.size(), kItemCount) << "ordering must not lose or duplicate items";
+}
+
+TEST_F(RenderQueueUVETest, SortForDepthOnlyPassUVE_OrdersByDepthWithinEachMesh) {
+    // Mesh first is the point, but within one mesh the pass should still draw nearest-first so the
+    // depth test rejects as much as it can. This pins the secondary key.
+    RenderQueueUVE queue;
+    for (const float depth : {9.0F, 1.0F, 5.0F, 3.0F}) {
+        queue.opaqueItems.push_back(MakeItemOnMeshUVE(depth, 0));
+    }
+
+    queue.SortForDepthOnlyPassUVE();
+
+    ASSERT_EQ(queue.opaqueItems.size(), 4U);
+    for (std::size_t index = 1U; index < queue.opaqueItems.size(); ++index) {
+        EXPECT_LE(queue.opaqueItems[index - 1U].sortDepth, queue.opaqueItems[index].sortDepth)
+            << "within one mesh the order should still be front-to-back, at index " << index;
+    }
+}
+
+TEST_F(RenderQueueUVETest, SortForDepthOnlyPassUVE_NonFiniteDepthsDoNotBreakTheOrdering) {
+    // A NaN depth makes a naive comparator inconsistent, which is undefined behaviour in
+    // std::sort rather than just a wrong order - the same hazard SortUVE guards against, and easy
+    // to forget when writing a second comparator.
+    RenderQueueUVE queue;
+    queue.opaqueItems.push_back(MakeItemOnMeshUVE(std::numeric_limits<float>::quiet_NaN(), 0));
+    queue.opaqueItems.push_back(MakeItemOnMeshUVE(2.0F, 1));
+    queue.opaqueItems.push_back(MakeItemOnMeshUVE(std::numeric_limits<float>::infinity(), 0));
+    queue.opaqueItems.push_back(MakeItemOnMeshUVE(1.0F, 1));
+
+    queue.SortForDepthOnlyPassUVE();
+
+    ASSERT_EQ(queue.opaqueItems.size(), 4U) << "no item may be lost to a NaN comparison";
+    // Still grouped by mesh, which is what the pass downstream relies on.
+    for (std::size_t index = 1U; index < queue.opaqueItems.size(); ++index) {
+        EXPECT_LE(queue.opaqueItems[index - 1U].meshHandle.GetGuidUVE().value,
+                  queue.opaqueItems[index].meshHandle.GetGuidUVE().value);
+    }
+}
+
+TEST_F(RenderQueueUVETest, SortForDepthOnlyPassUVE_LeavesTransparentAndParticleBucketsAlone) {
+    // A depth-only pass draws neither, so reordering them would be work with no consumer. Pinned
+    // because "sort everything for symmetry" is the obvious thing for someone to add later.
+    RenderQueueUVE queue;
+    queue.transparentItems.push_back(MakeItemUVE(3.0F));
+    queue.transparentItems.push_back(MakeItemUVE(2.0F));
+    queue.transparentItems.push_back(MakeItemUVE(1.0F));
+    const std::vector<float> depthsBefore{3.0F, 2.0F, 1.0F};
+
+    queue.SortForDepthOnlyPassUVE();
+
+    ASSERT_EQ(queue.transparentItems.size(), depthsBefore.size());
+    for (std::size_t index = 0U; index < depthsBefore.size(); ++index) {
+        EXPECT_FLOAT_EQ(queue.transparentItems[index].sortDepth, depthsBefore[index]);
+    }
+}
+
 } // namespace UVE::Render::Tests

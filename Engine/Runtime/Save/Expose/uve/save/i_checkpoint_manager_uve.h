@@ -6,8 +6,8 @@
 #include <vector>
 
 #include "uve/save/i_save_game_system_uve.h"
-#include "uve/scene/entity_uve.h"
-#include "uve/scene/i_entity_manager_uve.h"
+#include "uve/component/entity_uve.h"
+#include "uve/entity/i_entity_manager_uve.h"
 
 namespace UVE::Save {
 

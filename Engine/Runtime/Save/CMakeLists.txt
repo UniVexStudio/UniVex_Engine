@@ -17,7 +17,7 @@ add_library(uve_save STATIC
 )
 target_include_directories(uve_save PUBLIC Expose)
 target_link_libraries(uve_save
-    PUBLIC uve_platform uve_debug uve_scene uve_asset
+    PUBLIC uve_platform uve_logging uve_scene uve_asset
     PRIVATE nlohmann_json::nlohmann_json
 )
 target_compile_features(uve_save PUBLIC cxx_std_20)

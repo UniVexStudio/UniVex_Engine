@@ -6,6 +6,12 @@ compile_commands.json
 shader_cache/
 *.uveassetdb
 *.uvesettings
+# Scene/prefab files the test suites write into the working directory. They clean up after
+# themselves on success, so one only survives a crash or an interrupted run - and a committed
+# one is a stale fixture nobody is maintaining. Authored project scenes live under a project
+# directory, never at the repository root, so this pattern cannot swallow real content.
+uve_*_tests*.uvescene
+uve_*_tests*.uveprefab
 *.log
 imgui.ini
 DerivedData/

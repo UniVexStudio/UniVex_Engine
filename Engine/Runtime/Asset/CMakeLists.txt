@@ -53,10 +53,13 @@ add_library(uve_asset STATIC
     Internal/asset_bundle_uve.cpp
     Internal/file_system_uve.cpp
     Internal/mesh_asset_uve.cpp
+    Internal/mesh_skinning_uve.cpp
     Internal/texture_asset_uve.cpp
     Internal/shader_asset_uve.cpp
     Internal/material_asset_uve.cpp
     Internal/asset_importer_uve.cpp
+    Internal/import_helpers_uve.cpp
+    Internal/project_tree_helpers_uve.cpp
     Internal/bmp_importer_uve.cpp
     Internal/bmp_metadata_uve.cpp
     Internal/tga_importer_uve.cpp
@@ -92,7 +95,7 @@ add_library(uve_asset STATIC
 )
 target_include_directories(uve_asset PUBLIC Expose)
 target_link_libraries(uve_asset
-    PUBLIC uve_debug uve_math uve_threading uve_events
+    PUBLIC uve_logging uve_math uve_threading uve_events
     PRIVATE nlohmann_json::nlohmann_json ZLIB::ZLIB
 )
 if(NOT ANDROID)

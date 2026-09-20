@@ -5,7 +5,7 @@
 
 #include <cstddef>
 
-#include "uve/debug/assert_uve.h"
+#include "uve/logging/assert_uve.h"
 
 namespace UVE::Scene::Detail {
 
@@ -106,8 +106,14 @@ EntityUVE ChunkUVE::VacateRowUVE(std::size_t row) {
 }
 
 void* ChunkUVE::GetComponentPointerUVE(std::type_index componentType, std::size_t row) const {
+    // Defined in terms of the column view, so the hoisted and per-row paths cannot disagree about
+    // where a row lives.
+    return GetColumnViewUVE(componentType).AtUVE(row);
+}
+
+ChunkUVE::ColumnViewUVE ChunkUVE::GetColumnViewUVE(std::type_index componentType) const {
     const ColumnUVE& column = GetColumnUVE(componentType);
-    return OffsetUVE(column.buffer, column.typeInfo.size, row);
+    return ColumnViewUVE{column.buffer, column.typeInfo.size};
 }
 
 EntityUVE ChunkUVE::GetEntityAtRowUVE(std::size_t row) const {

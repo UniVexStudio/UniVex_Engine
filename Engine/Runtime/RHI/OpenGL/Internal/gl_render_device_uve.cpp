@@ -1,7 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 
-#include "uve/render/gl_render_device_uve.h"
+#include "uve/rhi_opengl/gl_render_device_uve.h"
 
 #include <limits>
 #include <string>
@@ -18,8 +18,8 @@
 #include "gl_command_buffer_uve.h"
 #include "gl_error_check_uve.h"
 #include "gl_render_device_state_uve.h"
-#include "uve/debug/assert_uve.h"
-#include "uve/debug/logging_macros_uve.h"
+#include "uve/logging/assert_uve.h"
+#include "uve/logging/logging_macros_uve.h"
 
 namespace UVE::Render {
 
@@ -58,6 +58,18 @@ void* GlfwProcAddressBridgeUVE(const char* name) {
             return GL_ELEMENT_ARRAY_BUFFER;
         case BufferUsageUVE::Uniform:
             return GL_UNIFORM_BUFFER;
+        case BufferUsageUVE::Storage:
+        // CS7: an IndirectStorage buffer's HOME target is the SSBO one - that is how it is
+        // created, updated and read back, and how the compute kernel that fills it binds it.
+        // GL_DRAW_INDIRECT_BUFFER is a transient bind made at draw time by
+        // DrawIndexedIndirectUVE, not the buffer's resting place; GL buffer objects are
+        // untyped, so the same name binds legally to both targets.
+        case BufferUsageUVE::IndirectStorage:
+#if !defined(__ANDROID__)
+            return GL_SHADER_STORAGE_BUFFER; // M2f: desktop GL 4.3+ (gated at bind time)
+#else
+            return 0U; // the fixed ES 3.0 baseline has no SSBO target; creation fails loudly
+#endif
     }
     return GL_ARRAY_BUFFER;
 }
@@ -70,6 +82,10 @@ void* GlfwProcAddressBridgeUVE(const char* name) {
             return GL_ELEMENT_ARRAY_BUFFER_BINDING;
         case GL_UNIFORM_BUFFER:
             return GL_UNIFORM_BUFFER_BINDING;
+#if !defined(__ANDROID__)
+        case GL_SHADER_STORAGE_BUFFER:
+            return GL_SHADER_STORAGE_BUFFER_BINDING;
+#endif
         default:
             return 0U;
     }
@@ -112,6 +128,7 @@ struct GlTextureFormatUVE {
 
 [[nodiscard]] bool IsSamplerUniformTypeUVE(GLenum glType) noexcept {
     switch (glType) {
+        case GL_IMAGE_2D: // M5b: image uniforms carry a unit index exactly like samplers do
         case GL_SAMPLER_2D:
         case GL_SAMPLER_3D:
         case GL_SAMPLER_CUBE:
@@ -214,7 +231,8 @@ void ReflectPipelineUniformsUVE(
         const GLint location = gl.glGetUniformLocation(glProgram, name.c_str());
         outUniforms.emplace(std::move(name), Detail::GlDeviceStateUVE::PipelineRecordUVE::UniformRecordUVE{
                                                   GlUniformTypeToShaderDataTypeUVE(glType), location,
-                                                  static_cast<std::uint32_t>(arraySize)});
+                                                  static_cast<std::uint32_t>(arraySize),
+                                                  glType == GL_IMAGE_2D});
     }
 }
 
@@ -274,6 +292,12 @@ GlRenderDeviceUVE::GlRenderDeviceUVE(Window::IWindowManagerUVE& windowManager)
         glGetIntegerv(GL_MINOR_VERSION, &contextMinorVersion);
         m_impl->state.supportsComputeShadersUVE =
             contextMajorVersion > 4 || (contextMajorVersion == 4 && contextMinorVersion >= 3);
+        if (m_impl->state.supportsComputeShadersUVE) {
+            // M2f: SSBO binding points share compute's GL 4.3 floor; queried once here so
+            // BindStorageBufferUVE validates slots against the real driver limit.
+            glGetIntegerv(GL_MAX_SHADER_STORAGE_BUFFER_BINDINGS,
+                          &m_impl->state.maxShaderStorageBindings);
+        }
 #endif
         Detail::RegisterGlDebugCallbackUVE(m_impl->state.gl);
         UVE_INFO("GlRenderDeviceUVE: initialized, backend GL_VERSION={}",
@@ -325,6 +349,14 @@ BufferHandleUVE GlRenderDeviceUVE::CreateBufferUVE(const BufferDescUVE& desc, st
         UVE_ERROR("GlRenderDeviceUVE: CreateBufferUVE received an unknown buffer usage");
         return kInvalidBufferHandleUVE;
     }
+    if (IsStorageBindableUsageUVE(desc.usage) && !m_impl->state.supportsComputeShadersUVE) {
+        // SSBOs are desktop GL 4.3 core (the same floor as compute shaders; the fixed ES 3.0
+        // Android baseline has neither). Fail before touching GL_SHADER_STORAGE_BUFFER - on an
+        // older context the enum itself would raise GL_INVALID_ENUM at glBufferData time.
+        UVE_ERROR("GlRenderDeviceUVE: CreateBufferUVE(Storage) needs a desktop GL 4.3+ context "
+                  "(shader storage buffers); this context does not offer them");
+        return kInvalidBufferHandleUVE;
+    }
     if (desc.sizeBytes > static_cast<std::uint64_t>(std::numeric_limits<GLsizeiptr>::max())) {
         UVE_ERROR("GlRenderDeviceUVE: CreateBufferUVE size exceeds the GLsizeiptr range");
         return kInvalidBufferHandleUVE;
@@ -350,7 +382,7 @@ BufferHandleUVE GlRenderDeviceUVE::CreateBufferUVE(const BufferDescUVE& desc, st
 
     const std::uint32_t handleValue = m_impl->state.nextBufferHandle++;
     m_impl->state.buffers.emplace(handleValue,
-                                    Detail::GlDeviceStateUVE::BufferRecordUVE{glBuffer, target, desc.sizeBytes});
+                                    Detail::GlDeviceStateUVE::BufferRecordUVE{glBuffer, target, desc.sizeBytes, desc.usage});
     return BufferHandleUVE{handleValue};
 }
 
@@ -388,6 +420,45 @@ bool GlRenderDeviceUVE::UpdateBufferUVE(BufferHandleUVE buffer, std::span<const 
     m_impl->state.gl.glBufferSubData(it->second.target, static_cast<GLintptr>(offsetBytes),
                                        static_cast<GLsizeiptr>(data.size()), data.data());
     UVE_GL_CHECK_ERROR_UVE("UpdateBufferUVE");
+    m_impl->state.gl.glBindBuffer(it->second.target, static_cast<GLuint>(previousBufferBinding));
+    return true;
+}
+
+bool GlRenderDeviceUVE::ReadbackBufferUVE(BufferHandleUVE buffer, std::span<std::byte> outData,
+                                            std::uint64_t offsetBytes) {
+    const auto it = m_impl->state.buffers.find(buffer.value);
+    if (it == m_impl->state.buffers.end()) {
+        UVE_ERROR("GlRenderDeviceUVE: ReadbackBufferUVE called with an unknown handle ({})", buffer.value);
+        return false;
+    }
+    if (!ValidateBufferUpdateUVE(it->second.sizeBytes, outData.size(), offsetBytes)) {
+        UVE_ERROR("GlRenderDeviceUVE: ReadbackBufferUVE read of {} bytes at offset {} exceeds buffer size {}",
+                   outData.size(), offsetBytes, it->second.sizeBytes);
+        return false;
+    }
+    if (outData.empty()) {
+        return true;
+    }
+    const GLenum bindingQuery = BufferTargetToBindingQueryUVE(it->second.target);
+    if (bindingQuery == 0U) {
+        UVE_ERROR("GlRenderDeviceUVE: ReadbackBufferUVE resolved an unsupported GL buffer target");
+        return false;
+    }
+    // Cold-path synchronization, exactly what the interface promises. This backend executes its
+    // commands at record time, but a compute dispatch's SSBO writes become visible to a
+    // client-side read only after GL_BUFFER_UPDATE_BARRIER_BIT (writes seen by buffer queries)
+    // and GL_SHADER_STORAGE_BARRIER_BIT (the SSBO writes themselves). glGetBufferSubData below
+    // is then a blocking client read, which is itself a synchronization point - no glFinish is
+    // needed on top of it, and issuing one would only widen the stall beyond this buffer.
+    if (m_impl->state.gl.glMemoryBarrier != nullptr) {
+        m_impl->state.gl.glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT | GL_SHADER_STORAGE_BARRIER_BIT);
+    }
+    GLint previousBufferBinding = 0;
+    glGetIntegerv(bindingQuery, &previousBufferBinding);
+    m_impl->state.gl.glBindBuffer(it->second.target, it->second.glBuffer);
+    m_impl->state.gl.glGetBufferSubData(it->second.target, static_cast<GLintptr>(offsetBytes),
+                                          static_cast<GLsizeiptr>(outData.size()), outData.data());
+    UVE_GL_CHECK_ERROR_UVE("ReadbackBufferUVE");
     m_impl->state.gl.glBindBuffer(it->second.target, static_cast<GLuint>(previousBufferBinding));
     return true;
 }
@@ -514,7 +585,8 @@ ShaderHandleUVE GlRenderDeviceUVE::CreateShaderUVE(const ShaderDescUVE& desc, st
     }
 
     const std::uint32_t handleValue = m_impl->state.nextShaderHandle++;
-    m_impl->state.shaders.emplace(handleValue, Detail::GlDeviceStateUVE::ShaderRecordUVE{glShader});
+    m_impl->state.shaders.emplace(handleValue,
+                                  Detail::GlDeviceStateUVE::ShaderRecordUVE{glShader, desc.stage});
     return ShaderHandleUVE{handleValue};
 }
 
@@ -586,7 +658,69 @@ PipelineHandleUVE GlRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE& de
 
     Detail::GlDeviceStateUVE::PipelineRecordUVE record{
         glProgram, glVao, desc.vertexLayout, desc.vertexStride, desc.depthTestEnabled, desc.depthWriteEnabled,
-        desc.blendMode, {}};
+        desc.blendMode, /*isCompute=*/false, {}};
+    ReflectPipelineUniformsUVE(m_impl->state.gl, glProgram, record.uniforms);
+
+    const std::uint32_t handleValue = m_impl->state.nextPipelineHandle++;
+    m_impl->state.pipelines.emplace(handleValue, std::move(record));
+    return PipelineHandleUVE{handleValue};
+}
+
+PipelineHandleUVE GlRenderDeviceUVE::CreateComputePipelineUVE(const ComputePipelineDescUVE& desc,
+                                                              std::string* outInfoLog) {
+    const auto shaderIt = m_impl->state.shaders.find(desc.computeShader.value);
+    if (shaderIt == m_impl->state.shaders.end()) {
+        if (outInfoLog != nullptr) {
+            *outInfoLog = "Unknown compute shader handle.";
+        }
+        UVE_ERROR("GlRenderDeviceUVE: CreateComputePipelineUVE referenced an unknown shader handle");
+        return kInvalidPipelineHandleUVE;
+    }
+    if (shaderIt->second.stage != ShaderStageUVE::Compute) {
+        if (outInfoLog != nullptr) {
+            *outInfoLog = "Shader handle is not a Compute-stage shader.";
+        }
+        UVE_ERROR("GlRenderDeviceUVE: CreateComputePipelineUVE requires a Compute-stage shader");
+        return kInvalidPipelineHandleUVE;
+    }
+    // CreateShaderUVE already gated the stage on supportsComputeShadersUVE, but the dispatch pair
+    // is loaded separately — re-check here so a Compute-stage GLSL ES shader can never slip a
+    // pre-4.3 context into a link it cannot dispatch.
+    if (m_impl->state.gl.glDispatchCompute == nullptr || m_impl->state.gl.glMemoryBarrier == nullptr) {
+        if (outInfoLog != nullptr) {
+            *outInfoLog = "Compute pipelines require an OpenGL 4.3+ context (glDispatchCompute unavailable).";
+        }
+        UVE_ERROR("GlRenderDeviceUVE: CreateComputePipelineUVE requires an OpenGL 4.3+ context");
+        return kInvalidPipelineHandleUVE;
+    }
+
+    const GLuint glProgram = m_impl->state.gl.glCreateProgram();
+    m_impl->state.gl.glAttachShader(glProgram, shaderIt->second.glShader);
+    m_impl->state.gl.glLinkProgram(glProgram);
+
+    const std::string infoLog = GetProgramInfoLogUVE(m_impl->state.gl, glProgram);
+    if (outInfoLog != nullptr) {
+        *outInfoLog = infoLog;
+    }
+
+    GLint linked = GL_FALSE;
+    m_impl->state.gl.glGetProgramiv(glProgram, GL_LINK_STATUS, &linked);
+    if (linked == GL_FALSE) {
+        UVE_ERROR("GlRenderDeviceUVE: CreateComputePipelineUVE link failed: {}", infoLog);
+#if defined(__ANDROID__)
+        LogAndroidGlFailureUVE("compute program link failed", infoLog.empty() ? "<empty driver log>" : infoLog.c_str());
+#endif
+        m_impl->state.gl.glDeleteProgram(glProgram);
+        return kInvalidPipelineHandleUVE;
+    }
+
+    // No VAO for compute records — glDeleteVertexArrays silently ignores name 0 on destroy, and
+    // GlCommandBufferUVE skips glBindVertexArray() for isCompute pipelines entirely.
+    Detail::GlDeviceStateUVE::PipelineRecordUVE record{
+        glProgram, /*glVao=*/0U, {}, /*vertexStride=*/0U, /*depthTestEnabled=*/true,
+        /*depthWriteEnabled=*/true, PipelineBlendModeUVE::Opaque, /*isCompute=*/true, {}};
+    // Active-uniform reflection works identically for compute programs, so SetUniform*UVE on a
+    // compute pipeline needs no special-casing.
     ReflectPipelineUniformsUVE(m_impl->state.gl, glProgram, record.uniforms);
 
     const std::uint32_t handleValue = m_impl->state.nextPipelineHandle++;
@@ -704,7 +838,7 @@ PipelineHandleUVE GlRenderDeviceUVE::CreatePipelineFromBinaryUVE(std::span<const
 
     Detail::GlDeviceStateUVE::PipelineRecordUVE record{
         glProgram, glVao, desc.vertexLayout, desc.vertexStride, desc.depthTestEnabled, desc.depthWriteEnabled,
-        desc.blendMode, {}};
+        desc.blendMode, /*isCompute=*/false, {}};
     // Uniform locations are not guaranteed portable across a binary load even though behavior
     // is - reflection must always be re-run here, never assumed inherited from the original
     // compile that produced this binary.

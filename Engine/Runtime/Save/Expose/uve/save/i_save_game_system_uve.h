@@ -8,8 +8,8 @@
 
 #include "uve/save/game_state_metadata_uve.h"
 #include "uve/save/save_payload_migration_uve.h"
-#include "uve/scene/entity_uve.h"
-#include "uve/scene/i_entity_manager_uve.h"
+#include "uve/component/entity_uve.h"
+#include "uve/entity/i_entity_manager_uve.h"
 
 namespace UVE::Save {
 

@@ -1,19 +1,30 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 
-#include "uve/render/null_render_device_uve.h"
+#include "uve/rhi_null/null_render_device_uve.h"
 
+#include <algorithm>
+#include <iterator>
+#include <mutex>
 #include <unordered_map>
 #include <utility>
 
 #include "null_command_buffer_uve.h"
-#include "uve/debug/assert_uve.h"
-#include "uve/debug/logging_macros_uve.h"
+#include "uve/logging/assert_uve.h"
+#include "uve/logging/logging_macros_uve.h"
 
 namespace UVE::Render {
 
 struct NullRenderDeviceUVE::ImplUVE {
-    std::unordered_map<std::uint32_t, BufferDescUVE> buffers;
+    // CS3: the Null backend now keeps each buffer's BYTES, not just its descriptor. Without
+    // them ReadbackBufferUVE could only ever hand back zeros, which would make a headless
+    // "what did the write leave behind" assertion a lie; with them the null device models the
+    // one thing a memory-less backend can honestly model - host-visible buffer contents.
+    struct BufferRecordUVE {
+        BufferDescUVE desc;
+        std::vector<std::byte> bytes;
+    };
+    std::unordered_map<std::uint32_t, BufferRecordUVE> buffers;
     std::uint32_t nextBufferHandle = 1;
     std::unordered_map<std::uint32_t, TextureDescUVE> textures;
     std::uint32_t nextTextureHandle = 1;
@@ -21,7 +32,13 @@ struct NullRenderDeviceUVE::ImplUVE {
     std::unordered_map<std::uint32_t, ShaderDescUVE> shaders;
     std::uint32_t nextShaderHandle = 1;
     std::unordered_map<std::uint32_t, PipelineDescUVE> pipelines;
+    std::unordered_map<std::uint32_t, ComputePipelineDescUVE> computePipelines; // M5a, same handle domain
     std::uint32_t nextPipelineHandle = 1;
+    // M4: SubmitUVE may be called from any thread (the same contract the Vulkan backend
+    // honors for its submission FIFO) — the spy write happens under this lock. Readers of
+    // GetLastSubmittedCommandsUVE() get a const reference, so they must be externally
+    // quiesced (the test-spy pattern: submit, join all threads, then inspect).
+    std::mutex submissionMutex;
     std::vector<RecordedCommandUVE> lastSubmittedCommands;
     std::uint64_t presentCallCount = 0;
 };
@@ -36,13 +53,18 @@ BufferHandleUVE NullRenderDeviceUVE::CreateBufferUVE(const BufferDescUVE& desc,
         UVE_ERROR("NullRenderDeviceUVE: CreateBufferUVE initial data exceeds buffer size");
         return kInvalidBufferHandleUVE;
     }
-    static_cast<void>(initialData); // NullRenderDeviceUVE performs no real upload, bookkeeping only.
     if (!IsBufferUsageValidUVE(desc.usage)) {
         UVE_ERROR("NullRenderDeviceUVE: CreateBufferUVE received an unknown buffer usage");
         return kInvalidBufferHandleUVE;
     }
     const std::uint32_t handleValue = m_impl->nextBufferHandle++;
-    m_impl->buffers.emplace(handleValue, desc);
+    // Zero-filled to the declared size, then the optional initial upload on top: the same
+    // observable state a real backend leaves behind for a freshly created buffer.
+    ImplUVE::BufferRecordUVE record{desc, std::vector<std::byte>(desc.sizeBytes, std::byte{0})};
+    if (!initialData.empty()) {
+        std::copy(initialData.begin(), initialData.end(), record.bytes.begin());
+    }
+    m_impl->buffers.emplace(handleValue, std::move(record));
     return BufferHandleUVE{handleValue};
 }
 
@@ -60,11 +82,36 @@ bool NullRenderDeviceUVE::UpdateBufferUVE(BufferHandleUVE buffer, std::span<cons
         UVE_ERROR("NullRenderDeviceUVE: UpdateBufferUVE called with an unknown handle ({})", buffer.value);
         return false;
     }
-    if (!ValidateBufferUpdateUVE(iterator->second.sizeBytes, data.size(), offsetBytes)) {
+    if (!ValidateBufferUpdateUVE(iterator->second.desc.sizeBytes, data.size(), offsetBytes)) {
         UVE_ERROR("NullRenderDeviceUVE: UpdateBufferUVE write of {} bytes at offset {} exceeds buffer size {}",
-                   data.size(), offsetBytes, iterator->second.sizeBytes);
+                   data.size(), offsetBytes, iterator->second.desc.sizeBytes);
         return false;
     }
+    std::copy(data.begin(), data.end(),
+              iterator->second.bytes.begin() + static_cast<std::ptrdiff_t>(offsetBytes));
+    return true;
+}
+
+bool NullRenderDeviceUVE::ReadbackBufferUVE(BufferHandleUVE buffer, std::span<std::byte> outData,
+                                             std::uint64_t offsetBytes) {
+    const auto iterator = m_impl->buffers.find(buffer.value);
+    if (iterator == m_impl->buffers.end()) {
+        UVE_ERROR("NullRenderDeviceUVE: ReadbackBufferUVE called with an unknown handle ({})", buffer.value);
+        return false;
+    }
+    // Same range rule as the write direction - a read that runs off the end is the same
+    // authoring bug as a write that does.
+    if (!ValidateBufferUpdateUVE(iterator->second.desc.sizeBytes, outData.size(), offsetBytes)) {
+        UVE_ERROR("NullRenderDeviceUVE: ReadbackBufferUVE read of {} bytes at offset {} exceeds buffer size {}",
+                   outData.size(), offsetBytes, iterator->second.desc.sizeBytes);
+        return false;
+    }
+    if (outData.empty()) {
+        return true;
+    }
+    // No device, no synchronization needed: the null backend's "GPU memory" is this vector.
+    const auto begin = iterator->second.bytes.begin() + static_cast<std::ptrdiff_t>(offsetBytes);
+    std::copy(begin, begin + static_cast<std::ptrdiff_t>(outData.size()), outData.begin());
     return true;
 }
 
@@ -129,8 +176,26 @@ PipelineHandleUVE NullRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE& 
     return PipelineHandleUVE{handleValue};
 }
 
+PipelineHandleUVE NullRenderDeviceUVE::CreateComputePipelineUVE(const ComputePipelineDescUVE& desc,
+                                                                 std::string* outInfoLog) {
+    static_cast<void>(outInfoLog); // NullRenderDeviceUVE never links anything real - nothing to log.
+    const auto shader = m_impl->shaders.find(desc.computeShader.value);
+    if (shader == m_impl->shaders.end()) {
+        UVE_ERROR("NullRenderDeviceUVE: CreateComputePipelineUVE referenced an unknown shader handle");
+        return kInvalidPipelineHandleUVE;
+    }
+    if (shader->second.stage != ShaderStageUVE::Compute) {
+        UVE_ERROR("NullRenderDeviceUVE: CreateComputePipelineUVE requires a Compute-stage shader");
+        return kInvalidPipelineHandleUVE;
+    }
+    const std::uint32_t handleValue = m_impl->nextPipelineHandle++;
+    m_impl->computePipelines.emplace(handleValue, desc);
+    return PipelineHandleUVE{handleValue};
+}
+
 void NullRenderDeviceUVE::DestroyPipelineUVE(PipelineHandleUVE pipeline) {
-    if (m_impl->pipelines.erase(pipeline.value) == 0) {
+    if (m_impl->pipelines.erase(pipeline.value) == 0 &&
+        m_impl->computePipelines.erase(pipeline.value) == 0) {
         UVE_ERROR("NullRenderDeviceUVE: DestroyPipelineUVE called with an unknown or already-destroyed handle ({})",
                    pipeline.value);
     }
@@ -188,6 +253,7 @@ void NullRenderDeviceUVE::SubmitUVE(std::unique_ptr<ICommandBufferUVE> commandBu
     UVE_ASSERT(commandBuffer != nullptr);
     auto* const nullCommandBuffer = dynamic_cast<NullCommandBufferUVE*>(commandBuffer.get());
     UVE_ASSERT(nullCommandBuffer != nullptr); // only this device's own CreateCommandBufferUVE() ever produces one
+    const std::lock_guard<std::mutex> submissionLock(m_impl->submissionMutex);
     m_impl->lastSubmittedCommands = nullCommandBuffer->GetRecordedCommandsUVE();
 }
 
@@ -208,7 +274,8 @@ const std::vector<RecordedCommandUVE>& NullRenderDeviceUVE::GetLastSubmittedComm
 }
 
 std::size_t NullRenderDeviceUVE::GetLiveResourceCountUVE() const noexcept {
-    return m_impl->buffers.size() + m_impl->textures.size() + m_impl->shaders.size() + m_impl->pipelines.size();
+    return m_impl->buffers.size() + m_impl->textures.size() + m_impl->shaders.size() +
+           m_impl->pipelines.size() + m_impl->computePipelines.size();
 }
 
 std::uint64_t NullRenderDeviceUVE::GetTextureCreateAttemptCountUVE() const noexcept {

@@ -2,32 +2,26 @@
 
 #include "integration/EditorMeshLayer.h"
 
+#include "integration/MathConversions.h"
 #include "univex/camera/OrbitCamera.h"
 
 #include "uve/math/quaternion_uve.h"
 #include "uve/math/vector3_uve.h"
-#include "uve/render/gl_render_device_uve.h"
-#include "uve/render/i_renderer_3d_uve.h"
-#include "uve/render/render_resource_descs_uve.h"
-#include "uve/scene/components/camera_component_uve.h"
-#include "uve/scene/components/editor_internal_entity_component_uve.h"
-#include "uve/scene/components/transform_component_uve.h"
-#include "uve/scene/components/world_transform_component_uve.h"
-#include "uve/scene/i_entity_manager_uve.h"
+#include "uve/rhi_opengl/gl_render_device_uve.h"
+#include "uve/render_systems/i_renderer_3d_uve.h"
+#include "uve/rhi/render_resource_descs_uve.h"
+#include "uve/component/camera_component_uve.h"
+#include "uve/component/editor_internal_entity_component_uve.h"
+#include "uve/component/transform_component_uve.h"
+#include "uve/component/world_transform_component_uve.h"
+#include "uve/entity/i_entity_manager_uve.h"
 #include "uve/scene/i_scene_graph_uve.h"
 
 namespace univex::integration {
 
-namespace {
-
-// univex::math::Vec3 -> UVE::Math::Vector3UVE: two structurally-identical {x,y,z} float structs
-// from unrelated math libraries (this module stays engine-agnostic - see this file's own header
-// comment) - a plain field-by-field copy, not a real conversion.
-[[nodiscard]] UVE::Math::Vector3UVE ToUveVectorUVE(const univex::math::Vec3& value) noexcept {
-    return UVE::Math::Vector3UVE{value.x, value.y, value.z};
-}
-
-} // namespace
+// univex::math <-> UVE::Math conversions come from integration/MathConversions.h - the single,
+// documented boundary between this module's own OpenGL-facing math kit and the engine-wide
+// UVE::Math library (see that header for what may and may not cross the wall).
 
 EditorMeshLayerUVE::EditorMeshLayerUVE(UVE::Core::EngineServicesUVE& services) : services_(services) {
     cameraEntity_ = CreateCameraProxyEntityUVE();
@@ -81,12 +75,12 @@ void EditorMeshLayerUVE::SyncCameraFromOrbitUVE(const univex::camera::OrbitCamer
     const univex::math::Vec3 target = camera.Target();
     const univex::math::Vec3 backward{eye.x - target.x, eye.y - target.y, eye.z - target.z};
     UVE::Math::QuaternionUVE rotation{};
-    if (!UVE::Math::TryMakeLookAtUVE(ToUveVectorUVE(backward), UVE::Math::Vector3UVE{0.0F, 1.0F, 0.0F}, rotation)) {
+    if (!UVE::Math::TryMakeLookAtUVE(ToUveVector3UVE(backward), UVE::Math::Vector3UVE{0.0F, 1.0F, 0.0F}, rotation)) {
         rotation = UVE::Math::QuaternionUVE{};
     }
 
     UVE::Scene::TransformComponentUVE localTransform;
-    localTransform.localPosition = ToUveVectorUVE(eye);
+    localTransform.localPosition = ToUveVector3UVE(eye);
     localTransform.localRotation = rotation;
     services_.GetSceneGraphUVE().SetLocalTransformUVE(entityManager, cameraEntity_, localTransform);
     services_.GetSceneGraphUVE().UpdateUVE(entityManager);
