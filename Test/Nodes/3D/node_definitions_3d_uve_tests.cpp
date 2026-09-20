@@ -1,5 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
+#include <string_view>
 #include <type_traits>
 
 #include <gtest/gtest.h>
@@ -55,6 +56,17 @@ protected:
         return entityManager.CreateEntityUVE();
     }
 };
+
+// Every 3D scene-node recipe stands on the Node3D baseline; asserting it once per kind (instead
+// of re-typing four component checks in every block) pins the composition, not just its effect.
+void ExpectNode3DBaselineUVE(EntityManagerUVE& entityManager, const EntityUVE entity,
+                             const std::string_view expectedName) {
+    EXPECT_TRUE(entityManager.HasComponentUVE<TransformComponentUVE>(entity));
+    EXPECT_TRUE(entityManager.HasComponentUVE<WorldTransformComponentUVE>(entity));
+    EXPECT_TRUE(entityManager.HasComponentUVE<HierarchyComponentUVE>(entity));
+    ASSERT_TRUE(entityManager.HasComponentUVE<NameComponentUVE>(entity));
+    EXPECT_EQ(entityManager.GetComponentUVE<NameComponentUVE>(entity).name, expectedName);
+}
 
 TEST_F(Node3DDefinitionsUVETest, AllDefinitionDefaultsAreValid) {
     EXPECT_TRUE(IsNode3DNodeDefinitionValidUVE(Node3DNodeDefinitionUVE{}));
@@ -122,61 +134,68 @@ TEST_F(Node3DDefinitionsUVETest, ApplyAttachesEachKindsExactComponentRecipe) {
         ApplyNode3DNodeDefinitionUVE(entityManager, entity, Node3DNodeDefinitionUVE{});
         // Node3D's recipe is the baseline itself, not "nothing": the guarantee is pinned
         // behaviour-for-behaviour in the dedicated tests below.
-        EXPECT_TRUE(entityManager.HasComponentUVE<TransformComponentUVE>(entity));
-        EXPECT_TRUE(entityManager.HasComponentUVE<WorldTransformComponentUVE>(entity));
-        EXPECT_TRUE(entityManager.HasComponentUVE<HierarchyComponentUVE>(entity));
-        EXPECT_TRUE(entityManager.HasComponentUVE<NameComponentUVE>(entity));
+        ExpectNode3DBaselineUVE(entityManager, entity, Node3DNodeDefinitionUVE::defaultName);
         EXPECT_FALSE(entityManager.HasComponentUVE<CameraComponentUVE>(entity));
     }
     {
         const EntityUVE entity = CreateEntityUVE();
         ApplyArea3DNodeDefinitionUVE(entityManager, entity, Area3DNodeDefinitionUVE{});
+        ExpectNode3DBaselineUVE(entityManager, entity, Area3DNodeDefinitionUVE::defaultName);
         EXPECT_TRUE(entityManager.HasComponentUVE<AreaComponentUVE>(entity));
     }
     {
         const EntityUVE entity = CreateEntityUVE();
         ApplyStaticBody3DNodeDefinitionUVE(entityManager, entity, StaticBody3DNodeDefinitionUVE{});
+        ExpectNode3DBaselineUVE(entityManager, entity, StaticBody3DNodeDefinitionUVE::defaultName);
         EXPECT_TRUE(entityManager.HasComponentUVE<ColliderComponentUVE>(entity));
         EXPECT_FALSE(entityManager.HasComponentUVE<RigidBodyComponentUVE>(entity));
     }
     {
         const EntityUVE entity = CreateEntityUVE();
         ApplyCamera3DNodeDefinitionUVE(entityManager, entity, Camera3DNodeDefinitionUVE{});
+        ExpectNode3DBaselineUVE(entityManager, entity, Camera3DNodeDefinitionUVE::defaultName);
         EXPECT_TRUE(entityManager.HasComponentUVE<CameraComponentUVE>(entity));
     }
     {
         const EntityUVE entity = CreateEntityUVE();
         ApplyMeshInstance3DNodeDefinitionUVE(entityManager, entity, MeshInstance3DNodeDefinitionUVE{});
+        ExpectNode3DBaselineUVE(entityManager, entity, MeshInstance3DNodeDefinitionUVE::defaultName);
         EXPECT_TRUE(entityManager.HasComponentUVE<MeshComponentUVE>(entity));
     }
     {
         const EntityUVE entity = CreateEntityUVE();
         ApplyCollider3DNodeDefinitionUVE(entityManager, entity, Collider3DNodeDefinitionUVE{});
+        ExpectNode3DBaselineUVE(entityManager, entity, Collider3DNodeDefinitionUVE::defaultName);
         EXPECT_TRUE(entityManager.HasComponentUVE<ColliderComponentUVE>(entity));
     }
     {
         const EntityUVE entity = CreateEntityUVE();
         ApplyRigidBody3DNodeDefinitionUVE(entityManager, entity, RigidBody3DNodeDefinitionUVE{});
+        ExpectNode3DBaselineUVE(entityManager, entity, RigidBody3DNodeDefinitionUVE::defaultName);
         EXPECT_TRUE(entityManager.HasComponentUVE<RigidBodyComponentUVE>(entity));
     }
     {
         const EntityUVE entity = CreateEntityUVE();
         ApplyAudioSource3DNodeDefinitionUVE(entityManager, entity, AudioSource3DNodeDefinitionUVE{});
+        ExpectNode3DBaselineUVE(entityManager, entity, AudioSource3DNodeDefinitionUVE::defaultName);
         EXPECT_TRUE(entityManager.HasComponentUVE<AudioSourceComponentUVE>(entity));
     }
     {
         const EntityUVE entity = CreateEntityUVE();
         ApplyParticleEmitter3DNodeDefinitionUVE(entityManager, entity, ParticleEmitter3DNodeDefinitionUVE{});
+        ExpectNode3DBaselineUVE(entityManager, entity, ParticleEmitter3DNodeDefinitionUVE::defaultName);
         EXPECT_TRUE(entityManager.HasComponentUVE<ParticleEmitterComponentUVE>(entity));
     }
     {
         const EntityUVE entity = CreateEntityUVE();
         ApplyScriptNodeDefinitionUVE(entityManager, entity, ScriptNodeDefinitionUVE{});
+        ExpectNode3DBaselineUVE(entityManager, entity, ScriptNodeDefinitionUVE::defaultName);
         EXPECT_TRUE(entityManager.HasComponentUVE<ScriptComponentUVE>(entity));
     }
     {
         const EntityUVE entity = CreateEntityUVE();
         ApplyAnimationPlayerNodeDefinitionUVE(entityManager, entity, AnimationPlayerNodeDefinitionUVE{});
+        ExpectNode3DBaselineUVE(entityManager, entity, AnimationPlayerNodeDefinitionUVE::defaultName);
         EXPECT_TRUE(entityManager.HasComponentUVE<AnimationPlayerComponentUVE>(entity));
     }
 }

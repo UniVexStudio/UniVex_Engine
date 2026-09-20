@@ -3,6 +3,7 @@
 #include "uve/nodes/3d/rigid_body_3d_uve.h"
 
 #include "uve/entity/i_entity_manager_uve.h"
+#include "uve/nodes/3d/node_3d_uve.h"
 
 namespace UVE::Scene {
 
@@ -11,6 +12,9 @@ bool IsRigidBody3DNodeDefinitionValidUVE(const RigidBody3DNodeDefinitionUVE& val
 }
 
 void ApplyRigidBody3DNodeDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity, const RigidBody3DNodeDefinitionUVE& value) {
+    // RigidBody3D is Node3D plus its own components: the shared baseline guarantee comes first,
+    // then this kind's part goes on top.
+    EnsureNode3DBaselineUVE(entityManager, entity, RigidBody3DNodeDefinitionUVE::defaultName);
     entityManager.AddComponentUVE<RigidBodyComponentUVE>(entity, value.body);
 }
 
