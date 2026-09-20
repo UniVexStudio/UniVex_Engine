@@ -3,8 +3,8 @@
 """Byte-embeds a binary file as a C++20 `inline constexpr std::array<std::uint8_t, N>` .inc,
 byte-for-byte compatible with this repo's established embedded-asset convention (16 uppercase
 hex bytes per line, 4-space indent, trailing comma on every entry - the same layout the
-previously hand-committed font .inc files used; see AUDIT.md section 5.4 for why those are
-now generated at build time from a single canonical source instead).
+previously hand-committed font .inc files used; those are now generated at build time from a
+single canonical source instead).
 
 Usage:
     embed_file.py <input> <output.inc> <symbol_name> [--comment="free text"]

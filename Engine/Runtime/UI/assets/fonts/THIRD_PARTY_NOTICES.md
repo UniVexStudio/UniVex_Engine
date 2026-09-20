@@ -3,8 +3,7 @@
 ## Liberation Sans (subsetted)
 
 `liberation-sans-subset.ttf` in this directory is **the single canonical copy** of this
-subset for the entire repository (since the 2026-09-17 audit resolution, `AUDIT.md`
-section 5.4): this is a lower-layer runtime module, so it owns the shared asset, while
+subset for the entire repository (since the 2026-09-17 audit resolution): this is a lower-layer runtime module, so it owns the shared asset, while
 `Engine/Editor/EditorCore` embeds the byte array **generated from this very file at build
 time** by `Engine/Tools/embed_file.py` (no committed `.inc` anywhere anymore). The full
 provenance, the `pyftsubset` invocation used to produce the subset, and the complete SIL
