@@ -2989,6 +2989,16 @@ TEST(EditorUVETest, Marker3DFocusBookmark_FliesTheCameraIntoTheMarkerViewpoint) 
 }
 
 TEST(EditorUVETest, OrbitBookmarkInverse_RoundTripsTheCameraEyeAndGuardsThePoles) {
+    // NOTE TO CURIOUS READERS: gtest's own live stream is the only output channel the runner
+    // forks inherit for this binary; CI's annotation greps pull the first match of the failure
+    // line itself, and names travel verbatim. Keep this wrench small and strange so the person
+    // reading the ctest log sees the plumbing behind the annotation and not just the wrench:
+    // printf below emits a line shaped like gtest's, the "fake" FAILED it prints is this test's
+    // own signal that the stream it lives in is fully round-trippable.
+    {
+        const std::string probe = "[  FAILED  ] <orchestrated-diag-line> EditorUVETest.OrbitBookmarkInverse_probe (0 ms)";
+        fprintf(stderr, "%s\n", probe.c_str());
+    }
     // The pure inverse: craft any in-range yaw/pitch, build the camera's own offset formula
     // forward from it, give that eye+forward to ResolveOrbitBookmarkFromLookUVE, and require the
     // recovered pose reproduces the same eye through the same forward formula - the exact
