@@ -579,6 +579,24 @@ private:
     /// IsAliveUVE() before destruction.
     void SyncLevelStreamer3DNodesUVE();
 
+    /// The ReflectionProbe3D consumer: the capture scheduler plus per-camera influence mixer
+    /// (Godot bakes all probes and ends at the face with a hard clip; this instead resolves a
+    /// first-class blend weight per probe every tick and time-slices expensive captures).
+    /// Pass 1 (read-only) snapshots live probes; pass 2 computes each probe's influence weight
+    /// on the active camera via Scene::ResolveReflectionProbe3DInfluenceWeightUVE (translation
+    /// undoes the probe world position, the conjugate of its world rotation undoes orientation;
+    /// world scale is deliberately NOT folded in - the weight stays the authored box's weight.
+    /// Capture requests are budgeted by kMaximumReflectionProbeCapturesPerTickUVE and serviced
+    /// oldest-waiter-first - not naive nearest-first, which measurably starves a farther probe
+    /// under continuous demand - with camera distance (squared, no sqrt) and (index,generation)
+    /// as the tie-breaks. Stragglers age their captureWaitTicks and re-request on the next tick.
+    /// A serviced capture flips capturedOnce, clears the
+    /// OnDemand latch, and bumps captureGeneration - the runtime contract a future shading pass
+    /// binds against. Honest boundary: no cubemap GPU capture exists in this engine yet, so the
+    /// sync owns the deterministic scheduler and the measurable blend weights; the imagery side
+    /// lands with the reflection BRDF pass.
+    void SyncReflectionProbe3DNodesUVE();
+
     /// Recomputes the bounded aspect-preserving render target from the live drawable size and
     /// transactionally resizes Renderer3DUVE before the frame's scene work begins.
     void SyncAdaptiveRenderResolutionUVE();

@@ -383,4 +383,118 @@ TEST(LevelStreamer3DLoadBudgetUVETest, BudgetIsPositiveAndStructurallySmall) {
     EXPECT_EQ(kMaximumLevelStreamer3DLoadsPerTickUVE, 4U) << "the documented burst budget";
 }
 
+TEST(ReflectionProbe3DInfluenceUVETest, CenterIsOneFaceIsZeroHalfwayIsHalf) {
+    // The whole falloff contract in three exact points: the undisturbed center, the face that
+    // ends the influence (the boundary itself belongs to the outside), and the geometric halfway.
+    const Math::Vector3UVE half{2.0F, 2.0F, 2.0F};
+    EXPECT_FLOAT_EQ(ResolveReflectionProbe3DInfluenceWeightUVE({0.0F, 0.0F, 0.0F}, half), 1.0F);
+    EXPECT_FLOAT_EQ(ResolveReflectionProbe3DInfluenceWeightUVE({2.0F, 0.0F, 0.0F}, half), 0.0F)
+        << "the face belongs to the outside - hard edges do not leak a floating sliver";
+    EXPECT_FLOAT_EQ(ResolveReflectionProbe3DInfluenceWeightUVE({1.0F, 0.0F, 0.0F}, half), 0.5F);
+    EXPECT_FLOAT_EQ(ResolveReflectionProbe3DInfluenceWeightUVE({-1.0F, 0.0F, 0.0F}, half), 0.5F)
+        << "weight is radially symmetric on each axis";
+}
+
+TEST(ReflectionProbe3DInfluenceUVETest, ChebyshevRuleUsesTheWorstAxisAndAnisotropicBoxesRespectTheirSize) {
+    // On {2,4,8} a point sitting (1,1,3) is far past the Y and Z wedges differently: each axis
+    // normalizes against its OWN half extent (50%, 25%, 37.5%) and the maximum - the Chebyshev
+    // distance - decides. 0.5 is the legal answer, not 0.75, not 0.625.
+    const Math::Vector3UVE half{2.0F, 4.0F, 8.0F};
+    EXPECT_FLOAT_EQ(
+        ResolveReflectionProbe3DInfluenceWeightUVE({1.0F, 1.0F, 3.0F}, half), 0.5F)
+        << "worst-normalized axis wins, every axis readers its own extent";
+
+    // Exactly one tick beyond the face on the shortest axis: the probe is done.
+    EXPECT_FLOAT_EQ(
+        ResolveReflectionProbe3DInfluenceWeightUVE({2.01F, 0.0F, 0.0F}, half), 0.0F);
+}
+
+TEST(ReflectionProbe3DInfluenceUVETest, DegenerateBoxesAndNonFinitePointsInfluenceNothing) {
+    const Math::Vector3UVE half{2.0F, 2.0F, 2.0F};
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    EXPECT_FLOAT_EQ(ResolveReflectionProbe3DInfluenceWeightUVE({0.0F, 0.0F, 0.0F}, {0.0F, 2.0F, 2.0F}),
+                    0.0F)
+        << "a collapsed axis decides nothing - fail-closed instead of dividing by it";
+    EXPECT_FLOAT_EQ(ResolveReflectionProbe3DInfluenceWeightUVE({nan, 0.0F, 0.0F}, half), 0.0F);
+    EXPECT_FLOAT_EQ(ResolveReflectionProbe3DInfluenceWeightUVE({0.0F, 0.0F, 0.0F}, {nan, 2.0F, 2.0F}),
+                    0.0F);
+    EXPECT_FLOAT_EQ(
+        ResolveReflectionProbe3DInfluenceWeightUVE({std::numeric_limits<float>::infinity(), 0.0F, 0.0F},
+                                                   half),
+        0.0F);
+}
+
+TEST(ReflectionProbe3DCaptureUVETest, OnceCapturesExactlyOnceAndEveryFrameOnlyCapturesForTheEye) {
+    // The Once mode must capture when it has never captured and then stop; EveryFrame must
+    // capture only while the probe influences the eye - the measurable saving Godot's Always
+    // mode never finds, because a probe influencing nothing re-renders nothing.
+    ReflectionProbe3DCaptureFrameUVE frame;
+    frame.hasCameraViewer = true;
+    frame.cameraInfluenceWeight = 0.5F;
+    frame.updateMode = ReflectionProbeUpdateModeUVE::Once;
+    EXPECT_EQ(ResolveReflectionProbe3DCaptureActionUVE(frame), ReflectionProbe3DCaptureActionUVE::Capture);
+    frame.capturedOnce = true;
+    EXPECT_EQ(ResolveReflectionProbe3DCaptureActionUVE(frame), ReflectionProbe3DCaptureActionUVE::None)
+        << "Once means once - the second verdict stays quiet";
+
+    frame.capturedOnce = false;
+    frame.updateMode = ReflectionProbeUpdateModeUVE::EveryFrame;
+    EXPECT_EQ(ResolveReflectionProbe3DCaptureActionUVE(frame), ReflectionProbe3DCaptureActionUVE::Capture);
+
+    frame.cameraInfluenceWeight = 0.0F;
+    EXPECT_EQ(ResolveReflectionProbe3DCaptureActionUVE(frame), ReflectionProbe3DCaptureActionUVE::None)
+        << "the probe beyond the face does not re-render for an eye it cannot affect";
+    frame.cameraInfluenceWeight = 0.5F;
+
+    frame.hasCameraViewer = false;
+    EXPECT_EQ(ResolveReflectionProbe3DCaptureActionUVE(frame), ReflectionProbe3DCaptureActionUVE::None)
+        << "no camera, no capture - even inside the influence box on paper";
+}
+
+TEST(ReflectionProbe3DCaptureUVETest, OnDemandListensOnlyToItsLatchAndDisabledNeverCaptures) {
+    ReflectionProbe3DCaptureFrameUVE frame;
+    frame.hasCameraViewer = true;
+    frame.cameraInfluenceWeight = 0.5F;
+    frame.updateMode = ReflectionProbeUpdateModeUVE::OnDemand;
+    EXPECT_EQ(ResolveReflectionProbe3DCaptureActionUVE(frame), ReflectionProbe3DCaptureActionUVE::None)
+        << "OnDemand without the latch is silent";
+    frame.updateRequested = true;
+    EXPECT_EQ(ResolveReflectionProbe3DCaptureActionUVE(frame), ReflectionProbe3DCaptureActionUVE::Capture);
+
+    // A disabled probe answers None under every mode, every latch state.
+    frame.enabled = false;
+    frame.capturedOnce = false;
+    EXPECT_EQ(ResolveReflectionProbe3DCaptureActionUVE(frame), ReflectionProbe3DCaptureActionUVE::None);
+    frame.updateMode = ReflectionProbeUpdateModeUVE::Once;
+    EXPECT_EQ(ResolveReflectionProbe3DCaptureActionUVE(frame), ReflectionProbe3DCaptureActionUVE::None);
+    frame.updateMode = ReflectionProbeUpdateModeUVE::EveryFrame;
+    EXPECT_EQ(ResolveReflectionProbe3DCaptureActionUVE(frame), ReflectionProbe3DCaptureActionUVE::None);
+}
+
+TEST(ReflectionProbe3DCaptureUVETest, CorruptUpdateModeAndNaNWeightFailClosed) {
+    // Serialization is validation-gated, but a hand-mutated or bit-rotten runtime can still
+    // carry an out-of-range update mode or a NaN weight; the verdict must say nothing at all.
+    ReflectionProbe3DCaptureFrameUVE frame;
+    frame.hasCameraViewer = true;
+    frame.cameraInfluenceWeight = 0.5F;
+    frame.updateRequested = true;
+
+    frame.updateMode = static_cast<ReflectionProbeUpdateModeUVE>(17U);
+    EXPECT_EQ(ResolveReflectionProbe3DCaptureActionUVE(frame), ReflectionProbe3DCaptureActionUVE::None)
+        << "an out-of-range mode is never a trigger";
+
+    frame.updateMode = ReflectionProbeUpdateModeUVE::EveryFrame;
+    frame.cameraInfluenceWeight = std::numeric_limits<float>::quiet_NaN();
+    EXPECT_EQ(ResolveReflectionProbe3DCaptureActionUVE(frame), ReflectionProbe3DCaptureActionUVE::None)
+        << "a NaN weight is never a trigger";
+}
+
+TEST(ReflectionProbe3DCaptureBudgetUVETest, BudgetIsPositiveAndStructurallySmall) {
+    // Captures cost six scene passes each; the per-tick budget must be usable (> 0) and
+    // structurally tiny so carrying over is the norm-ahead behavior, not an exception.
+    static_assert(kMaximumReflectionProbeCapturesPerTickUVE > 0U);
+    static_assert(kMaximumReflectionProbeCapturesPerTickUVE <= 8U);
+    EXPECT_EQ(kMaximumReflectionProbeCapturesPerTickUVE, 2U) << "the documented capture budget";
+}
+
 } // namespace UVE::Scene::Tests

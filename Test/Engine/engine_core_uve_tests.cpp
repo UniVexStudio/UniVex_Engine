@@ -14,6 +14,7 @@
 #include <numbers>
 #include <limits>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -64,6 +65,7 @@
 #include "uve/nodes/3d/hurtbox_3d_uve.h"
 #include "uve/nodes/3d/interaction_area_3d_uve.h"
 #include "uve/nodes/3d/level_streamer_3d_uve.h"
+#include "uve/nodes/3d/reflection_probe_3d_uve.h"
 #include "uve/nodes/3d/projectile_3d_uve.h"
 #include "uve/nodes/3d/ray_cast_3d_uve.h"
 #include "uve/component/mesh_component_uve.h"
@@ -2846,6 +2848,243 @@ TEST(EngineCoreUVETest, LevelStreamer3D_LoadBudgetCarriesOverflowIntoTheNextTick
     EXPECT_EQ(countLoaded(), 5U) << "tick two consumed the carry-over - the straggler loads";
     engine.TickFrameUVE();
     EXPECT_EQ(countLoaded(), 5U) << "a further tick sits at steady state, nothing more moved";
+}
+
+namespace {
+
+Scene::EntityUVE CreateReflectionProbeAtUVE(Scene::IEntityManagerUVE& entityManager,
+                                             Scene::ISceneGraphUVE& sceneGraph,
+                                             const Math::Vector3UVE& position,
+                                              Scene::ReflectionProbeUpdateModeUVE updateMode) {
+    const Scene::EntityUVE probe = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE transform;
+    transform.localPosition = position;
+    sceneGraph.AttachTransformUVE(entityManager, probe, transform);
+    Scene::ReflectionProbe3DNodeComponentUVE component;
+    component.updateMode = updateMode;
+    entityManager.AddComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(probe, component);
+    return probe;
+}
+
+std::uint32_t TotalProbeGenerationsUVE(Scene::IEntityManagerUVE& entityManager,
+                                       std::span<const Scene::EntityUVE> probes) {
+    std::uint32_t total = 0;
+    for (const Scene::EntityUVE probe : probes) {
+        total += entityManager.GetComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(probe)
+                     .captureGeneration;
+    }
+    return total;
+}
+
+} // namespace
+
+TEST(EngineCoreUVETest, ReflectionProbe3D_OnceCapturesOnFirstTickThenStaysSilentForever) {
+    // The measurable answer to Unreal's "capture scene on load" convention: first Tick resolves
+    // exactly one capture (capturedOnce flips, captureGeneration hits 1), every subsequent tick
+    // touches nothing - no re-capture, no latch drift, cost paid exactly once.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    const Scene::EntityUVE probe = CreateReflectionProbeAtUVE(
+        entityManager, sceneGraph, Math::Vector3UVE{}, Scene::ReflectionProbeUpdateModeUVE::Once);
+
+    engine.TickFrameUVE();
+    {
+        const Scene::ReflectionProbe3DNodeComponentUVE& live =
+            entityManager.GetComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(probe);
+        EXPECT_TRUE(live.capturedOnce) << "the first tick resolves the one-and-only capture";
+        EXPECT_EQ(live.captureGeneration, 1U);
+    }
+    engine.TickFrameUVE();
+    engine.TickFrameUVE();
+    const Scene::ReflectionProbe3DNodeComponentUVE& after =
+        entityManager.GetComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(probe);
+    EXPECT_EQ(after.captureGeneration, 1U) << "later ticks revisit nothing - once means once";
+}
+
+TEST(EngineCoreUVETest, ReflectionProbe3D_EveryFrameRecapturesOnlyWhileTheCameraIsInside) {
+    // A camera parked inside the probe sees one fresh capture per tick; walking it outside the
+    // influence box stops the churn COMPLETELY the same tick - the save Godot's Always mode
+    // cannot express, measured as captureGeneration flatlines.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    const Scene::EntityUVE probe = CreateReflectionProbeAtUVE(
+        entityManager, sceneGraph, Math::Vector3UVE{},
+        Scene::ReflectionProbeUpdateModeUVE::EveryFrame);
+    const Scene::EntityUVE camera =
+        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{});
+    engine.SetActiveCameraUVE(camera);
+
+    engine.TickFrameUVE();
+    const std::uint32_t insideOne =
+        entityManager.GetComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(probe)
+            .captureGeneration;
+    EXPECT_GE(insideOne, 1U) << "camera inside: the probe keeps its imagery current";
+    engine.TickFrameUVE();
+    const std::uint32_t insideTwo =
+        entityManager.GetComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(probe)
+            .captureGeneration;
+    EXPECT_GT(insideTwo, insideOne) << "camera inside: each tick refreshes";
+
+    // Walk out (default probe size 5 => half extent 2.5; 10 units is comfortably beyond) and the
+    // meter falls dead on the very first outside tick.
+    Scene::TransformComponentUVE farTransform;
+    farTransform.localPosition = Math::Vector3UVE{10.0F, 0.0F, 0.0F};
+    sceneGraph.SetLocalTransformUVE(entityManager, camera, farTransform);
+    engine.TickFrameUVE();
+    engine.TickFrameUVE();
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(probe)
+                  .captureGeneration,
+              insideTwo) << "camera outside: no capture at all - the eye sees nothing of it";
+    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(probe)
+                        .cameraInfluenceWeight,
+                    0.0F) << "outside the face the camera's blend weight reads exactly zero";
+}
+
+TEST(EngineCoreUVETest, ReflectionProbe3D_CameraInfluenceWeightTracksCameraPositionExactly) {
+    // The first-class blend weight: dead center reads 1.0 (perfectly influential), halfway to the
+    // face 0.5, and passing the face snaps to 0.0 - each measured through the public component
+    // state, which is exactly the number a shading pass would blend with.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    Scene::ReflectionProbe3DNodeComponentUVE probeTemplate;
+    probeTemplate.size = Math::Vector3UVE{4.0F, 4.0F, 4.0F}; // half extent 2 on every axis
+    probeTemplate.updateMode = Scene::ReflectionProbeUpdateModeUVE::EveryFrame;
+    const Scene::EntityUVE probe = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, probe, Scene::TransformComponentUVE{});
+    entityManager.AddComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(probe, probeTemplate);
+    const Scene::EntityUVE camera =
+        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{});
+    engine.SetActiveCameraUVE(camera);
+
+    engine.TickFrameUVE();
+    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(probe)
+                        .cameraInfluenceWeight,
+                    1.0F) << "dead center: completely influential";
+
+    Scene::TransformComponentUVE halfTransform;
+    halfTransform.localPosition = Math::Vector3UVE{1.0F, 0.0F, 0.0F}; // halfway: 1/2 of half-extent
+    sceneGraph.SetLocalTransformUVE(entityManager, camera, halfTransform);
+    engine.TickFrameUVE();
+    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(probe)
+                        .cameraInfluenceWeight,
+                    0.5F) << "halfway: exactly the linear falloff midpoint";
+
+    Scene::TransformComponentUVE faceTransform;
+    faceTransform.localPosition = Math::Vector3UVE{2.0F, 0.0F, 0.0F}; // exactly ON the face
+    sceneGraph.SetLocalTransformUVE(entityManager, camera, faceTransform);
+    engine.TickFrameUVE();
+    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(probe)
+                        .cameraInfluenceWeight,
+                    0.0F) << "the face itself counts as outside - no floating sliver of weight";
+}
+
+TEST(EngineCoreUVETest, ReflectionProbe3D_OnDemandServicesTheLatchThenClearsIt) {
+    // The inspector "Recapture" contract: latched, the next tick resolves exactly one capture
+    // and CLEARS the latch - second tick does nothing, until latched again.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    const Scene::EntityUVE probe = CreateReflectionProbeAtUVE(
+        entityManager, sceneGraph, Math::Vector3UVE{},
+        Scene::ReflectionProbeUpdateModeUVE::OnDemand);
+
+    engine.TickFrameUVE();
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(probe)
+                  .captureGeneration,
+              0U) << "without the latch OnDemand captures nothing";
+
+    entityManager.GetComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(probe).updateRequested =
+        true;
+    engine.TickFrameUVE();
+    {
+        const Scene::ReflectionProbe3DNodeComponentUVE& live =
+            entityManager.GetComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(probe);
+        EXPECT_EQ(live.captureGeneration, 1U) << "the latch delivered exactly one capture";
+        EXPECT_FALSE(live.updateRequested) << "and cleared itself the same tick it fired";
+    }
+
+    engine.TickFrameUVE();
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(probe)
+                  .captureGeneration,
+              1U) << "no latch, no capture - the probe waits for the next demand";
+}
+
+TEST(EngineCoreUVETest, ReflectionProbe3D_CaptureBudgetAgesOutOfStarvationNeverNearestOnly) {
+    // Three EveryFrame probes with a budget of two, all containing the camera: naive nearest-
+    // first would starve the farthest one forever under continuous demand, so priority is the
+    // WAIT AGE first, distance second. Measured: tick one takes the two nearest by tie-break,
+    // far one tick ages visibly (captureWaitTicks 1), and on tick two the aged waiter cuts the
+    // line ahead of nearer-but-fresher askers.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    // Distances 0.5 / 1.0 / 1.5 on +X keep d^2 distinct (no ties), while the default box of
+    // half extent 2.5 still contains the origin - all three demand a capture every tick.
+    const Scene::EntityUVE nearProbe = CreateReflectionProbeAtUVE(
+        entityManager, sceneGraph, Math::Vector3UVE{0.5F, 0.0F, 0.0F},
+        Scene::ReflectionProbeUpdateModeUVE::EveryFrame);
+    const Scene::EntityUVE midProbe = CreateReflectionProbeAtUVE(
+        entityManager, sceneGraph, Math::Vector3UVE{1.0F, 0.0F, 0.0F},
+        Scene::ReflectionProbeUpdateModeUVE::EveryFrame);
+    const Scene::EntityUVE farProbe = CreateReflectionProbeAtUVE(
+        entityManager, sceneGraph, Math::Vector3UVE{1.5F, 0.0F, 0.0F},
+        Scene::ReflectionProbeUpdateModeUVE::EveryFrame);
+    const Scene::EntityUVE camera =
+        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{});
+    engine.SetActiveCameraUVE(camera);
+    const std::array<Scene::EntityUVE, 3U> probes{nearProbe, midProbe, farProbe};
+
+    engine.TickFrameUVE();
+    EXPECT_EQ(TotalProbeGenerationsUVE(entityManager, probes),
+              Scene::kMaximumReflectionProbeCapturesPerTickUVE)
+        << "tick one serves exactly the budget, never the whole queue";
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(nearProbe)
+                  .captureGeneration,
+              1U);
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(midProbe)
+                  .captureGeneration,
+              1U);
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(farProbe)
+                  .captureGeneration,
+              0U) << "the farthest one waits (distances tie-free)";
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(farProbe)
+                  .captureWaitTicks,
+              1U) << "and its wait age shows in its own component state";
+
+    engine.TickFrameUVE();
+    // Tick two: far now beats both nearer probes by age and captures ahead of them.
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(farProbe)
+                  .captureGeneration,
+              1U) << "the aged waiter cuts the line - starvation is impossible";
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(farProbe)
+                  .captureWaitTicks,
+              0U) << "service resets the age";
+    EXPECT_EQ(TotalProbeGenerationsUVE(entityManager, probes),
+              2U * Scene::kMaximumReflectionProbeCapturesPerTickUVE)
+        << "every tick still stays within budget";
 }
 
 } // namespace
