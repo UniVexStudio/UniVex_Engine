@@ -97,12 +97,16 @@ struct VkFunctionsUVE {
     PFN_vkCreatePipelineLayout vkCreatePipelineLayout = nullptr;
     PFN_vkDestroyPipelineLayout vkDestroyPipelineLayout = nullptr;
     PFN_vkCreateGraphicsPipelines vkCreateGraphicsPipelines = nullptr;
+    PFN_vkCreateComputePipelines vkCreateComputePipelines = nullptr; // M5a (core since Vulkan 1.0)
     PFN_vkDestroyPipeline vkDestroyPipeline = nullptr;
     PFN_vkCmdBindPipeline vkCmdBindPipeline = nullptr;
+    PFN_vkCmdDispatch vkCmdDispatch = nullptr; // M5a (core since Vulkan 1.0)
     PFN_vkCmdBindVertexBuffers vkCmdBindVertexBuffers = nullptr;
     PFN_vkCmdBindIndexBuffer vkCmdBindIndexBuffer = nullptr;
     PFN_vkCmdDraw vkCmdDraw = nullptr;
     PFN_vkCmdDrawIndexed vkCmdDrawIndexed = nullptr;
+    // CS7: core since Vulkan 1.0, so it joins the required set rather than the optional probes.
+    PFN_vkCmdDrawIndexedIndirect vkCmdDrawIndexedIndirect = nullptr;
     PFN_vkCmdSetViewport vkCmdSetViewport = nullptr;
     PFN_vkCmdSetScissor vkCmdSetScissor = nullptr;
 
@@ -127,6 +131,11 @@ struct VkFunctionsUVE {
     PFN_vkDestroySampler vkDestroySampler = nullptr;
     PFN_vkCmdCopyBufferToImage vkCmdCopyBufferToImage = nullptr;
     PFN_vkFreeDescriptorSets vkFreeDescriptorSets = nullptr;
+
+    // M3 "device-local staging" addition: buffer→buffer copy for the one-shot staging
+    // uploads that feed DEVICE_LOCAL vertex/index buffers (create-time initial data and
+    // every UpdateBufferUVE re-stage).
+    PFN_vkCmdCopyBuffer vkCmdCopyBuffer = nullptr;
 
     // M2d "offscreen RT" additions: core-1.3 dynamic rendering. The instance/device gate is
     // probed at bring-up; when unavailable the device stays fully classic (M2c behavior)

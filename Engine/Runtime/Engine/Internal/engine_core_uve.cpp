@@ -15,6 +15,7 @@
 #include <cmath>
 #include <cstddef>
 #include <exception>
+#include <filesystem>
 #include <string>
 #include <vector>
 #include <utility>
@@ -56,14 +57,25 @@
 #include "uve/math/matrix4x4_uve.h"
 #include "uve/math/quaternion_uve.h"
 #include "uve/memory/memory_manager_uve.h"
+#include "uve/component/mesh_component_uve.h"
+#include "uve/nodes/3d/hitbox_3d_uve.h"
+#include "uve/nodes/3d/hurtbox_3d_uve.h"
+#include "uve/nodes/3d/interaction_area_3d_uve.h"
+#include "uve/nodes/3d/level_streamer_3d_uve.h"
 #include "uve/nodes/3d/projectile_3d_uve.h"
+#include "uve/nodes/3d/reflection_probe_3d_uve.h"
 #include "uve/nodes/3d/ray_cast_3d_uve.h"
+#include "uve/nodes/3d/spring_arm_3d_uve.h"
+#include "uve/nodes/3d/visibility_region_3d_uve.h"
+#include "uve/nodes/3d/world_partition_3d_uve.h"
+#include "uve/physics/detail/shape_narrow_phase_uve.h"
 #include "uve/physics/character_controller_uve.h"
 #include "uve/physics/collision_system_uve.h"
 #include "uve/physics/physics_system_uve.h"
 #include "uve/physics/raycast_system_uve.h"
 #include "uve/platform/platform_uve.h"
 #include "uve/render_systems/camera_system_uve.h"
+#include "uve/render_systems/compute_system_uve.h"
 #include "uve/rhi_opengl/gl_render_device_uve.h"
 #include "uve/rhi_vulkan/vulkan_render_device_uve.h"
 #include "uve/render_systems/light_system_uve.h"
@@ -377,10 +389,15 @@ void EngineCoreUVE::Init() {
     // submits command buffers through it.
     m_renderSystem = std::make_unique<Render::RenderSystemUVE>(*m_renderDevice);
 
+    // ComputeSystem: needs RenderDevice (it creates compute programs and records dispatches
+    // through it). Constructed right after RenderSystem because Render() drains its queue into
+    // the frame's own command buffer, before any render pass opens — the outside-pass-markers
+    // contract IComputeSystemUVE documents.
+    m_computeSystem = std::make_unique<Render::ComputeSystemUVE>(*m_renderDevice);
+
     // CameraSystem twenty-first: stateless, no dependencies of its own —
     // grouped with the rest of engine/render.
     m_cameraSystem = std::make_unique<Render::CameraSystemUVE>();
-
     // MeshRenderer twenty-second: stateless, no dependencies of its own —
     // grouped with the rest of engine/render.
     m_meshRenderer = std::make_unique<Render::MeshRendererUVE>();
@@ -511,7 +528,7 @@ void EngineCoreUVE::Init() {
                          *m_prefabSystem, *m_particleRuntime, *m_hotReload, *m_assetManager, *m_assetImporter, *m_assetImportQueue,
                          *m_assetBundle, *m_fileSystem,
 
-                        *m_renderDevice, *m_shaderManager, *m_renderSystem, *m_cameraSystem,
+                        *m_renderDevice, *m_shaderManager, *m_renderSystem, *m_computeSystem, *m_cameraSystem,
                         *m_meshRenderer, *m_lightSystem, *m_renderer3D, *m_collisionSystem, *m_physicsSystem,
                         *m_physicsQuerySystem, *m_raycastSystem, *m_physicsConstraintSystem, *m_inputSystem,
                         *m_gamepadInputSystem, *m_mobileInputSystem, *m_mobileGestureSystem,
@@ -761,6 +778,888 @@ void EngineCoreUVE::SyncRayCast3DNodesUVE() {
         });
 }
 
+void EngineCoreUVE::SyncSpringArm3DNodesUVE(const float fixedDeltaTimeSeconds) {
+    m_entityManager->ForEachUVE<Scene::SpringArm3DNodeComponentUVE>(
+        [this, fixedDeltaTimeSeconds](const Scene::EntityUVE entity,
+                                      Scene::SpringArm3DNodeComponentUVE& springArm) {
+            if (!springArm.enabled || !Scene::IsSpringArm3DNodeComponentValidUVE(springArm) ||
+                !m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(entity)) {
+                return;
+            }
+
+            const auto& worldTransform =
+                m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
+            Physics::RaycastQueryUVE query{};
+            query.ray.origin = worldTransform.worldPosition;
+            // The arm extends along the pivot's local +Z - behind it, since the camera
+            // convention looks down -Z (same convention SyncRayCast3DNodesUVE applies to the
+            // authored ray direction).
+            query.ray.direction =
+                Math::RotateVectorUVE(worldTransform.worldRotation, {0.0F, 0.0F, 1.0F});
+            query.maxDistance = springArm.armLength;
+            query.layerMask = springArm.collisionMask;
+            query.ignoreEntity = entity;
+
+            const std::optional<Physics::RaycastHitUVE> result =
+                m_raycastSystem->RaycastUVE(*m_entityManager, query);
+            const float targetLength = Scene::ResolveSpringArm3DTargetUVE(
+                result.has_value() ? std::optional<float>{result->distance} : std::nullopt,
+                springArm.margin, springArm.armLength);
+
+            const float previousLength = springArm.currentLength;
+            springArm.currentLength = Scene::ResolveSpringArm3DLengthUVE(
+                previousLength, targetLength, springArm.smoothing, fixedDeltaTimeSeconds);
+            const float lengthDelta = springArm.currentLength - previousLength;
+            if (lengthDelta == 0.0F || !m_entityManager->HasComponentUVE<Scene::TransformComponentUVE>(entity)) {
+                return;
+            }
+
+            // Every direct child rides the delta along the arm's local Z; because the shift is
+            // the change in length and not an absolute rewrite, authored child offsets survive
+            // and an unobstructed arm restores the authored pose exactly.
+            for (const Scene::EntityUVE child :
+                 m_sceneGraph->GetChildrenUVE(*m_entityManager, entity)) {
+                if (!m_entityManager->HasComponentUVE<Scene::TransformComponentUVE>(child)) {
+                    continue;
+                }
+                Scene::TransformComponentUVE childTransform =
+                    m_entityManager->GetComponentUVE<Scene::TransformComponentUVE>(child);
+                childTransform.localPosition.z += lengthDelta;
+                m_sceneGraph->SetLocalTransformUVE(*m_entityManager, child, childTransform);
+            }
+        });
+}
+
+namespace {
+
+/// Snapshot of one hurtbox's world-space strike volume, taken once per frame by
+/// EngineCoreUVE::SyncHitbox3DNodesUVE() pass 1.
+struct HurtboxCandidateUVE final {
+    Scene::EntityUVE entity;
+    Math::Vector3UVE center;
+    Math::Vector3UVE halfExtents;
+    Math::QuaternionUVE rotation;
+    std::uint32_t collisionLayer = 1U;
+    std::uint32_t collisionMask = 0xFFFFFFFFU;
+    std::string damageChannel;
+};
+
+/// Snapshot of one character-controller interactor's overlap volume, taken once per frame by
+/// EngineCoreUVE::SyncInteractionArea3DNodesUVE() pass 1: world pose plus broad-phase half
+/// extents and layer/mask from the entity's own ColliderComponentUVE.
+struct InteractionInteractorCandidateUVE final {
+    Scene::EntityUVE entity;
+    Math::Vector3UVE center;
+    Math::Vector3UVE halfExtents;
+    Math::QuaternionUVE rotation;
+    std::uint32_t collisionLayer = 1U;
+    std::uint32_t collisionMask = 0xFFFFFFFFU;
+};
+
+} // namespace
+
+void EngineCoreUVE::SyncHitbox3DNodesUVE() {
+    // Pass 1 (read-only): snapshot every enabled, valid hurtbox that has a world transform, so
+    // the mutation pass can evaluate every hitbox against a stable candidate set without
+    // holding ECS iteration open across a second ForEachUVE. The candidate set is deliberately
+    // unbounded - capping it would mean silently pretending hurtboxes beyond the cap do not
+    // exist; only the per-hitbox strike LIST is bounded, and it reports its own overflow.
+    std::vector<HurtboxCandidateUVE> candidates;
+    m_entityManager->ForEachUVE<Scene::WorldTransformComponentUVE, Scene::Hurtbox3DNodeComponentUVE>(
+        [&candidates](const Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE& worldTransform,
+                      const Scene::Hurtbox3DNodeComponentUVE& hurtbox) {
+            if (!hurtbox.enabled || !Scene::IsHurtbox3DNodeComponentValidUVE(hurtbox)) {
+                return;
+            }
+            HurtboxCandidateUVE candidate;
+            candidate.entity = entity;
+            candidate.center = worldTransform.worldPosition;
+            candidate.halfExtents = hurtbox.halfExtents;
+            if (!Math::TryNormalizeUVE(worldTransform.worldRotation, candidate.rotation)) {
+                candidate.rotation = {}; // degenerate rotation falls back to identity
+            }
+            candidate.collisionLayer = hurtbox.collisionLayer;
+            candidate.collisionMask = hurtbox.collisionMask;
+            candidate.damageChannel = hurtbox.damageChannel;
+            candidates.push_back(std::move(candidate));
+        });
+
+    // Pass 2: refresh every hitbox's runtime strike state against that snapshot.
+    m_entityManager->ForEachUVE<Scene::Hitbox3DNodeComponentUVE>(
+        [this, &candidates](const Scene::EntityUVE entity, Scene::Hitbox3DNodeComponentUVE& hitbox) {
+            hitbox.strikeCount = 0U;
+            hitbox.strikesTruncated = false;
+            if (!hitbox.enabled || !Scene::IsHitbox3DNodeComponentValidUVE(hitbox) ||
+                !m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(entity)) {
+                return;
+            }
+
+            const Scene::WorldTransformComponentUVE& worldTransform =
+                m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
+            Math::QuaternionUVE hitboxRotation{};
+            if (!Math::TryNormalizeUVE(worldTransform.worldRotation, hitboxRotation)) {
+                hitboxRotation = {}; // degenerate rotation falls back to identity
+            }
+
+            for (const HurtboxCandidateUVE& candidate : candidates) {
+                if (candidate.entity == entity) {
+                    continue; // a hitbox never strikes a hurtbox on its own entity
+                }
+                if ((candidate.collisionLayer & hitbox.collisionMask) == 0U ||
+                    (hitbox.collisionLayer & candidate.collisionMask) == 0U) {
+                    continue; // symmetric layer/mask acceptance, AreaOverlapSystemUVE-style
+                }
+                if (candidate.damageChannel != hitbox.damageChannel) {
+                    continue; // a strike requires matching damage channels
+                }
+                const std::optional<Math::PenetrationUVE> penetration =
+                    Physics::Detail::ComputeOrientedBoxOrientedBoxPenetrationUVE(
+                        worldTransform.worldPosition, hitbox.halfExtents, hitboxRotation,
+                        candidate.center, candidate.halfExtents, candidate.rotation);
+                if (!penetration.has_value()) {
+                    continue; // no overlap (touching boundaries are not strikes either)
+                }
+                if (hitbox.strikeCount >= Scene::kMaximumHitbox3DStrikesUVE) {
+                    hitbox.strikesTruncated = true;
+                    break;
+                }
+                hitbox.strikes[hitbox.strikeCount] =
+                    Scene::Hitbox3DStrikeUVE{candidate.entity, penetration->depth};
+                ++hitbox.strikeCount;
+            }
+        });
+}
+
+void EngineCoreUVE::SyncInteractionArea3DNodesUVE() {
+    // Pass 1 (read-only): snapshot every interactor - a character controller carrying a valid
+    // collider and a world transform - so the mutation pass evaluates every area against a
+    // stable set without holding ECS iteration open across a second ForEachUVE. The set is
+    // deliberately unbounded (same call SyncHitbox3DNodesUVE() made for hurtboxes): capping it
+    // would silently pretend interactors beyond the cap do not exist; only each area's stored
+    // list is bounded, and it reports its own overflow.
+    std::vector<InteractionInteractorCandidateUVE> interactors;
+    std::vector<Scene::EntityUVE> interactorEntities;
+    m_entityManager->ForEachUVE<Scene::WorldTransformComponentUVE,
+                                Scene::CharacterControllerComponentUVE,
+                                Scene::ColliderComponentUVE>(
+        [&interactors, &interactorEntities](
+            const Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE& worldTransform,
+            const Scene::CharacterControllerComponentUVE&, const Scene::ColliderComponentUVE& collider) {
+            if (!Scene::IsColliderComponentValidUVE(collider)) {
+                return; // an invalid collider (e.g. a zero layer) can never interact
+            }
+            InteractionInteractorCandidateUVE candidate;
+            candidate.entity = entity;
+            candidate.center = worldTransform.worldPosition;
+            candidate.halfExtents = Scene::GetColliderLocalHalfExtentsUVE(collider);
+            if (!Math::TryNormalizeUVE(worldTransform.worldRotation, candidate.rotation)) {
+                candidate.rotation = {}; // degenerate rotation falls back to identity
+            }
+            candidate.collisionLayer = collider.collisionLayer;
+            candidate.collisionMask = collider.collisionMask;
+            interactorEntities.push_back(entity);
+            interactors.push_back(std::move(candidate));
+        });
+
+    const std::optional<Scene::EntityUVE> primaryInteractor =
+        Scene::ResolvePrimaryInteractorUVE(interactorEntities);
+    const Scene::EntityUVE primaryEntity =
+        primaryInteractor.value_or(Scene::kInvalidEntityUVE);
+
+    // Pass 2: refresh every area's runtime state against that snapshot, gathering the primary
+    // interactor's focus candidates on the way. Every gate fails closed: anything that stops an
+    // area participating this frame clears its runtime state in full, never leaving a stale
+    // interactor list or focus flag behind.
+    std::vector<Scene::InteractionFocusCandidateUVE> focusCandidates;
+    m_entityManager->ForEachUVE<Scene::InteractionArea3DNodeComponentUVE>(
+        [this, &interactors, primaryEntity, &focusCandidates](
+            const Scene::EntityUVE entity, Scene::InteractionArea3DNodeComponentUVE& area) {
+            area.interactorCount = 0U;
+            area.interactorsTruncated = false;
+            area.focusedByPrimaryInteractor = false;
+            if (!area.enabled || !Scene::IsInteractionArea3DNodeComponentValidUVE(area) ||
+                !m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(entity)) {
+                return;
+            }
+
+            const Scene::WorldTransformComponentUVE& worldTransform =
+                m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
+            Math::QuaternionUVE areaRotation{};
+            if (!Math::TryNormalizeUVE(worldTransform.worldRotation, areaRotation)) {
+                areaRotation = {}; // degenerate rotation falls back to identity
+            }
+            const std::size_t candidateCap = Scene::ResolveInteractionAreaCandidateCapUVE(
+                area.maximumCandidates, Scene::kMaximumInteractionAreaCandidatesUVE);
+
+            for (const InteractionInteractorCandidateUVE& interactor : interactors) {
+                if (interactor.entity == entity) {
+                    continue; // an area never lists the interactor living on its own entity
+                }
+                if ((interactor.collisionLayer & area.collisionMask) == 0U ||
+                    (area.collisionLayer & interactor.collisionMask) == 0U) {
+                    continue; // symmetric layer/mask acceptance, AreaOverlapSystemUVE's rule
+                }
+                const std::optional<Math::PenetrationUVE> penetration =
+                    Physics::Detail::ComputeOrientedBoxOrientedBoxPenetrationUVE(
+                        worldTransform.worldPosition, area.halfExtents, areaRotation,
+                        interactor.center, interactor.halfExtents, interactor.rotation);
+                if (!penetration.has_value()) {
+                    continue; // no overlap (touching boundaries are not overlaps either)
+                }
+                if (interactor.entity == primaryEntity) {
+                    // Rank by squared center distance - nearest center is the focus candidate;
+                    // no sqrt needed for a comparison.
+                    focusCandidates.push_back(Scene::InteractionFocusCandidateUVE{
+                        entity,
+                        Math::LengthSquaredUVE(worldTransform.worldPosition - interactor.center)});
+                }
+                if (area.interactorCount >= candidateCap) {
+                    area.interactorsTruncated = true;
+                    break;
+                }
+                area.interactors[area.interactorCount] = interactor.entity;
+                ++area.interactorCount;
+            }
+        });
+
+    // Pass 3: exactly one area gets the primary interactor's focus - nearest center wins, ties
+    // deterministically by (index,generation); a scene with no eligible interactor focuses
+    // nothing (ResolvePrimaryInteractorUVE already failed closed above) and stale focus flags
+    // were all cleared in pass 2.
+    const std::optional<Scene::EntityUVE> focusedArea =
+        Scene::ResolveInteractionFocusUVE(focusCandidates);
+    if (focusedArea.has_value() &&
+        m_entityManager->HasComponentUVE<Scene::InteractionArea3DNodeComponentUVE>(*focusedArea)) {
+            m_entityManager->GetComponentUVE<Scene::InteractionArea3DNodeComponentUVE>(*focusedArea)
+            .focusedByPrimaryInteractor = true;
+    }
+}
+
+void EngineCoreUVE::SyncLevelStreamer3DNodesUVE() {
+    // Bookkeeping hygiene first: Play/Stop rebuilds every document handle, so a streamer entity
+    // that no longer exists must drop its remembered roots AND its failure latch before anything
+    // else looks at them - subsequent detection is always through IsAliveUVE(), never blind
+    // destruction of a possibly-recycled handle.
+    for (auto it = m_levelStreamerLoadedRoots.begin(); it != m_levelStreamerLoadedRoots.end();) {
+        if (!m_entityManager->IsAliveUVE(it->first)) {
+            it = m_levelStreamerLoadedRoots.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    for (auto it = m_levelStreamerLoadFailures.begin(); it != m_levelStreamerLoadFailures.end();) {
+        if (!m_entityManager->IsAliveUVE(it->first)) {
+            it = m_levelStreamerLoadFailures.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    // Pass 1 (read-only): the viewer point cloud for this tick. The active camera is the Unreal
+    // convention (streaming follows the eye); every character controller is a Frostbite-style
+    // listener source (split-screen clients each drag their own content in). Finite world poses
+    // only - a degenerate camera/contoller pose simply stops being a viewer, it never poisons
+    // the decision for everyone else.
+    std::vector<Math::Vector3UVE> viewerPositions;
+    if (m_activeCamera != Scene::kInvalidEntityUVE &&
+        m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(m_activeCamera)) {
+        const Scene::WorldTransformComponentUVE& cameraWorld =
+            m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(m_activeCamera);
+        viewerPositions.push_back(cameraWorld.worldPosition);
+    }
+    m_entityManager->ForEachUVE<Scene::WorldTransformComponentUVE,
+                                Scene::CharacterControllerComponentUVE>(
+        [&viewerPositions](const Scene::EntityUVE, const Scene::WorldTransformComponentUVE& world,
+                           const Scene::CharacterControllerComponentUVE&) {
+            viewerPositions.push_back(world.worldPosition);
+        });
+
+    // Pass 2 (read-only snapshot): the safe traversal. The verdict pass below can CREATE
+    // entities (levelPath restores any component mix, including another streamer) and DESTROY
+    // them (an unload), so iterating LevelStreamer3D components directly while mutating would
+    // walk over an exploding candlebox: snapshot handles + world poses here, then close the
+    // ForEachUVE before any state moves.
+    struct StreamerSnapshotUVE final {
+        Scene::EntityUVE entity;
+        Math::Vector3UVE worldPosition;
+    };
+    std::vector<StreamerSnapshotUVE> streamers;
+    m_entityManager->ForEachUVE<Scene::WorldTransformComponentUVE,
+                                Scene::LevelStreamer3DNodeComponentUVE>(
+        [&streamers](const Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE& world,
+                     const Scene::LevelStreamer3DNodeComponentUVE&) {
+            if (world.dirty) {
+                return; // a streamer whose world pose is out of date must never fake distance math
+            }
+            streamers.push_back(StreamerSnapshotUVE{entity, world.worldPosition});
+        });
+
+    // Pass 3: the verdict per streamer, then the state change it orders. Load requests are
+    // time-sliced by kMaximumLevelStreamer3DLoadsPerTickUVE - over-budget requests simply remain
+    // pending, and the same verdict re-issues next tick (Frostbite burst budgeting).
+    std::size_t loadsIssuedThisTick = 0U;
+    for (const StreamerSnapshotUVE& snapshot : streamers) {
+        if (!m_entityManager->IsAliveUVE(snapshot.entity) ||
+            !m_entityManager->HasComponentUVE<Scene::LevelStreamer3DNodeComponentUVE>(snapshot.entity)) {
+            continue; // died inside this very pass (unloaded as part of a parent streamer's subtree)
+        }
+        Scene::LevelStreamer3DNodeComponentUVE& streamer =
+            m_entityManager->GetComponentUVE<Scene::LevelStreamer3DNodeComponentUVE>(snapshot.entity);
+        if (!Scene::IsLevelStreamer3DNodeComponentValidUVE(streamer)) {
+            continue; // an invalid authoring piece never decides anything
+        }
+
+        Scene::LevelStreamer3DStreamingFrameUVE frame;
+        frame.enabled = streamer.enabled;
+        frame.loaded = streamer.loaded;
+        frame.loadRequested = streamer.loadRequested;
+        frame.loadDistance = streamer.loadDistance;
+        frame.unloadDistance = streamer.unloadDistance;
+        if (const std::optional<float> nearest =
+                Scene::ResolveLevelStreamer3DNearestViewerDistanceSquaredUVE(
+                    snapshot.worldPosition, viewerPositions);
+            nearest.has_value()) {
+            frame.hasViewer = true;
+            frame.nearestViewerDistanceSquared = *nearest;
+        }
+
+        const Scene::LevelStreamer3DActionUVE action =
+            Scene::ResolveLevelStreamer3DStreamingActionUVE(frame);
+        if (action == Scene::LevelStreamer3DActionUVE::RequestLoad) {
+            if (m_levelStreamerLoadFailures.find(snapshot.entity) != m_levelStreamerLoadFailures.end()) {
+                continue; // latched earlier failure: fail-closed, never a retry storm
+            }
+            if (loadsIssuedThisTick >= Scene::kMaximumLevelStreamer3DLoadsPerTickUVE) {
+                continue; // over budget: stay pending - the same verdict re-issues next tick
+            }
+            ++loadsIssuedThisTick;
+            streamer.loadRequested = true; // set for the duration of the synchronous call
+            const std::vector<Scene::EntityUVE> freshRoots =
+                m_sceneSerializer->LoadUVE(*m_entityManager, std::filesystem::path{streamer.levelPath});
+            if (freshRoots.empty()) {
+                streamer.loadRequested = false;
+                streamer.loaded = false;
+                m_levelStreamerLoadFailures.emplace(snapshot.entity, true);
+                UVE_ERROR("EngineCoreUVE: LevelStreamer3D could not load '{}' - latched off "
+                          "until the session restarts (fail-closed, never retried)",
+                          streamer.levelPath);
+                continue;
+            }
+            m_levelStreamerLoadedRoots[snapshot.entity] = freshRoots;
+            streamer.loaded = true;
+            streamer.loadRequested = false;
+            continue;
+        }
+        if (action == Scene::LevelStreamer3DActionUVE::RequestUnload) {
+            const auto roots = m_levelStreamerLoadedRoots.find(snapshot.entity);
+            if (roots != m_levelStreamerLoadedRoots.end()) {
+                // Destroy deepest-first so a parent's destruction never observes an already-
+                // dead child handle; IsAliveUVE() keeps possibly-recycled handles out of the way.
+                const std::function<void(Scene::EntityUVE)> destroySubtree =
+                    [this, &destroySubtree](const Scene::EntityUVE current) {
+                        if (!m_entityManager->IsAliveUVE(current)) {
+                            return;
+                        }
+                        const std::vector<Scene::EntityUVE> children =
+                            m_sceneGraph->GetChildrenUVE(*m_entityManager, current);
+                        for (const Scene::EntityUVE child : children) {
+                            destroySubtree(child);
+                        }
+                        m_entityManager->DestroyEntityUVE(current);
+                    };
+                for (const Scene::EntityUVE root : roots->second) {
+                    destroySubtree(root);
+                }
+                m_levelStreamerLoadedRoots.erase(roots);
+            }
+            m_levelStreamerLoadFailures.erase(snapshot.entity); // unloaded: a future load may retry
+            streamer.loaded = false;
+            streamer.loadRequested = false;
+            continue;
+        }
+        // LevelStreamer3DActionUVE::None - the hysteresis band holds the line, nothing moves.
+    }
+}
+
+void EngineCoreUVE::SyncReflectionProbe3DNodesUVE() {
+    // Pass 1 (read-only): the eye position for this tick. Reflections only exist for the camera.
+    std::optional<Math::Vector3UVE> cameraPosition;
+    if (m_activeCamera != Scene::kInvalidEntityUVE &&
+        m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(m_activeCamera)) {
+        const Math::Vector3UVE& position =
+            m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(m_activeCamera)
+                .worldPosition;
+        if (std::isfinite(position.x) && std::isfinite(position.y) && std::isfinite(position.z)) {
+            cameraPosition = position;
+        }
+    }
+
+    // Pass 2 (read-only snapshot): snapshots BEFORE any mutation - the sync never creates or
+    // destroys entities, but it DOES rewrite runtime fields on the components it walks, and a
+    // ForEachUVE-compatible snapshot pass keeps iterator safety explicit (streamer convention).
+    struct ProbeSnapshotUVE final {
+        Scene::EntityUVE entity;
+        Math::Vector3UVE worldPosition;
+        Math::QuaternionUVE worldRotation;
+    };
+    std::vector<ProbeSnapshotUVE> probes;
+    m_entityManager->ForEachUVE<Scene::WorldTransformComponentUVE,
+                                Scene::ReflectionProbe3DNodeComponentUVE>(
+        [&probes](const Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE& world,
+                  const Scene::ReflectionProbe3DNodeComponentUVE&) {
+            if (world.dirty) {
+                return; // a stale world pose must never fake influence math
+            }
+            Math::QuaternionUVE rotation{};
+            if (!Math::TryNormalizeUVE(world.worldRotation, rotation)) {
+                rotation = {}; // degenerate rotation falls back to identity
+            }
+            probes.push_back(ProbeSnapshotUVE{entity, world.worldPosition, rotation});
+        });
+
+    // Pass 3: per probe, the influence weight on the eye plus the capture verdict. The local
+    // offset undoes translation and then orientation with the conjugate (unit-quaternion
+    // inverse) - the same pair editor code uses for world->local math.
+    struct CaptureCandidateUVE final {
+        Scene::EntityUVE entity;
+        float cameraDistanceSquared = 0.0F;
+    };
+    std::vector<CaptureCandidateUVE> candidates;
+    for (const ProbeSnapshotUVE& snapshot : probes) {
+        Scene::ReflectionProbe3DNodeComponentUVE& probe =
+            m_entityManager->GetComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(
+                snapshot.entity);
+        if (!Scene::IsReflectionProbe3DNodeComponentValidUVE(probe)) {
+            probe.cameraInfluenceWeight = 0.0F;
+            continue; // invalid authoring never influences, never captures
+        }
+
+        Scene::ReflectionProbe3DCaptureFrameUVE frame;
+        frame.enabled = probe.enabled;
+        frame.updateMode = probe.updateMode;
+        frame.updateRequested = probe.updateRequested;
+        frame.capturedOnce = probe.capturedOnce;
+        float cameraDistanceSquared =
+            std::numeric_limits<float>::max();
+        if (cameraPosition.has_value()) {
+            const Math::Vector3UVE offset = *cameraPosition - snapshot.worldPosition;
+            // Pass 2 normalized the world rotation; the conjugate of a unit quaternion is its
+            // inverse, so this undoes orientation with no re-normalization needed.
+            const Math::QuaternionUVE inverse{
+                -snapshot.worldRotation.x, -snapshot.worldRotation.y, -snapshot.worldRotation.z,
+                snapshot.worldRotation.w};
+            const Math::Vector3UVE localPoint = Math::RotateVectorUVE(inverse, offset);
+            frame.cameraInfluenceWeight = Scene::ResolveReflectionProbe3DInfluenceWeightUVE(
+                localPoint, Math::Vector3UVE{probe.size.x * 0.5F, probe.size.y * 0.5F,
+                                             probe.size.z * 0.5F});
+            frame.hasCameraViewer = true;
+            cameraDistanceSquared = Math::LengthSquaredUVE(offset);
+        }
+        probe.cameraInfluenceWeight = frame.hasCameraViewer ? frame.cameraInfluenceWeight : 0.0F;
+
+        if (Scene::ResolveReflectionProbe3DCaptureActionUVE(frame) ==
+            Scene::ReflectionProbe3DCaptureActionUVE::Capture) {
+            candidates.push_back(CaptureCandidateUVE{snapshot.entity, cameraDistanceSquared});
+        }
+    }
+
+    // Budgeted service. naive nearest-first STARVES the far probe under continuous demand (with
+    // more constant candidates than budget, the nearest always win), so the primary key is the
+    // WAIT AGE first - the oldest waiter is served before anyone nearer - then camera distance,
+    // then (index,generation). Deterministic across runs AND starvation-free, both measured.
+    struct RankedCandidateUVE final {
+        Scene::EntityUVE entity;
+        float cameraDistanceSquared = 0.0F;
+        std::uint32_t waitTicks = 0;
+    };
+    std::vector<RankedCandidateUVE> ranked;
+    ranked.reserve(candidates.size());
+    for (const CaptureCandidateUVE& candidate : candidates) {
+        const Scene::ReflectionProbe3DNodeComponentUVE& waiting =
+            m_entityManager->GetComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(
+                candidate.entity);
+        ranked.push_back(
+            RankedCandidateUVE{candidate.entity, candidate.cameraDistanceSquared, waiting.captureWaitTicks});
+    }
+    std::sort(ranked.begin(), ranked.end(),
+              [](const RankedCandidateUVE& lhs, const RankedCandidateUVE& rhs) {
+                  if (lhs.waitTicks != rhs.waitTicks) {
+                      return lhs.waitTicks > rhs.waitTicks;
+                  }
+                  if (lhs.cameraDistanceSquared != rhs.cameraDistanceSquared) {
+                      return lhs.cameraDistanceSquared < rhs.cameraDistanceSquared;
+                  }
+                  if (lhs.entity.index != rhs.entity.index) {
+                      return lhs.entity.index < rhs.entity.index;
+                  }
+                  return lhs.entity.generation < rhs.entity.generation;
+              });
+    // Nobody's capture request DIES on an over-budget tick: Once probes simply have not captured
+    // once yet, EveryFrame probes re-decide next tick, and OnDemand keeps its latch set until
+    // serviced - while captureWaitTicks makes their queue position increasingly undeniable.
+    const std::size_t servicedCount =
+        std::min(ranked.size(), Scene::kMaximumReflectionProbeCapturesPerTickUVE);
+    for (std::size_t i = 0; i < ranked.size(); ++i) {
+        Scene::ReflectionProbe3DNodeComponentUVE& probe =
+            m_entityManager->GetComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(
+                ranked[i].entity);
+        if (i < servicedCount) {
+            probe.capturedOnce = true;
+            probe.updateRequested = false;
+            ++probe.captureGeneration;
+            probe.captureWaitTicks = 0;
+        } else {
+            ++probe.captureWaitTicks;
+        }
+    }
+}
+
+void EngineCoreUVE::SyncWorldPartition3DNodesUVE() {
+    // The viewer cloud is identical to the streamer's: the eye plus every character controller,
+    // finite poses only. Rebuild it here instead of sharing scratch so the two syncs stay
+    // symmetric with each other while remaining readable one after the other in LateUpdate.
+    std::vector<Math::Vector3UVE> viewerPositions;
+    if (m_activeCamera != Scene::kInvalidEntityUVE &&
+        m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(m_activeCamera)) {
+        viewerPositions.push_back(
+            m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(m_activeCamera)
+                .worldPosition);
+    }
+    m_entityManager->ForEachUVE<Scene::WorldTransformComponentUVE,
+                                Scene::CharacterControllerComponentUVE>(
+        [&viewerPositions](const Scene::EntityUVE, const Scene::WorldTransformComponentUVE& world,
+                           const Scene::CharacterControllerComponentUVE&) {
+            viewerPositions.push_back(world.worldPosition);
+        });
+
+    std::vector<Scene::EntityUVE> partitions;
+    m_entityManager->ForEachUVE<Scene::WorldPartition3DNodeComponentUVE>(
+        [&partitions](const Scene::EntityUVE entity, const Scene::WorldPartition3DNodeComponentUVE&) {
+            partitions.push_back(entity);
+        });
+
+    for (const Scene::EntityUVE partition : partitions) {
+        // The whole partition is rebuilt every tick from its live subtree, so nothing can point
+        // at a stale member: components are mutable only through this one place per tick.
+        if (!m_entityManager->IsAliveUVE(partition) ||
+            !m_entityManager->HasComponentUVE<Scene::WorldPartition3DNodeComponentUVE>(partition)) {
+            continue; // Play/Stop mid-walk tore the world down under our feet - stay out of it
+        }
+        Scene::WorldPartition3DNodeComponentUVE& config =
+            m_entityManager->GetComponentUVE<Scene::WorldPartition3DNodeComponentUVE>(partition);
+        if (!Scene::IsWorldPartition3DNodeComponentValidUVE(config) ||
+            !m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(partition)) {
+            continue; // an invalid partition configures nothing
+        }
+        const Math::Vector3UVE gridOrigin =
+            m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(partition)
+                .worldPosition;
+
+        // Breadth-first member collection: all descendants that carry a mesh. Nested partitions
+        // stop the walk - a partition deep inside another's volume self-manages, so only the
+        // closest owning partition ever stamps a membership it does not understand.
+        struct MemberSnapshotUVE final {
+            Scene::EntityUVE entity;
+            Math::Vector3UVE worldPosition;
+            std::optional<Scene::WorldPartition3DCellIdUVE> cell;
+        };
+        std::vector<MemberSnapshotUVE> members;
+        std::vector<Scene::EntityUVE> pending;
+        pending.push_back(partition);
+        while (!pending.empty()) {
+            const Scene::EntityUVE current = pending.back();
+            pending.pop_back();
+            if (!m_entityManager->IsAliveUVE(current)) {
+                continue; // the scene graph hands over handles; destruction can invalidate them
+            }
+            const std::vector<Scene::EntityUVE> children =
+                m_sceneGraph->GetChildrenUVE(*m_entityManager, current);
+            for (const Scene::EntityUVE child : children) {
+                if (!m_entityManager->IsAliveUVE(child)) {
+                    continue;
+                }
+                if (m_entityManager->HasComponentUVE<Scene::WorldPartition3DNodeComponentUVE>(
+                        child)) {
+                    continue; // closest-ancestor-wins: the inner partition claims its subtree
+                }
+                if (m_entityManager->HasComponentUVE<Scene::MeshComponentUVE>(child) &&
+                    m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(child)) {
+                    const Scene::WorldTransformComponentUVE& world =
+                        m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(child);
+                    members.push_back(MemberSnapshotUVE{
+                        child, world.worldPosition,
+                        Scene::ResolveWorldPartition3DCellIdForPositionUVE(
+                            config, gridOrigin, world.worldPosition)});
+                }
+                pending.push_back(child);
+            }
+        }
+
+        // Membership attachment is idempotent: the engine owns this runtime component on every
+        // mesh-carrying descendant, attaches when absent, and re-stamps the owner when an entity
+        // has moved between partitions between ticks. AddComponentUVE mutates the ECS, but the
+        // member list was snapshotted above, so nothing being iterated here can be invalidated.
+        for (const MemberSnapshotUVE& member : members) {
+            if (!m_entityManager->HasComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+                    member.entity)) {
+                m_entityManager->AddComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+                    member.entity, Scene::WorldPartition3DMembershipComponentUVE{});
+            }
+            auto& membership =
+                m_entityManager->GetComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+                    member.entity);
+            membership.partition = partition;
+        }
+
+        if (!config.enabled) {
+            // A disabled partition willingly shows its whole subtree - fail-open instead of
+            // leaving yesterday's fade behind. loadedCellCount reads 0, never a stale count.
+            for (const MemberSnapshotUVE& member : members) {
+                auto& membership =
+                    m_entityManager->GetComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+                        member.entity);
+                membership.live = true;
+            }
+            config.loadedCellCount = 0U;
+            continue;
+        }
+
+        // Pass over occupied cells: priority = nearest member's squared distance to the nearest
+        // viewer; a cell with no members cannot exist here by construction. The first
+        // maximumLoadedCells are live - the budget acceptance is EXACT, members past it fade.
+        struct OccupiedCellUVE final {
+            Scene::WorldPartition3DCellIdUVE id;
+            float nearestDistanceSquared = std::numeric_limits<float>::max();
+        };
+        std::vector<OccupiedCellUVE> occupied;
+        std::vector<float> memberDistances;
+        memberDistances.reserve(members.size());
+        for (const MemberSnapshotUVE& member : members) {
+            memberDistances.push_back(
+                Scene::ResolveLevelStreamer3DNearestViewerDistanceSquaredUVE(
+                    member.worldPosition, viewerPositions)
+                    .value_or(std::numeric_limits<float>::max()));
+        }
+        for (std::size_t i = 0U; i < members.size(); ++i) {
+            if (!members[i].cell.has_value()) {
+                continue; // outside the partitioned volume: unmanaged, always renders
+            }
+            auto found = std::find_if(occupied.begin(), occupied.end(),
+                                      [&members, i](const OccupiedCellUVE& cell) {
+                                          return cell.id == *members[i].cell;
+                                      });
+            if (found == occupied.end()) {
+                occupied.push_back(OccupiedCellUVE{*members[i].cell, memberDistances[i]});
+            } else if (memberDistances[i] < found->nearestDistanceSquared) {
+                found->nearestDistanceSquared = memberDistances[i];
+            }
+        }
+        std::sort(occupied.begin(), occupied.end(),
+                  [&config](const OccupiedCellUVE& lhs, const OccupiedCellUVE& rhs) {
+                      if (lhs.nearestDistanceSquared != rhs.nearestDistanceSquared) {
+                          return lhs.nearestDistanceSquared < rhs.nearestDistanceSquared;
+                      }
+                      return Scene::ResolveWorldPartition3DCellLinearIndexUVE(
+                                 lhs.id, config.cellCounts) <
+                             Scene::ResolveWorldPartition3DCellLinearIndexUVE(
+                                 rhs.id, config.cellCounts);
+                  });
+        const std::size_t liveCells =
+            std::min<std::size_t>(occupied.size(), config.maximumLoadedCells);
+        // Admission wholly-cellular: every member of an admitted cell goes live together, and
+        // every member outside it fades together. Unmanaged members never join the verdict.
+        for (std::size_t i = 0U; i < members.size(); ++i) {
+            bool live = true;
+            if (members[i].cell.has_value()) {
+                live = false;
+                for (std::size_t c = 0U; c < liveCells; ++c) {
+                    if (occupied[c].id == *members[i].cell) {
+                        live = true;
+                        break;
+                    }
+                }
+            }
+            auto& membership =
+                m_entityManager->GetComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+                    members[i].entity);
+            membership.live = live;
+        }
+        config.loadedCellCount = static_cast<std::uint32_t>(liveCells);
+    }
+}
+
+void EngineCoreUVE::SyncVisibilityRegion3DNodesUVE() {
+    // The viewer cloud is identical to the streamer's and the world partition's: the eye plus
+    // every character controller, finite poses only. Regions activate on ANY viewer inside.
+    std::vector<Math::Vector3UVE> viewerPositions;
+    if (m_activeCamera != Scene::kInvalidEntityUVE &&
+        m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(m_activeCamera)) {
+        viewerPositions.push_back(
+            m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(m_activeCamera)
+                .worldPosition);
+    }
+    m_entityManager->ForEachUVE<Scene::WorldTransformComponentUVE,
+                                Scene::CharacterControllerComponentUVE>(
+        [&viewerPositions](const Scene::EntityUVE, const Scene::WorldTransformComponentUVE& world,
+                           const Scene::CharacterControllerComponentUVE&) {
+            viewerPositions.push_back(world.worldPosition);
+        });
+
+    struct RegionSnapshotUVE final {
+        Scene::EntityUVE entity;
+        Math::Vector3UVE origin;
+    };
+    std::vector<RegionSnapshotUVE> regions;
+    m_entityManager->ForEachUVE<Scene::VisibilityRegion3DNodeComponentUVE>(
+        [this, &regions](const Scene::EntityUVE entity,
+                         Scene::VisibilityRegion3DNodeComponentUVE&) {
+            regions.push_back(RegionSnapshotUVE{
+                entity,
+                m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(entity)
+                    ? m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(entity)
+                          .worldPosition
+                    : Math::Vector3UVE{}});
+        });
+    // NO early-out on an empty region list: Pass 1 must still sweep memberships so a region
+    // destroyed THIS tick rebrands its orphan members (live + kInvalidEntityUVE) instead of
+    // leaving the stale fade binding forever.
+
+    // active is recomputed for every region, ENABLED OR NOT: a disabled region stays dormant on
+    // its members through Pass 1, but its flag still reads honestly for the inspector, and the
+    // tick it is re-enabled the verdict is already fresh instead of one frame stale. No viewers
+    // at all means fail-open-active: an empty play-in-editor world shows everything.
+    for (const RegionSnapshotUVE& region : regions) {
+        auto& config =
+            m_entityManager->GetComponentUVE<Scene::VisibilityRegion3DNodeComponentUVE>(
+                region.entity);
+        config.active =
+            viewerPositions.empty() ||
+            Scene::ResolveVisibilityRegion3DAnyViewerInsideUVE(config, region.origin,
+                                                               viewerPositions);
+    }
+
+    // Pass 1: sweep existing memberships. The snapshot doubles as iteration stability - the ECS
+    // is not mutated here, but a by-value copy survives whatever a mid-draw Play/Stop does.
+    struct MembershipSnapshotUVE final {
+        Scene::EntityUVE entity;
+        Scene::EntityUVE region;
+    };
+    std::vector<MembershipSnapshotUVE> members;
+    m_entityManager->ForEachUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+        [&members](const Scene::EntityUVE entity,
+                   const Scene::VisibilityRegion3DMembershipComponentUVE& membership) {
+            members.push_back(MembershipSnapshotUVE{entity, membership.region});
+        });
+    for (const MembershipSnapshotUVE& member : members) {
+        if (!m_entityManager->IsAliveUVE(member.entity)) {
+            continue; // the membership dies with its mesh
+        }
+        auto& membership =
+            m_entityManager->GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+                member.entity);
+        const bool ownerAlive =
+            member.region != Scene::kInvalidEntityUVE &&
+            m_entityManager->IsAliveUVE(member.region) &&
+            m_entityManager->HasComponentUVE<Scene::VisibilityRegion3DNodeComponentUVE>(
+                member.region);
+        if (!ownerAlive) {
+            // The owner is gone or disowned its component: rebrand so Pass 2 can rehome the mesh
+            // THIS tick, and fail open exactly the way the renderer gate would anyway.
+            membership.region = Scene::kInvalidEntityUVE;
+            membership.live = true;
+            continue;
+        }
+        const Scene::VisibilityRegion3DNodeComponentUVE& ownerConfig =
+            m_entityManager->GetComponentUVE<Scene::VisibilityRegion3DNodeComponentUVE>(
+                member.region);
+        const Math::Vector3UVE ownerOrigin =
+            m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(member.region)
+                ? m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(member.region)
+                      .worldPosition
+                : Math::Vector3UVE{};
+        const bool stillManaged =
+            ownerConfig.enabled && Scene::IsVisibilityRegion3DNodeComponentValidUVE(ownerConfig) &&
+            m_entityManager->HasComponentUVE<Scene::MeshComponentUVE>(member.entity) &&
+            m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(member.entity) &&
+            Scene::ResolveVisibilityRegion3DLayerGateUVE(
+                ownerConfig.visibilityLayers,
+                m_entityManager->GetComponentUVE<Scene::MeshComponentUVE>(member.entity)
+                    .visibilityLayers) &&
+            Scene::ResolveVisibilityRegion3DContainsPointUVE(
+                ownerConfig, ownerOrigin,
+                m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(member.entity)
+                    .worldPosition);
+        // Managed: the owner's current verdict. Released (walked out, layer gate closed,
+        // disabled, mesh component removed): back to live THIS tick - no frame of stale dark.
+        membership.live = !stillManaged || ownerConfig.active;
+    }
+
+    // Pass 2: discovery. An un-owned mesh (never stamped, or Pass 1 rebranded it to kInvalid on
+    // a dead owner) inside an enabled region whose layer gate passes becomes its member. With
+    // overlapping regions the mesh stamps the NEAREST one's center; ties resolve in the
+    // iteration order the ECS hands regions over, which is ascending entity id - deterministic
+    // for content that does not overlap rooms halfway.
+    std::vector<Scene::EntityUVE> meshes;
+    m_entityManager->ForEachUVE<Scene::MeshComponentUVE, Scene::WorldTransformComponentUVE>(
+        [this, &meshes](const Scene::EntityUVE entity, const Scene::MeshComponentUVE&,
+                        const Scene::WorldTransformComponentUVE&) {
+            const bool unowned =
+                !m_entityManager->HasComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+                    entity) ||
+                m_entityManager
+                        ->GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(entity)
+                        .region == Scene::kInvalidEntityUVE;
+            if (unowned) {
+                meshes.push_back(entity);
+            }
+        });
+    for (const Scene::EntityUVE mesh : meshes) {
+        const Math::Vector3UVE position =
+            m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(mesh)
+                .worldPosition;
+        const std::uint32_t meshLayers =
+            m_entityManager->GetComponentUVE<Scene::MeshComponentUVE>(mesh).visibilityLayers;
+        float bestDistanceSquared = std::numeric_limits<float>::max();
+        Scene::EntityUVE bestRegion = Scene::kInvalidEntityUVE;
+        for (const RegionSnapshotUVE& region : regions) {
+            const Scene::VisibilityRegion3DNodeComponentUVE& config =
+                m_entityManager->GetComponentUVE<Scene::VisibilityRegion3DNodeComponentUVE>(
+                    region.entity);
+            if (!config.enabled || !Scene::IsVisibilityRegion3DNodeComponentValidUVE(config) ||
+                !Scene::ResolveVisibilityRegion3DLayerGateUVE(config.visibilityLayers,
+                                                              meshLayers) ||
+                !Scene::ResolveVisibilityRegion3DContainsPointUVE(config, region.origin,
+                                                                  position)) {
+                continue;
+            }
+            const float dx = position.x - region.origin.x;
+            const float dy = position.y - region.origin.y;
+            const float dz = position.z - region.origin.z;
+            const float distanceSquared = dx * dx + dy * dy + dz * dz;
+            if (bestRegion == Scene::kInvalidEntityUVE || distanceSquared < bestDistanceSquared) {
+                bestDistanceSquared = distanceSquared;
+                bestRegion = region.entity;
+            }
+        }
+        if (bestRegion == Scene::kInvalidEntityUVE) {
+            continue; // outside every region: the mesh stays unmanaged and renders as ever
+        }
+        const bool activeNow =
+            m_entityManager->GetComponentUVE<Scene::VisibilityRegion3DNodeComponentUVE>(bestRegion)
+                .active;
+        if (!m_entityManager->HasComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+                mesh)) {
+            m_entityManager->AddComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+                mesh, Scene::VisibilityRegion3DMembershipComponentUVE{});
+        }
+        auto& membership =
+            m_entityManager->GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+                mesh);
+        membership.region = bestRegion;
+        membership.live = activeNow;
+    }
+}
+
 void EngineCoreUVE::SyncAdaptiveRenderResolutionUVE() {
     if (!m_windowedRenderingActiveUVE || !m_presentationSurfaceReadyUVE || !m_renderDevice->IsUsableUVE()) {
         return;
@@ -848,13 +1747,26 @@ void EngineCoreUVE::Update() {
         m_physicsSystem->StepUVE(*m_entityManager, *m_sceneGraph, fixedDeltaTimeSeconds);
         SyncCharacterControllersUVE(fixedDeltaTimeSeconds);
         SyncProjectile3DNodesUVE(fixedDeltaTimeSeconds);
+        SyncSpringArm3DNodesUVE(fixedDeltaTimeSeconds);
     }
 
     m_sceneGraph->UpdateUVE(*m_entityManager);
+    // The fraction of a fixed step already elapsed, handed to the renderer so it can draw between
+    // the last two simulated poses instead of snapping to the newest one. Measured on a 144 Hz
+    // display against 60 Hz physics: 58% of frames previously received no new pose at all, and
+    // per-frame movement jumped between 0 and 16.7 cm at 10 m/s. This is the value that fixes it,
+    // and it has been computed every frame since the timer was written - only ever logged.
+    m_renderer3D->SetPhysicsInterpolationAlphaUVE(static_cast<float>(fixedStep.alpha));
     SyncParticleRuntimeUVE();
     SyncUIRuntimeUVE();
     SyncCollisionLifecycleUVE();
     SyncRayCast3DNodesUVE();
+    SyncHitbox3DNodesUVE();
+    SyncInteractionArea3DNodesUVE();
+    SyncLevelStreamer3DNodesUVE();
+    SyncReflectionProbe3DNodesUVE();
+    SyncWorldPartition3DNodesUVE();
+    SyncVisibilityRegion3DNodesUVE();
     SyncScriptRuntimeUVE();
 
     if (m_config.hotReloadEnabledUVE) {
@@ -929,6 +1841,36 @@ void EngineCoreUVE::Render() {
         (m_windowedRenderingActiveUVE && !m_presentationSurfaceReadyUVE)) {
         return;
     }
+    // Compute first, graphics after: any dispatch enqueued on ComputeSystemUVE this frame is
+    // recorded into its OWN command buffer and submitted before the renderer opens a single
+    // render pass. That ordering is the portable flow the RHI compute slices settled on (Vulkan
+    // forbids dispatch inside a rendering instance), and giving compute a separate buffer keeps
+    // it independent of which render path runs below — including the no-camera path, where the
+    // renderer never records anything at all. An empty queue costs one unused command buffer and
+    // no submission, so scenes that never touch compute pay nothing observable.
+    // Note the early return above: while the device is unusable (or a windowed surface is not
+    // ready yet) this is never reached, so queued dispatches WAIT rather than being recorded
+    // against a device that cannot execute them - they run on the first frame that renders
+    // again. Callers that enqueue every frame regardless should check
+    // IRenderDeviceUVE::IsUsableUVE() or call ClearQueueUVE() themselves; the engine does not
+    // silently discard work a caller explicitly asked for.
+    if (m_computeSystem->GetQueuedDispatchCountUVE() > 0U) {
+        std::unique_ptr<Render::ICommandBufferUVE> computeCommands = m_renderDevice->CreateCommandBufferUVE();
+        if (computeCommands != nullptr) {
+            const std::size_t recordedDispatches = m_computeSystem->ExecuteQueuedDispatchesUVE(*computeCommands);
+            if (recordedDispatches > 0U) {
+                m_renderDevice->SubmitUVE(std::move(computeCommands));
+            }
+        } else {
+            // No buffer, no honest way to record: drop the queue loudly rather than carrying
+            // stale work into a later frame where its resources may already be gone.
+            UVE_WARNING("EngineCoreUVE: render device returned no command buffer for {} queued "
+                        "compute dispatch(es) - dropping them",
+                        m_computeSystem->GetQueuedDispatchCountUVE());
+            m_computeSystem->ClearQueueUVE();
+        }
+    }
+
     m_renderer3D->SetUIRuntimeUVE(&m_uiRuntime);
     if (m_activeCamera != Scene::kInvalidEntityUVE) {
         const bool hasParticles = m_particleRuntime != nullptr && m_particleRuntime->GetInstanceCountUVE() > 0U;

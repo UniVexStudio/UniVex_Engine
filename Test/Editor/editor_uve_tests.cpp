@@ -17,6 +17,7 @@
 #include "uve/core/engine_core_uve.h"
 #include "uve/editor/editor_uve.h"
 #include "uve/component/camera_component_uve.h"
+#include "uve/component/character_controller_component_uve.h"
 #include "uve/component/collider_component_uve.h"
 #include "uve/component/editor_internal_entity_component_uve.h"
 #include "uve/component/light_component_uve.h"
@@ -24,7 +25,9 @@
 #include "uve/component/name_component_uve.h"
 #include "uve/component/primitive_mesh_component_uve.h"
 #include "uve/component/transform_component_uve.h"
+#include "uve/nodes/3d/marker_3d_uve.h"
 #include "uve/component/world_transform_component_uve.h"
+#include "uve/nodes/3d/spawn_point_3d_uve.h"
 #include "uve/scene/nodes/scene_node_registry_uve.h"
 
 namespace UVE::Editor::Tests {
@@ -170,7 +173,9 @@ TEST(EditorUVETest, InitUVE_StartsRunningWithEmptyDocumentRootsAndSupportsHeadle
         editor.InitUVE();
 
         EXPECT_EQ(editor.GetStateUVE(), EditorStateUVE::Running);
-        EXPECT_TRUE(editor.GetDocumentRootsUVE().empty());
+        // One-root documents: an otherwise-empty document holds exactly the scene root.
+        ASSERT_EQ(editor.GetDocumentRootsUVE().size(), 1U);
+        EXPECT_EQ(editor.GetDocumentRootsUVE()[0U], editor.GetDocumentSceneRootUVE());
 
         editor.ShutdownUVE();
         EXPECT_EQ(editor.GetStateUVE(), EditorStateUVE::Shutdown);
@@ -228,7 +233,9 @@ TEST(EditorUVETest, InitUVE_DoesNotCreateAutomaticPreviewLighting) {
         Core::EngineServicesUVE& services = engine.GetServicesUVE();
         Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
 
-        EXPECT_TRUE(editor.GetDocumentRootsUVE().empty());
+        // One-root documents: an otherwise-empty document holds exactly the scene root.
+        ASSERT_EQ(editor.GetDocumentRootsUVE().size(), 1U);
+        EXPECT_EQ(editor.GetDocumentRootsUVE()[0U], editor.GetDocumentSceneRootUVE());
         std::size_t lightCount = 0U;
         entityManager.ForEachUVE<Scene::LightComponentUVE>(
             [&lightCount](Scene::EntityUVE, Scene::LightComponentUVE&) { ++lightCount; });
@@ -242,7 +249,9 @@ TEST(EditorUVETest, InitUVE_DoesNotCreateAutomaticPreviewLighting) {
         EXPECT_FALSE(editor.IsSceneDirtyUVE());
 
         editor.TickUVE();
-        EXPECT_TRUE(editor.GetDocumentRootsUVE().empty());
+        // One-root documents: an otherwise-empty document holds exactly the scene root.
+        ASSERT_EQ(editor.GetDocumentRootsUVE().size(), 1U);
+        EXPECT_EQ(editor.GetDocumentRootsUVE()[0U], editor.GetDocumentSceneRootUVE());
         lightCount = 0U;
         entityManager.ForEachUVE<Scene::LightComponentUVE>(
             [&lightCount](Scene::EntityUVE, Scene::LightComponentUVE&) { ++lightCount; });
@@ -274,7 +283,9 @@ TEST(EditorUVETest, TwoDCanvasStateUVE_IsEditorOnlyAndValidated) {
         EXPECT_FLOAT_EQ(initial.pan.y, 0.0F);
         EXPECT_TRUE(initial.gridVisible);
         EXPECT_TRUE(initial.safeAreaVisible);
-        EXPECT_TRUE(editor.GetDocumentRootsUVE().empty());
+        // One-root documents: an otherwise-empty document holds exactly the scene root.
+        ASSERT_EQ(editor.GetDocumentRootsUVE().size(), 1U);
+        EXPECT_EQ(editor.GetDocumentRootsUVE()[0U], editor.GetDocumentSceneRootUVE());
         EXPECT_FALSE(editor.IsSceneDirtyUVE());
 
         EXPECT_TRUE(editor.Set2DCanvasZoomUVE(1.25F));
@@ -289,7 +300,9 @@ TEST(EditorUVETest, TwoDCanvasStateUVE_IsEditorOnlyAndValidated) {
         EXPECT_FLOAT_EQ(reset.zoom, 0.36F);
         EXPECT_FLOAT_EQ(reset.pan.x, 0.0F);
         EXPECT_FLOAT_EQ(reset.pan.y, 0.0F);
-        EXPECT_TRUE(editor.GetDocumentRootsUVE().empty());
+        // One-root documents: an otherwise-empty document holds exactly the scene root.
+        ASSERT_EQ(editor.GetDocumentRootsUVE().size(), 1U);
+        EXPECT_EQ(editor.GetDocumentRootsUVE()[0U], editor.GetDocumentSceneRootUVE());
         EXPECT_FALSE(editor.IsSceneDirtyUVE());
 
         editor.ShutdownUVE();
@@ -371,7 +384,7 @@ TEST(EditorUVETest, WorldEnvironmentComponentUVE_AttachEditUndoRedoThroughEditor
         Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
 
         const Scene::EntityUVE entity =
-            editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Empty);
+            editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Node3D);
         ASSERT_NE(entity, Scene::kInvalidEntityUVE);
         ASSERT_TRUE(entityManager.HasComponentUVE<Scene::TransformComponentUVE>(entity));
         EXPECT_FALSE(entityManager.HasComponentUVE<Scene::WorldEnvironment3DNodeComponentUVE>(entity));
@@ -478,7 +491,8 @@ TEST(EditorUVETest, OutlinerContextUVE_AncestryAndEligibleParentsExcludeSelected
         EXPECT_EQ(EditorUVEAccessUVE::GetDocumentAncestryUVE(editor, selected),
                   (std::vector<Scene::EntityUVE>{parent, selected}));
         EXPECT_EQ(EditorUVEAccessUVE::GetEligibleReparentParentsUVE(editor, selected),
-                  (std::vector<Scene::EntityUVE>{rootA, parent, rootB}));
+                  (std::vector<Scene::EntityUVE>{rootA, parent, rootB,
+                                                 editor.GetDocumentSceneRootUVE()}));
 
         editor.ShutdownUVE();
     }
@@ -950,7 +964,7 @@ TEST(EditorUVETest, CreateDocumentEntityUVE_CreatesSelectedDirtyRootArchetypes) 
         EXPECT_FALSE(entityManager.HasComponentUVE<Scene::LightComponentUVE>(empty));
         EXPECT_FALSE(entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(empty));
         ASSERT_TRUE(entityManager.HasComponentUVE<Scene::NameComponentUVE>(empty));
-        EXPECT_EQ(entityManager.GetComponentUVE<Scene::NameComponentUVE>(empty).name, "Empty");
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::NameComponentUVE>(empty).name, "Node3D");
         EXPECT_EQ(editor.GetSelectedEntityUVE(), empty);
         EXPECT_TRUE(editor.IsSceneDirtyUVE());
 
@@ -1014,15 +1028,18 @@ TEST(EditorUVETest, CreateDocumentEntityUVE_CreatesSelectedDirtyRootArchetypes) 
                   (Math::Vector3UVE{0.5F, 0.025F, 0.5F}));
         EXPECT_EQ(entityManager.GetComponentUVE<Scene::NameComponentUVE>(plane).name, "Plane");
 
+        // One-root document: every created archetype lives under the scene root (chained by
+        // creation-under-selection), and the document's single root is the SceneRoot itself.
         const std::vector<Scene::EntityUVE> roots = editor.GetDocumentRootsUVE();
-        ASSERT_EQ(roots.size(), 7U);
-        EXPECT_NE(std::find(roots.begin(), roots.end(), empty), roots.end());
-        EXPECT_NE(std::find(roots.begin(), roots.end(), camera), roots.end());
-        EXPECT_NE(std::find(roots.begin(), roots.end(), directionalLight), roots.end());
-        EXPECT_NE(std::find(roots.begin(), roots.end(), collisionBox), roots.end());
-        EXPECT_NE(std::find(roots.begin(), roots.end(), cube), roots.end());
-        EXPECT_NE(std::find(roots.begin(), roots.end(), sphere), roots.end());
-        EXPECT_NE(std::find(roots.begin(), roots.end(), plane), roots.end());
+        ASSERT_EQ(roots.size(), 1U);
+        EXPECT_EQ(roots.front(), editor.GetDocumentSceneRootUVE());
+        EXPECT_TRUE(entityManager.IsAliveUVE(empty));
+        EXPECT_TRUE(entityManager.IsAliveUVE(camera));
+        EXPECT_TRUE(entityManager.IsAliveUVE(directionalLight));
+        EXPECT_TRUE(entityManager.IsAliveUVE(collisionBox));
+        EXPECT_TRUE(entityManager.IsAliveUVE(cube));
+        EXPECT_TRUE(entityManager.IsAliveUVE(sphere));
+        EXPECT_TRUE(entityManager.IsAliveUVE(plane));
 
         editor.ShutdownUVE();
     }
@@ -1087,7 +1104,9 @@ TEST(EditorUVETest, CreateDocumentEntityUVE_RejectsInvalidKindsAndNonRunningStat
         editor.InitUVE();
         EXPECT_EQ(editor.CreateDocumentEntityUVE(static_cast<EditorEntityKindUVE>(999)),
                   Scene::kInvalidEntityUVE);
-        EXPECT_TRUE(editor.GetDocumentRootsUVE().empty());
+        // One-root documents: an otherwise-empty document holds exactly the scene root.
+        ASSERT_EQ(editor.GetDocumentRootsUVE().size(), 1U);
+        EXPECT_EQ(editor.GetDocumentRootsUVE()[0U], editor.GetDocumentSceneRootUVE());
         EXPECT_FALSE(editor.IsSceneDirtyUVE());
 
         editor.ShutdownUVE();
@@ -1242,7 +1261,9 @@ TEST(EditorUVETest, EditorHistoryUVE_CreationUndoRedoRecreatesArchetypeAndName) 
         ASSERT_TRUE(editor.CanUndoUVE());
         ASSERT_TRUE(editor.UndoUVE());
         EXPECT_FALSE(entityManager.IsAliveUVE(created));
-        EXPECT_TRUE(editor.GetDocumentRootsUVE().empty());
+        // One-root documents: an otherwise-empty document holds exactly the scene root.
+        ASSERT_EQ(editor.GetDocumentRootsUVE().size(), 1U);
+        EXPECT_EQ(editor.GetDocumentRootsUVE()[0U], editor.GetDocumentSceneRootUVE());
         EXPECT_EQ(editor.GetSelectedEntityUVE(), Scene::kInvalidEntityUVE);
         EXPECT_FALSE(editor.IsSceneDirtyUVE());
 
@@ -1359,7 +1380,7 @@ TEST(EditorUVETest, DuplicateSelectedEntityUVE_RootCreatesNamedSiblingWithCopied
         EXPECT_TRUE(entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(duplicate));
 
         const std::vector<Scene::EntityUVE> roots = editor.GetDocumentRootsUVE();
-        ASSERT_EQ(roots.size(), 2U);
+        ASSERT_EQ(roots.size(), 3U); // the scene root + the raw source + its duplicate
         EXPECT_NE(std::find(roots.begin(), roots.end(), source), roots.end());
         EXPECT_NE(std::find(roots.begin(), roots.end(), duplicate), roots.end());
 
@@ -1556,7 +1577,8 @@ TEST(EditorUVETest, EditorHistoryUVE_DeleteUndoRejectsStaleParentAndClearsTimeli
         EXPECT_FALSE(editor.UndoUVE());
         EXPECT_FALSE(editor.CanUndoUVE());
         EXPECT_FALSE(editor.CanRedoUVE());
-        EXPECT_EQ(editor.GetDocumentRootsUVE().size(), 0U);
+        // The ever-present scene root is the only thing left in the document.
+        EXPECT_EQ(editor.GetDocumentRootsUVE().size(), 1U);
 
         editor.ShutdownUVE();
     }
@@ -1656,8 +1678,8 @@ TEST(EditorUVETest, ReparentSelectedEntityUVE_RootMovesBelowTargetAndPreservesLo
         EXPECT_TRUE(editor.IsSceneDirtyUVE());
         EXPECT_TRUE(editor.CanUndoUVE());
         const std::vector<Scene::EntityUVE> roots = editor.GetDocumentRootsUVE();
-        ASSERT_EQ(roots.size(), 1U);
-        EXPECT_EQ(roots.front(), target);
+        ASSERT_EQ(roots.size(), 2U); // the scene root + the still-top-level target
+        EXPECT_NE(std::find(roots.begin(), roots.end(), target), roots.end());
 
         editor.ShutdownUVE();
     }
@@ -1687,10 +1709,13 @@ TEST(EditorUVETest, ReparentSelectedEntityUVE_ChildCanReturnToRootWithoutDetachi
 
         ASSERT_TRUE(editor.ReparentSelectedEntityUVE(Scene::kInvalidEntityUVE));
         const std::vector<Scene::EntityUVE> roots = editor.GetDocumentRootsUVE();
-        ASSERT_EQ(roots.size(), 2U);
+        ASSERT_EQ(roots.size(), 2U); // the scene root + the still-top-level parent
         EXPECT_NE(std::find(roots.begin(), roots.end(), parent), roots.end());
-        EXPECT_NE(std::find(roots.begin(), roots.end(), child), roots.end());
         EXPECT_TRUE(services.GetSceneGraphUVE().GetChildrenUVE(entityManager, parent).empty());
+        // "Return to root" now means a direct child of the scene root.
+        const std::vector<Scene::EntityUVE> sceneRootChildren =
+            services.GetSceneGraphUVE().GetChildrenUVE(entityManager, editor.GetDocumentSceneRootUVE());
+        EXPECT_NE(std::find(sceneRootChildren.begin(), sceneRootChildren.end(), child), sceneRootChildren.end());
         const std::vector<Scene::EntityUVE> childChildren =
             services.GetSceneGraphUVE().GetChildrenUVE(entityManager, child);
         EXPECT_NE(std::find(childChildren.begin(), childChildren.end(), grandchild), childChildren.end());
@@ -1766,7 +1791,9 @@ TEST(EditorUVETest, ReparentSelectedEntityUVE_RejectsCyclesNoOpNonDocumentStaleA
         editor.SelectEntityUVE(root);
         EXPECT_FALSE(editor.ReparentSelectedEntityUVE(root));
         EXPECT_FALSE(editor.ReparentSelectedEntityUVE(child));
-        EXPECT_FALSE(editor.ReparentSelectedEntityUVE(Scene::kInvalidEntityUVE));
+        // kInvalidEntityUVE as the new parent now means "move under the scene root" (see
+        // ReparentDocumentEntityUVE), so rejection is exercised with a dead handle instead.
+        EXPECT_FALSE(editor.ReparentSelectedEntityUVE(Scene::EntityUVE{9999U, 1U}));
         editor.SelectEntityUVE(child);
         EXPECT_FALSE(editor.ReparentSelectedEntityUVE(root));
         const Scene::EntityUVE nonDocumentEntity = entityManager.CreateEntityUVE();
@@ -1951,12 +1978,22 @@ TEST(EditorUVETest, SaveThenLoadScene_RoundTripsDocumentRootsWithoutSerializingE
 
         const std::vector<Scene::EntityUVE> loadedRoots = editor.GetDocumentRootsUVE();
         ASSERT_EQ(loadedRoots.size(), 1U);
+        // The single root is the scene root; the authored root (with its saved transform and
+        // its own child) sits one level under it - the load wrapped the pre-root save's
+        // top-level entities beneath the one-root invariant.
+        const Scene::EntityUVE loadedSceneRoot = loadedRoots.front();
+        const std::vector<Scene::EntityUVE> loadedSceneRootChildren =
+            services.GetSceneGraphUVE().GetChildrenUVE(services.GetEntityManagerUVE(), loadedSceneRoot);
+        ASSERT_EQ(loadedSceneRootChildren.size(), 1U);
         const Scene::TransformComponentUVE& loadedTransform =
-            services.GetEntityManagerUVE().GetComponentUVE<Scene::TransformComponentUVE>(loadedRoots.front());
+            services.GetEntityManagerUVE().GetComponentUVE<Scene::TransformComponentUVE>(
+                loadedSceneRootChildren.front());
         EXPECT_EQ(loadedTransform.localPosition, rootTransform.localPosition);
-        EXPECT_EQ(services.GetSceneGraphUVE().GetChildrenUVE(services.GetEntityManagerUVE(), loadedRoots.front()).size(),
+        EXPECT_EQ(services.GetSceneGraphUVE()
+                      .GetChildrenUVE(services.GetEntityManagerUVE(), loadedSceneRootChildren.front())
+                      .size(),
                   1U);
-        EXPECT_FALSE(editor.IsSceneDirtyUVE());
+        EXPECT_TRUE(editor.IsSceneDirtyUVE()); // the load wrapped the file's top level
 
         editor.ShutdownUVE();
     }
@@ -2504,8 +2541,8 @@ TEST(EditorUVETest, LoadMissingScene_FailsWithoutDestroyingCurrentDocument) {
 
         EXPECT_FALSE(editor.LoadSceneUVE());
         const std::vector<Scene::EntityUVE> roots = editor.GetDocumentRootsUVE();
-        ASSERT_EQ(roots.size(), 1U);
-        EXPECT_EQ(roots.front(), root);
+        ASSERT_EQ(roots.size(), 2U); // the scene root + the surviving authored root
+        EXPECT_NE(std::find(roots.begin(), roots.end(), root), roots.end());
 
         editor.ShutdownUVE();
     }
@@ -2547,11 +2584,14 @@ TEST(EditorUVETest, PlayModeSandbox_RestoresSnapshotRejectsAuthoringAndPreserves
         EXPECT_EQ(editor.GetPlayModeStateUVE(), EditorPlayModeStateUVE::Edit);
         EXPECT_FALSE(engine.IsTransientSimulationSessionActiveUVE());
         const std::vector<Scene::EntityUVE> restoredRoots = editor.GetDocumentRootsUVE();
-        ASSERT_EQ(restoredRoots.size(), 1U);
-        EXPECT_NE(restoredRoots.front(), root);
-        EXPECT_EQ(editor.GetSelectedEntityUVE(), restoredRoots.front());
+        ASSERT_EQ(restoredRoots.size(), 2U); // the scene root + the restored authored root
+        const Scene::EntityUVE restoredAuthored =
+            restoredRoots.front() == editor.GetDocumentSceneRootUVE() ? restoredRoots.back()
+                                                                       : restoredRoots.front();
+        EXPECT_NE(restoredAuthored, root);
+        EXPECT_EQ(editor.GetSelectedEntityUVE(), restoredAuthored);
         const Scene::TransformComponentUVE& restored =
-            entityManager.GetComponentUVE<Scene::TransformComponentUVE>(restoredRoots.front());
+            entityManager.GetComponentUVE<Scene::TransformComponentUVE>(restoredAuthored);
         EXPECT_EQ(restored.localPosition, authored.localPosition);
 
         editor.ShutdownUVE();
@@ -2584,8 +2624,9 @@ TEST(EditorUVETest, GetDocumentRootsUVE_ExcludesEditorInternalEntitiesAndTheySur
         entityManager.AddComponentUVE<Scene::EditorInternalEntityComponentUVE>(internalEntity);
 
         const std::vector<Scene::EntityUVE> roots = editor.GetDocumentRootsUVE();
-        ASSERT_EQ(roots.size(), 1U);
-        EXPECT_EQ(roots.front(), documentRoot);
+        ASSERT_EQ(roots.size(), 2U); // the scene root + the authored document root
+        EXPECT_NE(std::find(roots.begin(), roots.end(), documentRoot), roots.end());
+        EXPECT_EQ(std::find(roots.begin(), roots.end(), internalEntity), roots.end());
 
         editor.SelectEntityUVE(documentRoot);
         ASSERT_TRUE(editor.EnterPlayModeUVE());
@@ -2597,13 +2638,416 @@ TEST(EditorUVETest, GetDocumentRootsUVE_ExcludesEditorInternalEntitiesAndTheySur
         EXPECT_TRUE(entityManager.HasComponentUVE<Scene::EditorInternalEntityComponentUVE>(internalEntity));
 
         const std::vector<Scene::EntityUVE> rootsAfterStop = editor.GetDocumentRootsUVE();
-        ASSERT_EQ(rootsAfterStop.size(), 1U);
-        EXPECT_NE(rootsAfterStop.front(), documentRoot); // restored as a fresh handle, like every real root
+        ASSERT_EQ(rootsAfterStop.size(), 2U); // the scene root + the restored authored root
+        EXPECT_NE(rootsAfterStop.back(), documentRoot); // restored as a fresh handle, like every real root
 
         editor.ShutdownUVE();
     }
 
     engine.Shutdown();
+}
+
+TEST(EditorUVETest, PlayModeSandbox_SpawnPointTeleportsThePlayerAndStopGivesEverythingBack) {
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_play_spawn.uvescene", 100U, &engine);
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        Core::EngineServicesUVE& services = engine.GetServicesUVE();
+
+        // The player: a root-level entity with the controller component, authored at origin.
+        const Scene::EntityUVE player = entityManager.CreateEntityUVE();
+        AttachRootUVE(engine, player, Scene::TransformComponentUVE{});
+        entityManager.AddComponentUVE<Scene::CharacterControllerComponentUVE>(
+            player, Scene::CharacterControllerComponentUVE{});
+
+        // The spawn point: another root-level entity at (3, 1, -2), no offset, one-shot so both
+        // sandbox mutations (teleport, spend) can be measured in one session.
+        const Scene::EntityUVE spawn = entityManager.CreateEntityUVE();
+        Scene::TransformComponentUVE spawnTransform{};
+        spawnTransform.localPosition = Math::Vector3UVE{3.0F, 1.0F, -2.0F};
+        AttachRootUVE(engine, spawn, spawnTransform);
+        Scene::SpawnPoint3DNodeComponentUVE spawnPoint{};
+        spawnPoint.oneShot = true;
+        entityManager.AddComponentUVE<Scene::SpawnPoint3DNodeComponentUVE>(spawn, spawnPoint);
+
+        // Compose reads the spawn node's WORLD pose, so the sweep must have run since attaching.
+        services.GetSceneGraphUVE().UpdateUVE(entityManager);
+
+        ASSERT_TRUE(editor.EnterPlayModeUVE());
+        const Scene::TransformComponentUVE& playedTransform =
+            entityManager.GetComponentUVE<Scene::TransformComponentUVE>(player);
+        EXPECT_NEAR(playedTransform.localPosition.x, 3.0F, 1.0e-5F);
+        EXPECT_NEAR(playedTransform.localPosition.y, 1.0F, 1.0e-5F);
+        EXPECT_NEAR(playedTransform.localPosition.z, -2.0F, 1.0e-5F);
+        // The documented simulation-write rule: the quaternion is now the truth, so the authored
+        // Euler cache stops replaying over this teleport.
+        EXPECT_EQ(playedTransform.rotationEditMode, Scene::RotationEditModeUVE::Quaternion);
+        // One-shot is spent inside the sandbox.
+        EXPECT_FALSE(entityManager.GetComponentUVE<Scene::SpawnPoint3DNodeComponentUVE>(spawn).enabled);
+
+        services.GetSceneGraphUVE().UpdateUVE(entityManager);
+        EXPECT_NEAR(entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(player)
+                        .worldPosition.x,
+                    3.0F, 1.0e-5F);
+
+        // Stop hands BOTH back - the snapshot remakes document entities, so the two roles are
+        // found again by component, never by the old handles (see the restore test above).
+        ASSERT_TRUE(editor.StopPlayModeUVE());
+        Scene::EntityUVE restoredPlayer = Scene::kInvalidEntityUVE;
+        entityManager.ForEachUVE<Scene::CharacterControllerComponentUVE>(
+            [&restoredPlayer](const Scene::EntityUVE entity, Scene::CharacterControllerComponentUVE&) {
+                restoredPlayer = entity;
+            });
+        ASSERT_NE(restoredPlayer, Scene::kInvalidEntityUVE);
+        const Scene::TransformComponentUVE& restoredTransform =
+            entityManager.GetComponentUVE<Scene::TransformComponentUVE>(restoredPlayer);
+        EXPECT_EQ(restoredTransform.localPosition.x, 0.0F);
+        EXPECT_EQ(restoredTransform.localPosition.z, 0.0F);
+        EXPECT_EQ(restoredTransform.rotationEditMode, Scene::RotationEditModeUVE::Euler);
+        Scene::EntityUVE restoredSpawn = Scene::kInvalidEntityUVE;
+        entityManager.ForEachUVE<Scene::SpawnPoint3DNodeComponentUVE>(
+            [&restoredSpawn](const Scene::EntityUVE entity, Scene::SpawnPoint3DNodeComponentUVE&) {
+                restoredSpawn = entity;
+            });
+        ASSERT_NE(restoredSpawn, Scene::kInvalidEntityUVE);
+        EXPECT_TRUE(
+            entityManager.GetComponentUVE<Scene::SpawnPoint3DNodeComponentUVE>(restoredSpawn).enabled);
+
+        editor.ShutdownUVE();
+    }
+
+    engine.Shutdown();
+}
+
+TEST(EditorUVETest, PlayModeSandbox_SpawnPointWithOffsetAndParentPlacesRespectingBothKinds) {
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_play_spawn_offset.uvescene", 100U,
+                         &engine);
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        Core::EngineServicesUVE& services = engine.GetServicesUVE();
+        Scene::ISceneGraphUVE& sceneGraph = services.GetSceneGraphUVE();
+
+        // Spawn point node at (4, 0, 0) whose authored offset raises the player by (0, 0.5, 0);
+        // one-shot false, so the point stays live through the session.
+        const Scene::EntityUVE spawn = entityManager.CreateEntityUVE();
+        Scene::TransformComponentUVE spawnTransform{};
+        spawnTransform.localPosition = Math::Vector3UVE{4.0F, 0.0F, 0.0F};
+        AttachRootUVE(engine, spawn, spawnTransform);
+        Scene::SpawnPoint3DNodeComponentUVE spawnPoint{};
+        spawnPoint.localPosition = Math::Vector3UVE{0.0F, 0.5F, 0.0F};
+        entityManager.AddComponentUVE<Scene::SpawnPoint3DNodeComponentUVE>(spawn, spawnPoint);
+
+        // The player this time is a child of a scaled, translated parent: the world pose must
+        // arrive through the sweep's exact inverse, not by pretending the parent is identity.
+        const Scene::EntityUVE group = entityManager.CreateEntityUVE();
+        Scene::TransformComponentUVE groupTransform{};
+        groupTransform.localPosition = Math::Vector3UVE{10.0F, 0.0F, 0.0F};
+        groupTransform.localScale = Math::Vector3UVE{2.0F, 2.0F, 2.0F};
+        AttachRootUVE(engine, group, groupTransform);
+        const Scene::EntityUVE player = entityManager.CreateEntityUVE();
+        sceneGraph.AttachTransformUVE(entityManager, player, Scene::TransformComponentUVE{});
+        sceneGraph.SetParentUVE(entityManager, player, group);
+        entityManager.AddComponentUVE<Scene::CharacterControllerComponentUVE>(
+            player, Scene::CharacterControllerComponentUVE{});
+
+        sceneGraph.UpdateUVE(entityManager);
+        ASSERT_TRUE(editor.EnterPlayModeUVE());
+
+        // Expected world pose = (4, 0.5, 0); expected local = ((4-10)/2, (0.5-0)/2, 0).
+        const Scene::TransformComponentUVE& local =
+            entityManager.GetComponentUVE<Scene::TransformComponentUVE>(player);
+        EXPECT_NEAR(local.localPosition.x, -3.0F, 1.0e-5F);
+        EXPECT_NEAR(local.localPosition.y, 0.25F, 1.0e-5F);
+        EXPECT_NEAR(local.localPosition.z, 0.0F, 1.0e-5F);
+        sceneGraph.UpdateUVE(entityManager);
+        const Scene::WorldTransformComponentUVE& world =
+            entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(player);
+        EXPECT_NEAR(world.worldPosition.x, 4.0F, 1.0e-4F);
+        EXPECT_NEAR(world.worldPosition.y, 0.5F, 1.0e-4F);
+        // A reusable point is not spent.
+        EXPECT_TRUE(entityManager.GetComponentUVE<Scene::SpawnPoint3DNodeComponentUVE>(spawn).enabled);
+
+        ASSERT_TRUE(editor.StopPlayModeUVE());
+        editor.ShutdownUVE();
+    }
+
+    engine.Shutdown();
+}
+
+TEST(EditorUVETest, PlayModeSandbox_SpawnPointWithNoPlayerJustPlays) {
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_play_spawn_noop_a.uvescene", 100U,
+                         &engine);
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        Core::EngineServicesUVE& services = engine.GetServicesUVE();
+
+        // A spawn point with no player to absorb it: play still enters, and the point keeps its
+        // one-shot loaded - resolution is defined as "nothing to do", never a failure.
+        const Scene::EntityUVE spawn = entityManager.CreateEntityUVE();
+        AttachRootUVE(engine, spawn, Scene::TransformComponentUVE{});
+        Scene::SpawnPoint3DNodeComponentUVE spawnPoint{};
+        spawnPoint.oneShot = true;
+        entityManager.AddComponentUVE<Scene::SpawnPoint3DNodeComponentUVE>(spawn, spawnPoint);
+        services.GetSceneGraphUVE().UpdateUVE(entityManager);
+        ASSERT_TRUE(editor.EnterPlayModeUVE());
+        EXPECT_TRUE(entityManager.GetComponentUVE<Scene::SpawnPoint3DNodeComponentUVE>(spawn).enabled);
+        ASSERT_TRUE(editor.StopPlayModeUVE());
+
+        editor.ShutdownUVE();
+    }
+
+    engine.Shutdown();
+}
+
+TEST(EditorUVETest, PlayModeSandbox_PlayerWithNoSpawnPointKeepsItsAuthoredPose) {
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_play_spawn_noop_b.uvescene", 100U,
+                         &engine);
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        Core::EngineServicesUVE& services = engine.GetServicesUVE();
+
+        // The inverse of the previous test, in a document of its own: a player with nothing to
+        // spawn at keeps its authored pose through the whole sandbox cycle.
+        const Scene::EntityUVE player = entityManager.CreateEntityUVE();
+        Scene::TransformComponentUVE authored{};
+        authored.localPosition = Math::Vector3UVE{1.0F, 2.0F, 3.0F};
+        AttachRootUVE(engine, player, authored);
+        entityManager.AddComponentUVE<Scene::CharacterControllerComponentUVE>(
+            player, Scene::CharacterControllerComponentUVE{});
+        services.GetSceneGraphUVE().UpdateUVE(entityManager);
+        ASSERT_TRUE(editor.EnterPlayModeUVE());
+        const Scene::TransformComponentUVE& during =
+            entityManager.GetComponentUVE<Scene::TransformComponentUVE>(player);
+        EXPECT_EQ(during.localPosition.x, 1.0F);
+        EXPECT_EQ(during.localPosition.y, 2.0F);
+        ASSERT_TRUE(editor.StopPlayModeUVE());
+
+        editor.ShutdownUVE();
+    }
+
+    engine.Shutdown();
+}
+
+TEST(EditorUVETest, ViewportBookmarks_StoreRestoreClearAndRejectBadInput) {
+    // The session bookmark store itself: Unreal's Ctrl+digit/digit slots as editor-owned
+    // transient state - isolated per slot, validated on the way in, honest about what is not
+    // inside it (no document coupling, no scene dirty flag touched).
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_bookmarks.uvescene", 100U, &engine);
+        editor.InitUVE();
+
+        // An untouched slot answers no value, and every slot index out of range fails closed.
+        EXPECT_FALSE(editor.GetViewportBookmarkUVE(0U).has_value());
+        EXPECT_FALSE(editor.GetViewportBookmarkUVE(Editor::kEditorViewportBookmarkSlotCountUVE).has_value());
+        EXPECT_FALSE(editor.ClearViewportBookmarkUVE(Editor::kEditorViewportBookmarkSlotCountUVE));
+
+        const Editor::EditorViewportBookmarkUVE first{
+            Math::Vector3UVE{1.0F, 2.0F, 3.0F}, 0.4F, -0.2F, 7.5F};
+        ASSERT_TRUE(editor.SetViewportBookmarkUVE(0U, first));
+        const Editor::EditorViewportBookmarkUVE other{
+            Math::Vector3UVE{-8.0F, 0.0F, 2.0F}, 2.1F, 0.9F, 12.0F};
+        ASSERT_TRUE(editor.SetViewportBookmarkUVE(Editor::kEditorViewportBookmarkSlotCountUVE - 1U, other));
+
+        // Round trip is exact - the store must not smear floats while they are only passing through.
+        const std::optional<Editor::EditorViewportBookmarkUVE> restored =
+            editor.GetViewportBookmarkUVE(0U);
+        ASSERT_TRUE(restored.has_value());
+        EXPECT_EQ(restored->target.x, 1.0F);
+        EXPECT_EQ(restored->yawRadians, 0.4F);
+        EXPECT_EQ(restored->pitchRadians, -0.2F);
+        EXPECT_EQ(restored->distance, 7.5F);
+        // Slots stay independent; clearing an occupied slot reports it, an empty one does not.
+        ASSERT_TRUE(editor.GetViewportBookmarkUVE(9U).has_value());
+        EXPECT_TRUE(editor.ClearViewportBookmarkUVE(0U));
+        EXPECT_FALSE(editor.GetViewportBookmarkUVE(0U).has_value());
+        EXPECT_TRUE(editor.GetViewportBookmarkUVE(9U).has_value());
+        EXPECT_FALSE(editor.ClearViewportBookmarkUVE(1U));
+
+        // Storing over an occupied slot replaces it.
+        ASSERT_TRUE(editor.SetViewportBookmarkUVE(9U, first));
+        EXPECT_EQ(editor.GetViewportBookmarkUVE(9U)->target.x, 1.0F);
+
+        // Garbage in, nothing stored: out-of-range slot, NaN, and a non-positive distance.
+        EXPECT_FALSE(editor.SetViewportBookmarkUVE(10U, first));
+        EXPECT_FALSE(editor.SetViewportBookmarkUVE(
+            1U, Editor::EditorViewportBookmarkUVE{
+                    Math::Vector3UVE{std::numeric_limits<float>::quiet_NaN(), 0.0F, 0.0F},
+                    0.0F, 0.0F, 5.0F}));
+        EXPECT_FALSE(editor.SetViewportBookmarkUVE(
+            1U, Editor::EditorViewportBookmarkUVE{{}, 0.0F, 0.0F, 0.0F}));
+        EXPECT_FALSE(editor.GetViewportBookmarkUVE(1U).has_value());
+
+        editor.ShutdownUVE();
+    }
+
+    engine.Shutdown();
+}
+
+TEST(EditorUVETest, Marker3DFocusBookmark_FliesTheCameraIntoTheMarkerViewpoint) {
+    // ComposeMarker3DFocusBookmarkUVE is the live consumer that separates UVE's Marker3D from
+    // Godot's inert annotation: the marker's authored offset+rotation compose under the node's
+    // world pose, the eye lands exactly ON the marker looking along its composed -Z, and the
+    // orbit inverse then hands back a target/yaw/pitch the viewport camera can hold verbatim -
+    // measured here by running the camera's own forward formula back to the eye (round trip).
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_marker_focus.uvescene", 100U, &engine);
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        Core::EngineServicesUVE& services = engine.GetServicesUVE();
+
+        // Marker node at (3,1,-2), yawed 90 degrees about Y (-Z faces -X), local offset (0,2,4).
+        const Scene::EntityUVE markerNode = entityManager.CreateEntityUVE();
+        Scene::TransformComponentUVE markerTransform{};
+        markerTransform.localPosition = Math::Vector3UVE{3.0F, 1.0F, -2.0F};
+        markerTransform.localRotation = Math::QuaternionUVE{0.0F, 0.70710678F, 0.0F, 0.70710678F};
+        AttachRootUVE(engine, markerNode, markerTransform);
+        Scene::Marker3DNodeComponentUVE marker{};
+        marker.markerName = "Boss view";
+        marker.localPosition = Math::Vector3UVE{0.0F, 2.0F, 4.0F};
+        entityManager.AddComponentUVE<Scene::Marker3DNodeComponentUVE>(markerNode, marker);
+        services.GetSceneGraphUVE().UpdateUVE(entityManager);
+
+        const std::optional<Editor::EditorViewportBookmarkUVE> bookmark =
+            editor.ComposeMarker3DFocusBookmarkUVE(markerNode);
+        ASSERT_TRUE(bookmark.has_value());
+        // Composed eye: rotation maps (0,2,4) to (4,2,0) about Y with sin90, added to the node.
+        const float expectedEyeX = 3.0F + 4.0F;
+        const float expectedEyeY = 1.0F + 2.0F;
+        const float expectedEyeZ = -2.0F;
+        // Composed forward: -Z rotated 90 degrees about Y points along -X.
+        // The camera convention: eye = target + offset(yaw,pitch) * distance with
+        // offset=(cosy*cosp, sinp, siny*cosp) - run it forward and require the eye back.
+        const float cosPitch = std::cos(bookmark->pitchRadians);
+        const Math::Vector3UVE offset{
+            std::cos(bookmark->yawRadians) * cosPitch,
+            std::sin(bookmark->pitchRadians),
+            std::sin(bookmark->yawRadians) * cosPitch,
+        };
+        const Math::Vector3UVE roundTripEye =
+            bookmark->target + offset * bookmark->distance;
+        EXPECT_NEAR(roundTripEye.x, expectedEyeX, 1.0e-4F);
+        EXPECT_NEAR(roundTripEye.y, expectedEyeY, 1.0e-4F);
+        EXPECT_NEAR(roundTripEye.z, expectedEyeZ, 1.0e-4F);
+        EXPECT_NEAR(bookmark->distance, Editor::kEditorMarkerFocusDistanceUVE, 1.0e-6F);
+        // And the view direction itself is -X: target - eye points along composed -Z.
+        const Math::Vector3UVE viewDirection =
+            (bookmark->target - roundTripEye) * (1.0F / Editor::kEditorMarkerFocusDistanceUVE);
+        EXPECT_NEAR(viewDirection.x, -1.0F, 1.0e-4F);
+        EXPECT_NEAR(viewDirection.y, 0.0F, 1.0e-4F);
+        EXPECT_NEAR(viewDirection.z, 0.0F, 1.0e-4F);
+
+        // A disabled or invalid marker, or a plain entity, composes nothing - fail-closed.
+        entityManager.GetComponentUVE<Scene::Marker3DNodeComponentUVE>(markerNode).enabled = false;
+        EXPECT_FALSE(editor.ComposeMarker3DFocusBookmarkUVE(markerNode).has_value());
+        const Scene::EntityUVE plain = entityManager.CreateEntityUVE();
+        AttachRootUVE(engine, plain, Scene::TransformComponentUVE{});
+        EXPECT_FALSE(editor.ComposeMarker3DFocusBookmarkUVE(plain).has_value());
+
+        // Plain-entity focus still answers the authored world position when a transform exists.
+        Scene::TransformComponentUVE plainTransform{};
+        plainTransform.localPosition = Math::Vector3UVE{-4.0F, 0.5F, 8.0F};
+        services.GetSceneGraphUVE().SetLocalTransformUVE(entityManager, plain, plainTransform);
+        services.GetSceneGraphUVE().UpdateUVE(entityManager);
+        const std::optional<Math::Vector3UVE> focusTarget =
+            editor.ResolveEntityFocusTargetUVE(plain);
+        ASSERT_TRUE(focusTarget.has_value());
+        EXPECT_NEAR(focusTarget->x, -4.0F, 1.0e-5F);
+        EXPECT_NEAR(focusTarget->y, 0.5F, 1.0e-5F);
+        EXPECT_NEAR(focusTarget->z, 8.0F, 1.0e-5F);
+
+        editor.ShutdownUVE();
+    }
+
+    engine.Shutdown();
+}
+
+TEST(EditorUVETest, OrbitBookmarkInverse_RoundTripsTheCameraEyeAndGuardsThePoles) {
+    // The pure inverse: craft any in-range yaw/pitch, build the camera's own offset formula
+    // forward from it, give that eye+forward to ResolveOrbitBookmarkFromLookUVE, and require the
+    // recovered pose reproduces the same eye through the same forward formula - the exact
+    // measured round trip (identical claim style to SpringArm3D's sweep inverse, below 1e-4).
+    const float distance = 6.0F;
+    const float cases[][2] = {{0.0F, 0.0F}, {0.7553F, -0.4561F}, {-2.2F, 1.2F}, {3.0F, -1.55F}};
+    for (const auto& yawPitch : cases) {
+        const float cosPitch = std::cos(yawPitch[1]);
+        const Math::Vector3UVE offset{
+            std::cos(yawPitch[0]) * cosPitch, std::sin(yawPitch[1]),
+            std::sin(yawPitch[0]) * cosPitch};
+        const Math::Vector3UVE target{2.0F, -1.0F, 5.0F};
+        const Math::Vector3UVE eye = target + offset * distance;
+        const Math::Vector3UVE forward = offset * (-1.0F);
+        const std::optional<Editor::EditorViewportBookmarkUVE> recovered =
+            Editor::EditorUVE::ResolveOrbitBookmarkFromLookUVE(eye, forward, distance);
+        ASSERT_TRUE(recovered.has_value());
+        const float recoveredCosPitch = std::cos(recovered->pitchRadians);
+        const Math::Vector3UVE recoveredOffset{
+            std::cos(recovered->yawRadians) * recoveredCosPitch,
+            std::sin(recovered->pitchRadians),
+            std::sin(recovered->yawRadians) * recoveredCosPitch};
+        const Math::Vector3UVE recoveredEye =
+            recovered->target + recoveredOffset * recovered->distance;
+        EXPECT_NEAR(recoveredEye.x, eye.x, 1.0e-4F) << "yaw in case: " << yawPitch[0];
+        EXPECT_NEAR(recoveredEye.y, eye.y, 1.0e-4F) << "yaw in case: " << yawPitch[0];
+        EXPECT_NEAR(recoveredEye.z, eye.z, 1.0e-4F) << "yaw in case: " << yawPitch[0];
+    }
+
+    // The poles: a straight-down look can only snap to the clamped pitch with yaw 0 (the
+    // convention), and garbage never yields a pose at all.
+    const std::optional<Editor::EditorViewportBookmarkUVE> straightDown =
+        Editor::EditorUVE::ResolveOrbitBookmarkFromLookUVE(
+            {}, Math::Vector3UVE{0.0F, -1.0F, 0.0F}, distance);
+    ASSERT_TRUE(straightDown.has_value());
+    // The camera formula has offset.y = sin(pitch): a down-looking forward (-Y) means the eye
+    // sits ABOVE the target, so the inverse of a -Y forward is pitch = +pi/2, not -pi/2. The
+    // camera's own ~89-degree clamp is applied only when the pose is handed to it
+    // (OrbitCamera::SetYawPitch), and yaw is clamped to 0 at the pole where it is unobservable.
+    EXPECT_NEAR(straightDown->pitchRadians, std::numbers::pi_v<float> * 0.5F, 1.0e-6F);
+    EXPECT_EQ(straightDown->yawRadians, 0.0F);
+    // The opposite pole: a straight-up look inverts to pitch = -pi/2 (eye below the target).
+    const std::optional<Editor::EditorViewportBookmarkUVE> straightUp =
+        Editor::EditorUVE::ResolveOrbitBookmarkFromLookUVE(
+            {}, Math::Vector3UVE{0.0F, 1.0F, 0.0F}, distance);
+    ASSERT_TRUE(straightUp.has_value());
+    EXPECT_NEAR(straightUp->pitchRadians, -std::numbers::pi_v<float> * 0.5F, 1.0e-6F);
+    EXPECT_EQ(straightUp->yawRadians, 0.0F);
+
+    EXPECT_FALSE(Editor::EditorUVE::ResolveOrbitBookmarkFromLookUVE(
+                     {}, Math::Vector3UVE{0.0F, 0.0F, 0.0F}, distance)
+                     .has_value());
+    EXPECT_FALSE(Editor::EditorUVE::ResolveOrbitBookmarkFromLookUVE(
+                     {}, Math::Vector3UVE{std::numeric_limits<float>::quiet_NaN(), 0.0F, 0.0F},
+                     distance)
+                     .has_value());
+    EXPECT_FALSE(Editor::EditorUVE::ResolveOrbitBookmarkFromLookUVE(
+                     {}, Math::Vector3UVE{1.0F, 0.0F, 0.0F}, -1.0F)
+                     .has_value());
 }
 
 TEST(EditorUVETest, PlayModeSandbox_RestoresOrderedMultiSelectionAndActiveEntity) {
@@ -2626,11 +3070,13 @@ TEST(EditorUVETest, PlayModeSandbox_RestoresOrderedMultiSelectionAndActiveEntity
         ASSERT_TRUE(editor.StopPlayModeUVE());
 
         const std::vector<Scene::EntityUVE> restoredRoots = editor.GetDocumentRootsUVE();
-        ASSERT_EQ(restoredRoots.size(), 2U);
-        EXPECT_NE(restoredRoots[0], first);
-        EXPECT_NE(restoredRoots[1], second);
-        EXPECT_EQ(editor.GetSelectedEntitiesUVE(), restoredRoots);
-        EXPECT_EQ(editor.GetSelectedEntityUVE(), restoredRoots.back());
+        ASSERT_EQ(restoredRoots.size(), 3U); // the scene root + the two restored authored roots
+        EXPECT_NE(restoredRoots[1], first);
+        EXPECT_NE(restoredRoots[2], second);
+        // The restored selection is the authored pair (the two non-scene-root restored roots,
+        // in their restored order); the scene root itself is never part of it.
+        EXPECT_EQ(editor.GetSelectedEntitiesUVE(), (std::vector<Scene::EntityUVE>{restoredRoots[0], restoredRoots[1]}));
+        EXPECT_EQ(editor.GetSelectedEntityUVE(), restoredRoots[1]);
         EXPECT_FALSE(editor.HasSingleDocumentSelectionUVE());
 
         editor.ShutdownUVE();
@@ -2652,11 +3098,15 @@ TEST(EditorUVETest, PlayModeSandbox_HandlesEmptyDocumentAndMissingControlSafely)
 
         EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_play_empty.uvescene", 100U, &engine);
         editor.InitUVE();
-        EXPECT_TRUE(editor.GetDocumentRootsUVE().empty());
+        // One-root documents: an otherwise-empty document holds exactly the scene root.
+        ASSERT_EQ(editor.GetDocumentRootsUVE().size(), 1U);
+        EXPECT_EQ(editor.GetDocumentRootsUVE()[0U], editor.GetDocumentSceneRootUVE());
         ASSERT_TRUE(editor.EnterPlayModeUVE());
         ASSERT_TRUE(editor.StopPlayModeUVE());
         EXPECT_EQ(editor.GetPlayModeStateUVE(), EditorPlayModeStateUVE::Edit);
-        EXPECT_TRUE(editor.GetDocumentRootsUVE().empty());
+        // One-root documents: an otherwise-empty document holds exactly the scene root.
+        ASSERT_EQ(editor.GetDocumentRootsUVE().size(), 1U);
+        EXPECT_EQ(editor.GetDocumentRootsUVE()[0U], editor.GetDocumentSceneRootUVE());
         editor.ShutdownUVE();
     }
 

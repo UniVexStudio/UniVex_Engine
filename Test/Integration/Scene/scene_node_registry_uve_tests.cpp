@@ -14,7 +14,7 @@ namespace {
 
 TEST(SceneNodeRegistryUVETest, BuiltInDescriptorsUVE_AreStableUniqueAndRuntimeBound) {
     const std::span<const SceneNodeDescriptorUVE> descriptors = GetSceneNodeDescriptorsUVE();
-    ASSERT_EQ(descriptors.size(), 38U);
+    ASSERT_EQ(descriptors.size(), 43U);
 
     std::unordered_set<std::string_view> ids;
     for (const SceneNodeDescriptorUVE& descriptor : descriptors) {
@@ -24,7 +24,8 @@ TEST(SceneNodeRegistryUVETest, BuiltInDescriptorsUVE_AreStableUniqueAndRuntimeBo
         EXPECT_FALSE(descriptor.category.empty());
         EXPECT_FALSE(descriptor.runtimeOwner.empty());
         EXPECT_LE(descriptor.authoredContracts.size(), 8U);
-        if (descriptor.kind == SceneNodeKindUVE::AnimationTree) {
+        if (descriptor.kind == SceneNodeKindUVE::AnimationTree ||
+            descriptor.kind == SceneNodeKindUVE::SceneRoot) {
             EXPECT_FALSE(descriptor.libraryCreatable);
         } else {
             EXPECT_TRUE(descriptor.libraryCreatable);

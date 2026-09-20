@@ -45,6 +45,7 @@
 #include "uve/physics/physics_query_system_uve.h"
 #include "uve/physics/i_raycast_system_uve.h"
 #include "uve/render_systems/i_camera_system_uve.h"
+#include "uve/render_systems/i_compute_system_uve.h"
 #include "uve/render_systems/i_light_system_uve.h"
 #include "uve/render_systems/i_mesh_renderer_uve.h"
 #include "uve/rhi/i_render_device_uve.h"
@@ -573,8 +574,11 @@ public:
     void BindIndexBufferUVE(Render::BufferHandleUVE) override {}
     void BindTextureUVE(Render::TextureHandleUVE, std::uint32_t) override {}
     void BindUniformBufferUVE(Render::BufferHandleUVE, std::uint32_t) override {}
+    void BindStorageBufferUVE(Render::BufferHandleUVE, std::uint32_t) override {}
     void DrawIndexedUVE(std::uint32_t, std::uint32_t) override {}
+    void DrawIndexedIndirectUVE(Render::BufferHandleUVE, std::uint64_t) override {}
     void DrawUVE(std::uint32_t, std::uint32_t) override {}
+    void DispatchUVE(std::uint32_t, std::uint32_t, std::uint32_t) override {}
     void SetUniformFloatUVE(std::string_view, float) override {}
     void SetUniformIntUVE(std::string_view, std::int32_t) override {}
     void SetUniformBoolUVE(std::string_view, bool) override {}
@@ -593,6 +597,9 @@ public:
     [[nodiscard]] bool UpdateBufferUVE(Render::BufferHandleUVE, std::span<const std::byte>, std::uint64_t) override {
         return true;
     }
+    [[nodiscard]] bool ReadbackBufferUVE(Render::BufferHandleUVE, std::span<std::byte>, std::uint64_t) override {
+        return false; // this fake owns no memory - it never pretends to have contents to hand back
+    }
     [[nodiscard]] Render::TextureHandleUVE CreateTextureUVE(const Render::TextureDescUVE&,
                                                               std::span<const std::byte>) override {
         return Render::TextureHandleUVE{1};
@@ -603,6 +610,10 @@ public:
     }
     void DestroyShaderUVE(Render::ShaderHandleUVE) override {}
     [[nodiscard]] Render::PipelineHandleUVE CreatePipelineUVE(const Render::PipelineDescUVE&, std::string*) override {
+        return Render::PipelineHandleUVE{1};
+    }
+    [[nodiscard]] Render::PipelineHandleUVE CreateComputePipelineUVE(const Render::ComputePipelineDescUVE&,
+                                                                      std::string*) override {
         return Render::PipelineHandleUVE{1};
     }
     void DestroyPipelineUVE(Render::PipelineHandleUVE) override {}
@@ -656,6 +667,25 @@ public:
 
     FakeCommandBufferUVE commandBuffer;
     int beginFrameCallCount = 0;
+};
+
+class FakeComputeSystemUVE final : public Render::IComputeSystemUVE {
+public:
+    [[nodiscard]] Render::PipelineHandleUVE CreateProgramUVE(const Render::ComputeProgramDescUVE&,
+                                                              std::string*) override {
+        return Render::kInvalidPipelineHandleUVE;
+    }
+    void DestroyProgramUVE(Render::PipelineHandleUVE) override {}
+    [[nodiscard]] bool IsProgramLiveUVE(Render::PipelineHandleUVE) const noexcept override { return false; }
+    [[nodiscard]] bool EnqueueDispatchUVE(const Render::ComputeDispatchDescUVE&) override { return false; }
+    std::size_t ExecuteQueuedDispatchesUVE(Render::ICommandBufferUVE&) override { return 0U; }
+    [[nodiscard]] std::size_t GetQueuedDispatchCountUVE() const noexcept override { return 0U; }
+    void ClearQueueUVE() override {}
+    [[nodiscard]] const Render::ComputeSystemDiagnosticsUVE& GetDiagnosticsUVE() const noexcept override {
+        return diagnostics;
+    }
+
+    Render::ComputeSystemDiagnosticsUVE diagnostics;
 };
 
 class FakeCameraSystemUVE final : public Render::ICameraSystemUVE {
@@ -712,7 +742,16 @@ public:
 
 class FakeRenderer3DUVE final : public Render::IRenderer3DUVE {
 public:
+    float lastPhysicsInterpolationAlpha = -1.0F;
+
     void RenderFrameUVE(Scene::IEntityManagerUVE&, Scene::EntityUVE) override { ++renderFrameCallCount; }
+
+    void SetPhysicsInterpolationAlphaUVE(const float alpha) noexcept override {
+        // Recorded rather than ignored: a fake that silently swallows the value cannot tell a
+        // caller that forgot to set it from one that set it to zero, and this fake exists
+        // precisely to observe what the engine hands the renderer.
+        lastPhysicsInterpolationAlpha = alpha;
+    }
 
     [[nodiscard]] Render::Renderer3DFrameDiagnosticsUVE GetLastFrameDiagnosticsUVE() const noexcept override {
         ++getDiagnosticsCallCount;
@@ -941,6 +980,7 @@ TEST(EngineServicesUVETest, Accessors_ReturnExactSameInstancesPassedIn) {
     FakeRenderDeviceUVE renderDevice;
     FakeShaderManagerUVE shaderManager;
     FakeRenderSystemUVE renderSystem;
+    FakeComputeSystemUVE computeSystem;
     FakeCameraSystemUVE cameraSystem;
     FakeMeshRendererUVE meshRenderer;
     FakeLightSystemUVE lightSystem;
@@ -966,7 +1006,7 @@ TEST(EngineServicesUVETest, Accessors_ReturnExactSameInstancesPassedIn) {
                                       assetDatabase, projectFileIndex, derivedArtifactCache, projectChangeWatcher,
                                       sceneSerializer, prefabSystem, particleRuntime,
                                       hotReload, assetManager, assetImporter, assetImportQueue, assetBundle, fileSystem,
-                                      renderDevice, shaderManager, renderSystem, cameraSystem,
+                                      renderDevice, shaderManager, renderSystem, computeSystem, cameraSystem,
                                       meshRenderer, lightSystem, renderer3D, collisionSystem, physicsSystem,
                                       physicsQuerySystem, raycastSystem, physicsConstraintSystem, inputSystem,
                                       gamepadInputSystem, mobileInputSystem, mobileGestureSystem, audioDevice, audioSystem,
@@ -997,6 +1037,7 @@ TEST(EngineServicesUVETest, Accessors_ReturnExactSameInstancesPassedIn) {
     EXPECT_EQ(&services.GetRenderDeviceUVE(), &renderDevice);
     EXPECT_EQ(&services.GetShaderManagerUVE(), &shaderManager);
     EXPECT_EQ(&services.GetRenderSystemUVE(), &renderSystem);
+    EXPECT_EQ(&services.GetComputeSystemUVE(), &computeSystem);
     EXPECT_EQ(&services.GetCameraSystemUVE(), &cameraSystem);
     EXPECT_EQ(&services.GetMeshRendererUVE(), &meshRenderer);
     EXPECT_EQ(&services.GetLightSystemUVE(), &lightSystem);
@@ -1044,6 +1085,7 @@ TEST(EngineServicesUVETest, Accessors_ProveInterfacesAreGenuinelySubstitutable) 
     FakeRenderDeviceUVE renderDevice;
     FakeShaderManagerUVE shaderManager;
     FakeRenderSystemUVE renderSystem;
+    FakeComputeSystemUVE computeSystem;
     FakeCameraSystemUVE cameraSystem;
     FakeMeshRendererUVE meshRenderer;
     FakeLightSystemUVE lightSystem;
@@ -1068,7 +1110,7 @@ TEST(EngineServicesUVETest, Accessors_ProveInterfacesAreGenuinelySubstitutable) 
                                       assetDatabase, projectFileIndex, derivedArtifactCache, projectChangeWatcher,
                                       sceneSerializer, prefabSystem, particleRuntime,
                                       hotReload, assetManager, assetImporter, assetImportQueue, assetBundle, fileSystem,
-                                      renderDevice, shaderManager, renderSystem, cameraSystem,
+                                      renderDevice, shaderManager, renderSystem, computeSystem, cameraSystem,
                                       meshRenderer, lightSystem, renderer3D, collisionSystem, physicsSystem,
                                       physicsQuerySystem, raycastSystem, physicsConstraintSystem, inputSystem,
                                       gamepadInputSystem, mobileInputSystem, mobileGestureSystem, audioDevice, audioSystem,

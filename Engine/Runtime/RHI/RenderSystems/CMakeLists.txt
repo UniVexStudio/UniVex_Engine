@@ -4,7 +4,8 @@
 # The render systems built on top of RHI+Shader: RenderSystemUVE (frame submission),
 # RenderGraphUVE/RenderQueueUVE (draw ordering), CameraSystemUVE, MeshRendererUVE/
 # MeshRenderEligibilityUVE, PrimitiveGeometryUVE, LightSystemUVE, Renderer3DUVE (the composed
-# per-frame 3D renderer), ViewportManagerUVE, and the particle rendering bridge
+# per-frame 3D renderer), ComputeSystemUVE (the engine-level compute consumer layer over the
+# M5a/M5b RHI compute slices), ViewportManagerUVE, and the particle rendering bridge
 # (ParticleRenderBridgeUVE/ParticleDrawCommandUVE) - the layer EngineCoreUVE itself sits on.
 #
 # uve_scene: these systems walk Scene::IEntityManagerUVE for Camera/Light/Mesh/PrimitiveMesh/
@@ -19,9 +20,16 @@ add_library(uve_render_systems STATIC
     Internal/render_system_uve.cpp
     Internal/render_graph_uve.cpp
     Internal/camera_system_uve.cpp
+    Internal/compute_system_uve.cpp
+    Internal/particle_compute_simulation_uve.cpp
+    Internal/frustum_cull_compute_uve.cpp
+    Internal/frustum_cull_indirect_uve.cpp
+    Internal/mesh_skin_compute_uve.cpp
+    Internal/render_batch_uve.cpp
     Internal/render_queue_uve.cpp
     Internal/particle_render_bridge_uve.cpp
     Internal/particle_draw_command_uve.cpp
+    Internal/mesh_visibility_set_uve.cpp
     Internal/mesh_renderer_uve.cpp
     Internal/mesh_render_eligibility_uve.cpp
     Internal/primitive_geometry_uve.cpp

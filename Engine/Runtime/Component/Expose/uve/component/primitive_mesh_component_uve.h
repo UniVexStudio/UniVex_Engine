@@ -26,23 +26,10 @@ struct PrimitiveMeshComponentUVE final {
     Math::Vector3UVE baseColor{0.72F, 0.72F, 0.72F};
 };
 
-[[nodiscard]] constexpr bool IsPrimitiveMeshKindValidUVE(const PrimitiveMeshKindUVE kind) noexcept {
-    switch (kind) {
-        case PrimitiveMeshKindUVE::Cube:
-        case PrimitiveMeshKindUVE::UVSphere:
-        case PrimitiveMeshKindUVE::Plane:
-            return true;
-    }
-    return false;
-}
+[[nodiscard]] bool IsPrimitiveMeshKindValidUVE(const PrimitiveMeshKindUVE kind) noexcept;
 
-[[nodiscard]] inline bool IsPrimitiveBaseColorValidUVE(const Math::Vector3UVE& color) noexcept {
-    return std::isfinite(color.x) && std::isfinite(color.y) && std::isfinite(color.z) && color.x >= 0.0F &&
-           color.x <= 1.0F && color.y >= 0.0F && color.y <= 1.0F && color.z >= 0.0F && color.z <= 1.0F;
-}
+[[nodiscard]] bool IsPrimitiveBaseColorValidUVE(const Math::Vector3UVE& color) noexcept;
 
-[[nodiscard]] inline bool IsPrimitiveMeshComponentValidUVE(const PrimitiveMeshComponentUVE& component) noexcept {
-    return IsPrimitiveMeshKindValidUVE(component.kind) && IsPrimitiveBaseColorValidUVE(component.baseColor);
-}
+[[nodiscard]] bool IsPrimitiveMeshComponentValidUVE(const PrimitiveMeshComponentUVE& component) noexcept;
 
 } // namespace UVE::Scene

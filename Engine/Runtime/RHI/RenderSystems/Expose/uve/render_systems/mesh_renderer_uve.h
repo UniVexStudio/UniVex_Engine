@@ -18,6 +18,13 @@ public:
                                                          Asset::IAssetDatabaseUVE& assetDatabase,
                                                          const Math::FrustumUVE& cullFrustum) const override;
 
+    void BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityManager, Asset::IAssetManagerUVE& assetManager,
+                               Asset::IAssetDatabaseUVE& assetDatabase,
+                               MeshVisibilitySetUVE& outVisibilitySet) const override;
+
+    void CullVisibilitySetIntoUVE(const MeshVisibilitySetUVE& visibilitySet, const Math::FrustumUVE& cullFrustum,
+                                  RenderQueueUVE& outQueue) const override;
+
     void ExtractRenderQueueIntoUVE(Scene::IEntityManagerUVE& entityManager, Asset::IAssetManagerUVE& assetManager,
                                    Asset::IAssetDatabaseUVE& assetDatabase, const Math::FrustumUVE& cullFrustum,
                                    RenderQueueUVE& outQueue) const override;

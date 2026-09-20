@@ -17,20 +17,57 @@
 
 namespace UVE::Render {
 
-/// What a BufferDescUVE-created buffer is used for. `Storage` (arbitrary read/write buffers for
-/// compute shaders) is deliberately omitted — ComputeSystemUVE (Part 7.2) doesn't exist yet;
-/// adding it later is additive, not a breaking change to this enum.
-enum class BufferUsageUVE : std::uint8_t { Vertex, Index, Uniform };
+/// What a BufferDescUVE-created buffer is used for. `Storage` (Vulkan M2f) is a shader-storage
+/// buffer (SSBO): arbitrary read/write GPU data bound via ICommandBufferUVE::BindStorageBufferUVE
+/// and read/written from graphics-stage shaders (`readonly buffer`/`buffer` blocks) — and since
+/// the M5a compute slice, from compute shaders too (the classic SSBO producer/consumer pattern:
+/// dispatch writes, draws read).
+/// `IndirectStorage` (CS7) is a buffer holding DrawIndexedIndirectCommandUVE records for
+/// ICommandBufferUVE::DrawIndexedIndirectUVE() - and, deliberately, an SSBO at the same time.
+/// A separate write-only Indirect usage was considered and rejected: the entire point of indirect
+/// draw in this engine is that a COMPUTE dispatch writes the parameters (that is what lets GPU
+/// culling stop round-tripping through the CPU), so a usage the compute stage cannot bind would
+/// serve nothing the CPU could not already do with DrawIndexedUVE. Backends therefore create it
+/// with both capabilities - VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | STORAGE_BUFFER_BIT on Vulkan,
+/// and on GL it binds to both GL_DRAW_INDIRECT_BUFFER and GL_SHADER_STORAGE_BUFFER - and
+/// ReadbackBufferUVE covers it exactly as it covers Storage.
+enum class BufferUsageUVE : std::uint8_t { Vertex, Index, Uniform, Storage, IndirectStorage };
 
 [[nodiscard]] constexpr bool IsBufferUsageValidUVE(const BufferUsageUVE usage) noexcept {
     switch (usage) {
         case BufferUsageUVE::Vertex:
         case BufferUsageUVE::Index:
         case BufferUsageUVE::Uniform:
+        case BufferUsageUVE::Storage:
+        case BufferUsageUVE::IndirectStorage:
             return true;
     }
     return false;
 }
+
+/// True for the usages a shader-storage binding accepts. IndirectStorage is deliberately included:
+/// it IS an SSBO, and the compute kernel that fills it binds it as one.
+[[nodiscard]] constexpr bool IsStorageBindableUsageUVE(const BufferUsageUVE usage) noexcept {
+    return usage == BufferUsageUVE::Storage || usage == BufferUsageUVE::IndirectStorage;
+}
+
+/// One indexed indirect draw, laid out to match what every backend's indirect draw reads straight
+/// out of GPU memory: VkDrawIndexedIndirectCommand and GL's DrawElementsIndirectCommand are the
+/// same five consecutive 32-bit fields in the same order, which is what makes one struct portable
+/// here. The layout is fixed by those APIs, so it is asserted below rather than merely intended.
+struct DrawIndexedIndirectCommandUVE {
+    std::uint32_t indexCount = 0;
+    std::uint32_t instanceCount = 0;
+    std::uint32_t firstIndex = 0;
+    std::int32_t vertexOffset = 0;
+    std::uint32_t firstInstance = 0;
+};
+
+static_assert(sizeof(DrawIndexedIndirectCommandUVE) == 20U,
+              "DrawIndexedIndirectCommandUVE must be the five tightly packed 32-bit fields both "
+              "Vulkan and GL read directly out of buffer memory");
+static_assert(alignof(DrawIndexedIndirectCommandUVE) == alignof(std::uint32_t),
+              "DrawIndexedIndirectCommandUVE must not acquire padding the GPU layout lacks");
 
 /// Describes a GPU buffer to create via IRenderDeviceUVE::CreateBufferUVE(). A buffer must have
 /// positive byte capacity; zero-sized GL buffers are not useful to any supported draw/update path.
@@ -98,12 +135,13 @@ struct TextureDescUVE {
     return initialData.empty() || initialData.size() == static_cast<std::size_t>(expectedBytes);
 }
 
-/// Which programmable stage a ShaderDescUVE belongs to. `Compute` is reserved for the future
-/// ComputeSystemUVE (Part 7.2) — unused by anything built so far. `Geometry` (Increment 21) is
-/// compilable standalone via Shader::ShaderSourceUVE but, like Compute, has no pipeline slot yet
-/// — PipelineDescUVE still only links a vertex+fragment pair; growing it with a geometry slot is
-/// deferred future work, not built this increment. Append-only: never renumber existing values,
-/// since ShaderStageUVE crosses the RHI boundary.
+/// Which programmable stage a ShaderDescUVE belongs to. `Compute` is real since the M5a
+/// compute slice: CreateShaderUVE accepts compute-stage shaders and CreateComputePipelineUVE
+/// links exactly one of them. `Geometry` (Increment 21) is compilable standalone via
+/// Shader::ShaderSourceUVE but still has no pipeline slot — PipelineDescUVE only links a
+/// vertex+fragment pair; growing it with a geometry slot is deferred future work, not built
+/// this increment. Append-only: never renumber existing values, since ShaderStageUVE crosses
+/// the RHI boundary.
 enum class ShaderStageUVE : std::uint8_t { Vertex, Fragment, Compute, Geometry };
 
 [[nodiscard]] constexpr bool IsShaderStageValidUVE(const ShaderStageUVE stage) noexcept {
@@ -226,6 +264,18 @@ struct PipelineDescUVE {
     /// `glVertexAttribPointer` stride parameter). `0` (the default) is only ever valid for
     /// `NullRenderDeviceUVE`, which ignores this field like every other one it merely bookkeeps.
     std::uint32_t vertexStride = 0;
+};
+
+/// Describes a COMPUTE pipeline to create via IRenderDeviceUVE::CreateComputePipelineUVE()
+/// (M5a compute slice). Deliberately its own struct: a compute pipeline has no vertex layout,
+/// no fixed-function state, and exactly one shader stage, so folding it into PipelineDescUVE
+/// would make every graphics field a lie. The resulting PipelineHandleUVE lives in the SAME
+/// handle domain as graphics pipelines — BindPipelineUVE binds either kind, and the backend
+/// selects the correct bind point internally (Vulkan GRAPHICS vs COMPUTE).
+struct ComputePipelineDescUVE {
+    /// Must reference a live shader created with ShaderStageUVE::Compute. An invalid handle,
+    /// or a shader of any other stage, is a loud creation failure on every real backend.
+    ShaderHandleUVE computeShader;
 };
 
 /// Fixed-function state accompanying a pre-compiled GL program binary passed to

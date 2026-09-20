@@ -73,12 +73,15 @@ public:
     /// rect converted to OpenGL's bottom-left-origin viewport convention (this struct's own
     /// `originY01` is top-left, matching this engine's other screen-space UI conventions).
     ///
-    /// Known simplification: resizing the shared renderer's offscreen target once per pane means
-    /// consecutive panes of different pixel sizes each pay a GPU texture reallocation - correct,
-    /// but not the fastest possible approach (a per-pane-cached target pool would avoid the churn).
-    /// Acceptable for this phase: "compose with the existing single-camera render path rather than
-    /// requiring a parallel one" was the explicit design constraint, and a resize is already the
-    /// established mechanism that path uses for adaptive resolution.
+    /// The per-pane resize that this once documented as a known cost is no longer one:
+    /// Renderer3DUVE caches its size-dependent targets as complete sets keyed by size, so a pane
+    /// whose size has been seen before costs a handful of pointer assignments rather than six
+    /// texture allocations (color, depth, bloom bright, two blur, SSAO). A steady-state split
+    /// view therefore allocates nothing per frame. The cache is bounded and evicts, so a window
+    /// being dragged - which mints a new size every frame - cannot accumulate sets without limit.
+    ///
+    /// The design constraint that produced this shape still holds and is still the right one:
+    /// compose with the existing single-camera render path rather than requiring a parallel one.
     void RenderAllPanesUVE(IRenderer3DUVE& renderer, Scene::IEntityManagerUVE& entityManager,
                             std::uint32_t windowWidth, std::uint32_t windowHeight) const;
 

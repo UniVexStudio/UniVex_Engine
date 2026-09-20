@@ -36,6 +36,7 @@
 #include "uve/component/character_controller_component_uve.h"
 #include "uve/component/collider_component_uve.h"
 #include "uve/nodes/3d/all_nodes_3d_uve.h"
+#include "uve/scene/nodes/scene_root_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/light_component_uve.h"
 #include "uve/component/mesh_component_uve.h"
@@ -46,6 +47,7 @@
 #include "uve/component/rigid_body_component_uve.h"
 #include "uve/component/script_component_uve.h"
 #include "uve/component/transform_component_uve.h"
+#include "uve/component/visibility_component_uve.h"
 #include "uve/component/ui_button_component_uve.h"
 #include "uve/component/ui_image_component_uve.h"
 #include "uve/component/ui_text_component_uve.h"
@@ -91,11 +93,42 @@ namespace {
 //
 // Adding a new built-in component type? Register its JSON (de)serialization here too.
 
+/// Reads an enum stored as a small integer, rejecting anything outside the known range rather
+/// than casting it through. A hand-edited or future-version scene can carry a value this build
+/// does not have, and silently reinterpreting it as XYZ would rotate the object without saying
+/// so - the same class of failure as a mismatched icon name, but with geometry.
+[[nodiscard]] Math::EulerOrderUVE ReadEulerOrderUVE(const nlohmann::json& json) {
+    const auto raw = json.value("eulerOrder", static_cast<std::uint8_t>(0));
+    switch (raw) {
+        case 0: return Math::EulerOrderUVE::XYZ;
+        case 1: return Math::EulerOrderUVE::YXZ;
+        case 2: return Math::EulerOrderUVE::ZYX;
+        case 3: return Math::EulerOrderUVE::XZY;
+        case 4: return Math::EulerOrderUVE::YZX;
+        case 5: return Math::EulerOrderUVE::ZXY;
+        default: return Math::EulerOrderUVE::XYZ;
+    }
+}
+
+[[nodiscard]] RotationEditModeUVE ReadRotationEditModeUVE(const nlohmann::json& json) {
+    const auto raw = json.value("rotationEditMode", static_cast<std::uint8_t>(0));
+    return raw == 1 ? RotationEditModeUVE::Quaternion : RotationEditModeUVE::Euler;
+}
+
 [[nodiscard]] nlohmann::json ToJsonUVE(const TransformComponentUVE& component) {
+    // localRotation is written even in Euler mode, and that is deliberate: it is what every
+    // consumer reads, and a reader that does not know about the Euler fields must still get a
+    // correct rotation out of the file. The Euler fields are the AUTHORED source beside it - the
+    // exact angles typed, including turns past 360 and the pole poses a quaternion cannot
+    // distinguish - so reopening a scene shows what was typed rather than a re-derived guess.
     return {
         {"localPosition", ToJsonUVE(component.localPosition)},
         {"localRotation", ToJsonUVE(component.localRotation)},
         {"localScale", ToJsonUVE(component.localScale)},
+        {"localEulerRadians", ToJsonUVE(component.localEulerRadians)},
+        {"eulerOrder", static_cast<std::uint8_t>(component.eulerOrder)},
+        {"rotationEditMode", static_cast<std::uint8_t>(component.rotationEditMode)},
+        {"topLevel", component.topLevel},
     };
 }
 
@@ -108,7 +141,9 @@ namespace {
 }
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const MeshComponentUVE& component) {
-    return {{"meshGuid", component.meshGuid.value}, {"materialGuid", component.materialGuid.value}};
+    return {{"meshGuid", component.meshGuid.value},
+            {"materialGuid", component.materialGuid.value},
+            {"visibilityLayers", component.visibilityLayers}};
 }
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const PrimitiveMeshComponentUVE& component) {
@@ -223,6 +258,10 @@ namespace {
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const ParticleEmitterComponentUVE& component) {
     return {{"maxParticles", component.maxParticles}};
+}
+
+[[nodiscard]] nlohmann::json ToJsonUVE(const SceneRootComponentUVE&) {
+    return nlohmann::json::object(); // pure marker: no authored state to persist
 }
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const RayCast3DNodeComponentUVE& value) {
@@ -683,9 +722,28 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
         std::unordered_map<std::string, ComponentRegistrationUVE> table;
 
         table.emplace("TransformComponentUVE", MakeRegistrationUVE<TransformComponentUVE>([](const nlohmann::json& json) {
-                          const TransformComponentUVE transform{Vector3FromJsonUVE(json.at("localPosition")),
-                                                                QuaternionFromJsonUVE(json.at("localRotation")),
-                                                                Vector3FromJsonUVE(json.at("localScale"))};
+                          TransformComponentUVE transform{Vector3FromJsonUVE(json.at("localPosition")),
+                                                          QuaternionFromJsonUVE(json.at("localRotation")),
+                                                          Vector3FromJsonUVE(json.at("localScale"))};
+                          // Absent in every scene written before Euler authoring existed. Those
+                          // documents get the angles derived from the rotation they DO have, which
+                          // is the best available answer and matches what the Inspector used to
+                          // show them; from then on the angles are authored and stop drifting.
+                          // Absent in scenes written before the flag existed, and false is what
+                          // they meant: every transform in them composed from its parent.
+                          transform.topLevel = json.value("topLevel", false);
+                          if (json.contains("localEulerRadians")) {
+                              transform.localEulerRadians = Vector3FromJsonUVE(json.at("localEulerRadians"));
+                              transform.eulerOrder = ReadEulerOrderUVE(json);
+                              transform.rotationEditMode = ReadRotationEditModeUVE(json);
+                          } else {
+                              transform.eulerOrder = Math::EulerOrderUVE::XYZ;
+                              transform.rotationEditMode = RotationEditModeUVE::Euler;
+                              if (!Math::TryToEulerOrderedUVE(transform.localRotation, Math::EulerOrderUVE::XYZ,
+                                                              transform.localEulerRadians)) {
+                                  transform.localEulerRadians = Math::Vector3UVE{};
+                              }
+                          }
                           if (!IsTransformComponentValidUVE(transform)) {
                               throw std::runtime_error("Invalid TransformComponentUVE payload");
                           }
@@ -705,8 +763,12 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                           return animation;
                       }, IsAnimationPlayerComponentValidUVE));
         table.emplace("MeshComponentUVE", MakeRegistrationUVE<MeshComponentUVE>([](const nlohmann::json& json) {
-                          const MeshComponentUVE mesh{Asset::AssetGuidUVE{json.at("meshGuid").get<std::uint64_t>()},
-                                                     Asset::AssetGuidUVE{json.at("materialGuid").get<std::uint64_t>()}};
+                          // visibilityLayers defaults through json.value on purpose: scenes saved
+                          // before the field existed load unchanged, while meshGuid/materialGuid
+                          // stay REQUIRED so the malformed-payload rollback tests keep their teeth.
+                          MeshComponentUVE mesh{Asset::AssetGuidUVE{json.at("meshGuid").get<std::uint64_t>()},
+                                                 Asset::AssetGuidUVE{json.at("materialGuid").get<std::uint64_t>()}};
+                          mesh.visibilityLayers = json.value("visibilityLayers", std::uint32_t{0x00000001U});
                           if (!IsMeshComponentValidUVE(mesh)) {
                               throw std::runtime_error("Invalid MeshComponentUVE payload");
                           }
@@ -844,6 +906,10 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                 }
                 return value;
             }, IsMarker3DNodeComponentValidUVE));
+        table.emplace("SceneRootComponentUVE",
+                    MakeRegistrationUVE<SceneRootComponentUVE>([](const nlohmann::json&) {
+                        return SceneRootComponentUVE{};
+                    }, IsSceneRootComponentValidUVE));
         table.emplace("Hitbox3DNodeComponentUVE", MakeRegistrationUVE<Hitbox3DNodeComponentUVE>(
             [](const nlohmann::json& json) {
                 const Hitbox3DNodeComponentUVE value = Hitbox3DNodeFromJsonUVE(json);
@@ -1156,6 +1222,29 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
             if (type == std::type_index(typeid(WorldTransformComponentUVE))) {
                 continue; // Derived/cached state is rebuilt after restore.
             }
+            if (type == std::type_index(typeid(VisibilityComponentUVE))) {
+                // Written here rather than through the registration table for the same reason
+                // HierarchyComponentUVE is: it holds an entity reference, and only this function
+                // knows the file-local id each entity was assigned.
+                const VisibilityComponentUVE& visibility =
+                    entityManager.GetComponentUVE<VisibilityComponentUVE>(entity);
+                std::int64_t visibilityParentLocalId = -1;
+                if (visibility.visibilityParent != kInvalidEntityUVE) {
+                    const auto targetIt = entityToLocalId.find(visibility.visibilityParent);
+                    if (targetIt != entityToLocalId.end()) {
+                        visibilityParentLocalId = static_cast<std::int64_t>(targetIt->second);
+                    }
+                    // A target outside the captured subtree is dropped, exactly as an outside
+                    // transform parent becomes a restored root: saving a reference to an entity
+                    // the file does not contain would dangle on every load.
+                }
+                // visibleInHierarchy is deliberately absent - it is derived from ancestors and
+                // recomputed by the first update after load.
+                componentsJson["VisibilityComponentUVE"] = {
+                    {"visible", visibility.visible},
+                    {"visibilityParentLocalId", visibilityParentLocalId}};
+                continue;
+            }
             if (type == std::type_index(typeid(HierarchyComponentUVE))) {
                 const HierarchyComponentUVE& hierarchy = entityManager.GetComponentUVE<HierarchyComponentUVE>(entity);
                 std::int64_t parentLocalId = -1;
@@ -1227,6 +1316,32 @@ void RollbackRestoredEntitiesUVE(IEntityManagerUVE& entityManager, std::vector<E
                 return std::nullopt;
             }
             for (const auto& [componentName, componentJson] : components.items()) {
+                if (componentName == "VisibilityComponentUVE") {
+                    // Validated here and restored by the entity-aware path below, never through
+                    // the registration table: it carries an entity reference, and only this
+                    // function knows which file-local id maps to which restored entity.
+                    if (!componentJson.is_object()) {
+                        UVE_ERROR("SceneSerializerUVE: malformed visibility data in \"{}\"", sourceDescription);
+                        return std::nullopt;
+                    }
+                    if (componentJson.contains("visibilityParentLocalId")) {
+                        const auto& targetJson = componentJson.at("visibilityParentLocalId");
+                        if (!targetJson.is_number_integer()) {
+                            UVE_ERROR("SceneSerializerUVE: malformed visibility parent id in \"{}\"",
+                                      sourceDescription);
+                            return std::nullopt;
+                        }
+                        const std::int64_t targetLocalId = targetJson.get<std::int64_t>();
+                        if (targetLocalId < -1 ||
+                            (targetLocalId >= 0 && static_cast<std::uint64_t>(targetLocalId) >
+                                                       std::numeric_limits<std::uint32_t>::max())) {
+                            UVE_ERROR("SceneSerializerUVE: visibility parent local ID is outside the "
+                                      "uint32 range in \"{}\"", sourceDescription);
+                            return std::nullopt;
+                        }
+                    }
+                    continue;
+                }
                 if (componentName == "HierarchyComponentUVE") {
                     if (!componentJson.is_object() || !componentJson.contains("parentLocalId") ||
                         !componentJson.at("parentLocalId").is_number_integer()) {
@@ -1332,6 +1447,28 @@ void RollbackRestoredEntitiesUVE(IEntityManagerUVE& entityManager, std::vector<E
             bool isRoot = true;
             bool hasTransform = false;
             for (const auto& [componentName, componentJson] : entityJson.at("components").items()) {
+                if (componentName == "VisibilityComponentUVE") {
+                    VisibilityComponentUVE visibility;
+                    // Absent in documents written before the flag existed, and visible is what
+                    // they meant.
+                    visibility.visible = componentJson.value("visible", true);
+                    // Seeded from the authored value so nothing is briefly drawn between restore
+                    // and the first scene-graph update, which then computes the inherited answer.
+                    visibility.visibleInHierarchy = visibility.visible;
+                    const std::int64_t targetLocalId = componentJson.value("visibilityParentLocalId",
+                                                                           static_cast<std::int64_t>(-1));
+                    if (targetLocalId >= 0) {
+                        const auto targetIt = localIdToEntity.find(static_cast<std::uint32_t>(targetLocalId));
+                        if (targetIt != localIdToEntity.end()) {
+                            visibility.visibilityParent = targetIt->second;
+                        }
+                        // A target the file does not contain leaves the redirect unset, which
+                        // means "inherit from the transform parent" - the same fallback the
+                        // resolver uses for a dangling reference at runtime.
+                    }
+                    entityManager.AddComponentUVE<VisibilityComponentUVE>(entity, visibility);
+                    continue;
+                }
                 if (componentName == "HierarchyComponentUVE") {
                     const std::int64_t parentLocalId = componentJson.at("parentLocalId").get<std::int64_t>();
                     EntityUVE parent = kInvalidEntityUVE;

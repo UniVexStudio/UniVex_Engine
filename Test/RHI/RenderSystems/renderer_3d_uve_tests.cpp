@@ -1362,35 +1362,57 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_DirectionalLightAndReadyShadowProgram_S
     renderer3D->RenderFrameUVE(entityManager, cameraEntity);
 
     const std::vector<RecordedCommandUVE>& commands = renderDevice.GetLastSubmittedCommandsUVE();
-    // ShaderProgramUVE::ApplyToUVE() flushes its pending uniforms from an unordered_map, so
-    // uModel/uLightSpaceMatrix can appear in either order - this searches a small window instead
-    // of asserting a fixed position for either one individually.
+
+    // Rewritten when the shadow cascades became instanced. The old version asserted fixed command
+    // INDICES and the presence of a per-item "uModel" uniform, both of which were artefacts of the
+    // one-draw-per-caster loop rather than anything the pass promises. The instanced path sends
+    // model matrices through a storage buffer, so uModel legitimately disappears, and the command
+    // count per draw changes - a test pinned to either would have to be rewritten again the next
+    // time the recording changes shape. What this pass actually owes its caller is checked instead:
+    // the shadow pass comes first, it is set up with a real light-space matrix, and it draws the
+    // caster's geometry. The path taken to get there is an implementation detail.
+    const auto shadowPassEnd = std::find_if(commands.cbegin(), commands.cend(),
+        [](const RecordedCommandUVE& command) {
+            return std::holds_alternative<EndRenderPassCommandUVE>(command);
+        });
+    ASSERT_NE(shadowPassEnd, commands.cend());
+
     ASSERT_TRUE(std::holds_alternative<BeginRenderPassCommandUVE>(commands[0]));
     ASSERT_TRUE(std::holds_alternative<BindPipelineCommandUVE>(commands[1]));
 
-    bool foundModelUniform = false;
-    bool foundLightSpaceUniform = false;
-    for (std::size_t index = 2; index < 4; ++index) {
-        ASSERT_TRUE(std::holds_alternative<SetUniformMatrix4x4CommandUVE>(commands[index]));
-        const std::string& name = std::get<SetUniformMatrix4x4CommandUVE>(commands[index]).name;
-        if (name == "uModel") {
-            foundModelUniform = true;
-        } else if (name == "uLightSpaceMatrix") {
-            foundLightSpaceUniform = true;
-            EXPECT_NE(std::get<SetUniformMatrix4x4CommandUVE>(commands[index]).value, Math::Matrix4x4UVE::IdentityUVE());
-        }
-    }
-    EXPECT_TRUE(foundModelUniform);
+    // uLightSpaceMatrix is still a plain uniform on both paths - it is per-cascade, not
+    // per-instance - and it must not be identity, or the cascade is rendering from nowhere.
+    const bool foundLightSpaceUniform = std::any_of(commands.cbegin(), shadowPassEnd,
+        [](const RecordedCommandUVE& command) {
+            if (!std::holds_alternative<SetUniformMatrix4x4CommandUVE>(command)) {
+                return false;
+            }
+            const SetUniformMatrix4x4CommandUVE& uniform = std::get<SetUniformMatrix4x4CommandUVE>(command);
+            return uniform.name == "uLightSpaceMatrix" && uniform.value != Math::Matrix4x4UVE::IdentityUVE();
+        });
     EXPECT_TRUE(foundLightSpaceUniform);
 
-    EXPECT_TRUE(std::holds_alternative<BindVertexBufferCommandUVE>(commands[4]));
-    EXPECT_TRUE(std::holds_alternative<BindIndexBufferCommandUVE>(commands[5]));
-    ASSERT_TRUE(std::holds_alternative<DrawIndexedCommandUVE>(commands[6]));
-    EXPECT_EQ(std::get<DrawIndexedCommandUVE>(commands[6]).indexCount, 3U);
-    EXPECT_TRUE(std::holds_alternative<EndRenderPassCommandUVE>(commands[7]));
+    // The caster's mesh is bound and drawn. Whether that is one instanced draw or one plain draw,
+    // the single caster must be covered exactly once with its real index count.
+    const auto shadowDraw = std::find_if(commands.cbegin(), shadowPassEnd,
+        [](const RecordedCommandUVE& command) {
+            return std::holds_alternative<DrawIndexedCommandUVE>(command);
+        });
+    ASSERT_NE(shadowDraw, shadowPassEnd);
+    EXPECT_EQ(std::get<DrawIndexedCommandUVE>(*shadowDraw).indexCount, 3U);
+    EXPECT_EQ(std::get<DrawIndexedCommandUVE>(*shadowDraw).instanceCount, 1U);
+    EXPECT_EQ(std::count_if(commands.cbegin(), shadowPassEnd, [](const RecordedCommandUVE& command) {
+        return std::holds_alternative<DrawIndexedCommandUVE>(command);
+    }), 1);
+    EXPECT_TRUE(std::any_of(commands.cbegin(), shadowDraw, [](const RecordedCommandUVE& command) {
+        return std::holds_alternative<BindVertexBufferCommandUVE>(command);
+    }));
+    EXPECT_TRUE(std::any_of(commands.cbegin(), shadowDraw, [](const RecordedCommandUVE& command) {
+        return std::holds_alternative<BindIndexBufferCommandUVE>(command);
+    }));
 
     // The main pass follows immediately after the shadow pass ends.
-    EXPECT_TRUE(std::holds_alternative<BeginRenderPassCommandUVE>(commands[8]));
+    EXPECT_TRUE(std::holds_alternative<BeginRenderPassCommandUVE>(*std::next(shadowPassEnd)));
 }
 
 #if !UVE_DEBUG
@@ -1520,6 +1542,418 @@ TEST_F(Renderer3DUVETest, RenderFrameToTargetUVE_UIOverlayPassTargetsTheSameDest
     EXPECT_EQ(uiOverlayDesc.depthAttachment, depthTarget);
 
     renderer3D->SetUIRuntimeUVE(nullptr);
+}
+
+
+// ---------------------------------------------------------------------------
+// GPU instancing. The risk this path carries is not that it fails loudly - it
+// is that it succeeds at drawing the WRONG thing: a material whose shader knows
+// nothing about gl_InstanceID, drawn with instanceCount > 1, stacks every
+// instance on the first one's transform. That reads as missing objects, not as
+// a renderer bug, so these tests care most about the opt-in staying honest.
+//
+// Note the fixture's shader loader supplies "void main() { }" - deliberately
+// NOT instancing-aware. Every pre-existing test in this file therefore stays on
+// the per-object path, which is exactly the regression guarantee wanted: adding
+// instancing must not change what a legacy material does.
+// ---------------------------------------------------------------------------
+
+/// Swaps in a vertex shader that actually implements the instancing contract. The detection is a
+/// source-text check, so the marker tokens are what matter here, not a working shader body - the
+/// Null device never compiles GLSL.
+void UseInstancingAwareShaderUVE(Asset::AssetManagerUVE& assetManager) {
+    assetManager.RegisterLoaderUVE<Asset::ShaderAssetUVE>(
+        [](const std::filesystem::path&, Asset::ShaderAssetUVE& shader) {
+            shader.sourceCode =
+                "void main() { int slot = uInstanceBaseIndex + gl_InstanceID; }";
+            return true;
+        });
+}
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_LegacyMaterial_StaysOnThePerObjectPath) {
+    // The regression case, stated explicitly rather than left implicit in the other tests: a
+    // material that predates the instancing contract must still get one draw call per object.
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_instancing_legacy.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_instancing_legacy.uvemat");
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    for (int index = 0; index < 3; ++index) {
+        MakeMeshEntityUVE(Math::Vector3UVE{static_cast<float>(index), 0.0F, -5.0F}, meshGuid, materialGuid);
+    }
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid, false);
+    PrimeMaterialProgramUVE(*renderer3D, cameraEntity);
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const Renderer3DFrameDiagnosticsUVE diagnostics = renderer3D->GetLastFrameDiagnosticsUVE();
+
+    EXPECT_EQ(diagnostics.meshDrawCallsRecorded, 3U);
+    EXPECT_EQ(diagnostics.instancedDrawCallsRecorded, 0U);
+    EXPECT_EQ(diagnostics.instancedObjectsRecorded, 0U);
+}
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_InstancingAwareMaterial_CollapsesRepeatsIntoOneDraw) {
+    UseInstancingAwareShaderUVE(assetManager);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_instancing_shared.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_instancing_shared.uvemat");
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    // Same mesh, same material, laid out along a line so they sort into one contiguous run.
+    for (int index = 0; index < 4; ++index) {
+        MakeMeshEntityUVE(Math::Vector3UVE{static_cast<float>(index) * 0.1F, 0.0F, -5.0F}, meshGuid,
+                          materialGuid);
+    }
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid, false);
+    PrimeMaterialProgramUVE(*renderer3D, cameraEntity);
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const Renderer3DFrameDiagnosticsUVE diagnostics = renderer3D->GetLastFrameDiagnosticsUVE();
+
+    // Four objects, one draw call - and the object count proves all four are still being drawn,
+    // which a draw-call count alone would not.
+    EXPECT_EQ(diagnostics.meshDrawCallsRecorded, 1U);
+    EXPECT_EQ(diagnostics.instancedDrawCallsRecorded, 1U);
+    EXPECT_EQ(diagnostics.instancedObjectsRecorded, 4U);
+}
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_InstancedDiagnosticsResetBetweenFrames) {
+    // The counters are frame-local. If they accumulated, a long-running session would report a
+    // growing instanced count for a static scene - a diagnostic that lies slowly.
+    UseInstancingAwareShaderUVE(assetManager);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_instancing_reset.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_instancing_reset.uvemat");
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    for (int index = 0; index < 3; ++index) {
+        MakeMeshEntityUVE(Math::Vector3UVE{static_cast<float>(index) * 0.1F, 0.0F, -5.0F}, meshGuid,
+                          materialGuid);
+    }
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid, false);
+    PrimeMaterialProgramUVE(*renderer3D, cameraEntity);
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const std::size_t firstFrameObjects = renderer3D->GetLastFrameDiagnosticsUVE().instancedObjectsRecorded;
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const std::size_t secondFrameObjects = renderer3D->GetLastFrameDiagnosticsUVE().instancedObjectsRecorded;
+
+    EXPECT_EQ(firstFrameObjects, 3U);
+    EXPECT_EQ(secondFrameObjects, 3U);
+}
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_SingleInstancingAwareObject_StillDrawsExactlyOnce) {
+    // A run of one goes through the instanced path as a one-instance draw rather than through a
+    // separate leftover path. Correct either way; this pins which one, so the consumer stays a
+    // single loop.
+    UseInstancingAwareShaderUVE(assetManager);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_instancing_single.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_instancing_single.uvemat");
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -5.0F}, meshGuid, materialGuid);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid, false);
+    PrimeMaterialProgramUVE(*renderer3D, cameraEntity);
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const Renderer3DFrameDiagnosticsUVE diagnostics = renderer3D->GetLastFrameDiagnosticsUVE();
+
+    EXPECT_EQ(diagnostics.meshDrawCallsRecorded, 1U);
+    EXPECT_EQ(diagnostics.instancedDrawCallsRecorded, 1U);
+    EXPECT_EQ(diagnostics.instancedObjectsRecorded, 1U);
+}
+
+
+// ---------------------------------------------------------------------------
+// Cached offscreen target sets.
+//
+// ViewportManagerUVE::RenderAllPanesUVE drives ONE shared renderer across every
+// pane, resizing it to each pane's pixel size in turn. Before the cache, a
+// split view of differently-sized panes destroyed and recreated all SIX
+// size-dependent textures (color, depth, bloom bright, two blur, SSAO) per pane
+// per frame - permanently, not as a warm-up. These tests measure that directly
+// through the Null device's texture-creation counter rather than asserting
+// something vague about performance.
+// ---------------------------------------------------------------------------
+
+TEST_F(Renderer3DUVETest, ResizeTargetsUVE_RepeatedSizeAlternation_StopsReallocating) {
+    // The split-view case in miniature: two sizes, alternating, forever.
+    ASSERT_TRUE(renderer3D->ResizeTargetsUVE(320U, 240U));
+    ASSERT_TRUE(renderer3D->ResizeTargetsUVE(640U, 480U));
+    const std::uint64_t afterWarmup = renderDevice.GetTextureCreateAttemptCountUVE();
+
+    for (int frame = 0; frame < 10; ++frame) {
+        ASSERT_TRUE(renderer3D->ResizeTargetsUVE(320U, 240U));
+        ASSERT_TRUE(renderer3D->ResizeTargetsUVE(640U, 480U));
+    }
+
+    // Twenty resizes across ten frames, and not one texture created: both sizes were already
+    // cached. Before the cache this would have been 120 creations.
+    EXPECT_EQ(renderDevice.GetTextureCreateAttemptCountUVE(), afterWarmup);
+}
+
+TEST_F(Renderer3DUVETest, ResizeTargetsUVE_NewSize_AllocatesOnceAndThenIsFree) {
+    const std::uint64_t beforeNewSize = renderDevice.GetTextureCreateAttemptCountUVE();
+    ASSERT_TRUE(renderer3D->ResizeTargetsUVE(800U, 600U));
+    const std::uint64_t afterFirst = renderDevice.GetTextureCreateAttemptCountUVE();
+
+    // A genuinely new size does cost allocations - the cache removes repeat cost, it does not
+    // conjure targets. Six of them: color, depth, bloom bright, two blur, SSAO.
+    EXPECT_EQ(afterFirst - beforeNewSize, 6U);
+
+    ASSERT_TRUE(renderer3D->ResizeTargetsUVE(800U, 600U));
+    EXPECT_EQ(renderDevice.GetTextureCreateAttemptCountUVE(), afterFirst);
+}
+
+TEST_F(Renderer3DUVETest, ResizeTargetsUVE_ManyDistinctSizes_DoesNotGrowWithoutBound) {
+    // A window being dragged produces a new size every frame, and those sets are dead the moment
+    // they are made. The cache must evict rather than accumulate, or a long drag exhausts GPU
+    // memory - a slow leak is worse than the churn it replaced.
+    for (std::uint32_t index = 0U; index < 24U; ++index) {
+        ASSERT_TRUE(renderer3D->ResizeTargetsUVE(100U + index, 100U + index));
+    }
+    // Live resources are bounded by the cache limit rather than by the number of sizes seen. The
+    // exact figure is not the point; that it is far below 24 sets is.
+    EXPECT_LT(renderDevice.GetLiveResourceCountUVE(), 24U * 6U);
+}
+
+TEST_F(Renderer3DUVETest, ResizeTargetsUVE_AfterEviction_StillRendersCorrectly) {
+    // Eviction clears sets that a later resize may ask for again. The rebuilt set must be just as
+    // usable as the original - an evicted-then-recreated size that renders nothing would be a
+    // pane that goes black after the user resizes a window enough times.
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_evict.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_evict.uvemat");
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -5.0F}, meshGuid, materialGuid);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid, false);
+    PrimeMaterialProgramUVE(*renderer3D, cameraEntity);
+
+    ASSERT_TRUE(renderer3D->ResizeTargetsUVE(256U, 256U));
+    for (std::uint32_t index = 0U; index < 20U; ++index) {
+        ASSERT_TRUE(renderer3D->ResizeTargetsUVE(300U + index, 300U + index));
+    }
+    ASSERT_TRUE(renderer3D->ResizeTargetsUVE(256U, 256U));
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const Renderer3DFrameDiagnosticsUVE diagnostics = renderer3D->GetLastFrameDiagnosticsUVE();
+    EXPECT_EQ(diagnostics.renderTargetWidth, 256U);
+    EXPECT_EQ(diagnostics.renderTargetHeight, 256U);
+    EXPECT_TRUE(diagnostics.mainPassRecorded);
+    EXPECT_EQ(diagnostics.meshDrawCallsRecorded, 1U);
+}
+
+TEST_F(Renderer3DUVETest, ResizeTargetsUVE_SwitchingBackToACachedSize_RendersThatSize) {
+    // The cache must hand back the RIGHT set, not merely a valid one. A mismatch here would draw
+    // one pane's content at another pane's resolution.
+    ASSERT_TRUE(renderer3D->ResizeTargetsUVE(320U, 200U));
+    ASSERT_TRUE(renderer3D->ResizeTargetsUVE(640U, 400U));
+    ASSERT_TRUE(renderer3D->ResizeTargetsUVE(320U, 200U));
+
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const Renderer3DFrameDiagnosticsUVE diagnostics = renderer3D->GetLastFrameDiagnosticsUVE();
+    EXPECT_EQ(diagnostics.renderTargetWidth, 320U);
+    EXPECT_EQ(diagnostics.renderTargetHeight, 200U);
+}
+
+TEST_F(Renderer3DUVETest, ResizeTargetsUVE_ZeroSizeStillRejected) {
+    // Unchanged behavior, restated because the resize path was rewritten around it.
+    EXPECT_FALSE(renderer3D->ResizeTargetsUVE(0U, 480U));
+    EXPECT_FALSE(renderer3D->ResizeTargetsUVE(640U, 0U));
+}
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_StaticSceneSecondFrame_ServesPlacementsFromCache) {
+    // End-to-end confirmation that the cache is actually reached through a real frame, not just
+    // through MeshRendererUVE directly - the renderer owns the set across frames, and a set
+    // rebuilt or reset per frame would silently never hit while every unit test still passed.
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_cache_mesh.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_cache_material.uvemat");
+    const Scene::EntityUVE movingEntity =
+        MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    MakeMeshEntityUVE(Math::Vector3UVE{2.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    // NOTE: WaitUntilAssetsReadyUVE primes the material program by rendering a frame of its own
+    // (see PrimeMaterialProgramUVE), so the cache is already warm by the time this test renders.
+    // Asserting a cold first frame here was wrong about the fixture, not about the cache. Rather
+    // than assert a miss count that depends on how many frames the fixture happened to render,
+    // this drives the property that actually matters and holds either way: once the scene is
+    // static, every subsequent frame is all hits and no misses.
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const Renderer3DFrameDiagnosticsUVE firstFrame = renderer3D->GetLastFrameDiagnosticsUVE();
+    EXPECT_EQ(firstFrame.placementCacheHits + firstFrame.placementCacheMisses, 2U)
+        << "every mesh entity must be accounted for as exactly one hit or one miss";
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const Renderer3DFrameDiagnosticsUVE secondFrame = renderer3D->GetLastFrameDiagnosticsUVE();
+    EXPECT_EQ(secondFrame.placementCacheHits, 2U);
+    EXPECT_EQ(secondFrame.placementCacheMisses, 0U);
+
+    // A third frame, to prove the steady state is genuinely steady rather than alternating.
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const Renderer3DFrameDiagnosticsUVE thirdFrame = renderer3D->GetLastFrameDiagnosticsUVE();
+    EXPECT_EQ(thirdFrame.placementCacheHits, 2U);
+    EXPECT_EQ(thirdFrame.placementCacheMisses, 0U);
+
+    // And moving one entity must cost exactly one miss - not zero (stale) and not two (the cache
+    // dropping an untouched neighbour along with the one that moved).
+    Scene::TransformComponentUVE moved;
+    moved.localPosition = Math::Vector3UVE{0.0F, 0.0F, -18.0F};
+    sceneGraph.SetLocalTransformUVE(entityManager, movingEntity, moved);
+    sceneGraph.UpdateUVE(entityManager);
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const Renderer3DFrameDiagnosticsUVE movedFrame = renderer3D->GetLastFrameDiagnosticsUVE();
+    EXPECT_EQ(movedFrame.placementCacheMisses, 1U);
+    EXPECT_EQ(movedFrame.placementCacheHits, 1U);
+}
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_StaticPrimitives_ReachAnAllHitSteadyState) {
+    // The property that matters, stated the way the mesh-cache test states it: once the scene is
+    // static, every subsequent frame is all hits and no misses. Not asserted as a cold first frame
+    // - the fixture's own priming renders frames before this test does, and a miss count that
+    // depends on how many is a test about the fixture, not about the cache.
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Scene::EntityUVE movingEntity = MakePrimitiveEntityUVE(
+        Math::Vector3UVE{0.0F, 0.0F, -10.0F},
+        Scene::PrimitiveMeshComponentUVE{Scene::PrimitiveMeshKindUVE::Cube, Math::Vector3UVE{1.0F, 1.0F, 1.0F}});
+    MakePrimitiveEntityUVE(
+        Math::Vector3UVE{2.0F, 0.0F, -10.0F},
+        Scene::PrimitiveMeshComponentUVE{Scene::PrimitiveMeshKindUVE::UVSphere, Math::Vector3UVE{1.0F, 0.0F, 0.0F}});
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const Renderer3DFrameDiagnosticsUVE firstFrame = renderer3D->GetLastFrameDiagnosticsUVE();
+    EXPECT_EQ(firstFrame.primitivePlacementCacheHits + firstFrame.primitivePlacementCacheMisses, 2U)
+        << "every primitive candidate must be accounted for as exactly one hit or one miss";
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const Renderer3DFrameDiagnosticsUVE secondFrame = renderer3D->GetLastFrameDiagnosticsUVE();
+    EXPECT_EQ(secondFrame.primitivePlacementCacheHits, 2U);
+    EXPECT_EQ(secondFrame.primitivePlacementCacheMisses, 0U);
+
+    // A third frame, to prove the steady state is steady rather than alternating.
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const Renderer3DFrameDiagnosticsUVE thirdFrame = renderer3D->GetLastFrameDiagnosticsUVE();
+    EXPECT_EQ(thirdFrame.primitivePlacementCacheHits, 2U);
+    EXPECT_EQ(thirdFrame.primitivePlacementCacheMisses, 0U);
+
+    // Moving one primitive must cost exactly one miss - not zero (stale) and not two (the cache
+    // dropping an untouched neighbour along with the one that moved).
+    Scene::TransformComponentUVE moved;
+    moved.localPosition = Math::Vector3UVE{0.0F, 0.0F, -18.0F};
+    sceneGraph.SetLocalTransformUVE(entityManager, movingEntity, moved);
+    sceneGraph.UpdateUVE(entityManager);
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const Renderer3DFrameDiagnosticsUVE movedFrame = renderer3D->GetLastFrameDiagnosticsUVE();
+    EXPECT_EQ(movedFrame.primitivePlacementCacheMisses, 1U);
+    EXPECT_EQ(movedFrame.primitivePlacementCacheHits, 1U);
+}
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_ChangingOnlyThePrimitiveKind_InvalidatesThePlacement) {
+    // The hazard specific to this key. Kind is not part of the transform, but it selects the local
+    // bounds the world bounds are derived from, so a key that omitted it would serve a cube's
+    // bounds for a sphere with the transform sitting perfectly still. Exercised by swapping kind
+    // and nothing else.
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Scene::EntityUVE entity = MakePrimitiveEntityUVE(
+        Math::Vector3UVE{0.0F, 0.0F, -10.0F},
+        Scene::PrimitiveMeshComponentUVE{Scene::PrimitiveMeshKindUVE::Cube, Math::Vector3UVE{1.0F, 1.0F, 1.0F}});
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    ASSERT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().primitivePlacementCacheMisses, 0U)
+        << "the cache must be warm before the kind swap for the swap to prove anything";
+
+    entityManager.GetComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity).kind =
+        Scene::PrimitiveMeshKindUVE::UVSphere;
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().primitivePlacementCacheMisses, 1U)
+        << "a kind change must invalidate the cached bounds even though the transform is identical";
+}
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_MovingOnlyTheCamera_StillHitsThePlacementCache) {
+    // The split this optimization rests on: placement is entity-dependent and cached, culling and
+    // sort depth are view-dependent and are not. A camera move must therefore cost zero misses
+    // while still being free to change what is visible. If someone later folds the frustum test
+    // into the cached half, this is the test that catches it.
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    MakePrimitiveEntityUVE(
+        Math::Vector3UVE{0.0F, 0.0F, -10.0F},
+        Scene::PrimitiveMeshComponentUVE{Scene::PrimitiveMeshKindUVE::Cube, Math::Vector3UVE{1.0F, 1.0F, 1.0F}});
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    ASSERT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().primitivePlacementCacheMisses, 0U);
+    ASSERT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().primitiveItemsExtracted, 1U);
+
+    // Turn the camera away from the primitive. Same scene, different view.
+    Scene::TransformComponentUVE cameraTransform;
+    cameraTransform.localPosition = Math::Vector3UVE{0.0F, 0.0F, -400.0F};
+    sceneGraph.SetLocalTransformUVE(entityManager, cameraEntity, cameraTransform);
+    sceneGraph.UpdateUVE(entityManager);
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const Renderer3DFrameDiagnosticsUVE movedCamera = renderer3D->GetLastFrameDiagnosticsUVE();
+    EXPECT_EQ(movedCamera.primitivePlacementCacheMisses, 0U)
+        << "the camera moving must not invalidate any entity's placement";
+    EXPECT_EQ(movedCamera.primitivePlacementCacheHits, 1U);
+    EXPECT_EQ(movedCamera.primitiveItemsExtracted, 0U)
+        << "culling must still respond to the new view despite the placement being reused";
+}
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_RejectedPrimitive_IsCachedAsARejectionAndStaysRejected) {
+    // A rejection costs the same recompute to rediscover as a success, so it is cached too. The
+    // risk in caching a negative is that it is cached as a positive by accident - an entity that
+    // cannot produce finite geometry must never appear in the extracted items, on the miss frame
+    // or on any hit frame after it.
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE transform;
+    transform.localPosition = Math::Vector3UVE{std::numeric_limits<float>::max(), 0.0F, -10.0F};
+    sceneGraph.AttachTransformUVE(entityManager, entity, transform);
+    sceneGraph.UpdateUVE(entityManager);
+    entityManager.AddComponentUVE<Scene::PrimitiveMeshComponentUVE>(
+        entity,
+        Scene::PrimitiveMeshComponentUVE{Scene::PrimitiveMeshKindUVE::Cube, Math::Vector3UVE{1.0F, 1.0F, 1.0F}});
+
+    for (int frame = 0; frame < 3; ++frame) {
+        renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+        const Renderer3DFrameDiagnosticsUVE diagnostics = renderer3D->GetLastFrameDiagnosticsUVE();
+        EXPECT_EQ(diagnostics.primitiveCandidates, 1U) << "frame " << frame;
+        EXPECT_EQ(diagnostics.primitiveItemsExtracted, 0U)
+            << "a rejected primitive must stay rejected on frame " << frame;
+    }
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().primitivePlacementCacheHits, 1U)
+        << "the rejection must be served from the cache, not recomputed every frame";
+}
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_DestroyedPrimitive_IsPrunedFromThePlacementCache) {
+    // The cache outlives the frame, so it must not outlive the entity. There is no accessor for
+    // the cache's size, so this drives the prune through what is observable: after a destroy the
+    // remaining primitive must still be a hit (the prune must not evict the survivor) and the
+    // destroyed one must no longer be counted as a candidate at all.
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Scene::EntityUVE doomed = MakePrimitiveEntityUVE(
+        Math::Vector3UVE{0.0F, 0.0F, -10.0F},
+        Scene::PrimitiveMeshComponentUVE{Scene::PrimitiveMeshKindUVE::Cube, Math::Vector3UVE{1.0F, 1.0F, 1.0F}});
+    MakePrimitiveEntityUVE(
+        Math::Vector3UVE{2.0F, 0.0F, -10.0F},
+        Scene::PrimitiveMeshComponentUVE{Scene::PrimitiveMeshKindUVE::Cube, Math::Vector3UVE{1.0F, 1.0F, 1.0F}});
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    ASSERT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().primitivePlacementCacheHits, 2U);
+
+    entityManager.DestroyEntityUVE(doomed);
+    sceneGraph.UpdateUVE(entityManager);
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const Renderer3DFrameDiagnosticsUVE afterDestroy = renderer3D->GetLastFrameDiagnosticsUVE();
+    EXPECT_EQ(afterDestroy.primitiveCandidates, 1U);
+    EXPECT_EQ(afterDestroy.primitivePlacementCacheHits, 1U)
+        << "the surviving primitive must still be served from the cache";
+    EXPECT_EQ(afterDestroy.primitivePlacementCacheMisses, 0U);
+
+    // And a frame later the survivor is still a hit, proving the prune left a usable cache behind
+    // rather than one that happens to work once.
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().primitivePlacementCacheHits, 1U);
 }
 
 } // namespace

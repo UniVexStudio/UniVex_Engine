@@ -36,6 +36,8 @@ public:
     void DestroyBufferUVE(BufferHandleUVE buffer) override;
     [[nodiscard]] bool UpdateBufferUVE(BufferHandleUVE buffer, std::span<const std::byte> data,
                                         std::uint64_t offsetBytes = 0) override;
+    [[nodiscard]] bool ReadbackBufferUVE(BufferHandleUVE buffer, std::span<std::byte> outData,
+                                          std::uint64_t offsetBytes = 0) override;
 
     [[nodiscard]] TextureHandleUVE CreateTextureUVE(const TextureDescUVE& desc,
                                                      std::span<const std::byte> initialData = {}) override;
@@ -46,6 +48,8 @@ public:
 
     [[nodiscard]] PipelineHandleUVE CreatePipelineUVE(const PipelineDescUVE& desc,
                                                        std::string* outInfoLog = nullptr) override;
+    [[nodiscard]] PipelineHandleUVE CreateComputePipelineUVE(const ComputePipelineDescUVE& desc,
+                                                              std::string* outInfoLog = nullptr) override;
     void DestroyPipelineUVE(PipelineHandleUVE pipeline) override;
 
     [[nodiscard]] std::vector<UniformReflectionUVE> GetPipelineUniformsUVE(PipelineHandleUVE pipeline) const override;

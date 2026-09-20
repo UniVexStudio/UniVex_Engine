@@ -67,6 +67,8 @@ public:
                                 std::uint32_t width = 0U, std::uint32_t height = 0U) override;
     void SetPostProcessSettingsUVE(const PostProcessSettingsUVE& settings) override;
     void SetUIRuntimeUVE(const UI::UIRuntimeUVE* uiRuntime) noexcept override;
+    void SetPhysicsInterpolationAlphaUVE(float alpha) noexcept override;
+
     [[nodiscard]] Renderer3DFrameDiagnosticsUVE GetLastFrameDiagnosticsUVE() const noexcept override;
 
 private:
