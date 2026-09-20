@@ -1565,10 +1565,13 @@ TEST(EngineCoreUVETest, InteractionArea3DNode_TracksInteractorsFocusesTheNearest
                   .interactorCount,
               0U);
 
-    // Mask restored, plus a second controller on the same spot: with an authored candidate budget
-    // of one, the bounded list keeps exactly one entry and REPORTS its overflow instead of
-    // silently dropping the extra interactor or overwriting past the cap.
+    // Mask restored and B moved back out of range, plus a second controller on the same spot:
+    // with an authored candidate budget of one, the bounded list keeps exactly one entry and
+    // REPORTS its overflow instead of silently dropping the extra interactor or overwriting past
+    // the cap.
     playerCollider.collisionMask = 0xFFFFFFFFU;
+    transformB.localPosition = Math::Vector3UVE{30.0F, 0.0F, 0.0F};
+    sceneGraph.SetLocalTransformUVE(entityManager, areaB, transformB);
     Scene::InteractionArea3DNodeComponentUVE& liveA =
         entityManager.GetComponentUVE<Scene::InteractionArea3DNodeComponentUVE>(areaA);
     liveA.maximumCandidates = 1U;
@@ -1584,7 +1587,8 @@ TEST(EngineCoreUVETest, InteractionArea3DNode_TracksInteractorsFocusesTheNearest
         EXPECT_EQ(afterFill.interactorCount, 1U);
         EXPECT_TRUE(afterFill.interactorsTruncated);
         // The primary interactor is the first content-ordered controller, and the focus verdict
-        // is independent of the bounded list: A is still the nearest area for that player.
+        // is independent of the bounded list: with B out of range, A is the only area the
+        // primary overlaps, so it stays focused regardless of the truncated extra entry.
         EXPECT_TRUE(afterFill.focusedByPrimaryInteractor);
     }
 
