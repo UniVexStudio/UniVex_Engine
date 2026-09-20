@@ -37,10 +37,20 @@ struct Node3DNodeDefinitionUVE final {
 
 [[nodiscard]] bool IsNode3DNodeDefinitionValidUVE(const Node3DNodeDefinitionUVE& value) noexcept;
 
-/// Attaches this node's components to `entity`. Kept to the same validate-before-apply seam as
-/// every other node kind; the body grows the baseline guarantee in the slice that wires the
-/// scene root onto the same recipe.
+/// Attaches this node's components to `entity`. Node3D's recipe IS the transform baseline, so
+/// applying it guarantees that baseline: any of Transform/WorldTransform/Hierarchy/Name that is
+/// missing gets attached with sane defaults, and anything already present - its authored values
+/// included - is left alone. On the standard creation path the shell has attached all four
+/// before this runs, so the guarantee costs nothing there; it exists for every other path
+/// (deserialization, programmatic creation, repair) that can reach a Node3D without the shell.
 void ApplyNode3DNodeDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                  const Node3DNodeDefinitionUVE& value) noexcept;
+                                  const Node3DNodeDefinitionUVE& value);
+
+/// The baseline part of the Node3D recipe, factored out so the other kind whose recipe rests on
+/// the same baseline - the scene root - shares one guarantee rather than a second copy of it.
+/// `nameFallback` is used only when the entity has no name yet; existing components are never
+/// overwritten, and a destroyed entity is refused quietly, matching the scene-root apply.
+void EnsureNode3DBaselineUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
+                             std::string_view nameFallback);
 
 } // namespace UVE::Scene
