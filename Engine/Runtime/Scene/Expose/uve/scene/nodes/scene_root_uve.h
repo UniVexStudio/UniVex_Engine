@@ -33,7 +33,9 @@ struct SceneRootNodeDefinitionUVE final {
     return true;
 }
 
-/// Attaches the scene-root marker to `entity`. The entity must be alive.
+/// Attaches the scene-root recipe to `entity`: the Node3D transform baseline shared with every
+/// other 3D scene node (via EnsureNode3DBaselineUVE), plus the scene-root marker. The entity
+/// must be alive; existing components keep their values.
 void ApplySceneRootNodeDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
                                      const SceneRootNodeDefinitionUVE& value);
 

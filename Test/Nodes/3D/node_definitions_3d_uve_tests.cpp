@@ -7,14 +7,19 @@
 #include "uve/component/camera_component_uve.h"
 #include "uve/component/collider_component_uve.h"
 #include "uve/component/entity_uve.h"
+#include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/light_component_uve.h"
+#include "uve/component/name_component_uve.h"
 #include "uve/component/primitive_mesh_component_uve.h"
 #include "uve/component/rigid_body_component_uve.h"
+#include "uve/component/transform_component_uve.h"
+#include "uve/component/world_transform_component_uve.h"
 #include "uve/entity/entity_manager_uve.h"
 #include "uve/events/event_system_uve.h"
 #include "uve/memory/memory_manager_uve.h"
 #include "uve/nodes/3d/all_nodes_3d_uve.h"
 #include "uve/scene/nodes/scene_node_registry_uve.h"
+#include "uve/scene/nodes/scene_root_uve.h"
 
 namespace UVE::Scene::Tests {
 namespace {
@@ -115,6 +120,12 @@ TEST_F(Node3DDefinitionsUVETest, ApplyAttachesEachKindsExactComponentRecipe) {
     {
         const EntityUVE entity = CreateEntityUVE();
         ApplyNode3DNodeDefinitionUVE(entityManager, entity, Node3DNodeDefinitionUVE{});
+        // Node3D's recipe is the baseline itself, not "nothing": the guarantee is pinned
+        // behaviour-for-behaviour in the dedicated tests below.
+        EXPECT_TRUE(entityManager.HasComponentUVE<TransformComponentUVE>(entity));
+        EXPECT_TRUE(entityManager.HasComponentUVE<WorldTransformComponentUVE>(entity));
+        EXPECT_TRUE(entityManager.HasComponentUVE<HierarchyComponentUVE>(entity));
+        EXPECT_TRUE(entityManager.HasComponentUVE<NameComponentUVE>(entity));
         EXPECT_FALSE(entityManager.HasComponentUVE<CameraComponentUVE>(entity));
     }
     {
@@ -256,6 +267,82 @@ TEST_F(Node3DDefinitionsUVETest, Node3DIsReachableUnderBothItsNewAndLegacyTypeId
     EXPECT_EQ(Nodes::FindSceneNodeDescriptorUVE("node_3d"), descriptor);
     EXPECT_EQ(Nodes::FindSceneNodeDescriptorUVE("empty"), descriptor);
     EXPECT_EQ(Nodes::GetSceneNodeTypeIdUVE(Nodes::SceneNodeKindUVE::Node3D), "node_3d");
+}
+
+TEST_F(Node3DDefinitionsUVETest, Node3DApplyAttachesALocalTransformToABareEntity) {
+    const EntityUVE entity = CreateEntityUVE();
+    ApplyNode3DNodeDefinitionUVE(entityManager, entity, Node3DNodeDefinitionUVE{});
+
+    // The meaningful part of the guarantee: a Node3D reached without the creation shell still
+    // ends up with the transform every SceneNode3D needs, at identity and named after its kind.
+    const TransformComponentUVE& local = entityManager.GetComponentUVE<TransformComponentUVE>(entity);
+    EXPECT_EQ(local.localPosition.x, 0.0F);
+    EXPECT_EQ(local.localPosition.y, 0.0F);
+    EXPECT_EQ(local.localPosition.z, 0.0F);
+    EXPECT_EQ(entityManager.GetComponentUVE<NameComponentUVE>(entity).name,
+              Node3DNodeDefinitionUVE::defaultName);
+    EXPECT_EQ(entityManager.GetComponentUVE<HierarchyComponentUVE>(entity).parent, kInvalidEntityUVE);
+}
+
+TEST_F(Node3DDefinitionsUVETest, Node3DApplyPreservesAuthoredValuesAndRepairsOnlyWhatIsMissing) {
+    const EntityUVE entity = CreateEntityUVE();
+    // A partially-baselined entity, as a partial deserialization leaves behind: transform is
+    // present and authored, the rest of the baseline is not.
+    TransformComponentUVE authored;
+    authored.localPosition = Math::Vector3UVE{3.0F, -2.0F, 7.5F};
+    entityManager.AddComponentUVE<TransformComponentUVE>(entity, authored);
+    entityManager.AddComponentUVE<NameComponentUVE>(entity, NameComponentUVE{"AuthoredPivot"});
+
+    ApplyNode3DNodeDefinitionUVE(entityManager, entity, Node3DNodeDefinitionUVE{});
+
+    // Authored state is sacred: position and name survive application untouched, and the missing
+    // half of the baseline is what got repaired.
+    EXPECT_EQ(entityManager.GetComponentUVE<TransformComponentUVE>(entity).localPosition.x, 3.0F);
+    EXPECT_EQ(entityManager.GetComponentUVE<TransformComponentUVE>(entity).localPosition.z, 7.5F);
+    EXPECT_EQ(entityManager.GetComponentUVE<NameComponentUVE>(entity).name, "AuthoredPivot");
+    EXPECT_TRUE(entityManager.HasComponentUVE<WorldTransformComponentUVE>(entity));
+    EXPECT_TRUE(entityManager.HasComponentUVE<HierarchyComponentUVE>(entity));
+}
+
+TEST_F(Node3DDefinitionsUVETest, Node3DApplyIsIdempotent) {
+    const EntityUVE entity = CreateEntityUVE();
+    ApplyNode3DNodeDefinitionUVE(entityManager, entity, Node3DNodeDefinitionUVE{});
+    entityManager.GetComponentUVE<TransformComponentUVE>(entity).localPosition =
+        Math::Vector3UVE{1.0F, 2.0F, 3.0F};
+
+    ApplyNode3DNodeDefinitionUVE(entityManager, entity, Node3DNodeDefinitionUVE{});
+    EXPECT_EQ(entityManager.GetComponentUVE<TransformComponentUVE>(entity).localPosition.y, 2.0F);
+    EXPECT_EQ(entityManager.GetComponentUVE<NameComponentUVE>(entity).name,
+              Node3DNodeDefinitionUVE::defaultName);
+}
+
+TEST_F(Node3DDefinitionsUVETest, Node3DApplyRefusesADestroyedEntity) {
+    const EntityUVE entity = CreateEntityUVE();
+    entityManager.DestroyEntityUVE(entity);
+    // Same refusal as the scene-root apply: dead entities get nothing, and nothing crashes.
+    ApplyNode3DNodeDefinitionUVE(entityManager, entity, Node3DNodeDefinitionUVE{});
+    EXPECT_FALSE(entityManager.IsAliveUVE(entity));
+}
+
+TEST_F(Node3DDefinitionsUVETest, SceneRootStandsOnTheSameBaselineAsEveryNode3D) {
+    const EntityUVE root = CreateEntityUVE();
+    ApplySceneRootNodeDefinitionUVE(entityManager, root, SceneRootNodeDefinitionUVE{});
+
+    // The root is "Node3D plus the marker" the same way the other kinds are "Node3D plus their
+    // component": one shared baseline guarantee, one extra component on top.
+    EXPECT_TRUE(entityManager.HasComponentUVE<TransformComponentUVE>(root));
+    EXPECT_TRUE(entityManager.HasComponentUVE<WorldTransformComponentUVE>(root));
+    EXPECT_TRUE(entityManager.HasComponentUVE<HierarchyComponentUVE>(root));
+    EXPECT_TRUE(entityManager.HasComponentUVE<NameComponentUVE>(root));
+    EXPECT_EQ(entityManager.GetComponentUVE<NameComponentUVE>(root).name,
+              SceneRootNodeDefinitionUVE::defaultName);
+    EXPECT_TRUE(entityManager.HasComponentUVE<SceneRootComponentUVE>(root));
+
+    // And it is still the idempotent recipe the document lifecycle relies on: applying twice
+    // adds nothing and changes nothing.
+    ApplySceneRootNodeDefinitionUVE(entityManager, root, SceneRootNodeDefinitionUVE{});
+    EXPECT_EQ(entityManager.GetComponentUVE<NameComponentUVE>(root).name,
+              SceneRootNodeDefinitionUVE::defaultName);
 }
 
 TEST_F(Node3DDefinitionsUVETest, AnimationTreeStaysHonestlyNonCreatable) {
