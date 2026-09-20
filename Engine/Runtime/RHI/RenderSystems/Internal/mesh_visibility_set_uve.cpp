@@ -202,6 +202,7 @@ void MeshVisibilitySetUVE::ClearUVE() noexcept {
     placementCacheMisses = 0U;
     hiddenEntities = 0U;
     interpolatedCandidates = 0U;
+    distanceCulledEntities = 0U;
     invalidAssetReferences = 0U;
     pendingAssetLoads = 0U;
     failedAssetLoads = 0U;

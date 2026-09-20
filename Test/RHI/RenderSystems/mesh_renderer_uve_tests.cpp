@@ -23,8 +23,10 @@
 #include "uve/events/event_system_uve.h"
 #include "uve/memory/memory_manager_uve.h"
 #include "uve/component/mesh_component_uve.h"
+#include "uve/component/physics_interpolation_component_uve.h"
 #include "uve/component/visibility_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
+#include "uve/nodes/3d/lod_group_3d_uve.h"
 #include "uve/entity/entity_manager_uve.h"
 #include "uve/scene/scene_graph_uve.h"
 #include "uve/threading/thread_pool_uve.h"
@@ -1331,6 +1333,94 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_InterpolationOffUsesTheSimulat
     EXPECT_EQ(visibilitySet.interpolatedCandidates, 0U);
     EXPECT_NEAR(visibilitySet.candidates[0U].placement.worldBounds.GetCenterUVE().x, 8.0F, 1e-3F)
         << "Off must draw the simulated pose, not a blend of the recorded ones";
+}
+
+TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_LodGroupPastItsChainIsDroppedBeforeAnyWorkIsDone) {
+    // The payoff: a distance-culled entity must produce no candidate at all, not a candidate that
+    // is culled later. The gate sits ahead of asset resolution and placement, so the object costs
+    // a subtraction and a length and nothing else.
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_lod.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_lod.uvemat");
+    const Scene::EntityUVE near = MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -5.0F}, meshGuid, materialGuid);
+    const Scene::EntityUVE far = MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -500.0F}, meshGuid, materialGuid);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    for (const Scene::EntityUVE entity : {near, far}) {
+        entityManager.AddComponentUVE<Scene::LodGroup3DNodeComponentUVE>(
+            entity, Scene::LodGroup3DNodeComponentUVE{});
+    }
+
+    MeshVisibilitySetUVE visibilitySet;
+    visibilitySet.cameraWorldPosition = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+
+    EXPECT_EQ(visibilitySet.candidates.size(), 1U) << "the far entity must not become a candidate";
+    EXPECT_EQ(visibilitySet.distanceCulledEntities, 1U);
+    EXPECT_EQ(visibilitySet.invalidAssetReferences, 0U)
+        << "a distance-culled object is not a scene fault";
+}
+
+TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_LodLevelIsResolvedForVisibleEntitiesToo) {
+    // currentLevel is what a future mesh swap indexes by and what the Inspector shows. Resolving
+    // it only on the cull path would leave it correct exactly when nobody can see the object.
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_lodlevel.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_lodlevel.uvemat");
+    // Default chain is 10/25/60/120 - this sits in level 2.
+    const Scene::EntityUVE entity = MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -40.0F}, meshGuid, materialGuid);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+    entityManager.AddComponentUVE<Scene::LodGroup3DNodeComponentUVE>(
+        entity, Scene::LodGroup3DNodeComponentUVE{});
+
+    MeshVisibilitySetUVE visibilitySet;
+    visibilitySet.cameraWorldPosition = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+
+    ASSERT_EQ(visibilitySet.candidates.size(), 1U);
+    EXPECT_EQ(visibilitySet.distanceCulledEntities, 0U);
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::LodGroup3DNodeComponentUVE>(entity).currentLevel, 2U);
+}
+
+TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_TheCameraPositionIsWhatDistanceIsMeasuredFrom) {
+    // Distance is from the CAMERA, not from the origin. With the camera moved out to meet it, an
+    // object that would otherwise be past the chain is back in range - which is the whole point
+    // of a draw distance and trivially easy to get wrong by measuring from the wrong point.
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_lodcam.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_lodcam.uvemat");
+    const Scene::EntityUVE entity = MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -200.0F}, meshGuid, materialGuid);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+    entityManager.AddComponentUVE<Scene::LodGroup3DNodeComponentUVE>(
+        entity, Scene::LodGroup3DNodeComponentUVE{});
+
+    MeshVisibilitySetUVE fromOrigin;
+    fromOrigin.cameraWorldPosition = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, fromOrigin);
+    EXPECT_EQ(fromOrigin.distanceCulledEntities, 1U) << "200 m away is past the default chain";
+
+    MeshVisibilitySetUVE fromNearby;
+    fromNearby.cameraWorldPosition = Math::Vector3UVE{0.0F, 0.0F, -195.0F};
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, fromNearby);
+    EXPECT_EQ(fromNearby.distanceCulledEntities, 0U) << "5 m from the camera is level 0";
+    ASSERT_EQ(fromNearby.candidates.size(), 1U);
+}
+
+TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_EntitiesWithoutALodGroupAreNeverDistanceCulled) {
+    // The component is opt-in. Without one, an entity draws at any distance - otherwise adding
+    // LOD support to the engine would silently impose a draw distance on every existing scene.
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_nolod.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_nolod.uvemat");
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -9000.0F}, meshGuid, materialGuid);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    MeshVisibilitySetUVE visibilitySet;
+    visibilitySet.cameraWorldPosition = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+
+    EXPECT_EQ(visibilitySet.candidates.size(), 1U);
+    EXPECT_EQ(visibilitySet.distanceCulledEntities, 0U);
 }
 
 } // namespace

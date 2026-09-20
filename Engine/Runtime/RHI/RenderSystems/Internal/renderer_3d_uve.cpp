@@ -2024,11 +2024,15 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     // this, the full extraction walk ran per frustum - three shadow cascades plus the main view -
     // re-resolving the same asset handles and recomputing the same world matrices and bounds four
     // times over to reach four different plane tests. Only the plane test ever differed.
+    // Distances for LodGroup3D are measured from here. Set before the build because the build is
+    // where the level is resolved and the far entities are dropped.
+    m_impl->visibilitySet.cameraWorldPosition = viewPosition;
     m_impl->meshRenderer.BuildVisibilitySetUVE(entityManager, m_impl->assetManager, m_impl->assetDatabase,
                                                m_impl->visibilitySet);
     m_impl->lastFrameDiagnostics.placementCacheHits = m_impl->visibilitySet.placementCacheHits;
     m_impl->lastFrameDiagnostics.placementCacheMisses = m_impl->visibilitySet.placementCacheMisses;
     m_impl->lastFrameDiagnostics.visibilityClusters = m_impl->visibilitySet.clusters.size();
+    m_impl->lastFrameDiagnostics.distanceCulledEntities = m_impl->visibilitySet.distanceCulledEntities;
 
     const LightDataUVE* const shadowCaster = FindShadowCasterUVE(lights);
     bool shadowsReady = shadowCaster != nullptr && m_impl->shadowProgram->IsValidUVE() &&
