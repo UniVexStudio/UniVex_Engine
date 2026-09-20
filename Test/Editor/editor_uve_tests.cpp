@@ -3024,11 +3024,19 @@ TEST(EditorUVETest, OrbitBookmarkInverse_RoundTripsTheCameraEyeAndGuardsThePoles
         Editor::EditorUVE::ResolveOrbitBookmarkFromLookUVE(
             {}, Math::Vector3UVE{0.0F, -1.0F, 0.0F}, distance);
     ASSERT_TRUE(straightDown.has_value());
-    // A perfect -Y forward snaps pitch to -pi/2; the camera's own ~89-degree clamp is applied
-    // only when the pose is handed to it (OrbitCamera::SetYawPitch), so the inverse reports the
-    // exact -pi/2 and clamps yaw to 0 at the pole where it is unobservable.
-    EXPECT_NEAR(straightDown->pitchRadians, -std::numbers::pi_v<float> * 0.5F, 1.0e-6F);
+    // The camera formula has offset.y = sin(pitch): a down-looking forward (-Y) means the eye
+    // sits ABOVE the target, so the inverse of a -Y forward is pitch = +pi/2, not -pi/2. The
+    // camera's own ~89-degree clamp is applied only when the pose is handed to it
+    // (OrbitCamera::SetYawPitch), and yaw is clamped to 0 at the pole where it is unobservable.
+    EXPECT_NEAR(straightDown->pitchRadians, std::numbers::pi_v<float> * 0.5F, 1.0e-6F);
     EXPECT_EQ(straightDown->yawRadians, 0.0F);
+    // The opposite pole: a straight-up look inverts to pitch = -pi/2 (eye below the target).
+    const std::optional<Editor::EditorViewportBookmarkUVE> straightUp =
+        Editor::EditorUVE::ResolveOrbitBookmarkFromLookUVE(
+            {}, Math::Vector3UVE{0.0F, 1.0F, 0.0F}, distance);
+    ASSERT_TRUE(straightUp.has_value());
+    EXPECT_NEAR(straightUp->pitchRadians, -std::numbers::pi_v<float> * 0.5F, 1.0e-6F);
+    EXPECT_EQ(straightUp->yawRadians, 0.0F);
 
     EXPECT_FALSE(Editor::EditorUVE::ResolveOrbitBookmarkFromLookUVE(
                      {}, Math::Vector3UVE{0.0F, 0.0F, 0.0F}, distance)
