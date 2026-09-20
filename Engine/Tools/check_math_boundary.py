@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) 2026 UniVex Studios. All Rights Reserved.
-"""Enforces the two-math-libraries boundary (2026-09-17 audit finding / AUDIT.md section 6.1).
+"""Enforces the two-math-libraries boundary (2026-09-17 audit finding).
 
 Two math libraries coexist deliberately:
 
@@ -81,7 +81,7 @@ def main() -> int:
         for violation in violations:
             print(f"\n  {violation}")
         return 1
-    print("math boundary check passed (AUDIT.md section 6.1)")
+    print("math boundary check passed")
     return 0
 
 

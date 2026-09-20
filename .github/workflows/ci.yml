@@ -1,42 +1,37 @@
 # Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #
-# UniVex Engine CI - the one place that validates the *whole* engine, including the
-# OpenGL/GLFW/GLEW/zlib/libjpeg paths that a headless or dev-machine-only workflow
-# cannot see (the 2026-09-17 audit found 44 engine sources that are otherwise
-# "compiled by inspection" only, plus one real break that had no test).
-#
-# What this does on every push and PR:
-#   1. Installs the full native toolchain deps (GLFW3, GLEW, Mesa GL, zlib, libjpeg).
-#   2. Configures + builds the entire tree: 40+ engine/editor static libs, both app
-#      executables (uve_runtime, uve_editor), all Viewport demo/tools, and the two
-#      GoogleTest suites.
-#   3. Runs ctest under Xvfb so window/context-creating tests have a display.
-#
-# If this file is green, "the engine builds" is a fact, not an assumption.
+# Builds the whole tree and runs both GoogleTest suites on every pull request and
+# every push to master. Green here means the engine, the editor, and the tests all
+# compile and pass against real GL and Vulkan drivers.
 
-name: UniVex Engine CI
+name: CI
 
 on:
   push:
-  pull_request:
     branches: [master]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-and-test:
-    name: Ubuntu GCC - full build + ctest
+    name: Ubuntu / GCC / Debug
     runs-on: ubuntu-latest
     timeout-minutes: 45
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Install native dependencies
-        # M2d note: libvulkan1 + mesa-vulkan-drivers (lavapipe) let the tier-2 real-device
-        # Vulkan RHI tests execute on CI instead of skipping (they were skip-only before
-        # 2026-09-17; the headless GLFW + Xvfb path covers the swapchain).
+        # mesa-vulkan-drivers supplies lavapipe, the CPU Vulkan device the RHI tests
+        # need; without it they skip and the Vulkan backend goes unverified.
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get install -y --no-install-recommends \
+            ninja-build \
             libglfw3-dev \
             libglew-dev \
             libgl1-mesa-dev \
@@ -47,114 +42,40 @@ jobs:
             libvulkan1 \
             mesa-vulkan-drivers
 
-      - name: Math boundary check (audit §6.1)
+      - name: Math boundary check
         run: python3 Engine/Tools/check_math_boundary.py
 
-      - name: Configure (Debug)
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -DUVE_BUILD_TESTS=ON
+      - name: Configure
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DUVE_BUILD_TESTS=ON
 
       - name: Build
+        run: cmake --build build --parallel "$(nproc)"
+
+      - name: Test
+        # Serial on purpose. Several fixtures derive scratch paths from fixed names or
+        # from a process-local counter, so under `ctest -j` one test case deletes
+        # another's files mid-run and the suite fails at random. Drop the -j only once
+        # those fixtures use per-process unique directories.
+        run: xvfb-run -a ctest --test-dir build --output-on-failure
+
+      - name: Verify the Vulkan device tests actually ran
+        # These cases skip themselves when no Vulkan device is present, which would leave
+        # the backend untested while CI stayed green. Fail loudly if the runner loses it.
+        working-directory: build
         run: |
-          set +e
-          cmake --build build --parallel "$(nproc)" > /tmp/build.log 2>&1
-          RC=$?
-          set -e
-          if [ "$RC" -ne 0 ]; then
-            # Sandbox/CI forensics: the log CDN is not always reachable, so surface EVERY
-            # compiler/linker diagnostic as its own annotation - no head cap (the platform
-            # shows what it can; the full log also ships as an artifact below).
-            grep -E "error:|Error [0-9]|undefined reference|FAILED" /tmp/build.log | while read -r L; do
-              echo "::error title=build-error::$(echo "$L" | cut -c1-1000)"
-            done
-            # Last 8 KiB of raw log, chunked into |-separated annotations for context.
-            tail -c 8192 /tmp/build.log | tr '\n' '|' | fold -w 1800 | nl -ba | while read -r N L; do
-              echo "::error title=build-tail-$N::$L"
-            done
-            exit $RC
-          fi
-
-      - name: Test (under Xvfb)
-        run: |
-          set +e
-          xvfb-run -a ctest --test-dir build --output-on-failure > /tmp/ctest.log 2>&1
-          RC=$?
-          set -e
-          if [ "$RC" -ne 0 ]; then
-            # Sandbox/CI forensics: the log CDN is not always reachable from the agent sandbox,
-            # so annotations are the evidence channel that always works - but GitHub keeps only
-            # the FIRST ~10 error annotations per run. Everything below is therefore ordered
-            # most-diagnostic-first, and matched precisely: an earlier revision of this block
-            # grepped for "Failed" anywhere on the line, which matched the NAMES of passing
-            # tests like LoadUVE_UnknownGuid_BecomesFailedAndLogsError and spent the whole
-            # annotation budget on noise while the real failure never appeared.
-
-            # 1. The assertion bodies that explain WHY, first and budget-capped. Ordering
-            #    matters more than it looks: a previous revision led with the summary and the
-            #    failing-test names, which are the CHEAPEST information to recover (ctest
-            #    reprints them, and the names alone often identify the test), and the ~10
-            #    annotation cap was exhausted before a single "Value of:" line was emitted.
-            #    The bodies are the part that cannot be reconstructed from anywhere else.
-            grep -E "^(.*:[0-9]+: Failure|Value of:|  Actual:|Expected:|Which is:|Assertion)" /tmp/ctest.log | head -6 | while read -r L; do
-              echo "::error title=ctest-detail::$(echo "$L" | cut -c1-1000)"
-            done
-            # 2. gtest's own verdict lines - anchored, so only real results match.
-            grep -E "^\[  FAILED  \]" /tmp/ctest.log | sort -u | head -6 | while read -r L; do
-              echo "::error title=ctest-failed-case::$(echo "$L" | cut -c1-1000)"
-            done
-            # 3. ctest's trailing summary, last: the definitive list, but also the most
-            #    redundant once the names above are known.
-            sed -n "/The following tests FAILED:/,\$p" /tmp/ctest.log | head -20 | while read -r L; do
-              echo "::error title=ctest-summary::$(echo "$L" | cut -c1-1000)"
-            done
-            # 4. ctest per-case lines, restricted to the ***-marked outcomes (Failed, Exception,
-            #    Timeout) so passing and skipped cases can never crowd the budget.
-            grep -E "^ *[0-9]+/[0-9]+ Test .*\*\*\*(Failed|Exception|Timeout)" /tmp/ctest.log | while read -r L; do
-              echo "::error title=ctest-case::$(echo "$L" | cut -c1-1000)"
-            done
-            exit $RC
-          fi
-
-      - name: Upload failure logs (artifact)
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ci-failure-logs
-          path: |
-            /tmp/build.log
-            /tmp/ctest.log
-          if-no-files-found: ignore
-          retention-days: 7
-
-      # M2d evidence step: prior to the displayless-host clause, a silently-broken display or
-      # ICD only made the tier-2 fixture skip politely and could never flip CI red — which is
-      # exactly what happened (every M2a..M2d tier-2 device case skipped on CI since the M2a
-      # windowed fixture existed; the pixel-verified coverage lived in vkshot). The engine now
-      # owns a CI-ready headless construction (VK_EXT_headless_surface) and the fixture falls
-      # back to it automatically, so a real device run is expected on every CI host: windowed
-      # via xvfb+lavapipe, or headless via a CPU ICD. A skip from here on means the CI image
-      # lost its Vulkan story — fail loudly instead of hiding.
-      - name: Prove tier-2 Vulkan device tests really ran (did not skip)
-        run: |
-          cd build
-          set +e
-          ./Test/uve_core_tests --gtest_filter='VulkanRenderDeviceUVETest.*' \
-            > /tmp/tier2.log 2>&1
-          GRC=$?
-          set -e
-          COUNT=$(grep -c '\[       OK \] VulkanRenderDeviceUVETest' /tmp/tier2.log || true)
-          echo "tier-2 device cases executed for real: $COUNT (gtest rc=$GRC)"
-          if [ "$COUNT" -lt 17 ] || [ "$GRC" -ne 0 ]; then
-            grep -m6 'Skipped\|SKIPPED' /tmp/tier2.log | head -6 | while read -r L; do
-              echo "::warning title=tier2-why::$L"
-            done
-            echo "::error title=tier2::tier-2 Vulkan device tests did not all execute (ok=$COUNT expected>=17 rc=$GRC)"
+          ./Test/uve_core_tests --gtest_filter='VulkanRenderDeviceUVETest.*' | tee /tmp/vulkan.log
+          executed=$(grep -c '^\[       OK \] VulkanRenderDeviceUVETest' /tmp/vulkan.log)
+          echo "Vulkan device cases executed: $executed"
+          if [ "$executed" -lt 17 ]; then
+            echo "::error::Only $executed Vulkan device cases ran (expected at least 17) - the runner has no working Vulkan driver."
             exit 1
           fi
 
-      - name: Build summary
-        if: always()
-        run: |
-          echo "== Built targets =="
-          find build -maxdepth 4 -name "*.a" -type f | sort || true
-          echo "== Built executables =="
-          find build -maxdepth 5 -type f -executable \( -name "uve_*" -o -name "univex_*" \) | sort || true
+      - name: Upload test log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ctest-log
+          path: build/Testing/Temporary/LastTest.log
+          if-no-files-found: ignore
+          retention-days: 7
