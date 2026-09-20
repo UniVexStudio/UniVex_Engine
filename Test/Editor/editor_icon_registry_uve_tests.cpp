@@ -20,7 +20,7 @@ TEST(EditorIconRegistryUVETest, EveryIconKindIsReachableByName) {
     // Listed explicitly rather than iterated, because C++ gives no way to enumerate an enum: a
     // new enumerator added without a name would silently pass an iteration-based test.
     const std::array<HierarchyNodeIconKindUVE, 10U> everyKind{
-        HierarchyNodeIconKindUVE::Empty,       HierarchyNodeIconKindUVE::Mesh,
+        HierarchyNodeIconKindUVE::Node3D,       HierarchyNodeIconKindUVE::Mesh,
         HierarchyNodeIconKindUVE::Camera,      HierarchyNodeIconKindUVE::Light,
         HierarchyNodeIconKindUVE::Environment, HierarchyNodeIconKindUVE::Physics,
         HierarchyNodeIconKindUVE::Audio,       HierarchyNodeIconKindUVE::Particle,
@@ -74,9 +74,9 @@ TEST(EditorIconRegistryUVETest, UnknownNameFallsBackToTheEmptyGlyphRatherThanFai
     // An icon is decoration. A typo should leave the row readable with a neutral marker, not blank
     // the outliner and not take the editor down - so the miss path is a deliberate fallback, and
     // this pins it rather than leaving it to whoever next reads the loop.
-    EXPECT_EQ(ResolveEditorIconUVE("definitely-not-an-icon"), HierarchyNodeIconKindUVE::Empty);
-    EXPECT_EQ(ResolveEditorIconUVE(""), HierarchyNodeIconKindUVE::Empty);
-    EXPECT_EQ(ResolveEditorIconUVE("Camera"), HierarchyNodeIconKindUVE::Empty)
+    EXPECT_EQ(ResolveEditorIconUVE("definitely-not-an-icon"), HierarchyNodeIconKindUVE::Node3D);
+    EXPECT_EQ(ResolveEditorIconUVE(""), HierarchyNodeIconKindUVE::Node3D);
+    EXPECT_EQ(ResolveEditorIconUVE("Camera"), HierarchyNodeIconKindUVE::Node3D)
         << "lookup is case-sensitive by design; the convention is lowercase names";
 }
 
@@ -85,6 +85,10 @@ TEST(EditorIconRegistryUVETest, RegistrationIsDistinguishableFromTheFallback) {
     // both are Empty. A caller validating author-supplied text needs to tell those apart, which is
     // the entire reason IsEditorIconRegisteredUVE exists.
     EXPECT_TRUE(IsEditorIconRegisteredUVE("empty"));
+    // The kind's current spelling is registered too, and resolves to the same glyph the legacy
+    // name maps to.
+    EXPECT_TRUE(IsEditorIconRegisteredUVE("node_3d"));
+    EXPECT_EQ(ResolveEditorIconUVE("node_3d"), ResolveEditorIconUVE("empty"));
     EXPECT_FALSE(IsEditorIconRegisteredUVE("definitely-not-an-icon"));
     EXPECT_EQ(ResolveEditorIconUVE("empty"), ResolveEditorIconUVE("definitely-not-an-icon"))
         << "both resolve to Empty - which is why the two functions are not redundant";
@@ -95,7 +99,7 @@ TEST(EditorIconRegistryUVETest, LookupIsUsableInAConstantExpression) {
     // enum it replaced. If this ever stops being constexpr, the naming becomes a per-frame string
     // comparison in a draw loop instead of a free convenience.
     static_assert(ResolveEditorIconUVE("camera") == HierarchyNodeIconKindUVE::Camera);
-    static_assert(ResolveEditorIconUVE("unknown") == HierarchyNodeIconKindUVE::Empty);
+    static_assert(ResolveEditorIconUVE("unknown") == HierarchyNodeIconKindUVE::Node3D);
     static_assert(IsEditorIconRegisteredUVE("mesh"));
     static_assert(!IsEditorIconRegisteredUVE("mesh-typo"));
     SUCCEED();
