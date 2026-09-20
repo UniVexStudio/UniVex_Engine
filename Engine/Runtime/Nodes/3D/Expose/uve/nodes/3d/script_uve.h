@@ -31,6 +31,8 @@ struct ScriptNodeDefinitionUVE final {
 
 /// Attaches this node's components to `entity` using the definition's authored defaults. The
 /// entity must be alive and must not already have any of the attached component types.
+/// Every application first guarantees the Node3D baseline (Transform/WorldTransform/
+/// Hierarchy/Name) through EnsureNode3DBaselineUVE - this kind is Node3D plus its recipe.
 void ApplyScriptNodeDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
                                   const ScriptNodeDefinitionUVE& value);
 
