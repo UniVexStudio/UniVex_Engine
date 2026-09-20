@@ -2769,6 +2769,125 @@ Scene::EntityUVE EditorUVE::GetSelectedEntityUVE() const noexcept {
     return m_selectedEntity;
 }
 
+namespace {
+
+[[nodiscard]] bool IsFiniteVector3UVE(const Math::Vector3UVE& value) noexcept {
+    return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
+}
+
+[[nodiscard]] bool IsViewportBookmarkWellFormedUVE(const EditorViewportBookmarkUVE& bookmark) noexcept {
+    return IsFiniteVector3UVE(bookmark.target) && std::isfinite(bookmark.yawRadians) &&
+           std::isfinite(bookmark.pitchRadians) && std::isfinite(bookmark.distance) &&
+           bookmark.distance > 0.0F;
+}
+
+} // namespace
+
+bool EditorUVE::SetViewportBookmarkUVE(const std::size_t slot,
+                                       const EditorViewportBookmarkUVE& bookmark) noexcept {
+    if (slot >= kEditorViewportBookmarkSlotCountUVE || !IsViewportBookmarkWellFormedUVE(bookmark)) {
+        return false;
+    }
+    m_viewportBookmarks[slot] = bookmark;
+    return true;
+}
+
+std::optional<EditorViewportBookmarkUVE> EditorUVE::GetViewportBookmarkUVE(
+    const std::size_t slot) const noexcept {
+    if (slot >= kEditorViewportBookmarkSlotCountUVE) {
+        return std::nullopt;
+    }
+    return m_viewportBookmarks[slot];
+}
+
+bool EditorUVE::ClearViewportBookmarkUVE(const std::size_t slot) noexcept {
+    if (slot >= kEditorViewportBookmarkSlotCountUVE) {
+        return false;
+    }
+    const bool wasOccupied = m_viewportBookmarks[slot].has_value();
+    m_viewportBookmarks[slot].reset();
+    return wasOccupied;
+}
+
+std::optional<EditorViewportBookmarkUVE> EditorUVE::ComposeMarker3DFocusBookmarkUVE(
+    const Scene::EntityUVE entity) const {
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (!entityManager.HasComponentUVE<Scene::Marker3DNodeComponentUVE>(entity) ||
+        !entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(entity)) {
+        return std::nullopt;
+    }
+    const Scene::Marker3DNodeComponentUVE& marker =
+        entityManager.GetComponentUVE<Scene::Marker3DNodeComponentUVE>(entity);
+    if (!marker.enabled || !Scene::IsMarker3DNodeComponentValidUVE(marker)) {
+        return std::nullopt;
+    }
+    const Scene::WorldTransformComponentUVE& worldTransform =
+        entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
+    Math::QuaternionUVE worldRotation{};
+    if (!Math::TryNormalizeUVE(worldTransform.worldRotation, worldRotation)) {
+        return std::nullopt; // a degenerate node rotation gives no meaningful viewpoint
+    }
+    const std::optional<Scene::Marker3DPoseUVE> pose = Scene::ComposeMarker3DPoseUVE(
+        worldTransform.worldPosition, worldRotation, marker.localPosition, marker.localRotation);
+    if (!pose.has_value()) {
+        return std::nullopt;
+    }
+    // The engine camera convention looks down -Z (see the SpringArm3D module doc), so the
+    // marker's facing is its composed rotation applied to -Z.
+    const Math::Vector3UVE forward =
+        Math::RotateVectorUVE(pose->rotation, Math::Vector3UVE{0.0F, 0.0F, -1.0F});
+    return ResolveOrbitBookmarkFromLookUVE(pose->position, forward, kEditorMarkerFocusDistanceUVE);
+}
+
+std::optional<Math::Vector3UVE> EditorUVE::ResolveEntityFocusTargetUVE(
+    const Scene::EntityUVE entity) const {
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (!entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(entity)) {
+        return std::nullopt;
+    }
+    const Math::Vector3UVE& worldPosition =
+        entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity).worldPosition;
+    if (!IsFiniteVector3UVE(worldPosition)) {
+        return std::nullopt;
+    }
+    return worldPosition;
+}
+
+std::optional<EditorViewportBookmarkUVE> EditorUVE::ResolveOrbitBookmarkFromLookUVE(
+    const Math::Vector3UVE& eye, const Math::Vector3UVE& forward, const float distance) noexcept {
+    // OrbitCamera's own pitch clamp (OrbitCameraSettings::pitchMin/Max) - the inverse must hand
+    // back angles the camera could itself hold, so a look straight up/down snaps to the pole.
+    constexpr float kOrbitPitchLimitRadians = 1.5533F;
+    constexpr float kDegenerateForwardEpsilon = 1.0e-6F;
+    if (!IsFiniteVector3UVE(eye) || !IsFiniteVector3UVE(forward) || !std::isfinite(distance) ||
+        distance <= 0.0F) {
+        return std::nullopt;
+    }
+    const float forwardLengthSquared = Math::LengthSquaredUVE(forward);
+    if (forwardLengthSquared < kDegenerateForwardEpsilon * kDegenerateForwardEpsilon) {
+        return std::nullopt;
+    }
+    const float forwardLength = std::sqrt(forwardLengthSquared);
+    const Math::Vector3UVE direction = forward * (1.0F / forwardLength);
+
+    // OrbitCamera: eye = target + offset(yaw,pitch) * distance with offset =
+    // (cos(yaw)cos(pitch), sin(pitch), sin(yaw)cos(pitch)); the look direction (target - eye)
+    // is therefore -offset, i.e. sin(pitch) = -dir.y and (cos,sin)(yaw)*cos(pitch) = (-x,-z).
+    EditorViewportBookmarkUVE bookmark{};
+    bookmark.pitchRadians =
+        std::clamp(std::asin(std::clamp(-direction.y, -1.0F, 1.0F)), -kOrbitPitchLimitRadians,
+                   kOrbitPitchLimitRadians);
+    const float cosPitch = std::cos(bookmark.pitchRadians);
+    if (cosPitch < kDegenerateForwardEpsilon) {
+        bookmark.yawRadians = 0.0F; // pole convention: at the clamp limit yaw is unobservable
+    } else {
+        bookmark.yawRadians = std::atan2(-direction.z, -direction.x);
+    }
+    bookmark.target = eye + direction * distance;
+    bookmark.distance = distance;
+    return bookmark;
+}
+
 Editor2DCanvasStateUVE EditorUVE::Get2DCanvasStateUVE() const noexcept {
     return m_2dCanvasState;
 }

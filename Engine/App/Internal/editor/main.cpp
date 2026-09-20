@@ -140,6 +140,7 @@ public:
         UpdateSelectionGizmoUVE();
         const bool navGizmoOwnsGesture = UpdateNavGizmoInteractionUVE(width, height);
         UpdateCameraFromMouseUVE(height, navGizmoOwnsGesture);
+        UpdateViewportBookmarkHotkeysUVE();
         // Advances the eased snap-to-axis animation SnapToDirection() starts (a manual orbit/pan
         // cancels it instead - see OrbitCamera.cpp) - without this the camera would flag itself
         // "animating" and then never actually move, since nothing else ticks it forward. Mirrors
@@ -488,6 +489,65 @@ private:
         }
         if (io.MouseWheel != 0.0F) {
             camera_.Dolly(io.MouseWheel);
+        }
+    }
+
+    // Unreal's Ctrl+digit (store) / digit (restore) viewport bookmarks, plus F-to-focus - the
+    // live consumer of Marker3D in the real editor. Same hovered-panel routing
+    // UpdateCameraFromMouseUVE() uses, and deliberately inert while a text field owns the
+    // keyboard so typing a digit into an input never hijacks the camera. All bookmark state and
+    // marker composition live in EditorUVE (tested there); this method only translates between
+    // those plain orbit poses and this OrbitCamera - it owns no camera logic of its own.
+    void UpdateViewportBookmarkHotkeysUVE() {
+        const ImGuiIO& io = ImGui::GetIO();
+        if (!ImGui::IsWindowHovered() || io.WantTextInput) {
+            return;
+        }
+        static constexpr ImGuiKey kDigitKeysUVE[] = {
+            ImGuiKey_1, ImGuiKey_2, ImGuiKey_3, ImGuiKey_4, ImGuiKey_5,
+            ImGuiKey_6, ImGuiKey_7, ImGuiKey_8, ImGuiKey_9, ImGuiKey_0,
+        };
+        for (std::size_t order = 0U; order < 10U; ++order) {
+            const std::size_t slot = (order + 1U) % 10U; // 1..9,0 like a real keyboard row
+            if (!ImGui::IsKeyPressed(kDigitKeysUVE[order], false)) {
+                continue;
+            }
+            if (io.KeyCtrl) {
+                const univex::math::Vec3 target = camera_.Target();
+                editor_.SetViewportBookmarkUVE(
+                    slot, UVE::Editor::EditorViewportBookmarkUVE{
+                               UVE::Math::Vector3UVE{target.x, target.y, target.z},
+                               camera_.Yaw(), camera_.Pitch(), camera_.Distance()});
+                continue;
+            }
+            const std::optional<UVE::Editor::EditorViewportBookmarkUVE> bookmark =
+                editor_.GetViewportBookmarkUVE(slot);
+            if (!bookmark.has_value()) {
+                continue; // an empty slot restores nothing - Unreal does the same
+            }
+            camera_.CancelAnimation();
+            camera_.SetTarget(univex::integration::FromUveVector3UVE(bookmark->target));
+            camera_.SetYawPitch(bookmark->yawRadians, bookmark->pitchRadians);
+            camera_.SetDistance(bookmark->distance);
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_F, false) && !io.KeyCtrl) {
+            const UVE::Scene::EntityUVE selected = editor_.GetSelectedEntityUVE();
+            if (selected == UVE::Scene::kInvalidEntityUVE) {
+                return;
+            }
+            // A selected Marker3D flies the camera INTO the marker's named viewpoint (the thing
+            // Godot's inert Marker3D cannot do); anything else gets a plain re-target focus.
+            if (const std::optional<UVE::Editor::EditorViewportBookmarkUVE> markerView =
+                    editor_.ComposeMarker3DFocusBookmarkUVE(selected)) {
+                camera_.CancelAnimation();
+                camera_.SetTarget(univex::integration::FromUveVector3UVE(markerView->target));
+                camera_.SetYawPitch(markerView->yawRadians, markerView->pitchRadians);
+                camera_.SetDistance(markerView->distance);
+            } else if (const std::optional<UVE::Math::Vector3UVE> focusTarget =
+                           editor_.ResolveEntityFocusTargetUVE(selected)) {
+                camera_.CancelAnimation();
+                camera_.SetTarget(univex::integration::FromUveVector3UVE(*focusTarget));
+            }
         }
     }
 
