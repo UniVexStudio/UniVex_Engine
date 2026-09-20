@@ -50,7 +50,7 @@ public:
 
     // IVulkanWindowSurfaceUVE (implemented in window_manager_uve.cpp): GLFW WSI forwarding for a
     // Vulkan backend's surface needs, expressed entirely in opaque handles — Vulkan SDK headers
-    // never enter this module, mirroring the GL-header confinement from audit finding #37.
+    // never enter this module, mirroring the GL-header confinement the audit called for.
     // EngineCoreUVE queries this interface via dynamic_cast when a Vulkan render device is
     // configured; NullWindowManagerUVE deliberately never implements it.
     [[nodiscard]] std::vector<const char*> GetRequiredVulkanInstanceExtensionsUVE() const override;
