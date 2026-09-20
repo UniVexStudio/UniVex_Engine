@@ -66,6 +66,7 @@
 #include "uve/nodes/3d/interaction_area_3d_uve.h"
 #include "uve/nodes/3d/level_streamer_3d_uve.h"
 #include "uve/nodes/3d/reflection_probe_3d_uve.h"
+#include "uve/nodes/3d/world_partition_3d_uve.h"
 #include "uve/nodes/3d/projectile_3d_uve.h"
 #include "uve/nodes/3d/ray_cast_3d_uve.h"
 #include "uve/component/mesh_component_uve.h"
@@ -3085,6 +3086,258 @@ TEST(EngineCoreUVETest, ReflectionProbe3D_CaptureBudgetAgesOutOfStarvationNeverN
     EXPECT_EQ(TotalProbeGenerationsUVE(entityManager, probes),
               2U * Scene::kMaximumReflectionProbeCapturesPerTickUVE)
         << "every tick still stays within budget";
+}
+
+namespace {
+
+Scene::EntityUVE CreateWorldPartitionAtUVE(Scene::IEntityManagerUVE& entityManager,
+                                           Scene::ISceneGraphUVE& sceneGraph,
+                                           const Math::Vector3UVE& position,
+                                           const float cellSize,
+                                           const std::array<std::uint32_t, 3U>& counts,
+                                           const std::uint32_t maximumLoadedCells) {
+    const Scene::EntityUVE partition = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE transform;
+    transform.localPosition = position;
+    sceneGraph.AttachTransformUVE(entityManager, partition, transform);
+    Scene::WorldPartition3DNodeComponentUVE component;
+    component.cellSize = cellSize;
+    component.cellCounts = counts;
+    component.maximumLoadedCells = maximumLoadedCells;
+    entityManager.AddComponentUVE<Scene::WorldPartition3DNodeComponentUVE>(partition, component);
+    return partition;
+}
+
+Scene::EntityUVE CreatePartitionChildAtUVE(Scene::IEntityManagerUVE& entityManager,
+                                           Scene::ISceneGraphUVE& sceneGraph,
+                                           const Scene::EntityUVE parent,
+                                           const Math::Vector3UVE& position,
+                                           const bool withMesh) {
+    const Scene::EntityUVE child = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE transform;
+    transform.localPosition = position;
+    sceneGraph.AttachTransformUVE(entityManager, child, transform);
+    sceneGraph.SetParentUVE(entityManager, child, parent);
+    if (withMesh) {
+        entityManager.AddComponentUVE<Scene::MeshComponentUVE>(child, Scene::MeshComponentUVE{});
+    }
+    return child;
+}
+
+} // namespace
+
+TEST(EngineCoreUVETest, WorldPartition3D_MembershipAttachesOnlyToMeshesAndOutsideStaysUnmanaged) {
+    // The engine-owned runtime state attaches to mesh-carrying descendants only (a transform-only
+    // child must stay clean), the partition beyond its volume is nobody's business (membership
+    // there exists but its live verdict is always true - volume-rejection must never hide
+    // geometry), and loadedCellCount only counts cells actually inside the volume.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    const Scene::EntityUVE partition = CreateWorldPartitionAtUVE(
+        entityManager, sceneGraph, Math::Vector3UVE{}, 10.0F, {2U, 1U, 2U}, 2U);
+    const Scene::EntityUVE insideMesh =
+        CreatePartitionChildAtUVE(entityManager, sceneGraph, partition,
+                                  Math::Vector3UVE{5.0F, 0.0F, 5.0F}, /*withMesh=*/true);
+    const Scene::EntityUVE meshlessChild =
+        CreatePartitionChildAtUVE(entityManager, sceneGraph, partition,
+                                  Math::Vector3UVE{5.0F, 0.0F, 5.0F}, /*withMesh=*/false);
+    const Scene::EntityUVE outsideMesh =
+        CreatePartitionChildAtUVE(entityManager, sceneGraph, partition,
+                                  Math::Vector3UVE{500.0F, 0.0F, 500.0F}, /*withMesh=*/true);
+    const Scene::EntityUVE camera =
+        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{5.0F, 0.0F, 5.0F});
+    engine.SetActiveCameraUVE(camera);
+
+    engine.TickFrameUVE();
+
+    ASSERT_TRUE(entityManager.HasComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+        insideMesh));
+    const Scene::WorldPartition3DMembershipComponentUVE& insideMembership =
+        entityManager.GetComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(insideMesh);
+    EXPECT_TRUE(insideMembership.live) << "inside cell (0,0,0) with budget 2: live";
+    EXPECT_EQ(insideMembership.partition, partition) << "the engine stamps the deciding owner";
+
+    EXPECT_FALSE(entityManager.HasComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+        meshlessChild)) << "no mesh, no membership - authoritatively not every descendant";
+
+    ASSERT_TRUE(entityManager.HasComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+        outsideMesh));
+    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+                    outsideMesh)
+                    .live)
+        << "outside the partition volume: never culled by a partition that cannot see it";
+
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::WorldPartition3DNodeComponentUVE>(partition)
+                  .loadedCellCount,
+              1U) << "the unmanaged outside point creates no occupied cell";
+}
+
+TEST(EngineCoreUVETest, WorldPartition3D_BudgetAdmitsNearestCellOnlyAndCameraMoveFlipsTheVerdict) {
+    // maximumLoadedCells is the hard contract: with one slot and two occupied cells, only the
+    // serially-nearest cell's member renders - move the camera to the other cell and the verdict
+    // flips seat afterwards, deterministically (nothing depends on iteration order because the
+    // distance key breaks the tie cleanly).
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    const Scene::EntityUVE partition = CreateWorldPartitionAtUVE(
+        entityManager, sceneGraph, Math::Vector3UVE{}, 10.0F, {2U, 1U, 1U}, 1U);
+    const Scene::EntityUVE nearMesh =
+        CreatePartitionChildAtUVE(entityManager, sceneGraph, partition,
+                                  Math::Vector3UVE{5.0F, 0.0F, 0.0F}, /*withMesh=*/true);
+    const Scene::EntityUVE farMesh =
+        CreatePartitionChildAtUVE(entityManager, sceneGraph, partition,
+                                  Math::Vector3UVE{15.0F, 0.0F, 0.0F}, /*withMesh=*/true);
+    const Scene::EntityUVE camera =
+        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{});
+    engine.SetActiveCameraUVE(camera);
+
+    engine.TickFrameUVE();
+    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+                    nearMesh)
+                    .live) << "cell (0,0,0): the nearest occupied cell earns the slot";
+    EXPECT_FALSE(entityManager.GetComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+                     farMesh)
+                     .live) << "cell (1,0,0): out of budget, out of the frame";
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::WorldPartition3DNodeComponentUVE>(partition)
+                  .loadedCellCount,
+              1U);
+
+    Scene::TransformComponentUVE farCameraTransform;
+    farCameraTransform.localPosition = Math::Vector3UVE{15.0F, 0.0F, 0.0F};
+    sceneGraph.SetLocalTransformUVE(entityManager, camera, farCameraTransform);
+    engine.TickFrameUVE();
+    EXPECT_FALSE(entityManager.GetComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+                     nearMesh)
+                     .live) << "the verdict flips with the camera, not with sentiment";
+    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+                    farMesh)
+                    .live);
+}
+
+TEST(EngineCoreUVETest, WorldPartition3D_NestedPartitionsTheInnerOneOwnsItsSubtree) {
+    // Closest-ancestor-wins: a partition inside another partition manages its own subtree, and
+    // nothing the outer walk touches ever rewrites that decision - measured as the inner child's
+    // stamped owner being the INNER partition, not the outer.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    const Scene::EntityUVE outer = CreateWorldPartitionAtUVE(
+        entityManager, sceneGraph, Math::Vector3UVE{}, 50.0F, {2U, 1U, 1U}, 2U);
+    const Scene::EntityUVE inner = CreateWorldPartitionAtUVE(
+        entityManager, sceneGraph, Math::Vector3UVE{}, 10.0F, {2U, 1U, 1U}, 2U);
+    sceneGraph.SetParentUVE(entityManager, inner, outer);
+    const Scene::EntityUVE innerMesh =
+        CreatePartitionChildAtUVE(entityManager, sceneGraph, inner,
+                                  Math::Vector3UVE{5.0F, 0.0F, 0.0F}, /*withMesh=*/true);
+    const Scene::EntityUVE outerMesh =
+        CreatePartitionChildAtUVE(entityManager, sceneGraph, outer,
+                                  Math::Vector3UVE{25.0F, 0.0F, 0.0F}, /*withMesh=*/true);
+    const Scene::EntityUVE camera =
+        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{});
+    engine.SetActiveCameraUVE(camera);
+
+    engine.TickFrameUVE();
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+                  innerMesh)
+                  .partition,
+              inner) << "the inner partition decides its own subtree";
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+                  outerMesh)
+                  .partition,
+              outer) << "the outer one only ever touches its own descendants";
+}
+
+TEST(EngineCoreUVETest, WorldPartition3D_DisabledReleasesEveryMemberAndClearsTheLiveCount) {
+    // The toggle must show EVERYTHING, because leaving a stale fade behind after switching the
+    // system off is the honest failure mode exactly backwards - fail open, measured everywhere.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    const Scene::EntityUVE partition = CreateWorldPartitionAtUVE(
+        entityManager, sceneGraph, Math::Vector3UVE{}, 10.0F, {2U, 1U, 1U}, 1U);
+    const Scene::EntityUVE farMesh =
+        CreatePartitionChildAtUVE(entityManager, sceneGraph, partition,
+                                  Math::Vector3UVE{15.0F, 0.0F, 0.0F}, /*withMesh=*/true);
+    static_cast<void>(CreatePartitionChildAtUVE(entityManager, sceneGraph, partition,
+                                                Math::Vector3UVE{5.0F, 0.0F, 0.0F},
+                                                /*withMesh=*/true));
+    const Scene::EntityUVE camera =
+        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{});
+    engine.SetActiveCameraUVE(camera);
+
+    engine.TickFrameUVE();
+    ASSERT_FALSE(entityManager.GetComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+                     farMesh)
+                     .live)
+        << "setup: budget 1, far cell out of budget";
+
+    entityManager.GetComponentUVE<Scene::WorldPartition3DNodeComponentUVE>(partition).enabled =
+        false;
+    engine.TickFrameUVE();
+    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+                    farMesh)
+                    .live)
+        << "disabled: every member renders, no stale fade lingers";
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::WorldPartition3DNodeComponentUVE>(partition)
+                  .loadedCellCount,
+              0U) << "and the live cell count zeroes instead of freezing";
+}
+
+TEST(EngineCoreUVETest, WorldPartition3D_MembershipFollowsSubtreeGrowthNotStaleSnapshots) {
+    // The state lives in the sync, not in a one-shot: a mesh added between ticks earns its
+    // membership on the NEXT tick, and destroying a member mid-run leaves nothing stale behind -
+    // measured as the live-set moving exactly with the mutate-then-tick cadence.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    const Scene::EntityUVE partition = CreateWorldPartitionAtUVE(
+        entityManager, sceneGraph, Math::Vector3UVE{}, 10.0F, {2U, 1U, 1U}, 2U);
+    const Scene::EntityUVE camera =
+        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{});
+    engine.SetActiveCameraUVE(camera);
+
+    engine.TickFrameUVE();
+    const Scene::EntityUVE added =
+        CreatePartitionChildAtUVE(entityManager, sceneGraph, partition,
+                                  Math::Vector3UVE{5.0F, 0.0F, 0.0F}, /*withMesh=*/true);
+    EXPECT_FALSE(entityManager.HasComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+        added)) << "mid-tick birth: nothing attaches before the follow-up tick's sync";
+
+    engine.TickFrameUVE();
+    ASSERT_TRUE(entityManager.HasComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+        added));
+    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+                    added)
+                    .live);
+
+    // Destroy it and the partition must still tick cleanly with nothing stale behind.
+    entityManager.DestroyEntityUVE(added);
+    engine.TickFrameUVE();
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::WorldPartition3DNodeComponentUVE>(partition)
+                  .loadedCellCount,
+              0U) << "a dead member unbooks its whole cell - no ghost occupancy";
 }
 
 } // namespace

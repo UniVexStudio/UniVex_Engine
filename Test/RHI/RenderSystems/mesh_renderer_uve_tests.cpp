@@ -27,6 +27,7 @@
 #include "uve/component/visibility_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/nodes/3d/lod_group_3d_uve.h"
+#include "uve/nodes/3d/world_partition_3d_uve.h"
 #include "uve/entity/entity_manager_uve.h"
 #include "uve/scene/scene_graph_uve.h"
 #include "uve/threading/thread_pool_uve.h"
@@ -1421,6 +1422,62 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_EntitiesWithoutALodGroupAreNev
 
     EXPECT_EQ(visibilitySet.candidates.size(), 1U);
     EXPECT_EQ(visibilitySet.distanceCulledEntities, 0U);
+}
+
+TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_PartitionCellOutsideTheBudgetIsCulledWithItsOwnCounter) {
+    // The rendering half of WorldPartition3D: the membership component is the ONLY runtime state
+    // the render pipeline reads (SyncWorldPartition3DNodesUVE writes it; this test simulates its
+    // verdict by hand so the gate is measured in isolation). A live-flag true member renders;
+    // live=false (the engine put its cell outside the budget) is culled and counted in
+    // partitionCulledEntities so authored hiding and partition streaming never blur together.
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_wp.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_wp.uvemat");
+
+    const Scene::EntityUVE partition = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE partitionTransform;
+    partitionTransform.localPosition = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, partition, partitionTransform);
+    Scene::WorldPartition3DNodeComponentUVE partitionComponent;
+    partitionComponent.cellSize = 4.0F;
+    partitionComponent.cellCounts = {2U, 1U, 2U};
+    partitionComponent.maximumLoadedCells = 1U;
+    entityManager.AddComponentUVE<Scene::WorldPartition3DNodeComponentUVE>(partition,
+                                                                           partitionComponent);
+
+    const Scene::EntityUVE near = MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -1.0F},
+                                                    meshGuid, materialGuid);
+    const Scene::EntityUVE far = MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -6.0F},
+                                                   meshGuid, materialGuid);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+    sceneGraph.SetParentUVE(entityManager, near, partition);
+    sceneGraph.SetParentUVE(entityManager, far, partition);
+
+    // What SyncWorldPartition3DNodesUVE writes after admitting only the nearest cell:
+    entityManager.AddComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+        near, Scene::WorldPartition3DMembershipComponentUVE{partition, true});
+    entityManager.AddComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+        far, Scene::WorldPartition3DMembershipComponentUVE{partition, false});
+
+    MeshVisibilitySetUVE visibilitySet;
+    visibilitySet.cameraWorldPosition = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+
+    ASSERT_EQ(visibilitySet.candidates.size(), 1U)
+        << "only the admitted cell's mesh may render";
+    EXPECT_TRUE(visibilitySet.candidates[0U].placement.IsPlacedUVE());
+    EXPECT_NEAR(visibilitySet.candidates[0U].placement.worldBounds.GetCenterUVE().z, -1.0F, 1e-3F)
+        << "and it is the NEAR member, not the far one";
+    EXPECT_EQ(visibilitySet.partitionCulledEntities, 1U)
+        << "the partition gate is counted in its own counter, never conflated with authoring";
+
+    MeshVisibilitySetUVE repeat;
+    repeat.cameraWorldPosition = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, repeat);
+    ASSERT_EQ(repeat.candidates.size(), 1U);
+    EXPECT_NEAR(repeat.candidates[0U].placement.worldBounds.GetCenterUVE().z, -1.0F, 1e-3F);
+    EXPECT_EQ(repeat.partitionCulledEntities, 1U)
+        << "the same membership verdicts answer the same gate decision every build";
 }
 
 } // namespace

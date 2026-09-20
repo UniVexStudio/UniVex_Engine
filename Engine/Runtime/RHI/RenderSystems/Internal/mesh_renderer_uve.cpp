@@ -18,6 +18,7 @@
 #include "uve/component/mesh_component_uve.h"
 #include "uve/component/physics_interpolation_component_uve.h"
 #include "uve/nodes/3d/lod_group_3d_uve.h"
+#include "uve/nodes/3d/world_partition_3d_uve.h"
 #include "uve/component/visibility_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 
@@ -213,6 +214,26 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
                 Scene::ResolveLodGroup3DLevelUVE(lodGroup, Math::LengthUVE(toCamera));
                 if (lodGroup.culledByDistance) {
                     ++outVisibilitySet.distanceCulledEntities;
+                    return;
+                }
+            }
+
+            // World partition, in the same cheap-before-expensive order as the gates above. A
+            // membership entry whose owner was destroyed fails open via the pure resolver -
+            // residual partition opinions must never hide content forever.
+            if (entityManager.HasComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+                    entity)) {
+                const Scene::WorldPartition3DMembershipComponentUVE& membership =
+                    entityManager
+                        .GetComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(entity);
+                const bool ownerAlive =
+                    membership.partition != Scene::kInvalidEntityUVE &&
+                    entityManager.IsAliveUVE(membership.partition) &&
+                    entityManager.HasComponentUVE<Scene::WorldPartition3DNodeComponentUVE>(
+                        membership.partition);
+                if (!Scene::ResolveWorldPartition3DMembershipLiveUVE(ownerAlive,
+                                                                     membership.live)) {
+                    ++outVisibilitySet.partitionCulledEntities;
                     return;
                 }
             }

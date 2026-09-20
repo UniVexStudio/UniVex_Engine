@@ -597,6 +597,24 @@ private:
     /// lands with the reflection BRDF pass.
     void SyncReflectionProbe3DNodesUVE();
 
+    /// The WorldPartition3D consumer: cell-based visibility for a partition's own subtree
+    /// (Godot has no built-in equivalent at all; this is Unreal World Partition translated into
+    /// an in-document budget). Pass 1 walks each enabled, valid partition's descendants
+    /// breadth-first (a nested WorldPartition3D manages its own subtree - closest ancestor wins,
+    /// so an inner partition is never re-partitioned by an outer one), marks every descendant
+    /// carrying a MeshComponent with the engine-owned WorldPartition3DMembershipComponentUVE,
+    /// and resolves its cell. Pass 2 ranks the partition's OCCUPIED cells by the nearest member
+    /// squared distance to the nearest viewer (the same camera/controller cloud the streamer
+    /// uses - a level far away has a live floor but a dead interior), admits exactly
+    /// maximumLoadedCells of them, and flips membership.live so MeshRendererUVE drops the rest
+    /// at candidate-build time. loadedCellCount is always <= maximumLoadedCells the same tick it
+    /// is written. Honest boundary: membership stamps a derived verdict about THIS tick; the
+    /// authored scene is never rewritten for it (that is exactly why VisibilityComponentUVE's
+    /// authored `visible` is not the carrier here), and an orphan membership after a partition's
+    /// death fails OPEN through the pure resolver check in the renderer gate rather than hiding
+    /// content forever.
+    void SyncWorldPartition3DNodesUVE();
+
     /// Recomputes the bounded aspect-preserving render target from the live drawable size and
     /// transactionally resizes Renderer3DUVE before the frame's scene work begins.
     void SyncAdaptiveRenderResolutionUVE();

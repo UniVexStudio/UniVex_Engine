@@ -497,4 +497,101 @@ TEST(ReflectionProbe3DCaptureBudgetUVETest, BudgetIsPositiveAndStructurallySmall
     EXPECT_EQ(kMaximumReflectionProbeCapturesPerTickUVE, 2U) << "the documented capture budget";
 }
 
+TEST(WorldPartition3DCellIdUVETest, OriginAndInteriorPointsLandInTheExpectedCells) {
+    // The grid origin is the minimum corner: the partition's own position is cell (0,0,0)'s
+    // start, and a point clear inside another cell reads its integer coordinates exactly.
+    WorldPartition3DNodeComponentUVE config;
+    config.cellSize = 10.0F;
+    config.cellCounts = {4U, 1U, 4U};
+
+    const Math::Vector3UVE origin{100.0F, 0.0F, -50.0F};
+    const auto atOrigin = ResolveWorldPartition3DCellIdForPositionUVE(config, origin, origin);
+    ASSERT_TRUE(atOrigin.has_value());
+    EXPECT_EQ(atOrigin->x, 0);
+    EXPECT_EQ(atOrigin->y, 0);
+    EXPECT_EQ(atOrigin->z, 0);
+
+    // origin + (25, 3, 11): inside cell (2, 0, 1) - every axis divides independently.
+    const Math::Vector3UVE interior{125.0F, 3.0F, -39.0F};
+    const auto inside = ResolveWorldPartition3DCellIdForPositionUVE(config, origin, interior);
+    ASSERT_TRUE(inside.has_value());
+    EXPECT_EQ(inside->x, 2);
+    EXPECT_EQ(inside->y, 0);
+    EXPECT_EQ(inside->z, 1);
+}
+
+TEST(WorldPartition3DCellIdUVETest, BoundariesBelongToExactlyOneCellEachAndTheOutsideIsUnmanaged) {
+    // The floor rule at every edge class: exact cell starts belong to the cell they start,
+    // one epsilon before belongs to the previous cell, the volume boundary itself is outside,
+    // and anything behind or beyond the grid answers no cell at all (unmanaged: it stays
+    // rendered, because volume-rejection must never hide geometry).
+    WorldPartition3DNodeComponentUVE config;
+    config.cellSize = 10.0F;
+    config.cellCounts = {2U, 1U, 1U}; // volume: x in [0,20), y in [0,10), z in [0,10)
+    const Math::Vector3UVE origin{0.0F, 0.0F, 0.0F};
+
+    const auto onBoundary = ResolveWorldPartition3DCellIdForPositionUVE(
+        config, origin, Math::Vector3UVE{10.0F, 0.0F, 0.0F});
+    ASSERT_TRUE(onBoundary.has_value());
+    EXPECT_EQ(onBoundary->x, 1) << "an exact cell start belongs to the cell it starts";
+
+    const auto justBefore = ResolveWorldPartition3DCellIdForPositionUVE(
+        config, origin, Math::Vector3UVE{9.9999F, 0.0F, 0.0F});
+    ASSERT_TRUE(justBefore.has_value());
+    EXPECT_EQ(justBefore->x, 0) << "one epsilon earlier is still the previous cell";
+
+    EXPECT_FALSE(ResolveWorldPartition3DCellIdForPositionUVE(
+                     config, origin, Math::Vector3UVE{-0.0001F, 0.0F, 0.0F})
+                     .has_value())
+        << "behind the origin corner is outside the volume";
+    EXPECT_FALSE(ResolveWorldPartition3DCellIdForPositionUVE(
+                     config, origin, Math::Vector3UVE{20.0F, 0.0F, 0.0F})
+                     .has_value())
+        << "the volume's upper bound on an axis is outside it";
+    EXPECT_FALSE(ResolveWorldPartition3DCellIdForPositionUVE(
+                     config, origin, Math::Vector3UVE{5.0F, 15.0F, 5.0F})
+                     .has_value())
+        << "inside on two axes but outside the short third is still outside";
+}
+
+TEST(WorldPartition3DCellIdUVETest, DegenerateConfigAndNonFinitePosesNeverAnswerACell) {
+    WorldPartition3DNodeComponentUVE broken;
+    broken.cellSize = 0.0F; // never valid
+    EXPECT_FALSE(ResolveWorldPartition3DCellIdForPositionUVE(
+                     broken, Math::Vector3UVE{}, Math::Vector3UVE{})
+                     .has_value());
+
+    WorldPartition3DNodeComponentUVE valid;
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    EXPECT_FALSE(ResolveWorldPartition3DCellIdForPositionUVE(
+                     valid, Math::Vector3UVE{}, Math::Vector3UVE{nan, 0.0F, 0.0F})
+                     .has_value());
+    EXPECT_FALSE(ResolveWorldPartition3DCellIdForPositionUVE(
+                     valid, Math::Vector3UVE{0.0F, nan, 0.0F}, Math::Vector3UVE{})
+                     .has_value())
+        << "a NaN grid origin manages nothing either";
+}
+
+TEST(WorldPartition3DCellLinearIndexUVETest, IndexingIsDeterministicAndXMajor) {
+    // The tie-break key consumers sort cells by: a fixed, space-filling index so two runs always
+    // admit the same budget candidates even when distances tie exactly.
+    const std::array<std::uint32_t, 3U> counts{4U, 2U, 3U};
+    EXPECT_EQ(ResolveWorldPartition3DCellLinearIndexUVE({0, 0, 0}, counts), 0U);
+    EXPECT_EQ(ResolveWorldPartition3DCellLinearIndexUVE({3, 0, 0}, counts), 3U);
+    EXPECT_EQ(ResolveWorldPartition3DCellLinearIndexUVE({0, 1, 0}, counts), 4U) << "y strides by cx";
+    EXPECT_EQ(ResolveWorldPartition3DCellLinearIndexUVE({0, 0, 1}, counts), 8U) << "z strides by cx*cy";
+    EXPECT_EQ(ResolveWorldPartition3DCellLinearIndexUVE({2, 1, 2}, counts), 2U + 4U + 16U);
+}
+
+TEST(WorldPartition3DMembershipLiveUVETest, LiveOwnerTrustsItsFlagDeadOwnerFailsOpen) {
+    // The renderer-side contract measured in isolation: while the partition exists, the live
+    // flag rules; once it is gone, nobody may hide content with a stale opinion.
+    EXPECT_FALSE(ResolveWorldPartition3DMembershipLiveUVE(/*partitionOwnerAlive=*/true, false))
+        << "a live partition's fade verdict rules";
+    EXPECT_TRUE(ResolveWorldPartition3DMembershipLiveUVE(true, true));
+    EXPECT_TRUE(ResolveWorldPartition3DMembershipLiveUVE(/*partitionOwnerAlive=*/false, false))
+        << "dead partition: fail open, never delete the world by stale flag";
+    EXPECT_TRUE(ResolveWorldPartition3DMembershipLiveUVE(false, true));
+}
+
 } // namespace UVE::Scene::Tests
