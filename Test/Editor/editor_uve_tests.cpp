@@ -2782,13 +2782,13 @@ TEST(EditorUVETest, PlayModeSandbox_SpawnPointWithOffsetAndParentPlacesRespectin
     engine.Shutdown();
 }
 
-TEST(EditorUVETest, PlayModeSandbox_NoPlayerOrNoSpawnPointJustPlays) {
+TEST(EditorUVETest, PlayModeSandbox_SpawnPointWithNoPlayerJustPlays) {
     Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_play_spawn_noop.uvescene", 100U,
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_play_spawn_noop_a.uvescene", 100U,
                          &engine);
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
@@ -2806,7 +2806,26 @@ TEST(EditorUVETest, PlayModeSandbox_NoPlayerOrNoSpawnPointJustPlays) {
         EXPECT_TRUE(entityManager.GetComponentUVE<Scene::SpawnPoint3DNodeComponentUVE>(spawn).enabled);
         ASSERT_TRUE(editor.StopPlayModeUVE());
 
-        // The inverse: a player with no enabled spawn point keeps its authored pose.
+        editor.ShutdownUVE();
+    }
+
+    engine.Shutdown();
+}
+
+TEST(EditorUVETest, PlayModeSandbox_PlayerWithNoSpawnPointKeepsItsAuthoredPose) {
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_play_spawn_noop_b.uvescene", 100U,
+                         &engine);
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        Core::EngineServicesUVE& services = engine.GetServicesUVE();
+
+        // The inverse of the previous test, in a document of its own: a player with nothing to
+        // spawn at keeps its authored pose through the whole sandbox cycle.
         const Scene::EntityUVE player = entityManager.CreateEntityUVE();
         Scene::TransformComponentUVE authored{};
         authored.localPosition = Math::Vector3UVE{1.0F, 2.0F, 3.0F};
