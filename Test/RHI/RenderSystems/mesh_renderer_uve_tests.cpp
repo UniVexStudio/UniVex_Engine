@@ -1503,8 +1503,8 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_InactiveRegionSkipsItsInterior
 
     const Scene::EntityUVE interior = MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -2.0F},
                                                        meshGuid, materialGuid);
-    const Scene::EntityUVE corridor = MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -9.0F},
-                                                      meshGuid, materialGuid);
+    static_cast<void>(MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -9.0F},
+                                        meshGuid, materialGuid)); // the corridor mesh
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
 
     // What SyncVisibilityRegion3DNodesUVE writes: only the in-room mesh is managed, with the
