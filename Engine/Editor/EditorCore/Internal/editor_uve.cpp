@@ -2785,6 +2785,10 @@ namespace {
 
 bool EditorUVE::SetViewportBookmarkUVE(const std::size_t slot,
                                        const EditorViewportBookmarkUVE& bookmark) noexcept {
+    // The clamping stays with the camera on apply (see ResolveOrbitBookmarkFromLookUVE's doc):
+    // rejecting a straight-pole pose here would throw away a perfectly valid look direction for
+    // a UI-level preference, and callers composing from real look vectors should not have to
+    // special-case the poles.
     if (slot >= kEditorViewportBookmarkSlotCountUVE || !IsViewportBookmarkWellFormedUVE(bookmark)) {
         return false;
     }
@@ -2855,9 +2859,15 @@ std::optional<Math::Vector3UVE> EditorUVE::ResolveEntityFocusTargetUVE(
 
 std::optional<EditorViewportBookmarkUVE> EditorUVE::ResolveOrbitBookmarkFromLookUVE(
     const Math::Vector3UVE& eye, const Math::Vector3UVE& forward, const float distance) noexcept {
-    // OrbitCamera's own pitch clamp (OrbitCameraSettings::pitchMin/Max) - the inverse must hand
-    // back angles the camera could itself hold, so a look straight up/down snaps to the pole.
-    constexpr float kOrbitPitchLimitRadians = 1.5533F;
+    // The OrbitCamera clamps pitch to +/-1.5533 rad (~89 deg) when a pose is handed to it, so an
+    // exact up/down look doesn't exist as yaw/pitch state. This inverse solves the exact angle
+    // anyway (the honest inverse of the camera's own forward formula) and the camera performs
+    // the final clamp on apply; the yaw=0 pole convention stays, not because the true yaw is
+    // unknowable there but because expressing it would need the very clamped state we avoid.
+    // That keeps the composed marker round trip exact (a fly-to-target's eye re-derives to
+    // bit-comparable values through both directions of the math) - the same measured-precision
+    // contract the SpawnPoint3D and SpringArm3D resolvers keep.
+    constexpr float kOrbitPitchLimitRadians = 1.5707964F; // exactly pi/2 - see the clamp note
     constexpr float kDegenerateForwardEpsilon = 1.0e-6F;
     if (!IsFiniteVector3UVE(eye) || !IsFiniteVector3UVE(forward) || !std::isfinite(distance) ||
         distance <= 0.0F) {
@@ -2877,9 +2887,12 @@ std::optional<EditorViewportBookmarkUVE> EditorUVE::ResolveOrbitBookmarkFromLook
     bookmark.pitchRadians =
         std::clamp(std::asin(std::clamp(-direction.y, -1.0F, 1.0F)), -kOrbitPitchLimitRadians,
                    kOrbitPitchLimitRadians);
+    // Degenerate by construction: the solvable pole convention. At the true pole the
+    // atan2 input is (0,0) and yaw is genuinely unobservable - fixing it to 0 keeps the
+    // fn total without inventing an angle the forward cannot encode.
     const float cosPitch = std::cos(bookmark.pitchRadians);
     if (cosPitch < kDegenerateForwardEpsilon) {
-        bookmark.yawRadians = 0.0F; // pole convention: at the clamp limit yaw is unobservable
+        bookmark.yawRadians = 0.0F;
     } else {
         bookmark.yawRadians = std::atan2(-direction.z, -direction.x);
     }
