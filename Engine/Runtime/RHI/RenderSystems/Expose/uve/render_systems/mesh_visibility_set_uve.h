@@ -175,6 +175,12 @@ struct MeshVisibilitySetUVE final {
     /// that is mostly the second wants its draw distances looked at, not its visibility flags.
     std::size_t distanceCulledEntities = 0U;
 
+    /// Entities skipped because their WorldPartition3D cell fell outside this tick's loaded-cell
+    /// budget. Reported distinctly from the other two culls so the stats panel can separate
+    /// "out of budget" (raise maximumLoadedCells) from "out of distance" (raise draw distance)
+    /// and from "switched off" - three different tuning knobs, one pane.
+    std::size_t partitionCulledEntities = 0U;
+
     std::size_t invalidAssetReferences = 0U;
     std::size_t pendingAssetLoads = 0U;
     std::size_t failedAssetLoads = 0U;
