@@ -62,6 +62,7 @@
 #include "uve/nodes/3d/interaction_area_3d_uve.h"
 #include "uve/nodes/3d/level_streamer_3d_uve.h"
 #include "uve/nodes/3d/projectile_3d_uve.h"
+#include "uve/nodes/3d/reflection_probe_3d_uve.h"
 #include "uve/nodes/3d/ray_cast_3d_uve.h"
 #include "uve/nodes/3d/spring_arm_3d_uve.h"
 #include "uve/physics/detail/shape_narrow_phase_uve.h"
@@ -1177,6 +1178,139 @@ void EngineCoreUVE::SyncLevelStreamer3DNodesUVE() {
     }
 }
 
+void EngineCoreUVE::SyncReflectionProbe3DNodesUVE() {
+    // Pass 1 (read-only): the eye position for this tick. Reflections only exist for the camera.
+    std::optional<Math::Vector3UVE> cameraPosition;
+    if (m_activeCamera != Scene::kInvalidEntityUVE &&
+        m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(m_activeCamera)) {
+        const Math::Vector3UVE& position =
+            m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(m_activeCamera)
+                .worldPosition;
+        if (std::isfinite(position.x) && std::isfinite(position.y) && std::isfinite(position.z)) {
+            cameraPosition = position;
+        }
+    }
+
+    // Pass 2 (read-only snapshot): snapshots BEFORE any mutation - the sync never creates or
+    // destroys entities, but it DOES rewrite runtime fields on the components it walks, and a
+    // ForEachUVE-compatible snapshot pass keeps iterator safety explicit (streamer convention).
+    struct ProbeSnapshotUVE final {
+        Scene::EntityUVE entity;
+        Math::Vector3UVE worldPosition;
+        Math::QuaternionUVE worldRotation;
+    };
+    std::vector<ProbeSnapshotUVE> probes;
+    m_entityManager->ForEachUVE<Scene::WorldTransformComponentUVE,
+                                Scene::ReflectionProbe3DNodeComponentUVE>(
+        [&probes](const Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE& world,
+                  const Scene::ReflectionProbe3DNodeComponentUVE&) {
+            if (world.dirty) {
+                return; // a stale world pose must never fake influence math
+            }
+            Math::QuaternionUVE rotation{};
+            if (!Math::TryNormalizeUVE(world.worldRotation, rotation)) {
+                rotation = {}; // degenerate rotation falls back to identity
+            }
+            probes.push_back(ProbeSnapshotUVE{entity, world.worldPosition, rotation});
+        });
+
+    // Pass 3: per probe, the influence weight on the eye plus the capture verdict. The local
+    // offset undoes translation and then orientation with the conjugate (unit-quaternion
+    // inverse) - the same pair editor code uses for world->local math.
+    struct CaptureCandidateUVE final {
+        Scene::EntityUVE entity;
+        float cameraDistanceSquared = 0.0F;
+    };
+    std::vector<CaptureCandidateUVE> candidates;
+    for (const ProbeSnapshotUVE& snapshot : probes) {
+        Scene::ReflectionProbe3DNodeComponentUVE& probe =
+            m_entityManager->GetComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(
+                snapshot.entity);
+        if (!Scene::IsReflectionProbe3DNodeComponentValidUVE(probe)) {
+            probe.cameraInfluenceWeight = 0.0F;
+            continue; // invalid authoring never influences, never captures
+        }
+
+        Scene::ReflectionProbe3DCaptureFrameUVE frame;
+        frame.enabled = probe.enabled;
+        frame.updateMode = probe.updateMode;
+        frame.updateRequested = probe.updateRequested;
+        frame.capturedOnce = probe.capturedOnce;
+        float cameraDistanceSquared =
+            std::numeric_limits<float>::max();
+        if (cameraPosition.has_value()) {
+            const Math::Vector3UVE offset = *cameraPosition - snapshot.worldPosition;
+            // Pass 2 normalized the world rotation; the conjugate of a unit quaternion is its
+            // inverse, so this undoes orientation with no re-normalization needed.
+            const Math::QuaternionUVE inverse{
+                -snapshot.worldRotation.x, -snapshot.worldRotation.y, -snapshot.worldRotation.z,
+                snapshot.worldRotation.w};
+            const Math::Vector3UVE localPoint = Math::RotateVectorUVE(inverse, offset);
+            frame.cameraInfluenceWeight = Scene::ResolveReflectionProbe3DInfluenceWeightUVE(
+                localPoint, Math::Vector3UVE{probe.size.x * 0.5F, probe.size.y * 0.5F,
+                                             probe.size.z * 0.5F});
+            frame.hasCameraViewer = true;
+            cameraDistanceSquared = Math::LengthSquaredUVE(offset);
+        }
+        probe.cameraInfluenceWeight = frame.hasCameraViewer ? frame.cameraInfluenceWeight : 0.0F;
+
+        if (Scene::ResolveReflectionProbe3DCaptureActionUVE(frame) ==
+            Scene::ReflectionProbe3DCaptureActionUVE::Capture) {
+            candidates.push_back(CaptureCandidateUVE{snapshot.entity, cameraDistanceSquared});
+        }
+    }
+
+    // Budgeted service. naive nearest-first STARVES the far probe under continuous demand (with
+    // more constant candidates than budget, the nearest always win), so the primary key is the
+    // WAIT AGE first - the oldest waiter is served before anyone nearer - then camera distance,
+    // then (index,generation). Deterministic across runs AND starvation-free, both measured.
+    struct RankedCandidateUVE final {
+        Scene::EntityUVE entity;
+        float cameraDistanceSquared = 0.0F;
+        std::uint32_t waitTicks = 0;
+    };
+    std::vector<RankedCandidateUVE> ranked;
+    ranked.reserve(candidates.size());
+    for (const CaptureCandidateUVE& candidate : candidates) {
+        const Scene::ReflectionProbe3DNodeComponentUVE& waiting =
+            m_entityManager->GetComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(
+                candidate.entity);
+        ranked.push_back(
+            RankedCandidateUVE{candidate.entity, candidate.cameraDistanceSquared, waiting.captureWaitTicks});
+    }
+    std::sort(ranked.begin(), ranked.end(),
+              [](const RankedCandidateUVE& lhs, const RankedCandidateUVE& rhs) {
+                  if (lhs.waitTicks != rhs.waitTicks) {
+                      return lhs.waitTicks > rhs.waitTicks;
+                  }
+                  if (lhs.cameraDistanceSquared != rhs.cameraDistanceSquared) {
+                      return lhs.cameraDistanceSquared < rhs.cameraDistanceSquared;
+                  }
+                  if (lhs.entity.index != rhs.entity.index) {
+                      return lhs.entity.index < rhs.entity.index;
+                  }
+                  return lhs.entity.generation < rhs.entity.generation;
+              });
+    // Nobody's capture request DIES on an over-budget tick: Once probes simply have not captured
+    // once yet, EveryFrame probes re-decide next tick, and OnDemand keeps its latch set until
+    // serviced - while captureWaitTicks makes their queue position increasingly undeniable.
+    const std::size_t servicedCount =
+        std::min(ranked.size(), Scene::kMaximumReflectionProbeCapturesPerTickUVE);
+    for (std::size_t i = 0; i < ranked.size(); ++i) {
+        Scene::ReflectionProbe3DNodeComponentUVE& probe =
+            m_entityManager->GetComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(
+                ranked[i].entity);
+        if (i < servicedCount) {
+            probe.capturedOnce = true;
+            probe.updateRequested = false;
+            ++probe.captureGeneration;
+            probe.captureWaitTicks = 0;
+        } else {
+            ++probe.captureWaitTicks;
+        }
+    }
+}
+
 void EngineCoreUVE::SyncAdaptiveRenderResolutionUVE() {
     if (!m_windowedRenderingActiveUVE || !m_presentationSurfaceReadyUVE || !m_renderDevice->IsUsableUVE()) {
         return;
@@ -1281,6 +1415,7 @@ void EngineCoreUVE::Update() {
     SyncHitbox3DNodesUVE();
     SyncInteractionArea3DNodesUVE();
     SyncLevelStreamer3DNodesUVE();
+    SyncReflectionProbe3DNodesUVE();
     SyncScriptRuntimeUVE();
 
     if (m_config.hotReloadEnabledUVE) {
