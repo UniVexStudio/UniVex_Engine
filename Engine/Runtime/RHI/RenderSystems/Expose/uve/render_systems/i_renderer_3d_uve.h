@@ -88,6 +88,11 @@ struct Renderer3DFrameDiagnosticsUVE final {
     /// average the number into meaninglessness.
     std::size_t visibilityClusters = 0U;
     std::size_t visibilityClustersRejected = 0U;
+
+    /// Entities a LodGroup3D dropped for being past the end of its distance chain. Distinct from
+    /// a hidden entity: this is "too far to matter", not "the author switched it off", and a scene
+    /// that is mostly this wants its draw distances reviewed rather than its visibility flags.
+    std::size_t distanceCulledEntities = 0U;
     std::size_t primitiveDrawCallsRecorded = 0U;
     std::size_t particleItemsExtracted = 0U;
     std::size_t particleDrawCommandsRecorded = 0U;

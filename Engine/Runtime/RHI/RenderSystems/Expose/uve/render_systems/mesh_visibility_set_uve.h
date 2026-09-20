@@ -169,6 +169,12 @@ struct MeshVisibilitySetUVE final {
     /// a different fault from the blend being wrong.
     std::size_t interpolatedCandidates = 0U;
 
+    /// Entities skipped because a LodGroup3D put them past the end of its distance chain.
+    /// Reported separately from hiddenEntities because the two answer different questions: one is
+    /// "the author switched this off", the other is "this is too far away to matter", and a scene
+    /// that is mostly the second wants its draw distances looked at, not its visibility flags.
+    std::size_t distanceCulledEntities = 0U;
+
     std::size_t invalidAssetReferences = 0U;
     std::size_t pendingAssetLoads = 0U;
     std::size_t failedAssetLoads = 0U;
@@ -185,6 +191,16 @@ struct MeshVisibilitySetUVE final {
     /// Blending there would do identical arithmetic four times and, worse, risk the cascades
     /// disagreeing with the main view about where an object is, which puts a shadow under nothing.
     float physicsInterpolationAlpha = 0.0F;
+
+    /// Where the camera is this frame, in world space.
+    ///
+    /// Set by the caller before the build, like the interpolation alpha and for the same reason:
+    /// BuildVisibilitySetUVE is a virtual with existing overriders and callers, and threading a
+    /// camera through its signature would change every one of them to serve one feature.
+    ///
+    /// Left at the origin it simply means distances are measured from there - LOD groups are the
+    /// only consumer, and a caller that has none is unaffected.
+    Math::Vector3UVE cameraWorldPosition{};
 
     /// Monotonic frame stamp, incremented by each build, used to tell touched entries from stale
     /// ones without a second pass to reset flags.
