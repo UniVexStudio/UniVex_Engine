@@ -66,6 +66,7 @@
 #include "uve/nodes/3d/interaction_area_3d_uve.h"
 #include "uve/nodes/3d/level_streamer_3d_uve.h"
 #include "uve/nodes/3d/reflection_probe_3d_uve.h"
+#include "uve/nodes/3d/visibility_region_3d_uve.h"
 #include "uve/nodes/3d/world_partition_3d_uve.h"
 #include "uve/nodes/3d/projectile_3d_uve.h"
 #include "uve/nodes/3d/ray_cast_3d_uve.h"
@@ -3338,6 +3339,266 @@ TEST(EngineCoreUVETest, WorldPartition3D_MembershipFollowsSubtreeGrowthNotStaleS
     EXPECT_EQ(entityManager.GetComponentUVE<Scene::WorldPartition3DNodeComponentUVE>(partition)
                   .loadedCellCount,
               0U) << "a dead member unbooks its whole cell - no ghost occupancy";
+}
+
+namespace {
+
+Scene::EntityUVE CreateVisibilityRegionAtUVE(Scene::IEntityManagerUVE& entityManager,
+                                             Scene::ISceneGraphUVE& sceneGraph,
+                                             const Math::Vector3UVE& position,
+                                             const Math::Vector3UVE& halfExtents,
+                                             const std::uint32_t layers) {
+    const Scene::EntityUVE region = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE transform;
+    transform.localPosition = position;
+    sceneGraph.AttachTransformUVE(entityManager, region, transform);
+    Scene::VisibilityRegion3DNodeComponentUVE component;
+    component.halfExtents = halfExtents;
+    component.visibilityLayers = layers;
+    entityManager.AddComponentUVE<Scene::VisibilityRegion3DNodeComponentUVE>(region, component);
+    return region;
+}
+
+Scene::EntityUVE CreateStandaloneMeshAtUVE(Scene::IEntityManagerUVE& entityManager,
+                                           Scene::ISceneGraphUVE& sceneGraph,
+                                           const Math::Vector3UVE& position,
+                                           const std::uint32_t layers) {
+    const Scene::EntityUVE mesh = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE transform;
+    transform.localPosition = position;
+    sceneGraph.AttachTransformUVE(entityManager, mesh, transform);
+    Scene::MeshComponentUVE component{};
+    component.visibilityLayers = layers;
+    entityManager.AddComponentUVE<Scene::MeshComponentUVE>(mesh, component);
+    return mesh;
+}
+
+} // namespace
+
+TEST(EngineCoreUVETest, VisibilityRegion3D_CameraOutsideTheRoomSkipsItsInteriorCameraInsideShowsIt) {
+    // The headline claim Godot cannot answer: interior contents cost zero render while nobody
+    // stands inside the room, and reappear the tick the eye enters - with the region's own
+    // active flag readable as the same verdict the membership carries.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    static_cast<void>(CreateVisibilityRegionAtUVE(entityManager, sceneGraph, Math::Vector3UVE{},
+                                                  Math::Vector3UVE{5.0F, 5.0F, 5.0F},
+                                                  0xFFFFFFFFU));
+    const Scene::EntityUVE content = CreateStandaloneMeshAtUVE(
+        entityManager, sceneGraph, Math::Vector3UVE{1.0F, 0.0F, 0.0F}, 0x00000001U);
+    const Scene::EntityUVE outside = CreateStandaloneMeshAtUVE(
+        entityManager, sceneGraph, Math::Vector3UVE{50.0F, 0.0F, 0.0F}, 0x00000001U);
+    const Scene::EntityUVE camera =
+        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{50.0F, 0.0F, 0.0F});
+    engine.SetActiveCameraUVE(camera);
+
+    engine.TickFrameUVE();
+    ASSERT_TRUE(entityManager.HasComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+        content));
+    EXPECT_FALSE(entityManager.GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+                     content)
+                     .live)
+        << "camera outside: interior content is skipped with zero render work";
+    EXPECT_FALSE(entityManager.HasComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+        outside)) << "content outside every region is not a member of anything";
+
+    Scene::TransformComponentUVE enterTransform;
+    enterTransform.localPosition = Math::Vector3UVE{1.0F, 0.0F, 0.0F};
+    sceneGraph.SetLocalTransformUVE(entityManager, camera, enterTransform);
+    engine.TickFrameUVE();
+    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+                    content)
+                    .live)
+        << "the tick the eye steps in, the room draws again - no one-frame stale dark";
+}
+
+TEST(EngineCoreUVETest, VisibilityRegion3D_LayerGateKeepsUninvitedMeshesOutOfTheRoom) {
+    // The roadmap's own phrase: the REGION's visibilityLayers gate what renders inside it. A
+    // props-layer mesh is managed by the props region; an NPC on the default layer standing in
+    // the same room is NOT, so nobody has to special-node the walk-through cases.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    static_cast<void>(CreateVisibilityRegionAtUVE(entityManager, sceneGraph, Math::Vector3UVE{},
+                                                  Math::Vector3UVE{5.0F, 5.0F, 5.0F},
+                                                  0x00000002U)); // props only
+    const Scene::EntityUVE prop = CreateStandaloneMeshAtUVE(
+        entityManager, sceneGraph, Math::Vector3UVE{1.0F, 0.0F, 0.0F}, 0x00000002U);
+    const Scene::EntityUVE npc = CreateStandaloneMeshAtUVE(
+        entityManager, sceneGraph, Math::Vector3UVE{-1.0F, 0.0F, 0.0F}, 0x00000001U);
+    const Scene::EntityUVE camera =
+        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{50.0F, 0.0F, 0.0F});
+    engine.SetActiveCameraUVE(camera);
+
+    engine.TickFrameUVE();
+    ASSERT_TRUE(entityManager.HasComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+        prop));
+    EXPECT_FALSE(entityManager.GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+                     prop)
+                     .live)
+        << "same room, right layer: skipped while the room is empty";
+    EXPECT_FALSE(entityManager.HasComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+        npc)) << "same room, wrong layer: the room simply does not claim this mesh";
+}
+
+TEST(EngineCoreUVETest, VisibilityRegion3D_WalkingOutReleasesTheVerdictOnTheVeryNextTick) {
+    // The regression that decides this slice is honest: a member that LEAVES the box must not
+    // keep last tick's fade. Membership refreshes per tick, and the live flag goes back to true
+    // the same tick the mesh crosses out of the room - never a frame of dark behind it.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    static_cast<void>(CreateVisibilityRegionAtUVE(entityManager, sceneGraph, Math::Vector3UVE{},
+                                                  Math::Vector3UVE{5.0F, 5.0F, 5.0F},
+                                                  0xFFFFFFFFU));
+    const Scene::EntityUVE content = CreateStandaloneMeshAtUVE(
+        entityManager, sceneGraph, Math::Vector3UVE{1.0F, 0.0F, 0.0F}, 0x00000001U);
+    const Scene::EntityUVE camera =
+        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{50.0F, 0.0F, 0.0F});
+    engine.SetActiveCameraUVE(camera);
+
+    engine.TickFrameUVE();
+    ASSERT_FALSE(entityManager.GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+                     content)
+                     .live)
+        << "setup: inside an inactive room, skipped";
+
+    Scene::TransformComponentUVE doorTransform;
+    doorTransform.localPosition = Math::Vector3UVE{10.0F, 0.0F, 0.0F};
+    sceneGraph.SetLocalTransformUVE(entityManager, content, doorTransform);
+    engine.TickFrameUVE();
+    ASSERT_TRUE(entityManager.HasComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+        content))
+        << "the engine leaves the marker; the VERDICT is what is released";
+    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+                    content)
+                    .live) << "out of the room: rendered again the very next tick, not someday";
+}
+
+TEST(EngineCoreUVETest, VisibilityRegion3D_DisabledReleasesAndDestroyingTheRegionRehomesItsMembers) {
+    // Two fail-open paths at once: disabling a region shows its content from the next tick, and
+    // destroying the region lets the membership rehome to ANOTHER containing region (or nobody)
+    // without a stale fade ever binding the mesh again.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    const Scene::EntityUVE roomA =
+        CreateVisibilityRegionAtUVE(entityManager, sceneGraph, Math::Vector3UVE{},
+                                    Math::Vector3UVE{5.0F, 5.0F, 5.0F}, 0xFFFFFFFFU);
+    const Scene::EntityUVE content = CreateStandaloneMeshAtUVE(
+        entityManager, sceneGraph, Math::Vector3UVE{1.0F, 0.0F, 0.0F}, 0x00000001U);
+    const Scene::EntityUVE camera =
+        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{50.0F, 0.0F, 0.0F});
+    engine.SetActiveCameraUVE(camera);
+
+    engine.TickFrameUVE();
+    ASSERT_FALSE(entityManager.GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+                     content)
+                     .live);
+
+    entityManager.GetComponentUVE<Scene::VisibilityRegion3DNodeComponentUVE>(roomA).enabled =
+        false;
+    engine.TickFrameUVE();
+    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+                    content)
+                    .live) << "disabled: released the same tick, no stale fade";
+
+    // Re-enable, then destroy: the membership rebrands to kInvalidEntityUVE and stays live.
+    entityManager.GetComponentUVE<Scene::VisibilityRegion3DNodeComponentUVE>(roomA).enabled =
+        true;
+    engine.TickFrameUVE();
+    ASSERT_FALSE(entityManager.GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+                     content)
+                     .live);
+    entityManager.DestroyEntityUVE(roomA);
+    engine.TickFrameUVE();
+    const Scene::VisibilityRegion3DMembershipComponentUVE& membership =
+        entityManager.GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(content);
+    EXPECT_TRUE(membership.live)
+        << "dead region: fail open on the render path AND in the recorded verdict";
+    EXPECT_EQ(membership.region, Scene::kInvalidEntityUVE)
+        << "ownership is reassigned - content is rehomeable, never orphan-hidden";
+}
+
+TEST(EngineCoreUVETest, VisibilityRegion3D_OverlappingRoomsTheNearestCenterOwnsTheMesh) {
+    // Overlapping rooms need ONE deterministic owner per mesh; otherwise the culling of a double-
+    // booked room was history-dependent. Measured: the nearest region center stamps it, and a
+    // second tick answers the same way without oscillation.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    static_cast<void>(CreateVisibilityRegionAtUVE(entityManager, sceneGraph, Math::Vector3UVE{},
+                                                  Math::Vector3UVE{6.0F, 6.0F, 6.0F},
+                                                  0xFFFFFFFFU)); // big, centered at 0
+    const Scene::EntityUVE small =
+        CreateVisibilityRegionAtUVE(entityManager, sceneGraph,
+                                    Math::Vector3UVE{4.0F, 0.0F, 0.0F},
+                                    Math::Vector3UVE{2.0F, 2.0F, 2.0F}, 0xFFFFFFFFU);
+    const Scene::EntityUVE content = CreateStandaloneMeshAtUVE(
+        entityManager, sceneGraph, Math::Vector3UVE{4.5F, 0.0F, 0.0F}, 0x00000001U);
+    const Scene::EntityUVE camera =
+        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{50.0F, 0.0F, 0.0F});
+    engine.SetActiveCameraUVE(camera);
+
+    engine.TickFrameUVE();
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+                  content)
+                  .region,
+              small) << "inside both rooms: the NEAREST center owns the mesh";
+    engine.TickFrameUVE();
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+                  content)
+                  .region,
+              small) << "second tick: same owner, no oscillation between overlapping rooms";
+}
+
+TEST(EngineCoreUVETest, VisibilityRegion3D_NoViewersAtAllFailsOpenWithActiveRegions) {
+    // Empty worlds show everything: with no camera and no controller, regions report active and
+    // their members report live. The fail-open belongs to the POLICY (the sync), while the pure
+    // function stays measurable - asserted separately in the node tests.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    const Scene::EntityUVE room =
+        CreateVisibilityRegionAtUVE(entityManager, sceneGraph, Math::Vector3UVE{},
+                                    Math::Vector3UVE{5.0F, 5.0F, 5.0F}, 0xFFFFFFFFU);
+    const Scene::EntityUVE content = CreateStandaloneMeshAtUVE(
+        entityManager, sceneGraph, Math::Vector3UVE{1.0F, 0.0F, 0.0F}, 0x00000001U);
+
+    engine.TickFrameUVE();
+    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::VisibilityRegion3DNodeComponentUVE>(room)
+                    .active)
+        << "no viewer anywhere: active, because managing nothing hides nothing";
+    ASSERT_TRUE(entityManager.HasComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+        content));
+    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+                    content)
+                    .live);
 }
 
 } // namespace

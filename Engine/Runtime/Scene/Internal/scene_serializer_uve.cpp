@@ -141,7 +141,9 @@ namespace {
 }
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const MeshComponentUVE& component) {
-    return {{"meshGuid", component.meshGuid.value}, {"materialGuid", component.materialGuid.value}};
+    return {{"meshGuid", component.meshGuid.value},
+            {"materialGuid", component.materialGuid.value},
+            {"visibilityLayers", component.visibilityLayers}};
 }
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const PrimitiveMeshComponentUVE& component) {
@@ -761,8 +763,12 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                           return animation;
                       }, IsAnimationPlayerComponentValidUVE));
         table.emplace("MeshComponentUVE", MakeRegistrationUVE<MeshComponentUVE>([](const nlohmann::json& json) {
-                          const MeshComponentUVE mesh{Asset::AssetGuidUVE{json.at("meshGuid").get<std::uint64_t>()},
-                                                     Asset::AssetGuidUVE{json.at("materialGuid").get<std::uint64_t>()}};
+                          // visibilityLayers defaults through json.value on purpose: scenes saved
+                          // before the field existed load unchanged, while meshGuid/materialGuid
+                          // stay REQUIRED so the malformed-payload rollback tests keep their teeth.
+                          MeshComponentUVE mesh{Asset::AssetGuidUVE{json.at("meshGuid").get<std::uint64_t>()},
+                                                 Asset::AssetGuidUVE{json.at("materialGuid").get<std::uint64_t>()}};
+                          mesh.visibilityLayers = json.value("visibilityLayers", std::uint32_t{0x00000001U});
                           if (!IsMeshComponentValidUVE(mesh)) {
                               throw std::runtime_error("Invalid MeshComponentUVE payload");
                           }

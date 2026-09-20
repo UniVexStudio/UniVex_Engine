@@ -615,6 +615,24 @@ private:
     /// content forever.
     void SyncWorldPartition3DNodesUVE();
 
+    /// The VisibilityRegion3D consumer: interior culling for the meshes standing inside each
+    /// authored visibility box (Godot has no built-in equivalent at all - Godot's
+    /// VisibilityNotifier3D answers "is the box on screen", not "should this room's contents
+    /// render"). Each region's `active` is recomputed from the same viewer cloud the streamer
+    /// and world partition use: active while any viewer stands inside its box, or while there
+    /// are no viewers at all (fail-open: an empty world shows everything). Pass 1 sweeps the
+    /// existing memberships: a member that walked OUT of the box, whose layer gate closed, whose
+    /// region got disabled, or whose region died goes back to live (dead regions rebrand the
+    /// membership to kInvalidEntityUVE so Pass 2 can rehome the mesh that same tick) - released
+    /// content must never be stuck hidden a tick later. Pass 2 discovers un-owned meshes inside
+    /// an enabled region whose mesh visibilityLayers share a bit with the region mask and stamps
+    /// the engine-owned VisibilityRegion3DMembershipComponentUVE with the NEAREST containing
+    /// region (ties resolve in entity-id order, so overlapping-room scenes are deterministic).
+    /// MeshRendererUVE drops !live members at candidate-build time and counts them in
+    /// regionCulledEntities. Honest boundary: like the world partition's membership, this is a
+    /// derived verdict about THIS tick; authored VisibilityComponentUVE.visible stays untouched.
+    void SyncVisibilityRegion3DNodesUVE();
+
     /// Recomputes the bounded aspect-preserving render target from the live drawable size and
     /// transactionally resizes Renderer3DUVE before the frame's scene work begins.
     void SyncAdaptiveRenderResolutionUVE();
