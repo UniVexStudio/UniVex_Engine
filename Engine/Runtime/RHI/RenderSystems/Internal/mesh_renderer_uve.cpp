@@ -18,6 +18,7 @@
 #include "uve/component/mesh_component_uve.h"
 #include "uve/component/physics_interpolation_component_uve.h"
 #include "uve/nodes/3d/lod_group_3d_uve.h"
+#include "uve/nodes/3d/occluder_3d_uve.h"
 #include "uve/nodes/3d/visibility_region_3d_uve.h"
 #include "uve/nodes/3d/world_partition_3d_uve.h"
 #include "uve/component/visibility_component_uve.h"
@@ -180,6 +181,28 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
     // it describes this walk only.
     std::unordered_map<AssetPairKeyUVE, std::size_t, AssetPairKeyHashUVE> assetPairSlots;
 
+    // Occluder snapshot, captured once per build: hiding is a per-FRAME verdict against the
+    // live camera, never persisted state, so the walk re-derives it from the authored nodes as
+    // they exist right now. Disabled or transform-less occluder nodes simply do not cover
+    // anything - fail open on every honest ambiguity, by the resolver's own contract.
+    struct OccluderSnapshotUVE final {
+        Scene::Occluder3DNodeComponentUVE config;
+        Math::Vector3UVE worldPosition;
+    };
+    std::vector<OccluderSnapshotUVE> occluders;
+    entityManager.ForEachUVE<Scene::Occluder3DNodeComponentUVE>(
+        [&occluders, &entityManager](const Scene::EntityUVE entity,
+                                     const Scene::Occluder3DNodeComponentUVE& config) {
+            if (!config.enabled ||
+                !entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(entity)) {
+                return;
+            }
+            occluders.push_back(OccluderSnapshotUVE{
+                config,
+                entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity)
+                    .worldPosition});
+        });
+
     entityManager.ForEachUVE<Scene::WorldTransformComponentUVE, Scene::MeshComponentUVE>(
         [&](Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE& worldTransform,
             const Scene::MeshComponentUVE& meshComponent) {
@@ -254,6 +277,25 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
                 if (!Scene::ResolveVisibilityRegion3DMembershipLiveUVE(ownerAlive,
                                                                        membership.live)) {
                     ++outVisibilitySet.regionCulledEntities;
+                    return;
+                }
+            }
+
+            // Occluders, composed as a plain OR over the build's snapshot: any strict cover on
+            // the viewer->entity segment hides it. The gate sits right after the other cheap
+            // gates, ahead of asset resolution, so a hidden courtyard costs one slab test.
+            if (!occluders.empty()) {
+                bool occluded = false;
+                for (const OccluderSnapshotUVE& occluder : occluders) {
+                    if (Scene::ResolveOccluder3DFullyHiddenUVE(
+                            occluder.config, occluder.worldPosition,
+                            outVisibilitySet.cameraWorldPosition, worldTransform.worldPosition)) {
+                        occluded = true;
+                        break;
+                    }
+                }
+                if (occluded) {
+                    ++outVisibilitySet.occlusionCulledEntities;
                     return;
                 }
             }

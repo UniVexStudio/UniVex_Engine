@@ -27,6 +27,7 @@
 #include "uve/component/visibility_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/nodes/3d/lod_group_3d_uve.h"
+#include "uve/nodes/3d/occluder_3d_uve.h"
 #include "uve/nodes/3d/visibility_region_3d_uve.h"
 #include "uve/nodes/3d/world_partition_3d_uve.h"
 #include "uve/entity/entity_manager_uve.h"
@@ -1532,6 +1533,129 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_InactiveRegionSkipsItsInterior
     meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, awake);
     EXPECT_EQ(awake.candidates.size(), 2U) << "viewer stepped in: everything draws again";
     EXPECT_EQ(awake.regionCulledEntities, 0U);
+}
+
+TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_MeshBehindAnOccluderIsCulledInItsOwnCounter) {
+    // The wall claim, end to end: a mesh dead-center behind the wall costs one slab test and
+    // lands in occlusionCulledEntities, while its twin off the silhouette still draws - hiding
+    // never spills past the box the author painted.
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_occ.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_occ.uvemat");
+
+    const Scene::EntityUVE wall = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE wallTransform;
+    wallTransform.localPosition = Math::Vector3UVE{0.0F, 0.0F, -5.0F};
+    sceneGraph.AttachTransformUVE(entityManager, wall, wallTransform);
+    Scene::Occluder3DNodeComponentUVE wallOccluder;
+    wallOccluder.halfExtents = Math::Vector3UVE{2.0F, 2.0F, 2.0F};
+    entityManager.AddComponentUVE<Scene::Occluder3DNodeComponentUVE>(wall, wallOccluder);
+
+    static_cast<void>(MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -9.0F}, meshGuid,
+                                        materialGuid)); // behind the wall
+    static_cast<void>(MakeMeshEntityUVE(Math::Vector3UVE{8.0F, 0.0F, -9.0F}, meshGuid,
+                                        materialGuid)); // off the silhouette: the segment's cone
+                                                        // from this camera stays clear of the box
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    MeshVisibilitySetUVE visibilitySet;
+    visibilitySet.cameraWorldPosition = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+
+    ASSERT_EQ(visibilitySet.candidates.size(), 1U) << "only the off-silhouette mesh may render";
+    EXPECT_NEAR(visibilitySet.candidates[0U].placement.worldBounds.GetCenterUVE().x, 8.0F, 1e-3F);
+    EXPECT_EQ(visibilitySet.occlusionCulledEntities, 1U)
+        << "wall cover is a per-frame render stat, never conflated with the ownership gates";
+    EXPECT_EQ(visibilitySet.partitionCulledEntities, 0U);
+    EXPECT_EQ(visibilitySet.regionCulledEntities, 0U);
+}
+
+TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_CameraMoveReanswersOcclusionWithNoStateAtAll) {
+    // No persisted verdicts exist, so moving the camera behind the wall line re-answers the
+    // whole scene this very build: what was hidden shows, what was free-space hides - with no
+    // teleport-stale possibility by construction.
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_occ2.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_occ2.uvemat");
+
+    const Scene::EntityUVE wall = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE wallTransform;
+    wallTransform.localPosition = Math::Vector3UVE{0.0F, 0.0F, -5.0F};
+    sceneGraph.AttachTransformUVE(entityManager, wall, wallTransform);
+    entityManager.AddComponentUVE<Scene::Occluder3DNodeComponentUVE>(
+        wall, Scene::Occluder3DNodeComponentUVE{});
+
+    static_cast<void>(MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -9.0F}, meshGuid,
+                                        materialGuid));
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    MeshVisibilitySetUVE before;
+    before.cameraWorldPosition = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, before);
+    ASSERT_TRUE(before.candidates.empty());
+    ASSERT_EQ(before.occlusionCulledEntities, 1U);
+
+    MeshVisibilitySetUVE behindWall;
+    behindWall.cameraWorldPosition = Math::Vector3UVE{0.0F, 0.0F, -7.0F};
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, behindWall);
+    EXPECT_EQ(behindWall.candidates.size(), 1U)
+        << "from behind the wall the cover sits behind the mesh: drawn, this very frame";
+    EXPECT_EQ(behindWall.occlusionCulledEntities, 0U);
+}
+
+TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_DisabledOccluderCoversNothing) {
+    // The eye-toggle on the wall: disabled means the box paints nothing into the frame, the
+    // same way an enabled=false on the region releases its members - fail open, measured.
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_occ3.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_occ3.uvemat");
+
+    const Scene::EntityUVE wall = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE wallTransform;
+    wallTransform.localPosition = Math::Vector3UVE{0.0F, 0.0F, -5.0F};
+    sceneGraph.AttachTransformUVE(entityManager, wall, wallTransform);
+    Scene::Occluder3DNodeComponentUVE wallOccluder;
+    wallOccluder.halfExtents = Math::Vector3UVE{2.0F, 2.0F, 2.0F};
+    wallOccluder.enabled = false;
+    entityManager.AddComponentUVE<Scene::Occluder3DNodeComponentUVE>(wall, wallOccluder);
+
+    static_cast<void>(MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -9.0F}, meshGuid,
+                                        materialGuid));
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    MeshVisibilitySetUVE visibilitySet;
+    visibilitySet.cameraWorldPosition = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+    EXPECT_EQ(visibilitySet.candidates.size(), 1U) << "disabled: the cover paints nothing";
+    EXPECT_EQ(visibilitySet.occlusionCulledEntities, 0U);
+}
+
+TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_AnyOfSeveralWallsHidesOnce) {
+    // Composition is a plain OR: a corridor of two walls hides the mesh exactly once in the
+    // counter (not once per wall - the stats would otherwise lie about scene content).
+    RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_occ4.uvemodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_occ4.uvemat");
+
+    for (const float wallZ : {-4.0F, -6.0F}) {
+        const Scene::EntityUVE wall = entityManager.CreateEntityUVE();
+        Scene::TransformComponentUVE wallTransform;
+        wallTransform.localPosition = Math::Vector3UVE{0.0F, 0.0F, wallZ};
+        sceneGraph.AttachTransformUVE(entityManager, wall, wallTransform);
+        entityManager.AddComponentUVE<Scene::Occluder3DNodeComponentUVE>(
+            wall, Scene::Occluder3DNodeComponentUVE{});
+    }
+
+    static_cast<void>(MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -9.0F}, meshGuid,
+                                        materialGuid));
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    MeshVisibilitySetUVE visibilitySet;
+    visibilitySet.cameraWorldPosition = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+    meshRenderer.BuildVisibilitySetUVE(entityManager, assetManager, assetDatabase, visibilitySet);
+    EXPECT_TRUE(visibilitySet.candidates.empty());
+    EXPECT_EQ(visibilitySet.occlusionCulledEntities, 1U)
+        << "two walls, one hidden mesh, one stat - no double-booking";
 }
 
 } // namespace

@@ -704,4 +704,93 @@ TEST(VisibilityRegion3DMembershipLiveUVETest, LiveOwnerTrustsItsFlagDeadOwnerFai
     EXPECT_TRUE(ResolveVisibilityRegion3DMembershipLiveUVE(false, true));
 }
 
+TEST(Occluder3DFullyHiddenUVETest, BehindTheWallIsHiddenInFrontBesideAndBeyondOverReachAreNot) {
+    // The single strict rule, measured on a wall at the origin with half extents {2,1,2}: the
+    // viewer at z=+5 looking down -z. A point on the far side of the wall, on the segment
+    // through the wall's interior, is hidden; everything else draws.
+    Occluder3DNodeComponentUVE wall;
+    wall.halfExtents = Math::Vector3UVE{2.0F, 1.0F, 2.0F};
+    const Math::Vector3UVE wallOrigin{};
+    const Math::Vector3UVE viewer{0.0F, 0.0F, 5.0F};
+
+    EXPECT_TRUE(ResolveOccluder3DFullyHiddenUVE(wall, wallOrigin, viewer,
+                                                Math::Vector3UVE{0.0F, 0.0F, -5.0F}))
+        << "dead center behind the wall: hidden";
+    EXPECT_TRUE(ResolveOccluder3DFullyHiddenUVE(wall, wallOrigin, viewer,
+                                                Math::Vector3UVE{1.0F, 0.5F, -30.0F}))
+        << "off-axis behind the wall, still covered: hidden";
+    EXPECT_FALSE(ResolveOccluder3DFullyHiddenUVE(wall, wallOrigin, viewer,
+                                                 Math::Vector3UVE{0.0F, 0.0F, 3.0F}))
+        << "in FRONT of the wall: nothing was hidden";
+    EXPECT_FALSE(ResolveOccluder3DFullyHiddenUVE(wall, wallOrigin, viewer,
+                                                 Math::Vector3UVE{8.0F, 0.0F, -5.0F}))
+        << "beside the wall on the far side: the segment clears the box (minded cone math:"
+           " at x=8 the ray exits the wall's x-slab before ever entering its z-slab)";
+    EXPECT_FALSE(ResolveOccluder3DFullyHiddenUVE(wall, wallOrigin,
+                                                 Math::Vector3UVE{20.0F, 0.0F, 5.0F},
+                                                 Math::Vector3UVE{0.0F, 0.0F, -5.0F}))
+        << "viewer beside the wall, same answer - the cover is directional";
+}
+
+TEST(Occluder3DFullyHiddenUVETest, HonestAmbiguitiesAllFailOpen) {
+    // The no-false-culls edge list, each case measured: grazing the exact skin, standing on the
+    // surface, standing inside, the box exactly AT the candidate, an invalid box, a NaN pose -
+    // every one of them answers NOT hidden.
+    Occluder3DNodeComponentUVE wall;
+    wall.halfExtents = Math::Vector3UVE{2.0F, 1.0F, 2.0F};
+    const Math::Vector3UVE wallOrigin{};
+    const Math::Vector3UVE viewer{0.0F, 0.0F, 5.0F};
+
+    EXPECT_FALSE(ResolveOccluder3DFullyHiddenUVE(wall, wallOrigin, viewer,
+                                                 Math::Vector3UVE{4.0F, 0.0F, -1.0F}))
+        << "true tangency: the segment kisses the far corner (2,0,2) exactly once - grazing is"
+           " no cover, the strict-overlap rule fails open at the boundary";
+    EXPECT_FALSE(ResolveOccluder3DFullyHiddenUVE(wall, wallOrigin, viewer,
+                                                 Math::Vector3UVE{0.0F, 0.0F, -2.0F}))
+        << "the candidate stands ON the back face (the wall hides what is BEHIND, not at it)";
+    EXPECT_FALSE(ResolveOccluder3DFullyHiddenUVE(wall, wallOrigin, viewer,
+                                                 Math::Vector3UVE{0.0F, 0.0F, 0.5F}))
+        << "inside the box is never hidden by the box";
+    EXPECT_FALSE(ResolveOccluder3DFullyHiddenUVE(wall, wallOrigin,
+                                                 Math::Vector3UVE{0.0F, 0.0F, 1.0F},
+                                                 Math::Vector3UVE{0.0F, 0.0F, -5.0F}))
+        << "the viewer inside the cover sees past it";
+
+    Occluder3DNodeComponentUVE degenerate;
+    degenerate.halfExtents = Math::Vector3UVE{0.0F, 1.0F, 1.0F};
+    EXPECT_FALSE(ResolveOccluder3DFullyHiddenUVE(degenerate, wallOrigin, viewer,
+                                                 Math::Vector3UVE{0.0F, 0.0F, -5.0F}))
+        << "a zero-half-extent cover covers nothing";
+
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    EXPECT_FALSE(ResolveOccluder3DFullyHiddenUVE(wall, wallOrigin, viewer,
+                                                 Math::Vector3UVE{nan, 0.0F, -5.0F}));
+    EXPECT_FALSE(ResolveOccluder3DFullyHiddenUVE(wall, wallOrigin,
+                                                 Math::Vector3UVE{0.0F, 0.0F, nan},
+                                                 Math::Vector3UVE{0.0F, 0.0F, -5.0F}));
+}
+
+TEST(Occluder3DFullyHiddenUVETest, CoverIsAboutTheSegmentNotAboutDistance) {
+    // Distance is not cover: a candidate VERY far behind but off the wall's silhouette draws,
+    // and one centimetre behind the wall on-axis is hidden - the box casts an exact
+    // infinite-depth shadow down the segment, nothing shorter, nothing longer.
+    Occluder3DNodeComponentUVE wall;
+    wall.halfExtents = Math::Vector3UVE{1.0F, 1.0F, 1.0F};
+    const Math::Vector3UVE wallOrigin{};
+    const Math::Vector3UVE viewer{0.0F, 0.0F, 5.0F};
+
+    EXPECT_TRUE(ResolveOccluder3DFullyHiddenUVE(wall, wallOrigin, viewer,
+                                                Math::Vector3UVE{0.0F, 0.0F, -1.01F}))
+        << "2 cm behind the back face is already hidden";
+    EXPECT_TRUE(ResolveOccluder3DFullyHiddenUVE(wall, wallOrigin, viewer,
+                                                Math::Vector3UVE{0.0F, 0.0F, -10000.0F}))
+        << "and the shadow has no draw-distance";
+    EXPECT_TRUE(ResolveOccluder3DFullyHiddenUVE(wall, wallOrigin, viewer,
+                                                Math::Vector3UVE{1.5F, 0.0F, -10000.0F}))
+        << "perspective narrows at range: even far-off-axis points fall under the cover";
+    EXPECT_FALSE(ResolveOccluder3DFullyHiddenUVE(wall, wallOrigin, viewer,
+                                                 Math::Vector3UVE{3000.0F, 0.0F, -10000.0F}))
+        << "10 km away outside the silhouette cone: still drawn";
+}
+
 } // namespace UVE::Scene::Tests
