@@ -50,6 +50,7 @@
 #include "uve/scripting/script_compiler_ir_uve.h"
 #include "uve/component/area_component_uve.h"
 #include "uve/component/camera_component_uve.h"
+#include "uve/component/character_controller_component_uve.h"
 #include "uve/component/collider_component_uve.h"
 #include "uve/nodes/3d/all_nodes_3d_uve.h"
 #include "uve/nodes/canvas_layer/all_nodes_canvas_layer_uve.h"
@@ -484,8 +485,98 @@ bool EditorUVE::EnterPlayModeUVE() {
 
     m_playModeSession = std::move(session);
     m_playModeState = EditorPlayModeStateUVE::Playing;
+    // Play-entry spawn resolution, inside the snapshot's protection and never allowed to fail
+    // entering Play itself: a scene with no player or no enabled spawn point simply plays from
+    // the authored poses.
+    static_cast<void>(ApplyPlayEntrySpawnUVE());
     m_workspaceBeforePlayMode = m_activeWorkspace;
     m_activeWorkspace = EditorWorkspaceUVE::Game;
+    return true;
+}
+
+bool EditorUVE::ApplyPlayEntrySpawnUVE() {
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+
+    // The player: the entity carrying the character controller. A scene with several is a
+    // split-screen/multiplayer question this v1 deliberately does not answer - the first in
+    // pool order is the only deterministic honest pick, and any gameplay layer that wants
+    // richer selection lands its rule in ResolveSpawnPoint3DSelectionUVE, not here.
+    Scene::EntityUVE player = Scene::kInvalidEntityUVE;
+    entityManager.ForEachUVE<Scene::CharacterControllerComponentUVE>(
+        [&entityManager, &player](const Scene::EntityUVE entity,
+                                  Scene::CharacterControllerComponentUVE&) {
+            if (player == Scene::kInvalidEntityUVE &&
+                entityManager.HasComponentUVE<Scene::TransformComponentUVE>(entity) &&
+                entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(entity)) {
+                player = entity;
+            }
+        });
+    if (player == Scene::kInvalidEntityUVE) {
+        return false;
+    }
+
+    // The candidates: enabled, valid spawn points whose world pose is knowable. Filtering is
+    // the resolver's contract; the resolver itself stays a pure ranking over what survives.
+    std::vector<Scene::SpawnPoint3DCandidateUVE> candidates;
+    entityManager.ForEachUVE<Scene::SpawnPoint3DNodeComponentUVE>(
+        [&entityManager, &candidates](const Scene::EntityUVE entity,
+                                      Scene::SpawnPoint3DNodeComponentUVE& spawnPoint) {
+            if (spawnPoint.enabled && Scene::IsSpawnPoint3DNodeComponentValidUVE(spawnPoint) &&
+                entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(entity)) {
+                candidates.push_back(Scene::SpawnPoint3DCandidateUVE{entity, spawnPoint.oneShot});
+            }
+        });
+    const std::optional<Scene::EntityUVE> selection =
+        Scene::ResolveSpawnPoint3DSelectionUVE(candidates);
+    if (!selection.has_value()) {
+        return false;
+    }
+
+    const Scene::SpawnPoint3DNodeComponentUVE& spawnPoint =
+        entityManager.GetComponentUVE<Scene::SpawnPoint3DNodeComponentUVE>(*selection);
+    const Scene::WorldTransformComponentUVE& spawnWorld =
+        entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(*selection);
+    const std::optional<Scene::SpawnPoint3DPoseUVE> spawnPose = Scene::ComposeSpawnPointPoseUVE(
+        spawnWorld.worldPosition, spawnWorld.worldRotation, spawnPoint.localPosition,
+        spawnPoint.localRotation);
+    if (!spawnPose.has_value()) {
+        return false;
+    }
+
+    // World-space spawn pose -> the player's LOCAL pose under its own parent, via the sweep's
+    // exact inverse. A root-level player passes identity TRS and the pose falls straight
+    // through.
+    const auto& playerHierarchy = entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(player);
+    Math::Vector3UVE parentPosition{};
+    Math::QuaternionUVE parentRotation{};
+    Math::Vector3UVE parentScale{1.0F, 1.0F, 1.0F};
+    const bool hasParent = playerHierarchy.parent != Scene::kInvalidEntityUVE;
+    if (hasParent &&
+        entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(playerHierarchy.parent)) {
+        const Scene::WorldTransformComponentUVE& parentWorld =
+            entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(playerHierarchy.parent);
+        parentPosition = parentWorld.worldPosition;
+        parentRotation = parentWorld.worldRotation;
+        parentScale = parentWorld.worldScale;
+    }
+    const std::optional<Scene::SpawnPoint3DPoseUVE> playerLocalPose =
+        Scene::ResolveSpawnPointPlayerLocalUVE(*spawnPose, parentPosition, parentRotation, parentScale);
+    if (!playerLocalPose.has_value()) {
+        return false;
+    }
+
+    Scene::TransformComponentUVE playerTransform =
+        entityManager.GetComponentUVE<Scene::TransformComponentUVE>(player);
+    playerTransform.localPosition = playerLocalPose->position;
+    playerTransform.localRotation = playerLocalPose->rotation;
+    // The documented rule for a simulation write that sets rotation directly: the quaternion is
+    // now the truth, so the authored (and now stale) Euler cache must stop replaying.
+    playerTransform.rotationEditMode = Scene::RotationEditModeUVE::Quaternion;
+    m_services->GetSceneGraphUVE().SetLocalTransformUVE(entityManager, player, playerTransform);
+
+    if (spawnPoint.oneShot) {
+        entityManager.GetComponentUVE<Scene::SpawnPoint3DNodeComponentUVE>(*selection).enabled = false;
+    }
     return true;
 }
 

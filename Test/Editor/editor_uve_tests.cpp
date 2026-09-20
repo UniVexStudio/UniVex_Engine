@@ -17,6 +17,7 @@
 #include "uve/core/engine_core_uve.h"
 #include "uve/editor/editor_uve.h"
 #include "uve/component/camera_component_uve.h"
+#include "uve/component/character_controller_component_uve.h"
 #include "uve/component/collider_component_uve.h"
 #include "uve/component/editor_internal_entity_component_uve.h"
 #include "uve/component/light_component_uve.h"
@@ -25,6 +26,7 @@
 #include "uve/component/primitive_mesh_component_uve.h"
 #include "uve/component/transform_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
+#include "uve/nodes/3d/spawn_point_3d_uve.h"
 #include "uve/scene/nodes/scene_node_registry_uve.h"
 
 namespace UVE::Editor::Tests {
@@ -2637,6 +2639,187 @@ TEST(EditorUVETest, GetDocumentRootsUVE_ExcludesEditorInternalEntitiesAndTheySur
         const std::vector<Scene::EntityUVE> rootsAfterStop = editor.GetDocumentRootsUVE();
         ASSERT_EQ(rootsAfterStop.size(), 2U); // the scene root + the restored authored root
         EXPECT_NE(rootsAfterStop.back(), documentRoot); // restored as a fresh handle, like every real root
+
+        editor.ShutdownUVE();
+    }
+
+    engine.Shutdown();
+}
+
+TEST(EditorUVETest, PlayModeSandbox_SpawnPointTeleportsThePlayerAndStopGivesEverythingBack) {
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_play_spawn.uvescene", 100U, &engine);
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        Core::EngineServicesUVE& services = engine.GetServicesUVE();
+
+        // The player: a root-level entity with the controller component, authored at origin.
+        const Scene::EntityUVE player = entityManager.CreateEntityUVE();
+        AttachRootUVE(engine, player, Scene::TransformComponentUVE{});
+        entityManager.AddComponentUVE<Scene::CharacterControllerComponentUVE>(
+            player, Scene::CharacterControllerComponentUVE{});
+
+        // The spawn point: another root-level entity at (3, 1, -2), no offset, one-shot so both
+        // sandbox mutations (teleport, spend) can be measured in one session.
+        const Scene::EntityUVE spawn = entityManager.CreateEntityUVE();
+        Scene::TransformComponentUVE spawnTransform{};
+        spawnTransform.localPosition = Math::Vector3UVE{3.0F, 1.0F, -2.0F};
+        AttachRootUVE(engine, spawn, spawnTransform);
+        Scene::SpawnPoint3DNodeComponentUVE spawnPoint{};
+        spawnPoint.oneShot = true;
+        entityManager.AddComponentUVE<Scene::SpawnPoint3DNodeComponentUVE>(spawn, spawnPoint);
+
+        // Compose reads the spawn node's WORLD pose, so the sweep must have run since attaching.
+        services.GetSceneGraphUVE().UpdateUVE(entityManager);
+
+        ASSERT_TRUE(editor.EnterPlayModeUVE());
+        const Scene::TransformComponentUVE& playedTransform =
+            entityManager.GetComponentUVE<Scene::TransformComponentUVE>(player);
+        EXPECT_NEAR(playedTransform.localPosition.x, 3.0F, 1.0e-5F);
+        EXPECT_NEAR(playedTransform.localPosition.y, 1.0F, 1.0e-5F);
+        EXPECT_NEAR(playedTransform.localPosition.z, -2.0F, 1.0e-5F);
+        // The documented simulation-write rule: the quaternion is now the truth, so the authored
+        // Euler cache stops replaying over this teleport.
+        EXPECT_EQ(playedTransform.rotationEditMode, Scene::RotationEditModeUVE::Quaternion);
+        // One-shot is spent inside the sandbox.
+        EXPECT_FALSE(entityManager.GetComponentUVE<Scene::SpawnPoint3DNodeComponentUVE>(spawn).enabled);
+
+        services.GetSceneGraphUVE().UpdateUVE(entityManager);
+        EXPECT_NEAR(entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(player)
+                        .worldPosition.x,
+                    3.0F, 1.0e-5F);
+
+        // Stop hands BOTH back - the snapshot remakes document entities, so the two roles are
+        // found again by component, never by the old handles (see the restore test above).
+        ASSERT_TRUE(editor.StopPlayModeUVE());
+        Scene::EntityUVE restoredPlayer = Scene::kInvalidEntityUVE;
+        entityManager.ForEachUVE<Scene::CharacterControllerComponentUVE>(
+            [&restoredPlayer](const Scene::EntityUVE entity, Scene::CharacterControllerComponentUVE&) {
+                restoredPlayer = entity;
+            });
+        ASSERT_NE(restoredPlayer, Scene::kInvalidEntityUVE);
+        const Scene::TransformComponentUVE& restoredTransform =
+            entityManager.GetComponentUVE<Scene::TransformComponentUVE>(restoredPlayer);
+        EXPECT_EQ(restoredTransform.localPosition.x, 0.0F);
+        EXPECT_EQ(restoredTransform.localPosition.z, 0.0F);
+        EXPECT_EQ(restoredTransform.rotationEditMode, Scene::RotationEditModeUVE::Euler);
+        Scene::EntityUVE restoredSpawn = Scene::kInvalidEntityUVE;
+        entityManager.ForEachUVE<Scene::SpawnPoint3DNodeComponentUVE>(
+            [&restoredSpawn](const Scene::EntityUVE entity, Scene::SpawnPoint3DNodeComponentUVE&) {
+                restoredSpawn = entity;
+            });
+        ASSERT_NE(restoredSpawn, Scene::kInvalidEntityUVE);
+        EXPECT_TRUE(
+            entityManager.GetComponentUVE<Scene::SpawnPoint3DNodeComponentUVE>(restoredSpawn).enabled);
+
+        editor.ShutdownUVE();
+    }
+
+    engine.Shutdown();
+}
+
+TEST(EditorUVETest, PlayModeSandbox_SpawnPointWithOffsetAndParentPlacesRespectingBothKinds) {
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_play_spawn_offset.uvescene", 100U,
+                         &engine);
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        Core::EngineServicesUVE& services = engine.GetServicesUVE();
+        Scene::ISceneGraphUVE& sceneGraph = services.GetSceneGraphUVE();
+
+        // Spawn point node at (4, 0, 0) whose authored offset raises the player by (0, 0.5, 0);
+        // one-shot false, so the point stays live through the session.
+        const Scene::EntityUVE spawn = entityManager.CreateEntityUVE();
+        Scene::TransformComponentUVE spawnTransform{};
+        spawnTransform.localPosition = Math::Vector3UVE{4.0F, 0.0F, 0.0F};
+        AttachRootUVE(engine, spawn, spawnTransform);
+        Scene::SpawnPoint3DNodeComponentUVE spawnPoint{};
+        spawnPoint.localPosition = Math::Vector3UVE{0.0F, 0.5F, 0.0F};
+        entityManager.AddComponentUVE<Scene::SpawnPoint3DNodeComponentUVE>(spawn, spawnPoint);
+
+        // The player this time is a child of a scaled, translated parent: the world pose must
+        // arrive through the sweep's exact inverse, not by pretending the parent is identity.
+        const Scene::EntityUVE group = entityManager.CreateEntityUVE();
+        Scene::TransformComponentUVE groupTransform{};
+        groupTransform.localPosition = Math::Vector3UVE{10.0F, 0.0F, 0.0F};
+        groupTransform.localScale = Math::Vector3UVE{2.0F, 2.0F, 2.0F};
+        AttachRootUVE(engine, group, groupTransform);
+        const Scene::EntityUVE player = entityManager.CreateEntityUVE();
+        sceneGraph.AttachTransformUVE(entityManager, player, Scene::TransformComponentUVE{});
+        sceneGraph.SetParentUVE(entityManager, player, group);
+        entityManager.AddComponentUVE<Scene::CharacterControllerComponentUVE>(
+            player, Scene::CharacterControllerComponentUVE{});
+
+        sceneGraph.UpdateUVE(entityManager);
+        ASSERT_TRUE(editor.EnterPlayModeUVE());
+
+        // Expected world pose = (4, 0.5, 0); expected local = ((4-10)/2, (0.5-0)/2, 0).
+        const Scene::TransformComponentUVE& local =
+            entityManager.GetComponentUVE<Scene::TransformComponentUVE>(player);
+        EXPECT_NEAR(local.localPosition.x, -3.0F, 1.0e-5F);
+        EXPECT_NEAR(local.localPosition.y, 0.25F, 1.0e-5F);
+        EXPECT_NEAR(local.localPosition.z, 0.0F, 1.0e-5F);
+        sceneGraph.UpdateUVE(entityManager);
+        const Scene::WorldTransformComponentUVE& world =
+            entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(player);
+        EXPECT_NEAR(world.worldPosition.x, 4.0F, 1.0e-4F);
+        EXPECT_NEAR(world.worldPosition.y, 0.5F, 1.0e-4F);
+        // A reusable point is not spent.
+        EXPECT_TRUE(entityManager.GetComponentUVE<Scene::SpawnPoint3DNodeComponentUVE>(spawn).enabled);
+
+        ASSERT_TRUE(editor.StopPlayModeUVE());
+        editor.ShutdownUVE();
+    }
+
+    engine.Shutdown();
+}
+
+TEST(EditorUVETest, PlayModeSandbox_NoPlayerOrNoSpawnPointJustPlays) {
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_play_spawn_noop.uvescene", 100U,
+                         &engine);
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        Core::EngineServicesUVE& services = engine.GetServicesUVE();
+
+        // A spawn point with no player to absorb it: play still enters, and the point keeps its
+        // one-shot loaded - resolution is defined as "nothing to do", never a failure.
+        const Scene::EntityUVE spawn = entityManager.CreateEntityUVE();
+        AttachRootUVE(engine, spawn, Scene::TransformComponentUVE{});
+        Scene::SpawnPoint3DNodeComponentUVE spawnPoint{};
+        spawnPoint.oneShot = true;
+        entityManager.AddComponentUVE<Scene::SpawnPoint3DNodeComponentUVE>(spawn, spawnPoint);
+        services.GetSceneGraphUVE().UpdateUVE(entityManager);
+        ASSERT_TRUE(editor.EnterPlayModeUVE());
+        EXPECT_TRUE(entityManager.GetComponentUVE<Scene::SpawnPoint3DNodeComponentUVE>(spawn).enabled);
+        ASSERT_TRUE(editor.StopPlayModeUVE());
+
+        // The inverse: a player with no enabled spawn point keeps its authored pose.
+        const Scene::EntityUVE player = entityManager.CreateEntityUVE();
+        Scene::TransformComponentUVE authored{};
+        authored.localPosition = Math::Vector3UVE{1.0F, 2.0F, 3.0F};
+        AttachRootUVE(engine, player, authored);
+        entityManager.AddComponentUVE<Scene::CharacterControllerComponentUVE>(
+            player, Scene::CharacterControllerComponentUVE{});
+        services.GetSceneGraphUVE().UpdateUVE(entityManager);
+        ASSERT_TRUE(editor.EnterPlayModeUVE());
+        const Scene::TransformComponentUVE& during =
+            entityManager.GetComponentUVE<Scene::TransformComponentUVE>(player);
+        EXPECT_EQ(during.localPosition.x, 1.0F);
+        EXPECT_EQ(during.localPosition.y, 2.0F);
+        ASSERT_TRUE(editor.StopPlayModeUVE());
 
         editor.ShutdownUVE();
     }

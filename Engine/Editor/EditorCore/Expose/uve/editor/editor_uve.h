@@ -453,6 +453,17 @@ private:
         EditorSelectionPathsUVE selectionBefore;
     };
 
+    /// Play-entry spawn semantics. Called once by EnterPlayModeUVE() after the document snapshot
+    /// is captured and the simulation is running: resolves the one spawn point that fires this
+    /// session (deterministic content order over enabled+valid SpawnPoint3D nodes), moves the
+    /// player entity (the one carrying a CharacterControllerComponentUVE) to the composed spawn
+    /// pose via the sweep's exact inverse, and disables the point when it was authored
+    /// `oneShot = true`. Every mutation sits inside the snapshot, so StopPlayModeUVE() hands
+    /// back the authored player pose and every spent one-shot. Returns false when there is
+    /// nothing to do - no player, no enabled spawn point, or a degenerate pose/ancestry the
+    /// resolvers refuse - and a false return never fails play entry.
+    [[nodiscard]] bool ApplyPlayEntrySpawnUVE();
+
     /// Editor-only workspace labels. They do not alter document data, simulation state, or history.
     enum class EditorWorkspaceUVE {
         Library,
