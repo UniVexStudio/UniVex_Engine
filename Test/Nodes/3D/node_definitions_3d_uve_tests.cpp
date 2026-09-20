@@ -688,6 +688,50 @@ TEST_F(Node3DDefinitionsUVETest, InteractionFocusPicksTheNearestAreaWithDetermin
     }
 }
 
+TEST_F(Node3DDefinitionsUVETest, MarkerPoseComposeSharesTheSpawnPointCompositionContract) {
+    // The pure half of fly-to-marker: the same measured composition contract the spawn point
+    // owns - position = node position + node rotation * authored offset, rotation composes,
+    // node scale stays out of it - so a marker's viewpoint tracks prefab-level transforms
+    // identically to every other authored-offset node in the engine.
+    const std::optional<Marker3DPoseUVE> flat =
+        ComposeMarker3DPoseUVE({}, {}, Math::Vector3UVE{0.0F, 0.0F, -4.0F}, {});
+    ASSERT_TRUE(flat.has_value());
+    EXPECT_NEAR(flat->position.z, -4.0F, 1.0e-6F);
+
+    const Math::QuaternionUVE halfTurnAboutY{0.0F, 1.0F, 0.0F, 0.0F};
+    const std::optional<Marker3DPoseUVE> posed = ComposeMarker3DPoseUVE(
+        Math::Vector3UVE{10.0F, 0.0F, 10.0F}, halfTurnAboutY,
+        Math::Vector3UVE{1.0F, 0.0F, 0.0F}, {});
+    ASSERT_TRUE(posed.has_value());
+    // 180 degrees about Y maps (1,0,0) to (-1,0,0), then the node position adds.
+    EXPECT_NEAR(posed->position.x, 9.0F, 1.0e-5F);
+    EXPECT_NEAR(posed->position.z, 10.0F, 1.0e-5F);
+    EXPECT_NEAR(posed->rotation.y, 1.0F, 1.0e-5F);
+    EXPECT_NEAR(posed->rotation.w, 0.0F, 1.0e-5F);
+
+    // A rotated marker composes its facing under the node's rotation, not around it.
+    const Math::QuaternionUVE quarterTurnAboutY{0.0F, 0.70710678F, 0.0F, 0.70710678F};
+    const std::optional<Marker3DPoseUVE> faced = ComposeMarker3DPoseUVE(
+        Math::Vector3UVE{3.0F, 1.0F, -2.0F}, quarterTurnAboutY, {}, halfTurnAboutY);
+    ASSERT_TRUE(faced.has_value());
+    const Math::QuaternionUVE expectedFacing =
+        Math::MultiplyUVE(quarterTurnAboutY, halfTurnAboutY);
+    const Math::Vector3UVE expectedForward =
+        Math::RotateVectorUVE(expectedFacing, Math::Vector3UVE{0.0F, 0.0F, -1.0F});
+    const Math::Vector3UVE actualForward =
+        Math::RotateVectorUVE(faced->rotation, Math::Vector3UVE{0.0F, 0.0F, -1.0F});
+    EXPECT_NEAR(actualForward.x, expectedForward.x, 1.0e-5F);
+    EXPECT_NEAR(actualForward.y, expectedForward.y, 1.0e-5F);
+    EXPECT_NEAR(actualForward.z, expectedForward.z, 1.0e-5F);
+
+    // Garbage in, no viewpoint out - fail-closed like every other 3D resolver.
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    EXPECT_FALSE(ComposeMarker3DPoseUVE(Math::Vector3UVE{nan, 0.0F, 0.0F}, {}, {}, {}).has_value());
+    EXPECT_FALSE(ComposeMarker3DPoseUVE({}, Math::QuaternionUVE{0.0F, 0.0F, 0.0F, 0.0F}, {}, {})
+                     .has_value());
+    EXPECT_FALSE(ComposeMarker3DPoseUVE({}, {}, Math::Vector3UVE{nan, 0.0F, 0.0F}, {}).has_value());
+}
+
 TEST_F(Node3DDefinitionsUVETest, AnimationTreeStaysHonestlyNonCreatable) {
     // An empty graph is a valid placeholder definition, but the registry keeps telling the
     // truth: AnimationTree is not library-creatable until the animation pipeline exists, and

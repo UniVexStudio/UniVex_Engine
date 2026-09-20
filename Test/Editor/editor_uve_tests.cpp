@@ -25,6 +25,7 @@
 #include "uve/component/name_component_uve.h"
 #include "uve/component/primitive_mesh_component_uve.h"
 #include "uve/component/transform_component_uve.h"
+#include "uve/nodes/3d/marker_3d_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/nodes/3d/spawn_point_3d_uve.h"
 #include "uve/scene/nodes/scene_node_registry_uve.h"
@@ -2844,6 +2845,198 @@ TEST(EditorUVETest, PlayModeSandbox_PlayerWithNoSpawnPointKeepsItsAuthoredPose) 
     }
 
     engine.Shutdown();
+}
+
+TEST(EditorUVETest, ViewportBookmarks_StoreRestoreClearAndRejectBadInput) {
+    // The session bookmark store itself: Unreal's Ctrl+digit/digit slots as editor-owned
+    // transient state - isolated per slot, validated on the way in, honest about what is not
+    // inside it (no document coupling, no scene dirty flag touched).
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_bookmarks.uvescene", 100U, &engine);
+        editor.InitUVE();
+
+        // An untouched slot answers no value, and every slot index out of range fails closed.
+        EXPECT_FALSE(editor.GetViewportBookmarkUVE(0U).has_value());
+        EXPECT_FALSE(editor.GetViewportBookmarkUVE(Editor::kEditorViewportBookmarkSlotCountUVE).has_value());
+        EXPECT_FALSE(editor.ClearViewportBookmarkUVE(Editor::kEditorViewportBookmarkSlotCountUVE));
+
+        const Editor::EditorViewportBookmarkUVE first{
+            Math::Vector3UVE{1.0F, 2.0F, 3.0F}, 0.4F, -0.2F, 7.5F};
+        ASSERT_TRUE(editor.SetViewportBookmarkUVE(0U, first));
+        const Editor::EditorViewportBookmarkUVE other{
+            Math::Vector3UVE{-8.0F, 0.0F, 2.0F}, 2.1F, 0.9F, 12.0F};
+        ASSERT_TRUE(editor.SetViewportBookmarkUVE(Editor::kEditorViewportBookmarkSlotCountUVE - 1U, other));
+
+        // Round trip is exact - the store must not smear floats while they are only passing through.
+        const std::optional<Editor::EditorViewportBookmarkUVE> restored =
+            editor.GetViewportBookmarkUVE(0U);
+        ASSERT_TRUE(restored.has_value());
+        EXPECT_EQ(restored->target.x, 1.0F);
+        EXPECT_EQ(restored->yawRadians, 0.4F);
+        EXPECT_EQ(restored->pitchRadians, -0.2F);
+        EXPECT_EQ(restored->distance, 7.5F);
+        // Slots stay independent; clearing an occupied slot reports it, an empty one does not.
+        ASSERT_TRUE(editor.GetViewportBookmarkUVE(9U).has_value());
+        EXPECT_TRUE(editor.ClearViewportBookmarkUVE(0U));
+        EXPECT_FALSE(editor.GetViewportBookmarkUVE(0U).has_value());
+        EXPECT_TRUE(editor.GetViewportBookmarkUVE(9U).has_value());
+        EXPECT_FALSE(editor.ClearViewportBookmarkUVE(1U));
+
+        // Storing over an occupied slot replaces it.
+        ASSERT_TRUE(editor.SetViewportBookmarkUVE(9U, first));
+        EXPECT_EQ(editor.GetViewportBookmarkUVE(9U)->target.x, 1.0F);
+
+        // Garbage in, nothing stored: out-of-range slot, NaN, and a non-positive distance.
+        EXPECT_FALSE(editor.SetViewportBookmarkUVE(10U, first));
+        EXPECT_FALSE(editor.SetViewportBookmarkUVE(
+            1U, Editor::EditorViewportBookmarkUVE{
+                    Math::Vector3UVE{std::numeric_limits<float>::quiet_NaN(), 0.0F, 0.0F},
+                    0.0F, 0.0F, 5.0F}));
+        EXPECT_FALSE(editor.SetViewportBookmarkUVE(
+            1U, Editor::EditorViewportBookmarkUVE{{}, 0.0F, 0.0F, 0.0F}));
+        EXPECT_FALSE(editor.GetViewportBookmarkUVE(1U).has_value());
+
+        editor.ShutdownUVE();
+    }
+
+    engine.Shutdown();
+}
+
+TEST(EditorUVETest, Marker3DFocusBookmark_FliesTheCameraIntoTheMarkerViewpoint) {
+    // ComposeMarker3DFocusBookmarkUVE is the live consumer that separates UVE's Marker3D from
+    // Godot's inert annotation: the marker's authored offset+rotation compose under the node's
+    // world pose, the eye lands exactly ON the marker looking along its composed -Z, and the
+    // orbit inverse then hands back a target/yaw/pitch the viewport camera can hold verbatim -
+    // measured here by running the camera's own forward formula back to the eye (round trip).
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_marker_focus.uvescene", 100U, &engine);
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        Core::EngineServicesUVE& services = engine.GetServicesUVE();
+
+        // Marker node at (3,1,-2), yawed 90 degrees about Y (-Z faces -X), local offset (0,2,4).
+        const Scene::EntityUVE markerNode = entityManager.CreateEntityUVE();
+        Scene::TransformComponentUVE markerTransform{};
+        markerTransform.localPosition = Math::Vector3UVE{3.0F, 1.0F, -2.0F};
+        markerTransform.localRotation = Math::QuaternionUVE{0.0F, 0.70710678F, 0.0F, 0.70710678F};
+        AttachRootUVE(engine, markerNode, markerTransform);
+        Scene::Marker3DNodeComponentUVE marker{};
+        marker.markerName = "Boss view";
+        marker.localPosition = Math::Vector3UVE{0.0F, 2.0F, 4.0F};
+        entityManager.AddComponentUVE<Scene::Marker3DNodeComponentUVE>(markerNode, marker);
+        services.GetSceneGraphUVE().UpdateUVE(entityManager);
+
+        const std::optional<Editor::EditorViewportBookmarkUVE> bookmark =
+            editor.ComposeMarker3DFocusBookmarkUVE(markerNode);
+        ASSERT_TRUE(bookmark.has_value());
+        // Composed eye: rotation maps (0,2,4) to (4,2,0) about Y with sin90, added to the node.
+        const float expectedEyeX = 3.0F + 4.0F;
+        const float expectedEyeY = 1.0F + 2.0F;
+        const float expectedEyeZ = -2.0F;
+        // Composed forward: -Z rotated 90 degrees about Y points along -X.
+        // The camera convention: eye = target + offset(yaw,pitch) * distance with
+        // offset=(cosy*cosp, sinp, siny*cosp) - run it forward and require the eye back.
+        const float cosPitch = std::cos(bookmark->pitchRadians);
+        const Math::Vector3UVE offset{
+            std::cos(bookmark->yawRadians) * cosPitch,
+            std::sin(bookmark->pitchRadians),
+            std::sin(bookmark->yawRadians) * cosPitch,
+        };
+        const Math::Vector3UVE roundTripEye =
+            bookmark->target + offset * bookmark->distance;
+        EXPECT_NEAR(roundTripEye.x, expectedEyeX, 1.0e-4F);
+        EXPECT_NEAR(roundTripEye.y, expectedEyeY, 1.0e-4F);
+        EXPECT_NEAR(roundTripEye.z, expectedEyeZ, 1.0e-4F);
+        EXPECT_NEAR(bookmark->distance, Editor::kEditorMarkerFocusDistanceUVE, 1.0e-6F);
+        // And the view direction itself is -X: target - eye points along composed -Z.
+        const Math::Vector3UVE viewDirection =
+            (bookmark->target - roundTripEye) * (1.0F / Editor::kEditorMarkerFocusDistanceUVE);
+        EXPECT_NEAR(viewDirection.x, -1.0F, 1.0e-4F);
+        EXPECT_NEAR(viewDirection.y, 0.0F, 1.0e-4F);
+        EXPECT_NEAR(viewDirection.z, 0.0F, 1.0e-4F);
+
+        // A disabled or invalid marker, or a plain entity, composes nothing - fail-closed.
+        entityManager.GetComponentUVE<Scene::Marker3DNodeComponentUVE>(markerNode).enabled = false;
+        EXPECT_FALSE(editor.ComposeMarker3DFocusBookmarkUVE(markerNode).has_value());
+        const Scene::EntityUVE plain = entityManager.CreateEntityUVE();
+        AttachRootUVE(engine, plain, Scene::TransformComponentUVE{});
+        EXPECT_FALSE(editor.ComposeMarker3DFocusBookmarkUVE(plain).has_value());
+
+        // Plain-entity focus still answers the authored world position when a transform exists.
+        Scene::TransformComponentUVE plainTransform{};
+        plainTransform.localPosition = Math::Vector3UVE{-4.0F, 0.5F, 8.0F};
+        services.GetSceneGraphUVE().SetLocalTransformUVE(entityManager, plain, plainTransform);
+        services.GetSceneGraphUVE().UpdateUVE(entityManager);
+        const std::optional<Math::Vector3UVE> focusTarget =
+            editor.ResolveEntityFocusTargetUVE(plain);
+        ASSERT_TRUE(focusTarget.has_value());
+        EXPECT_NEAR(focusTarget->x, -4.0F, 1.0e-5F);
+        EXPECT_NEAR(focusTarget->y, 0.5F, 1.0e-5F);
+        EXPECT_NEAR(focusTarget->z, 8.0F, 1.0e-5F);
+
+        editor.ShutdownUVE();
+    }
+
+    engine.Shutdown();
+}
+
+TEST(EditorUVETest, OrbitBookmarkInverse_RoundTripsTheCameraEyeAndGuardsThePoles) {
+    // The pure inverse: craft any in-range yaw/pitch, build the camera's own offset formula
+    // forward from it, give that eye+forward to ResolveOrbitBookmarkFromLookUVE, and require the
+    // recovered pose reproduces the same eye through the same forward formula - the exact
+    // measured round trip (identical claim style to SpringArm3D's sweep inverse, below 1e-4).
+    const float distance = 6.0F;
+    const float cases[][2] = {{0.0F, 0.0F}, {0.7553F, -0.4561F}, {-2.2F, 1.2F}, {3.0F, -1.55F}};
+    for (const auto& yawPitch : cases) {
+        const float cosPitch = std::cos(yawPitch[1]);
+        const Math::Vector3UVE offset{
+            std::cos(yawPitch[0]) * cosPitch, std::sin(yawPitch[1]),
+            std::sin(yawPitch[0]) * cosPitch};
+        const Math::Vector3UVE target{2.0F, -1.0F, 5.0F};
+        const Math::Vector3UVE eye = target + offset * distance;
+        const Math::Vector3UVE forward = offset * (-1.0F);
+        const std::optional<Editor::EditorViewportBookmarkUVE> recovered =
+            Editor::EditorUVE::ResolveOrbitBookmarkFromLookUVE(eye, forward, distance);
+        ASSERT_TRUE(recovered.has_value());
+        const float recoveredCosPitch = std::cos(recovered->pitchRadians);
+        const Math::Vector3UVE recoveredOffset{
+            std::cos(recovered->yawRadians) * recoveredCosPitch,
+            std::sin(recovered->pitchRadians),
+            std::sin(recovered->yawRadians) * recoveredCosPitch};
+        const Math::Vector3UVE recoveredEye =
+            recovered->target + recoveredOffset * recovered->distance;
+        EXPECT_NEAR(recoveredEye.x, eye.x, 1.0e-4F) << "yaw in case: " << yawPitch[0];
+        EXPECT_NEAR(recoveredEye.y, eye.y, 1.0e-4F) << "yaw in case: " << yawPitch[0];
+        EXPECT_NEAR(recoveredEye.z, eye.z, 1.0e-4F) << "yaw in case: " << yawPitch[0];
+    }
+
+    // The poles: a straight-down look can only snap to the clamped pitch with yaw 0 (the
+    // convention), and garbage never yields a pose at all.
+    const std::optional<Editor::EditorViewportBookmarkUVE> straightDown =
+        Editor::EditorUVE::ResolveOrbitBookmarkFromLookUVE(
+            {}, Math::Vector3UVE{0.0F, -1.0F, 0.0F}, distance);
+    ASSERT_TRUE(straightDown.has_value());
+    EXPECT_NEAR(straightDown->pitchRadians, -1.5533F, 1.0e-4F);
+    EXPECT_EQ(straightDown->yawRadians, 0.0F);
+
+    EXPECT_FALSE(Editor::EditorUVE::ResolveOrbitBookmarkFromLookUVE(
+                     {}, Math::Vector3UVE{0.0F, 0.0F, 0.0F}, distance)
+                     .has_value());
+    EXPECT_FALSE(Editor::EditorUVE::ResolveOrbitBookmarkFromLookUVE(
+                     {}, Math::Vector3UVE{std::numeric_limits<float>::quiet_NaN(), 0.0F, 0.0F},
+                     distance)
+                     .has_value());
+    EXPECT_FALSE(Editor::EditorUVE::ResolveOrbitBookmarkFromLookUVE(
+                     {}, Math::Vector3UVE{1.0F, 0.0F, 0.0F}, -1.0F)
+                     .has_value());
 }
 
 TEST(EditorUVETest, PlayModeSandbox_RestoresOrderedMultiSelectionAndActiveEntity) {

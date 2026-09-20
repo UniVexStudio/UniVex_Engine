@@ -114,6 +114,28 @@ struct EditorTransformSnappingSettingsUVE final {
     float scaleStep = 0.1F;
 };
 
+/// One stored editor-viewport pose, expressed in orbit-camera terms (pivot target, yaw/pitch,
+/// orbit distance) so the value is independent of any concrete camera implementation - the app
+/// host applies it through its OrbitCamera's SetTarget/SetYawPitch/SetDistance. Session-local and
+/// never serialized (persisting these across runs needs a settings schema this increment does not
+/// define - real, separate follow-up, the same call Unreal makes for its own Ctrl+0..9 viewport
+/// bookmarks when they are stored only in per-user editor settings anyway).
+struct EditorViewportBookmarkUVE final {
+    Math::Vector3UVE target{};
+    float yawRadians = 0.0F;
+    float pitchRadians = 0.0F;
+    float distance = 10.0F;
+};
+
+/// The numeric bookmark slots following the Unreal editor convention (Ctrl+digit stores,
+/// plain digit restores).
+inline constexpr std::size_t kEditorViewportBookmarkSlotCountUVE = 10U;
+
+/// The orbit distance fly-to-marker bookmarks are composed at: near enough to actually frame the
+/// subject the marker stares at, far enough to keep the near-clip out of trouble. A bookmark is
+/// trivially dollied afterwards, so this is only ever a starting point.
+inline constexpr float kEditorMarkerFocusDistanceUVE = 5.0F;
+
 /// A read-only oriented box for the selected collider-backed document entity. All points are in
 /// derived world space and are intended for editor feedback only; this value is never serialized.
 struct EditorSelectionBoundsUVE final {
@@ -388,6 +410,46 @@ public:
     [[nodiscard]] Scene::EntityUVE GetSelectedEntityUVE() const noexcept;
     /// Returns editor-only 2D canvas state for screen-space authoring. It is not scene data.
     [[nodiscard]] Editor2DCanvasStateUVE Get2DCanvasStateUVE() const noexcept;
+
+    /// The editor-viewport bookmark slots (Unreal-editor Ctrl+digit/digit convention). All of it
+    /// is transient session state on EditorUVE, never document data and never dirtying the scene:
+    /// Set rejects an out-of-range slot or a non-finite/badly-formed pose, Get answers no value
+    /// for an empty slot, and Clear empties one slot. The app host owns applying a pose to its
+    /// real OrbitCamera - this class deliberately has no camera type in its interface.
+    [[nodiscard]] bool SetViewportBookmarkUVE(std::size_t slot,
+                                              const EditorViewportBookmarkUVE& bookmark) noexcept;
+    [[nodiscard]] std::optional<EditorViewportBookmarkUVE> GetViewportBookmarkUVE(
+        std::size_t slot) const noexcept;
+    [[nodiscard]] bool ClearViewportBookmarkUVE(std::size_t slot) noexcept;
+
+    /// Composes the fly-to-marker bookmark for an entity: the entity must carry a valid, enabled
+    /// Marker3DNodeComponentUVE and a world transform; the marker's authored offset+rotation are
+    /// composed under the node's pose (Scene::ComposeMarker3DPoseUVE), the camera eye is placed at
+    /// the marker's position looking along its composed -Z (the camera convention), and the orbit
+    /// bookmark states that same view as target/yaw/pitch/distance so the host camera applies it
+    /// verbatim. Any missing piece answers no value - fail-closed, the caller simply does not
+    /// move the camera. This is Marker3D's live consumer: a marker is a scene-persistent named
+    /// viewpoint the viewport can fly into, not the inert gizmo it stays in Godot.
+    [[nodiscard]] std::optional<EditorViewportBookmarkUVE> ComposeMarker3DFocusBookmarkUVE(
+        Scene::EntityUVE entity) const;
+
+    /// The orbit pivot for a plain focus-on-entity (no marker): the entity's world position, or
+    /// no value when it has no world transform. Distance/yaw/pitch intentionally stay whatever
+    /// the camera already holds - bounds-aware framing needs renderer-side bounds this class does
+    /// not own today; real, separate follow-up, not silently faked.
+    [[nodiscard]] std::optional<Math::Vector3UVE> ResolveEntityFocusTargetUVE(
+        Scene::EntityUVE entity) const;
+
+    /// Inverts the editor OrbitCamera's forward offset formula (eye = target + offset(yaw,pitch) *
+    /// distance) for a requested eye/look direction: pitch = asin(-forward.y) clamped to the same
+    /// +/-1.5533 range OrbitCameraSettings itself enforces (a straight-up/down look snaps to the
+    /// pole with yaw 0 by convention), yaw = atan2(-forward.z, -forward.x), target = eye +
+    /// forward * distance. A degenerate (near-zero or non-finite) forward answers no value.
+    /// Standing alone so both ComposeMarker3DFocusBookmarkUVE above and any future caller pin the
+    /// same math; Test/Editor measures the round trip (offset formula then this inverse) back to
+    /// the original eye below 1e-4.
+    [[nodiscard]] static std::optional<EditorViewportBookmarkUVE> ResolveOrbitBookmarkFromLookUVE(
+        const Math::Vector3UVE& eye, const Math::Vector3UVE& forward, float distance) noexcept;
     /// Validates and updates the editor-only 2D canvas zoom without changing scene state/history.
     [[nodiscard]] bool Set2DCanvasZoomUVE(float zoom) noexcept;
     /// Restores the editor-only 2D canvas to its centered loading-screen design view.
@@ -813,6 +875,10 @@ private:
     EditorTransformSnappingSettingsUVE m_transformSnappingSettings{};
     EditorToolSessionUVE m_toolSession;
     Editor2DCanvasStateUVE m_2dCanvasState{};
+    // Transient editor-viewport bookmark slots (Set/Get/ClearViewportBookmarkUVE) - session
+    // state only, intentionally NOT part of any document or settings file.
+    std::array<std::optional<EditorViewportBookmarkUVE>, kEditorViewportBookmarkSlotCountUVE>
+        m_viewportBookmarks{};
     bool m_2dCanvasPanning = false;
     std::deque<HistoryEntryUVE> m_undoHistory;
     std::deque<HistoryEntryUVE> m_redoHistory;
