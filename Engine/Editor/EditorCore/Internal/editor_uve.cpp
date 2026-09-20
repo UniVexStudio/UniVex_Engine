@@ -1456,9 +1456,9 @@ Scene::EntityUVE EditorUVE::CreateDocumentSceneNodeUVE(
         // their NodeDefinition in Engine/Runtime/Nodes/3D — one .h + .cpp per kind holds the
         // recipe (components to attach, authored defaults, default entity name). No
         // node-kind-specific recipe is authored in this switch anymore.
-        case Scene::Nodes::SceneNodeKindUVE::Empty:
-            entity = CreateNodeDefinitionEntityInternalUVE(Scene::EmptyNodeDefinitionUVE{},
-                                                            Scene::ApplyEmptyNodeDefinitionUVE);
+        case Scene::Nodes::SceneNodeKindUVE::Node3D:
+            entity = CreateNodeDefinitionEntityInternalUVE(Scene::Node3DNodeDefinitionUVE{},
+                                                            Scene::ApplyNode3DNodeDefinitionUVE);
             break;
         case Scene::Nodes::SceneNodeKindUVE::Camera3D:
             entity = CreateNodeDefinitionEntityInternalUVE(Scene::Camera3DNodeDefinitionUVE{},
@@ -3020,7 +3020,7 @@ std::string EditorUVE::GetDefaultEntityNameUVE(const EditorEntityKindUVE kind) c
     // this legacy-kind mapper only picks which definition to ask, never authors a name itself.
     switch (kind) {
         case EditorEntityKindUVE::Empty:
-            return std::string{Scene::EmptyNodeDefinitionUVE::defaultName};
+            return std::string{Scene::Node3DNodeDefinitionUVE::defaultName};
         case EditorEntityKindUVE::Camera:
             return std::string{Scene::Camera3DNodeDefinitionUVE::defaultName};
         case EditorEntityKindUVE::DirectionalLight:

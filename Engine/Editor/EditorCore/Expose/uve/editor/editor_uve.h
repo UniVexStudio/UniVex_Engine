@@ -566,7 +566,7 @@ private:
     /// creation (for example CharacterBody3D plus Collider and kinematic RigidBody) is one history unit.
     struct SceneNodeCreationHistoryEntryUVE final {
         Scene::SceneSnapshotUVE snapshot;
-        Scene::Nodes::SceneNodeKindUVE kind = Scene::Nodes::SceneNodeKindUVE::Empty;
+        Scene::Nodes::SceneNodeKindUVE kind = Scene::Nodes::SceneNodeKindUVE::Node3D;
         Scene::EntityUVE activeEntity = Scene::kInvalidEntityUVE;
         EditorSelectionSnapshotUVE selectionBefore;
         EditorSelectionSnapshotUVE selectionAfter;

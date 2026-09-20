@@ -49,10 +49,10 @@ constexpr std::array<SceneNodeDescriptorUVE, 43U> kDescriptors{
     // The document's structural root: created by the document lifecycle (new document,
     // load-time migration), never through the Add-Node library - libraryCreatable is false.
     SceneNodeDescriptorUVE{SceneNodeKindUVE::SceneRoot, "scene_root", "SceneRoot", "Scene", "Scene/SceneRootNodeDefinitionUVE", kNoContracts, false},
-    // Display name only. The enumerator and the "empty" on-disk id are unchanged: every saved
-    // .uvescene carries that string, and renaming the kind would break those files or need a
-    // migration, in exchange for nothing but a different word in the code.
-    SceneNodeDescriptorUVE{SceneNodeKindUVE::Empty, "empty", "Node3D", "Scene", "Scene/ECS", kNoContracts, true},
+    // The transform-only base node, type id "node_3d". Documents and layouts written while the
+    // kind was still called "empty" keep loading: FindSceneNodeDescriptorUVE(typeId) resolves
+    // the legacy id to this same row, so the rename touches no saved file.
+    SceneNodeDescriptorUVE{SceneNodeKindUVE::Node3D, "node_3d", "Node3D", "Scene", "Scene/ECS", kNoContracts, true},
     SceneNodeDescriptorUVE{SceneNodeKindUVE::Area3D, "area_3d", "Area3D", "Physics", "Physics/AreaOverlapSystemUVE", kAreaContracts, true},
     SceneNodeDescriptorUVE{SceneNodeKindUVE::RayCast3D, "ray_cast_3d", "RayCast3D", "Physics", "Physics/RaycastSystemUVE", kRayCastContracts, true},
     SceneNodeDescriptorUVE{SceneNodeKindUVE::StaticBody3D, "static_body_3d", "StaticBody3D", "Physics", "Physics/CollisionSystemUVE", kColliderContracts, true},
@@ -112,6 +112,11 @@ const SceneNodeDescriptorUVE* FindSceneNodeDescriptorUVE(const SceneNodeKindUVE 
 }
 
 const SceneNodeDescriptorUVE* FindSceneNodeDescriptorUVE(const std::string_view typeId) noexcept {
+    // Legacy id accepted on load: this kind was written as "empty" before the rename, and
+    // saved documents and layouts carrying that string must keep resolving to the same node.
+    if (typeId == "empty") {
+        return FindSceneNodeDescriptorUVE(SceneNodeKindUVE::Node3D);
+    }
     for (const SceneNodeDescriptorUVE& descriptor : kDescriptors) {
         if (descriptor.typeId == typeId) {
             return &descriptor;

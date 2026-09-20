@@ -34,7 +34,7 @@ add_library(uve_nodes_3d STATIC
     Internal/spawn_point_3d_uve.cpp
     Internal/level_streamer_3d_uve.cpp
     Internal/world_partition_3d_uve.cpp
-    Internal/empty_uve.cpp
+    Internal/node_3d_uve.cpp
     Internal/camera_3d_uve.cpp
     Internal/light_3d_uve.cpp
     Internal/mesh_instance_3d_uve.cpp

@@ -381,7 +381,7 @@ TEST(EditorUVETest, WorldEnvironmentComponentUVE_AttachEditUndoRedoThroughEditor
         Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
 
         const Scene::EntityUVE entity =
-            editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Empty);
+            editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Node3D);
         ASSERT_NE(entity, Scene::kInvalidEntityUVE);
         ASSERT_TRUE(entityManager.HasComponentUVE<Scene::TransformComponentUVE>(entity));
         EXPECT_FALSE(entityManager.HasComponentUVE<Scene::WorldEnvironment3DNodeComponentUVE>(entity));

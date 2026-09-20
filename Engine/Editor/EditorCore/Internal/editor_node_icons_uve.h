@@ -39,7 +39,10 @@ namespace UVE::Editor {
 /// Moved here unchanged; no glyph is redrawn as part of the move.
 
 enum class HierarchyNodeIconKindUVE {
-    Empty,
+    // The neutral glyph every unregistered name falls back to. Named after the node's current
+    // spelling; this was `Empty` before the kind rename, and the icon table below keeps the
+    // legacy "empty" name mapped here alongside "node_3d".
+    Node3D,
     Mesh,
     Camera,
     Light,
@@ -123,7 +126,7 @@ inline void DrawNodeAnimationIconUVE(ImDrawList& drawList, const ImVec2 center, 
                                ImVec2{center.x + triHalf * 0.9F, center.y}, color);
 }
 
-inline void DrawNodeEmptyIconUVE(ImDrawList& drawList, const ImVec2 center, const float radius, const ImU32 color) {
+inline void DrawNode3DIconUVE(ImDrawList& drawList, const ImVec2 center, const float radius, const ImU32 color) {
     drawList.AddCircle(center, radius * 0.42F, color, 16, 1.2F);
 }
 
@@ -160,7 +163,7 @@ inline void DrawNodeEmptyIconUVE(ImDrawList& drawList, const ImVec2 center, cons
         entityManager.HasComponentUVE<Scene::RigidBodyComponentUVE>(entity)) {
         return HierarchyNodeIconKindUVE::Physics;
     }
-    return HierarchyNodeIconKindUVE::Empty;
+    return HierarchyNodeIconKindUVE::Node3D;
 }
 
 // Light/Environment reuse the existing "sun"/"environment" general icon textures (already used
@@ -179,7 +182,7 @@ inline void DrawHierarchyNodeIconUVE(ImDrawList& drawList, const ImVec2 center, 
                 drawList.AddImage(static_cast<ImTextureID>(sunTextureId), ImVec2{center.x - half, center.y - half},
                                   ImVec2{center.x + half, center.y + half});
             } else {
-                DrawNodeEmptyIconUVE(drawList, center, radius, color);
+                DrawNode3DIconUVE(drawList, center, radius, color);
             }
             break;
         case HierarchyNodeIconKindUVE::Environment:
@@ -188,7 +191,7 @@ inline void DrawHierarchyNodeIconUVE(ImDrawList& drawList, const ImVec2 center, 
                 drawList.AddImage(static_cast<ImTextureID>(environmentTextureId),
                                   ImVec2{center.x - half, center.y - half}, ImVec2{center.x + half, center.y + half});
             } else {
-                DrawNodeEmptyIconUVE(drawList, center, radius, color);
+                DrawNode3DIconUVE(drawList, center, radius, color);
             }
             break;
         case HierarchyNodeIconKindUVE::Physics: DrawNodePhysicsIconUVE(drawList, center, radius, color); break;
@@ -196,7 +199,7 @@ inline void DrawHierarchyNodeIconUVE(ImDrawList& drawList, const ImVec2 center, 
         case HierarchyNodeIconKindUVE::Particle: DrawNodeParticleIconUVE(drawList, center, radius, color); break;
         case HierarchyNodeIconKindUVE::Script: DrawNodeScriptIconUVE(drawList, center, radius, color); break;
         case HierarchyNodeIconKindUVE::Animation: DrawNodeAnimationIconUVE(drawList, center, radius, color); break;
-        case HierarchyNodeIconKindUVE::Empty: default: DrawNodeEmptyIconUVE(drawList, center, radius, color); break;
+        case HierarchyNodeIconKindUVE::Node3D: default: DrawNode3DIconUVE(drawList, center, radius, color); break;
     }
 }
 
@@ -272,7 +275,7 @@ inline void DrawFolderIconUVE(ImDrawList& drawList, const ImVec2 center, const f
 // icons for every Scene::Nodes::SceneNodeKindUVE preset (most of which just add one of these same
 // 10 components to a plain entity), one procedural icon is drawn per actual component the entity
 // carries, checked in the same priority order a user would expect to identify it visually first
-// (Camera/Light/Mesh before the more generic Physics/Script/Animation) - Empty (a plain ring,
+// (Camera/Light/Mesh before the more generic Physics/Script/Animation) - the base-node icon (a plain ring,
 // matching Godot's own bare Node3D icon) when none of the 10 match.
 [[nodiscard]] constexpr HierarchyNodeIconKindUVE ClassifySceneComponentKindIconUVE(
     const EditorSceneComponentKindUVE kind) noexcept {
@@ -291,9 +294,9 @@ inline void DrawFolderIconUVE(ImDrawList& drawList, const ImVec2 center, const f
         case EditorSceneComponentKindUVE::Canvas:
         case EditorSceneComponentKindUVE::UIText:
         case EditorSceneComponentKindUVE::UIImage:
-        case EditorSceneComponentKindUVE::UIButton: return HierarchyNodeIconKindUVE::Empty;
+        case EditorSceneComponentKindUVE::UIButton: return HierarchyNodeIconKindUVE::Node3D;
     }
-    return HierarchyNodeIconKindUVE::Empty;
+    return HierarchyNodeIconKindUVE::Node3D;
 }
 
 } // namespace UVE::Editor

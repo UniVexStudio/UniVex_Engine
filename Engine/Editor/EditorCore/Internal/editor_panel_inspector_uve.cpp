@@ -727,7 +727,7 @@ void EditorUVE::DrawCanvasInspectorDrawerUVE(const Scene::EntityUVE entity) {
     bool changed = false;
 
     ImGui::Separator();
-    DrawProceduralIconLabelUVE(8.0F, "Canvas", DrawNodeEmptyIconUVE);
+    DrawProceduralIconLabelUVE(8.0F, "Canvas", DrawNode3DIconUVE);
     ImGui::TextDisabled(
         "A screen-space UI root - UIText/UIImage/UIButton entities render in window pixel "
         "coordinates regardless of Canvas nesting; world-space canvases are not supported yet.");
@@ -771,7 +771,7 @@ void EditorUVE::DrawUITextInspectorDrawerUVE(const Scene::EntityUVE entity) {
     // collide with a sibling UI drawer's identically-named fields in the same Inspector frame.
     ImGui::PushID("ui-text-inspector");
     ImGui::Separator();
-    DrawProceduralIconLabelUVE(8.0F, "UI Text", DrawNodeEmptyIconUVE);
+    DrawProceduralIconLabelUVE(8.0F, "UI Text", DrawNode3DIconUVE);
 
     std::array<char, Scene::kMaximumUITextBytesUVE + 1U> textBuffer{};
     current.text.copy(textBuffer.data(), std::min(current.text.size(), textBuffer.size() - 1U));

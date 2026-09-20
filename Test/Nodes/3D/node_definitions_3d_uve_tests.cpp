@@ -22,7 +22,7 @@ namespace {
 // Every one of the 17 component-backed node kinds' definition is reachable from the aggregate
 // header, mirroring the registry test's guarantee for the 21 data-carrying node components:
 // no node kind's home file can be silently dropped without breaking this compile.
-static_assert(std::is_class_v<EmptyNodeDefinitionUVE>);            // Empty
+static_assert(std::is_class_v<Node3DNodeDefinitionUVE>);            // Node3D
 static_assert(std::is_class_v<Area3DNodeDefinitionUVE>);           // Area3D
 static_assert(std::is_class_v<StaticBody3DNodeDefinitionUVE>);     // StaticBody3D
 static_assert(std::is_class_v<CharacterBody3DNodeDefinitionUVE>);  // CharacterBody3D
@@ -52,7 +52,7 @@ protected:
 };
 
 TEST_F(Node3DDefinitionsUVETest, AllDefinitionDefaultsAreValid) {
-    EXPECT_TRUE(IsEmptyNodeDefinitionValidUVE(EmptyNodeDefinitionUVE{}));
+    EXPECT_TRUE(IsNode3DNodeDefinitionValidUVE(Node3DNodeDefinitionUVE{}));
     EXPECT_TRUE(IsArea3DNodeDefinitionValidUVE(Area3DNodeDefinitionUVE{}));
     EXPECT_TRUE(IsStaticBody3DNodeDefinitionValidUVE(StaticBody3DNodeDefinitionUVE{}));
     EXPECT_TRUE(IsCharacterBody3DNodeDefinitionValidUVE(CharacterBody3DNodeDefinitionUVE{}));
@@ -75,7 +75,7 @@ TEST_F(Node3DDefinitionsUVETest, AllDefinitionDefaultsAreValid) {
 // The seven names the editor's legacy EditorEntityKindUVE path surfaces are locked at compile
 // time: the editor now sources every default name from these definitions, so any drift here
 // would silently rename what legacy creation produces.
-static_assert(EmptyNodeDefinitionUVE::defaultName == "Node3D");
+static_assert(Node3DNodeDefinitionUVE::defaultName == "Node3D");
 static_assert(Camera3DNodeDefinitionUVE::defaultName == "Camera");
 static_assert(Light3DNodeDefinitionUVE::defaultName == "Directional Light");
 static_assert(Collider3DNodeDefinitionUVE::defaultName == "Collision Box");
@@ -88,10 +88,10 @@ TEST_F(Node3DDefinitionsUVETest, DefaultNamesAreAuthoredPerKindNotGeneric) {
     // The six kinds that previously lived behind legacy EditorEntityKindUVE values keep their
     // exact historical names; the kinds the editor used to name "Empty" now carry their own.
     //
-    // The transform-only base is displayed as Node3D. Its KIND enumerator and on-disk id are
-    // still `empty` - renaming those would break every saved .uvescene to buy a different word -
-    // so this is the one place the two deliberately differ.
-    EXPECT_EQ(EmptyNodeDefinitionUVE::defaultName, "Node3D");
+    // The transform-only base is Node3D every way an author can meet it: display name, kind
+    // enumerator, and the "node_3d" on-disk id. The legacy "empty" id still resolves to it at
+    // load (covered below) so the rename broke no saved file.
+    EXPECT_EQ(Node3DNodeDefinitionUVE::defaultName, "Node3D");
     EXPECT_EQ(Camera3DNodeDefinitionUVE::defaultName, "Camera");
     EXPECT_EQ(Light3DNodeDefinitionUVE::defaultName, "Directional Light");
     EXPECT_EQ(Collider3DNodeDefinitionUVE::defaultName, "Collision Box");
@@ -114,7 +114,7 @@ TEST_F(Node3DDefinitionsUVETest, DefaultNamesAreAuthoredPerKindNotGeneric) {
 TEST_F(Node3DDefinitionsUVETest, ApplyAttachesEachKindsExactComponentRecipe) {
     {
         const EntityUVE entity = CreateEntityUVE();
-        ApplyEmptyNodeDefinitionUVE(entityManager, entity, EmptyNodeDefinitionUVE{});
+        ApplyNode3DNodeDefinitionUVE(entityManager, entity, Node3DNodeDefinitionUVE{});
         EXPECT_FALSE(entityManager.HasComponentUVE<CameraComponentUVE>(entity));
     }
     {
@@ -240,6 +240,22 @@ TEST_F(Node3DDefinitionsUVETest, LightRecipeDefaultsToDirectionalSunLight) {
     ApplyLight3DNodeDefinitionUVE(entityManager, entity, Light3DNodeDefinitionUVE{});
     ASSERT_TRUE(entityManager.HasComponentUVE<LightComponentUVE>(entity));
     EXPECT_EQ(entityManager.GetComponentUVE<LightComponentUVE>(entity).type, LightTypeUVE::Directional);
+}
+
+TEST_F(Node3DDefinitionsUVETest, Node3DIsReachableUnderBothItsNewAndLegacyTypeIds) {
+    const Nodes::SceneNodeDescriptorUVE* descriptor =
+        Nodes::FindSceneNodeDescriptorUVE(Nodes::SceneNodeKindUVE::Node3D);
+    ASSERT_NE(descriptor, nullptr);
+    EXPECT_EQ(descriptor->typeId, "node_3d");
+    EXPECT_EQ(descriptor->displayName, "Node3D");
+    EXPECT_TRUE(descriptor->libraryCreatable);
+
+    // New writes use the canonical id; the legacy id from before the rename must resolve to the
+    // very same node, since saved documents and layouts carrying "empty" have no way to upgrade
+    // themselves.
+    EXPECT_EQ(Nodes::FindSceneNodeDescriptorUVE("node_3d"), descriptor);
+    EXPECT_EQ(Nodes::FindSceneNodeDescriptorUVE("empty"), descriptor);
+    EXPECT_EQ(Nodes::GetSceneNodeTypeIdUVE(Nodes::SceneNodeKindUVE::Node3D), "node_3d");
 }
 
 TEST_F(Node3DDefinitionsUVETest, AnimationTreeStaysHonestlyNonCreatable) {

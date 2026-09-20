@@ -31,7 +31,7 @@ namespace UVE::Editor {
 /// One named icon: the name an author writes, and the glyph it resolves to.
 struct EditorIconEntryUVE final {
     std::string_view name;
-    HierarchyNodeIconKindUVE kind = HierarchyNodeIconKindUVE::Empty;
+    HierarchyNodeIconKindUVE kind = HierarchyNodeIconKindUVE::Node3D;
 };
 
 /// The registry. Adding an icon means adding one row here and one glyph in
@@ -42,7 +42,7 @@ struct EditorIconEntryUVE final {
 /// because the same glyph legitimately answers to more than one word depending on which panel is
 /// asking - "light" and "sun" are the same picture, and forcing one vocabulary on both the
 /// outliner and the inspector would just move the guessing somewhere else.
-inline constexpr std::array<EditorIconEntryUVE, 16U> kEditorIconRegistryUVE{{
+inline constexpr std::array<EditorIconEntryUVE, 18U> kEditorIconRegistryUVE{{
     {"mesh", HierarchyNodeIconKindUVE::Mesh},
     {"model", HierarchyNodeIconKindUVE::Mesh},
     {"camera", HierarchyNodeIconKindUVE::Camera},
@@ -57,8 +57,12 @@ inline constexpr std::array<EditorIconEntryUVE, 16U> kEditorIconRegistryUVE{{
     {"particle", HierarchyNodeIconKindUVE::Particle},
     {"script", HierarchyNodeIconKindUVE::Script},
     {"animation", HierarchyNodeIconKindUVE::Animation},
-    {"empty", HierarchyNodeIconKindUVE::Empty},
-    {"node", HierarchyNodeIconKindUVE::Empty},
+    {"node_3d", HierarchyNodeIconKindUVE::Node3D},
+    {"node3d", HierarchyNodeIconKindUVE::Node3D},
+    {"node", HierarchyNodeIconKindUVE::Node3D},
+    // Legacy name from before the kind rename: kept resolving so old layouts and docs that say
+    // "empty" still pick the base-node glyph.
+    {"empty", HierarchyNodeIconKindUVE::Node3D},
 }};
 
 /// Resolves a name to its glyph, falling back to the empty-node glyph for anything unknown.
@@ -73,11 +77,11 @@ inline constexpr std::array<EditorIconEntryUVE, 16U> kEditorIconRegistryUVE{{
             return entry.kind;
         }
     }
-    return HierarchyNodeIconKindUVE::Empty;
+    return HierarchyNodeIconKindUVE::Node3D;
 }
 
 /// True when `name` is registered. Separate from ResolveEditorIconUVE because that one cannot
-/// distinguish "unknown name" from "the empty icon was asked for by name" - both return Empty, and
+/// distinguish "unknown name" from "the base icon was asked for by name" - both return Node3D, and
 /// a caller validating author-supplied text needs to tell those apart.
 [[nodiscard]] constexpr bool IsEditorIconRegisteredUVE(const std::string_view name) noexcept {
     for (const EditorIconEntryUVE& entry : kEditorIconRegistryUVE) {

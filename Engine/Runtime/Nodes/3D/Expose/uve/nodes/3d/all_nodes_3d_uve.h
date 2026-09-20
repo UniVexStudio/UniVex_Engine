@@ -30,7 +30,7 @@
 // component (Engine/Runtime/Component); each definition holds that kind's components-to-attach,
 // authored defaults, and default entity name in its own file, instead of those recipes living
 // hardcoded in the editor's creation switch:
-#include "uve/nodes/3d/empty_uve.h"
+#include "uve/nodes/3d/node_3d_uve.h"
 #include "uve/nodes/3d/area_3d_uve.h"
 #include "uve/nodes/3d/static_body_3d_uve.h"
 #include "uve/nodes/3d/character_body_3d_uve.h"
