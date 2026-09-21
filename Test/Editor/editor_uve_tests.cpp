@@ -12,6 +12,8 @@
 
 #include <gtest/gtest.h>
 
+#include "Support/test_scratch_uve.h"
+
 #include "uve/asset/mesh_asset_uve.h"
 #include "uve/asset/texture_asset_uve.h"
 #include "uve/core/engine_core_uve.h"
@@ -148,7 +150,7 @@ namespace {
     config.assetDatabaseFilePath = "uve_editor_tests_assets.json";
     config.saveDirectoryPath = "uve_editor_tests_saves";
     config.shaderCachePath = "uve_editor_tests_shader_cache";
-    config.shaderSourceRealDirectoryUVE = "Engine/Runtime/RHI/Shader/built_in";
+    config.shaderSourceRealDirectoryUVE = ::UVE::Tests::RepositoryRootUVE() / "Engine/Runtime/RHI/Shader/built_in";
     config.shaderSourceMountPrefixUVE = "shaders";
     return config;
 }

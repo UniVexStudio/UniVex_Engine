@@ -6,6 +6,8 @@
 #include <filesystem>
 #include <gtest/gtest.h>
 
+#include "Support/test_scratch_uve.h"
+
 #include "uve/core/engine_core_uve.h"
 #include "uve/editor/editor_uve.h"
 #include "uve/component/animation_player_component_uve.h"
@@ -33,7 +35,7 @@ namespace {
     config.assetDatabaseFilePath = "uve_scene_node_editor_tests_assets.json";
     config.saveDirectoryPath = "uve_scene_node_editor_tests_saves";
     config.shaderCachePath = "uve_scene_node_editor_tests_shader_cache";
-    config.shaderSourceRealDirectoryUVE = "Engine/Runtime/RHI/Shader/built_in";
+    config.shaderSourceRealDirectoryUVE = ::UVE::Tests::RepositoryRootUVE() / "Engine/Runtime/RHI/Shader/built_in";
     config.shaderSourceMountPrefixUVE = "shaders";
     return config;
 }

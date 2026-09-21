@@ -8,6 +8,8 @@
 
 #include <gtest/gtest.h>
 
+#include "Support/test_scratch_uve.h"
+
 #include "uve/asset/asset_database_uve.h"
 #include "uve/asset/data_table_asset_registration_uve.h"
 #include "uve/asset/data_table_asset_uve.h"
@@ -27,7 +29,7 @@ class TemporaryRegistrationFilesUVE final {
 public:
     TemporaryRegistrationFilesUVE() {
         for (const std::string name : {"valid.uvetable", "wrong_kind.uvetable", "wrong_extension.txt"}) {
-            m_paths.emplace_back(std::filesystem::temp_directory_path() / ("uve_data_table_registration_" + name));
+            m_paths.emplace_back(::UVE::Tests::ScratchRootUVE() / ("uve_data_table_registration_" + name));
             static_cast<void>(std::filesystem::remove(m_paths.back()));
         }
     }
@@ -75,7 +77,7 @@ TEST(DataTableAssetRegistrationUVE, RejectsInvalidFilesBeforeChangingDatabase) {
     EXPECT_FALSE(RegisterDataTableAssetUVE(database, files.WrongKindUVE()).has_value());
     EXPECT_FALSE(RegisterDataTableAssetUVE(database, files.WrongExtensionUVE()).has_value());
     EXPECT_FALSE(RegisterDataTableAssetUVE(database,
-                                           std::filesystem::temp_directory_path() /
+                                           ::UVE::Tests::ScratchRootUVE() /
                                                "uve_data_table_registration_missing.uvetable").has_value());
     EXPECT_TRUE(database.GetRegisteredAssetsUVE().empty());
 }
