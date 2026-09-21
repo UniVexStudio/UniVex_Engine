@@ -10,7 +10,7 @@
 //
 // Usage:
 //   headless_capture --out frame.ppm [--width 1280] [--height 800]
-//                    [--dist 14] [--yaw -0.62] [--pitch 0.42] [--no-cube]
+//                    [--dist 14] [--yaw -0.62] [--pitch 0.42]
 // -----------------------------------------------------------------------
 #include <algorithm>
 #include <array>
@@ -27,12 +27,6 @@
 #include "univex/viewport/ViewportSettings.h"
 #include "univex/render/GlApi.h"
 
-#include "integration/WorldUveEntitySource.h"
-#include "uve/events/event_system_uve.h"
-#include "uve/memory/heap_allocator_uve.h"
-#include "uve/component/transform_component_uve.h"
-#include "uve/scene/scene_graph_uve.h"
-#include "uve/world/world_uve.h"
 
 #include <GLFW/glfw3.h>
 
@@ -44,7 +38,6 @@ struct Options {
     float distance = 11.26f;
     float yaw = -0.7553f;
     float pitch = 0.4561f;
-    bool drawCube = true;
     bool useDefaultCamera = true; // unless --yaw/--pitch/--dist override it
     bool orthographic = false;
     bool drawGrid = true;
@@ -55,10 +48,6 @@ struct Options {
     int samples = 8;   // MSAA sample count, clamped to GL_MAX_SAMPLES
     float navSize = 0.f; // >0 overrides the orientation gizmo's pixel size
     std::string outputPath = "frame.ppm";
-    // Proves the univex_viewport_engine_bridge integration: builds a real
-    // UVE::World::WorldUVE with a handful of entities and draws them (via
-    // WorldUveEntitySource) instead of the single hardcoded demo cube.
-    bool engineDemo = false;
 };
 
 univex::gizmo::GizmoMode ParseGizmoMode(const std::string& name) {
@@ -89,7 +78,6 @@ Options ParseOptions(int argc, char** argv) {
         else if (arg == "--dist") { options.distance = next(11.26f); options.useDefaultCamera = false; }
         else if (arg == "--yaw") { options.yaw = next(-0.7553f); options.useDefaultCamera = false; }
         else if (arg == "--pitch") { options.pitch = next(0.4561f); options.useDefaultCamera = false; }
-        else if (arg == "--no-cube") options.drawCube = false;
         else if (arg == "--no-grid") options.drawGrid = false;
         else if (arg == "--no-nav") options.drawNavGizmo = false;
         else if (arg == "--no-gizmo") options.drawTransformGizmo = false;
@@ -99,7 +87,6 @@ Options ParseOptions(int argc, char** argv) {
         else if (arg == "--samples") options.samples = static_cast<int>(next(8.f));
         else if (arg == "--nav-size") options.navSize = next(0.f);
         else if (arg == "--out" && i + 1 < argc) options.outputPath = argv[++i];
-        else if (arg == "--engine-demo") options.engineDemo = true;
     }
     return options;
 }
@@ -225,7 +212,6 @@ int main(int argc, char** argv) {
     }
     {
         auto& settings = pass->Settings();
-        settings.viewSceneGeometry = options.drawCube;
         settings.viewGrid = options.drawGrid;
         settings.viewGizmos = options.drawNavGizmo;
         settings.viewTransformGizmo = options.drawTransformGizmo;
@@ -242,37 +228,6 @@ int main(int argc, char** argv) {
         camera.SetDistance(options.distance);
     }
     camera.SetOrthographic(options.orthographic);
-
-    // These must outlive pass->RenderFrame() below: WorldUVE's EntityManagerUVE
-    // holds the allocator/event-system by reference, and entitySource wraps
-    // world by reference too.
-    UVE::Memory::HeapAllocatorUVE engineAllocator;
-    UVE::Events::EventSystemUVE engineEventSystem;
-    std::optional<UVE::World::WorldUVE> engineWorld;
-    std::optional<univex::integration::WorldUveEntitySource> entitySource;
-    if (options.engineDemo) {
-        engineWorld.emplace(engineAllocator, engineEventSystem);
-        UVE::Scene::SceneGraphUVE sceneGraph;
-        auto& entityManager = engineWorld->GetEntityManagerUVE();
-        // A small scattered handful of entities - just enough to prove the
-        // bridge actually reads real WorldUVE entities, not the exact count
-        // or arrangement of a real scene.
-        const std::array<UVE::Math::Vector3UVE, 5> positions = {
-            UVE::Math::Vector3UVE{0.0F, 0.0F, 0.0F},
-            UVE::Math::Vector3UVE{4.0F, 0.0F, 2.0F},
-            UVE::Math::Vector3UVE{-3.0F, 0.0F, -2.0F},
-            UVE::Math::Vector3UVE{2.0F, 0.0F, -4.0F},
-            UVE::Math::Vector3UVE{-4.0F, 0.0F, 3.0F},
-        };
-        for (const auto& position : positions) {
-            const UVE::Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-            sceneGraph.AttachTransformUVE(entityManager, entity,
-                                          UVE::Scene::TransformComponentUVE{position, {}, {1.0F, 1.0F, 1.0F}});
-        }
-        engineWorld->TickUVE(0.0F); // propagates local -> world transforms once
-        entitySource.emplace(*engineWorld);
-        pass->SetEntitySource(&*entitySource);
-    }
 
     pass->RenderFrame(camera, options.width, options.height);
 
