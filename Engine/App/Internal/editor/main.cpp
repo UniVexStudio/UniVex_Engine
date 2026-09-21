@@ -408,6 +408,7 @@ private:
         // The Game workspace tab previews what a player would see - no editor-only grid overlay.
         settings.viewGrid = overlayState.gridVisible && !overlayState.gameWorkspaceActive;
         gameWorkspaceActive_ = overlayState.gameWorkspaceActive;
+        pointerOverOverlay_ = overlayState.pointerOverOverlay;
         using UVE::Editor::EditorUVE;
         switch (overlayState.gizmoMode) {
             case EditorUVE::ViewportGizmoModeUVE::Move:
@@ -515,7 +516,8 @@ private:
     }
 
     [[nodiscard]] bool TryBeginGizmoDragUVE(const int width, const int height) {
-        if (!ImGui::IsWindowHovered() || !ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        if (pointerOverOverlay_ || !ImGui::IsWindowHovered() ||
+            !ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
             return false;
         }
         const std::optional<GizmoPlacementUVE> placement = CurrentGizmoPlacementUVE(height);
@@ -778,7 +780,8 @@ private:
         }
 
         const ImGuiIO& io = ImGui::GetIO();
-        if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        if (!pointerOverOverlay_ && ImGui::IsWindowHovered() &&
+            ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
             const ImVec2 imageOrigin = ImGui::GetCursorScreenPos();
             selectionPressActive_ = true;
             selectionPressX_ = io.MousePos.x - imageOrigin.x;
@@ -830,7 +833,9 @@ private:
     // IsMouseDragging(Left) check would ALSO orbit the camera from the same drag, double-applying
     // the same mouse delta on top of the nav gizmo's own orbit-while-dragging behavior.
     void UpdateCameraFromMouseUVE(const int framebufferHeight, const bool suppressOrbit) {
-        if (!ImGui::IsWindowHovered()) {
+        // Same overlay guard as selection and the handle drag: pressing a toolbar bubble must not
+        // also start orbiting the scene behind it.
+        if (pointerOverOverlay_ || !ImGui::IsWindowHovered()) {
             return;
         }
         const ImGuiIO& io = ImGui::GetIO();
@@ -1010,6 +1015,9 @@ private:
     // own comment - it already forces the grid off directly, but the gizmo's visibility is decided
     // later in the same frame by selection state, so it needs this stored flag instead).
     bool gameWorkspaceActive_ = false;
+    // See ViewportOverlayStateUVE::pointerOverOverlay - the toolbar floats inside this same
+    // window, so without this a click on one of its buttons also lands in the scene behind it.
+    bool pointerOverOverlay_ = false;
     univex::camera::OrbitCamera camera_;
     // Nav-gizmo click-vs-drag state - see UpdateNavGizmoInteractionUVE()'s own comment.
     bool navDragging_ = false;
