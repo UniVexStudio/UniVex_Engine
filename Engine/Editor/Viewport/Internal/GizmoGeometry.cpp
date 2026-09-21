@@ -27,11 +27,20 @@ std::array<Axis, 3> AxesOf(const GizmoStyle& style) {
     }};
 }
 
-// How opaque the half of a rotation ring curving away from the camera stays, and how wide the
-// band over which it fades there. Both are in the ring's own facing-dot space, where 0 is the
-// silhouette and -1 is pointing straight at the eye.
-constexpr float kRingFarAlphaUVE = 0.16f;
-constexpr float kRingSilhouetteFeatherUVE = 0.42f;
+// A rotation ring shows only the half curving toward the camera.
+//
+// This is the convention every established editor follows (ImGuizmo's DrawRotationGizmo emits a
+// half circle per axis; Maya and Unreal read the same way), and the reason is not decoration:
+// three full circles through one point overlap into a ball of arcs where no ring can be told from
+// another. Half rings cannot overlap, so each one stays a readable curve.
+//
+// Crucially the cut costs nothing visually, because it falls exactly where the ring turns away
+// from the eye - there the circle is edge-on, so its end is a point rather than a blunt edge.
+// This value is the width of a short fade either side of that silhouette, in the ring's own
+// facing-dot space, purely so the last segment resolves smoothly instead of popping as the camera
+// orbits. It is deliberately tiny: wide enough to anti-alias the end, far too narrow to bring the
+// back half of the ring back into view.
+constexpr float kRingSilhouetteFeatherUVE = 0.06f;
 
 [[nodiscard]] float Clamp01UVE(float value) {
     return value < 0.f ? 0.f : (value > 1.f ? 1.f : value);
@@ -170,13 +179,7 @@ void AddAnnulus(GizmoMesh& mesh, const Vec3& center, const Vec3& axis, const Vec
     }
 }
 
-// A whole ring, with the half that curves away from the camera faded rather than cut off.
-//
-// This used to drop the far segments outright, which did stop three overlapping circles reading
-// as a ball of spaghetti - but it also ended each arc on a hard, square edge in mid-air, and that
-// reads as a rendering fault rather than as depth. Fading keeps the ring continuous, so its shape
-// is legible as a circle in 3D, while the near side still clearly dominates. The fade is smooth
-// across the silhouette band so there is no visible seam where it turns over.
+// The camera-facing half of a ring. See kRingSilhouetteFeatherUVE for why only half.
 void AddRingArc(GizmoMesh& mesh, const Vec3& axis, const Vec3& color, float radius,
                 int segments, const Vec3& viewDirection, float halfWidth) {
     AddAnnulus(mesh, Vec3{0.f, 0.f, 0.f}, axis, color, radius, halfWidth, segments,
@@ -184,9 +187,11 @@ void AddRingArc(GizmoMesh& mesh, const Vec3& axis, const Vec3& color, float radi
                    // Facing is negative on the near side: viewDirection points away from the eye.
                    const float facing = (Dot(Normalize(a), viewDirection) +
                                          Dot(Normalize(b), viewDirection)) * 0.5f;
+                   // Fully opaque across the near half, falling to nothing over the narrow band at
+                   // the silhouette. AddAnnulus drops a segment whose alpha reaches zero, so the
+                   // back half is never built at all rather than being drawn transparent.
                    const float nearness = Clamp01UVE(-facing / kRingSilhouetteFeatherUVE);
-                   const float smoothNearness = nearness * nearness * (3.f - 2.f * nearness);
-                   return kRingFarAlphaUVE + (1.f - kRingFarAlphaUVE) * smoothNearness;
+                   return nearness * nearness * (3.f - 2.f * nearness);
                });
 }
 
