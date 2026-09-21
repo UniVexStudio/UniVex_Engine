@@ -12,6 +12,8 @@
 
 #include <gtest/gtest.h>
 
+#include "Support/test_scratch_uve.h"
+
 #include "uve/logging/log_sink_uve.h"
 #include "uve/logging/logging_macros_uve.h"
 
@@ -84,7 +86,7 @@ TEST_F(LoggerUVETest, MemorySink_ClearRemovesMessages) {
 
 TEST_F(LoggerUVETest, FileSink_WritesLineToFile) {
     const std::filesystem::path tempPath =
-        std::filesystem::temp_directory_path() / "uve_logger_test_file_sink.log";
+        ::UVE::Tests::ScratchRootUVE() / "uve_logger_test_file_sink.log";
     std::filesystem::remove(tempPath);
 
     {

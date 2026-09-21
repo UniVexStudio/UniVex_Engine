@@ -7,13 +7,15 @@
 
 #include <gtest/gtest.h>
 
+#include "Support/test_scratch_uve.h"
+
 #include "uve/asset/uve_file_envelope_uve.h"
 
 namespace UVE::Asset::Tests {
 namespace {
 
 std::filesystem::path TestPathUVE(const char* const name) {
-    return std::filesystem::temp_directory_path() / name;
+    return ::UVE::Tests::ScratchRootUVE() / name;
 }
 
 AnimationClipAssetUVE MakeValidClipUVE() {

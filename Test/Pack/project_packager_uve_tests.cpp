@@ -2,34 +2,24 @@
 
 #include "uve/pack/project_packager_uve.h"
 
-#include <atomic>
 #include <filesystem>
 #include <fstream>
-#include <string>
 
 #include <gtest/gtest.h>
+
+#include "Support/test_scratch_uve.h"
 
 #include "uve/platform/editor_project_package_uve.h"
 
 namespace UVE::Pack::Tests {
 namespace {
 
-[[nodiscard]] std::filesystem::path MakeUniqueTestDirectoryUVE(const std::string& label) {
-    static std::atomic<unsigned int> nextId{0U};
-    const std::filesystem::path directory = std::filesystem::temp_directory_path() /
-                                            ("uve_project_packager_test_" + label + "_" +
-                                             std::to_string(nextId.fetch_add(1U)));
-    std::filesystem::remove_all(directory);
-    std::filesystem::create_directories(directory);
-    return directory;
-}
-
 class ProjectPackagerUVETest : public ::testing::Test {
 protected:
     void SetUp() override {
-        projectRoot = MakeUniqueTestDirectoryUVE("root");
-        outputDirectory = MakeUniqueTestDirectoryUVE("output");
-        std::filesystem::remove_all(outputDirectory); // PackUVE itself must create it
+        projectRoot = ::UVE::Tests::MakeTestCaseDirectoryUVE("root");
+        // Deliberately NOT created: PackUVE itself must create its output directory.
+        outputDirectory = ::UVE::Tests::ScratchPathUVE("packager_output");
 
         std::filesystem::create_directories(projectRoot / "content" / "scenes");
         {

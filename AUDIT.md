@@ -31,7 +31,8 @@ Whole-tree automated analysis followed by manual reading of every candidate it s
 |---|---|---|
 | Build health | 🟢 | Clean configure and build; **0 errors, 0 warnings** across 55 static libraries and 8 executables |
 | Test suite (serial) | 🟢 | **2,519 tests, 100% passed** |
-| Test suite (parallel) | 🔴 | Non-deterministic failures from shared scratch paths |
+| Test suite (parallel) | 🟢 | Scratch-path collisions fixed; 10/10 clean `-j` runs |
+| Parallel threading abort | 🟠 | Pre-existing, ~1/30 under `-j`; keeps CI serial (§2b) |
 | Continuous integration | 🟢 | Green on this commit, including 39/39 real Vulkan device cases |
 | Code duplication | 🟡 | One helper duplicated 17×; a serialization helper set duplicated 3–5× with divergent safety |
 | Dead code | 🟠 | One unused header; no orphan sources |
@@ -42,9 +43,9 @@ Whole-tree automated analysis followed by manual reading of every candidate it s
 
 ---
 
-## 2. 🔴 CRITICAL — Test suite is not parallel-safe
+## 2. 🟢 RESOLVED — Test suite is not parallel-safe
 
-**Status:** 🔴 FAIL — confirmed, reproducible
+**Status:** 🟢 VERIFIED — was 🔴 FAIL; fixed in this repository, evidence below
 **Affected:** `Test/RHI/Shader/shader_manager_uve_tests.cpp`, `Test/Engine/engine_core_uve_tests.cpp`, `Test/Pack/project_launcher_uve_tests.cpp`, `Test/Pack/project_packager_uve_tests.cpp`, `Test/Core/Platform/editor_project_package_uve_tests.cpp`
 
 ### Evidence
@@ -106,13 +107,67 @@ The `static` counter is per-process. Because every test case is a separate proce
 
 CI currently runs `ctest` serially, so this does not block the pipeline today — but it forces serial execution (44s for the Test step) and any future move to `-j` will produce random red builds. More importantly, a genuinely flaky or racy engine defect would be indistinguishable from this noise.
 
-### Recommended next action
+### Resolution
 
-Introduce one shared test helper that derives scratch paths from the process ID combined with the gtest test name (`::testing::UnitTest::GetInstance()->current_test_info()`), and route all fixtures through it. Do not remove the serial constraint in `.github/workflows/ci.yml` until this is done; the workflow comment records the same requirement.
+`Test/Support/test_scratch_uve.h` now gives every test process a scratch directory under
+`temp_directory_path() / "uve_tests" / <pid>_<steady-clock ns>` and makes it the working
+directory, via a GoogleTest global environment registered in all four test executables. Because
+`gtest_discover_tests` gives each case its own process, every current-directory-relative path in
+the suite became per-case isolated with no edits at those call sites.
+
+Paths that a working-directory change cannot reach were rerouted explicitly:
+`ScratchRootUVE()` for the absolute `temp_directory_path()` sites (9 files), and
+`MakeTestCaseDirectoryUVE()` — which also keys on the running test's name, so a developer running
+one executable directly still gets per-case isolation — for the three fixtures that used the
+process-local counter. That counter and its `MakeUniqueTestDirectoryUVE` wrapper are gone.
+
+**Evidence after the fix:** `ctest -j$(nproc)` run **10 consecutive times, 0 failures**
+(baseline over four runs: 2, 0, 1, 0). `ctest -j1` still 2519/2519. Build clean, 0 warnings.
+No scratch files are left in the build directory. Twelve tests that had never executed now run —
+see §9.
+
+CI deliberately still runs serially. Not because of scratch paths, which are fixed, but because
+removing the serial constraint exposes a separate defect — see §2b.
 
 ### Related observation
 
-An earlier parallel run in this session produced a SEGFAULT in `EngineCoreUVETest.CollisionLifecycle_UpdatesReportBeforeScriptTickEachFrame`. It did **not** reproduce on the current tree across four parallel runs, nor in 60 consecutive isolated executions, nor under `gdb`. Whether it shares the root cause above or is an independent race is **🟣 UNVERIFIED**. It should be re-assessed once the scratch-path defect is fixed and the noise floor is clear.
+An earlier parallel run in this session produced a SEGFAULT in `EngineCoreUVETest.CollisionLifecycle_UpdatesReportBeforeScriptTickEachFrame`. It did **not** reproduce on the current tree across four parallel runs, nor in 60 consecutive isolated executions, nor under `gdb`. Whether it shares the root cause above or is an independent race is **🟣 UNVERIFIED**. It remains **🟣 UNVERIFIED**: the scratch-path defect is now fixed and the noise floor is clear, and it did not reappear across the 10 parallel verification runs, but absence over 10 runs is not proof that an intermittent race is gone.
+
+---
+
+## 2b. 🟠 Parallel runs expose a pre-existing threading abort
+
+**Status:** 🟠 PARTIAL — reproducible and bounded, root cause not identified
+**Affected:** `Test/RHI/RenderSystems/renderer_3d_uve_tests.cpp`,
+`Test/RHI/RenderSystems/viewport_manager_uve_tests.cpp` (varies by run)
+
+With §2 fixed and the suite able to run under `ctest -j`, roughly **1 run in 30** aborts a single
+Renderer3D or ViewportManager case with:
+
+```
+terminate called without an active exception
+```
+
+That message means a `std::thread` was destroyed while still joinable. The affected case differs
+between runs, so it is not specific to one test.
+
+**This is not a regression from §2.** A build of unmodified master, with none of the scratch-path
+changes, fails at the same rate under the same load: 1/30 at `-j4` and 1/30 at `-j16`. The defect
+predates this work and was simply unreachable while the suite could not run in parallel at all.
+In isolation the affected tests pass 40/40.
+
+**Root cause is not established.** `ThreadPoolUVE`'s destructor
+(`Engine/Runtime/Core/Threading/Internal/thread_pool_uve.cpp:57-66`) joins every worker and looks
+correct. An initial hypothesis that thread creation was failing under load was checked and
+rejected — the container's thread limit is 64313, nowhere near exhausted.
+
+**Impact:** this is what keeps `.github/workflows/ci.yml` serial. Enabling `-j` would give roughly
+a 3% chance of a spurious red build per run, which would reintroduce the exact "random red builds"
+problem §2 removed, only from a different cause.
+
+**Recommended next action:** reproduce under a debugger or with `-fsanitize=thread` to find which
+thread is destroyed unjoined, fix it, then enable `-j"$(nproc)"` in CI. The test suite itself is
+ready for it.
 
 ---
 
@@ -269,18 +324,28 @@ CI covers what this container cannot: it installs `mesa-vulkan-drivers` (lavapip
 
 ## 10. 🟣 Coverage not verifiable in this environment
 
-350 of 2,519 tests skip in the audit container for lack of a GPU, a display, and a Vulkan driver:
+**158** of 2,519 tests skip in the audit container for lack of a GPU, a display, and a Vulkan
+driver. Before the §2 work the figure was 170; the twelve `BuiltInShaderParityUVETest` cases now
+execute and pass.
 
 | Suite | Skipped |
 |---|---|
 | `GlRenderDeviceUVETest` | 74 |
 | `VulkanRenderDeviceUVETest` | 39 |
 | `WindowManagerUVETest` | 13 |
-| `BuiltInShaderParityUVETest` | 12 |
 | `ComputeWorkloadsVulkanUVETest` | 7 |
-| Remaining GL compute and engine suites | 205 |
+| `EngineCoreUVETest` (windowed paths) | 6 |
+| Remaining GL compute suites | 19 |
 
-**This is a limitation of the audit environment, not a gap in the project.** The same tree skips only 12 tests on CI, where all 39 Vulkan device cases execute and pass. Device-dependent behaviour is therefore 🟣 UNVERIFIED *here* and 🟢 VERIFIED *on CI*. Any statement that the Vulkan backend is untested would be incorrect.
+Under `xvfb`, which is what CI uses, the same tree skips only **47**.
+
+**This is a limitation of the audit environment, not a gap in the project.** On CI all 39 Vulkan
+device cases execute and pass. Device-dependent behaviour is therefore 🟣 UNVERIFIED *here* and
+🟢 VERIFIED *on CI*. Any statement that the Vulkan backend is untested would be incorrect.
+
+A correction to the previous revision of this document, which reported 350 skips and a
+205-test remainder: those figures came from a `grep` that counted each skipped test twice.
+`ctest`'s own count is authoritative and is what the table above uses.
 
 ---
 
@@ -296,12 +361,13 @@ CI covers what this container cannot: it installs `mesa-vulkan-drivers` (lavapip
 
 | # | Action | Status addressed | Priority |
 |---|---|---|---|
-| 1 | Give test fixtures per-process unique scratch paths | 🔴 §2 | High |
-| 2 | Re-assess the `CollisionLifecycle` SEGFAULT once §2 is fixed | 🟣 §2 | High |
-| 3 | Export `IsFiniteUVE(const Vector3UVE&)`; remove 17 local copies | 🟡 §3 | Medium |
-| 4 | Consolidate binary helpers on the overflow-safe guard | 🟡 §4 | Medium |
-| 5 | Resolve the unused `ComponentUVE` concept | 🟠 §6 | Low |
-| 6 | Bump `actions/checkout` | 🔵 §11 | Low |
-| 7 | Qualify the JPEG `state` pointer as `volatile` | 🟡 §7 | Low |
+| 1 | ~~Give test fixtures per-process unique scratch paths~~ — **done**, see §2 | 🟢 §2 | — |
+| 2 | Find the unjoined thread behind the parallel abort, then enable `-j` in CI | 🟠 §2b | High |
+| 3 | Keep watching for the `CollisionLifecycle` SEGFAULT under `-j` | 🟣 §2 | Medium |
+| 4 | Export `IsFiniteUVE(const Vector3UVE&)`; remove 17 local copies | 🟡 §3 | Medium |
+| 5 | Consolidate binary helpers on the overflow-safe guard | 🟡 §4 | Medium |
+| 6 | Resolve the unused `ComponentUVE` concept | 🟠 §6 | Low |
+| 7 | Bump `actions/checkout` | 🔵 §11 | Low |
+| 8 | Qualify the JPEG `state` pointer as `volatile` | 🟡 §7 | Low |
 
 No production code was modified in the course of this audit.

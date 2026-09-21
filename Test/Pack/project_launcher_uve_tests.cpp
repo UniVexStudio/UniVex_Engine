@@ -2,12 +2,12 @@
 
 #include "uve/pack/project_launcher_uve.h"
 
-#include <atomic>
 #include <filesystem>
 #include <fstream>
-#include <string>
 
 #include <gtest/gtest.h>
+
+#include "Support/test_scratch_uve.h"
 
 #include "uve/core/engine_core_uve.h"
 #include "uve/platform/editor_project_package_uve.h"
@@ -19,16 +19,6 @@
 
 namespace UVE::Pack::Tests {
 namespace {
-
-[[nodiscard]] std::filesystem::path MakeUniqueTestDirectoryUVE(const std::string& label) {
-    static std::atomic<unsigned int> nextId{0U};
-    const std::filesystem::path directory = std::filesystem::temp_directory_path() /
-                                            ("uve_project_launcher_test_" + label + "_" +
-                                             std::to_string(nextId.fetch_add(1U)));
-    std::filesystem::remove_all(directory);
-    std::filesystem::create_directories(directory);
-    return directory;
-}
 
 [[nodiscard]] Core::EngineConfigUVE MakeHeadlessConfigUVE(const std::filesystem::path& scratchDirectory) {
     Core::EngineConfigUVE config{};
@@ -44,7 +34,7 @@ namespace {
 class ProjectLauncherUVETest : public ::testing::Test {
 protected:
     void SetUp() override {
-        projectRoot = MakeUniqueTestDirectoryUVE("root");
+        projectRoot = ::UVE::Tests::MakeTestCaseDirectoryUVE("root");
         std::filesystem::create_directories(projectRoot / "content" / "scenes");
     }
 

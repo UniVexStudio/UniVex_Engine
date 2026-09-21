@@ -16,6 +16,8 @@
 
 #include <gtest/gtest.h>
 
+#include "Support/test_scratch_uve.h"
+
 #include "uve/asset/asset_bundle_uve.h"
 #include "uve/asset/file_system_uve.h"
 #include "uve/events/event_system_uve.h"
@@ -291,7 +293,7 @@ class BuiltInShaderParityUVETest : public ::testing::TestWithParam<std::pair<std
 TEST_P(BuiltInShaderParityUVETest, EmbeddedSource_IsByteIdenticalToPhysicalFile) {
     const auto& [relativePath, embeddedSource] = GetParam();
     const std::filesystem::path fullPath =
-        std::filesystem::path("Engine/Runtime/RHI/Shader/built_in") / relativePath;
+        ::UVE::Tests::RepositoryRootUVE() / ::UVE::Tests::RepositoryRootUVE() / "Engine/Runtime/RHI/Shader/built_in" / relativePath;
     const std::optional<std::string> fileContent = ReadFileToStringUVE(fullPath);
     if (!fileContent.has_value()) {
         GTEST_SKIP() << "Could not read " << fullPath

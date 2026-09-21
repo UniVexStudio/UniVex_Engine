@@ -17,6 +17,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(googletest)
 
 add_executable(uve_core_tests
+    Support/test_scratch_uve.cpp
     Core/Platform/editor_project_package_uve_tests.cpp
     Core/Logging/logger_uve_tests.cpp
     Core/Logging/log_format_uve_tests.cpp
@@ -136,6 +137,10 @@ target_compile_features(uve_core_tests PRIVATE cxx_std_20)
 target_compile_definitions(uve_core_tests PRIVATE UVE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 uve_set_warnings(uve_core_tests)
 
+# Support/ holds the suite's shared test-only helpers. Test/ itself goes on the include path
+# so they are reached as "Support/<name>.h" from any subdirectory.
+target_include_directories(uve_core_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
 # shader_binary_cache_uve_tests.cpp/shader_diagnostics_parser_uve_tests.cpp/
 # shader_preprocessor_uve_tests.cpp unit-test uve_rhi_shader's module-private classes directly -
 # this include path exposes only those module-private headers, never anything from
@@ -153,6 +158,7 @@ gtest_discover_tests(uve_core_tests)
 # ticking + serialization).
 
 add_executable(uve_integration_tests
+    Support/test_scratch_uve.cpp
     Nodes/3D/nodes_3d_uve_tests.cpp
     Nodes/3D/node_definitions_3d_uve_tests.cpp
     Nodes/CanvasLayer/node_definitions_canvas_layer_uve_tests.cpp
@@ -269,6 +275,10 @@ target_compile_features(uve_integration_tests PRIVATE cxx_std_20)
 target_compile_definitions(uve_integration_tests PRIVATE UVE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 uve_set_warnings(uve_integration_tests)
 
+# Support/ holds the suite's shared test-only helpers. Test/ itself goes on the include path
+# so they are reached as "Support/<name>.h" from any subdirectory.
+target_include_directories(uve_integration_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
 # archetype_uve_tests.cpp and chunk_uve_tests.cpp unit-test the module-private
 # ArchetypeUVE/ChunkUVE Detail:: classes directly - this include path exposes only those
 # module-private headers, never anything from Engine/Runtime/Entity/Internal as part of uve_entity's
@@ -297,6 +307,7 @@ gtest_discover_tests(uve_integration_tests)
 # chain regardless of PRIVATE/PUBLIC (CMake still needs it to link the final executable), and the
 # system GL/GLFW headers are already on the default compiler include path.
 add_executable(uve_engine_tests
+    Support/test_scratch_uve.cpp
     Engine/engine_state_uve_tests.cpp
     Engine/version_uve_tests.cpp
     Engine/engine_services_uve_tests.cpp
@@ -317,6 +328,10 @@ target_compile_features(uve_engine_tests PRIVATE cxx_std_20)
 target_compile_definitions(uve_engine_tests PRIVATE UVE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 uve_set_warnings(uve_engine_tests)
 
+# Support/ holds the suite's shared test-only helpers. Test/ itself goes on the include path
+# so they are reached as "Support/<name>.h" from any subdirectory.
+target_include_directories(uve_engine_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
 gtest_discover_tests(uve_engine_tests)
 
 #
@@ -330,6 +345,7 @@ gtest_discover_tests(uve_engine_tests)
 # gl_render_device_uve_tests.cpp do. Linking uve_editor is sufficient for every dependency - it
 # PUBLIC-links uve_core, uve_scripting, and uve_plugins, which propagate transitively.
 add_executable(uve_editor_tests
+    Support/test_scratch_uve.cpp
     Editor/editor_bridge_stdio_uve_tests.cpp
     Editor/editor_bridge_uve_tests.cpp
     Editor/developer_console_uve_tests.cpp
@@ -370,5 +386,9 @@ target_link_libraries(uve_editor_tests PRIVATE uve_editor_imgui)
 target_compile_features(uve_editor_tests PRIVATE cxx_std_20)
 target_compile_definitions(uve_editor_tests PRIVATE UVE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 uve_set_warnings(uve_editor_tests)
+
+# Support/ holds the suite's shared test-only helpers. Test/ itself goes on the include path
+# so they are reached as "Support/<name>.h" from any subdirectory.
+target_include_directories(uve_editor_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 gtest_discover_tests(uve_editor_tests)
