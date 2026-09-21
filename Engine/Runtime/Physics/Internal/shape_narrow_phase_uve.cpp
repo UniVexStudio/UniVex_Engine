@@ -7,22 +7,20 @@
 #include <cmath>
 #include <limits>
 
+#include "uve/math/vector3_uve.h"
+
 namespace UVE::Physics::Detail {
 namespace {
 
-[[nodiscard]] bool IsFiniteVectorUVE(const Math::Vector3UVE value) noexcept {
-    return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
-}
-
 [[nodiscard]] bool IsFiniteAabbUVE(const Math::AabbUVE& box) noexcept {
-    return IsFiniteVectorUVE(box.min) && IsFiniteVectorUVE(box.max) && box.min.x < box.max.x &&
+    return Math::IsFiniteUVE(box.min) && Math::IsFiniteUVE(box.max) && box.min.x < box.max.x &&
            box.min.y < box.max.y && box.min.z < box.max.z;
 }
 
 [[nodiscard]] bool TryBuildOrientedBoxFrameUVE(
     const Math::Vector3UVE boxHalfExtents, const Math::QuaternionUVE boxRotation,
     Math::QuaternionUVE& outRotation, Math::QuaternionUVE& outInverse) noexcept {
-    if (!IsFiniteVectorUVE(boxHalfExtents) || boxHalfExtents.x <= 0.0F || boxHalfExtents.y <= 0.0F ||
+    if (!Math::IsFiniteUVE(boxHalfExtents) || boxHalfExtents.x <= 0.0F || boxHalfExtents.y <= 0.0F ||
         boxHalfExtents.z <= 0.0F || !Math::TryNormalizeUVE(boxRotation, outRotation) ||
         !Math::TryInverseUVE(outRotation, outInverse)) {
         return false;
@@ -35,8 +33,8 @@ namespace {
 std::optional<Math::RayHitUVE> IntersectMovingSphereSphereUVE(
     const Math::RayUVE& ray, const Math::Vector3UVE targetCenter, const float movingRadius,
     const float targetRadius, const float maxDistance) noexcept {
-    if (!IsFiniteVectorUVE(ray.origin) || !IsFiniteVectorUVE(ray.direction) ||
-        !IsFiniteVectorUVE(targetCenter) || !std::isfinite(movingRadius) || movingRadius < 0.0F ||
+    if (!Math::IsFiniteUVE(ray.origin) || !Math::IsFiniteUVE(ray.direction) ||
+        !Math::IsFiniteUVE(targetCenter) || !std::isfinite(movingRadius) || movingRadius < 0.0F ||
         !std::isfinite(targetRadius) || targetRadius <= 0.0F || !std::isfinite(maxDistance) ||
         maxDistance < 0.0F) {
         return std::nullopt;
@@ -91,7 +89,7 @@ std::optional<Math::RayHitUVE> IntersectMovingSphereSphereUVE(
     const Math::Vector3UVE normal{static_cast<float>(normalX / normalLength),
                                   static_cast<float>(normalY / normalLength),
                                   static_cast<float>(normalZ / normalLength)};
-    if (!IsFiniteVectorUVE(normal)) {
+    if (!Math::IsFiniteUVE(normal)) {
         return std::nullopt;
     }
     return Math::RayHitUVE{static_cast<float>(distance), normal};
@@ -106,8 +104,8 @@ std::optional<Math::RayHitUVE> IntersectRaySphereUVE(
 std::optional<Math::RayHitUVE> IntersectRayCapsuleUVE(
     const Math::RayUVE& ray, const Math::Vector3UVE segmentStart, const Math::Vector3UVE segmentEnd,
     const float capsuleRadius, const float maxDistance) noexcept {
-    if (!IsFiniteVectorUVE(ray.origin) || !IsFiniteVectorUVE(ray.direction) ||
-        !IsFiniteVectorUVE(segmentStart) || !IsFiniteVectorUVE(segmentEnd) ||
+    if (!Math::IsFiniteUVE(ray.origin) || !Math::IsFiniteUVE(ray.direction) ||
+        !Math::IsFiniteUVE(segmentStart) || !Math::IsFiniteUVE(segmentEnd) ||
         !std::isfinite(capsuleRadius) || capsuleRadius <= 0.0F || !std::isfinite(maxDistance) ||
         maxDistance < 0.0F) {
         return std::nullopt;
@@ -128,7 +126,7 @@ std::optional<Math::RayHitUVE> IntersectRayCapsuleUVE(
     const Math::Vector3UVE axis{static_cast<float>(segmentX / segmentLength),
                                 static_cast<float>(segmentY / segmentLength),
                                 static_cast<float>(segmentZ / segmentLength)};
-    if (!IsFiniteVectorUVE(axis)) {
+    if (!Math::IsFiniteUVE(axis)) {
         return std::nullopt;
     }
     const double originX = static_cast<double>(ray.origin.x) - static_cast<double>(segmentStart.x);
@@ -233,8 +231,8 @@ std::optional<Math::RayHitUVE> IntersectRayCapsuleUVE(
 std::optional<Math::RayHitUVE> IntersectRayOrientedBoxUVE(
     const Math::RayUVE& ray, const Math::Vector3UVE boxCenter, const Math::Vector3UVE boxHalfExtents,
     const Math::QuaternionUVE boxRotation, const float maxDistance) noexcept {
-    if (!IsFiniteVectorUVE(ray.origin) || !IsFiniteVectorUVE(ray.direction) || !IsFiniteVectorUVE(boxCenter) ||
-        !IsFiniteVectorUVE(boxHalfExtents) || boxHalfExtents.x <= 0.0F || boxHalfExtents.y <= 0.0F ||
+    if (!Math::IsFiniteUVE(ray.origin) || !Math::IsFiniteUVE(ray.direction) || !Math::IsFiniteUVE(boxCenter) ||
+        !Math::IsFiniteUVE(boxHalfExtents) || boxHalfExtents.x <= 0.0F || boxHalfExtents.y <= 0.0F ||
         boxHalfExtents.z <= 0.0F || !std::isfinite(maxDistance) || maxDistance < 0.0F) {
         return std::nullopt;
     }
@@ -253,7 +251,7 @@ std::optional<Math::RayHitUVE> IntersectRayOrientedBoxUVE(
         return std::nullopt;
     }
     const Math::Vector3UVE worldNormal = Math::RotateVectorUVE(normalizedRotation, localHit->normal);
-    if (!IsFiniteVectorUVE(worldNormal)) {
+    if (!Math::IsFiniteUVE(worldNormal)) {
         return std::nullopt;
     }
     return Math::RayHitUVE{localHit->distance, worldNormal};
@@ -464,7 +462,7 @@ std::optional<Math::PenetrationUVE> ComputeCapsuleAabbPenetrationUVE(
     if (bestDistanceSquared <= 0.0) {
         const Math::Vector3UVE closestSegmentPoint{
             static_cast<float>(closestX), static_cast<float>(closestY), static_cast<float>(closestZ)};
-        if (!IsFiniteVectorUVE(closestSegmentPoint)) {
+        if (!Math::IsFiniteUVE(closestSegmentPoint)) {
             return std::nullopt;
         }
         return ComputeSphereAabbPenetrationUVE(box, closestSegmentPoint, capsuleRadius);
@@ -481,7 +479,7 @@ std::optional<Math::PenetrationUVE> ComputeCapsuleAabbPenetrationUVE(
         static_cast<float>(bestDeltaY * inverseDistance),
         static_cast<float>(bestDeltaZ * inverseDistance),
     };
-    if (!IsFiniteVectorUVE(axis)) {
+    if (!Math::IsFiniteUVE(axis)) {
         return std::nullopt;
     }
     return Math::PenetrationUVE{axis, static_cast<float>(depth)};
@@ -542,7 +540,7 @@ std::optional<Math::PenetrationUVE> ComputeSphereSpherePenetrationUVE(
         static_cast<float>(deltaY * inverseDistance),
         static_cast<float>(deltaZ * inverseDistance),
     };
-    if (!IsFiniteVectorUVE(axis)) {
+    if (!Math::IsFiniteUVE(axis)) {
         return std::nullopt;
     }
     return Math::PenetrationUVE{axis, static_cast<float>(depth)};
@@ -634,7 +632,7 @@ std::optional<Math::PenetrationUVE> ComputeCapsuleSpherePenetrationUVE(
         static_cast<float>(deltaY * inverseDistance),
         static_cast<float>(deltaZ * inverseDistance),
     };
-    if (!IsFiniteVectorUVE(axis)) {
+    if (!Math::IsFiniteUVE(axis)) {
         return std::nullopt;
     }
     return Math::PenetrationUVE{axis, static_cast<float>(depth)};
@@ -644,11 +642,8 @@ std::optional<Math::PenetrationUVE> ComputeCapsuleCapsulePenetrationUVE(
     const Math::Vector3UVE firstSegmentStart, const Math::Vector3UVE firstSegmentEnd, const float firstRadius,
     const Math::Vector3UVE secondSegmentStart, const Math::Vector3UVE secondSegmentEnd,
     const float secondRadius) noexcept {
-    const auto IsFiniteVectorUVE = [](const Math::Vector3UVE value) noexcept {
-        return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
-    };
-    if (!IsFiniteVectorUVE(firstSegmentStart) || !IsFiniteVectorUVE(firstSegmentEnd) ||
-        !IsFiniteVectorUVE(secondSegmentStart) || !IsFiniteVectorUVE(secondSegmentEnd) ||
+    if (!Math::IsFiniteUVE(firstSegmentStart) || !Math::IsFiniteUVE(firstSegmentEnd) ||
+        !Math::IsFiniteUVE(secondSegmentStart) || !Math::IsFiniteUVE(secondSegmentEnd) ||
         !std::isfinite(firstRadius) || firstRadius <= 0.0F || !std::isfinite(secondRadius) || secondRadius <= 0.0F) {
         return std::nullopt;
     }
@@ -787,7 +782,7 @@ std::optional<Math::PenetrationUVE> ComputeCapsuleCapsulePenetrationUVE(
         static_cast<float>(bestDeltaY * inverseDistance),
         static_cast<float>(bestDeltaZ * inverseDistance),
     };
-    if (!IsFiniteVectorUVE(axis)) {
+    if (!Math::IsFiniteUVE(axis)) {
         return std::nullopt;
     }
     return Math::PenetrationUVE{axis, static_cast<float>(depth)};
@@ -797,7 +792,7 @@ std::optional<Math::PenetrationUVE> ComputeSphereOrientedBoxPenetrationUVE(
     const Math::Vector3UVE boxCenter, const Math::Vector3UVE boxHalfExtents,
     const Math::QuaternionUVE boxRotation, const Math::Vector3UVE sphereCenter,
     const float sphereRadius) noexcept {
-    if (!IsFiniteVectorUVE(boxCenter) || !IsFiniteVectorUVE(sphereCenter) || !std::isfinite(sphereRadius) ||
+    if (!Math::IsFiniteUVE(boxCenter) || !Math::IsFiniteUVE(sphereCenter) || !std::isfinite(sphereRadius) ||
         sphereRadius <= 0.0F) {
         return std::nullopt;
     }
@@ -826,7 +821,7 @@ std::optional<Math::PenetrationUVE> ComputeSphereOrientedBoxPenetrationUVE(
         static_cast<float>(static_cast<double>(boxHalfExtents.z) / centerScale),
     };
     const float scaledSphereRadius = static_cast<float>(static_cast<double>(sphereRadius) / centerScale);
-    if (!IsFiniteVectorUVE(scaledSphereOffset) || !IsFiniteVectorUVE(scaledHalfExtents) ||
+    if (!Math::IsFiniteUVE(scaledSphereOffset) || !Math::IsFiniteUVE(scaledHalfExtents) ||
         !std::isfinite(scaledSphereRadius) || scaledSphereRadius <= 0.0F ||
         scaledHalfExtents.x <= 0.0F || scaledHalfExtents.y <= 0.0F || scaledHalfExtents.z <= 0.0F) {
         return std::nullopt;
@@ -843,7 +838,7 @@ std::optional<Math::PenetrationUVE> ComputeSphereOrientedBoxPenetrationUVE(
     const double maximumFloat = static_cast<double>(std::numeric_limits<float>::max());
     const Math::Vector3UVE worldAxis = Math::RotateVectorUVE(normalizedRotation, localPenetration->axis);
     if (!std::isfinite(worldDepth) || worldDepth <= 0.0 || worldDepth > maximumFloat ||
-        !IsFiniteVectorUVE(worldAxis)) {
+        !Math::IsFiniteUVE(worldAxis)) {
         return std::nullopt;
     }
     return Math::PenetrationUVE{worldAxis, static_cast<float>(worldDepth)};
@@ -853,8 +848,8 @@ std::optional<Math::PenetrationUVE> ComputeCapsuleOrientedBoxPenetrationUVE(
     const Math::Vector3UVE boxCenter, const Math::Vector3UVE boxHalfExtents,
     const Math::QuaternionUVE boxRotation, const Math::Vector3UVE capsuleSegmentStart,
     const Math::Vector3UVE capsuleSegmentEnd, const float capsuleRadius) noexcept {
-    if (!IsFiniteVectorUVE(boxCenter) || !IsFiniteVectorUVE(capsuleSegmentStart) ||
-        !IsFiniteVectorUVE(capsuleSegmentEnd) || !std::isfinite(capsuleRadius) || capsuleRadius <= 0.0F) {
+    if (!Math::IsFiniteUVE(boxCenter) || !Math::IsFiniteUVE(capsuleSegmentStart) ||
+        !Math::IsFiniteUVE(capsuleSegmentEnd) || !std::isfinite(capsuleRadius) || capsuleRadius <= 0.0F) {
         return std::nullopt;
     }
     Math::QuaternionUVE normalizedRotation;
@@ -900,8 +895,8 @@ std::optional<Math::PenetrationUVE> ComputeCapsuleOrientedBoxPenetrationUVE(
         static_cast<float>(static_cast<double>(boxHalfExtents.z) / geometryScale),
     };
     const float scaledCapsuleRadius = static_cast<float>(static_cast<double>(capsuleRadius) / geometryScale);
-    if (!IsFiniteVectorUVE(scaledSegmentStart) || !IsFiniteVectorUVE(scaledSegmentEnd) ||
-        !IsFiniteVectorUVE(scaledHalfExtents) || !std::isfinite(scaledCapsuleRadius) ||
+    if (!Math::IsFiniteUVE(scaledSegmentStart) || !Math::IsFiniteUVE(scaledSegmentEnd) ||
+        !Math::IsFiniteUVE(scaledHalfExtents) || !std::isfinite(scaledCapsuleRadius) ||
         scaledCapsuleRadius <= 0.0F || scaledHalfExtents.x <= 0.0F || scaledHalfExtents.y <= 0.0F ||
         scaledHalfExtents.z <= 0.0F) {
         return std::nullopt;
@@ -920,7 +915,7 @@ std::optional<Math::PenetrationUVE> ComputeCapsuleOrientedBoxPenetrationUVE(
     const double maximumFloat = static_cast<double>(std::numeric_limits<float>::max());
     const Math::Vector3UVE worldAxis = Math::RotateVectorUVE(normalizedRotation, localPenetration->axis);
     if (!std::isfinite(worldDepth) || worldDepth <= 0.0 || worldDepth > maximumFloat ||
-        !IsFiniteVectorUVE(worldAxis)) {
+        !Math::IsFiniteUVE(worldAxis)) {
         return std::nullopt;
     }
     return Math::PenetrationUVE{worldAxis, static_cast<float>(worldDepth)};
@@ -930,7 +925,7 @@ std::optional<Math::PenetrationUVE> ComputeOrientedBoxOrientedBoxPenetrationUVE(
     const Math::Vector3UVE firstCenter, const Math::Vector3UVE firstHalfExtents,
     const Math::QuaternionUVE firstRotation, const Math::Vector3UVE secondCenter,
     const Math::Vector3UVE secondHalfExtents, const Math::QuaternionUVE secondRotation) noexcept {
-    if (!IsFiniteVectorUVE(firstCenter) || !IsFiniteVectorUVE(secondCenter)) {
+    if (!Math::IsFiniteUVE(firstCenter) || !Math::IsFiniteUVE(secondCenter)) {
         return std::nullopt;
     }
     Math::QuaternionUVE normalizedFirstRotation;
@@ -1022,7 +1017,7 @@ std::optional<Math::PenetrationUVE> ComputeOrientedBoxOrientedBoxPenetrationUVE(
         }
     }
     const double maximumFloat = static_cast<double>(std::numeric_limits<float>::max());
-    if (!std::isfinite(minimumOverlap) || minimumOverlap > maximumFloat || !IsFiniteVectorUVE(minimumAxis)) {
+    if (!std::isfinite(minimumOverlap) || minimumOverlap > maximumFloat || !Math::IsFiniteUVE(minimumAxis)) {
         return std::nullopt;
     }
     return Math::PenetrationUVE{minimumAxis, static_cast<float>(minimumOverlap)};

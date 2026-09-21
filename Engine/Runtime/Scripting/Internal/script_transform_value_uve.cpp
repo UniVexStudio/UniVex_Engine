@@ -3,18 +3,15 @@
 #include "uve/scripting/script_transform_value_uve.h"
 
 #include "uve/math/matrix4x4_uve.h"
+#include "uve/math/vector3_uve.h"
 
 #include <cmath>
 
 namespace UVE::Scripting {
 namespace {
 
-[[nodiscard]] bool IsFiniteVectorUVE(const ScriptVector3ValueUVE& vector) noexcept {
-    return std::isfinite(vector.value.x) && std::isfinite(vector.value.y) && std::isfinite(vector.value.z);
-}
-
 [[nodiscard]] bool IsFiniteTransformUVE(const ScriptTransformValueUVE& transform) noexcept {
-    return IsFiniteVectorUVE(transform.position) && IsFiniteVectorUVE(transform.scale) &&
+    return Math::IsFiniteUVE(transform.position.value) && Math::IsFiniteUVE(transform.scale.value) &&
            Math::IsFiniteUVE(transform.rotation.value);
 }
 
@@ -74,7 +71,7 @@ ScriptTransformVectorResultUVE EvaluateScriptTransformGetPositionUVE(
 
 ScriptTransformValueResultUVE EvaluateScriptTransformSetPositionUVE(
     const ScriptTransformValueUVE& transform, const ScriptVector3ValueUVE& position) noexcept {
-    if (!IsFiniteVectorUVE(position)) {
+    if (!Math::IsFiniteUVE(position.value)) {
         return MakeValueResultUVE(ScriptTransformEvaluationCodeUVE::NonFiniteInput);
     }
     ScriptTransformValueUVE normalized{};
@@ -120,7 +117,7 @@ ScriptTransformVectorResultUVE EvaluateScriptTransformGetScaleUVE(
 
 ScriptTransformValueResultUVE EvaluateScriptTransformSetScaleUVE(
     const ScriptTransformValueUVE& transform, const ScriptVector3ValueUVE& scale) noexcept {
-    if (!IsFiniteVectorUVE(scale)) {
+    if (!Math::IsFiniteUVE(scale.value)) {
         return MakeValueResultUVE(ScriptTransformEvaluationCodeUVE::NonFiniteInput);
     }
     ScriptTransformValueUVE normalized{};
@@ -134,7 +131,7 @@ ScriptTransformValueResultUVE EvaluateScriptTransformSetScaleUVE(
 
 ScriptTransformValueResultUVE EvaluateScriptTransformTranslateUVE(
     const ScriptTransformValueUVE& transform, const ScriptVector3ValueUVE& translation) noexcept {
-    if (!IsFiniteVectorUVE(translation)) {
+    if (!Math::IsFiniteUVE(translation.value)) {
         return MakeValueResultUVE(ScriptTransformEvaluationCodeUVE::NonFiniteInput);
     }
     ScriptTransformValueUVE normalized{};
@@ -147,7 +144,7 @@ ScriptTransformValueResultUVE EvaluateScriptTransformTranslateUVE(
         normalized.position.value.y + translation.value.y,
         normalized.position.value.z + translation.value.z,
     };
-    if (!IsFiniteVectorUVE(normalized.position)) {
+    if (!Math::IsFiniteUVE(normalized.position.value)) {
         return MakeValueResultUVE(ScriptTransformEvaluationCodeUVE::NonFiniteInput);
     }
     return MakeValueResultUVE(ScriptTransformEvaluationCodeUVE::Applied, normalized);
@@ -176,7 +173,7 @@ ScriptTransformValueResultUVE EvaluateScriptTransformRotateUVE(
 
 ScriptTransformVectorResultUVE EvaluateScriptTransformPointUVE(
     const ScriptTransformValueUVE& transform, const ScriptVector3ValueUVE& point) noexcept {
-    if (!IsFiniteVectorUVE(point)) {
+    if (!Math::IsFiniteUVE(point.value)) {
         return MakeVectorResultUVE(ScriptTransformEvaluationCodeUVE::NonFiniteInput);
     }
     ScriptTransformValueUVE normalized{};

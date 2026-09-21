@@ -8,16 +8,13 @@
 
 #include "uve/component/collider_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
+#include "uve/math/vector3_uve.h"
 
 namespace UVE::Physics::Detail {
 namespace {
 
-[[nodiscard]] bool IsFiniteVectorUVE(const Math::Vector3UVE& value) noexcept {
-    return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
-}
-
 [[nodiscard]] bool IsValidAabbUVE(const Math::AabbUVE& value) noexcept {
-    return IsFiniteVectorUVE(value.min) && IsFiniteVectorUVE(value.max) && value.min.x <= value.max.x &&
+    return Math::IsFiniteUVE(value.min) && Math::IsFiniteUVE(value.max) && value.min.x <= value.max.x &&
            value.min.y <= value.max.y && value.min.z <= value.max.z;
 }
 

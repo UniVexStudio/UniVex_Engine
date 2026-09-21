@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "uve/logging/logging_macros_uve.h"
+#include "uve/math/vector3_uve.h"
 #include "uve/rhi_shader/built_in_compute_spirv_uve.h"
 #include "uve/rhi_shader/built_in_shaders_uve.h"
 
@@ -17,10 +18,6 @@ namespace UVE::Render {
 namespace {
 
 constexpr std::size_t kFrustumPlaneCountUVE = 6U;
-
-[[nodiscard]] bool IsFiniteVectorUVE(const Math::Vector3UVE& vector) noexcept {
-    return std::isfinite(vector.x) && std::isfinite(vector.y) && std::isfinite(vector.z);
-}
 
 
 /// Picks the kernel source the injected backend can actually consume. This is not a nicety: the
@@ -180,7 +177,7 @@ bool FrustumCullComputeUVE::CullUVE(const std::span<const Math::AabbUVE> boxes,
     // differently, and answering differently is worse than saying honestly that it does not cover
     // the case. The caller still has the CPU test.
     for (const Math::PlaneUVE& plane : frustum.planes) {
-        if (!IsFiniteVectorUVE(plane.normal) || !std::isfinite(plane.distance)) {
+        if (!Math::IsFiniteUVE(plane.normal) || !std::isfinite(plane.distance)) {
             ++m_diagnostics.cullsRejected;
             UVE_WARNING("FrustumCullComputeUVE refuses a non-finite frustum plane; the CPU test is "
                         "the path that handles those.");
@@ -193,7 +190,7 @@ bool FrustumCullComputeUVE::CullUVE(const std::span<const Math::AabbUVE> boxes,
     for (std::size_t index = 0U; index < boxCount; ++index) {
         const Math::Vector3UVE center = boxes[index].GetCenterUVE();
         const Math::Vector3UVE extents = boxes[index].GetExtentsUVE();
-        if (!IsFiniteVectorUVE(center) || !IsFiniteVectorUVE(extents)) {
+        if (!Math::IsFiniteUVE(center) || !Math::IsFiniteUVE(extents)) {
             ++m_diagnostics.cullsRejected;
             UVE_WARNING("FrustumCullComputeUVE refuses a non-finite bounding box; the CPU test is "
                         "the path that handles those.");

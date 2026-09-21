@@ -15,6 +15,7 @@
 
 #include "uve/asset/uve_file_envelope_uve.h"
 #include "uve/logging/logging_macros_uve.h"
+#include "uve/math/vector3_uve.h"
 
 namespace UVE::Asset {
 namespace {
@@ -22,13 +23,9 @@ namespace {
 using JsonUVE = nlohmann::json;
 constexpr std::string_view kAnimationSchemaUVE = "uve-animation-v1";
 
-[[nodiscard]] bool IsFiniteVectorUVE(const Math::Vector3UVE& value) noexcept {
-    return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
-}
-
 [[nodiscard]] bool IsFinitePoseUVE(const AnimationAssetPoseUVE& pose) noexcept {
-    return IsFiniteVectorUVE(pose.position) && Math::IsFiniteUVE(pose.rotation) &&
-           IsFiniteVectorUVE(pose.scale);
+    return Math::IsFiniteUVE(pose.position) && Math::IsFiniteUVE(pose.rotation) &&
+           Math::IsFiniteUVE(pose.scale);
 }
 
 [[nodiscard]] JsonUVE ToVectorJsonUVE(const Math::Vector3UVE& value) {
@@ -44,7 +41,7 @@ constexpr std::string_view kAnimationSchemaUVE = "uve-animation-v1";
         return false;
     }
     const Math::Vector3UVE candidate{value.at(0).get<float>(), value.at(1).get<float>(), value.at(2).get<float>()};
-    if (!IsFiniteVectorUVE(candidate)) {
+    if (!Math::IsFiniteUVE(candidate)) {
         return false;
     }
     outVector = candidate;

@@ -35,11 +35,8 @@ std::string ToStringUVE(const AabbUVE& box) {
 }
 
 std::optional<PenetrationUVE> ComputePenetrationUVE(const AabbUVE& a, const AabbUVE& b) noexcept {
-    const auto IsFiniteVectorUVE = [](const Vector3UVE& value) noexcept {
-        return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
-    };
-    if (!IsFiniteVectorUVE(a.min) || !IsFiniteVectorUVE(a.max) || !IsFiniteVectorUVE(b.min) ||
-        !IsFiniteVectorUVE(b.max) || a.min.x > a.max.x || a.min.y > a.max.y || a.min.z > a.max.z ||
+    if (!IsFiniteUVE(a.min) || !IsFiniteUVE(a.max) || !IsFiniteUVE(b.min) ||
+        !IsFiniteUVE(b.max) || a.min.x > a.max.x || a.min.y > a.max.y || a.min.z > a.max.z ||
         b.min.x > b.max.x || b.min.y > b.max.y || b.min.z > b.max.z || !a.IntersectsUVE(b)) {
         return std::nullopt;
     }
@@ -50,8 +47,8 @@ std::optional<PenetrationUVE> ComputePenetrationUVE(const AabbUVE& a, const Aabb
     const Vector3UVE centerA = a.GetCenterUVE();
     const Vector3UVE centerB = b.GetCenterUVE();
     if (!std::isfinite(overlapX) || !std::isfinite(overlapY) || !std::isfinite(overlapZ) ||
-        overlapX <= 0.0F || overlapY <= 0.0F || overlapZ <= 0.0F || !IsFiniteVectorUVE(centerA) ||
-        !IsFiniteVectorUVE(centerB)) {
+        overlapX <= 0.0F || overlapY <= 0.0F || overlapZ <= 0.0F || !IsFiniteUVE(centerA) ||
+        !IsFiniteUVE(centerB)) {
         return std::nullopt;
     }
 
@@ -66,17 +63,14 @@ std::optional<PenetrationUVE> ComputePenetrationUVE(const AabbUVE& a, const Aabb
 
 std::optional<SweptAabbHitUVE> SweepAabbUVE(const AabbUVE& moving, const Vector3UVE& displacement,
                                                    const AabbUVE& target) noexcept {
-    const auto IsFiniteVectorUVE = [](const Vector3UVE& value) noexcept {
-        return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
-    };
-    if (!IsFiniteVectorUVE(moving.min) || !IsFiniteVectorUVE(moving.max) ||
-        !IsFiniteVectorUVE(displacement) || !IsFiniteVectorUVE(target.min) ||
-        !IsFiniteVectorUVE(target.max) || moving.IntersectsUVE(target)) {
+    if (!IsFiniteUVE(moving.min) || !IsFiniteUVE(moving.max) ||
+        !IsFiniteUVE(displacement) || !IsFiniteUVE(target.min) ||
+        !IsFiniteUVE(target.max) || moving.IntersectsUVE(target)) {
         return std::nullopt;
     }
 
     const Vector3UVE movingExtents = moving.GetExtentsUVE();
-    if (!IsFiniteVectorUVE(movingExtents) || movingExtents.x < 0.0F || movingExtents.y < 0.0F ||
+    if (!IsFiniteUVE(movingExtents) || movingExtents.x < 0.0F || movingExtents.y < 0.0F ||
         movingExtents.z < 0.0F) {
         return std::nullopt;
     }
@@ -130,11 +124,8 @@ std::optional<SweptAabbHitUVE> SweepAabbUVE(const AabbUVE& moving, const Vector3
 }
 
 std::optional<RayHitUVE> IntersectRayUVE(const RayUVE& ray, const AabbUVE& aabb, float maxDistance) noexcept {
-    const auto IsFiniteVectorUVE = [](const Vector3UVE& value) noexcept {
-        return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
-    };
-    if (!IsFiniteVectorUVE(ray.origin) || !IsFiniteVectorUVE(ray.direction) ||
-        !IsFiniteVectorUVE(aabb.min) || !IsFiniteVectorUVE(aabb.max) || !std::isfinite(maxDistance) ||
+    if (!IsFiniteUVE(ray.origin) || !IsFiniteUVE(ray.direction) ||
+        !IsFiniteUVE(aabb.min) || !IsFiniteUVE(aabb.max) || !std::isfinite(maxDistance) ||
         maxDistance < 0.0F || aabb.min.x > aabb.max.x || aabb.min.y > aabb.max.y || aabb.min.z > aabb.max.z) {
         return std::nullopt;
     }
@@ -189,7 +180,7 @@ std::optional<RayHitUVE> IntersectRayUVE(const RayUVE& ray, const AabbUVE& aabb,
         }
     }
 
-    if (!std::isfinite(tmin) || !IsFiniteVectorUVE(normal)) {
+    if (!std::isfinite(tmin) || !IsFiniteUVE(normal)) {
         return std::nullopt;
     }
     return RayHitUVE{tmin, normal};

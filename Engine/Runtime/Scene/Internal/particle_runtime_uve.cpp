@@ -1,5 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
+#include "uve/math/vector3_uve.h"
 #include "uve/scene/particle_runtime_uve.h"
 
 #include <algorithm>
@@ -9,10 +10,6 @@
 
 namespace UVE::Scene {
 namespace {
-
-[[nodiscard]] bool IsFiniteVectorUVE(const Math::Vector3UVE& value) noexcept {
-    return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
-}
 
 [[nodiscard]] ParticleRuntimeResultUVE MakeResultUVE(const ParticleRuntimeCodeUVE code,
                                                       std::string message) {
@@ -115,8 +112,8 @@ ParticleRuntimeResultUVE ParticleRuntimeUVE::EmitDetailedUVE(const EntityUVE ent
     }
     if (emission.lifetimeSeconds <= 0.0F ||
         emission.lifetimeSeconds > kMaximumParticleLifetimeSecondsUVE ||
-        !std::isfinite(emission.lifetimeSeconds) || !IsFiniteVectorUVE(emission.position) ||
-        !IsFiniteVectorUVE(emission.velocity)) {
+        !std::isfinite(emission.lifetimeSeconds) || !Math::IsFiniteUVE(emission.position) ||
+        !Math::IsFiniteUVE(emission.velocity)) {
         return MakeResultUVE(ParticleRuntimeCodeUVE::InvalidSimulationInput,
                              "Particle emission requires finite position/velocity and bounded positive lifetime.");
     }
@@ -149,7 +146,7 @@ ParticleRuntimeResultUVE ParticleRuntimeUVE::EmitDetailedUVE(const EntityUVE ent
 ParticleRuntimeResultUVE ParticleRuntimeUVE::SimulateDetailedUVE(
     const float deltaSeconds, const Math::Vector3UVE& acceleration) noexcept {
     if (deltaSeconds < 0.0F || deltaSeconds > kMaximumSimulationDeltaSecondsUVE ||
-        !std::isfinite(deltaSeconds) || !IsFiniteVectorUVE(acceleration)) {
+        !std::isfinite(deltaSeconds) || !Math::IsFiniteUVE(acceleration)) {
         return MakeResultUVE(ParticleRuntimeCodeUVE::InvalidSimulationInput,
                              "Particle simulation requires finite acceleration and bounded non-negative delta time.");
     }
@@ -168,7 +165,7 @@ ParticleRuntimeResultUVE ParticleRuntimeUVE::SimulateDetailedUVE(
             const Math::Vector3UVE nextVelocity = particle.velocity + acceleration * deltaSeconds;
             const Math::Vector3UVE nextPosition = particle.position + nextVelocity * deltaSeconds;
             const float nextLifetime = particle.remainingLifetimeSeconds - deltaSeconds;
-            if (!IsFiniteVectorUVE(nextVelocity) || !IsFiniteVectorUVE(nextPosition) ||
+            if (!Math::IsFiniteUVE(nextVelocity) || !Math::IsFiniteUVE(nextPosition) ||
                 !std::isfinite(nextLifetime)) {
                 return MakeResultUVE(ParticleRuntimeCodeUVE::NonFiniteSimulation,
                                      "Particle simulation rejected a non-finite integrated state atomically.");

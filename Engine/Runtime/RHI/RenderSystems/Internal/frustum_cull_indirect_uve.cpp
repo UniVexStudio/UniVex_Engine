@@ -11,6 +11,7 @@
 #include <utility>
 
 #include "uve/logging/logging_macros_uve.h"
+#include "uve/math/vector3_uve.h"
 #include "uve/rhi_shader/built_in_compute_spirv_uve.h"
 #include "uve/rhi_shader/built_in_shaders_uve.h"
 
@@ -18,10 +19,6 @@ namespace UVE::Render {
 namespace {
 
 constexpr std::size_t kFrustumPlaneCountUVE = 6U;
-
-[[nodiscard]] bool IsFiniteVectorUVE(const Math::Vector3UVE& vector) noexcept {
-    return std::isfinite(vector.x) && std::isfinite(vector.y) && std::isfinite(vector.z);
-}
 
 /// See the identical helper in frustum_cull_compute_uve.cpp: the RHI takes each backend's own
 /// shader language, and runtime GLSL->SPIR-V translation is still an open ROADMAP item.
@@ -196,7 +193,7 @@ bool FrustumCullIndirectUVE::PrepareUVE(const std::span<const Math::AabbUVE> box
     }
 
     for (const Math::PlaneUVE& plane : frustum.planes) {
-        if (!IsFiniteVectorUVE(plane.normal) || !std::isfinite(plane.distance)) {
+        if (!Math::IsFiniteUVE(plane.normal) || !std::isfinite(plane.distance)) {
             ++m_diagnostics.cullsRejected;
             UVE_WARNING("FrustumCullIndirectUVE refuses a non-finite frustum plane; the CPU test "
                         "is the path that handles those.");
@@ -209,7 +206,7 @@ bool FrustumCullIndirectUVE::PrepareUVE(const std::span<const Math::AabbUVE> box
     for (std::size_t index = 0U; index < boxCount; ++index) {
         const Math::Vector3UVE center = boxes[index].GetCenterUVE();
         const Math::Vector3UVE extents = boxes[index].GetExtentsUVE();
-        if (!IsFiniteVectorUVE(center) || !IsFiniteVectorUVE(extents)) {
+        if (!Math::IsFiniteUVE(center) || !Math::IsFiniteUVE(extents)) {
             ++m_diagnostics.cullsRejected;
             UVE_WARNING("FrustumCullIndirectUVE refuses a non-finite bounding box; the CPU test is "
                         "the path that handles those.");

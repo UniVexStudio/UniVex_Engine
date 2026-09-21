@@ -6,20 +6,17 @@
 #include <cmath>
 
 #include "uve/asset/asset_guid_uve.h"
-#include "uve/math/quaternion_uve.h"
 #include "uve/component/mesh_component_uve.h"
+#include "uve/math/quaternion_uve.h"
+#include "uve/math/vector3_uve.h"
 
 namespace UVE::Render {
 namespace {
 
 constexpr std::size_t kNearPlaneIndexUVE = 4U;
 
-[[nodiscard]] bool IsFiniteVectorUVE(const Math::Vector3UVE& value) noexcept {
-    return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
-}
-
 [[nodiscard]] bool IsOrderedFiniteAabbUVE(const Math::AabbUVE& bounds) noexcept {
-    return IsFiniteVectorUVE(bounds.min) && IsFiniteVectorUVE(bounds.max) && bounds.min.x <= bounds.max.x &&
+    return Math::IsFiniteUVE(bounds.min) && Math::IsFiniteUVE(bounds.max) && bounds.min.x <= bounds.max.x &&
            bounds.min.y <= bounds.max.y && bounds.min.z <= bounds.max.z;
 }
 
@@ -37,7 +34,7 @@ bool EvaluateMeshRenderPlacementUVE(const Scene::MeshComponentUVE& meshComponent
         outPlacement = candidate;
         return false;
     }
-    if (!IsFiniteVectorUVE(worldTransform.worldPosition) || !IsFiniteVectorUVE(worldTransform.worldScale) ||
+    if (!Math::IsFiniteUVE(worldTransform.worldPosition) || !Math::IsFiniteUVE(worldTransform.worldScale) ||
         !Math::IsFiniteUVE(worldTransform.worldRotation)) {
         candidate.reason = MeshRenderEligibilityReasonUVE::InvalidWorldTransform;
         outPlacement = candidate;

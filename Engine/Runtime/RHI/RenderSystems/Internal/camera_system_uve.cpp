@@ -7,21 +7,18 @@
 #include <limits>
 #include <numbers>
 
-#include "uve/logging/assert_uve.h"
-#include "uve/logging/logging_macros_uve.h"
 #include "uve/component/camera_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
+#include "uve/logging/assert_uve.h"
+#include "uve/logging/logging_macros_uve.h"
+#include "uve/math/vector3_uve.h"
 
 namespace UVE::Render {
 namespace {
 
-[[nodiscard]] bool IsFiniteVectorUVE(const Math::Vector3UVE& value) noexcept {
-    return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
-}
-
 [[nodiscard]] bool TryNormalizeWorldTransformRotationUVE(const Scene::WorldTransformComponentUVE& worldTransform,
                                                           Math::QuaternionUVE& outRotation) noexcept {
-    return IsFiniteVectorUVE(worldTransform.worldPosition) &&
+    return Math::IsFiniteUVE(worldTransform.worldPosition) &&
            Math::TryNormalizeUVE(worldTransform.worldRotation, outRotation);
 }
 

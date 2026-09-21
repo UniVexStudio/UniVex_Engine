@@ -13,10 +13,6 @@ namespace {
 
 constexpr float kMinimumQuaternionLengthSquaredUVE = std::numeric_limits<float>::epsilon();
 
-[[nodiscard]] bool IsFiniteVectorUVE(const Vector3UVE& value) noexcept {
-    return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
-}
-
 [[nodiscard]] float LargestAbsoluteComponentUVE(const QuaternionUVE& value) noexcept {
     return std::max(std::fabs(value.x), std::max(std::fabs(value.y), std::max(std::fabs(value.z), std::fabs(value.w))));
 }
@@ -155,7 +151,7 @@ bool TryInverseUVE(const QuaternionUVE& value, QuaternionUVE& outInverse) noexce
 }
 
 bool TryMakeAxisAngleUVE(const Vector3UVE& axis, const float radians, QuaternionUVE& outRotation) noexcept {
-    if (!IsFiniteVectorUVE(axis) || !std::isfinite(radians)) {
+    if (!IsFiniteUVE(axis) || !std::isfinite(radians)) {
         return false;
     }
 
@@ -176,7 +172,7 @@ bool TryMakeAxisAngleUVE(const Vector3UVE& axis, const float radians, Quaternion
     }
 
     const Vector3UVE normalizedAxis = NormalizeUVE(axis);
-    if (!IsFiniteVectorUVE(normalizedAxis)) {
+    if (!IsFiniteUVE(normalizedAxis)) {
         return false;
     }
     const QuaternionUVE candidate{
@@ -194,8 +190,8 @@ Vector3UVE RotateVectorUVE(const QuaternionUVE& rotation, const Vector3UVE& vect
     const Vector3UVE scalarPart = twiceCross * rotation.w;
     const Vector3UVE correction = CrossUVE(axis, twiceCross);
     const Vector3UVE floatResult = vector + scalarPart + correction;
-    if (IsFiniteVectorUVE(twiceCross) && IsFiniteVectorUVE(scalarPart) && IsFiniteVectorUVE(correction) &&
-        IsFiniteVectorUVE(floatResult)) {
+    if (IsFiniteUVE(twiceCross) && IsFiniteUVE(scalarPart) && IsFiniteUVE(correction) &&
+        IsFiniteUVE(floatResult)) {
         return floatResult;
     }
 
@@ -278,7 +274,7 @@ constexpr float kEulerSingularLimitUVE = 0.999999F;
 
 bool TryMakeEulerOrderedUVE(const Vector3UVE& radians, const EulerOrderUVE order,
                             QuaternionUVE& outRotation) noexcept {
-    if (!IsFiniteVectorUVE(radians)) {
+    if (!IsFiniteUVE(radians)) {
         return false;
     }
     const QuaternionUVE x = AxisRotationXUVE(radians.x);
@@ -381,7 +377,7 @@ bool TryToEulerOrderedUVE(const QuaternionUVE& rotation, const EulerOrderUVE ord
         default:
             return false;
     }
-    if (!IsFiniteVectorUVE(result)) {
+    if (!IsFiniteUVE(result)) {
         return false;
     }
     outRadians = result;
@@ -389,7 +385,7 @@ bool TryToEulerOrderedUVE(const QuaternionUVE& rotation, const EulerOrderUVE ord
 }
 
 bool TryMakeEulerUVE(const Vector3UVE& radians, QuaternionUVE& outRotation) noexcept {
-    if (!IsFiniteVectorUVE(radians)) {
+    if (!IsFiniteUVE(radians)) {
         return false;
     }
     const Vector3UVE half = radians * 0.5F;
@@ -432,7 +428,7 @@ bool TryToEulerUVE(const QuaternionUVE& rotation, Vector3UVE& outRadians) noexce
     const float angleZ = std::atan2(sinZCosY, cosZCosY);
 
     const Vector3UVE candidate{angleX, angleY, angleZ};
-    if (!IsFiniteVectorUVE(candidate)) {
+    if (!IsFiniteUVE(candidate)) {
         return false;
     }
     outRadians = candidate;
@@ -441,7 +437,7 @@ bool TryToEulerUVE(const QuaternionUVE& rotation, Vector3UVE& outRadians) noexce
 
 bool TryMakeLookAtUVE(const Vector3UVE& direction, const Vector3UVE& up,
                       QuaternionUVE& outRotation) noexcept {
-    if (!IsFiniteVectorUVE(direction) || !IsFiniteVectorUVE(up)) {
+    if (!IsFiniteUVE(direction) || !IsFiniteUVE(up)) {
         return false;
     }
     const float directionLengthSquared = LengthSquaredUVE(direction);
@@ -453,11 +449,11 @@ bool TryMakeLookAtUVE(const Vector3UVE& direction, const Vector3UVE& up,
     }
     const Vector3UVE forward = NormalizeUVE(direction);
     const Vector3UVE normalizedUp = NormalizeUVE(up);
-    if (!IsFiniteVectorUVE(forward) || !IsFiniteVectorUVE(normalizedUp)) {
+    if (!IsFiniteUVE(forward) || !IsFiniteUVE(normalizedUp)) {
         return false;
     }
     const Vector3UVE rightUnnormalized = CrossUVE(normalizedUp, forward);
-    if (!IsFiniteVectorUVE(rightUnnormalized) ||
+    if (!IsFiniteUVE(rightUnnormalized) ||
         LengthSquaredUVE(rightUnnormalized) <= kMinimumQuaternionLengthSquaredUVE) {
         return false;
     }
@@ -531,7 +527,7 @@ bool TryToAxisAngleUVE(const QuaternionUVE& rotation, Vector3UVE& outAxis,
     if (sine > 1.0e-5F) {
         axis = Vector3UVE{normalized.x / sine, normalized.y / sine, normalized.z / sine};
     }
-    if (!IsFiniteVectorUVE(axis)) return false;
+    if (!IsFiniteUVE(axis)) return false;
     outAxis = axis;
     outRadians = radians;
     return true;

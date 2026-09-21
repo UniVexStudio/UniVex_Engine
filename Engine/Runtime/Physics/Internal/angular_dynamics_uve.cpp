@@ -1,15 +1,12 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
+#include "uve/math/vector3_uve.h"
 #include "uve/physics/angular_dynamics_uve.h"
 
 #include <cmath>
 
 namespace UVE::Physics {
 namespace {
-
-[[nodiscard]] bool IsFiniteVectorUVE(const Math::Vector3UVE& value) noexcept {
-    return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
-}
 
 [[nodiscard]] Math::Vector3UVE MultiplyComponentsUVE(
     const Math::Vector3UVE& lhs, const Math::Vector3UVE& rhs) noexcept {
@@ -20,7 +17,7 @@ namespace {
 
 std::optional<Math::Vector3UVE> ComputeBoxInverseInertiaUVE(
     const float mass, const Math::Vector3UVE halfExtents) noexcept {
-    if (!std::isfinite(mass) || mass < 0.0F || !IsFiniteVectorUVE(halfExtents) ||
+    if (!std::isfinite(mass) || mass < 0.0F || !Math::IsFiniteUVE(halfExtents) ||
         halfExtents.x <= 0.0F || halfExtents.y <= 0.0F || halfExtents.z <= 0.0F) {
         return std::nullopt;
     }
@@ -51,7 +48,7 @@ std::optional<Math::Vector3UVE> ComputeBoxInverseInertiaUVE(
     if (!std::isfinite(inertiaX) || !std::isfinite(inertiaY) || !std::isfinite(inertiaZ) ||
         inertiaX <= 0.0 || inertiaY <= 0.0 || inertiaZ <= 0.0 ||
         !std::isfinite(inverseInertiaX) || !std::isfinite(inverseInertiaY) ||
-        !std::isfinite(inverseInertiaZ) || !IsFiniteVectorUVE(result) ||
+        !std::isfinite(inverseInertiaZ) || !Math::IsFiniteUVE(result) ||
         result.x <= 0.0F || result.y <= 0.0F || result.z <= 0.0F) {
         return std::nullopt;
     }
@@ -61,31 +58,31 @@ std::optional<Math::Vector3UVE> ComputeBoxInverseInertiaUVE(
 std::optional<Math::Vector3UVE> IntegrateAngularVelocityUVE(
     const Math::Vector3UVE angularVelocity, const Math::Vector3UVE torque,
     const Math::Vector3UVE inverseInertia, const float deltaTimeSeconds) noexcept {
-    if (!IsFiniteVectorUVE(angularVelocity) || !IsFiniteVectorUVE(torque) ||
-        !IsFiniteVectorUVE(inverseInertia) || !std::isfinite(deltaTimeSeconds) || deltaTimeSeconds < 0.0F ||
+    if (!Math::IsFiniteUVE(angularVelocity) || !Math::IsFiniteUVE(torque) ||
+        !Math::IsFiniteUVE(inverseInertia) || !std::isfinite(deltaTimeSeconds) || deltaTimeSeconds < 0.0F ||
         inverseInertia.x < 0.0F || inverseInertia.y < 0.0F || inverseInertia.z < 0.0F) {
         return std::nullopt;
     }
     const Math::Vector3UVE angularAcceleration = MultiplyComponentsUVE(torque, inverseInertia);
     const Math::Vector3UVE result = angularVelocity + angularAcceleration * deltaTimeSeconds;
-    return IsFiniteVectorUVE(result) ? std::optional<Math::Vector3UVE>{result} : std::nullopt;
+    return Math::IsFiniteUVE(result) ? std::optional<Math::Vector3UVE>{result} : std::nullopt;
 }
 
 std::optional<Math::Vector3UVE> ApplyAngularImpulseUVE(
     const Math::Vector3UVE angularVelocity, const Math::Vector3UVE angularImpulse,
     const Math::Vector3UVE inverseInertia) noexcept {
-    if (!IsFiniteVectorUVE(angularVelocity) || !IsFiniteVectorUVE(angularImpulse) ||
-        !IsFiniteVectorUVE(inverseInertia) || inverseInertia.x < 0.0F || inverseInertia.y < 0.0F ||
+    if (!Math::IsFiniteUVE(angularVelocity) || !Math::IsFiniteUVE(angularImpulse) ||
+        !Math::IsFiniteUVE(inverseInertia) || inverseInertia.x < 0.0F || inverseInertia.y < 0.0F ||
         inverseInertia.z < 0.0F) {
         return std::nullopt;
     }
     const Math::Vector3UVE result = angularVelocity + MultiplyComponentsUVE(angularImpulse, inverseInertia);
-    return IsFiniteVectorUVE(result) ? std::optional<Math::Vector3UVE>{result} : std::nullopt;
+    return Math::IsFiniteUVE(result) ? std::optional<Math::Vector3UVE>{result} : std::nullopt;
 }
 
 std::optional<Math::Vector3UVE> EvaluateGyroscopicTorqueUVE(
     const Math::Vector3UVE angularVelocity, const Math::Vector3UVE inverseInertia) noexcept {
-    if (!IsFiniteVectorUVE(angularVelocity) || !IsFiniteVectorUVE(inverseInertia) ||
+    if (!Math::IsFiniteUVE(angularVelocity) || !Math::IsFiniteUVE(inverseInertia) ||
         inverseInertia.x < 0.0F || inverseInertia.y < 0.0F || inverseInertia.z < 0.0F) {
         return std::nullopt;
     }
@@ -97,7 +94,7 @@ std::optional<Math::Vector3UVE> EvaluateGyroscopicTorqueUVE(
         angularVelocity.y * angularMomentum.z - angularVelocity.z * angularMomentum.y,
         angularVelocity.z * angularMomentum.x - angularVelocity.x * angularMomentum.z,
         angularVelocity.x * angularMomentum.y - angularVelocity.y * angularMomentum.x};
-    return IsFiniteVectorUVE(result) ? std::optional<Math::Vector3UVE>{result} : std::nullopt;
+    return Math::IsFiniteUVE(result) ? std::optional<Math::Vector3UVE>{result} : std::nullopt;
 }
 
 } // namespace UVE::Physics
