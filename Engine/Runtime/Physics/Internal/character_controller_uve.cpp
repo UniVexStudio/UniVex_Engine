@@ -6,18 +6,15 @@
 #include <cmath>
 #include <optional>
 
-#include "uve/physics/detail/collider_world_aabb_cache_uve.h"
 #include "uve/component/collider_component_uve.h"
 #include "uve/component/rigid_body_component_uve.h"
 #include "uve/component/transform_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
+#include "uve/math/vector3_uve.h"
+#include "uve/physics/detail/collider_world_aabb_cache_uve.h"
 
 namespace UVE::Physics {
 namespace {
-
-[[nodiscard]] bool IsFiniteVectorUVE(const Math::Vector3UVE& value) noexcept {
-    return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
-}
 
 [[nodiscard]] bool HasFiniteLengthUVE(const Math::Vector3UVE& value) noexcept {
     const float lengthSquared = Math::LengthSquaredUVE(value);
@@ -57,7 +54,7 @@ bool ValidateControllerInputUVE(Scene::IEntityManagerUVE& entityManager,
         result.code = CharacterControllerMoveCodeUVE::MissingCollider;
         return false;
     }
-    if (!IsFiniteVectorUVE(input.desiredDisplacement) || !HasFiniteLengthUVE(input.desiredDisplacement) ||
+    if (!Math::IsFiniteUVE(input.desiredDisplacement) || !HasFiniteLengthUVE(input.desiredDisplacement) ||
         !Scene::IsColliderComponentValidUVE(
             entityManager.GetComponentUVE<Scene::ColliderComponentUVE>(input.entity))) {
         result.code = CharacterControllerMoveCodeUVE::InvalidInput;
@@ -81,12 +78,12 @@ bool ValidateControllerInputUVE(Scene::IEntityManagerUVE& entityManager,
 [[nodiscard]] bool ApplyLocalDeltaUVE(Scene::IEntityManagerUVE& entityManager,
                                       Scene::ISceneGraphUVE& sceneGraph, Scene::EntityUVE entity,
                                       const Math::Vector3UVE& delta) {
-    if (!IsFiniteVectorUVE(delta)) {
+    if (!Math::IsFiniteUVE(delta)) {
         return false;
     }
     Scene::TransformComponentUVE transform = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(entity);
     const Math::Vector3UVE candidatePosition = transform.localPosition + delta;
-    if (!IsFiniteVectorUVE(candidatePosition)) {
+    if (!Math::IsFiniteUVE(candidatePosition)) {
         return false;
     }
     transform.localPosition = candidatePosition;
@@ -174,7 +171,7 @@ struct DynamicBodyPushPolicyUVE final {
     }
     const float normalLengthSquared = Math::LengthSquaredUVE(contactNormal);
     if (!std::isfinite(normalLengthSquared) || normalLengthSquared <= 0.0F ||
-        !IsFiniteVectorUVE(controllerDisplacement)) {
+        !Math::IsFiniteUVE(controllerDisplacement)) {
         return false;
     }
     const Math::Vector3UVE normal = contactNormal * (1.0F / std::sqrt(normalLengthSquared));
@@ -203,7 +200,7 @@ struct DynamicBodyPushPolicyUVE final {
         return false;
     }
     const Math::Vector3UVE proposedVelocity = rigidBody.velocity + normal * speedDelta;
-    if (!IsFiniteVectorUVE(proposedVelocity)) {
+    if (!Math::IsFiniteUVE(proposedVelocity)) {
         return false;
     }
     rigidBody.velocity = proposedVelocity;
@@ -359,7 +356,7 @@ struct ToICandidateUVE final {
 
 CcdEligibilityStatusUVE EvaluateCcdEligibilityUVE(const Math::Vector3UVE displacement,
                                                    const float minimumSweepDistance) noexcept {
-    if (!IsFiniteVectorUVE(displacement) || !HasFiniteLengthUVE(displacement) ||
+    if (!Math::IsFiniteUVE(displacement) || !HasFiniteLengthUVE(displacement) ||
         !std::isfinite(minimumSweepDistance) || minimumSweepDistance <= 0.0F) {
         return CcdEligibilityStatusUVE::Invalid;
     }
@@ -411,8 +408,8 @@ CharacterControllerMoveResultUVE CharacterControllerUVE::MoveUVE(
         }
         result.remainingDisplacement -= step;
         result.appliedDisplacement += step;
-        if (!IsFiniteVectorUVE(result.remainingDisplacement) ||
-            !IsFiniteVectorUVE(result.appliedDisplacement)) {
+        if (!Math::IsFiniteUVE(result.remainingDisplacement) ||
+            !Math::IsFiniteUVE(result.appliedDisplacement)) {
             result.code = CharacterControllerMoveCodeUVE::InvalidInput;
             return result;
         }
@@ -429,7 +426,7 @@ CharacterControllerMoveResultUVE CharacterControllerUVE::MoveUVE(
             }
             const float separationAxisLengthSquared = Math::LengthSquaredUVE(pair.separationAxis);
             if (!std::isfinite(pair.penetrationDepth) || pair.penetrationDepth <= 0.0F ||
-                !IsFiniteVectorUVE(pair.separationAxis) || !std::isfinite(separationAxisLengthSquared) ||
+                !Math::IsFiniteUVE(pair.separationAxis) || !std::isfinite(separationAxisLengthSquared) ||
                 std::abs(separationAxisLengthSquared - 1.0F) > 1.0e-3F) {
                 continue;
             }
@@ -440,7 +437,7 @@ CharacterControllerMoveResultUVE CharacterControllerUVE::MoveUVE(
             const Math::Vector3UVE correction = controllerIsFirst
                 ? -pair.separationAxis * pair.penetrationDepth
                 : pair.separationAxis * pair.penetrationDepth;
-            if (!IsFiniteVectorUVE(correction)) {
+            if (!Math::IsFiniteUVE(correction)) {
                 continue;
             }
             RegisterGroundContactUVE(result, contactNormal, minimumGroundNormalY);
@@ -451,8 +448,8 @@ CharacterControllerMoveResultUVE CharacterControllerUVE::MoveUVE(
             result.appliedDisplacement += correction;
             result.remainingDisplacement = RemoveIntoNormalComponentUVE(
                 result.remainingDisplacement, contactNormal);
-            if (!IsFiniteVectorUVE(result.appliedDisplacement) ||
-                !IsFiniteVectorUVE(result.remainingDisplacement)) {
+            if (!Math::IsFiniteUVE(result.appliedDisplacement) ||
+                !Math::IsFiniteUVE(result.remainingDisplacement)) {
                 result.code = CharacterControllerMoveCodeUVE::InvalidInput;
                 return result;
             }
@@ -537,8 +534,8 @@ CharacterControllerMoveResultUVE CharacterControllerUVE::MoveWithToIUVE(
             }
             result.remainingDisplacement -= consideredDisplacement;
             result.appliedDisplacement += consideredDisplacement;
-            if (!IsFiniteVectorUVE(result.remainingDisplacement) ||
-                !IsFiniteVectorUVE(result.appliedDisplacement)) {
+            if (!Math::IsFiniteUVE(result.remainingDisplacement) ||
+                !Math::IsFiniteUVE(result.appliedDisplacement)) {
                 result.code = CharacterControllerMoveCodeUVE::InvalidInput;
                 return result;
             }
@@ -577,8 +574,8 @@ CharacterControllerMoveResultUVE CharacterControllerUVE::MoveWithToIUVE(
         }
         result.remainingDisplacement -= preImpactDisplacement;
         result.appliedDisplacement += preImpactDisplacement;
-        if (!IsFiniteVectorUVE(result.remainingDisplacement) ||
-            !IsFiniteVectorUVE(result.appliedDisplacement)) {
+        if (!Math::IsFiniteUVE(result.remainingDisplacement) ||
+            !Math::IsFiniteUVE(result.appliedDisplacement)) {
             result.code = CharacterControllerMoveCodeUVE::InvalidInput;
             return result;
         }

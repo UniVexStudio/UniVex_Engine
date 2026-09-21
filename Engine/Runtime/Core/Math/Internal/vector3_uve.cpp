@@ -26,4 +26,8 @@ std::string ToStringUVE(const Vector3UVE& vector) {
            std::to_string(vector.z) + ")";
 }
 
+bool IsFiniteUVE(const Vector3UVE& value) noexcept {
+    return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
+}
+
 } // namespace UVE::Math

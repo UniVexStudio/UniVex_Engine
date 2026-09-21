@@ -3,6 +3,7 @@
 
 add_library(uve_utilities STATIC
     Internal/timer_uve.cpp
+    Internal/binary_buffer_uve.cpp
 )
 target_include_directories(uve_utilities PUBLIC Expose)
 target_link_libraries(uve_utilities PUBLIC uve_platform)

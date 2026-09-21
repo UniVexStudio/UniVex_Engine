@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "uve/logging/logging_macros_uve.h"
+#include "uve/math/vector3_uve.h"
 #include "uve/rhi_shader/built_in_compute_spirv_uve.h"
 #include "uve/rhi_shader/built_in_shaders_uve.h"
 
@@ -17,10 +18,6 @@ namespace UVE::Render {
 namespace {
 
 constexpr std::size_t kMatrixFloatsUVE = 16U;
-
-[[nodiscard]] bool IsFiniteVectorUVE(const Math::Vector3UVE& vector) noexcept {
-    return std::isfinite(vector.x) && std::isfinite(vector.y) && std::isfinite(vector.z);
-}
 
 /// See the identical helper in the other compute workloads: the RHI takes each backend's own
 /// shader language, and runtime GLSL->SPIR-V translation remains an open ROADMAP item.
@@ -197,8 +194,8 @@ bool MeshSkinComputeUVE::SkinUVE(const Asset::MeshAssetUVE& mesh,
     m_vertexScratch.assign(vertexCount, MeshSkinVertexGpuUVE{});
     for (std::size_t index = 0U; index < vertexCount; ++index) {
         const Asset::MeshVertexUVE& source = mesh.vertices[index];
-        if (!IsFiniteVectorUVE(source.position) || !IsFiniteVectorUVE(source.normal) ||
-            !IsFiniteVectorUVE(source.tangent) || !std::isfinite(source.tangentHandedness)) {
+        if (!Math::IsFiniteUVE(source.position) || !Math::IsFiniteUVE(source.normal) ||
+            !Math::IsFiniteUVE(source.tangent) || !std::isfinite(source.tangentHandedness)) {
             ++m_diagnostics.skinsRejected;
             UVE_WARNING("MeshSkinComputeUVE refuses a non-finite source vertex at index {}", index);
             return false;

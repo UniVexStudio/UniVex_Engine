@@ -11,13 +11,10 @@
 #include "uve/component/rigid_body_component_uve.h"
 #include "uve/component/transform_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
+#include "uve/math/vector3_uve.h"
 
 namespace UVE::Physics {
 namespace {
-
-[[nodiscard]] bool IsFiniteVectorUVE(const Math::Vector3UVE& value) noexcept {
-    return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
-}
 
 [[nodiscard]] float ConstraintLengthUVE(const Math::Vector3UVE& value) noexcept {
     const float squared = Math::LengthSquaredUVE(value);
@@ -46,7 +43,7 @@ void ApplyLocalDeltaUVE(Scene::IEntityManagerUVE& entityManager, Scene::ISceneGr
 [[nodiscard]] bool IsLocalDeltaValidUVE(Scene::IEntityManagerUVE& entityManager,
                                         Scene::EntityUVE entity,
                                         const Math::Vector3UVE delta) {
-    if (!IsFiniteVectorUVE(delta)) {
+    if (!Math::IsFiniteUVE(delta)) {
         return false;
     }
     Scene::TransformComponentUVE candidate =
@@ -138,8 +135,8 @@ std::size_t PhysicsConstraintSystemUVE::GetConstraintCountUVE() const noexcept {
 bool PhysicsConstraintSystemUVE::IsValidDistanceUVE(const DistanceConstraintUVE& constraint) noexcept {
     return constraint.firstEntity != Scene::kInvalidEntityUVE &&
            constraint.secondEntity != Scene::kInvalidEntityUVE &&
-           constraint.firstEntity != constraint.secondEntity && IsFiniteVectorUVE(constraint.firstAnchor) &&
-           IsFiniteVectorUVE(constraint.secondAnchor) && std::isfinite(constraint.restLength) &&
+           constraint.firstEntity != constraint.secondEntity && Math::IsFiniteUVE(constraint.firstAnchor) &&
+           Math::IsFiniteUVE(constraint.secondAnchor) && std::isfinite(constraint.restLength) &&
            constraint.restLength >= 0.0F;
 }
 
@@ -147,8 +144,8 @@ bool PhysicsConstraintSystemUVE::IsValidHingeUVE(const HingeConstraintUVE& const
     const float worldAxisLength = ConstraintLengthUVE(constraint.worldAxis);
     return constraint.firstEntity != Scene::kInvalidEntityUVE &&
            constraint.secondEntity != Scene::kInvalidEntityUVE &&
-           constraint.firstEntity != constraint.secondEntity && IsFiniteVectorUVE(constraint.firstAnchor) &&
-           IsFiniteVectorUVE(constraint.secondAnchor) && IsFiniteVectorUVE(constraint.worldAxis) &&
+           constraint.firstEntity != constraint.secondEntity && Math::IsFiniteUVE(constraint.firstAnchor) &&
+           Math::IsFiniteUVE(constraint.secondAnchor) && Math::IsFiniteUVE(constraint.worldAxis) &&
            std::isfinite(worldAxisLength) &&
            worldAxisLength > PhysicsConstraintSystemUVE::kConstraintEpsilonUVE;
 }
@@ -248,7 +245,7 @@ PhysicsConstraintSolveResultUVE PhysicsConstraintSystemUVE::SolveUVE(
             const Math::Vector3UVE secondAnchor = secondWorld.worldPosition +
                 (slot.kind == KindUVE::Distance ? slot.distance.secondAnchor : slot.hinge.secondAnchor);
             const Math::Vector3UVE delta = secondAnchor - firstAnchor;
-            if (!IsFiniteVectorUVE(delta)) {
+            if (!Math::IsFiniteUVE(delta)) {
                 if (!reportedSkipped[index]) {
                     ++result.skippedConstraintCount;
                     reportedSkipped[index] = true;

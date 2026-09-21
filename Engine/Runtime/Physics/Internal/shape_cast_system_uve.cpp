@@ -6,28 +6,25 @@
 #include <limits>
 #include <vector>
 
+#include "uve/component/collider_component_uve.h"
+#include "uve/entity/i_entity_manager_uve.h"
 #include "uve/math/aabb_uve.h"
+#include "uve/math/vector3_uve.h"
 #include "uve/physics/detail/collider_world_aabb_cache_uve.h"
 #include "uve/physics/detail/shape_narrow_phase_uve.h"
 #include "uve/physics/physics_material_uve.h"
-#include "uve/component/collider_component_uve.h"
-#include "uve/entity/i_entity_manager_uve.h"
 
 namespace UVE::Physics {
 namespace {
 
-[[nodiscard]] bool IsFiniteVectorUVE(const Math::Vector3UVE& value) noexcept {
-    return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
-}
-
 [[nodiscard]] bool IsValidBoxCastRayUVE(const Math::RayUVE& ray) noexcept {
     const float lengthSquared = Math::LengthSquaredUVE(ray.direction);
-    return IsFiniteVectorUVE(ray.origin) && IsFiniteVectorUVE(ray.direction) &&
+    return Math::IsFiniteUVE(ray.origin) && Math::IsFiniteUVE(ray.direction) &&
            std::isfinite(lengthSquared) && lengthSquared > 0.0F;
 }
 
 [[nodiscard]] bool IsFiniteAabbUVE(const Math::AabbUVE& aabb) noexcept {
-    return IsFiniteVectorUVE(aabb.min) && IsFiniteVectorUVE(aabb.max) &&
+    return Math::IsFiniteUVE(aabb.min) && Math::IsFiniteUVE(aabb.max) &&
            aabb.min.x <= aabb.max.x && aabb.min.y <= aabb.max.y && aabb.min.z <= aabb.max.z;
 }
 
@@ -93,7 +90,7 @@ std::optional<CapsuleCastHitUVE> ShapeCastSystemUVE::CapsuleCastUVE(
     }
 
     const Math::Vector3UVE halfExtents{query.radius, query.height * 0.5F, query.radius};
-    if (!IsFiniteVectorUVE(halfExtents)) {
+    if (!Math::IsFiniteUVE(halfExtents)) {
         return std::nullopt;
     }
     const std::vector<Detail::ColliderWorldAabbUVE> colliders =
@@ -134,7 +131,7 @@ std::optional<CapsuleCastHitUVE> ShapeCastSystemUVE::CapsuleCastUVE(
 
 std::optional<BoxCastHitUVE> ShapeCastSystemUVE::BoxCastUVE(
     Scene::IEntityManagerUVE& entityManager, const BoxCastQueryUVE& query) {
-    if (!IsValidBoxCastRayUVE(query.ray) || !IsFiniteVectorUVE(query.halfExtents) ||
+    if (!IsValidBoxCastRayUVE(query.ray) || !Math::IsFiniteUVE(query.halfExtents) ||
         query.halfExtents.x < 0.0F || query.halfExtents.y < 0.0F || query.halfExtents.z < 0.0F ||
         !std::isfinite(query.maxDistance) || query.maxDistance < 0.0F || query.layerMask == 0U) {
         return std::nullopt;

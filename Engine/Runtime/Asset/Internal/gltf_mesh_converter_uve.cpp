@@ -97,10 +97,6 @@ constexpr float kMinimumNormalLengthSquaredUVE = 1.0e-12F;
     return 0U;
 }
 
-[[nodiscard]] bool IsFiniteVectorUVE(const UVE::Math::Vector3UVE& value) noexcept {
-    return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
-}
-
 [[nodiscard]] bool HasUsableNormalLengthUVE(const UVE::Math::Vector3UVE& value) noexcept {
     const float lengthSquared = UVE::Math::LengthSquaredUVE(value);
     return std::isfinite(lengthSquared) && lengthSquared > kMinimumNormalLengthSquaredUVE;
@@ -160,13 +156,13 @@ bool ConvertGltfPrimitiveUVE(const GltfPrimitiveSourceUVE& source, MeshAssetUVE&
     bool hasBounds = false;
     for (std::size_t vertexIndex = 0U; vertexIndex < vertexCount; ++vertexIndex) {
         const UVE::Math::Vector3UVE position = ReadVector3UVE(source.positions, vertexIndex);
-        if (!IsFiniteVectorUVE(position)) {
+        if (!Math::IsFiniteUVE(position)) {
             return false;
         }
         candidate.vertices[vertexIndex].position = position;
         if (source.normals.has_value()) {
             const UVE::Math::Vector3UVE normal = ReadVector3UVE(*source.normals, vertexIndex);
-            if (!IsFiniteVectorUVE(normal) || !HasUsableNormalLengthUVE(normal)) {
+            if (!Math::IsFiniteUVE(normal) || !HasUsableNormalLengthUVE(normal)) {
                 return false;
             }
             candidate.vertices[vertexIndex].normal = UVE::Math::NormalizeUVE(normal);
@@ -212,19 +208,19 @@ bool ConvertGltfPrimitiveUVE(const GltfPrimitiveSourceUVE& source, MeshAssetUVE&
             const auto& b = candidate.vertices[candidate.indices[triangle + 1U]].position;
             const auto& c = candidate.vertices[candidate.indices[triangle + 2U]].position;
             const UVE::Math::Vector3UVE faceNormal = UVE::Math::CrossUVE(b - a, c - a);
-            if (!IsFiniteVectorUVE(faceNormal) || !HasUsableNormalLengthUVE(faceNormal)) {
+            if (!Math::IsFiniteUVE(faceNormal) || !HasUsableNormalLengthUVE(faceNormal)) {
                 return false;
             }
             normalAccumulation[candidate.indices[triangle]] += faceNormal;
-            if (!IsFiniteVectorUVE(normalAccumulation[candidate.indices[triangle]])) {
+            if (!Math::IsFiniteUVE(normalAccumulation[candidate.indices[triangle]])) {
                 return false;
             }
             normalAccumulation[candidate.indices[triangle + 1U]] += faceNormal;
-            if (!IsFiniteVectorUVE(normalAccumulation[candidate.indices[triangle + 1U]])) {
+            if (!Math::IsFiniteUVE(normalAccumulation[candidate.indices[triangle + 1U]])) {
                 return false;
             }
             normalAccumulation[candidate.indices[triangle + 2U]] += faceNormal;
-            if (!IsFiniteVectorUVE(normalAccumulation[candidate.indices[triangle + 2U]])) {
+            if (!Math::IsFiniteUVE(normalAccumulation[candidate.indices[triangle + 2U]])) {
                 return false;
             }
         }

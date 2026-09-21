@@ -22,35 +22,32 @@
 #include "uve/asset/mesh_asset_uve.h"
 #include "uve/asset/shader_asset_uve.h"
 #include "uve/asset/texture_asset_uve.h"
+#include "uve/component/camera_component_uve.h"
+#include "uve/component/primitive_mesh_component_uve.h"
+#include "uve/component/world_transform_component_uve.h"
 #include "uve/logging/assert_uve.h"
-#include "uve/math/aabb_uve.h"
 #include "uve/logging/logging_macros_uve.h"
+#include "uve/math/aabb_uve.h"
 #include "uve/math/frustum_uve.h"
 #include "uve/math/matrix4x4_uve.h"
 #include "uve/math/quaternion_uve.h"
+#include "uve/math/vector3_uve.h"
+#include "uve/nodes/3d/all_nodes_3d_uve.h"
 #include "uve/render_systems/i_light_system_uve.h"
-#include "uve/render_systems/render_graph_uve.h"
-#include "uve/render_systems/primitive_geometry_uve.h"
-#include "uve/render_systems/particle_render_bridge_uve.h"
 #include "uve/render_systems/particle_draw_command_uve.h"
+#include "uve/render_systems/particle_render_bridge_uve.h"
+#include "uve/render_systems/primitive_geometry_uve.h"
 #include "uve/render_systems/render_batch_uve.h"
+#include "uve/render_systems/render_graph_uve.h"
 #include "uve/render_systems/render_queue_uve.h"
 #include "uve/rhi_shader/built_in_shaders_uve.h"
 #include "uve/rhi_shader/shader_program_desc_uve.h"
 #include "uve/rhi_shader/shader_program_uve.h"
-#include "uve/component/camera_component_uve.h"
-#include "uve/nodes/3d/all_nodes_3d_uve.h"
-#include "uve/component/primitive_mesh_component_uve.h"
-#include "uve/component/world_transform_component_uve.h"
 #include "uve/ui/ui_runtime_uve.h"
 
 namespace UVE::Render {
 
 namespace {
-
-[[nodiscard]] bool IsFiniteVectorUVE(const Math::Vector3UVE& value) noexcept {
-    return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
-}
 
 [[nodiscard]] bool IsFiniteMatrixUVE(const Math::Matrix4x4UVE& matrix) noexcept {
     for (const auto& row : matrix.m) {
@@ -64,7 +61,7 @@ namespace {
 }
 
 [[nodiscard]] bool IsOrderedFiniteAabbUVE(const Math::AabbUVE& bounds) noexcept {
-    return IsFiniteVectorUVE(bounds.min) && IsFiniteVectorUVE(bounds.max) && bounds.min.x <= bounds.max.x &&
+    return Math::IsFiniteUVE(bounds.min) && Math::IsFiniteUVE(bounds.max) && bounds.min.x <= bounds.max.x &&
            bounds.min.y <= bounds.max.y && bounds.min.z <= bounds.max.z;
 }
 
@@ -458,13 +455,13 @@ constexpr std::array<std::uint8_t, 4> kFlatNormalPixelUVE{0x80, 0x80, 0xFF, 0xFF
             const Math::Vector3UVE resolved{environment.ambientColor.x * environment.ambientEnergy,
                                             environment.ambientColor.y * environment.ambientEnergy,
                                             environment.ambientColor.z * environment.ambientEnergy};
-            if (!IsFiniteVectorUVE(resolved)) {
+            if (!Math::IsFiniteUVE(resolved)) {
                 return;
             }
             ambient = resolved;
             environmentFound = true;
         });
-    return IsFiniteVectorUVE(ambient) ? ambient : Math::Vector3UVE{};
+    return Math::IsFiniteUVE(ambient) ? ambient : Math::Vector3UVE{};
 }
 
 [[nodiscard]] bool AreShadowMapTargetsValidUVE(
@@ -1357,7 +1354,7 @@ struct Renderer3DUVE::ImplUVE {
                                                               const Scene::PrimitiveMeshComponentUVE& primitive,
                                                               Math::Matrix4x4UVE& outWorldMatrix,
                                                               Math::AabbUVE& outWorldBounds) {
-        if (!IsFiniteVectorUVE(worldTransform.worldPosition) || !IsFiniteVectorUVE(worldTransform.worldScale) ||
+        if (!Math::IsFiniteUVE(worldTransform.worldPosition) || !Math::IsFiniteUVE(worldTransform.worldScale) ||
             !Math::IsFiniteUVE(worldTransform.worldRotation)) {
             return false;
         }
@@ -1980,7 +1977,7 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
         entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(cameraEntity);
     Math::QuaternionUVE normalizedCameraRotation;
     const bool cameraTransformValid =
-        IsFiniteVectorUVE(cameraWorldTransform.worldPosition) &&
+        Math::IsFiniteUVE(cameraWorldTransform.worldPosition) &&
         Math::TryNormalizeUVE(cameraWorldTransform.worldRotation, normalizedCameraRotation);
     UVE_ASSERT(cameraTransformValid);
     if (!cameraTransformValid) {
@@ -2055,7 +2052,7 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             const bool shadowViewInputsValid = IsFiniteMatrixUVE(lightView) &&
                                                std::all_of(cameraCorners.cbegin(), cameraCorners.cend(),
                                                            [](const Math::Vector3UVE& corner) {
-                                                               return IsFiniteVectorUVE(corner);
+                                                               return Math::IsFiniteUVE(corner);
                                                            });
             UVE_ASSERT(shadowViewInputsValid);
             if (!shadowViewInputsValid) {

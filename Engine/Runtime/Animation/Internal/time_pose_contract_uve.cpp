@@ -1,6 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 #include "uve/animation/time_pose_contract_uve.h"
+#include "uve/math/vector3_uve.h"
 
 #include <algorithm>
 #include <cmath>
@@ -11,10 +12,6 @@ namespace {
 
 [[nodiscard]] double NonNegativeScaleUVE(const double value) noexcept {
     return std::isfinite(value) && value >= 0.0 ? value : 0.0;
-}
-
-[[nodiscard]] bool IsFiniteVectorUVE(const Math::Vector3UVE& value) noexcept {
-    return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
 }
 
 [[nodiscard]] bool IsAnimationIdentifierValidUVE(const std::string& identifier, const bool allowEmpty) noexcept {
@@ -225,7 +222,7 @@ AnimationContractValidationResultUVE ValidateAnimationEvaluationContextUVE(
 }
 
 bool IsFiniteTransformPoseUVE(const TransformPoseUVE& pose) noexcept {
-    return IsFiniteVectorUVE(pose.position) && IsFiniteVectorUVE(pose.scale) &&
+    return Math::IsFiniteUVE(pose.position) && Math::IsFiniteUVE(pose.scale) &&
            Math::IsFiniteUVE(pose.rotation);
 }
 

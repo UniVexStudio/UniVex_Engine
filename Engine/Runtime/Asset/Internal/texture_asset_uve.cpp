@@ -9,45 +9,9 @@
 
 #include "uve/asset/uve_file_envelope_uve.h"
 #include "uve/logging/logging_macros_uve.h"
+#include "uve/utilities/binary_buffer_uve.h"
 
 namespace UVE::Asset {
-
-namespace {
-
-void AppendBytesUVE(std::vector<std::byte>& buffer, const void* data, std::size_t size) {
-    const auto* const bytes = static_cast<const std::byte*>(data);
-    buffer.insert(buffer.end(), bytes, bytes + size);
-}
-
-void AppendUint32UVE(std::vector<std::byte>& buffer, std::uint32_t value) {
-    AppendBytesUVE(buffer, &value, sizeof(value));
-}
-
-void AppendUint64UVE(std::vector<std::byte>& buffer, std::uint64_t value) {
-    AppendBytesUVE(buffer, &value, sizeof(value));
-}
-
-[[nodiscard]] bool ReadUint32FromBufferUVE(const std::vector<std::byte>& buffer, std::size_t& offset,
-                                            std::uint32_t& outValue) {
-    if (offset > buffer.size() || sizeof(outValue) > buffer.size() - offset) {
-        return false;
-    }
-    std::memcpy(&outValue, buffer.data() + offset, sizeof(outValue));
-    offset += sizeof(outValue);
-    return true;
-}
-
-[[nodiscard]] bool ReadUint64FromBufferUVE(const std::vector<std::byte>& buffer, std::size_t& offset,
-                                            std::uint64_t& outValue) {
-    if (offset > buffer.size() || sizeof(outValue) > buffer.size() - offset) {
-        return false;
-    }
-    std::memcpy(&outValue, buffer.data() + offset, sizeof(outValue));
-    offset += sizeof(outValue);
-    return true;
-}
-
-} // namespace
 
 std::uint32_t BytesPerPixelUVE(TextureFormatUVE format) noexcept {
     switch (format) {
@@ -77,9 +41,9 @@ bool LoadTextureAssetUVE(const std::filesystem::path& path, TextureAssetUVE& out
     std::uint32_t height = 0;
     std::uint32_t formatValue = 0;
     std::uint64_t pixelByteCount = 0;
-    if (!ReadUint32FromBufferUVE(payload, offset, width) || !ReadUint32FromBufferUVE(payload, offset, height) ||
-        !ReadUint32FromBufferUVE(payload, offset, formatValue) ||
-        !ReadUint64FromBufferUVE(payload, offset, pixelByteCount)) {
+    if (!Utilities::ReadUint32FromBufferUVE(payload, offset, width) || !Utilities::ReadUint32FromBufferUVE(payload, offset, height) ||
+        !Utilities::ReadUint32FromBufferUVE(payload, offset, formatValue) ||
+        !Utilities::ReadUint64FromBufferUVE(payload, offset, pixelByteCount)) {
         UVE_ERROR("TextureAssetUVE: \"{}\" has a truncated header", path.string());
         return false;
     }
@@ -139,11 +103,11 @@ bool SaveTextureAssetUVE(const TextureAssetUVE& texture, const std::filesystem::
     }
 
     std::vector<std::byte> payload;
-    AppendUint32UVE(payload, texture.width);
-    AppendUint32UVE(payload, texture.height);
-    AppendUint32UVE(payload, static_cast<std::uint32_t>(texture.format));
-    AppendUint64UVE(payload, static_cast<std::uint64_t>(texture.pixels.size()));
-    AppendBytesUVE(payload, texture.pixels.data(), texture.pixels.size());
+    Utilities::AppendUint32UVE(payload, texture.width);
+    Utilities::AppendUint32UVE(payload, texture.height);
+    Utilities::AppendUint32UVE(payload, static_cast<std::uint32_t>(texture.format));
+    Utilities::AppendUint64UVE(payload, static_cast<std::uint64_t>(texture.pixels.size()));
+    Utilities::AppendBytesUVE(payload, texture.pixels.data(), texture.pixels.size());
 
     return WriteUveFileUVE(path, AssetKindUVE::Texture, payload);
 }
