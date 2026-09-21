@@ -101,8 +101,6 @@ void main() {
     float denom = rayDir.y;
     float safeDenom = abs(denom) < 1e-9 ? 1e-9 : denom;
     float t = clamp(-vNearPoint.y / safeDenom, -1e6, 1e6);
-    bool hitsGround = abs(denom) >= 1e-9 && t > 0.0 && t < 1.0;
-
     vec3 worldPos = vNearPoint + t * rayDir;
 
     // ---- how much world space does one pixel cover here? ------------------
@@ -126,10 +124,26 @@ void main() {
     float axisYDenom = max(dot(rayDir.xz, rayDir.xz), 1e-9);
     float axisYT = clamp(-dot(vNearPoint.xz, rayDir.xz) / axisYDenom, -1e6, 1e6);
     vec3 axisYClosestPoint = vNearPoint + axisYT * rayDir;
-    float axisYDist = length(axisYClosestPoint.xz);
-    vec2 axisYDistPerPixel = vec2(dFdx(axisYDist), dFdy(axisYDist));
+
+    // Measure the offset from the line as a SIGNED value, not as length(). This matters more
+    // than it looks. length() is a V shape with a kink exactly at the line, so its screen-space
+    // derivative collapses toward zero for any 2x2 quad that straddles the line evenly - and
+    // axisYWorldPerPixel below, which is that derivative, then drives halfWidth to zero and the
+    // coverage with it. The line therefore appeared or vanished according to the sub-pixel phase
+    // between it and the derivative quad, which is why it used to come and go along its own
+    // length and show up in some camera angles but not others.
+    //
+    // The vector from the Y axis to the ray's closest approach is by construction perpendicular
+    // to the ray's own XZ direction, so projecting it onto that perpendicular recovers the same
+    // distance WITH a sign that flips cleanly as the ray crosses the line. That is a smooth
+    // function through zero, so its derivative is well behaved - exactly the property the X and Z
+    // axes already get for free by measuring a signed world coordinate rather than a distance.
+    vec2 axisYPerp = vec2(-rayDir.z, rayDir.x);
+    float axisYPerpLength = max(length(axisYPerp), 1e-9);
+    float axisYSigned = dot(axisYClosestPoint.xz, axisYPerp) / axisYPerpLength;
+    vec2 axisYDistPerPixel = vec2(dFdx(axisYSigned), dFdy(axisYSigned));
     float axisYWorldPerPixel = max(length(axisYDistPerPixel), 1e-9);
-    float axisY = AxisCoverage(axisYDist, axisYWorldPerPixel, uAxisWidthPixels) * (axisYT > 0.0 ? 1.0 : 0.0);
+    float axisY = AxisCoverage(axisYSigned, axisYWorldPerPixel, uAxisWidthPixels) * (axisYT > 0.0 ? 1.0 : 0.0);
 
     // ---- pick the decade of spacing, and how far through it we are --------
     // The upper clamp keeps pow(10, floor(lod)) finite for the stretched

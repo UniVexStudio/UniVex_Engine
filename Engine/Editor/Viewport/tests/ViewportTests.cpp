@@ -358,33 +358,30 @@ int main() {
             Check(!mesh.lines.empty() && !mesh.triangles.empty(), label);
         }
 
-        // Rotate rings are whole circles whose far half is faded rather than cut away: a hard
-        // arc end reads as a rendering fault, while a continuous ring reads as a circle seen in
-        // 3D. What must hold is that the near half stays clearly dominant, so the three rings
-        // never overlap into an unreadable ball.
+        // Only the camera-facing half of each rotate ring is built. Three full circles through
+        // one small area overlap into a mesh of arcs where no ring can be told from another,
+        // which is why every established editor (ImGuizmo, Maya, Unreal) shows half rings. The
+        // cut is free visually because it falls where the ring is edge-on to the eye.
         const auto rotate = BuildGizmoMesh(GizmoMode::Rotate, style, view, kUnitsPerPixel);
         int nearSide = 0;
         int farSide = 0;
-        float nearAlphaTotal = 0.f;
-        float farAlphaTotal = 0.f;
+        float weakestNearAlpha = 1.f;
         for (const auto& tri : rotate.triangles) {
-            // Skip the free ring (screen-facing, drawn whole) and the centre cube.
+            // Only the three axis rings; skip the screen-facing free ring and the centre cube.
             const float radius = univex::math::Length(tri.a);
             if (radius < style.ringRadius * 0.8f || radius > style.ringRadius * 1.1f) continue;
-            if (univex::math::Dot(univex::math::Normalize(tri.a), view) > 0.2f) {
+            const float facing = univex::math::Dot(univex::math::Normalize(tri.a), view);
+            if (facing > 0.2f) {
                 ++farSide;
-                farAlphaTotal += tri.alpha;
-            } else if (univex::math::Dot(univex::math::Normalize(tri.a), view) < -0.2f) {
+            } else if (facing < -0.2f) {
                 ++nearSide;
-                nearAlphaTotal += tri.alpha;
+                weakestNearAlpha = std::min(weakestNearAlpha, tri.alpha);
             }
         }
-        Check(nearSide > 0 && farSide > 0, "rotate rings are continuous circles, not cut-off arcs");
-        const float nearAverage = nearAlphaTotal / static_cast<float>(nearSide);
-        const float farAverage = farAlphaTotal / static_cast<float>(farSide);
-        Check(nearAverage > farAverage * 2.f,
-              "the near half of a rotate ring is clearly stronger than the far half");
-        Check(farAverage > 0.f, "the far half stays visible rather than vanishing");
+        Check(nearSide > 0, "the camera-facing half of each rotate ring is built");
+        Check(farSide == 0, "the half curving away from the camera is not built at all");
+        Check(weakestNearAlpha > 0.99f,
+              "the near half is fully opaque, not a faded ghost of a whole ring");
     }
 
     std::puts("\n== Universal gizmo layout: the three tools stay separated ==");
@@ -596,14 +593,58 @@ int main() {
         Check(miss.handle == GizmoHandleUVE::None,
               "a ray well outside the widget hits nothing");
 
-        // --- Rotate: each ring, aimed at a point on the drawn circle -------------------------
-        Check(pickAtLocal(GizmoMode::Rotate, Vec3{0.f, style.ringRadius, 0.f}).handle ==
-                  GizmoHandleUVE::AxisX, "rotate: a point on the X ring picks the X ring");
-        Check(pickAtLocal(GizmoMode::Rotate, Vec3{style.ringRadius, 0.f, 0.f}).handle ==
-                  GizmoHandleUVE::AxisY, "rotate: a point on the Y ring picks the Y ring");
-        Check(pickAtLocal(GizmoMode::Rotate, Vec3{0.f, 0.f, style.ringRadius}).handle ==
+        // --- Rotate: each ring, aimed at a point that lies on THAT RING ONLY -----------------
+        // Every axis-aligned point on a rotation ring is shared by two of them - (0, r, 0) is on
+        // the X ring and the Z ring alike, since both contain the Y direction - so aiming at one
+        // proves nothing about which ring answered. These points sit at 45 degrees between two
+        // axes, which belongs to exactly one ring each, and so actually pin the mapping.
+        const float diagonal = style.ringRadius * 0.70710678f;
+        Check(pickAtLocal(GizmoMode::Rotate, Vec3{0.f, diagonal, diagonal}).handle ==
                   GizmoHandleUVE::AxisX,
-              "rotate: a point shared by the X and Z rings picks one of them, not nothing");
+              "rotate: the ring in the YZ plane - the only one there - is the X ring");
+        Check(pickAtLocal(GizmoMode::Rotate, Vec3{diagonal, 0.f, diagonal}).handle ==
+                  GizmoHandleUVE::AxisY,
+              "rotate: the ring in the ZX plane is the Y ring");
+        Check(pickAtLocal(GizmoMode::Rotate, Vec3{diagonal, diagonal, 0.f}).handle ==
+                  GizmoHandleUVE::AxisZ,
+              "rotate: the ring in the XY plane is the Z ring");
+
+        // The same three points, checked against the DRAWN geometry rather than the picker, so a
+        // ring that is drawn in one plane but picked as another cannot pass both halves.
+        {
+            const auto rotateMesh = BuildGizmoMesh(GizmoMode::Rotate, style, view, kUnitsPerPixel);
+            const std::array<std::pair<Vec3, const char*>, 3> ringProbes = {{
+                {style.axisColorX, "the ring in the YZ plane is drawn red (X)"},
+                {style.axisColorY, "the ring in the ZX plane is drawn green (Y)"},
+                {style.axisColorZ, "the ring in the XY plane is drawn blue (Z)"},
+            }};
+            const std::array<Vec3, 3> ringPoints = {{
+                Vec3{0.f, diagonal, diagonal},
+                Vec3{diagonal, 0.f, diagonal},
+                Vec3{diagonal, diagonal, 0.f},
+            }};
+            for (std::size_t i = 0; i < ringPoints.size(); ++i) {
+                // Find the ring triangle nearest this point and read the colour it was authored
+                // with. The nearest ring geometry to a point on one ring is that ring.
+                float bestDistance = 1e30f;
+                Vec3 bestColor{};
+                for (const auto& tri : rotateMesh.triangles) {
+                    const float radius = univex::math::Length(tri.a);
+                    if (radius < style.ringRadius * 0.9f || radius > style.ringRadius * 1.1f) continue;
+                    const float distance = univex::math::Length(tri.a - ringPoints[i]);
+                    if (distance < bestDistance) {
+                        bestDistance = distance;
+                        bestColor = tri.color;
+                    }
+                }
+                const Vec3 expected = ringProbes[i].first;
+                Check(bestDistance < 1e30f &&
+                          std::fabs(bestColor.x - expected.x) < 1e-4f &&
+                          std::fabs(bestColor.y - expected.y) < 1e-4f &&
+                          std::fabs(bestColor.z - expected.z) < 1e-4f,
+                      ringProbes[i].second);
+            }
+        }
 
         // --- Scale: the shafts and their end cubes -------------------------------------------
         const float scaleMid = (style.scaleShaftStart + style.scaleShaftEnd) * 0.5f;
@@ -717,6 +758,71 @@ int main() {
             CheckNear(ShortestAngleDeltaUVE(-kPi + 0.1f, kPi - 0.1f), -0.2f, 1e-5f,
                       "   ... and the same in reverse");
         }
+    }
+
+    std::puts("\n== Nav gizmo labels: legible vector glyphs, upright in screen space ==");
+    {
+        using univex::gizmo::BuildNavGizmoMeshes;
+        using univex::gizmo::GizmoStyle;
+
+        const GizmoStyle style;
+        const Vec3 view = univex::math::Normalize(Vec3{-0.65f, -0.44f, 0.62f});
+        const auto meshes = BuildNavGizmoMeshes(style, view);
+
+        // The screen basis the labels are placed on - the same one BuildNavGizmoMeshes derives,
+        // and the same one the nav viewport's own camera uses, so a glyph laid out on it is
+        // axis-aligned on screen.
+        const Vec3 forward = view;
+        const Vec3 right = univex::math::Normalize(
+            univex::math::Cross(forward, Vec3{0.f, 1.f, 0.f}));
+        const Vec3 up = univex::math::Normalize(univex::math::Cross(right, forward));
+
+        // Collect the strokes sitting near the +Y ball: those are its 'Y' glyph.
+        const Vec3 ballCentre{0.f, 1.f, 0.f};
+        const float halfSize = style.navBallRadius * style.navLabelScale;
+        int glyphStrokes = 0;
+        float widestSpan = 0.f;
+        float tallestSpan = 0.f;
+        bool everyStrokeInPlane = true;
+        for (const auto& line : meshes.overlay.lines) {
+            if (univex::math::Length(line.a - ballCentre) > style.navBallRadius ||
+                univex::math::Length(line.b - ballCentre) > style.navBallRadius) {
+                continue; // an axis stub or another ball's glyph
+            }
+            ++glyphStrokes;
+            for (const Vec3& end : {line.a, line.b}) {
+                const Vec3 offset = end - ballCentre;
+                // A glyph laid out on (right, up) has no component along the view direction
+                // beyond the small lift that keeps it in front of the ball.
+                if (std::fabs(univex::math::Dot(offset, forward)) > halfSize * 0.5f) {
+                    everyStrokeInPlane = false;
+                }
+                widestSpan = std::max(widestSpan, std::fabs(univex::math::Dot(offset, right)));
+                tallestSpan = std::max(tallestSpan, std::fabs(univex::math::Dot(offset, up)));
+            }
+        }
+
+        Check(glyphStrokes == 3, "the Y glyph is exactly three strokes - two arms and a stem");
+        Check(everyStrokeInPlane, "every stroke lies in the screen plane, so the letter is upright");
+        CheckNear(tallestSpan, halfSize, 1e-4f, "the glyph fills its nominal height exactly");
+        Check(widestSpan < tallestSpan,
+              "the glyph is taller than it is wide, as a letterform should be");
+
+        // The stroke has to keep a solid core at the size it is actually drawn. gizmo_line.frag
+        // fades coverage over one pixel either side of the nominal width, so a stroke thinner
+        // than about 1.5 px has no fully-covered centre left and breaks into fragments - which is
+        // exactly how these glyphs used to render.
+        const float pixelsPerUnit = (style.navPixelSize * 0.5f) /
+                                    univex::gizmo::NavViewHalfExtent(style);
+        const float glyphHeightPx = 2.f * halfSize * pixelsPerUnit;
+        std::printf("       nav %.0f px -> glyph %.1f px tall, stroke %.1f px (%.0f%%)\n",
+                    static_cast<double>(style.navPixelSize), static_cast<double>(glyphHeightPx),
+                    static_cast<double>(style.navLabelWidthPx),
+                    static_cast<double>(style.navLabelWidthPx / glyphHeightPx * 100.f));
+        Check(style.navLabelWidthPx >= 1.5f, "the label stroke keeps a solid core at its drawn width");
+        Check(glyphHeightPx >= 14.f, "the glyph is tall enough to read");
+        Check(style.navLabelWidthPx / glyphHeightPx < 0.18f,
+              "the stroke stays a sane fraction of the glyph, not a blot");
     }
 
     std::printf("\n%s (%d failing check%s)\n",
