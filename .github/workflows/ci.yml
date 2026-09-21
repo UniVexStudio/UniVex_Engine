@@ -52,10 +52,16 @@ jobs:
         run: cmake --build build --parallel "$(nproc)"
 
       - name: Test
-        # Serial on purpose. Several fixtures derive scratch paths from fixed names or
-        # from a process-local counter, so under `ctest -j` one test case deletes
-        # another's files mid-run and the suite fails at random. Drop the -j only once
-        # those fixtures use per-process unique directories.
+        # Still serial, but no longer because of scratch paths - those are fixed, and every test
+        # process now gets its own working directory from Test/Support/test_scratch_uve.h.
+        #
+        # What blocks `-j` now is a separate, older defect: roughly 1 run in 30, a Renderer3D or
+        # ViewportManager case aborts with "terminate called without an active exception" (a
+        # joinable std::thread destroyed). It reproduces at the same rate on a build of master
+        # with none of the scratch-path changes, so it is not a regression from them - it was
+        # simply hidden while the suite could not run in parallel at all. Root cause is not yet
+        # identified. Add -j"$(nproc)" once it is fixed; the suite itself is ready (10 consecutive
+        # clean parallel runs locally, ~9s versus ~27s serial).
         run: xvfb-run -a ctest --test-dir build --output-on-failure
 
       - name: Verify the Vulkan device tests actually ran

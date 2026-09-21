@@ -9,6 +9,8 @@
 
 #include <gtest/gtest.h>
 
+#include "Support/test_scratch_uve.h"
+
 #include "uve/asset/asset_database_uve.h"
 #include "uve/asset/asset_guid_uve.h"
 #include "uve/asset/asset_importer_uve.h"
@@ -28,14 +30,14 @@ class TemporaryImporterFilesUVE final {
 public:
     TemporaryImporterFilesUVE() {
         m_paths = {
-            std::filesystem::temp_directory_path() / "uve_data_table_importer.csv",
-            std::filesystem::temp_directory_path() / "uve_data_table_importer.tsv",
-            std::filesystem::temp_directory_path() / "uve_data_table_importer.json",
-            std::filesystem::temp_directory_path() / "uve_data_table_importer_csv.uvetable",
-            std::filesystem::temp_directory_path() / "uve_data_table_importer_tsv.uvetable",
-            std::filesystem::temp_directory_path() / "uve_data_table_importer_json.uvetable",
-            std::filesystem::temp_directory_path() / "uve_data_table_importer_bad.uvetable",
-            std::filesystem::temp_directory_path() / "uve_data_table_importer_wrong.txt",
+            ::UVE::Tests::ScratchRootUVE() / "uve_data_table_importer.csv",
+            ::UVE::Tests::ScratchRootUVE() / "uve_data_table_importer.tsv",
+            ::UVE::Tests::ScratchRootUVE() / "uve_data_table_importer.json",
+            ::UVE::Tests::ScratchRootUVE() / "uve_data_table_importer_csv.uvetable",
+            ::UVE::Tests::ScratchRootUVE() / "uve_data_table_importer_tsv.uvetable",
+            ::UVE::Tests::ScratchRootUVE() / "uve_data_table_importer_json.uvetable",
+            ::UVE::Tests::ScratchRootUVE() / "uve_data_table_importer_bad.uvetable",
+            ::UVE::Tests::ScratchRootUVE() / "uve_data_table_importer_wrong.txt",
         };
         for (const std::filesystem::path& path : m_paths) {
             static_cast<void>(std::filesystem::remove(path));

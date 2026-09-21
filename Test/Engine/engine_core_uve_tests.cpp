@@ -23,6 +23,8 @@
 #include <GL/gl.h>
 #include <gtest/gtest.h>
 
+#include "Support/test_scratch_uve.h"
+
 #include "uve/asset/asset_handle_uve.h"
 #include "uve/asset/asset_importer_uve.h"
 #include "uve/asset/asset_manager_uve.h"
@@ -563,7 +565,7 @@ TEST(EngineCoreUVETest, AssetManagerImporterHotReloadBundle_ReachableAndRoundTri
 
 TEST(EngineCoreUVETest, TypedUVEEnvelopeImporters_ComposedAndReachableAfterInit) {
     EngineConfigUVE config = MakeTestConfigUVE();
-    const std::filesystem::path root = std::filesystem::temp_directory_path();
+    const std::filesystem::path root = ::UVE::Tests::ScratchRootUVE();
     config.assetDatabaseFilePath = root / "uve_engine_core_typed_envelope_tests.uveassetdb";
 
     constexpr std::array<std::string_view, 4> kTypedEnvelopeExtensions = {
@@ -610,7 +612,7 @@ TEST(EngineCoreUVETest, TypedUVEEnvelopeImporters_ComposedAndReachableAfterInit)
 
 TEST(EngineCoreUVETest, AudioAssetLoader_RegisteredAndReachableThroughBuiltInPipeline) {
     EngineConfigUVE config = MakeTestConfigUVE();
-    const std::filesystem::path root = std::filesystem::temp_directory_path();
+    const std::filesystem::path root = ::UVE::Tests::ScratchRootUVE();
     config.assetDatabaseFilePath = root / "uve_engine_core_audio_asset_tests.uveassetdb";
     const std::filesystem::path sourcePath = root / "uve_engine_core_audio_asset_tests.wav";
     const std::filesystem::path destinationPath = root / "uve_engine_core_audio_asset_tests.uveaudio";
@@ -671,7 +673,7 @@ TEST(EngineCoreUVETest, AudioAssetLoader_RegisteredAndReachableThroughBuiltInPip
 }
 TEST(EngineCoreUVETest, AnimationAssetLoader_RegisteredAndReachableThroughBuiltInPipeline) {
     EngineConfigUVE config = MakeTestConfigUVE();
-    const std::filesystem::path root = std::filesystem::temp_directory_path();
+    const std::filesystem::path root = ::UVE::Tests::ScratchRootUVE();
     config.assetDatabaseFilePath = root / "uve_engine_core_animation_asset_tests.uveassetdb";
     const std::filesystem::path sourcePath = root / "uve_engine_core_animation_asset_tests_source.uveanim";
     const std::filesystem::path destinationPath = root / "uve_engine_core_animation_asset_tests_dest.uveanim";
@@ -728,7 +730,7 @@ TEST(EngineCoreUVETest, AnimationAssetLoader_RegisteredAndReachableThroughBuiltI
 }
 TEST(EngineCoreUVETest, DataTablePipeline_RegisteredAndReachableThroughServicesAfterInit) {
     EngineConfigUVE config = MakeTestConfigUVE();
-    const std::filesystem::path root = std::filesystem::temp_directory_path();
+    const std::filesystem::path root = ::UVE::Tests::ScratchRootUVE();
     config.assetDatabaseFilePath = root / "uve_engine_core_data_table_tests.uveassetdb";
     const std::filesystem::path sourcePath = root / "uve_engine_core_data_table_tests.csv";
     const std::filesystem::path destinationPath = root / "uve_engine_core_data_table_tests.uvetable";

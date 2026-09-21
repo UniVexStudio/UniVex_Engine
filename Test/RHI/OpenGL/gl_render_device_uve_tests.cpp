@@ -23,6 +23,8 @@
 #include <GL/gl.h>
 #include <gtest/gtest.h>
 
+#include "Support/test_scratch_uve.h"
+
 #include <chrono>
 #include <limits>
 
@@ -1617,7 +1619,7 @@ TEST_F(GlRenderDeviceUVETest, ShaderManager_Basic3DProgramRendersIndexedGeometry
     Asset::AssetBundleUVE assetBundle;
     Asset::FileSystemUVE fileSystem{assetBundle};
     const Asset::MountHandleUVE shaderMount =
-        fileSystem.MountDirectoryUVE("shaders", "Engine/Runtime/RHI/Shader/built_in", 0);
+        fileSystem.MountDirectoryUVE("shaders", ::UVE::Tests::RepositoryRootUVE() / "Engine/Runtime/RHI/Shader/built_in", 0);
     ASSERT_NE(shaderMount, 0U);
     Shader::ShaderManagerUVE shaderManager(threadPool, eventSystem, *renderDevice, fileSystem,
                                             Shader::ShaderManagerConfigUVE{});

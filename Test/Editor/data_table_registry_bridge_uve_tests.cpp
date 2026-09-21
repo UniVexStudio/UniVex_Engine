@@ -6,6 +6,8 @@
 
 #include <gtest/gtest.h>
 
+#include "Support/test_scratch_uve.h"
+
 #include "uve/asset/data_table_registry_uve.h"
 #include "uve/core/engine_core_uve.h"
 #include "uve/editor/editor_bridge_uve.h"
@@ -21,7 +23,7 @@ namespace {
     config.assetDatabaseFilePath = "uve_data_table_registry_bridge_tests_assets.json";
     config.saveDirectoryPath = "uve_data_table_registry_bridge_tests_saves";
     config.shaderCachePath = "uve_data_table_registry_bridge_tests_shader_cache";
-    config.shaderSourceRealDirectoryUVE = "Engine/Runtime/RHI/Shader/built_in";
+    config.shaderSourceRealDirectoryUVE = ::UVE::Tests::RepositoryRootUVE() / "Engine/Runtime/RHI/Shader/built_in";
     config.shaderSourceMountPrefixUVE = "shaders";
     return config;
 }

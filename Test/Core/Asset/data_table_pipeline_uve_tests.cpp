@@ -9,6 +9,8 @@
 
 #include <gtest/gtest.h>
 
+#include "Support/test_scratch_uve.h"
+
 #include "uve/asset/asset_database_uve.h"
 #include "uve/asset/asset_importer_uve.h"
 #include "uve/asset/asset_handle_uve.h"
@@ -34,9 +36,9 @@ namespace {
 }
 
 TEST(DataTablePipelineUVE, BootstrapComposesImportAndTypedLoadServices) {
-    const std::filesystem::path source = std::filesystem::temp_directory_path() / "uve_data_table_pipeline.csv";
+    const std::filesystem::path source = ::UVE::Tests::ScratchRootUVE() / "uve_data_table_pipeline.csv";
     const std::filesystem::path destination =
-        std::filesystem::temp_directory_path() / "uve_data_table_pipeline.uvetable";
+        ::UVE::Tests::ScratchRootUVE() / "uve_data_table_pipeline.uvetable";
     static_cast<void>(std::filesystem::remove(source));
     static_cast<void>(std::filesystem::remove(destination));
     struct CleanupUVE final {
