@@ -113,4 +113,7 @@ constexpr Vector3UVE& operator*=(Vector3UVE& v, float scalar) noexcept {
 /// Formats `vector` as `"(x, y, z)"`, for logging/debugging.
 [[nodiscard]] std::string ToStringUVE(const Vector3UVE& vector);
 
+/// Returns whether every vector component is finite.
+[[nodiscard]] bool IsFiniteUVE(const Vector3UVE& value) noexcept;
+
 } // namespace UVE::Math

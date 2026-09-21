@@ -34,7 +34,7 @@ Whole-tree automated analysis followed by manual reading of every candidate it s
 | Test suite (parallel) | 🟢 | Scratch-path collisions fixed; 10/10 clean `-j` runs |
 | Parallel job-state lifetime | 🟢 | Fixed — see section 2b; CI now runs parallel |
 | Continuous integration | 🟢 | Green on this commit, including 39/39 real Vulkan device cases |
-| Code duplication | 🟡 | One helper duplicated 17×; a serialization helper set duplicated 3–5× with divergent safety |
+| Code duplication | 🟢 | `IsFiniteVectorUVE` (22× — see section 3) and the binary serialization helpers (6× — see section 4) both consolidated; `SelectKernelSourceUVE` (section 5) remains open, deliberate and low-risk |
 | Dead code | 🟠 | One unused header; no orphan sources |
 | Stub / TODO debt | 🟢 | **Zero** TODO/FIXME/HACK/XXX markers outside vendored code |
 | Static analysis | 🔵 | 9 raised; 8 verified false positives, 1 partially valid |
@@ -197,10 +197,10 @@ CI now runs `ctest … -j"$(nproc)"`.
 
 ---
 
-## 3. 🟡 Duplication — `IsFiniteVectorUVE` reimplemented 17 times
+## 3. 🟢 RESOLVED — `IsFiniteVectorUVE` reimplemented 17 times
 
-**Status:** 🟡 WARNING
-**Affected:** 17 translation units across 8 modules
+**Status:** 🟢 RESOLVED — fixed in PR #89 (`fix/code-cleanup`)
+**Affected:** 22 translation units across 9 modules (corrected from 17 across 8 — see below)
 
 The same finite-check on `Math::Vector3UVE` is defined independently in 17 files. Two textual variants exist, differing only in parameter name:
 
@@ -221,13 +221,26 @@ Fragmentation extends beyond this function: `plane_uve.h:12` defines `IsFiniteSc
 
 Member functions named `IsFiniteVectorUVE` in `editor_uve.cpp` and `mobile_gesture_recognizer_uve.cpp` operate on different types with different semantics and are **not** part of this finding.
 
-**Recommended next action:** export `IsFiniteUVE(const Vector3UVE&)` from `Engine/Runtime/Core/Math/Expose/uve/math/vector3_uve.h` and replace the 17 local definitions. No behavioural change is expected — all 17 are semantically identical.
+### Resolution
+
+Re-verification during the fix (not just a text search for `IsFiniteVectorUVE`) found the true count was **22, not 17**:
+
+- 19 sites matched this section's original inventory.
+- `Core/Math/Internal/quaternion_uve.cpp` had its own private copy — the module meant to *own* the canonical version was itself a duplicate, used at 13 call sites in that file.
+- `Core/Math/Internal/aabb_uve.cpp` had three further local lambda copies, not caught by the original grep.
+- `script_vector3_value_uve.cpp` and `Test/RHI/RenderSystems/primitive_geometry_uve_tests.cpp` each had a copy already independently renamed to `IsFiniteUVE`, invisible to any search for the string `IsFiniteVectorUVE`. Both surfaced only as ambiguous-overload compile errors once the canonical `Math::IsFiniteUVE` was introduced.
+
+`Math::IsFiniteUVE(const Vector3UVE&)` is now declared in `Engine/Runtime/Core/Math/Expose/uve/math/vector3_uve.h` and defined in `vector3_uve.cpp`, mirroring the existing `QuaternionUVE::IsFiniteUVE` pattern exactly. All 22 duplicate definitions are deleted; call sites are qualified as `Math::IsFiniteUVE(...)` (unqualified inside `Core/Math` itself). The two Scripting-layer sites, whose local copies operated on a `ScriptVector3ValueUVE` wrapper rather than a bare `Vector3UVE`, now unwrap `.value` at the call site instead of a plain rename.
+
+**Deliberately excluded, confirmed different in kind:** `EditorUVE::IsFiniteVectorUVE` (member function composing the class's own `IsFiniteUVE(float)`) and `MobileGestureRecognizerUVE::IsFiniteVectorUVE` (static member, operates on `Vector2UVE`, a different type). Both remain untouched.
+
+**Verified:** full clean build (0 errors, 0 warnings) across every touched target plus a full top-level build; `ctest -j1` 2519/2519 passed, unchanged. See `7a884c8` on `fix/code-cleanup` (PR #89).
 
 ---
 
-## 4. 🟡 Duplication — binary serialization helpers with divergent overflow guards
+## 4. 🟢 RESOLVED — binary serialization helpers with divergent overflow guards
 
-**Status:** 🟡 WARNING — latent, not currently exploitable
+**Status:** 🟢 RESOLVED — fixed in PR #89 (`fix/code-cleanup`)
 **Affected:** `Engine/Runtime/Asset/Internal/{asset_bundle,mesh_asset,texture_asset,audio_asset}_uve.cpp`, `Engine/Runtime/Save/Internal/{save_game_system,save_payload_compression}_uve.cpp`
 
 A set of byte-buffer helpers is copy-pasted across the Asset and Save modules:
@@ -250,7 +263,15 @@ if (offset > buffer.size() || buffer.size() - offset < 2U) return false;   // ov
 
 The first form computes `offset + sizeof(outValue)` before comparing, which wraps if `offset` is near `SIZE_MAX`. In practice `offset` is always produced by walking the buffer from zero, so the wrap is **not reachable today** — this is classified 🟡, not 🔴. It is recorded because it demonstrates the concrete cost of the duplication: the same operation now has two guards in the codebase and only one is correct for all inputs.
 
-**Recommended next action:** consolidate into one internal header shared by both modules, standardising on the `audio_asset` overflow-safe form.
+### Resolution
+
+Re-verification during the fix found **6 unsafe/duplicated sites, not the 3–5 implied above** — `mesh_asset_uve.cpp` had two further copies (`ReadUint32FromBufferUVE`, `ReadFloatFromBufferUVE`) using the same overflow-prone `offset + sizeof(outValue) > buffer.size()` guard, undocumented in the original inventory.
+
+A new shared module, `Engine/Runtime/Core/Utilities` (`uve/utilities/binary_buffer_uve.h` / `.cpp`, namespace `UVE::Utilities`), now provides `AppendBytesUVE`, `AppendUint32UVE`, `AppendUint64UVE`, `AppendFloatUVE`, `ReadUint32FromBufferUVE`, `ReadUint64FromBufferUVE`, `ReadFloatFromBufferUVE`, and `ReadBytesFromBufferUVE`. Every reader uses the overflow-safe two-part guard (`offset > buffer.size() || buffer.size() - offset < sizeof(outValue)`) that this section originally identified as the correct form. `texture_asset_uve.cpp`, `asset_bundle_uve.cpp`, `mesh_asset_uve.cpp`, and `save_game_system_uve.cpp` were repointed to it; their local copies are deleted. This fixes all 4 sites using the overflow-prone guard (2 in `mesh_asset_uve.cpp`, 2 in `save_game_system_uve.cpp`) — unreachable on well-formed input as this section notes, but real on adversarial input.
+
+**Deliberately excluded, confirmed different in kind:** `audio_asset_uve.cpp` uses a structurally different, portable little-endian byte-shift encoding (not just a different guard — a different algorithm, and already the *more* correct one of the two). `save_payload_compression_uve.cpp`'s `ReadUint64UVE` takes `offset` by value and does not advance it, an incompatible signature versus every other file's auto-advancing `offset&` shape. Both are left untouched; forcing either into the shared shape would be a behavior/API change, not deduplication.
+
+**Verified:** full clean build (0 errors, 0 warnings) across every touched target plus a full top-level build; `ctest -j1` 2519/2519 passed, unchanged; `ctest -j$(nproc)` 2519/2519 passed (confirms the section 2/2b parallel-safety fixes still hold); targeted mesh-asset and save-game tests re-run by name (53/53). See `ae2e33a` on `fix/code-cleanup` (PR #89).
 
 ---
 
@@ -390,8 +411,8 @@ A correction to the previous revision of this document, which reported 350 skips
 | 1 | ~~Give test fixtures per-process unique scratch paths~~ — **done**, see section 2 | 🟢 | 2 | — |
 | 2 | ~~Find the cause of the parallel abort, then enable `-j` in CI~~ — **done**, see section 2b | 🟢 | 2b | — |
 | 3 | Keep watching for the `CollisionLifecycle` SEGFAULT under `-j` | 🟣 | 2 | Medium |
-| 4 | Export `IsFiniteUVE(const Vector3UVE&)`; remove 17 local copies | 🟡 | 3 | Medium |
-| 5 | Consolidate binary helpers on the overflow-safe guard | 🟡 | 4 | Medium |
+| 4 | ~~Export `IsFiniteUVE(const Vector3UVE&)`; remove local copies~~ — **done** (22 sites, not 17), see section 3 | 🟢 | 3 | — |
+| 5 | ~~Consolidate binary helpers on the overflow-safe guard~~ — **done** (6 sites, not 3–5), see section 4 | 🟢 | 4 | — |
 | 6 | Resolve the unused `ComponentUVE` concept | 🟠 | 6 | Low |
 | 7 | Bump `actions/checkout` | 🔵 | 11 | Low |
 | 8 | Qualify the JPEG `state` pointer as `volatile` | 🟡 | 7 | Low |

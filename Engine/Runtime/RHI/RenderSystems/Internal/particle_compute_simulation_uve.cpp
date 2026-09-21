@@ -11,15 +11,12 @@
 #include <utility>
 
 #include "uve/logging/logging_macros_uve.h"
+#include "uve/math/vector3_uve.h"
 #include "uve/rhi_shader/built_in_compute_spirv_uve.h"
 #include "uve/rhi_shader/built_in_shaders_uve.h"
 
 namespace UVE::Render {
 namespace {
-
-[[nodiscard]] bool IsFiniteVectorUVE(const Math::Vector3UVE& vector) noexcept {
-    return std::isfinite(vector.x) && std::isfinite(vector.y) && std::isfinite(vector.z);
-}
 
 /// The same input bounds Scene::ParticleRuntimeUVE::SimulateDetailedUVE() enforces. Duplicated
 /// rather than delegated because the runtime's validation is welded to its own state mutation;
@@ -28,7 +25,7 @@ namespace {
                                                const Math::Vector3UVE& acceleration) noexcept {
     return std::isfinite(deltaSeconds) && deltaSeconds >= 0.0F &&
            deltaSeconds <= Scene::ParticleRuntimeUVE::kMaximumSimulationDeltaSecondsUVE &&
-           IsFiniteVectorUVE(acceleration);
+           Math::IsFiniteUVE(acceleration);
 }
 
 

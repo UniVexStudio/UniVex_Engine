@@ -16,10 +16,6 @@ namespace {
     return Math::LengthSquaredUVE(Math::CrossUVE(second.position - first.position, third.position - first.position));
 }
 
-[[nodiscard]] bool IsFiniteUVE(const Math::Vector3UVE& vector) noexcept {
-    return std::isfinite(vector.x) && std::isfinite(vector.y) && std::isfinite(vector.z);
-}
-
 } // namespace
 
 TEST(PrimitiveGeometryUVETest, CubeAndPlane_HaveDeterministicTopologyBoundsAndOutwardFaces) {
@@ -76,8 +72,8 @@ TEST(PrimitiveGeometryUVETest, UVSphere_HasStableSeamPolesUnitNormalsAndNonDegen
     }
 
     for (const Asset::MeshVertexUVE& vertex : sphere.vertices) {
-        EXPECT_TRUE(IsFiniteUVE(vertex.position));
-        EXPECT_TRUE(IsFiniteUVE(vertex.normal));
+        EXPECT_TRUE(Math::IsFiniteUVE(vertex.position));
+        EXPECT_TRUE(Math::IsFiniteUVE(vertex.normal));
         EXPECT_TRUE(std::isfinite(vertex.u));
         EXPECT_TRUE(std::isfinite(vertex.v));
         EXPECT_NEAR(Math::LengthSquaredUVE(vertex.normal), 1.0F, 0.00001F);

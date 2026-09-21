@@ -29,12 +29,8 @@ namespace {
 
 constexpr float kDegenerateTriangleEpsilonSquaredUVE = 0.00000001F;
 
-[[nodiscard]] bool IsFiniteVectorUVE(const Math::Vector3UVE& value) noexcept {
-    return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
-}
-
 [[nodiscard]] bool IsFiniteBoundsUVE(const Math::AabbUVE& bounds) noexcept {
-    return IsFiniteVectorUVE(bounds.min) && IsFiniteVectorUVE(bounds.max) &&
+    return Math::IsFiniteUVE(bounds.min) && Math::IsFiniteUVE(bounds.max) &&
            bounds.min.x <= bounds.max.x && bounds.min.y <= bounds.max.y && bounds.min.z <= bounds.max.z;
 }
 
@@ -143,7 +139,7 @@ void UpdateBoundsUVE(const Math::Vector3UVE& position, bool& hasBounds, Math::Aa
                                                      const Math::Vector3UVE& third) noexcept {
     const Math::Vector3UVE firstEdge = second - first;
     const Math::Vector3UVE secondEdge = third - first;
-    if (!IsFiniteVectorUVE(firstEdge) || !IsFiniteVectorUVE(secondEdge)) {
+    if (!Math::IsFiniteUVE(firstEdge) || !Math::IsFiniteUVE(secondEdge)) {
         return {};
     }
     const Math::Vector3UVE cross = Math::CrossUVE(firstEdge, secondEdge);
@@ -152,7 +148,7 @@ void UpdateBoundsUVE(const Math::Vector3UVE& position, bool& hasBounds, Math::Aa
         return {};
     }
     const Math::Vector3UVE normalized = Math::NormalizeUVE(cross);
-    return IsFiniteVectorUVE(normalized) ? normalized : Math::Vector3UVE{};
+    return Math::IsFiniteUVE(normalized) ? normalized : Math::Vector3UVE{};
 }
 
 } // namespace
@@ -292,8 +288,8 @@ bool ConvertObjMeshUVE(const std::string_view source, MeshAssetUVE& outMesh) {
         return false;
     }
     for (const MeshVertexUVE& vertex : candidate.vertices) {
-        if (!IsFiniteVectorUVE(vertex.position) || !IsFiniteVectorUVE(vertex.normal) ||
-            !std::isfinite(vertex.u) || !std::isfinite(vertex.v) || !IsFiniteVectorUVE(vertex.tangent) ||
+        if (!Math::IsFiniteUVE(vertex.position) || !Math::IsFiniteUVE(vertex.normal) ||
+            !std::isfinite(vertex.u) || !std::isfinite(vertex.v) || !Math::IsFiniteUVE(vertex.tangent) ||
             !std::isfinite(vertex.tangentHandedness)) {
             return false;
         }

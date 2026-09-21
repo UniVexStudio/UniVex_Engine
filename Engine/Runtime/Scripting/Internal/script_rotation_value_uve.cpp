@@ -1,5 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
+#include "uve/math/vector3_uve.h"
 #include "uve/scripting/script_rotation_value_uve.h"
 
 #include <cmath>
@@ -8,10 +9,6 @@
 
 namespace UVE::Scripting {
 namespace {
-
-[[nodiscard]] bool IsFiniteVectorUVE(const ScriptVector3ValueUVE& value) noexcept {
-    return std::isfinite(value.value.x) && std::isfinite(value.value.y) && std::isfinite(value.value.z);
-}
 
 [[nodiscard]] ScriptRotationValueResultUVE MakeRotationResultUVE(
     const Math::QuaternionUVE& value) noexcept {
@@ -26,7 +23,7 @@ namespace {
 
 ScriptRotationValueResultUVE EvaluateScriptRotationMakeUVE(
     const ScriptVector3ValueUVE& axis, const float radians) noexcept {
-    if (!IsFiniteVectorUVE(axis) || !std::isfinite(radians)) {
+    if (!Math::IsFiniteUVE(axis.value) || !std::isfinite(radians)) {
         return {ScriptRotationEvaluationCodeUVE::NonFiniteInput, {}};
     }
     Math::QuaternionUVE value{};
@@ -65,7 +62,7 @@ ScriptRotationNumberResultUVE EvaluateScriptRotationRadiansUVE(const float degre
 
 ScriptRotationValueResultUVE EvaluateScriptRotationEulerUVE(
     const ScriptVector3ValueUVE& radians) noexcept {
-    if (!IsFiniteVectorUVE(radians)) return {ScriptRotationEvaluationCodeUVE::NonFiniteInput, {}};
+    if (!Math::IsFiniteUVE(radians.value)) return {ScriptRotationEvaluationCodeUVE::NonFiniteInput, {}};
     Math::QuaternionUVE value{};
     if (!Math::TryMakeEulerUVE(radians.value, value)) {
         return {ScriptRotationEvaluationCodeUVE::DegenerateInput, {}};
@@ -83,7 +80,7 @@ ScriptRotationValueResultUVE EvaluateScriptRotationQuaternionUVE(
 
 ScriptRotationValueResultUVE EvaluateScriptRotationLookAtUVE(
     const ScriptVector3ValueUVE& direction, const ScriptVector3ValueUVE& up) noexcept {
-    if (!IsFiniteVectorUVE(direction) || !IsFiniteVectorUVE(up)) {
+    if (!Math::IsFiniteUVE(direction.value) || !Math::IsFiniteUVE(up.value)) {
         return {ScriptRotationEvaluationCodeUVE::NonFiniteInput, {}};
     }
     Math::QuaternionUVE value{};
@@ -107,7 +104,7 @@ ScriptRotationValueResultUVE EvaluateScriptRotationSlerpUVE(
 
 ScriptRotationVectorResultUVE EvaluateScriptRotationRotateUVE(
     const ScriptRotationValueUVE& rotation, const ScriptVector3ValueUVE& vector) noexcept {
-    if (!Math::IsFiniteUVE(rotation.value) || !IsFiniteVectorUVE(vector)) {
+    if (!Math::IsFiniteUVE(rotation.value) || !Math::IsFiniteUVE(vector.value)) {
         return {ScriptRotationEvaluationCodeUVE::NonFiniteInput, {}};
     }
     Math::QuaternionUVE normalized{};
