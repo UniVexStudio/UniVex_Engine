@@ -201,4 +201,66 @@ TEST_F(EntityPickerUVETest, CursorRayThroughTheCentrePixelSelectsWhatTheCameraIs
     EXPECT_FALSE(univex::integration::PickEntityAtPixelUVE(EntitiesUVE(), camera, kWidth, kHeight, 2.0F, 2.0F).hit);
 }
 
+// ProjectWorldPointToPixelUVE is BuildCursorRayUVE's inverse: what the camera is framing (its own
+// orbit target) must project to the centre pixel, the same point CursorRayThroughTheCentrePixel...
+// above picks through.
+TEST(EntityScreenProjectorUVETest, PointAtCameraTargetProjectsToViewportCentre) {
+    univex::camera::OrbitCamera camera; // default orbit target is the origin
+    camera.SetDistance(12.0F);
+
+    constexpr int kWidth = 1280;
+    constexpr int kHeight = 800;
+    float pixelX = 0.0F;
+    float pixelY = 0.0F;
+    ASSERT_TRUE(univex::integration::ProjectWorldPointToPixelUVE(
+        camera, kWidth, kHeight, Math::Vector3UVE{0.0F, 0.0F, 0.0F}, pixelX, pixelY));
+
+    EXPECT_NEAR(pixelX, static_cast<float>(kWidth) * 0.5F, 0.5F);
+    EXPECT_NEAR(pixelY, static_cast<float>(kHeight) * 0.5F, 0.5F);
+}
+
+TEST(EntityScreenProjectorUVETest, PointBehindCameraReturnsFalse) {
+    univex::camera::OrbitCamera camera; // eye sits behind the target along -forward
+    camera.SetDistance(12.0F);
+
+    // Twice the eye's own distance further back along the same axis is guaranteed behind it.
+    const Math::Vector3UVE behindCamera =
+        Math::Vector3UVE{camera.Eye().x, camera.Eye().y, camera.Eye().z} * 3.0F;
+
+    float pixelX = 0.0F;
+    float pixelY = 0.0F;
+    EXPECT_FALSE(univex::integration::ProjectWorldPointToPixelUVE(camera, 1280, 800, behindCamera,
+                                                                   pixelX, pixelY));
+}
+
+// Locks ProjectWorldPointToPixelUVE and BuildCursorRayUVE to the same coordinate convention: a
+// point projected to a pixel, then re-unprojected as a cursor ray through that same pixel, must
+// have the ray pass back through (close to) the original point.
+TEST(EntityScreenProjectorUVETest, ProjectedPixelRoundTripsThroughBuildCursorRayUVE) {
+    univex::camera::OrbitCamera camera;
+    camera.SetDistance(12.0F);
+
+    constexpr int kWidth = 1280;
+    constexpr int kHeight = 800;
+    const Math::Vector3UVE original{1.5F, 0.75F, -0.5F};
+
+    float pixelX = 0.0F;
+    float pixelY = 0.0F;
+    ASSERT_TRUE(univex::integration::ProjectWorldPointToPixelUVE(camera, kWidth, kHeight, original,
+                                                                  pixelX, pixelY));
+
+    const Math::RayUVE ray =
+        univex::integration::BuildCursorRayUVE(camera, kWidth, kHeight, pixelX, pixelY);
+    const Math::Vector3UVE toOriginal = original - ray.origin;
+    const float projectionLength = toOriginal.x * ray.direction.x + toOriginal.y * ray.direction.y +
+                                   toOriginal.z * ray.direction.z;
+    const Math::Vector3UVE closestPointOnRay =
+        ray.origin + Math::Vector3UVE{ray.direction.x * projectionLength,
+                                      ray.direction.y * projectionLength,
+                                      ray.direction.z * projectionLength};
+    const Math::Vector3UVE delta = closestPointOnRay - original;
+    const float distance = std::sqrt(delta.x * delta.x + delta.y * delta.y + delta.z * delta.z);
+    EXPECT_LT(distance, 0.01F);
+}
+
 } // namespace

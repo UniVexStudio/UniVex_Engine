@@ -155,6 +155,7 @@ public:
         const bool gizmoOwnsGesture = !navGizmoOwnsGesture && UpdateGizmoDragUVE(width, height);
         const bool pointerTaken = navGizmoOwnsGesture || gizmoOwnsGesture;
         UpdateSelectionFromMouseUVE(width, height, pointerTaken);
+        UpdateEntityContextToolbarFromMouseUVE(width, height, pointerTaken);
         UpdateCameraFromMouseUVE(height, pointerTaken);
         UpdateViewportBookmarkHotkeysUVE();
         // Advances the eased snap-to-axis animation SnapToDirection() starts (a manual orbit/pan
@@ -819,6 +820,66 @@ private:
         }
     }
 
+    // Right-click an entity -> select it and open the floating "Scripting" toolbar anchored at
+    // its projected screen position (editor_.DrawEntityContextToolbarUVE draws it; this method
+    // only decides whether to arm it). Same click-vs-drag shape as UpdateSelectionFromMouseUVE
+    // above, but for the right button, which today only drives camera pan on an actual drag
+    // (UpdateCameraFromMouseUVE's IsMouseDragging(Right) check below) - a clean right-click
+    // currently falls through that check and does nothing, which is exactly the gap this fills.
+    //
+    // A right-drag beyond the slop is left alone: UpdateCameraFromMouseUVE already panned the
+    // camera live during the drag, and an in-flight pan should not also fight whatever toolbar
+    // state already existed before the drag started.
+    void UpdateEntityContextToolbarFromMouseUVE(const int width, const int height, const bool suppressed) {
+        if (suppressed) {
+            contextToolbarPressActive_ = false;
+            return;
+        }
+
+        const ImGuiIO& io = ImGui::GetIO();
+        if (!pointerOverOverlay_ && ImGui::IsWindowHovered() &&
+            ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+            const ImVec2 imageOrigin = ImGui::GetCursorScreenPos();
+            contextToolbarPressActive_ = true;
+            contextToolbarPressX_ = io.MousePos.x - imageOrigin.x;
+            contextToolbarPressY_ = io.MousePos.y - imageOrigin.y;
+        }
+
+        if (!contextToolbarPressActive_ || !ImGui::IsMouseReleased(ImGuiMouseButton_Right)) {
+            return;
+        }
+        contextToolbarPressActive_ = false;
+
+        const ImVec2 dragDelta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Right, 0.0F);
+        if ((std::fabs(dragDelta.x) + std::fabs(dragDelta.y)) > kNavClickSlopPixelsUVE) {
+            return; // that was a pan, not a click - leave any existing toolbar state alone
+        }
+
+        const univex::integration::EntityPickResultUVE pick = univex::integration::PickEntityAtPixelUVE(
+            entityManager_, camera_, width, height, contextToolbarPressX_, contextToolbarPressY_);
+        if (!pick.hit) {
+            editor_.ClearEntityContextToolbarUVE();
+            return;
+        }
+
+        editor_.SelectEntityUVE(pick.entity);
+
+        if (!entityManager_.HasComponentUVE<UVE::Scene::WorldTransformComponentUVE>(pick.entity)) {
+            editor_.ClearEntityContextToolbarUVE();
+            return;
+        }
+        const auto& worldTransform =
+            entityManager_.GetComponentUVE<UVE::Scene::WorldTransformComponentUVE>(pick.entity);
+        float anchorPixelX = 0.0F;
+        float anchorPixelY = 0.0F;
+        if (univex::integration::ProjectWorldPointToPixelUVE(camera_, width, height, worldTransform.worldPosition,
+                                                              anchorPixelX, anchorPixelY)) {
+            editor_.SetEntityContextToolbarAnchorUVE(pick.entity, anchorPixelX, anchorPixelY);
+        } else {
+            editor_.ClearEntityContextToolbarUVE();
+        }
+    }
+
     // Mirrors app/main.cpp's own GLFW mouse-button/scroll wiring (left-drag orbits, middle/right
     // drag pans, wheel dollies) but sourced from ImGui's IO instead of GLFW callbacks, since input
     // flows through ImGui while the viewport is docked. Called from inside EditorUVE's own
@@ -1028,6 +1089,10 @@ private:
     bool selectionPressActive_ = false;
     float selectionPressX_ = 0.0F;
     float selectionPressY_ = 0.0F;
+    // Click-vs-drag state for the entity context toolbar - see UpdateEntityContextToolbarFromMouseUVE().
+    bool contextToolbarPressActive_ = false;
+    float contextToolbarPressX_ = 0.0F;
+    float contextToolbarPressY_ = 0.0F;
     // Transform-gizmo drag state - see UpdateGizmoDragUVE(). dragPivot_ and dragPressValue_ are
     // frozen at the press: the object moves during the drag, and re-reading them each frame would
     // make the gesture chase its own result.

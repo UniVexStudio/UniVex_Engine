@@ -46,6 +46,17 @@ struct EntityPickResultUVE final {
                                                   int viewportWidth, int viewportHeight,
                                                   float pixelX, float pixelY);
 
+/// The inverse of BuildCursorRayUVE: projects a world-space point through
+/// camera.ViewProjection(aspect) to a pixel in that same top-left-origin space (x right, y down).
+/// Returns false - and leaves outPixelX/outPixelY untouched - when the point is behind the camera
+/// or the projection is otherwise degenerate (w too close to zero), rather than silently returning
+/// a misleading {0, 0}. Used to anchor viewport-space UI (e.g. an entity context toolbar) to a
+/// world-space position.
+[[nodiscard]] bool ProjectWorldPointToPixelUVE(const univex::camera::OrbitCamera& camera,
+                                               int viewportWidth, int viewportHeight,
+                                               const UVE::Math::Vector3UVE& worldPoint,
+                                               float& outPixelX, float& outPixelY);
+
 /// The nearest entity `worldRay` hits, or a result with `hit == false`.
 ///
 /// Candidates are entities carrying a clean (non-dirty) WorldTransformComponentUVE and a
