@@ -4,15 +4,13 @@
 #include <cmath>
 #include <limits>
 
+#include "uve/math/vector3_uve.h"
+
 namespace UVE::Scripting {
 namespace {
 
 [[nodiscard]] bool IsFiniteUVE(const float value) noexcept {
     return std::isfinite(value);
-}
-
-[[nodiscard]] bool IsFiniteUVE(const Math::Vector3UVE& value) noexcept {
-    return IsFiniteUVE(value.x) && IsFiniteUVE(value.y) && IsFiniteUVE(value.z);
 }
 
 [[nodiscard]] ScriptVector3ValueResultUVE MakeValueResultUVE(
@@ -26,14 +24,14 @@ namespace {
 }
 
 [[nodiscard]] bool IsFiniteInputUVE(const ScriptVector3ValueUVE& value) noexcept {
-    return IsFiniteUVE(value.value);
+    return Math::IsFiniteUVE(value.value);
 }
 
 } // namespace
 
 ScriptVector3ValueResultUVE EvaluateScriptVector3MakeUVE(const float x, const float y, const float z) noexcept {
     const Math::Vector3UVE value{x, y, z};
-    return IsFiniteUVE(value)
+    return Math::IsFiniteUVE(value)
         ? MakeValueResultUVE(ScriptVector3EvaluationCodeUVE::Applied, value)
         : MakeValueResultUVE(ScriptVector3EvaluationCodeUVE::NonFiniteInput);
 }
@@ -44,7 +42,7 @@ ScriptVector3ValueResultUVE EvaluateScriptVector3AddUVE(
         return MakeValueResultUVE(ScriptVector3EvaluationCodeUVE::NonFiniteInput);
     }
     const Math::Vector3UVE value = lhs.value + rhs.value;
-    return IsFiniteUVE(value)
+    return Math::IsFiniteUVE(value)
         ? MakeValueResultUVE(ScriptVector3EvaluationCodeUVE::Applied, value)
         : MakeValueResultUVE(ScriptVector3EvaluationCodeUVE::NonFiniteInput);
 }
@@ -55,7 +53,7 @@ ScriptVector3ValueResultUVE EvaluateScriptVector3SubtractUVE(
         return MakeValueResultUVE(ScriptVector3EvaluationCodeUVE::NonFiniteInput);
     }
     const Math::Vector3UVE value = lhs.value - rhs.value;
-    return IsFiniteUVE(value)
+    return Math::IsFiniteUVE(value)
         ? MakeValueResultUVE(ScriptVector3EvaluationCodeUVE::Applied, value)
         : MakeValueResultUVE(ScriptVector3EvaluationCodeUVE::NonFiniteInput);
 }
@@ -66,7 +64,7 @@ ScriptVector3ValueResultUVE EvaluateScriptVector3MultiplyUVE(
         return MakeValueResultUVE(ScriptVector3EvaluationCodeUVE::NonFiniteInput);
     }
     const Math::Vector3UVE value = vector.value * scalar;
-    return IsFiniteUVE(value)
+    return Math::IsFiniteUVE(value)
         ? MakeValueResultUVE(ScriptVector3EvaluationCodeUVE::Applied, value)
         : MakeValueResultUVE(ScriptVector3EvaluationCodeUVE::NonFiniteInput);
 }
@@ -110,7 +108,7 @@ ScriptVector3ValueResultUVE EvaluateScriptVector3CrossUVE(
         static_cast<float>(valueY),
         static_cast<float>(valueZ),
     };
-    return IsFiniteUVE(value)
+    return Math::IsFiniteUVE(value)
         ? MakeValueResultUVE(ScriptVector3EvaluationCodeUVE::Applied, value)
         : MakeValueResultUVE(ScriptVector3EvaluationCodeUVE::NonFiniteInput);
 }
@@ -138,7 +136,7 @@ ScriptVector3ValueResultUVE EvaluateScriptVector3NormalizeUVE(
         return MakeValueResultUVE(ScriptVector3EvaluationCodeUVE::ZeroLengthNormalize);
     }
     const Math::Vector3UVE value = Math::NormalizeUVE(vector.value);
-    return IsFiniteUVE(value)
+    return Math::IsFiniteUVE(value)
         ? MakeValueResultUVE(ScriptVector3EvaluationCodeUVE::Applied, value)
         : MakeValueResultUVE(ScriptVector3EvaluationCodeUVE::NonFiniteInput);
 }
@@ -173,7 +171,7 @@ ScriptVector3ValueResultUVE EvaluateScriptVector3DirectionUVE(
         static_cast<float>(deltaY / scale),
         static_cast<float>(deltaZ / scale),
     };
-    if (!IsFiniteUVE(scaledDelta)) {
+    if (!Math::IsFiniteUVE(scaledDelta)) {
         return MakeValueResultUVE(ScriptVector3EvaluationCodeUVE::NonFiniteInput);
     }
     return EvaluateScriptVector3NormalizeUVE(ScriptVector3ValueUVE{scaledDelta});
@@ -204,7 +202,7 @@ ScriptVector3ValueResultUVE EvaluateScriptVector3LerpUVE(
         static_cast<float>(valueY),
         static_cast<float>(valueZ),
     };
-    return IsFiniteUVE(value)
+    return Math::IsFiniteUVE(value)
         ? MakeValueResultUVE(ScriptVector3EvaluationCodeUVE::Applied, value)
         : MakeValueResultUVE(ScriptVector3EvaluationCodeUVE::NonFiniteInput);
 }
