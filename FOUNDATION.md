@@ -24,10 +24,13 @@ below, matching `ROADMAP.md`'s stated policy.
 
 ## How to read this document
 
-Status markers are the same three `ROADMAP.md` uses, so all five documents read as
+Status markers are the same four `ROADMAP.md` uses, so all five documents read as
 one set:
 
-- `[x]` — exists and works, confirmed by reading the source.
+- `[x]` — verified: exists, works, confirmed by reading the source, and for anything with
+  real logic behind it, backed by dedicated tests.
+- `[/]` — wired but not fully verified: a real implementation exists and is confirmed by
+  reading the source, but it lacks the test coverage to call it verified.
 - `[~]` — exists but is incomplete, unused, or narrower than it looks. The note
   says exactly how.
 - `[ ]` — does not exist. Confirmed by listing the directory, not assumed.

@@ -18,8 +18,14 @@ is built from — is catalogued in `FOUNDATION.md`, which follows the same statu
 ## How to read this document
 
 - `[ ]` = not started, or only a stub/placeholder exists.
-- `[x]` = verified real and working in the current codebase (confirmed by reading the
-  actual source, not assumed).
+- `[x]` = **verified** — real and working in the current codebase, confirmed by reading the
+  actual source (not assumed), and for anything with meaningful logic, backed by dedicated
+  tests that lock more than one case. A system existing is not the same claim as a system
+  being verified correct; this mark is reserved for the second one.
+- `[/]` = **wired, not fully verified** — a real system runs it, confirmed by reading the
+  actual implementation, but it lacks the dedicated test coverage (or end-to-end integration
+  check) needed to call it verified. This sits between "foundation only" and "done"; treat it
+  as "probably works, hasn't earned the checkmark yet."
 - `[~]` = partially implemented — the foundation exists but the feature is not complete
   or not production-ready yet. The note after the item says what's missing.
 - Items are grouped by engine subsystem, and within each subsystem roughly from
