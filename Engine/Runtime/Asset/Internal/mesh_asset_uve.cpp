@@ -9,54 +9,23 @@
 
 #include "uve/asset/uve_file_envelope_uve.h"
 #include "uve/logging/logging_macros_uve.h"
+#include "uve/utilities/binary_buffer_uve.h"
 
 namespace UVE::Asset {
 
 namespace {
 
-void AppendBytesUVE(std::vector<std::byte>& buffer, const void* data, std::size_t size) {
-    const auto* const bytes = static_cast<const std::byte*>(data);
-    buffer.insert(buffer.end(), bytes, bytes + size);
-}
-
-void AppendUint32UVE(std::vector<std::byte>& buffer, std::uint32_t value) {
-    AppendBytesUVE(buffer, &value, sizeof(value));
-}
-
-void AppendFloatUVE(std::vector<std::byte>& buffer, float value) {
-    AppendBytesUVE(buffer, &value, sizeof(value));
-}
-
-[[nodiscard]] bool ReadUint32FromBufferUVE(const std::vector<std::byte>& buffer, std::size_t& offset,
-                                            std::uint32_t& outValue) {
-    if (offset + sizeof(outValue) > buffer.size()) {
-        return false;
-    }
-    std::memcpy(&outValue, buffer.data() + offset, sizeof(outValue));
-    offset += sizeof(outValue);
-    return true;
-}
-
-[[nodiscard]] bool ReadFloatFromBufferUVE(const std::vector<std::byte>& buffer, std::size_t& offset,
-                                           float& outValue) {
-    if (offset + sizeof(outValue) > buffer.size()) {
-        return false;
-    }
-    std::memcpy(&outValue, buffer.data() + offset, sizeof(outValue));
-    offset += sizeof(outValue);
-    return true;
-}
-
 [[nodiscard]] bool ReadVector3FromBufferUVE(const std::vector<std::byte>& buffer, std::size_t& offset,
                                              Math::Vector3UVE& outValue) {
-    return ReadFloatFromBufferUVE(buffer, offset, outValue.x) && ReadFloatFromBufferUVE(buffer, offset, outValue.y) &&
-           ReadFloatFromBufferUVE(buffer, offset, outValue.z);
+    return Utilities::ReadFloatFromBufferUVE(buffer, offset, outValue.x) &&
+           Utilities::ReadFloatFromBufferUVE(buffer, offset, outValue.y) &&
+           Utilities::ReadFloatFromBufferUVE(buffer, offset, outValue.z);
 }
 
 void AppendVector3UVE(std::vector<std::byte>& buffer, const Math::Vector3UVE& value) {
-    AppendFloatUVE(buffer, value.x);
-    AppendFloatUVE(buffer, value.y);
-    AppendFloatUVE(buffer, value.z);
+    Utilities::AppendFloatUVE(buffer, value.x);
+    Utilities::AppendFloatUVE(buffer, value.y);
+    Utilities::AppendFloatUVE(buffer, value.z);
 }
 
 [[nodiscard]] Math::Vector3UVE DeterministicTangentFallbackUVE(const Math::Vector3UVE& normal) noexcept {
@@ -287,7 +256,7 @@ bool LoadMeshAssetUVE(const std::filesystem::path& path, MeshAssetUVE& outMesh) 
     std::size_t offset = 0;
 
     std::uint32_t vertexCount = 0;
-    if (!ReadUint32FromBufferUVE(payload, offset, vertexCount)) {
+    if (!Utilities::ReadUint32FromBufferUVE(payload, offset, vertexCount)) {
         UVE_ERROR("MeshAssetUVE: \"{}\" has a truncated vertex count", path.string());
         return false;
     }
@@ -306,7 +275,7 @@ bool LoadMeshAssetUVE(const std::filesystem::path& path, MeshAssetUVE& outMesh) 
         MeshVertexUVE vertex;
         if (!ReadVector3FromBufferUVE(payload, offset, vertex.position) ||
             !ReadVector3FromBufferUVE(payload, offset, vertex.normal) ||
-            !ReadFloatFromBufferUVE(payload, offset, vertex.u) || !ReadFloatFromBufferUVE(payload, offset, vertex.v)) {
+            !Utilities::ReadFloatFromBufferUVE(payload, offset, vertex.u) || !Utilities::ReadFloatFromBufferUVE(payload, offset, vertex.v)) {
             UVE_ERROR("MeshAssetUVE: \"{}\" has truncated vertex data", path.string());
             return false;
         }
@@ -314,7 +283,7 @@ bool LoadMeshAssetUVE(const std::filesystem::path& path, MeshAssetUVE& outMesh) 
     }
 
     std::uint32_t indexCount = 0;
-    if (!ReadUint32FromBufferUVE(payload, offset, indexCount)) {
+    if (!Utilities::ReadUint32FromBufferUVE(payload, offset, indexCount)) {
         UVE_ERROR("MeshAssetUVE: \"{}\" has a truncated index count", path.string());
         return false;
     }
@@ -327,7 +296,7 @@ bool LoadMeshAssetUVE(const std::filesystem::path& path, MeshAssetUVE& outMesh) 
     indices.reserve(indexCount);
     for (std::uint32_t index = 0; index < indexCount; ++index) {
         std::uint32_t value = 0;
-        if (!ReadUint32FromBufferUVE(payload, offset, value)) {
+        if (!Utilities::ReadUint32FromBufferUVE(payload, offset, value)) {
             UVE_ERROR("MeshAssetUVE: \"{}\" has truncated index data", path.string());
             return false;
         }
@@ -355,7 +324,7 @@ bool LoadMeshAssetUVE(const std::filesystem::path& path, MeshAssetUVE& outMesh) 
     std::vector<MeshJointUVE> joints;
     if (offset < payload.size()) {
         std::uint32_t jointCount = 0;
-        if (!ReadUint32FromBufferUVE(payload, offset, jointCount)) {
+        if (!Utilities::ReadUint32FromBufferUVE(payload, offset, jointCount)) {
             UVE_ERROR("MeshAssetUVE: \"{}\" has a truncated joint count", path.string());
             return false;
         }
@@ -368,14 +337,14 @@ bool LoadMeshAssetUVE(const std::filesystem::path& path, MeshAssetUVE& outMesh) 
         joints.reserve(jointCount);
         for (std::uint32_t jointIndex = 0; jointIndex < jointCount; ++jointIndex) {
             MeshJointUVE joint;
-            if (!ReadUint32FromBufferUVE(payload, offset, joint.parentIndex)) {
+            if (!Utilities::ReadUint32FromBufferUVE(payload, offset, joint.parentIndex)) {
                 UVE_ERROR("MeshAssetUVE: \"{}\" has truncated joint data", path.string());
                 return false;
             }
             bool matrixComplete = true;
             for (auto& row : joint.inverseBindMatrix.m) {
                 for (float& value : row) {
-                    matrixComplete = matrixComplete && ReadFloatFromBufferUVE(payload, offset, value);
+                    matrixComplete = matrixComplete && Utilities::ReadFloatFromBufferUVE(payload, offset, value);
                 }
             }
             if (!matrixComplete) {
@@ -393,10 +362,10 @@ bool LoadMeshAssetUVE(const std::filesystem::path& path, MeshAssetUVE& outMesh) 
             MeshSkinningInfluenceUVE influence;
             bool complete = true;
             for (std::uint32_t& jointSlot : influence.joints) {
-                complete = complete && ReadUint32FromBufferUVE(payload, offset, jointSlot);
+                complete = complete && Utilities::ReadUint32FromBufferUVE(payload, offset, jointSlot);
             }
             for (float& weight : influence.weights) {
-                complete = complete && ReadFloatFromBufferUVE(payload, offset, weight);
+                complete = complete && Utilities::ReadFloatFromBufferUVE(payload, offset, weight);
             }
             if (!complete) {
                 UVE_ERROR("MeshAssetUVE: \"{}\" has truncated skinning influences", path.string());
@@ -428,17 +397,17 @@ bool LoadMeshAssetUVE(const std::filesystem::path& path, MeshAssetUVE& outMesh) 
 
 bool SaveMeshAssetUVE(const MeshAssetUVE& mesh, const std::filesystem::path& path) {
     std::vector<std::byte> payload;
-    AppendUint32UVE(payload, static_cast<std::uint32_t>(mesh.vertices.size()));
+    Utilities::AppendUint32UVE(payload, static_cast<std::uint32_t>(mesh.vertices.size()));
     for (const MeshVertexUVE& vertex : mesh.vertices) {
         AppendVector3UVE(payload, vertex.position);
         AppendVector3UVE(payload, vertex.normal);
-        AppendFloatUVE(payload, vertex.u);
-        AppendFloatUVE(payload, vertex.v);
+        Utilities::AppendFloatUVE(payload, vertex.u);
+        Utilities::AppendFloatUVE(payload, vertex.v);
     }
 
-    AppendUint32UVE(payload, static_cast<std::uint32_t>(mesh.indices.size()));
+    Utilities::AppendUint32UVE(payload, static_cast<std::uint32_t>(mesh.indices.size()));
     for (std::uint32_t index : mesh.indices) {
-        AppendUint32UVE(payload, index);
+        Utilities::AppendUint32UVE(payload, index);
     }
 
     AppendVector3UVE(payload, mesh.localBounds.min);
@@ -448,21 +417,21 @@ bool SaveMeshAssetUVE(const MeshAssetUVE& mesh, const std::filesystem::path& pat
     // of this engine produced - which is the property that makes the optional trailing section
     // safe in both directions, not just on read.
     if (mesh.IsSkinnedUVE()) {
-        AppendUint32UVE(payload, static_cast<std::uint32_t>(mesh.joints.size()));
+        Utilities::AppendUint32UVE(payload, static_cast<std::uint32_t>(mesh.joints.size()));
         for (const MeshJointUVE& joint : mesh.joints) {
-            AppendUint32UVE(payload, joint.parentIndex);
+            Utilities::AppendUint32UVE(payload, joint.parentIndex);
             for (const auto& row : joint.inverseBindMatrix.m) {
                 for (const float value : row) {
-                    AppendFloatUVE(payload, value);
+                    Utilities::AppendFloatUVE(payload, value);
                 }
             }
         }
         for (const MeshSkinningInfluenceUVE& influence : mesh.skinningInfluences) {
             for (const std::uint32_t joint : influence.joints) {
-                AppendUint32UVE(payload, joint);
+                Utilities::AppendUint32UVE(payload, joint);
             }
             for (const float weight : influence.weights) {
-                AppendFloatUVE(payload, weight);
+                Utilities::AppendFloatUVE(payload, weight);
             }
         }
     }

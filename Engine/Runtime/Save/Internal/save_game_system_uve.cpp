@@ -15,6 +15,7 @@
 #include <nlohmann/json.hpp>
 
 #include "uve/logging/logging_macros_uve.h"
+#include "uve/utilities/binary_buffer_uve.h"
 
 namespace UVE::Save {
 
@@ -79,51 +80,6 @@ private:
     std::filesystem::path m_path;
 };
 
-void AppendBytesUVE(std::vector<std::byte>& buffer, const void* data, std::size_t size) {
-    const auto* const bytes = static_cast<const std::byte*>(data);
-    buffer.insert(buffer.end(), bytes, bytes + size);
-}
-
-void AppendUint32UVE(std::vector<std::byte>& buffer, std::uint32_t value) {
-    AppendBytesUVE(buffer, &value, sizeof(value));
-}
-
-void AppendUint64UVE(std::vector<std::byte>& buffer, std::uint64_t value) {
-    AppendBytesUVE(buffer, &value, sizeof(value));
-}
-
-[[nodiscard]] bool ReadUint32FromBufferUVE(const std::vector<std::byte>& buffer, std::size_t& offset,
-                                            std::uint32_t& outValue) {
-    if (offset + sizeof(outValue) > buffer.size()) {
-        return false;
-    }
-    std::memcpy(&outValue, buffer.data() + offset, sizeof(outValue));
-    offset += sizeof(outValue);
-    return true;
-}
-
-[[nodiscard]] bool ReadUint64FromBufferUVE(const std::vector<std::byte>& buffer, std::size_t& offset,
-                                            std::uint64_t& outValue) {
-    if (offset + sizeof(outValue) > buffer.size()) {
-        return false;
-    }
-    std::memcpy(&outValue, buffer.data() + offset, sizeof(outValue));
-    offset += sizeof(outValue);
-    return true;
-}
-
-[[nodiscard]] bool ReadBytesFromBufferUVE(const std::vector<std::byte>& buffer, std::size_t& offset,
-                                           std::uint64_t length, std::vector<std::byte>& outBytes) {
-    if (offset > buffer.size() || length > static_cast<std::uint64_t>(buffer.size() - offset)) {
-        return false;
-    }
-    const std::size_t safeLength = static_cast<std::size_t>(length);
-    outBytes.assign(buffer.begin() + static_cast<std::ptrdiff_t>(offset),
-                     buffer.begin() + static_cast<std::ptrdiff_t>(offset + safeLength));
-    offset += safeLength;
-    return true;
-}
-
 [[nodiscard]] std::vector<std::byte> EncodeMetadataJsonUVE(const GameStateMetadataUVE& metadata) {
     nlohmann::json json;
     json["savedAtUnixSecondsUVE"] = metadata.savedAtUnixSecondsUVE;
@@ -183,10 +139,10 @@ void AppendUint64UVE(std::vector<std::byte>& buffer, std::uint64_t value) {
 [[nodiscard]] std::vector<std::byte> BuildSavePayloadUVE(const std::vector<std::byte>& metadataJsonBytes,
                                                           const std::vector<std::byte>& worldJsonBytes) {
     std::vector<std::byte> payload;
-    AppendUint32UVE(payload, static_cast<std::uint32_t>(metadataJsonBytes.size()));
-    AppendBytesUVE(payload, metadataJsonBytes.data(), metadataJsonBytes.size());
-    AppendUint64UVE(payload, worldJsonBytes.size());
-    AppendBytesUVE(payload, worldJsonBytes.data(), worldJsonBytes.size());
+    Utilities::AppendUint32UVE(payload, static_cast<std::uint32_t>(metadataJsonBytes.size()));
+    Utilities::AppendBytesUVE(payload, metadataJsonBytes.data(), metadataJsonBytes.size());
+    Utilities::AppendUint64UVE(payload, worldJsonBytes.size());
+    Utilities::AppendBytesUVE(payload, worldJsonBytes.data(), worldJsonBytes.size());
     return CompressSavePayloadUVE(payload);
 }
 
@@ -197,13 +153,13 @@ void AppendUint64UVE(std::vector<std::byte>& buffer, std::uint64_t value) {
                                         std::vector<std::byte>& outWorldJsonBytes) {
     std::size_t offset = 0;
     std::uint32_t metadataLength = 0;
-    if (!ReadUint32FromBufferUVE(payload, offset, metadataLength) ||
-        !ReadBytesFromBufferUVE(payload, offset, metadataLength, outMetadataJsonBytes)) {
+    if (!Utilities::ReadUint32FromBufferUVE(payload, offset, metadataLength) ||
+        !Utilities::ReadBytesFromBufferUVE(payload, offset, metadataLength, outMetadataJsonBytes)) {
         return false;
     }
     std::uint64_t worldLength = 0;
-    if (!ReadUint64FromBufferUVE(payload, offset, worldLength) ||
-        !ReadBytesFromBufferUVE(payload, offset, worldLength, outWorldJsonBytes)) {
+    if (!Utilities::ReadUint64FromBufferUVE(payload, offset, worldLength) ||
+        !Utilities::ReadBytesFromBufferUVE(payload, offset, worldLength, outWorldJsonBytes)) {
         return false;
     }
     return offset == payload.size();
@@ -215,12 +171,12 @@ void AppendUint64UVE(std::vector<std::byte>& buffer, std::uint64_t value) {
                                              std::vector<std::byte>& outMetadataJsonBytes) {
     std::size_t offset = 0;
     std::uint32_t metadataLength = 0;
-    if (!ReadUint32FromBufferUVE(payload, offset, metadataLength) ||
-        !ReadBytesFromBufferUVE(payload, offset, metadataLength, outMetadataJsonBytes)) {
+    if (!Utilities::ReadUint32FromBufferUVE(payload, offset, metadataLength) ||
+        !Utilities::ReadBytesFromBufferUVE(payload, offset, metadataLength, outMetadataJsonBytes)) {
         return false;
     }
     std::uint64_t worldLength = 0U;
-    if (!ReadUint64FromBufferUVE(payload, offset, worldLength)) {
+    if (!Utilities::ReadUint64FromBufferUVE(payload, offset, worldLength)) {
         return false;
     }
     const std::size_t remainingBytes = payload.size() - offset;
