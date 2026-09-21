@@ -14,6 +14,8 @@
 // -----------------------------------------------------------------------
 #pragma once
 
+#include "univex/viewport/AxisPalette.h"
+
 #include "univex/math/Vec.h"
 
 namespace univex::gizmo {
@@ -24,10 +26,15 @@ struct GizmoStyle {
     // ---- overall on-screen size ------------------------------------------
     float gizmoPixelRadius = 155.f; // screen radius of the widget, in pixels
 
-    // ---- axis colours (shared with the grid's axis lines) ----------------
-    Vec3 axisColorX{1.000f, 0.365f, 0.365f}; // #ff5d5d
-    Vec3 axisColorY{0.373f, 0.878f, 0.541f}; // #5fe08a
-    Vec3 axisColorZ{0.357f, 0.616f, 1.000f}; // #5b9dff
+    // ---- axis colours ----------------------------------------------------
+    // From univex/viewport/AxisPalette.h, the single definition these and the grid's own axis
+    // lines both derive from - see that header for why the grid takes a darker variant.
+    Vec3 axisColorX{univex::viewport::kAxisColorXUVE.r, univex::viewport::kAxisColorXUVE.g,
+                    univex::viewport::kAxisColorXUVE.b};
+    Vec3 axisColorY{univex::viewport::kAxisColorYUVE.r, univex::viewport::kAxisColorYUVE.g,
+                    univex::viewport::kAxisColorYUVE.b};
+    Vec3 axisColorZ{univex::viewport::kAxisColorZUVE.r, univex::viewport::kAxisColorZUVE.g,
+                    univex::viewport::kAxisColorZUVE.b};
     Vec3 planeColor{0.933f, 0.945f, 0.965f};
     Vec3 freeRingColor{0.906f, 0.918f, 0.949f};
     Vec3 centerColor{0.643f, 0.678f, 0.749f};
@@ -88,12 +95,9 @@ struct GizmoStyle {
     // ---- orientation (nav) gizmo -----------------------------------------
     float navPixelSize = 72.f;    // side of the square corner viewport, px
     float navMarginPx = 16.f;
-    float navCubeSize = 1.10f;    // in nav-gizmo units
     float navAxisLineWidthPx = 2.6f;
     float navBallRadius = 0.30f;  // radius of the axis end balls
     int   navBallSegments = 32;
-    float navFaceAlpha = 0.16f;
-    float navEdgeWidthPx = 1.4f;
 
     // Axis letters on the positive balls, drawn as vector strokes (no font
     // dependency for three glyphs) sized as a fraction of the ball radius.

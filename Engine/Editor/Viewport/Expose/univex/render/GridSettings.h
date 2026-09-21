@@ -15,6 +15,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include "univex/viewport/AxisPalette.h"
+
 namespace univex::render {
 
 struct GridColor {
@@ -42,9 +44,15 @@ struct GridSettings {
     float midIntensity = 0.70f;
     float thickIntensity = 0.95f;
 
-    GridColor axisColorX{1.000f, 0.365f, 0.365f}; // #ff5d5d
-    GridColor axisColorY{0.373f, 0.878f, 0.541f}; // #5fe08a - matches GizmoStyle::axisColorY
-    GridColor axisColorZ{0.357f, 0.616f, 1.000f}; // #5b9dff
+    // Darker variants of univex/viewport/AxisPalette.h's shared axis hues: the grid's lines run
+    // through the same origin the transform gizmo sits on, so they must read as the backdrop
+    // rather than compete with the handle drawn over them.
+    GridColor axisColorX{univex::viewport::kGridAxisColorXUVE.r, univex::viewport::kGridAxisColorXUVE.g,
+                         univex::viewport::kGridAxisColorXUVE.b};
+    GridColor axisColorY{univex::viewport::kGridAxisColorYUVE.r, univex::viewport::kGridAxisColorYUVE.g,
+                         univex::viewport::kGridAxisColorYUVE.b};
+    GridColor axisColorZ{univex::viewport::kGridAxisColorZUVE.r, univex::viewport::kGridAxisColorZUVE.g,
+                         univex::viewport::kGridAxisColorZUVE.b};
 
     // Horizon fade, as multiples of the camera's orbit distance. Keeping
     // these relative to distance means the fade sits at the same place on

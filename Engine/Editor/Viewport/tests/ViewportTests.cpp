@@ -353,18 +353,33 @@ int main() {
             Check(!mesh.lines.empty() && !mesh.triangles.empty(), label);
         }
 
-        // Rotate rings are near-side arcs only: every ring triangle must sit on
-        // the camera-facing half, otherwise three full circles overlap into an
-        // unreadable ball.
+        // Rotate rings are whole circles whose far half is faded rather than cut away: a hard
+        // arc end reads as a rendering fault, while a continuous ring reads as a circle seen in
+        // 3D. What must hold is that the near half stays clearly dominant, so the three rings
+        // never overlap into an unreadable ball.
         const auto rotate = BuildGizmoMesh(GizmoMode::Rotate, style, view, kUnitsPerPixel);
-        int behindCamera = 0;
+        int nearSide = 0;
+        int farSide = 0;
+        float nearAlphaTotal = 0.f;
+        float farAlphaTotal = 0.f;
         for (const auto& tri : rotate.triangles) {
             // Skip the free ring (screen-facing, drawn whole) and the centre cube.
             const float radius = univex::math::Length(tri.a);
             if (radius < style.ringRadius * 0.8f || radius > style.ringRadius * 1.1f) continue;
-            if (univex::math::Dot(tri.a, view) > 0.02f) ++behindCamera;
+            if (univex::math::Dot(univex::math::Normalize(tri.a), view) > 0.2f) {
+                ++farSide;
+                farAlphaTotal += tri.alpha;
+            } else if (univex::math::Dot(univex::math::Normalize(tri.a), view) < -0.2f) {
+                ++nearSide;
+                nearAlphaTotal += tri.alpha;
+            }
         }
-        Check(behindCamera == 0, "rotate rings emit only the camera-facing arc");
+        Check(nearSide > 0 && farSide > 0, "rotate rings are continuous circles, not cut-off arcs");
+        const float nearAverage = nearAlphaTotal / static_cast<float>(nearSide);
+        const float farAverage = farAlphaTotal / static_cast<float>(farSide);
+        Check(nearAverage > farAverage * 2.f,
+              "the near half of a rotate ring is clearly stronger than the far half");
+        Check(farAverage > 0.f, "the far half stays visible rather than vanishing");
     }
 
     std::puts("\n== Universal gizmo layout: the three tools stay separated ==");
