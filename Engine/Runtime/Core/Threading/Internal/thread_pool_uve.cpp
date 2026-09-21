@@ -128,6 +128,21 @@ void ThreadPoolUVE::RunJobUVE(QueuedJobUVE& job) {
         UVE_ERROR("ThreadPoolUVE: job threw an unknown, non-std::exception value");
     }
 
+    // Release everything the job captured BEFORE reporting completion. A job that captured
+    // shared ownership - a shared_ptr whose deleter calls back into some system, say - would
+    // otherwise keep that reference alive past the point where WaitUVE() has already returned
+    // and the waiter has torn its world down. The last reference would then drop here, on this
+    // worker, and the deleter would run against a destroyed object.
+    //
+    // That is not hypothetical: ShaderManagerUVE hands out shared_ptr<ShaderSourceUVE> whose
+    // deleter holds IRenderDeviceUVE*, and its destructor drains with WaitUVE(). With the
+    // release happening after the decrement, roughly one parallel test run in five aborted in
+    // __cxa_pure_virtual - a virtual call on a render device that had already been destroyed.
+    //
+    // Clearing it here makes WaitUVE() mean what every caller already assumes: once it returns,
+    // no worker still holds anything belonging to those jobs.
+    job.function = nullptr;
+
     m_activeWorkerCount.fetch_sub(1, std::memory_order_relaxed);
 
     if (job.counter != nullptr) {

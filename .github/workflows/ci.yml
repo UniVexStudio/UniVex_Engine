@@ -52,17 +52,11 @@ jobs:
         run: cmake --build build --parallel "$(nproc)"
 
       - name: Test
-        # Still serial, but no longer because of scratch paths - those are fixed, and every test
-        # process now gets its own working directory from Test/Support/test_scratch_uve.h.
-        #
-        # What blocks `-j` now is a separate, older defect: roughly 1 run in 30, a Renderer3D or
-        # ViewportManager case aborts with "terminate called without an active exception" (a
-        # joinable std::thread destroyed). It reproduces at the same rate on a build of master
-        # with none of the scratch-path changes, so it is not a regression from them - it was
-        # simply hidden while the suite could not run in parallel at all. Root cause is not yet
-        # identified. Add -j"$(nproc)" once it is fixed; the suite itself is ready (10 consecutive
-        # clean parallel runs locally, ~9s versus ~27s serial).
-        run: xvfb-run -a ctest --test-dir build --output-on-failure
+        # Parallel, and both things that blocked it are fixed: every test process gets its own
+        # working directory from Test/Support/test_scratch_uve.h, and ThreadPoolUVE now releases
+        # a job's captured state before signalling completion, so a drained WaitUVE() no longer
+        # leaves a worker holding the last reference to something it is about to outlive.
+        run: xvfb-run -a ctest --test-dir build --output-on-failure -j"$(nproc)"
 
       - name: Verify the Vulkan device tests actually ran
         # These cases skip themselves when no Vulkan device is present, which would leave

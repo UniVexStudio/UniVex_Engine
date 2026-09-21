@@ -507,11 +507,16 @@ ShaderManagerUVE::ShaderManagerUVE(Threading::IThreadPoolUVE& threadPool, Events
     : m_impl(std::make_unique<ImplUVE>(threadPool, eventSystem, renderDevice, fileSystem, std::move(config))) {}
 
 ShaderManagerUVE::~ShaderManagerUVE() {
-    // Every ShaderSourceUVE/ShaderProgramUVE this manager handed out must be released by the
-    // caller before this destructor runs in practice (their deleters only capture
-    // IRenderDeviceUVE&, not this manager, so a slightly-late release remains safely
-    // destructible) - but a background job still referencing this ImplUVE must never still be
-    // running when it's freed, hence this unconditional drain.
+    // Drains every background job still referencing this ImplUVE, which must never outlive it.
+    //
+    // This also has to hold the shader deleters: MakeSourceUVE/MakeProgramUVE capture a raw
+    // IRenderDeviceUVE*, so a ShaderSourceUVE released after the render device is gone calls a
+    // virtual function on a destroyed object. Compile jobs capture their target shared_ptr, so
+    // the last reference can be the worker's. ThreadPoolUVE::RunJobUVE therefore releases a
+    // job's captured state before decrementing the counter this waits on - without that
+    // ordering, this drain returns while a worker still owns a shader, and the deleter fires
+    // into a dead device. An earlier revision of this comment claimed the deleters capturing
+    // only IRenderDeviceUVE& made a late release safe; that was exactly backwards.
     m_impl->pendingJobs.WaitUVE();
 }
 
