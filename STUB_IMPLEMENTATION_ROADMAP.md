@@ -3,11 +3,15 @@
 A working tracker for every scene node that already owns its `.h` + `.cpp` pair but whose
 **component fields and arrays still receive no real work at runtime** — plus the declared
 honest gaps of nodes that are otherwise real. This is the drill-down companion to
-`SCENE_NODES_ROADMAP.md`: that file keeps the high-level `[x]`/`[~]`/`[ ]` status per node;
-THIS file is the per-item implementation checklist we tick off as each one gets built.
+`SCENE_NODES_ROADMAP.md`: that file keeps the high-level `[x]`/`[/]`/`[~]`/`[ ]` status per
+node (four levels — see that file's "How to read" section for why `[/]` exists as a
+step short of `[x]`); THIS file is the per-item implementation checklist we tick off as
+each one gets built.
 
-Scope: the 18 authored-data-only 3D stubs + the 4 declared gaps of working nodes (2D/UI/AI
-nodes have no files yet, so they have nothing to track here — they stay in
+Scope: the 11 authored-data-only 3D stubs still at `[~]`, the 3 real-but-unverified items
+at `[/]` (still tracked here until their sync functions earn dedicated tests), + the 4
+declared gaps of working nodes (2D/UI/AI nodes have no files yet, so they have nothing to
+track here — they stay in
 `SCENE_NODES_ROADMAP.md`'s missing-entirely sections until they exist).
 
 ## How to read this file
@@ -34,24 +38,30 @@ Rules, same spirit as `SCENE_NODES_ROADMAP.md`:
 
 ## Summary table (suggested order)
 
-| # | Node | Component | Arrays to give work | The work | Depends on | Size |
-|---|------|-----------|---------------------|----------|------------|------|
-| 1 | SpringArm3D | `SpringArm3DNodeComponentUVE` | — | camera-boom raycast clamp | RaycastSystemUVE (exists) | S |
-| 2 | AnimatableBody3D | `AnimatableBody3DNodeComponentUVE` | — | target-velocity kinematic mover | physics kinematic move (exists) | S |
-| 3 | SpawnPoint3D | `SpawnPoint3DNodeComponentUVE` | — | tag-based spawn query + one-shot | — | S |
-| 4 | InteractionArea3D | `InteractionArea3DNodeComponentUVE` | candidate list (new, bounded by `maximumCandidates`) | per-frame interactable candidate tracking | AreaOverlapSystemUVE (exists) | M |
-| 5 | RayCast3D gap | `RayCast3DNodeComponentUVE` | `exclusions[8]` + `exclusionCount` | multi-entity exclusion queries | query API + stable entity refs | M |
-| 6 | Projectile3D gap | `Projectile3DNodeComponentUVE` | — (`radius`, `collisionMask` scalars) | swept-sphere hit resolution | hit-decision contract | M |
-| 7 | Hitbox3D/Hurtbox3D gap | `Hitbox3DNodeComponentUVE` / `Hurtbox3DNodeComponentUVE` | `strikes[16]` + `strikeCount` | strike consequences (events first) | gameplay/event contract | M |
-| 8 | LODGroup3D | `LodGroup3DNodeComponentUVE` | `distanceThresholds[8]` | camera-distance LOD switching | multi-level mesh source | M |
-| 9 | Occluder3D | `Occluder3DNodeComponentUVE` | — | conservative-box occlusion culling | render queue integration | M |
-| 10 | VisibilityRegion3D | `VisibilityRegion3DNodeComponentUVE` | — | layer-gated visibility culling | render queue integration | M |
-| 11 | Decal3D | `Decal3DNodeComponentUVE` | — | decal-projection rendering | renderer (big) | L |
-| 12 | ReflectionProbe3D | `ReflectionProbe3DNodeComponentUVE` | — | probe capture + sampling | renderer (big) | L |
-| 13 | NavigationRegion3D + NavigationAgent3D | `NavigationRegion3DNodeComponentUVE` / `NavigationAgent3DNodeComponentUVE` | — | navmesh bake + pathfind + steer | new Navigation subsystem | L |
-| 14 | Skeleton3D + BoneAttachment3D + AnimationPlayer + AnimationTree | `Skeleton3DNodeComponentUVE`, `BoneAttachment3DNodeComponentUVE`, `AnimationPlayerComponentUVE`, `AnimationTreeUVE` | `bones` vector | clip sampling → bone pose → skinning | new Animation pipeline | L |
-| 15 | LevelStreamer3D + WorldPartition3D | `LevelStreamer3DNodeComponentUVE` / `WorldPartition3DNodeComponentUVE` | `cellCounts[3]` | streaming + cell grid load/unload | external-scene lifecycle | L |
-| — | Marker3D | `Marker3DNodeComponentUVE` | — | **none, by design** — read by tools/scripts, never ticked | — | — |
+Status column uses the same `[x]`/`[/]`/`[~]` marks as `SCENE_NODES_ROADMAP.md`: `[~]` still
+authored-data-only (nothing below has moved yet), `[/]` a real sync function is wired and
+called every frame but lacks dedicated behavior tests, `[x]` wired and locked by dedicated
+tests. An item's row here is retired to "Done" (bottom of file) only once it reaches `[x]`
+**and** the boxes below its write-up are all ticked.
+
+| # | Node | Status | Component | Arrays to give work | The work | Depends on | Size |
+|---|------|--------|-----------|---------------------|----------|------------|------|
+| 1 | SpringArm3D | `[/]` | `SpringArm3DNodeComponentUVE` | — | camera-boom raycast clamp — **implemented**, needs behavior tests | RaycastSystemUVE (exists) | S |
+| 2 | AnimatableBody3D | `[~]` | `AnimatableBody3DNodeComponentUVE` | — | target-velocity kinematic mover | physics kinematic move (exists) | S |
+| 3 | SpawnPoint3D | `[~]` | `SpawnPoint3DNodeComponentUVE` | — | tag-based spawn query + one-shot | — | S |
+| 4 | InteractionArea3D | `[/]` | `InteractionArea3DNodeComponentUVE` | candidate list (new, bounded by `maximumCandidates`) | per-frame interactable candidate tracking — **implemented**, one test exists, edge cases not separately locked | AreaOverlapSystemUVE (exists) | M |
+| 5 | RayCast3D gap | `[~]` | `RayCast3DNodeComponentUVE` | `exclusions[8]` + `exclusionCount` | multi-entity exclusion queries | query API + stable entity refs | M |
+| 6 | Projectile3D gap | `[~]` | `Projectile3DNodeComponentUVE` | — (`radius`, `collisionMask` scalars) | swept-sphere hit resolution | hit-decision contract | M |
+| 7 | Hitbox3D/Hurtbox3D gap | `[~]` | `Hitbox3DNodeComponentUVE` / `Hurtbox3DNodeComponentUVE` | `strikes[16]` + `strikeCount` | strike consequences (events first) | gameplay/event contract | M |
+| 8 | LODGroup3D | `[~]` | `LodGroup3DNodeComponentUVE` | `distanceThresholds[8]` | camera-distance LOD switching | multi-level mesh source | M |
+| 9 | Occluder3D | `[/]` | `Occluder3DNodeComponentUVE` | — | conservative-box occlusion culling — **implemented** in the render queue, pure logic tested, render-queue integration untested | render queue integration | M |
+| 10 | VisibilityRegion3D | `[x]` | `VisibilityRegion3DNodeComponentUVE` | — | layer-gated visibility culling — **done**, four dedicated tests | render queue integration | M |
+| 11 | Decal3D | `[~]` | `Decal3DNodeComponentUVE` | — | decal-projection rendering | renderer (big) | L |
+| 12 | ReflectionProbe3D | `[x]` (sync half) | `ReflectionProbe3DNodeComponentUVE` | — | probe capture scheduling — **done**, five dedicated tests; renderer-side sampling still `[~]` | renderer (big) | L |
+| 13 | NavigationRegion3D + NavigationAgent3D | `[~]` | `NavigationRegion3DNodeComponentUVE` / `NavigationAgent3DNodeComponentUVE` | — | navmesh bake + pathfind + steer | new Navigation subsystem | L |
+| 14 | Skeleton3D + BoneAttachment3D + AnimationPlayer + AnimationTree | `[~]` | `Skeleton3DNodeComponentUVE`, `BoneAttachment3DNodeComponentUVE`, `AnimationPlayerComponentUVE`, `AnimationTreeUVE` | `bones` vector | clip sampling → bone pose → skinning | new Animation pipeline | L |
+| 15 | LevelStreamer3D + WorldPartition3D | `[x]` | `LevelStreamer3DNodeComponentUVE` / `WorldPartition3DNodeComponentUVE` | `cellCounts[3]` | streaming + cell grid load/unload — **done**, five + five dedicated tests each | external-scene lifecycle | L |
+| — | Marker3D | — | `Marker3DNodeComponentUVE` | — | **none, by design** — read by tools/scripts, never ticked | — | — |
 
 ---
 
@@ -59,10 +69,14 @@ Rules, same spirit as `SCENE_NODES_ROADMAP.md`:
 
 ### 1. SpringArm3D — camera-boom raycast clamp
 
-- [ ] Implement
+- [x] Implement — `EngineCoreUVE::SyncSpringArm3DNodesUVE()` exists and is called every fixed
+      tick; raycasts from the arm's origin, clamps `currentLength` to hit-distance minus
+      `margin`, applies `smoothing`.
 - [ ] Tests lock it (arm shortens behind geometry, margin honored, smoothing converges,
-      mask filters, disabled = full length)
-- [ ] `SCENE_NODES_ROADMAP.md` `[~]` → `[x]`
+      mask filters, disabled = full length) — none of these cases has a dedicated test yet;
+      existing coverage only touches construction and scene-serialization round-trips of
+      `currentLength`.
+- [ ] `SCENE_NODES_ROADMAP.md` `[/]` → `[x]` (once the tests above land)
 
 **Component:** `SpringArm3DNodeComponentUVE` — `Engine/Runtime/Nodes/3D` (own file pair).
 **Fields to give work:** `armLength`, `margin`, `smoothing`, `collisionMask`, `enabled`;
@@ -109,10 +123,13 @@ This is a query others call — the point itself stays unticked, by design.
 
 ### 4. InteractionArea3D — per-frame interactable candidate tracking
 
-- [ ] Implement
-- [ ] Tests lock it (candidates refresh, tag/layer/mask gates, bound respected + overflow
-      flagged, disabled clears stale candidates)
-- [ ] `SCENE_NODES_ROADMAP.md` `[~]` → `[x]`
+- [x] Implement — `EngineCoreUVE::SyncInteractionArea3DNodesUVE()` exists and is called every
+      frame; real overlap queries, tag/layer/mask gating, nearest-candidate focus.
+- [~] Tests lock it — one dedicated test exists
+      (`InteractionArea3DNode_TracksInteractorsFocusesTheNearestAndClearsWhenGated`) but the
+      cases this checklist calls out (bound respected + overflow flagged, disabled clears
+      stale candidates) aren't separately locked.
+- [ ] `SCENE_NODES_ROADMAP.md` `[/]` → `[x]` (once the remaining cases are separately tested)
 
 **Component:** `InteractionArea3DNodeComponentUVE` — own file pair.
 **Fields to give work:** `halfExtents`, `collisionLayer`, `collisionMask`, `interactionTag`,
@@ -182,20 +199,25 @@ runtime result `currentLevel` (today a dead copy of the default).
 
 ### 9. Occluder3D — conservative-box occlusion culling
 
-- [ ] Implement (occluder boxes vs camera frustum → cull fully-hidden renderables)
-- [ ] Tests lock it (occluded mesh culled, edge cases fail open, never false-culls)
-- [ ] `SCENE_NODES_ROADMAP.md` `[~]` → `[x]`
+- [x] Implement — wired into the render queue's mesh-culling pass, which calls
+      `ResolveOccluder3DFullyHiddenUVE()` against every occluder every frame.
+- [~] Tests lock it — the pure geometry function is thoroughly tested (occluded mesh culled,
+      edge cases fail open, degenerate box, never false-culls), but no test exercises the
+      render-queue integration end to end.
+- [ ] `SCENE_NODES_ROADMAP.md` `[/]` → `[x]` (once an integration test covers the render-queue wiring)
 
 **Component:** `Occluder3DNodeComponentUVE` — own file pair.
 **Fields to give work:** `halfExtents`, `mode` (`ConservativeBox` first — sphere mode after),
 `enabled`.
 **Depends on:** render queue integration. **Size: M.**
 
-### 10. VisibilityRegion3D — layer-gated visibility culling
+### 10. VisibilityRegion3D — layer-gated visibility culling — DONE
 
-- [ ] Implement (region extents + `visibilityLayers` gate what renders inside it)
-- [ ] Tests lock it (layers gate, `active` toggles, no region = current behavior)
-- [ ] `SCENE_NODES_ROADMAP.md` `[~]` → `[x]`
+- [x] Implement — `EngineCoreUVE::SyncVisibilityRegion3DNodesUVE()`, region extents +
+      `visibilityLayers` gate membership every frame.
+- [x] Tests lock it — four dedicated `EngineCoreUVETest` cases (camera in/out, layer gate,
+      immediate release on leaving, disable/destroy rehoming).
+- [x] `SCENE_NODES_ROADMAP.md` `[~]` → `[x]` — done, see that file's "Working today" section.
 
 **Component:** `VisibilityRegion3DNodeComponentUVE` — own file pair.
 **Fields to give work:** `halfExtents`, `visibilityLayers`, `enabled`, `active`.
@@ -219,15 +241,19 @@ geometry with the material, expire by `lifetime`). A rendering-lane feature — 
 with/beside the renderer's own roadmap, not alone.
 **Depends on:** renderer decal pass. **Size: L.**
 
-### 12. ReflectionProbe3D — probe capture + sampling
+### 12. ReflectionProbe3D — probe capture scheduling (done) + sampling (still open)
 
-- [ ] Implement
-- [ ] Tests lock it
-- [ ] `SCENE_NODES_ROADMAP.md` `[~]` → `[x]`
+- [x] Implement capture scheduling — `EngineCoreUVE::SyncReflectionProbe3DNodesUVE()`:
+      `updateMode` (`Once`/`Always`/on-demand), `cameraInfluenceWeight`, capture budget with
+      starvation aging.
+- [x] Tests lock the scheduling half — five dedicated `EngineCoreUVETest` cases.
+- [x] `SCENE_NODES_ROADMAP.md` `[~]` → `[x]` — done for the sync half.
+- [ ] Implement the renderer-side sampling half — still `[~]`: capture the probe's volume
+      into a reflection texture and feed ambient/reflection sampling.
 
 **Component:** `ReflectionProbe3DNodeComponentUVE` — own file pair.
-**Fields to give work:** `size`, `visibilityLayers`, `updateMode` (`Once` first —
-`Always`/`Request` after), `updateRequested`, `enabled`.
+**Remaining fields:** `size`, `visibilityLayers` are scheduled but not yet consumed by any
+renderer capture.
 **The work:** capture the probe's volume into a reflection texture and feed ambient/reflection
 sampling. Also a rendering-lane feature.
 **Depends on:** renderer cubemap capture. **Size: L.**
@@ -273,15 +299,19 @@ local TRS, `enabled`), `AnimationPlayerComponentUVE` (shared component), and
 **Depends on:** the missing skinning/clip-sampling pipeline — `ROADMAP.md`'s Animation
 section owns that gap. **Size: L** (largest item here).
 
-### 15. LevelStreamer3D + WorldPartition3D — streaming + cell partitioning (paired)
+### 15. LevelStreamer3D + WorldPartition3D — streaming + cell partitioning (paired) — DONE
 
-- [ ] External-scene lifecycle: load/unload a saved scene file at runtime
-- [ ] LevelStreamer3D: `loadDistance`/`unloadDistance` vs the streaming origin drive
-      `loaded` (hysteresis between the two distances, `loadRequested` for manual control)
-- [ ] WorldPartition3D: `cellSize` + **`cellCounts[3]`** define the grid;
-      `maximumLoadedCells` bounds the working set, `loadedCellCount` reports it
-- [ ] Tests lock each layer
-- [ ] `SCENE_NODES_ROADMAP.md` `[~]` → `[x]` (both entries)
+- [x] External-scene lifecycle: load/unload a saved scene file at runtime —
+      `SyncLevelStreamer3DNodesUVE()` tracks loaded roots and load-failure latches per
+      streamer entity, cleaned up against `IsAliveUVE()`, never blind destruction.
+- [x] LevelStreamer3D: `loadDistance`/`unloadDistance` vs the streaming origin drive
+      `loaded` (hysteresis between the two distances, `loadRequested` for manual control).
+- [x] WorldPartition3D: `cellSize` + **`cellCounts[3]`** define the grid;
+      `maximumLoadedCells` bounds the working set, `loadedCellCount` reports it.
+- [x] Tests lock each layer — five dedicated tests for LevelStreamer3D, five for
+      WorldPartition3D (see the entries in `SCENE_NODES_ROADMAP.md`'s "Working today" section
+      for the exact case names).
+- [x] `SCENE_NODES_ROADMAP.md` `[~]` → `[x]` (both entries) — done.
 
 **Components:** `LevelStreamer3DNodeComponentUVE` (fields: `levelPath`, `loadDistance`,
 `unloadDistance`, `enabled`, `loaded`, `loadRequested`) and
