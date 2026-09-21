@@ -22,6 +22,7 @@
 
 #include "ViewportRenderPass.h"
 #include "integration/EditorMeshLayer.h"
+#include "integration/EntityPicker.h"
 #include "integration/MathConversions.h"
 #include "univex/camera/OrbitCamera.h"
 #include "univex/render/ShaderProgram.h"
@@ -146,6 +147,7 @@ public:
         ApplyOverlayStateUVE(overlayState);
         UpdateSelectionGizmoUVE();
         const bool navGizmoOwnsGesture = UpdateNavGizmoInteractionUVE(width, height);
+        UpdateSelectionFromMouseUVE(width, height, navGizmoOwnsGesture);
         UpdateCameraFromMouseUVE(height, navGizmoOwnsGesture);
         UpdateViewportBookmarkHotkeysUVE();
         // Advances the eased snap-to-axis animation SnapToDirection() starts (a manual orbit/pan
@@ -438,6 +440,63 @@ private:
         }
     }
 
+    // Click-to-select. Until now selection came only from the Hierarchy panel, so the 3D view was
+    // something to look at rather than something to work in.
+    //
+    // The whole difficulty is that the left button already means "orbit". A press is therefore not
+    // committed to either meaning until release: travel more than the slop and it was a drag, so
+    // the camera keeps it and nothing is selected; release within the slop and it was a click, so
+    // it picks. That is the same press-relative accumulation UpdateNavGizmoInteractionUVE uses,
+    // and the reason both read GetMouseDragDelta rather than the per-frame delta - a slow drag of
+    // many tiny movements never exceeds a per-frame threshold.
+    //
+    // `suppressed` is true when the nav gizmo already owns this gesture, in which case the click
+    // belongs to it and must not also fall through to selection.
+    void UpdateSelectionFromMouseUVE(const int width, const int height, const bool suppressed) {
+        if (suppressed) {
+            selectionPressActive_ = false;
+            return;
+        }
+
+        const ImGuiIO& io = ImGui::GetIO();
+        if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+            const ImVec2 imageOrigin = ImGui::GetCursorScreenPos();
+            selectionPressActive_ = true;
+            selectionPressX_ = io.MousePos.x - imageOrigin.x;
+            selectionPressY_ = io.MousePos.y - imageOrigin.y;
+        }
+
+        if (!selectionPressActive_ || !ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+            return;
+        }
+        selectionPressActive_ = false;
+
+        const ImVec2 dragDelta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Left, 0.0F);
+        if ((std::fabs(dragDelta.x) + std::fabs(dragDelta.y)) > kNavClickSlopPixelsUVE) {
+            return; // that was an orbit, not a click
+        }
+
+        const univex::integration::EntityPickResultUVE pick = univex::integration::PickEntityAtPixelUVE(
+            entityManager_, camera_, width, height, selectionPressX_, selectionPressY_);
+
+        // Ctrl extends the selection, matching every other multi-select surface in the editor;
+        // a plain click replaces it, and a plain click on nothing clears it. Ctrl-clicking empty
+        // space deliberately does nothing rather than clearing, so a mis-aimed extend does not
+        // throw away a selection the user spent time building.
+        const bool extend = io.KeyCtrl;
+        if (!pick.hit) {
+            if (!extend) {
+                editor_.ClearSelectionUVE();
+            }
+            return;
+        }
+        if (extend) {
+            editor_.ToggleEntitySelectionUVE(pick.entity);
+        } else {
+            editor_.SelectEntityUVE(pick.entity);
+        }
+    }
+
     // Mirrors app/main.cpp's own GLFW mouse-button/scroll wiring (left-drag orbits, middle/right
     // drag pans, wheel dollies) but sourced from ImGui's IO instead of GLFW callbacks, since input
     // flows through ImGui while the viewport is docked. Called from inside EditorUVE's own
@@ -638,6 +697,10 @@ private:
     bool navDragMoved_ = false;
     float navPressX_ = 0.0F;
     float navPressY_ = 0.0F;
+    // Click-vs-drag state for click-to-select - see UpdateSelectionFromMouseUVE().
+    bool selectionPressActive_ = false;
+    float selectionPressX_ = 0.0F;
+    float selectionPressY_ = 0.0F;
     bool glewInitialized_ = false;
     GLuint msaaFbo_ = 0U;
     GLuint msaaColorRb_ = 0U;

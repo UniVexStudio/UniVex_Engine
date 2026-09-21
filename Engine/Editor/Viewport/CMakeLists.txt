@@ -87,7 +87,8 @@ target_compile_options(univex_viewport_app_support PRIVATE -Wall -Wextra -Wpedan
 # Engine bridge: the only target here that depends on the host UniVex engine.
 # ---------------------------------------------------------------------------
 add_library(univex_viewport_engine_bridge STATIC
-    Internal/integration/EditorMeshLayer.cpp)
+    Internal/integration/EditorMeshLayer.cpp
+    Internal/integration/EntityPicker.cpp)
 target_include_directories(univex_viewport_engine_bridge PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/Internal)
 # uve_core brings in EngineServicesUVE/Renderer3DUVE/GlRenderDeviceUVE/Scene for
 # EditorMeshLayerUVE, which renders the live scene's real mesh/material entities into the

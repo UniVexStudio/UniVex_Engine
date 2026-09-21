@@ -1,0 +1,204 @@
+// Copyright (c) 2026 UniVex Studios. All Rights Reserved.
+//
+// Click-to-select picking. The cases that matter are not "does a ray hit a box" - they are the
+// ones that decide whether the feature feels right: that the exact geometry test actually earns
+// its keep over the bounds test, that a nearer object wins, and that the viewport's own hidden
+// entities stay unselectable.
+
+#include <cmath>
+
+#include <gtest/gtest.h>
+
+#include "Support/test_scratch_uve.h"
+
+#include "integration/EntityPicker.h"
+
+#include "univex/camera/OrbitCamera.h"
+
+#include "uve/component/editor_internal_entity_component_uve.h"
+#include "uve/component/primitive_mesh_component_uve.h"
+#include "uve/component/transform_component_uve.h"
+#include "uve/core/engine_core_uve.h"
+#include "uve/math/ray_uve.h"
+
+namespace {
+
+using namespace UVE;
+using univex::integration::EntityPickResultUVE;
+using univex::integration::PickEntityAlongRayUVE;
+
+[[nodiscard]] Core::EngineConfigUVE MakePickerTestConfigUVE() {
+    Core::EngineConfigUVE config{};
+    config.headlessUVE = true;
+    config.logFilePath = "uve_entity_picker_tests.log";
+    config.settingsFilePath = "uve_entity_picker_tests_settings.json";
+    config.assetDatabaseFilePath = "uve_entity_picker_tests_assets.json";
+    config.saveDirectoryPath = "uve_entity_picker_tests_saves";
+    config.shaderCachePath = "uve_entity_picker_tests_shader_cache";
+    config.shaderSourceRealDirectoryUVE =
+        ::UVE::Tests::RepositoryRootUVE() / "Engine/Runtime/RHI/Shader/built_in";
+    config.shaderSourceMountPrefixUVE = "shaders";
+    return config;
+}
+
+/// Creates a primitive at `position` with uniform `scale`, attached through the scene graph so its
+/// WorldTransformComponentUVE is real and clean - a dirty transform is deliberately unpickable, so
+/// a test that skipped the graph would silently test nothing.
+[[nodiscard]] Scene::EntityUVE SpawnPrimitiveUVE(Core::EngineServicesUVE& services,
+                                                 const Scene::PrimitiveMeshKindUVE kind,
+                                                 const Math::Vector3UVE position, const float scale) {
+    Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
+    const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
+
+    Scene::TransformComponentUVE transform{};
+    transform.localPosition = position;
+    transform.localScale = Math::Vector3UVE{scale, scale, scale};
+    services.GetSceneGraphUVE().AttachTransformUVE(entityManager, entity, transform);
+
+    Scene::PrimitiveMeshComponentUVE primitive{};
+    primitive.kind = kind;
+    static_cast<void>(entityManager.AddComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity, primitive));
+
+    services.GetSceneGraphUVE().UpdateUVE(entityManager);
+    return entity;
+}
+
+class EntityPickerUVETest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        m_engine = std::make_unique<Core::EngineCoreUVE>(MakePickerTestConfigUVE());
+        m_engine->Init();
+        ASSERT_TRUE(m_engine->Load());
+    }
+
+    [[nodiscard]] Core::EngineServicesUVE& ServicesUVE() { return m_engine->GetServicesUVE(); }
+    [[nodiscard]] Scene::IEntityManagerUVE& EntitiesUVE() { return ServicesUVE().GetEntityManagerUVE(); }
+
+    std::unique_ptr<Core::EngineCoreUVE> m_engine;
+};
+
+TEST_F(EntityPickerUVETest, RayDownTheAxis_SelectsTheCubeAtTheDistanceItActuallySits) {
+    const Scene::EntityUVE cube =
+        SpawnPrimitiveUVE(ServicesUVE(), Scene::PrimitiveMeshKindUVE::Cube, Math::Vector3UVE{0.0F, 0.0F, 0.0F}, 2.0F);
+
+    // Cube geometry is a 0.5 half extent, so a scale of 2 puts its near face at z = 1.
+    const Math::RayUVE ray{Math::Vector3UVE{0.0F, 0.0F, 10.0F}, Math::Vector3UVE{0.0F, 0.0F, -1.0F}};
+    const EntityPickResultUVE result = PickEntityAlongRayUVE(EntitiesUVE(), ray, 1000.0F);
+
+    ASSERT_TRUE(result.hit);
+    EXPECT_EQ(result.entity, cube);
+    EXPECT_NEAR(result.distance, 9.0F, 1e-3F);
+}
+
+TEST_F(EntityPickerUVETest, NearerObjectWins_EvenWhenBothAreUnderTheCursor) {
+    const Scene::EntityUVE farCube =
+        SpawnPrimitiveUVE(ServicesUVE(), Scene::PrimitiveMeshKindUVE::Cube, Math::Vector3UVE{0.0F, 0.0F, -6.0F}, 1.0F);
+    const Scene::EntityUVE nearCube =
+        SpawnPrimitiveUVE(ServicesUVE(), Scene::PrimitiveMeshKindUVE::Cube, Math::Vector3UVE{0.0F, 0.0F, 0.0F}, 1.0F);
+
+    const Math::RayUVE ray{Math::Vector3UVE{0.0F, 0.0F, 10.0F}, Math::Vector3UVE{0.0F, 0.0F, -1.0F}};
+    const EntityPickResultUVE result = PickEntityAlongRayUVE(EntitiesUVE(), ray, 1000.0F);
+
+    ASSERT_TRUE(result.hit);
+    EXPECT_EQ(result.entity, nearCube);
+    EXPECT_NE(result.entity, farCube);
+}
+
+// The case the narrow phase exists for. A sphere's world AABB is a cube, so a ray through the
+// corner of that box passes the bounds test and misses the sphere itself. Selecting on bounds
+// alone would hand the user an object they can plainly see they did not click.
+TEST_F(EntityPickerUVETest, RayThroughTheCornerGapOfASphere_HitsItsBoundsButSelectsNothing) {
+    const Scene::EntityUVE sphere = SpawnPrimitiveUVE(
+        ServicesUVE(), Scene::PrimitiveMeshKindUVE::UVSphere, Math::Vector3UVE{0.0F, 0.0F, 0.0F}, 2.0F);
+    ASSERT_NE(sphere, Scene::kInvalidEntityUVE);
+
+    // Radius is 0.5 * 2 = 1. A ray at x = y = 0.9 is inside the AABB's corner (|x|, |y| <= 1) but
+    // at a radial distance of ~1.27 from the axis, well outside the sphere.
+    const Math::RayUVE cornerRay{Math::Vector3UVE{0.9F, 0.9F, 10.0F}, Math::Vector3UVE{0.0F, 0.0F, -1.0F}};
+    EXPECT_FALSE(PickEntityAlongRayUVE(EntitiesUVE(), cornerRay, 1000.0F).hit);
+
+    // ... and the very same sphere is still selectable straight through its middle, so the test
+    // above is proving the corner gap and not merely that the sphere is unpickable.
+    const Math::RayUVE centreRay{Math::Vector3UVE{0.0F, 0.0F, 10.0F}, Math::Vector3UVE{0.0F, 0.0F, -1.0F}};
+    EXPECT_TRUE(PickEntityAlongRayUVE(EntitiesUVE(), centreRay, 1000.0F).hit);
+}
+
+TEST_F(EntityPickerUVETest, EmptySpaceSelectsNothing) {
+    static_cast<void>(SpawnPrimitiveUVE(ServicesUVE(), Scene::PrimitiveMeshKindUVE::Cube,
+                                        Math::Vector3UVE{0.0F, 0.0F, 0.0F}, 1.0F));
+
+    const Math::RayUVE ray{Math::Vector3UVE{0.0F, 50.0F, 10.0F}, Math::Vector3UVE{0.0F, 0.0F, -1.0F}};
+    EXPECT_FALSE(PickEntityAlongRayUVE(EntitiesUVE(), ray, 1000.0F).hit);
+}
+
+TEST_F(EntityPickerUVETest, MaxDistanceRejectsAnObjectBeyondIt) {
+    static_cast<void>(SpawnPrimitiveUVE(ServicesUVE(), Scene::PrimitiveMeshKindUVE::Cube,
+                                        Math::Vector3UVE{0.0F, 0.0F, 0.0F}, 1.0F));
+
+    const Math::RayUVE ray{Math::Vector3UVE{0.0F, 0.0F, 10.0F}, Math::Vector3UVE{0.0F, 0.0F, -1.0F}};
+    EXPECT_TRUE(PickEntityAlongRayUVE(EntitiesUVE(), ray, 1000.0F).hit);
+    EXPECT_FALSE(PickEntityAlongRayUVE(EntitiesUVE(), ray, 5.0F).hit);
+}
+
+// The viewport owns hidden entities of its own (the camera proxy, the headlight). They are never
+// serialized and never shown in the Scene panel, so clicking through where one sits must not
+// select it either.
+TEST_F(EntityPickerUVETest, EditorInternalEntitiesAreNeverSelectable) {
+    const Scene::EntityUVE hidden =
+        SpawnPrimitiveUVE(ServicesUVE(), Scene::PrimitiveMeshKindUVE::Cube, Math::Vector3UVE{0.0F, 0.0F, 0.0F}, 1.0F);
+    static_cast<void>(EntitiesUVE().AddComponentUVE<Scene::EditorInternalEntityComponentUVE>(
+        hidden, Scene::EditorInternalEntityComponentUVE{}));
+
+    const Math::RayUVE ray{Math::Vector3UVE{0.0F, 0.0F, 10.0F}, Math::Vector3UVE{0.0F, 0.0F, -1.0F}};
+    EXPECT_FALSE(PickEntityAlongRayUVE(EntitiesUVE(), ray, 1000.0F).hit);
+}
+
+// Non-uniform scale is handled by transforming the ray into local space, not by rescaling the
+// geometry - so a stretched cube must be pickable across its stretched extent and miss just past
+// it. This is the property that breaks first if the local/world conversion is wrong.
+TEST_F(EntityPickerUVETest, NonUniformScaleIsPickedAcrossItsRealExtent) {
+    Scene::IEntityManagerUVE& entityManager = EntitiesUVE();
+    const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
+
+    Scene::TransformComponentUVE transform{};
+    transform.localScale = Math::Vector3UVE{8.0F, 1.0F, 1.0F}; // half extents become 4, 0.5, 0.5
+    ServicesUVE().GetSceneGraphUVE().AttachTransformUVE(entityManager, entity, transform);
+    Scene::PrimitiveMeshComponentUVE primitive{};
+    primitive.kind = Scene::PrimitiveMeshKindUVE::Cube;
+    static_cast<void>(entityManager.AddComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity, primitive));
+    ServicesUVE().GetSceneGraphUVE().UpdateUVE(entityManager);
+
+    const Math::RayUVE inside{Math::Vector3UVE{3.5F, 0.0F, 10.0F}, Math::Vector3UVE{0.0F, 0.0F, -1.0F}};
+    const Math::RayUVE outside{Math::Vector3UVE{4.5F, 0.0F, 10.0F}, Math::Vector3UVE{0.0F, 0.0F, -1.0F}};
+
+    EXPECT_TRUE(PickEntityAlongRayUVE(entityManager, inside, 1000.0F).hit);
+    EXPECT_FALSE(PickEntityAlongRayUVE(entityManager, outside, 1000.0F).hit);
+}
+
+// The cursor ray must actually point at what is drawn under the cursor. Rather than assert
+// hand-derived numbers, this picks an object through the centre pixel and confirms it is the one
+// the camera is framing - the round trip that would break if the NDC mapping or the Y flip were
+// wrong.
+TEST_F(EntityPickerUVETest, CursorRayThroughTheCentrePixelSelectsWhatTheCameraIsLookingAt) {
+    const Scene::EntityUVE framed =
+        SpawnPrimitiveUVE(ServicesUVE(), Scene::PrimitiveMeshKindUVE::Cube, Math::Vector3UVE{0.0F, 0.0F, 0.0F}, 1.0F);
+    static_cast<void>(SpawnPrimitiveUVE(ServicesUVE(), Scene::PrimitiveMeshKindUVE::Cube,
+                                        Math::Vector3UVE{40.0F, 0.0F, 0.0F}, 1.0F));
+
+    univex::camera::OrbitCamera camera; // default orbit target is the origin, where `framed` sits
+    camera.SetDistance(12.0F);
+
+    constexpr int kWidth = 1280;
+    constexpr int kHeight = 800;
+    const EntityPickResultUVE centre = univex::integration::PickEntityAtPixelUVE(
+        EntitiesUVE(), camera, kWidth, kHeight, static_cast<float>(kWidth) * 0.5F,
+        static_cast<float>(kHeight) * 0.5F);
+
+    ASSERT_TRUE(centre.hit);
+    EXPECT_EQ(centre.entity, framed);
+
+    // A corner pixel looks past everything in this scene.
+    EXPECT_FALSE(univex::integration::PickEntityAtPixelUVE(EntitiesUVE(), camera, kWidth, kHeight, 2.0F, 2.0F).hit);
+}
+
+} // namespace
