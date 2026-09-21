@@ -32,7 +32,7 @@ Whole-tree automated analysis followed by manual reading of every candidate it s
 | Build health | 🟢 | Clean configure and build; **0 errors, 0 warnings** across 55 static libraries and 8 executables |
 | Test suite (serial) | 🟢 | **2,519 tests, 100% passed** |
 | Test suite (parallel) | 🟢 | Scratch-path collisions fixed; 10/10 clean `-j` runs |
-| Parallel threading abort | 🟠 | Pre-existing, ~1/30 under `-j`; keeps CI serial (§2b) |
+| Parallel job-state lifetime | 🟢 | Fixed — see section 2b; CI now runs parallel |
 | Continuous integration | 🟢 | Green on this commit, including 39/39 real Vulkan device cases |
 | Code duplication | 🟡 | One helper duplicated 17×; a serialization helper set duplicated 3–5× with divergent safety |
 | Dead code | 🟠 | One unused header; no orphan sources |
@@ -124,10 +124,10 @@ process-local counter. That counter and its `MakeUniqueTestDirectoryUVE` wrapper
 **Evidence after the fix:** `ctest -j$(nproc)` run **10 consecutive times, 0 failures**
 (baseline over four runs: 2, 0, 1, 0). `ctest -j1` still 2519/2519. Build clean, 0 warnings.
 No scratch files are left in the build directory. Twelve tests that had never executed now run —
-see §9.
+see section 9.
 
 CI deliberately still runs serially. Not because of scratch paths, which are fixed, but because
-removing the serial constraint exposes a separate defect — see §2b.
+removing the serial constraint exposes a separate defect — see section 2b.
 
 ### Related observation
 
@@ -135,39 +135,65 @@ An earlier parallel run in this session produced a SEGFAULT in `EngineCoreUVETes
 
 ---
 
-## 2b. 🟠 Parallel runs expose a pre-existing threading abort
+## 2b. 🟢 RESOLVED — Job state outlived a drained WaitUVE()
 
-**Status:** 🟠 PARTIAL — reproducible and bounded, root cause not identified
-**Affected:** `Test/RHI/RenderSystems/renderer_3d_uve_tests.cpp`,
-`Test/RHI/RenderSystems/viewport_manager_uve_tests.cpp` (varies by run)
+**Status:** 🟢 VERIFIED — was 🟠; root cause found and fixed
+**Affected:** `Engine/Runtime/Core/Threading/Internal/thread_pool_uve.cpp`,
+`Engine/Runtime/RHI/Shader/Internal/shader_manager_uve.cpp`
 
-With §2 fixed and the suite able to run under `ctest -j`, roughly **1 run in 30** aborts a single
-Renderer3D or ViewportManager case with:
+Once section 2 let the suite run under `ctest -j`, roughly **1 run in 5** at high concurrency
+aborted a Renderer3D or ViewportManager case. The defect predated that work — a build of
+unmodified master failed at the same rate — and had simply been unreachable while the suite could
+not run in parallel at all.
+
+### Root cause
+
+Four core dumps were captured and all four carry an identical stack:
 
 ```
-terminate called without an active exception
+__cxa_pure_virtual ()
+operator() (pointer=...) at shader_manager_uve.cpp:209
+std::_Sp_counted_deleter<ShaderSourceUVE*, ShaderManagerUVE::MakeSourceUVE(...)::<lambda>>::_M_dispose()
+...
+~<lambda>() at shader_manager_uve.cpp:235          // the compile job being destroyed
+std::_Function_base::_Base_manager<...>::_M_destroy()
 ```
 
-That message means a `std::thread` was destroyed while still joinable. The affected case differs
-between runs, so it is not specific to one test.
+The crashing thread is a pool worker (`UVEWorker0` / `UVEWorker1`). The chain:
 
-**This is not a regression from §2.** A build of unmodified master, with none of the scratch-path
-changes, fails at the same rate under the same load: 1/30 at `-j4` and 1/30 at `-j16`. The defect
-predates this work and was simply unreachable while the suite could not run in parallel at all.
-In isolation the affected tests pass 40/40.
+1. `MakeSourceUVE` gives each `shared_ptr<ShaderSourceUVE>` a deleter capturing a **raw
+   `IRenderDeviceUVE*`**.
+2. `SubmitSourceCompileJobUVE` captures that `shared_ptr` **by value** in the job.
+3. `ThreadPoolUVE::RunJobUVE` decremented the job counter **before** the job object was
+   destroyed — the `QueuedJobUVE` is scoped to `WorkerLoopUVE`'s loop body and dies one line
+   later.
+4. So `JobCounterUVE::WaitUVE()` could return, `~ShaderManagerUVE` could complete, and the render
+   device could be destroyed, all while a worker still held the last reference.
+5. The worker then dropped it, the deleter ran, and `renderDevicePtr->DestroyShaderUVE(...)` made
+   a virtual call on a destroyed object.
 
-**Root cause is not established.** `ThreadPoolUVE`'s destructor
-(`Engine/Runtime/Core/Threading/Internal/thread_pool_uve.cpp:57-66`) joins every worker and looks
-correct. An initial hypothesis that thread creation was failing under load was checked and
-rejected — the container's thread limit is 64313, nowhere near exhausted.
+`~ShaderManagerUVE` carried a comment asserting the opposite — that because the deleters capture
+only `IRenderDeviceUVE&` and not the manager, "a slightly-late release remains safely
+destructible". That reasoning was backwards: capturing the device is precisely what makes a late
+release unsafe.
 
-**Impact:** this is what keeps `.github/workflows/ci.yml` serial. Enabling `-j` would give roughly
-a 3% chance of a spurious red build per run, which would reintroduce the exact "random red builds"
-problem §2 removed, only from a different cause.
+### Fix
 
-**Recommended next action:** reproduce under a debugger or with `-fsanitize=thread` to find which
-thread is destroyed unjoined, fix it, then enable `-j"$(nproc)"` in CI. The test suite itself is
-ready for it.
+`RunJobUVE` now clears `job.function` before decrementing the counter, which makes `WaitUVE()`
+mean what every caller already assumed: once it returns, no worker still holds anything the jobs
+captured. One line, in the primitive that made the wrong guarantee, rather than a workaround at
+each call site. The misleading comment in `~ShaderManagerUVE` is corrected.
+
+### Evidence
+
+| | Before | After |
+|---|---|---|
+| GL subset, `-j16`, 25 runs | **5 aborted** | 0 |
+| GL subset, `-j16`, 60 runs | — | **0 aborted** |
+| Full suite, `-j4`, 15 runs | — | **0 failed** |
+| Core dumps from worker threads | 4 captured | **0** |
+
+CI now runs `ctest … -j"$(nproc)"`.
 
 ---
 
@@ -284,7 +310,7 @@ The six near-identical manual cleanup blocks in this function are **not** a find
 |---|---|---|
 | `containerOutOfBounds` in `audio_asset_uve.cpp` | 7 | **False positive** — the guard `offset > buffer.size() \|\| buffer.size() - offset < N` is correct; when `offset == size()` the second clause yields `0 < N` and returns early |
 | `returnDanglingLifetime` in `scene_serializer_uve.cpp:1285` | 1 | **False positive** — `std::vector<std::byte>{ptr, ptr + n}` *copies* the range; `payloadText` is alive throughout construction |
-| `legacyUninitvar` in `jpeg_metadata_uve.cpp:47` | 1 | **Partially valid** — see §7 |
+| `legacyUninitvar` in `jpeg_metadata_uve.cpp:47` | 1 | **Partially valid** — see section 7 |
 
 No new findings were introduced relative to the pre-`#84` baseline.
 
@@ -305,7 +331,7 @@ Required system packages: `libglfw3-dev`, `libglew-dev`, `libgl1-mesa-dev`, `lib
 
 ### Tests — 🟢 VERIFIED (serial)
 
-`ctest -j1` → **2,519 tests, 100% passed, 0 failed.** See §2 for parallel behaviour.
+`ctest -j1` → **2,519 tests, 100% passed, 0 failed.** See section 2 for parallel behaviour.
 
 ### Continuous integration — 🟢 VERIFIED
 
@@ -325,7 +351,7 @@ CI covers what this container cannot: it installs `mesa-vulkan-drivers` (lavapip
 ## 10. 🟣 Coverage not verifiable in this environment
 
 **158** of 2,519 tests skip in the audit container for lack of a GPU, a display, and a Vulkan
-driver. Before the §2 work the figure was 170; the twelve `BuiltInShaderParityUVETest` cases now
+driver. Before the section 2 work the figure was 170; the twelve `BuiltInShaderParityUVETest` cases now
 execute and pass.
 
 | Suite | Skipped |
@@ -359,15 +385,15 @@ A correction to the previous revision of this document, which reported 350 skips
 
 ## 12. Prioritised recommendations
 
-| # | Action | Status addressed | Priority |
-|---|---|---|---|
-| 1 | ~~Give test fixtures per-process unique scratch paths~~ — **done**, see §2 | 🟢 §2 | — |
-| 2 | Find the unjoined thread behind the parallel abort, then enable `-j` in CI | 🟠 §2b | High |
-| 3 | Keep watching for the `CollisionLifecycle` SEGFAULT under `-j` | 🟣 §2 | Medium |
-| 4 | Export `IsFiniteUVE(const Vector3UVE&)`; remove 17 local copies | 🟡 §3 | Medium |
-| 5 | Consolidate binary helpers on the overflow-safe guard | 🟡 §4 | Medium |
-| 6 | Resolve the unused `ComponentUVE` concept | 🟠 §6 | Low |
-| 7 | Bump `actions/checkout` | 🔵 §11 | Low |
-| 8 | Qualify the JPEG `state` pointer as `volatile` | 🟡 §7 | Low |
+| # | Action | Status | Section | Priority |
+|---|---|---|---|---|
+| 1 | ~~Give test fixtures per-process unique scratch paths~~ — **done**, see section 2 | 🟢 | 2 | — |
+| 2 | ~~Find the cause of the parallel abort, then enable `-j` in CI~~ — **done**, see section 2b | 🟢 | 2b | — |
+| 3 | Keep watching for the `CollisionLifecycle` SEGFAULT under `-j` | 🟣 | 2 | Medium |
+| 4 | Export `IsFiniteUVE(const Vector3UVE&)`; remove 17 local copies | 🟡 | 3 | Medium |
+| 5 | Consolidate binary helpers on the overflow-safe guard | 🟡 | 4 | Medium |
+| 6 | Resolve the unused `ComponentUVE` concept | 🟠 | 6 | Low |
+| 7 | Bump `actions/checkout` | 🔵 | 11 | Low |
+| 8 | Qualify the JPEG `state` pointer as `volatile` | 🟡 | 7 | Low |
 
 No production code was modified in the course of this audit.
