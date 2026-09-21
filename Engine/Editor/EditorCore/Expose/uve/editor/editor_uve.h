@@ -352,6 +352,30 @@ public:
     /// positive scale floor; it never clamps individual components or performs proportional scaling.
     [[nodiscard]] bool ScaleSelectedUniformlyUVE(float localScaleOffset);
 
+    /// Begins one pointer-driven transform transaction on the selected entity, capturing the
+    /// baseline to preview from and to restore on cancel. A drag is not a sequence of commands:
+    /// every public transform command records history, so driving one from a drag would push an
+    /// undo entry per mouse-move frame. Returns false, leaving any existing session untouched,
+    /// for invalid editor state, multi-selection, or an entity with no transform.
+    [[nodiscard]] bool BeginTransformGestureUVE(EditorToolSessionModeUVE mode);
+
+    /// Applies the gesture's current value WITHOUT recording history. `totalAmount` is measured
+    /// from where the drag began, not from the previous frame - a drag reports its total offset
+    /// each frame, and treating it as an increment would compound into a runaway. The mode is the
+    /// one captured at Begin, so a tool switch mid-drag cannot reinterpret the gesture.
+    /// For Scale, EditorTransformAxisUVE::None means uniform.
+    [[nodiscard]] bool PreviewTransformGestureUVE(EditorTransformAxisUVE axis, float totalAmount);
+
+    /// Ends the gesture and records exactly ONE history entry, baseline to final. A gesture that
+    /// never moved anything commits cleanly without an entry and without marking the scene dirty.
+    [[nodiscard]] bool CommitTransformGestureUVE();
+
+    /// Ends the gesture and restores the baseline. Returns false without restoring when the live
+    /// transform no longer matches this gesture's last preview - something else moved the entity,
+    /// and writing a stale baseline over it would silently discard that change
+    /// (EditorToolSessionOutcomeUVE::ExternalTransformConflict).
+    [[nodiscard]] bool CancelTransformGestureUVE();
+
     /// Replaces session-local snapping settings only when every increment is finite and strictly
     /// positive and no transform/navigation gesture is active. Returns false without mutation otherwise.
     [[nodiscard]] bool SetTransformSnappingSettingsUVE(const EditorTransformSnappingSettingsUVE& settings);
@@ -715,6 +739,20 @@ private:
                                                             const Math::QuaternionUVE& initialLocalRotation,
                                                             const Math::Vector3UVE& worldAxis, float radians,
                                                             Math::QuaternionUVE& outLocalRotation) const;
+    /// The transform `source` becomes after one axis operation, including snapping and the
+    /// world-to-local conversion. Shared by the four public axis commands - which pass the LIVE
+    /// transform, making them incremental - and by the gesture preview path, which passes the
+    /// gesture BASELINE, making it absolute. One copy of the maths, so the two can never drift.
+    /// For Scale, EditorTransformAxisUVE::None means uniform; Translate and Rotate reject it.
+    [[nodiscard]] bool ComputeGestureTransformUVE(EditorToolSessionModeUVE mode,
+                                                   EditorTransformAxisUVE axis, float amount,
+                                                   const Scene::TransformComponentUVE& source,
+                                                   Scene::TransformComponentUVE& outTransform) const;
+    /// ComputeGestureTransformUVE against the selected entity's live transform, behind the guards
+    /// the four public commands share.
+    [[nodiscard]] bool TryComputeSelectedGestureTransformUVE(
+        EditorToolSessionModeUVE mode, EditorTransformAxisUVE axis, float amount,
+        Scene::TransformComponentUVE& outTransform) const;
     [[nodiscard]] bool ApplyLocalTransformUVE(Scene::EntityUVE entity,
                                                const Scene::TransformComponentUVE& transform);
     [[nodiscard]] bool ApplyEntityNameStateUVE(Scene::EntityUVE entity,
