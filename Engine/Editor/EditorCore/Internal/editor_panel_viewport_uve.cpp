@@ -201,6 +201,12 @@ void EditorUVE::DrawViewportPanelUVE() {
             if (!m_viewportOverlayState.gameWorkspaceActive) {
                 DrawViewportOverlayBubblesUVE(Math::Vector2UVE{cursorBeforeImage.x, cursorBeforeImage.y},
                                               Math::Vector2UVE{used.x, used.y});
+                // Every item submitted in this window this frame is an overlay bubble - the image
+                // above is not a hoverable item - so this is exactly "the pointer is on a button",
+                // which the renderer reads next frame to keep a toolbar click out of the scene.
+                m_viewportOverlayState.pointerOverOverlay = ImGui::IsAnyItemHovered();
+            } else {
+                m_viewportOverlayState.pointerOverOverlay = false;
             }
         }
     }

@@ -249,6 +249,15 @@ public:
         // renderer should hide editor-only overlays (grid, transform gizmo) in this mode, matching
         // Unity's own Scene/Game split, since Game is meant to preview what a player would see.
         bool gameWorkspaceActive = false;
+        // True while the pointer is over one of the overlay toolbar's own bubble buttons.
+        //
+        // The bubbles float on top of the rendered image inside the same ImGui window, so the
+        // renderer's IsWindowHovered() is equally true over a button and over the scene - which
+        // made clicking "Move" also register as a click on empty space and clear the selection.
+        // The renderer callback runs BEFORE the bubbles are submitted each frame, so it cannot ask
+        // ImGui directly; this carries the answer to it instead. It is therefore one frame old,
+        // which is imperceptible for a hover state and exact for every frame of a press.
+        bool pointerOverOverlay = false;
     };
 
     /// Render callback for the dockable "Viewport" panel: given the panel's current available
