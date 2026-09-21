@@ -11,6 +11,10 @@ No third-party engine or product name is used anywhere in this document, by poli
 a section says "match current-generation quality," it means: benchmarked against the best
 publicly shipping real-time engines as of today, without naming any of them.
 
+This document works at the **system** level. The layer underneath it — the math
+primitives, containers, allocators, handles, resources and components every system here
+is built from — is catalogued in `FOUNDATION.md`, which follows the same status legend.
+
 ## How to read this document
 
 - `[ ]` = not started, or only a stub/placeholder exists.
