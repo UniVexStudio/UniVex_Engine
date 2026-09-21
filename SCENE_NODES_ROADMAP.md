@@ -12,13 +12,22 @@ product.
 
 ## How to read this file
 
-- `[x]` — the node exists AND is backed by a real system that ticks/uses it every frame. Attaching
-  it to an entity has a real, verifiable effect.
-- `[~]` — the node exists as authored data (fields + validation) but nothing reads or writes it at
-  runtime yet. It can be added in the editor and will save/load correctly, but it does nothing.
-- `[ ]` — the node does not exist at all yet, in any form.
+Four levels, not three — a system existing is not the same claim as a system being verified
+correct, and collapsing those two into one checkmark is exactly how a stale `[x]` happens:
 
-For every `[~]` entry (and the declared gaps of `[x]` entries), `STUB_IMPLEMENTATION_ROADMAP.md`
+- `[x]` — **verified.** A real system ticks/uses it every frame AND that behavior is locked by
+  dedicated tests covering more than one case (not just construction/serialization round-trips).
+  Attaching it to an entity has a real, checked effect.
+- `[/]` — **wired, not fully verified.** A real system ticks/uses it every frame — confirmed by
+  reading the actual sync function, not assumed — but either no dedicated behavior test exists
+  yet, or coverage is thin (one test, or only the pure-logic helper is tested and not its
+  per-frame integration). Treat this as "probably works, hasn't earned the checkmark yet."
+- `[~]` — **authored data only.** The node exists as authored data (fields + validation) but
+  nothing reads or writes it at runtime. It can be added in the editor and will save/load
+  correctly, but it does nothing.
+- `[ ]` — **not started.** The node does not exist at all yet, in any form.
+
+For every `[~]`/`[/]` entry (and the declared gaps of `[x]` entries), `STUB_IMPLEMENTATION_ROADMAP.md`
 is the drill-down tracker: the exact component fields/arrays awaiting work, the system each one
 needs, dependencies, and the per-item checklist ticked as implementation lands. This file keeps
 the high-level status; that file holds the working plan.
@@ -66,6 +75,50 @@ worse than no checklist.
   RayCast3D), so resolving what a projectile hits and what should happen (stop, bounce, apply
   damage, spawn an effect) needs real gameplay decisions this struct doesn't specify. Real,
   separate follow-up.
+- [x] LevelStreamer3D — real per-frame system (`EngineCoreUVE::SyncLevelStreamer3DNodesUVE()`):
+  `loadDistance`/`unloadDistance` against the nearest viewer drive `loaded` through a hysteresis
+  band, `loadRequested` forces a manual load, a failed load latches closed and never retries in
+  the session, and per-tick load requests are budget-capped with overflow carried into the next
+  tick. Locked by five dedicated `EngineCoreUVETest` cases (hysteresis, character-as-viewer,
+  disable-pulls-content, failed-load latch, budget carryover).
+- [x] WorldPartition3D — real per-frame system (`EngineCoreUVE::SyncWorldPartition3DNodesUVE()`):
+  `cellSize` + `cellCounts` define the grid, meshes are assigned cell membership by nearest-viewer
+  distance, `maximumLoadedCells` bounds the working set (nearest cell wins on contention), nested
+  partitions let the inner one own its subtree, and disabling releases every member. Locked by
+  five dedicated tests (membership scope, budget/contention, nesting, disable-releases,
+  subtree-growth tracking).
+- [x] VisibilityRegion3D — real per-frame system (`EngineCoreUVE::SyncVisibilityRegion3DNodesUVE()`):
+  a mesh joins a region's visibility set only while a viewer is inside the region's extents AND
+  the mesh passes the region's `visibilityLayers` gate; leaving releases the verdict on the very
+  next tick, and disabling or destroying the region rehomes its members. Locked by four dedicated
+  tests (camera in/out, layer gate, immediate release, disable/destroy rehoming).
+- [x] ReflectionProbe3D — real per-frame system (`EngineCoreUVE::SyncReflectionProbe3DNodesUVE()`):
+  `updateMode` (`Once` captures on first tick then goes silent forever; `Always` recaptures only
+  while a camera is inside its influence volume; on-demand services `updateRequested` then clears
+  the latch), `cameraInfluenceWeight` tracks camera position exactly, and the per-tick capture
+  budget ages out starvation instead of always favoring the nearest probe. Locked by five
+  dedicated tests. The renderer-side sampling half of this feature (feeding the captured cubemap
+  into ambient/reflection shading) is a separate, real gap — see `ROADMAP.md`.
+
+### Wired to a real system, not yet verified by dedicated tests
+
+- [/] SpringArm3D — `EngineCoreUVE::SyncSpringArm3DNodesUVE()` raycasts from the arm's origin every
+  fixed tick, clamps `currentLength` to the hit distance minus `margin`, and applies `smoothing`
+  as an exponential approach — confirmed by reading the sync function, called every fixed tick
+  from the main loop. No test exercises the raycast-clamp/smoothing/mask behavior yet (existing
+  tests only cover construction and scene-serialization round-trips of `currentLength`), so this
+  stays short of `[x]` until one does.
+- [/] InteractionArea3D — `EngineCoreUVE::SyncInteractionArea3DNodesUVE()` refreshes a bounded
+  candidate list every frame from real overlap queries, gated by tag and symmetric layer/mask, and
+  focuses the nearest candidate. One dedicated test exists
+  (`InteractionArea3DNode_TracksInteractorsFocusesTheNearestAndClearsWhenGated`) but the edge
+  cases `STUB_IMPLEMENTATION_ROADMAP.md` calls out (bound-respected + overflow-flagged,
+  disabled-clears-stale-candidates as separate cases) aren't separately locked yet.
+- [/] Occluder3D — wired into the render queue (`RHI::RenderSystems`'s mesh-culling pass calls
+  `ResolveOccluder3DFullyHiddenUVE()` against every occluder every frame). The pure geometry
+  function itself is thoroughly tested (13+ cases: fully hidden, edge cases fail open, degenerate
+  box, never false-culls), but no test exercises the render-queue integration end to end, so the
+  wiring itself is unverified.
 
 ### Authored data only, not yet wired to a system
 
@@ -74,7 +127,6 @@ worse than no checklist.
 - [~] NavigationAgent3D — target/path fields exist, no pathfinding/steering system exists yet.
 - [~] Skeleton3D — bone hierarchy data exists, no skinning/animation system reads it.
 - [~] BoneAttachment3D — attach-to-bone fields exist, nothing resolves/follows a bone transform.
-- [~] SpringArm3D — arm-length/collision fields exist, no camera-boom system consumes it.
 - [~] Marker3D — a plain position/orientation hint, has no behavior by design (this one may never need a "system" — it's meant to be read by other tools/scripts, not ticked itself).
 - [x] Hitbox3D — real per-frame strike detection: `EngineCoreUVE::SyncHitbox3DNodesUVE()`
   (the same engine-core home the RayCast3D/Projectile3D syncs use) pairs every enabled hitbox
@@ -89,15 +141,9 @@ worse than no checklist.
   genuinely gate which hitboxes can strike it every frame (locked by engine-core tests on both
   sides of every gate); consequences of being struck are the same gameplay follow-up as
   Hitbox3D's.
-- [~] InteractionArea3D — candidate-tracking fields exist, no interact/prompt system consumes it.
-- [~] ReflectionProbe3D — size/update-mode fields exist, no reflection-probe capture/render system exists.
 - [~] Decal3D — material/size/lifetime fields exist, no decal-projection rendering exists.
 - [~] LODGroup3D — distance-threshold fields exist, no LOD-switching system exists.
-- [~] Occluder3D — extents/mode fields exist, no occlusion-culling system exists.
-- [~] VisibilityRegion3D — extents/layers fields exist, no visibility-culling system consumes it.
 - [~] SpawnPoint3D — tag/one-shot fields exist, no spawn system reads it.
-- [~] LevelStreamer3D — load/unload distance fields exist, no level-streaming system exists.
-- [~] WorldPartition3D — cell-size/loaded-cell fields exist, no world-partitioning/streaming system exists.
 - [~] AnimationPlayer — clip/speed/loop fields exist, nothing decodes a clip or evaluates a pose (see `ROADMAP.md`'s Animation section for the real gap: no skeleton/skinning/clip-sampling pipeline exists).
 - [~] AnimationTree — not even creatable yet in the editor (registry marks it `libraryCreatable = false`); depends on the same missing animation pipeline as AnimationPlayer.
 
