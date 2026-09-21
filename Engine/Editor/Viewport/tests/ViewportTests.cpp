@@ -25,6 +25,7 @@
 
 #include "univex/camera/OrbitCamera.h"
 #include "univex/camera/ViewportMetrics.h"
+#include "univex/gizmo/GizmoDrag.h"
 #include "univex/gizmo/GizmoPicking.h"
 #include "univex/gizmo/GizmoGeometry.h"
 #include "univex/gizmo/GizmoStyle.h"
@@ -627,6 +628,95 @@ int main() {
                                                view, farPivot, 4.f, view, kUnitsPerPixel);
         Check(farHit.handle == GizmoHandleUVE::AxisX,
               "a gizmo at a distant pivot picks exactly as one at a near pivot does");
+    }
+
+    std::puts("\n== Gizmo drag: cursor movement to transform amount ==");
+    {
+        using univex::gizmo::ProjectRayOntoAxisUVE;
+        using univex::gizmo::ProjectRayOntoPlaneUVE;
+        using univex::gizmo::ProjectRayOntoRingAngleUVE;
+        using univex::gizmo::ShortestAngleDeltaUVE;
+
+        const Vec3 pivot{4.f, -2.f, 7.f}; // deliberately not the origin
+        const Vec3 axisX{1.f, 0.f, 0.f};
+        const Vec3 axisY{0.f, 1.f, 0.f};
+
+        // --- axis: a ray aimed straight at a point on the axis reports that point ------------
+        {
+            const Vec3 target = pivot + axisX * 3.5f;
+            const Vec3 direction = univex::math::Normalize(Vec3{0.f, -1.f, -1.f});
+            const auto along = ProjectRayOntoAxisUVE(target - direction * 20.f, direction, pivot, axisX);
+            Check(along.has_value(), "a ray crossing the axis projects onto it");
+            if (along.has_value()) {
+                CheckNear(*along, 3.5f, 1e-3f, "   ... at the distance it actually crosses");
+            }
+        }
+
+        // The property a drag depends on: the value is measured from the PIVOT, so the caller's
+        // (current - press) is a true delta regardless of where the gesture started.
+        {
+            const Vec3 direction = univex::math::Normalize(Vec3{0.f, -1.f, -1.f});
+            const auto press = ProjectRayOntoAxisUVE((pivot + axisX * 1.f) - direction * 20.f,
+                                                     direction, pivot, axisX);
+            const auto current = ProjectRayOntoAxisUVE((pivot + axisX * 4.f) - direction * 20.f,
+                                                       direction, pivot, axisX);
+            Check(press.has_value() && current.has_value(), "both ends of a drag project");
+            if (press.has_value() && current.has_value()) {
+                CheckNear(*current - *press, 3.0f, 1e-3f,
+                          "   ... and their difference is the distance dragged");
+            }
+        }
+
+        // Sighting down the axis must refuse rather than fling the object across the world.
+        Check(!ProjectRayOntoAxisUVE(pivot - axisX * 30.f, axisX, pivot, axisX).has_value(),
+              "a ray parallel to the axis is refused, not projected with infinite sensitivity");
+        Check(!ProjectRayOntoAxisUVE(pivot, Vec3{0.f, 0.f, 0.f}, pivot, axisX).has_value(),
+              "a degenerate ray direction is refused");
+
+        // --- plane ---------------------------------------------------------------------------
+        {
+            const Vec3 expected = pivot + Vec3{2.f, 3.f, 0.f}; // in the XY plane through the pivot
+            const Vec3 normal{0.f, 0.f, 1.f};
+            const auto hit = ProjectRayOntoPlaneUVE(expected + normal * 12.f, normal * -1.f, pivot, normal);
+            Check(hit.has_value(), "a ray through the plane finds its crossing point");
+            if (hit.has_value()) {
+                CheckNear(univex::math::Length(*hit - expected), 0.f, 1e-3f,
+                          "   ... exactly where it crosses");
+            }
+        }
+        Check(!ProjectRayOntoPlaneUVE(pivot + Vec3{0.f, 0.f, 5.f}, Vec3{1.f, 0.f, 0.f}, pivot,
+                                      Vec3{0.f, 0.f, 1.f}).has_value(),
+              "a ray grazing along the plane is refused");
+
+        // --- ring ----------------------------------------------------------------------------
+        // A quarter turn around Y must read as a quarter turn, whichever way the basis happens to
+        // be oriented - so the test compares two angles rather than asserting one absolute value.
+        {
+            const Vec3 normal = axisY;
+            const Vec3 first = pivot + Vec3{2.f, 0.f, 0.f};
+            const Vec3 second = pivot + Vec3{0.f, 0.f, 2.f};
+            const auto a = ProjectRayOntoRingAngleUVE(first + normal * 9.f, normal * -1.f, pivot, normal);
+            const auto b = ProjectRayOntoRingAngleUVE(second + normal * 9.f, normal * -1.f, pivot, normal);
+            Check(a.has_value() && b.has_value(), "two points on a ring both report an angle");
+            if (a.has_value() && b.has_value()) {
+                CheckNear(std::fabs(ShortestAngleDeltaUVE(*a, *b)),
+                          std::numbers::pi_v<float> * 0.5f, 1e-3f,
+                          "   ... a quarter turn apart reads as a quarter turn");
+            }
+        }
+        Check(!ProjectRayOntoRingAngleUVE(pivot + axisY * 5.f, axisY * -1.f, pivot, axisY).has_value(),
+              "a ray landing exactly on the pivot has no angle to report");
+
+        // --- angle wrapping --------------------------------------------------------------------
+        {
+            constexpr float kPi = std::numbers::pi_v<float>;
+            CheckNear(ShortestAngleDeltaUVE(0.1f, 0.4f), 0.3f, 1e-5f, "a small turn is itself");
+            // Crossing the +-pi seam the short way, not the 359-degree way round.
+            CheckNear(ShortestAngleDeltaUVE(kPi - 0.1f, -kPi + 0.1f), 0.2f, 1e-5f,
+                      "crossing the seam takes the short way round");
+            CheckNear(ShortestAngleDeltaUVE(-kPi + 0.1f, kPi - 0.1f), -0.2f, 1e-5f,
+                      "   ... and the same in reverse");
+        }
     }
 
     std::printf("\n%s (%d failing check%s)\n",

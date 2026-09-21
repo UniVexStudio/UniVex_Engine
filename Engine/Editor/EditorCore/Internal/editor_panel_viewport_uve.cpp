@@ -283,7 +283,16 @@ void EditorUVE::DrawViewportOverlayBubblesUVE(const Math::Vector2UVE imageOrigin
                     list.AddImage(static_cast<ImTextureID>(snapIconTextureId),
                                   ImVec2{center.x - half, center.y - half}, ImVec2{center.x + half, center.y + half});
                 })) {
-            m_viewportOverlayState.snapEnabled = !m_viewportOverlayState.snapEnabled;
+            // The bubble used to be inert: snapEnabled was written here and read only by the
+            // bubble's own highlight, so the button lit up and changed nothing. It is the editor's
+            // real snapping setting that decides whether a transform quantises, so route it there
+            // and keep the bubble reflecting what actually took effect - if the setting refuses
+            // the change (a gesture is in flight, say), the bubble must not claim otherwise.
+            EditorTransformSnappingSettingsUVE snapping = GetTransformSnappingSettingsUVE();
+            snapping.enabled = !m_viewportOverlayState.snapEnabled;
+            if (SetTransformSnappingSettingsUVE(snapping)) {
+                m_viewportOverlayState.snapEnabled = snapping.enabled;
+            }
         }
         ImGui::SameLine(0.0F, kBubbleSpacingUVE);
 
