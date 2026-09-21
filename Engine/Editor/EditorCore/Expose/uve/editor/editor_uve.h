@@ -366,6 +366,13 @@ public:
     /// For Scale, EditorTransformAxisUVE::None means uniform.
     [[nodiscard]] bool PreviewTransformGestureUVE(EditorTransformAxisUVE axis, float totalAmount);
 
+    /// The translate-gesture form that takes a full world-space delta rather than one axis, for a
+    /// plane handle - a drag in the XY plane moves along two axes at once, which no single-axis
+    /// call can express. Snapping quantises each component by the translate step, so a snapped
+    /// plane drag lands on the same lattice an axis drag would. Rejected unless the gesture in
+    /// flight is a Translate.
+    [[nodiscard]] bool PreviewTranslateGestureUVE(const Math::Vector3UVE& totalWorldDelta);
+
     /// Ends the gesture and records exactly ONE history entry, baseline to final. A gesture that
     /// never moved anything commits cleanly without an entry and without marking the scene dirty.
     [[nodiscard]] bool CommitTransformGestureUVE();
@@ -748,6 +755,12 @@ private:
                                                    EditorTransformAxisUVE axis, float amount,
                                                    const Scene::TransformComponentUVE& source,
                                                    Scene::TransformComponentUVE& outTransform) const;
+    /// The translate half of ComputeGestureTransformUVE, taking the world delta directly. The
+    /// axis form is this with a delta of `axisVector * amount`.
+    [[nodiscard]] bool ComputeTranslatedTransformUVE(Scene::EntityUVE entity,
+                                                      const Math::Vector3UVE& worldDelta,
+                                                      const Scene::TransformComponentUVE& source,
+                                                      Scene::TransformComponentUVE& outTransform) const;
     /// ComputeGestureTransformUVE against the selected entity's live transform, behind the guards
     /// the four public commands share.
     [[nodiscard]] bool TryComputeSelectedGestureTransformUVE(

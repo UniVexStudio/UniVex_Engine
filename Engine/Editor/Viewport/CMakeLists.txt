@@ -53,7 +53,8 @@ add_library(univex_viewport_core STATIC
     Internal/GizmoGeometry.cpp
     Internal/NavGizmo.cpp
     Internal/GizmoPicking.cpp
-    Internal/ViewportMetrics.cpp)
+    Internal/ViewportMetrics.cpp
+    Internal/GizmoDrag.cpp)
 target_include_directories(univex_viewport_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/Expose)
 target_compile_options(univex_viewport_core PRIVATE -Wall -Wextra -Wpedantic)
 

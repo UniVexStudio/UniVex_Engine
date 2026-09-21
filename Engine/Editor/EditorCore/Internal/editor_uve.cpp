@@ -1292,6 +1292,22 @@ bool EditorUVE::SetSelectedEntityNameUVE(std::string name) {
     return true;
 }
 
+bool EditorUVE::ComputeTranslatedTransformUVE(const Scene::EntityUVE entity,
+                                              const Math::Vector3UVE& worldDelta,
+                                              const Scene::TransformComponentUVE& source,
+                                              Scene::TransformComponentUVE& outTransform) const {
+    if (!IsFiniteVectorUVE(worldDelta)) {
+        return false;
+    }
+    Math::Vector3UVE localDelta{};
+    if (!ComputeLocalDeltaForWorldDeltaUVE(entity, worldDelta, localDelta)) {
+        return false;
+    }
+    outTransform = source;
+    outTransform.localPosition += localDelta;
+    return true;
+}
+
 bool EditorUVE::ComputeGestureTransformUVE(const EditorToolSessionModeUVE mode,
                                            const EditorTransformAxisUVE axis, const float amount,
                                            const Scene::TransformComponentUVE& source,
@@ -1306,17 +1322,15 @@ bool EditorUVE::ComputeGestureTransformUVE(const EditorToolSessionModeUVE mode,
             if (axis == EditorTransformAxisUVE::None) {
                 return false;
             }
+            // Snap the DISTANCE along the axis, then build the delta from it - snapping the
+            // resulting vector per component would quantise a diagonal axis differently.
             const float snappedDistance =
                 m_transformSnappingSettings.enabled
                     ? SnapScalarUVE(amount, m_transformSnappingSettings.translateStep)
                     : amount;
-            Math::Vector3UVE localDelta{};
-            const Math::Vector3UVE worldDelta = GetAxisVectorUVE(axis) * snappedDistance;
-            if (!ComputeLocalDeltaForWorldDeltaUVE(m_selectedEntity, worldDelta, localDelta)) {
-                return false;
-            }
-            outTransform.localPosition += localDelta;
-            return true;
+            return ComputeTranslatedTransformUVE(m_selectedEntity,
+                                                 GetAxisVectorUVE(axis) * snappedDistance, source,
+                                                 outTransform);
         }
         case EditorToolSessionModeUVE::Rotate: {
             if (axis == EditorTransformAxisUVE::None) {
@@ -1446,6 +1460,44 @@ bool EditorUVE::PreviewTransformGestureUVE(const EditorTransformAxisUVE axis, co
     Scene::TransformComponentUVE updated{};
     if (!ComputeGestureTransformUVE(snapshot->mode, axis, totalAmount, snapshot->baselineTransform,
                                     updated)) {
+        return false;
+    }
+    if (!IsTransformFiniteUVE(updated) || !ApplyLocalTransformUVE(entity, updated)) {
+        return false;
+    }
+    m_sceneDirty = true;
+    return m_toolSession.RecordPreviewAppliedUVE(updated);
+}
+
+bool EditorUVE::PreviewTranslateGestureUVE(const Math::Vector3UVE& totalWorldDelta) {
+    if (m_toolSession.GetPhaseUVE() != EditorToolSessionPhaseUVE::Previewing) {
+        return false;
+    }
+    const std::optional<EditorToolSessionSnapshotUVE>& snapshot = m_toolSession.GetSnapshotUVE();
+    if (!snapshot.has_value() || snapshot->mode != EditorToolSessionModeUVE::Translate ||
+        !IsAuthoringCommandAllowedUVE() || !IsFiniteVectorUVE(totalWorldDelta)) {
+        return false;
+    }
+
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    const Scene::EntityUVE entity = snapshot->entity;
+    if (!entityManager.IsAliveUVE(entity) ||
+        !entityManager.HasComponentUVE<Scene::TransformComponentUVE>(entity)) {
+        m_toolSession.DiscardUVE();
+        return false;
+    }
+
+    // A plane drag has no single axis, so each component is quantised on its own - which lands on
+    // the same lattice a pair of axis drags would have reached.
+    Math::Vector3UVE worldDelta = totalWorldDelta;
+    if (m_transformSnappingSettings.enabled) {
+        const float step = m_transformSnappingSettings.translateStep;
+        worldDelta = Math::Vector3UVE{SnapScalarUVE(worldDelta.x, step), SnapScalarUVE(worldDelta.y, step),
+                                      SnapScalarUVE(worldDelta.z, step)};
+    }
+
+    Scene::TransformComponentUVE updated{};
+    if (!ComputeTranslatedTransformUVE(entity, worldDelta, snapshot->baselineTransform, updated)) {
         return false;
     }
     if (!IsTransformFiniteUVE(updated) || !ApplyLocalTransformUVE(entity, updated)) {
