@@ -1978,9 +1978,21 @@ TEST(EngineCoreUVETest, WindowedMode_PresentsDeterministicPrimitiveFixtureToDefa
         glReadBuffer(GL_BACK);
         // These center-of-raster samples are intentionally well inside the fixed fixture's
         // projected geometry: red cube, green plane, then blue UV sphere.
-        glReadPixels(41, 85, 1, 1, GL_RGB, GL_UNSIGNED_BYTE, cube.data());
-        glReadPixels(103, 89, 1, 1, GL_RGB, GL_UNSIGNED_BYTE, plane.data());
-        glReadPixels(79, 80, 1, 1, GL_RGB, GL_UNSIGNED_BYTE, sphere.data());
+        //
+        // Derived from the fixture rather than observed: camera at the origin looking down -Z,
+        // 60 degrees vertical FOV, 128x96 (aspect 4:3), so half-height at distance t is
+        // t*tan(30deg) and half-width is that times the aspect. That puts the cube's near face at
+        // x 19.7-30.8 / y 42.5-53.5, the sphere at x 34-51 / y 39-57, and the 6x6 plane at
+        // x 38.9-89.1 / y 24.2-71.8, with the cube and sphere both nearer than the plane and not
+        // overlapping each other. Each sample below is the middle of one of those.
+        //
+        // These coordinates were previously exactly double these values, which only landed on
+        // geometry because the built-in fullscreen-triangle shaders halved their texture
+        // coordinate and so magnified the lower-left quarter of every post-process source across
+        // the whole target - see the vertex shaders in built_in_shaders_uve.cpp.
+        glReadPixels(25, 48, 1, 1, GL_RGB, GL_UNSIGNED_BYTE, cube.data());
+        glReadPixels(75, 48, 1, 1, GL_RGB, GL_UNSIGNED_BYTE, plane.data());
+        glReadPixels(43, 48, 1, 1, GL_RGB, GL_UNSIGNED_BYTE, sphere.data());
         postRenderGlError = glGetError();
     });
     for (int frame = 0; frame < 12; ++frame) {

@@ -57,7 +57,23 @@ public:
 
     [[nodiscard]] static std::optional<ViewportRenderPass> Create(std::string& outError);
 
+    // Clears, then runs every layer in order. For hosts that draw nothing of
+    // their own - the standalone demo and the headless capture tool.
     void RenderFrame(const OrbitCamera& camera, int framebufferWidth, int framebufferHeight) const;
+
+    // The same layers, individually, for a host that has to interleave its own
+    // rendering between them. The editor draws the engine's real scene geometry
+    // between the background and the grid so all three share one depth buffer:
+    // the grid then depth-tests against actual meshes instead of being reconciled
+    // with them afterwards, and the gizmos - which must never be occluded by the
+    // object they manipulate - go last of all.
+    //
+    // Expected order: ClearUVE, RenderBackgroundUVE, [host scene geometry],
+    // RenderGridUVE, RenderOverlayUVE.
+    void ClearUVE(int framebufferWidth, int framebufferHeight) const;
+    void RenderBackgroundUVE() const;
+    void RenderGridUVE(const OrbitCamera& camera, int framebufferWidth, int framebufferHeight) const;
+    void RenderOverlayUVE(const OrbitCamera& camera, int framebufferWidth, int framebufferHeight) const;
 
     [[nodiscard]] univex::render::InfiniteGridRenderer& Grid() { return grid_; }
     [[nodiscard]] const univex::render::InfiniteGridRenderer& Grid() const { return grid_; }

@@ -45,30 +45,38 @@ namespace {
 // kNavClickSlopPixels for the standalone demo.
 constexpr float kNavClickSlopPixelsUVE = 4.0F;
 
-// Fullscreen-triangle compositing pass: layers EditorMeshLayerUVE's real mesh/material render on
-// top of ViewportRenderPass's grid/gizmo image, using the mesh layer's own depth buffer (cleared
-// to the far value, 1.0) as the per-pixel test for "was real geometry drawn here" - avoids needing
-// to reconcile the two renderers' independent camera/projection depth conventions, since only the
-// mesh layer's own depth is ever read. No vertex buffer needed (same gl_VertexID trick already
-// used by Renderer3DUVE's own internal tonemap/fullscreen-quad shader).
-constexpr std::string_view kCompositeVertexShaderUVE = R"(#version 330 core
+// Fullscreen-triangle pass that injects EditorMeshLayerUVE's real mesh/material render into the
+// viewport's own framebuffer, colour AND depth, so that the editor's grid and gizmos share one
+// depth buffer with the engine's scene geometry instead of being reconciled against it afterwards.
+// No vertex buffer needed (same gl_VertexID trick already used by Renderer3DUVE's own internal
+// tonemap/fullscreen-quad shader).
+constexpr std::string_view kMeshBlitVertexShaderUVE = R"(#version 330 core
 void main() {
     vec2 pos = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
     gl_Position = vec4(pos * 2.0 - 1.0, 0.0, 1.0);
 }
 )";
 
-constexpr std::string_view kCompositeFragmentShaderUVE = R"(#version 330 core
-uniform sampler2D uGridColor;
+// Coverage comes from alpha, not depth: Renderer3DUVE's tone-mapping pass reports which pixels it
+// actually drew by writing alpha 1 there and 0 elsewhere (see fullscreen_quad.glsl), because the
+// depth attachment a caller hands RenderFrameToTargetUVE is cleared by that pass and never
+// written, and the scene's own clear colour is indistinguishable from dark geometry.
+//
+// Covered pixels are pushed to the near plane rather than carried at their real depth, so scene
+// geometry occludes the grid drawn after it. That is correct for opaque geometry above the ground
+// plane, which is every case the editor can currently author; geometry below y=0 will hide grid
+// lines that should cross in front of it. Fixing that properly needs the renderer to export real
+// per-pixel depth, which in turn needs a depth-compare mode the RHI does not expose yet.
+constexpr std::string_view kMeshBlitFragmentShaderUVE = R"(#version 330 core
 uniform sampler2D uMeshColor;
-uniform sampler2D uMeshDepth;
 out vec4 FragColor;
 void main() {
-    ivec2 coord = ivec2(gl_FragCoord.xy);
-    float meshDepth = texelFetch(uMeshDepth, coord, 0).r;
-    vec4 meshColor = texelFetch(uMeshColor, coord, 0);
-    vec4 gridColor = texelFetch(uGridColor, coord, 0);
-    FragColor = meshDepth < 1.0 ? meshColor : gridColor;
+    vec4 meshColor = texelFetch(uMeshColor, ivec2(gl_FragCoord.xy), 0);
+    if (meshColor.a < 0.5) {
+        discard; // the renderer drew nothing here; leave the backdrop and its depth alone
+    }
+    FragColor = vec4(meshColor.rgb, 1.0);
+    gl_FragDepth = 0.0;
 }
 )";
 
@@ -111,8 +119,8 @@ public:
 
     ~ViewportPanelBackendUVE() {
         DestroyFramebuffersUVE();
-        if (compositeVao_ != 0U) {
-            glDeleteVertexArrays(1, &compositeVao_);
+        if (meshBlitVao_ != 0U) {
+            glDeleteVertexArrays(1, &meshBlitVao_);
         }
         if (uiFontAtlasTexture_ != 0U) {
             glDeleteTextures(1, &uiFontAtlasTexture_);
@@ -146,29 +154,39 @@ public:
         // app/main.cpp's own per-frame state.camera.Update(deltaSeconds) call in the standalone demo.
         camera_.Update(ImGui::GetIO().DeltaTime);
 
-        GLint previousFbo = 0;
-        glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previousFbo);
-        glBindFramebuffer(GL_FRAMEBUFFER, msaaFbo_);
-        glEnable(GL_MULTISAMPLE);
-        renderPass_->RenderFrame(camera_, width, height);
-        glBindFramebuffer(GL_READ_FRAMEBUFFER, msaaFbo_);
-        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, resolveFbo_);
-        glBlitFramebuffer(0, 0, width, height, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
-        glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(previousFbo));
-
-        // Real MeshComponentUVE-carrying scene entities, rendered via the same lit/shaded pipeline
-        // EngineCoreUVE itself uses at runtime (Renderer3DUVE::RenderFrameToTargetUVE), layered on
-        // top of the grid/gizmo image above - see EditorMeshLayerUVE's own header comment. While the
-        // Game workspace tab is active, render through the scene's own camera instead of the
-        // editor's free-look OrbitCamera - see FindGameCameraEntityUVE's own comment for the "first
-        // camera found" convention; EditorMeshLayerUVE itself falls back to the OrbitCamera-synced
-        // view if the scene has no usable camera, so a Play session with no authored camera still
-        // shows something instead of a blank panel.
+        // Real scene entities, rendered via the same lit/shaded pipeline EngineCoreUVE itself uses
+        // at runtime (Renderer3DUVE::RenderFrameToTargetUVE) - see EditorMeshLayerUVE's own header
+        // comment. This runs first because its colour and depth are injected into the viewport's
+        // framebuffer below, between the backdrop and the grid, so the grid depth-tests against
+        // real geometry. While the Game workspace tab is active, render through the scene's own
+        // camera instead of the editor's free-look OrbitCamera - see FindGameCameraEntityUVE's own
+        // comment for the "first camera found" convention; EditorMeshLayerUVE itself falls back to
+        // the OrbitCamera-synced view if the scene has no usable camera, so a Play session with no
+        // authored camera still shows something instead of a blank panel.
         const std::optional<UVE::Scene::EntityUVE> gameCameraOverride =
             gameWorkspaceActive_ ? FindGameCameraEntityUVE(entityManager_) : std::nullopt;
         const univex::integration::EditorMeshLayerResultUVE meshResult = meshLayer_.RenderUVE(
             camera_, static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height), gameCameraOverride);
         outUsedSize = UVE::Math::Vector2UVE{static_cast<float>(width), static_cast<float>(height)};
+
+        // One framebuffer, one depth buffer, drawn back to front: backdrop, then the engine's
+        // scene geometry, then the grid (which depth-tests against it), then the gizmos last of
+        // all so nothing can paint over them.
+        GLint previousFbo = 0;
+        glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previousFbo);
+        glBindFramebuffer(GL_FRAMEBUFFER, msaaFbo_);
+        glEnable(GL_MULTISAMPLE);
+        renderPass_->ClearUVE(width, height);
+        renderPass_->RenderBackgroundUVE();
+        if (meshResult.colorTextureId != 0U && EnsureMeshBlitResourcesUVE()) {
+            BlitMeshLayerUVE(meshResult);
+        }
+        renderPass_->RenderGridUVE(camera_, width, height);
+        renderPass_->RenderOverlayUVE(camera_, width, height);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, msaaFbo_);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, resolveFbo_);
+        glBlitFramebuffer(0, 0, width, height, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+        glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(previousFbo));
 
         // Player-facing HUD content only shows during the Game workspace tab's "what a player
         // would see" preview (matching the grid/transform-gizmo hiding above) - drawn via ImGui's
@@ -178,11 +196,7 @@ public:
             DrawUIOverlayUVE();
         }
 
-        if (meshResult.colorTextureId == 0U || !EnsureCompositeResourcesUVE(width, height)) {
-            return static_cast<std::uint64_t>(resolveColorTexture_);
-        }
-        CompositeMeshOverGridUVE(meshResult, width, height, static_cast<GLuint>(previousFbo));
-        return static_cast<std::uint64_t>(compositeColorTexture_);
+        return static_cast<std::uint64_t>(resolveColorTexture_);
     }
 
 private:
@@ -277,85 +291,48 @@ private:
         }
         resolveColorTexture_ = resolveFbo_ = msaaColorRb_ = msaaDepthRb_ = msaaFbo_ = 0U;
         framebufferWidth_ = framebufferHeight_ = 0;
-        if (compositeColorTexture_ != 0U) {
-            glDeleteTextures(1, &compositeColorTexture_);
-        }
-        if (compositeFbo_ != 0U) {
-            glDeleteFramebuffers(1, &compositeFbo_);
-        }
-        compositeColorTexture_ = compositeFbo_ = 0U;
-        compositeWidth_ = compositeHeight_ = 0;
     }
 
-    // Lazily builds the compositing shader/VAO once (not size-dependent) and (re)creates the
-    // composite FBO+color-texture pair whenever the panel's reported size changes - same shape as
-    // EnsureFramebuffersUVE above, kept separate since this pair's lifetime is independent of the
-    // MSAA/resolve pair (this one only needs recreating, never touched by the grid render pass).
-    [[nodiscard]] bool EnsureCompositeResourcesUVE(const int width, const int height) {
-        if (!compositeProgram_.has_value()) {
-            std::string error;
-            compositeProgram_ = univex::render::ShaderProgram::Build(kCompositeVertexShaderUVE,
-                                                                      kCompositeFragmentShaderUVE, error);
-            if (!compositeProgram_.has_value()) {
-                UVE_ERROR("uve_editor_app: viewport composite shader build failed: {}", error);
-                return false;
-            }
-            glGenVertexArrays(1, &compositeVao_);
-        }
-        if (width == compositeWidth_ && height == compositeHeight_ && compositeFbo_ != 0U) {
+    // Lazily builds the mesh-blit shader and its empty VAO once. Nothing here is size-dependent:
+    // the pass draws straight into the viewport's own MSAA framebuffer, so there is no second
+    // colour target to keep in step with the panel's size.
+    [[nodiscard]] bool EnsureMeshBlitResourcesUVE() {
+        if (meshBlitProgram_.has_value()) {
             return true;
         }
-        if (compositeColorTexture_ != 0U) {
-            glDeleteTextures(1, &compositeColorTexture_);
+        std::string error;
+        meshBlitProgram_ = univex::render::ShaderProgram::Build(kMeshBlitVertexShaderUVE,
+                                                                 kMeshBlitFragmentShaderUVE, error);
+        if (!meshBlitProgram_.has_value()) {
+            UVE_ERROR("uve_editor_app: viewport mesh blit shader build failed: {}", error);
+            return false;
         }
-        if (compositeFbo_ != 0U) {
-            glDeleteFramebuffers(1, &compositeFbo_);
-        }
-        compositeWidth_ = width;
-        compositeHeight_ = height;
-
-        glGenFramebuffers(1, &compositeFbo_);
-        glBindFramebuffer(GL_FRAMEBUFFER, compositeFbo_);
-        glGenTextures(1, &compositeColorTexture_);
-        glBindTexture(GL_TEXTURE_2D, compositeColorTexture_);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, compositeColorTexture_, 0);
-        const bool complete = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
-        if (!complete) {
-            UVE_ERROR("uve_editor_app: viewport composite framebuffer incomplete");
-        }
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        return complete;
+        glGenVertexArrays(1, &meshBlitVao_);
+        return true;
     }
 
-    // Draws the fullscreen depth-tested composite pass: `resolveColorTexture_` (grid/gizmos) under
-    // `meshResult`'s color, selected per-pixel by `meshResult`'s own depth (see the shader source
-    // above for why only the mesh layer's depth is ever read).
-    void CompositeMeshOverGridUVE(const univex::integration::EditorMeshLayerResultUVE& meshResult, const int width,
-                                  const int height, const GLuint restoreFbo) {
-        glBindFramebuffer(GL_FRAMEBUFFER, compositeFbo_);
-        glViewport(0, 0, width, height);
-        glDisable(GL_DEPTH_TEST);
+    // Writes EditorMeshLayerUVE's colour and depth into the currently bound framebuffer, so the
+    // grid and gizmos that follow share one depth buffer with the engine's scene geometry. Depth
+    // testing stays off: the mesh layer's own depth already resolved visibility between meshes,
+    // and at this point in the frame only the backdrop is underneath.
+    void BlitMeshLayerUVE(const univex::integration::EditorMeshLayerResultUVE& meshResult) {
+        // GL_ALWAYS rather than disabling the test: OpenGL skips depth-buffer writes entirely
+        // while GL_DEPTH_TEST is disabled, whatever the write mask says, and the depth this pass
+        // writes is the whole reason it exists.
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_ALWAYS);
+        glDepthMask(GL_TRUE);
         glDisable(GL_BLEND);
-        compositeProgram_->Use();
+        meshBlitProgram_->Use();
         glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, resolveColorTexture_);
-        glUniform1i(compositeProgram_->UniformLocation("uGridColor"), 0);
-        glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_2D, meshResult.colorTextureId);
-        glUniform1i(compositeProgram_->UniformLocation("uMeshColor"), 1);
-        glActiveTexture(GL_TEXTURE2);
-        glBindTexture(GL_TEXTURE_2D, meshResult.depthTextureId);
-        glUniform1i(compositeProgram_->UniformLocation("uMeshDepth"), 2);
-        glBindVertexArray(compositeVao_);
+        glUniform1i(meshBlitProgram_->UniformLocation("uMeshColor"), 0);
+        glBindVertexArray(meshBlitVao_);
         glDrawArrays(GL_TRIANGLES, 0, 3);
         glBindVertexArray(0);
         glActiveTexture(GL_TEXTURE0);
-        glBindFramebuffer(GL_FRAMEBUFFER, restoreFbo);
+        // The grid depth-tests against what this pass just wrote, so put the comparison back.
+        glDepthFunc(GL_LESS);
     }
 
     // Uploads UI::UIFontAtlasUVE's baked RGBA8 bitmap once (it never changes after construction),
@@ -669,12 +646,8 @@ private:
     GLuint resolveColorTexture_ = 0U;
     int framebufferWidth_ = 0;
     int framebufferHeight_ = 0;
-    std::optional<univex::render::ShaderProgram> compositeProgram_;
-    GLuint compositeVao_ = 0U;
-    GLuint compositeFbo_ = 0U;
-    GLuint compositeColorTexture_ = 0U;
-    int compositeWidth_ = 0;
-    int compositeHeight_ = 0;
+    std::optional<univex::render::ShaderProgram> meshBlitProgram_;
+    GLuint meshBlitVao_ = 0U;
     // Uploaded lazily on first use by DrawUIOverlayUVE() - see that method's own comment for why
     // the editor keeps its own copy of this texture rather than reading Renderer3DUVE's internal
     // one (created only inside its "UIOverlay" render-graph pass, which this panel deliberately

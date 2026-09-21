@@ -141,6 +141,14 @@ NavViewportRect ViewportRenderPass::NavViewportRectFor(const GizmoStyle& style,
 }
 
 void ViewportRenderPass::DrawBackground() const {
+    const GLboolean hadDepthTest = glIsEnabled(GL_DEPTH_TEST);
+    const GLboolean hadBlend = glIsEnabled(GL_BLEND);
+    GLint depthMask = GL_TRUE;
+    glGetIntegerv(GL_DEPTH_WRITEMASK, &depthMask);
+
+    // The backdrop sits behind everything by construction, so it neither tests
+    // nor writes depth - writing far-plane depth here would be indistinguishable
+    // from the clear, and testing would only cost fill rate.
     glDisable(GL_DEPTH_TEST);
     glDepthMask(GL_FALSE);
     glDisable(GL_BLEND);
@@ -148,6 +156,12 @@ void ViewportRenderPass::DrawBackground() const {
     glBindVertexArray(backgroundVao_);
     glDrawArrays(GL_TRIANGLES, 0, 3);
     glBindVertexArray(0);
+
+    // Restore: anything drawn after this pass (the host's own scene geometry,
+    // in the interleaved ordering) must not inherit a disabled depth test.
+    glDepthMask(static_cast<GLboolean>(depthMask));
+    if (hadDepthTest == GL_TRUE) glEnable(GL_DEPTH_TEST);
+    if (hadBlend == GL_TRUE) glEnable(GL_BLEND);
 }
 
 void ViewportRenderPass::DrawTransformGizmo(const OrbitCamera& camera, int width, int height) const {
@@ -168,7 +182,11 @@ void ViewportRenderPass::DrawTransformGizmo(const OrbitCamera& camera, int width
     params.viewportHeight = static_cast<float>(height);
     // Clear depth first: the gizmo then draws over the whole scene (a handle
     // hidden inside the object it moves is useless) while still depth-sorting
-    // against itself.
+    // against itself, so its own near arms occlude its far ones.
+    //
+    // Discarding scene depth is only safe because the overlay is the last pass
+    // of the frame - RenderOverlayUVE is documented as such, and RenderFrame
+    // calls it last. Anything that needs scene depth must run before it.
     glDepthMask(GL_TRUE);
     glClear(GL_DEPTH_BUFFER_BIT);
     params.depthTest = true;
@@ -202,31 +220,54 @@ void ViewportRenderPass::DrawNavGizmo(const OrbitCamera& camera, int width, int 
     glViewport(0, 0, width, height);
 }
 
-void ViewportRenderPass::RenderFrame(const OrbitCamera& camera,
-                                     int framebufferWidth,
-                                     int framebufferHeight) const {
+void ViewportRenderPass::ClearUVE(int framebufferWidth, int framebufferHeight) const {
     if (framebufferWidth <= 0 || framebufferHeight <= 0) return;
-
     glViewport(0, 0, framebufferWidth, framebufferHeight);
     glDepthMask(GL_TRUE); // clearing depth requires the write mask on
     glClearColor(0.043f, 0.055f, 0.086f, 1.f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+}
 
+void ViewportRenderPass::RenderBackgroundUVE() const {
     if (settings_.viewEnvironment) DrawBackground();
+}
 
-    if (settings_.viewGrid) {
-        // The vertical Y axis line is drawn inside the grid's own shader now (InfiniteGridRenderer /
-        // infinite_grid.frag) rather than as a separate GizmoRenderer pass, so it shares the exact
-        // same per-pixel anti-aliasing and distance fade as the X/Z axis lines instead of visibly
-        // seaming against them.
-        grid_.Draw(camera, framebufferWidth, framebufferHeight);
-    }
+void ViewportRenderPass::RenderGridUVE(const OrbitCamera& camera,
+                                       int framebufferWidth,
+                                       int framebufferHeight) const {
+    if (framebufferWidth <= 0 || framebufferHeight <= 0 || !settings_.viewGrid) return;
+    // The grid depth-tests (infinite_grid.frag writes real gl_FragDepth) but does
+    // not write depth, so scene geometry already in this buffer correctly occludes
+    // it, while the grid never occludes anything drawn after it.
+    //
+    // The vertical Y axis line is drawn inside the grid's own shader now (InfiniteGridRenderer /
+    // infinite_grid.frag) rather than as a separate GizmoRenderer pass, so it shares the exact
+    // same per-pixel anti-aliasing and distance fade as the X/Z axis lines instead of visibly
+    // seaming against them.
+    grid_.Draw(camera, framebufferWidth, framebufferHeight);
+}
+
+void ViewportRenderPass::RenderOverlayUVE(const OrbitCamera& camera,
+                                          int framebufferWidth,
+                                          int framebufferHeight) const {
+    if (framebufferWidth <= 0 || framebufferHeight <= 0) return;
+    // Last pass of the frame - see DrawTransformGizmo on why that matters.
     if (settings_.viewTransformGizmo && gizmoMode_ != GizmoMode::Select) {
         DrawTransformGizmo(camera, framebufferWidth, framebufferHeight);
     }
     if (settings_.viewGizmos) {
         DrawNavGizmo(camera, framebufferWidth, framebufferHeight);
     }
+}
+
+void ViewportRenderPass::RenderFrame(const OrbitCamera& camera,
+                                     int framebufferWidth,
+                                     int framebufferHeight) const {
+    if (framebufferWidth <= 0 || framebufferHeight <= 0) return;
+    ClearUVE(framebufferWidth, framebufferHeight);
+    RenderBackgroundUVE();
+    RenderGridUVE(camera, framebufferWidth, framebufferHeight);
+    RenderOverlayUVE(camera, framebufferWidth, framebufferHeight);
 }
 
 } // namespace univex::app
