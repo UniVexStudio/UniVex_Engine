@@ -36,11 +36,14 @@ void main() {
     vec4 clipCurrent = uViewProj * vec4(worldCurrent, 1.0);
     vec4 clipOther   = uViewProj * vec4(worldOther,   1.0);
 
-    // Guard against a zero/negative w: a segment endpoint exactly on or behind
-    // the eye would otherwise produce an infinite screen position and smear the
-    // quad across the whole viewport.
-    float wCurrent = (abs(clipCurrent.w) < 1e-6) ? 1e-6 : clipCurrent.w;
-    float wOther   = (abs(clipOther.w)   < 1e-6) ? 1e-6 : clipOther.w;
+    // Guard against a zero or NEGATIVE w. Taking abs() alone was not enough: an endpoint behind
+    // the eye has w < 0, which mirrors its projected position through the origin, flips the
+    // segment's screen-space direction and therefore the normal the quad is expanded along - the
+    // handle smears or inverts. Clamping to a small POSITIVE w keeps the direction (and so the
+    // quad's thickness) well defined; gl_Position below still uses the true clip coordinates, so
+    // real clipping is unaffected.
+    float wCurrent = max(clipCurrent.w, 1e-4);
+    float wOther   = max(clipOther.w,   1e-4);
 
     vec2 halfViewport = uViewportSize * 0.5;
     vec2 screenCurrent = (clipCurrent.xy / wCurrent) * halfViewport;

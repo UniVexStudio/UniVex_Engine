@@ -1,5 +1,7 @@
 #include "ViewportRenderPass.h"
 
+#include "univex/camera/ViewportMetrics.h"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -166,18 +168,24 @@ void ViewportRenderPass::DrawBackground() const {
 
 void ViewportRenderPass::DrawTransformGizmo(const OrbitCamera& camera, int width, int height) const {
     const Vec3 viewDirection = Normalize(camera.Target() - camera.Eye());
-    const float scale = univex::render::GizmoRenderer::ScaleForPixelRadius(camera, height,
-                                                                          style_.gizmoPixelRadius);
+    // Everything below is measured at the pivot the widget is actually drawn at, not at the
+    // camera's orbit target - they are the same point only right after a focus, and sizing from
+    // the wrong one is what made the gizmo's proportions wander as the view orbited.
+    const Vec3 pivot = gizmoPivotOverride_.value_or(camera.Target());
+    const float scale = univex::render::GizmoRenderer::ScaleForPixelRadius(
+        camera, height, style_.gizmoPixelRadius, pivot);
     // Gizmo units per pixel: one pixel is worldPerPixel world units, and one
     // gizmo unit is `scale` world units.
-    const float worldPerPixel = univex::render::WorldPerPixelAtPivot(camera, height);
+    const float worldPerPixel =
+        univex::camera::WorldPerPixelAtPointUVE(camera, height, pivot);
     const float unitsPerPixel = (scale > 0.f) ? worldPerPixel / scale : 1.f;
     const auto mesh = BuildGizmoMesh(gizmoMode_, style_, viewDirection, unitsPerPixel);
 
     GizmoDrawParams params;
     params.viewProjection = camera.ViewProjection(static_cast<float>(width) / static_cast<float>(height));
-    params.origin = gizmoPivotOverride_.value_or(camera.Target());
+    params.origin = pivot;
     params.scale = scale;
+    params.viewDirection = viewDirection;
     params.viewportWidth = static_cast<float>(width);
     params.viewportHeight = static_cast<float>(height);
     // Clear depth first: the gizmo then draws over the whole scene (a handle
@@ -209,6 +217,7 @@ void ViewportRenderPass::DrawNavGizmo(const OrbitCamera& camera, int width, int 
     params.scale = 1.f;
     params.viewportWidth = static_cast<float>(rect.size);
     params.viewportHeight = static_cast<float>(rect.size);
+    params.viewDirection = viewDirection;
     params.depthTest = false; // six discs, painter-sorted in the builder
 
     // Two passes: the axis stubs underneath, then the balls and their letters together. The

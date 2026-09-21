@@ -82,9 +82,14 @@ private:
     GridSettings settings_{};
 };
 
-// World units covered by one pixel at the pivot's depth — what the
+// World units covered by one pixel at the orbit target's depth — what the
 // viewport HUD should feed to ComputeDisplayGridSpacing() so the readout
 // matches what the user sees around the centre of the screen.
+//
+// Kept as the name this module's HUD call sites already use; the maths itself now lives in
+// univex/camera/ViewportMetrics.h, which is also what the gizmo sizes itself from (at its own
+// pivot rather than at the orbit target — see that header for why the two must not be the same
+// function with a hidden assumption baked in).
 [[nodiscard]] float WorldPerPixelAtPivot(const univex::camera::OrbitCamera& camera, int framebufferHeight);
 
 } // namespace univex::render
