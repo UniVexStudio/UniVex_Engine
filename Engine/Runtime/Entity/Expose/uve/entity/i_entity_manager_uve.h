@@ -69,6 +69,12 @@ public:
     /// {entity's current components} ∪ {T}. Asserts `entity` is alive and does not already have
     /// a `T`. Returns a reference to the newly-constructed component (valid until the next
     /// structural change involving `entity` or any entity sharing its archetype/chunk).
+    /// Component types are plain, non-polymorphic object types with no shared base — an earlier
+    /// draft had every component type derive from an empty marker base, but that broke portable
+    /// placement-construction: an empty base class forces stricter brace-elision rules in
+    /// aggregate/list-initialization that GCC and Clang disagree on for a single,
+    /// non-brace-enclosed initializer, i.e. exactly this call copy-constructing `T` from a single
+    /// existing value — confirmed by direct testing across both compilers this project targets.
     template <typename T, typename... TArgs>
     T& AddComponentUVE(EntityUVE entity, TArgs&&... args) {
         void* const slot = AddComponentErased(entity, std::type_index(typeid(T)), MakeComponentTypeInfoUVE<T>());

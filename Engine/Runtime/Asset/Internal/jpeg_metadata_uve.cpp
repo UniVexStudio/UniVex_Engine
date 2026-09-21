@@ -44,7 +44,10 @@ struct JpegDecodeStateUVE final {
                                           const JpegMetadataUVE& metadata,
                                           std::byte*& outPixels) noexcept {
     outPixels = nullptr;
-    auto* const state = new (std::nothrow) JpegDecodeStateUVE{};
+    // volatile-qualified (not the pointee) because `state` is read in the setjmp/longjmp
+    // recovery path below: the standard leaves a non-volatile automatic variable indeterminate
+    // after longjmp if it could have changed since setjmp, even though this one never is.
+    JpegDecodeStateUVE* volatile state = new (std::nothrow) JpegDecodeStateUVE{};
     if (state == nullptr) return false;
     JpegErrorUVE error;
     state->decoder.err = jpeg_std_error(&error.base);
