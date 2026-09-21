@@ -34,6 +34,11 @@ extern const std::string_view kShadowDepthSource;
 inline constexpr std::string_view kLitShadowed3DVirtualPath = "shaders/lit_shadowed_3d.glsl";
 extern const std::string_view kLitShadowed3DSource;
 
+/// Lambert-only shading for PrimitiveMeshComponentUVE geometry, which has an authored base colour
+/// but no material and so cannot use kLitShadowed3DSource's PBR/texture/shadow path.
+inline constexpr std::string_view kLitPrimitive3DVirtualPath = "shaders/lit_primitive_3d.glsl";
+extern const std::string_view kLitPrimitive3DSource;
+
 inline constexpr std::string_view kParticleVirtualPath = "shaders/particle.glsl";
 extern const std::string_view kParticleSource;
 

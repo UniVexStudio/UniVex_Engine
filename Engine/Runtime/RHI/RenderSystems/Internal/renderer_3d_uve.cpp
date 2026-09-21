@@ -1438,12 +1438,13 @@ struct Renderer3DUVE::ImplUVE {
     /// Sets every uniform that does not vary per object. Shared verbatim by the per-object and
     /// instanced paths so the two cannot drift in how they light a surface - the same reason the
     /// shader keeps both variants in one file.
-    void ApplyFrameAndMaterialUniformsUVE(Shader::ShaderProgramUVE& program,
-                                          const Asset::MaterialAssetUVE& material,
-                                          const FrameUniformsUVE& frameUniforms) {
+    /// The frame-constant view and lighting state every lit program needs, and nothing else -
+    /// deliberately not uViewPosition or any shadow/material uniform, so a program that lights
+    /// without them (the primitive shader, which is Lambert-only) can share this without the
+    /// backend warning about uniforms it does not declare.
+    void ApplyLightingUniformsUVE(Shader::ShaderProgramUVE& program, const FrameUniformsUVE& frameUniforms) {
         program.SetMatrix4x4UVE("uViewProjection", frameUniforms.viewProjection);
         program.SetVector3UVE("uAmbientColor", frameUniforms.ambientColor);
-        program.SetVector3UVE("uViewPosition", frameUniforms.viewPosition);
         for (std::size_t lightIndex = 0; lightIndex < kMaxLightsUVE; ++lightIndex) {
             const LightDataUVE& light = frameUniforms.lights[lightIndex];
             const LightUniformNamesUVE& names = uniformNames.lights[lightIndex];
@@ -1455,6 +1456,13 @@ struct Renderer3DUVE::ImplUVE {
             program.SetFloatUVE(names.range, light.range);
             program.SetFloatUVE(names.spotAngleDegrees, light.spotAngleDegrees);
         }
+    }
+
+    void ApplyFrameAndMaterialUniformsUVE(Shader::ShaderProgramUVE& program,
+                                          const Asset::MaterialAssetUVE& material,
+                                          const FrameUniformsUVE& frameUniforms) {
+        ApplyLightingUniformsUVE(program, frameUniforms);
+        program.SetVector3UVE("uViewPosition", frameUniforms.viewPosition);
         program.SetMatrix4x4UVE(uniformNames.legacyLightSpaceMatrix, frameUniforms.lightSpaceMatrices[0]);
         program.SetIntUVE("uShadowMapTexture", static_cast<std::int32_t>(kShadowMapTextureSlotUVE));
         program.SetIntUVE("uShadowCascadeCount", frameUniforms.cascadeCount);
@@ -1667,8 +1675,11 @@ struct Renderer3DUVE::ImplUVE {
                 continue;
             }
             primitiveProgram->SetMatrix4x4UVE("uModel", item.worldMatrix);
-            primitiveProgram->SetMatrix4x4UVE("uViewProjection", frameUniforms.viewProjection);
+            // Normal matrix = transpose(inverse(model)); see ComputeNormalMatrixUVE, shared with
+            // the lit mesh path so the two cannot disagree under non-uniform scale.
+            primitiveProgram->SetMatrix4x4UVE("uNormalMatrix", ComputeNormalMatrixUVE(item.worldMatrix));
             primitiveProgram->SetVector3UVE("uColor", item.baseColor);
+            ApplyLightingUniformsUVE(*primitiveProgram, frameUniforms);
             primitiveProgram->ApplyToUVE(commandBuffer);
             commandBuffer.BindVertexBufferUVE(meshResources.vertexBuffer);
             commandBuffer.BindIndexBufferUVE(meshResources.indexBuffer);
@@ -1875,8 +1886,8 @@ Renderer3DUVE::Renderer3DUVE(IRenderDeviceUVE& renderDevice, IRenderSystemUVE& r
                       BufferUsageUVE::Vertex});
 
     Shader::ShaderProgramDescUVE primitiveProgramDesc;
-    primitiveProgramDesc.virtualFilePath = std::string(Shader::BuiltIn::kBasic3DVirtualPath);
-    primitiveProgramDesc.embeddedFallbackSourceCode = std::string(Shader::BuiltIn::kBasic3DSource);
+    primitiveProgramDesc.virtualFilePath = std::string(Shader::BuiltIn::kLitPrimitive3DVirtualPath);
+    primitiveProgramDesc.embeddedFallbackSourceCode = std::string(Shader::BuiltIn::kLitPrimitive3DSource);
     primitiveProgramDesc.vertexLayout = MeshVertexLayoutUVE();
     primitiveProgramDesc.vertexStride = static_cast<std::uint32_t>(sizeof(Asset::MeshVertexUVE));
     primitiveProgramDesc.depthTestEnabled = true;
