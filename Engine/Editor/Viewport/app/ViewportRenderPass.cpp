@@ -211,9 +211,9 @@ void ViewportRenderPass::DrawNavGizmo(const OrbitCamera& camera, int width, int 
     params.viewportHeight = static_cast<float>(rect.size);
     params.depthTest = false; // six discs, painter-sorted in the builder
 
-    // Three passes in order: stubs, then balls, then the letters on top. The
-    // letters are strokes, so they ride the line pass and inherit its
-    // analytic anti-aliasing rather than needing a font texture.
+    // Two passes: the axis stubs underneath, then the balls and their letters together. The
+    // letters are strokes, so they ride the line pass and inherit its analytic anti-aliasing
+    // rather than needing a font texture.
     gizmos_.Draw(meshes.underlay, params);
     gizmos_.Draw(meshes.overlay, params);
 

@@ -27,6 +27,16 @@ std::array<Axis, 3> AxesOf(const GizmoStyle& style) {
     }};
 }
 
+// How opaque the half of a rotation ring curving away from the camera stays, and how wide the
+// band over which it fades there. Both are in the ring's own facing-dot space, where 0 is the
+// silhouette and -1 is pointing straight at the eye.
+constexpr float kRingFarAlphaUVE = 0.16f;
+constexpr float kRingSilhouetteFeatherUVE = 0.42f;
+
+[[nodiscard]] float Clamp01UVE(float value) {
+    return value < 0.f ? 0.f : (value > 1.f ? 1.f : value);
+}
+
 // Two unit vectors perpendicular to `axis` and to each other.
 void PerpBasis(const Vec3& axis, Vec3& outU, Vec3& outV) {
     const Vec3 a = Normalize(axis);
@@ -141,9 +151,11 @@ void AddMoveArrow(GizmoMesh& mesh, const Axis& axis, const GizmoStyle& style,
 // `keepSegment` decides which parts of the ring survive — that is where the
 // near-side arc selection happens, so the same routine serves both the
 // camera-facing arcs and the full free-rotation ring.
-template <typename KeepFn>
+// `segmentAlpha` returns the opacity for one segment, given its two midpoints. Returning zero
+// drops the segment entirely, so the same routine serves a solid ring and a depth-cued one.
+template <typename AlphaFn>
 void AddAnnulus(GizmoMesh& mesh, const Vec3& axis, const Vec3& color, float radius,
-                float halfWidth, int segments, KeepFn keepSegment) {
+                float halfWidth, int segments, AlphaFn segmentAlpha) {
     Vec3 u, v;
     PerpBasis(axis, u, v);
     const auto inner = CirclePoints(Vec3{0.f, 0.f, 0.f}, u, v, radius - halfWidth, segments);
@@ -151,27 +163,37 @@ void AddAnnulus(GizmoMesh& mesh, const Vec3& axis, const Vec3& color, float radi
     const auto mid = CirclePoints(Vec3{0.f, 0.f, 0.f}, u, v, radius, segments);
 
     for (std::size_t i = 0; i + 1 < mid.size(); ++i) {
-        if (!keepSegment(mid[i], mid[i + 1])) continue;
-        AddTriangle(mesh, inner[i], outer[i], outer[i + 1], color, 1.f);
-        AddTriangle(mesh, inner[i], outer[i + 1], inner[i + 1], color, 1.f);
+        const float alpha = segmentAlpha(mid[i], mid[i + 1]);
+        if (alpha <= 0.f) continue;
+        AddTriangle(mesh, inner[i], outer[i], outer[i + 1], color, alpha);
+        AddTriangle(mesh, inner[i], outer[i + 1], inner[i + 1], color, alpha);
     }
 }
 
-// Near-side arc only: a segment survives when both of its endpoints face the
-// camera. On a ring centred at the pivot that is exactly the front half, and
-// three full circles drawn over each other would read as a ball of spaghetti.
+// A whole ring, with the half that curves away from the camera faded rather than cut off.
+//
+// This used to drop the far segments outright, which did stop three overlapping circles reading
+// as a ball of spaghetti - but it also ended each arc on a hard, square edge in mid-air, and that
+// reads as a rendering fault rather than as depth. Fading keeps the ring continuous, so its shape
+// is legible as a circle in 3D, while the near side still clearly dominates. The fade is smooth
+// across the silhouette band so there is no visible seam where it turns over.
 void AddRingArc(GizmoMesh& mesh, const Vec3& axis, const Vec3& color, float radius,
                 int segments, float frontBias, const Vec3& viewDirection, float halfWidth) {
     AddAnnulus(mesh, axis, color, radius, halfWidth, segments,
                [&](const Vec3& a, const Vec3& b) {
-                   return Dot(a, viewDirection) < -frontBias && Dot(b, viewDirection) < -frontBias;
+                   // Facing is negative on the near side: viewDirection points away from the eye.
+                   const float facing = (Dot(Normalize(a), viewDirection) +
+                                         Dot(Normalize(b), viewDirection)) * 0.5f + frontBias;
+                   const float nearness = Clamp01UVE(-facing / kRingSilhouetteFeatherUVE);
+                   const float smoothNearness = nearness * nearness * (3.f - 2.f * nearness);
+                   return kRingFarAlphaUVE + (1.f - kRingFarAlphaUVE) * smoothNearness;
                });
 }
 
 void AddFullRing(GizmoMesh& mesh, const Vec3& axis, const Vec3& color, float radius,
                  int segments, float halfWidth) {
     AddAnnulus(mesh, axis, color, radius, halfWidth, segments,
-               [](const Vec3&, const Vec3&) { return true; });
+               [](const Vec3&, const Vec3&) { return 1.f; });
 }
 
 void AddMovePlaneHandles(GizmoMesh& mesh, const GizmoStyle& style) {
