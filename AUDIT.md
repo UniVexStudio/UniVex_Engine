@@ -35,11 +35,11 @@ Whole-tree automated analysis followed by manual reading of every candidate it s
 | Parallel job-state lifetime | 🟢 | Fixed — see section 2b; CI now runs parallel |
 | Continuous integration | 🟢 | Green on this commit, including 39/39 real Vulkan device cases |
 | Code duplication | 🟢 | `IsFiniteVectorUVE` (22× — see section 3) and the binary serialization helpers (6× — see section 4) both consolidated; `SelectKernelSourceUVE` (section 5) remains open, deliberate and low-risk |
-| Dead code | 🟠 | One unused header; no orphan sources |
+| Dead code | 🟢 | One unused header deleted — see section 6; no orphan sources |
 | Stub / TODO debt | 🟢 | **Zero** TODO/FIXME/HACK/XXX markers outside vendored code |
-| Static analysis | 🔵 | 9 raised; 8 verified false positives, 1 partially valid |
+| Static analysis | 🟢 | 9 raised; 8 verified false positives, 1 partially valid — fixed defensively, see section 7 |
 
-**Overall assessment.** The engine is in good structural condition. Every source file is wired into the build, there are no orphan modules, no byte-identical duplicate files, and no stub or TODO debt in first-party code. The one confirmed defect is in the test harness, not the engine: the suite cannot run in parallel. The duplication findings are maintenance risk rather than active bugs, with one exception where copy-paste has already produced divergent overflow guards.
+**Overall assessment.** The engine is in good structural condition. Every source file is wired into the build, there are no orphan modules, no byte-identical duplicate files, and no stub or TODO debt in first-party code. The parallel-test-suite and threading defects, both duplication findings, the unused header, and the JPEG decoder's defensive `volatile` fix are all resolved. The only items still open — section 5's deliberate, in-source-documented `SelectKernelSourceUVE` triplication and section 2's ongoing watch for the `CollisionLifecycle` SEGFAULT recurring under `-j` — are low-risk and tracked, not active bugs.
 
 ---
 
@@ -284,9 +284,9 @@ The GLSL-versus-SPIR-V kernel selection helper is defined identically in three c
 
 ---
 
-## 6. 🟠 Dead code — unused `ComponentUVE` concept
+## 6. 🟢 RESOLVED — Dead code — unused `ComponentUVE` concept
 
-**Status:** 🟠 PARTIAL / INCOMPLETE
+**Status:** 🟢 RESOLVED — fixed on `fix/audit-followups`
 **Affected:** `Engine/Runtime/Component/Expose/uve/component/component_uve.h` (23 lines)
 
 The header defines a concept that is never referenced:
@@ -300,13 +300,17 @@ A repository-wide scan for `#include` of this header returns zero results, and n
 
 The header carries a substantive rationale comment explaining why the design is a concept rather than an empty base class (empty-base brace-elision divergence between GCC and Clang during placement construction). That rationale is worth preserving regardless of the outcome.
 
-**Recommended next action:** either constrain the component-facing templates with it, or delete the header and move the rationale to the relevant call site. It should not remain as-is.
+### Resolution
+
+The header was deleted, per the second of the two recommended options — no constrained template ever used the concept, so exporting it further would have added an API surface with zero consumers. Its rationale comment was moved verbatim (as a doc comment) onto `IEntityManagerUVE::AddComponentUVE` in `Engine/Runtime/Entity/Expose/uve/entity/i_entity_manager_uve.h` — the exact call site the original comment already named as the reason the concept-not-base-class design exists. No behavioural change; `component_uve.h` had zero includes.
+
+**Verified:** full clean build (0 errors, 0 warnings), `ctest -j1` 2519/2519 passed, unchanged.
 
 ---
 
-## 7. 🟡 `setjmp` clobber risk in the JPEG decoder
+## 7. 🟢 RESOLVED — `setjmp` clobber risk in the JPEG decoder
 
-**Status:** 🟡 WARNING — theoretical, defensive fix only
+**Status:** 🟢 RESOLVED — fixed on `fix/audit-followups`
 **Affected:** `Engine/Runtime/Asset/Internal/jpeg_metadata_uve.cpp:47`
 
 ```cpp
@@ -319,7 +323,11 @@ The surrounding implementation is otherwise careful and was verified in detail: 
 
 The six near-identical manual cleanup blocks in this function are **not** a finding: RAII destructors cannot be relied upon across `longjmp`, so explicit cleanup is the correct pattern here.
 
-**Recommended next action:** declare `state` as `volatile`-qualified pointer. Low priority.
+### Resolution
+
+`state` is now declared `JpegDecodeStateUVE* volatile state` — the pointer variable itself is volatile-qualified, not its pointee, so every `state->` member access remains ordinary (no volatile-qualified `jpeg_decompress_struct` reaches libjpeg's non-volatile-taking API). This is a defensive fix only: as this section noted, `state` was already correct on the compilers in use since it is never reassigned between `setjmp` and `longjmp`.
+
+**Verified:** full clean build (0 errors, 0 warnings), `ctest -j1` 2519/2519 passed, unchanged.
 
 ---
 
@@ -398,7 +406,7 @@ A correction to the previous revision of this document, which reported 350 skips
 
 ## 11. 🔵 Informational observations
 
-- **`actions/checkout@v4` deprecation.** CI emits `Node.js 20 is deprecated ... actions/checkout@v4`. Non-blocking; the runner forces Node 24. A version bump resolves it.
+- **`actions/checkout@v4` deprecation — 🟢 RESOLVED.** CI emitted `Node.js 20 is deprecated ... actions/checkout@v4`. Bumped to `actions/checkout@v5` in `.github/workflows/ci.yml` on `fix/audit-followups`.
 - **Vulkan guard threshold.** `.github/workflows/ci.yml` requires at least 17 Vulkan cases to execute, while 39 actually run. The floor is deliberately conservative so that legitimately gated cases do not break the build, while still catching the real failure mode (driver absent → 0 execute).
 - **Resolved since the previous audit.** `MakeRootRelativePathUVE` was previously duplicated between `project_file_index_uve.cpp` and `project_change_watcher_uve.cpp`; it is now consolidated in `Engine/Runtime/Asset/Internal/project_tree_helpers_uve.cpp`. Font `.inc` byte blobs are no longer committed — they are generated at build time by `Engine/Tools/embed_file.py` from a single canonical `.ttf` per face.
 
@@ -413,8 +421,8 @@ A correction to the previous revision of this document, which reported 350 skips
 | 3 | Keep watching for the `CollisionLifecycle` SEGFAULT under `-j` | 🟣 | 2 | Medium |
 | 4 | ~~Export `IsFiniteUVE(const Vector3UVE&)`; remove local copies~~ — **done** (22 sites, not 17), see section 3 | 🟢 | 3 | — |
 | 5 | ~~Consolidate binary helpers on the overflow-safe guard~~ — **done** (6 sites, not 3–5), see section 4 | 🟢 | 4 | — |
-| 6 | Resolve the unused `ComponentUVE` concept | 🟠 | 6 | Low |
-| 7 | Bump `actions/checkout` | 🔵 | 11 | Low |
-| 8 | Qualify the JPEG `state` pointer as `volatile` | 🟡 | 7 | Low |
+| 6 | ~~Resolve the unused `ComponentUVE` concept~~ — **done**, see section 6 | 🟢 | 6 | — |
+| 7 | ~~Bump `actions/checkout`~~ — **done**, see section 11 | 🟢 | 11 | — |
+| 8 | ~~Qualify the JPEG `state` pointer as `volatile`~~ — **done**, see section 7 | 🟢 | 7 | — |
 
 No production code was modified in the course of this audit.
