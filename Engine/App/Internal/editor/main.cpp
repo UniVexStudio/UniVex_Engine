@@ -22,7 +22,6 @@
 
 #include "ViewportRenderPass.h"
 #include "integration/EditorMeshLayer.h"
-#include "integration/EntityManagerEntitySource.h"
 #include "integration/MathConversions.h"
 #include "univex/camera/OrbitCamera.h"
 #include "univex/render/ShaderProgram.h"
@@ -108,7 +107,7 @@ class ViewportPanelBackendUVE final {
 public:
     ViewportPanelBackendUVE(UVE::Editor::EditorUVE& editor, UVE::Core::EngineCoreUVE& engine)
         : editor_(editor), engine_(engine), entityManager_(engine.GetServicesUVE().GetEntityManagerUVE()),
-          entitySource_(entityManager_), meshLayer_(engine.GetServicesUVE()) {}
+          meshLayer_(engine.GetServicesUVE()) {}
 
     ~ViewportPanelBackendUVE() {
         DestroyFramebuffersUVE();
@@ -212,7 +211,6 @@ private:
             UVE_ERROR("uve_editor_app: viewport render pass init failed: {}", error);
             return false;
         }
-        renderPass_->SetEntitySource(&entitySource_);
         return true;
     }
 
@@ -650,7 +648,6 @@ private:
     UVE::Editor::EditorUVE& editor_;
     UVE::Core::EngineCoreUVE& engine_;
     UVE::Scene::IEntityManagerUVE& entityManager_;
-    univex::integration::EntityManagerEntitySource entitySource_;
     univex::integration::EditorMeshLayerUVE meshLayer_;
     std::optional<univex::app::ViewportRenderPass> renderPass_;
     // Set each frame by ApplyOverlayStateUVE(), read by UpdateSelectionGizmoUVE() so it can force

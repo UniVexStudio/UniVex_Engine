@@ -80,11 +80,10 @@ target_link_libraries(univex_viewport_gl PUBLIC univex_viewport_core OpenGL::GL 
 target_compile_options(univex_viewport_gl PRIVATE -Wall -Wextra -Wpedantic)
 
 # ---------------------------------------------------------------------------
-# Demo app support (ReferenceScene, ViewportRenderPass) - engine-agnostic;
-# depends only on univex_viewport_gl.
+# Viewport render pass (background, grid, gizmos) - engine-agnostic; depends
+# only on univex_viewport_gl. Scene entities are the host renderer's job.
 # ---------------------------------------------------------------------------
 add_library(univex_viewport_app_support STATIC
-    app/ReferenceScene.cpp
     app/ViewportRenderPass.cpp)
 target_include_directories(univex_viewport_app_support PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/app)
 target_link_libraries(univex_viewport_app_support PUBLIC univex_viewport_gl)
@@ -94,13 +93,11 @@ target_compile_options(univex_viewport_app_support PRIVATE -Wall -Wextra -Wpedan
 # Engine bridge: the only target here that depends on the host UniVex engine.
 # ---------------------------------------------------------------------------
 add_library(univex_viewport_engine_bridge STATIC
-    Internal/integration/WorldUveEntitySource.cpp
-    Internal/integration/EntityManagerEntitySource.cpp
     Internal/integration/EditorMeshLayer.cpp)
 target_include_directories(univex_viewport_engine_bridge PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/Internal)
-# uve_core additionally brings in EngineServicesUVE/Renderer3DUVE/GlRenderDeviceUVE/Scene for
+# uve_core brings in EngineServicesUVE/Renderer3DUVE/GlRenderDeviceUVE/Scene for
 # EditorMeshLayerUVE, which renders the live scene's real mesh/material entities into the
-# Viewport panel - the other two bridge files only ever read entity transforms.
+# Viewport panel.
 target_link_libraries(univex_viewport_engine_bridge PUBLIC univex_viewport_app_support uve_world uve_core)
 target_compile_options(univex_viewport_engine_bridge PRIVATE -Wall -Wextra -Wpedantic)
 uve_set_warnings(univex_viewport_engine_bridge)
@@ -120,7 +117,7 @@ endif()
 
 if(UNIVEX_VIEWPORT_BUILD_TOOLS)
     add_executable(univex_headless_capture tools/headless_capture.cpp)
-    target_link_libraries(univex_headless_capture PRIVATE univex_viewport_engine_bridge glfw)
+    target_link_libraries(univex_headless_capture PRIVATE univex_viewport_app_support glfw)
     target_compile_options(univex_headless_capture PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 

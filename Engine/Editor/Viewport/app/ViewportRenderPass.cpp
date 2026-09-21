@@ -52,15 +52,12 @@ ViewportRenderPass::~ViewportRenderPass() { Destroy(); }
 ViewportRenderPass::ViewportRenderPass(ViewportRenderPass&& other) noexcept
     : grid_(std::move(other.grid_)),
       gizmos_(std::move(other.gizmos_)),
-      scene_(std::move(other.scene_)),
       backgroundProgram_(std::move(other.backgroundProgram_)),
       backgroundVao_(std::exchange(other.backgroundVao_, 0)),
       backgroundVbo_(std::exchange(other.backgroundVbo_, 0)),
       settings_(other.settings_),
       style_(other.style_),
       gizmoMode_(other.gizmoMode_),
-      cubeHalfExtent_(other.cubeHalfExtent_),
-      entitySource_(other.entitySource_),
       gizmoPivotOverride_(other.gizmoPivotOverride_) {}
 
 ViewportRenderPass& ViewportRenderPass::operator=(ViewportRenderPass&& other) noexcept {
@@ -68,15 +65,12 @@ ViewportRenderPass& ViewportRenderPass::operator=(ViewportRenderPass&& other) no
         Destroy();
         grid_ = std::move(other.grid_);
         gizmos_ = std::move(other.gizmos_);
-        scene_ = std::move(other.scene_);
         backgroundProgram_ = std::move(other.backgroundProgram_);
         backgroundVao_ = std::exchange(other.backgroundVao_, 0);
         backgroundVbo_ = std::exchange(other.backgroundVbo_, 0);
         settings_ = other.settings_;
         style_ = other.style_;
         gizmoMode_ = other.gizmoMode_;
-        cubeHalfExtent_ = other.cubeHalfExtent_;
-        entitySource_ = other.entitySource_;
         gizmoPivotOverride_ = other.gizmoPivotOverride_;
     }
     return *this;
@@ -97,10 +91,6 @@ std::optional<ViewportRenderPass> ViewportRenderPass::Create(std::string& outErr
     auto gizmos = univex::render::GizmoRenderer::Create(outError);
     if (!gizmos.has_value()) return std::nullopt;
     pass.gizmos_ = std::move(*gizmos);
-
-    auto scene = ReferenceScene::Create(outError);
-    if (!scene.has_value()) return std::nullopt;
-    pass.scene_ = std::move(*scene);
 
     auto background = univex::render::ShaderProgram::Build(kBackgroundVertexSource,
                                                            kBackgroundFragmentSource, outError);
@@ -224,26 +214,6 @@ void ViewportRenderPass::RenderFrame(const OrbitCamera& camera,
 
     if (settings_.viewEnvironment) DrawBackground();
 
-    const float aspect = static_cast<float>(framebufferWidth) / static_cast<float>(framebufferHeight);
-    const Mat4 viewProjection = camera.ViewProjection(aspect);
-
-    if (settings_.viewSceneGeometry) {
-        if (entitySource_ != nullptr) {
-            // One proxy cube per real host-engine entity, each at its own
-            // world position/scale, instead of the single origin-relative
-            // demo cube. No rotation yet - see EntityTransformSource.h.
-            for (const auto& entity : entitySource_->GetEntityTransformsUVE()) {
-                Mat4 model = Mat4::Identity();
-                model.Set(0, 3, entity.positionX);
-                model.Set(1, 3, entity.positionY);
-                model.Set(2, 3, entity.positionZ);
-                const float extent = cubeHalfExtent_ * entity.uniformScale;
-                scene_.Draw(viewProjection, model, extent, settings_.display);
-            }
-        } else {
-            scene_.Draw(viewProjection, cubeHalfExtent_, settings_.display);
-        }
-    }
     if (settings_.viewGrid) {
         // The vertical Y axis line is drawn inside the grid's own shader now (InfiniteGridRenderer /
         // infinite_grid.frag) rather than as a separate GizmoRenderer pass, so it shares the exact
