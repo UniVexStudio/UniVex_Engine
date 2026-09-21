@@ -8,6 +8,8 @@
 
 #include <gtest/gtest.h>
 
+#include "Support/test_scratch_uve.h"
+
 #include "uve/asset/data_table_asset_uve.h"
 #include "uve/asset/uve_file_envelope_uve.h"
 
@@ -15,7 +17,7 @@ namespace UVE::Asset::Tests {
 namespace {
 
 [[nodiscard]] std::filesystem::path TestPathUVE(const std::string& suffix) {
-    return std::filesystem::temp_directory_path() / ("uve_data_table_asset_" + suffix + ".uvetable");
+    return ::UVE::Tests::ScratchRootUVE() / ("uve_data_table_asset_" + suffix + ".uvetable");
 }
 
 [[nodiscard]] DataTableUVE MakeTableUVE(const std::string& name, const std::string& rowId,

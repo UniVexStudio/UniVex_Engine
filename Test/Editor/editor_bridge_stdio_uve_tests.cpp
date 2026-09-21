@@ -10,6 +10,8 @@
 #include <vector>
 
 #include <gtest/gtest.h>
+
+#include "Support/test_scratch_uve.h"
 #include <nlohmann/json.hpp>
 
 #include "uve/core/engine_core_uve.h"
@@ -30,7 +32,7 @@ using JsonUVE = nlohmann::json;
     config.assetDatabaseFilePath = "uve_editor_bridge_stdio_tests_assets.json";
     config.saveDirectoryPath = "uve_editor_bridge_stdio_tests_saves";
     config.shaderCachePath = "uve_editor_bridge_stdio_tests_shader_cache";
-    config.shaderSourceRealDirectoryUVE = "Engine/Runtime/RHI/Shader/built_in";
+    config.shaderSourceRealDirectoryUVE = ::UVE::Tests::RepositoryRootUVE() / "Engine/Runtime/RHI/Shader/built_in";
     config.shaderSourceMountPrefixUVE = "shaders";
     return config;
 }

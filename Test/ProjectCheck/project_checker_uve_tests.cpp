@@ -1,12 +1,13 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <string>
 #include <vector>
 
 #include <gtest/gtest.h>
+
+#include "Support/test_scratch_uve.h"
 
 #include "uve/asset/uve_file_envelope_uve.h"
 #include "uve/project_check/project_checker_uve.h"
@@ -16,11 +17,7 @@ namespace {
 
 class ProjectCheckerUVETest : public ::testing::Test {
 protected:
-    void SetUp() override {
-        const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
-        m_root = std::filesystem::temp_directory_path() / ("uve_project_check_tests_" + std::to_string(stamp));
-        ASSERT_TRUE(std::filesystem::create_directories(m_root));
-    }
+    void SetUp() override { m_root = ::UVE::Tests::MakeTestCaseDirectoryUVE(); }
 
     void TearDown() override { std::filesystem::remove_all(m_root); }
 

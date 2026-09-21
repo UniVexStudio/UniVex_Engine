@@ -12,6 +12,8 @@
 
 #include <gtest/gtest.h>
 
+#include "Support/test_scratch_uve.h"
+
 #include "uve/asset/mesh_asset_uve.h"
 #include "uve/asset/uve_file_envelope_uve.h"
 #include "uve/math/matrix4x4_uve.h"
@@ -312,7 +314,7 @@ TEST(MeshSkinningUVETest, TrySkinMeshUVE_RefusesStaticMeshesAndMismatchedMatrixC
 TEST(MeshSkinningUVETest, SaveAndLoad_RoundTripSkinningData) {
     const MeshAssetUVE original = MakeSkinnedMeshUVE();
     const std::filesystem::path path =
-        std::filesystem::temp_directory_path() / "uve_skinned_roundtrip.uvemodel";
+        ::UVE::Tests::ScratchRootUVE() / "uve_skinned_roundtrip.uvemodel";
     ASSERT_TRUE(SaveMeshAssetUVE(original, path));
 
     MeshAssetUVE loaded;
@@ -365,7 +367,7 @@ TEST(MeshSkinningUVETest, StaticMeshBytes_AreUnchangedByTheSkinningSection) {
                                              6U * sizeof(float);
 
     const std::filesystem::path path =
-        std::filesystem::temp_directory_path() / "uve_static_compat.uvemodel";
+        ::UVE::Tests::ScratchRootUVE() / "uve_static_compat.uvemodel";
     ASSERT_TRUE(SaveMeshAssetUVE(staticMesh, path));
     const std::uintmax_t fileBytes = std::filesystem::file_size(path);
 
@@ -390,7 +392,7 @@ TEST(MeshSkinningUVETest, Load_RejectsStructurallyInvalidSkinningDataWithoutTouc
     bad.skinningInfluences[0].joints[0] = 7U; // no such joint
 
     const std::filesystem::path path =
-        std::filesystem::temp_directory_path() / "uve_bad_skinning.uvemodel";
+        ::UVE::Tests::ScratchRootUVE() / "uve_bad_skinning.uvemodel";
     ASSERT_TRUE(SaveMeshAssetUVE(bad, path));
 
     MeshAssetUVE loaded;

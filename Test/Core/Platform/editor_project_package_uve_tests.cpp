@@ -1,6 +1,5 @@
 #include "uve/platform/editor_project_package_uve.h"
 
-#include <atomic>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -8,23 +7,14 @@
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
 
+#include "Support/test_scratch_uve.h"
+
 namespace UVE::Platform::Tests {
 namespace {
 
 class EditorProjectPackageUVETest : public ::testing::Test {
 protected:
-    void SetUp() override {
-        static std::atomic<unsigned int> nextId{0U};
-        packagePath = std::filesystem::temp_directory_path() /
-                      ("uve_editor_package_test_" + std::to_string(nextId.fetch_add(1U)) + ".uveditor");
-        std::error_code error;
-        std::filesystem::remove(packagePath, error);
-    }
-
-    void TearDown() override {
-        std::error_code error;
-        std::filesystem::remove(packagePath, error);
-    }
+    void SetUp() override { packagePath = ::UVE::Tests::MakeTestCaseDirectoryUVE() / "package.uveditor"; }
 
     [[nodiscard]] EditorProjectPackageUVE MakePackage() const {
         EditorProjectPackageUVE package;
