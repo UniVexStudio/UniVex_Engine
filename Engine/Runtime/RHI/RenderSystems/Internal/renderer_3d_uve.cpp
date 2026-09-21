@@ -1438,12 +1438,13 @@ struct Renderer3DUVE::ImplUVE {
     /// Sets every uniform that does not vary per object. Shared verbatim by the per-object and
     /// instanced paths so the two cannot drift in how they light a surface - the same reason the
     /// shader keeps both variants in one file.
-    void ApplyFrameAndMaterialUniformsUVE(Shader::ShaderProgramUVE& program,
-                                          const Asset::MaterialAssetUVE& material,
-                                          const FrameUniformsUVE& frameUniforms) {
+    /// The frame-constant view and lighting state every lit program needs, and nothing else -
+    /// deliberately not uViewPosition or any shadow/material uniform, so a program that lights
+    /// without them (the primitive shader, which is Lambert-only) can share this without the
+    /// backend warning about uniforms it does not declare.
+    void ApplyLightingUniformsUVE(Shader::ShaderProgramUVE& program, const FrameUniformsUVE& frameUniforms) {
         program.SetMatrix4x4UVE("uViewProjection", frameUniforms.viewProjection);
         program.SetVector3UVE("uAmbientColor", frameUniforms.ambientColor);
-        program.SetVector3UVE("uViewPosition", frameUniforms.viewPosition);
         for (std::size_t lightIndex = 0; lightIndex < kMaxLightsUVE; ++lightIndex) {
             const LightDataUVE& light = frameUniforms.lights[lightIndex];
             const LightUniformNamesUVE& names = uniformNames.lights[lightIndex];
@@ -1455,6 +1456,13 @@ struct Renderer3DUVE::ImplUVE {
             program.SetFloatUVE(names.range, light.range);
             program.SetFloatUVE(names.spotAngleDegrees, light.spotAngleDegrees);
         }
+    }
+
+    void ApplyFrameAndMaterialUniformsUVE(Shader::ShaderProgramUVE& program,
+                                          const Asset::MaterialAssetUVE& material,
+                                          const FrameUniformsUVE& frameUniforms) {
+        ApplyLightingUniformsUVE(program, frameUniforms);
+        program.SetVector3UVE("uViewPosition", frameUniforms.viewPosition);
         program.SetMatrix4x4UVE(uniformNames.legacyLightSpaceMatrix, frameUniforms.lightSpaceMatrices[0]);
         program.SetIntUVE("uShadowMapTexture", static_cast<std::int32_t>(kShadowMapTextureSlotUVE));
         program.SetIntUVE("uShadowCascadeCount", frameUniforms.cascadeCount);
@@ -1667,8 +1675,11 @@ struct Renderer3DUVE::ImplUVE {
                 continue;
             }
             primitiveProgram->SetMatrix4x4UVE("uModel", item.worldMatrix);
-            primitiveProgram->SetMatrix4x4UVE("uViewProjection", frameUniforms.viewProjection);
+            // Normal matrix = transpose(inverse(model)); see ComputeNormalMatrixUVE, shared with
+            // the lit mesh path so the two cannot disagree under non-uniform scale.
+            primitiveProgram->SetMatrix4x4UVE("uNormalMatrix", ComputeNormalMatrixUVE(item.worldMatrix));
             primitiveProgram->SetVector3UVE("uColor", item.baseColor);
+            ApplyLightingUniformsUVE(*primitiveProgram, frameUniforms);
             primitiveProgram->ApplyToUVE(commandBuffer);
             commandBuffer.BindVertexBufferUVE(meshResources.vertexBuffer);
             commandBuffer.BindIndexBufferUVE(meshResources.indexBuffer);
@@ -1875,8 +1886,8 @@ Renderer3DUVE::Renderer3DUVE(IRenderDeviceUVE& renderDevice, IRenderSystemUVE& r
                       BufferUsageUVE::Vertex});
 
     Shader::ShaderProgramDescUVE primitiveProgramDesc;
-    primitiveProgramDesc.virtualFilePath = std::string(Shader::BuiltIn::kBasic3DVirtualPath);
-    primitiveProgramDesc.embeddedFallbackSourceCode = std::string(Shader::BuiltIn::kBasic3DSource);
+    primitiveProgramDesc.virtualFilePath = std::string(Shader::BuiltIn::kLitPrimitive3DVirtualPath);
+    primitiveProgramDesc.embeddedFallbackSourceCode = std::string(Shader::BuiltIn::kLitPrimitive3DSource);
     primitiveProgramDesc.vertexLayout = MeshVertexLayoutUVE();
     primitiveProgramDesc.vertexStride = static_cast<std::uint32_t>(sizeof(Asset::MeshVertexUVE));
     primitiveProgramDesc.depthTestEnabled = true;
@@ -2384,11 +2395,26 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             passDesc.depthAttachment = m_impl->destinationTextureOverride.has_value()
                                            ? m_impl->destinationTextureOverride->second
                                            : kInvalidTextureHandleUVE;
+            // A caller-supplied destination texture is generally not the size of the presentation
+            // surface, and a render pass that names no viewport inherits the surface's. Without
+            // this the fullscreen tone-mapping triangle would be rasterised at surface size while
+            // only the texture-sized corner of it was captured, cropping the frame rather than
+            // filling the texture. destinationViewportOverride (RenderFrameToRegionUVE's explicit
+            // sub-region) still wins when set, since that caller is asking for a crop on purpose.
             passDesc.viewportOverride = m_impl->destinationViewportOverride;
+            if (!passDesc.viewportOverride.has_value() && m_impl->destinationTextureOverride.has_value() &&
+                m_impl->destinationTextureSizeOverride.has_value()) {
+                passDesc.viewportOverride = ViewportRectUVE{0U, 0U, m_impl->destinationTextureSizeOverride->first,
+                                                            m_impl->destinationTextureSizeOverride->second};
+            }
             commandBuffer.BeginRenderPassUVE(passDesc);
             m_impl->toneMappingProgram->SetIntUVE("uSourceTexture", 0);
+            m_impl->toneMappingProgram->SetIntUVE("uSceneDepthTexture", 1);
+            m_impl->toneMappingProgram->SetIntUVE("uWriteCoverageAlpha",
+                                                   m_impl->destinationTextureOverride.has_value() ? 1 : 0);
             m_impl->toneMappingProgram->ApplyToUVE(commandBuffer);
             commandBuffer.BindTextureUVE(m_impl->colorTarget, 0U);
+            commandBuffer.BindTextureUVE(m_impl->depthTarget, 1U);
             commandBuffer.DrawUVE(3);
             commandBuffer.EndRenderPassUVE();
         });

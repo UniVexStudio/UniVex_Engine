@@ -9,10 +9,10 @@
 // The editor shell's first interactive slice: a real desktop window,
 // created and owned by Engine/Runtime/Window::WindowManagerUVE (not raw
 // GLFW, unlike Engine/Editor/Viewport's own standalone demo app), driving
-// the same ViewportRenderPass that demo and the headless-capture tool use,
-// showing a real Engine/Runtime/World::WorldUVE's entities through the
-// same WorldUveEntitySource bridge Engine/Editor/Viewport's headless
-// --engine-demo mode already proved out.
+// the same ViewportRenderPass that demo and the headless-capture tool use.
+// It builds a real Engine/Runtime/World::WorldUVE so Window + Input + World
+// + the viewport renderer are exercised together in one live process;
+// entity geometry itself is the host renderer's job and is not drawn here.
 //
 // This is a scaffold, not "the whole editor" - there is no outliner,
 // inspector, or content browser yet (those are separate future increments
@@ -28,7 +28,7 @@
 // Home/numpad-specific entries and gizmo picking is a separate increment):
 //   left drag     orbit            middle/right drag   pan
 //   scroll        dolly            Q/W/E/R/T            gizmo mode
-//   Z             cycle shading    G/N/H/B/M            toggle overlays
+//   Z             cycle shading    G/N/H/B              toggle overlays
 //   7/1/3 (+Ctrl) standard views   5                    toggle ortho
 //   O             focus origin     F                    focus selection
 //   Escape        quit
@@ -39,7 +39,6 @@
 #include <cstring>
 
 #include "ViewportRenderPass.h"
-#include "integration/WorldUveEntitySource.h"
 #include "univex/camera/OrbitCamera.h"
 #include "univex/render/GlApi.h"
 #include "univex/viewport/ViewportSettings.h"
@@ -162,8 +161,6 @@ int main(int argc, char** argv) {
     UVE::Scene::SceneGraphUVE sceneGraph;
     PopulateDemoEntities(world, sceneGraph);
     world.TickUVE(0.0F);
-    const univex::integration::WorldUveEntitySource entitySource(world);
-    pass->SetEntitySource(&entitySource);
 
     std::printf("UniVex Editor: GL_RENDERER: %s\nUniVex Editor: GL_VERSION : %s\n",
                 glGetString(GL_RENDERER), glGetString(GL_VERSION));
@@ -207,7 +204,6 @@ int main(int argc, char** argv) {
         if (inputSystem.WasKeyPressedThisFrameUVE(KeyCodeUVE::N)) settings.viewGizmos = !settings.viewGizmos;
         if (inputSystem.WasKeyPressedThisFrameUVE(KeyCodeUVE::H)) settings.viewTransformGizmo = !settings.viewTransformGizmo;
         if (inputSystem.WasKeyPressedThisFrameUVE(KeyCodeUVE::B)) settings.viewEnvironment = !settings.viewEnvironment;
-        if (inputSystem.WasKeyPressedThisFrameUVE(KeyCodeUVE::M)) settings.viewSceneGeometry = !settings.viewSceneGeometry;
 
         const bool ctrl = inputSystem.IsKeyDownUVE(KeyCodeUVE::LeftCtrl) ||
                            inputSystem.IsKeyDownUVE(KeyCodeUVE::RightCtrl);

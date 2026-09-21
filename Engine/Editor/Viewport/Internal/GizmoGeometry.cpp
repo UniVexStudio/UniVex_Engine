@@ -27,6 +27,25 @@ std::array<Axis, 3> AxesOf(const GizmoStyle& style) {
     }};
 }
 
+// A rotation ring shows only the half curving toward the camera.
+//
+// This is the convention every established editor follows (ImGuizmo's DrawRotationGizmo emits a
+// half circle per axis; Maya and Unreal read the same way), and the reason is not decoration:
+// three full circles through one point overlap into a ball of arcs where no ring can be told from
+// another. Half rings cannot overlap, so each one stays a readable curve.
+//
+// Crucially the cut costs nothing visually, because it falls exactly where the ring turns away
+// from the eye - there the circle is edge-on, so its end is a point rather than a blunt edge.
+// This value is the width of a short fade either side of that silhouette, in the ring's own
+// facing-dot space, purely so the last segment resolves smoothly instead of popping as the camera
+// orbits. It is deliberately tiny: wide enough to anti-alias the end, far too narrow to bring the
+// back half of the ring back into view.
+constexpr float kRingSilhouetteFeatherUVE = 0.06f;
+
+[[nodiscard]] float Clamp01UVE(float value) {
+    return value < 0.f ? 0.f : (value > 1.f ? 1.f : value);
+}
+
 // Two unit vectors perpendicular to `axis` and to each other.
 void PerpBasis(const Vec3& axis, Vec3& outU, Vec3& outV) {
     const Vec3 a = Normalize(axis);
@@ -141,37 +160,64 @@ void AddMoveArrow(GizmoMesh& mesh, const Axis& axis, const GizmoStyle& style,
 // `keepSegment` decides which parts of the ring survive — that is where the
 // near-side arc selection happens, so the same routine serves both the
 // camera-facing arcs and the full free-rotation ring.
-template <typename KeepFn>
-void AddAnnulus(GizmoMesh& mesh, const Vec3& axis, const Vec3& color, float radius,
-                float halfWidth, int segments, KeepFn keepSegment) {
+// `segmentAlpha` returns the opacity for one segment, given its two midpoints. Returning zero
+// drops the segment entirely, so the same routine serves a solid ring and a depth-cued one.
+template <typename AlphaFn>
+void AddAnnulus(GizmoMesh& mesh, const Vec3& center, const Vec3& axis, const Vec3& color,
+                float radius, float halfWidth, int segments, AlphaFn segmentAlpha) {
     Vec3 u, v;
     PerpBasis(axis, u, v);
-    const auto inner = CirclePoints(Vec3{0.f, 0.f, 0.f}, u, v, radius - halfWidth, segments);
-    const auto outer = CirclePoints(Vec3{0.f, 0.f, 0.f}, u, v, radius + halfWidth, segments);
-    const auto mid = CirclePoints(Vec3{0.f, 0.f, 0.f}, u, v, radius, segments);
+    const auto inner = CirclePoints(center, u, v, radius - halfWidth, segments);
+    const auto outer = CirclePoints(center, u, v, radius + halfWidth, segments);
+    const auto mid = CirclePoints(center, u, v, radius, segments);
 
     for (std::size_t i = 0; i + 1 < mid.size(); ++i) {
-        if (!keepSegment(mid[i], mid[i + 1])) continue;
-        AddTriangle(mesh, inner[i], outer[i], outer[i + 1], color, 1.f);
-        AddTriangle(mesh, inner[i], outer[i + 1], inner[i + 1], color, 1.f);
+        const float alpha = segmentAlpha(mid[i] - center, mid[i + 1] - center);
+        if (alpha <= 0.f) continue;
+        AddTriangle(mesh, inner[i], outer[i], outer[i + 1], color, alpha);
+        AddTriangle(mesh, inner[i], outer[i + 1], inner[i + 1], color, alpha);
     }
 }
 
-// Near-side arc only: a segment survives when both of its endpoints face the
-// camera. On a ring centred at the pivot that is exactly the front half, and
-// three full circles drawn over each other would read as a ball of spaghetti.
+// The camera-facing half of a ring. See kRingSilhouetteFeatherUVE for why only half.
 void AddRingArc(GizmoMesh& mesh, const Vec3& axis, const Vec3& color, float radius,
-                int segments, float frontBias, const Vec3& viewDirection, float halfWidth) {
-    AddAnnulus(mesh, axis, color, radius, halfWidth, segments,
+                int segments, const Vec3& viewDirection, float halfWidth) {
+    AddAnnulus(mesh, Vec3{0.f, 0.f, 0.f}, axis, color, radius, halfWidth, segments,
                [&](const Vec3& a, const Vec3& b) {
-                   return Dot(a, viewDirection) < -frontBias && Dot(b, viewDirection) < -frontBias;
+                   // Facing is negative on the near side: viewDirection points away from the eye.
+                   const float facing = (Dot(Normalize(a), viewDirection) +
+                                         Dot(Normalize(b), viewDirection)) * 0.5f;
+                   // Fully opaque across the near half, falling to nothing over the narrow band at
+                   // the silhouette. AddAnnulus drops a segment whose alpha reaches zero, so the
+                   // back half is never built at all rather than being drawn transparent.
+                   const float nearness = Clamp01UVE(-facing / kRingSilhouetteFeatherUVE);
+                   return nearness * nearness * (3.f - 2.f * nearness);
                });
 }
 
-void AddFullRing(GizmoMesh& mesh, const Vec3& axis, const Vec3& color, float radius,
-                 int segments, float halfWidth) {
-    AddAnnulus(mesh, axis, color, radius, halfWidth, segments,
-               [](const Vec3&, const Vec3&) { return true; });
+void AddFullRing(GizmoMesh& mesh, const Vec3& center, const Vec3& axis, const Vec3& color,
+                 float radius, int segments, float halfWidth) {
+    AddAnnulus(mesh, center, axis, color, radius, halfWidth, segments,
+               [](const Vec3&, const Vec3&) { return 1.f; });
+}
+
+// How far in front of the pivot the view-facing screen ring sits, in pixels. The ring is built in
+// the plane perpendicular to the view, so centred on the pivot it passes exactly through the
+// middle of the three axis rings and through the centre cube - with depth testing on, half of it
+// ends up buried inside the widget. Lifting it a few pixels toward the eye puts the whole ring in
+// front, where it reads as the outer boundary of the gizmo. In pixels rather than world units so
+// the offset does not change with zoom.
+constexpr float kScreenRingLiftPixelsUVE = 6.f;
+
+// A plane handle tinted by the axis it is NORMAL to - the convention that makes XY, YZ and ZX
+// tellable apart at a glance, and after which the colour of a handle predicts which drag it
+// starts. Kept mostly neutral so it still reads as a face rather than as a fourth axis.
+[[nodiscard]] Vec3 PlaneFillColor(const Vec3& normalAxisColor, const GizmoStyle& style) {
+    return normalAxisColor * 0.35f + style.planeColor * 0.65f;
+}
+
+[[nodiscard]] Vec3 PlaneEdgeColor(const Vec3& normalAxisColor, const GizmoStyle& style) {
+    return normalAxisColor * 0.55f + style.planeColor * 0.45f;
 }
 
 void AddMovePlaneHandles(GizmoMesh& mesh, const GizmoStyle& style) {
@@ -180,17 +226,21 @@ void AddMovePlaneHandles(GizmoMesh& mesh, const GizmoStyle& style) {
     for (const auto& [i, j] : pairs) {
         const Vec3 a = axes[static_cast<std::size_t>(i)].direction;
         const Vec3 b = axes[static_cast<std::size_t>(j)].direction;
+        // The third axis is the one this plane is normal to, and the one that names its colour.
+        const Vec3 normalColor = axes[static_cast<std::size_t>(3 - i - j)].color;
+        const Vec3 fill = PlaneFillColor(normalColor, style);
+        const Vec3 edge = PlaneEdgeColor(normalColor, style);
         const float o = style.planeHandleOffset;
         const float s = style.planeHandleSize;
         const Vec3 p0 = a * o + b * o;
         const Vec3 p1 = a * (o + s) + b * o;
         const Vec3 p2 = a * (o + s) + b * (o + s);
         const Vec3 p3 = a * o + b * (o + s);
-        AddQuad(mesh, p0, p1, p2, p3, style.planeColor, style.planeHandleAlpha);
-        AddLine(mesh, p0, p1, style.planeColor, 1.1f);
-        AddLine(mesh, p1, p2, style.planeColor, 1.1f);
-        AddLine(mesh, p2, p3, style.planeColor, 1.1f);
-        AddLine(mesh, p3, p0, style.planeColor, 1.1f);
+        AddQuad(mesh, p0, p1, p2, p3, fill, style.planeHandleAlpha);
+        AddLine(mesh, p0, p1, edge, 1.1f);
+        AddLine(mesh, p1, p2, edge, 1.1f);
+        AddLine(mesh, p2, p3, edge, 1.1f);
+        AddLine(mesh, p3, p0, edge, 1.1f);
     }
 }
 
@@ -200,11 +250,14 @@ void AddScalePlaneHandles(GizmoMesh& mesh, const GizmoStyle& style) {
     for (const auto& [i, j] : pairs) {
         const Vec3 a = axes[static_cast<std::size_t>(i)].direction;
         const Vec3 b = axes[static_cast<std::size_t>(j)].direction;
+        // Same normal-axis tint as the move gizmo's plane handles, so Move and Scale read off one
+        // basis instead of each inventing their own.
+        const Vec3 normalColor = axes[static_cast<std::size_t>(3 - i - j)].color;
         const Vec3 p0 = a * style.scalePlaneOffset;
         const Vec3 p1 = b * style.scalePlaneOffset;
         const Vec3 p2 = (a + b) * style.scalePlanePull;
-        AddTriangle(mesh, p0, p1, p2, style.planeColor, style.planeHandleAlpha);
-        AddLine(mesh, p0, p1, style.planeColor, 1.1f);
+        AddTriangle(mesh, p0, p1, p2, PlaneFillColor(normalColor, style), style.planeHandleAlpha);
+        AddLine(mesh, p0, p1, PlaneEdgeColor(normalColor, style), 1.1f);
     }
 }
 
@@ -261,11 +314,14 @@ GizmoMesh BuildGizmoMesh(GizmoMode mode, const GizmoStyle& style, const Vec3& vi
             AddCenterCube(mesh, style);
             for (const Axis& axis : axes) {
                 AddRingArc(mesh, axis.direction, axis.color, style.ringRadius,
-                           style.ringSegments, style.ringFrontBias, view, ringHalfWidth);
+                           style.ringSegments, view, ringHalfWidth);
             }
             // The free ring always faces the viewer, so it is built in the
-            // plane perpendicular to the view direction rather than to an axis.
-            AddFullRing(mesh, view, style.freeRingColor, style.freeRingRadius,
+            // plane perpendicular to the view direction rather than to an axis,
+            // and lifted toward the eye so it bounds the widget instead of
+            // slicing through it.
+            AddFullRing(mesh, view * (-kScreenRingLiftPixelsUVE * scale), view,
+                        style.freeRingColor, style.freeRingRadius,
                         style.ringSegments, freeRingHalfWidth);
             break;
 
@@ -285,7 +341,7 @@ GizmoMesh BuildGizmoMesh(GizmoMode mode, const GizmoStyle& style, const Vec3& vi
             for (const Axis& axis : axes) {
                 // rotate: smallest radius, closest to the pivot
                 AddRingArc(mesh, axis.direction, axis.color, style.universalRingRadius,
-                           style.ringSegments, style.ringFrontBias, view, universalRingHalfWidth);
+                           style.ringSegments, view, universalRingHalfWidth);
                 // move: reaches well out past the ring
                 AddMoveArrow(mesh, axis, style,
                              style.universalShaftStart, style.universalShaftEnd,

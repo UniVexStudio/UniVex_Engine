@@ -10,7 +10,7 @@
 //                     3 right · Ctrl+3 left   (numpad or the number row)
 //   MODES             5 perspective/orthographic · Z cycle shading
 //                     G grid · N orientation gizmo · H transform gizmo
-//                     B environment · M scene geometry
+//                     B environment
 //   FRAMING           O focus origin · F focus selection · Home reset view
 //   ESC               quit
 //
@@ -271,7 +271,6 @@ void OnKey(GLFWwindow* window, int key, int /*scancode*/, int action, int mods) 
         case GLFW_KEY_N: settings.viewGizmos = !settings.viewGizmos; return;
         case GLFW_KEY_H: settings.viewTransformGizmo = !settings.viewTransformGizmo; return;
         case GLFW_KEY_B: settings.viewEnvironment = !settings.viewEnvironment; return;
-        case GLFW_KEY_M: settings.viewSceneGeometry = !settings.viewSceneGeometry; return;
 
         // ---- framing ----
         case GLFW_KEY_O: state->camera.Focus(Vec3{0.f, 0.f, 0.f}, 6.f); return;

@@ -16,12 +16,17 @@
 // an earlier session; the camera convention here reproduces them exactly.
 // -----------------------------------------------------------------------
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <numbers>
 #include <string>
+#include <utility>
 
 #include "univex/camera/OrbitCamera.h"
+#include "univex/camera/ViewportMetrics.h"
+#include "univex/gizmo/GizmoDrag.h"
+#include "univex/gizmo/GizmoPicking.h"
 #include "univex/gizmo/GizmoGeometry.h"
 #include "univex/gizmo/GizmoStyle.h"
 #include "univex/gizmo/NavGizmo.h"
@@ -353,18 +358,30 @@ int main() {
             Check(!mesh.lines.empty() && !mesh.triangles.empty(), label);
         }
 
-        // Rotate rings are near-side arcs only: every ring triangle must sit on
-        // the camera-facing half, otherwise three full circles overlap into an
-        // unreadable ball.
+        // Only the camera-facing half of each rotate ring is built. Three full circles through
+        // one small area overlap into a mesh of arcs where no ring can be told from another,
+        // which is why every established editor (ImGuizmo, Maya, Unreal) shows half rings. The
+        // cut is free visually because it falls where the ring is edge-on to the eye.
         const auto rotate = BuildGizmoMesh(GizmoMode::Rotate, style, view, kUnitsPerPixel);
-        int behindCamera = 0;
+        int nearSide = 0;
+        int farSide = 0;
+        float weakestNearAlpha = 1.f;
         for (const auto& tri : rotate.triangles) {
-            // Skip the free ring (screen-facing, drawn whole) and the centre cube.
+            // Only the three axis rings; skip the screen-facing free ring and the centre cube.
             const float radius = univex::math::Length(tri.a);
             if (radius < style.ringRadius * 0.8f || radius > style.ringRadius * 1.1f) continue;
-            if (univex::math::Dot(tri.a, view) > 0.02f) ++behindCamera;
+            const float facing = univex::math::Dot(univex::math::Normalize(tri.a), view);
+            if (facing > 0.2f) {
+                ++farSide;
+            } else if (facing < -0.2f) {
+                ++nearSide;
+                weakestNearAlpha = std::min(weakestNearAlpha, tri.alpha);
+            }
         }
-        Check(behindCamera == 0, "rotate rings emit only the camera-facing arc");
+        Check(nearSide > 0, "the camera-facing half of each rotate ring is built");
+        Check(farSide == 0, "the half curving away from the camera is not built at all");
+        Check(weakestNearAlpha > 0.99f,
+              "the near half is fully opaque, not a faded ghost of a whole ring");
     }
 
     std::puts("\n== Universal gizmo layout: the three tools stay separated ==");
@@ -465,6 +482,347 @@ int main() {
         Check(finite, "the orthographic view-projection is finite");
         Check(Mat4::Inverse(orthoViewProj).has_value(),
               "the orthographic view-projection inverts (the grid needs it for ray rebuilding)");
+    }
+
+    std::puts("\n== Viewport metric: world-per-pixel is measured AT A POINT ==");
+    {
+        using univex::camera::WorldPerPixelAtPointUVE;
+
+        OrbitCamera camera;
+        constexpr int kHeight = 720;
+
+        // At the orbit target the metric must reproduce the frustum-height formula the whole
+        // module used before it took a point at all, or every existing on-screen size shifts.
+        const float expectedAtTarget =
+            (2.f * camera.Distance() * std::tan(camera.Settings().fovYRadians * 0.5f)) /
+            static_cast<float>(kHeight);
+        CheckNear(WorldPerPixelAtPointUVE(camera, kHeight, camera.Target()), expectedAtTarget,
+                  1e-6f, "at the orbit target the metric matches the frustum height there");
+
+        // The regression this whole change exists to prevent: a pivot that is not the orbit
+        // target must scale with ITS depth, not the camera's orbit distance. Twice as far along
+        // the view axis is exactly twice the world per pixel.
+        const Vec3 forward =
+            univex::math::Normalize(camera.Target() - camera.Eye());
+        const Vec3 twiceAsFar = camera.Eye() + forward * (camera.Distance() * 2.f);
+        CheckNear(WorldPerPixelAtPointUVE(camera, kHeight, twiceAsFar), expectedAtTarget * 2.f,
+                  1e-5f, "a pivot twice as deep spans twice the world per pixel");
+
+        // Depth is measured ALONG the view axis, not as straight-line distance from the eye -
+        // otherwise the metric would swell toward the corners of the screen and a gizmo would
+        // grow simply for being off-centre.
+        const Vec3 right = univex::math::Normalize(
+            univex::math::Cross(forward, Vec3{0.f, 1.f, 0.f}));
+        const Vec3 offCentre = camera.Target() + right * (camera.Distance() * 0.5f);
+        CheckNear(WorldPerPixelAtPointUVE(camera, kHeight, offCentre), expectedAtTarget, 1e-5f,
+                  "sliding a pivot sideways does not change its world-per-pixel");
+
+        // A pivot level with or behind the eye cannot produce a zero or negative scale.
+        const Vec3 behindEye = camera.Eye() - forward * 5.f;
+        Check(WorldPerPixelAtPointUVE(camera, kHeight, behindEye) > 0.f,
+              "a pivot behind the eye still yields a positive scale");
+        Check(WorldPerPixelAtPointUVE(camera, 0, camera.Target()) == 0.f,
+              "a zero-height viewport yields zero rather than a division by zero");
+
+        // Orthographic has no converging frustum, so the answer cannot depend on the point.
+        OrbitCamera ortho;
+        ortho.SetOrthographic(true);
+        const float orthoAtTarget = WorldPerPixelAtPointUVE(ortho, kHeight, ortho.Target());
+        CheckNear(WorldPerPixelAtPointUVE(ortho, kHeight, twiceAsFar), orthoAtTarget, 1e-6f,
+                  "orthographic world-per-pixel is the same at any depth");
+        CheckNear(orthoAtTarget,
+                  (ortho.OrthographicHalfHeight() * 2.f) / static_cast<float>(kHeight), 1e-6f,
+                  "orthographic world-per-pixel is the view volume over the pixel height");
+    }
+
+    std::puts("\n== Gizmo picking: what is grabbable is what is drawn ==");
+    {
+        using univex::gizmo::AxisDirectionForHandleUVE;
+        using univex::gizmo::GizmoHandleUVE;
+        using univex::gizmo::GizmoMode;
+        using univex::gizmo::GizmoStyle;
+        using univex::gizmo::PickGizmoHandleUVE;
+
+        const GizmoStyle style;
+        const Vec3 pivot{2.f, 1.f, -3.f};   // deliberately NOT the origin
+        constexpr float kScale = 0.1f;      // gizmo units -> world units
+        constexpr float kUnitsPerPixel = 1.f / 82.f;
+        const Vec3 view = univex::math::Normalize(Vec3{-0.65f, -0.44f, 0.62f});
+
+        // Fires a ray straight at a point expressed in gizmo units about the pivot, from far
+        // enough away that everything is in front of the eye.
+        const auto pickAtLocal = [&](GizmoMode mode, const Vec3& local) {
+            const Vec3 target = pivot + local * kScale;
+            const Vec3 origin = target - view * 50.f;
+            return PickGizmoHandleUVE(mode, style, origin, view, pivot, kScale, view,
+                                      kUnitsPerPixel);
+        };
+
+        // --- Move: each axis shaft, aimed at its own midpoint -------------------------------
+        const float moveMid = (style.moveShaftStart + style.moveShaftEnd) * 0.5f;
+        const std::array<std::pair<Vec3, GizmoHandleUVE>, 3> moveAxes = {{
+            {Vec3{1.f, 0.f, 0.f}, GizmoHandleUVE::AxisX},
+            {Vec3{0.f, 1.f, 0.f}, GizmoHandleUVE::AxisY},
+            {Vec3{0.f, 0.f, 1.f}, GizmoHandleUVE::AxisZ},
+        }};
+        for (const auto& [direction, expected] : moveAxes) {
+            const auto hit = pickAtLocal(GizmoMode::Move, direction * moveMid);
+            char label[96];
+            std::snprintf(label, sizeof label, "move: the %c shaft picks its own axis",
+                          expected == GizmoHandleUVE::AxisX ? 'X'
+                              : (expected == GizmoHandleUVE::AxisY ? 'Y' : 'Z'));
+            Check(hit.handle == expected, label);
+            const auto axis = AxisDirectionForHandleUVE(hit.handle);
+            Check(axis.has_value() && univex::math::Dot(*axis, direction) > 0.99f,
+                  "   ... and the handle names the axis it was drawn along");
+        }
+
+        // --- Move: the plane quads, aimed at the centre of each drawn quad -------------------
+        const float planeMid = style.planeHandleOffset + style.planeHandleSize * 0.5f;
+        Check(pickAtLocal(GizmoMode::Move, Vec3{planeMid, planeMid, 0.f}).handle ==
+                  GizmoHandleUVE::PlaneXY, "move: the XY quad picks the XY plane");
+        Check(pickAtLocal(GizmoMode::Move, Vec3{0.f, planeMid, planeMid}).handle ==
+                  GizmoHandleUVE::PlaneYZ, "move: the YZ quad picks the YZ plane");
+        Check(pickAtLocal(GizmoMode::Move, Vec3{planeMid, 0.f, planeMid}).handle ==
+                  GizmoHandleUVE::PlaneZX, "move: the ZX quad picks the ZX plane");
+
+        // --- Centre and clean miss ----------------------------------------------------------
+        Check(pickAtLocal(GizmoMode::Move, Vec3{0.f, 0.f, 0.f}).handle == GizmoHandleUVE::Uniform,
+              "move: the pivot picks the centre handle");
+        const auto miss = pickAtLocal(GizmoMode::Move, Vec3{6.f, 6.f, 6.f});
+        Check(miss.handle == GizmoHandleUVE::None,
+              "a ray well outside the widget hits nothing");
+
+        // --- Rotate: each ring, aimed at a point that lies on THAT RING ONLY -----------------
+        // Every axis-aligned point on a rotation ring is shared by two of them - (0, r, 0) is on
+        // the X ring and the Z ring alike, since both contain the Y direction - so aiming at one
+        // proves nothing about which ring answered. These points sit at 45 degrees between two
+        // axes, which belongs to exactly one ring each, and so actually pin the mapping.
+        const float diagonal = style.ringRadius * 0.70710678f;
+        Check(pickAtLocal(GizmoMode::Rotate, Vec3{0.f, diagonal, diagonal}).handle ==
+                  GizmoHandleUVE::AxisX,
+              "rotate: the ring in the YZ plane - the only one there - is the X ring");
+        Check(pickAtLocal(GizmoMode::Rotate, Vec3{diagonal, 0.f, diagonal}).handle ==
+                  GizmoHandleUVE::AxisY,
+              "rotate: the ring in the ZX plane is the Y ring");
+        Check(pickAtLocal(GizmoMode::Rotate, Vec3{diagonal, diagonal, 0.f}).handle ==
+                  GizmoHandleUVE::AxisZ,
+              "rotate: the ring in the XY plane is the Z ring");
+
+        // The same three points, checked against the DRAWN geometry rather than the picker, so a
+        // ring that is drawn in one plane but picked as another cannot pass both halves.
+        {
+            const auto rotateMesh = BuildGizmoMesh(GizmoMode::Rotate, style, view, kUnitsPerPixel);
+            const std::array<std::pair<Vec3, const char*>, 3> ringProbes = {{
+                {style.axisColorX, "the ring in the YZ plane is drawn red (X)"},
+                {style.axisColorY, "the ring in the ZX plane is drawn green (Y)"},
+                {style.axisColorZ, "the ring in the XY plane is drawn blue (Z)"},
+            }};
+            const std::array<Vec3, 3> ringPoints = {{
+                Vec3{0.f, diagonal, diagonal},
+                Vec3{diagonal, 0.f, diagonal},
+                Vec3{diagonal, diagonal, 0.f},
+            }};
+            for (std::size_t i = 0; i < ringPoints.size(); ++i) {
+                // Find the ring triangle nearest this point and read the colour it was authored
+                // with. The nearest ring geometry to a point on one ring is that ring.
+                float bestDistance = 1e30f;
+                Vec3 bestColor{};
+                for (const auto& tri : rotateMesh.triangles) {
+                    const float radius = univex::math::Length(tri.a);
+                    if (radius < style.ringRadius * 0.9f || radius > style.ringRadius * 1.1f) continue;
+                    const float distance = univex::math::Length(tri.a - ringPoints[i]);
+                    if (distance < bestDistance) {
+                        bestDistance = distance;
+                        bestColor = tri.color;
+                    }
+                }
+                const Vec3 expected = ringProbes[i].first;
+                Check(bestDistance < 1e30f &&
+                          std::fabs(bestColor.x - expected.x) < 1e-4f &&
+                          std::fabs(bestColor.y - expected.y) < 1e-4f &&
+                          std::fabs(bestColor.z - expected.z) < 1e-4f,
+                      ringProbes[i].second);
+            }
+        }
+
+        // --- Scale: the shafts and their end cubes -------------------------------------------
+        const float scaleMid = (style.scaleShaftStart + style.scaleShaftEnd) * 0.5f;
+        for (const auto& [direction, expected] : moveAxes) {
+            Check(pickAtLocal(GizmoMode::Scale, direction * scaleMid).handle == expected,
+                  "scale: a shaft picks the same axis the move gizmo would");
+            Check(pickAtLocal(GizmoMode::Scale, direction * style.scaleShaftEnd).handle == expected,
+                  "scale: the end cube picks that axis too");
+        }
+
+        // --- Select mode offers only the centre ----------------------------------------------
+        Check(pickAtLocal(GizmoMode::Select, Vec3{1.f, 0.f, 0.f}).handle == GizmoHandleUVE::None,
+              "select: there are no axis handles to grab");
+
+        // --- Hit regions hold their pixel size at any depth -----------------------------------
+        // The bug this guards: sizing from the camera's orbit distance instead of the pivot's own
+        // depth made the grab radii drift as soon as the two differed. Picking is expressed in
+        // gizmo units, so the same local aim point must hit at any scale.
+        const Vec3 farPivot{200.f, 60.f, -140.f};
+        const Vec3 farTarget = farPivot + Vec3{1.f, 0.f, 0.f} * (moveMid * 4.f);
+        const auto farHit = PickGizmoHandleUVE(GizmoMode::Move, style, farTarget - view * 900.f,
+                                               view, farPivot, 4.f, view, kUnitsPerPixel);
+        Check(farHit.handle == GizmoHandleUVE::AxisX,
+              "a gizmo at a distant pivot picks exactly as one at a near pivot does");
+    }
+
+    std::puts("\n== Gizmo drag: cursor movement to transform amount ==");
+    {
+        using univex::gizmo::ProjectRayOntoAxisUVE;
+        using univex::gizmo::ProjectRayOntoPlaneUVE;
+        using univex::gizmo::ProjectRayOntoRingAngleUVE;
+        using univex::gizmo::ShortestAngleDeltaUVE;
+
+        const Vec3 pivot{4.f, -2.f, 7.f}; // deliberately not the origin
+        const Vec3 axisX{1.f, 0.f, 0.f};
+        const Vec3 axisY{0.f, 1.f, 0.f};
+
+        // --- axis: a ray aimed straight at a point on the axis reports that point ------------
+        {
+            const Vec3 target = pivot + axisX * 3.5f;
+            const Vec3 direction = univex::math::Normalize(Vec3{0.f, -1.f, -1.f});
+            const auto along = ProjectRayOntoAxisUVE(target - direction * 20.f, direction, pivot, axisX);
+            Check(along.has_value(), "a ray crossing the axis projects onto it");
+            if (along.has_value()) {
+                CheckNear(*along, 3.5f, 1e-3f, "   ... at the distance it actually crosses");
+            }
+        }
+
+        // The property a drag depends on: the value is measured from the PIVOT, so the caller's
+        // (current - press) is a true delta regardless of where the gesture started.
+        {
+            const Vec3 direction = univex::math::Normalize(Vec3{0.f, -1.f, -1.f});
+            const auto press = ProjectRayOntoAxisUVE((pivot + axisX * 1.f) - direction * 20.f,
+                                                     direction, pivot, axisX);
+            const auto current = ProjectRayOntoAxisUVE((pivot + axisX * 4.f) - direction * 20.f,
+                                                       direction, pivot, axisX);
+            Check(press.has_value() && current.has_value(), "both ends of a drag project");
+            if (press.has_value() && current.has_value()) {
+                CheckNear(*current - *press, 3.0f, 1e-3f,
+                          "   ... and their difference is the distance dragged");
+            }
+        }
+
+        // Sighting down the axis must refuse rather than fling the object across the world.
+        Check(!ProjectRayOntoAxisUVE(pivot - axisX * 30.f, axisX, pivot, axisX).has_value(),
+              "a ray parallel to the axis is refused, not projected with infinite sensitivity");
+        Check(!ProjectRayOntoAxisUVE(pivot, Vec3{0.f, 0.f, 0.f}, pivot, axisX).has_value(),
+              "a degenerate ray direction is refused");
+
+        // --- plane ---------------------------------------------------------------------------
+        {
+            const Vec3 expected = pivot + Vec3{2.f, 3.f, 0.f}; // in the XY plane through the pivot
+            const Vec3 normal{0.f, 0.f, 1.f};
+            const auto hit = ProjectRayOntoPlaneUVE(expected + normal * 12.f, normal * -1.f, pivot, normal);
+            Check(hit.has_value(), "a ray through the plane finds its crossing point");
+            if (hit.has_value()) {
+                CheckNear(univex::math::Length(*hit - expected), 0.f, 1e-3f,
+                          "   ... exactly where it crosses");
+            }
+        }
+        Check(!ProjectRayOntoPlaneUVE(pivot + Vec3{0.f, 0.f, 5.f}, Vec3{1.f, 0.f, 0.f}, pivot,
+                                      Vec3{0.f, 0.f, 1.f}).has_value(),
+              "a ray grazing along the plane is refused");
+
+        // --- ring ----------------------------------------------------------------------------
+        // A quarter turn around Y must read as a quarter turn, whichever way the basis happens to
+        // be oriented - so the test compares two angles rather than asserting one absolute value.
+        {
+            const Vec3 normal = axisY;
+            const Vec3 first = pivot + Vec3{2.f, 0.f, 0.f};
+            const Vec3 second = pivot + Vec3{0.f, 0.f, 2.f};
+            const auto a = ProjectRayOntoRingAngleUVE(first + normal * 9.f, normal * -1.f, pivot, normal);
+            const auto b = ProjectRayOntoRingAngleUVE(second + normal * 9.f, normal * -1.f, pivot, normal);
+            Check(a.has_value() && b.has_value(), "two points on a ring both report an angle");
+            if (a.has_value() && b.has_value()) {
+                CheckNear(std::fabs(ShortestAngleDeltaUVE(*a, *b)),
+                          std::numbers::pi_v<float> * 0.5f, 1e-3f,
+                          "   ... a quarter turn apart reads as a quarter turn");
+            }
+        }
+        Check(!ProjectRayOntoRingAngleUVE(pivot + axisY * 5.f, axisY * -1.f, pivot, axisY).has_value(),
+              "a ray landing exactly on the pivot has no angle to report");
+
+        // --- angle wrapping --------------------------------------------------------------------
+        {
+            constexpr float kPi = std::numbers::pi_v<float>;
+            CheckNear(ShortestAngleDeltaUVE(0.1f, 0.4f), 0.3f, 1e-5f, "a small turn is itself");
+            // Crossing the +-pi seam the short way, not the 359-degree way round.
+            CheckNear(ShortestAngleDeltaUVE(kPi - 0.1f, -kPi + 0.1f), 0.2f, 1e-5f,
+                      "crossing the seam takes the short way round");
+            CheckNear(ShortestAngleDeltaUVE(-kPi + 0.1f, kPi - 0.1f), -0.2f, 1e-5f,
+                      "   ... and the same in reverse");
+        }
+    }
+
+    std::puts("\n== Nav gizmo labels: legible vector glyphs, upright in screen space ==");
+    {
+        using univex::gizmo::BuildNavGizmoMeshes;
+        using univex::gizmo::GizmoStyle;
+
+        const GizmoStyle style;
+        const Vec3 view = univex::math::Normalize(Vec3{-0.65f, -0.44f, 0.62f});
+        const auto meshes = BuildNavGizmoMeshes(style, view);
+
+        // The screen basis the labels are placed on - the same one BuildNavGizmoMeshes derives,
+        // and the same one the nav viewport's own camera uses, so a glyph laid out on it is
+        // axis-aligned on screen.
+        const Vec3 forward = view;
+        const Vec3 right = univex::math::Normalize(
+            univex::math::Cross(forward, Vec3{0.f, 1.f, 0.f}));
+        const Vec3 up = univex::math::Normalize(univex::math::Cross(right, forward));
+
+        // Collect the strokes sitting near the +Y ball: those are its 'Y' glyph.
+        const Vec3 ballCentre{0.f, 1.f, 0.f};
+        const float halfSize = style.navBallRadius * style.navLabelScale;
+        int glyphStrokes = 0;
+        float widestSpan = 0.f;
+        float tallestSpan = 0.f;
+        bool everyStrokeInPlane = true;
+        for (const auto& line : meshes.overlay.lines) {
+            if (univex::math::Length(line.a - ballCentre) > style.navBallRadius ||
+                univex::math::Length(line.b - ballCentre) > style.navBallRadius) {
+                continue; // an axis stub or another ball's glyph
+            }
+            ++glyphStrokes;
+            for (const Vec3& end : {line.a, line.b}) {
+                const Vec3 offset = end - ballCentre;
+                // A glyph laid out on (right, up) has no component along the view direction
+                // beyond the small lift that keeps it in front of the ball.
+                if (std::fabs(univex::math::Dot(offset, forward)) > halfSize * 0.5f) {
+                    everyStrokeInPlane = false;
+                }
+                widestSpan = std::max(widestSpan, std::fabs(univex::math::Dot(offset, right)));
+                tallestSpan = std::max(tallestSpan, std::fabs(univex::math::Dot(offset, up)));
+            }
+        }
+
+        Check(glyphStrokes == 3, "the Y glyph is exactly three strokes - two arms and a stem");
+        Check(everyStrokeInPlane, "every stroke lies in the screen plane, so the letter is upright");
+        CheckNear(tallestSpan, halfSize, 1e-4f, "the glyph fills its nominal height exactly");
+        Check(widestSpan < tallestSpan,
+              "the glyph is taller than it is wide, as a letterform should be");
+
+        // The stroke has to keep a solid core at the size it is actually drawn. gizmo_line.frag
+        // fades coverage over one pixel either side of the nominal width, so a stroke thinner
+        // than about 1.5 px has no fully-covered centre left and breaks into fragments - which is
+        // exactly how these glyphs used to render.
+        const float pixelsPerUnit = (style.navPixelSize * 0.5f) /
+                                    univex::gizmo::NavViewHalfExtent(style);
+        const float glyphHeightPx = 2.f * halfSize * pixelsPerUnit;
+        std::printf("       nav %.0f px -> glyph %.1f px tall, stroke %.1f px (%.0f%%)\n",
+                    static_cast<double>(style.navPixelSize), static_cast<double>(glyphHeightPx),
+                    static_cast<double>(style.navLabelWidthPx),
+                    static_cast<double>(style.navLabelWidthPx / glyphHeightPx * 100.f));
+        Check(style.navLabelWidthPx >= 1.5f, "the label stroke keeps a solid core at its drawn width");
+        Check(glyphHeightPx >= 14.f, "the glyph is tall enough to read");
+        Check(style.navLabelWidthPx / glyphHeightPx < 0.18f,
+              "the stroke stays a sane fraction of the glyph, not a blot");
     }
 
     std::printf("\n%s (%d failing check%s)\n",

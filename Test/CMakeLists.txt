@@ -355,6 +355,7 @@ add_executable(uve_editor_tests
     Editor/editor_chrome_layout_uve_tests.cpp
     Editor/editor_icon_registry_uve_tests.cpp
     Editor/editor_uve_tests.cpp
+    Editor/entity_picker_uve_tests.cpp
     Editor/inspector_drawer_registry_uve_tests.cpp
     Editor/regression_harness_uve_tests.cpp
     Editor/data_table_registry_bridge_uve_tests.cpp
@@ -383,6 +384,12 @@ target_include_directories(uve_editor_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/Engine/Editor/EditorCore/Internal
 )
 target_link_libraries(uve_editor_tests PRIVATE uve_editor_imgui)
+
+# EntityPickerUVE is the viewport module's engine bridge - the one target there allowed to see
+# UVE::* types. Its header lives under Viewport/Internal (private to the module, like
+# EditorMeshLayer), so the test reaches it as "integration/EntityPicker.h" the same way the
+# module's own sources do.
+target_link_libraries(uve_editor_tests PRIVATE univex_viewport_engine_bridge)
 target_compile_features(uve_editor_tests PRIVATE cxx_std_20)
 target_compile_definitions(uve_editor_tests PRIVATE UVE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 uve_set_warnings(uve_editor_tests)

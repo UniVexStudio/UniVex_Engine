@@ -91,7 +91,6 @@ struct ViewportSettings {
     bool viewGrid = true;             // the infinite ground grid
     bool viewGizmos = true;           // the corner orientation gizmo
     bool viewTransformGizmo = true;   // the move/rotate/scale widget
-    bool viewSceneGeometry = true;    // the reference object
 
     void CycleDisplayMode() {
         switch (display) {

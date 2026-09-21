@@ -89,19 +89,26 @@ void AddAxisLabel(GizmoMesh& mesh, const Vec3& center, const Vec3& right, const 
     };
 
     switch (letter) {
+        // Proportions matter at this size: too narrow and the Y's arms close up against its stem,
+        // too wide and the X's crossing thickens into a blob. These are conventional letterform
+        // ratios - a little over half as wide as tall, with the Y's arms meeting above centre so
+        // its stem stays a clearly separate stroke.
         case 'X':
-            stroke(-0.62f,  1.f,  0.62f, -1.f);
-            stroke(-0.62f, -1.f,  0.62f,  1.f);
+            stroke(-0.58f,  1.f,   0.58f, -1.f);
+            stroke(-0.58f, -1.f,   0.58f,  1.f);
             break;
         case 'Y':
-            stroke(-0.62f,  1.f,  0.f,    0.f);
-            stroke( 0.62f,  1.f,  0.f,    0.f);
-            stroke( 0.f,    0.f,  0.f,   -1.f);
+            // The arms meet well above centre. Bringing the junction down towards the middle makes
+            // the two arms and the stem converge at a shallow angle, and three stroke quads
+            // overlapping at a shallow angle read as a blot rather than as a join.
+            stroke(-0.58f,  1.f,   0.f,    0.28f);
+            stroke( 0.58f,  1.f,   0.f,    0.28f);
+            stroke( 0.f,    0.28f, 0.f,   -1.f);
             break;
         case 'Z':
-            stroke(-0.62f,  1.f,  0.62f,  1.f);
-            stroke( 0.62f,  1.f, -0.62f, -1.f);
-            stroke(-0.62f, -1.f,  0.62f, -1.f);
+            stroke(-0.58f,  1.f,   0.58f,  1.f);
+            stroke( 0.58f,  1.f,  -0.58f, -1.f);
+            stroke(-0.58f, -1.f,   0.58f, -1.f);
             break;
         default:
             break;
@@ -135,7 +142,7 @@ std::array<NavHandle, 6> NavHandles(const GizmoStyle& style) {
 
 float NavViewHalfExtent(const GizmoStyle& style) {
     // One unit out to each ball centre, plus its radius, plus a little air.
-    return 1.f + style.navBallRadius + 0.12f;
+    return 1.f + style.navBallRadius + 0.10f;
 }
 
 NavGizmoMeshes BuildNavGizmoMeshes(const GizmoStyle& style, const Vec3& viewDirection) {

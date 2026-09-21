@@ -1292,118 +1292,321 @@ bool EditorUVE::SetSelectedEntityNameUVE(std::string name) {
     return true;
 }
 
-bool EditorUVE::TranslateSelectedAlongAxisUVE(const EditorTransformAxisUVE axis, const float worldDistance) {
-    if (!IsAuthoringCommandAllowedUVE() || !HasSingleDocumentSelectionUVE() ||
-        !IsFiniteUVE(worldDistance) || axis == EditorTransformAxisUVE::None) {
+bool EditorUVE::ComputeTranslatedTransformUVE(const Scene::EntityUVE entity,
+                                              const Math::Vector3UVE& worldDelta,
+                                              const Scene::TransformComponentUVE& source,
+                                              Scene::TransformComponentUVE& outTransform) const {
+    if (!IsFiniteVectorUVE(worldDelta)) {
+        return false;
+    }
+    Math::Vector3UVE localDelta{};
+    if (!ComputeLocalDeltaForWorldDeltaUVE(entity, worldDelta, localDelta)) {
+        return false;
+    }
+    outTransform = source;
+    outTransform.localPosition += localDelta;
+    return true;
+}
+
+bool EditorUVE::ComputeGestureTransformUVE(const EditorToolSessionModeUVE mode,
+                                           const EditorTransformAxisUVE axis, const float amount,
+                                           const Scene::TransformComponentUVE& source,
+                                           Scene::TransformComponentUVE& outTransform) const {
+    if (!IsFiniteUVE(amount)) {
         return false;
     }
 
+    outTransform = source;
+    switch (mode) {
+        case EditorToolSessionModeUVE::Translate: {
+            if (axis == EditorTransformAxisUVE::None) {
+                return false;
+            }
+            // Snap the DISTANCE along the axis, then build the delta from it - snapping the
+            // resulting vector per component would quantise a diagonal axis differently.
+            const float snappedDistance =
+                m_transformSnappingSettings.enabled
+                    ? SnapScalarUVE(amount, m_transformSnappingSettings.translateStep)
+                    : amount;
+            return ComputeTranslatedTransformUVE(m_selectedEntity,
+                                                 GetAxisVectorUVE(axis) * snappedDistance, source,
+                                                 outTransform);
+        }
+        case EditorToolSessionModeUVE::Rotate: {
+            if (axis == EditorTransformAxisUVE::None) {
+                return false;
+            }
+            const float rotateStepRadians =
+                (m_transformSnappingSettings.rotateStepDegrees * std::numbers::pi_v<float>) / 180.0F;
+            const float snappedRadians = m_transformSnappingSettings.enabled
+                                             ? SnapScalarUVE(amount, rotateStepRadians)
+                                             : amount;
+            Math::QuaternionUVE localRotation{};
+            if (!ComputeLocalRotationForWorldAxisUVE(m_selectedEntity, source.localRotation,
+                                                     GetAxisVectorUVE(axis), snappedRadians,
+                                                     localRotation)) {
+                return false;
+            }
+            outTransform.localRotation = localRotation;
+            return true;
+        }
+        case EditorToolSessionModeUVE::Scale: {
+            const float snappedDelta = m_transformSnappingSettings.enabled
+                                           ? SnapScalarUVE(amount, m_transformSnappingSettings.scaleStep)
+                                           : amount;
+            if (axis == EditorTransformAxisUVE::None) {
+                // Uniform: every component moves by the same additive offset. The command rejects
+                // as a whole if any result is invalid; it never clamps one component or silently
+                // turns the request into a proportional scale.
+                if (!IsFiniteUVE(snappedDelta)) {
+                    return false;
+                }
+                outTransform.localScale.x += snappedDelta;
+                outTransform.localScale.y += snappedDelta;
+                outTransform.localScale.z += snappedDelta;
+                return IsFiniteUVE(outTransform.localScale.x) && IsFiniteUVE(outTransform.localScale.y) &&
+                       IsFiniteUVE(outTransform.localScale.z) &&
+                       outTransform.localScale.x >= kMinimumLocalScaleUVE &&
+                       outTransform.localScale.y >= kMinimumLocalScaleUVE &&
+                       outTransform.localScale.z >= kMinimumLocalScaleUVE;
+            }
+            float* component = nullptr;
+            switch (axis) {
+                case EditorTransformAxisUVE::X: component = &outTransform.localScale.x; break;
+                case EditorTransformAxisUVE::Y: component = &outTransform.localScale.y; break;
+                case EditorTransformAxisUVE::Z: component = &outTransform.localScale.z; break;
+                case EditorTransformAxisUVE::None: return false;
+            }
+            *component += snappedDelta;
+            return IsFiniteUVE(*component) && *component >= kMinimumLocalScaleUVE;
+        }
+    }
+    return false;
+}
+
+/// The shared guard the four public axis commands used to each repeat: valid editor state, a
+/// single document entity selected, and that entity actually carrying a transform to read. It
+/// reads the LIVE transform as the source, which is what an incremental command means.
+bool EditorUVE::TryComputeSelectedGestureTransformUVE(const EditorToolSessionModeUVE mode,
+                                                      const EditorTransformAxisUVE axis,
+                                                      const float amount,
+                                                      Scene::TransformComponentUVE& outTransform) const {
+    if (!IsAuthoringCommandAllowedUVE() || !HasSingleDocumentSelectionUVE()) {
+        return false;
+    }
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
     if (!entityManager.HasComponentUVE<Scene::TransformComponentUVE>(m_selectedEntity)) {
         return false;
     }
+    const Scene::TransformComponentUVE live =
+        entityManager.GetComponentUVE<Scene::TransformComponentUVE>(m_selectedEntity);
+    return ComputeGestureTransformUVE(mode, axis, amount, live, outTransform);
+}
 
-    const float snappedDistance = m_transformSnappingSettings.enabled
-                                      ? SnapScalarUVE(worldDistance, m_transformSnappingSettings.translateStep)
-                                      : worldDistance;
-    Math::Vector3UVE localDelta{};
-    const Math::Vector3UVE worldDelta = GetAxisVectorUVE(axis) * snappedDistance;
-    if (!ComputeLocalDeltaForWorldDeltaUVE(m_selectedEntity, worldDelta, localDelta)) {
+// ---------------------------------------------------------------------------------------------
+// Transform gestures.
+//
+// A pointer drag is not a sequence of commands. Every public transform command records a history
+// entry, so driving one from a drag would push an undo step per mouse-move frame and leave the
+// user pressing Ctrl+Z several hundred times to get back where they started. A gesture is one
+// transaction: many previews, then a single history entry from where the drag began to where it
+// ended.
+//
+// The two properties that make this correct, and that are easy to get wrong:
+//
+//   * Previews are computed from the BASELINE captured at Begin, never from the live transform.
+//     A drag reports the total offset from the press point every frame, so re-applying an
+//     incremental command each frame would compound it into a runaway.
+//   * Previews go through ApplyLocalTransformUVE, the same scene-graph write the commands use,
+//     but deliberately NOT through SetSelectedLocalTransformUVE - that is the one that records
+//     history, which is precisely what a preview must not do.
+// ---------------------------------------------------------------------------------------------
+
+bool EditorUVE::BeginTransformGestureUVE(const EditorToolSessionModeUVE mode) {
+    if (!IsAuthoringCommandAllowedUVE() || !HasSingleDocumentSelectionUVE()) {
+        return false;
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (!entityManager.HasComponentUVE<Scene::TransformComponentUVE>(m_selectedEntity)) {
+        return false;
+    }
+    const Scene::TransformComponentUVE baseline =
+        entityManager.GetComponentUVE<Scene::TransformComponentUVE>(m_selectedEntity);
+    // m_sceneDirty travels with the baseline so a cancelled gesture restores the document's
+    // unsaved state as well as its transform - a drag that is abandoned must not leave the scene
+    // looking modified.
+    return m_toolSession.BeginUVE(m_selectedEntity, mode, baseline, m_sceneDirty);
+}
+
+bool EditorUVE::PreviewTransformGestureUVE(const EditorTransformAxisUVE axis, const float totalAmount) {
+    if (m_toolSession.GetPhaseUVE() != EditorToolSessionPhaseUVE::Previewing) {
+        return false;
+    }
+    const std::optional<EditorToolSessionSnapshotUVE>& snapshot = m_toolSession.GetSnapshotUVE();
+    if (!snapshot.has_value() || !IsAuthoringCommandAllowedUVE()) {
         return false;
     }
 
-    Scene::TransformComponentUVE updated =
-        entityManager.GetComponentUVE<Scene::TransformComponentUVE>(m_selectedEntity);
-    updated.localPosition += localDelta;
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    const Scene::EntityUVE entity = snapshot->entity;
+    if (!entityManager.IsAliveUVE(entity) ||
+        !entityManager.HasComponentUVE<Scene::TransformComponentUVE>(entity)) {
+        // The gesture's target went away underneath it. Discard rather than cancel: there is no
+        // live transform left to compare against, so no restore can be claimed.
+        m_toolSession.DiscardUVE();
+        return false;
+    }
+
+    Scene::TransformComponentUVE updated{};
+    if (!ComputeGestureTransformUVE(snapshot->mode, axis, totalAmount, snapshot->baselineTransform,
+                                    updated)) {
+        return false;
+    }
+    if (!IsTransformFiniteUVE(updated) || !ApplyLocalTransformUVE(entity, updated)) {
+        return false;
+    }
+    m_sceneDirty = true;
+    return m_toolSession.RecordPreviewAppliedUVE(updated);
+}
+
+bool EditorUVE::PreviewTranslateGestureUVE(const Math::Vector3UVE& totalWorldDelta) {
+    if (m_toolSession.GetPhaseUVE() != EditorToolSessionPhaseUVE::Previewing) {
+        return false;
+    }
+    const std::optional<EditorToolSessionSnapshotUVE>& snapshot = m_toolSession.GetSnapshotUVE();
+    if (!snapshot.has_value() || snapshot->mode != EditorToolSessionModeUVE::Translate ||
+        !IsAuthoringCommandAllowedUVE() || !IsFiniteVectorUVE(totalWorldDelta)) {
+        return false;
+    }
+
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    const Scene::EntityUVE entity = snapshot->entity;
+    if (!entityManager.IsAliveUVE(entity) ||
+        !entityManager.HasComponentUVE<Scene::TransformComponentUVE>(entity)) {
+        m_toolSession.DiscardUVE();
+        return false;
+    }
+
+    // A plane drag has no single axis, so each component is quantised on its own - which lands on
+    // the same lattice a pair of axis drags would have reached.
+    Math::Vector3UVE worldDelta = totalWorldDelta;
+    if (m_transformSnappingSettings.enabled) {
+        const float step = m_transformSnappingSettings.translateStep;
+        worldDelta = Math::Vector3UVE{SnapScalarUVE(worldDelta.x, step), SnapScalarUVE(worldDelta.y, step),
+                                      SnapScalarUVE(worldDelta.z, step)};
+    }
+
+    Scene::TransformComponentUVE updated{};
+    if (!ComputeTranslatedTransformUVE(entity, worldDelta, snapshot->baselineTransform, updated)) {
+        return false;
+    }
+    if (!IsTransformFiniteUVE(updated) || !ApplyLocalTransformUVE(entity, updated)) {
+        return false;
+    }
+    m_sceneDirty = true;
+    return m_toolSession.RecordPreviewAppliedUVE(updated);
+}
+
+bool EditorUVE::CommitTransformGestureUVE() {
+    if (m_toolSession.GetPhaseUVE() != EditorToolSessionPhaseUVE::Previewing) {
+        return false;
+    }
+    const std::optional<EditorToolSessionSnapshotUVE>& live = m_toolSession.GetSnapshotUVE();
+    if (!live.has_value()) {
+        return false;
+    }
+    const bool changed = !AreTransformsEqualUVE(live->baselineTransform, live->lastAppliedTransform);
+
+    const std::optional<EditorToolSessionSnapshotUVE> snapshot = m_toolSession.CommitUVE(changed);
+    if (!snapshot.has_value()) {
+        return false;
+    }
+    if (!changed) {
+        // A press and release that never moved anything. Restoring the dirty flag matters: a
+        // no-op gesture must not mark an unmodified scene as needing a save.
+        m_sceneDirty = snapshot->baselineDirty;
+        return true;
+    }
+
+    // One entry for the whole drag. Selection cannot change while a gesture owns the pointer, so
+    // the same snapshot describes both sides of it.
+    const EditorSelectionSnapshotUVE selection = CaptureSelectionSnapshotUVE();
+    m_sceneDirty = true;
+    RecordHistoryUVE(TransformHistoryEntryUVE{snapshot->entity, snapshot->baselineTransform,
+                                              snapshot->lastAppliedTransform, selection, selection,
+                                              snapshot->baselineDirty, true});
+    return true;
+}
+
+bool EditorUVE::CancelTransformGestureUVE() {
+    if (m_toolSession.GetPhaseUVE() != EditorToolSessionPhaseUVE::Previewing) {
+        return false;
+    }
+    const std::optional<EditorToolSessionSnapshotUVE>& live = m_toolSession.GetSnapshotUVE();
+    if (!live.has_value()) {
+        return false;
+    }
+
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    const Scene::EntityUVE entity = live->entity;
+    if (!entityManager.IsAliveUVE(entity) ||
+        !entityManager.HasComponentUVE<Scene::TransformComponentUVE>(entity)) {
+        m_toolSession.DiscardUVE();
+        return false;
+    }
+
+    const Scene::TransformComponentUVE current =
+        entityManager.GetComponentUVE<Scene::TransformComponentUVE>(entity);
+    const std::optional<EditorToolSessionSnapshotUVE> snapshot = m_toolSession.CancelUVE(current);
+    if (!snapshot.has_value()) {
+        // ExternalTransformConflict: something else moved this entity since the last preview, so
+        // the baseline is stale and writing it back would silently discard that change. The
+        // session has already cleared; the external value is left exactly as it stands.
+        return false;
+    }
+
+    if (!ApplyLocalTransformUVE(entity, snapshot->baselineTransform)) {
+        m_toolSession.MarkRestoreFailedUVE();
+        return false;
+    }
+    m_sceneDirty = snapshot->baselineDirty;
+    return true;
+}
+
+bool EditorUVE::TranslateSelectedAlongAxisUVE(const EditorTransformAxisUVE axis, const float worldDistance) {
+    Scene::TransformComponentUVE updated{};
+    if (!TryComputeSelectedGestureTransformUVE(EditorToolSessionModeUVE::Translate, axis, worldDistance,
+                                               updated)) {
+        return false;
+    }
     return SetSelectedLocalTransformUVE(updated);
 }
 
 bool EditorUVE::RotateSelectedAroundWorldAxisUVE(const EditorTransformAxisUVE axis, const float radians) {
-    if (!IsAuthoringCommandAllowedUVE() || !HasSingleDocumentSelectionUVE() ||
-        !IsFiniteUVE(radians) || axis == EditorTransformAxisUVE::None) {
+    Scene::TransformComponentUVE updated{};
+    if (!TryComputeSelectedGestureTransformUVE(EditorToolSessionModeUVE::Rotate, axis, radians, updated)) {
         return false;
     }
-
-    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    if (!entityManager.HasComponentUVE<Scene::TransformComponentUVE>(m_selectedEntity)) {
-        return false;
-    }
-
-    const float rotateStepRadians =
-        (m_transformSnappingSettings.rotateStepDegrees * std::numbers::pi_v<float>) / 180.0F;
-    const float snappedRadians = m_transformSnappingSettings.enabled
-                                     ? SnapScalarUVE(radians, rotateStepRadians)
-                                     : radians;
-    Scene::TransformComponentUVE updated =
-        entityManager.GetComponentUVE<Scene::TransformComponentUVE>(m_selectedEntity);
-    Math::QuaternionUVE localRotation{};
-    if (!ComputeLocalRotationForWorldAxisUVE(m_selectedEntity, updated.localRotation, GetAxisVectorUVE(axis),
-                                             snappedRadians, localRotation)) {
-        return false;
-    }
-    updated.localRotation = localRotation;
     return SetSelectedLocalTransformUVE(updated);
 }
 
 bool EditorUVE::ScaleSelectedAlongAxisUVE(const EditorTransformAxisUVE axis,
-                                           const float localScaleDelta) {
-    if (!IsAuthoringCommandAllowedUVE() || !HasSingleDocumentSelectionUVE() ||
-        !IsFiniteUVE(localScaleDelta) || axis == EditorTransformAxisUVE::None) {
-        return false;
+                                          const float localScaleDelta) {
+    if (axis == EditorTransformAxisUVE::None) {
+        return false; // None means "uniform" to the shared helper; this command is per-axis only
     }
-
-    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    if (!entityManager.HasComponentUVE<Scene::TransformComponentUVE>(m_selectedEntity)) {
-        return false;
-    }
-
-    Scene::TransformComponentUVE updated =
-        entityManager.GetComponentUVE<Scene::TransformComponentUVE>(m_selectedEntity);
-    float* component = nullptr;
-    switch (axis) {
-        case EditorTransformAxisUVE::X:
-            component = &updated.localScale.x;
-            break;
-        case EditorTransformAxisUVE::Y:
-            component = &updated.localScale.y;
-            break;
-        case EditorTransformAxisUVE::Z:
-            component = &updated.localScale.z;
-            break;
-        case EditorTransformAxisUVE::None:
-            return false;
-    }
-    const float snappedScaleDelta = m_transformSnappingSettings.enabled
-                                        ? SnapScalarUVE(localScaleDelta, m_transformSnappingSettings.scaleStep)
-                                        : localScaleDelta;
-    *component += snappedScaleDelta;
-    if (!IsFiniteUVE(*component) || *component < kMinimumLocalScaleUVE) {
+    Scene::TransformComponentUVE updated{};
+    if (!TryComputeSelectedGestureTransformUVE(EditorToolSessionModeUVE::Scale, axis, localScaleDelta,
+                                               updated)) {
         return false;
     }
     return SetSelectedLocalTransformUVE(updated);
 }
 
 bool EditorUVE::ScaleSelectedUniformlyUVE(const float localScaleOffset) {
-    if (!IsAuthoringCommandAllowedUVE() || !HasSingleDocumentSelectionUVE() ||
-        !IsFiniteUVE(localScaleOffset)) {
-        return false;
-    }
-    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    if (!entityManager.HasComponentUVE<Scene::TransformComponentUVE>(m_selectedEntity)) {
-        return false;
-    }
-    const float snappedOffset = m_transformSnappingSettings.enabled
-                                    ? SnapScalarUVE(localScaleOffset, m_transformSnappingSettings.scaleStep)
-                                    : localScaleOffset;
-    Scene::TransformComponentUVE updated =
-        entityManager.GetComponentUVE<Scene::TransformComponentUVE>(m_selectedEntity);
-    updated.localScale.x += snappedOffset;
-    updated.localScale.y += snappedOffset;
-    updated.localScale.z += snappedOffset;
-    if (!IsFiniteUVE(snappedOffset) || !IsFiniteUVE(updated.localScale.x) ||
-        !IsFiniteUVE(updated.localScale.y) || !IsFiniteUVE(updated.localScale.z) ||
-        updated.localScale.x < kMinimumLocalScaleUVE || updated.localScale.y < kMinimumLocalScaleUVE ||
-        updated.localScale.z < kMinimumLocalScaleUVE) {
+    Scene::TransformComponentUVE updated{};
+    if (!TryComputeSelectedGestureTransformUVE(EditorToolSessionModeUVE::Scale,
+                                               EditorTransformAxisUVE::None, localScaleOffset, updated)) {
         return false;
     }
     return SetSelectedLocalTransformUVE(updated);

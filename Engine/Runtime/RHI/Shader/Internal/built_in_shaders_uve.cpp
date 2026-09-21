@@ -102,8 +102,13 @@ const std::string_view kFullscreenQuadSource = R"GLSLSRC(#version 450 core
 out vec2 vTexCoord;
 
 void main() {
+    // position is (0,0), (2,0), (0,2) - the oversized triangle that covers clip space once
+    // gl_Position maps it with position*2-1. The texture coordinate must use the inverse of
+    // that same mapping, (ndc+1)/2 == position, so the visible NDC range [-1,1] samples the
+    // full [0,1] of the source. Halving it here would sample only the source's lower-left
+    // quarter and magnify it across the whole target.
     vec2 position = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
-    vTexCoord = position * 0.5;
+    vTexCoord = position;
     gl_Position = vec4(position * 2.0 - 1.0, 0.0, 1.0);
 }
 #endif
@@ -113,6 +118,15 @@ in vec2 vTexCoord;
 out vec4 FragColor;
 
 uniform sampler2D uSourceTexture;
+// The scene depth this frame was rendered with, used only to report coverage. A caller that
+// renders into its own texture (RenderFrameToTargetUVE) otherwise has no way to tell which
+// pixels the renderer actually covered: the destination depth attachment is cleared by this
+// pass and never written, and the scene's clear colour is indistinguishable from dark geometry.
+// The editor viewport needs exactly that distinction to lay its grid and gizmos over the frame.
+uniform sampler2D uSceneDepthTexture;
+// 1 while rendering into a caller-supplied texture, 0 for the presentation surface - whose
+// alpha must stay opaque, since some window visuals composite it.
+uniform int uWriteCoverageAlpha;
 
 vec3 AcesToneMapUVE(vec3 color) {
     const float a = 2.51;
@@ -125,7 +139,9 @@ vec3 AcesToneMapUVE(vec3 color) {
 
 void main() {
     vec3 hdrColor = max(texture(uSourceTexture, vTexCoord).rgb, vec3(0.0));
-    FragColor = vec4(AcesToneMapUVE(hdrColor), 1.0);
+    float covered = texture(uSceneDepthTexture, vTexCoord).r < 1.0 ? 1.0 : 0.0;
+    float alpha = uWriteCoverageAlpha != 0 ? covered : 1.0;
+    FragColor = vec4(AcesToneMapUVE(hdrColor), alpha);
 }
 #endif
 )GLSLSRC";
@@ -1033,6 +1049,112 @@ void main() {
 )GLSLSRC";
 
 
+const std::string_view kLitPrimitive3DSource = R"GLSLSRC(#version 450 core
+
+// Built-in primitives (PrimitiveMeshComponentUVE: Cube, UVSphere, Plane) carry an authored base
+// colour and no material, so they cannot go through the PBR path lit_shadowed_3d.glsl serves -
+// there is no albedo/normal/AO texture, no metallic or roughness, and nothing to sample a shadow
+// map with. They are still real scene geometry, though, and shading them flat made every primitive
+// read as a silhouette with no form.
+//
+// This is therefore deliberately Lambert-only: the engine's exact light contract (the same
+// LightUVE layout, the same type codes, the same range and spot-cone falloff) applied as pure
+// diffuse over the world's ambient term. No specular, no shadows, no textures - each of those
+// needs material data a primitive does not have, and faking them would be worse than not having
+// them.
+
+#ifdef VERTEX_SHADER
+layout(location = 0) in vec3 aPosition;
+layout(location = 1) in vec3 aNormal;
+
+uniform mat4 uModel;
+// Transpose(inverse(uModel)): correctly transforms normals under non-uniform scale, which
+// primitives routinely have (a Plane node is authored by scaling one axis flat).
+uniform mat4 uNormalMatrix;
+uniform mat4 uViewProjection;
+
+out vec3 vWorldPosition;
+out vec3 vNormal;
+
+void main() {
+    vec4 worldPosition = uModel * vec4(aPosition, 1.0);
+    vWorldPosition = worldPosition.xyz;
+    vNormal = mat3(uNormalMatrix) * aNormal;
+    gl_Position = uViewProjection * worldPosition;
+}
+#endif
+
+#ifdef FRAGMENT_SHADER
+in vec3 vWorldPosition;
+in vec3 vNormal;
+
+out vec4 FragColor;
+
+const int kMaxLightsUVE = 4;
+const float kEpsilonUVE = 0.0001;
+// Matches lit_shadowed_3d.glsl exactly: one authored outer angle, inner cone derived from it.
+const float kSpotInnerConeRatioUVE = 0.85;
+
+struct LightUVE {
+    int type; // 0 = Directional, 1 = Point, 2 = Spot
+    vec3 position;
+    vec3 direction;
+    vec3 color;
+    float intensity;
+    float range;
+    float spotAngleDegrees;
+};
+
+uniform LightUVE uLights[kMaxLightsUVE];
+uniform vec3 uAmbientColor;
+uniform vec3 uColor;
+
+vec3 SafeNormalizeUVE(vec3 value) {
+    float lengthValue = length(value);
+    return lengthValue > kEpsilonUVE ? value / lengthValue : vec3(0.0, 1.0, 0.0);
+}
+
+void main() {
+    vec3 normal = SafeNormalizeUVE(vNormal);
+    vec3 accumulated = uColor * uAmbientColor;
+
+    for (int lightIndex = 0; lightIndex < kMaxLightsUVE; ++lightIndex) {
+        LightUVE light = uLights[lightIndex];
+        if (light.intensity <= 0.0) {
+            continue;
+        }
+
+        vec3 lightDirection;
+        float attenuation = 1.0;
+        if (light.type == 0) {
+            lightDirection = SafeNormalizeUVE(-light.direction);
+        } else {
+            vec3 toLight = light.position - vWorldPosition;
+            float distanceToLight = max(length(toLight), kEpsilonUVE);
+            lightDirection = toLight / distanceToLight;
+            attenuation = 1.0 / max(distanceToLight * distanceToLight, kEpsilonUVE);
+            if (light.range > 0.0 && distanceToLight > light.range) {
+                attenuation = 0.0;
+            }
+            if (light.type == 2) {
+                float cosOuter = cos(radians(light.spotAngleDegrees));
+                float cosInner = cos(radians(light.spotAngleDegrees) * kSpotInnerConeRatioUVE);
+                float coneAlignment = dot(-lightDirection, SafeNormalizeUVE(light.direction));
+                float coneFalloff = clamp((coneAlignment - cosOuter) / max(cosInner - cosOuter, kEpsilonUVE),
+                                          0.0, 1.0);
+                attenuation *= coneFalloff;
+            }
+        }
+
+        float diffuse = max(dot(normal, lightDirection), 0.0);
+        accumulated += uColor * light.color * (light.intensity * attenuation * diffuse);
+    }
+
+    FragColor = vec4(accumulated, 1.0);
+}
+#endif
+)GLSLSRC";
+
 const std::string_view kBloomBrightPassSource = R"GLSLSRC(#version 450 core
 
 #ifdef VERTEX_SHADER
@@ -1040,8 +1162,13 @@ const std::string_view kBloomBrightPassSource = R"GLSLSRC(#version 450 core
 out vec2 vTexCoord;
 
 void main() {
+    // position is (0,0), (2,0), (0,2) - the oversized triangle that covers clip space once
+    // gl_Position maps it with position*2-1. The texture coordinate must use the inverse of
+    // that same mapping, (ndc+1)/2 == position, so the visible NDC range [-1,1] samples the
+    // full [0,1] of the source. Halving it here would sample only the source's lower-left
+    // quarter and magnify it across the whole target.
     vec2 position = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
-    vTexCoord = position * 0.5;
+    vTexCoord = position;
     gl_Position = vec4(position * 2.0 - 1.0, 0.0, 1.0);
 }
 #endif
@@ -1069,8 +1196,13 @@ const std::string_view kBloomBlurSource = R"GLSLSRC(#version 450 core
 out vec2 vTexCoord;
 
 void main() {
+    // position is (0,0), (2,0), (0,2) - the oversized triangle that covers clip space once
+    // gl_Position maps it with position*2-1. The texture coordinate must use the inverse of
+    // that same mapping, (ndc+1)/2 == position, so the visible NDC range [-1,1] samples the
+    // full [0,1] of the source. Halving it here would sample only the source's lower-left
+    // quarter and magnify it across the whole target.
     vec2 position = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
-    vTexCoord = position * 0.5;
+    vTexCoord = position;
     gl_Position = vec4(position * 2.0 - 1.0, 0.0, 1.0);
 }
 #endif
@@ -1113,8 +1245,13 @@ const std::string_view kFullscreenCopySource = R"GLSLSRC(#version 450 core
 out vec2 vTexCoord;
 
 void main() {
+    // position is (0,0), (2,0), (0,2) - the oversized triangle that covers clip space once
+    // gl_Position maps it with position*2-1. The texture coordinate must use the inverse of
+    // that same mapping, (ndc+1)/2 == position, so the visible NDC range [-1,1] samples the
+    // full [0,1] of the source. Halving it here would sample only the source's lower-left
+    // quarter and magnify it across the whole target.
     vec2 position = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
-    vTexCoord = position * 0.5;
+    vTexCoord = position;
     gl_Position = vec4(position * 2.0 - 1.0, 0.0, 1.0);
 }
 #endif
@@ -1141,8 +1278,13 @@ const std::string_view kSsaoSource = R"GLSLSRC(#version 450 core
 out vec2 vTexCoord;
 
 void main() {
+    // position is (0,0), (2,0), (0,2) - the oversized triangle that covers clip space once
+    // gl_Position maps it with position*2-1. The texture coordinate must use the inverse of
+    // that same mapping, (ndc+1)/2 == position, so the visible NDC range [-1,1] samples the
+    // full [0,1] of the source. Halving it here would sample only the source's lower-left
+    // quarter and magnify it across the whole target.
     vec2 position = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
-    vTexCoord = position * 0.5;
+    vTexCoord = position;
     gl_Position = vec4(position * 2.0 - 1.0, 0.0, 1.0);
 }
 #endif
