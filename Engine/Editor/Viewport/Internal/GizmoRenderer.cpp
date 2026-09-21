@@ -1,6 +1,10 @@
 #include "univex/render/GizmoRenderer.h"
 
+#include "univex/camera/ViewportMetrics.h"
+
+#include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <utility>
 #include <vector>
 
@@ -15,6 +19,18 @@ namespace {
 constexpr GLsizei kLineStride = static_cast<GLsizei>(sizeof(float) * 11);
 // Solid pass: position + normal + RGBA.
 constexpr GLsizei kSolidStride = static_cast<GLsizei>(sizeof(float) * 10);
+
+// At and above this alpha, blending leaves a triangle visually solid, so it is drawn in the
+// opaque pass and keeps its depth writes.
+constexpr float kOpaqueAlphaThreshold = 0.999f;
+
+// Depth of a triangle's centroid along the view axis; larger is farther from the eye.
+[[nodiscard]] float CentroidDepth(const univex::gizmo::GizmoTriangle& tri, const Vec3& viewDirection) {
+    const Vec3 centroid{(tri.a.x + tri.b.x + tri.c.x) / 3.f,
+                        (tri.a.y + tri.b.y + tri.c.y) / 3.f,
+                        (tri.a.z + tri.b.z + tri.c.z) / 3.f};
+    return univex::math::Dot(centroid, viewDirection);
+}
 
 void PushLineVertex(std::vector<float>& out, const Vec3& current, const Vec3& other,
                     const Vec3& color, float side, float widthPx) {
@@ -95,12 +111,36 @@ std::optional<GizmoRenderer> GizmoRenderer::Create(std::string& outError) {
     return renderer;
 }
 
-void GizmoRenderer::UploadAndDrawTriangles(const GizmoMesh& mesh, const GizmoDrawParams& params) const {
+void GizmoRenderer::UploadAndDrawTriangles(const GizmoMesh& mesh, const GizmoDrawParams& params,
+                                           TrianglePassUVE pass) const {
     if (mesh.triangles.empty()) return;
 
+    // Select this pass's half of the mesh. Alpha is authored per triangle, so the split is just a
+    // threshold - anything the blend would leave indistinguishable from opaque is treated as
+    // opaque, so it keeps its depth writes and goes on occluding the widget's own far side.
+    const bool wantOpaque = pass == TrianglePassUVE::Opaque;
+    std::vector<std::size_t> selected;
+    selected.reserve(mesh.triangles.size());
+    for (std::size_t i = 0; i < mesh.triangles.size(); ++i) {
+        if ((mesh.triangles[i].alpha >= kOpaqueAlphaThreshold) == wantOpaque) selected.push_back(i);
+    }
+    if (selected.empty()) return;
+
+    if (!wantOpaque) {
+        // Back to front along the view axis. The mesh is authored around the origin and placed by
+        // a uniform positive scale, so ordering by the local centroid's depth is the same ordering
+        // as in world space, without having to transform anything here.
+        std::stable_sort(selected.begin(), selected.end(),
+                         [&](std::size_t lhs, std::size_t rhs) {
+                             return CentroidDepth(mesh.triangles[lhs], params.viewDirection) >
+                                    CentroidDepth(mesh.triangles[rhs], params.viewDirection);
+                         });
+    }
+
     std::vector<float> vertices;
-    vertices.reserve(mesh.triangles.size() * 3 * 10);
-    for (const auto& tri : mesh.triangles) {
+    vertices.reserve(selected.size() * 3 * 10);
+    for (const std::size_t index : selected) {
+        const auto& tri = mesh.triangles[index];
         // Flat (faceted) shading: one normal per triangle, replicated across
         // its 3 vertices - matches this mesh's own immediate/expanded style
         // (no shared vertex buffer to smooth across), and reads as the same
@@ -176,17 +216,23 @@ void GizmoRenderer::Draw(const GizmoMesh& mesh, const GizmoDrawParams& params) c
     glDisable(GL_CULL_FACE); // gizmo geometry is viewed from every side
     if (params.depthTest) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
 
+    // Opaque solids write depth so the widget occludes itself. Translucent solids and the strokes
+    // drawn over them test against that depth but never add to it: a half-transparent handle must
+    // not reject the geometry showing through it, and an anti-aliased stroke edge must not punch a
+    // hole in whatever is behind it.
+    const auto drawSolids = [&] {
+        glDepthMask(params.depthWrite ? GL_TRUE : GL_FALSE);
+        UploadAndDrawTriangles(mesh, params, TrianglePassUVE::Opaque);
+        glDepthMask(GL_FALSE);
+        UploadAndDrawTriangles(mesh, params, TrianglePassUVE::Translucent);
+    };
+
     if (params.drawLinesFirst) {
         glDepthMask(GL_FALSE);
         UploadAndDrawLines(mesh, params);
-        glDepthMask(params.depthWrite ? GL_TRUE : GL_FALSE);
-        UploadAndDrawTriangles(mesh, params);
+        drawSolids();
     } else {
-        // Solids write depth so the widget occludes itself; the strokes drawn
-        // over them test against that depth but do not add to it, which keeps
-        // an anti-aliased edge from punching a hole in whatever is behind it.
-        glDepthMask(params.depthWrite ? GL_TRUE : GL_FALSE);
-        UploadAndDrawTriangles(mesh, params);
+        drawSolids();
         glDepthMask(GL_FALSE);
         UploadAndDrawLines(mesh, params);
     }
@@ -199,16 +245,15 @@ void GizmoRenderer::Draw(const GizmoMesh& mesh, const GizmoDrawParams& params) c
 
 float GizmoRenderer::ScaleForPixelRadius(const univex::camera::OrbitCamera& camera,
                                          int framebufferHeight,
-                                         float gizmoPixelRadius) {
+                                         float gizmoPixelRadius,
+                                         const Vec3& pivot) {
     if (framebufferHeight <= 0) return 1.f;
 
-    // World units per pixel at the pivot's depth. In orthographic the view
-    // volume is fixed, so distance does not enter into it.
-    const float viewportWorldHeight =
-        camera.IsOrthographic()
-            ? camera.OrthographicHalfHeight() * 2.f
-            : 2.f * camera.Distance() * std::tan(camera.Settings().fovYRadians * 0.5f);
-    const float worldPerPixel = viewportWorldHeight / static_cast<float>(framebufferHeight);
+    // World units per pixel at the PIVOT's depth (orthographic handled inside), so the widget
+    // holds its on-screen size wherever the selected node happens to be relative to the camera's
+    // orbit target.
+    const float worldPerPixel =
+        univex::camera::WorldPerPixelAtPointUVE(camera, framebufferHeight, pivot);
 
     // The gizmo's outermost handle sits ~1.9 gizmo units from the pivot, so
     // dividing by that turns "pixels to the outer edge" into a unit scale.

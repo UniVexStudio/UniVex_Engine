@@ -1,24 +1,16 @@
 # Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 #
-# Ported from a standalone C++20/OpenGL viewport module (infinite grid, orbit camera, 4 transform
-# gizmos + orientation gizmo) - unchanged logic except: ReferenceScene::Draw() gained a `model`
-# matrix parameter (was implicitly always at the origin) and ViewportRenderPass gained an optional
-# univex::integration::IEntityTransformSourceUVE* so scene geometry can be "one proxy cube per
-# real engine entity" instead of always the single demo cube - see EntityTransformSource.h and
-# WorldUveEntitySource.h/.cpp for why and how.
+# Ported from a standalone C++20/OpenGL viewport module: infinite grid, orbit camera, the four
+# transform gizmos and the orientation gizmo. It draws the editor's own furniture - backdrop,
+# grid, gizmos - while scene entities are rendered by the host engine's Renderer3DUVE and
+# composited against this pass by the editor (see Internal/integration/EditorMeshLayer.h).
 #
-# EntityManagerEntitySource.h/.cpp (added when this module was wired into the real
-# EngineCoreUVE/EditorUVE editor) implements the same IEntityTransformSourceUVE interface directly
-# over Scene::IEntityManagerUVE& - WorldUveEntitySource can't be reused there since WorldUVE
-# constructs its own internal EntityManagerUVE rather than wrapping an externally-owned one, and
-# EngineCoreUVE's real entity manager is never inside a WorldUVE.
-#
-# The library splits in three deliberately: univex_viewport_core is pure CPU (math, camera, LOD)
-# and links nothing; univex_viewport_gl adds the GL renderer; univex_viewport_engine_bridge (new)
-# is the only target in this module that depends on the host UniVex engine (uve_world, which
-# PUBLIC-links uve_entity - enough for EntityManagerEntitySource too) - core/gl stay engine-agnostic
-# so this module keeps working if dropped into a different engine.
+# The library splits in four deliberately. univex_viewport_core is pure CPU (math, camera, LOD,
+# gizmo geometry and picking) and links nothing; univex_viewport_gl adds the GL renderer;
+# univex_viewport_app_support is the frame-level render pass; univex_viewport_engine_bridge is
+# the only target here that depends on the host UniVex engine. Core, gl and app_support stay
+# engine-agnostic so this module keeps working if dropped into a different engine.
 
 option(UNIVEX_VIEWPORT_BUILD_APP "Build the interactive GLFW demo" ON)
 option(UNIVEX_VIEWPORT_BUILD_TOOLS "Build the headless capture tool" ON)
@@ -59,7 +51,9 @@ add_library(univex_viewport_core STATIC
     Internal/Mat4.cpp
     Internal/OrbitCamera.cpp
     Internal/GizmoGeometry.cpp
-    Internal/NavGizmo.cpp)
+    Internal/NavGizmo.cpp
+    Internal/GizmoPicking.cpp
+    Internal/ViewportMetrics.cpp)
 target_include_directories(univex_viewport_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/Expose)
 target_compile_options(univex_viewport_core PRIVATE -Wall -Wextra -Wpedantic)
 

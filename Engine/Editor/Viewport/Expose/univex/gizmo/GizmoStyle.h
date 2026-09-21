@@ -61,10 +61,6 @@ struct GizmoStyle {
     float ringRadius = 1.30f;
     float freeRingRadius = 1.55f;
     int   ringSegments = 96;
-    // Ring samples whose camera-space depth is behind this are dropped, so
-    // only the near-side arc is drawn and the three rings never turn into
-    // an unreadable ball of overlapping circles.
-    float ringFrontBias = 0.0f;
 
     // ---- scale gizmo ------------------------------------------------------
     float scaleShaftStart = 0.18f;

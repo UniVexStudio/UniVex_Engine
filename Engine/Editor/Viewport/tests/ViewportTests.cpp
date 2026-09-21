@@ -16,12 +16,16 @@
 // an earlier session; the camera convention here reproduces them exactly.
 // -----------------------------------------------------------------------
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <numbers>
 #include <string>
+#include <utility>
 
 #include "univex/camera/OrbitCamera.h"
+#include "univex/camera/ViewportMetrics.h"
+#include "univex/gizmo/GizmoPicking.h"
 #include "univex/gizmo/GizmoGeometry.h"
 #include "univex/gizmo/GizmoStyle.h"
 #include "univex/gizmo/NavGizmo.h"
@@ -480,6 +484,149 @@ int main() {
         Check(finite, "the orthographic view-projection is finite");
         Check(Mat4::Inverse(orthoViewProj).has_value(),
               "the orthographic view-projection inverts (the grid needs it for ray rebuilding)");
+    }
+
+    std::puts("\n== Viewport metric: world-per-pixel is measured AT A POINT ==");
+    {
+        using univex::camera::WorldPerPixelAtPointUVE;
+
+        OrbitCamera camera;
+        constexpr int kHeight = 720;
+
+        // At the orbit target the metric must reproduce the frustum-height formula the whole
+        // module used before it took a point at all, or every existing on-screen size shifts.
+        const float expectedAtTarget =
+            (2.f * camera.Distance() * std::tan(camera.Settings().fovYRadians * 0.5f)) /
+            static_cast<float>(kHeight);
+        CheckNear(WorldPerPixelAtPointUVE(camera, kHeight, camera.Target()), expectedAtTarget,
+                  1e-6f, "at the orbit target the metric matches the frustum height there");
+
+        // The regression this whole change exists to prevent: a pivot that is not the orbit
+        // target must scale with ITS depth, not the camera's orbit distance. Twice as far along
+        // the view axis is exactly twice the world per pixel.
+        const Vec3 forward =
+            univex::math::Normalize(camera.Target() - camera.Eye());
+        const Vec3 twiceAsFar = camera.Eye() + forward * (camera.Distance() * 2.f);
+        CheckNear(WorldPerPixelAtPointUVE(camera, kHeight, twiceAsFar), expectedAtTarget * 2.f,
+                  1e-5f, "a pivot twice as deep spans twice the world per pixel");
+
+        // Depth is measured ALONG the view axis, not as straight-line distance from the eye -
+        // otherwise the metric would swell toward the corners of the screen and a gizmo would
+        // grow simply for being off-centre.
+        const Vec3 right = univex::math::Normalize(
+            univex::math::Cross(forward, Vec3{0.f, 1.f, 0.f}));
+        const Vec3 offCentre = camera.Target() + right * (camera.Distance() * 0.5f);
+        CheckNear(WorldPerPixelAtPointUVE(camera, kHeight, offCentre), expectedAtTarget, 1e-5f,
+                  "sliding a pivot sideways does not change its world-per-pixel");
+
+        // A pivot level with or behind the eye cannot produce a zero or negative scale.
+        const Vec3 behindEye = camera.Eye() - forward * 5.f;
+        Check(WorldPerPixelAtPointUVE(camera, kHeight, behindEye) > 0.f,
+              "a pivot behind the eye still yields a positive scale");
+        Check(WorldPerPixelAtPointUVE(camera, 0, camera.Target()) == 0.f,
+              "a zero-height viewport yields zero rather than a division by zero");
+
+        // Orthographic has no converging frustum, so the answer cannot depend on the point.
+        OrbitCamera ortho;
+        ortho.SetOrthographic(true);
+        const float orthoAtTarget = WorldPerPixelAtPointUVE(ortho, kHeight, ortho.Target());
+        CheckNear(WorldPerPixelAtPointUVE(ortho, kHeight, twiceAsFar), orthoAtTarget, 1e-6f,
+                  "orthographic world-per-pixel is the same at any depth");
+        CheckNear(orthoAtTarget,
+                  (ortho.OrthographicHalfHeight() * 2.f) / static_cast<float>(kHeight), 1e-6f,
+                  "orthographic world-per-pixel is the view volume over the pixel height");
+    }
+
+    std::puts("\n== Gizmo picking: what is grabbable is what is drawn ==");
+    {
+        using univex::gizmo::AxisDirectionForHandleUVE;
+        using univex::gizmo::GizmoHandleUVE;
+        using univex::gizmo::GizmoMode;
+        using univex::gizmo::GizmoStyle;
+        using univex::gizmo::PickGizmoHandleUVE;
+
+        const GizmoStyle style;
+        const Vec3 pivot{2.f, 1.f, -3.f};   // deliberately NOT the origin
+        constexpr float kScale = 0.1f;      // gizmo units -> world units
+        constexpr float kUnitsPerPixel = 1.f / 82.f;
+        const Vec3 view = univex::math::Normalize(Vec3{-0.65f, -0.44f, 0.62f});
+
+        // Fires a ray straight at a point expressed in gizmo units about the pivot, from far
+        // enough away that everything is in front of the eye.
+        const auto pickAtLocal = [&](GizmoMode mode, const Vec3& local) {
+            const Vec3 target = pivot + local * kScale;
+            const Vec3 origin = target - view * 50.f;
+            return PickGizmoHandleUVE(mode, style, origin, view, pivot, kScale, view,
+                                      kUnitsPerPixel);
+        };
+
+        // --- Move: each axis shaft, aimed at its own midpoint -------------------------------
+        const float moveMid = (style.moveShaftStart + style.moveShaftEnd) * 0.5f;
+        const std::array<std::pair<Vec3, GizmoHandleUVE>, 3> moveAxes = {{
+            {Vec3{1.f, 0.f, 0.f}, GizmoHandleUVE::AxisX},
+            {Vec3{0.f, 1.f, 0.f}, GizmoHandleUVE::AxisY},
+            {Vec3{0.f, 0.f, 1.f}, GizmoHandleUVE::AxisZ},
+        }};
+        for (const auto& [direction, expected] : moveAxes) {
+            const auto hit = pickAtLocal(GizmoMode::Move, direction * moveMid);
+            char label[96];
+            std::snprintf(label, sizeof label, "move: the %c shaft picks its own axis",
+                          expected == GizmoHandleUVE::AxisX ? 'X'
+                              : (expected == GizmoHandleUVE::AxisY ? 'Y' : 'Z'));
+            Check(hit.handle == expected, label);
+            const auto axis = AxisDirectionForHandleUVE(hit.handle);
+            Check(axis.has_value() && univex::math::Dot(*axis, direction) > 0.99f,
+                  "   ... and the handle names the axis it was drawn along");
+        }
+
+        // --- Move: the plane quads, aimed at the centre of each drawn quad -------------------
+        const float planeMid = style.planeHandleOffset + style.planeHandleSize * 0.5f;
+        Check(pickAtLocal(GizmoMode::Move, Vec3{planeMid, planeMid, 0.f}).handle ==
+                  GizmoHandleUVE::PlaneXY, "move: the XY quad picks the XY plane");
+        Check(pickAtLocal(GizmoMode::Move, Vec3{0.f, planeMid, planeMid}).handle ==
+                  GizmoHandleUVE::PlaneYZ, "move: the YZ quad picks the YZ plane");
+        Check(pickAtLocal(GizmoMode::Move, Vec3{planeMid, 0.f, planeMid}).handle ==
+                  GizmoHandleUVE::PlaneZX, "move: the ZX quad picks the ZX plane");
+
+        // --- Centre and clean miss ----------------------------------------------------------
+        Check(pickAtLocal(GizmoMode::Move, Vec3{0.f, 0.f, 0.f}).handle == GizmoHandleUVE::Uniform,
+              "move: the pivot picks the centre handle");
+        const auto miss = pickAtLocal(GizmoMode::Move, Vec3{6.f, 6.f, 6.f});
+        Check(miss.handle == GizmoHandleUVE::None,
+              "a ray well outside the widget hits nothing");
+
+        // --- Rotate: each ring, aimed at a point on the drawn circle -------------------------
+        Check(pickAtLocal(GizmoMode::Rotate, Vec3{0.f, style.ringRadius, 0.f}).handle ==
+                  GizmoHandleUVE::AxisX, "rotate: a point on the X ring picks the X ring");
+        Check(pickAtLocal(GizmoMode::Rotate, Vec3{style.ringRadius, 0.f, 0.f}).handle ==
+                  GizmoHandleUVE::AxisY, "rotate: a point on the Y ring picks the Y ring");
+        Check(pickAtLocal(GizmoMode::Rotate, Vec3{0.f, 0.f, style.ringRadius}).handle ==
+                  GizmoHandleUVE::AxisX,
+              "rotate: a point shared by the X and Z rings picks one of them, not nothing");
+
+        // --- Scale: the shafts and their end cubes -------------------------------------------
+        const float scaleMid = (style.scaleShaftStart + style.scaleShaftEnd) * 0.5f;
+        for (const auto& [direction, expected] : moveAxes) {
+            Check(pickAtLocal(GizmoMode::Scale, direction * scaleMid).handle == expected,
+                  "scale: a shaft picks the same axis the move gizmo would");
+            Check(pickAtLocal(GizmoMode::Scale, direction * style.scaleShaftEnd).handle == expected,
+                  "scale: the end cube picks that axis too");
+        }
+
+        // --- Select mode offers only the centre ----------------------------------------------
+        Check(pickAtLocal(GizmoMode::Select, Vec3{1.f, 0.f, 0.f}).handle == GizmoHandleUVE::None,
+              "select: there are no axis handles to grab");
+
+        // --- Hit regions hold their pixel size at any depth -----------------------------------
+        // The bug this guards: sizing from the camera's orbit distance instead of the pivot's own
+        // depth made the grab radii drift as soon as the two differed. Picking is expressed in
+        // gizmo units, so the same local aim point must hit at any scale.
+        const Vec3 farPivot{200.f, 60.f, -140.f};
+        const Vec3 farTarget = farPivot + Vec3{1.f, 0.f, 0.f} * (moveMid * 4.f);
+        const auto farHit = PickGizmoHandleUVE(GizmoMode::Move, style, farTarget - view * 900.f,
+                                               view, farPivot, 4.f, view, kUnitsPerPixel);
+        Check(farHit.handle == GizmoHandleUVE::AxisX,
+              "a gizmo at a distant pivot picks exactly as one at a near pivot does");
     }
 
     std::printf("\n%s (%d failing check%s)\n",
