@@ -22,7 +22,10 @@
 
 #include "ViewportRenderPass.h"
 #include "integration/EditorMeshLayer.h"
-#include "integration/EntityManagerEntitySource.h"
+#include "integration/EntityPicker.h"
+#include "univex/camera/ViewportMetrics.h"
+#include "univex/gizmo/GizmoDrag.h"
+#include "univex/gizmo/GizmoPicking.h"
 #include "integration/MathConversions.h"
 #include "univex/camera/OrbitCamera.h"
 #include "univex/render/ShaderProgram.h"
@@ -46,30 +49,38 @@ namespace {
 // kNavClickSlopPixels for the standalone demo.
 constexpr float kNavClickSlopPixelsUVE = 4.0F;
 
-// Fullscreen-triangle compositing pass: layers EditorMeshLayerUVE's real mesh/material render on
-// top of ViewportRenderPass's grid/gizmo image, using the mesh layer's own depth buffer (cleared
-// to the far value, 1.0) as the per-pixel test for "was real geometry drawn here" - avoids needing
-// to reconcile the two renderers' independent camera/projection depth conventions, since only the
-// mesh layer's own depth is ever read. No vertex buffer needed (same gl_VertexID trick already
-// used by Renderer3DUVE's own internal tonemap/fullscreen-quad shader).
-constexpr std::string_view kCompositeVertexShaderUVE = R"(#version 330 core
+// Fullscreen-triangle pass that injects EditorMeshLayerUVE's real mesh/material render into the
+// viewport's own framebuffer, colour AND depth, so that the editor's grid and gizmos share one
+// depth buffer with the engine's scene geometry instead of being reconciled against it afterwards.
+// No vertex buffer needed (same gl_VertexID trick already used by Renderer3DUVE's own internal
+// tonemap/fullscreen-quad shader).
+constexpr std::string_view kMeshBlitVertexShaderUVE = R"(#version 330 core
 void main() {
     vec2 pos = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
     gl_Position = vec4(pos * 2.0 - 1.0, 0.0, 1.0);
 }
 )";
 
-constexpr std::string_view kCompositeFragmentShaderUVE = R"(#version 330 core
-uniform sampler2D uGridColor;
+// Coverage comes from alpha, not depth: Renderer3DUVE's tone-mapping pass reports which pixels it
+// actually drew by writing alpha 1 there and 0 elsewhere (see fullscreen_quad.glsl), because the
+// depth attachment a caller hands RenderFrameToTargetUVE is cleared by that pass and never
+// written, and the scene's own clear colour is indistinguishable from dark geometry.
+//
+// Covered pixels are pushed to the near plane rather than carried at their real depth, so scene
+// geometry occludes the grid drawn after it. That is correct for opaque geometry above the ground
+// plane, which is every case the editor can currently author; geometry below y=0 will hide grid
+// lines that should cross in front of it. Fixing that properly needs the renderer to export real
+// per-pixel depth, which in turn needs a depth-compare mode the RHI does not expose yet.
+constexpr std::string_view kMeshBlitFragmentShaderUVE = R"(#version 330 core
 uniform sampler2D uMeshColor;
-uniform sampler2D uMeshDepth;
 out vec4 FragColor;
 void main() {
-    ivec2 coord = ivec2(gl_FragCoord.xy);
-    float meshDepth = texelFetch(uMeshDepth, coord, 0).r;
-    vec4 meshColor = texelFetch(uMeshColor, coord, 0);
-    vec4 gridColor = texelFetch(uGridColor, coord, 0);
-    FragColor = meshDepth < 1.0 ? meshColor : gridColor;
+    vec4 meshColor = texelFetch(uMeshColor, ivec2(gl_FragCoord.xy), 0);
+    if (meshColor.a < 0.5) {
+        discard; // the renderer drew nothing here; leave the backdrop and its depth alone
+    }
+    FragColor = vec4(meshColor.rgb, 1.0);
+    gl_FragDepth = 0.0;
 }
 )";
 
@@ -108,12 +119,12 @@ class ViewportPanelBackendUVE final {
 public:
     ViewportPanelBackendUVE(UVE::Editor::EditorUVE& editor, UVE::Core::EngineCoreUVE& engine)
         : editor_(editor), engine_(engine), entityManager_(engine.GetServicesUVE().GetEntityManagerUVE()),
-          entitySource_(entityManager_), meshLayer_(engine.GetServicesUVE()) {}
+          meshLayer_(engine.GetServicesUVE()) {}
 
     ~ViewportPanelBackendUVE() {
         DestroyFramebuffersUVE();
-        if (compositeVao_ != 0U) {
-            glDeleteVertexArrays(1, &compositeVao_);
+        if (meshBlitVao_ != 0U) {
+            glDeleteVertexArrays(1, &meshBlitVao_);
         }
         if (uiFontAtlasTexture_ != 0U) {
             glDeleteTextures(1, &uiFontAtlasTexture_);
@@ -139,7 +150,12 @@ public:
         ApplyOverlayStateUVE(overlayState);
         UpdateSelectionGizmoUVE();
         const bool navGizmoOwnsGesture = UpdateNavGizmoInteractionUVE(width, height);
-        UpdateCameraFromMouseUVE(height, navGizmoOwnsGesture);
+        // A handle drag outranks both: grabbing an arrow must not also orbit the camera or, on
+        // release, register as a click that selects whatever is behind the gizmo.
+        const bool gizmoOwnsGesture = !navGizmoOwnsGesture && UpdateGizmoDragUVE(width, height);
+        const bool pointerTaken = navGizmoOwnsGesture || gizmoOwnsGesture;
+        UpdateSelectionFromMouseUVE(width, height, pointerTaken);
+        UpdateCameraFromMouseUVE(height, pointerTaken);
         UpdateViewportBookmarkHotkeysUVE();
         // Advances the eased snap-to-axis animation SnapToDirection() starts (a manual orbit/pan
         // cancels it instead - see OrbitCamera.cpp) - without this the camera would flag itself
@@ -147,29 +163,39 @@ public:
         // app/main.cpp's own per-frame state.camera.Update(deltaSeconds) call in the standalone demo.
         camera_.Update(ImGui::GetIO().DeltaTime);
 
-        GLint previousFbo = 0;
-        glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previousFbo);
-        glBindFramebuffer(GL_FRAMEBUFFER, msaaFbo_);
-        glEnable(GL_MULTISAMPLE);
-        renderPass_->RenderFrame(camera_, width, height);
-        glBindFramebuffer(GL_READ_FRAMEBUFFER, msaaFbo_);
-        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, resolveFbo_);
-        glBlitFramebuffer(0, 0, width, height, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
-        glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(previousFbo));
-
-        // Real MeshComponentUVE-carrying scene entities, rendered via the same lit/shaded pipeline
-        // EngineCoreUVE itself uses at runtime (Renderer3DUVE::RenderFrameToTargetUVE), layered on
-        // top of the grid/gizmo image above - see EditorMeshLayerUVE's own header comment. While the
-        // Game workspace tab is active, render through the scene's own camera instead of the
-        // editor's free-look OrbitCamera - see FindGameCameraEntityUVE's own comment for the "first
-        // camera found" convention; EditorMeshLayerUVE itself falls back to the OrbitCamera-synced
-        // view if the scene has no usable camera, so a Play session with no authored camera still
-        // shows something instead of a blank panel.
+        // Real scene entities, rendered via the same lit/shaded pipeline EngineCoreUVE itself uses
+        // at runtime (Renderer3DUVE::RenderFrameToTargetUVE) - see EditorMeshLayerUVE's own header
+        // comment. This runs first because its colour and depth are injected into the viewport's
+        // framebuffer below, between the backdrop and the grid, so the grid depth-tests against
+        // real geometry. While the Game workspace tab is active, render through the scene's own
+        // camera instead of the editor's free-look OrbitCamera - see FindGameCameraEntityUVE's own
+        // comment for the "first camera found" convention; EditorMeshLayerUVE itself falls back to
+        // the OrbitCamera-synced view if the scene has no usable camera, so a Play session with no
+        // authored camera still shows something instead of a blank panel.
         const std::optional<UVE::Scene::EntityUVE> gameCameraOverride =
             gameWorkspaceActive_ ? FindGameCameraEntityUVE(entityManager_) : std::nullopt;
         const univex::integration::EditorMeshLayerResultUVE meshResult = meshLayer_.RenderUVE(
             camera_, static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height), gameCameraOverride);
         outUsedSize = UVE::Math::Vector2UVE{static_cast<float>(width), static_cast<float>(height)};
+
+        // One framebuffer, one depth buffer, drawn back to front: backdrop, then the engine's
+        // scene geometry, then the grid (which depth-tests against it), then the gizmos last of
+        // all so nothing can paint over them.
+        GLint previousFbo = 0;
+        glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previousFbo);
+        glBindFramebuffer(GL_FRAMEBUFFER, msaaFbo_);
+        glEnable(GL_MULTISAMPLE);
+        renderPass_->ClearUVE(width, height);
+        renderPass_->RenderBackgroundUVE();
+        if (meshResult.colorTextureId != 0U && EnsureMeshBlitResourcesUVE()) {
+            BlitMeshLayerUVE(meshResult);
+        }
+        renderPass_->RenderGridUVE(camera_, width, height);
+        renderPass_->RenderOverlayUVE(camera_, width, height);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, msaaFbo_);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, resolveFbo_);
+        glBlitFramebuffer(0, 0, width, height, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+        glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(previousFbo));
 
         // Player-facing HUD content only shows during the Game workspace tab's "what a player
         // would see" preview (matching the grid/transform-gizmo hiding above) - drawn via ImGui's
@@ -179,11 +205,7 @@ public:
             DrawUIOverlayUVE();
         }
 
-        if (meshResult.colorTextureId == 0U || !EnsureCompositeResourcesUVE(width, height)) {
-            return static_cast<std::uint64_t>(resolveColorTexture_);
-        }
-        CompositeMeshOverGridUVE(meshResult, width, height, static_cast<GLuint>(previousFbo));
-        return static_cast<std::uint64_t>(compositeColorTexture_);
+        return static_cast<std::uint64_t>(resolveColorTexture_);
     }
 
 private:
@@ -212,7 +234,6 @@ private:
             UVE_ERROR("uve_editor_app: viewport render pass init failed: {}", error);
             return false;
         }
-        renderPass_->SetEntitySource(&entitySource_);
         return true;
     }
 
@@ -279,85 +300,48 @@ private:
         }
         resolveColorTexture_ = resolveFbo_ = msaaColorRb_ = msaaDepthRb_ = msaaFbo_ = 0U;
         framebufferWidth_ = framebufferHeight_ = 0;
-        if (compositeColorTexture_ != 0U) {
-            glDeleteTextures(1, &compositeColorTexture_);
-        }
-        if (compositeFbo_ != 0U) {
-            glDeleteFramebuffers(1, &compositeFbo_);
-        }
-        compositeColorTexture_ = compositeFbo_ = 0U;
-        compositeWidth_ = compositeHeight_ = 0;
     }
 
-    // Lazily builds the compositing shader/VAO once (not size-dependent) and (re)creates the
-    // composite FBO+color-texture pair whenever the panel's reported size changes - same shape as
-    // EnsureFramebuffersUVE above, kept separate since this pair's lifetime is independent of the
-    // MSAA/resolve pair (this one only needs recreating, never touched by the grid render pass).
-    [[nodiscard]] bool EnsureCompositeResourcesUVE(const int width, const int height) {
-        if (!compositeProgram_.has_value()) {
-            std::string error;
-            compositeProgram_ = univex::render::ShaderProgram::Build(kCompositeVertexShaderUVE,
-                                                                      kCompositeFragmentShaderUVE, error);
-            if (!compositeProgram_.has_value()) {
-                UVE_ERROR("uve_editor_app: viewport composite shader build failed: {}", error);
-                return false;
-            }
-            glGenVertexArrays(1, &compositeVao_);
-        }
-        if (width == compositeWidth_ && height == compositeHeight_ && compositeFbo_ != 0U) {
+    // Lazily builds the mesh-blit shader and its empty VAO once. Nothing here is size-dependent:
+    // the pass draws straight into the viewport's own MSAA framebuffer, so there is no second
+    // colour target to keep in step with the panel's size.
+    [[nodiscard]] bool EnsureMeshBlitResourcesUVE() {
+        if (meshBlitProgram_.has_value()) {
             return true;
         }
-        if (compositeColorTexture_ != 0U) {
-            glDeleteTextures(1, &compositeColorTexture_);
+        std::string error;
+        meshBlitProgram_ = univex::render::ShaderProgram::Build(kMeshBlitVertexShaderUVE,
+                                                                 kMeshBlitFragmentShaderUVE, error);
+        if (!meshBlitProgram_.has_value()) {
+            UVE_ERROR("uve_editor_app: viewport mesh blit shader build failed: {}", error);
+            return false;
         }
-        if (compositeFbo_ != 0U) {
-            glDeleteFramebuffers(1, &compositeFbo_);
-        }
-        compositeWidth_ = width;
-        compositeHeight_ = height;
-
-        glGenFramebuffers(1, &compositeFbo_);
-        glBindFramebuffer(GL_FRAMEBUFFER, compositeFbo_);
-        glGenTextures(1, &compositeColorTexture_);
-        glBindTexture(GL_TEXTURE_2D, compositeColorTexture_);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, compositeColorTexture_, 0);
-        const bool complete = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
-        if (!complete) {
-            UVE_ERROR("uve_editor_app: viewport composite framebuffer incomplete");
-        }
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        return complete;
+        glGenVertexArrays(1, &meshBlitVao_);
+        return true;
     }
 
-    // Draws the fullscreen depth-tested composite pass: `resolveColorTexture_` (grid/gizmos) under
-    // `meshResult`'s color, selected per-pixel by `meshResult`'s own depth (see the shader source
-    // above for why only the mesh layer's depth is ever read).
-    void CompositeMeshOverGridUVE(const univex::integration::EditorMeshLayerResultUVE& meshResult, const int width,
-                                  const int height, const GLuint restoreFbo) {
-        glBindFramebuffer(GL_FRAMEBUFFER, compositeFbo_);
-        glViewport(0, 0, width, height);
-        glDisable(GL_DEPTH_TEST);
+    // Writes EditorMeshLayerUVE's colour and depth into the currently bound framebuffer, so the
+    // grid and gizmos that follow share one depth buffer with the engine's scene geometry. Depth
+    // testing stays off: the mesh layer's own depth already resolved visibility between meshes,
+    // and at this point in the frame only the backdrop is underneath.
+    void BlitMeshLayerUVE(const univex::integration::EditorMeshLayerResultUVE& meshResult) {
+        // GL_ALWAYS rather than disabling the test: OpenGL skips depth-buffer writes entirely
+        // while GL_DEPTH_TEST is disabled, whatever the write mask says, and the depth this pass
+        // writes is the whole reason it exists.
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_ALWAYS);
+        glDepthMask(GL_TRUE);
         glDisable(GL_BLEND);
-        compositeProgram_->Use();
+        meshBlitProgram_->Use();
         glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, resolveColorTexture_);
-        glUniform1i(compositeProgram_->UniformLocation("uGridColor"), 0);
-        glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_2D, meshResult.colorTextureId);
-        glUniform1i(compositeProgram_->UniformLocation("uMeshColor"), 1);
-        glActiveTexture(GL_TEXTURE2);
-        glBindTexture(GL_TEXTURE_2D, meshResult.depthTextureId);
-        glUniform1i(compositeProgram_->UniformLocation("uMeshDepth"), 2);
-        glBindVertexArray(compositeVao_);
+        glUniform1i(meshBlitProgram_->UniformLocation("uMeshColor"), 0);
+        glBindVertexArray(meshBlitVao_);
         glDrawArrays(GL_TRIANGLES, 0, 3);
         glBindVertexArray(0);
         glActiveTexture(GL_TEXTURE0);
-        glBindFramebuffer(GL_FRAMEBUFFER, restoreFbo);
+        // The grid depth-tests against what this pass just wrote, so put the comparison back.
+        glDepthFunc(GL_LESS);
     }
 
     // Uploads UI::UIFontAtlasUVE's baked RGBA8 bitmap once (it never changes after construction),
@@ -414,9 +398,9 @@ private:
 
     // Applies EditorUVE's own generic overlay-toolbar state (see ViewportOverlayStateUVE's doc
     // comment on why it's plain enums/bools rather than any Viewport-module type) to the real
-    // ViewportRenderPass each frame. Snap is stored and reflected in the bubble's highlight but
-    // has no behavioral effect yet: there is no drag-to-move gizmo interaction implemented in this
-    // slice for it to snap - the gizmo is currently a visual overlay only, not yet draggable.
+    // ViewportRenderPass each frame. Snap is no longer decorative: the bubble now writes through
+    // to EditorUVE's real snapping settings, which is what quantises a handle drag (see
+    // UpdateGizmoDragUVE).
     void ApplyOverlayStateUVE(const UVE::Editor::EditorUVE::ViewportOverlayStateUVE& overlayState) {
         auto& settings = renderPass_->Settings();
         settings.projection = overlayState.orthographic ? univex::viewport::ProjectionMode::Orthographic
@@ -424,6 +408,7 @@ private:
         // The Game workspace tab previews what a player would see - no editor-only grid overlay.
         settings.viewGrid = overlayState.gridVisible && !overlayState.gameWorkspaceActive;
         gameWorkspaceActive_ = overlayState.gameWorkspaceActive;
+        pointerOverOverlay_ = overlayState.pointerOverOverlay;
         using UVE::Editor::EditorUVE;
         switch (overlayState.gizmoMode) {
             case EditorUVE::ViewportGizmoModeUVE::Move:
@@ -449,17 +434,388 @@ private:
     // SetGizmoPivotOverride() (see that method's own comment on why camera.Target() alone isn't
     // enough - orbiting the camera must not drag a selected object's gizmo along with it).
     void UpdateSelectionGizmoUVE() {
-        const UVE::Scene::EntityUVE selected = editor_.GetSelectedEntityUVE();
-        const bool hasSelection = selected != UVE::Scene::kInvalidEntityUVE &&
-                                  entityManager_.HasComponentUVE<UVE::Scene::WorldTransformComponentUVE>(selected);
+        // The pivot is the centroid of everything selected, not the active entity's own position.
+        // With one node the two are identical; with several, using the active entity put the gizmo
+        // on whichever node happened to be clicked last, sitting off to one side of the group it
+        // claims to represent.
+        univex::math::Vec3 centroid{0.0F, 0.0F, 0.0F};
+        int contributing = 0;
+        for (const UVE::Scene::EntityUVE entity : editor_.GetSelectedEntitiesUVE()) {
+            if (entity == UVE::Scene::kInvalidEntityUVE ||
+                !entityManager_.HasComponentUVE<UVE::Scene::WorldTransformComponentUVE>(entity)) {
+                continue;
+            }
+            const auto& worldTransform =
+                entityManager_.GetComponentUVE<UVE::Scene::WorldTransformComponentUVE>(entity);
+            centroid += univex::integration::FromUveVector3UVE(worldTransform.worldPosition);
+            ++contributing;
+        }
+
+        const bool hasSelection = contributing > 0;
         renderPass_->Settings().viewTransformGizmo = hasSelection && !gameWorkspaceActive_;
         if (hasSelection) {
-            const auto& worldTransform =
-                entityManager_.GetComponentUVE<UVE::Scene::WorldTransformComponentUVE>(selected);
-            renderPass_->SetGizmoPivotOverride(
-                univex::integration::FromUveVector3UVE(worldTransform.worldPosition));
+            gizmoPivot_ = centroid * (1.0F / static_cast<float>(contributing));
+            renderPass_->SetGizmoPivotOverride(gizmoPivot_);
         } else {
+            gizmoPivot_.reset();
             renderPass_->SetGizmoPivotOverride(std::nullopt);
+        }
+    }
+
+    // Drags a transform handle.
+    //
+    // The gizmo has been drawable but not touchable: geometry was produced and nothing ever asked
+    // what the pointer was on. This closes that loop - pick a handle, project the cursor ray onto
+    // it each frame, and feed the result through EditorUVE's gesture API so the whole drag is one
+    // undo step.
+    //
+    // Every number here is the one the renderer drew with, taken from the same helpers
+    // (ScaleForPixelRadius / WorldPerPixelAtPointUVE at the gizmo's own pivot), so the region that
+    // responds is the region that is visible.
+    //
+    // Returns true while a drag owns the pointer, which suppresses both orbit and click-to-select.
+    [[nodiscard]] bool UpdateGizmoDragUVE(const int width, const int height) {
+        if (dragHandle_ != univex::gizmo::GizmoHandleUVE::None) {
+            return ContinueGizmoDragUVE(width, height);
+        }
+        return TryBeginGizmoDragUVE(width, height);
+    }
+
+    /// The gizmo's placement this frame: the pivot it is drawn at, the world size of one gizmo
+    /// unit, and how many gizmo units a pixel spans. Empty when no gizmo is on screen.
+    struct GizmoPlacementUVE final {
+        univex::math::Vec3 pivot{};
+        float scale = 1.0F;
+        float unitsPerPixel = 1.0F;
+        univex::math::Vec3 viewDirection{};
+    };
+
+    [[nodiscard]] std::optional<GizmoPlacementUVE> CurrentGizmoPlacementUVE(const int height) const {
+        if (!gizmoPivot_.has_value() || !renderPass_->Settings().viewTransformGizmo || height <= 0) {
+            return std::nullopt;
+        }
+        GizmoPlacementUVE placement;
+        placement.pivot = *gizmoPivot_;
+        placement.scale = univex::render::GizmoRenderer::ScaleForPixelRadius(
+            camera_, height, renderPass_->Style().gizmoPixelRadius, placement.pivot);
+        const float worldPerPixel =
+            univex::camera::WorldPerPixelAtPointUVE(camera_, height, placement.pivot);
+        placement.unitsPerPixel = (placement.scale > 0.0F) ? worldPerPixel / placement.scale : 1.0F;
+        placement.viewDirection = univex::math::Normalize(camera_.Target() - camera_.Eye());
+        return placement;
+    }
+
+    /// The cursor ray in the viewport's own math kit, for the gizmo code that lives in the
+    /// engine-agnostic core.
+    void CursorRayUVE(const int width, const int height, const float pixelX, const float pixelY,
+                      univex::math::Vec3& outOrigin, univex::math::Vec3& outDirection) const {
+        const UVE::Math::RayUVE ray =
+            univex::integration::BuildCursorRayUVE(camera_, width, height, pixelX, pixelY);
+        outOrigin = univex::integration::FromUveVector3UVE(ray.origin);
+        outDirection = univex::integration::FromUveVector3UVE(ray.direction);
+    }
+
+    [[nodiscard]] bool TryBeginGizmoDragUVE(const int width, const int height) {
+        if (pointerOverOverlay_ || !ImGui::IsWindowHovered() ||
+            !ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+            return false;
+        }
+        const std::optional<GizmoPlacementUVE> placement = CurrentGizmoPlacementUVE(height);
+        if (!placement.has_value()) {
+            return false;
+        }
+        // Universal mode stacks a ring, an arrow and a scale cube on the same axis, and the pick
+        // reports only which axis was hit - not which of the three tools. Rather than guess at
+        // what the user grabbed, dragging is offered in the explicit Move/Rotate/Scale tools; the
+        // universal widget stays a display of all three.
+        const univex::gizmo::GizmoMode mode = renderPass_->Mode();
+        if (mode != univex::gizmo::GizmoMode::Move && mode != univex::gizmo::GizmoMode::Rotate &&
+            mode != univex::gizmo::GizmoMode::Scale) {
+            return false;
+        }
+
+        const ImVec2 imageOrigin = ImGui::GetCursorScreenPos();
+        const ImGuiIO& io = ImGui::GetIO();
+        univex::math::Vec3 rayOrigin{};
+        univex::math::Vec3 rayDirection{};
+        CursorRayUVE(width, height, io.MousePos.x - imageOrigin.x, io.MousePos.y - imageOrigin.y,
+                     rayOrigin, rayDirection);
+
+        const univex::gizmo::GizmoPickResultUVE pick = univex::gizmo::PickGizmoHandleUVE(
+            mode, renderPass_->Style(), rayOrigin, rayDirection, placement->pivot, placement->scale,
+            placement->viewDirection, placement->unitsPerPixel);
+        if (pick.handle == univex::gizmo::GizmoHandleUVE::None) {
+            return false;
+        }
+
+        UVE::Editor::EditorToolSessionModeUVE sessionMode{};
+        switch (mode) {
+            case univex::gizmo::GizmoMode::Move:
+                sessionMode = UVE::Editor::EditorToolSessionModeUVE::Translate;
+                break;
+            case univex::gizmo::GizmoMode::Rotate:
+                sessionMode = UVE::Editor::EditorToolSessionModeUVE::Rotate;
+                break;
+            default:
+                sessionMode = UVE::Editor::EditorToolSessionModeUVE::Scale;
+                break;
+        }
+
+        // Capture where the drag started, in the handle's own terms. Every later frame reports its
+        // value the same way and subtracts this one, so the amount fed to the gesture is always
+        // measured from the press rather than accumulated frame to frame.
+        if (!CaptureDragReferenceUVE(*placement, mode, pick.handle, rayOrigin, rayDirection,
+                                     dragPressValue_)) {
+            return false;
+        }
+        if (!editor_.BeginTransformGestureUVE(sessionMode)) {
+            return false;
+        }
+
+        dragHandle_ = pick.handle;
+        dragMode_ = mode;
+        dragPivot_ = placement->pivot;
+        return true;
+    }
+
+    /// One scalar and one point, enough to express every handle's press-time reference: the
+    /// distance along an axis, the world point on a plane, or the angle around a ring.
+    struct DragReferenceUVE final {
+        float scalar = 0.0F;
+        univex::math::Vec3 point{};
+    };
+
+    [[nodiscard]] bool CaptureDragReferenceUVE(const GizmoPlacementUVE& placement,
+                                               const univex::gizmo::GizmoMode mode,
+                                               const univex::gizmo::GizmoHandleUVE handle,
+                                               const univex::math::Vec3& rayOrigin,
+                                               const univex::math::Vec3& rayDirection,
+                                               DragReferenceUVE& outReference) const {
+        using univex::gizmo::GizmoHandleUVE;
+
+        if (const std::optional<univex::math::Vec3> axis =
+                univex::gizmo::AxisDirectionForHandleUVE(handle);
+            axis.has_value()) {
+            if (mode == univex::gizmo::GizmoMode::Rotate) {
+                const std::optional<float> angle = univex::gizmo::ProjectRayOntoRingAngleUVE(
+                    rayOrigin, rayDirection, placement.pivot, *axis);
+                if (!angle.has_value()) {
+                    return false;
+                }
+                outReference.scalar = *angle;
+                return true;
+            }
+            const std::optional<float> along = univex::gizmo::ProjectRayOntoAxisUVE(
+                rayOrigin, rayDirection, placement.pivot, *axis);
+            if (!along.has_value()) {
+                return false;
+            }
+            outReference.scalar = *along;
+            return true;
+        }
+
+        if (const std::optional<univex::math::Vec3> normal = PlaneHandleNormalUVE(handle);
+            normal.has_value()) {
+            const std::optional<univex::math::Vec3> point = univex::gizmo::ProjectRayOntoPlaneUVE(
+                rayOrigin, rayDirection, placement.pivot, *normal);
+            if (!point.has_value()) {
+                return false;
+            }
+            outReference.point = *point;
+            return true;
+        }
+
+        if (handle == GizmoHandleUVE::Uniform && mode == univex::gizmo::GizmoMode::Scale) {
+            // Uniform scale has no axis to run along, so it reads the cursor's distance from the
+            // pivot in the view plane - drag away from the object to grow it, toward it to shrink.
+            const std::optional<univex::math::Vec3> point = univex::gizmo::ProjectRayOntoPlaneUVE(
+                rayOrigin, rayDirection, placement.pivot, placement.viewDirection);
+            if (!point.has_value()) {
+                return false;
+            }
+            outReference.scalar = univex::math::Length(*point - placement.pivot);
+            return true;
+        }
+
+        // Anything else (the rotate gizmo's screen-space ring, a plane handle in Scale mode) has
+        // no single-axis command to drive yet, so it stays pickable but not draggable rather than
+        // being mapped onto an axis it does not mean.
+        return false;
+    }
+
+    [[nodiscard]] static std::optional<univex::math::Vec3> PlaneHandleNormalUVE(
+        const univex::gizmo::GizmoHandleUVE handle) {
+        using univex::gizmo::GizmoHandleUVE;
+        switch (handle) {
+            case GizmoHandleUVE::PlaneXY: return univex::math::Vec3{0.0F, 0.0F, 1.0F};
+            case GizmoHandleUVE::PlaneYZ: return univex::math::Vec3{1.0F, 0.0F, 0.0F};
+            case GizmoHandleUVE::PlaneZX: return univex::math::Vec3{0.0F, 1.0F, 0.0F};
+            default: return std::nullopt;
+        }
+    }
+
+    [[nodiscard]] static UVE::Editor::EditorTransformAxisUVE EditorAxisForHandleUVE(
+        const univex::gizmo::GizmoHandleUVE handle) {
+        using univex::gizmo::GizmoHandleUVE;
+        switch (handle) {
+            case GizmoHandleUVE::AxisX: return UVE::Editor::EditorTransformAxisUVE::X;
+            case GizmoHandleUVE::AxisY: return UVE::Editor::EditorTransformAxisUVE::Y;
+            case GizmoHandleUVE::AxisZ: return UVE::Editor::EditorTransformAxisUVE::Z;
+            default: return UVE::Editor::EditorTransformAxisUVE::None;
+        }
+    }
+
+    [[nodiscard]] bool ContinueGizmoDragUVE(const int width, const int height) {
+        // Esc abandons the drag and puts the object back, the universal convention.
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
+            static_cast<void>(editor_.CancelTransformGestureUVE());
+            EndGizmoDragUVE();
+            return true;
+        }
+        if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+            static_cast<void>(editor_.CommitTransformGestureUVE());
+            EndGizmoDragUVE();
+            return true;
+        }
+
+        const std::optional<GizmoPlacementUVE> placement = CurrentGizmoPlacementUVE(height);
+        if (!placement.has_value()) {
+            static_cast<void>(editor_.CancelTransformGestureUVE());
+            EndGizmoDragUVE();
+            return true;
+        }
+
+        const ImVec2 imageOrigin = ImGui::GetCursorScreenPos();
+        const ImGuiIO& io = ImGui::GetIO();
+        univex::math::Vec3 rayOrigin{};
+        univex::math::Vec3 rayDirection{};
+        CursorRayUVE(width, height, io.MousePos.x - imageOrigin.x, io.MousePos.y - imageOrigin.y,
+                     rayOrigin, rayDirection);
+
+        // The pivot is frozen at the press: it moves with the object during a translate, and
+        // re-reading it each frame would make the gizmo chase itself.
+        ApplyDragPreviewUVE(rayOrigin, rayDirection, placement->viewDirection);
+        return true;
+    }
+
+    void ApplyDragPreviewUVE(const univex::math::Vec3& rayOrigin,
+                             const univex::math::Vec3& rayDirection,
+                             const univex::math::Vec3& viewDirection) {
+        using univex::gizmo::GizmoHandleUVE;
+
+        if (const std::optional<univex::math::Vec3> normal = PlaneHandleNormalUVE(dragHandle_);
+            normal.has_value()) {
+            const std::optional<univex::math::Vec3> point =
+                univex::gizmo::ProjectRayOntoPlaneUVE(rayOrigin, rayDirection, dragPivot_, *normal);
+            if (!point.has_value()) {
+                return; // grazing the plane: hold the last good preview rather than jumping
+            }
+            const univex::math::Vec3 delta = *point - dragPressValue_.point;
+            static_cast<void>(editor_.PreviewTranslateGestureUVE(
+                univex::integration::ToUveVector3UVE(delta)));
+            return;
+        }
+
+        if (dragHandle_ == GizmoHandleUVE::Uniform) {
+            const std::optional<univex::math::Vec3> point = univex::gizmo::ProjectRayOntoPlaneUVE(
+                rayOrigin, rayDirection, dragPivot_, viewDirection);
+            if (!point.has_value()) {
+                return;
+            }
+            const float radius = univex::math::Length(*point - dragPivot_);
+            static_cast<void>(editor_.PreviewTransformGestureUVE(
+                UVE::Editor::EditorTransformAxisUVE::None, radius - dragPressValue_.scalar));
+            return;
+        }
+
+        const std::optional<univex::math::Vec3> axis =
+            univex::gizmo::AxisDirectionForHandleUVE(dragHandle_);
+        if (!axis.has_value()) {
+            return;
+        }
+        const UVE::Editor::EditorTransformAxisUVE editorAxis = EditorAxisForHandleUVE(dragHandle_);
+
+        if (dragMode_ == univex::gizmo::GizmoMode::Rotate) {
+            const std::optional<float> angle =
+                univex::gizmo::ProjectRayOntoRingAngleUVE(rayOrigin, rayDirection, dragPivot_, *axis);
+            if (!angle.has_value()) {
+                return;
+            }
+            // The ring's angle wraps at +-pi; a drag reads the short way round, which is the only
+            // way a pointer can have travelled between two frames.
+            static_cast<void>(editor_.PreviewTransformGestureUVE(
+                editorAxis, univex::gizmo::ShortestAngleDeltaUVE(dragPressValue_.scalar, *angle)));
+            return;
+        }
+
+        const std::optional<float> along =
+            univex::gizmo::ProjectRayOntoAxisUVE(rayOrigin, rayDirection, dragPivot_, *axis);
+        if (!along.has_value()) {
+            return;
+        }
+        static_cast<void>(
+            editor_.PreviewTransformGestureUVE(editorAxis, *along - dragPressValue_.scalar));
+    }
+
+    void EndGizmoDragUVE() {
+        dragHandle_ = univex::gizmo::GizmoHandleUVE::None;
+    }
+
+    // Click-to-select. Until now selection came only from the Hierarchy panel, so the 3D view was
+    // something to look at rather than something to work in.
+    //
+    // The whole difficulty is that the left button already means "orbit". A press is therefore not
+    // committed to either meaning until release: travel more than the slop and it was a drag, so
+    // the camera keeps it and nothing is selected; release within the slop and it was a click, so
+    // it picks. That is the same press-relative accumulation UpdateNavGizmoInteractionUVE uses,
+    // and the reason both read GetMouseDragDelta rather than the per-frame delta - a slow drag of
+    // many tiny movements never exceeds a per-frame threshold.
+    //
+    // `suppressed` is true when the nav gizmo already owns this gesture, in which case the click
+    // belongs to it and must not also fall through to selection.
+    void UpdateSelectionFromMouseUVE(const int width, const int height, const bool suppressed) {
+        if (suppressed) {
+            selectionPressActive_ = false;
+            return;
+        }
+
+        const ImGuiIO& io = ImGui::GetIO();
+        if (!pointerOverOverlay_ && ImGui::IsWindowHovered() &&
+            ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+            const ImVec2 imageOrigin = ImGui::GetCursorScreenPos();
+            selectionPressActive_ = true;
+            selectionPressX_ = io.MousePos.x - imageOrigin.x;
+            selectionPressY_ = io.MousePos.y - imageOrigin.y;
+        }
+
+        if (!selectionPressActive_ || !ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+            return;
+        }
+        selectionPressActive_ = false;
+
+        const ImVec2 dragDelta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Left, 0.0F);
+        if ((std::fabs(dragDelta.x) + std::fabs(dragDelta.y)) > kNavClickSlopPixelsUVE) {
+            return; // that was an orbit, not a click
+        }
+
+        const univex::integration::EntityPickResultUVE pick = univex::integration::PickEntityAtPixelUVE(
+            entityManager_, camera_, width, height, selectionPressX_, selectionPressY_);
+
+        // Ctrl extends the selection, matching every other multi-select surface in the editor;
+        // a plain click replaces it, and a plain click on nothing clears it. Ctrl-clicking empty
+        // space deliberately does nothing rather than clearing, so a mis-aimed extend does not
+        // throw away a selection the user spent time building.
+        const bool extend = io.KeyCtrl;
+        if (!pick.hit) {
+            if (!extend) {
+                editor_.ClearSelectionUVE();
+            }
+            return;
+        }
+        if (extend) {
+            editor_.ToggleEntitySelectionUVE(pick.entity);
+        } else {
+            editor_.SelectEntityUVE(pick.entity);
         }
     }
 
@@ -477,7 +833,9 @@ private:
     // IsMouseDragging(Left) check would ALSO orbit the camera from the same drag, double-applying
     // the same mouse delta on top of the nav gizmo's own orbit-while-dragging behavior.
     void UpdateCameraFromMouseUVE(const int framebufferHeight, const bool suppressOrbit) {
-        if (!ImGui::IsWindowHovered()) {
+        // Same overlay guard as selection and the handle drag: pressing a toolbar bubble must not
+        // also start orbiting the scene behind it.
+        if (pointerOverOverlay_ || !ImGui::IsWindowHovered()) {
             return;
         }
         const ImGuiIO& io = ImGui::GetIO();
@@ -650,7 +1008,6 @@ private:
     UVE::Editor::EditorUVE& editor_;
     UVE::Core::EngineCoreUVE& engine_;
     UVE::Scene::IEntityManagerUVE& entityManager_;
-    univex::integration::EntityManagerEntitySource entitySource_;
     univex::integration::EditorMeshLayerUVE meshLayer_;
     std::optional<univex::app::ViewportRenderPass> renderPass_;
     // Set each frame by ApplyOverlayStateUVE(), read by UpdateSelectionGizmoUVE() so it can force
@@ -658,12 +1015,27 @@ private:
     // own comment - it already forces the grid off directly, but the gizmo's visibility is decided
     // later in the same frame by selection state, so it needs this stored flag instead).
     bool gameWorkspaceActive_ = false;
+    // See ViewportOverlayStateUVE::pointerOverOverlay - the toolbar floats inside this same
+    // window, so without this a click on one of its buttons also lands in the scene behind it.
+    bool pointerOverOverlay_ = false;
     univex::camera::OrbitCamera camera_;
     // Nav-gizmo click-vs-drag state - see UpdateNavGizmoInteractionUVE()'s own comment.
     bool navDragging_ = false;
     bool navDragMoved_ = false;
     float navPressX_ = 0.0F;
     float navPressY_ = 0.0F;
+    // Click-vs-drag state for click-to-select - see UpdateSelectionFromMouseUVE().
+    bool selectionPressActive_ = false;
+    float selectionPressX_ = 0.0F;
+    float selectionPressY_ = 0.0F;
+    // Transform-gizmo drag state - see UpdateGizmoDragUVE(). dragPivot_ and dragPressValue_ are
+    // frozen at the press: the object moves during the drag, and re-reading them each frame would
+    // make the gesture chase its own result.
+    std::optional<univex::math::Vec3> gizmoPivot_;
+    univex::gizmo::GizmoHandleUVE dragHandle_ = univex::gizmo::GizmoHandleUVE::None;
+    univex::gizmo::GizmoMode dragMode_ = univex::gizmo::GizmoMode::Move;
+    univex::math::Vec3 dragPivot_{};
+    DragReferenceUVE dragPressValue_{};
     bool glewInitialized_ = false;
     GLuint msaaFbo_ = 0U;
     GLuint msaaColorRb_ = 0U;
@@ -672,12 +1044,8 @@ private:
     GLuint resolveColorTexture_ = 0U;
     int framebufferWidth_ = 0;
     int framebufferHeight_ = 0;
-    std::optional<univex::render::ShaderProgram> compositeProgram_;
-    GLuint compositeVao_ = 0U;
-    GLuint compositeFbo_ = 0U;
-    GLuint compositeColorTexture_ = 0U;
-    int compositeWidth_ = 0;
-    int compositeHeight_ = 0;
+    std::optional<univex::render::ShaderProgram> meshBlitProgram_;
+    GLuint meshBlitVao_ = 0U;
     // Uploaded lazily on first use by DrawUIOverlayUVE() - see that method's own comment for why
     // the editor keeps its own copy of this texture rather than reading Renderer3DUVE's internal
     // one (created only inside its "UIOverlay" render-graph pass, which this panel deliberately

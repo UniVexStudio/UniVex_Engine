@@ -94,7 +94,12 @@ float OrbitCamera::OrthographicHalfHeight() const {
 void OrbitCamera::SnapToDirection(const Vec3& worldDirection) {
     const Vec3 direction = Normalize(worldDirection);
     const float horizontal = std::sqrt(direction.x * direction.x + direction.z * direction.z);
-    const float targetYaw = std::atan2(direction.z, direction.x);
+    // Straight up or straight down has no horizontal component to read a yaw from, and
+    // atan2(0, 0) answers 0 - which would swing the view round to face +X as well as tilting it,
+    // every time the nav gizmo's Y ball is clicked. There is no "correct" yaw looking down the
+    // pole, so the least surprising one is the one already in use.
+    constexpr float kPoleEpsilon = 1e-4f;
+    const float targetYaw = (horizontal > kPoleEpsilon) ? std::atan2(direction.z, direction.x) : yaw_;
     // atan2(y, horizontal) is +-pi/2 at the poles; the clamp keeps `up` from
     // degenerating exactly on-axis for Top and Bottom.
     const float targetPitch = std::clamp(std::atan2(direction.y, horizontal),

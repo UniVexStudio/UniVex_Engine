@@ -12,6 +12,7 @@
 #include "uve/rhi/render_resource_descs_uve.h"
 #include "uve/component/camera_component_uve.h"
 #include "uve/component/editor_internal_entity_component_uve.h"
+#include "uve/component/light_component_uve.h"
 #include "uve/component/transform_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
@@ -25,6 +26,7 @@ namespace univex::integration {
 
 EditorMeshLayerUVE::EditorMeshLayerUVE(UVE::Core::EngineServicesUVE& services) : services_(services) {
     cameraEntity_ = CreateCameraProxyEntityUVE();
+    headlightEntity_ = CreateHeadlightEntityUVE();
 }
 
 UVE::Scene::EntityUVE EditorMeshLayerUVE::CreateCameraProxyEntityUVE() {
@@ -42,10 +44,77 @@ UVE::Scene::EntityUVE EditorMeshLayerUVE::CreateCameraProxyEntityUVE() {
     return entity;
 }
 
+UVE::Scene::EntityUVE EditorMeshLayerUVE::CreateHeadlightEntityUVE() {
+    UVE::Scene::IEntityManagerUVE& entityManager = services_.GetEntityManagerUVE();
+    const UVE::Scene::EntityUVE entity = entityManager.CreateEntityUVE();
+    services_.GetSceneGraphUVE().AttachTransformUVE(entityManager, entity, UVE::Scene::TransformComponentUVE{});
+    // Starts dark: SyncHeadlightUVE() decides every frame whether the scene needs it.
+    UVE::Scene::LightComponentUVE light{};
+    light.intensity = 0.0F;
+    entityManager.AddComponentUVE<UVE::Scene::LightComponentUVE>(entity, light);
+    entityManager.AddComponentUVE<UVE::Scene::EditorInternalEntityComponentUVE>(entity);
+    return entity;
+}
+
+// A scene with no Light3D of its own would render every lit surface at the world's ambient term
+// alone - near-black with the default 0.05 ambient - which would make authoring a first object
+// look broken rather than unlit. So the viewport supplies one directional light, and only while
+// the scene has none: the moment an author adds a real light, theirs is the only one that counts.
+//
+// It follows the camera rather than the world, so whatever is being looked at is lit, and it is
+// deliberately offset up and to the right of the view direction: a light exactly along the view
+// axis lights every visible face equally and flattens the shape it is meant to reveal.
+bool EditorMeshLayerUVE::SyncHeadlightUVE(const univex::camera::OrbitCamera& camera) {
+    UVE::Scene::IEntityManagerUVE& entityManager = services_.GetEntityManagerUVE();
+    if (!entityManager.IsAliveUVE(headlightEntity_)) {
+        headlightEntity_ = CreateHeadlightEntityUVE();
+    }
+
+    bool sceneHasItsOwnLight = false;
+    entityManager.ForEachUVE<UVE::Scene::LightComponentUVE>(
+        [this, &sceneHasItsOwnLight](const UVE::Scene::EntityUVE entity,
+                                     const UVE::Scene::LightComponentUVE& light) {
+            if (entity != headlightEntity_ && light.intensity > 0.0F) {
+                sceneHasItsOwnLight = true;
+            }
+        });
+
+    UVE::Scene::LightComponentUVE& headlight =
+        entityManager.GetComponentUVE<UVE::Scene::LightComponentUVE>(headlightEntity_);
+    headlight.type = UVE::Scene::LightTypeUVE::Directional;
+    headlight.color = UVE::Math::Vector3UVE{1.0F, 0.98F, 0.94F};
+    headlight.intensity = sceneHasItsOwnLight ? 0.0F : 1.25F;
+    if (sceneHasItsOwnLight) {
+        return false; // no point orienting a light that contributes nothing
+    }
+
+    const univex::math::Vec3 backward =
+        univex::math::Normalize(camera.Eye() - camera.Target());
+    const univex::math::Vec3 worldUp{0.0F, 1.0F, 0.0F};
+    const univex::math::Vec3 right = univex::math::Normalize(univex::math::Cross(worldUp, backward));
+    const univex::math::Vec3 offsetBackward =
+        univex::math::Normalize(backward + right * 0.40F + worldUp * 0.55F);
+
+    UVE::Math::QuaternionUVE rotation{};
+    if (!UVE::Math::TryMakeLookAtUVE(ToUveVector3UVE(offsetBackward), UVE::Math::Vector3UVE{0.0F, 1.0F, 0.0F},
+                                     rotation)) {
+        rotation = UVE::Math::QuaternionUVE{};
+    }
+    UVE::Scene::TransformComponentUVE localTransform;
+    localTransform.localPosition = ToUveVector3UVE(camera.Eye());
+    localTransform.localRotation = rotation;
+    services_.GetSceneGraphUVE().SetLocalTransformUVE(entityManager, headlightEntity_, localTransform);
+    return true;
+}
+
 EditorMeshLayerUVE::~EditorMeshLayerUVE() {
     DestroyTargetsUVE();
+    UVE::Scene::IEntityManagerUVE& entityManager = services_.GetEntityManagerUVE();
     if (cameraEntity_ != UVE::Scene::kInvalidEntityUVE) {
-        services_.GetEntityManagerUVE().DestroyEntityUVE(cameraEntity_);
+        entityManager.DestroyEntityUVE(cameraEntity_);
+    }
+    if (headlightEntity_ != UVE::Scene::kInvalidEntityUVE) {
+        entityManager.DestroyEntityUVE(headlightEntity_);
     }
 }
 
@@ -141,9 +210,15 @@ EditorMeshLayerResultUVE EditorMeshLayerUVE::RenderUVE(const univex::camera::Orb
         entityManager.HasComponentUVE<UVE::Scene::WorldTransformComponentUVE>(*gameCameraOverride) &&
         entityManager.HasComponentUVE<UVE::Scene::CameraComponentUVE>(*gameCameraOverride);
     const UVE::Scene::EntityUVE renderCameraEntity = overrideUsable ? *gameCameraOverride : cameraEntity_;
+    // Ordered before the camera sync so that sync's own SceneGraph update also propagates the
+    // headlight's transform. The game-camera path skips that sync, so it updates explicitly -
+    // otherwise the light would keep a stale world transform for as long as the override lasts.
+    const bool headlightMoved = SyncHeadlightUVE(camera);
     if (!overrideUsable) {
         const float aspectRatio = static_cast<float>(width) / static_cast<float>(height);
         SyncCameraFromOrbitUVE(camera, aspectRatio);
+    } else if (headlightMoved) {
+        services_.GetSceneGraphUVE().UpdateUVE(entityManager);
     }
 
     UVE::Render::IRenderer3DUVE& renderer = services_.GetRenderer3DUVE();
@@ -165,7 +240,10 @@ EditorMeshLayerResultUVE EditorMeshLayerUVE::RenderUVE(const univex::camera::Orb
     // DrawUIOverlayUVE()) - the correct approach anyway, since UIQuadUVE positions are authored in
     // real window pixel space (matching IInputSystemUVE::GetMousePositionUVE()'s own convention),
     // not this panel's own local render-target space.
-    renderer.RenderFrameToTargetUVE(entityManager, renderCameraEntity, colorTarget_, depthTarget_);
+    // Passing the size matters beyond the UI-overlay path this parameter was added for: it is also
+    // what tells the tone-mapping pass how large its destination is, so the frame fills the texture
+    // instead of being rasterised at presentation-surface size and captured as a corner crop.
+    renderer.RenderFrameToTargetUVE(entityManager, renderCameraEntity, colorTarget_, depthTarget_, width, height);
 
     auto* const glRenderDevice = dynamic_cast<UVE::Render::GlRenderDeviceUVE*>(&services_.GetRenderDeviceUVE());
     if (glRenderDevice == nullptr) {

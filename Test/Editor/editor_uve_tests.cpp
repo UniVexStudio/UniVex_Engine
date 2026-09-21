@@ -3149,7 +3149,242 @@ TEST(EditorUVETest, VisualScriptSearchInsertionPreservesPositionAndCompilerUsesN
     engine.Shutdown();
 }
 
+
+
+// ---------------------------------------------------------------------------------------------
+// Transform gestures.
+//
+// A pointer drag is one transaction, not a stream of commands. These pin the properties that
+// distinguish the two - a single undo step per drag, previews measured from where the drag began,
+// and a cancel that refuses to write a stale baseline over someone else's change.
+// ---------------------------------------------------------------------------------------------
+
+/// One selected root entity ready to be dragged, with `editor` already pointing at it.
+[[nodiscard]] Scene::EntityUVE SelectFreshRootUVE(Core::EngineCoreUVE& engine, EditorUVE& editor,
+                                                  const Math::Vector3UVE position) {
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE transform{};
+    transform.localPosition = position;
+    AttachRootUVE(engine, entity, transform);
+    engine.GetServicesUVE().GetSceneGraphUVE().UpdateUVE(entityManager);
+    editor.SelectEntityUVE(entity);
+    return entity;
+}
+
+TEST(EditorUVETest, TransformGesture_ManyPreviewsCollapseIntoExactlyOneUndoStep) {
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_gesture_commit.uvescene");
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        const Scene::EntityUVE entity = SelectFreshRootUVE(engine, editor, Math::Vector3UVE{});
+
+        ASSERT_TRUE(editor.BeginTransformGestureUVE(EditorToolSessionModeUVE::Translate));
+        EXPECT_EQ(editor.GetToolSessionPhaseUVE(), EditorToolSessionPhaseUVE::Previewing);
+
+        // A drag reports its TOTAL offset each frame. Feeding 1, 2, ... 10 must land on 10, not on
+        // their sum - that difference is the whole reason previews run off the baseline.
+        for (int step = 1; step <= 10; ++step) {
+            ASSERT_TRUE(editor.PreviewTransformGestureUVE(EditorTransformAxisUVE::X,
+                                                          static_cast<float>(step)));
+        }
+        EXPECT_NEAR(entityManager.GetComponentUVE<Scene::TransformComponentUVE>(entity).localPosition.x,
+                    10.0F, 0.0001F);
+
+        ASSERT_TRUE(editor.CommitTransformGestureUVE());
+        EXPECT_EQ(editor.GetToolSessionPhaseUVE(), EditorToolSessionPhaseUVE::Idle);
+        EXPECT_EQ(editor.GetLastToolSessionOutcomeUVE(), EditorToolSessionOutcomeUVE::Committed);
+
+        // Ten previews, one undo step: straight back to the start, and nothing left to undo after.
+        ASSERT_TRUE(editor.UndoUVE());
+        EXPECT_NEAR(entityManager.GetComponentUVE<Scene::TransformComponentUVE>(entity).localPosition.x,
+                    0.0F, 0.0001F);
+        EXPECT_FALSE(editor.UndoUVE());
+
+        ASSERT_TRUE(editor.RedoUVE());
+        EXPECT_NEAR(entityManager.GetComponentUVE<Scene::TransformComponentUVE>(entity).localPosition.x,
+                    10.0F, 0.0001F);
+
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
+TEST(EditorUVETest, TransformGesture_CancelRestoresTheBaselineAndLeavesNoHistory) {
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_gesture_cancel.uvescene");
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        const Scene::EntityUVE entity =
+            SelectFreshRootUVE(engine, editor, Math::Vector3UVE{3.0F, 0.0F, 0.0F});
+        const bool dirtyBeforeGesture = editor.IsSceneDirtyUVE();
+
+        ASSERT_TRUE(editor.BeginTransformGestureUVE(EditorToolSessionModeUVE::Translate));
+        ASSERT_TRUE(editor.PreviewTransformGestureUVE(EditorTransformAxisUVE::X, 25.0F));
+        EXPECT_NEAR(entityManager.GetComponentUVE<Scene::TransformComponentUVE>(entity).localPosition.x,
+                    28.0F, 0.0001F);
+
+        ASSERT_TRUE(editor.CancelTransformGestureUVE());
+        EXPECT_EQ(editor.GetLastToolSessionOutcomeUVE(), EditorToolSessionOutcomeUVE::Cancelled);
+        EXPECT_NEAR(entityManager.GetComponentUVE<Scene::TransformComponentUVE>(entity).localPosition.x,
+                    3.0F, 0.0001F);
+        // An abandoned drag must not leave the document looking modified, or the user is prompted
+        // to save a change they explicitly threw away.
+        EXPECT_EQ(editor.IsSceneDirtyUVE(), dirtyBeforeGesture);
+        EXPECT_FALSE(editor.UndoUVE());
+
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
+TEST(EditorUVETest, TransformGesture_CancelRefusesToOverwriteAnExternalChange) {
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_gesture_conflict.uvescene");
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        const Scene::EntityUVE entity = SelectFreshRootUVE(engine, editor, Math::Vector3UVE{});
+
+        ASSERT_TRUE(editor.BeginTransformGestureUVE(EditorToolSessionModeUVE::Translate));
+        ASSERT_TRUE(editor.PreviewTransformGestureUVE(EditorTransformAxisUVE::X, 5.0F));
+
+        // Something other than this gesture moves the entity - another tool, a script, the
+        // runtime. The baseline is now stale.
+        Scene::TransformComponentUVE external{};
+        external.localPosition = Math::Vector3UVE{-99.0F, 0.0F, 0.0F};
+        ASSERT_TRUE(editor.SetSelectedLocalTransformUVE(external));
+
+        // Cancel must decline rather than silently restore over that change.
+        EXPECT_FALSE(editor.CancelTransformGestureUVE());
+        EXPECT_EQ(editor.GetLastToolSessionOutcomeUVE(),
+                  EditorToolSessionOutcomeUVE::ExternalTransformConflict);
+        EXPECT_NEAR(entityManager.GetComponentUVE<Scene::TransformComponentUVE>(entity).localPosition.x,
+                    -99.0F, 0.0001F);
+        EXPECT_EQ(editor.GetToolSessionPhaseUVE(), EditorToolSessionPhaseUVE::Idle);
+
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
+TEST(EditorUVETest, TransformGesture_RejectsMultiSelectionAndOutOfOrderCalls) {
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_gesture_guards.uvescene");
+        editor.InitUVE();
+
+        // Nothing is in flight, so preview/commit/cancel have nothing to act on.
+        EXPECT_FALSE(editor.PreviewTransformGestureUVE(EditorTransformAxisUVE::X, 1.0F));
+        EXPECT_FALSE(editor.CommitTransformGestureUVE());
+        EXPECT_FALSE(editor.CancelTransformGestureUVE());
+
+        const Scene::EntityUVE first = SelectFreshRootUVE(engine, editor, Math::Vector3UVE{});
+        const Scene::EntityUVE second =
+            SelectFreshRootUVE(engine, editor, Math::Vector3UVE{5.0F, 0.0F, 0.0F});
+        ASSERT_NE(first, second);
+
+        // Two entities selected: a transform gesture has no single pivot to act on, matching the
+        // existing single-selection rule the four axis commands already enforce.
+        editor.SelectEntityUVE(first);
+        editor.ToggleEntitySelectionUVE(second);
+        EXPECT_FALSE(editor.BeginTransformGestureUVE(EditorToolSessionModeUVE::Translate));
+
+        // Back to one, and a re-entrant Begin is refused without disturbing the live session.
+        editor.SelectEntityUVE(first);
+        ASSERT_TRUE(editor.BeginTransformGestureUVE(EditorToolSessionModeUVE::Scale));
+        EXPECT_FALSE(editor.BeginTransformGestureUVE(EditorToolSessionModeUVE::Rotate));
+        EXPECT_EQ(editor.GetToolSessionPhaseUVE(), EditorToolSessionPhaseUVE::Previewing);
+
+        // The mode captured at Begin is the one that applies, so this previews a SCALE even though
+        // a rotate Begin was attempted in between.
+        ASSERT_TRUE(editor.PreviewTransformGestureUVE(EditorTransformAxisUVE::Y, 1.5F));
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        EXPECT_NEAR(entityManager.GetComponentUVE<Scene::TransformComponentUVE>(first).localScale.y,
+                    2.5F, 0.0001F);
+
+        // The scale floor still rejects, and a rejected preview leaves the last good one standing.
+        EXPECT_FALSE(editor.PreviewTransformGestureUVE(EditorTransformAxisUVE::Y, -50.0F));
+        EXPECT_NEAR(entityManager.GetComponentUVE<Scene::TransformComponentUVE>(first).localScale.y,
+                    2.5F, 0.0001F);
+        ASSERT_TRUE(editor.CancelTransformGestureUVE());
+
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
+TEST(EditorUVETest, TransformGesture_NoOpDragCommitsWithoutHistoryOrDirtyingTheScene) {
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_gesture_noop.uvescene");
+        editor.InitUVE();
+        static_cast<void>(SelectFreshRootUVE(engine, editor, Math::Vector3UVE{}));
+        const bool dirtyBeforeGesture = editor.IsSceneDirtyUVE();
+
+        ASSERT_TRUE(editor.BeginTransformGestureUVE(EditorToolSessionModeUVE::Translate));
+        ASSERT_TRUE(editor.PreviewTransformGestureUVE(EditorTransformAxisUVE::X, 0.0F));
+        ASSERT_TRUE(editor.CommitTransformGestureUVE());
+
+        EXPECT_EQ(editor.GetLastToolSessionOutcomeUVE(),
+                  EditorToolSessionOutcomeUVE::CompletedWithoutChange);
+        EXPECT_EQ(editor.IsSceneDirtyUVE(), dirtyBeforeGesture);
+        EXPECT_FALSE(editor.UndoUVE());
+
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
+// Snapping must mean the same thing on both paths, or a drag with Snap on would quantise
+// differently from the keyboard command that nominally does the same operation.
+TEST(EditorUVETest, TransformGesture_SnappingQuantisesIdenticallyToTheEquivalentCommand) {
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_gesture_snap.uvescene");
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+
+        EditorTransformSnappingSettingsUVE snapping{};
+        snapping.enabled = true;
+        snapping.translateStep = 0.5F;
+        ASSERT_TRUE(editor.SetTransformSnappingSettingsUVE(snapping));
+
+        const Scene::EntityUVE viaCommand = SelectFreshRootUVE(engine, editor, Math::Vector3UVE{});
+        ASSERT_TRUE(editor.TranslateSelectedAlongAxisUVE(EditorTransformAxisUVE::X, 1.31F));
+        const float commandResult =
+            entityManager.GetComponentUVE<Scene::TransformComponentUVE>(viaCommand).localPosition.x;
+
+        static_cast<void>(SelectFreshRootUVE(engine, editor, Math::Vector3UVE{}));
+        ASSERT_TRUE(editor.BeginTransformGestureUVE(EditorToolSessionModeUVE::Translate));
+        ASSERT_TRUE(editor.PreviewTransformGestureUVE(EditorTransformAxisUVE::X, 1.31F));
+        ASSERT_TRUE(editor.CommitTransformGestureUVE());
+        const float gestureResult = entityManager
+                                        .GetComponentUVE<Scene::TransformComponentUVE>(
+                                            editor.GetSelectedEntityUVE())
+                                        .localPosition.x;
+
+        EXPECT_NEAR(gestureResult, commandResult, 1e-6F);
+        EXPECT_NEAR(gestureResult, 1.5F, 1e-6F);
+
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
 } // namespace
 } // namespace UVE::Editor::Tests
-
-

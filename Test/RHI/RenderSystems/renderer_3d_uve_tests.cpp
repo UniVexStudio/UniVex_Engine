@@ -662,8 +662,10 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_MaterialWithoutTextures_UsesFallbackTex
             }
         }
     }
-    // 2 items x 3 material texture slots, then 6 Phase 2b post-process passes, then tone-map source.
-    ASSERT_EQ(textureBinds.size(), 13U);
+    // 2 items x 3 material texture slots, then 6 Phase 2b post-process passes, then ToneMapping's
+    // two binds - its scene-colour source on slot 0 and the scene depth it reads on slot 1 to
+    // report per-pixel coverage in the destination's alpha (see fullscreen_quad.glsl).
+    ASSERT_EQ(textureBinds.size(), 14U);
 
     // Group by slot: item1's slot-N handle must equal item2's slot-N handle (fallback reuse
     // across two independently-resolved materials), and the albedo/AO slots (both default to the

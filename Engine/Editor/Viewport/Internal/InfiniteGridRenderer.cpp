@@ -1,5 +1,7 @@
 #include "univex/render/InfiniteGridRenderer.h"
 
+#include "univex/camera/ViewportMetrics.h"
+
 #include <array>
 #include <cmath>
 #include <utility>
@@ -149,10 +151,7 @@ void InfiniteGridRenderer::Draw(const univex::camera::OrbitCamera& camera,
 }
 
 float WorldPerPixelAtPivot(const univex::camera::OrbitCamera& camera, int framebufferHeight) {
-    if (framebufferHeight <= 0) return 0.f;
-    const float viewportWorldHeight =
-        2.f * camera.Distance() * std::tan(camera.Settings().fovYRadians * 0.5f);
-    return viewportWorldHeight / static_cast<float>(framebufferHeight);
+    return univex::camera::WorldPerPixelAtOrbitTargetUVE(camera, framebufferHeight);
 }
 
 } // namespace univex::render

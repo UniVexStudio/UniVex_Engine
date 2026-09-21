@@ -249,6 +249,15 @@ public:
         // renderer should hide editor-only overlays (grid, transform gizmo) in this mode, matching
         // Unity's own Scene/Game split, since Game is meant to preview what a player would see.
         bool gameWorkspaceActive = false;
+        // True while the pointer is over one of the overlay toolbar's own bubble buttons.
+        //
+        // The bubbles float on top of the rendered image inside the same ImGui window, so the
+        // renderer's IsWindowHovered() is equally true over a button and over the scene - which
+        // made clicking "Move" also register as a click on empty space and clear the selection.
+        // The renderer callback runs BEFORE the bubbles are submitted each frame, so it cannot ask
+        // ImGui directly; this carries the answer to it instead. It is therefore one frame old,
+        // which is imperceptible for a hover state and exact for every frame of a press.
+        bool pointerOverOverlay = false;
     };
 
     /// Render callback for the dockable "Viewport" panel: given the panel's current available
@@ -351,6 +360,37 @@ public:
     /// entity. The command rejects as a whole if any proposed component is non-finite or below the
     /// positive scale floor; it never clamps individual components or performs proportional scaling.
     [[nodiscard]] bool ScaleSelectedUniformlyUVE(float localScaleOffset);
+
+    /// Begins one pointer-driven transform transaction on the selected entity, capturing the
+    /// baseline to preview from and to restore on cancel. A drag is not a sequence of commands:
+    /// every public transform command records history, so driving one from a drag would push an
+    /// undo entry per mouse-move frame. Returns false, leaving any existing session untouched,
+    /// for invalid editor state, multi-selection, or an entity with no transform.
+    [[nodiscard]] bool BeginTransformGestureUVE(EditorToolSessionModeUVE mode);
+
+    /// Applies the gesture's current value WITHOUT recording history. `totalAmount` is measured
+    /// from where the drag began, not from the previous frame - a drag reports its total offset
+    /// each frame, and treating it as an increment would compound into a runaway. The mode is the
+    /// one captured at Begin, so a tool switch mid-drag cannot reinterpret the gesture.
+    /// For Scale, EditorTransformAxisUVE::None means uniform.
+    [[nodiscard]] bool PreviewTransformGestureUVE(EditorTransformAxisUVE axis, float totalAmount);
+
+    /// The translate-gesture form that takes a full world-space delta rather than one axis, for a
+    /// plane handle - a drag in the XY plane moves along two axes at once, which no single-axis
+    /// call can express. Snapping quantises each component by the translate step, so a snapped
+    /// plane drag lands on the same lattice an axis drag would. Rejected unless the gesture in
+    /// flight is a Translate.
+    [[nodiscard]] bool PreviewTranslateGestureUVE(const Math::Vector3UVE& totalWorldDelta);
+
+    /// Ends the gesture and records exactly ONE history entry, baseline to final. A gesture that
+    /// never moved anything commits cleanly without an entry and without marking the scene dirty.
+    [[nodiscard]] bool CommitTransformGestureUVE();
+
+    /// Ends the gesture and restores the baseline. Returns false without restoring when the live
+    /// transform no longer matches this gesture's last preview - something else moved the entity,
+    /// and writing a stale baseline over it would silently discard that change
+    /// (EditorToolSessionOutcomeUVE::ExternalTransformConflict).
+    [[nodiscard]] bool CancelTransformGestureUVE();
 
     /// Replaces session-local snapping settings only when every increment is finite and strictly
     /// positive and no transform/navigation gesture is active. Returns false without mutation otherwise.
@@ -715,6 +755,26 @@ private:
                                                             const Math::QuaternionUVE& initialLocalRotation,
                                                             const Math::Vector3UVE& worldAxis, float radians,
                                                             Math::QuaternionUVE& outLocalRotation) const;
+    /// The transform `source` becomes after one axis operation, including snapping and the
+    /// world-to-local conversion. Shared by the four public axis commands - which pass the LIVE
+    /// transform, making them incremental - and by the gesture preview path, which passes the
+    /// gesture BASELINE, making it absolute. One copy of the maths, so the two can never drift.
+    /// For Scale, EditorTransformAxisUVE::None means uniform; Translate and Rotate reject it.
+    [[nodiscard]] bool ComputeGestureTransformUVE(EditorToolSessionModeUVE mode,
+                                                   EditorTransformAxisUVE axis, float amount,
+                                                   const Scene::TransformComponentUVE& source,
+                                                   Scene::TransformComponentUVE& outTransform) const;
+    /// The translate half of ComputeGestureTransformUVE, taking the world delta directly. The
+    /// axis form is this with a delta of `axisVector * amount`.
+    [[nodiscard]] bool ComputeTranslatedTransformUVE(Scene::EntityUVE entity,
+                                                      const Math::Vector3UVE& worldDelta,
+                                                      const Scene::TransformComponentUVE& source,
+                                                      Scene::TransformComponentUVE& outTransform) const;
+    /// ComputeGestureTransformUVE against the selected entity's live transform, behind the guards
+    /// the four public commands share.
+    [[nodiscard]] bool TryComputeSelectedGestureTransformUVE(
+        EditorToolSessionModeUVE mode, EditorTransformAxisUVE axis, float amount,
+        Scene::TransformComponentUVE& outTransform) const;
     [[nodiscard]] bool ApplyLocalTransformUVE(Scene::EntityUVE entity,
                                                const Scene::TransformComponentUVE& transform);
     [[nodiscard]] bool ApplyEntityNameStateUVE(Scene::EntityUVE entity,

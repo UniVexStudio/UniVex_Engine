@@ -1,12 +1,16 @@
 // app/ViewportRenderPass.h
 // -----------------------------------------------------------------------
-// One frame of the viewport, in draw order:
+// One frame of the viewport's own non-scene layers, in draw order:
 //
 //   background gradient  (View Environment)
-//   scene geometry       (Normal / Wireframe / Unshaded)
 //   infinite ground grid (View Grid)
 //   transform gizmo      (View Transform Gizmo)   - on top, no depth test
 //   orientation gizmo    (View Gizmos)            - own corner viewport
+//
+// Scene geometry is NOT drawn here: entities are rendered by the host
+// engine's own renderer (Renderer3DUVE, via EditorMeshLayerUVE) and
+// composited against this image. This pass owns only the things the
+// renderer has no concept of - the editor's grid, gizmos and backdrop.
 //
 // Both the interactive demo and the headless capture tool render through
 // this same function on purpose — a screenshot is only evidence about the
@@ -17,12 +21,10 @@
 #include <optional>
 #include <string>
 
-#include "ReferenceScene.h"
 #include "univex/camera/OrbitCamera.h"
 #include "univex/gizmo/GizmoGeometry.h"
 #include "univex/gizmo/GizmoStyle.h"
 #include "univex/gizmo/NavGizmo.h"
-#include "univex/integration/EntityTransformSource.h"
 #include "univex/render/GizmoRenderer.h"
 #include "univex/render/InfiniteGridRenderer.h"
 #include "univex/viewport/ViewportSettings.h"
@@ -55,7 +57,23 @@ public:
 
     [[nodiscard]] static std::optional<ViewportRenderPass> Create(std::string& outError);
 
+    // Clears, then runs every layer in order. For hosts that draw nothing of
+    // their own - the standalone demo and the headless capture tool.
     void RenderFrame(const OrbitCamera& camera, int framebufferWidth, int framebufferHeight) const;
+
+    // The same layers, individually, for a host that has to interleave its own
+    // rendering between them. The editor draws the engine's real scene geometry
+    // between the background and the grid so all three share one depth buffer:
+    // the grid then depth-tests against actual meshes instead of being reconciled
+    // with them afterwards, and the gizmos - which must never be occluded by the
+    // object they manipulate - go last of all.
+    //
+    // Expected order: ClearUVE, RenderBackgroundUVE, [host scene geometry],
+    // RenderGridUVE, RenderOverlayUVE.
+    void ClearUVE(int framebufferWidth, int framebufferHeight) const;
+    void RenderBackgroundUVE() const;
+    void RenderGridUVE(const OrbitCamera& camera, int framebufferWidth, int framebufferHeight) const;
+    void RenderOverlayUVE(const OrbitCamera& camera, int framebufferWidth, int framebufferHeight) const;
 
     [[nodiscard]] univex::render::InfiniteGridRenderer& Grid() { return grid_; }
     [[nodiscard]] const univex::render::InfiniteGridRenderer& Grid() const { return grid_; }
@@ -68,18 +86,6 @@ public:
 
     void SetGizmoMode(GizmoMode mode) { gizmoMode_ = mode; }
     [[nodiscard]] GizmoMode Mode() const { return gizmoMode_; }
-
-    void SetCubeHalfExtent(float halfExtent) { cubeHalfExtent_ = halfExtent; }
-
-    // When set, scene geometry is one proxy cube per entity returned by
-    // `source` (drawn at that entity's world position/scale) instead of the
-    // single origin-relative demo cube. `source` is not owned - the caller
-    // (the host engine's viewport integration) keeps it alive at least as
-    // long as it stays set here. Pass nullptr to restore the original
-    // single-cube demo behavior.
-    void SetEntitySource(const univex::integration::IEntityTransformSourceUVE* source) {
-        entitySource_ = source;
-    }
 
     // The transform gizmo's world-space pivot defaults to the camera's own orbit target - fine
     // for this module's own standalone demo (there is no independent "selected object" concept
@@ -104,7 +110,6 @@ private:
 
     univex::render::InfiniteGridRenderer grid_;
     univex::render::GizmoRenderer gizmos_;
-    ReferenceScene scene_;
     univex::render::ShaderProgram backgroundProgram_;
     GLuint backgroundVao_ = 0;
     GLuint backgroundVbo_ = 0;
@@ -112,8 +117,6 @@ private:
     univex::viewport::ViewportSettings settings_{};
     GizmoStyle style_{};
     GizmoMode gizmoMode_ = GizmoMode::Universal;
-    float cubeHalfExtent_ = 0.75f;
-    const univex::integration::IEntityTransformSourceUVE* entitySource_ = nullptr;
     std::optional<Vec3> gizmoPivotOverride_;
 };
 
