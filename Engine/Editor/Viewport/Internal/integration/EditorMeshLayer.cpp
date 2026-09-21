@@ -165,7 +165,10 @@ EditorMeshLayerResultUVE EditorMeshLayerUVE::RenderUVE(const univex::camera::Orb
     // DrawUIOverlayUVE()) - the correct approach anyway, since UIQuadUVE positions are authored in
     // real window pixel space (matching IInputSystemUVE::GetMousePositionUVE()'s own convention),
     // not this panel's own local render-target space.
-    renderer.RenderFrameToTargetUVE(entityManager, renderCameraEntity, colorTarget_, depthTarget_);
+    // Passing the size matters beyond the UI-overlay path this parameter was added for: it is also
+    // what tells the tone-mapping pass how large its destination is, so the frame fills the texture
+    // instead of being rasterised at presentation-surface size and captured as a corner crop.
+    renderer.RenderFrameToTargetUVE(entityManager, renderCameraEntity, colorTarget_, depthTarget_, width, height);
 
     auto* const glRenderDevice = dynamic_cast<UVE::Render::GlRenderDeviceUVE*>(&services_.GetRenderDeviceUVE());
     if (glRenderDevice == nullptr) {

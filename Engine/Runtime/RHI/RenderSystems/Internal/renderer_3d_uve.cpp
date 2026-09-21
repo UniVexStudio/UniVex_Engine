@@ -2384,11 +2384,26 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             passDesc.depthAttachment = m_impl->destinationTextureOverride.has_value()
                                            ? m_impl->destinationTextureOverride->second
                                            : kInvalidTextureHandleUVE;
+            // A caller-supplied destination texture is generally not the size of the presentation
+            // surface, and a render pass that names no viewport inherits the surface's. Without
+            // this the fullscreen tone-mapping triangle would be rasterised at surface size while
+            // only the texture-sized corner of it was captured, cropping the frame rather than
+            // filling the texture. destinationViewportOverride (RenderFrameToRegionUVE's explicit
+            // sub-region) still wins when set, since that caller is asking for a crop on purpose.
             passDesc.viewportOverride = m_impl->destinationViewportOverride;
+            if (!passDesc.viewportOverride.has_value() && m_impl->destinationTextureOverride.has_value() &&
+                m_impl->destinationTextureSizeOverride.has_value()) {
+                passDesc.viewportOverride = ViewportRectUVE{0U, 0U, m_impl->destinationTextureSizeOverride->first,
+                                                            m_impl->destinationTextureSizeOverride->second};
+            }
             commandBuffer.BeginRenderPassUVE(passDesc);
             m_impl->toneMappingProgram->SetIntUVE("uSourceTexture", 0);
+            m_impl->toneMappingProgram->SetIntUVE("uSceneDepthTexture", 1);
+            m_impl->toneMappingProgram->SetIntUVE("uWriteCoverageAlpha",
+                                                   m_impl->destinationTextureOverride.has_value() ? 1 : 0);
             m_impl->toneMappingProgram->ApplyToUVE(commandBuffer);
             commandBuffer.BindTextureUVE(m_impl->colorTarget, 0U);
+            commandBuffer.BindTextureUVE(m_impl->depthTarget, 1U);
             commandBuffer.DrawUVE(3);
             commandBuffer.EndRenderPassUVE();
         });
