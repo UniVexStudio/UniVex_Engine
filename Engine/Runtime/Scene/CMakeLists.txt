@@ -12,6 +12,7 @@
 add_library(uve_scene STATIC
     Internal/prefab_revision_policy_uve.cpp
     Internal/scene_graph_uve.cpp
+    Internal/scene_component_metadata_uve.cpp
     Internal/scene_serializer_uve.cpp
     Internal/prefab_system_uve.cpp
     Internal/nodes/scene_node_registry_uve.cpp
@@ -20,7 +21,7 @@ add_library(uve_scene STATIC
 )
 target_include_directories(uve_scene PUBLIC Expose)
 target_link_libraries(uve_scene
-    PUBLIC uve_platform uve_logging uve_memory uve_events uve_math uve_asset uve_component uve_entity uve_animation uve_nodes_3d uve_nodes_canvas_layer
+    PUBLIC uve_platform uve_logging uve_memory uve_events uve_math uve_asset uve_component uve_entity uve_object uve_animation uve_nodes_3d uve_nodes_canvas_layer
     PRIVATE nlohmann_json::nlohmann_json
 )
 target_compile_features(uve_scene PUBLIC cxx_std_20)

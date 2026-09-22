@@ -41,6 +41,7 @@ FetchContent_MakeAvailable(nlohmann_json)
 
 add_subdirectory(Engine/Runtime/Platform)
 add_subdirectory(Engine/Runtime/Object)
+add_subdirectory(Engine/Runtime/Localization)
 add_subdirectory(Engine/Runtime/Core/Logging)
 add_subdirectory(Engine/Runtime/Core/Memory)
 add_subdirectory(Engine/Runtime/Core/Threading)

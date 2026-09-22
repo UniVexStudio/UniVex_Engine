@@ -297,6 +297,13 @@ inline void DrawFolderIconUVE(ImDrawList& drawList, const ImVec2 center, const f
         case EditorSceneComponentKindUVE::UIButton: return HierarchyNodeIconKindUVE::Node3D;
         case EditorSceneComponentKindUVE::PhysicsInterpolation: return HierarchyNodeIconKindUVE::Physics;
         case EditorSceneComponentKindUVE::EditorDescription: return HierarchyNodeIconKindUVE::Node3D;
+        // The four properties every node has in common carry no icon meaning of their own - they
+        // describe when and how a node runs, not what it is - so they leave the node's icon as
+        // whatever the rest of its components already decided.
+        case EditorSceneComponentKindUVE::Process:
+        case EditorSceneComponentKindUVE::ThreadGroup:
+        case EditorSceneComponentKindUVE::AutoTranslate:
+        case EditorSceneComponentKindUVE::NodeMetadata: return HierarchyNodeIconKindUVE::Node3D;
     }
     return HierarchyNodeIconKindUVE::Node3D;
 }

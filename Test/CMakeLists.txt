@@ -165,7 +165,10 @@ add_executable(uve_integration_tests
     Integration/Entity/archetype_uve_tests.cpp
     Integration/Entity/chunk_uve_tests.cpp
     Integration/Entity/entity_manager_uve_tests.cpp
+    Integration/Localization/localization_uve_tests.cpp
     Integration/Scene/scene_graph_uve_tests.cpp
+    Integration/Scene/node_common_components_uve_tests.cpp
+    Integration/Scene/scene_component_metadata_uve_tests.cpp
     Integration/Scene/scene_serializer_uve_tests.cpp
     Integration/Scene/prefab_system_uve_tests.cpp
     Integration/Scene/prefab_maturity_uve_tests.cpp
@@ -179,6 +182,7 @@ add_executable(uve_integration_tests
     Integration/World/world_uve_tests.cpp
     Integration/Object/type_metadata_uve_tests.cpp
     Integration/Object/property_accessor_uve_tests.cpp
+    Integration/Object/type_metadata_bridge_uve_tests.cpp
     Integration/Scripting/script_asset_loader_uve_tests.cpp
     Integration/Scripting/script_graph_uve_tests.cpp
     Integration/Scripting/script_rotation_value_uve_tests.cpp
@@ -238,6 +242,7 @@ add_executable(uve_integration_tests
     UI/ui_runtime_uve_tests.cpp
 )
 target_link_libraries(uve_integration_tests PRIVATE
+    uve_localization
     nlohmann_json::nlohmann_json
     uve_component
     uve_entity

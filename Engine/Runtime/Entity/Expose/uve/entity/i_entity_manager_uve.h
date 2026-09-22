@@ -95,6 +95,13 @@ public:
         return HasComponentErased(entity, std::type_index(typeid(T)));
     }
 
+    /// Runtime-typed counterpart to HasComponentUVE<T>(), for a caller that only learns the type
+    /// at runtime. GetComponentPointerUVE() below asserts that the component is present, so it is
+    /// not a presence test; this is, and it is what a caller asks first.
+    [[nodiscard]] bool HasComponentUVE(EntityUVE entity, std::type_index componentType) const {
+        return IsAliveUVE(entity) && HasComponentErased(entity, componentType);
+    }
+
     /// Returns a reference to `entity`'s `T`. Asserts `entity` is alive and currently has one.
     template <typename T>
     [[nodiscard]] T& GetComponentUVE(EntityUVE entity) {

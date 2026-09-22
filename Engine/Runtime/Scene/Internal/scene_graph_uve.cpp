@@ -209,6 +209,38 @@ bool SceneGraphUVE::ResolveInterpolationUVE(const PendingEntityUVE& item, const 
     return resolved;
 }
 
+void SceneGraphUVE::ResolveInheritedModesUVE(const PendingEntityUVE& item,
+                                             const WorldTransformPassStateUVE& parentState,
+                                             WorldTransformPassStateUVE& outState) noexcept {
+    // Each of the three has the same shape: no component means the parent's answer passes straight
+    // through, so an intermediate node that never opted in does not break a subtree's chain.
+    outState.processModeInHierarchy =
+        item.process == nullptr
+            ? ResolveProcessModeUVE(ProcessModeUVE::Inherit, parentState.processModeInHierarchy)
+            : ResolveProcessModeUVE(item.process->mode, parentState.processModeInHierarchy);
+    if (item.process != nullptr) {
+        item.process->resolvedModeInHierarchy = outState.processModeInHierarchy;
+    }
+
+    outState.threadGroupModeInHierarchy =
+        item.threadGroup == nullptr
+            ? ResolveThreadGroupModeUVE(ThreadGroupModeUVE::Inherit, parentState.threadGroupModeInHierarchy)
+            : ResolveThreadGroupModeUVE(item.threadGroup->mode, parentState.threadGroupModeInHierarchy);
+    if (item.threadGroup != nullptr) {
+        item.threadGroup->resolvedModeInHierarchy = outState.threadGroupModeInHierarchy;
+    }
+
+    outState.autoTranslateModeInHierarchy =
+        item.autoTranslate == nullptr
+            ? ResolveAutoTranslateModeUVE(AutoTranslateModeUVE::Inherit,
+                                          parentState.autoTranslateModeInHierarchy)
+            : ResolveAutoTranslateModeUVE(item.autoTranslate->mode,
+                                          parentState.autoTranslateModeInHierarchy);
+    if (item.autoTranslate != nullptr) {
+        item.autoTranslate->resolvedModeInHierarchy = outState.autoTranslateModeInHierarchy;
+    }
+}
+
 bool SceneGraphUVE::ResolveVisibilityUVE(const PendingEntityUVE& item, const bool parentVisible) noexcept {
     // No component means visible, and means the parent's state passes straight through. An entity
     // without the component is not a break in the chain - hiding a parent must still hide a
@@ -264,8 +296,20 @@ void SceneGraphUVE::UpdateUVE(IEntityManagerUVE& entityManager) {
                 entityManager.HasComponentUVE<PhysicsInterpolationComponentUVE>(entity)
                     ? &entityManager.GetComponentUVE<PhysicsInterpolationComponentUVE>(entity)
                     : nullptr;
-            m_pendingScratch.push_back(
-                PendingEntityUVE{entity, hierarchy.parent, &local, &world, visibility, interpolation});
+            ProcessComponentUVE* const process =
+                entityManager.HasComponentUVE<ProcessComponentUVE>(entity)
+                    ? &entityManager.GetComponentUVE<ProcessComponentUVE>(entity)
+                    : nullptr;
+            ThreadGroupComponentUVE* const threadGroup =
+                entityManager.HasComponentUVE<ThreadGroupComponentUVE>(entity)
+                    ? &entityManager.GetComponentUVE<ThreadGroupComponentUVE>(entity)
+                    : nullptr;
+            AutoTranslateComponentUVE* const autoTranslate =
+                entityManager.HasComponentUVE<AutoTranslateComponentUVE>(entity)
+                    ? &entityManager.GetComponentUVE<AutoTranslateComponentUVE>(entity)
+                    : nullptr;
+            m_pendingScratch.push_back(PendingEntityUVE{entity, hierarchy.parent, &local, &world, visibility,
+                                                        interpolation, process, threadGroup, autoTranslate});
         });
 
     // Level-order sweep, root-first: repeatedly process any pending entity whose parent has
@@ -325,11 +369,15 @@ void SceneGraphUVE::UpdateUVE(IEntityManagerUVE& entityManager) {
                 // Designated initializers, deliberately: this aggregate has four same-typed bools
                 // and grew one in the middle, which silently rewired every positional call site
                 // here. Naming the fields makes the next addition a compile error instead.
-                m_passStateScratch.emplace(item.entity,
-                                           WorldTransformPassStateUVE{.valid = false,
-                                                                      .recomputed = false,
-                                                                      .interpolatedInHierarchy = interpolated,
-                                                                      .visibleInHierarchy = inherited});
+                WorldTransformPassStateUVE state{.valid = false,
+                                                 .recomputed = false,
+                                                 .interpolatedInHierarchy = interpolated,
+                                                 .visibleInHierarchy = inherited};
+                // Resolved on this arm too, for the same reason visibility is: whether an entity
+                // runs, which thread it runs on and whether its text is translated are all
+                // independent of whether its world transform came out finite.
+                ResolveInheritedModesUVE(item, parentIt->second, state);
+                m_passStateScratch.emplace(item.entity, state);
                 madeProgress = true;
                 continue;
             }
@@ -377,12 +425,16 @@ void SceneGraphUVE::UpdateUVE(IEntityManagerUVE& entityManager) {
             const bool interpolated =
                 ResolveInterpolationUVE(item, parentInterpolated, world,
                                         /*poseChanged=*/shouldRecompute && publishedValid);
-            m_passStateScratch.emplace(
-                item.entity,
-                WorldTransformPassStateUVE{.valid = publishedValid,
-                                           .recomputed = shouldRecompute && publishedValid,
-                                           .interpolatedInHierarchy = interpolated,
-                                           .visibleInHierarchy = inherited});
+            WorldTransformPassStateUVE state{.valid = publishedValid,
+                                             .recomputed = shouldRecompute && publishedValid,
+                                             .interpolatedInHierarchy = interpolated,
+                                             .visibleInHierarchy = inherited};
+            // These three follow the hierarchy, not the transform chain: a top-level entity is
+            // still paused with its parent, still constrained to its parent's thread, and still
+            // translated with the menu it belongs to. Only the transform chain is cut, which is
+            // exactly what TransformComponentUVE::topLevel documents.
+            ResolveInheritedModesUVE(item, hasParent ? parentIt->second : WorldTransformPassStateUVE{}, state);
+            m_passStateScratch.emplace(item.entity, state);
             madeProgress = true;
         }
 

@@ -38,6 +38,10 @@ add_library(uve_component STATIC
     Internal/primitive_mesh_component_uve.cpp
     Internal/rigid_body_component_uve.cpp
     Internal/script_component_uve.cpp
+    Internal/auto_translate_component_uve.cpp
+    Internal/node_metadata_component_uve.cpp
+    Internal/process_component_uve.cpp
+    Internal/thread_group_component_uve.cpp
     Internal/transform_component_uve.cpp
     Internal/visibility_component_uve.cpp
     Internal/ui_button_component_uve.cpp
