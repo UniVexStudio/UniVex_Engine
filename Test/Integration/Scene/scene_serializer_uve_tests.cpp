@@ -28,7 +28,11 @@
 #include "uve/component/canvas_component_uve.h"
 #include "uve/component/character_controller_component_uve.h"
 #include "uve/component/collider_component_uve.h"
+#include "uve/component/auto_translate_component_uve.h"
 #include "uve/component/editor_description_component_uve.h"
+#include "uve/component/node_metadata_component_uve.h"
+#include "uve/component/process_component_uve.h"
+#include "uve/component/thread_group_component_uve.h"
 #include "uve/nodes/3d/all_nodes_3d_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/light_component_uve.h"
@@ -157,6 +161,26 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
     entityManager.AddComponentUVE<EditorDescriptionComponentUVE>(
         source, EditorDescriptionComponentUVE{"Why this node exists."});
 
+    ProcessComponentUVE process{};
+    process.mode = ProcessModeUVE::WhenPaused;
+    process.priority = -5;
+    process.physicsPriority = 12;
+    // Populated resolved state, to prove it deliberately does NOT round-trip: the scene graph
+    // recomputes it from the hierarchy on the first update after load.
+    process.resolvedModeInHierarchy = ProcessModeUVE::Disabled;
+    entityManager.AddComponentUVE<ProcessComponentUVE>(source, process);
+    ThreadGroupComponentUVE threadGroup{};
+    threadGroup.mode = ThreadGroupModeUVE::SubThread;
+    threadGroup.order = 3;
+    threadGroup.resolvedModeInHierarchy = ThreadGroupModeUVE::SubThread;
+    entityManager.AddComponentUVE<ThreadGroupComponentUVE>(source, threadGroup);
+    AutoTranslateComponentUVE autoTranslate{};
+    autoTranslate.mode = AutoTranslateModeUVE::Disabled;
+    entityManager.AddComponentUVE<AutoTranslateComponentUVE>(source, autoTranslate);
+    NodeMetadataComponentUVE nodeMetadata{};
+    nodeMetadata.entries = {{"door", "north"}, {"charges", "3"}};
+    entityManager.AddComponentUVE<NodeMetadataComponentUVE>(source, nodeMetadata);
+
     AreaComponentUVE area{};
     area.monitoring = false;
     area.monitorable = false;
@@ -259,6 +283,27 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
               Math::Vector3UVE{});
     EXPECT_EQ(entityManager.GetComponentUVE<EditorDescriptionComponentUVE>(restored).description,
               "Why this node exists.");
+
+    ASSERT_TRUE(entityManager.HasComponentUVE<ProcessComponentUVE>(restored));
+    EXPECT_EQ(entityManager.GetComponentUVE<ProcessComponentUVE>(restored).mode, ProcessModeUVE::WhenPaused);
+    EXPECT_EQ(entityManager.GetComponentUVE<ProcessComponentUVE>(restored).priority, -5);
+    EXPECT_EQ(entityManager.GetComponentUVE<ProcessComponentUVE>(restored).physicsPriority, 12);
+    // Same rule as the interpolation pose above: the resolved answer is derived from the hierarchy
+    // every update, so persisting it would restore something already being replaced.
+    EXPECT_EQ(entityManager.GetComponentUVE<ProcessComponentUVE>(restored).resolvedModeInHierarchy,
+              ProcessComponentUVE{}.resolvedModeInHierarchy);
+    EXPECT_EQ(entityManager.GetComponentUVE<ThreadGroupComponentUVE>(restored).mode,
+              ThreadGroupModeUVE::SubThread);
+    EXPECT_EQ(entityManager.GetComponentUVE<ThreadGroupComponentUVE>(restored).order, 3);
+    EXPECT_EQ(entityManager.GetComponentUVE<ThreadGroupComponentUVE>(restored).resolvedModeInHierarchy,
+              ThreadGroupComponentUVE{}.resolvedModeInHierarchy);
+    EXPECT_EQ(entityManager.GetComponentUVE<AutoTranslateComponentUVE>(restored).mode,
+              AutoTranslateModeUVE::Disabled);
+    // Authored order survives, which is why the entries serialize as an array rather than as a
+    // JSON object whose member order a reader is not obliged to keep.
+    ASSERT_EQ(entityManager.GetComponentUVE<NodeMetadataComponentUVE>(restored).entries.size(), 2U);
+    EXPECT_EQ(entityManager.GetComponentUVE<NodeMetadataComponentUVE>(restored).entries[0].key, "door");
+    EXPECT_EQ(entityManager.GetComponentUVE<NodeMetadataComponentUVE>(restored).entries[1].value, "3");
     EXPECT_FALSE(entityManager.GetComponentUVE<AreaComponentUVE>(restored).monitoring);
     EXPECT_FALSE(entityManager.GetComponentUVE<AreaComponentUVE>(restored).monitorable);
     EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<RayCast3DNodeComponentUVE>(restored).length, 42.0F);

@@ -474,11 +474,13 @@ TEST(EditorUVETest, InspectorDrawerRegistrationUVE_IncludesStableHierarchyDrawer
 
     {
         EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_hierarchy_drawer_registration.uvescene");
-        // 23, not 22: every one of the twenty-two ids below still registers, and Visibility
-        // gained the section it never had. The drawers are generated from what each component
-        // declares now (RegisterMetadataInspectorDrawersUVE), so this count follows the
+        // 27, not the original 22: every one of the twenty-two ids below still registers, and
+        // five sections were added - Visibility, which never had one, plus the four the common
+        // Node section gained (Process, Thread Group, Auto Translate, Metadata). None of those
+        // five needed a line of Inspector code: the drawers are generated from what each
+        // component declares (RegisterMetadataInspectorDrawersUVE), so this count follows the
         // declarations rather than a hand-written registration list.
-        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorDrawerCountUVE(editor), 23U);
+        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorDrawerCountUVE(editor), 27U);
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "name"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "hierarchy"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "transform"));
@@ -502,6 +504,10 @@ TEST(EditorUVETest, InspectorDrawerRegistrationUVE_IncludesStableHierarchyDrawer
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "physics-interpolation"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "editor-description"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "visibility"));
+        EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "process"));
+        EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "thread-group"));
+        EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "auto-translate"));
+        EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "node-metadata"));
         editor.ShutdownUVE();
     }
 

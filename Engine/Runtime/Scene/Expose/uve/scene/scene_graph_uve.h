@@ -8,6 +8,10 @@
 
 #include "uve/component/transform_component_uve.h"
 #include "uve/component/physics_interpolation_component_uve.h"
+#include "uve/component/auto_translate_component_uve.h"
+#include "uve/component/node_metadata_component_uve.h"
+#include "uve/component/process_component_uve.h"
+#include "uve/component/thread_group_component_uve.h"
 #include "uve/component/visibility_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/scene/i_scene_graph_uve.h"
@@ -57,6 +61,18 @@ private:
         /// an entity with no VisibilityComponentUVE still has one - it is visible, and its
         /// children must inherit that rather than finding no component and guessing.
         bool visibleInHierarchy = true;
+
+        /// The three modes that inherit the same way visibility does, carried for the same reason:
+        /// an entity with no component still has an answer, and its children inherit that answer
+        /// rather than finding no component and guessing.
+        /// Defaulted to Inherit, not to each mode's hierarchy default: a default-constructed pass
+        /// state is what a ROOT is resolved against, and a root has no ancestor constraining it.
+        /// Seeding the defaults here instead would make every root look like a child of something
+        /// that had already chosen - which a thread group treats as a constraint, so a root could
+        /// then never opt into a worker at all.
+        ProcessModeUVE processModeInHierarchy = ProcessModeUVE::Inherit;
+        ThreadGroupModeUVE threadGroupModeInHierarchy = ThreadGroupModeUVE::Inherit;
+        AutoTranslateModeUVE autoTranslateModeInHierarchy = AutoTranslateModeUVE::Inherit;
     };
 
     /// One entity awaiting processing, with its components resolved once by the initial walk
@@ -79,6 +95,14 @@ private:
         /// visibility pointer is: the sweep can revisit an entity across several passes while it
         /// waits for its parent, and an ECS existence check per pass would be paid for nothing.
         PhysicsInterpolationComponentUVE* interpolation = nullptr;
+
+        /// Null when the entity carries no such component, which is the common case and means
+        /// "inherit". Resolved during the gather walk for the same reason the two pointers above
+        /// are: an existence check per sweep pass would be paid by every entity that will never
+        /// carry one.
+        ProcessComponentUVE* process = nullptr;
+        ThreadGroupComponentUVE* threadGroup = nullptr;
+        AutoTranslateComponentUVE* autoTranslate = nullptr;
     };
 
     /// Per-update scratch, cleared on entry to UpdateUVE(). Retained between calls purely to keep
@@ -99,6 +123,17 @@ private:
     /// transforms and would have to wait for this sweep anyway.
     static bool ResolveInterpolationUVE(const PendingEntityUVE& item, bool parentInterpolated,
                                         const WorldTransformComponentUVE& world, bool poseChanged) noexcept;
+
+    /// Resolves the three inheriting modes for one entity and publishes each to its component.
+    ///
+    /// Grouped into one function rather than three because they share a shape exactly - an
+    /// optional component, Inherit passing the parent's answer through, the resolved answer
+    /// written to a derived field nothing else may write - and because the sweep already has the
+    /// parent's state in hand at each of its two exit arms. Three separate calls at both arms
+    /// would be six places to forget one.
+    static void ResolveInheritedModesUVE(const PendingEntityUVE& item,
+                                         const WorldTransformPassStateUVE& parentState,
+                                         WorldTransformPassStateUVE& outState) noexcept;
 
     /// Second visibility pass, for entities that inherit from a VisibilityComponentUVE's
     /// `visibilityParent` instead of from their transform parent.

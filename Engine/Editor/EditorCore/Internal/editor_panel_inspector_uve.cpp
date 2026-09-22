@@ -632,6 +632,20 @@ void EditorUVE::DrawSceneComponentAddPanelUVE() {
         addIfMissing("Editor Description", EditorSceneComponentKindUVE::EditorDescription,
                      Scene::EditorDescriptionComponentUVE{},
                      entityManager.HasComponentUVE<Scene::EditorDescriptionComponentUVE>(m_selectedEntity));
+        // The rest of the common Node section, ungated for the same reason: when an entity runs,
+        // which thread it runs on, whether its text is translated and what data is attached to it
+        // apply to every kind of node, not to a family of them.
+        addIfMissing("Process", EditorSceneComponentKindUVE::Process, Scene::ProcessComponentUVE{},
+                     entityManager.HasComponentUVE<Scene::ProcessComponentUVE>(m_selectedEntity));
+        addIfMissing("Thread Group", EditorSceneComponentKindUVE::ThreadGroup,
+                     Scene::ThreadGroupComponentUVE{},
+                     entityManager.HasComponentUVE<Scene::ThreadGroupComponentUVE>(m_selectedEntity));
+        addIfMissing("Auto Translate", EditorSceneComponentKindUVE::AutoTranslate,
+                     Scene::AutoTranslateComponentUVE{},
+                     entityManager.HasComponentUVE<Scene::AutoTranslateComponentUVE>(m_selectedEntity));
+        addIfMissing("Metadata", EditorSceneComponentKindUVE::NodeMetadata,
+                     Scene::NodeMetadataComponentUVE{},
+                     entityManager.HasComponentUVE<Scene::NodeMetadataComponentUVE>(m_selectedEntity));
 
         ImGui::EndTable();
     }
