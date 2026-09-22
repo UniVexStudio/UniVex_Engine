@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <typeindex>
 #include <typeinfo>
 #include <utility>
@@ -161,6 +162,33 @@ template <auto MemberPointer>
     };
     property.setValue = +[](void* instance, const void* inValue) {
         static_cast<OwnerT*>(instance)->*MemberPointer = *static_cast<const ValueT*>(inValue);
+    };
+    return property;
+}
+
+/// Builds a property for an enum member whose accessors speak std::int64_t rather than the
+/// concrete enumeration. A generic consumer cannot name LightTypeUVE or ColliderShapeTypeUVE, so
+/// without this every enum would force exactly the per-type branch this registry exists to remove.
+/// `options` carries each selectable value with its label, so the dropdown round-trips a selection
+/// back to a real enumerator instead of relying on label order matching declaration order.
+template <auto MemberPointer>
+[[nodiscard]] TypeMetadataPropertyUVE MakeEnumPropertyUVE(std::string name, std::string displayName,
+                                                          std::string typeId, const bool editable,
+                                                          std::vector<TypeMetadataEnumEntryUVE> options) {
+    using Traits = Detail::MemberPointerTraitsUVE<decltype(MemberPointer)>;
+    using OwnerT = typename Traits::Owner;
+    using ValueT = typename Traits::Value;
+    static_assert(std::is_enum_v<ValueT>, "MakeEnumPropertyUVE requires an enumeration member.");
+
+    TypeMetadataPropertyUVE property{std::move(name), std::move(displayName), std::move(typeId), editable};
+    property.enumEntries = std::move(options);
+    property.getValue = +[](const void* instance, void* outValue) {
+        *static_cast<std::int64_t*>(outValue) =
+            static_cast<std::int64_t>(static_cast<const OwnerT*>(instance)->*MemberPointer);
+    };
+    property.setValue = +[](void* instance, const void* inValue) {
+        static_cast<OwnerT*>(instance)->*MemberPointer =
+            static_cast<ValueT>(*static_cast<const std::int64_t*>(inValue));
     };
     return property;
 }
@@ -321,8 +349,14 @@ public:
     static constexpr std::size_t kMaximumDisplayNameBytesUVE = 256U;
 
     TypeMetadataRegistryUVE() = default;
+    /// Copying stays deleted: a registry is authoritative, and a silent duplicate would let two
+    /// consumers disagree about what is registered. Moving is allowed, so a registry can be built
+    /// completely and then handed over - which is how a populated one reaches a function-local
+    /// static without being assembled in place.
     TypeMetadataRegistryUVE(const TypeMetadataRegistryUVE&) = delete;
     TypeMetadataRegistryUVE& operator=(const TypeMetadataRegistryUVE&) = delete;
+    TypeMetadataRegistryUVE(TypeMetadataRegistryUVE&&) noexcept = default;
+    TypeMetadataRegistryUVE& operator=(TypeMetadataRegistryUVE&&) noexcept = default;
 
     [[nodiscard]] TypeMetadataRegistrationResultUVE RegisterTypeUVE(TypeMetadataEntryUVE entry);
     [[nodiscard]] const TypeMetadataEntryUVE* FindTypeUVE(std::string_view typeId) const noexcept;
