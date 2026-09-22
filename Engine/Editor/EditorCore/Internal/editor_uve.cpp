@@ -2768,6 +2768,14 @@ bool EditorUVE::UndoHistoryEntryUVE(HistoryEntryUVE& entry) {
                 RestoreSelectionUVE(typedEntry.selectionBefore);
                 m_sceneDirty = typedEntry.dirtyBefore;
                 return true;
+            } else if constexpr (std::is_same_v<EntryType, ComponentPropertyHistoryEntryUVE>) {
+                if (!ApplyComponentPropertySnapshotUVE(typedEntry.entity, typedEntry.metadata,
+                                                       typedEntry.before.GetUVE())) {
+                    return false;
+                }
+                RestoreSelectionUVE(typedEntry.selectionBefore);
+                m_sceneDirty = typedEntry.dirtyBefore;
+                return true;
             } else if constexpr (std::is_same_v<EntryType, CreationHistoryEntryUVE>) {
                 if (!IsDocumentEntityUVE(typedEntry.activeEntity)) {
                     return false;
@@ -2857,6 +2865,14 @@ bool EditorUVE::RedoHistoryEntryUVE(HistoryEntryUVE& entry) {
                 return true;
             } else if constexpr (std::is_same_v<EntryType, SceneComponentHistoryEntryUVE>) {
                 if (!ApplySceneComponentStateUVE(typedEntry.entity, typedEntry.kind, typedEntry.after)) {
+                    return false;
+                }
+                RestoreSelectionUVE(typedEntry.selectionAfter);
+                m_sceneDirty = typedEntry.dirtyAfter;
+                return true;
+            } else if constexpr (std::is_same_v<EntryType, ComponentPropertyHistoryEntryUVE>) {
+                if (!ApplyComponentPropertySnapshotUVE(typedEntry.entity, typedEntry.metadata,
+                                                       typedEntry.after.GetUVE())) {
                     return false;
                 }
                 RestoreSelectionUVE(typedEntry.selectionAfter);

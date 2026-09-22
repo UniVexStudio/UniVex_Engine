@@ -11,6 +11,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <typeindex>
 #include <variant>
 #include <vector>
 
@@ -23,6 +24,8 @@
 #include "uve/editor/developer_console_uve.h"
 #include "uve/editor/editor_ui_assets_uve.h"
 #include "uve/editor/inspector_drawer_registry_uve.h"
+#include "uve/object/type_metadata_uve.h"
+#include "uve/scene/scene_component_metadata_uve.h"
 #include "uve/editor/mesh_thumbnail_renderer_uve.h"
 #include "uve/math/vector2_uve.h"
 #include "uve/math/vector3_uve.h"
@@ -740,6 +743,25 @@ private:
         bool dirtyAfter = false;
     };
 
+    /// One authored write to one property of one component, recorded without naming that
+    /// component's type. `metadata` points into the process-wide component metadata registry,
+    /// which is built once and never mutated, so the pointer stays valid for the entry's life.
+    ///
+    /// The before/after values are type-erased clones rather than a variant of every component
+    /// type, which is what makes this entry independent of how many component types exist.
+    /// It is move-only for that reason, matching how history entries are already handled
+    /// everywhere: they are moved onto the stacks and moved back off, never copied.
+    struct ComponentPropertyHistoryEntryUVE final {
+        Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
+        const Core::TypeMetadataEntryUVE* metadata = nullptr;
+        Core::TypeInstanceUVE before;
+        Core::TypeInstanceUVE after;
+        EditorSelectionSnapshotUVE selectionBefore;
+        EditorSelectionSnapshotUVE selectionAfter;
+        bool dirtyBefore = false;
+        bool dirtyAfter = false;
+    };
+
     struct CreationHistoryEntryUVE final {
         EditorEntityKindUVE kind = EditorEntityKindUVE::Empty;
         std::string name;
@@ -805,7 +827,8 @@ private:
 
     using HistoryEntryUVE =
         std::variant<TransformHistoryEntryUVE, NameHistoryEntryUVE, PrimitiveAppearanceHistoryEntryUVE,
-                     SceneComponentHistoryEntryUVE, CreationHistoryEntryUVE, SceneNodeCreationHistoryEntryUVE,
+                     SceneComponentHistoryEntryUVE, ComponentPropertyHistoryEntryUVE,
+                     CreationHistoryEntryUVE, SceneNodeCreationHistoryEntryUVE,
                      DuplicationHistoryEntryUVE,
                      DeletionHistoryEntryUVE,
                      ReparentHistoryEntryUVE>;
@@ -944,19 +967,37 @@ private:
     void DrawInspectorPanelUVE();
     void DrawInspectorContentUVE();
     void RegisterBuiltInInspectorDrawersUVE();
+    /// Registers one drawer per declared component type, from the metadata registry. This replaced
+    /// a hand-written registration and a per-type switch for each of them: a component that
+    /// declares its properties is inspectable without the inspector being told it exists.
+    void RegisterMetadataInspectorDrawersUVE();
+    /// Draws every declared property of one component, choosing a widget by the property's value
+    /// type and honouring its declared range, enum options, conditional visibility and read-only
+    /// flags. Writes go through SetSelectedComponentPropertyUVE below.
+    void DrawMetadataComponentDrawerUVE(Scene::EntityUVE entity, const Core::TypeMetadataEntryUVE& entry);
+    /// Draws one property row: label, tooltip, the widget its declared value type calls for, and a
+    /// reset button. `instance` points at the live component on the selected entity.
+    void DrawMetadataPropertyRowUVE(const Core::TypeMetadataEntryUVE& entry,
+                                    const Core::TypeMetadataPropertyUVE& property, const void* instance);
+    /// Writes one property of one component on the selected entity and records one undo entry.
+    /// Refuses when authoring is unavailable, the selection is not a single document entity, the
+    /// entity does not hold the component, the property is not authoring-writable, or the value is
+    /// unchanged - matching what the per-type commands already refuse.
+    [[nodiscard]] bool SetSelectedComponentPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
+                                                       const Core::TypeMetadataPropertyUVE& property,
+                                                       const void* newValue);
+    /// Restores one property to the value a default-constructed component would have.
+    [[nodiscard]] bool ResetSelectedComponentPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
+                                                         const Core::TypeMetadataPropertyUVE& property);
+    /// Overwrites a live component with a recorded snapshot of it, for undo and redo. Fails
+    /// without mutation when the entity is gone or no longer holds the component, which is what
+    /// makes a stale history entry clear the history rather than corrupt the scene.
+    [[nodiscard]] bool ApplyComponentPropertySnapshotUVE(Scene::EntityUVE entity,
+                                                         const Core::TypeMetadataEntryUVE* metadata,
+                                                         const void* snapshot);
     void DrawNameInspectorDrawerUVE(Scene::EntityUVE entity);
     void DrawHierarchyInspectorDrawerUVE(Scene::EntityUVE entity);
     void DrawTransformInspectorDrawerUVE(Scene::EntityUVE entity);
-    void DrawPrimitiveMeshInspectorDrawerUVE(Scene::EntityUVE entity);
-    void DrawWorldEnvironmentInspectorDrawerUVE(Scene::EntityUVE entity);
-    void DrawCharacterControllerInspectorDrawerUVE(Scene::EntityUVE entity);
-    void DrawPhysicsInterpolationInspectorDrawerUVE(Scene::EntityUVE entity);
-    void DrawEditorDescriptionInspectorDrawerUVE(Scene::EntityUVE entity);
-    void DrawCanvasInspectorDrawerUVE(Scene::EntityUVE entity);
-    void DrawUITextInspectorDrawerUVE(Scene::EntityUVE entity);
-    void DrawUIImageInspectorDrawerUVE(Scene::EntityUVE entity);
-    void DrawUIButtonInspectorDrawerUVE(Scene::EntityUVE entity);
-    void DrawSceneComponentInspectorDrawerUVE(Scene::EntityUVE entity, EditorSceneComponentKindUVE kind);
     void DrawSceneComponentAddPanelUVE();
     void DrawPrefabInspectorDrawerUVE(Scene::EntityUVE entity);
     void DrawImportQueueMonitorUVE();

@@ -28,6 +28,7 @@
 #include "uve/component/ui_text_component_uve.h"
 #include "uve/component/visibility_component_uve.h"
 #include "uve/logging/logging_macros_uve.h"
+#include "uve/nodes/3d/world_environment_3d_uve.h"
 #include "uve/math/quaternion_uve.h"
 
 namespace UVE::Scene {
@@ -245,6 +246,45 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                          DeclareUVE<&PrimitiveMeshComponentUVE::baseColor>("baseColor", "Base Color",
                                                                            kPropertyTypeColorUVE),
                      }));
+
+    AddUVE<WorldEnvironment3DNodeComponentUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.world_environment", "World Environment", kSectionOrderTypeSpecificUVE,
+            {
+                DeclareUVE<&WorldEnvironment3DNodeComponentUVE::skyAssetPath>("skyAssetPath", "Sky",
+                                                                              kPropertyTypeStringUVE),
+                DeclareUVE<&WorldEnvironment3DNodeComponentUVE::ambientColor>(
+                    "ambientColor", "Ambient Color", kPropertyTypeColorUVE),
+                WithRangeUVE(DeclareUVE<&WorldEnvironment3DNodeComponentUVE::ambientEnergy>(
+                                 "ambientEnergy", "Ambient Energy", kPropertyTypeFloatUVE),
+                             0.0, 100.0, 0.05),
+                WithRangeUVE(DeclareUVE<&WorldEnvironment3DNodeComponentUVE::exposure>(
+                                 "exposure", "Exposure", kPropertyTypeFloatUVE),
+                             0.0, 100.0, 0.05),
+                DeclareUVE<&WorldEnvironment3DNodeComponentUVE::fogEnabled>("fogEnabled", "Fog Enabled",
+                                                                            kPropertyTypeBoolUVE),
+                [] {
+                    TypeMetadataPropertyUVE property = DeclareUVE<&WorldEnvironment3DNodeComponentUVE::fogColor>(
+                        "fogColor", "Fog Color", kPropertyTypeColorUVE);
+                    property.isVisible = +[](const void* instance) {
+                        return static_cast<const WorldEnvironment3DNodeComponentUVE*>(instance)->fogEnabled;
+                    };
+                    return property;
+                }(),
+                [] {
+                    TypeMetadataPropertyUVE property =
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DNodeComponentUVE::fogDensity>(
+                                         "fogDensity", "Fog Density", kPropertyTypeFloatUVE),
+                                     0.0, 1.0, 0.001);
+                    property.isVisible = +[](const void* instance) {
+                        return static_cast<const WorldEnvironment3DNodeComponentUVE*>(instance)->fogEnabled;
+                    };
+                    return property;
+                }(),
+                DeclareUVE<&WorldEnvironment3DNodeComponentUVE::postProcessingEnabled>(
+                    "postProcessingEnabled", "Post Processing", kPropertyTypeBoolUVE),
+            }));
 
     AddUVE<ParticleEmitterComponentUVE>(
         entries, MakeEntryUVE("component.particle_emitter", "Particle Emitter",

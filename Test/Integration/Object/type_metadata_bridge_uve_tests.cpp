@@ -78,7 +78,7 @@ TEST(TypeMetadataBridgeUVETest, RegisterTypeUVE_RejectsAHalfDeclaredFactoryBefor
     EXPECT_EQ(registry.GetTypeCountUVE(), 0U);
 }
 
-TEST(TypeMetadataBridgeUVETest, TypeDefaultInstanceUVE_ExposesADefaultConstructedInstanceToReadFrom) {
+TEST(TypeMetadataBridgeUVETest, TypeInstanceUVE_ExposesADefaultConstructedInstanceToReadFrom) {
     TypeMetadataRegistryUVE registry;
     ASSERT_TRUE(registry.RegisterTypeUVE(MakeTransformEntryUVE()).IsRegisteredUVE());
     const TypeMetadataEntryUVE* entry = registry.FindTypeUVE("component.transform");
@@ -87,7 +87,7 @@ TEST(TypeMetadataBridgeUVETest, TypeDefaultInstanceUVE_ExposesADefaultConstructe
 
     // This is what reset-to-default needs: the default value of a property, read generically,
     // without the caller ever naming Scene::TransformComponentUVE.
-    const TypeDefaultInstanceUVE defaults{*entry};
+    const TypeInstanceUVE defaults = TypeInstanceUVE::MakeDefaultUVE(*entry);
     ASSERT_TRUE(defaults.IsValidUVE());
     const Math::Vector3UVE defaultPosition = GetPropertyValueUVE<Math::Vector3UVE>(
         entry->properties.front(), *static_cast<const Scene::TransformComponentUVE*>(defaults.GetUVE()));
@@ -96,9 +96,9 @@ TEST(TypeMetadataBridgeUVETest, TypeDefaultInstanceUVE_ExposesADefaultConstructe
     EXPECT_FLOAT_EQ(defaultPosition.z, 0.0F);
 }
 
-TEST(TypeMetadataBridgeUVETest, TypeDefaultInstanceUVE_IsInvalidForADescribeOnlyEntry) {
+TEST(TypeMetadataBridgeUVETest, TypeInstanceUVE_IsInvalidForADescribeOnlyEntry) {
     const TypeMetadataEntryUVE describeOnly{TypeMetadataKindUVE::Other, "describe.only", "Only", 1U, {}, {}};
-    const TypeDefaultInstanceUVE defaults{describeOnly};
+    const TypeInstanceUVE defaults = TypeInstanceUVE::MakeDefaultUVE(describeOnly);
     EXPECT_FALSE(defaults.IsValidUVE());
     EXPECT_EQ(defaults.GetUVE(), nullptr);
 }
