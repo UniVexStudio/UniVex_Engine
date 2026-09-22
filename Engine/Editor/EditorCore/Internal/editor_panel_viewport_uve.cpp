@@ -31,6 +31,8 @@
 #include "editor_fonts_uve.h"
 #include "editor_node_icons_uve.h"
 
+#include "uve/component/script_component_uve.h"
+
 namespace UVE::Editor {
 namespace {
 
@@ -201,6 +203,8 @@ void EditorUVE::DrawViewportPanelUVE() {
             if (!m_viewportOverlayState.gameWorkspaceActive) {
                 DrawViewportOverlayBubblesUVE(Math::Vector2UVE{cursorBeforeImage.x, cursorBeforeImage.y},
                                               Math::Vector2UVE{used.x, used.y});
+                DrawEntityContextToolbarUVE(Math::Vector2UVE{cursorBeforeImage.x, cursorBeforeImage.y},
+                                            Math::Vector2UVE{used.x, used.y});
                 // Every item submitted in this window this frame is an overlay bubble - the image
                 // above is not a hoverable item - so this is exactly "the pointer is on a button",
                 // which the renderer reads next frame to keep a toolbar click out of the scene.
@@ -335,6 +339,74 @@ void EditorUVE::DrawViewportOverlayBubblesUVE(const Math::Vector2UVE imageOrigin
         if (pressed) {
             m_viewportOverlayState.orthographic = !m_viewportOverlayState.orthographic;
         }
+    }
+}
+
+void EditorUVE::SetEntityContextToolbarAnchorUVE(const Scene::EntityUVE entity, const float pixelX,
+                                                 const float pixelY) {
+    m_viewportOverlayState.entityContextToolbarOpen = true;
+    m_viewportOverlayState.entityContextToolbarEntity = entity;
+    m_viewportOverlayState.entityContextToolbarPixelX = pixelX;
+    m_viewportOverlayState.entityContextToolbarPixelY = pixelY;
+}
+
+void EditorUVE::ClearEntityContextToolbarUVE() noexcept {
+    m_viewportOverlayState.entityContextToolbarOpen = false;
+    m_viewportOverlayState.entityContextToolbarEntity = Scene::kInvalidEntityUVE;
+}
+
+// The right-click "Scripting" bubble, anchored at the entity's projected screen position rather
+// than the panel's own fixed corner (contrast DrawViewportOverlayBubblesUVE's gizmo/projection
+// bubbles above). Same InvisibleButton + manual ImDrawList paint idiom, not ImGui::BeginPopup -
+// a popup is a second ImGui window and would steal hover from camera orbit/pan exactly the way
+// pointerOverOverlay exists to prevent for viewport-anchored chrome (see its own doc comment).
+void EditorUVE::DrawEntityContextToolbarUVE(const Math::Vector2UVE imageOriginUVE,
+                                            const Math::Vector2UVE imageSizeUVE) {
+    if (!m_viewportOverlayState.entityContextToolbarOpen || m_services == nullptr) {
+        return;
+    }
+    const Scene::EntityUVE entity = m_viewportOverlayState.entityContextToolbarEntity;
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    // The button offers nothing an entity can't use - no silent "add a Script component for you".
+    if (!entityManager.IsAliveUVE(entity) || !entityManager.HasComponentUVE<Scene::ScriptComponentUVE>(entity)) {
+        return;
+    }
+
+    const char* const kLabel = "Scripting";
+    const ImVec2 textSize = ImGui::CalcTextSize(kLabel);
+    constexpr float kPaddingXUVE = 8.0F;
+    constexpr float kPaddingYUVE = 5.0F;
+    const float pillWidth = textSize.x + kPaddingXUVE * 2.0F;
+    const float pillHeight = textSize.y + kPaddingYUVE * 2.0F;
+
+    // Anchor centered under the entity's projected pixel, clamped inside the rendered image so a
+    // point near an edge never draws the toolbar half off the panel.
+    const float anchorX = imageOriginUVE.x + m_viewportOverlayState.entityContextToolbarPixelX;
+    const float anchorY = imageOriginUVE.y + m_viewportOverlayState.entityContextToolbarPixelY;
+    const float minX = imageOriginUVE.x;
+    const float maxX = imageOriginUVE.x + imageSizeUVE.x - pillWidth;
+    const float minY = imageOriginUVE.y;
+    const float maxY = imageOriginUVE.y + imageSizeUVE.y - pillHeight;
+    const ImVec2 pillMin{std::clamp(anchorX - pillWidth * 0.5F, minX, std::max(minX, maxX)),
+                         std::clamp(anchorY + 12.0F, minY, std::max(minY, maxY))};
+    const ImVec2 pillMax{pillMin.x + pillWidth, pillMin.y + pillHeight};
+
+    ImGui::SetCursorScreenPos(pillMin);
+    ImGui::PushID("##viewport-entity-context-toolbar");
+    const bool pressed = ImGui::InvisibleButton("##scripting-pill", ImVec2{pillWidth, pillHeight});
+    const bool hovered = ImGui::IsItemHovered();
+    ImGui::PopID();
+
+    ImDrawList* const drawList = ImGui::GetWindowDrawList();
+    drawList->AddRectFilled(pillMin, pillMax, hovered ? IM_COL32(64, 132, 214, 235) : IM_COL32(18, 21, 28, 220),
+                            pillHeight * 0.5F);
+    drawList->AddRect(pillMin, pillMax, IM_COL32(255, 255, 255, 32), pillHeight * 0.5F);
+    drawList->AddText(ImVec2{pillMin.x + kPaddingXUVE, pillMin.y + kPaddingYUVE}, IM_COL32(240, 243, 248, 255),
+                      kLabel);
+
+    if (pressed) {
+        static_cast<void>(OpenScriptGraphForEntityUVE(entity));
+        m_viewportOverlayState.entityContextToolbarOpen = false;
     }
 }
 

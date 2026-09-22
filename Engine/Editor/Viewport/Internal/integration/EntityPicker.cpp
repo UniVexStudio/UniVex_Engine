@@ -164,6 +164,37 @@ UVE::Math::RayUVE BuildCursorRayUVE(const univex::camera::OrbitCamera& camera,
     return RayUVE{ToUveVector3UVE(nearPoint), ToUveVector3UVE(direction)};
 }
 
+bool ProjectWorldPointToPixelUVE(const univex::camera::OrbitCamera& camera,
+                                 const int viewportWidth, const int viewportHeight,
+                                 const UVE::Math::Vector3UVE& worldPoint,
+                                 float& outPixelX, float& outPixelY) {
+    if (viewportWidth <= 0 || viewportHeight <= 0) {
+        return false;
+    }
+
+    const float aspect = static_cast<float>(viewportWidth) / static_cast<float>(viewportHeight);
+    const univex::math::Mat4 viewProjection = camera.ViewProjection(aspect);
+
+    const univex::math::Vec3 point = FromUveVector3UVE(worldPoint);
+    const univex::math::Vec4 clip =
+        viewProjection.Transform(univex::math::Vec4{point.x, point.y, point.z, 1.0F});
+
+    // A point behind the camera (or exactly on its plane) has clip.w <= 0; PerspectiveDivide would
+    // silently fold that into {0, 0, 0} instead of signaling the degenerate case, so it's checked
+    // here first rather than trusted to the shared helper.
+    constexpr float kMinimumClipWUVE = 1e-6F;
+    if (clip.w <= kMinimumClipWUVE) {
+        return false;
+    }
+
+    const univex::math::Vec3 ndc = univex::math::PerspectiveDivide(clip);
+
+    // NDC -> pixel, the exact inverse of BuildCursorRayUVE's pixel -> NDC mapping above.
+    outPixelX = (ndc.x + 1.0F) * 0.5F * static_cast<float>(viewportWidth);
+    outPixelY = (1.0F - ndc.y) * 0.5F * static_cast<float>(viewportHeight);
+    return true;
+}
+
 EntityPickResultUVE PickEntityAlongRayUVE(UVE::Scene::IEntityManagerUVE& entityManager,
                                           const UVE::Math::RayUVE& worldRay,
                                           const float maxDistance) {
