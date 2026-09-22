@@ -165,8 +165,13 @@ Stated so this skill does not describe the repository as tidier than it is:
 - **Tests are not co-located** except in Viewport.
 - **No `CHANGELOG.md` anywhere**, and README coverage is 11 of 26 modules.
 - **No runtime/plugin dependency mechanism**, as above.
-- **`Engine/Runtime/Networking/`** is a placeholder with no code, already flagged in its
-  own README.
+
+A 2026-09-17 audit stamped six empty, unwired directories that duplicated a real module's
+name or responsibility — `Runtime/Networking`, `Runtime/Renderer`, `Runtime/FileSystem`,
+`Runtime/Serialization`, `Engine/Shaders`, `Engine/Config` — each with a note pointing at
+the real code and warning against starting a second implementation there. All six have
+since been deleted; the pattern is recorded here so a future placeholder gets the same
+treatment (resolve or delete) rather than sitting for months.
 
 ---
 
