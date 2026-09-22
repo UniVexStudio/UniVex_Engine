@@ -32,10 +32,12 @@
 #include "uve/component/canvas_component_uve.h"
 #include "uve/component/character_controller_component_uve.h"
 #include "uve/component/collider_component_uve.h"
+#include "uve/component/editor_description_component_uve.h"
 #include "uve/nodes/3d/all_nodes_3d_uve.h"
 #include "uve/component/light_component_uve.h"
 #include "uve/component/mesh_component_uve.h"
 #include "uve/component/particle_emitter_component_uve.h"
+#include "uve/component/physics_interpolation_component_uve.h"
 #include "uve/component/primitive_mesh_component_uve.h"
 #include "uve/component/rigid_body_component_uve.h"
 #include "uve/component/script_component_uve.h"
@@ -161,6 +163,8 @@ enum class EditorSceneComponentKindUVE : std::uint8_t {
     UIText,
     UIImage,
     UIButton,
+    PhysicsInterpolation,
+    EditorDescription,
 };
 
 using EditorSceneComponentValueUVE =
@@ -169,7 +173,8 @@ using EditorSceneComponentValueUVE =
                  Scene::ParticleEmitterComponentUVE, Scene::ScriptComponentUVE,
                  Scene::AnimationPlayerComponentUVE, Scene::WorldEnvironment3DNodeComponentUVE,
                  Scene::CharacterControllerComponentUVE, Scene::CanvasComponentUVE, Scene::UITextComponentUVE,
-                 Scene::UIImageComponentUVE, Scene::UIButtonComponentUVE>;
+                 Scene::UIImageComponentUVE, Scene::UIButtonComponentUVE,
+                 Scene::PhysicsInterpolationComponentUVE, Scene::EditorDescriptionComponentUVE>;
 
 enum class EditorEntityKindUVE {
     Empty,
@@ -945,6 +950,8 @@ private:
     void DrawPrimitiveMeshInspectorDrawerUVE(Scene::EntityUVE entity);
     void DrawWorldEnvironmentInspectorDrawerUVE(Scene::EntityUVE entity);
     void DrawCharacterControllerInspectorDrawerUVE(Scene::EntityUVE entity);
+    void DrawPhysicsInterpolationInspectorDrawerUVE(Scene::EntityUVE entity);
+    void DrawEditorDescriptionInspectorDrawerUVE(Scene::EntityUVE entity);
     void DrawCanvasInspectorDrawerUVE(Scene::EntityUVE entity);
     void DrawUITextInspectorDrawerUVE(Scene::EntityUVE entity);
     void DrawUIImageInspectorDrawerUVE(Scene::EntityUVE entity);

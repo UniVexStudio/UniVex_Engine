@@ -295,6 +295,8 @@ inline void DrawFolderIconUVE(ImDrawList& drawList, const ImVec2 center, const f
         case EditorSceneComponentKindUVE::UIText:
         case EditorSceneComponentKindUVE::UIImage:
         case EditorSceneComponentKindUVE::UIButton: return HierarchyNodeIconKindUVE::Node3D;
+        case EditorSceneComponentKindUVE::PhysicsInterpolation: return HierarchyNodeIconKindUVE::Physics;
+        case EditorSceneComponentKindUVE::EditorDescription: return HierarchyNodeIconKindUVE::Node3D;
     }
     return HierarchyNodeIconKindUVE::Node3D;
 }
