@@ -12,7 +12,10 @@
 
 #include "uve/events/event_system_uve.h"
 #include "uve/memory/memory_manager_uve.h"
+#include "uve/component/auto_translate_component_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
+#include "uve/component/process_component_uve.h"
+#include "uve/component/thread_group_component_uve.h"
 #include "uve/component/visibility_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/entity/entity_manager_uve.h"
@@ -564,6 +567,106 @@ TEST_F(SceneGraphUVETest, UpdateUVE_AnEntityWithoutTheComponentPassesVisibilityT
 
     EXPECT_FALSE(entityManager.GetComponentUVE<VisibilityComponentUVE>(grandchild).visibleInHierarchy)
         << "a node without the component must pass its parent's state through, not reset it";
+}
+
+TEST_F(SceneGraphUVETest, UpdateUVE_ResolvesProcessModeThroughANodeThatDoesNotCarryTheComponent) {
+    // Same rule visibility follows: an intermediate node that never opted in must pass its
+    // parent's answer through rather than resetting the chain.
+    const EntityUVE root = entityManager.CreateEntityUVE();
+    const EntityUVE middle = entityManager.CreateEntityUVE();
+    const EntityUVE leaf = entityManager.CreateEntityUVE();
+    for (const EntityUVE entity : {root, middle, leaf}) {
+        sceneGraph.AttachTransformUVE(entityManager, entity, TransformComponentUVE{});
+    }
+    entityManager.AddComponentUVE<ProcessComponentUVE>(root, ProcessComponentUVE{});
+    entityManager.AddComponentUVE<ProcessComponentUVE>(leaf, ProcessComponentUVE{});
+    sceneGraph.SetParentUVE(entityManager, middle, root);
+    sceneGraph.SetParentUVE(entityManager, leaf, middle);
+
+    entityManager.GetComponentUVE<ProcessComponentUVE>(root).mode = ProcessModeUVE::Disabled;
+    sceneGraph.UpdateUVE(entityManager);
+
+    EXPECT_EQ(entityManager.GetComponentUVE<ProcessComponentUVE>(leaf).resolvedModeInHierarchy,
+              ProcessModeUVE::Disabled);
+    EXPECT_FALSE(IsProcessingUVE(
+        entityManager.GetComponentUVE<ProcessComponentUVE>(leaf).resolvedModeInHierarchy,
+        /*simulationPaused=*/false));
+
+    // A pause menu under a Pausable parent has to be able to say Always and be believed, which is
+    // the whole reason the mode is authored per entity.
+    entityManager.GetComponentUVE<ProcessComponentUVE>(root).mode = ProcessModeUVE::Pausable;
+    entityManager.GetComponentUVE<ProcessComponentUVE>(leaf).mode = ProcessModeUVE::Always;
+    sceneGraph.UpdateUVE(entityManager);
+    EXPECT_EQ(entityManager.GetComponentUVE<ProcessComponentUVE>(leaf).resolvedModeInHierarchy,
+              ProcessModeUVE::Always);
+    EXPECT_TRUE(IsProcessingUVE(
+        entityManager.GetComponentUVE<ProcessComponentUVE>(leaf).resolvedModeInHierarchy,
+        /*simulationPaused=*/true));
+}
+
+TEST_F(SceneGraphUVETest, UpdateUVE_AChildCannotEscapeAMainThreadAncestor) {
+    const EntityUVE root = entityManager.CreateEntityUVE();
+    const EntityUVE child = entityManager.CreateEntityUVE();
+    for (const EntityUVE entity : {root, child}) {
+        sceneGraph.AttachTransformUVE(entityManager, entity, TransformComponentUVE{});
+        entityManager.AddComponentUVE<ThreadGroupComponentUVE>(entity, ThreadGroupComponentUVE{});
+    }
+    sceneGraph.SetParentUVE(entityManager, child, root);
+
+    entityManager.GetComponentUVE<ThreadGroupComponentUVE>(root).mode = ThreadGroupModeUVE::MainThread;
+    entityManager.GetComponentUVE<ThreadGroupComponentUVE>(child).mode = ThreadGroupModeUVE::SubThread;
+    sceneGraph.UpdateUVE(entityManager);
+
+    EXPECT_EQ(entityManager.GetComponentUVE<ThreadGroupComponentUVE>(child).resolvedModeInHierarchy,
+              ThreadGroupModeUVE::MainThread)
+        << "a main-thread ancestor is a constraint about shared state, not a preference";
+
+    entityManager.GetComponentUVE<ThreadGroupComponentUVE>(root).mode = ThreadGroupModeUVE::SubThread;
+    sceneGraph.UpdateUVE(entityManager);
+    EXPECT_EQ(entityManager.GetComponentUVE<ThreadGroupComponentUVE>(child).resolvedModeInHierarchy,
+              ThreadGroupModeUVE::SubThread);
+}
+
+TEST_F(SceneGraphUVETest, UpdateUVE_TopLevelStillInheritsTheCommonNodeModes) {
+    // topLevel cuts the transform chain only. A top-level child is still paused with its parent and
+    // still translated with the menu it belongs to - the same reasoning that keeps visibility
+    // inherited across it.
+    const EntityUVE root = entityManager.CreateEntityUVE();
+    const EntityUVE child = entityManager.CreateEntityUVE();
+    for (const EntityUVE entity : {root, child}) {
+        sceneGraph.AttachTransformUVE(entityManager, entity, TransformComponentUVE{});
+        entityManager.AddComponentUVE<ProcessComponentUVE>(entity, ProcessComponentUVE{});
+        entityManager.AddComponentUVE<AutoTranslateComponentUVE>(entity, AutoTranslateComponentUVE{});
+    }
+    sceneGraph.SetParentUVE(entityManager, child, root);
+    entityManager.GetComponentUVE<TransformComponentUVE>(child).topLevel = true;
+
+    entityManager.GetComponentUVE<ProcessComponentUVE>(root).mode = ProcessModeUVE::WhenPaused;
+    entityManager.GetComponentUVE<AutoTranslateComponentUVE>(root).mode = AutoTranslateModeUVE::Disabled;
+    sceneGraph.UpdateUVE(entityManager);
+
+    EXPECT_EQ(entityManager.GetComponentUVE<ProcessComponentUVE>(child).resolvedModeInHierarchy,
+              ProcessModeUVE::WhenPaused);
+    EXPECT_EQ(entityManager.GetComponentUVE<AutoTranslateComponentUVE>(child).resolvedModeInHierarchy,
+              AutoTranslateModeUVE::Disabled);
+}
+
+TEST_F(SceneGraphUVETest, UpdateUVE_ARootWithNoAncestorsResolvesToTheHierarchyDefaults) {
+    const EntityUVE root = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, root, TransformComponentUVE{});
+    entityManager.AddComponentUVE<ProcessComponentUVE>(root, ProcessComponentUVE{});
+    entityManager.AddComponentUVE<ThreadGroupComponentUVE>(root, ThreadGroupComponentUVE{});
+    entityManager.AddComponentUVE<AutoTranslateComponentUVE>(root, AutoTranslateComponentUVE{});
+
+    sceneGraph.UpdateUVE(entityManager);
+
+    // Inherit at the top of a hierarchy means the default, not "unanswered".
+    EXPECT_EQ(entityManager.GetComponentUVE<ProcessComponentUVE>(root).resolvedModeInHierarchy,
+              ProcessModeUVE::Pausable);
+    EXPECT_EQ(entityManager.GetComponentUVE<ThreadGroupComponentUVE>(root).resolvedModeInHierarchy,
+              ThreadGroupModeUVE::MainThread);
+    EXPECT_EQ(entityManager.GetComponentUVE<AutoTranslateComponentUVE>(root).resolvedModeInHierarchy,
+              AutoTranslateModeUVE::Always);
 }
 
 TEST_F(SceneGraphUVETest, UpdateUVE_ReparentingRecomputesInheritedVisibility) {

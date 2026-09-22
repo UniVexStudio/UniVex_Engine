@@ -635,6 +635,13 @@ void EditorUVE::DrawFilesystemContextPopupUVE() {
     componentAction("UI Text", EditorSceneComponentKindUVE::UIText, Scene::UITextComponentUVE{});
     componentAction("UI Image", EditorSceneComponentKindUVE::UIImage, Scene::UIImageComponentUVE{});
     componentAction("UI Button", EditorSceneComponentKindUVE::UIButton, Scene::UIButtonComponentUVE{});
+    componentAction("Process", EditorSceneComponentKindUVE::Process, Scene::ProcessComponentUVE{});
+    componentAction("Thread Group", EditorSceneComponentKindUVE::ThreadGroup,
+                    Scene::ThreadGroupComponentUVE{});
+    componentAction("Auto Translate", EditorSceneComponentKindUVE::AutoTranslate,
+                    Scene::AutoTranslateComponentUVE{});
+    componentAction("Metadata", EditorSceneComponentKindUVE::NodeMetadata,
+                    Scene::NodeMetadataComponentUVE{});
     if (!IsDocumentEntityUVE(m_selectedEntity)) {
         ImGui::TextDisabled("Select a Scene node to attach a component.");
     }

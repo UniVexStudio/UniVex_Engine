@@ -955,7 +955,18 @@ bool EditorUVE::IsSceneComponentValueValidUVE(
                 return kind == EditorSceneComponentKindUVE::UIImage && Scene::IsUIImageComponentValidUVE(typedValue);
             } else if constexpr (std::is_same_v<ValueType, Scene::UIButtonComponentUVE>) {
                 return kind == EditorSceneComponentKindUVE::UIButton && Scene::IsUIButtonComponentValidUVE(typedValue);
-            } else if constexpr (std::is_same_v<ValueType, Scene::PhysicsInterpolationComponentUVE>) {
+            } else if constexpr (std::is_same_v<ValueType, Scene::ProcessComponentUVE>) {
+                return kind == EditorSceneComponentKindUVE::Process &&
+                       Scene::IsProcessComponentValidUVE(typedValue);
+            } else if constexpr (std::is_same_v<ValueType, Scene::ThreadGroupComponentUVE>) {
+                return kind == EditorSceneComponentKindUVE::ThreadGroup &&
+                       Scene::IsThreadGroupComponentValidUVE(typedValue);
+            } else if constexpr (std::is_same_v<ValueType, Scene::AutoTranslateComponentUVE>) {
+                return kind == EditorSceneComponentKindUVE::AutoTranslate &&
+                       Scene::IsAutoTranslateComponentValidUVE(typedValue);
+            } else if constexpr (std::is_same_v<ValueType, Scene::NodeMetadataComponentUVE>) {
+                return kind == EditorSceneComponentKindUVE::NodeMetadata &&
+                       Scene::IsNodeMetadataComponentValidUVE(typedValue);            } else if constexpr (std::is_same_v<ValueType, Scene::PhysicsInterpolationComponentUVE>) {
                 return kind == EditorSceneComponentKindUVE::PhysicsInterpolation &&
                        Scene::IsPhysicsInterpolationComponentValidUVE(typedValue);
             } else if constexpr (std::is_same_v<ValueType, Scene::EditorDescriptionComponentUVE>) {
@@ -1108,6 +1119,14 @@ bool EditorUVE::ApplySceneComponentStateUVE(
             return apply.template operator()<Scene::PhysicsInterpolationComponentUVE>();
         case EditorSceneComponentKindUVE::EditorDescription:
             return apply.template operator()<Scene::EditorDescriptionComponentUVE>();
+        case EditorSceneComponentKindUVE::Process:
+            return apply.template operator()<Scene::ProcessComponentUVE>();
+        case EditorSceneComponentKindUVE::ThreadGroup:
+            return apply.template operator()<Scene::ThreadGroupComponentUVE>();
+        case EditorSceneComponentKindUVE::AutoTranslate:
+            return apply.template operator()<Scene::AutoTranslateComponentUVE>();
+        case EditorSceneComponentKindUVE::NodeMetadata:
+            return apply.template operator()<Scene::NodeMetadataComponentUVE>();
     }
     return false;
 }
@@ -1207,6 +1226,26 @@ bool EditorUVE::SetSelectedSceneComponentUVE(const EditorSceneComponentKindUVE k
                 before = entityManager.GetComponentUVE<Scene::EditorDescriptionComponentUVE>(m_selectedEntity);
             }
             break;
+        case EditorSceneComponentKindUVE::Process:
+            if (entityManager.HasComponentUVE<Scene::ProcessComponentUVE>(m_selectedEntity)) {
+                before = entityManager.GetComponentUVE<Scene::ProcessComponentUVE>(m_selectedEntity);
+            }
+            break;
+        case EditorSceneComponentKindUVE::ThreadGroup:
+            if (entityManager.HasComponentUVE<Scene::ThreadGroupComponentUVE>(m_selectedEntity)) {
+                before = entityManager.GetComponentUVE<Scene::ThreadGroupComponentUVE>(m_selectedEntity);
+            }
+            break;
+        case EditorSceneComponentKindUVE::AutoTranslate:
+            if (entityManager.HasComponentUVE<Scene::AutoTranslateComponentUVE>(m_selectedEntity)) {
+                before = entityManager.GetComponentUVE<Scene::AutoTranslateComponentUVE>(m_selectedEntity);
+            }
+            break;
+        case EditorSceneComponentKindUVE::NodeMetadata:
+            if (entityManager.HasComponentUVE<Scene::NodeMetadataComponentUVE>(m_selectedEntity)) {
+                before = entityManager.GetComponentUVE<Scene::NodeMetadataComponentUVE>(m_selectedEntity);
+            }
+            break;
     }
     if (before.has_value() && AreSceneComponentValuesEqualUVE(*before, value)) {
         return false;
@@ -1281,6 +1320,18 @@ bool EditorUVE::RemoveSelectedSceneComponentUVE(const EditorSceneComponentKindUV
             break;
         case EditorSceneComponentKindUVE::EditorDescription:
             if (entityManager.HasComponentUVE<Scene::EditorDescriptionComponentUVE>(m_selectedEntity)) before = entityManager.GetComponentUVE<Scene::EditorDescriptionComponentUVE>(m_selectedEntity);
+            break;
+        case EditorSceneComponentKindUVE::Process:
+            if (entityManager.HasComponentUVE<Scene::ProcessComponentUVE>(m_selectedEntity)) before = entityManager.GetComponentUVE<Scene::ProcessComponentUVE>(m_selectedEntity);
+            break;
+        case EditorSceneComponentKindUVE::ThreadGroup:
+            if (entityManager.HasComponentUVE<Scene::ThreadGroupComponentUVE>(m_selectedEntity)) before = entityManager.GetComponentUVE<Scene::ThreadGroupComponentUVE>(m_selectedEntity);
+            break;
+        case EditorSceneComponentKindUVE::AutoTranslate:
+            if (entityManager.HasComponentUVE<Scene::AutoTranslateComponentUVE>(m_selectedEntity)) before = entityManager.GetComponentUVE<Scene::AutoTranslateComponentUVE>(m_selectedEntity);
+            break;
+        case EditorSceneComponentKindUVE::NodeMetadata:
+            if (entityManager.HasComponentUVE<Scene::NodeMetadataComponentUVE>(m_selectedEntity)) before = entityManager.GetComponentUVE<Scene::NodeMetadataComponentUVE>(m_selectedEntity);
             break;
     }
     if (!before.has_value()) {
@@ -2768,6 +2819,14 @@ bool EditorUVE::UndoHistoryEntryUVE(HistoryEntryUVE& entry) {
                 RestoreSelectionUVE(typedEntry.selectionBefore);
                 m_sceneDirty = typedEntry.dirtyBefore;
                 return true;
+            } else if constexpr (std::is_same_v<EntryType, ComponentPropertyHistoryEntryUVE>) {
+                if (!ApplyComponentPropertySnapshotUVE(typedEntry.entity, typedEntry.metadata,
+                                                       typedEntry.before.GetUVE())) {
+                    return false;
+                }
+                RestoreSelectionUVE(typedEntry.selectionBefore);
+                m_sceneDirty = typedEntry.dirtyBefore;
+                return true;
             } else if constexpr (std::is_same_v<EntryType, CreationHistoryEntryUVE>) {
                 if (!IsDocumentEntityUVE(typedEntry.activeEntity)) {
                     return false;
@@ -2857,6 +2916,14 @@ bool EditorUVE::RedoHistoryEntryUVE(HistoryEntryUVE& entry) {
                 return true;
             } else if constexpr (std::is_same_v<EntryType, SceneComponentHistoryEntryUVE>) {
                 if (!ApplySceneComponentStateUVE(typedEntry.entity, typedEntry.kind, typedEntry.after)) {
+                    return false;
+                }
+                RestoreSelectionUVE(typedEntry.selectionAfter);
+                m_sceneDirty = typedEntry.dirtyAfter;
+                return true;
+            } else if constexpr (std::is_same_v<EntryType, ComponentPropertyHistoryEntryUVE>) {
+                if (!ApplyComponentPropertySnapshotUVE(typedEntry.entity, typedEntry.metadata,
+                                                       typedEntry.after.GetUVE())) {
                     return false;
                 }
                 RestoreSelectionUVE(typedEntry.selectionAfter);
