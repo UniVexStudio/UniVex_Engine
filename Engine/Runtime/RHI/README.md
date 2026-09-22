@@ -1,8 +1,9 @@
 # Engine/Runtime/RHI
 
 The render hardware interface: a stable base abstraction plus its concrete backends and
-the systems built on top of it, following the base-plus-siblings pattern documented in
-`.claude/skills/engine-layout/SKILL.md`.
+the systems built on top of it, following a base-plus-siblings pattern — a stable base
+module that every backend implements, with each backend a sibling directory rather than a
+branch inside the base.
 
 - `RHI/` — the base: interfaces every backend implements.
 - `OpenGL/`, `Vulkan/`, `Null/` — concrete backends, siblings of the base.
