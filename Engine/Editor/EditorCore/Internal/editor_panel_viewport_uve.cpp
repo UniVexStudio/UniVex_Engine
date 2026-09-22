@@ -355,6 +355,53 @@ void EditorUVE::ClearEntityContextToolbarUVE() noexcept {
     m_viewportOverlayState.entityContextToolbarEntity = Scene::kInvalidEntityUVE;
 }
 
+namespace {
+
+[[nodiscard]] bool IsViewportAxisColorValidUVE(const EditorUVE::ViewportAxisColorUVE& color) {
+    const auto channelValid = [](const float channel) {
+        // NaN fails both comparisons, so it is refused here rather than surviving as a colour.
+        return channel >= 0.0F && channel <= 1.0F;
+    };
+    return channelValid(color.r) && channelValid(color.g) && channelValid(color.b);
+}
+
+} // namespace
+
+bool EditorUVE::SetViewportAxisColorsUVE(const ViewportAxisColorUVE x, const ViewportAxisColorUVE y,
+                                         const ViewportAxisColorUVE z) {
+    // All three or none: a half-applied palette would leave one axis in a colour the author never
+    // chose, which is worse than refusing the whole change.
+    if (!IsViewportAxisColorValidUVE(x) || !IsViewportAxisColorValidUVE(y) ||
+        !IsViewportAxisColorValidUVE(z)) {
+        return false;
+    }
+    m_viewportOverlayState.axisColorX = x;
+    m_viewportOverlayState.axisColorY = y;
+    m_viewportOverlayState.axisColorZ = z;
+    m_viewportOverlayState.axisColorsValid = true;
+    return true;
+}
+
+bool EditorUVE::AreViewportAxisColorsSetUVE() const noexcept {
+    return m_viewportOverlayState.axisColorsValid;
+}
+
+void EditorUVE::ResetViewportAxisColorsUVE() noexcept {
+    m_viewportOverlayState.axisColorsValid = false;
+    m_viewportOverlayState.axisColorX = ViewportAxisColorUVE{};
+    m_viewportOverlayState.axisColorY = ViewportAxisColorUVE{};
+    m_viewportOverlayState.axisColorZ = ViewportAxisColorUVE{};
+}
+
+EditorUVE::ViewportAxisColorUVE EditorUVE::GetViewportAxisColorUVE(const int axisIndex) const {
+    switch (axisIndex) {
+        case 0: return m_viewportOverlayState.axisColorX;
+        case 1: return m_viewportOverlayState.axisColorY;
+        case 2: return m_viewportOverlayState.axisColorZ;
+        default: return ViewportAxisColorUVE{};
+    }
+}
+
 // The right-click "Scripting" bubble, anchored at the entity's projected screen position rather
 // than the panel's own fixed corner (contrast DrawViewportOverlayBubblesUVE's gizmo/projection
 // bubbles above). Same InvisibleButton + manual ImDrawList paint idiom, not ImGui::BeginPopup -

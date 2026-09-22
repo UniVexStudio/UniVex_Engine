@@ -149,6 +149,41 @@ struct ClosestApproachUVE {
     return inside ? distance : std::nullopt;
 }
 
+/// The scale gizmo's plane handle, which is a TRIANGLE, not a square.
+///
+/// AddScalePlaneHandles draws corners at (offset, 0), (0, offset) and (pull, pull) in the plane's
+/// own two-axis coordinates. This used to be picked with the move gizmo's square test instead -
+/// `a` and `b` both within [scalePlaneOffset, scalePlaneOffset + planeHandleSize] - which is not a
+/// near-enough approximation, it is a different region entirely: the square needs a + b >= 1.2
+/// while the whole triangle lives below a + b = 0.6. The drawn handle was therefore close to
+/// unclickable, and a patch of empty space outside it answered to the click instead.
+[[nodiscard]] std::optional<float> RayScalePlaneHandleDistanceUVE(const RayUVE& ray,
+                                                                  const Vec3& pivot, float scale,
+                                                                  const Vec3& axisA,
+                                                                  const Vec3& axisB, float offset,
+                                                                  float pull) {
+    const Vec3 normal = Normalize(Cross(axisA, axisB));
+    const std::optional<float> distance = RayPlaneDistanceUVE(ray, pivot, normal);
+    if (!distance.has_value()) {
+        return std::nullopt;
+    }
+    const Vec3 local = (ray.origin + ray.direction * *distance) - pivot;
+    const float a = Dot(local, axisA) / scale;
+    const float b = Dot(local, axisB) / scale;
+
+    // Point-in-triangle by the sign of the three edge cross products: inside means the point falls
+    // on the same side of every edge, and a zero lands exactly on one.
+    const auto edgeSign = [](float px, float py, float x0, float y0, float x1, float y1) {
+        return (x1 - x0) * (py - y0) - (y1 - y0) * (px - x0);
+    };
+    const float s0 = edgeSign(a, b, offset, 0.f, 0.f, offset);
+    const float s1 = edgeSign(a, b, 0.f, offset, pull, pull);
+    const float s2 = edgeSign(a, b, pull, pull, offset, 0.f);
+    const bool allNonNegative = s0 >= 0.f && s1 >= 0.f && s2 >= 0.f;
+    const bool allNonPositive = s0 <= 0.f && s1 <= 0.f && s2 <= 0.f;
+    return (allNonNegative || allNonPositive) ? distance : std::nullopt;
+}
+
 struct CandidateUVE {
     GizmoHandleUVE handle = GizmoHandleUVE::None;
     float rayDistance = 0.f;
@@ -242,14 +277,18 @@ GizmoPickResultUVE PickGizmoHandleUVE(const GizmoMode mode, const GizmoStyle& st
     }
 
     // ---- plane handles ---------------------------------------------------
+    // Move's chip is a square and Scale's is a triangle, so each is tested against its own drawn
+    // shape rather than both sharing the square test.
     if (mode == GizmoMode::Move || mode == GizmoMode::Scale) {
-        const float offset = mode == GizmoMode::Move ? style.planeHandleOffset : style.scalePlaneOffset;
-        const float size = style.planeHandleSize;
         const std::array<std::pair<std::size_t, std::size_t>, 3> pairs = {{{0, 1}, {1, 2}, {2, 0}}};
         for (const auto& [first, second] : pairs) {
-            ConsiderUVE(best, PlaneHandleForPairUVE(first, second),
-                        RayPlaneHandleDistanceUVE(ray, pivot, scale, axes[first], axes[second], offset,
-                                                  size));
+            const std::optional<float> distance =
+                mode == GizmoMode::Move
+                    ? RayPlaneHandleDistanceUVE(ray, pivot, scale, axes[first], axes[second],
+                                                style.planeHandleOffset, style.planeHandleSize)
+                    : RayScalePlaneHandleDistanceUVE(ray, pivot, scale, axes[first], axes[second],
+                                                     style.scalePlaneOffset, style.scalePlanePull);
+            ConsiderUVE(best, PlaneHandleForPairUVE(first, second), distance);
         }
     }
 
@@ -273,7 +312,16 @@ GizmoPickResultUVE PickGizmoHandleUVE(const GizmoMode mode, const GizmoStyle& st
     // ---- centre handle ---------------------------------------------------
     // Considered last and allowed to win outright: it is the smallest thing on screen and sits
     // exactly where all three axes converge, so nearest-along-the-ray would almost never choose it.
-    const float centerRadius = style.centerCubeSize * scale;
+    //
+    // Derived from the dot's own PIXEL radius, not a world size. The dot is drawn pixel-sized, so
+    // a world-sized hit disc would agree with it at one zoom level and drift at every other. Same
+    // padding as every other handle, so the dot is no harder to hit than a 1.5 px line - and no
+    // easier: the old world-unit radius covered roughly 20 px and quietly swallowed clicks aimed
+    // at the plane chips and rings beside it, which is why this one wins outright and yet had to
+    // be this generous.
+    const float centerRadiusUnits = (style.pivotDotRadiusPx + kGrabPaddingPixelsUVE) * unitsPerPixel;
+    const float centerRadius =
+        (centerRadiusUnits > kMinimumGrabRadiusUVE ? centerRadiusUnits : kMinimumGrabRadiusUVE) * scale;
     const std::optional<float> centerDistance = RaySphereDistanceUVE(ray, pivot, centerRadius);
     if (centerDistance.has_value()) {
         return GizmoPickResultUVE{GizmoHandleUVE::Uniform, *centerDistance};
