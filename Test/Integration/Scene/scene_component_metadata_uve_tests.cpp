@@ -196,7 +196,7 @@ TEST(SceneComponentMetadataUVETest, TheFactoryAnswersWhatAPropertysDefaultValueI
     const TypeMetadataEntryUVE* collider =
         FindSceneComponentMetadataUVE(std::type_index(typeid(ColliderComponentUVE)));
     ASSERT_NE(collider, nullptr);
-    const Core::TypeDefaultInstanceUVE defaults{*collider};
+    const Core::TypeInstanceUVE defaults = Core::TypeInstanceUVE::MakeDefaultUVE(*collider);
     ASSERT_TRUE(defaults.IsValidUVE());
 
     const TypeMetadataPropertyUVE* density = FindPropertyUVE(*collider, "density");

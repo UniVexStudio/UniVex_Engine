@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <concepts>
 #include <type_traits>
 #include <typeindex>
 #include <typeinfo>
@@ -114,6 +115,9 @@ struct TypeMetadataPropertyUVE final {
     /// Conditional visibility. Null means always visible; otherwise the inspector calls it with a
     /// pointer to the owning instance, so a property can depend on a sibling field's value.
     bool (*isVisible)(const void* instance) = nullptr;
+    /// Compares this one property across two instances of the owning type. Null when the value
+    /// type has no equality operator.
+    bool (*areEqual)(const void* leftInstance, const void* rightInstance) = nullptr;
 
     [[nodiscard]] bool operator==(const TypeMetadataPropertyUVE&) const = default;
 
@@ -163,6 +167,17 @@ template <auto MemberPointer>
     property.setValue = +[](void* instance, const void* inValue) {
         static_cast<OwnerT*>(instance)->*MemberPointer = *static_cast<const ValueT*>(inValue);
     };
+    // Property-level equality is what lets a generic editor tell "the author changed this" from
+    // "the widget reported the value it was given", without which every redraw would look like an
+    // edit. Left null for a value type that cannot be compared, which callers treat as "unknown".
+    if constexpr (requires(const ValueT& left, const ValueT& right) {
+                      { left == right } -> std::convertible_to<bool>;
+                  }) {
+        property.areEqual = +[](const void* left, const void* right) {
+            return static_cast<const OwnerT*>(left)->*MemberPointer ==
+                   static_cast<const OwnerT*>(right)->*MemberPointer;
+        };
+    }
     return property;
 }
 
@@ -254,13 +269,19 @@ struct TypeMetadataEntryUVE final {
     /// field back) and generic deserialization possible without a per-type branch.
     void* (*createDefaultInstance)() = nullptr;
     void (*destroyInstance)(void* instance) = nullptr;
+    /// Copies an existing instance, and overwrites one in place. Together with the pointer the ECS
+    /// already hands out for a live component, these are what let an undo record a component's
+    /// prior value and put it back without naming the component's type.
+    void* (*cloneInstance)(const void* source) = nullptr;
+    void (*assignInstance)(void* destination, const void* source) = nullptr;
     /// Sort key for the type's own inspector section, so a common section can be pushed last.
     std::int32_t order = 0;
 
     [[nodiscard]] bool operator==(const TypeMetadataEntryUVE&) const = default;
 
     [[nodiscard]] bool HasFactoryUVE() const noexcept {
-        return createDefaultInstance != nullptr && destroyInstance != nullptr;
+        return createDefaultInstance != nullptr && destroyInstance != nullptr &&
+               cloneInstance != nullptr && assignInstance != nullptr;
     }
 };
 
@@ -272,26 +293,43 @@ void BindTypeUVE(TypeMetadataEntryUVE& entry) {
     entry.typeIndex = std::type_index(typeid(TypeT));
     entry.createDefaultInstance = +[]() -> void* { return new TypeT{}; };
     entry.destroyInstance = +[](void* instance) { delete static_cast<TypeT*>(instance); };
+    entry.cloneInstance = +[](const void* source) -> void* {
+        return new TypeT{*static_cast<const TypeT*>(source)};
+    };
+    entry.assignInstance = +[](void* destination, const void* source) {
+        *static_cast<TypeT*>(destination) = *static_cast<const TypeT*>(source);
+    };
 }
 
-/// Owns one default-constructed instance produced by a registered entry's factory. Used to answer
-/// "what is this property's default value" without the caller naming the concrete type.
-class TypeDefaultInstanceUVE final {
+/// Owns one instance of a reflected type without the owner naming that type. Used to answer "what
+/// is this property's default value" (MakeDefaultUVE) and to hold a component's prior value for an
+/// undo entry (CloneUVE).
+class TypeInstanceUVE final {
 public:
-    TypeDefaultInstanceUVE() = default;
+    TypeInstanceUVE() = default;
 
-    explicit TypeDefaultInstanceUVE(const TypeMetadataEntryUVE& entry)
-        : m_destroy(entry.destroyInstance),
-          m_instance(entry.HasFactoryUVE() ? entry.createDefaultInstance() : nullptr) {}
+    /// A default-constructed instance, or an invalid holder when `entry` declares no factory.
+    [[nodiscard]] static TypeInstanceUVE MakeDefaultUVE(const TypeMetadataEntryUVE& entry) {
+        return entry.HasFactoryUVE() ? TypeInstanceUVE{entry.createDefaultInstance(), entry.destroyInstance}
+                                     : TypeInstanceUVE{};
+    }
 
-    TypeDefaultInstanceUVE(const TypeDefaultInstanceUVE&) = delete;
-    TypeDefaultInstanceUVE& operator=(const TypeDefaultInstanceUVE&) = delete;
+    /// A copy of `source`, which must point at an instance of `entry`'s type. An invalid holder
+    /// when `entry` declares no factory or `source` is null.
+    [[nodiscard]] static TypeInstanceUVE CloneUVE(const TypeMetadataEntryUVE& entry, const void* source) {
+        return (entry.HasFactoryUVE() && source != nullptr)
+                   ? TypeInstanceUVE{entry.cloneInstance(source), entry.destroyInstance}
+                   : TypeInstanceUVE{};
+    }
 
-    TypeDefaultInstanceUVE(TypeDefaultInstanceUVE&& other) noexcept
+    TypeInstanceUVE(const TypeInstanceUVE&) = delete;
+    TypeInstanceUVE& operator=(const TypeInstanceUVE&) = delete;
+
+    TypeInstanceUVE(TypeInstanceUVE&& other) noexcept
         : m_destroy(std::exchange(other.m_destroy, nullptr)),
           m_instance(std::exchange(other.m_instance, nullptr)) {}
 
-    TypeDefaultInstanceUVE& operator=(TypeDefaultInstanceUVE&& other) noexcept {
+    TypeInstanceUVE& operator=(TypeInstanceUVE&& other) noexcept {
         if (this != &other) {
             ResetUVE();
             m_destroy = std::exchange(other.m_destroy, nullptr);
@@ -300,12 +338,16 @@ public:
         return *this;
     }
 
-    ~TypeDefaultInstanceUVE() { ResetUVE(); }
+    ~TypeInstanceUVE() { ResetUVE(); }
 
     [[nodiscard]] const void* GetUVE() const noexcept { return m_instance; }
+    [[nodiscard]] void* GetMutableUVE() noexcept { return m_instance; }
     [[nodiscard]] bool IsValidUVE() const noexcept { return m_instance != nullptr; }
 
 private:
+    TypeInstanceUVE(void* instance, void (*destroy)(void*)) noexcept
+        : m_destroy(destroy), m_instance(instance) {}
+
     void ResetUVE() noexcept {
         if (m_instance != nullptr && m_destroy != nullptr) {
             m_destroy(m_instance);

@@ -17,6 +17,15 @@ namespace {
     return !value.empty() && value.size() <= TypeMetadataRegistryUVE::kMaximumDisplayNameBytesUVE;
 }
 
+/// The four factory hooks are declared together by BindTypeUVE or not at all. Half of them is
+/// always a mistake - a create with no destroy leaks, a clone with no assign cannot be put back -
+/// and it is worth rejecting rather than discovering at the first generic edit.
+[[nodiscard]] bool HasPartialFactoryUVE(const TypeMetadataEntryUVE& entry) noexcept {
+    const bool anyDeclared = entry.createDefaultInstance != nullptr || entry.destroyInstance != nullptr ||
+                             entry.cloneInstance != nullptr || entry.assignInstance != nullptr;
+    return anyDeclared && !entry.HasFactoryUVE();
+}
+
 /// An optional identifier: absent is fine, present must be bounded like any other identifier.
 [[nodiscard]] bool IsBoundedOptionalUVE(const std::string& value) noexcept {
     return value.empty() || value.size() <= TypeMetadataRegistryUVE::kMaximumIdentifierBytesUVE;
@@ -81,7 +90,7 @@ namespace {
 
 TypeMetadataRegistrationResultUVE TypeMetadataRegistryUVE::RegisterTypeUVE(TypeMetadataEntryUVE entry) {
     if (!IsBoundedIdentifierUVE(entry.typeId) || !IsBoundedDisplayNameUVE(entry.displayName) || entry.version == 0U ||
-        ((entry.createDefaultInstance == nullptr) != (entry.destroyInstance == nullptr)) ||
+        HasPartialFactoryUVE(entry) ||
         ExceedsMemberCapacityUVE(entry) ||
         HasDuplicateMemberNamesUVE(entry)) {
         return {TypeMetadataRegistrationCodeUVE::InvalidEntry,
