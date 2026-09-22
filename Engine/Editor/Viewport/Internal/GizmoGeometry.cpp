@@ -203,7 +203,7 @@ void AddFullRing(GizmoMesh& mesh, const Vec3& center, const Vec3& axis, const Ve
 
 // How far in front of the pivot the view-facing screen ring sits, in pixels. The ring is built in
 // the plane perpendicular to the view, so centred on the pivot it passes exactly through the
-// middle of the three axis rings and through the centre cube - with depth testing on, half of it
+// middle of the three axis rings and through the pivot dot - with depth testing on, half of it
 // ends up buried inside the widget. Lifting it a few pixels toward the eye puts the whole ring in
 // front, where it reads as the outer boundary of the gizmo. In pixels rather than world units so
 // the offset does not change with zoom.
@@ -237,10 +237,10 @@ void AddMovePlaneHandles(GizmoMesh& mesh, const GizmoStyle& style) {
         const Vec3 p2 = a * (o + s) + b * (o + s);
         const Vec3 p3 = a * o + b * (o + s);
         AddQuad(mesh, p0, p1, p2, p3, fill, style.planeHandleAlpha);
-        AddLine(mesh, p0, p1, edge, 1.1f);
-        AddLine(mesh, p1, p2, edge, 1.1f);
-        AddLine(mesh, p2, p3, edge, 1.1f);
-        AddLine(mesh, p3, p0, edge, 1.1f);
+        AddLine(mesh, p0, p1, edge, style.planeHandleEdgeWidthPx);
+        AddLine(mesh, p1, p2, edge, style.planeHandleEdgeWidthPx);
+        AddLine(mesh, p2, p3, edge, style.planeHandleEdgeWidthPx);
+        AddLine(mesh, p3, p0, edge, style.planeHandleEdgeWidthPx);
     }
 }
 
@@ -257,15 +257,21 @@ void AddScalePlaneHandles(GizmoMesh& mesh, const GizmoStyle& style) {
         const Vec3 p1 = b * style.scalePlaneOffset;
         const Vec3 p2 = (a + b) * style.scalePlanePull;
         AddTriangle(mesh, p0, p1, p2, PlaneFillColor(normalColor, style), style.planeHandleAlpha);
-        AddLine(mesh, p0, p1, PlaneEdgeColor(normalColor, style), 1.1f);
+        AddLine(mesh, p0, p1, PlaneEdgeColor(normalColor, style), style.planeHandleEdgeWidthPx);
     }
 }
 
-// A small solid block at the pivot. It used to be a wire box, but twelve
-// edges a few pixels long read as scribble rather than as a cube.
-void AddCenterCube(GizmoMesh& mesh, const GizmoStyle& style) {
-    AddSolidCube(mesh, Vec3{0.f, 0.f, 0.f}, style.centerCubeSize,
-                 style.centerColor, style.centerCubeWidthPx);
+// How far in front of the pivot the dot sits, in pixels. All three axis strokes cross exactly at
+// the pivot, so a ring built in the same place fights them for depth and comes out broken. Nudged
+// along the view direction, which changes its depth without moving it on screen at all.
+constexpr float kPivotDotLiftPixelsUVE = 2.f;
+
+// A thin ring at the pivot - see GizmoStyle::pivotDotRadiusPx for why this replaced a solid cube.
+// View-aligned, so it stays a circle from every angle instead of foreshortening into an ellipse.
+void AddPivotDot(GizmoMesh& mesh, const GizmoStyle& style, const Vec3& view, float scale) {
+    AddFullRing(mesh, view * (-kPivotDotLiftPixelsUVE * scale), view, style.centerColor,
+                style.pivotDotRadiusPx * scale, style.pivotDotSegments,
+                style.pivotDotWidthPx * 0.5f * scale);
 }
 
 } // namespace
@@ -296,11 +302,11 @@ GizmoMesh BuildGizmoMesh(GizmoMode mode, const GizmoStyle& style, const Vec3& vi
 
     switch (mode) {
         case GizmoMode::Select:
-            AddCenterCube(mesh, style);
+            AddPivotDot(mesh, style, view, scale);
             break;
 
         case GizmoMode::Move:
-            AddCenterCube(mesh, style);
+            AddPivotDot(mesh, style, view, scale);
             for (const Axis& axis : axes) {
                 AddMoveArrow(mesh, axis, style,
                              style.moveShaftStart, style.moveShaftEnd,
@@ -311,7 +317,7 @@ GizmoMesh BuildGizmoMesh(GizmoMode mode, const GizmoStyle& style, const Vec3& vi
             break;
 
         case GizmoMode::Rotate:
-            AddCenterCube(mesh, style);
+            AddPivotDot(mesh, style, view, scale);
             for (const Axis& axis : axes) {
                 AddRingArc(mesh, axis.direction, axis.color, style.ringRadius,
                            style.ringSegments, view, ringHalfWidth);
@@ -326,7 +332,7 @@ GizmoMesh BuildGizmoMesh(GizmoMode mode, const GizmoStyle& style, const Vec3& vi
             break;
 
         case GizmoMode::Scale:
-            AddCenterCube(mesh, style);
+            AddPivotDot(mesh, style, view, scale);
             for (const Axis& axis : axes) {
                 AddLine(mesh, axis.direction * style.scaleShaftStart,
                         axis.direction * style.scaleShaftEnd, axis.color, style.axisLineWidthPx);
@@ -337,7 +343,7 @@ GizmoMesh BuildGizmoMesh(GizmoMode mode, const GizmoStyle& style, const Vec3& vi
             break;
 
         case GizmoMode::Universal:
-            AddCenterCube(mesh, style);
+            AddPivotDot(mesh, style, view, scale);
             for (const Axis& axis : axes) {
                 // rotate: smallest radius, closest to the pivot
                 AddRingArc(mesh, axis.direction, axis.color, style.universalRingRadius,

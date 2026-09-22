@@ -19,6 +19,7 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <limits>
 #include <numbers>
 #include <string>
 #include <utility>
@@ -33,6 +34,7 @@
 #include "univex/math/Mat4.h"
 #include "univex/math/Vec.h"
 #include "univex/render/GridSettings.h"
+#include "univex/viewport/AxisPaletteApply.h"
 
 using univex::camera::OrbitCamera;
 using univex::math::Mat4;
@@ -349,13 +351,110 @@ int main() {
         const Vec3 view = univex::math::Normalize(Vec3{-0.65f, -0.44f, 0.62f});
         constexpr float kUnitsPerPixel = 1.f / 82.f; // ~155 px radius over 1.9 units
 
-        for (const auto mode : {GizmoMode::Move, GizmoMode::Rotate,
-                                GizmoMode::Scale, GizmoMode::Universal}) {
-            const auto mesh = BuildGizmoMesh(mode, style, view, kUnitsPerPixel);
-            char label[96];
-            std::snprintf(label, sizeof label, "%s builds lines and triangles",
-                          univex::gizmo::GizmoModeName(mode));
-            Check(!mesh.lines.empty() && !mesh.triangles.empty(), label);
+        // Per mode, not one blanket rule. This used to assert every mode built BOTH lines and
+        // triangles, which was only ever true by accident: the centre cube contributed twelve edge
+        // lines to every mode, so Rotate passed on the cube's lines rather than on anything of its
+        // own. A rotate gizmo is rings, and rings are annuli - triangles, no lines. With the cube
+        // replaced by a pivot dot (also an annulus) the old rule started failing for the one mode
+        // it was always wrong about, so it is stated honestly here instead, and each mode gets a
+        // check on what it is actually made of.
+        struct ModeExpectationUVE {
+            GizmoMode mode;
+            bool wantsLines;
+        };
+        for (const auto& expectation : std::array<ModeExpectationUVE, 5>{{
+                 {GizmoMode::Select, false},    // the pivot dot alone
+                 {GizmoMode::Move, true},       // arrow shafts
+                 {GizmoMode::Rotate, false},    // rings only, by nature
+                 {GizmoMode::Scale, true},      // shafts + cube edges
+                 {GizmoMode::Universal, true},  // shafts + cube edges
+             }}) {
+            const auto mesh = BuildGizmoMesh(expectation.mode, style, view, kUnitsPerPixel);
+            const char* const name = univex::gizmo::GizmoModeName(expectation.mode);
+            char label[128];
+
+            std::snprintf(label, sizeof label, "%s builds filled geometry", name);
+            Check(!mesh.triangles.empty(), label);
+
+            std::snprintf(label, sizeof label, "%s %s stroke geometry", name,
+                          expectation.wantsLines ? "builds" : "builds no");
+            Check(mesh.lines.empty() != expectation.wantsLines, label);
+        }
+
+        // Rotate carries all three axis colours - the check the old lines-and-triangles rule never
+        // made. If a ring were dropped or two collapsed onto one colour, that rule would still
+        // have passed.
+        {
+            const auto rotateMesh = BuildGizmoMesh(GizmoMode::Rotate, style, view, kUnitsPerPixel);
+            const auto carriesColor = [&rotateMesh](const Vec3& wanted) {
+                for (const auto& tri : rotateMesh.triangles) {
+                    if (std::fabs(tri.color.x - wanted.x) < 1e-4f &&
+                        std::fabs(tri.color.y - wanted.y) < 1e-4f &&
+                        std::fabs(tri.color.z - wanted.z) < 1e-4f) {
+                        return true;
+                    }
+                }
+                return false;
+            };
+            Check(carriesColor(style.axisColorX) && carriesColor(style.axisColorY) &&
+                      carriesColor(style.axisColorZ),
+                  "all three rotate rings are present, one per axis colour");
+        }
+
+        // The pivot is hollow. This is the assertion that fails the day a solid block reappears at
+        // the centre: a thin ring puts no geometry inside its own radius, a cube fills it.
+        {
+            const float dotRadius = style.pivotDotRadiusPx * kUnitsPerPixel;
+            const float hollowRadius = dotRadius - style.pivotDotWidthPx * kUnitsPerPixel;
+            for (const auto mode : {GizmoMode::Select, GizmoMode::Move, GizmoMode::Rotate,
+                                    GizmoMode::Scale, GizmoMode::Universal}) {
+                const auto mesh = BuildGizmoMesh(mode, style, view, kUnitsPerPixel);
+                bool filledCentre = false;
+                for (const auto& tri : mesh.triangles) {
+                    // A cube at the pivot would put all three corners inside the dot; a ring never
+                    // does, and the axis geometry all starts further out than the dot.
+                    filledCentre = filledCentre || (univex::math::Length(tri.a) < hollowRadius &&
+                                                    univex::math::Length(tri.b) < hollowRadius &&
+                                                    univex::math::Length(tri.c) < hollowRadius);
+                }
+                char label[128];
+                std::snprintf(label, sizeof label, "%s leaves the pivot hollow",
+                              univex::gizmo::GizmoModeName(mode));
+                Check(!filledCentre, label);
+            }
+        }
+
+        // Select mode is the pivot dot and nothing else - the marker that keeps a mesh-less entity
+        // (a Script, a Camera) locatable in the viewport, with no drag handles in the way.
+        {
+            const auto select = BuildGizmoMesh(GizmoMode::Select, style, view, kUnitsPerPixel);
+            const float dotOuter =
+                (style.pivotDotRadiusPx + style.pivotDotWidthPx) * kUnitsPerPixel;
+            bool everythingWithinTheDot = true;
+            for (const auto& tri : select.triangles) {
+                everythingWithinTheDot = everythingWithinTheDot &&
+                                         univex::math::Length(tri.a) <= dotOuter * 1.05f;
+            }
+            Check(!select.triangles.empty() && everythingWithinTheDot,
+                  "Select mode draws the pivot dot and nothing beyond it");
+        }
+
+        // The dot is sized in pixels, not gizmo units: doubling its pixel radius doubles the built
+        // radius at a fixed conversion, and it does not inherit the widget's world scale.
+        {
+            GizmoStyle wide = style;
+            wide.pivotDotRadiusPx = style.pivotDotRadiusPx * 2.f;
+            const auto narrowMesh = BuildGizmoMesh(GizmoMode::Select, style, view, kUnitsPerPixel);
+            const auto wideMesh = BuildGizmoMesh(GizmoMode::Select, wide, view, kUnitsPerPixel);
+            const auto outermost = [](const univex::gizmo::GizmoMesh& mesh) {
+                float furthest = 0.f;
+                for (const auto& tri : mesh.triangles) {
+                    furthest = std::max(furthest, univex::math::Length(tri.a));
+                }
+                return furthest;
+            };
+            CheckNear(outermost(wideMesh), outermost(narrowMesh) * 2.f, 1e-3f,
+                      "the pivot dot scales with its pixel radius");
         }
 
         // Only the camera-facing half of each rotate ring is built. Three full circles through
@@ -367,7 +466,7 @@ int main() {
         int farSide = 0;
         float weakestNearAlpha = 1.f;
         for (const auto& tri : rotate.triangles) {
-            // Only the three axis rings; skip the screen-facing free ring and the centre cube.
+            // Only the three axis rings; skip the screen-facing free ring and the pivot dot.
             const float radius = univex::math::Length(tri.a);
             if (radius < style.ringRadius * 0.8f || radius > style.ringRadius * 1.1f) continue;
             const float facing = univex::math::Dot(univex::math::Normalize(tri.a), view);
@@ -382,6 +481,64 @@ int main() {
         Check(farSide == 0, "the half curving away from the camera is not built at all");
         Check(weakestNearAlpha > 0.99f,
               "the near half is fully opaque, not a faded ghost of a whole ring");
+    }
+
+    std::puts("\n== Axis palette: one choice drives the gizmo and the grid together ==");
+    {
+        using univex::gizmo::GizmoStyle;
+        using univex::viewport::ApplyAxisPaletteUVE;
+        using univex::viewport::AxisPaletteOfUVE;
+        using univex::viewport::AxisPaletteUVE;
+        using univex::viewport::AxisRgbUVE;
+        using univex::viewport::IsAxisPaletteValidUVE;
+        using univex::viewport::kGridAxisDimFactorUVE;
+
+        // Six colour slots written from three, half of them dimmed. One forgotten line here shows
+        // up only as "the grid axis did not change colour", which no other test would notice.
+        GizmoStyle style;
+        GridSettings grid;
+        const AxisPaletteUVE chosen{AxisRgbUVE{0.90f, 0.10f, 0.40f}, AxisRgbUVE{0.20f, 0.80f, 0.30f},
+                                    AxisRgbUVE{0.15f, 0.45f, 0.95f}};
+        ApplyAxisPaletteUVE(chosen, style, grid);
+
+        CheckNear(style.axisColorX.x, chosen.x.r, 1e-6f, "the gizmo takes the chosen X colour");
+        CheckNear(style.axisColorY.y, chosen.y.g, 1e-6f, "the gizmo takes the chosen Y colour");
+        CheckNear(style.axisColorZ.z, chosen.z.b, 1e-6f, "the gizmo takes the chosen Z colour");
+
+        CheckNear(grid.axisColorX.r, chosen.x.r * kGridAxisDimFactorUVE, 1e-6f,
+                  "the grid takes the dimmed X colour, not the raw one");
+        CheckNear(grid.axisColorY.g, chosen.y.g * kGridAxisDimFactorUVE, 1e-6f,
+                  "the grid takes the dimmed Y colour");
+        CheckNear(grid.axisColorZ.b, chosen.z.b * kGridAxisDimFactorUVE, 1e-6f,
+                  "the grid takes the dimmed Z colour");
+
+        // The grid must stay the backdrop: darker than the handle drawn over it, on every channel
+        // that carries any colour at all. This is the relationship the dim factor exists for, and
+        // the reason the two sets are derived rather than stored independently.
+        Check(grid.axisColorX.r < style.axisColorX.x && grid.axisColorY.g < style.axisColorY.y &&
+                  grid.axisColorZ.b < style.axisColorZ.z,
+              "every grid axis stays darker than the gizmo axis over it");
+
+        // Round trip: what was applied is what is read back.
+        const AxisPaletteUVE readBack = AxisPaletteOfUVE(style);
+        Check(std::fabs(readBack.x.r - chosen.x.r) < 1e-6f &&
+                  std::fabs(readBack.y.g - chosen.y.g) < 1e-6f &&
+                  std::fabs(readBack.z.b - chosen.z.b) < 1e-6f,
+              "the palette reads back as it was applied");
+
+        // Validation, which is what stands between a corrupt settings file and a viewport drawing
+        // axes in colours nobody picked.
+        Check(IsAxisPaletteValidUVE(AxisPaletteUVE{}), "the built-in defaults are a valid palette");
+        Check(!IsAxisPaletteValidUVE(AxisPaletteUVE{AxisRgbUVE{1.4f, 0.f, 0.f}, AxisRgbUVE{},
+                                                     AxisRgbUVE{}}),
+              "a channel above 1 is refused");
+        Check(!IsAxisPaletteValidUVE(AxisPaletteUVE{AxisRgbUVE{-0.2f, 0.f, 0.f}, AxisRgbUVE{},
+                                                     AxisRgbUVE{}}),
+              "a negative channel is refused");
+        Check(!IsAxisPaletteValidUVE(AxisPaletteUVE{
+                  AxisRgbUVE{std::numeric_limits<float>::quiet_NaN(), 0.f, 0.f}, AxisRgbUVE{},
+                  AxisRgbUVE{}}),
+              "NaN is refused rather than compared its way through");
     }
 
     std::puts("\n== Universal gizmo layout: the three tools stay separated ==");
@@ -585,6 +742,31 @@ int main() {
                   GizmoHandleUVE::PlaneYZ, "move: the YZ quad picks the YZ plane");
         Check(pickAtLocal(GizmoMode::Move, Vec3{planeMid, 0.f, planeMid}).handle ==
                   GizmoHandleUVE::PlaneZX, "move: the ZX quad picks the ZX plane");
+
+        // --- Scale: the plane TRIANGLES, which are a different shape from Move's squares -----
+        //
+        // Untested until now, and it hid a real bug: both were picked with the square test, so
+        // Scale's hit region was a patch at a,b in [scalePlaneOffset, +planeHandleSize] - which
+        // needs a + b >= 1.2, while every point of the drawn triangle has a + b <= 0.6. The
+        // handle you could see was close to unclickable, and empty space beyond it answered
+        // instead. These two checks are what that mistake could not have survived.
+        {
+            // Centroid of the drawn triangle (offset, 0), (0, offset), (pull, pull).
+            const float ta = (style.scalePlaneOffset + style.scalePlanePull) / 3.f;
+            Check(pickAtLocal(GizmoMode::Scale, Vec3{ta, ta, 0.f}).handle ==
+                      GizmoHandleUVE::PlaneXY, "scale: inside the XY triangle picks the XY plane");
+            Check(pickAtLocal(GizmoMode::Scale, Vec3{0.f, ta, ta}).handle ==
+                      GizmoHandleUVE::PlaneYZ, "scale: inside the YZ triangle picks the YZ plane");
+            Check(pickAtLocal(GizmoMode::Scale, Vec3{ta, 0.f, ta}).handle ==
+                      GizmoHandleUVE::PlaneZX, "scale: inside the ZX triangle picks the ZX plane");
+
+            // Dead centre of the region the old square test claimed. Nothing is drawn there, so
+            // nothing may be picked there.
+            const float oldSquareMid = style.scalePlaneOffset + style.planeHandleSize * 0.5f;
+            Check(pickAtLocal(GizmoMode::Scale, Vec3{oldSquareMid, oldSquareMid, 0.f}).handle !=
+                      GizmoHandleUVE::PlaneXY,
+                  "scale: the empty space past the triangle no longer picks a plane");
+        }
 
         // --- Centre and clean miss ----------------------------------------------------------
         Check(pickAtLocal(GizmoMode::Move, Vec3{0.f, 0.f, 0.f}).handle == GizmoHandleUVE::Uniform,

@@ -39,4 +39,40 @@ inline constexpr AxisRgbUVE kGridAxisColorXUVE = kAxisColorXUVE.Scaled(kGridAxis
 inline constexpr AxisRgbUVE kGridAxisColorYUVE = kAxisColorYUVE.Scaled(kGridAxisDimFactorUVE);
 inline constexpr AxisRgbUVE kGridAxisColorZUVE = kAxisColorZUVE.Scaled(kGridAxisDimFactorUVE);
 
+/// One author-chosen set of axis hues. The constants above are the defaults; this is the same
+/// three colours as a value a caller can hold and change, which is what lets the editor offer a
+/// colour picker for them.
+///
+/// The gizmo and grid colours are NOT stored separately. Deriving the grid's from the gizmo's
+/// through kGridAxisDimFactorUVE keeps "the grid is the darker backdrop for the same axis" as one
+/// rule in one place; two independent sets would let a picker drift them apart until the grid
+/// stopped reading as the same axis at all.
+struct AxisPaletteUVE {
+    AxisRgbUVE x = kAxisColorXUVE;
+    AxisRgbUVE y = kAxisColorYUVE;
+    AxisRgbUVE z = kAxisColorZUVE;
+
+    [[nodiscard]] constexpr AxisPaletteUVE GridVariantUVE() const {
+        return AxisPaletteUVE{x.Scaled(kGridAxisDimFactorUVE), y.Scaled(kGridAxisDimFactorUVE),
+                              z.Scaled(kGridAxisDimFactorUVE)};
+    }
+};
+
+/// A channel a colour picker may legitimately produce. Anything outside 0..1, or not a number at
+/// all, is rejected rather than clamped: a persisted file that says -3 or NaN is corrupt, and
+/// silently reading it as 0 would hand back a palette the author never chose.
+[[nodiscard]] constexpr bool IsAxisChannelValidUVE(float channel) {
+    return channel >= 0.f && channel <= 1.f;
+}
+
+[[nodiscard]] constexpr bool IsAxisRgbValidUVE(const AxisRgbUVE& color) {
+    return IsAxisChannelValidUVE(color.r) && IsAxisChannelValidUVE(color.g) &&
+           IsAxisChannelValidUVE(color.b);
+}
+
+[[nodiscard]] constexpr bool IsAxisPaletteValidUVE(const AxisPaletteUVE& palette) {
+    return IsAxisRgbValidUVE(palette.x) && IsAxisRgbValidUVE(palette.y) &&
+           IsAxisRgbValidUVE(palette.z);
+}
+
 } // namespace univex::viewport

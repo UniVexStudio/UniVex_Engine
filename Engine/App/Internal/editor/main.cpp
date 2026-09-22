@@ -410,6 +410,21 @@ private:
         settings.viewGrid = overlayState.gridVisible && !overlayState.gameWorkspaceActive;
         gameWorkspaceActive_ = overlayState.gameWorkspaceActive;
         pointerOverOverlay_ = overlayState.pointerOverOverlay;
+        // Axis colours drive the gizmo AND the grid's own axis lines, so they go through
+        // SetAxisPaletteUVE rather than being written into either one directly - see that method.
+        // Skipped until the host has seeded the real defaults, so an unset state cannot paint
+        // every axis black (see ViewportOverlayStateUVE::axisColorsValid).
+        if (overlayState.axisColorsValid) {
+            static_cast<void>(renderPass_->SetAxisPaletteUVE(univex::viewport::AxisPaletteUVE{
+                univex::viewport::AxisRgbUVE{overlayState.axisColorX.r, overlayState.axisColorX.g,
+                                             overlayState.axisColorX.b},
+                univex::viewport::AxisRgbUVE{overlayState.axisColorY.r, overlayState.axisColorY.g,
+                                             overlayState.axisColorY.b},
+                univex::viewport::AxisRgbUVE{overlayState.axisColorZ.r, overlayState.axisColorZ.g,
+                                             overlayState.axisColorZ.b}}));
+        } else {
+            SeedEditorAxisColorsFromDefaultsUVE();
+        }
         using UVE::Editor::EditorUVE;
         switch (overlayState.gizmoMode) {
             case EditorUVE::ViewportGizmoModeUVE::Move:
@@ -427,7 +442,24 @@ private:
         }
     }
 
-    // Only shows the transform gizmo (and its center pivot cube) while a real entity is selected
+    // Hands EditorCore the viewport's own default axis hues. It cannot name them itself -
+    // AxisPalette.h belongs to the Viewport module EditorCore deliberately does not depend on -
+    // so this side of the boundary supplies them, and the menu bar's picker edits from there.
+    //
+    // Driven by the `axisColorsValid == false` branch above rather than called once at startup, so
+    // one line covers both cases that need it: the first frame, and "Reset to defaults", which
+    // clears the flag precisely so these defaults come back from the one place that owns them.
+    void SeedEditorAxisColorsFromDefaultsUVE() {
+        const univex::viewport::AxisPaletteUVE defaults;
+        using EditorAxisColorUVE = UVE::Editor::EditorUVE::ViewportAxisColorUVE;
+        const auto toEditor = [](const univex::viewport::AxisRgbUVE& color) {
+            return EditorAxisColorUVE{color.r, color.g, color.b};
+        };
+        static_cast<void>(editor_.SetViewportAxisColorsUVE(
+            toEditor(defaults.x), toEditor(defaults.y), toEditor(defaults.z)));
+    }
+
+    // Only shows the transform gizmo (and its pivot dot) while a real entity is selected
     // in EditorUVE, like a Node3D-style engine - the reference standalone demo always draws it at
     // the camera's own orbit target since it has no independent "selected object" concept, which
     // read as a stray gizmo floating with nothing selected once wired into a real editor.
