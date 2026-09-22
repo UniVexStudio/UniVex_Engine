@@ -237,12 +237,28 @@ void EditorUVE::DrawMetadataPropertyRowUVE(const TypeMetadataEntryUVE& entry,
     // is how you debug it. It is drawn disabled so the widget cannot report an edit that would be
     // overwritten on the next update.
     const bool writable = property.IsAuthoringWritableUVE() && IsAuthoringCommandAllowedUVE();
-    ImGui::BeginDisabled(!writable);
+    bool edited = false;
+
+    // The label and the reset button share one line, and the widget gets the full width of the
+    // next. Putting reset after a full-width widget instead pushes it past the panel's right edge,
+    // where it is drawn but can never be clicked.
     ImGui::TextUnformatted(property.displayName.c_str());
     DrawTooltipUVE(property);
-    ImGui::SetNextItemWidth(-1.0F);
+    if (writable) {
+        const float resetWidth = ImGui::CalcTextSize("Reset").x + (ImGui::GetStyle().FramePadding.x * 2.0F);
+        ImGui::SameLine(ImGui::GetContentRegionAvail().x - resetWidth);
+        // Reset asks the type's own factory what a fresh component would hold, so a default can
+        // never drift from the one the constructor actually applies.
+        if (ImGui::SmallButton("Reset")) {
+            edited = ResetSelectedComponentPropertyUVE(entry, property);
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Restore the value a newly added %s would have.", entry.displayName.c_str());
+        }
+    }
 
-    bool edited = false;
+    ImGui::BeginDisabled(!writable);
+    ImGui::SetNextItemWidth(-1.0F);
     if (!property.enumEntries.empty()) {
         // Collapsed dropdown, which is what Combo is by default - an enum never occupies the
         // section with one row per option.
@@ -370,18 +386,6 @@ void EditorUVE::DrawMetadataPropertyRowUVE(const TypeMetadataEntryUVE& entry,
         ImGui::TextDisabled("No editor for type \"%s\".", property.typeId.c_str());
     }
     ImGui::EndDisabled();
-
-    if (writable) {
-        ImGui::SameLine();
-        // Reset asks the type's own factory what a fresh component would hold, so a default can
-        // never drift from the one the constructor actually applies.
-        if (ImGui::SmallButton("Reset")) {
-            edited = ResetSelectedComponentPropertyUVE(entry, property) || edited;
-        }
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Restore the value a newly added %s would have.", entry.displayName.c_str());
-        }
-    }
     static_cast<void>(edited);
 }
 
