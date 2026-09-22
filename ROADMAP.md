@@ -15,6 +15,10 @@ This document works at the **system** level. The layer underneath it — the mat
 primitives, containers, allocators, handles, resources and components every system here
 is built from — is catalogued in `FOUNDATION.md`, which follows the same status legend.
 
+The **settings** surfaces every system here eventually needs to expose — project settings,
+editor preferences, the colour picker, material and import options — are catalogued
+separately in `SETTINGS_ROADMAP.md`, which follows the same status legend.
+
 ## How to read this document
 
 - `[ ]` = not started, or only a stub/placeholder exists.
