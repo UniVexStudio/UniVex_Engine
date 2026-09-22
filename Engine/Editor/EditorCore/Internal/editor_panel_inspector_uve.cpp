@@ -297,6 +297,13 @@ void EditorUVE::RegisterBuiltInInspectorDrawersUVE() {
                         return entityManager.HasComponentUVE<Scene::UIImageComponentUVE>(entity);
                     case EditorSceneComponentKindUVE::UIButton:
                         return entityManager.HasComponentUVE<Scene::UIButtonComponentUVE>(entity);
+                    case EditorSceneComponentKindUVE::PhysicsInterpolation:
+                    case EditorSceneComponentKindUVE::EditorDescription:
+                        // Not routed through this generic bare drawer - both get a dedicated
+                        // field-editing drawer, registered standalone below (matching
+                        // WorldEnvironment/CharacterController's pattern, not the simple
+                        // title-plus-Remove-button one this lambda backs).
+                        return false;
                 }
                 return false;
             },
@@ -327,6 +334,22 @@ void EditorUVE::RegisterBuiltInInspectorDrawersUVE() {
                    m_services->GetEntityManagerUVE().HasComponentUVE<Scene::CharacterControllerComponentUVE>(entity);
         },
         [this](const Scene::EntityUVE entity) { DrawCharacterControllerInspectorDrawerUVE(entity); },
+    }));
+    static_cast<void>(m_inspectorDrawerRegistry.RegisterDrawerUVE(InspectorDrawerEntryUVE{
+        "physics-interpolation",
+        [this](const Scene::EntityUVE entity) {
+            return IsDocumentEntityUVE(entity) &&
+                   m_services->GetEntityManagerUVE().HasComponentUVE<Scene::PhysicsInterpolationComponentUVE>(entity);
+        },
+        [this](const Scene::EntityUVE entity) { DrawPhysicsInterpolationInspectorDrawerUVE(entity); },
+    }));
+    static_cast<void>(m_inspectorDrawerRegistry.RegisterDrawerUVE(InspectorDrawerEntryUVE{
+        "editor-description",
+        [this](const Scene::EntityUVE entity) {
+            return IsDocumentEntityUVE(entity) &&
+                   m_services->GetEntityManagerUVE().HasComponentUVE<Scene::EditorDescriptionComponentUVE>(entity);
+        },
+        [this](const Scene::EntityUVE entity) { DrawEditorDescriptionInspectorDrawerUVE(entity); },
     }));
     static_cast<void>(m_inspectorDrawerRegistry.RegisterDrawerUVE(InspectorDrawerEntryUVE{
         "canvas",
@@ -713,6 +736,87 @@ void EditorUVE::DrawCharacterControllerInspectorDrawerUVE(const Scene::EntityUVE
     }
 }
 
+void EditorUVE::DrawPhysicsInterpolationInspectorDrawerUVE(const Scene::EntityUVE entity) {
+    if (!IsDocumentEntityUVE(entity) || entity != m_selectedEntity) {
+        return;
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (!entityManager.HasComponentUVE<Scene::PhysicsInterpolationComponentUVE>(entity)) {
+        return;
+    }
+
+    const Scene::PhysicsInterpolationComponentUVE current =
+        entityManager.GetComponentUVE<Scene::PhysicsInterpolationComponentUVE>(entity);
+    Scene::PhysicsInterpolationComponentUVE edited = current;
+
+    ImGui::Separator();
+    DrawProceduralIconLabelUVE(8.0F, "Physics Interpolation",
+                               [this](ImDrawList& drawList, const ImVec2 center, const float radius, const ImU32) {
+                                   DrawNamedIconUVE(drawList, center, radius, "physics",
+                                                    m_uiAssets.GetGeneralIconTextureIdUVE("sun"),
+                                                    m_uiAssets.GetGeneralIconTextureIdUVE("environment"));
+                               });
+    ImGui::TextDisabled(
+        "Whether this entity's rendered pose is smoothed between fixed physics steps. Inherit takes "
+        "the parent's answer (On at the top of the hierarchy).");
+
+    // Index order matches PhysicsInterpolationModeUVE (Inherit, On, Off).
+    constexpr const char* kModeLabels[] = {"Inherit", "On", "Off"};
+    int modeIndex = static_cast<int>(edited.mode);
+    ImGui::TextUnformatted("Mode");
+    const bool modeChanged =
+        ImGui::Combo("##physics-interpolation-mode", &modeIndex, kModeLabels, static_cast<int>(std::size(kModeLabels)));
+
+    ImGui::BeginDisabled();
+    bool interpolatedInHierarchy = edited.interpolatedInHierarchy;
+    ImGui::TextUnformatted("Interpolated In Hierarchy (runtime)");
+    ImGui::Checkbox("##physics-interpolation-resolved", &interpolatedInHierarchy);
+    ImGui::EndDisabled();
+
+    if (modeChanged) {
+        edited.mode = static_cast<Scene::PhysicsInterpolationModeUVE>(modeIndex);
+        if (!SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::PhysicsInterpolation, edited)) {
+            ImGui::TextDisabled("Input was rejected by the authored-value validator.");
+        }
+    }
+    if (ImGui::Button("Remove Physics Interpolation")) {
+        static_cast<void>(RemoveSelectedSceneComponentUVE(EditorSceneComponentKindUVE::PhysicsInterpolation));
+    }
+}
+
+void EditorUVE::DrawEditorDescriptionInspectorDrawerUVE(const Scene::EntityUVE entity) {
+    if (!IsDocumentEntityUVE(entity) || entity != m_selectedEntity) {
+        return;
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (!entityManager.HasComponentUVE<Scene::EditorDescriptionComponentUVE>(entity)) {
+        return;
+    }
+
+    const Scene::EditorDescriptionComponentUVE current =
+        entityManager.GetComponentUVE<Scene::EditorDescriptionComponentUVE>(entity);
+
+    ImGui::Separator();
+    DrawNativeIconLabelUVE(0U, "Editor Description");
+    ImGui::TextDisabled(
+        "Free-text author notes. Editor-facing only - nothing at runtime reads this.");
+
+    std::array<char, Scene::kMaximumEditorDescriptionBytesUVE + 1U> descriptionBuffer{};
+    current.description.copy(descriptionBuffer.data(),
+                             std::min(current.description.size(), descriptionBuffer.size() - 1U));
+    if (ImGui::InputTextMultiline("##editor-description", descriptionBuffer.data(), descriptionBuffer.size(),
+                                  ImVec2{-1.0F, 96.0F})) {
+        Scene::EditorDescriptionComponentUVE edited{};
+        edited.description = descriptionBuffer.data();
+        if (!SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::EditorDescription, edited)) {
+            ImGui::TextDisabled("Input was rejected by the authored-value validator.");
+        }
+    }
+    if (ImGui::Button("Remove Editor Description")) {
+        static_cast<void>(RemoveSelectedSceneComponentUVE(EditorSceneComponentKindUVE::EditorDescription));
+    }
+}
+
 void EditorUVE::DrawCanvasInspectorDrawerUVE(const Scene::EntityUVE entity) {
     if (!IsDocumentEntityUVE(entity) || entity != m_selectedEntity) {
         return;
@@ -967,6 +1071,11 @@ void EditorUVE::DrawSceneComponentInspectorDrawerUVE(const Scene::EntityUVE enti
         case EditorSceneComponentKindUVE::UIText: title = "UI Text"; break;
         case EditorSceneComponentKindUVE::UIImage: title = "UI Image"; break;
         case EditorSceneComponentKindUVE::UIButton: title = "UI Button"; break;
+        case EditorSceneComponentKindUVE::PhysicsInterpolation:
+        case EditorSceneComponentKindUVE::EditorDescription:
+            // Unreachable: never registered through this generic drawer (see the id-presence
+            // predicate above) - listed only so this switch stays exhaustive.
+            break;
     }
     ImGui::Separator();
     DrawProceduralIconLabelUVE(8.0F, title, [this, kind](ImDrawList& drawList, const ImVec2 center,
@@ -1029,7 +1138,7 @@ void EditorUVE::DrawSceneComponentAddPanelUVE() {
 
     // This engine has no stored per-entity "node type" - every entity is a bare ECS bag of
     // components, classified only by whichever components it currently has. Rather than list all
-    // ~15 components unconditionally on every entity, gate by what's already attached: once an
+    // ~17 components unconditionally on every entity, gate by what's already attached: once an
     // entity has committed to being a UI node (Canvas/UIText/UIImage/UIButton) or a 3D node (any
     // of the rest below), the other family's not-yet-attached rows are hidden - a freshly created
     // Empty entity with neither yet shows everything until it picks a direction. Script is a
@@ -1051,7 +1160,8 @@ void EditorUVE::DrawSceneComponentAddPanelUVE() {
         entityManager.HasComponentUVE<Scene::ParticleEmitterComponentUVE>(m_selectedEntity) ||
         entityManager.HasComponentUVE<Scene::AnimationPlayerComponentUVE>(m_selectedEntity) ||
         entityManager.HasComponentUVE<Scene::WorldEnvironment3DNodeComponentUVE>(m_selectedEntity) ||
-        entityManager.HasComponentUVE<Scene::CharacterControllerComponentUVE>(m_selectedEntity);
+        entityManager.HasComponentUVE<Scene::CharacterControllerComponentUVE>(m_selectedEntity) ||
+        entityManager.HasComponentUVE<Scene::PhysicsInterpolationComponentUVE>(m_selectedEntity);
 
     enum class ComponentCategoryUVE { Neutral, UI, ThreeD };
     const auto shouldOfferRowUVE = [hasAnyUIComponent, hasAny3DComponent](const bool present,
@@ -1178,6 +1288,17 @@ void EditorUVE::DrawSceneComponentAddPanelUVE() {
             addIfMissing("UI Button", EditorSceneComponentKindUVE::UIButton, Scene::UIButtonComponentUVE{},
                          hasUIButton);
         }
+        const bool hasPhysicsInterpolation =
+            entityManager.HasComponentUVE<Scene::PhysicsInterpolationComponentUVE>(m_selectedEntity);
+        if (shouldOfferRowUVE(hasPhysicsInterpolation, ComponentCategoryUVE::ThreeD)) {
+            addIfMissing("Physics Interpolation", EditorSceneComponentKindUVE::PhysicsInterpolation,
+                         Scene::PhysicsInterpolationComponentUVE{}, hasPhysicsInterpolation);
+        }
+        // Editor Description, like Script, is a cross-cutting concern that applies to any entity
+        // regardless of which family it has committed to, so it is never category-gated.
+        addIfMissing("Editor Description", EditorSceneComponentKindUVE::EditorDescription,
+                     Scene::EditorDescriptionComponentUVE{},
+                     entityManager.HasComponentUVE<Scene::EditorDescriptionComponentUVE>(m_selectedEntity));
 
         ImGui::EndTable();
     }

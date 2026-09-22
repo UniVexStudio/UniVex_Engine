@@ -955,6 +955,12 @@ bool EditorUVE::IsSceneComponentValueValidUVE(
                 return kind == EditorSceneComponentKindUVE::UIImage && Scene::IsUIImageComponentValidUVE(typedValue);
             } else if constexpr (std::is_same_v<ValueType, Scene::UIButtonComponentUVE>) {
                 return kind == EditorSceneComponentKindUVE::UIButton && Scene::IsUIButtonComponentValidUVE(typedValue);
+            } else if constexpr (std::is_same_v<ValueType, Scene::PhysicsInterpolationComponentUVE>) {
+                return kind == EditorSceneComponentKindUVE::PhysicsInterpolation &&
+                       Scene::IsPhysicsInterpolationComponentValidUVE(typedValue);
+            } else if constexpr (std::is_same_v<ValueType, Scene::EditorDescriptionComponentUVE>) {
+                return kind == EditorSceneComponentKindUVE::EditorDescription &&
+                       Scene::IsEditorDescriptionComponentValidUVE(typedValue);
             } else {
                 return false;
             }
@@ -1024,6 +1030,13 @@ bool EditorUVE::AreSceneComponentValuesEqualUVE(const EditorSceneComponentValueU
                 return left.positionPixels == right.positionPixels && left.sizePixels == right.sizePixels &&
                        left.normalColor == right.normalColor && left.hoverColor == right.hoverColor &&
                        left.pressedColor == right.pressedColor;
+            } else if constexpr (std::is_same_v<LeftType, Scene::PhysicsInterpolationComponentUVE>) {
+                // Only `mode` is the authored, comparable field - the pose members are
+                // runtime-computed and never part of an authoring diff (see the component's own
+                // doc comment).
+                return left.mode == right.mode;
+            } else if constexpr (std::is_same_v<LeftType, Scene::EditorDescriptionComponentUVE>) {
+                return left.description == right.description;
             } else {
                 return false;
             }
@@ -1091,6 +1104,10 @@ bool EditorUVE::ApplySceneComponentStateUVE(
             return apply.template operator()<Scene::UIImageComponentUVE>();
         case EditorSceneComponentKindUVE::UIButton:
             return apply.template operator()<Scene::UIButtonComponentUVE>();
+        case EditorSceneComponentKindUVE::PhysicsInterpolation:
+            return apply.template operator()<Scene::PhysicsInterpolationComponentUVE>();
+        case EditorSceneComponentKindUVE::EditorDescription:
+            return apply.template operator()<Scene::EditorDescriptionComponentUVE>();
     }
     return false;
 }
@@ -1180,6 +1197,16 @@ bool EditorUVE::SetSelectedSceneComponentUVE(const EditorSceneComponentKindUVE k
                 before = entityManager.GetComponentUVE<Scene::UIButtonComponentUVE>(m_selectedEntity);
             }
             break;
+        case EditorSceneComponentKindUVE::PhysicsInterpolation:
+            if (entityManager.HasComponentUVE<Scene::PhysicsInterpolationComponentUVE>(m_selectedEntity)) {
+                before = entityManager.GetComponentUVE<Scene::PhysicsInterpolationComponentUVE>(m_selectedEntity);
+            }
+            break;
+        case EditorSceneComponentKindUVE::EditorDescription:
+            if (entityManager.HasComponentUVE<Scene::EditorDescriptionComponentUVE>(m_selectedEntity)) {
+                before = entityManager.GetComponentUVE<Scene::EditorDescriptionComponentUVE>(m_selectedEntity);
+            }
+            break;
     }
     if (before.has_value() && AreSceneComponentValuesEqualUVE(*before, value)) {
         return false;
@@ -1248,6 +1275,12 @@ bool EditorUVE::RemoveSelectedSceneComponentUVE(const EditorSceneComponentKindUV
             break;
         case EditorSceneComponentKindUVE::UIButton:
             if (entityManager.HasComponentUVE<Scene::UIButtonComponentUVE>(m_selectedEntity)) before = entityManager.GetComponentUVE<Scene::UIButtonComponentUVE>(m_selectedEntity);
+            break;
+        case EditorSceneComponentKindUVE::PhysicsInterpolation:
+            if (entityManager.HasComponentUVE<Scene::PhysicsInterpolationComponentUVE>(m_selectedEntity)) before = entityManager.GetComponentUVE<Scene::PhysicsInterpolationComponentUVE>(m_selectedEntity);
+            break;
+        case EditorSceneComponentKindUVE::EditorDescription:
+            if (entityManager.HasComponentUVE<Scene::EditorDescriptionComponentUVE>(m_selectedEntity)) before = entityManager.GetComponentUVE<Scene::EditorDescriptionComponentUVE>(m_selectedEntity);
             break;
     }
     if (!before.has_value()) {
