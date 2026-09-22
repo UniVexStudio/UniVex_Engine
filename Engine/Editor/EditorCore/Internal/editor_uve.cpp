@@ -61,6 +61,7 @@
 #include "uve/component/name_component_uve.h"
 #include "uve/component/primitive_mesh_component_uve.h"
 #include "uve/component/prefab_instance_component_uve.h"
+#include "uve/component/script_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 
 namespace UVE::Editor {
@@ -3225,6 +3226,82 @@ bool EditorUVE::RenameActiveVisualScriptBranchUVE(std::string name) {
         return false;
     }
     m_visualScriptBranches[m_activeVisualScriptBranch].name = std::move(name);
+    return true;
+}
+
+namespace {
+
+/// A branch name must satisfy CreateVisualScriptBranchUVE's own invalidName check (non-empty,
+/// <= 96 bytes, no control characters, no '/' or '\'). scriptAssetPath and entity names can
+/// violate every one of those, so this maps either into something that will always pass.
+[[nodiscard]] std::string SanitizeScriptBranchNameCandidateUVE(std::string_view source) {
+    std::string sanitized;
+    sanitized.reserve(source.size());
+    for (const char value : source) {
+        const auto byte = static_cast<unsigned char>(value);
+        sanitized.push_back((std::iscntrl(byte) != 0 || value == '/' || value == 0x5c) ? '_' : value);
+    }
+    constexpr std::size_t kMaximumBranchNameBytesUVE = 96U;
+    if (sanitized.size() > kMaximumBranchNameBytesUVE) {
+        sanitized.resize(kMaximumBranchNameBytesUVE);
+    }
+    if (sanitized.empty()) {
+        sanitized = "Script";
+    }
+    return sanitized;
+}
+
+} // namespace
+
+bool EditorUVE::OpenScriptGraphForEntityUVE(const Scene::EntityUVE entity) {
+    if (m_state != EditorStateUVE::Running || m_services == nullptr) {
+        return false;
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (!entityManager.IsAliveUVE(entity) || !entityManager.HasComponentUVE<Scene::ScriptComponentUVE>(entity)) {
+        return false;
+    }
+
+    // Branches are looked up by owner identity, never by name: a scriptAssetPath is free to
+    // contain '/', which CreateVisualScriptBranchUVE's invalidName check would reject outright.
+    const auto owned = std::find_if(
+        m_visualScriptBranches.begin(), m_visualScriptBranches.end(),
+        [entity](const ScriptBranchUVE& branch) { return branch.ownerEntity == entity; });
+    if (owned != m_visualScriptBranches.end()) {
+        if (!SelectVisualScriptBranchUVE(owned->name)) {
+            return false;
+        }
+        m_activeWorkspace = EditorWorkspaceUVE::Scripting;
+        return true;
+    }
+
+    const Scene::ScriptComponentUVE& script = entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(entity);
+    std::string candidateName;
+    if (!script.scriptAssetPath.empty()) {
+        candidateName = SanitizeScriptBranchNameCandidateUVE(script.scriptAssetPath);
+    } else if (entityManager.HasComponentUVE<Scene::NameComponentUVE>(entity)) {
+        candidateName =
+            SanitizeScriptBranchNameCandidateUVE(entityManager.GetComponentUVE<Scene::NameComponentUVE>(entity).name) +
+            " Script";
+    } else {
+        candidateName = "Script";
+    }
+
+    // De-duplicate against every existing branch name (not just owned ones - a free-text branch
+    // could already sit on the name this entity would otherwise take).
+    std::string finalName = candidateName;
+    const std::vector<std::string> existingNames = GetVisualScriptBranchNamesUVE();
+    for (int suffix = 2; std::find(existingNames.begin(), existingNames.end(), finalName) != existingNames.end();
+        ++suffix) {
+        finalName = candidateName + " (" + std::to_string(suffix) + ")";
+    }
+
+    if (!CreateVisualScriptBranchUVE(finalName)) {
+        return false;
+    }
+    // CreateVisualScriptBranchUVE already made the new branch active on success.
+    m_visualScriptBranches[m_activeVisualScriptBranch].ownerEntity = entity;
+    m_activeWorkspace = EditorWorkspaceUVE::Scripting;
     return true;
 }
 

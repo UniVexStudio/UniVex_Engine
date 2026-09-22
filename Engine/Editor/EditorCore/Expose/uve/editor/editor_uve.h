@@ -258,6 +258,19 @@ public:
         // ImGui directly; this carries the answer to it instead. It is therefore one frame old,
         // which is imperceptible for a hover state and exact for every frame of a press.
         bool pointerOverOverlay = false;
+
+        // The entity context toolbar (right-click an entity -> a small "Scripting" bubble anchored
+        // at its projected screen position). The world->screen projection needs OrbitCamera, which
+        // lives in Engine/Editor/Viewport - a module EditorCore may not depend on - so main.cpp
+        // computes the anchor pixel each frame and pushes it in via SetEntityContextToolbarAnchorUVE
+        // before RenderOverlayUVE runs that same frame; unlike gizmoMode/orthographic/etc above,
+        // this direction has no one-frame lag; entityContextToolbarOpen only goes false again
+        // through ClearEntityContextToolbarUVE (a miss) or DrawEntityContextToolbarUVE consuming a
+        // click, both driven by this same class.
+        bool entityContextToolbarOpen = false;
+        Scene::EntityUVE entityContextToolbarEntity = Scene::kInvalidEntityUVE;
+        float entityContextToolbarPixelX = 0.0F;
+        float entityContextToolbarPixelY = 0.0F;
     };
 
     /// Render callback for the dockable "Viewport" panel: given the panel's current available
@@ -516,6 +529,17 @@ public:
     [[nodiscard]] bool RenameActiveVisualScriptBranchUVE(std::string name);
     [[nodiscard]] bool SaveVisualScriptWorkspaceUVE();
     [[nodiscard]] bool LoadVisualScriptWorkspaceUVE();
+    /// Resolves (creating on first use) the script branch owned by `entity` and switches the
+    /// active workspace to Scripting with that branch selected. Returns false if `entity` carries
+    /// no ScriptComponentUVE - the caller (the viewport's entity context toolbar) uses that to
+    /// decide whether to offer a "Scripting" action at all.
+    [[nodiscard]] bool OpenScriptGraphForEntityUVE(Scene::EntityUVE entity);
+    /// Arms the entity context toolbar (see ViewportOverlayStateUVE) at the given screen pixel for
+    /// `entity`. The caller (main.cpp, which owns viewport picking and the camera the pixel was
+    /// projected with) must call this before RenderOverlayUVE runs the same frame.
+    void SetEntityContextToolbarAnchorUVE(Scene::EntityUVE entity, float pixelX, float pixelY);
+    /// Closes the entity context toolbar (a right-click that missed every entity).
+    void ClearEntityContextToolbarUVE() noexcept;
 
     /// Releases editor-private UI resources and destroys the editor camera while the services are
     /// still alive. Idempotent after the first successful shutdown.
@@ -546,6 +570,11 @@ private:
     struct ScriptBranchUVE final {
         std::string name;
         std::unique_ptr<Scripting::ScriptGraphCanvasUVE> canvas;
+        /// The entity OpenScriptGraphForEntityUVE created this branch for, or kInvalidEntityUVE for
+        /// a branch made through the free-text branch UI (CreateVisualScriptBranchUVE directly).
+        /// Looked up by identity, never by name - a scriptAssetPath can contain '/' and therefore
+        /// can never be a valid branch name (see CreateVisualScriptBranchUVE's invalidName check).
+        Scene::EntityUVE ownerEntity = Scene::kInvalidEntityUVE;
     };
 
     struct PlayModeSessionUVE final {
@@ -858,6 +887,7 @@ private:
     void DrawMenuBarUVE();
     void DrawViewportPanelUVE();
     void DrawViewportOverlayBubblesUVE(Math::Vector2UVE imageOrigin, Math::Vector2UVE imageSize);
+    void DrawEntityContextToolbarUVE(Math::Vector2UVE imageOrigin, Math::Vector2UVE imageSize);
     void DrawPluginWindowUVE();
     void DrawBottomDockUVE();
     void DrawBottomDockContentUVE();
