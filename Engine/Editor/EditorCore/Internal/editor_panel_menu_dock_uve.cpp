@@ -46,6 +46,58 @@ constexpr const char* kMenuLabelHelpUVE = "\xEF\xA4\x9D Help";
 
 } // namespace
 
+// Three colour rows plus a reset, editing the axis hues the viewport draws its gizmo and grid
+// with. Same ColorEdit3 call shape as every other colour row in this editor (the Primitive "Base
+// Color" row is the original), so the widget behaves identically wherever a colour is edited.
+//
+// Reads back through GetViewportAxisColorUVE each frame rather than keeping its own copy: the
+// value can also change underneath this menu when session settings load, and a cached copy would
+// show the author a colour the viewport is no longer using.
+void EditorUVE::DrawViewportAxisColorPickerUVE() {
+    if (!AreViewportAxisColorsSetUVE()) {
+        // The host seeds the real defaults at startup; before that there is nothing true to show,
+        // and inventing a placeholder here would make this a second home for the default hues.
+        ImGui::TextDisabled("Viewport not ready");
+        return;
+    }
+
+    struct AxisRowUVE {
+        const char* label;
+        const char* id;
+    };
+    constexpr std::array<AxisRowUVE, 3> rows{{
+        {"X axis", "##viewport-axis-color-x"},
+        {"Y axis", "##viewport-axis-color-y"},
+        {"Z axis", "##viewport-axis-color-z"},
+    }};
+
+    std::array<ViewportAxisColorUVE, 3> colors{GetViewportAxisColorUVE(0), GetViewportAxisColorUVE(1),
+                                               GetViewportAxisColorUVE(2)};
+    bool edited = false;
+    for (std::size_t index = 0; index < rows.size(); ++index) {
+        ImGui::TextUnformatted(rows[index].label);
+        std::array<float, 3> channels{colors[index].r, colors[index].g, colors[index].b};
+        if (ImGui::ColorEdit3(rows[index].id, channels.data(),
+                              ImGuiColorEditFlags_Float | ImGuiColorEditFlags_DisplayRGB)) {
+            colors[index] = ViewportAxisColorUVE{channels[0], channels[1], channels[2]};
+            edited = true;
+        }
+    }
+
+    ImGui::Separator();
+    if (ImGui::MenuItem("Reset to defaults")) {
+        // Cleared rather than overwritten with values named here: dropping the valid flag makes
+        // the host re-seed its own palette on the next frame, which keeps the defaults in the one
+        // place that owns them.
+        ResetViewportAxisColorsUVE();
+        return;
+    }
+
+    if (edited) {
+        static_cast<void>(SetViewportAxisColorsUVE(colors[0], colors[1], colors[2]));
+    }
+}
+
 void EditorUVE::DrawMenuBarUVE() {
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
     ImGuiIO& io = ImGui::GetIO();
@@ -137,6 +189,20 @@ void EditorUVE::DrawMenuBarUVE() {
                 ImGui::EndDisabled();
                 if (ImGui::MenuItem("Load Scene")) {
                     static_cast<void>(LoadSceneUVE());
+                }
+                ImGui::Separator();
+                // The viewport's X/Y/Z hues, edited here rather than in a viewport-anchored popup:
+                // a second ImGui window floating over the 3D view would take hover away from
+                // camera orbit and pan, which is exactly what ViewportOverlayStateUVE's
+                // pointerOverOverlay guard exists to prevent. The menu bar is outside that panel,
+                // so it cannot fight the camera at all.
+                //
+                // Only the gizmo's colours are offered. The grid's axis lines are derived from
+                // them (a darker variant) inside the viewport, so there is nothing here to let
+                // the two drift apart.
+                if (ImGui::BeginMenu("Viewport Axis Colours")) {
+                    DrawViewportAxisColorPickerUVE();
+                    ImGui::EndMenu();
                 }
                 ImGui::Separator();
                 if (ImGui::MenuItem("Save Editor Preferences")) {

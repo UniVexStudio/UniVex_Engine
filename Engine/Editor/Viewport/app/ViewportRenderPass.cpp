@@ -114,6 +114,20 @@ std::optional<ViewportRenderPass> ViewportRenderPass::Create(std::string& outErr
     return pass;
 }
 
+bool ViewportRenderPass::SetAxisPaletteUVE(const univex::viewport::AxisPaletteUVE& palette) {
+    if (!univex::viewport::IsAxisPaletteValidUVE(palette)) {
+        return false;
+    }
+    // The nav gizmo reads its colours off the same GizmoStyle, so the corner widget follows for
+    // free - there is no third place to keep in step.
+    univex::viewport::ApplyAxisPaletteUVE(palette, style_, grid_.Settings());
+    return true;
+}
+
+univex::viewport::AxisPaletteUVE ViewportRenderPass::GetAxisPaletteUVE() const {
+    return univex::viewport::AxisPaletteOfUVE(style_);
+}
+
 Mat4 ViewportRenderPass::NavViewMatrix(const OrbitCamera& camera) {
     // Same orientation as the main camera, but always three units out from
     // the origin: the widget shows which way the world is facing, not where

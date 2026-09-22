@@ -27,6 +27,7 @@
 #include "univex/gizmo/NavGizmo.h"
 #include "univex/render/GizmoRenderer.h"
 #include "univex/render/InfiniteGridRenderer.h"
+#include "univex/viewport/AxisPaletteApply.h"
 #include "univex/viewport/ViewportSettings.h"
 
 namespace univex::app {
@@ -83,6 +84,18 @@ public:
 
     [[nodiscard]] GizmoStyle& Style() { return style_; }
     [[nodiscard]] const GizmoStyle& Style() const { return style_; }
+
+    // ---- axis colours -----------------------------------------------------
+    // The one way to change the X/Y/Z hues, because they have two consumers that must not drift:
+    // the gizmo's own axes and the grid's axis lines, which run through the same origin. Setting
+    // both here, with the grid taking AxisPaletteUVE's darker variant, keeps that relationship a
+    // single rule rather than something each caller has to remember.
+    //
+    // An invalid palette (a channel outside 0..1, or NaN - see IsAxisPaletteValidUVE) is refused
+    // outright and nothing changes, so a corrupt settings file cannot leave the viewport drawing
+    // axes in colours nobody picked. Returns whether the palette was applied.
+    bool SetAxisPaletteUVE(const univex::viewport::AxisPaletteUVE& palette);
+    [[nodiscard]] univex::viewport::AxisPaletteUVE GetAxisPaletteUVE() const;
 
     void SetGizmoMode(GizmoMode mode) { gizmoMode_ = mode; }
     [[nodiscard]] GizmoMode Mode() const { return gizmoMode_; }
