@@ -17,6 +17,31 @@ namespace {
     return !value.empty() && value.size() <= TypeMetadataRegistryUVE::kMaximumDisplayNameBytesUVE;
 }
 
+/// An optional identifier: absent is fine, present must be bounded like any other identifier.
+[[nodiscard]] bool IsBoundedOptionalUVE(const std::string& value) noexcept {
+    return value.empty() || value.size() <= TypeMetadataRegistryUVE::kMaximumIdentifierBytesUVE;
+}
+
+/// A declared enum must offer distinct values with bounded, non-empty labels, or the inspector
+/// would render a dropdown that cannot round-trip a selection back to a value.
+[[nodiscard]] bool HasMalformedEnumEntriesUVE(const TypeMetadataPropertyUVE& property) noexcept {
+    if (property.enumEntries.size() > TypeMetadataRegistryUVE::kMaximumMembersPerTypeUVE) {
+        return true;
+    }
+    std::vector<std::int64_t> values;
+    values.reserve(property.enumEntries.size());
+    for (const TypeMetadataEnumEntryUVE& option : property.enumEntries) {
+        if (!IsBoundedDisplayNameUVE(option.label)) {
+            return true;
+        }
+        if (std::find(values.begin(), values.end(), option.value) != values.end()) {
+            return true;
+        }
+        values.push_back(option.value);
+    }
+    return false;
+}
+
 [[nodiscard]] bool ExceedsMemberCapacityUVE(const TypeMetadataEntryUVE& entry) noexcept {
     return entry.properties.size() > TypeMetadataRegistryUVE::kMaximumMembersPerTypeUVE ||
            entry.methods.size() > TypeMetadataRegistryUVE::kMaximumMembersPerTypeUVE -
@@ -29,7 +54,10 @@ namespace {
     names.reserve(std::min(entry.properties.size(), TypeMetadataRegistryUVE::kMaximumMembersPerTypeUVE));
     for (const TypeMetadataPropertyUVE& property : entry.properties) {
         if (!IsBoundedIdentifierUVE(property.name) || !IsBoundedDisplayNameUVE(property.displayName) ||
-            !IsBoundedIdentifierUVE(property.typeId)) {
+            !IsBoundedIdentifierUVE(property.typeId) || !IsBoundedOptionalUVE(property.section) ||
+            !IsBoundedOptionalUVE(property.customDrawerId) ||
+            property.tooltip.size() > TypeMetadataRegistryUVE::kMaximumDisplayNameBytesUVE ||
+            HasMalformedEnumEntriesUVE(property)) {
             return true;
         }
         if (std::find(names.begin(), names.end(), property.name) != names.end()) {
@@ -53,6 +81,7 @@ namespace {
 
 TypeMetadataRegistrationResultUVE TypeMetadataRegistryUVE::RegisterTypeUVE(TypeMetadataEntryUVE entry) {
     if (!IsBoundedIdentifierUVE(entry.typeId) || !IsBoundedDisplayNameUVE(entry.displayName) || entry.version == 0U ||
+        ((entry.createDefaultInstance == nullptr) != (entry.destroyInstance == nullptr)) ||
         ExceedsMemberCapacityUVE(entry) ||
         HasDuplicateMemberNamesUVE(entry)) {
         return {TypeMetadataRegistrationCodeUVE::InvalidEntry,
@@ -61,6 +90,12 @@ TypeMetadataRegistrationResultUVE TypeMetadataRegistryUVE::RegisterTypeUVE(TypeM
     if (FindTypeUVE(entry.typeId) != nullptr) {
         return {TypeMetadataRegistrationCodeUVE::DuplicateType,
                 "Type metadata registration rejected a duplicate type identifier."};
+    }
+    // Two entries claiming the same C++ type would make the std::type_index bridge ambiguous:
+    // an entity's live component could resolve to either set of metadata.
+    if (FindTypeByIndexUVE(entry.typeIndex) != nullptr) {
+        return {TypeMetadataRegistrationCodeUVE::DuplicateType,
+                "Type metadata registration rejected a duplicate native type."};
     }
     if (m_entries.size() >= kMaximumTypesUVE) {
         return {TypeMetadataRegistrationCodeUVE::CapacityExceeded,
@@ -71,6 +106,17 @@ TypeMetadataRegistrationResultUVE TypeMetadataRegistryUVE::RegisterTypeUVE(TypeM
         ++m_generation;
     }
     return {TypeMetadataRegistrationCodeUVE::Registered, "Type metadata was registered."};
+}
+
+const TypeMetadataEntryUVE* TypeMetadataRegistryUVE::FindTypeByIndexUVE(
+    const std::type_index typeIndex) const noexcept {
+    if (typeIndex == std::type_index(typeid(void))) {
+        return nullptr;
+    }
+    const auto iterator = std::find_if(m_entries.cbegin(), m_entries.cend(), [typeIndex](const auto& entry) {
+        return entry.typeIndex == typeIndex;
+    });
+    return iterator == m_entries.cend() ? nullptr : &*iterator;
 }
 
 const TypeMetadataEntryUVE* TypeMetadataRegistryUVE::FindTypeUVE(const std::string_view typeId) const noexcept {
