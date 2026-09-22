@@ -166,6 +166,7 @@ add_executable(uve_integration_tests
     Integration/Entity/chunk_uve_tests.cpp
     Integration/Entity/entity_manager_uve_tests.cpp
     Integration/Scene/scene_graph_uve_tests.cpp
+    Integration/Scene/scene_component_metadata_uve_tests.cpp
     Integration/Scene/scene_serializer_uve_tests.cpp
     Integration/Scene/prefab_system_uve_tests.cpp
     Integration/Scene/prefab_maturity_uve_tests.cpp
