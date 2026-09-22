@@ -14,6 +14,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <type_traits>
 #include <typeindex>
 #include <unordered_map>
 #include <unordered_set>
@@ -41,7 +42,9 @@
 #include "uve/component/light_component_uve.h"
 #include "uve/component/mesh_component_uve.h"
 #include "uve/component/name_component_uve.h"
+#include "uve/component/editor_description_component_uve.h"
 #include "uve/component/particle_emitter_component_uve.h"
+#include "uve/component/physics_interpolation_component_uve.h"
 #include "uve/component/primitive_mesh_component_uve.h"
 #include "uve/component/prefab_instance_component_uve.h"
 #include "uve/component/rigid_body_component_uve.h"
@@ -258,6 +261,17 @@ namespace {
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const ParticleEmitterComponentUVE& component) {
     return {{"maxParticles", component.maxParticles}};
+}
+
+[[nodiscard]] nlohmann::json ToJsonUVE(const PhysicsInterpolationComponentUVE& component) {
+    // Only `mode` is the authored switch (the component's own doc comment). The pose fields are
+    // runtime-computed by SceneGraphUVE::UpdateUVE every frame and must never be persisted - a
+    // saved pose from one session would be stale the instant it loaded into another.
+    return {{"mode", static_cast<std::underlying_type_t<PhysicsInterpolationModeUVE>>(component.mode)}};
+}
+
+[[nodiscard]] nlohmann::json ToJsonUVE(const EditorDescriptionComponentUVE& component) {
+    return {{"description", component.description}};
 }
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const SceneRootComponentUVE&) {
@@ -1138,6 +1152,31 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                           }
                           return emitter;
                       }, IsParticleEmitterComponentValidUVE));
+        table.emplace(
+            "PhysicsInterpolationComponentUVE",
+            MakeRegistrationUVE<PhysicsInterpolationComponentUVE>(
+                [](const nlohmann::json& json) {
+                    // Only `mode` round-trips; the pose fields default-construct (false
+                    // hasPreviousPose), matching a freshly spawned entity - never the possibly
+                    // stale pose from whatever session wrote the file.
+                    PhysicsInterpolationComponentUVE interpolation{};
+                    interpolation.mode = static_cast<PhysicsInterpolationModeUVE>(
+                        json.at("mode").get<std::underlying_type_t<PhysicsInterpolationModeUVE>>());
+                    if (!IsPhysicsInterpolationComponentValidUVE(interpolation)) {
+                        throw std::runtime_error("Invalid PhysicsInterpolationComponentUVE payload");
+                    }
+                    return interpolation;
+                },
+                IsPhysicsInterpolationComponentValidUVE));
+        table.emplace("EditorDescriptionComponentUVE",
+                      MakeRegistrationUVE<EditorDescriptionComponentUVE>([](const nlohmann::json& json) {
+                          const EditorDescriptionComponentUVE description{
+                              json.at("description").get<std::string>()};
+                          if (!IsEditorDescriptionComponentValidUVE(description)) {
+                              throw std::runtime_error("Invalid EditorDescriptionComponentUVE payload");
+                          }
+                          return description;
+                      }, IsEditorDescriptionComponentValidUVE));
         table.emplace("PrefabInstanceComponentUVE",
                       MakeRegistrationUVE<PrefabInstanceComponentUVE>(
                           [](const nlohmann::json& json) { return PrefabInstanceFromJsonUVE(json); },

@@ -28,12 +28,14 @@
 #include "uve/component/canvas_component_uve.h"
 #include "uve/component/character_controller_component_uve.h"
 #include "uve/component/collider_component_uve.h"
+#include "uve/component/editor_description_component_uve.h"
 #include "uve/nodes/3d/all_nodes_3d_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/light_component_uve.h"
 #include "uve/component/mesh_component_uve.h"
 #include "uve/component/name_component_uve.h"
 #include "uve/component/particle_emitter_component_uve.h"
+#include "uve/component/physics_interpolation_component_uve.h"
 #include "uve/component/primitive_mesh_component_uve.h"
 #include "uve/component/prefab_instance_component_uve.h"
 #include "uve/component/rigid_body_component_uve.h"
@@ -146,6 +148,14 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
     entityManager.AddComponentUVE<ParticleEmitterComponentUVE>(source, ParticleEmitterComponentUVE{128U});
     entityManager.AddComponentUVE<PrefabInstanceComponentUVE>(source,
                                                                PrefabInstanceComponentUVE{Asset::AssetGuidUVE{9001}, {}});
+    PhysicsInterpolationComponentUVE interpolation{};
+    interpolation.mode = PhysicsInterpolationModeUVE::On;
+    // Populated pose state to prove it deliberately does NOT round-trip - only `mode` is authored.
+    interpolation.hasPreviousPose = true;
+    interpolation.currentPosition = Math::Vector3UVE{5.0F, 6.0F, 7.0F};
+    entityManager.AddComponentUVE<PhysicsInterpolationComponentUVE>(source, interpolation);
+    entityManager.AddComponentUVE<EditorDescriptionComponentUVE>(
+        source, EditorDescriptionComponentUVE{"Why this node exists."});
 
     AreaComponentUVE area{};
     area.monitoring = false;
@@ -238,6 +248,17 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
     EXPECT_EQ(entityManager.GetComponentUVE<ParticleEmitterComponentUVE>(restored).maxParticles, 128U);
     EXPECT_EQ(entityManager.GetComponentUVE<PrefabInstanceComponentUVE>(restored).sourcePrefabGuid,
               Asset::AssetGuidUVE{9001});
+    ASSERT_TRUE(entityManager.HasComponentUVE<PhysicsInterpolationComponentUVE>(restored));
+    EXPECT_EQ(entityManager.GetComponentUVE<PhysicsInterpolationComponentUVE>(restored).mode,
+              PhysicsInterpolationModeUVE::On);
+    // The pose fields are runtime state and must NOT survive the round trip: a restored entity
+    // starts as if freshly spawned, never with a possibly-stale pose from whatever session wrote
+    // the file.
+    EXPECT_FALSE(entityManager.GetComponentUVE<PhysicsInterpolationComponentUVE>(restored).hasPreviousPose);
+    EXPECT_EQ(entityManager.GetComponentUVE<PhysicsInterpolationComponentUVE>(restored).currentPosition,
+              Math::Vector3UVE{});
+    EXPECT_EQ(entityManager.GetComponentUVE<EditorDescriptionComponentUVE>(restored).description,
+              "Why this node exists.");
     EXPECT_FALSE(entityManager.GetComponentUVE<AreaComponentUVE>(restored).monitoring);
     EXPECT_FALSE(entityManager.GetComponentUVE<AreaComponentUVE>(restored).monitorable);
     EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<RayCast3DNodeComponentUVE>(restored).length, 42.0F);
@@ -606,6 +627,24 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_InvalidParticlePayload_RollsBackCreate
     const std::size_t entityCountBefore = entityManager.GetEntityCountUVE();
     const std::string payloadText =
         R"({"entities":[{"localId":0,"components":{"ParticleEmitterComponentUVE":{"maxParticles":0}}}]})";
+    const auto* const payloadBytes = reinterpret_cast<const std::byte*>(payloadText.data());
+    const SceneSnapshotUVE snapshot{
+        Asset::EncodeUveFileEnvelopeUVE(SceneAssetTypeUVE::Scene,
+                                        std::vector<std::byte>{payloadBytes, payloadBytes + payloadText.size()}),
+        SceneAssetTypeUVE::Scene};
+    const std::vector<EntityUVE> roots = serializer.RestoreUVE(entityManager, snapshot);
+    EXPECT_TRUE(roots.empty());
+    EXPECT_TRUE(entityManager.IsAliveUVE(existing));
+    EXPECT_EQ(entityManager.GetEntityCountUVE(), entityCountBefore);
+}
+
+TEST_F(SceneSerializerUVETest, RestoreUVE_InvalidEditorDescriptionPayload_RollsBackCreatedEntities) {
+    const EntityUVE existing = entityManager.CreateEntityUVE();
+    const std::size_t entityCountBefore = entityManager.GetEntityCountUVE();
+    const std::string oversizedDescription(kMaximumEditorDescriptionBytesUVE + 1U, 'x');
+    const std::string payloadText =
+        R"({"entities":[{"localId":0,"components":{"EditorDescriptionComponentUVE":{"description":")" +
+        oversizedDescription + R"("}}}]})";
     const auto* const payloadBytes = reinterpret_cast<const std::byte*>(payloadText.data());
     const SceneSnapshotUVE snapshot{
         Asset::EncodeUveFileEnvelopeUVE(SceneAssetTypeUVE::Scene,
