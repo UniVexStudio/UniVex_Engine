@@ -909,6 +909,81 @@ TEST(EditorUVETest, SessionSettingsUVE_MigratesWithoutHiddenWriteAndPreservesDoc
     std::filesystem::remove(config.settingsFilePath);
 }
 
+TEST(EditorUVETest, ViewportAxisColorsUVE_RefuseInvalidChannelsAndPersistAcrossSessionReload) {
+    const Core::EngineConfigUVE config = MakeEditorTestConfigUVE();
+    std::filesystem::remove(config.settingsFilePath);
+    Core::EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    using AxisColorUVE = EditorUVE::ViewportAxisColorUVE;
+    const AxisColorUVE chosenX{0.90F, 0.10F, 0.40F};
+    const AxisColorUVE chosenY{0.20F, 0.80F, 0.30F};
+    const AxisColorUVE chosenZ{0.15F, 0.45F, 0.95F};
+
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_axis_colors.uvescene");
+        editor.InitUVE();
+
+        // Nothing is seeded until the host - which owns the viewport's default hues - supplies
+        // them, so the editor must say so rather than report three zeroes as a chosen palette.
+        EXPECT_FALSE(editor.AreViewportAxisColorsSetUVE());
+
+        // All three or none: one bad channel must not leave a partially applied palette.
+        EXPECT_FALSE(editor.SetViewportAxisColorsUVE(AxisColorUVE{1.5F, 0.0F, 0.0F}, chosenY, chosenZ))
+            << "a channel above 1 must be refused";
+        EXPECT_FALSE(editor.SetViewportAxisColorsUVE(chosenX, AxisColorUVE{0.0F, -0.3F, 0.0F}, chosenZ))
+            << "a negative channel must be refused";
+        EXPECT_FALSE(editor.SetViewportAxisColorsUVE(
+            chosenX, chosenY, AxisColorUVE{0.0F, 0.0F, std::numeric_limits<float>::quiet_NaN()}))
+            << "NaN must be refused, not compared its way through";
+        EXPECT_FALSE(editor.AreViewportAxisColorsSetUVE())
+            << "a refused palette must leave the state untouched, not half-written";
+
+        ASSERT_TRUE(editor.SetViewportAxisColorsUVE(chosenX, chosenY, chosenZ));
+        EXPECT_TRUE(editor.AreViewportAxisColorsSetUVE());
+        EXPECT_FLOAT_EQ(editor.GetViewportAxisColorUVE(0).r, chosenX.r);
+        EXPECT_FLOAT_EQ(editor.GetViewportAxisColorUVE(1).g, chosenY.g);
+        EXPECT_FLOAT_EQ(editor.GetViewportAxisColorUVE(2).b, chosenZ.b);
+
+        ASSERT_TRUE(EditorUVEAccessUVE::SaveSessionSettingsUVE(editor));
+        editor.ShutdownUVE();
+    }
+    {
+        EditorUVE reloaded(engine.GetServicesUVE(), "uve_editor_tests_axis_colors_reload.uvescene");
+        reloaded.InitUVE();
+        ASSERT_TRUE(reloaded.AreViewportAxisColorsSetUVE())
+            << "a saved palette must survive LoadSessionSettingsUVE on the next InitUVE()";
+        EXPECT_FLOAT_EQ(reloaded.GetViewportAxisColorUVE(0).r, chosenX.r);
+        EXPECT_FLOAT_EQ(reloaded.GetViewportAxisColorUVE(0).g, chosenX.g);
+        EXPECT_FLOAT_EQ(reloaded.GetViewportAxisColorUVE(1).g, chosenY.g);
+        EXPECT_FLOAT_EQ(reloaded.GetViewportAxisColorUVE(2).b, chosenZ.b);
+
+        // Reset drops the choice so the host re-seeds its own defaults; it must not write
+        // default-looking values here, which would make this module a second home for them.
+        reloaded.ResetViewportAxisColorsUVE();
+        EXPECT_FALSE(reloaded.AreViewportAxisColorsSetUVE());
+        reloaded.ShutdownUVE();
+    }
+    {
+        // A corrupt settings file must cost the colour choice, not produce a viewport drawing
+        // axes in a colour nobody picked.
+        Config::IConfigManagerUVE& settings = engine.GetServicesUVE().GetConfigManagerUVE();
+        settings.SetBoolUVE("editor.viewport.axisColors.set", true);
+        settings.SetDoubleUVE("editor.viewport.axisColors.x.r", 7.5);
+        ASSERT_TRUE(settings.SaveUVE());
+
+        EditorUVE corrupt(engine.GetServicesUVE(), "uve_editor_tests_axis_colors_corrupt.uvescene");
+        corrupt.InitUVE();
+        EXPECT_FALSE(corrupt.AreViewportAxisColorsSetUVE())
+            << "an out-of-range persisted channel must fall back to unset, not be clamped in";
+        corrupt.ShutdownUVE();
+    }
+
+    engine.Shutdown();
+    std::filesystem::remove(config.settingsFilePath);
+}
+
 TEST(EditorUVETest, FavoritesUVE_ToggleReflectsImmediatelyAndPersistsAcrossSessionReload) {
     const Core::EngineConfigUVE config = MakeEditorTestConfigUVE();
     std::filesystem::remove(config.settingsFilePath);

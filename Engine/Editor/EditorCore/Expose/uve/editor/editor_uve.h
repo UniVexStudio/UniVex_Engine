@@ -240,6 +240,14 @@ public:
     /// (DrawViewportPanelUVE()), then handed to ViewportPanelRendererUVE each frame so the
     /// concrete renderer can apply it to its own real projection/gizmo-mode/grid state. Kept as
     /// plain enums/bools with no viewport-module type in sight, for the same reason.
+    /// One axis colour as plain RGB in 0..1 - see ViewportOverlayStateUVE::axisColorX for why this
+    /// is a local struct rather than the viewport's own palette type.
+    struct ViewportAxisColorUVE final {
+        float r = 0.0F;
+        float g = 0.0F;
+        float b = 0.0F;
+    };
+
     struct ViewportOverlayStateUVE final {
         bool orthographic = false;
         ViewportGizmoModeUVE gizmoMode = ViewportGizmoModeUVE::Universal;
@@ -271,6 +279,24 @@ public:
         Scene::EntityUVE entityContextToolbarEntity = Scene::kInvalidEntityUVE;
         float entityContextToolbarPixelX = 0.0F;
         float entityContextToolbarPixelY = 0.0F;
+
+        // The author's chosen X/Y/Z axis colours, as RGB in 0..1.
+        //
+        // Deliberately plain float triples and not any Viewport-module palette type, for the same
+        // reason as everything else in this struct: EditorCore does not link the viewport, so the
+        // colour picker that edits these lives here while the renderer that applies them lives
+        // across the boundary. The viewport derives the grid's darker axis lines from these, so
+        // one choice moves both the gizmo and the grid.
+        //
+        // `axisColorsValid` starts false and the values start at zero ON PURPOSE. The default hues
+        // belong to the viewport's own AxisPalette, which this module may not include, so the host
+        // seeds them once at startup through SetViewportAxisColorsUVE. Until it does, the flag
+        // tells the renderer to keep its own defaults rather than apply three zeroes and paint
+        // every axis black.
+        ViewportAxisColorUVE axisColorX{};
+        ViewportAxisColorUVE axisColorY{};
+        ViewportAxisColorUVE axisColorZ{};
+        bool axisColorsValid = false;
     };
 
     /// Render callback for the dockable "Viewport" panel: given the panel's current available
@@ -540,6 +566,21 @@ public:
     void SetEntityContextToolbarAnchorUVE(Scene::EntityUVE entity, float pixelX, float pixelY);
     /// Closes the entity context toolbar (a right-click that missed every entity).
     void ClearEntityContextToolbarUVE() noexcept;
+
+    /// The viewport's X/Y/Z axis colours, which the menu bar offers a picker for and the host
+    /// pushes into the real renderer each frame (see ViewportOverlayStateUVE::axisColorX).
+    ///
+    /// The host calls the setter once at startup to seed the viewport's own default palette -
+    /// this module cannot name those defaults itself - and thereafter whenever a persisted
+    /// choice is loaded. A channel outside 0..1, or not finite, is refused and nothing changes.
+    [[nodiscard]] bool SetViewportAxisColorsUVE(ViewportAxisColorUVE x, ViewportAxisColorUVE y,
+                                                ViewportAxisColorUVE z);
+    [[nodiscard]] bool AreViewportAxisColorsSetUVE() const noexcept;
+    [[nodiscard]] ViewportAxisColorUVE GetViewportAxisColorUVE(int axisIndex) const;
+    /// Forgets the author's choice, which makes the host re-seed its own default palette on the
+    /// next frame. Clearing rather than writing default values keeps those hues in the one module
+    /// that owns them instead of copying them into this one.
+    void ResetViewportAxisColorsUVE() noexcept;
 
     /// Releases editor-private UI resources and destroys the editor camera while the services are
     /// still alive. Idempotent after the first successful shutdown.
@@ -888,6 +929,7 @@ private:
     void DrawViewportPanelUVE();
     void DrawViewportOverlayBubblesUVE(Math::Vector2UVE imageOrigin, Math::Vector2UVE imageSize);
     void DrawEntityContextToolbarUVE(Math::Vector2UVE imageOrigin, Math::Vector2UVE imageSize);
+    void DrawViewportAxisColorPickerUVE();
     void DrawPluginWindowUVE();
     void DrawBottomDockUVE();
     void DrawBottomDockContentUVE();

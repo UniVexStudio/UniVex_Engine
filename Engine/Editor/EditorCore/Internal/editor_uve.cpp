@@ -3779,6 +3779,25 @@ void EditorUVE::LoadSessionSettingsUVE() {
         getPositiveSnapValue("editor.viewport.snap.rotateStepDegrees", snapping.rotateStepDegrees);
     snapping.scaleStep = getPositiveSnapValue("editor.viewport.snap.scaleStep", snapping.scaleStep);
     m_transformSnappingSettings = snapping;
+    // The viewport's axis hues, restored only if a complete, in-range palette was stored. Anything
+    // missing, out of 0..1, or not finite leaves the state unset, which makes the host re-seed its
+    // own defaults on the next frame - a corrupt or hand-edited settings file therefore costs the
+    // author their colour choice, never a viewport drawing axes in colours nobody picked.
+    if (config.GetBoolUVE("editor.viewport.axisColors.set", false)) {
+        const auto readChannel = [&config](const std::string& key) {
+            // -1 as the fallback is deliberately outside 0..1, so a missing key fails the same
+            // range check a corrupt value does instead of quietly reading as black.
+            return static_cast<float>(config.GetDoubleUVE(key, -1.0));
+        };
+        const auto readColor = [&readChannel](const char* axis) {
+            const std::string prefix = std::string{"editor.viewport.axisColors."} + axis + ".";
+            return ViewportAxisColorUVE{readChannel(prefix + "r"), readChannel(prefix + "g"),
+                                        readChannel(prefix + "b")};
+        };
+        // SetViewportAxisColorsUVE does the validating, and refuses all three together rather than
+        // leaving one axis restored and two defaulted.
+        static_cast<void>(SetViewportAxisColorsUVE(readColor("x"), readColor("y"), readColor("z")));
+    }
     constexpr std::int64_t kMaxPersistedFavoritesUVE = 128;
     const std::int64_t favoritesCount =
         std::clamp(config.GetIntUVE("editor.favorites.count", 0), std::int64_t{0}, kMaxPersistedFavoritesUVE);
@@ -3810,6 +3829,23 @@ bool EditorUVE::SaveSessionSettingsUVE() {
     config.SetDoubleUVE("editor.viewport.snap.translateStep", m_transformSnappingSettings.translateStep);
     config.SetDoubleUVE("editor.viewport.snap.rotateStepDegrees", m_transformSnappingSettings.rotateStepDegrees);
     config.SetDoubleUVE("editor.viewport.snap.scaleStep", m_transformSnappingSettings.scaleStep);
+    // The viewport's axis hues. Written only once the host has seeded the real defaults: until
+    // then the stored values are zeroes standing for "not chosen yet", and persisting those would
+    // turn "I never touched the colours" into "I chose black" on the next launch.
+    config.SetBoolUVE("editor.viewport.axisColors.set", m_viewportOverlayState.axisColorsValid);
+    if (m_viewportOverlayState.axisColorsValid) {
+        const std::array<std::pair<const char*, ViewportAxisColorUVE>, 3> axisColors{{
+            {"x", m_viewportOverlayState.axisColorX},
+            {"y", m_viewportOverlayState.axisColorY},
+            {"z", m_viewportOverlayState.axisColorZ},
+        }};
+        for (const auto& [axis, color] : axisColors) {
+            const std::string prefix = std::string{"editor.viewport.axisColors."} + axis + ".";
+            config.SetDoubleUVE(prefix + "r", color.r);
+            config.SetDoubleUVE(prefix + "g", color.g);
+            config.SetDoubleUVE(prefix + "b", color.b);
+        }
+    }
     constexpr std::size_t kMaxPersistedFavoritesUVE = 128U;
     const std::size_t favoritesToPersist = std::min(m_favoriteProjectPaths.size(), kMaxPersistedFavoritesUVE);
     config.SetIntUVE("editor.favorites.count", static_cast<std::int64_t>(favoritesToPersist));

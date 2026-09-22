@@ -37,17 +37,21 @@ struct GizmoStyle {
                     univex::viewport::kAxisColorZUVE.b};
     Vec3 planeColor{0.933f, 0.945f, 0.965f};
     Vec3 freeRingColor{0.906f, 0.918f, 0.949f};
-    Vec3 centerColor{0.643f, 0.678f, 0.749f};
+    // Brighter than it was as a cube: a 1.2 px ring has a fraction of a solid block's ink, so the
+    // same grey that read as a body reads as a smudge as an outline.
+    Vec3 centerColor{0.827f, 0.855f, 0.902f};
 
     // ---- line weights, in pixels -----------------------------------------
     // Kept deliberately light. A gizmo is read, not admired: past about two pixels a stroke stops
     // looking precise and starts looking drawn on, and the rotate rings suffer worst because three
     // of them cross in a small area. These sit close to what ImGuizmo and Unreal use.
-    float axisLineWidthPx = 2.0f;
-    float ringLineWidthPx = 2.0f;
-    float freeRingWidthPx = 1.3f;
+    float axisLineWidthPx = 1.5f;
+    float ringLineWidthPx = 1.6f;
+    float freeRingWidthPx = 1.1f;
     float cubeEdgeWidthPx = 0.9f;
-    float centerCubeWidthPx = 1.1f;
+    // The plane chips' outlines. Was a bare 1.1f repeated five times inside the geometry builders;
+    // a number that decides how the widget looks belongs with the rest of the look.
+    float planeHandleEdgeWidthPx = 1.1f;
 
     // ---- move gizmo -------------------------------------------------------
     float moveShaftStart = 0.18f;
@@ -56,9 +60,12 @@ struct GizmoStyle {
     float moveConeRadius = 0.105f;
     int   moveConeSegments = 28;
 
-    float planeHandleOffset = 0.42f;
-    float planeHandleSize = 0.30f;
-    float planeHandleAlpha = 0.22f;
+    // Plane chips: smaller and firmer, not larger and fainter. A big wash at 0.22 alpha reads as a
+    // smudge you are not sure is interactive; a small chip at 0.35 reads as a button. Pulling the
+    // offset in as well keeps the three chips inside the rings instead of crowding the arrow heads.
+    float planeHandleOffset = 0.36f;
+    float planeHandleSize = 0.22f;
+    float planeHandleAlpha = 0.35f;
 
     // ---- rotate gizmo -----------------------------------------------------
     float ringRadius = 1.30f;
@@ -85,11 +92,24 @@ struct GizmoStyle {
     float universalConeRadius = 0.090f;
     float universalScaleBoxOffset = 1.86f;
     float universalScaleBoxSize = 0.165f;
-    float universalLineWidthPx = 2.0f;
-    float universalRingWidthPx = 2.0f;
+    float universalLineWidthPx = 1.5f;
+    float universalRingWidthPx = 1.5f;
 
-    // ---- selected-object stand-in ----------------------------------------
-    float centerCubeSize = 0.20f;
+    // ---- pivot dot -------------------------------------------------------
+    // The visual for the Uniform (free-move / uniform-scale) handle, and the only thing Select
+    // mode draws.
+    //
+    // This was a solid cube, which no production editor draws: a grey block in the middle of the
+    // widget hides whatever sits behind it and reads as a fourth piece of geometry competing with
+    // the three axes. A thin ring marks the same spot while claiming no volume.
+    //
+    // In PIXELS, unlike the rest of the gizmo's shape constants, which are in abstract gizmo units.
+    // A dot is the one part that must not grow with the widget - at a world size it swells into a
+    // disc as you zoom in on a small object. GizmoPicking derives the Uniform hit radius from
+    // pivotDotRadiusPx too, so the clickable area can never drift from what is drawn.
+    float pivotDotRadiusPx = 5.0f;
+    float pivotDotWidthPx = 1.2f;
+    int   pivotDotSegments = 24; // plenty for a 5 px circle; ringSegments would be 4x wasted work
 
     // ---- orientation (nav) gizmo -----------------------------------------
     // The widget was previously 72 px across, which left each axis letter about 9 px tall drawn
