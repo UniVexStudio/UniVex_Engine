@@ -35,7 +35,11 @@
 #include "uve/component/canvas_component_uve.h"
 #include "uve/component/character_controller_component_uve.h"
 #include "uve/component/collider_component_uve.h"
+#include "uve/component/auto_translate_component_uve.h"
 #include "uve/component/editor_description_component_uve.h"
+#include "uve/component/node_metadata_component_uve.h"
+#include "uve/component/process_component_uve.h"
+#include "uve/component/thread_group_component_uve.h"
 #include "uve/nodes/3d/all_nodes_3d_uve.h"
 #include "uve/component/light_component_uve.h"
 #include "uve/component/mesh_component_uve.h"
@@ -168,6 +172,10 @@ enum class EditorSceneComponentKindUVE : std::uint8_t {
     UIButton,
     PhysicsInterpolation,
     EditorDescription,
+    Process,
+    ThreadGroup,
+    AutoTranslate,
+    NodeMetadata,
 };
 
 using EditorSceneComponentValueUVE =
@@ -177,7 +185,9 @@ using EditorSceneComponentValueUVE =
                  Scene::AnimationPlayerComponentUVE, Scene::WorldEnvironment3DNodeComponentUVE,
                  Scene::CharacterControllerComponentUVE, Scene::CanvasComponentUVE, Scene::UITextComponentUVE,
                  Scene::UIImageComponentUVE, Scene::UIButtonComponentUVE,
-                 Scene::PhysicsInterpolationComponentUVE, Scene::EditorDescriptionComponentUVE>;
+                 Scene::PhysicsInterpolationComponentUVE, Scene::EditorDescriptionComponentUVE, Scene::ProcessComponentUVE,
+                 Scene::ThreadGroupComponentUVE, Scene::AutoTranslateComponentUVE,
+                 Scene::NodeMetadataComponentUVE>;
 
 enum class EditorEntityKindUVE {
     Empty,

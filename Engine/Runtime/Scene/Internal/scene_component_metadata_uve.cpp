@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "uve/component/animation_player_component_uve.h"
+#include "uve/component/auto_translate_component_uve.h"
 #include "uve/component/audio_source_component_uve.h"
 #include "uve/component/camera_component_uve.h"
 #include "uve/component/canvas_component_uve.h"
@@ -17,7 +18,10 @@
 #include "uve/component/light_component_uve.h"
 #include "uve/component/mesh_component_uve.h"
 #include "uve/component/name_component_uve.h"
+#include "uve/component/node_metadata_component_uve.h"
 #include "uve/component/particle_emitter_component_uve.h"
+#include "uve/component/process_component_uve.h"
+#include "uve/component/thread_group_component_uve.h"
 #include "uve/component/physics_interpolation_component_uve.h"
 #include "uve/component/primitive_mesh_component_uve.h"
 #include "uve/component/rigid_body_component_uve.h"
@@ -70,6 +74,19 @@ template <auto MemberPointer>
     return MakeEnumPropertyUVE<MemberPointer>(std::move(name), std::move(displayName),
                                               std::string(kPropertyTypeEnumUVE), true,
                                               std::move(options));
+}
+
+/// A runtime-owned enum. Declared through the enum path rather than the plain one so its
+/// accessors speak std::int64_t and a generic consumer can actually read it back - a read-only
+/// property still has to be readable, or the inspector shows nothing where the resolved answer
+/// should be.
+template <auto MemberPointer>
+[[nodiscard]] TypeMetadataPropertyUVE DeclareRuntimeStateEnumUVE(
+    std::string name, std::string displayName, std::vector<TypeMetadataEnumEntryUVE> options) {
+    TypeMetadataPropertyUVE property =
+        DeclareEnumUVE<MemberPointer>(std::move(name), std::move(displayName), std::move(options));
+    property.flags = TypeMetadataPropertyFlagsUVE::RuntimeState;
+    return property;
 }
 
 /// Adds an inclusive numeric range with the given editing step.
@@ -533,6 +550,75 @@ void DeclareMediaAndUIUVE(std::vector<TypeMetadataEntryUVE>& entries) {
 /// The common Node section: what every node has regardless of what it is. These sort last, below
 /// whatever the node itself brings, which is where an author expects them.
 void DeclareNodeCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
+    // Each of these four is declared here and nowhere else, and each appeared in the Inspector,
+    // with its dropdown, its ordering fields and its read-only resolved answer, without a line of
+    // Inspector code being written for it. That is the whole point of the declaration being the
+    // single source of property truth.
+    AddUVE<ProcessComponentUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.process", "Process", kSectionOrderNodeCommonUVE,
+            {
+                WithTooltipUVE(
+                    DeclareEnumUVE<&ProcessComponentUVE::mode>("mode", "Mode",
+                                                               {{0, "Inherit"},
+                                                                {1, "Pausable"},
+                                                                {2, "When Paused"},
+                                                                {3, "Always"},
+                                                                {4, "Disabled"}}),
+                    "Whether this entity's per-frame work runs while the simulation is paused. "
+                    "Inherit takes the parent's answer (Pausable at the top of the hierarchy)."),
+                DeclareUVE<&ProcessComponentUVE::priority>("priority", "Priority",
+                                                            kPropertyTypeInt32UVE),
+                DeclareUVE<&ProcessComponentUVE::physicsPriority>(
+                    "physicsPriority", "Physics Priority", kPropertyTypeInt32UVE),
+                DeclareRuntimeStateEnumUVE<&ProcessComponentUVE::resolvedModeInHierarchy>(
+                    "resolvedModeInHierarchy", "Resolved Mode",
+                    {{0, "Inherit"}, {1, "Pausable"}, {2, "When Paused"}, {3, "Always"}, {4, "Disabled"}}),
+            }));
+
+    AddUVE<ThreadGroupComponentUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.thread_group", "Thread Group", kSectionOrderNodeCommonUVE,
+            {
+                WithTooltipUVE(
+                    DeclareEnumUVE<&ThreadGroupComponentUVE::mode>(
+                        "mode", "Mode", {{0, "Inherit"}, {1, "Main Thread"}, {2, "Sub Thread"}}),
+                    "Which thread this entity's work may run on. A Main Thread ancestor is a "
+                    "constraint a child cannot override."),
+                DeclareUVE<&ThreadGroupComponentUVE::order>("order", "Order", kPropertyTypeInt32UVE),
+                DeclareRuntimeStateEnumUVE<&ThreadGroupComponentUVE::resolvedModeInHierarchy>(
+                    "resolvedModeInHierarchy", "Resolved Mode",
+                    {{0, "Inherit"}, {1, "Main Thread"}, {2, "Sub Thread"}}),
+            }));
+
+    AddUVE<AutoTranslateComponentUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.auto_translate", "Auto Translate", kSectionOrderNodeCommonUVE,
+            {
+                WithTooltipUVE(
+                    DeclareEnumUVE<&AutoTranslateComponentUVE::mode>(
+                        "mode", "Mode", {{0, "Inherit"}, {1, "Always"}, {2, "Disabled"}}),
+                    "Whether this entity's authored text is looked up in the active locale before "
+                    "it is displayed. Disable it for debug labels, identifiers and player names."),
+                DeclareRuntimeStateEnumUVE<&AutoTranslateComponentUVE::resolvedModeInHierarchy>(
+                    "resolvedModeInHierarchy", "Resolved Mode",
+                    {{0, "Inherit"}, {1, "Always"}, {2, "Disabled"}}),
+            }));
+
+    // The entry list itself has no generic editor yet - a list of key/value pairs needs add and
+    // remove affordances a property row cannot express - so it is declared Hidden rather than
+    // shown as a control that looks editable and is not. It serializes, it is readable from code,
+    // and it gains its editor when the list drawer exists.
+    TypeMetadataPropertyUVE metadataEntries = DeclareUVE<&NodeMetadataComponentUVE::entries>(
+        "entries", "Entries", "NodeMetadataEntryList");
+    metadataEntries.flags = TypeMetadataPropertyFlagsUVE::Hidden;
+    AddUVE<NodeMetadataComponentUVE>(entries, MakeEntryUVE("component.node_metadata", "Metadata",
+                                                           kSectionOrderNodeCommonUVE,
+                                                           {std::move(metadataEntries)}));
+
     AddUVE<ScriptComponentUVE>(
         entries, MakeEntryUVE("component.script", "Script", kSectionOrderNodeCommonUVE,
                               {DeclareUVE<&ScriptComponentUVE::scriptAssetPath>(

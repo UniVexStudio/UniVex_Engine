@@ -42,7 +42,11 @@
 #include "uve/component/light_component_uve.h"
 #include "uve/component/mesh_component_uve.h"
 #include "uve/component/name_component_uve.h"
+#include "uve/component/auto_translate_component_uve.h"
 #include "uve/component/editor_description_component_uve.h"
+#include "uve/component/node_metadata_component_uve.h"
+#include "uve/component/process_component_uve.h"
+#include "uve/component/thread_group_component_uve.h"
 #include "uve/component/particle_emitter_component_uve.h"
 #include "uve/component/physics_interpolation_component_uve.h"
 #include "uve/component/primitive_mesh_component_uve.h"
@@ -268,6 +272,35 @@ namespace {
     // runtime-computed by SceneGraphUVE::UpdateUVE every frame and must never be persisted - a
     // saved pose from one session would be stale the instant it loaded into another.
     return {{"mode", static_cast<std::underlying_type_t<PhysicsInterpolationModeUVE>>(component.mode)}};
+}
+
+[[nodiscard]] nlohmann::json ToJsonUVE(const ProcessComponentUVE& component) {
+    // resolvedModeInHierarchy is deliberately absent, for the same reason the interpolation
+    // component's pose fields are: SceneGraphUVE::UpdateUVE recomputes it from the hierarchy on
+    // every update, so persisting it would restore an answer that is already being replaced.
+    return {{"mode", static_cast<std::underlying_type_t<ProcessModeUVE>>(component.mode)},
+            {"priority", component.priority},
+            {"physicsPriority", component.physicsPriority}};
+}
+
+[[nodiscard]] nlohmann::json ToJsonUVE(const ThreadGroupComponentUVE& component) {
+    return {{"mode", static_cast<std::underlying_type_t<ThreadGroupModeUVE>>(component.mode)},
+            {"order", component.order}};
+}
+
+[[nodiscard]] nlohmann::json ToJsonUVE(const AutoTranslateComponentUVE& component) {
+    return {{"mode", static_cast<std::underlying_type_t<AutoTranslateModeUVE>>(component.mode)}};
+}
+
+[[nodiscard]] nlohmann::json ToJsonUVE(const NodeMetadataComponentUVE& component) {
+    // An array of key/value objects rather than one JSON object, so authored order survives a
+    // round trip - a JSON object's member order is not something a reader is obliged to keep, and
+    // losing it would reorder an inspector's rows and dirty a scene file for no reason.
+    nlohmann::json entries = nlohmann::json::array();
+    for (const NodeMetadataEntryUVE& entry : component.entries) {
+        entries.push_back({{"key", entry.key}, {"value", entry.value}});
+    }
+    return {{"entries", std::move(entries)}};
 }
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const EditorDescriptionComponentUVE& component) {
@@ -1168,6 +1201,54 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                     return interpolation;
                 },
                 IsPhysicsInterpolationComponentValidUVE));
+        table.emplace("ProcessComponentUVE",
+                      MakeRegistrationUVE<ProcessComponentUVE>([](const nlohmann::json& json) {
+                          ProcessComponentUVE process{};
+                          process.mode = static_cast<ProcessModeUVE>(
+                              json.at("mode").get<std::underlying_type_t<ProcessModeUVE>>());
+                          process.priority = json.at("priority").get<std::int32_t>();
+                          process.physicsPriority = json.at("physicsPriority").get<std::int32_t>();
+                          if (!IsProcessComponentValidUVE(process)) {
+                              throw std::runtime_error("Invalid ProcessComponentUVE payload");
+                          }
+                          return process;
+                      }, IsProcessComponentValidUVE));
+        table.emplace("ThreadGroupComponentUVE",
+                      MakeRegistrationUVE<ThreadGroupComponentUVE>([](const nlohmann::json& json) {
+                          ThreadGroupComponentUVE threadGroup{};
+                          threadGroup.mode = static_cast<ThreadGroupModeUVE>(
+                              json.at("mode").get<std::underlying_type_t<ThreadGroupModeUVE>>());
+                          threadGroup.order = json.at("order").get<std::int32_t>();
+                          if (!IsThreadGroupComponentValidUVE(threadGroup)) {
+                              throw std::runtime_error("Invalid ThreadGroupComponentUVE payload");
+                          }
+                          return threadGroup;
+                      }, IsThreadGroupComponentValidUVE));
+        table.emplace("AutoTranslateComponentUVE",
+                      MakeRegistrationUVE<AutoTranslateComponentUVE>([](const nlohmann::json& json) {
+                          AutoTranslateComponentUVE autoTranslate{};
+                          autoTranslate.mode = static_cast<AutoTranslateModeUVE>(
+                              json.at("mode").get<std::underlying_type_t<AutoTranslateModeUVE>>());
+                          if (!IsAutoTranslateComponentValidUVE(autoTranslate)) {
+                              throw std::runtime_error("Invalid AutoTranslateComponentUVE payload");
+                          }
+                          return autoTranslate;
+                      }, IsAutoTranslateComponentValidUVE));
+        table.emplace("NodeMetadataComponentUVE",
+                      MakeRegistrationUVE<NodeMetadataComponentUVE>([](const nlohmann::json& json) {
+                          NodeMetadataComponentUVE metadata{};
+                          for (const nlohmann::json& entry : json.at("entries")) {
+                              metadata.entries.push_back(NodeMetadataEntryUVE{
+                                  entry.at("key").get<std::string>(), entry.at("value").get<std::string>()});
+                          }
+                          // The validator rejects a duplicate key, an oversized one and an
+                          // over-long list, so a hand-edited or hostile file cannot load an entity
+                          // whose metadata lookups would depend on iteration order.
+                          if (!IsNodeMetadataComponentValidUVE(metadata)) {
+                              throw std::runtime_error("Invalid NodeMetadataComponentUVE payload");
+                          }
+                          return metadata;
+                      }, IsNodeMetadataComponentValidUVE));
         table.emplace("EditorDescriptionComponentUVE",
                       MakeRegistrationUVE<EditorDescriptionComponentUVE>([](const nlohmann::json& json) {
                           const EditorDescriptionComponentUVE description{
