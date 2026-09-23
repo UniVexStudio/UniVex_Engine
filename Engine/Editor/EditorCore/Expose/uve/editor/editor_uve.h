@@ -1217,9 +1217,6 @@ private:
     /// committed on the frame the field is let go. Per widget, because clicking from one field into
     /// another activates the second in the same frame the first reports it was let go.
     std::vector<std::pair<std::uint32_t, std::string>> m_inspectorTextEdits;
-    /// The Scripting slot's action strip (Add new C++ / Quick Load / Load) is open for this entity.
-    /// Kept per entity so selecting another node never shows it pre-opened.
-    Scene::EntityUVE m_scriptSlotActionsEntity = Scene::kInvalidEntityUVE;
     std::string m_scriptQuickLoadFilter;
     /// Gathered when Quick Load opens rather than every frame it is open: it walks a folder.
     std::vector<std::string> m_scriptQuickLoadCandidates;
