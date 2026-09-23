@@ -655,6 +655,13 @@ public:
     /// Closes the entity context toolbar (a right-click that missed every entity).
     void ClearEntityContextToolbarUVE() noexcept;
 
+    /// Inspector folds (sections, nested components, sub-groups) remembered by key across
+    /// selections and sessions. A key never set answers `defaultOpen`. At most
+    /// kMaxRememberedInspectorFoldsUVE are kept; beyond that new choices are not remembered.
+    void SetInspectorFoldOpenUVE(const std::string& key, bool open);
+    [[nodiscard]] bool IsInspectorFoldOpenUVE(const std::string& key, bool defaultOpen) const;
+    static constexpr std::size_t kMaxRememberedInspectorFoldsUVE = 256U;
+
     /// Viewport projection and named views. Choosing a projection explicitly sticks until changed.
     /// Moving to a named view switches to orthographic *automatically*, and that automatic
     /// orthographic ends - back to perspective - as soon as the camera is orbited out of the view,
@@ -1106,6 +1113,9 @@ private:
     void DrawHierarchyPanelUVE();
     void DrawHierarchyNodeContextMenuUVE(Scene::EntityUVE entity);
     void DrawNodePickerUVE();
+    // A collapsing header (`asHeader`) or tree node whose open state lives in m_inspectorFoldOpen.
+    bool DrawInspectorFoldUVE(const char* label, const std::string& key, bool defaultOpen, bool asHeader,
+                              int flags);
     void DrawHierarchyVisibilityToggleUVE(Scene::EntityUVE entity);
     void DrawHierarchyNodeUVE(Scene::EntityUVE entity);
     void AcceptHierarchyDropTargetUVE(Scene::EntityUVE targetParent);
@@ -1284,6 +1294,8 @@ private:
     /// Save/LoadSessionSettingsUVE). An entry no longer present in the latest snapshot is simply
     /// not shown, never pruned from storage here, so a not-yet-scanned favorite is not lost.
     std::vector<std::filesystem::path> m_favoriteProjectPaths;
+    // Inspector fold states by key (see SetInspectorFoldOpenUVE); saved with the session.
+    std::map<std::string, bool> m_inspectorFoldOpen;
     /// True while the Filesystem panel shows the flattened Favorites list instead of the direct
     /// children of m_contentBrowserDirectory.
     bool m_contentBrowserShowingFavorites = false;

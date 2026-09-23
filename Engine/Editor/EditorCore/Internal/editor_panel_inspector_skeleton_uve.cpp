@@ -168,9 +168,8 @@ void EditorUVE::DrawSkeletonBonesPropertyUVE(const Core::TypeMetadataEntryUVE&,
                                              const Core::TypeMetadataPropertyUVE&, const void* const instance) {
     const auto& skeleton = *static_cast<const Scene::Skeleton3DNodeComponentUVE*>(instance);
     const std::string header = "Bones (" + std::to_string(skeleton.bones.size()) + ")##skeleton-bones";
-    constexpr ImGuiTreeNodeFlags kGroupFlags =
-        ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_FramePadding | ImGuiTreeNodeFlags_DefaultOpen;
-    if (!ImGui::TreeNodeEx(header.c_str(), kGroupFlags)) {
+    constexpr ImGuiTreeNodeFlags kGroupFlags = ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_FramePadding;
+    if (!DrawInspectorFoldUVE(header.c_str(), "group:skeleton-bones", true, false, kGroupFlags)) {
         return;
     }
     if (skeleton.bones.empty()) {

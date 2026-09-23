@@ -3643,6 +3643,13 @@ void EditorUVE::ShutdownUVE() {
         return;
     }
 
+    // An interactive session keeps its editor preferences (panels, snapping, grid, Inspector folds,
+    // favourites) without the author having to remember "Save Editor Preferences" first. Headless
+    // runs - tests, tools - have no UI and leave the stored preferences alone.
+    if (m_uiInitialized) {
+        static_cast<void>(SaveSessionSettingsUVE());
+    }
+
     if (m_playModeState != EditorPlayModeStateUVE::Edit) {
         if (!StopPlayModeUVE() && m_simulationControl != nullptr) {
             static_cast<void>(m_simulationControl->SetSimulationExecutionModeUVE(
@@ -4003,6 +4010,18 @@ void EditorUVE::LoadSessionSettingsUVE() {
         // leaving one axis restored and two defaulted.
         static_cast<void>(SetViewportAxisColorsUVE(readColor("x"), readColor("y"), readColor("z")));
     }
+    // Inspector folds: one key and one open flag per entry, bounded like the favourites. An entry
+    // with an empty key is skipped rather than trusted.
+    m_inspectorFoldOpen.clear();
+    const std::int64_t foldCount = std::clamp(config.GetIntUVE("editor.inspector.folds.count", 0), std::int64_t{0},
+                                              static_cast<std::int64_t>(kMaxRememberedInspectorFoldsUVE));
+    for (std::int64_t index = 0; index < foldCount; ++index) {
+        const std::string prefix = "editor.inspector.folds." + std::to_string(index) + ".";
+        const std::string key = config.GetStringUVE(prefix + "key", "");
+        if (!key.empty()) {
+            SetInspectorFoldOpenUVE(key, config.GetBoolUVE(prefix + "open", true));
+        }
+    }
     constexpr std::int64_t kMaxPersistedFavoritesUVE = 128;
     const std::int64_t favoritesCount =
         std::clamp(config.GetIntUVE("editor.favorites.count", 0), std::int64_t{0}, kMaxPersistedFavoritesUVE);
@@ -4052,6 +4071,13 @@ bool EditorUVE::SaveSessionSettingsUVE() {
             config.SetDoubleUVE(prefix + "g", color.g);
             config.SetDoubleUVE(prefix + "b", color.b);
         }
+    }
+    config.SetIntUVE("editor.inspector.folds.count", static_cast<std::int64_t>(m_inspectorFoldOpen.size()));
+    std::size_t foldIndex = 0U;
+    for (const auto& [key, open] : m_inspectorFoldOpen) {
+        const std::string prefix = "editor.inspector.folds." + std::to_string(foldIndex++) + ".";
+        config.SetStringUVE(prefix + "key", key);
+        config.SetBoolUVE(prefix + "open", open);
     }
     constexpr std::size_t kMaxPersistedFavoritesUVE = 128U;
     const std::size_t favoritesToPersist = std::min(m_favoriteProjectPaths.size(), kMaxPersistedFavoritesUVE);

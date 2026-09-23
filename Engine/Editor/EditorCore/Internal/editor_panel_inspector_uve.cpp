@@ -280,8 +280,8 @@ void EditorUVE::DrawTransformInspectorDrawerUVE(const Scene::EntityUVE entity) {
     }
 
     Scene::TransformComponentUVE edited = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(entity);
-    // A collapsible section like every other one; its open state is remembered per window.
-    if (!ImGui::CollapsingHeader("Transform##transform-section", ImGuiTreeNodeFlags_DefaultOpen)) {
+    // A collapsible section like every other one; its open state is remembered across sessions.
+    if (!DrawInspectorFoldUVE("Transform##transform-section", "section:transform", true, true, 0)) {
         return;
     }
     float position[3]{edited.localPosition.x, edited.localPosition.y, edited.localPosition.z};
@@ -373,5 +373,36 @@ void EditorUVE::DrawPrefabInspectorDrawerUVE(const Scene::EntityUVE entity) {
     }
 }
 
+
+void EditorUVE::SetInspectorFoldOpenUVE(const std::string& key, const bool open) {
+    if (key.empty()) {
+        return;
+    }
+    const auto it = m_inspectorFoldOpen.find(key);
+    if (it != m_inspectorFoldOpen.end()) {
+        it->second = open;
+    } else if (m_inspectorFoldOpen.size() < kMaxRememberedInspectorFoldsUVE) {
+        m_inspectorFoldOpen.emplace(key, open);
+    }
+}
+
+bool EditorUVE::IsInspectorFoldOpenUVE(const std::string& key, const bool defaultOpen) const {
+    const auto it = m_inspectorFoldOpen.find(key);
+    return it != m_inspectorFoldOpen.end() ? it->second : defaultOpen;
+}
+
+bool EditorUVE::DrawInspectorFoldUVE(const char* const label, const std::string& key, const bool defaultOpen,
+                                     const bool asHeader, const int flags) {
+    // The editor, not Dear ImGui's per-window storage, owns the state: that storage is lost on
+    // exit, and the Inspector should reopen the way it was left.
+    const bool open = IsInspectorFoldOpenUVE(key, defaultOpen);
+    ImGui::SetNextItemOpen(open, ImGuiCond_Always);
+    const auto treeFlags = static_cast<ImGuiTreeNodeFlags>(flags);
+    const bool nowOpen = asHeader ? ImGui::CollapsingHeader(label, treeFlags) : ImGui::TreeNodeEx(label, treeFlags);
+    if (nowOpen != open) {
+        SetInspectorFoldOpenUVE(key, nowOpen);
+    }
+    return nowOpen;
+}
 
 } // namespace UVE::Editor
