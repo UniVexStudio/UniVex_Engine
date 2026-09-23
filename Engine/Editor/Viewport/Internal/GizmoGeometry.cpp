@@ -1,7 +1,5 @@
 #include "univex/gizmo/GizmoGeometry.h"
 
-#include "univex/gizmo/SolidPrimitives.h"
-
 #include <array>
 #include <cmath>
 #include <numbers>
@@ -67,9 +65,25 @@ std::vector<Vec3> CirclePoints(const Vec3& center, const Vec3& u, const Vec3& v,
     return points;
 }
 
+void AddLine(GizmoMesh& mesh, const Vec3& a, const Vec3& b, const Vec3& color, float widthPx) {
+    mesh.lines.push_back(GizmoLine{a, b, color, widthPx});
+}
+
 void AddTriangle(GizmoMesh& mesh, const Vec3& a, const Vec3& b, const Vec3& c,
-                 const Vec3& color, float alpha) {
-    mesh.triangles.push_back(GizmoTriangle{a, b, c, color, alpha});
+                 const Vec3& color, float alpha, float lit = 0.f) {
+    GizmoTriangle triangle{a, b, c, color, alpha};
+    triangle.lit = lit;
+    mesh.triangles.push_back(triangle);
+}
+
+// A stroke over its own darker, wider shadow. The shadow is pushed a pixel away from the eye so
+// the two never fight for depth; the result reads as an outlined, shaded line at no more cost
+// than two strokes.
+void AddOutlinedLine(GizmoMesh& mesh, const Vec3& a, const Vec3& b, const Vec3& color, float widthPx,
+                     const GizmoStyle& style, const Vec3& view, float unitsPerPixel) {
+    const Vec3 back = view * unitsPerPixel;
+    AddLine(mesh, a + back, b + back, color * style.outlineShade, widthPx + style.outlineExtraPx);
+    AddLine(mesh, a, b, color, widthPx);
 }
 
 void AddQuad(GizmoMesh& mesh, const Vec3& p0, const Vec3& p1, const Vec3& p2, const Vec3& p3,
@@ -78,18 +92,80 @@ void AddQuad(GizmoMesh& mesh, const Vec3& p0, const Vec3& p1, const Vec3& p2, co
     AddTriangle(mesh, p0, p2, p3, color, alpha);
 }
 
-// A solid, axis-aligned cube, lit so its faces separate by shading instead of drawn edges.
-void AddSolidCube(GizmoMesh& mesh, const Vec3& center, float size, const Vec3& color) {
-    AddSolidBoxUVE(mesh, center, size, color);
+// A solid, axis-aligned cube: six filled faces plus twelve darker edges, so
+// the handle reads as a body with a defined silhouette rather than a wire
+// box that disappears against the grid.
+void AddSolidCube(GizmoMesh& mesh, const Vec3& center, float size,
+                  const Vec3& color, float edgeWidthPx) {
+    const float h = size * 0.5f;
+    struct Face { Vec3 n, u, v; };
+    const std::array<Face, 6> faces = {{
+        {{ 1, 0, 0}, {0, 1, 0}, {0, 0, 1}},
+        {{-1, 0, 0}, {0, 1, 0}, {0, 0, 1}},
+        {{ 0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
+        {{ 0,-1, 0}, {1, 0, 0}, {0, 0, 1}},
+        {{ 0, 0, 1}, {1, 0, 0}, {0, 1, 0}},
+        {{ 0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
+    }};
+    for (const Face& f : faces) {
+        const Vec3 c = center + f.n * h;
+        AddQuad(mesh,
+                c + f.u * -h + f.v * -h,
+                c + f.u *  h + f.v * -h,
+                c + f.u *  h + f.v *  h,
+                c + f.u * -h + f.v *  h,
+                color, 1.f);
+    }
+    // Lit, so the three visible faces separate by shading rather than by colour alone.
+    for (std::size_t i = mesh.triangles.size() - 12; i < mesh.triangles.size(); ++i) mesh.triangles[i].lit = 1.f;
+
+    const Vec3 edgeColor = color * 0.55f;
+    for (int axis = 0; axis < 3; ++axis) {
+        for (int i = 0; i < 4; ++i) {
+            Vec3 a = center, b = center;
+            const float s0 = (i & 1) ? h : -h;
+            const float s1 = (i & 2) ? h : -h;
+            const int a1 = (axis + 1) % 3;
+            const int a2 = (axis + 2) % 3;
+            float* pa[3] = {&a.x, &a.y, &a.z};
+            float* pb[3] = {&b.x, &b.y, &b.z};
+            *pa[a1] += s0; *pb[a1] += s0;
+            *pa[a2] += s1; *pb[a2] += s1;
+            *pa[axis] -= h; *pb[axis] += h;
+            AddLine(mesh, a, b, edgeColor, edgeWidthPx);
+        }
+    }
 }
 
-// Arrow: a lit cylindrical shaft capped by a lit cone - one solid piece, no strokes.
+// Arrow head: a cone of real triangles, capped so it stays solid when seen
+// from behind. The base-circle outline (same darkened-edge convention as
+// AddSolidCube's own 12 edges) gives the flat-shaded cone a defined
+// silhouette instead of reading as a featureless colored blob - previously
+// the only shape in this file with zero outline treatment at all.
+void AddCone(GizmoMesh& mesh, const Vec3& baseCenter, const Vec3& axis,
+             float length, float radius, int segments, const Vec3& color,
+             float edgeWidthPx) {
+    Vec3 u, v;
+    PerpBasis(axis, u, v);
+    const Vec3 tip = baseCenter + axis * length;
+    const auto ring = CirclePoints(baseCenter, u, v, radius, segments);
+    for (std::size_t i = 0; i + 1 < ring.size(); ++i) {
+        AddTriangle(mesh, tip, ring[i], ring[i + 1], color, 1.f, 1.f);
+        AddTriangle(mesh, baseCenter, ring[i + 1], ring[i], color, 1.f, 1.f);
+    }
+    const Vec3 edgeColor = color * 0.55f;
+    for (std::size_t i = 0; i + 1 < ring.size(); ++i) {
+        AddLine(mesh, ring[i], ring[i + 1], edgeColor, edgeWidthPx);
+    }
+}
+
 void AddMoveArrow(GizmoMesh& mesh, const Axis& axis, const GizmoStyle& style,
-                  float shaftStart, float shaftEnd, float coneLength, float coneRadius) {
-    AddSolidCylinderUVE(mesh, axis.direction * shaftStart, axis.direction * shaftEnd, style.shaftRadius,
-                        style.shaftSegments, axis.color);
-    AddSolidConeUVE(mesh, axis.direction * shaftEnd, axis.direction * (shaftEnd + coneLength), coneRadius,
-                    style.moveConeSegments, axis.color);
+                  float shaftStart, float shaftEnd, float coneLength, float coneRadius,
+                  float lineWidthPx, const Vec3& view, float unitsPerPixel) {
+    AddOutlinedLine(mesh, axis.direction * shaftStart, axis.direction * shaftEnd,
+                    axis.color, lineWidthPx, style, view, unitsPerPixel);
+    AddCone(mesh, axis.direction * shaftEnd, axis.direction,
+            coneLength, coneRadius, style.moveConeSegments, axis.color, style.cubeEdgeWidthPx);
 }
 
 // A ring drawn as a solid annulus: two concentric circles joined by quads.
@@ -117,41 +193,22 @@ void AddAnnulus(GizmoMesh& mesh, const Vec3& center, const Vec3& axis, const Vec
     }
 }
 
-// The camera-facing half of a ring, as a lit tube. See kRingSilhouetteFeatherUVE for why only half.
+// The camera-facing half of a ring. See kRingSilhouetteFeatherUVE for why only half.
 void AddRingArc(GizmoMesh& mesh, const Vec3& axis, const Vec3& color, float radius,
-                int segments, const Vec3& viewDirection, float tubeRadius, int tubeSegments) {
-    Vec3 u, v;
-    PerpBasis(axis, u, v);
-    const Vec3 n = Normalize(axis);
-    const auto spine = CirclePoints(Vec3{0.f, 0.f, 0.f}, u, v, radius, segments);
-    for (std::size_t i = 0; i + 1 < spine.size(); ++i) {
+                int segments, const Vec3& viewDirection, float halfWidth, const GizmoStyle& style,
+                float unitsPerPixel) {
+    const auto nearHalf = [&](const Vec3& a, const Vec3& b) {
         // Facing is negative on the near side: viewDirection points away from the eye.
-        const float facing = (Dot(Normalize(spine[i]), viewDirection) +
-                              Dot(Normalize(spine[i + 1]), viewDirection)) * 0.5f;
-        // Fully opaque across the near half, falling to nothing over the narrow band at the
-        // silhouette; the back half is never built at all.
+        const float facing = (Dot(Normalize(a), viewDirection) + Dot(Normalize(b), viewDirection)) * 0.5f;
         const float nearness = Clamp01UVE(-facing / kRingSilhouetteFeatherUVE);
-        const float alpha = nearness * nearness * (3.f - 2.f * nearness);
-        if (alpha <= 0.f) continue;
-        // The tube's cross-section at each end of this segment lies in the plane of the radius
-        // and the ring axis.
-        const Vec3 r0 = Normalize(spine[i]);
-        const Vec3 r1 = Normalize(spine[i + 1]);
-        for (int k = 0; k < tubeSegments; ++k) {
-            const float t0 = (2.f * kPi * static_cast<float>(k)) / static_cast<float>(tubeSegments);
-            const float t1 = (2.f * kPi * static_cast<float>(k + 1)) / static_cast<float>(tubeSegments);
-            const Vec3 a0 = spine[i] + (r0 * std::cos(t0) + n * std::sin(t0)) * tubeRadius;
-            const Vec3 a1 = spine[i] + (r0 * std::cos(t1) + n * std::sin(t1)) * tubeRadius;
-            const Vec3 b0 = spine[i + 1] + (r1 * std::cos(t0) + n * std::sin(t0)) * tubeRadius;
-            const Vec3 b1 = spine[i + 1] + (r1 * std::cos(t1) + n * std::sin(t1)) * tubeRadius;
-            GizmoTriangle first{a0, b0, b1, color, alpha};
-            GizmoTriangle second{a0, b1, a1, color, alpha};
-            first.lit = 1.f;
-            second.lit = 1.f;
-            mesh.triangles.push_back(first);
-            mesh.triangles.push_back(second);
-        }
-    }
+        return nearness * nearness * (3.f - 2.f * nearness);
+    };
+    // The ring's darker, wider shadow first, a pixel behind it - the same outline the strokes get.
+    AddAnnulus(mesh, viewDirection * unitsPerPixel, axis, color * style.outlineShade, radius,
+               halfWidth + style.outlineExtraPx * 0.5f * unitsPerPixel, segments, nearHalf);
+    // Fully opaque across the near half, falling to nothing over the narrow band at the silhouette.
+    // AddAnnulus drops a segment whose alpha reaches zero, so the back half is never built at all.
+    AddAnnulus(mesh, Vec3{0.f, 0.f, 0.f}, axis, color, radius, halfWidth, segments, nearHalf);
 }
 
 void AddFullRing(GizmoMesh& mesh, const Vec3& center, const Vec3& axis, const Vec3& color,
@@ -179,7 +236,7 @@ constexpr float kScreenRingLiftPixelsUVE = 6.f;
     return normalAxisColor * 0.55f + style.planeColor * 0.45f;
 }
 
-void AddMovePlaneHandles(GizmoMesh& mesh, const GizmoStyle& style, float unitsPerPixel) {
+void AddMovePlaneHandles(GizmoMesh& mesh, const GizmoStyle& style) {
     const auto axes = AxesOf(style);
     const std::array<std::pair<int, int>, 3> pairs = {{{0, 1}, {1, 2}, {2, 0}}};
     for (const auto& [i, j] : pairs) {
@@ -195,18 +252,11 @@ void AddMovePlaneHandles(GizmoMesh& mesh, const GizmoStyle& style, float unitsPe
         const Vec3 p1 = a * (o + s) + b * o;
         const Vec3 p2 = a * (o + s) + b * (o + s);
         const Vec3 p3 = a * o + b * (o + s);
-        // A translucent face inside an opaque frame: the frame gives the handle its edge as
-        // geometry, at the same pixel width the old stroke had.
-        const float t = style.planeHandleEdgeWidthPx * unitsPerPixel;
-        const Vec3 q0 = a * (o + t) + b * (o + t);
-        const Vec3 q1 = a * (o + s - t) + b * (o + t);
-        const Vec3 q2 = a * (o + s - t) + b * (o + s - t);
-        const Vec3 q3 = a * (o + t) + b * (o + s - t);
-        AddQuad(mesh, q0, q1, q2, q3, fill, style.planeHandleAlpha);
-        AddQuad(mesh, p0, p1, q1, q0, edge, 1.f);
-        AddQuad(mesh, p1, p2, q2, q1, edge, 1.f);
-        AddQuad(mesh, p2, p3, q3, q2, edge, 1.f);
-        AddQuad(mesh, p3, p0, q0, q3, edge, 1.f);
+        AddQuad(mesh, p0, p1, p2, p3, fill, style.planeHandleAlpha);
+        AddLine(mesh, p0, p1, edge, style.planeHandleEdgeWidthPx);
+        AddLine(mesh, p1, p2, edge, style.planeHandleEdgeWidthPx);
+        AddLine(mesh, p2, p3, edge, style.planeHandleEdgeWidthPx);
+        AddLine(mesh, p3, p0, edge, style.planeHandleEdgeWidthPx);
     }
 }
 
@@ -223,6 +273,7 @@ void AddScalePlaneHandles(GizmoMesh& mesh, const GizmoStyle& style) {
         const Vec3 p1 = b * style.scalePlaneOffset;
         const Vec3 p2 = (a + b) * style.scalePlanePull;
         AddTriangle(mesh, p0, p1, p2, PlaneFillColor(normalColor, style), style.planeHandleAlpha);
+        AddLine(mesh, p0, p1, PlaneEdgeColor(normalColor, style), style.planeHandleEdgeWidthPx);
     }
 }
 
@@ -261,7 +312,9 @@ GizmoMesh BuildGizmoMesh(GizmoMode mode, const GizmoStyle& style, const Vec3& vi
     // Ring strokes are solid geometry, so their pixel widths have to be
     // converted into gizmo units up front.
     const float scale = (unitsPerPixel > 0.f) ? unitsPerPixel : 1.f;
+    const float ringHalfWidth = style.ringLineWidthPx * 0.5f * scale;
     const float freeRingHalfWidth = style.freeRingWidthPx * 0.5f * scale;
+    const float universalRingHalfWidth = style.universalRingWidthPx * 0.5f * scale;
 
     switch (mode) {
         case GizmoMode::Select:
@@ -273,16 +326,17 @@ GizmoMesh BuildGizmoMesh(GizmoMode mode, const GizmoStyle& style, const Vec3& vi
             for (const Axis& axis : axes) {
                 AddMoveArrow(mesh, axis, style,
                              style.moveShaftStart, style.moveShaftEnd,
-                             style.moveConeLength, style.moveConeRadius);
+                             style.moveConeLength, style.moveConeRadius,
+                             style.axisLineWidthPx, view, scale);
             }
-            AddMovePlaneHandles(mesh, style, scale);
+            AddMovePlaneHandles(mesh, style);
             break;
 
         case GizmoMode::Rotate:
             AddPivotDot(mesh, style, view, scale);
             for (const Axis& axis : axes) {
                 AddRingArc(mesh, axis.direction, axis.color, style.ringRadius,
-                           style.ringSegments, view, style.ringTubeRadius, style.ringTubeSegments);
+                           style.ringSegments, view, ringHalfWidth, style, scale);
             }
             // The free ring always faces the viewer, so it is built in the
             // plane perpendicular to the view direction rather than to an axis,
@@ -296,10 +350,11 @@ GizmoMesh BuildGizmoMesh(GizmoMode mode, const GizmoStyle& style, const Vec3& vi
         case GizmoMode::Scale:
             AddPivotDot(mesh, style, view, scale);
             for (const Axis& axis : axes) {
-                AddSolidCylinderUVE(mesh, axis.direction * style.scaleShaftStart,
-                                    axis.direction * style.scaleShaftEnd, style.shaftRadius,
-                                    style.shaftSegments, axis.color);
-                AddSolidCube(mesh, axis.direction * style.scaleShaftEnd, style.scaleBoxSize, axis.color);
+                AddOutlinedLine(mesh, axis.direction * style.scaleShaftStart,
+                                axis.direction * style.scaleShaftEnd, axis.color, style.axisLineWidthPx,
+                                style, view, scale);
+                AddSolidCube(mesh, axis.direction * style.scaleShaftEnd, style.scaleBoxSize,
+                             axis.color, style.cubeEdgeWidthPx);
             }
             AddScalePlaneHandles(mesh, style);
             break;
@@ -309,14 +364,15 @@ GizmoMesh BuildGizmoMesh(GizmoMode mode, const GizmoStyle& style, const Vec3& vi
             for (const Axis& axis : axes) {
                 // rotate: smallest radius, closest to the pivot
                 AddRingArc(mesh, axis.direction, axis.color, style.universalRingRadius,
-                           style.ringSegments, view, style.ringTubeRadius, style.ringTubeSegments);
+                           style.ringSegments, view, universalRingHalfWidth, style, scale);
                 // move: reaches well out past the ring
                 AddMoveArrow(mesh, axis, style,
                              style.universalShaftStart, style.universalShaftEnd,
-                             style.universalConeLength, style.universalConeRadius);
+                             style.universalConeLength, style.universalConeRadius,
+                             style.universalLineWidthPx, view, scale);
                 // scale: sits clear of the arrow tip, further out again
                 AddSolidCube(mesh, axis.direction * style.universalScaleBoxOffset,
-                             style.universalScaleBoxSize, axis.color);
+                             style.universalScaleBoxSize, axis.color, style.cubeEdgeWidthPx);
             }
             break;
     }

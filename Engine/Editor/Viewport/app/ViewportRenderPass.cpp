@@ -181,12 +181,13 @@ void ViewportRenderPass::DrawBackground() const {
 }
 
 void ViewportRenderPass::DrawBones(const OrbitCamera& camera, int width, int height) const {
-    const univex::gizmo::GizmoMesh mesh = univex::gizmo::BuildBoneMeshUVE(bones_);
+    const Vec3 viewDirection = Normalize(camera.Target() - camera.Eye());
+    const univex::gizmo::GizmoMesh mesh = univex::gizmo::BuildBoneMeshUVE(bones_, viewDirection);
     GizmoDrawParams params;
     params.viewProjection = camera.ViewProjection(static_cast<float>(width) / static_cast<float>(height));
     params.origin = Vec3{0.f, 0.f, 0.f}; // the bones are already in world space
     params.scale = 1.f;
-    params.viewDirection = Normalize(camera.Target() - camera.Eye());
+    params.viewDirection = viewDirection;
     params.viewportWidth = static_cast<float>(width);
     params.viewportHeight = static_cast<float>(height);
     // X-ray, like the gizmo: a rig is normally inside its mesh, and a bone you cannot see is one

@@ -24,7 +24,7 @@ using univex::math::Vec3;
 
 struct GizmoStyle {
     // ---- overall on-screen size ------------------------------------------
-    float gizmoPixelRadius = 155.f; // screen radius of the widget, in pixels
+    float gizmoPixelRadius = 120.f; // screen radius of the widget, in pixels
 
     // ---- axis colours ----------------------------------------------------
     // From univex/viewport/AxisPalette.h, the single definition these and the grid's own axis
@@ -45,15 +45,13 @@ struct GizmoStyle {
     // Kept deliberately light. A gizmo is read, not admired: past about two pixels a stroke stops
     // looking precise and starts looking drawn on, and the rotate rings suffer worst because three
     // of them cross in a small area. These sit close to what ImGuizmo and Unreal use.
-    float axisLineWidthPx = 1.5f;
-    // Every handle is solid, lit geometry. These are the solids' own thicknesses, in gizmo units
-    // (the widget's outer handle sits ~1.9 units out), so they scale with the widget like the
-    // cones and cubes do.
-    float shaftRadius = 0.026f;     // arrow and scale shafts
-    float ringTubeRadius = 0.020f;  // rotate rings
-    int   shaftSegments = 12;
-    int   ringTubeSegments = 8;
-    float ringLineWidthPx = 1.6f;
+    float axisLineWidthPx = 2.6f;
+    // Every stroke and ring is drawn over a darker, slightly wider copy of itself, pushed a pixel
+    // behind it: a cheap outline that separates a handle from the scene and from its neighbours
+    // without any extra geometry type. `outlineShade` scales the handle's own colour.
+    float outlineExtraPx = 2.2f;
+    float outlineShade = 0.30f;
+    float ringLineWidthPx = 2.6f;
     float freeRingWidthPx = 1.1f;
     float cubeEdgeWidthPx = 0.9f;
     // The plane chips' outlines. Was a bare 1.1f repeated five times inside the geometry builders;
@@ -99,8 +97,8 @@ struct GizmoStyle {
     float universalConeRadius = 0.090f;
     float universalScaleBoxOffset = 1.86f;
     float universalScaleBoxSize = 0.165f;
-    float universalLineWidthPx = 1.5f;
-    float universalRingWidthPx = 1.5f;
+    float universalLineWidthPx = 2.6f;
+    float universalRingWidthPx = 2.6f;
 
     // ---- pivot dot -------------------------------------------------------
     // The visual for the Uniform (free-move / uniform-scale) handle, and the only thing Select
@@ -119,15 +117,13 @@ struct GizmoStyle {
     int   pivotDotSegments = 24; // plenty for a 5 px circle; ringSegments would be 4x wasted work
 
     // ---- orientation (nav) gizmo -----------------------------------------
-    // The widget was previously 72 px across, which left each axis letter about 9 px tall drawn
-    // with 2 px strokes - a quarter of the glyph's own height, so the three letters closed up into
-    // unreadable blobs. Legible vector type wants a stroke nearer a tenth of its height, which
-    // needs either thinner strokes or more room; at this size both are available, and the widget
-    // still occupies a modest corner of the viewport.
-    float navPixelSize = 118.f;   // side of the square corner viewport, px
+    // Compact: 80 px keeps the corner free while each axis letter stays about 15 px tall with a
+    // stroke near a tenth of its height - the proportion vector type needs to stay legible (at
+    // 72 px with small balls the letters closed up into blobs; the larger balls here prevent that).
+    float navPixelSize = 80.f;    // side of the square corner viewport, px
     float navMarginPx = 16.f;
-    float navAxisLineWidthPx = 1.8f;
-    float navBallRadius = 0.34f;  // radius of the axis end balls
+    float navAxisLineWidthPx = 2.0f;
+    float navBallRadius = 0.36f;  // radius of the axis end balls
     int   navBallSegments = 48;
 
     // Axis letters on the positive balls, drawn as vector strokes (no font
@@ -135,7 +131,7 @@ struct GizmoStyle {
     // A vector stroke needs a solid core to read, not just coverage: below about 1.5 px the
     // fragment shader's analytic edge fade eats the whole width and the glyph breaks into
     // fragments. 1.7 px against a ~17 px glyph is both solid and proportionate.
-    float navLabelScale = 0.62f;
+    float navLabelScale = 0.72f;
     float navLabelWidthPx = 2.1f;
     Vec3  navLabelColor{0.043f, 0.051f, 0.074f}; // dark, to read on the bright balls
 };
