@@ -725,7 +725,9 @@ The group with the most real backing today.
       that value; no dedicated test locks it yet.
 - [ ] Multi-object editing, with mixed-value indication. With several nodes selected the
       Inspector says single-entity editing is unavailable.
-- [ ] Copy / paste property values, and copy property path.
+- [~] Copy / paste property values, and copy property path. Right-click a section header for
+      Copy Values, Paste Values (same component type only) and Reset to Defaults, each one undoable
+      step; Transform copies only the local pose; missing: per-property copy/paste and the path.
 - [ ] Favourite properties pinned to the top — a favourites list already exists in the preferences
       (capped at 128 entries) and could back this.
 - [ ] Default colour-picker shape and colour-picker mode (see Part 3).
