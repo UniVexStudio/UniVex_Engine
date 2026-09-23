@@ -1,5 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
+#include "uve/asset/gltf_metadata_uve.h"
 #include "uve/editor/editor_uve.h"
 #include "uve/editor/editor_render_stats_uve.h"
 
@@ -16,6 +17,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <sstream>
 #include <functional>
 #include <limits>
@@ -447,6 +449,7 @@ void EditorUVE::TickUVE() {
         m_projectFileLastObservedChangeSequence = changeSnapshot.latestSequence;
         RefreshProjectFileIndexUVE();
     }
+    PollModelImportJobsUVE();
 
     PruneSelectionUVE();
     if (m_hierarchyRenameEntity != Scene::kInvalidEntityUVE &&
@@ -4148,7 +4151,10 @@ EditorUVE::ContentBrowserItemTypeUVE EditorUVE::ClassifyContentBrowserEntryUVE(
     if (extension == ".uvebundle") {
         return ContentBrowserItemTypeUVE::Bundle;
     }
-    if (extension == ".uvemodel") {
+    // Model sources are shown as what they are - a mesh - and imported automatically behind the
+    // scenes (see QueueModelAutoImportsUVE); a rigged one is relabelled Model by the caller, which
+    // knows the file's contents.
+    if (extension == ".uvemodel" || IsModelSourcePathUVE(entry.relativePath)) {
         return ContentBrowserItemTypeUVE::Mesh;
     }
     if (extension == ".uvetex") {
@@ -4187,6 +4193,8 @@ const char* EditorUVE::GetContentBrowserItemTypeLabelUVE(const ContentBrowserIte
             return "Bundle";
         case ContentBrowserItemTypeUVE::Mesh:
             return "Mesh";
+        case ContentBrowserItemTypeUVE::Model:
+            return "Model";
         case ContentBrowserItemTypeUVE::Texture:
             return "Texture";
         case ContentBrowserItemTypeUVE::Shader:
@@ -4245,7 +4253,7 @@ bool EditorUVE::DoesContentBrowserEntryMatchFocusUVE(const Asset::ProjectFileEnt
         case ContentBrowserTypeFocusUVE::Bundle:
             return type == ContentBrowserItemTypeUVE::Bundle;
         case ContentBrowserTypeFocusUVE::Mesh:
-            return type == ContentBrowserItemTypeUVE::Mesh;
+            return type == ContentBrowserItemTypeUVE::Mesh || type == ContentBrowserItemTypeUVE::Model;
         case ContentBrowserTypeFocusUVE::Texture:
             return type == ContentBrowserItemTypeUVE::Texture;
         case ContentBrowserTypeFocusUVE::Shader:
@@ -4388,7 +4396,9 @@ std::uintptr_t EditorUVE::GetMeshThumbnailUVE(const std::filesystem::path& relat
         return cachedIt->second;
     }
     const Asset::ProjectFileSnapshotUVE snapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-    const std::filesystem::path absolutePath = snapshot.contentRoot / relativePath;
+    // A model source previews its imported mesh; until that exists there is nothing to render yet.
+    const std::filesystem::path absolutePath =
+        IsModelSourcePathUVE(relativePath) ? GetImportedModelPathUVE(relativePath) : snapshot.contentRoot / relativePath;
     Asset::MeshAssetUVE mesh;
     std::uintptr_t textureId = 0U;
     if (Asset::LoadMeshAssetUVE(absolutePath, mesh)) {
@@ -4403,6 +4413,112 @@ void EditorUVE::ClearMeshThumbnailCacheUVE() noexcept {
         EditorUiAssetsUVE::DeleteDynamicTextureUVE(textureId);
     }
     m_meshThumbnailCache.clear();
+}
+
+bool EditorUVE::IsModelSourcePathUVE(const std::filesystem::path& path) {
+    std::string extension = path.extension().string();
+    std::transform(extension.begin(), extension.end(), extension.begin(),
+                   [](const unsigned char character) { return static_cast<char>(std::tolower(character)); });
+    return extension == ".glb" || extension == ".gltf" || extension == ".obj";
+}
+
+std::filesystem::path EditorUVE::GetImportedModelPathUVE(const std::filesystem::path& relativeSource) const {
+    // Beside the import cache rather than inside it: the cache root holds only cache metadata.
+    // The source's own extension stays in the name, so "rock.obj" and "rock.glb" never collide.
+    const std::filesystem::path cacheRoot = m_services->GetDerivedArtifactCacheUVE().GetCacheRootUVE();
+    std::filesystem::path importedRoot = cacheRoot.has_filename() ? cacheRoot.parent_path() : cacheRoot.parent_path().parent_path();
+    importedRoot /= "Imported";
+    return (importedRoot / relativeSource).concat(".uvemodel").lexically_normal();
+}
+
+namespace {
+
+/// Reads only as much of a model source as it takes to count its skins: the whole file for a
+/// .gltf (it is the JSON), the header and JSON chunk for a .glb - never the binary payload.
+[[nodiscard]] bool ModelSourceHasSkeletonUVE(const std::filesystem::path& path) {
+    std::ifstream file(path, std::ios::binary);
+    if (!file) {
+        return false;
+    }
+    std::string json;
+    std::string extension = path.extension().string();
+    std::transform(extension.begin(), extension.end(), extension.begin(),
+                   [](const unsigned char character) { return static_cast<char>(std::tolower(character)); });
+    constexpr std::uint32_t kMaximumJsonBytes = 64U * 1024U * 1024U;
+    if (extension == ".glb") {
+        std::array<std::uint32_t, 5> header{};
+        if (!file.read(reinterpret_cast<char*>(header.data()), sizeof(header)) || header[0] != 0x46546C67U ||
+            header[4] != 0x4E4F534AU || header[3] > kMaximumJsonBytes) {
+            return false;
+        }
+        json.resize(header[3]);
+        if (!file.read(json.data(), static_cast<std::streamsize>(json.size()))) {
+            return false;
+        }
+    } else if (extension == ".gltf") {
+        json.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+    } else {
+        return false; // OBJ has no skeleton.
+    }
+    const std::optional<Asset::GltfMetadataUVE> metadata = Asset::ParseGltfMetadataUVE(json);
+    return metadata.has_value() && metadata->skinCount > 0U;
+}
+
+} // namespace
+
+bool EditorUVE::IsRiggedModelSourceUVE(const std::filesystem::path& relativeSource) const {
+    const auto found = m_riggedModelSources.find(relativeSource.generic_string());
+    return found != m_riggedModelSources.end() && found->second;
+}
+
+void EditorUVE::QueueModelAutoImportsUVE(const Asset::ProjectFileSnapshotUVE& snapshot) {
+    Asset::IAssetImportQueueUVE& queue = m_services->GetAssetImportQueueUVE();
+    m_riggedModelSources.clear();
+    for (const Asset::ProjectFileEntryUVE& entry : snapshot.entries) {
+        if (entry.kind == Asset::ProjectFileEntryKindUVE::Directory || !IsModelSourcePathUVE(entry.relativePath)) {
+            continue;
+        }
+        const std::string key = entry.relativePath.generic_string();
+        const std::filesystem::path source = snapshot.contentRoot / entry.relativePath;
+        m_riggedModelSources[key] = ModelSourceHasSkeletonUVE(source);
+        if (m_modelImportJobs.find(key) != m_modelImportJobs.end()) {
+            continue; // Already queued or running; its completion is collected by PollModelImportJobsUVE.
+        }
+        Asset::AssetImportRequestUVE request;
+        request.sourcePath = source;
+        request.destinationPath = GetImportedModelPathUVE(entry.relativePath);
+        request.settings = std::make_shared<const Asset::AssetImportSettingsUVE>();
+        if (const std::optional<Asset::AssetImportJobIdUVE> job = queue.EnqueueUVE(std::move(request));
+            job.has_value()) {
+            m_modelImportJobs.emplace(key, *job);
+        }
+    }
+}
+
+void EditorUVE::PollModelImportJobsUVE() {
+    if (m_modelImportJobs.empty()) {
+        return;
+    }
+    const std::vector<Asset::AssetImportJobUVE> jobs = m_services->GetAssetImportQueueUVE().GetJobsUVE();
+    bool imported = false;
+    for (auto it = m_modelImportJobs.begin(); it != m_modelImportJobs.end();) {
+        const auto job = std::find_if(jobs.begin(), jobs.end(),
+                                      [&it](const Asset::AssetImportJobUVE& candidate) { return candidate.id == it->second; });
+        if (job == jobs.end() || job->state == Asset::AssetImportJobStateUVE::Failed) {
+            if (job != jobs.end()) {
+                UVE_WARNING("EditorUVE: could not import model {}", it->first);
+            }
+            it = m_modelImportJobs.erase(it);
+        } else if (job->state == Asset::AssetImportJobStateUVE::Succeeded) {
+            imported = imported || !job->cacheHit;
+            it = m_modelImportJobs.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    if (imported) {
+        ClearMeshThumbnailCacheUVE(); // A freshly converted mesh has a thumbnail now.
+    }
 }
 
 void EditorUVE::RefreshProjectFileIndexUVE() {
@@ -4421,6 +4537,7 @@ void EditorUVE::RefreshProjectFileIndexUVE() {
         // On-disk content may have changed since these were cached; re-decode lazily on next display.
         ClearTextureThumbnailCacheUVE();
         ClearMeshThumbnailCacheUVE();
+        QueueModelAutoImportsUVE(projectFileIndex.GetSnapshotUVE());
     } else {
         m_projectFileRefreshAttemptedForRescan = changesBeforeRefresh.rescanRequired;
     }

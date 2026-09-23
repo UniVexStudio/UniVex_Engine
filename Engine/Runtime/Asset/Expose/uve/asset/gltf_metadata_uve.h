@@ -40,6 +40,9 @@ struct GltfMetadataUVE final {
     std::uint32_t materialCount = 0U;
     std::uint32_t imageCount = 0U;
     std::uint32_t bufferCount = 0U;
+    /// Skins (joint hierarchies) in the file: a mesh bound to bones is a rigged model rather than
+    /// a static mesh, which the editor presents differently.
+    std::uint32_t skinCount = 0U;
     bool hasBinaryChunk = false;
 };
 

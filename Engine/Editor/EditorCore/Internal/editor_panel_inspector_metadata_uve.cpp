@@ -603,11 +603,23 @@ void EditorUVE::DrawMetadataPropertyRowUVE(const TypeMetadataEntryUVE& entry,
                 }
                 const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
                 for (const Asset::ProjectFileEntryUVE& file : project.entries) {
-                    if (file.kind == Asset::ProjectFileEntryKindUVE::Directory ||
-                        file.relativePath.extension().string() != extension) {
+                    if (file.kind == Asset::ProjectFileEntryKindUVE::Directory) {
                         continue;
                     }
-                    const std::filesystem::path path = (project.contentRoot / file.relativePath).lexically_normal();
+                    // A model source (.glb/.gltf/.obj) stands for the mesh it was imported to, once
+                    // that import has produced it; the author picks the file they know.
+                    std::filesystem::path path;
+                    if (extension == ".uvemodel" && IsModelSourcePathUVE(file.relativePath)) {
+                        path = GetImportedModelPathUVE(file.relativePath);
+                        std::error_code error;
+                        if (!std::filesystem::is_regular_file(path, error)) {
+                            continue;
+                        }
+                    } else if (file.relativePath.extension().string() == extension) {
+                        path = (project.contentRoot / file.relativePath).lexically_normal();
+                    } else {
+                        continue;
+                    }
                     const bool known = std::any_of(candidates.begin(), candidates.end(),
                                                    [&path](const CandidateUVE& candidate) { return candidate.path == path; });
                     if (!known) {
