@@ -23,6 +23,9 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <unordered_map>
+#include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include <imgui.h>
@@ -32,6 +35,7 @@
 #include "editor_text_search_uve.h"
 
 #include "uve/asset/i_asset_database_uve.h"
+#include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/mesh_component_uve.h"
 #include "uve/component/name_component_uve.h"
 #include "uve/component/script_component_uve.h"
@@ -231,8 +235,12 @@ void EditorUVE::DrawHierarchyNodeUVE(const Scene::EntityUVE entity) {
     if (selected) {
         flags |= ImGuiTreeNodeFlags_Selected;
     }
+    const auto pendingOpen = m_hierarchyPendingRowOpen.find(entity);
     if (IsHierarchyFilterActiveUVE()) {
         ImGui::SetNextItemOpen(true, ImGuiCond_Always);
+    } else if (pendingOpen != m_hierarchyPendingRowOpen.end()) {
+        ImGui::SetNextItemOpen(pendingOpen->second, ImGuiCond_Always);
+        m_hierarchyPendingRowOpen.erase(pendingOpen);
     } else if (m_hierarchyRevealPending &&
                std::find(m_hierarchyRevealAncestors.begin(), m_hierarchyRevealAncestors.end(), entity) !=
                    m_hierarchyRevealAncestors.end()) {
@@ -270,7 +278,10 @@ void EditorUVE::DrawHierarchyNodeUVE(const Scene::EntityUVE entity) {
     const std::string shownName = FitTextToWidthUVE(fullName, labelLimit - labelStart);
     const bool nameTruncated = shownName.size() != fullName.size();
     const std::string visibleLabel = renaming ? "" : std::string(gapSpaces, ' ') + shownName;
-    const std::string nodeLabel = visibleLabel + "##entity-" + std::to_string(entity.index) + ":" +
+    // "###" keys the row on the entity alone. With "##" the visible text was part of the ID, so
+    // renaming a node, or narrowing the panel until its name was cut short, gave the row a new
+    // ID and it forgot it was open.
+    const std::string nodeLabel = visibleLabel + "###entity-" + std::to_string(entity.index) + ":" +
                                   std::to_string(entity.generation);
     if (active) {
         ImGui::PushStyleColor(ImGuiCol_Header, IM_COL32(66, 84, 101, 235));
@@ -395,6 +406,34 @@ void EditorUVE::DrawHierarchyNodeContextMenuUVE(const Scene::EntityUVE entity) {
     }
     ImGui::EndDisabled();
     ImGui::Separator();
+    const bool focusable = CanFocusEntityInViewportUVE(entity);
+    if (ImGui::MenuItem("Focus in Viewport", "F", false, focusable)) {
+        static_cast<void>(RequestViewportFocusUVE(entity));
+    }
+    if (!focusable && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip("This node has no position in the scene to look at.");
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    const bool hideable = entityManager.HasComponentUVE<Scene::VisibilityComponentUVE>(entity);
+    const bool visible =
+        hideable && entityManager.GetComponentUVE<Scene::VisibilityComponentUVE>(entity).visible;
+    if (ImGui::MenuItem(hideable && !visible ? "Show" : "Hide", nullptr, false, authoring && hideable)) {
+        static_cast<void>(SetEntityVisibleUVE(entity, !visible));
+    }
+    if (!hideable && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip("This node draws nothing, so there is nothing to hide.");
+    }
+    ImGui::Separator();
+    const std::vector<Scene::EntityUVE> children = m_services->GetSceneGraphUVE().GetChildrenUVE(entityManager, entity);
+    const bool hasChildren = std::any_of(children.begin(), children.end(),
+                                         [this](const Scene::EntityUVE child) { return IsDocumentEntityUVE(child); });
+    if (ImGui::MenuItem("Expand Branch", nullptr, false, hasChildren)) {
+        static_cast<void>(SetHierarchyBranchOpenUVE(entity, true));
+    }
+    if (ImGui::MenuItem("Collapse Branch", nullptr, false, hasChildren)) {
+        static_cast<void>(SetHierarchyBranchOpenUVE(entity, false));
+    }
+    ImGui::Separator();
     ImGui::BeginDisabled(!lifecycle || !single || sceneRoot);
     if (ImGui::MenuItem("Duplicate", "Ctrl+D")) {
         static_cast<void>(DuplicateSelectedEntityUVE());
@@ -407,6 +446,55 @@ void EditorUVE::DrawHierarchyNodeContextMenuUVE(const Scene::EntityUVE entity) {
         ImGui::SetTooltip("The scene root holds the whole scene and cannot be duplicated or deleted.");
     }
     ImGui::EndPopup();
+}
+
+bool EditorUVE::SetHierarchyBranchOpenUVE(const Scene::EntityUVE entity, const bool open) {
+    if (!IsDocumentEntityUVE(entity)) {
+        return false;
+    }
+    // A request left for a row that has since been deleted would never be drawn; drop those here,
+    // so the map only ever holds live rows.
+    std::erase_if(m_hierarchyPendingRowOpen,
+                  [this](const auto& pending) { return !IsDocumentEntityUVE(pending.first); });
+
+    // One pass over the parent links instead of a children query per node, which scans the whole
+    // scene each time.
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    std::vector<std::pair<Scene::EntityUVE, Scene::EntityUVE>> links;
+    entityManager.ForEachUVE<Scene::HierarchyComponentUVE>(
+        [&links](const Scene::EntityUVE child, const Scene::HierarchyComponentUVE& hierarchy) {
+            links.emplace_back(hierarchy.parent, child);
+        });
+    std::unordered_map<Scene::EntityUVE, std::vector<Scene::EntityUVE>> childrenOf;
+    for (const auto& [parent, child] : links) {
+        if (parent != Scene::kInvalidEntityUVE && IsDocumentEntityUVE(child)) {
+            childrenOf[parent].push_back(child);
+        }
+    }
+
+    // Only rows with children have an open state; a leaf has nothing to open. The visited set
+    // keeps a malformed parent loop from walking forever.
+    std::vector<Scene::EntityUVE> pending{entity};
+    std::unordered_set<Scene::EntityUVE> visited;
+    while (!pending.empty()) {
+        const Scene::EntityUVE current = pending.back();
+        pending.pop_back();
+        const auto children = childrenOf.find(current);
+        if (!visited.insert(current).second || children == childrenOf.end()) {
+            continue;
+        }
+        m_hierarchyPendingRowOpen[current] = open;
+        pending.insert(pending.end(), children->second.begin(), children->second.end());
+    }
+    return true;
+}
+
+std::optional<bool> EditorUVE::GetPendingHierarchyRowOpenUVE(const Scene::EntityUVE entity) const {
+    const auto pending = m_hierarchyPendingRowOpen.find(entity);
+    if (pending == m_hierarchyPendingRowOpen.end()) {
+        return std::nullopt;
+    }
+    return pending->second;
 }
 
 void EditorUVE::DrawNodePickerUVE() {

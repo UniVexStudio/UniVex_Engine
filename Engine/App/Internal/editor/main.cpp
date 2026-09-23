@@ -459,6 +459,10 @@ private:
             appliedViewRequestSerial_ = overlayState.viewRequestSerial;
             ApplyNamedViewUVE(overlayState.view);
         }
+        if (overlayState.focusRequestSerial != appliedFocusRequestSerial_) {
+            appliedFocusRequestSerial_ = overlayState.focusRequestSerial;
+            FocusCameraOnEntityUVE(overlayState.focusEntity);
+        }
         // The Game workspace tab previews what a player would see - no editor-only grid overlay.
         settings.viewGrid = overlayState.gridVisible && !overlayState.gameWorkspaceActive;
         renderPass_->SetGridOpacityUVE(overlayState.gridOpacity);
@@ -1091,24 +1095,27 @@ private:
             camera_.SetYawPitch(bookmark->yawRadians, bookmark->pitchRadians);
             camera_.SetDistance(bookmark->distance);
         }
+        // Goes through the editor like the hierarchy's Focus in Viewport, so both share
+        // FocusCameraOnEntityUVE() and the key does nothing for a node that cannot be focused.
         if (ImGui::IsKeyPressed(ImGuiKey_F, false) && !io.KeyCtrl) {
-            const UVE::Scene::EntityUVE selected = editor_.GetSelectedEntityUVE();
-            if (selected == UVE::Scene::kInvalidEntityUVE) {
-                return;
-            }
-            // A selected Marker3D flies the camera INTO the marker's named viewpoint (the thing
-            // Godot's inert Marker3D cannot do); anything else gets a plain re-target focus.
-            if (const std::optional<UVE::Editor::EditorViewportBookmarkUVE> markerView =
-                    editor_.ComposeMarker3DFocusBookmarkUVE(selected)) {
-                camera_.CancelAnimation();
-                camera_.SetTarget(univex::integration::FromUveVector3UVE(markerView->target));
-                camera_.SetYawPitch(markerView->yawRadians, markerView->pitchRadians);
-                camera_.SetDistance(markerView->distance);
-            } else if (const std::optional<UVE::Math::Vector3UVE> focusTarget =
-                           editor_.ResolveEntityFocusTargetUVE(selected)) {
-                camera_.CancelAnimation();
-                camera_.SetTarget(univex::integration::FromUveVector3UVE(*focusTarget));
-            }
+            static_cast<void>(editor_.RequestViewportFocusUVE(editor_.GetSelectedEntityUVE()));
+        }
+    }
+
+    void FocusCameraOnEntityUVE(const UVE::Scene::EntityUVE entity) {
+        // A Marker3D flies the camera INTO the marker's named viewpoint (the thing Godot's inert
+        // Marker3D cannot do); anything else gets a plain re-target focus.
+        if (const std::optional<UVE::Editor::EditorViewportBookmarkUVE> markerView =
+                editor_.ComposeMarker3DFocusBookmarkUVE(entity)) {
+            editor_.NotifyViewportOrbitedUVE(); // the marker's viewpoint is a free view, not a named one
+            camera_.CancelAnimation();
+            camera_.SetTarget(univex::integration::FromUveVector3UVE(markerView->target));
+            camera_.SetYawPitch(markerView->yawRadians, markerView->pitchRadians);
+            camera_.SetDistance(markerView->distance);
+        } else if (const std::optional<UVE::Math::Vector3UVE> focusTarget =
+                       editor_.ResolveEntityFocusTargetUVE(entity)) {
+            camera_.CancelAnimation();
+            camera_.SetTarget(univex::integration::FromUveVector3UVE(*focusTarget));
         }
     }
 
@@ -1205,6 +1212,8 @@ private:
     UVE::Editor::EditorUVE& editor_;
     // The last view request applied to the camera; see ViewportOverlayStateUVE::viewRequestSerial.
     std::uint32_t appliedViewRequestSerial_ = 0U;
+    // The last focus request applied; see ViewportOverlayStateUVE::focusRequestSerial.
+    std::uint32_t appliedFocusRequestSerial_ = 0U;
     UVE::Core::EngineCoreUVE& engine_;
     UVE::Scene::IEntityManagerUVE& entityManager_;
     univex::integration::EditorMeshLayerUVE meshLayer_;

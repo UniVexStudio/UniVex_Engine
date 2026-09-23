@@ -1751,6 +1751,99 @@ TEST(EditorUVETest, SetEntityVisibleUVE_TogglesAnyRowUndoablyWithoutTouchingSele
     engine.Shutdown();
 }
 
+TEST(EditorUVETest, ViewportFocusRequest_OnlyForNodesWithAPlaceInTheScene) {
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_viewport_focus.uvescene");
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        const Scene::EntityUVE placed = entityManager.CreateEntityUVE();
+        AttachRootUVE(engine, placed, Scene::TransformComponentUVE{});
+        // An entity with no transform is like the scene root or a plain Node: nothing to look at.
+        const Scene::EntityUVE unplaced = entityManager.CreateEntityUVE();
+
+        const std::uint32_t serialBefore = editor.GetViewportFocusRequestSerialUVE();
+        EXPECT_TRUE(editor.CanFocusEntityInViewportUVE(placed));
+        ASSERT_TRUE(editor.RequestViewportFocusUVE(placed));
+        EXPECT_EQ(editor.GetViewportFocusEntityUVE(), placed);
+        EXPECT_EQ(editor.GetViewportFocusRequestSerialUVE(), serialBefore + 1U);
+
+        // Asking again is a new request, so the host focuses again even on the same node.
+        ASSERT_TRUE(editor.RequestViewportFocusUVE(placed));
+        EXPECT_EQ(editor.GetViewportFocusRequestSerialUVE(), serialBefore + 2U);
+
+        // Refused requests leave the last one as it was.
+        EXPECT_FALSE(editor.CanFocusEntityInViewportUVE(unplaced));
+        EXPECT_FALSE(editor.RequestViewportFocusUVE(unplaced));
+        EXPECT_FALSE(editor.RequestViewportFocusUVE(Scene::kInvalidEntityUVE));
+        EXPECT_EQ(editor.GetViewportFocusEntityUVE(), placed);
+        EXPECT_EQ(editor.GetViewportFocusRequestSerialUVE(), serialBefore + 2U);
+
+        editor.ShutdownUVE();
+    }
+
+    engine.Shutdown();
+}
+
+TEST(EditorUVETest, HierarchyBranchOpen_QueuesEveryRowWithChildrenInTheBranch) {
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_hierarchy_branch.uvescene");
+        editor.InitUVE();
+        Core::EngineServicesUVE& services = engine.GetServicesUVE();
+        Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
+        const auto makeNode = [&](const Scene::EntityUVE parent) {
+            const Scene::EntityUVE node = entityManager.CreateEntityUVE();
+            AttachRootUVE(engine, node, Scene::TransformComponentUVE{});
+            if (parent != Scene::kInvalidEntityUVE) {
+                services.GetSceneGraphUVE().SetParentUVE(entityManager, node, parent);
+            }
+            return node;
+        };
+        // branch -> middle -> leaf, branch -> sibling leaf; and a separate tree beside it.
+        const Scene::EntityUVE branch = makeNode(Scene::kInvalidEntityUVE);
+        const Scene::EntityUVE middle = makeNode(branch);
+        const Scene::EntityUVE leaf = makeNode(middle);
+        const Scene::EntityUVE siblingLeaf = makeNode(branch);
+        const Scene::EntityUVE otherRoot = makeNode(Scene::kInvalidEntityUVE);
+        const Scene::EntityUVE otherChild = makeNode(otherRoot);
+
+        ASSERT_TRUE(editor.SetHierarchyBranchOpenUVE(branch, true));
+        EXPECT_EQ(editor.GetPendingHierarchyRowOpenUVE(branch), std::optional<bool>{true});
+        EXPECT_EQ(editor.GetPendingHierarchyRowOpenUVE(middle), std::optional<bool>{true});
+        // Leaves have nothing to open, and the tree beside it is not part of the branch.
+        EXPECT_FALSE(editor.GetPendingHierarchyRowOpenUVE(leaf).has_value());
+        EXPECT_FALSE(editor.GetPendingHierarchyRowOpenUVE(siblingLeaf).has_value());
+        EXPECT_FALSE(editor.GetPendingHierarchyRowOpenUVE(otherRoot).has_value());
+
+        // Collapsing replaces the pending state for the whole branch.
+        ASSERT_TRUE(editor.SetHierarchyBranchOpenUVE(branch, false));
+        EXPECT_EQ(editor.GetPendingHierarchyRowOpenUVE(branch), std::optional<bool>{false});
+        EXPECT_EQ(editor.GetPendingHierarchyRowOpenUVE(middle), std::optional<bool>{false});
+
+        // A pending row that is deleted before it is drawn is dropped by the next request.
+        entityManager.DestroyEntityUVE(middle);
+        ASSERT_TRUE(editor.SetHierarchyBranchOpenUVE(otherRoot, true));
+        EXPECT_FALSE(editor.GetPendingHierarchyRowOpenUVE(middle).has_value());
+        EXPECT_EQ(editor.GetPendingHierarchyRowOpenUVE(branch), std::optional<bool>{false});
+        EXPECT_EQ(editor.GetPendingHierarchyRowOpenUVE(otherRoot), std::optional<bool>{true});
+        EXPECT_FALSE(editor.GetPendingHierarchyRowOpenUVE(otherChild).has_value());
+
+        EXPECT_FALSE(editor.SetHierarchyBranchOpenUVE(Scene::kInvalidEntityUVE, true));
+        EXPECT_FALSE(editor.SetHierarchyBranchOpenUVE(middle, true));
+
+        editor.ShutdownUVE();
+    }
+
+    engine.Shutdown();
+}
+
 TEST(EditorUVETest, EditorHistoryUVE_TransformUndoRedoRestoresSelectionAndDirtyState) {
     Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
     engine.Init();
