@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdio>
 
 #include <imgui.h>
@@ -54,11 +55,18 @@ inline bool DrawAxisVectorInputUVE(const char* const id, float* const values, co
         const float fieldWidth = std::max(8.0F, width - tagWidth);
         ImGui::SetNextItemWidth(fieldWidth);
         // As many decimals as the field can show whole: a narrow panel shows "1.25" rather than a
-        // cut-off "1.250". The exact value is always in the tooltip, and typing is never limited.
+        // cut-off "1.250" - but never so few that the number shown is a different one. The exact
+        // value is always in the tooltip, and typing is never limited.
         const char* fieldFormat = "%.3f";
         static constexpr std::array<const char*, 4> kFallbacks{"%.3f", "%.2f", "%.1f", "%.0f"};
         std::array<char, 64> preview{};
         for (const char* const candidate : kFallbacks) {
+            // Whole numbers only when the value is one: 0.5 shown as "0" is a wrong number, while a
+            // clipped "0.5" is merely cut short (and the tooltip has it exactly).
+            if (candidate == kFallbacks.back() && fieldFormat != nullptr &&
+                std::abs(values[axis] - std::round(values[axis])) > 1.0e-4F) {
+                break;
+            }
             fieldFormat = candidate;
             std::snprintf(preview.data(), preview.size(), candidate, static_cast<double>(values[axis]));
             if (ImGui::CalcTextSize(preview.data()).x + 6.0F <= fieldWidth) {

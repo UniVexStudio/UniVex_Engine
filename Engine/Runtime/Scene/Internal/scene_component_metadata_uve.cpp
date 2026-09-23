@@ -270,7 +270,7 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
 
     AddUVE<MeshComponentUVE>(
         entries,
-        MakeEntryUVE("component.mesh", "Mesh", kSectionOrderTypeSpecificUVE,
+        MakeEntryUVE("component.mesh", "MeshInstance3D", kSectionOrderTypeSpecificUVE,
                      {
                          DeclareUVE<&MeshComponentUVE::meshGuid>("meshGuid", "Mesh",
                                                                  kPropertyTypeAssetGuidUVE),
@@ -280,15 +280,28 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                              "visibilityLayers", "Visibility Layers", kPropertyTypeBitMask32UVE),
                      }));
 
-    AddUVE<PrimitiveMeshComponentUVE>(
-        entries,
-        MakeEntryUVE("component.primitive_mesh", "Primitive Mesh", kSectionOrderTypeSpecificUVE,
+    // One component behind BoxMesh3D, SphereMesh3D and PlaneMesh3D; its section carries the name
+    // of the node it is on.
+    TypeMetadataEntryUVE primitive =
+        MakeEntryUVE("component.primitive_mesh", "PrimitiveMesh3D", kSectionOrderTypeSpecificUVE,
                      {
                          DeclareEnumUVE<&PrimitiveMeshComponentUVE::kind>(
                              "kind", "Shape", {{0, "Cube"}, {1, "UV Sphere"}, {2, "Plane"}}),
                          DeclareUVE<&PrimitiveMeshComponentUVE::baseColor>("baseColor", "Base Color",
                                                                            kPropertyTypeColorUVE),
-                     }));
+                     });
+    primitive.sectionTitle = +[](const void* instance) -> const char* {
+        switch (static_cast<const PrimitiveMeshComponentUVE*>(instance)->kind) {
+            case PrimitiveMeshKindUVE::UVSphere:
+                return "SphereMesh3D";
+            case PrimitiveMeshKindUVE::Plane:
+                return "PlaneMesh3D";
+            case PrimitiveMeshKindUVE::Cube:
+                break;
+        }
+        return "BoxMesh3D";
+    };
+    AddUVE<PrimitiveMeshComponentUVE>(entries, std::move(primitive));
 
     AddUVE<WorldEnvironment3DNodeComponentUVE>(
         entries,
@@ -330,7 +343,7 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
             }));
 
     AddUVE<ParticleEmitterComponentUVE>(
-        entries, MakeEntryUVE("component.particle_emitter", "Particle Emitter",
+        entries, MakeEntryUVE("component.particle_emitter", "ParticleEmitter3D",
                               kSectionOrderTypeSpecificUVE,
                               {WithRangeUVE(DeclareUVE<&ParticleEmitterComponentUVE::maxParticles>(
                                                 "maxParticles", "Max Particles", kPropertyTypeUInt32UVE),
@@ -338,9 +351,7 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
 }
 
 void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
-    AddUVE<ColliderComponentUVE>(
-        entries,
-        MakeEntryUVE(
+    TypeMetadataEntryUVE collider = MakeEntryUVE(
             "component.collider", "Collider", kSectionOrderTypeSpecificUVE,
             {
                 DeclareEnumUVE<&ColliderComponentUVE::shapeType>(
@@ -389,7 +400,11 @@ void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                 WithRangeUVE(DeclareUVE<&ColliderComponentUVE::density>("density", "Density",
                                                                         kPropertyTypeFloatUVE),
                              0.0, 10000.0, 0.01),
-            }));
+            });
+    // The collision a BoxMesh3D/SphereMesh3D/PlaneMesh3D is created with is part of that node, so it
+    // is drawn inside the node's own section rather than as a section of its own.
+    collider.nestedUnderTypeId = "component.primitive_mesh";
+    AddUVE<ColliderComponentUVE>(entries, std::move(collider));
 
     AddUVE<RigidBodyComponentUVE>(
         entries,
@@ -654,12 +669,12 @@ void DeclareNodeBasesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
         MakeEntryUVE(
             "component.surface_instance", "SurfaceInstance3D", kSectionOrderNodeBaseUVE + 3,
             {
-                WithTooltipUVE(DeclareUVE<&S::materialOverridePath>("materialOverridePath", "Material Override",
+                WithTooltipUVE(DeclareUVE<&S::materialOverridePath>("materialOverridePath", "Override",
                                                                     kPropertyTypeStringUVE),
-                               "A material used on every surface in place of the mesh's own. Empty keeps them."),
-                WithTooltipUVE(DeclareUVE<&S::materialOverlayPath>("materialOverlayPath", "Material Overlay",
+                               "Material override: used on every surface in place of the mesh's own. Empty keeps them."),
+                WithTooltipUVE(DeclareUVE<&S::materialOverlayPath>("materialOverlayPath", "Overlay",
                                                                    kPropertyTypeStringUVE),
-                               "A material drawn over every surface, on top of whatever it already shows."),
+                               "Material overlay: drawn over every surface, on top of whatever it already shows."),
                 WithTooltipUVE(WithRangeUVE(DeclareUVE<&S::transparency>("transparency", "Transparency",
                                                                          kPropertyTypeFloatUVE),
                                             0.0, 1.0, 0.01),
