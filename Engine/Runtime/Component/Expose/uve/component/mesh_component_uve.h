@@ -24,9 +24,9 @@ struct MeshComponentUVE final {
     std::uint32_t visibilityLayers = 0x00000001U;
 };
 
-/// Validates the authored asset-reference pair without resolving assets. Both invalid GUIDs are
-/// the established unassigned state; a single invalid GUID would otherwise create a permanently
-/// incomplete render reference and is rejected at persistence/runtime boundaries.
+/// Validates the authored asset-reference pair without resolving assets. Unassigned, mesh only
+/// (drawn with the built-in lit shader until a material is chosen) and both are valid; a material
+/// with no mesh is rejected at persistence/runtime boundaries, because it has nothing to draw on.
 [[nodiscard]] bool IsMeshComponentValidUVE(const MeshComponentUVE& component) noexcept;
 
 } // namespace UVE::Scene

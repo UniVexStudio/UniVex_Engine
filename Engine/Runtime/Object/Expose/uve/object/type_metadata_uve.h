@@ -297,6 +297,10 @@ struct TypeMetadataEntryUVE final {
     /// one component shared by several node kinds titles its section with the kind it is on.
     /// Null uses displayName.
     const char* (*sectionTitle)(const void* instance) = nullptr;
+    /// The type's own whole-value rule (a mesh reference pair, a non-degenerate size). A generic
+    /// editor checks it after writing one property and undoes a write that breaks it, so an edit
+    /// can never leave a component that its systems assert against. Null means any value is valid.
+    bool (*isInstanceValid)(const void* instance) = nullptr;
 
     [[nodiscard]] bool operator==(const TypeMetadataEntryUVE&) const = default;
 

@@ -38,6 +38,7 @@
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/nodes/3d/spawn_point_3d_uve.h"
 #include "uve/scene/nodes/scene_node_registry_uve.h"
+#include "uve/scene/scene_component_metadata_uve.h"
 
 namespace UVE::Editor::Tests {
 
@@ -61,6 +62,11 @@ struct EditorUVEAccessUVE final {
         return editor.m_inspectorDrawerRegistry.HasDrawerUVE(id);
     }
 
+    [[nodiscard]] static bool SetSelectedComponentPropertyUVE(EditorUVE& editor, const Core::TypeMetadataEntryUVE& entry,
+                                                              const Core::TypeMetadataPropertyUVE& property,
+                                                              const void* value) {
+        return editor.SetSelectedComponentPropertyUVE(entry, property, value);
+    }
     [[nodiscard]] static std::vector<std::string> GetEligibleInspectorDrawerIdsUVE(const EditorUVE& editor,
                                                                                   const Scene::EntityUVE entity) {
         return editor.m_inspectorDrawerRegistry.GetEligibleDrawerIdsUVE(entity);
@@ -3916,6 +3922,39 @@ TEST(EditorUVETest, SurfaceInstanceChildInspectorUVE_IsOwnSectionThenSurfaceRend
         }
         EXPECT_EQ(EditorUVEAccessUVE::GetEligibleInspectorDrawerIdsUVE(editor, particles),
                   expected("particle-emitter"));
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
+TEST(EditorUVETest, InspectorPropertyEditUVE_RefusesAValueTheComponentRuleRejects) {
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_mesh_rule.uvescene");
+        editor.InitUVE();
+        const Scene::EntityUVE entity =
+            editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::MeshInstance3D);
+        ASSERT_NE(entity, Scene::kInvalidEntityUVE);
+        const Core::TypeMetadataEntryUVE* const entry =
+            Scene::FindSceneComponentMetadataUVE(std::type_index(typeid(Scene::MeshComponentUVE)));
+        ASSERT_NE(entry, nullptr);
+        const auto property = [&](const std::string& name) {
+            return *std::find_if(entry->properties.begin(), entry->properties.end(),
+                                 [&](const auto& candidate) { return candidate.name == name; });
+        };
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        // A material with no mesh has nothing to draw on: refused, and the component unchanged.
+        const Asset::AssetGuidUVE material{0x77U};
+        EXPECT_FALSE(EditorUVEAccessUVE::SetSelectedComponentPropertyUVE(editor, *entry, property("materialGuid"),
+                                                                          &material));
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::MeshComponentUVE>(entity).materialGuid,
+                  Asset::kInvalidAssetGuidUVE);
+        // A mesh alone is fine: it is drawn with the built-in lit shader.
+        const Asset::AssetGuidUVE mesh{0x55U};
+        EXPECT_TRUE(EditorUVEAccessUVE::SetSelectedComponentPropertyUVE(editor, *entry, property("meshGuid"), &mesh));
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::MeshComponentUVE>(entity).meshGuid, mesh);
         editor.ShutdownUVE();
     }
     engine.Shutdown();

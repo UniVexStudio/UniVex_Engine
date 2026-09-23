@@ -23,6 +23,7 @@
 #include "uve/asset/shader_asset_uve.h"
 #include "uve/asset/texture_asset_uve.h"
 #include "uve/component/camera_component_uve.h"
+#include "uve/component/mesh_component_uve.h"
 #include "uve/component/primitive_mesh_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/logging/assert_uve.h"
@@ -133,6 +134,11 @@ struct PrimitiveRenderItemUVE {
     Scene::PrimitiveMeshKindUVE kind = Scene::PrimitiveMeshKindUVE::Cube;
     Math::Vector3UVE baseColor{};
     float sortDepth = 0.0F;
+    /// Set for an imported mesh drawn without a material (see ExtractUnmaterialedMeshItemsUVE):
+    /// the geometry then comes from that mesh asset instead of the built-in `kind`. The mesh stays
+    /// loaded through `unmaterialedMeshHandles` for as long as an item can name it.
+    Asset::AssetGuidUVE meshGuid = Asset::kInvalidAssetGuidUVE;
+    const Asset::MeshAssetUVE* mesh = nullptr;
 };
 
 /// Identity of a primitive's placement inputs. Two placements with equal keys must produce equal
@@ -691,6 +697,9 @@ struct Renderer3DUVE::ImplUVE {
 
     std::unordered_map<Asset::AssetGuidUVE, MeshGpuResourcesUVE> meshCache;
     std::unordered_map<std::uint8_t, MeshGpuResourcesUVE> primitiveMeshCache;
+    /// Keeps each imported mesh that is drawn without a material loaded between frames. Pruned
+    /// when no entity names the mesh any more.
+    std::unordered_map<Asset::AssetGuidUVE, Asset::AssetHandleUVE<Asset::MeshAssetUVE>> unmaterialedMeshHandles;
     std::unordered_map<Asset::AssetGuidUVE, MaterialGpuResourcesUVE> materialCache;
 
     /// GPU textures uploaded from a loaded TextureAssetUVE, cached by that texture's own
@@ -981,13 +990,18 @@ struct Renderer3DUVE::ImplUVE {
     /// is always ready by construction (MeshRendererUVE::ExtractRenderQueueUVE only includes
     /// asset-ready items), so this never fails.
     [[nodiscard]] const MeshGpuResourcesUVE& ResolveMeshGpuResourcesUVE(const RenderItemUVE& item) {
-        const Asset::AssetGuidUVE guid = item.meshHandle.GetGuidUVE();
+        return ResolveMeshGpuResourcesUVE(item.meshHandle.GetGuidUVE(), item.meshHandle.TryGetUVE());
+    }
+
+    /// The same cache, for a caller that already holds the ready mesh. Both paths draw the same
+    /// vertex layout, so an imported mesh is uploaded once whichever path draws it.
+    [[nodiscard]] const MeshGpuResourcesUVE& ResolveMeshGpuResourcesUVE(const Asset::AssetGuidUVE guid,
+                                                                       const Asset::MeshAssetUVE* const mesh) {
         const auto existingIt = meshCache.find(guid);
         if (existingIt != meshCache.end()) {
             return existingIt->second;
         }
 
-        const Asset::MeshAssetUVE* const mesh = item.meshHandle.TryGetUVE();
         // Asset loaders derive tangents for legacy `.uvemodel` payloads, but runtime/custom mesh
         // loaders may construct MeshAssetUVE directly. Regenerate into this one-time GPU-upload copy
         // so every material draw has the canonical TBN input without mutating shared asset data.
@@ -1281,6 +1295,69 @@ struct Renderer3DUVE::ImplUVE {
     /// that produced it. Everything that depends on the VIEW - the frustum test and the sort depth
     /// - is recomputed every frame, because the camera moves even when nothing in the scene does.
     /// Caching the view-dependent half would be a correctness bug, not an optimization.
+    /// An imported mesh whose MeshInstance3D has no material yet is still drawn, with the built-in
+    /// lit shader in a neutral grey - so a model brought in from a DCC tool shows up the moment it
+    /// is assigned, instead of staying invisible until a material and its shaders are authored.
+    /// Appended to the primitive items; call after ExtractPrimitiveItemsUVE and before sorting.
+    void ExtractUnmaterialedMeshItemsUVE(Scene::IEntityManagerUVE& entityManager, const Math::FrustumUVE& frustum,
+                                          std::vector<PrimitiveRenderItemUVE>& outItems) {
+        static constexpr Math::Vector3UVE kUnmaterialedColor{0.72F, 0.72F, 0.74F};
+        std::unordered_map<Asset::AssetGuidUVE, bool> named;
+        entityManager.ForEachUVE<Scene::WorldTransformComponentUVE, Scene::MeshComponentUVE>(
+            [&](Scene::EntityUVE, const Scene::WorldTransformComponentUVE& worldTransform,
+                const Scene::MeshComponentUVE& meshComponent) {
+                if (meshComponent.meshGuid == Asset::kInvalidAssetGuidUVE ||
+                    meshComponent.materialGuid != Asset::kInvalidAssetGuidUVE || worldTransform.dirty) {
+                    return;
+                }
+                named[meshComponent.meshGuid] = true;
+                auto handleIt = unmaterialedMeshHandles.find(meshComponent.meshGuid);
+                if (handleIt == unmaterialedMeshHandles.end()) {
+                    handleIt = unmaterialedMeshHandles
+                                   .emplace(meshComponent.meshGuid, assetManager.LoadUVE<Asset::MeshAssetUVE>(
+                                                                        meshComponent.meshGuid, assetDatabase))
+                                   .first;
+                }
+                const Asset::MeshAssetUVE* const mesh = handleIt->second.TryGetUVE();
+                if (mesh == nullptr || mesh->indices.empty() || !IsOrderedFiniteAabbUVE(mesh->localBounds) ||
+                    !Math::IsFiniteUVE(worldTransform.worldPosition) || !Math::IsFiniteUVE(worldTransform.worldScale)) {
+                    return;
+                }
+                Math::QuaternionUVE rotation;
+                if (!Math::TryNormalizeUVE(worldTransform.worldRotation, rotation)) {
+                    return;
+                }
+                const Math::Matrix4x4UVE worldMatrix =
+                    Math::Matrix4x4UVE::ComposeTrsUVE(worldTransform.worldPosition, rotation, worldTransform.worldScale);
+                if (!IsFiniteMatrixUVE(worldMatrix)) {
+                    return;
+                }
+                const Math::AabbUVE worldBounds = mesh->localBounds.TransformUVE(worldMatrix);
+                if (!IsOrderedFiniteAabbUVE(worldBounds) || !frustum.IntersectsUVE(worldBounds)) {
+                    return;
+                }
+                const float sortDepth = frustum.planes[4U].GetSignedDistanceUVE(worldBounds.GetCenterUVE());
+                if (!std::isfinite(sortDepth)) {
+                    return;
+                }
+                PrimitiveRenderItemUVE item{worldMatrix, Scene::PrimitiveMeshKindUVE::Cube, kUnmaterialedColor, sortDepth};
+                item.meshGuid = meshComponent.meshGuid;
+                item.mesh = mesh;
+                outItems.push_back(item);
+            });
+        for (auto it = unmaterialedMeshHandles.begin(); it != unmaterialedMeshHandles.end();) {
+            if (named.find(it->first) == named.end()) {
+                it = unmaterialedMeshHandles.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        std::sort(outItems.begin(), outItems.end(),
+                  [](const PrimitiveRenderItemUVE& lhs, const PrimitiveRenderItemUVE& rhs) {
+                      return lhs.sortDepth < rhs.sortDepth;
+                  });
+    }
+
     void ExtractPrimitiveItemsUVE(Scene::IEntityManagerUVE& entityManager, const Math::FrustumUVE& frustum,
                                    std::vector<PrimitiveRenderItemUVE>& outItems) {
         outItems.clear();
@@ -1670,7 +1747,9 @@ struct Renderer3DUVE::ImplUVE {
         }
         std::size_t drawCalls = 0U;
         for (const PrimitiveRenderItemUVE& item : items) {
-            const MeshGpuResourcesUVE& meshResources = ResolvePrimitiveMeshGpuResourcesUVE(item.kind);
+            const MeshGpuResourcesUVE& meshResources = item.mesh != nullptr
+                                                           ? ResolveMeshGpuResourcesUVE(item.meshGuid, item.mesh)
+                                                           : ResolvePrimitiveMeshGpuResourcesUVE(item.kind);
             if (!IsValidMeshGpuResourcesUVE(meshResources)) {
                 continue;
             }
@@ -2145,6 +2224,7 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     m_impl->lastFrameDiagnostics.pendingAssetLoads = queue.pendingAssetLoads;
     m_impl->lastFrameDiagnostics.failedAssetLoads = queue.failedAssetLoads;
     m_impl->ExtractPrimitiveItemsUVE(entityManager, frustum, m_impl->primitiveItems);
+    m_impl->ExtractUnmaterialedMeshItemsUVE(entityManager, frustum, m_impl->primitiveItems);
     m_impl->lastFrameDiagnostics.primitiveItemsExtracted = m_impl->primitiveItems.size();
 
     RenderGraphUVE& renderGraph = m_impl->renderGraph;

@@ -25,6 +25,7 @@
 #include <cfloat>
 #include <cmath>
 #include <cstdint>
+#include <filesystem>
 #include <limits>
 #include <optional>
 #include <string>
@@ -37,6 +38,8 @@
 #include "editor_axis_input_uve.h"
 
 #include "uve/asset/asset_guid_uve.h"
+#include "uve/asset/i_asset_database_uve.h"
+#include "uve/asset/i_project_file_index_uve.h"
 #include "uve/component/editor_description_component_uve.h"
 #include "uve/component/entity_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
@@ -562,15 +565,79 @@ void EditorUVE::DrawMetadataPropertyRowUVE(const TypeMetadataEntryUVE& entry,
             edited = SetSelectedComponentPropertyUVE(entry, property, &*committed);
         }
     } else if (property.typeId == Scene::kPropertyTypeAssetGuidUVE) {
-        // Shown, not edited: there is no asset picker yet, and a text field that accepts an
-        // arbitrary 64-bit number is a way to author a dangling reference, not a way to pick an
-        // asset. It becomes editable when the picker exists.
+        // A picker over the registered assets of the kind the property declares
+        // ("asset:uvemodel"). Picking, never typing: a typed 64-bit number is a way to author a
+        // dangling reference. A property that declares no kind is shown read-only.
         Asset::AssetGuidUVE value{};
         property.getValue(instance, &value);
-        ImGui::BeginDisabled();
-        ImGui::Text("%016llX", static_cast<unsigned long long>(value.value));
-        ImGui::EndDisabled();
-        ImGui::TextDisabled("Assign from the Content Browser; there is no inline picker yet.");
+        constexpr std::string_view kAssetPrefix = "asset:";
+        if (property.customDrawerId.rfind(kAssetPrefix, 0U) != 0U) {
+            ImGui::BeginDisabled();
+            ImGui::Text("%016llX", static_cast<unsigned long long>(value.value));
+            ImGui::EndDisabled();
+        } else {
+            const std::string extension = "." + property.customDrawerId.substr(kAssetPrefix.size());
+            const Asset::IAssetDatabaseUVE& database = m_services->GetAssetDatabaseUVE();
+            std::string preview = "(none)";
+            if (value != Asset::kInvalidAssetGuidUVE) {
+                const std::filesystem::path path = database.ResolveUVE(value);
+                preview = path.empty() ? "(missing asset)" : path.stem().string();
+            }
+            if (ImGui::BeginCombo("##value", preview.c_str())) {
+                if (ImGui::Selectable("(none)", value == Asset::kInvalidAssetGuidUVE) &&
+                    value != Asset::kInvalidAssetGuidUVE) {
+                    const Asset::AssetGuidUVE none = Asset::kInvalidAssetGuidUVE;
+                    edited = SetSelectedComponentPropertyUVE(entry, property, &none);
+                }
+                // Registered assets plus every project file of the kind, so a model imported in an
+                // earlier session is offered too; picking an unregistered file registers it.
+                struct CandidateUVE {
+                    std::filesystem::path path;
+                    std::optional<Asset::AssetGuidUVE> guid;
+                };
+                std::vector<CandidateUVE> candidates;
+                for (const Asset::AssetRecordUVE& record : database.GetRegisteredAssetsUVE()) {
+                    if (record.path.extension().string() == extension) {
+                        candidates.push_back({record.path.lexically_normal(), record.guid});
+                    }
+                }
+                const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+                for (const Asset::ProjectFileEntryUVE& file : project.entries) {
+                    if (file.kind == Asset::ProjectFileEntryKindUVE::Directory ||
+                        file.relativePath.extension().string() != extension) {
+                        continue;
+                    }
+                    const std::filesystem::path path = (project.contentRoot / file.relativePath).lexically_normal();
+                    const bool known = std::any_of(candidates.begin(), candidates.end(),
+                                                   [&path](const CandidateUVE& candidate) { return candidate.path == path; });
+                    if (!known) {
+                        candidates.push_back({path, std::nullopt});
+                    }
+                }
+                std::sort(candidates.begin(), candidates.end(), [](const CandidateUVE& left, const CandidateUVE& right) {
+                    return left.path.generic_string() < right.path.generic_string();
+                });
+                bool any = false;
+                for (const CandidateUVE& candidate : candidates) {
+                    any = true;
+                    const bool isSelected = candidate.guid.has_value() && *candidate.guid == value;
+                    const std::string label = candidate.path.stem().string() + "##" + candidate.path.generic_string();
+                    if (ImGui::Selectable(label.c_str(), isSelected) && !isSelected) {
+                        const Asset::AssetGuidUVE chosen = candidate.guid.has_value()
+                                                               ? *candidate.guid
+                                                               : m_services->GetAssetDatabaseUVE().RegisterUVE(candidate.path);
+                        edited = SetSelectedComponentPropertyUVE(entry, property, &chosen);
+                    }
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("%s", candidate.path.generic_string().c_str());
+                    }
+                }
+                if (!any) {
+                    ImGui::TextDisabled("No %s assets yet. Import one from the Content Browser.", extension.c_str());
+                }
+                ImGui::EndCombo();
+            }
+        }
     } else if (property.typeId == Scene::kPropertyTypeEntityUVE) {
         // Same reasoning as an asset guid: an entity reference is picked, not typed. The two
         // properties that hold one both declare a custom drawer for when that picker lands.
@@ -710,6 +777,11 @@ bool EditorUVE::SetSelectedComponentPropertyUVE(const TypeMetadataEntryUVE& entr
         return false;
     }
     property.setValue(instance, newValue);
+    if (entry.isInstanceValid != nullptr && !entry.isInstanceValid(instance)) {
+        // The component's own rule refuses this combination; put the prior value back.
+        entry.assignInstance(instance, before.GetUVE());
+        return false;
+    }
     // An edit that changed nothing records no history, matching what the per-type commands do.
     // A property with no equality operator is treated as changed, which over-records rather than
     // silently dropping a real edit.
