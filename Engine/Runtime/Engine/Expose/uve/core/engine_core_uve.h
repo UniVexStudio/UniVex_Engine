@@ -463,9 +463,8 @@ private:
     /// entity that isn't already reconciled, then ticks every attached instance once against the
     /// real, engine-owned ScriptEngineCallBindingsUVE (see script_gameplay_bindings_uve.h - only
     /// keyboard/mouse input is wired for real so far). An entity whose script fails to load/compile
-    /// is remembered in m_scriptReconcileFailedEntities so a broken script logs once, not every
-    /// frame; editing the component's path again is not yet a supported way to retry within the
-    /// same run (a real follow-up, not a silent limitation).
+    /// is remembered in m_scriptReconcileFailedEntities with the path that failed, so a broken
+    /// script logs once, not every frame, and changing the component's path retries at once.
     void SyncScriptRuntimeUVE();
 
     /// Steps every live CharacterControllerComponentUVE entity once per fixed step: reads WASD/Space
@@ -740,7 +739,7 @@ private:
     Scripting::ScriptRuntimeUVE m_scriptRuntime;
     ScriptGameplayBindingContextUVE m_scriptBindingContext;
     Scripting::ScriptEngineCallBindingsUVE m_scriptEngineCallBindings;
-    std::unordered_set<Scene::EntityUVE> m_scriptReconcileFailedEntities;
+    std::unordered_map<Scene::EntityUVE, std::string> m_scriptReconcileFailedEntities;
     std::unique_ptr<Save::ISaveGameSystemUVE> m_saveGameSystem;
     std::unique_ptr<Save::ICheckpointManagerUVE> m_checkpointManager;
     std::unique_ptr<Config::IConfigManagerUVE> m_configManager;

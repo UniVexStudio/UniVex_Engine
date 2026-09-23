@@ -3497,7 +3497,11 @@ bool EditorUVE::WriteProjectTextFileUVE(const std::filesystem::path& path, const
 }
 
 std::optional<std::string> EditorUVE::ReadProjectTextFileUVE(const std::filesystem::path& path) const {
-    if (const std::optional<std::vector<std::byte>> bytes = m_services->GetFileSystemUVE().ReadFileUVE(path.generic_string());
+    // Asked first, because a VFS read that misses logs an error - and "is this name free?" is an
+    // ordinary question here, not a failure.
+    const Asset::IFileSystemUVE& fileSystem = m_services->GetFileSystemUVE();
+    if (const std::optional<std::vector<std::byte>> bytes =
+            fileSystem.HasFileUVE(path.generic_string()) ? fileSystem.ReadFileUVE(path.generic_string()) : std::nullopt;
         bytes.has_value()) {
         return std::string(reinterpret_cast<const char*>(bytes->data()), bytes->size());
     }

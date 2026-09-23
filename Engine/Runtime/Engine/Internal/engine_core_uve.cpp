@@ -426,6 +426,11 @@ void EngineCoreUVE::Init() {
     // automatically when the mount doesn't resolve. Works identically in headless mode (against
     // NullRenderDeviceUVE) and windowed mode (against GlRenderDeviceUVE).
     m_fileSystem->MountDirectoryUVE(m_config.shaderSourceMountPrefixUVE, m_config.shaderSourceRealDirectoryUVE, 0);
+    // The project itself, beneath everything else: without it no project-relative asset path -
+    // a node's script above all - could be read at runtime, so scripts were saved but never ran.
+    if (!m_config.projectRootDirectoryUVE.empty()) {
+        m_fileSystem->MountDirectoryUVE("", m_config.projectRootDirectoryUVE, -100);
+    }
     Render::Shader::ShaderManagerConfigUVE shaderManagerConfig;
     shaderManagerConfig.cachePath = m_config.shaderCachePath;
     shaderManagerConfig.hotReloadEnabledUVE = m_config.shaderHotReloadEnabledUVE;
@@ -680,9 +685,17 @@ void EngineCoreUVE::SyncUIRuntimeUVE() {
 void EngineCoreUVE::SyncScriptRuntimeUVE() {
     m_entityManager->ForEachUVE<Scene::ScriptComponentUVE>(
         [this](const Scene::EntityUVE entity, const Scene::ScriptComponentUVE& component) {
-            if (m_scriptRuntime.HasInstanceUVE(entity) ||
-                m_scriptReconcileFailedEntities.contains(entity)) {
+            if (m_scriptRuntime.HasInstanceUVE(entity)) {
                 return;
+            }
+            // A failure is remembered against the path that failed, so a broken script logs once
+            // but pointing the node at another script - or creating it - is tried straight away.
+            if (const auto failed = m_scriptReconcileFailedEntities.find(entity);
+                failed != m_scriptReconcileFailedEntities.end()) {
+                if (failed->second == component.scriptAssetPath) {
+                    return;
+                }
+                m_scriptReconcileFailedEntities.erase(failed);
             }
             const Scripting::ScriptAssetLoadResultUVE loaded = Scripting::ScriptAssetLoaderUVE::LoadSchemaUVE(
                 component, *m_fileSystem, Scripting::ScriptGraphPersistenceLimitsUVE{});
@@ -692,7 +705,7 @@ void EngineCoreUVE::SyncScriptRuntimeUVE() {
                 return;
             }
             if (!loaded.IsLoadedUVE()) {
-                m_scriptReconcileFailedEntities.insert(entity);
+                m_scriptReconcileFailedEntities.insert_or_assign(entity, component.scriptAssetPath);
                 UVE_ERROR("EngineCoreUVE: ScriptComponentUVE on entity failed to load its script asset "
                           "\"{}\": {}",
                           component.scriptAssetPath, loaded.message);
@@ -702,7 +715,7 @@ void EngineCoreUVE::SyncScriptRuntimeUVE() {
                 Scripting::ScriptComponentRuntimeOwnershipUVE::ReconcileUVE(
                     component, loaded.schema->graph, m_scriptNodeRegistry, m_scriptRuntime, entity);
             if (!reconciled.IsAcceptedUVE()) {
-                m_scriptReconcileFailedEntities.insert(entity);
+                m_scriptReconcileFailedEntities.insert_or_assign(entity, component.scriptAssetPath);
                 UVE_ERROR("EngineCoreUVE: ScriptComponentUVE on entity failed to attach to ScriptRuntimeUVE: {}",
                           reconciled.message);
             }
