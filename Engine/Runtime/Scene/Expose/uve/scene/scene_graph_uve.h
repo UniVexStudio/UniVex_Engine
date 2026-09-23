@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <optional>
 #include <unordered_map>
 #include <vector>
 
@@ -43,6 +44,10 @@ public:
     void UpdateUVE(IEntityManagerUVE& entityManager) override;
     [[nodiscard]] std::vector<EntityUVE> GetChildrenUVE(IEntityManagerUVE& entityManager,
                                                          EntityUVE parent) override;
+    /// Answered from the pass state UpdateUVE() leaves behind, which is retained until the next
+    /// update clears it - so this costs one hash lookup and adds no storage or pass of its own.
+    [[nodiscard]] std::optional<ResolvedNodeModesUVE> TryGetResolvedNodeModesUVE(
+        EntityUVE entity) const override;
 
 private:
     /// Whether an entity's derived world transform came out valid this pass, and whether it was

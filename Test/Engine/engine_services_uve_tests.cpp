@@ -264,6 +264,10 @@ public:
                                                                 Scene::EntityUVE) override {
         return {};
     }
+    [[nodiscard]] std::optional<Scene::ResolvedNodeModesUVE> TryGetResolvedNodeModesUVE(
+        Scene::EntityUVE) const override {
+        return std::nullopt;
+    }
 
     int updateCallCount = 0;
 };
