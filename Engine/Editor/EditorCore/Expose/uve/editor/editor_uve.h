@@ -999,6 +999,14 @@ private:
     /// Returns whether `entity` carries the scene-root marker. The root is never deletable,
     /// re-parentable, or duplicable - every one of those commands checks this first.
     [[nodiscard]] bool IsSceneRootEntityUVE(Scene::EntityUVE entity) const;
+    /// True for a plain Node3D: a transform, and nothing beyond the Node3D recipe - the transform
+    /// baseline, Visibility and the common Node section. Anything more (a camera, a mesh, a light)
+    /// makes it a different kind of node, which keeps the full Inspector.
+    [[nodiscard]] bool IsPlainNode3DEntityUVE(Scene::EntityUVE entity) const;
+    /// An Inspector that is a node's fixed recipe rather than an open component list: the scene
+    /// root and a plain Node3D. No name field, no hierarchy block, no search box, no Add Component,
+    /// no Remove - the node's sections, and nothing else.
+    [[nodiscard]] bool HasFixedInspectorUVE(Scene::EntityUVE entity) const;
 
     /// Returns the document's scene root when one exists, else creates it (name + transform +
     /// marker via the SceneRoot NodeDefinition). Idempotent: the one-root invariant every

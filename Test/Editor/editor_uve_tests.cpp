@@ -62,6 +62,9 @@ struct EditorUVEAccessUVE final {
                                                                                   const Scene::EntityUVE entity) {
         return editor.m_inspectorDrawerRegistry.GetEligibleDrawerIdsUVE(entity);
     }
+    [[nodiscard]] static bool IsPlainNode3DEntityUVE(const EditorUVE& editor, const Scene::EntityUVE entity) {
+        return editor.IsPlainNode3DEntityUVE(entity);
+    }
     [[nodiscard]] static std::string GetScriptNodeTitleUVE(const EditorUVE& editor) {
         return editor.GetScriptNodeTitleUVE("scene.self", "Scene Node");
     }
@@ -3820,6 +3823,32 @@ TEST(EditorUVETest, NodeMetadataUVE_EveryEditIsOneUndoStep) {
         EXPECT_EQ(entries().front().key, "charges");
         ASSERT_TRUE(editor.UndoUVE()); // add
         EXPECT_TRUE(entries().empty());
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
+TEST(EditorUVETest, Node3DInspectorUVE_IsTransformVisibilityAndTheNodeSection) {
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_node3d_inspector.uvescene");
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        const Scene::EntityUVE node = entityManager.CreateEntityUVE();
+        AttachRootUVE(engine, node, Scene::TransformComponentUVE{});
+        Scene::ApplyNode3DNodeDefinitionUVE(entityManager, node, Scene::Node3DNodeDefinitionUVE{});
+        EXPECT_TRUE(EditorUVEAccessUVE::IsPlainNode3DEntityUVE(editor, node));
+        EXPECT_EQ(EditorUVEAccessUVE::GetEligibleInspectorDrawerIdsUVE(editor, node),
+                  (std::vector<std::string>{"transform", "visibility", "process", "physics-interpolation",
+                                            "auto-translate", "editor-description", "script", "node-metadata"}));
+
+        // A camera makes it a Camera3D: the full, open Inspector comes back.
+        entityManager.AddComponentUVE<Scene::CameraComponentUVE>(node, Scene::CameraComponentUVE{});
+        EXPECT_FALSE(EditorUVEAccessUVE::IsPlainNode3DEntityUVE(editor, node));
+        const std::vector<std::string> ids = EditorUVEAccessUVE::GetEligibleInspectorDrawerIdsUVE(editor, node);
+        EXPECT_NE(std::find(ids.begin(), ids.end(), "name"), ids.end());
         editor.ShutdownUVE();
     }
     engine.Shutdown();

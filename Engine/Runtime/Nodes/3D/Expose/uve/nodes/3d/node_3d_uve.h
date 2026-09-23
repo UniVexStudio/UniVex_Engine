@@ -37,8 +37,8 @@ struct Node3DNodeDefinitionUVE final {
 
 [[nodiscard]] bool IsNode3DNodeDefinitionValidUVE(const Node3DNodeDefinitionUVE& value) noexcept;
 
-/// Attaches this node's components to `entity`. Node3D's recipe IS the transform baseline, so
-/// applying it guarantees that baseline: any of Transform/WorldTransform/Hierarchy/Name that is
+/// Attaches this node's components to `entity`: the transform baseline, Visibility, and the common
+/// Node section (EnsureCommonNodeSectionUVE). Applying it guarantees the baseline: any of Transform/WorldTransform/Hierarchy/Name that is
 /// missing gets attached with sane defaults, and anything already present - its authored values
 /// included - is left alone. On the standard creation path the shell has attached all four
 /// before this runs, so the guarantee costs nothing there; it exists for every other path
@@ -52,5 +52,12 @@ void ApplyNode3DNodeDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE en
 /// overwritten, and a destroyed entity is refused quietly, matching the scene-root apply.
 void EnsureNode3DBaselineUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
                              std::string_view nameFallback);
+
+/// The Node section every node has in common - Process, Thread Group, Physics Interpolation, Auto
+/// Translate, Editor Description, Script and Metadata - attached with defaults where missing.
+/// Every default is Inherit or empty, so attaching them changes nothing about how the scene runs;
+/// it makes them reachable in an Inspector that offers no Add Component. Shared by the scene root
+/// and Node3D so both carry exactly the same section.
+void EnsureCommonNodeSectionUVE(IEntityManagerUVE& entityManager, EntityUVE entity);
 
 } // namespace UVE::Scene
