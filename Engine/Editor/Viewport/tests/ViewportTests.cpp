@@ -352,34 +352,26 @@ int main() {
         const Vec3 view = univex::math::Normalize(Vec3{-0.65f, -0.44f, 0.62f});
         constexpr float kUnitsPerPixel = 1.f / 82.f; // ~155 px radius over 1.9 units
 
-        // Per mode, not one blanket rule. This used to assert every mode built BOTH lines and
-        // triangles, which was only ever true by accident: the centre cube contributed twelve edge
-        // lines to every mode, so Rotate passed on the cube's lines rather than on anything of its
-        // own. A rotate gizmo is rings, and rings are annuli - triangles, no lines. With the cube
-        // replaced by a pivot dot (also an annulus) the old rule started failing for the one mode
-        // it was always wrong about, so it is stated honestly here instead, and each mode gets a
-        // check on what it is actually made of.
-        struct ModeExpectationUVE {
-            GizmoMode mode;
-            bool wantsLines;
-        };
-        for (const auto& expectation : std::array<ModeExpectationUVE, 5>{{
-                 {GizmoMode::Select, false},    // the pivot dot alone
-                 {GizmoMode::Move, true},       // arrow shafts
-                 {GizmoMode::Rotate, false},    // rings only, by nature
-                 {GizmoMode::Scale, true},      // shafts + cube edges
-                 {GizmoMode::Universal, true},  // shafts + cube edges
-             }}) {
-            const auto mesh = BuildGizmoMesh(expectation.mode, style, view, kUnitsPerPixel);
-            const char* const name = univex::gizmo::GizmoModeName(expectation.mode);
+        // Every handle is solid, lit geometry now - shafts are cylinders, rings are tubes, plane
+        // handles are framed faces - so no mode builds strokes at all, and every mode builds
+        // filled geometry. A stroke reappearing in a mode means a handle slipped back to a line.
+        for (const auto mode : {GizmoMode::Select, GizmoMode::Move, GizmoMode::Rotate, GizmoMode::Scale,
+                                GizmoMode::Universal}) {
+            const auto mesh = BuildGizmoMesh(mode, style, view, kUnitsPerPixel);
+            const char* const name = univex::gizmo::GizmoModeName(mode);
             char label[128];
-
             std::snprintf(label, sizeof label, "%s builds filled geometry", name);
             Check(!mesh.triangles.empty(), label);
-
-            std::snprintf(label, sizeof label, "%s %s stroke geometry", name,
-                          expectation.wantsLines ? "builds" : "builds no");
-            Check(mesh.lines.empty() != expectation.wantsLines, label);
+            std::snprintf(label, sizeof label, "%s builds no stroke geometry", name);
+            Check(mesh.lines.empty(), label);
+        }
+        // The handles that are bodies are lit; the flat UI shapes (pivot dot, screen ring) are not.
+        {
+            const auto move = BuildGizmoMesh(GizmoMode::Move, style, view, kUnitsPerPixel);
+            std::size_t litFaces = 0U;
+            for (const auto& tri : move.triangles) litFaces += tri.lit == 1.f ? 1U : 0U;
+            Check(litFaces > 0U && litFaces < move.triangles.size(),
+                  "Move lights its shafts and cones and leaves the pivot dot and plane faces flat");
         }
 
         // Rotate carries all three axis colours - the check the old lines-and-triangles rule never
@@ -1021,27 +1013,34 @@ int main() {
         bone.tail = Vec3{0.f, 1.f, 0.f};
         bone.skeletonSelected = true;
         const auto mesh = univex::gizmo::BuildBoneMeshUVE({bone}, style);
-        Check(mesh.triangles.size() == 16U, "one bone is an 8-face spindle plus an 8-face joint");
-        Check(mesh.lines.size() == 12U, "and 12 outline edges");
+        Check(!mesh.triangles.empty() && mesh.lines.empty(), "a bone is solid geometry, not strokes");
+        bool allLit = true;
         bool withinBone = true;
-        for (const auto& line : mesh.lines) {
-            for (const Vec3& p : {line.a, line.b}) {
-                withinBone = withinBone && p.y >= -0.06f && p.y <= 1.0001f &&
-                             std::fabs(p.x) <= 0.11f && std::fabs(p.z) <= 0.11f;
+        const float jointRadius = std::clamp(style.jointRatio, style.minimumRadius, style.maximumRadius);
+        for (const auto& tri : mesh.triangles) {
+            allLit = allLit && tri.lit == 1.f && tri.alpha == 1.f;
+            for (const Vec3& p : {tri.a, tri.b, tri.c}) {
+                withinBone = withinBone && p.y >= -jointRadius - 1e-4f && p.y <= 1.0001f &&
+                             std::fabs(p.x) <= jointRadius + 1e-4f && std::fabs(p.z) <= jointRadius + 1e-4f;
             }
         }
-        Check(withinBone, "the outline stays within the bone's length and width");
-        Check(mesh.lines.front().color.x == style.selectedColor.x, "a selected skeleton draws in teal");
+        Check(allLit, "every face is opaque and lit");
+        Check(withinBone, "the joint and cone stay within the bone's length and joint radius");
+        Check(mesh.triangles.front().color.x == style.selectedColor.x, "a selected skeleton is light grey");
 
+        BoneOverlayUVE idle = bone;
+        idle.skeletonSelected = false;
+        Check(univex::gizmo::BuildBoneMeshUVE({idle}, style).triangles.front().color.x == style.idleColor.x,
+              "another skeleton is charcoal");
         bone.boneSelected = true;
-        Check(univex::gizmo::BuildBoneMeshUVE({bone}, style).lines.front().color.x == style.activeBoneColor.x,
-              "the Inspector's bone draws in amber");
+        Check(univex::gizmo::BuildBoneMeshUVE({bone}, style).triangles.front().color.x == style.activeBoneColor.x,
+              "the Inspector's bone is the orange accent");
 
         BoneOverlayUVE linked = bone;
         linked.hasLink = true;
         linked.linkFrom = Vec3{0.f, -0.5f, 0.f};
-        Check(univex::gizmo::BuildBoneMeshUVE({linked}, style).lines.size() == 13U,
-              "a bone that does not start at its parent's tail gets a link line");
+        Check(univex::gizmo::BuildBoneMeshUVE({linked}, style).lines.size() == 1U,
+              "a bone that does not start at its parent's tail gets one link line");
 
         BoneOverlayUVE degenerate;
         Check(univex::gizmo::BuildBoneMeshUVE({degenerate}, style).Empty(), "a zero-length bone draws nothing");

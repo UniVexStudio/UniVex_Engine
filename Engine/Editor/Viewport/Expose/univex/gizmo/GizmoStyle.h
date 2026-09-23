@@ -46,6 +46,13 @@ struct GizmoStyle {
     // looking precise and starts looking drawn on, and the rotate rings suffer worst because three
     // of them cross in a small area. These sit close to what ImGuizmo and Unreal use.
     float axisLineWidthPx = 1.5f;
+    // Every handle is solid, lit geometry. These are the solids' own thicknesses, in gizmo units
+    // (the widget's outer handle sits ~1.9 units out), so they scale with the widget like the
+    // cones and cubes do.
+    float shaftRadius = 0.026f;     // arrow and scale shafts
+    float ringTubeRadius = 0.020f;  // rotate rings
+    int   shaftSegments = 12;
+    int   ringTubeSegments = 8;
     float ringLineWidthPx = 1.6f;
     float freeRingWidthPx = 1.1f;
     float cubeEdgeWidthPx = 0.9f;

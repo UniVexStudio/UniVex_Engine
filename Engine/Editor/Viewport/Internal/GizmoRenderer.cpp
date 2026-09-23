@@ -18,7 +18,7 @@ namespace {
 // (side, widthPx). Six of these per segment — two triangles.
 constexpr GLsizei kLineStride = static_cast<GLsizei>(sizeof(float) * 11);
 // Solid pass: position + normal + RGBA.
-constexpr GLsizei kSolidStride = static_cast<GLsizei>(sizeof(float) * 10);
+constexpr GLsizei kSolidStride = static_cast<GLsizei>(sizeof(float) * 11);
 
 // At and above this alpha, blending leaves a triangle visually solid, so it is drawn in the
 // opaque pass and keeps its depth writes.
@@ -102,9 +102,11 @@ std::optional<GizmoRenderer> GizmoRenderer::Create(std::string& outError) {
     glEnableVertexAttribArray(0);
     glEnableVertexAttribArray(1);
     glEnableVertexAttribArray(2);
+    glEnableVertexAttribArray(3);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, kSolidStride, reinterpret_cast<void*>(0));
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, kSolidStride, reinterpret_cast<void*>(sizeof(float) * 3));
     glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, kSolidStride, reinterpret_cast<void*>(sizeof(float) * 6));
+    glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, kSolidStride, reinterpret_cast<void*>(sizeof(float) * 10));
 
     glBindVertexArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
@@ -138,7 +140,7 @@ void GizmoRenderer::UploadAndDrawTriangles(const GizmoMesh& mesh, const GizmoDra
     }
 
     std::vector<float> vertices;
-    vertices.reserve(selected.size() * 3 * 10);
+    vertices.reserve(selected.size() * 3 * 11);
     for (const std::size_t index : selected) {
         const auto& tri = mesh.triangles[index];
         // Flat (faceted) shading: one normal per triangle, replicated across
@@ -150,7 +152,7 @@ void GizmoRenderer::UploadAndDrawTriangles(const GizmoMesh& mesh, const GizmoDra
         for (const Vec3& p : {tri.a, tri.b, tri.c}) {
             vertices.insert(vertices.end(),
                             {p.x, p.y, p.z, normal.x, normal.y, normal.z,
-                             tri.color.x, tri.color.y, tri.color.z, tri.alpha});
+                             tri.color.x, tri.color.y, tri.color.z, tri.alpha, tri.lit});
         }
     }
 
@@ -164,6 +166,7 @@ void GizmoRenderer::UploadAndDrawTriangles(const GizmoMesh& mesh, const GizmoDra
     solidProgram_.SetVec3("uOrigin", params.origin.x, params.origin.y, params.origin.z);
     solidProgram_.SetFloat("uScale", params.scale);
     solidProgram_.SetFloat("uOpacity", params.opacity);
+    solidProgram_.SetVec3("uViewDir", params.viewDirection.x, params.viewDirection.y, params.viewDirection.z);
 
     glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(mesh.triangles.size() * 3));
     glBindVertexArray(0);

@@ -1,5 +1,7 @@
 #include "univex/gizmo/NavGizmo.h"
 
+#include "univex/gizmo/SolidPrimitives.h"
+
 #include <algorithm>
 #include <cmath>
 #include <numbers>
@@ -13,14 +15,6 @@ using univex::math::Normalize;
 
 namespace {
 
-constexpr float kPi = std::numbers::pi_v<float>;
-
-void PerpBasis(const Vec3& axis, Vec3& outU, Vec3& outV) {
-    const Vec3 a = Normalize(axis);
-    const Vec3 helper = (std::fabs(a.y) < 0.98f) ? Vec3{0.f, 1.f, 0.f} : Vec3{1.f, 0.f, 0.f};
-    outU = Normalize(Cross(helper, a));
-    outV = Normalize(Cross(a, outU));
-}
 
 // A disc that always faces the camera, built from real triangles. No rim
 // stroke here - an earlier version added one as a per-segment GizmoLine
@@ -32,53 +26,6 @@ void PerpBasis(const Vec3& axis, Vec3& outU, Vec3& outV) {
 // around every ball instead of a clean rim. Callers that want a defined
 // edge use the same seamless double-disc technique AddFacingAnnulus already
 // relies on (see AddFacingDiscWithRim below) instead of a stroke.
-void AddFacingDisc(GizmoMesh& mesh, const Vec3& center, float radius,
-                   const Vec3& viewDirection, const Vec3& color, float alpha, int segments) {
-    Vec3 u, v;
-    PerpBasis(viewDirection, u, v);
-    Vec3 previous = center + u * radius;
-    for (int i = 1; i <= segments; ++i) {
-        const float t = (2.f * kPi * static_cast<float>(i)) / static_cast<float>(segments);
-        const Vec3 current = center + u * (std::cos(t) * radius) + v * (std::sin(t) * radius);
-        mesh.triangles.push_back(GizmoTriangle{center, previous, current, color, alpha});
-        previous = current;
-    }
-}
-
-// A filled disc with a clean, seamless dark rim - the same "slightly larger
-// disc behind a smaller one" trick AddFacingAnnulus uses, just with the roles
-// swapped (a mostly-color disc with a thin dark ring showing at its edge,
-// rather than a mostly-hole ring). Used for the positive (filled) nav balls,
-// which is the shape that previously grew the "hairy" stroke artifact.
-void AddFacingDiscWithRim(GizmoMesh& mesh, const Vec3& center, float radius,
-                          const Vec3& viewDirection, const Vec3& color, int segments,
-                          float rimFraction = 0.12f) {
-    const Vec3 towardCamera = viewDirection * -0.002f;
-    AddFacingDisc(mesh, center, radius, viewDirection, color * 0.45f, 1.f, segments);
-    AddFacingDisc(mesh, center + towardCamera, radius * (1.f - rimFraction), viewDirection, color, 1.f,
-                 segments);
-}
-
-// A hollow ball is drawn as a coloured disc with a smaller dark disc laid on
-// top, rather than as a stroked circle. Stroking a small circle from
-// independent per-segment quads leaves gear teeth wherever the chord is
-// shorter than the stroke is wide; two discs are seamless at any size.
-void AddFacingAnnulus(GizmoMesh& mesh, const Vec3& center, float outerRadius, float innerRadius,
-                      const Vec3& viewDirection, const Vec3& ringColor, const Vec3& holeColor,
-                      int segments) {
-    // Nudge the hole a hair toward the camera so it always wins the tie when
-    // both discs are coplanar and depth testing is off.
-    const Vec3 towardCamera = viewDirection * -0.002f;
-    AddFacingDisc(mesh, center, outerRadius, viewDirection, ringColor, 1.f, segments);
-    AddFacingDisc(mesh, center + towardCamera, innerRadius, viewDirection, holeColor, 1.f, segments);
-}
-
-// X, Y and Z drawn as vector strokes rather than from a font. Three glyphs is
-// not worth a texture atlas or a font dependency, and going through the line
-// pass means the letters inherit its analytic anti-aliasing for free.
-//
-// Each glyph is defined in a unit box centred on the origin, then placed on
-// the screen-facing basis (right, up) so it always reads upright.
 void AddAxisLabel(GizmoMesh& mesh, const Vec3& center, const Vec3& right, const Vec3& up,
                   char letter, float halfSize, const Vec3& color, float widthPx) {
     const auto place = [&](float x, float y) {
@@ -152,15 +99,16 @@ NavGizmoMeshes BuildNavGizmoMeshes(const GizmoStyle& style, const Vec3& viewDire
     const auto handles = NavHandles(style);
 
     // Axis stubs go in the underlay, so the balls sit on top of them.
+    // Nav units per pixel, so the stubs keep their pixel thickness at any widget size.
+    const float unitsPerPixel = NavViewHalfExtent(style) / (style.navPixelSize * 0.5f);
     for (const NavHandle& handle : handles) {
         if (!handle.positive) continue; // one stub per axis, drawn full length both ways
-        meshes.underlay.lines.push_back(GizmoLine{handle.direction * -1.f, handle.direction,
-                                                  handle.color * 0.75f, style.navAxisLineWidthPx});
+        // A lit rod rather than a stroke. There is no depth buffer here, so only the faces
+        // turned toward the eye are built - painting the far side would show through.
+        AddSolidCylinderUVE(meshes.underlay, handle.direction * -1.f, handle.direction,
+                            style.navAxisLineWidthPx * 0.65f * unitsPerPixel, 12, handle.color * 0.75f, 1.f, view);
     }
 
-    // Balls, drawn back-to-front so the near ones cover the far ones. The
-    // nav viewport has no depth buffer of its own worth relying on, and a
-    // painter's sort over six discs is exact.
     std::vector<const NavHandle*> sorted;
     sorted.reserve(handles.size());
     for (const NavHandle& handle : handles) sorted.push_back(&handle);
@@ -174,20 +122,15 @@ NavGizmoMeshes BuildNavGizmoMeshes(const GizmoStyle& style, const Vec3& viewDire
     for (const NavHandle* handle : sorted) {
         const Vec3 center = handle->direction;
         if (handle->positive) {
-            AddFacingDiscWithRim(mesh, center, style.navBallRadius, view, handle->color,
-                                 style.navBallSegments);
-            // Only the positive ends are labelled: putting a letter in the
-            // hollow negative rings as well doubles the clutter without adding
-            // anything, since the ring already says which end it is.
+            // A lit sphere carrying its axis letter. The letter is a stroke, drawn after the
+            // spheres in this no-depth pass, so it sits on top without being lifted off the ball.
+            AddSolidSphereUVE(mesh, center, style.navBallRadius, 12, 24, handle->color, 1.f, view);
             AddAxisLabel(mesh, center + view * -0.01f, right, up, handle->axisLabel,
                          style.navBallRadius * style.navLabelScale,
                          style.navLabelColor, style.navLabelWidthPx);
         } else {
-            // Negative ends read as hollow rings, so the two directions of an
-            // axis are never confused at a glance.
-            AddFacingAnnulus(mesh, center, style.navBallRadius, style.navBallRadius * 0.62f,
-                             view, handle->color, Vec3{0.078f, 0.090f, 0.125f},
-                             style.navBallSegments);
+            // The negative end: a smaller, darker sphere - same family, clearly the back of the axis.
+            AddSolidSphereUVE(mesh, center, style.navBallRadius * 0.72f, 10, 20, handle->color * 0.5f, 1.f, view);
         }
     }
     return meshes;
