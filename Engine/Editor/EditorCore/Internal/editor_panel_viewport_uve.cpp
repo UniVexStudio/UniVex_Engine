@@ -18,6 +18,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -248,7 +249,14 @@ void EditorUVE::DrawViewportOverlayBubblesUVE(const Math::Vector2UVE imageOrigin
     // A vertical-dots glyph (U+22EE) drawn as text came out as "?" - the current base UI font
     // has no glyph for it. Drawn procedurally instead, matching every other icon in this toolbar -
     // reliable regardless of font coverage.
-    const char* const projectionLabel = m_viewportOverlayState.orthographic ? "Orthographic" : "Perspective";
+    // "Perspective", "Orthographic", or the named view with its projection ("Top - Ortho").
+    const char* const projectionName = m_viewportOverlayState.orthographic ? "Orthographic" : "Perspective";
+    const std::string projectionText =
+        m_viewportOverlayState.view == ViewportViewUVE::User
+            ? std::string{projectionName}
+            : std::string{GetViewportViewNameUVE(m_viewportOverlayState.view)} +
+                  (m_viewportOverlayState.orthographic ? " - Ortho" : " - Persp");
+    const char* const projectionLabel = projectionText.c_str();
     const ImVec2 textSize = ImGui::CalcTextSize(projectionLabel);
     constexpr float kDotsWidthUVE = 10.0F;
     constexpr float kDotsToTextGapUVE = 5.0F;
@@ -364,8 +372,69 @@ void EditorUVE::DrawViewportOverlayBubblesUVE(const Math::Vector2UVE imageOrigin
                                  pillCenterY - textSize.y * 0.5F},
                           dotColor, projectionLabel);
         if (pressed) {
-            m_viewportOverlayState.orthographic = !m_viewportOverlayState.orthographic;
+            ImGui::OpenPopup("##viewport-view-menu");
         }
+        if (hovered && !ImGui::IsPopupOpen("##viewport-view-menu")) {
+            ImGui::SetTooltip("Projection and view");
+        }
+        ImGui::SetNextWindowPos(ImVec2{pillMin.x, pillMax.y + 4.0F}, ImGuiCond_Appearing);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{10.0F, 10.0F});
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{4.0F, 4.0F});
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0F);
+        if (ImGui::BeginPopup("##viewport-view-menu")) {
+            // One control per decision: a two-way segmented switch for the projection, then the six
+            // named views as a 3x2 grid laid out by opposites (Top over Bottom, Front over Back,
+            // Right over Left). The active option is filled; the rest are quiet.
+            const float cellWidth = ImGui::GetFontSize() * 4.6F;
+            const float spacing = ImGui::GetStyle().ItemSpacing.x;
+            const ImVec4 activeFill = ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive);
+            const ImVec4 quietFill = ImGui::GetStyleColorVec4(ImGuiCol_FrameBg);
+            const auto option = [&](const char* label, const bool active, const float width) {
+                ImGui::PushStyleColor(ImGuiCol_Button, active ? activeFill : quietFill);
+                const bool clicked = ImGui::Button(label, ImVec2{width, 0.0F});
+                ImGui::PopStyleColor();
+                return clicked;
+            };
+
+            ImGui::TextDisabled("PROJECTION");
+            const float halfWidth = (cellWidth * 3.0F + spacing * 2.0F - spacing) * 0.5F;
+            if (option("Perspective", !m_viewportOverlayState.orthographic, halfWidth)) {
+                SetViewportOrthographicUVE(false);
+            }
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+                ImGui::SetTooltip("Toggle: Numpad 5  /  Alt+5");
+            }
+            ImGui::SameLine();
+            if (option("Orthographic", m_viewportOverlayState.orthographic, halfWidth)) {
+                SetViewportOrthographicUVE(true);
+            }
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+                ImGui::SetTooltip("Toggle: Numpad 5  /  Alt+5");
+            }
+
+            ImGui::Dummy(ImVec2{0.0F, 4.0F});
+            ImGui::TextDisabled("VIEW");
+            constexpr std::array<ViewportViewUVE, 6> kViews{ViewportViewUVE::Top,    ViewportViewUVE::Front,
+                                                            ViewportViewUVE::Right,  ViewportViewUVE::Bottom,
+                                                            ViewportViewUVE::Back,   ViewportViewUVE::Left};
+            for (std::size_t index = 0U; index < kViews.size(); ++index) {
+                const ViewportViewUVE view = kViews[index];
+                if (index % 3U != 0U) {
+                    ImGui::SameLine();
+                }
+                if (option(GetViewportViewNameUVE(view), m_viewportOverlayState.view == view, cellWidth)) {
+                    RequestViewportViewUVE(view);
+                    ImGui::CloseCurrentPopup();
+                }
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+                    ImGui::SetTooltip("%s", GetViewportViewShortcutUVE(view));
+                }
+            }
+            ImGui::Dummy(ImVec2{0.0F, 2.0F});
+            ImGui::TextDisabled("Orbit to return to a free view. Numpad or Alt+digit.");
+            ImGui::EndPopup();
+        }
+        ImGui::PopStyleVar(3);
     }
 }
 
@@ -393,6 +462,68 @@ namespace {
 }
 
 } // namespace
+
+void EditorUVE::SetViewportOrthographicUVE(const bool orthographic) noexcept {
+    m_viewportOverlayState.orthographic = orthographic;
+    m_viewportOrthographicIsAutomatic = false;
+}
+
+void EditorUVE::RequestViewportViewUVE(const ViewportViewUVE view) noexcept {
+    m_viewportOverlayState.view = view;
+    ++m_viewportOverlayState.viewRequestSerial;
+    // An axis view reads best flat; switch to orthographic unless the author already chose it.
+    if (view != ViewportViewUVE::User && !m_viewportOverlayState.orthographic) {
+        m_viewportOverlayState.orthographic = true;
+        m_viewportOrthographicIsAutomatic = true;
+    }
+}
+
+void EditorUVE::NotifyViewportOrbitedUVE() noexcept {
+    if (m_viewportOverlayState.view == ViewportViewUVE::User) {
+        return;
+    }
+    m_viewportOverlayState.view = ViewportViewUVE::User;
+    if (m_viewportOrthographicIsAutomatic) {
+        m_viewportOverlayState.orthographic = false;
+        m_viewportOrthographicIsAutomatic = false;
+    }
+}
+
+const char* EditorUVE::GetViewportViewNameUVE(const ViewportViewUVE view) noexcept {
+    switch (view) {
+        case ViewportViewUVE::Top: return "Top";
+        case ViewportViewUVE::Bottom: return "Bottom";
+        case ViewportViewUVE::Front: return "Front";
+        case ViewportViewUVE::Back: return "Back";
+        case ViewportViewUVE::Right: return "Right";
+        case ViewportViewUVE::Left: return "Left";
+        case ViewportViewUVE::User: break;
+    }
+    return "User";
+}
+
+std::optional<EditorUVE::ViewportViewUVE> EditorUVE::GetViewportViewForKeypadDigitUVE(const int digit,
+                                                                                    const bool opposite) noexcept {
+    switch (digit) {
+        case 7: return opposite ? ViewportViewUVE::Bottom : ViewportViewUVE::Top;
+        case 1: return opposite ? ViewportViewUVE::Back : ViewportViewUVE::Front;
+        case 3: return opposite ? ViewportViewUVE::Left : ViewportViewUVE::Right;
+        default: return std::nullopt;
+    }
+}
+
+const char* EditorUVE::GetViewportViewShortcutUVE(const ViewportViewUVE view) noexcept {
+    switch (view) {
+        case ViewportViewUVE::Top: return "Numpad 7  /  Alt+7";
+        case ViewportViewUVE::Bottom: return "Ctrl+Numpad 7  /  Ctrl+Alt+7";
+        case ViewportViewUVE::Front: return "Numpad 1  /  Alt+1";
+        case ViewportViewUVE::Back: return "Ctrl+Numpad 1  /  Ctrl+Alt+1";
+        case ViewportViewUVE::Right: return "Numpad 3  /  Alt+3";
+        case ViewportViewUVE::Left: return "Ctrl+Numpad 3  /  Ctrl+Alt+3";
+        case ViewportViewUVE::User: break;
+    }
+    return "";
+}
 
 bool EditorUVE::SetViewportGridUVE(const bool visible, const float opacity) {
     if (!std::isfinite(opacity) || opacity < kMinimumViewportGridOpacityUVE || opacity > 1.0F) {

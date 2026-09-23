@@ -674,7 +674,12 @@ The group with the most real backing today.
 - [ ] Inertia / smoothing amount for camera motion.
 - [ ] Freelook: enable, activation modifier, base speed, speed scaling with scroll, acceleration.
 - [ ] Default camera field of view, near plane, far plane.
-- [ ] Orthographic view presets and the shortcut to each.
+- [~] Orthographic view presets and the shortcut to each. The projection pill is a menu:
+      Perspective / Orthographic, and Top, Bottom, Front, Back, Right, Left. A named view goes
+      orthographic by itself and returns to perspective when orbited out; an orthographic chosen
+      explicitly stays. The nav gizmo's balls use the same path. Shortcuts: Numpad 7/1/3 (Alt+7/1/3
+      without a keypad) for Top/Front/Right, Ctrl for the opposite side, Numpad 5 / Alt+5 to switch
+      projection; missing: user rebinding.
 - [ ] Frame-selected padding and animation duration.
 - [ ] Selection outline: colour, thickness, and whether it draws through geometry. The engine has
       **no selection outline today**, which is why the pivot dot is the only indication that a
