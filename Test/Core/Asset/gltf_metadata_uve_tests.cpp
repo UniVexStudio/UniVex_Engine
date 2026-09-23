@@ -110,6 +110,13 @@ TEST(GltfMetadataUVETest, ParseGltfMetadataUVE_ReturnsCopiedJsonCounts) {
     EXPECT_EQ(metadata->container, GltfContainerKindUVE::Json);
     EXPECT_EQ(metadata->nodeCount, 1U); EXPECT_EQ(metadata->meshCount, 2U); EXPECT_EQ(metadata->materialCount, 1U);
     EXPECT_EQ(metadata->imageCount, 1U); EXPECT_EQ(metadata->bufferCount, 2U); EXPECT_FALSE(metadata->hasBinaryChunk);
+    EXPECT_EQ(metadata->skinCount, 0U);
+}
+TEST(GltfMetadataUVETest, ParseGltfMetadataUVE_CountsSkinsForRiggedModels) {
+    const auto rigged = ParseGltfMetadataUVE(R"({"asset":{"version":"2.0"},"meshes":[{}],"skins":[{"joints":[0]}]})");
+    ASSERT_TRUE(rigged.has_value());
+    EXPECT_EQ(rigged->skinCount, 1U);
+    EXPECT_FALSE(ParseGltfMetadataUVE(R"({"asset":{"version":"2.0"},"skins":{}})").has_value());
 }
 TEST(GltfMetadataUVETest, ParseGlbMetadataUVE_ValidatesHeaderJsonChunkAndBinaryTail) {
     const std::string json = R"({"asset":{"version":"2.0"},"nodes":[{}],"meshes":[]})";

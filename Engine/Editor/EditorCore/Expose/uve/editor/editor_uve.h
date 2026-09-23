@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "uve/asset/i_asset_database_uve.h"
+#include "uve/asset/i_asset_import_queue_uve.h"
 #include "uve/asset/i_project_file_index_uve.h"
 #include "uve/asset/i_project_change_watcher_uve.h"
 #include "uve/core/engine_services_uve.h"
@@ -740,6 +741,8 @@ private:
         Prefab,
         Bundle,
         Mesh,
+        /// A model source with a skeleton (mesh plus bones), as opposed to a static Mesh.
+        Model,
         Texture,
         Shader,
         Material,
@@ -1132,8 +1135,19 @@ private:
     /// filesystem baseline. It never schedules imports or mutates project files.
     void RefreshProjectFileIndexUVE();
     void DrawFilesystemContextPopupUVE();
-    /// Queues a glTF/GLB source for import to a .uvemodel beside it. False when the queue refuses.
-    bool QueueModelImportUVE(const Asset::ProjectFileEntryUVE& entry);
+    /// Model sources (.glb/.gltf/.obj) are imported automatically: the source stays the thing an
+    /// author sees and picks, and its converted mesh lives in the derived-data folder beside the
+    /// import cache, never in the content folder.
+    [[nodiscard]] static bool IsModelSourcePathUVE(const std::filesystem::path& path);
+    /// Where the converted mesh of the model source at `relativeSource` (content-relative) lives.
+    [[nodiscard]] std::filesystem::path GetImportedModelPathUVE(const std::filesystem::path& relativeSource) const;
+    /// Queues an import for every model source in `snapshot` that is not already in flight. An
+    /// unchanged source is a cache hit in the import queue, so this costs a hash, not a re-import.
+    void QueueModelAutoImportsUVE(const Asset::ProjectFileSnapshotUVE& snapshot);
+    /// Collects finished auto-imports; a successful one refreshes the mesh thumbnails.
+    void PollModelImportJobsUVE();
+    /// True for a model source whose file declares a skeleton (read once per project refresh).
+    [[nodiscard]] bool IsRiggedModelSourceUVE(const std::filesystem::path& relativeSource) const;
     [[nodiscard]] Scripting::ScriptGraphCanvasUVE& ActiveVisualScriptCanvasUVE() noexcept;
     [[nodiscard]] const Scripting::ScriptGraphCanvasUVE& ActiveVisualScriptCanvasUVE() const noexcept;
 
@@ -1208,6 +1222,10 @@ private:
     /// Content-derived thumbnail textures for Content Browser mesh entries, rendered on demand by
     /// m_meshThumbnailRenderer. Same caching/invalidation contract as m_textureThumbnailCache.
     std::map<std::string, std::uintptr_t> m_meshThumbnailCache;
+    /// In-flight automatic model imports, by content-relative source path.
+    std::map<std::string, Asset::AssetImportJobIdUVE> m_modelImportJobs;
+    /// Content-relative model sources that carry a skeleton, from the last project refresh.
+    std::map<std::string, bool> m_riggedModelSources;
     MeshThumbnailRendererUVE m_meshThumbnailRenderer;
     ContentBrowserTypeFocusUVE m_contentBrowserTypeFocus = ContentBrowserTypeFocusUVE::All;
     std::string m_assetFilter;
