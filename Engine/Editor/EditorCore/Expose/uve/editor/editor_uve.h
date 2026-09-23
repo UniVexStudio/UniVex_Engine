@@ -1311,6 +1311,12 @@ private:
     // + button and from a row's "Add Child Node". The request is a flag so either caller can ask
     // for it from inside its own popup and the picker still opens in the panel's ID scope.
     bool m_nodePickerOpenRequested = false;
+    // Reveal-on-select: when the active selection changes, the hierarchy opens the rows above it
+    // and scrolls it into view once, so a node picked in the viewport or just added is never
+    // hidden in a collapsed branch. Once shown, the user is free to collapse it again.
+    Scene::EntityUVE m_hierarchyRevealedEntity = Scene::kInvalidEntityUVE;
+    std::vector<Scene::EntityUVE> m_hierarchyRevealAncestors;
+    bool m_hierarchyRevealPending = false;
     std::string m_nodePickerFilter;
     std::optional<Asset::AssetRecordUVE> m_selectedAsset;
     std::optional<Asset::ProjectFileEntryUVE> m_selectedProjectFile;

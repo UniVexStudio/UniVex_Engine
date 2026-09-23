@@ -82,6 +82,20 @@ void EditorUVE::DrawHierarchyPanelUVE() {
     }
     DrawNodePickerUVE();
     RebuildHierarchyFilterCacheUVE();
+    if (m_selectedEntity != m_hierarchyRevealedEntity) {
+        m_hierarchyRevealedEntity = m_selectedEntity;
+        m_hierarchyRevealAncestors.clear();
+        m_hierarchyRevealPending = IsDocumentEntityUVE(m_selectedEntity);
+        Scene::EntityUVE cursor = m_selectedEntity;
+        Scene::EntityUVE parent = Scene::kInvalidEntityUVE;
+        // Bounded by the entity count, so a malformed parent loop can never hang the panel.
+        for (std::size_t guard = 0U; m_hierarchyRevealPending && guard < 4096U &&
+                                     TryGetDocumentParentUVE(cursor, parent) && parent != Scene::kInvalidEntityUVE;
+             ++guard) {
+            m_hierarchyRevealAncestors.push_back(parent);
+            cursor = parent;
+        }
+    }
     const float hierarchyItemsHeight = std::max(36.0F, ImGui::GetContentRegionAvail().y);
     if (ImGui::BeginChild("##scene-hierarchy-items", ImVec2{0.0F, hierarchyItemsHeight}, true,
                            ImGuiWindowFlags_AlwaysVerticalScrollbar)) {
@@ -121,6 +135,10 @@ void EditorUVE::DrawHierarchyNodeUVE(const Scene::EntityUVE entity) {
     }
     if (IsHierarchyFilterActiveUVE()) {
         ImGui::SetNextItemOpen(true, ImGuiCond_Always);
+    } else if (m_hierarchyRevealPending &&
+               std::find(m_hierarchyRevealAncestors.begin(), m_hierarchyRevealAncestors.end(), entity) !=
+                   m_hierarchyRevealAncestors.end()) {
+        ImGui::SetNextItemOpen(true, ImGuiCond_Always);
     }
 
     const bool renaming = entity == m_hierarchyRenameEntity;
@@ -145,6 +163,13 @@ void EditorUVE::DrawHierarchyNodeUVE(const Scene::EntityUVE entity) {
     const bool open = ImGui::TreeNodeEx(nodeLabel.c_str(), flags);
     if (active) {
         ImGui::PopStyleColor(3);
+    }
+    if (m_hierarchyRevealPending && active) {
+        if (!ImGui::IsItemVisible()) {
+            ImGui::SetScrollHereY(0.5F);
+        }
+        m_hierarchyRevealPending = false;
+        m_hierarchyRevealAncestors.clear();
     }
     if (!renaming) {
         // Draws into the gap the row's own 4-space label prefix already reserves before the name,

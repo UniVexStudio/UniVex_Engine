@@ -567,7 +567,10 @@ settings window.
 The hierarchy is one of the two panels a user looks at constantly. Several behaviours below are
 already built in, but none of them is a setting yet - each is fixed in code.
 
-- [ ] Auto-expand on selection, and auto-scroll the selected node into view.
+- [~] Auto-expand on selection, and auto-scroll the selected node into view. When the active
+      selection changes (picked in the viewport, or a node just added) the rows above it open and
+      it is scrolled into view, once, so it can be collapsed again; missing: a setting to turn it
+      off.
 - [ ] Expand-all / collapse-all depth limit.
 - [ ] Persist expansion state per scene across sessions.
 - [ ] Row height, indent width, and whether indent guides are drawn.
