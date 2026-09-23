@@ -130,8 +130,19 @@ void main() {
     // is still live, so an early `discard` here would make the LOD undefined
     // exactly where the grid is most stretched.
     float denom = rayDir.y;
-    float safeDenom = abs(denom) < 1e-9 ? 1e-9 : denom;
-    float t = clamp(-vNearPoint.y / safeDenom, -1e6, 1e6);
+    // A ray running along the ground - the horizon row of an eye-level view, or every row of an
+    // orthographic side view - has no usable hit. Dividing by its near-zero y threw worldPos out to
+    // ~1e10, the grid maths on that came back NaN, and a NaN defeated every comparison below:
+    // the depth then came from that far-away point and the whole row, axis lines included, failed
+    // the depth test. isnan() cannot be relied on to catch it (compilers may assume no NaNs), so
+    // the hit is kept finite here - the near point stands in - and its contribution zeroed.
+    float groundHitValid = abs(denom) > 1e-6 * length(rayDir) ? 1.0 : 0.0;
+    float safeDenom = groundHitValid > 0.5 ? denom : 1.0;
+    float t = groundHitValid > 0.5 ? clamp(-vNearPoint.y / safeDenom, -1e6, 1e6) : 0.0;
+    // Only a hit in front of the near plane is a hit. With the eye on the ground itself (an
+    // eye-level side view) the near point is already past the plane and the solution lands
+    // behind it, between eye and near plane; drawn, that bogus grid won every pixel's depth.
+    groundHitValid *= step(0.0, t);
     vec3 worldPos = vNearPoint + t * rayDir;
 
     // ---- how much world space does one pixel cover here? ------------------
@@ -148,6 +159,14 @@ void main() {
     float axisX = AxisLineCoverage(vNearPoint, rayDir, vec3(1.0, 0.0, 0.0), uAxisWidthPixels, axisXClosestPoint);
     float axisY = AxisLineCoverage(vNearPoint, rayDir, vec3(0.0, 1.0, 0.0), uAxisWidthPixels, axisYClosestPoint);
     float axisZ = AxisLineCoverage(vNearPoint, rayDir, vec3(0.0, 0.0, 1.0), uAxisWidthPixels, axisZClosestPoint);
+    // An axis that passes through the eye - the X axis in a Left or Right view, Z in Front or Back,
+    // Y in Top or Bottom - is a single vanishing point on screen, not a line. Every ray starts on
+    // it, so without this it "hit" at the eye itself, behind the near plane, and that depth failed
+    // the depth test for the whole view, taking the other axes with it.
+    float eyeScale = max(uFadeStart, 1e-6) * 1e-3;
+    axisX *= step(eyeScale, length(axisXClosestPoint - uCameraPos));
+    axisY *= step(eyeScale, length(axisYClosestPoint - uCameraPos));
+    axisZ *= step(eyeScale, length(axisZClosestPoint - uCameraPos));
 
     // ---- pick the decade of spacing, and how far through it we are --------
     // The upper clamp keeps pow(10, floor(lod)) finite for the stretched
@@ -183,6 +202,7 @@ void main() {
     float groundDist = length(worldPos.xz - uCameraPos.xz);
     float groundFade = 1.0 - smoothstep(uFadeStart, uFadeEnd, groundDist);
     float groundAlpha = accum.a * groundFade * uOpacity;
+    groundAlpha *= groundHitValid;
 
     // ---- axes: each fades by its own distance from the camera --------------
     // Not by the ground hit: that is unrelated to how far along an axis this pixel is, and for

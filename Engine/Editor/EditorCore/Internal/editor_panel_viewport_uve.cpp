@@ -18,6 +18,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -400,9 +401,15 @@ void EditorUVE::DrawViewportOverlayBubblesUVE(const Math::Vector2UVE imageOrigin
             if (option("Perspective", !m_viewportOverlayState.orthographic, halfWidth)) {
                 SetViewportOrthographicUVE(false);
             }
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+                ImGui::SetTooltip("Toggle: Numpad 5  /  Alt+5");
+            }
             ImGui::SameLine();
             if (option("Orthographic", m_viewportOverlayState.orthographic, halfWidth)) {
                 SetViewportOrthographicUVE(true);
+            }
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+                ImGui::SetTooltip("Toggle: Numpad 5  /  Alt+5");
             }
 
             ImGui::Dummy(ImVec2{0.0F, 4.0F});
@@ -419,9 +426,12 @@ void EditorUVE::DrawViewportOverlayBubblesUVE(const Math::Vector2UVE imageOrigin
                     RequestViewportViewUVE(view);
                     ImGui::CloseCurrentPopup();
                 }
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+                    ImGui::SetTooltip("%s", GetViewportViewShortcutUVE(view));
+                }
             }
             ImGui::Dummy(ImVec2{0.0F, 2.0F});
-            ImGui::TextDisabled("Orbit to return to a free view.");
+            ImGui::TextDisabled("Orbit to return to a free view. Numpad or Alt+digit.");
             ImGui::EndPopup();
         }
         ImGui::PopStyleVar(3);
@@ -490,6 +500,29 @@ const char* EditorUVE::GetViewportViewNameUVE(const ViewportViewUVE view) noexce
         case ViewportViewUVE::User: break;
     }
     return "User";
+}
+
+std::optional<EditorUVE::ViewportViewUVE> EditorUVE::GetViewportViewForKeypadDigitUVE(const int digit,
+                                                                                    const bool opposite) noexcept {
+    switch (digit) {
+        case 7: return opposite ? ViewportViewUVE::Bottom : ViewportViewUVE::Top;
+        case 1: return opposite ? ViewportViewUVE::Back : ViewportViewUVE::Front;
+        case 3: return opposite ? ViewportViewUVE::Left : ViewportViewUVE::Right;
+        default: return std::nullopt;
+    }
+}
+
+const char* EditorUVE::GetViewportViewShortcutUVE(const ViewportViewUVE view) noexcept {
+    switch (view) {
+        case ViewportViewUVE::Top: return "Numpad 7  /  Alt+7";
+        case ViewportViewUVE::Bottom: return "Ctrl+Numpad 7  /  Ctrl+Alt+7";
+        case ViewportViewUVE::Front: return "Numpad 1  /  Alt+1";
+        case ViewportViewUVE::Back: return "Ctrl+Numpad 1  /  Ctrl+Alt+1";
+        case ViewportViewUVE::Right: return "Numpad 3  /  Alt+3";
+        case ViewportViewUVE::Left: return "Ctrl+Numpad 3  /  Ctrl+Alt+3";
+        case ViewportViewUVE::User: break;
+    }
+    return "";
 }
 
 bool EditorUVE::SetViewportGridUVE(const bool visible, const float opacity) {

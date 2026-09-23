@@ -668,6 +668,12 @@ public:
         return m_viewportOverlayState.viewRequestSerial;
     }
     [[nodiscard]] static const char* GetViewportViewNameUVE(ViewportViewUVE view) noexcept;
+    /// The keypad layout for named views: 7 Top, 1 Front, 3 Right, and with `opposite` (Ctrl) the
+    /// view from the other side - Bottom, Back, Left. Any other digit is not a view.
+    [[nodiscard]] static std::optional<ViewportViewUVE> GetViewportViewForKeypadDigitUVE(int digit,
+                                                                                       bool opposite) noexcept;
+    /// The shortcut text shown next to a view or the projection switch in the view menu.
+    [[nodiscard]] static const char* GetViewportViewShortcutUVE(ViewportViewUVE view) noexcept;
 
     /// The viewport grid: shown or hidden, and its opacity (0.1..1 - never fully invisible, which
     /// would be a hidden grid under another name). Both are editor preferences, saved with the

@@ -157,6 +157,7 @@ public:
         UpdateSelectionFromMouseUVE(width, height, pointerTaken);
         UpdateEntityContextToolbarFromMouseUVE(width, height, pointerTaken);
         UpdateCameraFromMouseUVE(height, pointerTaken);
+        UpdateViewportViewHotkeysUVE();
         UpdateViewportBookmarkHotkeysUVE();
         // Advances the eased snap-to-axis animation SnapToDirection() starts (a manual orbit/pan
         // cancels it instead - see OrbitCamera.cpp) - without this the camera would flag itself
@@ -1002,9 +1003,46 @@ private:
     // keyboard so typing a digit into an input never hijacks the camera. All bookmark state and
     // marker composition live in EditorUVE (tested there); this method only translates between
     // those plain orbit poses and this OrbitCamera - it owns no camera logic of its own.
-    void UpdateViewportBookmarkHotkeysUVE() {
+    // Named views from the keyboard: the keypad layout (7 Top, 1 Front, 3 Right, Ctrl for the
+    // opposite side, 5 to switch projection), with Alt+digit as the same thing on keyboards that
+    // have no keypad. Alt keeps them clear of the bookmarks, which own plain and Ctrl+digit.
+    // Same hovered-panel and text-input routing as the bookmarks.
+    void UpdateViewportViewHotkeysUVE() {
         const ImGuiIO& io = ImGui::GetIO();
         if (!ImGui::IsWindowHovered() || io.WantTextInput) {
+            return;
+        }
+        struct DigitKeysUVE {
+            int digit;
+            ImGuiKey keypad;
+            ImGuiKey row;
+        };
+        static constexpr DigitKeysUVE kKeysUVE[] = {
+            {1, ImGuiKey_Keypad1, ImGuiKey_1},
+            {3, ImGuiKey_Keypad3, ImGuiKey_3},
+            {5, ImGuiKey_Keypad5, ImGuiKey_5},
+            {7, ImGuiKey_Keypad7, ImGuiKey_7},
+        };
+        for (const DigitKeysUVE& keys : kKeysUVE) {
+            const bool pressed = ImGui::IsKeyPressed(keys.keypad, false) ||
+                                 (io.KeyAlt && ImGui::IsKeyPressed(keys.row, false));
+            if (!pressed) {
+                continue;
+            }
+            if (keys.digit == 5) {
+                editor_.SetViewportOrthographicUVE(!editor_.IsViewportOrthographicUVE());
+                continue;
+            }
+            if (const auto view = UVE::Editor::EditorUVE::GetViewportViewForKeypadDigitUVE(keys.digit, io.KeyCtrl)) {
+                editor_.RequestViewportViewUVE(*view);
+            }
+        }
+    }
+
+    void UpdateViewportBookmarkHotkeysUVE() {
+        const ImGuiIO& io = ImGui::GetIO();
+        // Alt+digit belongs to the named views (UpdateViewportViewHotkeysUVE).
+        if (!ImGui::IsWindowHovered() || io.WantTextInput || io.KeyAlt) {
             return;
         }
         static constexpr ImGuiKey kDigitKeysUVE[] = {

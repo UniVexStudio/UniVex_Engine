@@ -1005,6 +1005,17 @@ TEST(EditorUVETest, ViewportViewUVE_NamedViewsGoOrthographicAutomaticallyUntilOr
         EXPECT_FALSE(editor.IsViewportOrthographicUVE());
 
         EXPECT_STREQ(EditorUVE::GetViewportViewNameUVE(View::Back), "Back");
+
+        // Keypad layout: 7/1/3 are Top/Front/Right, Ctrl gives the opposite side; others are not views.
+        EXPECT_EQ(EditorUVE::GetViewportViewForKeypadDigitUVE(7, false), View::Top);
+        EXPECT_EQ(EditorUVE::GetViewportViewForKeypadDigitUVE(7, true), View::Bottom);
+        EXPECT_EQ(EditorUVE::GetViewportViewForKeypadDigitUVE(1, false), View::Front);
+        EXPECT_EQ(EditorUVE::GetViewportViewForKeypadDigitUVE(1, true), View::Back);
+        EXPECT_EQ(EditorUVE::GetViewportViewForKeypadDigitUVE(3, false), View::Right);
+        EXPECT_EQ(EditorUVE::GetViewportViewForKeypadDigitUVE(3, true), View::Left);
+        EXPECT_FALSE(EditorUVE::GetViewportViewForKeypadDigitUVE(5, false).has_value());
+        EXPECT_FALSE(EditorUVE::GetViewportViewForKeypadDigitUVE(0, true).has_value());
+        EXPECT_STRNE(EditorUVE::GetViewportViewShortcutUVE(View::Left), "");
         editor.ShutdownUVE();
     }
     engine.Shutdown();
