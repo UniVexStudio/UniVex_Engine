@@ -3980,6 +3980,10 @@ void EditorUVE::LoadSessionSettingsUVE() {
         getPositiveSnapValue("editor.viewport.snap.rotateStepDegrees", snapping.rotateStepDegrees);
     snapping.scaleStep = getPositiveSnapValue("editor.viewport.snap.scaleStep", snapping.scaleStep);
     m_transformSnappingSettings = snapping;
+    // A stored opacity that is out of range or corrupt is ignored as a whole with the visibility,
+    // leaving both at their defaults rather than restoring one half of the choice.
+    static_cast<void>(SetViewportGridUVE(config.GetBoolUVE("editor.viewport.grid.visible", true),
+                                         static_cast<float>(config.GetDoubleUVE("editor.viewport.grid.opacity", 1.0))));
     // The viewport's axis hues, restored only if a complete, in-range palette was stored. Anything
     // missing, out of 0..1, or not finite leaves the state unset, which makes the host re-seed its
     // own defaults on the next frame - a corrupt or hand-edited settings file therefore costs the
@@ -4030,6 +4034,8 @@ bool EditorUVE::SaveSessionSettingsUVE() {
     config.SetDoubleUVE("editor.viewport.snap.translateStep", m_transformSnappingSettings.translateStep);
     config.SetDoubleUVE("editor.viewport.snap.rotateStepDegrees", m_transformSnappingSettings.rotateStepDegrees);
     config.SetDoubleUVE("editor.viewport.snap.scaleStep", m_transformSnappingSettings.scaleStep);
+    config.SetBoolUVE("editor.viewport.grid.visible", m_viewportOverlayState.gridVisible);
+    config.SetDoubleUVE("editor.viewport.grid.opacity", m_viewportOverlayState.gridOpacity);
     // The viewport's axis hues. Written only once the host has seeded the real defaults: until
     // then the stored values are zeroes standing for "not chosen yet", and persisting those would
     // turn "I never touched the colours" into "I chose black" on the next launch.

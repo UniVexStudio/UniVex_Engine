@@ -98,6 +98,8 @@ public:
     // outright and nothing changes, so a corrupt settings file cannot leave the viewport drawing
     // axes in colours nobody picked. Returns whether the palette was applied.
     bool SetAxisPaletteUVE(const univex::viewport::AxisPaletteUVE& palette);
+    /// Overall strength of the ground grid, clamped to 0..1.
+    void SetGridOpacityUVE(float opacity);
     [[nodiscard]] univex::viewport::AxisPaletteUVE GetAxisPaletteUVE() const;
 
     void SetGizmoMode(GizmoMode mode) { gizmoMode_ = mode; }

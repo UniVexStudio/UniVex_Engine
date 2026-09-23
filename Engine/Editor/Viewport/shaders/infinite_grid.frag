@@ -31,8 +31,8 @@
 // single proprietary implementation.
 // ---------------------------------------------------------------------------
 
-in vec3 vNearPoint;
-in vec3 vFarPoint;
+in vec4 vNearPointH;
+in vec4 vFarPointH;
 
 uniform mat4  uViewProj;
 uniform vec3  uCameraPos;
@@ -86,6 +86,9 @@ vec4 Over(vec4 dst, vec3 srcColor, float srcAlpha) {
 }
 
 void main() {
+    // The divide happens here, per fragment: see infinite_grid.vert for why it cannot happen there.
+    vec3 vNearPoint = vNearPointH.xyz / vNearPointH.w;
+    vec3 vFarPoint = vFarPointH.xyz / vFarPointH.w;
     vec3 rayDir = vFarPoint - vNearPoint;
 
     // Ray/plane intersection with y = 0.

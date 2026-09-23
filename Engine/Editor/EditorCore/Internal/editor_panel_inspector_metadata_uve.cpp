@@ -42,6 +42,7 @@
 #include "uve/asset/i_project_file_index_uve.h"
 #include "uve/component/editor_description_component_uve.h"
 #include "uve/component/entity_uve.h"
+#include "uve/component/visibility_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
 #include "uve/math/vector2_uve.h"
 #include "uve/math/vector3_uve.h"
@@ -801,6 +802,43 @@ bool EditorUVE::SetSelectedComponentValueUVE(const TypeMetadataEntryUVE& entry, 
     RecordHistoryUVE(ComponentPropertyHistoryEntryUVE{m_selectedEntity, &entry, std::move(before), std::move(after),
                                                       selectionBefore, CaptureSelectionSnapshotUVE(), dirtyBefore,
                                                       true});
+    return true;
+}
+
+bool EditorUVE::SetEntityVisibleUVE(const Scene::EntityUVE entity, const bool visible) {
+    if (!IsAuthoringCommandAllowedUVE() || !IsDocumentEntityUVE(entity)) {
+        return false;
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (!entityManager.HasComponentUVE<Scene::VisibilityComponentUVE>(entity)) {
+        return false;
+    }
+    const Core::TypeMetadataEntryUVE* const entry = Scene::GetSceneComponentMetadataRegistryUVE().FindTypeByIndexUVE(
+        std::type_index(typeid(Scene::VisibilityComponentUVE)));
+    if (entry == nullptr || !entry->HasFactoryUVE()) {
+        return false;
+    }
+    auto& visibility = entityManager.GetComponentUVE<Scene::VisibilityComponentUVE>(entity);
+    if (visibility.visible == visible) {
+        return false;
+    }
+    // Same history entry as an Inspector edit, so undo restores the whole component on this
+    // entity and leaves the selection exactly as it was.
+    Core::TypeInstanceUVE before = Core::TypeInstanceUVE::CloneUVE(*entry, &visibility);
+    if (!before.IsValidUVE()) {
+        return false;
+    }
+    visibility.visible = visible;
+    Core::TypeInstanceUVE after = Core::TypeInstanceUVE::CloneUVE(*entry, &visibility);
+    if (!after.IsValidUVE()) {
+        visibility.visible = !visible;
+        return false;
+    }
+    const EditorSelectionSnapshotUVE selection = CaptureSelectionSnapshotUVE();
+    const bool dirtyBefore = m_sceneDirty;
+    m_sceneDirty = true;
+    RecordHistoryUVE(ComponentPropertyHistoryEntryUVE{entity, entry, std::move(before), std::move(after), selection,
+                                                      selection, dirtyBefore, true});
     return true;
 }
 
