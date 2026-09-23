@@ -1052,6 +1052,7 @@ private:
     void DrawBottomDockUVE();
     void DrawBottomDockContentUVE();
     void DrawHierarchyPanelUVE();
+    void DrawHierarchyNodeContextMenuUVE(Scene::EntityUVE entity);
     void DrawHierarchyNodeUVE(Scene::EntityUVE entity);
     void AcceptHierarchyDropTargetUVE(Scene::EntityUVE targetParent);
     void DrawInspectorPanelUVE();
