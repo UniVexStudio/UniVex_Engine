@@ -647,8 +647,9 @@ settings question.
 - [ ] Recent files / recent projects list length, and whether it is cleared on exit.
 - [ ] Toolbar contents and button size.
 - [ ] Confirmation prompts: which destructive actions ask first.
-- [/] "Save Editor Preferences" exists today as a single menu item that writes the sixteen keys;
-      it should become an automatic save on change once the substrate lands.
+- [/] "Save Editor Preferences" exists as a menu item, and an interactive editor now also saves
+      its preferences when it shuts down; it should become an automatic save on change once the
+      substrate lands.
 
 ## 2.6 Viewport and 3D editing
 
@@ -697,10 +698,11 @@ The group with the most real backing today.
 
 ## 2.7 Inspector
 
-- [~] Collapsible, component-grouped sections with persisted expansion state. Every section is
+- [x] Collapsible, component-grouped sections with persisted expansion state. Every section is
       a collapsible header, a component that belongs to a node sits nested inside the node's own
-      section, and related fields share collapsible sub-groups; missing: remembering which
-      sections were collapsed.
+      section, and related fields share collapsible sub-groups. Which ones are open is kept by
+      key (section, nested component, sub-group) across selections and sessions, bounded to 256
+      entries; covered by an editor test.
 - [/] Property-row helpers used by every drawer, replacing the hand-drawn rows and the ten
       copy-pasted colour rows. Rows are drawn from the type metadata - label, tooltip, range,
       step, enum and colour - through one set of helpers.
