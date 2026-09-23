@@ -157,6 +157,7 @@ public:
         UpdateSelectionFromMouseUVE(width, height, pointerTaken);
         UpdateEntityContextToolbarFromMouseUVE(width, height, pointerTaken);
         UpdateCameraFromMouseUVE(height, pointerTaken);
+        UpdateViewportViewHotkeysUVE();
         UpdateViewportBookmarkHotkeysUVE();
         // Advances the eased snap-to-axis animation SnapToDirection() starts (a manual orbit/pan
         // cancels it instead - see OrbitCamera.cpp) - without this the camera would flag itself
@@ -402,10 +403,52 @@ private:
     // ViewportRenderPass each frame. Snap is no longer decorative: the bubble now writes through
     // to EditorUVE's real snapping settings, which is what quantises a handle drag (see
     // UpdateGizmoDragUVE).
+    using ViewportViewUVE = UVE::Editor::EditorUVE::ViewportViewUVE;
+
+    // Looks at the orbit target along a world axis. The direction is where the eye sits relative
+    // to the target, the same convention as the nav gizmo's balls (+Y is Top).
+    void ApplyNamedViewUVE(const ViewportViewUVE view) {
+        // Top and Bottom are set by yaw and pitch directly: looking down the pole has no yaw of its
+        // own, and a named view must always land the same way - X to the right, -Z up the screen
+        // for Top - whatever angle the camera came from.
+        constexpr float kHalfPi = 1.5707963f;
+        const auto& limits = camera_.Settings();
+        univex::math::Vec3 direction{};
+        switch (view) {
+            case ViewportViewUVE::Top: camera_.SnapToYawPitch(kHalfPi, limits.pitchMax); return;
+            case ViewportViewUVE::Bottom: camera_.SnapToYawPitch(kHalfPi, limits.pitchMin); return;
+            case ViewportViewUVE::Front: direction = {0.f, 0.f, 1.f}; break;
+            case ViewportViewUVE::Back: direction = {0.f, 0.f, -1.f}; break;
+            case ViewportViewUVE::Right: direction = {1.f, 0.f, 0.f}; break;
+            case ViewportViewUVE::Left: direction = {-1.f, 0.f, 0.f}; break;
+            case ViewportViewUVE::User: return;
+        }
+        camera_.SnapToDirection(direction);
+    }
+
+    // The nav gizmo's ball directions are exact world axes; anything else is not a named view.
+    [[nodiscard]] static ViewportViewUVE NamedViewForDirectionUVE(const univex::math::Vec3& d) {
+        if (d.y > 0.5f) return ViewportViewUVE::Top;
+        if (d.y < -0.5f) return ViewportViewUVE::Bottom;
+        if (d.z > 0.5f) return ViewportViewUVE::Front;
+        if (d.z < -0.5f) return ViewportViewUVE::Back;
+        if (d.x > 0.5f) return ViewportViewUVE::Right;
+        if (d.x < -0.5f) return ViewportViewUVE::Left;
+        return ViewportViewUVE::User;
+    }
+
     void ApplyOverlayStateUVE(const UVE::Editor::EditorUVE::ViewportOverlayStateUVE& overlayState) {
         auto& settings = renderPass_->Settings();
         settings.projection = overlayState.orthographic ? univex::viewport::ProjectionMode::Orthographic
                                                         : univex::viewport::ProjectionMode::Perspective;
+        // The editor owns projection and named views; the camera follows it. Before this, the
+        // toolbar's projection pill changed only this settings field, which nothing in the editor
+        // host read - the camera never left perspective.
+        camera_.SetOrthographic(overlayState.orthographic);
+        if (overlayState.viewRequestSerial != appliedViewRequestSerial_) {
+            appliedViewRequestSerial_ = overlayState.viewRequestSerial;
+            ApplyNamedViewUVE(overlayState.view);
+        }
         // The Game workspace tab previews what a player would see - no editor-only grid overlay.
         settings.viewGrid = overlayState.gridVisible && !overlayState.gameWorkspaceActive;
         renderPass_->SetGridOpacityUVE(overlayState.gridOpacity);
@@ -944,6 +987,7 @@ private:
         const ImGuiIO& io = ImGui::GetIO();
         if (!suppressOrbit && ImGui::IsMouseDragging(ImGuiMouseButton_Left, 0.0F)) {
             camera_.Orbit(io.MouseDelta.x, io.MouseDelta.y);
+            editor_.NotifyViewportOrbitedUVE();
         } else if (ImGui::IsMouseDragging(ImGuiMouseButton_Middle, 0.0F) ||
                    ImGui::IsMouseDragging(ImGuiMouseButton_Right, 0.0F)) {
             camera_.Pan(io.MouseDelta.x, io.MouseDelta.y, framebufferHeight);
@@ -959,9 +1003,46 @@ private:
     // keyboard so typing a digit into an input never hijacks the camera. All bookmark state and
     // marker composition live in EditorUVE (tested there); this method only translates between
     // those plain orbit poses and this OrbitCamera - it owns no camera logic of its own.
-    void UpdateViewportBookmarkHotkeysUVE() {
+    // Named views from the keyboard: the keypad layout (7 Top, 1 Front, 3 Right, Ctrl for the
+    // opposite side, 5 to switch projection), with Alt+digit as the same thing on keyboards that
+    // have no keypad. Alt keeps them clear of the bookmarks, which own plain and Ctrl+digit.
+    // Same hovered-panel and text-input routing as the bookmarks.
+    void UpdateViewportViewHotkeysUVE() {
         const ImGuiIO& io = ImGui::GetIO();
         if (!ImGui::IsWindowHovered() || io.WantTextInput) {
+            return;
+        }
+        struct DigitKeysUVE {
+            int digit;
+            ImGuiKey keypad;
+            ImGuiKey row;
+        };
+        static constexpr DigitKeysUVE kKeysUVE[] = {
+            {1, ImGuiKey_Keypad1, ImGuiKey_1},
+            {3, ImGuiKey_Keypad3, ImGuiKey_3},
+            {5, ImGuiKey_Keypad5, ImGuiKey_5},
+            {7, ImGuiKey_Keypad7, ImGuiKey_7},
+        };
+        for (const DigitKeysUVE& keys : kKeysUVE) {
+            const bool pressed = ImGui::IsKeyPressed(keys.keypad, false) ||
+                                 (io.KeyAlt && ImGui::IsKeyPressed(keys.row, false));
+            if (!pressed) {
+                continue;
+            }
+            if (keys.digit == 5) {
+                editor_.SetViewportOrthographicUVE(!editor_.IsViewportOrthographicUVE());
+                continue;
+            }
+            if (const auto view = UVE::Editor::EditorUVE::GetViewportViewForKeypadDigitUVE(keys.digit, io.KeyCtrl)) {
+                editor_.RequestViewportViewUVE(*view);
+            }
+        }
+    }
+
+    void UpdateViewportBookmarkHotkeysUVE() {
+        const ImGuiIO& io = ImGui::GetIO();
+        // Alt+digit belongs to the named views (UpdateViewportViewHotkeysUVE).
+        if (!ImGui::IsWindowHovered() || io.WantTextInput || io.KeyAlt) {
             return;
         }
         static constexpr ImGuiKey kDigitKeysUVE[] = {
@@ -990,6 +1071,7 @@ private:
             if (!bookmark.has_value()) {
                 continue; // an empty slot restores nothing - Unreal does the same
             }
+            editor_.NotifyViewportOrbitedUVE(); // a restored pose is a free view, not a named one
             camera_.CancelAnimation();
             camera_.SetTarget(univex::integration::FromUveVector3UVE(bookmark->target));
             camera_.SetYawPitch(bookmark->yawRadians, bookmark->pitchRadians);
@@ -1086,6 +1168,7 @@ private:
         }
         if (navDragMoved_) {
             camera_.Orbit(io.MouseDelta.x, io.MouseDelta.y);
+            editor_.NotifyViewportOrbitedUVE();
         }
 
         if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
@@ -1094,12 +1177,9 @@ private:
                     renderPass_->Style(), univex::app::ViewportRenderPass::NavViewMatrix(camera_),
                     navPressX_, navPressY_, static_cast<float>(renderPass_->Style().navPixelSize));
                 if (pick.hit) {
-                    camera_.SnapToDirection(pick.direction);
-                    auto& settings = renderPass_->Settings();
-                    settings.standardView = univex::viewport::StandardView::User;
-                    if (settings.autoOrthogonal) {
-                        camera_.SetOrthographic(true);
-                    }
+                    // Through the editor, like the toolbar menu, so the label, the projection and
+                    // the camera all agree; the snap itself happens when the request is applied.
+                    editor_.RequestViewportViewUVE(NamedViewForDirectionUVE(pick.direction));
                 }
             }
             navDragging_ = false;
@@ -1109,6 +1189,8 @@ private:
     }
 
     UVE::Editor::EditorUVE& editor_;
+    // The last view request applied to the camera; see ViewportOverlayStateUVE::viewRequestSerial.
+    std::uint32_t appliedViewRequestSerial_ = 0U;
     UVE::Core::EngineCoreUVE& engine_;
     UVE::Scene::IEntityManagerUVE& entityManager_;
     univex::integration::EditorMeshLayerUVE meshLayer_;
