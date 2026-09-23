@@ -258,6 +258,18 @@ public:
         Universal,
     };
 
+    /// The viewport's named camera views. User is any free orbit; the others look along a world
+    /// axis at the orbit target (Top looks down -Y, Front looks down -Z, Right looks down -X).
+    enum class ViewportViewUVE {
+        User,
+        Top,
+        Bottom,
+        Front,
+        Back,
+        Right,
+        Left,
+    };
+
     /// Current state of the Viewport panel's own overlay toolbar (projection mode, active gizmo
     /// tool, snap, grid) - owned and mutated by EditorUVE's own overlay-drawing code
     /// (DrawViewportPanelUVE()), then handed to ViewportPanelRendererUVE each frame so the
@@ -285,6 +297,11 @@ public:
 
     struct ViewportOverlayStateUVE final {
         bool orthographic = false;
+        // The named view the camera is in (User once it is orbited freely), and a counter bumped
+        // on every request to move to one. The host applies a request when the counter changes,
+        // so picking the same view twice still re-snaps, and nothing has to be "consumed".
+        ViewportViewUVE view = ViewportViewUVE::User;
+        std::uint32_t viewRequestSerial = 0U;
         ViewportGizmoModeUVE gizmoMode = ViewportGizmoModeUVE::Universal;
         bool snapEnabled = false;
         bool gridVisible = true;
@@ -637,6 +654,20 @@ public:
     void SetEntityContextToolbarAnchorUVE(Scene::EntityUVE entity, float pixelX, float pixelY);
     /// Closes the entity context toolbar (a right-click that missed every entity).
     void ClearEntityContextToolbarUVE() noexcept;
+
+    /// Viewport projection and named views. Choosing a projection explicitly sticks until changed.
+    /// Moving to a named view switches to orthographic *automatically*, and that automatic
+    /// orthographic ends - back to perspective - as soon as the camera is orbited out of the view,
+    /// which the host reports with NotifyViewportOrbitedUVE().
+    void SetViewportOrthographicUVE(bool orthographic) noexcept;
+    void RequestViewportViewUVE(ViewportViewUVE view) noexcept;
+    void NotifyViewportOrbitedUVE() noexcept;
+    [[nodiscard]] bool IsViewportOrthographicUVE() const noexcept { return m_viewportOverlayState.orthographic; }
+    [[nodiscard]] ViewportViewUVE GetViewportViewUVE() const noexcept { return m_viewportOverlayState.view; }
+    [[nodiscard]] std::uint32_t GetViewportViewRequestSerialUVE() const noexcept {
+        return m_viewportOverlayState.viewRequestSerial;
+    }
+    [[nodiscard]] static const char* GetViewportViewNameUVE(ViewportViewUVE view) noexcept;
 
     /// The viewport grid: shown or hidden, and its opacity (0.1..1 - never fully invisible, which
     /// would be a hidden grid under another name). Both are editor preferences, saved with the
@@ -1327,6 +1358,8 @@ private:
     // + button and from a row's "Add Child Node". The request is a flag so either caller can ask
     // for it from inside its own popup and the picker still opens in the panel's ID scope.
     bool m_nodePickerOpenRequested = false;
+    // True while the orthographic projection came from a named view rather than an explicit choice.
+    bool m_viewportOrthographicIsAutomatic = false;
     // Reveal-on-select: when the active selection changes, the hierarchy opens the rows above it
     // and scrolls it into view once, so a node picked in the viewport or just added is never
     // hidden in a collapsed branch. Once shown, the user is free to collapse it again.

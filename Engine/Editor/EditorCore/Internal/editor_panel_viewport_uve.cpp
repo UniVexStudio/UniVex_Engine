@@ -248,7 +248,14 @@ void EditorUVE::DrawViewportOverlayBubblesUVE(const Math::Vector2UVE imageOrigin
     // A vertical-dots glyph (U+22EE) drawn as text came out as "?" - the current base UI font
     // has no glyph for it. Drawn procedurally instead, matching every other icon in this toolbar -
     // reliable regardless of font coverage.
-    const char* const projectionLabel = m_viewportOverlayState.orthographic ? "Orthographic" : "Perspective";
+    // "Perspective", "Orthographic", or the named view with its projection ("Top - Ortho").
+    const char* const projectionName = m_viewportOverlayState.orthographic ? "Orthographic" : "Perspective";
+    const std::string projectionText =
+        m_viewportOverlayState.view == ViewportViewUVE::User
+            ? std::string{projectionName}
+            : std::string{GetViewportViewNameUVE(m_viewportOverlayState.view)} +
+                  (m_viewportOverlayState.orthographic ? " - Ortho" : " - Persp");
+    const char* const projectionLabel = projectionText.c_str();
     const ImVec2 textSize = ImGui::CalcTextSize(projectionLabel);
     constexpr float kDotsWidthUVE = 10.0F;
     constexpr float kDotsToTextGapUVE = 5.0F;
@@ -364,7 +371,31 @@ void EditorUVE::DrawViewportOverlayBubblesUVE(const Math::Vector2UVE imageOrigin
                                  pillCenterY - textSize.y * 0.5F},
                           dotColor, projectionLabel);
         if (pressed) {
-            m_viewportOverlayState.orthographic = !m_viewportOverlayState.orthographic;
+            ImGui::OpenPopup("##viewport-view-menu");
+        }
+        if (hovered && !ImGui::IsPopupOpen("##viewport-view-menu")) {
+            ImGui::SetTooltip("Projection and view");
+        }
+        ImGui::SetNextWindowPos(ImVec2{pillMin.x, pillMax.y + 4.0F}, ImGuiCond_Appearing);
+        if (ImGui::BeginPopup("##viewport-view-menu")) {
+            ImGui::TextDisabled("Projection");
+            if (ImGui::MenuItem("Perspective", nullptr, !m_viewportOverlayState.orthographic)) {
+                SetViewportOrthographicUVE(false);
+            }
+            if (ImGui::MenuItem("Orthographic", nullptr, m_viewportOverlayState.orthographic)) {
+                SetViewportOrthographicUVE(true);
+            }
+            ImGui::Separator();
+            ImGui::TextDisabled("View");
+            constexpr std::array<ViewportViewUVE, 6> kViews{ViewportViewUVE::Top,   ViewportViewUVE::Bottom,
+                                                            ViewportViewUVE::Front, ViewportViewUVE::Back,
+                                                            ViewportViewUVE::Right, ViewportViewUVE::Left};
+            for (const ViewportViewUVE view : kViews) {
+                if (ImGui::MenuItem(GetViewportViewNameUVE(view), nullptr, m_viewportOverlayState.view == view)) {
+                    RequestViewportViewUVE(view);
+                }
+            }
+            ImGui::EndPopup();
         }
     }
 }
@@ -393,6 +424,45 @@ namespace {
 }
 
 } // namespace
+
+void EditorUVE::SetViewportOrthographicUVE(const bool orthographic) noexcept {
+    m_viewportOverlayState.orthographic = orthographic;
+    m_viewportOrthographicIsAutomatic = false;
+}
+
+void EditorUVE::RequestViewportViewUVE(const ViewportViewUVE view) noexcept {
+    m_viewportOverlayState.view = view;
+    ++m_viewportOverlayState.viewRequestSerial;
+    // An axis view reads best flat; switch to orthographic unless the author already chose it.
+    if (view != ViewportViewUVE::User && !m_viewportOverlayState.orthographic) {
+        m_viewportOverlayState.orthographic = true;
+        m_viewportOrthographicIsAutomatic = true;
+    }
+}
+
+void EditorUVE::NotifyViewportOrbitedUVE() noexcept {
+    if (m_viewportOverlayState.view == ViewportViewUVE::User) {
+        return;
+    }
+    m_viewportOverlayState.view = ViewportViewUVE::User;
+    if (m_viewportOrthographicIsAutomatic) {
+        m_viewportOverlayState.orthographic = false;
+        m_viewportOrthographicIsAutomatic = false;
+    }
+}
+
+const char* EditorUVE::GetViewportViewNameUVE(const ViewportViewUVE view) noexcept {
+    switch (view) {
+        case ViewportViewUVE::Top: return "Top";
+        case ViewportViewUVE::Bottom: return "Bottom";
+        case ViewportViewUVE::Front: return "Front";
+        case ViewportViewUVE::Back: return "Back";
+        case ViewportViewUVE::Right: return "Right";
+        case ViewportViewUVE::Left: return "Left";
+        case ViewportViewUVE::User: break;
+    }
+    return "User";
+}
 
 bool EditorUVE::SetViewportGridUVE(const bool visible, const float opacity) {
     if (!std::isfinite(opacity) || opacity < kMinimumViewportGridOpacityUVE || opacity > 1.0F) {

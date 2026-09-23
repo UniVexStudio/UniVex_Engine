@@ -966,6 +966,50 @@ TEST(EditorUVETest, SessionSettingsUVE_MigratesWithoutHiddenWriteAndPreservesDoc
     std::filesystem::remove(config.settingsFilePath);
 }
 
+TEST(EditorUVETest, ViewportViewUVE_NamedViewsGoOrthographicAutomaticallyUntilOrbited) {
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_viewport_views.uvescene");
+        editor.InitUVE();
+        using View = EditorUVE::ViewportViewUVE;
+        EXPECT_EQ(editor.GetViewportViewUVE(), View::User);
+        EXPECT_FALSE(editor.IsViewportOrthographicUVE());
+        const std::uint32_t serialBefore = editor.GetViewportViewRequestSerialUVE();
+
+        // A named view switches to orthographic by itself, and each request bumps the serial -
+        // picking the same view again must re-snap a camera that has drifted.
+        editor.RequestViewportViewUVE(View::Top);
+        EXPECT_EQ(editor.GetViewportViewUVE(), View::Top);
+        EXPECT_TRUE(editor.IsViewportOrthographicUVE());
+        editor.RequestViewportViewUVE(View::Top);
+        EXPECT_EQ(editor.GetViewportViewRequestSerialUVE(), serialBefore + 2U);
+
+        // Orbiting out of it returns to a free perspective view.
+        editor.NotifyViewportOrbitedUVE();
+        EXPECT_EQ(editor.GetViewportViewUVE(), View::User);
+        EXPECT_FALSE(editor.IsViewportOrthographicUVE());
+
+        // An orthographic the author chose sticks through views and orbits.
+        editor.SetViewportOrthographicUVE(true);
+        editor.RequestViewportViewUVE(View::Front);
+        editor.NotifyViewportOrbitedUVE();
+        EXPECT_EQ(editor.GetViewportViewUVE(), View::User);
+        EXPECT_TRUE(editor.IsViewportOrthographicUVE());
+
+        // Choosing perspective while in a named view keeps the view.
+        editor.RequestViewportViewUVE(View::Right);
+        editor.SetViewportOrthographicUVE(false);
+        EXPECT_EQ(editor.GetViewportViewUVE(), View::Right);
+        EXPECT_FALSE(editor.IsViewportOrthographicUVE());
+
+        EXPECT_STREQ(EditorUVE::GetViewportViewNameUVE(View::Back), "Back");
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
 TEST(EditorUVETest, ViewportGridUVE_RefusesBadOpacityAndPersistsAcrossSessionReload) {
     const Core::EngineConfigUVE config = MakeEditorTestConfigUVE();
     std::filesystem::remove(config.settingsFilePath);

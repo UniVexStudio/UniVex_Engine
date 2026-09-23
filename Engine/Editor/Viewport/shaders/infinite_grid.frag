@@ -146,7 +146,14 @@ void main() {
     float axisYSigned = dot(axisYClosestPoint.xz, axisYPerp) / axisYPerpLength;
     vec2 axisYDistPerPixel = vec2(dFdx(axisYSigned), dFdy(axisYSigned));
     float axisYWorldPerPixel = max(length(axisYDistPerPixel), 1e-9);
-    float axisY = AxisCoverage(axisYSigned, axisYWorldPerPixel, uAxisWidthPixels) * (axisYT > 0.0 ? 1.0 : 0.0);
+    // A ray (nearly) parallel to the Y axis - every ray of an orthographic Top or Bottom view -
+    // has no closest-approach point worth drawing: the axis is a single point on screen there.
+    // Fade it out as the ray turns vertical instead of letting the clamped division smear it
+    // into a line across the view.
+    float rayHorizontal = length(rayDir.xz) / max(length(rayDir), 1e-9);
+    float axisYAlongRay = smoothstep(0.02, 0.08, rayHorizontal);
+    float axisY = AxisCoverage(axisYSigned, axisYWorldPerPixel, uAxisWidthPixels) * (axisYT > 0.0 ? 1.0 : 0.0) *
+                  axisYAlongRay;
 
     // ---- pick the decade of spacing, and how far through it we are --------
     // The upper clamp keeps pow(10, floor(lod)) finite for the stretched
