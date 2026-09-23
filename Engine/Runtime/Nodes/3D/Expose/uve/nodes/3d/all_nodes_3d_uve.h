@@ -4,6 +4,7 @@
 
 // Node components (authored data structs) — the 21 kinds whose node-specific data has no shared
 // component to live in:
+#include "uve/nodes/3d/abstract_nodes_3d_uve.h"
 #include "uve/nodes/3d/animatable_body_3d_uve.h"
 #include "uve/nodes/3d/bone_attachment_3d_uve.h"
 #include "uve/nodes/3d/decal_3d_uve.h"

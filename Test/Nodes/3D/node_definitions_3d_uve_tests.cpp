@@ -9,6 +9,9 @@
 #include <gtest/gtest.h>
 
 #include "uve/component/auto_translate_component_uve.h"
+#include "uve/component/bone_modifier_component_uve.h"
+#include "uve/component/physics_object_component_uve.h"
+#include "uve/component/render_instance_component_uve.h"
 #include "uve/component/camera_component_uve.h"
 #include "uve/component/collider_component_uve.h"
 #include "uve/component/editor_description_component_uve.h"
@@ -364,6 +367,47 @@ TEST_F(Node3DDefinitionsUVETest, Node3DCarriesVisibilityAndTheCommonNodeSection)
     EXPECT_TRUE(entityManager.HasComponentUVE<EditorDescriptionComponentUVE>(entity));
     EXPECT_TRUE(entityManager.HasComponentUVE<ScriptComponentUVE>(entity));
     EXPECT_TRUE(entityManager.HasComponentUVE<NodeMetadataComponentUVE>(entity));
+}
+
+TEST_F(Node3DDefinitionsUVETest, AbstractBasesAreNode3DPlusTheirOwnComponent) {
+    const EntityUVE bone = CreateEntityUVE();
+    const EntityUVE physics = CreateEntityUVE();
+    const EntityUVE render = CreateEntityUVE();
+    ApplyBoneModifier3DBaseUVE(entityManager, bone, "LookAtModifier3D");
+    ApplyPhysicsObject3DBaseUVE(entityManager, physics, "Area3D");
+    ApplyRenderInstance3DBaseUVE(entityManager, render, "MeshInstance3D");
+    ExpectNode3DBaselineUVE(entityManager, bone, "LookAtModifier3D");
+    ExpectNode3DBaselineUVE(entityManager, physics, "Area3D");
+    ExpectNode3DBaselineUVE(entityManager, render, "MeshInstance3D");
+    for (const EntityUVE entity : {bone, physics, render}) {
+        EXPECT_TRUE(entityManager.HasComponentUVE<VisibilityComponentUVE>(entity));
+        EXPECT_TRUE(entityManager.HasComponentUVE<ProcessComponentUVE>(entity));
+        EXPECT_TRUE(entityManager.HasComponentUVE<NodeMetadataComponentUVE>(entity));
+    }
+    EXPECT_TRUE(entityManager.HasComponentUVE<BoneModifierComponentUVE>(bone));
+    EXPECT_TRUE(entityManager.HasComponentUVE<PhysicsObjectComponentUVE>(physics));
+    EXPECT_TRUE(entityManager.HasComponentUVE<RenderInstanceComponentUVE>(render));
+    // The child's name, never the abstract base's.
+    EXPECT_EQ(entityManager.GetComponentUVE<NameComponentUVE>(physics).name, "Area3D");
+    // Authored values survive a second apply.
+    entityManager.GetComponentUVE<BoneModifierComponentUVE>(bone).influence = 0.5F;
+    ApplyBoneModifier3DBaseUVE(entityManager, bone, "LookAtModifier3D");
+    EXPECT_EQ(entityManager.GetComponentUVE<BoneModifierComponentUVE>(bone).influence, 0.5F);
+}
+
+TEST_F(Node3DDefinitionsUVETest, AbstractBaseComponentsRejectValuesTheySaveBadly) {
+    EXPECT_TRUE(IsBoneModifierComponentValidUVE(BoneModifierComponentUVE{}));
+    EXPECT_FALSE(IsBoneModifierComponentValidUVE(BoneModifierComponentUVE{true, 1.5F}));
+    EXPECT_FALSE(IsBoneModifierComponentValidUVE(BoneModifierComponentUVE{true, std::numeric_limits<float>::quiet_NaN()}));
+    PhysicsObjectComponentUVE object{};
+    EXPECT_TRUE(IsPhysicsObjectComponentValidUVE(object));
+    object.collisionPriority = -1.0F;
+    EXPECT_FALSE(IsPhysicsObjectComponentValidUVE(object));
+    object.collisionPriority = 1.0F;
+    object.disableMode = static_cast<PhysicsObjectDisableModeUVE>(9);
+    EXPECT_FALSE(IsPhysicsObjectComponentValidUVE(object));
+    EXPECT_FALSE(IsRenderInstanceComponentValidUVE(
+        RenderInstanceComponentUVE{1U, std::numeric_limits<float>::infinity(), true}));
 }
 
 TEST_F(Node3DDefinitionsUVETest, Node3DApplyIsIdempotent) {

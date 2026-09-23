@@ -35,6 +35,9 @@
 #include "uve/component/thread_group_component_uve.h"
 #include "uve/nodes/3d/all_nodes_3d_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
+#include "uve/component/render_instance_component_uve.h"
+#include "uve/component/physics_object_component_uve.h"
+#include "uve/component/bone_modifier_component_uve.h"
 #include "uve/component/light_component_uve.h"
 #include "uve/component/mesh_component_uve.h"
 #include "uve/component/name_component_uve.h"
@@ -719,6 +722,30 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_InvalidEditorDescriptionPayload_RollsB
     EXPECT_TRUE(roots.empty());
     EXPECT_TRUE(entityManager.IsAliveUVE(existing));
     EXPECT_EQ(entityManager.GetEntityCountUVE(), entityCountBefore);
+}
+
+TEST_F(SceneSerializerUVETest, CaptureThenRestore_AbstractNodeBasesKeepTheirAuthoredValues) {
+    const EntityUVE source = entityManager.CreateEntityUVE();
+    entityManager.AddComponentUVE<HierarchyComponentUVE>(source, HierarchyComponentUVE{kInvalidEntityUVE});
+    entityManager.AddComponentUVE<BoneModifierComponentUVE>(source, BoneModifierComponentUVE{false, 0.25F});
+    PhysicsObjectComponentUVE object{};
+    object.disableMode = PhysicsObjectDisableModeUVE::KeepActive;
+    object.collisionLayer = 0x5U;
+    object.collisionMask = 0xF0U;
+    object.collisionPriority = 3.5F;
+    object.inputRayPickable = false;
+    object.inputCaptureOnDrag = true;
+    entityManager.AddComponentUVE<PhysicsObjectComponentUVE>(source, object);
+    entityManager.AddComponentUVE<RenderInstanceComponentUVE>(source, RenderInstanceComponentUVE{0x3U, -1.5F, false});
+
+    const std::optional<SceneSnapshotUVE> snapshot = serializer.CaptureUVE(entityManager, {source}, SceneAssetTypeUVE::Scene);
+    ASSERT_TRUE(snapshot.has_value());
+    const std::vector<EntityUVE> roots = serializer.RestoreUVE(entityManager, *snapshot);
+    ASSERT_EQ(roots.size(), 1U);
+    EXPECT_EQ(entityManager.GetComponentUVE<BoneModifierComponentUVE>(roots.front()), (BoneModifierComponentUVE{false, 0.25F}));
+    EXPECT_EQ(entityManager.GetComponentUVE<PhysicsObjectComponentUVE>(roots.front()), object);
+    EXPECT_EQ(entityManager.GetComponentUVE<RenderInstanceComponentUVE>(roots.front()),
+              (RenderInstanceComponentUVE{0x3U, -1.5F, false}));
 }
 
 TEST_F(SceneSerializerUVETest, RestoreUVE_MetadataSavedAsPlainStringsLoadsAsStringValues) {
