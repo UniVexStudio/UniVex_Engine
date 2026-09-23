@@ -1053,6 +1053,7 @@ private:
     void DrawBottomDockContentUVE();
     void DrawHierarchyPanelUVE();
     void DrawHierarchyNodeContextMenuUVE(Scene::EntityUVE entity);
+    void DrawNodePickerUVE();
     void DrawHierarchyNodeUVE(Scene::EntityUVE entity);
     void AcceptHierarchyDropTargetUVE(Scene::EntityUVE targetParent);
     void DrawInspectorPanelUVE();
@@ -1306,6 +1307,11 @@ private:
     std::string m_hierarchyRenameBuffer;
     bool m_hierarchyFilterCacheDirty = true;
     bool m_hierarchyRenameFocusRequested = false;
+    // The Add Node picker: a small floating box with a search field, opened from the Scene panel's
+    // + button and from a row's "Add Child Node". The request is a flag so either caller can ask
+    // for it from inside its own popup and the picker still opens in the panel's ID scope.
+    bool m_nodePickerOpenRequested = false;
+    std::string m_nodePickerFilter;
     std::optional<Asset::AssetRecordUVE> m_selectedAsset;
     std::optional<Asset::ProjectFileEntryUVE> m_selectedProjectFile;
     std::optional<Asset::ProjectFileEntryUVE> m_filesystemContextEntry;
