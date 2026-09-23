@@ -413,6 +413,21 @@ public:
     /// transforms are marked dirty for EngineCoreUVE's next scene-graph update. Returns false for
     /// invalid/deleted/non-transform entities or non-finite transform values.
     [[nodiscard]] bool SetSelectedLocalTransformUVE(const Scene::TransformComponentUVE& transform);
+    /// Inspector section clipboard. Copy takes the selected entity's whole component of `entry`'s
+    /// type; Paste writes a copied value back onto a component of the same type (any entity) as one
+    /// undoable edit, refused when the clipboard holds another type or the value breaks the
+    /// component's own rule; Reset writes the type's default the same way.
+    [[nodiscard]] bool CopySelectedComponentUVE(const Core::TypeMetadataEntryUVE& entry);
+    [[nodiscard]] bool CanPasteSelectedComponentUVE(const Core::TypeMetadataEntryUVE& entry) const noexcept;
+    [[nodiscard]] bool PasteSelectedComponentUVE(const Core::TypeMetadataEntryUVE& entry);
+    [[nodiscard]] bool ResetSelectedComponentUVE(const Core::TypeMetadataEntryUVE& entry);
+    /// The same for the Transform section, which is drawn by hand rather than from metadata. Only
+    /// the local pose travels - position, rotation (with its Euler authoring state) and scale; the
+    /// node's own top-level flag stays as it is.
+    [[nodiscard]] bool CopySelectedTransformUVE();
+    [[nodiscard]] bool CanPasteSelectedTransformUVE() const noexcept { return m_transformClipboard.has_value(); }
+    [[nodiscard]] bool PasteSelectedTransformUVE();
+    [[nodiscard]] bool ResetSelectedTransformUVE();
 
     /// Adds or updates persistent human-readable metadata for the selected live document entity.
     /// Returns false without mutation for invalid editor/selection state, an empty or whitespace-only
@@ -1124,6 +1139,9 @@ private:
     bool DrawInspectorFoldUVE(const char* label, const std::string& key, bool defaultOpen, bool asHeader,
                               int flags);
     void DrawHierarchyVisibilityToggleUVE(Scene::EntityUVE entity);
+    // Right-click menu on an Inspector section header: Copy / Paste / Reset. `entry` null means
+    // the Transform section.
+    void DrawInspectorSectionMenuUVE(const Core::TypeMetadataEntryUVE* entry, const char* sectionName);
     void DrawHierarchyRowBadgesUVE(const std::vector<std::string>& warnings, const std::optional<std::string>& script);
     void DrawHierarchyNodeUVE(Scene::EntityUVE entity);
     void AcceptHierarchyDropTargetUVE(Scene::EntityUVE targetParent);
@@ -1304,6 +1322,13 @@ private:
     std::vector<std::filesystem::path> m_favoriteProjectPaths;
     // Inspector fold states by key (see SetInspectorFoldOpenUVE); saved with the session.
     std::map<std::string, bool> m_inspectorFoldOpen;
+    // Inspector section clipboard (see CopySelectedComponentUVE / CopySelectedTransformUVE).
+    struct ComponentClipboardUVE final {
+        const Core::TypeMetadataEntryUVE* entry = nullptr;
+        Core::TypeInstanceUVE value;
+    };
+    std::optional<ComponentClipboardUVE> m_componentClipboard;
+    std::optional<Scene::TransformComponentUVE> m_transformClipboard;
     /// True while the Filesystem panel shows the flattened Favorites list instead of the direct
     /// children of m_contentBrowserDirectory.
     bool m_contentBrowserShowingFavorites = false;
