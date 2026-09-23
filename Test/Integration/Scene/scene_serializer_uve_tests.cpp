@@ -497,7 +497,7 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_InvalidMeshPayload_RollsBackCreatedEnt
     const EntityUVE existing = entityManager.CreateEntityUVE();
     const std::size_t entityCountBefore = entityManager.GetEntityCountUVE();
     const std::string payloadText =
-        R"({"entities":[{"localId":0,"components":{"MeshComponentUVE":{"meshGuid":5,"materialGuid":0}}}]})";
+        R"({"entities":[{"localId":0,"components":{"MeshComponentUVE":{"meshGuid":0,"materialGuid":5}}}]})";
     const auto* const payloadBytes = reinterpret_cast<const std::byte*>(payloadText.data());
     const SceneSnapshotUVE snapshot{
         Asset::EncodeUveFileEnvelopeUVE(SceneAssetTypeUVE::Scene,
