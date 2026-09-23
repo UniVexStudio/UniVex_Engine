@@ -9,6 +9,7 @@
 #include "uve/component/animation_player_component_uve.h"
 #include "uve/component/auto_translate_component_uve.h"
 #include "uve/component/audio_source_component_uve.h"
+#include "uve/component/bone_modifier_component_uve.h"
 #include "uve/component/camera_component_uve.h"
 #include "uve/component/canvas_component_uve.h"
 #include "uve/component/character_controller_component_uve.h"
@@ -23,7 +24,9 @@
 #include "uve/component/process_component_uve.h"
 #include "uve/component/thread_group_component_uve.h"
 #include "uve/component/physics_interpolation_component_uve.h"
+#include "uve/component/physics_object_component_uve.h"
 #include "uve/component/primitive_mesh_component_uve.h"
+#include "uve/component/render_instance_component_uve.h"
 #include "uve/component/rigid_body_component_uve.h"
 #include "uve/component/script_component_uve.h"
 #include "uve/component/transform_component_uve.h"
@@ -563,6 +566,67 @@ void DeclareMediaAndUIUVE(std::vector<TypeMetadataEntryUVE>& entries) {
 /// The common Node section: what every node has regardless of what it is. These sort last, below
 /// whatever the node itself brings, which is where an author expects them - and in a fixed order
 /// among themselves, because an author finds a setting by where it was last time.
+/// The abstract 3D bases. Their sections appear on every concrete child, between what the child
+/// itself brings and the common Node section.
+void DeclareNodeBasesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
+    AddUVE<BoneModifierComponentUVE>(
+        entries,
+        MakeEntryUVE("component.bone_modifier", "BoneModifier3D", kSectionOrderNodeBaseUVE,
+                     {
+                         WithTooltipUVE(DeclareUVE<&BoneModifierComponentUVE::active>("active", "Active",
+                                                                                        kPropertyTypeBoolUVE),
+                                        "Off skips this modifier, as if it were not there."),
+                         WithTooltipUVE(WithRangeUVE(DeclareUVE<&BoneModifierComponentUVE::influence>(
+                                                         "influence", "Influence", kPropertyTypeFloatUVE),
+                                                     0.0, 1.0, 0.01),
+                                        "How much of the modifier's result is blended over the pose."),
+                     }));
+
+    TypeMetadataPropertyUVE priority = WithTooltipUVE(
+        DeclareUVE<&PhysicsObjectComponentUVE::collisionPriority>("collisionPriority", "Priority",
+                                                                  kPropertyTypeFloatUVE),
+        "How strongly this object is pushed out of an overlap; higher yields less.");
+    priority.range = {true, 0.0, 1000000.0, 0.1};
+    AddUVE<PhysicsObjectComponentUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.physics_object", "PhysicsObject3D", kSectionOrderNodeBaseUVE + 1,
+            {
+                WithTooltipUVE(DeclareEnumUVE<&PhysicsObjectComponentUVE::disableMode>(
+                                   "disableMode", "Disable Mode",
+                                   {{0, "Remove"}, {1, "Make Static"}, {2, "Keep Active"}}),
+                               "What happens to this object while its Process mode stops it."),
+                WithTooltipUVE(DeclareUVE<&PhysicsObjectComponentUVE::collisionLayer>("collisionLayer", "Layer",
+                                                                                      kPropertyTypeBitMask32UVE),
+                               "The layers this object is on - what others can find it on."),
+                WithTooltipUVE(DeclareUVE<&PhysicsObjectComponentUVE::collisionMask>("collisionMask", "Mask",
+                                                                                     kPropertyTypeBitMask32UVE),
+                               "The layers this object looks for - what it collides with or detects."),
+                std::move(priority),
+                WithTooltipUVE(DeclareUVE<&PhysicsObjectComponentUVE::inputRayPickable>(
+                                   "inputRayPickable", "Ray Pickable", kPropertyTypeBoolUVE),
+                               "Whether a mouse or touch pick can hit this object."),
+                WithTooltipUVE(DeclareUVE<&PhysicsObjectComponentUVE::inputCaptureOnDrag>(
+                                   "inputCaptureOnDrag", "Capture On Drag", kPropertyTypeBoolUVE),
+                               "Whether a drag that started here keeps reporting here after leaving."),
+            }));
+
+    AddUVE<RenderInstanceComponentUVE>(
+        entries,
+        MakeEntryUVE("component.render_instance", "RenderInstance3D", kSectionOrderNodeBaseUVE + 2,
+                     {
+                         WithTooltipUVE(DeclareUVE<&RenderInstanceComponentUVE::renderLayers>(
+                                            "renderLayers", "Layers", kPropertyTypeBitMask32UVE),
+                                        "The render layers this is on. A camera draws it only when their layers overlap."),
+                         WithTooltipUVE(DeclareUVE<&RenderInstanceComponentUVE::sortingOffset>(
+                                            "sortingOffset", "Sorting Offset", kPropertyTypeFloatUVE),
+                                        "Moves this forward (negative) or back in transparent sorting, without moving it."),
+                         WithTooltipUVE(DeclareUVE<&RenderInstanceComponentUVE::sortingUseAabbCenter>(
+                                            "sortingUseAabbCenter", "Sort By Bounds Center", kPropertyTypeBoolUVE),
+                                        "Sort by the centre of the bounds rather than the origin."),
+                     }));
+}
+
 void DeclareNodeCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     // Each of these is declared here and nowhere else, and each appears in the Inspector - with
     // its dropdown, its resolved answer and its place in the section - without a line of Inspector
@@ -698,6 +762,7 @@ void DeclareNodeCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     DeclareRenderingUVE(entries);
     DeclarePhysicsUVE(entries);
     DeclareMediaAndUIUVE(entries);
+    DeclareNodeBasesUVE(entries);
     DeclareNodeCommonUVE(entries);
 
     TypeMetadataRegistryUVE registry;

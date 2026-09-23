@@ -13,6 +13,7 @@
 
 add_library(uve_nodes_3d STATIC
     Internal/node_3d_common_uve.cpp
+    Internal/abstract_nodes_3d_uve.cpp
     Internal/ray_cast_3d_uve.cpp
     Internal/animatable_body_3d_uve.cpp
     Internal/navigation_region_3d_uve.cpp
