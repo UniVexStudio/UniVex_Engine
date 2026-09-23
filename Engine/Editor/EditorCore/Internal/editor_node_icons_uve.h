@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 
@@ -213,8 +214,16 @@ inline void DrawHierarchyNodeIconUVE(ImDrawList& drawList, const ImVec2 center, 
 
 inline void DrawNativeIconLabelUVE(const std::uintptr_t textureId, const char* const label) {
     if (textureId != 0U) {
-        ImGui::Image(static_cast<ImTextureID>(textureId), ImVec2{16.0F, 16.0F});
-        ImGui::SameLine(0.0F, 5.0F);
+        // Centred on the text line rather than hanging from its top, so icon and name share a
+        // middle whatever the font size.
+        const float line = ImGui::GetTextLineHeight();
+        const float size = std::min(16.0F, line);
+        const ImVec2 cursor = ImGui::GetCursorScreenPos();
+        ImGui::Dummy(ImVec2{size, line});
+        ImGui::GetWindowDrawList()->AddImage(static_cast<ImTextureID>(textureId),
+                                             ImVec2{cursor.x, cursor.y + ((line - size) * 0.5F)},
+                                             ImVec2{cursor.x + size, cursor.y + ((line + size) * 0.5F)});
+        ImGui::SameLine(0.0F, 6.0F);
     }
     ImGui::TextUnformatted(label);
 }
@@ -227,10 +236,14 @@ template <typename DrawIconUVE>
 void DrawProceduralIconLabelUVE(const float radius, const char* const label, DrawIconUVE&& drawIcon) {
     ImDrawList* const drawList = ImGui::GetWindowDrawList();
     const ImVec2 cursor = ImGui::GetCursorScreenPos();
-    ImGui::Dummy(ImVec2{radius * 2.0F, radius * 2.0F});
-    const ImVec2 center{cursor.x + radius, cursor.y + radius};
-    drawIcon(*drawList, center, radius, ImGui::GetColorU32(ImGuiCol_Text));
-    ImGui::SameLine(0.0F, 5.0F);
+    // The glyph is centred on the text line, and its slot is exactly the line's height, so the
+    // name's baseline is the same as any plain row's.
+    const float line = ImGui::GetTextLineHeight();
+    const float glyphRadius = std::min(radius, line * 0.5F);
+    ImGui::Dummy(ImVec2{glyphRadius * 2.0F, line});
+    const ImVec2 center{cursor.x + glyphRadius, cursor.y + (line * 0.5F)};
+    drawIcon(*drawList, center, glyphRadius, ImGui::GetColorU32(ImGuiCol_Text));
+    ImGui::SameLine(0.0F, 6.0F);
     ImGui::TextUnformatted(label);
 }
 

@@ -18,6 +18,7 @@
 #include "uve/editor/editor_uve.h"
 
 #include <algorithm>
+#include <cmath>
 #include <array>
 #include <string>
 #include <string_view>
@@ -144,7 +145,13 @@ void EditorUVE::DrawHierarchyNodeUVE(const Scene::EntityUVE entity) {
     // a small gap - was 4 spaces, which (combined with TreeNodeEx's own arrow-toggle spacing that
     // every row reserves, leaf or not) pushed the icon+name noticeably right of the panel's left
     // edge instead of hugging it.
-    const std::string visibleLabel = renaming ? "" : "  " + GetEntityDisplayLabelUVE(entity);
+    // The gap is measured, not guessed: as many spaces as it takes to clear the icon plus a gap,
+    // in the current font. A fixed two spaces was narrower than the icon, which then sat on top of
+    // the name's first letter.
+    const float spaceWidth = std::max(1.0F, ImGui::CalcTextSize(" ").x);
+    const auto gapSpaces = static_cast<std::size_t>(
+        std::ceil(((kHierarchyNodeIconRadiusUVE * 2.0F) + 6.0F) / spaceWidth));
+    const std::string visibleLabel = renaming ? "" : std::string(gapSpaces, ' ') + GetEntityDisplayLabelUVE(entity);
     const std::string nodeLabel = visibleLabel + "##entity-" + std::to_string(entity.index) + ":" +
                                   std::to_string(entity.generation);
     if (active) {
@@ -163,8 +170,7 @@ void EditorUVE::DrawHierarchyNodeUVE(const Scene::EntityUVE entity) {
         const ImVec2 itemMin = ImGui::GetItemRectMin();
         const ImVec2 itemMax = ImGui::GetItemRectMax();
         const float iconCenterY = (itemMin.y + itemMax.y) * 0.5F;
-        const float iconCenterX =
-            itemMin.x + ImGui::GetTreeNodeToLabelSpacing() + kHierarchyNodeIconRadiusUVE + 2.0F;
+        const float iconCenterX = itemMin.x + ImGui::GetTreeNodeToLabelSpacing() + kHierarchyNodeIconRadiusUVE;
         const HierarchyNodeIconKindUVE iconKind = ClassifyHierarchyNodeIconUVE(entityManager, entity);
         DrawHierarchyNodeIconUVE(*ImGui::GetWindowDrawList(), ImVec2{iconCenterX, iconCenterY},
                                 kHierarchyNodeIconRadiusUVE, iconKind,

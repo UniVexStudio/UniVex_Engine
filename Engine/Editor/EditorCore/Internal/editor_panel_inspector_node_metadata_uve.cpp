@@ -24,6 +24,8 @@
 
 #include <imgui.h>
 
+#include "editor_axis_input_uve.h"
+
 #include "uve/component/node_metadata_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
 
@@ -102,8 +104,7 @@ bool EditorUVE::DrawVariantValueEditorUVE(const char* const id, VariantUVE& valu
     ImGui::PushID(id);
     bool changed = false;
     const auto dragFloats = [](float* values, const int count) {
-        ImGui::SetNextItemWidth(-FLT_MIN);
-        return ImGui::DragScalarN("##v", ImGuiDataType_Float, values, count, 0.01F);
+        return DrawAxisVectorInputUVE("##v", values, count, 0.01F);
     };
     value.VisitMutableUVE([&](auto& stored) {
         using T = std::decay_t<decltype(stored)>;
