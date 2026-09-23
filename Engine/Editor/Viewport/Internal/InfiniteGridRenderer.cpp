@@ -123,6 +123,7 @@ void InfiniteGridRenderer::Draw(const GridFrameParams& frame) const {
     program_.SetFloat("uFadeStart", reference * settings_.fadeStartDistanceScale);
     program_.SetFloat("uFadeEnd", reference * settings_.fadeEndDistanceScale);
     program_.SetFloat("uOpacity", settings_.opacity);
+    program_.SetFloat("uGridPlane", static_cast<float>(settings_.plane));
 
     glBindVertexArray(vao_);
     glDrawArrays(GL_TRIANGLES, 0, 3);

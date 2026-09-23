@@ -213,6 +213,20 @@ int main() {
         CheckNear(hit.z, 0.f, 1e-3f, "the centre pixel's ground hit is the orbit target (z)");
     }
 
+    std::puts("\n== Grid plane: side views stand the grid up facing the camera ==");
+    {
+        using univex::render::GridPlane;
+        using univex::render::GridPlaneFacing;
+        Check(GridPlaneFacing(0.f, 1.f, 0.f) == GridPlane::XZ, "Top keeps the ground");
+        Check(GridPlaneFacing(0.f, -1.f, 0.f) == GridPlane::XZ, "Bottom keeps the ground");
+        Check(GridPlaneFacing(0.f, 0.f, 1.f) == GridPlane::XY, "Front uses the XY plane");
+        Check(GridPlaneFacing(0.f, 0.f, -1.f) == GridPlane::XY, "Back uses the XY plane");
+        Check(GridPlaneFacing(1.f, 0.f, 0.f) == GridPlane::ZY, "Right uses the ZY plane");
+        Check(GridPlaneFacing(-1.f, 0.f, 0.f) == GridPlane::ZY, "Left uses the ZY plane");
+        Check(GridPlaneFacing(0.6f, 0.3f, 0.7f) == GridPlane::XZ, "an oblique view keeps the ground");
+        Check(GridPlaneFacing(0.f, 0.f, 0.f) == GridPlane::XZ, "a free view (no axis) keeps the ground");
+    }
+
     std::puts("\n== Ray reconstruction rejects pixels above the horizon ==");
     {
         OrbitCamera camera;
