@@ -35,6 +35,7 @@
 #include "uve/nodes/3d/decal_3d_uve.h"
 #include "uve/nodes/3d/fog_volume_3d_uve.h"
 #include "uve/nodes/3d/marker_3d_uve.h"
+#include "uve/nodes/3d/skeleton_3d_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/nodes/3d/spawn_point_3d_uve.h"
 #include "uve/scene/nodes/scene_node_registry_uve.h"
@@ -68,6 +69,9 @@ struct EditorUVEAccessUVE final {
     }
     [[nodiscard]] static bool IsRiggedModelSourceUVE(const EditorUVE& editor, const std::filesystem::path& source) {
         return editor.IsRiggedModelSourceUVE(source);
+    }
+    [[nodiscard]] static bool BindSelectedSkeletonSourceUVE(EditorUVE& editor, const std::filesystem::path& source) {
+        return editor.BindSelectedSkeletonSourceUVE(source);
     }
     [[nodiscard]] static bool SetSelectedComponentPropertyUVE(EditorUVE& editor, const Core::TypeMetadataEntryUVE& entry,
                                                               const Core::TypeMetadataPropertyUVE& property,
@@ -509,7 +513,9 @@ TEST(EditorUVETest, InspectorDrawerRegistrationUVE_IncludesStableHierarchyDrawer
         // 27 before the three abstract 3D bases, each of which brings one section; 30 before the
         // old Name and Hierarchy drawers were removed and SurfaceInstance3D, LightEmitter3D,
         // Decal3D and FogVolume3D each brought one.
-        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorDrawerCountUVE(editor), 32U);
+        // 33 with Skeleton3D's own section.
+        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorDrawerCountUVE(editor), 33U);
+        EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "skeleton-3d"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "surface-instance"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "light-emitter"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "decal-3d"));
@@ -4010,6 +4016,59 @@ TEST(EditorUVETest, ModelSourcesUVE_AreImportedAutomaticallyOutsideTheContentFol
     engine.Shutdown();
     std::filesystem::remove_all(root);
     std::filesystem::remove_all(derived);
+}
+
+TEST(EditorUVETest, Skeleton3DUVE_StartsEmptyAndTakesItsBonesFromARiggedModel) {
+    const std::filesystem::path root = "uve_editor_tests_skeleton_content";
+    std::filesystem::remove_all(root);
+    std::filesystem::create_directories(root / "Characters");
+    {
+        std::ofstream rig(root / "Characters" / "hero.gltf", std::ios::binary | std::ios::trunc);
+        rig << R"({"asset":{"version":"2.0"},"nodes":[{"name":"Armature","children":[1]},)"
+               R"({"name":"Hips","translation":[0,1,0],"children":[2]},{"name":"Spine"}],"skins":[{"joints":[1,2]}]})";
+        std::ofstream plain(root / "Characters" / "rock.gltf", std::ios::binary | std::ios::trunc);
+        plain << R"({"asset":{"version":"2.0"},"nodes":[{}]})";
+    }
+    Core::EngineConfigUVE config = MakeEditorTestConfigUVE();
+    config.projectContentRootUVE = root;
+    config.derivedArtifactCacheRootUVE = "uve_editor_tests_skeleton_derived/Import";
+    Core::EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_skeleton.uvescene");
+        editor.InitUVE();
+        editor.TickUVE(); // first project refresh
+        const Scene::EntityUVE skeleton = editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Skeleton3D);
+        ASSERT_NE(skeleton, Scene::kInvalidEntityUVE);
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        // A Node3D child, empty until pointed at a rig, and named for what it is.
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::NameComponentUVE>(skeleton).name, "Skeleton3D");
+        EXPECT_TRUE(entityManager.GetComponentUVE<Scene::Skeleton3DNodeComponentUVE>(skeleton).bones.empty());
+        EXPECT_EQ(EditorUVEAccessUVE::GetEligibleInspectorDrawerIdsUVE(editor, skeleton),
+                  (std::vector<std::string>{"skeleton-3d", "transform", "visibility", "process", "physics-interpolation",
+                                            "auto-translate", "editor-description", "script", "node-metadata"}));
+
+        // A model with no armature is refused and the node stays as it was.
+        EXPECT_FALSE(EditorUVEAccessUVE::BindSelectedSkeletonSourceUVE(editor, "Characters/rock.gltf"));
+        EXPECT_TRUE(entityManager.GetComponentUVE<Scene::Skeleton3DNodeComponentUVE>(skeleton).bones.empty());
+
+        ASSERT_TRUE(EditorUVEAccessUVE::BindSelectedSkeletonSourceUVE(editor, "Characters/hero.gltf"));
+        const Scene::Skeleton3DNodeComponentUVE& bound =
+            entityManager.GetComponentUVE<Scene::Skeleton3DNodeComponentUVE>(skeleton);
+        EXPECT_EQ(bound.skeletonAssetPath, "Characters/hero.gltf");
+        ASSERT_EQ(bound.bones.size(), 2U);
+        EXPECT_EQ(bound.bones[0].name, "Hips");
+        EXPECT_EQ(bound.bones[1].parentIndex, 0);
+        // One undo step takes the node back to empty.
+        ASSERT_TRUE(editor.UndoUVE());
+        EXPECT_TRUE(entityManager.GetComponentUVE<Scene::Skeleton3DNodeComponentUVE>(skeleton).bones.empty());
+        EXPECT_TRUE(entityManager.GetComponentUVE<Scene::Skeleton3DNodeComponentUVE>(skeleton).skeletonAssetPath.empty());
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+    std::filesystem::remove_all(root);
+    std::filesystem::remove_all("uve_editor_tests_skeleton_derived");
 }
 
 TEST(EditorUVETest, Node3DInspectorUVE_IsTransformVisibilityAndTheNodeSection) {

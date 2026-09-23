@@ -1074,6 +1074,16 @@ private:
                                    const Core::TypeMetadataPropertyUVE& property, const void* instance);
     void DrawNodeMetadataPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
                                      const Core::TypeMetadataPropertyUVE& property, const void* instance);
+    /// Skeleton3D's Source row: which rigged model its bones come from, with Reload and Clear.
+    void DrawSkeletonSourcePropertyUVE(const Core::TypeMetadataEntryUVE& entry,
+                                       const Core::TypeMetadataPropertyUVE& property, const void* instance);
+    /// Skeleton3D's bone hierarchy, read-only: bones are authored in the DCC tool, not here.
+    void DrawSkeletonBonesPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
+                                      const Core::TypeMetadataPropertyUVE& property, const void* instance);
+    /// Points the selected Skeleton3D at the model source `relativeSource` (content-relative) and
+    /// loads its bones; an empty path clears both. One undo step. False, with the reason in
+    /// m_skeletonSourceStatus, when the file has no readable skeleton.
+    bool BindSelectedSkeletonSourceUVE(const std::filesystem::path& relativeSource);
     /// True when `instance`'s value for `property` equals what a newly added component holds. False
     /// when that cannot be known (no equality for the type), so a revert is offered rather than hidden.
     [[nodiscard]] bool IsPropertyAtDefaultUVE(const Core::TypeMetadataEntryUVE& entry,
@@ -1084,6 +1094,9 @@ private:
     [[nodiscard]] std::optional<std::string> DrawCommittedTextInputUVE(const char* id, const std::string& current,
                                                                        bool multiline, float height,
                                                                        std::size_t maximumBytes);
+    /// Replaces the selected entity's whole component of `entry`'s type with `newInstance`, as one
+    /// undo step, when the type's own rule accepts it. For edits that change several fields at once.
+    bool SetSelectedComponentValueUVE(const Core::TypeMetadataEntryUVE& entry, const void* newInstance);
     /// Writes one property of one component on the selected entity and records one undo entry.
     /// Refuses when authoring is unavailable, the selection is not a single document entity, the
     /// entity does not hold the component, the property is not authoring-writable, or the value is
@@ -1222,6 +1235,10 @@ private:
     /// Content-derived thumbnail textures for Content Browser mesh entries, rendered on demand by
     /// m_meshThumbnailRenderer. Same caching/invalidation contract as m_textureThumbnailCache.
     std::map<std::string, std::uintptr_t> m_meshThumbnailCache;
+    /// Why the last Skeleton3D source bind failed; shown under the Source row until the next bind.
+    std::string m_skeletonSourceStatus;
+    /// The bone whose rest pose the Skeleton3D Inspector shows, by name.
+    std::string m_selectedSkeletonBone;
     /// In-flight automatic model imports, by content-relative source path.
     std::map<std::string, Asset::AssetImportJobIdUVE> m_modelImportJobs;
     /// Content-relative model sources that carry a skeleton, from the last project refresh.
