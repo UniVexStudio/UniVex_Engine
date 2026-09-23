@@ -579,7 +579,9 @@ already built in, but none of them is a setting yet - each is fixed in code.
       missing: a setting to hide or recolour them.
 - [ ] Show node type name alongside the node name.
 - [ ] Show component badges on the row (script attached, visibility off, locked).
-- [ ] Visibility toggle column: show, hide, or show on hover.
+- [~] Visibility toggle column: show, hide, or show on hover. Every row that can be hidden has
+      an eye at its right edge; a click is one undoable edit that leaves the selection alone, and
+      a node hidden only by its parent shows a dimmer eye; missing: the show-on-hover option.
 - [ ] Lock / unselectable column.
 - [~] Filter behaviour: match name only, or name plus type plus component; case sensitivity;
       whether ancestors of a match are kept visible. The Search Nodes box already matches the

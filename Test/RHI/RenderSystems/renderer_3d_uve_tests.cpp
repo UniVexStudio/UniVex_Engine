@@ -18,6 +18,8 @@
 
 #include <gtest/gtest.h>
 
+#include "uve/component/visibility_component_uve.h"
+
 #include "uve/asset/asset_bundle_uve.h"
 #include "uve/asset/asset_database_uve.h"
 #include "uve/asset/asset_manager_uve.h"
@@ -331,6 +333,44 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_VisiblePrimitive_RecordsCanonicalGeomet
     });
     ASSERT_NE(primitiveColor, commands.cend());
     EXPECT_EQ(std::get<SetUniformVector3CommandUVE>(*primitiveColor).value, baseColor);
+}
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_HiddenPrimitiveIsNotDrawnAndReturnsWhenShown) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Scene::EntityUVE parent = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE placed;
+    placed.localPosition = Math::Vector3UVE{0.0F, 0.0F, -10.0F};
+    sceneGraph.AttachTransformUVE(entityManager, parent, placed);
+    entityManager.AddComponentUVE<Scene::VisibilityComponentUVE>(parent, Scene::VisibilityComponentUVE{});
+    const Scene::EntityUVE primitiveEntity = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, primitiveEntity, Scene::TransformComponentUVE{});
+    sceneGraph.SetParentUVE(entityManager, primitiveEntity, parent);
+    entityManager.AddComponentUVE<Scene::VisibilityComponentUVE>(primitiveEntity, Scene::VisibilityComponentUVE{});
+    entityManager.AddComponentUVE<Scene::PrimitiveMeshComponentUVE>(primitiveEntity);
+    sceneGraph.UpdateUVE(entityManager);
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().primitiveCandidates, 1U);
+
+    // Its own switch off: not even a candidate.
+    entityManager.GetComponentUVE<Scene::VisibilityComponentUVE>(primitiveEntity).visible = false;
+    sceneGraph.UpdateUVE(entityManager);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().primitiveCandidates, 0U);
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().primitiveDrawCallsRecorded, 0U);
+
+    // Shown again, but its parent hidden: still not drawn - hiding a parent hides the subtree.
+    entityManager.GetComponentUVE<Scene::VisibilityComponentUVE>(primitiveEntity).visible = true;
+    entityManager.GetComponentUVE<Scene::VisibilityComponentUVE>(parent).visible = false;
+    sceneGraph.UpdateUVE(entityManager);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().primitiveCandidates, 0U);
+
+    // Parent shown again: the primitive comes back.
+    entityManager.GetComponentUVE<Scene::VisibilityComponentUVE>(parent).visible = true;
+    sceneGraph.UpdateUVE(entityManager);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().primitiveCandidates, 1U);
 }
 
 TEST_F(Renderer3DUVETest, RenderFrameUVE_FiniteExtremePrimitiveTransformIsRejectedBeforeQueuePublication) {

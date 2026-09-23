@@ -399,6 +399,11 @@ public:
     /// Returns false without mutation for invalid editor/selection state, an empty or whitespace-only
     /// name, a name longer than the supported editor-entry limit, or an unchanged value.
     [[nodiscard]] bool SetSelectedEntityNameUVE(std::string name);
+    /// Shows or hides `entity` (its Visibility component's authored switch) as one undoable edit.
+    /// Unlike the selected-entity setters this targets any document entity, so the hierarchy's
+    /// eye toggle works on a row without changing the selection. Returns false without mutation
+    /// when editing is not allowed, the entity has no Visibility component, or nothing changes.
+    [[nodiscard]] bool SetEntityVisibleUVE(Scene::EntityUVE entity, bool visible);
 
     /// Adds or replaces one supported scene component on the selected document entity using the
     /// value variant matching `kind`. Valid changes are one Undo/Redo transaction; invalid, unchanged,
@@ -1054,6 +1059,7 @@ private:
     void DrawHierarchyPanelUVE();
     void DrawHierarchyNodeContextMenuUVE(Scene::EntityUVE entity);
     void DrawNodePickerUVE();
+    void DrawHierarchyVisibilityToggleUVE(Scene::EntityUVE entity);
     void DrawHierarchyNodeUVE(Scene::EntityUVE entity);
     void AcceptHierarchyDropTargetUVE(Scene::EntityUVE targetParent);
     void DrawInspectorPanelUVE();

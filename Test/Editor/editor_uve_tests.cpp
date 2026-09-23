@@ -31,6 +31,7 @@
 #include "uve/component/primitive_mesh_component_uve.h"
 #include "uve/component/script_component_uve.h"
 #include "uve/component/transform_component_uve.h"
+#include "uve/component/visibility_component_uve.h"
 #include "uve/nodes/3d/all_nodes_3d_uve.h"
 #include "uve/nodes/3d/decal_3d_uve.h"
 #include "uve/nodes/3d/fog_volume_3d_uve.h"
@@ -1429,6 +1430,50 @@ TEST(EditorUVETest, SetSelectedEntityNameUVE_ValidatesInputAndMarksDocumentDirty
         EXPECT_FALSE(editor.SetSelectedEntityNameUVE("Destroyed"));
         editor.ShutdownUVE();
         EXPECT_FALSE(editor.SetSelectedEntityNameUVE("Shutdown"));
+    }
+
+    engine.Shutdown();
+}
+
+TEST(EditorUVETest, SetEntityVisibleUVE_TogglesAnyRowUndoablyWithoutTouchingSelection) {
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_visibility_toggle.uvescene");
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        const Scene::EntityUVE shown = entityManager.CreateEntityUVE();
+        AttachRootUVE(engine, shown, Scene::TransformComponentUVE{});
+        entityManager.AddComponentUVE<Scene::VisibilityComponentUVE>(shown, Scene::VisibilityComponentUVE{});
+        const Scene::EntityUVE other = entityManager.CreateEntityUVE();
+        AttachRootUVE(engine, other, Scene::TransformComponentUVE{});
+        editor.SelectEntityUVE(other);
+
+        // The eye works on a row that is not selected, and leaves the selection alone.
+        ASSERT_TRUE(editor.SetEntityVisibleUVE(shown, false));
+        EXPECT_FALSE(entityManager.GetComponentUVE<Scene::VisibilityComponentUVE>(shown).visible);
+        EXPECT_EQ(editor.GetSelectedEntityUVE(), other);
+        EXPECT_TRUE(editor.IsSceneDirtyUVE());
+
+        // Setting the value it already has is not an edit.
+        EXPECT_FALSE(editor.SetEntityVisibleUVE(shown, false));
+
+        ASSERT_TRUE(editor.UndoUVE());
+        EXPECT_TRUE(entityManager.GetComponentUVE<Scene::VisibilityComponentUVE>(shown).visible);
+        EXPECT_EQ(editor.GetSelectedEntityUVE(), other);
+        EXPECT_FALSE(editor.IsSceneDirtyUVE());
+
+        ASSERT_TRUE(editor.RedoUVE());
+        EXPECT_FALSE(entityManager.GetComponentUVE<Scene::VisibilityComponentUVE>(shown).visible);
+
+        // A node without a Visibility component has no eye to toggle.
+        EXPECT_FALSE(entityManager.HasComponentUVE<Scene::VisibilityComponentUVE>(other));
+        EXPECT_FALSE(editor.SetEntityVisibleUVE(other, false));
+        EXPECT_FALSE(editor.SetEntityVisibleUVE(Scene::kInvalidEntityUVE, false));
+
+        editor.ShutdownUVE();
     }
 
     engine.Shutdown();
