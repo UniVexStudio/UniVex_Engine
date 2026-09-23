@@ -320,7 +320,12 @@ void EditorUVE::DrawMetadataComponentDrawerUVE(const Scene::EntityUVE entity, co
     }
     // Collapsible, and collapsed state is remembered per section by Dear ImGui's own storage for
     // the window - which is what makes a long Inspector usable at all.
-    if (ImGui::CollapsingHeader(entry.displayName.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
+    // "###" keeps the header's identity on the type, so a title that follows the value does not
+    // reset the section's open state when the value changes.
+    const std::string header = std::string{entry.sectionTitle != nullptr ? entry.sectionTitle(instance)
+                                                                          : entry.displayName.c_str()} +
+                               "###" + entry.typeId;
+    if (ImGui::CollapsingHeader(header.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
         DrawMetadataPropertyRowsUVE(entry, instance);
         for (const TypeMetadataEntryUVE* const child : nested) {
             if (!entityManager.HasComponentUVE(entity, child->typeIndex)) {

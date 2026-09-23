@@ -293,6 +293,10 @@ struct TypeMetadataEntryUVE final {
     /// for a type that is conceptually one property of the node rather than a feature of it - a
     /// node has a script and has metadata, it does not have a "Script section".
     bool presentedInline = false;
+    /// Inspector presentation: the section title for one instance, when it depends on the value -
+    /// one component shared by several node kinds titles its section with the kind it is on.
+    /// Null uses displayName.
+    const char* (*sectionTitle)(const void* instance) = nullptr;
 
     [[nodiscard]] bool operator==(const TypeMetadataEntryUVE&) const = default;
 

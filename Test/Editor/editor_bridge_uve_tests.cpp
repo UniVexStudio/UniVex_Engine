@@ -572,11 +572,17 @@ TEST(EditorBridgeUVETest, SnapshotUVE_CopiesHierarchyInspectorAndNativePanelSess
         EXPECT_EQ(snapshot.inspector.activeEntity->displayLabel, "Bridge Child");
         ASSERT_TRUE(snapshot.inspector.parent.has_value());
         EXPECT_EQ(snapshot.inspector.parent->displayLabel, "Bridge Root");
-        // Collider before mesh: see the same expectation in editor_bridge_stdio_uve_tests.cpp -
-        // drawer order now follows the component declarations rather than a hand-written list.
-        EXPECT_EQ(snapshot.inspector.eligibleDrawerIds,
-                  (std::vector<std::string>{"collider", "mesh", "primitive-mesh", "transform"}));
-        EXPECT_EQ(snapshot.inspector.attachedComponentIds, (std::vector<std::string>{"collider", "mesh"}));
+        // A PlaneMesh3D is a SurfaceInstance3D: its own sections (the collision it was created with
+        // is drawn inside the primitive's section), its bases, Node3D, then the Node section.
+        const std::vector<std::string> nodeSection{"process",           "physics-interpolation", "auto-translate",
+                                                   "editor-description", "script",                "node-metadata"};
+        std::vector<std::string> expectedDrawers{"mesh", "primitive-mesh", "surface-instance", "render-instance",
+                                                 "transform", "visibility"};
+        expectedDrawers.insert(expectedDrawers.end(), nodeSection.begin(), nodeSection.end());
+        EXPECT_EQ(snapshot.inspector.eligibleDrawerIds, expectedDrawers);
+        std::vector<std::string> expectedAttached{"mesh", "surface-instance", "render-instance", "visibility"};
+        expectedAttached.insert(expectedAttached.end(), nodeSection.begin(), nodeSection.end());
+        EXPECT_EQ(snapshot.inspector.attachedComponentIds, expectedAttached);
         ASSERT_TRUE(snapshot.inspector.assetBinding.has_value());
         ASSERT_TRUE(snapshot.inspector.assetBinding->meshGuid.has_value());
         ASSERT_TRUE(snapshot.inspector.assetBinding->materialGuid.has_value());
