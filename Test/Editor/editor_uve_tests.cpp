@@ -23,6 +23,8 @@
 #include "uve/component/collider_component_uve.h"
 #include "uve/component/editor_internal_entity_component_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
+#include "uve/component/thread_group_component_uve.h"
+#include "uve/component/node_metadata_component_uve.h"
 #include "uve/component/light_component_uve.h"
 #include "uve/component/mesh_component_uve.h"
 #include "uve/component/name_component_uve.h"
@@ -56,6 +58,13 @@ struct EditorUVEAccessUVE final {
         return editor.m_inspectorDrawerRegistry.HasDrawerUVE(id);
     }
 
+    [[nodiscard]] static std::vector<std::string> GetEligibleInspectorDrawerIdsUVE(const EditorUVE& editor,
+                                                                                  const Scene::EntityUVE entity) {
+        return editor.m_inspectorDrawerRegistry.GetEligibleDrawerIdsUVE(entity);
+    }
+    [[nodiscard]] static std::string GetScriptNodeTitleUVE(const EditorUVE& editor) {
+        return editor.GetScriptNodeTitleUVE("scene.self", "Scene Node");
+    }
     [[nodiscard]] static std::size_t GetInspectorDrawerCountUVE(const EditorUVE& editor) {
         return editor.m_inspectorDrawerRegistry.GetDrawerCountUVE();
     }
@@ -270,8 +279,8 @@ TEST(EditorUVETest, OpenScriptGraphForEntity_NoBranchYet_CreatesOneNamedFromAsse
     ASSERT_TRUE(editor.OpenScriptGraphForEntityUVE(entity));
     EXPECT_TRUE(EditorUVEAccessUVE::IsScriptingWorkspaceActiveUVE(editor));
     // The raw path contains '/', which CreateVisualScriptBranchUVE would reject as a branch name -
-    // the branch name is sanitized, but lookup afterward is by owner entity, not by this name.
-    EXPECT_EQ(editor.GetActiveVisualScriptBranchNameUVE(), "Scripts_Boss.scripting");
+    // the branch is named for the script itself, and found again by its asset path, not by name.
+    EXPECT_EQ(editor.GetActiveVisualScriptBranchNameUVE(), "Boss");
     EXPECT_EQ(EditorUVEAccessUVE::GetActiveVisualScriptBranchOwnerUVE(editor), entity);
 
     editor.ShutdownUVE();
@@ -345,7 +354,7 @@ TEST(EditorUVETest, OpenScriptGraphForEntity_ExistingOwnedBranch_SelectsItWithou
     ASSERT_TRUE(editor.OpenScriptGraphForEntityUVE(entity));
 
     EXPECT_EQ(editor.GetVisualScriptBranchNamesUVE().size(), branchCountAfterFirstOpen);
-    EXPECT_EQ(editor.GetActiveVisualScriptBranchNameUVE(), "Scripts_Boss.scripting");
+    EXPECT_EQ(editor.GetActiveVisualScriptBranchNameUVE(), "Boss");
     EXPECT_EQ(editor.GetVisualScriptCanvasUVE().GetSnapshotUVE().nodes.size(), 1U);
 
     editor.ShutdownUVE();
@@ -3700,6 +3709,117 @@ TEST(EditorUVETest, TransformGesture_SnappingQuantisesIdenticallyToTheEquivalent
         EXPECT_NEAR(gestureResult, commandResult, 1e-6F);
         EXPECT_NEAR(gestureResult, 1.5F, 1e-6F);
 
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
+} // namespace
+} // namespace UVE::Editor::Tests
+
+namespace UVE::Editor::Tests {
+namespace {
+
+TEST(EditorUVETest, SceneRootInspectorUVE_ShowsExactlyTheNodeSectionInOrder) {
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_scene_root_inspector.uvescene");
+        editor.InitUVE();
+        const Scene::EntityUVE root = editor.GetDocumentSceneRootUVE();
+        // No Name, Hierarchy or Transform; Thread Group lives inside Process.
+        EXPECT_EQ(EditorUVEAccessUVE::GetEligibleInspectorDrawerIdsUVE(editor, root),
+                  (std::vector<std::string>{"process", "physics-interpolation", "auto-translate",
+                                            "editor-description", "script", "node-metadata"}));
+
+        // On a node without Process, Thread Group still has a section of its own.
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        const Scene::EntityUVE node = entityManager.CreateEntityUVE();
+        AttachRootUVE(engine, node, Scene::TransformComponentUVE{});
+        entityManager.AddComponentUVE<Scene::ThreadGroupComponentUVE>(node, Scene::ThreadGroupComponentUVE{});
+        const std::vector<std::string> ids = EditorUVEAccessUVE::GetEligibleInspectorDrawerIdsUVE(editor, node);
+        EXPECT_NE(std::find(ids.begin(), ids.end(), "thread-group"), ids.end());
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
+TEST(EditorUVETest, ScriptSlotUVE_AddNewCppCreatesALinkedScriptTitledWithTheNode) {
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_script_slot.uvescene");
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        const Scene::EntityUVE root = editor.GetDocumentSceneRootUVE();
+        editor.SelectEntityUVE(root);
+        ASSERT_TRUE(editor.SetSelectedEntityNameUVE("main"));
+
+        ASSERT_TRUE(editor.CreateScriptForSelectedEntityUVE());
+        const std::string path = entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(root).scriptAssetPath;
+        EXPECT_EQ(path.rfind("scripts/main", 0), 0U);
+        EXPECT_TRUE(editor.DescribeScriptAssetProblemUVE(path).empty()); // A real, decodable script file.
+        EXPECT_TRUE(EditorUVEAccessUVE::IsScriptingWorkspaceActiveUVE(editor));
+        const auto nodes = editor.GetVisualScriptCanvasUVE().GetSnapshotUVE().nodes;
+        ASSERT_EQ(nodes.size(), 1U);
+        EXPECT_EQ(nodes.front().typeId, "scene.self");
+        EXPECT_TRUE(nodes.front().pins.empty());
+        EXPECT_EQ(EditorUVEAccessUVE::GetScriptNodeTitleUVE(editor), "main");
+
+        // Connected: renaming the node renames it on the canvas.
+        ASSERT_TRUE(editor.SetSelectedEntityNameUVE("game"));
+        EXPECT_EQ(EditorUVEAccessUVE::GetScriptNodeTitleUVE(editor), "game");
+
+        // A second Add is refused while the slot is filled; Clear then Load puts it back.
+        EXPECT_FALSE(editor.CreateScriptForSelectedEntityUVE());
+        ASSERT_TRUE(editor.AssignScriptToSelectedEntityUVE({}));
+        EXPECT_TRUE(entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(root).scriptAssetPath.empty());
+        EXPECT_FALSE(editor.AssignScriptToSelectedEntityUVE("scripts/missing.uvescript"));
+        EXPECT_FALSE(editor.AssignScriptToSelectedEntityUVE("../escape.uvescript"));
+        ASSERT_TRUE(editor.AssignScriptToSelectedEntityUVE(path));
+        ASSERT_TRUE(editor.UndoUVE());
+        EXPECT_TRUE(entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(root).scriptAssetPath.empty());
+
+        std::error_code error;
+        std::filesystem::remove(path, error);
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
+TEST(EditorUVETest, NodeMetadataUVE_EveryEditIsOneUndoStep) {
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_node_metadata.uvescene");
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        const Scene::EntityUVE root = editor.GetDocumentSceneRootUVE();
+        editor.SelectEntityUVE(root);
+        const auto entries = [&] { return entityManager.GetComponentUVE<Scene::NodeMetadataComponentUVE>(root).entries; };
+
+        EXPECT_FALSE(editor.AddSelectedNodeMetadataUVE("2bad", Core::VariantUVE::MakeIntUVE(1)));
+        ASSERT_TRUE(editor.AddSelectedNodeMetadataUVE("charges", Core::VariantUVE::MakeFloatUVE(3.5)));
+        EXPECT_FALSE(editor.AddSelectedNodeMetadataUVE("charges", Core::VariantUVE::MakeIntUVE(1)));
+        ASSERT_TRUE(editor.RenameSelectedNodeMetadataUVE("charges", "ammo"));
+        // 3.5 -> int loses the fraction: refused unless the author confirms.
+        EXPECT_FALSE(editor.ChangeSelectedNodeMetadataTypeUVE("ammo", Core::VariantTypeUVE::Int, false));
+        ASSERT_TRUE(editor.ChangeSelectedNodeMetadataTypeUVE("ammo", Core::VariantTypeUVE::Int, true));
+        EXPECT_EQ(entries().front().value.GetTypeUVE(), Core::VariantTypeUVE::Int);
+        ASSERT_TRUE(editor.RemoveSelectedNodeMetadataUVE("ammo"));
+        EXPECT_TRUE(entries().empty());
+
+        ASSERT_TRUE(editor.UndoUVE()); // remove
+        EXPECT_EQ(entries().front().value.GetTypeUVE(), Core::VariantTypeUVE::Int);
+        ASSERT_TRUE(editor.UndoUVE()); // retype
+        EXPECT_EQ(entries().front().value, Core::VariantUVE::MakeFloatUVE(3.5));
+        ASSERT_TRUE(editor.UndoUVE()); // rename
+        EXPECT_EQ(entries().front().key, "charges");
+        ASSERT_TRUE(editor.UndoUVE()); // add
+        EXPECT_TRUE(entries().empty());
         editor.ShutdownUVE();
     }
     engine.Shutdown();

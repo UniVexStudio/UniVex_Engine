@@ -670,7 +670,9 @@ bool EditorUVE::SaveSceneUVE() {
     if (saved) {
         m_sceneDirty = false;
     }
-    return saved;
+    // The scripts this scene's nodes run are part of what "save" means to the author; a scene
+    // saved with a stale script beside it would load back behaving differently.
+    return WriteLinkedScriptAssetsUVE() && saved;
 }
 
 bool EditorUVE::SaveSelectedPrefabUVE(const std::filesystem::path& path) {
@@ -3361,24 +3363,31 @@ bool EditorUVE::OpenScriptGraphForEntityUVE(const Scene::EntityUVE entity) {
     if (!entityManager.IsAliveUVE(entity) || !entityManager.HasComponentUVE<Scene::ScriptComponentUVE>(entity)) {
         return false;
     }
+    const std::string& assetPath = entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(entity).scriptAssetPath;
 
-    // Branches are looked up by owner identity, never by name: a scriptAssetPath is free to
-    // contain '/', which CreateVisualScriptBranchUVE's invalidName check would reject outright.
-    const auto owned = std::find_if(
-        m_visualScriptBranches.begin(), m_visualScriptBranches.end(),
-        [entity](const ScriptBranchUVE& branch) { return branch.ownerEntity == entity; });
-    if (owned != m_visualScriptBranches.end()) {
-        if (!SelectVisualScriptBranchUVE(owned->name)) {
+    // The branch already editing this entity's script, found by the asset first - which survives an
+    // editor restart and is shared by every entity running the same script - and by owner identity
+    // for a script that has no asset yet. Never by name: a scriptAssetPath is free to contain '/',
+    // which CreateVisualScriptBranchUVE's invalidName check would reject outright.
+    const auto existing = std::find_if(
+        m_visualScriptBranches.begin(), m_visualScriptBranches.end(), [entity, &assetPath](const ScriptBranchUVE& branch) {
+            return assetPath.empty() ? branch.ownerEntity == entity && branch.assetPath.empty()
+                                     : branch.assetPath == assetPath;
+        });
+    if (existing != m_visualScriptBranches.end()) {
+        if (!SelectVisualScriptBranchUVE(existing->name)) {
             return false;
         }
+        // The last entity to open a shared script is the one its scene node is titled after.
+        existing->ownerEntity = entity;
         m_activeWorkspace = EditorWorkspaceUVE::Scripting;
         return true;
     }
 
-    const Scene::ScriptComponentUVE& script = entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(entity);
+    // Named for the script - "Boss" for scripts/Boss.uvescript - or, with no script yet, for the node.
     std::string candidateName;
-    if (!script.scriptAssetPath.empty()) {
-        candidateName = SanitizeScriptBranchNameCandidateUVE(script.scriptAssetPath);
+    if (!assetPath.empty()) {
+        candidateName = SanitizeScriptBranchNameCandidateUVE(std::filesystem::path{assetPath}.stem().string());
     } else if (entityManager.HasComponentUVE<Scene::NameComponentUVE>(entity)) {
         candidateName =
             SanitizeScriptBranchNameCandidateUVE(entityManager.GetComponentUVE<Scene::NameComponentUVE>(entity).name) +
@@ -3400,9 +3409,35 @@ bool EditorUVE::OpenScriptGraphForEntityUVE(const Scene::EntityUVE entity) {
         return false;
     }
     // CreateVisualScriptBranchUVE already made the new branch active on success.
-    m_visualScriptBranches[m_activeVisualScriptBranch].ownerEntity = entity;
+    ScriptBranchUVE& branch = m_visualScriptBranches[m_activeVisualScriptBranch];
+    branch.ownerEntity = entity;
+    branch.assetPath = assetPath;
+    // The canvas shows what the entity runs. A script whose file is missing or unreadable opens
+    // empty rather than failing: the author is here to write it, and saving creates the file.
+    if (!assetPath.empty()) {
+        if (const std::optional<std::string> text = ReadProjectTextFileUVE(assetPath); text.has_value()) {
+            const Scripting::ScriptGraphSchemaDecodeResultUVE decoded = Scripting::DecodeScriptGraphSchemaUVE(*text);
+            if (decoded.IsSuccessUVE()) {
+                Scripting::ScriptGraphCanvasLayoutSnapshotUVE layout{};
+                for (const Scripting::ScriptGraphLayoutEntryUVE& entry : decoded.schema->layout) {
+                    layout.entries.push_back(Scripting::ScriptGraphCanvasLayoutEntryUVE{entry.nodeId, {entry.x, entry.y}});
+                }
+                static_cast<void>(branch.canvas->RestorePersistenceUVE(*decoded.schema, std::move(layout)));
+            }
+        }
+    }
     m_activeWorkspace = EditorWorkspaceUVE::Scripting;
     return true;
+}
+
+std::string EditorUVE::GetScriptNodeTitleUVE(const std::string& typeId, const std::string& displayName) const {
+    if (typeId == Scripting::kSceneSelfScriptNodeTypeIdUVE && m_activeVisualScriptBranch < m_visualScriptBranches.size()) {
+        const Scene::EntityUVE owner = m_visualScriptBranches[m_activeVisualScriptBranch].ownerEntity;
+        if (IsDocumentEntityUVE(owner)) {
+            return GetEntityDisplayLabelUVE(owner);
+        }
+    }
+    return displayName.empty() ? typeId : displayName;
 }
 
 std::filesystem::path ScriptWorkspacePathUVE(const std::filesystem::path& scenePath) {
@@ -3411,44 +3446,18 @@ std::filesystem::path ScriptWorkspacePathUVE(const std::filesystem::path& sceneP
     return path.empty() ? std::filesystem::path{"main.scripting"} : path;
 }
 
-bool EditorUVE::SaveVisualScriptWorkspaceUVE() {
-    if (m_state != EditorStateUVE::Running || m_visualScriptBranches.empty()) {
-        return false;
-    }
-    Scripting::ScriptGraphWorkspaceSchemaUVE workspace{};
-    workspace.branches.reserve(m_visualScriptBranches.size());
-    for (const ScriptBranchUVE& branch : m_visualScriptBranches) {
-        const Scripting::ScriptGraphCanvasLayoutSnapshotUVE layout = branch.canvas->GetLayoutSnapshotUVE();
-        Scripting::ScriptGraphSchemaUVE schema{};
-        schema.graph = branch.canvas->GetGraphUVE();
-        schema.layout.reserve(layout.entries.size());
-        for (const auto& entry : layout.entries) {
-            schema.layout.push_back(Scripting::ScriptGraphLayoutEntryUVE{
-                entry.nodeId, entry.position.x, entry.position.y});
-        }
-        workspace.branches.push_back(Scripting::ScriptGraphWorkspaceBranchUVE{
-            branch.name, std::move(schema), {layout.view.pan.x, layout.view.pan.y, layout.view.zoom}});
-    }
-    std::vector<Scripting::ScriptPersistenceDiagnosticUVE> diagnostics;
-    const std::string encoded = Scripting::EncodeScriptGraphWorkspaceUVE(workspace, diagnostics);
-    if (encoded.empty() || !diagnostics.empty()) {
-        return false;
-    }
-    const std::filesystem::path path = ScriptWorkspacePathUVE(m_activeScenePath);
-    const std::string virtualPath = path.generic_string();
-    Asset::IFileSystemUVE& fileSystem = m_services->GetFileSystemUVE();
-    const std::filesystem::path resolvedPath = fileSystem.ResolveRealPathUVE(virtualPath);
-    if (!resolvedPath.empty()) {
-        const std::filesystem::path temporaryPath = resolvedPath.string() + ".tmp";
+bool EditorUVE::WriteProjectTextFileUVE(const std::filesystem::path& path, const std::string_view text) {
+    const auto writeAtomicallyUVE = [text](const std::filesystem::path& target) {
+        const std::filesystem::path temporaryPath = target.string() + ".tmp";
         std::error_code error;
-        if (!resolvedPath.parent_path().empty()) {
-            std::filesystem::create_directories(resolvedPath.parent_path(), error);
+        if (!target.parent_path().empty()) {
+            std::filesystem::create_directories(target.parent_path(), error);
         }
         std::ofstream output(temporaryPath, std::ios::binary | std::ios::trunc);
         if (!output.is_open()) {
             return false;
         }
-        output.write(encoded.data(), static_cast<std::streamsize>(encoded.size()));
+        output.write(text.data(), static_cast<std::streamsize>(text.size()));
         output.flush();
         const bool outputGood = output.good();
         output.close();
@@ -3456,81 +3465,124 @@ bool EditorUVE::SaveVisualScriptWorkspaceUVE() {
             std::filesystem::remove(temporaryPath, error);
             return false;
         }
-        std::filesystem::rename(temporaryPath, resolvedPath, error);
+        std::filesystem::rename(temporaryPath, target, error);
         if (error) {
-            std::filesystem::remove(resolvedPath, error);
+            std::filesystem::remove(target, error);
             error.clear();
-            std::filesystem::rename(temporaryPath, resolvedPath, error);
+            std::filesystem::rename(temporaryPath, target, error);
         }
         if (error) {
             std::filesystem::remove(temporaryPath, error);
             return false;
         }
         return true;
+    };
+
+    const std::string virtualPath = path.generic_string();
+    Asset::IFileSystemUVE& fileSystem = m_services->GetFileSystemUVE();
+    const std::filesystem::path resolvedPath = fileSystem.ResolveRealPathUVE(virtualPath);
+    if (!resolvedPath.empty()) {
+        return writeAtomicallyUVE(resolvedPath);
     }
-    std::vector<std::byte> bytes(encoded.size());
-    if (!encoded.empty()) {
-        std::memcpy(bytes.data(), encoded.data(), encoded.size());
+    std::vector<std::byte> bytes(text.size());
+    if (!text.empty()) {
+        std::memcpy(bytes.data(), text.data(), text.size());
     }
     if (fileSystem.WriteFileUVE(virtualPath, bytes)) {
         return true;
     }
     // Some editor test/legacy configurations have no mounted project directory. Preserve the
     // established raw-path behavior as a compatibility fallback after the native VFS attempt.
-    const std::filesystem::path temporaryPath = path.string() + ".tmp";
+    return writeAtomicallyUVE(path);
+}
+
+std::optional<std::string> EditorUVE::ReadProjectTextFileUVE(const std::filesystem::path& path) const {
+    if (const std::optional<std::vector<std::byte>> bytes = m_services->GetFileSystemUVE().ReadFileUVE(path.generic_string());
+        bytes.has_value()) {
+        return std::string(reinterpret_cast<const char*>(bytes->data()), bytes->size());
+    }
     std::error_code error;
-    if (!path.parent_path().empty()) {
-        std::filesystem::create_directories(path.parent_path(), error);
+    if (!std::filesystem::is_regular_file(path, error)) {
+        return std::nullopt;
     }
-    std::ofstream output(temporaryPath, std::ios::binary | std::ios::trunc);
-    if (!output.is_open()) {
+    std::ifstream input(path, std::ios::binary);
+    if (!input.is_open()) {
+        return std::nullopt;
+    }
+    std::ostringstream buffer;
+    buffer << input.rdbuf();
+    return buffer.str();
+}
+
+namespace {
+
+/// A canvas's graph and node positions in the persisted schema shape, for both the workspace and a
+/// linked script asset.
+[[nodiscard]] Scripting::ScriptGraphSchemaUVE CaptureCanvasSchemaUVE(const Scripting::ScriptGraphCanvasUVE& canvas) {
+    const Scripting::ScriptGraphCanvasLayoutSnapshotUVE layout = canvas.GetLayoutSnapshotUVE();
+    Scripting::ScriptGraphSchemaUVE schema{};
+    schema.graph = canvas.GetGraphUVE();
+    schema.layout.reserve(layout.entries.size());
+    for (const auto& entry : layout.entries) {
+        schema.layout.push_back(Scripting::ScriptGraphLayoutEntryUVE{entry.nodeId, entry.position.x, entry.position.y});
+    }
+    return schema;
+}
+
+} // namespace
+
+bool EditorUVE::WriteLinkedScriptAssetsUVE() {
+    bool allWritten = true;
+    for (const ScriptBranchUVE& branch : m_visualScriptBranches) {
+        if (branch.assetPath.empty()) {
+            continue;
+        }
+        std::vector<Scripting::ScriptPersistenceDiagnosticUVE> diagnostics;
+        const std::string encoded = Scripting::EncodeScriptGraphSchemaUVE(CaptureCanvasSchemaUVE(*branch.canvas), diagnostics);
+        allWritten = !encoded.empty() && diagnostics.empty() && WriteProjectTextFileUVE(branch.assetPath, encoded) &&
+                     allWritten;
+    }
+    return allWritten;
+}
+
+bool EditorUVE::SaveVisualScriptWorkspaceUVE() {
+    if (m_state != EditorStateUVE::Running || m_visualScriptBranches.empty()) {
         return false;
     }
-    output.write(encoded.data(), static_cast<std::streamsize>(encoded.size()));
-    output.flush();
-    const bool outputGood = output.good();
-    output.close();
-    if (!outputGood) {
-        std::filesystem::remove(temporaryPath, error);
+    // A linked branch is saved to its script asset - the copy the entity actually runs - and is
+    // left out of the workspace, which would otherwise hold a second copy that goes stale the
+    // moment the asset is edited anywhere else.
+    const bool assetsWritten = WriteLinkedScriptAssetsUVE();
+    Scripting::ScriptGraphWorkspaceSchemaUVE workspace{};
+    workspace.branches.reserve(m_visualScriptBranches.size());
+    for (const ScriptBranchUVE& branch : m_visualScriptBranches) {
+        if (!branch.assetPath.empty()) {
+            continue;
+        }
+        const Scripting::ScriptGraphCanvasLayoutSnapshotUVE layout = branch.canvas->GetLayoutSnapshotUVE();
+        workspace.branches.push_back(Scripting::ScriptGraphWorkspaceBranchUVE{
+            branch.name, CaptureCanvasSchemaUVE(*branch.canvas), {layout.view.pan.x, layout.view.pan.y, layout.view.zoom}});
+    }
+    if (workspace.branches.empty()) {
+        return assetsWritten; // Every branch is linked; there is no workspace-only graph to save.
+    }
+    std::vector<Scripting::ScriptPersistenceDiagnosticUVE> diagnostics;
+    const std::string encoded = Scripting::EncodeScriptGraphWorkspaceUVE(workspace, diagnostics);
+    if (encoded.empty() || !diagnostics.empty()) {
         return false;
     }
-    std::filesystem::rename(temporaryPath, path, error);
-    if (error) {
-        std::filesystem::remove(path, error);
-        error.clear();
-        std::filesystem::rename(temporaryPath, path, error);
-    }
-    if (error) {
-        std::filesystem::remove(temporaryPath, error);
-        return false;
-    }
-    return true;
+    return WriteProjectTextFileUVE(ScriptWorkspacePathUVE(m_activeScenePath), encoded) && assetsWritten;
 }
 
 bool EditorUVE::LoadVisualScriptWorkspaceUVE() {
     if (m_state != EditorStateUVE::Running) {
         return false;
     }
-    const std::filesystem::path path = ScriptWorkspacePathUVE(m_activeScenePath);
-    const std::string virtualPath = path.generic_string();
-    std::string text;
-    if (const std::optional<std::vector<std::byte>> bytes = m_services->GetFileSystemUVE().ReadFileUVE(virtualPath);
-        bytes.has_value()) {
-        text.assign(reinterpret_cast<const char*>(bytes->data()), bytes->size());
-    } else {
-        if (!std::filesystem::exists(path)) {
-            return false;
-        }
-        std::ifstream input(path, std::ios::binary);
-        if (!input.is_open()) {
-            return false;
-        }
-        std::ostringstream buffer;
-        buffer << input.rdbuf();
-        text = buffer.str();
+    const std::optional<std::string> text = ReadProjectTextFileUVE(ScriptWorkspacePathUVE(m_activeScenePath));
+    if (!text.has_value()) {
+        return false;
     }
-    const Scripting::ScriptGraphWorkspaceDecodeResultUVE decoded =
-        Scripting::DecodeScriptGraphWorkspaceUVE(text);
+    const Scripting::ScriptGraphWorkspaceDecodeResultUVE decoded = Scripting::DecodeScriptGraphWorkspaceUVE(*text);
     if (!decoded.IsSuccessUVE()) {
         return false;
     }
@@ -3552,6 +3604,16 @@ bool EditorUVE::LoadVisualScriptWorkspaceUVE() {
     }
     if (loaded.empty()) {
         return false;
+    }
+    // A linked branch is not in the workspace file - its asset is its persistence - so it survives
+    // a reload untouched instead of being thrown away with the free-standing ones.
+    for (ScriptBranchUVE& branch : m_visualScriptBranches) {
+        if (!branch.assetPath.empty() &&
+            std::none_of(loaded.cbegin(), loaded.cend(), [&branch](const ScriptBranchUVE& other) {
+                return other.name == branch.name;
+            })) {
+            loaded.push_back(std::move(branch));
+        }
     }
     m_visualScriptBranches = std::move(loaded);
     m_activeVisualScriptBranch = 0U;
@@ -4649,7 +4711,7 @@ void EditorUVE::DrawScriptingWorkspaceUVE() {
                 const ImVec2 categoryIconCenter{nodeMin.x + 14.0F, nodeMin.y + headerHeight * 0.5F};
                 DrawScriptNodeCategoryIconUVE(drawList, categoryIconCenter, categoryIconRadius, node.category,
                                               IM_COL32(255, 255, 255, 235));
-                const std::string title = node.displayName.empty() ? node.typeId : node.displayName;
+                const std::string title = GetScriptNodeTitleUVE(node.typeId, node.displayName);
                 drawList->AddText(ImVec2{nodeMin.x + 24.0F, nodeMin.y + 6.0F}, IM_COL32(226, 241, 252, 255), title.c_str());
                 for (std::size_t pinIndex = 0U; pinIndex < node.pins.size(); ++pinIndex) {
                     const auto& pin = node.pins[pinIndex];
@@ -4893,7 +4955,7 @@ void EditorUVE::DrawScriptingWorkspaceUVE() {
                     ++visibleContextNodes;
                     // Name-only: no icon, no category label - a clean flat list, distinct from the
                     // persistent palette sidebar's own icon+category-grouped presentation.
-                    const std::string label = (entry.displayName.empty() ? entry.typeId : entry.displayName) +
+                    const std::string label = GetScriptNodeTitleUVE(entry.typeId, entry.displayName) +
                                               "##context-node-" + entry.typeId;
                     if (ImGui::Selectable(label.c_str())) {
                         const auto addResult = ActiveVisualScriptCanvasUVE().AddNodeTypeUVE(

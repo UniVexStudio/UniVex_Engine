@@ -218,10 +218,10 @@ TEST(ScriptNodeRegistryUVETest, BuiltInVector3Catalog_RegistersDeterministicDesc
 
     ASSERT_TRUE(RegisterBuiltInScriptNodesUVE(registry));
     EXPECT_FALSE(RegisterBuiltInScriptNodesUVE(registry));
-    EXPECT_EQ(registry.GetNodeTypeCountUVE(), 163U);
+    EXPECT_EQ(registry.GetNodeTypeCountUVE(), 164U);
 
     const std::vector<ScriptNodeTypeDescriptorUVE> descriptors = registry.GetNodeTypeDescriptorsUVE();
-    ASSERT_EQ(descriptors.size(), 163U);
+    ASSERT_EQ(descriptors.size(), 164U);
     const std::vector<std::string> expectedIds{
         "flow.sequence", "flow.branch", "flow.return", "flow.do_once", "flow.gate", "flow.switch",
         "flow.event", "flow.loop", "flow.for_loop", "flow.while_loop", "flow.delay",
@@ -265,7 +265,7 @@ TEST(ScriptNodeRegistryUVETest, BuiltInVector3Catalog_RegistersDeterministicDesc
         "physics.enable_gravity", "physics.is_colliding", "physics.on_collision_enter", "physics.on_collision_exit",
         "audio.set_volume", "audio.set_pitch",
         "audio.set_3d_position", "audio.play_sound", "audio.stop_sound", "audio.is_playing",
-        "audio.set_attenuation", "debug.print", "debug.warning", "debug.error"};
+        "audio.set_attenuation", "debug.print", "debug.warning", "debug.error", "scene.self"};
     ASSERT_EQ(expectedIds.size(), descriptors.size());
     for (std::size_t index = 0U; index < expectedIds.size(); ++index) {
         EXPECT_EQ(descriptors[index].typeId, expectedIds[index]);
@@ -342,6 +342,11 @@ TEST(ScriptNodeRegistryUVETest, BuiltInVector3Catalog_RegistersDeterministicDesc
         EXPECT_EQ(descriptors[index].category, "Debug");
         EXPECT_EQ(descriptors[index].iconId, "node.debug");
     }
+    // The owner's scene node: last in the palette, and deliberately pinless.
+    EXPECT_EQ(descriptors[163U].category, "Scene");
+    EXPECT_EQ(descriptors[163U].iconId, "node.scene");
+    EXPECT_TRUE(descriptors[163U].pins.empty());
+    EXPECT_FALSE(descriptors[163U].executionRequired);
 
     for (const char* typeId : {"physics.on_collision_enter", "physics.on_collision_exit"}) {
         const ScriptNodeTypeDescriptorUVE* onCollision = registry.FindNodeTypeUVE(typeId);
@@ -2738,6 +2743,28 @@ TEST(ScriptRuntimeUVETest, TickDetailedUVE_OrdersByPriorityAndKeepsEntityOrderOn
     EXPECT_EQ(batch.results[0].entity, (Scene::EntityUVE{1U, 1U}));
 
     EXPECT_FALSE(runtime.SetPriorityUVE({99U, 1U}, 5)); // No instance to prioritise.
+}
+
+TEST(ScriptComponentRuntimeOwnershipUVETest, ReconcileUVE_AFreshScriptHoldingOnlyTheSceneNodeRunsAndDoesNothing) {
+    // What "Add new C++" creates: a script whose canvas holds the owner's pinless scene node and
+    // nothing else. It must attach and tick cleanly - a new script that errors before the author
+    // has written anything would be the first thing they see.
+    ScriptNodeRegistryUVE registry;
+    ASSERT_TRUE(RegisterBuiltInScriptNodesUVE(registry));
+    ScriptGraphUVE graph;
+    ASSERT_TRUE(graph.AddNodeUVE({1U, std::string{kSceneSelfScriptNodeTypeIdUVE}}));
+    EXPECT_TRUE(graph.ValidateUVE(registry).empty());
+    ScriptRuntimeUVE runtime;
+
+    const ScriptComponentRuntimeOwnershipResultUVE result = ScriptComponentRuntimeOwnershipUVE::ReconcileUVE(
+        Scene::ScriptComponentUVE{"scripts/main.uvescript"}, graph, registry, runtime, {4U, 1U});
+    ASSERT_TRUE(result.IsAcceptedUVE());
+    ASSERT_EQ(runtime.GetInstanceCountUVE(), 1U);
+
+    const ScriptRuntimeTickBatchResultUVE batch = runtime.TickDetailedUVE();
+    EXPECT_EQ(batch.summary.completedCount, 1U);
+    EXPECT_EQ(batch.summary.diagnosticCount, 0U);
+    EXPECT_EQ(batch.summary.invalidInstructionCount, 0U);
 }
 
 TEST(ScriptComponentRuntimeOwnershipUVETest, ReconcileUVE_EmptyPathDetachesIdempotently) {

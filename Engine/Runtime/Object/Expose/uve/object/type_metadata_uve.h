@@ -112,6 +112,11 @@ struct TypeMetadataPropertyUVE final {
     /// Opt-in escape hatch: names a registered custom drawer for the cases a generic editor cannot
     /// serve correctly (a transform that must round-trip through euler sync, an entity picker).
     std::string customDrawerId;
+    /// Names the sibling property holding what this authored value resolves to once inheritance is
+    /// applied - `mode` resolves to `resolvedModeInHierarchy`. An inspector shows the answer beside
+    /// the choice ("Inherit (Pausable)") instead of as a second row that repeats the same dropdown.
+    /// Must name another property of the same type; the registry rejects anything else.
+    std::string resolvedByProperty;
     /// Conditional visibility. Null means always visible; otherwise the inspector calls it with a
     /// pointer to the owning instance, so a property can depend on a sibling field's value.
     bool (*isVisible)(const void* instance) = nullptr;
@@ -205,6 +210,10 @@ template <auto MemberPointer>
         static_cast<OwnerT*>(instance)->*MemberPointer =
             static_cast<ValueT>(*static_cast<const std::int64_t*>(inValue));
     };
+    // An enumeration always compares, so an enum property always knows whether it changed.
+    property.areEqual = +[](const void* left, const void* right) {
+        return static_cast<const OwnerT*>(left)->*MemberPointer == static_cast<const OwnerT*>(right)->*MemberPointer;
+    };
     return property;
 }
 
@@ -276,6 +285,14 @@ struct TypeMetadataEntryUVE final {
     void (*assignInstance)(void* destination, const void* source) = nullptr;
     /// Sort key for the type's own inspector section, so a common section can be pushed last.
     std::int32_t order = 0;
+    /// Inspector presentation: draw this type's section inside the named type's section whenever an
+    /// entity carries both - Thread Group belongs under Process, the way a sub-group reads. On an
+    /// entity without the host it stands on its own, so nothing ever becomes unreachable.
+    std::string nestedUnderTypeId;
+    /// Inspector presentation: draw the properties as rows in place, with no collapsible header,
+    /// for a type that is conceptually one property of the node rather than a feature of it - a
+    /// node has a script and has metadata, it does not have a "Script section".
+    bool presentedInline = false;
 
     [[nodiscard]] bool operator==(const TypeMetadataEntryUVE&) const = default;
 

@@ -11,7 +11,9 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <typeindex>
+#include <unordered_map>
 #include <variant>
 #include <vector>
 
@@ -579,6 +581,32 @@ public:
     /// no ScriptComponentUVE - the caller (the viewport's entity context toolbar) uses that to
     /// decide whether to offer a "Scripting" action at all.
     [[nodiscard]] bool OpenScriptGraphForEntityUVE(Scene::EntityUVE entity);
+    /// "Add new C++" on the Scripting slot. Creates a script asset for the selected entity at
+    /// `scripts/<name>.uvescript` (a free name), holding the owner's pinless scene node; points the
+    /// entity's Script at it as one undoable edit; and opens its canvas in the Scripting workspace.
+    /// Refuses unless authoring is allowed, exactly one document entity is selected, it carries a
+    /// Script component and that Script is still empty.
+    [[nodiscard]] bool CreateScriptForSelectedEntityUVE();
+    /// "Quick Load" and "Load": points the selected entity's Script at an existing script asset, as
+    /// one undoable edit. An empty path clears the slot. Any other path must pass
+    /// DescribeScriptAssetProblemUVE.
+    [[nodiscard]] bool AssignScriptToSelectedEntityUVE(const std::string& path);
+    /// Why `path` cannot be assigned as a script, in words fit to show beside the field; empty when
+    /// it can. A path must be project-relative and name a file that decodes as a script graph.
+    [[nodiscard]] std::string DescribeScriptAssetProblemUVE(const std::string& path) const;
+    /// The script assets Quick Load offers, sorted: every one the document already uses, plus every
+    /// `.uvescript` file in the project's scripts folder.
+    [[nodiscard]] std::vector<std::string> GetKnownScriptAssetPathsUVE() const;
+    /// Metadata on the selected node. Each writes the whole entry list once through the metadata
+    /// property path, so every add, edit, rename, retype or removal is exactly one undo entry.
+    /// New and renamed keys must pass ValidateNodeMetadataKeyUVE.
+    [[nodiscard]] bool AddSelectedNodeMetadataUVE(const std::string& key, const Core::VariantUVE& value);
+    [[nodiscard]] bool SetSelectedNodeMetadataValueUVE(const std::string& key, const Core::VariantUVE& value);
+    [[nodiscard]] bool RenameSelectedNodeMetadataUVE(const std::string& key, const std::string& newKey);
+    /// Converts the value to `type`. Refuses a conversion that would lose data unless `allowLoss`.
+    [[nodiscard]] bool ChangeSelectedNodeMetadataTypeUVE(const std::string& key, Core::VariantTypeUVE type,
+                                                         bool allowLoss);
+    [[nodiscard]] bool RemoveSelectedNodeMetadataUVE(const std::string& key);
     /// Arms the entity context toolbar (see ViewportOverlayStateUVE) at the given screen pixel for
     /// `entity`. The caller (main.cpp, which owns viewport picking and the camera the pixel was
     /// projected with) must call this before RenderOverlayUVE runs the same frame.
@@ -635,6 +663,12 @@ private:
         /// Looked up by identity, never by name - a scriptAssetPath can contain '/' and therefore
         /// can never be a valid branch name (see CreateVisualScriptBranchUVE's invalidName check).
         Scene::EntityUVE ownerEntity = Scene::kInvalidEntityUVE;
+        /// The script asset this canvas edits, or empty for a free-standing branch. A linked branch
+        /// is loaded from and saved to that asset rather than the .scripting workspace: the asset
+        /// is what the entity runs, so it is the one copy of the graph that must never go stale.
+        /// It is also how an entity finds its canvas again after the editor restarts, when the
+        /// owner handle above no longer means anything.
+        std::string assetPath{};
     };
 
     struct PlayModeSessionUVE final {
@@ -844,6 +878,17 @@ private:
                      DeletionHistoryEntryUVE,
                      ReparentHistoryEntryUVE>;
 
+    /// Writes `text` to a project file: through the VFS when a mount covers `path`, else at `path`
+    /// itself relative to the working directory - the rule the .scripting workspace established.
+    /// Written to a temporary and renamed, so a failed write never leaves a half-written file.
+    [[nodiscard]] bool WriteProjectTextFileUVE(const std::filesystem::path& path, std::string_view text);
+    /// Reads a project file by the same rule as WriteProjectTextFileUVE.
+    [[nodiscard]] std::optional<std::string> ReadProjectTextFileUVE(const std::filesystem::path& path) const;
+    /// Writes every linked script branch back to its asset. Returns false if any write failed.
+    [[nodiscard]] bool WriteLinkedScriptAssetsUVE();
+    /// The title a script canvas shows for a node: the owner's live name for the scene node, so the
+    /// canvas reads "main" the moment the root is renamed, and the descriptor's name otherwise.
+    [[nodiscard]] std::string GetScriptNodeTitleUVE(const std::string& typeId, const std::string& displayName) const;
     [[nodiscard]] bool IsDocumentEntityUVE(Scene::EntityUVE entity) const noexcept;
     [[nodiscard]] bool HasSceneGraphNodeUVE(Scene::EntityUVE entity) const noexcept;
     /// True for any live document entity in the hierarchy, spatial or not. This, not
@@ -992,14 +1037,45 @@ private:
     /// a hand-written registration and a per-type switch for each of them: a component that
     /// declares its properties is inspectable without the inspector being told it exists.
     void RegisterMetadataInspectorDrawersUVE();
-    /// Draws every declared property of one component, choosing a widget by the property's value
-    /// type and honouring its declared range, enum options, conditional visibility and read-only
-    /// flags. Writes go through SetSelectedComponentPropertyUVE below.
-    void DrawMetadataComponentDrawerUVE(Scene::EntityUVE entity, const Core::TypeMetadataEntryUVE& entry);
-    /// Draws one property row: label, tooltip, the widget its declared value type calls for, and a
-    /// reset button. `instance` points at the live component on the selected entity.
+    /// Draws one component's section: a collapsible header (or, for a type presented inline, just
+    /// its rows), its properties, and the section of each type in `nested` the entity also carries.
+    /// Writes go through SetSelectedComponentPropertyUVE below.
+    void DrawMetadataComponentDrawerUVE(Scene::EntityUVE entity, const Core::TypeMetadataEntryUVE& entry,
+                                        const std::vector<const Core::TypeMetadataEntryUVE*>& nested);
+    /// Draws the visible properties of one component as label/value rows. Runtime-owned rows appear
+    /// only during Play, where they describe something real; a row another property declares as its
+    /// resolved answer is shown beside that property instead of on its own.
+    void DrawMetadataPropertyRowsUVE(const Core::TypeMetadataEntryUVE& entry, const void* instance);
+    /// Draws one property row: label, tooltip, a revert control when the value differs from a new
+    /// component's, and the widget its declared value type calls for. `instance` points at the live
+    /// component on the selected entity.
     void DrawMetadataPropertyRowUVE(const Core::TypeMetadataEntryUVE& entry,
                                     const Core::TypeMetadataPropertyUVE& property, const void* instance);
+    /// The label cell shared by generic and custom rows. Returns true when the author reverted the
+    /// property to its default this frame.
+    bool DrawMetadataPropertyLabelUVE(const Core::TypeMetadataEntryUVE& entry,
+                                      const Core::TypeMetadataPropertyUVE& property, const void* instance,
+                                      bool writable);
+    /// Dispatches a property that names a custom drawer. Returns false for an id with no drawer,
+    /// which the caller treats as "draw it generically".
+    bool DrawCustomPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
+                               const Core::TypeMetadataPropertyUVE& property, const void* instance);
+    void DrawMultilineTextPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
+                                      const Core::TypeMetadataPropertyUVE& property, const void* instance);
+    void DrawScriptSlotPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
+                                   const Core::TypeMetadataPropertyUVE& property, const void* instance);
+    void DrawNodeMetadataPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
+                                     const Core::TypeMetadataPropertyUVE& property, const void* instance);
+    /// True when `instance`'s value for `property` equals what a newly added component holds. False
+    /// when that cannot be known (no equality for the type), so a revert is offered rather than hidden.
+    [[nodiscard]] bool IsPropertyAtDefaultUVE(const Core::TypeMetadataEntryUVE& entry,
+                                              const Core::TypeMetadataPropertyUVE& property, const void* instance);
+    /// A text field that commits once, when the author finishes - Enter, or focus leaving after an
+    /// edit - rather than on every keystroke: one undo entry per edit, and no edit lost to a click
+    /// elsewhere. Input past `maximumBytes` is refused as it is typed. Returns the committed text.
+    [[nodiscard]] std::optional<std::string> DrawCommittedTextInputUVE(const char* id, const std::string& current,
+                                                                       bool multiline, float height,
+                                                                       std::size_t maximumBytes);
     /// Writes one property of one component on the selected entity and records one undo entry.
     /// Refuses when authoring is unavailable, the selection is not a single document entity, the
     /// entity does not hold the component, the property is not authoring-writable, or the value is
@@ -1132,6 +1208,41 @@ private:
     ContentBrowserTypeFocusUVE m_contentBrowserTypeFocus = ContentBrowserTypeFocusUVE::All;
     std::string m_assetFilter;
     std::string m_inspectorFilter;
+    /// One default-constructed instance per inspected component type, made on first use, so the
+    /// Inspector can tell a changed value from a default one without constructing a component per
+    /// row per frame.
+    std::unordered_map<const Core::TypeMetadataEntryUVE*, Core::TypeInstanceUVE> m_inspectorDefaultInstances;
+    /// Working copies of the text fields being edited (DrawCommittedTextInputUVE), keyed by widget
+    /// id. Dear ImGui owns the text while a field is active; this is where it lands so it can be
+    /// committed on the frame the field is let go. Per widget, because clicking from one field into
+    /// another activates the second in the same frame the first reports it was let go.
+    std::vector<std::pair<std::uint32_t, std::string>> m_inspectorTextEdits;
+    /// The Scripting slot's action strip (Add new C++ / Quick Load / Load) is open for this entity.
+    /// Kept per entity so selecting another node never shows it pre-opened.
+    Scene::EntityUVE m_scriptSlotActionsEntity = Scene::kInvalidEntityUVE;
+    std::string m_scriptQuickLoadFilter;
+    /// Gathered when Quick Load opens rather than every frame it is open: it walks a folder.
+    std::vector<std::string> m_scriptQuickLoadCandidates;
+    std::string m_scriptLoadPath;
+    /// The Load dialog's verdict on the path last checked, re-derived only when the path changes:
+    /// checking reads and decodes the file.
+    std::optional<std::string> m_scriptLoadCheckedPath;
+    std::string m_scriptLoadProblem;
+    /// The Add Metadata popup's draft. The type is remembered between uses: the next property an
+    /// author adds is most often the same kind as the last.
+    std::string m_metadataAddName;
+    std::string m_metadataTypeFilter;
+    Core::VariantTypeUVE m_metadataAddType = Core::VariantTypeUVE::Bool;
+    std::optional<Core::VariantUVE> m_metadataAddValue;
+    /// Row being renamed, and its draft name.
+    std::string m_metadataRenameKey;
+    std::string m_metadataRenameDraft;
+    /// A lossy retype awaiting confirmation: key and target type.
+    std::optional<std::pair<std::string, Core::VariantTypeUVE>> m_metadataPendingRetype;
+    /// Commits a new entry list for the selected node's metadata: the single write path.
+    [[nodiscard]] bool CommitSelectedNodeMetadataUVE(std::vector<Scene::NodeMetadataEntryUVE> entries);
+    /// Draws an editor for one Variant; returns true when the value changed and should be committed.
+    bool DrawVariantValueEditorUVE(const char* id, Core::VariantUVE& value, int depth);
     std::string m_consoleFilter;
     std::string m_consoleCommand;
     std::string m_hierarchyFilter;

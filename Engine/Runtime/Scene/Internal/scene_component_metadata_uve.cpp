@@ -548,25 +548,47 @@ void DeclareMediaAndUIUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                      }));
 }
 
+/// Links an authored Inherit-style choice to the runtime property holding what it resolved to, so
+/// the Inspector can show the answer beside the choice rather than as a row of its own.
+[[nodiscard]] TypeMetadataPropertyUVE ResolvedByUVE(TypeMetadataPropertyUVE property, std::string resolvedProperty) {
+    property.resolvedByProperty = std::move(resolvedProperty);
+    return property;
+}
+
+[[nodiscard]] TypeMetadataPropertyUVE HiddenUVE(TypeMetadataPropertyUVE property) {
+    property.flags = TypeMetadataPropertyFlagsUVE::Hidden;
+    return property;
+}
+
 /// The common Node section: what every node has regardless of what it is. These sort last, below
-/// whatever the node itself brings, which is where an author expects them.
+/// whatever the node itself brings, which is where an author expects them - and in a fixed order
+/// among themselves, because an author finds a setting by where it was last time.
 void DeclareNodeCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
-    // Each of these four is declared here and nowhere else, and each appeared in the Inspector,
-    // with its dropdown, its ordering fields and its read-only resolved answer, without a line of
-    // Inspector code being written for it. That is the whole point of the declaration being the
-    // single source of property truth.
+    // Each of these is declared here and nowhere else, and each appears in the Inspector - with
+    // its dropdown, its resolved answer and its place in the section - without a line of Inspector
+    // code being written for it. That is the whole point of the declaration being the single
+    // source of property truth.
+    constexpr std::int32_t kProcessOrder = kSectionOrderNodeCommonUVE;
+    constexpr std::int32_t kThreadGroupOrder = kSectionOrderNodeCommonUVE + 10;
+    constexpr std::int32_t kPhysicsInterpolationOrder = kSectionOrderNodeCommonUVE + 20;
+    constexpr std::int32_t kAutoTranslateOrder = kSectionOrderNodeCommonUVE + 30;
+    constexpr std::int32_t kEditorDescriptionOrder = kSectionOrderNodeCommonUVE + 40;
+    constexpr std::int32_t kScriptOrder = kSectionOrderNodeCommonUVE + 50;
+    constexpr std::int32_t kMetadataOrder = kSectionOrderNodeCommonUVE + 60;
+
     AddUVE<ProcessComponentUVE>(
         entries,
         MakeEntryUVE(
-            "component.process", "Process", kSectionOrderNodeCommonUVE,
+            "component.process", "Process", kProcessOrder,
             {
                 WithTooltipUVE(
-                    DeclareEnumUVE<&ProcessComponentUVE::mode>("mode", "Mode",
-                                                               {{0, "Inherit"},
-                                                                {1, "Pausable"},
-                                                                {2, "When Paused"},
-                                                                {3, "Always"},
-                                                                {4, "Disabled"}}),
+                    ResolvedByUVE(DeclareEnumUVE<&ProcessComponentUVE::mode>("mode", "Mode",
+                                                                             {{0, "Inherit"},
+                                                                              {1, "Pausable"},
+                                                                              {2, "When Paused"},
+                                                                              {3, "Always"},
+                                                                              {4, "Disabled"}}),
+                                  "resolvedModeInHierarchy"),
                     "Whether this entity's work runs while paused. Drives scripts and particle "
                     "emitters; controllers, projectiles and spring arms skip Disabled and When "
                     "Paused. Inherit takes the parent's answer (Pausable at the top)."),
@@ -583,34 +605,54 @@ void DeclareNodeCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                     {{0, "Inherit"}, {1, "Pausable"}, {2, "When Paused"}, {3, "Always"}, {4, "Disabled"}}),
             }));
 
-    AddUVE<ThreadGroupComponentUVE>(
+    // A sub-group of Process: which thread the work runs on is a refinement of when it runs.
+    TypeMetadataEntryUVE threadGroup = MakeEntryUVE(
+        "component.thread_group", "Thread Group", kThreadGroupOrder,
+        {
+            WithTooltipUVE(
+                ResolvedByUVE(DeclareEnumUVE<&ThreadGroupComponentUVE::mode>(
+                                  "mode", "Group", {{0, "Inherit"}, {1, "Main Thread"}, {2, "Sub Thread"}}),
+                              "resolvedModeInHierarchy"),
+                "Which thread this entity's work may run on. Today this moves particle emitter "
+                "simulation onto worker threads; scripts always stay on the main thread. A Main "
+                "Thread ancestor is a constraint a child cannot override."),
+            // Kept declared so code can still read it, but not offered: particle emitters are
+            // simulated independently, so an order within a group has nothing to order yet.
+            HiddenUVE(DeclareUVE<&ThreadGroupComponentUVE::order>("order", "Order", kPropertyTypeInt32UVE)),
+            DeclareRuntimeStateEnumUVE<&ThreadGroupComponentUVE::resolvedModeInHierarchy>(
+                "resolvedModeInHierarchy", "Resolved Group",
+                {{0, "Inherit"}, {1, "Main Thread"}, {2, "Sub Thread"}}),
+        });
+    threadGroup.nestedUnderTypeId = "component.process";
+    AddUVE<ThreadGroupComponentUVE>(entries, std::move(threadGroup));
+
+    // Only `mode` is authored. Everything else on this component is the interpolation system's
+    // working state: the resolved answer plus the two poses it blends between. Marking them
+    // RuntimeState is what keeps a generic editor from writing a pose and a generic serializer
+    // from persisting one - either would corrupt the next frame's interpolation.
+    AddUVE<PhysicsInterpolationComponentUVE>(
         entries,
-        MakeEntryUVE(
-            "component.thread_group", "Thread Group", kSectionOrderNodeCommonUVE,
-            {
-                WithTooltipUVE(
-                    DeclareEnumUVE<&ThreadGroupComponentUVE::mode>(
-                        "mode", "Mode", {{0, "Inherit"}, {1, "Main Thread"}, {2, "Sub Thread"}}),
-                    "Which thread this entity's work may run on. Today this moves particle emitter "
-                    "simulation onto worker threads; scripts always stay on the main thread. A Main "
-                    "Thread ancestor is a constraint a child cannot override."),
-                WithTooltipUVE(DeclareUVE<&ThreadGroupComponentUVE::order>("order", "Order",
-                                                                          kPropertyTypeInt32UVE),
-                               "Not used yet. Particle emitters are simulated independently, so "
-                               "their order within a group has no effect."),
-                DeclareRuntimeStateEnumUVE<&ThreadGroupComponentUVE::resolvedModeInHierarchy>(
-                    "resolvedModeInHierarchy", "Resolved Mode",
-                    {{0, "Inherit"}, {1, "Main Thread"}, {2, "Sub Thread"}}),
-            }));
+        MakeEntryUVE("component.physics_interpolation", "Physics Interpolation", kPhysicsInterpolationOrder,
+                     {
+                         ResolvedByUVE(DeclareEnumUVE<&PhysicsInterpolationComponentUVE::mode>(
+                                           "mode", "Mode", {{0, "Inherit"}, {1, "On"}, {2, "Off"}}),
+                                       "interpolatedInHierarchy"),
+                         DeclareRuntimeStateUVE<&PhysicsInterpolationComponentUVE::interpolatedInHierarchy>(
+                             "interpolatedInHierarchy", "Interpolated In Hierarchy",
+                             kPropertyTypeBoolUVE),
+                         DeclareRuntimeStateUVE<&PhysicsInterpolationComponentUVE::hasPreviousPose>(
+                             "hasPreviousPose", "Has Previous Pose", kPropertyTypeBoolUVE),
+                     }));
 
     AddUVE<AutoTranslateComponentUVE>(
         entries,
         MakeEntryUVE(
-            "component.auto_translate", "Auto Translate", kSectionOrderNodeCommonUVE,
+            "component.auto_translate", "Auto Translate", kAutoTranslateOrder,
             {
                 WithTooltipUVE(
-                    DeclareEnumUVE<&AutoTranslateComponentUVE::mode>(
-                        "mode", "Mode", {{0, "Inherit"}, {1, "Always"}, {2, "Disabled"}}),
+                    ResolvedByUVE(DeclareEnumUVE<&AutoTranslateComponentUVE::mode>(
+                                      "mode", "Mode", {{0, "Inherit"}, {1, "Always"}, {2, "Disabled"}}),
+                                  "resolvedModeInHierarchy"),
                     "Whether this entity's UI Text is looked up in the active locale before it is "
                     "drawn. The authored text is its own key. Disable it for debug labels, "
                     "identifiers and player names; a label with no component follows its parent."),
@@ -619,46 +661,35 @@ void DeclareNodeCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                     {{0, "Inherit"}, {1, "Always"}, {2, "Disabled"}}),
             }));
 
-    // The entry list itself has no generic editor yet - a list of key/value pairs needs add and
-    // remove affordances a property row cannot express - so it is declared Hidden rather than
-    // shown as a control that looks editable and is not. It serializes, it is readable from code,
-    // and it gains its editor when the list drawer exists.
-    TypeMetadataPropertyUVE metadataEntries = DeclareUVE<&NodeMetadataComponentUVE::entries>(
-        "entries", "Entries", "NodeMetadataEntryList");
-    metadataEntries.flags = TypeMetadataPropertyFlagsUVE::Hidden;
-    AddUVE<NodeMetadataComponentUVE>(entries, MakeEntryUVE("component.node_metadata", "Metadata",
-                                                           kSectionOrderNodeCommonUVE,
-                                                           {std::move(metadataEntries)}));
-
-    AddUVE<ScriptComponentUVE>(
-        entries, MakeEntryUVE("component.script", "Script", kSectionOrderNodeCommonUVE,
-                              {DeclareUVE<&ScriptComponentUVE::scriptAssetPath>(
-                                  "scriptAssetPath", "Script", kPropertyTypeStringUVE)}));
-
-    // Only `mode` is authored. Everything else on this component is the interpolation system's
-    // working state: the resolved answer plus the two poses it blends between. Marking them
-    // RuntimeState is what keeps a generic editor from writing a pose and a generic serializer
-    // from persisting one - either would corrupt the next frame's interpolation.
-    AddUVE<PhysicsInterpolationComponentUVE>(
-        entries,
-        MakeEntryUVE("component.physics_interpolation", "Physics Interpolation",
-                     kSectionOrderNodeCommonUVE,
-                     {
-                         DeclareEnumUVE<&PhysicsInterpolationComponentUVE::mode>(
-                             "mode", "Mode", {{0, "Inherit"}, {1, "On"}, {2, "Off"}}),
-                         DeclareRuntimeStateUVE<&PhysicsInterpolationComponentUVE::interpolatedInHierarchy>(
-                             "interpolatedInHierarchy", "Interpolated In Hierarchy",
-                             kPropertyTypeBoolUVE),
-                         DeclareRuntimeStateUVE<&PhysicsInterpolationComponentUVE::hasPreviousPose>(
-                             "hasPreviousPose", "Has Previous Pose", kPropertyTypeBoolUVE),
-                     }));
-
-    TypeMetadataPropertyUVE description = DeclareUVE<&EditorDescriptionComponentUVE::description>(
-        "description", "Description", kPropertyTypeStringUVE);
+    // A note to the next person, so it gets a box that fits a paragraph rather than one line.
+    TypeMetadataPropertyUVE description = WithCustomDrawerUVE(
+        DeclareUVE<&EditorDescriptionComponentUVE::description>("description", "Description",
+                                                                kPropertyTypeStringUVE),
+        "multiline-text");
     description.flags = TypeMetadataPropertyFlagsUVE::EditorOnly;
     AddUVE<EditorDescriptionComponentUVE>(entries,
                                           MakeEntryUVE("component.editor_description", "Editor Description",
-                                                       kSectionOrderNodeCommonUVE, {std::move(description)}));
+                                                       kEditorDescriptionOrder, {std::move(description)}));
+
+    // The script slot: empty offers to create, pick or load a script; filled names it. The path
+    // is still the stored truth - the drawer only decides how it is chosen.
+    TypeMetadataEntryUVE script =
+        MakeEntryUVE("component.script", "Script", kScriptOrder,
+                     {WithCustomDrawerUVE(DeclareUVE<&ScriptComponentUVE::scriptAssetPath>(
+                                              "scriptAssetPath", "Scripting", kPropertyTypeStringUVE),
+                                          "script-slot")});
+    script.presentedInline = true;
+    AddUVE<ScriptComponentUVE>(entries, std::move(script));
+
+    // Typed key/value pairs. A list needs add, rename, retype and remove, which a single property
+    // row cannot express, so the whole list is one custom-drawn property.
+    TypeMetadataEntryUVE metadata = MakeEntryUVE(
+        "component.node_metadata", "Metadata", kMetadataOrder,
+        {WithCustomDrawerUVE(DeclareUVE<&NodeMetadataComponentUVE::entries>("entries", "Metadata",
+                                                                            "NodeMetadataEntryList"),
+                             "node-metadata")});
+    metadata.presentedInline = true;
+    AddUVE<NodeMetadataComponentUVE>(entries, std::move(metadata));
 }
 
 [[nodiscard]] TypeMetadataRegistryUVE BuildRegistryUVE() {
