@@ -23,6 +23,28 @@ struct GridColor {
     float r = 0.f, g = 0.f, b = 0.f;
 };
 
+// Which world plane the grid is drawn on. The ground (XZ) almost always; a named side view looks
+// along the ground, where it is only an edge, so the grid stands up on the plane facing the
+// camera instead - XY for Front/Back, ZY for Left/Right - and the view keeps a reference.
+enum class GridPlane {
+    XZ = 0,
+    XY = 1,
+    ZY = 2,
+};
+
+// The plane facing a view that looks along `direction` (either sign): the one whose normal is the
+// dominant world axis, when the view is axis-aligned. Anything oblique, and Top/Bottom, keep the
+// ground. Mirrors the host's choice so it is testable without a GPU.
+[[nodiscard]] constexpr GridPlane GridPlaneFacing(float x, float y, float z) {
+    const float ax = x < 0.f ? -x : x;
+    const float az = z < 0.f ? -z : z;
+    const float lengthSquared = x * x + y * y + z * z;
+    constexpr float kAlignedCosSquared = 0.999f * 0.999f;
+    if (az * az >= kAlignedCosSquared * lengthSquared && az > 0.f) return GridPlane::XY;
+    if (ax * ax >= kAlignedCosSquared * lengthSquared && ax > 0.f) return GridPlane::ZY;
+    return GridPlane::XZ;
+}
+
 struct GridSettings {
     // Finest spacing the grid will ever draw, in world units. 1.0 with a
     // metre-scale engine means the tightest visible cell is 1 m; the LOD
@@ -61,6 +83,8 @@ struct GridSettings {
     float fadeEndDistanceScale = 45.0f;
 
     float opacity = 1.0f;
+
+    GridPlane plane = GridPlane::XZ;
 };
 
 struct GridLod {
