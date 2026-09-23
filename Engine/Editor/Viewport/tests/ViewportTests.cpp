@@ -26,6 +26,7 @@
 
 #include "univex/camera/OrbitCamera.h"
 #include "univex/camera/ViewportMetrics.h"
+#include "univex/gizmo/BoneShape.h"
 #include "univex/gizmo/GizmoDrag.h"
 #include "univex/gizmo/GizmoPicking.h"
 #include "univex/gizmo/GizmoGeometry.h"
@@ -1010,5 +1011,41 @@ int main() {
     std::printf("\n%s (%d failing check%s)\n",
                 g_failures == 0 ? "ALL CHECKS PASSED" : "SOME CHECKS FAILED",
                 g_failures, g_failures == 1 ? "" : "s");
+    std::puts("\n== BoneShape: the editor's bone ==");
+    {
+        using univex::gizmo::BoneOverlayUVE;
+        using univex::gizmo::BoneStyleUVE;
+        const BoneStyleUVE style;
+        BoneOverlayUVE bone;
+        bone.head = Vec3{0.f, 0.f, 0.f};
+        bone.tail = Vec3{0.f, 1.f, 0.f};
+        bone.skeletonSelected = true;
+        const auto mesh = univex::gizmo::BuildBoneMeshUVE({bone}, style);
+        Check(mesh.triangles.size() == 16U, "one bone is an 8-face spindle plus an 8-face joint");
+        Check(mesh.lines.size() == 12U, "and 12 outline edges");
+        bool withinBone = true;
+        for (const auto& line : mesh.lines) {
+            for (const Vec3& p : {line.a, line.b}) {
+                withinBone = withinBone && p.y >= -0.06f && p.y <= 1.0001f &&
+                             std::fabs(p.x) <= 0.11f && std::fabs(p.z) <= 0.11f;
+            }
+        }
+        Check(withinBone, "the outline stays within the bone's length and width");
+        Check(mesh.lines.front().color.x == style.selectedColor.x, "a selected skeleton draws in teal");
+
+        bone.boneSelected = true;
+        Check(univex::gizmo::BuildBoneMeshUVE({bone}, style).lines.front().color.x == style.activeBoneColor.x,
+              "the Inspector's bone draws in amber");
+
+        BoneOverlayUVE linked = bone;
+        linked.hasLink = true;
+        linked.linkFrom = Vec3{0.f, -0.5f, 0.f};
+        Check(univex::gizmo::BuildBoneMeshUVE({linked}, style).lines.size() == 13U,
+              "a bone that does not start at its parent's tail gets a link line");
+
+        BoneOverlayUVE degenerate;
+        Check(univex::gizmo::BuildBoneMeshUVE({degenerate}, style).Empty(), "a zero-length bone draws nothing");
+    }
+
     return g_failures == 0 ? 0 : 1;
 }

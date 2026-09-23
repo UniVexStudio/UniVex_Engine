@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <array>
 #include <map>
 #include <memory>
 #include <cstddef>
@@ -270,6 +271,18 @@ public:
         float b = 0.0F;
     };
 
+    /// One Skeleton3D bone in world space, for the viewport to draw (see BoneShape in the viewport
+    /// module for the look). Plain floats for the same reason as the rest of the overlay state.
+    struct ViewportBoneUVE final {
+        std::array<float, 3> head{};
+        std::array<float, 3> tail{};
+        std::array<float, 3> side{1.0F, 0.0F, 0.0F};
+        bool hasLink = false;
+        std::array<float, 3> linkFrom{};
+        bool skeletonSelected = false;
+        bool boneSelected = false;
+    };
+
     struct ViewportOverlayStateUVE final {
         bool orthographic = false;
         ViewportGizmoModeUVE gizmoMode = ViewportGizmoModeUVE::Universal;
@@ -319,6 +332,9 @@ public:
         ViewportAxisColorUVE axisColorY{};
         ViewportAxisColorUVE axisColorZ{};
         bool axisColorsValid = false;
+
+        // Every enabled, visible Skeleton3D's bones, rebuilt each frame; empty in the Game workspace.
+        std::vector<ViewportBoneUVE> bones;
     };
 
     /// Render callback for the dockable "Viewport" panel: given the panel's current available
@@ -1084,6 +1100,8 @@ private:
     /// loads its bones; an empty path clears both. One undo step. False, with the reason in
     /// m_skeletonSourceStatus, when the file has no readable skeleton.
     bool BindSelectedSkeletonSourceUVE(const std::filesystem::path& relativeSource);
+    /// The world-space bones of every enabled Skeleton3D in the document, for the viewport.
+    void BuildSkeletonOverlayUVE(std::vector<ViewportBoneUVE>& outBones) const;
     /// True when `instance`'s value for `property` equals what a newly added component holds. False
     /// when that cannot be known (no equality for the type), so a revert is offered rather than hidden.
     [[nodiscard]] bool IsPropertyAtDefaultUVE(const Core::TypeMetadataEntryUVE& entry,
