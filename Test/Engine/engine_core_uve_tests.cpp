@@ -1089,6 +1089,47 @@ TEST(EngineCoreUVETest, ScriptComponentEntity_ReconcilesAndTicksAgainstScriptRun
     engine.Shutdown();
 }
 
+TEST(EngineCoreUVETest, ScriptComponentEntity_FindsAProjectScriptAndRetriesWhenItsPathChanges) {
+    // No manual mount: the project directory itself is mounted at the VFS root, so a node's
+    // project-relative script path resolves to the file the editor wrote beside the scene.
+    const std::filesystem::path projectRoot = "uve_engine_core_tests_project_root";
+    std::filesystem::remove_all(projectRoot);
+    std::filesystem::create_directories(projectRoot / "scripts");
+    EngineConfigUVE config = MakeTestConfigUVE();
+    config.projectRootDirectoryUVE = projectRoot;
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    Scripting::ScriptGraphSchemaUVE schema;
+    ASSERT_TRUE(schema.graph.AddNodeUVE({1U, "scene.self"}));
+    std::vector<Scripting::ScriptPersistenceDiagnosticUVE> diagnostics;
+    const std::string encoded = Scripting::EncodeScriptGraphSchemaUVE(schema, diagnostics);
+    ASSERT_TRUE(diagnostics.empty());
+
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
+    // First the script does not exist yet: a failure, remembered for that path.
+    entityManager.AddComponentUVE<Scene::ScriptComponentUVE>(entity, Scene::ScriptComponentUVE{"scripts/main.uvescript"});
+    engine.TickFrameUVE();
+    EXPECT_EQ(engine.GetActiveScriptInstanceCountUVE(), 0U);
+
+    // Written, but the same path is not retried every frame...
+    {
+        std::ofstream(projectRoot / "scripts" / "main.uvescript", std::ios::binary) << encoded;
+        std::ofstream(projectRoot / "scripts" / "other.uvescript", std::ios::binary) << encoded;
+    }
+    engine.TickFrameUVE();
+    EXPECT_EQ(engine.GetActiveScriptInstanceCountUVE(), 0U);
+    // ...while pointing the node at a script is tried at once.
+    entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(entity).scriptAssetPath = "scripts/other.uvescript";
+    engine.TickFrameUVE();
+    EXPECT_EQ(engine.GetActiveScriptInstanceCountUVE(), 1U);
+
+    engine.Shutdown();
+    std::filesystem::remove_all(projectRoot);
+}
+
 TEST(EngineCoreUVETest, RenderSystem_ReachableAndFrameLifecycleWorksAfterInit) {
     EngineCoreUVE engine(MakeTestConfigUVE());
     engine.Init();

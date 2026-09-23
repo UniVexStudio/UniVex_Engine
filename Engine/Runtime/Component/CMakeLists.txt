@@ -50,5 +50,5 @@ add_library(uve_component STATIC
     Internal/world_transform_component_uve.cpp
 )
 target_include_directories(uve_component PUBLIC Expose)
-target_link_libraries(uve_component PUBLIC uve_math uve_asset)
+target_link_libraries(uve_component PUBLIC uve_math uve_asset uve_object)
 target_compile_features(uve_component PUBLIC cxx_std_20)

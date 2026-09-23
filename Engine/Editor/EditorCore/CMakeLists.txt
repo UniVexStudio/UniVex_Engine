@@ -124,6 +124,8 @@ add_library(uve_editor STATIC
     Internal/editor_panel_hierarchy_uve.cpp
     Internal/editor_panel_inspector_metadata_uve.cpp
     Internal/editor_panel_inspector_uve.cpp
+    Internal/editor_panel_inspector_node_metadata_uve.cpp
+    Internal/editor_script_slot_uve.cpp
     Internal/editor_panel_content_browser_uve.cpp
     Internal/editor_panel_viewport_uve.cpp
     Internal/editor_panel_menu_dock_uve.cpp

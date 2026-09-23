@@ -8,22 +8,31 @@
 
 #include <gtest/gtest.h>
 
+#include "uve/component/auto_translate_component_uve.h"
 #include "uve/component/camera_component_uve.h"
 #include "uve/component/collider_component_uve.h"
+#include "uve/component/editor_description_component_uve.h"
 #include "uve/component/entity_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/light_component_uve.h"
 #include "uve/component/name_component_uve.h"
+#include "uve/component/node_metadata_component_uve.h"
+#include "uve/component/physics_interpolation_component_uve.h"
 #include "uve/component/primitive_mesh_component_uve.h"
+#include "uve/component/process_component_uve.h"
 #include "uve/component/rigid_body_component_uve.h"
+#include "uve/component/script_component_uve.h"
+#include "uve/component/thread_group_component_uve.h"
 #include "uve/component/transform_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/entity/entity_manager_uve.h"
 #include "uve/events/event_system_uve.h"
+#include "uve/math/quaternion_uve.h"
 #include "uve/memory/memory_manager_uve.h"
 #include "uve/nodes/3d/all_nodes_3d_uve.h"
 #include "uve/scene/nodes/scene_node_registry_uve.h"
 #include "uve/scene/nodes/scene_root_uve.h"
+#include "uve/scene/scene_graph_uve.h"
 
 namespace UVE::Scene::Tests {
 namespace {
@@ -55,6 +64,7 @@ protected:
     Memory::MemoryManagerUVE memoryManager;
     Events::EventSystemUVE eventSystem;
     EntityManagerUVE entityManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
+    SceneGraphUVE sceneGraph;
 
     [[nodiscard]] EntityUVE CreateEntityUVE() {
         return entityManager.CreateEntityUVE();
@@ -361,25 +371,104 @@ TEST_F(Node3DDefinitionsUVETest, Node3DApplyRefusesADestroyedEntity) {
     EXPECT_FALSE(entityManager.IsAliveUVE(entity));
 }
 
-TEST_F(Node3DDefinitionsUVETest, SceneRootStandsOnTheSameBaselineAsEveryNode3D) {
+TEST_F(Node3DDefinitionsUVETest, SceneRootIsAPureNodeCarryingTheCommonNodeSection) {
     const EntityUVE root = CreateEntityUVE();
     ApplySceneRootNodeDefinitionUVE(entityManager, root, SceneRootNodeDefinitionUVE{});
 
-    // The root is "Node3D plus the marker" the same way the other kinds are "Node3D plus their
-    // component": one shared baseline guarantee, one extra component on top.
-    EXPECT_TRUE(entityManager.HasComponentUVE<TransformComponentUVE>(root));
-    EXPECT_TRUE(entityManager.HasComponentUVE<WorldTransformComponentUVE>(root));
+    // In the hierarchy and named, but with no transform: placing things in space is what Node3D
+    // adds, and the root has nothing to place. Its children start their own transform chains.
+    EXPECT_FALSE(entityManager.HasComponentUVE<TransformComponentUVE>(root));
+    EXPECT_FALSE(entityManager.HasComponentUVE<WorldTransformComponentUVE>(root));
     EXPECT_TRUE(entityManager.HasComponentUVE<HierarchyComponentUVE>(root));
     EXPECT_TRUE(entityManager.HasComponentUVE<NameComponentUVE>(root));
     EXPECT_EQ(entityManager.GetComponentUVE<NameComponentUVE>(root).name,
               SceneRootNodeDefinitionUVE::defaultName);
     EXPECT_TRUE(entityManager.HasComponentUVE<SceneRootComponentUVE>(root));
 
+    // The root's Inspector offers no Add Component, so the whole common Node section is attached
+    // here - anything left out could never be reached from the editor.
+    EXPECT_TRUE(entityManager.HasComponentUVE<ProcessComponentUVE>(root));
+    EXPECT_TRUE(entityManager.HasComponentUVE<ThreadGroupComponentUVE>(root));
+    EXPECT_TRUE(entityManager.HasComponentUVE<PhysicsInterpolationComponentUVE>(root));
+    EXPECT_TRUE(entityManager.HasComponentUVE<AutoTranslateComponentUVE>(root));
+    EXPECT_TRUE(entityManager.HasComponentUVE<EditorDescriptionComponentUVE>(root));
+    EXPECT_TRUE(entityManager.HasComponentUVE<ScriptComponentUVE>(root));
+    EXPECT_TRUE(entityManager.HasComponentUVE<NodeMetadataComponentUVE>(root));
+
     // And it is still the idempotent recipe the document lifecycle relies on: applying twice
-    // adds nothing and changes nothing.
+    // adds nothing and changes nothing, including an authored value.
+    entityManager.GetComponentUVE<ProcessComponentUVE>(root).priority = 7;
     ApplySceneRootNodeDefinitionUVE(entityManager, root, SceneRootNodeDefinitionUVE{});
     EXPECT_EQ(entityManager.GetComponentUVE<NameComponentUVE>(root).name,
               SceneRootNodeDefinitionUVE::defaultName);
+    EXPECT_EQ(entityManager.GetComponentUVE<ProcessComponentUVE>(root).priority, 7);
+    EXPECT_FALSE(entityManager.HasComponentUVE<TransformComponentUVE>(root));
+}
+
+TEST_F(Node3DDefinitionsUVETest, SceneRootMigrationBakesAnOldRootTransformIntoItsChildren) {
+    // A scene saved when the root still had a transform: the root moved, rotated and scaled, and
+    // every child's world pose was composed through it. Dropping the transform must move nothing.
+    const EntityUVE root = CreateEntityUVE();
+    TransformComponentUVE rootTransform{};
+    rootTransform.localPosition = Math::Vector3UVE{10.0F, -2.0F, 4.0F};
+    ASSERT_TRUE(Math::TryMakeAxisAngleUVE(Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 1.2F, rootTransform.localRotation));
+    rootTransform.localScale = Math::Vector3UVE{2.0F, 2.0F, 2.0F};
+    sceneGraph.AttachTransformUVE(entityManager, root, rootTransform);
+
+    const EntityUVE child = CreateEntityUVE();
+    TransformComponentUVE childTransform{};
+    childTransform.localPosition = Math::Vector3UVE{1.0F, 0.5F, -3.0F};
+    ASSERT_TRUE(Math::TryMakeAxisAngleUVE(Math::Vector3UVE{1.0F, 0.0F, 0.0F}, 0.4F, childTransform.localRotation));
+    childTransform.localScale = Math::Vector3UVE{0.5F, 1.0F, 1.5F};
+    sceneGraph.AttachTransformUVE(entityManager, child, childTransform);
+    sceneGraph.SetParentUVE(entityManager, child, root);
+
+    // A top-level child never composed from the root, so the migration must not touch it.
+    const EntityUVE topLevelChild = CreateEntityUVE();
+    TransformComponentUVE topLevelTransform{};
+    topLevelTransform.localPosition = Math::Vector3UVE{-5.0F, 0.0F, 0.0F};
+    topLevelTransform.topLevel = true;
+    sceneGraph.AttachTransformUVE(entityManager, topLevelChild, topLevelTransform);
+    sceneGraph.SetParentUVE(entityManager, topLevelChild, root);
+
+    sceneGraph.UpdateUVE(entityManager);
+    const WorldTransformComponentUVE childBefore = entityManager.GetComponentUVE<WorldTransformComponentUVE>(child);
+    const WorldTransformComponentUVE topLevelBefore =
+        entityManager.GetComponentUVE<WorldTransformComponentUVE>(topLevelChild);
+
+    ApplySceneRootNodeDefinitionUVE(entityManager, root, SceneRootNodeDefinitionUVE{});
+    ASSERT_FALSE(entityManager.HasComponentUVE<TransformComponentUVE>(root));
+    sceneGraph.UpdateUVE(entityManager);
+
+    const WorldTransformComponentUVE& childAfter = entityManager.GetComponentUVE<WorldTransformComponentUVE>(child);
+    constexpr float kTolerance = 1.0e-5F;
+    EXPECT_NEAR(childAfter.worldPosition.x, childBefore.worldPosition.x, kTolerance);
+    EXPECT_NEAR(childAfter.worldPosition.y, childBefore.worldPosition.y, kTolerance);
+    EXPECT_NEAR(childAfter.worldPosition.z, childBefore.worldPosition.z, kTolerance);
+    EXPECT_NEAR(childAfter.worldScale.x, childBefore.worldScale.x, kTolerance);
+    EXPECT_NEAR(childAfter.worldScale.y, childBefore.worldScale.y, kTolerance);
+    EXPECT_NEAR(childAfter.worldScale.z, childBefore.worldScale.z, kTolerance);
+    // q and -q are the same rotation, so compare through the absolute dot product.
+    const float dot = childAfter.worldRotation.x * childBefore.worldRotation.x +
+                      childAfter.worldRotation.y * childBefore.worldRotation.y +
+                      childAfter.worldRotation.z * childBefore.worldRotation.z +
+                      childAfter.worldRotation.w * childBefore.worldRotation.w;
+    EXPECT_NEAR(std::abs(dot), 1.0F, kTolerance);
+    // The baked rotation is now the truth; the stale Euler cache must not replay over it.
+    EXPECT_EQ(entityManager.GetComponentUVE<TransformComponentUVE>(child).rotationEditMode,
+              RotationEditModeUVE::Quaternion);
+
+    const WorldTransformComponentUVE& topLevelAfter =
+        entityManager.GetComponentUVE<WorldTransformComponentUVE>(topLevelChild);
+    EXPECT_EQ(topLevelAfter.worldPosition, topLevelBefore.worldPosition);
+    EXPECT_EQ(entityManager.GetComponentUVE<TransformComponentUVE>(topLevelChild).localPosition,
+              topLevelTransform.localPosition);
+
+    // Idempotent: a second apply finds no transform and bakes nothing twice.
+    ApplySceneRootNodeDefinitionUVE(entityManager, root, SceneRootNodeDefinitionUVE{});
+    sceneGraph.UpdateUVE(entityManager);
+    EXPECT_NEAR(entityManager.GetComponentUVE<WorldTransformComponentUVE>(child).worldPosition.x,
+                childBefore.worldPosition.x, kTolerance);
 }
 
 TEST_F(Node3DDefinitionsUVETest, SpringArm3DIsRegisteredCreatableAsACameraNode) {

@@ -164,6 +164,20 @@ void SceneGraphUVE::ResolveVisibilityParentsUVE(IEntityManagerUVE& entityManager
         });
 }
 
+bool SceneGraphUVE::ResolveInterpolationModeUVE(const PendingEntityUVE& item, const bool parentInterpolated) noexcept {
+    if (item.interpolation == nullptr) {
+        return parentInterpolated;
+    }
+    bool resolved = parentInterpolated;
+    if (item.interpolation->mode == PhysicsInterpolationModeUVE::On) {
+        resolved = true;
+    } else if (item.interpolation->mode == PhysicsInterpolationModeUVE::Off) {
+        resolved = false;
+    }
+    item.interpolation->interpolatedInHierarchy = resolved;
+    return resolved;
+}
+
 bool SceneGraphUVE::ResolveInterpolationUVE(const PendingEntityUVE& item, const bool parentInterpolated,
                                             const WorldTransformComponentUVE& world,
                                             const bool poseChanged) noexcept {
@@ -175,13 +189,7 @@ bool SceneGraphUVE::ResolveInterpolationUVE(const PendingEntityUVE& item, const 
     }
 
     PhysicsInterpolationComponentUVE& interpolation = *item.interpolation;
-    bool resolved = parentInterpolated;
-    if (interpolation.mode == PhysicsInterpolationModeUVE::On) {
-        resolved = true;
-    } else if (interpolation.mode == PhysicsInterpolationModeUVE::Off) {
-        resolved = false;
-    }
-    interpolation.interpolatedInHierarchy = resolved;
+    const bool resolved = ResolveInterpolationModeUVE(item, parentInterpolated);
 
     // Poses are recorded only when the transform actually changed. Recording on every sweep would
     // collapse previous onto current for a stationary object, and the first frame after it began
@@ -325,6 +333,33 @@ void SceneGraphUVE::UpdateUVE(IEntityManagerUVE& entityManager) {
                                                         interpolation, process, threadGroup, autoTranslate});
         });
 
+    // Pure Nodes: in the hierarchy, with no transform of their own - the scene root is the first.
+    // They take part in the sweep because their children wait on them and because the inherited
+    // modes (Process, Thread Group, Auto Translate, and visibility passing through) must flow down
+    // through them; leaving them out would strand every child waiting on a parent answer that never
+    // arrives. They carry no transform, so nothing below composes from them: see `spatial`.
+    entityManager.ForEachUVE<HierarchyComponentUVE>(
+        [this, &entityManager](EntityUVE entity, HierarchyComponentUVE& hierarchy) {
+            if (entityManager.HasComponentUVE<WorldTransformComponentUVE>(entity) &&
+                entityManager.HasComponentUVE<TransformComponentUVE>(entity)) {
+                return; // A spatial node, already gathered above.
+            }
+            const auto optional = [&entityManager, entity]<typename ComponentT>() -> ComponentT* {
+                return entityManager.HasComponentUVE<ComponentT>(entity) ? &entityManager.GetComponentUVE<ComponentT>(entity)
+                                                                         : nullptr;
+            };
+            VisibilityComponentUVE* const visibility = optional.template operator()<VisibilityComponentUVE>();
+            if (visibility != nullptr && visibility->visibilityParent != kInvalidEntityUVE) {
+                ++m_visibilityRedirectCount;
+            }
+            m_pendingScratch.push_back(PendingEntityUVE{
+                entity, hierarchy.parent, nullptr, nullptr, visibility,
+                optional.template operator()<PhysicsInterpolationComponentUVE>(),
+                optional.template operator()<ProcessComponentUVE>(),
+                optional.template operator()<ThreadGroupComponentUVE>(),
+                optional.template operator()<AutoTranslateComponentUVE>()});
+        });
+
     // Level-order sweep, root-first: repeatedly process any pending entity whose parent has
     // already been processed this pass (or is a root), tracking valid/invalid derived state and
     // whether each valid processed entity's world transform was actually recomputed (as opposed
@@ -347,10 +382,6 @@ void SceneGraphUVE::UpdateUVE(IEntityManagerUVE& entityManager) {
         for (std::size_t index = 0; index < m_pendingScratch.size(); ++index) {
             const PendingEntityUVE& item = m_pendingScratch[index];
             const bool hasParent = (item.parent != kInvalidEntityUVE);
-            // Top-level entities compose as if they had no parent. Distinct from hasParent
-            // because they still ARE children: visibility below still inherits, and the pass state
-            // is still keyed off the real parent, so only the transform chain is cut.
-            const bool composesFromParent = hasParent && !item.local->topLevel;
             const auto parentIt = hasParent ? m_passStateScratch.find(item.parent) : m_passStateScratch.end();
             // A top-level child still waits for its parent, even though it will ignore the
             // parent's transform: its visibility is inherited, and inheriting from a parent that
@@ -362,6 +393,31 @@ void SceneGraphUVE::UpdateUVE(IEntityManagerUVE& entityManager) {
                 ++writeIndex;
                 continue;
             }
+
+            if (item.world == nullptr) {
+                // A pure Node. Visibility and the modes pass through it exactly as they would
+                // through a node without those components; its interpolation answer is resolved
+                // without a pose, because it has none to record.
+                const WorldTransformPassStateUVE parentState =
+                    hasParent ? parentIt->second : WorldTransformPassStateUVE{};
+                WorldTransformPassStateUVE state{.valid = true,
+                                                 .recomputed = false,
+                                                 .interpolatedInHierarchy =
+                                                     ResolveInterpolationModeUVE(item, parentState.interpolatedInHierarchy),
+                                                 .visibleInHierarchy =
+                                                     ResolveVisibilityUVE(item, parentState.visibleInHierarchy),
+                                                 .spatial = false};
+                ResolveInheritedModesUVE(item, parentState, state);
+                m_passStateScratch.emplace(item.entity, state);
+                madeProgress = true;
+                continue;
+            }
+
+            // Top-level entities compose as if they had no parent, and so does a child of a pure
+            // Node: there is no parent transform to compose from. Distinct from hasParent because
+            // both still ARE children - visibility and the modes still inherit, and the pass state
+            // is still keyed off the real parent - so only the transform chain is cut.
+            const bool composesFromParent = hasParent && !item.local->topLevel && parentIt->second.spatial;
 
             WorldTransformComponentUVE& world = *item.world;
             // `composesFromParent`, not `hasParent`: an entity that does not read its parent's

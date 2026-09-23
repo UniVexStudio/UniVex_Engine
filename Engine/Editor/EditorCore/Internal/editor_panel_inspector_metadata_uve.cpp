@@ -22,6 +22,8 @@
 
 #include <algorithm>
 #include <array>
+#include <cfloat>
+#include <cmath>
 #include <cstdint>
 #include <limits>
 #include <optional>
@@ -33,6 +35,7 @@
 #include <imgui.h>
 
 #include "uve/asset/asset_guid_uve.h"
+#include "uve/component/editor_description_component_uve.h"
 #include "uve/component/entity_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
 #include "uve/math/vector2_uve.h"
@@ -154,6 +157,117 @@ GetRemovableComponentKindsUVE() {
     return std::nullopt;
 }
 
+/// Custom drawers that lay out their own rows - a multi-line box, a slot with an action strip, a
+/// list with an add button - rather than filling a value cell. Any other id falls back to the
+/// generic editor for its value type, which is where the rotation and entity-picker ids still go.
+constexpr std::array<std::string_view, 3> kBlockPropertyDrawerIdsUVE{
+    "multiline-text",
+    "script-slot",
+    "node-metadata",
+};
+
+[[nodiscard]] bool IsBlockPropertyDrawerUVE(const std::string& drawerId) noexcept {
+    return std::find(kBlockPropertyDrawerIdsUVE.cbegin(), kBlockPropertyDrawerIdsUVE.cend(), drawerId) !=
+           kBlockPropertyDrawerIdsUVE.cend();
+}
+
+/// True when another property of `entry` names `property` as its resolved answer. Such a property
+/// is shown beside the choice it resolves, never as a row of its own.
+[[nodiscard]] bool IsResolvedCompanionUVE(const TypeMetadataEntryUVE& entry, const TypeMetadataPropertyUVE& property) {
+    return std::any_of(entry.properties.cbegin(), entry.properties.cend(),
+                       [&property](const TypeMetadataPropertyUVE& other) {
+                           return other.resolvedByProperty == property.name;
+                       });
+}
+
+/// The label of what `property` currently resolves to, read through the companion it names: an
+/// enum's option label, or On/Off for a flag. Empty when there is no companion or no answer.
+[[nodiscard]] std::string ResolvedLabelUVE(const TypeMetadataEntryUVE& entry, const TypeMetadataPropertyUVE& property,
+                                           const void* instance) {
+    const auto companion = std::find_if(entry.properties.cbegin(), entry.properties.cend(),
+                                        [&property](const TypeMetadataPropertyUVE& other) {
+                                            return other.name == property.resolvedByProperty;
+                                        });
+    if (property.resolvedByProperty.empty() || companion == entry.properties.cend() ||
+        companion->getValue == nullptr) {
+        return {};
+    }
+    if (!companion->enumEntries.empty()) {
+        std::int64_t value = 0;
+        companion->getValue(instance, &value);
+        for (const Core::TypeMetadataEnumEntryUVE& option : companion->enumEntries) {
+            if (option.value == value) {
+                return option.label;
+            }
+        }
+        return {};
+    }
+    if (companion->typeId == Scene::kPropertyTypeBoolUVE) {
+        bool value = false;
+        companion->getValue(instance, &value);
+        return value ? "On" : "Off";
+    }
+    return {};
+}
+
+/// Opens the two-column label/value table every section's rows share. The fixed ratio is what
+/// keeps values aligned down the whole panel, although each section is its own table.
+[[nodiscard]] bool BeginPropertyRowsUVE(const char* const id) {
+    if (!ImGui::BeginTable(id, 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_NoSavedSettings)) {
+        return false;
+    }
+    ImGui::TableSetupColumn("##label", ImGuiTableColumnFlags_WidthStretch, 0.42F);
+    ImGui::TableSetupColumn("##value", ImGuiTableColumnFlags_WidthStretch, 0.58F);
+    return true;
+}
+
+/// A small circular-arrow button. Drawn rather than taken from a font so it never depends on which
+/// glyphs the editor font happens to carry.
+[[nodiscard]] bool DrawRevertIconButtonUVE(const float size) {
+    const ImVec2 origin = ImGui::GetCursorScreenPos();
+    const bool clicked = ImGui::InvisibleButton("##revert", ImVec2{size, size});
+    const bool hovered = ImGui::IsItemHovered();
+    ImDrawList& drawList = *ImGui::GetWindowDrawList();
+    const ImU32 color = ImGui::GetColorU32(hovered ? ImGuiCol_Text : ImGuiCol_TextDisabled);
+    const ImVec2 center{origin.x + (size * 0.5F), origin.y + (size * 0.5F)};
+    const float radius = size * 0.28F;
+    constexpr float kPi = 3.14159265F;
+    drawList.PathArcTo(center, radius, kPi * 0.15F, kPi * 1.75F, 16);
+    drawList.PathStroke(color, 0, 1.6F);
+    // Arrowhead at the arc's start, pointing along the direction of travel.
+    const ImVec2 tip{center.x + (radius * std::cos(kPi * 0.15F)), center.y + (radius * std::sin(kPi * 0.15F))};
+    const float head = size * 0.18F;
+    drawList.AddTriangleFilled(ImVec2{tip.x - head, tip.y - (head * 0.2F)}, ImVec2{tip.x + head, tip.y - (head * 0.2F)},
+                               ImVec2{tip.x, tip.y + head}, color);
+    return clicked;
+}
+
+/// The std::string plumbing Dear ImGui leaves to the caller: grows the string when the text
+/// outgrows it, and refuses input past the bound by trimming at a UTF-8 character boundary.
+struct TextInputContextUVE final {
+    std::string* text = nullptr;
+    std::size_t maximumBytes = 0U;
+};
+
+int TextInputCallbackUVE(ImGuiInputTextCallbackData* const data) {
+    auto* const context = static_cast<TextInputContextUVE*>(data->UserData);
+    if (data->EventFlag == ImGuiInputTextFlags_CallbackResize) {
+        context->text->resize(static_cast<std::size_t>(data->BufTextLen));
+        data->Buf = context->text->data();
+        return 0;
+    }
+    if (data->EventFlag == ImGuiInputTextFlags_CallbackEdit &&
+        static_cast<std::size_t>(data->BufTextLen) > context->maximumBytes) {
+        std::size_t keep = context->maximumBytes;
+        // Never cut a multi-byte character in half: back up to the start of the one straddling it.
+        while (keep > 0U && (static_cast<unsigned char>(data->Buf[keep]) & 0xC0U) == 0x80U) {
+            --keep;
+        }
+        data->DeleteChars(static_cast<int>(keep), data->BufTextLen - static_cast<int>(keep));
+    }
+    return 0;
+}
+
 } // namespace
 
 void EditorUVE::RegisterMetadataInspectorDrawersUVE() {
@@ -178,22 +292,43 @@ void EditorUVE::RegisterMetadataInspectorDrawersUVE() {
                          return left->typeId < right->typeId;
                      });
 
+    // A nested type is drawn by its host when the entity carries both, and on its own otherwise, so
+    // it is never unreachable. A host that is hand-drawn or undeclared cannot draw it, so a type
+    // naming one stands alone.
+    const auto findHostUVE = [&entries](const TypeMetadataEntryUVE& entry) -> const TypeMetadataEntryUVE* {
+        if (entry.nestedUnderTypeId.empty()) {
+            return nullptr;
+        }
+        const auto host = std::find_if(entries.cbegin(), entries.cend(), [&entry](const TypeMetadataEntryUVE* candidate) {
+            return candidate->typeId == entry.nestedUnderTypeId;
+        });
+        return host == entries.cend() ? nullptr : *host;
+    };
+
     for (const TypeMetadataEntryUVE* const entry : entries) {
+        std::vector<const TypeMetadataEntryUVE*> nested;
+        for (const TypeMetadataEntryUVE* const candidate : entries) {
+            if (findHostUVE(*candidate) == entry) {
+                nested.push_back(candidate);
+            }
+        }
+        const TypeMetadataEntryUVE* const host = findHostUVE(*entry);
         static_cast<void>(m_inspectorDrawerRegistry.RegisterDrawerUVE(InspectorDrawerEntryUVE{
             DrawerIdForTypeIdUVE(entry->typeId),
-            [this, entry](const Scene::EntityUVE entity) {
-                return IsDocumentEntityUVE(entity) &&
-                       m_services->GetEntityManagerUVE().HasComponentUVE(entity, entry->typeIndex);
+            [this, entry, host](const Scene::EntityUVE entity) {
+                const Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+                return IsDocumentEntityUVE(entity) && entityManager.HasComponentUVE(entity, entry->typeIndex) &&
+                       (host == nullptr || !entityManager.HasComponentUVE(entity, host->typeIndex));
             },
-            [this, entry](const Scene::EntityUVE entity) {
-                DrawMetadataComponentDrawerUVE(entity, *entry);
+            [this, entry, nested = std::move(nested)](const Scene::EntityUVE entity) {
+                DrawMetadataComponentDrawerUVE(entity, *entry, nested);
             },
         }));
     }
 }
 
-void EditorUVE::DrawMetadataComponentDrawerUVE(const Scene::EntityUVE entity,
-                                               const TypeMetadataEntryUVE& entry) {
+void EditorUVE::DrawMetadataComponentDrawerUVE(const Scene::EntityUVE entity, const TypeMetadataEntryUVE& entry,
+                                               const std::vector<const TypeMetadataEntryUVE*>& nested) {
     if (!IsDocumentEntityUVE(entity) || entity != m_selectedEntity) {
         return;
     }
@@ -202,80 +337,159 @@ void EditorUVE::DrawMetadataComponentDrawerUVE(const Scene::EntityUVE entity,
         return;
     }
     const void* const instance = entityManager.GetComponentPointerUVE(entity, entry.typeIndex);
+    // The scene root's components are its fixed Node section: there is no Add Component on the
+    // root to bring one back, so none of them offers Remove.
+    const bool removable = !IsSceneRootEntityUVE(entity);
+    const auto drawRemoveButton = [this, removable](const TypeMetadataEntryUVE& owner) {
+        const std::optional<EditorSceneComponentKindUVE> kind = FindRemovableKindUVE(owner.typeId);
+        if (!removable || !kind.has_value()) {
+            return;
+        }
+        const std::string label = "Remove " + owner.displayName;
+        if (ImGui::Button(label.c_str())) {
+            static_cast<void>(RemoveSelectedSceneComponentUVE(*kind));
+        }
+    };
 
-    ImGui::Separator();
-    // Collapsible, and collapsed state is remembered per section by Dear ImGui's own storage for
-    // the window - which is what makes a long Inspector usable at all.
     ImGui::PushID(entry.typeId.c_str());
-    if (!ImGui::CollapsingHeader(entry.displayName.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (entry.presentedInline) {
+        ImGui::Spacing();
+        DrawMetadataPropertyRowsUVE(entry, instance);
         ImGui::PopID();
         return;
     }
+    // Collapsible, and collapsed state is remembered per section by Dear ImGui's own storage for
+    // the window - which is what makes a long Inspector usable at all.
+    if (ImGui::CollapsingHeader(entry.displayName.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
+        DrawMetadataPropertyRowsUVE(entry, instance);
+        for (const TypeMetadataEntryUVE* const child : nested) {
+            if (!entityManager.HasComponentUVE(entity, child->typeIndex)) {
+                continue;
+            }
+            ImGui::PushID(child->typeId.c_str());
+            constexpr ImGuiTreeNodeFlags kNestedFlags = ImGuiTreeNodeFlags_DefaultOpen |
+                                                        ImGuiTreeNodeFlags_SpanAvailWidth |
+                                                        ImGuiTreeNodeFlags_FramePadding;
+            if (ImGui::TreeNodeEx(child->displayName.c_str(), kNestedFlags)) {
+                DrawMetadataPropertyRowsUVE(*child, entityManager.GetComponentPointerUVE(entity, child->typeIndex));
+                drawRemoveButton(*child);
+                ImGui::TreePop();
+            }
+            ImGui::PopID();
+        }
+        drawRemoveButton(entry);
+    }
+    ImGui::PopID();
+}
+
+void EditorUVE::DrawMetadataPropertyRowsUVE(const TypeMetadataEntryUVE& entry, const void* const instance) {
+    // Runtime-owned state describes a simulation, and there is one only in Play. Shown while
+    // editing, it is a frozen number that looks like a setting.
+    const bool simulating = m_playModeState != EditorPlayModeStateUVE::Edit;
+    enum class TableStateUVE : std::uint8_t { Closed, Open, Clipped };
+    TableStateUVE table = TableStateUVE::Closed;
+    int tableIndex = 0;
+    const auto closeTable = [&table] {
+        if (table == TableStateUVE::Open) {
+            ImGui::EndTable();
+        }
+        table = TableStateUVE::Closed;
+    };
 
     for (const TypeMetadataPropertyUVE& property : entry.properties) {
-        if (!IsPropertyVisibleUVE(property, instance)) {
+        if (!IsPropertyVisibleUVE(property, instance) || IsResolvedCompanionUVE(entry, property) ||
+            (HasPropertyFlagUVE(property.flags, TypeMetadataPropertyFlagsUVE::RuntimeState) && !simulating)) {
             continue;
+        }
+        if (IsBlockPropertyDrawerUVE(property.customDrawerId)) {
+            // A block drawer lays out its own rows, so the shared table closes around it and a
+            // fresh one opens for whatever follows.
+            closeTable();
+            ImGui::PushID(property.name.c_str());
+            static_cast<void>(DrawCustomPropertyUVE(entry, property, instance));
+            ImGui::PopID();
+            continue;
+        }
+        if (table == TableStateUVE::Closed) {
+            const std::string tableId = "##rows" + std::to_string(tableIndex++);
+            table = BeginPropertyRowsUVE(tableId.c_str()) ? TableStateUVE::Open : TableStateUVE::Clipped;
+        }
+        if (table == TableStateUVE::Clipped) {
+            continue; // Scrolled out of view; Dear ImGui asks for nothing to be submitted.
         }
         ImGui::PushID(property.name.c_str());
         DrawMetadataPropertyRowUVE(entry, property, instance);
         ImGui::PopID();
     }
+    closeTable();
+}
 
-    if (const std::optional<EditorSceneComponentKindUVE> kind = FindRemovableKindUVE(entry.typeId);
-        kind.has_value()) {
-        const std::string label = "Remove " + entry.displayName;
-        if (ImGui::Button(label.c_str())) {
-            static_cast<void>(RemoveSelectedSceneComponentUVE(*kind));
-        }
+bool EditorUVE::DrawMetadataPropertyLabelUVE(const TypeMetadataEntryUVE& entry, const TypeMetadataPropertyUVE& property,
+                                             const void* const instance, const bool writable) {
+    const float cellStart = ImGui::GetCursorPosX();
+    const float cellWidth = ImGui::GetContentRegionAvail().x;
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted(property.displayName.c_str());
+    DrawTooltipUVE(property);
+    // Offered only when there is something to revert to. A revert control on every row, most of
+    // them already at their default, is noise that hides the few rows someone actually changed.
+    if (!writable || IsPropertyAtDefaultUVE(entry, property, instance)) {
+        return false;
     }
-    ImGui::PopID();
+    const float size = ImGui::GetFrameHeight();
+    ImGui::SameLine(cellStart + std::max(0.0F, cellWidth - size));
+    // The type's own factory says what a fresh component holds, so a default can never drift
+    // from the one the constructor actually applies.
+    const bool reverted = DrawRevertIconButtonUVE(size) && ResetSelectedComponentPropertyUVE(entry, property);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Revert to the value a newly added %s has.", entry.displayName.c_str());
+    }
+    return reverted;
 }
 
 void EditorUVE::DrawMetadataPropertyRowUVE(const TypeMetadataEntryUVE& entry,
                                            const TypeMetadataPropertyUVE& property, const void* instance) {
-    // Runtime-owned and read-only state is shown, not hidden: seeing what the simulation computed
-    // is how you debug it. It is drawn disabled so the widget cannot report an edit that would be
-    // overwritten on the next update.
+    // Runtime-owned and read-only state is drawn disabled so the widget cannot report an edit that
+    // would be overwritten on the next update.
     const bool writable = property.IsAuthoringWritableUVE() && IsAuthoringCommandAllowedUVE();
     bool edited = false;
 
-    // The label and the reset button share one line, and the widget gets the full width of the
-    // next. Putting reset after a full-width widget instead pushes it past the panel's right edge,
-    // where it is drawn but can never be clicked.
-    ImGui::TextUnformatted(property.displayName.c_str());
-    DrawTooltipUVE(property);
-    if (writable) {
-        const float resetWidth = ImGui::CalcTextSize("Reset").x + (ImGui::GetStyle().FramePadding.x * 2.0F);
-        ImGui::SameLine(ImGui::GetContentRegionAvail().x - resetWidth);
-        // Reset asks the type's own factory what a fresh component would hold, so a default can
-        // never drift from the one the constructor actually applies.
-        if (ImGui::SmallButton("Reset")) {
-            edited = ResetSelectedComponentPropertyUVE(entry, property);
-        }
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Restore the value a newly added %s would have.", entry.displayName.c_str());
-        }
-    }
+    ImGui::TableNextRow();
+    ImGui::TableSetColumnIndex(0);
+    edited = DrawMetadataPropertyLabelUVE(entry, property, instance, writable);
+    ImGui::TableSetColumnIndex(1);
 
     ImGui::BeginDisabled(!writable);
-    ImGui::SetNextItemWidth(-1.0F);
+    ImGui::SetNextItemWidth(-FLT_MIN);
     if (!property.enumEntries.empty()) {
-        // Collapsed dropdown, which is what Combo is by default - an enum never occupies the
-        // section with one row per option.
+        // Collapsed dropdown - an enum never occupies the section with one row per option. When
+        // the choice is resolved against the hierarchy, the answer rides along in the preview:
+        // "Inherit (Pausable)" says what Inherit means here without a second row to read.
         std::int64_t current = 0;
         property.getValue(instance, &current);
-        std::vector<const char*> labels;
-        labels.reserve(property.enumEntries.size());
-        int selected = 0;
+        std::size_t selected = 0U;
         for (std::size_t index = 0; index < property.enumEntries.size(); ++index) {
-            labels.push_back(property.enumEntries[index].label.c_str());
             if (property.enumEntries[index].value == current) {
-                selected = static_cast<int>(index);
+                selected = index;
             }
         }
-        if (ImGui::Combo("##value", &selected, labels.data(), static_cast<int>(labels.size()))) {
-            const std::int64_t chosen = property.enumEntries[static_cast<std::size_t>(selected)].value;
-            edited = SetSelectedComponentPropertyUVE(entry, property, &chosen);
+        std::string preview = property.enumEntries[selected].label;
+        if (const std::string resolved = ResolvedLabelUVE(entry, property, instance);
+            !resolved.empty() && resolved != preview) {
+            preview += " (" + resolved + ")";
+        }
+        if (ImGui::BeginCombo("##value", preview.c_str())) {
+            for (std::size_t index = 0; index < property.enumEntries.size(); ++index) {
+                const bool isSelected = index == selected;
+                if (ImGui::Selectable(property.enumEntries[index].label.c_str(), isSelected) && !isSelected) {
+                    const std::int64_t chosen = property.enumEntries[index].value;
+                    edited = SetSelectedComponentPropertyUVE(entry, property, &chosen);
+                }
+                if (isSelected) {
+                    ImGui::SetItemDefaultFocus();
+                }
+            }
+            ImGui::EndCombo();
         }
     } else if (property.typeId == Scene::kPropertyTypeBoolUVE) {
         bool value = false;
@@ -350,13 +564,13 @@ void EditorUVE::DrawMetadataPropertyRowUVE(const TypeMetadataEntryUVE& entry,
     } else if (property.typeId == Scene::kPropertyTypeStringUVE) {
         std::string value;
         property.getValue(instance, &value);
-        std::array<char, 256> buffer{};
-        value.copy(buffer.data(), std::min(value.size(), buffer.size() - 1U));
-        // EnterReturnsTrue so a string edit is one history entry on commit rather than one per
-        // keystroke, which is what a per-frame InputText would record.
-        if (ImGui::InputText("##value", buffer.data(), buffer.size(), ImGuiInputTextFlags_EnterReturnsTrue)) {
-            std::string committed{buffer.data()};
-            edited = SetSelectedComponentPropertyUVE(entry, property, &committed);
+        // Committed once when the author finishes, so an edit is one history entry and clicking
+        // away keeps it. The bound is the one this row always had.
+        constexpr std::size_t kMaximumGenericStringBytesUVE = 255U;
+        if (const std::optional<std::string> committed =
+                DrawCommittedTextInputUVE("##value", value, false, 0.0F, kMaximumGenericStringBytesUVE);
+            committed.has_value()) {
+            edited = SetSelectedComponentPropertyUVE(entry, property, &*committed);
         }
     } else if (property.typeId == Scene::kPropertyTypeAssetGuidUVE) {
         // Shown, not edited: there is no asset picker yet, and a text field that accepts an
@@ -387,6 +601,104 @@ void EditorUVE::DrawMetadataPropertyRowUVE(const TypeMetadataEntryUVE& entry,
     }
     ImGui::EndDisabled();
     static_cast<void>(edited);
+}
+
+bool EditorUVE::DrawCustomPropertyUVE(const TypeMetadataEntryUVE& entry, const TypeMetadataPropertyUVE& property,
+                                      const void* const instance) {
+    if (property.customDrawerId == "multiline-text") {
+        DrawMultilineTextPropertyUVE(entry, property, instance);
+        return true;
+    }
+    if (property.customDrawerId == "script-slot") {
+        DrawScriptSlotPropertyUVE(entry, property, instance);
+        return true;
+    }
+    if (property.customDrawerId == "node-metadata") {
+        DrawNodeMetadataPropertyUVE(entry, property, instance);
+        return true;
+    }
+    return false;
+}
+
+void EditorUVE::DrawMultilineTextPropertyUVE(const TypeMetadataEntryUVE& entry, const TypeMetadataPropertyUVE& property,
+                                             const void* const instance) {
+    if (property.typeId != Scene::kPropertyTypeStringUVE || property.getValue == nullptr) {
+        return;
+    }
+    const bool writable = property.IsAuthoringWritableUVE() && IsAuthoringCommandAllowedUVE();
+    if (!BeginPropertyRowsUVE("##multiline")) {
+        return;
+    }
+    ImGui::TableNextRow();
+    ImGui::TableSetColumnIndex(0);
+    static_cast<void>(DrawMetadataPropertyLabelUVE(entry, property, instance, writable));
+    ImGui::TableSetColumnIndex(1);
+    std::string value;
+    property.getValue(instance, &value);
+    ImGui::BeginDisabled(!writable);
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    // Four lines: enough to read a note without scrolling, small enough not to dominate the panel.
+    const float height = (ImGui::GetTextLineHeight() * 4.0F) + (ImGui::GetStyle().FramePadding.y * 2.0F);
+    if (const std::optional<std::string> committed =
+            DrawCommittedTextInputUVE("##value", value, true, height, Scene::kMaximumEditorDescriptionBytesUVE);
+        committed.has_value()) {
+        static_cast<void>(SetSelectedComponentPropertyUVE(entry, property, &*committed));
+    }
+    ImGui::EndDisabled();
+    ImGui::EndTable();
+}
+
+bool EditorUVE::IsPropertyAtDefaultUVE(const TypeMetadataEntryUVE& entry, const TypeMetadataPropertyUVE& property,
+                                       const void* const instance) {
+    if (property.areEqual == nullptr || !entry.HasFactoryUVE()) {
+        return false;
+    }
+    auto defaults = m_inspectorDefaultInstances.find(&entry);
+    if (defaults == m_inspectorDefaultInstances.end()) {
+        defaults = m_inspectorDefaultInstances.emplace(&entry, Core::TypeInstanceUVE::MakeDefaultUVE(entry)).first;
+    }
+    return defaults->second.IsValidUVE() && property.areEqual(defaults->second.GetUVE(), instance);
+}
+
+std::optional<std::string> EditorUVE::DrawCommittedTextInputUVE(const char* const id, const std::string& current,
+                                                                const bool multiline, const float height,
+                                                                const std::size_t maximumBytes) {
+    const ImGuiID widgetId = ImGui::GetID(id);
+    const auto findEdit = [this, widgetId] {
+        return std::find_if(m_inspectorTextEdits.begin(), m_inspectorTextEdits.end(),
+                            [widgetId](const auto& edit) { return edit.first == widgetId; });
+    };
+    // While the field is active Dear ImGui holds the text itself; the buffer handed to it only
+    // receives the edits. Before that, it is a fresh copy of the stored value.
+    auto edit = findEdit();
+    std::string scratch = edit == m_inspectorTextEdits.end() ? current : std::string{};
+    std::string& text = edit == m_inspectorTextEdits.end() ? scratch : edit->second;
+    TextInputContextUVE context{&text, maximumBytes};
+    constexpr ImGuiInputTextFlags kFlags = ImGuiInputTextFlags_CallbackResize | ImGuiInputTextFlags_CallbackEdit;
+    if (multiline) {
+        ImGui::InputTextMultiline(id, text.data(), text.capacity() + 1U, ImVec2{-FLT_MIN, height}, kFlags,
+                                  TextInputCallbackUVE, &context);
+    } else {
+        ImGui::InputText(id, text.data(), text.capacity() + 1U, kFlags, TextInputCallbackUVE, &context);
+    }
+    if (ImGui::IsItemActivated() && edit == m_inspectorTextEdits.end()) {
+        // At most the field being let go and the one being taken are live at once; anything older
+        // belonged to a field that vanished while active (the selection changed), and is dropped.
+        if (m_inspectorTextEdits.size() >= 2U) {
+            m_inspectorTextEdits.erase(m_inspectorTextEdits.begin());
+        }
+        m_inspectorTextEdits.emplace_back(widgetId, text);
+        return std::nullopt;
+    }
+    if (!ImGui::IsItemDeactivated() || edit == m_inspectorTextEdits.end()) {
+        return std::nullopt;
+    }
+    std::string committed = std::move(edit->second);
+    m_inspectorTextEdits.erase(edit);
+    if (!ImGui::IsItemDeactivatedAfterEdit()) {
+        return std::nullopt;
+    }
+    return committed;
 }
 
 bool EditorUVE::SetSelectedComponentPropertyUVE(const TypeMetadataEntryUVE& entry,
@@ -476,8 +788,21 @@ bool EditorUVE::ResetSelectedComponentPropertyUVE(const TypeMetadataEntryUVE& en
         property.getValue(defaults.GetUVE(), &value);
         return SetSelectedComponentPropertyUVE(entry, property, &value);
     }
-    // Every remaining declared value type is trivially copyable and fits the buffer: bool, the
-    // integer types, float, Vector2/3, Quaternion, and an enum's std::int64_t.
+    // The byte buffer is only sound for trivially copyable values, so the types allowed through it
+    // are named rather than assumed. A list or other owning value (the metadata entries) is never
+    // reset through here; its custom drawer owns that.
+    const bool trivial = !property.enumEntries.empty() || property.typeId == Scene::kPropertyTypeBoolUVE ||
+                         property.typeId == Scene::kPropertyTypeFloatUVE ||
+                         property.typeId == Scene::kPropertyTypeInt32UVE ||
+                         property.typeId == Scene::kPropertyTypeUInt32UVE ||
+                         property.typeId == Scene::kPropertyTypeBitMask32UVE ||
+                         property.typeId == Scene::kPropertyTypeVector2UVE ||
+                         property.typeId == Scene::kPropertyTypeVector3UVE ||
+                         property.typeId == Scene::kPropertyTypeColorUVE ||
+                         property.typeId == Scene::kPropertyTypeQuaternionUVE;
+    if (!trivial) {
+        return false;
+    }
     property.getValue(defaults.GetUVE(), buffer.data());
     return SetSelectedComponentPropertyUVE(entry, property, buffer.data());
 }

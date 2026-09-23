@@ -107,6 +107,12 @@ struct EngineConfigUVE {
     /// empty snapshots and are never created by the index. The root does not
     /// change AssetDatabaseUVE ownership, import behavior, or VFS mounts.
     std::filesystem::path projectContentRootUVE = "assets/";
+    /// The project directory, mounted at the root of the virtual file system at the lowest
+    /// priority, so a project-relative path such as "scripts/player.uvescript" - what a Script
+    /// component stores - resolves to the same file the editor wrote. The default is the working
+    /// directory, which is exactly where the editor already saves scenes, workspaces and scripts
+    /// when nothing else is mounted, so mounting it moves no file. Empty disables the mount.
+    std::filesystem::path projectRootDirectoryUVE = ".";
 
     /// Project-local root reserved for derived import metadata only. DerivedArtifactCacheUVE
     /// creates this directory lazily on successful cache writes; it never creates source or
