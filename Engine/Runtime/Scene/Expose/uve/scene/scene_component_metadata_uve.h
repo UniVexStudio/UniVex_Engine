@@ -42,6 +42,9 @@ inline constexpr std::int32_t kSectionOrderVisibilityUVE = 20;
 /// Everything a specific node type brings with it.
 inline constexpr std::int32_t kSectionOrderTypeSpecificUVE = 100;
 /// The common Node section, last.
+/// The abstract 3D bases (BoneModifier3D, PhysicsObject3D, RenderInstance3D): below what a
+/// concrete node brings, above what every node has.
+inline constexpr std::int32_t kSectionOrderNodeBaseUVE = 500;
 inline constexpr std::int32_t kSectionOrderNodeCommonUVE = 1000;
 
 /// The process-wide metadata for every component a scene can contain, built once on first use.

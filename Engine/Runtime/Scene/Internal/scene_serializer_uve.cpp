@@ -33,6 +33,7 @@
 #include "uve/component/animation_player_component_uve.h"
 #include "uve/component/area_component_uve.h"
 #include "uve/component/audio_source_component_uve.h"
+#include "uve/component/bone_modifier_component_uve.h"
 #include "uve/component/camera_component_uve.h"
 #include "uve/component/canvas_component_uve.h"
 #include "uve/component/character_controller_component_uve.h"
@@ -50,7 +51,9 @@
 #include "uve/component/thread_group_component_uve.h"
 #include "uve/component/particle_emitter_component_uve.h"
 #include "uve/component/physics_interpolation_component_uve.h"
+#include "uve/component/physics_object_component_uve.h"
 #include "uve/component/primitive_mesh_component_uve.h"
+#include "uve/component/render_instance_component_uve.h"
 #include "uve/component/prefab_instance_component_uve.h"
 #include "uve/component/rigid_body_component_uve.h"
 #include "uve/component/script_component_uve.h"
@@ -287,6 +290,25 @@ namespace {
 [[nodiscard]] nlohmann::json ToJsonUVE(const ThreadGroupComponentUVE& component) {
     return {{"mode", static_cast<std::underlying_type_t<ThreadGroupModeUVE>>(component.mode)},
             {"order", component.order}};
+}
+
+[[nodiscard]] nlohmann::json ToJsonUVE(const BoneModifierComponentUVE& component) {
+    return {{"active", component.active}, {"influence", component.influence}};
+}
+
+[[nodiscard]] nlohmann::json ToJsonUVE(const PhysicsObjectComponentUVE& component) {
+    return {{"disableMode", static_cast<std::underlying_type_t<PhysicsObjectDisableModeUVE>>(component.disableMode)},
+            {"collisionLayer", component.collisionLayer},
+            {"collisionMask", component.collisionMask},
+            {"collisionPriority", component.collisionPriority},
+            {"inputRayPickable", component.inputRayPickable},
+            {"inputCaptureOnDrag", component.inputCaptureOnDrag}};
+}
+
+[[nodiscard]] nlohmann::json ToJsonUVE(const RenderInstanceComponentUVE& component) {
+    return {{"renderLayers", component.renderLayers},
+            {"sortingOffset", component.sortingOffset},
+            {"sortingUseAabbCenter", component.sortingUseAabbCenter}};
 }
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const AutoTranslateComponentUVE& component) {
@@ -1384,6 +1406,42 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                           }
                           return threadGroup;
                       }, IsThreadGroupComponentValidUVE));
+        table.emplace("BoneModifierComponentUVE",
+                      MakeRegistrationUVE<BoneModifierComponentUVE>([](const nlohmann::json& json) {
+                          BoneModifierComponentUVE modifier{};
+                          modifier.active = json.at("active").get<bool>();
+                          modifier.influence = ReadFloatUVE(json.at("influence"));
+                          if (!IsBoneModifierComponentValidUVE(modifier)) {
+                              throw std::runtime_error("Invalid BoneModifierComponentUVE payload");
+                          }
+                          return modifier;
+                      }, IsBoneModifierComponentValidUVE));
+        table.emplace("PhysicsObjectComponentUVE",
+                      MakeRegistrationUVE<PhysicsObjectComponentUVE>([](const nlohmann::json& json) {
+                          PhysicsObjectComponentUVE object{};
+                          object.disableMode = static_cast<PhysicsObjectDisableModeUVE>(
+                              json.at("disableMode").get<std::underlying_type_t<PhysicsObjectDisableModeUVE>>());
+                          object.collisionLayer = json.at("collisionLayer").get<std::uint32_t>();
+                          object.collisionMask = json.at("collisionMask").get<std::uint32_t>();
+                          object.collisionPriority = ReadFloatUVE(json.at("collisionPriority"));
+                          object.inputRayPickable = json.at("inputRayPickable").get<bool>();
+                          object.inputCaptureOnDrag = json.at("inputCaptureOnDrag").get<bool>();
+                          if (!IsPhysicsObjectComponentValidUVE(object)) {
+                              throw std::runtime_error("Invalid PhysicsObjectComponentUVE payload");
+                          }
+                          return object;
+                      }, IsPhysicsObjectComponentValidUVE));
+        table.emplace("RenderInstanceComponentUVE",
+                      MakeRegistrationUVE<RenderInstanceComponentUVE>([](const nlohmann::json& json) {
+                          RenderInstanceComponentUVE instance{};
+                          instance.renderLayers = json.at("renderLayers").get<std::uint32_t>();
+                          instance.sortingOffset = ReadFloatUVE(json.at("sortingOffset"));
+                          instance.sortingUseAabbCenter = json.at("sortingUseAabbCenter").get<bool>();
+                          if (!IsRenderInstanceComponentValidUVE(instance)) {
+                              throw std::runtime_error("Invalid RenderInstanceComponentUVE payload");
+                          }
+                          return instance;
+                      }, IsRenderInstanceComponentValidUVE));
         table.emplace("AutoTranslateComponentUVE",
                       MakeRegistrationUVE<AutoTranslateComponentUVE>([](const nlohmann::json& json) {
                           AutoTranslateComponentUVE autoTranslate{};
