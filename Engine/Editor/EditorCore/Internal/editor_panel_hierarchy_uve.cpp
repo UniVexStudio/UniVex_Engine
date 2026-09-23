@@ -291,6 +291,7 @@ void EditorUVE::DrawNodePickerUVE() {
     if (m_nodePickerOpenRequested) {
         m_nodePickerOpenRequested = false;
         m_nodePickerFilter.clear();
+        m_nodePickerScrolledFilter.clear();
         focusSearch = true;
         ImGui::OpenPopup(kPopupId);
     }
@@ -331,11 +332,31 @@ void EditorUVE::DrawNodePickerUVE() {
                                                ContainsCaseInsensitiveUVE(descriptor.category, m_nodePickerFilter));
     };
 
-    std::optional<Scene::Nodes::SceneNodeKindUVE> chosen;
+    // The best match is what Enter takes and what is highlighted: a name that starts with the query
+    // beats one that merely contains it, so "box" picks BoxMesh3D rather than Hitbox3D.
+    const auto descriptors = Scene::Nodes::GetSceneNodeDescriptorsUVE();
+    std::optional<Scene::Nodes::SceneNodeKindUVE> bestMatch;
     std::optional<Scene::Nodes::SceneNodeKindUVE> firstMatch;
+    for (const Scene::Nodes::SceneNodeDescriptorUVE& descriptor : descriptors) {
+        if (!matches(descriptor)) {
+            continue;
+        }
+        if (!firstMatch.has_value()) {
+            firstMatch = descriptor.kind;
+        }
+        const std::string_view name = descriptor.displayName;
+        if (!bestMatch.has_value() && name.size() >= m_nodePickerFilter.size() &&
+            ContainsCaseInsensitiveUVE(name.substr(0U, m_nodePickerFilter.size()), m_nodePickerFilter)) {
+            bestMatch = descriptor.kind;
+        }
+    }
+    if (!bestMatch.has_value()) {
+        bestMatch = firstMatch;
+    }
+
+    std::optional<Scene::Nodes::SceneNodeKindUVE> chosen;
     ImGui::Separator();
     if (ImGui::BeginChild("##node-picker-list", ImVec2{0.0F, 0.0F}, false)) {
-        const auto descriptors = Scene::Nodes::GetSceneNodeDescriptorsUVE();
         std::string_view shownCategory;
         for (const Scene::Nodes::SceneNodeDescriptorUVE& descriptor : descriptors) {
             if (!matches(descriptor)) {
@@ -349,13 +370,14 @@ void EditorUVE::DrawNodePickerUVE() {
                 ImGui::TextDisabled("%s", descriptor.category.data());
                 shownCategory = descriptor.category;
             }
-            if (!firstMatch.has_value()) {
-                firstMatch = descriptor.kind;
-            }
             ImGui::Indent(fontSize * 0.6F);
-            const bool highlight = !m_nodePickerFilter.empty() && firstMatch == descriptor.kind;
+            const bool highlight = !m_nodePickerFilter.empty() && bestMatch == descriptor.kind;
             if (ImGui::Selectable(descriptor.displayName.data(), highlight)) {
                 chosen = descriptor.kind;
+            }
+            if (highlight && m_nodePickerFilter != m_nodePickerScrolledFilter) {
+                ImGui::SetScrollHereY(0.5F); // keep the Enter target in sight as the query changes
+                m_nodePickerScrolledFilter = m_nodePickerFilter;
             }
             ImGui::Unindent(fontSize * 0.6F);
         }
@@ -365,10 +387,10 @@ void EditorUVE::DrawNodePickerUVE() {
     }
     ImGui::EndChild();
 
-    // Enter takes the first match - the highlighted row - so typing a few letters and pressing
+    // Enter takes the best match - the highlighted row - so typing a few letters and pressing
     // Enter is enough to add a node without touching the mouse.
-    if (!chosen.has_value() && enterPressed && firstMatch.has_value()) {
-        chosen = firstMatch;
+    if (!chosen.has_value() && enterPressed && bestMatch.has_value()) {
+        chosen = bestMatch;
     }
     if (chosen.has_value()) {
         static_cast<void>(CreateDocumentSceneNodeUVE(*chosen));

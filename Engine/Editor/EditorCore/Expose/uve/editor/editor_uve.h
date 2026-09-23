@@ -1318,6 +1318,7 @@ private:
     std::vector<Scene::EntityUVE> m_hierarchyRevealAncestors;
     bool m_hierarchyRevealPending = false;
     std::string m_nodePickerFilter;
+    std::string m_nodePickerScrolledFilter;
     std::optional<Asset::AssetRecordUVE> m_selectedAsset;
     std::optional<Asset::ProjectFileEntryUVE> m_selectedProjectFile;
     std::optional<Asset::ProjectFileEntryUVE> m_filesystemContextEntry;
