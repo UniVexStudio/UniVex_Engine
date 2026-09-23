@@ -324,24 +324,24 @@ void EditorUVE::DrawMetadataComponentDrawerUVE(const Scene::EntityUVE entity, co
         ImGui::PopID();
         return;
     }
-    // Collapsible, and collapsed state is remembered per section by Dear ImGui's own storage for
-    // the window - which is what makes a long Inspector usable at all.
+    // Collapsible, and the collapsed state is remembered per section type across selections and
+    // sessions (DrawInspectorFoldUVE) - which is what makes a long Inspector usable at all.
     // "###" keeps the header's identity on the type, so a title that follows the value does not
     // reset the section's open state when the value changes.
     const std::string header = std::string{entry.sectionTitle != nullptr ? entry.sectionTitle(instance)
                                                                           : entry.displayName.c_str()} +
                                "###" + entry.typeId;
-    if (ImGui::CollapsingHeader(header.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (DrawInspectorFoldUVE(header.c_str(), "section:" + entry.typeId, true, true, 0)) {
         DrawMetadataPropertyRowsUVE(entry, instance);
         for (const TypeMetadataEntryUVE* const child : nested) {
             if (!entityManager.HasComponentUVE(entity, child->typeIndex)) {
                 continue;
             }
             ImGui::PushID(child->typeId.c_str());
-            constexpr ImGuiTreeNodeFlags kNestedFlags = ImGuiTreeNodeFlags_DefaultOpen |
-                                                        ImGuiTreeNodeFlags_SpanAvailWidth |
+            constexpr ImGuiTreeNodeFlags kNestedFlags = ImGuiTreeNodeFlags_SpanAvailWidth |
                                                         ImGuiTreeNodeFlags_FramePadding;
-            if (ImGui::TreeNodeEx(child->displayName.c_str(), kNestedFlags)) {
+            if (DrawInspectorFoldUVE(child->displayName.c_str(), "nested:" + child->typeId, true, false,
+                                     kNestedFlags)) {
                 DrawMetadataPropertyRowsUVE(*child, entityManager.GetComponentPointerUVE(entity, child->typeIndex));
                 ImGui::TreePop();
             }
@@ -390,7 +390,8 @@ void EditorUVE::DrawMetadataPropertyRowsUVE(const TypeMetadataEntryUVE& entry, c
                 constexpr ImGuiTreeNodeFlags kGroupFlags = ImGuiTreeNodeFlags_SpanAvailWidth |
                                                            ImGuiTreeNodeFlags_FramePadding;
                 const std::string groupId = property.section + "##group-" + property.section;
-                groupOpen = ImGui::TreeNodeEx(groupId.c_str(), kGroupFlags);
+                groupOpen = DrawInspectorFoldUVE(groupId.c_str(), "group:" + entry.typeId + "/" + property.section,
+                                                 false, false, kGroupFlags);
             }
         }
         if (group != nullptr && !groupOpen) {

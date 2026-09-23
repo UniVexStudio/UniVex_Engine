@@ -1021,6 +1021,48 @@ TEST(EditorUVETest, ViewportViewUVE_NamedViewsGoOrthographicAutomaticallyUntilOr
     engine.Shutdown();
 }
 
+TEST(EditorUVETest, InspectorFoldsUVE_RememberedAcrossSessionReloadAndBounded) {
+    const Core::EngineConfigUVE config = MakeEditorTestConfigUVE();
+    std::filesystem::remove(config.settingsFilePath);
+    Core::EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_inspector_folds.uvescene");
+        editor.InitUVE();
+        // An unknown key answers the caller's default, open or closed.
+        EXPECT_TRUE(editor.IsInspectorFoldOpenUVE("section:transform", true));
+        EXPECT_FALSE(editor.IsInspectorFoldOpenUVE("group:light/Shadow", false));
+
+        editor.SetInspectorFoldOpenUVE("section:transform", false);
+        editor.SetInspectorFoldOpenUVE("group:light/Shadow", true);
+        editor.SetInspectorFoldOpenUVE("", false); // an empty key is not a fold
+        EXPECT_FALSE(editor.IsInspectorFoldOpenUVE("section:transform", true));
+        EXPECT_TRUE(editor.IsInspectorFoldOpenUVE("group:light/Shadow", false));
+        EXPECT_TRUE(editor.IsInspectorFoldOpenUVE("", true));
+        ASSERT_TRUE(EditorUVEAccessUVE::SaveSessionSettingsUVE(editor));
+        editor.ShutdownUVE();
+    }
+    {
+        EditorUVE reloaded(engine.GetServicesUVE(), "uve_editor_tests_inspector_folds_reload.uvescene");
+        reloaded.InitUVE();
+        EXPECT_FALSE(reloaded.IsInspectorFoldOpenUVE("section:transform", true));
+        EXPECT_TRUE(reloaded.IsInspectorFoldOpenUVE("group:light/Shadow", false));
+
+        // Bounded: past the cap, new keys are not remembered, but existing ones still update.
+        for (std::size_t index = 0U; index < EditorUVE::kMaxRememberedInspectorFoldsUVE + 10U; ++index) {
+            reloaded.SetInspectorFoldOpenUVE("section:filler-" + std::to_string(index), false);
+        }
+        EXPECT_TRUE(reloaded.IsInspectorFoldOpenUVE(
+            "section:filler-" + std::to_string(EditorUVE::kMaxRememberedInspectorFoldsUVE + 5U), true));
+        reloaded.SetInspectorFoldOpenUVE("section:transform", true);
+        EXPECT_TRUE(reloaded.IsInspectorFoldOpenUVE("section:transform", false));
+        reloaded.ShutdownUVE();
+    }
+    engine.Shutdown();
+    std::filesystem::remove(config.settingsFilePath);
+}
+
 TEST(EditorUVETest, ViewportGridUVE_RefusesBadOpacityAndPersistsAcrossSessionReload) {
     const Core::EngineConfigUVE config = MakeEditorTestConfigUVE();
     std::filesystem::remove(config.settingsFilePath);
