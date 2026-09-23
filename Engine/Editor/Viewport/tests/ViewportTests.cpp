@@ -178,6 +178,41 @@ int main() {
         CheckNear(worstReprojectionError, 0.f, 1e-4f, "every hit projects back to the pixel it came from");
     }
 
+    std::puts("\n== Ray reconstruction survives the rasterizer's interpolation ==");
+    {
+        // The grid is one fullscreen triangle with corners at clip (-1,-1), (3,-1), (-1,3); the
+        // rasterizer interpolates the vertex outputs linearly between them. Unprojection is linear
+        // only in HOMOGENEOUS form, so the shader must interpolate the undivided vec4s and divide
+        // per fragment. Interpolating already-divided points bends the ray, which once pushed the
+        // grid's origin about 13 px sideways from the gizmo and the scene.
+        OrbitCamera camera;
+        const float aspect = 855.f / 457.f;
+        const Mat4 invViewProj = camera.InverseViewProjection(aspect);
+        const Vec4 corners[3] = {Vec4{-1.f, -1.f, 0.f, 1.f}, Vec4{3.f, -1.f, 0.f, 1.f}, Vec4{-1.f, 3.f, 0.f, 1.f}};
+        // Barycentric weights of screen point (px, py) in that triangle.
+        const auto weights = [](float px, float py) {
+            const float b1 = (px + 1.f) / 4.f;
+            const float b2 = (py + 1.f) / 4.f;
+            return std::array<float, 3>{1.f - b1 - b2, b1, b2};
+        };
+        const auto interpolate = [&](float px, float py, float clipZ) {
+            const auto w = weights(px, py);
+            Vec4 sum{0.f, 0.f, 0.f, 0.f};
+            for (int i = 0; i < 3; ++i) {
+                const Vec4 h = invViewProj.Transform(Vec4{corners[i].x, corners[i].y, clipZ, 1.f});
+                sum = Vec4{sum.x + h.x * w[i], sum.y + h.y * w[i], sum.z + h.z * w[i], sum.w + h.w * w[i]};
+            }
+            return Vec3{sum.x / sum.w, sum.y / sum.w, sum.z / sum.w};
+        };
+        // The orbit target is the origin, so the screen centre's ray must hit the ground there.
+        const Vec3 nearPoint = interpolate(0.f, 0.f, -1.f);
+        const Vec3 farPoint = interpolate(0.f, 0.f, 1.f);
+        const Vec3 rayDir = farPoint - nearPoint;
+        const Vec3 hit = nearPoint + rayDir * (-nearPoint.y / rayDir.y);
+        CheckNear(hit.x, 0.f, 1e-3f, "the centre pixel's ground hit is the orbit target (x)");
+        CheckNear(hit.z, 0.f, 1e-3f, "the centre pixel's ground hit is the orbit target (z)");
+    }
+
     std::puts("\n== Ray reconstruction rejects pixels above the horizon ==");
     {
         OrbitCamera camera;
