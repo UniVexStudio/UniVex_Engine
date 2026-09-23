@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <cmath>
 #include <array>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -28,6 +29,7 @@
 
 #include "editor_chrome_layout_uve.h"
 #include "editor_node_icons_uve.h"
+#include "editor_text_search_uve.h"
 
 #include "uve/component/name_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
@@ -36,30 +38,6 @@
 
 namespace UVE::Editor {
 
-namespace {
-
-/// The node library as menu items, grouped by category - shared by the panel's Add Node button and
-/// each row's "Add Child Node" submenu so the two lists can never drift apart.
-template <typename CreateFn>
-void DrawNodeLibraryMenuItemsUVE(CreateFn&& create) {
-    std::string_view lastCategory;
-    for (const Scene::Nodes::SceneNodeDescriptorUVE& descriptor : Scene::Nodes::GetSceneNodeDescriptorsUVE()) {
-        if (descriptor.category != lastCategory) {
-            if (!lastCategory.empty()) {
-                ImGui::Separator();
-            }
-            ImGui::TextDisabled("%s", descriptor.category.data());
-            lastCategory = descriptor.category;
-        }
-        ImGui::BeginDisabled(!descriptor.libraryCreatable);
-        if (ImGui::MenuItem(descriptor.displayName.data())) {
-            create(descriptor.kind);
-        }
-        ImGui::EndDisabled();
-    }
-}
-
-} // namespace
 
 void EditorUVE::DrawHierarchyPanelUVE() {
     if (!m_scenePanelVisible) {
@@ -87,12 +65,13 @@ void EditorUVE::DrawHierarchyPanelUVE() {
     ImGui::PushID("scene-add-node");
     ImGui::BeginDisabled(!canCreateNode);
     if (ImGui::Button("+", ImVec2{addNodeButtonWidth, addNodeButtonWidth})) {
-        ImGui::OpenPopup("scene-add-node-popup");
+        m_nodePickerOpenRequested = true;
     }
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
         ImGui::SetTooltip("Add Node");
     }
+    ImGui::PopID();
     ImGui::SameLine(0.0F, ImGui::GetStyle().ItemSpacing.x);
     // No "Script" shortcut button here anymore - it duplicated the already-existing Scripting
     // workspace tab (Scene / Scripting / Game) and only added clutter/clipping risk to this row.
@@ -101,14 +80,7 @@ void EditorUVE::DrawHierarchyPanelUVE() {
         m_hierarchyFilter = filterBuffer.data();
         InvalidateHierarchyFilterCacheUVE();
     }
-    if (ImGui::BeginPopup("scene-add-node-popup")) {
-        ImGui::TextDisabled("Add Node");
-        ImGui::Separator();
-        DrawNodeLibraryMenuItemsUVE(
-            [this](const Scene::Nodes::SceneNodeKindUVE kind) { static_cast<void>(CreateDocumentSceneNodeUVE(kind)); });
-        ImGui::EndPopup();
-    }
-    ImGui::PopID();
+    DrawNodePickerUVE();
     RebuildHierarchyFilterCacheUVE();
     const float hierarchyItemsHeight = std::max(36.0F, ImGui::GetContentRegionAvail().y);
     if (ImGui::BeginChild("##scene-hierarchy-items", ImVec2{0.0F, hierarchyItemsHeight}, true,
@@ -262,11 +234,10 @@ void EditorUVE::DrawHierarchyNodeContextMenuUVE(const Scene::EntityUVE entity) {
     ImGui::TextDisabled("%s", GetEntityDisplayLabelUVE(entity).c_str());
     ImGui::Separator();
     ImGui::BeginDisabled(!authoring || !single);
-    if (ImGui::BeginMenu("Add Child Node")) {
-        // New nodes go under the single selection, which the right-click has just made this row.
-        DrawNodeLibraryMenuItemsUVE(
-            [this](const Scene::Nodes::SceneNodeKindUVE kind) { static_cast<void>(CreateDocumentSceneNodeUVE(kind)); });
-        ImGui::EndMenu();
+    // Opens the same searchable picker as the + button. New nodes go under the single selection,
+    // which the right-click has just made this row.
+    if (ImGui::MenuItem("Add Child Node...")) {
+        m_nodePickerOpenRequested = true;
     }
     if (ImGui::MenuItem("Rename", "F2")) {
         m_hierarchyRenameEntity = entity;
@@ -285,6 +256,98 @@ void EditorUVE::DrawHierarchyNodeContextMenuUVE(const Scene::EntityUVE entity) {
     ImGui::EndDisabled();
     if (sceneRoot && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
         ImGui::SetTooltip("The scene root holds the whole scene and cannot be duplicated or deleted.");
+    }
+    ImGui::EndPopup();
+}
+
+void EditorUVE::DrawNodePickerUVE() {
+    constexpr const char* kPopupId = "##node-picker";
+    bool focusSearch = false;
+    if (m_nodePickerOpenRequested) {
+        m_nodePickerOpenRequested = false;
+        m_nodePickerFilter.clear();
+        focusSearch = true;
+        ImGui::OpenPopup(kPopupId);
+    }
+    // Small and fixed: the list scrolls inside the box instead of the box growing to the screen's
+    // height. Placed at the cursor, which is where the click that asked for it happened.
+    const float fontSize = ImGui::GetFontSize();
+    ImGui::SetNextWindowSize(ImVec2{fontSize * 17.0F, fontSize * 21.0F}, ImGuiCond_Always);
+    if (!ImGui::BeginPopup(kPopupId)) {
+        return;
+    }
+
+    // Name the parent, so it is obvious where the new node will land.
+    const Scene::EntityUVE parent =
+        (m_selectedEntity != Scene::kInvalidEntityUVE && IsDocumentEntityUVE(m_selectedEntity) &&
+         HasSingleDocumentSelectionUVE())
+            ? m_selectedEntity
+            : Scene::kInvalidEntityUVE;
+    if (parent != Scene::kInvalidEntityUVE) {
+        ImGui::TextDisabled("Add child to %s", GetEntityDisplayLabelUVE(parent).c_str());
+    } else {
+        ImGui::TextDisabled("Add node to the scene");
+    }
+
+    std::array<char, 128> buffer{};
+    m_nodePickerFilter.copy(buffer.data(), buffer.size() - 1U);
+    if (focusSearch) {
+        ImGui::SetKeyboardFocusHere();
+    }
+    ImGui::SetNextItemWidth(-1.0F);
+    if (ImGui::InputTextWithHint("##node-picker-search", "Search nodes", buffer.data(), buffer.size())) {
+        m_nodePickerFilter = buffer.data();
+    }
+    const bool enterPressed = ImGui::IsItemFocused() && ImGui::IsKeyPressed(ImGuiKey_Enter, false);
+
+    // A node matches on its name or its category, so "physics" lists the whole group.
+    const auto matches = [this](const Scene::Nodes::SceneNodeDescriptorUVE& descriptor) {
+        return descriptor.libraryCreatable && (ContainsCaseInsensitiveUVE(descriptor.displayName, m_nodePickerFilter) ||
+                                               ContainsCaseInsensitiveUVE(descriptor.category, m_nodePickerFilter));
+    };
+
+    std::optional<Scene::Nodes::SceneNodeKindUVE> chosen;
+    std::optional<Scene::Nodes::SceneNodeKindUVE> firstMatch;
+    ImGui::Separator();
+    if (ImGui::BeginChild("##node-picker-list", ImVec2{0.0F, 0.0F}, false)) {
+        const auto descriptors = Scene::Nodes::GetSceneNodeDescriptorsUVE();
+        std::string_view shownCategory;
+        for (const Scene::Nodes::SceneNodeDescriptorUVE& descriptor : descriptors) {
+            if (!matches(descriptor)) {
+                continue;
+            }
+            // A category heading only above the first match in it, so an empty group never shows.
+            if (descriptor.category != shownCategory) {
+                if (!shownCategory.empty()) {
+                    ImGui::Spacing();
+                }
+                ImGui::TextDisabled("%s", descriptor.category.data());
+                shownCategory = descriptor.category;
+            }
+            if (!firstMatch.has_value()) {
+                firstMatch = descriptor.kind;
+            }
+            ImGui::Indent(fontSize * 0.6F);
+            const bool highlight = !m_nodePickerFilter.empty() && firstMatch == descriptor.kind;
+            if (ImGui::Selectable(descriptor.displayName.data(), highlight)) {
+                chosen = descriptor.kind;
+            }
+            ImGui::Unindent(fontSize * 0.6F);
+        }
+        if (!firstMatch.has_value()) {
+            ImGui::TextDisabled("No node matches \"%s\".", m_nodePickerFilter.c_str());
+        }
+    }
+    ImGui::EndChild();
+
+    // Enter takes the first match - the highlighted row - so typing a few letters and pressing
+    // Enter is enough to add a node without touching the mouse.
+    if (!chosen.has_value() && enterPressed && firstMatch.has_value()) {
+        chosen = firstMatch;
+    }
+    if (chosen.has_value()) {
+        static_cast<void>(CreateDocumentSceneNodeUVE(*chosen));
+        ImGui::CloseCurrentPopup();
     }
     ImGui::EndPopup();
 }
