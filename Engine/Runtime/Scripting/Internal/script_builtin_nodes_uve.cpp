@@ -18,8 +18,8 @@ struct BuiltInNodeDefinitionUVE final {
     bool executionRequired = false;
 };
 
-[[nodiscard]] std::array<BuiltInNodeDefinitionUVE, 163U> MakeBuiltInDefinitionsUVE() {
-    auto definitions = std::array<BuiltInNodeDefinitionUVE, 163U>{
+[[nodiscard]] std::array<BuiltInNodeDefinitionUVE, 164U> MakeBuiltInDefinitionsUVE() {
+    auto definitions = std::array<BuiltInNodeDefinitionUVE, 164U>{
         BuiltInNodeDefinitionUVE{
             "flow.sequence", "Sequence",
             {ScriptPinDescriptorUVE{"In", ScriptPinDirectionUVE::Input, ScriptValueTypeUVE::Execution},
@@ -1003,6 +1003,10 @@ struct BuiltInNodeDefinitionUVE final {
             {ScriptPinDescriptorUVE{"Value", ScriptPinDirectionUVE::Input, ScriptValueTypeUVE::Number},
              ScriptPinDescriptorUVE{"Result", ScriptPinDirectionUVE::Output, ScriptValueTypeUVE::Boolean}},
             "Debug", "node.debug", 1202U},
+        // The scene node the script belongs to, placed on its canvas when the script is created.
+        // No pins: it names the owner rather than computing anything, so it compiles to a
+        // no-op and a fresh script with only this node is a valid script that does nothing.
+        BuiltInNodeDefinitionUVE{kSceneSelfScriptNodeTypeIdUVE, "Scene Node", {}, "Scene", "node.scene", 1300U},
     };
     const auto isExecutionActionTypeUVE = [](const std::string_view typeId) noexcept {
         return typeId == "engine.log" || typeId == "debug.print" || typeId == "debug.warning" ||
@@ -1036,7 +1040,7 @@ struct BuiltInNodeDefinitionUVE final {
 } // namespace
 
 bool RegisterBuiltInScriptNodesUVE(ScriptNodeRegistryUVE& registry) {
-    std::array<BuiltInNodeDefinitionUVE, 163U> definitions = MakeBuiltInDefinitionsUVE();
+    std::array<BuiltInNodeDefinitionUVE, 164U> definitions = MakeBuiltInDefinitionsUVE();
     for (const BuiltInNodeDefinitionUVE& definition : definitions) {
         if (registry.FindNodeTypeUVE(definition.typeId) != nullptr) {
             return false;

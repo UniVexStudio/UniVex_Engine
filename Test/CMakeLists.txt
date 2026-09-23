@@ -183,6 +183,7 @@ add_executable(uve_integration_tests
     Integration/Object/type_metadata_uve_tests.cpp
     Integration/Object/property_accessor_uve_tests.cpp
     Integration/Object/type_metadata_bridge_uve_tests.cpp
+    Integration/Object/variant_uve_tests.cpp
     Integration/Scripting/script_asset_loader_uve_tests.cpp
     Integration/Scripting/script_graph_uve_tests.cpp
     Integration/Scripting/script_rotation_value_uve_tests.cpp

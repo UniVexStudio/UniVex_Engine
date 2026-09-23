@@ -178,7 +178,27 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
     autoTranslate.mode = AutoTranslateModeUVE::Disabled;
     entityManager.AddComponentUVE<AutoTranslateComponentUVE>(source, autoTranslate);
     NodeMetadataComponentUVE nodeMetadata{};
-    nodeMetadata.entries = {{"door", "north"}, {"charges", "3"}};
+    // One value of each shape the codec handles differently: a scalar, text, a vector, a colour
+    // with alpha, a packed array, and a dictionary holding an array - so nesting is covered too.
+    Core::VariantUVE spawnOffset = Core::VariantUVE::MakeDefaultUVE(Core::VariantTypeUVE::Vector3);
+    *spawnOffset.TryGetMutableUVE<Math::Vector3UVE>() = {1.5F, -2.0F, 0.25F};
+    Core::VariantUVE tint = Core::VariantUVE::MakeDefaultUVE(Core::VariantTypeUVE::Color);
+    *tint.TryGetMutableUVE<Core::VariantColorUVE>() = {0.1F, 0.2F, 0.3F, 0.5F};
+    Core::VariantUVE bytes = Core::VariantUVE::MakeDefaultUVE(Core::VariantTypeUVE::PackedByteArray);
+    *bytes.TryGetMutableUVE<std::vector<std::uint8_t>>() = {0U, 127U, 255U};
+    Core::VariantUVE waves = Core::VariantUVE::MakeDefaultUVE(Core::VariantTypeUVE::Array);
+    waves.TryGetMutableUVE<std::vector<Core::VariantUVE>>()->push_back(Core::VariantUVE::MakeIntUVE(4));
+    waves.TryGetMutableUVE<std::vector<Core::VariantUVE>>()->push_back(Core::VariantUVE::MakeFloatUVE(0.1));
+    Core::VariantUVE loot = Core::VariantUVE::MakeDefaultUVE(Core::VariantTypeUVE::Dictionary);
+    loot.TryGetMutableUVE<std::vector<Core::VariantDictionaryEntryUVE>>()->push_back({"waves", waves});
+    nodeMetadata.entries = {
+        {"door", Core::VariantUVE::MakeTextUVE(Core::VariantTypeUVE::NodePath, "Level/Doors/North")},
+        {"charges", Core::VariantUVE::MakeIntUVE(3)},
+        {"spawn_offset", spawnOffset},
+        {"tint", tint},
+        {"bytes", bytes},
+        {"loot", loot},
+    };
     entityManager.AddComponentUVE<NodeMetadataComponentUVE>(source, nodeMetadata);
 
     AreaComponentUVE area{};
@@ -301,9 +321,9 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
               AutoTranslateModeUVE::Disabled);
     // Authored order survives, which is why the entries serialize as an array rather than as a
     // JSON object whose member order a reader is not obliged to keep.
-    ASSERT_EQ(entityManager.GetComponentUVE<NodeMetadataComponentUVE>(restored).entries.size(), 2U);
-    EXPECT_EQ(entityManager.GetComponentUVE<NodeMetadataComponentUVE>(restored).entries[0].key, "door");
-    EXPECT_EQ(entityManager.GetComponentUVE<NodeMetadataComponentUVE>(restored).entries[1].value, "3");
+    // Every value, type included, comes back exactly: a NodePath stays a NodePath rather than
+    // decaying into a plain string, and the float inside the nested array keeps every digit.
+    EXPECT_EQ(entityManager.GetComponentUVE<NodeMetadataComponentUVE>(restored).entries, nodeMetadata.entries);
     EXPECT_FALSE(entityManager.GetComponentUVE<AreaComponentUVE>(restored).monitoring);
     EXPECT_FALSE(entityManager.GetComponentUVE<AreaComponentUVE>(restored).monitorable);
     EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<RayCast3DNodeComponentUVE>(restored).length, 42.0F);
@@ -699,6 +719,47 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_InvalidEditorDescriptionPayload_RollsB
     EXPECT_TRUE(roots.empty());
     EXPECT_TRUE(entityManager.IsAliveUVE(existing));
     EXPECT_EQ(entityManager.GetEntityCountUVE(), entityCountBefore);
+}
+
+TEST_F(SceneSerializerUVETest, RestoreUVE_MetadataSavedAsPlainStringsLoadsAsStringValues) {
+    // The format before metadata values were typed. It must keep loading, not fail the scene.
+    const std::string payloadText =
+        R"({"entities":[{"localId":0,"components":{"NodeMetadataComponentUVE":)"
+        R"({"entries":[{"key":"door north","value":"open"}]}}}]})";
+    const auto* const payloadBytes = reinterpret_cast<const std::byte*>(payloadText.data());
+    const SceneSnapshotUVE snapshot{
+        Asset::EncodeUveFileEnvelopeUVE(SceneAssetTypeUVE::Scene,
+                                        std::vector<std::byte>{payloadBytes, payloadBytes + payloadText.size()}),
+        SceneAssetTypeUVE::Scene};
+
+    const std::vector<EntityUVE> roots = serializer.RestoreUVE(entityManager, snapshot);
+    ASSERT_EQ(roots.size(), 1U);
+    const NodeMetadataComponentUVE& metadata = entityManager.GetComponentUVE<NodeMetadataComponentUVE>(roots.front());
+    ASSERT_EQ(metadata.entries.size(), 1U);
+    EXPECT_EQ(metadata.entries.front().key, "door north");
+    EXPECT_EQ(metadata.entries.front().value, Core::VariantUVE::MakeTextUVE(Core::VariantTypeUVE::String, "open"));
+}
+
+TEST_F(SceneSerializerUVETest, RestoreUVE_MalformedMetadataValueRollsBackCreatedEntities) {
+    const EntityUVE existing = entityManager.CreateEntityUVE();
+    const std::size_t entityCountBefore = entityManager.GetEntityCountUVE();
+    // An unknown type name, a vector with the wrong arity, and a float written as null (what a NaN
+    // would have become): each must fail the load cleanly rather than half-restore a scene.
+    for (const std::string& value : {std::string{R"({"type":"Matrix7","value":0})"},
+                                    std::string{R"({"type":"Vector3","value":[1,2]})"},
+                                    std::string{R"({"type":"float","value":null})"}}) {
+        const std::string payloadText =
+            R"({"entities":[{"localId":0,"components":{"NodeMetadataComponentUVE":{"entries":[{"key":"k","value":)" +
+            value + R"(}]}}}]})";
+        const auto* const payloadBytes = reinterpret_cast<const std::byte*>(payloadText.data());
+        const SceneSnapshotUVE snapshot{
+            Asset::EncodeUveFileEnvelopeUVE(SceneAssetTypeUVE::Scene,
+                                            std::vector<std::byte>{payloadBytes, payloadBytes + payloadText.size()}),
+            SceneAssetTypeUVE::Scene};
+        EXPECT_TRUE(serializer.RestoreUVE(entityManager, snapshot).empty()) << value;
+        EXPECT_TRUE(entityManager.IsAliveUVE(existing));
+        EXPECT_EQ(entityManager.GetEntityCountUVE(), entityCountBefore) << value;
+    }
 }
 
 TEST_F(SceneSerializerUVETest, RestoreUVE_InvalidPrefabInstancePayload_RollsBackCreatedEntities) {

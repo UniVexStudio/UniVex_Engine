@@ -210,6 +210,16 @@ void EditorUVE::DrawInspectorContentUVE() {
 
     ImGui::BeginDisabled(!IsAuthoringCommandAllowedUVE());
     ImGui::Text("%s", GetEntityDisplayLabelUVE(m_selectedEntity).c_str());
+    // The scene root is a fixed, short Inspector: the common Node section and nothing else. It is
+    // renamed from the Scene panel, it has no parent, it has no transform, and there is nothing
+    // to add to it, so the search box, the Add Component panel and the id line would all be chrome
+    // around six rows.
+    if (IsSceneRootEntityUVE(m_selectedEntity)) {
+        ImGui::Separator();
+        m_inspectorDrawerRegistry.DrawEligibleUVE(m_selectedEntity);
+        ImGui::EndDisabled();
+        return;
+    }
     ImGui::TextDisabled("%s", EntityLabelUVE(m_selectedEntity).c_str());
     std::array<char, 128> inspectorFilterBuffer{};
     m_inspectorFilter.copy(inspectorFilterBuffer.data(), inspectorFilterBuffer.size() - 1U);
@@ -233,12 +243,14 @@ void EditorUVE::DrawInspectorContentUVE() {
 void EditorUVE::RegisterBuiltInInspectorDrawersUVE() {
     static_cast<void>(m_inspectorDrawerRegistry.RegisterDrawerUVE(InspectorDrawerEntryUVE{
         "name",
-        [this](const Scene::EntityUVE entity) { return IsDocumentEntityUVE(entity); },
+        // The root is renamed from the Scene panel; its Inspector is only the Node section.
+        [this](const Scene::EntityUVE entity) { return IsDocumentEntityUVE(entity) && !IsSceneRootEntityUVE(entity); },
         [this](const Scene::EntityUVE entity) { DrawNameInspectorDrawerUVE(entity); },
     }));
     static_cast<void>(m_inspectorDrawerRegistry.RegisterDrawerUVE(InspectorDrawerEntryUVE{
         "hierarchy",
-        [this](const Scene::EntityUVE entity) { return IsDocumentEntityUVE(entity); },
+        // The root has no parent and cannot be given one.
+        [this](const Scene::EntityUVE entity) { return IsDocumentEntityUVE(entity) && !IsSceneRootEntityUVE(entity); },
         [this](const Scene::EntityUVE entity) { DrawHierarchyInspectorDrawerUVE(entity); },
     }));
     static_cast<void>(m_inspectorDrawerRegistry.RegisterDrawerUVE(InspectorDrawerEntryUVE{

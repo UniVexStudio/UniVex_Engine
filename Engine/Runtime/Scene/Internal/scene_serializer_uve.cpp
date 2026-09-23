@@ -19,6 +19,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <nlohmann/json.hpp>
@@ -292,13 +293,172 @@ namespace {
     return {{"mode", static_cast<std::underlying_type_t<AutoTranslateModeUVE>>(component.mode)}};
 }
 
+// ---- VariantUVE <-> JSON ------------------------------------------------------------------------
+//
+// {"type": "<name>", "value": <payload>}. The type is written by name (GetVariantTypeNameUVE), never
+// by enumerator number, so the Variant type list can grow or reorder without invalidating a single
+// saved scene. Vectors are arrays of numbers; Dictionaries are arrays of {key, value} so authored
+// order survives, for the same reason metadata entries are.
+
+[[nodiscard]] nlohmann::json VariantToJsonUVE(const Core::VariantUVE& value);
+
+template <typename VectorT>
+[[nodiscard]] nlohmann::json ComponentsToJsonUVE(const VectorT& vector) {
+    if constexpr (std::is_same_v<VectorT, Math::Vector2UVE>) {
+        return nlohmann::json::array({vector.x, vector.y});
+    } else if constexpr (std::is_same_v<VectorT, Math::Vector3UVE>) {
+        return nlohmann::json::array({vector.x, vector.y, vector.z});
+    } else if constexpr (std::is_same_v<VectorT, Core::VariantColorUVE>) {
+        return nlohmann::json::array({vector.r, vector.g, vector.b, vector.a});
+    } else {
+        return nlohmann::json::array({vector.x, vector.y, vector.z, vector.w});
+    }
+}
+
+[[nodiscard]] nlohmann::json VariantPayloadToJsonUVE(const Core::VariantUVE& value) {
+    return std::visit(
+        [](const auto& stored) -> nlohmann::json {
+            using StoredT = std::decay_t<decltype(stored)>;
+            if constexpr (std::is_same_v<StoredT, Math::Vector2UVE> || std::is_same_v<StoredT, Math::Vector3UVE> ||
+                          std::is_same_v<StoredT, Core::VariantVector4UVE> ||
+                          std::is_same_v<StoredT, Math::QuaternionUVE> ||
+                          std::is_same_v<StoredT, Core::VariantColorUVE>) {
+                return ComponentsToJsonUVE(stored);
+            } else if constexpr (std::is_same_v<StoredT, std::vector<Core::VariantUVE>>) {
+                nlohmann::json elements = nlohmann::json::array();
+                for (const Core::VariantUVE& element : stored) {
+                    elements.push_back(VariantToJsonUVE(element));
+                }
+                return elements;
+            } else if constexpr (std::is_same_v<StoredT, std::vector<Core::VariantDictionaryEntryUVE>>) {
+                nlohmann::json entries = nlohmann::json::array();
+                for (const Core::VariantDictionaryEntryUVE& entry : stored) {
+                    entries.push_back({{"key", entry.key}, {"value", VariantToJsonUVE(entry.value)}});
+                }
+                return entries;
+            } else if constexpr (std::is_same_v<StoredT, std::vector<Math::Vector2UVE>> ||
+                                 std::is_same_v<StoredT, std::vector<Math::Vector3UVE>> ||
+                                 std::is_same_v<StoredT, std::vector<Core::VariantColorUVE>>) {
+                nlohmann::json elements = nlohmann::json::array();
+                for (const auto& element : stored) {
+                    elements.push_back(ComponentsToJsonUVE(element));
+                }
+                return elements;
+            } else {
+                // bool, integers, double, string, and packed arrays of those: nlohmann writes each as
+                // its natural JSON form.
+                return stored;
+            }
+        },
+        value.GetStorageUVE());
+}
+
+[[nodiscard]] nlohmann::json VariantToJsonUVE(const Core::VariantUVE& value) {
+    return {{"type", std::string{Core::GetVariantTypeNameUVE(value.GetTypeUVE())}},
+            {"value", VariantPayloadToJsonUVE(value)}};
+}
+
+[[nodiscard]] float ReadFloatUVE(const nlohmann::json& json) {
+    if (!json.is_number()) {
+        throw std::runtime_error("Variant component is not a number");
+    }
+    return json.get<float>();
+}
+
+template <typename VectorT>
+[[nodiscard]] VectorT ComponentsFromJsonUVE(const nlohmann::json& json) {
+    constexpr std::size_t count =
+        std::is_same_v<VectorT, Math::Vector2UVE> ? 2U : (std::is_same_v<VectorT, Math::Vector3UVE> ? 3U : 4U);
+    if (!json.is_array() || json.size() != count) {
+        throw std::runtime_error("Variant vector has the wrong number of components");
+    }
+    if constexpr (std::is_same_v<VectorT, Math::Vector2UVE>) {
+        return {ReadFloatUVE(json[0]), ReadFloatUVE(json[1])};
+    } else if constexpr (std::is_same_v<VectorT, Math::Vector3UVE>) {
+        return {ReadFloatUVE(json[0]), ReadFloatUVE(json[1]), ReadFloatUVE(json[2])};
+    } else if constexpr (std::is_same_v<VectorT, Core::VariantColorUVE>) {
+        return {ReadFloatUVE(json[0]), ReadFloatUVE(json[1]), ReadFloatUVE(json[2]), ReadFloatUVE(json[3])};
+    } else {
+        return {ReadFloatUVE(json[0]), ReadFloatUVE(json[1]), ReadFloatUVE(json[2]), ReadFloatUVE(json[3])};
+    }
+}
+
+/// Decodes one Variant, throwing on anything malformed - the serializer turns that into a rolled-back
+/// load. `depth` stops the recursion at the Variant depth bound, so a hostile file nested thousands
+/// deep cannot exhaust the stack before validation ever runs.
+[[nodiscard]] Core::VariantUVE VariantFromJsonUVE(const nlohmann::json& json, const std::size_t depth) {
+    if (depth > Core::kMaximumVariantDepthUVE) {
+        throw std::runtime_error("Variant nesting exceeds the depth limit");
+    }
+    if (!json.is_object() || !json.contains("type") || !json.contains("value")) {
+        throw std::runtime_error("Variant is not a {type, value} object");
+    }
+    const std::optional<Core::VariantTypeUVE> type = Core::TryParseVariantTypeNameUVE(json.at("type").get<std::string>());
+    if (!type.has_value()) {
+        throw std::runtime_error("Variant has an unknown type");
+    }
+    const nlohmann::json& payload = json.at("value");
+    Core::VariantUVE value = Core::VariantUVE::MakeDefaultUVE(*type);
+    const auto readList = [&payload](auto& list, const auto& readElement) {
+        if (!payload.is_array() || payload.size() > Core::kMaximumVariantElementsUVE) {
+            throw std::runtime_error("Variant array payload is not a bounded array");
+        }
+        list.reserve(payload.size());
+        for (const nlohmann::json& element : payload) {
+            list.push_back(readElement(element));
+        }
+    };
+    value.VisitMutableUVE(
+        [&](auto& stored) {
+            using StoredT = std::decay_t<decltype(stored)>;
+            if constexpr (std::is_same_v<StoredT, bool>) {
+                stored = payload.get<bool>();
+            } else if constexpr (std::is_same_v<StoredT, std::int64_t>) {
+                stored = payload.get<std::int64_t>();
+            } else if constexpr (std::is_same_v<StoredT, std::uint64_t>) {
+                stored = payload.get<std::uint64_t>();
+            } else if constexpr (std::is_same_v<StoredT, double>) {
+                if (!payload.is_number()) {
+                    throw std::runtime_error("Variant float is not a number");
+                }
+                stored = payload.get<double>();
+            } else if constexpr (std::is_same_v<StoredT, std::string>) {
+                stored = payload.get<std::string>();
+            } else if constexpr (std::is_same_v<StoredT, Math::Vector2UVE> ||
+                                 std::is_same_v<StoredT, Math::Vector3UVE> ||
+                                 std::is_same_v<StoredT, Core::VariantVector4UVE> ||
+                                 std::is_same_v<StoredT, Math::QuaternionUVE> ||
+                                 std::is_same_v<StoredT, Core::VariantColorUVE>) {
+                stored = ComponentsFromJsonUVE<StoredT>(payload);
+            } else if constexpr (std::is_same_v<StoredT, std::vector<Core::VariantUVE>>) {
+                readList(stored, [depth](const nlohmann::json& element) {
+                    return VariantFromJsonUVE(element, depth + 1U);
+                });
+            } else if constexpr (std::is_same_v<StoredT, std::vector<Core::VariantDictionaryEntryUVE>>) {
+                readList(stored, [depth](const nlohmann::json& entry) {
+                    return Core::VariantDictionaryEntryUVE{entry.at("key").get<std::string>(),
+                                                          VariantFromJsonUVE(entry.at("value"), depth + 1U)};
+                });
+            } else if constexpr (std::is_same_v<StoredT, std::vector<Math::Vector2UVE>> ||
+                                 std::is_same_v<StoredT, std::vector<Math::Vector3UVE>> ||
+                                 std::is_same_v<StoredT, std::vector<Core::VariantColorUVE>>) {
+                using ElementT = typename StoredT::value_type;
+                readList(stored, [](const nlohmann::json& element) { return ComponentsFromJsonUVE<ElementT>(element); });
+            } else {
+                using ElementT = typename StoredT::value_type;
+                readList(stored, [](const nlohmann::json& element) { return element.get<ElementT>(); });
+            }
+        });
+    return value;
+}
+
 [[nodiscard]] nlohmann::json ToJsonUVE(const NodeMetadataComponentUVE& component) {
     // An array of key/value objects rather than one JSON object, so authored order survives a
     // round trip - a JSON object's member order is not something a reader is obliged to keep, and
     // losing it would reorder an inspector's rows and dirty a scene file for no reason.
     nlohmann::json entries = nlohmann::json::array();
     for (const NodeMetadataEntryUVE& entry : component.entries) {
-        entries.push_back({{"key", entry.key}, {"value", entry.value}});
+        entries.push_back({{"key", entry.key}, {"value", VariantToJsonUVE(entry.value)}});
     }
     return {{"entries", std::move(entries)}};
 }
@@ -1238,8 +1398,15 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                       MakeRegistrationUVE<NodeMetadataComponentUVE>([](const nlohmann::json& json) {
                           NodeMetadataComponentUVE metadata{};
                           for (const nlohmann::json& entry : json.at("entries")) {
+                              const nlohmann::json& value = entry.at("value");
+                              // A plain string is the format metadata was saved in before values
+                              // were typed; it loads as a String, so no older scene is lost.
                               metadata.entries.push_back(NodeMetadataEntryUVE{
-                                  entry.at("key").get<std::string>(), entry.at("value").get<std::string>()});
+                                  entry.at("key").get<std::string>(),
+                                  value.is_string()
+                                      ? Core::VariantUVE::MakeTextUVE(Core::VariantTypeUVE::String,
+                                                                      value.get<std::string>())
+                                      : VariantFromJsonUVE(value, 0U)});
                           }
                           // The validator rejects a duplicate key, an oversized one and an
                           // over-long list, so a hand-edited or hostile file cannot load an entity

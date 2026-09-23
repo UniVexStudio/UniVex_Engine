@@ -64,7 +64,7 @@ namespace {
     for (const TypeMetadataPropertyUVE& property : entry.properties) {
         if (!IsBoundedIdentifierUVE(property.name) || !IsBoundedDisplayNameUVE(property.displayName) ||
             !IsBoundedIdentifierUVE(property.typeId) || !IsBoundedOptionalUVE(property.section) ||
-            !IsBoundedOptionalUVE(property.customDrawerId) ||
+            !IsBoundedOptionalUVE(property.customDrawerId) || !IsBoundedOptionalUVE(property.resolvedByProperty) ||
             property.tooltip.size() > TypeMetadataRegistryUVE::kMaximumDisplayNameBytesUVE ||
             HasMalformedEnumEntriesUVE(property)) {
             return true;
@@ -86,15 +86,31 @@ namespace {
     return false;
 }
 
+/// A resolved-by link must point at a different property of the same entry. A dangling name would
+/// leave an inspector with nothing to show; a self-reference would show the choice as its own answer.
+[[nodiscard]] bool HasDanglingResolvedByUVE(const TypeMetadataEntryUVE& entry) noexcept {
+    return std::any_of(entry.properties.cbegin(), entry.properties.cend(), [&entry](const auto& property) {
+        if (property.resolvedByProperty.empty()) {
+            return false;
+        }
+        return property.resolvedByProperty == property.name ||
+               std::none_of(entry.properties.cbegin(), entry.properties.cend(), [&property](const auto& other) {
+                   return other.name == property.resolvedByProperty;
+               });
+    });
+}
+
 } // namespace
 
 TypeMetadataRegistrationResultUVE TypeMetadataRegistryUVE::RegisterTypeUVE(TypeMetadataEntryUVE entry) {
     if (!IsBoundedIdentifierUVE(entry.typeId) || !IsBoundedDisplayNameUVE(entry.displayName) || entry.version == 0U ||
         HasPartialFactoryUVE(entry) ||
         ExceedsMemberCapacityUVE(entry) ||
-        HasDuplicateMemberNamesUVE(entry)) {
+        HasDuplicateMemberNamesUVE(entry) ||
+        HasDanglingResolvedByUVE(entry) ||
+        !IsBoundedOptionalUVE(entry.nestedUnderTypeId) || entry.nestedUnderTypeId == entry.typeId) {
         return {TypeMetadataRegistrationCodeUVE::InvalidEntry,
-                "Type metadata requires bounded identity, display, version, and unique members."};
+                "Type metadata requires bounded identity, display, version, unique members and resolvable links."};
     }
     if (FindTypeUVE(entry.typeId) != nullptr) {
         return {TypeMetadataRegistrationCodeUVE::DuplicateType,

@@ -2,6 +2,9 @@
 
 #include <gtest/gtest.h>
 
+#include <limits>
+#include <string>
+
 #include "uve/component/auto_translate_component_uve.h"
 #include "uve/component/node_metadata_component_uve.h"
 #include "uve/component/process_component_uve.h"
@@ -81,44 +84,82 @@ TEST(AutoTranslateComponentUVETest, ResolveAutoTranslateModeUVE_ALabelCanOptOutI
               AutoTranslateModeUVE::Disabled);
 }
 
+[[nodiscard]] Core::VariantUVE TextUVE(std::string text) {
+    return Core::VariantUVE::MakeTextUVE(Core::VariantTypeUVE::String, std::move(text));
+}
+
 TEST(NodeMetadataComponentUVETest, IsNodeMetadataComponentValidUVE_RejectsWhatWouldMakeLookupAmbiguous) {
     NodeMetadataComponentUVE metadata;
     EXPECT_TRUE(IsNodeMetadataComponentValidUVE(metadata)); // Empty is a legitimate state.
 
-    metadata.entries = {{"door", "north"}, {"charges", "3"}};
+    metadata.entries = {{"door", TextUVE("north")}, {"charges", Core::VariantUVE::MakeIntUVE(3)}};
     EXPECT_TRUE(IsNodeMetadataComponentValidUVE(metadata));
 
     // A duplicate key would make the answer depend on which entry happens to come first, which
     // only breaks once someone reorders the list.
-    metadata.entries.push_back({"door", "south"});
+    metadata.entries.push_back({"door", TextUVE("south")});
     EXPECT_FALSE(IsNodeMetadataComponentValidUVE(metadata));
 
-    metadata.entries = {{"", "value"}};
+    metadata.entries = {{"", TextUVE("value")}};
     EXPECT_FALSE(IsNodeMetadataComponentValidUVE(metadata));
 
-    metadata.entries = {{std::string(kMaximumNodeMetadataKeyBytesUVE + 1U, 'k'), "value"}};
+    metadata.entries = {{std::string(kMaximumNodeMetadataKeyBytesUVE + 1U, 'k'), TextUVE("value")}};
     EXPECT_FALSE(IsNodeMetadataComponentValidUVE(metadata));
 
-    metadata.entries = {{"key", std::string(kMaximumNodeMetadataValueBytesUVE + 1U, 'v')}};
+    // A non-finite float would save as JSON null and break the next load, so it never gets in.
+    metadata.entries = {{"speed", Core::VariantUVE::MakeFloatUVE(std::numeric_limits<double>::infinity())}};
     EXPECT_FALSE(IsNodeMetadataComponentValidUVE(metadata));
 
     metadata.entries.clear();
     for (std::size_t index = 0; index <= kMaximumNodeMetadataEntriesUVE; ++index) {
-        metadata.entries.push_back({"key" + std::to_string(index), "value"});
+        metadata.entries.push_back({"key" + std::to_string(index), TextUVE("value")});
     }
     EXPECT_FALSE(IsNodeMetadataComponentValidUVE(metadata));
 }
 
+TEST(NodeMetadataComponentUVETest, IsNodeMetadataComponentValidUVE_StillAcceptsKeysSavedBeforeTheIdentifierRule) {
+    // Metadata saved before keys had to be identifiers may hold "door north". Rejecting it on load
+    // would fail the component and roll back the whole scene, so the loader only checks structure.
+    NodeMetadataComponentUVE metadata;
+    metadata.entries = {{"door north", TextUVE("open")}};
+    EXPECT_TRUE(IsNodeMetadataComponentValidUVE(metadata));
+    // New authoring is held to the identifier rule, with a reason the editor can show.
+    EXPECT_EQ(ValidateNodeMetadataKeyUVE("door north", NodeMetadataComponentUVE{}),
+              NodeMetadataKeyIssueUVE::InvalidCharacter);
+}
+
+TEST(NodeMetadataComponentUVETest, ValidateNodeMetadataKeyUVE_ExplainsEveryRejection) {
+    NodeMetadataComponentUVE existing;
+    existing.entries = {{"charges", Core::VariantUVE::MakeIntUVE(3)}};
+
+    EXPECT_EQ(ValidateNodeMetadataKeyUVE("spawn_offset_2", existing), NodeMetadataKeyIssueUVE::None);
+    EXPECT_EQ(ValidateNodeMetadataKeyUVE("", existing), NodeMetadataKeyIssueUVE::Empty);
+    EXPECT_EQ(ValidateNodeMetadataKeyUVE("2nd", existing), NodeMetadataKeyIssueUVE::StartsWithDigit);
+    EXPECT_EQ(ValidateNodeMetadataKeyUVE("a-b", existing), NodeMetadataKeyIssueUVE::InvalidCharacter);
+    EXPECT_EQ(ValidateNodeMetadataKeyUVE(std::string(kMaximumNodeMetadataKeyBytesUVE + 1U, 'k'), existing),
+              NodeMetadataKeyIssueUVE::TooLong);
+    EXPECT_EQ(ValidateNodeMetadataKeyUVE("charges", existing), NodeMetadataKeyIssueUVE::Duplicate);
+    // Renaming an entry to its own name is not a collision with itself.
+    EXPECT_EQ(ValidateNodeMetadataKeyUVE("charges", existing, "charges"), NodeMetadataKeyIssueUVE::None);
+    // Every rejection comes with a reason to show; acceptance comes with none.
+    for (const NodeMetadataKeyIssueUVE issue :
+         {NodeMetadataKeyIssueUVE::Empty, NodeMetadataKeyIssueUVE::TooLong, NodeMetadataKeyIssueUVE::InvalidCharacter,
+          NodeMetadataKeyIssueUVE::StartsWithDigit, NodeMetadataKeyIssueUVE::Duplicate}) {
+        EXPECT_FALSE(DescribeNodeMetadataKeyIssueUVE(issue).empty());
+    }
+    EXPECT_TRUE(DescribeNodeMetadataKeyIssueUVE(NodeMetadataKeyIssueUVE::None).empty());
+}
+
 TEST(NodeMetadataComponentUVETest, FindNodeMetadataUVE_DistinguishesAbsentFromEmpty) {
     NodeMetadataComponentUVE metadata;
-    metadata.entries = {{"door", "north"}, {"note", ""}};
+    metadata.entries = {{"door", TextUVE("north")}, {"note", TextUVE("")}};
 
     ASSERT_NE(FindNodeMetadataUVE(metadata, "door"), nullptr);
-    EXPECT_EQ(*FindNodeMetadataUVE(metadata, "door"), "north");
+    EXPECT_EQ(*FindNodeMetadataUVE(metadata, "door"), TextUVE("north"));
 
     // An entry whose value is empty is a value that was authored, not a missing entry.
     ASSERT_NE(FindNodeMetadataUVE(metadata, "note"), nullptr);
-    EXPECT_TRUE(FindNodeMetadataUVE(metadata, "note")->empty());
+    EXPECT_TRUE(FindNodeMetadataUVE(metadata, "note")->TryGetUVE<std::string>()->empty());
 
     EXPECT_EQ(FindNodeMetadataUVE(metadata, "missing"), nullptr);
 }

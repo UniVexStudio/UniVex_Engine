@@ -90,3 +90,29 @@ TEST(TypeMetadataRegistryUVETest, RegisterTypeUVE_RejectsUnboundedIdentityBefore
 }
 
 } // namespace UVE::Core
+
+namespace UVE::Core::Tests {
+namespace {
+
+TEST(TypeMetadataRegistryUVETest, RegisterTypeUVE_RejectsPresentationLinksThatPointNowhere) {
+    TypeMetadataRegistryUVE registry;
+    TypeMetadataPropertyUVE mode{"mode", "Mode", "Enum", true};
+    mode.resolvedByProperty = "resolved";
+    // The named companion does not exist: an inspector would have no answer to show.
+    EXPECT_FALSE(registry.RegisterTypeUVE({TypeMetadataKindUVE::Component, "t.dangling", "T", 1U, {mode}, {}})
+                     .IsRegisteredUVE());
+    mode.resolvedByProperty = "mode"; // Its own answer.
+    EXPECT_FALSE(registry.RegisterTypeUVE({TypeMetadataKindUVE::Component, "t.self", "T", 1U, {mode}, {}})
+                     .IsRegisteredUVE());
+    TypeMetadataEntryUVE nestedInItself{TypeMetadataKindUVE::Component, "t.nest", "T", 1U, {}, {}};
+    nestedInItself.nestedUnderTypeId = "t.nest";
+    EXPECT_FALSE(registry.RegisterTypeUVE(nestedInItself).IsRegisteredUVE());
+
+    mode.resolvedByProperty = "resolved";
+    const TypeMetadataPropertyUVE resolved{"resolved", "Resolved", "Enum", false};
+    EXPECT_TRUE(registry.RegisterTypeUVE({TypeMetadataKindUVE::Component, "t.ok", "T", 1U, {mode, resolved}, {}})
+                    .IsRegisteredUVE());
+}
+
+} // namespace
+} // namespace UVE::Core::Tests
