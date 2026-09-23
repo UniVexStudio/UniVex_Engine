@@ -659,8 +659,10 @@ The group with the most real backing today.
 - [x] Gizmo axis colours are user-configurable and persisted under `editor.viewport.axisColors.*`,
       applied whole-or-nothing to both the transform gizmo and the grid axis lines, with the grid
       taking a dimmed variant; covered by dedicated tests.
-- [ ] Grid: visible, size, subdivisions, extent/fade distance, colour, and which plane(s) are
-      drawn.
+- [~] Grid: visible, size, subdivisions, extent/fade distance, colour, and which plane(s) are
+      drawn. Visible and opacity (10-100%) are set from the grid button (click toggles,
+      right-click opens the options) and saved under `editor.viewport.grid.*`, with a corrupt
+      stored value falling back to the defaults; missing: size, subdivisions, fade, colour, plane.
 - [ ] Grid follows the camera vs. fixed at origin.
 - [ ] Gizmo size in pixels, gizmo opacity, and whether the gizmo is hidden during drag.
 - [ ] Gizmo mode memory: whether the active transform mode persists across sessions.

@@ -288,6 +288,8 @@ public:
         ViewportGizmoModeUVE gizmoMode = ViewportGizmoModeUVE::Universal;
         bool snapEnabled = false;
         bool gridVisible = true;
+        // How strongly the grid is drawn, 0.1..1. Persisted with gridVisible; see SetViewportGridUVE.
+        float gridOpacity = 1.0F;
         // True while the Game workspace tab is active (see EditorWorkspaceUVE::Game): the concrete
         // renderer should hide editor-only overlays (grid, transform gizmo) in this mode, matching
         // Unity's own Scene/Game split, since Game is meant to preview what a player would see.
@@ -635,6 +637,14 @@ public:
     void SetEntityContextToolbarAnchorUVE(Scene::EntityUVE entity, float pixelX, float pixelY);
     /// Closes the entity context toolbar (a right-click that missed every entity).
     void ClearEntityContextToolbarUVE() noexcept;
+
+    /// The viewport grid: shown or hidden, and its opacity (0.1..1 - never fully invisible, which
+    /// would be a hidden grid under another name). Both are editor preferences, saved with the
+    /// session. An opacity outside the range, or not finite, is refused and nothing changes.
+    [[nodiscard]] bool SetViewportGridUVE(bool visible, float opacity);
+    [[nodiscard]] bool IsViewportGridVisibleUVE() const noexcept { return m_viewportOverlayState.gridVisible; }
+    [[nodiscard]] float GetViewportGridOpacityUVE() const noexcept { return m_viewportOverlayState.gridOpacity; }
+    static constexpr float kMinimumViewportGridOpacityUVE = 0.1F;
 
     /// The viewport's X/Y/Z axis colours, which the menu bar offers a picker for and the host
     /// pushes into the real renderer each frame (see ViewportOverlayStateUVE::axisColorX).

@@ -966,6 +966,52 @@ TEST(EditorUVETest, SessionSettingsUVE_MigratesWithoutHiddenWriteAndPreservesDoc
     std::filesystem::remove(config.settingsFilePath);
 }
 
+TEST(EditorUVETest, ViewportGridUVE_RefusesBadOpacityAndPersistsAcrossSessionReload) {
+    const Core::EngineConfigUVE config = MakeEditorTestConfigUVE();
+    std::filesystem::remove(config.settingsFilePath);
+    Core::EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_grid_prefs.uvescene");
+        editor.InitUVE();
+        EXPECT_TRUE(editor.IsViewportGridVisibleUVE());
+        EXPECT_FLOAT_EQ(editor.GetViewportGridOpacityUVE(), 1.0F);
+
+        // Out of range, zero (a hidden grid under another name) and NaN are refused whole.
+        EXPECT_FALSE(editor.SetViewportGridUVE(false, 1.5F));
+        EXPECT_FALSE(editor.SetViewportGridUVE(false, 0.0F));
+        EXPECT_FALSE(editor.SetViewportGridUVE(false, std::numeric_limits<float>::quiet_NaN()));
+        EXPECT_TRUE(editor.IsViewportGridVisibleUVE());
+        EXPECT_FLOAT_EQ(editor.GetViewportGridOpacityUVE(), 1.0F);
+
+        ASSERT_TRUE(editor.SetViewportGridUVE(false, 0.35F));
+        ASSERT_TRUE(EditorUVEAccessUVE::SaveSessionSettingsUVE(editor));
+        editor.ShutdownUVE();
+    }
+    {
+        EditorUVE reloaded(engine.GetServicesUVE(), "uve_editor_tests_grid_prefs_reload.uvescene");
+        reloaded.InitUVE();
+        EXPECT_FALSE(reloaded.IsViewportGridVisibleUVE());
+        EXPECT_FLOAT_EQ(reloaded.GetViewportGridOpacityUVE(), 0.35F);
+        reloaded.ShutdownUVE();
+    }
+
+    // A corrupt stored opacity leaves both settings at their defaults.
+    engine.GetServicesUVE().GetConfigManagerUVE().SetDoubleUVE("editor.viewport.grid.opacity", 7.0);
+    {
+        EditorUVE corrupt(engine.GetServicesUVE(), "uve_editor_tests_grid_prefs_corrupt.uvescene");
+        corrupt.InitUVE();
+        EXPECT_TRUE(corrupt.IsViewportGridVisibleUVE());
+        EXPECT_FLOAT_EQ(corrupt.GetViewportGridOpacityUVE(), 1.0F);
+        corrupt.ShutdownUVE();
+    }
+
+    engine.Shutdown();
+    std::filesystem::remove(config.settingsFilePath);
+}
+
 TEST(EditorUVETest, ViewportAxisColorsUVE_RefuseInvalidChannelsAndPersistAcrossSessionReload) {
     const Core::EngineConfigUVE config = MakeEditorTestConfigUVE();
     std::filesystem::remove(config.settingsFilePath);

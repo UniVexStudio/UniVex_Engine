@@ -408,6 +408,7 @@ private:
                                                         : univex::viewport::ProjectionMode::Perspective;
         // The Game workspace tab previews what a player would see - no editor-only grid overlay.
         settings.viewGrid = overlayState.gridVisible && !overlayState.gameWorkspaceActive;
+        renderPass_->SetGridOpacityUVE(overlayState.gridOpacity);
         gameWorkspaceActive_ = overlayState.gameWorkspaceActive;
         pointerOverOverlay_ = overlayState.pointerOverOverlay;
         // Axis colours drive the gizmo AND the grid's own axis lines, so they go through
