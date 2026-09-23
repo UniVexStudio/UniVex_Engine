@@ -152,6 +152,13 @@ void AddUVE(std::vector<TypeMetadataEntryUVE>& entries, TypeMetadataEntryUVE ent
     entries.push_back(std::move(entry));
 }
 
+/// AddUVE for a component with a whole-value rule, so a generic editor enforces it too.
+template <typename ComponentT, bool (*IsValid)(const ComponentT&) noexcept>
+void AddValidatedUVE(std::vector<TypeMetadataEntryUVE>& entries, TypeMetadataEntryUVE entry) {
+    entry.isInstanceValid = +[](const void* instance) { return IsValid(*static_cast<const ComponentT*>(instance)); };
+    AddUVE<ComponentT>(entries, std::move(entry));
+}
+
 // ---------------------------------------------------------------------------------------------
 // The declarations themselves. Each component states what it exposes exactly once, here, instead
 // of being re-described by every consumer that needs to know.
@@ -268,14 +275,19 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                 }(),
             }));
 
-    AddUVE<MeshComponentUVE>(
+    AddValidatedUVE<MeshComponentUVE, &IsMeshComponentValidUVE>(
         entries,
         MakeEntryUVE("component.mesh", "MeshInstance3D", kSectionOrderTypeSpecificUVE,
                      {
-                         DeclareUVE<&MeshComponentUVE::meshGuid>("meshGuid", "Mesh",
-                                                                 kPropertyTypeAssetGuidUVE),
-                         DeclareUVE<&MeshComponentUVE::materialGuid>("materialGuid", "Material",
-                                                                     kPropertyTypeAssetGuidUVE),
+                         WithTooltipUVE(WithCustomDrawerUVE(DeclareUVE<&MeshComponentUVE::meshGuid>(
+                                                                "meshGuid", "Mesh", kPropertyTypeAssetGuidUVE),
+                                                            "asset:uvemodel"),
+                                        "An imported model. Import a .glb or .gltf (Blender: File > Export > "
+                                        "glTF 2.0) from the Content Browser."),
+                         WithTooltipUVE(WithCustomDrawerUVE(DeclareUVE<&MeshComponentUVE::materialGuid>(
+                                                                "materialGuid", "Material", kPropertyTypeAssetGuidUVE),
+                                                            "asset:uvemat"),
+                                        "The surface material. Without one the mesh is drawn in neutral grey."),
                          DeclareUVE<&MeshComponentUVE::visibilityLayers>(
                              "visibilityLayers", "Visibility Layers", kPropertyTypeBitMask32UVE),
                      }));
@@ -664,7 +676,7 @@ void DeclareNodeBasesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                      }));
 
     using S = SurfaceInstanceComponentUVE;
-    AddUVE<SurfaceInstanceComponentUVE>(
+    AddValidatedUVE<SurfaceInstanceComponentUVE, &IsSurfaceInstanceComponentValidUVE>(
         entries,
         MakeEntryUVE(
             "component.surface_instance", "SurfaceInstance3D", kSectionOrderNodeBaseUVE + 3,
@@ -729,7 +741,7 @@ void DeclareNodeBasesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
             }));
 
     using L = LightEmitterComponentUVE;
-    AddUVE<LightEmitterComponentUVE>(
+    AddValidatedUVE<LightEmitterComponentUVE, &IsLightEmitterComponentValidUVE>(
         entries,
         MakeEntryUVE(
             "component.light_emitter", "LightEmitter3D", kSectionOrderNodeBaseUVE + 4,
@@ -797,7 +809,7 @@ void DeclareNodeBasesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
 /// comes from the bases.
 void DeclareRenderInstanceNodesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     using D = Decal3DNodeComponentUVE;
-    AddUVE<Decal3DNodeComponentUVE>(
+    AddValidatedUVE<Decal3DNodeComponentUVE, &IsDecal3DNodeComponentValidUVE>(
         entries,
         MakeEntryUVE(
             "component.decal_3d", "Decal3D", kSectionOrderTypeSpecificUVE,
@@ -853,7 +865,7 @@ void DeclareRenderInstanceNodesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
             }));
 
     using F = FogVolume3DNodeComponentUVE;
-    AddUVE<FogVolume3DNodeComponentUVE>(
+    AddValidatedUVE<FogVolume3DNodeComponentUVE, &IsFogVolume3DNodeComponentValidUVE>(
         entries,
         MakeEntryUVE(
             "component.fog_volume_3d", "FogVolume3D", kSectionOrderTypeSpecificUVE,

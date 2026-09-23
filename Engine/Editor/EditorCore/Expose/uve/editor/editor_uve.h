@@ -1132,6 +1132,8 @@ private:
     /// filesystem baseline. It never schedules imports or mutates project files.
     void RefreshProjectFileIndexUVE();
     void DrawFilesystemContextPopupUVE();
+    /// Queues a glTF/GLB source for import to a .uvemodel beside it. False when the queue refuses.
+    bool QueueModelImportUVE(const Asset::ProjectFileEntryUVE& entry);
     [[nodiscard]] Scripting::ScriptGraphCanvasUVE& ActiveVisualScriptCanvasUVE() noexcept;
     [[nodiscard]] const Scripting::ScriptGraphCanvasUVE& ActiveVisualScriptCanvasUVE() const noexcept;
 

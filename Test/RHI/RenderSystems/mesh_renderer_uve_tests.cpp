@@ -151,13 +151,26 @@ TEST(MeshComponentUVE, IsMeshComponentValidUVE_AllowsUnassignedPair) {
         Scene::MeshComponentUVE{Asset::kInvalidAssetGuidUVE, Asset::kInvalidAssetGuidUVE}));
 }
 
-TEST(MeshComponentUVE, IsMeshComponentValidUVE_RejectsPartialAssignment) {
-    EXPECT_FALSE(Scene::IsMeshComponentValidUVE(Scene::MeshComponentUVE{Asset::AssetGuidUVE{1U},
-                                                                         Asset::kInvalidAssetGuidUVE}));
+TEST(MeshComponentUVE, IsMeshComponentValidUVE_AllowsAMeshWithoutAMaterialOnly) {
+    // A mesh alone is drawn with the built-in lit shader; a material alone has nothing to draw on.
+    EXPECT_TRUE(Scene::IsMeshComponentValidUVE(Scene::MeshComponentUVE{Asset::AssetGuidUVE{1U},
+                                                                        Asset::kInvalidAssetGuidUVE}));
     EXPECT_FALSE(Scene::IsMeshComponentValidUVE(Scene::MeshComponentUVE{Asset::kInvalidAssetGuidUVE,
                                                                          Asset::AssetGuidUVE{2U}}));
     EXPECT_TRUE(Scene::IsMeshComponentValidUVE(Scene::MeshComponentUVE{Asset::AssetGuidUVE{1U},
                                                                         Asset::AssetGuidUVE{2U}}));
+}
+
+TEST_F(MeshRendererUVETest, ExtractRenderQueueUVE_MeshWithoutMaterial_IsLeftToTheBuiltInPathUncounted) {
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, Asset::AssetGuidUVE{1U}, Asset::kInvalidAssetGuidUVE);
+
+    const RenderQueueUVE queue =
+        meshRenderer.ExtractRenderQueueUVE(entityManager, assetManager, assetDatabase, MakeTestFrustumUVE());
+
+    // Not a material draw, and not a broken reference either: Renderer3DUVE draws it with the
+    // built-in lit shader.
+    EXPECT_TRUE(queue.opaqueItems.empty());
+    EXPECT_EQ(queue.invalidAssetReferences, 0U);
 }
 
 TEST_F(MeshRendererUVETest, ExtractRenderQueueUVE_InvalidGuid_Skipped) {
@@ -174,9 +187,9 @@ TEST_F(MeshRendererUVETest, ExtractRenderQueueUVE_InvalidGuid_Skipped) {
 }
 
 #if UVE_DEBUG
-TEST_F(MeshRendererUVETest, ExtractRenderQueueUVE_PartialReference_Asserts) {
-    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, Asset::AssetGuidUVE{1U},
-                      Asset::kInvalidAssetGuidUVE);
+TEST_F(MeshRendererUVETest, ExtractRenderQueueUVE_MaterialWithoutMesh_Asserts) {
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, Asset::kInvalidAssetGuidUVE,
+                      Asset::AssetGuidUVE{1U});
 
     EXPECT_DEATH(
         { static_cast<void>(meshRenderer.ExtractRenderQueueUVE(entityManager, assetManager, assetDatabase,

@@ -28,6 +28,10 @@
 
 #include <imgui.h>
 
+#include "uve/asset/asset_import_queue_uve.h"
+#include "uve/component/mesh_component_uve.h"
+#include "uve/logging/logging_macros_uve.h"
+
 #include "editor_chrome_layout_uve.h"
 #include "editor_fonts_uve.h"
 #include "editor_node_icons_uve.h"
@@ -544,6 +548,23 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
     ImGui::End();
 }
 
+bool EditorUVE::QueueModelImportUVE(const Asset::ProjectFileEntryUVE& entry) {
+    const Asset::ProjectFileSnapshotUVE snapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    std::filesystem::path destination = entry.relativePath;
+    destination.replace_extension(".uvemodel");
+    Asset::AssetImportRequestUVE request;
+    request.sourcePath = snapshot.contentRoot / entry.relativePath;
+    request.destinationPath = snapshot.contentRoot / destination;
+    request.settings = std::make_shared<const Asset::AssetImportSettingsUVE>();
+    if (!m_services->GetAssetImportQueueUVE().EnqueueUVE(std::move(request)).has_value()) {
+        UVE_WARNING("EditorUVE: the import queue rejected {}", entry.relativePath.generic_string());
+        return false;
+    }
+    // The new .uvemodel appears once the queue has run; rescan so the Content Browser shows it.
+    m_projectFileSnapshotInitialized = false;
+    return true;
+}
+
 void EditorUVE::DrawFilesystemContextPopupUVE() {
     if (!m_filesystemContextVisible) {
         return;
@@ -595,6 +616,34 @@ void EditorUVE::DrawFilesystemContextPopupUVE() {
             m_selectedAsset.reset();
             m_filesystemContextVisible = false;
         }
+    }
+
+    // Models from a DCC tool: glTF 2.0 is what Blender (and most engines and editors) export
+    // natively. Importing writes a .uvemodel beside the source and registers it, after which it is
+    // offered in every Mesh picker.
+    const std::string contextExtension = contextEntry.relativePath.extension().string();
+    if (contextEntry.kind != Asset::ProjectFileEntryKindUVE::Directory &&
+        (contextExtension == ".glb" || contextExtension == ".gltf") && matches("Import as Mesh")) {
+        ImGui::BeginDisabled(!IsAuthoringCommandAllowedUVE());
+        if (ImGui::MenuItem("Import as Mesh")) {
+            static_cast<void>(QueueModelImportUVE(contextEntry));
+            m_filesystemContextVisible = false;
+        }
+        ImGui::EndDisabled();
+    }
+    if (contextEntry.registeredAssetGuid.has_value() && contextExtension == ".uvemodel" &&
+        matches("Use as Mesh on selected node")) {
+        const bool canAssign = IsDocumentEntityUVE(m_selectedEntity) && IsAuthoringCommandAllowedUVE() &&
+                               m_services->GetEntityManagerUVE().HasComponentUVE<Scene::MeshComponentUVE>(m_selectedEntity);
+        ImGui::BeginDisabled(!canAssign);
+        if (ImGui::MenuItem("Use as Mesh on selected node")) {
+            Scene::MeshComponentUVE mesh =
+                m_services->GetEntityManagerUVE().GetComponentUVE<Scene::MeshComponentUVE>(m_selectedEntity);
+            mesh.meshGuid = *contextEntry.registeredAssetGuid;
+            static_cast<void>(SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::Mesh, mesh));
+            m_filesystemContextVisible = false;
+        }
+        ImGui::EndDisabled();
     }
 
     ImGui::Separator();

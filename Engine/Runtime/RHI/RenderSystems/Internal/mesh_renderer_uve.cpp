@@ -303,7 +303,11 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
             if (meshComponent.meshGuid == Asset::kInvalidAssetGuidUVE) {
                 ++outVisibilitySet.invalidAssetReferences;
             }
-            if (meshComponent.materialGuid == Asset::kInvalidAssetGuidUVE) {
+            // A mesh with no material is not a broken reference: the renderer draws it with the
+            // built-in lit shader (Renderer3DUVE's unmaterialed path), so only an unassigned pair
+            // counts its material as missing.
+            if (meshComponent.materialGuid == Asset::kInvalidAssetGuidUVE &&
+                meshComponent.meshGuid == Asset::kInvalidAssetGuidUVE) {
                 ++outVisibilitySet.invalidAssetReferences;
             }
             if (meshComponent.meshGuid == Asset::kInvalidAssetGuidUVE ||
