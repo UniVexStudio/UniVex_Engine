@@ -209,6 +209,19 @@ bool SceneGraphUVE::ResolveInterpolationUVE(const PendingEntityUVE& item, const 
     return resolved;
 }
 
+std::optional<ResolvedNodeModesUVE> SceneGraphUVE::TryGetResolvedNodeModesUVE(
+    const EntityUVE entity) const {
+    const auto iterator = m_passStateScratch.find(entity);
+    if (iterator == m_passStateScratch.end()) {
+        return std::nullopt;
+    }
+    // Every stored state went through ResolveInheritedModesUVE, which never leaves Inherit behind
+    // (Inherit at the top of a hierarchy resolves to the default), so these are final answers.
+    return ResolvedNodeModesUVE{iterator->second.processModeInHierarchy,
+                                iterator->second.threadGroupModeInHierarchy,
+                                iterator->second.autoTranslateModeInHierarchy};
+}
+
 void SceneGraphUVE::ResolveInheritedModesUVE(const PendingEntityUVE& item,
                                              const WorldTransformPassStateUVE& parentState,
                                              WorldTransformPassStateUVE& outState) noexcept {

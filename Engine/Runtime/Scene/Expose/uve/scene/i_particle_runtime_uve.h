@@ -57,6 +57,9 @@ struct ParticleRuntimeInstanceSnapshotUVE final {
     std::uint32_t liveParticles = 0U;
     std::uint64_t generation = 0U;
     bool enabled = false;
+    /// Whether this emitter is simulated on a worker thread when a thread pool is supplied - its
+    /// resolved Thread Group mode, as the engine last set it.
+    bool workerEligible = false;
 
     [[nodiscard]] bool operator==(const ParticleRuntimeInstanceSnapshotUVE&) const = default;
 };

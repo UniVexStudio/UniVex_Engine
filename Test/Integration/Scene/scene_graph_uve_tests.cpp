@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <optional>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -667,6 +668,49 @@ TEST_F(SceneGraphUVETest, UpdateUVE_ARootWithNoAncestorsResolvesToTheHierarchyDe
               ThreadGroupModeUVE::MainThread);
     EXPECT_EQ(entityManager.GetComponentUVE<AutoTranslateComponentUVE>(root).resolvedModeInHierarchy,
               AutoTranslateModeUVE::Always);
+}
+
+TEST_F(SceneGraphUVETest, TryGetResolvedNodeModesUVE_AnswersForANodeThatCarriesNoComponent) {
+    // The case the query exists for. The resolved mode is written onto a component only when the
+    // entity carries one, so a consumer that read the component alone would translate a label
+    // with no Auto Translate component sitting under a Disabled menu. The query answers for it.
+    const EntityUVE menu = entityManager.CreateEntityUVE();
+    const EntityUVE label = entityManager.CreateEntityUVE();
+    for (const EntityUVE entity : {menu, label}) {
+        sceneGraph.AttachTransformUVE(entityManager, entity, TransformComponentUVE{});
+    }
+    sceneGraph.SetParentUVE(entityManager, label, menu);
+    AutoTranslateComponentUVE disabled{};
+    disabled.mode = AutoTranslateModeUVE::Disabled;
+    entityManager.AddComponentUVE<AutoTranslateComponentUVE>(menu, disabled);
+    ProcessComponentUVE always{};
+    always.mode = ProcessModeUVE::Always;
+    entityManager.AddComponentUVE<ProcessComponentUVE>(menu, always);
+
+    sceneGraph.UpdateUVE(entityManager);
+
+    ASSERT_FALSE(entityManager.HasComponentUVE<AutoTranslateComponentUVE>(label));
+    const std::optional<ResolvedNodeModesUVE> resolved = sceneGraph.TryGetResolvedNodeModesUVE(label);
+    ASSERT_TRUE(resolved.has_value());
+    EXPECT_EQ(resolved->autoTranslate, AutoTranslateModeUVE::Disabled);
+    EXPECT_EQ(resolved->process, ProcessModeUVE::Always);
+    EXPECT_EQ(resolved->threadGroup, ThreadGroupModeUVE::MainThread);
+}
+
+TEST_F(SceneGraphUVETest, TryGetResolvedNodeModesUVE_IsEmptyForAnEntityTheUpdateNeverSaw) {
+    // Not a scene-graph node at all, and a node created after the last update: in both cases
+    // there is no answer yet, and saying so is better than inventing the default.
+    const EntityUVE bare = entityManager.CreateEntityUVE();
+    sceneGraph.UpdateUVE(entityManager);
+    EXPECT_FALSE(sceneGraph.TryGetResolvedNodeModesUVE(bare).has_value());
+
+    const EntityUVE late = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, late, TransformComponentUVE{});
+    EXPECT_FALSE(sceneGraph.TryGetResolvedNodeModesUVE(late).has_value());
+    sceneGraph.UpdateUVE(entityManager);
+    ASSERT_TRUE(sceneGraph.TryGetResolvedNodeModesUVE(late).has_value());
+    // A root that opted into nothing resolves to the hierarchy defaults, never to Inherit.
+    EXPECT_EQ(*sceneGraph.TryGetResolvedNodeModesUVE(late), ResolvedNodeModesUVE{});
 }
 
 TEST_F(SceneGraphUVETest, UpdateUVE_ReparentingRecomputesInheritedVisibility) {

@@ -97,6 +97,10 @@ struct ScriptRuntimeInstanceUVE final {
     ScriptRuntimeStateUVE state;
     std::uint64_t generation = 1U;
     bool enabled = true;
+    /// Tick order key: lower runs first, ties fall back to entity order - the order every tick
+    /// used before priority existed, so an instance nobody set a priority on ticks exactly where
+    /// it always did.
+    std::int32_t priority = 0;
 };
 
 struct ScriptRuntimeTickResultUVE final {
@@ -179,6 +183,9 @@ public:
     [[nodiscard]] ScriptRuntimeEnabledUpdateResultUVE SetEnabledDetailedUVE(Scene::EntityUVE entity,
                                                                               bool enabled) noexcept;
     [[nodiscard]] bool SetEnabledUVE(Scene::EntityUVE entity, bool enabled) noexcept;
+    /// Sets the instance's tick order key (see ScriptRuntimeInstanceUVE::priority). Returns false
+    /// when no instance exists for `entity`.
+    [[nodiscard]] bool SetPriorityUVE(Scene::EntityUVE entity, std::int32_t priority) noexcept;
     [[nodiscard]] ScriptRuntimeStateUpdateResultUVE SetStateDetailedUVE(Scene::EntityUVE entity,
                                                                          ScriptRuntimeStateUVE state);
     [[nodiscard]] bool SetStateUVE(Scene::EntityUVE entity, ScriptRuntimeStateUVE state);
@@ -200,6 +207,10 @@ public:
         ScriptVmExecutionOptionsUVE options = {});
 
 private:
+    /// The enabled instances in tick order. Shared by both tick paths so the order rule - priority,
+    /// then entity - exists once.
+    [[nodiscard]] std::vector<Scene::EntityUVE> CollectTickOrderUVE() const;
+
     std::unordered_map<Scene::EntityUVE, ScriptRuntimeInstanceUVE> m_instances;
 };
 
