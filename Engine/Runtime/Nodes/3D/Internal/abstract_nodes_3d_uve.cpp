@@ -12,6 +12,17 @@
 #include "uve/nodes/3d/node_3d_uve.h"
 
 namespace UVE::Scene {
+void ApplyNode3DRecipeUVE(IEntityManagerUVE& entityManager, const EntityUVE entity, const std::string_view name) {
+    if (!entityManager.IsAliveUVE(entity)) {
+        return;
+    }
+    EnsureNode3DBaselineUVE(entityManager, entity, name);
+    if (!entityManager.HasComponentUVE<VisibilityComponentUVE>(entity)) {
+        entityManager.AddComponentUVE<VisibilityComponentUVE>(entity, VisibilityComponentUVE{});
+    }
+    EnsureCommonNodeSectionUVE(entityManager, entity);
+}
+
 namespace {
 
 /// The Node3D recipe under the child's name, then the base component.
@@ -20,11 +31,7 @@ void ApplyBaseUVE(IEntityManagerUVE& entityManager, const EntityUVE entity, cons
     if (!entityManager.IsAliveUVE(entity)) {
         return;
     }
-    EnsureNode3DBaselineUVE(entityManager, entity, nameFallback);
-    if (!entityManager.HasComponentUVE<VisibilityComponentUVE>(entity)) {
-        entityManager.AddComponentUVE<VisibilityComponentUVE>(entity, VisibilityComponentUVE{});
-    }
-    EnsureCommonNodeSectionUVE(entityManager, entity);
+    ApplyNode3DRecipeUVE(entityManager, entity, nameFallback);
     if (!entityManager.HasComponentUVE<BaseComponentT>(entity)) {
         entityManager.AddComponentUVE<BaseComponentT>(entity, BaseComponentT{});
     }

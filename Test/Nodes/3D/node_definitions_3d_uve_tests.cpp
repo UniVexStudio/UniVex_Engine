@@ -507,6 +507,15 @@ TEST_F(Node3DDefinitionsUVETest, RenderInstanceFamilyComponentsRejectValuesTheyS
     EXPECT_FALSE(IsFogVolume3DNodeComponentValidUVE(fog));
 }
 
+TEST_F(Node3DDefinitionsUVETest, Skeleton3DIsANode3DChildThatStartsWithNoBones) {
+    const EntityUVE skeleton = CreateEntityUVE();
+    ApplySkeleton3DNodeDefinitionUVE(entityManager, skeleton, Skeleton3DNodeDefinitionUVE{});
+    ExpectNode3DBaselineUVE(entityManager, skeleton, "Skeleton3D");
+    EXPECT_TRUE(entityManager.HasComponentUVE<VisibilityComponentUVE>(skeleton));
+    EXPECT_TRUE(entityManager.HasComponentUVE<NodeMetadataComponentUVE>(skeleton));
+    EXPECT_TRUE(entityManager.GetComponentUVE<Skeleton3DNodeComponentUVE>(skeleton).bones.empty());
+}
+
 TEST_F(Node3DDefinitionsUVETest, Node3DApplyIsIdempotent) {
     const EntityUVE entity = CreateEntityUVE();
     ApplyNode3DNodeDefinitionUVE(entityManager, entity, Node3DNodeDefinitionUVE{});

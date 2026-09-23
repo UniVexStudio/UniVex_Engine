@@ -492,7 +492,10 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
                 contentThumbnail != 0U ? contentThumbnail
                 : type == ContentBrowserItemTypeUVE::Folder
                     ? 0U
-                    : m_uiAssets.GetContentTypeIconTextureIdUVE(GetContentBrowserItemTypeLabelUVE(type));
+                    // A model shares the mesh badge: there is no separate artwork for it, and a
+                    // rig with no geometry (bones only) would otherwise show a blank card.
+                    : m_uiAssets.GetContentTypeIconTextureIdUVE(GetContentBrowserItemTypeLabelUVE(
+                          type == ContentBrowserItemTypeUVE::Model ? ContentBrowserItemTypeUVE::Mesh : type));
             if (iconTexture != 0U) {
                 const float iconX = cardMin.x + (kCardWidthUVE - kCardIconSizeUVE) * 0.5F;
                 gridDrawList->AddImage(static_cast<ImTextureID>(iconTexture), ImVec2{iconX, cardMin.y + 4.0F},

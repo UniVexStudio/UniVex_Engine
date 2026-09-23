@@ -44,6 +44,10 @@ struct LightEmitter3DNodeDefinitionUVE final {
     static constexpr std::string_view typeName = "LightEmitter3D";
 };
 
+/// The Node3D recipe - transform baseline, Visibility and the common Node section - under `name`.
+/// Every Node3D child applies this first, directly or through its abstract base.
+void ApplyNode3DRecipeUVE(IEntityManagerUVE& entityManager, EntityUVE entity, std::string_view name);
+
 /// Each applies the Node3D recipe (transform baseline, Visibility, the common Node section) and
 /// attaches its base component where missing. Existing components and their authored values are
 /// left alone, and a destroyed entity is refused quietly. `nameFallback` is the name given to an

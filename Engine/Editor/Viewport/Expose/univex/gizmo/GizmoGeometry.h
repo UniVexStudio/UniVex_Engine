@@ -43,6 +43,10 @@ struct GizmoTriangle {
     Vec3 a{}, b{}, c{};
     Vec3 color{};
     float alpha = 1.f;
+    // How much real lighting the face takes: 0 for flat UI shapes (rings, plane handles, discs),
+    // which keep a gentle fixed shade so their colour never changes with the angle; 1 for solid
+    // bodies (shafts, cones, cubes, spheres, bones), lit from both sides so they read as 3D.
+    float lit = 0.f;
 };
 
 struct GizmoMesh {

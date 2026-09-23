@@ -425,6 +425,15 @@ private:
         } else {
             SeedEditorAxisColorsFromDefaultsUVE();
         }
+        std::vector<univex::gizmo::BoneOverlayUVE> bones;
+        bones.reserve(overlayState.bones.size());
+        const auto toVec3 = [](const std::array<float, 3>& value) { return univex::math::Vec3{value[0], value[1], value[2]}; };
+        for (const auto& bone : overlayState.bones) {
+            bones.push_back(univex::gizmo::BoneOverlayUVE{toVec3(bone.head), toVec3(bone.tail), toVec3(bone.side),
+                                                          bone.hasLink, toVec3(bone.linkFrom), bone.skeletonSelected,
+                                                          bone.boneSelected});
+        }
+        renderPass_->SetBonesUVE(std::move(bones));
         using UVE::Editor::EditorUVE;
         switch (overlayState.gizmoMode) {
             case EditorUVE::ViewportGizmoModeUVE::Move:

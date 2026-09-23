@@ -19,9 +19,12 @@
 #pragma once
 
 #include <optional>
+#include <utility>
+#include <vector>
 #include <string>
 
 #include "univex/camera/OrbitCamera.h"
+#include "univex/gizmo/BoneShape.h"
 #include "univex/gizmo/GizmoGeometry.h"
 #include "univex/gizmo/GizmoStyle.h"
 #include "univex/gizmo/NavGizmo.h"
@@ -107,6 +110,10 @@ public:
     // camera is currently looking; pass nullopt to restore the original camera-target behavior.
     void SetGizmoPivotOverride(std::optional<Vec3> pivot) { gizmoPivotOverride_ = pivot; }
 
+    // The Skeleton3D bones to draw this frame, in world space (empty: none). Drawn over the
+    // scene, under the transform gizmo, so a rig inside its mesh is still visible and editable.
+    void SetBonesUVE(std::vector<univex::gizmo::BoneOverlayUVE> bones) { bones_ = std::move(bones); }
+
     // ---- nav gizmo geometry, shared with input handling -------------------
     // The nav gizmo's own camera: the main camera's rotation, no translation.
     [[nodiscard]] static Mat4 NavViewMatrix(const OrbitCamera& camera);
@@ -118,6 +125,7 @@ public:
 private:
     void DrawBackground() const;
     void DrawTransformGizmo(const OrbitCamera& camera, int width, int height) const;
+    void DrawBones(const OrbitCamera& camera, int width, int height) const;
     void DrawNavGizmo(const OrbitCamera& camera, int width, int height) const;
     void Destroy() noexcept;
 
@@ -131,6 +139,7 @@ private:
     GizmoStyle style_{};
     GizmoMode gizmoMode_ = GizmoMode::Universal;
     std::optional<Vec3> gizmoPivotOverride_;
+    std::vector<univex::gizmo::BoneOverlayUVE> bones_;
 };
 
 } // namespace univex::app

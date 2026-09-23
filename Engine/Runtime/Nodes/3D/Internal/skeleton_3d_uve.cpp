@@ -2,6 +2,9 @@
 
 #include "uve/nodes/3d/skeleton_3d_uve.h"
 
+#include "uve/entity/i_entity_manager_uve.h"
+#include "uve/nodes/3d/abstract_nodes_3d_uve.h"
+
 namespace UVE::Scene {
 
 bool IsSkeleton3DNodeComponentValidUVE(const Skeleton3DNodeComponentUVE& value) noexcept {
@@ -23,6 +26,14 @@ bool IsSkeleton3DNodeComponentValidUVE(const Skeleton3DNodeComponentUVE& value) 
         }
     }
     return true;
+}
+
+void ApplySkeleton3DNodeDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
+                                      const Skeleton3DNodeDefinitionUVE& value) {
+    ApplyNode3DRecipeUVE(entityManager, entity, Skeleton3DNodeDefinitionUVE::defaultName);
+    if (entityManager.IsAliveUVE(entity) && !entityManager.HasComponentUVE<Skeleton3DNodeComponentUVE>(entity)) {
+        entityManager.AddComponentUVE<Skeleton3DNodeComponentUVE>(entity, value.skeleton);
+    }
 }
 
 } // namespace UVE::Scene

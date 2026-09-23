@@ -127,10 +127,12 @@ void DrawTooltipUVE(const TypeMetadataPropertyUVE& property) {
 /// Custom drawers that lay out their own rows - a multi-line box, a slot with an action strip, a
 /// list with an add button - rather than filling a value cell. Any other id falls back to the
 /// generic editor for its value type, which is where the rotation and entity-picker ids still go.
-constexpr std::array<std::string_view, 3> kBlockPropertyDrawerIdsUVE{
+constexpr std::array<std::string_view, 5> kBlockPropertyDrawerIdsUVE{
     "multiline-text",
     "script-slot",
     "node-metadata",
+    "skeleton-source",
+    "skeleton-bones",
 };
 
 [[nodiscard]] bool IsBlockPropertyDrawerUVE(const std::string& drawerId) noexcept {
@@ -685,6 +687,14 @@ bool EditorUVE::DrawCustomPropertyUVE(const TypeMetadataEntryUVE& entry, const T
         DrawNodeMetadataPropertyUVE(entry, property, instance);
         return true;
     }
+    if (property.customDrawerId == "skeleton-source") {
+        DrawSkeletonSourcePropertyUVE(entry, property, instance);
+        return true;
+    }
+    if (property.customDrawerId == "skeleton-bones") {
+        DrawSkeletonBonesPropertyUVE(entry, property, instance);
+        return true;
+    }
     return false;
 }
 
@@ -767,6 +777,31 @@ std::optional<std::string> EditorUVE::DrawCommittedTextInputUVE(const char* cons
         return std::nullopt;
     }
     return committed;
+}
+
+bool EditorUVE::SetSelectedComponentValueUVE(const TypeMetadataEntryUVE& entry, const void* const newInstance) {
+    if (!IsAuthoringCommandAllowedUVE() || !HasSingleDocumentSelectionUVE() || !entry.HasFactoryUVE() ||
+        newInstance == nullptr || (entry.isInstanceValid != nullptr && !entry.isInstanceValid(newInstance))) {
+        return false;
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (!entityManager.HasComponentUVE(m_selectedEntity, entry.typeIndex)) {
+        return false;
+    }
+    void* const instance = entityManager.GetComponentPointerUVE(m_selectedEntity, entry.typeIndex);
+    Core::TypeInstanceUVE before = Core::TypeInstanceUVE::CloneUVE(entry, instance);
+    Core::TypeInstanceUVE after = Core::TypeInstanceUVE::CloneUVE(entry, newInstance);
+    if (!before.IsValidUVE() || !after.IsValidUVE()) {
+        return false;
+    }
+    entry.assignInstance(instance, newInstance);
+    const EditorSelectionSnapshotUVE selectionBefore = CaptureSelectionSnapshotUVE();
+    const bool dirtyBefore = m_sceneDirty;
+    m_sceneDirty = true;
+    RecordHistoryUVE(ComponentPropertyHistoryEntryUVE{m_selectedEntity, &entry, std::move(before), std::move(after),
+                                                      selectionBefore, CaptureSelectionSnapshotUVE(), dirtyBefore,
+                                                      true});
+    return true;
 }
 
 bool EditorUVE::SetSelectedComponentPropertyUVE(const TypeMetadataEntryUVE& entry,

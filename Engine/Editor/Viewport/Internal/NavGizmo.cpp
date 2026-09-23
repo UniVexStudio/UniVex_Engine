@@ -152,15 +152,18 @@ NavGizmoMeshes BuildNavGizmoMeshes(const GizmoStyle& style, const Vec3& viewDire
     const auto handles = NavHandles(style);
 
     // Axis stubs go in the underlay, so the balls sit on top of them.
+    // A faint plate behind the widget, so the axes read against any scene behind the corner.
+    AddFacingDisc(meshes.underlay, view * 0.5f, NavViewHalfExtent(style) * 0.96f, view,
+                  Vec3{0.055f, 0.063f, 0.082f}, 0.55f, style.navBallSegments);
     for (const NavHandle& handle : handles) {
         if (!handle.positive) continue; // one stub per axis, drawn full length both ways
+        // Outlined stroke: a darker, wider copy underneath, as the transform gizmo's shafts do.
         meshes.underlay.lines.push_back(GizmoLine{handle.direction * -1.f, handle.direction,
-                                                  handle.color * 0.75f, style.navAxisLineWidthPx});
+                                                  handle.color * 0.28f, style.navAxisLineWidthPx + 2.f});
+        meshes.underlay.lines.push_back(GizmoLine{handle.direction * -1.f, handle.direction,
+                                                  handle.color * 0.8f, style.navAxisLineWidthPx});
     }
 
-    // Balls, drawn back-to-front so the near ones cover the far ones. The
-    // nav viewport has no depth buffer of its own worth relying on, and a
-    // painter's sort over six discs is exact.
     std::vector<const NavHandle*> sorted;
     sorted.reserve(handles.size());
     for (const NavHandle& handle : handles) sorted.push_back(&handle);
@@ -174,19 +177,18 @@ NavGizmoMeshes BuildNavGizmoMeshes(const GizmoStyle& style, const Vec3& viewDire
     for (const NavHandle* handle : sorted) {
         const Vec3 center = handle->direction;
         if (handle->positive) {
+            // A clean ball: dark rim and flat body. No highlight - a highlight sitting under the
+            // letter broke its outline into light and dark patches and made it hard to read.
             AddFacingDiscWithRim(mesh, center, style.navBallRadius, view, handle->color,
                                  style.navBallSegments);
-            // Only the positive ends are labelled: putting a letter in the
-            // hollow negative rings as well doubles the clutter without adding
-            // anything, since the ring already says which end it is.
             AddAxisLabel(mesh, center + view * -0.01f, right, up, handle->axisLabel,
                          style.navBallRadius * style.navLabelScale,
                          style.navLabelColor, style.navLabelWidthPx);
         } else {
-            // Negative ends read as hollow rings, so the two directions of an
-            // axis are never confused at a glance.
-            AddFacingAnnulus(mesh, center, style.navBallRadius, style.navBallRadius * 0.62f,
-                             view, handle->color, Vec3{0.078f, 0.090f, 0.125f},
+            // The negative end: a ring in the axis colour around a dark core - same family,
+            // clearly the back of the axis.
+            AddFacingAnnulus(mesh, center, style.navBallRadius * 0.82f, style.navBallRadius * 0.52f,
+                             view, handle->color * 0.85f, Vec3{0.078f, 0.090f, 0.125f},
                              style.navBallSegments);
         }
     }

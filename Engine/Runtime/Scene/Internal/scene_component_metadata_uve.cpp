@@ -40,6 +40,7 @@
 #include "uve/logging/logging_macros_uve.h"
 #include "uve/nodes/3d/decal_3d_uve.h"
 #include "uve/nodes/3d/fog_volume_3d_uve.h"
+#include "uve/nodes/3d/skeleton_3d_uve.h"
 #include "uve/nodes/3d/world_environment_3d_uve.h"
 #include "uve/math/quaternion_uve.h"
 
@@ -805,6 +806,29 @@ void DeclareNodeBasesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
             }));
 }
 
+/// Skeleton3D: a Node3D child. Its bones are read-only here - they come from the rigged model the
+/// Source names and change only by re-exporting it - so they are declared for display and saving,
+/// with a drawer that shows the hierarchy instead of a generic editor.
+void DeclareSkeletonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
+    using K = Skeleton3DNodeComponentUVE;
+    TypeMetadataPropertyUVE bones = WithCustomDrawerUVE(DeclareUVE<&K::bones>("bones", "Bones", "SkeletonBones"),
+                                                        "skeleton-bones");
+    bones.flags = TypeMetadataPropertyFlagsUVE::ReadOnly;
+    AddValidatedUVE<Skeleton3DNodeComponentUVE, &IsSkeleton3DNodeComponentValidUVE>(
+        entries,
+        MakeEntryUVE("component.skeleton_3d", "Skeleton3D", kSectionOrderTypeSpecificUVE,
+                     {
+                         WithTooltipUVE(WithCustomDrawerUVE(DeclareUVE<&K::skeletonAssetPath>(
+                                                                "skeletonAssetPath", "Source", kPropertyTypeStringUVE),
+                                                            "skeleton-source"),
+                                        "The rigged model (a glTF exported from Blender, say) whose armature this "
+                                        "skeleton uses. Its bones are read from it."),
+                         WithTooltipUVE(DeclareUVE<&K::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
+                                        "Off: attached meshes and bone attachments stop following this skeleton."),
+                         std::move(bones),
+                     }));
+}
+
 /// Concrete RenderInstance3D children. Each brings exactly its own section; everything above it
 /// comes from the bases.
 void DeclareRenderInstanceNodesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
@@ -1044,6 +1068,7 @@ void DeclareNodeCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     DeclareMediaAndUIUVE(entries);
     DeclareNodeBasesUVE(entries);
     DeclareRenderInstanceNodesUVE(entries);
+    DeclareSkeletonUVE(entries);
     DeclareNodeCommonUVE(entries);
 
     TypeMetadataRegistryUVE registry;
