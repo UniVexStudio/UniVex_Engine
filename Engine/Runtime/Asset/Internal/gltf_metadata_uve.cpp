@@ -40,9 +40,10 @@ constexpr std::uint32_t kMaximumCountUVE = 1'000'000U;
         const auto materials = CountArrayUVE(document, "materials");
         const auto images = CountArrayUVE(document, "images");
         const auto buffers = CountArrayUVE(document, "buffers");
-        if (!nodes || !meshes || !materials || !images || !buffers) return std::nullopt;
+        const auto skins = CountArrayUVE(document, "skins");
+        if (!nodes || !meshes || !materials || !images || !buffers || !skins) return std::nullopt;
         metadata.nodeCount = *nodes; metadata.meshCount = *meshes; metadata.materialCount = *materials;
-        metadata.imageCount = *images; metadata.bufferCount = *buffers;
+        metadata.imageCount = *images; metadata.bufferCount = *buffers; metadata.skinCount = *skins;
         return metadata;
     } catch (const nlohmann::json::exception&) { return std::nullopt; }
 }

@@ -62,6 +62,13 @@ struct EditorUVEAccessUVE final {
         return editor.m_inspectorDrawerRegistry.HasDrawerUVE(id);
     }
 
+    [[nodiscard]] static std::filesystem::path GetImportedModelPathUVE(const EditorUVE& editor,
+                                                                        const std::filesystem::path& source) {
+        return editor.GetImportedModelPathUVE(source);
+    }
+    [[nodiscard]] static bool IsRiggedModelSourceUVE(const EditorUVE& editor, const std::filesystem::path& source) {
+        return editor.IsRiggedModelSourceUVE(source);
+    }
     [[nodiscard]] static bool SetSelectedComponentPropertyUVE(EditorUVE& editor, const Core::TypeMetadataEntryUVE& entry,
                                                               const Core::TypeMetadataPropertyUVE& property,
                                                               const void* value) {
@@ -3958,6 +3965,51 @@ TEST(EditorUVETest, InspectorPropertyEditUVE_RefusesAValueTheComponentRuleReject
         editor.ShutdownUVE();
     }
     engine.Shutdown();
+}
+
+TEST(EditorUVETest, ModelSourcesUVE_AreImportedAutomaticallyOutsideTheContentFolder) {
+    const std::filesystem::path root = "uve_editor_tests_model_auto_import_content";
+    const std::filesystem::path derived = "uve_editor_tests_model_auto_import_derived";
+    std::filesystem::remove_all(root);
+    std::filesystem::remove_all(derived);
+    std::filesystem::create_directories(root / "Models");
+    {
+        std::ofstream obj(root / "Models" / "tri.obj", std::ios::binary | std::ios::trunc);
+        obj << "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n";
+        std::ofstream rig(root / "Models" / "rig.gltf", std::ios::binary | std::ios::trunc);
+        rig << R"({"asset":{"version":"2.0"},"meshes":[{}],"skins":[{"joints":[0]}],"nodes":[{}]})";
+    }
+    Core::EngineConfigUVE config = MakeEditorTestConfigUVE();
+    config.projectContentRootUVE = root;
+    config.derivedArtifactCacheRootUVE = derived / "Import";
+    config.projectChangeWatchPollIntervalSecondsUVE = 0.0;
+    Core::EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_model_auto_import.uvescene");
+        editor.InitUVE();
+        const std::filesystem::path imported = EditorUVEAccessUVE::GetImportedModelPathUVE(editor, "Models/tri.obj");
+        for (int frame = 0; frame < 8 && !std::filesystem::exists(imported); ++frame) {
+            editor.TickUVE();
+            engine.TickFrameUVE();
+        }
+        // Converted without any action, into derived data - the content folder holds only sources.
+        EXPECT_TRUE(std::filesystem::exists(imported));
+        EXPECT_TRUE(imported.generic_string().ends_with(
+            "uve_editor_tests_model_auto_import_derived/Imported/Models/tri.obj.uvemodel"))
+            << imported;
+        for (const auto& file : std::filesystem::recursive_directory_iterator(root)) {
+            EXPECT_NE(file.path().extension(), ".uvemodel") << file.path();
+        }
+        // Mesh plus bones reads as a model; a plain mesh does not.
+        EXPECT_TRUE(EditorUVEAccessUVE::IsRiggedModelSourceUVE(editor, "Models/rig.gltf"));
+        EXPECT_FALSE(EditorUVEAccessUVE::IsRiggedModelSourceUVE(editor, "Models/tri.obj"));
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+    std::filesystem::remove_all(root);
+    std::filesystem::remove_all(derived);
 }
 
 TEST(EditorUVETest, Node3DInspectorUVE_IsTransformVisibilityAndTheNodeSection) {

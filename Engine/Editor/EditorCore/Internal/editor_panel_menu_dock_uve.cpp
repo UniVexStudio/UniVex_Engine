@@ -129,18 +129,31 @@ void EditorUVE::DrawMenuBarUVE() {
         static_cast<void>(DeleteSelectedEntityUVE());
     }
 
+    // The two chrome strips never come to the front when clicked: they tile against the panels
+    // below them, and a strip drawn over a panel hides that panel's title row.
     constexpr ImGuiWindowFlags chromeFlags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
                                               ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar |
-                                              ImGuiWindowFlags_NoScrollWithMouse;
-    const auto beginChrome = [mainViewport, chromeFlags](const char* const id, const float y, const float height) {
+                                              ImGuiWindowFlags_NoScrollWithMouse |
+                                              ImGuiWindowFlags_NoBringToFrontOnFocus;
+    // Dear ImGui clamps every window to style.WindowMinSize (32px by default), which silently made
+    // the 24px title bar and the 26px tool row taller than their slots, overlapping the panels'
+    // title rows. The strips are exactly their declared height.
+    const auto beginChromeWindow = [](const char* const id, const ImGuiWindowFlags flags) {
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowMinSize, ImVec2{1.0F, 1.0F});
+        const bool open = ImGui::Begin(id, nullptr, flags);
+        ImGui::PopStyleVar();
+        return open;
+    };
+    const auto beginChrome = [mainViewport, chromeFlags, &beginChromeWindow](const char* const id, const float y,
+                                                                            const float height) {
         ImGui::SetNextWindowPos(ImVec2{mainViewport->WorkPos.x, mainViewport->WorkPos.y + y}, ImGuiCond_Always);
         ImGui::SetNextWindowSize(ImVec2{mainViewport->WorkSize.x, height}, ImGuiCond_Always);
-        return ImGui::Begin(id, nullptr, chromeFlags);
+        return beginChromeWindow(id, chromeFlags);
     };
 
     ImGui::SetNextWindowPos(ImVec2{mainViewport->WorkPos.x, mainViewport->WorkPos.y}, ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2{mainViewport->WorkSize.x, kEditorTitleBarHeightUVE}, ImGuiCond_Always);
-    if (ImGui::Begin("##uve-titlebar", nullptr, chromeFlags | ImGuiWindowFlags_MenuBar)) {
+    if (beginChromeWindow("##uve-titlebar", chromeFlags | ImGuiWindowFlags_MenuBar)) {
         ImDrawList* const titleDrawList = ImGui::GetWindowDrawList();
         const ImVec2 titleMin = ImGui::GetWindowPos();
         const ImVec2 titleMax{titleMin.x + ImGui::GetWindowWidth(), titleMin.y + kEditorTitleBarHeightUVE};

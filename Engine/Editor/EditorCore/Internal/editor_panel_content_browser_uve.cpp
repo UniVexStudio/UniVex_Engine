@@ -465,7 +465,10 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
             const int column = static_cast<int>(visibleCount) % columns;
             const int row = static_cast<int>(visibleCount) / columns;
             ++visibleCount;
-            const ContentBrowserItemTypeUVE type = ClassifyContentBrowserEntryUVE(entry);
+            ContentBrowserItemTypeUVE type = ClassifyContentBrowserEntryUVE(entry);
+            if (type == ContentBrowserItemTypeUVE::Mesh && IsRiggedModelSourceUVE(entry.relativePath)) {
+                type = ContentBrowserItemTypeUVE::Model;
+            }
             const std::string displayLabel = entry.relativePath.filename().generic_string();
             const std::string rowId = "folder-content-entry-" + entry.relativePath.generic_string();
             ImGui::PushID(rowId.c_str());
@@ -482,7 +485,8 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
             }
             const std::uintptr_t contentThumbnail =
                 type == ContentBrowserItemTypeUVE::Texture ? GetTextureThumbnailUVE(entry.relativePath)
-                : type == ContentBrowserItemTypeUVE::Mesh  ? GetMeshThumbnailUVE(entry.relativePath)
+                : type == ContentBrowserItemTypeUVE::Mesh || type == ContentBrowserItemTypeUVE::Model
+                    ? GetMeshThumbnailUVE(entry.relativePath)
                                                             : 0U;
             const std::uintptr_t iconTexture =
                 contentThumbnail != 0U ? contentThumbnail
@@ -548,23 +552,6 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
     ImGui::End();
 }
 
-bool EditorUVE::QueueModelImportUVE(const Asset::ProjectFileEntryUVE& entry) {
-    const Asset::ProjectFileSnapshotUVE snapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-    std::filesystem::path destination = entry.relativePath;
-    destination.replace_extension(".uvemodel");
-    Asset::AssetImportRequestUVE request;
-    request.sourcePath = snapshot.contentRoot / entry.relativePath;
-    request.destinationPath = snapshot.contentRoot / destination;
-    request.settings = std::make_shared<const Asset::AssetImportSettingsUVE>();
-    if (!m_services->GetAssetImportQueueUVE().EnqueueUVE(std::move(request)).has_value()) {
-        UVE_WARNING("EditorUVE: the import queue rejected {}", entry.relativePath.generic_string());
-        return false;
-    }
-    // The new .uvemodel appears once the queue has run; rescan so the Content Browser shows it.
-    m_projectFileSnapshotInitialized = false;
-    return true;
-}
-
 void EditorUVE::DrawFilesystemContextPopupUVE() {
     if (!m_filesystemContextVisible) {
         return;
@@ -618,28 +605,25 @@ void EditorUVE::DrawFilesystemContextPopupUVE() {
         }
     }
 
-    // Models from a DCC tool: glTF 2.0 is what Blender (and most engines and editors) export
-    // natively. Importing writes a .uvemodel beside the source and registers it, after which it is
-    // offered in every Mesh picker.
-    const std::string contextExtension = contextEntry.relativePath.extension().string();
-    if (contextEntry.kind != Asset::ProjectFileEntryKindUVE::Directory &&
-        (contextExtension == ".glb" || contextExtension == ".gltf") && matches("Import as Mesh")) {
-        ImGui::BeginDisabled(!IsAuthoringCommandAllowedUVE());
-        if (ImGui::MenuItem("Import as Mesh")) {
-            static_cast<void>(QueueModelImportUVE(contextEntry));
-            m_filesystemContextVisible = false;
-        }
-        ImGui::EndDisabled();
-    }
-    if (contextEntry.registeredAssetGuid.has_value() && contextExtension == ".uvemodel" &&
-        matches("Use as Mesh on selected node")) {
+    // A model source is imported automatically; this puts it on the selected node's mesh. The
+    // converted mesh must exist first - naming one that is still importing would leave the node
+    // pointing at nothing.
+    const std::filesystem::path importedModel =
+        IsModelSourcePathUVE(contextEntry.relativePath) ? GetImportedModelPathUVE(contextEntry.relativePath)
+                                                        : std::filesystem::path{};
+    std::error_code importedError;
+    const bool modelReady = !importedModel.empty() && std::filesystem::is_regular_file(importedModel, importedError);
+    const bool uvemodel = contextEntry.registeredAssetGuid.has_value() &&
+                          contextEntry.relativePath.extension().string() == ".uvemodel";
+    if ((modelReady || uvemodel) && matches("Use as Mesh on selected node")) {
         const bool canAssign = IsDocumentEntityUVE(m_selectedEntity) && IsAuthoringCommandAllowedUVE() &&
                                m_services->GetEntityManagerUVE().HasComponentUVE<Scene::MeshComponentUVE>(m_selectedEntity);
         ImGui::BeginDisabled(!canAssign);
         if (ImGui::MenuItem("Use as Mesh on selected node")) {
             Scene::MeshComponentUVE mesh =
                 m_services->GetEntityManagerUVE().GetComponentUVE<Scene::MeshComponentUVE>(m_selectedEntity);
-            mesh.meshGuid = *contextEntry.registeredAssetGuid;
+            mesh.meshGuid = modelReady ? m_services->GetAssetDatabaseUVE().RegisterUVE(importedModel)
+                                       : *contextEntry.registeredAssetGuid;
             static_cast<void>(SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::Mesh, mesh));
             m_filesystemContextVisible = false;
         }
