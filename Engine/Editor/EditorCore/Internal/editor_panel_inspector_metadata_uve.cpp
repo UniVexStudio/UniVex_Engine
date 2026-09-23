@@ -339,9 +339,9 @@ void EditorUVE::DrawMetadataComponentDrawerUVE(const Scene::EntityUVE entity, co
         return;
     }
     const void* const instance = entityManager.GetComponentPointerUVE(entity, entry.typeIndex);
-    // The scene root's components are its fixed Node section: there is no Add Component on the
-    // root to bring one back, so none of them offers Remove.
-    const bool removable = !IsSceneRootEntityUVE(entity);
+    // A fixed Inspector's components are its recipe: there is no Add Component there to bring one
+    // back, so none of them offers Remove.
+    const bool removable = !HasFixedInspectorUVE(entity);
     const auto drawRemoveButton = [this, removable](const TypeMetadataEntryUVE& owner) {
         const std::optional<EditorSceneComponentKindUVE> kind = FindRemovableKindUVE(owner.typeId);
         if (!removable || !kind.has_value()) {

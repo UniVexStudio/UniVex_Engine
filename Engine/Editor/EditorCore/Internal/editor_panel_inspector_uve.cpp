@@ -59,6 +59,7 @@
 #include "uve/component/ui_button_component_uve.h"
 #include "uve/component/ui_image_component_uve.h"
 #include "uve/component/ui_text_component_uve.h"
+#include "uve/component/visibility_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
 #include "uve/nodes/3d/world_environment_3d_uve.h"
 #include "uve/scene/i_scene_graph_uve.h"
@@ -212,11 +213,22 @@ void EditorUVE::DrawInspectorContentUVE() {
 
     ImGui::BeginDisabled(!IsAuthoringCommandAllowedUVE());
     ImGui::Text("%s", GetEntityDisplayLabelUVE(m_selectedEntity).c_str());
-    // The scene root is a fixed, short Inspector: the common Node section and nothing else. It is
-    // renamed from the Scene panel, it has no parent, it has no transform, and there is nothing
-    // to add to it, so the search box, the Add Component panel and the id line would all be chrome
-    // around six rows.
-    if (IsSceneRootEntityUVE(m_selectedEntity)) {
+    // The scene root and a plain Node3D are fixed, short Inspectors: their recipe's sections and
+    // nothing else. They are renamed and reparented from the Scene panel, and there is nothing to
+    // add to them, so a search box, an Add Component panel and an id line would be chrome around a
+    // handful of rows.
+    if (HasFixedInspectorUVE(m_selectedEntity)) {
+        if (IsPlainNode3DEntityUVE(m_selectedEntity)) {
+            // A Node3D saved before its recipe included Visibility and the Node section is given
+            // them here, where they are first needed. Every default is Inherit or empty, so this
+            // changes nothing about how the scene runs.
+            Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+            if (!entityManager.HasComponentUVE<Scene::VisibilityComponentUVE>(m_selectedEntity)) {
+                entityManager.AddComponentUVE<Scene::VisibilityComponentUVE>(m_selectedEntity,
+                                                                             Scene::VisibilityComponentUVE{});
+            }
+            Scene::EnsureCommonNodeSectionUVE(entityManager, m_selectedEntity);
+        }
         ImGui::Separator();
         m_inspectorDrawerRegistry.DrawEligibleUVE(m_selectedEntity);
         ImGui::EndDisabled();
@@ -245,14 +257,14 @@ void EditorUVE::DrawInspectorContentUVE() {
 void EditorUVE::RegisterBuiltInInspectorDrawersUVE() {
     static_cast<void>(m_inspectorDrawerRegistry.RegisterDrawerUVE(InspectorDrawerEntryUVE{
         "name",
-        // The root is renamed from the Scene panel; its Inspector is only the Node section.
-        [this](const Scene::EntityUVE entity) { return IsDocumentEntityUVE(entity) && !IsSceneRootEntityUVE(entity); },
+        // Fixed Inspectors (root, plain Node3D) are renamed from the Scene panel.
+        [this](const Scene::EntityUVE entity) { return IsDocumentEntityUVE(entity) && !HasFixedInspectorUVE(entity); },
         [this](const Scene::EntityUVE entity) { DrawNameInspectorDrawerUVE(entity); },
     }));
     static_cast<void>(m_inspectorDrawerRegistry.RegisterDrawerUVE(InspectorDrawerEntryUVE{
         "hierarchy",
-        // The root has no parent and cannot be given one.
-        [this](const Scene::EntityUVE entity) { return IsDocumentEntityUVE(entity) && !IsSceneRootEntityUVE(entity); },
+        // Fixed Inspectors are reparented from the Scene panel; the root has no parent at all.
+        [this](const Scene::EntityUVE entity) { return IsDocumentEntityUVE(entity) && !HasFixedInspectorUVE(entity); },
         [this](const Scene::EntityUVE entity) { DrawHierarchyInspectorDrawerUVE(entity); },
     }));
     static_cast<void>(m_inspectorDrawerRegistry.RegisterDrawerUVE(InspectorDrawerEntryUVE{
@@ -381,8 +393,10 @@ void EditorUVE::DrawTransformInspectorDrawerUVE(const Scene::EntityUVE entity) {
     }
 
     Scene::TransformComponentUVE edited = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(entity);
-    ImGui::Separator();
-    DrawProceduralIconLabelUVE(8.0F, "Transform", DrawMoveIconUVE);
+    // A collapsible section like every other one; its open state is remembered per window.
+    if (!ImGui::CollapsingHeader("Transform##transform-section", ImGuiTreeNodeFlags_DefaultOpen)) {
+        return;
+    }
     float position[3]{edited.localPosition.x, edited.localPosition.y, edited.localPosition.z};
     // Displayed/edited as Euler degrees (Position/Scale's own 3-box shape, and the convention
     // every other engine's Inspector uses) even though the stored/serialized rotation stays a

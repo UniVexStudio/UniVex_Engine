@@ -62,6 +62,7 @@
 #include "uve/component/primitive_mesh_component_uve.h"
 #include "uve/component/prefab_instance_component_uve.h"
 #include "uve/component/script_component_uve.h"
+#include "uve/component/visibility_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 
 namespace UVE::Editor {
@@ -3013,6 +3014,33 @@ bool EditorUVE::RedoHistoryEntryUVE(HistoryEntryUVE& entry) {
 bool EditorUVE::IsSceneRootEntityUVE(const Scene::EntityUVE entity) const {
     return entity != Scene::kInvalidEntityUVE && m_services->GetEntityManagerUVE().IsAliveUVE(entity) &&
            m_services->GetEntityManagerUVE().HasComponentUVE<Scene::SceneRootComponentUVE>(entity);
+}
+
+bool EditorUVE::IsPlainNode3DEntityUVE(const Scene::EntityUVE entity) const {
+    if (!IsDocumentEntityUVE(entity) || IsSceneRootEntityUVE(entity)) {
+        return false;
+    }
+    const Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (!entityManager.HasComponentUVE<Scene::TransformComponentUVE>(entity)) {
+        return false;
+    }
+    static const std::array<std::type_index, 12> kRecipe{
+        std::type_index(typeid(Scene::TransformComponentUVE)), std::type_index(typeid(Scene::WorldTransformComponentUVE)),
+        std::type_index(typeid(Scene::HierarchyComponentUVE)), std::type_index(typeid(Scene::NameComponentUVE)),
+        std::type_index(typeid(Scene::VisibilityComponentUVE)), std::type_index(typeid(Scene::ProcessComponentUVE)),
+        std::type_index(typeid(Scene::ThreadGroupComponentUVE)),
+        std::type_index(typeid(Scene::PhysicsInterpolationComponentUVE)),
+        std::type_index(typeid(Scene::AutoTranslateComponentUVE)),
+        std::type_index(typeid(Scene::EditorDescriptionComponentUVE)), std::type_index(typeid(Scene::ScriptComponentUVE)),
+        std::type_index(typeid(Scene::NodeMetadataComponentUVE))};
+    const std::vector<std::type_index> types = entityManager.GetComponentTypesUVE(entity);
+    return std::all_of(types.cbegin(), types.cend(), [](const std::type_index type) {
+        return std::find(kRecipe.cbegin(), kRecipe.cend(), type) != kRecipe.cend();
+    });
+}
+
+bool EditorUVE::HasFixedInspectorUVE(const Scene::EntityUVE entity) const {
+    return IsSceneRootEntityUVE(entity) || IsPlainNode3DEntityUVE(entity);
 }
 
 Scene::EntityUVE EditorUVE::GetDocumentSceneRootUVE() {
