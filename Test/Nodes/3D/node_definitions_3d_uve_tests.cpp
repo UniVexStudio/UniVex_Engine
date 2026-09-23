@@ -12,6 +12,8 @@
 #include "uve/component/bone_modifier_component_uve.h"
 #include "uve/component/physics_object_component_uve.h"
 #include "uve/component/render_instance_component_uve.h"
+#include "uve/component/light_emitter_component_uve.h"
+#include "uve/component/surface_instance_component_uve.h"
 #include "uve/component/camera_component_uve.h"
 #include "uve/component/collider_component_uve.h"
 #include "uve/component/editor_description_component_uve.h"
@@ -408,6 +410,83 @@ TEST_F(Node3DDefinitionsUVETest, AbstractBaseComponentsRejectValuesTheySaveBadly
     EXPECT_FALSE(IsPhysicsObjectComponentValidUVE(object));
     EXPECT_FALSE(IsRenderInstanceComponentValidUVE(
         RenderInstanceComponentUVE{1U, std::numeric_limits<float>::infinity(), true}));
+}
+
+TEST_F(Node3DDefinitionsUVETest, RenderInstanceChildBasesCarryRenderInstanceAndTheirOwnComponent) {
+    const EntityUVE surface = CreateEntityUVE();
+    const EntityUVE light = CreateEntityUVE();
+    ApplySurfaceInstance3DBaseUVE(entityManager, surface, "MeshInstance3D");
+    ApplyLightEmitter3DBaseUVE(entityManager, light, "OmniLight3D");
+    ExpectNode3DBaselineUVE(entityManager, surface, "MeshInstance3D");
+    ExpectNode3DBaselineUVE(entityManager, light, "OmniLight3D");
+    for (const EntityUVE entity : {surface, light}) {
+        EXPECT_TRUE(entityManager.HasComponentUVE<RenderInstanceComponentUVE>(entity));
+        EXPECT_TRUE(entityManager.HasComponentUVE<VisibilityComponentUVE>(entity));
+        EXPECT_TRUE(entityManager.HasComponentUVE<NodeMetadataComponentUVE>(entity));
+    }
+    EXPECT_TRUE(entityManager.HasComponentUVE<SurfaceInstanceComponentUVE>(surface));
+    EXPECT_FALSE(entityManager.HasComponentUVE<LightEmitterComponentUVE>(surface));
+    EXPECT_TRUE(entityManager.HasComponentUVE<LightEmitterComponentUVE>(light));
+    EXPECT_FALSE(entityManager.HasComponentUVE<SurfaceInstanceComponentUVE>(light));
+}
+
+TEST_F(Node3DDefinitionsUVETest, Decal3DAndFogVolume3DAreRenderInstancesPlusTheirOwnComponent) {
+    const EntityUVE decal = CreateEntityUVE();
+    const EntityUVE fog = CreateEntityUVE();
+    Decal3DNodeDefinitionUVE decalDefinition{};
+    decalDefinition.decal.albedoMix = 0.25F;
+    ApplyDecal3DNodeDefinitionUVE(entityManager, decal, decalDefinition);
+    ApplyFogVolume3DNodeDefinitionUVE(entityManager, fog, FogVolume3DNodeDefinitionUVE{});
+    ExpectNode3DBaselineUVE(entityManager, decal, "Decal3D");
+    ExpectNode3DBaselineUVE(entityManager, fog, "FogVolume3D");
+    for (const EntityUVE entity : {decal, fog}) {
+        EXPECT_TRUE(entityManager.HasComponentUVE<RenderInstanceComponentUVE>(entity));
+        EXPECT_FALSE(entityManager.HasComponentUVE<SurfaceInstanceComponentUVE>(entity));
+        EXPECT_FALSE(entityManager.HasComponentUVE<LightEmitterComponentUVE>(entity));
+    }
+    EXPECT_EQ(entityManager.GetComponentUVE<Decal3DNodeComponentUVE>(decal).albedoMix, 0.25F);
+    EXPECT_EQ(entityManager.GetComponentUVE<FogVolume3DNodeComponentUVE>(fog), FogVolume3DNodeComponentUVE{});
+    // A second apply keeps what was authored.
+    entityManager.GetComponentUVE<FogVolume3DNodeComponentUVE>(fog).density = -0.5F;
+    ApplyFogVolume3DNodeDefinitionUVE(entityManager, fog, FogVolume3DNodeDefinitionUVE{});
+    EXPECT_EQ(entityManager.GetComponentUVE<FogVolume3DNodeComponentUVE>(fog).density, -0.5F);
+}
+
+TEST_F(Node3DDefinitionsUVETest, RenderInstanceFamilyComponentsRejectValuesTheySaveBadly) {
+    EXPECT_TRUE(IsSurfaceInstanceComponentValidUVE(SurfaceInstanceComponentUVE{}));
+    SurfaceInstanceComponentUVE surface{};
+    surface.transparency = 1.5F;
+    EXPECT_FALSE(IsSurfaceInstanceComponentValidUVE(surface));
+    surface = {};
+    surface.lodBias = 0.0F;
+    EXPECT_FALSE(IsSurfaceInstanceComponentValidUVE(surface));
+    surface = {};
+    surface.visibilityRangeBegin = 10.0F;
+    surface.visibilityRangeEnd = 5.0F;
+    EXPECT_FALSE(IsSurfaceInstanceComponentValidUVE(surface));
+
+    EXPECT_TRUE(IsLightEmitterComponentValidUVE(LightEmitterComponentUVE{}));
+    LightEmitterComponentUVE light{};
+    light.shadowOpacity = 2.0F;
+    EXPECT_FALSE(IsLightEmitterComponentValidUVE(light));
+    light = {};
+    light.energy = std::numeric_limits<float>::quiet_NaN();
+    EXPECT_FALSE(IsLightEmitterComponentValidUVE(light));
+
+    EXPECT_TRUE(IsDecal3DNodeComponentValidUVE(Decal3DNodeComponentUVE{}));
+    Decal3DNodeComponentUVE decal{};
+    decal.albedoMix = -0.1F;
+    EXPECT_FALSE(IsDecal3DNodeComponentValidUVE(decal));
+
+    EXPECT_TRUE(IsFogVolume3DNodeComponentValidUVE(FogVolume3DNodeComponentUVE{}));
+    FogVolume3DNodeComponentUVE fog{};
+    fog.density = -2.0F; // Negative density is allowed: it clears fog.
+    EXPECT_TRUE(IsFogVolume3DNodeComponentValidUVE(fog));
+    fog.size.y = 0.0F;
+    EXPECT_FALSE(IsFogVolume3DNodeComponentValidUVE(fog));
+    fog = {};
+    fog.shape = static_cast<FogVolumeShapeUVE>(9);
+    EXPECT_FALSE(IsFogVolume3DNodeComponentValidUVE(fog));
 }
 
 TEST_F(Node3DDefinitionsUVETest, Node3DApplyIsIdempotent) {

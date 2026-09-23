@@ -31,6 +31,8 @@
 #include "uve/component/primitive_mesh_component_uve.h"
 #include "uve/component/script_component_uve.h"
 #include "uve/component/transform_component_uve.h"
+#include "uve/nodes/3d/decal_3d_uve.h"
+#include "uve/nodes/3d/fog_volume_3d_uve.h"
 #include "uve/nodes/3d/marker_3d_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/nodes/3d/spawn_point_3d_uve.h"
@@ -61,9 +63,6 @@ struct EditorUVEAccessUVE final {
     [[nodiscard]] static std::vector<std::string> GetEligibleInspectorDrawerIdsUVE(const EditorUVE& editor,
                                                                                   const Scene::EntityUVE entity) {
         return editor.m_inspectorDrawerRegistry.GetEligibleDrawerIdsUVE(entity);
-    }
-    [[nodiscard]] static bool IsPlainNode3DEntityUVE(const EditorUVE& editor, const Scene::EntityUVE entity) {
-        return editor.IsPlainNode3DEntityUVE(entity);
     }
     [[nodiscard]] static std::string GetScriptNodeTitleUVE(const EditorUVE& editor) {
         return editor.GetScriptNodeTitleUVE("scene.self", "Scene Node");
@@ -493,13 +492,19 @@ TEST(EditorUVETest, InspectorDrawerRegistrationUVE_IncludesStableHierarchyDrawer
         // five needed a line of Inspector code: the drawers are generated from what each
         // component declares (RegisterMetadataInspectorDrawersUVE), so this count follows the
         // declarations rather than a hand-written registration list.
-        // 27 before the three abstract 3D bases, each of which brings one section.
-        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorDrawerCountUVE(editor), 30U);
+        // 27 before the three abstract 3D bases, each of which brings one section; 30 before the
+        // old Name and Hierarchy drawers were removed and SurfaceInstance3D, LightEmitter3D,
+        // Decal3D and FogVolume3D each brought one.
+        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorDrawerCountUVE(editor), 32U);
+        EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "surface-instance"));
+        EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "light-emitter"));
+        EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "decal-3d"));
+        EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "fog-volume-3d"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "bone-modifier"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "physics-object"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "render-instance"));
-        EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "name"));
-        EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "hierarchy"));
+        EXPECT_FALSE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "name"));
+        EXPECT_FALSE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "hierarchy"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "transform"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "primitive-mesh"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "camera"));
@@ -3832,6 +3837,32 @@ TEST(EditorUVETest, NodeMetadataUVE_EveryEditIsOneUndoStep) {
     engine.Shutdown();
 }
 
+TEST(EditorUVETest, RenderInstanceChildInspectorUVE_IsOwnSectionThenBasesThenNode3DThenNode) {
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_render_instance_inspector.uvescene");
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        const Scene::EntityUVE decal = entityManager.CreateEntityUVE();
+        AttachRootUVE(engine, decal, Scene::TransformComponentUVE{});
+        Scene::ApplyDecal3DNodeDefinitionUVE(entityManager, decal, Scene::Decal3DNodeDefinitionUVE{});
+        const Scene::EntityUVE fog = entityManager.CreateEntityUVE();
+        AttachRootUVE(engine, fog, Scene::TransformComponentUVE{});
+        Scene::ApplyFogVolume3DNodeDefinitionUVE(entityManager, fog, Scene::FogVolume3DNodeDefinitionUVE{});
+        const auto expected = [](const std::string& own) {
+            return std::vector<std::string>{own,       "render-instance",       "transform",      "visibility",
+                                            "process", "physics-interpolation", "auto-translate", "editor-description",
+                                            "script",  "node-metadata"};
+        };
+        EXPECT_EQ(EditorUVEAccessUVE::GetEligibleInspectorDrawerIdsUVE(editor, decal), expected("decal-3d"));
+        EXPECT_EQ(EditorUVEAccessUVE::GetEligibleInspectorDrawerIdsUVE(editor, fog), expected("fog-volume-3d"));
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
 TEST(EditorUVETest, Node3DInspectorUVE_IsTransformVisibilityAndTheNodeSection) {
     Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
     engine.Init();
@@ -3843,16 +3874,9 @@ TEST(EditorUVETest, Node3DInspectorUVE_IsTransformVisibilityAndTheNodeSection) {
         const Scene::EntityUVE node = entityManager.CreateEntityUVE();
         AttachRootUVE(engine, node, Scene::TransformComponentUVE{});
         Scene::ApplyNode3DNodeDefinitionUVE(entityManager, node, Scene::Node3DNodeDefinitionUVE{});
-        EXPECT_TRUE(EditorUVEAccessUVE::IsPlainNode3DEntityUVE(editor, node));
         EXPECT_EQ(EditorUVEAccessUVE::GetEligibleInspectorDrawerIdsUVE(editor, node),
                   (std::vector<std::string>{"transform", "visibility", "process", "physics-interpolation",
                                             "auto-translate", "editor-description", "script", "node-metadata"}));
-
-        // A camera makes it a Camera3D: the full, open Inspector comes back.
-        entityManager.AddComponentUVE<Scene::CameraComponentUVE>(node, Scene::CameraComponentUVE{});
-        EXPECT_FALSE(EditorUVEAccessUVE::IsPlainNode3DEntityUVE(editor, node));
-        const std::vector<std::string> ids = EditorUVEAccessUVE::GetEligibleInspectorDrawerIdsUVE(editor, node);
-        EXPECT_NE(std::find(ids.begin(), ids.end(), "name"), ids.end());
         editor.ShutdownUVE();
     }
     engine.Shutdown();

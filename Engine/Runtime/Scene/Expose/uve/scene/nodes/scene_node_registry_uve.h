@@ -56,6 +56,8 @@ enum class SceneNodeKindUVE : std::uint8_t {
     UIImage,
     UIButton,
     SceneRoot,
+    /// Appended rather than placed beside Decal3D so no existing kind's value moves.
+    FogVolume3D,
 };
 
 struct SceneNodeDescriptorUVE final {

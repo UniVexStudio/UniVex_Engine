@@ -8,6 +8,7 @@
 #include "uve/nodes/3d/animatable_body_3d_uve.h"
 #include "uve/nodes/3d/bone_attachment_3d_uve.h"
 #include "uve/nodes/3d/decal_3d_uve.h"
+#include "uve/nodes/3d/fog_volume_3d_uve.h"
 #include "uve/nodes/3d/hitbox_3d_uve.h"
 #include "uve/nodes/3d/hurtbox_3d_uve.h"
 #include "uve/nodes/3d/interaction_area_3d_uve.h"

@@ -999,14 +999,11 @@ private:
     /// Returns whether `entity` carries the scene-root marker. The root is never deletable,
     /// re-parentable, or duplicable - every one of those commands checks this first.
     [[nodiscard]] bool IsSceneRootEntityUVE(Scene::EntityUVE entity) const;
-    /// True for a plain Node3D: a transform, and nothing beyond the Node3D recipe - the transform
-    /// baseline, Visibility and the common Node section. Anything more (a camera, a mesh, a light)
-    /// makes it a different kind of node, which keeps the full Inspector.
-    [[nodiscard]] bool IsPlainNode3DEntityUVE(Scene::EntityUVE entity) const;
-    /// An Inspector that is a node's fixed recipe rather than an open component list: the scene
-    /// root and a plain Node3D. No name field, no hierarchy block, no search box, no Add Component,
-    /// no Remove - the node's sections, and nothing else.
-    [[nodiscard]] bool HasFixedInspectorUVE(Scene::EntityUVE entity) const;
+    /// Gives a node the recipe parts it was saved without - Visibility for a spatial node and the
+    /// common Node section - so its Inspector always shows the full recipe.
+    void RepairInspectorRecipeUVE(Scene::EntityUVE entity);
+    /// Registers the hand-drawn Transform section; called at Transform's place in section order.
+    void RegisterTransformInspectorDrawerUVE();
 
     /// Returns the document's scene root when one exists, else creates it (name + transform +
     /// marker via the SceneRoot NodeDefinition). Idempotent: the one-root invariant every
@@ -1100,10 +1097,7 @@ private:
     [[nodiscard]] bool ApplyComponentPropertySnapshotUVE(Scene::EntityUVE entity,
                                                          const Core::TypeMetadataEntryUVE* metadata,
                                                          const void* snapshot);
-    void DrawNameInspectorDrawerUVE(Scene::EntityUVE entity);
-    void DrawHierarchyInspectorDrawerUVE(Scene::EntityUVE entity);
     void DrawTransformInspectorDrawerUVE(Scene::EntityUVE entity);
-    void DrawSceneComponentAddPanelUVE();
     void DrawPrefabInspectorDrawerUVE(Scene::EntityUVE entity);
     void DrawImportQueueMonitorUVE();
     void DrawScriptingWorkspaceUVE();
@@ -1215,7 +1209,6 @@ private:
     MeshThumbnailRendererUVE m_meshThumbnailRenderer;
     ContentBrowserTypeFocusUVE m_contentBrowserTypeFocus = ContentBrowserTypeFocusUVE::All;
     std::string m_assetFilter;
-    std::string m_inspectorFilter;
     /// One default-constructed instance per inspected component type, made on first use, so the
     /// Inspector can tell a changed value from a default one without constructing a component per
     /// row per frame.

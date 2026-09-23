@@ -121,44 +121,6 @@ void DrawTooltipUVE(const TypeMetadataPropertyUVE& property) {
 
 /// Which declared components can be detached, and under which authoring kind.
 ///
-/// Removing a component is still a per-kind command (EditorSceneComponentKindUVE), because a
-/// generic detach needs the ECS's erased add/remove path, which is not public. That is one small
-/// table in one place instead of the eight dispatch sites the Inspector used to carry, and a
-/// component absent from it simply offers no Remove button - which is already correct for
-/// Transform, Visibility and Name, none of which were ever removable.
-[[nodiscard]] const std::vector<std::pair<std::string, EditorSceneComponentKindUVE>>&
-GetRemovableComponentKindsUVE() {
-    static const std::vector<std::pair<std::string, EditorSceneComponentKindUVE>> kinds{
-        {"component.camera", EditorSceneComponentKindUVE::Camera},
-        {"component.mesh", EditorSceneComponentKindUVE::Mesh},
-        {"component.light", EditorSceneComponentKindUVE::Light},
-        {"component.collider", EditorSceneComponentKindUVE::Collider},
-        {"component.rigid_body", EditorSceneComponentKindUVE::RigidBody},
-        {"component.audio_source", EditorSceneComponentKindUVE::AudioSource},
-        {"component.particle_emitter", EditorSceneComponentKindUVE::ParticleEmitter},
-        {"component.script", EditorSceneComponentKindUVE::Script},
-        {"component.animation_player", EditorSceneComponentKindUVE::AnimationPlayer},
-        {"component.world_environment", EditorSceneComponentKindUVE::WorldEnvironment},
-        {"component.character_controller", EditorSceneComponentKindUVE::CharacterController},
-        {"component.canvas", EditorSceneComponentKindUVE::Canvas},
-        {"component.ui_text", EditorSceneComponentKindUVE::UIText},
-        {"component.ui_image", EditorSceneComponentKindUVE::UIImage},
-        {"component.ui_button", EditorSceneComponentKindUVE::UIButton},
-        {"component.physics_interpolation", EditorSceneComponentKindUVE::PhysicsInterpolation},
-        {"component.editor_description", EditorSceneComponentKindUVE::EditorDescription},
-    };
-    return kinds;
-}
-
-[[nodiscard]] std::optional<EditorSceneComponentKindUVE> FindRemovableKindUVE(const std::string& typeId) {
-    for (const auto& [candidate, kind] : GetRemovableComponentKindsUVE()) {
-        if (candidate == typeId) {
-            return kind;
-        }
-    }
-    return std::nullopt;
-}
-
 /// Custom drawers that lay out their own rows - a multi-line box, a slot with an action strip, a
 /// list with an add button - rather than filling a value cell. Any other id falls back to the
 /// generic editor for its value type, which is where the rotation and entity-picker ids still go.
@@ -307,7 +269,13 @@ void EditorUVE::RegisterMetadataInspectorDrawersUVE() {
         return host == entries.cend() ? nullptr : *host;
     };
 
+    // Transform is hand-drawn, but it still takes its declared place in the order.
+    bool transformRegistered = false;
     for (const TypeMetadataEntryUVE* const entry : entries) {
+        if (!transformRegistered && entry->order > Scene::kSectionOrderTransformUVE) {
+            RegisterTransformInspectorDrawerUVE();
+            transformRegistered = true;
+        }
         std::vector<const TypeMetadataEntryUVE*> nested;
         for (const TypeMetadataEntryUVE* const candidate : entries) {
             if (findHostUVE(*candidate) == entry) {
@@ -327,6 +295,9 @@ void EditorUVE::RegisterMetadataInspectorDrawersUVE() {
             },
         }));
     }
+    if (!transformRegistered) {
+        RegisterTransformInspectorDrawerUVE();
+    }
 }
 
 void EditorUVE::DrawMetadataComponentDrawerUVE(const Scene::EntityUVE entity, const TypeMetadataEntryUVE& entry,
@@ -339,19 +310,6 @@ void EditorUVE::DrawMetadataComponentDrawerUVE(const Scene::EntityUVE entity, co
         return;
     }
     const void* const instance = entityManager.GetComponentPointerUVE(entity, entry.typeIndex);
-    // A fixed Inspector's components are its recipe: there is no Add Component there to bring one
-    // back, so none of them offers Remove.
-    const bool removable = !HasFixedInspectorUVE(entity);
-    const auto drawRemoveButton = [this, removable](const TypeMetadataEntryUVE& owner) {
-        const std::optional<EditorSceneComponentKindUVE> kind = FindRemovableKindUVE(owner.typeId);
-        if (!removable || !kind.has_value()) {
-            return;
-        }
-        const std::string label = "Remove " + owner.displayName;
-        if (ImGui::Button(label.c_str())) {
-            static_cast<void>(RemoveSelectedSceneComponentUVE(*kind));
-        }
-    };
 
     ImGui::PushID(entry.typeId.c_str());
     if (entry.presentedInline) {
@@ -374,12 +332,10 @@ void EditorUVE::DrawMetadataComponentDrawerUVE(const Scene::EntityUVE entity, co
                                                         ImGuiTreeNodeFlags_FramePadding;
             if (ImGui::TreeNodeEx(child->displayName.c_str(), kNestedFlags)) {
                 DrawMetadataPropertyRowsUVE(*child, entityManager.GetComponentPointerUVE(entity, child->typeIndex));
-                drawRemoveButton(*child);
                 ImGui::TreePop();
             }
             ImGui::PopID();
         }
-        drawRemoveButton(entry);
     }
     ImGui::PopID();
 }
@@ -397,10 +353,36 @@ void EditorUVE::DrawMetadataPropertyRowsUVE(const TypeMetadataEntryUVE& entry, c
         }
         table = TableStateUVE::Closed;
     };
+    // Sub-groups: consecutive properties naming the same `section` sit under one collapsible
+    // header inside the type's section, so a long section reads as a few labelled blocks. A
+    // collapsed group submits nothing for its rows.
+    const std::string* group = nullptr;
+    bool groupOpen = false;
+    const auto closeGroup = [&] {
+        closeTable();
+        if (groupOpen) {
+            ImGui::TreePop();
+        }
+        group = nullptr;
+        groupOpen = false;
+    };
 
     for (const TypeMetadataPropertyUVE& property : entry.properties) {
         if (!IsPropertyVisibleUVE(property, instance) || IsResolvedCompanionUVE(entry, property) ||
             (HasPropertyFlagUVE(property.flags, TypeMetadataPropertyFlagsUVE::RuntimeState) && !simulating)) {
+            continue;
+        }
+        if (group == nullptr ? !property.section.empty() : *group != property.section) {
+            closeGroup();
+            if (!property.section.empty()) {
+                group = &property.section;
+                constexpr ImGuiTreeNodeFlags kGroupFlags = ImGuiTreeNodeFlags_SpanAvailWidth |
+                                                           ImGuiTreeNodeFlags_FramePadding;
+                const std::string groupId = property.section + "##group-" + property.section;
+                groupOpen = ImGui::TreeNodeEx(groupId.c_str(), kGroupFlags);
+            }
+        }
+        if (group != nullptr && !groupOpen) {
             continue;
         }
         if (IsBlockPropertyDrawerUVE(property.customDrawerId)) {
@@ -423,7 +405,7 @@ void EditorUVE::DrawMetadataPropertyRowsUVE(const TypeMetadataEntryUVE& entry, c
         DrawMetadataPropertyRowUVE(entry, property, instance);
         ImGui::PopID();
     }
-    closeTable();
+    closeGroup();
 }
 
 bool EditorUVE::DrawMetadataPropertyLabelUVE(const TypeMetadataEntryUVE& entry, const TypeMetadataPropertyUVE& property,

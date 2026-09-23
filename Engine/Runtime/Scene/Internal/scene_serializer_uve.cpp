@@ -42,6 +42,7 @@
 #include "uve/scene/nodes/scene_root_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/light_component_uve.h"
+#include "uve/component/light_emitter_component_uve.h"
 #include "uve/component/mesh_component_uve.h"
 #include "uve/component/name_component_uve.h"
 #include "uve/component/auto_translate_component_uve.h"
@@ -57,6 +58,7 @@
 #include "uve/component/prefab_instance_component_uve.h"
 #include "uve/component/rigid_body_component_uve.h"
 #include "uve/component/script_component_uve.h"
+#include "uve/component/surface_instance_component_uve.h"
 #include "uve/component/transform_component_uve.h"
 #include "uve/component/visibility_component_uve.h"
 #include "uve/component/ui_button_component_uve.h"
@@ -771,15 +773,140 @@ template <typename VectorT>
             {"size", ToJsonUVE(value.size)},
             {"projection", static_cast<std::uint8_t>(value.projection)},
             {"lifetime", value.lifetime},
-            {"enabled", value.enabled}};
+            {"enabled", value.enabled},
+            {"modulate", ToJsonUVE(value.modulate)},
+            {"emissionEnergy", value.emissionEnergy},
+            {"albedoMix", value.albedoMix},
+            {"normalFade", value.normalFade},
+            {"upperFade", value.upperFade},
+            {"lowerFade", value.lowerFade},
+            {"distanceFadeEnabled", value.distanceFadeEnabled},
+            {"distanceFadeBegin", value.distanceFadeBegin},
+            {"distanceFadeLength", value.distanceFadeLength},
+            {"cullMask", value.cullMask}};
 }
 
 [[nodiscard]] Decal3DNodeComponentUVE Decal3DNodeFromJsonUVE(const nlohmann::json& json) {
-    return Decal3DNodeComponentUVE{json.value("materialAssetPath", std::string{}),
-                                   Vector3FromJsonUVE(json.at("size")),
-                                   static_cast<DecalProjectionModeUVE>(json.value("projection", std::uint8_t{0})),
-                                   json.value("lifetime", 0.0F),
-                                   json.value("enabled", true)};
+    // Every field after `enabled` arrived later; a decal saved before them reads with its defaults.
+    const Decal3DNodeComponentUVE defaults{};
+    Decal3DNodeComponentUVE value{};
+    value.materialAssetPath = json.value("materialAssetPath", std::string{});
+    value.size = Vector3FromJsonUVE(json.at("size"));
+    value.projection = static_cast<DecalProjectionModeUVE>(json.value("projection", std::uint8_t{0}));
+    value.lifetime = json.value("lifetime", 0.0F);
+    value.enabled = json.value("enabled", true);
+    value.modulate = json.contains("modulate") ? Vector3FromJsonUVE(json.at("modulate")) : defaults.modulate;
+    value.emissionEnergy = json.value("emissionEnergy", defaults.emissionEnergy);
+    value.albedoMix = json.value("albedoMix", defaults.albedoMix);
+    value.normalFade = json.value("normalFade", defaults.normalFade);
+    value.upperFade = json.value("upperFade", defaults.upperFade);
+    value.lowerFade = json.value("lowerFade", defaults.lowerFade);
+    value.distanceFadeEnabled = json.value("distanceFadeEnabled", defaults.distanceFadeEnabled);
+    value.distanceFadeBegin = json.value("distanceFadeBegin", defaults.distanceFadeBegin);
+    value.distanceFadeLength = json.value("distanceFadeLength", defaults.distanceFadeLength);
+    value.cullMask = json.value("cullMask", defaults.cullMask);
+    return value;
+}
+
+[[nodiscard]] nlohmann::json ToJsonUVE(const FogVolume3DNodeComponentUVE& value) {
+    return {{"shape", static_cast<std::uint8_t>(value.shape)},
+            {"size", ToJsonUVE(value.size)},
+            {"density", value.density},
+            {"albedo", ToJsonUVE(value.albedo)},
+            {"emission", ToJsonUVE(value.emission)},
+            {"heightFalloff", value.heightFalloff},
+            {"edgeFade", value.edgeFade},
+            {"materialAssetPath", value.materialAssetPath}};
+}
+
+[[nodiscard]] FogVolume3DNodeComponentUVE FogVolume3DNodeFromJsonUVE(const nlohmann::json& json) {
+    FogVolume3DNodeComponentUVE value{};
+    value.shape = static_cast<FogVolumeShapeUVE>(json.at("shape").get<std::uint8_t>());
+    value.size = Vector3FromJsonUVE(json.at("size"));
+    value.density = ReadFloatUVE(json.at("density"));
+    value.albedo = Vector3FromJsonUVE(json.at("albedo"));
+    value.emission = Vector3FromJsonUVE(json.at("emission"));
+    value.heightFalloff = ReadFloatUVE(json.at("heightFalloff"));
+    value.edgeFade = ReadFloatUVE(json.at("edgeFade"));
+    value.materialAssetPath = json.at("materialAssetPath").get<std::string>();
+    return value;
+}
+
+[[nodiscard]] nlohmann::json ToJsonUVE(const SurfaceInstanceComponentUVE& value) {
+    return {{"materialOverridePath", value.materialOverridePath},
+            {"materialOverlayPath", value.materialOverlayPath},
+            {"transparency", value.transparency},
+            {"castShadow", static_cast<std::uint8_t>(value.castShadow)},
+            {"extraCullMargin", value.extraCullMargin},
+            {"lodBias", value.lodBias},
+            {"ignoreOcclusionCulling", value.ignoreOcclusionCulling},
+            {"lightingMode", static_cast<std::uint8_t>(value.lightingMode)},
+            {"visibilityRangeBegin", value.visibilityRangeBegin},
+            {"visibilityRangeBeginMargin", value.visibilityRangeBeginMargin},
+            {"visibilityRangeEnd", value.visibilityRangeEnd},
+            {"visibilityRangeEndMargin", value.visibilityRangeEndMargin},
+            {"visibilityRangeFadeMode", static_cast<std::uint8_t>(value.visibilityRangeFadeMode)}};
+}
+
+[[nodiscard]] SurfaceInstanceComponentUVE SurfaceInstanceFromJsonUVE(const nlohmann::json& json) {
+    SurfaceInstanceComponentUVE value{};
+    value.materialOverridePath = json.at("materialOverridePath").get<std::string>();
+    value.materialOverlayPath = json.at("materialOverlayPath").get<std::string>();
+    value.transparency = ReadFloatUVE(json.at("transparency"));
+    value.castShadow = static_cast<SurfaceShadowModeUVE>(json.at("castShadow").get<std::uint8_t>());
+    value.extraCullMargin = ReadFloatUVE(json.at("extraCullMargin"));
+    value.lodBias = ReadFloatUVE(json.at("lodBias"));
+    value.ignoreOcclusionCulling = json.at("ignoreOcclusionCulling").get<bool>();
+    value.lightingMode = static_cast<SurfaceLightingModeUVE>(json.at("lightingMode").get<std::uint8_t>());
+    value.visibilityRangeBegin = ReadFloatUVE(json.at("visibilityRangeBegin"));
+    value.visibilityRangeBeginMargin = ReadFloatUVE(json.at("visibilityRangeBeginMargin"));
+    value.visibilityRangeEnd = ReadFloatUVE(json.at("visibilityRangeEnd"));
+    value.visibilityRangeEndMargin = ReadFloatUVE(json.at("visibilityRangeEndMargin"));
+    value.visibilityRangeFadeMode =
+        static_cast<SurfaceFadeModeUVE>(json.at("visibilityRangeFadeMode").get<std::uint8_t>());
+    return value;
+}
+
+[[nodiscard]] nlohmann::json ToJsonUVE(const LightEmitterComponentUVE& value) {
+    return {{"color", ToJsonUVE(value.color)},
+            {"energy", value.energy},
+            {"indirectEnergy", value.indirectEnergy},
+            {"volumetricFogEnergy", value.volumetricFogEnergy},
+            {"specular", value.specular},
+            {"negative", value.negative},
+            {"bakeMode", static_cast<std::uint8_t>(value.bakeMode)},
+            {"cullMask", value.cullMask},
+            {"shadowEnabled", value.shadowEnabled},
+            {"shadowBias", value.shadowBias},
+            {"shadowNormalBias", value.shadowNormalBias},
+            {"shadowOpacity", value.shadowOpacity},
+            {"shadowBlur", value.shadowBlur},
+            {"distanceFadeEnabled", value.distanceFadeEnabled},
+            {"distanceFadeBegin", value.distanceFadeBegin},
+            {"distanceFadeShadow", value.distanceFadeShadow},
+            {"distanceFadeLength", value.distanceFadeLength}};
+}
+
+[[nodiscard]] LightEmitterComponentUVE LightEmitterFromJsonUVE(const nlohmann::json& json) {
+    LightEmitterComponentUVE value{};
+    value.color = Vector3FromJsonUVE(json.at("color"));
+    value.energy = ReadFloatUVE(json.at("energy"));
+    value.indirectEnergy = ReadFloatUVE(json.at("indirectEnergy"));
+    value.volumetricFogEnergy = ReadFloatUVE(json.at("volumetricFogEnergy"));
+    value.specular = ReadFloatUVE(json.at("specular"));
+    value.negative = json.at("negative").get<bool>();
+    value.bakeMode = static_cast<LightBakeModeUVE>(json.at("bakeMode").get<std::uint8_t>());
+    value.cullMask = json.at("cullMask").get<std::uint32_t>();
+    value.shadowEnabled = json.at("shadowEnabled").get<bool>();
+    value.shadowBias = ReadFloatUVE(json.at("shadowBias"));
+    value.shadowNormalBias = ReadFloatUVE(json.at("shadowNormalBias"));
+    value.shadowOpacity = ReadFloatUVE(json.at("shadowOpacity"));
+    value.shadowBlur = ReadFloatUVE(json.at("shadowBlur"));
+    value.distanceFadeEnabled = json.at("distanceFadeEnabled").get<bool>();
+    value.distanceFadeBegin = ReadFloatUVE(json.at("distanceFadeBegin"));
+    value.distanceFadeShadow = ReadFloatUVE(json.at("distanceFadeShadow"));
+    value.distanceFadeLength = ReadFloatUVE(json.at("distanceFadeLength"));
+    return value;
 }
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const LodGroup3DNodeComponentUVE& value) {
@@ -1187,6 +1314,30 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                 }
                 return value;
             }, IsReflectionProbe3DNodeComponentValidUVE));
+        table.emplace("FogVolume3DNodeComponentUVE", MakeRegistrationUVE<FogVolume3DNodeComponentUVE>(
+            [](const nlohmann::json& json) {
+                const FogVolume3DNodeComponentUVE value = FogVolume3DNodeFromJsonUVE(json);
+                if (!IsFogVolume3DNodeComponentValidUVE(value)) {
+                    throw std::runtime_error("Invalid FogVolume3DNodeComponentUVE payload");
+                }
+                return value;
+            }, IsFogVolume3DNodeComponentValidUVE));
+        table.emplace("SurfaceInstanceComponentUVE", MakeRegistrationUVE<SurfaceInstanceComponentUVE>(
+            [](const nlohmann::json& json) {
+                const SurfaceInstanceComponentUVE value = SurfaceInstanceFromJsonUVE(json);
+                if (!IsSurfaceInstanceComponentValidUVE(value)) {
+                    throw std::runtime_error("Invalid SurfaceInstanceComponentUVE payload");
+                }
+                return value;
+            }, IsSurfaceInstanceComponentValidUVE));
+        table.emplace("LightEmitterComponentUVE", MakeRegistrationUVE<LightEmitterComponentUVE>(
+            [](const nlohmann::json& json) {
+                const LightEmitterComponentUVE value = LightEmitterFromJsonUVE(json);
+                if (!IsLightEmitterComponentValidUVE(value)) {
+                    throw std::runtime_error("Invalid LightEmitterComponentUVE payload");
+                }
+                return value;
+            }, IsLightEmitterComponentValidUVE));
         table.emplace("Decal3DNodeComponentUVE", MakeRegistrationUVE<Decal3DNodeComponentUVE>(
             [](const nlohmann::json& json) {
                 const Decal3DNodeComponentUVE value = Decal3DNodeFromJsonUVE(json);

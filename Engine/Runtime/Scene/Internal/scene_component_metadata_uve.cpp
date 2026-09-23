@@ -17,6 +17,7 @@
 #include "uve/component/editor_description_component_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/light_component_uve.h"
+#include "uve/component/light_emitter_component_uve.h"
 #include "uve/component/mesh_component_uve.h"
 #include "uve/component/name_component_uve.h"
 #include "uve/component/node_metadata_component_uve.h"
@@ -29,6 +30,7 @@
 #include "uve/component/render_instance_component_uve.h"
 #include "uve/component/rigid_body_component_uve.h"
 #include "uve/component/script_component_uve.h"
+#include "uve/component/surface_instance_component_uve.h"
 #include "uve/component/transform_component_uve.h"
 #include "uve/component/ui_button_component_uve.h"
 #include "uve/component/ui_image_component_uve.h"
@@ -36,6 +38,8 @@
 #include "uve/component/visibility_component_uve.h"
 #include "uve/logging/assert_uve.h"
 #include "uve/logging/logging_macros_uve.h"
+#include "uve/nodes/3d/decal_3d_uve.h"
+#include "uve/nodes/3d/fog_volume_3d_uve.h"
 #include "uve/nodes/3d/world_environment_3d_uve.h"
 #include "uve/math/quaternion_uve.h"
 
@@ -110,6 +114,24 @@ template <auto MemberPointer>
 [[nodiscard]] TypeMetadataPropertyUVE WithCustomDrawerUVE(TypeMetadataPropertyUVE property,
                                                           std::string drawerId) {
     property.customDrawerId = std::move(drawerId);
+    return property;
+}
+
+/// Places a property in a named sub-group of its section. A group's properties are declared
+/// together, after the section's ungrouped ones.
+[[nodiscard]] TypeMetadataPropertyUVE InGroupUVE(TypeMetadataPropertyUVE property, std::string group) {
+    property.section = std::move(group);
+    return property;
+}
+
+/// Shows a property only while a bool switch on the same component is on - the field after a
+/// "Enabled" toggle means nothing while the toggle is off, so it is not shown then.
+template <auto SwitchPointer>
+[[nodiscard]] TypeMetadataPropertyUVE WhenOnUVE(TypeMetadataPropertyUVE property) {
+    property.isVisible = +[](const void* instance) {
+        using OwnerT = typename Core::Detail::MemberPointerTraitsUVE<decltype(SwitchPointer)>::Owner;
+        return static_cast<const OwnerT*>(instance)->*SwitchPointer;
+    };
     return property;
 }
 
@@ -613,7 +635,7 @@ void DeclareNodeBasesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
 
     AddUVE<RenderInstanceComponentUVE>(
         entries,
-        MakeEntryUVE("component.render_instance", "RenderInstance3D", kSectionOrderNodeBaseUVE + 2,
+        MakeEntryUVE("component.render_instance", "RenderInstance3D", kSectionOrderNodeBaseUVE + 10,
                      {
                          WithTooltipUVE(DeclareUVE<&RenderInstanceComponentUVE::renderLayers>(
                                             "renderLayers", "Layers", kPropertyTypeBitMask32UVE),
@@ -625,6 +647,237 @@ void DeclareNodeBasesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                             "sortingUseAabbCenter", "Sort By Bounds Center", kPropertyTypeBoolUVE),
                                         "Sort by the centre of the bounds rather than the origin."),
                      }));
+
+    using S = SurfaceInstanceComponentUVE;
+    AddUVE<SurfaceInstanceComponentUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.surface_instance", "SurfaceInstance3D", kSectionOrderNodeBaseUVE + 3,
+            {
+                WithTooltipUVE(DeclareUVE<&S::materialOverridePath>("materialOverridePath", "Material Override",
+                                                                    kPropertyTypeStringUVE),
+                               "A material used on every surface in place of the mesh's own. Empty keeps them."),
+                WithTooltipUVE(DeclareUVE<&S::materialOverlayPath>("materialOverlayPath", "Material Overlay",
+                                                                   kPropertyTypeStringUVE),
+                               "A material drawn over every surface, on top of whatever it already shows."),
+                WithTooltipUVE(WithRangeUVE(DeclareUVE<&S::transparency>("transparency", "Transparency",
+                                                                         kPropertyTypeFloatUVE),
+                                            0.0, 1.0, 0.01),
+                               "Fades the whole instance out: 0 as authored, 1 invisible."),
+                InGroupUVE(WithTooltipUVE(DeclareEnumUVE<&S::castShadow>(
+                                              "castShadow", "Cast Shadow",
+                                              {{0, "Off"}, {1, "On"}, {2, "Double Sided"}, {3, "Shadows Only"}}),
+                                          "Whether it casts a shadow, and Shadows Only for an invisible caster."),
+                           "Shadow"),
+                InGroupUVE(WithTooltipUVE(DeclareEnumUVE<&S::lightingMode>(
+                                              "lightingMode", "Lighting",
+                                              {{0, "Disabled"}, {1, "Static (Baked)"}, {2, "Dynamic"}}),
+                                          "How baked lighting treats it: ignored, baked into, or lit at runtime."),
+                           "Global Illumination"),
+                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&S::visibilityRangeBegin>(
+                                                           "visibilityRangeBegin", "Begin", kPropertyTypeFloatUVE),
+                                                       0.0, 1000000.0, 0.1),
+                                          "Hidden closer to the camera than this. 0 never hides it up close."),
+                           "Visibility Range"),
+                InGroupUVE(WithRangeUVE(DeclareUVE<&S::visibilityRangeBeginMargin>(
+                                            "visibilityRangeBeginMargin", "Begin Margin", kPropertyTypeFloatUVE),
+                                        0.0, 1000000.0, 0.1),
+                           "Visibility Range"),
+                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&S::visibilityRangeEnd>(
+                                                           "visibilityRangeEnd", "End", kPropertyTypeFloatUVE),
+                                                       0.0, 1000000.0, 0.1),
+                                          "Hidden farther from the camera than this. 0 never hides it far away."),
+                           "Visibility Range"),
+                InGroupUVE(WithRangeUVE(DeclareUVE<&S::visibilityRangeEndMargin>(
+                                            "visibilityRangeEndMargin", "End Margin", kPropertyTypeFloatUVE),
+                                        0.0, 1000000.0, 0.1),
+                           "Visibility Range"),
+                InGroupUVE(WithTooltipUVE(DeclareEnumUVE<&S::visibilityRangeFadeMode>(
+                                              "visibilityRangeFadeMode", "Fade",
+                                              {{0, "Disabled"}, {1, "Self"}, {2, "Dependencies"}}),
+                                          "Fade across the margins instead of popping."),
+                           "Visibility Range"),
+                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&S::extraCullMargin>(
+                                                           "extraCullMargin", "Extra Cull Margin", kPropertyTypeFloatUVE),
+                                                       0.0, 100000.0, 0.01),
+                                          "Grows the bounds used for culling, for shaders that move vertices outward."),
+                           "Culling"),
+                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&S::lodBias>("lodBias", "LOD Bias",
+                                                                               kPropertyTypeFloatUVE),
+                                                       0.001, 128.0, 0.01),
+                                          "Above 1 keeps detailed levels longer; below 1 drops them sooner."),
+                           "Culling"),
+                InGroupUVE(WithTooltipUVE(DeclareUVE<&S::ignoreOcclusionCulling>(
+                                              "ignoreOcclusionCulling", "Ignore Occlusion", kPropertyTypeBoolUVE),
+                                          "Never hidden because something else covers it."),
+                           "Culling"),
+            }));
+
+    using L = LightEmitterComponentUVE;
+    AddUVE<LightEmitterComponentUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.light_emitter", "LightEmitter3D", kSectionOrderNodeBaseUVE + 4,
+            {
+                DeclareUVE<&L::color>("color", "Color", kPropertyTypeColorUVE),
+                WithTooltipUVE(WithRangeUVE(DeclareUVE<&L::energy>("energy", "Energy", kPropertyTypeFloatUVE), 0.0,
+                                            1000.0, 0.01),
+                               "How bright the light is."),
+                WithTooltipUVE(WithRangeUVE(DeclareUVE<&L::indirectEnergy>("indirectEnergy", "Indirect Energy",
+                                                                           kPropertyTypeFloatUVE),
+                                            0.0, 1000.0, 0.01),
+                               "Multiplies the light's bounced (indirect) contribution only."),
+                WithTooltipUVE(WithRangeUVE(DeclareUVE<&L::volumetricFogEnergy>(
+                                                "volumetricFogEnergy", "Fog Energy", kPropertyTypeFloatUVE),
+                                            0.0, 1000.0, 0.01),
+                               "How strongly it lights volumetric fog and fog volumes."),
+                WithTooltipUVE(WithRangeUVE(DeclareUVE<&L::specular>("specular", "Specular", kPropertyTypeFloatUVE),
+                                            0.0, 16.0, 0.01),
+                               "Strength of the light's highlights on shiny surfaces."),
+                WithTooltipUVE(DeclareUVE<&L::negative>("negative", "Negative", kPropertyTypeBoolUVE),
+                               "Subtracts light instead of adding it - darkens what it touches."),
+                WithTooltipUVE(DeclareEnumUVE<&L::bakeMode>("bakeMode", "Bake Mode",
+                                                            {{0, "Disabled"}, {1, "Static"}, {2, "Dynamic"}}),
+                               "How baked lighting uses it: not at all, fully baked, or indirect only."),
+                WithTooltipUVE(DeclareUVE<&L::cullMask>("cullMask", "Cull Mask", kPropertyTypeBitMask32UVE),
+                               "The render layers this light affects."),
+                InGroupUVE(DeclareUVE<&L::shadowEnabled>("shadowEnabled", "Enabled", kPropertyTypeBoolUVE), "Shadow"),
+                InGroupUVE(WhenOnUVE<&L::shadowEnabled>(WithRangeUVE(
+                               DeclareUVE<&L::shadowBias>("shadowBias", "Bias", kPropertyTypeFloatUVE), 0.0, 10.0,
+                               0.001)),
+                           "Shadow"),
+                InGroupUVE(WhenOnUVE<&L::shadowEnabled>(WithRangeUVE(
+                               DeclareUVE<&L::shadowNormalBias>("shadowNormalBias", "Normal Bias",
+                                                                kPropertyTypeFloatUVE),
+                               0.0, 10.0, 0.001)),
+                           "Shadow"),
+                InGroupUVE(WhenOnUVE<&L::shadowEnabled>(WithRangeUVE(
+                               DeclareUVE<&L::shadowOpacity>("shadowOpacity", "Opacity", kPropertyTypeFloatUVE), 0.0,
+                               1.0, 0.01)),
+                           "Shadow"),
+                InGroupUVE(WhenOnUVE<&L::shadowEnabled>(WithRangeUVE(
+                               DeclareUVE<&L::shadowBlur>("shadowBlur", "Blur", kPropertyTypeFloatUVE), 0.0, 64.0,
+                               0.01)),
+                           "Shadow"),
+                InGroupUVE(DeclareUVE<&L::distanceFadeEnabled>("distanceFadeEnabled", "Enabled", kPropertyTypeBoolUVE),
+                           "Distance Fade"),
+                InGroupUVE(WhenOnUVE<&L::distanceFadeEnabled>(WithRangeUVE(
+                               DeclareUVE<&L::distanceFadeBegin>("distanceFadeBegin", "Begin", kPropertyTypeFloatUVE),
+                               0.0, 1000000.0, 0.1)),
+                           "Distance Fade"),
+                InGroupUVE(WhenOnUVE<&L::distanceFadeEnabled>(WithRangeUVE(
+                               DeclareUVE<&L::distanceFadeShadow>("distanceFadeShadow", "Shadow",
+                                                                  kPropertyTypeFloatUVE),
+                               0.0, 1000000.0, 0.1)),
+                           "Distance Fade"),
+                InGroupUVE(WhenOnUVE<&L::distanceFadeEnabled>(WithRangeUVE(
+                               DeclareUVE<&L::distanceFadeLength>("distanceFadeLength", "Length",
+                                                                  kPropertyTypeFloatUVE),
+                               0.0, 1000000.0, 0.1)),
+                           "Distance Fade"),
+            }));
+}
+
+/// Concrete RenderInstance3D children. Each brings exactly its own section; everything above it
+/// comes from the bases.
+void DeclareRenderInstanceNodesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
+    using D = Decal3DNodeComponentUVE;
+    AddUVE<Decal3DNodeComponentUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.decal_3d", "Decal3D", kSectionOrderTypeSpecificUVE,
+            {
+                WithTooltipUVE(DeclareUVE<&D::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
+                               "Off stops projecting without removing the node."),
+                WithTooltipUVE(DeclareUVE<&D::materialAssetPath>("materialAssetPath", "Material",
+                                                                 kPropertyTypeStringUVE),
+                               "The decal material to project."),
+                WithTooltipUVE(WithRangeUVE(DeclareUVE<&D::size>("size", "Size", kPropertyTypeVector3UVE), 0.001,
+                                            100000.0, 0.01),
+                               "The projection volume, centred on the node; it projects along -Y."),
+                DeclareEnumUVE<&D::projection>("projection", "Projection", {{0, "Box"}, {1, "Cylinder"}}),
+                WithTooltipUVE(WithRangeUVE(DeclareUVE<&D::lifetime>("lifetime", "Lifetime", kPropertyTypeFloatUVE),
+                                            0.0, 100000.0, 0.1),
+                               "Seconds until the decal removes itself. 0 keeps it forever."),
+                WithTooltipUVE(DeclareUVE<&D::cullMask>("cullMask", "Projects On", kPropertyTypeBitMask32UVE),
+                               "The render layers it projects onto."),
+                InGroupUVE(WithTooltipUVE(DeclareUVE<&D::modulate>("modulate", "Modulate", kPropertyTypeColorUVE),
+                                          "Tints the projected colour."),
+                           "Parameters"),
+                InGroupUVE(WithRangeUVE(DeclareUVE<&D::emissionEnergy>("emissionEnergy", "Emission",
+                                                                       kPropertyTypeFloatUVE),
+                                        0.0, 128.0, 0.01),
+                           "Parameters"),
+                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&D::albedoMix>("albedoMix", "Albedo Mix",
+                                                                                 kPropertyTypeFloatUVE),
+                                                       0.0, 1.0, 0.01),
+                                          "How much of the surface colour it replaces. 0 keeps the paint, for dents."),
+                           "Parameters"),
+                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&D::normalFade>("normalFade", "Normal Fade",
+                                                                                  kPropertyTypeFloatUVE),
+                                                       0.0, 1.0, 0.01),
+                                          "Fades it on surfaces turned away from the projection."),
+                           "Parameters"),
+                InGroupUVE(WithRangeUVE(DeclareUVE<&D::upperFade>("upperFade", "Upper", kPropertyTypeFloatUVE), 0.0,
+                                        1.0, 0.01),
+                           "Vertical Fade"),
+                InGroupUVE(WithRangeUVE(DeclareUVE<&D::lowerFade>("lowerFade", "Lower", kPropertyTypeFloatUVE), 0.0,
+                                        1.0, 0.01),
+                           "Vertical Fade"),
+                InGroupUVE(DeclareUVE<&D::distanceFadeEnabled>("distanceFadeEnabled", "Enabled", kPropertyTypeBoolUVE),
+                           "Distance Fade"),
+                InGroupUVE(WhenOnUVE<&D::distanceFadeEnabled>(WithRangeUVE(
+                               DeclareUVE<&D::distanceFadeBegin>("distanceFadeBegin", "Begin", kPropertyTypeFloatUVE),
+                               0.0, 1000000.0, 0.1)),
+                           "Distance Fade"),
+                InGroupUVE(WhenOnUVE<&D::distanceFadeEnabled>(WithRangeUVE(
+                               DeclareUVE<&D::distanceFadeLength>("distanceFadeLength", "Length",
+                                                                  kPropertyTypeFloatUVE),
+                               0.0, 1000000.0, 0.1)),
+                           "Distance Fade"),
+            }));
+
+    using F = FogVolume3DNodeComponentUVE;
+    AddUVE<FogVolume3DNodeComponentUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.fog_volume_3d", "FogVolume3D", kSectionOrderTypeSpecificUVE,
+            {
+                WithTooltipUVE(DeclareEnumUVE<&F::shape>(
+                                   "shape", "Shape",
+                                   {{0, "Ellipsoid"}, {1, "Cone"}, {2, "Cylinder"}, {3, "Box"}, {4, "World"}}),
+                               "The volume's shape. World fills the whole scene and ignores Size."),
+                [] {
+                    TypeMetadataPropertyUVE property = WithRangeUVE(
+                        DeclareUVE<&F::size>("size", "Size", kPropertyTypeVector3UVE), 0.001, 100000.0, 0.01);
+                    property.isVisible = +[](const void* instance) {
+                        return static_cast<const F*>(instance)->shape != FogVolumeShapeUVE::World;
+                    };
+                    return property;
+                }(),
+                WithTooltipUVE(DeclareUVE<&F::materialAssetPath>("materialAssetPath", "Material",
+                                                                 kPropertyTypeStringUVE),
+                               "An optional fog material. When set it replaces the values below."),
+                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&F::density>("density", "Density",
+                                                                               kPropertyTypeFloatUVE),
+                                                       -1024.0, 1024.0, 0.01),
+                                          "How thick the fog is. Negative clears fog from inside the volume."),
+                           "Fog"),
+                InGroupUVE(DeclareUVE<&F::albedo>("albedo", "Albedo", kPropertyTypeColorUVE), "Fog"),
+                InGroupUVE(WithTooltipUVE(DeclareUVE<&F::emission>("emission", "Emission", kPropertyTypeColorUVE),
+                                          "Light the fog gives off by itself, with no light shining on it."),
+                           "Fog"),
+                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&F::heightFalloff>(
+                                                           "heightFalloff", "Height Falloff", kPropertyTypeFloatUVE),
+                                                       0.0, 1024.0, 0.01),
+                                          "Thins the fog with height inside the volume. 0 keeps it even."),
+                           "Fog"),
+                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&F::edgeFade>("edgeFade", "Edge Fade",
+                                                                                kPropertyTypeFloatUVE),
+                                                       0.0, 1.0, 0.01),
+                                          "Softens the volume's boundary. 0 is a hard edge."),
+                           "Fog"),
+            }));
 }
 
 void DeclareNodeCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
@@ -763,6 +1016,7 @@ void DeclareNodeCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     DeclarePhysicsUVE(entries);
     DeclareMediaAndUIUVE(entries);
     DeclareNodeBasesUVE(entries);
+    DeclareRenderInstanceNodesUVE(entries);
     DeclareNodeCommonUVE(entries);
 
     TypeMetadataRegistryUVE registry;

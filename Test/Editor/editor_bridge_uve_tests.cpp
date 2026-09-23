@@ -575,7 +575,7 @@ TEST(EditorBridgeUVETest, SnapshotUVE_CopiesHierarchyInspectorAndNativePanelSess
         // Collider before mesh: see the same expectation in editor_bridge_stdio_uve_tests.cpp -
         // drawer order now follows the component declarations rather than a hand-written list.
         EXPECT_EQ(snapshot.inspector.eligibleDrawerIds,
-                  (std::vector<std::string>{"name", "hierarchy", "transform", "collider", "mesh", "primitive-mesh"}));
+                  (std::vector<std::string>{"collider", "mesh", "primitive-mesh", "transform"}));
         EXPECT_EQ(snapshot.inspector.attachedComponentIds, (std::vector<std::string>{"collider", "mesh"}));
         ASSERT_TRUE(snapshot.inspector.assetBinding.has_value());
         ASSERT_TRUE(snapshot.inspector.assetBinding->meshGuid.has_value());

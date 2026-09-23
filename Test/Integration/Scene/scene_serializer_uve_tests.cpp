@@ -53,6 +53,10 @@
 #include "uve/component/ui_image_component_uve.h"
 #include "uve/component/ui_text_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
+#include "uve/component/light_emitter_component_uve.h"
+#include "uve/component/surface_instance_component_uve.h"
+#include "uve/nodes/3d/decal_3d_uve.h"
+#include "uve/nodes/3d/fog_volume_3d_uve.h"
 #include "uve/entity/entity_manager_uve.h"
 #include "uve/scene/scene_graph_uve.h"
 #include "uve/scene/nodes/scene_root_uve.h"
@@ -746,6 +750,66 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AbstractNodeBasesKeepTheirAuth
     EXPECT_EQ(entityManager.GetComponentUVE<PhysicsObjectComponentUVE>(roots.front()), object);
     EXPECT_EQ(entityManager.GetComponentUVE<RenderInstanceComponentUVE>(roots.front()),
               (RenderInstanceComponentUVE{0x3U, -1.5F, false}));
+}
+
+TEST_F(SceneSerializerUVETest, RoundTripUVE_RenderInstanceFamilyKeepsEveryField) {
+    const EntityUVE source = entityManager.CreateEntityUVE();
+    SurfaceInstanceComponentUVE surface{};
+    surface.materialOverridePath = "materials/red.uvemat";
+    surface.transparency = 0.4F;
+    surface.castShadow = SurfaceShadowModeUVE::ShadowsOnly;
+    surface.visibilityRangeBegin = 2.0F;
+    surface.visibilityRangeEnd = 50.0F;
+    surface.visibilityRangeFadeMode = SurfaceFadeModeUVE::Self;
+    LightEmitterComponentUVE light{};
+    light.color = {1.0F, 0.5F, 0.25F};
+    light.energy = 3.0F;
+    light.shadowEnabled = true;
+    light.shadowBlur = 2.0F;
+    light.bakeMode = LightBakeModeUVE::Static;
+    light.cullMask = 0x5U;
+    Decal3DNodeComponentUVE decal{};
+    decal.modulate = {0.5F, 0.5F, 1.0F};
+    decal.normalFade = 0.3F;
+    decal.distanceFadeEnabled = true;
+    decal.cullMask = 0x2U;
+    FogVolume3DNodeComponentUVE fog{};
+    fog.shape = FogVolumeShapeUVE::Ellipsoid;
+    fog.density = -0.5F;
+    fog.emission = {0.1F, 0.2F, 0.3F};
+    fog.edgeFade = 0.5F;
+    entityManager.AddComponentUVE<SurfaceInstanceComponentUVE>(source, surface);
+    entityManager.AddComponentUVE<LightEmitterComponentUVE>(source, light);
+    entityManager.AddComponentUVE<Decal3DNodeComponentUVE>(source, decal);
+    entityManager.AddComponentUVE<FogVolume3DNodeComponentUVE>(source, fog);
+
+    const std::optional<SceneSnapshotUVE> snapshot = serializer.CaptureUVE(entityManager, {source}, SceneAssetTypeUVE::Scene);
+    ASSERT_TRUE(snapshot.has_value());
+    const std::vector<EntityUVE> roots = serializer.RestoreUVE(entityManager, *snapshot);
+    ASSERT_EQ(roots.size(), 1U);
+    EXPECT_EQ(entityManager.GetComponentUVE<SurfaceInstanceComponentUVE>(roots.front()), surface);
+    EXPECT_EQ(entityManager.GetComponentUVE<LightEmitterComponentUVE>(roots.front()), light);
+    EXPECT_EQ(entityManager.GetComponentUVE<Decal3DNodeComponentUVE>(roots.front()), decal);
+    EXPECT_EQ(entityManager.GetComponentUVE<FogVolume3DNodeComponentUVE>(roots.front()), fog);
+}
+
+TEST_F(SceneSerializerUVETest, RestoreUVE_DecalSavedBeforeItsNewFieldsLoadsWithDefaults) {
+    const std::string payloadText =
+        R"({"entities":[{"localId":0,"components":{"Decal3DNodeComponentUVE":)"
+        R"({"materialAssetPath":"decals/hole.uvemat","size":[2,1,2],"projection":1,"lifetime":5,"enabled":true}}}]})";
+    const auto* const payloadBytes = reinterpret_cast<const std::byte*>(payloadText.data());
+    const SceneSnapshotUVE snapshot{
+        Asset::EncodeUveFileEnvelopeUVE(SceneAssetTypeUVE::Scene,
+                                        std::vector<std::byte>{payloadBytes, payloadBytes + payloadText.size()}),
+        SceneAssetTypeUVE::Scene};
+    const std::vector<EntityUVE> roots = serializer.RestoreUVE(entityManager, snapshot);
+    ASSERT_EQ(roots.size(), 1U);
+    Decal3DNodeComponentUVE expected{};
+    expected.materialAssetPath = "decals/hole.uvemat";
+    expected.size = {2.0F, 1.0F, 2.0F};
+    expected.projection = DecalProjectionModeUVE::Cylinder;
+    expected.lifetime = 5.0F;
+    EXPECT_EQ(entityManager.GetComponentUVE<Decal3DNodeComponentUVE>(roots.front()), expected);
 }
 
 TEST_F(SceneSerializerUVETest, RestoreUVE_MetadataSavedAsPlainStringsLoadsAsStringValues) {
