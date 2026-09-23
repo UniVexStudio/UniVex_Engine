@@ -236,7 +236,7 @@ void EditorUVE::DrawScriptSlotPropertyUVE(const Core::TypeMetadataEntryUVE& entr
     std::string path;
     property.getValue(instance, &path);
     const Scene::EntityUVE entity = m_selectedEntity;
-    bool actionsOpen = m_scriptSlotActionsEntity == entity;
+    bool openActions = false;
 
     if (!ImGui::BeginTable("##script-slot", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_NoSavedSettings)) {
         return;
@@ -248,14 +248,14 @@ void EditorUVE::DrawScriptSlotPropertyUVE(const Core::TypeMetadataEntryUVE& entr
     static_cast<void>(DrawMetadataPropertyLabelUVE(entry, property, instance, writable));
     ImGui::TableSetColumnIndex(1);
 
-    // The slot: a framed control reading "C++  <empty>" or "C++  main". Clicking it opens the
-    // action strip below; double-clicking a filled slot goes straight to the script.
+    // The slot: a framed control reading "C++  <empty>" or "C++  main". Clicking it floats a small
+    // action menu just under it; double-clicking a filled slot goes straight to the script.
     ImGui::BeginDisabled(!writable);
     const float height = ImGui::GetFrameHeight();
     const ImVec2 origin = ImGui::GetCursorScreenPos();
     const float width = ImGui::GetContentRegionAvail().x;
     if (ImGui::Button("##slot", ImVec2{width, height})) {
-        actionsOpen = !actionsOpen;
+        openActions = true;
     }
     const bool doubleClicked = ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
     if (ImGui::IsItemHovered()) {
@@ -275,146 +275,130 @@ void EditorUVE::DrawScriptSlotPropertyUVE(const Core::TypeMetadataEntryUVE& entr
     ImGui::EndDisabled();
     if (doubleClicked && !path.empty()) {
         static_cast<void>(OpenScriptGraphForEntityUVE(entity));
-        actionsOpen = false;
+        openActions = false;
     }
     ImGui::EndTable();
 
-    if (!writable) {
-        actionsOpen = false;
+    // Opened here, outside the table: a table scopes the ids inside it, and the popup must be
+    // opened and drawn under the same id.
+    if (openActions && writable) {
+        ImGui::OpenPopup("##script-actions");
     }
-    if (actionsOpen) {
-        // One row of actions, full width, directly under the slot. Each button is as wide as its
-        // label needs, with the spare width shared out, so no label is cut in a narrow panel.
-        const std::vector<const char*> labels = path.empty()
-                                                    ? std::vector<const char*>{"Add new C++", "Quick Load", "Load"}
-                                                    : std::vector<const char*>{"Open", "Quick Load", "Load", "Clear"};
-        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2{4.0F, ImGui::GetStyle().FramePadding.y});
-        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{4.0F, ImGui::GetStyle().ItemSpacing.y});
-        float textTotal = 0.0F;
-        for (const char* const label : labels) {
-            textTotal += ImGui::CalcTextSize(label).x + 8.0F;
+    ImGui::SetNextWindowPos(ImVec2{origin.x, origin.y + height + 2.0F}, ImGuiCond_Appearing);
+    if (!ImGui::BeginPopup("##script-actions")) {
+        return;
+    }
+    // A small floating menu, one action per row, like the Add Metadata form but compact.
+    constexpr float kMenuWidth = 170.0F;
+    bool closeMenu = false;
+    const auto action = [kMenuWidth](const char* const label, const char* const tooltip) {
+        const bool pressed = ImGui::Button(label, ImVec2{kMenuWidth, 0.0F});
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("%s", tooltip);
         }
-        const float spare = std::max(0.0F, ImGui::GetContentRegionAvail().x - textTotal -
-                                               (4.0F * static_cast<float>(labels.size() - 1U)));
-        const auto buttonWidth = [&](const char* const label) {
-            return ImGui::CalcTextSize(label).x + 8.0F + (spare / static_cast<float>(labels.size()));
-        };
-        // Keeps the row on one line while it fits and wraps it when the panel is too narrow, rather
-        // than pushing the last action past the edge where it cannot be clicked.
-        const float rowRight = ImGui::GetCursorScreenPos().x + ImGui::GetContentRegionAvail().x;
-        const auto nextButton = [&](const char* const label) {
-            ImGui::SameLine();
-            if (ImGui::GetCursorScreenPos().x + buttonWidth(label) > rowRight + 0.5F) {
-                ImGui::NewLine();
-            }
-        };
-        if (path.empty()) {
-            if (ImGui::Button("Add new C++", ImVec2{buttonWidth("Add new C++"), 0.0F})) {
-                actionsOpen = !CreateScriptForSelectedEntityUVE();
-            }
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("Create a script for this node and open it in Scripting.");
-            }
-        } else if (ImGui::Button("Open", ImVec2{buttonWidth("Open"), 0.0F})) {
-            actionsOpen = !OpenScriptGraphForEntityUVE(entity);
+        return pressed;
+    };
+    if (path.empty()) {
+        if (action("Add new C++", "Create a script for this node and open it in Scripting.")) {
+            closeMenu = CreateScriptForSelectedEntityUVE();
         }
-        nextButton("Quick Load");
-        if (ImGui::Button("Quick Load", ImVec2{buttonWidth("Quick Load"), 0.0F})) {
-            m_scriptQuickLoadFilter.clear();
-            m_scriptQuickLoadCandidates = GetKnownScriptAssetPathsUVE();
-            ImGui::OpenPopup("##script-quick-load");
-        }
-        nextButton("Load");
-        if (ImGui::Button("Load", ImVec2{buttonWidth("Load"), 0.0F})) {
-            m_scriptLoadPath = path;
-            m_scriptLoadCheckedPath.reset();
-            ImGui::OpenPopup("Load Script##script-load");
-        }
-        if (!path.empty()) {
-            nextButton("Clear");
-            if (ImGui::Button("Clear", ImVec2{buttonWidth("Clear"), 0.0F})) {
-                actionsOpen = !AssignScriptToSelectedEntityUVE({});
-            }
-        }
-        ImGui::PopStyleVar(2);
-
-        // Quick Load: every script the project knows, filtered as you type; one click assigns.
-        ImGui::SetNextWindowSizeConstraints(ImVec2{260.0F, 0.0F}, ImVec2{FLT_MAX, 320.0F});
-        if (ImGui::BeginPopup("##script-quick-load")) {
-            if (ImGui::IsWindowAppearing()) {
-                ImGui::SetKeyboardFocusHere();
-            }
-            std::array<char, 128> filter{};
-            m_scriptQuickLoadFilter.copy(filter.data(), filter.size() - 1U);
-            ImGui::SetNextItemWidth(-FLT_MIN);
-            if (ImGui::InputTextWithHint("##filter", "Search scripts", filter.data(), filter.size())) {
-                m_scriptQuickLoadFilter = filter.data();
-            }
-            std::size_t shown = 0U;
-            for (const std::string& candidate : m_scriptQuickLoadCandidates) {
-                const bool matches = m_scriptQuickLoadFilter.empty() ||
-                                     std::search(candidate.cbegin(), candidate.cend(), m_scriptQuickLoadFilter.cbegin(),
-                                                 m_scriptQuickLoadFilter.cend(), [](const char left, const char right) {
-                                                     return std::tolower(static_cast<unsigned char>(left)) ==
-                                                            std::tolower(static_cast<unsigned char>(right));
-                                                 }) != candidate.cend();
-                if (!matches) {
-                    continue;
-                }
-                ++shown;
-                if (ImGui::Selectable(candidate.c_str(), candidate == path)) {
-                    if (AssignScriptToSelectedEntityUVE(candidate) || candidate == path) {
-                        actionsOpen = false;
-                    }
-                    ImGui::CloseCurrentPopup();
-                }
-            }
-            if (shown == 0U) {
-                ImGui::TextDisabled(m_scriptQuickLoadFilter.empty() ? "No scripts in this project yet."
-                                                                    : "No script matches.");
-            }
-            ImGui::EndPopup();
-        }
-
-        // Load: a path typed or pasted in full, checked as it is typed so the reason a path is
-        // refused is visible before Load is pressed. Enter loads, Escape cancels.
-        ImGui::SetNextWindowSize(ImVec2{420.0F, 0.0F}, ImGuiCond_Appearing);
-        if (ImGui::BeginPopupModal("Load Script##script-load", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-            if (ImGui::IsWindowAppearing()) {
-                ImGui::SetKeyboardFocusHere();
-            }
-            std::array<char, Scene::kMaximumScriptAssetPathBytesUVE + 1U> buffer{};
-            m_scriptLoadPath.copy(buffer.data(), buffer.size() - 1U);
-            ImGui::SetNextItemWidth(400.0F);
-            const bool submitted = ImGui::InputTextWithHint("##path", "scripts/player.uvescript", buffer.data(),
-                                                            buffer.size(), ImGuiInputTextFlags_EnterReturnsTrue);
-            m_scriptLoadPath = buffer.data();
-            if (m_scriptLoadCheckedPath != m_scriptLoadPath) {
-                m_scriptLoadProblem = DescribeScriptAssetProblemUVE(m_scriptLoadPath);
-                m_scriptLoadCheckedPath = m_scriptLoadPath;
-            }
-            const std::string& problem = m_scriptLoadProblem;
-            if (problem.empty()) {
-                ImGui::TextDisabled("Ready to load.");
-            } else {
-                ImGui::TextColored(ImVec4{0.95F, 0.62F, 0.35F, 1.0F}, "%s", problem.c_str());
-            }
-            ImGui::Separator();
-            const bool cancel = ImGui::Button("Cancel", ImVec2{120.0F, 0.0F}) || ImGui::IsKeyPressed(ImGuiKey_Escape);
-            ImGui::SameLine();
-            ImGui::BeginDisabled(!problem.empty());
-            const bool load = ImGui::Button("Load", ImVec2{120.0F, 0.0F}) || (submitted && problem.empty());
-            ImGui::EndDisabled();
-            if (load && AssignScriptToSelectedEntityUVE(m_scriptLoadPath)) {
-                actionsOpen = false;
-                ImGui::CloseCurrentPopup();
-            } else if (cancel) {
-                ImGui::CloseCurrentPopup();
-            }
-            ImGui::EndPopup();
+    } else if (action("Open", "Open this node's script in Scripting.")) {
+        closeMenu = OpenScriptGraphForEntityUVE(entity);
+    }
+    if (action("Quick Load", "Pick one of this project's scripts.")) {
+        m_scriptQuickLoadFilter.clear();
+        m_scriptQuickLoadCandidates = GetKnownScriptAssetPathsUVE();
+        ImGui::OpenPopup("##script-quick-load");
+    }
+    if (action("Load", "Load a script by its path.")) {
+        m_scriptLoadPath = path;
+        m_scriptLoadCheckedPath.reset();
+        ImGui::OpenPopup("Load Script##script-load");
+    }
+    if (!path.empty()) {
+        ImGui::Separator();
+        if (action("Clear", "Detach the script from this node. Undo brings it back.")) {
+            closeMenu = AssignScriptToSelectedEntityUVE({});
         }
     }
-    m_scriptSlotActionsEntity = actionsOpen ? entity : Scene::kInvalidEntityUVE;
+
+    // Quick Load: every script the project knows, filtered as you type; one click assigns.
+    ImGui::SetNextWindowSizeConstraints(ImVec2{260.0F, 0.0F}, ImVec2{FLT_MAX, 320.0F});
+    if (ImGui::BeginPopup("##script-quick-load")) {
+        if (ImGui::IsWindowAppearing()) {
+            ImGui::SetKeyboardFocusHere();
+        }
+        std::array<char, 128> filter{};
+        m_scriptQuickLoadFilter.copy(filter.data(), filter.size() - 1U);
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        if (ImGui::InputTextWithHint("##filter", "Search scripts", filter.data(), filter.size())) {
+            m_scriptQuickLoadFilter = filter.data();
+        }
+        std::size_t shown = 0U;
+        for (const std::string& candidate : m_scriptQuickLoadCandidates) {
+            const bool matches = m_scriptQuickLoadFilter.empty() ||
+                                 std::search(candidate.cbegin(), candidate.cend(), m_scriptQuickLoadFilter.cbegin(),
+                                             m_scriptQuickLoadFilter.cend(), [](const char left, const char right) {
+                                                 return std::tolower(static_cast<unsigned char>(left)) ==
+                                                        std::tolower(static_cast<unsigned char>(right));
+                                             }) != candidate.cend();
+            if (!matches) {
+                continue;
+            }
+            ++shown;
+            if (ImGui::Selectable(candidate.c_str(), candidate == path)) {
+                closeMenu = AssignScriptToSelectedEntityUVE(candidate) || candidate == path;
+                ImGui::CloseCurrentPopup();
+            }
+        }
+        if (shown == 0U) {
+            ImGui::TextDisabled(m_scriptQuickLoadFilter.empty() ? "No scripts in this project yet."
+                                                                : "No script matches.");
+        }
+        ImGui::EndPopup();
+    }
+
+    // Load: a path typed or pasted in full, checked as it is typed so the reason a path is refused
+    // is visible before Load is pressed. Enter loads, Escape cancels.
+    ImGui::SetNextWindowSize(ImVec2{420.0F, 0.0F}, ImGuiCond_Appearing);
+    if (ImGui::BeginPopupModal("Load Script##script-load", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        if (ImGui::IsWindowAppearing()) {
+            ImGui::SetKeyboardFocusHere();
+        }
+        std::array<char, Scene::kMaximumScriptAssetPathBytesUVE + 1U> buffer{};
+        m_scriptLoadPath.copy(buffer.data(), buffer.size() - 1U);
+        ImGui::SetNextItemWidth(400.0F);
+        const bool submitted = ImGui::InputTextWithHint("##path", "scripts/player.uvescript", buffer.data(),
+                                                        buffer.size(), ImGuiInputTextFlags_EnterReturnsTrue);
+        m_scriptLoadPath = buffer.data();
+        if (m_scriptLoadCheckedPath != m_scriptLoadPath) {
+            m_scriptLoadProblem = DescribeScriptAssetProblemUVE(m_scriptLoadPath);
+            m_scriptLoadCheckedPath = m_scriptLoadPath;
+        }
+        const std::string& problem = m_scriptLoadProblem;
+        if (problem.empty()) {
+            ImGui::TextDisabled("Ready to load.");
+        } else {
+            ImGui::TextColored(ImVec4{0.95F, 0.62F, 0.35F, 1.0F}, "%s", problem.c_str());
+        }
+        ImGui::Separator();
+        const bool cancel = ImGui::Button("Cancel", ImVec2{120.0F, 0.0F}) || ImGui::IsKeyPressed(ImGuiKey_Escape);
+        ImGui::SameLine();
+        ImGui::BeginDisabled(!problem.empty());
+        const bool load = ImGui::Button("Load", ImVec2{120.0F, 0.0F}) || (submitted && problem.empty());
+        ImGui::EndDisabled();
+        if (load && AssignScriptToSelectedEntityUVE(m_scriptLoadPath)) {
+            closeMenu = true;
+            ImGui::CloseCurrentPopup();
+        } else if (cancel) {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+    if (closeMenu) {
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndPopup();
 }
 
 } // namespace UVE::Editor

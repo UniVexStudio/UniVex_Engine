@@ -22,6 +22,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cfloat>
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
@@ -32,6 +33,7 @@
 
 #include <imgui.h>
 
+#include "editor_axis_input_uve.h"
 #include "editor_chrome_layout_uve.h"
 #include "editor_fonts_uve.h"
 #include "editor_entity_label_uve.h"
@@ -292,6 +294,7 @@ void EditorUVE::DrawNameInspectorDrawerUVE(const Scene::EntityUVE entity) {
         const std::string& currentName = entityManager.GetComponentUVE<Scene::NameComponentUVE>(entity).name;
         currentName.copy(nameBuffer.data(), std::min(currentName.size(), nameBuffer.size() - 1U));
     }
+    ImGui::SetNextItemWidth(-FLT_MIN);
     if (ImGui::InputText("##name", nameBuffer.data(), nameBuffer.size())) {
         static_cast<void>(SetSelectedEntityNameUVE(nameBuffer.data()));
     }
@@ -330,6 +333,7 @@ void EditorUVE::DrawHierarchyInspectorDrawerUVE(const Scene::EntityUVE entity) {
         m_reparentTransformMode == EditorReparentTransformModeUVE::KeepWorld ? 1 : 0;
     constexpr const char* kReparentModes[] = {"Keep Local", "Keep World"};
     ImGui::TextUnformatted("Reparent Transform");
+    ImGui::SetNextItemWidth(-FLT_MIN);
     if (ImGui::Combo("##reparent-transform", &reparentModeIndex, kReparentModes,
                      static_cast<int>(std::size(kReparentModes)))) {
         const EditorReparentTransformModeUVE requestedMode = reparentModeIndex == 1
@@ -342,6 +346,7 @@ void EditorUVE::DrawHierarchyInspectorDrawerUVE(const Scene::EntityUVE entity) {
                                           ? "Root"
                                           : GetHierarchyCandidateLabelUVE(currentParent);
     ImGui::TextUnformatted("New Parent");
+    ImGui::SetNextItemWidth(-FLT_MIN);
     if (ImGui::BeginCombo("##new-parent", parentPreview.c_str())) {
         for (const Scene::EntityUVE candidate : GetEligibleReparentParentsUVE(entity)) {
             const bool isCurrentParent = candidate == currentParent;
@@ -392,22 +397,27 @@ void EditorUVE::DrawTransformInspectorDrawerUVE(const Scene::EntityUVE entity) {
                              haveEuler ? eulerRadians.z * kRadiansToDegreesUVE : 0.0F};
     float scale[3]{edited.localScale.x, edited.localScale.y, edited.localScale.z};
 
-    // Cowork's mockup uses a monospace font for numeric fields (`--font-mono`); PushFont() here
-    // only around these three widgets, not the whole panel, since everything else (labels,
-    // section headers) stays on the main UI font. Each group's label sits on its own line above
-    // its row of boxes (matching Unity/Unreal's own Inspector convention) rather than ImGui's
-    // default trailing label, which used to clip off the panel's right edge.
-    if (g_monoFontUVE != nullptr) {
-        ImGui::PushFont(g_monoFontUVE);
-    }
-    ImGui::TextUnformatted("Position");
-    const bool positionChanged = ImGui::InputFloat3("##local-position", position);
-    ImGui::TextUnformatted("Rotation");
-    const bool rotationChanged = ImGui::InputFloat3("##local-rotation", rotationDegrees);
-    ImGui::TextUnformatted("Scale");
-    const bool scaleChanged = ImGui::InputFloat3("##local-scale", scale);
-    if (g_monoFontUVE != nullptr) {
-        ImGui::PopFont();
+    // Label beside value, the layout every other Inspector row uses, with one axis-tagged field per
+    // component sharing the value column. Each field clips its own number, so a narrow panel shows
+    // fewer digits rather than digits spilling over the box.
+    bool positionChanged = false;
+    bool rotationChanged = false;
+    bool scaleChanged = false;
+    if (ImGui::BeginTable("##transform", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_NoSavedSettings)) {
+        ImGui::TableSetupColumn("##label", ImGuiTableColumnFlags_WidthStretch, 0.26F);
+        ImGui::TableSetupColumn("##value", ImGuiTableColumnFlags_WidthStretch, 0.74F);
+        const auto row = [](const char* const label, const char* const id, float* const values) {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted(label);
+            ImGui::TableSetColumnIndex(1);
+            return DrawAxisVectorInputUVE(id, values, 3, 0.0F, 0.0F, 0.0F, true);
+        };
+        positionChanged = row("Position", "##local-position", position);
+        rotationChanged = row("Rotation", "##local-rotation", rotationDegrees);
+        scaleChanged = row("Scale", "##local-scale", scale);
+        ImGui::EndTable();
     }
     if (positionChanged || rotationChanged || scaleChanged) {
         edited.localPosition = Math::Vector3UVE{position[0], position[1], position[2]};

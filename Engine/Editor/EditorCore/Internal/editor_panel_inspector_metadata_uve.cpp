@@ -34,6 +34,8 @@
 
 #include <imgui.h>
 
+#include "editor_axis_input_uve.h"
+
 #include "uve/asset/asset_guid_uve.h"
 #include "uve/component/editor_description_component_uve.h"
 #include "uve/component/entity_uve.h"
@@ -507,15 +509,15 @@ void EditorUVE::DrawMetadataPropertyRowUVE(const TypeMetadataEntryUVE& entry,
     } else if (property.typeId == Scene::kPropertyTypeVector2UVE) {
         Math::Vector2UVE value{};
         property.getValue(instance, &value);
-        if (ImGui::DragFloat2("##value", &value.x, RangeStepUVE(property, 0.01F), RangeMinimumUVE(property),
-                              RangeMaximumUVE(property))) {
+        if (DrawAxisVectorInputUVE("##value", &value.x, 2, RangeStepUVE(property, 0.01F), RangeMinimumUVE(property),
+                                   RangeMaximumUVE(property))) {
             edited = SetSelectedComponentPropertyUVE(entry, property, &value);
         }
     } else if (property.typeId == Scene::kPropertyTypeVector3UVE) {
         Math::Vector3UVE value{};
         property.getValue(instance, &value);
-        if (ImGui::DragFloat3("##value", &value.x, RangeStepUVE(property, 0.01F), RangeMinimumUVE(property),
-                              RangeMaximumUVE(property))) {
+        if (DrawAxisVectorInputUVE("##value", &value.x, 3, RangeStepUVE(property, 0.01F), RangeMinimumUVE(property),
+                                   RangeMaximumUVE(property))) {
             edited = SetSelectedComponentPropertyUVE(entry, property, &value);
         }
     } else if (property.typeId == Scene::kPropertyTypeColorUVE) {
