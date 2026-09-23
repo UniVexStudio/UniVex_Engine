@@ -23,6 +23,8 @@
 #include <GL/gl.h>
 #include <gtest/gtest.h>
 
+#include "uve/component/thread_group_component_uve.h"
+
 #include "uve/localization/localization_uve.h"
 
 #include "uve/component/auto_translate_component_uve.h"
@@ -320,6 +322,58 @@ TEST(EngineCoreUVETest, AutoTranslate_ALabelInheritsItsMenusOptOutWithoutACompon
     entityManager.GetComponentUVE<Scene::AutoTranslateComponentUVE>(menu).mode = Scene::AutoTranslateModeUVE::Always;
     engine.TickFrameUVE();
     EXPECT_EQ(glyphCount(), 7) << "\"Maglaro\"";
+
+    engine.Shutdown();
+}
+
+TEST(EngineCoreUVETest, ThreadGroup_ASubThreadEmitterSimulatesIdenticallyToItsMainThreadTwin) {
+    // End to end through real frames: the engine resolves the thread group, marks the emitter
+    // worker-eligible, and hands the simulate its thread pool. The twin never leaves the main
+    // thread. Same emission, same frames - the particles must come out the same.
+    EngineCoreUVE engine(MakeTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Core::EngineServicesUVE& services = engine.GetServicesUVE();
+    Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = services.GetSceneGraphUVE();
+
+    const auto makeEmitter = [&](const Scene::ThreadGroupModeUVE mode) {
+        const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
+        sceneGraph.AttachTransformUVE(entityManager, entity, Scene::TransformComponentUVE{});
+        entityManager.AddComponentUVE<Scene::ParticleEmitterComponentUVE>(entity,
+                                                                           Scene::ParticleEmitterComponentUVE{32U});
+        Scene::ThreadGroupComponentUVE threadGroup{};
+        threadGroup.mode = mode;
+        entityManager.AddComponentUVE<Scene::ThreadGroupComponentUVE>(entity, threadGroup);
+        return entity;
+    };
+    const Scene::EntityUVE onWorker = makeEmitter(Scene::ThreadGroupModeUVE::SubThread);
+    const Scene::EntityUVE onMain = makeEmitter(Scene::ThreadGroupModeUVE::MainThread);
+
+    engine.TickFrameUVE(); // Resolve modes and attach both runtime instances.
+    // The engine routed each emitter by its resolved mode. Without this check the comparison below
+    // would pass even if nothing ever left the main thread, because the serial path agrees too.
+    for (const Scene::ParticleRuntimeInstanceSnapshotUVE& instance : engine.GetParticleRuntimeSnapshotUVE().instances) {
+        EXPECT_EQ(instance.workerEligible, instance.entity == onWorker) << "emitter " << instance.entity.index;
+    }
+    Scene::IParticleRuntimeUVE& particles = services.GetParticleRuntimeUVE();
+    const Scene::ParticleEmissionUVE emission{16U, Math::Vector3UVE{1.0F, 2.0F, 3.0F},
+                                              Math::Vector3UVE{0.5F, 4.0F, -1.0F}, 5.0F};
+    ASSERT_TRUE(particles.EmitDetailedUVE(onWorker, emission).IsAcceptedUVE());
+    ASSERT_TRUE(particles.EmitDetailedUVE(onMain, emission).IsAcceptedUVE());
+
+    for (int frame = 0; frame < 10; ++frame) {
+        engine.TickFrameUVE();
+    }
+
+    const std::optional<Scene::ParticleStateSnapshotUVE> worker = particles.GetParticleSnapshotUVE(onWorker);
+    const std::optional<Scene::ParticleStateSnapshotUVE> main = particles.GetParticleSnapshotUVE(onMain);
+    ASSERT_TRUE(worker.has_value());
+    ASSERT_TRUE(main.has_value());
+    ASSERT_FALSE(worker->particles.empty());
+    EXPECT_EQ(worker->particles, main->particles);
+    // And they actually moved, so the comparison is not two untouched emissions agreeing.
+    EXPECT_NE(worker->particles.front().position, emission.position);
 
     engine.Shutdown();
 }

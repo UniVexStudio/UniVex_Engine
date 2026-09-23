@@ -2,6 +2,8 @@
 
 #include "uve/math/vector3_uve.h"
 #include "uve/scene/particle_runtime_uve.h"
+#include "uve/threading/job_counter_uve.h"
+#include "uve/threading/i_thread_pool_uve.h"
 
 #include <algorithm>
 #include <cmath>
@@ -41,7 +43,7 @@ ParticleRuntimeResultUVE ParticleRuntimeUVE::AttachDetailedUVE(
                              "Particle runtime attach rejected the aggregate particle budget limit.");
     }
 
-    m_instances.emplace(entity, InstanceUVE{entity, component.maxParticles, 0U, 1U, 1U, true, {}});
+    m_instances.emplace(entity, InstanceUVE{entity, component.maxParticles, 0U, 1U, 1U, true, false, {}});
     m_totalBudget += component.maxParticles;
     return MakeResultUVE(ParticleRuntimeCodeUVE::Applied,
                          "Particle emitter ownership attached without allocating particle storage.");
@@ -143,6 +145,36 @@ ParticleRuntimeResultUVE ParticleRuntimeUVE::EmitDetailedUVE(const EntityUVE ent
                          "Particle emission appended deterministic CPU particle state.");
 }
 
+bool ParticleRuntimeUVE::IsStepFiniteUVE(const InstanceUVE& instance, const float deltaSeconds,
+                                         const Math::Vector3UVE& acceleration) noexcept {
+    for (const ParticleStateUVE& particle : instance.particles) {
+        const Math::Vector3UVE nextVelocity = particle.velocity + acceleration * deltaSeconds;
+        const Math::Vector3UVE nextPosition = particle.position + nextVelocity * deltaSeconds;
+        const float nextLifetime = particle.remainingLifetimeSeconds - deltaSeconds;
+        if (!Math::IsFiniteUVE(nextVelocity) || !Math::IsFiniteUVE(nextPosition) || !std::isfinite(nextLifetime)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void ParticleRuntimeUVE::CommitStepUVE(InstanceUVE& instance, const float deltaSeconds,
+                                       const Math::Vector3UVE& acceleration) {
+    std::size_t writeIndex = 0U;
+    for (const ParticleStateUVE& particle : instance.particles) {
+        const Math::Vector3UVE nextVelocity = particle.velocity + acceleration * deltaSeconds;
+        const Math::Vector3UVE nextPosition = particle.position + nextVelocity * deltaSeconds;
+        const float nextLifetime = particle.remainingLifetimeSeconds - deltaSeconds;
+        if (nextLifetime <= 0.0F) {
+            continue;
+        }
+        instance.particles[writeIndex++] = {nextPosition, nextVelocity, nextLifetime, particle.sequence};
+    }
+    // Shrinking never reallocates, so this cannot throw; it is the only size change in a step.
+    instance.particles.resize(writeIndex);
+    instance.liveParticles = static_cast<std::uint32_t>(writeIndex);
+}
+
 ParticleRuntimeResultUVE ParticleRuntimeUVE::SimulateDetailedUVE(
     const float deltaSeconds, const Math::Vector3UVE& acceleration) noexcept {
     if (deltaSeconds < 0.0F || deltaSeconds > kMaximumSimulationDeltaSecondsUVE ||
@@ -161,15 +193,9 @@ ParticleRuntimeResultUVE ParticleRuntimeUVE::SimulateDetailedUVE(
         if (!instance.enabled || instance.particles.empty()) {
             continue;
         }
-        for (const ParticleStateUVE& particle : instance.particles) {
-            const Math::Vector3UVE nextVelocity = particle.velocity + acceleration * deltaSeconds;
-            const Math::Vector3UVE nextPosition = particle.position + nextVelocity * deltaSeconds;
-            const float nextLifetime = particle.remainingLifetimeSeconds - deltaSeconds;
-            if (!Math::IsFiniteUVE(nextVelocity) || !Math::IsFiniteUVE(nextPosition) ||
-                !std::isfinite(nextLifetime)) {
-                return MakeResultUVE(ParticleRuntimeCodeUVE::NonFiniteSimulation,
-                                     "Particle simulation rejected a non-finite integrated state atomically.");
-            }
+        if (!IsStepFiniteUVE(instance, deltaSeconds, acceleration)) {
+            return MakeResultUVE(ParticleRuntimeCodeUVE::NonFiniteSimulation,
+                                 "Particle simulation rejected a non-finite integrated state atomically.");
         }
         hasWork = true;
     }
@@ -183,19 +209,109 @@ ParticleRuntimeResultUVE ParticleRuntimeUVE::SimulateDetailedUVE(
         if (!instance.enabled || instance.particles.empty()) {
             continue;
         }
-        std::size_t writeIndex = 0U;
-        for (const ParticleStateUVE& particle : instance.particles) {
-            const Math::Vector3UVE nextVelocity = particle.velocity + acceleration * deltaSeconds;
-            const Math::Vector3UVE nextPosition = particle.position + nextVelocity * deltaSeconds;
-            const float nextLifetime = particle.remainingLifetimeSeconds - deltaSeconds;
-            if (nextLifetime <= 0.0F) {
-                continue;
-            }
-            instance.particles[writeIndex++] =
-                {nextPosition, nextVelocity, nextLifetime, particle.sequence};
+        CommitStepUVE(instance, deltaSeconds, acceleration);
+    }
+    return MakeResultUVE(ParticleRuntimeCodeUVE::Applied,
+                         "Particle simulation advanced enabled CPU particle state deterministically.");
+}
+
+ParticleRuntimeResultUVE ParticleRuntimeUVE::SetWorkerEligibleDetailedUVE(const EntityUVE entity,
+                                                                          const bool eligible) noexcept {
+    const auto iterator = m_instances.find(entity);
+    if (iterator == m_instances.end()) {
+        return MakeResultUVE(ParticleRuntimeCodeUVE::NoActiveInstance,
+                             "Worker eligibility requires an attached particle instance.");
+    }
+    if (iterator->second.workerEligible == eligible) {
+        return MakeResultUVE(ParticleRuntimeCodeUVE::Unchanged, "Worker eligibility is unchanged.");
+    }
+    iterator->second.workerEligible = eligible;
+    return MakeResultUVE(ParticleRuntimeCodeUVE::Applied, "Worker eligibility updated.");
+}
+
+namespace {
+
+/// Waits on `counter` when it leaves scope, however it leaves. A phase whose submission throws
+/// part-way must still wait for the jobs it already handed out: they hold pointers into this
+/// stack frame, and returning before they finish would leave them writing into freed memory.
+class JobCounterWaitGuardUVE final {
+public:
+    explicit JobCounterWaitGuardUVE(Threading::JobCounterUVE& counter) noexcept : m_counter(counter) {}
+    JobCounterWaitGuardUVE(const JobCounterWaitGuardUVE&) = delete;
+    JobCounterWaitGuardUVE& operator=(const JobCounterWaitGuardUVE&) = delete;
+    ~JobCounterWaitGuardUVE() { m_counter.WaitUVE(); }
+
+private:
+    Threading::JobCounterUVE& m_counter;
+};
+
+} // namespace
+
+ParticleRuntimeResultUVE ParticleRuntimeUVE::SimulateDetailedUVE(const float deltaSeconds,
+                                                                 const Math::Vector3UVE& acceleration,
+                                                                 Threading::IThreadPoolUVE* const threadPool) {
+    // Collected on the calling thread, in the same map order the serial path walks. Reading the
+    // map's structure is the only thing here that is not per-emitter, and it happens before any
+    // job exists; nothing below inserts or erases, so every pointer stays valid throughout.
+    std::vector<InstanceUVE*> work;
+    bool anyEligible = false;
+    for (auto& [entity, instance] : m_instances) {
+        static_cast<void>(entity);
+        if (instance.enabled && !instance.particles.empty()) {
+            work.push_back(&instance);
+            anyEligible = anyEligible || instance.workerEligible;
         }
-        instance.particles.resize(writeIndex);
-        instance.liveParticles = static_cast<std::uint32_t>(writeIndex);
+    }
+    if (threadPool == nullptr || threadPool->GetWorkerCountUVE() == 0U || !anyEligible) {
+        return SimulateDetailedUVE(deltaSeconds, acceleration);
+    }
+    // Input validation and the empty cases are the serial path's to answer, so both overloads
+    // report exactly the same codes for exactly the same inputs.
+    if (deltaSeconds <= 0.0F || deltaSeconds > kMaximumSimulationDeltaSecondsUVE ||
+        !std::isfinite(deltaSeconds) || !Math::IsFiniteUVE(acceleration)) {
+        return SimulateDetailedUVE(deltaSeconds, acceleration);
+    }
+
+    // Phase 1: validate. One byte per emitter, not std::vector<bool>: packed bits would make two
+    // workers writing neighbouring emitters' answers a data race on the same byte.
+    std::vector<std::uint8_t> finite(work.size(), 1U);
+    {
+        Threading::JobCounterUVE counter;
+        const JobCounterWaitGuardUVE waitForWorkers{counter};
+        for (std::size_t index = 0; index < work.size(); ++index) {
+            InstanceUVE* const instance = work[index];
+            std::uint8_t* const slot = &finite[index];
+            if (instance->workerEligible) {
+                threadPool->SubmitUVE(
+                    [instance, slot, deltaSeconds, acceleration] {
+                        *slot = IsStepFiniteUVE(*instance, deltaSeconds, acceleration) ? 1U : 0U;
+                    },
+                    counter);
+            } else {
+                *slot = IsStepFiniteUVE(*instance, deltaSeconds, acceleration) ? 1U : 0U;
+            }
+        }
+    } // The barrier: every validation, on every thread, has finished here.
+
+    if (std::find(finite.cbegin(), finite.cend(), std::uint8_t{0U}) != finite.cend()) {
+        return MakeResultUVE(ParticleRuntimeCodeUVE::NonFiniteSimulation,
+                             "Particle simulation rejected a non-finite integrated state atomically.");
+    }
+
+    // Phase 2: commit. Reached only when every emitter validated, so no emitter is written unless
+    // all of them will be - the serial path's atomicity, kept across threads.
+    {
+        Threading::JobCounterUVE counter;
+        const JobCounterWaitGuardUVE waitForWorkers{counter};
+        for (InstanceUVE* const instance : work) {
+            if (instance->workerEligible) {
+                threadPool->SubmitUVE([instance, deltaSeconds, acceleration] {
+                    CommitStepUVE(*instance, deltaSeconds, acceleration);
+                }, counter);
+            } else {
+                CommitStepUVE(*instance, deltaSeconds, acceleration);
+            }
+        }
     }
     return MakeResultUVE(ParticleRuntimeCodeUVE::Applied,
                          "Particle simulation advanced enabled CPU particle state deterministically.");
@@ -208,7 +324,8 @@ ParticleRuntimeSnapshotUVE ParticleRuntimeUVE::GetSnapshotUVE() const {
     snapshot.instances.reserve(m_instances.size());
     for (const auto& [entity, instance] : m_instances) {
         snapshot.instances.push_back(
-            {entity, instance.maxParticles, instance.liveParticles, instance.generation, instance.enabled});
+            {entity, instance.maxParticles, instance.liveParticles, instance.generation, instance.enabled,
+             instance.workerEligible});
     }
     std::sort(snapshot.instances.begin(), snapshot.instances.end(),
               [](const ParticleRuntimeInstanceSnapshotUVE& lhs, const ParticleRuntimeInstanceSnapshotUVE& rhs) {

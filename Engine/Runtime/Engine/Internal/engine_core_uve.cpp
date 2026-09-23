@@ -640,6 +640,12 @@ void EngineCoreUVE::SyncParticleRuntimeUVE() {
             // paused, rather than continuing to integrate behind a paused game.
             static_cast<void>(m_particleRuntime->SetEnabledDetailedUVE(
                 entity, Scene::IsProcessingUVE(ResolvedProcessModeUVE(*m_sceneGraph, entity), simulationPaused)));
+            // Thread Group: only an emitter resolved to Sub Thread is simulated on a worker. The
+            // default is Main Thread, so nothing leaves the main thread unless an author put it
+            // there - and a Main Thread ancestor keeps its whole subtree here.
+            const std::optional<Scene::ResolvedNodeModesUVE> modes = m_sceneGraph->TryGetResolvedNodeModesUVE(entity);
+            static_cast<void>(m_particleRuntime->SetWorkerEligibleDetailedUVE(
+                entity, modes.has_value() && modes->threadGroup == Scene::ThreadGroupModeUVE::SubThread));
         });
 
     const Scene::ParticleRuntimeSnapshotUVE runtimeSnapshot = m_particleRuntime->GetSnapshotUVE();
@@ -652,7 +658,7 @@ void EngineCoreUVE::SyncParticleRuntimeUVE() {
 
     const float deltaSeconds = static_cast<float>(m_timer->GetDeltaTimeUVE());
     if (deltaSeconds > 0.0F) {
-        static_cast<void>(m_particleRuntime->SimulateDetailedUVE(deltaSeconds, m_config.gravity));
+        static_cast<void>(m_particleRuntime->SimulateDetailedUVE(deltaSeconds, m_config.gravity, m_threadPool.get()));
     }
 }
 
