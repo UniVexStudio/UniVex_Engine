@@ -5,19 +5,13 @@
 #include <string>
 #include <vector>
 
-#include "uve/component/auto_translate_component_uve.h"
-#include "uve/component/editor_description_component_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/name_component_uve.h"
-#include "uve/component/node_metadata_component_uve.h"
-#include "uve/component/physics_interpolation_component_uve.h"
-#include "uve/component/process_component_uve.h"
-#include "uve/component/script_component_uve.h"
-#include "uve/component/thread_group_component_uve.h"
 #include "uve/component/transform_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
 #include "uve/math/quaternion_uve.h"
+#include "uve/nodes/3d/node_3d_uve.h"
 
 namespace UVE::Scene {
 namespace {
@@ -102,13 +96,7 @@ void ApplySceneRootNodeDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE
     // The root's Inspector is exactly the common Node section, always present rather than added:
     // the root offers no Add Component, so anything not attached here could never be reached.
     // Every one defaults to Inherit / empty, which changes nothing about how the scene runs.
-    EnsureComponentUVE<ProcessComponentUVE>(entityManager, entity);
-    EnsureComponentUVE<ThreadGroupComponentUVE>(entityManager, entity);
-    EnsureComponentUVE<PhysicsInterpolationComponentUVE>(entityManager, entity);
-    EnsureComponentUVE<AutoTranslateComponentUVE>(entityManager, entity);
-    EnsureComponentUVE<EditorDescriptionComponentUVE>(entityManager, entity);
-    EnsureComponentUVE<ScriptComponentUVE>(entityManager, entity);
-    EnsureComponentUVE<NodeMetadataComponentUVE>(entityManager, entity);
+    EnsureCommonNodeSectionUVE(entityManager, entity);
 }
 
 } // namespace UVE::Scene

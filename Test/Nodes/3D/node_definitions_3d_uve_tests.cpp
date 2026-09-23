@@ -24,6 +24,7 @@
 #include "uve/component/script_component_uve.h"
 #include "uve/component/thread_group_component_uve.h"
 #include "uve/component/transform_component_uve.h"
+#include "uve/component/visibility_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/entity/entity_manager_uve.h"
 #include "uve/events/event_system_uve.h"
@@ -349,6 +350,20 @@ TEST_F(Node3DDefinitionsUVETest, Node3DApplyPreservesAuthoredValuesAndRepairsOnl
     EXPECT_EQ(entityManager.GetComponentUVE<NameComponentUVE>(entity).name, "AuthoredPivot");
     EXPECT_TRUE(entityManager.HasComponentUVE<WorldTransformComponentUVE>(entity));
     EXPECT_TRUE(entityManager.HasComponentUVE<HierarchyComponentUVE>(entity));
+}
+
+TEST_F(Node3DDefinitionsUVETest, Node3DCarriesVisibilityAndTheCommonNodeSection) {
+    const EntityUVE entity = CreateEntityUVE();
+    ApplyNode3DNodeDefinitionUVE(entityManager, entity, Node3DNodeDefinitionUVE{});
+    // Its Inspector has no Add Component, so every section it shows is attached by the recipe.
+    EXPECT_TRUE(entityManager.HasComponentUVE<VisibilityComponentUVE>(entity));
+    EXPECT_TRUE(entityManager.HasComponentUVE<ProcessComponentUVE>(entity));
+    EXPECT_TRUE(entityManager.HasComponentUVE<ThreadGroupComponentUVE>(entity));
+    EXPECT_TRUE(entityManager.HasComponentUVE<PhysicsInterpolationComponentUVE>(entity));
+    EXPECT_TRUE(entityManager.HasComponentUVE<AutoTranslateComponentUVE>(entity));
+    EXPECT_TRUE(entityManager.HasComponentUVE<EditorDescriptionComponentUVE>(entity));
+    EXPECT_TRUE(entityManager.HasComponentUVE<ScriptComponentUVE>(entity));
+    EXPECT_TRUE(entityManager.HasComponentUVE<NodeMetadataComponentUVE>(entity));
 }
 
 TEST_F(Node3DDefinitionsUVETest, Node3DApplyIsIdempotent) {
