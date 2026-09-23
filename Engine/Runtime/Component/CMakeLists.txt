@@ -42,6 +42,8 @@ add_library(uve_component STATIC
     Internal/bone_modifier_component_uve.cpp
     Internal/physics_object_component_uve.cpp
     Internal/render_instance_component_uve.cpp
+    Internal/surface_instance_component_uve.cpp
+    Internal/light_emitter_component_uve.cpp
     Internal/node_metadata_component_uve.cpp
     Internal/process_component_uve.cpp
     Internal/thread_group_component_uve.cpp

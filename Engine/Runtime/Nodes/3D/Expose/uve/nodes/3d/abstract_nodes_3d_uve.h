@@ -15,9 +15,11 @@ class IEntityManagerUVE;
 // definition of what they have in common:
 //
 //   Node3D
-//   +- BoneModifier3D    adjusts a posed skeleton          (BoneModifierComponentUVE)
-//   +- PhysicsObject3D   takes part in collision           (PhysicsObjectComponentUVE)
-//   +- RenderInstance3D  is drawn                          (RenderInstanceComponentUVE)
+//   +- BoneModifier3D        adjusts a posed skeleton      (BoneModifierComponentUVE)
+//   +- PhysicsObject3D       takes part in collision       (PhysicsObjectComponentUVE)
+//   +- RenderInstance3D      is drawn                      (RenderInstanceComponentUVE)
+//      +- SurfaceInstance3D  draws geometry                (SurfaceInstanceComponentUVE)
+//      +- LightEmitter3D     gives off light               (LightEmitterComponentUVE)
 //
 // A child's recipe calls its base's Apply first and then attaches its own components, so a child
 // is exactly "its base plus its own", the same way every base is "Node3D plus its own".
@@ -34,6 +36,14 @@ struct RenderInstance3DNodeDefinitionUVE final {
     static constexpr std::string_view typeName = "RenderInstance3D";
 };
 
+struct SurfaceInstance3DNodeDefinitionUVE final {
+    static constexpr std::string_view typeName = "SurfaceInstance3D";
+};
+
+struct LightEmitter3DNodeDefinitionUVE final {
+    static constexpr std::string_view typeName = "LightEmitter3D";
+};
+
 /// Each applies the Node3D recipe (transform baseline, Visibility, the common Node section) and
 /// attaches its base component where missing. Existing components and their authored values are
 /// left alone, and a destroyed entity is refused quietly. `nameFallback` is the name given to an
@@ -41,5 +51,8 @@ struct RenderInstance3DNodeDefinitionUVE final {
 void ApplyBoneModifier3DBaseUVE(IEntityManagerUVE& entityManager, EntityUVE entity, std::string_view nameFallback);
 void ApplyPhysicsObject3DBaseUVE(IEntityManagerUVE& entityManager, EntityUVE entity, std::string_view nameFallback);
 void ApplyRenderInstance3DBaseUVE(IEntityManagerUVE& entityManager, EntityUVE entity, std::string_view nameFallback);
+/// The RenderInstance3D recipe, then the base's own component.
+void ApplySurfaceInstance3DBaseUVE(IEntityManagerUVE& entityManager, EntityUVE entity, std::string_view nameFallback);
+void ApplyLightEmitter3DBaseUVE(IEntityManagerUVE& entityManager, EntityUVE entity, std::string_view nameFallback);
 
 } // namespace UVE::Scene

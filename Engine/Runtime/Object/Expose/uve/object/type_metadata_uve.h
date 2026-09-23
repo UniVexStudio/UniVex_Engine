@@ -100,9 +100,9 @@ struct TypeMetadataPropertyUVE final {
     void (*getValue)(const void* instance, void* outValue) = nullptr;
     void (*setValue)(void* instance, const void* inValue) = nullptr;
 
-    /// Inspector grouping. Empty means the owning type's own section. Properties sort by
-    /// (section, order, declaration index), which is how the common Node section is kept last
-    /// without the inspector knowing what a "Node section" is.
+    /// Inspector sub-group inside the owning type's section, such as "Shadow". Empty means the
+    /// section's top level. Consecutive properties naming the same group are drawn under one
+    /// collapsible header, so declare a group's properties together and after the ungrouped ones.
     std::string section;
     std::int32_t order = 0;
     TypeMetadataPropertyFlagsUVE flags = TypeMetadataPropertyFlagsUVE::None;

@@ -176,6 +176,8 @@ TEST(SceneComponentMetadataUVETest, ConditionalVisibilityFollowsTheSiblingFieldI
     EXPECT_TRUE(height->isVisible(&component));
 }
 
+// Sections follow the class chain from most to least derived: the node's own, then Node3D's
+// Transform, then the common Node section.
 TEST(SceneComponentMetadataUVETest, TheCommonNodeSectionSortsBelowEverythingTypeSpecific) {
     const TypeMetadataEntryUVE* transform =
         FindSceneComponentMetadataUVE(std::type_index(typeid(TransformComponentUVE)));
@@ -186,8 +188,8 @@ TEST(SceneComponentMetadataUVETest, TheCommonNodeSectionSortsBelowEverythingType
     ASSERT_NE(light, nullptr);
     ASSERT_NE(interpolation, nullptr);
 
-    EXPECT_LT(transform->order, light->order);
-    EXPECT_LT(light->order, interpolation->order);
+    EXPECT_LT(light->order, transform->order);
+    EXPECT_LT(transform->order, interpolation->order);
     EXPECT_GE(interpolation->order, kSectionOrderNodeCommonUVE);
 }
 
