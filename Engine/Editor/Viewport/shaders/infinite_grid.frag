@@ -56,6 +56,7 @@ uniform vec3  uAxisColorZ;        // line along world Z (at x = 0)
 uniform float uFadeStart;         // world-space ground distance where the fade begins
 uniform float uFadeEnd;           // ... and where it reaches zero
 uniform float uOpacity;
+uniform float uGridPlane;         // 0 = ground XZ, 1 = XY (Front/Back), 2 = ZY (Left/Right)
 
 out vec4 fragColor;
 
@@ -113,6 +114,21 @@ float AxisLineCoverage(vec3 nearPoint, vec3 rayDir, vec3 axis, float widthPixels
     return AxisCoverage(signedDistance, worldPerPixel, widthPixels) * (t > 0.0 ? 1.0 : 0.0) * notAlongRay;
 }
 
+// The grid maths below is written for the ground: a plane y = 0 with its lines in x and z. The
+// other planes reuse it by relabelling the axes so the plane's normal lands in the "y" slot -
+// ToGridPlane() into that space, FromGridPlane() back to the world. Both are pure swizzles.
+vec3 ToGridPlane(vec3 v) {
+    if (uGridPlane > 1.5) return vec3(v.z, v.x, v.y); // ZY plane, normal X
+    if (uGridPlane > 0.5) return vec3(v.x, v.z, v.y); // XY plane, normal Z
+    return v;
+}
+
+vec3 FromGridPlane(vec3 p) {
+    if (uGridPlane > 1.5) return vec3(p.y, p.z, p.x);
+    if (uGridPlane > 0.5) return vec3(p.x, p.z, p.y);
+    return p;
+}
+
 void main() {
     // The divide happens here, per fragment: see infinite_grid.vert for why it cannot happen there.
     vec3 vNearPoint = vNearPointH.xyz / vNearPointH.w;
@@ -129,7 +145,9 @@ void main() {
     // been taken — derivatives are only well defined when the whole 2x2 quad
     // is still live, so an early `discard` here would make the LOD undefined
     // exactly where the grid is most stretched.
-    float denom = rayDir.y;
+    vec3 planeNear = ToGridPlane(vNearPoint);
+    vec3 planeRay = ToGridPlane(rayDir);
+    float denom = planeRay.y;
     // A ray running along the ground - the horizon row of an eye-level view, or every row of an
     // orthographic side view - has no usable hit. Dividing by its near-zero y threw worldPos out to
     // ~1e10, the grid maths on that came back NaN, and a NaN defeated every comparison below:
@@ -138,12 +156,13 @@ void main() {
     // the hit is kept finite here - the near point stands in - and its contribution zeroed.
     float groundHitValid = abs(denom) > 1e-6 * length(rayDir) ? 1.0 : 0.0;
     float safeDenom = groundHitValid > 0.5 ? denom : 1.0;
-    float t = groundHitValid > 0.5 ? clamp(-vNearPoint.y / safeDenom, -1e6, 1e6) : 0.0;
+    float t = groundHitValid > 0.5 ? clamp(-planeNear.y / safeDenom, -1e6, 1e6) : 0.0;
     // Only a hit in front of the near plane is a hit. With the eye on the ground itself (an
     // eye-level side view) the near point is already past the plane and the solution lands
     // behind it, between eye and near plane; drawn, that bogus grid won every pixel's depth.
     groundHitValid *= step(0.0, t);
-    vec3 worldPos = vNearPoint + t * rayDir;
+    // In grid-plane space: .xz are the grid's two line directions, .y is (zero) height off it.
+    vec3 worldPos = planeNear + t * planeRay;
 
     // ---- how much world space does one pixel cover here? ------------------
     vec2 worldPerPixel = vec2(
@@ -199,7 +218,7 @@ void main() {
     accum = Over(accum, color3, cov3 * alpha3);
 
     // ---- horizon fade for the ground-plane grid ------------------------------
-    float groundDist = length(worldPos.xz - uCameraPos.xz);
+    float groundDist = length(worldPos.xz - ToGridPlane(uCameraPos).xz);
     float groundFade = 1.0 - smoothstep(uFadeStart, uFadeEnd, groundDist);
     float groundAlpha = accum.a * groundFade * uOpacity;
     groundAlpha *= groundHitValid;
@@ -221,7 +240,7 @@ void main() {
     // ---- real depth, so the grid composites with scene geometry -----------
     // Whichever content wins this pixel supplies the depth - the ground hit for the grid, or the
     // closest point on whichever axis line is strongest here.
-    vec3 depthSourcePos = worldPos;
+    vec3 depthSourcePos = FromGridPlane(worldPos);
     float strongest = groundAlpha;
     if (axisXAlpha > strongest) { strongest = axisXAlpha; depthSourcePos = axisXClosestPoint; }
     if (axisZAlpha > strongest) { strongest = axisZAlpha; depthSourcePos = axisZClosestPoint; }

@@ -413,17 +413,27 @@ private:
         // for Top - whatever angle the camera came from.
         constexpr float kHalfPi = 1.5707963f;
         const auto& limits = camera_.Settings();
-        univex::math::Vec3 direction{};
         switch (view) {
             case ViewportViewUVE::Top: camera_.SnapToYawPitch(kHalfPi, limits.pitchMax); return;
             case ViewportViewUVE::Bottom: camera_.SnapToYawPitch(kHalfPi, limits.pitchMin); return;
-            case ViewportViewUVE::Front: direction = {0.f, 0.f, 1.f}; break;
-            case ViewportViewUVE::Back: direction = {0.f, 0.f, -1.f}; break;
-            case ViewportViewUVE::Right: direction = {1.f, 0.f, 0.f}; break;
-            case ViewportViewUVE::Left: direction = {-1.f, 0.f, 0.f}; break;
             case ViewportViewUVE::User: return;
+            default: camera_.SnapToDirection(NamedViewDirectionUVE(view)); return;
         }
-        camera_.SnapToDirection(direction);
+    }
+
+    // Where the eye sits relative to the target for a named view (the nav gizmo's convention,
+    // +Y is Top); zero for a free view.
+    [[nodiscard]] static univex::math::Vec3 NamedViewDirectionUVE(const ViewportViewUVE view) {
+        switch (view) {
+            case ViewportViewUVE::Top: return {0.f, 1.f, 0.f};
+            case ViewportViewUVE::Bottom: return {0.f, -1.f, 0.f};
+            case ViewportViewUVE::Front: return {0.f, 0.f, 1.f};
+            case ViewportViewUVE::Back: return {0.f, 0.f, -1.f};
+            case ViewportViewUVE::Right: return {1.f, 0.f, 0.f};
+            case ViewportViewUVE::Left: return {-1.f, 0.f, 0.f};
+            case ViewportViewUVE::User: break;
+        }
+        return {0.f, 0.f, 0.f};
     }
 
     // The nav gizmo's ball directions are exact world axes; anything else is not a named view.
@@ -452,6 +462,10 @@ private:
         // The Game workspace tab previews what a player would see - no editor-only grid overlay.
         settings.viewGrid = overlayState.gridVisible && !overlayState.gameWorkspaceActive;
         renderPass_->SetGridOpacityUVE(overlayState.gridOpacity);
+        // A named side view looks along the ground, which is only an edge from there; the grid
+        // stands up on the plane facing the camera instead, so the view keeps a reference.
+        const univex::math::Vec3 viewAxis = NamedViewDirectionUVE(overlayState.view);
+        renderPass_->SetGridPlaneUVE(univex::render::GridPlaneFacing(viewAxis.x, viewAxis.y, viewAxis.z));
         gameWorkspaceActive_ = overlayState.gameWorkspaceActive;
         pointerOverOverlay_ = overlayState.pointerOverOverlay;
         // Axis colours drive the gizmo AND the grid's own axis lines, so they go through

@@ -100,6 +100,8 @@ public:
     bool SetAxisPaletteUVE(const univex::viewport::AxisPaletteUVE& palette);
     /// Overall strength of the ground grid, clamped to 0..1.
     void SetGridOpacityUVE(float opacity);
+    /// Which world plane the grid is drawn on (see univex::render::GridPlane).
+    void SetGridPlaneUVE(univex::render::GridPlane plane);
     [[nodiscard]] univex::viewport::AxisPaletteUVE GetAxisPaletteUVE() const;
 
     void SetGizmoMode(GizmoMode mode) { gizmoMode_ = mode; }
