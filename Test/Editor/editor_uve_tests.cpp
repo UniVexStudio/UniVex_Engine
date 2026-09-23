@@ -1578,6 +1578,59 @@ TEST(EditorUVETest, SetSelectedEntityNameUVE_ValidatesInputAndMarksDocumentDirty
     engine.Shutdown();
 }
 
+TEST(EditorUVETest, NodeWarningsUVE_ReportSetupProblemsAndScriptPath) {
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_node_warnings.uvescene");
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+
+        // A plain, well-formed node has nothing to report and no script.
+        const Scene::EntityUVE clean = entityManager.CreateEntityUVE();
+        AttachRootUVE(engine, clean, Scene::TransformComponentUVE{});
+        EXPECT_TRUE(editor.GetNodeWarningsUVE(clean).empty());
+        EXPECT_FALSE(editor.GetNodeScriptPathUVE(clean).has_value());
+
+        // A mesh node with no mesh, and one pointing at a mesh the project does not have.
+        const Scene::EntityUVE noMesh = entityManager.CreateEntityUVE();
+        AttachRootUVE(engine, noMesh, Scene::TransformComponentUVE{});
+        entityManager.AddComponentUVE<Scene::MeshComponentUVE>(noMesh, Scene::MeshComponentUVE{});
+        ASSERT_EQ(editor.GetNodeWarningsUVE(noMesh).size(), 1U);
+        EXPECT_NE(editor.GetNodeWarningsUVE(noMesh).front().find("No mesh"), std::string::npos);
+
+        const Scene::EntityUVE lostMesh = entityManager.CreateEntityUVE();
+        AttachRootUVE(engine, lostMesh, Scene::TransformComponentUVE{});
+        Scene::MeshComponentUVE lost{};
+        lost.meshGuid = Asset::AssetGuidUVE{0x12345678ULL};
+        lost.materialGuid = Asset::AssetGuidUVE{0x9abcdef0ULL};
+        entityManager.AddComponentUVE<Scene::MeshComponentUVE>(lostMesh, lost);
+        EXPECT_EQ(editor.GetNodeWarningsUVE(lostMesh).size(), 2U) << "missing mesh and missing material";
+
+        // A script: a valid path is reported as the node's script; an invalid one is a warning too.
+        const Scene::EntityUVE scripted = entityManager.CreateEntityUVE();
+        AttachRootUVE(engine, scripted, Scene::TransformComponentUVE{});
+        entityManager.AddComponentUVE<Scene::ScriptComponentUVE>(scripted, Scene::ScriptComponentUVE{"scripts/player.uvescript"});
+        ASSERT_TRUE(editor.GetNodeScriptPathUVE(scripted).has_value());
+        EXPECT_EQ(*editor.GetNodeScriptPathUVE(scripted), "scripts/player.uvescript");
+        EXPECT_TRUE(editor.GetNodeWarningsUVE(scripted).empty());
+        entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(scripted).scriptAssetPath = "../outside.uvescript";
+        EXPECT_EQ(editor.GetNodeWarningsUVE(scripted).size(), 1U);
+
+        // A Skeleton3D with no source model has no bones to show.
+        const Scene::EntityUVE skeleton = entityManager.CreateEntityUVE();
+        AttachRootUVE(engine, skeleton, Scene::TransformComponentUVE{});
+        entityManager.AddComponentUVE<Scene::Skeleton3DNodeComponentUVE>(skeleton, Scene::Skeleton3DNodeComponentUVE{});
+        EXPECT_EQ(editor.GetNodeWarningsUVE(skeleton).size(), 1U);
+
+        // Not a document entity: nothing to say.
+        EXPECT_TRUE(editor.GetNodeWarningsUVE(Scene::kInvalidEntityUVE).empty());
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
 TEST(EditorUVETest, SetEntityVisibleUVE_TogglesAnyRowUndoablyWithoutTouchingSelection) {
     Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
     engine.Init();

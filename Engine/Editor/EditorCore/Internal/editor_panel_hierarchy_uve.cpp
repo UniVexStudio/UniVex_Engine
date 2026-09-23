@@ -31,10 +31,15 @@
 #include "editor_node_icons_uve.h"
 #include "editor_text_search_uve.h"
 
+#include "uve/asset/i_asset_database_uve.h"
+#include "uve/component/mesh_component_uve.h"
 #include "uve/component/name_component_uve.h"
+#include "uve/component/script_component_uve.h"
+#include "uve/component/transform_component_uve.h"
 #include "uve/component/visibility_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
 #include "uve/scene/i_scene_graph_uve.h"
+#include "uve/nodes/3d/skeleton_3d_uve.h"
 #include "uve/scene/nodes/scene_node_registry_uve.h"
 
 namespace UVE::Editor {
@@ -72,6 +77,61 @@ void DrawEyeGlyphUVE(ImDrawList& drawList, const ImVec2 center, const float size
     for (const float t : {0.25F, 0.5F, 0.75F}) {
         const ImVec2 root = lidPoint(t, lid);
         drawList.AddLine(root, ImVec2{root.x + ((t - 0.5F) * size * 0.25F), root.y + (size * 0.16F)}, color, thickness);
+    }
+}
+
+// `text` cut at a character boundary and ended with "..." so it fits `maxWidth` in the current
+// font; unchanged when it already fits, and just "..." when nothing else does.
+std::string FitTextToWidthUVE(const std::string& text, const float maxWidth) {
+    if (ImGui::CalcTextSize(text.c_str()).x <= maxWidth) {
+        return text;
+    }
+    constexpr const char* kEllipsis = "...";
+    std::size_t length = text.size();
+    while (length > 0U) {
+        // Step back one whole UTF-8 character: skip continuation bytes (10xxxxxx).
+        do {
+            --length;
+        } while (length > 0U && (static_cast<unsigned char>(text[length]) & 0xC0U) == 0x80U);
+        const std::string candidate = text.substr(0U, length) + kEllipsis;
+        if (ImGui::CalcTextSize(candidate.c_str()).x <= maxWidth) {
+            return candidate;
+        }
+    }
+    return kEllipsis;
+}
+
+// An amber warning triangle with a dark exclamation mark.
+void DrawWarningGlyphUVE(ImDrawList& drawList, const ImVec2 center, const float size) {
+    const float half = size * 0.42F;
+    const ImVec2 top{center.x, center.y - half};
+    const ImVec2 left{center.x - half, center.y + (half * 0.8F)};
+    const ImVec2 right{center.x + half, center.y + (half * 0.8F)};
+    drawList.AddTriangleFilled(top, right, left, IM_COL32(236, 172, 52, 255));
+    const ImU32 mark = IM_COL32(28, 22, 12, 255);
+    const float stroke = std::max(1.0F, size * 0.1F);
+    drawList.AddLine(ImVec2{center.x, center.y - (half * 0.35F)}, ImVec2{center.x, center.y + (half * 0.25F)}, mark,
+                     stroke);
+    drawList.AddCircleFilled(ImVec2{center.x, center.y + (half * 0.55F)}, stroke * 0.6F, mark, 8);
+}
+
+// A script: a pair of braces, drawn as strokes so it never depends on the font.
+void DrawScriptGlyphUVE(ImDrawList& drawList, const ImVec2 center, const float size, const ImU32 color) {
+    const float halfHeight = size * 0.36F;
+    const float halfWidth = size * 0.30F;
+    const float notch = size * 0.10F;
+    const float stroke = std::max(1.0F, size * 0.09F);
+    for (const float side : {-1.0F, 1.0F}) {
+        const float outer = center.x + (side * halfWidth);
+        const float inner = outer - (side * notch);
+        drawList.PathLineTo(ImVec2{inner + (side * notch * 0.2F), center.y - halfHeight});
+        drawList.PathLineTo(ImVec2{inner, center.y - (halfHeight * 0.75F)});
+        drawList.PathLineTo(ImVec2{inner, center.y - (halfHeight * 0.2F)});
+        drawList.PathLineTo(ImVec2{outer, center.y});
+        drawList.PathLineTo(ImVec2{inner, center.y + (halfHeight * 0.2F)});
+        drawList.PathLineTo(ImVec2{inner, center.y + (halfHeight * 0.75F)});
+        drawList.PathLineTo(ImVec2{inner + (side * notch * 0.2F), center.y + halfHeight});
+        drawList.PathStroke(color, 0, stroke);
     }
 }
 
@@ -190,7 +250,26 @@ void EditorUVE::DrawHierarchyNodeUVE(const Scene::EntityUVE entity) {
     const float spaceWidth = std::max(1.0F, ImGui::CalcTextSize(" ").x);
     const auto gapSpaces = static_cast<std::size_t>(
         std::ceil(((kHierarchyNodeIconRadiusUVE * 2.0F) + 6.0F) / spaceWidth));
-    const std::string visibleLabel = renaming ? "" : std::string(gapSpaces, ' ') + GetEntityDisplayLabelUVE(entity);
+    // The row's right-hand columns (eye, warning, script) are fixed; the name gives way to them.
+    // A name that would run under the leftmost column this row uses is cut short with "..." and
+    // shown in full on hover, instead of being painted over by the badges.
+    const std::vector<std::string> warnings = GetNodeWarningsUVE(entity);
+    const std::optional<std::string> script = GetNodeScriptPathUVE(entity);
+    float usedColumns = entityManager.HasComponentUVE<Scene::VisibilityComponentUVE>(entity) ? 1.0F : 0.0F;
+    if (!warnings.empty()) {
+        usedColumns = 2.0F;
+    }
+    if (script.has_value()) {
+        usedColumns = 3.0F;
+    }
+    const std::string fullName = GetEntityDisplayLabelUVE(entity);
+    const float labelStart = ImGui::GetCursorPosX() + ImGui::GetTreeNodeToLabelSpacing() +
+                             (static_cast<float>(gapSpaces) * spaceWidth);
+    const float labelLimit = ImGui::GetWindowContentRegionMax().x - (usedColumns * ImGui::GetFrameHeight()) -
+                             ImGui::GetStyle().ItemSpacing.x;
+    const std::string shownName = FitTextToWidthUVE(fullName, labelLimit - labelStart);
+    const bool nameTruncated = shownName.size() != fullName.size();
+    const std::string visibleLabel = renaming ? "" : std::string(gapSpaces, ' ') + shownName;
     const std::string nodeLabel = visibleLabel + "##entity-" + std::to_string(entity.index) + ":" +
                                   std::to_string(entity.generation);
     if (active) {
@@ -222,6 +301,9 @@ void EditorUVE::DrawHierarchyNodeUVE(const Scene::EntityUVE entity) {
                                 kHierarchyNodeIconRadiusUVE, iconKind,
                                 m_uiAssets.GetGeneralIconTextureIdUVE("sun"),
                                 m_uiAssets.GetGeneralIconTextureIdUVE("environment"));
+    }
+    if (nameTruncated && !renaming && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
+        ImGui::SetTooltip("%s", fullName.c_str());
     }
     if (ImGui::IsItemClicked() && !renaming) {
         if (ImGui::GetIO().KeyCtrl) {
@@ -273,6 +355,7 @@ void EditorUVE::DrawHierarchyNodeUVE(const Scene::EntityUVE entity) {
     }
     AcceptHierarchyDropTargetUVE(entity);
     if (!renaming) {
+        DrawHierarchyRowBadgesUVE(warnings, script);
         DrawHierarchyVisibilityToggleUVE(entity);
     }
     if (open) {
@@ -478,6 +561,95 @@ void EditorUVE::DrawHierarchyVisibilityToggleUVE(const Scene::EntityUVE entity) 
     if (clicked) {
         static_cast<void>(SetEntityVisibleUVE(entity, !visibility.visible));
     }
+}
+
+std::vector<std::string> EditorUVE::GetNodeWarningsUVE(const Scene::EntityUVE entity) const {
+    std::vector<std::string> warnings;
+    if (!IsDocumentEntityUVE(entity)) {
+        return warnings;
+    }
+    const Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    const Asset::IAssetDatabaseUVE& assets = m_services->GetAssetDatabaseUVE();
+    if (entityManager.HasComponentUVE<Scene::TransformComponentUVE>(entity) &&
+        !IsTransformFiniteUVE(entityManager.GetComponentUVE<Scene::TransformComponentUVE>(entity))) {
+        warnings.emplace_back("The transform holds a value that is not a number or is infinite.");
+    }
+    if (entityManager.HasComponentUVE<Scene::ScriptComponentUVE>(entity)) {
+        const std::string& path = entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(entity).scriptAssetPath;
+        if (!path.empty() && !Scene::IsScriptAssetPathValidUVE(path)) {
+            warnings.emplace_back("The script path is not a valid project path.");
+        }
+    }
+    if (entityManager.HasComponentUVE<Scene::MeshComponentUVE>(entity)) {
+        const Scene::MeshComponentUVE& mesh = entityManager.GetComponentUVE<Scene::MeshComponentUVE>(entity);
+        if (mesh.meshGuid == Asset::kInvalidAssetGuidUVE) {
+            warnings.emplace_back("No mesh is assigned, so nothing is drawn.");
+        } else if (!assets.HasGuidUVE(mesh.meshGuid)) {
+            warnings.emplace_back("The assigned mesh is no longer in the project.");
+        }
+        if (mesh.materialGuid != Asset::kInvalidAssetGuidUVE && !assets.HasGuidUVE(mesh.materialGuid)) {
+            warnings.emplace_back("The assigned material is no longer in the project.");
+        }
+    }
+    if (entityManager.HasComponentUVE<Scene::Skeleton3DNodeComponentUVE>(entity) &&
+        entityManager.GetComponentUVE<Scene::Skeleton3DNodeComponentUVE>(entity).skeletonAssetPath.empty()) {
+        warnings.emplace_back("No source model is set, so the skeleton has no bones.");
+    }
+    return warnings;
+}
+
+std::optional<std::string> EditorUVE::GetNodeScriptPathUVE(const Scene::EntityUVE entity) const {
+    const Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (!IsDocumentEntityUVE(entity) || !entityManager.HasComponentUVE<Scene::ScriptComponentUVE>(entity)) {
+        return std::nullopt;
+    }
+    const std::string& path = entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(entity).scriptAssetPath;
+    return path.empty() ? std::nullopt : std::optional<std::string>{path};
+}
+
+void EditorUVE::DrawHierarchyRowBadgesUVE(const std::vector<std::string>& warnings,
+                                          const std::optional<std::string>& script) {
+    // Two fixed columns left of the eye - warning nearest it, then script - so the same badge
+    // lines up down the whole tree and is found by scanning one column.
+    const float size = ImGui::GetFrameHeight();
+    const float rightEdge = ImGui::GetWindowContentRegionMax().x;
+    const float lineHeight = ImGui::GetTextLineHeight();
+    ImDrawList& drawList = *ImGui::GetWindowDrawList();
+    const auto badge = [&](const char* id, const float columnFromRight, auto&& drawGlyph, auto&& tooltip) {
+        ImGui::SameLine(std::max(ImGui::GetCursorPosX(), rightEdge - (size * columnFromRight)));
+        ImGui::InvisibleButton(id, ImVec2{size, lineHeight});
+        const ImVec2 min = ImGui::GetItemRectMin();
+        const ImVec2 max = ImGui::GetItemRectMax();
+        drawGlyph(ImVec2{(min.x + max.x) * 0.5F, (min.y + max.y) * 0.5F}, lineHeight);
+        if (ImGui::IsItemHovered()) {
+            ImGui::BeginTooltip();
+            tooltip();
+            ImGui::EndTooltip();
+        }
+    };
+
+    ImGui::PushID("##row-badges");
+    if (script.has_value()) {
+        badge("##script", 3.0F,
+              [&](const ImVec2 center, const float glyphSize) {
+                  DrawScriptGlyphUVE(drawList, center, glyphSize, IM_COL32(120, 170, 245, 255));
+              },
+              [&] {
+                  ImGui::TextDisabled("Script");
+                  ImGui::TextUnformatted(script->c_str());
+              });
+    }
+    if (!warnings.empty()) {
+        badge("##warning", 2.0F,
+              [&](const ImVec2 center, const float glyphSize) { DrawWarningGlyphUVE(drawList, center, glyphSize); },
+              [&] {
+                  ImGui::TextDisabled(warnings.size() == 1U ? "1 problem" : "%zu problems", warnings.size());
+                  for (const std::string& warning : warnings) {
+                      ImGui::BulletText("%s", warning.c_str());
+                  }
+              });
+    }
+    ImGui::PopID();
 }
 
 } // namespace UVE::Editor
