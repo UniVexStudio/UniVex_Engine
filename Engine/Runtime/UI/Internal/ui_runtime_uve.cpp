@@ -2,6 +2,8 @@
 
 #include "uve/ui/ui_runtime_uve.h"
 
+#include <string>
+
 #include "uve/input/mouse_button_uve.h"
 #include "uve/component/ui_button_component_uve.h"
 #include "uve/component/ui_image_component_uve.h"
@@ -19,7 +21,8 @@ namespace {
 
 } // namespace
 
-void UIRuntimeUVE::TickUVE(Scene::IEntityManagerUVE& entityManager, const Input::IInputSystemUVE& inputSystem) {
+void UIRuntimeUVE::TickUVE(Scene::IEntityManagerUVE& entityManager, const Input::IInputSystemUVE& inputSystem,
+                           const UITextLocalizationUVE& localization) {
     m_drawBatch.quads.clear();
 
     entityManager.ForEachUVE<Scene::UIImageComponentUVE>(
@@ -53,14 +56,25 @@ void UIRuntimeUVE::TickUVE(Scene::IEntityManagerUVE& entityManager, const Input:
         });
 
     std::vector<UIGlyphQuadUVE> glyphQuads;
+    std::string translated;
     entityManager.ForEachUVE<Scene::UITextComponentUVE>(
-        [this, &glyphQuads](const Scene::EntityUVE, const Scene::UITextComponentUVE& text) {
+        [this, &glyphQuads, &localization, &translated](const Scene::EntityUVE entity,
+                                                       const Scene::UITextComponentUVE& text) {
             glyphQuads.clear();
+            // The authored string is its own key. With no table installed - or no entry for this
+            // string - TranslateUVE hands it back unchanged, so localizing a scene nobody has
+            // translated draws exactly what it drew before.
+            const std::string* shown = &text.text;
+            if (localization.service != nullptr &&
+                (!localization.isAutoTranslated || localization.isAutoTranslated(entity))) {
+                translated = localization.service->TranslateUVE(text.text);
+                shown = &translated;
+            }
             // positionPixels is the text box's top-left; approximate the baseline as one fontSize
             // down (no separate ascent/descent metric is tracked) so the first line sits inside it.
             float cursorX = text.positionPixels.x;
             float cursorY = text.positionPixels.y + text.fontSize;
-            m_fontAtlas.AppendTextQuadsUVE(text.text, cursorX, cursorY, text.fontSize, glyphQuads);
+            m_fontAtlas.AppendTextQuadsUVE(*shown, cursorX, cursorY, text.fontSize, glyphQuads);
             for (const UIGlyphQuadUVE& glyphQuad : glyphQuads) {
                 UIQuadUVE quad{};
                 quad.positionPixels = Math::Vector2UVE{glyphQuad.x0, glyphQuad.y0};

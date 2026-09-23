@@ -31,6 +31,7 @@
 #include "uve/component/ui_image_component_uve.h"
 #include "uve/component/ui_text_component_uve.h"
 #include "uve/component/visibility_component_uve.h"
+#include "uve/logging/assert_uve.h"
 #include "uve/logging/logging_macros_uve.h"
 #include "uve/nodes/3d/world_environment_3d_uve.h"
 #include "uve/math/quaternion_uve.h"
@@ -566,12 +567,17 @@ void DeclareNodeCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                                                 {2, "When Paused"},
                                                                 {3, "Always"},
                                                                 {4, "Disabled"}}),
-                    "Whether this entity's per-frame work runs while the simulation is paused. "
-                    "Inherit takes the parent's answer (Pausable at the top of the hierarchy)."),
-                DeclareUVE<&ProcessComponentUVE::priority>("priority", "Priority",
-                                                            kPropertyTypeInt32UVE),
-                DeclareUVE<&ProcessComponentUVE::physicsPriority>(
-                    "physicsPriority", "Physics Priority", kPropertyTypeInt32UVE),
+                    "Whether this entity's work runs while paused. Drives scripts and particle "
+                    "emitters; controllers, projectiles and spring arms skip Disabled and When "
+                    "Paused. Inherit takes the parent's answer (Pausable at the top)."),
+                WithTooltipUVE(DeclareUVE<&ProcessComponentUVE::priority>("priority", "Priority",
+                                                                           kPropertyTypeInt32UVE),
+                               "Script tick order. Lower runs first; equal priorities keep entity "
+                               "order. Not inherited."),
+                WithTooltipUVE(DeclareUVE<&ProcessComponentUVE::physicsPriority>(
+                                   "physicsPriority", "Physics Priority", kPropertyTypeInt32UVE),
+                               "Fixed-step order for character controllers, projectiles and spring "
+                               "arms. Lower runs first. Not inherited."),
                 DeclareRuntimeStateEnumUVE<&ProcessComponentUVE::resolvedModeInHierarchy>(
                     "resolvedModeInHierarchy", "Resolved Mode",
                     {{0, "Inherit"}, {1, "Pausable"}, {2, "When Paused"}, {3, "Always"}, {4, "Disabled"}}),
@@ -585,9 +591,13 @@ void DeclareNodeCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                 WithTooltipUVE(
                     DeclareEnumUVE<&ThreadGroupComponentUVE::mode>(
                         "mode", "Mode", {{0, "Inherit"}, {1, "Main Thread"}, {2, "Sub Thread"}}),
-                    "Which thread this entity's work may run on. A Main Thread ancestor is a "
-                    "constraint a child cannot override."),
-                DeclareUVE<&ThreadGroupComponentUVE::order>("order", "Order", kPropertyTypeInt32UVE),
+                    "Which thread this entity's work may run on. Today this moves particle emitter "
+                    "simulation onto worker threads; scripts always stay on the main thread. A Main "
+                    "Thread ancestor is a constraint a child cannot override."),
+                WithTooltipUVE(DeclareUVE<&ThreadGroupComponentUVE::order>("order", "Order",
+                                                                          kPropertyTypeInt32UVE),
+                               "Not used yet. Particle emitters are simulated independently, so "
+                               "their order within a group has no effect."),
                 DeclareRuntimeStateEnumUVE<&ThreadGroupComponentUVE::resolvedModeInHierarchy>(
                     "resolvedModeInHierarchy", "Resolved Mode",
                     {{0, "Inherit"}, {1, "Main Thread"}, {2, "Sub Thread"}}),
@@ -601,8 +611,9 @@ void DeclareNodeCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                 WithTooltipUVE(
                     DeclareEnumUVE<&AutoTranslateComponentUVE::mode>(
                         "mode", "Mode", {{0, "Inherit"}, {1, "Always"}, {2, "Disabled"}}),
-                    "Whether this entity's authored text is looked up in the active locale before "
-                    "it is displayed. Disable it for debug labels, identifiers and player names."),
+                    "Whether this entity's UI Text is looked up in the active locale before it is "
+                    "drawn. The authored text is its own key. Disable it for debug labels, "
+                    "identifiers and player names; a label with no component follows its parent."),
                 DeclareRuntimeStateEnumUVE<&AutoTranslateComponentUVE::resolvedModeInHierarchy>(
                     "resolvedModeInHierarchy", "Resolved Mode",
                     {{0, "Inherit"}, {1, "Always"}, {2, "Disabled"}}),
@@ -667,6 +678,11 @@ void DeclareNodeCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
             // is a compile-time literal, so it either always registers or never does. Log loudly
             // and carry on - the affected component simply falls back to having no metadata.
             UVE_ERROR("SceneComponentMetadataUVE: \"{}\" was rejected: {}", typeId, result.message);
+            // Loud in debug builds. A rejected declaration otherwise costs only a log line while its
+            // whole component silently vanishes from the Inspector - which is exactly how an
+            // over-long tooltip once removed the Process section without failing anything but a
+            // drawer count.
+            UVE_ASSERT(result.IsRegisteredUVE());
         }
     }
     return registry;

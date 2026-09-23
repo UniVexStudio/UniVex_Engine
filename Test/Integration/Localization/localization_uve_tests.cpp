@@ -115,5 +115,31 @@ TEST(LocalizationServiceUVETest, AddStringTableUVE_ReplacesOneLocalesTableAndRef
     EXPECT_EQ(service.GetStringTableCountUVE(), 1U);
 }
 
+TEST(StringTableJsonUVETest, TryParseStringTableJsonUVE_ReadsAFlatObjectOfStrings) {
+    const std::optional<StringTableUVE> table = TryParseStringTableJsonUVE(
+        LocaleUVE{"fil", ""}, R"({"Play": "Maglaro", "menu.quit": "Umalis", "note": ""})");
+    ASSERT_TRUE(table.has_value());
+    EXPECT_EQ(table->GetLocaleUVE().language, "fil");
+    EXPECT_EQ(table->GetTranslationCountUVE(), 3U);
+    ASSERT_NE(table->FindTranslationUVE("menu.quit"), nullptr);
+    EXPECT_EQ(*table->FindTranslationUVE("menu.quit"), "Umalis");
+    // An empty value is a legitimate translation (a string deliberately blanked in one language).
+    ASSERT_NE(table->FindTranslationUVE("note"), nullptr);
+    EXPECT_TRUE(table->FindTranslationUVE("note")->empty());
+}
+
+TEST(StringTableJsonUVETest, TryParseStringTableJsonUVE_RejectsTheWholeFileRatherThanShippingHoles) {
+    const LocaleUVE locale{"fil", ""};
+    EXPECT_FALSE(TryParseStringTableJsonUVE(locale, "{not json").has_value());
+    EXPECT_FALSE(TryParseStringTableJsonUVE(locale, R"(["Play", "Maglaro"])").has_value());
+    // One bad entry sinks the file: a table that dropped it silently would ship with a hole in it
+    // and nothing to say where.
+    EXPECT_FALSE(TryParseStringTableJsonUVE(locale, R"({"Play": "Maglaro", "count": 3})").has_value());
+    EXPECT_FALSE(TryParseStringTableJsonUVE(locale, R"({"": "empty key"})").has_value());
+    const std::string oversizedValue = R"({"key": ")" + std::string(kMaximumTranslationValueBytesUVE + 1U, 'v') +
+                                       R"("})";
+    EXPECT_FALSE(TryParseStringTableJsonUVE(locale, oversizedValue).has_value());
+}
+
 } // namespace
 } // namespace UVE::Localization::Tests

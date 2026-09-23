@@ -2710,6 +2710,36 @@ TEST(ScriptComponentRuntimeOwnershipUVETest, ReconcileUVE_AttachesValidatedPathT
     EXPECT_EQ(runtime.GetInstanceCountUVE(), 1U);
 }
 
+TEST(ScriptRuntimeUVETest, TickDetailedUVE_OrdersByPriorityAndKeepsEntityOrderOnTies) {
+    ScriptRuntimeUVE runtime;
+    ASSERT_TRUE(runtime.AttachUVE({1U, 1U}, ScriptBytecodeProgramUVE{}));
+    ASSERT_TRUE(runtime.AttachUVE({2U, 1U}, ScriptBytecodeProgramUVE{}));
+    ASSERT_TRUE(runtime.AttachUVE({3U, 1U}, ScriptBytecodeProgramUVE{}));
+
+    // Nothing prioritised: entity order, exactly as every tick ran before priority existed.
+    ScriptRuntimeTickBatchResultUVE batch = runtime.TickDetailedUVE();
+    ASSERT_EQ(batch.results.size(), 3U);
+    EXPECT_EQ(batch.results[0].entity, (Scene::EntityUVE{1U, 1U}));
+    EXPECT_EQ(batch.results[1].entity, (Scene::EntityUVE{2U, 1U}));
+    EXPECT_EQ(batch.results[2].entity, (Scene::EntityUVE{3U, 1U}));
+
+    // Lower runs first; the two left at 0 keep their entity order relative to each other.
+    ASSERT_TRUE(runtime.SetPriorityUVE({3U, 1U}, -10));
+    batch = runtime.TickDetailedUVE();
+    ASSERT_EQ(batch.results.size(), 3U);
+    EXPECT_EQ(batch.results[0].entity, (Scene::EntityUVE{3U, 1U}));
+    EXPECT_EQ(batch.results[1].entity, (Scene::EntityUVE{1U, 1U}));
+    EXPECT_EQ(batch.results[2].entity, (Scene::EntityUVE{2U, 1U}));
+
+    // A disabled instance is skipped regardless of its priority.
+    ASSERT_TRUE(runtime.SetEnabledUVE({3U, 1U}, false));
+    batch = runtime.TickDetailedUVE();
+    ASSERT_EQ(batch.results.size(), 2U);
+    EXPECT_EQ(batch.results[0].entity, (Scene::EntityUVE{1U, 1U}));
+
+    EXPECT_FALSE(runtime.SetPriorityUVE({99U, 1U}, 5)); // No instance to prioritise.
+}
+
 TEST(ScriptComponentRuntimeOwnershipUVETest, ReconcileUVE_EmptyPathDetachesIdempotently) {
     ScriptRuntimeUVE runtime;
     ASSERT_TRUE(runtime.AttachUVE({9U, 1U}, ScriptBytecodeProgramUVE{}));

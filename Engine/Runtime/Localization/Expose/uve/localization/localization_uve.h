@@ -6,6 +6,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace UVE::Localization {
@@ -62,6 +63,16 @@ private:
     LocaleUVE m_locale;
     std::vector<TranslationUVE> m_translations;
 };
+
+/// Parses a string table from a JSON document: one flat object mapping each key to its display
+/// string, e.g. {"Play": "Maglaro", "menu.quit": "Umalis"}.
+///
+/// All or nothing. Returns nothing - and yields no partial table - when the text is not valid JSON,
+/// is not an object, holds a value that is not a string, or holds any entry StringTableUVE would
+/// refuse (an empty or oversized key, an oversized value, too many entries). A table that silently
+/// dropped the entries it did not like would ship a translation with holes in it and no sign of
+/// where they were.
+[[nodiscard]] std::optional<StringTableUVE> TryParseStringTableJsonUVE(LocaleUVE locale, std::string_view json);
 
 /// Resolves a translation key against the active locale, falling back until something answers.
 ///

@@ -159,7 +159,7 @@ ScriptRuntimeAttachResultUVE ScriptRuntimeUVE::AttachDetailedUVE(const Scene::En
         return {ScriptRuntimeAttachCodeUVE::DuplicateInstance, {},
                 "Runtime attachment rejected because the entity already has an active instance."};
     }
-    m_instances.emplace(entity, ScriptRuntimeInstanceUVE{entity, std::move(program), {}, 1U, true});
+    m_instances.emplace(entity, ScriptRuntimeInstanceUVE{entity, std::move(program), {}, 1U, true, 0});
     return {ScriptRuntimeAttachCodeUVE::Accepted, {}, "Runtime instance attached."};
 }
 
@@ -216,6 +216,44 @@ ScriptRuntimeEnabledUpdateResultUVE ScriptRuntimeUVE::SetEnabledDetailedUVE(
     }
     iterator->second.enabled = enabled;
     return {ScriptRuntimeEnabledUpdateCodeUVE::Applied, "Enabled state updated."};
+}
+
+bool ScriptRuntimeUVE::SetPriorityUVE(const Scene::EntityUVE entity, const std::int32_t priority) noexcept {
+    const auto iterator = m_instances.find(entity);
+    if (iterator == m_instances.end()) {
+        return false;
+    }
+    iterator->second.priority = priority;
+    return true;
+}
+
+std::vector<Scene::EntityUVE> ScriptRuntimeUVE::CollectTickOrderUVE() const {
+    std::vector<const ScriptRuntimeInstanceUVE*> enabled;
+    enabled.reserve(m_instances.size());
+    for (const auto& [entity, instance] : m_instances) {
+        static_cast<void>(entity);
+        if (instance.enabled) {
+            enabled.push_back(&instance);
+        }
+    }
+    // Priority first, then entity index and generation - the order both tick paths used before
+    // priority existed. An unset priority is 0 everywhere, so ties reproduce the old order exactly.
+    std::sort(enabled.begin(), enabled.end(),
+              [](const ScriptRuntimeInstanceUVE* const lhs, const ScriptRuntimeInstanceUVE* const rhs) {
+                  if (lhs->priority != rhs->priority) {
+                      return lhs->priority < rhs->priority;
+                  }
+                  if (lhs->entity.index != rhs->entity.index) {
+                      return lhs->entity.index < rhs->entity.index;
+                  }
+                  return lhs->entity.generation < rhs->entity.generation;
+              });
+    std::vector<Scene::EntityUVE> entities;
+    entities.reserve(enabled.size());
+    for (const ScriptRuntimeInstanceUVE* const instance : enabled) {
+        entities.push_back(instance->entity);
+    }
+    return entities;
 }
 
 bool ScriptRuntimeUVE::SetEnabledUVE(const Scene::EntityUVE entity, const bool enabled) noexcept {
@@ -308,19 +346,7 @@ std::size_t ScriptRuntimeUVE::GetInstanceCountUVE() const noexcept {
 
 ScriptRuntimeTickBatchResultUVE ScriptRuntimeUVE::TickDetailedUVE(
     const ScriptVmExecutionOptionsUVE options) {
-    std::vector<Scene::EntityUVE> entities;
-    entities.reserve(m_instances.size());
-    for (const auto& [entity, instance] : m_instances) {
-        if (instance.enabled) {
-            entities.push_back(entity);
-        }
-    }
-    std::sort(entities.begin(), entities.end(), [](const Scene::EntityUVE& lhs, const Scene::EntityUVE& rhs) {
-        if (lhs.index != rhs.index) {
-            return lhs.index < rhs.index;
-        }
-        return lhs.generation < rhs.generation;
-    });
+    const std::vector<Scene::EntityUVE> entities = CollectTickOrderUVE();
 
     ScriptRuntimeTickBatchResultUVE batch;
     batch.summary.enabledInstanceCount = entities.size();
@@ -358,19 +384,7 @@ ScriptRuntimeTickBatchResultUVE ScriptRuntimeUVE::TickWithEntityQueryDetailedUVE
     const Scene::IEntityManagerUVE& entityManager,
     const std::vector<ScriptEntityComponentTypeBindingUVE>& bindings,
     const ScriptVmExecutionOptionsUVE options) {
-    std::vector<Scene::EntityUVE> entities;
-    entities.reserve(m_instances.size());
-    for (const auto& [entity, instance] : m_instances) {
-        if (instance.enabled) {
-            entities.push_back(entity);
-        }
-    }
-    std::sort(entities.begin(), entities.end(), [](const Scene::EntityUVE& lhs, const Scene::EntityUVE& rhs) {
-        if (lhs.index != rhs.index) {
-            return lhs.index < rhs.index;
-        }
-        return lhs.generation < rhs.generation;
-    });
+    const std::vector<Scene::EntityUVE> entities = CollectTickOrderUVE();
 
     ScriptRuntimeTickBatchResultUVE batch;
     batch.summary.enabledInstanceCount = entities.size();

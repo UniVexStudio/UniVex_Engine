@@ -3,13 +3,27 @@
 
 #pragma once
 
+#include <optional>
 #include <vector>
 
+#include "uve/component/auto_translate_component_uve.h"
+#include "uve/component/process_component_uve.h"
+#include "uve/component/thread_group_component_uve.h"
 #include "uve/component/transform_component_uve.h"
 #include "uve/component/entity_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
 
 namespace UVE::Scene {
+
+/// The three inherited node modes as resolved for one entity by the most recent UpdateUVE().
+/// Always fully resolved - never Inherit - so a consumer uses the value as-is.
+struct ResolvedNodeModesUVE final {
+    ProcessModeUVE process = ProcessModeUVE::Pausable;
+    ThreadGroupModeUVE threadGroup = ThreadGroupModeUVE::MainThread;
+    AutoTranslateModeUVE autoTranslate = AutoTranslateModeUVE::Always;
+
+    [[nodiscard]] bool operator==(const ResolvedNodeModesUVE&) const = default;
+};
 
 /// ISceneGraphUVE is the hierarchical-transform-tree interface: parent/child relationships and
 /// dirty-flag-propagated world-space transforms, built on top of IEntityManagerUVE's
@@ -55,6 +69,18 @@ public:
     /// optimizing" rule; a cached parent→children index is a documented future optimization.
     [[nodiscard]] virtual std::vector<EntityUVE> GetChildrenUVE(IEntityManagerUVE& entityManager,
                                                                  EntityUVE parent) = 0;
+
+    /// The inherited node modes UpdateUVE() resolved for `entity`, or nothing when the entity was
+    /// not part of the last update (not a scene-graph node, or created since).
+    ///
+    /// WHY CONSUMERS ASK HERE RATHER THAN READING THE COMPONENT. The resolved answer is written
+    /// onto a ProcessComponentUVE / AutoTranslateComponentUVE only when the entity carries one.
+    /// An entity without the component still HAS an answer - inherited from its ancestors - and a
+    /// consumer that read only the component would ignore it: a label with no Auto Translate
+    /// component under a Disabled menu would still be translated, which is exactly the
+    /// inheritance the mode promises. This returns the answer for every node, carrier or not.
+    [[nodiscard]] virtual std::optional<ResolvedNodeModesUVE> TryGetResolvedNodeModesUVE(
+        EntityUVE entity) const = 0;
 };
 
 } // namespace UVE::Scene

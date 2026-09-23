@@ -6,6 +6,8 @@
 #include <cctype>
 #include <utility>
 
+#include <nlohmann/json.hpp>
+
 namespace UVE::Localization {
 namespace {
 
@@ -90,6 +92,23 @@ const std::string* StringTableUVE::FindTranslationUVE(const std::string_view key
                                            return translation.key == key;
                                        });
     return iterator == m_translations.cend() ? nullptr : &iterator->value;
+}
+
+std::optional<StringTableUVE> TryParseStringTableJsonUVE(LocaleUVE locale, const std::string_view json) {
+    // Parsed without exceptions: a malformed translation file is an expected input, not an
+    // exceptional one, and the caller is told through the empty result.
+    const nlohmann::json document = nlohmann::json::parse(json, nullptr, /*allow_exceptions=*/false);
+    if (document.is_discarded() || !document.is_object() ||
+        document.size() > kMaximumTranslationsPerTableUVE) {
+        return std::nullopt;
+    }
+    StringTableUVE table{std::move(locale)};
+    for (const auto& [key, value] : document.items()) {
+        if (!value.is_string() || !table.SetTranslationUVE(key, value.get<std::string>())) {
+            return std::nullopt;
+        }
+    }
+    return table;
 }
 
 bool LocalizationServiceUVE::AddStringTableUVE(StringTableUVE table) {

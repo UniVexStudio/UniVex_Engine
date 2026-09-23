@@ -23,6 +23,14 @@
 #include <GL/gl.h>
 #include <gtest/gtest.h>
 
+#include "uve/component/thread_group_component_uve.h"
+
+#include "uve/localization/localization_uve.h"
+
+#include "uve/component/auto_translate_component_uve.h"
+
+#include "uve/component/process_component_uve.h"
+
 #include "Support/test_scratch_uve.h"
 
 #include "uve/asset/asset_handle_uve.h"
@@ -151,6 +159,223 @@ TEST(EngineCoreUVETest, ParticleEmitterComponents_ReconcileWithRuntimeAcrossFram
     entityManager.RemoveComponentUVE<Scene::ParticleEmitterComponentUVE>(entity);
     engine.TickFrameUVE();
     EXPECT_EQ(engine.GetParticleRuntimeSnapshotUVE().instanceCount, 0U);
+}
+
+TEST(EngineCoreUVETest, ProcessMode_GatesParticleEmittersAgainstThePausedState) {
+    EngineCoreUVE engine(MakeTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Core::EngineServicesUVE& services = engine.GetServicesUVE();
+    Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = services.GetSceneGraphUVE();
+
+    const auto makeEmitter = [&](const std::optional<Scene::ProcessModeUVE> mode) {
+        const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
+        sceneGraph.AttachTransformUVE(entityManager, entity, Scene::TransformComponentUVE{});
+        entityManager.AddComponentUVE<Scene::ParticleEmitterComponentUVE>(entity,
+                                                                           Scene::ParticleEmitterComponentUVE{8U});
+        if (mode.has_value()) {
+            Scene::ProcessComponentUVE process{};
+            process.mode = *mode;
+            entityManager.AddComponentUVE<Scene::ProcessComponentUVE>(entity, process);
+        }
+        return entity;
+    };
+    const Scene::EntityUVE pausable = makeEmitter(std::nullopt); // No component: the default.
+    const Scene::EntityUVE always = makeEmitter(Scene::ProcessModeUVE::Always);
+    const Scene::EntityUVE whenPaused = makeEmitter(Scene::ProcessModeUVE::WhenPaused);
+    const Scene::EntityUVE disabled = makeEmitter(Scene::ProcessModeUVE::Disabled);
+
+    const auto isEnabled = [&engine](const Scene::EntityUVE entity) {
+        for (const Scene::ParticleRuntimeInstanceSnapshotUVE& instance :
+             engine.GetParticleRuntimeSnapshotUVE().instances) {
+            if (instance.entity == entity) {
+                return instance.enabled;
+            }
+        }
+        ADD_FAILURE() << "emitter has no runtime instance";
+        return false;
+    };
+
+    engine.TickFrameUVE();
+    EXPECT_TRUE(isEnabled(pausable));
+    EXPECT_TRUE(isEnabled(always));
+    EXPECT_FALSE(isEnabled(whenPaused));
+    EXPECT_FALSE(isEnabled(disabled));
+
+    // Pausing flips the two pause-sensitive modes and leaves the other two where they were.
+    ASSERT_TRUE(engine.SetSimulationExecutionModeUVE(SimulationExecutionModeUVE::Paused));
+    engine.TickFrameUVE();
+    EXPECT_FALSE(isEnabled(pausable));
+    EXPECT_TRUE(isEnabled(always));
+    EXPECT_TRUE(isEnabled(whenPaused));
+    EXPECT_FALSE(isEnabled(disabled));
+
+    engine.Shutdown();
+}
+
+TEST(EngineCoreUVETest, ProcessMode_DisabledInheritsToAChildWithoutTheComponent) {
+    // The inheritance the scene-graph query exists for: the child carries no ProcessComponentUVE,
+    // and must still stop because its parent was disabled.
+    EngineCoreUVE engine(MakeTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Core::EngineServicesUVE& services = engine.GetServicesUVE();
+    Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = services.GetSceneGraphUVE();
+
+    const Scene::EntityUVE parent = entityManager.CreateEntityUVE();
+    const Scene::EntityUVE child = entityManager.CreateEntityUVE();
+    for (const Scene::EntityUVE entity : {parent, child}) {
+        sceneGraph.AttachTransformUVE(entityManager, entity, Scene::TransformComponentUVE{});
+    }
+    sceneGraph.SetParentUVE(entityManager, child, parent);
+    Scene::ProcessComponentUVE disabled{};
+    disabled.mode = Scene::ProcessModeUVE::Disabled;
+    entityManager.AddComponentUVE<Scene::ProcessComponentUVE>(parent, disabled);
+    entityManager.AddComponentUVE<Scene::ParticleEmitterComponentUVE>(child, Scene::ParticleEmitterComponentUVE{8U});
+
+    engine.TickFrameUVE();
+    const Scene::ParticleRuntimeSnapshotUVE snapshot = engine.GetParticleRuntimeSnapshotUVE();
+    ASSERT_EQ(snapshot.instances.size(), 1U);
+    EXPECT_FALSE(snapshot.instances.front().enabled);
+
+    engine.Shutdown();
+}
+
+TEST(EngineCoreUVETest, ProcessMode_ADisabledProjectileDoesNotAdvanceOnAFixedStep) {
+    EngineCoreUVE engine(MakeTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Core::EngineServicesUVE& services = engine.GetServicesUVE();
+    Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = services.GetSceneGraphUVE();
+
+    const auto makeProjectile = [&](const Scene::ProcessModeUVE mode) {
+        const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
+        sceneGraph.AttachTransformUVE(entityManager, entity, Scene::TransformComponentUVE{});
+        Scene::Projectile3DNodeComponentUVE projectile{};
+        projectile.velocity = Math::Vector3UVE{10.0F, 0.0F, 0.0F};
+        entityManager.AddComponentUVE<Scene::Projectile3DNodeComponentUVE>(entity, projectile);
+        Scene::ProcessComponentUVE process{};
+        process.mode = mode;
+        entityManager.AddComponentUVE<Scene::ProcessComponentUVE>(entity, process);
+        return entity;
+    };
+    const Scene::EntityUVE moving = makeProjectile(Scene::ProcessModeUVE::Pausable);
+    const Scene::EntityUVE frozen = makeProjectile(Scene::ProcessModeUVE::Disabled);
+
+    // One frame so the scene graph resolves the modes, then one explicitly requested fixed step:
+    // a single step is the simulation advancing, so Pausable moves even though play is paused.
+    engine.TickFrameUVE();
+    ASSERT_TRUE(engine.SetSimulationExecutionModeUVE(SimulationExecutionModeUVE::Paused));
+    const float movingBefore = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(moving).localPosition.x;
+    const float frozenBefore = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(frozen).localPosition.x;
+    ASSERT_TRUE(engine.RequestSingleSimulationStepUVE());
+    engine.TickFrameUVE();
+
+    EXPECT_GT(entityManager.GetComponentUVE<Scene::TransformComponentUVE>(moving).localPosition.x, movingBefore);
+    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Scene::TransformComponentUVE>(frozen).localPosition.x,
+                    frozenBefore);
+
+    engine.Shutdown();
+}
+
+TEST(EngineCoreUVETest, AutoTranslate_ALabelInheritsItsMenusOptOutWithoutAComponent) {
+    EngineCoreUVE engine(MakeTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Core::EngineServicesUVE& services = engine.GetServicesUVE();
+    Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = services.GetSceneGraphUVE();
+
+    Localization::StringTableUVE filipino{Localization::LocaleUVE{"fil", ""}};
+    ASSERT_TRUE(filipino.SetTranslationUVE("Play", "Maglaro"));
+    ASSERT_TRUE(engine.GetLocalizationServiceUVE().AddStringTableUVE(std::move(filipino)));
+    engine.GetLocalizationServiceUVE().SetActiveLocaleUVE(Localization::LocaleUVE{"fil", ""});
+
+    // One menu that opts out; one label under it carrying no Auto Translate component of its own.
+    const Scene::EntityUVE menu = entityManager.CreateEntityUVE();
+    const Scene::EntityUVE label = entityManager.CreateEntityUVE();
+    for (const Scene::EntityUVE entity : {menu, label}) {
+        sceneGraph.AttachTransformUVE(entityManager, entity, Scene::TransformComponentUVE{});
+    }
+    sceneGraph.SetParentUVE(entityManager, label, menu);
+    Scene::AutoTranslateComponentUVE optOut{};
+    optOut.mode = Scene::AutoTranslateModeUVE::Disabled;
+    entityManager.AddComponentUVE<Scene::AutoTranslateComponentUVE>(menu, optOut);
+    Scene::UITextComponentUVE text{};
+    text.text = "Play";
+    entityManager.AddComponentUVE<Scene::UITextComponentUVE>(label, text);
+
+    const auto glyphCount = [&engine] {
+        const UI::UIDrawBatchUVE& batch = engine.GetUIRuntimeUVE().GetDrawBatchUVE();
+        return std::count_if(batch.quads.cbegin(), batch.quads.cend(), [](const UI::UIQuadUVE& quad) {
+            return quad.kind == UI::UIDrawItemKindUVE::Glyph;
+        });
+    };
+
+    engine.TickFrameUVE();
+    EXPECT_EQ(glyphCount(), 4) << "the label inherits Disabled, so it draws \"Play\" untranslated";
+
+    // Let the menu translate again, and the same label - still without a component - follows.
+    entityManager.GetComponentUVE<Scene::AutoTranslateComponentUVE>(menu).mode = Scene::AutoTranslateModeUVE::Always;
+    engine.TickFrameUVE();
+    EXPECT_EQ(glyphCount(), 7) << "\"Maglaro\"";
+
+    engine.Shutdown();
+}
+
+TEST(EngineCoreUVETest, ThreadGroup_ASubThreadEmitterSimulatesIdenticallyToItsMainThreadTwin) {
+    // End to end through real frames: the engine resolves the thread group, marks the emitter
+    // worker-eligible, and hands the simulate its thread pool. The twin never leaves the main
+    // thread. Same emission, same frames - the particles must come out the same.
+    EngineCoreUVE engine(MakeTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Core::EngineServicesUVE& services = engine.GetServicesUVE();
+    Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = services.GetSceneGraphUVE();
+
+    const auto makeEmitter = [&](const Scene::ThreadGroupModeUVE mode) {
+        const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
+        sceneGraph.AttachTransformUVE(entityManager, entity, Scene::TransformComponentUVE{});
+        entityManager.AddComponentUVE<Scene::ParticleEmitterComponentUVE>(entity,
+                                                                           Scene::ParticleEmitterComponentUVE{32U});
+        Scene::ThreadGroupComponentUVE threadGroup{};
+        threadGroup.mode = mode;
+        entityManager.AddComponentUVE<Scene::ThreadGroupComponentUVE>(entity, threadGroup);
+        return entity;
+    };
+    const Scene::EntityUVE onWorker = makeEmitter(Scene::ThreadGroupModeUVE::SubThread);
+    const Scene::EntityUVE onMain = makeEmitter(Scene::ThreadGroupModeUVE::MainThread);
+
+    engine.TickFrameUVE(); // Resolve modes and attach both runtime instances.
+    // The engine routed each emitter by its resolved mode. Without this check the comparison below
+    // would pass even if nothing ever left the main thread, because the serial path agrees too.
+    for (const Scene::ParticleRuntimeInstanceSnapshotUVE& instance : engine.GetParticleRuntimeSnapshotUVE().instances) {
+        EXPECT_EQ(instance.workerEligible, instance.entity == onWorker) << "emitter " << instance.entity.index;
+    }
+    Scene::IParticleRuntimeUVE& particles = services.GetParticleRuntimeUVE();
+    const Scene::ParticleEmissionUVE emission{16U, Math::Vector3UVE{1.0F, 2.0F, 3.0F},
+                                              Math::Vector3UVE{0.5F, 4.0F, -1.0F}, 5.0F};
+    ASSERT_TRUE(particles.EmitDetailedUVE(onWorker, emission).IsAcceptedUVE());
+    ASSERT_TRUE(particles.EmitDetailedUVE(onMain, emission).IsAcceptedUVE());
+
+    for (int frame = 0; frame < 10; ++frame) {
+        engine.TickFrameUVE();
+    }
+
+    const std::optional<Scene::ParticleStateSnapshotUVE> worker = particles.GetParticleSnapshotUVE(onWorker);
+    const std::optional<Scene::ParticleStateSnapshotUVE> main = particles.GetParticleSnapshotUVE(onMain);
+    ASSERT_TRUE(worker.has_value());
+    ASSERT_TRUE(main.has_value());
+    ASSERT_FALSE(worker->particles.empty());
+    EXPECT_EQ(worker->particles, main->particles);
+    // And they actually moved, so the comparison is not two untouched emissions agreeing.
+    EXPECT_NE(worker->particles.front().position, emission.position);
+
+    engine.Shutdown();
 }
 
 TEST(EngineCoreUVETest, RunUVE_BoundedFrames_ReachesShutdownWithCorrectFrameCount) {
