@@ -30,6 +30,7 @@ constexpr std::array<std::string_view, 1U> kInteractionAreaContracts{"Interactio
 constexpr std::array<std::string_view, 1U> kEnvironmentContracts{"WorldEnvironment3DNodeComponentUVE"};
 constexpr std::array<std::string_view, 1U> kReflectionProbeContracts{"ReflectionProbe3DNodeComponentUVE"};
 constexpr std::array<std::string_view, 1U> kDecalContracts{"Decal3DNodeComponentUVE"};
+constexpr std::array<std::string_view, 1U> kFogVolumeContracts{"FogVolume3DNodeComponentUVE"};
 constexpr std::array<std::string_view, 1U> kLodContracts{"LodGroup3DNodeComponentUVE"};
 constexpr std::array<std::string_view, 1U> kOccluderContracts{"Occluder3DNodeComponentUVE"};
 constexpr std::array<std::string_view, 1U> kVisibilityContracts{"VisibilityRegion3DNodeComponentUVE"};
@@ -45,7 +46,7 @@ constexpr std::array<std::string_view, 1U> kUITextContracts{"UITextComponentUVE"
 constexpr std::array<std::string_view, 1U> kUIImageContracts{"UIImageComponentUVE"};
 constexpr std::array<std::string_view, 1U> kUIButtonContracts{"UIButtonComponentUVE"};
 
-constexpr std::array<SceneNodeDescriptorUVE, 43U> kDescriptors{
+constexpr std::array<SceneNodeDescriptorUVE, 44U> kDescriptors{
     // The document's structural root: created by the document lifecycle (new document,
     // load-time migration), never through the Add-Node library - libraryCreatable is false.
     SceneNodeDescriptorUVE{SceneNodeKindUVE::SceneRoot, "scene_root", "SceneRoot", "Scene", "Scene/SceneRootNodeDefinitionUVE", kNoContracts, false},
@@ -70,6 +71,7 @@ constexpr std::array<SceneNodeDescriptorUVE, 43U> kDescriptors{
     SceneNodeDescriptorUVE{SceneNodeKindUVE::WorldEnvironment3D, "world_environment_3d", "WorldEnvironment3D", "Rendering", "Render/WorldEnvironment3DNodeComponentUVE", kEnvironmentContracts, true},
     SceneNodeDescriptorUVE{SceneNodeKindUVE::ReflectionProbe3D, "reflection_probe_3d", "ReflectionProbe3D", "Rendering", "Render/ReflectionProbe3DNodeComponentUVE", kReflectionProbeContracts, true},
     SceneNodeDescriptorUVE{SceneNodeKindUVE::Decal3D, "decal_3d", "Decal3D", "Rendering", "Render/Decal3DNodeComponentUVE", kDecalContracts, true},
+    SceneNodeDescriptorUVE{SceneNodeKindUVE::FogVolume3D, "fog_volume_3d", "FogVolume3D", "Rendering", "Render/FogVolume3DNodeComponentUVE", kFogVolumeContracts, true},
     SceneNodeDescriptorUVE{SceneNodeKindUVE::LODGroup3D, "lod_group_3d", "LODGroup3D", "Optimization", "Render/LODGroup3DNodeComponentUVE", kLodContracts, true},
     SceneNodeDescriptorUVE{SceneNodeKindUVE::Occluder3D, "occluder_3d", "Occluder3D", "Optimization", "Render/Occluder3DNodeComponentUVE", kOccluderContracts, true},
     SceneNodeDescriptorUVE{SceneNodeKindUVE::VisibilityRegion3D, "visibility_region_3d", "VisibilityRegion3D", "Optimization", "Render/VisibilityRegion3DNodeComponentUVE", kVisibilityContracts, true},

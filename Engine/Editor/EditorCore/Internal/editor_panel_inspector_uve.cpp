@@ -213,60 +213,17 @@ void EditorUVE::DrawInspectorContentUVE() {
 
     ImGui::BeginDisabled(!IsAuthoringCommandAllowedUVE());
     ImGui::Text("%s", GetEntityDisplayLabelUVE(m_selectedEntity).c_str());
-    // The scene root and a plain Node3D are fixed, short Inspectors: their recipe's sections and
-    // nothing else. They are renamed and reparented from the Scene panel, and there is nothing to
-    // add to them, so a search box, an Add Component panel and an id line would be chrome around a
-    // handful of rows.
-    if (HasFixedInspectorUVE(m_selectedEntity)) {
-        if (IsPlainNode3DEntityUVE(m_selectedEntity)) {
-            // A Node3D saved before its recipe included Visibility and the Node section is given
-            // them here, where they are first needed. Every default is Inherit or empty, so this
-            // changes nothing about how the scene runs.
-            Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-            if (!entityManager.HasComponentUVE<Scene::VisibilityComponentUVE>(m_selectedEntity)) {
-                entityManager.AddComponentUVE<Scene::VisibilityComponentUVE>(m_selectedEntity,
-                                                                             Scene::VisibilityComponentUVE{});
-            }
-            Scene::EnsureCommonNodeSectionUVE(entityManager, m_selectedEntity);
-        }
-        ImGui::Separator();
-        m_inspectorDrawerRegistry.DrawEligibleUVE(m_selectedEntity);
-        ImGui::EndDisabled();
-        return;
-    }
-    ImGui::TextDisabled("%s", EntityLabelUVE(m_selectedEntity).c_str());
-    std::array<char, 128> inspectorFilterBuffer{};
-    m_inspectorFilter.copy(inspectorFilterBuffer.data(), inspectorFilterBuffer.size() - 1U);
-    ImGui::SetNextItemWidth(-1.0F);
-    if (ImGui::InputTextWithHint("##inspector-filter", "Search properties...",
-                                inspectorFilterBuffer.data(), inspectorFilterBuffer.size())) {
-        m_inspectorFilter = inspectorFilterBuffer.data();
-    }
-    if (m_inspectorFilter.empty()) {
-        m_inspectorDrawerRegistry.DrawEligibleUVE(m_selectedEntity);
-    } else {
-        m_inspectorDrawerRegistry.DrawEligibleMatchingUVE(m_selectedEntity, m_inspectorFilter);
-    }
-    DrawSceneComponentAddPanelUVE();
-    if (!m_services->GetEntityManagerUVE().HasComponentUVE<Scene::TransformComponentUVE>(m_selectedEntity)) {
-        ImGui::TextUnformatted("No local Transform component.");
-    }
+    // Every Inspector is its node's recipe and nothing else: the node's own section, its bases,
+    // Node3D's Transform and Visibility, then the common Node section. Nodes are renamed and
+    // reparented from the Scene panel and get their parts from their recipe, so there is no name
+    // field, hierarchy block, search box, Add Component or Remove here.
+    RepairInspectorRecipeUVE(m_selectedEntity);
+    ImGui::Separator();
+    m_inspectorDrawerRegistry.DrawEligibleUVE(m_selectedEntity);
     ImGui::EndDisabled();
 }
 
-void EditorUVE::RegisterBuiltInInspectorDrawersUVE() {
-    static_cast<void>(m_inspectorDrawerRegistry.RegisterDrawerUVE(InspectorDrawerEntryUVE{
-        "name",
-        // Fixed Inspectors (root, plain Node3D) are renamed from the Scene panel.
-        [this](const Scene::EntityUVE entity) { return IsDocumentEntityUVE(entity) && !HasFixedInspectorUVE(entity); },
-        [this](const Scene::EntityUVE entity) { DrawNameInspectorDrawerUVE(entity); },
-    }));
-    static_cast<void>(m_inspectorDrawerRegistry.RegisterDrawerUVE(InspectorDrawerEntryUVE{
-        "hierarchy",
-        // Fixed Inspectors are reparented from the Scene panel; the root has no parent at all.
-        [this](const Scene::EntityUVE entity) { return IsDocumentEntityUVE(entity) && !HasFixedInspectorUVE(entity); },
-        [this](const Scene::EntityUVE entity) { DrawHierarchyInspectorDrawerUVE(entity); },
-    }));
+void EditorUVE::RegisterTransformInspectorDrawerUVE() {
     static_cast<void>(m_inspectorDrawerRegistry.RegisterDrawerUVE(InspectorDrawerEntryUVE{
         "transform",
         [this](const Scene::EntityUVE entity) {
@@ -275,7 +232,25 @@ void EditorUVE::RegisterBuiltInInspectorDrawersUVE() {
         },
         [this](const Scene::EntityUVE entity) { DrawTransformInspectorDrawerUVE(entity); },
     }));
-    // Everything between "transform" above and "prefab-instance" below used to be registered by
+}
+
+void EditorUVE::RepairInspectorRecipeUVE(const Scene::EntityUVE entity) {
+    // A node saved before its recipe included Visibility and the Node section is given them here,
+    // where they are first needed. Every default is Inherit or empty, so this changes nothing
+    // about how the scene runs.
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (!IsDocumentEntityUVE(entity)) {
+        return;
+    }
+    if (entityManager.HasComponentUVE<Scene::TransformComponentUVE>(entity) &&
+        !entityManager.HasComponentUVE<Scene::VisibilityComponentUVE>(entity)) {
+        entityManager.AddComponentUVE<Scene::VisibilityComponentUVE>(entity, Scene::VisibilityComponentUVE{});
+    }
+    Scene::EnsureCommonNodeSectionUVE(entityManager, entity);
+}
+
+void EditorUVE::RegisterBuiltInInspectorDrawersUVE() {
+    // Everything before "prefab-instance" below, the Transform section included, used to be registered by
     // hand here: a lambda with a fifteen-case switch over EditorSceneComponentKindUVE to decide
     // eligibility, fifteen calls into it, and a separate registration for each drawer that had
     // grown real fields. All of it is now generated from what each component declares about
@@ -292,94 +267,6 @@ void EditorUVE::RegisterBuiltInInspectorDrawersUVE() {
         },
         [this](const Scene::EntityUVE entity) { DrawPrefabInspectorDrawerUVE(entity); },
     }));
-}
-
-void EditorUVE::DrawNameInspectorDrawerUVE(const Scene::EntityUVE entity) {
-    if (!IsDocumentEntityUVE(entity)) {
-        return;
-    }
-
-    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    DrawNativeIconLabelUVE(0U, "Name");
-    std::array<char, kMaximumEntityNameBytesUVE + 1U> nameBuffer{};
-    if (entityManager.HasComponentUVE<Scene::NameComponentUVE>(entity)) {
-        const std::string& currentName = entityManager.GetComponentUVE<Scene::NameComponentUVE>(entity).name;
-        currentName.copy(nameBuffer.data(), std::min(currentName.size(), nameBuffer.size() - 1U));
-    }
-    ImGui::SetNextItemWidth(-FLT_MIN);
-    if (ImGui::InputText("##name", nameBuffer.data(), nameBuffer.size())) {
-        static_cast<void>(SetSelectedEntityNameUVE(nameBuffer.data()));
-    }
-}
-
-void EditorUVE::DrawHierarchyInspectorDrawerUVE(const Scene::EntityUVE entity) {
-    if (!IsDocumentEntityUVE(entity) || entity != m_selectedEntity) {
-        return;
-    }
-
-    ImGui::Separator();
-    DrawNativeIconLabelUVE(0U, "Hierarchy");
-    Scene::EntityUVE currentParent = Scene::kInvalidEntityUVE;
-    if (!TryGetDocumentParentUVE(entity, currentParent)) {
-        ImGui::TextDisabled("Parent unavailable due to invalid hierarchy state.");
-        return;
-    }
-
-    if (currentParent == Scene::kInvalidEntityUVE) {
-        ImGui::TextDisabled("Parent: Root");
-    } else {
-        ImGui::Text("Parent: %s", GetHierarchyCandidateLabelUVE(currentParent).c_str());
-    }
-
-    const std::vector<Scene::EntityUVE> ancestry = GetDocumentAncestryUVE(entity);
-    if (!ancestry.empty()) {
-        ImGui::TextDisabled("Ancestry (read-only)");
-        for (const Scene::EntityUVE ancestor : ancestry) {
-            ImGui::BulletText("%s", GetHierarchyCandidateLabelUVE(ancestor).c_str());
-        }
-    }
-
-    const bool canReparent = IsLifecycleCommandAllowedUVE();
-    ImGui::BeginDisabled(!canReparent);
-    int reparentModeIndex =
-        m_reparentTransformMode == EditorReparentTransformModeUVE::KeepWorld ? 1 : 0;
-    constexpr const char* kReparentModes[] = {"Keep Local", "Keep World"};
-    ImGui::TextUnformatted("Reparent Transform");
-    ImGui::SetNextItemWidth(-FLT_MIN);
-    if (ImGui::Combo("##reparent-transform", &reparentModeIndex, kReparentModes,
-                     static_cast<int>(std::size(kReparentModes)))) {
-        const EditorReparentTransformModeUVE requestedMode = reparentModeIndex == 1
-                                                                  ? EditorReparentTransformModeUVE::KeepWorld
-                                                                  : EditorReparentTransformModeUVE::KeepLocal;
-        static_cast<void>(SetReparentTransformModeUVE(requestedMode));
-    }
-
-    const std::string parentPreview = currentParent == Scene::kInvalidEntityUVE
-                                          ? "Root"
-                                          : GetHierarchyCandidateLabelUVE(currentParent);
-    ImGui::TextUnformatted("New Parent");
-    ImGui::SetNextItemWidth(-FLT_MIN);
-    if (ImGui::BeginCombo("##new-parent", parentPreview.c_str())) {
-        for (const Scene::EntityUVE candidate : GetEligibleReparentParentsUVE(entity)) {
-            const bool isCurrentParent = candidate == currentParent;
-            ImGui::BeginDisabled(isCurrentParent);
-            const std::string candidateLabel = GetHierarchyCandidateLabelUVE(candidate) + "##reparent-" +
-                                               std::to_string(candidate.index) + ":" +
-                                               std::to_string(candidate.generation);
-            if (ImGui::Selectable(candidateLabel.c_str(), false) && !isCurrentParent) {
-                static_cast<void>(ReparentSelectedEntityUVE(candidate));
-            }
-            ImGui::EndDisabled();
-        }
-        ImGui::EndCombo();
-    }
-
-    ImGui::BeginDisabled(currentParent == Scene::kInvalidEntityUVE);
-    if (ImGui::Button("Make Root")) {
-        static_cast<void>(ReparentSelectedEntityUVE(Scene::kInvalidEntityUVE));
-    }
-    ImGui::EndDisabled();
-    ImGui::EndDisabled();
 }
 
 void EditorUVE::DrawTransformInspectorDrawerUVE(const Scene::EntityUVE entity) {
@@ -449,16 +336,6 @@ void EditorUVE::DrawTransformInspectorDrawerUVE(const Scene::EntityUVE entity) {
     }
 }
 
-
-
-
-
-
-
-
-
-
-
 void EditorUVE::DrawPrefabInspectorDrawerUVE(const Scene::EntityUVE entity) {
     if (!IsDocumentEntityUVE(entity) || entity != m_selectedEntity) {
         return;
@@ -496,195 +373,5 @@ void EditorUVE::DrawPrefabInspectorDrawerUVE(const Scene::EntityUVE entity) {
     }
 }
 
-void EditorUVE::DrawSceneComponentAddPanelUVE() {
-    if (!IsDocumentEntityUVE(m_selectedEntity)) {
-        return;
-    }
-    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    if (!ImGui::CollapsingHeader("Add Component", ImGuiTreeNodeFlags_DefaultOpen)) {
-        return;
-    }
-
-    // This engine has no stored per-entity "node type" - every entity is a bare ECS bag of
-    // components, classified only by whichever components it currently has. Rather than list all
-    // ~17 components unconditionally on every entity, gate by what's already attached: once an
-    // entity has committed to being a UI node (Canvas/UIText/UIImage/UIButton) or a 3D node (any
-    // of the rest below), the other family's not-yet-attached rows are hidden - a freshly created
-    // Empty entity with neither yet shows everything until it picks a direction. Script is a
-    // generic behavior hook that applies to either kind, so it is never gated. An already-attached
-    // component's row always stays visible regardless of category, so the user can still see/
-    // remove it.
-    const bool hasAnyUIComponent = entityManager.HasComponentUVE<Scene::CanvasComponentUVE>(m_selectedEntity) ||
-                                   entityManager.HasComponentUVE<Scene::UITextComponentUVE>(m_selectedEntity) ||
-                                   entityManager.HasComponentUVE<Scene::UIImageComponentUVE>(m_selectedEntity) ||
-                                   entityManager.HasComponentUVE<Scene::UIButtonComponentUVE>(m_selectedEntity);
-    const bool hasAny3DComponent =
-        entityManager.HasComponentUVE<Scene::CameraComponentUVE>(m_selectedEntity) ||
-        entityManager.HasComponentUVE<Scene::MeshComponentUVE>(m_selectedEntity) ||
-        entityManager.HasComponentUVE<Scene::PrimitiveMeshComponentUVE>(m_selectedEntity) ||
-        entityManager.HasComponentUVE<Scene::LightComponentUVE>(m_selectedEntity) ||
-        entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(m_selectedEntity) ||
-        entityManager.HasComponentUVE<Scene::RigidBodyComponentUVE>(m_selectedEntity) ||
-        entityManager.HasComponentUVE<Scene::AudioSourceComponentUVE>(m_selectedEntity) ||
-        entityManager.HasComponentUVE<Scene::ParticleEmitterComponentUVE>(m_selectedEntity) ||
-        entityManager.HasComponentUVE<Scene::AnimationPlayerComponentUVE>(m_selectedEntity) ||
-        entityManager.HasComponentUVE<Scene::WorldEnvironment3DNodeComponentUVE>(m_selectedEntity) ||
-        entityManager.HasComponentUVE<Scene::CharacterControllerComponentUVE>(m_selectedEntity) ||
-        entityManager.HasComponentUVE<Scene::PhysicsInterpolationComponentUVE>(m_selectedEntity);
-
-    enum class ComponentCategoryUVE { Neutral, UI, ThreeD };
-    const auto shouldOfferRowUVE = [hasAnyUIComponent, hasAny3DComponent](const bool present,
-                                                                          const ComponentCategoryUVE category) {
-        if (present) {
-            return true;
-        }
-        if (category == ComponentCategoryUVE::UI) {
-            return !hasAny3DComponent;
-        }
-        if (category == ComponentCategoryUVE::ThreeD) {
-            return !hasAnyUIComponent;
-        }
-        return true;
-    };
-
-    if (ImGui::BeginTable("##component-grid", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_NoBordersInBody)) {
-        ImGui::TableSetupColumn("Component", ImGuiTableColumnFlags_WidthStretch);
-        ImGui::TableSetupColumn("State", ImGuiTableColumnFlags_WidthFixed, 70.0F);
-        const auto addIfMissing = [this, &entityManager](const char* label, const EditorSceneComponentKindUVE kind,
-                                                           const EditorSceneComponentValueUVE& value, const bool present) {
-            ImGui::TableNextRow();
-            ImGui::TableSetColumnIndex(0);
-            ImGui::BeginDisabled(present);
-            if (ImGui::SmallButton(label) && !present) {
-                static_cast<void>(SetSelectedSceneComponentUVE(kind, value));
-            }
-            ImGui::EndDisabled();
-            ImGui::TableSetColumnIndex(1);
-            ImGui::TextDisabled(present ? "Attached" : "Available");
-        };
-
-        const bool hasCamera = entityManager.HasComponentUVE<Scene::CameraComponentUVE>(m_selectedEntity);
-        if (shouldOfferRowUVE(hasCamera, ComponentCategoryUVE::ThreeD)) {
-            addIfMissing("Camera", EditorSceneComponentKindUVE::Camera, Scene::CameraComponentUVE{}, hasCamera);
-        }
-        const bool hasMesh = entityManager.HasComponentUVE<Scene::MeshComponentUVE>(m_selectedEntity);
-        if (shouldOfferRowUVE(hasMesh, ComponentCategoryUVE::ThreeD)) {
-            addIfMissing("Mesh", EditorSceneComponentKindUVE::Mesh, Scene::MeshComponentUVE{}, hasMesh);
-        }
-        const bool hasLight = entityManager.HasComponentUVE<Scene::LightComponentUVE>(m_selectedEntity);
-        if (shouldOfferRowUVE(hasLight, ComponentCategoryUVE::ThreeD)) {
-            addIfMissing("Light", EditorSceneComponentKindUVE::Light, Scene::LightComponentUVE{}, hasLight);
-        }
-        const bool hasCollider = entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(m_selectedEntity);
-        if (shouldOfferRowUVE(hasCollider, ComponentCategoryUVE::ThreeD)) {
-            addIfMissing("Collider", EditorSceneComponentKindUVE::Collider, Scene::ColliderComponentUVE{}, hasCollider);
-        }
-        const bool hasRigidBody = entityManager.HasComponentUVE<Scene::RigidBodyComponentUVE>(m_selectedEntity);
-        if (shouldOfferRowUVE(hasRigidBody, ComponentCategoryUVE::ThreeD)) {
-            addIfMissing("Rigid Body", EditorSceneComponentKindUVE::RigidBody, Scene::RigidBodyComponentUVE{},
-                         hasRigidBody);
-        }
-        const bool hasAudioSource = entityManager.HasComponentUVE<Scene::AudioSourceComponentUVE>(m_selectedEntity);
-        if (shouldOfferRowUVE(hasAudioSource, ComponentCategoryUVE::ThreeD)) {
-            addIfMissing("Audio Source", EditorSceneComponentKindUVE::AudioSource, Scene::AudioSourceComponentUVE{},
-                         hasAudioSource);
-        }
-        const bool hasParticleEmitter =
-            entityManager.HasComponentUVE<Scene::ParticleEmitterComponentUVE>(m_selectedEntity);
-        if (shouldOfferRowUVE(hasParticleEmitter, ComponentCategoryUVE::ThreeD)) {
-            addIfMissing("Particle Emitter", EditorSceneComponentKindUVE::ParticleEmitter,
-                         Scene::ParticleEmitterComponentUVE{}, hasParticleEmitter);
-        }
-        addIfMissing("Script", EditorSceneComponentKindUVE::Script, Scene::ScriptComponentUVE{},
-                     entityManager.HasComponentUVE<Scene::ScriptComponentUVE>(m_selectedEntity));
-        const bool hasAnimationPlayer =
-            entityManager.HasComponentUVE<Scene::AnimationPlayerComponentUVE>(m_selectedEntity);
-        if (shouldOfferRowUVE(hasAnimationPlayer, ComponentCategoryUVE::ThreeD)) {
-            addIfMissing("Animation Player", EditorSceneComponentKindUVE::AnimationPlayer,
-                         Scene::AnimationPlayerComponentUVE{}, hasAnimationPlayer);
-        }
-        const bool hasWorldEnvironment =
-            entityManager.HasComponentUVE<Scene::WorldEnvironment3DNodeComponentUVE>(m_selectedEntity);
-        if (shouldOfferRowUVE(hasWorldEnvironment, ComponentCategoryUVE::ThreeD)) {
-            addIfMissing("World Environment", EditorSceneComponentKindUVE::WorldEnvironment,
-                         Scene::WorldEnvironment3DNodeComponentUVE{}, hasWorldEnvironment);
-        }
-
-        // Character Controller needs its own row (not the shared addIfMissing lambda) because
-        // attaching it also auto-attaches a Collider + kinematic Rigid Body if either is missing -
-        // the same precondition CharacterControllerUVE::MoveUVE/MoveWithToIUVE already enforce, and
-        // the same auto-attach behavior the Library's CharacterBody3D node already establishes.
-        const bool hasCharacterController =
-            entityManager.HasComponentUVE<Scene::CharacterControllerComponentUVE>(m_selectedEntity);
-        if (shouldOfferRowUVE(hasCharacterController, ComponentCategoryUVE::ThreeD)) {
-            ImGui::TableNextRow();
-            ImGui::TableSetColumnIndex(0);
-            ImGui::BeginDisabled(hasCharacterController);
-            if (ImGui::SmallButton("Character Controller") && !hasCharacterController) {
-                if (!entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(m_selectedEntity)) {
-                    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(m_selectedEntity,
-                                                                               Scene::ColliderComponentUVE{});
-                }
-                if (entityManager.HasComponentUVE<Scene::RigidBodyComponentUVE>(m_selectedEntity)) {
-                    entityManager.GetComponentUVE<Scene::RigidBodyComponentUVE>(m_selectedEntity).isKinematic = true;
-                } else {
-                    Scene::RigidBodyComponentUVE body{};
-                    body.isKinematic = true;
-                    entityManager.AddComponentUVE<Scene::RigidBodyComponentUVE>(m_selectedEntity, body);
-                }
-                static_cast<void>(SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::CharacterController,
-                                                                Scene::CharacterControllerComponentUVE{}));
-            }
-            ImGui::EndDisabled();
-            ImGui::TableSetColumnIndex(1);
-            ImGui::TextDisabled(hasCharacterController ? "Attached" : "Available");
-        }
-
-        const bool hasCanvas = entityManager.HasComponentUVE<Scene::CanvasComponentUVE>(m_selectedEntity);
-        if (shouldOfferRowUVE(hasCanvas, ComponentCategoryUVE::UI)) {
-            addIfMissing("Canvas", EditorSceneComponentKindUVE::Canvas, Scene::CanvasComponentUVE{}, hasCanvas);
-        }
-        const bool hasUIText = entityManager.HasComponentUVE<Scene::UITextComponentUVE>(m_selectedEntity);
-        if (shouldOfferRowUVE(hasUIText, ComponentCategoryUVE::UI)) {
-            addIfMissing("UI Text", EditorSceneComponentKindUVE::UIText, Scene::UITextComponentUVE{}, hasUIText);
-        }
-        const bool hasUIImage = entityManager.HasComponentUVE<Scene::UIImageComponentUVE>(m_selectedEntity);
-        if (shouldOfferRowUVE(hasUIImage, ComponentCategoryUVE::UI)) {
-            addIfMissing("UI Image", EditorSceneComponentKindUVE::UIImage, Scene::UIImageComponentUVE{}, hasUIImage);
-        }
-        const bool hasUIButton = entityManager.HasComponentUVE<Scene::UIButtonComponentUVE>(m_selectedEntity);
-        if (shouldOfferRowUVE(hasUIButton, ComponentCategoryUVE::UI)) {
-            addIfMissing("UI Button", EditorSceneComponentKindUVE::UIButton, Scene::UIButtonComponentUVE{},
-                         hasUIButton);
-        }
-        const bool hasPhysicsInterpolation =
-            entityManager.HasComponentUVE<Scene::PhysicsInterpolationComponentUVE>(m_selectedEntity);
-        if (shouldOfferRowUVE(hasPhysicsInterpolation, ComponentCategoryUVE::ThreeD)) {
-            addIfMissing("Physics Interpolation", EditorSceneComponentKindUVE::PhysicsInterpolation,
-                         Scene::PhysicsInterpolationComponentUVE{}, hasPhysicsInterpolation);
-        }
-        // Editor Description, like Script, is a cross-cutting concern that applies to any entity
-        // regardless of which family it has committed to, so it is never category-gated.
-        addIfMissing("Editor Description", EditorSceneComponentKindUVE::EditorDescription,
-                     Scene::EditorDescriptionComponentUVE{},
-                     entityManager.HasComponentUVE<Scene::EditorDescriptionComponentUVE>(m_selectedEntity));
-        // The rest of the common Node section, ungated for the same reason: when an entity runs,
-        // which thread it runs on, whether its text is translated and what data is attached to it
-        // apply to every kind of node, not to a family of them.
-        addIfMissing("Process", EditorSceneComponentKindUVE::Process, Scene::ProcessComponentUVE{},
-                     entityManager.HasComponentUVE<Scene::ProcessComponentUVE>(m_selectedEntity));
-        addIfMissing("Thread Group", EditorSceneComponentKindUVE::ThreadGroup,
-                     Scene::ThreadGroupComponentUVE{},
-                     entityManager.HasComponentUVE<Scene::ThreadGroupComponentUVE>(m_selectedEntity));
-        addIfMissing("Auto Translate", EditorSceneComponentKindUVE::AutoTranslate,
-                     Scene::AutoTranslateComponentUVE{},
-                     entityManager.HasComponentUVE<Scene::AutoTranslateComponentUVE>(m_selectedEntity));
-        addIfMissing("Metadata", EditorSceneComponentKindUVE::NodeMetadata,
-                     Scene::NodeMetadataComponentUVE{},
-                     entityManager.HasComponentUVE<Scene::NodeMetadataComponentUVE>(m_selectedEntity));
-
-        ImGui::EndTable();
-    }
-}
 
 } // namespace UVE::Editor
