@@ -8,6 +8,7 @@
 #include <numbers>
 #include <string>
 #include <string_view>
+#include <typeindex>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -1626,6 +1627,81 @@ TEST(EditorUVETest, NodeWarningsUVE_ReportSetupProblemsAndScriptPath) {
 
         // Not a document entity: nothing to say.
         EXPECT_TRUE(editor.GetNodeWarningsUVE(Scene::kInvalidEntityUVE).empty());
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
+TEST(EditorUVETest, InspectorClipboardUVE_CopyPasteResetComponentsAndTransformUndoably) {
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_inspector_clipboard.uvescene");
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        const Core::TypeMetadataRegistryUVE& registry = Scene::GetSceneComponentMetadataRegistryUVE();
+        const Core::TypeMetadataEntryUVE* const primitive =
+            registry.FindTypeByIndexUVE(std::type_index(typeid(Scene::PrimitiveMeshComponentUVE)));
+        const Core::TypeMetadataEntryUVE* const visibility =
+            registry.FindTypeByIndexUVE(std::type_index(typeid(Scene::VisibilityComponentUVE)));
+        ASSERT_NE(primitive, nullptr);
+        ASSERT_NE(visibility, nullptr);
+
+        const Scene::EntityUVE source = entityManager.CreateEntityUVE();
+        const Scene::EntityUVE target = entityManager.CreateEntityUVE();
+        Scene::TransformComponentUVE placed{};
+        placed.localPosition = Math::Vector3UVE{3.0F, 1.0F, -2.0F};
+        placed.localScale = Math::Vector3UVE{2.0F, 2.0F, 2.0F};
+        AttachRootUVE(engine, source, placed);
+        AttachRootUVE(engine, target, Scene::TransformComponentUVE{});
+        entityManager.AddComponentUVE<Scene::PrimitiveMeshComponentUVE>(
+            source, Scene::PrimitiveMeshComponentUVE{Scene::PrimitiveMeshKindUVE::UVSphere, Math::Vector3UVE{0.9F, 0.1F, 0.2F}});
+        entityManager.AddComponentUVE<Scene::PrimitiveMeshComponentUVE>(target, Scene::PrimitiveMeshComponentUVE{});
+
+        // Nothing copied yet: nothing to paste.
+        editor.SelectEntityUVE(target);
+        EXPECT_FALSE(editor.CanPasteSelectedComponentUVE(*primitive));
+        EXPECT_FALSE(editor.PasteSelectedComponentUVE(*primitive));
+
+        editor.SelectEntityUVE(source);
+        ASSERT_TRUE(editor.CopySelectedComponentUVE(*primitive));
+        ASSERT_TRUE(editor.CopySelectedTransformUVE());
+        // A clipboard of one type never pastes into another.
+        EXPECT_FALSE(editor.CanPasteSelectedComponentUVE(*visibility));
+
+        editor.SelectEntityUVE(target);
+        ASSERT_TRUE(editor.PasteSelectedComponentUVE(*primitive));
+        const auto& pasted = entityManager.GetComponentUVE<Scene::PrimitiveMeshComponentUVE>(target);
+        EXPECT_EQ(pasted.kind, Scene::PrimitiveMeshKindUVE::UVSphere);
+        EXPECT_FLOAT_EQ(pasted.baseColor.x, 0.9F);
+        ASSERT_TRUE(editor.UndoUVE());
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::PrimitiveMeshComponentUVE>(target).kind,
+                  Scene::PrimitiveMeshKindUVE::Cube);
+
+        // Transform: only the local pose travels.
+        ASSERT_TRUE(editor.PasteSelectedTransformUVE());
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::TransformComponentUVE>(target).localPosition,
+                  placed.localPosition);
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::TransformComponentUVE>(target).localScale, placed.localScale);
+
+        // Reset writes the type's defaults, and is one undoable step.
+        editor.SelectEntityUVE(source);
+        ASSERT_TRUE(editor.ResetSelectedComponentUVE(*primitive));
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::PrimitiveMeshComponentUVE>(source).kind,
+                  Scene::PrimitiveMeshComponentUVE{}.kind);
+        ASSERT_TRUE(editor.UndoUVE());
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::PrimitiveMeshComponentUVE>(source).kind,
+                  Scene::PrimitiveMeshKindUVE::UVSphere);
+        ASSERT_TRUE(editor.ResetSelectedTransformUVE());
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::TransformComponentUVE>(source).localPosition, Math::Vector3UVE{});
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::TransformComponentUVE>(source).localScale,
+                  (Math::Vector3UVE{1.0F, 1.0F, 1.0F}));
+
+        // A node without the component cannot be copied from.
+        editor.ClearSelectionUVE();
+        EXPECT_FALSE(editor.CopySelectedComponentUVE(*primitive));
+        EXPECT_FALSE(editor.CopySelectedTransformUVE());
         editor.ShutdownUVE();
     }
     engine.Shutdown();

@@ -42,6 +42,7 @@
 #include "uve/asset/i_project_file_index_uve.h"
 #include "uve/component/editor_description_component_uve.h"
 #include "uve/component/entity_uve.h"
+#include "uve/component/transform_component_uve.h"
 #include "uve/component/visibility_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
 #include "uve/math/vector2_uve.h"
@@ -328,10 +329,12 @@ void EditorUVE::DrawMetadataComponentDrawerUVE(const Scene::EntityUVE entity, co
     // sessions (DrawInspectorFoldUVE) - which is what makes a long Inspector usable at all.
     // "###" keeps the header's identity on the type, so a title that follows the value does not
     // reset the section's open state when the value changes.
-    const std::string header = std::string{entry.sectionTitle != nullptr ? entry.sectionTitle(instance)
-                                                                          : entry.displayName.c_str()} +
-                               "###" + entry.typeId;
-    if (DrawInspectorFoldUVE(header.c_str(), "section:" + entry.typeId, true, true, 0)) {
+    const std::string sectionTitle{entry.sectionTitle != nullptr ? entry.sectionTitle(instance)
+                                                                 : entry.displayName.c_str()};
+    const std::string header = sectionTitle + "###" + entry.typeId;
+    const bool sectionOpen = DrawInspectorFoldUVE(header.c_str(), "section:" + entry.typeId, true, true, 0);
+    DrawInspectorSectionMenuUVE(&entry, sectionTitle.c_str());
+    if (sectionOpen) {
         DrawMetadataPropertyRowsUVE(entry, instance);
         for (const TypeMetadataEntryUVE* const child : nested) {
             if (!entityManager.HasComponentUVE(entity, child->typeIndex)) {
@@ -804,6 +807,112 @@ bool EditorUVE::SetSelectedComponentValueUVE(const TypeMetadataEntryUVE& entry, 
                                                       selectionBefore, CaptureSelectionSnapshotUVE(), dirtyBefore,
                                                       true});
     return true;
+}
+
+bool EditorUVE::CopySelectedComponentUVE(const TypeMetadataEntryUVE& entry) {
+    if (!HasSingleDocumentSelectionUVE() || !entry.HasFactoryUVE()) {
+        return false;
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (!entityManager.HasComponentUVE(m_selectedEntity, entry.typeIndex)) {
+        return false;
+    }
+    Core::TypeInstanceUVE copy =
+        Core::TypeInstanceUVE::CloneUVE(entry, entityManager.GetComponentPointerUVE(m_selectedEntity, entry.typeIndex));
+    if (!copy.IsValidUVE()) {
+        return false;
+    }
+    m_componentClipboard = ComponentClipboardUVE{&entry, std::move(copy)};
+    return true;
+}
+
+bool EditorUVE::CanPasteSelectedComponentUVE(const TypeMetadataEntryUVE& entry) const noexcept {
+    // Types are compared by identity, not by name: two entries can never share a type index.
+    return m_componentClipboard.has_value() && m_componentClipboard->entry != nullptr &&
+           m_componentClipboard->entry->typeIndex == entry.typeIndex && m_componentClipboard->value.IsValidUVE();
+}
+
+bool EditorUVE::PasteSelectedComponentUVE(const TypeMetadataEntryUVE& entry) {
+    if (!CanPasteSelectedComponentUVE(entry)) {
+        return false;
+    }
+    return SetSelectedComponentValueUVE(entry, m_componentClipboard->value.GetUVE());
+}
+
+bool EditorUVE::ResetSelectedComponentUVE(const TypeMetadataEntryUVE& entry) {
+    const Core::TypeInstanceUVE defaults = Core::TypeInstanceUVE::MakeDefaultUVE(entry);
+    return defaults.IsValidUVE() && SetSelectedComponentValueUVE(entry, defaults.GetUVE());
+}
+
+bool EditorUVE::CopySelectedTransformUVE() {
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (!HasSingleDocumentSelectionUVE() ||
+        !entityManager.HasComponentUVE<Scene::TransformComponentUVE>(m_selectedEntity)) {
+        return false;
+    }
+    m_transformClipboard = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(m_selectedEntity);
+    return true;
+}
+
+namespace {
+
+// The local pose of `pose` written over `target`, leaving everything that is not pose alone.
+Scene::TransformComponentUVE WithLocalPoseUVE(Scene::TransformComponentUVE target,
+                                              const Scene::TransformComponentUVE& pose) {
+    target.localPosition = pose.localPosition;
+    target.localRotation = pose.localRotation;
+    target.localScale = pose.localScale;
+    target.localEulerRadians = pose.localEulerRadians;
+    target.eulerOrder = pose.eulerOrder;
+    target.rotationEditMode = pose.rotationEditMode;
+    return target;
+}
+
+} // namespace
+
+bool EditorUVE::PasteSelectedTransformUVE() {
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (!m_transformClipboard.has_value() || !HasSingleDocumentSelectionUVE() ||
+        !entityManager.HasComponentUVE<Scene::TransformComponentUVE>(m_selectedEntity)) {
+        return false;
+    }
+    return SetSelectedLocalTransformUVE(WithLocalPoseUVE(
+        entityManager.GetComponentUVE<Scene::TransformComponentUVE>(m_selectedEntity), *m_transformClipboard));
+}
+
+bool EditorUVE::ResetSelectedTransformUVE() {
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (!HasSingleDocumentSelectionUVE() ||
+        !entityManager.HasComponentUVE<Scene::TransformComponentUVE>(m_selectedEntity)) {
+        return false;
+    }
+    return SetSelectedLocalTransformUVE(WithLocalPoseUVE(
+        entityManager.GetComponentUVE<Scene::TransformComponentUVE>(m_selectedEntity), Scene::TransformComponentUVE{}));
+}
+
+void EditorUVE::DrawInspectorSectionMenuUVE(const TypeMetadataEntryUVE* const entry, const char* const sectionName) {
+    if (!ImGui::BeginPopupContextItem("##section-menu")) {
+        return;
+    }
+    ImGui::TextDisabled("%s", sectionName);
+    ImGui::Separator();
+    const bool writable = IsAuthoringCommandAllowedUVE();
+    if (ImGui::MenuItem("Copy Values")) {
+        static_cast<void>(entry != nullptr ? CopySelectedComponentUVE(*entry) : CopySelectedTransformUVE());
+    }
+    const bool canPaste = writable && (entry != nullptr ? CanPasteSelectedComponentUVE(*entry)
+                                                        : CanPasteSelectedTransformUVE());
+    if (ImGui::MenuItem("Paste Values", nullptr, false, canPaste)) {
+        static_cast<void>(entry != nullptr ? PasteSelectedComponentUVE(*entry) : PasteSelectedTransformUVE());
+    }
+    if (!canPaste && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip("Copy a %s section first.", sectionName);
+    }
+    ImGui::Separator();
+    if (ImGui::MenuItem("Reset to Defaults", nullptr, false, writable)) {
+        static_cast<void>(entry != nullptr ? ResetSelectedComponentUVE(*entry) : ResetSelectedTransformUVE());
+    }
+    ImGui::EndPopup();
 }
 
 bool EditorUVE::SetEntityVisibleUVE(const Scene::EntityUVE entity, const bool visible) {

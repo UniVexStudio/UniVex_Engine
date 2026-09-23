@@ -281,7 +281,9 @@ void EditorUVE::DrawTransformInspectorDrawerUVE(const Scene::EntityUVE entity) {
 
     Scene::TransformComponentUVE edited = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(entity);
     // A collapsible section like every other one; its open state is remembered across sessions.
-    if (!DrawInspectorFoldUVE("Transform##transform-section", "section:transform", true, true, 0)) {
+    const bool transformOpen = DrawInspectorFoldUVE("Transform##transform-section", "section:transform", true, true, 0);
+    DrawInspectorSectionMenuUVE(nullptr, "Transform");
+    if (!transformOpen) {
         return;
     }
     float position[3]{edited.localPosition.x, edited.localPosition.y, edited.localPosition.z};
