@@ -124,6 +124,10 @@ bool ViewportRenderPass::SetAxisPaletteUVE(const univex::viewport::AxisPaletteUV
     return true;
 }
 
+void ViewportRenderPass::SetGridOpacityUVE(const float opacity) {
+    grid_.Settings().opacity = std::isfinite(opacity) ? std::clamp(opacity, 0.f, 1.f) : 1.f;
+}
+
 univex::viewport::AxisPaletteUVE ViewportRenderPass::GetAxisPaletteUVE() const {
     return univex::viewport::AxisPaletteOfUVE(style_);
 }

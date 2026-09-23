@@ -314,6 +314,29 @@ void EditorUVE::DrawViewportOverlayBubblesUVE(const Math::Vector2UVE imageOrigin
                                             DrawGridIconUVE)) {
             m_viewportOverlayState.gridVisible = !m_viewportOverlayState.gridVisible;
         }
+        // Click toggles; right-click opens the grid's options, so the toolbar stays one button wide.
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+            ImGui::SetTooltip("Grid - right-click for options");
+        }
+        if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+            ImGui::OpenPopup("##viewport-grid-options");
+        }
+        if (ImGui::BeginPopup("##viewport-grid-options")) {
+            ImGui::TextDisabled("Grid");
+            ImGui::Separator();
+            bool visible = m_viewportOverlayState.gridVisible;
+            float opacityPercent = m_viewportOverlayState.gridOpacity * 100.0F;
+            bool changed = ImGui::Checkbox("Show grid", &visible);
+            ImGui::BeginDisabled(!visible);
+            ImGui::SetNextItemWidth(ImGui::GetFontSize() * 9.0F);
+            changed |= ImGui::SliderFloat("Opacity", &opacityPercent, kMinimumViewportGridOpacityUVE * 100.0F, 100.0F,
+                                          "%.0f%%", ImGuiSliderFlags_AlwaysClamp);
+            ImGui::EndDisabled();
+            if (changed) {
+                static_cast<void>(SetViewportGridUVE(visible, opacityPercent / 100.0F));
+            }
+            ImGui::EndPopup();
+        }
     }
 
     // ---- projection mode pill, top-left (right after the gizmo bubble) ---------------------
@@ -370,6 +393,15 @@ namespace {
 }
 
 } // namespace
+
+bool EditorUVE::SetViewportGridUVE(const bool visible, const float opacity) {
+    if (!std::isfinite(opacity) || opacity < kMinimumViewportGridOpacityUVE || opacity > 1.0F) {
+        return false;
+    }
+    m_viewportOverlayState.gridVisible = visible;
+    m_viewportOverlayState.gridOpacity = opacity;
+    return true;
+}
 
 bool EditorUVE::SetViewportAxisColorsUVE(const ViewportAxisColorUVE x, const ViewportAxisColorUVE y,
                                          const ViewportAxisColorUVE z) {

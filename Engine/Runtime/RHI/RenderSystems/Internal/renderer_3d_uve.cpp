@@ -25,6 +25,7 @@
 #include "uve/component/camera_component_uve.h"
 #include "uve/component/mesh_component_uve.h"
 #include "uve/component/primitive_mesh_component_uve.h"
+#include "uve/component/visibility_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/logging/assert_uve.h"
 #include "uve/logging/logging_macros_uve.h"
@@ -49,6 +50,13 @@
 namespace UVE::Render {
 
 namespace {
+
+/// Hidden - by its own switch or an ancestor's - as the scene graph resolved it last update. An
+/// entity without a Visibility component is always drawn, the same rule the mesh renderer uses.
+[[nodiscard]] bool IsHiddenInHierarchyUVE(Scene::IEntityManagerUVE& entityManager, const Scene::EntityUVE entity) {
+    return entityManager.HasComponentUVE<Scene::VisibilityComponentUVE>(entity) &&
+           !entityManager.GetComponentUVE<Scene::VisibilityComponentUVE>(entity).visibleInHierarchy;
+}
 
 [[nodiscard]] bool IsFiniteMatrixUVE(const Math::Matrix4x4UVE& matrix) noexcept {
     for (const auto& row : matrix.m) {
@@ -1304,10 +1312,11 @@ struct Renderer3DUVE::ImplUVE {
         static constexpr Math::Vector3UVE kUnmaterialedColor{0.72F, 0.72F, 0.74F};
         std::unordered_map<Asset::AssetGuidUVE, bool> named;
         entityManager.ForEachUVE<Scene::WorldTransformComponentUVE, Scene::MeshComponentUVE>(
-            [&](Scene::EntityUVE, const Scene::WorldTransformComponentUVE& worldTransform,
+            [&](Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE& worldTransform,
                 const Scene::MeshComponentUVE& meshComponent) {
                 if (meshComponent.meshGuid == Asset::kInvalidAssetGuidUVE ||
-                    meshComponent.materialGuid != Asset::kInvalidAssetGuidUVE || worldTransform.dirty) {
+                    meshComponent.materialGuid != Asset::kInvalidAssetGuidUVE || worldTransform.dirty ||
+                    IsHiddenInHierarchyUVE(entityManager, entity)) {
                     return;
                 }
                 named[meshComponent.meshGuid] = true;
@@ -1365,7 +1374,8 @@ struct Renderer3DUVE::ImplUVE {
         entityManager.ForEachUVE<Scene::WorldTransformComponentUVE, Scene::PrimitiveMeshComponentUVE>(
             [&](Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE& worldTransform,
                 const Scene::PrimitiveMeshComponentUVE& primitive) {
-                if (worldTransform.dirty || !Scene::IsPrimitiveMeshComponentValidUVE(primitive)) {
+                if (worldTransform.dirty || !Scene::IsPrimitiveMeshComponentValidUVE(primitive) ||
+                    IsHiddenInHierarchyUVE(entityManager, entity)) {
                     // Returning before the cache is touched leaves any existing entry unstamped,
                     // so an entity that stays dirty or invalid is pruned rather than kept alive by
                     // a placement nobody can use.

@@ -579,7 +579,9 @@ already built in, but none of them is a setting yet - each is fixed in code.
       missing: a setting to hide or recolour them.
 - [ ] Show node type name alongside the node name.
 - [ ] Show component badges on the row (script attached, visibility off, locked).
-- [ ] Visibility toggle column: show, hide, or show on hover.
+- [~] Visibility toggle column: show, hide, or show on hover. Every row that can be hidden has
+      an eye at its right edge; a click is one undoable edit that leaves the selection alone, and
+      a node hidden only by its parent shows a dimmer eye; missing: the show-on-hover option.
 - [ ] Lock / unselectable column.
 - [~] Filter behaviour: match name only, or name plus type plus component; case sensitivity;
       whether ancestors of a match are kept visible. The Search Nodes box already matches the
@@ -657,8 +659,10 @@ The group with the most real backing today.
 - [x] Gizmo axis colours are user-configurable and persisted under `editor.viewport.axisColors.*`,
       applied whole-or-nothing to both the transform gizmo and the grid axis lines, with the grid
       taking a dimmed variant; covered by dedicated tests.
-- [ ] Grid: visible, size, subdivisions, extent/fade distance, colour, and which plane(s) are
-      drawn.
+- [~] Grid: visible, size, subdivisions, extent/fade distance, colour, and which plane(s) are
+      drawn. Visible and opacity (10-100%) are set from the grid button (click toggles,
+      right-click opens the options) and saved under `editor.viewport.grid.*`, with a corrupt
+      stored value falling back to the defaults; missing: size, subdivisions, fade, colour, plane.
 - [ ] Grid follows the camera vs. fixed at origin.
 - [ ] Gizmo size in pixels, gizmo opacity, and whether the gizmo is hidden during drag.
 - [ ] Gizmo mode memory: whether the active transform mode persists across sessions.

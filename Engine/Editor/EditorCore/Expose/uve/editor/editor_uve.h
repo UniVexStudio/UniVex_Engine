@@ -288,6 +288,8 @@ public:
         ViewportGizmoModeUVE gizmoMode = ViewportGizmoModeUVE::Universal;
         bool snapEnabled = false;
         bool gridVisible = true;
+        // How strongly the grid is drawn, 0.1..1. Persisted with gridVisible; see SetViewportGridUVE.
+        float gridOpacity = 1.0F;
         // True while the Game workspace tab is active (see EditorWorkspaceUVE::Game): the concrete
         // renderer should hide editor-only overlays (grid, transform gizmo) in this mode, matching
         // Unity's own Scene/Game split, since Game is meant to preview what a player would see.
@@ -399,6 +401,11 @@ public:
     /// Returns false without mutation for invalid editor/selection state, an empty or whitespace-only
     /// name, a name longer than the supported editor-entry limit, or an unchanged value.
     [[nodiscard]] bool SetSelectedEntityNameUVE(std::string name);
+    /// Shows or hides `entity` (its Visibility component's authored switch) as one undoable edit.
+    /// Unlike the selected-entity setters this targets any document entity, so the hierarchy's
+    /// eye toggle works on a row without changing the selection. Returns false without mutation
+    /// when editing is not allowed, the entity has no Visibility component, or nothing changes.
+    [[nodiscard]] bool SetEntityVisibleUVE(Scene::EntityUVE entity, bool visible);
 
     /// Adds or replaces one supported scene component on the selected document entity using the
     /// value variant matching `kind`. Valid changes are one Undo/Redo transaction; invalid, unchanged,
@@ -630,6 +637,14 @@ public:
     void SetEntityContextToolbarAnchorUVE(Scene::EntityUVE entity, float pixelX, float pixelY);
     /// Closes the entity context toolbar (a right-click that missed every entity).
     void ClearEntityContextToolbarUVE() noexcept;
+
+    /// The viewport grid: shown or hidden, and its opacity (0.1..1 - never fully invisible, which
+    /// would be a hidden grid under another name). Both are editor preferences, saved with the
+    /// session. An opacity outside the range, or not finite, is refused and nothing changes.
+    [[nodiscard]] bool SetViewportGridUVE(bool visible, float opacity);
+    [[nodiscard]] bool IsViewportGridVisibleUVE() const noexcept { return m_viewportOverlayState.gridVisible; }
+    [[nodiscard]] float GetViewportGridOpacityUVE() const noexcept { return m_viewportOverlayState.gridOpacity; }
+    static constexpr float kMinimumViewportGridOpacityUVE = 0.1F;
 
     /// The viewport's X/Y/Z axis colours, which the menu bar offers a picker for and the host
     /// pushes into the real renderer each frame (see ViewportOverlayStateUVE::axisColorX).
@@ -1054,6 +1069,7 @@ private:
     void DrawHierarchyPanelUVE();
     void DrawHierarchyNodeContextMenuUVE(Scene::EntityUVE entity);
     void DrawNodePickerUVE();
+    void DrawHierarchyVisibilityToggleUVE(Scene::EntityUVE entity);
     void DrawHierarchyNodeUVE(Scene::EntityUVE entity);
     void AcceptHierarchyDropTargetUVE(Scene::EntityUVE targetParent);
     void DrawInspectorPanelUVE();
