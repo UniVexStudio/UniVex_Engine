@@ -564,28 +564,39 @@ settings window.
 
 ## 2.3 Scene tree and hierarchy panel
 
-The hierarchy is one of the two panels a user looks at constantly, and it currently has no
-settings of its own.
+The hierarchy is one of the two panels a user looks at constantly. Several behaviours below are
+already built in, but none of them is a setting yet - each is fixed in code.
 
 - [ ] Auto-expand on selection, and auto-scroll the selected node into view.
 - [ ] Expand-all / collapse-all depth limit.
 - [ ] Persist expansion state per scene across sessions.
 - [ ] Row height, indent width, and whether indent guides are drawn.
-- [ ] Node-type icons: show, hide, or colour-code by type.
+- [~] Node-type icons: show, hide, or colour-code by type. Every row already draws an icon for its
+      node kind (mesh, camera, light, environment, physics, audio, particle, script, plain node);
+      missing: a setting to hide or recolour them.
 - [ ] Show node type name alongside the node name.
 - [ ] Show component badges on the row (script attached, visibility off, locked).
 - [ ] Visibility toggle column: show, hide, or show on hover.
 - [ ] Lock / unselectable column.
-- [ ] Filter behaviour: match name only, or name plus type plus component; case sensitivity;
-      whether ancestors of a match are kept visible.
+- [~] Filter behaviour: match name only, or name plus type plus component; case sensitivity;
+      whether ancestors of a match are kept visible. The Search Nodes box already matches the
+      name case-insensitively, `type:` filters by node type, `root` lists the roots, ancestors of
+      a match stay visible and the tree opens while a filter is active; missing: component
+      matching and a setting to choose the mode.
 - [ ] Sort mode: scene order (authoritative), alphabetical, or by type.
-- [ ] Drag-and-drop reparent: enable, and whether a confirmation is required for large subtrees.
-- [ ] Multi-selection behaviour: rubber-band, range select, and whether children follow the
-      parent.
+- [~] Drag-and-drop reparent: enable, and whether a confirmation is required for large subtrees.
+      Dragging a row onto another reparents it, and dropping below the tree makes it a root;
+      missing: the enable toggle and the large-subtree confirmation.
+- [~] Multi-selection behaviour: rubber-band, range select, and whether children follow the
+      parent. Ctrl+click toggles a row in the selection; missing: range select, rubber-band and
+      the children-follow option.
 - [ ] Colour tags / node groups, and whether tag colour tints the row.
 - [ ] Warning and error badges (missing script, broken reference, invalid transform).
-- [ ] Double-click action: rename, focus in viewport, or open script.
-- [ ] Rename mode: inline edit vs. dialog, and name-collision policy.
+- [~] Double-click action: rename, focus in viewport, or open script. Double-click on the
+      selected row renames it today; missing: the choice of action.
+- [~] Rename mode: inline edit vs. dialog, and name-collision policy. Inline rename exists (F2 or
+      double-click, Enter commits, Escape cancels); missing: the dialog option and a
+      name-collision policy.
 - [ ] Show the scene root specially — the scene root is not special-cased anywhere today, so its
       reparent controls are drawn and enabled even though the command layer refuses them. This is
       a real, known gap.
@@ -600,7 +611,9 @@ settings question.
 - [ ] Add child node, add sibling node, instantiate scene as child.
 - [ ] Attach / detach / open script.
 - [ ] Add component, remove component, copy component values, paste component values.
-- [ ] Cut, copy, paste, duplicate, delete, with a configurable duplicate-name suffix pattern.
+- [~] Cut, copy, paste, duplicate, delete, with a configurable duplicate-name suffix pattern.
+      Duplicate (Ctrl+D), delete (Delete) and undo (Ctrl+Z) exist as keyboard shortcuts, but
+      there is no right-click menu in the hierarchy, no cut/copy/paste and no suffix setting.
 - [ ] Rename, and change node type where the conversion is legal.
 - [ ] Reparent to selection, reparent keeping global transform (toggle).
 - [ ] Move up / move down / move to top / move to bottom in sibling order.
@@ -667,26 +680,38 @@ The group with the most real backing today.
 
 ## 2.7 Inspector
 
-- [ ] Collapsible, component-grouped sections with persisted expansion state. Today only two
-      sections collapse at all, and no collapse state is remembered.
-- [ ] Property-row helpers used by every drawer, replacing the hand-drawn rows and the ten
-      copy-pasted colour rows.
-- [ ] Property search that matches **property names**, not only drawer ids — today the search box
-      matches drawer ids, so typing a property name hides everything.
+- [~] Collapsible, component-grouped sections with persisted expansion state. Every section is
+      a collapsible header, a component that belongs to a node sits nested inside the node's own
+      section, and related fields share collapsible sub-groups; missing: remembering which
+      sections were collapsed.
+- [/] Property-row helpers used by every drawer, replacing the hand-drawn rows and the ten
+      copy-pasted colour rows. Rows are drawn from the type metadata - label, tooltip, range,
+      step, enum and colour - through one set of helpers.
+- Property search: the Inspector's search box was removed on purpose - the Inspector shows only
+      the node's own class chain. If search returns, it must match property names, not drawer
+      ids.
 - [ ] Label width / name column ratio, and word-wrapping of long labels.
-- [ ] Float display precision, and drag step per property.
-- [ ] Degrees vs. radians display for angles.
+- [~] Float display precision, and drag step per property. The drag step comes from each
+      property's metadata range; missing: display precision.
+- [~] Degrees vs. radians display for angles. Rotation is shown and edited in degrees and stored
+      in radians; missing: the choice.
 - [ ] Show advanced / internal properties toggle.
-- [ ] Show modified-from-default markers, and per-property revert.
-- [ ] Multi-object editing, with mixed-value indication.
+- [/] Show modified-from-default markers, and per-property revert. A revert button appears only
+      on a row whose value differs from what a freshly added component holds, and resets it to
+      that value; no dedicated test locks it yet.
+- [ ] Multi-object editing, with mixed-value indication. With several nodes selected the
+      Inspector says single-entity editing is unavailable.
 - [ ] Copy / paste property values, and copy property path.
 - [ ] Favourite properties pinned to the top — a favourites list already exists in the preferences
       (capped at 128 entries) and could back this.
 - [ ] Default colour-picker shape and colour-picker mode (see Part 3).
 - [ ] Open resources in a sub-inspector vs. a new panel.
 - [ ] Auto-refresh rate while the game is running.
-- [ ] Section ordering, with the universal node section last.
-- [ ] Add Component search: fuzzy matching, recent components, and category grouping.
+- [x] Section ordering, with the universal node section last. The node's own section comes
+      first, then its bases, then Transform and Visibility, then the Node section; editor tests
+      assert the exact order for each node kind. Missing only: user reordering.
+- Add Component search: the Add Component control was removed from the Inspector on purpose -
+      a node's components come from its type. Not planned in this form.
 
 ## 2.8 Script and shader editor
 
@@ -1174,7 +1199,8 @@ constantly and they belong in the same inventory.
 - [ ] Default property values for newly created nodes of each type, editable as a setting.
 - [ ] Node creation defaults: where a new node is placed (origin, camera focus, ground plane under
       the cursor), and whether it is parented to the selection.
-- [ ] Default component set for each node type.
+- [~] Default component set for each node type. Each node type's recipe attaches its
+      components (its own, its bases', and Node3D's); missing: editing that set as a setting.
 - [ ] A "save current node as the default" action.
 - [ ] Per-project node templates.
 
