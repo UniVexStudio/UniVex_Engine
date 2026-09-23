@@ -249,33 +249,73 @@ TEST(ThreadPoolUVETest, IsWorkerThreadUVE_TrueInsideJobFalseOnCallingThread) {
     EXPECT_TRUE(wasWorkerThreadInsideJob.load());
 }
 
-TEST(ThreadPoolUVETest, StealingIsObservedUnderContention_RetriedToAvoidFlakiness) {
-    // Timing-sensitive: this asserts scheduler behavior, not a pure logical invariant, so it is
-    // retried a handful of times before failing (see docs/CODING_STANDARDS.md's guidance on
-    // this class of test) — every other ThreadPoolUVE/JobCounterUVE test in this suite is fully
-    // deterministic.
-    constexpr int kMaxAttempts = 5;
-    bool stealingObserved = false;
-
-    for (int attempt = 0; attempt < kMaxAttempts && !stealingObserved; ++attempt) {
-        ThreadPoolUVE pool(4);
-        JobCounterUVE counter;
-
-        // The first 3 submissions (slow) round-robin onto queues 0/1/2, leaving queue 3 with
-        // none of its own — its worker should finish quickly and steal from a still-busy queue.
-        for (int i = 0; i < 3; ++i) {
-            pool.SubmitUVE([] { std::this_thread::sleep_for(std::chrono::milliseconds(20)); },
-                           counter);
+TEST(ThreadPoolUVETest, IdleWorkerStealsJobsQueuedBehindBlockedWorkers) {
+    // Deterministic by construction: nothing here depends on one worker happening to run dry
+    // before the others, which is what made sleep-based versions of this test fail under a
+    // parallel ctest run.
+    //
+    // Three workers are pinned inside gate jobs until the test releases them. Submission is
+    // round-robin, so most of the fast jobs that follow land on those pinned workers' queues,
+    // where their owners cannot reach them. The only way all of them finish before the gates
+    // open is for the one free worker to steal them. The waits are bounded, so a pool that
+    // cannot steal fails the test instead of hanging it.
+    constexpr std::size_t kWorkerCount = 4;
+    constexpr std::size_t kGateCount = kWorkerCount - 1;
+    constexpr int kFastJobCount = 60;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    const auto waitUntil = [deadline](const auto& isDone) {
+        while (!isDone() && std::chrono::steady_clock::now() < deadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
-        for (int i = 0; i < 60; ++i) {
-            pool.SubmitUVE([] {}, counter);
-        }
-        counter.WaitUVE();
+        return isDone();
+    };
 
-        stealingObserved = pool.GetStolenJobCountUVE() > 0;
+    ThreadPoolUVE pool(kWorkerCount);
+    JobCounterUVE counter;
+    std::atomic<std::size_t> gatesEntered{0};
+    std::atomic<bool> releaseGates{false};
+    std::atomic<int> fastJobsDone{0};
+
+    // The gates wait for the release alone, with no deadline of their own: the test thread never
+    // blocks on the pool before releasing them, so they cannot hang it, and a shared deadline
+    // would let the blocked workers start draining their queues at the very moment the count
+    // below is read.
+    for (std::size_t i = 0; i < kGateCount; ++i) {
+        pool.SubmitUVE(
+            [&gatesEntered, &releaseGates] {
+                gatesEntered.fetch_add(1, std::memory_order_acq_rel);
+                while (!releaseGates.load(std::memory_order_acquire)) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                }
+            },
+            counter);
     }
 
-    EXPECT_TRUE(stealingObserved);
+    // A worker running a gate job cannot pick up anything else, so once every gate has been
+    // entered, exactly kGateCount distinct workers are occupied and one is free.
+    const bool allGatesEntered = waitUntil(
+        [&gatesEntered] { return gatesEntered.load(std::memory_order_acquire) == kGateCount; });
+
+    int fastJobsDoneWhileGated = 0;
+    if (allGatesEntered) {
+        for (int i = 0; i < kFastJobCount; ++i) {
+            pool.SubmitUVE(
+                [&fastJobsDone] { fastJobsDone.fetch_add(1, std::memory_order_acq_rel); }, counter);
+        }
+        waitUntil([&fastJobsDone] {
+            return fastJobsDone.load(std::memory_order_acquire) == kFastJobCount;
+        });
+        fastJobsDoneWhileGated = fastJobsDone.load(std::memory_order_acquire);
+    }
+
+    // Every path reaches here, so no job outlives the locals it captured.
+    releaseGates.store(true, std::memory_order_release);
+    counter.WaitUVE();
+
+    ASSERT_TRUE(allGatesEntered) << "the gate jobs never all started";
+    EXPECT_EQ(fastJobsDoneWhileGated, kFastJobCount)
+        << "jobs queued behind the blocked workers were never picked up by the idle one";
+    EXPECT_GT(pool.GetStolenJobCountUVE(), 0U);
 }
 
 } // namespace
