@@ -11,9 +11,9 @@
 // of the editor's state ownership dressed up as a file move. A translation unit boundary gets the
 // navigability without touching the design.
 //
-// Moved verbatim - not one line of the two functions differs from what was in editor_uve.cpp.
-// Anything that looks worth improving in here was already there and belongs in its own commit,
-// where it can be reviewed as a change rather than hidden inside a move.
+// Each row also has a right-click menu - add a child, rename, duplicate, delete - running the same
+// commands as the keyboard shortcuts, so both paths share one set of rules (the scene root, for
+// one, can be renamed but never duplicated, deleted or dragged).
 
 #include "uve/editor/editor_uve.h"
 
@@ -35,6 +35,31 @@
 #include "uve/scene/nodes/scene_node_registry_uve.h"
 
 namespace UVE::Editor {
+
+namespace {
+
+/// The node library as menu items, grouped by category - shared by the panel's Add Node button and
+/// each row's "Add Child Node" submenu so the two lists can never drift apart.
+template <typename CreateFn>
+void DrawNodeLibraryMenuItemsUVE(CreateFn&& create) {
+    std::string_view lastCategory;
+    for (const Scene::Nodes::SceneNodeDescriptorUVE& descriptor : Scene::Nodes::GetSceneNodeDescriptorsUVE()) {
+        if (descriptor.category != lastCategory) {
+            if (!lastCategory.empty()) {
+                ImGui::Separator();
+            }
+            ImGui::TextDisabled("%s", descriptor.category.data());
+            lastCategory = descriptor.category;
+        }
+        ImGui::BeginDisabled(!descriptor.libraryCreatable);
+        if (ImGui::MenuItem(descriptor.displayName.data())) {
+            create(descriptor.kind);
+        }
+        ImGui::EndDisabled();
+    }
+}
+
+} // namespace
 
 void EditorUVE::DrawHierarchyPanelUVE() {
     if (!m_scenePanelVisible) {
@@ -79,22 +104,8 @@ void EditorUVE::DrawHierarchyPanelUVE() {
     if (ImGui::BeginPopup("scene-add-node-popup")) {
         ImGui::TextDisabled("Add Node");
         ImGui::Separator();
-        std::string_view lastCategory;
-        for (const Scene::Nodes::SceneNodeDescriptorUVE& descriptor :
-             Scene::Nodes::GetSceneNodeDescriptorsUVE()) {
-            if (descriptor.category != lastCategory) {
-                if (!lastCategory.empty()) {
-                    ImGui::Separator();
-                }
-                ImGui::TextUnformatted(descriptor.category.data());
-                lastCategory = descriptor.category;
-            }
-            ImGui::BeginDisabled(!descriptor.libraryCreatable);
-            if (ImGui::MenuItem(descriptor.displayName.data())) {
-                static_cast<void>(CreateDocumentSceneNodeUVE(descriptor.kind));
-            }
-            ImGui::EndDisabled();
-        }
+        DrawNodeLibraryMenuItemsUVE(
+            [this](const Scene::Nodes::SceneNodeKindUVE kind) { static_cast<void>(CreateDocumentSceneNodeUVE(kind)); });
         ImGui::EndPopup();
     }
     ImGui::PopID();
@@ -184,6 +195,9 @@ void EditorUVE::DrawHierarchyNodeUVE(const Scene::EntityUVE entity) {
             SelectEntityUVE(entity);
         }
     }
+    if (!renaming) {
+        DrawHierarchyNodeContextMenuUVE(entity);
+    }
     // Rename triggers the same way Godot's own Scene dock does: F2, or a double-click on an
     // already-selected row - no separate "Rename" button cluttering the row (the button used to
     // sit here, pushing further controls toward the panel's edge).
@@ -215,7 +229,9 @@ void EditorUVE::DrawHierarchyNodeUVE(const Scene::EntityUVE entity) {
             CancelHierarchyRenameUVE();
         }
     }
-    if (IsLifecycleCommandAllowedUVE() && IsDocumentEntityUVE(entity) && ImGui::BeginDragDropSource()) {
+    // The scene root is the document itself: it has no parent to leave, so it is never a drag source.
+    if (IsLifecycleCommandAllowedUVE() && IsDocumentEntityUVE(entity) && !IsSceneRootEntityUVE(entity) &&
+        ImGui::BeginDragDropSource()) {
         ImGui::SetDragDropPayload(kHierarchyEntityPayloadUVE, &entity, sizeof(entity));
         ImGui::Text("Move %s", GetEntityDisplayLabelUVE(entity).c_str());
         ImGui::EndDragDropSource();
@@ -227,6 +243,50 @@ void EditorUVE::DrawHierarchyNodeUVE(const Scene::EntityUVE entity) {
         }
         ImGui::TreePop();
     }
+}
+
+void EditorUVE::DrawHierarchyNodeContextMenuUVE(const Scene::EntityUVE entity) {
+    // Right-click acts on the row under the cursor: it becomes the selection first (unless it is
+    // already part of it), so every command below targets what the user pointed at.
+    if (ImGui::IsItemClicked(ImGuiMouseButton_Right) && !IsEntitySelectedUVE(entity)) {
+        SelectEntityUVE(entity);
+    }
+    if (!ImGui::BeginPopupContextItem("##hierarchy-node-context")) {
+        return;
+    }
+    const bool authoring = IsAuthoringCommandAllowedUVE();
+    const bool lifecycle = IsLifecycleCommandAllowedUVE();
+    const bool single = HasSingleDocumentSelectionUVE() && entity == m_selectedEntity;
+    const bool sceneRoot = IsSceneRootEntityUVE(entity);
+
+    ImGui::TextDisabled("%s", GetEntityDisplayLabelUVE(entity).c_str());
+    ImGui::Separator();
+    ImGui::BeginDisabled(!authoring || !single);
+    if (ImGui::BeginMenu("Add Child Node")) {
+        // New nodes go under the single selection, which the right-click has just made this row.
+        DrawNodeLibraryMenuItemsUVE(
+            [this](const Scene::Nodes::SceneNodeKindUVE kind) { static_cast<void>(CreateDocumentSceneNodeUVE(kind)); });
+        ImGui::EndMenu();
+    }
+    if (ImGui::MenuItem("Rename", "F2")) {
+        m_hierarchyRenameEntity = entity;
+        m_hierarchyRenameBuffer = GetEntityDisplayLabelUVE(entity);
+        m_hierarchyRenameFocusRequested = true;
+    }
+    ImGui::EndDisabled();
+    ImGui::Separator();
+    ImGui::BeginDisabled(!lifecycle || !single || sceneRoot);
+    if (ImGui::MenuItem("Duplicate", "Ctrl+D")) {
+        static_cast<void>(DuplicateSelectedEntityUVE());
+    }
+    if (ImGui::MenuItem("Delete", "Del")) {
+        static_cast<void>(DeleteSelectedEntityUVE());
+    }
+    ImGui::EndDisabled();
+    if (sceneRoot && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip("The scene root holds the whole scene and cannot be duplicated or deleted.");
+    }
+    ImGui::EndPopup();
 }
 
 } // namespace UVE::Editor

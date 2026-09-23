@@ -597,9 +597,9 @@ already built in, but none of them is a setting yet - each is fixed in code.
 - [~] Rename mode: inline edit vs. dialog, and name-collision policy. Inline rename exists (F2 or
       double-click, Enter commits, Escape cancels); missing: the dialog option and a
       name-collision policy.
-- [ ] Show the scene root specially — the scene root is not special-cased anywhere today, so its
-      reparent controls are drawn and enabled even though the command layer refuses them. This is
-      a real, known gap.
+- [~] Show the scene root specially. The scene root can no longer be dragged, and its
+      right-click menu disables Duplicate and Delete with a tooltip saying why; missing: a
+      distinct look for its row.
 
 ## 2.4 Scene node context menu (right-click)
 
@@ -608,13 +608,16 @@ graph. The full context-menu surface is much larger, and *which entries appear* 
 settings question.
 
 - [ ] Which actions appear, and in what order — user-reorderable.
-- [ ] Add child node, add sibling node, instantiate scene as child.
+- [~] Add child node, add sibling node, instantiate scene as child. Each hierarchy row has a
+      right-click menu with Add Child Node (the full node library); missing: add sibling and
+      instantiate scene.
 - [ ] Attach / detach / open script.
 - [ ] Add component, remove component, copy component values, paste component values.
 - [~] Cut, copy, paste, duplicate, delete, with a configurable duplicate-name suffix pattern.
-      Duplicate (Ctrl+D), delete (Delete) and undo (Ctrl+Z) exist as keyboard shortcuts, but
-      there is no right-click menu in the hierarchy, no cut/copy/paste and no suffix setting.
-- [ ] Rename, and change node type where the conversion is legal.
+      Duplicate and Delete are in the row's right-click menu and on Ctrl+D / Delete, both
+      disabled on the scene root; missing: cut/copy/paste and the suffix setting.
+- [~] Rename, and change node type where the conversion is legal. Rename is in the right-click
+      menu (and F2); missing: change node type.
 - [ ] Reparent to selection, reparent keeping global transform (toggle).
 - [ ] Move up / move down / move to top / move to bottom in sibling order.
 - [ ] Save branch as a reusable scene, and make a local instance editable.
