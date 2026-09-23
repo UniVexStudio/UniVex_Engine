@@ -13,6 +13,7 @@
 #include "uve/component/ui_image_component_uve.h"
 #include "uve/component/ui_text_component_uve.h"
 #include "uve/entity/entity_manager_uve.h"
+#include "uve/localization/localization_uve.h"
 
 namespace UVE::UI::Tests {
 namespace {
@@ -25,6 +26,71 @@ protected:
     Input::InputSystemUVE inputSystem{eventSystem};
     UIRuntimeUVE runtime;
 };
+
+[[nodiscard]] std::size_t CountGlyphQuadsUVE(const UIDrawBatchUVE& batch) {
+    return static_cast<std::size_t>(std::count_if(batch.quads.cbegin(), batch.quads.cend(), [](const UIQuadUVE& quad) {
+        return quad.kind == UIDrawItemKindUVE::Glyph;
+    }));
+}
+
+[[nodiscard]] bool AreQuadsIdenticalUVE(const UIDrawBatchUVE& left, const UIDrawBatchUVE& right) {
+    if (left.quads.size() != right.quads.size()) {
+        return false;
+    }
+    for (std::size_t index = 0; index < left.quads.size(); ++index) {
+        const UIQuadUVE& a = left.quads[index];
+        const UIQuadUVE& b = right.quads[index];
+        if (a.positionPixels != b.positionPixels || a.sizePixels != b.sizePixels || a.u0 != b.u0 ||
+            a.v0 != b.v0 || a.u1 != b.u1 || a.v1 != b.v1 || a.color != b.color || a.alpha != b.alpha ||
+            a.kind != b.kind || a.imageAssetGuid != b.imageAssetGuid) {
+            return false;
+        }
+    }
+    return true;
+}
+
+TEST_F(UIRuntimeUVETest, TickUVE_LocalizingWithNoTableDrawsExactlyWhatWasAuthored) {
+    // The safety property that lets localization be on by default: a project nobody has
+    // translated must render identically, quad for quad, whether or not a service is attached.
+    const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
+    Scene::UITextComponentUVE text{};
+    text.text = "Play";
+    entityManager.AddComponentUVE<Scene::UITextComponentUVE>(entity, text);
+    inputSystem.UpdateUVE();
+
+    runtime.TickUVE(entityManager, inputSystem);
+    const UIDrawBatchUVE unlocalized = runtime.GetDrawBatchUVE();
+
+    const Localization::LocalizationServiceUVE emptyService;
+    runtime.TickUVE(entityManager, inputSystem, UITextLocalizationUVE{&emptyService, {}});
+    EXPECT_TRUE(AreQuadsIdenticalUVE(unlocalized, runtime.GetDrawBatchUVE()));
+    EXPECT_EQ(CountGlyphQuadsUVE(runtime.GetDrawBatchUVE()), 4U);
+}
+
+TEST_F(UIRuntimeUVETest, TickUVE_TranslatesOnlyTheTextWhoseModeSaysTo) {
+    const Scene::EntityUVE translatedLabel = entityManager.CreateEntityUVE();
+    const Scene::EntityUVE optedOutLabel = entityManager.CreateEntityUVE();
+    Scene::UITextComponentUVE text{};
+    text.text = "Play";
+    entityManager.AddComponentUVE<Scene::UITextComponentUVE>(translatedLabel, text);
+    entityManager.AddComponentUVE<Scene::UITextComponentUVE>(optedOutLabel, text);
+    inputSystem.UpdateUVE();
+
+    Localization::LocalizationServiceUVE service;
+    Localization::StringTableUVE filipino{Localization::LocaleUVE{"fil", ""}};
+    ASSERT_TRUE(filipino.SetTranslationUVE("Play", "Maglaro"));
+    ASSERT_TRUE(service.AddStringTableUVE(std::move(filipino)));
+    service.SetActiveLocaleUVE(Localization::LocaleUVE{"fil", ""});
+
+    runtime.TickUVE(entityManager, inputSystem,
+                    UITextLocalizationUVE{&service, [translatedLabel](const Scene::EntityUVE entity) {
+                                              return entity == translatedLabel;
+                                          }});
+
+    // "Maglaro" is seven glyphs and the opted-out "Play" stays four. Counting glyphs is enough to
+    // tell which string each entity drew without depending on atlas metrics.
+    EXPECT_EQ(CountGlyphQuadsUVE(runtime.GetDrawBatchUVE()), 7U + 4U);
+}
 
 TEST_F(UIRuntimeUVETest, TickUVE_BuildsOneSolidQuadPerImageEntity) {
     const Scene::EntityUVE entity = entityManager.CreateEntityUVE();

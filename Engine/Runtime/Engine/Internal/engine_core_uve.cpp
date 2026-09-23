@@ -660,7 +660,15 @@ void EngineCoreUVE::SyncUIRuntimeUVE() {
     if (m_inputSystem == nullptr) {
         return;
     }
-    m_uiRuntime.TickUVE(*m_entityManager, *m_inputSystem);
+    // Whether a text is translated is its resolved Auto Translate mode, asked of the scene graph so
+    // a label with no component of its own follows the menu it sits in. An entity the scene graph
+    // has not resolved yet takes the hierarchy default, Always.
+    const UI::UITextLocalizationUVE localization{
+        &m_localizationService, [this](const Scene::EntityUVE entity) {
+            const std::optional<Scene::ResolvedNodeModesUVE> modes = m_sceneGraph->TryGetResolvedNodeModesUVE(entity);
+            return !modes.has_value() || modes->autoTranslate == Scene::AutoTranslateModeUVE::Always;
+        }};
+    m_uiRuntime.TickUVE(*m_entityManager, *m_inputSystem, localization);
 }
 
 void EngineCoreUVE::SyncScriptRuntimeUVE() {

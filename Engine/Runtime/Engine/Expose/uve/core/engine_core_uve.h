@@ -75,6 +75,7 @@
 #include "uve/scripting/script_graph_uve.h"
 #include "uve/scripting/script_runtime_uve.h"
 #include "uve/threading/i_thread_pool_uve.h"
+#include "uve/localization/localization_uve.h"
 #include "uve/ui/ui_runtime_uve.h"
 #include "uve/utilities/i_timer_uve.h"
 #include "uve/window/i_window_manager_uve.h"
@@ -387,6 +388,17 @@ public:
     /// list, since UIQuadUVE positions are authored in real window pixel space, not any one
     /// render target's local space - see EditorMeshLayerUVE::RenderUVE()'s own doc comment).
     [[nodiscard]] const UI::UIRuntimeUVE& GetUIRuntimeUVE() const noexcept { return m_uiRuntime; }
+
+    /// The locale and string tables authored UI text is translated through. Owned here alongside
+    /// the UI runtime that consumes it, and starts empty: with no table installed every text draws
+    /// exactly as authored, so a project that never localizes pays nothing and sees no change.
+    /// A host installs tables (see Localization::TryParseStringTableJsonUVE) and selects a locale.
+    [[nodiscard]] Localization::LocalizationServiceUVE& GetLocalizationServiceUVE() noexcept {
+        return m_localizationService;
+    }
+    [[nodiscard]] const Localization::LocalizationServiceUVE& GetLocalizationServiceUVE() const noexcept {
+        return m_localizationService;
+    }
 
     /// Returns this build's engine version — the single source of truth
     /// future systems (assets, plugins, projects, crash reports, Hub
@@ -713,6 +725,7 @@ private:
     std::unique_ptr<Physics::IRaycastSystemUVE> m_raycastSystem;
     std::unique_ptr<Scene::ParticleRuntimeUVE> m_particleRuntime;
     UI::UIRuntimeUVE m_uiRuntime;
+    Localization::LocalizationServiceUVE m_localizationService;
     Physics::AreaOverlapLifecycleTrackerUVE m_areaOverlapLifecycleTracker;
     Physics::CollisionLifecycleTrackerUVE m_collisionLifecycleTracker;
     Physics::CollisionLifecycleReportUVE m_collisionLifecycleReport;

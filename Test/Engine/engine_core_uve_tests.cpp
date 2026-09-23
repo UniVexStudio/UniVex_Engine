@@ -23,6 +23,10 @@
 #include <GL/gl.h>
 #include <gtest/gtest.h>
 
+#include "uve/localization/localization_uve.h"
+
+#include "uve/component/auto_translate_component_uve.h"
+
 #include "uve/component/process_component_uve.h"
 
 #include "Support/test_scratch_uve.h"
@@ -271,6 +275,51 @@ TEST(EngineCoreUVETest, ProcessMode_ADisabledProjectileDoesNotAdvanceOnAFixedSte
     EXPECT_GT(entityManager.GetComponentUVE<Scene::TransformComponentUVE>(moving).localPosition.x, movingBefore);
     EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Scene::TransformComponentUVE>(frozen).localPosition.x,
                     frozenBefore);
+
+    engine.Shutdown();
+}
+
+TEST(EngineCoreUVETest, AutoTranslate_ALabelInheritsItsMenusOptOutWithoutAComponent) {
+    EngineCoreUVE engine(MakeTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Core::EngineServicesUVE& services = engine.GetServicesUVE();
+    Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = services.GetSceneGraphUVE();
+
+    Localization::StringTableUVE filipino{Localization::LocaleUVE{"fil", ""}};
+    ASSERT_TRUE(filipino.SetTranslationUVE("Play", "Maglaro"));
+    ASSERT_TRUE(engine.GetLocalizationServiceUVE().AddStringTableUVE(std::move(filipino)));
+    engine.GetLocalizationServiceUVE().SetActiveLocaleUVE(Localization::LocaleUVE{"fil", ""});
+
+    // One menu that opts out; one label under it carrying no Auto Translate component of its own.
+    const Scene::EntityUVE menu = entityManager.CreateEntityUVE();
+    const Scene::EntityUVE label = entityManager.CreateEntityUVE();
+    for (const Scene::EntityUVE entity : {menu, label}) {
+        sceneGraph.AttachTransformUVE(entityManager, entity, Scene::TransformComponentUVE{});
+    }
+    sceneGraph.SetParentUVE(entityManager, label, menu);
+    Scene::AutoTranslateComponentUVE optOut{};
+    optOut.mode = Scene::AutoTranslateModeUVE::Disabled;
+    entityManager.AddComponentUVE<Scene::AutoTranslateComponentUVE>(menu, optOut);
+    Scene::UITextComponentUVE text{};
+    text.text = "Play";
+    entityManager.AddComponentUVE<Scene::UITextComponentUVE>(label, text);
+
+    const auto glyphCount = [&engine] {
+        const UI::UIDrawBatchUVE& batch = engine.GetUIRuntimeUVE().GetDrawBatchUVE();
+        return std::count_if(batch.quads.cbegin(), batch.quads.cend(), [](const UI::UIQuadUVE& quad) {
+            return quad.kind == UI::UIDrawItemKindUVE::Glyph;
+        });
+    };
+
+    engine.TickFrameUVE();
+    EXPECT_EQ(glyphCount(), 4) << "the label inherits Disabled, so it draws \"Play\" untranslated";
+
+    // Let the menu translate again, and the same label - still without a component - follows.
+    entityManager.GetComponentUVE<Scene::AutoTranslateComponentUVE>(menu).mode = Scene::AutoTranslateModeUVE::Always;
+    engine.TickFrameUVE();
+    EXPECT_EQ(glyphCount(), 7) << "\"Maglaro\"";
 
     engine.Shutdown();
 }
