@@ -423,6 +423,13 @@ public:
     /// eye toggle works on a row without changing the selection. Returns false without mutation
     /// when editing is not allowed, the entity has no Visibility component, or nothing changes.
     [[nodiscard]] bool SetEntityVisibleUVE(Scene::EntityUVE entity, bool visible);
+    /// Problems with how `entity` is set up, one readable sentence each, for the hierarchy's
+    /// warning badge: a non-finite transform, a script path that is not a valid project path, a
+    /// mesh node with no mesh or with a mesh/material the project no longer has, a Skeleton3D
+    /// with no source model. Empty when there is nothing to fix.
+    [[nodiscard]] std::vector<std::string> GetNodeWarningsUVE(Scene::EntityUVE entity) const;
+    /// The script attached to `entity`, when it has one (a non-empty script path).
+    [[nodiscard]] std::optional<std::string> GetNodeScriptPathUVE(Scene::EntityUVE entity) const;
 
     /// Adds or replaces one supported scene component on the selected document entity using the
     /// value variant matching `kind`. Valid changes are one Undo/Redo transaction; invalid, unchanged,
@@ -1117,6 +1124,7 @@ private:
     bool DrawInspectorFoldUVE(const char* label, const std::string& key, bool defaultOpen, bool asHeader,
                               int flags);
     void DrawHierarchyVisibilityToggleUVE(Scene::EntityUVE entity);
+    void DrawHierarchyRowBadgesUVE(const std::vector<std::string>& warnings, const std::optional<std::string>& script);
     void DrawHierarchyNodeUVE(Scene::EntityUVE entity);
     void AcceptHierarchyDropTargetUVE(Scene::EntityUVE targetParent);
     void DrawInspectorPanelUVE();

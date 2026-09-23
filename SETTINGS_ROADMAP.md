@@ -578,7 +578,9 @@ already built in, but none of them is a setting yet - each is fixed in code.
       node kind (mesh, camera, light, environment, physics, audio, particle, script, plain node);
       missing: a setting to hide or recolour them.
 - [ ] Show node type name alongside the node name.
-- [ ] Show component badges on the row (script attached, visibility off, locked).
+- [~] Show component badges on the row (script attached, visibility off, locked). A script badge
+      (with its path on hover) and the visibility eye sit in fixed columns at the row's right edge,
+      and a long name is cut with "..." and shown whole on hover; missing: locked, and a setting.
 - [~] Visibility toggle column: show, hide, or show on hover. Every row that can be hidden has
       an eye at its right edge; a click is one undoable edit that leaves the selection alone, and
       a node hidden only by its parent shows a dimmer eye; missing: the show-on-hover option.
@@ -596,7 +598,10 @@ already built in, but none of them is a setting yet - each is fixed in code.
       parent. Ctrl+click toggles a row in the selection; missing: range select, rubber-band and
       the children-follow option.
 - [ ] Colour tags / node groups, and whether tag colour tints the row.
-- [ ] Warning and error badges (missing script, broken reference, invalid transform).
+- [~] Warning and error badges (missing script, broken reference, invalid transform). An amber
+      badge lists each problem on hover: non-finite transform, invalid script path, no mesh, mesh
+      or material missing from the project, Skeleton3D with no source; missing: error severity
+      and per-node-type checks beyond these.
 - [~] Double-click action: rename, focus in viewport, or open script. Double-click on the
       selected row renames it today; missing: the choice of action.
 - [~] Rename mode: inline edit vs. dialog, and name-collision policy. Inline rename exists (F2 or
