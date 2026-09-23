@@ -40,6 +40,7 @@
 #include "uve/component/node_metadata_component_uve.h"
 #include "uve/component/process_component_uve.h"
 #include "uve/component/thread_group_component_uve.h"
+#include "uve/component/world_transform_component_uve.h"
 #include "uve/nodes/3d/all_nodes_3d_uve.h"
 #include "uve/component/light_component_uve.h"
 #include "uve/component/mesh_component_uve.h"
@@ -845,6 +846,16 @@ private:
 
     [[nodiscard]] bool IsDocumentEntityUVE(Scene::EntityUVE entity) const noexcept;
     [[nodiscard]] bool HasSceneGraphNodeUVE(Scene::EntityUVE entity) const noexcept;
+    /// True for any live document entity in the hierarchy, spatial or not. This, not
+    /// HasSceneGraphNodeUVE, is what a parent needs: a pure Node such as the scene root holds
+    /// children without having a transform of its own.
+    [[nodiscard]] bool IsHierarchyNodeUVE(Scene::EntityUVE entity) const noexcept;
+    /// The world pose a child of `parent` composes its local transform from, by the rule
+    /// SceneGraphUVE::UpdateUVE applies: identity for no parent and for a parent with no transform
+    /// (a pure Node starts its children's transform chains), otherwise the parent's world transform.
+    /// Null when `parent` is not a live document entity.
+    [[nodiscard]] std::optional<Scene::WorldTransformComponentUVE> TryGetComposingParentWorldUVE(
+        Scene::EntityUVE parent) const;
     [[nodiscard]] bool IsTransformFiniteUVE(const Scene::TransformComponentUVE& transform) const noexcept;
     [[nodiscard]] bool IsEntityNameValidUVE(std::string_view name) const noexcept;
     [[nodiscard]] std::string GetEntityDisplayLabelUVE(Scene::EntityUVE entity) const;

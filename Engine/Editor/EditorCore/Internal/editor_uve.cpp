@@ -2130,37 +2130,28 @@ bool EditorUVE::ComputeKeepWorldLocalTransformUVE(const Scene::EntityUVE entity,
         return false;
     }
 
-    Math::Vector3UVE parentPosition{};
-    Math::Vector3UVE parentScale{1.0F, 1.0F, 1.0F};
-    Math::QuaternionUVE parentRotation{0.0F, 0.0F, 0.0F, 1.0F};
-    if (newParent != Scene::kInvalidEntityUVE) {
-        if (!IsDocumentEntityUVE(newParent) ||
-            !entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(newParent)) {
-            return false;
-        }
-        const Scene::WorldTransformComponentUVE& parentWorld =
-            entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(newParent);
-        if (parentWorld.dirty || !IsFiniteVectorUVE(parentWorld.worldPosition) ||
-            !IsFiniteVectorUVE(parentWorld.worldScale) ||
-            !Math::TryNormalizeUVE(parentWorld.worldRotation, parentRotation) ||
-            parentWorld.worldScale.x < kMinimumLocalScaleUVE ||
-            parentWorld.worldScale.y < kMinimumLocalScaleUVE ||
-            parentWorld.worldScale.z < kMinimumLocalScaleUVE) {
-            return false;
-        }
-        const bool nonUniform = std::abs(parentWorld.worldScale.x - parentWorld.worldScale.y) > kVectorEpsilonUVE ||
-                                std::abs(parentWorld.worldScale.x - parentWorld.worldScale.z) > kVectorEpsilonUVE ||
-                                std::abs(parentWorld.worldScale.y - parentWorld.worldScale.z) > kVectorEpsilonUVE;
-        const bool rotated = std::abs(parentRotation.x) > kVectorEpsilonUVE ||
-                             std::abs(parentRotation.y) > kVectorEpsilonUVE ||
-                             std::abs(parentRotation.z) > kVectorEpsilonUVE ||
-                             std::abs(std::abs(parentRotation.w) - 1.0F) > kVectorEpsilonUVE;
-        if (nonUniform && rotated) {
-            return false;
-        }
-        parentPosition = parentWorld.worldPosition;
-        parentScale = parentWorld.worldScale;
+    // No parent and a pure-Node parent both compose as identity, which falls straight through.
+    const std::optional<Scene::WorldTransformComponentUVE> parentWorld = TryGetComposingParentWorldUVE(newParent);
+    Math::QuaternionUVE parentRotation{};
+    if (!parentWorld.has_value() || parentWorld->dirty || !IsFiniteVectorUVE(parentWorld->worldPosition) ||
+        !IsFiniteVectorUVE(parentWorld->worldScale) ||
+        !Math::TryNormalizeUVE(parentWorld->worldRotation, parentRotation) ||
+        parentWorld->worldScale.x < kMinimumLocalScaleUVE || parentWorld->worldScale.y < kMinimumLocalScaleUVE ||
+        parentWorld->worldScale.z < kMinimumLocalScaleUVE) {
+        return false;
     }
+    const bool nonUniform = std::abs(parentWorld->worldScale.x - parentWorld->worldScale.y) > kVectorEpsilonUVE ||
+                            std::abs(parentWorld->worldScale.x - parentWorld->worldScale.z) > kVectorEpsilonUVE ||
+                            std::abs(parentWorld->worldScale.y - parentWorld->worldScale.z) > kVectorEpsilonUVE;
+    const bool rotated = std::abs(parentRotation.x) > kVectorEpsilonUVE ||
+                         std::abs(parentRotation.y) > kVectorEpsilonUVE ||
+                         std::abs(parentRotation.z) > kVectorEpsilonUVE ||
+                         std::abs(std::abs(parentRotation.w) - 1.0F) > kVectorEpsilonUVE;
+    if (nonUniform && rotated) {
+        return false;
+    }
+    const Math::Vector3UVE parentPosition = parentWorld->worldPosition;
+    const Math::Vector3UVE parentScale = parentWorld->worldScale;
 
     Math::QuaternionUVE parentInverse{};
     if (!Math::TryInverseUVE(parentRotation, parentInverse)) {
@@ -2183,7 +2174,7 @@ bool EditorUVE::ComputeKeepWorldLocalTransformUVE(const Scene::EntityUVE entity,
 bool EditorUVE::ReparentDocumentEntityUVE(const Scene::EntityUVE entity, const Scene::EntityUVE newParent) {
     if (!IsLifecycleCommandAllowedUVE() || IsSceneRootEntityUVE(entity) || !HasSceneGraphNodeUVE(entity) ||
         !IsDocumentSubtreeUVE(entity) ||
-        (newParent != Scene::kInvalidEntityUVE && !HasSceneGraphNodeUVE(newParent)) ||
+        (newParent != Scene::kInvalidEntityUVE && !IsHierarchyNodeUVE(newParent)) ||
         entity == newParent || DoesSubtreeContainEntityUVE(entity, newParent)) {
         return false;
     }
@@ -2221,9 +2212,11 @@ bool EditorUVE::ReparentDocumentEntityUVE(const Scene::EntityUVE entity, const S
     RestoreSelectionUVE(EditorSelectionSnapshotUVE{{entity}, entity});
     m_sceneDirty = true;
     InvalidateHierarchyFilterCacheUVE();
+    // The parent the entity actually got. Recording `newParent` would make redo of "move to
+    // document root" set no parent at all, leaving a stray beside the scene root instead of under it.
     RecordHistoryUVE(ReparentHistoryEntryUVE{
-        entity, parentBefore, newParent, localBefore, localAfter, selectionBefore, CaptureSelectionSnapshotUVE(),
-        dirtyBefore, true});
+        entity, parentBefore, effectiveParent, localBefore, localAfter, selectionBefore,
+        CaptureSelectionSnapshotUVE(), dirtyBefore, true});
     return true;
 }
 
@@ -2871,7 +2864,7 @@ bool EditorUVE::UndoHistoryEntryUVE(HistoryEntryUVE& entry) {
             } else {
                 if (!HasSceneGraphNodeUVE(typedEntry.entity) ||
                     (typedEntry.parentBefore != Scene::kInvalidEntityUVE &&
-                     !HasSceneGraphNodeUVE(typedEntry.parentBefore)) ||
+                     !IsHierarchyNodeUVE(typedEntry.parentBefore)) ||
                     DoesSubtreeContainEntityUVE(typedEntry.entity, typedEntry.parentBefore)) {
                     return false;
                 }
@@ -2997,7 +2990,7 @@ bool EditorUVE::RedoHistoryEntryUVE(HistoryEntryUVE& entry) {
             } else {
                 if (!HasSceneGraphNodeUVE(typedEntry.entity) ||
                     (typedEntry.parentAfter != Scene::kInvalidEntityUVE &&
-                     !HasSceneGraphNodeUVE(typedEntry.parentAfter)) ||
+                     !IsHierarchyNodeUVE(typedEntry.parentAfter)) ||
                     DoesSubtreeContainEntityUVE(typedEntry.entity, typedEntry.parentAfter)) {
                     return false;
                 }
@@ -3062,6 +3055,13 @@ std::vector<Scene::EntityUVE> EditorUVE::GetDocumentRootsUVE() {
                                        entity);
                                }),
                roots.end());
+    // The scene root leads. The entity manager iterates in archetype order, which it documents as
+    // unspecified and which moves whenever a node's component set changes; without this the root
+    // could sit anywhere among stray top-level entities, in the outliner, in the reparent list, and
+    // in the order a Play-mode snapshot is captured and restored.
+    std::stable_partition(roots.begin(), roots.end(), [&entityManager](const Scene::EntityUVE entity) {
+        return entityManager.HasComponentUVE<Scene::SceneRootComponentUVE>(entity);
+    });
     return roots;
 }
 
@@ -3607,6 +3607,31 @@ bool EditorUVE::HasSceneGraphNodeUVE(const Scene::EntityUVE entity) const noexce
            entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(entity);
 }
 
+bool EditorUVE::IsHierarchyNodeUVE(const Scene::EntityUVE entity) const noexcept {
+    return IsDocumentEntityUVE(entity) &&
+           m_services->GetEntityManagerUVE().HasComponentUVE<Scene::HierarchyComponentUVE>(entity);
+}
+
+std::optional<Scene::WorldTransformComponentUVE> EditorUVE::TryGetComposingParentWorldUVE(
+    const Scene::EntityUVE parent) const {
+    // Identity, already resolved: what a child with no parent, or under a pure Node, composes from.
+    const Scene::WorldTransformComponentUVE identity{
+        Math::Vector3UVE{}, Math::QuaternionUVE{}, Math::Vector3UVE{1.0F, 1.0F, 1.0F}, false};
+    if (parent == Scene::kInvalidEntityUVE) {
+        return identity;
+    }
+    if (!IsDocumentEntityUVE(parent)) {
+        return std::nullopt;
+    }
+    const Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    // Spatial means both halves, exactly as the scene graph's sweep decides it.
+    if (!entityManager.HasComponentUVE<Scene::TransformComponentUVE>(parent) ||
+        !entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(parent)) {
+        return identity;
+    }
+    return entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(parent);
+}
+
 bool EditorUVE::IsEntityNameValidUVE(const std::string_view name) const noexcept {
     return !name.empty() && name.size() <= kMaximumEntityNameBytesUVE && !IsWhitespaceOnlyUVE(name);
 }
@@ -3740,13 +3765,13 @@ bool EditorUVE::ComputeLocalRotationForWorldAxisUVE(const Scene::EntityUVE entit
         entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(entity);
     Math::QuaternionUVE localDelta = worldDelta;
     if (hierarchy.parent != Scene::kInvalidEntityUVE) {
-        if (!entityManager.IsAliveUVE(hierarchy.parent) ||
-            !entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(hierarchy.parent)) {
+        const std::optional<Scene::WorldTransformComponentUVE> composingParent =
+            TryGetComposingParentWorldUVE(hierarchy.parent);
+        if (!composingParent.has_value()) {
             return false;
         }
 
-        const Scene::WorldTransformComponentUVE& parentWorld =
-            entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(hierarchy.parent);
+        const Scene::WorldTransformComponentUVE& parentWorld = *composingParent;
         Math::QuaternionUVE parentNormalized{};
         Math::QuaternionUVE parentInverse{};
         if (parentWorld.dirty || !Math::TryNormalizeUVE(parentWorld.worldRotation, parentNormalized) ||
@@ -3779,13 +3804,13 @@ bool EditorUVE::ComputeLocalDeltaForWorldDeltaUVE(const Scene::EntityUVE entity,
         return true;
     }
 
-    if (!entityManager.IsAliveUVE(hierarchy.parent) ||
-        !entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(hierarchy.parent)) {
+    const std::optional<Scene::WorldTransformComponentUVE> composingParent =
+        TryGetComposingParentWorldUVE(hierarchy.parent);
+    if (!composingParent.has_value()) {
         return false;
     }
 
-    const Scene::WorldTransformComponentUVE& parentWorld =
-        entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(hierarchy.parent);
+    const Scene::WorldTransformComponentUVE& parentWorld = *composingParent;
     if (parentWorld.dirty || !IsFiniteVectorUVE(parentWorld.worldScale) ||
         std::abs(parentWorld.worldScale.x) <= kVectorEpsilonUVE ||
         std::abs(parentWorld.worldScale.y) <= kVectorEpsilonUVE ||

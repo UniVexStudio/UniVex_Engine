@@ -75,6 +75,11 @@ private:
         /// Seeding the defaults here instead would make every root look like a child of something
         /// that had already chosen - which a thread group treats as a constraint, so a root could
         /// then never opt into a worker at all.
+        /// False for a pure Node, which is in the hierarchy but has no transform. A child never
+        /// composes its world transform from a non-spatial parent; it starts a new transform chain
+        /// there, the way a Node3D under a plain Node does.
+        bool spatial = true;
+
         ProcessModeUVE processModeInHierarchy = ProcessModeUVE::Inherit;
         ThreadGroupModeUVE threadGroupModeInHierarchy = ThreadGroupModeUVE::Inherit;
         AutoTranslateModeUVE autoTranslateModeInHierarchy = AutoTranslateModeUVE::Inherit;
@@ -126,6 +131,10 @@ private:
     /// Recording happens here rather than in the physics system because this is the one place that
     /// already knows a world transform has just been finalised - the physics system writes LOCAL
     /// transforms and would have to wait for this sweep anyway.
+    /// The Inherit/On/Off rule alone, published to the component when there is one. Shared by the
+    /// spatial path (which also records poses) and the pure-Node path (which has no pose).
+    static bool ResolveInterpolationModeUVE(const PendingEntityUVE& item, bool parentInterpolated) noexcept;
+
     static bool ResolveInterpolationUVE(const PendingEntityUVE& item, bool parentInterpolated,
                                         const WorldTransformComponentUVE& world, bool poseChanged) noexcept;
 

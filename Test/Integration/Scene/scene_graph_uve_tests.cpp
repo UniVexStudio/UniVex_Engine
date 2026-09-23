@@ -713,6 +713,106 @@ TEST_F(SceneGraphUVETest, TryGetResolvedNodeModesUVE_IsEmptyForAnEntityTheUpdate
     EXPECT_EQ(*sceneGraph.TryGetResolvedNodeModesUVE(late), ResolvedNodeModesUVE{});
 }
 
+// A pure Node is in the hierarchy with no transform of its own - the scene root is one. The rule
+// these lock: it passes the modes and visibility down like any node, and it cuts the transform
+// chain, because there is no transform on it to compose from.
+
+[[nodiscard]] EntityUVE CreatePureNodeUVE(EntityManagerUVE& entityManager) {
+    const EntityUVE entity = entityManager.CreateEntityUVE();
+    entityManager.AddComponentUVE<HierarchyComponentUVE>(entity, HierarchyComponentUVE{});
+    return entity;
+}
+
+TEST_F(SceneGraphUVETest, UpdateUVE_AChildOfAPureNodeStartsItsOwnTransformChain) {
+    const EntityUVE node = CreatePureNodeUVE(entityManager);
+    const EntityUVE child = entityManager.CreateEntityUVE();
+    TransformComponentUVE local{};
+    local.localPosition = Math::Vector3UVE{3.0F, 4.0F, 5.0F};
+    local.localScale = Math::Vector3UVE{2.0F, 2.0F, 2.0F};
+    sceneGraph.AttachTransformUVE(entityManager, child, local);
+    sceneGraph.SetParentUVE(entityManager, child, node);
+
+    sceneGraph.UpdateUVE(entityManager);
+
+    const WorldTransformComponentUVE& world = entityManager.GetComponentUVE<WorldTransformComponentUVE>(child);
+    EXPECT_FALSE(world.dirty);
+    EXPECT_EQ(world.worldPosition, local.localPosition);
+    EXPECT_EQ(world.worldScale, local.localScale);
+    // The pure Node gained nothing: the sweep never gives it a transform.
+    EXPECT_FALSE(entityManager.HasComponentUVE<WorldTransformComponentUVE>(node));
+}
+
+TEST_F(SceneGraphUVETest, UpdateUVE_APureNodeBetweenSpatialNodesCutsTheChainButNotTheModes) {
+    // Spatial -> pure -> spatial. The grandchild must not compose from the spatial grandparent:
+    // the node in between has no transform, so the chain restarts there. The modes and
+    // visibility, which do not depend on a transform, still reach it.
+    const EntityUVE grandparent = entityManager.CreateEntityUVE();
+    TransformComponentUVE moved{};
+    moved.localPosition = Math::Vector3UVE{100.0F, 0.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, grandparent, moved);
+    ProcessComponentUVE always{};
+    always.mode = ProcessModeUVE::Always;
+    entityManager.AddComponentUVE<ProcessComponentUVE>(grandparent, always);
+    VisibilityComponentUVE hidden{};
+    hidden.visible = false;
+    entityManager.AddComponentUVE<VisibilityComponentUVE>(grandparent, hidden);
+
+    const EntityUVE node = CreatePureNodeUVE(entityManager);
+    // SetParentUVE is for spatial children; a pure Node's parent is authored directly.
+    entityManager.GetComponentUVE<HierarchyComponentUVE>(node).parent = grandparent;
+    AutoTranslateComponentUVE disabled{};
+    disabled.mode = AutoTranslateModeUVE::Disabled;
+    entityManager.AddComponentUVE<AutoTranslateComponentUVE>(node, disabled);
+
+    const EntityUVE grandchild = entityManager.CreateEntityUVE();
+    TransformComponentUVE local{};
+    local.localPosition = Math::Vector3UVE{1.0F, 2.0F, 3.0F};
+    sceneGraph.AttachTransformUVE(entityManager, grandchild, local);
+    sceneGraph.SetParentUVE(entityManager, grandchild, node);
+    entityManager.AddComponentUVE<VisibilityComponentUVE>(grandchild, VisibilityComponentUVE{});
+
+    sceneGraph.UpdateUVE(entityManager);
+
+    EXPECT_EQ(entityManager.GetComponentUVE<WorldTransformComponentUVE>(grandchild).worldPosition,
+              local.localPosition);
+    EXPECT_FALSE(entityManager.GetComponentUVE<VisibilityComponentUVE>(grandchild).visibleInHierarchy);
+
+    const std::optional<ResolvedNodeModesUVE> resolved = sceneGraph.TryGetResolvedNodeModesUVE(grandchild);
+    ASSERT_TRUE(resolved.has_value());
+    EXPECT_EQ(resolved->process, ProcessModeUVE::Always);
+    EXPECT_EQ(resolved->autoTranslate, AutoTranslateModeUVE::Disabled);
+}
+
+TEST_F(SceneGraphUVETest, TryGetResolvedNodeModesUVE_AnswersForThePureNodeItself) {
+    // The scene root's own Process and Thread Group settings are what its whole scene inherits, so
+    // the pure Node carrying them must have an answer of its own, published to its components.
+    const EntityUVE root = CreatePureNodeUVE(entityManager);
+    ProcessComponentUVE whenPaused{};
+    whenPaused.mode = ProcessModeUVE::WhenPaused;
+    entityManager.AddComponentUVE<ProcessComponentUVE>(root, whenPaused);
+    ThreadGroupComponentUVE subThread{};
+    subThread.mode = ThreadGroupModeUVE::SubThread;
+    entityManager.AddComponentUVE<ThreadGroupComponentUVE>(root, subThread);
+
+    const EntityUVE child = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, child, TransformComponentUVE{});
+    sceneGraph.SetParentUVE(entityManager, child, root);
+
+    sceneGraph.UpdateUVE(entityManager);
+
+    const std::optional<ResolvedNodeModesUVE> own = sceneGraph.TryGetResolvedNodeModesUVE(root);
+    ASSERT_TRUE(own.has_value());
+    EXPECT_EQ(own->process, ProcessModeUVE::WhenPaused);
+    EXPECT_EQ(own->threadGroup, ThreadGroupModeUVE::SubThread);
+    EXPECT_EQ(entityManager.GetComponentUVE<ProcessComponentUVE>(root).resolvedModeInHierarchy,
+              ProcessModeUVE::WhenPaused);
+
+    const std::optional<ResolvedNodeModesUVE> inherited = sceneGraph.TryGetResolvedNodeModesUVE(child);
+    ASSERT_TRUE(inherited.has_value());
+    EXPECT_EQ(inherited->process, ProcessModeUVE::WhenPaused);
+    EXPECT_EQ(inherited->threadGroup, ThreadGroupModeUVE::SubThread);
+}
+
 TEST_F(SceneGraphUVETest, UpdateUVE_ReparentingRecomputesInheritedVisibility) {
     // Moving a node between a hidden and a visible parent has to change its answer. Nothing else
     // in the sweep is keyed on the old parent, so a cached result would survive the move.

@@ -22,6 +22,7 @@
 #include "uve/component/character_controller_component_uve.h"
 #include "uve/component/collider_component_uve.h"
 #include "uve/component/editor_internal_entity_component_uve.h"
+#include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/light_component_uve.h"
 #include "uve/component/mesh_component_uve.h"
 #include "uve/component/name_component_uve.h"
@@ -632,9 +633,10 @@ TEST(EditorUVETest, OutlinerContextUVE_AncestryAndEligibleParentsExcludeSelected
 
         EXPECT_EQ(EditorUVEAccessUVE::GetDocumentAncestryUVE(editor, selected),
                   (std::vector<Scene::EntityUVE>{parent, selected}));
+        // The scene root leads, then the stray top-level entities in creation order.
         EXPECT_EQ(EditorUVEAccessUVE::GetEligibleReparentParentsUVE(editor, selected),
-                  (std::vector<Scene::EntityUVE>{rootA, parent, rootB,
-                                                 editor.GetDocumentSceneRootUVE()}));
+                  (std::vector<Scene::EntityUVE>{editor.GetDocumentSceneRootUVE(), rootA, parent,
+                                                 rootB}));
 
         editor.ShutdownUVE();
     }
@@ -1989,6 +1991,107 @@ TEST(EditorUVETest, EditorHistoryUVE_ReparentUndoRedoRestoresParentsSelectionAnd
     engine.Shutdown();
 }
 
+TEST(EditorUVETest, SceneRootUVE_ChildrenOfTheTransformlessRootStayFullyEditable) {
+    // The scene root is a pure Node: in the hierarchy, with no transform. Everything that used to
+    // read the parent's world transform must treat it as identity, the way the scene graph does -
+    // otherwise every direct child of the root would refuse to move, rotate or be reparented.
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_scene_root_children.uvescene");
+        editor.InitUVE();
+        Core::EngineServicesUVE& services = engine.GetServicesUVE();
+        Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
+        const Scene::EntityUVE sceneRoot = editor.GetDocumentSceneRootUVE();
+        ASSERT_NE(sceneRoot, Scene::kInvalidEntityUVE);
+        ASSERT_FALSE(entityManager.HasComponentUVE<Scene::TransformComponentUVE>(sceneRoot));
+
+        const Scene::EntityUVE parent = entityManager.CreateEntityUVE();
+        Scene::TransformComponentUVE parentTransform{};
+        parentTransform.localPosition = Math::Vector3UVE{0.0F, 10.0F, 0.0F};
+        AttachRootUVE(engine, parent, parentTransform);
+        services.GetSceneGraphUVE().SetParentUVE(entityManager, parent, sceneRoot);
+        const Scene::EntityUVE child = entityManager.CreateEntityUVE();
+        Scene::TransformComponentUVE childTransform{};
+        childTransform.localPosition = Math::Vector3UVE{1.0F, 2.0F, 3.0F};
+        AttachRootUVE(engine, child, childTransform);
+        services.GetSceneGraphUVE().SetParentUVE(entityManager, child, sceneRoot);
+        services.GetSceneGraphUVE().UpdateUVE(entityManager);
+
+        // A gizmo drag on a direct child of the root: world delta == local delta.
+        editor.SelectEntityUVE(child);
+        ASSERT_TRUE(editor.TranslateSelectedAlongAxisUVE(EditorTransformAxisUVE::X, 2.0F));
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::TransformComponentUVE>(child).localPosition,
+                  (Math::Vector3UVE{3.0F, 2.0F, 3.0F}));
+        EXPECT_TRUE(editor.RotateSelectedAroundWorldAxisUVE(EditorTransformAxisUVE::Y, 0.5F));
+        services.GetSceneGraphUVE().UpdateUVE(entityManager);
+
+        // Keep-world reparent out from under the root and back onto it by name, then undo and
+        // redo both: every step names the root as a parent, which a spatial-only check refused.
+        ASSERT_TRUE(editor.SetReparentTransformModeUVE(EditorReparentTransformModeUVE::KeepWorld));
+        const Math::Vector3UVE worldBefore =
+            entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(child).worldPosition;
+        ASSERT_TRUE(editor.ReparentSelectedEntityUVE(parent));
+        services.GetSceneGraphUVE().UpdateUVE(entityManager);
+        EXPECT_NEAR(entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(child).worldPosition.y,
+                    worldBefore.y, 1.0e-5F);
+        ASSERT_TRUE(editor.ReparentSelectedEntityUVE(sceneRoot));
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(child).parent, sceneRoot);
+        services.GetSceneGraphUVE().UpdateUVE(entityManager);
+        EXPECT_NEAR(entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(child).worldPosition.y,
+                    worldBefore.y, 1.0e-5F);
+
+        ASSERT_TRUE(editor.UndoUVE());
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(child).parent, parent);
+        ASSERT_TRUE(editor.UndoUVE());
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(child).parent, sceneRoot);
+        ASSERT_TRUE(editor.RedoUVE());
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(child).parent, parent);
+
+        editor.ShutdownUVE();
+    }
+
+    engine.Shutdown();
+}
+
+TEST(EditorUVETest, EditorHistoryUVE_RedoOfMoveToDocumentRootLandsUnderTheSceneRoot) {
+    // "Move to document root" is spelled as no parent, and means the scene root. History has to
+    // record the parent the entity actually got, or redo would set no parent at all and leave a
+    // stray beside the root - a second top-level node in a one-root document.
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_reparent_to_root_redo.uvescene");
+        editor.InitUVE();
+        Core::EngineServicesUVE& services = engine.GetServicesUVE();
+        Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
+        const Scene::EntityUVE sceneRoot = editor.GetDocumentSceneRootUVE();
+        const Scene::EntityUVE parent = entityManager.CreateEntityUVE();
+        AttachRootUVE(engine, parent, Scene::TransformComponentUVE{});
+        services.GetSceneGraphUVE().SetParentUVE(entityManager, parent, sceneRoot);
+        const Scene::EntityUVE child = entityManager.CreateEntityUVE();
+        AttachRootUVE(engine, child, Scene::TransformComponentUVE{});
+        services.GetSceneGraphUVE().SetParentUVE(entityManager, child, parent);
+        editor.SelectEntityUVE(child);
+
+        ASSERT_TRUE(editor.ReparentSelectedEntityUVE(Scene::kInvalidEntityUVE));
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(child).parent, sceneRoot);
+        ASSERT_TRUE(editor.UndoUVE());
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(child).parent, parent);
+        ASSERT_TRUE(editor.RedoUVE());
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(child).parent, sceneRoot);
+        EXPECT_EQ(editor.GetDocumentRootsUVE(), std::vector<Scene::EntityUVE>{sceneRoot});
+
+        editor.ShutdownUVE();
+    }
+
+    engine.Shutdown();
+}
+
 TEST(EditorUVETest, ReparentSelectedEntityUVE_RejectsCyclesNoOpNonDocumentStaleAndNonRunningStates) {
     Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
     engine.Init();
@@ -3288,12 +3391,13 @@ TEST(EditorUVETest, PlayModeSandbox_RestoresOrderedMultiSelectionAndActiveEntity
 
         const std::vector<Scene::EntityUVE> restoredRoots = editor.GetDocumentRootsUVE();
         ASSERT_EQ(restoredRoots.size(), 3U); // the scene root + the two restored authored roots
+        EXPECT_EQ(restoredRoots[0], editor.GetDocumentSceneRootUVE());
         EXPECT_NE(restoredRoots[1], first);
         EXPECT_NE(restoredRoots[2], second);
         // The restored selection is the authored pair (the two non-scene-root restored roots,
         // in their restored order); the scene root itself is never part of it.
-        EXPECT_EQ(editor.GetSelectedEntitiesUVE(), (std::vector<Scene::EntityUVE>{restoredRoots[0], restoredRoots[1]}));
-        EXPECT_EQ(editor.GetSelectedEntityUVE(), restoredRoots[1]);
+        EXPECT_EQ(editor.GetSelectedEntitiesUVE(), (std::vector<Scene::EntityUVE>{restoredRoots[1], restoredRoots[2]}));
+        EXPECT_EQ(editor.GetSelectedEntityUVE(), restoredRoots[2]);
         EXPECT_FALSE(editor.HasSingleDocumentSelectionUVE());
 
         editor.ShutdownUVE();
