@@ -3,7 +3,7 @@
 #include "uve/nodes/3d/plane_mesh_3d_uve.h"
 
 #include "uve/entity/i_entity_manager_uve.h"
-#include "uve/nodes/3d/node_3d_uve.h"
+#include "uve/nodes/3d/abstract_nodes_3d_uve.h"
 
 namespace UVE::Scene {
 
@@ -13,9 +13,9 @@ bool IsPlaneMesh3DNodeDefinitionValidUVE(const PlaneMesh3DNodeDefinitionUVE& val
 
 void ApplyPlaneMesh3DNodeDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
                                        const PlaneMesh3DNodeDefinitionUVE& value) {
-    // PlaneMesh3D is Node3D plus its own components: the shared baseline guarantee comes first,
-    // then this kind's part goes on top.
-    EnsureNode3DBaselineUVE(entityManager, entity, PlaneMesh3DNodeDefinitionUVE::defaultName);
+    // A SurfaceInstance3D: that base (RenderInstance3D, Node3D, the Node section) first, then
+    // this kind's own part.
+    ApplySurfaceInstance3DBaseUVE(entityManager, entity, PlaneMesh3DNodeDefinitionUVE::defaultName);
     entityManager.AddComponentUVE<PrimitiveMeshComponentUVE>(entity, value.mesh);
     entityManager.AddComponentUVE<ColliderComponentUVE>(entity, value.collider);
 }

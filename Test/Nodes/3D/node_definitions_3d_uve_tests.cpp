@@ -430,6 +430,24 @@ TEST_F(Node3DDefinitionsUVETest, RenderInstanceChildBasesCarryRenderInstanceAndT
     EXPECT_FALSE(entityManager.HasComponentUVE<SurfaceInstanceComponentUVE>(light));
 }
 
+TEST_F(Node3DDefinitionsUVETest, MeshAndParticleNodesAreSurfaceInstances) {
+    const EntityUVE mesh = CreateEntityUVE();
+    const EntityUVE box = CreateEntityUVE();
+    const EntityUVE particles = CreateEntityUVE();
+    ApplyMeshInstance3DNodeDefinitionUVE(entityManager, mesh, MeshInstance3DNodeDefinitionUVE{});
+    ApplyBoxMesh3DNodeDefinitionUVE(entityManager, box, BoxMesh3DNodeDefinitionUVE{});
+    ApplyParticleEmitter3DNodeDefinitionUVE(entityManager, particles, ParticleEmitter3DNodeDefinitionUVE{});
+    ExpectNode3DBaselineUVE(entityManager, mesh, "MeshInstance3D");
+    ExpectNode3DBaselineUVE(entityManager, box, "Cube");
+    ExpectNode3DBaselineUVE(entityManager, particles, "ParticleEmitter3D");
+    for (const EntityUVE entity : {mesh, box, particles}) {
+        EXPECT_TRUE(entityManager.HasComponentUVE<SurfaceInstanceComponentUVE>(entity));
+        EXPECT_TRUE(entityManager.HasComponentUVE<RenderInstanceComponentUVE>(entity));
+        EXPECT_TRUE(entityManager.HasComponentUVE<VisibilityComponentUVE>(entity));
+        EXPECT_TRUE(entityManager.HasComponentUVE<NodeMetadataComponentUVE>(entity));
+    }
+}
+
 TEST_F(Node3DDefinitionsUVETest, Decal3DAndFogVolume3DAreRenderInstancesPlusTheirOwnComponent) {
     const EntityUVE decal = CreateEntityUVE();
     const EntityUVE fog = CreateEntityUVE();

@@ -31,6 +31,7 @@
 #include "uve/component/primitive_mesh_component_uve.h"
 #include "uve/component/script_component_uve.h"
 #include "uve/component/transform_component_uve.h"
+#include "uve/nodes/3d/all_nodes_3d_uve.h"
 #include "uve/nodes/3d/decal_3d_uve.h"
 #include "uve/nodes/3d/fog_volume_3d_uve.h"
 #include "uve/nodes/3d/marker_3d_uve.h"
@@ -3858,6 +3859,63 @@ TEST(EditorUVETest, RenderInstanceChildInspectorUVE_IsOwnSectionThenBasesThenNod
         };
         EXPECT_EQ(EditorUVEAccessUVE::GetEligibleInspectorDrawerIdsUVE(editor, decal), expected("decal-3d"));
         EXPECT_EQ(EditorUVEAccessUVE::GetEligibleInspectorDrawerIdsUVE(editor, fog), expected("fog-volume-3d"));
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
+TEST(EditorUVETest, SurfaceInstanceChildInspectorUVE_IsOwnSectionThenSurfaceRenderNode3DNode) {
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_surface_instance_inspector.uvescene");
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        const auto create = [&](const auto& apply) {
+            const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
+            AttachRootUVE(engine, entity, Scene::TransformComponentUVE{});
+            apply(entity);
+            return entity;
+        };
+        const auto expected = [](const std::string& own) {
+            return std::vector<std::string>{own,
+                                            "surface-instance",
+                                            "render-instance",
+                                            "transform",
+                                            "visibility",
+                                            "process",
+                                            "physics-interpolation",
+                                            "auto-translate",
+                                            "editor-description",
+                                            "script",
+                                            "node-metadata"};
+        };
+        const Scene::EntityUVE mesh = create([&](const Scene::EntityUVE entity) {
+            Scene::ApplyMeshInstance3DNodeDefinitionUVE(entityManager, entity, Scene::MeshInstance3DNodeDefinitionUVE{});
+        });
+        const Scene::EntityUVE box = create([&](const Scene::EntityUVE entity) {
+            Scene::ApplyBoxMesh3DNodeDefinitionUVE(entityManager, entity, Scene::BoxMesh3DNodeDefinitionUVE{});
+        });
+        const Scene::EntityUVE sphere = create([&](const Scene::EntityUVE entity) {
+            Scene::ApplySphereMesh3DNodeDefinitionUVE(entityManager, entity, Scene::SphereMesh3DNodeDefinitionUVE{});
+        });
+        const Scene::EntityUVE plane = create([&](const Scene::EntityUVE entity) {
+            Scene::ApplyPlaneMesh3DNodeDefinitionUVE(entityManager, entity, Scene::PlaneMesh3DNodeDefinitionUVE{});
+        });
+        const Scene::EntityUVE particles = create([&](const Scene::EntityUVE entity) {
+            Scene::ApplyParticleEmitter3DNodeDefinitionUVE(entityManager, entity,
+                                                           Scene::ParticleEmitter3DNodeDefinitionUVE{});
+        });
+        EXPECT_EQ(EditorUVEAccessUVE::GetEligibleInspectorDrawerIdsUVE(editor, mesh), expected("mesh"));
+        // The primitive's collision is drawn inside its own section, not as a section of its own.
+        for (const Scene::EntityUVE primitive : {box, sphere, plane}) {
+            EXPECT_TRUE(entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(primitive));
+            EXPECT_EQ(EditorUVEAccessUVE::GetEligibleInspectorDrawerIdsUVE(editor, primitive),
+                      expected("primitive-mesh"));
+        }
+        EXPECT_EQ(EditorUVEAccessUVE::GetEligibleInspectorDrawerIdsUVE(editor, particles),
+                  expected("particle-emitter"));
         editor.ShutdownUVE();
     }
     engine.Shutdown();
