@@ -177,14 +177,10 @@ NavGizmoMeshes BuildNavGizmoMeshes(const GizmoStyle& style, const Vec3& viewDire
     for (const NavHandle* handle : sorted) {
         const Vec3 center = handle->direction;
         if (handle->positive) {
-            // A shaded ball drawn flat: dark rim, body, then a soft highlight up and to the left,
-            // which is all a sphere needs to read as one at this size - no sphere mesh required.
+            // A clean ball: dark rim and flat body. No highlight - a highlight sitting under the
+            // letter broke its outline into light and dark patches and made it hard to read.
             AddFacingDiscWithRim(mesh, center, style.navBallRadius, view, handle->color,
                                  style.navBallSegments);
-            const Vec3 lift = view * -0.004f;
-            AddFacingDisc(mesh, center + lift + right * (-0.28f * style.navBallRadius) + up * (0.30f * style.navBallRadius),
-                          style.navBallRadius * 0.42f, view, handle->color * 0.55f + Vec3{0.45f, 0.45f, 0.45f},
-                          0.55f, style.navBallSegments / 2);
             AddAxisLabel(mesh, center + view * -0.01f, right, up, handle->axisLabel,
                          style.navBallRadius * style.navLabelScale,
                          style.navLabelColor, style.navLabelWidthPx);

@@ -180,13 +180,15 @@ void GizmoRenderer::UploadAndDrawLines(const GizmoMesh& mesh, const GizmoDrawPar
     for (const auto& line : mesh.lines) {
         // Quad corners: A-n, A+n, B+n, B-n. At B the computed normal is
         // flipped (its "other" end is A), so the side value flips with it.
+        // The width's sign marks the end (A positive, B negative), so the shader can lay out a
+        // coordinate along the segment and round both caps.
         PushLineVertex(vertices, line.a, line.b, line.color, -1.f, line.widthPx);
         PushLineVertex(vertices, line.a, line.b, line.color, +1.f, line.widthPx);
-        PushLineVertex(vertices, line.b, line.a, line.color, -1.f, line.widthPx);
+        PushLineVertex(vertices, line.b, line.a, line.color, -1.f, -line.widthPx);
 
         PushLineVertex(vertices, line.a, line.b, line.color, -1.f, line.widthPx);
-        PushLineVertex(vertices, line.b, line.a, line.color, -1.f, line.widthPx);
-        PushLineVertex(vertices, line.b, line.a, line.color, +1.f, line.widthPx);
+        PushLineVertex(vertices, line.b, line.a, line.color, -1.f, -line.widthPx);
+        PushLineVertex(vertices, line.b, line.a, line.color, +1.f, -line.widthPx);
     }
 
     glBindVertexArray(lineVao_);

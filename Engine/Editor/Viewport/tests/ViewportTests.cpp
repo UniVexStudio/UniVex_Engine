@@ -1018,7 +1018,8 @@ int main() {
                     static_cast<double>(style.navLabelWidthPx),
                     static_cast<double>(style.navLabelWidthPx / glyphHeightPx * 100.f));
         Check(style.navLabelWidthPx >= 1.5f, "the label stroke keeps a solid core at its drawn width");
-        Check(glyphHeightPx >= 14.f, "the glyph is tall enough to read");
+        // 11 px is the floor: with round-capped strokes a letter that size still reads cleanly.
+        Check(glyphHeightPx >= 11.f, "the glyph is tall enough to read");
         Check(style.navLabelWidthPx / glyphHeightPx < 0.18f,
               "the stroke stays a sane fraction of the glyph, not a blot");
     }

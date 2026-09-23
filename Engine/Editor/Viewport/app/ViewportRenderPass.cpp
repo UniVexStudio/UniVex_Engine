@@ -251,12 +251,23 @@ void ViewportRenderPass::DrawNavGizmo(const OrbitCamera& camera, int width, int 
     params.viewportWidth = static_cast<float>(rect.size);
     params.viewportHeight = static_cast<float>(rect.size);
     params.viewDirection = viewDirection;
-    params.depthTest = false; // six discs, painter-sorted in the builder
-
-    // Two passes: the axis stubs underneath, then the balls and their letters together. The
-    // letters are strokes, so they ride the line pass and inherit its analytic anti-aliasing
-    // rather than needing a font texture.
+    // The stubs underneath need no depth: they are always behind the balls.
+    params.depthTest = false;
     gizmos_.Draw(meshes.underlay, params);
+
+    // The balls do. The renderer draws every stroke after every disc, so without depth a letter on
+    // a ball further back would print straight through the ball in front of it - two letters
+    // overlapping on one ball is what made the labels look scrambled. The opaque discs write
+    // depth, and each letter sits just in front of its own ball but behind any nearer one.
+    // Depth is cleared for this corner only, so the scene's depth elsewhere is untouched.
+    const GLboolean hadScissor = glIsEnabled(GL_SCISSOR_TEST);
+    glEnable(GL_SCISSOR_TEST);
+    glScissor(rect.x, rect.y, rect.size, rect.size);
+    glDepthMask(GL_TRUE);
+    glClear(GL_DEPTH_BUFFER_BIT);
+    if (hadScissor == GL_FALSE) glDisable(GL_SCISSOR_TEST);
+    params.depthTest = true;
+    params.depthWrite = true;
     gizmos_.Draw(meshes.overlay, params);
 
     glViewport(0, 0, width, height);

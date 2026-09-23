@@ -117,22 +117,22 @@ struct GizmoStyle {
     int   pivotDotSegments = 24; // plenty for a 5 px circle; ringSegments would be 4x wasted work
 
     // ---- orientation (nav) gizmo -----------------------------------------
-    // Compact: 80 px keeps the corner free while each axis letter stays about 15 px tall with a
-    // stroke near a tenth of its height - the proportion vector type needs to stay legible (at
-    // 72 px with small balls the letters closed up into blobs; the larger balls here prevent that).
-    float navPixelSize = 80.f;    // side of the square corner viewport, px
+    // Compact: 64 px keeps the corner out of the way. The balls take a larger share of that
+    // square than before, so each letter still stands about 11 px tall - big enough for the
+    // round-capped strokes to read as a letter rather than a blot.
+    float navPixelSize = 64.f;    // side of the square corner viewport, px
     float navMarginPx = 16.f;
     float navAxisLineWidthPx = 2.0f;
-    float navBallRadius = 0.36f;  // radius of the axis end balls
+    float navBallRadius = 0.44f;  // radius of the axis end balls
     int   navBallSegments = 48;
 
     // Axis letters on the positive balls, drawn as vector strokes (no font
     // dependency for three glyphs) sized as a fraction of the ball radius.
     // A vector stroke needs a solid core to read, not just coverage: below about 1.5 px the
     // fragment shader's analytic edge fade eats the whole width and the glyph breaks into
-    // fragments. 1.7 px against a ~17 px glyph is both solid and proportionate.
-    float navLabelScale = 0.72f;
-    float navLabelWidthPx = 2.1f;
+    // fragments. 1.8 px against an ~11 px glyph is both solid and proportionate.
+    float navLabelScale = 0.62f;
+    float navLabelWidthPx = 1.8f;
     Vec3  navLabelColor{0.043f, 0.051f, 0.074f}; // dark, to read on the bright balls
 };
 
