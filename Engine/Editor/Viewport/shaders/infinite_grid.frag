@@ -73,9 +73,13 @@ float GridCoverage(vec2 p, float spacing, vec2 worldPerPixel, float widthPixels)
 }
 
 // Coverage of a single line at coord == 0 (the world axes).
+// Box-filtered in pixels, like the gizmo strokes: a solid core `widthPixels` wide and a one-pixel
+// feather. The earlier tent (1 - d / halfWidth) had no core, so a line that happened to fall on a
+// pixel boundary - the screen centre of every orthographic axis view - came out as two half-strength
+// rows, reading as a grey line instead of the axis colour.
 float AxisCoverage(float coord, float worldPerPixel, float widthPixels) {
-    float halfWidth = worldPerPixel * widthPixels * 0.5;
-    return 1.0 - clamp(abs(coord) / max(halfWidth, 1e-9), 0.0, 1.0);
+    float distancePixels = abs(coord) / max(worldPerPixel, 1e-9);
+    return clamp(widthPixels * 0.5 + 0.5 - distancePixels, 0.0, 1.0);
 }
 
 // Composite `src` on top of the accumulated `dst`.
@@ -83,6 +87,30 @@ vec4 Over(vec4 dst, vec3 srcColor, float srcAlpha) {
     srcAlpha = clamp(srcAlpha, 0.0, 1.0);
     return vec4(mix(dst.rgb, srcColor, srcAlpha),
                 dst.a + srcAlpha * (1.0 - dst.a));
+}
+
+// Coverage of a world axis - the line through the origin along unit vector `axis` - for this
+// pixel's ray, from the ray's closest approach to the line. Used for all three axes so each is
+// drawn as a real line in space: X and Z used to be read off the ground-plane hit, which does not
+// exist when the ground is seen edge-on (Front, Back, Left, Right), so those views lost them.
+//
+// The distance is measured SIGNED - projected onto the direction perpendicular to both the axis
+// and the ray - rather than with length(). length() has a kink at the line, its screen-space
+// derivative collapses for a 2x2 quad straddling it, and the line then flickers in and out;
+// the signed value is smooth through zero. Nothing here branches or discards, so the derivative
+// quad stays valid. A ray (nearly) parallel to the axis sees it as a single point, so the line
+// fades out there instead of smearing across the view.
+float AxisLineCoverage(vec3 nearPoint, vec3 rayDir, vec3 axis, float widthPixels, out vec3 closestPoint) {
+    vec3 nearPerp = nearPoint - dot(nearPoint, axis) * axis;
+    vec3 rayPerp = rayDir - dot(rayDir, axis) * axis;
+    float t = clamp(-dot(nearPerp, rayPerp) / max(dot(rayPerp, rayPerp), 1e-9), -1e6, 1e6);
+    closestPoint = nearPoint + t * rayDir;
+    vec3 side = cross(axis, rayDir);
+    float sideLength = max(length(side), 1e-9);
+    float signedDistance = dot(closestPoint, side) / sideLength;
+    float worldPerPixel = max(length(vec2(dFdx(signedDistance), dFdy(signedDistance))), 1e-9);
+    float notAlongRay = smoothstep(0.02, 0.08, sideLength / max(length(rayDir), 1e-9));
+    return AxisCoverage(signedDistance, worldPerPixel, widthPixels) * (t > 0.0 ? 1.0 : 0.0) * notAlongRay;
 }
 
 void main() {
@@ -113,47 +141,13 @@ void main() {
     );
     float pixelWorld = max(max(worldPerPixel.x, worldPerPixel.y), 1e-9);
 
-    // ---- vertical Y axis line (perpendicular to the ground plane) ---------
-    // The ground-plane intersection above only touches this line at the single
-    // point x=0,z=0 - a vertical line isn't "on" the y=0 plane, so it needs its
-    // own ray-vs-line closest-approach test, independent of whether this
-    // pixel's ray even hits the ground. Minimizing horizontal (XZ) distance
-    // along the ray is a 1D quadratic in the ray parameter t, since the
-    // line's own direction is (0,1,0) and only rayDir.xz enters this at all.
-    // Same "guard the division, take derivatives unconditionally" discipline
-    // as the ground-plane t above - the final t>0 gate is a branchless
-    // multiply, not an `if`, so it never disturbs the 2x2 derivative quad
-    // dFdx/dFdy below need to stay valid across.
-    float axisYDenom = max(dot(rayDir.xz, rayDir.xz), 1e-9);
-    float axisYT = clamp(-dot(vNearPoint.xz, rayDir.xz) / axisYDenom, -1e6, 1e6);
-    vec3 axisYClosestPoint = vNearPoint + axisYT * rayDir;
-
-    // Measure the offset from the line as a SIGNED value, not as length(). This matters more
-    // than it looks. length() is a V shape with a kink exactly at the line, so its screen-space
-    // derivative collapses toward zero for any 2x2 quad that straddles the line evenly - and
-    // axisYWorldPerPixel below, which is that derivative, then drives halfWidth to zero and the
-    // coverage with it. The line therefore appeared or vanished according to the sub-pixel phase
-    // between it and the derivative quad, which is why it used to come and go along its own
-    // length and show up in some camera angles but not others.
-    //
-    // The vector from the Y axis to the ray's closest approach is by construction perpendicular
-    // to the ray's own XZ direction, so projecting it onto that perpendicular recovers the same
-    // distance WITH a sign that flips cleanly as the ray crosses the line. That is a smooth
-    // function through zero, so its derivative is well behaved - exactly the property the X and Z
-    // axes already get for free by measuring a signed world coordinate rather than a distance.
-    vec2 axisYPerp = vec2(-rayDir.z, rayDir.x);
-    float axisYPerpLength = max(length(axisYPerp), 1e-9);
-    float axisYSigned = dot(axisYClosestPoint.xz, axisYPerp) / axisYPerpLength;
-    vec2 axisYDistPerPixel = vec2(dFdx(axisYSigned), dFdy(axisYSigned));
-    float axisYWorldPerPixel = max(length(axisYDistPerPixel), 1e-9);
-    // A ray (nearly) parallel to the Y axis - every ray of an orthographic Top or Bottom view -
-    // has no closest-approach point worth drawing: the axis is a single point on screen there.
-    // Fade it out as the ray turns vertical instead of letting the clamped division smear it
-    // into a line across the view.
-    float rayHorizontal = length(rayDir.xz) / max(length(rayDir), 1e-9);
-    float axisYAlongRay = smoothstep(0.02, 0.08, rayHorizontal);
-    float axisY = AxisCoverage(axisYSigned, axisYWorldPerPixel, uAxisWidthPixels) * (axisYT > 0.0 ? 1.0 : 0.0) *
-                  axisYAlongRay;
+    // ---- world axes, each as a line in space (see AxisLineCoverage) --------
+    vec3 axisXClosestPoint;
+    vec3 axisYClosestPoint;
+    vec3 axisZClosestPoint;
+    float axisX = AxisLineCoverage(vNearPoint, rayDir, vec3(1.0, 0.0, 0.0), uAxisWidthPixels, axisXClosestPoint);
+    float axisY = AxisLineCoverage(vNearPoint, rayDir, vec3(0.0, 1.0, 0.0), uAxisWidthPixels, axisYClosestPoint);
+    float axisZ = AxisLineCoverage(vNearPoint, rayDir, vec3(0.0, 0.0, 1.0), uAxisWidthPixels, axisZClosestPoint);
 
     // ---- pick the decade of spacing, and how far through it we are --------
     // The upper clamp keeps pow(10, floor(lod)) finite for the stretched
@@ -185,39 +179,33 @@ void main() {
     accum = Over(accum, color2, cov2 * alpha2);
     accum = Over(accum, color3, cov3 * alpha3);
 
-    // ---- world axes on top -----------------------------------------------
-    float axisX = AxisCoverage(worldPos.z, worldPerPixel.y, uAxisWidthPixels);
-    float axisZ = AxisCoverage(worldPos.x, worldPerPixel.x, uAxisWidthPixels);
-    accum = Over(accum, uAxisColorX, axisX);
-    accum = Over(accum, uAxisColorZ, axisZ);
-
-    // ---- horizon fade for the ground-plane content (grid tiers + X/Z axes) -
-    // Correct for X/Z, since they truly lie on the ground plane worldPos hits.
+    // ---- horizon fade for the ground-plane grid ------------------------------
     float groundDist = length(worldPos.xz - uCameraPos.xz);
     float groundFade = 1.0 - smoothstep(uFadeStart, uFadeEnd, groundDist);
     float groundAlpha = accum.a * groundFade * uOpacity;
 
-    // ---- Y axis line: its own independent fade, not the ground's ----------
-    // The vertical line isn't on the ground plane, so reusing groundDist here
-    // (as an earlier version of this shader did) fades/cuts it off wherever
-    // THIS pixel's ground ray happens to land - often unrelated to how far
-    // along the vertical line this pixel actually is, which is what made the
-    // line visibly terminate well short of the horizon while X/Z kept going.
-    // Fading by the line's own camera-space distance instead makes it dissolve
-    // at the same true visual range as X/Z, matching the "infinite" ask.
-    float axisYCameraDist = length(axisYClosestPoint - uCameraPos);
-    float axisYFade = 1.0 - smoothstep(uFadeStart, uFadeEnd, axisYCameraDist);
-    float axisYAlpha = axisY * axisYFade * uOpacity;
+    // ---- axes: each fades by its own distance from the camera --------------
+    // Not by the ground hit: that is unrelated to how far along an axis this pixel is, and for
+    // the Y axis (or any axis seen edge-on) there may be no ground hit at all.
+    float axisXAlpha = axisX * (1.0 - smoothstep(uFadeStart, uFadeEnd, length(axisXClosestPoint - uCameraPos))) * uOpacity;
+    float axisYAlpha = axisY * (1.0 - smoothstep(uFadeStart, uFadeEnd, length(axisYClosestPoint - uCameraPos))) * uOpacity;
+    float axisZAlpha = axisZ * (1.0 - smoothstep(uFadeStart, uFadeEnd, length(axisZClosestPoint - uCameraPos))) * uOpacity;
 
-    vec4 finalColor = Over(vec4(accum.rgb, groundAlpha), uAxisColorY, axisYAlpha);
+    vec4 finalColor = vec4(accum.rgb, groundAlpha);
+    finalColor = Over(finalColor, uAxisColorX, axisXAlpha);
+    finalColor = Over(finalColor, uAxisColorZ, axisZAlpha);
+    finalColor = Over(finalColor, uAxisColorY, axisYAlpha);
     float finalAlpha = finalColor.a;
     if (finalAlpha < 0.002) discard;   // nothing to show; don't touch depth either
 
     // ---- real depth, so the grid composites with scene geometry -----------
-    // Whichever content actually wins this pixel (the Y line or the ground)
-    // supplies the depth - using the ground's worldPos for a pixel that's
-    // really showing the Y line would write nonsense/unrelated depth there.
-    vec3 depthSourcePos = (axisYAlpha > groundAlpha) ? axisYClosestPoint : worldPos;
+    // Whichever content wins this pixel supplies the depth - the ground hit for the grid, or the
+    // closest point on whichever axis line is strongest here.
+    vec3 depthSourcePos = worldPos;
+    float strongest = groundAlpha;
+    if (axisXAlpha > strongest) { strongest = axisXAlpha; depthSourcePos = axisXClosestPoint; }
+    if (axisZAlpha > strongest) { strongest = axisZAlpha; depthSourcePos = axisZClosestPoint; }
+    if (axisYAlpha > strongest) { strongest = axisYAlpha; depthSourcePos = axisYClosestPoint; }
     vec4 clip = uViewProj * vec4(depthSourcePos, 1.0);
     gl_FragDepth = (clip.z / clip.w) * 0.5 + 0.5;
 

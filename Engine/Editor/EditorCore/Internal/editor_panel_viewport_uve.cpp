@@ -377,26 +377,54 @@ void EditorUVE::DrawViewportOverlayBubblesUVE(const Math::Vector2UVE imageOrigin
             ImGui::SetTooltip("Projection and view");
         }
         ImGui::SetNextWindowPos(ImVec2{pillMin.x, pillMax.y + 4.0F}, ImGuiCond_Appearing);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{10.0F, 10.0F});
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{4.0F, 4.0F});
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0F);
         if (ImGui::BeginPopup("##viewport-view-menu")) {
-            ImGui::TextDisabled("Projection");
-            if (ImGui::MenuItem("Perspective", nullptr, !m_viewportOverlayState.orthographic)) {
+            // One control per decision: a two-way segmented switch for the projection, then the six
+            // named views as a 3x2 grid laid out by opposites (Top over Bottom, Front over Back,
+            // Right over Left). The active option is filled; the rest are quiet.
+            const float cellWidth = ImGui::GetFontSize() * 4.6F;
+            const float spacing = ImGui::GetStyle().ItemSpacing.x;
+            const ImVec4 activeFill = ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive);
+            const ImVec4 quietFill = ImGui::GetStyleColorVec4(ImGuiCol_FrameBg);
+            const auto option = [&](const char* label, const bool active, const float width) {
+                ImGui::PushStyleColor(ImGuiCol_Button, active ? activeFill : quietFill);
+                const bool clicked = ImGui::Button(label, ImVec2{width, 0.0F});
+                ImGui::PopStyleColor();
+                return clicked;
+            };
+
+            ImGui::TextDisabled("PROJECTION");
+            const float halfWidth = (cellWidth * 3.0F + spacing * 2.0F - spacing) * 0.5F;
+            if (option("Perspective", !m_viewportOverlayState.orthographic, halfWidth)) {
                 SetViewportOrthographicUVE(false);
             }
-            if (ImGui::MenuItem("Orthographic", nullptr, m_viewportOverlayState.orthographic)) {
+            ImGui::SameLine();
+            if (option("Orthographic", m_viewportOverlayState.orthographic, halfWidth)) {
                 SetViewportOrthographicUVE(true);
             }
-            ImGui::Separator();
-            ImGui::TextDisabled("View");
-            constexpr std::array<ViewportViewUVE, 6> kViews{ViewportViewUVE::Top,   ViewportViewUVE::Bottom,
-                                                            ViewportViewUVE::Front, ViewportViewUVE::Back,
-                                                            ViewportViewUVE::Right, ViewportViewUVE::Left};
-            for (const ViewportViewUVE view : kViews) {
-                if (ImGui::MenuItem(GetViewportViewNameUVE(view), nullptr, m_viewportOverlayState.view == view)) {
+
+            ImGui::Dummy(ImVec2{0.0F, 4.0F});
+            ImGui::TextDisabled("VIEW");
+            constexpr std::array<ViewportViewUVE, 6> kViews{ViewportViewUVE::Top,    ViewportViewUVE::Front,
+                                                            ViewportViewUVE::Right,  ViewportViewUVE::Bottom,
+                                                            ViewportViewUVE::Back,   ViewportViewUVE::Left};
+            for (std::size_t index = 0U; index < kViews.size(); ++index) {
+                const ViewportViewUVE view = kViews[index];
+                if (index % 3U != 0U) {
+                    ImGui::SameLine();
+                }
+                if (option(GetViewportViewNameUVE(view), m_viewportOverlayState.view == view, cellWidth)) {
                     RequestViewportViewUVE(view);
+                    ImGui::CloseCurrentPopup();
                 }
             }
+            ImGui::Dummy(ImVec2{0.0F, 2.0F});
+            ImGui::TextDisabled("Orbit to return to a free view.");
             ImGui::EndPopup();
         }
+        ImGui::PopStyleVar(3);
     }
 }
 
