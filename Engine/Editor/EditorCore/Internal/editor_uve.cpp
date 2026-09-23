@@ -1938,7 +1938,8 @@ Scene::EntityUVE EditorUVE::CreateDocumentSceneNodeUVE(
             entity = createNodeWithComponent(Scene::NavigationAgent3DNodeComponentUVE{});
             break;
         case Scene::Nodes::SceneNodeKindUVE::Skeleton3D:
-            entity = createNodeWithComponent(Scene::Skeleton3DNodeComponentUVE{});
+            entity = CreateNodeDefinitionEntityInternalUVE(Scene::Skeleton3DNodeDefinitionUVE{},
+                                                            Scene::ApplySkeleton3DNodeDefinitionUVE);
             break;
         case Scene::Nodes::SceneNodeKindUVE::BoneAttachment3D:
             entity = createNodeWithComponent(Scene::BoneAttachment3DNodeComponentUVE{});

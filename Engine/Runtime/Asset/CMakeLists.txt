@@ -74,6 +74,7 @@ add_library(uve_asset STATIC
     Internal/gltf_importer_uve.cpp
     Internal/gltf_mesh_converter_uve.cpp
     Internal/gltf_metadata_uve.cpp
+    Internal/gltf_skeleton_uve.cpp
     Internal/mtl_importer_uve.cpp
     Internal/mtl_material_converter_uve.cpp
     Internal/mtl_metadata_uve.cpp

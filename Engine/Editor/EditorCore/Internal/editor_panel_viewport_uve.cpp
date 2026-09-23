@@ -183,6 +183,10 @@ void EditorUVE::DrawViewportPanelUVE() {
     const ImVec2 availableRegion = ImGui::GetContentRegionAvail();
     if (m_viewportPanelRenderer && availableRegion.x > 0.0F && availableRegion.y > 0.0F) {
         m_viewportOverlayState.gameWorkspaceActive = m_activeWorkspace == EditorWorkspaceUVE::Game;
+        m_viewportOverlayState.bones.clear();
+        if (!m_viewportOverlayState.gameWorkspaceActive) {
+            BuildSkeletonOverlayUVE(m_viewportOverlayState.bones);
+        }
         const Math::Vector2UVE available{availableRegion.x, availableRegion.y};
         Math::Vector2UVE used{0.0F, 0.0F};
         // Whatever the overlay bubbles below changed last frame - the renderer applies it to its
