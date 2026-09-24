@@ -697,9 +697,12 @@ The group with the most real backing today.
       without a keypad) for Top/Front/Right, Ctrl for the opposite side, Numpad 5 / Alt+5 to switch
       projection; missing: user rebinding.
 - [ ] Frame-selected padding and animation duration.
-- [ ] Selection outline: colour, thickness, and whether it draws through geometry. The engine has
-      **no selection outline today**, which is why the pivot dot is the only indication that a
-      mesh-less node is selected.
+- [~] Selection outline: colour, thickness, and whether it draws through geometry. Selected
+      meshes, and the meshes below a selected node, get a band of colour outside their silhouette
+      (the active node full strength, the rest of a multi-selection dimmer); File > Selection
+      Outline sets show, colour and thickness (1-6 px), saved under
+      `editor.viewport.selectionOutline.*`; missing: hiding the parts behind other geometry, which
+      waits on the renderer exporting depth.
 - [ ] Selection box / rubber-band select mode: touch vs. enclose.
 - [ ] View modes: wireframe, unshaded, overdraw, lighting-only, normals, and per-buffer debug
       views.

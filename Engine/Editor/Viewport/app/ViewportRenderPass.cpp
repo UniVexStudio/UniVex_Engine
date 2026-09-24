@@ -54,6 +54,8 @@ ViewportRenderPass::~ViewportRenderPass() { Destroy(); }
 ViewportRenderPass::ViewportRenderPass(ViewportRenderPass&& other) noexcept
     : grid_(std::move(other.grid_)),
       gizmos_(std::move(other.gizmos_)),
+      selectionOutline_(std::move(other.selectionOutline_)),
+      selectionOutlineSettings_(other.selectionOutlineSettings_),
       backgroundProgram_(std::move(other.backgroundProgram_)),
       backgroundVao_(std::exchange(other.backgroundVao_, 0)),
       backgroundVbo_(std::exchange(other.backgroundVbo_, 0)),
@@ -67,6 +69,8 @@ ViewportRenderPass& ViewportRenderPass::operator=(ViewportRenderPass&& other) no
         Destroy();
         grid_ = std::move(other.grid_);
         gizmos_ = std::move(other.gizmos_);
+        selectionOutline_ = std::move(other.selectionOutline_);
+        selectionOutlineSettings_ = other.selectionOutlineSettings_;
         backgroundProgram_ = std::move(other.backgroundProgram_);
         backgroundVao_ = std::exchange(other.backgroundVao_, 0);
         backgroundVbo_ = std::exchange(other.backgroundVbo_, 0);
@@ -93,6 +97,11 @@ std::optional<ViewportRenderPass> ViewportRenderPass::Create(std::string& outErr
     auto gizmos = univex::render::GizmoRenderer::Create(outError);
     if (!gizmos.has_value()) return std::nullopt;
     pass.gizmos_ = std::move(*gizmos);
+
+    // The outline is an aid, not the viewport: if its shaders will not build, the viewport still
+    // works and simply draws no outline.
+    std::string outlineError;
+    pass.selectionOutline_ = univex::render::SelectionOutlineRenderer::CreateWithBuiltinShaders(outlineError);
 
     auto background = univex::render::ShaderProgram::Build(kBackgroundVertexSource,
                                                            kBackgroundFragmentSource, outError);
@@ -130,6 +139,21 @@ void ViewportRenderPass::SetGridOpacityUVE(const float opacity) {
 
 void ViewportRenderPass::SetGridPlaneUVE(const univex::render::GridPlane plane) {
     grid_.Settings().plane = plane;
+}
+
+void ViewportRenderPass::SetSelectionOutlineUVE(const univex::render::SelectionOutlineSettings& settings) {
+    selectionOutlineSettings_ = univex::render::SanitizeSelectionOutlineSettings(settings);
+}
+
+void ViewportRenderPass::RenderSelectionOutlineUVE(const OrbitCamera& camera, const int framebufferWidth,
+                                                   const int framebufferHeight,
+                                                   const std::vector<univex::render::SelectionOutlineVertex>& triangles) {
+    if (!selectionOutline_.has_value() || framebufferWidth <= 0 || framebufferHeight <= 0) {
+        return;
+    }
+    const float aspect = static_cast<float>(framebufferWidth) / static_cast<float>(framebufferHeight);
+    selectionOutline_->Draw(camera.ViewProjection(aspect), framebufferWidth, framebufferHeight, triangles,
+                            selectionOutlineSettings_);
 }
 
 void ViewportRenderPass::SetGridCellSizeUVE(const float cellSize) {

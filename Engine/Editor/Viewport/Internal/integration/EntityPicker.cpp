@@ -70,24 +70,6 @@ using UVE::Scene::EntityUVE;
     return UVE::Math::TransformPointUVE(matrix, direction) - transformedOrigin;
 }
 
-/// The world matrix for a clean world transform, composed the same way Renderer3DUVE composes it
-/// for the very same entity - so what is pickable is placed exactly where it is drawn.
-[[nodiscard]] bool TryComputeWorldMatrixUVE(const UVE::Scene::WorldTransformComponentUVE& worldTransform,
-                                            Matrix4x4UVE& outWorldMatrix) noexcept {
-    if (!UVE::Math::IsFiniteUVE(worldTransform.worldPosition) ||
-        !UVE::Math::IsFiniteUVE(worldTransform.worldScale) ||
-        !UVE::Math::IsFiniteUVE(worldTransform.worldRotation)) {
-        return false;
-    }
-    UVE::Math::QuaternionUVE normalizedRotation;
-    if (!UVE::Math::TryNormalizeUVE(worldTransform.worldRotation, normalizedRotation)) {
-        return false;
-    }
-    outWorldMatrix = Matrix4x4UVE::ComposeTrsUVE(worldTransform.worldPosition, normalizedRotation,
-                                                 worldTransform.worldScale);
-    return true;
-}
-
 /// Considers one candidate hit, keeping whichever is nearest along the ray.
 void ConsiderUVE(EntityPickResultUVE& best, const EntityUVE entity, const float distance) noexcept {
     if (!std::isfinite(distance) || distance < 0.0F) {
@@ -135,6 +117,22 @@ void ConsiderUVE(EntityPickResultUVE& best, const EntityUVE entity, const float 
 }
 
 } // namespace
+
+bool TryComputeWorldMatrixUVE(const UVE::Scene::WorldTransformComponentUVE& worldTransform,
+                              Matrix4x4UVE& outWorldMatrix) noexcept {
+    if (!UVE::Math::IsFiniteUVE(worldTransform.worldPosition) ||
+        !UVE::Math::IsFiniteUVE(worldTransform.worldScale) ||
+        !UVE::Math::IsFiniteUVE(worldTransform.worldRotation)) {
+        return false;
+    }
+    UVE::Math::QuaternionUVE normalizedRotation;
+    if (!UVE::Math::TryNormalizeUVE(worldTransform.worldRotation, normalizedRotation)) {
+        return false;
+    }
+    outWorldMatrix = Matrix4x4UVE::ComposeTrsUVE(worldTransform.worldPosition, normalizedRotation,
+                                                 worldTransform.worldScale);
+    return true;
+}
 
 UVE::Math::RayUVE BuildCursorRayUVE(const univex::camera::OrbitCamera& camera,
                                     const int viewportWidth, const int viewportHeight,

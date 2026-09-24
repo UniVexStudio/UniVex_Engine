@@ -30,6 +30,8 @@
 #include "univex/gizmo/NavGizmo.h"
 #include "univex/render/GizmoRenderer.h"
 #include "univex/render/InfiniteGridRenderer.h"
+#include "univex/render/SelectionOutline.h"
+#include "univex/render/SelectionOutlineRenderer.h"
 #include "univex/viewport/AxisPaletteApply.h"
 #include "univex/viewport/ViewportSettings.h"
 
@@ -105,6 +107,12 @@ public:
     /// The grid's finest spacing in world units (GridSettings::baseSpacing). A size that is not
     /// finite or not positive is ignored and the grid keeps its current spacing.
     void SetGridCellSizeUVE(float cellSize);
+    /// How the selection outline looks (colour clamped to 0..1, thickness to 1..6 px).
+    void SetSelectionOutlineUVE(const univex::render::SelectionOutlineSettings& settings);
+    /// Draws the outline of the selected meshes' world-space triangles. Call after the scene and
+    /// the grid, before RenderOverlayUVE, so the gizmos stay on top.
+    void RenderSelectionOutlineUVE(const OrbitCamera& camera, int framebufferWidth, int framebufferHeight,
+                                   const std::vector<univex::render::SelectionOutlineVertex>& triangles);
     [[nodiscard]] univex::viewport::AxisPaletteUVE GetAxisPaletteUVE() const;
 
     void SetGizmoMode(GizmoMode mode) { gizmoMode_ = mode; }
@@ -138,6 +146,9 @@ private:
 
     univex::render::InfiniteGridRenderer grid_;
     univex::render::GizmoRenderer gizmos_;
+    // Optional: a driver that cannot build its shaders loses the outline, not the viewport.
+    std::optional<univex::render::SelectionOutlineRenderer> selectionOutline_;
+    univex::render::SelectionOutlineSettings selectionOutlineSettings_{};
     univex::render::ShaderProgram backgroundProgram_;
     GLuint backgroundVao_ = 0;
     GLuint backgroundVbo_ = 0;

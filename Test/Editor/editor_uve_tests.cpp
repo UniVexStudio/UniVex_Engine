@@ -1174,6 +1174,52 @@ TEST(EditorUVETest, ViewportGridCellSizeUVE_RefusesBadSizesAndPersistsAcrossSess
     std::filesystem::remove(config.settingsFilePath);
 }
 
+TEST(EditorUVETest, ViewportSelectionOutlineUVE_RefusesBadValuesAndPersistsAcrossSessionReload) {
+    const Core::EngineConfigUVE config = MakeEditorTestConfigUVE();
+    std::filesystem::remove(config.settingsFilePath);
+    Core::EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    using Color = EditorUVE::ViewportAxisColorUVE;
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_outline_prefs.uvescene");
+        editor.InitUVE();
+        EXPECT_TRUE(editor.IsViewportSelectionOutlineVisibleUVE());
+        EXPECT_FLOAT_EQ(editor.GetViewportSelectionOutlineThicknessUVE(), 2.0F);
+
+        // Each bad value is refused whole: nothing changes.
+        EXPECT_FALSE(editor.SetViewportSelectionOutlineUVE(false, Color{1.5F, 0.0F, 0.0F}, 2.0F));
+        EXPECT_FALSE(editor.SetViewportSelectionOutlineUVE(false, Color{1.0F, 0.0F, 0.0F}, 0.5F));
+        EXPECT_FALSE(editor.SetViewportSelectionOutlineUVE(false, Color{1.0F, 0.0F, 0.0F}, 7.0F));
+        EXPECT_FALSE(editor.SetViewportSelectionOutlineUVE(
+            false, Color{1.0F, 0.0F, 0.0F}, std::numeric_limits<float>::quiet_NaN()));
+        EXPECT_TRUE(editor.IsViewportSelectionOutlineVisibleUVE());
+
+        ASSERT_TRUE(editor.SetViewportSelectionOutlineUVE(false, Color{0.2F, 0.6F, 1.0F}, 4.0F));
+        ASSERT_TRUE(EditorUVEAccessUVE::SaveSessionSettingsUVE(editor));
+        editor.ShutdownUVE();
+    }
+    {
+        EditorUVE reloaded(engine.GetServicesUVE(), "uve_editor_tests_outline_prefs_reload.uvescene");
+        reloaded.InitUVE();
+        EXPECT_FALSE(reloaded.IsViewportSelectionOutlineVisibleUVE());
+        EXPECT_FLOAT_EQ(reloaded.GetViewportSelectionOutlineColorUVE().g, 0.6F);
+        EXPECT_FLOAT_EQ(reloaded.GetViewportSelectionOutlineThicknessUVE(), 4.0F);
+        reloaded.ShutdownUVE();
+    }
+    // A corrupt stored thickness leaves the whole outline at its defaults.
+    engine.GetServicesUVE().GetConfigManagerUVE().SetDoubleUVE("editor.viewport.selectionOutline.thickness", 40.0);
+    {
+        EditorUVE corrupt(engine.GetServicesUVE(), "uve_editor_tests_outline_prefs_corrupt.uvescene");
+        corrupt.InitUVE();
+        EXPECT_TRUE(corrupt.IsViewportSelectionOutlineVisibleUVE());
+        EXPECT_FLOAT_EQ(corrupt.GetViewportSelectionOutlineThicknessUVE(), 2.0F);
+        corrupt.ShutdownUVE();
+    }
+    engine.Shutdown();
+    std::filesystem::remove(config.settingsFilePath);
+}
+
 TEST(EditorUVETest, ViewportAxisColorsUVE_RefuseInvalidChannelsAndPersistAcrossSessionReload) {
     const Core::EngineConfigUVE config = MakeEditorTestConfigUVE();
     std::filesystem::remove(config.settingsFilePath);

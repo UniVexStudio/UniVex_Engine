@@ -20,7 +20,9 @@
 #pragma once
 
 #include "uve/component/entity_uve.h"
+#include "uve/math/matrix4x4_uve.h"
 #include "uve/math/ray_uve.h"
+#include "uve/component/world_transform_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
 
 namespace univex::camera {
@@ -28,6 +30,12 @@ class OrbitCamera;
 }
 
 namespace univex::integration {
+
+/// The world matrix for a clean world transform, composed the same way Renderer3DUVE composes it
+/// for the very same entity - so what is picked or outlined is placed exactly where it is drawn.
+/// False for a non-finite transform or a degenerate rotation.
+[[nodiscard]] bool TryComputeWorldMatrixUVE(const UVE::Scene::WorldTransformComponentUVE& worldTransform,
+                                            UVE::Math::Matrix4x4UVE& outWorldMatrix) noexcept;
 
 struct EntityPickResultUVE final {
     UVE::Scene::EntityUVE entity = UVE::Scene::kInvalidEntityUVE;

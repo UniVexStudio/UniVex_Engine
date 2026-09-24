@@ -55,6 +55,49 @@ constexpr const char* kMenuLabelHelpUVE = "\xEF\xA4\x9D Help";
 // Reads back through GetViewportAxisColorUVE each frame rather than keeping its own copy: the
 // value can also change underneath this menu when session settings load, and a cached copy would
 // show the author a colour the viewport is no longer using.
+// The outline drawn around selected meshes in the viewport: whether it shows, its colour (the same
+// colour field as every other colour in the editor) and its thickness. Preferences, applied live.
+void EditorUVE::DrawViewportSelectionOutlineMenuUVE() {
+    bool visible = m_viewportOverlayState.selectionOutlineVisible;
+    ViewportAxisColorUVE color = m_viewportOverlayState.selectionOutlineColor;
+    int thickness = static_cast<int>(std::lround(m_viewportOverlayState.selectionOutlineThickness));
+    bool changed = ImGui::Checkbox("Show outline", &visible);
+
+    const float labelColumn = ImGui::GetFontSize() * 5.5F;
+    ImGui::BeginDisabled(!visible);
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Colour");
+    ImGui::SameLine(labelColumn);
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 8.0F);
+    EditorColorUVE picked{color.r, color.g, color.b, 1.0F};
+    if (DrawColorFieldUVE("##selection-outline-color", "Selection outline", picked, false, m_colorPickerPreferences) !=
+        ColorFieldEventUVE::None) {
+        color = ViewportAxisColorUVE{picked.r, picked.g, picked.b};
+        changed = true;
+    }
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Thickness");
+    ImGui::SameLine(labelColumn);
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 8.0F);
+    changed |= ImGui::SliderInt("##selection-outline-thickness", &thickness,
+                                static_cast<int>(kMinimumSelectionOutlineThicknessUVE),
+                                static_cast<int>(kMaximumSelectionOutlineThicknessUVE), "%d px",
+                                ImGuiSliderFlags_AlwaysClamp);
+    ImGui::EndDisabled();
+
+    ImGui::Separator();
+    if (ImGui::MenuItem("Reset to defaults")) {
+        const ViewportOverlayStateUVE defaults{};
+        visible = defaults.selectionOutlineVisible;
+        color = defaults.selectionOutlineColor;
+        thickness = static_cast<int>(defaults.selectionOutlineThickness);
+        changed = true;
+    }
+    if (changed) {
+        static_cast<void>(SetViewportSelectionOutlineUVE(visible, color, static_cast<float>(thickness)));
+    }
+}
+
 void EditorUVE::DrawViewportAxisColorPickerUVE() {
     if (!AreViewportAxisColorsSetUVE()) {
         // The host seeds the real defaults at startup; before that there is nothing true to show,
@@ -220,6 +263,10 @@ void EditorUVE::DrawMenuBarUVE() {
                 // the two drift apart.
                 if (ImGui::BeginMenu("Viewport Axis Colours")) {
                     DrawViewportAxisColorPickerUVE();
+                    ImGui::EndMenu();
+                }
+                if (ImGui::BeginMenu("Selection Outline")) {
+                    DrawViewportSelectionOutlineMenuUVE();
                     ImGui::EndMenu();
                 }
                 ImGui::Separator();

@@ -12,11 +12,14 @@
 #include "Support/test_scratch_uve.h"
 
 #include "integration/EntityPicker.h"
+#include "integration/SelectionOutlineGeometry.h"
 
 #include "univex/camera/OrbitCamera.h"
 
 #include "uve/component/editor_internal_entity_component_uve.h"
 #include "uve/component/primitive_mesh_component_uve.h"
+#include "uve/component/visibility_component_uve.h"
+#include "uve/render_systems/primitive_geometry_uve.h"
 #include "uve/component/transform_component_uve.h"
 #include "uve/core/engine_core_uve.h"
 #include "uve/math/ray_uve.h"
@@ -261,6 +264,91 @@ TEST(EntityScreenProjectorUVETest, ProjectedPixelRoundTripsThroughBuildCursorRay
     const Math::Vector3UVE delta = closestPointOnRay - original;
     const float distance = std::sqrt(delta.x * delta.x + delta.y * delta.y + delta.z * delta.z);
     EXPECT_LT(distance, 0.01F);
+}
+
+// ---- selection outline geometry --------------------------------------------------------------
+
+using univex::integration::CollectSelectionOutlineTrianglesUVE;
+using univex::render::SelectionOutlineVertex;
+
+[[nodiscard]] std::size_t CubeIndexCountUVE() {
+    const std::size_t count = Render::GetPrimitiveGeometryUVE(Scene::PrimitiveMeshKindUVE::Cube).indices.size();
+    return count - (count % 3U);
+}
+
+TEST_F(EntityPickerUVETest, SelectionOutline_IsTheSelectedMeshInWorldSpaceAtFullStrength) {
+    const Scene::EntityUVE cube =
+        SpawnPrimitiveUVE(ServicesUVE(), Scene::PrimitiveMeshKindUVE::Cube, Math::Vector3UVE{3.0F, 0.0F, 0.0F}, 2.0F);
+    static_cast<void>(
+        SpawnPrimitiveUVE(ServicesUVE(), Scene::PrimitiveMeshKindUVE::Cube, Math::Vector3UVE{-5.0F, 0.0F, 0.0F}, 1.0F));
+
+    EXPECT_TRUE(CollectSelectionOutlineTrianglesUVE(EntitiesUVE(), {}, Scene::kInvalidEntityUVE).empty());
+
+    const std::vector<SelectionOutlineVertex> triangles = CollectSelectionOutlineTrianglesUVE(EntitiesUVE(), {cube}, cube);
+    ASSERT_EQ(triangles.size(), CubeIndexCountUVE());
+    for (const SelectionOutlineVertex& vertex : triangles) {
+        // Half extent 0.5 scaled by 2 around x = 3: the unselected cube at x = -5 contributes nothing.
+        EXPECT_GE(vertex.x, 2.0F - 1e-4F);
+        EXPECT_LE(vertex.x, 4.0F + 1e-4F);
+        EXPECT_FLOAT_EQ(vertex.weight, univex::render::kSelectionOutlineActiveWeight);
+    }
+}
+
+TEST_F(EntityPickerUVETest, SelectionOutline_TakesMeshesBelowASelectedNodeAndDimsTheRestOfAMultiSelection) {
+    Core::EngineServicesUVE& services = ServicesUVE();
+    Scene::IEntityManagerUVE& entityManager = EntitiesUVE();
+    // A group node with no mesh of its own, holding one cube.
+    const Scene::EntityUVE group = entityManager.CreateEntityUVE();
+    services.GetSceneGraphUVE().AttachTransformUVE(entityManager, group, Scene::TransformComponentUVE{});
+    const Scene::EntityUVE child =
+        SpawnPrimitiveUVE(services, Scene::PrimitiveMeshKindUVE::Cube, Math::Vector3UVE{0.0F, 0.0F, 0.0F}, 1.0F);
+    services.GetSceneGraphUVE().SetParentUVE(entityManager, child, group);
+    const Scene::EntityUVE other =
+        SpawnPrimitiveUVE(services, Scene::PrimitiveMeshKindUVE::Cube, Math::Vector3UVE{5.0F, 0.0F, 0.0F}, 1.0F);
+    services.GetSceneGraphUVE().UpdateUVE(entityManager);
+
+    // Selecting the group outlines what is in it.
+    EXPECT_EQ(CollectSelectionOutlineTrianglesUVE(entityManager, {group}, group).size(), CubeIndexCountUVE());
+
+    // Group active, the other cube also selected: two cubes, the second dimmer.
+    const std::vector<SelectionOutlineVertex> both =
+        CollectSelectionOutlineTrianglesUVE(entityManager, {group, other}, group);
+    ASSERT_EQ(both.size(), CubeIndexCountUVE() * 2U);
+    std::size_t dim = 0U;
+    for (const SelectionOutlineVertex& vertex : both) {
+        if (vertex.weight == univex::render::kSelectionOutlineOtherWeight) {
+            ++dim;
+            EXPECT_GT(vertex.x, 4.0F);
+        }
+    }
+    EXPECT_EQ(dim, CubeIndexCountUVE());
+
+    // A mesh reached both as the active node's child and as a dimmer selection of its own keeps
+    // the stronger weight, and is listed once.
+    const std::vector<SelectionOutlineVertex> overlap =
+        CollectSelectionOutlineTrianglesUVE(entityManager, {child, group}, group);
+    ASSERT_EQ(overlap.size(), CubeIndexCountUVE());
+    for (const SelectionOutlineVertex& vertex : overlap) {
+        EXPECT_FLOAT_EQ(vertex.weight, univex::render::kSelectionOutlineActiveWeight);
+    }
+}
+
+TEST_F(EntityPickerUVETest, SelectionOutline_SkipsHiddenAndEditorInternalMeshes) {
+    Core::EngineServicesUVE& services = ServicesUVE();
+    Scene::IEntityManagerUVE& entityManager = EntitiesUVE();
+    const Scene::EntityUVE hidden =
+        SpawnPrimitiveUVE(services, Scene::PrimitiveMeshKindUVE::Cube, Math::Vector3UVE{0.0F, 0.0F, 0.0F}, 1.0F);
+    Scene::VisibilityComponentUVE visibility{};
+    visibility.visible = false;
+    static_cast<void>(entityManager.AddComponentUVE<Scene::VisibilityComponentUVE>(hidden, visibility));
+    const Scene::EntityUVE internal =
+        SpawnPrimitiveUVE(services, Scene::PrimitiveMeshKindUVE::Cube, Math::Vector3UVE{2.0F, 0.0F, 0.0F}, 1.0F);
+    static_cast<void>(entityManager.AddComponentUVE<Scene::EditorInternalEntityComponentUVE>(
+        internal, Scene::EditorInternalEntityComponentUVE{}));
+    services.GetSceneGraphUVE().UpdateUVE(entityManager);
+    ASSERT_FALSE(entityManager.GetComponentUVE<Scene::VisibilityComponentUVE>(hidden).visibleInHierarchy);
+
+    EXPECT_TRUE(CollectSelectionOutlineTrianglesUVE(entityManager, {hidden, internal}, hidden).empty());
 }
 
 } // namespace

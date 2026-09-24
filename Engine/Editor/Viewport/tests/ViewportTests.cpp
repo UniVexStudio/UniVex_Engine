@@ -35,6 +35,7 @@
 #include "univex/math/Mat4.h"
 #include "univex/math/Vec.h"
 #include "univex/render/GridSettings.h"
+#include "univex/render/SelectionOutline.h"
 #include "univex/viewport/AxisPaletteApply.h"
 
 using univex::camera::OrbitCamera;
@@ -225,6 +226,27 @@ int main() {
         Check(GridPlaneFacing(-1.f, 0.f, 0.f) == GridPlane::ZY, "Left uses the ZY plane");
         Check(GridPlaneFacing(0.6f, 0.3f, 0.7f) == GridPlane::XZ, "an oblique view keeps the ground");
         Check(GridPlaneFacing(0.f, 0.f, 0.f) == GridPlane::XZ, "a free view (no axis) keeps the ground");
+    }
+
+    std::puts("\n== Selection outline settings are kept in range ==");
+    {
+        using univex::render::SanitizeSelectionOutlineSettings;
+        using univex::render::SelectionOutlineSettings;
+        SelectionOutlineSettings wild;
+        wild.r = 2.f;
+        wild.g = -1.f;
+        wild.b = std::numeric_limits<float>::quiet_NaN();
+        wild.thicknessPixels = 40.f;
+        const SelectionOutlineSettings kept = SanitizeSelectionOutlineSettings(wild);
+        const SelectionOutlineSettings defaults{};
+        CheckNear(kept.r, 1.f, 0.f, "a channel above 1 is clamped to 1");
+        CheckNear(kept.g, 0.f, 0.f, "a channel below 0 is clamped to 0");
+        CheckNear(kept.b, defaults.b, 0.f, "a NaN channel falls back to the default");
+        CheckNear(kept.thicknessPixels, univex::render::kSelectionOutlineMaxThicknessPixels, 0.f,
+                  "a thickness past the range is clamped to the largest");
+        wild.thicknessPixels = std::numeric_limits<float>::infinity();
+        CheckNear(SanitizeSelectionOutlineSettings(wild).thicknessPixels, defaults.thicknessPixels, 0.f,
+                  "an infinite thickness falls back to the default");
     }
 
     std::puts("\n== Ray reconstruction rejects pixels above the horizon ==");

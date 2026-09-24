@@ -314,6 +314,10 @@ public:
         float gridOpacity = 1.0F;
         // The smallest grid square, in world units; see SetViewportGridCellSizeUVE.
         float gridCellSize = 1.0F;
+        // The outline drawn around selected meshes; see SetViewportSelectionOutlineUVE.
+        bool selectionOutlineVisible = true;
+        ViewportAxisColorUVE selectionOutlineColor{1.0F, 0.62F, 0.16F};
+        float selectionOutlineThickness = 2.0F;
         // True while the Game workspace tab is active (see EditorWorkspaceUVE::Game): the concrete
         // renderer should hide editor-only overlays (grid, transform gizmo) in this mode, matching
         // Unity's own Scene/Game split, since Game is meant to preview what a player would see.
@@ -762,6 +766,22 @@ public:
     static constexpr float kMinimumViewportGridCellSizeUVE = 0.01F;
     static constexpr float kMaximumViewportGridCellSizeUVE = 1000.0F;
 
+    /// The selection outline: shown or hidden, its colour, and its thickness in pixels. Editor
+    /// preferences, saved with the session. A colour channel outside 0..1, a thickness outside
+    /// kMinimum..kMaximumSelectionOutlineThicknessUVE, or anything not finite is refused whole.
+    [[nodiscard]] bool SetViewportSelectionOutlineUVE(bool visible, ViewportAxisColorUVE color, float thickness);
+    [[nodiscard]] bool IsViewportSelectionOutlineVisibleUVE() const noexcept {
+        return m_viewportOverlayState.selectionOutlineVisible;
+    }
+    [[nodiscard]] ViewportAxisColorUVE GetViewportSelectionOutlineColorUVE() const noexcept {
+        return m_viewportOverlayState.selectionOutlineColor;
+    }
+    [[nodiscard]] float GetViewportSelectionOutlineThicknessUVE() const noexcept {
+        return m_viewportOverlayState.selectionOutlineThickness;
+    }
+    static constexpr float kMinimumSelectionOutlineThicknessUVE = 1.0F;
+    static constexpr float kMaximumSelectionOutlineThicknessUVE = 6.0F;
+
     /// The viewport's X/Y/Z axis colours, which the menu bar offers a picker for and the host
     /// pushes into the real renderer each frame (see ViewportOverlayStateUVE::axisColorX).
     ///
@@ -1179,6 +1199,7 @@ private:
     void DrawViewportOverlayBubblesUVE(Math::Vector2UVE imageOrigin, Math::Vector2UVE imageSize);
     void DrawEntityContextToolbarUVE(Math::Vector2UVE imageOrigin, Math::Vector2UVE imageSize);
     void DrawViewportAxisColorPickerUVE();
+    void DrawViewportSelectionOutlineMenuUVE();
     void DrawPluginWindowUVE();
     void DrawBottomDockUVE();
     void DrawBottomDockContentUVE();

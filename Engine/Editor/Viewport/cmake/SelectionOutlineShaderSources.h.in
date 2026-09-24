@@ -1,0 +1,20 @@
+// SelectionOutlineShaderSources.h — GENERATED FILE, DO NOT EDIT.
+// -----------------------------------------------------------------------
+// CMake embeds the selection outline shaders into this header at configure
+// time, the same way it does for the grid and the gizmos. The files under
+// shaders/ remain the source of truth and are listed in
+// CMAKE_CONFIGURE_DEPENDS, so editing one re-runs configure automatically.
+// -----------------------------------------------------------------------
+#pragma once
+
+namespace univex::render::shaders {
+
+inline constexpr const char* kSelectionMaskVertexSource = R"UNIVEX_GLSL(@UNIVEX_SELECTION_MASK_VERT@)UNIVEX_GLSL";
+
+inline constexpr const char* kSelectionMaskFragmentSource = R"UNIVEX_GLSL(@UNIVEX_SELECTION_MASK_FRAG@)UNIVEX_GLSL";
+
+inline constexpr const char* kSelectionOutlineVertexSource = R"UNIVEX_GLSL(@UNIVEX_SELECTION_OUTLINE_VERT@)UNIVEX_GLSL";
+
+inline constexpr const char* kSelectionOutlineFragmentSource = R"UNIVEX_GLSL(@UNIVEX_SELECTION_OUTLINE_FRAG@)UNIVEX_GLSL";
+
+} // namespace univex::render::shaders
