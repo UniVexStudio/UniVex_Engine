@@ -3,10 +3,14 @@
 
 #include "uve/scene/scene_graph_uve.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
+#include <optional>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include "uve/logging/assert_uve.h"
@@ -98,7 +102,11 @@ void SceneGraphUVE::SetParentUVE(IEntityManagerUVE& entityManager, EntityUVE chi
         return;
     }
 
-    entityManager.GetComponentUVE<HierarchyComponentUVE>(child).parent = newParent;
+    HierarchyComponentUVE& hierarchy = entityManager.GetComponentUVE<HierarchyComponentUVE>(child);
+    if (hierarchy.parent != newParent) {
+        hierarchy.parent = newParent;
+        hierarchy.siblingOrder = NextSiblingOrderUVE(); // after the siblings already there
+    }
     entityManager.GetComponentUVE<WorldTransformComponentUVE>(child).dirty = true;
 }
 
@@ -522,14 +530,54 @@ void SceneGraphUVE::UpdateUVE(IEntityManagerUVE& entityManager) {
 }
 
 std::vector<EntityUVE> SceneGraphUVE::GetChildrenUVE(IEntityManagerUVE& entityManager, EntityUVE parent) {
-    std::vector<EntityUVE> children;
+    // Sorted, because the ECS visits entities in storage order, which moves whenever a component
+    // is added or removed: without it, giving a node a script could reorder its siblings.
+    std::vector<std::pair<std::int64_t, EntityUVE>> ordered;
     entityManager.ForEachUVE<HierarchyComponentUVE>(
-        [&children, parent](EntityUVE entity, HierarchyComponentUVE& hierarchy) {
+        [&ordered, parent](EntityUVE entity, HierarchyComponentUVE& hierarchy) {
             if (hierarchy.parent == parent) {
-                children.push_back(entity);
+                ordered.emplace_back(hierarchy.siblingOrder, entity);
             }
         });
+    std::sort(ordered.begin(), ordered.end(), [](const auto& a, const auto& b) {
+        if (a.first != b.first) {
+            return a.first < b.first;
+        }
+        return a.second.index != b.second.index ? a.second.index < b.second.index
+                                                : a.second.generation < b.second.generation;
+    });
+    std::vector<EntityUVE> children;
+    children.reserve(ordered.size());
+    for (const auto& [order, entity] : ordered) {
+        children.push_back(entity);
+    }
     return children;
+}
+
+std::optional<std::size_t> SceneGraphUVE::GetSiblingIndexUVE(IEntityManagerUVE& entityManager, EntityUVE entity) {
+    if (!entityManager.IsAliveUVE(entity) || !entityManager.HasComponentUVE<HierarchyComponentUVE>(entity)) {
+        return std::nullopt;
+    }
+    const std::vector<EntityUVE> siblings =
+        GetChildrenUVE(entityManager, entityManager.GetComponentUVE<HierarchyComponentUVE>(entity).parent);
+    const auto found = std::find(siblings.begin(), siblings.end(), entity);
+    return found == siblings.end() ? std::nullopt
+                                   : std::optional<std::size_t>{static_cast<std::size_t>(found - siblings.begin())};
+}
+
+bool SceneGraphUVE::SetSiblingIndexUVE(IEntityManagerUVE& entityManager, EntityUVE entity, std::size_t index) {
+    if (!entityManager.IsAliveUVE(entity) || !entityManager.HasComponentUVE<HierarchyComponentUVE>(entity)) {
+        return false;
+    }
+    std::vector<EntityUVE> siblings =
+        GetChildrenUVE(entityManager, entityManager.GetComponentUVE<HierarchyComponentUVE>(entity).parent);
+    std::erase(siblings, entity);
+    siblings.insert(siblings.begin() + static_cast<std::ptrdiff_t>(std::min(index, siblings.size())), entity);
+    // Fresh orders for the whole run keep them strictly increasing in the new sequence.
+    for (const EntityUVE sibling : siblings) {
+        entityManager.GetComponentUVE<HierarchyComponentUVE>(sibling).siblingOrder = NextSiblingOrderUVE();
+    }
+    return true;
 }
 
 } // namespace UVE::Scene

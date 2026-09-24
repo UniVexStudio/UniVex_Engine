@@ -683,7 +683,11 @@ settings question.
 - [~] Rename, and change node type where the conversion is legal. Rename is in the right-click
       menu (and F2); missing: change node type.
 - [ ] Reparent to selection, reparent keeping global transform (toggle).
-- [ ] Move up / move down / move to top / move to bottom in sibling order.
+- [x] Move up / move down / move to top / move to bottom in sibling order. Sibling order is now
+      the scene's own: it survives adding a component (which moves a node in ECS storage), is
+      saved as the order siblings appear in the file, and the four moves are in the row's menu
+      (Ctrl+Up / Ctrl+Down) as one undoable edit each. A duplicate lands just below its source,
+      and an undone delete puts the node back where it was.
 - [ ] Save branch as a reusable scene, and make a local instance editable.
 - [~] Focus in viewport, frame selection, align view to node, align node to view. Focus in
       Viewport is in the row's menu and on F over the viewport, both through one request the host
