@@ -1593,6 +1593,11 @@ private:
     /// filesystem baseline. It never schedules imports or mutates project files.
     void RefreshProjectFileIndexUVE();
     void DrawFilesystemContextPopupUVE();
+    /// Places a draggable Content popup before BeginPopup: above the anchor while it is new, at
+    /// (x, y) after. `justOpened` restarts it at the pointer.
+    static void PlaceContentMenuUVE(bool justOpened, float& anchorX, float& anchorY, int frames, float x, float y);
+    /// After BeginPopup: counts the popup's frames and takes its position once it has settled.
+    static void SettleContentMenuUVE(int& frames, float& x, float& y);
     /// The Content "+ Add" menu's body - also what right-clicking empty Content space opens.
     void DrawContentCreateMenuUVE(const std::filesystem::path& contentRoot, const std::filesystem::path& directory);
     /// Draws the inline name field over a card while it is being renamed; true while it is.
@@ -1837,6 +1842,18 @@ private:
     std::vector<std::string> m_contentCreateRecent;
     std::string m_contentCreateFilter;
     bool m_contentCreateMenuRequested = false;
+    /// Where the Content menus sit once open; their top strip drags them. A menu opens above the
+    /// pointer (anchorX/Y) and is held there for its first frames, until it has its real size.
+    float m_contentCreateMenuX = 0.0F;
+    float m_contentCreateMenuY = 0.0F;
+    float m_contentCreateMenuAnchorX = 0.0F;
+    float m_contentCreateMenuAnchorY = 0.0F;
+    int m_contentCreateMenuFrames = 0;
+    float m_contentItemMenuX = 0.0F;
+    float m_contentItemMenuY = 0.0F;
+    float m_contentItemMenuAnchorX = 0.0F;
+    float m_contentItemMenuAnchorY = 0.0F;
+    int m_contentItemMenuFrames = 0;
     /// The card being renamed inline (Content-relative), its text, and whether to focus it.
     std::filesystem::path m_contentRenamePath;
     std::string m_contentRenameText;

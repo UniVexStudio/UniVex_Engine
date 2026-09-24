@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <cfloat>
 #include <cstring>
 #include <filesystem>
 #include <string>
@@ -53,7 +54,71 @@ constexpr std::size_t kMaximumContentNameBytesUVE = 96U;
     });
 }
 
+/// The top strip of a Content menu: shows `title` and moves the menu while dragged. Popups cannot
+/// be moved by ImGui itself, so the caller places the window at (x, y) every frame.
+void DrawMenuDragStripUVE(const char* const title, float& x, float& y) {
+    const ImVec2 start = ImGui::GetCursorScreenPos();
+    const float width = std::max(ImGui::GetContentRegionAvail().x, 160.0F);
+    const float height = ImGui::GetTextLineHeight() + 4.0F;
+    ImGui::InvisibleButton("##menu-drag", ImVec2{width, height});
+    const bool hovered = ImGui::IsItemHovered();
+    if (ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left, 0.0F)) {
+        const ImGuiViewport* const viewport = ImGui::GetMainViewport();
+        const ImVec2 size = ImGui::GetWindowSize();
+        x = std::clamp(x + ImGui::GetIO().MouseDelta.x, viewport->WorkPos.x,
+                       std::max(viewport->WorkPos.x, viewport->WorkPos.x + viewport->WorkSize.x - size.x));
+        y = std::clamp(y + ImGui::GetIO().MouseDelta.y, viewport->WorkPos.y,
+                       std::max(viewport->WorkPos.y, viewport->WorkPos.y + viewport->WorkSize.y - size.y));
+    }
+    if (hovered || ImGui::IsItemActive()) {
+        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+    }
+    ImDrawList* const drawList = ImGui::GetWindowDrawList();
+    drawList->AddRectFilled(start, ImVec2{start.x + width, start.y + height},
+                            ImGui::GetColorU32(hovered || ImGui::IsItemActive() ? ImGuiCol_HeaderHovered : ImGuiCol_Header),
+                            3.0F);
+    // A grip of dots on the left says "drag me"; the title follows it.
+    for (int column = 0; column < 2; ++column) {
+        for (int row = 0; row < 3; ++row) {
+            drawList->AddCircleFilled(ImVec2{start.x + 7.0F + static_cast<float>(column) * 4.0F,
+                                             start.y + height * 0.5F + static_cast<float>(row - 1) * 4.0F},
+                                      1.2F, ImGui::GetColorU32(ImGuiCol_TextDisabled));
+        }
+    }
+    drawList->AddText(ImVec2{start.x + 18.0F, start.y + 2.0F}, ImGui::GetColorU32(ImGuiCol_TextDisabled), title);
+}
+
 } // namespace
+
+namespace {
+// A popup sizes itself on its second frame; before that a bottom anchor would place it wrong.
+constexpr int kContentMenuSettleFramesUVE = 3;
+} // namespace
+
+void EditorUVE::PlaceContentMenuUVE(const bool justOpened, float& anchorX, float& anchorY, const int frames,
+                                    const float x, const float y) {
+    if (justOpened) {
+        anchorX = ImGui::GetMousePos().x;
+        anchorY = ImGui::GetMousePos().y;
+    }
+    if (justOpened || frames < kContentMenuSettleFramesUVE) {
+        // Content is at the bottom of the window: grow upward from the pointer, over the viewport.
+        ImGui::SetNextWindowPos(ImVec2{anchorX, anchorY}, ImGuiCond_Always, ImVec2{0.0F, 1.0F});
+        const ImGuiViewport* const viewport = ImGui::GetMainViewport();
+        ImGui::SetNextWindowSizeConstraints(ImVec2{0.0F, 0.0F},
+                                            ImVec2{FLT_MAX, std::max(120.0F, anchorY - viewport->WorkPos.y - 8.0F)});
+    } else {
+        ImGui::SetNextWindowPos(ImVec2{x, y}, ImGuiCond_Always);
+    }
+}
+
+void EditorUVE::SettleContentMenuUVE(int& frames, float& x, float& y) {
+    if (frames < kContentMenuSettleFramesUVE) {
+        ++frames;
+        x = ImGui::GetWindowPos().x;
+        y = ImGui::GetWindowPos().y;
+    }
+}
 
 std::optional<std::filesystem::path> EditorUVE::RenameContentFileUVE(const std::filesystem::path& file,
                                                                      const std::string_view newStem) {
@@ -159,6 +224,8 @@ bool EditorUVE::DrawContentRenameFieldUVE(const std::filesystem::path& contentRo
 
 void EditorUVE::DrawContentCreateMenuUVE(const std::filesystem::path& contentRoot,
                                          const std::filesystem::path& directory) {
+    const std::string title = "Create in " + (directory.empty() ? std::string{"main"} : directory.generic_string());
+    DrawMenuDragStripUVE(title.c_str(), m_contentCreateMenuX, m_contentCreateMenuY);
     if (ImGui::IsWindowAppearing()) {
         m_contentCreateFilter.clear();
         ImGui::SetKeyboardFocusHere();
@@ -170,7 +237,6 @@ void EditorUVE::DrawContentCreateMenuUVE(const std::filesystem::path& contentRoo
                                  filter.size())) {
         m_contentCreateFilter = filter.data();
     }
-    ImGui::TextDisabled("Create in %s", directory.empty() ? "main" : directory.generic_string().c_str());
     ImGui::Separator();
 
     const bool allowed = IsAuthoringCommandAllowedUVE();
@@ -297,15 +363,22 @@ void EditorUVE::AcceptContentEntityDropUVE(Scene::EntityUVE parent) {
 
 void EditorUVE::DrawFilesystemContextPopupUVE() {
     constexpr const char* kPopupId = "##content-item-menu";
-    if (m_filesystemContextVisible) {
+    const bool justOpened = m_filesystemContextVisible;
+    if (justOpened) {
         ImGui::OpenPopup(kPopupId);
         m_filesystemContextVisible = false;
-        // Opened from the Content panel at the bottom: grow upward from the pointer.
-        ImGui::SetNextWindowPos(ImGui::GetMousePos(), ImGuiCond_Always, ImVec2{0.0F, 1.0F});
+        m_contentItemMenuFrames = 0;
+    }
+    // Only while it is open: a SetNextWindow* call with no popup to take it would land on the
+    // next window drawn.
+    if (ImGui::IsPopupOpen(kPopupId)) {
+        PlaceContentMenuUVE(justOpened, m_contentItemMenuAnchorX, m_contentItemMenuAnchorY, m_contentItemMenuFrames,
+                            m_contentItemMenuX, m_contentItemMenuY);
     }
     if (!ImGui::BeginPopup(kPopupId)) {
         return;
     }
+    SettleContentMenuUVE(m_contentItemMenuFrames, m_contentItemMenuX, m_contentItemMenuY);
     if (!m_filesystemContextEntry.has_value()) {
         ImGui::EndPopup();
         return;
@@ -323,7 +396,8 @@ void EditorUVE::DrawFilesystemContextPopupUVE() {
         RefreshProjectFileIndexUVE();
     };
 
-    ImGui::TextDisabled("%s", contextEntry.relativePath.filename().generic_string().c_str());
+    DrawMenuDragStripUVE(contextEntry.relativePath.filename().generic_string().c_str(), m_contentItemMenuX,
+                         m_contentItemMenuY);
     ImGui::Separator();
 
     if (entityAsset) {

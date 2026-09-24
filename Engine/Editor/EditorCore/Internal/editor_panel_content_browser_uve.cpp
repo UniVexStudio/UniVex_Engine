@@ -636,19 +636,20 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
     }
 
     constexpr const char* kCreateMenuId = "##content-create-menu";
-    if (m_contentCreateMenuRequested) {
+    const bool createMenuOpened = m_contentCreateMenuRequested;
+    if (createMenuOpened) {
         m_contentCreateMenuRequested = false;
         ImGui::OpenPopup(kCreateMenuId);
-        // Content sits at the bottom of the window, so the menu grows upward from the pointer,
-        // over the viewport, instead of running off the bottom edge. Taller than the room above
-        // it, it scrolls.
-        const ImVec2 mouse = ImGui::GetMousePos();
-        const ImGuiViewport* const viewport = ImGui::GetMainViewport();
-        ImGui::SetNextWindowPos(mouse, ImGuiCond_Always, ImVec2{0.0F, 1.0F});
-        ImGui::SetNextWindowSizeConstraints(ImVec2{0.0F, 0.0F},
-                                            ImVec2{FLT_MAX, std::max(120.0F, mouse.y - viewport->WorkPos.y - 8.0F)});
+        m_contentCreateMenuFrames = 0;
+    }
+    // Only while it is open: a SetNextWindow* call with no popup to take it would land on the
+    // next window drawn.
+    if (ImGui::IsPopupOpen(kCreateMenuId)) {
+        PlaceContentMenuUVE(createMenuOpened, m_contentCreateMenuAnchorX, m_contentCreateMenuAnchorY,
+                            m_contentCreateMenuFrames, m_contentCreateMenuX, m_contentCreateMenuY);
     }
     if (ImGui::BeginPopup(kCreateMenuId)) {
+        SettleContentMenuUVE(m_contentCreateMenuFrames, m_contentCreateMenuX, m_contentCreateMenuY);
         DrawContentCreateMenuUVE(snapshot.contentRoot, gridDirectory);
         ImGui::EndPopup();
     }
