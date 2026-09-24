@@ -92,6 +92,11 @@ struct EditorUVEAccessUVE final {
     static bool CancelComponentPropertyPreviewUVE(EditorUVE& editor) {
         return editor.CancelComponentPropertyPreviewUVE();
     }
+    [[nodiscard]] static bool CommitComponentPropertyPreviewForUVE(EditorUVE& editor,
+                                                                   const Core::TypeMetadataEntryUVE& entry,
+                                                                   const Core::TypeMetadataPropertyUVE& property) {
+        return editor.CommitComponentPropertyPreviewForUVE(entry, property);
+    }
     [[nodiscard]] static std::vector<std::string> GetEligibleInspectorDrawerIdsUVE(const EditorUVE& editor,
                                                                                   const Scene::EntityUVE entity) {
         return editor.m_inspectorDrawerRegistry.GetEligibleDrawerIdsUVE(entity);
@@ -4552,6 +4557,106 @@ TEST(EditorUVETest, ColorPickerPreferencesUVE_SanitiseAndPersistAcrossSessionRel
     }
     engine.Shutdown();
     std::filesystem::remove(config.settingsFilePath);
+}
+
+TEST(EditorUVETest, InspectorTransformDragUVE_IsOneUndoStepAndCanBeCancelled) {
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_inspector_transform_drag.uvescene");
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        const Scene::EntityUVE node = entityManager.CreateEntityUVE();
+        AttachRootUVE(engine, node, Scene::TransformComponentUVE{});
+        editor.SelectEntityUVE(node);
+        const auto live = [&] { return entityManager.GetComponentUVE<Scene::TransformComponentUVE>(node); };
+
+        // No gesture in flight: nothing to preview into.
+        Scene::TransformComponentUVE moved = live();
+        moved.localPosition = Math::Vector3UVE{1.0F, 0.0F, 0.0F};
+        EXPECT_FALSE(editor.PreviewTransformGestureValueUVE(moved));
+
+        // Dragging Position.x from 0 to 3: every frame shows, one undo step results.
+        ASSERT_TRUE(editor.BeginTransformGestureUVE(EditorToolSessionModeUVE::Translate));
+        for (int frame = 1; frame <= 30; ++frame) {
+            moved.localPosition.x = static_cast<float>(frame) * 0.1F;
+            ASSERT_TRUE(editor.PreviewTransformGestureValueUVE(moved));
+            EXPECT_FLOAT_EQ(live().localPosition.x, moved.localPosition.x);
+        }
+        // A non-finite value is refused and the last good one stays.
+        Scene::TransformComponentUVE broken = moved;
+        broken.localScale.y = std::numeric_limits<float>::quiet_NaN();
+        EXPECT_FALSE(editor.PreviewTransformGestureValueUVE(broken));
+        EXPECT_FLOAT_EQ(live().localScale.y, 1.0F);
+        EXPECT_FALSE(editor.CanUndoUVE());
+        ASSERT_TRUE(editor.CommitTransformGestureUVE());
+        ASSERT_TRUE(editor.CanUndoUVE());
+        ASSERT_TRUE(editor.UndoUVE());
+        EXPECT_FLOAT_EQ(live().localPosition.x, 0.0F);
+        EXPECT_FALSE(editor.CanUndoUVE());
+        EXPECT_FALSE(editor.IsSceneDirtyUVE());
+
+        // Cancelled: back where it started, no history.
+        ASSERT_TRUE(editor.BeginTransformGestureUVE(EditorToolSessionModeUVE::Scale));
+        Scene::TransformComponentUVE scaled = live();
+        scaled.localScale = Math::Vector3UVE{2.0F, 2.0F, 2.0F};
+        ASSERT_TRUE(editor.PreviewTransformGestureValueUVE(scaled));
+        ASSERT_TRUE(editor.CancelTransformGestureUVE());
+        EXPECT_FLOAT_EQ(live().localScale.x, 1.0F);
+        EXPECT_FALSE(editor.CanUndoUVE());
+
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
+TEST(EditorUVETest, InspectorMetadataDragUVE_IsOneUndoStepAndOnlyItsOwnEditIsCommitted) {
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_inspector_metadata_drag.uvescene");
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        const Scene::EntityUVE root = editor.GetDocumentSceneRootUVE();
+        editor.SelectEntityUVE(root);
+        ASSERT_TRUE(editor.AddSelectedNodeMetadataUVE("speed", Core::VariantUVE::MakeFloatUVE(1.0)));
+        const auto speed = [&] {
+            return entityManager.GetComponentUVE<Scene::NodeMetadataComponentUVE>(root).entries.front().value;
+        };
+
+        for (int frame = 1; frame <= 20; ++frame) {
+            ASSERT_TRUE(editor.PreviewSelectedNodeMetadataValueUVE(
+                "speed", Core::VariantUVE::MakeFloatUVE(1.0 + static_cast<double>(frame))));
+        }
+        EXPECT_EQ(speed(), Core::VariantUVE::MakeFloatUVE(21.0));
+
+        // Letting go of some other field does not end this drag.
+        const Core::TypeMetadataEntryUVE* const light =
+            Scene::FindSceneComponentMetadataUVE(std::type_index(typeid(Scene::LightComponentUVE)));
+        ASSERT_NE(light, nullptr);
+        EXPECT_FALSE(EditorUVEAccessUVE::CommitComponentPropertyPreviewForUVE(editor, *light, light->properties.front()));
+
+        ASSERT_TRUE(EditorUVEAccessUVE::CommitComponentPropertyPreviewUVE(editor));
+        ASSERT_TRUE(editor.UndoUVE()); // the whole drag
+        EXPECT_EQ(speed(), Core::VariantUVE::MakeFloatUVE(1.0));
+
+        // A one-shot edit arriving while a drag is still in flight records the drag first, so
+        // undo walks back through both in the order they happened.
+        ASSERT_TRUE(editor.PreviewSelectedNodeMetadataValueUVE("speed", Core::VariantUVE::MakeFloatUVE(5.0)));
+        ASSERT_TRUE(editor.SetSelectedNodeMetadataValueUVE("speed", Core::VariantUVE::MakeFloatUVE(9.0)));
+        ASSERT_TRUE(editor.UndoUVE());
+        EXPECT_EQ(speed(), Core::VariantUVE::MakeFloatUVE(5.0));
+        ASSERT_TRUE(editor.UndoUVE());
+        EXPECT_EQ(speed(), Core::VariantUVE::MakeFloatUVE(1.0));
+        ASSERT_TRUE(editor.UndoUVE()); // the add
+        EXPECT_TRUE(entityManager.GetComponentUVE<Scene::NodeMetadataComponentUVE>(root).entries.empty());
+        EXPECT_FALSE(editor.CanUndoUVE());
+
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
 }
 
 TEST(EditorUVETest, InspectorPropertyEditUVE_RefusesAValueTheComponentRuleRejects) {
