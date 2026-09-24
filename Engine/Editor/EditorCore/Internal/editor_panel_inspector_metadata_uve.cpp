@@ -316,6 +316,14 @@ void EditorUVE::RegisterMetadataInspectorDrawersUVE() {
                 DrawMetadataComponentDrawerUVE(entity, *entry, nested);
             },
         }));
+        // The class chain, spelled out: Node3D's own sections under a "Node3D" heading and the
+        // common Node section under "Node", so the Inspector reads as the node's ancestry.
+        if (entry->order >= Scene::kSectionOrderNodeCommonUVE) {
+            static_cast<void>(m_inspectorDrawerRegistry.SetDrawerGroupUVE(DrawerIdForTypeIdUVE(entry->typeId), "Node"));
+        } else if (entry->order >= Scene::kSectionOrderTransformUVE) {
+            static_cast<void>(
+                m_inspectorDrawerRegistry.SetDrawerGroupUVE(DrawerIdForTypeIdUVE(entry->typeId), "Node3D"));
+        }
     }
     if (!transformRegistered) {
         RegisterTransformInspectorDrawerUVE();
