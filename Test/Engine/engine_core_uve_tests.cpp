@@ -122,13 +122,16 @@ TEST(EngineCoreUVETest, ProjectSettings_OverrideTheApplicationsConfigWhereThePro
     {
         std::ofstream file(config.projectSettingsFilePath);
         // Ticks and filter are legal; the auto-save interval is below its minimum and ignored.
-        file << R"({"physics": {"common": {"ticksPerSecond": 30}},
+        file << R"({"physics": {"common": {"ticksPerSecond": 30},
+                                "3d": {"gravity": {"x": 0.0, "y": -3.7, "z": 0.0}}},
                     "rendering": {"shadows": {"filter": 0}},
                     "application": {"save": {"autoSaveInterval": 5.0}}})";
     }
     EngineCoreUVE engine(config);
     engine.Init();
     EXPECT_DOUBLE_EQ(engine.GetConfigUVE().fixedUpdateFps, 30.0);
+    EXPECT_FLOAT_EQ(engine.GetConfigUVE().gravity.y, -3.7F);
+    EXPECT_EQ(engine.GetConfigUVE().maxFixedStepsPerFrame, EngineConfigUVE{}.maxFixedStepsPerFrame);
     EXPECT_EQ(engine.GetConfigUVE().shadowPcfKernelRadius, 0U);
     EXPECT_DOUBLE_EQ(engine.GetConfigUVE().autoSaveIntervalSecondsUVE, 123.0);
     EXPECT_EQ(engine.GetConfigUVE().shadowMapResolution, EngineConfigUVE{}.shadowMapResolution);
@@ -142,7 +145,7 @@ TEST(EngineCoreUVETest, ProjectSettings_OverrideTheApplicationsConfigWhereThePro
 TEST(EngineCoreUVETest, ProjectSettings_DeclareEngineDefaultsAndNeedARestart) {
     Config::SettingsRegistryUVE registry;
     ASSERT_TRUE(RegisterEngineProjectSettingsUVE(registry));
-    EXPECT_EQ(registry.GetCountUVE(), 5U + (2U * kLayerCountUVE));
+    EXPECT_EQ(registry.GetCountUVE(), 7U + (2U * kLayerCountUVE));
     const EngineConfigUVE defaults{};
     namespace Id = EngineProjectSettingIdUVE;
     EXPECT_DOUBLE_EQ(registry.GetFloatUVE(Config::ConfigManagerUVE{}, Id::kPhysicsTicksPerSecondUVE),

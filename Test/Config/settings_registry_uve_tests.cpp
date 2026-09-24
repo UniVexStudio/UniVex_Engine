@@ -350,6 +350,37 @@ TEST_F(SettingsRegistryUVETest, ClearRemovesEveryKeyOfTheSetting) {
     EXPECT_FALSE(registry.ClearValueUVE(store, "editor.unknown"));
 }
 
+TEST(SettingVector3UVETest, IsStoredPerComponentAndValidatedWhole) {
+    SettingsRegistryUVE registry;
+    ASSERT_TRUE(registry.RegisterUVE(
+        MakeVector3SettingUVE("physics.gravity", {0.0, -9.81, 0.0}, -100.0, 100.0, "Gravity", "Physics")));
+    ConfigManagerUVE store;
+    EXPECT_EQ(registry.GetVector3UVE(store, "physics.gravity"), (SettingVector3UVE{0.0, -9.81, 0.0}));
+
+    ASSERT_TRUE(registry.SetValueUVE(store, "physics.gravity", SettingVector3UVE{1.0, -2.0, 3.0}));
+    EXPECT_DOUBLE_EQ(store.GetDoubleUVE("physics.gravity.y", 0.0), -2.0);
+    EXPECT_EQ(registry.GetVector3UVE(store, "physics.gravity"), (SettingVector3UVE{1.0, -2.0, 3.0}));
+
+    // Bounds hold for each component, and one bad component refuses the vector.
+    EXPECT_FALSE(registry.SetValueUVE(store, "physics.gravity", SettingVector3UVE{0.0, -200.0, 0.0}));
+    EXPECT_FALSE(registry.SetValueUVE(store, "physics.gravity", SettingVector3UVE{0.0, kNaN, 0.0}));
+    EXPECT_EQ(registry.GetVector3UVE(store, "physics.gravity"), (SettingVector3UVE{1.0, -2.0, 3.0}));
+
+    // A vector missing a component reads as its default, never half stored.
+    store.RemoveKeyUVE("physics.gravity.z");
+    EXPECT_FALSE(registry.GetStoredValueUVE(store, "physics.gravity").has_value());
+    EXPECT_EQ(registry.GetVector3UVE(store, "physics.gravity"), (SettingVector3UVE{0.0, -9.81, 0.0}));
+
+    ASSERT_TRUE(registry.SetValueUVE(store, "physics.gravity", SettingVector3UVE{1.0, 1.0, 1.0}));
+    EXPECT_TRUE(registry.ClearValueUVE(store, "physics.gravity"));
+    EXPECT_FALSE(store.HasKeyUVE("physics.gravity.x"));
+
+    // Its components are its own, but a sibling beside them is fine.
+    EXPECT_FALSE(registry.RegisterUVE(MakeFloatSettingUVE("physics.gravity.x", 0.0, 0.0, 1.0, "X", "")));
+    EXPECT_TRUE(registry.RegisterUVE(MakeFloatSettingUVE("physics.gravity.scale", 1.0, 0.0, 10.0, "Scale", "")));
+    EXPECT_NE(ValidateSettingDescriptorUVE(MakeVector3SettingUVE("a.v", {0.0, 5.0, 0.0}, 0.0, 1.0, "V", "")), "");
+}
+
 class SettingsDocumentUVETest : public ::testing::Test {
 protected:
     void SetUp() override {

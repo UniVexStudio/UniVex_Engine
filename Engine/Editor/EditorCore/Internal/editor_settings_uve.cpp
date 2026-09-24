@@ -364,7 +364,13 @@ std::string FormatSettingValueUVE(const Config::SettingDescriptorUVE& descriptor
     if (const auto* color = std::get_if<Config::SettingColorUVE>(&value)) {
         return FormatColorHexUVE(EditorColorUVE{color->r, color->g, color->b, color->a}, descriptor.colorHasAlpha);
     }
-    return std::get<std::string>(value);
+    if (const auto* vector = std::get_if<Config::SettingVector3UVE>(&value)) {
+        char text[96];
+        std::snprintf(text, sizeof(text), "(%.6g, %.6g, %.6g)", vector->x, vector->y, vector->z);
+        return text;
+    }
+    const auto* text = std::get_if<std::string>(&value);
+    return text != nullptr ? *text : std::string{};
 }
 
 bool RegisterEditorSettingsUVE(Config::SettingsRegistryUVE& registry) {

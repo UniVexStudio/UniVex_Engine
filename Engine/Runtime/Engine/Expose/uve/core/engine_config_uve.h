@@ -60,6 +60,10 @@ struct EngineConfigUVE {
     /// spiral of death after a debugger pause or long stall.
     double maxDeltaTimeSeconds = 0.25;
 
+    /// Most fixed steps run in one frame (TimerUVE::SetMaxStepsPerTickUVE): past it, the leftover
+    /// time is dropped and the simulation slows down rather than falling ever further behind.
+    int maxFixedStepsPerFrame = 8;
+
     /// Minimum severity a log message must have to reach any sink. Named UVE
     /// profiles provide Trace/Debug/Info/Warning defaults from the build
     /// configuration; integrations outside CMake retain the historical Trace

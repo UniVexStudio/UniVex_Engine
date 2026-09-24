@@ -99,7 +99,23 @@ TEST(TimerUVETest, FixedStep_CapsStepsAtMaximum) {
     timer.Tick();
 
     const FixedStepResultUVE result = timer.AdvanceFixedStepUVE();
-    EXPECT_LE(result.stepsToRun, 8); // matches TimerUVE::kMaxStepsPerTick
+    EXPECT_LE(result.stepsToRun, 8); // TimerUVE's default cap
+}
+
+TEST(TimerUVETest, FixedStep_CapIsConfigurableAndIgnoresNonPositiveValues) {
+    TimerUVE timer;
+    timer.SetMaxDeltaTimeUVE(10.0);
+    timer.SetFixedTimestepUVE(0.001);
+    timer.SetMaxStepsPerTickUVE(3);
+    timer.SetMaxStepsPerTickUVE(0);  // ignored
+    timer.SetMaxStepsPerTickUVE(-5); // ignored
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    timer.Tick();
+
+    // 50 ms of 1 ms steps is far more than the cap, so the cap is what comes back.
+    const FixedStepResultUVE result = timer.AdvanceFixedStepUVE();
+    EXPECT_EQ(result.stepsToRun, 3);
+    EXPECT_LT(result.alpha, 1.0);
 }
 
 TEST(TimerUVETest, DiscardFixedStepAccumulator_PreservesWallClockTimeAndDropsPendingSteps) {

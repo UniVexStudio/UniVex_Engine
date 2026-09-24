@@ -33,7 +33,7 @@ public:
     /// Adds `descriptor`. Refused - nothing registered, false returned - when ValidateSettingDescriptorUVE
     /// finds it malformed, its id is already registered, or the document could not hold it beside
     /// the registered settings: "a.b" holding a value rules out "a.b.c", and a colour's channel keys
-    /// (`.r`, `.g`, `.b`, `.a`) are its own. All are programming errors the registry's own test is
+    /// (`.r`, `.g`, `.b`, `.a`) and a vector's (`.x`, `.y`, `.z`) are its own. All are programming errors the registry's own test is
     /// there to catch.
     [[nodiscard]] bool RegisterUVE(SettingDescriptorUVE descriptor);
 
@@ -73,11 +73,13 @@ public:
                                            std::string fallback = {}) const;
     [[nodiscard]] SettingColorUVE GetColorUVE(const IConfigManagerUVE& store, std::string_view id,
                                               SettingColorUVE fallback = {}) const;
+    [[nodiscard]] SettingVector3UVE GetVector3UVE(const IConfigManagerUVE& store, std::string_view id,
+                                                  SettingVector3UVE fallback = {}) const;
 
 private:
     std::vector<std::unique_ptr<SettingDescriptorUVE>> m_descriptors;
     std::unordered_map<std::string, const SettingDescriptorUVE*> m_byId;
-    /// Document paths holding a value (an id, or a colour's channel keys), and every path that
+    /// Document paths holding a value (an id, or a colour's or vector's component keys), and every path that
     /// is an object because a value sits beneath it. No path may be in both.
     std::unordered_set<std::string> m_values;
     std::unordered_set<std::string> m_branches;

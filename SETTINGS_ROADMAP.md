@@ -113,8 +113,8 @@ and it is written once per setting. Multiply by four hundred settings and the co
 ## 0.2 The setting descriptor
 
 - [~] `SettingDescriptorUVE` — the single record describing one setting. Landed in
-      `Engine/Runtime/Config` (`setting_descriptor_uve.h`) with bool, int, float, string, enum and
-      colour; the remaining types and the version fields below are still open.
+      `Engine/Runtime/Config` (`setting_descriptor_uve.h`) with bool, int, float, string, enum,
+      colour and vector3; the remaining types and the version fields below are still open.
   - [x] `id` — the dot path, e.g. `rendering.shadows.softShadowQuality`. The storage key.
   - [~] `type` — bool, int, float/double, string, enum, colour, vector2/3/4, key binding, asset
         reference, file path, layer mask, string list.
@@ -221,7 +221,8 @@ This is the payoff, and it is why the descriptor carries display strings.
       **Editor Preferences** window (Menu > File), `editor_panel_preferences_uve.cpp`.
 - [~] Per-type row renderers written **once** — bool, slider, drag, combo, colour, vector, path,
       key binding — instead of per setting. Bool, int, float, string, enum and colour (through
-      the editor's colour field) exist; vector, path and key binding follow their types.
+      the editor's colour field) and vector3 (the axis-tagged fields Transform uses) exist; path
+      and key binding follow their types.
 - [x] A modified-from-default indicator and a per-setting revert control, both of which are free
       once `defaultValue` is in the descriptor. Also a "Modified only" filter, a dot on every
       category holding a change, the default in each row's tooltip, and a confirmed "Reset to
@@ -412,11 +413,14 @@ The largest group by far, and the one most dependent on the renderer maturing.
 
 ## 1.4 Physics
 
-- [~] Physics tick rate, and maximum substeps per frame. `physics.common.ticksPerSecond` and
-      `physics.common.maxFrameTime` (the longest frame caught up on), applied at startup; the
-      substep cap is internal to the timer.
+- [x] Physics tick rate, and maximum substeps per frame. `physics.common.ticksPerSecond`,
+      `physics.common.maxFrameTime` (the longest frame caught up on) and
+      `physics.common.maxStepsPerFrame` (the timer's step cap, now `SetMaxStepsPerTickUVE`),
+      applied at startup.
 - [ ] Engine selection per dimension, where more than one exists.
-- [ ] Default gravity vector and magnitude, 2D and 3D separately.
+- [~] Default gravity vector and magnitude, 2D and 3D separately. `physics.3d.gravity`, a
+      vector, applied at startup to rigid bodies, characters and particles. 2D waits for 2D
+      physics.
 - [ ] Default linear and angular damping.
 - [ ] Sleep threshold, sleep time, and whether sleeping is allowed by default.
 - [ ] Solver iteration counts: position and velocity.

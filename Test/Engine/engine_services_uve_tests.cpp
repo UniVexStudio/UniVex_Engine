@@ -102,6 +102,7 @@ public:
     void Reset() override {}
     void SetMaxDeltaTimeUVE(double) override {}
     void SetFixedTimestepUVE(double) override {}
+    void SetMaxStepsPerTickUVE(int) override {}
     Utilities::FixedStepResultUVE AdvanceFixedStepUVE() override { return {}; }
     void DiscardFixedStepAccumulatorUVE() noexcept override { ++discardCount; }
 

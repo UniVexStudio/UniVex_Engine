@@ -58,18 +58,24 @@ void TimerUVE::SetFixedTimestepUVE(double fixedDeltaSeconds) {
     }
 }
 
+void TimerUVE::SetMaxStepsPerTickUVE(const int maxSteps) {
+    if (maxSteps >= 1) {
+        m_maxStepsPerTick = maxSteps;
+    }
+}
+
 FixedStepResultUVE TimerUVE::AdvanceFixedStepUVE() {
     FixedStepResultUVE result;
 
-    while (m_accumulator >= m_fixedDeltaTime && result.stepsToRun < kMaxStepsPerTick) {
+    while (m_accumulator >= m_fixedDeltaTime && result.stepsToRun < m_maxStepsPerTick) {
         m_accumulator -= m_fixedDeltaTime;
         ++result.stepsToRun;
     }
 
     // Hit the step cap with more than a full step still buffered: drop the
     // remainder down to a single sub-step's worth rather than let the
-    // accumulator grow unbounded across frames (see kMaxStepsPerTick doc).
-    if (result.stepsToRun >= kMaxStepsPerTick && m_accumulator >= m_fixedDeltaTime) {
+    // accumulator grow unbounded across frames (see m_maxStepsPerTick).
+    if (result.stepsToRun >= m_maxStepsPerTick && m_accumulator >= m_fixedDeltaTime) {
         m_accumulator = std::fmod(m_accumulator, m_fixedDeltaTime);
     }
 
