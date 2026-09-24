@@ -132,4 +132,22 @@ std::string_view GetSceneNodeTypeIdUVE(const SceneNodeKindUVE kind) noexcept {
     return descriptor == nullptr ? std::string_view{} : descriptor->typeId;
 }
 
+SceneNodePlacementUVE GetSceneNodePlacementUVE(const SceneNodeKindUVE kind) noexcept {
+    switch (kind) {
+        case SceneNodeKindUVE::CharacterBody3D:
+        case SceneNodeKindUVE::AnimationPlayer:
+        case SceneNodeKindUVE::AnimationTree:
+        case SceneNodeKindUVE::Skeleton3D:
+        case SceneNodeKindUVE::BoneAttachment3D:
+        case SceneNodeKindUVE::NavigationAgent3D:
+        case SceneNodeKindUVE::SpringArm3D:
+        case SceneNodeKindUVE::Hitbox3D:
+        case SceneNodeKindUVE::Hurtbox3D:
+        case SceneNodeKindUVE::Projectile3D:
+            return SceneNodePlacementUVE::Entity;
+        default:
+            return SceneNodePlacementUVE::World;
+    }
+}
+
 } // namespace UVE::Scene::Nodes

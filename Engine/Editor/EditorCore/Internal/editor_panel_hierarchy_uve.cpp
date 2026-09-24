@@ -663,46 +663,68 @@ void EditorUVE::DrawNodePickerUVE() {
     std::optional<Scene::Nodes::SceneNodeKindUVE> chosen;
     ImGui::Separator();
     if (ImGui::BeginChild("##node-picker-list", ImVec2{0.0F, 0.0F}, false)) {
-        std::string_view shownCategory;
-        for (const Scene::Nodes::SceneNodeDescriptorUVE& descriptor : descriptors) {
-            if (!matches(descriptor)) {
-                continue;
-            }
-            // A category heading only above the first match in it, so an empty group never shows.
-            if (descriptor.category != shownCategory) {
-                if (!shownCategory.empty()) {
-                    ImGui::Spacing();
+        // The level's own nodes first. Nodes that belong to an entity (a character's body, its
+        // animation) sit folded away below: they are built in an Entity asset, and are here only
+        // until the Entity Editor exists.
+        using Placement = Scene::Nodes::SceneNodePlacementUVE;
+        const auto drawGroup = [&](const Placement placement) {
+            std::string_view shownCategory;
+            for (const Scene::Nodes::SceneNodeDescriptorUVE& descriptor : descriptors) {
+                if (!matches(descriptor) || Scene::Nodes::GetSceneNodePlacementUVE(descriptor.kind) != placement) {
+                    continue;
                 }
-                DrawNodePickerIconUVE(m_uiAssets.GetNodeCategoryIconTextureIdUVE(descriptor.category));
-                ImGui::TextDisabled("%s", descriptor.category.data());
-                shownCategory = descriptor.category;
+                // A category heading only above the first match in it, so an empty group never shows.
+                if (descriptor.category != shownCategory) {
+                    if (!shownCategory.empty()) {
+                        ImGui::Spacing();
+                    }
+                    DrawNodePickerIconUVE(m_uiAssets.GetNodeCategoryIconTextureIdUVE(descriptor.category));
+                    ImGui::TextDisabled("%s", descriptor.category.data());
+                    shownCategory = descriptor.category;
+                }
+                ImGui::Indent(fontSize * 0.6F);
+                const bool highlight = !m_nodePickerFilter.empty() && bestMatch == descriptor.kind;
+                // The row is the whole width; the icon and name are painted over it, so the name keeps
+                // the same left edge whether or not an icon is there.
+                const ImVec2 rowStart = ImGui::GetCursorScreenPos();
+                ImGui::PushID(static_cast<int>(descriptor.kind));
+                if (ImGui::Selectable("##node", highlight)) {
+                    chosen = descriptor.kind;
+                }
+                ImGui::PopID();
+                const float line = ImGui::GetTextLineHeight();
+                const float iconSize = std::min(kHierarchyNodeIconSizeUVE, std::floor(line));
+                if (const std::uintptr_t icon = m_uiAssets.GetNodeIconTextureIdUVE(descriptor.kind); icon != 0U) {
+                    const ImVec2 iconMin{std::floor(rowStart.x), std::floor(rowStart.y + ((line - iconSize) * 0.5F))};
+                    ImGui::GetWindowDrawList()->AddImage(static_cast<ImTextureID>(icon), iconMin,
+                                                         ImVec2{iconMin.x + iconSize, iconMin.y + iconSize});
+                }
+                ImGui::GetWindowDrawList()->AddText(
+                    ImVec2{rowStart.x + iconSize + ImGui::GetStyle().ItemInnerSpacing.x, rowStart.y},
+                    ImGui::GetColorU32(ImGuiCol_Text), descriptor.displayName.data(),
+                    descriptor.displayName.data() + descriptor.displayName.size());
+                if (highlight && m_nodePickerFilter != m_nodePickerScrolledFilter) {
+                    ImGui::SetScrollHereY(0.5F); // keep the Enter target in sight as the query changes
+                    m_nodePickerScrolledFilter = m_nodePickerFilter;
+                }
+                ImGui::Unindent(fontSize * 0.6F);
             }
-            ImGui::Indent(fontSize * 0.6F);
-            const bool highlight = !m_nodePickerFilter.empty() && bestMatch == descriptor.kind;
-            // The row is the whole width; the icon and name are painted over it, so the name keeps
-            // the same left edge whether or not an icon is there.
-            const ImVec2 rowStart = ImGui::GetCursorScreenPos();
-            ImGui::PushID(static_cast<int>(descriptor.kind));
-            if (ImGui::Selectable("##node", highlight)) {
-                chosen = descriptor.kind;
+        };
+        drawGroup(Placement::World);
+        const bool anyEntityMatch = std::any_of(descriptors.begin(), descriptors.end(), [&](const auto& descriptor) {
+            return matches(descriptor) &&
+                   Scene::Nodes::GetSceneNodePlacementUVE(descriptor.kind) == Placement::Entity;
+        });
+        if (anyEntityMatch) {
+            ImGui::Spacing();
+            // Opened by a search, so typing "character" still finds it.
+            ImGui::SetNextItemOpen(!m_nodePickerFilter.empty(), ImGuiCond_Always);
+            if (ImGui::CollapsingHeader("Entity nodes")) {
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Parts of an entity - a character's body, its animation, its hitboxes.");
+                }
+                drawGroup(Placement::Entity);
             }
-            ImGui::PopID();
-            const float line = ImGui::GetTextLineHeight();
-            const float iconSize = std::min(kHierarchyNodeIconSizeUVE, std::floor(line));
-            if (const std::uintptr_t icon = m_uiAssets.GetNodeIconTextureIdUVE(descriptor.kind); icon != 0U) {
-                const ImVec2 iconMin{std::floor(rowStart.x), std::floor(rowStart.y + ((line - iconSize) * 0.5F))};
-                ImGui::GetWindowDrawList()->AddImage(static_cast<ImTextureID>(icon), iconMin,
-                                                     ImVec2{iconMin.x + iconSize, iconMin.y + iconSize});
-            }
-            ImGui::GetWindowDrawList()->AddText(ImVec2{rowStart.x + iconSize + ImGui::GetStyle().ItemInnerSpacing.x,
-                                                       rowStart.y},
-                                                ImGui::GetColorU32(ImGuiCol_Text), descriptor.displayName.data(),
-                                                descriptor.displayName.data() + descriptor.displayName.size());
-            if (highlight && m_nodePickerFilter != m_nodePickerScrolledFilter) {
-                ImGui::SetScrollHereY(0.5F); // keep the Enter target in sight as the query changes
-                m_nodePickerScrolledFilter = m_nodePickerFilter;
-            }
-            ImGui::Unindent(fontSize * 0.6F);
         }
         if (!firstMatch.has_value()) {
             ImGui::TextDisabled("No node matches \"%s\".", m_nodePickerFilter.c_str());

@@ -86,4 +86,13 @@ TEST(SceneNodeRegistryUVETest, UnknownLookupUVE_ReturnsEmptyOrNull) {
 }
 
 } // namespace
+TEST(SceneNodeRegistryUVETest, PlacementSeparatesTheLevelFromEntityParts) {
+    EXPECT_EQ(GetSceneNodePlacementUVE(SceneNodeKindUVE::Light3D), SceneNodePlacementUVE::World);
+    EXPECT_EQ(GetSceneNodePlacementUVE(SceneNodeKindUVE::BoxMesh3D), SceneNodePlacementUVE::World);
+    EXPECT_EQ(GetSceneNodePlacementUVE(SceneNodeKindUVE::WorldEnvironment3D), SceneNodePlacementUVE::World);
+    EXPECT_EQ(GetSceneNodePlacementUVE(SceneNodeKindUVE::CharacterBody3D), SceneNodePlacementUVE::Entity);
+    EXPECT_EQ(GetSceneNodePlacementUVE(SceneNodeKindUVE::AnimationTree), SceneNodePlacementUVE::Entity);
+    EXPECT_EQ(GetSceneNodePlacementUVE(SceneNodeKindUVE::Hitbox3D), SceneNodePlacementUVE::Entity);
+}
+
 } // namespace UVE::Scene::Nodes::Tests

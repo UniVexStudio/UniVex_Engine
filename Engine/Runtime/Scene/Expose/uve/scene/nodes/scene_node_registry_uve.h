@@ -72,6 +72,17 @@ struct SceneNodeDescriptorUVE final {
 
 inline constexpr std::size_t kMaximumSceneNodeDescriptorsUVE = 64U;
 
+/// Where a node kind belongs. The world holds the level itself - meshes, lights, cameras,
+/// environment, volumes - and is what the Scene panel's "+" offers first. An Entity node is part of
+/// something that lives in the world: a character's body, its animation, its hitboxes. Those are
+/// built inside an Entity asset and brought into the level whole.
+enum class SceneNodePlacementUVE : std::uint8_t {
+    World = 0,
+    Entity,
+};
+
+[[nodiscard]] SceneNodePlacementUVE GetSceneNodePlacementUVE(SceneNodeKindUVE kind) noexcept;
+
 [[nodiscard]] std::span<const SceneNodeDescriptorUVE> GetSceneNodeDescriptorsUVE() noexcept;
 [[nodiscard]] const SceneNodeDescriptorUVE* FindSceneNodeDescriptorUVE(
     SceneNodeKindUVE kind) noexcept;
