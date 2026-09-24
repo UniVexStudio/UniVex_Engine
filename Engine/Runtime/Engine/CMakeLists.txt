@@ -33,6 +33,7 @@ add_library(uve_core STATIC
     Internal/engine_services_uve.cpp
     Internal/engine_core_uve.cpp
     Internal/engine_project_settings_uve.cpp
+    Internal/input_map_document_uve.cpp
     Internal/script_gameplay_bindings_uve.cpp
 )
 target_include_directories(uve_core PUBLIC Expose)

@@ -100,6 +100,10 @@ struct EngineConfigUVE {
     /// every default, not an error.
     std::filesystem::path projectSettingsFilePath = "project.uvesettings";
 
+    /// Path of the project's input map (see Core::InputMapDocumentUVE), read during Init() and
+    /// registered with the input system. A missing file is an empty map, not an error.
+    std::filesystem::path inputMapFilePath = "project.uveinput";
+
     /// Raw startup argument tokens (excluding the program path) that
     /// CommandLineUVE parses during Init(). Populated by main() from
     /// argv[1..argc); left empty by default so tests can construct an

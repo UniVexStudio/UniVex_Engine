@@ -136,6 +136,7 @@ void EditorUVE::RenderOverlayUVE() {
     DrawPluginWindowUVE();
     DrawEditorPreferencesWindowUVE();
     DrawProjectSettingsWindowUVE();
+    DrawInputMapWindowUVE();
 
     if (m_activeWorkspace == EditorWorkspaceUVE::Scripting) {
         DrawScriptingWorkspaceUVE();

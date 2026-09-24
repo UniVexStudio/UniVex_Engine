@@ -273,6 +273,9 @@ void EditorUVE::DrawMenuBarUVE() {
                 if (ImGui::MenuItem("Project Settings...")) {
                     OpenProjectSettingsUVE();
                 }
+                if (ImGui::MenuItem("Input Map...")) {
+                    OpenInputMapUVE();
+                }
                 if (ImGui::MenuItem("Editor Preferences...")) {
                     OpenEditorPreferencesUVE();
                 }

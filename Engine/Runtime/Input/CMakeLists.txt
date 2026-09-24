@@ -15,6 +15,7 @@
 
 add_library(uve_input STATIC
     Internal/input_system_uve.cpp
+    Internal/input_names_uve.cpp
     Internal/gamepad_input_system_uve.cpp
     Internal/mobile_input_system_uve.cpp
     Internal/mobile_gesture_system_uve.cpp

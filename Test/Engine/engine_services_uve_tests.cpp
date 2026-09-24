@@ -1007,9 +1007,10 @@ TEST(EngineServicesUVETest, Accessors_ReturnExactSameInstancesPassedIn) {
     FakeCheckpointManagerUVE checkpointManager;
     FakeWindowManagerUVE windowManager;
     Config::SettingsDocumentUVE projectSettings;
+    Core::InputMapDocumentUVE inputMap;
 
     const EngineServicesUVE services(logger, timer, eventSystem, memoryManager, threadPool,
-                                      commandLine, configManager, projectSettings, entityManager, sceneGraph,
+                                      commandLine, configManager, projectSettings, inputMap, entityManager, sceneGraph,
                                       assetDatabase, projectFileIndex, derivedArtifactCache, projectChangeWatcher,
                                       sceneSerializer, prefabSystem, particleRuntime,
                                       hotReload, assetManager, assetImporter, assetImportQueue, assetBundle, fileSystem,
@@ -1026,6 +1027,7 @@ TEST(EngineServicesUVETest, Accessors_ReturnExactSameInstancesPassedIn) {
     EXPECT_EQ(&services.GetMemoryManagerUVE(), &memoryManager);
     EXPECT_EQ(&services.GetThreadPoolUVE(), &threadPool);
     EXPECT_EQ(&services.GetProjectSettingsUVE(), &projectSettings);
+    EXPECT_EQ(&services.GetInputMapUVE(), &inputMap);
     EXPECT_EQ(&services.GetCommandLineUVE(), &commandLine);
     EXPECT_EQ(&services.GetConfigManagerUVE(), &configManager);
     EXPECT_EQ(&services.GetEntityManagerUVE(), &entityManager);
@@ -1114,8 +1116,9 @@ TEST(EngineServicesUVETest, Accessors_ProveInterfacesAreGenuinelySubstitutable) 
     FakeCheckpointManagerUVE checkpointManager;
     FakeWindowManagerUVE windowManager;
     Config::SettingsDocumentUVE projectSettings;
+    Core::InputMapDocumentUVE inputMap;
     const EngineServicesUVE services(logger, timer, eventSystem, memoryManager, threadPool,
-                                      commandLine, configManager, projectSettings, entityManager, sceneGraph,
+                                      commandLine, configManager, projectSettings, inputMap, entityManager, sceneGraph,
                                       assetDatabase, projectFileIndex, derivedArtifactCache, projectChangeWatcher,
                                       sceneSerializer, prefabSystem, particleRuntime,
                                       hotReload, assetManager, assetImporter, assetImportQueue, assetBundle, fileSystem,
