@@ -132,6 +132,13 @@ void ViewportRenderPass::SetGridPlaneUVE(const univex::render::GridPlane plane) 
     grid_.Settings().plane = plane;
 }
 
+void ViewportRenderPass::SetGridCellSizeUVE(const float cellSize) {
+    // The shader divides by this spacing; zero, negative or NaN would blank or corrupt the grid.
+    if (std::isfinite(cellSize) && cellSize > 0.f) {
+        grid_.Settings().baseSpacing = cellSize;
+    }
+}
+
 univex::viewport::AxisPaletteUVE ViewportRenderPass::GetAxisPaletteUVE() const {
     return univex::viewport::AxisPaletteOfUVE(style_);
 }

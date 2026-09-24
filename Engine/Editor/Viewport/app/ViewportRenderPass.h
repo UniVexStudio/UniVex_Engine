@@ -102,6 +102,9 @@ public:
     void SetGridOpacityUVE(float opacity);
     /// Which world plane the grid is drawn on (see univex::render::GridPlane).
     void SetGridPlaneUVE(univex::render::GridPlane plane);
+    /// The grid's finest spacing in world units (GridSettings::baseSpacing). A size that is not
+    /// finite or not positive is ignored and the grid keeps its current spacing.
+    void SetGridCellSizeUVE(float cellSize);
     [[nodiscard]] univex::viewport::AxisPaletteUVE GetAxisPaletteUVE() const;
 
     void SetGizmoMode(GizmoMode mode) { gizmoMode_ = mode; }

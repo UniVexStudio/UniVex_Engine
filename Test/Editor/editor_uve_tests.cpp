@@ -1110,6 +1110,53 @@ TEST(EditorUVETest, ViewportGridUVE_RefusesBadOpacityAndPersistsAcrossSessionRel
     std::filesystem::remove(config.settingsFilePath);
 }
 
+TEST(EditorUVETest, ViewportGridCellSizeUVE_RefusesBadSizesAndPersistsAcrossSessionReload) {
+    const Core::EngineConfigUVE config = MakeEditorTestConfigUVE();
+    std::filesystem::remove(config.settingsFilePath);
+    Core::EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_grid_cell.uvescene");
+        editor.InitUVE();
+        EXPECT_FLOAT_EQ(editor.GetViewportGridCellSizeUVE(), 1.0F);
+
+        // Zero and negative sizes would blank the grid; NaN, infinity and sizes past the range
+        // are refused too, and each refusal leaves the size as it was.
+        EXPECT_FALSE(editor.SetViewportGridCellSizeUVE(0.0F));
+        EXPECT_FALSE(editor.SetViewportGridCellSizeUVE(-1.0F));
+        EXPECT_FALSE(editor.SetViewportGridCellSizeUVE(std::numeric_limits<float>::quiet_NaN()));
+        EXPECT_FALSE(editor.SetViewportGridCellSizeUVE(std::numeric_limits<float>::infinity()));
+        EXPECT_FALSE(editor.SetViewportGridCellSizeUVE(EditorUVE::kMinimumViewportGridCellSizeUVE * 0.5F));
+        EXPECT_FALSE(editor.SetViewportGridCellSizeUVE(EditorUVE::kMaximumViewportGridCellSizeUVE * 2.0F));
+        EXPECT_FLOAT_EQ(editor.GetViewportGridCellSizeUVE(), 1.0F);
+
+        ASSERT_TRUE(editor.SetViewportGridCellSizeUVE(0.25F));
+        EXPECT_FLOAT_EQ(editor.GetViewportGridCellSizeUVE(), 0.25F);
+        ASSERT_TRUE(EditorUVEAccessUVE::SaveSessionSettingsUVE(editor));
+        editor.ShutdownUVE();
+    }
+    {
+        EditorUVE reloaded(engine.GetServicesUVE(), "uve_editor_tests_grid_cell_reload.uvescene");
+        reloaded.InitUVE();
+        EXPECT_FLOAT_EQ(reloaded.GetViewportGridCellSizeUVE(), 0.25F);
+        reloaded.ShutdownUVE();
+    }
+
+    // A corrupt stored size falls back to the 1 m default.
+    engine.GetServicesUVE().GetConfigManagerUVE().SetDoubleUVE("editor.viewport.grid.cellSize", -3.0);
+    {
+        EditorUVE corrupt(engine.GetServicesUVE(), "uve_editor_tests_grid_cell_corrupt.uvescene");
+        corrupt.InitUVE();
+        EXPECT_FLOAT_EQ(corrupt.GetViewportGridCellSizeUVE(), 1.0F);
+        corrupt.ShutdownUVE();
+    }
+
+    engine.Shutdown();
+    std::filesystem::remove(config.settingsFilePath);
+}
+
 TEST(EditorUVETest, ViewportAxisColorsUVE_RefuseInvalidChannelsAndPersistAcrossSessionReload) {
     const Core::EngineConfigUVE config = MakeEditorTestConfigUVE();
     std::filesystem::remove(config.settingsFilePath);

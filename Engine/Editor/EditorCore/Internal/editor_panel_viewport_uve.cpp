@@ -18,6 +18,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -339,10 +340,35 @@ void EditorUVE::DrawViewportOverlayBubblesUVE(const Math::Vector2UVE imageOrigin
             ImGui::SetNextItemWidth(ImGui::GetFontSize() * 9.0F);
             changed |= ImGui::SliderFloat("Opacity", &opacityPercent, kMinimumViewportGridOpacityUVE * 100.0F, 100.0F,
                                           "%.0f%%", ImGuiSliderFlags_AlwaysClamp);
-            ImGui::EndDisabled();
             if (changed) {
                 static_cast<void>(SetViewportGridUVE(visible, opacityPercent / 100.0F));
             }
+            // Round sizes only: a slider would hand out 0.2371 m, which nobody lays a scene out in.
+            // A size loaded from a hand-edited file still shows, as itself, in the preview.
+            static constexpr std::array<float, 7> kCellSizesUVE{0.1F, 0.25F, 0.5F, 1.0F, 2.0F, 5.0F, 10.0F};
+            const auto cellSizeLabel = [](const float size) {
+                std::array<char, 32> label{};
+                std::snprintf(label.data(), label.size(), "%g m", static_cast<double>(size));
+                return std::string(label.data());
+            };
+            const float cellSize = m_viewportOverlayState.gridCellSize;
+            ImGui::SetNextItemWidth(ImGui::GetFontSize() * 9.0F);
+            if (ImGui::BeginCombo("Cell size", cellSizeLabel(cellSize).c_str())) {
+                for (const float size : kCellSizesUVE) {
+                    const bool current = size == cellSize;
+                    if (ImGui::Selectable(cellSizeLabel(size).c_str(), current)) {
+                        static_cast<void>(SetViewportGridCellSizeUVE(size));
+                    }
+                    if (current) {
+                        ImGui::SetItemDefaultFocus();
+                    }
+                }
+                ImGui::EndCombo();
+            }
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+                ImGui::SetTooltip("The smallest grid square. Zooming out still steps the grid up in tens.");
+            }
+            ImGui::EndDisabled();
             ImGui::EndPopup();
         }
     }
@@ -545,6 +571,15 @@ bool EditorUVE::SetViewportGridUVE(const bool visible, const float opacity) {
     }
     m_viewportOverlayState.gridVisible = visible;
     m_viewportOverlayState.gridOpacity = opacity;
+    return true;
+}
+
+bool EditorUVE::SetViewportGridCellSizeUVE(const float cellSize) {
+    if (!std::isfinite(cellSize) || cellSize < kMinimumViewportGridCellSizeUVE ||
+        cellSize > kMaximumViewportGridCellSizeUVE) {
+        return false;
+    }
+    m_viewportOverlayState.gridCellSize = cellSize;
     return true;
 }
 
