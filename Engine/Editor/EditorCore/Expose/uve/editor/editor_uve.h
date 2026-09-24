@@ -481,6 +481,10 @@ public:
     /// request until it is next drawn, so reopening the branch later shows it closed. Returns
     /// false for anything that is not a document entity.
     [[nodiscard]] bool SetHierarchyBranchOpenUVE(Scene::EntityUVE entity, bool open);
+    /// The display name of `entity`'s node type ("StaticBody3D"): its stored type, or for a node
+    /// saved before types were stored, the best reading of its components
+    /// (Scene::ResolveSceneNodeKindUVE). Empty for anything that is not a document entity.
+    [[nodiscard]] std::string_view GetNodeTypeNameUVE(Scene::EntityUVE entity) const;
     /// The hierarchy panel preferences in effect (Editor Preferences > Hierarchy).
     [[nodiscard]] const HierarchyViewSettingsUVE& GetHierarchyViewSettingsUVE() const noexcept { return m_hierarchyView; }
     /// The open state a hierarchy row will be given when it is next drawn, if one is pending.

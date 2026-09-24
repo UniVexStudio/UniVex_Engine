@@ -45,6 +45,7 @@
 #include "uve/scene/i_scene_graph_uve.h"
 #include "uve/nodes/3d/skeleton_3d_uve.h"
 #include "uve/scene/nodes/scene_node_registry_uve.h"
+#include "uve/scene/nodes/scene_node_type_uve.h"
 
 namespace UVE::Editor {
 
@@ -325,19 +326,43 @@ void EditorUVE::DrawHierarchyNodeUVE(const Scene::EntityUVE entity) {
                                                                ImVec2{ImGui::GetWindowPos().x + ImGui::GetWindowWidth(),
                                                                       rowMax.y},
                                                                false);
+    // The type goes after the name, dimmed, only when all of it fits in the room the name and the
+    // right-hand columns leave: a type cut to "C..." says nothing. Whatever does not fit is in the
+    // row's tooltip instead.
+    const std::string_view typeName = GetNodeTypeNameUVE(entity);
+    const std::string_view typeHint = GetHierarchyTypeHintUVE(fullName, typeName);
+    bool typeHintShown = false;
+    if (!renaming && m_hierarchyView.showTypeName && !nameTruncated && !typeHint.empty()) {
+        const std::string hint(typeHint);
+        const float hintStart = rowMin.x + ImGui::GetTreeNodeToLabelSpacing() +
+                                ImGui::CalcTextSize(visibleLabel.c_str()).x + ImGui::GetStyle().ItemSpacing.x;
+        const float hintLimit = ImGui::GetWindowPos().x - ImGui::GetScrollX() + labelLimit;
+        if (ImGui::CalcTextSize(hint.c_str()).x <= hintLimit - hintStart) {
+            ImGui::GetWindowDrawList()->AddText(ImVec2{hintStart, (rowMin.y + rowMax.y - ImGui::GetTextLineHeight()) * 0.5F},
+                                                ImGui::GetColorU32(ImGuiCol_TextDisabled), hint.c_str());
+            typeHintShown = true;
+        }
+    }
     if (!renaming && m_hierarchyView.showIcons) {
         // Draws into the gap the row's own label prefix reserves before the name, so the icon lines
         // up with the name without a second ImGui column or child window just for one glyph.
         const float iconCenterY = (rowMin.y + rowMax.y) * 0.5F;
         const float iconCenterX = rowMin.x + ImGui::GetTreeNodeToLabelSpacing() + kHierarchyNodeIconRadiusUVE;
-        const HierarchyNodeIconKindUVE iconKind = ClassifyHierarchyNodeIconUVE(entityManager, entity);
+        const HierarchyNodeIconKindUVE iconKind =
+            GetHierarchyNodeIconKindUVE(Scene::ResolveSceneNodeKindUVE(entityManager, entity));
         DrawHierarchyNodeIconUVE(*ImGui::GetWindowDrawList(), ImVec2{iconCenterX, iconCenterY},
                                 kHierarchyNodeIconRadiusUVE, iconKind,
                                 m_uiAssets.GetGeneralIconTextureIdUVE("sun"),
                                 m_uiAssets.GetGeneralIconTextureIdUVE("environment"));
     }
-    if (nameTruncated && !renaming && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
-        ImGui::SetTooltip("%s", fullName.c_str());
+    const bool typeHidden = m_hierarchyView.showTypeName && !typeHint.empty() && !typeHintShown;
+    if ((nameTruncated || typeHidden) && !renaming && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
+        ImGui::BeginTooltip();
+        ImGui::TextUnformatted(fullName.c_str());
+        if (!typeName.empty() && typeName != fullName) {
+            ImGui::TextDisabled("%.*s", static_cast<int>(typeName.size()), typeName.data());
+        }
+        ImGui::EndTooltip();
     }
     if (ImGui::IsItemClicked() && !renaming) {
         if (ImGui::GetIO().KeyCtrl) {

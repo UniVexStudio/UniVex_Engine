@@ -17,4 +17,8 @@ bool ShouldDrawHierarchyEyeUVE(const HierarchyVisibilityColumnUVE mode, const bo
     return true;
 }
 
+std::string_view GetHierarchyTypeHintUVE(const std::string_view name, const std::string_view type) noexcept {
+    return type == name ? std::string_view{} : type;
+}
+
 } // namespace UVE::Editor
