@@ -311,6 +311,8 @@ public:
         bool gridVisible = true;
         // How strongly the grid is drawn, 0.1..1. Persisted with gridVisible; see SetViewportGridUVE.
         float gridOpacity = 1.0F;
+        // The smallest grid square, in world units; see SetViewportGridCellSizeUVE.
+        float gridCellSize = 1.0F;
         // True while the Game workspace tab is active (see EditorWorkspaceUVE::Game): the concrete
         // renderer should hide editor-only overlays (grid, transform gizmo) in this mode, matching
         // Unity's own Scene/Game split, since Game is meant to preview what a player would see.
@@ -735,6 +737,13 @@ public:
     [[nodiscard]] bool IsViewportGridVisibleUVE() const noexcept { return m_viewportOverlayState.gridVisible; }
     [[nodiscard]] float GetViewportGridOpacityUVE() const noexcept { return m_viewportOverlayState.gridOpacity; }
     static constexpr float kMinimumViewportGridOpacityUVE = 0.1F;
+    /// The smallest square the grid draws, in world units. Zooming out still steps the grid up in
+    /// tens from here; zooming in never draws finer than it. A preference, saved with the session.
+    /// A size outside kMinimum..kMaximumViewportGridCellSizeUVE, or not finite, is refused.
+    [[nodiscard]] bool SetViewportGridCellSizeUVE(float cellSize);
+    [[nodiscard]] float GetViewportGridCellSizeUVE() const noexcept { return m_viewportOverlayState.gridCellSize; }
+    static constexpr float kMinimumViewportGridCellSizeUVE = 0.01F;
+    static constexpr float kMaximumViewportGridCellSizeUVE = 1000.0F;
 
     /// The viewport's X/Y/Z axis colours, which the menu bar offers a picker for and the host
     /// pushes into the real renderer each frame (see ViewportOverlayStateUVE::axisColorX).

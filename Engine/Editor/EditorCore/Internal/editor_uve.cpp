@@ -3991,6 +3991,9 @@ void EditorUVE::LoadSessionSettingsUVE() {
     // leaving both at their defaults rather than restoring one half of the choice.
     static_cast<void>(SetViewportGridUVE(config.GetBoolUVE("editor.viewport.grid.visible", true),
                                          static_cast<float>(config.GetDoubleUVE("editor.viewport.grid.opacity", 1.0))));
+    // A stored cell size out of range or corrupt is ignored, leaving the 1 m default.
+    static_cast<void>(
+        SetViewportGridCellSizeUVE(static_cast<float>(config.GetDoubleUVE("editor.viewport.grid.cellSize", 1.0))));
     // The viewport's axis hues, restored only if a complete, in-range palette was stored. Anything
     // missing, out of 0..1, or not finite leaves the state unset, which makes the host re-seed its
     // own defaults on the next frame - a corrupt or hand-edited settings file therefore costs the
@@ -4055,6 +4058,7 @@ bool EditorUVE::SaveSessionSettingsUVE() {
     config.SetDoubleUVE("editor.viewport.snap.scaleStep", m_transformSnappingSettings.scaleStep);
     config.SetBoolUVE("editor.viewport.grid.visible", m_viewportOverlayState.gridVisible);
     config.SetDoubleUVE("editor.viewport.grid.opacity", m_viewportOverlayState.gridOpacity);
+    config.SetDoubleUVE("editor.viewport.grid.cellSize", m_viewportOverlayState.gridCellSize);
     // The viewport's axis hues. Written only once the host has seeded the real defaults: until
     // then the stored values are zeroes standing for "not chosen yet", and persisting those would
     // turn "I never touched the colours" into "I chose black" on the next launch.
