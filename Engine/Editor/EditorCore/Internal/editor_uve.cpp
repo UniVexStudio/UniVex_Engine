@@ -63,6 +63,8 @@
 #include "uve/nodes/3d/all_nodes_3d_uve.h"
 #include "uve/nodes/canvas_layer/all_nodes_canvas_layer_uve.h"
 #include "uve/scene/nodes/scene_node_type_uve.h"
+#include "uve/editor/editor_content_catalogue_uve.h"
+#include "uve/core/engine_project_settings_uve.h"
 #include "uve/scene/nodes/scene_folder_uve.h"
 #include "uve/scene/nodes/scene_root_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
@@ -730,6 +732,141 @@ bool EditorUVE::SaveSelectedPrefabUVE(const std::filesystem::path& path) {
     const Asset::AssetGuidUVE guid = m_services->GetPrefabSystemUVE().SavePrefabUVE(
         m_services->GetEntityManagerUVE(), m_services->GetAssetDatabaseUVE(), m_selectedEntity, path);
     return guid != Asset::kInvalidAssetGuidUVE;
+}
+
+std::filesystem::path EditorUVE::MakeUniqueContentPathUVE(const std::filesystem::path& directory,
+                                                          const std::string_view stem,
+                                                          const std::string_view extension) {
+    const std::string base{stem.empty() ? std::string_view{"New"} : stem};
+    std::error_code error;
+    std::filesystem::path candidate = directory / (base + std::string{extension});
+    for (int suffix = 2; std::filesystem::exists(candidate, error); ++suffix) {
+        candidate = directory / (base + " " + std::to_string(suffix) + std::string{extension});
+    }
+    return candidate;
+}
+
+std::optional<std::filesystem::path> EditorUVE::CreateContentCatalogueItemUVE(
+    const std::string_view itemId, const std::filesystem::path& directory) {
+    const ContentCatalogueItemUVE* const item = FindContentCatalogueItemUVE(itemId);
+    std::error_code error;
+    if (item == nullptr || !IsAuthoringCommandAllowedUVE() || directory.empty() ||
+        !std::filesystem::is_directory(directory, error)) {
+        return std::nullopt;
+    }
+
+    if (item->action == ContentCatalogueActionUVE::Folder) {
+        const std::filesystem::path folder = MakeUniqueContentPathUVE(directory, "New Folder", "");
+        if (!std::filesystem::create_directory(folder, error) || error) {
+            return std::nullopt;
+        }
+        return folder;
+    }
+    if (item->nodes.empty()) {
+        return std::nullopt;
+    }
+
+    // The tree is built in the live entity manager, saved, and destroyed again in this call: it is
+    // never a document node, never selected and never in the undo history.
+    const std::filesystem::path path = MakeUniqueContentPathUVE(directory, item->label, ".uveentity");
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = m_services->GetSceneGraphUVE();
+    std::vector<Scene::EntityUVE> built;
+    built.reserve(item->nodes.size());
+    bool complete = true;
+    for (const ContentCatalogueNodeUVE& node : item->nodes) {
+        const Scene::EntityUVE entity = CreateSceneNodeEntityInternalUVE(node.kind);
+        if (entity == Scene::kInvalidEntityUVE || node.parent >= static_cast<std::int32_t>(built.size()) ||
+            (built.empty() != (node.parent < 0))) {
+            if (entity != Scene::kInvalidEntityUVE) {
+                built.push_back(entity);
+            }
+            complete = false;
+            break;
+        }
+        const std::string name = built.empty() ? path.stem().string() : std::string{node.name};
+        if (!name.empty()) {
+            entityManager.GetComponentUVE<Scene::NameComponentUVE>(entity).name = name;
+        }
+        if (node.parent >= 0) {
+            sceneGraph.SetParentUVE(entityManager, entity, built[static_cast<std::size_t>(node.parent)]);
+        }
+        built.push_back(entity);
+    }
+
+    Asset::AssetGuidUVE guid = Asset::kInvalidAssetGuidUVE;
+    if (complete) {
+        guid = m_services->GetPrefabSystemUVE().SavePrefabUVE(entityManager, m_services->GetAssetDatabaseUVE(),
+                                                             built.front(), path);
+    }
+    if (!built.empty()) {
+        DestroyDocumentSubtreeUVE(built.front());
+    }
+    InvalidateHierarchyFilterCacheUVE();
+    if (guid == Asset::kInvalidAssetGuidUVE) {
+        return std::nullopt;
+    }
+    return path;
+}
+
+Scene::EntityUVE EditorUVE::PlaceEntityAssetUVE(const std::filesystem::path& path, Scene::EntityUVE parent) {
+    std::string extension = path.extension().string();
+    std::transform(extension.begin(), extension.end(), extension.begin(),
+                   [](const unsigned char character) { return static_cast<char>(std::tolower(character)); });
+    std::error_code error;
+    if (!IsAuthoringCommandAllowedUVE() || (extension != ".uveentity" && extension != ".uveprefab") ||
+        !std::filesystem::is_regular_file(path, error)) {
+        return Scene::kInvalidEntityUVE;
+    }
+    if (parent == Scene::kInvalidEntityUVE || !IsDocumentEntityUVE(parent)) {
+        parent = ResolveNewNodeParentUVE();
+    }
+
+    const EditorSelectionSnapshotUVE selectionBefore = CaptureSelectionSnapshotUVE();
+    const bool dirtyBefore = m_sceneDirty;
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    const std::string rootName = MakeUniqueDocumentEntityNameUVE(path.stem().string());
+    const Asset::AssetGuidUVE guid = m_services->GetAssetDatabaseUVE().RegisterUVE(path);
+    const Scene::EntityUVE root = m_services->GetPrefabSystemUVE().InstantiateUVE(
+        entityManager, m_services->GetSceneGraphUVE(), m_services->GetAssetDatabaseUVE(), guid, parent);
+    if (root == Scene::kInvalidEntityUVE) {
+        return Scene::kInvalidEntityUVE;
+    }
+    if (entityManager.HasComponentUVE<Scene::NameComponentUVE>(root)) {
+        entityManager.GetComponentUVE<Scene::NameComponentUVE>(root).name = rootName;
+    }
+    InvalidateHierarchyFilterCacheUVE();
+    PlaceNewDocumentNodeUVE(root);
+
+    const std::optional<Scene::SceneSnapshotUVE> snapshot = CaptureSubtreeUVE(root);
+    if (!snapshot.has_value()) {
+        DestroyDocumentSubtreeUVE(root);
+        RestoreSelectionUVE(selectionBefore);
+        m_sceneDirty = dirtyBefore;
+        return Scene::kInvalidEntityUVE;
+    }
+    SelectEntityUVE(root);
+    m_sceneDirty = true;
+    RecordHistoryUVE(SceneNodeCreationHistoryEntryUVE{*snapshot, Scene::ResolveSceneNodeKindUVE(entityManager, root),
+                                                      root, selectionBefore, CaptureSelectionSnapshotUVE(),
+                                                      dirtyBefore, true, parent});
+    return root;
+}
+
+bool EditorUVE::SetDefaultPlayerEntityUVE(const std::filesystem::path& contentRelativePath) {
+    Config::SettingsDocumentUVE& project = m_services->GetProjectSettingsUVE();
+    const std::string value = contentRelativePath.generic_string();
+    if (!project.SetValueUVE(Core::EngineProjectSettingIdUVE::kDefaultPlayerEntityUVE, Config::SettingValueUVE{value})) {
+        return false;
+    }
+    return SaveProjectSettingsUVE();
+}
+
+std::string EditorUVE::GetDefaultPlayerEntityUVE() const {
+    const std::optional<Config::SettingValueUVE> value =
+        m_services->GetProjectSettingsUVE().GetValueUVE(Core::EngineProjectSettingIdUVE::kDefaultPlayerEntityUVE);
+    const auto* const text = value.has_value() ? std::get_if<std::string>(&*value) : nullptr;
+    return text != nullptr ? *text : std::string{};
 }
 
 bool EditorUVE::RefreshSelectedPrefabUVE() {
@@ -1877,19 +2014,7 @@ Scene::EntityUVE EditorUVE::CreateDocumentEntityUVE(const EditorEntityKindUVE ki
     return entity;
 }
 
-Scene::EntityUVE EditorUVE::CreateDocumentSceneNodeUVE(
-    const Scene::Nodes::SceneNodeKindUVE kind) {
-    if (!IsAuthoringCommandAllowedUVE() || m_selectedEntities.size() > 1U) {
-        return Scene::kInvalidEntityUVE;
-    }
-    const Scene::Nodes::SceneNodeDescriptorUVE* descriptor =
-        Scene::Nodes::FindSceneNodeDescriptorUVE(kind);
-    if (descriptor == nullptr || !descriptor->libraryCreatable) {
-        return Scene::kInvalidEntityUVE;
-    }
-
-    const EditorSelectionSnapshotUVE selectionBefore = CaptureSelectionSnapshotUVE();
-    const bool dirtyBefore = m_sceneDirty;
+Scene::EntityUVE EditorUVE::CreateSceneNodeEntityInternalUVE(const Scene::Nodes::SceneNodeKindUVE kind) {
     Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
     const auto createNodeWithComponent = [this, &entityManager](auto component) {
@@ -2077,11 +2202,31 @@ Scene::EntityUVE EditorUVE::CreateDocumentSceneNodeUVE(
             return Scene::kInvalidEntityUVE;
     }
 
+    if (entity != Scene::kInvalidEntityUVE) {
+        // Typed at once, so snapshots taken of it (undo, prefab save) bring the type back with it.
+        Scene::SetSceneNodeKindUVE(entityManager, entity, kind);
+    }
+    return entity;
+}
+
+Scene::EntityUVE EditorUVE::CreateDocumentSceneNodeUVE(
+    const Scene::Nodes::SceneNodeKindUVE kind) {
+    if (!IsAuthoringCommandAllowedUVE() || m_selectedEntities.size() > 1U) {
+        return Scene::kInvalidEntityUVE;
+    }
+    const Scene::Nodes::SceneNodeDescriptorUVE* descriptor =
+        Scene::Nodes::FindSceneNodeDescriptorUVE(kind);
+    if (descriptor == nullptr || !descriptor->libraryCreatable) {
+        return Scene::kInvalidEntityUVE;
+    }
+
+    const EditorSelectionSnapshotUVE selectionBefore = CaptureSelectionSnapshotUVE();
+    const bool dirtyBefore = m_sceneDirty;
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    const Scene::EntityUVE entity = CreateSceneNodeEntityInternalUVE(kind);
     if (entity == Scene::kInvalidEntityUVE) {
         return Scene::kInvalidEntityUVE;
     }
-    // Typed before the snapshot below, so undo and redo bring the type back with the node.
-    Scene::SetSceneNodeKindUVE(entityManager, entity, kind);
 
     // New nodes join the hierarchy instead of becoming document roots, and are placed before the
     // snapshot below is taken, so undo and redo restore the same place.
@@ -4261,6 +4406,16 @@ void EditorUVE::LoadSessionSettingsUVE() {
             SetInspectorFoldOpenUVE(key, config.GetBoolUVE(prefix + "open", true));
         }
     }
+    // Recent "+ Add" items; an id the catalogue no longer has is dropped rather than kept.
+    m_contentCreateRecent.clear();
+    const std::int64_t recentCount = std::clamp(config.GetIntUVE("editor.content.recent.count", 0), std::int64_t{0},
+                                                std::int64_t{5});
+    for (std::int64_t index = recentCount - 1; index >= 0; --index) {
+        const std::string id = config.GetStringUVE("editor.content.recent." + std::to_string(index), "");
+        if (FindContentCatalogueItemUVE(id) != nullptr) {
+            PushContentCreateRecentUVE(m_contentCreateRecent, id);
+        }
+    }
     constexpr std::int64_t kMaxPersistedFavoritesUVE = 128;
     const std::int64_t favoritesCount =
         std::clamp(config.GetIntUVE("editor.favorites.count", 0), std::int64_t{0}, kMaxPersistedFavoritesUVE);
@@ -4320,6 +4475,10 @@ bool EditorUVE::SaveSessionSettingsUVE() {
         const std::string prefix = "editor.inspector.folds." + std::to_string(foldIndex++) + ".";
         config.SetStringUVE(prefix + "key", key);
         config.SetBoolUVE(prefix + "open", open);
+    }
+    config.SetIntUVE("editor.content.recent.count", static_cast<std::int64_t>(m_contentCreateRecent.size()));
+    for (std::size_t index = 0U; index < m_contentCreateRecent.size(); ++index) {
+        config.SetStringUVE("editor.content.recent." + std::to_string(index), m_contentCreateRecent[index]);
     }
     constexpr std::size_t kMaxPersistedFavoritesUVE = 128U;
     const std::size_t favoritesToPersist = std::min(m_favoriteProjectPaths.size(), kMaxPersistedFavoritesUVE);
@@ -4406,6 +4565,13 @@ void EditorUVE::AcceptHierarchyDropTargetUVE(const Scene::EntityUVE targetParent
         std::memcpy(&source, payload->Data, sizeof(source));
         static_cast<void>(ReparentDocumentEntityUVE(source, targetParent));
     }
+    // An entity asset dragged out of Content lands under the row, or in the scene for empty space.
+    const ImGuiPayload* const asset = ImGui::AcceptDragDropPayload(kContentEntityPayloadUVE);
+    if (asset != nullptr && asset->DataSize > 1) {
+        const std::string path(static_cast<const char*>(asset->Data), static_cast<std::size_t>(asset->DataSize - 1));
+        static_cast<void>(PlaceEntityAssetUVE(
+            path, targetParent != Scene::kInvalidEntityUVE ? targetParent : EnsureDocumentSceneRootUVE()));
+    }
     ImGui::EndDragDropTarget();
 }
 
@@ -4424,6 +4590,9 @@ EditorUVE::ContentBrowserItemTypeUVE EditorUVE::ClassifyContentBrowserEntryUVE(
     }
     if (extension == ".uveprefab") {
         return ContentBrowserItemTypeUVE::Prefab;
+    }
+    if (extension == ".uveentity") {
+        return ContentBrowserItemTypeUVE::Entity;
     }
     if (extension == ".uvebundle") {
         return ContentBrowserItemTypeUVE::Bundle;
@@ -4476,6 +4645,8 @@ const char* EditorUVE::GetContentBrowserItemTypeLabelUVE(const ContentBrowserIte
             return "Scene";
         case ContentBrowserItemTypeUVE::Prefab:
             return "Prefab";
+        case ContentBrowserItemTypeUVE::Entity:
+            return "Entity";
         case ContentBrowserItemTypeUVE::Bundle:
             return "Bundle";
         case ContentBrowserItemTypeUVE::Mesh:
@@ -4544,7 +4715,7 @@ bool EditorUVE::DoesContentBrowserEntryMatchFocusUVE(const Asset::ProjectFileEnt
         case ContentBrowserTypeFocusUVE::Scene:
             return type == ContentBrowserItemTypeUVE::Scene;
         case ContentBrowserTypeFocusUVE::Prefab:
-            return type == ContentBrowserItemTypeUVE::Prefab;
+            return type == ContentBrowserItemTypeUVE::Prefab || type == ContentBrowserItemTypeUVE::Entity;
         case ContentBrowserTypeFocusUVE::Bundle:
             return type == ContentBrowserItemTypeUVE::Bundle;
         case ContentBrowserTypeFocusUVE::Mesh:

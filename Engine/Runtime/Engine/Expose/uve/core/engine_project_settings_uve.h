@@ -20,6 +20,8 @@ inline constexpr std::string_view kPhysicsGravityUVE = "physics.3d.gravity";
 inline constexpr std::string_view kShadowMapResolutionUVE = "rendering.shadows.mapResolution";
 inline constexpr std::string_view kShadowFilterUVE = "rendering.shadows.filter";
 inline constexpr std::string_view kAutoSaveIntervalUVE = "application.save.autoSaveInterval";
+/// The `.uveentity` (Content-relative path) a player is spawned from when Play starts. Empty: none.
+inline constexpr std::string_view kDefaultPlayerEntityUVE = "game.player.defaultEntity";
 } // namespace EngineProjectSettingIdUVE
 
 /// The two sets of 32 layers a project names: physics layers (what a collider is on and looks

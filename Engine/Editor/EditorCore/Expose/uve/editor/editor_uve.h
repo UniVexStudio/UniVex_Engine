@@ -428,6 +428,43 @@ public:
     /// GUID through the existing PrefabSystemUVE. This command never runs during Play or a viewport gesture.
     [[nodiscard]] bool SaveSelectedPrefabUVE(const std::filesystem::path& path);
 
+    /// Makes what the Content catalogue item `itemId` stands for inside `directory`: a folder, or a
+    /// `.uveentity` holding the item's node tree with its root named after the file. Names never
+    /// collide ("Character", "Character 2", ...). The document is not touched and no undo step is
+    /// recorded. Returns the new path, or nothing in Play, for an unknown item or a failed write.
+    [[nodiscard]] std::optional<std::filesystem::path> CreateContentCatalogueItemUVE(
+        std::string_view itemId, const std::filesystem::path& directory);
+
+    /// Brings the entity asset (`.uveentity` or `.uveprefab`) at `path` into the scene under
+    /// `parent` - or, when that is invalid, where a new node would go - selects it and records one
+    /// undo step. Returns the new root, or kInvalidEntityUVE.
+    [[nodiscard]] Scene::EntityUVE PlaceEntityAssetUVE(const std::filesystem::path& path,
+                                                       Scene::EntityUVE parent = Scene::kInvalidEntityUVE);
+
+    /// Stores `contentRelativePath` (a `.uveentity`) as the project's Default Player and saves the
+    /// project settings. An empty path clears it.
+    [[nodiscard]] bool SetDefaultPlayerEntityUVE(const std::filesystem::path& contentRelativePath);
+    [[nodiscard]] std::string GetDefaultPlayerEntityUVE() const;
+
+    /// `directory/stem.extension`, or `directory/stem N.extension` with the smallest N >= 2 that is
+    /// free. `extension` is empty for a folder.
+    [[nodiscard]] static std::filesystem::path MakeUniqueContentPathUVE(const std::filesystem::path& directory,
+                                                                        std::string_view stem,
+                                                                        std::string_view extension);
+
+    /// Renames `file` (a file or folder) to `newStem` plus its old extension, in the same folder.
+    /// Nothing happens for an empty or path-like stem, or when the name is taken. Returns the new
+    /// path. An asset already placed in a scene keeps pointing at the old name.
+    [[nodiscard]] static std::optional<std::filesystem::path> RenameContentFileUVE(const std::filesystem::path& file,
+                                                                                   std::string_view newStem);
+
+    /// Copies `file` next to itself under the first free name ("Hero 2.uveentity"). Folders are
+    /// copied whole. Returns the copy's path.
+    [[nodiscard]] static std::optional<std::filesystem::path> DuplicateContentFileUVE(const std::filesystem::path& file);
+
+    /// Moves `id` to the front of `recent`, without duplicates, keeping at most five.
+    static void PushContentCreateRecentUVE(std::vector<std::string>& recent, std::string_view id);
+
     /// Refreshes the sole selected prefab instance from its current source revision. Dirty instances
     /// are rejected with merge-required semantics and are never silently overwritten.
     [[nodiscard]] bool RefreshSelectedPrefabUVE();
@@ -1003,6 +1040,9 @@ private:
         Folder,
         Scene,
         Prefab,
+        /// A `.uveentity`: a prefab envelope made from the Content "+ Add" catalogue. It opens as
+        /// a tree (Open Tree) rather than as a plain prefab.
+        Entity,
         Bundle,
         Mesh,
         /// A model source with a skeleton (mesh plus bones), as opposed to a static Mesh.
@@ -1292,6 +1332,9 @@ private:
     /// Creates a document entity for one node kind from that kind's NodeDefinition: a
     /// uniquely-named entity shell plus the definition's component recipe. Defined in
     /// editor_uve.cpp next to its only call sites.
+    /// A new, typed, unparented node of `kind` with no undo step - the recipe both the Add menus
+    /// and the Content catalogue build from.
+    [[nodiscard]] Scene::EntityUVE CreateSceneNodeEntityInternalUVE(Scene::Nodes::SceneNodeKindUVE kind);
     template <typename Definition, typename ApplyFunc>
     [[nodiscard]] Scene::EntityUVE CreateNodeDefinitionEntityInternalUVE(const Definition& definition,
                                                                          ApplyFunc applyDefinition);
@@ -1550,6 +1593,14 @@ private:
     /// filesystem baseline. It never schedules imports or mutates project files.
     void RefreshProjectFileIndexUVE();
     void DrawFilesystemContextPopupUVE();
+    /// The Content "+ Add" menu's body - also what right-clicking empty Content space opens.
+    void DrawContentCreateMenuUVE(const std::filesystem::path& contentRoot, const std::filesystem::path& directory);
+    /// Draws the inline name field over a card while it is being renamed; true while it is.
+    bool DrawContentRenameFieldUVE(const std::filesystem::path& contentRoot,
+                                   const Asset::ProjectFileEntryUVE& entry, float x, float y, float width);
+    void BeginContentRenameUVE(const std::filesystem::path& relativePath);
+    /// A drop target for an entity asset dragged out of Content; places it under `parent`.
+    void AcceptContentEntityDropUVE(Scene::EntityUVE parent);
     /// Model sources (.glb/.gltf/.obj) are imported automatically: the source stays the thing an
     /// author sees and picks, and its converted mesh lives in the derived-data folder beside the
     /// import cache, never in the content folder.
@@ -1780,8 +1831,18 @@ private:
     std::optional<Asset::AssetRecordUVE> m_selectedAsset;
     std::optional<Asset::ProjectFileEntryUVE> m_selectedProjectFile;
     std::optional<Asset::ProjectFileEntryUVE> m_filesystemContextEntry;
-    std::string m_filesystemContextFilter;
     bool m_filesystemContextVisible = false;
+    /// Content "+ Add": last five item ids used (persisted), the search text, and a request from
+    /// a right-click on empty space to open the menu this frame.
+    std::vector<std::string> m_contentCreateRecent;
+    std::string m_contentCreateFilter;
+    bool m_contentCreateMenuRequested = false;
+    /// The card being renamed inline (Content-relative), its text, and whether to focus it.
+    std::filesystem::path m_contentRenamePath;
+    std::string m_contentRenameText;
+    bool m_contentRenameFocus = false;
+    /// One line under the Content toolbar about the last action ("Entity Editor comes next").
+    std::string m_contentStatusMessage;
     std::filesystem::path m_filesystemLongPressPath;
     float m_filesystemLongPressSeconds = 0.0F;
     bool m_projectFileSnapshotInitialized = false;

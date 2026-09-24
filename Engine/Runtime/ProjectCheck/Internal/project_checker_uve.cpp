@@ -37,7 +37,7 @@ namespace {
 [[nodiscard]] std::optional<Asset::AssetKindUVE> ExpectedKindUVE(const std::filesystem::path& path) {
     const std::string extension = path.extension().string();
     if (extension == ".uvescene") return Asset::AssetKindUVE::Scene;
-    if (extension == ".uveprefab") return Asset::AssetKindUVE::Prefab;
+    if (extension == ".uveprefab" || extension == ".uveentity") return Asset::AssetKindUVE::Prefab;
     if (extension == ".uvebundle") return Asset::AssetKindUVE::Bundle;
     if (extension == ".uvemodel") return Asset::AssetKindUVE::Mesh;
     if (extension == ".uvetex") return Asset::AssetKindUVE::Texture;
