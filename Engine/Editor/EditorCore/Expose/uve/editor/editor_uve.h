@@ -1397,11 +1397,16 @@ private:
     /// a hand-written registration and a per-type switch for each of them: a component that
     /// declares its properties is inspectable without the inspector being told it exists.
     void RegisterMetadataInspectorDrawersUVE();
+    /// A type a section may draw inside itself, and the hosts that type prefers over this one.
+    struct NestedMetadataSectionUVE final {
+        const Core::TypeMetadataEntryUVE* entry = nullptr;
+        std::vector<const Core::TypeMetadataEntryUVE*> preferredHosts;
+    };
     /// Draws one component's section: a collapsible header (or, for a type presented inline, just
-    /// its rows), its properties, and the section of each type in `nested` the entity also carries.
-    /// Writes go through SetSelectedComponentPropertyUVE below.
+    /// its rows), its properties, and the section of each type in `nested` the entity also carries
+    /// and no preferred host of it draws. Writes go through SetSelectedComponentPropertyUVE below.
     void DrawMetadataComponentDrawerUVE(Scene::EntityUVE entity, const Core::TypeMetadataEntryUVE& entry,
-                                        const std::vector<const Core::TypeMetadataEntryUVE*>& nested);
+                                        const std::vector<NestedMetadataSectionUVE>& nested);
     /// Draws the visible properties of one component as label/value rows. Runtime-owned rows appear
     /// only during Play, where they describe something real; a row another property declares as its
     /// resolved answer is shown beside that property instead of on its own.

@@ -4,45 +4,40 @@
 
 #include <string_view>
 
+#include "uve/component/character_controller_component_uve.h"
 #include "uve/component/collider_component_uve.h"
 #include "uve/component/entity_uve.h"
-#include "uve/component/rigid_body_component_uve.h"
 
 namespace UVE::Scene {
 
 class IEntityManagerUVE;
 
-/// Authoring definition for the CharacterBody3D scene node: the component set and defaults a
-/// freshly created CharacterBody3D entity attaches — a collider plus a kinematic rigid body,
-/// which is the configuration Physics/CharacterControllerUVE drives (gravity never moves it; the
-/// controller does). This recipe used to be hardcoded inline in EditorUVE's creation switch; it
-/// now has the same per-file home every other node kind has. Per
-/// Engine/Runtime/Scene/README.md's "one truth per concept" rule this holds the *recipe*, not a
-/// second copy of component storage.
+/// CharacterBody3D: a body moved by its own code rather than by forces - a player, an NPC, an
+/// enemy. Node3D > PhysicsObject3D > SolidBody3D > CharacterBody3D.
+///
+/// A new one is ready to walk: it comes with a person-sized capsule and the built-in movement on,
+/// so dropping one onto a floor and pressing Play is enough to move it around. No rigid body is
+/// attached - the controller owns all of its motion.
 struct CharacterBody3DNodeDefinitionUVE final {
-    /// Default document-entity name for a freshly created node of this kind. (Previously the
-    /// generic "Empty".)
     static constexpr std::string_view defaultName = "CharacterBody3D";
 
-    /// Character authored defaults; the entity's transform is attached by the creation shell.
-    ColliderComponentUVE collider{};
-    /// Kinematic by default so the character controller owns all motion (matches the recipe the
-    /// editor previously hardcoded: default body with isKinematic flipped to true).
-    RigidBodyComponentUVE body = MakeDefaultBodyUVE();
+    /// Person-sized: 1.8 m tall, 0.8 m across.
+    ColliderComponentUVE collider = MakeDefaultColliderUVE();
+    CharacterControllerComponentUVE controller{};
 
-    [[nodiscard]] static RigidBodyComponentUVE MakeDefaultBodyUVE() noexcept {
-        RigidBodyComponentUVE body{};
-        body.isKinematic = true;
-        return body;
+    [[nodiscard]] static ColliderComponentUVE MakeDefaultColliderUVE() noexcept {
+        ColliderComponentUVE collider{};
+        collider.shapeType = ColliderShapeTypeUVE::Capsule;
+        collider.radius = 0.4F;
+        collider.height = 1.8F;
+        return collider;
     }
 };
 
 [[nodiscard]] bool IsCharacterBody3DNodeDefinitionValidUVE(const CharacterBody3DNodeDefinitionUVE& value) noexcept;
 
-/// Attaches this node's components to `entity` using the definition's authored defaults. The
-/// entity must be alive and must not already have any of the attached component types.
-/// Every application first guarantees the Node3D baseline (Transform/WorldTransform/
-/// Hierarchy/Name) through EnsureNode3DBaselineUVE - this kind is Node3D plus its recipe.
+/// Applies the SolidBody3D base (and through it PhysicsObject3D and Node3D), then the collider
+/// and the controller, each only where the entity does not already have one.
 void ApplyCharacterBody3DNodeDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
                                            const CharacterBody3DNodeDefinitionUVE& value);
 

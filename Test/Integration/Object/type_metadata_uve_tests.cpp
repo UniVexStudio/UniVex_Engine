@@ -105,8 +105,14 @@ TEST(TypeMetadataRegistryUVETest, RegisterTypeUVE_RejectsPresentationLinksThatPo
     EXPECT_FALSE(registry.RegisterTypeUVE({TypeMetadataKindUVE::Component, "t.self", "T", 1U, {mode}, {}})
                      .IsRegisteredUVE());
     TypeMetadataEntryUVE nestedInItself{TypeMetadataKindUVE::Component, "t.nest", "T", 1U, {}, {}};
-    nestedInItself.nestedUnderTypeId = "t.nest";
+    nestedInItself.nestedUnderTypeIds = {"t.other", "t.nest"};
     EXPECT_FALSE(registry.RegisterTypeUVE(nestedInItself).IsRegisteredUVE());
+    TypeMetadataEntryUVE hostTwice{TypeMetadataKindUVE::Component, "t.twice", "T", 1U, {}, {}};
+    hostTwice.nestedUnderTypeIds = {"t.host", "t.host"};
+    EXPECT_FALSE(registry.RegisterTypeUVE(hostTwice).IsRegisteredUVE());
+    TypeMetadataEntryUVE twoHosts{TypeMetadataKindUVE::Component, "t.two_hosts", "T", 1U, {}, {}};
+    twoHosts.nestedUnderTypeIds = {"t.host_a", "t.host_b"};
+    EXPECT_TRUE(registry.RegisterTypeUVE(twoHosts).IsRegisteredUVE());
 
     mode.resolvedByProperty = "resolved";
     const TypeMetadataPropertyUVE resolved{"resolved", "Resolved", "Enum", false};

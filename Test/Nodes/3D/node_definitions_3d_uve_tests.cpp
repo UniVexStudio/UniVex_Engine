@@ -13,6 +13,8 @@
 #include "uve/component/physics_object_component_uve.h"
 #include "uve/component/render_instance_component_uve.h"
 #include "uve/component/light_emitter_component_uve.h"
+#include "uve/component/character_controller_component_uve.h"
+#include "uve/component/solid_body_component_uve.h"
 #include "uve/component/surface_instance_component_uve.h"
 #include "uve/component/camera_component_uve.h"
 #include "uve/component/collider_component_uve.h"
@@ -271,16 +273,57 @@ TEST_F(Node3DDefinitionsUVETest, PrimitiveMeshRecipesKeepTheirDistinctShapesColo
     }
 }
 
-TEST_F(Node3DDefinitionsUVETest, CharacterBodyRecipeIsKinematicByContract) {
+TEST_F(Node3DDefinitionsUVETest, CharacterBodyIsItsChainPlusAReadyToWalkCapsule) {
     const EntityUVE entity = CreateEntityUVE();
     ApplyCharacterBody3DNodeDefinitionUVE(entityManager, entity, CharacterBody3DNodeDefinitionUVE{});
+    // Node3D > PhysicsObject3D > SolidBody3D > CharacterBody3D, and nothing from another branch.
+    ExpectNode3DBaselineUVE(entityManager, entity, CharacterBody3DNodeDefinitionUVE::defaultName);
+    EXPECT_TRUE(entityManager.HasComponentUVE<PhysicsObjectComponentUVE>(entity));
+    EXPECT_TRUE(entityManager.HasComponentUVE<SolidBodyComponentUVE>(entity));
+    ASSERT_TRUE(entityManager.HasComponentUVE<CharacterControllerComponentUVE>(entity));
+    EXPECT_FALSE(entityManager.HasComponentUVE<RigidBodyComponentUVE>(entity));
+    EXPECT_FALSE(entityManager.HasComponentUVE<RenderInstanceComponentUVE>(entity));
+    // A person-sized capsule, so it walks the moment Play starts.
     ASSERT_TRUE(entityManager.HasComponentUVE<ColliderComponentUVE>(entity));
-    ASSERT_TRUE(entityManager.HasComponentUVE<RigidBodyComponentUVE>(entity));
-    EXPECT_TRUE(entityManager.GetComponentUVE<RigidBodyComponentUVE>(entity).isKinematic);
+    const ColliderComponentUVE& shape = entityManager.GetComponentUVE<ColliderComponentUVE>(entity);
+    EXPECT_EQ(shape.shapeType, ColliderShapeTypeUVE::Capsule);
+    EXPECT_FLOAT_EQ(shape.height, 1.8F);
+    EXPECT_FLOAT_EQ(shape.radius, 0.4F);
+    EXPECT_TRUE(entityManager.GetComponentUVE<CharacterControllerComponentUVE>(entity).builtInMovement);
 
-    CharacterBody3DNodeDefinitionUVE nonKinematic{};
-    nonKinematic.body.isKinematic = false;
-    EXPECT_FALSE(IsCharacterBody3DNodeDefinitionValidUVE(nonKinematic));
+    // Applying again keeps what was authored.
+    entityManager.GetComponentUVE<CharacterControllerComponentUVE>(entity).moveSpeed = 9.0F;
+    ApplyCharacterBody3DNodeDefinitionUVE(entityManager, entity, CharacterBody3DNodeDefinitionUVE{});
+    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<CharacterControllerComponentUVE>(entity).moveSpeed, 9.0F);
+}
+
+TEST_F(Node3DDefinitionsUVETest, CharacterBodyRefusesSettingsItCannotRunWith) {
+    EXPECT_TRUE(IsCharacterBody3DNodeDefinitionValidUVE(CharacterBody3DNodeDefinitionUVE{}));
+    const auto invalid = [](auto change) {
+        CharacterBody3DNodeDefinitionUVE definition{};
+        change(definition.controller);
+        return !IsCharacterBody3DNodeDefinitionValidUVE(definition);
+    };
+    EXPECT_TRUE(invalid([](CharacterControllerComponentUVE& c) { c.airControl = 1.5F; }));
+    EXPECT_TRUE(invalid([](CharacterControllerComponentUVE& c) { c.moveSpeed = -1.0F; }));
+    EXPECT_TRUE(invalid([](CharacterControllerComponentUVE& c) { c.maxSlides = 0U; }));
+    EXPECT_TRUE(invalid([](CharacterControllerComponentUVE& c) { c.maxSlides = 33U; }));
+    EXPECT_TRUE(invalid([](CharacterControllerComponentUVE& c) { c.coyoteTimeSeconds = -0.1F; }));
+    EXPECT_TRUE(invalid([](CharacterControllerComponentUVE& c) { c.motionMode = static_cast<CharacterMotionModeUVE>(7); }));
+    EXPECT_TRUE(invalid([](CharacterControllerComponentUVE& c) {
+        c.velocity = Math::Vector3UVE{std::numeric_limits<float>::infinity(), 0.0F, 0.0F};
+    }));
+}
+
+TEST_F(Node3DDefinitionsUVETest, SolidBodyBaseSitsOnPhysicsObject) {
+    const EntityUVE entity = CreateEntityUVE();
+    ApplySolidBody3DBaseUVE(entityManager, entity, "StaticBody3D");
+    ExpectNode3DBaselineUVE(entityManager, entity, "StaticBody3D");
+    EXPECT_TRUE(entityManager.HasComponentUVE<PhysicsObjectComponentUVE>(entity));
+    EXPECT_TRUE(entityManager.HasComponentUVE<SolidBodyComponentUVE>(entity));
+    entityManager.GetComponentUVE<SolidBodyComponentUVE>(entity).lockMotionZ = true;
+    ApplySolidBody3DBaseUVE(entityManager, entity, "StaticBody3D");
+    EXPECT_TRUE(entityManager.GetComponentUVE<SolidBodyComponentUVE>(entity).lockMotionZ);
 }
 
 TEST_F(Node3DDefinitionsUVETest, AnimatableBodyRecipeMatchesTheFormerInlineEditorRecipe) {

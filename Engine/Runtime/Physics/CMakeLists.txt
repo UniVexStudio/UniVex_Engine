@@ -9,6 +9,7 @@
 add_library(uve_physics STATIC
     Internal/area_overlap_lifecycle_tracker_uve.cpp
     Internal/character_controller_uve.cpp
+    Internal/character_body_motion_uve.cpp
     Internal/area_overlap_system_uve.cpp
     Internal/angular_dynamics_uve.cpp
     Internal/collider_world_aabb_cache_uve.cpp

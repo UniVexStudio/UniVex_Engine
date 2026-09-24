@@ -566,8 +566,9 @@ TEST(EditorUVETest, InspectorDrawerRegistrationUVE_IncludesStableHierarchyDrawer
         // 27 before the three abstract 3D bases, each of which brings one section; 30 before the
         // old Name and Hierarchy drawers were removed and SurfaceInstance3D, LightEmitter3D,
         // Decal3D and FogVolume3D each brought one.
-        // 33 with Skeleton3D's own section.
-        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorDrawerCountUVE(editor), 33U);
+        // 33 with Skeleton3D's own section; 34 with SolidBody3D's.
+        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorDrawerCountUVE(editor), 34U);
+        EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "solid-body"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "skeleton-3d"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "surface-instance"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "light-emitter"));
@@ -4984,6 +4985,35 @@ TEST(EditorUVETest, SurfaceInstanceChildInspectorUVE_IsOwnSectionThenSurfaceRend
         }
         EXPECT_EQ(EditorUVEAccessUVE::GetEligibleInspectorDrawerIdsUVE(editor, particles),
                   expected("particle-emitter"));
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
+TEST(EditorUVETest, CharacterBodyInspectorUVE_IsItsChainToTheRootAndNothingElse) {
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_character_body_inspector.uvescene");
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        const Scene::EntityUVE body = entityManager.CreateEntityUVE();
+        AttachRootUVE(engine, body, Scene::TransformComponentUVE{});
+        Scene::ApplyCharacterBody3DNodeDefinitionUVE(entityManager, body, Scene::CharacterBody3DNodeDefinitionUVE{});
+        // CharacterBody3D > SolidBody3D > PhysicsObject3D > Node3D > Node. The capsule, layer and mask
+        // are drawn inside PhysicsObject3D, so the collider has no section of its own.
+        EXPECT_EQ(EditorUVEAccessUVE::GetEligibleInspectorDrawerIdsUVE(editor, body),
+                  (std::vector<std::string>{"character-controller", "solid-body", "physics-object", "transform",
+                                            "visibility", "process", "physics-interpolation", "auto-translate",
+                                            "editor-description", "script", "node-metadata"}));
+        // A primitive still draws its collider in its own section, not in PhysicsObject3D's.
+        const Scene::EntityUVE box = entityManager.CreateEntityUVE();
+        AttachRootUVE(engine, box, Scene::TransformComponentUVE{});
+        Scene::ApplyBoxMesh3DNodeDefinitionUVE(entityManager, box, Scene::BoxMesh3DNodeDefinitionUVE{});
+        const std::vector<std::string> boxIds = EditorUVEAccessUVE::GetEligibleInspectorDrawerIdsUVE(editor, box);
+        EXPECT_EQ(std::count(boxIds.begin(), boxIds.end(), "collider"), 0);
+        EXPECT_EQ(std::count(boxIds.begin(), boxIds.end(), "physics-object"), 0);
         editor.ShutdownUVE();
     }
     engine.Shutdown();

@@ -6,6 +6,7 @@
 #include "uve/component/light_emitter_component_uve.h"
 #include "uve/component/physics_object_component_uve.h"
 #include "uve/component/render_instance_component_uve.h"
+#include "uve/component/solid_body_component_uve.h"
 #include "uve/component/surface_instance_component_uve.h"
 #include "uve/component/visibility_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
@@ -54,6 +55,12 @@ void ApplyBoneModifier3DBaseUVE(IEntityManagerUVE& entityManager, const EntityUV
 void ApplyPhysicsObject3DBaseUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
                                  const std::string_view nameFallback) {
     ApplyBaseUVE<PhysicsObjectComponentUVE>(entityManager, entity, nameFallback);
+}
+
+void ApplySolidBody3DBaseUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
+                             const std::string_view nameFallback) {
+    ApplyPhysicsObject3DBaseUVE(entityManager, entity, nameFallback);
+    EnsureUVE<SolidBodyComponentUVE>(entityManager, entity);
 }
 
 void ApplyRenderInstance3DBaseUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,

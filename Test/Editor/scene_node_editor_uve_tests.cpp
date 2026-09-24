@@ -14,6 +14,8 @@
 #include "uve/component/audio_source_component_uve.h"
 #include "uve/component/camera_component_uve.h"
 #include "uve/component/collider_component_uve.h"
+#include "uve/component/solid_body_component_uve.h"
+#include "uve/component/character_controller_component_uve.h"
 #include "uve/nodes/3d/all_nodes_3d_uve.h"
 #include "uve/component/light_component_uve.h"
 #include "uve/component/mesh_component_uve.h"
@@ -63,8 +65,9 @@ TEST(SceneNodeEditorUVETest, CentralizedRegistryCreationUVE_AttachesExpectedAuth
             editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::CharacterBody3D);
         ASSERT_NE(character, Scene::kInvalidEntityUVE);
         EXPECT_TRUE(entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(character));
-        ASSERT_TRUE(entityManager.HasComponentUVE<Scene::RigidBodyComponentUVE>(character));
-        EXPECT_TRUE(entityManager.GetComponentUVE<Scene::RigidBodyComponentUVE>(character).isKinematic);
+        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::CharacterControllerComponentUVE>(character));
+        // The controller owns all of its motion: no rigid body for gravity to fight over.
+        EXPECT_FALSE(entityManager.HasComponentUVE<Scene::RigidBodyComponentUVE>(character));
 
         const Scene::EntityUVE animationPlayer =
             editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::AnimationPlayer);
@@ -174,8 +177,8 @@ TEST(SceneNodeEditorUVETest, CharacterBodyCreationUVE_IsOneAtomicUndoRedoTransac
         ASSERT_NE(restored, Scene::kInvalidEntityUVE);
         EXPECT_NE(restored, created);
         EXPECT_TRUE(entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(restored));
-        ASSERT_TRUE(entityManager.HasComponentUVE<Scene::RigidBodyComponentUVE>(restored));
-        EXPECT_TRUE(entityManager.GetComponentUVE<Scene::RigidBodyComponentUVE>(restored).isKinematic);
+        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::CharacterControllerComponentUVE>(restored));
+        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::SolidBodyComponentUVE>(restored));
         EXPECT_TRUE(editor.IsSceneDirtyUVE());
         editor.ShutdownUVE();
     }

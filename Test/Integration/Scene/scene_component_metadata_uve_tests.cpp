@@ -72,7 +72,7 @@ TEST(SceneComponentMetadataUVETest, EveryLayerMaskNamesTheLayersItPicksFrom) {
             render += isRender ? 1U : 0U;
         }
     }
-    EXPECT_EQ(physics, 4U); // collider and physics object: layer and mask each
+    EXPECT_EQ(physics, 2U); // the collider's layer and mask - the one place a physics object keeps them
     EXPECT_EQ(render, 4U);  // mesh, render instance, light and decal
 }
 

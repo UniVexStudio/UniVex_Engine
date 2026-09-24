@@ -56,6 +56,7 @@
 #include "uve/component/physics_object_component_uve.h"
 #include "uve/component/primitive_mesh_component_uve.h"
 #include "uve/component/render_instance_component_uve.h"
+#include "uve/component/solid_body_component_uve.h"
 #include "uve/component/prefab_instance_component_uve.h"
 #include "uve/component/rigid_body_component_uve.h"
 #include "uve/component/script_component_uve.h"
@@ -216,11 +217,27 @@ namespace {
 }
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const CharacterControllerComponentUVE& component) {
-    return {{"moveSpeed", component.moveSpeed},
-            {"jumpHeight", component.jumpHeight},
+    return {{"motionMode", static_cast<std::uint8_t>(component.motionMode)},
             {"gravityScale", component.gravityScale},
-            {"verticalVelocity", component.verticalVelocity},
-            {"isGrounded", component.isGrounded}};
+            {"builtInMovement", component.builtInMovement},
+            {"moveSpeed", component.moveSpeed},
+            {"jumpHeight", component.jumpHeight},
+            {"airControl", component.airControl},
+            {"coyoteTimeSeconds", component.coyoteTimeSeconds},
+            {"jumpBufferSeconds", component.jumpBufferSeconds},
+            {"floorSnapLength", component.floorSnapLength},
+            {"maxStepHeight", component.maxStepHeight},
+            {"slideOnCeiling", component.slideOnCeiling},
+            {"pushRigidBodies", component.pushRigidBodies},
+            {"pushStrength", component.pushStrength},
+            {"maxPushSpeed", component.maxPushSpeed},
+            {"maxSlides", component.maxSlides},
+            {"velocity", ToJsonUVE(component.velocity)},
+            {"isOnFloor", component.isOnFloor},
+            {"isOnCeiling", component.isOnCeiling},
+            {"floorNormal", ToJsonUVE(component.floorNormal)},
+            {"timeSinceOnFloor", component.timeSinceOnFloor},
+            {"jumpBufferRemaining", component.jumpBufferRemaining}};
 }
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const CanvasComponentUVE& component) {
@@ -301,11 +318,15 @@ namespace {
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const PhysicsObjectComponentUVE& component) {
     return {{"disableMode", static_cast<std::underlying_type_t<PhysicsObjectDisableModeUVE>>(component.disableMode)},
-            {"collisionLayer", component.collisionLayer},
-            {"collisionMask", component.collisionMask},
             {"collisionPriority", component.collisionPriority},
             {"inputRayPickable", component.inputRayPickable},
             {"inputCaptureOnDrag", component.inputCaptureOnDrag}};
+}
+
+[[nodiscard]] nlohmann::json ToJsonUVE(const SolidBodyComponentUVE& component) {
+    return {{"lockMotionX", component.lockMotionX},
+            {"lockMotionY", component.lockMotionY},
+            {"lockMotionZ", component.lockMotionZ}};
 }
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const RenderInstanceComponentUVE& component) {
@@ -1446,12 +1467,36 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                       }, IsRigidBodyComponentValidUVE));
         table.emplace("CharacterControllerComponentUVE",
                       MakeRegistrationUVE<CharacterControllerComponentUVE>([](const nlohmann::json& json) {
-                          CharacterControllerComponentUVE characterController;
-                          characterController.moveSpeed = json.value("moveSpeed", 5.0F);
-                          characterController.jumpHeight = json.value("jumpHeight", 1.5F);
-                          characterController.gravityScale = json.value("gravityScale", 1.0F);
-                          characterController.verticalVelocity = json.value("verticalVelocity", 0.0F);
-                          characterController.isGrounded = json.value("isGrounded", false);
+                          // Every field falls back to its default, so a file from before a field
+                          // existed loads as if it had been left at that default.
+                          CharacterControllerComponentUVE c;
+                          c.motionMode = static_cast<CharacterMotionModeUVE>(json.value("motionMode", std::uint8_t{0}));
+                          c.gravityScale = json.value("gravityScale", c.gravityScale);
+                          c.builtInMovement = json.value("builtInMovement", c.builtInMovement);
+                          c.moveSpeed = json.value("moveSpeed", c.moveSpeed);
+                          c.jumpHeight = json.value("jumpHeight", c.jumpHeight);
+                          c.airControl = json.value("airControl", c.airControl);
+                          c.coyoteTimeSeconds = json.value("coyoteTimeSeconds", c.coyoteTimeSeconds);
+                          c.jumpBufferSeconds = json.value("jumpBufferSeconds", c.jumpBufferSeconds);
+                          c.floorSnapLength = json.value("floorSnapLength", c.floorSnapLength);
+                          c.maxStepHeight = json.value("maxStepHeight", c.maxStepHeight);
+                          c.slideOnCeiling = json.value("slideOnCeiling", c.slideOnCeiling);
+                          c.pushRigidBodies = json.value("pushRigidBodies", c.pushRigidBodies);
+                          c.pushStrength = json.value("pushStrength", c.pushStrength);
+                          c.maxPushSpeed = json.value("maxPushSpeed", c.maxPushSpeed);
+                          c.maxSlides = json.value("maxSlides", c.maxSlides);
+                          // Before velocity was a vector, only its vertical part was kept.
+                          c.velocity = json.contains("velocity")
+                                           ? Vector3FromJsonUVE(json.at("velocity"))
+                                           : Math::Vector3UVE{0.0F, json.value("verticalVelocity", 0.0F), 0.0F};
+                          c.isOnFloor = json.value("isOnFloor", json.value("isGrounded", false));
+                          c.isOnCeiling = json.value("isOnCeiling", false);
+                          if (json.contains("floorNormal")) {
+                              c.floorNormal = Vector3FromJsonUVE(json.at("floorNormal"));
+                          }
+                          c.timeSinceOnFloor = json.value("timeSinceOnFloor", 0.0F);
+                          c.jumpBufferRemaining = json.value("jumpBufferRemaining", 0.0F);
+                          CharacterControllerComponentUVE& characterController = c;
                           if (!IsCharacterControllerComponentValidUVE(characterController)) {
                               throw std::runtime_error("Invalid CharacterControllerComponentUVE payload");
                           }
@@ -1603,8 +1648,8 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                           PhysicsObjectComponentUVE object{};
                           object.disableMode = static_cast<PhysicsObjectDisableModeUVE>(
                               json.at("disableMode").get<std::underlying_type_t<PhysicsObjectDisableModeUVE>>());
-                          object.collisionLayer = json.at("collisionLayer").get<std::uint32_t>();
-                          object.collisionMask = json.at("collisionMask").get<std::uint32_t>();
+                          // collisionLayer/collisionMask in older files are ignored: the collider
+                          // owns them now.
                           object.collisionPriority = ReadFloatUVE(json.at("collisionPriority"));
                           object.inputRayPickable = json.at("inputRayPickable").get<bool>();
                           object.inputCaptureOnDrag = json.at("inputCaptureOnDrag").get<bool>();
@@ -1613,6 +1658,13 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                           }
                           return object;
                       }, IsPhysicsObjectComponentValidUVE));
+        table.emplace("SolidBodyComponentUVE", MakeRegistrationUVE<SolidBodyComponentUVE>([](const nlohmann::json& json) {
+                          SolidBodyComponentUVE body{};
+                          body.lockMotionX = json.value("lockMotionX", false);
+                          body.lockMotionY = json.value("lockMotionY", false);
+                          body.lockMotionZ = json.value("lockMotionZ", false);
+                          return body;
+                      }, [](const SolidBodyComponentUVE&) noexcept { return true; }));
         table.emplace("RenderInstanceComponentUVE",
                       MakeRegistrationUVE<RenderInstanceComponentUVE>([](const nlohmann::json& json) {
                           RenderInstanceComponentUVE instance{};
