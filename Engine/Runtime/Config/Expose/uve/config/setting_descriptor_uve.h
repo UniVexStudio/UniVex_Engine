@@ -13,7 +13,8 @@
 namespace UVE::Config {
 
 /// What kind of value a setting holds. Each maps onto the scalar store (IConfigManagerUVE): a
-/// colour is stored as one number per channel under `<id>.r`, `.g`, `.b` (and `.a`).
+/// colour is stored as one number per channel under `<id>.r`, `.g`, `.b` (and `.a`), a vector as
+/// one per component under `<id>.x`, `.y`, `.z`.
 enum class SettingTypeUVE {
     Bool,
     Int,
@@ -22,6 +23,8 @@ enum class SettingTypeUVE {
     /// A 64-bit value that must be one of the descriptor's enumEntries.
     Enum,
     Color,
+    /// Three numbers; the descriptor's bounds, if any, apply to each component.
+    Vector3,
 };
 
 /// A colour setting's value: channels in 0..1. `a` is ignored for a colour without alpha.
@@ -34,9 +37,19 @@ struct SettingColorUVE final {
     [[nodiscard]] bool operator==(const SettingColorUVE&) const = default;
 };
 
+/// A vector setting's value.
+struct SettingVector3UVE final {
+    double x = 0.0;
+    double y = 0.0;
+    double z = 0.0;
+
+    [[nodiscard]] bool operator==(const SettingVector3UVE&) const = default;
+};
+
 /// One setting's value. The alternative in use always matches the descriptor's type: bool for
-/// Bool, int64 for Int and Enum, double for Float, string for String, SettingColorUVE for Color.
-using SettingValueUVE = std::variant<bool, std::int64_t, double, std::string, SettingColorUVE>;
+/// Bool, int64 for Int and Enum, double for Float, string for String, SettingColorUVE for Color,
+/// SettingVector3UVE for Vector3.
+using SettingValueUVE = std::variant<bool, std::int64_t, double, std::string, SettingColorUVE, SettingVector3UVE>;
 
 /// Flags that describe a setting to the tools around it. The registry stores them; the settings
 /// panel, layering and migration act on them.
@@ -71,7 +84,7 @@ struct SettingDescriptorUVE final {
     SettingTypeUVE type = SettingTypeUVE::Bool;
     /// The engine default, of the type's own alternative. What "reset to default" restores.
     SettingValueUVE defaultValue = false;
-    /// Inclusive bounds for Int and Float; absent means unbounded.
+    /// Inclusive bounds for Int, Float and each component of a Vector3; absent means unbounded.
     std::optional<double> minimum;
     std::optional<double> maximum;
     /// Suggested increment for a slider or drag; purely a UI hint.
@@ -121,5 +134,9 @@ struct SettingDescriptorUVE final {
 [[nodiscard]] SettingDescriptorUVE MakeColorSettingUVE(std::string id, SettingColorUVE defaultValue, bool hasAlpha,
                                                        std::string displayName, std::string category,
                                                        std::string tooltip = {});
+[[nodiscard]] SettingDescriptorUVE MakeVector3SettingUVE(std::string id, SettingVector3UVE defaultValue,
+                                                         std::optional<double> minimum, std::optional<double> maximum,
+                                                         std::string displayName, std::string category,
+                                                         std::string tooltip = {});
 
 } // namespace UVE::Config

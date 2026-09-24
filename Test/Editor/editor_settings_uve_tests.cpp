@@ -151,6 +151,9 @@ TEST(EditorSettingsUVETest, ValuesAreFormattedTheWayAPersonReadsThem) {
     EXPECT_EQ(FormatSettingValueUVE(tab, std::int64_t{9}), "9");
     const Config::SettingDescriptorUVE& outline = *registry.FindUVE(Id::kSelectionOutlineColorUVE);
     EXPECT_EQ(FormatSettingValueUVE(outline, Config::SettingColorUVE{1.0F, 0.0F, 0.0F}), "#FF0000");
+    const Config::SettingDescriptorUVE gravity =
+        Config::MakeVector3SettingUVE("physics.gravity", {0.0, -9.81, 0.0}, std::nullopt, std::nullopt, "Gravity", "");
+    EXPECT_EQ(FormatSettingValueUVE(gravity, gravity.defaultValue), "(0, -9.81, 0)");
 }
 
 } // namespace

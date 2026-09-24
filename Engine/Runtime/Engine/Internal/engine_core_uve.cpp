@@ -262,6 +262,7 @@ void EngineCoreUVE::Init() {
     timer->Reset();
     timer->SetMaxDeltaTimeUVE(m_config.maxDeltaTimeSeconds);
     timer->SetFixedTimestepUVE(m_config.fixedUpdateFps > 0.0 ? (1.0 / m_config.fixedUpdateFps) : 0.0);
+    timer->SetMaxStepsPerTickUVE(m_config.maxFixedStepsPerFrame);
     m_timer = std::move(timer);
 
     // EventSystem sixth: it is the piece most likely to gain future

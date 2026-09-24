@@ -7,6 +7,7 @@
 #include "uve/editor/editor_uve.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <limits>
@@ -17,6 +18,7 @@
 
 #include <imgui.h>
 
+#include "editor_axis_input_uve.h"
 #include "editor_color_field_uve.h"
 #include "uve/editor/editor_settings_uve.h"
 
@@ -144,6 +146,21 @@ void DrawResetGlyphUVE(ImDrawList& drawList, const ImVec2 center, const float si
             return std::nullopt;
         }
         return SettingValueUVE{Config::SettingColorUVE{color.r, color.g, color.b, color.a}};
+    }
+    case SettingTypeUVE::Vector3: {
+        const auto& vector = std::get<Config::SettingVector3UVE>(current);
+        std::array<float, 3> components{static_cast<float>(vector.x), static_cast<float>(vector.y),
+                                        static_cast<float>(vector.z)};
+        const float speed = descriptor.step ? static_cast<float>(*descriptor.step * 0.2) : 0.01F;
+        // A drag clamps only with both bounds (equal bounds mean "unclamped" to it); the setting
+        // refuses anything outside a one-sided range anyway.
+        const bool bounded = descriptor.minimum && descriptor.maximum;
+        const float minimum = bounded ? static_cast<float>(*descriptor.minimum) : 0.0F;
+        const float maximum = bounded ? static_cast<float>(*descriptor.maximum) : 0.0F;
+        if (!DrawAxisVectorInputUVE("##value", components.data(), 3, speed, minimum, maximum)) {
+            return std::nullopt;
+        }
+        return SettingValueUVE{Config::SettingVector3UVE{components[0], components[1], components[2]}};
     }
     }
     return std::nullopt;
