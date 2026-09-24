@@ -21,10 +21,19 @@ TEST(EditorHierarchyViewUVETest, EyeIsDrawnPerModeAndAlwaysOnAHiddenNodeWhenOnHo
     EXPECT_TRUE(ShouldDrawHierarchyEyeUVE(Mode::OnHover, false, false));
 }
 
+TEST(EditorHierarchyViewUVETest, TypeHintIsLeftOutWhenItWouldOnlyRepeatTheName) {
+    EXPECT_EQ(GetHierarchyTypeHintUVE("Player", "CharacterBody3D"), "CharacterBody3D");
+    EXPECT_EQ(GetHierarchyTypeHintUVE("BoxMesh3D", "BoxMesh3D"), "");
+    EXPECT_EQ(GetHierarchyTypeHintUVE("Player", ""), "");
+    // Only an exact repeat is left out; a name that differs only in case still shows the type.
+    EXPECT_EQ(GetHierarchyTypeHintUVE("boxmesh3d", "BoxMesh3D"), "BoxMesh3D");
+}
+
 TEST(EditorHierarchyViewUVETest, DefaultsAreThePanelsBehaviourBeforeItHadPreferences) {
     const HierarchyViewSettingsUVE view{};
     EXPECT_TRUE(view.revealSelection);
     EXPECT_TRUE(view.showIcons);
+    EXPECT_TRUE(view.showTypeName); // new with node types, and on
     EXPECT_EQ(view.visibilityColumn, HierarchyVisibilityColumnUVE::Always);
     EXPECT_EQ(view.doubleClick, HierarchyDoubleClickUVE::Rename);
     EXPECT_TRUE(view.dragToReparent);

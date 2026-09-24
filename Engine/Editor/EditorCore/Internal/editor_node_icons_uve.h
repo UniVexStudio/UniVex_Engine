@@ -8,20 +8,8 @@
 
 #include <imgui.h>
 
-#include "uve/component/animation_player_component_uve.h"
-#include "uve/component/audio_source_component_uve.h"
-#include "uve/component/camera_component_uve.h"
-#include "uve/component/collider_component_uve.h"
-#include "uve/component/entity_uve.h"
-#include "uve/component/light_component_uve.h"
-#include "uve/component/mesh_component_uve.h"
-#include "uve/component/particle_emitter_component_uve.h"
-#include "uve/component/primitive_mesh_component_uve.h"
-#include "uve/component/rigid_body_component_uve.h"
-#include "uve/component/script_component_uve.h"
-#include "uve/entity/i_entity_manager_uve.h"
 #include "uve/editor/editor_uve.h" // EditorSceneComponentKindUVE, used by the classifier below
-#include "uve/nodes/3d/world_environment_3d_uve.h"
+#include "uve/scene/nodes/scene_node_registry_uve.h"
 
 namespace UVE::Editor {
 
@@ -131,40 +119,47 @@ inline void DrawNode3DIconUVE(ImDrawList& drawList, const ImVec2 center, const f
     drawList.AddCircle(center, radius * 0.42F, color, 16, 1.2F);
 }
 
-[[nodiscard]] inline HierarchyNodeIconKindUVE ClassifyHierarchyNodeIconUVE(Scene::IEntityManagerUVE& entityManager,
-                                                                     const Scene::EntityUVE entity) noexcept {
-    if (entityManager.HasComponentUVE<Scene::CameraComponentUVE>(entity)) {
-        return HierarchyNodeIconKindUVE::Camera;
+/// The icon a hierarchy row shows for a node of `kind` (Scene::ResolveSceneNodeKindUVE), so the
+/// icon names the node's type the same way its type name and the `type:` filter do.
+[[nodiscard]] constexpr HierarchyNodeIconKindUVE GetHierarchyNodeIconKindUVE(
+    const Scene::Nodes::SceneNodeKindUVE kind) noexcept {
+    using Kind = Scene::Nodes::SceneNodeKindUVE;
+    switch (kind) {
+        case Kind::Camera3D:
+            return HierarchyNodeIconKindUVE::Camera;
+        case Kind::Light3D:
+            return HierarchyNodeIconKindUVE::Light;
+        case Kind::MeshInstance3D:
+        case Kind::BoxMesh3D:
+        case Kind::SphereMesh3D:
+        case Kind::PlaneMesh3D:
+            return HierarchyNodeIconKindUVE::Mesh;
+        case Kind::WorldEnvironment3D:
+            return HierarchyNodeIconKindUVE::Environment;
+        case Kind::AudioSource3D:
+            return HierarchyNodeIconKindUVE::Audio;
+        case Kind::ParticleEmitter3D:
+            return HierarchyNodeIconKindUVE::Particle;
+        case Kind::Script:
+            return HierarchyNodeIconKindUVE::Script;
+        case Kind::AnimationPlayer:
+        case Kind::AnimationTree:
+            return HierarchyNodeIconKindUVE::Animation;
+        case Kind::Area3D:
+        case Kind::RayCast3D:
+        case Kind::StaticBody3D:
+        case Kind::AnimatableBody3D:
+        case Kind::CharacterBody3D:
+        case Kind::Collider3D:
+        case Kind::RigidBody3D:
+        case Kind::Hitbox3D:
+        case Kind::Hurtbox3D:
+        case Kind::Projectile3D:
+        case Kind::InteractionArea3D:
+            return HierarchyNodeIconKindUVE::Physics;
+        default:
+            return HierarchyNodeIconKindUVE::Node3D;
     }
-    if (entityManager.HasComponentUVE<Scene::LightComponentUVE>(entity)) {
-        return HierarchyNodeIconKindUVE::Light;
-    }
-    if (entityManager.HasComponentUVE<Scene::MeshComponentUVE>(entity) ||
-        entityManager.HasComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity)) {
-        return HierarchyNodeIconKindUVE::Mesh;
-    }
-    if (entityManager.HasComponentUVE<Scene::WorldEnvironment3DNodeComponentUVE>(entity)) {
-        return HierarchyNodeIconKindUVE::Environment;
-    }
-    if (entityManager.HasComponentUVE<Scene::AudioSourceComponentUVE>(entity)) {
-        return HierarchyNodeIconKindUVE::Audio;
-    }
-    if (entityManager.HasComponentUVE<Scene::ParticleEmitterComponentUVE>(entity)) {
-        return HierarchyNodeIconKindUVE::Particle;
-    }
-    if (entityManager.HasComponentUVE<Scene::ScriptComponentUVE>(entity)) {
-        return HierarchyNodeIconKindUVE::Script;
-    }
-    if (entityManager.HasComponentUVE<Scene::AnimationPlayerComponentUVE>(entity)) {
-        return HierarchyNodeIconKindUVE::Animation;
-    }
-    // Checked after Mesh: primitives (Cube/UVSphere/Plane) also carry a ColliderComponentUVE, and
-    // should read as their mesh, not as a generic physics body.
-    if (entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(entity) ||
-        entityManager.HasComponentUVE<Scene::RigidBodyComponentUVE>(entity)) {
-        return HierarchyNodeIconKindUVE::Physics;
-    }
-    return HierarchyNodeIconKindUVE::Node3D;
 }
 
 // Light/Environment reuse the existing "sun"/"environment" general icon textures (already used
@@ -288,8 +283,8 @@ inline void DrawFolderIconUVE(ImDrawList& drawList, const ImVec2 center, const f
 // icons for every Scene::Nodes::SceneNodeKindUVE preset (most of which just add one of these same
 // 10 components to a plain entity), one procedural icon is drawn per actual component the entity
 // carries, checked in the same priority order a user would expect to identify it visually first
-// (Camera/Light/Mesh before the more generic Physics/Script/Animation) - the base-node icon (a plain ring,
-// matching Godot's own bare Node3D icon) when none of the 10 match.
+// (Camera/Light/Mesh before the more generic Physics/Script/Animation) - the base-node icon (a plain ring)
+// when none of the 10 match.
 [[nodiscard]] constexpr HierarchyNodeIconKindUVE ClassifySceneComponentKindIconUVE(
     const EditorSceneComponentKindUVE kind) noexcept {
     switch (kind) {

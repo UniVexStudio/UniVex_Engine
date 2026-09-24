@@ -16,6 +16,7 @@ add_library(uve_scene STATIC
     Internal/scene_serializer_uve.cpp
     Internal/prefab_system_uve.cpp
     Internal/nodes/scene_node_registry_uve.cpp
+    Internal/nodes/scene_node_type_uve.cpp
     Internal/nodes/scene_root_uve.cpp
     Internal/particle_runtime_uve.cpp
 )

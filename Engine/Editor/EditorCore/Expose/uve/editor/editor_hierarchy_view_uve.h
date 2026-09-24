@@ -2,6 +2,8 @@
 
 #pragma once
 
+#include <string_view>
+
 namespace UVE::Editor {
 
 /// When the hierarchy draws a row's visibility eye.
@@ -29,10 +31,12 @@ enum class HierarchyTreeLinesUVE {
 };
 
 /// How the hierarchy panel looks and responds. Every field is an editor preference
-/// (editor_settings_uve.cpp); the defaults are how the panel behaved before they existed.
+/// (editor_settings_uve.cpp); apart from showTypeName, which came with node types, the defaults
+/// are how the panel behaved before they existed.
 struct HierarchyViewSettingsUVE final {
     bool revealSelection = true;
     bool showIcons = true;
+    bool showTypeName = true;
     HierarchyVisibilityColumnUVE visibilityColumn = HierarchyVisibilityColumnUVE::Always;
     HierarchyDoubleClickUVE doubleClick = HierarchyDoubleClickUVE::Rename;
     bool dragToReparent = true;
@@ -48,5 +52,9 @@ inline constexpr float kMaximumHierarchyIndentUVE = 40.0F;
 /// Hidden, so names do not shift as the pointer moves over rows.
 [[nodiscard]] bool ShouldDrawHierarchyEyeUVE(HierarchyVisibilityColumnUVE mode, bool rowHovered,
                                              bool nodeVisible) noexcept;
+
+/// The type shown after a row's name, or empty when it would only repeat the name (a node still
+/// called by its type's name).
+[[nodiscard]] std::string_view GetHierarchyTypeHintUVE(std::string_view name, std::string_view type) noexcept;
 
 } // namespace UVE::Editor
