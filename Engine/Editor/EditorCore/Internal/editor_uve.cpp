@@ -3703,6 +3703,8 @@ void EditorUVE::ShutdownUVE() {
     if (m_uiInitialized) {
         static_cast<void>(SaveSessionSettingsUVE());
     }
+    // Project settings changed in this session belong to the project, whatever ran the editor.
+    static_cast<void>(SaveProjectSettingsUVE());
 
     if (m_playModeState != EditorPlayModeStateUVE::Edit) {
         if (!StopPlayModeUVE() && m_simulationControl != nullptr) {

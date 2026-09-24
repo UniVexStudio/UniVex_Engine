@@ -270,6 +270,9 @@ void EditorUVE::DrawMenuBarUVE() {
                     ImGui::EndMenu();
                 }
                 ImGui::Separator();
+                if (ImGui::MenuItem("Project Settings...")) {
+                    OpenProjectSettingsUVE();
+                }
                 if (ImGui::MenuItem("Editor Preferences...")) {
                     OpenEditorPreferencesUVE();
                 }

@@ -90,6 +90,12 @@ struct EngineConfigUVE {
     /// file yet.
     std::filesystem::path settingsFilePath = ".uvesettings";
 
+    /// Path of the project's own settings file (see EngineServicesUVE::GetProjectSettingsUVE()),
+    /// read during Init(). Its values override the matching fields of this struct - the tick rate,
+    /// shadow quality and so on - so a project carries its settings with it. A missing file is
+    /// every default, not an error.
+    std::filesystem::path projectSettingsFilePath = "project.uvesettings";
+
     /// Raw startup argument tokens (excluding the program path) that
     /// CommandLineUVE parses during Init(). Populated by main() from
     /// argv[1..argc); left empty by default so tests can construct an

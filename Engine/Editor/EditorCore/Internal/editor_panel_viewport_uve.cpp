@@ -135,6 +135,7 @@ void EditorUVE::RenderOverlayUVE() {
     DrawMenuBarUVE();
     DrawPluginWindowUVE();
     DrawEditorPreferencesWindowUVE();
+    DrawProjectSettingsWindowUVE();
 
     if (m_activeWorkspace == EditorWorkspaceUVE::Scripting) {
         DrawScriptingWorkspaceUVE();

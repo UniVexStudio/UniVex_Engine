@@ -575,7 +575,13 @@ public:
     [[nodiscard]] bool SetEditorSettingUVE(std::string_view id, const Config::SettingValueUVE& value);
     /// Shows the Editor Preferences window, with the search field focused.
     void OpenEditorPreferencesUVE() noexcept;
-    [[nodiscard]] bool IsEditorPreferencesOpenUVE() const noexcept { return m_preferencesWindowVisible; }
+    [[nodiscard]] bool IsEditorPreferencesOpenUVE() const noexcept { return m_preferencesWindow.visible; }
+    /// Shows the Project Settings window, with the search field focused.
+    void OpenProjectSettingsUVE() noexcept;
+    [[nodiscard]] bool IsProjectSettingsOpenUVE() const noexcept { return m_projectSettingsWindow.visible; }
+    /// Writes the project settings file if it has unsaved changes. Also happens when the Project
+    /// Settings window closes and when the editor shuts down.
+    [[nodiscard]] bool SaveProjectSettingsUVE();
 
     /// Returns the derived world-space box for the active live collider-backed document entity.
     /// It never mutates selection, scene state, dirty state, or Undo/Redo history; unsafe or
@@ -1222,8 +1228,29 @@ private:
     void DrawViewportAxisColorPickerUVE();
     void DrawViewportSelectionOutlineMenuUVE();
     void DrawPluginWindowUVE();
+    // One settings window's view state (Editor Preferences, Project Settings). Session-only.
+    struct SettingsWindowStateUVE final {
+        bool visible = false;
+        bool focusSearch = false;
+        bool modifiedOnly = false;
+        bool showAdvanced = false;
+        std::array<char, 128> search{};
+        std::string category;
+    };
+    // Where a settings window reads and writes values: the live editor, or a settings document.
+    struct SettingsWindowSourceUVE final {
+        const Config::SettingsRegistryUVE* registry = nullptr;
+        std::function<std::optional<Config::SettingValueUVE>(std::string_view id)> get;
+        std::function<bool(std::string_view id, const Config::SettingValueUVE& value)> set;
+        // Where the changes go, shown in the footer, and any footer buttons beside Reset.
+        std::string footerNote;
+        std::function<void()> drawFooterActions;
+    };
     void DrawEditorPreferencesWindowUVE();
-    void DrawEditorSettingRowUVE(const Config::SettingDescriptorUVE& descriptor, bool modified);
+    void DrawProjectSettingsWindowUVE();
+    void DrawSettingsWindowBodyUVE(SettingsWindowStateUVE& state, const SettingsWindowSourceUVE& source);
+    void DrawSettingRowUVE(const Config::SettingDescriptorUVE& descriptor, bool modified,
+                           const SettingsWindowSourceUVE& source);
     void DrawBottomDockUVE();
     void DrawBottomDockContentUVE();
     void DrawHierarchyPanelUVE();
@@ -1427,13 +1454,9 @@ private:
     /// Transient Plugin window/tool gates. These are editor-session state only and never become ECS
     /// components, serialized scene data, or runtime/plugin activation side effects.
     bool m_pluginWindowVisible = false;
-    // The Editor Preferences window (editor_panel_preferences_uve.cpp). Session-only view state.
-    bool m_preferencesWindowVisible = false;
-    bool m_preferencesFocusSearch = false;
-    bool m_preferencesModifiedOnly = false;
-    bool m_preferencesShowAdvanced = false;
-    std::array<char, 128> m_preferencesSearch{};
-    std::string m_preferencesCategory;
+    // The Editor Preferences and Project Settings windows (editor_panel_preferences_uve.cpp).
+    SettingsWindowStateUVE m_preferencesWindow;
+    SettingsWindowStateUVE m_projectSettingsWindow;
     EditorRightPanelTabUVE m_activeRightPanelTab = EditorRightPanelTabUVE::Inspector;
     InspectorDrawerRegistryUVE m_inspectorDrawerRegistry;
     DeveloperConsoleUVE m_developerConsole;

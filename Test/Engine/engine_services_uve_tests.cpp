@@ -220,6 +220,7 @@ public:
     void SetDoubleUVE(std::string_view, double) override {}
     void SetBoolUVE(std::string_view, bool) override {}
     [[nodiscard]] bool HasKeyUVE(std::string_view) const override { return false; }
+    bool RemoveKeyUVE(std::string_view) override { return false; }
 
     int saveCallCount = 0;
 };
@@ -1004,9 +1005,10 @@ TEST(EngineServicesUVETest, Accessors_ReturnExactSameInstancesPassedIn) {
     FakeSaveGameSystemUVE saveGameSystem;
     FakeCheckpointManagerUVE checkpointManager;
     FakeWindowManagerUVE windowManager;
+    Config::SettingsDocumentUVE projectSettings;
 
     const EngineServicesUVE services(logger, timer, eventSystem, memoryManager, threadPool,
-                                      commandLine, configManager, entityManager, sceneGraph,
+                                      commandLine, configManager, projectSettings, entityManager, sceneGraph,
                                       assetDatabase, projectFileIndex, derivedArtifactCache, projectChangeWatcher,
                                       sceneSerializer, prefabSystem, particleRuntime,
                                       hotReload, assetManager, assetImporter, assetImportQueue, assetBundle, fileSystem,
@@ -1022,6 +1024,7 @@ TEST(EngineServicesUVETest, Accessors_ReturnExactSameInstancesPassedIn) {
     EXPECT_EQ(&services.GetEventSystemUVE(), &eventSystem);
     EXPECT_EQ(&services.GetMemoryManagerUVE(), &memoryManager);
     EXPECT_EQ(&services.GetThreadPoolUVE(), &threadPool);
+    EXPECT_EQ(&services.GetProjectSettingsUVE(), &projectSettings);
     EXPECT_EQ(&services.GetCommandLineUVE(), &commandLine);
     EXPECT_EQ(&services.GetConfigManagerUVE(), &configManager);
     EXPECT_EQ(&services.GetEntityManagerUVE(), &entityManager);
@@ -1109,8 +1112,9 @@ TEST(EngineServicesUVETest, Accessors_ProveInterfacesAreGenuinelySubstitutable) 
     FakeSaveGameSystemUVE saveGameSystem;
     FakeCheckpointManagerUVE checkpointManager;
     FakeWindowManagerUVE windowManager;
+    Config::SettingsDocumentUVE projectSettings;
     const EngineServicesUVE services(logger, timer, eventSystem, memoryManager, threadPool,
-                                      commandLine, configManager, entityManager, sceneGraph,
+                                      commandLine, configManager, projectSettings, entityManager, sceneGraph,
                                       assetDatabase, projectFileIndex, derivedArtifactCache, projectChangeWatcher,
                                       sceneSerializer, prefabSystem, particleRuntime,
                                       hotReload, assetManager, assetImporter, assetImportQueue, assetBundle, fileSystem,
