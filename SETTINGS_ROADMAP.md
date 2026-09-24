@@ -675,8 +675,10 @@ The group with the most real backing today.
       drawn. Visible and opacity (10-100%) are set from the grid button (click toggles,
       right-click opens the options) and saved under `editor.viewport.grid.*`, with a corrupt
       stored value falling back to the defaults. The plane follows the view: the ground normally,
-      XY in Front/Back and ZY in Left/Right so a side view keeps a grid; missing: size,
-      subdivisions, fade, colour, and a manual plane choice.
+      XY in Front/Back and ZY in Left/Right so a side view keeps a grid. Cell size (0.1 to 10 m,
+      the finest square; zooming out still steps up in tens) is in the same options and saved as
+      `editor.viewport.grid.cellSize`; missing: subdivisions, fade, colour, and a manual plane
+      choice.
 - [ ] Grid follows the camera vs. fixed at origin.
 - [ ] Gizmo size in pixels, gizmo opacity, and whether the gizmo is hidden during drag.
 - [ ] Gizmo mode memory: whether the active transform mode persists across sessions.
