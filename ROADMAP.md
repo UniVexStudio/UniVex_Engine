@@ -355,7 +355,14 @@ and one of the highest-priority areas below.
 - [ ] Animation retargeting done properly, as its own scoped system with real bone-mapping
   validation (a prior, non-functional retargeting attempt was deliberately removed from
   this codebase rather than kept half-working — see the project's own change history; this
-  is the "do it right" follow-up)
+  is the "do it right" follow-up). Decided shape, to start only when asked:
+  - The base is a skeleton read from an imported rig (FBX or glTF, through `ReadFbxSkeletonUVE` /
+    `ReadGltfSkeletonUVE`), IK bones included - `ik_*` chains are kept, not stripped.
+  - When the target rig has no IK bones of its own, they are generated automatically from its
+    limb chains, so every target ends up with the same IK set as the source.
+  - Both rigs are brought to a common A-pose automatically before mapping, so a source and a
+    target authored in different rest poses (A vs T) still line up.
+  - Needs a multi-track (per-bone) clip format first: `.uveanim` holds one track today.
 - [ ] Animation compression (both curve compression and a runtime decompression path)
 - [ ] Additive animation layers (e.g. aim offsets, lean, breathing) on top of a base pose
 - [ ] Blend spaces (1D and 2D) for locomotion blending, distinct from the existing blend

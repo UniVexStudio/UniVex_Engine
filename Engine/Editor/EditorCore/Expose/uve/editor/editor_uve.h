@@ -240,6 +240,8 @@ enum class EditorEntityKindUVE {
 struct EditorModelSourceInfoUVE final {
     /// A mesh is skinned to bones: shown as Model rather than Mesh.
     bool rigged = false;
+    /// The file has bones a Skeleton3D can take - skinned or not, so an animation file counts.
+    bool hasSkeleton = false;
     /// A skeleton and its animation with no mesh: shown as Animation, and not imported as a mesh.
     bool animationOnly = false;
     /// A one-line description for the Content Browser tooltip ("162 bones, 1 animation, 0.27 s").

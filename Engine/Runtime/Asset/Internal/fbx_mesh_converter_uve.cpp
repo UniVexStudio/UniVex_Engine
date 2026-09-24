@@ -11,6 +11,8 @@
 #include <memory>
 #include <new>
 #include <optional>
+#include <set>
+#include <string>
 #include <span>
 #include <unordered_map>
 #include <utility>
@@ -224,6 +226,76 @@ std::optional<FbxSourceSummaryUVE> DescribeFbxSourceUVE(const std::span<const st
         }
         summary.hasSkin = scene->skin_deformers.count > 0U;
         return summary;
+    } catch (const std::bad_alloc&) {
+        return std::nullopt;
+    }
+}
+
+std::optional<GltfSkeletonUVE> ReadFbxSkeletonUVE(const std::span<const std::byte> source,
+                                                  const std::size_t maximumJoints) {
+    try {
+        const ScenePtrUVE scene = LoadSceneUVE(source, false);
+        if (!scene) {
+            return std::nullopt;
+        }
+        GltfSkeletonUVE skeleton;
+        skeleton.skinCount = scene->skin_deformers.count;
+        std::unordered_map<const ufbx_node*, std::int32_t> jointOfNode;
+        std::set<std::string> usedNames;
+        // Depth first from the root, so a parent is always listed before its children.
+        std::vector<const ufbx_node*> pending{scene->root_node};
+        while (!pending.empty()) {
+            const ufbx_node* const node = pending.back();
+            pending.pop_back();
+            for (std::size_t child = node->children.count; child > 0U; --child) {
+                pending.push_back(node->children.data[child - 1U]);
+            }
+            if (node->bone == nullptr) {
+                continue;
+            }
+            if (skeleton.joints.size() >= maximumJoints) {
+                UVE_ERROR("FbxMeshConverterUVE: more than {} bones", maximumJoints);
+                return std::nullopt;
+            }
+            GltfJointUVE joint;
+            for (const ufbx_node* ancestor = node->parent; ancestor != nullptr; ancestor = ancestor->parent) {
+                if (const auto found = jointOfNode.find(ancestor); found != jointOfNode.end()) {
+                    joint.parentIndex = found->second;
+                    break;
+                }
+            }
+            const std::string name(node->name.data, node->name.length);
+            std::string unique = name.empty() ? std::string("Bone") : name;
+            const std::string stem = unique;
+            for (int suffix = 1; usedNames.count(unique) != 0U; ++suffix) {
+                unique = stem + "_" + std::to_string(suffix);
+            }
+            usedNames.insert(unique);
+            joint.name = std::move(unique);
+            // The pose relative to the nearest bone above it: everything between (a group or a
+            // null the exporter put in the chain) is folded in, so the chain still meets up.
+            ufbx_matrix local = node->node_to_parent;
+            for (const ufbx_node* between = node->parent; between != nullptr && !jointOfNode.contains(between);
+                 between = between->parent) {
+                local = ufbx_matrix_mul(&between->node_to_parent, &local);
+            }
+            const ufbx_transform pose = ufbx_matrix_to_transform(&local);
+            joint.translation = ToVectorUVE(pose.translation);
+            joint.rotation = Math::QuaternionUVE{static_cast<float>(pose.rotation.x), static_cast<float>(pose.rotation.y),
+                                                 static_cast<float>(pose.rotation.z), static_cast<float>(pose.rotation.w)};
+            joint.scale = ToVectorUVE(pose.scale);
+            if (!Math::IsFiniteUVE(joint.translation) || !Math::IsFiniteUVE(joint.scale) ||
+                !std::isfinite(joint.rotation.x) || !std::isfinite(joint.rotation.y) ||
+                !std::isfinite(joint.rotation.z) || !std::isfinite(joint.rotation.w)) {
+                return std::nullopt;
+            }
+            jointOfNode.emplace(node, static_cast<std::int32_t>(skeleton.joints.size()));
+            skeleton.joints.push_back(std::move(joint));
+        }
+        if (skeleton.joints.empty()) {
+            return std::nullopt;
+        }
+        return skeleton;
     } catch (const std::bad_alloc&) {
         return std::nullopt;
     }

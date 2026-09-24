@@ -206,6 +206,73 @@ TEST(FbxMeshConverterUVETest, ASkeletonWithAnimationAndNoMeshIsAnAnimationNotAMo
     EXPECT_FALSE(ConvertFbxMeshUVE(BytesUVE(fbx), mesh));
 }
 
+TEST(FbxMeshConverterUVETest, TheSkeletonComesOutInMetresUprightWithParentsFirst) {
+    // Hips one metre up (100 cm along Z in this Z-up file) with a spine child, under a null the
+    // exporter put between them: the null is folded into the spine's pose so the chain still meets.
+    const std::string fbx = MakeFbxUVE(R"(	Model: 3000, "Model::Hips", "LimbNode" {
+		Version: 232
+		Properties70:  {
+			P: "Lcl Translation", "Lcl Translation", "", "A",0,0,100
+		}
+	}
+	NodeAttribute: 3100, "NodeAttribute::Hips", "LimbNode" {
+		TypeFlags: "Skeleton"
+	}
+	Model: 3200, "Model::Offset", "Null" {
+		Version: 232
+		Properties70:  {
+			P: "Lcl Translation", "Lcl Translation", "", "A",0,0,10
+		}
+	}
+	Model: 3300, "Model::Hips", "LimbNode" {
+		Version: 232
+		Properties70:  {
+			P: "Lcl Translation", "Lcl Translation", "", "A",0,0,20
+		}
+	}
+	NodeAttribute: 3400, "NodeAttribute::Spine", "LimbNode" {
+		TypeFlags: "Skeleton"
+	}
+)",
+                                       "\tC: \"OO\",3100,3000\n\tC: \"OO\",3400,3300\n\tC: \"OO\",3300,3200\n"
+                                       "\tC: \"OO\",3200,3000\n\tC: \"OO\",3000,0\n");
+    const std::optional<GltfSkeletonUVE> skeleton = ReadFbxSkeletonUVE(BytesUVE(fbx), 16U);
+    ASSERT_TRUE(skeleton.has_value());
+    ASSERT_EQ(skeleton->joints.size(), 2U);
+    EXPECT_EQ(skeleton->skinCount, 0U);
+    const GltfJointUVE& hips = skeleton->joints[0];
+    const GltfJointUVE& spine = skeleton->joints[1];
+    EXPECT_EQ(hips.parentIndex, -1);
+    EXPECT_EQ(spine.parentIndex, 0);
+    // Two bones with one name: the second is made unique, the way the glTF reader does it.
+    EXPECT_EQ(hips.name, "Hips");
+    EXPECT_EQ(spine.name, "Hips_1");
+
+    // Hips stand one metre up, along +Y, and the spine continues straight up from them.
+    const auto rotate = [](const Math::QuaternionUVE& q, const Math::Vector3UVE& v) {
+        const Math::Vector3UVE u{q.x, q.y, q.z};
+        const Math::Vector3UVE t{2.0F * ((u.y * v.z) - (u.z * v.y)), 2.0F * ((u.z * v.x) - (u.x * v.z)),
+                                 2.0F * ((u.x * v.y) - (u.y * v.x))};
+        return Math::Vector3UVE{v.x + (q.w * t.x) + ((u.y * t.z) - (u.z * t.y)),
+                                v.y + (q.w * t.y) + ((u.z * t.x) - (u.x * t.z)),
+                                v.z + (q.w * t.z) + ((u.x * t.y) - (u.y * t.x))};
+    };
+    EXPECT_NEAR(hips.translation.x, 0.0F, 1.0e-4F);
+    EXPECT_NEAR(hips.translation.y, 1.0F, 1.0e-4F);
+    EXPECT_NEAR(hips.translation.z, 0.0F, 1.0e-4F);
+    // 0.1 m of null and 0.2 m of spine, in the hips' frame.
+    const Math::Vector3UVE spineOffset = rotate(hips.rotation, spine.translation);
+    EXPECT_NEAR(spineOffset.x, 0.0F, 1.0e-4F);
+    EXPECT_NEAR(spineOffset.y, 0.3F, 1.0e-4F);
+    EXPECT_NEAR(spineOffset.z, 0.0F, 1.0e-4F);
+
+    // A limit it does not fit in, bytes that are not FBX, and a file with no bones: nothing.
+    EXPECT_FALSE(ReadFbxSkeletonUVE(BytesUVE(fbx), 1U).has_value());
+    const std::string garbage = "not an fbx";
+    EXPECT_FALSE(ReadFbxSkeletonUVE(BytesUVE(garbage), 16U).has_value());
+    EXPECT_FALSE(ReadFbxSkeletonUVE(BytesUVE(MakeFbxUVE(kFloorGeometryUVE, kFloorConnectionsUVE)), 16U).has_value());
+}
+
 TEST(FbxMeshConverterUVETest, WhatIsNotAnFbxWithTrianglesIsRefusedAndLeavesTheMeshAlone) {
     MeshAssetUVE mesh;
     mesh.indices = {7U};

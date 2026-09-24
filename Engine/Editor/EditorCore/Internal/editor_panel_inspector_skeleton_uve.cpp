@@ -10,19 +10,27 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cfloat>
 #include <cmath>
 #include <cstdio>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
 #include <functional>
+#include <iterator>
 #include <numbers>
+#include <optional>
+#include <span>
 #include <string>
+#include <system_error>
 #include <typeindex>
 #include <vector>
 
 #include <imgui.h>
 
+#include "uve/asset/fbx_mesh_converter_uve.h"
 #include "uve/asset/gltf_skeleton_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
 #include "uve/component/visibility_component_uve.h"
@@ -52,6 +60,25 @@ void ReadOnlyRowUVE(const char* const label, const char* const value) {
     ImGui::TextDisabled("%s", value);
 }
 
+// The skeleton in a model source, whichever format it is: a glTF skin, or an FBX's bones.
+[[nodiscard]] std::optional<Asset::GltfSkeletonUVE> ReadSkeletonSourceUVE(const std::filesystem::path& path,
+                                                                          const std::size_t maximumBones) {
+    std::string extension = path.extension().string();
+    std::transform(extension.begin(), extension.end(), extension.begin(),
+                   [](const unsigned char character) { return static_cast<char>(std::tolower(character)); });
+    if (extension != ".fbx") {
+        return Asset::ReadGltfSkeletonUVE(path, maximumBones);
+    }
+    std::error_code error;
+    const std::uintmax_t size = std::filesystem::file_size(path, error);
+    std::ifstream file(path, std::ios::binary);
+    if (error || size > Asset::kMaximumFbxMeshSourceBytesUVE || !file) {
+        return std::nullopt;
+    }
+    const std::vector<char> bytes{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
+    return Asset::ReadFbxSkeletonUVE(std::as_bytes(std::span<const char>(bytes)), maximumBones);
+}
+
 } // namespace
 
 bool EditorUVE::BindSelectedSkeletonSourceUVE(const std::filesystem::path& relativeSource) {
@@ -69,10 +96,10 @@ bool EditorUVE::BindSelectedSkeletonSourceUVE(const std::filesystem::path& relat
     if (!relativeSource.empty()) {
         const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
         const std::optional<Asset::GltfSkeletonUVE> skeleton =
-            Asset::ReadGltfSkeletonUVE(project.contentRoot / relativeSource, Scene::kMaximumSkeletonBonesUVE);
+            ReadSkeletonSourceUVE(project.contentRoot / relativeSource, Scene::kMaximumSkeletonBonesUVE);
         if (!skeleton.has_value()) {
             m_skeletonSourceStatus = relativeSource.filename().string() +
-                                     " has no skeleton this engine can read (a glTF skin of at most " +
+                                     " has no skeleton this engine can read (a glTF skin or FBX bones, at most " +
                                      std::to_string(Scene::kMaximumSkeletonBonesUVE) + " bones).";
             return false;
         }
@@ -114,7 +141,8 @@ void EditorUVE::DrawSkeletonSourcePropertyUVE(const Core::TypeMetadataEntryUVE& 
         bool any = false;
         const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
         for (const Asset::ProjectFileEntryUVE& file : project.entries) {
-            if (file.kind == Asset::ProjectFileEntryKindUVE::Directory || !IsRiggedModelSourceUVE(file.relativePath)) {
+            const EditorModelSourceInfoUVE* const source = FindModelSourceInfoUVE(file.relativePath);
+            if (file.kind == Asset::ProjectFileEntryKindUVE::Directory || source == nullptr || !source->hasSkeleton) {
                 continue;
             }
             any = true;
