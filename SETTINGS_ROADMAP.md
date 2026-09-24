@@ -605,8 +605,8 @@ already built in, but none of them is a setting yet - each is fixed in code.
 - [~] Double-click action: rename, focus in viewport, or open script. Double-click on the
       selected row renames it today; missing: the choice of action.
 - [~] Rename mode: inline edit vs. dialog, and name-collision policy. Inline rename exists (F2 or
-      double-click, Enter commits, Escape cancels); missing: the dialog option and a
-      name-collision policy.
+      double-click, Enter commits, Escape cancels), and a renamed row keeps its children open;
+      missing: the dialog option and a name-collision policy.
 - [~] Show the scene root specially. The scene root can no longer be dragged, and its
       right-click menu disables Duplicate and Delete with a tooltip saying why; missing: a
       distinct look for its row.
@@ -631,10 +631,16 @@ settings question.
 - [ ] Reparent to selection, reparent keeping global transform (toggle).
 - [ ] Move up / move down / move to top / move to bottom in sibling order.
 - [ ] Save branch as a reusable scene, and make a local instance editable.
-- [ ] Focus in viewport, frame selection, align view to node, align node to view.
-- [ ] Lock / unlock, show / hide, toggle selectable.
+- [~] Focus in viewport, frame selection, align view to node, align node to view. Focus in
+      Viewport is in the row's menu and on F over the viewport, both through one request the host
+      applies: the node becomes the orbit pivot, and a Marker3D flies the camera into its
+      viewpoint; it is disabled, with a tooltip, for a node with no position (the scene root, a
+      plain Node); missing: framing by bounds, and the two align commands.
+- [~] Lock / unlock, show / hide, toggle selectable. Hide / Show is in the row's menu, the same
+      undoable edit as the row's eye; missing: lock and selectable.
 - [ ] Copy node path, copy node identifier.
-- [ ] Expand / collapse subtree.
+- [x] Expand / collapse subtree. Expand Branch and Collapse Branch open or close a row and every
+      row below it; rows inside a collapsed branch stay closed when the branch is opened again.
 - [ ] Whether the context menu also selects the node it opened on (currently it does — keep it as
       an explicit, documented setting rather than incidental behaviour).
 - [ ] Long-press equivalent for touch input, with a configurable hold duration.
