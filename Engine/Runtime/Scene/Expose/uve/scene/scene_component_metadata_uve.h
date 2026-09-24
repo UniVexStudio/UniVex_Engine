@@ -23,6 +23,10 @@ inline constexpr std::string_view kPropertyTypeInt32UVE = "Int32";
 inline constexpr std::string_view kPropertyTypeUInt32UVE = "UInt32";
 /// A 32-bit value authored as independent bits (a collision layer/mask), not as a number.
 inline constexpr std::string_view kPropertyTypeBitMask32UVE = "BitMask32";
+/// Custom drawer ids naming which set of layers a BitMask32 picks from, so the inspector can show
+/// the project's names for them instead of bits.
+inline constexpr std::string_view kLayerMaskDrawerPhysicsUVE = "layers:physics";
+inline constexpr std::string_view kLayerMaskDrawerRenderUVE = "layers:render";
 inline constexpr std::string_view kPropertyTypeStringUVE = "String";
 inline constexpr std::string_view kPropertyTypeVector2UVE = "Vector2";
 inline constexpr std::string_view kPropertyTypeVector3UVE = "Vector3";

@@ -56,6 +56,26 @@ TEST(SceneComponentMetadataUVETest, EveryDeclarationRegistersAndCarriesItsNative
     }
 }
 
+TEST(SceneComponentMetadataUVETest, EveryLayerMaskNamesTheLayersItPicksFrom) {
+    // A mask with no layer set would be drawn as bare hexadecimal, without the project's names.
+    std::size_t physics = 0U;
+    std::size_t render = 0U;
+    for (const TypeMetadataEntryUVE& entry : GetSceneComponentMetadataRegistryUVE().GetSnapshotUVE().entries) {
+        for (const TypeMetadataPropertyUVE& property : entry.properties) {
+            if (property.typeId != kPropertyTypeBitMask32UVE) {
+                continue;
+            }
+            const bool isPhysics = property.customDrawerId == kLayerMaskDrawerPhysicsUVE;
+            const bool isRender = property.customDrawerId == kLayerMaskDrawerRenderUVE;
+            EXPECT_TRUE(isPhysics || isRender) << entry.typeId << "." << property.name;
+            physics += isPhysics ? 1U : 0U;
+            render += isRender ? 1U : 0U;
+        }
+    }
+    EXPECT_EQ(physics, 4U); // collider and physics object: layer and mask each
+    EXPECT_EQ(render, 4U);  // mesh, render instance, light and decal
+}
+
 TEST(SceneComponentMetadataUVETest, FindSceneComponentMetadataUVE_ResolvesALiveComponentType) {
     const TypeMetadataEntryUVE* transform =
         FindSceneComponentMetadataUVE(std::type_index(typeid(TransformComponentUVE)));

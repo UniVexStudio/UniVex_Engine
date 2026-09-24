@@ -520,14 +520,19 @@ The largest group by far, and the one most dependent on the renderer maturing.
 
 ## 1.12 Layer names
 
-- [ ] Named 3D physics layers (32).
+- [x] Named 3D physics layers (32). `layers.physics.1` to `.32` in the project settings; one set
+      serves every collider today, since physics is not split by dimension yet.
 - [ ] Named 2D physics layers (32).
-- [ ] Named render/visibility layers (20 or 32, depending on the renderer's budget).
+- [x] Named render/visibility layers (20 or 32, depending on the renderer's budget). 32,
+      `layers.render.1` to `.32`: mesh visibility, render instance, light and decal cull masks.
 - [ ] Named navigation layers (32).
 - [ ] Named avoidance layers (32).
-- [ ] A shared layer-name editor UI, one implementation reused by all of the above.
-- [ ] A layer-mask property row that shows names instead of bits — this is the single change that
-      makes layers usable at all.
+- [x] A shared layer-name editor UI, one implementation reused by all of the above. The
+      Project Settings window's Layers pages, reached from any mask's "Edit Names...".
+- [x] A layer-mask property row that shows names instead of bits — this is the single change that
+      makes layers usable at all. The row reads "Default, Player +2", "All" or "None"; it opens a
+      two-column checklist of all 32 layers with All, None, Invert and Edit Names, and its tooltip
+      lists every layer in the mask with the raw value.
 
 ## 1.13 Quality tiers
 
