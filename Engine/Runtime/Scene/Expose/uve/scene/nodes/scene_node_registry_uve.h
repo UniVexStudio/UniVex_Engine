@@ -58,6 +58,8 @@ enum class SceneNodeKindUVE : std::uint8_t {
     SceneRoot,
     /// Appended rather than placed beside Decal3D so no existing kind's value moves.
     FogVolume3D,
+    /// Groups nodes in the Scene panel; no transform, no effect on the running scene.
+    Folder,
 };
 
 struct SceneNodeDescriptorUVE final {
