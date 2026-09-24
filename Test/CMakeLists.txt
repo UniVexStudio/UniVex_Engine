@@ -77,6 +77,7 @@ add_executable(uve_core_tests
     Core/Asset/data_table_registry_uve_tests.cpp
     Commandline/command_line_uve_tests.cpp
     Config/config_manager_uve_tests.cpp
+    Config/settings_registry_uve_tests.cpp
     Network/reliable_packet_window_uve_tests.cpp
     Plugins/plugin_registry_uve_tests.cpp
     ProjectCheck/project_checker_uve_tests.cpp
