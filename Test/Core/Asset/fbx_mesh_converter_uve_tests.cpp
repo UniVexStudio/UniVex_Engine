@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -153,14 +154,56 @@ TEST(FbxMeshConverterUVETest, ASkinIsWhatMakesItRigged) {
         objects, std::string(kFloorConnectionsUVE) +
                      "\tC: \"OO\",4000,1000\n\tC: \"OO\",4100,4000\n\tC: \"OO\",3000,4100\n\tC: \"OO\",3100,3000\n"
                      "\tC: \"OO\",3000,0\n");
-    EXPECT_TRUE(FbxSourceHasSkinUVE(BytesUVE(rigged)));
-    EXPECT_FALSE(FbxSourceHasSkinUVE(BytesUVE(MakeFbxUVE(kFloorGeometryUVE, kFloorConnectionsUVE))));
+    const std::optional<FbxSourceSummaryUVE> riggedSummary = DescribeFbxSourceUVE(BytesUVE(rigged));
+    ASSERT_TRUE(riggedSummary.has_value());
+    EXPECT_TRUE(riggedSummary->hasSkin);
+    EXPECT_EQ(riggedSummary->meshCount, 1U);
+    EXPECT_EQ(riggedSummary->boneCount, 1U);
+    EXPECT_FALSE(riggedSummary->IsAnimationOnlyUVE());
+    const std::optional<FbxSourceSummaryUVE> staticSummary =
+        DescribeFbxSourceUVE(BytesUVE(MakeFbxUVE(kFloorGeometryUVE, kFloorConnectionsUVE)));
+    ASSERT_TRUE(staticSummary.has_value());
+    EXPECT_FALSE(staticSummary->hasSkin);
+    EXPECT_FALSE(staticSummary->IsAnimationOnlyUVE());
 
     // The mesh itself still imports, in its bind pose.
     MeshAssetUVE mesh;
     ASSERT_TRUE(ConvertFbxMeshUVE(BytesUVE(rigged), mesh));
     EXPECT_EQ(mesh.vertices.size(), 4U);
     EXPECT_FALSE(mesh.IsSkinnedUVE());
+}
+
+TEST(FbxMeshConverterUVETest, ASkeletonWithAnimationAndNoMeshIsAnAnimationNotAModel) {
+    // The shape exported motion usually takes: bones and a take, nothing to draw. One second long
+    // (FBX time counts 46186158000 ticks a second).
+    const std::string fbx = MakeFbxUVE(R"(	Model: 3000, "Model::Hips", "LimbNode" {
+		Version: 232
+	}
+	NodeAttribute: 3100, "NodeAttribute::Hips", "LimbNode" {
+		TypeFlags: "Skeleton"
+	}
+	AnimationStack: 5000, "AnimStack::Strafe", "" {
+		Properties70:  {
+			P: "LocalStart", "KTime", "Time", "",0
+			P: "LocalStop", "KTime", "Time", "",46186158000
+		}
+	}
+	AnimationLayer: 5100, "AnimLayer::Base", "" {
+	}
+)",
+                                       "\tC: \"OO\",5100,5000\n\tC: \"OO\",3100,3000\n\tC: \"OO\",3000,0\n");
+    const std::optional<FbxSourceSummaryUVE> summary = DescribeFbxSourceUVE(BytesUVE(fbx));
+    ASSERT_TRUE(summary.has_value());
+    EXPECT_EQ(summary->meshCount, 0U);
+    EXPECT_EQ(summary->boneCount, 1U);
+    EXPECT_EQ(summary->animationCount, 1U);
+    EXPECT_NEAR(summary->longestAnimationSeconds, 1.0, 1.0e-6);
+    EXPECT_FALSE(summary->hasSkin);
+    EXPECT_TRUE(summary->IsAnimationOnlyUVE());
+
+    // And there is no mesh in it to convert.
+    MeshAssetUVE mesh;
+    EXPECT_FALSE(ConvertFbxMeshUVE(BytesUVE(fbx), mesh));
 }
 
 TEST(FbxMeshConverterUVETest, WhatIsNotAnFbxWithTrianglesIsRefusedAndLeavesTheMeshAlone) {
@@ -175,7 +218,7 @@ TEST(FbxMeshConverterUVETest, WhatIsNotAnFbxWithTrianglesIsRefusedAndLeavesTheMe
     // A valid FBX with nothing to draw.
     const std::string empty = MakeFbxUVE("", "");
     EXPECT_FALSE(ConvertFbxMeshUVE(BytesUVE(empty), mesh));
-    EXPECT_FALSE(FbxSourceHasSkinUVE(BytesUVE(garbage)));
+    EXPECT_FALSE(DescribeFbxSourceUVE(BytesUVE(garbage)).has_value());
     EXPECT_EQ(mesh.indices, (std::vector<std::uint32_t>{7U}));
 }
 

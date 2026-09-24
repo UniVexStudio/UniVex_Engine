@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 
 #include "uve/asset/mesh_asset_uve.h"
@@ -28,8 +29,23 @@ inline constexpr std::uint32_t kMaximumFbxMeshVerticesUVE = 1'000'000U;
 /// hold no triangles, exceed kMaximumFbxMeshVerticesUVE or produce a non-finite value.
 [[nodiscard]] bool ConvertFbxMeshUVE(std::span<const std::byte> source, MeshAssetUVE& outMesh);
 
-/// True when the FBX in `source` skins a mesh to bones, which is what makes it a rigged Model in
-/// the editor rather than a plain Mesh. False for a static model or bytes that do not parse.
-[[nodiscard]] bool FbxSourceHasSkinUVE(std::span<const std::byte> source);
+/// What an FBX holds, read without its geometry or animation curves - enough to tell a model from
+/// an animation-only file (a skeleton and its curves, the common shape of exported motion) before
+/// anything is imported.
+struct FbxSourceSummaryUVE final {
+    std::size_t meshCount = 0U;
+    std::size_t boneCount = 0U;
+    std::size_t animationCount = 0U;
+    /// The longest animation's length; 0 when there are none.
+    double longestAnimationSeconds = 0.0;
+    /// A mesh is skinned to bones, which is what makes a model a rigged Model rather than a Mesh.
+    bool hasSkin = false;
+
+    /// No mesh to show, but motion to play: the file is an animation, not a model.
+    [[nodiscard]] bool IsAnimationOnlyUVE() const noexcept { return meshCount == 0U && animationCount > 0U; }
+};
+
+/// Summarizes the FBX in `source`; empty when the bytes do not parse as FBX.
+[[nodiscard]] std::optional<FbxSourceSummaryUVE> DescribeFbxSourceUVE(std::span<const std::byte> source);
 
 } // namespace UVE::Asset

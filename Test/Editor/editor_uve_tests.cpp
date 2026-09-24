@@ -75,6 +75,15 @@ struct EditorUVEAccessUVE final {
                                                                         const std::filesystem::path& source) {
         return editor.GetImportedModelPathUVE(source);
     }
+    [[nodiscard]] static const EditorModelSourceInfoUVE* FindModelSourceInfoUVE(const EditorUVE& editor,
+                                                                                 const std::filesystem::path& source) {
+        return editor.FindModelSourceInfoUVE(source);
+    }
+
+    [[nodiscard]] static bool IsModelImportQueuedUVE(const EditorUVE& editor, const std::string& source) {
+        return editor.m_modelImportJobs.contains(source);
+    }
+
     [[nodiscard]] static bool IsRiggedModelSourceUVE(const EditorUVE& editor, const std::filesystem::path& source) {
         return editor.IsRiggedModelSourceUVE(source);
     }
@@ -118,7 +127,7 @@ struct EditorUVEAccessUVE final {
         using Type = EditorUVE::ContentBrowserItemTypeUVE;
         std::vector<std::string> labels;
         for (const Type type : {Type::Folder, Type::Scene, Type::Prefab, Type::Bundle, Type::Mesh, Type::Model,
-                                Type::Texture, Type::Shader, Type::Material, Type::Save, Type::Script, Type::Audio,
+                                Type::Texture, Type::Shader, Type::Material, Type::Save, Type::Animation, Type::Script, Type::Audio,
                                 Type::Font, Type::File}) {
             labels.emplace_back(EditorUVE::GetContentBrowserItemTypeLabelUVE(type));
         }
@@ -5269,6 +5278,35 @@ TEST(EditorUVETest, ModelSourcesUVE_AreImportedAutomaticallyOutsideTheContentFol
         obj << "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n";
         std::ofstream rig(root / "Models" / "rig.gltf", std::ios::binary | std::ios::trunc);
         rig << R"({"asset":{"version":"2.0"},"meshes":[{}],"skins":[{"joints":[0]}],"nodes":[{}]})";
+        // Exported motion: one bone and a one-second take, nothing to draw.
+        std::ofstream motion(root / "Models" / "strafe.fbx", std::ios::binary | std::ios::trunc);
+        motion << R"(; FBX 7.4.0 project file
+FBXHeaderExtension:  {
+	FBXHeaderVersion: 1003
+	FBXVersion: 7400
+}
+Objects:  {
+	Model: 3000, "Model::Hips", "LimbNode" {
+		Version: 232
+	}
+	NodeAttribute: 3100, "NodeAttribute::Hips", "LimbNode" {
+		TypeFlags: "Skeleton"
+	}
+	AnimationStack: 5000, "AnimStack::Strafe", "" {
+		Properties70:  {
+			P: "LocalStart", "KTime", "Time", "",0
+			P: "LocalStop", "KTime", "Time", "",46186158000
+		}
+	}
+	AnimationLayer: 5100, "AnimLayer::Base", "" {
+	}
+}
+Connections:  {
+	C: "OO",5100,5000
+	C: "OO",3100,3000
+	C: "OO",3000,0
+}
+)";
     }
     Core::EngineConfigUVE config = MakeEditorTestConfigUVE();
     config.projectContentRootUVE = root;
@@ -5296,6 +5334,14 @@ TEST(EditorUVETest, ModelSourcesUVE_AreImportedAutomaticallyOutsideTheContentFol
         // Mesh plus bones reads as a model; a plain mesh does not.
         EXPECT_TRUE(EditorUVEAccessUVE::IsRiggedModelSourceUVE(editor, "Models/rig.gltf"));
         EXPECT_FALSE(EditorUVEAccessUVE::IsRiggedModelSourceUVE(editor, "Models/tri.obj"));
+        // Motion with no mesh is an animation: described, and never sent to the mesh importer.
+        const EditorModelSourceInfoUVE* const motion = EditorUVEAccessUVE::FindModelSourceInfoUVE(editor, "Models/strafe.fbx");
+        ASSERT_NE(motion, nullptr);
+        EXPECT_TRUE(motion->animationOnly);
+        EXPECT_FALSE(motion->rigged);
+        EXPECT_EQ(motion->summary, "1 bone, 1 animation, 1.00 s");
+        EXPECT_FALSE(EditorUVEAccessUVE::IsModelImportQueuedUVE(editor, "Models/strafe.fbx"));
+        EXPECT_FALSE(std::filesystem::exists(EditorUVEAccessUVE::GetImportedModelPathUVE(editor, "Models/strafe.fbx")));
         editor.ShutdownUVE();
     }
     engine.Shutdown();

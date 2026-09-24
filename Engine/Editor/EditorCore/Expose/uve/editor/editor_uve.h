@@ -235,6 +235,17 @@ enum class EditorEntityKindUVE {
 ///
 /// The supplied EngineServicesUVE reference must remain valid from InitUVE() through ShutdownUVE().
 /// EditorUVE is main-thread only, matching the scene, render, and window services it composes.
+/// What the editor read from a model source file (.gltf, .glb, .obj, .fbx) on the last project
+/// refresh - enough to label it and decide whether it has a mesh to import.
+struct EditorModelSourceInfoUVE final {
+    /// A mesh is skinned to bones: shown as Model rather than Mesh.
+    bool rigged = false;
+    /// A skeleton and its animation with no mesh: shown as Animation, and not imported as a mesh.
+    bool animationOnly = false;
+    /// A one-line description for the Content Browser tooltip ("162 bones, 1 animation, 0.27 s").
+    std::string summary;
+};
+
 class EditorUVE final {
     friend struct Tests::EditorUVEAccessUVE;
     friend class EditorBridgeUVE;
@@ -996,6 +1007,8 @@ private:
         Shader,
         Material,
         Save,
+        /// Motion without a mesh: a model source that holds only a skeleton and its animation.
+        Animation,
         Script,
         Audio,
         Font,
@@ -1520,6 +1533,8 @@ private:
     void QueueModelAutoImportsUVE(const Asset::ProjectFileSnapshotUVE& snapshot);
     /// Collects finished auto-imports; a successful one refreshes the mesh thumbnails.
     void PollModelImportJobsUVE();
+    /// What the last project refresh read from a model source's file, or null if it is not one.
+    [[nodiscard]] const EditorModelSourceInfoUVE* FindModelSourceInfoUVE(const std::filesystem::path& relativeSource) const;
     /// True for a model source whose file declares a skeleton (read once per project refresh).
     [[nodiscard]] bool IsRiggedModelSourceUVE(const std::filesystem::path& relativeSource) const;
     [[nodiscard]] Scripting::ScriptGraphCanvasUVE& ActiveVisualScriptCanvasUVE() noexcept;
@@ -1646,8 +1661,8 @@ private:
     std::string m_selectedSkeletonBone;
     /// In-flight automatic model imports, by content-relative source path.
     std::map<std::string, Asset::AssetImportJobIdUVE> m_modelImportJobs;
-    /// Content-relative model sources that carry a skeleton, from the last project refresh.
-    std::map<std::string, bool> m_riggedModelSources;
+    /// Every content-relative model source, as the last project refresh read it.
+    std::map<std::string, EditorModelSourceInfoUVE> m_modelSources;
     MeshThumbnailRendererUVE m_meshThumbnailRenderer;
     ContentBrowserTypeFocusUVE m_contentBrowserTypeFocus = ContentBrowserTypeFocusUVE::All;
     std::string m_assetFilter;
