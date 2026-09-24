@@ -24,6 +24,7 @@
 #include "uve/asset/i_project_change_watcher_uve.h"
 #include "uve/core/engine_services_uve.h"
 #include "uve/core/i_simulation_control_uve.h"
+#include "uve/config/settings_registry_uve.h"
 #include "uve/editor/editor_color_uve.h"
 #include "uve/editor/editor_tool_session_uve.h"
 #include "uve/editor/developer_console_uve.h"
@@ -68,6 +69,8 @@ struct EditorUVEAccessUVE;
 }
 
 namespace UVE::Editor {
+
+struct EditorSettingBindingUVE;
 
 class EditorBridgeUVE;
 
@@ -551,10 +554,28 @@ public:
     /// (EditorToolSessionOutcomeUVE::ExternalTransformConflict).
     [[nodiscard]] bool CancelTransformGestureUVE();
 
-    /// Replaces session-local snapping settings only when every increment is finite and strictly
-    /// positive and no transform/navigation gesture is active. Returns false without mutation otherwise.
+    /// Replaces the snapping settings only when every increment is at least
+    /// kMinimumTransformSnapStepUVE and at most its own maximum below, and no transform/navigation
+    /// gesture is active. Returns false without mutation otherwise.
     [[nodiscard]] bool SetTransformSnappingSettingsUVE(const EditorTransformSnappingSettingsUVE& settings);
     [[nodiscard]] const EditorTransformSnappingSettingsUVE& GetTransformSnappingSettingsUVE() const noexcept;
+    static constexpr float kMinimumTransformSnapStepUVE = 0.0001F;
+    static constexpr float kMaximumTransformSnapTranslateStepUVE = 1000.0F;
+    static constexpr float kMaximumTransformSnapRotateStepDegreesUVE = 360.0F;
+    static constexpr float kMaximumTransformSnapScaleStepUVE = 100.0F;
+
+    /// Every editor setting kept in the settings file, described (see editor_settings_uve.h).
+    [[nodiscard]] const Config::SettingsRegistryUVE& GetSettingsRegistryUVE() const noexcept {
+        return m_settingsRegistry;
+    }
+    /// The value editor setting `id` has right now; nothing for an id that is not an editor setting.
+    [[nodiscard]] std::optional<Config::SettingValueUVE> GetEditorSettingUVE(std::string_view id) const;
+    /// Applies `value` to editor setting `id` at once. Refused, changing nothing, for an unknown id
+    /// or a value its descriptor does not allow. Stored in the settings file with the session.
+    [[nodiscard]] bool SetEditorSettingUVE(std::string_view id, const Config::SettingValueUVE& value);
+    /// Shows the Editor Preferences window, with the search field focused.
+    void OpenEditorPreferencesUVE() noexcept;
+    [[nodiscard]] bool IsEditorPreferencesOpenUVE() const noexcept { return m_preferencesWindowVisible; }
 
     /// Returns the derived world-space box for the active live collider-backed document entity.
     /// It never mutates selection, scene state, dirty state, or Undo/Redo history; unsafe or
@@ -1201,6 +1222,8 @@ private:
     void DrawViewportAxisColorPickerUVE();
     void DrawViewportSelectionOutlineMenuUVE();
     void DrawPluginWindowUVE();
+    void DrawEditorPreferencesWindowUVE();
+    void DrawEditorSettingRowUVE(const Config::SettingDescriptorUVE& descriptor, bool modified);
     void DrawBottomDockUVE();
     void DrawBottomDockContentUVE();
     void DrawHierarchyPanelUVE();
@@ -1367,6 +1390,14 @@ private:
     [[nodiscard]] const Scripting::ScriptGraphCanvasUVE& ActiveVisualScriptCanvasUVE() const noexcept;
 
     Core::EngineServicesUVE* m_services = nullptr;
+    /// The editor's own settings, declared by RegisterEditorSettingsUVE; read and written in the
+    /// services' settings store.
+    Config::SettingsRegistryUVE m_settingsRegistry;
+    // Each editor setting's descriptor and its reads and writes of the state above, in one table
+    // (editor_settings_uve.cpp) that loading, saving and the preferences window all use.
+    [[nodiscard]] static const std::vector<EditorSettingBindingUVE>& GetSettingBindingsUVE();
+    [[nodiscard]] static const EditorSettingBindingUVE* FindSettingBindingUVE(std::string_view id);
+    friend bool RegisterEditorSettingsUVE(Config::SettingsRegistryUVE& registry);
     Core::ISimulationControlUVE* m_simulationControl = nullptr;
     EditorStateUVE m_state = EditorStateUVE::Uninitialized;
     EditorPlayModeStateUVE m_playModeState = EditorPlayModeStateUVE::Edit;
@@ -1396,6 +1427,13 @@ private:
     /// Transient Plugin window/tool gates. These are editor-session state only and never become ECS
     /// components, serialized scene data, or runtime/plugin activation side effects.
     bool m_pluginWindowVisible = false;
+    // The Editor Preferences window (editor_panel_preferences_uve.cpp). Session-only view state.
+    bool m_preferencesWindowVisible = false;
+    bool m_preferencesFocusSearch = false;
+    bool m_preferencesModifiedOnly = false;
+    bool m_preferencesShowAdvanced = false;
+    std::array<char, 128> m_preferencesSearch{};
+    std::string m_preferencesCategory;
     EditorRightPanelTabUVE m_activeRightPanelTab = EditorRightPanelTabUVE::Inspector;
     InspectorDrawerRegistryUVE m_inspectorDrawerRegistry;
     DeveloperConsoleUVE m_developerConsole;

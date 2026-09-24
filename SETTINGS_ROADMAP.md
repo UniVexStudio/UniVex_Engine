@@ -144,11 +144,11 @@ collects them.
 - [x] Registration is explicit and ordered, following the pattern already used by
       `RegisterBuiltInInspectorDrawersUVE()` — a real, extensible, string-keyed registry that this
       codebase already proves works.
-- [~] A test that asserts every registered id is unique, every default satisfies its own
+- [x] A test that asserts every registered id is unique, every default satisfies its own
       declared range, and every enum default is one of the declared entries. This one test
-      removes an entire class of bug from all four hundred settings at once. Registration already
-      refuses such descriptors; the test over the engine's real registrations comes with 0.11
-      step 3, when there are real registrations to run it over.
+      removes an entire class of bug from all four hundred settings at once. Registration refuses
+      such descriptors, and `editor_settings_uve_tests.cpp` runs the check over the editor's real
+      declarations; each module that declares settings adds the same test.
 
 ## 0.4 Typed access over the existing store
 
@@ -206,16 +206,23 @@ collects them.
 
 This is the payoff, and it is why the descriptor carries display strings.
 
-- [ ] Enumerate all descriptors, filtered by category, flags, or a search string matching **id,
-      display name and tooltip**.
-- [ ] A generic settings panel that renders a page purely from descriptors: a category tree on
-      the left, the matching settings on the right, each rendered by its type.
-- [ ] Per-type row renderers written **once** — bool, slider, drag, combo, colour, vector, path,
-      key binding — instead of per setting.
-- [ ] A modified-from-default indicator and a per-setting revert control, both of which are free
-      once `defaultValue` is in the descriptor.
-- [ ] An "advanced settings" toggle that reveals `Advanced`-flagged entries.
-- [ ] A restart-required notice for `RestartRequired` entries.
+- [x] Enumerate all descriptors, filtered by category, flags, or a search string matching **id,
+      display name and tooltip**. Also the category, and every word of a multi-word search must
+      match (`MatchesSettingSearchUVE`).
+- [x] A generic settings panel that renders a page purely from descriptors: a category tree on
+      the left, the matching settings on the right, each rendered by its type. The editor's
+      **Editor Preferences** window (Menu > File), `editor_panel_preferences_uve.cpp`.
+- [~] Per-type row renderers written **once** — bool, slider, drag, combo, colour, vector, path,
+      key binding — instead of per setting. Bool, int, float, string, enum and colour (through
+      the editor's colour field) exist; vector, path and key binding follow their types.
+- [x] A modified-from-default indicator and a per-setting revert control, both of which are free
+      once `defaultValue` is in the descriptor. Also a "Modified only" filter, a dot on every
+      category holding a change, the default in each row's tooltip, and a confirmed "Reset to
+      Defaults" for what is shown.
+- [x] An "advanced settings" toggle that reveals `Advanced`-flagged entries. It appears only
+      when some setting is `Advanced`.
+- [~] A restart-required notice for `RestartRequired` entries: a "(restart)" tag and a tooltip
+      line. No setting needs it yet, and there is no notice after a change is made.
 
 Note the existing inspector search box matches **drawer ids only**, not property names, so typing
 a property name hides everything. A registry-backed search fixes that same class of problem for
@@ -234,11 +241,15 @@ settings, and the inspector should eventually share the mechanism.
 
 1. [x] `SettingDescriptorUVE` and the registry, with the uniqueness/range/default test.
 2. [x] Typed validated access over `ConfigManagerUVE`.
-3. [ ] Migrate the sixteen existing `editor.*` keys onto descriptors, deleting their hand-rolled
+3. [~] Migrate the sixteen existing `editor.*` keys onto descriptors, deleting their hand-rolled
        validation. This is the proof the substrate works, on real settings, with existing tests
-       to catch a regression.
+       to catch a regression. Eighteen scalar settings now go through `RegisterEditorSettingsUVE`
+       (panels, tabs, snapping, grid, selection outline), and a corrupt value falls back per setting
+       rather than taking its neighbours with it. Still hand-written: the saved and recent colours,
+       inspector folds and favourite projects (they need a list type), and the viewport axis
+       colours (their defaults belong to the viewport module and are seeded by the host).
 4. [ ] Change notification.
-5. [ ] The generic settings panel with type-based row renderers.
+5. [x] The generic settings panel with type-based row renderers (the Editor Preferences window).
 6. [ ] Layering, override order, and the "where did this come from" query.
 7. [ ] The project settings file and its layer.
 8. [ ] Versioning and migration.

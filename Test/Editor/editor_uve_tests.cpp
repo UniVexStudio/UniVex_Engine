@@ -6,6 +6,7 @@
 #include <fstream>
 #include <limits>
 #include <numbers>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <typeindex>
@@ -18,6 +19,7 @@
 #include "uve/asset/mesh_asset_uve.h"
 #include "uve/asset/texture_asset_uve.h"
 #include "uve/core/engine_core_uve.h"
+#include "uve/editor/editor_settings_uve.h"
 #include "uve/editor/editor_uve.h"
 #include "uve/component/camera_component_uve.h"
 #include "uve/component/character_controller_component_uve.h"
@@ -189,6 +191,12 @@ struct EditorUVEAccessUVE final {
         return editor.m_scriptCompileInstructionCount;
     }
 
+    [[nodiscard]] static bool IsLibraryWorkspaceActiveUVE(const EditorUVE& editor) noexcept {
+        return editor.m_activeWorkspace == EditorUVE::EditorWorkspaceUVE::Library;
+    }
+    static void ActivateGameWorkspaceUVE(EditorUVE& editor) noexcept {
+        editor.m_activeWorkspace = EditorUVE::EditorWorkspaceUVE::Game;
+    }
     [[nodiscard]] static bool IsScriptingWorkspaceActiveUVE(const EditorUVE& editor) noexcept {
         return editor.m_activeWorkspace == EditorUVE::EditorWorkspaceUVE::Scripting;
     }
@@ -984,6 +992,88 @@ TEST(EditorUVETest, SessionSettingsUVE_MigratesWithoutHiddenWriteAndPreservesDoc
     std::filesystem::remove(config.settingsFilePath);
 }
 
+TEST(EditorUVETest, EditorSettingsUVE_DescriptorDefaultsMatchTheEditorsOwnDefaults) {
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        // Not initialised, so nothing has been loaded: every value is the editor's in-class default.
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_setting_defaults.uvescene");
+        const Config::SettingsRegistryUVE& registry = editor.GetSettingsRegistryUVE();
+        ASSERT_EQ(registry.GetCountUVE(), 18U);
+        for (const Config::SettingDescriptorUVE* descriptor : registry.GetAllUVE()) {
+            const std::optional<Config::SettingValueUVE> value = editor.GetEditorSettingUVE(descriptor->id);
+            ASSERT_TRUE(value.has_value()) << descriptor->id;
+            EXPECT_EQ(*value, descriptor->defaultValue) << descriptor->id;
+        }
+    }
+    engine.Shutdown();
+}
+
+TEST(EditorUVETest, EditorSettingsUVE_SetAppliesAtOnceAndRefusesWhatItsDescriptorForbids) {
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_setting_set.uvescene");
+        editor.InitUVE();
+        namespace Id = EditorSettingIdUVE;
+        ASSERT_TRUE(editor.SetEditorSettingUVE(Id::kGridOpacityUVE, 0.5));
+        EXPECT_FLOAT_EQ(editor.GetViewportGridOpacityUVE(), 0.5F);
+        ASSERT_TRUE(editor.SetEditorSettingUVE(Id::kSelectionOutlineColorUVE, Config::SettingColorUVE{0.0F, 1.0F, 0.0F}));
+        EXPECT_FLOAT_EQ(editor.GetViewportSelectionOutlineColorUVE().g, 1.0F);
+        ASSERT_TRUE(editor.SetEditorSettingUVE(Id::kSnapRotateStepDegreesUVE, 45.0));
+        EXPECT_FLOAT_EQ(editor.GetTransformSnappingSettingsUVE().rotateStepDegrees, 45.0F);
+
+        // Out of range, the wrong type, and an unknown id change nothing.
+        EXPECT_FALSE(editor.SetEditorSettingUVE(Id::kGridOpacityUVE, 0.0));
+        EXPECT_FALSE(editor.SetEditorSettingUVE(Id::kGridOpacityUVE, std::numeric_limits<double>::quiet_NaN()));
+        EXPECT_FALSE(editor.SetEditorSettingUVE(Id::kGridOpacityUVE, true));
+        EXPECT_FALSE(editor.SetEditorSettingUVE(Id::kSnapRotateStepDegreesUVE, 720.0));
+        EXPECT_FALSE(editor.SetEditorSettingUVE("editor.unknown", true));
+        EXPECT_FLOAT_EQ(editor.GetViewportGridOpacityUVE(), 0.5F);
+        EXPECT_FLOAT_EQ(editor.GetTransformSnappingSettingsUVE().rotateStepDegrees, 45.0F);
+
+        // A change made elsewhere (the menu) is what the setting reads back.
+        ASSERT_TRUE(editor.SetViewportGridCellSizeUVE(5.0F));
+        EXPECT_EQ(editor.GetEditorSettingUVE(Id::kGridCellSizeUVE), Config::SettingValueUVE{5.0});
+        EXPECT_FALSE(editor.GetEditorSettingUVE("editor.unknown").has_value());
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
+TEST(EditorUVETest, SessionSettingsUVE_NeverRestoresTheGameWorkspace) {
+    const Core::EngineConfigUVE config = MakeEditorTestConfigUVE();
+    std::filesystem::remove(config.settingsFilePath);
+    Core::EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Config::IConfigManagerUVE& settings = engine.GetServicesUVE().GetConfigManagerUVE();
+
+    // Leaving the editor in Game keeps the last workspace a session can reopen into.
+    settings.SetIntUVE("editor.workspace.active", 2);
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_workspace_game.uvescene");
+        editor.InitUVE();
+        EXPECT_TRUE(EditorUVEAccessUVE::IsScriptingWorkspaceActiveUVE(editor));
+        EditorUVEAccessUVE::ActivateGameWorkspaceUVE(editor);
+        ASSERT_TRUE(EditorUVEAccessUVE::SaveSessionSettingsUVE(editor));
+        EXPECT_EQ(settings.GetIntUVE("editor.workspace.active", -1), 2);
+        editor.ShutdownUVE();
+    }
+    // A file that names Game anyway opens in Library.
+    settings.SetIntUVE("editor.workspace.active", 5);
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_workspace_game_file.uvescene");
+        editor.InitUVE();
+        EXPECT_TRUE(EditorUVEAccessUVE::IsLibraryWorkspaceActiveUVE(editor));
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+    std::filesystem::remove(config.settingsFilePath);
+}
+
 TEST(EditorUVETest, ViewportViewUVE_NamedViewsGoOrthographicAutomaticallyUntilOrbited) {
     Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
     engine.Init();
@@ -1113,12 +1203,12 @@ TEST(EditorUVETest, ViewportGridUVE_RefusesBadOpacityAndPersistsAcrossSessionRel
         reloaded.ShutdownUVE();
     }
 
-    // A corrupt stored opacity leaves both settings at their defaults.
+    // A corrupt stored opacity falls back to its default alone; the stored visibility survives it.
     engine.GetServicesUVE().GetConfigManagerUVE().SetDoubleUVE("editor.viewport.grid.opacity", 7.0);
     {
         EditorUVE corrupt(engine.GetServicesUVE(), "uve_editor_tests_grid_prefs_corrupt.uvescene");
         corrupt.InitUVE();
-        EXPECT_TRUE(corrupt.IsViewportGridVisibleUVE());
+        EXPECT_FALSE(corrupt.IsViewportGridVisibleUVE());
         EXPECT_FLOAT_EQ(corrupt.GetViewportGridOpacityUVE(), 1.0F);
         corrupt.ShutdownUVE();
     }
@@ -1207,13 +1297,26 @@ TEST(EditorUVETest, ViewportSelectionOutlineUVE_RefusesBadValuesAndPersistsAcros
         EXPECT_FLOAT_EQ(reloaded.GetViewportSelectionOutlineThicknessUVE(), 4.0F);
         reloaded.ShutdownUVE();
     }
-    // A corrupt stored thickness leaves the whole outline at its defaults.
+    // A corrupt stored thickness falls back to its default alone; visibility and colour survive it.
     engine.GetServicesUVE().GetConfigManagerUVE().SetDoubleUVE("editor.viewport.selectionOutline.thickness", 40.0);
     {
         EditorUVE corrupt(engine.GetServicesUVE(), "uve_editor_tests_outline_prefs_corrupt.uvescene");
         corrupt.InitUVE();
-        EXPECT_TRUE(corrupt.IsViewportSelectionOutlineVisibleUVE());
+        EXPECT_FALSE(corrupt.IsViewportSelectionOutlineVisibleUVE());
+        EXPECT_FLOAT_EQ(corrupt.GetViewportSelectionOutlineColorUVE().g, 0.6F);
         EXPECT_FLOAT_EQ(corrupt.GetViewportSelectionOutlineThicknessUVE(), 2.0F);
+        corrupt.ShutdownUVE();
+    }
+    // One bad colour channel sends the whole colour back to its default, never a mixed colour.
+    engine.GetServicesUVE().GetConfigManagerUVE().SetDoubleUVE("editor.viewport.selectionOutline.b", 3.0);
+    {
+        EditorUVE corrupt(engine.GetServicesUVE(), "uve_editor_tests_outline_prefs_corrupt_color.uvescene");
+        corrupt.InitUVE();
+        const Color color = corrupt.GetViewportSelectionOutlineColorUVE();
+        EXPECT_FLOAT_EQ(color.r, 1.0F);
+        EXPECT_FLOAT_EQ(color.g, 0.62F);
+        EXPECT_FLOAT_EQ(color.b, 0.16F);
+        EXPECT_FALSE(corrupt.IsViewportSelectionOutlineVisibleUVE());
         corrupt.ShutdownUVE();
     }
     engine.Shutdown();
