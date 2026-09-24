@@ -40,6 +40,26 @@ struct EngineProjectSettingUVE final {
          [](EngineConfigUVE& config, const SettingValueUVE& value) {
              config.maxDeltaTimeSeconds = std::get<double>(value);
          }},
+        {RestartRequiredUVE(Config::MakeIntSettingUVE(
+             std::string(Id::kPhysicsMaxStepsPerFrameUVE), defaults.maxFixedStepsPerFrame, 1, 64,
+             "Max Steps Per Frame",
+             "Physics/Common",
+             "The most fixed steps one frame runs to catch up. Higher keeps the simulation on time "
+             "through slow frames; lower keeps a slow frame from getting slower still.")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             config.maxFixedStepsPerFrame = static_cast<int>(std::get<std::int64_t>(value));
+         }},
+        {RestartRequiredUVE(Config::MakeVector3SettingUVE(
+             std::string(Id::kPhysicsGravityUVE),
+             Config::SettingVector3UVE{defaults.gravity.x, defaults.gravity.y, defaults.gravity.z}, -1000.0, 1000.0,
+             "Gravity", "Physics/3D",
+             "Acceleration every rigid body, character and particle falls with, in metres per second squared. "
+             "Each body scales it by its own gravity scale.")),
+         [](EngineConfigUVE& config, const SettingValueUVE& value) {
+             const auto& gravity = std::get<Config::SettingVector3UVE>(value);
+             config.gravity = Math::Vector3UVE{static_cast<float>(gravity.x), static_cast<float>(gravity.y),
+                                               static_cast<float>(gravity.z)};
+         }},
         {RestartRequiredUVE(Config::MakeEnumSettingUVE(
              std::string(Id::kShadowMapResolutionUVE), static_cast<std::int64_t>(defaults.shadowMapResolution),
              {{512, "512"}, {1024, "1024"}, {2048, "2048"}, {4096, "4096"}}, "Map Resolution", "Rendering/Shadows",

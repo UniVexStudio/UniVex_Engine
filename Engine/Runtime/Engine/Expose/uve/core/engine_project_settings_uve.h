@@ -15,6 +15,8 @@ namespace UVE::Core {
 namespace EngineProjectSettingIdUVE {
 inline constexpr std::string_view kPhysicsTicksPerSecondUVE = "physics.common.ticksPerSecond";
 inline constexpr std::string_view kPhysicsMaxFrameTimeUVE = "physics.common.maxFrameTime";
+inline constexpr std::string_view kPhysicsMaxStepsPerFrameUVE = "physics.common.maxStepsPerFrame";
+inline constexpr std::string_view kPhysicsGravityUVE = "physics.3d.gravity";
 inline constexpr std::string_view kShadowMapResolutionUVE = "rendering.shadows.mapResolution";
 inline constexpr std::string_view kShadowFilterUVE = "rendering.shadows.filter";
 inline constexpr std::string_view kAutoSaveIntervalUVE = "application.save.autoSaveInterval";

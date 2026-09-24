@@ -28,6 +28,7 @@ public:
     void Reset() override;
     void SetMaxDeltaTimeUVE(double maxDeltaSeconds) override;
     void SetFixedTimestepUVE(double fixedDeltaSeconds) override;
+    void SetMaxStepsPerTickUVE(int maxSteps) override;
     FixedStepResultUVE AdvanceFixedStepUVE() override;
     void DiscardFixedStepAccumulatorUVE() noexcept override;
 
@@ -40,14 +41,14 @@ private:
     double m_fixedDeltaTime = 1.0 / 60.0;
     double m_accumulator = 0.0;
 
-    /// Hard cap on stepsToRun returned by a single AdvanceFixedStepUVE()
-    /// call. A second, independent spiral-of-death guard beyond the
-    /// per-Tick() delta clamp: even with a clamped delta, a sustained run
-    /// of low frame rates could otherwise let the accumulator grow forever
-    /// if steps consistently take longer to run than they simulate. Not
-    /// currently exposed via ITimerUVE — revisit if a future system needs
-    /// it configurable.
-    static constexpr int kMaxStepsPerTick = 8;
+    /// Cap on stepsToRun returned by a single AdvanceFixedStepUVE() call
+    /// (SetMaxStepsPerTickUVE). A second, independent spiral-of-death guard
+    /// beyond the per-Tick() delta clamp: even with a clamped delta, a
+    /// sustained run of low frame rates could otherwise let the accumulator
+    /// grow forever if steps consistently take longer to run than they
+    /// simulate.
+    static constexpr int kDefaultMaxStepsPerTick = 8;
+    int m_maxStepsPerTick = kDefaultMaxStepsPerTick;
 };
 
 } // namespace UVE::Utilities

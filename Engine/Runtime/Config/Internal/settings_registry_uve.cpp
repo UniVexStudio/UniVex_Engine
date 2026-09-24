@@ -78,6 +78,18 @@ constexpr double kNoValueUVE = std::numeric_limits<double>::quiet_NaN();
     return key;
 }
 
+/// The keys beneath a composite setting's id that hold its parts; none for a scalar setting.
+[[nodiscard]] std::string_view ComponentKeysUVE(const SettingTypeUVE type) noexcept {
+    switch (type) {
+    case SettingTypeUVE::Color:
+        return "rgba";
+    case SettingTypeUVE::Vector3:
+        return "xyz";
+    default:
+        return {};
+    }
+}
+
 /// A stored channel as a float, or NaN when it is missing, not a number or outside 0..1. Narrowing
 /// only in-range values also keeps a huge stored double from overflowing the float conversion.
 [[nodiscard]] float ReadChannelUVE(const IConfigManagerUVE& store, const std::string& key) {
@@ -90,7 +102,7 @@ constexpr double kNoValueUVE = std::numeric_limits<double>::quiet_NaN();
 [[nodiscard]] std::optional<SettingValueUVE> ReadStoredUVE(const SettingDescriptorUVE& descriptor,
                                                           const IConfigManagerUVE& store) {
     const std::string& id = descriptor.id;
-    if (descriptor.type != SettingTypeUVE::Color && !store.HasKeyUVE(id)) {
+    if (ComponentKeysUVE(descriptor.type).empty() && !store.HasKeyUVE(id)) {
         return std::nullopt;
     }
     switch (descriptor.type) {
@@ -141,6 +153,15 @@ constexpr double kNoValueUVE = std::numeric_limits<double>::quiet_NaN();
         color.a = descriptor.colorHasAlpha ? ReadChannelUVE(store, ChannelKeyUVE(id, 'a')) : 1.0F;
         return color;
     }
+    case SettingTypeUVE::Vector3: {
+        if (!store.HasKeyUVE(ChannelKeyUVE(id, 'x'))) {
+            return std::nullopt;
+        }
+        // As with a colour, a missing or non-numeric component reads as NaN and fails the vector.
+        return SettingVector3UVE{store.GetDoubleUVE(ChannelKeyUVE(id, 'x'), kNoValueUVE),
+                                 store.GetDoubleUVE(ChannelKeyUVE(id, 'y'), kNoValueUVE),
+                                 store.GetDoubleUVE(ChannelKeyUVE(id, 'z'), kNoValueUVE)};
+    }
     }
     return std::nullopt;
 }
@@ -189,6 +210,11 @@ bool IsSettingValueValidUVE(const SettingDescriptorUVE& descriptor, const Settin
         return color != nullptr && IsChannelValidUVE(color->r) && IsChannelValidUVE(color->g) &&
                IsChannelValidUVE(color->b) && (!descriptor.colorHasAlpha || IsChannelValidUVE(color->a));
     }
+    case SettingTypeUVE::Vector3: {
+        const auto* vector = std::get_if<SettingVector3UVE>(&value);
+        return vector != nullptr && IsWithinBoundsUVE(descriptor, vector->x) &&
+               IsWithinBoundsUVE(descriptor, vector->y) && IsWithinBoundsUVE(descriptor, vector->z);
+    }
     }
     return false;
 }
@@ -197,9 +223,10 @@ std::string ValidateSettingDescriptorUVE(const SettingDescriptorUVE& descriptor)
     if (!IsPathUVE(descriptor.id, '.', false)) {
         return "id '" + descriptor.id + "' is not a dot path of letters, digits and underscores";
     }
-    const bool numeric = descriptor.type == SettingTypeUVE::Int || descriptor.type == SettingTypeUVE::Float;
+    const bool numeric = descriptor.type == SettingTypeUVE::Int || descriptor.type == SettingTypeUVE::Float ||
+                         descriptor.type == SettingTypeUVE::Vector3;
     if (!numeric && (descriptor.minimum || descriptor.maximum || descriptor.step)) {
-        return "'" + descriptor.id + "' declares numeric bounds or a step but is not an Int or Float setting";
+        return "'" + descriptor.id + "' declares numeric bounds or a step but is not a numeric setting";
     }
     for (const auto& bound : {descriptor.minimum, descriptor.maximum}) {
         if (bound && !std::isfinite(*bound)) {
@@ -298,19 +325,29 @@ SettingDescriptorUVE MakeColorSettingUVE(std::string id, const SettingColorUVE d
     return descriptor;
 }
 
+SettingDescriptorUVE MakeVector3SettingUVE(std::string id, const SettingVector3UVE defaultValue,
+                                           const std::optional<double> minimum, const std::optional<double> maximum,
+                                           std::string displayName, std::string category, std::string tooltip) {
+    SettingDescriptorUVE descriptor = MakeSettingUVE(std::move(id), SettingTypeUVE::Vector3, defaultValue,
+                                                     std::move(displayName), std::move(category), std::move(tooltip));
+    descriptor.minimum = minimum;
+    descriptor.maximum = maximum;
+    return descriptor;
+}
+
 bool SettingsRegistryUVE::RegisterUVE(SettingDescriptorUVE descriptor) {
     if (!ValidateSettingDescriptorUVE(descriptor).empty() || m_byId.contains(descriptor.id)) {
         return false;
     }
-    // Where the setting's values sit in the document: at its id, or for a colour at its four
-    // channel keys (alpha reserved even when unused). A colour's id is therefore an object, and
-    // other settings may live beside its channels, e.g. "outline" and "outline.thickness".
+    // Where the setting's values sit in the document: at its id, or for a composite at its
+    // component keys (a colour's alpha reserved even when unused). A composite's id is therefore
+    // an object, and other settings may live beside its components, e.g. "outline" and
+    // "outline.thickness".
     std::vector<std::string> values;
-    if (descriptor.type == SettingTypeUVE::Color) {
-        for (const char channel : {'r', 'g', 'b', 'a'}) {
-            values.push_back(ChannelKeyUVE(descriptor.id, channel));
-        }
-    } else {
+    for (const char component : ComponentKeysUVE(descriptor.type)) {
+        values.push_back(ChannelKeyUVE(descriptor.id, component));
+    }
+    if (values.empty()) {
         values.push_back(descriptor.id);
     }
     // No path may be both a value and an object: "a.b" holding a value rules out "a.b.c", and the
@@ -393,6 +430,13 @@ bool SettingsRegistryUVE::SetValueUVE(IConfigManagerUVE& store, const std::strin
         }
         break;
     }
+    case SettingTypeUVE::Vector3: {
+        const auto& vector = std::get<SettingVector3UVE>(value);
+        store.SetDoubleUVE(ChannelKeyUVE(key, 'x'), vector.x);
+        store.SetDoubleUVE(ChannelKeyUVE(key, 'y'), vector.y);
+        store.SetDoubleUVE(ChannelKeyUVE(key, 'z'), vector.z);
+        break;
+    }
     }
     return true;
 }
@@ -407,12 +451,13 @@ bool SettingsRegistryUVE::ClearValueUVE(IConfigManagerUVE& store, const std::str
     if (descriptor == nullptr) {
         return false;
     }
-    if (descriptor->type != SettingTypeUVE::Color) {
+    const std::string_view components = ComponentKeysUVE(descriptor->type);
+    if (components.empty()) {
         return store.RemoveKeyUVE(descriptor->id);
     }
     bool removed = false;
-    for (const char channel : {'r', 'g', 'b', 'a'}) {
-        removed = store.RemoveKeyUVE(ChannelKeyUVE(descriptor->id, channel)) || removed;
+    for (const char component : components) {
+        removed = store.RemoveKeyUVE(ChannelKeyUVE(descriptor->id, component)) || removed;
     }
     return removed;
 }
@@ -477,6 +522,11 @@ std::string SettingsRegistryUVE::GetStringUVE(const IConfigManagerUVE& store, co
 SettingColorUVE SettingsRegistryUVE::GetColorUVE(const IConfigManagerUVE& store, const std::string_view id,
                                                  const SettingColorUVE fallback) const {
     return GetTypedUVE<SettingColorUVE>(*this, store, id, {SettingTypeUVE::Color}, fallback);
+}
+
+SettingVector3UVE SettingsRegistryUVE::GetVector3UVE(const IConfigManagerUVE& store, const std::string_view id,
+                                                     const SettingVector3UVE fallback) const {
+    return GetTypedUVE<SettingVector3UVE>(*this, store, id, {SettingTypeUVE::Vector3}, fallback);
 }
 
 } // namespace UVE::Config

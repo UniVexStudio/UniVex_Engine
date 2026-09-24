@@ -69,6 +69,12 @@ public:
     /// and last valid value are retained. Default is 1/60 second.
     virtual void SetFixedTimestepUVE(double fixedDeltaSeconds) = 0;
 
+    /// Sets how many fixed steps one AdvanceFixedStepUVE() call may return at most, the guard
+    /// against a slow frame that asks for ever more steps to catch up. Past it, the leftover time is
+    /// dropped and the simulation runs slower than real time instead. Values below 1 are ignored;
+    /// the default is 8.
+    virtual void SetMaxStepsPerTickUVE(int maxSteps) = 0;
+
     /// Consumes as many fixed-size chunks of accumulated time as are
     /// available (capped at an internal maximum steps-per-call to avoid an
     /// unbounded catch-up loop), returning how many steps to run and the
