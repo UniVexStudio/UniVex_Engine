@@ -1171,6 +1171,7 @@ private:
     /// True for any live document entity in the hierarchy, spatial or not. This, not
     /// HasSceneGraphNodeUVE, is what a parent needs: a pure Node such as the scene root holds
     /// children without having a transform of its own.
+    [[nodiscard]] bool IsReparentableNodeUVE(Scene::EntityUVE entity) const noexcept;
     [[nodiscard]] bool IsHierarchyNodeUVE(Scene::EntityUVE entity) const noexcept;
     /// The world pose a child of `parent` composes its local transform from, by the rule
     /// SceneGraphUVE::UpdateUVE applies: identity for no parent and for a parent with no transform

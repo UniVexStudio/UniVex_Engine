@@ -19,6 +19,8 @@
 #include <unordered_set>
 #include <vector>
 
+#include "uve/asset/animation_clip_asset_uve.h"
+#include "uve/asset/asset_handle_uve.h"
 #include "uve/asset/i_asset_bundle_uve.h"
 #include "uve/asset/i_asset_database_uve.h"
 #include "uve/asset/i_asset_importer_uve.h"
@@ -482,6 +484,12 @@ private:
     /// components.
     void SyncCharacterControllersUVE(float fixedDeltaTimeSeconds);
 
+    /// Plays every AnimationPlayer and evaluates every AnimationTree whose update runs on this clock
+    /// (`physicsStep` true: the fixed step; false: once per frame), writing into each one's target
+    /// node - the set target, or the node's parent - through its transform. Clips load
+    /// asynchronously; until one is ready its player waits. Runs only while the simulation runs.
+    void SyncAnimationUVE(float deltaSeconds, bool physicsStep);
+
     /// Simple kinematic integration for every active Projectile3DNodeComponentUVE entity (that
     /// also has a TransformComponentUVE): accumulates `velocity` by `acceleration * dt`, moves the
     /// entity's authored local position by `velocity * dt` via SceneGraphUVE::SetLocalTransformUVE
@@ -745,6 +753,10 @@ private:
     ScriptGameplayBindingContextUVE m_scriptBindingContext;
     Scripting::ScriptEngineCallBindingsUVE m_scriptEngineCallBindings;
     std::unordered_map<Scene::EntityUVE, std::string> m_scriptReconcileFailedEntities;
+    /// Clips the animation nodes play, by asset guid. Declared after m_assetManager so the handles
+    /// release before the manager is destroyed; clips no node references any more are dropped
+    /// each frame.
+    std::unordered_map<std::uint64_t, Asset::AssetHandleUVE<Asset::AnimationClipAssetUVE>> m_animationClips;
     std::unique_ptr<Save::ISaveGameSystemUVE> m_saveGameSystem;
     std::unique_ptr<Save::ICheckpointManagerUVE> m_checkpointManager;
     std::unique_ptr<Config::IConfigManagerUVE> m_configManager;

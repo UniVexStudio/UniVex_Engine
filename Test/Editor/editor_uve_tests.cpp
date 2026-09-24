@@ -567,8 +567,9 @@ TEST(EditorUVETest, InspectorDrawerRegistrationUVE_IncludesStableHierarchyDrawer
         // old Name and Hierarchy drawers were removed and SurfaceInstance3D, LightEmitter3D,
         // Decal3D and FogVolume3D each brought one.
         // 33 with Skeleton3D's own section; 34 with SolidBody3D's.
-        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorDrawerCountUVE(editor), 34U);
+        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorDrawerCountUVE(editor), 35U);
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "solid-body"));
+        EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "animation-tree"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "skeleton-3d"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "surface-instance"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "light-emitter"));
@@ -5014,6 +5015,60 @@ TEST(EditorUVETest, CharacterBodyInspectorUVE_IsItsChainToTheRootAndNothingElse)
         const std::vector<std::string> boxIds = EditorUVEAccessUVE::GetEligibleInspectorDrawerIdsUVE(editor, box);
         EXPECT_EQ(std::count(boxIds.begin(), boxIds.end(), "collider"), 0);
         EXPECT_EQ(std::count(boxIds.begin(), boxIds.end(), "physics-object"), 0);
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
+TEST(EditorUVETest, AnimationNodesUVE_InspectorIsTheirOwnSectionThenTheNodeSection) {
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_animation_inspector.uvescene");
+        editor.InitUVE();
+        const Scene::EntityUVE player =
+            editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::AnimationPlayer);
+        const Scene::EntityUVE tree = editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::AnimationTree);
+        ASSERT_NE(player, Scene::kInvalidEntityUVE);
+        ASSERT_NE(tree, Scene::kInvalidEntityUVE);
+        // AnimationPlayer > Node, exactly like the scene root: no Transform, no Visibility.
+        const std::vector<std::string> nodeSection{"process", "physics-interpolation", "auto-translate",
+                                                   "editor-description", "script", "node-metadata"};
+        std::vector<std::string> expected{"animation-player"};
+        expected.insert(expected.end(), nodeSection.begin(), nodeSection.end());
+        EXPECT_EQ(EditorUVEAccessUVE::GetEligibleInspectorDrawerIdsUVE(editor, player), expected);
+        expected.front() = "animation-tree";
+        EXPECT_EQ(EditorUVEAccessUVE::GetEligibleInspectorDrawerIdsUVE(editor, tree), expected);
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
+TEST(EditorUVETest, AnimationNodesUVE_APureNodeReparentsAndUndoes) {
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_animation_reparent.uvescene");
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        const Scene::EntityUVE player =
+            editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::AnimationPlayer);
+        editor.SelectEntityUVE(editor.GetDocumentSceneRootUVE());
+        const Scene::EntityUVE door = editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Node3D);
+        ASSERT_NE(door, Scene::kInvalidEntityUVE);
+        ASSERT_NE(player, Scene::kInvalidEntityUVE);
+        const Scene::EntityUVE rootParent = entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(player).parent;
+
+        editor.SelectEntityUVE(player);
+        ASSERT_TRUE(editor.ReparentSelectedEntityUVE(door));
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(player).parent, door);
+        EXPECT_FALSE(entityManager.HasComponentUVE<Scene::TransformComponentUVE>(player));
+        ASSERT_TRUE(editor.UndoUVE());
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(player).parent, rootParent);
+        ASSERT_TRUE(editor.RedoUVE());
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(player).parent, door);
         editor.ShutdownUVE();
     }
     engine.Shutdown();

@@ -165,6 +165,7 @@ add_executable(uve_integration_tests
     Support/test_scratch_uve.cpp
     Nodes/3D/nodes_3d_uve_tests.cpp
     Nodes/3D/node_definitions_3d_uve_tests.cpp
+    Nodes/3D/animation_nodes_uve_tests.cpp
     Nodes/CanvasLayer/node_definitions_canvas_layer_uve_tests.cpp
     Integration/Entity/archetype_uve_tests.cpp
     Integration/Entity/chunk_uve_tests.cpp

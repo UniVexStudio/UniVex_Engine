@@ -87,8 +87,7 @@ void SceneGraphUVE::SetLocalTransformUVE(IEntityManagerUVE& entityManager, Entit
 
 void SceneGraphUVE::SetParentUVE(IEntityManagerUVE& entityManager, EntityUVE child, EntityUVE newParent) {
     const bool invalidChild = !entityManager.IsAliveUVE(child) ||
-                              !entityManager.HasComponentUVE<HierarchyComponentUVE>(child) ||
-                              !entityManager.HasComponentUVE<WorldTransformComponentUVE>(child);
+                              !entityManager.HasComponentUVE<HierarchyComponentUVE>(child);
     const bool invalidParent =
         newParent != kInvalidEntityUVE &&
         (!entityManager.IsAliveUVE(newParent) ||
@@ -107,7 +106,10 @@ void SceneGraphUVE::SetParentUVE(IEntityManagerUVE& entityManager, EntityUVE chi
         hierarchy.parent = newParent;
         hierarchy.siblingOrder = NextSiblingOrderUVE(); // after the siblings already there
     }
-    entityManager.GetComponentUVE<WorldTransformComponentUVE>(child).dirty = true;
+    // A pure Node (no transform of its own) moves in the hierarchy only; nothing composes from it.
+    if (entityManager.HasComponentUVE<WorldTransformComponentUVE>(child)) {
+        entityManager.GetComponentUVE<WorldTransformComponentUVE>(child).dirty = true;
+    }
 }
 
 void SceneGraphUVE::ResolveVisibilityParentsUVE(IEntityManagerUVE& entityManager) {

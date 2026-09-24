@@ -7,6 +7,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -72,6 +73,7 @@
 #include "uve/memory/memory_manager_uve.h"
 #include "uve/scene/scene_graph_uve.h"
 #include "uve/scene/scene_serializer_uve.h"
+#include "uve/nodes/3d/animation_player_uve.h"
 #include "uve/nodes/3d/hitbox_3d_uve.h"
 #include "uve/nodes/3d/hurtbox_3d_uve.h"
 #include "uve/nodes/3d/interaction_area_3d_uve.h"
@@ -1765,6 +1767,58 @@ TEST(EngineCoreUVETest, CharacterBody3D_SolidBodyMotionLocksHoldTheirAxis) {
     EXPECT_FLOAT_EQ(position.x, 0.0F);           // Locked: never moved along X.
     EXPECT_GT(position.z, 0.2F);                 // Free: moved along Z.
     EXPECT_NEAR(position.y, 5.5F, 1.0e-4F);      // Floating: no gravity.
+    engine.Shutdown();
+}
+
+TEST(EngineCoreUVETest, AnimationPlayer_PlaysItsClipOnItsParentNode) {
+    EngineCoreUVE engine(MakeTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+    Asset::IAssetDatabaseUVE& assetDatabase = engine.GetServicesUVE().GetAssetDatabaseUVE();
+
+    // A two-second clip that slides 10 m along X.
+    Asset::AnimationClipAssetUVE clip;
+    clip.clipId = "slide";
+    clip.durationSeconds = 2.0;
+    Asset::AnimationAssetSampleUVE start;
+    Asset::AnimationAssetSampleUVE end;
+    end.timeSeconds = 2.0;
+    end.pose.position = Math::Vector3UVE{10.0F, 0.0F, 0.0F};
+    clip.samples = {start, end};
+    const std::filesystem::path clipPath = "uve_engine_core_tests_slide.uveanim";
+    ASSERT_TRUE(Asset::SaveAnimationClipAssetUVE(clip, clipPath));
+    const Asset::AssetGuidUVE guid = assetDatabase.RegisterUVE(clipPath);
+    ASSERT_NE(guid, Asset::kInvalidAssetGuidUVE);
+
+    // The door is a Node3D; the player is a pure Node under it, with no target set.
+    const Scene::EntityUVE door = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, door, Scene::TransformComponentUVE{});
+    const Scene::EntityUVE player = entityManager.CreateEntityUVE();
+    Scene::AnimationPlayerNodeDefinitionUVE definition;
+    definition.player.clip = guid;
+    definition.player.loopMode = Scene::AnimationLoopModeUVE::Once;
+    Scene::ApplyAnimationPlayerNodeDefinitionUVE(entityManager, player, definition);
+    sceneGraph.SetParentUVE(entityManager, player, door);
+
+    const auto startedAt = std::chrono::steady_clock::now();
+    while (std::chrono::steady_clock::now() - startedAt < std::chrono::seconds(10) &&
+           !entityManager.GetComponentUVE<Scene::AnimationPlayerComponentUVE>(player).finished) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        engine.TickFrameUVE();
+    }
+    const Scene::AnimationPlayerComponentUVE& played =
+        entityManager.GetComponentUVE<Scene::AnimationPlayerComponentUVE>(player);
+    EXPECT_TRUE(played.finished);
+    EXPECT_FALSE(played.isPlaying);
+    // A Once clip holds its last pose, and the world transform followed.
+    EXPECT_NEAR(entityManager.GetComponentUVE<Scene::TransformComponentUVE>(door).localPosition.x, 10.0F, 1e-4F);
+    EXPECT_NEAR(entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(door).worldPosition.x, 10.0F, 1e-4F);
+    EXPECT_FALSE(entityManager.HasComponentUVE<Scene::TransformComponentUVE>(player));
+
+    std::filesystem::remove(clipPath);
+    std::filesystem::remove(MakeTestConfigUVE().assetDatabaseFilePath);
     engine.Shutdown();
 }
 

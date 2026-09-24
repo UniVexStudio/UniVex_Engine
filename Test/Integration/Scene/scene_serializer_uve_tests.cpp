@@ -22,6 +22,7 @@
 #include "uve/math/vector3_uve.h"
 #include "uve/memory/memory_manager_uve.h"
 #include "uve/component/animation_player_component_uve.h"
+#include "uve/component/animation_tree_component_uve.h"
 #include "uve/component/area_component_uve.h"
 #include "uve/component/audio_source_component_uve.h"
 #include "uve/component/camera_component_uve.h"
@@ -637,6 +638,56 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_InvalidAudioSourcePayload_RollsBackCre
     EXPECT_EQ(entityManager.GetEntityCountUVE(), entityCountBefore);
 }
 
+TEST_F(SceneSerializerUVETest, RestoreUVE_AnimationTargetsRemapToTheRestoredEntities) {
+    // A door (Node3D) with an AnimationPlayer and an AnimationTree beside it, both aimed at it.
+    const EntityUVE door = entityManager.CreateEntityUVE();
+    entityManager.AddComponentUVE<TransformComponentUVE>(door, TransformComponentUVE{});
+    entityManager.AddComponentUVE<HierarchyComponentUVE>(door, HierarchyComponentUVE{});
+    const EntityUVE player = entityManager.CreateEntityUVE();
+    entityManager.AddComponentUVE<HierarchyComponentUVE>(player, HierarchyComponentUVE{door});
+    AnimationPlayerComponentUVE animation;
+    animation.target = door;
+    entityManager.AddComponentUVE<AnimationPlayerComponentUVE>(player, animation);
+    AnimationTreeComponentUVE blend;
+    blend.target = door;
+    blend.blend = 0.25F;
+    entityManager.AddComponentUVE<AnimationTreeComponentUVE>(player, blend);
+
+    const std::optional<SceneSnapshotUVE> snapshot = serializer.CaptureUVE(entityManager, {door}, SceneAssetTypeUVE::Scene);
+    ASSERT_TRUE(snapshot.has_value());
+    EntityManagerUVE restoredManager(memoryManager.GetDefaultAllocatorUVE(), eventSystem);
+    const std::vector<EntityUVE> roots = serializer.RestoreUVE(restoredManager, *snapshot);
+    ASSERT_EQ(roots.size(), 1U);
+    const EntityUVE restoredDoor = roots[0];
+    EntityUVE restoredPlayer = kInvalidEntityUVE;
+    restoredManager.ForEachUVE<AnimationPlayerComponentUVE>(
+        [&restoredPlayer](const EntityUVE entity, const AnimationPlayerComponentUVE&) { restoredPlayer = entity; });
+    ASSERT_NE(restoredPlayer, kInvalidEntityUVE);
+    EXPECT_EQ(restoredManager.GetComponentUVE<AnimationPlayerComponentUVE>(restoredPlayer).target, restoredDoor);
+    EXPECT_EQ(restoredManager.GetComponentUVE<AnimationTreeComponentUVE>(restoredPlayer).target, restoredDoor);
+    EXPECT_FLOAT_EQ(restoredManager.GetComponentUVE<AnimationTreeComponentUVE>(restoredPlayer).blend, 0.25F);
+    // A pure Node stays one: no transform appears on the way through the file.
+    EXPECT_FALSE(restoredManager.HasComponentUVE<TransformComponentUVE>(restoredPlayer));
+}
+
+TEST_F(SceneSerializerUVETest, RestoreUVE_LegacyAnimationPlayerFieldsCarryOver) {
+    const std::string payloadText =
+        R"({"entities":[{"localId":0,"components":{"AnimationPlayerComponentUVE":{"clipAssetPath":"anims/run.uveclip","playbackSpeed":2.0,"looping":false,"playOnAwake":true,"enabled":false}}}]})";
+    const auto* const payloadBytes = reinterpret_cast<const std::byte*>(payloadText.data());
+    const SceneSnapshotUVE snapshot{
+        Asset::EncodeUveFileEnvelopeUVE(SceneAssetTypeUVE::Scene,
+                                        std::vector<std::byte>{payloadBytes, payloadBytes + payloadText.size()}),
+        SceneAssetTypeUVE::Scene};
+    const std::vector<EntityUVE> roots = serializer.RestoreUVE(entityManager, snapshot);
+    ASSERT_EQ(roots.size(), 1U);
+    const AnimationPlayerComponentUVE& loaded = entityManager.GetComponentUVE<AnimationPlayerComponentUVE>(roots[0]);
+    EXPECT_FLOAT_EQ(loaded.speed, 2.0F);
+    EXPECT_EQ(loaded.loopMode, AnimationLoopModeUVE::Once);
+    EXPECT_FALSE(loaded.autoplay); // it was disabled
+    EXPECT_EQ(loaded.clip, Asset::kInvalidAssetGuidUVE);
+    EXPECT_EQ(loaded.target, kInvalidEntityUVE);
+}
+
 TEST(AudioSourceComponentUVE, IsAudioSourceComponentValidUVE_EnforcesBoundedNulFreePath) {
     AudioSourceComponentUVE valid;
     valid.audioAssetPath = "sounds/player.wav";
@@ -1109,7 +1160,19 @@ TEST_F(SceneSerializerUVETest, SaveThenLoad_UIComponentsUVE_RoundTripExactly) {
 
 TEST_F(SceneSerializerUVETest, SaveThenLoad_AnimationPlayerComponentUVE_RoundTripsExactly) {
     const EntityUVE entity = entityManager.CreateEntityUVE();
-    const AnimationPlayerComponentUVE animation{"animations/hero_run.uveclip", 1.25F, false, false, true};
+    AnimationPlayerComponentUVE animation;
+    animation.clip = Asset::AssetGuidUVE{0x1234U};
+    animation.autoplay = false;
+    animation.speed = -1.25F;
+    animation.loopMode = AnimationLoopModeUVE::PingPong;
+    animation.onFinish = AnimationFinishActionUVE::ReturnToStart;
+    animation.startOffsetSeconds = 0.5F;
+    animation.blendInSeconds = 0.25F;
+    animation.relative = true;
+    animation.animateScale = false;
+    animation.processCallback = AnimationProcessCallbackUVE::Physics;
+    animation.isPlaying = true; // runtime state: must not be saved
+    animation.currentTimeSeconds = 3.0F;
     entityManager.AddComponentUVE<AnimationPlayerComponentUVE>(entity, animation);
 
     const std::filesystem::path path = "uve_scene_serializer_tests_animation_player.uvescene";
@@ -1121,11 +1184,9 @@ TEST_F(SceneSerializerUVETest, SaveThenLoad_AnimationPlayerComponentUVE_RoundTri
     ASSERT_EQ(roots.size(), 1U);
     const AnimationPlayerComponentUVE& loaded =
         loadedManager.GetComponentUVE<AnimationPlayerComponentUVE>(roots[0]);
-    EXPECT_EQ(loaded.clipAssetPath, animation.clipAssetPath);
-    EXPECT_FLOAT_EQ(loaded.playbackSpeed, animation.playbackSpeed);
-    EXPECT_EQ(loaded.looping, animation.looping);
-    EXPECT_EQ(loaded.playOnAwake, animation.playOnAwake);
-    EXPECT_EQ(loaded.enabled, animation.enabled);
+    EXPECT_TRUE(loaded.HasSameSettingsUVE(animation));
+    EXPECT_FALSE(loaded.isPlaying);
+    EXPECT_EQ(loaded.currentTimeSeconds, 0.0F);
 
     std::filesystem::remove(path);
 }
