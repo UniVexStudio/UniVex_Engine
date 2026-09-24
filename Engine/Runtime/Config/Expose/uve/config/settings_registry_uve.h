@@ -31,9 +31,10 @@ namespace UVE::Config {
 class SettingsRegistryUVE final {
 public:
     /// Adds `descriptor`. Refused - nothing registered, false returned - when ValidateSettingDescriptorUVE
-    /// finds it malformed, its id is already registered, or its id and a registered one would nest
-    /// ("a.b" and "a.b.c" cannot both hold a value). All are programming errors the registry's own
-    /// test is there to catch.
+    /// finds it malformed, its id is already registered, or the document could not hold it beside
+    /// the registered settings: "a.b" holding a value rules out "a.b.c", and a colour's channel keys
+    /// (`.r`, `.g`, `.b`, `.a`) are its own. All are programming errors the registry's own test is
+    /// there to catch.
     [[nodiscard]] bool RegisterUVE(SettingDescriptorUVE descriptor);
 
     [[nodiscard]] const SettingDescriptorUVE* FindUVE(std::string_view id) const;
@@ -67,8 +68,9 @@ public:
 private:
     std::vector<std::unique_ptr<SettingDescriptorUVE>> m_descriptors;
     std::unordered_map<std::string, const SettingDescriptorUVE*> m_byId;
-    /// Every proper prefix of a registered id ("a" and "a.b" for "a.b.c"): objects in the settings
-    /// document, so none of them may also be registered as a setting.
+    /// Document paths holding a value (an id, or a colour's channel keys), and every path that
+    /// is an object because a value sits beneath it. No path may be in both.
+    std::unordered_set<std::string> m_values;
     std::unordered_set<std::string> m_branches;
 };
 

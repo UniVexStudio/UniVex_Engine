@@ -133,11 +133,18 @@ TEST_F(SettingsRegistryUVETest, RefusesDuplicatesMalformedAndNestedIds) {
     // Under a registered value, and above one.
     EXPECT_FALSE(registry.RegisterUVE(MakeBoolSettingUVE("editor.grid.visible.extra", false, "Child", "")));
     EXPECT_FALSE(registry.RegisterUVE(MakeBoolSettingUVE("editor.grid", false, "Parent", "")));
-    // A colour's channels are its own children.
+    // A colour's channels are its own, alpha included even when it has none...
     EXPECT_FALSE(registry.RegisterUVE(MakeFloatSettingUVE("editor.outline.color.r", 0.0, 0.0, 1.0, "Red", "")));
-    EXPECT_EQ(registry.GetCountUVE(), 7U);
-    // A sibling is fine.
+    EXPECT_FALSE(registry.RegisterUVE(MakeFloatSettingUVE("editor.outline.color.a", 0.0, 0.0, 1.0, "Alpha", "")));
+    // ...and a colour cannot sit where a value or another setting's object already is.
+    EXPECT_FALSE(registry.RegisterUVE(MakeColorSettingUVE("editor.grid.visible", {}, false, "Under a value", "")));
+    ASSERT_TRUE(registry.RegisterUVE(MakeBoolSettingUVE("editor.tint.r.locked", false, "Locked", "")));
+    EXPECT_FALSE(registry.RegisterUVE(MakeColorSettingUVE("editor.tint", {}, false, "Channel is an object", "")));
+    EXPECT_EQ(registry.GetCountUVE(), 8U);
+    // A sibling is fine, and so is a setting beside a colour's channels.
     EXPECT_TRUE(registry.RegisterUVE(MakeFloatSettingUVE("editor.grid.fade", 10.0, 0.0, 100.0, "Fade", "")));
+    EXPECT_TRUE(registry.RegisterUVE(MakeFloatSettingUVE("editor.outline.color.width", 2.0, 1.0, 6.0, "Width", "")));
+    EXPECT_TRUE(registry.RegisterUVE(MakeBoolSettingUVE("editor.outline.color.visible", true, "Visible", "")));
 }
 
 TEST_F(SettingsRegistryUVETest, EveryRegisteredDefaultIsLegalAndReadsBackUnmodified) {

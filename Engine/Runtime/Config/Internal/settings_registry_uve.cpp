@@ -284,20 +284,35 @@ SettingDescriptorUVE MakeColorSettingUVE(std::string id, const SettingColorUVE d
 }
 
 bool SettingsRegistryUVE::RegisterUVE(SettingDescriptorUVE descriptor) {
-    if (!ValidateSettingDescriptorUVE(descriptor).empty() || m_byId.contains(descriptor.id) ||
-        m_branches.contains(descriptor.id)) {
+    if (!ValidateSettingDescriptorUVE(descriptor).empty() || m_byId.contains(descriptor.id)) {
         return false;
     }
-    // "a.b" as a value and "a.b.c" as another would need "a.b" to be both a value and an object in
-    // the settings document; a colour is already an object holding its channels.
+    // Where the setting's values sit in the document: at its id, or for a colour at its four
+    // channel keys (alpha reserved even when unused). A colour's id is therefore an object, and
+    // other settings may live beside its channels, e.g. "outline" and "outline.thickness".
+    std::vector<std::string> values;
+    if (descriptor.type == SettingTypeUVE::Color) {
+        for (const char channel : {'r', 'g', 'b', 'a'}) {
+            values.push_back(ChannelKeyUVE(descriptor.id, channel));
+        }
+    } else {
+        values.push_back(descriptor.id);
+    }
+    // No path may be both a value and an object: "a.b" holding a value rules out "a.b.c", and the
+    // other way round.
     std::vector<std::string> branches;
-    for (std::size_t dot = descriptor.id.find('.'); dot != std::string::npos;
-         dot = descriptor.id.find('.', dot + 1U)) {
-        branches.push_back(descriptor.id.substr(0U, dot));
-        if (m_byId.contains(branches.back())) {
+    for (const std::string& value : values) {
+        if (m_values.contains(value) || m_branches.contains(value)) {
             return false;
         }
+        for (std::size_t dot = value.find('.'); dot != std::string::npos; dot = value.find('.', dot + 1U)) {
+            branches.push_back(value.substr(0U, dot));
+            if (m_values.contains(branches.back())) {
+                return false;
+            }
+        }
     }
+    m_values.insert(std::make_move_iterator(values.begin()), std::make_move_iterator(values.end()));
     m_branches.insert(std::make_move_iterator(branches.begin()), std::make_move_iterator(branches.end()));
     descriptor.defaultValue = NormalizeUVE(descriptor, std::move(descriptor.defaultValue));
     auto owned = std::make_unique<SettingDescriptorUVE>(std::move(descriptor));
