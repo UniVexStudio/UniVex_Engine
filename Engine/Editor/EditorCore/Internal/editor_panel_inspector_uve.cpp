@@ -103,6 +103,12 @@ constexpr const char* kPanelLabelInspectorUVE = "\xEE\xA8\x83 Inspector##right-p
 } // namespace
 
 void EditorUVE::DrawInspectorPanelUVE() {
+    // A colour edit whose node is no longer the one selected - picked elsewhere while its picker
+    // was open - is finished as it stands rather than left waiting for a picker nobody can see.
+    if (m_componentPropertyPreview.has_value() &&
+        (m_componentPropertyPreview->entity != m_selectedEntity || !HasSingleDocumentSelectionUVE())) {
+        static_cast<void>(CommitComponentPropertyPreviewUVE());
+    }
     if (!m_inspectorPanelVisible) {
         return;
     }

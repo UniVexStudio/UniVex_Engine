@@ -36,6 +36,7 @@
 #include <imgui.h>
 
 #include "editor_axis_input_uve.h"
+#include "editor_color_field_uve.h"
 
 #include "uve/asset/asset_guid_uve.h"
 #include "uve/asset/i_asset_database_uve.h"
@@ -518,10 +519,20 @@ void EditorUVE::DrawMetadataPropertyRowUVE(const TypeMetadataEntryUVE& entry,
             edited = SetSelectedComponentPropertyUVE(entry, property, &value);
         }
     } else if (property.typeId == Scene::kPropertyTypeColorUVE) {
+        // Shown live while the picker is open, recorded as one undo step when it closes.
         Math::Vector3UVE value{};
         property.getValue(instance, &value);
-        if (ImGui::ColorEdit3("##value", &value.x)) {
-            edited = SetSelectedComponentPropertyUVE(entry, property, &value);
+        EditorColorUVE color{value.x, value.y, value.z, 1.0F};
+        const ColorFieldEventUVE event =
+            DrawColorFieldUVE("##value", property.displayName.c_str(), color, false, m_colorPickerPreferences);
+        const Math::Vector3UVE picked{color.r, color.g, color.b};
+        if (event == ColorFieldEventUVE::Edited) {
+            static_cast<void>(PreviewSelectedComponentPropertyUVE(entry, property, &picked));
+        } else if (event == ColorFieldEventUVE::Committed) {
+            static_cast<void>(PreviewSelectedComponentPropertyUVE(entry, property, &picked));
+            edited = CommitComponentPropertyPreviewUVE();
+        } else if (event == ColorFieldEventUVE::Cancelled) {
+            static_cast<void>(CancelComponentPropertyPreviewUVE());
         }
     } else if (property.typeId == Scene::kPropertyTypeInt32UVE) {
         std::int32_t value = 0;
@@ -998,6 +1009,90 @@ bool EditorUVE::SetSelectedComponentPropertyUVE(const TypeMetadataEntryUVE& entr
     RecordHistoryUVE(ComponentPropertyHistoryEntryUVE{m_selectedEntity, &entry, std::move(before),
                                                       std::move(after), selectionBefore,
                                                       CaptureSelectionSnapshotUVE(), dirtyBefore, true});
+    return true;
+}
+
+bool EditorUVE::PreviewSelectedComponentPropertyUVE(const TypeMetadataEntryUVE& entry,
+                                                    const TypeMetadataPropertyUVE& property,
+                                                    const void* const newValue) {
+    if (!IsAuthoringCommandAllowedUVE() || !HasSingleDocumentSelectionUVE() ||
+        !property.IsAuthoringWritableUVE() || !entry.HasFactoryUVE() || newValue == nullptr) {
+        return false;
+    }
+    if (m_componentPropertyPreview.has_value() &&
+        (m_componentPropertyPreview->entity != m_selectedEntity || m_componentPropertyPreview->entry != &entry ||
+         m_componentPropertyPreview->property != &property)) {
+        static_cast<void>(CommitComponentPropertyPreviewUVE());
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (!entityManager.HasComponentUVE(m_selectedEntity, entry.typeIndex)) {
+        return false;
+    }
+    void* const instance = entityManager.GetComponentPointerUVE(m_selectedEntity, entry.typeIndex);
+    Core::TypeInstanceUVE previous = Core::TypeInstanceUVE::CloneUVE(entry, instance);
+    if (!previous.IsValidUVE()) {
+        return false;
+    }
+    if (!m_componentPropertyPreview.has_value()) {
+        Core::TypeInstanceUVE before = Core::TypeInstanceUVE::CloneUVE(entry, instance);
+        if (!before.IsValidUVE()) {
+            return false;
+        }
+        m_componentPropertyPreview = ComponentPropertyPreviewUVE{m_selectedEntity, &entry, &property, std::move(before),
+                                                                 CaptureSelectionSnapshotUVE(), m_sceneDirty};
+    }
+    property.setValue(instance, newValue);
+    if (entry.isInstanceValid != nullptr && !entry.isInstanceValid(instance)) {
+        // Refused by the component's own rule: keep the last accepted value on screen.
+        entry.assignInstance(instance, previous.GetUVE());
+        return false;
+    }
+    m_sceneDirty = true;
+    return true;
+}
+
+bool EditorUVE::CommitComponentPropertyPreviewUVE() {
+    if (!m_componentPropertyPreview.has_value()) {
+        return false;
+    }
+    ComponentPropertyPreviewUVE preview = std::move(*m_componentPropertyPreview);
+    m_componentPropertyPreview.reset();
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (!IsDocumentEntityUVE(preview.entity) || !entityManager.HasComponentUVE(preview.entity, preview.entry->typeIndex)) {
+        return false;
+    }
+    void* const instance = entityManager.GetComponentPointerUVE(preview.entity, preview.entry->typeIndex);
+    if (preview.property->areEqual != nullptr && preview.property->areEqual(preview.before.GetUVE(), instance)) {
+        // Opened and closed without a net change: nothing to undo, and nothing left unsaved.
+        m_sceneDirty = preview.dirtyBefore;
+        return true;
+    }
+    Core::TypeInstanceUVE after = Core::TypeInstanceUVE::CloneUVE(*preview.entry, instance);
+    if (!after.IsValidUVE()) {
+        preview.entry->assignInstance(instance, preview.before.GetUVE());
+        m_sceneDirty = preview.dirtyBefore;
+        return false;
+    }
+    m_sceneDirty = true;
+    RecordHistoryUVE(ComponentPropertyHistoryEntryUVE{preview.entity, preview.entry, std::move(preview.before),
+                                                      std::move(after), preview.selectionBefore,
+                                                      CaptureSelectionSnapshotUVE(), preview.dirtyBefore, true});
+    return true;
+}
+
+bool EditorUVE::CancelComponentPropertyPreviewUVE() {
+    if (!m_componentPropertyPreview.has_value()) {
+        return false;
+    }
+    ComponentPropertyPreviewUVE preview = std::move(*m_componentPropertyPreview);
+    m_componentPropertyPreview.reset();
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (!IsDocumentEntityUVE(preview.entity) || !entityManager.HasComponentUVE(preview.entity, preview.entry->typeIndex)) {
+        return false;
+    }
+    void* const instance = entityManager.GetComponentPointerUVE(preview.entity, preview.entry->typeIndex);
+    preview.entry->assignInstance(instance, preview.before.GetUVE());
+    m_sceneDirty = preview.dirtyBefore;
     return true;
 }
 

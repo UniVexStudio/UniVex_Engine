@@ -24,6 +24,7 @@
 #include "uve/asset/i_project_change_watcher_uve.h"
 #include "uve/core/engine_services_uve.h"
 #include "uve/core/i_simulation_control_uve.h"
+#include "uve/editor/editor_color_uve.h"
 #include "uve/editor/editor_tool_session_uve.h"
 #include "uve/editor/developer_console_uve.h"
 #include "uve/editor/editor_ui_assets_uve.h"
@@ -706,6 +707,14 @@ public:
     /// Inspector folds (sections, nested components, sub-groups) remembered by key across
     /// selections and sessions. A key never set answers `defaultOpen`. At most
     /// kMaxRememberedInspectorFoldsUVE are kept; beyond that new choices are not remembered.
+    /// The colour picker's remembered choices - the Advanced section's state, the saved palette and
+    /// the recent colours - saved with the session. The setter keeps only finite colours, clamped
+    /// to 0..1, and trims each list to its cap (kMaxSavedColorsUVE, kMaxRecentColorsUVE).
+    [[nodiscard]] const ColorPickerPreferencesUVE& GetColorPickerPreferencesUVE() const noexcept {
+        return m_colorPickerPreferences;
+    }
+    void SetColorPickerPreferencesUVE(ColorPickerPreferencesUVE preferences);
+
     void SetInspectorFoldOpenUVE(const std::string& key, bool open);
     [[nodiscard]] bool IsInspectorFoldOpenUVE(const std::string& key, bool defaultOpen) const;
     static constexpr std::size_t kMaxRememberedInspectorFoldsUVE = 256U;
@@ -1246,6 +1255,19 @@ private:
     [[nodiscard]] bool SetSelectedComponentPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
                                                        const Core::TypeMetadataPropertyUVE& property,
                                                        const void* newValue);
+    /// A continuous edit of one property - a colour picker session - shown live but recorded as
+    /// ONE undo entry when it ends, the way a transform drag is. Preview writes the value without
+    /// history (refused, leaving the previous value, when the component's rule rejects it); the
+    /// first preview captures the component to restore. A preview of another entity, component
+    /// or property first commits the one in flight.
+    [[nodiscard]] bool PreviewSelectedComponentPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
+                                                           const Core::TypeMetadataPropertyUVE& property,
+                                                           const void* newValue);
+    /// Ends the edit in flight with one history entry from where it started to where it is. An
+    /// edit that ended where it began records nothing and leaves the scene's dirty flag as it was.
+    [[nodiscard]] bool CommitComponentPropertyPreviewUVE();
+    /// Ends the edit in flight by putting the component back as it was, with no history.
+    bool CancelComponentPropertyPreviewUVE();
     /// Restores one property to the value a default-constructed component would have.
     [[nodiscard]] bool ResetSelectedComponentPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
                                                          const Core::TypeMetadataPropertyUVE& property);
@@ -1453,6 +1475,17 @@ private:
     // Expand Branch / Collapse Branch: the open state each row in the branch should take the next
     // time it is drawn. A row is erased once applied (see SetHierarchyBranchOpenUVE).
     std::unordered_map<Scene::EntityUVE, bool> m_hierarchyPendingRowOpen;
+    ColorPickerPreferencesUVE m_colorPickerPreferences;
+    // The property edit in flight; see PreviewSelectedComponentPropertyUVE.
+    struct ComponentPropertyPreviewUVE final {
+        Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
+        const Core::TypeMetadataEntryUVE* entry = nullptr;
+        const Core::TypeMetadataPropertyUVE* property = nullptr;
+        Core::TypeInstanceUVE before;
+        EditorSelectionSnapshotUVE selectionBefore;
+        bool dirtyBefore = false;
+    };
+    std::optional<ComponentPropertyPreviewUVE> m_componentPropertyPreview;
     std::string m_nodePickerFilter;
     std::string m_nodePickerScrolledFilter;
     std::optional<Asset::AssetRecordUVE> m_selectedAsset;

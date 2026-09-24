@@ -80,6 +80,18 @@ struct EditorUVEAccessUVE final {
                                                               const void* value) {
         return editor.SetSelectedComponentPropertyUVE(entry, property, value);
     }
+    [[nodiscard]] static bool PreviewSelectedComponentPropertyUVE(EditorUVE& editor,
+                                                                  const Core::TypeMetadataEntryUVE& entry,
+                                                                  const Core::TypeMetadataPropertyUVE& property,
+                                                                  const void* value) {
+        return editor.PreviewSelectedComponentPropertyUVE(entry, property, value);
+    }
+    [[nodiscard]] static bool CommitComponentPropertyPreviewUVE(EditorUVE& editor) {
+        return editor.CommitComponentPropertyPreviewUVE();
+    }
+    static bool CancelComponentPropertyPreviewUVE(EditorUVE& editor) {
+        return editor.CancelComponentPropertyPreviewUVE();
+    }
     [[nodiscard]] static std::vector<std::string> GetEligibleInspectorDrawerIdsUVE(const EditorUVE& editor,
                                                                                   const Scene::EntityUVE entity) {
         return editor.m_inspectorDrawerRegistry.GetEligibleDrawerIdsUVE(entity);
@@ -4395,6 +4407,151 @@ TEST(EditorUVETest, SurfaceInstanceChildInspectorUVE_IsOwnSectionThenSurfaceRend
         editor.ShutdownUVE();
     }
     engine.Shutdown();
+}
+
+TEST(EditorUVETest, ColorPickerSessionUVE_ManyLiveChangesAreOneUndoStep) {
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_color_session.uvescene");
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        const Scene::EntityUVE light = entityManager.CreateEntityUVE();
+        AttachRootUVE(engine, light, Scene::TransformComponentUVE{});
+        Scene::LightComponentUVE authored{};
+        authored.color = Math::Vector3UVE{1.0F, 1.0F, 1.0F};
+        entityManager.AddComponentUVE<Scene::LightComponentUVE>(light, authored);
+        const Scene::EntityUVE other = entityManager.CreateEntityUVE();
+        AttachRootUVE(engine, other, Scene::TransformComponentUVE{});
+        entityManager.AddComponentUVE<Scene::LightComponentUVE>(other, authored);
+        editor.SelectEntityUVE(light);
+
+        const Core::TypeMetadataEntryUVE* const entry =
+            Scene::FindSceneComponentMetadataUVE(std::type_index(typeid(Scene::LightComponentUVE)));
+        ASSERT_NE(entry, nullptr);
+        const auto colorProperty = std::find_if(entry->properties.begin(), entry->properties.end(),
+                                                [](const auto& candidate) { return candidate.name == "color"; });
+        ASSERT_NE(colorProperty, entry->properties.end());
+        const auto liveColor = [&](const Scene::EntityUVE entity) {
+            return entityManager.GetComponentUVE<Scene::LightComponentUVE>(entity).color;
+        };
+
+        // A drag across the picker: every step is visible at once, none of them is history.
+        EXPECT_FALSE(editor.CanUndoUVE());
+        for (int step = 1; step <= 30; ++step) {
+            const Math::Vector3UVE value{1.0F, 1.0F - (static_cast<float>(step) / 60.0F), 0.2F};
+            ASSERT_TRUE(EditorUVEAccessUVE::PreviewSelectedComponentPropertyUVE(editor, *entry, *colorProperty, &value));
+            EXPECT_FLOAT_EQ(liveColor(light).y, value.y);
+        }
+        EXPECT_FALSE(editor.CanUndoUVE());
+        EXPECT_TRUE(editor.IsSceneDirtyUVE());
+
+        // Closing the picker records the whole session as one step.
+        ASSERT_TRUE(EditorUVEAccessUVE::CommitComponentPropertyPreviewUVE(editor));
+        EXPECT_FLOAT_EQ(liveColor(light).y, 0.5F);
+        ASSERT_TRUE(editor.UndoUVE());
+        EXPECT_FLOAT_EQ(liveColor(light).x, 1.0F);
+        EXPECT_FLOAT_EQ(liveColor(light).y, 1.0F);
+        EXPECT_FLOAT_EQ(liveColor(light).z, 1.0F);
+        EXPECT_FALSE(editor.CanUndoUVE());
+        EXPECT_FALSE(editor.IsSceneDirtyUVE());
+        ASSERT_TRUE(editor.RedoUVE());
+        EXPECT_FLOAT_EQ(liveColor(light).y, 0.5F);
+        ASSERT_TRUE(editor.UndoUVE());
+
+        // Cancel puts the colour back, with no history and the scene as clean as it was.
+        const Math::Vector3UVE red{1.0F, 0.0F, 0.0F};
+        ASSERT_TRUE(EditorUVEAccessUVE::PreviewSelectedComponentPropertyUVE(editor, *entry, *colorProperty, &red));
+        ASSERT_TRUE(EditorUVEAccessUVE::CancelComponentPropertyPreviewUVE(editor));
+        EXPECT_FLOAT_EQ(liveColor(light).y, 1.0F);
+        EXPECT_FALSE(editor.CanUndoUVE());
+        EXPECT_FALSE(editor.IsSceneDirtyUVE());
+        EXPECT_FALSE(EditorUVEAccessUVE::CommitComponentPropertyPreviewUVE(editor));
+
+        // A session that ends where it began records nothing.
+        const Math::Vector3UVE white{1.0F, 1.0F, 1.0F};
+        ASSERT_TRUE(EditorUVEAccessUVE::PreviewSelectedComponentPropertyUVE(editor, *entry, *colorProperty, &red));
+        ASSERT_TRUE(EditorUVEAccessUVE::PreviewSelectedComponentPropertyUVE(editor, *entry, *colorProperty, &white));
+        ASSERT_TRUE(EditorUVEAccessUVE::CommitComponentPropertyPreviewUVE(editor));
+        EXPECT_FALSE(editor.CanUndoUVE());
+        EXPECT_FALSE(editor.IsSceneDirtyUVE());
+
+        // Undo in the middle of a session finishes it first, then takes it back.
+        ASSERT_TRUE(EditorUVEAccessUVE::PreviewSelectedComponentPropertyUVE(editor, *entry, *colorProperty, &red));
+        ASSERT_TRUE(editor.UndoUVE());
+        EXPECT_FLOAT_EQ(liveColor(light).y, 1.0F);
+        EXPECT_FALSE(editor.CanUndoUVE());
+
+        // Moving to another node while a session is open finishes it on the node it began on.
+        ASSERT_TRUE(EditorUVEAccessUVE::PreviewSelectedComponentPropertyUVE(editor, *entry, *colorProperty, &red));
+        editor.SelectEntityUVE(other);
+        const Math::Vector3UVE blue{0.0F, 0.0F, 1.0F};
+        ASSERT_TRUE(EditorUVEAccessUVE::PreviewSelectedComponentPropertyUVE(editor, *entry, *colorProperty, &blue));
+        ASSERT_TRUE(EditorUVEAccessUVE::CommitComponentPropertyPreviewUVE(editor));
+        EXPECT_FLOAT_EQ(liveColor(light).y, 0.0F);
+        EXPECT_FLOAT_EQ(liveColor(other).z, 1.0F);
+        ASSERT_TRUE(editor.UndoUVE());
+        EXPECT_FLOAT_EQ(liveColor(other).x, 1.0F);
+        EXPECT_FLOAT_EQ(liveColor(light).y, 0.0F);
+        ASSERT_TRUE(editor.UndoUVE());
+        EXPECT_FLOAT_EQ(liveColor(light).y, 1.0F);
+
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
+TEST(EditorUVETest, ColorPickerPreferencesUVE_SanitiseAndPersistAcrossSessionReload) {
+    const Core::EngineConfigUVE config = MakeEditorTestConfigUVE();
+    std::filesystem::remove(config.settingsFilePath);
+    Core::EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_color_prefs.uvescene");
+        editor.InitUVE();
+        EXPECT_TRUE(editor.GetColorPickerPreferencesUVE().advancedOpen);
+        EXPECT_TRUE(editor.GetColorPickerPreferencesUVE().saved.empty());
+
+        Editor::ColorPickerPreferencesUVE preferences;
+        preferences.advancedOpen = false;
+        preferences.saved = {Editor::EditorColorUVE{1.0F, 0.5F, 0.0F, 1.0F},
+                             Editor::EditorColorUVE{std::numeric_limits<float>::quiet_NaN(), 0.0F, 0.0F, 1.0F},
+                             Editor::EditorColorUVE{2.0F, -1.0F, 0.25F, 0.5F}};
+        for (int index = 0; index < 15; ++index) {
+            preferences.recents.push_back(Editor::EditorColorUVE{static_cast<float>(index) / 15.0F, 0.0F, 0.0F, 1.0F});
+        }
+        editor.SetColorPickerPreferencesUVE(preferences);
+        // The NaN colour is dropped, the out-of-range one clamped, and the recents trimmed.
+        ASSERT_EQ(editor.GetColorPickerPreferencesUVE().saved.size(), 2U);
+        EXPECT_EQ(Editor::FormatColorHexUVE(editor.GetColorPickerPreferencesUVE().saved[1], true), "#FF004080");
+        EXPECT_EQ(editor.GetColorPickerPreferencesUVE().recents.size(), Editor::kMaxRecentColorsUVE);
+        ASSERT_TRUE(EditorUVEAccessUVE::SaveSessionSettingsUVE(editor));
+        editor.ShutdownUVE();
+    }
+    {
+        EditorUVE reloaded(engine.GetServicesUVE(), "uve_editor_tests_color_prefs_reload.uvescene");
+        reloaded.InitUVE();
+        const Editor::ColorPickerPreferencesUVE& preferences = reloaded.GetColorPickerPreferencesUVE();
+        EXPECT_FALSE(preferences.advancedOpen);
+        ASSERT_EQ(preferences.saved.size(), 2U);
+        EXPECT_EQ(Editor::FormatColorHexUVE(preferences.saved[0], true), "#FF8000FF");
+        EXPECT_EQ(Editor::FormatColorHexUVE(preferences.saved[1], true), "#FF004080");
+        EXPECT_EQ(preferences.recents.size(), Editor::kMaxRecentColorsUVE);
+        reloaded.ShutdownUVE();
+    }
+    // A stored entry that is not a colour is skipped; the rest of the list still loads.
+    engine.GetServicesUVE().GetConfigManagerUVE().SetStringUVE("editor.colorPicker.saved.0", "not a colour");
+    {
+        EditorUVE corrupt(engine.GetServicesUVE(), "uve_editor_tests_color_prefs_corrupt.uvescene");
+        corrupt.InitUVE();
+        ASSERT_EQ(corrupt.GetColorPickerPreferencesUVE().saved.size(), 1U);
+        EXPECT_EQ(Editor::FormatColorHexUVE(corrupt.GetColorPickerPreferencesUVE().saved[0], true), "#FF004080");
+        corrupt.ShutdownUVE();
+    }
+    engine.Shutdown();
+    std::filesystem::remove(config.settingsFilePath);
 }
 
 TEST(EditorUVETest, InspectorPropertyEditUVE_RefusesAValueTheComponentRuleRejects) {
