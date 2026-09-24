@@ -1492,5 +1492,71 @@ TEST(PhysicsInterpolationBlendUVETest, TheSimulatedPoseIsUsedWhenInterpolationIs
     EXPECT_FALSE(TryGetInterpolatedPoseUVE(interpolation, 0.5F, position, rotation, scale));
 }
 
+TEST_F(SceneGraphUVETest, ChildrenKeepTheirOrderWhenAComponentMovesOneInStorage) {
+    const EntityUVE parent = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, parent, TransformComponentUVE{});
+    std::vector<EntityUVE> children;
+    for (int i = 0; i < 4; ++i) {
+        const EntityUVE child = entityManager.CreateEntityUVE();
+        sceneGraph.AttachTransformUVE(entityManager, child, TransformComponentUVE{});
+        sceneGraph.SetParentUVE(entityManager, child, parent);
+        children.push_back(child);
+    }
+    ASSERT_EQ(sceneGraph.GetChildrenUVE(entityManager, parent), children);
+
+    // Adding a component moves the first child to another archetype, and so to the end of the
+    // storage walk. Its place among its siblings must not follow.
+    entityManager.AddComponentUVE<VisibilityComponentUVE>(children.front(), VisibilityComponentUVE{});
+    EXPECT_EQ(sceneGraph.GetChildrenUVE(entityManager, parent), children);
+    EXPECT_EQ(sceneGraph.GetSiblingIndexUVE(entityManager, children.front()), std::optional<std::size_t>{0U});
+}
+
+TEST_F(SceneGraphUVETest, AChildThatChangesParentGoesLastAndOneThatDoesNotStaysPut) {
+    const EntityUVE a = entityManager.CreateEntityUVE();
+    const EntityUVE b = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, a, TransformComponentUVE{});
+    sceneGraph.AttachTransformUVE(entityManager, b, TransformComponentUVE{});
+    std::vector<EntityUVE> underA;
+    for (int i = 0; i < 3; ++i) {
+        const EntityUVE child = entityManager.CreateEntityUVE();
+        sceneGraph.AttachTransformUVE(entityManager, child, TransformComponentUVE{});
+        sceneGraph.SetParentUVE(entityManager, child, a);
+        underA.push_back(child);
+    }
+    const EntityUVE moved = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, moved, TransformComponentUVE{});
+    sceneGraph.SetParentUVE(entityManager, moved, b);
+
+    // Setting the parent a child already has is not a move.
+    sceneGraph.SetParentUVE(entityManager, underA.front(), a);
+    EXPECT_EQ(sceneGraph.GetChildrenUVE(entityManager, a), underA);
+
+    sceneGraph.SetParentUVE(entityManager, moved, a);
+    underA.push_back(moved);
+    EXPECT_EQ(sceneGraph.GetChildrenUVE(entityManager, a), underA);
+}
+
+TEST_F(SceneGraphUVETest, SetSiblingIndexUVE_MovesOneAndKeepsTheRestInOrder) {
+    const EntityUVE parent = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, parent, TransformComponentUVE{});
+    std::vector<EntityUVE> c;
+    for (int i = 0; i < 4; ++i) {
+        const EntityUVE child = entityManager.CreateEntityUVE();
+        sceneGraph.AttachTransformUVE(entityManager, child, TransformComponentUVE{});
+        sceneGraph.SetParentUVE(entityManager, child, parent);
+        c.push_back(child);
+    }
+
+    ASSERT_TRUE(sceneGraph.SetSiblingIndexUVE(entityManager, c[3], 1U));
+    EXPECT_EQ(sceneGraph.GetChildrenUVE(entityManager, parent), (std::vector<EntityUVE>{c[0], c[3], c[1], c[2]}));
+    ASSERT_TRUE(sceneGraph.SetSiblingIndexUVE(entityManager, c[0], 99U)); // past the end means last
+    EXPECT_EQ(sceneGraph.GetChildrenUVE(entityManager, parent), (std::vector<EntityUVE>{c[3], c[1], c[2], c[0]}));
+    EXPECT_EQ(sceneGraph.GetSiblingIndexUVE(entityManager, c[2]), std::optional<std::size_t>{2U});
+
+    const EntityUVE loose = entityManager.CreateEntityUVE();
+    EXPECT_FALSE(sceneGraph.SetSiblingIndexUVE(entityManager, loose, 0U));
+    EXPECT_FALSE(sceneGraph.GetSiblingIndexUVE(entityManager, loose).has_value());
+}
+
 } // namespace
 } // namespace UVE::Scene::Tests
