@@ -29,6 +29,7 @@ bool InspectorDrawerRegistryUVE::RegisterDrawerUVE(InspectorDrawerEntryUVE entry
         return false;
     }
     m_entries.push_back(std::move(entry));
+    m_groups.emplace_back();
     return true;
 }
 
@@ -39,9 +40,16 @@ void InspectorDrawerRegistryUVE::DrawEligibleUVE(const Scene::EntityUVE entity) 
 void InspectorDrawerRegistryUVE::DrawEligibleMatchingUVE(const Scene::EntityUVE entity,
                                                            const std::string_view filter) const {
     const std::size_t drawerCount = m_entries.size();
+    // Copied, not referenced: a drawer may register another drawer while it runs.
+    std::string currentGroup;
     for (std::size_t index = 0U; index < drawerCount; ++index) {
         const InspectorDrawerEntryUVE& entry = m_entries[index];
         if (entry.isEligible(entity) && ContainsCaseInsensitiveUVE(entry.id, filter)) {
+            const std::string group = m_groups[index];
+            if (!group.empty() && group != currentGroup && m_drawGroupHeader) {
+                m_drawGroupHeader(group);
+            }
+            currentGroup = group;
             entry.draw(entity);
         }
     }
@@ -56,6 +64,36 @@ std::vector<std::string> InspectorDrawerRegistryUVE::GetEligibleDrawerIdsUVE(con
         }
     }
     return identifiers;
+}
+
+bool InspectorDrawerRegistryUVE::SetDrawerGroupUVE(const std::string_view id, std::string group) {
+    for (std::size_t index = 0U; index < m_entries.size(); ++index) {
+        if (m_entries[index].id == id) {
+            m_groups[index] = std::move(group);
+            return true;
+        }
+    }
+    return false;
+}
+
+void InspectorDrawerRegistryUVE::SetGroupHeaderDrawerUVE(std::function<void(const std::string&)> drawHeader) {
+    m_drawGroupHeader = std::move(drawHeader);
+}
+
+std::vector<std::string> InspectorDrawerRegistryUVE::GetEligibleGroupHeadersUVE(const Scene::EntityUVE entity) const {
+    std::vector<std::string> headers;
+    std::string currentGroup;
+    for (std::size_t index = 0U; index < m_entries.size(); ++index) {
+        if (!m_entries[index].isEligible(entity)) {
+            continue;
+        }
+        const std::string& group = m_groups[index];
+        if (!group.empty() && group != currentGroup) {
+            headers.push_back(group);
+        }
+        currentGroup = group;
+    }
+    return headers;
 }
 
 std::size_t InspectorDrawerRegistryUVE::GetDrawerCountUVE() const noexcept {

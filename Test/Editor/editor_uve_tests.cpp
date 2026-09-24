@@ -112,6 +112,10 @@ struct EditorUVEAccessUVE final {
                                                                    const Core::TypeMetadataPropertyUVE& property) {
         return editor.CommitComponentPropertyPreviewForUVE(entry, property);
     }
+    [[nodiscard]] static std::vector<std::string> GetInspectorGroupHeadersUVE(const EditorUVE& editor,
+                                                                             const Scene::EntityUVE entity) {
+        return editor.m_inspectorDrawerRegistry.GetEligibleGroupHeadersUVE(entity);
+    }
     [[nodiscard]] static std::vector<std::string> GetEligibleInspectorDrawerIdsUVE(const EditorUVE& editor,
                                                                                   const Scene::EntityUVE entity) {
         return editor.m_inspectorDrawerRegistry.GetEligibleDrawerIdsUVE(entity);
@@ -5015,6 +5019,31 @@ TEST(EditorUVETest, CharacterBodyInspectorUVE_IsItsChainToTheRootAndNothingElse)
         const std::vector<std::string> boxIds = EditorUVEAccessUVE::GetEligibleInspectorDrawerIdsUVE(editor, box);
         EXPECT_EQ(std::count(boxIds.begin(), boxIds.end(), "collider"), 0);
         EXPECT_EQ(std::count(boxIds.begin(), boxIds.end(), "physics-object"), 0);
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
+TEST(EditorUVETest, InspectorHeadersUVE_SpellOutTheClassChain) {
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_chain_headers.uvescene");
+        editor.InitUVE();
+        const Scene::EntityUVE body =
+            editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::CharacterBody3D);
+        const Scene::EntityUVE player =
+            editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::AnimationPlayer);
+        ASSERT_NE(body, Scene::kInvalidEntityUVE);
+        ASSERT_NE(player, Scene::kInvalidEntityUVE);
+        // Transform and Visibility sit under Node3D, the common section under Node.
+        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorGroupHeadersUVE(editor, body),
+                  (std::vector<std::string>{"Node3D", "Node"}));
+        // A pure Node has no Node3D part to name.
+        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorGroupHeadersUVE(editor, player), (std::vector<std::string>{"Node"}));
+        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorGroupHeadersUVE(editor, editor.GetDocumentSceneRootUVE()),
+                  (std::vector<std::string>{"Node"}));
         editor.ShutdownUVE();
     }
     engine.Shutdown();
