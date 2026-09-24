@@ -266,17 +266,21 @@ void EditorUVE::RegisterMetadataInspectorDrawersUVE() {
                          return left->typeId < right->typeId;
                      });
 
-    // A nested type is drawn by its host when the entity carries both, and on its own otherwise, so
-    // it is never unreachable. A host that is hand-drawn or undeclared cannot draw it, so a type
-    // naming one stands alone.
-    const auto findHostUVE = [&entries](const TypeMetadataEntryUVE& entry) -> const TypeMetadataEntryUVE* {
-        if (entry.nestedUnderTypeId.empty()) {
-            return nullptr;
+    // A nested type is drawn by the first of its hosts the entity carries, and on its own when it
+    // carries none, so it is never unreachable. A host that is hand-drawn or undeclared cannot draw
+    // it, so it is left out of the list.
+    const auto findHostsUVE = [&entries](const TypeMetadataEntryUVE& entry) {
+        std::vector<const TypeMetadataEntryUVE*> hosts;
+        for (const std::string& hostId : entry.nestedUnderTypeIds) {
+            const auto host = std::find_if(entries.cbegin(), entries.cend(),
+                                           [&hostId](const TypeMetadataEntryUVE* candidate) {
+                                               return candidate->typeId == hostId;
+                                           });
+            if (host != entries.cend()) {
+                hosts.push_back(*host);
+            }
         }
-        const auto host = std::find_if(entries.cbegin(), entries.cend(), [&entry](const TypeMetadataEntryUVE* candidate) {
-            return candidate->typeId == entry.nestedUnderTypeId;
-        });
-        return host == entries.cend() ? nullptr : *host;
+        return hosts;
     };
 
     // Transform is hand-drawn, but it still takes its declared place in the order.
@@ -286,19 +290,25 @@ void EditorUVE::RegisterMetadataInspectorDrawersUVE() {
             RegisterTransformInspectorDrawerUVE();
             transformRegistered = true;
         }
-        std::vector<const TypeMetadataEntryUVE*> nested;
+        // Each nested type this entry may draw, with the hosts it prefers over this one: when the
+        // entity carries one of those, that host draws it instead.
+        std::vector<NestedMetadataSectionUVE> nested;
         for (const TypeMetadataEntryUVE* const candidate : entries) {
-            if (findHostUVE(*candidate) == entry) {
-                nested.push_back(candidate);
+            const std::vector<const TypeMetadataEntryUVE*> hosts = findHostsUVE(*candidate);
+            const auto self = std::find(hosts.begin(), hosts.end(), entry);
+            if (self != hosts.end()) {
+                nested.push_back(NestedMetadataSectionUVE{candidate, {hosts.begin(), self}});
             }
         }
-        const TypeMetadataEntryUVE* const host = findHostUVE(*entry);
+        const std::vector<const TypeMetadataEntryUVE*> hosts = findHostsUVE(*entry);
         static_cast<void>(m_inspectorDrawerRegistry.RegisterDrawerUVE(InspectorDrawerEntryUVE{
             DrawerIdForTypeIdUVE(entry->typeId),
-            [this, entry, host](const Scene::EntityUVE entity) {
+            [this, entry, hosts](const Scene::EntityUVE entity) {
                 const Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
                 return IsDocumentEntityUVE(entity) && entityManager.HasComponentUVE(entity, entry->typeIndex) &&
-                       (host == nullptr || !entityManager.HasComponentUVE(entity, host->typeIndex));
+                       std::none_of(hosts.begin(), hosts.end(), [&](const TypeMetadataEntryUVE* const host) {
+                           return entityManager.HasComponentUVE(entity, host->typeIndex);
+                       });
             },
             [this, entry, nested = std::move(nested)](const Scene::EntityUVE entity) {
                 DrawMetadataComponentDrawerUVE(entity, *entry, nested);
@@ -311,7 +321,7 @@ void EditorUVE::RegisterMetadataInspectorDrawersUVE() {
 }
 
 void EditorUVE::DrawMetadataComponentDrawerUVE(const Scene::EntityUVE entity, const TypeMetadataEntryUVE& entry,
-                                               const std::vector<const TypeMetadataEntryUVE*>& nested) {
+                                               const std::vector<NestedMetadataSectionUVE>& nested) {
     if (!IsDocumentEntityUVE(entity) || entity != m_selectedEntity) {
         return;
     }
@@ -339,8 +349,13 @@ void EditorUVE::DrawMetadataComponentDrawerUVE(const Scene::EntityUVE entity, co
     DrawInspectorSectionMenuUVE(&entry, sectionTitle.c_str());
     if (sectionOpen) {
         DrawMetadataPropertyRowsUVE(entry, instance);
-        for (const TypeMetadataEntryUVE* const child : nested) {
-            if (!entityManager.HasComponentUVE(entity, child->typeIndex)) {
+        for (const NestedMetadataSectionUVE& section : nested) {
+            const TypeMetadataEntryUVE* const child = section.entry;
+            if (!entityManager.HasComponentUVE(entity, child->typeIndex) ||
+                std::any_of(section.preferredHosts.begin(), section.preferredHosts.end(),
+                            [&](const TypeMetadataEntryUVE* const host) {
+                                return entityManager.HasComponentUVE(entity, host->typeIndex);
+                            })) {
                 continue;
             }
             ImGui::PushID(child->typeId.c_str());

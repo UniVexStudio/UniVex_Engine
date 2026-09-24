@@ -100,6 +100,20 @@ namespace {
     });
 }
 
+// Each host a bounded identifier, none of them the type itself, and none listed twice.
+[[nodiscard]] bool AreNestingHostsValidUVE(const TypeMetadataEntryUVE& entry) {
+    for (std::size_t index = 0U; index < entry.nestedUnderTypeIds.size(); ++index) {
+        const std::string& host = entry.nestedUnderTypeIds[index];
+        if (!IsBoundedIdentifierUVE(host) || host == entry.typeId ||
+            std::find(entry.nestedUnderTypeIds.begin(), entry.nestedUnderTypeIds.begin() +
+                                                            static_cast<std::ptrdiff_t>(index),
+                      host) != entry.nestedUnderTypeIds.begin() + static_cast<std::ptrdiff_t>(index)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 } // namespace
 
 TypeMetadataRegistrationResultUVE TypeMetadataRegistryUVE::RegisterTypeUVE(TypeMetadataEntryUVE entry) {
@@ -108,7 +122,7 @@ TypeMetadataRegistrationResultUVE TypeMetadataRegistryUVE::RegisterTypeUVE(TypeM
         ExceedsMemberCapacityUVE(entry) ||
         HasDuplicateMemberNamesUVE(entry) ||
         HasDanglingResolvedByUVE(entry) ||
-        !IsBoundedOptionalUVE(entry.nestedUnderTypeId) || entry.nestedUnderTypeId == entry.typeId) {
+        !AreNestingHostsValidUVE(entry)) {
         return {TypeMetadataRegistrationCodeUVE::InvalidEntry,
                 "Type metadata requires bounded identity, display, version, unique members and resolvable links."};
     }

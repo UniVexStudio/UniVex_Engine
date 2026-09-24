@@ -734,8 +734,6 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AbstractNodeBasesKeepTheirAuth
     entityManager.AddComponentUVE<BoneModifierComponentUVE>(source, BoneModifierComponentUVE{false, 0.25F});
     PhysicsObjectComponentUVE object{};
     object.disableMode = PhysicsObjectDisableModeUVE::KeepActive;
-    object.collisionLayer = 0x5U;
-    object.collisionMask = 0xF0U;
     object.collisionPriority = 3.5F;
     object.inputRayPickable = false;
     object.inputCaptureOnDrag = true;
@@ -968,8 +966,20 @@ TEST_F(SceneSerializerUVETest, SaveThenLoad_CharacterControllerComponentUVE_Roun
     characterController.moveSpeed = 6.5F;
     characterController.jumpHeight = 2.25F;
     characterController.gravityScale = 1.5F;
-    characterController.verticalVelocity = -3.0F;
-    characterController.isGrounded = true;
+    characterController.motionMode = CharacterMotionModeUVE::Floating;
+    characterController.builtInMovement = false;
+    characterController.airControl = 0.25F;
+    characterController.coyoteTimeSeconds = 0.2F;
+    characterController.jumpBufferSeconds = 0.15F;
+    characterController.floorSnapLength = 0.3F;
+    characterController.maxStepHeight = 0.45F;
+    characterController.slideOnCeiling = false;
+    characterController.pushRigidBodies = true;
+    characterController.pushStrength = 2.0F;
+    characterController.maxPushSpeed = 7.0F;
+    characterController.maxSlides = 12U;
+    characterController.velocity = Math::Vector3UVE{1.0F, -3.0F, 2.0F};
+    characterController.isOnFloor = true;
     entityManager.AddComponentUVE<CharacterControllerComponentUVE>(entity, characterController);
 
     const std::filesystem::path path = "uve_scene_serializer_tests_character_controller.uvescene";
@@ -986,10 +996,47 @@ TEST_F(SceneSerializerUVETest, SaveThenLoad_CharacterControllerComponentUVE_Roun
     EXPECT_FLOAT_EQ(loadedController.moveSpeed, 6.5F);
     EXPECT_FLOAT_EQ(loadedController.jumpHeight, 2.25F);
     EXPECT_FLOAT_EQ(loadedController.gravityScale, 1.5F);
-    EXPECT_FLOAT_EQ(loadedController.verticalVelocity, -3.0F);
-    EXPECT_TRUE(loadedController.isGrounded);
+    EXPECT_EQ(loadedController.motionMode, CharacterMotionModeUVE::Floating);
+    EXPECT_FALSE(loadedController.builtInMovement);
+    EXPECT_FLOAT_EQ(loadedController.airControl, 0.25F);
+    EXPECT_FLOAT_EQ(loadedController.coyoteTimeSeconds, 0.2F);
+    EXPECT_FLOAT_EQ(loadedController.jumpBufferSeconds, 0.15F);
+    EXPECT_FLOAT_EQ(loadedController.floorSnapLength, 0.3F);
+    EXPECT_FLOAT_EQ(loadedController.maxStepHeight, 0.45F);
+    EXPECT_FALSE(loadedController.slideOnCeiling);
+    EXPECT_TRUE(loadedController.pushRigidBodies);
+    EXPECT_FLOAT_EQ(loadedController.pushStrength, 2.0F);
+    EXPECT_FLOAT_EQ(loadedController.maxPushSpeed, 7.0F);
+    EXPECT_EQ(loadedController.maxSlides, 12U);
+    EXPECT_EQ(loadedController.velocity, (Math::Vector3UVE{1.0F, -3.0F, 2.0F}));
+    EXPECT_TRUE(loadedController.isOnFloor);
 
     std::filesystem::remove(path);
+}
+
+TEST_F(SceneSerializerUVETest, Load_OlderCharacterControllerPayloadKeepsItsValuesAndDefaultsTheRest) {
+    // Before CharacterBody3D had its full set of settings, only these five were saved.
+    const std::string payload =
+        R"({"entities":[{"localId":0,"components":{"CharacterControllerComponentUVE":)"
+        R"({"moveSpeed":6.5,"jumpHeight":2.25,"gravityScale":1.5,"verticalVelocity":-3.0,"isGrounded":true}}}]})";
+    const auto* const bytes = reinterpret_cast<const std::byte*>(payload.data());
+    const SceneSnapshotUVE snapshot{Asset::EncodeUveFileEnvelopeUVE(SceneAssetTypeUVE::Scene,
+                                                                    std::vector<std::byte>{bytes, bytes + payload.size()}),
+                                    SceneAssetTypeUVE::Scene};
+    const std::vector<EntityUVE> roots = serializer.RestoreUVE(entityManager, snapshot);
+    ASSERT_EQ(roots.size(), 1U);
+    const CharacterControllerComponentUVE& loaded =
+        entityManager.GetComponentUVE<CharacterControllerComponentUVE>(roots.front());
+    EXPECT_FLOAT_EQ(loaded.moveSpeed, 6.5F);
+    EXPECT_FLOAT_EQ(loaded.jumpHeight, 2.25F);
+    EXPECT_FLOAT_EQ(loaded.gravityScale, 1.5F);
+    EXPECT_EQ(loaded.velocity, (Math::Vector3UVE{0.0F, -3.0F, 0.0F}));
+    EXPECT_TRUE(loaded.isOnFloor);
+    const CharacterControllerComponentUVE defaults{};
+    EXPECT_EQ(loaded.motionMode, defaults.motionMode);
+    EXPECT_EQ(loaded.builtInMovement, defaults.builtInMovement);
+    EXPECT_FLOAT_EQ(loaded.maxStepHeight, defaults.maxStepHeight);
+    EXPECT_EQ(loaded.maxSlides, defaults.maxSlides);
 }
 
 TEST_F(SceneSerializerUVETest, SaveThenLoad_UIComponentsUVE_RoundTripExactly) {

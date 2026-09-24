@@ -285,10 +285,13 @@ struct TypeMetadataEntryUVE final {
     void (*assignInstance)(void* destination, const void* source) = nullptr;
     /// Sort key for the type's own inspector section, so a common section can be pushed last.
     std::int32_t order = 0;
-    /// Inspector presentation: draw this type's section inside the named type's section whenever an
-    /// entity carries both - Thread Group belongs under Process, the way a sub-group reads. On an
-    /// entity without the host it stands on its own, so nothing ever becomes unreachable.
-    std::string nestedUnderTypeId;
+    /// Inspector presentation: draw this type's section inside a host type's section whenever an
+    /// entity carries both - Thread Group belongs under Process, the way a sub-group reads. Hosts
+    /// are listed in order of preference and the first one the entity carries draws it, so one
+    /// type can belong to different nodes (a collider sits in a primitive mesh's section on a
+    /// BoxMesh3D and in PhysicsObject3D's on a body). On an entity with none of its hosts it stands
+    /// on its own, so nothing ever becomes unreachable.
+    std::vector<std::string> nestedUnderTypeIds;
     /// Inspector presentation: draw the properties as rows in place, with no collapsible header,
     /// for a type that is conceptually one property of the node rather than a feature of it - a
     /// node has a script and has metadata, it does not have a "Script section".
