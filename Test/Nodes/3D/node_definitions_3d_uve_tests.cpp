@@ -1049,9 +1049,9 @@ TEST_F(Node3DDefinitionsUVETest, MarkerPoseComposeSharesTheSpawnPointComposition
 
 TEST_F(Node3DDefinitionsUVETest, AnimationTreeIsCreatableAndValidatesItsBlend) {
     EXPECT_TRUE(IsAnimationTreeNodeDefinitionValidUVE(AnimationTreeNodeDefinitionUVE{}));
-    AnimationTreeNodeDefinitionUVE outOfRange;
-    outOfRange.tree.blend = 1.5F;
-    EXPECT_FALSE(IsAnimationTreeNodeDefinitionValidUVE(outOfRange));
+    AnimationTreeNodeDefinitionUVE noOutput;
+    noOutput.tree.nodes.erase(noOutput.tree.nodes.begin());
+    EXPECT_FALSE(IsAnimationTreeNodeDefinitionValidUVE(noOutput));
     const Nodes::SceneNodeDescriptorUVE* descriptor =
         Nodes::FindSceneNodeDescriptorUVE(Nodes::SceneNodeKindUVE::AnimationTree);
     ASSERT_NE(descriptor, nullptr);
