@@ -112,20 +112,23 @@ and it is written once per setting. Multiply by four hundred settings and the co
 
 ## 0.2 The setting descriptor
 
-- [ ] `SettingDescriptorUVE` — the single record describing one setting.
-  - [ ] `id` — the dot path, e.g. `rendering.shadows.softShadowQuality`. The storage key.
-  - [ ] `type` — bool, int, float/double, string, enum, colour, vector2/3/4, key binding, asset
+- [~] `SettingDescriptorUVE` — the single record describing one setting. Landed in
+      `Engine/Runtime/Config` (`setting_descriptor_uve.h`) with bool, int, float, string, enum and
+      colour; the remaining types and the version fields below are still open.
+  - [x] `id` — the dot path, e.g. `rendering.shadows.softShadowQuality`. The storage key.
+  - [~] `type` — bool, int, float/double, string, enum, colour, vector2/3/4, key binding, asset
         reference, file path, layer mask, string list.
-  - [ ] `defaultValue` — the engine default, typed. The single source of "reset to default".
-  - [ ] `minimum` / `maximum` / `step` — for numeric types; absent means unbounded.
-  - [ ] `enumEntries` — ordered (value, label) pairs for enum types, so a combo box needs no
+  - [x] `defaultValue` — the engine default, typed. The single source of "reset to default".
+  - [x] `minimum` / `maximum` / `step` — for numeric types; absent means unbounded.
+  - [x] `enumEntries` — ordered (value, label) pairs for enum types, so a combo box needs no
         hand-written label table.
-  - [ ] `displayName` and `tooltip` — the human-facing strings. Without these, a generic settings
+  - [x] `displayName` and `tooltip` — the human-facing strings. Without these, a generic settings
         panel can only show raw dot paths.
-  - [ ] `category` / `page` — where it appears in the settings tree.
-  - [ ] `flags` — `RestartRequired`, `Advanced` (hidden behind a toggle), `Hidden`,
+  - [x] `category` / `page` — where it appears in the settings tree.
+  - [x] `flags` — `RestartRequired`, `Advanced` (hidden behind a toggle), `Hidden`,
         `PerPlatform` (may be overridden per target), `NotPersisted` (session-only),
         `Internal` (never shown in UI), `Deprecated` (read for migration, never written).
+        `Hidden` covers `Internal`: both meant "stored and read, never shown".
   - [ ] `sinceVersion` / `migratedFrom` — supports the migration path in 0.8.
 
 The descriptor is **data**, declared next to the system that owns the setting, not centralised in
@@ -134,36 +137,41 @@ collects them.
 
 ## 0.3 The registry
 
-- [ ] `SettingsRegistryUVE` — collects descriptors, keyed by id, with duplicate-id detection at
+- [x] `SettingsRegistryUVE` — collects descriptors, keyed by id, with duplicate-id detection at
       registration time (a duplicate is a programming error and should fail loudly in a test, not
-      silently shadow).
-- [ ] Registration is explicit and ordered, following the pattern already used by
+      silently shadow). It also refuses ids that would nest (`a.b` and `a.b.c`), which the JSON
+      document cannot hold.
+- [x] Registration is explicit and ordered, following the pattern already used by
       `RegisterBuiltInInspectorDrawersUVE()` — a real, extensible, string-keyed registry that this
       codebase already proves works.
-- [ ] A test that asserts every registered id is unique, every default satisfies its own
+- [~] A test that asserts every registered id is unique, every default satisfies its own
       declared range, and every enum default is one of the declared entries. This one test
-      removes an entire class of bug from all four hundred settings at once.
+      removes an entire class of bug from all four hundred settings at once. Registration already
+      refuses such descriptors; the test over the engine's real registrations comes with 0.11
+      step 3, when there are real registrations to run it over.
 
 ## 0.4 Typed access over the existing store
 
-- [ ] Typed getters that take a descriptor (or id) and return the value already clamped and
+- [x] Typed getters that take a descriptor (or id) and return the value already clamped and
       validated, with the declared default substituted for anything missing or malformed.
       `ConfigManagerUVE` remains underneath as the JSON document; nothing about it is replaced.
-- [ ] Setters that reject out-of-range values rather than storing them, so a bad value can never
+- [x] Setters that reject out-of-range values rather than storing them, so a bad value can never
       enter the document in the first place.
-- [ ] **Whole-or-nothing application for composite settings.** The axis-palette setter added for
+- [~] **Whole-or-nothing application for composite settings.** The axis-palette setter added for
       the viewport already establishes this rule: a palette with one bad channel leaves *both*
       the gizmo and the grid untouched rather than half-written. Composite settings — colours,
-      vectors, key bindings — should follow it uniformly.
+      vectors, key bindings — should follow it uniformly. Colours do, on write and on read;
+      vectors and key bindings follow when their types land.
 
 ## 0.5 Validation at the boundary
 
-- [ ] Every value crossing the file boundary is validated once, at the registry, against its
+- [~] Every value crossing the file boundary is validated once, at the registry, against its
       descriptor. Consumers downstream receive values that are already legal and stop carrying
-      defensive checks.
-- [ ] Non-finite values (NaN, infinity) fail range checks by construction — a comparison against
+      defensive checks. The registry does this; consumers drop their own checks as they migrate
+      (0.11 step 3).
+- [x] Non-finite values (NaN, infinity) fail range checks by construction — a comparison against
       a bound is already false for NaN, which is the idiom the axis-palette validator uses.
-- [ ] A corrupt or hand-edited settings file degrades to defaults **per setting**, never
+- [x] A corrupt or hand-edited settings file degrades to defaults **per setting**, never
       discarding the whole document.
 
 ## 0.6 Change notification
@@ -224,8 +232,8 @@ settings, and the inspector should eventually share the mechanism.
 
 ## 0.11 Substrate work items, in dependency order
 
-1. [ ] `SettingDescriptorUVE` and the registry, with the uniqueness/range/default test.
-2. [ ] Typed validated access over `ConfigManagerUVE`.
+1. [x] `SettingDescriptorUVE` and the registry, with the uniqueness/range/default test.
+2. [x] Typed validated access over `ConfigManagerUVE`.
 3. [ ] Migrate the sixteen existing `editor.*` keys onto descriptors, deleting their hand-rolled
        validation. This is the proof the substrate works, on real settings, with existing tests
        to catch a regression.
