@@ -200,14 +200,17 @@ bool EditorUVE::DrawVariantValueEditorUVE(const char* const id, VariantUVE& valu
     return changed;
 }
 
-bool EditorUVE::CommitSelectedNodeMetadataUVE(std::vector<Scene::NodeMetadataEntryUVE> entries) {
+bool EditorUVE::CommitSelectedNodeMetadataUVE(std::vector<Scene::NodeMetadataEntryUVE> entries, const bool preview) {
     Scene::NodeMetadataComponentUVE candidate{std::move(entries)};
     if (!Scene::IsNodeMetadataComponentValidUVE(candidate)) {
         return false;
     }
     const MetadataPropertyUVE target = FindMetadataPropertyUVE();
-    return target.entry != nullptr &&
-           SetSelectedComponentPropertyUVE(*target.entry, *target.property, &candidate.entries);
+    if (target.entry == nullptr) {
+        return false;
+    }
+    return preview ? PreviewSelectedComponentPropertyUVE(*target.entry, *target.property, &candidate.entries)
+                   : SetSelectedComponentPropertyUVE(*target.entry, *target.property, &candidate.entries);
 }
 
 namespace {
@@ -236,6 +239,15 @@ bool EditorUVE::AddSelectedNodeMetadataUVE(const std::string& key, const Variant
 }
 
 bool EditorUVE::SetSelectedNodeMetadataValueUVE(const std::string& key, const VariantUVE& value) {
+    return WriteSelectedNodeMetadataValueUVE(key, value, false);
+}
+
+bool EditorUVE::PreviewSelectedNodeMetadataValueUVE(const std::string& key, const VariantUVE& value) {
+    return WriteSelectedNodeMetadataValueUVE(key, value, true);
+}
+
+bool EditorUVE::WriteSelectedNodeMetadataValueUVE(const std::string& key, const VariantUVE& value,
+                                                  const bool preview) {
     if (!HasSingleDocumentSelectionUVE()) {
         return false;
     }
@@ -250,7 +262,7 @@ bool EditorUVE::SetSelectedNodeMetadataValueUVE(const std::string& key, const Va
         return false;
     }
     found->value = value;
-    return CommitSelectedNodeMetadataUVE(std::move(entries));
+    return CommitSelectedNodeMetadataUVE(std::move(entries), preview);
 }
 
 bool EditorUVE::RenameSelectedNodeMetadataUVE(const std::string& key, const std::string& newKey) {
@@ -367,8 +379,20 @@ void EditorUVE::DrawNodeMetadataPropertyUVE(const Core::TypeMetadataEntryUVE& en
             ImGui::TableSetColumnIndex(1);
             ImGui::BeginDisabled(!writable);
             VariantUVE edited = item.value;
-            if (DrawVariantValueEditorUVE("##value", edited, 0)) {
-                static_cast<void>(SetSelectedNodeMetadataValueUVE(item.key, edited));
+            // One group, so a drag anywhere in the value - a number, one axis of a vector, an
+            // element of a list - is one edit, recorded as one undo step when it is let go.
+            ImGui::BeginGroup();
+            const bool changed = DrawVariantValueEditorUVE("##value", edited, 0);
+            ImGui::EndGroup();
+            if (changed) {
+                static_cast<void>(ImGui::IsItemActive() ? PreviewSelectedNodeMetadataValueUVE(item.key, edited)
+                                                        : SetSelectedNodeMetadataValueUVE(item.key, edited));
+            }
+            if (ImGui::IsItemDeactivated()) {
+                const MetadataPropertyUVE target = FindMetadataPropertyUVE();
+                if (target.entry != nullptr) {
+                    static_cast<void>(CommitComponentPropertyPreviewForUVE(*target.entry, *target.property));
+                }
             }
             ImGui::EndDisabled();
             ImGui::PopID();

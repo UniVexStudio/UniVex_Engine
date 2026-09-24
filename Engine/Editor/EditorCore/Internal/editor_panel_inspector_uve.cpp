@@ -312,20 +312,33 @@ void EditorUVE::DrawTransformInspectorDrawerUVE(const Scene::EntityUVE entity) {
     bool positionChanged = false;
     bool rotationChanged = false;
     bool scaleChanged = false;
+    bool gestureEnded = false;
     if (ImGui::BeginTable("##transform", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_NoSavedSettings)) {
         ImGui::TableSetupColumn("##label", ImGuiTableColumnFlags_WidthStretch, 0.26F);
         ImGui::TableSetupColumn("##value", ImGuiTableColumnFlags_WidthStretch, 0.74F);
-        const auto row = [](const char* const label, const char* const id, float* const values) {
+        // Each row is dragged (double-click or Ctrl+click types). A drag is a transform gesture:
+        // it starts when a field is taken hold of and ends as one undo step when it is let go.
+        const auto row = [this, &gestureEnded](const char* const label, const char* const id, float* const values,
+                                               const float speed, const EditorToolSessionModeUVE mode) {
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
             ImGui::AlignTextToFramePadding();
             ImGui::TextUnformatted(label);
             ImGui::TableSetColumnIndex(1);
-            return DrawAxisVectorInputUVE(id, values, 3, 0.0F, 0.0F, 0.0F, true);
+            const bool changed = DrawAxisVectorInputUVE(id, values, 3, speed);
+            if (ImGui::IsItemActivated()) {
+                // Tabbing from one field to the next ends the first edit and starts another.
+                if (GetToolSessionPhaseUVE() == EditorToolSessionPhaseUVE::Previewing) {
+                    static_cast<void>(CommitTransformGestureUVE());
+                }
+                static_cast<void>(BeginTransformGestureUVE(mode));
+            }
+            gestureEnded = (ImGui::IsItemDeactivated() && !ImGui::IsItemActive()) || gestureEnded;
+            return changed;
         };
-        positionChanged = row("Position", "##local-position", position);
-        rotationChanged = row("Rotation", "##local-rotation", rotationDegrees);
-        scaleChanged = row("Scale", "##local-scale", scale);
+        positionChanged = row("Position", "##local-position", position, 0.01F, EditorToolSessionModeUVE::Translate);
+        rotationChanged = row("Rotation", "##local-rotation", rotationDegrees, 0.5F, EditorToolSessionModeUVE::Rotate);
+        scaleChanged = row("Scale", "##local-scale", scale, 0.01F, EditorToolSessionModeUVE::Scale);
         ImGui::EndTable();
     }
     if (positionChanged || rotationChanged || scaleChanged) {
@@ -340,7 +353,15 @@ void EditorUVE::DrawTransformInspectorDrawerUVE(const Scene::EntityUVE entity) {
             }
         }
         edited.localScale = Math::Vector3UVE{scale[0], scale[1], scale[2]};
-        static_cast<void>(SetSelectedLocalTransformUVE(edited));
+        // Outside a gesture (it could not start, or the value changed without the field being
+        // held) the edit is recorded on its own, as before.
+        if (GetToolSessionPhaseUVE() != EditorToolSessionPhaseUVE::Previewing ||
+            !PreviewTransformGestureValueUVE(edited)) {
+            static_cast<void>(SetSelectedLocalTransformUVE(edited));
+        }
+    }
+    if (gestureEnded && GetToolSessionPhaseUVE() == EditorToolSessionPhaseUVE::Previewing) {
+        static_cast<void>(CommitTransformGestureUVE());
     }
 }
 

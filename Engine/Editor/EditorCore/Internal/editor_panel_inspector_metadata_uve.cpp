@@ -500,24 +500,21 @@ void EditorUVE::DrawMetadataPropertyRowUVE(const TypeMetadataEntryUVE& entry,
     } else if (property.typeId == Scene::kPropertyTypeFloatUVE) {
         float value = 0.0F;
         property.getValue(instance, &value);
-        if (ImGui::DragFloat("##value", &value, RangeStepUVE(property, 0.01F), RangeMinimumUVE(property),
-                             RangeMaximumUVE(property))) {
-            edited = SetSelectedComponentPropertyUVE(entry, property, &value);
-        }
+        const bool changed = ImGui::DragFloat("##value", &value, RangeStepUVE(property, 0.01F),
+                                              RangeMinimumUVE(property), RangeMaximumUVE(property));
+        edited = ApplyContinuousPropertyEditUVE(entry, property, changed, &value) || edited;
     } else if (property.typeId == Scene::kPropertyTypeVector2UVE) {
         Math::Vector2UVE value{};
         property.getValue(instance, &value);
-        if (DrawAxisVectorInputUVE("##value", &value.x, 2, RangeStepUVE(property, 0.01F), RangeMinimumUVE(property),
-                                   RangeMaximumUVE(property))) {
-            edited = SetSelectedComponentPropertyUVE(entry, property, &value);
-        }
+        const bool changed = DrawAxisVectorInputUVE("##value", &value.x, 2, RangeStepUVE(property, 0.01F),
+                                                    RangeMinimumUVE(property), RangeMaximumUVE(property));
+        edited = ApplyContinuousPropertyEditUVE(entry, property, changed, &value) || edited;
     } else if (property.typeId == Scene::kPropertyTypeVector3UVE) {
         Math::Vector3UVE value{};
         property.getValue(instance, &value);
-        if (DrawAxisVectorInputUVE("##value", &value.x, 3, RangeStepUVE(property, 0.01F), RangeMinimumUVE(property),
-                                   RangeMaximumUVE(property))) {
-            edited = SetSelectedComponentPropertyUVE(entry, property, &value);
-        }
+        const bool changed = DrawAxisVectorInputUVE("##value", &value.x, 3, RangeStepUVE(property, 0.01F),
+                                                    RangeMinimumUVE(property), RangeMaximumUVE(property));
+        edited = ApplyContinuousPropertyEditUVE(entry, property, changed, &value) || edited;
     } else if (property.typeId == Scene::kPropertyTypeColorUVE) {
         // Shown live while the picker is open, recorded as one undo step when it closes.
         Math::Vector3UVE value{};
@@ -538,14 +535,13 @@ void EditorUVE::DrawMetadataPropertyRowUVE(const TypeMetadataEntryUVE& entry,
         std::int32_t value = 0;
         property.getValue(instance, &value);
         int shown = value;
-        if (ImGui::DragInt("##value", &shown, RangeStepUVE(property, 1.0F),
-                           property.range.enabled ? static_cast<int>(property.range.minimum)
-                                                  : std::numeric_limits<int>::lowest(),
-                           property.range.enabled ? static_cast<int>(property.range.maximum)
-                                                  : std::numeric_limits<int>::max())) {
-            value = shown;
-            edited = SetSelectedComponentPropertyUVE(entry, property, &value);
-        }
+        const bool changed = ImGui::DragInt("##value", &shown, RangeStepUVE(property, 1.0F),
+                                            property.range.enabled ? static_cast<int>(property.range.minimum)
+                                                                   : std::numeric_limits<int>::lowest(),
+                                            property.range.enabled ? static_cast<int>(property.range.maximum)
+                                                                   : std::numeric_limits<int>::max());
+        value = shown;
+        edited = ApplyContinuousPropertyEditUVE(entry, property, changed, &value) || edited;
     } else if (property.typeId == Scene::kPropertyTypeUInt32UVE) {
         std::uint32_t value = 0U;
         property.getValue(instance, &value);
@@ -557,10 +553,9 @@ void EditorUVE::DrawMetadataPropertyRowUVE(const TypeMetadataEntryUVE& entry,
         const int minimum = property.range.enabled ? std::max(0, static_cast<int>(property.range.minimum)) : 0;
         const int maximum = property.range.enabled ? static_cast<int>(property.range.maximum)
                                                    : std::numeric_limits<int>::max();
-        if (ImGui::DragInt("##value", &shown, RangeStepUVE(property, 1.0F), minimum, maximum)) {
-            value = static_cast<std::uint32_t>(std::max(0, shown));
-            edited = SetSelectedComponentPropertyUVE(entry, property, &value);
-        }
+        const bool changed = ImGui::DragInt("##value", &shown, RangeStepUVE(property, 1.0F), minimum, maximum);
+        value = static_cast<std::uint32_t>(std::max(0, shown));
+        edited = ApplyContinuousPropertyEditUVE(entry, property, changed, &value) || edited;
     } else if (property.typeId == Scene::kPropertyTypeBitMask32UVE) {
         // Authored as bits, because that is what a layer or a mask is. Hexadecimal rather than a
         // decimal count, so 0xFFFFFFFF reads as "all layers" instead of as 4294967295.
@@ -796,6 +791,9 @@ std::optional<std::string> EditorUVE::DrawCommittedTextInputUVE(const char* cons
 }
 
 bool EditorUVE::SetSelectedComponentValueUVE(const TypeMetadataEntryUVE& entry, const void* const newInstance) {
+    // A live edit still in flight is finished first, before this one changes anything, so the two
+    // land in history in the order they happened.
+    static_cast<void>(CommitComponentPropertyPreviewUVE());
     if (!IsAuthoringCommandAllowedUVE() || !HasSingleDocumentSelectionUVE() || !entry.HasFactoryUVE() ||
         newInstance == nullptr || (entry.isInstanceValid != nullptr && !entry.isInstanceValid(newInstance))) {
         return false;
@@ -966,6 +964,8 @@ bool EditorUVE::SetEntityVisibleUVE(const Scene::EntityUVE entity, const bool vi
 bool EditorUVE::SetSelectedComponentPropertyUVE(const TypeMetadataEntryUVE& entry,
                                                 const TypeMetadataPropertyUVE& property,
                                                 const void* const newValue) {
+    // See SetSelectedComponentValueUVE: a live edit in flight is recorded before this one.
+    static_cast<void>(CommitComponentPropertyPreviewUVE());
     if (!IsAuthoringCommandAllowedUVE() || !HasSingleDocumentSelectionUVE() ||
         !property.IsAuthoringWritableUVE() || !entry.HasFactoryUVE() || newValue == nullptr) {
         return false;
@@ -1094,6 +1094,30 @@ bool EditorUVE::CancelComponentPropertyPreviewUVE() {
     preview.entry->assignInstance(instance, preview.before.GetUVE());
     m_sceneDirty = preview.dirtyBefore;
     return true;
+}
+
+bool EditorUVE::CommitComponentPropertyPreviewForUVE(const TypeMetadataEntryUVE& entry,
+                                                    const TypeMetadataPropertyUVE& property) {
+    if (!m_componentPropertyPreview.has_value() || m_componentPropertyPreview->entry != &entry ||
+        m_componentPropertyPreview->property != &property) {
+        return false;
+    }
+    return CommitComponentPropertyPreviewUVE();
+}
+
+bool EditorUVE::ApplyContinuousPropertyEditUVE(const TypeMetadataEntryUVE& entry,
+                                               const TypeMetadataPropertyUVE& property, const bool changed,
+                                               const void* const newValue) {
+    bool written = false;
+    if (changed) {
+        // Held: a drag (or typing into the field) in progress, shown live and not yet history.
+        written = ImGui::IsItemActive() ? PreviewSelectedComponentPropertyUVE(entry, property, newValue)
+                                        : SetSelectedComponentPropertyUVE(entry, property, newValue);
+    }
+    if (ImGui::IsItemDeactivated()) {
+        written = CommitComponentPropertyPreviewForUVE(entry, property) || written;
+    }
+    return written;
 }
 
 bool EditorUVE::ApplyComponentPropertySnapshotUVE(const Scene::EntityUVE entity,

@@ -724,7 +724,9 @@ The group with the most real backing today.
       ids.
 - [ ] Label width / name column ratio, and word-wrapping of long labels.
 - [~] Float display precision, and drag step per property. The drag step comes from each
-      property's metadata range; missing: display precision.
+      property's metadata range, and a drag is one undo step however long it lasts - numbers,
+      vectors, Transform (now draggable too; double-click or Ctrl+click types) and metadata
+      values alike; missing: display precision.
 - [~] Degrees vs. radians display for angles. Rotation is shown and edited in degrees and stored
       in radians; missing: the choice.
 - [ ] Show advanced / internal properties toggle.

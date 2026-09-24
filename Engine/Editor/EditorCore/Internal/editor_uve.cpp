@@ -1601,6 +1601,28 @@ bool EditorUVE::PreviewTranslateGestureUVE(const Math::Vector3UVE& totalWorldDel
     return m_toolSession.RecordPreviewAppliedUVE(updated);
 }
 
+bool EditorUVE::PreviewTransformGestureValueUVE(const Scene::TransformComponentUVE& transform) {
+    if (m_toolSession.GetPhaseUVE() != EditorToolSessionPhaseUVE::Previewing) {
+        return false;
+    }
+    const std::optional<EditorToolSessionSnapshotUVE>& snapshot = m_toolSession.GetSnapshotUVE();
+    if (!snapshot.has_value() || !IsAuthoringCommandAllowedUVE() || !IsTransformFiniteUVE(transform)) {
+        return false;
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    const Scene::EntityUVE entity = snapshot->entity;
+    if (!entityManager.IsAliveUVE(entity) ||
+        !entityManager.HasComponentUVE<Scene::TransformComponentUVE>(entity)) {
+        m_toolSession.DiscardUVE();
+        return false;
+    }
+    if (!ApplyLocalTransformUVE(entity, transform)) {
+        return false;
+    }
+    m_sceneDirty = true;
+    return m_toolSession.RecordPreviewAppliedUVE(transform);
+}
+
 bool EditorUVE::CommitTransformGestureUVE() {
     if (m_toolSession.GetPhaseUVE() != EditorToolSessionPhaseUVE::Previewing) {
         return false;

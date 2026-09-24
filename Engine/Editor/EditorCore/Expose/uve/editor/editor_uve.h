@@ -532,6 +532,11 @@ public:
     /// flight is a Translate.
     [[nodiscard]] bool PreviewTranslateGestureUVE(const Math::Vector3UVE& totalWorldDelta);
 
+    /// The Inspector's form of a gesture preview: the whole local transform as its Position,
+    /// Rotation and Scale fields now read, applied as-is (no snapping - the author typed or
+    /// dragged that exact number). Refused for a non-finite transform or with no gesture in flight.
+    [[nodiscard]] bool PreviewTransformGestureValueUVE(const Scene::TransformComponentUVE& transform);
+
     /// Ends the gesture and records exactly ONE history entry, baseline to final. A gesture that
     /// never moved anything commits cleanly without an entry and without marking the scene dirty.
     [[nodiscard]] bool CommitTransformGestureUVE();
@@ -692,6 +697,9 @@ public:
     /// New and renamed keys must pass ValidateNodeMetadataKeyUVE.
     [[nodiscard]] bool AddSelectedNodeMetadataUVE(const std::string& key, const Core::VariantUVE& value);
     [[nodiscard]] bool SetSelectedNodeMetadataValueUVE(const std::string& key, const Core::VariantUVE& value);
+    /// The same edit shown at once without history, for a value being dragged: the drag becomes
+    /// one undo step when it ends (see PreviewSelectedComponentPropertyUVE).
+    [[nodiscard]] bool PreviewSelectedNodeMetadataValueUVE(const std::string& key, const Core::VariantUVE& value);
     [[nodiscard]] bool RenameSelectedNodeMetadataUVE(const std::string& key, const std::string& newKey);
     /// Converts the value to `type`. Refuses a conversion that would lose data unless `allowLoss`.
     [[nodiscard]] bool ChangeSelectedNodeMetadataTypeUVE(const std::string& key, Core::VariantTypeUVE type,
@@ -1268,6 +1276,15 @@ private:
     [[nodiscard]] bool CommitComponentPropertyPreviewUVE();
     /// Ends the edit in flight by putting the component back as it was, with no history.
     bool CancelComponentPropertyPreviewUVE();
+    /// Commits the edit in flight only if it is of this property; any other is left alone.
+    [[nodiscard]] bool CommitComponentPropertyPreviewForUVE(const Core::TypeMetadataEntryUVE& entry,
+                                                            const Core::TypeMetadataPropertyUVE& property);
+    /// For a drag-style field just drawn: while it is held its value is previewed, and when it is
+    /// let go the whole drag becomes one undo step. A change made without holding it is recorded
+    /// at once. Returns whether anything was written.
+    bool ApplyContinuousPropertyEditUVE(const Core::TypeMetadataEntryUVE& entry,
+                                        const Core::TypeMetadataPropertyUVE& property, bool changed,
+                                        const void* newValue);
     /// Restores one property to the value a default-constructed component would have.
     [[nodiscard]] bool ResetSelectedComponentPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
                                                          const Core::TypeMetadataPropertyUVE& property);
@@ -1448,7 +1465,11 @@ private:
     /// A lossy retype awaiting confirmation: key and target type.
     std::optional<std::pair<std::string, Core::VariantTypeUVE>> m_metadataPendingRetype;
     /// Commits a new entry list for the selected node's metadata: the single write path.
-    [[nodiscard]] bool CommitSelectedNodeMetadataUVE(std::vector<Scene::NodeMetadataEntryUVE> entries);
+    /// With `preview`, the list is shown without history, as part of a drag.
+    [[nodiscard]] bool CommitSelectedNodeMetadataUVE(std::vector<Scene::NodeMetadataEntryUVE> entries,
+                                                     bool preview = false);
+    [[nodiscard]] bool WriteSelectedNodeMetadataValueUVE(const std::string& key, const Core::VariantUVE& value,
+                                                         bool preview);
     /// Draws an editor for one Variant; returns true when the value changed and should be committed.
     bool DrawVariantValueEditorUVE(const char* id, Core::VariantUVE& value, int depth);
     std::string m_consoleFilter;

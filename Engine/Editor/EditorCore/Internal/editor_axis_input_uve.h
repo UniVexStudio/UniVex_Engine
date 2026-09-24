@@ -16,15 +16,16 @@ namespace UVE::Editor {
 /// the tag and clipped to the field, so it can never spill over the box or into its neighbour -
 /// which is what happened when three fixed-width fields were squeezed into a narrow panel.
 ///
-/// Returns true when any component changed this frame. `count` is 2, 3 or 4. `typedInput` swaps
-/// the drag fields for typed ones.
+/// Returns true when any component changed this frame. `count` is 2, 3 or 4. The fields form one
+/// group, so ImGui::IsItemActive() and IsItemDeactivated() after the call describe the whole
+/// vector: a drag on any axis is one edit, which callers record as one undo step when it ends.
 inline bool DrawAxisVectorInputUVE(const char* const id, float* const values, const int count, const float speed,
-                                   const float minimum = 0.0F, const float maximum = 0.0F,
-                                   const bool typedInput = false) {
+                                   const float minimum = 0.0F, const float maximum = 0.0F) {
     static constexpr std::array<ImU32, 4> kAxisColors{IM_COL32(214, 72, 72, 255), IM_COL32(96, 180, 72, 255),
                                                       IM_COL32(72, 128, 222, 255), IM_COL32(140, 140, 150, 255)};
     static constexpr std::array<const char*, 4> kAxisNames{"X", "Y", "Z", "W"};
     ImGui::PushID(id);
+    ImGui::BeginGroup();
     const ImGuiStyle& style = ImGui::GetStyle();
     const float spacing = 3.0F;
     const float total = ImGui::GetContentRegionAvail().x;
@@ -73,17 +74,15 @@ inline bool DrawAxisVectorInputUVE(const char* const id, float* const values, co
                 break;
             }
         }
-        // Typed input for values whose every change is an undo step (a drag would record one per
-        // frame); dragging everywhere else.
-        changed = (typedInput ? ImGui::InputFloat("##axis", &values[axis], 0.0F, 0.0F, fieldFormat)
-                              : ImGui::DragFloat("##axis", &values[axis], speed, minimum, maximum, fieldFormat)) ||
-                  changed;
+        // Drag to scrub; double-click or Ctrl+click to type.
+        changed = ImGui::DragFloat("##axis", &values[axis], speed, minimum, maximum, fieldFormat) || changed;
         ImGui::PopStyleVar();
         if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip("%s: %.6g", name, static_cast<double>(values[axis]));
         }
         ImGui::PopID();
     }
+    ImGui::EndGroup();
     ImGui::PopID();
     return changed;
 }
