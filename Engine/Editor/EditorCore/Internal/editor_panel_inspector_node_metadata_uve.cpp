@@ -25,6 +25,7 @@
 #include <imgui.h>
 
 #include "editor_axis_input_uve.h"
+#include "editor_color_field_uve.h"
 
 #include "uve/component/node_metadata_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
@@ -103,6 +104,17 @@ bool EditListUVE(std::vector<ElementT>& items, DrawT&& drawElement, MakeT&& make
 bool EditorUVE::DrawVariantValueEditorUVE(const char* const id, VariantUVE& value, const int depth) {
     ImGui::PushID(id);
     bool changed = false;
+    // Metadata is committed as a whole entry list, so a colour changes it only once the picker
+    // closes with the colour kept; while it is open the field shows its own working copy.
+    const auto EditVariantColorUVE = [this](const char* fieldId, Core::VariantColorUVE& stored) {
+        EditorColorUVE color{stored.r, stored.g, stored.b, stored.a};
+        if (DrawColorFieldUVE(fieldId, "Color", color, true, m_colorPickerPreferences) !=
+            ColorFieldEventUVE::Committed) {
+            return false;
+        }
+        stored = Core::VariantColorUVE{color.r, color.g, color.b, color.a};
+        return true;
+    };
     const auto dragFloats = [](float* values, const int count) {
         return DrawAxisVectorInputUVE("##v", values, count, 0.01F);
     };
@@ -123,7 +135,7 @@ bool EditorUVE::DrawVariantValueEditorUVE(const char* const id, VariantUVE& valu
             changed = dragFloats(&stored.x, static_cast<int>(sizeof(T) / sizeof(float)));
         } else if constexpr (std::is_same_v<T, Core::VariantColorUVE>) {
             ImGui::SetNextItemWidth(-FLT_MIN);
-            changed = ImGui::ColorEdit4("##v", &stored.r);
+            changed = EditVariantColorUVE("##v", stored);
         } else if constexpr (std::is_same_v<T, std::uint64_t>) {
             // A resource reference is picked, not typed; shown until a picker exists.
             ImGui::TextDisabled(stored == 0U ? "(none)" : "%016llX", static_cast<unsigned long long>(stored));
@@ -162,9 +174,9 @@ bool EditorUVE::DrawVariantValueEditorUVE(const char* const id, VariantUVE& valu
         } else if constexpr (std::is_same_v<T, std::vector<Core::VariantColorUVE>>) {
             changed = EditListUVE(
                 stored,
-                [](Core::VariantColorUVE& element) {
+                [&](Core::VariantColorUVE& element) {
                     ImGui::SetNextItemWidth(-FLT_MIN);
-                    return ImGui::ColorEdit4("##e", &element.r);
+                    return EditVariantColorUVE("##e", element);
                 },
                 [] { return Core::VariantColorUVE{}; });
         } else {

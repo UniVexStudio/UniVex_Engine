@@ -867,10 +867,19 @@ HSV input modes. They are present, compiled, and unreachable.
 So the largest part of this feature is not implementing a colour picker. It is **calling the one
 already sitting there**, behind a shared property-row helper instead of ten copies.
 
+**Now:** every colour row - component colour properties in the Inspector, colour metadata, and
+the viewport axis colours - goes through one colour field (`DrawColorFieldUVE`): a swatch showing
+the colour and its hex code, opening a picker with a hue/saturation disc beside saturation and
+value bars, the old colour above the new one, recents, a saved-colour shelf, an Advanced section
+with R, G, B, A and H, S, V sliders and a hex field, and OK / Cancel. The disc and bars are drawn
+by the editor rather than taken from the UI library's picker, whose wheel only offers a triangle.
+
 ## 3.2 Picker shapes
 
-- [ ] Hue **wheel** with a saturation/value triangle or square inside — the requested shape.
-- [ ] Hue **bar** with a saturation/value rectangle — the current default; keep it as an option.
+- [x] Hue **wheel** with a saturation/value triangle or square inside — the requested shape.
+      Delivered as the shape that was asked for in the end: a hue/saturation disc (hue round the
+      rim, saturation from the centre out) with separate saturation and value bars beside it.
+- [ ] Hue **bar** with a saturation/value rectangle — the old default; not offered any more.
 - [ ] Value/hue/saturation circle variant.
 - [ ] Perceptual-lightness circle variant, for picking colours that stay perceptually even.
 - [ ] Perceptual hue/saturation and hue/lightness rectangles.
@@ -879,19 +888,25 @@ already sitting there**, behind a shared property-row helper instead of ten copi
 
 ## 3.3 Colour modes
 
-- [ ] RGB — 0-255 or 0-1 display, user-selectable.
-- [ ] HSV — hue in degrees, saturation and value as percentages.
+- [~] RGB — 0-255 or 0-1 display, user-selectable. Shown as 0-1; missing: the 0-255 choice.
+- [~] HSV — hue in degrees, saturation and value as percentages. Hue in degrees, saturation and
+      value as 0-1; missing: percentages.
 - [ ] Linear vs. sRGB display, with a clear indicator of which is shown. This matters because the
       engine stores material colours linearly; showing a linear value labelled as if it were sRGB
-      is a bug users cannot see.
+      is a bug users cannot see. **Blocked on the renderer:** the OpenGL path writes its
+      tone-mapped output with no sRGB encoding while the Vulkan swapchain is sRGB, so which space
+      a stored colour is in is not settled yet; a linear/sRGB readout now would show wrong numbers.
 - [ ] Perceptual (OK-family) mode for uniform-feeling adjustment.
 - [ ] The default mode is an editor setting, alongside the default shape.
 
 ## 3.4 Channels and inputs
 
-- [ ] Hex input field, accepting 3, 6 and 8 digit forms, with and without a leading marker.
-- [ ] Per-channel numeric inputs, drag-adjustable.
-- [ ] **Alpha bar**, drawn over a checkerboard so transparency is visible.
+- [x] Hex input field, accepting 3, 6 and 8 digit forms, with and without a leading marker.
+      Applied when the field is left or Enter is pressed; a 3 or 6 digit entry keeps the alpha.
+- [x] Per-channel numeric inputs, drag-adjustable. Each slider has a strip under it showing the
+      colours that channel runs through; Ctrl+click types a value.
+- [~] **Alpha bar**, drawn over a checkerboard so transparency is visible. Colours with alpha get an
+      A slider and half-transparent swatches over a checkerboard; missing: a bar beside the disc.
 - [ ] **Intensity / exposure** control for HDR colours, so an emissive colour can exceed 1.0
       without the hue field becoming unusable. Required for emission (Part 4.3).
 - [ ] Clamp-to-LDR toggle for colours that must not exceed 1.0.
@@ -899,9 +914,13 @@ already sitting there**, behind a shared property-row helper instead of ten copi
 
 ## 3.5 Presets, recents and sampling
 
-- [ ] A **presets** list, saved in user preferences, with add and remove.
-- [ ] A **recents** list, maintained automatically, kept separate from presets so that recents
-      never overwrite a curated palette.
+- [x] A **presets** list, saved in user preferences, with add and remove. The saved-colour shelf
+      along the top of the picker: drop any colour on it or press +, click one to use it, drag it
+      to the bin or right-click it to remove it. Up to 24, saved as hex under
+      `editor.colorPicker.saved.*`.
+- [x] A **recents** list, maintained automatically, kept separate from presets so that recents
+      never overwrite a curated palette. The last 10 colours kept from a picker, newest first,
+      under `editor.colorPicker.recent.*`.
 - [ ] Project-level palettes, checked in alongside the project, distinct from personal presets.
 - [ ] A screen **eyedropper** that samples any pixel on screen, including outside the editor
       window.
@@ -910,25 +929,31 @@ already sitting there**, behind a shared property-row helper instead of ten copi
 
 ## 3.6 Comparison and interaction
 
-- [ ] Old / new split swatch, so the original colour is visible while adjusting.
-- [ ] Revert to the value the picker opened with.
-- [ ] Live preview — the scene updates while dragging, not only on release.
-- [ ] Undo as a single entry per picker session, not one per pixel of drag.
+- [x] Old / new split swatch, so the original colour is visible while adjusting.
+- [x] Revert to the value the picker opened with. Click the old swatch.
+- [x] Live preview — the scene updates while dragging, not only on release.
+- [x] Undo as a single entry per picker session, not one per pixel of drag. A component colour is
+      written live without history and recorded once when the picker closes; Cancel restores it
+      with no history, and Undo, Play or a change of selection first finishes an open session.
 - [ ] Keyboard nudge on the selected channel.
-- [ ] Escape cancels and restores; Enter commits.
+- [x] Escape cancels and restores; Enter commits. Also OK and Cancel buttons; a click outside the
+      picker keeps the colour.
 
 ## 3.7 The prerequisite work
 
-- [ ] A shared colour property-row helper, used by all ten existing call sites. Nothing else in
-      this part should be built before this, or it will need doing ten times.
+- [x] A shared colour property-row helper, used by all ten existing call sites. Nothing else in
+      this part should be built before this, or it will need doing ten times. `DrawColorFieldUVE`,
+      used by the Inspector's colour properties, colour metadata and the axis colours.
 - [ ] Widen `MaterialAssetUVE::albedoColor` from `Vector3UVE` to a four-channel colour, and update
       `IsMaterialAssetValidUVE`, the material serializer, and the renderer's opaque/transparent
       bucketing (which currently reads an `isTransparent` flag that nothing consumes).
 - [ ] A colour type in the settings descriptor vocabulary (Part 0.2), so colour settings are
       declared like any other and the generic panel renders them.
-- [ ] Tests: hex parse/format round-trip for all accepted forms; linear/sRGB conversion round-trip
+- [~] Tests: hex parse/format round-trip for all accepted forms; linear/sRGB conversion round-trip
       within tolerance; alpha preserved through save and load; an out-of-range channel rejected
-      whole-or-nothing, matching the axis-palette rule.
+      whole-or-nothing, matching the axis-palette rule. Hex forms and round trip, HSV round trip,
+      saved/recent lists and their persistence (alpha included) are covered; missing: linear/sRGB,
+      which waits on the renderer.
 
 ---
 
