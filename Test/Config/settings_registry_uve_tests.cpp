@@ -10,6 +10,7 @@
 #include <gtest/gtest.h>
 
 #include "uve/config/config_manager_uve.h"
+#include "uve/config/settings_document_uve.h"
 
 namespace UVE::Config::Tests {
 namespace {
@@ -284,6 +285,130 @@ TEST_F(SettingsRegistryUVETest, ValuesSurviveASaveAndReload) {
     EXPECT_EQ(registry.GetColorUVE(reloaded, "editor.clear.color"), (SettingColorUVE{1.0F, 0.0F, 0.5F, 0.75F}));
     EXPECT_EQ(registry.GetIntUVE(reloaded, "render.quality"), 0);
     std::remove(path.c_str());
+}
+
+TEST(ConfigManagerRemoveKeyUVETest, RemovesTheLeafAndPrunesObjectsLeftEmpty) {
+    ConfigManagerUVE store;
+    store.SetIntUVE("a.b.c", 1);
+    store.SetIntUVE("a.d", 2);
+    EXPECT_TRUE(store.RemoveKeyUVE("a.b.c"));
+    EXPECT_FALSE(store.HasKeyUVE("a.b.c"));
+    EXPECT_TRUE(store.HasKeyUVE("a.d"));
+    // "a.b" is gone with its last value; "a" stays because it still holds "a.d".
+    store.SetIntUVE("a.b", 3);
+    EXPECT_TRUE(store.HasKeyUVE("a.b"));
+    EXPECT_TRUE(store.RemoveKeyUVE("a.d"));
+    EXPECT_TRUE(store.RemoveKeyUVE("a.b"));
+    const std::string path = "uve_remove_key_pruned.uvesettings";
+    ASSERT_TRUE(store.SaveUVE(path));
+    ConfigManagerUVE reloaded;
+    ASSERT_TRUE(reloaded.LoadUVE(path));
+    reloaded.SetIntUVE("probe", 1);
+    EXPECT_FALSE(reloaded.HasKeyUVE("a"));
+    std::remove(path.c_str());
+}
+
+TEST(ConfigManagerRemoveKeyUVETest, RefusesMissingKeysAndObjects) {
+    ConfigManagerUVE store;
+    store.SetIntUVE("a.b", 1);
+    EXPECT_FALSE(store.RemoveKeyUVE("a"));
+    EXPECT_FALSE(store.RemoveKeyUVE("a.missing"));
+    EXPECT_FALSE(store.RemoveKeyUVE("a.b.c"));
+    EXPECT_FALSE(store.RemoveKeyUVE(""));
+    EXPECT_TRUE(store.HasKeyUVE("a.b"));
+}
+
+TEST_F(SettingsRegistryUVETest, StoredValueIsOnlyALegalValueTheStoreReallyHolds) {
+    EXPECT_FALSE(registry.GetStoredValueUVE(store, "editor.grid.visible").has_value());
+    store.SetStringUVE("editor.grid.visible", "yes");
+    EXPECT_FALSE(registry.GetStoredValueUVE(store, "editor.grid.visible").has_value());
+    store.SetBoolUVE("editor.grid.visible", false);
+    EXPECT_EQ(registry.GetStoredValueUVE(store, "editor.grid.visible"), SettingValueUVE{false});
+
+    store.SetBoolUVE("editor.layout.name", true);
+    EXPECT_FALSE(registry.GetStoredValueUVE(store, "editor.layout.name").has_value());
+    store.SetStringUVE("editor.layout.name", "");
+    EXPECT_EQ(registry.GetStoredValueUVE(store, "editor.layout.name"), SettingValueUVE{std::string()});
+
+    store.SetStringUVE("editor.grid.opacity", "half");
+    EXPECT_FALSE(registry.GetStoredValueUVE(store, "editor.grid.opacity").has_value());
+    EXPECT_DOUBLE_EQ(registry.GetFloatUVE(store, "editor.grid.opacity"), 0.5);
+    store.SetDoubleUVE("editor.clear.color.r", 0.5);
+    EXPECT_FALSE(registry.GetStoredValueUVE(store, "editor.clear.color").has_value());
+}
+
+TEST_F(SettingsRegistryUVETest, ClearRemovesEveryKeyOfTheSetting) {
+    ASSERT_TRUE(registry.SetValueUVE(store, "editor.clear.color", SettingColorUVE{0.1F, 0.2F, 0.3F, 0.4F}));
+    ASSERT_TRUE(registry.SetValueUVE(store, "editor.grid.opacity", 0.75));
+    EXPECT_TRUE(registry.ClearValueUVE(store, "editor.clear.color"));
+    for (const char* key : {"editor.clear.color.r", "editor.clear.color.g", "editor.clear.color.b",
+                            "editor.clear.color.a"}) {
+        EXPECT_FALSE(store.HasKeyUVE(key)) << key;
+    }
+    EXPECT_TRUE(store.HasKeyUVE("editor.grid.opacity"));
+    EXPECT_FALSE(registry.ClearValueUVE(store, "editor.clear.color"));
+    EXPECT_FALSE(registry.ClearValueUVE(store, "editor.unknown"));
+}
+
+class SettingsDocumentUVETest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        std::remove(path.c_str());
+        ASSERT_TRUE(document.GetRegistryUVE().RegisterUVE(
+            MakeFloatSettingUVE("physics.ticks", 60.0, 1.0, 1000.0, "Ticks", "Physics")));
+        ASSERT_TRUE(document.GetRegistryUVE().RegisterUVE(
+            MakeColorSettingUVE("rendering.clear", {0.1F, 0.1F, 0.1F}, false, "Clear", "Rendering")));
+    }
+    void TearDown() override { std::remove(path.c_str()); }
+
+    const std::string path = "uve_settings_document_test.uvesettings";
+    SettingsDocumentUVE document;
+};
+
+TEST_F(SettingsDocumentUVETest, AMissingFileIsEveryDefault) {
+    ASSERT_TRUE(document.LoadUVE(path));
+    EXPECT_FALSE(document.IsDirtyUVE());
+    EXPECT_EQ(document.GetValueUVE("physics.ticks"), SettingValueUVE{60.0});
+    EXPECT_FALSE(document.GetStoredValueUVE("physics.ticks").has_value());
+    EXPECT_FALSE(document.IsModifiedUVE("physics.ticks"));
+}
+
+TEST_F(SettingsDocumentUVETest, HoldsOnlyWhatDiffersFromTheDefault) {
+    ASSERT_TRUE(document.LoadUVE(path));
+    ASSERT_TRUE(document.SetValueUVE("physics.ticks", 120.0));
+    EXPECT_TRUE(document.IsDirtyUVE());
+    EXPECT_TRUE(document.GetStoreUVE().HasKeyUVE("physics.ticks"));
+    ASSERT_TRUE(document.SaveUVE());
+    EXPECT_FALSE(document.IsDirtyUVE());
+
+    // Setting the value it already has changes nothing.
+    ASSERT_TRUE(document.SetValueUVE("physics.ticks", 120.0));
+    EXPECT_FALSE(document.IsDirtyUVE());
+
+    // Setting the default takes the key out of the file.
+    ASSERT_TRUE(document.SetValueUVE("physics.ticks", 60.0));
+    EXPECT_TRUE(document.IsDirtyUVE());
+    EXPECT_FALSE(document.GetStoreUVE().HasKeyUVE("physics.ticks"));
+    EXPECT_FALSE(document.GetStoreUVE().HasKeyUVE("physics"));
+}
+
+TEST_F(SettingsDocumentUVETest, RefusesIllegalValuesAndSurvivesAReload) {
+    ASSERT_TRUE(document.LoadUVE(path));
+    EXPECT_FALSE(document.SetValueUVE("physics.ticks", 0.0));
+    EXPECT_FALSE(document.SetValueUVE("physics.unknown", 1.0));
+    EXPECT_FALSE(document.IsDirtyUVE());
+    ASSERT_TRUE(document.SetValueUVE("rendering.clear", SettingColorUVE{0.5F, 0.25F, 1.0F}));
+    ASSERT_TRUE(document.SaveUVE());
+
+    SettingsDocumentUVE reloaded;
+    ASSERT_TRUE(reloaded.GetRegistryUVE().RegisterUVE(
+        MakeColorSettingUVE("rendering.clear", {0.1F, 0.1F, 0.1F}, false, "Clear", "Rendering")));
+    ASSERT_TRUE(reloaded.LoadUVE(path));
+    EXPECT_EQ(reloaded.GetValueUVE("rendering.clear"), (SettingValueUVE{SettingColorUVE{0.5F, 0.25F, 1.0F}}));
+    EXPECT_TRUE(reloaded.IsModifiedUVE("rendering.clear"));
+    EXPECT_TRUE(reloaded.ResetUVE("rendering.clear"));
+    EXPECT_TRUE(reloaded.IsDirtyUVE());
+    EXPECT_FALSE(reloaded.IsModifiedUVE("rendering.clear"));
 }
 
 } // namespace

@@ -50,6 +50,15 @@ public:
     [[nodiscard]] bool SetValueUVE(IConfigManagerUVE& store, std::string_view id, const SettingValueUVE& value) const;
     /// Stores the default of setting `id`.
     [[nodiscard]] bool ResetUVE(IConfigManagerUVE& store, std::string_view id) const;
+    /// Removes setting `id` from the store altogether (every channel of a colour), so it reads as
+    /// its default here, or as whatever a lower layer holds. False for an unknown id or when the
+    /// store held nothing for it.
+    bool ClearValueUVE(IConfigManagerUVE& store, std::string_view id) const;
+    /// The value the store holds for setting `id`, only when it holds a legal one: nothing for a
+    /// missing, mistyped or out-of-range value, or an unknown id. This is what a layer
+    /// contributes; GetValueUVE is this with the default filled in.
+    [[nodiscard]] std::optional<SettingValueUVE> GetStoredValueUVE(const IConfigManagerUVE& store,
+                                                                   std::string_view id) const;
     /// Whether the value in use differs from the default.
     [[nodiscard]] bool IsModifiedUVE(const IConfigManagerUVE& store, std::string_view id) const;
 

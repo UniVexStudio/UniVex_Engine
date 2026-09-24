@@ -207,4 +207,39 @@ bool ConfigManagerUVE::HasKeyUVE(std::string_view keyPath) const {
     return value != nullptr && !value->is_object();
 }
 
+bool ConfigManagerUVE::RemoveKeyUVE(std::string_view keyPath) {
+    const std::lock_guard<std::mutex> lock(m_impl->mutex);
+    const std::vector<std::string> segments = SplitKeyPathUVE(keyPath);
+    if (segments.empty()) {
+        return false;
+    }
+    // The chain of objects from the root down to the leaf's parent.
+    std::vector<nlohmann::json*> parents{&m_impl->document};
+    for (std::size_t index = 0U; index + 1U < segments.size(); ++index) {
+        nlohmann::json& parent = *parents.back();
+        if (!parent.is_object()) {
+            return false;
+        }
+        const auto member = parent.find(segments[index]);
+        if (member == parent.end()) {
+            return false;
+        }
+        parents.push_back(&*member);
+    }
+    nlohmann::json& parent = *parents.back();
+    if (!parent.is_object()) {
+        return false;
+    }
+    const auto leaf = parent.find(segments.back());
+    if (leaf == parent.end() || leaf->is_object()) {
+        return false;
+    }
+    parent.erase(leaf);
+    // Prune objects the removal emptied, deepest first; the root always stays.
+    for (std::size_t depth = parents.size() - 1U; depth > 0U && parents[depth]->empty(); --depth) {
+        parents[depth - 1U]->erase(segments[depth - 1U]);
+    }
+    return true;
+}
+
 } // namespace UVE::Config

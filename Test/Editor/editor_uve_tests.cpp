@@ -19,6 +19,7 @@
 #include "uve/asset/mesh_asset_uve.h"
 #include "uve/asset/texture_asset_uve.h"
 #include "uve/core/engine_core_uve.h"
+#include "uve/core/engine_project_settings_uve.h"
 #include "uve/editor/editor_settings_uve.h"
 #include "uve/editor/editor_uve.h"
 #include "uve/component/camera_component_uve.h"
@@ -213,6 +214,7 @@ namespace {
     config.headlessUVE = true;
     config.logFilePath = "uve_editor_tests.log";
     config.settingsFilePath = "uve_editor_tests_settings.json";
+    config.projectSettingsFilePath = "uve_editor_tests_project_settings.json";
     config.assetDatabaseFilePath = "uve_editor_tests_assets.json";
     config.saveDirectoryPath = "uve_editor_tests_saves";
     config.shaderCachePath = "uve_editor_tests_shader_cache";
@@ -1041,6 +1043,37 @@ TEST(EditorUVETest, EditorSettingsUVE_SetAppliesAtOnceAndRefusesWhatItsDescripto
         editor.ShutdownUVE();
     }
     engine.Shutdown();
+}
+
+TEST(EditorUVETest, ProjectSettingsUVE_ChangesAreSavedAndTheNextSessionRunsWithThem) {
+    const Core::EngineConfigUVE config = MakeEditorTestConfigUVE();
+    std::filesystem::remove(config.projectSettingsFilePath);
+    {
+        Core::EngineCoreUVE engine(config);
+        engine.Init();
+        ASSERT_TRUE(engine.Load());
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_project_settings.uvescene");
+        editor.InitUVE();
+        Config::SettingsDocumentUVE& project = engine.GetServicesUVE().GetProjectSettingsUVE();
+        ASSERT_TRUE(project.SetValueUVE(Core::EngineProjectSettingIdUVE::kPhysicsTicksPerSecondUVE, 120.0));
+        EXPECT_TRUE(project.IsDirtyUVE());
+        // A setting left at its default never reaches the file.
+        ASSERT_TRUE(project.SetValueUVE(Core::EngineProjectSettingIdUVE::kShadowFilterUVE, std::int64_t{1}));
+        editor.ShutdownUVE();
+        EXPECT_FALSE(project.IsDirtyUVE());
+        engine.Shutdown();
+    }
+    ASSERT_TRUE(std::filesystem::exists(config.projectSettingsFilePath));
+    {
+        Core::EngineCoreUVE engine(config);
+        engine.Init();
+        EXPECT_DOUBLE_EQ(engine.GetConfigUVE().fixedUpdateFps, 120.0);
+        EXPECT_FALSE(engine.GetServicesUVE().GetProjectSettingsUVE().GetStoredValueUVE(
+                         Core::EngineProjectSettingIdUVE::kShadowFilterUVE)
+                         .has_value());
+        engine.Shutdown();
+    }
+    std::filesystem::remove(config.projectSettingsFilePath);
 }
 
 TEST(EditorUVETest, SessionSettingsUVE_NeverRestoresTheGameWorkspace) {

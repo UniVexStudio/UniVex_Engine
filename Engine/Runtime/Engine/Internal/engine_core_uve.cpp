@@ -46,6 +46,7 @@
 #include "uve/audio/wav_importer_uve.h"
 #include "uve/commandline/command_line_uve.h"
 #include "uve/config/config_manager_uve.h"
+#include "uve/core/engine_project_settings_uve.h"
 #include "uve/logging/assert_uve.h"
 #include "uve/logging/log_sink_uve.h"
 #include "uve/logging/logger_uve.h"
@@ -178,7 +179,11 @@ template <typename ComponentT>
 
 } // namespace
 
-EngineCoreUVE::EngineCoreUVE(EngineConfigUVE config) : m_config(std::move(config)) {}
+EngineCoreUVE::EngineCoreUVE(EngineConfigUVE config) : m_config(std::move(config)) {
+    if (!RegisterEngineProjectSettingsUVE(m_projectSettings.GetRegistryUVE())) {
+        throw std::logic_error("Failed to register the engine's project settings.");
+    }
+}
 
 EngineCoreUVE::~EngineCoreUVE() {
     if (m_state == EngineStateUVE::Running) {
@@ -228,6 +233,15 @@ void EngineCoreUVE::Init() {
     m_logger = std::move(logger);
 
     UVE_INFO("EngineCoreUVE: initializing UniVex Engine {}", GetEngineVersionUVE().ToStringUVE());
+
+    // The project's settings next, before anything below reads the fields they override: the
+    // project file sits above the application's EngineConfigUVE, so a project carries its tick
+    // rate, shadow quality and so on wherever it is opened.
+    if (!m_projectSettings.LoadUVE(m_config.projectSettingsFilePath)) {
+        UVE_WARNING("EngineCoreUVE: project settings \"{}\" could not be read; using the defaults",
+                    m_config.projectSettingsFilePath.string());
+    }
+    ApplyEngineProjectSettingsUVE(m_projectSettings, m_config);
 
     // MemoryManager third: the next most foundational service after
     // logging — nothing constructed here has a hard dependency on it yet,
@@ -580,7 +594,7 @@ void EngineCoreUVE::Init() {
     m_configManager = std::move(configManager);
 
     m_services.emplace(*m_logger, *m_timer, *m_eventSystem, *m_memoryManager, *m_threadPool,
-                                                 *m_commandLine, *m_configManager, *m_entityManager, *m_sceneGraph,
+                                                 *m_commandLine, *m_configManager, m_projectSettings, *m_entityManager, *m_sceneGraph,
                          *m_assetDatabase, *m_projectFileIndex, *m_derivedArtifactCache, *m_projectChangeWatcher,
                          *m_sceneSerializer,
                          *m_prefabSystem, *m_particleRuntime, *m_hotReload, *m_assetManager, *m_assetImporter, *m_assetImportQueue,

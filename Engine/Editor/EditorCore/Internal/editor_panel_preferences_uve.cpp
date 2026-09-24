@@ -1,8 +1,8 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-// The Editor Preferences window: every visible editor setting, drawn from its descriptor. Nothing
-// here knows what a particular setting means - a new setting declared in editor_settings_uve.cpp
-// appears in the right category with the right control, range, tooltip and reset button.
+// The Editor Preferences and Project Settings windows: every visible setting of a registry, drawn
+// from its descriptor. Nothing here knows what a particular setting means - a newly declared
+// setting appears in the right category with the right control, range, tooltip and reset button.
 
 #include "uve/editor/editor_uve.h"
 
@@ -54,11 +54,12 @@ void DrawResetGlyphUVE(ImDrawList& drawList, const ImVec2 center, const float si
                                ImVec2{point.x - (radial.x * head * 0.75F), point.y - (radial.y * head * 0.75F)}, color);
 }
 
-/// "Editor/Viewport/Grid" shown as "Viewport / Grid": the root is the window's own subject.
-[[nodiscard]] std::string CategoryTitleUVE(const std::string_view category) {
+/// "Physics/Common" shown as "Physics / Common". With `dropRoot` - every setting in the window
+/// shares one root, such as "Editor" - "Editor/Viewport/Grid" is shown as "Viewport / Grid".
+[[nodiscard]] std::string CategoryTitleUVE(const std::string_view category, const bool dropRoot) {
     const std::size_t first = category.find('/');
     std::string title;
-    for (const char c : first == std::string_view::npos ? category : category.substr(first + 1U)) {
+    for (const char c : !dropRoot || first == std::string_view::npos ? category : category.substr(first + 1U)) {
         if (c == '/') {
             title += " / ";
         } else {
@@ -148,15 +149,77 @@ void DrawResetGlyphUVE(ImDrawList& drawList, const ImVec2 center, const float si
     return std::nullopt;
 }
 
+/// Opens a settings window centred on first use, sized for a category tree beside the rows.
+[[nodiscard]] bool BeginSettingsWindowUVE(const char* title, bool* visible) {
+    const float fontSize = ImGui::GetFontSize();
+    ImGui::SetNextWindowSize(ImVec2{fontSize * 50.0F, fontSize * 30.0F}, ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_FirstUseEver, ImVec2{0.5F, 0.5F});
+    ImGui::SetNextWindowSizeConstraints(ImVec2{fontSize * 32.0F, fontSize * 16.0F},
+                                        ImVec2{std::numeric_limits<float>::max(), std::numeric_limits<float>::max()});
+    return ImGui::Begin(title, visible, ImGuiWindowFlags_NoCollapse);
+}
+
 } // namespace
 
 void EditorUVE::OpenEditorPreferencesUVE() noexcept {
-    m_preferencesWindowVisible = true;
-    m_preferencesFocusSearch = true;
+    m_preferencesWindow.visible = true;
+    m_preferencesWindow.focusSearch = true;
 }
 
-void EditorUVE::DrawEditorSettingRowUVE(const SettingDescriptorUVE& descriptor, const bool modified) {
-    const std::optional<SettingValueUVE> current = GetEditorSettingUVE(descriptor.id);
+void EditorUVE::OpenProjectSettingsUVE() noexcept {
+    m_projectSettingsWindow.visible = true;
+    m_projectSettingsWindow.focusSearch = true;
+}
+
+bool EditorUVE::SaveProjectSettingsUVE() {
+    Config::SettingsDocumentUVE& project = m_services->GetProjectSettingsUVE();
+    return !project.IsDirtyUVE() || project.SaveUVE();
+}
+
+void EditorUVE::DrawEditorPreferencesWindowUVE() {
+    if (!m_preferencesWindow.visible) {
+        return;
+    }
+    const SettingsWindowSourceUVE source{
+        &m_settingsRegistry, [this](const std::string_view id) { return GetEditorSettingUVE(id); },
+        [this](const std::string_view id, const SettingValueUVE& value) { return SetEditorSettingUVE(id, value); },
+        "Changes apply at once and are kept with your editor session.", {}};
+    if (BeginSettingsWindowUVE("Editor Preferences", &m_preferencesWindow.visible)) {
+        DrawSettingsWindowBodyUVE(m_preferencesWindow, source);
+    }
+    ImGui::End();
+}
+
+void EditorUVE::DrawProjectSettingsWindowUVE() {
+    if (!m_projectSettingsWindow.visible) {
+        return;
+    }
+    Config::SettingsDocumentUVE& project = m_services->GetProjectSettingsUVE();
+    const std::string fileName = project.GetPathUVE().filename().string();
+    SettingsWindowSourceUVE source{
+        &project.GetRegistryUVE(), [&project](const std::string_view id) { return project.GetValueUVE(id); },
+        [&project](const std::string_view id, const SettingValueUVE& value) { return project.SetValueUVE(id, value); },
+        project.IsDirtyUVE() ? "Unsaved changes to " + fileName + "." : "Saved in " + fileName + ", with the project.",
+        [this, &project]() {
+            ImGui::BeginDisabled(!project.IsDirtyUVE());
+            if (ImGui::Button("Save")) {
+                static_cast<void>(SaveProjectSettingsUVE());
+            }
+            ImGui::EndDisabled();
+        }};
+    if (BeginSettingsWindowUVE("Project Settings", &m_projectSettingsWindow.visible)) {
+        DrawSettingsWindowBodyUVE(m_projectSettingsWindow, source);
+    }
+    ImGui::End();
+    // Closing the window keeps what was changed in it.
+    if (!m_projectSettingsWindow.visible) {
+        static_cast<void>(SaveProjectSettingsUVE());
+    }
+}
+
+void EditorUVE::DrawSettingRowUVE(const SettingDescriptorUVE& descriptor, const bool modified,
+                                  const SettingsWindowSourceUVE& source) {
+    const std::optional<SettingValueUVE> current = source.get(descriptor.id);
     if (!current) {
         return;
     }
@@ -216,68 +279,57 @@ void EditorUVE::DrawEditorSettingRowUVE(const SettingDescriptorUVE& descriptor, 
     }
 
     if (edited) {
-        static_cast<void>(SetEditorSettingUVE(descriptor.id, *edited));
+        static_cast<void>(source.set(descriptor.id, *edited));
     }
     ImGui::PopID();
 }
 
-void EditorUVE::DrawEditorPreferencesWindowUVE() {
-    if (!m_preferencesWindowVisible) {
-        return;
-    }
+void EditorUVE::DrawSettingsWindowBodyUVE(SettingsWindowStateUVE& state, const SettingsWindowSourceUVE& source) {
     const float fontSize = ImGui::GetFontSize();
-    ImGui::SetNextWindowSize(ImVec2{fontSize * 50.0F, fontSize * 30.0F}, ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_FirstUseEver, ImVec2{0.5F, 0.5F});
-    ImGui::SetNextWindowSizeConstraints(ImVec2{fontSize * 32.0F, fontSize * 16.0F},
-                                        ImVec2{std::numeric_limits<float>::max(), std::numeric_limits<float>::max()});
-    if (!ImGui::Begin("Editor Preferences", &m_preferencesWindowVisible, ImGuiWindowFlags_NoCollapse)) {
-        ImGui::End();
-        return;
-    }
 
     // Every setting a person may change, with whether it differs from its default.
     std::vector<PreferenceRowUVE> rows;
     bool anyAdvanced = false;
-    for (const SettingDescriptorUVE* descriptor : m_settingsRegistry.GetAllUVE()) {
+    for (const SettingDescriptorUVE* descriptor : source.registry->GetAllUVE()) {
         if (descriptor->HasFlagUVE(Config::kSettingFlagHiddenUVE)) {
             continue;
         }
         anyAdvanced = anyAdvanced || descriptor->HasFlagUVE(Config::kSettingFlagAdvancedUVE);
-        if (descriptor->HasFlagUVE(Config::kSettingFlagAdvancedUVE) && !m_preferencesShowAdvanced) {
+        if (descriptor->HasFlagUVE(Config::kSettingFlagAdvancedUVE) && !state.showAdvanced) {
             continue;
         }
-        const std::optional<SettingValueUVE> value = GetEditorSettingUVE(descriptor->id);
+        const std::optional<SettingValueUVE> value = source.get(descriptor->id);
         rows.push_back(PreferenceRowUVE{descriptor, value.has_value() && *value != descriptor->defaultValue});
     }
 
     // Search, across every category, and the filters beside it.
-    const std::string_view query{m_preferencesSearch.data()};
+    const std::string_view query{state.search.data()};
     const float filtersWidth = ImGui::CalcTextSize("Modified only").x + ImGui::GetFrameHeight() +
                                ImGui::GetStyle().ItemInnerSpacing.x +
                                (anyAdvanced ? ImGui::CalcTextSize("Advanced").x + ImGui::GetFrameHeight() +
                                                   (ImGui::GetStyle().ItemSpacing.x * 2.0F)
                                             : 0.0F);
-    if (m_preferencesFocusSearch) {
+    if (state.focusSearch) {
         ImGui::SetKeyboardFocusHere();
-        m_preferencesFocusSearch = false;
+        state.focusSearch = false;
     }
     ImGui::SetNextItemWidth(-(filtersWidth + ImGui::GetStyle().ItemSpacing.x));
-    ImGui::InputTextWithHint("##preferences-search", "Search settings", m_preferencesSearch.data(),
-                             m_preferencesSearch.size(), ImGuiInputTextFlags_EscapeClearsAll);
+    ImGui::InputTextWithHint("##preferences-search", "Search settings", state.search.data(),
+                             state.search.size(), ImGuiInputTextFlags_EscapeClearsAll);
     ImGui::SameLine();
-    ImGui::Checkbox("Modified only", &m_preferencesModifiedOnly);
+    ImGui::Checkbox("Modified only", &state.modifiedOnly);
     if (anyAdvanced) {
         ImGui::SameLine();
-        ImGui::Checkbox("Advanced", &m_preferencesShowAdvanced);
+        ImGui::Checkbox("Advanced", &state.showAdvanced);
     }
 
     const float footerHeight = ImGui::GetFrameHeightWithSpacing() + ImGui::GetStyle().ItemSpacing.y;
     const bool searching = !query.empty();
     const auto isShown = [&](const PreferenceRowUVE& row) {
         return MatchesSettingSearchUVE(*row.descriptor, query) &&
-               (searching || m_preferencesCategory.empty() ||
-                IsInSettingCategoryUVE(row.descriptor->category, m_preferencesCategory)) &&
-               (!m_preferencesModifiedOnly || row.modified);
+               (searching || state.category.empty() ||
+                IsInSettingCategoryUVE(row.descriptor->category, state.category)) &&
+               (!state.modifiedOnly || row.modified);
     };
 
     // Left: the category tree. A dot marks a category holding a modified setting.
@@ -290,8 +342,8 @@ void EditorUVE::DrawEditorPreferencesWindowUVE() {
     const float treeWidth = fontSize * 12.0F;
     if (ImGui::BeginChild("##preferences-tree", ImVec2{treeWidth, -footerHeight}, ImGuiChildFlags_Borders)) {
         ImGui::BeginDisabled(searching);
-        if (ImGui::Selectable("All Settings", searching || m_preferencesCategory.empty())) {
-            m_preferencesCategory.clear();
+        if (ImGui::Selectable("All Settings", searching || state.category.empty())) {
+            state.category.clear();
         }
         for (const SettingCategoryNodeUVE& node : tree) {
             const bool anyModified = std::any_of(rows.begin(), rows.end(), [&node](const PreferenceRowUVE& row) {
@@ -299,8 +351,8 @@ void EditorUVE::DrawEditorPreferencesWindowUVE() {
             });
             ImGui::PushID(node.path.c_str());
             ImGui::Indent(ImGui::GetStyle().IndentSpacing * static_cast<float>(node.depth + 1));
-            if (ImGui::Selectable(node.name.c_str(), !searching && m_preferencesCategory == node.path)) {
-                m_preferencesCategory = node.path;
+            if (ImGui::Selectable(node.name.c_str(), !searching && state.category == node.path)) {
+                state.category = node.path;
             }
             if (anyModified) {
                 const ImVec2 max = ImGui::GetItemRectMax();
@@ -317,6 +369,8 @@ void EditorUVE::DrawEditorPreferencesWindowUVE() {
     ImGui::EndChild();
 
     // Right: the settings, grouped under their category in tree order.
+    const bool singleRoot =
+        std::count_if(tree.begin(), tree.end(), [](const SettingCategoryNodeUVE& node) { return node.depth == 0; }) == 1;
     ImGui::SameLine();
     std::size_t shownCount = 0U;
     std::size_t shownModifiedCount = 0U;
@@ -331,7 +385,7 @@ void EditorUVE::DrawEditorPreferencesWindowUVE() {
                     if (shownCount != 0U) {
                         ImGui::Spacing();
                     }
-                    ImGui::SeparatorText(CategoryTitleUVE(node.path).c_str());
+                    ImGui::SeparatorText(CategoryTitleUVE(node.path, singleRoot).c_str());
                     groupOpen = ImGui::BeginTable(node.path.c_str(), 3, ImGuiTableFlags_SizingStretchProp);
                     if (!groupOpen) {
                         break;
@@ -340,7 +394,7 @@ void EditorUVE::DrawEditorPreferencesWindowUVE() {
                     ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch, 0.58F);
                     ImGui::TableSetupColumn("Reset", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFrameHeight());
                 }
-                DrawEditorSettingRowUVE(*row.descriptor, row.modified);
+                DrawSettingRowUVE(*row.descriptor, row.modified, source);
                 ++shownCount;
                 shownModifiedCount += row.modified ? 1U : 0U;
             }
@@ -352,11 +406,11 @@ void EditorUVE::DrawEditorPreferencesWindowUVE() {
             // Say why the list is empty, and offer the way back.
             ImGui::Spacing();
             if (searching) {
-                ImGui::TextDisabled("No settings match \"%s\".", m_preferencesSearch.data());
+                ImGui::TextDisabled("No settings match \"%s\".", state.search.data());
                 if (ImGui::Button("Clear Search")) {
-                    m_preferencesSearch.fill('\0');
+                    state.search.fill('\0');
                 }
-            } else if (m_preferencesModifiedOnly) {
+            } else if (state.modifiedOnly) {
                 ImGui::TextDisabled("Every setting here is at its default.");
             } else {
                 ImGui::TextDisabled("No settings in this category.");
@@ -367,11 +421,19 @@ void EditorUVE::DrawEditorPreferencesWindowUVE() {
 
     // Footer: where changes go, and resetting what is shown.
     ImGui::AlignTextToFramePadding();
-    ImGui::TextDisabled("Changes apply at once and are kept with your editor session.");
+    ImGui::TextDisabled("%s", source.footerNote.c_str());
     const char* resetLabel = "Reset to Defaults...";
-    const float resetWidth = ImGui::CalcTextSize(resetLabel).x + (ImGui::GetStyle().FramePadding.x * 2.0F);
+    const ImGuiStyle& style = ImGui::GetStyle();
+    float actionsWidth = ImGui::CalcTextSize(resetLabel).x + (style.FramePadding.x * 2.0F);
+    if (source.drawFooterActions) {
+        actionsWidth += ImGui::CalcTextSize("Save").x + (style.FramePadding.x * 2.0F) + style.ItemSpacing.x;
+    }
     ImGui::SameLine();
-    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::max(0.0F, ImGui::GetContentRegionAvail().x - resetWidth));
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::max(0.0F, ImGui::GetContentRegionAvail().x - actionsWidth));
+    if (source.drawFooterActions) {
+        source.drawFooterActions();
+        ImGui::SameLine();
+    }
     ImGui::BeginDisabled(shownModifiedCount == 0U);
     if (ImGui::Button(resetLabel)) {
         ImGui::OpenPopup("Reset Preferences");
@@ -388,7 +450,7 @@ void EditorUVE::DrawEditorPreferencesWindowUVE() {
         if (ImGui::Button("Reset") || ImGui::IsKeyPressed(ImGuiKey_Enter)) {
             for (const PreferenceRowUVE& row : rows) {
                 if (row.modified && isShown(row)) {
-                    static_cast<void>(SetEditorSettingUVE(row.descriptor->id, row.descriptor->defaultValue));
+                    static_cast<void>(source.set(row.descriptor->id, row.descriptor->defaultValue));
                 }
             }
             ImGui::CloseCurrentPopup();
@@ -399,7 +461,6 @@ void EditorUVE::DrawEditorPreferencesWindowUVE() {
         }
         ImGui::EndPopup();
     }
-    ImGui::End();
 }
 
 } // namespace UVE::Editor

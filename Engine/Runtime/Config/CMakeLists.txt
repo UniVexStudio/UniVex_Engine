@@ -8,6 +8,7 @@
 add_library(uve_config STATIC
     Internal/config_manager_uve.cpp
     Internal/settings_registry_uve.cpp
+    Internal/settings_document_uve.cpp
 )
 target_include_directories(uve_config PUBLIC Expose)
 target_link_libraries(uve_config

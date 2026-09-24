@@ -43,6 +43,7 @@ public:
     void SetBoolUVE(std::string_view keyPath, bool value) override;
 
     [[nodiscard]] bool HasKeyUVE(std::string_view keyPath) const override;
+    bool RemoveKeyUVE(std::string_view keyPath) override;
 
 private:
     struct ImplUVE;

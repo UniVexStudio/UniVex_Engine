@@ -34,6 +34,7 @@
 #include "uve/audio/i_audio_system_uve.h"
 #include "uve/commandline/i_command_line_uve.h"
 #include "uve/config/i_config_manager_uve.h"
+#include "uve/config/settings_document_uve.h"
 #include "uve/core/engine_config_uve.h"
 #include "uve/core/engine_services_uve.h"
 #include "uve/core/i_editor_viewport_host_uve.h"
@@ -325,6 +326,9 @@ public:
     void Shutdown();
 
     [[nodiscard]] EngineStateUVE GetStateUVE() const noexcept;
+    /// The configuration in effect: the one the engine was constructed with, with the project's
+    /// settings applied over it once Init() has read them.
+    [[nodiscard]] const EngineConfigUVE& GetConfigUVE() const noexcept { return m_config; }
     [[nodiscard]] const FrameStatsUVE& GetFrameStatsUVE() const noexcept;
     [[nodiscard]] Scene::ParticleRuntimeSnapshotUVE GetParticleRuntimeSnapshotUVE() const;
 
@@ -743,6 +747,9 @@ private:
     std::unique_ptr<Save::ISaveGameSystemUVE> m_saveGameSystem;
     std::unique_ptr<Save::ICheckpointManagerUVE> m_checkpointManager;
     std::unique_ptr<Config::IConfigManagerUVE> m_configManager;
+    // The project's settings file, declared at construction and read at the start of Init(), before
+    // anything reads the EngineConfigUVE fields it overrides.
+    Config::SettingsDocumentUVE m_projectSettings;
     std::optional<EngineServicesUVE> m_services;
 
     FrameStatsUVE m_frameStats;

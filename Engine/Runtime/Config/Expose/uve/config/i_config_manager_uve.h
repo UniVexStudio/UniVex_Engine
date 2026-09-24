@@ -79,6 +79,12 @@ public:
     /// True iff `keyPath` exists and resolves to a leaf value (not merely
     /// an intermediate object).
     [[nodiscard]] virtual bool HasKeyUVE(std::string_view keyPath) const = 0;
+
+    /// Removes the leaf value at dot-path `keyPath`, then any object along
+    /// the path that the removal left empty, so the document holds no
+    /// husks. Returns true iff a leaf value was removed; an intermediate
+    /// object is never removed by naming it.
+    virtual bool RemoveKeyUVE(std::string_view keyPath) = 0;
 };
 
 } // namespace UVE::Config
