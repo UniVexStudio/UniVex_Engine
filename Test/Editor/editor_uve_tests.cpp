@@ -1002,7 +1002,7 @@ TEST(EditorUVETest, EditorSettingsUVE_DescriptorDefaultsMatchTheEditorsOwnDefaul
         // Not initialised, so nothing has been loaded: every value is the editor's in-class default.
         EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_setting_defaults.uvescene");
         const Config::SettingsRegistryUVE& registry = editor.GetSettingsRegistryUVE();
-        ASSERT_EQ(registry.GetCountUVE(), 18U);
+        ASSERT_EQ(registry.GetCountUVE(), 20U);
         for (const Config::SettingDescriptorUVE* descriptor : registry.GetAllUVE()) {
             const std::optional<Config::SettingValueUVE> value = editor.GetEditorSettingUVE(descriptor->id);
             ASSERT_TRUE(value.has_value()) << descriptor->id;
@@ -1074,6 +1074,69 @@ TEST(EditorUVETest, ProjectSettingsUVE_ChangesAreSavedAndTheNextSessionRunsWithT
         engine.Shutdown();
     }
     std::filesystem::remove(config.projectSettingsFilePath);
+}
+
+TEST(EditorUVETest, NewNodeDefaultsUVE_ParentAndPlacementFollowThePreferences) {
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_new_node_defaults.uvescene");
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entities = engine.GetServicesUVE().GetEntityManagerUVE();
+        Scene::ISceneGraphUVE& graph = engine.GetServicesUVE().GetSceneGraphUVE();
+        const auto parentOf = [&entities](const Scene::EntityUVE entity) {
+            return entities.GetComponentUVE<Scene::HierarchyComponentUVE>(entity).parent;
+        };
+        const auto localPositionOf = [&entities](const Scene::EntityUVE entity) {
+            return entities.GetComponentUVE<Scene::TransformComponentUVE>(entity).localPosition;
+        };
+        namespace Id = EditorSettingIdUVE;
+
+        // By default: under the selection, at its origin, whatever the camera looks at.
+        editor.SetViewportCameraFocusUVE(Math::Vector3UVE{3.0F, 0.0F, -2.0F});
+        const Scene::EntityUVE parent = editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Node3D);
+        ASSERT_NE(parent, Scene::kInvalidEntityUVE);
+        const Scene::EntityUVE root = parentOf(parent);
+        const Scene::EntityUVE child = editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::BoxMesh3D);
+        ASSERT_NE(child, Scene::kInvalidEntityUVE);
+        EXPECT_EQ(parentOf(child), parent);
+        EXPECT_FLOAT_EQ(localPositionOf(child).x, 0.0F);
+
+        // Not under the selection: straight under the scene root.
+        ASSERT_TRUE(editor.SetEditorSettingUVE(Id::kNewNodesUnderSelectionUVE, false));
+        editor.SelectEntityUVE(parent);
+        const Scene::EntityUVE sibling = editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Node3D);
+        EXPECT_EQ(parentOf(sibling), root);
+
+        // At the view focus: under the root, that point itself...
+        ASSERT_TRUE(editor.SetEditorSettingUVE(Id::kNewNodePlacementUVE,
+                                               static_cast<std::int64_t>(EditorNewNodePlacementUVE::ViewFocus)));
+        const Scene::EntityUVE focused = editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Node3D);
+        EXPECT_FLOAT_EQ(localPositionOf(focused).x, 3.0F);
+        EXPECT_FLOAT_EQ(localPositionOf(focused).z, -2.0F);
+
+        // ...and under a moved parent, the same point taken into the parent's space.
+        ASSERT_TRUE(editor.SetEditorSettingUVE(Id::kNewNodesUnderSelectionUVE, true));
+        Scene::TransformComponentUVE moved = entities.GetComponentUVE<Scene::TransformComponentUVE>(parent);
+        moved.localPosition = Math::Vector3UVE{1.0F, 0.0F, 0.0F};
+        graph.SetLocalTransformUVE(entities, parent, moved);
+        graph.UpdateUVE(entities);
+        editor.SelectEntityUVE(parent);
+        const Scene::EntityUVE nested = editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Node3D);
+        EXPECT_EQ(parentOf(nested), parent);
+        EXPECT_FLOAT_EQ(localPositionOf(nested).x, 2.0F);
+        EXPECT_FLOAT_EQ(localPositionOf(nested).z, -2.0F);
+
+        // Undo and redo keep the place.
+        ASSERT_TRUE(editor.UndoUVE());
+        ASSERT_TRUE(editor.RedoUVE());
+        const Scene::EntityUVE redone = editor.GetSelectedEntityUVE();
+        ASSERT_NE(redone, Scene::kInvalidEntityUVE);
+        EXPECT_FLOAT_EQ(localPositionOf(redone).x, 2.0F);
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
 }
 
 TEST(EditorUVETest, SessionSettingsUVE_NeverRestoresTheGameWorkspace) {

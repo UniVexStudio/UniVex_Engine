@@ -20,7 +20,7 @@ using Config::SettingTypeUVE;
 TEST(EditorSettingsUVETest, EveryEditorSettingRegistersOnceWithALegalDefault) {
     Config::SettingsRegistryUVE registry;
     ASSERT_TRUE(RegisterEditorSettingsUVE(registry));
-    EXPECT_EQ(registry.GetCountUVE(), 18U);
+    EXPECT_EQ(registry.GetCountUVE(), 20U);
     for (const Config::SettingDescriptorUVE* descriptor : registry.GetAllUVE()) {
         EXPECT_EQ(Config::ValidateSettingDescriptorUVE(*descriptor), "") << descriptor->id;
         EXPECT_TRUE(descriptor->id.starts_with("editor.")) << descriptor->id;
@@ -29,7 +29,7 @@ TEST(EditorSettingsUVETest, EveryEditorSettingRegistersOnceWithALegalDefault) {
     }
     // A second declaration of the same settings is refused as duplicates.
     EXPECT_FALSE(RegisterEditorSettingsUVE(registry));
-    EXPECT_EQ(registry.GetCountUVE(), 18U);
+    EXPECT_EQ(registry.GetCountUVE(), 20U);
 }
 
 TEST(EditorSettingsUVETest, EveryIdIsDeclaredWithTheTypeTheEditorReadsItAs) {
@@ -55,6 +55,8 @@ TEST(EditorSettingsUVETest, EveryIdIsDeclaredWithTheTypeTheEditorReadsItAs) {
         {Id::kSelectionOutlineVisibleUVE, SettingTypeUVE::Bool},
         {Id::kSelectionOutlineColorUVE, SettingTypeUVE::Color},
         {Id::kSelectionOutlineThicknessUVE, SettingTypeUVE::Float},
+        {Id::kNewNodesUnderSelectionUVE, SettingTypeUVE::Bool},
+        {Id::kNewNodePlacementUVE, SettingTypeUVE::Enum},
     };
     for (const auto& [id, type] : expected) {
         const Config::SettingDescriptorUVE* descriptor = registry.FindUVE(id);

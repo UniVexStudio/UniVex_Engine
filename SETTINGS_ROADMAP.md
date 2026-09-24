@@ -1305,8 +1305,11 @@ constantly and they belong in the same inventory.
 ## 6.7 Node and component defaults
 
 - [ ] Default property values for newly created nodes of each type, editable as a setting.
-- [ ] Node creation defaults: where a new node is placed (origin, camera focus, ground plane under
-      the cursor), and whether it is parented to the selection.
+- [~] Node creation defaults: where a new node is placed (origin, camera focus, ground plane under
+      the cursor), and whether it is parented to the selection. Editor Preferences > Nodes:
+      **Placement** (Parent's Origin, or View Focus - the point the viewport camera orbits, taken
+      into the parent's space) and **Add Under Selection**. The ground plane under the cursor is
+      open.
 - [~] Default component set for each node type. Each node type's recipe attaches its
       components (its own, its bases', and Node3D's); missing: editing that set as a setting.
 - [ ] A "save current node as the default" action.

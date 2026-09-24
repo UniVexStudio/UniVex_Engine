@@ -27,6 +27,7 @@ constexpr const char* kSessionCategoryUVE = "Editor/Session";
 constexpr const char* kSnappingCategoryUVE = "Editor/Viewport/Snapping";
 constexpr const char* kGridCategoryUVE = "Editor/Viewport/Grid";
 constexpr const char* kOutlineCategoryUVE = "Editor/Viewport/Selection Outline";
+constexpr const char* kNodesCategoryUVE = "Editor/Nodes";
 
 [[nodiscard]] SettingDescriptorUVE HiddenUVE(SettingDescriptorUVE descriptor) {
     descriptor.flags |= Config::kSettingFlagHiddenUVE;
@@ -245,6 +246,30 @@ const std::vector<EditorSettingBindingUVE>& EditorUVE::GetSettingBindingsUVE() {
              const ViewportOverlayStateUVE& state = editor.m_viewportOverlayState;
              return editor.SetViewportSelectionOutlineUVE(state.selectionOutlineVisible, state.selectionOutlineColor,
                                                          FloatUVE(value));
+         }},
+
+        // New nodes.
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kNewNodesUnderSelectionUVE), true, "Add Under Selection",
+                                    kNodesCategoryUVE,
+                                    "A new node goes under the selected node. Off, it always goes under the scene root."),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_newNodesUnderSelection; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_newNodesUnderSelection = std::get<bool>(value);
+             return true;
+         }},
+        {Config::MakeEnumSettingUVE(IdUVE(Id::kNewNodePlacementUVE),
+                                    static_cast<std::int64_t>(EditorNewNodePlacementUVE::ParentOrigin),
+                                    {EntryUVE(EditorNewNodePlacementUVE::ParentOrigin, "Parent's Origin"),
+                                     EntryUVE(EditorNewNodePlacementUVE::ViewFocus, "View Focus")},
+                                    "Placement", kNodesCategoryUVE,
+                                    "Where a new 3D node appears: at its parent's origin, or at the point the "
+                                    "viewport camera orbits - where you are looking."),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             return static_cast<std::int64_t>(editor.m_newNodePlacement);
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_newNodePlacement = static_cast<EditorNewNodePlacementUVE>(std::get<std::int64_t>(value));
+             return true;
          }},
     };
     return bindings;
