@@ -148,34 +148,9 @@ void EditorUVE::DrawViewportAxisColorPickerUVE() {
 
 void EditorUVE::DrawMenuBarUVE() {
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
-    ImGuiIO& io = ImGui::GetIO();
-    const bool lifecycleCommandAllowed = IsLifecycleCommandAllowedUVE() && IsDocumentEntityUVE(m_selectedEntity);
-    const bool canEnterPlayMode = m_simulationControl != nullptr &&
-                                  m_playModeState == EditorPlayModeStateUVE::Edit;
-    if (!io.WantTextInput && canEnterPlayMode && ImGui::IsKeyPressed(ImGuiKey_F5, false)) {
-        static_cast<void>(EnterPlayModeUVE());
-    } else if (!io.WantTextInput && m_playModeState == EditorPlayModeStateUVE::Playing &&
-               ImGui::IsKeyPressed(ImGuiKey_F6, false)) {
-        static_cast<void>(PausePlayModeUVE());
-    } else if (!io.WantTextInput && m_playModeState == EditorPlayModeStateUVE::Paused &&
-               ImGui::IsKeyPressed(ImGuiKey_F6, false)) {
-        static_cast<void>(ResumePlayModeUVE());
-    } else if (!io.WantTextInput && m_playModeState == EditorPlayModeStateUVE::Paused &&
-               ImGui::IsKeyPressed(ImGuiKey_F10, false)) {
-        static_cast<void>(StepPlayModeUVE());
-    } else if (!io.WantTextInput && m_playModeState != EditorPlayModeStateUVE::Edit && io.KeyShift &&
-               ImGui::IsKeyPressed(ImGuiKey_F5, false)) {
-        static_cast<void>(StopPlayModeUVE());
-    } else if (!io.WantTextInput && io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Z, false)) {
-        static_cast<void>(io.KeyShift ? RedoUVE() : UndoUVE());
-    } else if (!io.WantTextInput && io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Y, false)) {
-        static_cast<void>(RedoUVE());
-    } else if (!io.WantTextInput && lifecycleCommandAllowed && io.KeyCtrl &&
-               ImGui::IsKeyPressed(ImGuiKey_D, false)) {
-        static_cast<void>(DuplicateSelectedEntityUVE());
-    } else if (!io.WantTextInput && lifecycleCommandAllowed && ImGui::IsKeyPressed(ImGuiKey_Delete, false)) {
-        static_cast<void>(DeleteSelectedEntityUVE());
-    }
+    // Every keyboard shortcut is a command's (editor_commands_uve.cpp), rebindable in Keyboard
+    // Shortcuts.
+    DispatchEditorShortcutsUVE();
 
     // The two chrome strips never come to the front when clicked: they tile against the panels
     // below them, and a strip drawn over a panel hides that panel's title row.
@@ -242,15 +217,8 @@ void EditorUVE::DrawMenuBarUVE() {
         // Every item's own body/callback is unchanged from before; only the nesting level moved.
         if (ImGui::BeginMenu("Menu")) {
             if (ImGui::BeginMenu(kMenuLabelFileUVE)) {
-                const bool canSave = IsAuthoringCommandAllowedUVE() && !m_activeScenePath.empty();
-                ImGui::BeginDisabled(!canSave);
-                if (ImGui::MenuItem("Save Scene")) {
-                    static_cast<void>(SaveSceneUVE());
-                }
-                ImGui::EndDisabled();
-                if (ImGui::MenuItem("Load Scene")) {
-                    static_cast<void>(LoadSceneUVE());
-                }
+                DrawCommandMenuItemUVE("file.saveScene");
+                DrawCommandMenuItemUVE("file.loadScene");
                 ImGui::Separator();
                 // The viewport's X/Y/Z hues, edited here rather than in a viewport-anchored popup:
                 // a second ImGui window floating over the 3D view would take hover away from
@@ -270,31 +238,22 @@ void EditorUVE::DrawMenuBarUVE() {
                     ImGui::EndMenu();
                 }
                 ImGui::Separator();
-                if (ImGui::MenuItem("Project Settings...")) {
-                    OpenProjectSettingsUVE();
-                }
-                if (ImGui::MenuItem("Input Map...")) {
-                    OpenInputMapUVE();
-                }
-                if (ImGui::MenuItem("Editor Preferences...")) {
-                    OpenEditorPreferencesUVE();
-                }
+                DrawCommandMenuItemUVE("file.projectSettings");
+                DrawCommandMenuItemUVE("file.inputMap");
+                DrawCommandMenuItemUVE("file.preferences");
+                DrawCommandMenuItemUVE("file.keyboardShortcuts");
+                DrawCommandMenuItemUVE("file.commandPalette");
                 if (ImGui::MenuItem("Save Editor Preferences")) {
                     static_cast<void>(SaveSessionSettingsUVE());
                 }
                 ImGui::EndMenu();
             }
             if (ImGui::BeginMenu(kMenuLabelEditUVE)) {
-                ImGui::BeginDisabled(!CanUndoUVE());
-                if (ImGui::MenuItem("Undo", "Ctrl+Z")) {
-                    static_cast<void>(UndoUVE());
-                }
-                ImGui::EndDisabled();
-                ImGui::BeginDisabled(!CanRedoUVE());
-                if (ImGui::MenuItem("Redo", "Ctrl+Y")) {
-                    static_cast<void>(RedoUVE());
-                }
-                ImGui::EndDisabled();
+                DrawCommandMenuItemUVE("edit.undo");
+                DrawCommandMenuItemUVE("edit.redo");
+                ImGui::Separator();
+                DrawCommandMenuItemUVE("edit.duplicate");
+                DrawCommandMenuItemUVE("edit.delete");
                 ImGui::EndMenu();
             }
             if (ImGui::BeginMenu(kMenuLabelAssetsUVE)) {
@@ -306,14 +265,8 @@ void EditorUVE::DrawMenuBarUVE() {
                 ImGui::EndMenu();
             }
             if (ImGui::BeginMenu(kMenuLabelGameObjectUVE)) {
-                ImGui::BeginDisabled(!IsAuthoringCommandAllowedUVE());
-                if (ImGui::MenuItem("Create Empty")) {
-                    static_cast<void>(CreateDocumentEntityUVE(EditorEntityKindUVE::Empty));
-                }
-                if (ImGui::MenuItem("Create Cube")) {
-                    static_cast<void>(CreateDocumentEntityUVE(EditorEntityKindUVE::Cube));
-                }
-                ImGui::EndDisabled();
+                DrawCommandMenuItemUVE("create.empty");
+                DrawCommandMenuItemUVE("create.cube");
                 ImGui::EndMenu();
             }
             if (ImGui::MenuItem(kMenuLabelPluginUVE)) {

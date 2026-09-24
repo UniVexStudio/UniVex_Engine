@@ -151,6 +151,7 @@ void EditorUVE::RenderOverlayUVE() {
     DrawEditorPreferencesWindowUVE();
     DrawProjectSettingsWindowUVE();
     DrawInputMapWindowUVE();
+    DrawKeyboardShortcutsWindowUVE();
 
     if (m_activeWorkspace == EditorWorkspaceUVE::Scripting) {
         DrawScriptingWorkspaceUVE();
@@ -160,6 +161,8 @@ void EditorUVE::RenderOverlayUVE() {
         DrawInspectorPanelUVE();
         DrawBottomDockContentUVE();
     }
+    // Last, so it floats over every panel.
+    DrawCommandPaletteUVE();
     ImGui::PopStyleColor(tintedColors);
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());

@@ -695,11 +695,19 @@ settings question.
 
 ## 2.5 Menu bar and commands
 
-- [ ] A command registry: every editor action has an id, a label, a category, and an optional
+- [x] A command registry: every editor action has an id, a label, a category, and an optional
       default shortcut. The menu bar and the command palette both render from it.
-- [ ] Command palette: enable, fuzzy-match mode, recent-command memory depth.
-- [ ] Shortcut bindings as a real settings page: searchable, per-command, with conflict detection
-      and a reset-to-default per binding.
+      `editor_commands_uve.cpp`: a primary and an alternate shortcut each, one dispatcher in
+      place of the old hard-coded F5/F6/Ctrl+Z chain (modifiers match exactly, so F5 and
+      Shift+F5 differ), and menu items that show the shortcut in use. New: Ctrl+S saves.
+- [~] Command palette: enable, fuzzy-match mode, recent-command memory depth. Ctrl+Shift+P:
+      fuzzy matching (prefix, then word, then inside, then scattered), the last eight commands
+      first, unavailable ones dimmed, arrows and Enter. Its options are not settings yet.
+- [x] Shortcut bindings as a real settings page: searchable, per-command, with conflict detection
+      and a reset-to-default per binding. **Keyboard Shortcuts** (Menu > File): click a shortcut
+      and press the new one; a shortcut two commands share is amber with the other's name; each
+      is kept as a hidden editor setting. Palette, Save and Preferences work while a text field
+      has the keyboard; the rest leave the keys to the field.
 - [ ] Shortcut profiles, so a user can switch between binding sets.
 - [ ] Menu bar customisation: which top-level menus appear.
 - [ ] Recent files / recent projects list length, and whether it is cleared on exit.
