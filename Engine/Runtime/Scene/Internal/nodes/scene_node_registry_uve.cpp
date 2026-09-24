@@ -6,7 +6,7 @@ namespace UVE::Scene::Nodes {
 namespace {
 
 constexpr std::array<std::string_view, 0U> kNoContracts{};
-constexpr std::array<std::string_view, 1U> kAnimationTreeContracts{"Core::AnimationTreeUVE"};
+constexpr std::array<std::string_view, 1U> kAnimationTreeContracts{"AnimationTreeComponentUVE"};
 constexpr std::array<std::string_view, 1U> kAnimationPlayerContracts{"AnimationPlayerComponentUVE"};
 constexpr std::array<std::string_view, 2U> kCharacterContracts{
     "TransformComponentUVE", "ColliderComponentUVE"};
@@ -78,7 +78,7 @@ constexpr std::array<SceneNodeDescriptorUVE, 44U> kDescriptors{
     SceneNodeDescriptorUVE{SceneNodeKindUVE::SpawnPoint3D, "spawn_point_3d", "SpawnPoint3D", "Gameplay", "Scene/SpawnPoint3DNodeComponentUVE", kSpawnContracts, true},
     SceneNodeDescriptorUVE{SceneNodeKindUVE::LevelStreamer3D, "level_streamer_3d", "LevelStreamer3D", "World", "Scene/LevelStreamer3DNodeComponentUVE", kStreamerContracts, true},
     SceneNodeDescriptorUVE{SceneNodeKindUVE::WorldPartition3D, "world_partition_3d", "WorldPartition3D", "World", "Scene/WorldPartition3DNodeComponentUVE", kPartitionContracts, true},
-    SceneNodeDescriptorUVE{SceneNodeKindUVE::AnimationTree, "animation_tree", "AnimationTree", "Animation", "Core/AnimationTreeUVE", kAnimationTreeContracts, false},
+    SceneNodeDescriptorUVE{SceneNodeKindUVE::AnimationTree, "animation_tree", "AnimationTree", "Animation", "Scene/AnimationTreeComponentUVE", kAnimationTreeContracts, true},
     SceneNodeDescriptorUVE{SceneNodeKindUVE::AnimationPlayer, "animation_player", "AnimationPlayer", "Animation", "Scene/AnimationPlayerComponentUVE", kAnimationPlayerContracts, true},
     SceneNodeDescriptorUVE{SceneNodeKindUVE::CharacterBody3D, "character_body_3d", "CharacterBody3D", "Physics", "Physics/CharacterControllerUVE", kCharacterContracts, true},
     SceneNodeDescriptorUVE{SceneNodeKindUVE::Camera3D, "camera_3d", "Camera3D", "Rendering", "Render/CameraSystemUVE", kCameraContracts, true},

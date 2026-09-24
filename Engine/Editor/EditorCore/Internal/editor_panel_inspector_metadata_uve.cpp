@@ -701,17 +701,47 @@ void EditorUVE::DrawMetadataPropertyRowUVE(const TypeMetadataEntryUVE& entry,
             }
         }
     } else if (property.typeId == Scene::kPropertyTypeEntityUVE) {
-        // Same reasoning as an asset guid: an entity reference is picked, not typed. The two
-        // properties that hold one both declare a custom drawer for when that picker lands.
+        // Same reasoning as an asset guid: an entity reference is picked, not typed. The list is
+        // every document node with a transform - the only nodes a reference can act on - in
+        // outliner order, minus the selection itself.
         Scene::EntityUVE value = Scene::kInvalidEntityUVE;
         property.getValue(instance, &value);
-        ImGui::BeginDisabled();
-        if (value == Scene::kInvalidEntityUVE) {
-            ImGui::TextUnformatted("(none)");
-        } else {
-            ImGui::TextUnformatted(GetEntityDisplayLabelUVE(value).c_str());
+        const Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+        const bool dangling = value != Scene::kInvalidEntityUVE && !IsDocumentEntityUVE(value);
+        const std::string preview = value == Scene::kInvalidEntityUVE ? std::string{"(default)"}
+                                    : dangling                        ? std::string{"(missing node)"}
+                                                                      : GetEntityDisplayLabelUVE(value);
+        if (ImGui::BeginCombo("##value", preview.c_str())) {
+            if (ImGui::Selectable("(default)", value == Scene::kInvalidEntityUVE) &&
+                value != Scene::kInvalidEntityUVE) {
+                const Scene::EntityUVE none = Scene::kInvalidEntityUVE;
+                edited = SetSelectedComponentPropertyUVE(entry, property, &none);
+            }
+            if (ImGui::IsItemHovered() && !property.tooltip.empty()) {
+                ImGui::SetTooltip("%s", property.tooltip.c_str());
+            }
+            std::vector<Scene::EntityUVE> pending = GetDocumentRootsUVE();
+            std::reverse(pending.begin(), pending.end());
+            while (!pending.empty()) {
+                const Scene::EntityUVE candidate = pending.back();
+                pending.pop_back();
+                std::vector<Scene::EntityUVE> children =
+                    m_services->GetSceneGraphUVE().GetChildrenUVE(m_services->GetEntityManagerUVE(), candidate);
+                pending.insert(pending.end(), children.rbegin(), children.rend());
+                if (candidate == m_selectedEntity ||
+                    !entityManager.HasComponentUVE<Scene::TransformComponentUVE>(candidate)) {
+                    continue;
+                }
+                const bool isSelected = candidate == value;
+                const std::string label = GetEntityDisplayLabelUVE(candidate) + "##" +
+                                          std::to_string(candidate.index) + "_" +
+                                          std::to_string(candidate.generation);
+                if (ImGui::Selectable(label.c_str(), isSelected) && !isSelected) {
+                    edited = SetSelectedComponentPropertyUVE(entry, property, &candidate);
+                }
+            }
+            ImGui::EndCombo();
         }
-        ImGui::EndDisabled();
     } else {
         // A value type nothing here knows how to draw. Saying so is better than drawing something
         // that looks editable and silently is not.

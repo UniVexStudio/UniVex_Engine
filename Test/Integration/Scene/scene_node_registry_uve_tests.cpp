@@ -24,8 +24,7 @@ TEST(SceneNodeRegistryUVETest, BuiltInDescriptorsUVE_AreStableUniqueAndRuntimeBo
         EXPECT_FALSE(descriptor.category.empty());
         EXPECT_FALSE(descriptor.runtimeOwner.empty());
         EXPECT_LE(descriptor.authoredContracts.size(), 8U);
-        if (descriptor.kind == SceneNodeKindUVE::AnimationTree ||
-            descriptor.kind == SceneNodeKindUVE::SceneRoot) {
+        if (descriptor.kind == SceneNodeKindUVE::SceneRoot) {
             EXPECT_FALSE(descriptor.libraryCreatable);
         } else {
             EXPECT_TRUE(descriptor.libraryCreatable);

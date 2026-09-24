@@ -94,8 +94,13 @@ TEST(SceneNodeEditorUVETest, CentralizedRegistryCreationUVE_AttachesExpectedAuth
         ASSERT_NE(rigidBody, Scene::kInvalidEntityUVE);
         EXPECT_TRUE(entityManager.HasComponentUVE<Scene::RigidBodyComponentUVE>(rigidBody));
 
-        EXPECT_EQ(editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::AnimationTree),
-                  Scene::kInvalidEntityUVE);
+        const Scene::EntityUVE animationTree =
+            editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::AnimationTree);
+        ASSERT_NE(animationTree, Scene::kInvalidEntityUVE);
+        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::AnimationTreeComponentUVE>(animationTree));
+        // Both animation nodes are pure Nodes: no transform of their own.
+        EXPECT_FALSE(entityManager.HasComponentUVE<Scene::TransformComponentUVE>(animationTree));
+        EXPECT_FALSE(entityManager.HasComponentUVE<Scene::TransformComponentUVE>(animationPlayer));
         editor.ShutdownUVE();
     }
     engine.Shutdown();

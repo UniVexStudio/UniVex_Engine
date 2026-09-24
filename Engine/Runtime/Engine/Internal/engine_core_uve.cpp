@@ -19,6 +19,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <unordered_set>
 #include <vector>
 #include <utility>
 
@@ -60,8 +61,11 @@
 #include "uve/math/matrix4x4_uve.h"
 #include "uve/math/quaternion_uve.h"
 #include "uve/memory/memory_manager_uve.h"
+#include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/mesh_component_uve.h"
 #include "uve/component/process_component_uve.h"
+#include "uve/nodes/3d/animation_player_uve.h"
+#include "uve/nodes/3d/animation_tree_uve.h"
 #include "uve/nodes/3d/hitbox_3d_uve.h"
 #include "uve/nodes/3d/hurtbox_3d_uve.h"
 #include "uve/nodes/3d/interaction_area_3d_uve.h"
@@ -762,6 +766,98 @@ void EngineCoreUVE::SyncScriptRuntimeUVE() {
 
     static_cast<void>(m_scriptRuntime.TickUVE(
         Scripting::ScriptVmExecutionOptionsUVE{.engineCallBindings = &m_scriptEngineCallBindings}));
+}
+
+void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physicsStep) {
+    if (!(deltaSeconds >= 0.0F)) {
+        return;
+    }
+    const auto clipFor = [this](const Asset::AssetGuidUVE guid) -> const Asset::AnimationClipAssetUVE* {
+        if (guid == Asset::kInvalidAssetGuidUVE) {
+            return nullptr;
+        }
+        auto it = m_animationClips.find(guid.value);
+        if (it == m_animationClips.end()) {
+            it = m_animationClips
+                     .emplace(guid.value, m_assetManager->LoadUVE<Asset::AnimationClipAssetUVE>(guid, *m_assetDatabase))
+                     .first;
+        }
+        return it->second.TryGetUVE();
+    };
+    // The node an animation moves: its target when that is a live node with a transform, otherwise
+    // its parent when that has one. A pure Node parent (the scene root) gives nothing to move.
+    const auto resolveTarget = [this](const Scene::EntityUVE self,
+                                      const Scene::EntityUVE target) -> Scene::TransformComponentUVE* {
+        Scene::EntityUVE chosen = target;
+        if (chosen == Scene::kInvalidEntityUVE || !m_entityManager->IsAliveUVE(chosen)) {
+            chosen = m_entityManager->HasComponentUVE<Scene::HierarchyComponentUVE>(self)
+                         ? m_entityManager->GetComponentUVE<Scene::HierarchyComponentUVE>(self).parent
+                         : Scene::kInvalidEntityUVE;
+        }
+        if (chosen == Scene::kInvalidEntityUVE || chosen == self || !m_entityManager->IsAliveUVE(chosen) ||
+            !m_entityManager->HasComponentUVE<Scene::TransformComponentUVE>(chosen)) {
+            return nullptr;
+        }
+        if (m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(chosen)) {
+            m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(chosen).dirty = true;
+        }
+        return &m_entityManager->GetComponentUVE<Scene::TransformComponentUVE>(chosen);
+    };
+    const Scene::AnimationProcessCallbackUVE callback =
+        physicsStep ? Scene::AnimationProcessCallbackUVE::Physics : Scene::AnimationProcessCallbackUVE::Frame;
+
+    for (const Scene::EntityUVE entity :
+         CollectFixedStepOrderUVE<Scene::AnimationPlayerComponentUVE>(*m_entityManager, *m_sceneGraph)) {
+        Scene::AnimationPlayerComponentUVE& player =
+            m_entityManager->GetComponentUVE<Scene::AnimationPlayerComponentUVE>(entity);
+        if (player.processCallback != callback) {
+            continue;
+        }
+        const Asset::AnimationClipAssetUVE* const clip = clipFor(player.clip);
+        if (clip == nullptr) {
+            continue; // not set, still loading, or failed - the player waits
+        }
+        // Resolved before playback starts, so a player with nothing to move never "plays".
+        Scene::TransformComponentUVE* const target = resolveTarget(entity, player.target);
+        if (target == nullptr) {
+            continue;
+        }
+        if (!player.hasStartPose && player.autoplay) {
+            Scene::PlayAnimationPlayerUVE(player, *target, clip->durationSeconds);
+        }
+        static_cast<void>(Scene::StepAnimationPlayerUVE(player, *clip, deltaSeconds, *target));
+    }
+
+    // A tree has no update setting of its own: it follows the frame, the smoothest for a character.
+    if (!physicsStep) {
+        for (const Scene::EntityUVE entity :
+             CollectFixedStepOrderUVE<Scene::AnimationTreeComponentUVE>(*m_entityManager, *m_sceneGraph)) {
+            Scene::AnimationTreeComponentUVE& tree =
+                m_entityManager->GetComponentUVE<Scene::AnimationTreeComponentUVE>(entity);
+            const Asset::AnimationClipAssetUVE* const clipA = clipFor(tree.clipA);
+            const Asset::AnimationClipAssetUVE* const clipB = clipFor(tree.clipB);
+            if (clipA == nullptr && clipB == nullptr) {
+                continue;
+            }
+            Scene::TransformComponentUVE* const target = resolveTarget(entity, tree.target);
+            if (target != nullptr) {
+                static_cast<void>(Scene::StepAnimationTreeUVE(tree, clipA, clipB, deltaSeconds, *target));
+            }
+        }
+
+        // Drop clips nothing references any more, so a swapped clip does not stay loaded.
+        std::unordered_set<std::uint64_t> referenced;
+        m_entityManager->ForEachUVE<Scene::AnimationPlayerComponentUVE>(
+            [&referenced](const Scene::EntityUVE, const Scene::AnimationPlayerComponentUVE& player) {
+                referenced.insert(player.clip.value);
+            });
+        m_entityManager->ForEachUVE<Scene::AnimationTreeComponentUVE>(
+            [&referenced](const Scene::EntityUVE, const Scene::AnimationTreeComponentUVE& tree) {
+                referenced.insert(tree.clipA.value);
+                referenced.insert(tree.clipB.value);
+            });
+        std::erase_if(m_animationClips, [&referenced](const auto& entry) { return !referenced.contains(entry.first); });
+    }
 }
 
 void EngineCoreUVE::SyncCharacterControllersUVE(const float fixedDeltaTimeSeconds) {
@@ -1909,10 +2005,14 @@ void EngineCoreUVE::Update() {
     for (int step = 0; step < fixedStep.stepsToRun; ++step) {
         m_physicsSystem->StepUVE(*m_entityManager, *m_sceneGraph, fixedDeltaTimeSeconds);
         SyncCharacterControllersUVE(fixedDeltaTimeSeconds);
+        SyncAnimationUVE(fixedDeltaTimeSeconds, /*physicsStep=*/true);
         SyncProjectile3DNodesUVE(fixedDeltaTimeSeconds);
         SyncSpringArm3DNodesUVE(fixedDeltaTimeSeconds);
     }
 
+    if (m_simulationExecutionMode == SimulationExecutionModeUVE::Running) {
+        SyncAnimationUVE(static_cast<float>(m_timer->GetDeltaTimeUVE()), /*physicsStep=*/false);
+    }
     m_sceneGraph->UpdateUVE(*m_entityManager);
     // The fraction of a fixed step already elapsed, handed to the renderer so it can draw between
     // the last two simulated poses instead of snapping to the newest one. Measured on a 144 Hz
@@ -2198,6 +2298,7 @@ void EngineCoreUVE::Shutdown() {
     m_assetBundle.reset();
     m_assetImportQueue.reset();
     m_assetImporter.reset();
+    m_animationClips.clear(); // the handles release into the manager, so they go first
     m_assetManager.reset();
     m_hotReload.reset();
     m_prefabSystem.reset();

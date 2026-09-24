@@ -3,6 +3,7 @@
 #include "uve/scene/nodes/scene_node_type_uve.h"
 
 #include "uve/component/animation_player_component_uve.h"
+#include "uve/component/animation_tree_component_uve.h"
 #include "uve/component/area_component_uve.h"
 #include "uve/component/audio_source_component_uve.h"
 #include "uve/component/camera_component_uve.h"
@@ -109,6 +110,7 @@ Nodes::SceneNodeKindUVE InferSceneNodeKindUVE(const IEntityManagerUVE& entityMan
                            OwnComponentUVE<AudioSourceComponentUVE>{Kind::AudioSource3D},
                            OwnComponentUVE<ParticleEmitterComponentUVE>{Kind::ParticleEmitter3D},
                            OwnComponentUVE<AnimationPlayerComponentUVE>{Kind::AnimationPlayer},
+                           OwnComponentUVE<AnimationTreeComponentUVE>{Kind::AnimationTree},
                            OwnComponentUVE<CanvasComponentUVE>{Kind::Canvas},
                            OwnComponentUVE<UITextComponentUVE>{Kind::UIText},
                            OwnComponentUVE<UIImageComponentUVE>{Kind::UIImage},

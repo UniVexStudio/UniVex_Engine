@@ -90,6 +90,18 @@ void ExpectNode3DBaselineUVE(EntityManagerUVE& entityManager, const EntityUVE en
     EXPECT_EQ(entityManager.GetComponentUVE<NameComponentUVE>(entity).name, expectedName);
 }
 
+/// A pure Node: in the hierarchy and named, with the Node section, and nothing spatial.
+void ExpectPureNodeUVE(EntityManagerUVE& entityManager, const EntityUVE entity, const std::string_view expectedName) {
+    EXPECT_FALSE(entityManager.HasComponentUVE<TransformComponentUVE>(entity));
+    EXPECT_FALSE(entityManager.HasComponentUVE<WorldTransformComponentUVE>(entity));
+    EXPECT_FALSE(entityManager.HasComponentUVE<VisibilityComponentUVE>(entity));
+    EXPECT_TRUE(entityManager.HasComponentUVE<HierarchyComponentUVE>(entity));
+    EXPECT_TRUE(entityManager.HasComponentUVE<ProcessComponentUVE>(entity));
+    EXPECT_TRUE(entityManager.HasComponentUVE<NodeMetadataComponentUVE>(entity));
+    ASSERT_TRUE(entityManager.HasComponentUVE<NameComponentUVE>(entity));
+    EXPECT_EQ(entityManager.GetComponentUVE<NameComponentUVE>(entity).name, expectedName);
+}
+
 TEST_F(Node3DDefinitionsUVETest, AllDefinitionDefaultsAreValid) {
     EXPECT_TRUE(IsNode3DNodeDefinitionValidUVE(Node3DNodeDefinitionUVE{}));
     EXPECT_TRUE(IsArea3DNodeDefinitionValidUVE(Area3DNodeDefinitionUVE{}));
@@ -219,8 +231,14 @@ TEST_F(Node3DDefinitionsUVETest, ApplyAttachesEachKindsExactComponentRecipe) {
     {
         const EntityUVE entity = CreateEntityUVE();
         ApplyAnimationPlayerNodeDefinitionUVE(entityManager, entity, AnimationPlayerNodeDefinitionUVE{});
-        ExpectNode3DBaselineUVE(entityManager, entity, AnimationPlayerNodeDefinitionUVE::defaultName);
+        ExpectPureNodeUVE(entityManager, entity, AnimationPlayerNodeDefinitionUVE::defaultName);
         EXPECT_TRUE(entityManager.HasComponentUVE<AnimationPlayerComponentUVE>(entity));
+    }
+    {
+        const EntityUVE entity = CreateEntityUVE();
+        ApplyAnimationTreeNodeDefinitionUVE(entityManager, entity, AnimationTreeNodeDefinitionUVE{});
+        ExpectPureNodeUVE(entityManager, entity, AnimationTreeNodeDefinitionUVE::defaultName);
+        EXPECT_TRUE(entityManager.HasComponentUVE<AnimationTreeComponentUVE>(entity));
     }
     {
         const EntityUVE entity = CreateEntityUVE();
@@ -1029,15 +1047,15 @@ TEST_F(Node3DDefinitionsUVETest, MarkerPoseComposeSharesTheSpawnPointComposition
     EXPECT_FALSE(ComposeMarker3DPoseUVE({}, {}, Math::Vector3UVE{nan, 0.0F, 0.0F}, {}).has_value());
 }
 
-TEST_F(Node3DDefinitionsUVETest, AnimationTreeStaysHonestlyNonCreatable) {
-    // An empty graph is a valid placeholder definition, but the registry keeps telling the
-    // truth: AnimationTree is not library-creatable until the animation pipeline exists, and
-    // the definition deliberately provides no Apply function to call even if someone tried.
+TEST_F(Node3DDefinitionsUVETest, AnimationTreeIsCreatableAndValidatesItsBlend) {
     EXPECT_TRUE(IsAnimationTreeNodeDefinitionValidUVE(AnimationTreeNodeDefinitionUVE{}));
+    AnimationTreeNodeDefinitionUVE outOfRange;
+    outOfRange.tree.blend = 1.5F;
+    EXPECT_FALSE(IsAnimationTreeNodeDefinitionValidUVE(outOfRange));
     const Nodes::SceneNodeDescriptorUVE* descriptor =
         Nodes::FindSceneNodeDescriptorUVE(Nodes::SceneNodeKindUVE::AnimationTree);
     ASSERT_NE(descriptor, nullptr);
-    EXPECT_FALSE(descriptor->libraryCreatable);
+    EXPECT_TRUE(descriptor->libraryCreatable);
 }
 
 } // namespace

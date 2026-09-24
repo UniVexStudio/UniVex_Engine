@@ -31,6 +31,7 @@
 #include "uve/math/vector2_uve.h"
 #include "uve/math/vector3_uve.h"
 #include "uve/component/animation_player_component_uve.h"
+#include "uve/component/animation_tree_component_uve.h"
 #include "uve/component/area_component_uve.h"
 #include "uve/component/audio_source_component_uve.h"
 #include "uve/component/bone_modifier_component_uve.h"
@@ -147,12 +148,34 @@ namespace {
     };
 }
 
+// The target is an entity reference and is written beside these by the entity-aware encoder
+// (targetLocalId), because only it knows the file-local ids. Runtime state is never written.
 [[nodiscard]] nlohmann::json ToJsonUVE(const AnimationPlayerComponentUVE& component) {
-    return {{"clipAssetPath", component.clipAssetPath},
-            {"playbackSpeed", component.playbackSpeed},
-            {"looping", component.looping},
-            {"playOnAwake", component.playOnAwake},
-            {"enabled", component.enabled}};
+    return {{"clip", component.clip.value},
+            {"autoplay", component.autoplay},
+            {"speed", component.speed},
+            {"loopMode", static_cast<std::uint8_t>(component.loopMode)},
+            {"onFinish", static_cast<std::uint8_t>(component.onFinish)},
+            {"startOffsetSeconds", component.startOffsetSeconds},
+            {"blendInSeconds", component.blendInSeconds},
+            {"relative", component.relative},
+            {"animatePosition", component.animatePosition},
+            {"animateRotation", component.animateRotation},
+            {"animateScale", component.animateScale},
+            {"processCallback", static_cast<std::uint8_t>(component.processCallback)}};
+}
+
+[[nodiscard]] nlohmann::json ToJsonUVE(const AnimationTreeComponentUVE& component) {
+    return {{"active", component.active},
+            {"clipA", component.clipA.value},
+            {"clipB", component.clipB.value},
+            {"blend", component.blend},
+            {"blendSmoothing", component.blendSmoothing},
+            {"syncPhase", component.syncPhase},
+            {"speed", component.speed},
+            {"animatePosition", component.animatePosition},
+            {"animateRotation", component.animateRotation},
+            {"animateScale", component.animateScale}};
 }
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const MeshComponentUVE& component) {
@@ -1136,16 +1159,56 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
         table.emplace("AnimationPlayerComponentUVE",
                       MakeRegistrationUVE<AnimationPlayerComponentUVE>([](const nlohmann::json& json) {
                           AnimationPlayerComponentUVE animation;
-                          animation.clipAssetPath = json.value("clipAssetPath", std::string{});
-                          animation.playbackSpeed = json.value("playbackSpeed", 1.0F);
-                          animation.looping = json.value("looping", true);
-                          animation.playOnAwake = json.value("playOnAwake", true);
-                          animation.enabled = json.value("enabled", true);
+                          animation.clip = Asset::AssetGuidUVE{json.value("clip", std::uint64_t{0})};
+                          // Players saved before the node was rebuilt: speed, looping and play-on-awake
+                          // carry over; a disabled one no longer autoplays. Their clip was a path no
+                          // runtime ever played, and cannot be resolved to an asset here, so it is dropped.
+                          if (json.contains("clipAssetPath") && !json.value("clipAssetPath", std::string{}).empty()) {
+                              UVE_WARNING("SceneSerializerUVE: AnimationPlayer clip path \"{}\" is no longer "
+                                          "supported; pick the clip again in the Inspector",
+                                          json.value("clipAssetPath", std::string{}));
+                          }
+                          const bool legacyEnabled = json.value("enabled", true);
+                          animation.autoplay = json.value("autoplay", json.value("playOnAwake", true)) && legacyEnabled;
+                          animation.speed = json.value("speed", json.value("playbackSpeed", 1.0F));
+                          const bool legacyLooping = json.value("looping", true);
+                          animation.loopMode = static_cast<AnimationLoopModeUVE>(json.value(
+                              "loopMode", static_cast<std::uint8_t>(legacyLooping ? AnimationLoopModeUVE::Loop
+                                                                                  : AnimationLoopModeUVE::Once)));
+                          animation.onFinish = static_cast<AnimationFinishActionUVE>(
+                              json.value("onFinish", std::uint8_t{0}));
+                          animation.startOffsetSeconds = json.value("startOffsetSeconds", 0.0F);
+                          animation.blendInSeconds = json.value("blendInSeconds", 0.0F);
+                          animation.relative = json.value("relative", false);
+                          animation.animatePosition = json.value("animatePosition", true);
+                          animation.animateRotation = json.value("animateRotation", true);
+                          animation.animateScale = json.value("animateScale", true);
+                          animation.processCallback = static_cast<AnimationProcessCallbackUVE>(
+                              json.value("processCallback", std::uint8_t{0}));
                           if (!IsAnimationPlayerComponentValidUVE(animation)) {
                               throw std::runtime_error("Invalid AnimationPlayerComponentUVE payload");
                           }
                           return animation;
                       }, IsAnimationPlayerComponentValidUVE));
+        table.emplace("AnimationTreeComponentUVE",
+                      MakeRegistrationUVE<AnimationTreeComponentUVE>([](const nlohmann::json& json) {
+                          AnimationTreeComponentUVE tree;
+                          tree.active = json.value("active", true);
+                          tree.clipA = Asset::AssetGuidUVE{json.value("clipA", std::uint64_t{0})};
+                          tree.clipB = Asset::AssetGuidUVE{json.value("clipB", std::uint64_t{0})};
+                          tree.blend = json.value("blend", 0.0F);
+                          tree.blendSmoothing = json.value("blendSmoothing", 0.0F);
+                          tree.syncPhase = json.value("syncPhase", true);
+                          tree.speed = json.value("speed", 1.0F);
+                          tree.animatePosition = json.value("animatePosition", true);
+                          tree.animateRotation = json.value("animateRotation", true);
+                          tree.animateScale = json.value("animateScale", true);
+                          tree.currentBlend = tree.blend;
+                          if (!IsAnimationTreeComponentValidUVE(tree)) {
+                              throw std::runtime_error("Invalid AnimationTreeComponentUVE payload");
+                          }
+                          return tree;
+                      }, IsAnimationTreeComponentValidUVE));
         table.emplace("MeshComponentUVE", MakeRegistrationUVE<MeshComponentUVE>([](const nlohmann::json& json) {
                           // visibilityLayers defaults through json.value on purpose: scenes saved
                           // before the field existed load unchanged, while meshGuid/materialGuid
@@ -1867,6 +1930,23 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                 return std::nullopt;
             }
             componentsJson[*name] = registration.toJson(entityManager, entity);
+            // Animation targets are entity references: remapped to file-local ids like the
+            // visibility parent, and dropped when the target is outside what is being saved.
+            const auto writeTarget = [&](const EntityUVE target) {
+                std::int64_t targetLocalId = -1;
+                if (target != kInvalidEntityUVE) {
+                    const auto targetIt = entityToLocalId.find(target);
+                    if (targetIt != entityToLocalId.end()) {
+                        targetLocalId = static_cast<std::int64_t>(targetIt->second);
+                    }
+                }
+                componentsJson[*name]["targetLocalId"] = targetLocalId;
+            };
+            if (type == std::type_index(typeid(AnimationPlayerComponentUVE))) {
+                writeTarget(entityManager.GetComponentUVE<AnimationPlayerComponentUVE>(entity).target);
+            } else if (type == std::type_index(typeid(AnimationTreeComponentUVE))) {
+                writeTarget(entityManager.GetComponentUVE<AnimationTreeComponentUVE>(entity).target);
+            }
         }
         entitiesJson.push_back({{"localId", entityToLocalId.at(entity)}, {"components", std::move(componentsJson)}});
     }
@@ -2082,6 +2162,23 @@ void RollbackRestoredEntitiesUVE(IEntityManagerUVE& entityManager, std::vector<E
                 }
                 registrationIt->second.fromJson(entityManager, entity, componentJson);
                 hasTransform = hasTransform || componentName == "TransformComponentUVE";
+                if (componentName == "AnimationPlayerComponentUVE" || componentName == "AnimationTreeComponentUVE") {
+                    // A target the file does not contain stays unset, which means "the parent".
+                    EntityUVE target = kInvalidEntityUVE;
+                    const std::int64_t targetLocalId = componentJson.value("targetLocalId", static_cast<std::int64_t>(-1));
+                    if (targetLocalId >= 0 &&
+                        static_cast<std::uint64_t>(targetLocalId) <= std::numeric_limits<std::uint32_t>::max()) {
+                        const auto targetIt = localIdToEntity.find(static_cast<std::uint32_t>(targetLocalId));
+                        if (targetIt != localIdToEntity.end()) {
+                            target = targetIt->second;
+                        }
+                    }
+                    if (componentName == "AnimationPlayerComponentUVE") {
+                        entityManager.GetComponentUVE<AnimationPlayerComponentUVE>(entity).target = target;
+                    } else {
+                        entityManager.GetComponentUVE<AnimationTreeComponentUVE>(entity).target = target;
+                    }
+                }
             }
 
             // AttachTransformUVE creates Transform+WorldTransform+Hierarchy together. Recreate the

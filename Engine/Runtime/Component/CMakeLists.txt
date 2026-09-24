@@ -20,6 +20,7 @@
 
 add_library(uve_component STATIC
     Internal/animation_player_component_uve.cpp
+    Internal/animation_tree_component_uve.cpp
     Internal/area_component_uve.cpp
     Internal/audio_source_component_uve.cpp
     Internal/camera_component_uve.cpp
