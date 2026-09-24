@@ -13,6 +13,7 @@
 #include <string_view>
 #include <thread>
 #include <utility>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -23,6 +24,7 @@
 #include "uve/events/event_system_uve.h"
 #include "uve/rhi_null/null_render_device_uve.h"
 #include "uve/rhi_shader/built_in_shaders_uve.h"
+#include "uve/threading/job_counter_uve.h"
 #include "uve/threading/thread_pool_uve.h"
 
 namespace UVE::Render::Shader::Tests {
@@ -43,6 +45,55 @@ template <typename T>
     }
     return false;
 }
+
+/// Runs jobs only when asked, on the calling thread, and holds on to each job it has run until
+/// told to let go: the window a real worker has between a job returning and the job's captures
+/// being destroyed. Counters are released after the captures, as ThreadPoolUVE does.
+class RetainingThreadPoolUVE final : public Threading::IThreadPoolUVE {
+public:
+    void SubmitUVE(Threading::JobUVE job) override { m_queued.push_back(JobUVE{std::move(job), nullptr}); }
+    void SubmitUVE(Threading::JobUVE job, Threading::JobCounterUVE& counter) override {
+        counter.IncrementUVE();
+        m_queued.push_back(JobUVE{std::move(job), &counter});
+    }
+    [[nodiscard]] std::size_t GetWorkerCountUVE() const noexcept override { return 1U; }
+    [[nodiscard]] std::size_t GetPendingJobCountUVE() const noexcept override {
+        return m_queued.size() + m_finished.size();
+    }
+    [[nodiscard]] std::size_t GetActiveWorkerCountUVE() const noexcept override { return 0U; }
+    [[nodiscard]] std::uint64_t GetStolenJobCountUVE() const noexcept override { return 0U; }
+    [[nodiscard]] bool IsWorkerThreadUVE() const noexcept override { return false; }
+
+    void RunQueuedJobsUVE() {
+        std::vector<JobUVE> jobs;
+        jobs.swap(m_queued);
+        for (JobUVE& job : jobs) {
+            job.function();
+            m_finished.push_back(std::move(job));
+        }
+    }
+
+    void ReleaseFinishedJobsUVE() {
+        std::vector<JobUVE> finished;
+        finished.swap(m_finished);
+        for (JobUVE& job : finished) {
+            job.function = nullptr;
+            if (job.counter != nullptr) {
+                job.counter->DecrementAndNotifyUVE();
+            }
+        }
+    }
+
+    ~RetainingThreadPoolUVE() override { ReleaseFinishedJobsUVE(); }
+
+private:
+    struct JobUVE {
+        Threading::JobUVE function;
+        Threading::JobCounterUVE* counter = nullptr;
+    };
+    std::vector<JobUVE> m_queued;
+    std::vector<JobUVE> m_finished;
+};
 
 class ShaderManagerUVETest : public ::testing::Test {
 protected:
@@ -100,6 +151,31 @@ TEST_F(ShaderManagerUVETest, CreateProgramUVE_BuiltInBasic3D_BecomesReadyAndVali
     ASSERT_TRUE(WaitUntilReadyUVE(*shaderManager, *program));
     EXPECT_TRUE(program->IsValidUVE());
     EXPECT_NE(program->GetPipelineHandleUVE(), kInvalidPipelineHandleUVE);
+}
+
+TEST_F(ShaderManagerUVETest, CreateProgramUVE_LinkedStagesAreReleasedByTheManagerNotByTheWorker) {
+    RetainingThreadPoolUVE pool;
+    ShaderManagerUVE shaderManager{pool, *eventSystem, *renderDevice, *fileSystem, ShaderManagerConfigUVE{}};
+    const auto& device = static_cast<const NullRenderDeviceUVE&>(*renderDevice);
+
+    ShaderProgramDescUVE desc;
+    desc.virtualFilePath = std::string(BuiltIn::kBasic3DVirtualPath);
+    desc.embeddedFallbackSourceCode = std::string(BuiltIn::kBasic3DSource);
+    desc.vertexLayout = {VertexAttributeUVE{"POSITION", VertexAttributeFormatUVE::Float3, 0}};
+    desc.vertexStride = 3U * static_cast<std::uint32_t>(sizeof(float));
+
+    const std::shared_ptr<ShaderProgramUVE> program = shaderManager.CreateProgramUVE(desc);
+    pool.RunQueuedJobsUVE();
+    shaderManager.UpdateUVE(0.0);
+    ASSERT_TRUE(program->IsReadyUVE());
+    ASSERT_TRUE(program->IsValidUVE());
+
+    // Linking is done and the stages are no longer needed. The worker letting go of the jobs it
+    // ran must not destroy anything: GPU objects are released on the thread that drives the
+    // manager, at a point that thread chooses.
+    const std::size_t liveAfterLink = device.GetLiveResourceCountUVE();
+    pool.ReleaseFinishedJobsUVE();
+    EXPECT_EQ(device.GetLiveResourceCountUVE(), liveAfterLink);
 }
 
 TEST_F(ShaderManagerUVETest, CreateProgramFromStagesUVE_SeparateEmbeddedStages_BecomesReadyAndValid) {

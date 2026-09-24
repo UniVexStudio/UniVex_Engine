@@ -108,6 +108,7 @@ EngineConfigUVE MakeTestConfigUVE() {
     config.settingsFilePath = "uve_engine_core_tests.uvesettings"; // never touch a real settings file
     config.assetDatabaseFilePath = "uve_engine_core_tests.uveassetdb"; // never touch a real asset db
     config.projectSettingsFilePath = "uve_engine_core_tests.project.uvesettings"; // nor a real project file
+    config.inputMapFilePath = "uve_engine_core_tests.project.uveinput";
     config.headlessUVE = true; // NullWindowManagerUVE/NullRenderDeviceUVE - no display required;
                                 // every pre-Increment-20 test opts into this by default, matching
                                 // its exact prior (headless-only) behavior. Tests that specifically

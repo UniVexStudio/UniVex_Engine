@@ -439,7 +439,9 @@ The largest group by far, and the one most dependent on the renderer maturing.
 
 ## 1.5 Input
 
-- [ ] The input map itself: named actions, each with positive and negative bindings.
+- [x] The input map itself: named actions, each with positive and negative bindings.
+      `project.uveinput`, read by `EngineCoreUVE::Init()` into `InputMapDocumentUVE` and
+      registered with the input system; `EngineServicesUVE::GetInputMapUVE()` reaches it.
 - [ ] Per-action deadzone, sensitivity, and whether it is analog or digital.
 - [ ] Device classes: keyboard, mouse, gamepad, touch, pen.
 - [ ] Gamepad button/axis remapping table and per-controller-model mapping database.
@@ -450,8 +452,9 @@ The largest group by far, and the one most dependent on the renderer maturing.
 - [ ] Text input: IME enable, on-screen keyboard behaviour.
 - [ ] Accumulated vs. per-frame input polling.
 - [ ] Action-set / context switching (gameplay vs. menu vs. vehicle).
-- [ ] Rebinding UI support, and where user rebinds are persisted — note `RemapActionUVE` already
-      exists and is unit-tested, with no production caller.
+- [~] Rebinding UI support, and where user rebinds are persisted — note `RemapActionUVE` already
+      exists and is unit-tested, with no production caller. The editor side exists (the Input Map
+      window); player-facing rebinding and its user-settings persistence do not.
 
 ## 1.6 Audio
 
@@ -1275,10 +1278,21 @@ constantly and they belong in the same inventory.
 
 ## 6.4 Input map asset and rebinding UI
 
-- [ ] An input map asset format, so actions and bindings are data rather than code.
-- [ ] An input map editor: add/remove actions, add/remove bindings, per-binding device filter.
-- [ ] A listen-for-input capture control for binding a key or button directly.
-- [ ] Conflict detection across actions within an action set.
+- [x] An input map asset format, so actions and bindings are data rather than code. Keys,
+      buttons and axes are stored by name (`input_names_uve.h`), pads counted from one; a
+      malformed action or binding in a hand-edited file is skipped on its own.
+- [x] An input map editor: add/remove actions, add/remove bindings, per-binding device filter.
+      Menu > File > **Input Map...**: actions with a filter, rename (refusing an empty or taken
+      name), duplicate and delete; Button or Axis, an axis with positive and negative bindings;
+      bindings added by pressing them or picked by device from a menu. Every change is
+      registered with the input system at once, so Play uses it without a restart; the file is
+      saved on Save, when the window closes and when the editor shuts down.
+- [x] A listen-for-input capture control for binding a key or button directly. Keys, gamepad
+      buttons and sticks pushed past half way (in the direction pushed); mouse buttons only inside
+      the capture box, so clicking Cancel binds nothing; Escape cancels.
+- [~] Conflict detection across actions within an action set. Across the whole map, since
+      there are no action sets yet: a shared binding is marked with the other action's name, and
+      every action holding one is flagged in the list.
 - [ ] Reset an action, or the whole map, to project defaults.
 - [ ] Player-facing rebinding at runtime, persisted to user settings — `RemapActionUVE` already
       exists and is unit-tested, and would be the function this calls. It has no production caller

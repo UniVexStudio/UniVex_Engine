@@ -3,6 +3,7 @@
 #pragma once
 
 #include <array>
+#include <limits>
 #include <map>
 #include <memory>
 #include <cstddef>
@@ -26,6 +27,7 @@
 #include "uve/core/i_simulation_control_uve.h"
 #include "uve/config/settings_registry_uve.h"
 #include "uve/editor/editor_color_uve.h"
+#include "uve/input/input_action_uve.h"
 #include "uve/editor/editor_tool_session_uve.h"
 #include "uve/editor/developer_console_uve.h"
 #include "uve/editor/editor_ui_assets_uve.h"
@@ -593,6 +595,12 @@ public:
     /// Writes the project settings file if it has unsaved changes. Also happens when the Project
     /// Settings window closes and when the editor shuts down.
     [[nodiscard]] bool SaveProjectSettingsUVE();
+    /// Shows the Input Map window: the project's actions and what triggers them.
+    void OpenInputMapUVE() noexcept;
+    [[nodiscard]] bool IsInputMapOpenUVE() const noexcept { return m_inputMapWindow.visible; }
+    /// Writes the input map file if it has unsaved changes. Also happens when the Input Map window
+    /// closes and when the editor shuts down.
+    [[nodiscard]] bool SaveInputMapUVE();
 
     /// Returns the derived world-space box for the active live collider-backed document entity.
     /// It never mutates selection, scene state, dirty state, or Undo/Redo history; unsafe or
@@ -1259,6 +1267,26 @@ private:
     };
     void DrawEditorPreferencesWindowUVE();
     void DrawProjectSettingsWindowUVE();
+    // The Input Map window (editor_panel_input_map_uve.cpp). Session-only view state.
+    struct InputMapWindowStateUVE final {
+        bool visible = false;
+        std::size_t selected = 0U;
+        std::array<char, 64> filter{};
+        // The name field's buffer, and which action and name it was filled from.
+        std::array<char, 129> rename{};
+        std::size_t renameFor = std::numeric_limits<std::size_t>::max();
+        std::string renameSource;
+        // Listening for an input to bind: to which action and side, replacing which binding.
+        bool listening = false;
+        std::size_t listenAction = 0U;
+        bool listenNegative = false;
+        std::optional<std::size_t> listenReplace;
+    };
+    void DrawInputMapWindowUVE();
+    void DrawInputBindingListUVE(std::vector<Input::InputActionUVE>& actions, std::size_t actionIndex, bool negative,
+                                 bool& changed);
+    // Sets the project's input map and registers it with the input system at once.
+    void CommitInputMapUVE(std::vector<Input::InputActionUVE> actions);
     void DrawSettingsWindowBodyUVE(SettingsWindowStateUVE& state, const SettingsWindowSourceUVE& source);
     void DrawSettingRowUVE(const Config::SettingDescriptorUVE& descriptor, bool modified,
                            const SettingsWindowSourceUVE& source);
@@ -1476,6 +1504,7 @@ private:
     // The Editor Preferences and Project Settings windows (editor_panel_preferences_uve.cpp).
     SettingsWindowStateUVE m_preferencesWindow;
     SettingsWindowStateUVE m_projectSettingsWindow;
+    InputMapWindowStateUVE m_inputMapWindow;
     EditorRightPanelTabUVE m_activeRightPanelTab = EditorRightPanelTabUVE::Inspector;
     InspectorDrawerRegistryUVE m_inspectorDrawerRegistry;
     DeveloperConsoleUVE m_developerConsole;

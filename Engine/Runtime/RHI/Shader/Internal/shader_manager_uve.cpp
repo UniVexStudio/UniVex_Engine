@@ -232,14 +232,21 @@ void ShaderManagerUVE::SubmitSourceCompileJobUVE(ImplUVE& impl, const std::share
         ++impl.pendingJobCount;
     }
     impl.threadPool.SubmitUVE(
-        [&impl, target, desc]() {
+        // Init-captures: a plain capture of these const& parameters would be const, and the
+        // moves below would quietly copy.
+        [&impl, target = target, desc = desc]() mutable {
             const std::vector<std::pair<std::string, std::string>> defines =
                 BuildDefinesUVE(desc.stage, impl.config.injectDebugDefineUVE, desc.extraDefines);
             Detail::PreprocessResultUVE preprocess = Detail::PreprocessShaderSourceUVE(
                 impl.fileSystem, desc.virtualFilePath, desc.embeddedFallbackSourceCode, defines);
 
+            // Hand the target over rather than copying it. A copy left in this job's captures
+            // can be the last reference once the main thread has drained and linked, and the
+            // worker then runs the shader's deleter itself: off the render thread, at whatever
+            // moment the pool gets round to destroying the job.
             std::lock_guard<std::mutex> lock(impl.mutex);
-            impl.completedSourceJobs.push_back(ImplUVE::SourceJobUVE{target, desc, std::move(preprocess)});
+            impl.completedSourceJobs.push_back(
+                ImplUVE::SourceJobUVE{std::move(target), std::move(desc), std::move(preprocess)});
         },
         impl.pendingJobs);
 }

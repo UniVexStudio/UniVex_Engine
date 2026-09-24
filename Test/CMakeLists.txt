@@ -82,6 +82,7 @@ add_executable(uve_core_tests
     Plugins/plugin_registry_uve_tests.cpp
     ProjectCheck/project_checker_uve_tests.cpp
     Input/input_system_uve_tests.cpp
+    Input/input_names_uve_tests.cpp
     Input/mobile_input_system_uve_tests.cpp
     Input/mobile_gesture_system_uve_tests.cpp
     Input/mobile_gesture_recognizer_uve_tests.cpp
@@ -320,6 +321,7 @@ add_executable(uve_engine_tests
     Engine/version_uve_tests.cpp
     Engine/engine_services_uve_tests.cpp
     Engine/engine_core_uve_tests.cpp
+    Engine/input_map_document_uve_tests.cpp
     Engine/script_gameplay_bindings_uve_tests.cpp
     Pack/project_launcher_uve_tests.cpp
     Pack/project_packager_uve_tests.cpp
@@ -366,6 +368,7 @@ add_executable(uve_editor_tests
     Editor/editor_color_uve_tests.cpp
     Editor/editor_settings_uve_tests.cpp
     Editor/editor_layer_mask_uve_tests.cpp
+    Editor/editor_input_map_uve_tests.cpp
     Editor/entity_picker_uve_tests.cpp
     Editor/inspector_drawer_registry_uve_tests.cpp
     Editor/regression_harness_uve_tests.cpp

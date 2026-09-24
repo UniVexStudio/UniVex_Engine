@@ -35,6 +35,7 @@
 #include "uve/commandline/i_command_line_uve.h"
 #include "uve/config/i_config_manager_uve.h"
 #include "uve/config/settings_document_uve.h"
+#include "uve/core/input_map_document_uve.h"
 #include "uve/core/engine_config_uve.h"
 #include "uve/core/engine_services_uve.h"
 #include "uve/core/i_editor_viewport_host_uve.h"
@@ -750,6 +751,8 @@ private:
     // The project's settings file, declared at construction and read at the start of Init(), before
     // anything reads the EngineConfigUVE fields it overrides.
     Config::SettingsDocumentUVE m_projectSettings;
+    // The project's input map, read and registered with the input system during Init().
+    InputMapDocumentUVE m_inputMap;
     std::optional<EngineServicesUVE> m_services;
 
     FrameStatsUVE m_frameStats;
