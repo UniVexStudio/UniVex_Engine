@@ -128,6 +128,7 @@ add_library(uve_editor STATIC
     Internal/editor_input_map_uve.cpp
     Internal/editor_command_helpers_uve.cpp
     Internal/editor_commands_uve.cpp
+    Internal/editor_hierarchy_view_uve.cpp
     Internal/editor_panel_hierarchy_uve.cpp
     Internal/editor_panel_inspector_metadata_uve.cpp
     Internal/editor_panel_inspector_uve.cpp

@@ -29,6 +29,7 @@ constexpr const char* kGridCategoryUVE = "Editor/Viewport/Grid";
 constexpr const char* kOutlineCategoryUVE = "Editor/Viewport/Selection Outline";
 constexpr const char* kNodesCategoryUVE = "Editor/Nodes";
 constexpr const char* kPlayCategoryUVE = "Editor/Play Mode";
+constexpr const char* kHierarchyCategoryUVE = "Editor/Hierarchy";
 
 [[nodiscard]] SettingDescriptorUVE HiddenUVE(SettingDescriptorUVE descriptor) {
     descriptor.flags |= Config::kSettingFlagHiddenUVE;
@@ -63,6 +64,7 @@ const std::vector<EditorSettingBindingUVE>& EditorUVE::GetSettingBindingsUVE() {
     const EditorTransformSnappingSettingsUVE snapping{};
     const ViewportOverlayStateUVE overlay{};
     const ColorPickerPreferencesUVE picker{};
+    const HierarchyViewSettingsUVE hierarchy{};
 
     static const std::vector<EditorSettingBindingUVE> bindings = {
         // Session state the editor remembers for itself.
@@ -323,6 +325,87 @@ const std::vector<EditorSettingBindingUVE>& EditorUVE::GetSettingBindingsUVE() {
          [](const EditorUVE& editor) -> SettingValueUVE { return static_cast<double>(editor.m_playTintStrength); },
          [](EditorUVE& editor, const SettingValueUVE& value) {
              editor.m_playTintStrength = FloatUVE(value);
+             return true;
+         }},
+
+        // Hierarchy panel.
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kHierarchyRevealSelectionUVE), hierarchy.revealSelection,
+                                    "Reveal Selection", kHierarchyCategoryUVE,
+                                    "When the selection changes, open the rows above it and scroll it into view."),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_hierarchyView.revealSelection; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_hierarchyView.revealSelection = std::get<bool>(value);
+             return true;
+         }},
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kHierarchyShowIconsUVE), hierarchy.showIcons, "Node Icons",
+                                    kHierarchyCategoryUVE, "Draw each node's type icon before its name."),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_hierarchyView.showIcons; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_hierarchyView.showIcons = std::get<bool>(value);
+             return true;
+         }},
+        {Config::MakeEnumSettingUVE(IdUVE(Id::kHierarchyVisibilityColumnUVE),
+                                    static_cast<std::int64_t>(hierarchy.visibilityColumn),
+                                    {EntryUVE(HierarchyVisibilityColumnUVE::Always, "Always"),
+                                     EntryUVE(HierarchyVisibilityColumnUVE::OnHover, "On Hover"),
+                                     EntryUVE(HierarchyVisibilityColumnUVE::Hidden, "Hidden")},
+                                    "Visibility Toggles", kHierarchyCategoryUVE,
+                                    "When a row shows its eye. On Hover still shows it on every hidden node, so a "
+                                    "hidden node never looks shown."),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             return static_cast<std::int64_t>(editor.m_hierarchyView.visibilityColumn);
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_hierarchyView.visibilityColumn =
+                 static_cast<HierarchyVisibilityColumnUVE>(std::get<std::int64_t>(value));
+             return true;
+         }},
+        {Config::MakeEnumSettingUVE(IdUVE(Id::kHierarchyDoubleClickUVE), static_cast<std::int64_t>(hierarchy.doubleClick),
+                                    {EntryUVE(HierarchyDoubleClickUVE::Rename, "Rename"),
+                                     EntryUVE(HierarchyDoubleClickUVE::FocusInViewport, "Focus in Viewport"),
+                                     EntryUVE(HierarchyDoubleClickUVE::ExpandCollapse, "Expand or Collapse")},
+                                    "Double-Click", kHierarchyCategoryUVE,
+                                    "What a double-click on a row does. F2 always renames."),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             return static_cast<std::int64_t>(editor.m_hierarchyView.doubleClick);
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_hierarchyView.doubleClick = static_cast<HierarchyDoubleClickUVE>(std::get<std::int64_t>(value));
+             return true;
+         }},
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kHierarchyDragToReparentUVE), hierarchy.dragToReparent,
+                                    "Drag to Reparent", kHierarchyCategoryUVE,
+                                    "Drag a row onto another to move it under that node. Off, rows stay put when "
+                                    "dragged."),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_hierarchyView.dragToReparent; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_hierarchyView.dragToReparent = std::get<bool>(value);
+             return true;
+         }},
+        {Config::MakeEnumSettingUVE(IdUVE(Id::kHierarchyTreeLinesUVE), static_cast<std::int64_t>(hierarchy.treeLines),
+                                    {EntryUVE(HierarchyTreeLinesUVE::None, "None"),
+                                     EntryUVE(HierarchyTreeLinesUVE::ToEachChild, "To Each Child"),
+                                     EntryUVE(HierarchyTreeLinesUVE::FullHeight, "Full Height")},
+                                    "Tree Lines", kHierarchyCategoryUVE,
+                                    "Lines joining each row to its parent. Full Height is cheaper on very large "
+                                    "scenes."),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             return static_cast<std::int64_t>(editor.m_hierarchyView.treeLines);
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_hierarchyView.treeLines = static_cast<HierarchyTreeLinesUVE>(std::get<std::int64_t>(value));
+             return true;
+         }},
+        {WithStepUVE(Config::MakeFloatSettingUVE(IdUVE(Id::kHierarchyIndentWidthUVE), hierarchy.indentWidth,
+                                                 kMinimumHierarchyIndentUVE, kMaximumHierarchyIndentUVE,
+                                                 "Indent Width", kHierarchyCategoryUVE,
+                                                 "Pixels each level of the tree is indented by."),
+                     1.0),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             return static_cast<double>(editor.m_hierarchyView.indentWidth);
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_hierarchyView.indentWidth = FloatUVE(value);
              return true;
          }},
     };
