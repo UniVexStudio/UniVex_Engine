@@ -142,7 +142,7 @@ TEST(EngineCoreUVETest, ProjectSettings_OverrideTheApplicationsConfigWhereThePro
 TEST(EngineCoreUVETest, ProjectSettings_DeclareEngineDefaultsAndNeedARestart) {
     Config::SettingsRegistryUVE registry;
     ASSERT_TRUE(RegisterEngineProjectSettingsUVE(registry));
-    EXPECT_EQ(registry.GetCountUVE(), 5U);
+    EXPECT_EQ(registry.GetCountUVE(), 5U + (2U * kLayerCountUVE));
     const EngineConfigUVE defaults{};
     namespace Id = EngineProjectSettingIdUVE;
     EXPECT_DOUBLE_EQ(registry.GetFloatUVE(Config::ConfigManagerUVE{}, Id::kPhysicsTicksPerSecondUVE),
@@ -151,8 +151,24 @@ TEST(EngineCoreUVETest, ProjectSettings_DeclareEngineDefaultsAndNeedARestart) {
               static_cast<std::int64_t>(defaults.shadowMapResolution));
     for (const Config::SettingDescriptorUVE* descriptor : registry.GetAllUVE()) {
         EXPECT_EQ(Config::ValidateSettingDescriptorUVE(*descriptor), "") << descriptor->id;
-        EXPECT_TRUE(descriptor->HasFlagUVE(Config::kSettingFlagRestartRequiredUVE)) << descriptor->id;
+        // Everything that overrides EngineConfigUVE is read at startup; layer names are read live.
+        EXPECT_EQ(descriptor->HasFlagUVE(Config::kSettingFlagRestartRequiredUVE),
+                  !descriptor->id.starts_with("layers."))
+            << descriptor->id;
     }
+}
+
+TEST(EngineCoreUVETest, ProjectSettings_NameLayersOneToThirtyTwo) {
+    EXPECT_EQ(GetLayerNameSettingIdUVE(LayerSetUVE::Physics, 0U), "layers.physics.1");
+    EXPECT_EQ(GetLayerNameSettingIdUVE(LayerSetUVE::Render, 31U), "layers.render.32");
+    Config::SettingsDocumentUVE document;
+    ASSERT_TRUE(RegisterEngineProjectSettingsUVE(document.GetRegistryUVE()));
+    EXPECT_EQ(GetLayerNameUVE(document, LayerSetUVE::Physics, 2U), "");
+    ASSERT_TRUE(document.SetValueUVE("layers.physics.3", std::string("Enemies")));
+    EXPECT_EQ(GetLayerNameUVE(document, LayerSetUVE::Physics, 2U), "Enemies");
+    EXPECT_EQ(GetLayerNameUVE(document, LayerSetUVE::Render, 2U), "");
+    EXPECT_EQ(GetLayerNameUVE(document, LayerSetUVE::Physics, kLayerCountUVE), "");
+    EXPECT_FALSE(document.SetValueUVE("layers.physics.3", std::string(33, 'x')));
 }
 
 TEST(EngineCoreUVETest, InitialState_IsUninitialized) {

@@ -66,10 +66,39 @@ struct EngineProjectSettingUVE final {
 
 } // namespace
 
+std::string GetLayerNameSettingIdUVE(const LayerSetUVE set, const std::size_t index) {
+    return std::string(set == LayerSetUVE::Physics ? "layers.physics." : "layers.render.") +
+           std::to_string(index + 1U);
+}
+
+std::string GetLayerNameUVE(const Config::SettingsDocumentUVE& document, const LayerSetUVE set,
+                            const std::size_t index) {
+    if (index >= kLayerCountUVE) {
+        return {};
+    }
+    const std::optional<SettingValueUVE> name = document.GetValueUVE(GetLayerNameSettingIdUVE(set, index));
+    const auto* text = name ? std::get_if<std::string>(&*name) : nullptr;
+    return text != nullptr ? *text : std::string{};
+}
+
 bool RegisterEngineProjectSettingsUVE(Config::SettingsRegistryUVE& registry) {
     bool allRegistered = true;
     for (const EngineProjectSettingUVE& setting : GetEngineProjectSettingsUVE()) {
         allRegistered = registry.RegisterUVE(setting.descriptor) && allRegistered;
+    }
+    // Layer names, 1 to 32 as a person counts them; bit 0 is layer 1.
+    constexpr std::size_t kMaximumLayerNameBytesUVE = 32U;
+    for (const LayerSetUVE set : {LayerSetUVE::Physics, LayerSetUVE::Render}) {
+        const bool physics = set == LayerSetUVE::Physics;
+        for (std::size_t index = 0U; index < kLayerCountUVE; ++index) {
+            allRegistered =
+                registry.RegisterUVE(Config::MakeStringSettingUVE(
+                    GetLayerNameSettingIdUVE(set, index), "", kMaximumLayerNameBytesUVE,
+                    "Layer " + std::to_string(index + 1U), physics ? "Layers/Physics" : "Layers/Render",
+                    physics ? "Shown wherever a collider's layer or mask is picked."
+                            : "Shown wherever a mesh's, light's or decal's render layers are picked.")) &&
+                allRegistered;
+        }
     }
     return allRegistered;
 }

@@ -289,8 +289,9 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                                                 "materialGuid", "Material", kPropertyTypeAssetGuidUVE),
                                                             "asset:uvemat"),
                                         "The surface material. Without one the mesh is drawn in neutral grey."),
-                         DeclareUVE<&MeshComponentUVE::visibilityLayers>(
-                             "visibilityLayers", "Visibility Layers", kPropertyTypeBitMask32UVE),
+                         WithCustomDrawerUVE(DeclareUVE<&MeshComponentUVE::visibilityLayers>(
+                                                 "visibilityLayers", "Visibility Layers", kPropertyTypeBitMask32UVE),
+                                             std::string(kLayerMaskDrawerRenderUVE)),
                      }));
 
     // One component behind BoxMesh3D, SphereMesh3D and PlaneMesh3D; its section carries the name
@@ -400,10 +401,12 @@ void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                     };
                     return property;
                 }(),
-                DeclareUVE<&ColliderComponentUVE::collisionLayer>("collisionLayer", "Layer",
-                                                                  kPropertyTypeBitMask32UVE),
-                DeclareUVE<&ColliderComponentUVE::collisionMask>("collisionMask", "Mask",
-                                                                 kPropertyTypeBitMask32UVE),
+                WithCustomDrawerUVE(DeclareUVE<&ColliderComponentUVE::collisionLayer>("collisionLayer", "Layer",
+                                                                                      kPropertyTypeBitMask32UVE),
+                                    std::string(kLayerMaskDrawerPhysicsUVE)),
+                WithCustomDrawerUVE(DeclareUVE<&ColliderComponentUVE::collisionMask>("collisionMask", "Mask",
+                                                                                     kPropertyTypeBitMask32UVE),
+                                    std::string(kLayerMaskDrawerPhysicsUVE)),
                 WithRangeUVE(DeclareUVE<&ColliderComponentUVE::friction>("friction", "Friction",
                                                                          kPropertyTypeFloatUVE),
                              0.0, 1.0, 0.01),
@@ -646,12 +649,16 @@ void DeclareNodeBasesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                    "disableMode", "Disable Mode",
                                    {{0, "Remove"}, {1, "Make Static"}, {2, "Keep Active"}}),
                                "What happens to this object while its Process mode stops it."),
-                WithTooltipUVE(DeclareUVE<&PhysicsObjectComponentUVE::collisionLayer>("collisionLayer", "Layer",
-                                                                                      kPropertyTypeBitMask32UVE),
-                               "The layers this object is on - what others can find it on."),
-                WithTooltipUVE(DeclareUVE<&PhysicsObjectComponentUVE::collisionMask>("collisionMask", "Mask",
-                                                                                     kPropertyTypeBitMask32UVE),
-                               "The layers this object looks for - what it collides with or detects."),
+                WithCustomDrawerUVE(
+                    WithTooltipUVE(DeclareUVE<&PhysicsObjectComponentUVE::collisionLayer>("collisionLayer", "Layer",
+                                                                                          kPropertyTypeBitMask32UVE),
+                                   "The layers this object is on - what others can find it on."),
+                    std::string(kLayerMaskDrawerPhysicsUVE)),
+                WithCustomDrawerUVE(
+                    WithTooltipUVE(DeclareUVE<&PhysicsObjectComponentUVE::collisionMask>("collisionMask", "Mask",
+                                                                                         kPropertyTypeBitMask32UVE),
+                                   "The layers this object looks for - what it collides with or detects."),
+                    std::string(kLayerMaskDrawerPhysicsUVE)),
                 std::move(priority),
                 WithTooltipUVE(DeclareUVE<&PhysicsObjectComponentUVE::inputRayPickable>(
                                    "inputRayPickable", "Ray Pickable", kPropertyTypeBoolUVE),
@@ -665,9 +672,11 @@ void DeclareNodeBasesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
         entries,
         MakeEntryUVE("component.render_instance", "RenderInstance3D", kSectionOrderNodeBaseUVE + 10,
                      {
-                         WithTooltipUVE(DeclareUVE<&RenderInstanceComponentUVE::renderLayers>(
-                                            "renderLayers", "Layers", kPropertyTypeBitMask32UVE),
-                                        "The render layers this is on. A camera draws it only when their layers overlap."),
+                         WithCustomDrawerUVE(
+                             WithTooltipUVE(DeclareUVE<&RenderInstanceComponentUVE::renderLayers>(
+                                                "renderLayers", "Layers", kPropertyTypeBitMask32UVE),
+                                            "The render layers this is on. A camera draws it only when their layers overlap."),
+                             std::string(kLayerMaskDrawerRenderUVE)),
                          WithTooltipUVE(DeclareUVE<&RenderInstanceComponentUVE::sortingOffset>(
                                             "sortingOffset", "Sorting Offset", kPropertyTypeFloatUVE),
                                         "Moves this forward (negative) or back in transparent sorting, without moving it."),
@@ -767,8 +776,10 @@ void DeclareNodeBasesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                 WithTooltipUVE(DeclareEnumUVE<&L::bakeMode>("bakeMode", "Bake Mode",
                                                             {{0, "Disabled"}, {1, "Static"}, {2, "Dynamic"}}),
                                "How baked lighting uses it: not at all, fully baked, or indirect only."),
-                WithTooltipUVE(DeclareUVE<&L::cullMask>("cullMask", "Cull Mask", kPropertyTypeBitMask32UVE),
-                               "The render layers this light affects."),
+                WithCustomDrawerUVE(WithTooltipUVE(DeclareUVE<&L::cullMask>("cullMask", "Cull Mask",
+                                                                            kPropertyTypeBitMask32UVE),
+                                                   "The render layers this light affects."),
+                                    std::string(kLayerMaskDrawerRenderUVE)),
                 InGroupUVE(DeclareUVE<&L::shadowEnabled>("shadowEnabled", "Enabled", kPropertyTypeBoolUVE), "Shadow"),
                 InGroupUVE(WhenOnUVE<&L::shadowEnabled>(WithRangeUVE(
                                DeclareUVE<&L::shadowBias>("shadowBias", "Bias", kPropertyTypeFloatUVE), 0.0, 10.0,
@@ -850,8 +861,10 @@ void DeclareRenderInstanceNodesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                 WithTooltipUVE(WithRangeUVE(DeclareUVE<&D::lifetime>("lifetime", "Lifetime", kPropertyTypeFloatUVE),
                                             0.0, 100000.0, 0.1),
                                "Seconds until the decal removes itself. 0 keeps it forever."),
-                WithTooltipUVE(DeclareUVE<&D::cullMask>("cullMask", "Projects On", kPropertyTypeBitMask32UVE),
-                               "The render layers it projects onto."),
+                WithCustomDrawerUVE(WithTooltipUVE(DeclareUVE<&D::cullMask>("cullMask", "Projects On",
+                                                                            kPropertyTypeBitMask32UVE),
+                                                   "The render layers it projects onto."),
+                                    std::string(kLayerMaskDrawerRenderUVE)),
                 InGroupUVE(WithTooltipUVE(DeclareUVE<&D::modulate>("modulate", "Modulate", kPropertyTypeColorUVE),
                                           "Tints the projected colour."),
                            "Parameters"),
