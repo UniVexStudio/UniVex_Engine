@@ -614,23 +614,27 @@ settings window.
 The hierarchy is one of the two panels a user looks at constantly. Several behaviours below are
 already built in, but none of them is a setting yet - each is fixed in code.
 
-- [~] Auto-expand on selection, and auto-scroll the selected node into view. When the active
+- [x] Auto-expand on selection, and auto-scroll the selected node into view. When the active
       selection changes (picked in the viewport, or a node just added) the rows above it open and
-      it is scrolled into view, once, so it can be collapsed again; missing: a setting to turn it
-      off.
+      it is scrolled into view, once, so it can be collapsed again. Editor Preferences >
+      Hierarchy > Reveal Selection turns it off.
 - [ ] Expand-all / collapse-all depth limit.
 - [ ] Persist expansion state per scene across sessions.
-- [ ] Row height, indent width, and whether indent guides are drawn.
-- [~] Node-type icons: show, hide, or colour-code by type. Every row already draws an icon for its
-      node kind (mesh, camera, light, environment, physics, audio, particle, script, plain node);
-      missing: a setting to hide or recolour them.
-- [ ] Show node type name alongside the node name.
+- [~] Row height, indent width, and whether indent guides are drawn. Indent Width (12-40 px)
+      and Tree Lines (none, to each child, full height) are preferences; missing: row height.
+- [~] Node-type icons: show, hide, or colour-code by type. Every row draws an icon for its node
+      kind (mesh, camera, light, environment, physics, audio, particle, script, plain node), and
+      Node Icons hides them; missing: recolouring.
+- [ ] Show node type name alongside the node name. Needs one resolver from an entity to its
+      node kind first: today the type is inferred from components in several partial places, and
+      a type name shown for some nodes and not others would mislead.
 - [~] Show component badges on the row (script attached, visibility off, locked). A script badge
       (with its path on hover) and the visibility eye sit in fixed columns at the row's right edge,
       and a long name is cut with "..." and shown whole on hover; missing: locked, and a setting.
-- [~] Visibility toggle column: show, hide, or show on hover. Every row that can be hidden has
+- [x] Visibility toggle column: show, hide, or show on hover. Every row that can be hidden has
       an eye at its right edge; a click is one undoable edit that leaves the selection alone, and
-      a node hidden only by its parent shows a dimmer eye; missing: the show-on-hover option.
+      a node hidden only by its parent shows a dimmer eye. Visibility Toggles chooses Always, On
+      Hover (a hidden node keeps its closed eye) or Hidden (the badges take the freed column).
 - [ ] Lock / unselectable column.
 - [~] Filter behaviour: match name only, or name plus type plus component; case sensitivity;
       whether ancestors of a match are kept visible. The Search Nodes box already matches the
@@ -639,8 +643,8 @@ already built in, but none of them is a setting yet - each is fixed in code.
       matching and a setting to choose the mode.
 - [ ] Sort mode: scene order (authoritative), alphabetical, or by type.
 - [~] Drag-and-drop reparent: enable, and whether a confirmation is required for large subtrees.
-      Dragging a row onto another reparents it, and dropping below the tree makes it a root;
-      missing: the enable toggle and the large-subtree confirmation.
+      Dragging a row onto another reparents it, dropping below the tree makes it a root, and Drag
+      to Reparent turns both off; missing: the large-subtree confirmation.
 - [~] Multi-selection behaviour: rubber-band, range select, and whether children follow the
       parent. Ctrl+click toggles a row in the selection; missing: range select, rubber-band and
       the children-follow option.
@@ -649,8 +653,9 @@ already built in, but none of them is a setting yet - each is fixed in code.
       badge lists each problem on hover: non-finite transform, invalid script path, no mesh, mesh
       or material missing from the project, Skeleton3D with no source; missing: error severity
       and per-node-type checks beyond these.
-- [~] Double-click action: rename, focus in viewport, or open script. Double-click on the
-      selected row renames it today; missing: the choice of action.
+- [~] Double-click action: rename, focus in viewport, or open script. Double-Click chooses
+      Rename, Focus in Viewport or Expand or Collapse, and F2 always renames; missing: open
+      script, which waits for a script editor.
 - [~] Rename mode: inline edit vs. dialog, and name-collision policy. Inline rename exists (F2 or
       double-click, Enter commits, Escape cancels), and a renamed row keeps its children open;
       missing: the dialog option and a name-collision policy.

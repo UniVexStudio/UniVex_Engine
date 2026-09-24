@@ -20,7 +20,7 @@ using Config::SettingTypeUVE;
 TEST(EditorSettingsUVETest, EveryEditorSettingRegistersOnceWithALegalDefault) {
     Config::SettingsRegistryUVE registry;
     ASSERT_TRUE(RegisterEditorSettingsUVE(registry));
-    EXPECT_EQ(registry.GetCountUVE(), 26U);
+    EXPECT_EQ(registry.GetCountUVE(), 33U);
     for (const Config::SettingDescriptorUVE* descriptor : registry.GetAllUVE()) {
         EXPECT_EQ(Config::ValidateSettingDescriptorUVE(*descriptor), "") << descriptor->id;
         EXPECT_TRUE(descriptor->id.starts_with("editor.")) << descriptor->id;
@@ -29,7 +29,7 @@ TEST(EditorSettingsUVETest, EveryEditorSettingRegistersOnceWithALegalDefault) {
     }
     // A second declaration of the same settings is refused as duplicates.
     EXPECT_FALSE(RegisterEditorSettingsUVE(registry));
-    EXPECT_EQ(registry.GetCountUVE(), 26U);
+    EXPECT_EQ(registry.GetCountUVE(), 33U);
 }
 
 TEST(EditorSettingsUVETest, EveryIdIsDeclaredWithTheTypeTheEditorReadsItAs) {
@@ -63,6 +63,13 @@ TEST(EditorSettingsUVETest, EveryIdIsDeclaredWithTheTypeTheEditorReadsItAs) {
         {Id::kPlayTintEnabledUVE, SettingTypeUVE::Bool},
         {Id::kPlayTintColorUVE, SettingTypeUVE::Color},
         {Id::kPlayTintStrengthUVE, SettingTypeUVE::Float},
+        {Id::kHierarchyRevealSelectionUVE, SettingTypeUVE::Bool},
+        {Id::kHierarchyShowIconsUVE, SettingTypeUVE::Bool},
+        {Id::kHierarchyVisibilityColumnUVE, SettingTypeUVE::Enum},
+        {Id::kHierarchyDoubleClickUVE, SettingTypeUVE::Enum},
+        {Id::kHierarchyDragToReparentUVE, SettingTypeUVE::Bool},
+        {Id::kHierarchyTreeLinesUVE, SettingTypeUVE::Enum},
+        {Id::kHierarchyIndentWidthUVE, SettingTypeUVE::Float},
     };
     for (const auto& [id, type] : expected) {
         const Config::SettingDescriptorUVE* descriptor = registry.FindUVE(id);
