@@ -56,7 +56,7 @@ constexpr float kHierarchyNodeIconSizeUVE = 16.0F;
 constexpr float kMinimumViewportWidthUVE = 64.0F;
 constexpr float kMinimumViewportHeightUVE = 64.0F;
 /// The bottom dock's default height, and its limits while being dragged.
-constexpr float kAssetsPanelHeightUVE = 280.0F;
+constexpr float kAssetsPanelHeightUVE = 192.0F;
 constexpr float kMinimumBottomDockHeightUVE = 96.0F;
 constexpr float kDockTabBarHeightUVE = 24.0F;
 constexpr float kEditorTitleBarHeightUVE = 24.0F;

@@ -97,7 +97,7 @@ const std::vector<EditorSettingBindingUVE>& EditorUVE::GetSettingBindingsUVE() {
              editor.m_bottomDockVisible = std::get<bool>(value);
              return true;
          }},
-        {HiddenUVE(Config::MakeFloatSettingUVE(IdUVE(Id::kBottomDockHeightUVE), 280.0, 96.0, 4096.0,
+        {HiddenUVE(Config::MakeFloatSettingUVE(IdUVE(Id::kBottomDockHeightUVE), 192.0, 96.0, 4096.0,
                                                "Bottom Dock Height", kSessionCategoryUVE)),
          [](const EditorUVE& editor) -> SettingValueUVE { return static_cast<double>(editor.m_bottomDockHeight); },
          [](EditorUVE& editor, const SettingValueUVE& value) {
