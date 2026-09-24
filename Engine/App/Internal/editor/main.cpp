@@ -22,6 +22,7 @@
 
 #include "ViewportRenderPass.h"
 #include "integration/EditorMeshLayer.h"
+#include "integration/SelectionOutlineGeometry.h"
 #include "integration/EntityPicker.h"
 #include "univex/camera/ViewportMetrics.h"
 #include "univex/gizmo/GizmoDrag.h"
@@ -193,6 +194,14 @@ public:
             BlitMeshLayerUVE(meshResult);
         }
         renderPass_->RenderGridUVE(camera_, width, height);
+        // The selection outline sits over the scene and the grid, under the gizmos. The Game tab
+        // previews what a player sees, so no editor outline there.
+        if (!gameWorkspaceActive_) {
+            renderPass_->RenderSelectionOutlineUVE(
+                camera_, width, height,
+                univex::integration::CollectSelectionOutlineTrianglesUVE(
+                    entityManager_, editor_.GetSelectedEntitiesUVE(), editor_.GetSelectedEntityUVE()));
+        }
         renderPass_->RenderOverlayUVE(camera_, width, height);
         glBindFramebuffer(GL_READ_FRAMEBUFFER, msaaFbo_);
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, resolveFbo_);
@@ -467,6 +476,10 @@ private:
         settings.viewGrid = overlayState.gridVisible && !overlayState.gameWorkspaceActive;
         renderPass_->SetGridOpacityUVE(overlayState.gridOpacity);
         renderPass_->SetGridCellSizeUVE(overlayState.gridCellSize);
+        renderPass_->SetSelectionOutlineUVE(univex::render::SelectionOutlineSettings{
+            overlayState.selectionOutlineVisible, overlayState.selectionOutlineColor.r,
+            overlayState.selectionOutlineColor.g, overlayState.selectionOutlineColor.b,
+            overlayState.selectionOutlineThickness});
         // A named side view looks along the ground, which is only an edge from there; the grid
         // stands up on the plane facing the camera instead, so the view keeps a reference.
         const univex::math::Vec3 viewAxis = NamedViewDirectionUVE(overlayState.view);

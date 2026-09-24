@@ -4040,6 +4040,13 @@ void EditorUVE::LoadSessionSettingsUVE() {
     // leaving both at their defaults rather than restoring one half of the choice.
     static_cast<void>(SetViewportGridUVE(config.GetBoolUVE("editor.viewport.grid.visible", true),
                                          static_cast<float>(config.GetDoubleUVE("editor.viewport.grid.opacity", 1.0))));
+    // The selection outline, restored whole or not at all.
+    static_cast<void>(SetViewportSelectionOutlineUVE(
+        config.GetBoolUVE("editor.viewport.selectionOutline.visible", true),
+        ViewportAxisColorUVE{static_cast<float>(config.GetDoubleUVE("editor.viewport.selectionOutline.r", 1.0)),
+                             static_cast<float>(config.GetDoubleUVE("editor.viewport.selectionOutline.g", 0.62)),
+                             static_cast<float>(config.GetDoubleUVE("editor.viewport.selectionOutline.b", 0.16))},
+        static_cast<float>(config.GetDoubleUVE("editor.viewport.selectionOutline.thickness", 2.0))));
     // A stored cell size out of range or corrupt is ignored, leaving the 1 m default.
     static_cast<void>(
         SetViewportGridCellSizeUVE(static_cast<float>(config.GetDoubleUVE("editor.viewport.grid.cellSize", 1.0))));
@@ -4126,6 +4133,12 @@ bool EditorUVE::SaveSessionSettingsUVE() {
     config.SetBoolUVE("editor.viewport.grid.visible", m_viewportOverlayState.gridVisible);
     config.SetDoubleUVE("editor.viewport.grid.opacity", m_viewportOverlayState.gridOpacity);
     config.SetDoubleUVE("editor.viewport.grid.cellSize", m_viewportOverlayState.gridCellSize);
+    config.SetBoolUVE("editor.viewport.selectionOutline.visible", m_viewportOverlayState.selectionOutlineVisible);
+    config.SetDoubleUVE("editor.viewport.selectionOutline.r", m_viewportOverlayState.selectionOutlineColor.r);
+    config.SetDoubleUVE("editor.viewport.selectionOutline.g", m_viewportOverlayState.selectionOutlineColor.g);
+    config.SetDoubleUVE("editor.viewport.selectionOutline.b", m_viewportOverlayState.selectionOutlineColor.b);
+    config.SetDoubleUVE("editor.viewport.selectionOutline.thickness",
+                        m_viewportOverlayState.selectionOutlineThickness);
     config.SetBoolUVE("editor.colorPicker.advancedOpen", m_colorPickerPreferences.advancedOpen);
     const auto saveList = [&config](const std::string& prefix, const std::vector<EditorColorUVE>& colors) {
         config.SetIntUVE(prefix + ".count", static_cast<std::int64_t>(colors.size()));
