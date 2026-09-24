@@ -54,11 +54,23 @@ public:
     /// never invokes a drawer, exposes its callback, or transfers ECS/editor ownership.
     [[nodiscard]] std::vector<std::string> GetEligibleDrawerIdsUVE(Scene::EntityUVE entity) const;
 
+    /// Places a registered drawer under a class-chain heading ("Node3D", "Node"). Consecutive
+    /// eligible drawers sharing a heading are drawn under one banner, drawn by `SetGroupHeaderDrawerUVE`
+    /// just before the first of them. Returns false for an unknown drawer.
+    [[nodiscard]] bool SetDrawerGroupUVE(std::string_view id, std::string group);
+    void SetGroupHeaderDrawerUVE(std::function<void(const std::string&)> drawHeader);
+
+    /// The headings the eligible drawers for `entity` are shown under, in order, each once per run.
+    [[nodiscard]] std::vector<std::string> GetEligibleGroupHeadersUVE(Scene::EntityUVE entity) const;
+
     [[nodiscard]] std::size_t GetDrawerCountUVE() const noexcept;
     [[nodiscard]] bool HasDrawerUVE(std::string_view id) const noexcept;
 
 private:
     std::vector<InspectorDrawerEntryUVE> m_entries;
+    /// Heading per entry, index for index with m_entries; empty for none.
+    std::vector<std::string> m_groups;
+    std::function<void(const std::string&)> m_drawGroupHeader;
 };
 
 } // namespace UVE::Editor

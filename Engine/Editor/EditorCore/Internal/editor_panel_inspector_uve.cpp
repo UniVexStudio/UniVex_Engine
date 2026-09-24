@@ -99,6 +99,21 @@ constexpr const char* kPanelLabelInspectorUVE = "\xEE\xA8\x83 Inspector##right-p
 }
 
 
+/// A class-chain heading ("Node3D", "Node"): the ancestor the sections below it come from. A
+/// quiet label with a rule to the edge, so it groups without competing with the section headers.
+void DrawInspectorChainHeaderUVE(const std::string& label) {
+    ImGui::Dummy(ImVec2(0.0F, 4.0F));
+    const ImVec2 start = ImGui::GetCursorScreenPos();
+    const float width = ImGui::GetContentRegionAvail().x;
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.55F, 0.66F, 0.80F, 1.0F));
+    ImGui::TextUnformatted(label.c_str());
+    ImGui::PopStyleColor();
+    const float textWidth = ImGui::CalcTextSize(label.c_str()).x;
+    const float ruleY = start.y + ImGui::GetTextLineHeight() * 0.5F;
+    ImGui::GetWindowDrawList()->AddLine(ImVec2(start.x + textWidth + 6.0F, ruleY), ImVec2(start.x + width, ruleY),
+                                        IM_COL32(88, 104, 128, 160), 1.0F);
+}
+
 } // namespace
 
 void EditorUVE::DrawInspectorPanelUVE() {
@@ -237,6 +252,7 @@ void EditorUVE::RegisterTransformInspectorDrawerUVE() {
         },
         [this](const Scene::EntityUVE entity) { DrawTransformInspectorDrawerUVE(entity); },
     }));
+    static_cast<void>(m_inspectorDrawerRegistry.SetDrawerGroupUVE("transform", "Node3D"));
 }
 
 void EditorUVE::RepairInspectorRecipeUVE(const Scene::EntityUVE entity) {
@@ -263,6 +279,7 @@ void EditorUVE::RegisterBuiltInInspectorDrawersUVE() {
     // editor_panel_inspector_metadata_uve.cpp. Nine of those drawers had never been finished and
     // only showed a title and a Remove button; they are complete field editors now without any of
     // them being written.
+    m_inspectorDrawerRegistry.SetGroupHeaderDrawerUVE([](const std::string& label) { DrawInspectorChainHeaderUVE(label); });
     RegisterMetadataInspectorDrawersUVE();
     static_cast<void>(m_inspectorDrawerRegistry.RegisterDrawerUVE(InspectorDrawerEntryUVE{
         "prefab-instance",
