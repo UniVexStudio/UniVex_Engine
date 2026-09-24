@@ -2043,19 +2043,14 @@ Scene::EntityUVE EditorUVE::CreateDocumentSceneNodeUVE(
         return Scene::kInvalidEntityUVE;
     }
 
-    // New nodes join the hierarchy instead of becoming document roots: under the single
-    // selection when there is one, otherwise directly under the scene root.
-    Scene::EntityUVE parentNode = Scene::kInvalidEntityUVE;
-    if (m_selectedEntity != Scene::kInvalidEntityUVE && IsDocumentSubtreeUVE(m_selectedEntity)) {
-        parentNode = m_selectedEntity;
-    }
-    if (parentNode == Scene::kInvalidEntityUVE) {
-        parentNode = EnsureDocumentSceneRootUVE();
-    }
+    // New nodes join the hierarchy instead of becoming document roots, and are placed before the
+    // snapshot below is taken, so undo and redo restore the same place.
+    const Scene::EntityUVE parentNode = ResolveNewNodeParentUVE();
     if (parentNode != Scene::kInvalidEntityUVE) {
         m_services->GetSceneGraphUVE().SetParentUVE(entityManager, entity, parentNode);
         InvalidateHierarchyFilterCacheUVE();
     }
+    PlaceNewDocumentNodeUVE(entity);
 
     const std::optional<Scene::SceneSnapshotUVE> snapshot = CaptureSubtreeUVE(entity);
     if (!snapshot.has_value()) {
@@ -2795,22 +2790,54 @@ Scene::EntityUVE EditorUVE::CreateDocumentEntityInternalUVE(
             return Scene::kInvalidEntityUVE;
     }
 
-    // Same hierarchy-joining rule as CreateDocumentSceneNodeUVE: under the single selection
-    // when there is one, otherwise directly under the scene root - never a new document root.
+    // Same hierarchy-joining rule as CreateDocumentSceneNodeUVE - never a new document root.
     if (entity != Scene::kInvalidEntityUVE) {
-        Scene::EntityUVE parentNode = Scene::kInvalidEntityUVE;
-        if (m_selectedEntity != Scene::kInvalidEntityUVE && IsDocumentSubtreeUVE(m_selectedEntity)) {
-            parentNode = m_selectedEntity;
-        }
-        if (parentNode == Scene::kInvalidEntityUVE) {
-            parentNode = EnsureDocumentSceneRootUVE();
-        }
+        const Scene::EntityUVE parentNode = ResolveNewNodeParentUVE();
         if (parentNode != Scene::kInvalidEntityUVE) {
             m_services->GetSceneGraphUVE().SetParentUVE(entityManager, entity, parentNode);
             InvalidateHierarchyFilterCacheUVE();
         }
+        PlaceNewDocumentNodeUVE(entity);
     }
     return entity;
+}
+
+Scene::EntityUVE EditorUVE::ResolveNewNodeParentUVE() {
+    if (m_newNodesUnderSelection && m_selectedEntity != Scene::kInvalidEntityUVE &&
+        IsDocumentSubtreeUVE(m_selectedEntity)) {
+        return m_selectedEntity;
+    }
+    return EnsureDocumentSceneRootUVE();
+}
+
+void EditorUVE::PlaceNewDocumentNodeUVE(const Scene::EntityUVE entity) {
+    if (m_newNodePlacement != EditorNewNodePlacementUVE::ViewFocus || !m_viewportCameraFocus.has_value()) {
+        return;
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (!entityManager.HasComponentUVE<Scene::TransformComponentUVE>(entity) ||
+        !entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(entity)) {
+        return; // A pure Node has no place in space.
+    }
+    // The node sits at its parent's origin; move it by the offset from there to the focus, taken
+    // into the parent's space. A parent whose world transform is not resolved yet leaves it be.
+    const std::optional<Scene::WorldTransformComponentUVE> parentWorld =
+        TryGetComposingParentWorldUVE(entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(entity).parent);
+    Math::Vector3UVE localPosition{};
+    if (!parentWorld.has_value() || parentWorld->dirty ||
+        !ComputeLocalDeltaForWorldDeltaUVE(entity, *m_viewportCameraFocus - parentWorld->worldPosition,
+                                           localPosition)) {
+        return;
+    }
+    Scene::TransformComponentUVE transform = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(entity);
+    transform.localPosition = localPosition;
+    m_services->GetSceneGraphUVE().SetLocalTransformUVE(entityManager, entity, transform);
+}
+
+void EditorUVE::SetViewportCameraFocusUVE(const Math::Vector3UVE& focus) noexcept {
+    if (IsFiniteVectorUVE(focus)) {
+        m_viewportCameraFocus = focus;
+    }
 }
 
 void EditorUVE::RecordHistoryUVE(HistoryEntryUVE entry) {
