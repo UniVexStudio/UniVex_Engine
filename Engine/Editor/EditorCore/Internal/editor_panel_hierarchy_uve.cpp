@@ -187,7 +187,7 @@ void EditorUVE::DrawHierarchyPanelUVE() {
     if (m_selectedEntity != m_hierarchyRevealedEntity) {
         m_hierarchyRevealedEntity = m_selectedEntity;
         m_hierarchyRevealAncestors.clear();
-        m_hierarchyRevealPending = IsDocumentEntityUVE(m_selectedEntity);
+        m_hierarchyRevealPending = m_hierarchyView.revealSelection && IsDocumentEntityUVE(m_selectedEntity);
         Scene::EntityUVE cursor = m_selectedEntity;
         Scene::EntityUVE parent = Scene::kInvalidEntityUVE;
         // Bounded by the entity count, so a malformed parent loop can never hang the panel.
@@ -202,10 +202,12 @@ void EditorUVE::DrawHierarchyPanelUVE() {
     if (ImGui::BeginChild("##scene-hierarchy-items", ImVec2{0.0F, hierarchyItemsHeight}, true,
                            ImGuiWindowFlags_AlwaysVerticalScrollbar)) {
         ImGui::BeginDisabled(!IsAuthoringCommandAllowedUVE());
+        ImGui::PushStyleVar(ImGuiStyleVar_IndentSpacing, m_hierarchyView.indentWidth);
         for (const Scene::EntityUVE root : GetDocumentRootsUVE()) {
             DrawHierarchyNodeUVE(root);
         }
-        if (!GetDocumentRootsUVE().empty()) {
+        ImGui::PopStyleVar();
+        if (m_hierarchyView.dragToReparent && !GetDocumentRootsUVE().empty()) {
             ImGui::Separator();
             ImGui::TextDisabled("Drop entity here to make it a root");
             AcceptHierarchyDropTargetUVE(Scene::kInvalidEntityUVE);
@@ -223,12 +225,24 @@ void EditorUVE::DrawHierarchyNodeUVE(const Scene::EntityUVE entity) {
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
     const std::vector<Scene::EntityUVE> children =
         m_services->GetSceneGraphUVE().GetChildrenUVE(entityManager, entity);
-    // OpenOnDoubleClick deliberately omitted: a double-click on this row now starts renaming (see
-    // below, matching Godot's own Scene dock convention) rather than toggling expand/collapse -
-    // OpenOnArrow alone still lets the arrow itself expand/collapse on click.
+    // The arrow always opens and closes a row. A double-click does too only when that is the chosen
+    // double-click action; otherwise it renames or focuses (below).
     ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow;
     if (children.empty()) {
         flags |= ImGuiTreeNodeFlags_Leaf;
+    } else if (m_hierarchyView.doubleClick == HierarchyDoubleClickUVE::ExpandCollapse) {
+        flags |= ImGuiTreeNodeFlags_OpenOnDoubleClick;
+    }
+    switch (m_hierarchyView.treeLines) {
+        case HierarchyTreeLinesUVE::None:
+            flags |= ImGuiTreeNodeFlags_DrawLinesNone;
+            break;
+        case HierarchyTreeLinesUVE::ToEachChild:
+            flags |= ImGuiTreeNodeFlags_DrawLinesToNodes;
+            break;
+        case HierarchyTreeLinesUVE::FullHeight:
+            flags |= ImGuiTreeNodeFlags_DrawLinesFull;
+            break;
     }
     const bool selected = IsEntitySelectedUVE(entity);
     const bool active = entity == m_selectedEntity;
@@ -256,19 +270,23 @@ void EditorUVE::DrawHierarchyNodeUVE(const Scene::EntityUVE entity) {
     // in the current font. A fixed two spaces was narrower than the icon, which then sat on top of
     // the name's first letter.
     const float spaceWidth = std::max(1.0F, ImGui::CalcTextSize(" ").x);
-    const auto gapSpaces = static_cast<std::size_t>(
-        std::ceil(((kHierarchyNodeIconRadiusUVE * 2.0F) + 6.0F) / spaceWidth));
+    const auto gapSpaces = m_hierarchyView.showIcons
+                               ? static_cast<std::size_t>(
+                                     std::ceil(((kHierarchyNodeIconRadiusUVE * 2.0F) + 6.0F) / spaceWidth))
+                               : std::size_t{0U};
     // The row's right-hand columns (eye, warning, script) are fixed; the name gives way to them.
     // A name that would run under the leftmost column this row uses is cut short with "..." and
     // shown in full on hover, instead of being painted over by the badges.
     const std::vector<std::string> warnings = GetNodeWarningsUVE(entity);
     const std::optional<std::string> script = GetNodeScriptPathUVE(entity);
-    float usedColumns = entityManager.HasComponentUVE<Scene::VisibilityComponentUVE>(entity) ? 1.0F : 0.0F;
+    // With the eyes hidden their column is given back, and the badges move over into it.
+    const float eyeColumns = m_hierarchyView.visibilityColumn == HierarchyVisibilityColumnUVE::Hidden ? 0.0F : 1.0F;
+    float usedColumns = entityManager.HasComponentUVE<Scene::VisibilityComponentUVE>(entity) ? eyeColumns : 0.0F;
     if (!warnings.empty()) {
-        usedColumns = 2.0F;
+        usedColumns = eyeColumns + 1.0F;
     }
     if (script.has_value()) {
-        usedColumns = 3.0F;
+        usedColumns = eyeColumns + 2.0F;
     }
     const std::string fullName = GetEntityDisplayLabelUVE(entity);
     const float labelStart = ImGui::GetCursorPosX() + ImGui::GetTreeNodeToLabelSpacing() +
@@ -299,14 +317,19 @@ void EditorUVE::DrawHierarchyNodeUVE(const Scene::EntityUVE entity) {
         m_hierarchyRevealPending = false;
         m_hierarchyRevealAncestors.clear();
     }
-    if (!renaming) {
-        // Draws into the gap the row's own 4-space label prefix already reserves before the name,
-        // so the icon lines up with the name the same way every other icon+name pair in this file
-        // does, without needing a second ImGui column or child window just for one glyph.
-        const ImVec2 itemMin = ImGui::GetItemRectMin();
-        const ImVec2 itemMax = ImGui::GetItemRectMax();
-        const float iconCenterY = (itemMin.y + itemMax.y) * 0.5F;
-        const float iconCenterX = itemMin.x + ImGui::GetTreeNodeToLabelSpacing() + kHierarchyNodeIconRadiusUVE;
+    const ImVec2 rowMin = ImGui::GetItemRectMin();
+    const ImVec2 rowMax = ImGui::GetItemRectMax();
+    // The whole row, not just its label, so a badge or eye at the far edge counts as on the row.
+    const bool rowHovered =
+        ImGui::IsWindowHovered() && ImGui::IsMouseHoveringRect(ImVec2{ImGui::GetWindowPos().x, rowMin.y},
+                                                               ImVec2{ImGui::GetWindowPos().x + ImGui::GetWindowWidth(),
+                                                                      rowMax.y},
+                                                               false);
+    if (!renaming && m_hierarchyView.showIcons) {
+        // Draws into the gap the row's own label prefix reserves before the name, so the icon lines
+        // up with the name without a second ImGui column or child window just for one glyph.
+        const float iconCenterY = (rowMin.y + rowMax.y) * 0.5F;
+        const float iconCenterX = rowMin.x + ImGui::GetTreeNodeToLabelSpacing() + kHierarchyNodeIconRadiusUVE;
         const HierarchyNodeIconKindUVE iconKind = ClassifyHierarchyNodeIconUVE(entityManager, entity);
         DrawHierarchyNodeIconUVE(*ImGui::GetWindowDrawList(), ImVec2{iconCenterX, iconCenterY},
                                 kHierarchyNodeIconRadiusUVE, iconKind,
@@ -326,13 +349,18 @@ void EditorUVE::DrawHierarchyNodeUVE(const Scene::EntityUVE entity) {
     if (!renaming) {
         DrawHierarchyNodeContextMenuUVE(entity);
     }
-    // Rename triggers the same way Godot's own Scene dock does: F2, or a double-click on an
-    // already-selected row - no separate "Rename" button cluttering the row (the button used to
-    // sit here, pushing further controls toward the panel's edge).
+    // F2 renames the selected row. A double-click does what the Double-Click preference says:
+    // rename, focus the node in the viewport, or open and close the row (handled by the tree node).
+    const bool doubleClicked = !renaming && ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
+    if (doubleClicked && m_hierarchyView.doubleClick == HierarchyDoubleClickUVE::FocusInViewport &&
+        CanFocusEntityInViewportUVE(entity)) {
+        static_cast<void>(RequestViewportFocusUVE(entity));
+    }
     const bool canRenameSelected =
         !renaming && HasSingleDocumentSelectionUVE() && entity == m_selectedEntity && IsAuthoringCommandAllowedUVE();
-    if (canRenameSelected && (ImGui::IsKeyPressed(ImGuiKey_F2) ||
-                              (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)))) {
+    if (canRenameSelected &&
+        (ImGui::IsKeyPressed(ImGuiKey_F2) ||
+         (doubleClicked && m_hierarchyView.doubleClick == HierarchyDoubleClickUVE::Rename))) {
         m_hierarchyRenameEntity = entity;
         m_hierarchyRenameBuffer = GetEntityDisplayLabelUVE(entity);
         m_hierarchyRenameFocusRequested = true;
@@ -358,16 +386,16 @@ void EditorUVE::DrawHierarchyNodeUVE(const Scene::EntityUVE entity) {
         }
     }
     // The scene root is the document itself: it has no parent to leave, so it is never a drag source.
-    if (IsLifecycleCommandAllowedUVE() && IsDocumentEntityUVE(entity) && !IsSceneRootEntityUVE(entity) &&
-        ImGui::BeginDragDropSource()) {
+    if (m_hierarchyView.dragToReparent && IsLifecycleCommandAllowedUVE() && IsDocumentEntityUVE(entity) &&
+        !IsSceneRootEntityUVE(entity) && ImGui::BeginDragDropSource()) {
         ImGui::SetDragDropPayload(kHierarchyEntityPayloadUVE, &entity, sizeof(entity));
         ImGui::Text("Move %s", GetEntityDisplayLabelUVE(entity).c_str());
         ImGui::EndDragDropSource();
     }
     AcceptHierarchyDropTargetUVE(entity);
     if (!renaming) {
-        DrawHierarchyRowBadgesUVE(warnings, script);
-        DrawHierarchyVisibilityToggleUVE(entity);
+        DrawHierarchyRowBadgesUVE(warnings, script, eyeColumns);
+        DrawHierarchyVisibilityToggleUVE(entity, rowHovered);
     }
     if (open) {
         for (const Scene::EntityUVE child : children) {
@@ -611,13 +639,16 @@ void EditorUVE::DrawNodePickerUVE() {
     ImGui::EndPopup();
 }
 
-void EditorUVE::DrawHierarchyVisibilityToggleUVE(const Scene::EntityUVE entity) {
+void EditorUVE::DrawHierarchyVisibilityToggleUVE(const Scene::EntityUVE entity, const bool rowHovered) {
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
     // Only nodes that can be hidden get an eye; the scene root and plain Nodes have no Visibility.
     if (!entityManager.HasComponentUVE<Scene::VisibilityComponentUVE>(entity)) {
         return;
     }
     const Scene::VisibilityComponentUVE& visibility = entityManager.GetComponentUVE<Scene::VisibilityComponentUVE>(entity);
+    if (!ShouldDrawHierarchyEyeUVE(m_hierarchyView.visibilityColumn, rowHovered, visibility.visible)) {
+        return;
+    }
     const float size = ImGui::GetFrameHeight();
     // Pinned to the row's right edge, so the eyes form one column however deep a row is nested.
     const float rightEdge = ImGui::GetWindowContentRegionMax().x;
@@ -696,9 +727,10 @@ std::optional<std::string> EditorUVE::GetNodeScriptPathUVE(const Scene::EntityUV
 }
 
 void EditorUVE::DrawHierarchyRowBadgesUVE(const std::vector<std::string>& warnings,
-                                          const std::optional<std::string>& script) {
+                                          const std::optional<std::string>& script, const float eyeColumns) {
     // Two fixed columns left of the eye - warning nearest it, then script - so the same badge
-    // lines up down the whole tree and is found by scanning one column.
+    // lines up down the whole tree and is found by scanning one column. With the eyes turned off
+    // (`eyeColumns` 0) the badges take the right edge.
     const float size = ImGui::GetFrameHeight();
     const float rightEdge = ImGui::GetWindowContentRegionMax().x;
     const float lineHeight = ImGui::GetTextLineHeight();
@@ -718,7 +750,7 @@ void EditorUVE::DrawHierarchyRowBadgesUVE(const std::vector<std::string>& warnin
 
     ImGui::PushID("##row-badges");
     if (script.has_value()) {
-        badge("##script", 3.0F,
+        badge("##script", eyeColumns + 2.0F,
               [&](const ImVec2 center, const float glyphSize) {
                   DrawScriptGlyphUVE(drawList, center, glyphSize, IM_COL32(120, 170, 245, 255));
               },
@@ -728,7 +760,7 @@ void EditorUVE::DrawHierarchyRowBadgesUVE(const std::vector<std::string>& warnin
               });
     }
     if (!warnings.empty()) {
-        badge("##warning", 2.0F,
+        badge("##warning", eyeColumns + 1.0F,
               [&](const ImVec2 center, const float glyphSize) { DrawWarningGlyphUVE(drawList, center, glyphSize); },
               [&] {
                   ImGui::TextDisabled(warnings.size() == 1U ? "1 problem" : "%zu problems", warnings.size());

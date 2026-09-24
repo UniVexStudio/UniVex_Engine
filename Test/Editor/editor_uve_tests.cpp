@@ -1004,7 +1004,7 @@ TEST(EditorUVETest, EditorSettingsUVE_DescriptorDefaultsMatchTheEditorsOwnDefaul
         EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_setting_defaults.uvescene");
         const Config::SettingsRegistryUVE& registry = editor.GetSettingsRegistryUVE();
         // The declared preferences, and a primary and alternate shortcut for every command.
-        ASSERT_EQ(registry.GetCountUVE(), 26U + (2U * editor.GetEditorCommandsUVE().size()));
+        ASSERT_EQ(registry.GetCountUVE(), 33U + (2U * editor.GetEditorCommandsUVE().size()));
         for (const Config::SettingDescriptorUVE* descriptor : registry.GetAllUVE()) {
             const std::optional<Config::SettingValueUVE> value = editor.GetEditorSettingUVE(descriptor->id);
             ASSERT_TRUE(value.has_value()) << descriptor->id;
@@ -1175,6 +1175,57 @@ TEST(EditorUVETest, PlayModePreferencesUVE_PauseSaveAndStayInTheTab) {
     }
     engine.Shutdown();
     std::filesystem::remove(scenePath);
+}
+
+TEST(EditorUVETest, HierarchyPreferencesUVE_ApplyRefuseWhatIsOutOfRangeAndPersist) {
+    const Core::EngineConfigUVE config = MakeEditorTestConfigUVE();
+    std::filesystem::remove(config.settingsFilePath);
+    Core::EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    namespace Id = EditorSettingIdUVE;
+    const std::string_view scenePath = "uve_editor_tests_hierarchy_prefs.uvescene";
+    const auto expectChosen = [](const HierarchyViewSettingsUVE& view) {
+        EXPECT_FALSE(view.revealSelection);
+        EXPECT_EQ(view.visibilityColumn, HierarchyVisibilityColumnUVE::OnHover);
+        EXPECT_EQ(view.doubleClick, HierarchyDoubleClickUVE::FocusInViewport);
+        EXPECT_EQ(view.treeLines, HierarchyTreeLinesUVE::ToEachChild);
+        EXPECT_FLOAT_EQ(view.indentWidth, 30.0F);
+        EXPECT_TRUE(view.showIcons);
+        EXPECT_TRUE(view.dragToReparent);
+    };
+    {
+        EditorUVE editor(engine.GetServicesUVE(), scenePath);
+        editor.InitUVE();
+        ASSERT_TRUE(editor.SetEditorSettingUVE(Id::kHierarchyRevealSelectionUVE, false));
+        ASSERT_TRUE(editor.SetEditorSettingUVE(Id::kHierarchyVisibilityColumnUVE,
+                                               static_cast<std::int64_t>(HierarchyVisibilityColumnUVE::OnHover)));
+        ASSERT_TRUE(editor.SetEditorSettingUVE(Id::kHierarchyDoubleClickUVE,
+                                               static_cast<std::int64_t>(HierarchyDoubleClickUVE::FocusInViewport)));
+        ASSERT_TRUE(editor.SetEditorSettingUVE(Id::kHierarchyTreeLinesUVE,
+                                               static_cast<std::int64_t>(HierarchyTreeLinesUVE::ToEachChild)));
+        ASSERT_TRUE(editor.SetEditorSettingUVE(Id::kHierarchyIndentWidthUVE, 30.0));
+        expectChosen(editor.GetHierarchyViewSettingsUVE());
+
+        // An indent the tree could not draw, an action that does not exist, or a value of the wrong
+        // type changes nothing.
+        EXPECT_FALSE(editor.SetEditorSettingUVE(Id::kHierarchyIndentWidthUVE, 2.0));
+        EXPECT_FALSE(editor.SetEditorSettingUVE(Id::kHierarchyIndentWidthUVE, 400.0));
+        EXPECT_FALSE(editor.SetEditorSettingUVE(Id::kHierarchyDoubleClickUVE, std::int64_t{7}));
+        EXPECT_FALSE(editor.SetEditorSettingUVE(Id::kHierarchyShowIconsUVE, std::int64_t{1}));
+        expectChosen(editor.GetHierarchyViewSettingsUVE());
+        ASSERT_TRUE(EditorUVEAccessUVE::SaveSessionSettingsUVE(editor));
+        editor.ShutdownUVE();
+    }
+    {
+        // The next session starts where this one left off.
+        EditorUVE reloaded(engine.GetServicesUVE(), scenePath);
+        reloaded.InitUVE();
+        expectChosen(reloaded.GetHierarchyViewSettingsUVE());
+        reloaded.ShutdownUVE();
+    }
+    engine.Shutdown();
+    std::filesystem::remove(config.settingsFilePath);
 }
 
 TEST(EditorUVETest, EditorCommandsUVE_RunOnlyWhenAvailableAndKeepRebindsAcrossSessions) {

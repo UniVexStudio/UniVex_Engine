@@ -28,6 +28,7 @@
 #include "uve/config/settings_registry_uve.h"
 #include "uve/editor/editor_color_uve.h"
 #include "uve/editor/editor_commands_uve.h"
+#include "uve/editor/editor_hierarchy_view_uve.h"
 #include "uve/input/input_action_uve.h"
 #include "uve/editor/editor_tool_session_uve.h"
 #include "uve/editor/developer_console_uve.h"
@@ -480,6 +481,8 @@ public:
     /// request until it is next drawn, so reopening the branch later shows it closed. Returns
     /// false for anything that is not a document entity.
     [[nodiscard]] bool SetHierarchyBranchOpenUVE(Scene::EntityUVE entity, bool open);
+    /// The hierarchy panel preferences in effect (Editor Preferences > Hierarchy).
+    [[nodiscard]] const HierarchyViewSettingsUVE& GetHierarchyViewSettingsUVE() const noexcept { return m_hierarchyView; }
     /// The open state a hierarchy row will be given when it is next drawn, if one is pending.
     [[nodiscard]] std::optional<bool> GetPendingHierarchyRowOpenUVE(Scene::EntityUVE entity) const;
     /// Problems with how `entity` is set up, one readable sentence each, for the hierarchy's
@@ -1336,11 +1339,12 @@ private:
     // A collapsing header (`asHeader`) or tree node whose open state lives in m_inspectorFoldOpen.
     bool DrawInspectorFoldUVE(const char* label, const std::string& key, bool defaultOpen, bool asHeader,
                               int flags);
-    void DrawHierarchyVisibilityToggleUVE(Scene::EntityUVE entity);
+    void DrawHierarchyVisibilityToggleUVE(Scene::EntityUVE entity, bool rowHovered);
     // Right-click menu on an Inspector section header: Copy / Paste / Reset. `entry` null means
     // the Transform section.
     void DrawInspectorSectionMenuUVE(const Core::TypeMetadataEntryUVE* entry, const char* sectionName);
-    void DrawHierarchyRowBadgesUVE(const std::vector<std::string>& warnings, const std::optional<std::string>& script);
+    void DrawHierarchyRowBadgesUVE(const std::vector<std::string>& warnings, const std::optional<std::string>& script,
+                                   float eyeColumns);
     void DrawHierarchyNodeUVE(Scene::EntityUVE entity);
     void AcceptHierarchyDropTargetUVE(Scene::EntityUVE targetParent);
     void DrawInspectorPanelUVE();
@@ -1510,6 +1514,8 @@ private:
     bool m_playTintEnabled = true;
     ViewportAxisColorUVE m_playTintColor = kDefaultPlayTintColorUVE;
     float m_playTintStrength = kDefaultPlayTintStrengthUVE;
+    // Hierarchy panel preferences (editor_settings_uve.cpp).
+    HierarchyViewSettingsUVE m_hierarchyView;
     // Each editor setting's descriptor and its reads and writes of the state above, in one table
     // (editor_settings_uve.cpp) that loading, saving and the preferences window all use.
     [[nodiscard]] static const std::vector<EditorSettingBindingUVE>& GetSettingBindingsUVE();
