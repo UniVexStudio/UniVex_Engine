@@ -85,38 +85,53 @@ constexpr double kNoValueUVE = std::numeric_limits<double>::quiet_NaN();
     return channel >= 0.0 && channel <= 1.0 ? static_cast<float>(channel) : std::numeric_limits<float>::quiet_NaN();
 }
 
-/// Reads the raw stored value of `descriptor`, with the default substituted for anything missing or
-/// of the wrong kind. Constraints are checked by the caller.
-[[nodiscard]] SettingValueUVE ReadStoredUVE(const SettingDescriptorUVE& descriptor, const IConfigManagerUVE& store) {
+/// Reads the raw stored value of `descriptor`: nothing when it is missing or of the wrong kind.
+/// Constraints are checked by the caller.
+[[nodiscard]] std::optional<SettingValueUVE> ReadStoredUVE(const SettingDescriptorUVE& descriptor,
+                                                          const IConfigManagerUVE& store) {
     const std::string& id = descriptor.id;
+    if (descriptor.type != SettingTypeUVE::Color && !store.HasKeyUVE(id)) {
+        return std::nullopt;
+    }
     switch (descriptor.type) {
-    case SettingTypeUVE::Bool:
-        return store.GetBoolUVE(id, std::get<bool>(descriptor.defaultValue));
+    case SettingTypeUVE::Bool: {
+        // Two reads with opposite fallbacks agree only when a bool is really there.
+        const bool stored = store.GetBoolUVE(id, false);
+        return stored == store.GetBoolUVE(id, true) ? std::optional<SettingValueUVE>(stored) : std::nullopt;
+    }
     case SettingTypeUVE::Int:
     case SettingTypeUVE::Enum: {
-        const auto fallback = std::get<std::int64_t>(descriptor.defaultValue);
-        if (!store.HasKeyUVE(id)) {
-            return fallback;
-        }
-        // A hand-edited file may say 4.0 where 4 is meant; accept a whole number written as one.
         constexpr auto kSentinel = std::numeric_limits<std::int64_t>::min();
         const std::int64_t stored = store.GetIntUVE(id, kSentinel);
         if (stored != kSentinel || store.GetIntUVE(id, 0) == kSentinel) {
             return stored;
         }
-        const double asDouble = store.GetDoubleUVE(id, kNoValueUVE);
+        // A hand-edited file may say 4.0 where 4 is meant; accept a whole number written as one.
         // 2^63 is the first double past the int64 range; the lower bound is exact.
+        const double asDouble = store.GetDoubleUVE(id, kNoValueUVE);
         if (std::isfinite(asDouble) && std::trunc(asDouble) == asDouble && asDouble >= -9223372036854775808.0 &&
             asDouble < 9223372036854775808.0) {
             return static_cast<std::int64_t>(asDouble);
         }
-        return fallback;
+        return std::nullopt;
     }
-    case SettingTypeUVE::Float:
-        return store.GetDoubleUVE(id, std::get<double>(descriptor.defaultValue));
-    case SettingTypeUVE::String:
-        return store.GetStringUVE(id, std::get<std::string>(descriptor.defaultValue));
+    case SettingTypeUVE::Float: {
+        // NaN never reaches the document as a number, so reading it back means "not a number".
+        const double stored = store.GetDoubleUVE(id, kNoValueUVE);
+        return std::isnan(stored) ? std::nullopt : std::optional<SettingValueUVE>(stored);
+    }
+    case SettingTypeUVE::String: {
+        std::string stored = store.GetStringUVE(id, "");
+        // An empty read is a real empty string only if a second, non-empty fallback reads empty too.
+        if (stored.empty() && !store.GetStringUVE(id, "x").empty()) {
+            return std::nullopt;
+        }
+        return SettingValueUVE{std::move(stored)};
+    }
     case SettingTypeUVE::Color: {
+        if (!store.HasKeyUVE(ChannelKeyUVE(id, 'r'))) {
+            return std::nullopt;
+        }
         // A missing or non-numeric channel reads as NaN, which fails validation and so takes the
         // whole colour back to its default - never a colour stitched from stored and default parts.
         SettingColorUVE color;
@@ -127,7 +142,7 @@ constexpr double kNoValueUVE = std::numeric_limits<double>::quiet_NaN();
         return color;
     }
     }
-    return descriptor.defaultValue;
+    return std::nullopt;
 }
 
 [[nodiscard]] SettingDescriptorUVE MakeSettingUVE(std::string id, const SettingTypeUVE type,
@@ -341,11 +356,8 @@ std::optional<SettingValueUVE> SettingsRegistryUVE::GetValueUVE(const IConfigMan
     if (descriptor == nullptr) {
         return std::nullopt;
     }
-    SettingValueUVE stored = ReadStoredUVE(*descriptor, store);
-    if (!IsSettingValueValidUVE(*descriptor, stored)) {
-        return descriptor->defaultValue;
-    }
-    return NormalizeUVE(*descriptor, std::move(stored));
+    std::optional<SettingValueUVE> stored = GetStoredValueUVE(store, id);
+    return stored ? std::move(stored) : std::optional<SettingValueUVE>(descriptor->defaultValue);
 }
 
 bool SettingsRegistryUVE::SetValueUVE(IConfigManagerUVE& store, const std::string_view id,
@@ -388,6 +400,34 @@ bool SettingsRegistryUVE::SetValueUVE(IConfigManagerUVE& store, const std::strin
 bool SettingsRegistryUVE::ResetUVE(IConfigManagerUVE& store, const std::string_view id) const {
     const SettingDescriptorUVE* descriptor = FindUVE(id);
     return descriptor != nullptr && SetValueUVE(store, id, descriptor->defaultValue);
+}
+
+bool SettingsRegistryUVE::ClearValueUVE(IConfigManagerUVE& store, const std::string_view id) const {
+    const SettingDescriptorUVE* descriptor = FindUVE(id);
+    if (descriptor == nullptr) {
+        return false;
+    }
+    if (descriptor->type != SettingTypeUVE::Color) {
+        return store.RemoveKeyUVE(descriptor->id);
+    }
+    bool removed = false;
+    for (const char channel : {'r', 'g', 'b', 'a'}) {
+        removed = store.RemoveKeyUVE(ChannelKeyUVE(descriptor->id, channel)) || removed;
+    }
+    return removed;
+}
+
+std::optional<SettingValueUVE> SettingsRegistryUVE::GetStoredValueUVE(const IConfigManagerUVE& store,
+                                                                     const std::string_view id) const {
+    const SettingDescriptorUVE* descriptor = FindUVE(id);
+    if (descriptor == nullptr) {
+        return std::nullopt;
+    }
+    std::optional<SettingValueUVE> stored = ReadStoredUVE(*descriptor, store);
+    if (!stored || !IsSettingValueValidUVE(*descriptor, *stored)) {
+        return std::nullopt;
+    }
+    return NormalizeUVE(*descriptor, std::move(*stored));
 }
 
 bool SettingsRegistryUVE::IsModifiedUVE(const IConfigManagerUVE& store, const std::string_view id) const {

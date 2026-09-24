@@ -94,6 +94,8 @@
 #include "uve/rhi_null/null_render_device_uve.h"
 #include "uve/scripting/script_graph_uve.h"
 #include "uve/window/i_window_manager_uve.h"
+#include "uve/core/engine_project_settings_uve.h"
+#include "uve/config/config_manager_uve.h"
 
 namespace UVE::Core::Tests {
 namespace {
@@ -105,11 +107,52 @@ EngineConfigUVE MakeTestConfigUVE() {
     config.threadPoolWorkerCount = 2; // keep the whole suite's thread churn small and fast
     config.settingsFilePath = "uve_engine_core_tests.uvesettings"; // never touch a real settings file
     config.assetDatabaseFilePath = "uve_engine_core_tests.uveassetdb"; // never touch a real asset db
+    config.projectSettingsFilePath = "uve_engine_core_tests.project.uvesettings"; // nor a real project file
     config.headlessUVE = true; // NullWindowManagerUVE/NullRenderDeviceUVE - no display required;
                                 // every pre-Increment-20 test opts into this by default, matching
                                 // its exact prior (headless-only) behavior. Tests that specifically
                                 // exercise the real window/GL backend override this explicitly.
     return config;
+}
+
+TEST(EngineCoreUVETest, ProjectSettings_OverrideTheApplicationsConfigWhereTheProjectSetsThem) {
+    EngineConfigUVE config = MakeTestConfigUVE();
+    config.projectSettingsFilePath = "uve_engine_core_tests_overrides.project.uvesettings";
+    config.autoSaveIntervalSecondsUVE = 123.0; // the application's choice, kept unless overridden
+    {
+        std::ofstream file(config.projectSettingsFilePath);
+        // Ticks and filter are legal; the auto-save interval is below its minimum and ignored.
+        file << R"({"physics": {"common": {"ticksPerSecond": 30}},
+                    "rendering": {"shadows": {"filter": 0}},
+                    "application": {"save": {"autoSaveInterval": 5.0}}})";
+    }
+    EngineCoreUVE engine(config);
+    engine.Init();
+    EXPECT_DOUBLE_EQ(engine.GetConfigUVE().fixedUpdateFps, 30.0);
+    EXPECT_EQ(engine.GetConfigUVE().shadowPcfKernelRadius, 0U);
+    EXPECT_DOUBLE_EQ(engine.GetConfigUVE().autoSaveIntervalSecondsUVE, 123.0);
+    EXPECT_EQ(engine.GetConfigUVE().shadowMapResolution, EngineConfigUVE{}.shadowMapResolution);
+    const Config::SettingsDocumentUVE& project = engine.GetServicesUVE().GetProjectSettingsUVE();
+    EXPECT_TRUE(project.IsModifiedUVE(EngineProjectSettingIdUVE::kPhysicsTicksPerSecondUVE));
+    EXPECT_FALSE(project.IsDirtyUVE());
+    engine.Shutdown();
+    std::filesystem::remove(config.projectSettingsFilePath);
+}
+
+TEST(EngineCoreUVETest, ProjectSettings_DeclareEngineDefaultsAndNeedARestart) {
+    Config::SettingsRegistryUVE registry;
+    ASSERT_TRUE(RegisterEngineProjectSettingsUVE(registry));
+    EXPECT_EQ(registry.GetCountUVE(), 5U);
+    const EngineConfigUVE defaults{};
+    namespace Id = EngineProjectSettingIdUVE;
+    EXPECT_DOUBLE_EQ(registry.GetFloatUVE(Config::ConfigManagerUVE{}, Id::kPhysicsTicksPerSecondUVE),
+                     defaults.fixedUpdateFps);
+    EXPECT_EQ(registry.GetIntUVE(Config::ConfigManagerUVE{}, Id::kShadowMapResolutionUVE),
+              static_cast<std::int64_t>(defaults.shadowMapResolution));
+    for (const Config::SettingDescriptorUVE* descriptor : registry.GetAllUVE()) {
+        EXPECT_EQ(Config::ValidateSettingDescriptorUVE(*descriptor), "") << descriptor->id;
+        EXPECT_TRUE(descriptor->HasFlagUVE(Config::kSettingFlagRestartRequiredUVE)) << descriptor->id;
+    }
 }
 
 TEST(EngineCoreUVETest, InitialState_IsUninitialized) {

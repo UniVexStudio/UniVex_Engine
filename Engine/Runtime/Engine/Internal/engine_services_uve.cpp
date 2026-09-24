@@ -19,6 +19,7 @@ EngineServicesUVE::EngineServicesUVE(Debug::ILoggerUVE& logger, Utilities::ITime
                                       Threading::IThreadPoolUVE& threadPool,
                                       CommandLine::ICommandLineUVE& commandLine,
                                       Config::IConfigManagerUVE& configManager,
+                                      Config::SettingsDocumentUVE& projectSettings,
                                       Scene::IEntityManagerUVE& entityManager,
                                       Scene::ISceneGraphUVE& sceneGraph,
                                       Asset::IAssetDatabaseUVE& assetDatabase,
@@ -59,7 +60,7 @@ EngineServicesUVE::EngineServicesUVE(Debug::ILoggerUVE& logger, Utilities::ITime
                                       Window::IWindowManagerUVE& windowManager) noexcept
     : m_logger(&logger), m_timer(&timer), m_eventSystem(&eventSystem),
       m_memoryManager(&memoryManager), m_threadPool(&threadPool), m_commandLine(&commandLine),
-      m_configManager(&configManager), m_entityManager(&entityManager), m_sceneGraph(&sceneGraph),
+      m_configManager(&configManager), m_projectSettings(&projectSettings), m_entityManager(&entityManager), m_sceneGraph(&sceneGraph),
       m_assetDatabase(&assetDatabase), m_projectFileIndex(&projectFileIndex),
       m_derivedArtifactCache(&derivedArtifactCache), m_projectChangeWatcher(&projectChangeWatcher),
       m_sceneSerializer(&sceneSerializer),
@@ -105,6 +106,10 @@ CommandLine::ICommandLineUVE& EngineServicesUVE::GetCommandLineUVE() const noexc
 
 Config::IConfigManagerUVE& EngineServicesUVE::GetConfigManagerUVE() const noexcept {
     return *m_configManager;
+}
+
+Config::SettingsDocumentUVE& EngineServicesUVE::GetProjectSettingsUVE() const noexcept {
+    return *m_projectSettings;
 }
 
 Scene::IEntityManagerUVE& EngineServicesUVE::GetEntityManagerUVE() const noexcept {

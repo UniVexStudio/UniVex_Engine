@@ -26,6 +26,7 @@
 #include "uve/audio/i_audio_system_uve.h"
 #include "uve/commandline/i_command_line_uve.h"
 #include "uve/config/i_config_manager_uve.h"
+#include "uve/config/settings_document_uve.h"
 #include "uve/logging/i_logger_uve.h"
 #include "uve/events/i_event_system_uve.h"
 #include "uve/input/i_gamepad_input_system_uve.h"
@@ -98,6 +99,7 @@ public:
                        Threading::IThreadPoolUVE& threadPool,
                        CommandLine::ICommandLineUVE& commandLine,
                        Config::IConfigManagerUVE& configManager,
+                       Config::SettingsDocumentUVE& projectSettings,
                        Scene::IEntityManagerUVE& entityManager,
                        Scene::ISceneGraphUVE& sceneGraph,
                        Asset::IAssetDatabaseUVE& assetDatabase,
@@ -144,6 +146,9 @@ public:
     [[nodiscard]] Threading::IThreadPoolUVE& GetThreadPoolUVE() const noexcept;
     [[nodiscard]] CommandLine::ICommandLineUVE& GetCommandLineUVE() const noexcept;
     [[nodiscard]] Config::IConfigManagerUVE& GetConfigManagerUVE() const noexcept;
+    /// The project's settings (project.uvesettings): the settings that belong to the project and
+    /// ship with it, as opposed to one person's editor preferences in GetConfigManagerUVE().
+    [[nodiscard]] Config::SettingsDocumentUVE& GetProjectSettingsUVE() const noexcept;
     [[nodiscard]] Scene::IEntityManagerUVE& GetEntityManagerUVE() const noexcept;
     [[nodiscard]] Scene::ISceneGraphUVE& GetSceneGraphUVE() const noexcept;
     [[nodiscard]] Asset::IAssetDatabaseUVE& GetAssetDatabaseUVE() const noexcept;
@@ -191,6 +196,7 @@ private:
     Threading::IThreadPoolUVE* m_threadPool;
     CommandLine::ICommandLineUVE* m_commandLine;
     Config::IConfigManagerUVE* m_configManager;
+    Config::SettingsDocumentUVE* m_projectSettings;
     Scene::IEntityManagerUVE* m_entityManager;
     Scene::ISceneGraphUVE* m_sceneGraph;
     Asset::IAssetDatabaseUVE* m_assetDatabase;

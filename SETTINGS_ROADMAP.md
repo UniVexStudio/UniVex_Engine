@@ -185,13 +185,20 @@ collects them.
 
 ## 0.7 Layering and override order
 
-- [ ] Resolution order, lowest to highest priority: **engine default → project setting → user
-      preference → per-platform override → command-line override**.
+- [~] Resolution order, lowest to highest priority: **engine default → project setting → user
+      preference → per-platform override → command-line override**. The project layer exists:
+      `project.uvesettings` is read at the start of `EngineCoreUVE::Init()` and overrides the
+      application's `EngineConfigUVE` wherever it sets a legal value. The user, platform and
+      command-line layers are not stacked on it yet.
 - [ ] `EngineConfigUVE`'s existing command-line overrides become the top layer of this stack
       rather than a separate mechanism.
-- [ ] A query for *where a value came from*. Without it, "I changed the setting and nothing
+- [~] A query for *where a value came from*. Without it, "I changed the setting and nothing
       happened" is undebuggable, because a higher layer may be silently winning.
-- [ ] Per-layer save targets: user preferences never write into the project file, and vice versa.
+      `GetStoredValueUVE` answers what one layer contributes (nothing, or a legal value); the
+      query across a full stack comes with the stack.
+- [x] Per-layer save targets: user preferences never write into the project file, and vice versa.
+      Editor preferences go to `.uvesettings`, project settings to `project.uvesettings`
+      (committed; the ignore rule for `*.uvesettings` makes an exception for it).
 
 ## 0.8 Versioning and migration
 
@@ -230,12 +237,15 @@ settings, and the inspector should eventually share the mechanism.
 
 ## 0.10 Project settings file
 
-- [ ] A project settings document, separate from user preferences, checked into version control
-      alongside the project.
-- [ ] Deterministic key ordering on write, so the file produces clean diffs rather than
-      reshuffling on every save.
-- [ ] Only non-default values written, so the file stays readable and defaults can change in a
-      later engine version without rewriting every project.
+- [x] A project settings document, separate from user preferences, checked into version control
+      alongside the project. `SettingsDocumentUVE`, owned by `EngineCoreUVE` and reached through
+      `EngineServicesUVE::GetProjectSettingsUVE()`; edited in the **Project Settings** window
+      (Menu > File), which saves when it closes, on Save, and when the editor shuts down.
+- [x] Deterministic key ordering on write, so the file produces clean diffs rather than
+      reshuffling on every save. The store's JSON objects keep keys sorted.
+- [x] Only non-default values written, so the file stays readable and defaults can change in a
+      later engine version without rewriting every project. Setting a default removes the key
+      (`IConfigManagerUVE::RemoveKeyUVE` prunes the objects it empties).
 
 ## 0.11 Substrate work items, in dependency order
 
@@ -250,8 +260,9 @@ settings, and the inspector should eventually share the mechanism.
        colours (their defaults belong to the viewport module and are seeded by the host).
 4. [ ] Change notification.
 5. [x] The generic settings panel with type-based row renderers (the Editor Preferences window).
-6. [ ] Layering, override order, and the "where did this come from" query.
-7. [ ] The project settings file and its layer.
+6. [~] Layering, override order, and the "where did this come from" query. The project layer
+       over the application's config; the rest of the stack is open.
+7. [x] The project settings file and its layer.
 8. [ ] Versioning and migration.
 
 ---
@@ -259,7 +270,8 @@ settings, and the inspector should eventually share the mechanism.
 # Part 1 — Project settings
 
 Settings that belong to the *project* and ship with the game. One line each; everything in this
-part is `[ ]` unless noted, because there is no project settings file yet.
+part is `[ ]` unless noted. The project settings file exists (0.10); a setting here is done when
+it is declared in it and something reads it.
 
 ## 1.1 Application and metadata
 
@@ -326,9 +338,11 @@ The largest group by far, and the one most dependent on the renderer maturing.
 ### Shadows
 
 - [ ] Shadow atlas size, and per-light quadrant subdivision.
-- [ ] Directional shadow resolution and split count.
+- [~] Directional shadow resolution and split count. Resolution is `rendering.shadows.mapResolution`
+      (512-4096, applied at startup); the split count is fixed at three.
 - [ ] Cascade split distribution (logarithmic/linear blend), and fade-out range.
-- [ ] Shadow filter quality: hard, soft, very soft, and sample counts per tier.
+- [x] Shadow filter quality: hard, soft, very soft, and sample counts per tier.
+      `rendering.shadows.filter`: Hard, Soft (3x3), Softer (5x5), applied at startup.
 - [ ] Depth bias, normal bias, slope-scaled bias defaults.
 - [ ] Shadow maximum distance.
 - [ ] 16-bit vs. 32-bit shadow depth format.
@@ -398,7 +412,9 @@ The largest group by far, and the one most dependent on the renderer maturing.
 
 ## 1.4 Physics
 
-- [ ] Physics tick rate, and maximum substeps per frame.
+- [~] Physics tick rate, and maximum substeps per frame. `physics.common.ticksPerSecond` and
+      `physics.common.maxFrameTime` (the longest frame caught up on), applied at startup; the
+      substep cap is internal to the timer.
 - [ ] Engine selection per dimension, where more than one exists.
 - [ ] Default gravity vector and magnitude, 2D and 3D separately.
 - [ ] Default linear and angular damping.

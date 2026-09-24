@@ -6,6 +6,9 @@ compile_commands.json
 shader_cache/
 *.uveassetdb
 *.uvesettings
+# ...except a project's own settings, which belong to the project and are committed with it. The
+# test suites write theirs under uve_*_tests* names, which the line above still ignores.
+!project.uvesettings
 # Scene/prefab files the test suites write into the working directory. They clean up after
 # themselves on success, so one only survives a crash or an interrupted run - and a committed
 # one is a stale fixture nobody is maintaining. Authored project scenes live under a project
