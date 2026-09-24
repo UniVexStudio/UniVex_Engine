@@ -5339,6 +5339,8 @@ Connections:  {
         ASSERT_NE(motion, nullptr);
         EXPECT_TRUE(motion->animationOnly);
         EXPECT_FALSE(motion->rigged);
+        // Its bones are still a skeleton a Skeleton3D can take.
+        EXPECT_TRUE(motion->hasSkeleton);
         EXPECT_EQ(motion->summary, "1 bone, 1 animation, 1.00 s");
         EXPECT_FALSE(EditorUVEAccessUVE::IsModelImportQueuedUVE(editor, "Models/strafe.fbx"));
         EXPECT_FALSE(std::filesystem::exists(EditorUVEAccessUVE::GetImportedModelPathUVE(editor, "Models/strafe.fbx")));
