@@ -37,6 +37,7 @@
 
 #include "editor_axis_input_uve.h"
 #include "editor_color_field_uve.h"
+#include "editor_layer_mask_field_uve.h"
 
 #include "uve/asset/asset_guid_uve.h"
 #include "uve/asset/i_asset_database_uve.h"
@@ -45,6 +46,7 @@
 #include "uve/component/entity_uve.h"
 #include "uve/component/transform_component_uve.h"
 #include "uve/component/visibility_component_uve.h"
+#include "uve/core/engine_project_settings_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
 #include "uve/math/vector2_uve.h"
 #include "uve/math/vector3_uve.h"
@@ -557,13 +559,33 @@ void EditorUVE::DrawMetadataPropertyRowUVE(const TypeMetadataEntryUVE& entry,
         value = static_cast<std::uint32_t>(std::max(0, shown));
         edited = ApplyContinuousPropertyEditUVE(entry, property, changed, &value) || edited;
     } else if (property.typeId == Scene::kPropertyTypeBitMask32UVE) {
-        // Authored as bits, because that is what a layer or a mask is. Hexadecimal rather than a
-        // decimal count, so 0xFFFFFFFF reads as "all layers" instead of as 4294967295.
         std::uint32_t value = 0U;
         property.getValue(instance, &value);
-        if (ImGui::InputScalar("##value", ImGuiDataType_U32, &value, nullptr, nullptr, "%08X",
-                               ImGuiInputTextFlags_CharsHexadecimal |
-                                   ImGuiInputTextFlags_EnterReturnsTrue)) {
+        const bool physics = property.customDrawerId == Scene::kLayerMaskDrawerPhysicsUVE;
+        if (physics || property.customDrawerId == Scene::kLayerMaskDrawerRenderUVE) {
+            // A layer mask, shown by the names the project gives its layers.
+            const Core::LayerSetUVE set = physics ? Core::LayerSetUVE::Physics : Core::LayerSetUVE::Render;
+            const Config::SettingsDocumentUVE& project = m_services->GetProjectSettingsUVE();
+            LayerNamesUVE names;
+            for (std::size_t index = 0U; index < names.size(); ++index) {
+                names[index] = Core::GetLayerNameUVE(project, set, index);
+            }
+            switch (DrawLayerMaskFieldUVE("##value", value, names)) {
+            case LayerMaskFieldEventUVE::Changed:
+                edited = SetSelectedComponentPropertyUVE(entry, property, &value);
+                break;
+            case LayerMaskFieldEventUVE::EditNames:
+                OpenProjectSettingsUVE();
+                m_projectSettingsWindow.search.fill('\0');
+                m_projectSettingsWindow.category = physics ? "Layers/Physics" : "Layers/Render";
+                break;
+            case LayerMaskFieldEventUVE::None:
+                break;
+            }
+        } else if (ImGui::InputScalar("##value", ImGuiDataType_U32, &value, nullptr, nullptr, "%08X",
+                                      ImGuiInputTextFlags_CharsHexadecimal | ImGuiInputTextFlags_EnterReturnsTrue)) {
+            // Any other mask: authored as bits, in hexadecimal, so 0xFFFFFFFF reads as "all"
+            // instead of as 4294967295.
             edited = SetSelectedComponentPropertyUVE(entry, property, &value);
         }
     } else if (property.typeId == Scene::kPropertyTypeStringUVE) {
