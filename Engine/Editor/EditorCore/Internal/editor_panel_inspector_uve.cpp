@@ -127,7 +127,7 @@ void EditorUVE::DrawInspectorPanelUVE() {
         return;
     }
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
-    const EditorChromeLayoutUVE layout = ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible);
+    const EditorChromeLayoutUVE layout = ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight);
     // Always, not FirstUseEver - see DrawHierarchyPanelUVE()'s comment on the same change.
     ImGui::SetNextWindowPos(layout.inspectorPos, ImGuiCond_Always);
     ImGui::SetNextWindowSize(layout.inspectorSize, ImGuiCond_Always);
@@ -139,20 +139,27 @@ void EditorUVE::DrawInspectorPanelUVE() {
     constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse;
     ImGui::Begin(kPanelLabelInspectorUVE, nullptr, flags);
 
-    const auto drawRightPanelTab = [this](const char* const label, const EditorRightPanelTabUVE tab) {
-        const bool active = m_activeRightPanelTab == tab;
-        if (ImGui::Selectable(label, active, ImGuiSelectableFlags_DontClosePopups, ImVec2{0.0F, 0.0F})) {
-            m_activeRightPanelTab = tab;
-        }
-        ImGui::SameLine();
-    };
-    drawRightPanelTab("Inspector", EditorRightPanelTabUVE::Inspector);
-    drawRightPanelTab("Import", EditorRightPanelTabUVE::Import);
-    const bool signalsActive = m_activeRightPanelTab == EditorRightPanelTabUVE::Signals;
-    if (ImGui::Selectable("Signals", signalsActive, ImGuiSelectableFlags_DontClosePopups, ImVec2{0.0F, 0.0F})) {
-        m_activeRightPanelTab = EditorRightPanelTabUVE::Signals;
+    // Real tabs rather than three selectable labels. The active tab can also be changed from
+    // elsewhere (the Content Browser opens the Inspector), so a change made outside the strip is
+    // pushed into it once, on the frame it happened.
+    const bool externallyChanged = m_activeRightPanelTab != m_drawnRightPanelTab;
+    if (ImGui::BeginTabBar("##right-panel-tabs", ImGuiTabBarFlags_FittingPolicyResizeDown)) {
+        const auto drawTab = [this, externallyChanged](const char* const label, const EditorRightPanelTabUVE tab) {
+            const ImGuiTabItemFlags tabFlags =
+                externallyChanged && m_activeRightPanelTab == tab ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None;
+            if (ImGui::BeginTabItem(label, nullptr, tabFlags)) {
+                if (!externallyChanged) {
+                    m_activeRightPanelTab = tab;
+                }
+                ImGui::EndTabItem();
+            }
+        };
+        drawTab("Inspector", EditorRightPanelTabUVE::Inspector);
+        drawTab("Import", EditorRightPanelTabUVE::Import);
+        drawTab("Signals", EditorRightPanelTabUVE::Signals);
+        ImGui::EndTabBar();
     }
-    ImGui::Separator();
+    m_drawnRightPanelTab = m_activeRightPanelTab;
 
     switch (m_activeRightPanelTab) {
         case EditorRightPanelTabUVE::Inspector:

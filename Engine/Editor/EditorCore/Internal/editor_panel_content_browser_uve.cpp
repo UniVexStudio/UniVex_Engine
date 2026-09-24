@@ -51,7 +51,7 @@ constexpr float kFilesystemLongPressThresholdSecondsUVE = 0.60F;
 
 void EditorUVE::DrawContentBrowserPanelUVE() {
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
-    const EditorChromeLayoutUVE layout = ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible);
+    const EditorChromeLayoutUVE layout = ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight);
     // Always, not FirstUseEver - see DrawHierarchyPanelUVE()'s comment on the same change.
     ImGui::SetNextWindowPos(layout.contentBrowserPos, ImGuiCond_Always);
     ImGui::SetNextWindowSize(layout.contentBrowserSize, ImGuiCond_Always);
@@ -60,7 +60,10 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
     // redundant in-content caps label is drawn; the single toolbar row below (main / Favorites /
     // Search, plus the "..." overflow right-aligned) is the only chrome above the list/grid body,
     // matching the reference's one-header layout.
-    constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse;
+    // The dock tab strip along the bottom names this panel, so it has no title bar of its own: the
+    // toolbar row (Add, Import, path, Favorites, Search, view mode) is its top edge.
+    constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar |
+                                       ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize;
     ImGui::Begin(kPanelLabelContentBrowserUVE, nullptr, flags);
 
     Asset::IProjectFileIndexUVE& projectFileIndex = m_services->GetProjectFileIndexUVE();
@@ -100,8 +103,6 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
             }
         }
     }
-
-    ImGui::Separator();
 
     // ---- Unreal-style "Add" / "Import" toolbar ----
     // "Add" opens the exact categorized node-descriptor menu the Scene panel's "+" uses, so it
@@ -199,24 +200,46 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
     std::array<char, 256> filterBuffer{};
     const std::size_t copiedCharacters = std::min(m_assetFilter.size(), filterBuffer.size() - 1U);
     m_assetFilter.copy(filterBuffer.data(), copiedCharacters);
-    ImGui::SetNextItemWidth(std::max(90.0F, ImGui::GetContentRegionAvail().x * 0.3F));
+    // One toolbar row: Search takes the room left after the path and before "...", so the header
+    // costs one line of the dock rather than two. On a narrow dock it keeps a usable minimum.
+    ImGui::SameLine();
+    const float menuButtonWidth = ImGui::CalcTextSize("...").x + (ImGui::GetStyle().FramePadding.x * 2.0F);
+    const float searchWidth =
+        std::max(90.0F, ImGui::GetContentRegionAvail().x - menuButtonWidth - ImGui::GetStyle().ItemSpacing.x);
+    ImGui::SetNextItemWidth(searchWidth);
     if (ImGui::InputTextWithHint("##content-filter", "Search", filterBuffer.data(), filterBuffer.size())) {
         m_assetFilter = filterBuffer.data();
     }
 
-    // "..." overflow menu, right-aligned at the end of this single toolbar row (the panel name
-    // lives in the window title bar, so the overflow sits here rather than on a second header row).
+    // "..." view-mode menu, right-aligned at the end of the same row.
     ImGui::SameLine();
-    ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(), ImGui::GetWindowContentRegionMax().x - 26.0F));
+    ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(), ImGui::GetWindowContentRegionMax().x - menuButtonWidth));
     if (ImGui::SmallButton("...##filesystem-menu")) {
         ImGui::OpenPopup("filesystem-overflow-menu");
     }
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+        ImGui::SetTooltip("View mode");
+    }
     if (ImGui::BeginPopup("filesystem-overflow-menu")) {
-        ImGui::TextDisabled("Content Browser dock");
+        ImGui::TextDisabled("View");
         ImGui::Separator();
-        if (ImGui::MenuItem("Debug")) {
-            m_activeBottomDock = EditorBottomDockUVE::Debugger;
+        struct ModeUVE final {
+            const char* label;
+            ContentBrowserViewModeUVE mode;
+        };
+        constexpr std::array<ModeUVE, 3> kModes{{{"Large Tiles", ContentBrowserViewModeUVE::LargeTiles},
+                                                 {"Small Tiles", ContentBrowserViewModeUVE::SmallTiles},
+                                                 {"List", ContentBrowserViewModeUVE::List}}};
+        for (const ModeUVE& mode : kModes) {
+            if (ImGui::MenuItem(mode.label, nullptr, m_contentBrowserViewMode == mode.mode)) {
+                m_contentBrowserViewMode = mode.mode;
+            }
         }
+        ImGui::Separator();
+        if (ImGui::MenuItem("Show Folders", nullptr, m_contentBrowserSplitModeUVE)) {
+            m_contentBrowserSplitModeUVE = !m_contentBrowserSplitModeUVE;
+        }
+        ImGui::Separator();
         // Named "Close" to match the real menu item Godot's own FileSystem "..." overflow shows
         // (per the user's reference screenshots) - functionally this already was "hide the dock",
         // just under a name that didn't say so. A literal "Make Floating"/Dock-Position-grid pair
@@ -225,7 +248,7 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
         // there is no docking-slot concept for "Dock Position" to move a panel between, and every
         // panel is already un-parented (no ImGuiWindowFlags_NoMove) - a "Make Floating" item would
         // be a no-op button. Building real dock-slot infrastructure is a separate, larger effort.
-        if (ImGui::MenuItem("Close")) {
+        if (ImGui::MenuItem("Hide Dock")) {
             m_bottomDockVisible = false;
         }
         ImGui::EndPopup();
@@ -452,9 +475,12 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
     }
     ImGui::SameLine(0.0F, 0.0F);
 
-    constexpr float kCardWidthUVE = 76.0F;
-    constexpr float kCardHeightUVE = 82.0F;
-    constexpr float kCardIconSizeUVE = 44.0F;
+    // The chosen view mode sets the card shape: big tiles for looking, small tiles for many files,
+    // a list for reading names and types.
+    const bool listMode = m_contentBrowserViewMode == ContentBrowserViewModeUVE::List;
+    const bool largeTiles = m_contentBrowserViewMode == ContentBrowserViewModeUVE::LargeTiles;
+    const float kCardIconSizeUVE = listMode ? 18.0F : (largeTiles ? 72.0F : 44.0F);
+    const float kCardHeightUVE = listMode ? 24.0F : kCardIconSizeUVE + 38.0F;
     constexpr float kCardPaddingUVE = 4.0F;
     const auto truncateLabelUVE = [](const std::string& label, const float maxWidth) {
         if (ImGui::CalcTextSize(label.c_str()).x <= maxWidth) {
@@ -470,8 +496,10 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
 
     if (ImGui::BeginChild("##content-browser-grid", ImVec2{0.0F, bodyHeight}, true,
                            ImGuiWindowFlags_AlwaysVerticalScrollbar)) {
-        const float availableWidth = std::max(kCardWidthUVE, ImGui::GetContentRegionAvail().x);
-        const int columns = std::max(1, static_cast<int>(availableWidth / kCardWidthUVE));
+        const float tileWidth = kCardIconSizeUVE + 32.0F;
+        const float availableWidth = std::max(tileWidth, ImGui::GetContentRegionAvail().x);
+        const float kCardWidthUVE = listMode ? availableWidth : tileWidth;
+        const int columns = listMode ? 1 : std::max(1, static_cast<int>(availableWidth / kCardWidthUVE));
         const ImVec2 gridOrigin = ImGui::GetCursorPos();
         ImDrawList* const gridDrawList = ImGui::GetWindowDrawList();
         std::size_t visibleCount = 0U;
@@ -524,17 +552,34 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
             const std::uintptr_t iconTexture =
                 contentThumbnail != 0U ? contentThumbnail
                                        : m_uiAssets.GetContentTypeIconTextureIdUVE(GetContentBrowserItemTypeLabelUVE(type));
-            if (iconTexture != 0U) {
-                const float iconX = std::floor(cardMin.x + (kCardWidthUVE - kCardIconSizeUVE) * 0.5F);
-                const float iconY = std::floor(cardMin.y + 4.0F);
-                gridDrawList->AddImage(static_cast<ImTextureID>(iconTexture), ImVec2{iconX, iconY},
-                                       ImVec2{iconX + kCardIconSizeUVE, iconY + kCardIconSizeUVE});
+            if (listMode) {
+                // One row: icon, name, and the type right-aligned in the muted colour.
+                const float iconY = std::floor(cardMin.y + (kCardHeightUVE - kCardPaddingUVE - kCardIconSizeUVE) * 0.5F);
+                if (iconTexture != 0U) {
+                    gridDrawList->AddImage(static_cast<ImTextureID>(iconTexture), ImVec2{cardMin.x + 4.0F, iconY},
+                                           ImVec2{cardMin.x + 4.0F + kCardIconSizeUVE, iconY + kCardIconSizeUVE});
+                }
+                const float textY = cardMin.y + (kCardHeightUVE - kCardPaddingUVE - ImGui::GetTextLineHeight()) * 0.5F;
+                const char* const typeLabel = GetContentBrowserItemTypeLabelUVE(type);
+                const float typeWidth = ImGui::CalcTextSize(typeLabel).x;
+                const float nameMax = std::max(20.0F, kCardWidthUVE - kCardIconSizeUVE - typeWidth - 32.0F);
+                gridDrawList->AddText(ImVec2{cardMin.x + kCardIconSizeUVE + 12.0F, textY},
+                                      ImGui::GetColorU32(ImGuiCol_Text), truncateLabelUVE(displayLabel, nameMax).c_str());
+                gridDrawList->AddText(ImVec2{cardMin.x + kCardWidthUVE - typeWidth - 12.0F, textY},
+                                      ImGui::GetColorU32(ImGuiCol_TextDisabled), typeLabel);
+            } else {
+                if (iconTexture != 0U) {
+                    const float iconX = std::floor(cardMin.x + (kCardWidthUVE - kCardIconSizeUVE) * 0.5F);
+                    const float iconY = std::floor(cardMin.y + 4.0F);
+                    gridDrawList->AddImage(static_cast<ImTextureID>(iconTexture), ImVec2{iconX, iconY},
+                                           ImVec2{iconX + kCardIconSizeUVE, iconY + kCardIconSizeUVE});
+                }
+                const std::string truncatedLabel = truncateLabelUVE(displayLabel, kCardWidthUVE - kCardPaddingUVE);
+                const float labelWidth = ImGui::CalcTextSize(truncatedLabel.c_str()).x;
+                const float labelX = cardMin.x + std::max(0.0F, (kCardWidthUVE - labelWidth) * 0.5F);
+                gridDrawList->AddText(ImVec2{labelX, cardMin.y + kCardIconSizeUVE + 8.0F},
+                                      ImGui::GetColorU32(ImGuiCol_Text), truncatedLabel.c_str());
             }
-            const std::string truncatedLabel = truncateLabelUVE(displayLabel, kCardWidthUVE - kCardPaddingUVE);
-            const float labelWidth = ImGui::CalcTextSize(truncatedLabel.c_str()).x;
-            const float labelX = cardMin.x + std::max(0.0F, (kCardWidthUVE - labelWidth) * 0.5F);
-            gridDrawList->AddText(ImVec2{labelX, cardMin.y + kCardIconSizeUVE + 8.0F},
-                                 ImGui::GetColorU32(ImGuiCol_Text), truncatedLabel.c_str());
             const bool contextClicked = rowHovered &&
                                          (ImGui::IsMouseClicked(ImGuiMouseButton_Right) ||
                                           ImGui::IsMouseReleased(ImGuiMouseButton_Right));

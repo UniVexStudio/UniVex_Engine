@@ -18,6 +18,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cfloat>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -480,15 +481,21 @@ void EditorUVE::DrawBottomDockContentUVE() {
         DrawFilesystemContextPopupUVE();
         return;
     }
+    if (m_activeBottomDock == EditorBottomDockUVE::Console) {
+        DrawConsoleDockUVE();
+        return;
+    }
 
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
-    const EditorChromeLayoutUVE layout = ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible);
+    const EditorChromeLayoutUVE layout = ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight);
     // Always, not FirstUseEver - see DrawHierarchyPanelUVE()'s comment on the same change. This
     // window is the Content Browser's mutually-exclusive alternate, so it shares the exact same
     // bottom rect (via the centralized layout helper) and re-tiling guarantee.
     ImGui::SetNextWindowPos(layout.contentBrowserPos, ImGuiCond_Always);
     ImGui::SetNextWindowSize(layout.contentBrowserSize, ImGuiCond_Always);
-    constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse;
+    // The dock tab strip names what is showing, so the dock windows carry no title bar of their own.
+    constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar |
+                                       ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize;
     ImGui::Begin("Debug##lower-workspace", nullptr, flags);
     switch (m_activeBottomDock) {
         case EditorBottomDockUVE::Debugger: {
@@ -526,7 +533,130 @@ void EditorUVE::DrawBottomDockContentUVE() {
             ImGui::TextDisabled("AI-assisted editor tools are intentionally separate from document state.");
             break;
         case EditorBottomDockUVE::FileSystem:
+        case EditorBottomDockUVE::Console:
             break;
+    }
+    ImGui::End();
+}
+
+void EditorUVE::DrawBottomDockTabBarUVE() {
+    const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
+    const EditorChromeLayoutUVE layout =
+        ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight);
+    constexpr ImGuiWindowFlags stripFlags =
+        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+        ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoCollapse |
+        ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus;
+
+    // The splitter between the viewport and the dock: drag its edge to resize, like any panel seam.
+    if (m_bottomDockVisible) {
+        constexpr float kGripHeight = 6.0F;
+        ImGui::SetNextWindowPos(ImVec2{layout.contentBrowserPos.x, layout.contentBrowserPos.y - (kGripHeight * 0.5F)},
+                                ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2{layout.contentBrowserSize.x, kGripHeight}, ImGuiCond_Always);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{0.0F, 0.0F});
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowMinSize, ImVec2{1.0F, 1.0F});
+        ImGui::SetNextWindowBgAlpha(0.0F);
+        if (ImGui::Begin("##bottom-dock-splitter", nullptr, stripFlags)) {
+            ImGui::InvisibleButton("##grip", ImVec2{layout.contentBrowserSize.x, kGripHeight});
+            if (ImGui::IsItemHovered() || ImGui::IsItemActive()) {
+                ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
+            }
+            if (ImGui::IsItemActive()) {
+                // Dragging up grows the dock; the layout clamps it to leave the viewport its minimum.
+                m_bottomDockHeight = std::max(kMinimumBottomDockHeightUVE, m_bottomDockHeight - ImGui::GetIO().MouseDelta.y);
+            }
+        }
+        ImGui::End();
+        ImGui::PopStyleVar(2);
+    }
+
+    ImGui::SetNextWindowPos(layout.dockTabBarPos, ImGuiCond_Always);
+    ImGui::SetNextWindowSize(layout.dockTabBarSize, ImGuiCond_Always);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{6.0F, 2.0F});
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{2.0F, 0.0F});
+    if (ImGui::Begin("##bottom-dock-tabs", nullptr, stripFlags)) {
+        struct TabUVE final {
+            const char* label;
+            EditorBottomDockUVE dock;
+            const char* tooltip;
+        };
+        constexpr std::array<TabUVE, 3> kTabs{{
+            {"Content", EditorBottomDockUVE::FileSystem, "The project's files and assets."},
+            {"Output", EditorBottomDockUVE::Debugger, "Frame statistics and editor state."},
+            {"Console", EditorBottomDockUVE::Console, "Engine messages and a command line."},
+        }};
+        const ImGuiStyle& style = ImGui::GetStyle();
+        for (const TabUVE& tab : kTabs) {
+            const bool active = m_bottomDockVisible && m_activeBottomDock == tab.dock;
+            ImGui::PushStyleColor(ImGuiCol_Button, active ? style.Colors[ImGuiCol_TabActive] : ImVec4{0.0F, 0.0F, 0.0F, 0.0F});
+            ImGui::PushStyleColor(ImGuiCol_Text, active ? style.Colors[ImGuiCol_Text] : style.Colors[ImGuiCol_TextDisabled]);
+            if (ImGui::Button(tab.label, ImVec2{0.0F, layout.dockTabBarSize.y - 4.0F})) {
+                // Clicking the tab already showing folds the dock away; any other tab shows it.
+                if (active) {
+                    m_bottomDockVisible = false;
+                } else {
+                    m_activeBottomDock = tab.dock;
+                    m_bottomDockVisible = true;
+                }
+            }
+            ImGui::PopStyleColor(2);
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+                ImGui::SetTooltip("%s%s", tab.tooltip, active ? " Click again to hide the dock." : "");
+            }
+            ImGui::SameLine(0.0F, 4.0F);
+        }
+        // Right end: the scene's save state, where the eye rests when looking for it.
+        const char* const state = m_sceneDirty ? "unsaved changes" : "saved";
+        const float stateWidth = ImGui::CalcTextSize(state).x;
+        ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(), ImGui::GetWindowContentRegionMax().x - stateWidth));
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextDisabled("%s", state);
+    }
+    ImGui::End();
+    ImGui::PopStyleVar(2);
+}
+
+void EditorUVE::DrawConsoleDockUVE() {
+    const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
+    const EditorChromeLayoutUVE layout =
+        ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight);
+    ImGui::SetNextWindowPos(layout.contentBrowserPos, ImGuiCond_Always);
+    ImGui::SetNextWindowSize(layout.contentBrowserSize, ImGuiCond_Always);
+    constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar |
+                                       ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize;
+    if (ImGui::Begin("Console##lower-workspace-console", nullptr, flags)) {
+        const DeveloperConsoleSnapshotUVE snapshot = m_developerConsole.GetSnapshotUVE();
+        const float inputHeight = ImGui::GetFrameHeightWithSpacing();
+        ImGui::BeginChild("##console-output", ImVec2{0.0F, -inputHeight}, false);
+        for (const DeveloperConsoleEntryUVE& entry : snapshot.output) {
+            ImVec4 color = ImGui::GetStyle().Colors[ImGuiCol_Text];
+            if (entry.severity == DeveloperConsoleSeverityUVE::Warning) {
+                color = ImVec4{0.95F, 0.72F, 0.30F, 1.0F};
+            } else if (entry.severity == DeveloperConsoleSeverityUVE::Error) {
+                color = ImVec4{0.95F, 0.45F, 0.40F, 1.0F};
+            }
+            ImGui::TextColored(color, "%s", entry.text.c_str());
+        }
+        if (snapshot.output.empty()) {
+            ImGui::TextDisabled("Nothing yet. Type help and press Enter.");
+        }
+        if (m_consoleScrollToBottom) {
+            ImGui::SetScrollHereY(1.0F);
+            m_consoleScrollToBottom = false;
+        }
+        ImGui::EndChild();
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        if (ImGui::InputTextWithHint("##console-input", "command  (Up/Down: history)", m_consoleInput.data(),
+                                     m_consoleInput.size(), ImGuiInputTextFlags_EnterReturnsTrue)) {
+            const std::string command = m_consoleInput.data();
+            if (!command.empty()) {
+                static_cast<void>(m_developerConsole.ExecuteUVE(command));
+                m_consoleInput.fill('\0');
+                m_consoleScrollToBottom = true;
+            }
+            ImGui::SetKeyboardFocusHere(-1);
+        }
     }
     ImGui::End();
 }

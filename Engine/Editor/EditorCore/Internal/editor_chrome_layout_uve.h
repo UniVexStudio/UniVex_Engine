@@ -27,8 +27,12 @@ struct EditorChromeLayoutUVE final {
     ImVec2 viewportSize;
     ImVec2 inspectorPos;
     ImVec2 inspectorSize;
+    /// The bottom dock body (Content, Output, Console): under the viewport, between the side panels.
     ImVec2 contentBrowserPos;
     ImVec2 contentBrowserSize;
+    /// The strip of dock tabs along the very bottom, full width.
+    ImVec2 dockTabBarPos;
+    ImVec2 dockTabBarSize;
 };
 
 /// Shared across the editor's panel translation units.
@@ -49,7 +53,10 @@ constexpr float kHierarchyNodeIconSizeUVE = 16.0F;
 
 constexpr float kMinimumViewportWidthUVE = 64.0F;
 constexpr float kMinimumViewportHeightUVE = 64.0F;
+/// The bottom dock's default height, and its limits while being dragged.
 constexpr float kAssetsPanelHeightUVE = 192.0F;
+constexpr float kMinimumBottomDockHeightUVE = 96.0F;
+constexpr float kDockTabBarHeightUVE = 24.0F;
 constexpr float kEditorTitleBarHeightUVE = 24.0F;
 constexpr float kEditorToolbarHeightUVE = 26.0F;
 constexpr float kEditorTopChromeHeightUVE = kEditorTitleBarHeightUVE + kEditorToolbarHeightUVE;
@@ -60,17 +67,25 @@ constexpr float kInspectorPanelWidthFractionUVE = 0.18F;
 constexpr float kInspectorPanelWidthMinUVE = 220.0F;
 constexpr float kInspectorPanelWidthMaxUVE = 300.0F;
 
+/// The editor's panel rectangles. The Scene and Inspector columns run the full height, from the top
+/// chrome down to the dock tab strip; the viewport and, under it, the bottom dock share the centre
+/// column. The tab strip spans the full width at the very bottom and stays when the dock is hidden,
+/// since it is how the dock is brought back. `dockHeight` is the dock body's height, clamped so the
+/// viewport keeps its minimum.
 [[nodiscard]] inline EditorChromeLayoutUVE ComputeEditorChromeLayoutUVE(const ImGuiViewport& viewport,
-                                                                        const bool bottomDockVisible) {
+                                                                        const bool bottomDockVisible,
+                                                                        const float dockHeight = kAssetsPanelHeightUVE) {
     const float originX = viewport.WorkPos.x;
     const float originY = viewport.WorkPos.y;
     const float totalWidth = viewport.WorkSize.x;
     const float totalHeight = viewport.WorkSize.y;
 
     const float chromeHeight = kEditorTopChromeHeightUVE;
-    const float reservedBottom = bottomDockVisible ? kAssetsPanelHeightUVE : 0.0F;
-    const float workspaceHeight =
-        std::max(kMinimumViewportHeightUVE, totalHeight - chromeHeight - reservedBottom);
+    const float columnHeight =
+        std::max(kMinimumViewportHeightUVE, totalHeight - chromeHeight - kDockTabBarHeightUVE);
+    const float maximumDock = std::max(kMinimumBottomDockHeightUVE, columnHeight - kMinimumViewportHeightUVE);
+    const float dock =
+        bottomDockVisible ? std::clamp(dockHeight, kMinimumBottomDockHeightUVE, maximumDock) : 0.0F;
 
     const float sceneWidth =
         std::clamp(totalWidth * kScenePanelWidthFractionUVE, kScenePanelWidthMinUVE, kScenePanelWidthMaxUVE);
@@ -78,16 +93,20 @@ constexpr float kInspectorPanelWidthMaxUVE = 300.0F;
                                             kInspectorPanelWidthMinUVE, kInspectorPanelWidthMaxUVE);
     const float viewportWidth =
         std::max(kMinimumViewportWidthUVE, totalWidth - sceneWidth - inspectorWidth);
+    const float top = originY + chromeHeight;
 
     EditorChromeLayoutUVE layout{};
-    layout.scenePos = ImVec2{originX, originY + chromeHeight};
-    layout.sceneSize = ImVec2{sceneWidth, workspaceHeight};
-    layout.viewportPos = ImVec2{originX + sceneWidth, originY + chromeHeight};
-    layout.viewportSize = ImVec2{viewportWidth, workspaceHeight};
-    layout.inspectorPos = ImVec2{originX + totalWidth - inspectorWidth, originY + chromeHeight};
-    layout.inspectorSize = ImVec2{inspectorWidth, workspaceHeight};
-    layout.contentBrowserPos = ImVec2{originX, originY + totalHeight - kAssetsPanelHeightUVE};
-    layout.contentBrowserSize = ImVec2{totalWidth, kAssetsPanelHeightUVE};
+    layout.scenePos = ImVec2{originX, top};
+    layout.sceneSize = ImVec2{sceneWidth, columnHeight};
+    layout.viewportPos = ImVec2{originX + sceneWidth, top};
+    layout.viewportSize = ImVec2{viewportWidth, std::max(kMinimumViewportHeightUVE, columnHeight - dock)};
+    layout.inspectorPos = ImVec2{originX + sceneWidth + viewportWidth, top};
+    layout.inspectorSize = ImVec2{inspectorWidth, columnHeight};
+    layout.contentBrowserPos = ImVec2{originX + sceneWidth, top + layout.viewportSize.y};
+    layout.contentBrowserSize = ImVec2{viewportWidth, dock};
+    layout.dockTabBarPos = ImVec2{originX, top + columnHeight};
+    layout.dockTabBarSize = ImVec2{std::max(totalWidth, sceneWidth + viewportWidth + inspectorWidth),
+                                   kDockTabBarHeightUVE};
     return layout;
 }
 

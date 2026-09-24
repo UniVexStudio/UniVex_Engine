@@ -149,7 +149,7 @@ void EditorUVE::DrawHierarchyPanelUVE() {
         return;
     }
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
-    const EditorChromeLayoutUVE layout = ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible);
+    const EditorChromeLayoutUVE layout = ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight);
     // Always, not FirstUseEver: this is one of the 5 core structural panels that must tile the
     // screen with zero gaps/overlaps on every single launch, regardless of any stale imgui.ini
     // from a previous version of this layout - an earlier version of this code used FirstUseEver
@@ -211,8 +211,19 @@ void EditorUVE::DrawHierarchyPanelUVE() {
         }
         ImGui::PopStyleVar();
         if (m_hierarchyView.dragToReparent && !GetDocumentRootsUVE().empty()) {
-            ImGui::Separator();
-            ImGui::TextDisabled("Drop entity here to make it a root");
+            // The hint is for an empty scene only; once there are nodes the rest of the panel is still
+            // the drop area for "move to the top", just without words in the way.
+            const Scene::EntityUVE sceneRoot = GetDocumentSceneRootUVE();
+            const bool sceneEmpty = sceneRoot == Scene::kInvalidEntityUVE ||
+                                    m_services->GetSceneGraphUVE()
+                                        .GetChildrenUVE(m_services->GetEntityManagerUVE(), sceneRoot)
+                                        .empty();
+            if (sceneEmpty) {
+                ImGui::Separator();
+                ImGui::TextDisabled("Drop entity here to make it a root");
+            } else {
+                ImGui::Dummy(ImVec2{ImGui::GetContentRegionAvail().x, std::max(8.0F, ImGui::GetContentRegionAvail().y)});
+            }
             AcceptHierarchyDropTargetUVE(Scene::kInvalidEntityUVE);
         }
         ImGui::EndDisabled();

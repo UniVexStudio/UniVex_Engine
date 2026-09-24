@@ -61,6 +61,7 @@ const std::vector<EditorSettingBindingUVE>& EditorUVE::GetSettingBindingsUVE() {
     using Workspace = EditorWorkspaceUVE;
     using RightTab = EditorRightPanelTabUVE;
     using BottomDock = EditorBottomDockUVE;
+    using ViewMode = EditorUVE::ContentBrowserViewModeUVE;
     const EditorTransformSnappingSettingsUVE snapping{};
     const ViewportOverlayStateUVE overlay{};
     const ColorPickerPreferencesUVE picker{};
@@ -96,6 +97,25 @@ const std::vector<EditorSettingBindingUVE>& EditorUVE::GetSettingBindingsUVE() {
              editor.m_bottomDockVisible = std::get<bool>(value);
              return true;
          }},
+        {HiddenUVE(Config::MakeFloatSettingUVE(IdUVE(Id::kBottomDockHeightUVE), 192.0, 96.0, 4096.0,
+                                               "Bottom Dock Height", kSessionCategoryUVE)),
+         [](const EditorUVE& editor) -> SettingValueUVE { return static_cast<double>(editor.m_bottomDockHeight); },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_bottomDockHeight = FloatUVE(value);
+             return true;
+         }},
+        {HiddenUVE(Config::MakeEnumSettingUVE(
+             IdUVE(Id::kContentBrowserViewModeUVE), static_cast<std::int64_t>(ViewMode::SmallTiles),
+             {EntryUVE(ViewMode::SmallTiles, "Small Tiles"), EntryUVE(ViewMode::LargeTiles, "Large Tiles"),
+              EntryUVE(ViewMode::List, "List")},
+             "Content Browser View", kSessionCategoryUVE)),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             return static_cast<std::int64_t>(editor.m_contentBrowserViewMode);
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_contentBrowserViewMode = static_cast<ViewMode>(std::get<std::int64_t>(value));
+             return true;
+         }},
         // Game is not among the entries, so a session is never restored into it: saving while in
         // Game is refused and leaves the last restorable workspace stored.
         {HiddenUVE(Config::MakeEnumSettingUVE(IdUVE(Id::kActiveWorkspaceUVE),
@@ -126,7 +146,8 @@ const std::vector<EditorSettingBindingUVE>& EditorUVE::GetSettingBindingsUVE() {
         {HiddenUVE(Config::MakeEnumSettingUVE(
              IdUVE(Id::kActiveBottomDockUVE), static_cast<std::int64_t>(BottomDock::FileSystem),
              {EntryUVE(BottomDock::Debugger, "Debugger"), EntryUVE(BottomDock::Animator, "Animator"),
-              EntryUVE(BottomDock::AIToolbar, "AI Toolbar"), EntryUVE(BottomDock::FileSystem, "File System")},
+              EntryUVE(BottomDock::AIToolbar, "AI Toolbar"), EntryUVE(BottomDock::FileSystem, "File System"),
+              EntryUVE(BottomDock::Console, "Console")},
              "Bottom Dock Panel", kSessionCategoryUVE)),
          [](const EditorUVE& editor) -> SettingValueUVE { return static_cast<std::int64_t>(editor.m_activeBottomDock); },
          [](EditorUVE& editor, const SettingValueUVE& value) {

@@ -31,27 +31,45 @@ TEST(EditorChromeLayoutUVETest, ThreeColumnsExactlyFillTheWidthWithNoGapOrOverla
     }
 }
 
-TEST(EditorChromeLayoutUVETest, PanelsStartBelowTheTopChromeAndShareOneRow) {
-    // Every structural panel begins under the title bar and toolbar, and all three are the same
-    // height - otherwise one of them leaves a strip of empty window below it.
+TEST(EditorChromeLayoutUVETest, SidePanelsRunFullHeightAndTheDockSitsUnderTheViewport) {
+    // Scene and Inspector run from the top chrome down to the dock tab strip; the viewport and the
+    // dock share the centre column between them, the dock directly under the viewport.
     const EditorChromeLayoutUVE layout = ComputeEditorChromeLayoutUVE(MakeViewportUVE(1920.0F, 1080.0F), true);
 
     EXPECT_FLOAT_EQ(layout.scenePos.y, kEditorTopChromeHeightUVE);
     EXPECT_FLOAT_EQ(layout.viewportPos.y, kEditorTopChromeHeightUVE);
     EXPECT_FLOAT_EQ(layout.inspectorPos.y, kEditorTopChromeHeightUVE);
-    EXPECT_FLOAT_EQ(layout.sceneSize.y, layout.viewportSize.y);
     EXPECT_FLOAT_EQ(layout.sceneSize.y, layout.inspectorSize.y);
+    EXPECT_FLOAT_EQ(layout.sceneSize.y, 1080.0F - kEditorTopChromeHeightUVE - kDockTabBarHeightUVE);
+    EXPECT_FLOAT_EQ(layout.viewportSize.y + layout.contentBrowserSize.y, layout.sceneSize.y);
+    EXPECT_FLOAT_EQ(layout.contentBrowserPos.x, layout.viewportPos.x);
+    EXPECT_FLOAT_EQ(layout.contentBrowserSize.x, layout.viewportSize.x);
+    EXPECT_FLOAT_EQ(layout.contentBrowserPos.y, layout.viewportPos.y + layout.viewportSize.y);
+    // The tab strip: the full width, at the very bottom.
+    EXPECT_FLOAT_EQ(layout.dockTabBarPos.y, 1080.0F - kDockTabBarHeightUVE);
+    EXPECT_FLOAT_EQ(layout.dockTabBarSize.x, 1920.0F);
 }
 
-TEST(EditorChromeLayoutUVETest, HidingTheBottomDockGivesItsHeightBackToTheWorkspace) {
-    // The dock is toggleable, and the workspace must reclaim exactly what it gave up - not
-    // approximately, or the viewport creeps a pixel each time it is toggled.
+TEST(EditorChromeLayoutUVETest, HidingTheBottomDockGivesItsHeightBackToTheViewport) {
     const EditorChromeLayoutUVE shown = ComputeEditorChromeLayoutUVE(MakeViewportUVE(1920.0F, 1080.0F), true);
     const EditorChromeLayoutUVE hidden = ComputeEditorChromeLayoutUVE(MakeViewportUVE(1920.0F, 1080.0F), false);
 
     EXPECT_FLOAT_EQ(hidden.viewportSize.y - shown.viewportSize.y, kAssetsPanelHeightUVE);
-    // Width is unaffected by a vertical toggle.
+    EXPECT_FLOAT_EQ(hidden.contentBrowserSize.y, 0.0F);
+    // The side columns and the tab strip do not move; only the centre column changes.
+    EXPECT_FLOAT_EQ(hidden.sceneSize.y, shown.sceneSize.y);
+    EXPECT_FLOAT_EQ(hidden.dockTabBarPos.y, shown.dockTabBarPos.y);
     EXPECT_FLOAT_EQ(hidden.viewportSize.x, shown.viewportSize.x);
+}
+
+TEST(EditorChromeLayoutUVETest, TheDockHeightIsDraggableWithinLimits) {
+    const ImGuiViewport viewport = MakeViewportUVE(1920.0F, 1080.0F);
+    const EditorChromeLayoutUVE tall = ComputeEditorChromeLayoutUVE(viewport, true, 400.0F);
+    EXPECT_FLOAT_EQ(tall.contentBrowserSize.y, 400.0F);
+    // Too small is lifted to the minimum; too large leaves the viewport its minimum.
+    EXPECT_FLOAT_EQ(ComputeEditorChromeLayoutUVE(viewport, true, 10.0F).contentBrowserSize.y, kMinimumBottomDockHeightUVE);
+    const EditorChromeLayoutUVE huge = ComputeEditorChromeLayoutUVE(viewport, true, 100000.0F);
+    EXPECT_FLOAT_EQ(huge.viewportSize.y, kMinimumViewportHeightUVE);
 }
 
 TEST(EditorChromeLayoutUVETest, SidePanelsStayWithinTheirClampsOnExtremeWidths) {
@@ -90,7 +108,8 @@ TEST(EditorChromeLayoutUVETest, LayoutIsOffsetByTheViewportOrigin) {
 
     EXPECT_FLOAT_EQ(layout.scenePos.x, kOriginX);
     EXPECT_FLOAT_EQ(layout.scenePos.y, kOriginY + kEditorTopChromeHeightUVE);
-    EXPECT_FLOAT_EQ(layout.contentBrowserPos.x, kOriginX);
+    EXPECT_FLOAT_EQ(layout.contentBrowserPos.x, kOriginX + layout.sceneSize.x);
+    EXPECT_FLOAT_EQ(layout.dockTabBarPos.x, kOriginX);
 }
 
 } // namespace
