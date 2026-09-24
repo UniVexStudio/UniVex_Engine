@@ -46,6 +46,8 @@ struct EditorChromeLayoutUVE final {
 /// copies that drift apart do not produce a compile error or a crash. Drag-and-drop simply stops
 /// working, silently.
 constexpr const char* kHierarchyEntityPayloadUVE = "UVE_SCENE_HIERARCHY_ENTITY";
+/// An entity asset dragged out of Content: the payload is its absolute path, NUL-terminated.
+constexpr const char* kContentEntityPayloadUVE = "UVE_CONTENT_ENTITY_ASSET";
 constexpr const char* kPanelLabelSceneUVE = "\xEF\xAB\xBA Scene##scene-panel";
 constexpr std::size_t kMaximumEntityNameBytesUVE = 96U;
 // A node icon is 16 px: its texture is 64 px, so 16 is an exact mip level and draws crisp.

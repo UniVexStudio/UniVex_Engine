@@ -149,6 +149,7 @@ add_library(uve_editor STATIC
     Internal/editor_command_helpers_uve.cpp
     Internal/editor_commands_uve.cpp
     Internal/editor_hierarchy_view_uve.cpp
+    Internal/editor_content_catalogue_uve.cpp
     Internal/editor_panel_hierarchy_uve.cpp
     Internal/editor_panel_inspector_metadata_uve.cpp
     Internal/editor_panel_inspector_uve.cpp
@@ -157,6 +158,7 @@ add_library(uve_editor STATIC
     Internal/editor_script_slot_uve.cpp
     Internal/editor_panel_inspector_skeleton_uve.cpp
     Internal/editor_panel_content_browser_uve.cpp
+    Internal/editor_panel_content_create_uve.cpp
     Internal/editor_panel_viewport_uve.cpp
     Internal/editor_panel_menu_dock_uve.cpp
     Internal/editor_panel_preferences_uve.cpp

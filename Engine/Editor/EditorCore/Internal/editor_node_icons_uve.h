@@ -9,6 +9,8 @@
 
 #include <imgui.h>
 
+#include "editor_chrome_layout_uve.h"
+
 namespace UVE::Editor {
 
 /// Small drawing helpers shared by the editor's panels. The node, category and content type
@@ -54,6 +56,23 @@ inline void DrawMoveIconUVE(ImDrawList& drawList, const ImVec2 center, const flo
                            tip.y - direction.y * headSize - perpendicular.y * headSize * 0.55F};
         drawList.AddTriangleFilled(tip, baseA, baseB, color);
     }
+}
+
+/// A node icon at the start of a menu line, sized and centred like a Scene row's, followed on the
+/// same line by whatever the caller draws next (the Scene "+" and the Content "+ Add" menus).
+/// Nothing when the texture is missing.
+inline void DrawNodePickerIconUVE(const std::uintptr_t textureId) {
+    if (textureId == 0U) {
+        return;
+    }
+    const float line = ImGui::GetTextLineHeight();
+    const float size = std::min(kHierarchyNodeIconSizeUVE, std::floor(line));
+    const ImVec2 cursor = ImGui::GetCursorScreenPos();
+    ImGui::Dummy(ImVec2{size, line});
+    const ImVec2 iconMin{std::floor(cursor.x), std::floor(cursor.y + ((line - size) * 0.5F))};
+    ImGui::GetWindowDrawList()->AddImage(static_cast<ImTextureID>(textureId), iconMin,
+                                         ImVec2{iconMin.x + size, iconMin.y + size});
+    ImGui::SameLine(0.0F, ImGui::GetStyle().ItemInnerSpacing.x);
 }
 
 } // namespace UVE::Editor

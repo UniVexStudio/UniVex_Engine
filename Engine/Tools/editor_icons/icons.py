@@ -866,6 +866,12 @@ def prefab_asset(ic):
     box(ic, 37, 53, 22, 22, 22, prefab)
 
 
+@content_type("entity", "Entity")
+def entity_asset(ic):
+    # An entity asset is a ready-made node tree - drawn as the character body it usually holds.
+    character_body_3d(ic)
+
+
 @content_type("bundle", "Bundle")
 def bundle_asset(ic):
     card = "#c99a5c"
