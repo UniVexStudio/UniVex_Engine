@@ -363,6 +363,7 @@ EditorUVE::EditorUVE(Core::EngineServicesUVE& services, std::filesystem::path ac
     if (!RegisterEditorSettingsUVE(m_settingsRegistry)) {
         throw std::logic_error("Failed to register the editor settings.");
     }
+    RegisterEditorCommandsUVE();
 }
 
 EditorUVE::~EditorUVE() {
@@ -4065,10 +4066,9 @@ void EditorUVE::LoadSessionSettingsUVE() {
     }
     // Every value read through the registry is legal for its setting - anything missing, mistyped
     // or out of range comes back as that one setting's default - so each binding applies it.
-    for (const EditorSettingBindingUVE& binding : GetSettingBindingsUVE()) {
-        if (const std::optional<Config::SettingValueUVE> value =
-                m_settingsRegistry.GetValueUVE(config, binding.descriptor.id)) {
-            static_cast<void>(binding.set(*this, *value));
+    for (const Config::SettingDescriptorUVE* descriptor : m_settingsRegistry.GetAllUVE()) {
+        if (const std::optional<Config::SettingValueUVE> value = m_settingsRegistry.GetValueUVE(config, descriptor->id)) {
+            static_cast<void>(SetEditorSettingUVE(descriptor->id, *value));
         }
     }
     // The colour picker's palette and recents, stored as hex. An entry that does not parse is
@@ -4143,8 +4143,10 @@ bool EditorUVE::SaveSessionSettingsUVE() {
     // Each value was accepted by a setter whose range is the one its setting declares, so the
     // registry takes it. The exception is the Game workspace, which a session is never restored
     // into: that write is refused and the last restorable workspace stays stored.
-    for (const EditorSettingBindingUVE& binding : GetSettingBindingsUVE()) {
-        static_cast<void>(m_settingsRegistry.SetValueUVE(config, binding.descriptor.id, binding.get(*this)));
+    for (const Config::SettingDescriptorUVE* descriptor : m_settingsRegistry.GetAllUVE()) {
+        if (const std::optional<Config::SettingValueUVE> value = GetEditorSettingUVE(descriptor->id)) {
+            static_cast<void>(m_settingsRegistry.SetValueUVE(config, descriptor->id, *value));
+        }
     }
     const auto saveList = [&config](const std::string& prefix, const std::vector<EditorColorUVE>& colors) {
         config.SetIntUVE(prefix + ".count", static_cast<std::int64_t>(colors.size()));

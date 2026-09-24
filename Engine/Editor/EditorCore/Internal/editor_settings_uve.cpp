@@ -340,13 +340,16 @@ const EditorSettingBindingUVE* EditorUVE::FindSettingBindingUVE(const std::strin
 
 std::optional<Config::SettingValueUVE> EditorUVE::GetEditorSettingUVE(const std::string_view id) const {
     const EditorSettingBindingUVE* binding = FindSettingBindingUVE(id);
-    return binding != nullptr ? std::optional<SettingValueUVE>(binding->get(*this)) : std::nullopt;
+    return binding != nullptr ? std::optional<SettingValueUVE>(binding->get(*this)) : GetShortcutSettingUVE(id);
 }
 
 bool EditorUVE::SetEditorSettingUVE(const std::string_view id, const Config::SettingValueUVE& value) {
-    const EditorSettingBindingUVE* binding = FindSettingBindingUVE(id);
-    return binding != nullptr && Config::IsSettingValueValidUVE(binding->descriptor, value) &&
-           binding->set(*this, value);
+    if (const EditorSettingBindingUVE* binding = FindSettingBindingUVE(id)) {
+        return Config::IsSettingValueValidUVE(binding->descriptor, value) && binding->set(*this, value);
+    }
+    const Config::SettingDescriptorUVE* descriptor = m_settingsRegistry.FindUVE(id);
+    return descriptor != nullptr && Config::IsSettingValueValidUVE(*descriptor, value) &&
+           SetShortcutSettingUVE(id, value);
 }
 
 namespace {
