@@ -1853,7 +1853,7 @@ private:
     bool m_inspectorPanelVisible = true;
     bool m_bottomDockVisible = true;
     /// The dock body's height, dragged from its top edge; the layout clamps it (kAssetsPanelHeightUVE default).
-    float m_bottomDockHeight = 192.0F;
+    float m_bottomDockHeight = 280.0F;
     std::array<char, 512> m_consoleInput{};
     bool m_consoleScrollToBottom = false;
     bool m_viewportPanelVisible = true;
