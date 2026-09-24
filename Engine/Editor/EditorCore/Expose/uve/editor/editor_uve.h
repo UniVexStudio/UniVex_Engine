@@ -302,6 +302,10 @@ public:
         // so picking the same view twice still re-snaps, and nothing has to be "consumed".
         ViewportViewUVE view = ViewportViewUVE::User;
         std::uint32_t viewRequestSerial = 0U;
+        // A request to bring a node into view (F over the viewport, or Focus in Viewport on a
+        // hierarchy row), applied by the host when the counter changes, like the view request.
+        Scene::EntityUVE focusEntity = Scene::kInvalidEntityUVE;
+        std::uint32_t focusRequestSerial = 0U;
         ViewportGizmoModeUVE gizmoMode = ViewportGizmoModeUVE::Universal;
         bool snapEnabled = false;
         bool gridVisible = true;
@@ -438,6 +442,26 @@ public:
     /// eye toggle works on a row without changing the selection. Returns false without mutation
     /// when editing is not allowed, the entity has no Visibility component, or nothing changes.
     [[nodiscard]] bool SetEntityVisibleUVE(Scene::EntityUVE entity, bool visible);
+    /// Asks the viewport to bring `entity` into view: a Marker3D flies into its viewpoint, any
+    /// other node with a world position becomes the orbit pivot. Returns false and requests
+    /// nothing when CanFocusEntityInViewportUVE() says no.
+    [[nodiscard]] bool RequestViewportFocusUVE(Scene::EntityUVE entity);
+    /// True for a document entity the viewport can focus: one with a world position or a usable
+    /// Marker3D viewpoint. The scene root and plain Nodes have neither.
+    [[nodiscard]] bool CanFocusEntityInViewportUVE(Scene::EntityUVE entity) const;
+    [[nodiscard]] std::uint32_t GetViewportFocusRequestSerialUVE() const noexcept {
+        return m_viewportOverlayState.focusRequestSerial;
+    }
+    [[nodiscard]] Scene::EntityUVE GetViewportFocusEntityUVE() const noexcept {
+        return m_viewportOverlayState.focusEntity;
+    }
+    /// Opens or closes `entity`'s row in the hierarchy together with every row below it. Rows
+    /// that are drawn the next frame change at once; a row inside a collapsed branch keeps the
+    /// request until it is next drawn, so reopening the branch later shows it closed. Returns
+    /// false for anything that is not a document entity.
+    [[nodiscard]] bool SetHierarchyBranchOpenUVE(Scene::EntityUVE entity, bool open);
+    /// The open state a hierarchy row will be given when it is next drawn, if one is pending.
+    [[nodiscard]] std::optional<bool> GetPendingHierarchyRowOpenUVE(Scene::EntityUVE entity) const;
     /// Problems with how `entity` is set up, one readable sentence each, for the hierarchy's
     /// warning badge: a non-finite transform, a script path that is not a valid project path, a
     /// mesh node with no mesh or with a mesh/material the project no longer has, a Skeleton3D
@@ -1417,6 +1441,9 @@ private:
     Scene::EntityUVE m_hierarchyRevealedEntity = Scene::kInvalidEntityUVE;
     std::vector<Scene::EntityUVE> m_hierarchyRevealAncestors;
     bool m_hierarchyRevealPending = false;
+    // Expand Branch / Collapse Branch: the open state each row in the branch should take the next
+    // time it is drawn. A row is erased once applied (see SetHierarchyBranchOpenUVE).
+    std::unordered_map<Scene::EntityUVE, bool> m_hierarchyPendingRowOpen;
     std::string m_nodePickerFilter;
     std::string m_nodePickerScrolledFilter;
     std::optional<Asset::AssetRecordUVE> m_selectedAsset;

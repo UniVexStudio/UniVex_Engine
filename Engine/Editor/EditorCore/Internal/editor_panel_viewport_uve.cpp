@@ -468,6 +468,20 @@ void EditorUVE::SetViewportOrthographicUVE(const bool orthographic) noexcept {
     m_viewportOrthographicIsAutomatic = false;
 }
 
+bool EditorUVE::CanFocusEntityInViewportUVE(const Scene::EntityUVE entity) const {
+    return IsDocumentEntityUVE(entity) && (ComposeMarker3DFocusBookmarkUVE(entity).has_value() ||
+                                           ResolveEntityFocusTargetUVE(entity).has_value());
+}
+
+bool EditorUVE::RequestViewportFocusUVE(const Scene::EntityUVE entity) {
+    if (!CanFocusEntityInViewportUVE(entity)) {
+        return false;
+    }
+    m_viewportOverlayState.focusEntity = entity;
+    ++m_viewportOverlayState.focusRequestSerial;
+    return true;
+}
+
 void EditorUVE::RequestViewportViewUVE(const ViewportViewUVE view) noexcept {
     m_viewportOverlayState.view = view;
     ++m_viewportOverlayState.viewRequestSerial;
