@@ -58,6 +58,7 @@
 #include "uve/component/collider_component_uve.h"
 #include "uve/nodes/3d/all_nodes_3d_uve.h"
 #include "uve/nodes/canvas_layer/all_nodes_canvas_layer_uve.h"
+#include "uve/scene/nodes/scene_node_type_uve.h"
 #include "uve/scene/nodes/scene_root_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/light_component_uve.h"
@@ -333,6 +334,27 @@ void DrawScriptNodeCategoryIconUVE(ImDrawList* const drawList, const ImVec2 cent
 
 [[nodiscard]] Math::QuaternionUVE ConjugateUVE(const Math::QuaternionUVE& value) noexcept {
     return Math::QuaternionUVE{-value.x, -value.y, -value.z, value.w};
+}
+
+[[nodiscard]] Scene::Nodes::SceneNodeKindUVE ToSceneNodeKindUVE(const EditorEntityKindUVE kind) noexcept {
+    using Kind = Scene::Nodes::SceneNodeKindUVE;
+    switch (kind) {
+        case EditorEntityKindUVE::Empty:
+            return Kind::Node3D;
+        case EditorEntityKindUVE::Camera:
+            return Kind::Camera3D;
+        case EditorEntityKindUVE::DirectionalLight:
+            return Kind::Light3D;
+        case EditorEntityKindUVE::CollisionBox:
+            return Kind::Collider3D;
+        case EditorEntityKindUVE::Cube:
+            return Kind::BoxMesh3D;
+        case EditorEntityKindUVE::UVSphere:
+            return Kind::SphereMesh3D;
+        case EditorEntityKindUVE::Plane:
+            return Kind::PlaneMesh3D;
+    }
+    return Kind::Node3D;
 }
 
 } // namespace
@@ -2052,6 +2074,8 @@ Scene::EntityUVE EditorUVE::CreateDocumentSceneNodeUVE(
     if (entity == Scene::kInvalidEntityUVE) {
         return Scene::kInvalidEntityUVE;
     }
+    // Typed before the snapshot below, so undo and redo bring the type back with the node.
+    Scene::SetSceneNodeKindUVE(entityManager, entity, kind);
 
     // New nodes join the hierarchy instead of becoming document roots, and are placed before the
     // snapshot below is taken, so undo and redo restore the same place.
@@ -2476,6 +2500,15 @@ bool EditorUVE::TryGetDocumentParentUVE(const Scene::EntityUVE entity, Scene::En
     return true;
 }
 
+std::string_view EditorUVE::GetNodeTypeNameUVE(const Scene::EntityUVE entity) const {
+    if (!IsDocumentEntityUVE(entity)) {
+        return {};
+    }
+    const Scene::Nodes::SceneNodeDescriptorUVE* const descriptor = Scene::Nodes::FindSceneNodeDescriptorUVE(
+        Scene::ResolveSceneNodeKindUVE(m_services->GetEntityManagerUVE(), entity));
+    return descriptor != nullptr ? descriptor->displayName : std::string_view{};
+}
+
 std::string EditorUVE::GetOutlinerTypeTagUVE(const Scene::EntityUVE entity) const {
     if (!IsDocumentEntityUVE(entity)) {
         return {};
@@ -2799,6 +2832,9 @@ Scene::EntityUVE EditorUVE::CreateDocumentEntityInternalUVE(
         default:
             return Scene::kInvalidEntityUVE;
     }
+
+    // These legacy kinds are the same nodes the Add Node list makes, and are typed as those.
+    Scene::SetSceneNodeKindUVE(entityManager, entity, ToSceneNodeKindUVE(kind));
 
     // Same hierarchy-joining rule as CreateDocumentSceneNodeUVE - never a new document root.
     if (entity != Scene::kInvalidEntityUVE) {
@@ -4230,7 +4266,9 @@ void EditorUVE::RebuildHierarchyFilterCacheUVE() {
         const std::string typeTag = GetOutlinerTypeTagUVE(entity);
         const bool hasTypeQuery = m_hierarchyFilter.rfind("type:", 0U) == 0U;
         const std::string_view typeQuery = hasTypeQuery ? std::string_view{m_hierarchyFilter}.substr(5U) : std::string_view{};
-        const bool typeMatches = !hasTypeQuery || ContainsCaseInsensitiveUVE(typeTag, typeQuery);
+        // The node's type ("StaticBody3D") or its older specialised tag ("Collision Box") both count.
+        const bool typeMatches = !hasTypeQuery || ContainsCaseInsensitiveUVE(typeTag, typeQuery) ||
+                                 ContainsCaseInsensitiveUVE(GetNodeTypeNameUVE(entity), typeQuery);
         Scene::EntityUVE parent = Scene::kInvalidEntityUVE;
         const bool isRoot = !TryGetDocumentParentUVE(entity, parent) || parent == Scene::kInvalidEntityUVE;
         const bool nameMatches = hasTypeQuery || ContainsCaseInsensitiveUVE(displayLabel, m_hierarchyFilter) ||

@@ -344,6 +344,15 @@ const std::vector<EditorSettingBindingUVE>& EditorUVE::GetSettingBindingsUVE() {
              editor.m_hierarchyView.showIcons = std::get<bool>(value);
              return true;
          }},
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kHierarchyShowTypeNameUVE), hierarchy.showTypeName, "Node Type Names",
+                                    kHierarchyCategoryUVE,
+                                    "Write each node's type after its name, dimmed, when the name is not already the "
+                                    "type and there is room."),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_hierarchyView.showTypeName; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_hierarchyView.showTypeName = std::get<bool>(value);
+             return true;
+         }},
         {Config::MakeEnumSettingUVE(IdUVE(Id::kHierarchyVisibilityColumnUVE),
                                     static_cast<std::int64_t>(hierarchy.visibilityColumn),
                                     {EntryUVE(HierarchyVisibilityColumnUVE::Always, "Always"),

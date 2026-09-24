@@ -625,9 +625,11 @@ already built in, but none of them is a setting yet - each is fixed in code.
 - [~] Node-type icons: show, hide, or colour-code by type. Every row draws an icon for its node
       kind (mesh, camera, light, environment, physics, audio, particle, script, plain node), and
       Node Icons hides them; missing: recolouring.
-- [ ] Show node type name alongside the node name. Needs one resolver from an entity to its
-      node kind first: today the type is inferred from components in several partial places, and
-      a type name shown for some nodes and not others would mislead.
+- [x] Show node type name alongside the node name. Every node now stores the type it was made
+      as (saved by its stable id), and nodes from older scenes are read from their components.
+      Node Type Names writes the type after the name, dimmed, when all of it fits and the name
+      is not already the type; otherwise the row's tooltip carries it. The icon and the `type:`
+      filter use the same type.
 - [~] Show component badges on the row (script attached, visibility off, locked). A script badge
       (with its path on hover) and the visibility eye sit in fixed columns at the row's right edge,
       and a long name is cut with "..." and shown whole on hover; missing: locked, and a setting.

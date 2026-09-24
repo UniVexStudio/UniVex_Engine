@@ -45,6 +45,7 @@ inline constexpr std::string_view kPlayTintColorUVE = "editor.play.tint.color";
 inline constexpr std::string_view kPlayTintStrengthUVE = "editor.play.tint.strength";
 inline constexpr std::string_view kHierarchyRevealSelectionUVE = "editor.hierarchy.revealSelection";
 inline constexpr std::string_view kHierarchyShowIconsUVE = "editor.hierarchy.showIcons";
+inline constexpr std::string_view kHierarchyShowTypeNameUVE = "editor.hierarchy.showTypeName";
 inline constexpr std::string_view kHierarchyVisibilityColumnUVE = "editor.hierarchy.visibilityColumn";
 inline constexpr std::string_view kHierarchyDoubleClickUVE = "editor.hierarchy.doubleClick";
 inline constexpr std::string_view kHierarchyDragToReparentUVE = "editor.hierarchy.dragToReparent";

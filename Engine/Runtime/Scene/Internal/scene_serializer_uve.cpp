@@ -39,6 +39,7 @@
 #include "uve/component/character_controller_component_uve.h"
 #include "uve/component/collider_component_uve.h"
 #include "uve/nodes/3d/all_nodes_3d_uve.h"
+#include "uve/scene/nodes/scene_node_type_uve.h"
 #include "uve/scene/nodes/scene_root_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/light_component_uve.h"
@@ -493,6 +494,12 @@ template <typename VectorT>
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const SceneRootComponentUVE&) {
     return nlohmann::json::object(); // pure marker: no authored state to persist
+}
+
+// The type is written by its stable id ("box_mesh_3d"), never the enum's number, so reordering
+// the enum can never retype a saved node.
+[[nodiscard]] nlohmann::json ToJsonUVE(const SceneNodeTypeComponentUVE& value) {
+    return {{"type", std::string{Nodes::GetSceneNodeTypeIdUVE(value.kind)}}};
 }
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const RayCast3DNodeComponentUVE& value) {
@@ -1262,6 +1269,30 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                 }
                 return value;
             }, IsMarker3DNodeComponentValidUVE));
+        // An id this build does not know (a scene from a newer one) adds nothing rather than failing
+        // the load: the node is then read from its components, like a scene saved before types were.
+        table.emplace("SceneNodeTypeComponentUVE",
+                      ComponentRegistrationUVE{
+                          std::type_index(typeid(SceneNodeTypeComponentUVE)),
+                          [](IEntityManagerUVE& entityManager, EntityUVE entity) -> nlohmann::json {
+                              return ToJsonUVE(entityManager.GetComponentUVE<SceneNodeTypeComponentUVE>(entity));
+                          },
+                          [](IEntityManagerUVE& entityManager, EntityUVE entity) {
+                              return IsSceneNodeTypeComponentValidUVE(
+                                  entityManager.GetComponentUVE<SceneNodeTypeComponentUVE>(entity));
+                          },
+                          [](IEntityManagerUVE& entityManager, EntityUVE entity, const nlohmann::json& json) {
+                              const auto type = json.find("type");
+                              const Nodes::SceneNodeDescriptorUVE* const descriptor =
+                                  type != json.end() && type->is_string()
+                                      ? Nodes::FindSceneNodeDescriptorUVE(type->get<std::string>())
+                                      : nullptr;
+                              if (descriptor != nullptr) {
+                                  entityManager.AddComponentUVE<SceneNodeTypeComponentUVE>(
+                                      entity, SceneNodeTypeComponentUVE{descriptor->kind});
+                              }
+                          },
+                      });
         table.emplace("SceneRootComponentUVE",
                     MakeRegistrationUVE<SceneRootComponentUVE>([](const nlohmann::json&) {
                         return SceneRootComponentUVE{};

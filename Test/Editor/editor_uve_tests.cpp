@@ -1004,7 +1004,7 @@ TEST(EditorUVETest, EditorSettingsUVE_DescriptorDefaultsMatchTheEditorsOwnDefaul
         EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_setting_defaults.uvescene");
         const Config::SettingsRegistryUVE& registry = editor.GetSettingsRegistryUVE();
         // The declared preferences, and a primary and alternate shortcut for every command.
-        ASSERT_EQ(registry.GetCountUVE(), 33U + (2U * editor.GetEditorCommandsUVE().size()));
+        ASSERT_EQ(registry.GetCountUVE(), 34U + (2U * editor.GetEditorCommandsUVE().size()));
         for (const Config::SettingDescriptorUVE* descriptor : registry.GetAllUVE()) {
             const std::optional<Config::SettingValueUVE> value = editor.GetEditorSettingUVE(descriptor->id);
             ASSERT_TRUE(value.has_value()) << descriptor->id;
@@ -1177,6 +1177,64 @@ TEST(EditorUVETest, PlayModePreferencesUVE_PauseSaveAndStayInTheTab) {
     std::filesystem::remove(scenePath);
 }
 
+TEST(EditorUVETest, NodeTypesUVE_EveryNodeIsTypedAndKeepsItThroughDuplicateUndoAndSave) {
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    const std::filesystem::path scenePath = "uve_editor_tests_node_types.uvescene";
+    std::filesystem::remove(scenePath);
+    {
+        EditorUVE editor(engine.GetServicesUVE(), scenePath);
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        const Scene::EntityUVE root = editor.GetDocumentSceneRootUVE();
+        EXPECT_EQ(editor.GetNodeTypeNameUVE(root), "SceneRoot");
+
+        // Every node the Add Node list makes reads back as the type it was made as, including the
+        // ones whose components alone could not say (StaticBody3D is built like a Collider3D).
+        for (const Scene::Nodes::SceneNodeDescriptorUVE& descriptor : Scene::Nodes::GetSceneNodeDescriptorsUVE()) {
+            if (!descriptor.libraryCreatable) {
+                continue;
+            }
+            editor.SelectEntityUVE(root);
+            const Scene::EntityUVE node = editor.CreateDocumentSceneNodeUVE(descriptor.kind);
+            ASSERT_NE(node, Scene::kInvalidEntityUVE) << descriptor.displayName;
+            EXPECT_EQ(editor.GetNodeTypeNameUVE(node), descriptor.displayName);
+        }
+
+        // The legacy creation commands type their nodes as the same kinds.
+        editor.SelectEntityUVE(root);
+        EXPECT_EQ(editor.GetNodeTypeNameUVE(editor.CreateDocumentEntityUVE(EditorEntityKindUVE::Cube)), "BoxMesh3D");
+
+        // Duplicate, and undo then redo of a creation, carry the type with the node.
+        editor.SelectEntityUVE(root);
+        const Scene::EntityUVE body = editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::StaticBody3D);
+        ASSERT_NE(body, Scene::kInvalidEntityUVE);
+        editor.SelectEntityUVE(body);
+        const Scene::EntityUVE copy = editor.DuplicateSelectedEntityUVE();
+        EXPECT_EQ(editor.GetNodeTypeNameUVE(copy), "StaticBody3D");
+        ASSERT_TRUE(editor.UndoUVE());
+        ASSERT_TRUE(editor.UndoUVE());
+        ASSERT_TRUE(editor.RedoUVE());
+        EXPECT_EQ(editor.GetNodeTypeNameUVE(editor.GetSelectedEntityUVE()), "StaticBody3D");
+
+        ASSERT_TRUE(editor.SaveSceneUVE());
+        ASSERT_TRUE(editor.LoadSceneUVE());
+        std::size_t staticBodies = 0U;
+        entityManager.ForEachUVE<Scene::NameComponentUVE>(
+            [&](const Scene::EntityUVE entity, const Scene::NameComponentUVE& name) {
+                if (name.name.starts_with("StaticBody3D")) {
+                    ++staticBodies;
+                    EXPECT_EQ(editor.GetNodeTypeNameUVE(entity), "StaticBody3D");
+                }
+            });
+        EXPECT_EQ(staticBodies, 2U); // the one from the list, and the one brought back by redo
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+    std::filesystem::remove(scenePath);
+}
+
 TEST(EditorUVETest, HierarchyPreferencesUVE_ApplyRefuseWhatIsOutOfRangeAndPersist) {
     const Core::EngineConfigUVE config = MakeEditorTestConfigUVE();
     std::filesystem::remove(config.settingsFilePath);
@@ -1187,6 +1245,7 @@ TEST(EditorUVETest, HierarchyPreferencesUVE_ApplyRefuseWhatIsOutOfRangeAndPersis
     const std::string_view scenePath = "uve_editor_tests_hierarchy_prefs.uvescene";
     const auto expectChosen = [](const HierarchyViewSettingsUVE& view) {
         EXPECT_FALSE(view.revealSelection);
+        EXPECT_FALSE(view.showTypeName);
         EXPECT_EQ(view.visibilityColumn, HierarchyVisibilityColumnUVE::OnHover);
         EXPECT_EQ(view.doubleClick, HierarchyDoubleClickUVE::FocusInViewport);
         EXPECT_EQ(view.treeLines, HierarchyTreeLinesUVE::ToEachChild);
@@ -1198,6 +1257,7 @@ TEST(EditorUVETest, HierarchyPreferencesUVE_ApplyRefuseWhatIsOutOfRangeAndPersis
         EditorUVE editor(engine.GetServicesUVE(), scenePath);
         editor.InitUVE();
         ASSERT_TRUE(editor.SetEditorSettingUVE(Id::kHierarchyRevealSelectionUVE, false));
+        ASSERT_TRUE(editor.SetEditorSettingUVE(Id::kHierarchyShowTypeNameUVE, false));
         ASSERT_TRUE(editor.SetEditorSettingUVE(Id::kHierarchyVisibilityColumnUVE,
                                                static_cast<std::int64_t>(HierarchyVisibilityColumnUVE::OnHover)));
         ASSERT_TRUE(editor.SetEditorSettingUVE(Id::kHierarchyDoubleClickUVE,

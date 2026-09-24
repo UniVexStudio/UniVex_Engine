@@ -173,6 +173,7 @@ add_executable(uve_integration_tests
     Integration/Scene/node_common_components_uve_tests.cpp
     Integration/Scene/scene_component_metadata_uve_tests.cpp
     Integration/Scene/scene_serializer_uve_tests.cpp
+    Integration/Scene/scene_node_type_uve_tests.cpp
     Integration/Scene/prefab_system_uve_tests.cpp
     Integration/Scene/prefab_maturity_uve_tests.cpp
     Integration/Scene/prefab_revision_policy_uve_tests.cpp
