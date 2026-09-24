@@ -364,6 +364,7 @@ add_executable(uve_editor_tests
     Editor/editor_icon_registry_uve_tests.cpp
     Editor/editor_uve_tests.cpp
     Editor/editor_color_uve_tests.cpp
+    Editor/editor_settings_uve_tests.cpp
     Editor/entity_picker_uve_tests.cpp
     Editor/inspector_drawer_registry_uve_tests.cpp
     Editor/regression_harness_uve_tests.cpp
