@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cfloat>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -638,6 +639,14 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
     if (m_contentCreateMenuRequested) {
         m_contentCreateMenuRequested = false;
         ImGui::OpenPopup(kCreateMenuId);
+        // Content sits at the bottom of the window, so the menu grows upward from the pointer,
+        // over the viewport, instead of running off the bottom edge. Taller than the room above
+        // it, it scrolls.
+        const ImVec2 mouse = ImGui::GetMousePos();
+        const ImGuiViewport* const viewport = ImGui::GetMainViewport();
+        ImGui::SetNextWindowPos(mouse, ImGuiCond_Always, ImVec2{0.0F, 1.0F});
+        ImGui::SetNextWindowSizeConstraints(ImVec2{0.0F, 0.0F},
+                                            ImVec2{FLT_MAX, std::max(120.0F, mouse.y - viewport->WorkPos.y - 8.0F)});
     }
     if (ImGui::BeginPopup(kCreateMenuId)) {
         DrawContentCreateMenuUVE(snapshot.contentRoot, gridDirectory);

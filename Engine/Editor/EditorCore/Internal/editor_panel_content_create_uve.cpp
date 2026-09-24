@@ -300,6 +300,8 @@ void EditorUVE::DrawFilesystemContextPopupUVE() {
     if (m_filesystemContextVisible) {
         ImGui::OpenPopup(kPopupId);
         m_filesystemContextVisible = false;
+        // Opened from the Content panel at the bottom: grow upward from the pointer.
+        ImGui::SetNextWindowPos(ImGui::GetMousePos(), ImGuiCond_Always, ImVec2{0.0F, 1.0F});
     }
     if (!ImGui::BeginPopup(kPopupId)) {
         return;
