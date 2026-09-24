@@ -132,6 +132,20 @@ void EditorUVE::RenderOverlayUVE() {
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
+    // While playing, the panels lean toward the tint colour: what is edited now is lost at Stop.
+    int tintedColors = 0;
+    if (m_playModeState != EditorPlayModeStateUVE::Edit && m_playTintEnabled) {
+        const ImGuiStyle& style = ImGui::GetStyle();
+        for (const ImGuiCol slot : {ImGuiCol_WindowBg, ImGuiCol_ChildBg, ImGuiCol_MenuBarBg, ImGuiCol_TitleBg,
+                                    ImGuiCol_TitleBgActive, ImGuiCol_PopupBg}) {
+            const ImVec4 base = style.Colors[slot];
+            const float t = m_playTintStrength;
+            ImGui::PushStyleColor(slot, ImVec4{base.x + ((m_playTintColor.r - base.x) * t),
+                                               base.y + ((m_playTintColor.g - base.y) * t),
+                                               base.z + ((m_playTintColor.b - base.z) * t), base.w});
+            ++tintedColors;
+        }
+    }
     DrawMenuBarUVE();
     DrawPluginWindowUVE();
     DrawEditorPreferencesWindowUVE();
@@ -146,6 +160,7 @@ void EditorUVE::RenderOverlayUVE() {
         DrawInspectorPanelUVE();
         DrawBottomDockContentUVE();
     }
+    ImGui::PopStyleColor(tintedColors);
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }

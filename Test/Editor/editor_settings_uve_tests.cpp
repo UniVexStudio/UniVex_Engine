@@ -20,7 +20,7 @@ using Config::SettingTypeUVE;
 TEST(EditorSettingsUVETest, EveryEditorSettingRegistersOnceWithALegalDefault) {
     Config::SettingsRegistryUVE registry;
     ASSERT_TRUE(RegisterEditorSettingsUVE(registry));
-    EXPECT_EQ(registry.GetCountUVE(), 20U);
+    EXPECT_EQ(registry.GetCountUVE(), 26U);
     for (const Config::SettingDescriptorUVE* descriptor : registry.GetAllUVE()) {
         EXPECT_EQ(Config::ValidateSettingDescriptorUVE(*descriptor), "") << descriptor->id;
         EXPECT_TRUE(descriptor->id.starts_with("editor.")) << descriptor->id;
@@ -29,7 +29,7 @@ TEST(EditorSettingsUVETest, EveryEditorSettingRegistersOnceWithALegalDefault) {
     }
     // A second declaration of the same settings is refused as duplicates.
     EXPECT_FALSE(RegisterEditorSettingsUVE(registry));
-    EXPECT_EQ(registry.GetCountUVE(), 20U);
+    EXPECT_EQ(registry.GetCountUVE(), 26U);
 }
 
 TEST(EditorSettingsUVETest, EveryIdIsDeclaredWithTheTypeTheEditorReadsItAs) {
@@ -57,6 +57,12 @@ TEST(EditorSettingsUVETest, EveryIdIsDeclaredWithTheTypeTheEditorReadsItAs) {
         {Id::kSelectionOutlineThicknessUVE, SettingTypeUVE::Float},
         {Id::kNewNodesUnderSelectionUVE, SettingTypeUVE::Bool},
         {Id::kNewNodePlacementUVE, SettingTypeUVE::Enum},
+        {Id::kPlayPauseOnStartUVE, SettingTypeUVE::Bool},
+        {Id::kPlaySaveSceneFirstUVE, SettingTypeUVE::Bool},
+        {Id::kPlaySwitchToGameUVE, SettingTypeUVE::Bool},
+        {Id::kPlayTintEnabledUVE, SettingTypeUVE::Bool},
+        {Id::kPlayTintColorUVE, SettingTypeUVE::Color},
+        {Id::kPlayTintStrengthUVE, SettingTypeUVE::Float},
     };
     for (const auto& [id, type] : expected) {
         const Config::SettingDescriptorUVE* descriptor = registry.FindUVE(id);
