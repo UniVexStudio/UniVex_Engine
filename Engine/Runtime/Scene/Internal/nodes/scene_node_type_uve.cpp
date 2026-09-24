@@ -21,6 +21,7 @@
 #include "uve/component/ui_text_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
 #include "uve/nodes/3d/all_nodes_3d_uve.h"
+#include "uve/scene/nodes/scene_folder_uve.h"
 #include "uve/scene/nodes/scene_root_uve.h"
 
 namespace UVE::Scene {
@@ -67,6 +68,9 @@ Nodes::SceneNodeKindUVE InferSceneNodeKindUVE(const IEntityManagerUVE& entityMan
     }
     if (entityManager.HasComponentUVE<SceneRootComponentUVE>(entity)) {
         return Kind::SceneRoot;
+    }
+    if (entityManager.HasComponentUVE<FolderComponentUVE>(entity)) {
+        return Kind::Folder;
     }
     // A primitive also carries a collider, so it is read before the physics kinds.
     if (entityManager.HasComponentUVE<PrimitiveMeshComponentUVE>(entity)) {
