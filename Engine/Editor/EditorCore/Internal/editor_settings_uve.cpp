@@ -28,6 +28,7 @@ constexpr const char* kSnappingCategoryUVE = "Editor/Viewport/Snapping";
 constexpr const char* kGridCategoryUVE = "Editor/Viewport/Grid";
 constexpr const char* kOutlineCategoryUVE = "Editor/Viewport/Selection Outline";
 constexpr const char* kNodesCategoryUVE = "Editor/Nodes";
+constexpr const char* kPlayCategoryUVE = "Editor/Play Mode";
 
 [[nodiscard]] SettingDescriptorUVE HiddenUVE(SettingDescriptorUVE descriptor) {
     descriptor.flags |= Config::kSettingFlagHiddenUVE;
@@ -269,6 +270,59 @@ const std::vector<EditorSettingBindingUVE>& EditorUVE::GetSettingBindingsUVE() {
          },
          [](EditorUVE& editor, const SettingValueUVE& value) {
              editor.m_newNodePlacement = static_cast<EditorNewNodePlacementUVE>(std::get<std::int64_t>(value));
+             return true;
+         }},
+
+        // Play mode.
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kPlayPauseOnStartUVE), false, "Pause on Start", kPlayCategoryUVE,
+                                    "Enter Play paused, on the first frame, to step from there."),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_playPauseOnStart; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_playPauseOnStart = std::get<bool>(value);
+             return true;
+         }},
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kPlaySaveSceneFirstUVE), false, "Save Scene First", kPlayCategoryUVE,
+                                    "Save the scene, if it has unsaved changes and a file, before Play starts."),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_playSaveSceneFirst; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_playSaveSceneFirst = std::get<bool>(value);
+             return true;
+         }},
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kPlaySwitchToGameUVE), true, "Switch to Game Tab", kPlayCategoryUVE,
+                                    "Show the Game tab while playing, and the tab you were on after. Off, Play "
+                                    "runs in the tab you are on."),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_playSwitchToGame; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_playSwitchToGame = std::get<bool>(value);
+             return true;
+         }},
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kPlayTintEnabledUVE), true, "Tint While Playing", kPlayCategoryUVE,
+                                    "Tint the editor's panels while playing, so an edit made in Play - and lost "
+                                    "when it stops - is never mistaken for a real one."),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_playTintEnabled; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_playTintEnabled = std::get<bool>(value);
+             return true;
+         }},
+        {Config::MakeColorSettingUVE(IdUVE(Id::kPlayTintColorUVE),
+                                     SettingColorUVE{kDefaultPlayTintColorUVE.r, kDefaultPlayTintColorUVE.g,
+                                                     kDefaultPlayTintColorUVE.b},
+                                     false, "Tint Colour", kPlayCategoryUVE),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             return SettingColorUVE{editor.m_playTintColor.r, editor.m_playTintColor.g, editor.m_playTintColor.b};
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             const auto& color = std::get<SettingColorUVE>(value);
+             editor.m_playTintColor = ViewportAxisColorUVE{color.r, color.g, color.b};
+             return true;
+         }},
+        {WithStepUVE(Config::MakeFloatSettingUVE(IdUVE(Id::kPlayTintStrengthUVE), kDefaultPlayTintStrengthUVE,
+                                                 0.05, 0.6, "Tint Strength",
+                                                 kPlayCategoryUVE, "How far the panels move toward the tint colour."),
+                     0.05),
+         [](const EditorUVE& editor) -> SettingValueUVE { return static_cast<double>(editor.m_playTintStrength); },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_playTintStrength = FloatUVE(value);
              return true;
          }},
     };

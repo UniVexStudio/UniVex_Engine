@@ -1463,6 +1463,15 @@ private:
     bool m_newNodesUnderSelection = true;
     EditorNewNodePlacementUVE m_newNodePlacement = EditorNewNodePlacementUVE::ParentOrigin;
     std::optional<Math::Vector3UVE> m_viewportCameraFocus;
+    // Play mode preferences (editor_settings_uve.cpp).
+    bool m_playPauseOnStart = false;
+    bool m_playSaveSceneFirst = false;
+    bool m_playSwitchToGame = true;
+    static constexpr ViewportAxisColorUVE kDefaultPlayTintColorUVE{0.30F, 0.48F, 0.80F};
+    static constexpr float kDefaultPlayTintStrengthUVE = 0.2F;
+    bool m_playTintEnabled = true;
+    ViewportAxisColorUVE m_playTintColor = kDefaultPlayTintColorUVE;
+    float m_playTintStrength = kDefaultPlayTintStrengthUVE;
     // Each editor setting's descriptor and its reads and writes of the state above, in one table
     // (editor_settings_uve.cpp) that loading, saving and the preferences window all use.
     [[nodiscard]] static const std::vector<EditorSettingBindingUVE>& GetSettingBindingsUVE();

@@ -1003,7 +1003,7 @@ TEST(EditorUVETest, EditorSettingsUVE_DescriptorDefaultsMatchTheEditorsOwnDefaul
         // Not initialised, so nothing has been loaded: every value is the editor's in-class default.
         EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_setting_defaults.uvescene");
         const Config::SettingsRegistryUVE& registry = editor.GetSettingsRegistryUVE();
-        ASSERT_EQ(registry.GetCountUVE(), 20U);
+        ASSERT_EQ(registry.GetCountUVE(), 26U);
         for (const Config::SettingDescriptorUVE* descriptor : registry.GetAllUVE()) {
             const std::optional<Config::SettingValueUVE> value = editor.GetEditorSettingUVE(descriptor->id);
             ASSERT_TRUE(value.has_value()) << descriptor->id;
@@ -1138,6 +1138,42 @@ TEST(EditorUVETest, NewNodeDefaultsUVE_ParentAndPlacementFollowThePreferences) {
         editor.ShutdownUVE();
     }
     engine.Shutdown();
+}
+
+TEST(EditorUVETest, PlayModePreferencesUVE_PauseSaveAndStayInTheTab) {
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    const std::filesystem::path scenePath = "uve_editor_tests_play_prefs.uvescene";
+    std::filesystem::remove(scenePath);
+    {
+        EditorUVE editor(engine.GetServicesUVE(), scenePath, 100U, &engine);
+        editor.InitUVE();
+        namespace Id = EditorSettingIdUVE;
+
+        // By default: running, in the Game tab, and the tab comes back at Stop.
+        ASSERT_TRUE(editor.EnterPlayModeUVE());
+        EXPECT_EQ(editor.GetPlayModeStateUVE(), EditorPlayModeStateUVE::Playing);
+        EXPECT_FALSE(EditorUVEAccessUVE::IsLibraryWorkspaceActiveUVE(editor));
+        ASSERT_TRUE(editor.StopPlayModeUVE());
+        EXPECT_TRUE(EditorUVEAccessUVE::IsLibraryWorkspaceActiveUVE(editor));
+
+        // Paused on start, in the tab it was started from, with the dirty scene saved first.
+        ASSERT_TRUE(editor.SetEditorSettingUVE(Id::kPlayPauseOnStartUVE, true));
+        ASSERT_TRUE(editor.SetEditorSettingUVE(Id::kPlaySwitchToGameUVE, false));
+        ASSERT_TRUE(editor.SetEditorSettingUVE(Id::kPlaySaveSceneFirstUVE, true));
+        ASSERT_NE(editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Node3D), Scene::kInvalidEntityUVE);
+        ASSERT_TRUE(editor.IsSceneDirtyUVE());
+        ASSERT_TRUE(editor.EnterPlayModeUVE());
+        EXPECT_EQ(editor.GetPlayModeStateUVE(), EditorPlayModeStateUVE::Paused);
+        EXPECT_TRUE(EditorUVEAccessUVE::IsLibraryWorkspaceActiveUVE(editor));
+        EXPECT_TRUE(std::filesystem::exists(scenePath));
+        ASSERT_TRUE(editor.StopPlayModeUVE());
+        EXPECT_FALSE(editor.IsSceneDirtyUVE());
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+    std::filesystem::remove(scenePath);
 }
 
 TEST(EditorUVETest, SessionSettingsUVE_NeverRestoresTheGameWorkspace) {

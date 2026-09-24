@@ -868,14 +868,18 @@ Explicitly requested. The engine has a log level and log sinks; it has no consol
 
 ## 2.11 Play mode and run
 
-- [ ] Play in a separate window vs. in a maximised viewport.
+- [~] Play in a separate window vs. in a maximised viewport. **Switch to Game Tab** (on by
+      default): Play shows the Game tab and returns to the tab it came from; off, it runs in the
+      tab you are on. A separate window is open.
 - [ ] Play window size, position and monitor.
-- [ ] Save all scenes before playing, or run from the in-memory state.
+- [x] Save all scenes before playing, or run from the in-memory state. **Save Scene First**
+      saves a dirty scene that has a file before the Play snapshot is taken.
 - [ ] Which scene runs: the current one, the main scene, or a fixed custom scene.
-- [ ] Pause on start, and pause on error.
+- [~] Pause on start, and pause on error. **Pause on Start**; pause on error is open.
 - [ ] Keep the editor responsive while playing.
 - [ ] Live reload of scripts and of scene changes.
-- [ ] Enter/exit play-mode tint, so play mode is visually unmistakable.
+- [x] Enter/exit play-mode tint, so play mode is visually unmistakable. **Tint While Playing**
+      (on by default), its colour and strength: the panels lean toward the tint while playing.
 - [ ] Time scale control and step-one-frame.
 
 ## 2.12 Autosave, recovery and performance
