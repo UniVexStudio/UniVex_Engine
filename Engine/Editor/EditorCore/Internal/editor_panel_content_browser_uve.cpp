@@ -200,15 +200,20 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
     std::array<char, 256> filterBuffer{};
     const std::size_t copiedCharacters = std::min(m_assetFilter.size(), filterBuffer.size() - 1U);
     m_assetFilter.copy(filterBuffer.data(), copiedCharacters);
-    ImGui::SetNextItemWidth(std::max(90.0F, ImGui::GetContentRegionAvail().x * 0.3F));
+    // One toolbar row: Search takes the room left after the path and before "...", so the header
+    // costs one line of the dock rather than two. On a narrow dock it keeps a usable minimum.
+    ImGui::SameLine();
+    const float menuButtonWidth = ImGui::CalcTextSize("...").x + (ImGui::GetStyle().FramePadding.x * 2.0F);
+    const float searchWidth =
+        std::max(90.0F, ImGui::GetContentRegionAvail().x - menuButtonWidth - ImGui::GetStyle().ItemSpacing.x);
+    ImGui::SetNextItemWidth(searchWidth);
     if (ImGui::InputTextWithHint("##content-filter", "Search", filterBuffer.data(), filterBuffer.size())) {
         m_assetFilter = filterBuffer.data();
     }
 
-    // "..." overflow menu, right-aligned at the end of this single toolbar row (the panel name
-    // lives in the window title bar, so the overflow sits here rather than on a second header row).
+    // "..." view-mode menu, right-aligned at the end of the same row.
     ImGui::SameLine();
-    ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(), ImGui::GetWindowContentRegionMax().x - 26.0F));
+    ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(), ImGui::GetWindowContentRegionMax().x - menuButtonWidth));
     if (ImGui::SmallButton("...##filesystem-menu")) {
         ImGui::OpenPopup("filesystem-overflow-menu");
     }
