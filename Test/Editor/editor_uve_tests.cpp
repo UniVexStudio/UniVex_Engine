@@ -782,6 +782,9 @@ TEST(EditorUVETest, ContentBrowserWorkflowUVE_ScriptsAudioAndFontsAreTheirOwnTyp
     EXPECT_EQ(labelOf("Fonts/title.ttf"), "Font");
     EXPECT_EQ(labelOf("Fonts/body.otf"), "Font");
     EXPECT_EQ(labelOf("Notes/readme.txt"), "File");
+    // FBX is a model source like glTF and OBJ: shown as a mesh and imported behind the scenes.
+    EXPECT_EQ(labelOf("Characters/hero.fbx"), "Mesh");
+    EXPECT_EQ(labelOf("Characters/Hero.FBX"), "Mesh");
 
     // Each type shows its own picture in the browser, found by the label it is shown with.
     std::set<const EditorIconSourceUVE*> icons;

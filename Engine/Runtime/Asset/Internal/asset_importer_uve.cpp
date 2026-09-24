@@ -8,6 +8,7 @@
 #include "uve/asset/jpeg_importer_uve.h"
 #endif
 #include "uve/asset/mtl_importer_uve.h"
+#include "uve/asset/fbx_importer_uve.h"
 #include "uve/asset/obj_importer_uve.h"
 #include "uve/asset/shader_source_importer_uve.h"
 
@@ -229,8 +230,8 @@ AssetImporterUVE::AssetImporterUVE() : m_impl(std::make_unique<ImplUVE>()) {
 
     // Typed UVE envelopes are already validated by their corresponding asset loaders. Importing
     // them here is an intentionally format-neutral, deterministic copy/re-register operation;
-    // bounded BMP/PNG/TGA, OBJ, MTL, glTF/GLB one-primitive, JPEG, and explicit-stage shader source
-    // conversions are registered separately; FBX/audio, ambiguous combined GLSL, and broader glTF
+    // bounded BMP/PNG/TGA, OBJ, FBX (static mesh), MTL, glTF/GLB one-primitive, JPEG, and explicit-stage
+    // shader source conversions are registered separately; audio, ambiguous combined GLSL, and broader glTF
     // scene/material/image conversion, and raw animation clip decoding remain independently deferred parser-owned work.
     RegisterImporterUVE("uvemodel", &GenericFileImportUVE);
     RegisterImporterUVE("uvetex", &GenericFileImportUVE);
@@ -241,6 +242,7 @@ AssetImporterUVE::AssetImporterUVE() : m_impl(std::make_unique<ImplUVE>()) {
     RegisterPngImporterUVE(*this);
     RegisterTgaImporterUVE(*this);
     RegisterObjImporterUVE(*this);
+    RegisterFbxImporterUVE(*this);
     RegisterGltfImporterUVE(*this);
 #if !defined(__ANDROID__)
     RegisterJpegImporterUVE(*this);

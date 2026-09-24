@@ -31,8 +31,12 @@ namespace {
 
 constexpr float kFieldOfViewYRadiansUVE = 0.6981317F; // 40 degrees
 constexpr float kCameraDistanceMarginUVE = 1.35F;
-constexpr float kMinimumBoundingRadiusUVE = 0.25F;
-constexpr float kNearPlaneUVE = 0.05F;
+// Only a guard against a mesh with no extent at all: a small model (a 2 cm bolt, a coin) is framed
+// to fill the card like any other, rather than shown as a dot in a quarter-metre view.
+constexpr float kMinimumBoundingRadiusUVE = 1.0e-4F;
+// The near plane follows the camera, which follows the mesh's size, so a small mesh is never cut
+// by a fixed near plane and a large one keeps the same depth precision.
+constexpr float kNearPlaneFractionUVE = 0.05F;
 
 // Fixed default viewing angle (a gentle 3/4 elevated view) and a single fixed key light -
 // deliberately not derived from the mesh's own assigned material (there may not be one; see this
@@ -253,9 +257,10 @@ std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAss
 
     const Math::Matrix4x4UVE view =
         Math::Matrix4x4UVE::ViewFromPositionAndRotationUVE(cameraPosition, cameraRotation);
-    const float farPlane = distance + boundingRadius * 2.0F + kNearPlaneUVE;
+    const float nearPlane = distance * kNearPlaneFractionUVE;
+    const float farPlane = distance + boundingRadius * 2.0F + nearPlane;
     const Math::Matrix4x4UVE projection = Math::Matrix4x4UVE::PerspectiveUVE(
-        kFieldOfViewYRadiansUVE, static_cast<float>(width) / static_cast<float>(height), kNearPlaneUVE, farPlane);
+        kFieldOfViewYRadiansUVE, static_cast<float>(width) / static_cast<float>(height), nearPlane, farPlane);
     const Math::Matrix4x4UVE viewProjection = projection * view;
     const Math::Vector3UVE lightDirection = Math::NormalizeUVE(Math::Vector3UVE{-0.5F, -1.0F, -0.35F});
 

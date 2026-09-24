@@ -1,5 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
+#include "uve/asset/fbx_mesh_converter_uve.h"
 #include "uve/asset/gltf_metadata_uve.h"
 #include "uve/editor/editor_uve.h"
 #include "uve/editor/editor_settings_uve.h"
@@ -20,6 +21,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <span>
 #include <sstream>
 #include <functional>
 #include <limits>
@@ -32,6 +34,7 @@
 #include <type_traits>
 #include <utility>
 #include <variant>
+#include <vector>
 
 #include <GLFW/glfw3.h>
 #include <imgui.h>
@@ -4694,7 +4697,7 @@ bool EditorUVE::IsModelSourcePathUVE(const std::filesystem::path& path) {
     std::string extension = path.extension().string();
     std::transform(extension.begin(), extension.end(), extension.begin(),
                    [](const unsigned char character) { return static_cast<char>(std::tolower(character)); });
-    return extension == ".glb" || extension == ".gltf" || extension == ".obj";
+    return extension == ".glb" || extension == ".gltf" || extension == ".obj" || extension == ".fbx";
 }
 
 std::filesystem::path EditorUVE::GetImportedModelPathUVE(const std::filesystem::path& relativeSource) const {
@@ -4709,7 +4712,8 @@ std::filesystem::path EditorUVE::GetImportedModelPathUVE(const std::filesystem::
 namespace {
 
 /// Reads only as much of a model source as it takes to count its skins: the whole file for a
-/// .gltf (it is the JSON), the header and JSON chunk for a .glb - never the binary payload.
+/// .gltf (it is the JSON), the header and JSON chunk for a .glb - never the binary payload - and
+/// the scene without its geometry for an .fbx.
 [[nodiscard]] bool ModelSourceHasSkeletonUVE(const std::filesystem::path& path) {
     std::ifstream file(path, std::ios::binary);
     if (!file) {
@@ -4732,6 +4736,16 @@ namespace {
         }
     } else if (extension == ".gltf") {
         json.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+    } else if (extension == ".fbx") {
+        // FBX keeps its skins among the scene's objects rather than in a header, so the file is
+        // parsed - without its geometry, which is most of what would take time.
+        std::error_code error;
+        const std::uintmax_t size = std::filesystem::file_size(path, error);
+        if (error || size > Asset::kMaximumFbxMeshSourceBytesUVE) {
+            return false;
+        }
+        const std::vector<char> bytes{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
+        return Asset::FbxSourceHasSkinUVE(std::as_bytes(std::span<const char>(bytes)));
     } else {
         return false; // OBJ has no skeleton.
     }

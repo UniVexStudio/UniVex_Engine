@@ -53,6 +53,7 @@ add_executable(uve_core_tests
     Core/Asset/jpeg_importer_uve_tests.cpp
     Core/Asset/jpeg_metadata_uve_tests.cpp
     Core/Asset/obj_importer_uve_tests.cpp
+    Core/Asset/fbx_mesh_converter_uve_tests.cpp
     Core/Asset/obj_mesh_converter_uve_tests.cpp
     Core/Asset/obj_metadata_uve_tests.cpp
     Core/Asset/gltf_importer_uve_tests.cpp

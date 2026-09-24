@@ -43,6 +43,30 @@ if(NOT ANDROID)
     find_package(JPEG REQUIRED)
 endif()
 
+# ufbx (vendored via FetchContent, pinned tag): the FBX parser behind ConvertFbxMeshUVE. One C
+# file and its header, compiled as its own small library with its own warning profile; it is linked
+# PRIVATE and included by exactly one engine source (fbx_mesh_converter_uve.cpp), so no engine
+# header or consumer ever sees an FBX type.
+enable_language(C)
+include(FetchContent)
+FetchContent_Declare(
+    uve_ufbx
+    GIT_REPOSITORY https://github.com/ufbx/ufbx.git
+    GIT_TAG        v0.23.0
+    GIT_SHALLOW    TRUE
+)
+FetchContent_GetProperties(uve_ufbx)
+if(NOT uve_ufbx_POPULATED)
+    FetchContent_Populate(uve_ufbx)
+endif()
+add_library(uve_ufbx STATIC "${uve_ufbx_SOURCE_DIR}/ufbx.c")
+target_include_directories(uve_ufbx SYSTEM PUBLIC "${uve_ufbx_SOURCE_DIR}")
+set_target_properties(uve_ufbx PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_compile_options(uve_ufbx PRIVATE $<$<C_COMPILER_ID:GNU,Clang>:-w>)
+if(UNIX)
+    target_link_libraries(uve_ufbx PRIVATE m)
+endif()
+
 add_library(uve_asset STATIC
     Internal/asset_guid_uve.cpp
     Internal/audio_asset_uve.cpp
@@ -71,6 +95,8 @@ add_library(uve_asset STATIC
     Internal/obj_importer_uve.cpp
     Internal/obj_mesh_converter_uve.cpp
     Internal/obj_metadata_uve.cpp
+    Internal/fbx_importer_uve.cpp
+    Internal/fbx_mesh_converter_uve.cpp
     Internal/gltf_importer_uve.cpp
     Internal/gltf_mesh_converter_uve.cpp
     Internal/gltf_metadata_uve.cpp
@@ -97,7 +123,7 @@ add_library(uve_asset STATIC
 target_include_directories(uve_asset PUBLIC Expose)
 target_link_libraries(uve_asset
     PUBLIC uve_logging uve_math uve_threading uve_events
-    PRIVATE uve_utilities nlohmann_json::nlohmann_json ZLIB::ZLIB
+    PRIVATE uve_utilities nlohmann_json::nlohmann_json ZLIB::ZLIB uve_ufbx
 )
 if(NOT ANDROID)
     target_link_libraries(uve_asset PRIVATE JPEG::JPEG)

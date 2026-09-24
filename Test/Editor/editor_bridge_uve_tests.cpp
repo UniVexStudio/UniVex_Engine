@@ -39,7 +39,7 @@ TEST(EditorBridgeUVETest, ContentBrowserImportCapabilityUVE_ReportsRawParserBoun
     std::filesystem::remove_all(contentRoot);
     std::filesystem::create_directories(contentRoot);
     {
-        std::ofstream fixture(contentRoot / "character.fbx", std::ios::binary);
+        std::ofstream fixture(contentRoot / "character.dae", std::ios::binary);
         ASSERT_TRUE(fixture.is_open());
         fixture << "raw model source";
     }
@@ -78,11 +78,11 @@ TEST(EditorBridgeUVETest, ContentBrowserImportCapabilityUVE_ReportsRawParserBoun
         select.requestId = 2U;
         select.expectedRevision = refreshed.snapshot.revision;
         select.kind = EditorBridgeRequestKindUVE::SelectContentBrowserEntry;
-        select.contentEntryPath = "character.fbx";
+        select.contentEntryPath = "character.dae";
         const EditorBridgeResponseUVE selected = bridge.DispatchUVE(select);
         ASSERT_TRUE(selected.applied);
         ASSERT_TRUE(selected.snapshot.contentBrowser.selectedEntry.has_value());
-        EXPECT_EQ(selected.snapshot.contentBrowser.selectedEntry->relativePath, "character.fbx");
+        EXPECT_EQ(selected.snapshot.contentBrowser.selectedEntry->relativePath, "character.dae");
         EXPECT_TRUE(selected.snapshot.contentBrowser.importAction.hasSelection);
         EXPECT_FALSE(selected.snapshot.contentBrowser.importAction.canImport);
         EXPECT_FALSE(selected.snapshot.contentBrowser.importAction.canReimport);
