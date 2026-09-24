@@ -4755,6 +4755,7 @@ namespace {
             return info;
         }
         info.rigged = summary->hasSkin;
+        info.hasSkeleton = summary->boneCount > 0U;
         info.animationOnly = summary->IsAnimationOnlyUVE();
         if (info.animationOnly) {
             char length[32] = {};
@@ -4769,6 +4770,7 @@ namespace {
     }
     const std::optional<Asset::GltfMetadataUVE> metadata = Asset::ParseGltfMetadataUVE(json);
     info.rigged = metadata.has_value() && metadata->skinCount > 0U;
+    info.hasSkeleton = info.rigged; // A glTF skeleton is read from its skin.
     return info;
 }
 

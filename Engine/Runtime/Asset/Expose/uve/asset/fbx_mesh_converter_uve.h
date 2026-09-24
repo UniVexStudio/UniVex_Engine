@@ -7,6 +7,7 @@
 #include <optional>
 #include <span>
 
+#include "uve/asset/gltf_skeleton_uve.h"
 #include "uve/asset/mesh_asset_uve.h"
 
 namespace UVE::Asset {
@@ -47,5 +48,16 @@ struct FbxSourceSummaryUVE final {
 
 /// Summarizes the FBX in `source`; empty when the bytes do not parse as FBX.
 [[nodiscard]] std::optional<FbxSourceSummaryUVE> DescribeFbxSourceUVE(std::span<const std::byte> source);
+
+/// Reads an FBX's bones - names, hierarchy and rest pose - into the same joint list a glTF skin
+/// gives (GltfSkeletonUVE is the engine's skeleton-source shape, whatever file it came from).
+///
+/// Every bone node counts, skinned or not, so an animation-only file (bones and takes, no mesh)
+/// has a skeleton too. Poses are in the engine's space, metres and +Y up; parents precede their
+/// children; a bone whose nearest bone ancestor is none is a root. Names are made unique the way
+/// the glTF reader does it. Returns std::nullopt when the bytes do not parse, hold no bones, or
+/// hold more than `maximumJoints`. skinCount is the number of skin deformers.
+[[nodiscard]] std::optional<GltfSkeletonUVE> ReadFbxSkeletonUVE(std::span<const std::byte> source,
+                                                                std::size_t maximumJoints);
 
 } // namespace UVE::Asset
