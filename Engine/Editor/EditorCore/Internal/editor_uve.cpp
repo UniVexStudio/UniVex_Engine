@@ -17,6 +17,7 @@
 #include <array>
 #include <cctype>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -4475,6 +4476,8 @@ const char* EditorUVE::GetContentBrowserItemTypeLabelUVE(const ContentBrowserIte
             return "Material";
         case ContentBrowserItemTypeUVE::Save:
             return "Save";
+        case ContentBrowserItemTypeUVE::Animation:
+            return "Animation";
         case ContentBrowserItemTypeUVE::Script:
             return "Script";
         case ContentBrowserItemTypeUVE::Audio:
@@ -4711,13 +4714,14 @@ std::filesystem::path EditorUVE::GetImportedModelPathUVE(const std::filesystem::
 
 namespace {
 
-/// Reads only as much of a model source as it takes to count its skins: the whole file for a
+/// Reads only as much of a model source as it takes to tell what it is: the whole file for a
 /// .gltf (it is the JSON), the header and JSON chunk for a .glb - never the binary payload - and
-/// the scene without its geometry for an .fbx.
-[[nodiscard]] bool ModelSourceHasSkeletonUVE(const std::filesystem::path& path) {
+/// the scene without its geometry or curves for an .fbx.
+[[nodiscard]] EditorModelSourceInfoUVE ReadModelSourceInfoUVE(const std::filesystem::path& path) {
+    EditorModelSourceInfoUVE info;
     std::ifstream file(path, std::ios::binary);
     if (!file) {
-        return false;
+        return info;
     }
     std::string json;
     std::string extension = path.extension().string();
@@ -4728,48 +4732,72 @@ namespace {
         std::array<std::uint32_t, 5> header{};
         if (!file.read(reinterpret_cast<char*>(header.data()), sizeof(header)) || header[0] != 0x46546C67U ||
             header[4] != 0x4E4F534AU || header[3] > kMaximumJsonBytes) {
-            return false;
+            return info;
         }
         json.resize(header[3]);
         if (!file.read(json.data(), static_cast<std::streamsize>(json.size()))) {
-            return false;
+            return info;
         }
     } else if (extension == ".gltf") {
         json.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
     } else if (extension == ".fbx") {
-        // FBX keeps its skins among the scene's objects rather than in a header, so the file is
-        // parsed - without its geometry, which is most of what would take time.
+        // FBX keeps its skins and takes among the scene's objects rather than in a header, so the
+        // file is parsed - without its geometry or curves, which is most of what would take time.
         std::error_code error;
         const std::uintmax_t size = std::filesystem::file_size(path, error);
         if (error || size > Asset::kMaximumFbxMeshSourceBytesUVE) {
-            return false;
+            return info;
         }
         const std::vector<char> bytes{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
-        return Asset::FbxSourceHasSkinUVE(std::as_bytes(std::span<const char>(bytes)));
+        const std::optional<Asset::FbxSourceSummaryUVE> summary =
+            Asset::DescribeFbxSourceUVE(std::as_bytes(std::span<const char>(bytes)));
+        if (!summary.has_value()) {
+            return info;
+        }
+        info.rigged = summary->hasSkin;
+        info.animationOnly = summary->IsAnimationOnlyUVE();
+        if (info.animationOnly) {
+            char length[32] = {};
+            std::snprintf(length, sizeof(length), "%.2f s", summary->longestAnimationSeconds);
+            info.summary = std::to_string(summary->boneCount) + (summary->boneCount == 1U ? " bone, " : " bones, ") +
+                           std::to_string(summary->animationCount) +
+                           (summary->animationCount == 1U ? " animation, " : " animations, ") + length;
+        }
+        return info;
     } else {
-        return false; // OBJ has no skeleton.
+        return info; // OBJ has no skeleton.
     }
     const std::optional<Asset::GltfMetadataUVE> metadata = Asset::ParseGltfMetadataUVE(json);
-    return metadata.has_value() && metadata->skinCount > 0U;
+    info.rigged = metadata.has_value() && metadata->skinCount > 0U;
+    return info;
 }
 
 } // namespace
 
+const EditorModelSourceInfoUVE* EditorUVE::FindModelSourceInfoUVE(
+    const std::filesystem::path& relativeSource) const {
+    const auto found = m_modelSources.find(relativeSource.generic_string());
+    return found != m_modelSources.end() ? &found->second : nullptr;
+}
+
 bool EditorUVE::IsRiggedModelSourceUVE(const std::filesystem::path& relativeSource) const {
-    const auto found = m_riggedModelSources.find(relativeSource.generic_string());
-    return found != m_riggedModelSources.end() && found->second;
+    const EditorModelSourceInfoUVE* const info = FindModelSourceInfoUVE(relativeSource);
+    return info != nullptr && info->rigged;
 }
 
 void EditorUVE::QueueModelAutoImportsUVE(const Asset::ProjectFileSnapshotUVE& snapshot) {
     Asset::IAssetImportQueueUVE& queue = m_services->GetAssetImportQueueUVE();
-    m_riggedModelSources.clear();
+    m_modelSources.clear();
     for (const Asset::ProjectFileEntryUVE& entry : snapshot.entries) {
         if (entry.kind == Asset::ProjectFileEntryKindUVE::Directory || !IsModelSourcePathUVE(entry.relativePath)) {
             continue;
         }
         const std::string key = entry.relativePath.generic_string();
         const std::filesystem::path source = snapshot.contentRoot / entry.relativePath;
-        m_riggedModelSources[key] = ModelSourceHasSkeletonUVE(source);
+        const EditorModelSourceInfoUVE& info = m_modelSources[key] = ReadModelSourceInfoUVE(source);
+        if (info.animationOnly) {
+            continue; // Motion with nothing to draw: there is no mesh to import.
+        }
         if (m_modelImportJobs.find(key) != m_modelImportJobs.end()) {
             continue; // Already queued or running; its completion is collected by PollModelImportJobsUVE.
         }

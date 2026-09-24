@@ -10,6 +10,7 @@
 #include <cstring>
 #include <memory>
 #include <new>
+#include <optional>
 #include <span>
 #include <unordered_map>
 #include <utility>
@@ -205,12 +206,26 @@ bool ConvertFbxMeshUVE(const std::span<const std::byte> source, MeshAssetUVE& ou
     }
 }
 
-bool FbxSourceHasSkinUVE(const std::span<const std::byte> source) {
+std::optional<FbxSourceSummaryUVE> DescribeFbxSourceUVE(const std::span<const std::byte> source) {
     try {
         const ScenePtrUVE scene = LoadSceneUVE(source, false);
-        return scene && scene->skin_deformers.count > 0U;
+        if (!scene) {
+            return std::nullopt;
+        }
+        FbxSourceSummaryUVE summary;
+        summary.meshCount = scene->meshes.count;
+        summary.boneCount = scene->bones.count;
+        summary.animationCount = scene->anim_stacks.count;
+        for (const ufbx_anim_stack* const stack : scene->anim_stacks) {
+            const double length = stack->time_end - stack->time_begin;
+            if (std::isfinite(length) && length > summary.longestAnimationSeconds) {
+                summary.longestAnimationSeconds = length;
+            }
+        }
+        summary.hasSkin = scene->skin_deformers.count > 0U;
+        return summary;
     } catch (const std::bad_alloc&) {
-        return false;
+        return std::nullopt;
     }
 }
 
