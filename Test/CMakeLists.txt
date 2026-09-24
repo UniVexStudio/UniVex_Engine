@@ -380,6 +380,7 @@ add_executable(uve_editor_tests
     Editor/regression_harness_uve_tests.cpp
     Editor/data_table_registry_bridge_uve_tests.cpp
     Editor/prefab_maturity_editor_uve_tests.cpp
+    Editor/content_catalogue_editor_uve_tests.cpp
     Editor/scene_component_authoring_uve_tests.cpp
     Editor/scene_node_editor_uve_tests.cpp
 )

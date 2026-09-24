@@ -106,6 +106,13 @@ bool RegisterEngineProjectSettingsUVE(Config::SettingsRegistryUVE& registry) {
     for (const EngineProjectSettingUVE& setting : GetEngineProjectSettingsUVE()) {
         allRegistered = registry.RegisterUVE(setting.descriptor) && allRegistered;
     }
+    constexpr std::size_t kMaximumContentPathBytesUVE = 512U;
+    allRegistered = registry.RegisterUVE(Config::MakeStringSettingUVE(
+                        std::string(EngineProjectSettingIdUVE::kDefaultPlayerEntityUVE), "",
+                        kMaximumContentPathBytesUVE, "Default Player", "Game/Player",
+                        "The entity asset (.uveentity, relative to Content) the player is spawned from. Set it "
+                        "from the Content panel: right-click an entity, Set as Default Player.")) &&
+                    allRegistered;
     // Layer names, 1 to 32 as a person counts them; bit 0 is layer 1.
     constexpr std::size_t kMaximumLayerNameBytesUVE = 32U;
     for (const LayerSetUVE set : {LayerSetUVE::Physics, LayerSetUVE::Render}) {

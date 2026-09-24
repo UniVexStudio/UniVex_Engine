@@ -171,7 +171,7 @@ using ImportFuncUVE = std::function<bool(const std::filesystem::path&, const std
     if (extension == "uvescene") {
         return AssetImportSourceKindUVE::SceneEnvelope;
     }
-    if (extension == "uveprefab") {
+    if (extension == "uveprefab" || extension == "uveentity") {
         return AssetImportSourceKindUVE::PrefabEnvelope;
     }
     if (extension == "uvemodel") {
@@ -227,6 +227,7 @@ AssetImporterUVE::AssetImporterUVE() : m_impl(std::make_unique<ImplUVE>()) {
     RegisterImporterUVE("txt", &TextFileImportUVE);
     RegisterImporterUVE("uvescene", &GenericFileImportUVE);
     RegisterImporterUVE("uveprefab", &GenericFileImportUVE);
+    RegisterImporterUVE("uveentity", &GenericFileImportUVE);
 
     // Typed UVE envelopes are already validated by their corresponding asset loaders. Importing
     // them here is an intentionally format-neutral, deterministic copy/re-register operation;

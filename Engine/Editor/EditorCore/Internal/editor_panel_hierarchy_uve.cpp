@@ -571,25 +571,6 @@ std::optional<bool> EditorUVE::GetPendingHierarchyRowOpenUVE(const Scene::Entity
     return pending->second;
 }
 
-namespace {
-
-// A category's icon on its heading line, sized and centred like a row's, followed on the same line
-// by whatever the caller draws next. Nothing when the texture is missing.
-void DrawNodePickerIconUVE(const std::uintptr_t textureId) {
-    if (textureId == 0U) {
-        return;
-    }
-    const float line = ImGui::GetTextLineHeight();
-    const float size = std::min(kHierarchyNodeIconSizeUVE, std::floor(line));
-    const ImVec2 cursor = ImGui::GetCursorScreenPos();
-    ImGui::Dummy(ImVec2{size, line});
-    const ImVec2 iconMin{std::floor(cursor.x), std::floor(cursor.y + ((line - size) * 0.5F))};
-    ImGui::GetWindowDrawList()->AddImage(static_cast<ImTextureID>(textureId), iconMin,
-                                         ImVec2{iconMin.x + size, iconMin.y + size});
-    ImGui::SameLine(0.0F, ImGui::GetStyle().ItemInnerSpacing.x);
-}
-
-} // namespace
 
 void EditorUVE::DrawNodePickerUVE() {
     // The Scene panel's "+" is small on purpose: the level's own furniture - a folder to organise it,

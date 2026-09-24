@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cfloat>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -83,6 +84,13 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
     if (changeSnapshot.rescanRequired) {
         ImGui::TextColored(ImVec4{0.95F, 0.72F, 0.30F, 1.0F}, "rescan required");
     }
+    if (!m_contentStatusMessage.empty()) {
+        if (ImGui::SmallButton("x##content-status")) {
+            m_contentStatusMessage.clear();
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("%s", m_contentStatusMessage.c_str());
+    }
     ReconcileContentBrowserDirectoryUVE(snapshot);
 
     if (m_selectedProjectFile.has_value()) {
@@ -104,40 +112,18 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
         }
     }
 
-    // ---- Unreal-style "Add" / "Import" toolbar ----
-    // "Add" opens the exact categorized node-descriptor menu the Scene panel's "+" uses, so it
-    // creates real scene nodes grouped by category (Node3D / Camera / Light / Physics / Audio / ...)
-    // - matching the requested "pindot ng Add -> Node3D-like" behavior with a real backing action,
-    // not a placeholder button.
+    // ---- "+ Add" / "Import" toolbar ----
+    // "+ Add" opens the Content catalogue: ready-made entities (Character, Prop, Trigger...), lights,
+    // shapes and the rest, each written as an asset into the folder on screen. Right-clicking
+    // empty Content space opens the same menu.
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{0.357F, 0.478F, 0.600F, 1.0F});
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{0.443F, 0.573F, 0.706F, 1.0F});
-    const bool addClicked = ImGui::SmallButton("+ Add");
+    if (ImGui::SmallButton("+ Add")) {
+        m_contentCreateMenuRequested = true;
+    }
     ImGui::PopStyleColor(2);
-    if (addClicked) {
-        ImGui::OpenPopup("content-add-node-popup");
-    }
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
-        ImGui::SetTooltip("Create a new object (Node3D, Camera, Light, Physics, Audio, ...)");
-    }
-    if (ImGui::BeginPopup("content-add-node-popup")) {
-        ImGui::TextDisabled("Add");
-        ImGui::Separator();
-        std::string_view lastCategory;
-        for (const Scene::Nodes::SceneNodeDescriptorUVE& descriptor : Scene::Nodes::GetSceneNodeDescriptorsUVE()) {
-            if (descriptor.category != lastCategory) {
-                if (!lastCategory.empty()) {
-                    ImGui::Separator();
-                }
-                ImGui::TextUnformatted(descriptor.category.data());
-                lastCategory = descriptor.category;
-            }
-            ImGui::BeginDisabled(!descriptor.libraryCreatable || !IsAuthoringCommandAllowedUVE());
-            if (ImGui::MenuItem(descriptor.displayName.data())) {
-                static_cast<void>(CreateDocumentSceneNodeUVE(descriptor.kind));
-            }
-            ImGui::EndDisabled();
-        }
-        ImGui::EndPopup();
+        ImGui::SetTooltip("Create an entity, light, shape, folder... here (or right-click empty space)");
     }
     ImGui::SameLine();
     if (ImGui::SmallButton("Import")) {
@@ -272,7 +258,6 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
     };
     const auto openContext = [this](const Asset::ProjectFileEntryUVE& entry) {
         m_filesystemContextEntry = entry;
-        m_filesystemContextFilter.clear();
         m_filesystemContextVisible = true;
     };
     const auto trackLongPress = [this, &openContext](const Asset::ProjectFileEntryUVE& entry,
@@ -426,6 +411,10 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
             };
             renderDirectory("");
         }
+        if (ImGui::IsWindowHovered() && !ImGui::IsAnyItemHovered() &&
+            ImGui::IsMouseReleased(ImGuiMouseButton_Right)) {
+            m_contentCreateMenuRequested = true;
+        }
     }
     ImGui::EndChild();
     ImGui::SameLine(0.0F, 0.0F);
@@ -534,7 +523,15 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
             const bool clicked = ImGui::Selectable("##card", selected, ImGuiSelectableFlags_AllowDoubleClick,
                                                    ImVec2{kCardWidthUVE - kCardPaddingUVE, kCardHeightUVE - kCardPaddingUVE});
             const bool rowHovered = ImGui::IsItemHovered();
-            if (rowHovered) {
+            // An entity asset drags into the Scene panel or the viewport to be placed there.
+            if ((type == ContentBrowserItemTypeUVE::Entity || type == ContentBrowserItemTypeUVE::Prefab) &&
+                ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID)) {
+                const std::string absolutePath = (snapshot.contentRoot / entry.relativePath).string();
+                ImGui::SetDragDropPayload(kContentEntityPayloadUVE, absolutePath.c_str(), absolutePath.size() + 1U);
+                ImGui::Text("Place %s", displayLabel.c_str());
+                ImGui::EndDragDropSource();
+            }
+            if (rowHovered && !ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
                 if (modelSource != nullptr && !modelSource->summary.empty()) {
                     ImGui::SetTooltip("%s\nType: %s\n%s", displayLabel.c_str(), GetContentBrowserItemTypeLabelUVE(type),
                                       modelSource->summary.c_str());
@@ -563,8 +560,12 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
                 const char* const typeLabel = GetContentBrowserItemTypeLabelUVE(type);
                 const float typeWidth = ImGui::CalcTextSize(typeLabel).x;
                 const float nameMax = std::max(20.0F, kCardWidthUVE - kCardIconSizeUVE - typeWidth - 32.0F);
-                gridDrawList->AddText(ImVec2{cardMin.x + kCardIconSizeUVE + 12.0F, textY},
-                                      ImGui::GetColorU32(ImGuiCol_Text), truncateLabelUVE(displayLabel, nameMax).c_str());
+                if (!DrawContentRenameFieldUVE(snapshot.contentRoot, entry, cardMin.x + kCardIconSizeUVE + 10.0F,
+                                               cardMin.y, nameMax)) {
+                    gridDrawList->AddText(ImVec2{cardMin.x + kCardIconSizeUVE + 12.0F, textY},
+                                          ImGui::GetColorU32(ImGuiCol_Text),
+                                          truncateLabelUVE(displayLabel, nameMax).c_str());
+                }
                 gridDrawList->AddText(ImVec2{cardMin.x + kCardWidthUVE - typeWidth - 12.0F, textY},
                                       ImGui::GetColorU32(ImGuiCol_TextDisabled), typeLabel);
             } else {
@@ -574,11 +575,14 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
                     gridDrawList->AddImage(static_cast<ImTextureID>(iconTexture), ImVec2{iconX, iconY},
                                            ImVec2{iconX + kCardIconSizeUVE, iconY + kCardIconSizeUVE});
                 }
-                const std::string truncatedLabel = truncateLabelUVE(displayLabel, kCardWidthUVE - kCardPaddingUVE);
-                const float labelWidth = ImGui::CalcTextSize(truncatedLabel.c_str()).x;
-                const float labelX = cardMin.x + std::max(0.0F, (kCardWidthUVE - labelWidth) * 0.5F);
-                gridDrawList->AddText(ImVec2{labelX, cardMin.y + kCardIconSizeUVE + 8.0F},
-                                      ImGui::GetColorU32(ImGuiCol_Text), truncatedLabel.c_str());
+                if (!DrawContentRenameFieldUVE(snapshot.contentRoot, entry, cardMin.x + 2.0F,
+                                               cardMin.y + kCardIconSizeUVE + 6.0F, kCardWidthUVE - kCardPaddingUVE - 4.0F)) {
+                    const std::string truncatedLabel = truncateLabelUVE(displayLabel, kCardWidthUVE - kCardPaddingUVE);
+                    const float labelWidth = ImGui::CalcTextSize(truncatedLabel.c_str()).x;
+                    const float labelX = cardMin.x + std::max(0.0F, (kCardWidthUVE - labelWidth) * 0.5F);
+                    gridDrawList->AddText(ImVec2{labelX, cardMin.y + kCardIconSizeUVE + 8.0F},
+                                          ImGui::GetColorU32(ImGuiCol_Text), truncatedLabel.c_str());
+                }
             }
             const bool contextClicked = rowHovered &&
                                          (ImGui::IsMouseClicked(ImGuiMouseButton_Right) ||
@@ -595,6 +599,10 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
                     m_contentBrowserDirectory = entry.relativePath;
                     m_contentBrowserShowingFavorites = false;
                 }
+                if (type == ContentBrowserItemTypeUVE::Entity && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                    m_contentStatusMessage =
+                        "Opening an entity's tree needs the Entity Editor, which is not in this build yet.";
+                }
             }
             ImGui::PopID();
             if (contextClicked) {
@@ -610,6 +618,11 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
                 trackLongPress(entry, rowHovered);
             }
         }
+        // Right-click on empty space: the same menu as "+ Add".
+        if (ImGui::IsWindowHovered() && !ImGui::IsAnyItemHovered() &&
+            ImGui::IsMouseReleased(ImGuiMouseButton_Right)) {
+            m_contentCreateMenuRequested = true;
+        }
         if (visibleCount == 0U) {
             ImGui::SetCursorPos(gridOrigin);
             ImGui::TextDisabled(gridDirectory.empty() ? "main is empty." : "This folder is empty.");
@@ -621,134 +634,24 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
         }
         ImGui::EndChild();
     }
-    ImGui::End();
-}
 
-void EditorUVE::DrawFilesystemContextPopupUVE() {
-    if (!m_filesystemContextVisible) {
-        return;
+    constexpr const char* kCreateMenuId = "##content-create-menu";
+    const bool createMenuOpened = m_contentCreateMenuRequested;
+    if (createMenuOpened) {
+        m_contentCreateMenuRequested = false;
+        ImGui::OpenPopup(kCreateMenuId);
+        m_contentCreateMenuFrames = 0;
     }
-    const ImGuiViewport* const contextViewport = ImGui::GetMainViewport();
-    ImGui::SetNextWindowPos(ImVec2{contextViewport->WorkPos.x + 360.0F, contextViewport->WorkPos.y + 180.0F},
-                            ImGuiCond_Appearing);
-    ImGui::SetNextWindowSize(ImVec2{320.0F, 0.0F}, ImGuiCond_Appearing);
-    if (!ImGui::Begin("Filesystem Components##context", &m_filesystemContextVisible,
-                      ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::End();
-        return;
+    // Only while it is open: a SetNextWindow* call with no popup to take it would land on the
+    // next window drawn.
+    if (ImGui::IsPopupOpen(kCreateMenuId)) {
+        PlaceContentMenuUVE(createMenuOpened, m_contentCreateMenuAnchorX, m_contentCreateMenuAnchorY,
+                            m_contentCreateMenuFrames, m_contentCreateMenuX, m_contentCreateMenuY);
     }
-
-    if (!m_filesystemContextEntry.has_value()) {
-        ImGui::TextDisabled("No Filesystem entry selected.");
-        ImGui::End();
-        return;
-    }
-
-    const Asset::ProjectFileEntryUVE& contextEntry = *m_filesystemContextEntry;
-    ImGui::TextDisabled("%s", contextEntry.relativePath.generic_string().c_str());
-    ImGui::Separator();
-    std::array<char, 257> filterBuffer{};
-    std::strncpy(filterBuffer.data(), m_filesystemContextFilter.c_str(), filterBuffer.size() - 1U);
-    ImGui::SetNextItemWidth(260.0F);
-    if (ImGui::InputTextWithHint("##filesystem-context-search", "Search components", filterBuffer.data(),
-                                 filterBuffer.size())) {
-        m_filesystemContextFilter = filterBuffer.data();
-    }
-
-    const auto matches = [this](const std::string_view label) {
-        return ContainsCaseInsensitiveUVE(label, m_filesystemContextFilter);
-    };
-    const bool contextEntryFavorited = IsProjectPathFavoritedUVE(contextEntry.relativePath);
-    const char* const favoriteActionText = contextEntryFavorited ? "Remove from Favorites" : "Add to Favorites";
-    if (matches(favoriteActionText)) {
-        const std::string favoriteMenuLabel = std::string(kIconStarUVE) + " " + favoriteActionText;
-        if (ImGui::MenuItem(favoriteMenuLabel.c_str())) {
-            ToggleProjectPathFavoriteUVE(contextEntry.relativePath);
-            m_filesystemContextVisible = false;
-        }
-    }
-    if (contextEntry.kind == Asset::ProjectFileEntryKindUVE::Directory && matches("Open folder")) {
-        if (ImGui::MenuItem("Open folder")) {
-            m_contentBrowserDirectory = contextEntry.relativePath;
-            m_contentBrowserShowingFavorites = false;
-            m_selectedProjectFile = contextEntry;
-            m_selectedAsset.reset();
-            m_filesystemContextVisible = false;
-        }
-    }
-
-    // A model source is imported automatically; this puts it on the selected node's mesh. The
-    // converted mesh must exist first - naming one that is still importing would leave the node
-    // pointing at nothing.
-    const std::filesystem::path importedModel =
-        IsModelSourcePathUVE(contextEntry.relativePath) ? GetImportedModelPathUVE(contextEntry.relativePath)
-                                                        : std::filesystem::path{};
-    std::error_code importedError;
-    const bool modelReady = !importedModel.empty() && std::filesystem::is_regular_file(importedModel, importedError);
-    const bool uvemodel = contextEntry.registeredAssetGuid.has_value() &&
-                          contextEntry.relativePath.extension().string() == ".uvemodel";
-    if ((modelReady || uvemodel) && matches("Use as Mesh on selected node")) {
-        const bool canAssign = IsDocumentEntityUVE(m_selectedEntity) && IsAuthoringCommandAllowedUVE() &&
-                               m_services->GetEntityManagerUVE().HasComponentUVE<Scene::MeshComponentUVE>(m_selectedEntity);
-        ImGui::BeginDisabled(!canAssign);
-        if (ImGui::MenuItem("Use as Mesh on selected node")) {
-            Scene::MeshComponentUVE mesh =
-                m_services->GetEntityManagerUVE().GetComponentUVE<Scene::MeshComponentUVE>(m_selectedEntity);
-            mesh.meshGuid = modelReady ? m_services->GetAssetDatabaseUVE().RegisterUVE(importedModel)
-                                       : *contextEntry.registeredAssetGuid;
-            static_cast<void>(SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::Mesh, mesh));
-            m_filesystemContextVisible = false;
-        }
-        ImGui::EndDisabled();
-    }
-
-    ImGui::Separator();
-    ImGui::TextDisabled("Scene components");
-    const auto componentAction = [this, &matches](const char* const label, const EditorSceneComponentKindUVE kind,
-                                                    const EditorSceneComponentValueUVE& value) {
-        if (!matches(label)) {
-            return;
-        }
-        const bool enabled = IsDocumentEntityUVE(m_selectedEntity) && IsAuthoringCommandAllowedUVE();
-        ImGui::BeginDisabled(!enabled);
-        if (ImGui::MenuItem(label)) {
-            if (SetSelectedSceneComponentUVE(kind, value)) {
-                m_activeRightPanelTab = EditorRightPanelTabUVE::Inspector;
-                m_inspectorPanelVisible = true;
-            }
-            m_filesystemContextVisible = false;
-        }
-        ImGui::EndDisabled();
-    };
-
-    componentAction("Camera", EditorSceneComponentKindUVE::Camera, Scene::CameraComponentUVE{});
-    componentAction("Mesh", EditorSceneComponentKindUVE::Mesh, Scene::MeshComponentUVE{});
-    componentAction("Light", EditorSceneComponentKindUVE::Light, Scene::LightComponentUVE{});
-    componentAction("Collider", EditorSceneComponentKindUVE::Collider, Scene::ColliderComponentUVE{});
-    componentAction("Rigid Body", EditorSceneComponentKindUVE::RigidBody, Scene::RigidBodyComponentUVE{});
-    componentAction("Audio Source", EditorSceneComponentKindUVE::AudioSource, Scene::AudioSourceComponentUVE{});
-    componentAction("Particle Emitter", EditorSceneComponentKindUVE::ParticleEmitter,
-                    Scene::ParticleEmitterComponentUVE{});
-    componentAction("Script", EditorSceneComponentKindUVE::Script, Scene::ScriptComponentUVE{});
-    componentAction("Animation Player", EditorSceneComponentKindUVE::AnimationPlayer,
-                    Scene::AnimationPlayerComponentUVE{});
-    componentAction("World Environment", EditorSceneComponentKindUVE::WorldEnvironment,
-                    Scene::WorldEnvironment3DNodeComponentUVE{});
-    componentAction("Character Controller", EditorSceneComponentKindUVE::CharacterController,
-                    Scene::CharacterControllerComponentUVE{});
-    componentAction("Canvas", EditorSceneComponentKindUVE::Canvas, Scene::CanvasComponentUVE{});
-    componentAction("UI Text", EditorSceneComponentKindUVE::UIText, Scene::UITextComponentUVE{});
-    componentAction("UI Image", EditorSceneComponentKindUVE::UIImage, Scene::UIImageComponentUVE{});
-    componentAction("UI Button", EditorSceneComponentKindUVE::UIButton, Scene::UIButtonComponentUVE{});
-    componentAction("Process", EditorSceneComponentKindUVE::Process, Scene::ProcessComponentUVE{});
-    componentAction("Thread Group", EditorSceneComponentKindUVE::ThreadGroup,
-                    Scene::ThreadGroupComponentUVE{});
-    componentAction("Auto Translate", EditorSceneComponentKindUVE::AutoTranslate,
-                    Scene::AutoTranslateComponentUVE{});
-    componentAction("Metadata", EditorSceneComponentKindUVE::NodeMetadata,
-                    Scene::NodeMetadataComponentUVE{});
-    if (!IsDocumentEntityUVE(m_selectedEntity)) {
-        ImGui::TextDisabled("Select a Scene node to attach a component.");
+    if (ImGui::BeginPopup(kCreateMenuId)) {
+        SettleContentMenuUVE(m_contentCreateMenuFrames, m_contentCreateMenuX, m_contentCreateMenuY);
+        DrawContentCreateMenuUVE(snapshot.contentRoot, gridDirectory);
+        ImGui::EndPopup();
     }
     ImGui::End();
 }

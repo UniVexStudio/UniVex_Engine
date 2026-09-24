@@ -133,7 +133,7 @@ struct EditorUVEAccessUVE final {
     [[nodiscard]] static std::vector<std::string> GetEveryContentBrowserTypeLabelUVE() {
         using Type = EditorUVE::ContentBrowserItemTypeUVE;
         std::vector<std::string> labels;
-        for (const Type type : {Type::Folder, Type::Scene, Type::Prefab, Type::Bundle, Type::Mesh, Type::Model,
+        for (const Type type : {Type::Folder, Type::Scene, Type::Prefab, Type::Entity, Type::Bundle, Type::Mesh, Type::Model,
                                 Type::Texture, Type::Shader, Type::Material, Type::Save, Type::Animation, Type::Script, Type::Audio,
                                 Type::Font, Type::File}) {
             labels.emplace_back(EditorUVE::GetContentBrowserItemTypeLabelUVE(type));
@@ -799,6 +799,7 @@ TEST(EditorUVETest, ContentBrowserWorkflowUVE_ScriptsAudioAndFontsAreTheirOwnTyp
     EXPECT_EQ(labelOf("Audio/Step.WAV"), "Audio");
     EXPECT_EQ(labelOf("Fonts/title.ttf"), "Font");
     EXPECT_EQ(labelOf("Fonts/body.otf"), "Font");
+    EXPECT_EQ(labelOf("Content/Hero.uveentity"), "Entity");
     EXPECT_EQ(labelOf("Notes/readme.txt"), "File");
     // FBX is a model source like glTF and OBJ: shown as a mesh and imported behind the scenes.
     EXPECT_EQ(labelOf("Characters/hero.fbx"), "Mesh");

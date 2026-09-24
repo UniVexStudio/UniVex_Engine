@@ -225,6 +225,8 @@ void EditorUVE::DrawViewportPanelUVE() {
             // displays elsewhere in this file - flip the V axis so the image displays right-side up.
             ImGui::Image(static_cast<ImTextureID>(textureId), ImVec2{used.x, used.y}, ImVec2{0.0F, 1.0F},
                          ImVec2{1.0F, 0.0F});
+            // An entity asset dropped on the view goes under the scene root.
+            AcceptContentEntityDropUVE(Scene::kInvalidEntityUVE);
             // The projection/gizmo-mode overlay bubbles are editor-authoring chrome - hidden while
             // the Game workspace tab is active, matching Unity's own Scene/Game split where the
             // Game view previews what a player would see with no editor overlays on top.
