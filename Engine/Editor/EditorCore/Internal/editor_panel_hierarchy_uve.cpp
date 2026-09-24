@@ -592,155 +592,53 @@ void DrawNodePickerIconUVE(const std::uintptr_t textureId) {
 } // namespace
 
 void EditorUVE::DrawNodePickerUVE() {
+    // The Scene panel's "+" is small on purpose: the level's own furniture - a folder to organise it,
+    // the sun and the sky. Everything else is made in the Content Browser ("+ Add" or right-click)
+    // and dragged into the level, so the world is built from assets instead of loose nodes.
     constexpr const char* kPopupId = "##node-picker";
-    bool focusSearch = false;
     if (m_nodePickerOpenRequested) {
         m_nodePickerOpenRequested = false;
-        m_nodePickerFilter.clear();
-        m_nodePickerScrolledFilter.clear();
-        focusSearch = true;
         ImGui::OpenPopup(kPopupId);
     }
-    // Small and fixed: the list scrolls inside the box instead of the box growing to the screen's
-    // height. Placed at the cursor, which is where the click that asked for it happened.
-    const float fontSize = ImGui::GetFontSize();
-    ImGui::SetNextWindowSize(ImVec2{fontSize * 17.0F, fontSize * 21.0F}, ImGuiCond_Always);
     if (!ImGui::BeginPopup(kPopupId)) {
         return;
     }
-
-    // Name the parent, so it is obvious where the new node will land.
     const Scene::EntityUVE parent =
         (m_selectedEntity != Scene::kInvalidEntityUVE && IsDocumentEntityUVE(m_selectedEntity) &&
          HasSingleDocumentSelectionUVE())
             ? m_selectedEntity
             : Scene::kInvalidEntityUVE;
-    if (parent != Scene::kInvalidEntityUVE) {
-        ImGui::TextDisabled("Add child to %s", GetEntityDisplayLabelUVE(parent).c_str());
-    } else {
-        ImGui::TextDisabled("Add node to the scene");
-    }
-
-    std::array<char, 128> buffer{};
-    m_nodePickerFilter.copy(buffer.data(), buffer.size() - 1U);
-    if (focusSearch) {
-        ImGui::SetKeyboardFocusHere();
-    }
-    ImGui::SetNextItemWidth(-1.0F);
-    if (ImGui::InputTextWithHint("##node-picker-search", "Search nodes", buffer.data(), buffer.size())) {
-        m_nodePickerFilter = buffer.data();
-    }
-    const bool enterPressed = ImGui::IsItemFocused() && ImGui::IsKeyPressed(ImGuiKey_Enter, false);
-
-    // A node matches on its name or its category, so "physics" lists the whole group.
-    const auto matches = [this](const Scene::Nodes::SceneNodeDescriptorUVE& descriptor) {
-        return descriptor.libraryCreatable && (ContainsCaseInsensitiveUVE(descriptor.displayName, m_nodePickerFilter) ||
-                                               ContainsCaseInsensitiveUVE(descriptor.category, m_nodePickerFilter));
-    };
-
-    // The best match is what Enter takes and what is highlighted: a name that starts with the query
-    // beats one that merely contains it, so "box" picks BoxMesh3D rather than Hitbox3D.
-    const auto descriptors = Scene::Nodes::GetSceneNodeDescriptorsUVE();
-    std::optional<Scene::Nodes::SceneNodeKindUVE> bestMatch;
-    std::optional<Scene::Nodes::SceneNodeKindUVE> firstMatch;
-    for (const Scene::Nodes::SceneNodeDescriptorUVE& descriptor : descriptors) {
-        if (!matches(descriptor)) {
-            continue;
-        }
-        if (!firstMatch.has_value()) {
-            firstMatch = descriptor.kind;
-        }
-        const std::string_view name = descriptor.displayName;
-        if (!bestMatch.has_value() && name.size() >= m_nodePickerFilter.size() &&
-            ContainsCaseInsensitiveUVE(name.substr(0U, m_nodePickerFilter.size()), m_nodePickerFilter)) {
-            bestMatch = descriptor.kind;
-        }
-    }
-    if (!bestMatch.has_value()) {
-        bestMatch = firstMatch;
-    }
-
-    std::optional<Scene::Nodes::SceneNodeKindUVE> chosen;
+    ImGui::TextDisabled("%s", parent != Scene::kInvalidEntityUVE
+                                  ? ("Add to " + GetEntityDisplayLabelUVE(parent)).c_str()
+                                  : "Add to the scene");
     ImGui::Separator();
-    if (ImGui::BeginChild("##node-picker-list", ImVec2{0.0F, 0.0F}, false)) {
-        // The level's own nodes first. Nodes that belong to an entity (a character's body, its
-        // animation) sit folded away below: they are built in an Entity asset, and are here only
-        // until the Entity Editor exists.
-        using Placement = Scene::Nodes::SceneNodePlacementUVE;
-        const auto drawGroup = [&](const Placement placement) {
-            std::string_view shownCategory;
-            for (const Scene::Nodes::SceneNodeDescriptorUVE& descriptor : descriptors) {
-                if (!matches(descriptor) || Scene::Nodes::GetSceneNodePlacementUVE(descriptor.kind) != placement) {
-                    continue;
-                }
-                // A category heading only above the first match in it, so an empty group never shows.
-                if (descriptor.category != shownCategory) {
-                    if (!shownCategory.empty()) {
-                        ImGui::Spacing();
-                    }
-                    DrawNodePickerIconUVE(m_uiAssets.GetNodeCategoryIconTextureIdUVE(descriptor.category));
-                    ImGui::TextDisabled("%s", descriptor.category.data());
-                    shownCategory = descriptor.category;
-                }
-                ImGui::Indent(fontSize * 0.6F);
-                const bool highlight = !m_nodePickerFilter.empty() && bestMatch == descriptor.kind;
-                // The row is the whole width; the icon and name are painted over it, so the name keeps
-                // the same left edge whether or not an icon is there.
-                const ImVec2 rowStart = ImGui::GetCursorScreenPos();
-                ImGui::PushID(static_cast<int>(descriptor.kind));
-                if (ImGui::Selectable("##node", highlight)) {
-                    chosen = descriptor.kind;
-                }
-                ImGui::PopID();
-                const float line = ImGui::GetTextLineHeight();
-                const float iconSize = std::min(kHierarchyNodeIconSizeUVE, std::floor(line));
-                if (const std::uintptr_t icon = m_uiAssets.GetNodeIconTextureIdUVE(descriptor.kind); icon != 0U) {
-                    const ImVec2 iconMin{std::floor(rowStart.x), std::floor(rowStart.y + ((line - iconSize) * 0.5F))};
-                    ImGui::GetWindowDrawList()->AddImage(static_cast<ImTextureID>(icon), iconMin,
-                                                         ImVec2{iconMin.x + iconSize, iconMin.y + iconSize});
-                }
-                ImGui::GetWindowDrawList()->AddText(
-                    ImVec2{rowStart.x + iconSize + ImGui::GetStyle().ItemInnerSpacing.x, rowStart.y},
-                    ImGui::GetColorU32(ImGuiCol_Text), descriptor.displayName.data(),
-                    descriptor.displayName.data() + descriptor.displayName.size());
-                if (highlight && m_nodePickerFilter != m_nodePickerScrolledFilter) {
-                    ImGui::SetScrollHereY(0.5F); // keep the Enter target in sight as the query changes
-                    m_nodePickerScrolledFilter = m_nodePickerFilter;
-                }
-                ImGui::Unindent(fontSize * 0.6F);
-            }
-        };
-        drawGroup(Placement::World);
-        const bool anyEntityMatch = std::any_of(descriptors.begin(), descriptors.end(), [&](const auto& descriptor) {
-            return matches(descriptor) &&
-                   Scene::Nodes::GetSceneNodePlacementUVE(descriptor.kind) == Placement::Entity;
-        });
-        if (anyEntityMatch) {
-            ImGui::Spacing();
-            // Opened by a search, so typing "character" still finds it.
-            ImGui::SetNextItemOpen(!m_nodePickerFilter.empty(), ImGuiCond_Always);
-            if (ImGui::CollapsingHeader("Entity nodes")) {
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Parts of an entity - a character's body, its animation, its hitboxes.");
-                }
-                drawGroup(Placement::Entity);
-            }
+    const auto item = [this](const Scene::Nodes::SceneNodeKindUVE kind, const char* const label,
+                             const char* const shortcut, const char* const tooltip) {
+        DrawNodePickerIconUVE(m_uiAssets.GetNodeIconTextureIdUVE(kind));
+        const bool picked = ImGui::MenuItem(label, shortcut);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("%s", tooltip);
         }
-        if (!firstMatch.has_value()) {
-            ImGui::TextDisabled("No node matches \"%s\".", m_nodePickerFilter.c_str());
+        return picked;
+    };
+    if (item(Scene::Nodes::SceneNodeKindUVE::Folder, "New Folder", nullptr,
+             "Groups nodes in this panel. It has no position, so nothing moves in the world.")) {
+        static_cast<void>(CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Folder));
+    }
+    ImGui::Separator();
+    if (item(Scene::Nodes::SceneNodeKindUVE::Light3D, "Sun", nullptr,
+             "A directional light: the sun that lights the whole level.")) {
+        if (CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Light3D) != Scene::kInvalidEntityUVE) {
+            static_cast<void>(SetSelectedEntityNameUVE(MakeUniqueDocumentEntityNameUVE("Sun")));
         }
     }
-    ImGui::EndChild();
-
-    // Enter takes the best match - the highlighted row - so typing a few letters and pressing
-    // Enter is enough to add a node without touching the mouse.
-    if (!chosen.has_value() && enterPressed && bestMatch.has_value()) {
-        chosen = bestMatch;
+    if (item(Scene::Nodes::SceneNodeKindUVE::WorldEnvironment3D, "World Environment", nullptr,
+             "The sky, ambient light and fog of the level.")) {
+        static_cast<void>(CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::WorldEnvironment3D));
     }
-    if (chosen.has_value()) {
-        static_cast<void>(CreateDocumentSceneNodeUVE(*chosen));
-        ImGui::CloseCurrentPopup();
-    }
+    ImGui::Separator();
+    ImGui::TextDisabled("Meshes, characters and the rest:");
+    ImGui::TextDisabled("Content Browser > + Add or right-click.");
     ImGui::EndPopup();
 }
 

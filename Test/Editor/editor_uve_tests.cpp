@@ -15,6 +15,9 @@
 
 #include <gtest/gtest.h>
 
+#include "uve/scene/nodes/scene_folder_uve.h"
+#include "uve/scene/nodes/scene_node_type_uve.h"
+
 #include "Support/test_scratch_uve.h"
 
 #include "editor_icon_set_uve.h"
@@ -5019,6 +5022,33 @@ TEST(EditorUVETest, CharacterBodyInspectorUVE_IsItsChainToTheRootAndNothingElse)
         const std::vector<std::string> boxIds = EditorUVEAccessUVE::GetEligibleInspectorDrawerIdsUVE(editor, box);
         EXPECT_EQ(std::count(boxIds.begin(), boxIds.end(), "collider"), 0);
         EXPECT_EQ(std::count(boxIds.begin(), boxIds.end(), "physics-object"), 0);
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
+TEST(EditorUVETest, FolderUVE_GroupsNodesWithoutMovingThem) {
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_folder.uvescene");
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        const Scene::EntityUVE cube = editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::BoxMesh3D);
+        ASSERT_NE(cube, Scene::kInvalidEntityUVE);
+        entityManager.GetComponentUVE<Scene::TransformComponentUVE>(cube).localPosition = Math::Vector3UVE{3.0F, 0.0F, 0.0F};
+        editor.SelectEntityUVE(editor.GetDocumentSceneRootUVE());
+        const Scene::EntityUVE folder = editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Folder);
+        ASSERT_NE(folder, Scene::kInvalidEntityUVE);
+        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::FolderComponentUVE>(folder));
+        EXPECT_FALSE(entityManager.HasComponentUVE<Scene::TransformComponentUVE>(folder));
+        EXPECT_EQ(Scene::ResolveSceneNodeKindUVE(entityManager, folder), Scene::Nodes::SceneNodeKindUVE::Folder);
+        // Moving the cube into the folder keeps it where it was.
+        editor.SelectEntityUVE(cube);
+        ASSERT_TRUE(editor.ReparentSelectedEntityUVE(folder));
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::TransformComponentUVE>(cube).localPosition.x, 3.0F);
+        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorGroupHeadersUVE(editor, folder), (std::vector<std::string>{"Node"}));
         editor.ShutdownUVE();
     }
     engine.Shutdown();

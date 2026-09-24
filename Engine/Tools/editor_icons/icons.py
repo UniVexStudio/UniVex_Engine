@@ -828,6 +828,12 @@ def folder_asset(ic):
     ic.add(f'<path d="M 7.5 26.5 h 50" stroke="{shade(GOLD, 0.34)}" stroke-width="1.3" stroke-linecap="round"/>')
 
 
+@scene_node("folder", "Folder", "Scene")
+def folder_node(ic):
+    # The Scene panel's Folder looks like the Content Browser's: the same thing, organising.
+    folder_asset(ic)
+
+
 @content_type("folder_open", "Folder (open)")
 def folder_open_asset(ic):
     shadow(ic, 32, 56, 27, 4.5)

@@ -63,6 +63,7 @@
 #include "uve/nodes/3d/all_nodes_3d_uve.h"
 #include "uve/nodes/canvas_layer/all_nodes_canvas_layer_uve.h"
 #include "uve/scene/nodes/scene_node_type_uve.h"
+#include "uve/scene/nodes/scene_folder_uve.h"
 #include "uve/scene/nodes/scene_root_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/light_component_uve.h"
@@ -2065,6 +2066,10 @@ Scene::EntityUVE EditorUVE::CreateDocumentSceneNodeUVE(
         case Scene::Nodes::SceneNodeKindUVE::AnimationTree:
             entity = CreateNodeDefinitionEntityInternalUVE(Scene::AnimationTreeNodeDefinitionUVE{},
                                                             Scene::ApplyAnimationTreeNodeDefinitionUVE);
+            break;
+        case Scene::Nodes::SceneNodeKindUVE::Folder:
+            entity = CreateNodeDefinitionEntityInternalUVE(Scene::FolderNodeDefinitionUVE{},
+                                                            Scene::ApplyFolderNodeDefinitionUVE);
             break;
         case Scene::Nodes::SceneNodeKindUVE::SceneRoot:
             // The scene root is created by the document lifecycle

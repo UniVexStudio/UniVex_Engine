@@ -41,6 +41,7 @@
 #include "uve/component/collider_component_uve.h"
 #include "uve/nodes/3d/all_nodes_3d_uve.h"
 #include "uve/scene/nodes/scene_node_type_uve.h"
+#include "uve/scene/nodes/scene_folder_uve.h"
 #include "uve/scene/nodes/scene_root_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/light_component_uve.h"
@@ -641,6 +642,10 @@ template <typename VectorT>
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const EditorDescriptionComponentUVE& component) {
     return {{"description", component.description}};
+}
+
+[[nodiscard]] nlohmann::json ToJsonUVE(const FolderComponentUVE&) {
+    return nlohmann::json::object();
 }
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const SceneRootComponentUVE&) {
@@ -1474,6 +1479,9 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                               }
                           },
                       });
+        table.emplace("FolderComponentUVE", MakeRegistrationUVE<FolderComponentUVE>([](const nlohmann::json&) {
+                          return FolderComponentUVE{};
+                      }, IsFolderComponentValidUVE));
         table.emplace("SceneRootComponentUVE",
                     MakeRegistrationUVE<SceneRootComponentUVE>([](const nlohmann::json&) {
                         return SceneRootComponentUVE{};
