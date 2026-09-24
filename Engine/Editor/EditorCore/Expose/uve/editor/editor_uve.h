@@ -27,6 +27,7 @@
 #include "uve/core/i_simulation_control_uve.h"
 #include "uve/config/settings_registry_uve.h"
 #include "uve/editor/editor_color_uve.h"
+#include "uve/editor/editor_commands_uve.h"
 #include "uve/input/input_action_uve.h"
 #include "uve/editor/editor_tool_session_uve.h"
 #include "uve/editor/developer_console_uve.h"
@@ -595,6 +596,20 @@ public:
     /// Writes the project settings file if it has unsaved changes. Also happens when the Project
     /// Settings window closes and when the editor shuts down.
     [[nodiscard]] bool SaveProjectSettingsUVE();
+    /// Every command the editor has, in the order the palette and the shortcuts window list them.
+    [[nodiscard]] const std::vector<EditorCommandUVE>& GetEditorCommandsUVE() const noexcept;
+    /// Runs command `id` when it is available now. False for an unknown or unavailable command.
+    [[nodiscard]] bool RunEditorCommandUVE(std::string_view id);
+    /// Sets shortcut `slot` (0 primary, 1 alternate) of command `id`; an empty shortcut removes it.
+    /// Refused for an unknown command, a slot past 1, or a key a shortcut may not use.
+    [[nodiscard]] bool SetEditorCommandShortcutUVE(std::string_view id, std::size_t slot,
+                                                   const EditorShortcutUVE& shortcut);
+    /// Shows the command palette, ready to type into.
+    void OpenCommandPaletteUVE() noexcept;
+    [[nodiscard]] bool IsCommandPaletteOpenUVE() const noexcept { return m_commandPalette.open; }
+    /// Shows the Keyboard Shortcuts window.
+    void OpenKeyboardShortcutsUVE() noexcept;
+
     /// Shows the Input Map window: the project's actions and what triggers them.
     void OpenInputMapUVE() noexcept;
     [[nodiscard]] bool IsInputMapOpenUVE() const noexcept { return m_inputMapWindow.visible; }
@@ -1283,6 +1298,29 @@ private:
         std::optional<std::size_t> listenReplace;
     };
     void DrawInputMapWindowUVE();
+    // Commands (editor_commands_uve.cpp).
+    struct CommandPaletteStateUVE final {
+        bool open = false;
+        bool focus = false;
+        std::array<char, 128> query{};
+        int highlighted = 0;
+    };
+    struct ShortcutsWindowStateUVE final {
+        bool visible = false;
+        std::array<char, 64> filter{};
+        bool listening = false;
+        std::size_t listenCommand = 0U;
+        std::size_t listenSlot = 0U;
+    };
+    void RegisterEditorCommandsUVE();
+    [[nodiscard]] EditorCommandUVE* FindEditorCommandUVE(std::string_view id) noexcept;
+    void DispatchEditorShortcutsUVE();
+    void DrawCommandMenuItemUVE(std::string_view id);
+    void DrawCommandPaletteUVE();
+    void DrawKeyboardShortcutsWindowUVE();
+    // Shortcuts as the hidden settings "editor.shortcuts.<command>.primary|alternate".
+    [[nodiscard]] std::optional<Config::SettingValueUVE> GetShortcutSettingUVE(std::string_view id) const;
+    [[nodiscard]] bool SetShortcutSettingUVE(std::string_view id, const Config::SettingValueUVE& value);
     void DrawInputBindingListUVE(std::vector<Input::InputActionUVE>& actions, std::size_t actionIndex, bool negative,
                                  bool& changed);
     // Sets the project's input map and registers it with the input system at once.
@@ -1514,6 +1552,10 @@ private:
     SettingsWindowStateUVE m_preferencesWindow;
     SettingsWindowStateUVE m_projectSettingsWindow;
     InputMapWindowStateUVE m_inputMapWindow;
+    std::vector<EditorCommandUVE> m_commands;
+    std::deque<std::string> m_recentCommandIds;
+    CommandPaletteStateUVE m_commandPalette;
+    ShortcutsWindowStateUVE m_shortcutsWindow;
     EditorRightPanelTabUVE m_activeRightPanelTab = EditorRightPanelTabUVE::Inspector;
     InspectorDrawerRegistryUVE m_inspectorDrawerRegistry;
     DeveloperConsoleUVE m_developerConsole;

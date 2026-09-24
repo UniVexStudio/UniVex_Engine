@@ -1003,7 +1003,8 @@ TEST(EditorUVETest, EditorSettingsUVE_DescriptorDefaultsMatchTheEditorsOwnDefaul
         // Not initialised, so nothing has been loaded: every value is the editor's in-class default.
         EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_setting_defaults.uvescene");
         const Config::SettingsRegistryUVE& registry = editor.GetSettingsRegistryUVE();
-        ASSERT_EQ(registry.GetCountUVE(), 26U);
+        // The declared preferences, and a primary and alternate shortcut for every command.
+        ASSERT_EQ(registry.GetCountUVE(), 26U + (2U * editor.GetEditorCommandsUVE().size()));
         for (const Config::SettingDescriptorUVE* descriptor : registry.GetAllUVE()) {
             const std::optional<Config::SettingValueUVE> value = editor.GetEditorSettingUVE(descriptor->id);
             ASSERT_TRUE(value.has_value()) << descriptor->id;
@@ -1174,6 +1175,74 @@ TEST(EditorUVETest, PlayModePreferencesUVE_PauseSaveAndStayInTheTab) {
     }
     engine.Shutdown();
     std::filesystem::remove(scenePath);
+}
+
+TEST(EditorUVETest, EditorCommandsUVE_RunOnlyWhenAvailableAndKeepRebindsAcrossSessions) {
+    const Core::EngineConfigUVE config = MakeEditorTestConfigUVE();
+    std::filesystem::remove(config.settingsFilePath);
+    Core::EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_commands.uvescene");
+        editor.InitUVE();
+        const std::vector<EditorCommandUVE>& commands = editor.GetEditorCommandsUVE();
+        // Ids are unique, and every default shortcut is one only its command has.
+        for (std::size_t a = 0U; a < commands.size(); ++a) {
+            for (std::size_t b = a + 1U; b < commands.size(); ++b) {
+                EXPECT_NE(commands[a].id, commands[b].id);
+                for (const EditorShortcutUVE& shortcut : commands[a].defaultShortcuts) {
+                    if (!shortcut.IsEmptyUVE()) {
+                        EXPECT_EQ(std::count(commands[b].defaultShortcuts.begin(), commands[b].defaultShortcuts.end(),
+                                             shortcut),
+                                  0)
+                            << commands[a].id << " and " << commands[b].id;
+                    }
+                }
+            }
+        }
+
+        // Undo is unavailable with nothing done; after creating a node it runs.
+        EXPECT_FALSE(editor.RunEditorCommandUVE("edit.undo"));
+        ASSERT_TRUE(editor.RunEditorCommandUVE("create.empty"));
+        EXPECT_TRUE(editor.CanUndoUVE());
+        EXPECT_TRUE(editor.RunEditorCommandUVE("edit.undo"));
+        EXPECT_FALSE(editor.RunEditorCommandUVE("no.such.command"));
+
+        // A rebind is kept with the preferences; a key a shortcut may not use is refused.
+        const std::optional<EditorShortcutUVE> ctrlU = ParseEditorShortcutUVE("Ctrl+U");
+        ASSERT_TRUE(ctrlU.has_value());
+        ASSERT_TRUE(editor.SetEditorCommandShortcutUVE("edit.undo", 1U, *ctrlU));
+        ASSERT_TRUE(editor.SetEditorCommandShortcutUVE("play.step", 0U, EditorShortcutUVE{}));
+        EXPECT_FALSE(editor.SetEditorCommandShortcutUVE("edit.undo", 2U, *ctrlU));
+        EXPECT_FALSE(editor.SetEditorCommandShortcutUVE("edit.undo", 0U, EditorShortcutUVE{1, false, false, false}));
+        ASSERT_TRUE(EditorUVEAccessUVE::SaveSessionSettingsUVE(editor));
+        editor.ShutdownUVE();
+    }
+    {
+        EditorUVE reloaded(engine.GetServicesUVE(), "uve_editor_tests_commands_reload.uvescene");
+        reloaded.InitUVE();
+        const auto find = [&reloaded](const std::string_view id) {
+            const auto& commands = reloaded.GetEditorCommandsUVE();
+            return *std::find_if(commands.begin(), commands.end(), [id](const auto& c) { return c.id == id; });
+        };
+        EXPECT_EQ(FormatEditorShortcutUVE(find("edit.undo").shortcuts[0]), "Ctrl+Z");
+        EXPECT_EQ(FormatEditorShortcutUVE(find("edit.undo").shortcuts[1]), "Ctrl+U");
+        EXPECT_TRUE(find("play.step").shortcuts[0].IsEmptyUVE());
+        reloaded.ShutdownUVE();
+    }
+    // A shortcut the file garbled falls back to its default.
+    engine.GetServicesUVE().GetConfigManagerUVE().SetStringUVE("editor.shortcuts.edit.undo.primary", "Ctrl+Nope");
+    {
+        EditorUVE corrupt(engine.GetServicesUVE(), "uve_editor_tests_commands_corrupt.uvescene");
+        corrupt.InitUVE();
+        const auto& commands = corrupt.GetEditorCommandsUVE();
+        const auto undo = std::find_if(commands.begin(), commands.end(), [](const auto& c) { return c.id == "edit.undo"; });
+        EXPECT_EQ(FormatEditorShortcutUVE(undo->shortcuts[0]), "Ctrl+Z");
+        corrupt.ShutdownUVE();
+    }
+    engine.Shutdown();
+    std::filesystem::remove(config.settingsFilePath);
 }
 
 TEST(EditorUVETest, SessionSettingsUVE_NeverRestoresTheGameWorkspace) {
