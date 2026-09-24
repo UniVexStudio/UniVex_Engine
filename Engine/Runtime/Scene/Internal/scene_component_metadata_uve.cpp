@@ -651,51 +651,32 @@ void DeclareAnimationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     using T = AnimationTreeComponentUVE;
     TypeMetadataPropertyUVE treeTarget = WithTooltipUVE(
         DeclareUVE<&T::target>("target", "Target", kPropertyTypeEntityUVE),
-        "The node the blend moves. Empty means this tree's parent.");
+        "The node the graph moves. Empty means this tree's parent.");
     treeTarget.flags = TypeMetadataPropertyFlagsUVE::EntityReference;
+    // The parameters and the graph are lists with their own add, remove and wiring, which a
+    // property row cannot express, so each is one custom-drawn block.
     AddValidatedUVE<AnimationTreeComponentUVE, &IsAnimationTreeComponentValidUVE>(
         entries,
         MakeEntryUVE(
             "component.animation_tree", "AnimationTree", kSectionOrderTypeSpecificUVE,
             {
                 WithTooltipUVE(DeclareUVE<&T::active>("active", "Active", kPropertyTypeBoolUVE),
-                               "Evaluates the tree every frame while the scene runs."),
+                               "Evaluates the graph every frame while the scene runs."),
                 std::move(treeTarget),
-                InGroupUVE(WithTooltipUVE(WithCustomDrawerUVE(DeclareUVE<&T::clipA>("clipA", "Clip A",
-                                                                                    kPropertyTypeAssetGuidUVE),
-                                                              "asset:uveanim"),
-                                          "The clip at Blend 0, such as a walk."),
-                           "Blend"),
-                InGroupUVE(WithTooltipUVE(WithCustomDrawerUVE(DeclareUVE<&T::clipB>("clipB", "Clip B",
-                                                                                    kPropertyTypeAssetGuidUVE),
-                                                              "asset:uveanim"),
-                                          "The clip at Blend 1, such as a run."),
-                           "Blend"),
-                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&T::blend>("blend", "Blend", kPropertyTypeFloatUVE),
-                                                       0.0, 1.0, 0.01),
-                                          "0 plays only Clip A, 1 only Clip B, anything between mixes them."),
-                           "Blend"),
-                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&T::blendSmoothing>(
-                                                           "blendSmoothing", "Smoothing", kPropertyTypeFloatUVE),
-                                                       0.0, 100.0, 0.1),
-                                          "How fast the blend follows a new value, per second. 0 jumps at once, so "
-                                          "a script can set Blend in one step and the change still eases."),
-                           "Blend"),
-                InGroupUVE(WithTooltipUVE(DeclareUVE<&T::syncPhase>("syncPhase", "Sync Phase", kPropertyTypeBoolUVE),
-                                          "Plays both clips at the same point in their cycle, stretching the "
-                                          "shorter one, so feet stay in step when blending walk into run."),
-                           "Blend"),
-                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&T::speed>("speed", "Speed", kPropertyTypeFloatUVE),
-                                                       -100.0, 100.0, 0.05),
-                                          "Playback rate of both clips."),
-                           "Blend"),
+                InGroupUVE(WithCustomDrawerUVE(DeclareUVE<&T::parameters>("parameters", "Parameters",
+                                                                         "AnimationParameterList"),
+                                               "animation-parameters"),
+                           "Parameters"),
+                InGroupUVE(WithCustomDrawerUVE(DeclareUVE<&T::nodes>("nodes", "Graph", "AnimationGraphNodeList"),
+                                               "animation-graph"),
+                           "Graph"),
                 InGroupUVE(DeclareUVE<&T::animatePosition>("animatePosition", "Position", kPropertyTypeBoolUVE),
                            "Channels"),
                 InGroupUVE(DeclareUVE<&T::animateRotation>("animateRotation", "Rotation", kPropertyTypeBoolUVE),
                            "Channels"),
                 InGroupUVE(DeclareUVE<&T::animateScale>("animateScale", "Scale", kPropertyTypeBoolUVE), "Channels"),
-                InGroupUVE(DeclareRuntimeStateUVE<&T::currentBlend>("currentBlend", "Applied Blend",
-                                                                    kPropertyTypeFloatUVE),
+                InGroupUVE(DeclareRuntimeStateUVE<&T::activeStates>("activeStates", "Active States",
+                                                                    kPropertyTypeStringUVE),
                            "State"),
             }));
 }

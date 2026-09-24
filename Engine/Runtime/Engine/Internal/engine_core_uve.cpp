@@ -772,7 +772,8 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
     if (!(deltaSeconds >= 0.0F)) {
         return;
     }
-    const auto clipFor = [this](const Asset::AssetGuidUVE guid) -> const Asset::AnimationClipAssetUVE* {
+    const Scene::AnimationClipResolverUVE clipFor = [this](const Asset::AssetGuidUVE guid)
+        -> const Asset::AnimationClipAssetUVE* {
         if (guid == Asset::kInvalidAssetGuidUVE) {
             return nullptr;
         }
@@ -834,14 +835,9 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
              CollectFixedStepOrderUVE<Scene::AnimationTreeComponentUVE>(*m_entityManager, *m_sceneGraph)) {
             Scene::AnimationTreeComponentUVE& tree =
                 m_entityManager->GetComponentUVE<Scene::AnimationTreeComponentUVE>(entity);
-            const Asset::AnimationClipAssetUVE* const clipA = clipFor(tree.clipA);
-            const Asset::AnimationClipAssetUVE* const clipB = clipFor(tree.clipB);
-            if (clipA == nullptr && clipB == nullptr) {
-                continue;
-            }
             Scene::TransformComponentUVE* const target = resolveTarget(entity, tree.target);
             if (target != nullptr) {
-                static_cast<void>(Scene::StepAnimationTreeUVE(tree, clipA, clipB, deltaSeconds, *target));
+                static_cast<void>(Scene::StepAnimationTreeUVE(tree, clipFor, deltaSeconds, *target));
             }
         }
 
@@ -853,8 +849,9 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
             });
         m_entityManager->ForEachUVE<Scene::AnimationTreeComponentUVE>(
             [&referenced](const Scene::EntityUVE, const Scene::AnimationTreeComponentUVE& tree) {
-                referenced.insert(tree.clipA.value);
-                referenced.insert(tree.clipB.value);
+                for (const Scene::AnimationGraphNodeUVE& node : tree.nodes) {
+                    referenced.insert(node.clip.value);
+                }
             });
         std::erase_if(m_animationClips, [&referenced](const auto& entry) { return !referenced.contains(entry.first); });
     }

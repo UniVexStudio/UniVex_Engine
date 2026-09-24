@@ -648,9 +648,29 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_AnimationTargetsRemapToTheRestoredEnti
     AnimationPlayerComponentUVE animation;
     animation.target = door;
     entityManager.AddComponentUVE<AnimationPlayerComponentUVE>(player, animation);
+    // A state machine with a transition and a parameter, so the whole graph goes through the file.
     AnimationTreeComponentUVE blend;
     blend.target = door;
-    blend.blend = 0.25F;
+    blend.parameters = {AnimationParameterUVE{"speed", AnimationParameterTypeUVE::Float, 0.25F},
+                        AnimationParameterUVE{"jump", AnimationParameterTypeUVE::Trigger, 0.0F}};
+    AnimationGraphNodeUVE machine;
+    machine.id = 3U;
+    machine.kind = AnimationGraphNodeKindUVE::StateMachine;
+    machine.name = "Locomotion";
+    machine.position = Math::Vector2UVE{12.0F, -4.0F};
+    machine.inputs = {2U, 0U};
+    AnimationTransitionUVE transition;
+    transition.fromState = kAnyAnimationStateUVE;
+    transition.toState = 1U;
+    transition.condition = AnimationConditionUVE::Triggered;
+    transition.parameter = "jump";
+    transition.fadeSeconds = 0.05F;
+    machine.transitions = {transition};
+    blend.nodes[0].inputs = {3U};
+    blend.nodes[1].clip = Asset::AssetGuidUVE{77U};
+    blend.nodes[1].loop = false;
+    blend.nodes.push_back(machine);
+    ASSERT_TRUE(IsAnimationTreeComponentValidUVE(blend)) << DescribeAnimationGraphProblemUVE(blend);
     entityManager.AddComponentUVE<AnimationTreeComponentUVE>(player, blend);
 
     const std::optional<SceneSnapshotUVE> snapshot = serializer.CaptureUVE(entityManager, {door}, SceneAssetTypeUVE::Scene);
@@ -665,9 +685,36 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_AnimationTargetsRemapToTheRestoredEnti
     ASSERT_NE(restoredPlayer, kInvalidEntityUVE);
     EXPECT_EQ(restoredManager.GetComponentUVE<AnimationPlayerComponentUVE>(restoredPlayer).target, restoredDoor);
     EXPECT_EQ(restoredManager.GetComponentUVE<AnimationTreeComponentUVE>(restoredPlayer).target, restoredDoor);
-    EXPECT_FLOAT_EQ(restoredManager.GetComponentUVE<AnimationTreeComponentUVE>(restoredPlayer).blend, 0.25F);
+    EXPECT_TRUE(restoredManager.GetComponentUVE<AnimationTreeComponentUVE>(restoredPlayer).HasSameSettingsUVE(
+        [&] {
+            AnimationTreeComponentUVE expected = blend;
+            expected.target = restoredDoor; // the one authored field that is remapped
+            return expected;
+        }()));
     // A pure Node stays one: no transform appears on the way through the file.
     EXPECT_FALSE(restoredManager.HasComponentUVE<TransformComponentUVE>(restoredPlayer));
+}
+
+TEST_F(SceneSerializerUVETest, RestoreUVE_TwoClipAnimationTreeBecomesABlendGraph) {
+    const std::string payloadText =
+        R"({"entities":[{"localId":0,"components":{"AnimationTreeComponentUVE":{"active":true,"clipA":11,"clipB":12,"blend":0.75,"speed":1.5}}}]})";
+    const auto* const payloadBytes = reinterpret_cast<const std::byte*>(payloadText.data());
+    const SceneSnapshotUVE snapshot{
+        Asset::EncodeUveFileEnvelopeUVE(SceneAssetTypeUVE::Scene,
+                                        std::vector<std::byte>{payloadBytes, payloadBytes + payloadText.size()}),
+        SceneAssetTypeUVE::Scene};
+    const std::vector<EntityUVE> roots = serializer.RestoreUVE(entityManager, snapshot);
+    ASSERT_EQ(roots.size(), 1U);
+    const AnimationTreeComponentUVE& tree = entityManager.GetComponentUVE<AnimationTreeComponentUVE>(roots[0]);
+    ASSERT_EQ(tree.parameters.size(), 1U);
+    EXPECT_EQ(tree.parameters[0].name, "blend");
+    EXPECT_FLOAT_EQ(tree.parameters[0].value, 0.75F);
+    ASSERT_EQ(tree.nodes.size(), 4U);
+    EXPECT_EQ(tree.nodes[1].kind, AnimationGraphNodeKindUVE::Blend2);
+    EXPECT_EQ(tree.nodes[1].parameter, "blend");
+    EXPECT_EQ(tree.nodes[2].clip.value, 11U);
+    EXPECT_EQ(tree.nodes[3].clip.value, 12U);
+    EXPECT_FLOAT_EQ(tree.nodes[3].speed, 1.5F);
 }
 
 TEST_F(SceneSerializerUVETest, RestoreUVE_LegacyAnimationPlayerFieldsCarryOver) {

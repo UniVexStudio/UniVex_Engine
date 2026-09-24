@@ -1430,6 +1430,20 @@ private:
                                       const Core::TypeMetadataPropertyUVE& property, const void* instance);
     void DrawScriptSlotPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
                                    const Core::TypeMetadataPropertyUVE& property, const void* instance);
+    /// A combo over the project's assets with `extension` (".uveanim"). Returns the pick, if any;
+    /// kInvalidAssetGuidUVE means "(none)" was picked.
+    [[nodiscard]] std::optional<Asset::AssetGuidUVE> DrawAssetPickerUVE(const char* id, Asset::AssetGuidUVE value,
+                                                                      const std::string& extension);
+    /// AnimationTree's parameter table and its graph (nodes, wiring, transitions). Every edit
+    /// writes the whole list back through SetSelectedComponentPropertyUVE, so it is one undo step
+    /// and the graph is re-validated before it lands.
+    void DrawAnimationParametersPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
+                                            const Core::TypeMetadataPropertyUVE& property, const void* instance);
+    void DrawAnimationGraphPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
+                                       const Core::TypeMetadataPropertyUVE& property, const void* instance);
+    /// Queues a parameter rename for the graph block drawn next, so the nodes and transitions that
+    /// read the old name follow it.
+    void RenameAnimationParameterReferencesUVE(const std::string& from, const std::string& to);
     void DrawNodeMetadataPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
                                      const Core::TypeMetadataPropertyUVE& property, const void* instance);
     /// Skeleton3D's Source row: which rigged model its bones come from, with Reload and Clear.
@@ -1745,6 +1759,7 @@ private:
         bool dirtyBefore = false;
     };
     std::optional<ComponentPropertyPreviewUVE> m_componentPropertyPreview;
+    std::optional<std::pair<std::string, std::string>> m_pendingAnimationParameterRename;
     std::string m_nodePickerFilter;
     std::string m_nodePickerScrolledFilter;
     std::optional<Asset::AssetRecordUVE> m_selectedAsset;

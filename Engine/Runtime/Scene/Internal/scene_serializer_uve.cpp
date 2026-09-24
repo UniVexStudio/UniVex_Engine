@@ -166,16 +166,123 @@ namespace {
 }
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const AnimationTreeComponentUVE& component) {
+    nlohmann::json parameters = nlohmann::json::array();
+    for (const AnimationParameterUVE& parameter : component.parameters) {
+        parameters.push_back({{"name", parameter.name},
+                              {"type", static_cast<std::uint8_t>(parameter.type)},
+                              {"value", parameter.value}});
+    }
+    nlohmann::json nodes = nlohmann::json::array();
+    for (const AnimationGraphNodeUVE& node : component.nodes) {
+        nlohmann::json transitions = nlohmann::json::array();
+        for (const AnimationTransitionUVE& transition : node.transitions) {
+            transitions.push_back({{"from", transition.fromState},
+                                   {"to", transition.toState},
+                                   {"condition", static_cast<std::uint8_t>(transition.condition)},
+                                   {"parameter", transition.parameter},
+                                   {"threshold", transition.threshold},
+                                   {"fadeSeconds", transition.fadeSeconds}});
+        }
+        nodes.push_back({{"id", node.id},
+                         {"kind", static_cast<std::uint8_t>(node.kind)},
+                         {"name", node.name},
+                         {"position", {node.position.x, node.position.y}},
+                         {"inputs", node.inputs},
+                         {"clip", node.clip.value},
+                         {"loop", node.loop},
+                         {"speed", node.speed},
+                         {"parameter", node.parameter},
+                         {"value", node.value},
+                         {"points", node.points},
+                         {"fadeSeconds", node.fadeSeconds},
+                         {"entryState", node.entryState},
+                         {"transitions", std::move(transitions)}});
+    }
     return {{"active", component.active},
-            {"clipA", component.clipA.value},
-            {"clipB", component.clipB.value},
-            {"blend", component.blend},
-            {"blendSmoothing", component.blendSmoothing},
-            {"syncPhase", component.syncPhase},
-            {"speed", component.speed},
             {"animatePosition", component.animatePosition},
             {"animateRotation", component.animateRotation},
-            {"animateScale", component.animateScale}};
+            {"animateScale", component.animateScale},
+            {"parameters", std::move(parameters)},
+            {"nodes", std::move(nodes)}};
+}
+
+/// Reads a tree. A tree saved as the earlier two-clip blend becomes the same thing as a graph:
+/// Output fed by a Blend2 of Clip A and Clip B, weighted by a "blend" parameter.
+[[nodiscard]] AnimationTreeComponentUVE AnimationTreeFromJsonUVE(const nlohmann::json& json) {
+    AnimationTreeComponentUVE tree;
+    tree.active = json.value("active", true);
+    tree.animatePosition = json.value("animatePosition", true);
+    tree.animateRotation = json.value("animateRotation", true);
+    tree.animateScale = json.value("animateScale", true);
+    if (!json.contains("nodes") && (json.contains("clipA") || json.contains("clipB"))) {
+        tree.parameters = {AnimationParameterUVE{"blend", AnimationParameterTypeUVE::Float, json.value("blend", 0.0F)}};
+        const auto makeNode = [](const std::uint32_t id, const AnimationGraphNodeKindUVE kind, std::string name) {
+            AnimationGraphNodeUVE node;
+            node.id = id;
+            node.kind = kind;
+            node.name = std::move(name);
+            return node;
+        };
+        AnimationGraphNodeUVE output = makeNode(1U, AnimationGraphNodeKindUVE::Output, "Output");
+        output.inputs = {2U};
+        output.position = Math::Vector2UVE{480.0F, 0.0F};
+        AnimationGraphNodeUVE blend = makeNode(2U, AnimationGraphNodeKindUVE::Blend2, "Blend");
+        blend.inputs = {3U, 4U};
+        blend.parameter = "blend";
+        blend.position = Math::Vector2UVE{240.0F, 0.0F};
+        const float speed = json.value("speed", 1.0F);
+        AnimationGraphNodeUVE clipA = makeNode(3U, AnimationGraphNodeKindUVE::Clip, "Clip A");
+        clipA.clip = Asset::AssetGuidUVE{json.value("clipA", std::uint64_t{0})};
+        clipA.speed = speed;
+        AnimationGraphNodeUVE clipB = makeNode(4U, AnimationGraphNodeKindUVE::Clip, "Clip B");
+        clipB.clip = Asset::AssetGuidUVE{json.value("clipB", std::uint64_t{0})};
+        clipB.speed = speed;
+        clipB.position = Math::Vector2UVE{0.0F, 120.0F};
+        tree.nodes = {output, blend, clipA, clipB};
+        return tree;
+    }
+    tree.parameters.clear();
+    for (const nlohmann::json& item : json.value("parameters", nlohmann::json::array())) {
+        tree.parameters.push_back(AnimationParameterUVE{item.at("name").get<std::string>(),
+                                                        static_cast<AnimationParameterTypeUVE>(
+                                                            item.value("type", std::uint8_t{0})),
+                                                        item.value("value", 0.0F)});
+    }
+    if (json.contains("nodes")) {
+        tree.nodes.clear();
+        for (const nlohmann::json& item : json.at("nodes")) {
+            AnimationGraphNodeUVE node;
+            node.id = item.at("id").get<std::uint32_t>();
+            node.kind = static_cast<AnimationGraphNodeKindUVE>(item.at("kind").get<std::uint8_t>());
+            node.name = item.value("name", std::string{});
+            const std::vector<float> position = item.value("position", std::vector<float>{0.0F, 0.0F});
+            if (position.size() == 2U) {
+                node.position = Math::Vector2UVE{position[0], position[1]};
+            }
+            node.inputs = item.value("inputs", std::vector<std::uint32_t>{});
+            node.clip = Asset::AssetGuidUVE{item.value("clip", std::uint64_t{0})};
+            node.loop = item.value("loop", true);
+            node.speed = item.value("speed", 1.0F);
+            node.parameter = item.value("parameter", std::string{});
+            node.value = item.value("value", 0.5F);
+            node.points = item.value("points", std::vector<float>{});
+            node.fadeSeconds = item.value("fadeSeconds", 0.2F);
+            node.entryState = item.value("entryState", std::uint32_t{0});
+            for (const nlohmann::json& transitionJson : item.value("transitions", nlohmann::json::array())) {
+                AnimationTransitionUVE transition;
+                transition.fromState = transitionJson.value("from", kAnyAnimationStateUVE);
+                transition.toState = transitionJson.value("to", std::uint32_t{0});
+                transition.condition =
+                    static_cast<AnimationConditionUVE>(transitionJson.value("condition", std::uint8_t{0}));
+                transition.parameter = transitionJson.value("parameter", std::string{});
+                transition.threshold = transitionJson.value("threshold", 0.0F);
+                transition.fadeSeconds = transitionJson.value("fadeSeconds", 0.2F);
+                node.transitions.push_back(std::move(transition));
+            }
+            tree.nodes.push_back(std::move(node));
+        }
+    }
+    return tree;
 }
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const MeshComponentUVE& component) {
@@ -1192,20 +1299,10 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                       }, IsAnimationPlayerComponentValidUVE));
         table.emplace("AnimationTreeComponentUVE",
                       MakeRegistrationUVE<AnimationTreeComponentUVE>([](const nlohmann::json& json) {
-                          AnimationTreeComponentUVE tree;
-                          tree.active = json.value("active", true);
-                          tree.clipA = Asset::AssetGuidUVE{json.value("clipA", std::uint64_t{0})};
-                          tree.clipB = Asset::AssetGuidUVE{json.value("clipB", std::uint64_t{0})};
-                          tree.blend = json.value("blend", 0.0F);
-                          tree.blendSmoothing = json.value("blendSmoothing", 0.0F);
-                          tree.syncPhase = json.value("syncPhase", true);
-                          tree.speed = json.value("speed", 1.0F);
-                          tree.animatePosition = json.value("animatePosition", true);
-                          tree.animateRotation = json.value("animateRotation", true);
-                          tree.animateScale = json.value("animateScale", true);
-                          tree.currentBlend = tree.blend;
-                          if (!IsAnimationTreeComponentValidUVE(tree)) {
-                              throw std::runtime_error("Invalid AnimationTreeComponentUVE payload");
+                          AnimationTreeComponentUVE tree = AnimationTreeFromJsonUVE(json);
+                          const std::string problem = DescribeAnimationGraphProblemUVE(tree);
+                          if (!problem.empty()) {
+                              throw std::runtime_error("Invalid AnimationTreeComponentUVE payload: " + problem);
                           }
                           return tree;
                       }, IsAnimationTreeComponentValidUVE));

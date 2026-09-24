@@ -132,7 +132,9 @@ void DrawTooltipUVE(const TypeMetadataPropertyUVE& property) {
 /// Custom drawers that lay out their own rows - a multi-line box, a slot with an action strip, a
 /// list with an add button - rather than filling a value cell. Any other id falls back to the
 /// generic editor for its value type, which is where the rotation and entity-picker ids still go.
-constexpr std::array<std::string_view, 5> kBlockPropertyDrawerIdsUVE{
+constexpr std::array<std::string_view, 7> kBlockPropertyDrawerIdsUVE{
+    "animation-parameters",
+    "animation-graph",
     "multiline-text",
     "script-slot",
     "node-metadata",
@@ -627,77 +629,8 @@ void EditorUVE::DrawMetadataPropertyRowUVE(const TypeMetadataEntryUVE& entry,
             ImGui::EndDisabled();
         } else {
             const std::string extension = "." + property.customDrawerId.substr(kAssetPrefix.size());
-            const Asset::IAssetDatabaseUVE& database = m_services->GetAssetDatabaseUVE();
-            std::string preview = "(none)";
-            if (value != Asset::kInvalidAssetGuidUVE) {
-                const std::filesystem::path path = database.ResolveUVE(value);
-                preview = path.empty() ? "(missing asset)" : path.stem().string();
-            }
-            if (ImGui::BeginCombo("##value", preview.c_str())) {
-                if (ImGui::Selectable("(none)", value == Asset::kInvalidAssetGuidUVE) &&
-                    value != Asset::kInvalidAssetGuidUVE) {
-                    const Asset::AssetGuidUVE none = Asset::kInvalidAssetGuidUVE;
-                    edited = SetSelectedComponentPropertyUVE(entry, property, &none);
-                }
-                // Registered assets plus every project file of the kind, so a model imported in an
-                // earlier session is offered too; picking an unregistered file registers it.
-                struct CandidateUVE {
-                    std::filesystem::path path;
-                    std::optional<Asset::AssetGuidUVE> guid;
-                };
-                std::vector<CandidateUVE> candidates;
-                for (const Asset::AssetRecordUVE& record : database.GetRegisteredAssetsUVE()) {
-                    if (record.path.extension().string() == extension) {
-                        candidates.push_back({record.path.lexically_normal(), record.guid});
-                    }
-                }
-                const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-                for (const Asset::ProjectFileEntryUVE& file : project.entries) {
-                    if (file.kind == Asset::ProjectFileEntryKindUVE::Directory) {
-                        continue;
-                    }
-                    // A model source (.glb/.gltf/.obj) stands for the mesh it was imported to, once
-                    // that import has produced it; the author picks the file they know.
-                    std::filesystem::path path;
-                    if (extension == ".uvemodel" && IsModelSourcePathUVE(file.relativePath)) {
-                        path = GetImportedModelPathUVE(file.relativePath);
-                        std::error_code error;
-                        if (!std::filesystem::is_regular_file(path, error)) {
-                            continue;
-                        }
-                    } else if (file.relativePath.extension().string() == extension) {
-                        path = (project.contentRoot / file.relativePath).lexically_normal();
-                    } else {
-                        continue;
-                    }
-                    const bool known = std::any_of(candidates.begin(), candidates.end(),
-                                                   [&path](const CandidateUVE& candidate) { return candidate.path == path; });
-                    if (!known) {
-                        candidates.push_back({path, std::nullopt});
-                    }
-                }
-                std::sort(candidates.begin(), candidates.end(), [](const CandidateUVE& left, const CandidateUVE& right) {
-                    return left.path.generic_string() < right.path.generic_string();
-                });
-                bool any = false;
-                for (const CandidateUVE& candidate : candidates) {
-                    any = true;
-                    const bool isSelected = candidate.guid.has_value() && *candidate.guid == value;
-                    const std::string label = candidate.path.stem().string() + "##" + candidate.path.generic_string();
-                    if (ImGui::Selectable(label.c_str(), isSelected) && !isSelected) {
-                        const Asset::AssetGuidUVE chosen = candidate.guid.has_value()
-                                                               ? *candidate.guid
-                                                               : m_services->GetAssetDatabaseUVE().RegisterUVE(candidate.path);
-                        edited = SetSelectedComponentPropertyUVE(entry, property, &chosen);
-                    }
-                    if (ImGui::IsItemHovered()) {
-                        ImGui::SetTooltip("%s", candidate.path.generic_string().c_str());
-                    }
-                }
-                if (!any) {
-                    ImGui::TextDisabled("No %s assets yet. Import one from the Content Browser.", extension.c_str());
-                }
-                ImGui::EndCombo();
+            if (const std::optional<Asset::AssetGuidUVE> chosen = DrawAssetPickerUVE("##value", value, extension)) {
+                edited = SetSelectedComponentPropertyUVE(entry, property, &*chosen);
             }
         }
     } else if (property.typeId == Scene::kPropertyTypeEntityUVE) {
@@ -751,10 +684,95 @@ void EditorUVE::DrawMetadataPropertyRowUVE(const TypeMetadataEntryUVE& entry,
     static_cast<void>(edited);
 }
 
+std::optional<Asset::AssetGuidUVE> EditorUVE::DrawAssetPickerUVE(const char* const id, const Asset::AssetGuidUVE value,
+                                                                const std::string& extension) {
+    std::optional<Asset::AssetGuidUVE> picked;
+    const Asset::IAssetDatabaseUVE& database = m_services->GetAssetDatabaseUVE();
+    std::string preview = "(none)";
+    if (value != Asset::kInvalidAssetGuidUVE) {
+        const std::filesystem::path path = database.ResolveUVE(value);
+        preview = path.empty() ? "(missing asset)" : path.stem().string();
+    }
+    if (ImGui::BeginCombo(id, preview.c_str())) {
+        if (ImGui::Selectable("(none)", value == Asset::kInvalidAssetGuidUVE) &&
+            value != Asset::kInvalidAssetGuidUVE) {
+            picked = Asset::kInvalidAssetGuidUVE;
+        }
+        // Registered assets plus every project file of the kind, so a model imported in an
+        // earlier session is offered too; picking an unregistered file registers it.
+        struct CandidateUVE {
+            std::filesystem::path path;
+            std::optional<Asset::AssetGuidUVE> guid;
+        };
+        std::vector<CandidateUVE> candidates;
+        for (const Asset::AssetRecordUVE& record : database.GetRegisteredAssetsUVE()) {
+            if (record.path.extension().string() == extension) {
+                candidates.push_back({record.path.lexically_normal(), record.guid});
+            }
+        }
+        const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+        for (const Asset::ProjectFileEntryUVE& file : project.entries) {
+            if (file.kind == Asset::ProjectFileEntryKindUVE::Directory) {
+                continue;
+            }
+            // A model source (.glb/.gltf/.obj) stands for the mesh it was imported to, once
+            // that import has produced it; the author picks the file they know.
+            std::filesystem::path path;
+            if (extension == ".uvemodel" && IsModelSourcePathUVE(file.relativePath)) {
+                path = GetImportedModelPathUVE(file.relativePath);
+                std::error_code error;
+                if (!std::filesystem::is_regular_file(path, error)) {
+                    continue;
+                }
+            } else if (file.relativePath.extension().string() == extension) {
+                path = (project.contentRoot / file.relativePath).lexically_normal();
+            } else {
+                continue;
+            }
+            const bool known = std::any_of(candidates.begin(), candidates.end(),
+                                           [&path](const CandidateUVE& candidate) { return candidate.path == path; });
+            if (!known) {
+                candidates.push_back({path, std::nullopt});
+            }
+        }
+        std::sort(candidates.begin(), candidates.end(), [](const CandidateUVE& left, const CandidateUVE& right) {
+            return left.path.generic_string() < right.path.generic_string();
+        });
+        bool any = false;
+        for (const CandidateUVE& candidate : candidates) {
+            any = true;
+            const bool isSelected = candidate.guid.has_value() && *candidate.guid == value;
+            const std::string label = candidate.path.stem().string() + "##" + candidate.path.generic_string();
+            if (ImGui::Selectable(label.c_str(), isSelected) && !isSelected) {
+                const Asset::AssetGuidUVE chosen = candidate.guid.has_value()
+                                                       ? *candidate.guid
+                                                       : m_services->GetAssetDatabaseUVE().RegisterUVE(candidate.path);
+                picked = chosen;
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("%s", candidate.path.generic_string().c_str());
+            }
+        }
+        if (!any) {
+            ImGui::TextDisabled("No %s assets yet. Import one from the Content Browser.", extension.c_str());
+        }
+        ImGui::EndCombo();
+    }
+    return picked;
+}
+
 bool EditorUVE::DrawCustomPropertyUVE(const TypeMetadataEntryUVE& entry, const TypeMetadataPropertyUVE& property,
                                       const void* const instance) {
     if (property.customDrawerId == "multiline-text") {
         DrawMultilineTextPropertyUVE(entry, property, instance);
+        return true;
+    }
+    if (property.customDrawerId == "animation-parameters") {
+        DrawAnimationParametersPropertyUVE(entry, property, instance);
+        return true;
+    }
+    if (property.customDrawerId == "animation-graph") {
+        DrawAnimationGraphPropertyUVE(entry, property, instance);
         return true;
     }
     if (property.customDrawerId == "script-slot") {
