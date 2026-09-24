@@ -20,7 +20,7 @@ using Config::SettingTypeUVE;
 TEST(EditorSettingsUVETest, EveryEditorSettingRegistersOnceWithALegalDefault) {
     Config::SettingsRegistryUVE registry;
     ASSERT_TRUE(RegisterEditorSettingsUVE(registry));
-    EXPECT_EQ(registry.GetCountUVE(), 34U);
+    EXPECT_EQ(registry.GetCountUVE(), 36U);
     for (const Config::SettingDescriptorUVE* descriptor : registry.GetAllUVE()) {
         EXPECT_EQ(Config::ValidateSettingDescriptorUVE(*descriptor), "") << descriptor->id;
         EXPECT_TRUE(descriptor->id.starts_with("editor.")) << descriptor->id;
@@ -29,7 +29,7 @@ TEST(EditorSettingsUVETest, EveryEditorSettingRegistersOnceWithALegalDefault) {
     }
     // A second declaration of the same settings is refused as duplicates.
     EXPECT_FALSE(RegisterEditorSettingsUVE(registry));
-    EXPECT_EQ(registry.GetCountUVE(), 34U);
+    EXPECT_EQ(registry.GetCountUVE(), 36U);
 }
 
 TEST(EditorSettingsUVETest, EveryIdIsDeclaredWithTheTypeTheEditorReadsItAs) {
@@ -41,6 +41,8 @@ TEST(EditorSettingsUVETest, EveryIdIsDeclaredWithTheTypeTheEditorReadsItAs) {
         {Id::kViewportPanelVisibleUVE, SettingTypeUVE::Bool},
         {Id::kInspectorPanelVisibleUVE, SettingTypeUVE::Bool},
         {Id::kBottomDockVisibleUVE, SettingTypeUVE::Bool},
+        {Id::kBottomDockHeightUVE, SettingTypeUVE::Float},
+        {Id::kContentBrowserViewModeUVE, SettingTypeUVE::Enum},
         {Id::kActiveWorkspaceUVE, SettingTypeUVE::Enum},
         {Id::kActiveRightPanelTabUVE, SettingTypeUVE::Enum},
         {Id::kActiveBottomDockUVE, SettingTypeUVE::Enum},

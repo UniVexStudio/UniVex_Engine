@@ -1060,7 +1060,7 @@ TEST(EditorUVETest, EditorSettingsUVE_DescriptorDefaultsMatchTheEditorsOwnDefaul
         EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_setting_defaults.uvescene");
         const Config::SettingsRegistryUVE& registry = editor.GetSettingsRegistryUVE();
         // The declared preferences, and a primary and alternate shortcut for every command.
-        ASSERT_EQ(registry.GetCountUVE(), 34U + (2U * editor.GetEditorCommandsUVE().size()));
+        ASSERT_EQ(registry.GetCountUVE(), 36U + (2U * editor.GetEditorCommandsUVE().size()));
         for (const Config::SettingDescriptorUVE* descriptor : registry.GetAllUVE()) {
             const std::optional<Config::SettingValueUVE> value = editor.GetEditorSettingUVE(descriptor->id);
             ASSERT_TRUE(value.has_value()) << descriptor->id;

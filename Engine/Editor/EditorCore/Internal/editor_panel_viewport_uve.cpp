@@ -160,6 +160,7 @@ void EditorUVE::RenderOverlayUVE() {
         DrawViewportPanelUVE();
         DrawInspectorPanelUVE();
         DrawBottomDockContentUVE();
+        DrawBottomDockTabBarUVE();
     }
     // Last, so it floats over every panel.
     DrawCommandPaletteUVE();
@@ -181,7 +182,7 @@ void EditorUVE::DrawViewportPanelUVE() {
     // fills the gap those two leave between them, matching the space actually visible on screen
     // rather than an arbitrary default ImGui would otherwise cascade this window into.
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
-    const EditorChromeLayoutUVE layout = ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible);
+    const EditorChromeLayoutUVE layout = ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight);
     // Always, not FirstUseEver: this is one of the 5 core structural panels that must tile the
     // screen with zero gaps/overlaps on every single launch, regardless of any stale imgui.ini
     // from a previous version of this layout (see the other 4 core panels' own identical comment
