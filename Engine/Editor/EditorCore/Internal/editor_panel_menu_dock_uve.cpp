@@ -28,6 +28,7 @@
 #include <imgui.h>
 
 #include "editor_chrome_layout_uve.h"
+#include "editor_color_field_uve.h"
 #include "editor_fonts_uve.h"
 #include "editor_node_icons_uve.h"
 
@@ -47,8 +48,9 @@ constexpr const char* kMenuLabelHelpUVE = "\xEF\xA4\x9D Help";
 } // namespace
 
 // Three colour rows plus a reset, editing the axis hues the viewport draws its gizmo and grid
-// with. Same ColorEdit3 call shape as every other colour row in this editor (the Primitive "Base
-// Color" row is the original), so the widget behaves identically wherever a colour is edited.
+// with. The same colour field as every other colour row in the editor, so the picker behaves
+// identically wherever a colour is edited. Applied live, since these are preferences with no undo;
+// Cancel in the picker puts the previous hue back.
 //
 // Reads back through GetViewportAxisColorUVE each frame rather than keeping its own copy: the
 // value can also change underneath this menu when session settings load, and a cached copy would
@@ -75,11 +77,14 @@ void EditorUVE::DrawViewportAxisColorPickerUVE() {
                                                GetViewportAxisColorUVE(2)};
     bool edited = false;
     for (std::size_t index = 0; index < rows.size(); ++index) {
+        ImGui::AlignTextToFramePadding();
         ImGui::TextUnformatted(rows[index].label);
-        std::array<float, 3> channels{colors[index].r, colors[index].g, colors[index].b};
-        if (ImGui::ColorEdit3(rows[index].id, channels.data(),
-                              ImGuiColorEditFlags_Float | ImGuiColorEditFlags_DisplayRGB)) {
-            colors[index] = ViewportAxisColorUVE{channels[0], channels[1], channels[2]};
+        ImGui::SameLine(ImGui::GetFontSize() * 4.0F);
+        ImGui::SetNextItemWidth(ImGui::GetFontSize() * 8.0F);
+        EditorColorUVE color{colors[index].r, colors[index].g, colors[index].b, 1.0F};
+        if (DrawColorFieldUVE(rows[index].id, rows[index].label, color, false, m_colorPickerPreferences) !=
+            ColorFieldEventUVE::None) {
+            colors[index] = ViewportAxisColorUVE{color.r, color.g, color.b};
             edited = true;
         }
     }

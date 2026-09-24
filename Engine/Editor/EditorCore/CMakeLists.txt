@@ -121,6 +121,8 @@ add_library(uve_editor STATIC
     Internal/editor_ui_assets_uve.cpp
     Internal/mesh_thumbnail_renderer_uve.cpp
     Internal/editor_uve.cpp
+    Internal/editor_color_uve.cpp
+    Internal/editor_color_field_uve.cpp
     Internal/editor_panel_hierarchy_uve.cpp
     Internal/editor_panel_inspector_metadata_uve.cpp
     Internal/editor_panel_inspector_uve.cpp

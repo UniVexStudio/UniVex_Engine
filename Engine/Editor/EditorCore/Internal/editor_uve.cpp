@@ -460,6 +460,8 @@ void EditorUVE::TickUVE() {
 }
 
 bool EditorUVE::EnterPlayModeUVE() {
+    // A colour still being picked belongs to the document being played; finish it first.
+    static_cast<void>(CommitComponentPropertyPreviewUVE());
     if (m_state != EditorStateUVE::Running || m_playModeState != EditorPlayModeStateUVE::Edit ||
         m_simulationControl == nullptr || !IsAuthoringCommandAllowedUVE()) {
         return false;
@@ -738,6 +740,7 @@ bool EditorUVE::DiscardSelectedPrefabOverridesAndRefreshUVE() {
 }
 
 bool EditorUVE::LoadSceneUVE() {
+    static_cast<void>(CommitComponentPropertyPreviewUVE());
     if (!IsAuthoringCommandAllowedUVE() || m_activeScenePath.empty() ||
         !std::filesystem::exists(m_activeScenePath)) {
         return false;
@@ -2233,6 +2236,9 @@ bool EditorUVE::ReparentDocumentEntityUVE(const Scene::EntityUVE entity, const S
 }
 
 bool EditorUVE::UndoUVE() {
+    // An edit still in flight is finished first, so undo takes back that edit rather than the
+    // one before it underneath a live value.
+    static_cast<void>(CommitComponentPropertyPreviewUVE());
     if (!IsAuthoringCommandAllowedUVE() || m_undoHistory.empty()) {
         return false;
     }
@@ -2249,6 +2255,7 @@ bool EditorUVE::UndoUVE() {
 }
 
 bool EditorUVE::RedoUVE() {
+    static_cast<void>(CommitComponentPropertyPreviewUVE());
     if (!IsAuthoringCommandAllowedUVE() || m_redoHistory.empty()) {
         return false;
     }
@@ -3638,10 +3645,30 @@ const Scripting::ScriptNodeRegistryUVE& EditorUVE::GetVisualScriptRegistryUVE() 
     return m_visualScriptRegistry;
 }
 
+void EditorUVE::SetColorPickerPreferencesUVE(ColorPickerPreferencesUVE preferences) {
+    const auto sanitize = [](std::vector<EditorColorUVE>& colors, const std::size_t cap) {
+        std::erase_if(colors, [](const EditorColorUVE& color) {
+            return !std::isfinite(color.r) || !std::isfinite(color.g) || !std::isfinite(color.b) ||
+                   !std::isfinite(color.a);
+        });
+        for (EditorColorUVE& color : colors) {
+            color = EditorColorUVE{std::clamp(color.r, 0.0F, 1.0F), std::clamp(color.g, 0.0F, 1.0F),
+                                   std::clamp(color.b, 0.0F, 1.0F), std::clamp(color.a, 0.0F, 1.0F)};
+        }
+        if (colors.size() > cap) {
+            colors.resize(cap);
+        }
+    };
+    sanitize(preferences.saved, kMaxSavedColorsUVE);
+    sanitize(preferences.recents, kMaxRecentColorsUVE);
+    m_colorPickerPreferences = std::move(preferences);
+}
+
 void EditorUVE::ShutdownUVE() {
     if (m_state == EditorStateUVE::Shutdown || m_state == EditorStateUVE::Uninitialized) {
         return;
     }
+    static_cast<void>(CommitComponentPropertyPreviewUVE());
 
     // An interactive session keeps its editor preferences (panels, snapping, grid, Inspector folds,
     // favourites) without the author having to remember "Save Editor Preferences" first. Headless
@@ -3994,6 +4021,24 @@ void EditorUVE::LoadSessionSettingsUVE() {
     // A stored cell size out of range or corrupt is ignored, leaving the 1 m default.
     static_cast<void>(
         SetViewportGridCellSizeUVE(static_cast<float>(config.GetDoubleUVE("editor.viewport.grid.cellSize", 1.0))));
+    // The colour picker's palette and recents, stored as hex. An entry that does not parse is
+    // skipped rather than failing the whole list.
+    {
+        ColorPickerPreferencesUVE picker;
+        picker.advancedOpen = config.GetBoolUVE("editor.colorPicker.advancedOpen", true);
+        const auto loadList = [&config](const std::string& prefix, std::vector<EditorColorUVE>& out) {
+            const std::int64_t count = std::clamp<std::int64_t>(config.GetIntUVE(prefix + ".count", 0), 0, 64);
+            for (std::int64_t index = 0; index < count; ++index) {
+                if (const std::optional<EditorColorUVE> color =
+                        ParseColorHexUVE(config.GetStringUVE(prefix + "." + std::to_string(index), ""))) {
+                    out.push_back(*color);
+                }
+            }
+        };
+        loadList("editor.colorPicker.saved", picker.saved);
+        loadList("editor.colorPicker.recent", picker.recents);
+        SetColorPickerPreferencesUVE(std::move(picker));
+    }
     // The viewport's axis hues, restored only if a complete, in-range palette was stored. Anything
     // missing, out of 0..1, or not finite leaves the state unset, which makes the host re-seed its
     // own defaults on the next frame - a corrupt or hand-edited settings file therefore costs the
@@ -4059,6 +4104,15 @@ bool EditorUVE::SaveSessionSettingsUVE() {
     config.SetBoolUVE("editor.viewport.grid.visible", m_viewportOverlayState.gridVisible);
     config.SetDoubleUVE("editor.viewport.grid.opacity", m_viewportOverlayState.gridOpacity);
     config.SetDoubleUVE("editor.viewport.grid.cellSize", m_viewportOverlayState.gridCellSize);
+    config.SetBoolUVE("editor.colorPicker.advancedOpen", m_colorPickerPreferences.advancedOpen);
+    const auto saveList = [&config](const std::string& prefix, const std::vector<EditorColorUVE>& colors) {
+        config.SetIntUVE(prefix + ".count", static_cast<std::int64_t>(colors.size()));
+        for (std::size_t index = 0; index < colors.size(); ++index) {
+            config.SetStringUVE(prefix + "." + std::to_string(index), FormatColorHexUVE(colors[index], true));
+        }
+    };
+    saveList("editor.colorPicker.saved", m_colorPickerPreferences.saved);
+    saveList("editor.colorPicker.recent", m_colorPickerPreferences.recents);
     // The viewport's axis hues. Written only once the host has seeded the real defaults: until
     // then the stored values are zeroes standing for "not chosen yet", and persisting those would
     // turn "I never touched the colours" into "I chose black" on the next launch.
