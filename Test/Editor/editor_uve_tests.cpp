@@ -215,6 +215,7 @@ namespace {
     config.logFilePath = "uve_editor_tests.log";
     config.settingsFilePath = "uve_editor_tests_settings.json";
     config.projectSettingsFilePath = "uve_editor_tests_project_settings.json";
+    config.inputMapFilePath = "uve_editor_tests_input_map.json";
     config.assetDatabaseFilePath = "uve_editor_tests_assets.json";
     config.saveDirectoryPath = "uve_editor_tests_saves";
     config.shaderCachePath = "uve_editor_tests_shader_cache";

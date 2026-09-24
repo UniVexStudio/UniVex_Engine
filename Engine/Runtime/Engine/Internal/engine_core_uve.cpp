@@ -537,6 +537,12 @@ void EngineCoreUVE::Init() {
     // InputSystem thirty-third: needs EventSystem and the already-composed gamepad snapshot service
     // to queue action events and evaluate keyboard/mouse/gamepad bindings.
     m_inputSystem = std::make_unique<Input::InputSystemUVE>(*m_eventSystem, m_gamepadInputSystem.get());
+    // The project's actions, so gameplay asks for "jump" and the project decides what jump is.
+    if (!m_inputMap.LoadUVE(m_config.inputMapFilePath)) {
+        UVE_WARNING("EngineCoreUVE: input map \"{}\" could not be read; no project actions are registered",
+                    m_config.inputMapFilePath.string());
+    }
+    m_inputMap.ApplyUVE(*m_inputSystem);
     m_windowManager->AttachInputSystemUVE(m_inputSystem.get());
 
     // AudioDevice twenty-ninth: no dependencies of its own. Prefers the real miniaudio backend;
@@ -595,7 +601,7 @@ void EngineCoreUVE::Init() {
     m_configManager = std::move(configManager);
 
     m_services.emplace(*m_logger, *m_timer, *m_eventSystem, *m_memoryManager, *m_threadPool,
-                                                 *m_commandLine, *m_configManager, m_projectSettings, *m_entityManager, *m_sceneGraph,
+                                                 *m_commandLine, *m_configManager, m_projectSettings, m_inputMap, *m_entityManager, *m_sceneGraph,
                          *m_assetDatabase, *m_projectFileIndex, *m_derivedArtifactCache, *m_projectChangeWatcher,
                          *m_sceneSerializer,
                          *m_prefabSystem, *m_particleRuntime, *m_hotReload, *m_assetManager, *m_assetImporter, *m_assetImportQueue,

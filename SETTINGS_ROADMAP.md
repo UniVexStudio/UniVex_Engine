@@ -439,7 +439,9 @@ The largest group by far, and the one most dependent on the renderer maturing.
 
 ## 1.5 Input
 
-- [ ] The input map itself: named actions, each with positive and negative bindings.
+- [x] The input map itself: named actions, each with positive and negative bindings.
+      `project.uveinput`, read by `EngineCoreUVE::Init()` into `InputMapDocumentUVE` and
+      registered with the input system; `EngineServicesUVE::GetInputMapUVE()` reaches it.
 - [ ] Per-action deadzone, sensitivity, and whether it is analog or digital.
 - [ ] Device classes: keyboard, mouse, gamepad, touch, pen.
 - [ ] Gamepad button/axis remapping table and per-controller-model mapping database.
@@ -1275,7 +1277,9 @@ constantly and they belong in the same inventory.
 
 ## 6.4 Input map asset and rebinding UI
 
-- [ ] An input map asset format, so actions and bindings are data rather than code.
+- [x] An input map asset format, so actions and bindings are data rather than code. Keys,
+      buttons and axes are stored by name (`input_names_uve.h`), pads counted from one; a
+      malformed action or binding in a hand-edited file is skipped on its own.
 - [ ] An input map editor: add/remove actions, add/remove bindings, per-binding device filter.
 - [ ] A listen-for-input capture control for binding a key or button directly.
 - [ ] Conflict detection across actions within an action set.
