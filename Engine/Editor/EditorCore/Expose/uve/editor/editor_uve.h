@@ -976,6 +976,8 @@ private:
         Animator,
         AIToolbar,
         FileSystem,
+        /// The developer console: output and a command line. Appended so persisted values keep meaning.
+        Console,
     };
 
     /// Session-only Content Browser focus. This filters copied ProjectFileIndexUVE entries and
@@ -1377,6 +1379,10 @@ private:
                            const SettingsWindowSourceUVE& source);
     void DrawBottomDockUVE();
     void DrawBottomDockContentUVE();
+    /// The strip of dock tabs along the bottom edge - Content, Output, Console - and the dock toggle.
+    void DrawBottomDockTabBarUVE();
+    /// The Console dock: the developer console's output and its command line.
+    void DrawConsoleDockUVE();
     void DrawHierarchyPanelUVE();
     void DrawHierarchyNodeContextMenuUVE(Scene::EntityUVE entity);
     void DrawNodePickerUVE();
@@ -1628,6 +1634,8 @@ private:
     CommandPaletteStateUVE m_commandPalette;
     ShortcutsWindowStateUVE m_shortcutsWindow;
     EditorRightPanelTabUVE m_activeRightPanelTab = EditorRightPanelTabUVE::Inspector;
+    /// The tab the strip showed last frame, to tell a click in it from a change made elsewhere.
+    EditorRightPanelTabUVE m_drawnRightPanelTab = EditorRightPanelTabUVE::Inspector;
     InspectorDrawerRegistryUVE m_inspectorDrawerRegistry;
     DeveloperConsoleUVE m_developerConsole;
     Scripting::ScriptNodeRegistryUVE m_visualScriptRegistry;
@@ -1665,6 +1673,13 @@ private:
     /// the two panes - the "filesystem flip mode" the design calls for, mirroring Godot's own
     /// FileSystem dock split toggle.
     bool m_contentBrowserSplitModeUVE = true;
+    /// How the Content Browser shows files, picked from its "..." menu.
+    enum class ContentBrowserViewModeUVE : std::uint8_t {
+        SmallTiles = 0,
+        LargeTiles,
+        List,
+    };
+    ContentBrowserViewModeUVE m_contentBrowserViewMode = ContentBrowserViewModeUVE::SmallTiles;
     /// Transient: set while the divider handle is being dragged so the release that ends a drag is
     /// not mistaken for a click that would flip the split mode.
     bool m_contentBrowserSplitterDraggingUVE = false;
@@ -1776,6 +1791,10 @@ private:
     bool m_scenePanelVisible = true;
     bool m_inspectorPanelVisible = true;
     bool m_bottomDockVisible = true;
+    /// The dock body's height, dragged from its top edge; the layout clamps it (kAssetsPanelHeightUVE default).
+    float m_bottomDockHeight = 192.0F;
+    std::array<char, 512> m_consoleInput{};
+    bool m_consoleScrollToBottom = false;
     bool m_viewportPanelVisible = true;
     ViewportPanelRendererUVE m_viewportPanelRenderer;
     ViewportOverlayStateUVE m_viewportOverlayState;
