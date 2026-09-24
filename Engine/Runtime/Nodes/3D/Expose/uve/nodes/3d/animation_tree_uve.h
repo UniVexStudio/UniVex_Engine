@@ -4,32 +4,38 @@
 
 #include <string_view>
 
-#include "uve/animation/animation_tree_uve.h"
+#include "uve/component/animation_tree_component_uve.h"
 #include "uve/component/entity_uve.h"
+
+namespace UVE::Asset {
+struct AnimationClipAssetUVE;
+} // namespace UVE::Asset
 
 namespace UVE::Scene {
 
-/// Authoring definition for the AnimationTree scene node. AnimationTree is the one registry kind
-/// that is deliberately NOT library-creatable yet (SceneNodeDescriptorUVE::libraryCreatable ==
-/// false): nothing consumes a tree at runtime until the skeleton/skinning/clip-sampling pipeline
-/// exists (see SCENE_NODES_ROADMAP.md's Animation section). This file exists so the kind still
-/// has the same per-file home as every other node kind — its authored default (an empty graph)
-/// and its validation live here, ready for the day the pipeline lands. Per
-/// Engine/Runtime/Scene/README.md's "one truth per concept" rule the graph itself is the
-/// existing Core::AnimationTreeUVE, never a second copy.
+class IEntityManagerUVE;
+struct TransformComponentUVE;
+
+/// Authoring definition for the AnimationTree node: a pure Node - no transform, no visibility -
+/// whose Inspector is its own section and then the Node section. It blends two clips on a target
+/// node (`target`, or its parent) by a single Blend value.
 struct AnimationTreeNodeDefinitionUVE final {
-    /// Default document-entity name for a freshly created node of this kind.
     static constexpr std::string_view defaultName = "AnimationTree";
 
-    /// Authored default: an empty graph — a valid placeholder, since authoring cannot start
-    /// until the animation pipeline the registry entry is blocked on exists.
-    Core::AnimationTreeUVE tree{};
+    AnimationTreeComponentUVE tree{};
 };
 
 [[nodiscard]] bool IsAnimationTreeNodeDefinitionValidUVE(const AnimationTreeNodeDefinitionUVE& value) noexcept;
 
-// Deliberately no ApplyAnimationTreeNodeDefinitionUVE(): there is no ECS component to attach
-// until the animation pipeline exists, and inventing a dead one would violate the registry's
-// honest libraryCreatable=false claim. The editor rejects AnimationTree creation up front.
+/// Makes `entity` a pure Node (EnsureNodeBaselineUVE) and adds the tree when it is missing.
+void ApplyAnimationTreeNodeDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
+                                         const AnimationTreeNodeDefinitionUVE& value);
+
+/// Advances the tree by `deltaSeconds` and writes the blended pose into `target`. Either clip may be
+/// null (not loaded, not set): the other then plays alone. Returns true when `target` was written;
+/// an inactive tree, or one with neither clip usable, writes nothing.
+[[nodiscard]] bool StepAnimationTreeUVE(AnimationTreeComponentUVE& tree, const Asset::AnimationClipAssetUVE* clipA,
+                                        const Asset::AnimationClipAssetUVE* clipB, float deltaSeconds,
+                                        TransformComponentUVE& target) noexcept;
 
 } // namespace UVE::Scene

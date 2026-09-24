@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "uve/component/animation_player_component_uve.h"
+#include "uve/component/animation_tree_component_uve.h"
 #include "uve/component/auto_translate_component_uve.h"
 #include "uve/component/audio_source_component_uve.h"
 #include "uve/component/bone_modifier_component_uve.h"
@@ -568,6 +569,137 @@ void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
             }));
 }
 
+void DeclareAnimationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
+    // AnimationPlayer's own section. Its target is an entity reference: flagged so the serializer
+    // remaps it, and drawn as a node picker. Empty means the player's parent, which is the common
+    // case and needs no picking at all.
+    using P = AnimationPlayerComponentUVE;
+    TypeMetadataPropertyUVE playerTarget = WithTooltipUVE(
+        DeclareUVE<&P::target>("target", "Target", kPropertyTypeEntityUVE),
+        "The node the clip moves. Empty means this player's parent.");
+    playerTarget.flags = TypeMetadataPropertyFlagsUVE::EntityReference;
+    const auto whenOnce = [](TypeMetadataPropertyUVE property) {
+        property.isVisible = +[](const void* instance) {
+            return static_cast<const P*>(instance)->loopMode == AnimationLoopModeUVE::Once;
+        };
+        return property;
+    };
+    AddValidatedUVE<AnimationPlayerComponentUVE, &IsAnimationPlayerComponentValidUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.animation_player", "AnimationPlayer", kSectionOrderTypeSpecificUVE,
+            {
+                WithTooltipUVE(WithCustomDrawerUVE(DeclareUVE<&P::clip>("clip", "Clip", kPropertyTypeAssetGuidUVE),
+                                                   "asset:uveanim"),
+                               "The .uveanim clip to play."),
+                std::move(playerTarget),
+                WithTooltipUVE(DeclareUVE<&P::autoplay>("autoplay", "Autoplay", kPropertyTypeBoolUVE),
+                               "Starts playing as soon as the scene runs."),
+                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&P::speed>("speed", "Speed", kPropertyTypeFloatUVE),
+                                                       -100.0, 100.0, 0.05),
+                                          "1 is normal, 2 twice as fast, negative plays backwards, 0 holds."),
+                           "Playback"),
+                InGroupUVE(WithTooltipUVE(DeclareEnumUVE<&P::loopMode>("loopMode", "Loop Mode",
+                                                                       {{0, "Once"}, {1, "Loop"}, {2, "Ping-Pong"}}),
+                                          "Once stops at the end. Loop starts again. Ping-Pong turns round and plays "
+                                          "back."),
+                           "Playback"),
+                InGroupUVE(whenOnce(WithTooltipUVE(DeclareEnumUVE<&P::onFinish>(
+                                                       "onFinish", "On Finish",
+                                                       {{0, "Hold Last Pose"}, {1, "Return To Start"}}),
+                                                   "Where the target is left when the clip ends.")),
+                           "Playback"),
+                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&P::startOffsetSeconds>(
+                                                           "startOffsetSeconds", "Start Offset", kPropertyTypeFloatUVE),
+                                                       0.0, 3600.0, 0.01),
+                                          "Seconds into the clip where playback starts. Offsetting copies of one "
+                                          "clip keeps a crowd from moving in lockstep."),
+                           "Playback"),
+                InGroupUVE(WithTooltipUVE(DeclareEnumUVE<&P::processCallback>("processCallback", "Update",
+                                                                              {{0, "Every Frame"}, {1, "Physics Step"}}),
+                                          "Every Frame is smoothest on screen. Physics Step keeps the target in step "
+                                          "with the bodies it pushes."),
+                           "Playback"),
+                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&P::blendInSeconds>(
+                                                           "blendInSeconds", "Blend In", kPropertyTypeFloatUVE),
+                                                       0.0, 60.0, 0.01),
+                                          "Eases from where the target is into the clip over this many seconds, "
+                                          "instead of snapping. 0 snaps."),
+                           "Blending"),
+                InGroupUVE(WithTooltipUVE(DeclareUVE<&P::relative>("relative", "Relative", kPropertyTypeBoolUVE),
+                                          "Plays the clip's motion on top of where the target already is, so one "
+                                          "clip works on any node wherever it was placed."),
+                           "Blending"),
+                InGroupUVE(WithTooltipUVE(DeclareUVE<&P::animatePosition>("animatePosition", "Position",
+                                                                          kPropertyTypeBoolUVE),
+                                          "Off, the clip leaves the target's position alone."),
+                           "Channels"),
+                InGroupUVE(WithTooltipUVE(DeclareUVE<&P::animateRotation>("animateRotation", "Rotation",
+                                                                          kPropertyTypeBoolUVE),
+                                          "Off, the clip leaves the target's rotation alone."),
+                           "Channels"),
+                InGroupUVE(WithTooltipUVE(DeclareUVE<&P::animateScale>("animateScale", "Scale", kPropertyTypeBoolUVE),
+                                          "Off, the clip leaves the target's scale alone."),
+                           "Channels"),
+                InGroupUVE(DeclareRuntimeStateUVE<&P::isPlaying>("isPlaying", "Playing", kPropertyTypeBoolUVE), "State"),
+                InGroupUVE(DeclareRuntimeStateUVE<&P::currentTimeSeconds>("currentTimeSeconds", "Time",
+                                                                         kPropertyTypeFloatUVE),
+                           "State"),
+                InGroupUVE(DeclareRuntimeStateUVE<&P::finished>("finished", "Finished", kPropertyTypeBoolUVE), "State"),
+            }));
+
+    using T = AnimationTreeComponentUVE;
+    TypeMetadataPropertyUVE treeTarget = WithTooltipUVE(
+        DeclareUVE<&T::target>("target", "Target", kPropertyTypeEntityUVE),
+        "The node the blend moves. Empty means this tree's parent.");
+    treeTarget.flags = TypeMetadataPropertyFlagsUVE::EntityReference;
+    AddValidatedUVE<AnimationTreeComponentUVE, &IsAnimationTreeComponentValidUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.animation_tree", "AnimationTree", kSectionOrderTypeSpecificUVE,
+            {
+                WithTooltipUVE(DeclareUVE<&T::active>("active", "Active", kPropertyTypeBoolUVE),
+                               "Evaluates the tree every frame while the scene runs."),
+                std::move(treeTarget),
+                InGroupUVE(WithTooltipUVE(WithCustomDrawerUVE(DeclareUVE<&T::clipA>("clipA", "Clip A",
+                                                                                    kPropertyTypeAssetGuidUVE),
+                                                              "asset:uveanim"),
+                                          "The clip at Blend 0, such as a walk."),
+                           "Blend"),
+                InGroupUVE(WithTooltipUVE(WithCustomDrawerUVE(DeclareUVE<&T::clipB>("clipB", "Clip B",
+                                                                                    kPropertyTypeAssetGuidUVE),
+                                                              "asset:uveanim"),
+                                          "The clip at Blend 1, such as a run."),
+                           "Blend"),
+                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&T::blend>("blend", "Blend", kPropertyTypeFloatUVE),
+                                                       0.0, 1.0, 0.01),
+                                          "0 plays only Clip A, 1 only Clip B, anything between mixes them."),
+                           "Blend"),
+                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&T::blendSmoothing>(
+                                                           "blendSmoothing", "Smoothing", kPropertyTypeFloatUVE),
+                                                       0.0, 100.0, 0.1),
+                                          "How fast the blend follows a new value, per second. 0 jumps at once, so "
+                                          "a script can set Blend in one step and the change still eases."),
+                           "Blend"),
+                InGroupUVE(WithTooltipUVE(DeclareUVE<&T::syncPhase>("syncPhase", "Sync Phase", kPropertyTypeBoolUVE),
+                                          "Plays both clips at the same point in their cycle, stretching the "
+                                          "shorter one, so feet stay in step when blending walk into run."),
+                           "Blend"),
+                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&T::speed>("speed", "Speed", kPropertyTypeFloatUVE),
+                                                       -100.0, 100.0, 0.05),
+                                          "Playback rate of both clips."),
+                           "Blend"),
+                InGroupUVE(DeclareUVE<&T::animatePosition>("animatePosition", "Position", kPropertyTypeBoolUVE),
+                           "Channels"),
+                InGroupUVE(DeclareUVE<&T::animateRotation>("animateRotation", "Rotation", kPropertyTypeBoolUVE),
+                           "Channels"),
+                InGroupUVE(DeclareUVE<&T::animateScale>("animateScale", "Scale", kPropertyTypeBoolUVE), "Channels"),
+                InGroupUVE(DeclareRuntimeStateUVE<&T::currentBlend>("currentBlend", "Applied Blend",
+                                                                    kPropertyTypeFloatUVE),
+                           "State"),
+            }));
+}
+
 void DeclareMediaAndUIUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     AddUVE<AudioSourceComponentUVE>(
         entries,
@@ -620,22 +752,7 @@ void DeclareMediaAndUIUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                 }(),
             }));
 
-    AddUVE<AnimationPlayerComponentUVE>(
-        entries,
-        MakeEntryUVE("component.animation_player", "Animation Player", kSectionOrderTypeSpecificUVE,
-                     {
-                         DeclareUVE<&AnimationPlayerComponentUVE::clipAssetPath>("clipAssetPath", "Clip",
-                                                                                 kPropertyTypeStringUVE),
-                         WithRangeUVE(DeclareUVE<&AnimationPlayerComponentUVE::playbackSpeed>(
-                                          "playbackSpeed", "Speed", kPropertyTypeFloatUVE),
-                                      -100.0, 100.0, 0.05),
-                         DeclareUVE<&AnimationPlayerComponentUVE::looping>("looping", "Looping",
-                                                                           kPropertyTypeBoolUVE),
-                         DeclareUVE<&AnimationPlayerComponentUVE::playOnAwake>(
-                             "playOnAwake", "Play On Awake", kPropertyTypeBoolUVE),
-                         DeclareUVE<&AnimationPlayerComponentUVE::enabled>("enabled", "Enabled",
-                                                                           kPropertyTypeBoolUVE),
-                     }));
+    DeclareAnimationUVE(entries);
 
     AddUVE<CanvasComponentUVE>(
         entries,

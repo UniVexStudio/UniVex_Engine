@@ -3,37 +3,29 @@
 #include "uve/component/animation_player_component_uve.h"
 
 #include <cmath>
-#include <cstddef>
-#include <string>
-#include <string_view>
 
 namespace UVE::Scene {
+namespace {
 
-[[nodiscard]] bool IsAnimationClipAssetPathValidUVE(const std::string_view path) noexcept {
-    if (path.empty() || path.size() > kMaximumAnimationClipAssetPathBytesUVE ||
-        path.find('\0') != std::string_view::npos || path.find('\\') != std::string_view::npos ||
-        path.find(':') != std::string_view::npos || path.front() == '/') {
-        return path.empty();
-    }
-
-    std::size_t segmentStart = 0U;
-    for (std::size_t index = 0U; index <= path.size(); ++index) {
-        if (index != path.size() && path[index] != '/') {
-            continue;
-        }
-        const std::string_view segment = path.substr(segmentStart, index - segmentStart);
-        if (segment.empty() || segment == "." || segment == "..") {
-            return false;
-        }
-        segmentStart = index + 1U;
-    }
-    return true;
+[[nodiscard]] bool IsNonNegativeUVE(const float value) noexcept {
+    return std::isfinite(value) && value >= 0.0F;
 }
 
-[[nodiscard]] bool IsAnimationPlayerComponentValidUVE(
-    const AnimationPlayerComponentUVE& component) noexcept {
-    return IsAnimationClipAssetPathValidUVE(component.clipAssetPath) &&
-           std::isfinite(component.playbackSpeed) && component.playbackSpeed > 0.0F;
+[[nodiscard]] bool IsFiniteVectorUVE(const Math::Vector3UVE& value) noexcept {
+    return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
+}
+
+} // namespace
+
+bool IsAnimationPlayerComponentValidUVE(const AnimationPlayerComponentUVE& component) noexcept {
+    const AnimationPlayerComponentUVE& c = component;
+    return std::isfinite(c.speed) && c.loopMode <= AnimationLoopModeUVE::PingPong &&
+           c.onFinish <= AnimationFinishActionUVE::ReturnToStart &&
+           c.processCallback <= AnimationProcessCallbackUVE::Physics && IsNonNegativeUVE(c.startOffsetSeconds) &&
+           IsNonNegativeUVE(c.blendInSeconds) && IsNonNegativeUVE(c.currentTimeSeconds) &&
+           (c.direction == 1.0F || c.direction == -1.0F) && IsNonNegativeUVE(c.blendElapsedSeconds) &&
+           IsFiniteVectorUVE(c.startPosition) && Math::IsFiniteUVE(c.startRotation) &&
+           IsFiniteVectorUVE(c.startScale);
 }
 
 } // namespace UVE::Scene

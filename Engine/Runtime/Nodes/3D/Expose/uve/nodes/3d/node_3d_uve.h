@@ -53,6 +53,12 @@ void ApplyNode3DNodeDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE en
 void EnsureNode3DBaselineUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
                              std::string_view nameFallback);
 
+/// The recipe of a pure Node - a node with no transform, such as the scene root or an
+/// AnimationPlayer: in the hierarchy, named, carrying the common Node section and nothing spatial.
+/// Any Transform/WorldTransform/Visibility present is removed; an existing transform is first
+/// folded into the children so nothing moves on screen. Idempotent, and refuses a dead entity.
+void EnsureNodeBaselineUVE(IEntityManagerUVE& entityManager, EntityUVE entity, std::string_view nameFallback);
+
 /// The Node section every node has in common - Process, Thread Group, Physics Interpolation, Auto
 /// Translate, Editor Description, Script and Metadata - attached with defaults where missing.
 /// Every default is Inherit or empty, so attaching them changes nothing about how the scene runs;

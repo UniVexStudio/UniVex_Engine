@@ -1066,9 +1066,7 @@ bool EditorUVE::AreSceneComponentValuesEqualUVE(const EditorSceneComponentValueU
             } else if constexpr (std::is_same_v<LeftType, Scene::ScriptComponentUVE>) {
                 return left.scriptAssetPath == right.scriptAssetPath;
             } else if constexpr (std::is_same_v<LeftType, Scene::AnimationPlayerComponentUVE>) {
-                return left.clipAssetPath == right.clipAssetPath && left.playbackSpeed == right.playbackSpeed &&
-                       left.looping == right.looping && left.playOnAwake == right.playOnAwake &&
-                       left.enabled == right.enabled;
+                return left.HasSameSettingsUVE(right);
             } else if constexpr (std::is_same_v<LeftType, Scene::WorldEnvironment3DNodeComponentUVE>) {
                 return left.skyAssetPath == right.skyAssetPath && left.ambientColor == right.ambientColor &&
                        left.fogColor == right.fogColor && left.ambientEnergy == right.ambientEnergy &&
@@ -2065,10 +2063,9 @@ Scene::EntityUVE EditorUVE::CreateDocumentSceneNodeUVE(
             entity = createNodeWithComponent(Scene::WorldPartition3DNodeComponentUVE{});
             break;
         case Scene::Nodes::SceneNodeKindUVE::AnimationTree:
-            // Not library-creatable until the real animation pipeline exists; the kind's
-            // per-file home (definition only, deliberately no Apply) is
-            // uve/nodes/3d/animation_tree_uve.h.
-            return Scene::kInvalidEntityUVE;
+            entity = CreateNodeDefinitionEntityInternalUVE(Scene::AnimationTreeNodeDefinitionUVE{},
+                                                            Scene::ApplyAnimationTreeNodeDefinitionUVE);
+            break;
         case Scene::Nodes::SceneNodeKindUVE::SceneRoot:
             // The scene root is created by the document lifecycle
             // (EnsureDocumentSceneRootUVE), never through the library path.
@@ -2253,7 +2250,7 @@ bool EditorUVE::ComputeKeepWorldLocalTransformUVE(const Scene::EntityUVE entity,
 }
 
 bool EditorUVE::ReparentDocumentEntityUVE(const Scene::EntityUVE entity, const Scene::EntityUVE newParent) {
-    if (!IsLifecycleCommandAllowedUVE() || IsSceneRootEntityUVE(entity) || !HasSceneGraphNodeUVE(entity) ||
+    if (!IsLifecycleCommandAllowedUVE() || IsSceneRootEntityUVE(entity) || !IsReparentableNodeUVE(entity) ||
         !IsDocumentSubtreeUVE(entity) ||
         (newParent != Scene::kInvalidEntityUVE && !IsHierarchyNodeUVE(newParent)) ||
         entity == newParent || DoesSubtreeContainEntityUVE(entity, newParent)) {
@@ -2272,13 +2269,12 @@ bool EditorUVE::ReparentDocumentEntityUVE(const Scene::EntityUVE entity, const S
         return false;
     }
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    if (!entityManager.HasComponentUVE<Scene::TransformComponentUVE>(entity)) {
-        return false;
-    }
+    // A pure Node has no transform: it moves in the hierarchy and nothing else changes.
+    const bool spatial = entityManager.HasComponentUVE<Scene::TransformComponentUVE>(entity);
     const Scene::TransformComponentUVE localBefore =
-        entityManager.GetComponentUVE<Scene::TransformComponentUVE>(entity);
+        spatial ? entityManager.GetComponentUVE<Scene::TransformComponentUVE>(entity) : Scene::TransformComponentUVE{};
     Scene::TransformComponentUVE localAfter = localBefore;
-    if (m_reparentTransformMode == EditorReparentTransformModeUVE::KeepWorld &&
+    if (spatial && m_reparentTransformMode == EditorReparentTransformModeUVE::KeepWorld &&
         !ComputeKeepWorldLocalTransformUVE(entity, effectiveParent, localAfter)) {
         return false;
     }
@@ -2287,7 +2283,7 @@ bool EditorUVE::ReparentDocumentEntityUVE(const Scene::EntityUVE entity, const S
     const std::size_t siblingIndexBefore =
         m_services->GetSceneGraphUVE().GetSiblingIndexUVE(entityManager, entity).value_or(0U);
     m_services->GetSceneGraphUVE().SetParentUVE(entityManager, entity, effectiveParent);
-    if (!ApplyLocalTransformUVE(entity, localAfter)) {
+    if (spatial && !ApplyLocalTransformUVE(entity, localAfter)) {
         m_services->GetSceneGraphUVE().SetParentUVE(entityManager, entity, parentBefore);
         static_cast<void>(ApplyLocalTransformUVE(entity, localBefore));
         return false;
@@ -3059,7 +3055,7 @@ bool EditorUVE::UndoHistoryEntryUVE(HistoryEntryUVE& entry) {
                 // A move among siblings keeps its parent, so it needs neither a reparent nor a
                 // transform - and a pure Node, which has no transform, can make one.
                 const bool reparented = typedEntry.parentBefore != typedEntry.parentAfter;
-                if (reparented ? (!HasSceneGraphNodeUVE(typedEntry.entity) ||
+                if (reparented ? (!IsReparentableNodeUVE(typedEntry.entity) ||
                                   (typedEntry.parentBefore != Scene::kInvalidEntityUVE &&
                                    !IsHierarchyNodeUVE(typedEntry.parentBefore)) ||
                                   DoesSubtreeContainEntityUVE(typedEntry.entity, typedEntry.parentBefore))
@@ -3069,7 +3065,8 @@ bool EditorUVE::UndoHistoryEntryUVE(HistoryEntryUVE& entry) {
                 if (reparented) {
                     m_services->GetSceneGraphUVE().SetParentUVE(
                         m_services->GetEntityManagerUVE(), typedEntry.entity, typedEntry.parentBefore);
-                    if (!ApplyLocalTransformUVE(typedEntry.entity, typedEntry.localTransformBefore)) {
+                    if (HasSceneGraphNodeUVE(typedEntry.entity) &&
+                        !ApplyLocalTransformUVE(typedEntry.entity, typedEntry.localTransformBefore)) {
                         return false;
                     }
                 }
@@ -3193,7 +3190,7 @@ bool EditorUVE::RedoHistoryEntryUVE(HistoryEntryUVE& entry) {
                 return true;
             } else {
                 const bool reparented = typedEntry.parentBefore != typedEntry.parentAfter;
-                if (reparented ? (!HasSceneGraphNodeUVE(typedEntry.entity) ||
+                if (reparented ? (!IsReparentableNodeUVE(typedEntry.entity) ||
                                   (typedEntry.parentAfter != Scene::kInvalidEntityUVE &&
                                    !IsHierarchyNodeUVE(typedEntry.parentAfter)) ||
                                   DoesSubtreeContainEntityUVE(typedEntry.entity, typedEntry.parentAfter))
@@ -3203,7 +3200,8 @@ bool EditorUVE::RedoHistoryEntryUVE(HistoryEntryUVE& entry) {
                 if (reparented) {
                     m_services->GetSceneGraphUVE().SetParentUVE(
                         m_services->GetEntityManagerUVE(), typedEntry.entity, typedEntry.parentAfter);
-                    if (!ApplyLocalTransformUVE(typedEntry.entity, typedEntry.localTransformAfter)) {
+                    if (HasSceneGraphNodeUVE(typedEntry.entity) &&
+                        !ApplyLocalTransformUVE(typedEntry.entity, typedEntry.localTransformAfter)) {
                         return false;
                     }
                 }
@@ -3910,6 +3908,17 @@ bool EditorUVE::HasSceneGraphNodeUVE(const Scene::EntityUVE entity) const noexce
     return entityManager.HasComponentUVE<Scene::TransformComponentUVE>(entity) &&
            entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(entity) &&
            entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(entity);
+}
+
+bool EditorUVE::IsReparentableNodeUVE(const Scene::EntityUVE entity) const noexcept {
+    // A spatial node carries the full transform set; a pure Node (AnimationPlayer, the scene root)
+    // carries none of it. Anything in between is a half-built entity and is refused.
+    if (HasSceneGraphNodeUVE(entity)) {
+        return true;
+    }
+    const Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    return IsHierarchyNodeUVE(entity) && !entityManager.HasComponentUVE<Scene::TransformComponentUVE>(entity) &&
+           !entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(entity);
 }
 
 bool EditorUVE::IsHierarchyNodeUVE(const Scene::EntityUVE entity) const noexcept {
