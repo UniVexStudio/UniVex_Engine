@@ -37,6 +37,12 @@ inline constexpr std::string_view kSelectionOutlineColorUVE = "editor.viewport.s
 inline constexpr std::string_view kSelectionOutlineThicknessUVE = "editor.viewport.selectionOutline.thickness";
 inline constexpr std::string_view kNewNodesUnderSelectionUVE = "editor.nodes.addUnderSelection";
 inline constexpr std::string_view kNewNodePlacementUVE = "editor.nodes.placement";
+inline constexpr std::string_view kPlayPauseOnStartUVE = "editor.play.pauseOnStart";
+inline constexpr std::string_view kPlaySaveSceneFirstUVE = "editor.play.saveSceneFirst";
+inline constexpr std::string_view kPlaySwitchToGameUVE = "editor.play.switchToGame";
+inline constexpr std::string_view kPlayTintEnabledUVE = "editor.play.tint.enabled";
+inline constexpr std::string_view kPlayTintColorUVE = "editor.play.tint.color";
+inline constexpr std::string_view kPlayTintStrengthUVE = "editor.play.tint.strength";
 } // namespace EditorSettingIdUVE
 
 /// Declares every editor setting in `registry`, with defaults and legal ranges taken from the

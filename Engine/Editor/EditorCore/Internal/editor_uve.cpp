@@ -472,6 +472,10 @@ bool EditorUVE::EnterPlayModeUVE() {
         return false;
     }
 
+    // Saved before the snapshot, so the saved file and the state Play restores are the same.
+    if (m_playSaveSceneFirst && m_sceneDirty && !m_activeScenePath.empty()) {
+        static_cast<void>(SaveSceneUVE());
+    }
     const std::vector<Scene::EntityUVE> roots = GetDocumentRootsUVE();
     PlayModeSessionUVE session{};
     session.capturedEmptyDocument = roots.empty();
@@ -502,7 +506,12 @@ bool EditorUVE::EnterPlayModeUVE() {
     // the authored poses.
     static_cast<void>(ApplyPlayEntrySpawnUVE());
     m_workspaceBeforePlayMode = m_activeWorkspace;
-    m_activeWorkspace = EditorWorkspaceUVE::Game;
+    if (m_playSwitchToGame) {
+        m_activeWorkspace = EditorWorkspaceUVE::Game;
+    }
+    if (m_playPauseOnStart) {
+        static_cast<void>(PausePlayModeUVE());
+    }
     return true;
 }
 
