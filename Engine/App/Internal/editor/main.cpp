@@ -165,6 +165,9 @@ public:
         // "animating" and then never actually move, since nothing else ticks it forward. Mirrors
         // app/main.cpp's own per-frame state.camera.Update(deltaSeconds) call in the standalone demo.
         camera_.Update(ImGui::GetIO().DeltaTime);
+        // Where a new node appears when its placement follows the view.
+        const univex::math::Vec3 cameraFocus = camera_.Target();
+        editor_.SetViewportCameraFocusUVE(UVE::Math::Vector3UVE{cameraFocus.x, cameraFocus.y, cameraFocus.z});
 
         // Real scene entities, rendered via the same lit/shaded pipeline EngineCoreUVE itself uses
         // at runtime (Renderer3DUVE::RenderFrameToTargetUVE) - see EditorMeshLayerUVE's own header

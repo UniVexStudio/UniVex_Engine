@@ -132,6 +132,13 @@ struct EditorTransformSnappingSettingsUVE final {
     float scaleStep = 0.1F;
 };
 
+/// Where a newly created 3D node appears: at its parent's origin, or at the point the viewport
+/// camera orbits - what the person is looking at.
+enum class EditorNewNodePlacementUVE {
+    ParentOrigin,
+    ViewFocus,
+};
+
 /// One stored editor-viewport pose, expressed in orbit-camera terms (pivot target, yaw/pitch,
 /// orbit distance) so the value is independent of any concrete camera implementation - the app
 /// host applies it through its OrbitCamera's SetTarget/SetYawPitch/SetDistance. Session-local and
@@ -573,6 +580,10 @@ public:
     /// Applies `value` to editor setting `id` at once. Refused, changing nothing, for an unknown id
     /// or a value its descriptor does not allow. Stored in the settings file with the session.
     [[nodiscard]] bool SetEditorSettingUVE(std::string_view id, const Config::SettingValueUVE& value);
+    /// The point the viewport camera orbits, reported by the host each frame; new nodes are placed
+    /// there when their placement preference says so. A non-finite point is ignored.
+    void SetViewportCameraFocusUVE(const Math::Vector3UVE& focus) noexcept;
+
     /// Shows the Editor Preferences window, with the search field focused.
     void OpenEditorPreferencesUVE() noexcept;
     [[nodiscard]] bool IsEditorPreferencesOpenUVE() const noexcept { return m_preferencesWindow.visible; }
@@ -1420,10 +1431,18 @@ private:
     /// The editor's own settings, declared by RegisterEditorSettingsUVE; read and written in the
     /// services' settings store.
     Config::SettingsRegistryUVE m_settingsRegistry;
+    // Node creation preferences (editor_settings_uve.cpp), and the host's latest camera focus.
+    bool m_newNodesUnderSelection = true;
+    EditorNewNodePlacementUVE m_newNodePlacement = EditorNewNodePlacementUVE::ParentOrigin;
+    std::optional<Math::Vector3UVE> m_viewportCameraFocus;
     // Each editor setting's descriptor and its reads and writes of the state above, in one table
     // (editor_settings_uve.cpp) that loading, saving and the preferences window all use.
     [[nodiscard]] static const std::vector<EditorSettingBindingUVE>& GetSettingBindingsUVE();
     [[nodiscard]] static const EditorSettingBindingUVE* FindSettingBindingUVE(std::string_view id);
+    // Where a new node goes: under the single selection when the preference allows and there is
+    // one, otherwise under the scene root. Then, for a spatial node, where in space.
+    [[nodiscard]] Scene::EntityUVE ResolveNewNodeParentUVE();
+    void PlaceNewDocumentNodeUVE(Scene::EntityUVE entity);
     friend bool RegisterEditorSettingsUVE(Config::SettingsRegistryUVE& registry);
     Core::ISimulationControlUVE* m_simulationControl = nullptr;
     EditorStateUVE m_state = EditorStateUVE::Uninitialized;
