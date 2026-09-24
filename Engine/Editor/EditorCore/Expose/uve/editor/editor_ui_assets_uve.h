@@ -3,6 +3,9 @@
 #include <array>
 #include <cstdint>
 #include <string_view>
+#include <vector>
+
+#include "uve/scene/nodes/scene_node_registry_uve.h"
 
 namespace UVE::Editor {
 
@@ -23,8 +26,12 @@ public:
     [[nodiscard]] bool IsReadyUVE() const noexcept;
     [[nodiscard]] std::uintptr_t GetLogoTextureIdUVE() const noexcept;
     [[nodiscard]] std::uintptr_t GetGeneralIconTextureIdUVE(std::string_view iconId) const noexcept;
-    /// Looks up a Content Browser per-type badge icon by its ContentBrowserItemTypeUVE label
-    /// (editor_uve.h), e.g. "Mesh" or "Material". Returns 0 for any unrecognized key.
+    /// The icon of a scene node type. Every node type has one; 0 only before InitializeUVE().
+    [[nodiscard]] std::uintptr_t GetNodeIconTextureIdUVE(Scene::Nodes::SceneNodeKindUVE kind) const noexcept;
+    /// The icon of a node palette category, by its display name ("Physics"). 0 when unknown.
+    [[nodiscard]] std::uintptr_t GetNodeCategoryIconTextureIdUVE(std::string_view category) const noexcept;
+    /// The icon of a Content Browser type, by its ContentBrowserItemTypeUVE label (editor_uve.h),
+    /// e.g. "Mesh" or "Folder", or "folder_open" for an expanded folder. 0 when unknown.
     [[nodiscard]] std::uintptr_t GetContentTypeIconTextureIdUVE(std::string_view typeId) const noexcept;
 
     /// Uploads an arbitrary RGBA8 image (e.g. a decoded Asset::TextureAssetUVE) as a standalone GL
@@ -39,8 +46,11 @@ public:
 
 private:
     std::uintptr_t m_logoTextureId = 0U;
-    std::array<std::uintptr_t, 4U> m_generalIconTextureIds{};
-    std::array<std::uintptr_t, 9U> m_contentTypeIconTextureIds{};
+    std::array<std::uintptr_t, 2U> m_generalIconTextureIds{};
+    // One per GetEditorIconSourcesUVE() entry (editor_icon_set_uve.h), in the same order.
+    std::vector<std::uintptr_t> m_iconTextureIds;
+    // The same textures again, indexed by node kind: the hierarchy asks once per row per frame.
+    std::array<std::uintptr_t, Scene::Nodes::kMaximumSceneNodeDescriptorsUVE> m_nodeIconTextureIds{};
 };
 
 } // namespace UVE::Editor

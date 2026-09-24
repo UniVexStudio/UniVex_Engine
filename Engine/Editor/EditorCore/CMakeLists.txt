@@ -83,9 +83,11 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter)
 #     (Runtime must not depend on Editor, so the lower layer owns it; the editor embeds it
 #     from there). This module no longer vendors its own copy.
 #   * liberation-mono + tabler icons: this module's own assets/fonts/ copies.
-# The rasterized icon .inc files (uve_general_icon_bytes.inc, uve_content_type_icon_bytes.inc,
-# univex_logo_uve_display_bytes.inc) stay committed: their SVG->RGBA rasterization step is not
-# (yet) part of the build, so they remain hand-produced assets.
+# The editor's node, node-category and content-type icons are embedded from the PNGs under
+# assets/icons/<group>/, which Engine/Tools/editor_icons/build_editor_icons.py renders from the SVGs
+# beside them. Rasterizing needs a browser, so the PNGs are committed and only the embedding runs
+# here. The two remaining hand-produced .inc files (uve_general_icon_bytes.inc,
+# univex_logo_uve_display_bytes.inc) predate that tool and stay committed as they are.
 set(_uve_editor_generated_dir "${CMAKE_CURRENT_BINARY_DIR}/generated")
 set(_uve_editor_font_incs)
 foreach(_font_pair IN ITEMS
@@ -111,6 +113,23 @@ foreach(_font_pair IN ITEMS
     list(APPEND _uve_editor_font_incs "${_uve_editor_generated_dir}/${_inc_name}")
 endforeach()
 
+file(GLOB _uve_editor_icon_pngs CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/assets/icons/nodes/*.png"
+    "${CMAKE_CURRENT_SOURCE_DIR}/assets/icons/node_categories/*.png"
+    "${CMAKE_CURRENT_SOURCE_DIR}/assets/icons/content_types/*.png")
+list(SORT _uve_editor_icon_pngs)
+add_custom_command(
+    OUTPUT "${_uve_editor_generated_dir}/uve_editor_icon_set.inc"
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/Engine/Tools/editor_icons/embed_editor_icons.py"
+            "${_uve_editor_generated_dir}/uve_editor_icon_set.inc"
+            "${CMAKE_CURRENT_SOURCE_DIR}/assets/icons"
+            ${_uve_editor_icon_pngs}
+    DEPENDS ${_uve_editor_icon_pngs}
+            "${CMAKE_SOURCE_DIR}/Engine/Tools/editor_icons/embed_editor_icons.py"
+    COMMENT "Embedding editor icons -> uve_editor_icon_set.inc"
+    VERBATIM
+)
+
 add_library(uve_editor STATIC
     Internal/editor_bridge_stdio_uve.cpp
     Internal/editor_bridge_uve.cpp
@@ -119,6 +138,7 @@ add_library(uve_editor STATIC
     Internal/editor_render_stats_uve.cpp
     Internal/editor_theme_uve.cpp
     Internal/editor_ui_assets_uve.cpp
+    Internal/editor_icon_set_uve.cpp
     Internal/mesh_thumbnail_renderer_uve.cpp
     Internal/editor_uve.cpp
     Internal/editor_settings_uve.cpp
@@ -143,6 +163,7 @@ add_library(uve_editor STATIC
     Internal/inspector_drawer_registry_uve.cpp
     Internal/regression_harness_uve.cpp
     ${_uve_editor_font_incs}
+    "${_uve_editor_generated_dir}/uve_editor_icon_set.inc"
 )
 target_include_directories(uve_editor PUBLIC Expose)
 target_include_directories(uve_editor PRIVATE "${_uve_editor_generated_dir}")

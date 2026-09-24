@@ -336,13 +336,32 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
                     directoryChildren[entry.relativePath.parent_path().generic_string()].push_back(&entry);
                 }
             }
+            // Each row leads with a folder icon, painted into spaces the label reserves for it, so
+            // the tree keeps imgui's own arrows, indent and selection instead of a custom row.
+            const float line = ImGui::GetTextLineHeight();
+            const float folderIconSize = std::min(16.0F, std::floor(line));
+            const float spaceWidth = std::max(1.0F, ImGui::CalcTextSize(" ").x);
+            const std::string iconGap(
+                static_cast<std::size_t>(std::ceil((folderIconSize + 4.0F) / spaceWidth)), ' ');
+            const auto drawFolderIcon = [&](const float x, const bool open) {
+                const std::uintptr_t icon = m_uiAssets.GetContentTypeIconTextureIdUVE(open ? "folder_open" : "Folder");
+                if (icon == 0U) {
+                    return;
+                }
+                const float rowTop = ImGui::GetItemRectMin().y;
+                const float rowHeight = ImGui::GetItemRectSize().y;
+                const ImVec2 iconMin{std::floor(x), std::floor(rowTop + ((rowHeight - folderIconSize) * 0.5F))};
+                ImGui::GetWindowDrawList()->AddImage(static_cast<ImTextureID>(icon), iconMin,
+                                                     ImVec2{iconMin.x + folderIconSize, iconMin.y + folderIconSize});
+            };
             // "main" root row: always click back to the content root.
             const bool rootSelected = m_contentBrowserDirectory.empty();
-            if (ImGui::Selectable("main##content-tree-root", rootSelected)) {
+            if (ImGui::Selectable((iconGap + "main##content-tree-root").c_str(), rootSelected)) {
                 m_contentBrowserDirectory.clear();
                 m_selectedProjectFile.reset();
                 m_selectedAsset.reset();
             }
+            drawFolderIcon(ImGui::GetItemRectMin().x, true);
             std::function<void(const std::string&)> renderDirectory = [&](const std::string& parentKey) {
                 const auto childrenIt = directoryChildren.find(parentKey);
                 if (childrenIt == directoryChildren.end()) {
@@ -361,8 +380,10 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
                         treeFlags |= ImGuiTreeNodeFlags_Selected;
                     }
                     ImGui::PushID(childKey.c_str());
-                    const std::string nodeLabel = dirEntry->relativePath.filename().generic_string();
+                    const std::string nodeLabel = iconGap + dirEntry->relativePath.filename().generic_string();
+                    const float rowX = ImGui::GetCursorScreenPos().x;
                     const bool open = ImGui::TreeNodeEx(nodeLabel.c_str(), treeFlags);
+                    drawFolderIcon(rowX + ImGui::GetTreeNodeToLabelSpacing(), open && hasSubdirectories);
                     if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
                         m_contentBrowserDirectory = dirEntry->relativePath;
                         selectEntry(*dirEntry);
@@ -488,23 +509,16 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
                 : type == ContentBrowserItemTypeUVE::Mesh || type == ContentBrowserItemTypeUVE::Model
                     ? GetMeshThumbnailUVE(entry.relativePath)
                                                             : 0U;
+            // A preview of the file itself when there is one, its type's icon otherwise - a rig
+            // with no geometry (bones only) has no mesh preview, and shows the Model icon.
             const std::uintptr_t iconTexture =
                 contentThumbnail != 0U ? contentThumbnail
-                : type == ContentBrowserItemTypeUVE::Folder
-                    ? 0U
-                    // A model shares the mesh badge: there is no separate artwork for it, and a
-                    // rig with no geometry (bones only) would otherwise show a blank card.
-                    : m_uiAssets.GetContentTypeIconTextureIdUVE(GetContentBrowserItemTypeLabelUVE(
-                          type == ContentBrowserItemTypeUVE::Model ? ContentBrowserItemTypeUVE::Mesh : type));
+                                       : m_uiAssets.GetContentTypeIconTextureIdUVE(GetContentBrowserItemTypeLabelUVE(type));
             if (iconTexture != 0U) {
-                const float iconX = cardMin.x + (kCardWidthUVE - kCardIconSizeUVE) * 0.5F;
-                gridDrawList->AddImage(static_cast<ImTextureID>(iconTexture), ImVec2{iconX, cardMin.y + 4.0F},
-                                       ImVec2{iconX + kCardIconSizeUVE, cardMin.y + 4.0F + kCardIconSizeUVE});
-            } else if (type == ContentBrowserItemTypeUVE::Folder) {
-                const ImVec2 folderCenter{cardMin.x + kCardWidthUVE * 0.5F,
-                                          cardMin.y + 4.0F + kCardIconSizeUVE * 0.5F};
-                DrawFolderIconUVE(*gridDrawList, folderCenter, kCardIconSizeUVE * 0.5F,
-                                  IM_COL32(224, 196, 122, 255));
+                const float iconX = std::floor(cardMin.x + (kCardWidthUVE - kCardIconSizeUVE) * 0.5F);
+                const float iconY = std::floor(cardMin.y + 4.0F);
+                gridDrawList->AddImage(static_cast<ImTextureID>(iconTexture), ImVec2{iconX, iconY},
+                                       ImVec2{iconX + kCardIconSizeUVE, iconY + kCardIconSizeUVE});
             }
             const std::string truncatedLabel = truncateLabelUVE(displayLabel, kCardWidthUVE - kCardPaddingUVE);
             const float labelWidth = ImGui::CalcTextSize(truncatedLabel.c_str()).x;

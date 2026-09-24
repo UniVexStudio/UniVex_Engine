@@ -18,8 +18,10 @@
 #include "uve/editor/editor_uve.h"
 
 #include <algorithm>
-#include <cmath>
 #include <array>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -263,7 +265,7 @@ void EditorUVE::DrawHierarchyNodeUVE(const Scene::EntityUVE entity) {
     }
 
     const bool renaming = entity == m_hierarchyRenameEntity;
-    // Just enough leading space for the icon DrawHierarchyNodeIconUVE() draws into (see below) plus
+    // Just enough leading space for the node icon drawn into it (see below) plus
     // a small gap - was 4 spaces, which (combined with TreeNodeEx's own arrow-toggle spacing that
     // every row reserves, leaf or not) pushed the icon+name noticeably right of the panel's left
     // edge instead of hugging it.
@@ -273,7 +275,7 @@ void EditorUVE::DrawHierarchyNodeUVE(const Scene::EntityUVE entity) {
     const float spaceWidth = std::max(1.0F, ImGui::CalcTextSize(" ").x);
     const auto gapSpaces = m_hierarchyView.showIcons
                                ? static_cast<std::size_t>(
-                                     std::ceil(((kHierarchyNodeIconRadiusUVE * 2.0F) + 6.0F) / spaceWidth))
+                                     std::ceil((kHierarchyNodeIconSizeUVE + 6.0F) / spaceWidth))
                                : std::size_t{0U};
     // The row's right-hand columns (eye, warning, script) are fixed; the name gives way to them.
     // A name that would run under the leftmost column this row uses is cut short with "..." and
@@ -345,15 +347,17 @@ void EditorUVE::DrawHierarchyNodeUVE(const Scene::EntityUVE entity) {
     }
     if (!renaming && m_hierarchyView.showIcons) {
         // Draws into the gap the row's own label prefix reserves before the name, so the icon lines
-        // up with the name without a second ImGui column or child window just for one glyph.
-        const float iconCenterY = (rowMin.y + rowMax.y) * 0.5F;
-        const float iconCenterX = rowMin.x + ImGui::GetTreeNodeToLabelSpacing() + kHierarchyNodeIconRadiusUVE;
-        const HierarchyNodeIconKindUVE iconKind =
-            GetHierarchyNodeIconKindUVE(Scene::ResolveSceneNodeKindUVE(entityManager, entity));
-        DrawHierarchyNodeIconUVE(*ImGui::GetWindowDrawList(), ImVec2{iconCenterX, iconCenterY},
-                                kHierarchyNodeIconRadiusUVE, iconKind,
-                                m_uiAssets.GetGeneralIconTextureIdUVE("sun"),
-                                m_uiAssets.GetGeneralIconTextureIdUVE("environment"));
+        // up with the name without a second ImGui column or child window just for one picture.
+        // Whole pixels, so the texture's texels land on screen pixels and stay sharp.
+        const std::uintptr_t icon =
+            m_uiAssets.GetNodeIconTextureIdUVE(Scene::ResolveSceneNodeKindUVE(entityManager, entity));
+        if (icon != 0U) {
+            const ImVec2 iconMin{std::floor(rowMin.x + ImGui::GetTreeNodeToLabelSpacing()),
+                                 std::floor(((rowMin.y + rowMax.y) - kHierarchyNodeIconSizeUVE) * 0.5F)};
+            ImGui::GetWindowDrawList()->AddImage(
+                static_cast<ImTextureID>(icon), iconMin,
+                ImVec2{iconMin.x + kHierarchyNodeIconSizeUVE, iconMin.y + kHierarchyNodeIconSizeUVE});
+        }
     }
     const bool typeHidden = m_hierarchyView.showTypeName && !typeHint.empty() && !typeHintShown;
     if ((nameTruncated || typeHidden) && !renaming && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
@@ -556,6 +560,26 @@ std::optional<bool> EditorUVE::GetPendingHierarchyRowOpenUVE(const Scene::Entity
     return pending->second;
 }
 
+namespace {
+
+// A category's icon on its heading line, sized and centred like a row's, followed on the same line
+// by whatever the caller draws next. Nothing when the texture is missing.
+void DrawNodePickerIconUVE(const std::uintptr_t textureId) {
+    if (textureId == 0U) {
+        return;
+    }
+    const float line = ImGui::GetTextLineHeight();
+    const float size = std::min(kHierarchyNodeIconSizeUVE, std::floor(line));
+    const ImVec2 cursor = ImGui::GetCursorScreenPos();
+    ImGui::Dummy(ImVec2{size, line});
+    const ImVec2 iconMin{std::floor(cursor.x), std::floor(cursor.y + ((line - size) * 0.5F))};
+    ImGui::GetWindowDrawList()->AddImage(static_cast<ImTextureID>(textureId), iconMin,
+                                         ImVec2{iconMin.x + size, iconMin.y + size});
+    ImGui::SameLine(0.0F, ImGui::GetStyle().ItemInnerSpacing.x);
+}
+
+} // namespace
+
 void EditorUVE::DrawNodePickerUVE() {
     constexpr const char* kPopupId = "##node-picker";
     bool focusSearch = false;
@@ -638,14 +662,31 @@ void EditorUVE::DrawNodePickerUVE() {
                 if (!shownCategory.empty()) {
                     ImGui::Spacing();
                 }
+                DrawNodePickerIconUVE(m_uiAssets.GetNodeCategoryIconTextureIdUVE(descriptor.category));
                 ImGui::TextDisabled("%s", descriptor.category.data());
                 shownCategory = descriptor.category;
             }
             ImGui::Indent(fontSize * 0.6F);
             const bool highlight = !m_nodePickerFilter.empty() && bestMatch == descriptor.kind;
-            if (ImGui::Selectable(descriptor.displayName.data(), highlight)) {
+            // The row is the whole width; the icon and name are painted over it, so the name keeps
+            // the same left edge whether or not an icon is there.
+            const ImVec2 rowStart = ImGui::GetCursorScreenPos();
+            ImGui::PushID(static_cast<int>(descriptor.kind));
+            if (ImGui::Selectable("##node", highlight)) {
                 chosen = descriptor.kind;
             }
+            ImGui::PopID();
+            const float line = ImGui::GetTextLineHeight();
+            const float iconSize = std::min(kHierarchyNodeIconSizeUVE, std::floor(line));
+            if (const std::uintptr_t icon = m_uiAssets.GetNodeIconTextureIdUVE(descriptor.kind); icon != 0U) {
+                const ImVec2 iconMin{std::floor(rowStart.x), std::floor(rowStart.y + ((line - iconSize) * 0.5F))};
+                ImGui::GetWindowDrawList()->AddImage(static_cast<ImTextureID>(icon), iconMin,
+                                                     ImVec2{iconMin.x + iconSize, iconMin.y + iconSize});
+            }
+            ImGui::GetWindowDrawList()->AddText(ImVec2{rowStart.x + iconSize + ImGui::GetStyle().ItemInnerSpacing.x,
+                                                       rowStart.y},
+                                                ImGui::GetColorU32(ImGuiCol_Text), descriptor.displayName.data(),
+                                                descriptor.displayName.data() + descriptor.displayName.size());
             if (highlight && m_nodePickerFilter != m_nodePickerScrolledFilter) {
                 ImGui::SetScrollHereY(0.5F); // keep the Enter target in sight as the query changes
                 m_nodePickerScrolledFilter = m_nodePickerFilter;
