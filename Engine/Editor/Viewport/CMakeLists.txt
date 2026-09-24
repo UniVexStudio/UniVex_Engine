@@ -35,7 +35,20 @@ configure_file(
     ${CMAKE_CURRENT_BINARY_DIR}/generated/univex/render/GizmoShaderSources.h
     @ONLY)
 
+file(READ ${CMAKE_CURRENT_SOURCE_DIR}/shaders/selection_mask.vert     UNIVEX_SELECTION_MASK_VERT)
+file(READ ${CMAKE_CURRENT_SOURCE_DIR}/shaders/selection_mask.frag     UNIVEX_SELECTION_MASK_FRAG)
+file(READ ${CMAKE_CURRENT_SOURCE_DIR}/shaders/selection_outline.vert  UNIVEX_SELECTION_OUTLINE_VERT)
+file(READ ${CMAKE_CURRENT_SOURCE_DIR}/shaders/selection_outline.frag  UNIVEX_SELECTION_OUTLINE_FRAG)
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/SelectionOutlineShaderSources.h.in
+    ${CMAKE_CURRENT_BINARY_DIR}/generated/univex/render/SelectionOutlineShaderSources.h
+    @ONLY)
+
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/selection_mask.vert
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/selection_mask.frag
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/selection_outline.vert
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/selection_outline.frag
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/infinite_grid.vert
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/infinite_grid.frag
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/gizmo_line.vert
@@ -68,7 +81,8 @@ find_package(GLEW REQUIRED)
 add_library(univex_viewport_gl STATIC
     Internal/ShaderProgram.cpp
     Internal/InfiniteGridRenderer.cpp
-    Internal/GizmoRenderer.cpp)
+    Internal/GizmoRenderer.cpp
+    Internal/SelectionOutlineRenderer.cpp)
 target_include_directories(univex_viewport_gl PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/Expose
     ${CMAKE_CURRENT_BINARY_DIR}/generated)
@@ -90,7 +104,8 @@ target_compile_options(univex_viewport_app_support PRIVATE -Wall -Wextra -Wpedan
 # ---------------------------------------------------------------------------
 add_library(univex_viewport_engine_bridge STATIC
     Internal/integration/EditorMeshLayer.cpp
-    Internal/integration/EntityPicker.cpp)
+    Internal/integration/EntityPicker.cpp
+    Internal/integration/SelectionOutlineGeometry.cpp)
 target_include_directories(univex_viewport_engine_bridge PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/Internal)
 # uve_core brings in EngineServicesUVE/Renderer3DUVE/GlRenderDeviceUVE/Scene for
 # EditorMeshLayerUVE, which renders the live scene's real mesh/material entities into the

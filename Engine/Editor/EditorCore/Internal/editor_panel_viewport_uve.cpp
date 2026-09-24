@@ -583,6 +583,18 @@ bool EditorUVE::SetViewportGridCellSizeUVE(const float cellSize) {
     return true;
 }
 
+bool EditorUVE::SetViewportSelectionOutlineUVE(const bool visible, const ViewportAxisColorUVE color,
+                                               const float thickness) {
+    if (!IsViewportAxisColorValidUVE(color) || !std::isfinite(thickness) ||
+        thickness < kMinimumSelectionOutlineThicknessUVE || thickness > kMaximumSelectionOutlineThicknessUVE) {
+        return false;
+    }
+    m_viewportOverlayState.selectionOutlineVisible = visible;
+    m_viewportOverlayState.selectionOutlineColor = color;
+    m_viewportOverlayState.selectionOutlineThickness = thickness;
+    return true;
+}
+
 bool EditorUVE::SetViewportAxisColorsUVE(const ViewportAxisColorUVE x, const ViewportAxisColorUVE y,
                                          const ViewportAxisColorUVE z) {
     // All three or none: a half-applied palette would leave one axis in a colour the author never
