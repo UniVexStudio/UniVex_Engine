@@ -1235,6 +1235,69 @@ TEST(EditorUVETest, NodeTypesUVE_EveryNodeIsTypedAndKeepsItThroughDuplicateUndoA
     std::filesystem::remove(scenePath);
 }
 
+TEST(EditorUVETest, SiblingOrderUVE_MoveDuplicateAndDeleteKeepPlacesThroughUndo) {
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_sibling_order.uvescene");
+        editor.InitUVE();
+        Core::EngineServicesUVE& services = engine.GetServicesUVE();
+        Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
+        Scene::ISceneGraphUVE& sceneGraph = services.GetSceneGraphUVE();
+        const Scene::EntityUVE root = editor.GetDocumentSceneRootUVE();
+        std::vector<Scene::EntityUVE> nodes;
+        for (int i = 0; i < 3; ++i) {
+            editor.SelectEntityUVE(root);
+            nodes.push_back(editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Node3D));
+            ASSERT_NE(nodes.back(), Scene::kInvalidEntityUVE);
+        }
+        const auto order = [&] { return sceneGraph.GetChildrenUVE(entityManager, root); };
+        ASSERT_EQ(order(), nodes);
+        using Move = EditorSiblingMoveUVE;
+
+        // At the ends, the moves toward that end are unavailable; the root never moves.
+        EXPECT_FALSE(editor.CanMoveDocumentEntityUVE(nodes[0], Move::Up));
+        EXPECT_FALSE(editor.CanMoveDocumentEntityUVE(nodes[2], Move::ToBottom));
+        EXPECT_FALSE(editor.CanMoveDocumentEntityUVE(root, Move::Down));
+
+        ASSERT_TRUE(editor.MoveDocumentEntityUVE(nodes[2], Move::Up));
+        EXPECT_EQ(order(), (std::vector<Scene::EntityUVE>{nodes[0], nodes[2], nodes[1]}));
+        ASSERT_TRUE(editor.MoveDocumentEntityUVE(nodes[0], Move::ToBottom));
+        EXPECT_EQ(order(), (std::vector<Scene::EntityUVE>{nodes[2], nodes[1], nodes[0]}));
+        ASSERT_TRUE(editor.UndoUVE());
+        EXPECT_EQ(order(), (std::vector<Scene::EntityUVE>{nodes[0], nodes[2], nodes[1]}));
+        ASSERT_TRUE(editor.UndoUVE());
+        EXPECT_EQ(order(), nodes);
+        ASSERT_TRUE(editor.RedoUVE());
+        EXPECT_EQ(order(), (std::vector<Scene::EntityUVE>{nodes[0], nodes[2], nodes[1]}));
+        ASSERT_TRUE(editor.UndoUVE());
+
+        // A copy lands right below its source, and comes back there on redo.
+        editor.SelectEntityUVE(nodes[0]);
+        const Scene::EntityUVE copy = editor.DuplicateSelectedEntityUVE();
+        ASSERT_NE(copy, Scene::kInvalidEntityUVE);
+        EXPECT_EQ(sceneGraph.GetSiblingIndexUVE(entityManager, copy), std::optional<std::size_t>{1U});
+        ASSERT_TRUE(editor.UndoUVE());
+        ASSERT_TRUE(editor.RedoUVE());
+        EXPECT_EQ(sceneGraph.GetSiblingIndexUVE(entityManager, editor.GetSelectedEntityUVE()),
+                  std::optional<std::size_t>{1U});
+        ASSERT_TRUE(editor.UndoUVE());
+        ASSERT_EQ(order(), nodes);
+
+        // A deleted node comes back in its place, not at the end.
+        editor.SelectEntityUVE(nodes[1]);
+        ASSERT_TRUE(editor.DeleteSelectedEntityUVE());
+        ASSERT_TRUE(editor.UndoUVE());
+        const std::vector<Scene::EntityUVE> after = order();
+        ASSERT_EQ(after.size(), 3U);
+        EXPECT_EQ(after[0], nodes[0]);
+        EXPECT_EQ(after[2], nodes[2]);
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
 TEST(EditorUVETest, HierarchyPreferencesUVE_ApplyRefuseWhatIsOutOfRangeAndPersist) {
     const Core::EngineConfigUVE config = MakeEditorTestConfigUVE();
     std::filesystem::remove(config.settingsFilePath);

@@ -44,6 +44,10 @@ public:
     void UpdateUVE(IEntityManagerUVE& entityManager) override;
     [[nodiscard]] std::vector<EntityUVE> GetChildrenUVE(IEntityManagerUVE& entityManager,
                                                          EntityUVE parent) override;
+    [[nodiscard]] std::optional<std::size_t> GetSiblingIndexUVE(IEntityManagerUVE& entityManager,
+                                                                 EntityUVE entity) override;
+    [[nodiscard]] bool SetSiblingIndexUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
+                                          std::size_t index) override;
     /// Answered from the pass state UpdateUVE() leaves behind, which is retained until the next
     /// update clears it - so this costs one hash lookup and adds no storage or pass of its own.
     [[nodiscard]] std::optional<ResolvedNodeModesUVE> TryGetResolvedNodeModesUVE(

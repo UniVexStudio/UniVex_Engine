@@ -2125,6 +2125,10 @@ Scene::EntityUVE EditorUVE::DuplicateSelectedEntityUVE() {
     }
 
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    // The copy goes right below the node it copies, not to the end of the list.
+    Scene::ISceneGraphUVE& sceneGraph = m_services->GetSceneGraphUVE();
+    const std::size_t duplicateIndex = sceneGraph.GetSiblingIndexUVE(entityManager, source).value_or(0U) + 1U;
+    static_cast<void>(sceneGraph.SetSiblingIndexUVE(entityManager, duplicate, duplicateIndex));
     std::optional<std::string> duplicateRootName;
     if (entityManager.HasComponentUVE<Scene::NameComponentUVE>(source)) {
         const std::string& sourceName = entityManager.GetComponentUVE<Scene::NameComponentUVE>(source).name;
@@ -2144,7 +2148,7 @@ Scene::EntityUVE EditorUVE::DuplicateSelectedEntityUVE() {
     InvalidateHierarchyFilterCacheUVE();
     RecordHistoryUVE(DuplicationHistoryEntryUVE{
         std::move(*snapshot), originalParent, duplicate, std::move(duplicateRootName), selectionBefore,
-        CaptureSelectionSnapshotUVE(), dirtyBefore, true});
+        CaptureSelectionSnapshotUVE(), dirtyBefore, true, duplicateIndex});
     return duplicate;
 }
 
@@ -2165,6 +2169,8 @@ bool EditorUVE::DeleteSelectedEntityUVE() {
         return false;
     }
 
+    const std::size_t siblingIndex =
+        m_services->GetSceneGraphUVE().GetSiblingIndexUVE(m_services->GetEntityManagerUVE(), target).value_or(0U);
     const EditorSelectionSnapshotUVE selectionBefore = CaptureSelectionSnapshotUVE();
     const bool dirtyBefore = m_sceneDirty;
     DestroyDocumentSubtreeUVE(target);
@@ -2177,8 +2183,8 @@ bool EditorUVE::DeleteSelectedEntityUVE() {
         selectionAfter});
     m_sceneDirty = true;
     InvalidateHierarchyFilterCacheUVE();
-    RecordHistoryUVE(DeletionHistoryEntryUVE{
-        std::move(*snapshot), originalParent, target, selectionBefore, CaptureSelectionSnapshotUVE(), dirtyBefore, true});
+    RecordHistoryUVE(DeletionHistoryEntryUVE{std::move(*snapshot), originalParent, target, selectionBefore,
+                                             CaptureSelectionSnapshotUVE(), dirtyBefore, true, siblingIndex});
     return true;
 }
 
@@ -2274,6 +2280,8 @@ bool EditorUVE::ReparentDocumentEntityUVE(const Scene::EntityUVE entity, const S
     }
     const EditorSelectionSnapshotUVE selectionBefore = CaptureSelectionSnapshotUVE();
     const bool dirtyBefore = m_sceneDirty;
+    const std::size_t siblingIndexBefore =
+        m_services->GetSceneGraphUVE().GetSiblingIndexUVE(entityManager, entity).value_or(0U);
     m_services->GetSceneGraphUVE().SetParentUVE(entityManager, entity, effectiveParent);
     if (!ApplyLocalTransformUVE(entity, localAfter)) {
         m_services->GetSceneGraphUVE().SetParentUVE(entityManager, entity, parentBefore);
@@ -2287,7 +2295,68 @@ bool EditorUVE::ReparentDocumentEntityUVE(const Scene::EntityUVE entity, const S
     // document root" set no parent at all, leaving a stray beside the scene root instead of under it.
     RecordHistoryUVE(ReparentHistoryEntryUVE{
         entity, parentBefore, effectiveParent, localBefore, localAfter, selectionBefore,
-        CaptureSelectionSnapshotUVE(), dirtyBefore, true});
+        CaptureSelectionSnapshotUVE(), dirtyBefore, true, siblingIndexBefore,
+        m_services->GetSceneGraphUVE().GetSiblingIndexUVE(entityManager, entity).value_or(0U)});
+    return true;
+}
+
+bool EditorUVE::CanMoveDocumentEntityUVE(const Scene::EntityUVE entity, const EditorSiblingMoveUVE move) {
+    if (!IsLifecycleCommandAllowedUVE() || !IsDocumentEntityUVE(entity) || IsSceneRootEntityUVE(entity)) {
+        return false;
+    }
+    Scene::EntityUVE parent = Scene::kInvalidEntityUVE;
+    if (!TryGetDocumentParentUVE(entity, parent)) {
+        return false;
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    const std::optional<std::size_t> index = m_services->GetSceneGraphUVE().GetSiblingIndexUVE(entityManager, entity);
+    if (!index.has_value()) {
+        return false;
+    }
+    const std::size_t last = m_services->GetSceneGraphUVE().GetChildrenUVE(entityManager, parent).size() - 1U;
+    return move == EditorSiblingMoveUVE::Up || move == EditorSiblingMoveUVE::ToTop ? *index > 0U : *index < last;
+}
+
+bool EditorUVE::MoveDocumentEntityUVE(const Scene::EntityUVE entity, const EditorSiblingMoveUVE move) {
+    if (!CanMoveDocumentEntityUVE(entity, move)) {
+        return false;
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = m_services->GetSceneGraphUVE();
+    Scene::EntityUVE parent = Scene::kInvalidEntityUVE;
+    static_cast<void>(TryGetDocumentParentUVE(entity, parent));
+    const std::size_t before = sceneGraph.GetSiblingIndexUVE(entityManager, entity).value_or(0U);
+    const std::size_t last = sceneGraph.GetChildrenUVE(entityManager, parent).size() - 1U;
+    std::size_t after = before;
+    switch (move) {
+        case EditorSiblingMoveUVE::Up:
+            after = before - 1U;
+            break;
+        case EditorSiblingMoveUVE::Down:
+            after = before + 1U;
+            break;
+        case EditorSiblingMoveUVE::ToTop:
+            after = 0U;
+            break;
+        case EditorSiblingMoveUVE::ToBottom:
+            after = last;
+            break;
+    }
+    const EditorSelectionSnapshotUVE selectionBefore = CaptureSelectionSnapshotUVE();
+    const bool dirtyBefore = m_sceneDirty;
+    if (!sceneGraph.SetSiblingIndexUVE(entityManager, entity, after)) {
+        return false;
+    }
+    RestoreSelectionUVE(EditorSelectionSnapshotUVE{{entity}, entity});
+    m_sceneDirty = true;
+    InvalidateHierarchyFilterCacheUVE();
+    // Recorded as a move to the same parent, so undo and redo share the reparent path.
+    const Scene::TransformComponentUVE local =
+        entityManager.HasComponentUVE<Scene::TransformComponentUVE>(entity)
+            ? entityManager.GetComponentUVE<Scene::TransformComponentUVE>(entity)
+            : Scene::TransformComponentUVE{};
+    RecordHistoryUVE(ReparentHistoryEntryUVE{entity, parent, parent, local, local, selectionBefore,
+                                             CaptureSelectionSnapshotUVE(), dirtyBefore, true, before, after});
     return true;
 }
 
@@ -2975,23 +3044,33 @@ bool EditorUVE::UndoHistoryEntryUVE(HistoryEntryUVE& entry) {
                 if (restored == Scene::kInvalidEntityUVE) {
                     return false;
                 }
+                static_cast<void>(m_services->GetSceneGraphUVE().SetSiblingIndexUVE(
+                    m_services->GetEntityManagerUVE(), restored, typedEntry.siblingIndex));
                 typedEntry.activeEntity = restored;
                 typedEntry.selectionBefore = EditorSelectionSnapshotUVE{{restored}, restored};
                 RestoreSelectionUVE(typedEntry.selectionBefore);
                 m_sceneDirty = typedEntry.dirtyBefore;
                 return true;
             } else {
-                if (!HasSceneGraphNodeUVE(typedEntry.entity) ||
-                    (typedEntry.parentBefore != Scene::kInvalidEntityUVE &&
-                     !IsHierarchyNodeUVE(typedEntry.parentBefore)) ||
-                    DoesSubtreeContainEntityUVE(typedEntry.entity, typedEntry.parentBefore)) {
+                // A move among siblings keeps its parent, so it needs neither a reparent nor a
+                // transform - and a pure Node, which has no transform, can make one.
+                const bool reparented = typedEntry.parentBefore != typedEntry.parentAfter;
+                if (reparented ? (!HasSceneGraphNodeUVE(typedEntry.entity) ||
+                                  (typedEntry.parentBefore != Scene::kInvalidEntityUVE &&
+                                   !IsHierarchyNodeUVE(typedEntry.parentBefore)) ||
+                                  DoesSubtreeContainEntityUVE(typedEntry.entity, typedEntry.parentBefore))
+                               : !IsHierarchyNodeUVE(typedEntry.entity)) {
                     return false;
                 }
-                m_services->GetSceneGraphUVE().SetParentUVE(
-                    m_services->GetEntityManagerUVE(), typedEntry.entity, typedEntry.parentBefore);
-                if (!ApplyLocalTransformUVE(typedEntry.entity, typedEntry.localTransformBefore)) {
-                    return false;
+                if (reparented) {
+                    m_services->GetSceneGraphUVE().SetParentUVE(
+                        m_services->GetEntityManagerUVE(), typedEntry.entity, typedEntry.parentBefore);
+                    if (!ApplyLocalTransformUVE(typedEntry.entity, typedEntry.localTransformBefore)) {
+                        return false;
+                    }
                 }
+                static_cast<void>(m_services->GetSceneGraphUVE().SetSiblingIndexUVE(
+                    m_services->GetEntityManagerUVE(), typedEntry.entity, typedEntry.siblingIndexBefore));
                 RestoreSelectionUVE(typedEntry.selectionBefore);
                 m_sceneDirty = typedEntry.dirtyBefore;
                 InvalidateHierarchyFilterCacheUVE();
@@ -3092,6 +3171,8 @@ bool EditorUVE::RedoHistoryEntryUVE(HistoryEntryUVE& entry) {
                     DestroyDocumentSubtreeUVE(restored);
                     return false;
                 }
+                static_cast<void>(m_services->GetSceneGraphUVE().SetSiblingIndexUVE(
+                    m_services->GetEntityManagerUVE(), restored, typedEntry.siblingIndex));
                 typedEntry.activeEntity = restored;
                 typedEntry.selectionAfter = EditorSelectionSnapshotUVE{{restored}, restored};
                 RestoreSelectionUVE(typedEntry.selectionAfter);
@@ -3107,17 +3188,23 @@ bool EditorUVE::RedoHistoryEntryUVE(HistoryEntryUVE& entry) {
                 m_sceneDirty = typedEntry.dirtyAfter;
                 return true;
             } else {
-                if (!HasSceneGraphNodeUVE(typedEntry.entity) ||
-                    (typedEntry.parentAfter != Scene::kInvalidEntityUVE &&
-                     !IsHierarchyNodeUVE(typedEntry.parentAfter)) ||
-                    DoesSubtreeContainEntityUVE(typedEntry.entity, typedEntry.parentAfter)) {
+                const bool reparented = typedEntry.parentBefore != typedEntry.parentAfter;
+                if (reparented ? (!HasSceneGraphNodeUVE(typedEntry.entity) ||
+                                  (typedEntry.parentAfter != Scene::kInvalidEntityUVE &&
+                                   !IsHierarchyNodeUVE(typedEntry.parentAfter)) ||
+                                  DoesSubtreeContainEntityUVE(typedEntry.entity, typedEntry.parentAfter))
+                               : !IsHierarchyNodeUVE(typedEntry.entity)) {
                     return false;
                 }
-                m_services->GetSceneGraphUVE().SetParentUVE(
-                    m_services->GetEntityManagerUVE(), typedEntry.entity, typedEntry.parentAfter);
-                if (!ApplyLocalTransformUVE(typedEntry.entity, typedEntry.localTransformAfter)) {
-                    return false;
+                if (reparented) {
+                    m_services->GetSceneGraphUVE().SetParentUVE(
+                        m_services->GetEntityManagerUVE(), typedEntry.entity, typedEntry.parentAfter);
+                    if (!ApplyLocalTransformUVE(typedEntry.entity, typedEntry.localTransformAfter)) {
+                        return false;
+                    }
                 }
+                static_cast<void>(m_services->GetSceneGraphUVE().SetSiblingIndexUVE(
+                    m_services->GetEntityManagerUVE(), typedEntry.entity, typedEntry.siblingIndexAfter));
                 RestoreSelectionUVE(typedEntry.selectionAfter);
                 m_sceneDirty = typedEntry.dirtyAfter;
                 InvalidateHierarchyFilterCacheUVE();

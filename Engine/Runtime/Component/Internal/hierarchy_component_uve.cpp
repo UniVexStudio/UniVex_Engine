@@ -2,10 +2,15 @@
 
 #include "uve/component/hierarchy_component_uve.h"
 
+#include <atomic>
+
 namespace UVE::Scene {
 
-// Deliberately empty today: this component is pure authored/cached data with no
-// value semantics to validate yet. This file is its single home the moment real
-// behavior exists — matching the one .h + .cpp pair per component convention.
+std::int64_t NextSiblingOrderUVE() noexcept {
+    // One counter for the process. Orders are compared only between siblings, so any strictly
+    // increasing source works; 64 bits cannot run out in a session.
+    static std::atomic<std::int64_t> next{0};
+    return next.fetch_add(1, std::memory_order_relaxed) + 1;
+}
 
 } // namespace UVE::Scene

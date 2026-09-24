@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <optional>
 #include <vector>
 
@@ -52,7 +53,8 @@ public:
                                        const TransformComponentUVE& localTransform) = 0;
 
     /// Reparents `child` under `newParent` (or makes it a root if `newParent ==
-    /// kInvalidEntityUVE`), marking `child` dirty. Debug builds assert valid entities/components and
+    /// kInvalidEntityUVE`), marking `child` dirty. A child that changes parent goes after its new
+    /// siblings; one given the parent it already has keeps its place. Debug builds assert valid entities/components and
     /// a cycle-free parent chain; release builds return without mutation for invalid input rather
     /// than silently corrupting the hierarchy.
     virtual void SetParentUVE(IEntityManagerUVE& entityManager, EntityUVE child, EntityUVE newParent) = 0;
@@ -64,11 +66,23 @@ public:
     /// per-entity dirty tracking. Called once per frame by EngineCoreUVE::Update().
     virtual void UpdateUVE(IEntityManagerUVE& entityManager) = 0;
 
-    /// Returns every entity whose HierarchyComponentUVE::parent equals `parent`. O(n) over
-    /// every scene-graph entity — acceptable per the coding standards' "profile before
-    /// optimizing" rule; a cached parent→children index is a documented future optimization.
+    /// Returns every entity whose HierarchyComponentUVE::parent equals `parent`, in sibling order
+    /// (HierarchyComponentUVE::siblingOrder; the entity handle breaks a tie). O(n) over every
+    /// scene-graph entity — acceptable per the coding standards' "profile before optimizing"
+    /// rule; a cached parent→children index is a documented future optimization.
     [[nodiscard]] virtual std::vector<EntityUVE> GetChildrenUVE(IEntityManagerUVE& entityManager,
                                                                  EntityUVE parent) = 0;
+
+    /// `entity`'s position among its parent's children (or among the roots), or nothing for an
+    /// entity outside the scene graph.
+    [[nodiscard]] virtual std::optional<std::size_t> GetSiblingIndexUVE(IEntityManagerUVE& entityManager,
+                                                                         EntityUVE entity) = 0;
+
+    /// Moves `entity` to position `index` among its siblings, the others keeping their order
+    /// around it; an index past the end means last. Returns false, changing nothing, for an
+    /// entity outside the scene graph.
+    [[nodiscard]] virtual bool SetSiblingIndexUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
+                                                  std::size_t index) = 0;
 
     /// The inherited node modes UpdateUVE() resolved for `entity`, or nothing when the entity was
     /// not part of the last update (not a scene-graph node, or created since).

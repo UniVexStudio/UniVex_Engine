@@ -487,6 +487,12 @@ void EditorUVE::DrawHierarchyNodeContextMenuUVE(const Scene::EntityUVE entity) {
         static_cast<void>(SetHierarchyBranchOpenUVE(entity, false));
     }
     ImGui::Separator();
+    // Place among its siblings; the right-click has already made this row the selection.
+    DrawCommandMenuItemUVE("edit.moveUp");
+    DrawCommandMenuItemUVE("edit.moveDown");
+    DrawCommandMenuItemUVE("edit.moveToTop");
+    DrawCommandMenuItemUVE("edit.moveToBottom");
+    ImGui::Separator();
     ImGui::BeginDisabled(!lifecycle || !single || sceneRoot);
     if (ImGui::MenuItem("Duplicate", "Ctrl+D")) {
         static_cast<void>(DuplicateSelectedEntityUVE());

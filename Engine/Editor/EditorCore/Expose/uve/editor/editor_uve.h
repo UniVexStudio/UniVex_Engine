@@ -143,6 +143,14 @@ enum class EditorNewNodePlacementUVE {
     ViewFocus,
 };
 
+/// Where a node moves among its siblings: one place up or down, or to either end.
+enum class EditorSiblingMoveUVE {
+    Up,
+    Down,
+    ToTop,
+    ToBottom,
+};
+
 /// One stored editor-viewport pose, expressed in orbit-camera terms (pivot target, yaw/pitch,
 /// orbit distance) so the value is independent of any concrete camera implementation - the app
 /// host applies it through its OrbitCamera's SetTarget/SetYawPitch/SetDistance. Session-local and
@@ -485,6 +493,12 @@ public:
     /// saved before types were stored, the best reading of its components
     /// (Scene::ResolveSceneNodeKindUVE). Empty for anything that is not a document entity.
     [[nodiscard]] std::string_view GetNodeTypeNameUVE(Scene::EntityUVE entity) const;
+    /// True when `entity` is a document node that can make `move` among its siblings: not the
+    /// scene root, and not already at the end it would move toward.
+    [[nodiscard]] bool CanMoveDocumentEntityUVE(Scene::EntityUVE entity, EditorSiblingMoveUVE move);
+    /// Moves `entity` among its siblings, keeping its parent and transform, as one undoable edit.
+    /// Returns false, changing nothing, when CanMoveDocumentEntityUVE does.
+    [[nodiscard]] bool MoveDocumentEntityUVE(Scene::EntityUVE entity, EditorSiblingMoveUVE move);
     /// The hierarchy panel preferences in effect (Editor Preferences > Hierarchy).
     [[nodiscard]] const HierarchyViewSettingsUVE& GetHierarchyViewSettingsUVE() const noexcept { return m_hierarchyView; }
     /// The open state a hierarchy row will be given when it is next drawn, if one is pending.
@@ -1081,6 +1095,8 @@ private:
         EditorSelectionSnapshotUVE selectionAfter;
         bool dirtyBefore = false;
         bool dirtyAfter = false;
+        /// Where among its siblings the copy stands: just below the node it copies.
+        std::size_t siblingIndex = 0U;
     };
 
     /// A deleted subtree is restored under its original parent with fresh handles on Undo.
@@ -1093,9 +1109,12 @@ private:
         EditorSelectionSnapshotUVE selectionAfter;
         bool dirtyBefore = false;
         bool dirtyAfter = false;
+        /// Where among its siblings the deleted root stood, so Undo puts it back there.
+        std::size_t siblingIndex = 0U;
     };
 
-    /// A hierarchy move restores its parent and authored local Transform atomically on replay.
+    /// A hierarchy move restores its parent, place among its siblings and authored local
+    /// Transform atomically on replay. A move up or down is one with the same parent.
     struct ReparentHistoryEntryUVE final {
         Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
         Scene::EntityUVE parentBefore = Scene::kInvalidEntityUVE;
@@ -1106,6 +1125,8 @@ private:
         EditorSelectionSnapshotUVE selectionAfter;
         bool dirtyBefore = false;
         bool dirtyAfter = false;
+        std::size_t siblingIndexBefore = 0U;
+        std::size_t siblingIndexAfter = 0U;
     };
 
     using HistoryEntryUVE =

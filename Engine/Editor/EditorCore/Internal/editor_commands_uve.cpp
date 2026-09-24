@@ -89,6 +89,16 @@ void EditorUVE::RegisterEditorCommandsUVE() {
         [this] { static_cast<void>(DuplicateSelectedEntityUVE()); });
     add("edit.delete", "Delete", "Edit", {KeyUVE(ImGuiKey_Delete)}, canChangeSelection,
         [this] { static_cast<void>(DeleteSelectedEntityUVE()); });
+    const auto addMove = [&](std::string id, std::string label, const EditorSiblingMoveUVE move,
+                             const EditorShortcutUVE shortcut) {
+        add(std::move(id), std::move(label), "Edit", {shortcut},
+            [this, move] { return CanMoveDocumentEntityUVE(m_selectedEntity, move); },
+            [this, move] { static_cast<void>(MoveDocumentEntityUVE(m_selectedEntity, move)); });
+    };
+    addMove("edit.moveUp", "Move Up", EditorSiblingMoveUVE::Up, KeyUVE(ImGuiKey_UpArrow, true));
+    addMove("edit.moveDown", "Move Down", EditorSiblingMoveUVE::Down, KeyUVE(ImGuiKey_DownArrow, true));
+    addMove("edit.moveToTop", "Move to Top", EditorSiblingMoveUVE::ToTop, EditorShortcutUVE{});
+    addMove("edit.moveToBottom", "Move to Bottom", EditorSiblingMoveUVE::ToBottom, EditorShortcutUVE{});
 
     add("create.empty", "Create Empty", "Create", {}, canAuthor,
         [this] { static_cast<void>(CreateDocumentEntityUVE(EditorEntityKindUVE::Empty)); });

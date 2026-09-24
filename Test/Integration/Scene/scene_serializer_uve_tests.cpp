@@ -1573,6 +1573,33 @@ TEST_F(SceneSerializerUVETest, SaveLoadUVE_SceneRootMarkerRoundTrips) {
     std::filesystem::remove(path);
 }
 
+TEST_F(SceneSerializerUVETest, CaptureRestoreUVE_KeepsSiblingOrder) {
+    // The file stores no order number: siblings are written in order and read back in sequence.
+    SceneGraphUVE sceneGraph;
+    const EntityUVE root = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, root, TransformComponentUVE{});
+    entityManager.AddComponentUVE<NameComponentUVE>(root, NameComponentUVE{"Root"});
+    std::vector<EntityUVE> children;
+    for (const char* const name : {"A", "B", "C"}) {
+        const EntityUVE child = entityManager.CreateEntityUVE();
+        sceneGraph.AttachTransformUVE(entityManager, child, TransformComponentUVE{});
+        entityManager.AddComponentUVE<NameComponentUVE>(child, NameComponentUVE{name});
+        sceneGraph.SetParentUVE(entityManager, child, root);
+        children.push_back(child);
+    }
+    ASSERT_TRUE(sceneGraph.SetSiblingIndexUVE(entityManager, children[2], 0U)); // C, A, B
+
+    const std::optional<SceneSnapshotUVE> snapshot = serializer.CaptureUVE(entityManager, {root}, SceneAssetTypeUVE::Scene);
+    ASSERT_TRUE(snapshot.has_value());
+    const std::vector<EntityUVE> restored = serializer.RestoreUVE(entityManager, *snapshot);
+    ASSERT_EQ(restored.size(), 1U);
+    std::vector<std::string> names;
+    for (const EntityUVE child : sceneGraph.GetChildrenUVE(entityManager, restored.front())) {
+        names.push_back(entityManager.GetComponentUVE<NameComponentUVE>(child).name);
+    }
+    EXPECT_EQ(names, (std::vector<std::string>{"C", "A", "B"}));
+}
+
 TEST_F(SceneSerializerUVETest, SaveLoadUVE_VisibilityRoundTripsTheAuthoredFlagOnly) {
     // Hiding an object has to survive a save. It also has to survive WITHOUT carrying the derived
     // field across: visibleInHierarchy depends on the entity's ancestors, so persisting it would

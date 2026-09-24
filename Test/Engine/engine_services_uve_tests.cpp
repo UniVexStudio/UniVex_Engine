@@ -266,6 +266,13 @@ public:
                                                                 Scene::EntityUVE) override {
         return {};
     }
+    [[nodiscard]] std::optional<std::size_t> GetSiblingIndexUVE(Scene::IEntityManagerUVE&,
+                                                                 Scene::EntityUVE) override {
+        return std::nullopt;
+    }
+    [[nodiscard]] bool SetSiblingIndexUVE(Scene::IEntityManagerUVE&, Scene::EntityUVE, std::size_t) override {
+        return false;
+    }
     [[nodiscard]] std::optional<Scene::ResolvedNodeModesUVE> TryGetResolvedNodeModesUVE(
         Scene::EntityUVE) const override {
         return std::nullopt;

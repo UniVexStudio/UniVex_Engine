@@ -1701,13 +1701,27 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
     }
 
     outEntities.push_back(root);
-    std::vector<EntityUVE> children;
+    // Siblings are written in their order: the file keeps no order number, so loading hands out
+    // orders in the sequence the entities appear.
+    std::vector<std::pair<std::int64_t, EntityUVE>> ordered;
     entityManager.ForEachUVE<HierarchyComponentUVE>(
-        [&children, root](const EntityUVE entity, HierarchyComponentUVE& hierarchy) {
+        [&ordered, root](const EntityUVE entity, HierarchyComponentUVE& hierarchy) {
             if (hierarchy.parent == root) {
-                children.push_back(entity);
+                ordered.emplace_back(hierarchy.siblingOrder, entity);
             }
         });
+    std::sort(ordered.begin(), ordered.end(), [](const auto& a, const auto& b) {
+        if (a.first != b.first) {
+            return a.first < b.first;
+        }
+        return a.second.index != b.second.index ? a.second.index < b.second.index
+                                                : a.second.generation < b.second.generation;
+    });
+    std::vector<EntityUVE> children;
+    children.reserve(ordered.size());
+    for (const auto& [order, child] : ordered) {
+        children.push_back(child);
+    }
     for (const EntityUVE child : children) {
         if (!CollectSubtreeUVE(entityManager, child, visited, outEntities)) {
             return false;
