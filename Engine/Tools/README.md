@@ -23,3 +23,22 @@ in `Engine/Runtime/UI/CMakeLists.txt` and `Engine/Editor/EditorCore/CMakeLists.t
 byte-arrays are generated from single canonical `.ttf` sources at build time instead of being
 committed as duplicate snapshots. Verified byte-identical against
 the four hand-committed `.inc` files it replaced.
+
+## editor_icons/
+
+The editor's built-in icons: one per scene node type, one per node palette category and one per
+content browser type, drawn in one shared style (solid 3D shapes lit from the upper left, one
+colour family per category).
+
+- `kit.py` - the drawing primitives (boxes, spheres, cylinders, figures, tiles).
+- `icons.py` - every icon, registered by group and id. A node's id is its registry typeId, a
+  category's is its name in lower case, a content type's is its label in lower case.
+- `build_editor_icons.py` - writes `<group>/<id>.svg` and a 64 px `<id>.png` for each icon under
+  `Engine/Editor/EditorCore/assets/icons/`, rasterizing with headless Chromium
+  (`--chromium PATH` or `$UVE_CHROMIUM`). `--gallery page.html` also writes a preview sheet.
+  Run it after changing an icon and commit both files; stale files are removed.
+- `embed_editor_icons.py` - run by the EditorCore build to embed the committed PNGs as one table.
+  The build never needs a browser.
+
+The editor's tests fail if a node type, palette category or content browser type has no icon, so
+adding one of those means adding its icon here.

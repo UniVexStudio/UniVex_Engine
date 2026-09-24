@@ -37,7 +37,6 @@
 #include "editor_chrome_layout_uve.h"
 #include "editor_fonts_uve.h"
 #include "editor_entity_label_uve.h"
-#include "editor_icon_registry_uve.h"
 #include "editor_node_icons_uve.h"
 
 #include "uve/asset/asset_import_queue_uve.h"
@@ -380,7 +379,7 @@ void EditorUVE::DrawPrefabInspectorDrawerUVE(const Scene::EntityUVE entity) {
     const std::optional<std::uint64_t> observedRevision =
         Scene::ComputePrefabSourceRevisionUVE(sourcePath);
     ImGui::Separator();
-    DrawProceduralIconLabelUVE(8.0F, "Prefab Instance", DrawFolderIconUVE);
+    DrawNativeIconLabelUVE(m_uiAssets.GetContentTypeIconTextureIdUVE("Prefab"), "Prefab Instance");
     ImGui::Text("Source GUID: %llu", static_cast<unsigned long long>(instance.sourcePrefabGuid.value));
     ImGui::Text("Instance revision: %llu", static_cast<unsigned long long>(instance.instanceRevision));
     ImGui::Text("Source revision: %s", observedRevision.has_value() ? "available" : "unavailable");

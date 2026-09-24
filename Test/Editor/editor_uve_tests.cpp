@@ -7,6 +7,7 @@
 #include <limits>
 #include <numbers>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <typeindex>
@@ -15,6 +16,8 @@
 #include <gtest/gtest.h>
 
 #include "Support/test_scratch_uve.h"
+
+#include "editor_icon_set_uve.h"
 
 #include "uve/asset/mesh_asset_uve.h"
 #include "uve/asset/texture_asset_uve.h"
@@ -109,6 +112,17 @@ struct EditorUVEAccessUVE final {
     }
     [[nodiscard]] static std::size_t GetInspectorDrawerCountUVE(const EditorUVE& editor) {
         return editor.m_inspectorDrawerRegistry.GetDrawerCountUVE();
+    }
+
+    [[nodiscard]] static std::vector<std::string> GetEveryContentBrowserTypeLabelUVE() {
+        using Type = EditorUVE::ContentBrowserItemTypeUVE;
+        std::vector<std::string> labels;
+        for (const Type type : {Type::Folder, Type::Scene, Type::Prefab, Type::Bundle, Type::Mesh, Type::Model,
+                                Type::Texture, Type::Shader, Type::Material, Type::Save, Type::Script, Type::Audio,
+                                Type::Font, Type::File}) {
+            labels.emplace_back(EditorUVE::GetContentBrowserItemTypeLabelUVE(type));
+        }
+        return labels;
     }
 
     [[nodiscard]] static std::string GetContentBrowserItemTypeLabelUVE(const Asset::ProjectFileEntryUVE& entry) {
@@ -753,6 +767,30 @@ TEST(EditorUVETest, ContentBrowserWorkflowUVE_UsesPrimaryExtensionTagAndIndepend
     }
 
     engine.Shutdown();
+}
+
+TEST(EditorUVETest, ContentBrowserWorkflowUVE_ScriptsAudioAndFontsAreTheirOwnTypesAndEveryTypeHasAnIcon) {
+    const auto labelOf = [](const char* const path) {
+        Asset::ProjectFileEntryUVE entry;
+        entry.relativePath = path;
+        entry.kind = Asset::ProjectFileEntryKindUVE::File;
+        return EditorUVEAccessUVE::GetContentBrowserItemTypeLabelUVE(entry);
+    };
+    EXPECT_EQ(labelOf("Scripts/player.uvescript"), "Script");
+    EXPECT_EQ(labelOf("Audio/step.uveaudio"), "Audio");
+    EXPECT_EQ(labelOf("Audio/Step.WAV"), "Audio");
+    EXPECT_EQ(labelOf("Fonts/title.ttf"), "Font");
+    EXPECT_EQ(labelOf("Fonts/body.otf"), "Font");
+    EXPECT_EQ(labelOf("Notes/readme.txt"), "File");
+
+    // Each type shows its own picture in the browser, found by the label it is shown with.
+    std::set<const EditorIconSourceUVE*> icons;
+    for (const std::string& label : EditorUVEAccessUVE::GetEveryContentBrowserTypeLabelUVE()) {
+        const EditorIconSourceUVE* const icon = FindEditorIconSourceUVE(EditorIconGroupUVE::ContentType, label);
+        EXPECT_NE(icon, nullptr) << "no icon for content type " << label;
+        icons.insert(icon);
+    }
+    EXPECT_EQ(icons.size(), EditorUVEAccessUVE::GetEveryContentBrowserTypeLabelUVE().size());
 }
 
 TEST(EditorUVETest, ContentBrowserWorkflowUVE_PersistsFiltersAndSafelyFallsBackWhenFolderDisappears) {

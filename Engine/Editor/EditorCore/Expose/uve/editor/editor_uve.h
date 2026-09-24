@@ -996,6 +996,9 @@ private:
         Shader,
         Material,
         Save,
+        Script,
+        Audio,
+        Font,
         File,
     };
 
