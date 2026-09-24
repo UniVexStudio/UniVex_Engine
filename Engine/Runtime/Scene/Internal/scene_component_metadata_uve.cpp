@@ -28,6 +28,7 @@
 #include "uve/component/physics_object_component_uve.h"
 #include "uve/component/primitive_mesh_component_uve.h"
 #include "uve/component/render_instance_component_uve.h"
+#include "uve/component/solid_body_component_uve.h"
 #include "uve/component/rigid_body_component_uve.h"
 #include "uve/component/script_component_uve.h"
 #include "uve/component/surface_instance_component_uve.h"
@@ -401,12 +402,16 @@ void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                     };
                     return property;
                 }(),
-                WithCustomDrawerUVE(DeclareUVE<&ColliderComponentUVE::collisionLayer>("collisionLayer", "Layer",
-                                                                                      kPropertyTypeBitMask32UVE),
-                                    std::string(kLayerMaskDrawerPhysicsUVE)),
-                WithCustomDrawerUVE(DeclareUVE<&ColliderComponentUVE::collisionMask>("collisionMask", "Mask",
+                WithCustomDrawerUVE(
+                    WithTooltipUVE(DeclareUVE<&ColliderComponentUVE::collisionLayer>("collisionLayer", "Layer",
                                                                                      kPropertyTypeBitMask32UVE),
-                                    std::string(kLayerMaskDrawerPhysicsUVE)),
+                                   "The layers this object is on - what others can find it on."),
+                    std::string(kLayerMaskDrawerPhysicsUVE)),
+                WithCustomDrawerUVE(
+                    WithTooltipUVE(DeclareUVE<&ColliderComponentUVE::collisionMask>("collisionMask", "Mask",
+                                                                                    kPropertyTypeBitMask32UVE),
+                                   "The layers this object looks for - what it collides with or detects."),
+                    std::string(kLayerMaskDrawerPhysicsUVE)),
                 WithRangeUVE(DeclareUVE<&ColliderComponentUVE::friction>("friction", "Friction",
                                                                          kPropertyTypeFloatUVE),
                              0.0, 1.0, 0.01),
@@ -417,9 +422,10 @@ void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                                                         kPropertyTypeFloatUVE),
                              0.0, 10000.0, 0.01),
             });
-    // The collision a BoxMesh3D/SphereMesh3D/PlaneMesh3D is created with is part of that node, so it
-    // is drawn inside the node's own section rather than as a section of its own.
-    collider.nestedUnderTypeId = "component.primitive_mesh";
+    // A collider is always part of some node rather than a feature of its own: the collision a
+    // BoxMesh3D/SphereMesh3D/PlaneMesh3D is created with sits in that node's section, and a body's
+    // or area's shape, layer and mask sit in PhysicsObject3D's.
+    collider.nestedUnderTypeIds = {"component.primitive_mesh", "component.physics_object"};
     AddUVE<ColliderComponentUVE>(entries, std::move(collider));
 
     AddUVE<RigidBodyComponentUVE>(
@@ -447,28 +453,119 @@ void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                                                    kPropertyTypeVector3UVE),
             }));
 
-    // verticalVelocity and isGrounded are written by the controller every step. They are shown
-    // because seeing them is how you debug a controller, and refused to authoring because a value
-    // typed into them survives exactly until the next frame.
-    AddUVE<CharacterControllerComponentUVE>(
+    // CharacterBody3D's own section. Grouped by what an author is thinking about - how it moves,
+    // what it stands on, what it hits - with the state the controller writes each step last, shown
+    // only while playing because that is when it describes something real.
+    using C = CharacterControllerComponentUVE;
+    const auto whenGrounded = [](TypeMetadataPropertyUVE property) {
+        property.isVisible = +[](const void* instance) {
+            return static_cast<const C*>(instance)->motionMode == CharacterMotionModeUVE::Grounded;
+        };
+        return property;
+    };
+    const auto whenBuiltIn = [](TypeMetadataPropertyUVE property) {
+        property.isVisible = +[](const void* instance) { return static_cast<const C*>(instance)->builtInMovement; };
+        return property;
+    };
+    const auto whenBuiltInGrounded = [](TypeMetadataPropertyUVE property) {
+        property.isVisible = +[](const void* instance) {
+            const C& c = *static_cast<const C*>(instance);
+            return c.builtInMovement && c.motionMode == CharacterMotionModeUVE::Grounded;
+        };
+        return property;
+    };
+    const auto whenPushing = [](TypeMetadataPropertyUVE property) {
+        property.isVisible = +[](const void* instance) { return static_cast<const C*>(instance)->pushRigidBodies; };
+        return property;
+    };
+    TypeMetadataPropertyUVE maxSlides = WithTooltipUVE(
+        DeclareUVE<&C::maxSlides>("maxSlides", "Max Slides", kPropertyTypeUInt32UVE),
+        "How many pieces a move is cut into to follow walls and corners. More is smoother and costs more.");
+    maxSlides.range = {true, 1.0, 32.0, 1.0};
+    AddValidatedUVE<CharacterControllerComponentUVE, &IsCharacterControllerComponentValidUVE>(
         entries,
-        MakeEntryUVE("component.character_controller", "Character Controller",
-                     kSectionOrderTypeSpecificUVE,
-                     {
-                         WithRangeUVE(DeclareUVE<&CharacterControllerComponentUVE::moveSpeed>(
-                                          "moveSpeed", "Move Speed", kPropertyTypeFloatUVE),
-                                      0.0, 1000.0, 0.1),
-                         WithRangeUVE(DeclareUVE<&CharacterControllerComponentUVE::jumpHeight>(
-                                          "jumpHeight", "Jump Height", kPropertyTypeFloatUVE),
-                                      0.0, 1000.0, 0.1),
-                         WithRangeUVE(DeclareUVE<&CharacterControllerComponentUVE::gravityScale>(
-                                          "gravityScale", "Gravity Scale", kPropertyTypeFloatUVE),
-                                      -100.0, 100.0, 0.05),
-                         DeclareRuntimeStateUVE<&CharacterControllerComponentUVE::verticalVelocity>(
-                             "verticalVelocity", "Vertical Velocity", kPropertyTypeFloatUVE),
-                         DeclareRuntimeStateUVE<&CharacterControllerComponentUVE::isGrounded>(
-                             "isGrounded", "Grounded", kPropertyTypeBoolUVE),
-                     }));
+        MakeEntryUVE(
+            "component.character_controller", "CharacterBody3D", kSectionOrderTypeSpecificUVE,
+            {
+                WithTooltipUVE(DeclareEnumUVE<&C::motionMode>("motionMode", "Motion Mode",
+                                                              {{0, "Grounded"}, {1, "Floating"}}),
+                               "Grounded walks on floors under gravity. Floating flies or swims: no gravity, no "
+                               "floor, every surface a wall."),
+                whenGrounded(WithTooltipUVE(WithRangeUVE(DeclareUVE<&C::gravityScale>("gravityScale", "Gravity Scale",
+                                                                                      kPropertyTypeFloatUVE),
+                                                         0.0, 100.0, 0.05),
+                                            "Multiplies the world's gravity. 1 is normal, 0 is none.")),
+                InGroupUVE(WithTooltipUVE(DeclareUVE<&C::builtInMovement>("builtInMovement", "Built-in",
+                                                                          kPropertyTypeBoolUVE),
+                                          "Moves and jumps from the keyboard with no script. Off, it moves by its "
+                                          "Velocity alone - how a script or an AI drives it."),
+                           "Movement"),
+                InGroupUVE(whenBuiltIn(WithTooltipUVE(WithRangeUVE(DeclareUVE<&C::moveSpeed>("moveSpeed", "Speed",
+                                                                                             kPropertyTypeFloatUVE),
+                                                                   0.0, 1000.0, 0.1),
+                                                      "Top speed, in metres per second.")),
+                           "Movement"),
+                InGroupUVE(whenBuiltInGrounded(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&C::jumpHeight>("jumpHeight", "Jump Height", kPropertyTypeFloatUVE),
+                                            0.0, 1000.0, 0.05),
+                               "How high a jump reaches, in metres, whatever the gravity.")),
+                           "Movement"),
+                InGroupUVE(whenBuiltInGrounded(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&C::airControl>("airControl", "Air Control", kPropertyTypeFloatUVE),
+                                            0.0, 1.0, 0.01),
+                               "How much steering works in the air. 1 is full control, 0 keeps the jump's direction.")),
+                           "Movement"),
+                InGroupUVE(whenBuiltInGrounded(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&C::coyoteTimeSeconds>("coyoteTimeSeconds", "Coyote Time",
+                                                                            kPropertyTypeFloatUVE),
+                                            0.0, 1.0, 0.01),
+                               "A jump still works this many seconds after walking off a ledge.")),
+                           "Movement"),
+                InGroupUVE(whenBuiltInGrounded(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&C::jumpBufferSeconds>("jumpBufferSeconds", "Jump Buffer",
+                                                                            kPropertyTypeFloatUVE),
+                                            0.0, 1.0, 0.01),
+                               "A jump pressed this many seconds before landing happens on landing.")),
+                           "Movement"),
+                InGroupUVE(whenGrounded(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&C::floorSnapLength>("floorSnapLength", "Snap Length",
+                                                                          kPropertyTypeFloatUVE),
+                                            0.0, 10.0, 0.01),
+                               "Stays on the floor walking down steps and ledges up to this far below. 0 lets it "
+                               "drop off every edge.")),
+                           "Floor"),
+                InGroupUVE(whenGrounded(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&C::maxStepHeight>("maxStepHeight", "Step Height",
+                                                                        kPropertyTypeFloatUVE),
+                                            0.0, 10.0, 0.01),
+                               "Walks up steps and kerbs up to this high without jumping. 0 turns it off.")),
+                           "Floor"),
+                InGroupUVE(WithTooltipUVE(DeclareUVE<&C::slideOnCeiling>("slideOnCeiling", "Slide On Ceiling",
+                                                                         kPropertyTypeBoolUVE),
+                                          "On hitting a ceiling, keep sliding along it. Off, the move stops there."),
+                           "Ceiling"),
+                InGroupUVE(WithTooltipUVE(DeclareUVE<&C::pushRigidBodies>("pushRigidBodies", "Push Bodies",
+                                                                          kPropertyTypeBoolUVE),
+                                          "Walking into a rigid body pushes it."),
+                           "Pushing"),
+                InGroupUVE(whenPushing(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&C::pushStrength>("pushStrength", "Strength", kPropertyTypeFloatUVE),
+                                            0.0, 100.0, 0.05),
+                               "How hard it pushes, relative to its own speed.")),
+                           "Pushing"),
+                InGroupUVE(whenPushing(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&C::maxPushSpeed>("maxPushSpeed", "Max Speed", kPropertyTypeFloatUVE),
+                                            0.0, 1000.0, 0.1),
+                               "The fastest a push may send a body, in metres per second.")),
+                           "Pushing"),
+                InGroupUVE(std::move(maxSlides), "Collision"),
+                InGroupUVE(DeclareRuntimeStateUVE<&C::velocity>("velocity", "Velocity", kPropertyTypeVector3UVE), "State"),
+                InGroupUVE(DeclareRuntimeStateUVE<&C::isOnFloor>("isOnFloor", "On Floor", kPropertyTypeBoolUVE), "State"),
+                InGroupUVE(DeclareRuntimeStateUVE<&C::isOnCeiling>("isOnCeiling", "On Ceiling", kPropertyTypeBoolUVE),
+                           "State"),
+                InGroupUVE(DeclareRuntimeStateUVE<&C::floorNormal>("floorNormal", "Floor Normal", kPropertyTypeVector3UVE),
+                           "State"),
+            }));
 }
 
 void DeclareMediaAndUIUVE(std::vector<TypeMetadataEntryUVE>& entries) {
@@ -649,16 +746,6 @@ void DeclareNodeBasesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                    "disableMode", "Disable Mode",
                                    {{0, "Remove"}, {1, "Make Static"}, {2, "Keep Active"}}),
                                "What happens to this object while its Process mode stops it."),
-                WithCustomDrawerUVE(
-                    WithTooltipUVE(DeclareUVE<&PhysicsObjectComponentUVE::collisionLayer>("collisionLayer", "Layer",
-                                                                                          kPropertyTypeBitMask32UVE),
-                                   "The layers this object is on - what others can find it on."),
-                    std::string(kLayerMaskDrawerPhysicsUVE)),
-                WithCustomDrawerUVE(
-                    WithTooltipUVE(DeclareUVE<&PhysicsObjectComponentUVE::collisionMask>("collisionMask", "Mask",
-                                                                                         kPropertyTypeBitMask32UVE),
-                                   "The layers this object looks for - what it collides with or detects."),
-                    std::string(kLayerMaskDrawerPhysicsUVE)),
                 std::move(priority),
                 WithTooltipUVE(DeclareUVE<&PhysicsObjectComponentUVE::inputRayPickable>(
                                    "inputRayPickable", "Ray Pickable", kPropertyTypeBoolUVE),
@@ -667,6 +754,25 @@ void DeclareNodeBasesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                    "inputCaptureOnDrag", "Capture On Drag", kPropertyTypeBoolUVE),
                                "Whether a drag that started here keeps reporting here after leaving."),
             }));
+
+    // Sorts before PhysicsObject3D: a base that derives from another is drawn above it.
+    AddUVE<SolidBodyComponentUVE>(
+        entries,
+        MakeEntryUVE("component.solid_body", "SolidBody3D", kSectionOrderNodeBaseUVE,
+                     {
+                         InGroupUVE(WithTooltipUVE(DeclareUVE<&SolidBodyComponentUVE::lockMotionX>(
+                                                       "lockMotionX", "X", kPropertyTypeBoolUVE),
+                                                   "Never moves along the world X axis."),
+                                    "Lock Motion"),
+                         InGroupUVE(WithTooltipUVE(DeclareUVE<&SolidBodyComponentUVE::lockMotionY>(
+                                                       "lockMotionY", "Y", kPropertyTypeBoolUVE),
+                                                   "Never moves along the world Y axis."),
+                                    "Lock Motion"),
+                         InGroupUVE(WithTooltipUVE(DeclareUVE<&SolidBodyComponentUVE::lockMotionZ>(
+                                                       "lockMotionZ", "Z", kPropertyTypeBoolUVE),
+                                                   "Never moves along the world Z axis - a side view locks this one."),
+                                    "Lock Motion"),
+                     }));
 
     AddUVE<RenderInstanceComponentUVE>(
         entries,
@@ -1004,7 +1110,7 @@ void DeclareNodeCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                 "resolvedModeInHierarchy", "Resolved Group",
                 {{0, "Inherit"}, {1, "Main Thread"}, {2, "Sub Thread"}}),
         });
-    threadGroup.nestedUnderTypeId = "component.process";
+    threadGroup.nestedUnderTypeIds = {"component.process"};
     AddUVE<ThreadGroupComponentUVE>(entries, std::move(threadGroup));
 
     // Only `mode` is authored. Everything else on this component is the interpolation system's

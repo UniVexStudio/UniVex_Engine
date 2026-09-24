@@ -7,6 +7,7 @@
 #include "uve/component/audio_source_component_uve.h"
 #include "uve/component/camera_component_uve.h"
 #include "uve/component/canvas_component_uve.h"
+#include "uve/component/character_controller_component_uve.h"
 #include "uve/component/collider_component_uve.h"
 #include "uve/component/light_component_uve.h"
 #include "uve/component/mesh_component_uve.h"
@@ -112,7 +113,8 @@ Nodes::SceneNodeKindUVE InferSceneNodeKindUVE(const IEntityManagerUVE& entityMan
                            OwnComponentUVE<UITextComponentUVE>{Kind::UIText},
                            OwnComponentUVE<UIImageComponentUVE>{Kind::UIImage},
                            OwnComponentUVE<UIButtonComponentUVE>{Kind::UIButton},
-                           OwnComponentUVE<AreaComponentUVE>{Kind::Area3D})) {
+                           OwnComponentUVE<AreaComponentUVE>{Kind::Area3D},
+                           OwnComponentUVE<CharacterControllerComponentUVE>{Kind::CharacterBody3D})) {
         return kind;
     }
 

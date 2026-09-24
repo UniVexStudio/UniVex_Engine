@@ -472,14 +472,14 @@ private:
     /// script logs once, not every frame, and changing the component's path retries at once.
     void SyncScriptRuntimeUVE();
 
-    /// Steps every live CharacterControllerComponentUVE entity once per fixed step: reads WASD/Space
-    /// via the real IInputSystemUVE, accumulates vertical velocity under this engine's own configured
-    /// gravity (m_config.gravity, matching PhysicsSystemUVE's own construction and
-    /// SyncParticleRuntimeUVE's own precedent), and moves the entity via the stateless
-    /// Physics::CharacterControllerUVE::MoveWithToIUVE utility - writing the resolved
-    /// verticalVelocity/isGrounded back into the component afterward. An entity missing a
-    /// ColliderComponentUVE, or whose optional RigidBodyComponentUVE isn't kinematic, is skipped
-    /// (MoveWithToIUVE's own precondition - this function never adds/removes components).
+    /// Steps every CharacterBody3D (CharacterControllerComponentUVE) once per fixed step: velocity
+    /// from the built-in movement when it is on (keyboard, with air control, coyote time and a
+    /// jump buffer) or as a script left it, gravity unless Floating, SolidBody3D's motion locks,
+    /// then Physics::CharacterControllerUVE::MoveWithToIUVE with the body's step height, slide
+    /// count and push settings, a snap down to the floor after walking off a step, and the floor
+    /// and ceiling state written back. An entity missing a ColliderComponentUVE, or whose optional
+    /// RigidBodyComponentUVE isn't kinematic, is skipped - this function never adds or removes
+    /// components.
     void SyncCharacterControllersUVE(float fixedDeltaTimeSeconds);
 
     /// Simple kinematic integration for every active Projectile3DNodeComponentUVE entity (that

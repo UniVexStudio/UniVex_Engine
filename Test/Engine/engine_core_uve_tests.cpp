@@ -64,6 +64,7 @@
 #include "uve/component/audio_source_component_uve.h"
 #include "uve/component/camera_component_uve.h"
 #include "uve/component/character_controller_component_uve.h"
+#include "uve/component/solid_body_component_uve.h"
 #include "uve/component/collider_component_uve.h"
 #include "uve/asset/uve_file_envelope_uve.h"
 #include "uve/entity/entity_manager_uve.h"
@@ -1650,7 +1651,7 @@ TEST(EngineCoreUVETest, CharacterController_FallsUnderGravityLandsOnGroundThenJu
 
     const Scene::CharacterControllerComponentUVE& afterFall =
         entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(entity);
-    EXPECT_TRUE(afterFall.isGrounded);
+    EXPECT_TRUE(afterFall.isOnFloor);
     const Scene::WorldTransformComponentUVE& worldAfterFall =
         entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
     EXPECT_NEAR(worldAfterFall.worldPosition.y, 1.0F, 0.35F);
@@ -1662,9 +1663,108 @@ TEST(EngineCoreUVETest, CharacterController_FallsUnderGravityLandsOnGroundThenJu
 
     const Scene::CharacterControllerComponentUVE& afterJump =
         entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(entity);
-    EXPECT_GT(afterJump.verticalVelocity, 0.0F);
-    EXPECT_FALSE(afterJump.isGrounded);
+    EXPECT_GT(afterJump.velocity.y, 0.0F);
+    EXPECT_FALSE(afterJump.isOnFloor);
 
+    engine.Shutdown();
+}
+
+namespace {
+
+// A box collider whose top face is at `top`, spanning x from `minX` to `maxX`.
+Scene::EntityUVE AddFloorUVE(Scene::IEntityManagerUVE& entityManager, Scene::ISceneGraphUVE& sceneGraph,
+                             const float minX, const float maxX, const float top) {
+    const Scene::EntityUVE floor = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE local;
+    local.localPosition = Math::Vector3UVE{(minX + maxX) * 0.5F, top - 0.5F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, floor, local);
+    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(
+        floor, Scene::ColliderComponentUVE{Math::Vector3UVE{(maxX - minX) * 0.5F, 0.5F, 10.0F}});
+    return floor;
+}
+
+// A script-driven CharacterBody3D (built-in movement off) with a 1 m box, standing on y = `floorTop`.
+Scene::EntityUVE AddWalkerUVE(Scene::IEntityManagerUVE& entityManager, Scene::ISceneGraphUVE& sceneGraph,
+                              const Math::Vector3UVE& feet, const Scene::CharacterControllerComponentUVE& controller) {
+    const Scene::EntityUVE walker = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE local;
+    local.localPosition = Math::Vector3UVE{feet.x, feet.y + 0.5F, feet.z};
+    sceneGraph.AttachTransformUVE(entityManager, walker, local);
+    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(walker, Scene::ColliderComponentUVE{});
+    entityManager.AddComponentUVE<Scene::CharacterControllerComponentUVE>(walker, controller);
+    return walker;
+}
+
+// Walks off a ledge 0.1 m high and reports whether the walker left the floor on the way down.
+bool LeavesTheFloorWalkingDownAStepUVE(const float floorSnapLength) {
+    EngineConfigUVE config = MakeTestConfigUVE();
+    config.fixedUpdateFps = 1000.0;
+    EngineCoreUVE engine(config);
+    engine.Init();
+    EXPECT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+    static_cast<void>(AddFloorUVE(entityManager, sceneGraph, -10.0F, 0.0F, 0.5F));
+    static_cast<void>(AddFloorUVE(entityManager, sceneGraph, 0.0F, 10.0F, 0.4F));
+    Scene::CharacterControllerComponentUVE controller{};
+    controller.builtInMovement = false;
+    controller.floorSnapLength = floorSnapLength;
+    const Scene::EntityUVE walker =
+        AddWalkerUVE(entityManager, sceneGraph, Math::Vector3UVE{-1.5F, 0.5F, 0.0F}, controller);
+
+    // Settle on the high floor, then walk right at 2 m/s across the edge at x = 0.
+    for (int frame = 0; frame < 20; ++frame) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        engine.TickFrameUVE();
+    }
+    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(walker).isOnFloor);
+    bool leftTheFloor = false;
+    for (int frame = 0; frame < 700; ++frame) {
+        entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(walker).velocity.x = 2.0F;
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        engine.TickFrameUVE();
+        leftTheFloor = leftTheFloor || !entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(walker).isOnFloor;
+    }
+    const float x = entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(walker).worldPosition.x;
+    const float y = entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(walker).worldPosition.y;
+    EXPECT_GT(x, 1.0F) << "never got past the edge";
+    EXPECT_NEAR(y, 0.9F, 0.05F) << "not standing on the low floor";
+    engine.Shutdown();
+    return leftTheFloor;
+}
+
+} // namespace
+
+TEST(EngineCoreUVETest, CharacterBody3D_FloorSnapFollowsAStepDownThatWouldOtherwiseLaunchIt) {
+    EXPECT_FALSE(LeavesTheFloorWalkingDownAStepUVE(0.2F));
+    EXPECT_TRUE(LeavesTheFloorWalkingDownAStepUVE(0.0F));
+}
+
+TEST(EngineCoreUVETest, CharacterBody3D_SolidBodyMotionLocksHoldTheirAxis) {
+    EngineConfigUVE config = MakeTestConfigUVE();
+    config.fixedUpdateFps = 1000.0;
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+    Scene::CharacterControllerComponentUVE controller{};
+    controller.builtInMovement = false;
+    controller.motionMode = Scene::CharacterMotionModeUVE::Floating;
+    const Scene::EntityUVE body = AddWalkerUVE(entityManager, sceneGraph, Math::Vector3UVE{0.0F, 5.0F, 0.0F}, controller);
+    Scene::SolidBodyComponentUVE locks{};
+    locks.lockMotionX = true;
+    entityManager.AddComponentUVE<Scene::SolidBodyComponentUVE>(body, locks);
+    for (int frame = 0; frame < 150; ++frame) {
+        entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(body).velocity =
+            Math::Vector3UVE{3.0F, 0.0F, 2.0F};
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        engine.TickFrameUVE();
+    }
+    const Math::Vector3UVE position = entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(body).worldPosition;
+    EXPECT_FLOAT_EQ(position.x, 0.0F);           // Locked: never moved along X.
+    EXPECT_GT(position.z, 0.2F);                 // Free: moved along Z.
+    EXPECT_NEAR(position.y, 5.5F, 1.0e-4F);      // Floating: no gravity.
     engine.Shutdown();
 }
 
