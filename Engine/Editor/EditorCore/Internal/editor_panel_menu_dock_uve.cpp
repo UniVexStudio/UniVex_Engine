@@ -270,6 +270,9 @@ void EditorUVE::DrawMenuBarUVE() {
                     ImGui::EndMenu();
                 }
                 ImGui::Separator();
+                if (ImGui::MenuItem("Editor Preferences...")) {
+                    OpenEditorPreferencesUVE();
+                }
                 if (ImGui::MenuItem("Save Editor Preferences")) {
                     static_cast<void>(SaveSessionSettingsUVE());
                 }

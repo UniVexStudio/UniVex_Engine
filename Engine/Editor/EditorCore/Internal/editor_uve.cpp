@@ -2,6 +2,8 @@
 
 #include "uve/asset/gltf_metadata_uve.h"
 #include "uve/editor/editor_uve.h"
+#include "uve/editor/editor_settings_uve.h"
+#include "editor_settings_binding_uve.h"
 #include "uve/editor/editor_render_stats_uve.h"
 
 #include "editor_chrome_layout_uve.h"
@@ -358,6 +360,9 @@ EditorUVE::EditorUVE(Core::EngineServicesUVE& services, std::filesystem::path ac
         ScriptBranchUVE{"Type 1 Scene", std::make_unique<Scripting::ScriptGraphCanvasUVE>(
                              m_visualScriptRegistry, m_historyCapacity)});
     RegisterBuiltInInspectorDrawersUVE();
+    if (!RegisterEditorSettingsUVE(m_settingsRegistry)) {
+        throw std::logic_error("Failed to register the editor settings.");
+    }
 }
 
 EditorUVE::~EditorUVE() {
@@ -3840,9 +3845,13 @@ bool EditorUVE::IsQuaternionFiniteUVE(const Math::QuaternionUVE& quaternion) con
 
 bool EditorUVE::AreTransformSnappingSettingsValidUVE(
     const EditorTransformSnappingSettingsUVE& settings) const noexcept {
-    return IsFiniteUVE(settings.translateStep) && settings.translateStep > kVectorEpsilonUVE &&
-           IsFiniteUVE(settings.rotateStepDegrees) && settings.rotateStepDegrees > kVectorEpsilonUVE &&
-           IsFiniteUVE(settings.scaleStep) && settings.scaleStep > kVectorEpsilonUVE;
+    // Written as "inside the range" so NaN, which compares false, is refused too.
+    const auto inRange = [](const float step, const float maximum) {
+        return step >= kMinimumTransformSnapStepUVE && step <= maximum;
+    };
+    return inRange(settings.translateStep, kMaximumTransformSnapTranslateStepUVE) &&
+           inRange(settings.rotateStepDegrees, kMaximumTransformSnapRotateStepDegreesUVE) &&
+           inRange(settings.scaleStep, kMaximumTransformSnapScaleStepUVE);
 }
 
 float EditorUVE::SnapScalarUVE(const float value, const float increment) const noexcept {
@@ -4014,47 +4023,19 @@ void EditorUVE::LoadSessionSettingsUVE() {
     if (version > kSessionVersion) {
         return;
     }
-    const auto getEnum = [&config](const std::string_view key, const std::int64_t fallback, const std::int64_t maximum) {
-        const std::int64_t value = config.GetIntUVE(key, fallback);
-        return value >= 0 && value <= maximum ? value : fallback;
-    };
-    m_scenePanelVisible = config.GetBoolUVE("editor.panels.sceneVisible", true);
-    m_viewportPanelVisible = config.GetBoolUVE("editor.panels.viewportVisible", true);
-    m_inspectorPanelVisible = config.GetBoolUVE("editor.panels.inspectorVisible", true);
-    m_bottomDockVisible = config.GetBoolUVE("editor.panels.bottomDockVisible", true);
-    m_activeWorkspace = static_cast<EditorWorkspaceUVE>(getEnum("editor.workspace.active", 0, 4));
-    m_activeRightPanelTab = static_cast<EditorRightPanelTabUVE>(getEnum("editor.rightPanel.activeTab", 0, 2));
-    m_activeBottomDock = static_cast<EditorBottomDockUVE>(getEnum("editor.bottomDock.active", 3, 3));
-    EditorTransformSnappingSettingsUVE snapping{};
-    const auto getPositiveSnapValue = [&config](const std::string_view key, const float fallback) {
-        const float candidate = static_cast<float>(config.GetDoubleUVE(key, fallback));
-        return IsFiniteUVE(candidate) && candidate > 0.0F ? candidate : fallback;
-    };
-    snapping.enabled = config.GetBoolUVE("editor.viewport.snap.enabled", false);
-    snapping.translateStep = getPositiveSnapValue("editor.viewport.snap.translateStep", snapping.translateStep);
-    snapping.rotateStepDegrees =
-        getPositiveSnapValue("editor.viewport.snap.rotateStepDegrees", snapping.rotateStepDegrees);
-    snapping.scaleStep = getPositiveSnapValue("editor.viewport.snap.scaleStep", snapping.scaleStep);
-    m_transformSnappingSettings = snapping;
-    // A stored opacity that is out of range or corrupt is ignored as a whole with the visibility,
-    // leaving both at their defaults rather than restoring one half of the choice.
-    static_cast<void>(SetViewportGridUVE(config.GetBoolUVE("editor.viewport.grid.visible", true),
-                                         static_cast<float>(config.GetDoubleUVE("editor.viewport.grid.opacity", 1.0))));
-    // The selection outline, restored whole or not at all.
-    static_cast<void>(SetViewportSelectionOutlineUVE(
-        config.GetBoolUVE("editor.viewport.selectionOutline.visible", true),
-        ViewportAxisColorUVE{static_cast<float>(config.GetDoubleUVE("editor.viewport.selectionOutline.r", 1.0)),
-                             static_cast<float>(config.GetDoubleUVE("editor.viewport.selectionOutline.g", 0.62)),
-                             static_cast<float>(config.GetDoubleUVE("editor.viewport.selectionOutline.b", 0.16))},
-        static_cast<float>(config.GetDoubleUVE("editor.viewport.selectionOutline.thickness", 2.0))));
-    // A stored cell size out of range or corrupt is ignored, leaving the 1 m default.
-    static_cast<void>(
-        SetViewportGridCellSizeUVE(static_cast<float>(config.GetDoubleUVE("editor.viewport.grid.cellSize", 1.0))));
+    // Every value read through the registry is legal for its setting - anything missing, mistyped
+    // or out of range comes back as that one setting's default - so each binding applies it.
+    for (const EditorSettingBindingUVE& binding : GetSettingBindingsUVE()) {
+        if (const std::optional<Config::SettingValueUVE> value =
+                m_settingsRegistry.GetValueUVE(config, binding.descriptor.id)) {
+            static_cast<void>(binding.set(*this, *value));
+        }
+    }
     // The colour picker's palette and recents, stored as hex. An entry that does not parse is
     // skipped rather than failing the whole list.
     {
         ColorPickerPreferencesUVE picker;
-        picker.advancedOpen = config.GetBoolUVE("editor.colorPicker.advancedOpen", true);
+        picker.advancedOpen = m_colorPickerPreferences.advancedOpen;
         const auto loadList = [&config](const std::string& prefix, std::vector<EditorColorUVE>& out) {
             const std::int64_t count = std::clamp<std::int64_t>(config.GetIntUVE(prefix + ".count", 0), 0, 64);
             for (std::int64_t index = 0; index < count; ++index) {
@@ -4119,27 +4100,12 @@ bool EditorUVE::SaveSessionSettingsUVE() {
     }
     Config::IConfigManagerUVE& config = m_services->GetConfigManagerUVE();
     config.SetIntUVE("editor.sessionSettingsVersion", 1);
-    config.SetIntUVE("editor.workspace.active", static_cast<std::int64_t>(m_activeWorkspace));
-    config.SetIntUVE("editor.rightPanel.activeTab", static_cast<std::int64_t>(m_activeRightPanelTab));
-    config.SetIntUVE("editor.bottomDock.active", static_cast<std::int64_t>(m_activeBottomDock));
-    config.SetBoolUVE("editor.panels.sceneVisible", m_scenePanelVisible);
-    config.SetBoolUVE("editor.panels.viewportVisible", m_viewportPanelVisible);
-    config.SetBoolUVE("editor.panels.inspectorVisible", m_inspectorPanelVisible);
-    config.SetBoolUVE("editor.panels.bottomDockVisible", m_bottomDockVisible);
-    config.SetBoolUVE("editor.viewport.snap.enabled", m_transformSnappingSettings.enabled);
-    config.SetDoubleUVE("editor.viewport.snap.translateStep", m_transformSnappingSettings.translateStep);
-    config.SetDoubleUVE("editor.viewport.snap.rotateStepDegrees", m_transformSnappingSettings.rotateStepDegrees);
-    config.SetDoubleUVE("editor.viewport.snap.scaleStep", m_transformSnappingSettings.scaleStep);
-    config.SetBoolUVE("editor.viewport.grid.visible", m_viewportOverlayState.gridVisible);
-    config.SetDoubleUVE("editor.viewport.grid.opacity", m_viewportOverlayState.gridOpacity);
-    config.SetDoubleUVE("editor.viewport.grid.cellSize", m_viewportOverlayState.gridCellSize);
-    config.SetBoolUVE("editor.viewport.selectionOutline.visible", m_viewportOverlayState.selectionOutlineVisible);
-    config.SetDoubleUVE("editor.viewport.selectionOutline.r", m_viewportOverlayState.selectionOutlineColor.r);
-    config.SetDoubleUVE("editor.viewport.selectionOutline.g", m_viewportOverlayState.selectionOutlineColor.g);
-    config.SetDoubleUVE("editor.viewport.selectionOutline.b", m_viewportOverlayState.selectionOutlineColor.b);
-    config.SetDoubleUVE("editor.viewport.selectionOutline.thickness",
-                        m_viewportOverlayState.selectionOutlineThickness);
-    config.SetBoolUVE("editor.colorPicker.advancedOpen", m_colorPickerPreferences.advancedOpen);
+    // Each value was accepted by a setter whose range is the one its setting declares, so the
+    // registry takes it. The exception is the Game workspace, which a session is never restored
+    // into: that write is refused and the last restorable workspace stays stored.
+    for (const EditorSettingBindingUVE& binding : GetSettingBindingsUVE()) {
+        static_cast<void>(m_settingsRegistry.SetValueUVE(config, binding.descriptor.id, binding.get(*this)));
+    }
     const auto saveList = [&config](const std::string& prefix, const std::vector<EditorColorUVE>& colors) {
         config.SetIntUVE(prefix + ".count", static_cast<std::int64_t>(colors.size()));
         for (std::size_t index = 0; index < colors.size(); ++index) {
