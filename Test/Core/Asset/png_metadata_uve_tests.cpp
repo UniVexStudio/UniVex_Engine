@@ -93,12 +93,27 @@ TEST(PngMetadataUVETest, UnfilterPngRgba8ScanlineUVE_ReconstructsAllSupportedFil
     EXPECT_EQ(output, original);
 }
 
+TEST(PngMetadataUVETest, UnfilterPngRgba8ScanlineUVE_FirstRowPredictsFromZerosForEveryFilter) {
+    // The first scanline has no row above it; the specification treats that row as zeros, so Up is
+    // the bytes as they are, Average halves only the left neighbour, and Paeth reduces to Sub.
+    const std::vector<std::byte> filtered{std::byte{10}, std::byte{20}, std::byte{30}, std::byte{40},
+                                          std::byte{2},  std::byte{4},  std::byte{6},  std::byte{8}};
+    std::vector<std::byte> output;
+    ASSERT_TRUE(UnfilterPngRgba8ScanlineUVE(PngFilterTypeUVE::Up, filtered, {}, output));
+    EXPECT_EQ(output, filtered);
+    ASSERT_TRUE(UnfilterPngRgba8ScanlineUVE(PngFilterTypeUVE::Average, filtered, {}, output));
+    EXPECT_EQ(output, (std::vector<std::byte>{std::byte{10}, std::byte{20}, std::byte{30}, std::byte{40},
+                                              std::byte{7}, std::byte{14}, std::byte{21}, std::byte{28}}));
+    std::vector<std::byte> sub;
+    ASSERT_TRUE(UnfilterPngRgba8ScanlineUVE(PngFilterTypeUVE::Sub, filtered, {}, sub));
+    ASSERT_TRUE(UnfilterPngRgba8ScanlineUVE(PngFilterTypeUVE::Paeth, filtered, {}, output));
+    EXPECT_EQ(output, sub);
+}
+
 TEST(PngMetadataUVETest, UnfilterPngRgba8ScanlineUVE_RejectsInvalidInputsAtomically) {
     const std::vector<std::byte> original{std::byte{0xAA}, std::byte{0xBB}};
     std::vector<std::byte> output = original;
     EXPECT_FALSE(UnfilterPngRgba8ScanlineUVE(static_cast<PngFilterTypeUVE>(9U), {std::byte{1}, std::byte{2}}, {}, output));
-    EXPECT_EQ(output, original);
-    EXPECT_FALSE(UnfilterPngRgba8ScanlineUVE(PngFilterTypeUVE::Up, {std::byte{1}, std::byte{2}}, {}, output));
     EXPECT_EQ(output, original);
     EXPECT_FALSE(UnfilterPngRgba8ScanlineUVE(PngFilterTypeUVE::None, {std::byte{1}, std::byte{2}}, {std::byte{1}}, output));
     EXPECT_EQ(output, original);

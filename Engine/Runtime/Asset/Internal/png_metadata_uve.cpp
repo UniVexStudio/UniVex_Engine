@@ -58,10 +58,11 @@ namespace {
                                            const std::vector<std::byte>& previousRow,
                                            const std::size_t bytesPerPixel,
                                            std::vector<std::byte>& outRow) {
+    // An empty previous row is the image's first scanline, which the PNG specification reconstructs
+    // against a row of zeros - so Up, Average and Paeth are as valid there as anywhere, and encoders
+    // do choose them (every browser-written PNG tried starts with one).
     if (bytesPerPixel == 0U || filteredBytes.empty() || filteredBytes.size() > kMaximumPngRgba8ScanlineBytesUVE ||
-        (!previousRow.empty() && previousRow.size() != filteredBytes.size()) ||
-        ((filter == PngFilterTypeUVE::Up || filter == PngFilterTypeUVE::Average || filter == PngFilterTypeUVE::Paeth) &&
-         previousRow.empty())) {
+        (!previousRow.empty() && previousRow.size() != filteredBytes.size())) {
         return false;
     }
     try {

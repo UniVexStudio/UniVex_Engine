@@ -4437,6 +4437,16 @@ EditorUVE::ContentBrowserItemTypeUVE EditorUVE::ClassifyContentBrowserEntryUVE(
     if (extension == ".uvesave") {
         return ContentBrowserItemTypeUVE::Save;
     }
+    if (extension == ".uvescript") {
+        return ContentBrowserItemTypeUVE::Script;
+    }
+    // Imported clips and the WAV sources the importer reads them from.
+    if (extension == ".uveaudio" || extension == ".wav") {
+        return ContentBrowserItemTypeUVE::Audio;
+    }
+    if (extension == ".ttf" || extension == ".otf") {
+        return ContentBrowserItemTypeUVE::Font;
+    }
     return ContentBrowserItemTypeUVE::File;
 }
 
@@ -4462,6 +4472,12 @@ const char* EditorUVE::GetContentBrowserItemTypeLabelUVE(const ContentBrowserIte
             return "Material";
         case ContentBrowserItemTypeUVE::Save:
             return "Save";
+        case ContentBrowserItemTypeUVE::Script:
+            return "Script";
+        case ContentBrowserItemTypeUVE::Audio:
+            return "Audio";
+        case ContentBrowserItemTypeUVE::Font:
+            return "Font";
         case ContentBrowserItemTypeUVE::File:
             return "File";
     }

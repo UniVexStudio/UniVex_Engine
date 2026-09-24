@@ -29,6 +29,8 @@ struct PngMetadataUVE final {
 enum class PngFilterTypeUVE : std::uint8_t { None = 0U, Sub = 1U, Up = 2U, Average = 3U, Paeth = 4U };
 
 /// Reconstructs one bounded RGBA8 PNG scanline from its filtered bytes and an optional previous row.
+/// With no previous row (the first scanline) every filter predicts from a row of zeros, as the PNG
+/// specification defines it.
 /// It performs no zlib/IDAT decoding, chunk parsing, image allocation, filesystem I/O, or texture conversion.
 [[nodiscard]] bool UnfilterPngRgba8ScanlineUVE(
     PngFilterTypeUVE filter, const std::vector<std::byte>& filteredBytes,
