@@ -16,10 +16,10 @@ inline constexpr std::size_t kMaximumShaderSourceBytesUVE = 16U * 1024U * 1024U;
 /// AssetImporterUVE is the concrete, engine-standard implementation of IAssetImporterUVE. Its
 /// constructor registers built-in importers for plain project documents, the existing typed UVE
 /// envelopes including `.uveanim`, and bounded raw BMP/PNG/TGA-to-`.uvetex`, OBJ-to-`.uvemodel`, MTL-to-`.uvemat`,
-/// glTF/GLB-to-`.uvemodel`, JPEG-to-`.uvetex`, and explicit `.vert`/`.frag`/`.comp` shader-source-
+/// glTF/GLB-to-`.uvemodel`, FBX-to-`.uvemodel` (static mesh), JPEG-to-`.uvetex`, and explicit `.vert`/`.frag`/`.comp` shader-source-
 /// to-`.uveshader` bridges.
 /// Envelope imports are deterministic reimport/copy contracts; the source importers decode/convert
-/// only their documented bounded forms, while raw FBX/audio, ambiguous combined `.glsl`, broader glTF
+/// only their documented bounded forms, while raw audio, FBX skins/materials/animation, ambiguous combined `.glsl`, broader glTF
 /// scene/material/image conversion, raw animation decoding, MTL texture/shader resolution, and other audio conversion remains independently deferred;
 /// EngineCoreUVE composes the cycle-safe WAV-to-`.uveaudio` bridge after constructing this importer.
 class AssetImporterUVE final : public IAssetImporterUVE {
