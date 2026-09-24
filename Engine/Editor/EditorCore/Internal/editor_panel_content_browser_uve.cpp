@@ -487,7 +487,12 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
             const int row = static_cast<int>(visibleCount) / columns;
             ++visibleCount;
             ContentBrowserItemTypeUVE type = ClassifyContentBrowserEntryUVE(entry);
-            if (type == ContentBrowserItemTypeUVE::Mesh && IsRiggedModelSourceUVE(entry.relativePath)) {
+            // A model source is relabelled by what its file turned out to hold.
+            const EditorModelSourceInfoUVE* const modelSource =
+                type == ContentBrowserItemTypeUVE::Mesh ? FindModelSourceInfoUVE(entry.relativePath) : nullptr;
+            if (modelSource != nullptr && modelSource->animationOnly) {
+                type = ContentBrowserItemTypeUVE::Animation;
+            } else if (modelSource != nullptr && modelSource->rigged) {
                 type = ContentBrowserItemTypeUVE::Model;
             }
             const std::string displayLabel = entry.relativePath.filename().generic_string();
@@ -502,7 +507,12 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
                                                    ImVec2{kCardWidthUVE - kCardPaddingUVE, kCardHeightUVE - kCardPaddingUVE});
             const bool rowHovered = ImGui::IsItemHovered();
             if (rowHovered) {
-                ImGui::SetTooltip("%s\nType: %s", displayLabel.c_str(), GetContentBrowserItemTypeLabelUVE(type));
+                if (modelSource != nullptr && !modelSource->summary.empty()) {
+                    ImGui::SetTooltip("%s\nType: %s\n%s", displayLabel.c_str(), GetContentBrowserItemTypeLabelUVE(type),
+                                      modelSource->summary.c_str());
+                } else {
+                    ImGui::SetTooltip("%s\nType: %s", displayLabel.c_str(), GetContentBrowserItemTypeLabelUVE(type));
+                }
             }
             const std::uintptr_t contentThumbnail =
                 type == ContentBrowserItemTypeUVE::Texture ? GetTextureThumbnailUVE(entry.relativePath)
