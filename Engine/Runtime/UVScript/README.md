@@ -119,8 +119,12 @@ primary     := NUMBER UNIT? | STRING | 'true' | 'false' | 'none' | IDENT | '(' e
      `is_on_floor`, plus `input.pressed/held/released/axis`.
    - a saved edit restarts the script within half a second, and fixing a broken file is enough
      for it to be retried.
-4. **Editor (this change).** The Inspector's script slot has **New UVScript**: it writes `scripts/<node>.uvs`
+4. **Editor.** The Inspector's script slot has **New UVScript**: it writes `scripts/<node>.uvs`
    with an `entity <Node> : <Kind>` header and opens it in the Scripting workspace's text editor,
    which checks the text against the node on every edit and lists problems by line and column.
-   - Next: exported fields in the Inspector, then removing the graph scripting.
+   - **Exports (this change):** each `export` field shows under the script slot as a control of
+     its type (checkbox, number, text, three numbers). The node stores only the values it changes,
+     as text in its Script component, so one edit is one undo step; right-clicking a changed name
+     resets it. The engine sets them before `ready`, and changing one restarts the script.
+   - Next: removing the graph scripting.
 5. **Last:** C++23 output for release builds.

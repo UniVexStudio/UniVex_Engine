@@ -4894,6 +4894,60 @@ TEST(EditorUVETest, ScriptSlotUVE_NewUVScriptOpensATextEditorThatChecksAsYouType
     engine.Shutdown();
 }
 
+TEST(EditorUVETest, ScriptExportsUVE_ShowTheScriptsExportsAndStoreTheNodesValues) {
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_script_exports.uvscene");
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        const Scene::EntityUVE root = editor.GetDocumentSceneRootUVE();
+        editor.SelectEntityUVE(root);
+        ASSERT_TRUE(editor.SetSelectedEntityNameUVE("exporter"));
+        EXPECT_TRUE(editor.GetSelectedScriptExportsUVE().empty()); // No script yet.
+
+        ASSERT_TRUE(editor.CreateUVScriptForSelectedEntityUVE());
+        editor.SetOpenUVScriptTextUVE("export speed = 6.0\nexport jumps = 2\nexport label = \"hero\"\n"
+                                      "export offset = vec3(0.0, 1.0, 0.0)\nvar hidden = 1\n");
+        ASSERT_TRUE(editor.SaveOpenUVScriptUVE());
+        const std::string path = entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(root).scriptAssetPath;
+        editor.CloseOpenUVScriptUVE();
+
+        // Exports only, in declaration order, at the script's defaults.
+        std::vector<EditorUVE::ScriptExportRowUVE> rows = editor.GetSelectedScriptExportsUVE();
+        ASSERT_EQ(rows.size(), 4U);
+        EXPECT_EQ(rows[0].name, "speed");
+        EXPECT_EQ(rows[0].valueText, "6.0");
+        EXPECT_EQ(rows[1].valueText, "2");
+        EXPECT_EQ(rows[2].valueText, "hero");
+        EXPECT_EQ(rows[3].valueText, "(0.0, 1.0, 0.0)");
+        EXPECT_FALSE(rows[0].overridden);
+
+        // A value of the right type is stored in its canonical form; a wrong one is refused.
+        ASSERT_TRUE(editor.SetSelectedScriptExportUVE("speed", "9"));
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(root).exportValues.at("speed"), "9.0");
+        EXPECT_FALSE(editor.SetSelectedScriptExportUVE("jumps", "lots"));
+        EXPECT_FALSE(editor.SetSelectedScriptExportUVE("hidden", "3"));
+        rows = editor.GetSelectedScriptExportsUVE();
+        EXPECT_TRUE(rows[0].overridden);
+        EXPECT_EQ(rows[0].valueText, "9.0");
+        EXPECT_EQ(rows[0].defaultText, "6.0");
+
+        // One undo step per edit; resetting drops the stored value.
+        ASSERT_TRUE(editor.UndoUVE());
+        EXPECT_TRUE(entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(root).exportValues.empty());
+        ASSERT_TRUE(editor.RedoUVE());
+        ASSERT_TRUE(editor.SetSelectedScriptExportUVE("speed", std::nullopt));
+        EXPECT_TRUE(entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(root).exportValues.empty());
+
+        std::error_code error;
+        std::filesystem::remove(path, error);
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
 TEST(EditorUVETest, ScriptSlotUVE_AddNewCppCreatesALinkedScriptTitledWithTheNode) {
     Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
     engine.Init();

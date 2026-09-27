@@ -3,6 +3,7 @@
 #pragma once
 
 #include <array>
+#include <chrono>
 #include <limits>
 #include <map>
 #include <memory>
@@ -68,6 +69,7 @@
 #include "uve/scene/i_scene_serializer_uve.h"
 #include "uve/scripting/script_graph_canvas_uve.h"
 #include "uve/uvscript/uvscript_ast_uve.h"
+#include "uve/uvscript/uvscript_value_uve.h"
 
 namespace UVE::Editor::Tests {
 struct EditorUVEAccessUVE;
@@ -846,6 +848,24 @@ public:
     [[nodiscard]] bool SaveOpenUVScriptUVE();
     /// Closes the text editor (unsaved text is dropped) and returns to the scene.
     void CloseOpenUVScriptUVE();
+
+    /// One `export` field of the selected node's `.uvs` script, as the Inspector shows it.
+    struct ScriptExportRowUVE final {
+        std::string name;
+        UVScript::TypeUVE type;
+        /// The script's own initial value, as UVScript text.
+        std::string defaultText;
+        /// What this node runs with: its stored value when it has a valid one, else the default.
+        std::string valueText;
+        bool overridden = false;
+    };
+    /// The selected node's exported fields, in declaration order. Empty when the node has no
+    /// `.uvs` script, the file cannot be read, or it does not compile.
+    [[nodiscard]] std::vector<ScriptExportRowUVE> GetSelectedScriptExportsUVE();
+    /// Sets the selected node's value for export `name` from UVScript text, or - with no text -
+    /// goes back to the script's default. One undo step. Refuses a name the script does not
+    /// export and text that is not a value of the field's type.
+    [[nodiscard]] bool SetSelectedScriptExportUVE(const std::string& name, std::optional<std::string> text);
     /// "Quick Load" and "Load": points the selected entity's Script at an existing script asset, as
     /// one undoable edit. An empty path clears the slot. Any other path must pass
     /// DescribeScriptAssetProblemUVE.
@@ -1507,6 +1527,9 @@ private:
                                       const Core::TypeMetadataPropertyUVE& property, const void* instance);
     void DrawScriptSlotPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
                                    const Core::TypeMetadataPropertyUVE& property, const void* instance);
+    /// The rows under the script slot: one control per `export` field of a `.uvs` script.
+    void DrawScriptExportsPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
+                                      const Core::TypeMetadataPropertyUVE& property, const void* instance);
     /// A combo over the project's assets with `extension` (".uvanim"). Returns the pick, if any;
     /// kInvalidAssetGuidUVE means "(none)" was picked.
     [[nodiscard]] std::optional<Asset::AssetGuidUVE> DrawAssetPickerUVE(const char* id, Asset::AssetGuidUVE value,
@@ -1807,6 +1830,16 @@ private:
     std::optional<std::string> m_scriptLoadCheckedPath;
     std::string m_scriptLoadProblem;
     std::optional<UVScriptDocumentUVE> m_openUVScript;
+    /// The export rows the Inspector last drew, reused until the node, its script or its values
+    /// change, or half a second passes (the file may have been edited).
+    struct ScriptExportsCacheUVE final {
+        Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
+        std::string path;
+        std::map<std::string, std::string> values;
+        std::chrono::steady_clock::time_point builtAt{};
+        std::vector<ScriptExportRowUVE> rows;
+    };
+    ScriptExportsCacheUVE m_scriptExportsCache;
     /// The Add Metadata popup's draft. The type is remembered between uses: the next property an
     /// author adds is most often the same kind as the last.
     std::string m_metadataAddName;

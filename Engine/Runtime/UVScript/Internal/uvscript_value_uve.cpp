@@ -2,7 +2,9 @@
 
 #include "uve/uvscript/uvscript_value_uve.h"
 
+#include <charconv>
 #include <cmath>
+#include <system_error>
 #include <cstdio>
 #include <string>
 #include <type_traits>
@@ -19,7 +21,83 @@ namespace {
     return buffer;
 }
 
+[[nodiscard]] std::string_view TrimUVE(std::string_view text) noexcept {
+    while (!text.empty() && (text.front() == ' ' || text.front() == '\t')) {
+        text.remove_prefix(1U);
+    }
+    while (!text.empty() && (text.back() == ' ' || text.back() == '\t')) {
+        text.remove_suffix(1U);
+    }
+    return text;
+}
+
+/// The whole of `text` as a number, or nothing (empty, trailing junk, out of range, not finite).
+template <typename T>
+[[nodiscard]] std::optional<T> ParseNumberUVE(std::string_view text) {
+    text = TrimUVE(text);
+    T value{};
+    const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
+    if (text.empty() || error != std::errc{} || end != text.data() + text.size()) {
+        return std::nullopt;
+    }
+    if constexpr (std::is_floating_point_v<T>) {
+        if (!std::isfinite(value)) {
+            return std::nullopt;
+        }
+    }
+    return value;
+}
+
 } // namespace
+
+std::optional<ValueUVE> ParseValueTextUVE(const std::string_view text, const TypeUVE& type) {
+    switch (type.kind) {
+        case TypeUVE::KindUVE::Bool: {
+            const std::string_view word = TrimUVE(text);
+            if (word == "true" || word == "false") {
+                return ValueUVE{word == "true"};
+            }
+            return std::nullopt;
+        }
+        case TypeUVE::KindUVE::Int:
+            if (const auto value = ParseNumberUVE<std::int64_t>(text)) {
+                return ValueUVE{*value};
+            }
+            return std::nullopt;
+        case TypeUVE::KindUVE::Float:
+            if (const auto value = ParseNumberUVE<double>(text)) {
+                return ValueUVE{*value};
+            }
+            return std::nullopt;
+        case TypeUVE::KindUVE::Str:
+            return ValueUVE{std::string{text}};
+        case TypeUVE::KindUVE::Vec3: {
+            std::string_view inner = TrimUVE(text);
+            if (inner.starts_with('(') && inner.ends_with(')')) {
+                inner = inner.substr(1U, inner.size() - 2U);
+            }
+            double parts[3]{};
+            for (std::size_t index = 0U; index < 3U; ++index) {
+                const std::size_t comma = index < 2U ? inner.find(',') : std::string_view::npos;
+                if (index < 2U && comma == std::string_view::npos) {
+                    return std::nullopt;
+                }
+                const auto part = ParseNumberUVE<double>(inner.substr(0U, comma));
+                if (!part.has_value()) {
+                    return std::nullopt;
+                }
+                parts[index] = *part;
+                inner = index < 2U ? inner.substr(comma + 1U) : std::string_view{};
+            }
+            return ValueUVE{Vec3ValueUVE{parts[0], parts[1], parts[2]}};
+        }
+        case TypeUVE::KindUVE::None:
+        case TypeUVE::KindUVE::Node:
+        case TypeUVE::KindUVE::Error:
+            break;
+    }
+    return std::nullopt;
+}
 
 std::string TypeUVE::NameUVE() const {
     switch (kind) {

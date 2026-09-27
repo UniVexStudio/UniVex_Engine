@@ -232,5 +232,25 @@ TEST(UVScriptVmUVETest, FieldsAreSetFromTheInspectorWithTheirOwnType) {
     EXPECT_FALSE(instance.SetFieldUVE("missing", 1.0));
 }
 
+TEST(UVScriptVmUVETest, ValueTextReadsBackWhatFormatWrites) {
+    const std::array<std::pair<ValueUVE, TypeUVE>, 5> values{{
+        {ValueUVE{true}, TypeUVE::BoolUVE()},
+        {ValueUVE{std::int64_t{-12}}, TypeUVE::IntUVE()},
+        {ValueUVE{6.0}, TypeUVE::FloatUVE()},
+        {ValueUVE{std::string{"hero one"}}, TypeUVE::StrUVE()},
+        {ValueUVE{Vec3ValueUVE{0.5, -1.0, 2.0}}, TypeUVE::Vec3UVE()},
+    }};
+    for (const auto& [value, type] : values) {
+        EXPECT_EQ(ParseValueTextUVE(FormatValueUVE(value), type), value) << FormatValueUVE(value);
+    }
+    EXPECT_EQ(ParseValueTextUVE(" 1, 2 ,3 ", TypeUVE::Vec3UVE()), ValueUVE{(Vec3ValueUVE{1.0, 2.0, 3.0})});
+    EXPECT_EQ(ParseValueTextUVE("4", TypeUVE::FloatUVE()), ValueUVE{4.0});
+    EXPECT_FALSE(ParseValueTextUVE("4.5", TypeUVE::IntUVE()).has_value());
+    EXPECT_FALSE(ParseValueTextUVE("yes", TypeUVE::BoolUVE()).has_value());
+    EXPECT_FALSE(ParseValueTextUVE("1, 2", TypeUVE::Vec3UVE()).has_value());
+    EXPECT_FALSE(ParseValueTextUVE("nan", TypeUVE::FloatUVE()).has_value());
+    EXPECT_FALSE(ParseValueTextUVE("", TypeUVE::IntUVE()).has_value());
+}
+
 } // namespace
 } // namespace UVE::UVScript::Tests
