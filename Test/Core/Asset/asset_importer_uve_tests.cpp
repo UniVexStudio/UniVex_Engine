@@ -383,7 +383,7 @@ TEST_F(AssetImporterUVETest, ImportUVE_UnregisteredExtension_ReturnsInvalidAndLo
     const bool foundError =
         std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessageUVE& message) {
             return message.level == Debug::LogLevelUVE::Error &&
-                   message.message.find("no importer registered") != std::string::npos;
+                   message.message.contains("no importer registered");
         });
     EXPECT_TRUE(foundError);
 
@@ -541,7 +541,7 @@ TEST_F(AssetImporterUVETest, ImportUVE_ImporterReportsFailure_ReturnsInvalidAndL
     const bool foundError =
         std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessageUVE& message) {
             return message.level == Debug::LogLevelUVE::Error &&
-                   message.message.find("import failed") != std::string::npos;
+                   message.message.contains("import failed");
         });
     EXPECT_TRUE(foundError);
 

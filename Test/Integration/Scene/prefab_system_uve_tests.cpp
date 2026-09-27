@@ -607,7 +607,7 @@ TEST_F(PrefabSystemUVETest, InstantiateUVE_UnknownGuid_ReturnsInvalidAndLogsErro
     const bool foundError =
         std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessageUVE& message) {
             return message.level == Debug::LogLevelUVE::Error &&
-                   message.message.find("unknown prefab GUID") != std::string::npos;
+                   message.message.contains("unknown prefab GUID");
         });
     EXPECT_TRUE(foundError);
 

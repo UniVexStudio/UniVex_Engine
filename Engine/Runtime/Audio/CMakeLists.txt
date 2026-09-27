@@ -51,5 +51,5 @@ target_link_libraries(uve_audio
     # the vendor header.
     PRIVATE uve_miniaudio_interface Threads::Threads ${CMAKE_DL_LIBS} m
 )
-target_compile_features(uve_audio PUBLIC cxx_std_20)
+target_compile_features(uve_audio PUBLIC cxx_std_23)
 uve_set_warnings(uve_audio)

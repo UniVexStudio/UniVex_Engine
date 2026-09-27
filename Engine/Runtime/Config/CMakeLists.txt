@@ -15,5 +15,5 @@ target_link_libraries(uve_config
     PUBLIC uve_platform uve_logging
     PRIVATE nlohmann_json::nlohmann_json
 )
-target_compile_features(uve_config PUBLIC cxx_std_20)
+target_compile_features(uve_config PUBLIC cxx_std_23)
 uve_set_warnings(uve_config)

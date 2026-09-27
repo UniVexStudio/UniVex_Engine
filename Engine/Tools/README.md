@@ -17,7 +17,7 @@ Runs standalone (`python3 Engine/Tools/check_math_boundary.py`) and as a step in
 
 ## embed_file.py
 
-Byte-embeds a binary file as a C++20 `inline constexpr std::array<std::uint8_t, N>` `.inc`,
+Byte-embeds a binary file as a C++23 `inline constexpr std::array<std::uint8_t, N>` `.inc`,
 in this repo's established 16-hex-bytes-per-line convention. Driven by `add_custom_command`
 in `Engine/Runtime/UI/CMakeLists.txt` and `Engine/Editor/EditorCore/CMakeLists.txt` so font
 byte-arrays are generated from single canonical `.ttf` sources at build time instead of being

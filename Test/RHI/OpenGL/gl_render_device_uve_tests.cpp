@@ -1136,7 +1136,7 @@ TEST_F(GlRenderDeviceUVETest, CreateShaderUVE_BrokenSource_ReturnsInvalidAndLogs
     const bool foundCompilerDiagnostic =
         std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessageUVE& message) {
             return message.level == Debug::LogLevelUVE::Error &&
-                   message.message.find("compilation failed") != std::string::npos;
+                   message.message.contains("compilation failed");
         });
     EXPECT_TRUE(foundCompilerDiagnostic);
 

@@ -12,5 +12,5 @@ add_library(uve_rhi_null STATIC
 )
 target_include_directories(uve_rhi_null PUBLIC Expose)
 target_link_libraries(uve_rhi_null PUBLIC uve_rhi uve_logging)
-target_compile_features(uve_rhi_null PUBLIC cxx_std_20)
+target_compile_features(uve_rhi_null PUBLIC cxx_std_23)
 uve_set_warnings(uve_rhi_null)

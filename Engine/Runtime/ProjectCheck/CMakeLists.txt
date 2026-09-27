@@ -5,7 +5,7 @@ add_library(uve_project_check_lib STATIC
 )
 target_include_directories(uve_project_check_lib PUBLIC Expose)
 target_link_libraries(uve_project_check_lib PUBLIC uve_asset)
-target_compile_features(uve_project_check_lib PUBLIC cxx_std_20)
+target_compile_features(uve_project_check_lib PUBLIC cxx_std_23)
 uve_set_warnings(uve_project_check_lib)
 
 #
@@ -16,5 +16,5 @@ uve_set_warnings(uve_project_check_lib)
 
 add_executable(uve_project_check app/main.cpp)
 target_link_libraries(uve_project_check PRIVATE uve_project_check_lib)
-target_compile_features(uve_project_check PRIVATE cxx_std_20)
+target_compile_features(uve_project_check PRIVATE cxx_std_23)
 uve_set_warnings(uve_project_check)

@@ -198,7 +198,7 @@ TEST_F(HotReloadUVETest, PollUVE_TrackedFileDeleted_LogsWarningAndDoesNotCrash) 
     const bool foundWarning =
         std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessageUVE& message) {
             return message.level == Debug::LogLevelUVE::Warning &&
-                   message.message.find("missing") != std::string::npos;
+                   message.message.contains("missing");
         });
     EXPECT_TRUE(foundWarning);
 

@@ -9,5 +9,5 @@ add_library(uve_memory STATIC
 )
 target_include_directories(uve_memory PUBLIC Expose)
 target_link_libraries(uve_memory PUBLIC uve_platform uve_logging)
-target_compile_features(uve_memory PUBLIC cxx_std_20)
+target_compile_features(uve_memory PUBLIC cxx_std_23)
 uve_set_warnings(uve_memory)

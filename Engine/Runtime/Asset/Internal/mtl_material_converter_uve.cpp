@@ -51,7 +51,7 @@ namespace {
 
 bool ConvertMtlMaterialUVE(const std::string_view source, MaterialAssetUVE& outMaterial) {
     if (source.empty() || source.size() > kMaximumMtlMaterialSourceBytesUVE ||
-        source.find('\0') != std::string_view::npos) {
+        source.contains('\0')) {
         return false;
     }
 

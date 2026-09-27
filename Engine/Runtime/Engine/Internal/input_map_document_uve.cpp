@@ -158,7 +158,7 @@ std::vector<InputActionUVE> InputMapDocumentUVE::SanitizeUVE(std::vector<InputAc
     for (InputActionUVE& action : actions) {
         if (kept.size() >= Input::kMaximumInputActionsUVE || action.name.empty() ||
             action.name.size() > Input::kMaximumInputActionNameBytesUVE ||
-            action.name.find('\0') != std::string::npos || !names.insert(action.name).second) {
+            action.name.contains('\0') || !names.insert(action.name).second) {
             continue;
         }
         action.positiveBindings = SanitizeBindingsUVE(std::move(action.positiveBindings));

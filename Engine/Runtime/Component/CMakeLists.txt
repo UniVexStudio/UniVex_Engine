@@ -57,4 +57,4 @@ add_library(uve_component STATIC
 )
 target_include_directories(uve_component PUBLIC Expose)
 target_link_libraries(uve_component PUBLIC uve_math uve_asset uve_object)
-target_compile_features(uve_component PUBLIC cxx_std_20)
+target_compile_features(uve_component PUBLIC cxx_std_23)

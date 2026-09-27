@@ -33,7 +33,7 @@ namespace {
 
 [[nodiscard]] bool IsSafeRelativePathUVE(std::string_view name) {
     if (name.empty() || name.size() > kMaximumAssetBundleEntryNameBytesUVE ||
-        name.find('\0') != std::string_view::npos || name.find('\\') != std::string_view::npos) {
+        name.contains('\0') || name.contains('\\')) {
         return false;
     }
     const std::filesystem::path path{std::string(name)};

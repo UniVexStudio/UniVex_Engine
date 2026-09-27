@@ -13,5 +13,5 @@ add_library(uve_plugins STATIC
 )
 target_include_directories(uve_plugins PUBLIC Expose)
 target_link_libraries(uve_plugins PUBLIC uve_asset PRIVATE nlohmann_json::nlohmann_json)
-target_compile_features(uve_plugins PUBLIC cxx_std_20)
+target_compile_features(uve_plugins PUBLIC cxx_std_23)
 uve_set_warnings(uve_plugins)

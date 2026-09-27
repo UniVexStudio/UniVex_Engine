@@ -23,5 +23,5 @@ add_library(uve_scheduling STATIC
 )
 target_include_directories(uve_scheduling PUBLIC Expose)
 target_link_libraries(uve_scheduling PUBLIC uve_threading)
-target_compile_features(uve_scheduling PUBLIC cxx_std_20)
+target_compile_features(uve_scheduling PUBLIC cxx_std_23)
 uve_set_warnings(uve_scheduling)

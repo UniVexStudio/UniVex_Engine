@@ -10,8 +10,8 @@ namespace UVE::Scene {
 
 [[nodiscard]] bool IsScriptAssetPathValidUVE(const std::string_view path) noexcept {
     if (path.empty() || path.size() > kMaximumScriptAssetPathBytesUVE ||
-        path.find('\0') != std::string_view::npos || path.find('\\') != std::string_view::npos ||
-        path.find(':') != std::string_view::npos || path.front() == '/') {
+        path.contains('\0') || path.contains('\\') ||
+        path.contains(':') || path.front() == '/') {
         return path.empty();
     }
 

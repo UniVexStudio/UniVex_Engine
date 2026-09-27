@@ -26,5 +26,5 @@ target_link_libraries(uve_scene
     PUBLIC uve_platform uve_logging uve_memory uve_events uve_math uve_asset uve_component uve_entity uve_object uve_threading uve_animation uve_nodes_3d uve_nodes_canvas_layer
     PRIVATE nlohmann_json::nlohmann_json
 )
-target_compile_features(uve_scene PUBLIC cxx_std_20)
+target_compile_features(uve_scene PUBLIC cxx_std_23)
 uve_set_warnings(uve_scene)
