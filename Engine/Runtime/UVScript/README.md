@@ -89,17 +89,27 @@ primary     := NUMBER UNIT? | STRING | 'true' | 'false' | 'none' | IDENT | '(' e
 - **What it does:** turns `.uvs` source into a checked tree, then into something that runs.
 - **Why it is separate:** the old `Scripting` module interprets node graphs. Its IR is
   "execute node N" and cannot hold a text program. It is removed once UVScript runs every script.
-- **Depends on:** nothing but the standard library, for now.
+- **Depends on:** nothing but the standard library.
 - **Exposes:**
-  - `ParseUVScriptUVE` (source text → `UVScriptFileUVE` plus diagnostics);
-  - the AST types in `uvscript_ast_uve.h`.
+  - `ParseUVScriptUVE` and the AST types in `uvscript_ast_uve.h`;
+  - `CompileUVScriptUVE` / `CompileUVScriptSourceUVE`;
+  - `ScriptInstanceUVE`;
+  - `UVScriptHostUVE`, the interface a node kind implements.
 
 ## Status
 
-1. **Lexer and parser (this change).** Indentation, unit literals, string interpolation, the full
-   v1 grammar, and diagnostics with line and column. Parsing recovers at the next line, so one
-   mistake does not hide the rest.
-2. **Next:** type checker and register VM.
-3. **Then:** engine binding (script slot, events, exported fields in the Inspector), and removing
+1. **Lexer and parser.** Indentation, unit literals, string interpolation, the full v1 grammar.
+   Diagnostics have line and column, and parsing recovers at the next line.
+2. **Checker, compiler and VM (this change).**
+   - `CompileUVScriptUVE` checks every name, operator, assignment, return and event against the
+     node's host (`UVScriptHostUVE`), then emits stack bytecode.
+   - `ScriptInstanceUVE` runs it: handlers, functions, fields, and `wait` that pauses only its own
+     handler.
+   - A runaway loop is cut off after one million instructions.
+   - Not in yet:
+     - collections, tuples and `[]`;
+     - calling methods on other nodes (`other.hide()`);
+     - `wait` inside a `fn`.
+3. **Next:** engine binding (script slot, events, exported fields in the Inspector), then removing
    the graph scripting.
 4. **Last:** C++23 output for release builds.

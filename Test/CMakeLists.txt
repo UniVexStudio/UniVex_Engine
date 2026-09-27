@@ -38,6 +38,7 @@ add_executable(uve_core_tests
     Core/Asset/asset_database_uve_tests.cpp
     Core/Asset/legacy_extension_migration_uve_tests.cpp
     UVScript/uvscript_parser_uve_tests.cpp
+    UVScript/uvscript_vm_uve_tests.cpp
     Core/Asset/asset_manager_uve_tests.cpp
     Core/Asset/file_system_uve_tests.cpp
     Core/Asset/mesh_asset_uve_tests.cpp
