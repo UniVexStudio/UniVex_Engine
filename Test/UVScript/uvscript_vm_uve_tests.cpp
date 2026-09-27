@@ -1,6 +1,10 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
+#include <array>
 #include <cmath>
+#include <cstdio>
+#include <fstream>
+#include <iterator>
 #include <map>
 #include <numbers>
 #include <string>
@@ -8,7 +12,9 @@
 
 #include <gtest/gtest.h>
 
+#include "uve/uvscript/uvscript_codegen_uve.h"
 #include "uve/uvscript/uvscript_compiler_uve.h"
+#include "uve/uvscript/uvscript_host_description_uve.h"
 #include "uve/uvscript/uvscript_instance_uve.h"
 
 namespace UVE::UVScript::Tests {
@@ -250,6 +256,173 @@ TEST(UVScriptVmUVETest, ValueTextReadsBackWhatFormatWrites) {
     EXPECT_FALSE(ParseValueTextUVE("1, 2", TypeUVE::Vec3UVE()).has_value());
     EXPECT_FALSE(ParseValueTextUVE("nan", TypeUVE::FloatUVE()).has_value());
     EXPECT_FALSE(ParseValueTextUVE("", TypeUVE::IntUVE()).has_value());
+}
+
+// ---- Native code: the same scripts compiled to C++ by uvsc at build time (Test/CMakeLists.txt).
+
+[[nodiscard]] std::string ReadNativeScriptUVE(const std::string& name) {
+    std::ifstream file(std::string{UVE_UVSCRIPT_NATIVE_DIR} + "/" + name, std::ios::binary);
+    return std::string(std::istreambuf_iterator<char>(file), {});
+}
+
+/// Everything a run leaves behind, so an interpreted and a native run can be compared whole.
+struct TranscriptUVE final {
+    std::vector<std::string> printed;
+    std::vector<std::string> calls;
+    Vec3ValueUVE velocity{};
+    std::int64_t health = 0;
+    std::vector<std::string> results;
+
+    bool operator==(const TranscriptUVE&) const = default;
+};
+
+/// Compiles `name` against FakeHostUVE and hands `run` an instance in the given mode.
+template <typename RunFn>
+[[nodiscard]] TranscriptUVE RunScriptUVE(const std::string& name, const ExecutionUVE execution, bool& native,
+                                         const RunFn& run) {
+    FakeHostUVE host;
+    host.onFloor = false;
+    const auto program = CompileOrFailUVE(ReadNativeScriptUVE(name), host);
+    TranscriptUVE transcript;
+    if (program == nullptr) {
+        return transcript;
+    }
+    ScriptInstanceUVE instance(program, host, execution);
+    native = instance.IsNativeUVE();
+    run(instance, host, transcript.results);
+    transcript.printed = host.printed;
+    transcript.calls = host.calls;
+    transcript.velocity = host.velocity;
+    transcript.health = host.health;
+    return transcript;
+}
+
+/// Runs `name` both ways and checks the native run really was native and matched the interpreter.
+template <typename RunFn>
+void ExpectNativeMatchesInterpreterUVE(const std::string& name, const RunFn& run) {
+    bool interpretedNative = true;
+    bool native = false;
+    const TranscriptUVE interpreted = RunScriptUVE(name, ExecutionUVE::Interpreted, interpretedNative, run);
+    const TranscriptUVE compiled = RunScriptUVE(name, ExecutionUVE::Auto, native, run);
+    EXPECT_FALSE(interpretedNative) << name;
+    EXPECT_TRUE(native) << name << " has no native code linked in - is fake_node.uvhost in step with FakeHostUVE?";
+    EXPECT_EQ(compiled.printed, interpreted.printed) << name;
+    EXPECT_EQ(compiled.calls, interpreted.calls) << name;
+    EXPECT_EQ(compiled.velocity, interpreted.velocity) << name;
+    EXPECT_EQ(compiled.health, interpreted.health) << name;
+    EXPECT_EQ(compiled.results, interpreted.results) << name;
+}
+
+[[nodiscard]] std::string ResultTextUVE(const std::optional<ValueUVE>& value, const ScriptInstanceUVE& instance) {
+    return value.has_value() ? FormatValueUVE(*value) : "error: " + instance.GetLastErrorUVE();
+}
+
+TEST(UVScriptNativeUVETest, PlayerControllerMatchesTheInterpreter) {
+    ExpectNativeMatchesInterpreterUVE("player.uvs", [](ScriptInstanceUVE& instance, FakeHostUVE& host,
+                                                       std::vector<std::string>& results) {
+        results.push_back(std::to_string(instance.RaiseEventUVE("ready")));
+        const std::array<ValueUVE, 1> dt{0.016};
+        for (int frame = 0; frame < 3; ++frame) {
+            host.onFloor = frame == 1;
+            results.push_back(std::to_string(instance.RaiseEventUVE("tick", dt)));
+        }
+        results.push_back(FormatValueUVE(*instance.GetFieldUVE("jumps")));
+        results.push_back(FormatValueUVE(*instance.GetFieldUVE("jump")));
+    });
+}
+
+TEST(UVScriptNativeUVETest, ArithmeticControlFlowAndBuiltinsMatchTheInterpreter) {
+    ExpectNativeMatchesInterpreterUVE("math.uvs", [](ScriptInstanceUVE& instance, FakeHostUVE&,
+                                                     std::vector<std::string>& results) {
+        results.push_back(FormatValueUVE(*instance.GetFieldUVE("TURN")));
+        results.push_back(FormatValueUVE(*instance.GetFieldUVE("SHORT")));
+        results.push_back(FormatValueUVE(*instance.GetFieldUVE("label")));
+        for (const std::int64_t n : {0, 1, 10, 20}) {
+            const std::array<ValueUVE, 1> arg{n};
+            results.push_back(ResultTextUVE(instance.CallUVE("sum_to", arg), instance));
+            results.push_back(ResultTextUVE(instance.CallUVE("fib", arg), instance));
+            results.push_back(ResultTextUVE(instance.CallUVE("first_over", arg), instance));
+        }
+        results.push_back(ResultTextUVE(instance.CallUVE("mix"), instance));
+        for (const double x : {0.5, 2.0, 5.0, 12.0}) {
+            const std::array<ValueUVE, 1> arg{x};
+            results.push_back(ResultTextUVE(instance.CallUVE("shapes", arg), instance));
+        }
+    });
+    // And the values are the right ones, not merely the same wrong ones.
+    FakeHostUVE host;
+    const auto program = CompileOrFailUVE(ReadNativeScriptUVE("math.uvs"), host);
+    ASSERT_NE(program, nullptr);
+    ScriptInstanceUVE instance(program, host);
+    ASSERT_TRUE(instance.IsNativeUVE());
+    const std::array<ValueUVE, 1> ten{std::int64_t{10}};
+    EXPECT_EQ(std::get<std::int64_t>(*instance.CallUVE("fib", ten)), 55);
+    EXPECT_EQ(std::get<std::string>(*instance.GetFieldUVE("label")), "tab\there \"quoted\" ?? done");
+    EXPECT_DOUBLE_EQ(std::get<double>(*instance.GetFieldUVE("TURN")), std::numbers::pi / 2.0);
+}
+
+TEST(UVScriptNativeUVETest, WaitResumesWhereItStopped) {
+    ExpectNativeMatchesInterpreterUVE("waits.uvs", [](ScriptInstanceUVE& instance, FakeHostUVE&,
+                                                      std::vector<std::string>& results) {
+        results.push_back(std::to_string(instance.RaiseEventUVE("ready")));
+        results.push_back(std::to_string(instance.RaiseEventUVE("ready"))); // two runs wait side by side
+        for (const double step : {0.3, 0.2, 0.05, 0.05, 0.1}) {
+            instance.AdvanceUVE(step);
+            results.push_back(std::to_string(instance.GetWaitingCountUVE()));
+        }
+        results.push_back(FormatValueUVE(*instance.GetFieldUVE("count")));
+    });
+}
+
+TEST(UVScriptNativeUVETest, RuntimeErrorsReadTheSame) {
+    ExpectNativeMatchesInterpreterUVE("errors.uvs", [](ScriptInstanceUVE& instance, FakeHostUVE&,
+                                                       std::vector<std::string>& results) {
+        results.push_back(ResultTextUVE(instance.CallUVE("spin"), instance));
+        const std::array<ValueUVE, 2> byZero{std::int64_t{1}, std::int64_t{0}};
+        results.push_back(ResultTextUVE(instance.CallUVE("divide", byZero), instance));
+        const std::array<ValueUVE, 1> start{std::int64_t{0}};
+        results.push_back(ResultTextUVE(instance.CallUVE("deep", start), instance));
+        results.push_back(std::to_string(instance.RaiseEventUVE("ready")));
+    });
+}
+
+TEST(UVScriptNativeUVETest, GeneratedCodeNamesItsProgramAndRegistersIt) {
+    FakeHostUVE host;
+    const auto program = CompileOrFailUVE("var n = 1\n\nfn twice() -> int:\n    return n * 2\n", host);
+    ASSERT_NE(program, nullptr);
+    const std::string cpp = GenerateUVScriptNativeCppUVE(*program, "twice.uvs");
+    char fingerprint[24];
+    std::snprintf(fingerprint, sizeof(fingerprint), "0x%016llxULL",
+                  static_cast<unsigned long long>(GetProgramFingerprintUVE(*program)));
+    EXPECT_NE(cpp.find("Generated from twice.uvs"), std::string::npos);
+    EXPECT_NE(cpp.find(std::string{"RegistrationUVE kRegistration{ProgramTableUVE{"} + fingerprint), std::string::npos);
+    // The same source compiled twice is the same program; a different host description is not.
+    EXPECT_EQ(GetProgramFingerprintUVE(*CompileOrFailUVE("var n = 1\n\nfn twice() -> int:\n    return n * 2\n", host)),
+              GetProgramFingerprintUVE(*program));
+    EXPECT_NE(GetProgramFingerprintUVE(*CompileOrFailUVE("var n = 2\n\nfn twice() -> int:\n    return n * 2\n", host)),
+              GetProgramFingerprintUVE(*program));
+}
+
+TEST(UVScriptNativeUVETest, HostDescriptionsParseAndReportTheirMistakes) {
+    std::string error;
+    const std::optional<DescribedHostUVE> host = DescribedHostUVE::ParseUVE(ReadNativeScriptUVE("fake_node.uvhost"), error);
+    ASSERT_TRUE(host.has_value()) << error;
+    EXPECT_EQ(host->DescribePropertyUVE("velocity")->type, TypeUVE::Vec3UVE());
+    EXPECT_FALSE(host->DescribePropertyUVE("is_on_floor")->writable);
+    EXPECT_EQ(host->DescribeFunctionUVE("input.axis")->params.size(), 2U);
+    EXPECT_EQ(host->DescribeEventUVE("body_entered")->front(), TypeUVE::NodeUVE("Node3D"));
+    EXPECT_FALSE(host->DescribePropertyUVE("missing").has_value());
+    // A script compiled against the description is the program the FakeHost gives: same fingerprint.
+    FakeHostUVE fake;
+    EXPECT_EQ(GetProgramFingerprintUVE(*CompileUVScriptSourceUVE(ReadNativeScriptUVE("player.uvs"), *host).program),
+              GetProgramFingerprintUVE(*CompileOrFailUVE(ReadNativeScriptUVE("player.uvs"), fake)));
+
+    EXPECT_FALSE(DescribedHostUVE::ParseUVE("property speed 3fast\n", error).has_value());
+    EXPECT_EQ(error, "line 1: unknown type '3fast'");
+    EXPECT_FALSE(DescribedHostUVE::ParseUVE("# ok\nfunction f(int)\n", error).has_value());
+    EXPECT_EQ(error, "line 2: expected 'function <name>(<types>) -> <type>'");
+    EXPECT_FALSE(DescribedHostUVE::ParseUVE("signal x\n", error).has_value());
+    EXPECT_EQ(error, "line 1: expected 'property', 'function' or 'event'");
 }
 
 } // namespace

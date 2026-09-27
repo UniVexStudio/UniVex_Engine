@@ -11,7 +11,7 @@ The comparison point is GDScript (Godot 4.x). The weaknesses that shaped UVScrip
 | GDScript today | UVScript |
 |---|---|
 | Typing is optional. Untyped code is slow, because every operation resolves the type at run time. | Every value has a static type. It is inferred when left out (`let n = 3`), and checked before the game runs. |
-| Interpreted. Hot loops are about half the speed of C#. | Compiled: a register bytecode VM in the editor (instant reload), and C++23 generated from the same checked tree for release builds. |
+| Interpreted. Hot loops are about half the speed of C#. | Compiled: a bytecode VM in the editor (instant reload), and C++23 generated from the same bytecode for release builds. |
 | No tuples, and no generics on user types. | Tuples (`let (a, b) = pair()`) and typed collections (`list[int]`, `map[str, Node3D]`). |
 | Signals are connected by name as strings; typos show up at run time. | Events are blocks (`on body_entered(other):`). The compiler checks the name and the parameters against the node kind. |
 | `await` needs a signal or a timer object. | `wait 0.5 s`, `wait until is_on_floor`, `wait next_frame`. The node pauses; nothing is allocated. |
@@ -95,7 +95,9 @@ primary     := NUMBER UNIT? | STRING | 'true' | 'false' | 'none' | IDENT | '(' e
   - `ParseUVScriptUVE` and the AST types in `uvscript_ast_uve.h`;
   - `CompileUVScriptUVE` / `CompileUVScriptSourceUVE`;
   - `ScriptInstanceUVE`;
-  - `UVScriptHostUVE`, the interface a node kind implements.
+  - `UVScriptHostUVE`, the interface a node kind implements;
+  - `GenerateUVScriptNativeCppUVE` and the native runtime (`uvscript_native_uve.h`);
+  - `DescribedHostUVE`, a host read from a `.uvhost` text file, and the `uvsc` tool.
 
 ## Status
 
@@ -129,4 +131,16 @@ primary     := NUMBER UNIT? | STRING | 'true' | 'false' | 'none' | IDENT | '(' e
      resets it. The engine sets them before `ready`, and changing one restarts the script.
    - The node-graph scripting (the old `Scripting` module, its canvas and bridge commands) has
      been removed. A node whose script is not a `.uvs` file logs one warning and does not run.
-5. **Last:** C++23 output for release builds.
+5. **C++23 output (this change).** `GenerateUVScriptNativeCppUVE` turns a compiled program into C++:
+   one function per handler or `fn`, jumps as `goto`, each `wait` as a return that the next call
+   resumes from. It calls the same value operations as the interpreter, so results, error text,
+   line numbers and the instruction budget are identical; the tests run every script both ways and
+   compare. Each file registers itself under the program's fingerprint, and an instance runs native
+   code whenever a table for its exact program is linked in, the interpreter otherwise.
+   - At build time: `uve_add_uvscript_native(game HOST player.uvhost SCRIPTS player.uvs)` runs
+     `uvsc`, which compiles each script against the node described in the `.uvhost` file.
+   - From a running game: `EngineCoreUVE::WriteNativeUVScriptsUVE(dir)` writes the C++ of every
+     program in use, compiled against the real node, ready to add to the release build.
+   - Not yet: values are still the tagged `ValueUVE`, so this removes the dispatch loop but not the
+     type checks on each operation. Typed code (plain `double` and `int64_t` locals where the
+     checker knows the type) is the next step. No speed measurement has been made yet.

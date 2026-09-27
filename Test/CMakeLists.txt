@@ -156,6 +156,15 @@ target_include_directories(uve_core_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # uve_integration_tests' identical need for Engine/Runtime/Entity/Internal below).
 target_include_directories(uve_core_tests PRIVATE ${CMAKE_SOURCE_DIR}/Engine/Runtime/RHI/Shader/Internal)
 
+# The UVScript native tests run each script both interpreted and as C++ that uvsc generated from it
+# at build time, and compare the two.
+uve_add_uvscript_native(uve_core_tests
+    HOST UVScript/native/fake_node.uvhost
+    SCRIPTS UVScript/native/player.uvs UVScript/native/math.uvs UVScript/native/waits.uvs
+            UVScript/native/errors.uvs)
+target_compile_definitions(uve_core_tests PRIVATE
+    UVE_UVSCRIPT_NATIVE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/UVScript/native")
+
 include(GoogleTest)
 gtest_discover_tests(uve_core_tests)
 

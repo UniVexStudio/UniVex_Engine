@@ -1189,6 +1189,23 @@ TEST(EngineCoreUVETest, UVScriptEntity_CompilesOnceRaisesReadyThenTicksEveryFram
     ASSERT_NE(engine.FindUVScriptInstanceUVE(exporter), nullptr);
     EXPECT_EQ(engine.FindUVScriptInstanceUVE(exporter)->GetFieldUVE("seen"), UVScript::ValueUVE{2.0});
 
+    // Release builds: the running programs are written out as C++, one file per distinct program.
+    {
+        const std::filesystem::path nativeDirectory = mountDirectory / "native";
+        const std::optional<std::size_t> written = engine.WriteNativeUVScriptsUVE(nativeDirectory);
+        ASSERT_TRUE(written.has_value());
+        EXPECT_EQ(*written, 1U); // only the exports script is running at this point
+        std::size_t files = 0U;
+        for (const auto& entry : std::filesystem::directory_iterator(nativeDirectory)) {
+            ++files;
+            EXPECT_TRUE(entry.path().filename().string().starts_with("exports_"));
+            std::ifstream in(entry.path());
+            const std::string text(std::istreambuf_iterator<char>(in), {});
+            EXPECT_NE(text.find("RegistrationUVE kRegistration"), std::string::npos);
+        }
+        EXPECT_EQ(files, 1U);
+    }
+
     // A node with a transform moves itself through `position`.
     write("mover.uvs", "on tick(dt):\n    position.x += 2.0\n");
     const Scene::EntityUVE mover = entityManager.CreateEntityUVE();

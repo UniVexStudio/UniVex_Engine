@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -40,5 +41,9 @@ struct CompileResultUVE final {
 [[nodiscard]] CompileResultUVE CompileUVScriptSourceUVE(std::string_view source, const UVScriptHostUVE& host);
 
 [[nodiscard]] std::vector<FieldInfoUVE> GetProgramFieldsUVE(const ProgramUVE& program);
+
+/// Identifies the compiled code exactly: the same source compiled against a host that describes
+/// the same things gives the same fingerprint. Native code is looked up by it.
+[[nodiscard]] std::uint64_t GetProgramFingerprintUVE(const ProgramUVE& program);
 
 } // namespace UVE::UVScript

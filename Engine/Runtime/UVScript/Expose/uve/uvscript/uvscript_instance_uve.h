@@ -3,6 +3,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <span>
@@ -14,12 +15,21 @@
 
 namespace UVE::UVScript {
 
+/// How an instance runs its program.
+enum class ExecutionUVE : std::uint8_t {
+    /// Native when C++ generated from this exact program is linked in, interpreted otherwise.
+    Auto,
+    /// Always the bytecode interpreter (tests compare the two).
+    Interpreted,
+};
+
 /// One node running a program: its field values and any handlers paused on `wait`.
 /// Not thread-safe; a node's script runs on the thread that updates the node.
 class ScriptInstanceUVE final {
 public:
     /// Evaluates the field initializers in source order. `host` must outlive the instance.
-    ScriptInstanceUVE(std::shared_ptr<const ProgramUVE> program, UVScriptHostUVE& host);
+    ScriptInstanceUVE(std::shared_ptr<const ProgramUVE> program, UVScriptHostUVE& host,
+                      ExecutionUVE execution = ExecutionUVE::Auto);
     ~ScriptInstanceUVE();
     ScriptInstanceUVE(const ScriptInstanceUVE&) = delete;
     ScriptInstanceUVE& operator=(const ScriptInstanceUVE&) = delete;
@@ -40,6 +50,8 @@ public:
     /// a value of the wrong type.
     bool SetFieldUVE(std::string_view name, const ValueUVE& value);
 
+    /// True when this instance runs generated C++ rather than the interpreter.
+    [[nodiscard]] bool IsNativeUVE() const noexcept;
     [[nodiscard]] std::size_t GetWaitingCountUVE() const noexcept;
     /// The last run-time error ("line 12: division by zero"), empty when there has been none.
     [[nodiscard]] const std::string& GetLastErrorUVE() const noexcept;

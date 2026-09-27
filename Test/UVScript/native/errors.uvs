@@ -1,0 +1,12 @@
+fn spin():
+    while true:
+        pass
+
+fn divide(a: int, b: int) -> int:
+    return a % b
+
+fn deep(n: int) -> int:
+    return deep(n + 1)
+
+on ready:
+    health = 3

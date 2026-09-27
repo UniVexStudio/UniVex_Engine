@@ -7,6 +7,7 @@
 #include <string>
 #include <utility>
 
+#include "uve/uvscript/uvscript_native_uve.h"
 #include "uvscript_program_uve.h"
 
 namespace UVE::UVScript {
@@ -23,119 +24,49 @@ struct FrameUVE final {
     std::size_t base = 0U;
 };
 
-/// A handler that is running or paused on `wait`: its own value stack and call frames.
+/// A handler that is running or paused on `wait`. Interpreted, it is a value stack and call
+/// frames; native, the generated chunk's own frame.
 struct CoroutineUVE final {
     std::vector<ValueUVE> stack;
     std::vector<FrameUVE> frames;
     double waitRemaining = 0.0;
+    std::size_t nativeChunk = 0U;
+    Native::FrameUVE nativeFrame;
+    bool nativeRunning = false;
+
+    [[nodiscard]] bool IsRunningUVE() const noexcept { return nativeRunning || !frames.empty(); }
 };
 
-/// Thrown inside Run to stop the current coroutine with a message.
-struct RuntimeErrorUVE final {
-    std::string message;
-};
+using Native::ErrorUVE;
 
-[[nodiscard]] bool IsNumberUVE(const ValueUVE& v) noexcept {
-    return std::holds_alternative<std::int64_t>(v) || std::holds_alternative<double>(v);
+[[nodiscard]] Native::ArithmeticOpUVE ToArithmeticUVE(const OpUVE op) noexcept {
+    switch (op) {
+        case OpUVE::Sub: return Native::ArithmeticOpUVE::Sub;
+        case OpUVE::Mul: return Native::ArithmeticOpUVE::Mul;
+        case OpUVE::Div: return Native::ArithmeticOpUVE::Div;
+        case OpUVE::Mod: return Native::ArithmeticOpUVE::Mod;
+        default: return Native::ArithmeticOpUVE::Add;
+    }
 }
 
-[[nodiscard]] double AsDoubleUVE(const ValueUVE& v) {
-    if (const auto* i = std::get_if<std::int64_t>(&v)) {
-        return static_cast<double>(*i);
+[[nodiscard]] Native::CompareOpUVE ToCompareUVE(const OpUVE op) noexcept {
+    switch (op) {
+        case OpUVE::Le: return Native::CompareOpUVE::Le;
+        case OpUVE::Gt: return Native::CompareOpUVE::Gt;
+        case OpUVE::Ge: return Native::CompareOpUVE::Ge;
+        default: return Native::CompareOpUVE::Lt;
     }
-    if (const auto* d = std::get_if<double>(&v)) {
-        return *d;
-    }
-    throw RuntimeErrorUVE{"expected a number"};
-}
-
-[[nodiscard]] Vec3ValueUVE AsVecUVE(const ValueUVE& v) {
-    if (const auto* vec = std::get_if<Vec3ValueUVE>(&v)) {
-        return *vec;
-    }
-    throw RuntimeErrorUVE{"expected a vec3"};
-}
-
-[[nodiscard]] ValueUVE ArithmeticUVE(const OpUVE op, const ValueUVE& a, const ValueUVE& b) {
-    const auto* ia = std::get_if<std::int64_t>(&a);
-    const auto* ib = std::get_if<std::int64_t>(&b);
-    if (ia != nullptr && ib != nullptr) {
-        switch (op) {
-            case OpUVE::Add: return *ia + *ib;
-            case OpUVE::Sub: return *ia - *ib;
-            case OpUVE::Mul: return *ia * *ib;
-            case OpUVE::Mod:
-                if (*ib == 0) {
-                    throw RuntimeErrorUVE{"'%' by zero"};
-                }
-                return *ia % *ib;
-            case OpUVE::Div:
-                if (*ib == 0) {
-                    throw RuntimeErrorUVE{"division by zero"};
-                }
-                return static_cast<double>(*ia) / static_cast<double>(*ib);
-            default: break;
-        }
-    }
-    if (IsNumberUVE(a) && IsNumberUVE(b)) {
-        const double x = AsDoubleUVE(a);
-        const double y = AsDoubleUVE(b);
-        switch (op) {
-            case OpUVE::Add: return x + y;
-            case OpUVE::Sub: return x - y;
-            case OpUVE::Mul: return x * y;
-            case OpUVE::Div:
-                if (y == 0.0) {
-                    throw RuntimeErrorUVE{"division by zero"};
-                }
-                return x / y;
-            case OpUVE::Mod:
-                if (y == 0.0) {
-                    throw RuntimeErrorUVE{"'%' by zero"};
-                }
-                return std::fmod(x, y);
-            default: break;
-        }
-    }
-    if (const auto* sa = std::get_if<std::string>(&a); sa != nullptr && op == OpUVE::Add) {
-        return *sa + std::get<std::string>(b);
-    }
-    if (std::holds_alternative<Vec3ValueUVE>(a) && std::holds_alternative<Vec3ValueUVE>(b)) {
-        const Vec3ValueUVE u = AsVecUVE(a);
-        const Vec3ValueUVE v = AsVecUVE(b);
-        return op == OpUVE::Add ? Vec3ValueUVE{u.x + v.x, u.y + v.y, u.z + v.z}
-                                : Vec3ValueUVE{u.x - v.x, u.y - v.y, u.z - v.z};
-    }
-    if (std::holds_alternative<Vec3ValueUVE>(a)) {
-        const Vec3ValueUVE u = AsVecUVE(a);
-        const double s = AsDoubleUVE(b);
-        if (op == OpUVE::Div && s == 0.0) {
-            throw RuntimeErrorUVE{"division by zero"};
-        }
-        return op == OpUVE::Mul ? Vec3ValueUVE{u.x * s, u.y * s, u.z * s} : Vec3ValueUVE{u.x / s, u.y / s, u.z / s};
-    }
-    const double s = AsDoubleUVE(a);
-    const Vec3ValueUVE v = AsVecUVE(b);
-    return Vec3ValueUVE{v.x * s, v.y * s, v.z * s};
-}
-
-[[nodiscard]] int CompareUVE(const ValueUVE& a, const ValueUVE& b) {
-    const double x = AsDoubleUVE(a);
-    const double y = AsDoubleUVE(b);
-    return x < y ? -1 : x > y ? 1 : 0;
-}
-
-[[nodiscard]] bool EqualUVE(const ValueUVE& a, const ValueUVE& b) {
-    if (IsNumberUVE(a) && IsNumberUVE(b)) {
-        return AsDoubleUVE(a) == AsDoubleUVE(b);
-    }
-    return a == b;
 }
 
 } // namespace
 
+/// StartChunk's index for the field initializers, which are not one of the program's functions.
+constexpr std::size_t kInitChunkUVE = static_cast<std::size_t>(-1);
+
 struct ScriptInstanceUVE::StateUVE final {
     std::shared_ptr<const ProgramUVE> program;
+    /// The program's native form when one is linked in (and not refused), else null.
+    const Native::ProgramTableUVE* native = nullptr;
     UVScriptHostUVE* host = nullptr;
     std::vector<ValueUVE> fields;
     std::vector<CoroutineUVE> waiting;
@@ -158,7 +89,7 @@ struct ScriptInstanceUVE::StateUVE final {
         try {
             while (!co.frames.empty()) {
                 if (budget-- == 0U) {
-                    throw RuntimeErrorUVE{"this ran too long without stopping - is a loop missing its exit?"};
+                    throw ErrorUVE{"this ran too long without stopping - is a loop missing its exit?"};
                 }
                 FrameUVE& frame = co.frames.back();
                 const InstructionUVE& in = frame.chunk->code[frame.ip++];
@@ -191,23 +122,16 @@ struct ScriptInstanceUVE::StateUVE final {
                     case OpUVE::Mod: {
                         const ValueUVE b = pop();
                         const ValueUVE a = pop();
-                        s.push_back(ArithmeticUVE(in.op, a, b));
+                        s.push_back(Native::ArithmeticUVE(ToArithmeticUVE(in.op), a, b));
                         break;
                     }
-                    case OpUVE::Neg: {
-                        ValueUVE v = pop();
-                        if (auto* i = std::get_if<std::int64_t>(&v)) *i = -*i;
-                        else if (auto* d = std::get_if<double>(&v)) *d = -*d;
-                        else if (auto* vec = std::get_if<Vec3ValueUVE>(&v)) *vec = {-vec->x, -vec->y, -vec->z};
-                        s.push_back(std::move(v));
-                        break;
-                    }
-                    case OpUVE::Not: s.push_back(!std::get<bool>(pop())); break;
+                    case OpUVE::Neg: s.push_back(Native::NegateUVE(pop())); break;
+                    case OpUVE::Not: s.push_back(!Native::AsBoolUVE(pop())); break;
                     case OpUVE::Eq:
                     case OpUVE::Ne: {
                         const ValueUVE b = pop();
                         const ValueUVE a = pop();
-                        s.push_back(EqualUVE(a, b) == (in.op == OpUVE::Eq));
+                        s.push_back(Native::EqualUVE(a, b) == (in.op == OpUVE::Eq));
                         break;
                     }
                     case OpUVE::Lt:
@@ -216,48 +140,37 @@ struct ScriptInstanceUVE::StateUVE final {
                     case OpUVE::Ge: {
                         const ValueUVE b = pop();
                         const ValueUVE a = pop();
-                        const int c = CompareUVE(a, b);
-                        s.push_back(in.op == OpUVE::Lt ? c < 0 : in.op == OpUVE::Le ? c <= 0 : in.op == OpUVE::Gt ? c > 0 : c >= 0);
+                        s.push_back(Native::CompareUVE(ToCompareUVE(in.op), a, b));
                         break;
                     }
-                    case OpUVE::ToFloat: s.push_back(AsDoubleUVE(pop())); break;
-                    case OpUVE::GetComponent: {
-                        const Vec3ValueUVE v = AsVecUVE(pop());
-                        s.push_back(in.a == 0 ? v.x : in.a == 1 ? v.y : v.z);
-                        break;
-                    }
+                    case OpUVE::ToFloat: s.push_back(Native::AsDoubleUVE(pop())); break;
+                    case OpUVE::GetComponent: s.push_back(Native::GetComponentUVE(pop(), in.a)); break;
                     case OpUVE::SetComponent: {
-                        const double value = AsDoubleUVE(pop());
-                        Vec3ValueUVE v = AsVecUVE(pop());
-                        (in.a == 0 ? v.x : in.a == 1 ? v.y : v.z) = value;
-                        s.push_back(v);
+                        const ValueUVE value = pop();
+                        const ValueUVE vector = pop();
+                        s.push_back(Native::SetComponentUVE(vector, in.a, value));
                         break;
                     }
                     case OpUVE::Concat: {
-                        std::string text;
-                        const std::size_t count = static_cast<std::size_t>(in.a);
-                        for (std::size_t i = s.size() - count; i < s.size(); ++i) {
-                            text += FormatValueUVE(s[i]);
-                        }
-                        s.resize(s.size() - count);
+                        ValueUVE text = Native::ConcatUVE(s, static_cast<std::size_t>(in.a));
                         s.push_back(std::move(text));
                         break;
                     }
                     case OpUVE::Jump: frame.ip = static_cast<std::size_t>(in.a); break;
                     case OpUVE::JumpIfFalse:
-                        if (!std::get<bool>(pop())) frame.ip = static_cast<std::size_t>(in.a);
+                        if (!Native::AsBoolUVE(pop())) frame.ip = static_cast<std::size_t>(in.a);
                         break;
                     case OpUVE::JumpIfFalseKeep:
-                        if (!std::get<bool>(s.back())) frame.ip = static_cast<std::size_t>(in.a);
+                        if (!Native::AsBoolUVE(s.back())) frame.ip = static_cast<std::size_t>(in.a);
                         else s.pop_back();
                         break;
                     case OpUVE::JumpIfTrueKeep:
-                        if (std::get<bool>(s.back())) frame.ip = static_cast<std::size_t>(in.a);
+                        if (Native::AsBoolUVE(s.back())) frame.ip = static_cast<std::size_t>(in.a);
                         else s.pop_back();
                         break;
                     case OpUVE::Call: {
                         if (co.frames.size() >= kMaximumCallDepthUVE) {
-                            throw RuntimeErrorUVE{"functions call each other too deeply"};
+                            throw ErrorUVE{"functions call each other too deeply"};
                         }
                         const ChunkUVE& callee = program->functions[static_cast<std::size_t>(in.a)];
                         const std::size_t base = s.size() - static_cast<std::size_t>(in.b);
@@ -269,7 +182,7 @@ struct ScriptInstanceUVE::StateUVE final {
                         const std::size_t argc = static_cast<std::size_t>(in.b);
                         const std::vector<ValueUVE> args(s.end() - static_cast<std::ptrdiff_t>(argc), s.end());
                         s.resize(s.size() - argc);
-                        s.push_back(CallBuiltin(static_cast<BuiltinUVE>(in.a), args));
+                        s.push_back(Native::CallBuiltinUVE(*host, in.a, args));
                         break;
                     }
                     case OpUVE::CallHost: {
@@ -292,11 +205,11 @@ struct ScriptInstanceUVE::StateUVE final {
                         break;
                     }
                     case OpUVE::Wait:
-                        co.waitRemaining = std::max(0.0, AsDoubleUVE(pop()));
+                        co.waitRemaining = std::max(0.0, Native::AsDoubleUVE(pop()));
                         return std::nullopt;
                 }
             }
-        } catch (const RuntimeErrorUVE& error) {
+        } catch (const ErrorUVE& error) {
             lastError = "line " + std::to_string(line) + ": " + error.message;
         } catch (const std::bad_variant_access&) {
             lastError = "line " + std::to_string(line) + ": a value had an unexpected type";
@@ -305,61 +218,58 @@ struct ScriptInstanceUVE::StateUVE final {
         return std::nullopt;
     }
 
-    ValueUVE CallBuiltin(const BuiltinUVE id, const std::vector<ValueUVE>& a) {
-        const bool allInt = std::ranges::all_of(a, [](const ValueUVE& v) { return std::holds_alternative<std::int64_t>(v); });
-        switch (id) {
-            case BuiltinUVE::Print: host->PrintUVE(FormatValueUVE(a[0])); return {};
-            case BuiltinUVE::Str: return FormatValueUVE(a[0]);
-            case BuiltinUVE::Sqrt: {
-                const double x = AsDoubleUVE(a[0]);
-                if (x < 0.0) {
-                    throw RuntimeErrorUVE{"sqrt of a negative number"};
-                }
-                return std::sqrt(x);
-            }
-            case BuiltinUVE::Sin: return std::sin(AsDoubleUVE(a[0]));
-            case BuiltinUVE::Cos: return std::cos(AsDoubleUVE(a[0]));
-            case BuiltinUVE::Floor: return std::floor(AsDoubleUVE(a[0]));
-            case BuiltinUVE::Lerp: return AsDoubleUVE(a[0]) + (AsDoubleUVE(a[1]) - AsDoubleUVE(a[0])) * AsDoubleUVE(a[2]);
-            case BuiltinUVE::Int: return static_cast<std::int64_t>(AsDoubleUVE(a[0]));
-            case BuiltinUVE::Float: return AsDoubleUVE(a[0]);
-            case BuiltinUVE::Abs:
-                if (allInt) return std::abs(std::get<std::int64_t>(a[0]));
-                return std::fabs(AsDoubleUVE(a[0]));
-            case BuiltinUVE::Min:
-                if (allInt) return std::min(std::get<std::int64_t>(a[0]), std::get<std::int64_t>(a[1]));
-                return std::min(AsDoubleUVE(a[0]), AsDoubleUVE(a[1]));
-            case BuiltinUVE::Max:
-                if (allInt) return std::max(std::get<std::int64_t>(a[0]), std::get<std::int64_t>(a[1]));
-                return std::max(AsDoubleUVE(a[0]), AsDoubleUVE(a[1]));
-            case BuiltinUVE::Clamp:
-                if (allInt) {
-                    return std::clamp(std::get<std::int64_t>(a[0]), std::get<std::int64_t>(a[1]),
-                                      std::max(std::get<std::int64_t>(a[1]), std::get<std::int64_t>(a[2])));
-                }
-                return std::clamp(AsDoubleUVE(a[0]), AsDoubleUVE(a[1]), std::max(AsDoubleUVE(a[1]), AsDoubleUVE(a[2])));
-            case BuiltinUVE::Vec3: return Vec3ValueUVE{AsDoubleUVE(a[0]), AsDoubleUVE(a[1]), AsDoubleUVE(a[2])};
-            case BuiltinUVE::Length: {
-                const Vec3ValueUVE v = AsVecUVE(a[0]);
-                return std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
-            }
-            case BuiltinUVE::Normalize: {
-                const Vec3ValueUVE v = AsVecUVE(a[0]);
-                const double length = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
-                return length == 0.0 ? v : Vec3ValueUVE{v.x / length, v.y / length, v.z / length};
-            }
+    /// Starts `chunk` (a program function index, or the init chunk) the way this instance runs.
+    CoroutineUVE StartChunk(const std::size_t index, const std::span<const ValueUVE> args) const {
+        const ChunkUVE& chunk = index == kInitChunkUVE ? program->init : program->functions[index];
+        if (native == nullptr) {
+            return Start(chunk, args);
         }
-        return {};
+        CoroutineUVE co;
+        co.nativeChunk = index == kInitChunkUVE ? native->initIndex : index;
+        co.nativeFrame.locals.assign(args.begin(), args.end());
+        co.nativeFrame.locals.resize(chunk.localCount);
+        co.nativeRunning = true;
+        return co;
+    }
+
+    /// Run, for either form of coroutine.
+    std::optional<ValueUVE> Resume(CoroutineUVE& co) {
+        if (!co.nativeRunning) {
+            return Run(co);
+        }
+        Native::ContextUVE context{fields, *host, kInstructionBudgetUVE, 0U, 0U};
+        try {
+            if (native->chunks[co.nativeChunk](context, co.nativeFrame) == Native::StatusUVE::Waiting) {
+                co.waitRemaining = co.nativeFrame.waitSeconds;
+                return std::nullopt;
+            }
+            co.nativeRunning = false;
+            return std::move(co.nativeFrame.result);
+        } catch (const ErrorUVE& error) {
+            lastError = "line " + std::to_string(context.line) + ": " + error.message;
+        } catch (const std::bad_variant_access&) {
+            lastError = "line " + std::to_string(context.line) + ": a value had an unexpected type";
+        }
+        co.nativeRunning = false;
+        return std::nullopt;
     }
 };
 
-ScriptInstanceUVE::ScriptInstanceUVE(std::shared_ptr<const ProgramUVE> program, UVScriptHostUVE& host)
+ScriptInstanceUVE::ScriptInstanceUVE(std::shared_ptr<const ProgramUVE> program, UVScriptHostUVE& host,
+                                     const ExecutionUVE execution)
     : m_state(std::make_unique<StateUVE>()) {
     m_state->program = std::move(program);
     m_state->host = &host;
+    if (execution == ExecutionUVE::Auto) {
+        m_state->native = Native::FindNativeProgramUVE(m_state->program->fingerprint);
+        // A table from a different build of the same fingerprint would not line up; refuse it.
+        if (m_state->native != nullptr && m_state->native->chunks.size() != m_state->program->functions.size() + 1U) {
+            m_state->native = nullptr;
+        }
+    }
     m_state->fields.resize(m_state->program->fields.size());
-    CoroutineUVE init = m_state->Start(m_state->program->init, {});
-    static_cast<void>(m_state->Run(init));
+    CoroutineUVE init = m_state->StartChunk(kInitChunkUVE, {});
+    static_cast<void>(m_state->Resume(init));
 }
 
 ScriptInstanceUVE::~ScriptInstanceUVE() = default;
@@ -377,9 +287,9 @@ bool ScriptInstanceUVE::RaiseEventUVE(const std::string_view event, const std::s
     }
     const std::string before = m_state->lastError;
     m_state->lastError.clear();
-    CoroutineUVE co = m_state->Start(chunk, args);
-    static_cast<void>(m_state->Run(co));
-    if (!co.frames.empty()) {
+    CoroutineUVE co = m_state->StartChunk(it->second, args);
+    static_cast<void>(m_state->Resume(co));
+    if (co.IsRunningUVE()) {
         m_state->waiting.push_back(std::move(co));
     }
     const bool ok = m_state->lastError.empty();
@@ -400,19 +310,21 @@ void ScriptInstanceUVE::AdvanceUVE(const double seconds) {
             m_state->waiting.push_back(std::move(co));
             continue;
         }
-        static_cast<void>(m_state->Run(co));
-        if (!co.frames.empty()) {
+        static_cast<void>(m_state->Resume(co));
+        if (co.IsRunningUVE()) {
             m_state->waiting.push_back(std::move(co));
         }
     }
 }
 
 std::optional<ValueUVE> ScriptInstanceUVE::CallUVE(const std::string_view name, const std::span<const ValueUVE> args) {
-    for (const ChunkUVE& chunk : m_state->program->functions) {
+    const auto& functions = m_state->program->functions;
+    for (std::size_t index = 0U; index < functions.size(); ++index) {
+        const ChunkUVE& chunk = functions[index];
         if (chunk.name == name && chunk.paramCount == args.size()) {
             m_state->lastError.clear();
-            CoroutineUVE co = m_state->Start(chunk, args);
-            std::optional<ValueUVE> result = m_state->Run(co);
+            CoroutineUVE co = m_state->StartChunk(index, args);
+            std::optional<ValueUVE> result = m_state->Resume(co);
             return m_state->lastError.empty() ? result : std::nullopt;
         }
     }
@@ -442,6 +354,10 @@ bool ScriptInstanceUVE::SetFieldUVE(const std::string_view name, const ValueUVE&
         return true;
     }
     return false;
+}
+
+bool ScriptInstanceUVE::IsNativeUVE() const noexcept {
+    return m_state->native != nullptr;
 }
 
 std::size_t ScriptInstanceUVE::GetWaitingCountUVE() const noexcept {
