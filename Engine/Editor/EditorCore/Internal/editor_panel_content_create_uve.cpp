@@ -216,6 +216,7 @@ bool EditorUVE::DrawContentRenameFieldUVE(const std::filesystem::path& contentRo
             }
             // Shelves, pins and the folder on screen follow the file to its new name.
             m_contentShelves.MovePathUVE(entry.relativePath, relative);
+            static_cast<void>(SaveSharedShelvesUVE());
             for (std::filesystem::path& pinned : m_favoriteProjectPaths) {
                 if (pinned == entry.relativePath) {
                     pinned = relative;
@@ -493,6 +494,7 @@ void EditorUVE::DrawFilesystemContextPopupUVE() {
                 } else if (!m_contentShelves.AddItemUVE(name, contextEntry.relativePath)) {
                     m_contentStatusMessage = "The shelf \"" + name + "\" is full.";
                 }
+                static_cast<void>(SaveSharedShelvesUVE());
                 break;
             }
         }
@@ -510,6 +512,12 @@ void EditorUVE::DrawFilesystemContextPopupUVE() {
             }
         }
         ImGui::EndMenu();
+    }
+    // On an open shelf, taking the file off it is the likely wish; say so directly.
+    if (!m_contentBrowserShelf.empty() && m_contentShelves.ContainsUVE(m_contentBrowserShelf, contextEntry.relativePath) &&
+        ImGui::MenuItem(("Remove from " + m_contentBrowserShelf).c_str())) {
+        static_cast<void>(m_contentShelves.RemoveItemUVE(m_contentBrowserShelf, contextEntry.relativePath));
+        static_cast<void>(SaveSharedShelvesUVE());
     }
     if (ImGui::MenuItem("Show in Folder")) {
         // Useful from a shelf, a pin or a search: go to where it lives and select it there.

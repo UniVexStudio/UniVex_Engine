@@ -321,6 +321,7 @@ void EditorUVE::InitUVE() {
 
     m_state = EditorStateUVE::Running;
     LoadSessionSettingsUVE();
+    LoadSharedShelvesUVE();
     // A document always has exactly one scene root - the structural anchor at the top of the
     // hierarchy. A fresh editor start is an empty document with just the root.
     static_cast<void>(EnsureDocumentSceneRootUVE());
@@ -3602,6 +3603,7 @@ void EditorUVE::ShutdownUVE() {
     if (m_uiInitialized) {
         static_cast<void>(SaveSessionSettingsUVE());
     }
+    static_cast<void>(SaveSharedShelvesUVE());
     // Project settings and the input map changed in this session belong to the project, whatever
     // ran the editor.
     static_cast<void>(SaveProjectSettingsUVE());
@@ -4014,16 +4016,18 @@ void EditorUVE::LoadSessionSettingsUVE() {
             m_favoriteProjectPaths.emplace_back(stored);
         }
     }
-    // Shelves: a name and its items each, bounded like the pins. A shelf whose stored name is
-    // empty or repeated is skipped rather than renamed behind the user's back.
-    m_contentShelves.ClearUVE();
+    // Personal shelves: a name and its items each, bounded like the pins. The team's shelves come
+    // from the project (LoadSharedShelvesUVE) and are left alone here; a personal shelf whose name
+    // a team shelf has is kept under a new name rather than dropped.
+    m_contentShelves.RemoveAllUVE(false);
     const std::int64_t shelfCount =
         std::clamp(config.GetIntUVE("editor.shelves.count", 0), std::int64_t{0},
                    static_cast<std::int64_t>(ContentShelvesUVE::kMaxShelvesUVE));
     for (std::int64_t index = 0; index < shelfCount; ++index) {
         const std::string prefix = "editor.shelves." + std::to_string(index) + ".";
-        const std::string name = config.GetStringUVE(prefix + "name", "");
-        if (name.empty() || m_contentShelves.FindUVE(name) != nullptr || m_contentShelves.CreateUVE(name) != name) {
+        const std::string storedName = config.GetStringUVE(prefix + "name", "");
+        const std::string name = storedName.empty() ? std::string{} : m_contentShelves.CreateUVE(storedName);
+        if (name.empty()) {
             continue;
         }
         const std::int64_t itemCount =
@@ -4096,7 +4100,9 @@ bool EditorUVE::SaveSessionSettingsUVE() {
         config.SetStringUVE("editor.favorites." + std::to_string(index),
                              m_favoriteProjectPaths[index].generic_string());
     }
-    const std::span<const ContentShelfUVE> shelves = m_contentShelves.GetAllUVE();
+    std::vector<ContentShelfUVE> shelves;
+    std::ranges::copy_if(m_contentShelves.GetAllUVE(), std::back_inserter(shelves),
+                         [](const ContentShelfUVE& shelf) { return !shelf.shared; });
     config.SetIntUVE("editor.shelves.count", static_cast<std::int64_t>(shelves.size()));
     for (std::size_t index = 0U; index < shelves.size(); ++index) {
         const std::string prefix = "editor.shelves." + std::to_string(index) + ".";
@@ -4374,6 +4380,58 @@ void EditorUVE::ReconcileContentBrowserDirectoryUVE(const Asset::ProjectFileSnap
 bool EditorUVE::IsProjectPathFavoritedUVE(const std::filesystem::path& relativePath) const {
     return std::find(m_favoriteProjectPaths.begin(), m_favoriteProjectPaths.end(), relativePath) !=
            m_favoriteProjectPaths.end();
+}
+
+std::filesystem::path EditorUVE::GetSharedShelvesPathUVE() const {
+    return m_services->GetProjectSettingsUVE().GetPathUVE().parent_path() / "project.uvshelves";
+}
+
+void EditorUVE::LoadSharedShelvesUVE() {
+    const std::filesystem::path path = GetSharedShelvesPathUVE();
+    std::error_code error;
+    const auto writeTime = std::filesystem::last_write_time(path, error);
+    if (error) {
+        m_contentShelves.RemoveAllUVE(true); // no file: the team has no shelves
+        m_sharedShelvesWriteTime.reset();
+        return;
+    }
+    m_sharedShelvesWriteTime = writeTime;
+    std::ifstream file(path, std::ios::binary);
+    const std::string text{std::istreambuf_iterator<char>{file}, std::istreambuf_iterator<char>{}};
+    std::string problem;
+    if (!ReadSharedShelvesTextUVE(text, m_contentShelves, problem)) {
+        m_contentStatusMessage = "Could not read the team's shelves (" + path.filename().string() + "): " + problem + ".";
+    }
+}
+
+bool EditorUVE::SaveSharedShelvesUVE() {
+    const std::filesystem::path path = GetSharedShelvesPathUVE();
+    std::error_code error;
+    const bool anyShared = std::ranges::any_of(m_contentShelves.GetAllUVE(), &ContentShelfUVE::shared);
+    // A project that never had a team shelf does not get an empty file.
+    if (!anyShared && !std::filesystem::exists(path, error)) {
+        return true;
+    }
+    {
+        std::ofstream file(path, std::ios::binary | std::ios::trunc);
+        file << WriteSharedShelvesTextUVE(m_contentShelves);
+        if (!file) {
+            m_contentStatusMessage = "Could not save the team's shelves to " + path.filename().string() + ".";
+            return false;
+        }
+    }
+    const auto writeTime = std::filesystem::last_write_time(path, error);
+    m_sharedShelvesWriteTime = error ? std::nullopt : std::optional{writeTime};
+    return true;
+}
+
+void EditorUVE::ReloadSharedShelvesIfChangedUVE() {
+    std::error_code error;
+    const auto writeTime = std::filesystem::last_write_time(GetSharedShelvesPathUVE(), error);
+    const std::optional<std::filesystem::file_time_type> now = error ? std::nullopt : std::optional{writeTime};
+    if (now != m_sharedShelvesWriteTime) {
+        LoadSharedShelvesUVE();
+    }
 }
 
 void EditorUVE::ToggleProjectPathFavoriteUVE(const std::filesystem::path& relativePath) {

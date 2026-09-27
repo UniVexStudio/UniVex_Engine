@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -187,6 +188,11 @@ struct EditorUVEAccessUVE final {
         return editor.IsProjectPathFavoritedUVE(relativePath);
     }
     [[nodiscard]] static ContentShelvesUVE& GetContentShelvesUVE(EditorUVE& editor) { return editor.m_contentShelves; }
+    [[nodiscard]] static std::filesystem::path GetSharedShelvesPathUVE(const EditorUVE& editor) {
+        return editor.GetSharedShelvesPathUVE();
+    }
+    static bool SaveSharedShelvesUVE(EditorUVE& editor) { return editor.SaveSharedShelvesUVE(); }
+    static void ReloadSharedShelvesIfChangedUVE(EditorUVE& editor) { editor.ReloadSharedShelvesIfChangedUVE(); }
     [[nodiscard]] static const std::string& GetContentStatusMessageUVE(const EditorUVE& editor) {
         return editor.m_contentStatusMessage;
     }
@@ -1751,6 +1757,59 @@ TEST(EditorUVETest, ContentShelvesPersistAcrossSessionReload) {
         editor.ShutdownUVE();
     }
     engine.Shutdown();
+    std::filesystem::remove(config.settingsFilePath);
+}
+
+TEST(EditorUVETest, TeamShelvesLiveInTheProjectAndFollowChangesOnDisk) {
+    const Core::EngineConfigUVE config = MakeEditorTestConfigUVE();
+    std::filesystem::remove(config.settingsFilePath);
+    Core::EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    std::filesystem::path shelvesPath;
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_team_shelves.uvscene");
+        editor.InitUVE();
+        shelvesPath = EditorUVEAccessUVE::GetSharedShelvesPathUVE(editor);
+        std::filesystem::remove(shelvesPath);
+        EXPECT_EQ(shelvesPath.filename(), "project.uvshelves");
+        ContentShelvesUVE& shelves = EditorUVEAccessUVE::GetContentShelvesUVE(editor);
+        // No team shelf: no file is made.
+        ASSERT_EQ(shelves.CreateUVE("Mine"), "Mine");
+        ASSERT_TRUE(EditorUVEAccessUVE::SaveSharedShelvesUVE(editor));
+        EXPECT_FALSE(std::filesystem::exists(shelvesPath));
+
+        ASSERT_EQ(shelves.CreateUVE("Props", true), "Props");
+        ASSERT_TRUE(shelves.AddItemUVE("Props", "Sea/rock.uvmodel"));
+        ASSERT_TRUE(EditorUVEAccessUVE::SaveSharedShelvesUVE(editor));
+        ASSERT_TRUE(std::filesystem::exists(shelvesPath));
+        ASSERT_TRUE(EditorUVEAccessUVE::SaveSessionSettingsUVE(editor));
+
+        // A teammate's change arrives on disk (a pull): the editor picks it up.
+        {
+            std::ofstream file(shelvesPath, std::ios::trunc);
+            file << R"({"version":1,"shelves":[{"name":"Props","items":["Sea/rock.uvmodel","Sea/Wave.uvtex"]}]})";
+        }
+        std::filesystem::last_write_time(shelvesPath,
+                                         std::filesystem::last_write_time(shelvesPath) + std::chrono::seconds{2});
+        EditorUVEAccessUVE::ReloadSharedShelvesIfChangedUVE(editor);
+        EXPECT_TRUE(shelves.ContainsUVE("Props", "Sea/Wave.uvtex"));
+        EXPECT_NE(shelves.FindUVE("Mine"), nullptr) << "a reload leaves personal shelves alone";
+        editor.ShutdownUVE();
+    }
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_team_shelves_reload.uvscene");
+        editor.InitUVE();
+        const ContentShelvesUVE& shelves = EditorUVEAccessUVE::GetContentShelvesUVE(editor);
+        ASSERT_NE(shelves.FindUVE("Props"), nullptr);
+        EXPECT_TRUE(shelves.FindUVE("Props")->shared);
+        EXPECT_EQ(shelves.FindUVE("Props")->items.size(), 2U);
+        ASSERT_NE(shelves.FindUVE("Mine"), nullptr);
+        EXPECT_FALSE(shelves.FindUVE("Mine")->shared);
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+    std::filesystem::remove(shelvesPath);
     std::filesystem::remove(config.settingsFilePath);
 }
 

@@ -244,6 +244,11 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
     }
     // Wherever the location was changed from (tree, path, a menu, the bridge), it is a step back.
     m_contentHistory.GoUVE(ContentLocationUVE{m_contentBrowserDirectory, m_contentBrowserShelf});
+    // The team's shelves may change on disk (a pull, a teammate); look about once a second.
+    if (ImGui::GetTime() - m_sharedShelvesCheckedAt >= 1.0) {
+        m_sharedShelvesCheckedAt = ImGui::GetTime();
+        ReloadSharedShelvesIfChangedUVE();
+    }
 
     if (m_selectedProjectFile.has_value()) {
         const auto selectedIt = std::find_if(
@@ -304,6 +309,51 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
         m_filesystemContextEntry = entry;
         m_filesystemContextVisible = true;
     };
+    // Anything in Content drags onto a shelf. Entity assets keep the payload the Scene panel and
+    // the viewport place from; everything else carries its content-relative path.
+    const auto dragContentItem = [&snapshot](const Asset::ProjectFileEntryUVE& entry, const bool entityAsset) {
+        if (!ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID)) {
+            return;
+        }
+        const std::string name = entry.relativePath.filename().generic_string();
+        if (entityAsset) {
+            const std::string absolutePath = (snapshot.contentRoot / entry.relativePath).string();
+            ImGui::SetDragDropPayload(kContentEntityPayloadUVE, absolutePath.c_str(), absolutePath.size() + 1U);
+            ImGui::Text("Place %s", name.c_str());
+        } else {
+            const std::string relativePath = entry.relativePath.generic_string();
+            ImGui::SetDragDropPayload(kContentItemPayloadUVE, relativePath.c_str(), relativePath.size() + 1U);
+            ImGui::Text("%s", name.c_str());
+        }
+        ImGui::TextDisabled("Drop on a shelf to keep it there");
+        ImGui::EndDragDropSource();
+    };
+    // A drop target over the last item: puts what is dropped on `shelfName`.
+    const auto acceptShelfDrop = [this, &snapshot](const std::string& shelfName) {
+        if (!ImGui::BeginDragDropTarget()) {
+            return;
+        }
+        std::filesystem::path dropped;
+        if (const ImGuiPayload* const item = ImGui::AcceptDragDropPayload(kContentItemPayloadUVE)) {
+            dropped = std::filesystem::path{std::string{static_cast<const char*>(item->Data)}};
+        } else if (const ImGuiPayload* const entity = ImGui::AcceptDragDropPayload(kContentEntityPayloadUVE)) {
+            const std::filesystem::path absolute{std::string{static_cast<const char*>(entity->Data)}};
+            dropped = absolute.lexically_relative(snapshot.contentRoot);
+            if (dropped.empty() || *dropped.begin() == "..") {
+                dropped.clear(); // not from this project's content
+            }
+        }
+        if (!dropped.empty()) {
+            if (m_contentShelves.ContainsUVE(shelfName, dropped)) {
+                m_contentStatusMessage = dropped.filename().string() + " is already on " + shelfName + ".";
+            } else if (m_contentShelves.AddItemUVE(shelfName, dropped)) {
+                static_cast<void>(SaveSharedShelvesUVE());
+            } else {
+                m_contentStatusMessage = "The shelf \"" + shelfName + "\" is full.";
+            }
+        }
+        ImGui::EndDragDropTarget();
+    };
     const auto trackLongPress = [this, &openContext](const Asset::ProjectFileEntryUVE& entry, const bool hovered) {
         if (!hovered || !ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
             if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
@@ -336,7 +386,7 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
             directoryChildren[entry.relativePath.parent_path().generic_string()].push_back(&entry);
         }
     }
-    const ContentShelfUVE* const shownShelf =
+    const ContentShelfUVE* shownShelf =
         m_contentBrowserShelf.empty() ? nullptr : m_contentShelves.FindUVE(m_contentBrowserShelf);
 
     // ---- toolbar: create / import / save | back forward | path ............ settings ----
@@ -560,6 +610,7 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
                     drawRowIcon(rowX, folder ? folderIcon(false)
                                              : m_uiAssets.GetContentTypeIconTextureIdUVE(GetContentBrowserItemTypeLabelUVE(
                                                    ClassifyContentBrowserEntryUVE(*entry))));
+                    dragContentItem(*entry, false);
                     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
                         ImGui::SetTooltip("%s", entry->relativePath.generic_string().c_str());
                     }
@@ -656,6 +707,7 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
                             const bool open = ImGui::TreeNodeEx(
                                 (iconGap + dirEntry->relativePath.filename().generic_string()).c_str(), treeFlags);
                             drawRowIcon(rowX + ImGui::GetTreeNodeToLabelSpacing(), folderIcon(open && hasSubdirectories));
+                            dragContentItem(*dirEntry, false);
                             if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
                                 goToFolder(dirEntry->relativePath);
                             }
@@ -688,81 +740,133 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
         ImGui::EndChild();
 
         // Shelves: hand-picked groups of files from anywhere, shown together in the items area.
+        // The team's come first and are saved in the project; the rest are this person's.
         const float addButtonWidth = ImGui::GetFrameHeight();
         const bool shelvesSectionOpen = SidebarSectionUVE("##section-shelves", nullptr, "Shelves", shelves.size(), addButtonWidth);
         ImGui::SameLine(0.0F, 0.0F);
         if (GlyphButtonUVE("##shelf-add", GlyphUVE::Plus, shelves.size() < ContentShelvesUVE::kMaxShelvesUVE,
                            "New shelf")) {
-            const std::string name = m_contentShelves.CreateUVE("Shelf");
-            m_contentShelfRenaming = name;
-            m_contentShelfRenameText = name;
+            ImGui::OpenPopup("##shelf-new");
+        }
+        if (ImGui::BeginPopup("##shelf-new")) {
+            const auto create = [this](const bool shared) {
+                const std::string name = m_contentShelves.CreateUVE(shared ? "Team Shelf" : "Shelf", shared);
+                m_contentShelfRenaming = name;
+                m_contentShelfRenameText = name;
+                static_cast<void>(SaveSharedShelvesUVE());
+            };
+            if (ImGui::MenuItem("Personal Shelf")) {
+                create(false);
+            }
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+                ImGui::SetTooltip("Only you see it; kept with your editor session.");
+            }
+            if (ImGui::MenuItem("Team Shelf")) {
+                create(true);
+            }
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+                ImGui::SetTooltip("Saved in the project (project.uvshelves), so everyone who has the project sees it.");
+            }
+            ImGui::EndPopup();
         }
         if (shelvesSectionOpen) {
             ImGui::BeginChild("##content-shelves", ImVec2{0.0F, 0.0F}, false);
             if (m_contentShelves.GetAllUVE().empty()) {
                 ImGui::Indent(8.0F);
-                ImGui::TextDisabled("+ starts one; right-click a file > Shelves");
+                ImGui::TextDisabled("+ starts one; drag files onto it");
                 ImGui::Unindent(8.0F);
             }
             std::string removeShelf;
-            for (const ContentShelfUVE& shelf : m_contentShelves.GetAllUVE()) {
-                ImGui::PushID(shelf.name.c_str());
-                if (m_contentShelfRenaming == shelf.name) {
-                    std::array<char, 96> nameBuffer{};
-                    m_contentShelfRenameText.copy(nameBuffer.data(),
-                                                  std::min(m_contentShelfRenameText.size(), nameBuffer.size() - 1U));
-                    ImGui::SetNextItemWidth(-1.0F);
-                    if (!ImGui::IsAnyItemActive()) {
-                        ImGui::SetKeyboardFocusHere();
+            std::string toggleShared;
+            bool listChanged = false;
+            const std::uintptr_t teamIcon = m_uiAssets.GetNodeCategoryIconTextureIdUVE("world");
+            const std::uintptr_t personalIcon = m_uiAssets.GetContentTypeIconTextureIdUVE("Bundle");
+            for (const bool teamPass : {true, false}) {
+                for (const ContentShelfUVE& shelf : m_contentShelves.GetAllUVE()) {
+                    if (listChanged) {
+                        break;
                     }
-                    const bool entered = ImGui::InputText("##shelf-name", nameBuffer.data(), nameBuffer.size(),
-                                                          ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll);
-                    m_contentShelfRenameText = nameBuffer.data();
-                    if (entered || ImGui::IsItemDeactivated()) {
-                        const std::string from = m_contentShelfRenaming;
-                        m_contentShelfRenaming.clear();
-                        if (!ImGui::IsKeyPressed(ImGuiKey_Escape) && m_contentShelfRenameText != from) {
-                            if (m_contentShelves.RenameUVE(from, m_contentShelfRenameText)) {
-                                if (m_contentBrowserShelf == from) {
-                                    m_contentBrowserShelf = m_contentShelfRenameText;
+                    if (shelf.shared != teamPass) {
+                        continue;
+                    }
+                    ImGui::PushID(shelf.name.c_str());
+                    if (m_contentShelfRenaming == shelf.name) {
+                        std::array<char, 96> nameBuffer{};
+                        m_contentShelfRenameText.copy(nameBuffer.data(),
+                                                      std::min(m_contentShelfRenameText.size(), nameBuffer.size() - 1U));
+                        ImGui::SetNextItemWidth(-1.0F);
+                        if (!ImGui::IsAnyItemActive()) {
+                            ImGui::SetKeyboardFocusHere();
+                        }
+                        const bool entered = ImGui::InputText("##shelf-name", nameBuffer.data(), nameBuffer.size(),
+                                                              ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll);
+                        m_contentShelfRenameText = nameBuffer.data();
+                        if (entered || ImGui::IsItemDeactivated()) {
+                            const std::string from = m_contentShelfRenaming;
+                            m_contentShelfRenaming.clear();
+                            if (!ImGui::IsKeyPressed(ImGuiKey_Escape) && m_contentShelfRenameText != from) {
+                                if (m_contentShelves.RenameUVE(from, m_contentShelfRenameText)) {
+                                    if (m_contentBrowserShelf == from) {
+                                        m_contentBrowserShelf = m_contentShelfRenameText;
+                                    }
+                                    static_cast<void>(SaveSharedShelvesUVE());
+                                } else {
+                                    m_contentStatusMessage = "A shelf needs a name no other shelf has.";
                                 }
-                            } else {
-                                m_contentStatusMessage = "A shelf needs a name no other shelf has.";
                             }
+                            listChanged = true; // the shelf list may have changed under this loop
                         }
-                        ImGui::PopID();
-                        break; // the shelf list may have changed under this loop
+                    } else {
+                        const float rowX = ImGui::GetCursorScreenPos().x;
+                        const bool selected = shownShelf != nullptr && shownShelf->name == shelf.name;
+                        if (ImGui::Selectable((iconGap + shelf.name).c_str(), selected)) {
+                            goToShelf(shelf.name);
+                        }
+                        drawRowIcon(rowX, shelf.shared && teamIcon != 0U ? teamIcon : personalIcon);
+                        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort) && ImGui::GetDragDropPayload() == nullptr) {
+                            ImGui::SetTooltip(shelf.shared ? "Team shelf, saved in the project (project.uvshelves)"
+                                                           : "Your shelf; only you see it");
+                        }
+                        const std::string shelfName = shelf.name;
+                        acceptShelfDrop(shelfName);
+                        const std::string count = std::to_string(shelf.items.size());
+                        const ImVec2 rowMax = ImGui::GetItemRectMax();
+                        ImGui::GetWindowDrawList()->AddText(
+                            ImVec2{rowMax.x - ImGui::CalcTextSize(count.c_str()).x - 6.0F, ImGui::GetItemRectMin().y},
+                            ImGui::GetColorU32(ImGuiCol_TextDisabled), count.c_str());
+                        if (ImGui::BeginPopupContextItem("##shelf-menu")) {
+                            if (ImGui::MenuItem("Rename")) {
+                                m_contentShelfRenaming = shelfName;
+                                m_contentShelfRenameText = shelfName;
+                            }
+                            if (ImGui::MenuItem(shelf.shared ? "Keep to Myself" : "Share with Team")) {
+                                toggleShared = shelfName;
+                            }
+                            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+                                ImGui::SetTooltip(shelf.shared ? "Moves it out of the project into your own session."
+                                                               : "Saves it in the project (project.uvshelves) for everyone.");
+                            }
+                            if (ImGui::MenuItem("Remove Shelf")) {
+                                removeShelf = shelfName;
+                            }
+                            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+                                ImGui::SetTooltip("Only the shelf goes; the files on it stay where they are.");
+                            }
+                            ImGui::EndPopup();
+                        }
                     }
-                } else {
-                    const float rowX = ImGui::GetCursorScreenPos().x;
-                    const bool selected = shownShelf != nullptr && shownShelf->name == shelf.name;
-                    if (ImGui::Selectable((iconGap + shelf.name).c_str(), selected)) {
-                        goToShelf(shelf.name);
-                    }
-                    drawRowIcon(rowX, m_uiAssets.GetContentTypeIconTextureIdUVE("Bundle"));
-                    const std::string count = std::to_string(shelf.items.size());
-                    const ImVec2 rowMax = ImGui::GetItemRectMax();
-                    ImGui::GetWindowDrawList()->AddText(
-                        ImVec2{rowMax.x - ImGui::CalcTextSize(count.c_str()).x - 6.0F, ImGui::GetItemRectMin().y},
-                        ImGui::GetColorU32(ImGuiCol_TextDisabled), count.c_str());
-                    if (ImGui::BeginPopupContextItem("##shelf-menu")) {
-                        if (ImGui::MenuItem("Rename")) {
-                            m_contentShelfRenaming = shelf.name;
-                            m_contentShelfRenameText = shelf.name;
-                        }
-                        if (ImGui::MenuItem("Remove Shelf")) {
-                            removeShelf = shelf.name;
-                        }
-                        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
-                            ImGui::SetTooltip("Only the shelf goes; the files on it stay where they are.");
-                        }
-                        ImGui::EndPopup();
-                    }
+                    ImGui::PopID();
                 }
-                ImGui::PopID();
+            }
+            if (!toggleShared.empty()) {
+                const ContentShelfUVE* const shelf = m_contentShelves.FindUVE(toggleShared);
+                if (shelf != nullptr && m_contentShelves.SetSharedUVE(toggleShared, !shelf->shared)) {
+                    static_cast<void>(SaveSharedShelvesUVE());
+                }
             }
             if (!removeShelf.empty()) {
                 static_cast<void>(m_contentShelves.RemoveUVE(removeShelf));
+                static_cast<void>(SaveSharedShelvesUVE());
                 if (m_contentBrowserShelf == removeShelf) {
                     m_contentBrowserShelf.clear();
                 }
@@ -793,6 +897,9 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
     }
 
     // ---- items: filter and search, the grid or list, and a status line ----
+    // The sidebar may have added, renamed or removed shelves this frame, which moves them in
+    // memory; look the shown one up again.
+    shownShelf = m_contentBrowserShelf.empty() ? nullptr : m_contentShelves.FindUVE(m_contentBrowserShelf);
     const std::filesystem::path itemsDirectory = shownShelf != nullptr ? std::filesystem::path{} : m_contentBrowserDirectory;
     ImGui::BeginChild("##content-items", ImVec2{0.0F, bodyHeight}, false);
     {
@@ -882,14 +989,9 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
                 const bool clicked = ImGui::Selectable("##card", selected, ImGuiSelectableFlags_AllowDoubleClick,
                                                        ImVec2{cardWidth - kCardPaddingUVE, cardHeight - kCardPaddingUVE});
                 const bool rowHovered = ImGui::IsItemHovered();
-                // An entity asset drags into the Scene panel or the viewport to be placed there.
-                if ((type == ContentBrowserItemTypeUVE::Entity || type == ContentBrowserItemTypeUVE::Prefab) &&
-                    ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID)) {
-                    const std::string absolutePath = (snapshot.contentRoot / entry.relativePath).string();
-                    ImGui::SetDragDropPayload(kContentEntityPayloadUVE, absolutePath.c_str(), absolutePath.size() + 1U);
-                    ImGui::Text("Place %s", displayLabel.c_str());
-                    ImGui::EndDragDropSource();
-                }
+                // An entity asset drags into the Scene panel or the viewport to be placed there; any
+                // item drags onto a shelf.
+                dragContentItem(entry, type == ContentBrowserItemTypeUVE::Entity || type == ContentBrowserItemTypeUVE::Prefab);
                 if (rowHovered && !ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
                     // A search or a shelf mixes folders, so the tooltip says where the file lives.
                     const std::string where = entry.relativePath.parent_path().generic_string();
@@ -989,6 +1091,10 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
         }
         ImGui::EndChild();
         ImGui::PopStyleColor();
+        // With a shelf open, dropping anywhere on its items puts the file on it.
+        if (shownShelf != nullptr) {
+            acceptShelfDrop(shownShelf->name);
+        }
 
         // Status line: how many items, how many selected, and where a search looks.
         std::string status = std::to_string(items.size()) + (items.size() == 1U ? " item" : " items");

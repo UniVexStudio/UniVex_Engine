@@ -48,6 +48,9 @@ struct EditorChromeLayoutUVE final {
 constexpr const char* kHierarchyEntityPayloadUVE = "UVE_SCENE_HIERARCHY_ENTITY";
 /// An entity asset dragged out of Content: the payload is its absolute path, NUL-terminated.
 constexpr const char* kContentEntityPayloadUVE = "UVE_CONTENT_ENTITY_ASSET";
+/// Any other file or folder dragged out of Content (onto a shelf): its content-relative path,
+/// NUL-terminated.
+constexpr const char* kContentItemPayloadUVE = "UVE_CONTENT_ITEM";
 constexpr const char* kPanelLabelSceneUVE = "\xEF\xAB\xBA Scene##scene-panel";
 constexpr std::size_t kMaximumEntityNameBytesUVE = 96U;
 // A node icon is 16 px: its texture is 64 px, so 16 is an exact mip level and draws crisp.

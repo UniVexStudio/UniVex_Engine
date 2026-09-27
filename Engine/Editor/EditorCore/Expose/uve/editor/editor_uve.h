@@ -1594,6 +1594,14 @@ private:
     void ReconcileContentBrowserDirectoryUVE(const Asset::ProjectFileSnapshotUVE& snapshot) noexcept;
     [[nodiscard]] bool IsProjectPathFavoritedUVE(const std::filesystem::path& relativePath) const;
     void ToggleProjectPathFavoriteUVE(const std::filesystem::path& relativePath);
+    /// The team's shelves live beside project.uvsettings, in project.uvshelves.
+    [[nodiscard]] std::filesystem::path GetSharedShelvesPathUVE() const;
+    /// Replaces the shared shelves with the file's; no file means none. Personal shelves stay.
+    void LoadSharedShelvesUVE();
+    /// Writes the shared shelves; true when written or when there was nothing to write.
+    bool SaveSharedShelvesUVE();
+    /// Loads the file again when it changed on disk since it was last read or written.
+    void ReloadSharedShelvesIfChangedUVE();
     /// Returns a GL texture id showing relativePath's own decoded image content, loading and
     /// uploading it on first request and caching the result thereafter. Returns 0 if the file
     /// cannot be loaded as a texture asset (not a texture, corrupt, or an unsupported pixel
@@ -1735,6 +1743,10 @@ private:
     std::string m_contentBrowserShelf;
     /// The user's shelves; saved with the session like the pinned paths.
     ContentShelvesUVE m_contentShelves;
+    /// project.uvshelves' write time as last read or written, to notice a change made outside
+    /// (a pull, a teammate's editor), and when the panel last looked.
+    std::optional<std::filesystem::file_time_type> m_sharedShelvesWriteTime;
+    double m_sharedShelvesCheckedAt = 0.0;
     /// Back/forward; follows m_contentBrowserDirectory/m_contentBrowserShelf each frame, so a
     /// change made anywhere (tree, breadcrumb, bridge) is a step Back can undo.
     ContentNavigationHistoryUVE m_contentHistory;
