@@ -37,7 +37,7 @@ AnimationClipAssetUVE MakeValidClipUVE() {
 } // namespace
 
 TEST(AnimationClipAssetUVETest, SaveThenLoad_RoundTripsBoundedPoseSamplesAndEvents) {
-    const std::filesystem::path path = TestPathUVE("uve_animation_clip_asset_round_trip.uveanim");
+    const std::filesystem::path path = TestPathUVE("uve_animation_clip_asset_round_trip.uvanim");
     std::filesystem::remove(path);
     const AnimationClipAssetUVE original = MakeValidClipUVE();
     ASSERT_TRUE(SaveAnimationClipAssetUVE(original, path));
@@ -55,7 +55,7 @@ TEST(AnimationClipAssetUVETest, SaveThenLoad_RoundTripsBoundedPoseSamplesAndEven
 }
 
 TEST(AnimationClipAssetUVETest, SaveRejectsInvalidClipWithoutPublishingDestination) {
-    const std::filesystem::path path = TestPathUVE("uve_animation_clip_asset_invalid.uveanim");
+    const std::filesystem::path path = TestPathUVE("uve_animation_clip_asset_invalid.uvanim");
     std::filesystem::remove(path);
     AnimationClipAssetUVE invalid = MakeValidClipUVE();
     invalid.samples[1].timeSeconds = 1.25;
@@ -64,7 +64,7 @@ TEST(AnimationClipAssetUVETest, SaveRejectsInvalidClipWithoutPublishingDestinati
 }
 
 TEST(AnimationClipAssetUVETest, LoadWrongEnvelopeKindPreservesExistingOutput) {
-    const std::filesystem::path path = TestPathUVE("uve_animation_clip_asset_wrong_kind.uveanim");
+    const std::filesystem::path path = TestPathUVE("uve_animation_clip_asset_wrong_kind.uvanim");
     std::filesystem::remove(path);
     const std::vector<std::byte> payload{std::byte{'{'}, std::byte{'}'}};
     ASSERT_TRUE(WriteUveFileUVE(path, AssetKindUVE::Mesh, payload));

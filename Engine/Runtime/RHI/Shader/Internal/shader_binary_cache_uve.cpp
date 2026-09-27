@@ -41,7 +41,7 @@ template <typename TValue>
 std::filesystem::path GetCacheFilePathUVE(const std::filesystem::path& cachePath, std::uint64_t contentHash) {
     std::array<char, 17> hexDigits{};
     std::snprintf(hexDigits.data(), hexDigits.size(), "%016llx", static_cast<unsigned long long>(contentHash));
-    return cachePath / kPlatformDirectoryUVE / (std::string(hexDigits.data()) + ".uveshadercache");
+    return cachePath / kPlatformDirectoryUVE / (std::string(hexDigits.data()) + ".uvshadercache");
 }
 
 std::optional<CacheEntryUVE> ReadCacheEntryUVE(const std::filesystem::path& filePath) {

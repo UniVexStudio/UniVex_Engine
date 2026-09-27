@@ -85,8 +85,8 @@ constexpr std::string_view kShaderTemporarySuffixUVE = ".uve_shader_tmp";
 [[nodiscard]] bool ImportShaderSourceUVE(const std::filesystem::path& sourcePath,
                                          const std::filesystem::path& destinationPath,
                                          const AssetImportSettingsUVE& /*settings*/) {
-    if (NormalizeShaderExtensionUVE(destinationPath.extension().string()) != "uveshader") {
-        UVE_ERROR("ShaderSourceImporterUVE: destination \"{}\" must use the .uveshader extension",
+    if (NormalizeShaderExtensionUVE(destinationPath.extension().string()) != "uvshader") {
+        UVE_ERROR("ShaderSourceImporterUVE: destination \"{}\" must use the .uvshader extension",
                   destinationPath.string());
         return false;
     }

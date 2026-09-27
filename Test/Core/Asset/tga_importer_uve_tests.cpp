@@ -42,7 +42,7 @@ void WriteBytesUVE(const std::filesystem::path& path, const std::vector<std::byt
 
 TEST(TgaImporterUVETest, ImportUVE_DecodesTgaToTextureEnvelopeAndRegistersGuid) {
     const std::filesystem::path sourcePath = "uve_tga_importer_source.tga";
-    const std::filesystem::path destinationPath = "uve_tga_importer_destination.uvetex";
+    const std::filesystem::path destinationPath = "uve_tga_importer_destination.uvtex";
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
     WriteBytesUVE(sourcePath, MakeTga24OneByOneUVE());
@@ -66,7 +66,7 @@ TEST(TgaImporterUVETest, ImportUVE_DecodesTgaToTextureEnvelopeAndRegistersGuid) 
 
 TEST(TgaImporterUVETest, ImportUVE_InvalidTgaPreservesExistingDestination) {
     const std::filesystem::path sourcePath = "uve_tga_importer_invalid_source.tga";
-    const std::filesystem::path destinationPath = "uve_tga_importer_existing_destination.uvetex";
+    const std::filesystem::path destinationPath = "uve_tga_importer_existing_destination.uvtex";
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
     WriteBytesUVE(sourcePath, {std::byte{0x01}, std::byte{0x02}, std::byte{0x03}});
@@ -90,7 +90,7 @@ TEST(TgaImporterUVETest, ImportUVE_InvalidTgaPreservesExistingDestination) {
 
 TEST(TgaImporterUVETest, ImportUVE_WrongDestinationExtensionFailsBeforePublish) {
     const std::filesystem::path sourcePath = "uve_tga_importer_wrong_destination.tga";
-    const std::filesystem::path destinationPath = "uve_tga_importer_wrong_destination.uvemodel";
+    const std::filesystem::path destinationPath = "uve_tga_importer_wrong_destination.uvmodel";
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
     WriteBytesUVE(sourcePath, MakeTga24OneByOneUVE());

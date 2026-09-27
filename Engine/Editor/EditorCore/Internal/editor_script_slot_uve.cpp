@@ -34,7 +34,7 @@ namespace UVE::Editor {
 namespace {
 
 constexpr std::string_view kScriptFolderUVE = "scripts";
-constexpr std::string_view kScriptExtensionUVE = ".uvescript";
+constexpr std::string_view kScriptExtensionUVE = ".uvscript";
 
 /// A file stem from a node name: letters, digits, '-' and '_' kept, anything else an underscore,
 /// runs of underscores collapsed. "Main Menu (old)" becomes "Main_Menu_old".
@@ -93,7 +93,7 @@ void DrawLanguageBadgeUVE(ImDrawList& drawList, const ImVec2 position, const flo
 
 std::string EditorUVE::DescribeScriptAssetProblemUVE(const std::string& path) const {
     if (path.empty()) {
-        return "Enter the path of a script, such as scripts/player.uvescript.";
+        return "Enter the path of a script, such as scripts/player.uvscript.";
     }
     if (!Scene::IsScriptAssetPathValidUVE(path)) {
         return "Use a project-relative path: no drive, no leading '/', no '..'.";
@@ -368,7 +368,7 @@ void EditorUVE::DrawScriptSlotPropertyUVE(const Core::TypeMetadataEntryUVE& entr
         std::array<char, Scene::kMaximumScriptAssetPathBytesUVE + 1U> buffer{};
         m_scriptLoadPath.copy(buffer.data(), buffer.size() - 1U);
         ImGui::SetNextItemWidth(400.0F);
-        const bool submitted = ImGui::InputTextWithHint("##path", "scripts/player.uvescript", buffer.data(),
+        const bool submitted = ImGui::InputTextWithHint("##path", "scripts/player.uvscript", buffer.data(),
                                                         buffer.size(), ImGuiInputTextFlags_EnterReturnsTrue);
         m_scriptLoadPath = buffer.data();
         if (m_scriptLoadCheckedPath != m_scriptLoadPath) {

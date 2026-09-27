@@ -23,7 +23,7 @@ enum class AudioAttenuationCurveUVE : std::uint8_t { Linear, InverseSquare };
 
 /// One of the master spec's named built-in components (Part 7.3), extended in Part 7.6's
 /// AudioSystemUVE (Increment 18) exactly as this component's own original doc comment predicted.
-/// `audioAssetPath` remains a path-based identity only. The typed `.uveaudio` AudioAssetUVE envelope
+/// `audioAssetPath` remains a path-based identity only. The typed `.uvaudio` AudioAssetUVE envelope
 /// and bounded caller-owned stream/effect preparation now exist, but this authored component still
 /// owns no decoded samples, stream cursor, effect queue, device voice, or backend state. No runtime
 /// "isPlaying" field is stored here — AudioSourceSystemUVE tracks the live entity->voice mapping

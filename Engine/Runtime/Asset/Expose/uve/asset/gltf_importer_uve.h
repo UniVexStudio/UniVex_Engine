@@ -9,7 +9,7 @@ namespace UVE::Asset {
 
 /// Registers the bounded raw glTF/GLB source importer. It supports one mesh with one TRIANGLES
 /// primitive, one buffer, POSITION plus optional NORMAL/TEXCOORD_0 and indices, safe relative or
-/// data-URI buffer bytes, and persists one validated MeshAssetUVE as a .uvemodel destination. It
+/// data-URI buffer bytes, and persists one validated MeshAssetUVE as a .uvmodel destination. It
 /// leaves AssetImporterUVE responsible for database registration and owns no scene assembly, materials,
 /// images, skins, LODs, VFS mounts, GPU resources, or background work.
 void RegisterGltfImporterUVE(IAssetImporterUVE& importer);

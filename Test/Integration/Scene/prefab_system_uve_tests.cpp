@@ -468,7 +468,7 @@ TEST_F(PrefabSystemUVETest, SaveThenInstantiate_ProducesEntityWithSameComponentV
     const EntityUVE source = entityManager.CreateEntityUVE();
     entityManager.AddComponentUVE<MeshComponentUVE>(source, MeshComponentUVE{Asset::AssetGuidUVE{11}, Asset::AssetGuidUVE{12}});
 
-    const std::filesystem::path prefabPath = "uve_prefab_tests_oak.uveprefab";
+    const std::filesystem::path prefabPath = "uve_prefab_tests_oak.uvprefab";
     std::filesystem::remove(prefabPath);
     const Asset::AssetGuidUVE guid = prefabSystem.SavePrefabUVE(entityManager, assetDatabase, source, prefabPath);
     ASSERT_NE(guid, Asset::kInvalidAssetGuidUVE);
@@ -492,7 +492,7 @@ TEST_F(PrefabSystemUVETest, SaveThenInstantiate_ProducesEntityWithSameComponentV
 TEST_F(PrefabSystemUVETest, InstantiateWithRevisionUVE_StampsRevisionAndRejectsZero) {
     const EntityUVE source = entityManager.CreateEntityUVE();
     entityManager.AddComponentUVE<MeshComponentUVE>(source, MeshComponentUVE{Asset::AssetGuidUVE{13}, Asset::AssetGuidUVE{14}});
-    const std::filesystem::path prefabPath = "uve_prefab_tests_revision.uveprefab";
+    const std::filesystem::path prefabPath = "uve_prefab_tests_revision.uvprefab";
     std::filesystem::remove(prefabPath);
     const Asset::AssetGuidUVE guid = prefabSystem.SavePrefabUVE(entityManager, assetDatabase, source, prefabPath);
     ASSERT_NE(guid, Asset::kInvalidAssetGuidUVE);
@@ -517,7 +517,7 @@ TEST_F(PrefabSystemUVETest, InstantiateTwice_ProducesIndependentEntities) {
     const EntityUVE source = entityManager.CreateEntityUVE();
     entityManager.AddComponentUVE<RigidBodyComponentUVE>(source, RigidBodyComponentUVE{1.0F, false});
 
-    const std::filesystem::path prefabPath = "uve_prefab_tests_independent.uveprefab";
+    const std::filesystem::path prefabPath = "uve_prefab_tests_independent.uvprefab";
     std::filesystem::remove(prefabPath);
     const Asset::AssetGuidUVE guid = prefabSystem.SavePrefabUVE(entityManager, assetDatabase, source, prefabPath);
 
@@ -538,7 +538,7 @@ TEST_F(PrefabSystemUVETest, InstantiateUVE_InvalidParentFailsBeforeEntityMutatio
     entityManager.AddComponentUVE<MeshComponentUVE>(source, MeshComponentUVE{Asset::AssetGuidUVE{21}, Asset::AssetGuidUVE{22}});
     sceneGraph.AttachTransformUVE(entityManager, source, TransformComponentUVE{});
 
-    const std::filesystem::path prefabPath = "uve_prefab_tests_invalid_parent.uveprefab";
+    const std::filesystem::path prefabPath = "uve_prefab_tests_invalid_parent.uvprefab";
     std::filesystem::remove(prefabPath);
     const Asset::AssetGuidUVE guid = prefabSystem.SavePrefabUVE(entityManager, assetDatabase, source, prefabPath);
     const std::size_t entityCountBefore = entityManager.GetEntityCountUVE();
@@ -559,7 +559,7 @@ TEST_F(PrefabSystemUVETest, InstantiateUVE_WithParent_ReparentsNewRoot) {
     entityManager.AddComponentUVE<MeshComponentUVE>(source, MeshComponentUVE{Asset::AssetGuidUVE{21}, Asset::AssetGuidUVE{22}});
     sceneGraph.AttachTransformUVE(entityManager, source, TransformComponentUVE{});
 
-    const std::filesystem::path prefabPath = "uve_prefab_tests_reparent.uveprefab";
+    const std::filesystem::path prefabPath = "uve_prefab_tests_reparent.uvprefab";
     std::filesystem::remove(prefabPath);
     const Asset::AssetGuidUVE guid = prefabSystem.SavePrefabUVE(entityManager, assetDatabase, source, prefabPath);
 
@@ -577,7 +577,7 @@ TEST_F(PrefabSystemUVETest, InstantiateUVE_WithParent_AttachesTransformToTransfo
     const EntityUVE source = entityManager.CreateEntityUVE();
     entityManager.AddComponentUVE<MeshComponentUVE>(source, MeshComponentUVE{Asset::AssetGuidUVE{23}, Asset::AssetGuidUVE{24}});
 
-    const std::filesystem::path prefabPath = "uve_prefab_tests_transformless_parent.uveprefab";
+    const std::filesystem::path prefabPath = "uve_prefab_tests_transformless_parent.uvprefab";
     std::filesystem::remove(prefabPath);
     const Asset::AssetGuidUVE guid = prefabSystem.SavePrefabUVE(entityManager, assetDatabase, source, prefabPath);
     ASSERT_NE(guid, Asset::kInvalidAssetGuidUVE);
@@ -618,7 +618,7 @@ TEST_F(PrefabSystemUVETest, NestedPrefab_PreservesSourceGuidWithoutRecursiveRein
     const EntityUVE innerSource = entityManager.CreateEntityUVE();
     entityManager.AddComponentUVE<MeshComponentUVE>(innerSource, MeshComponentUVE{Asset::AssetGuidUVE{31}, Asset::AssetGuidUVE{32}});
     sceneGraph.AttachTransformUVE(entityManager, innerSource, TransformComponentUVE{});
-    const std::filesystem::path innerPath = "uve_prefab_tests_inner.uveprefab";
+    const std::filesystem::path innerPath = "uve_prefab_tests_inner.uvprefab";
     std::filesystem::remove(innerPath);
     const Asset::AssetGuidUVE innerGuid =
         prefabSystem.SavePrefabUVE(entityManager, assetDatabase, innerSource, innerPath);
@@ -629,7 +629,7 @@ TEST_F(PrefabSystemUVETest, NestedPrefab_PreservesSourceGuidWithoutRecursiveRein
         prefabSystem.InstantiateUVE(entityManager, sceneGraph, assetDatabase, innerGuid, outerRoot);
     ASSERT_NE(innerInstance, kInvalidEntityUVE);
 
-    const std::filesystem::path outerPath = "uve_prefab_tests_outer.uveprefab";
+    const std::filesystem::path outerPath = "uve_prefab_tests_outer.uvprefab";
     std::filesystem::remove(outerPath);
     const Asset::AssetGuidUVE outerGuid =
         prefabSystem.SavePrefabUVE(entityManager, assetDatabase, outerRoot, outerPath);
@@ -659,7 +659,7 @@ TEST_F(PrefabSystemUVETest, NestedPrefab_PreservesSourceGuidWithoutRecursiveRein
 
 TEST_F(PrefabSystemUVETest, SavePrefabUVE_RegistrationExceptionFailsClosed) {
     const EntityUVE source = entityManager.CreateEntityUVE();
-    const std::filesystem::path path = "uve_prefab_tests_registration_exception.uveprefab";
+    const std::filesystem::path path = "uve_prefab_tests_registration_exception.uvprefab";
     std::filesystem::remove(path);
     ThrowingPrefabAssetDatabaseUVE throwingDatabase;
     throwingDatabase.throwOnRegister = true;
@@ -684,7 +684,7 @@ TEST_F(PrefabSystemUVETest, InstantiateUVE_ResolutionUnknownExceptionFailsBefore
 
 TEST_F(PrefabSystemUVETest, SavePrefabUVE_InvalidRegistrationFailsBeforeRegistrySave) {
     const EntityUVE source = entityManager.CreateEntityUVE();
-    const std::filesystem::path path = "uve_prefab_tests_invalid_registration.uveprefab";
+    const std::filesystem::path path = "uve_prefab_tests_invalid_registration.uvprefab";
     std::filesystem::remove(path);
     RejectingPrefabAssetDatabaseUVE rejectingDatabase;
 
@@ -699,7 +699,7 @@ TEST_F(PrefabSystemUVETest, SavePrefabUVE_SamePathTwice_KeepsGuidStable) {
     const EntityUVE source = entityManager.CreateEntityUVE();
     entityManager.AddComponentUVE<MeshComponentUVE>(source, MeshComponentUVE{Asset::AssetGuidUVE{41}, Asset::AssetGuidUVE{42}});
 
-    const std::filesystem::path path = "uve_prefab_tests_stable_guid.uveprefab";
+    const std::filesystem::path path = "uve_prefab_tests_stable_guid.uvprefab";
     std::filesystem::remove(path);
 
     const Asset::AssetGuidUVE firstGuid = prefabSystem.SavePrefabUVE(entityManager, assetDatabase, source, path);

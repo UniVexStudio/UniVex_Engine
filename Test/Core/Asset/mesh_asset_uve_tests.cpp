@@ -120,7 +120,7 @@ TEST(MeshAssetUVETest, TryGenerateMeshTangentsUVE_OverflowedSharedAccumulatorPre
 }
 
 TEST(MeshAssetUVETest, SaveThenLoad_RoundTripsByteExact) {
-    const std::filesystem::path path = "uve_mesh_asset_tests_round_trip.uvemodel";
+    const std::filesystem::path path = "uve_mesh_asset_tests_round_trip.uvmodel";
     std::filesystem::remove(path);
     const MeshAssetUVE original = MakeTestMeshUVE();
     ASSERT_TRUE(SaveMeshAssetUVE(original, path));
@@ -146,7 +146,7 @@ TEST(MeshAssetUVETest, SaveThenLoad_RoundTripsByteExact) {
 }
 
 TEST(MeshAssetUVETest, LoadMeshAssetUVE_WrongAssetKind_FailsCleanlyAndLogsError) {
-    const std::filesystem::path path = "uve_mesh_asset_tests_wrong_kind.uveblob";
+    const std::filesystem::path path = "uve_mesh_asset_tests_wrong_kind.uvblob";
     std::filesystem::remove(path);
     ASSERT_TRUE(WriteUveFileUVE(path, AssetKindUVE::Blob, {}));
 
@@ -171,7 +171,7 @@ TEST(MeshAssetUVETest, LoadMeshAssetUVE_WrongAssetKind_FailsCleanlyAndLogsError)
 }
 
 TEST(MeshAssetUVETest, LoadMeshAssetUVE_ImpossibleVertexCountFailsBeforeReserve) {
-    const std::filesystem::path path = "uve_mesh_asset_tests_impossible_vertex_count.uvemodel";
+    const std::filesystem::path path = "uve_mesh_asset_tests_impossible_vertex_count.uvmodel";
     std::filesystem::remove(path);
     const std::uint32_t impossibleVertexCount = std::numeric_limits<std::uint32_t>::max();
     std::vector<std::byte> payload(sizeof(impossibleVertexCount));
@@ -188,7 +188,7 @@ TEST(MeshAssetUVETest, LoadMeshAssetUVE_ImpossibleVertexCountFailsBeforeReserve)
 }
 
 TEST(MeshAssetUVETest, LoadMeshAssetUVE_MissingFile_ReturnsFalse) {
-    const std::filesystem::path path = "uve_mesh_asset_tests_nonexistent.uvemodel";
+    const std::filesystem::path path = "uve_mesh_asset_tests_nonexistent.uvmodel";
     std::filesystem::remove(path);
 
     MeshAssetUVE mesh;
@@ -196,7 +196,7 @@ TEST(MeshAssetUVETest, LoadMeshAssetUVE_MissingFile_ReturnsFalse) {
 }
 
 TEST(MeshAssetUVETest, LoadMeshAssetUVE_OutOfBoundsIndex_FailsAndLogsError) {
-    const std::filesystem::path path = "uve_mesh_asset_tests_bad_index.uvemodel";
+    const std::filesystem::path path = "uve_mesh_asset_tests_bad_index.uvmodel";
     std::filesystem::remove(path);
 
     MeshAssetUVE invalidMesh = MakeTestMeshUVE();
@@ -225,7 +225,7 @@ TEST(MeshAssetUVETest, LoadMeshAssetUVE_OutOfBoundsIndex_FailsAndLogsError) {
 }
 
 TEST(MeshAssetUVETest, EndToEnd_RegisterLoaderThenLoadUVE_ReachesLoadedWithMatchingData) {
-    const std::filesystem::path path = "uve_mesh_asset_tests_end_to_end.uvemodel";
+    const std::filesystem::path path = "uve_mesh_asset_tests_end_to_end.uvmodel";
     std::filesystem::remove(path);
     const MeshAssetUVE original = MakeTestMeshUVE();
     ASSERT_TRUE(SaveMeshAssetUVE(original, path));

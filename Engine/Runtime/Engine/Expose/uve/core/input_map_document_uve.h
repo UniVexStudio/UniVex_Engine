@@ -11,7 +11,7 @@
 
 namespace UVE::Core {
 
-/// The project's input map: its named actions and their bindings, kept in project.uveinput beside
+/// The project's input map: its named actions and their bindings, kept in project.uvinput beside
 /// the project settings and committed with the project. EngineCoreUVE reads it at startup and
 /// registers every action with the input system, so gameplay code asks for "jump", never for Space.
 ///

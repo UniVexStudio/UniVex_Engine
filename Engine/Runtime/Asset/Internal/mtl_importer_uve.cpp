@@ -23,8 +23,8 @@ constexpr std::string_view kMtlTemporarySuffixUVE = ".uve_mtl_tmp";
 [[nodiscard]] bool ImportMtlSourceUVE(const std::filesystem::path& sourcePath,
                                       const std::filesystem::path& destinationPath,
                                       const AssetImportSettingsUVE& /*settings*/) {
-    if (destinationPath.extension() != ".uvemat") {
-        UVE_ERROR("MtlImporterUVE: destination \"{}\" must use the .uvemat extension",
+    if (destinationPath.extension() != ".uvmat") {
+        UVE_ERROR("MtlImporterUVE: destination \"{}\" must use the .uvmat extension",
                   destinationPath.string());
         return false;
     }

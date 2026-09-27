@@ -105,8 +105,8 @@ protected:
 
 TEST_F(MeshRendererUVETest, ExtractRenderQueueUVE_VisibleOpaqueEntity_AppearsInOpaqueBucket) {
     RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_opaque.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_opaque.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_opaque.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_opaque.uvmat");
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
 
@@ -119,8 +119,8 @@ TEST_F(MeshRendererUVETest, ExtractRenderQueueUVE_VisibleOpaqueEntity_AppearsInO
 
 TEST_F(MeshRendererUVETest, ExtractRenderQueueUVE_VisibleTransparentEntity_AppearsInTransparentBucket) {
     RegisterImmediateLoadersUVE(/*materialIsTransparent=*/true);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_transparent.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_transparent.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_transparent.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_transparent.uvmat");
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
 
@@ -133,8 +133,8 @@ TEST_F(MeshRendererUVETest, ExtractRenderQueueUVE_VisibleTransparentEntity_Appea
 
 TEST_F(MeshRendererUVETest, ExtractRenderQueueUVE_EntityOutsideFrustum_Excluded) {
     RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_offscreen.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_offscreen.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_offscreen.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_offscreen.uvmat");
     // Behind the camera, matching CameraSystemUVETest's own "behindCameraBox" fixture.
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 10.0F}, meshGuid, materialGuid);
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
@@ -200,8 +200,8 @@ TEST_F(MeshRendererUVETest, ExtractRenderQueueUVE_MaterialWithoutMesh_Asserts) {
 
 TEST_F(MeshRendererUVETest, ExtractRenderQueueUVE_NonFiniteWorldTransform_IsCountedAndSkipped) {
     RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_nonfinite.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_nonfinite.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_nonfinite.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_nonfinite.uvmat");
     const Scene::EntityUVE entity = MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
     entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity).worldPosition.x =
@@ -223,8 +223,8 @@ TEST_F(MeshRendererUVETest, ExtractRenderQueueUVE_FailedAssetLoad_IsCountedAndSk
         [](const std::filesystem::path&, Asset::MeshAssetUVE&) { return false; });
     assetManager.RegisterLoaderUVE<Asset::MaterialAssetUVE>(
         [](const std::filesystem::path&, Asset::MaterialAssetUVE&) { return true; });
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_failed.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_failed.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_failed.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_failed.uvmat");
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     Asset::AssetHandleUVE<Asset::MeshAssetUVE> meshHandle =
         assetManager.LoadUVE<Asset::MeshAssetUVE>(meshGuid, assetDatabase);
@@ -251,8 +251,8 @@ TEST_F(MeshRendererUVETest, ExtractRenderQueueUVE_FailedAssetLoad_IsCountedAndSk
 
 TEST_F(MeshRendererUVETest, ExtractRenderQueueUVE_MixOfVisibleAndCulledEntities_OnlyVisibleOneIncluded) {
     RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_mixed.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_mixed.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_mixed.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_mixed.uvmat");
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     MakeMeshEntityUVE(Math::Vector3UVE{1000.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
@@ -280,8 +280,8 @@ TEST_F(MeshRendererUVETest, ExtractRenderQueueUVE_AssetNotReadyYet_ExcludedThenI
             return true;
         });
 
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_gate.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_gate.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_gate.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_gate.uvmat");
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     const Math::FrustumUVE frustum = MakeTestFrustumUVE();
     Asset::AssetHandleUVE<Asset::MaterialAssetUVE> materialHandle =
@@ -325,8 +325,8 @@ TEST_F(MeshRendererUVETest, ExtractRenderQueueUVE_AssetNotReadyYet_ExcludedThenI
 
 TEST_F(MeshRendererUVETest, BuildAndCull_ProducesTheSameQueueAsSingleStepExtraction) {
     RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_equiv.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_equiv.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_equiv.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_equiv.uvmat");
     // A mix of in-frustum and out-of-frustum entities, so the comparison covers the cull verdict
     // rather than just agreeing that everything is visible.
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
@@ -361,8 +361,8 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_IsIndependentOfAnyFrustum) {
     // set, because a shadow cascade's frustum may well contain it - dropping it at build time
     // would delete shadows cast by off-screen geometry, which is the classic version of this bug.
     RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_offscreen.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_offscreen.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_offscreen.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_offscreen.uvmat");
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 500.0F}, meshGuid, materialGuid);
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
@@ -386,8 +386,8 @@ TEST_F(MeshRendererUVETest, CullVisibilitySetIntoUVE_OneSetFeedsManyFrustaWithou
     // must not move the handles out of it. A second cull returning fewer items would mean the
     // shadow cascades silently lose casters after the first one runs.
     RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_reuse.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_reuse.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_reuse.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_reuse.uvmat");
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -20.0F}, meshGuid, materialGuid);
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
@@ -421,8 +421,8 @@ TEST_F(MeshRendererUVETest, CullVisibilitySetIntoUVE_DifferentFrustaSelectDiffer
     // Proves the cull is genuinely per-frustum rather than baked in at build time - which is what
     // would happen if visibility leaked into the shared step.
     RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_subset.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_subset.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_subset.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_subset.uvmat");
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 10.0F}, meshGuid, materialGuid);
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
@@ -457,8 +457,8 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_ReusedAcrossFrames_DoesNotAccu
     // Renderer3DUVE holds one set for the lifetime of the renderer, so appending instead of
     // clearing would re-render every frame the scene has ever had.
     RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_frames.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_frames.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_frames.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_frames.uvmat");
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
 
@@ -481,8 +481,8 @@ TEST_F(MeshRendererUVETest, CullVisibilitySetIntoUVE_CountersDescribeTheSceneNot
     // half-assigned component is a component bug and trips UVE_ASSERT before extraction sees it.
     // Hence two counted references for the one entity.
     RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_counters.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_counters.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_counters.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_counters.uvmat");
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -12.0F}, Asset::kInvalidAssetGuidUVE,
                       Asset::kInvalidAssetGuidUVE);
@@ -530,8 +530,8 @@ TEST_F(MeshRendererUVETest, CullVisibilitySetIntoUVE_EmptySetClearsTheQueue) {
 
 TEST_F(MeshRendererUVETest, PlacementCache_SecondBuildOfAStaticScene_IsAllHits) {
     RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_static.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_static.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_static.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_static.uvmat");
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     MakeMeshEntityUVE(Math::Vector3UVE{2.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     MakeMeshEntityUVE(Math::Vector3UVE{4.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
@@ -553,8 +553,8 @@ TEST_F(MeshRendererUVETest, PlacementCache_HitProducesTheSamePlacementAsARecompu
     // The claim is that a hit is indistinguishable from a recompute. Anything less and the cache
     // is trading correctness for speed, which is not a trade worth making.
     RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_same.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_same.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_same.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_same.uvmat");
     MakeMeshEntityUVE(Math::Vector3UVE{1.5F, -2.5F, -12.0F}, meshGuid, materialGuid);
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
 
@@ -584,8 +584,8 @@ TEST_F(MeshRendererUVETest, PlacementCache_MovedEntity_IsRecomputedNotReused) {
     // THE test. A stale placement renders an object at last frame's position with no error
     // anywhere - exactly the silent failure a cache introduces if invalidation is wrong.
     RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_moved.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_moved.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_moved.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_moved.uvmat");
     const Scene::EntityUVE entity = MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
 
@@ -612,8 +612,8 @@ TEST_F(MeshRendererUVETest, PlacementCache_TinyMovement_StillInvalidates) {
     // The key is an identity test, not a tolerance test. A sub-millimetre move must still miss -
     // a cache that rounds is a cache that drifts, and the error accumulates invisibly.
     RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_tiny.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_tiny.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_tiny.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_tiny.uvmat");
     const Scene::EntityUVE entity = MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
 
@@ -635,8 +635,8 @@ TEST_F(MeshRendererUVETest, PlacementCache_RotationAndScaleAreBothPartOfTheKey) 
     // Position is the obvious field to key on and the easy one to get right. Rotation and scale
     // change the world bounds just as much and are easy to forget.
     RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_rs.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_rs.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_rs.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_rs.uvmat");
     const Scene::EntityUVE entity = MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
 
@@ -674,9 +674,9 @@ TEST_F(MeshRendererUVETest, PlacementCache_SwappedMesh_InvalidatesEvenWhenTheTra
     // A stationary entity whose mesh guid changes. The transform is untouched, so a transform-only
     // key would happily serve the old mesh's bounds forever.
     RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
-    const Asset::AssetGuidUVE firstMesh = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_swap_a.uvemodel");
-    const Asset::AssetGuidUVE secondMesh = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_swap_b.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_swap.uvemat");
+    const Asset::AssetGuidUVE firstMesh = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_swap_a.uvmodel");
+    const Asset::AssetGuidUVE secondMesh = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_swap_b.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_swap.uvmat");
     const Scene::EntityUVE entity = MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, firstMesh, materialGuid);
     WaitUntilAssetsReadyUVE(firstMesh, materialGuid);
     WaitUntilAssetsReadyUVE(secondMesh, materialGuid);
@@ -696,8 +696,8 @@ TEST_F(MeshRendererUVETest, PlacementCache_DestroyedEntity_IsPrunedNotRetained) 
     // Unbounded growth turns a cache into a leak. A long-running streaming world must not retain
     // an entry for every entity it has ever shown.
     RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_prune.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_prune.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_prune.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_prune.uvmat");
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     const Scene::EntityUVE doomed = MakeMeshEntityUVE(Math::Vector3UVE{2.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
@@ -717,8 +717,8 @@ TEST_F(MeshRendererUVETest, PlacementCache_SurvivesManyFramesWithoutGrowing) {
     // The steady state a real frame loop lives in: same scene, many frames. The cache must reach a
     // fixed size and stay there, all hits.
     RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_steady.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_steady.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_steady.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_steady.uvmat");
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     MakeMeshEntityUVE(Math::Vector3UVE{2.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
@@ -739,8 +739,8 @@ TEST_F(MeshRendererUVETest, PlacementCache_DoesNotChangeTheQueueAnyFrameProduces
     // downstream. A frame served entirely from cache must cull to exactly the queue an uncached
     // frame would.
     RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_queue.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_queue.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_queue.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cache_queue.uvmat");
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -30.0F}, meshGuid, materialGuid);
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 50.0F}, meshGuid, materialGuid);
@@ -770,8 +770,8 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_EntitiesSharingAssets_EachOwnA
     // later entities would receive an empty handle - which would not fail to compile, and would
     // not fail any test that only renders one entity.
     RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_shared.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_shared.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_shared.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_shared.uvmat");
     constexpr int kSharedEntityCount = 4;
     for (int index = 0; index < kSharedEntityCount; ++index) {
         MakeMeshEntityUVE(Math::Vector3UVE{static_cast<float>(index), 0.0F, -10.0F}, meshGuid, materialGuid);
@@ -804,8 +804,8 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_SharedFailedAsset_IsCountedOnc
         [](const std::filesystem::path&, Asset::MeshAssetUVE&) { return false; });
     assetManager.RegisterLoaderUVE<Asset::MaterialAssetUVE>(
         [](const std::filesystem::path&, Asset::MaterialAssetUVE&) { return true; });
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_sharedfail.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_sharedfail.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_sharedfail.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_sharedfail.uvmat");
     constexpr int kBlockedEntityCount = 3;
     for (int index = 0; index < kBlockedEntityCount; ++index) {
         MakeMeshEntityUVE(Math::Vector3UVE{static_cast<float>(index), 0.0F, -10.0F}, meshGuid, materialGuid);
@@ -840,8 +840,8 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_AssetBecomingReady_IsObservedO
     // a mesh that was pending during one build must be drawable on the next without anything else
     // in the scene changing.
     RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_becomesready.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_becomesready.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_becomesready.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_becomesready.uvmat");
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
 
     // Built before waiting: the loads are in flight, so this build sees them pending.
@@ -866,8 +866,8 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_DistinctAssetsPerEntity_AreEac
     std::vector<Asset::AssetGuidUVE> materialGuids;
     for (int index = 0; index < kDistinctEntityCount; ++index) {
         const std::string suffix = std::to_string(index);
-        meshGuids.push_back(assetDatabase.RegisterUVE("mesh_renderer_tests_distinct" + suffix + ".uvemodel"));
-        materialGuids.push_back(assetDatabase.RegisterUVE("mesh_renderer_tests_distinct" + suffix + ".uvemat"));
+        meshGuids.push_back(assetDatabase.RegisterUVE("mesh_renderer_tests_distinct" + suffix + ".uvmodel"));
+        materialGuids.push_back(assetDatabase.RegisterUVE("mesh_renderer_tests_distinct" + suffix + ".uvmat"));
         MakeMeshEntityUVE(Math::Vector3UVE{static_cast<float>(index), 0.0F, -10.0F}, meshGuids.back(),
                           materialGuids.back());
     }
@@ -897,8 +897,8 @@ TEST_F(MeshRendererUVETest, CullVisibilitySetIntoUVE_ClusteredAndUnclustered_Pro
     // answer. A cluster box that is too tight silently drops visible geometry, which is the exact
     // bug no rendering test with one entity in front of the camera would ever catch.
     RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cluster.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cluster.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cluster.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_cluster.uvmat");
     // Spread well past one cluster (64) and well outside the frustum, so clusters are genuinely
     // rejected rather than all trivially accepted.
     constexpr int kSpreadEntityCount = 400;
@@ -944,8 +944,8 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_ClustersCoverEveryCandidateExa
     // would duplicate one candidate and lose another. Sizes alone would still add up, so this
     // checks the ranges partition the list: contiguous, non-overlapping, covering all of it.
     RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_partition.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_partition.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_partition.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_partition.uvmat");
     constexpr int kPartitionEntityCount = 150;
     for (int index = 0; index < kPartitionEntityCount; ++index) {
         MakeMeshEntityUVE(Math::Vector3UVE{static_cast<float>(index), 0.0F, -10.0F}, meshGuid, materialGuid);
@@ -969,8 +969,8 @@ TEST_F(MeshRendererUVETest, BuildSpatialClustersUVE_ClusterBoundsEncloseEveryMem
     // The rejection is only sound if the enclosing box really encloses. This asserts the invariant
     // the cull depends on, rather than inferring it from a visible-count that happened to match.
     RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_enclose.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_enclose.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_enclose.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_enclose.uvmat");
     constexpr int kEncloseEntityCount = 200;
     for (int index = 0; index < kEncloseEntityCount; ++index) {
         const float x = static_cast<float>((index * 17) % 90) - 45.0F;
@@ -1002,8 +1002,8 @@ TEST_F(MeshRendererUVETest, BuildSpatialClustersUVE_ReorderingDoesNotDisturbAsse
     // that copied instead of moved, or that left a moved-from element behind, would show up as a
     // handle that no longer resolves - while sizes and bounds all still looked right.
     RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_reorder.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_reorder.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_reorder.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_reorder.uvmat");
     constexpr int kReorderEntityCount = 100;
     for (int index = 0; index < kReorderEntityCount; ++index) {
         const float x = static_cast<float>((index * 41) % 60) - 30.0F;
@@ -1028,8 +1028,8 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_EntitiesSharingAssets_ShareOne
     // Four entities on one mesh and one material must produce exactly one entry, and every
     // candidate must point at it.
     RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_onepair.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_onepair.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_onepair.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_onepair.uvmat");
     constexpr int kSharedEntityCount = 4;
     for (int index = 0; index < kSharedEntityCount; ++index) {
         MakeMeshEntityUVE(Math::Vector3UVE{static_cast<float>(index), 0.0F, -10.0F}, meshGuid, materialGuid);
@@ -1055,9 +1055,9 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_SameMeshDifferentMaterials_Get
     // check would still pass, because both entities would still draw. The material would just be
     // silently wrong.
     RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_twomat.uvemodel");
-    const Asset::AssetGuidUVE firstMaterialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_twomat_a.uvemat");
-    const Asset::AssetGuidUVE secondMaterialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_twomat_b.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_twomat.uvmodel");
+    const Asset::AssetGuidUVE firstMaterialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_twomat_a.uvmat");
+    const Asset::AssetGuidUVE secondMaterialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_twomat_b.uvmat");
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, firstMaterialGuid);
     MakeMeshEntityUVE(Math::Vector3UVE{2.0F, 0.0F, -10.0F}, meshGuid, secondMaterialGuid);
     WaitUntilAssetsReadyUVE(meshGuid, firstMaterialGuid);
@@ -1093,8 +1093,8 @@ TEST_F(MeshRendererUVETest, BuildSpatialClustersUVE_ReorderingKeepsEachCandidate
     std::vector<Asset::AssetGuidUVE> materialGuids;
     for (int index = 0; index < kDistinctEntityCount; ++index) {
         const std::string suffix = std::to_string(index);
-        meshGuids.push_back(assetDatabase.RegisterUVE("mesh_renderer_tests_pairtravel" + suffix + ".uvemodel"));
-        materialGuids.push_back(assetDatabase.RegisterUVE("mesh_renderer_tests_pairtravel" + suffix + ".uvemat"));
+        meshGuids.push_back(assetDatabase.RegisterUVE("mesh_renderer_tests_pairtravel" + suffix + ".uvmodel"));
+        materialGuids.push_back(assetDatabase.RegisterUVE("mesh_renderer_tests_pairtravel" + suffix + ".uvmat"));
         // Spread widely so the Morton ordering genuinely permutes them rather than leaving the
         // creation order intact - a reorder that does nothing would not test anything.
         const float x = static_cast<float>((index * 37) % 60) - 30.0F;
@@ -1133,8 +1133,8 @@ TEST_F(MeshRendererUVETest, CullVisibilitySetIntoUVE_QueueItemsOutliveTheVisibil
     // own theirs. This drives that directly: build a queue, destroy the set, collect garbage, and
     // require the queue's handles to still resolve.
     RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_outlive.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_outlive.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_outlive.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_outlive.uvmat");
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
 
@@ -1161,8 +1161,8 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_HiddenEntitiesAreSkippedBefore
     // else - this asserts it produces no candidate at all rather than a candidate that is later
     // culled, which would still have paid to build it.
     RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_hidden.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_hidden.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_hidden.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_hidden.uvmat");
     const Scene::EntityUVE shown = MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     const Scene::EntityUVE hidden = MakeMeshEntityUVE(Math::Vector3UVE{2.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
@@ -1186,8 +1186,8 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_VisibleInHierarchyIsWhatCounts
     // hidden has visible == true and visibleInHierarchy == false, and reading the wrong one draws
     // exactly the objects the author just hid.
     RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_inherited.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_inherited.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_inherited.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_inherited.uvmat");
     const Scene::EntityUVE entity = MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
 
@@ -1206,8 +1206,8 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_EntitiesWithoutTheComponentSti
     // The component is optional and most entities will never carry one. If its absence were read
     // as hidden, every existing scene would go blank.
     RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_novis.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_novis.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_novis.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_novis.uvmat");
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
 
@@ -1222,8 +1222,8 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_InterpolatedPoseIsDrawnBetween
     // The payoff. At alpha 0.5 the candidate must sit halfway between the two recorded poses, not
     // at the newest one - which is what the renderer drew before and what produced the stutter.
     RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_interp.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_interp.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_interp.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_interp.uvmat");
     const Scene::EntityUVE entity = MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
 
@@ -1249,8 +1249,8 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_AlphaZeroDrawsThePreviousPoseA
     // The two boundaries have to be exact, or an object visibly jumps at the moment a fixed step
     // lands - which is precisely the artefact interpolation is supposed to remove.
     RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_interp_ends.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_interp_ends.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_interp_ends.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_interp_ends.uvmat");
     const Scene::EntityUVE entity = MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
 
@@ -1278,8 +1278,8 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_EntitiesWithoutInterpolationDr
     // The component is optional and most entities will never carry one. They must be unaffected by
     // a non-zero alpha, or switching interpolation on would move the whole static world.
     RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_interp_none.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_interp_none.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_interp_none.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_interp_none.uvmat");
     MakeMeshEntityUVE(Math::Vector3UVE{3.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
 
@@ -1298,8 +1298,8 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_InterpolationDoesNotDefeatTheP
     // frame for every moving object and hand all of that back. A second build with a different
     // alpha but the same simulated pose must still hit.
     RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_interp_cache.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_interp_cache.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_interp_cache.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_interp_cache.uvmat");
     const Scene::EntityUVE entity = MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
 
@@ -1328,8 +1328,8 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_InterpolationDoesNotDefeatTheP
 TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_InterpolationOffUsesTheSimulatedPose) {
     // Off must reach all the way through to the drawn position, not merely be recorded.
     RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_interp_off.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_interp_off.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_interp_off.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_interp_off.uvmat");
     const Scene::EntityUVE entity = MakeMeshEntityUVE(Math::Vector3UVE{8.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
 
@@ -1356,8 +1356,8 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_LodGroupPastItsChainIsDroppedB
     // is culled later. The gate sits ahead of asset resolution and placement, so the object costs
     // a subtraction and a length and nothing else.
     RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_lod.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_lod.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_lod.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_lod.uvmat");
     const Scene::EntityUVE near = MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -5.0F}, meshGuid, materialGuid);
     const Scene::EntityUVE far = MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -500.0F}, meshGuid, materialGuid);
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
@@ -1381,8 +1381,8 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_LodLevelIsResolvedForVisibleEn
     // currentLevel is what a future mesh swap indexes by and what the Inspector shows. Resolving
     // it only on the cull path would leave it correct exactly when nobody can see the object.
     RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_lodlevel.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_lodlevel.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_lodlevel.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_lodlevel.uvmat");
     // Default chain is 10/25/60/120 - this sits in level 2.
     const Scene::EntityUVE entity = MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -40.0F}, meshGuid, materialGuid);
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
@@ -1403,8 +1403,8 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_TheCameraPositionIsWhatDistanc
     // object that would otherwise be past the chain is back in range - which is the whole point
     // of a draw distance and trivially easy to get wrong by measuring from the wrong point.
     RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_lodcam.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_lodcam.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_lodcam.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_lodcam.uvmat");
     const Scene::EntityUVE entity = MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -200.0F}, meshGuid, materialGuid);
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
     entityManager.AddComponentUVE<Scene::LodGroup3DNodeComponentUVE>(
@@ -1426,8 +1426,8 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_EntitiesWithoutALodGroupAreNev
     // The component is opt-in. Without one, an entity draws at any distance - otherwise adding
     // LOD support to the engine would silently impose a draw distance on every existing scene.
     RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_nolod.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_nolod.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_nolod.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_nolod.uvmat");
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -9000.0F}, meshGuid, materialGuid);
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
 
@@ -1446,8 +1446,8 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_PartitionCellOutsideTheBudgetI
     // live=false (the engine put its cell outside the budget) is culled and counted in
     // partitionCulledEntities so authored hiding and partition streaming never blur together.
     RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_wp.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_wp.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_wp.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_wp.uvmat");
 
     const Scene::EntityUVE partition = entityManager.CreateEntityUVE();
     Scene::TransformComponentUVE partitionTransform;
@@ -1502,8 +1502,8 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_InactiveRegionSkipsItsInterior
     // regionCulledEntities - "nobody is inside" never blurs with streaming-budget or authored
     // hiding counts.
     RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_vr.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_vr.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_vr.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_vr.uvmat");
 
     const Scene::EntityUVE region = entityManager.CreateEntityUVE();
     Scene::TransformComponentUVE regionTransform;
@@ -1553,8 +1553,8 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_MeshBehindAnOccluderIsCulledIn
     // lands in occlusionCulledEntities, while its twin off the silhouette still draws - hiding
     // never spills past the box the author painted.
     RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_occ.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_occ.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_occ.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_occ.uvmat");
 
     const Scene::EntityUVE wall = entityManager.CreateEntityUVE();
     Scene::TransformComponentUVE wallTransform;
@@ -1588,8 +1588,8 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_CameraMoveReanswersOcclusionWi
     // whole scene this very build: what was hidden shows, what was free-space hides - with no
     // teleport-stale possibility by construction.
     RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_occ2.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_occ2.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_occ2.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_occ2.uvmat");
 
     const Scene::EntityUVE wall = entityManager.CreateEntityUVE();
     Scene::TransformComponentUVE wallTransform;
@@ -1620,8 +1620,8 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_DisabledOccluderCoversNothing)
     // The eye-toggle on the wall: disabled means the box paints nothing into the frame, the
     // same way an enabled=false on the region releases its members - fail open, measured.
     RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_occ3.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_occ3.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_occ3.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_occ3.uvmat");
 
     const Scene::EntityUVE wall = entityManager.CreateEntityUVE();
     Scene::TransformComponentUVE wallTransform;
@@ -1647,8 +1647,8 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_AnyOfSeveralWallsHidesOnce) {
     // Composition is a plain OR: a corridor of two walls hides the mesh exactly once in the
     // counter (not once per wall - the stats would otherwise lie about scene content).
     RegisterImmediateLoadersUVE(/*materialIsTransparent=*/false);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_occ4.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_occ4.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_occ4.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("mesh_renderer_tests_occ4.uvmat");
 
     for (const float wallZ : {-4.0F, -6.0F}) {
         const Scene::EntityUVE wall = entityManager.CreateEntityUVE();

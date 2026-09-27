@@ -38,7 +38,7 @@ constexpr std::size_t kMaximumContentNameBytesUVE = 96U;
 
 [[nodiscard]] bool IsEntityAssetPathUVE(const std::filesystem::path& path) {
     const std::string extension = LowerExtensionUVE(path);
-    return extension == ".uveentity" || extension == ".uveprefab";
+    return extension == ".uventity" || extension == ".uvprefab";
 }
 
 /// A file name a person typed: not empty, no separators, no "." or "..", nothing a filesystem
@@ -389,7 +389,7 @@ void EditorUVE::DrawFilesystemContextPopupUVE() {
     const std::filesystem::path absolute = contentRoot / contextEntry.relativePath;
     const bool directory = contextEntry.kind == Asset::ProjectFileEntryKindUVE::Directory;
     const bool entityAsset = !directory && IsEntityAssetPathUVE(contextEntry.relativePath);
-    const bool isEntity = entityAsset && LowerExtensionUVE(contextEntry.relativePath) == ".uveentity";
+    const bool isEntity = entityAsset && LowerExtensionUVE(contextEntry.relativePath) == ".uventity";
     const bool allowed = IsAuthoringCommandAllowedUVE();
     const auto refresh = [this]() {
         m_projectFileSnapshotInitialized = false;
@@ -443,9 +443,9 @@ void EditorUVE::DrawFilesystemContextPopupUVE() {
                                                         : std::filesystem::path{};
     std::error_code importedError;
     const bool modelReady = !importedModel.empty() && std::filesystem::is_regular_file(importedModel, importedError);
-    const bool uvemodel = contextEntry.registeredAssetGuid.has_value() &&
-                          contextEntry.relativePath.extension().string() == ".uvemodel";
-    if (modelReady || uvemodel) {
+    const bool uvmodel = contextEntry.registeredAssetGuid.has_value() &&
+                          contextEntry.relativePath.extension().string() == ".uvmodel";
+    if (modelReady || uvmodel) {
         const bool canAssign = IsDocumentEntityUVE(m_selectedEntity) && IsAuthoringCommandAllowedUVE() &&
                                m_services->GetEntityManagerUVE().HasComponentUVE<Scene::MeshComponentUVE>(m_selectedEntity);
         ImGui::BeginDisabled(!canAssign);
@@ -458,7 +458,7 @@ void EditorUVE::DrawFilesystemContextPopupUVE() {
         }
         ImGui::EndDisabled();
     }
-    if (entityAsset || directory || modelReady || uvemodel) {
+    if (entityAsset || directory || modelReady || uvmodel) {
         ImGui::Separator();
     }
 

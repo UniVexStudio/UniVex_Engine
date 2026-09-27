@@ -53,10 +53,10 @@ protected:
     /// items that genuinely SHOULD batch together - the fixture in render_queue's tests
     /// deliberately makes every item unique, which is the opposite of what is needed here.
     [[nodiscard]] Asset::AssetGuidUVE MeshGuidUVE(const std::string& name) {
-        return assetDatabase.RegisterUVE("render_batch_tests_" + name + ".uvemodel");
+        return assetDatabase.RegisterUVE("render_batch_tests_" + name + ".uvmodel");
     }
     [[nodiscard]] Asset::AssetGuidUVE MaterialGuidUVE(const std::string& name) {
-        return assetDatabase.RegisterUVE("render_batch_tests_" + name + ".uvemat");
+        return assetDatabase.RegisterUVE("render_batch_tests_" + name + ".uvmat");
     }
 
     [[nodiscard]] RenderItemUVE MakeItemUVE(const std::string& meshName,

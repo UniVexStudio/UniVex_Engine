@@ -13,20 +13,20 @@ namespace UVE::Save {
 /// SaveGameSystemUVE is the concrete, engine-standard implementation of ISaveGameSystemUVE.
 /// Composes a Scene::ISceneSerializerUVE& (dependency injection, matching Physics::PhysicsSystemUVE's
 /// ICollisionSystemUVE& precedent) rather than duplicating any of its private per-component JSON
-/// (de)serialization table: "world state" is bounced through a scratch `.uvescene`-shaped file on
+/// (de)serialization table: "world state" is bounced through a scratch `.uvscene`-shaped file on
 /// disk — SaveUVE() calls sceneSerializer.SaveUVE() to a scratch path, reads the raw JSON payload
 /// bytes back via Asset::ReadUveFileUVE(), deletes the scratch file, and embeds those bytes
-/// verbatim into its own two-section `.uvesave` payload (metadata JSON, then the embedded world
+/// verbatim into its own two-section `.uvsave` payload (metadata JSON, then the embedded world
 /// JSON); LoadUVE() does the reverse. This is the only way to reuse SceneSerializerUVE's
 /// already-tested component table without exposing it (deliberately private to
 /// scene_serializer_uve.cpp) or changing ISceneSerializerUVE's signature.
-/// A `.uvesave` file is its own dedicated `.uve*` envelope payload (Asset::AssetKindUVE::Save)
+/// A `.uvsave` file is its own dedicated `.uve*` envelope payload (Asset::AssetKindUVE::Save)
 /// rather than an Asset::AssetBundleUVE-packed bundle: AssetBundleUVE::PackUVE() only reads
 /// entries from real source files on disk and pays for a variable-length name-indexed entry
 /// table a save file (always exactly two fixed sections) has no use for.
 /// Writes are atomic: SaveUVE() writes to a temporary path in the save directory, then
 /// std::filesystem::rename()s it over the real slot path only after a fully successful write, so
-/// no half-written `.uvesave` file is ever visible at a slot's real path.
+/// no half-written `.uvsave` file is ever visible at a slot's real path.
 class SaveGameSystemUVE final : public ISaveGameSystemUVE {
 public:
     /// `sceneSerializer` must outlive this SaveGameSystemUVE. `saveDirectory` is created lazily

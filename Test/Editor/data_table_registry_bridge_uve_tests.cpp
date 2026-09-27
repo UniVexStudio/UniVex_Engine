@@ -41,7 +41,7 @@ TEST(EditorDataTableRegistryBridgeUVE, RegistryIsAuthoritativeForCatalogAndPrevi
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_data_table_registry_authority.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_data_table_registry_authority.uvscene");
         editor.InitUVE();
         Asset::DataTableRegistryUVE registry;
         EditorBridgeUVE bridge(editor, &registry);
@@ -90,7 +90,7 @@ TEST(EditorDataTableRegistryBridgeUVE, PreviewSelectionRejectsUnknownAndReflects
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_data_table_registry_selection.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_data_table_registry_selection.uvscene");
         editor.InitUVE();
         Asset::DataTableRegistryUVE registry;
         EditorBridgeUVE bridge(editor, &registry);
@@ -129,7 +129,7 @@ TEST(EditorDataTableRegistryBridgeUVE, RegistryMutationAdvancesBridgeRevisionOnl
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_data_table_registry_revision.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_data_table_registry_revision.uvscene");
         editor.InitUVE();
         Asset::DataTableRegistryUVE registry;
         EditorBridgeUVE bridge(editor, &registry);
@@ -159,7 +159,7 @@ TEST(EditorDataTableRegistryBridgeUVE, DispatchRoutesRevisionCheckedPreviewSelec
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_data_table_registry_dispatch.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_data_table_registry_dispatch.uvscene");
         editor.InitUVE();
         Asset::DataTableRegistryUVE registry;
         ASSERT_TRUE(registry.RegisterUVE(MakeTableUVE("weapons", "pistol", 25)));
@@ -205,7 +205,7 @@ TEST(EditorDataTableRegistryBridgeUVE, DispatchRejectsPreviewSelectionWithoutReg
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_data_table_registry_legacy_dispatch.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_data_table_registry_legacy_dispatch.uvscene");
         editor.InitUVE();
         EditorBridgeUVE bridge(editor);
         const EditorBridgeSnapshotUVE initial = bridge.GetSnapshotUVE();

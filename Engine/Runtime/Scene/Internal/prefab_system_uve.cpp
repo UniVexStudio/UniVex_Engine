@@ -48,9 +48,9 @@ std::optional<std::uint64_t> ComputePrefabSourceRevisionUVE(const std::filesyste
 Asset::AssetGuidUVE PrefabSystemUVE::SavePrefabUVE(IEntityManagerUVE& entityManager,
                                                     Asset::IAssetDatabaseUVE& assetDatabase,
                                                     EntityUVE rootEntity, const std::filesystem::path& path) {
-    // A `.uveentity` is the same envelope; the extension only tells the editor it is an entity asset.
-    if (path.empty() || (path.extension() != ".uveprefab" && path.extension() != ".uveentity")) {
-        UVE_ERROR("PrefabSystemUVE: prefab path must use the .uveprefab or .uveentity extension");
+    // A `.uventity` is the same envelope; the extension only tells the editor it is an entity asset.
+    if (path.empty() || (path.extension() != ".uvprefab" && path.extension() != ".uventity")) {
+        UVE_ERROR("PrefabSystemUVE: prefab path must use the .uvprefab or .uventity extension");
         return Asset::kInvalidAssetGuidUVE;
     }
     const bool saved =

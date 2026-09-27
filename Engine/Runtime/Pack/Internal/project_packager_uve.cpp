@@ -21,7 +21,7 @@ ProjectPackResultUVE ProjectPackagerUVE::PackUVE(const ProjectPackOptionsUVE& op
         Platform::EditorProjectPackageCodecUVE::LoadUVE(options.projectFile);
     if (!loaded.IsAcceptedUVE()) {
         return MakeResultUVE(ProjectPackCodeUVE::InvalidProjectFile,
-                             "Unable to load the .uveditor project file: " + loaded.result.message);
+                             "Unable to load the .uvproject project file: " + loaded.result.message);
     }
     const Platform::EditorProjectPackageUVE& package = *loaded.package;
     if (package.startupScenePath.empty()) {
@@ -78,7 +78,7 @@ ProjectPackResultUVE ProjectPackagerUVE::PackUVE(const ProjectPackOptionsUVE& op
         std::filesystem::permissions(copiedRuntimePath, sourcePermissions, error);
     }
 
-    // Copy the .uveditor manifest verbatim (unchanged) - its relative contentRoot/
+    // Copy the .uvproject manifest verbatim (unchanged) - its relative contentRoot/
     // startupScenePath still resolve correctly once the content tree below is copied alongside
     // it at the same relative path.
     error.clear();
@@ -86,7 +86,7 @@ ProjectPackResultUVE ProjectPackagerUVE::PackUVE(const ProjectPackOptionsUVE& op
                                std::filesystem::copy_options::overwrite_existing, error);
     if (error) {
         return MakeResultUVE(ProjectPackCodeUVE::CopyFailed,
-                             "Unable to copy the .uveditor project file into the output directory.");
+                             "Unable to copy the .uvproject project file into the output directory.");
     }
 
     // Copy the whole content tree, preserving package.contentRoot's own relative path/name so the

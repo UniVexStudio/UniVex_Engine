@@ -59,7 +59,7 @@ void RemoveFilesUVE(const std::initializer_list<std::filesystem::path>& paths) {
 
 TEST(JpegImporterUVETest, ImportUVE_ValidJpgPublishesUveTexAndRegistersGuid) {
     const std::filesystem::path sourcePath = "uve_jpeg_importer_tests_red.jpg";
-    const std::filesystem::path destinationPath = "uve_jpeg_importer_tests_red.uvetex";
+    const std::filesystem::path destinationPath = "uve_jpeg_importer_tests_red.uvtex";
     RemoveFilesUVE({sourcePath, destinationPath});
     WriteBytesUVE(sourcePath, MakeOneByOneJpegUVE());
 
@@ -88,7 +88,7 @@ TEST(JpegImporterUVETest, ImportUVE_ValidJpgPublishesUveTexAndRegistersGuid) {
 
 TEST(JpegImporterUVETest, ImportUVE_ValidProgressiveJpegPublishesThroughJpegExtension) {
     const std::filesystem::path sourcePath = "uve_jpeg_importer_tests_progressive.jpeg";
-    const std::filesystem::path destinationPath = "uve_jpeg_importer_tests_progressive.uvetex";
+    const std::filesystem::path destinationPath = "uve_jpeg_importer_tests_progressive.uvtex";
     RemoveFilesUVE({sourcePath, destinationPath});
     WriteBytesUVE(sourcePath, MakeOneByOneJpegUVE(true));
 
@@ -109,7 +109,7 @@ TEST(JpegImporterUVETest, ImportUVE_ValidProgressiveJpegPublishesThroughJpegExte
 
 TEST(JpegImporterUVETest, ImportUVE_InvalidJpegPreservesExistingDestinationAndDoesNotRegister) {
     const std::filesystem::path sourcePath = "uve_jpeg_importer_tests_invalid.jpg";
-    const std::filesystem::path destinationPath = "uve_jpeg_importer_tests_existing.uvetex";
+    const std::filesystem::path destinationPath = "uve_jpeg_importer_tests_existing.uvtex";
     RemoveFilesUVE({sourcePath, destinationPath});
     WriteBytesUVE(sourcePath, {std::byte{0xFF}, std::byte{0xD8}, std::byte{0x00}});
     TextureAssetUVE original;
@@ -135,7 +135,7 @@ TEST(JpegImporterUVETest, ImportUVE_InvalidJpegPreservesExistingDestinationAndDo
 
 TEST(JpegImporterUVETest, ImportUVE_WrongDestinationExtensionFailsBeforePublish) {
     const std::filesystem::path sourcePath = "uve_jpeg_importer_tests_wrong_destination.jpg";
-    const std::filesystem::path destinationPath = "uve_jpeg_importer_tests_wrong_destination.uvemodel";
+    const std::filesystem::path destinationPath = "uve_jpeg_importer_tests_wrong_destination.uvmodel";
     RemoveFilesUVE({sourcePath, destinationPath});
     WriteBytesUVE(sourcePath, MakeOneByOneJpegUVE());
 

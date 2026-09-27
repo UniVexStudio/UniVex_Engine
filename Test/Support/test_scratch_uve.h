@@ -22,7 +22,7 @@ namespace UVE::Tests {
 /// An absolute path inside this process's scratch root.
 ///
 /// Prefer a plain relative path in tests - the working directory is already the scratch root, so
-/// "fixture.uvescene" is isolated without any help. Reach for this when a path must survive a
+/// "fixture.uvscene" is isolated without any help. Reach for this when a path must survive a
 /// test changing the working directory, or when the value is handed to something that resolves it
 /// later against an unknown directory.
 [[nodiscard]] std::filesystem::path ScratchPathUVE(std::string_view name);

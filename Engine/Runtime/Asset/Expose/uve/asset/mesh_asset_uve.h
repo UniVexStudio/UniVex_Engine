@@ -16,7 +16,7 @@ namespace UVE::Asset {
 
 /// One vertex of a MeshAssetUVE: position, normal, one UV set, and a tangent-space basis
 /// direction. `tangent`/`tangentHandedness` are runtime-derived rather than serialized in the
-/// current `.uvemodel` payload, preserving compatibility with existing meshes while providing the
+/// current `.uvmodel` payload, preserving compatibility with existing meshes while providing the
 /// canonical material shader the TBN data normal mapping needs. Skinned meshes/LODs remain
 /// future-increment work.
 struct MeshVertexUVE {
@@ -39,7 +39,7 @@ inline constexpr std::size_t kMaxJointInfluencesUVE = 4U;
 /// Parallel to MeshAssetUVE::vertices rather than a member of MeshVertexUVE, deliberately. A
 /// skinned mesh is the exception, not the rule: folding 32 bytes of joint data into every vertex
 /// of every static mesh in the engine would cost memory on the common case to serve the rare one,
-/// and the existing `.uvemodel` payload writes MeshVertexUVE field by field - growing that struct
+/// and the existing `.uvmodel` payload writes MeshVertexUVE field by field - growing that struct
 /// would change the serialized vertex stride for files that contain no skinning at all.
 ///
 /// Weights are stored as they were authored, NOT silently renormalized. A weight set that does
@@ -75,7 +75,7 @@ struct MeshJointUVE {
     Math::Matrix4x4UVE inverseBindMatrix;
 };
 
-/// The CPU-side, engine-native representation of a `.uvemodel` asset (Part 2's file-format
+/// The CPU-side, engine-native representation of a `.uvmodel` asset (Part 2's file-format
 /// table): triangle vertex/index data plus a precomputed local-space bounding box (used for
 /// frustum culling once `MeshRendererUVE` exists, Increment 13). Purely CPU-side data — turning
 /// this into GPU buffers is a future increment's concern (Renderer3DUVE's resource cache); this

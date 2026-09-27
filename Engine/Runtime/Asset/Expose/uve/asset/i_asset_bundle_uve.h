@@ -27,7 +27,7 @@ struct AssetBundleEntryUVE {
     std::string virtualName;
 };
 
-/// IAssetBundleUVE packs multiple assets' raw file bytes into a single `.uvebundle` file (the
+/// IAssetBundleUVE packs multiple assets' raw file bytes into a single `.uvbundle` file (the
 /// spec's "pack assets for builds - streaming, DLC", Part 7.4) and unpacks one back into loose
 /// files, or reads a single entry's bytes directly without unpacking. `PackUVE`/`UnpackUVE` are
 /// the whole-bundle operations; `HasEntryUVE`/`ReadEntryUVE` are the on-demand, no-temp-files

@@ -11,14 +11,14 @@
 namespace UVE::Config {
 
 /// IConfigManagerUVE is the engine's JSON-backed key-value settings store
-/// interface (the `.uvesettings` file — engine/editor settings such as
+/// interface (the `.uvsettings` file — engine/editor settings such as
 /// keybinds, theme, layout, and platform preferences). Keys are addressed
 /// by dot-separated path (e.g. "editor.theme") into a nested JSON
 /// document; the JSON library itself never appears in this interface or
 /// any implementation's public header (see ConfigManagerUVE). Only scalar
 /// value types are supported — string, 64-bit integer, double, and bool.
 /// The in-memory document reserves a root-level "version" integer field as
-/// a forward-compatibility convention for future `.uvesettings` format
+/// a forward-compatibility convention for future `.uvsettings` format
 /// changes; this increment implements no migration logic against it.
 /// Thread-safety: implementations must be safe to call from any thread
 /// concurrently, guarded by an internal mutex.

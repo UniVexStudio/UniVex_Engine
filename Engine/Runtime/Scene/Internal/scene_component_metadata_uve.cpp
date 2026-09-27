@@ -284,12 +284,12 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                      {
                          WithTooltipUVE(WithCustomDrawerUVE(DeclareUVE<&MeshComponentUVE::meshGuid>(
                                                                 "meshGuid", "Mesh", kPropertyTypeAssetGuidUVE),
-                                                            "asset:uvemodel"),
+                                                            "asset:uvmodel"),
                                         "An imported model. Import a .glb or .gltf (Blender: File > Export > "
                                         "glTF 2.0) from the Content Browser."),
                          WithTooltipUVE(WithCustomDrawerUVE(DeclareUVE<&MeshComponentUVE::materialGuid>(
                                                                 "materialGuid", "Material", kPropertyTypeAssetGuidUVE),
-                                                            "asset:uvemat"),
+                                                            "asset:uvmat"),
                                         "The surface material. Without one the mesh is drawn in neutral grey."),
                          WithCustomDrawerUVE(DeclareUVE<&MeshComponentUVE::visibilityLayers>(
                                                  "visibilityLayers", "Visibility Layers", kPropertyTypeBitMask32UVE),
@@ -590,8 +590,8 @@ void DeclareAnimationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
             "component.animation_player", "AnimationPlayer", kSectionOrderTypeSpecificUVE,
             {
                 WithTooltipUVE(WithCustomDrawerUVE(DeclareUVE<&P::clip>("clip", "Clip", kPropertyTypeAssetGuidUVE),
-                                                   "asset:uveanim"),
-                               "The .uveanim clip to play."),
+                                                   "asset:uvanim"),
+                               "The .uvanim clip to play."),
                 std::move(playerTarget),
                 WithTooltipUVE(DeclareUVE<&P::autoplay>("autoplay", "Autoplay", kPropertyTypeBoolUVE),
                                "Starts playing as soon as the scene runs."),

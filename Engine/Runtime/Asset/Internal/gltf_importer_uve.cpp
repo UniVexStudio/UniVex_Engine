@@ -360,8 +360,8 @@ struct BufferViewDefinitionUVE final {
                                        const std::filesystem::path& destinationPath,
                                        const AssetImportSettingsUVE& /*settings*/) {
     try {
-        if (destinationPath.extension() != ".uvemodel") {
-            UVE_ERROR("GltfImporterUVE: destination \"{}\" must use the .uvemodel extension",
+        if (destinationPath.extension() != ".uvmodel") {
+            UVE_ERROR("GltfImporterUVE: destination \"{}\" must use the .uvmodel extension",
                       destinationPath.string());
             return false;
         }

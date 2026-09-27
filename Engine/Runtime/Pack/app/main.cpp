@@ -12,7 +12,7 @@ constexpr int kUsageExitCodeUVE = 2;
 constexpr int kOperationalFailureExitCodeUVE = 3;
 
 void PrintUsageUVE() {
-    std::cerr << "Usage: uve_pack --project <path-to.uveditor> --runtime <path-to-uve_runtime> "
+    std::cerr << "Usage: uve_pack --project <path-to.uvproject> --runtime <path-to-uve_runtime> "
                  "--output <distributable-folder>\n";
 }
 

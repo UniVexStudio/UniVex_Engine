@@ -51,18 +51,18 @@ namespace {
 }
 
 [[nodiscard]] std::filesystem::path SlotFilePathUVE(const std::filesystem::path& saveDirectory, int slotIndex) {
-    return saveDirectory / (SlotFileStemUVE(slotIndex) + ".uvesave");
+    return saveDirectory / (SlotFileStemUVE(slotIndex) + ".uvsave");
 }
 
 /// The atomic-write staging path SaveUVE() writes to before renaming over SlotFilePathUVE().
 [[nodiscard]] std::filesystem::path TempSaveFilePathUVE(const std::filesystem::path& saveDirectory, int slotIndex) {
-    return saveDirectory / (SlotFileStemUVE(slotIndex) + ".uvesave.tmp");
+    return saveDirectory / (SlotFileStemUVE(slotIndex) + ".uvsave.tmp");
 }
 
-/// The scratch `.uvescene`-shaped file SaveUVE()/LoadUVE() bounce world-state JSON through, to
+/// The scratch `.uvscene`-shaped file SaveUVE()/LoadUVE() bounce world-state JSON through, to
 /// reuse Scene::ISceneSerializerUVE without exposing its private per-component JSON table.
 [[nodiscard]] std::filesystem::path ScratchScenePathUVE(const std::filesystem::path& saveDirectory, int slotIndex) {
-    return saveDirectory / ("." + SlotFileStemUVE(slotIndex) + "_scratch.uvescene");
+    return saveDirectory / ("." + SlotFileStemUVE(slotIndex) + "_scratch.uvscene");
 }
 
 class ScratchFileCleanupUVE final {
@@ -132,7 +132,7 @@ private:
     }
 }
 
-/// Builds a `.uvesave` payload: `metadataJsonLength uint32`, `metadataJsonBytes`,
+/// Builds a `.uvsave` payload: `metadataJsonLength uint32`, `metadataJsonBytes`,
 /// `worldJsonLength uint64`, `worldJsonBytes` — the *only* function that touches this fixed
 /// layout, so a future increment can wrap this function's output (and SplitSavePayloadUVE's
 /// input) through a compressor/encryptor without touching anything else in this file.
@@ -146,7 +146,7 @@ private:
     return CompressSavePayloadUVE(payload);
 }
 
-/// Splits a `.uvesave` payload back into its metadata and world JSON byte sections. Returns
+/// Splits a `.uvsave` payload back into its metadata and world JSON byte sections. Returns
 /// false (no logging — callers attach path/slot context) on any truncation, bounds, or trailing-byte failure.
 [[nodiscard]] bool SplitSavePayloadUVE(const std::vector<std::byte>& payload,
                                         std::vector<std::byte>& outMetadataJsonBytes,
@@ -165,7 +165,7 @@ private:
     return offset == payload.size();
 }
 
-/// Reads only the metadata section of a `.uvesave` payload — never copies the (potentially much
+/// Reads only the metadata section of a `.uvsave` payload — never copies the (potentially much
 /// larger) world JSON bytes, keeping GetSaveMetadataUVE() cheap relative to a full LoadUVE().
 [[nodiscard]] bool SplitSaveMetadataOnlyUVE(const std::vector<std::byte>& payload,
                                              std::vector<std::byte>& outMetadataJsonBytes) {

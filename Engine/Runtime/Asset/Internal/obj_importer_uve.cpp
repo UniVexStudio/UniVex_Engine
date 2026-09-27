@@ -23,8 +23,8 @@ constexpr std::string_view kObjTemporarySuffixUVE = ".uve_obj_tmp";
 [[nodiscard]] bool ImportObjSourceUVE(const std::filesystem::path& sourcePath,
                                       const std::filesystem::path& destinationPath,
                                       const AssetImportSettingsUVE& /*settings*/) {
-    if (destinationPath.extension() != ".uvemodel") {
-        UVE_ERROR("ObjImporterUVE: destination \"{}\" must use the .uvemodel extension",
+    if (destinationPath.extension() != ".uvmodel") {
+        UVE_ERROR("ObjImporterUVE: destination \"{}\" must use the .uvmodel extension",
                   destinationPath.string());
         return false;
     }

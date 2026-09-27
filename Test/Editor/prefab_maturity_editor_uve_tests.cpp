@@ -29,14 +29,14 @@ namespace {
 }
 
 TEST(PrefabMaturityEditorUVETest, SaveRefreshAndBridgeFactsUVE_AreRevisionAwareAndPlayGuarded) {
-    const std::filesystem::path prefabPath = "uve_prefab_editor_maturity.uveprefab";
+    const std::filesystem::path prefabPath = "uve_prefab_editor_maturity.uvprefab";
     std::filesystem::remove(prefabPath);
 
     Core::EngineCoreUVE engine(MakePrefabEditorTestConfigUVE());
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_prefab_editor_maturity.uvescene", 100U, &engine);
+        EditorUVE editor(engine.GetServicesUVE(), "uve_prefab_editor_maturity.uvscene", 100U, &engine);
         editor.InitUVE();
         EditorBridgeUVE bridge(editor);
         Core::EngineServicesUVE& services = engine.GetServicesUVE();

@@ -33,10 +33,10 @@ public:
             ::UVE::Tests::ScratchRootUVE() / "uve_data_table_importer.csv",
             ::UVE::Tests::ScratchRootUVE() / "uve_data_table_importer.tsv",
             ::UVE::Tests::ScratchRootUVE() / "uve_data_table_importer.json",
-            ::UVE::Tests::ScratchRootUVE() / "uve_data_table_importer_csv.uvetable",
-            ::UVE::Tests::ScratchRootUVE() / "uve_data_table_importer_tsv.uvetable",
-            ::UVE::Tests::ScratchRootUVE() / "uve_data_table_importer_json.uvetable",
-            ::UVE::Tests::ScratchRootUVE() / "uve_data_table_importer_bad.uvetable",
+            ::UVE::Tests::ScratchRootUVE() / "uve_data_table_importer_csv.uvtable",
+            ::UVE::Tests::ScratchRootUVE() / "uve_data_table_importer_tsv.uvtable",
+            ::UVE::Tests::ScratchRootUVE() / "uve_data_table_importer_json.uvtable",
+            ::UVE::Tests::ScratchRootUVE() / "uve_data_table_importer_bad.uvtable",
             ::UVE::Tests::ScratchRootUVE() / "uve_data_table_importer_wrong.txt",
         };
         for (const std::filesystem::path& path : m_paths) {

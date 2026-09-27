@@ -254,7 +254,7 @@ class EditorUVE final {
 
 public:
     explicit EditorUVE(Core::EngineServicesUVE& services,
-                       std::filesystem::path activeScenePath = "editor_scene.uvescene",
+                       std::filesystem::path activeScenePath = "editor_scene.uvscene",
                        std::size_t historyCapacity = 100U,
                        Core::ISimulationControlUVE* simulationControl = nullptr);
     ~EditorUVE();
@@ -420,28 +420,28 @@ public:
     /// Called once per frame from RenderOverlayUVE() while the panel is visible.
     void SetViewportPanelRendererUVE(ViewportPanelRendererUVE renderer);
 
-    /// Saves every document root except the editor camera to the active .uvescene path. Dirty state
+    /// Saves every document root except the editor camera to the active .uvscene path. Dirty state
     /// is cleared only after the scene serializer reports success.
     [[nodiscard]] bool SaveSceneUVE();
 
-    /// Saves the sole selected document subtree as a canonical `.uveprefab` and registers its source
+    /// Saves the sole selected document subtree as a canonical `.uvprefab` and registers its source
     /// GUID through the existing PrefabSystemUVE. This command never runs during Play or a viewport gesture.
     [[nodiscard]] bool SaveSelectedPrefabUVE(const std::filesystem::path& path);
 
     /// Makes what the Content catalogue item `itemId` stands for inside `directory`: a folder, or a
-    /// `.uveentity` holding the item's node tree with its root named after the file. Names never
+    /// `.uventity` holding the item's node tree with its root named after the file. Names never
     /// collide ("Character", "Character 2", ...). The document is not touched and no undo step is
     /// recorded. Returns the new path, or nothing in Play, for an unknown item or a failed write.
     [[nodiscard]] std::optional<std::filesystem::path> CreateContentCatalogueItemUVE(
         std::string_view itemId, const std::filesystem::path& directory);
 
-    /// Brings the entity asset (`.uveentity` or `.uveprefab`) at `path` into the scene under
+    /// Brings the entity asset (`.uventity` or `.uvprefab`) at `path` into the scene under
     /// `parent` - or, when that is invalid, where a new node would go - selects it and records one
     /// undo step. Returns the new root, or kInvalidEntityUVE.
     [[nodiscard]] Scene::EntityUVE PlaceEntityAssetUVE(const std::filesystem::path& path,
                                                        Scene::EntityUVE parent = Scene::kInvalidEntityUVE);
 
-    /// Stores `contentRelativePath` (a `.uveentity`) as the project's Default Player and saves the
+    /// Stores `contentRelativePath` (a `.uventity`) as the project's Default Player and saves the
     /// project settings. An empty path clears it.
     [[nodiscard]] bool SetDefaultPlayerEntityUVE(const std::filesystem::path& contentRelativePath);
     [[nodiscard]] std::string GetDefaultPlayerEntityUVE() const;
@@ -458,7 +458,7 @@ public:
     [[nodiscard]] static std::optional<std::filesystem::path> RenameContentFileUVE(const std::filesystem::path& file,
                                                                                    std::string_view newStem);
 
-    /// Copies `file` next to itself under the first free name ("Hero 2.uveentity"). Folders are
+    /// Copies `file` next to itself under the first free name ("Hero 2.uventity"). Folders are
     /// copied whole. Returns the copy's path.
     [[nodiscard]] static std::optional<std::filesystem::path> DuplicateContentFileUVE(const std::filesystem::path& file);
 
@@ -473,7 +473,7 @@ public:
     /// destructive authoring command and is rejected outside Edit mode or without a sole selection.
     [[nodiscard]] bool DiscardSelectedPrefabOverridesAndRefreshUVE();
 
-    /// Replaces the editable document scene with the active .uvescene file. A backup scene is
+    /// Replaces the editable document scene with the active .uvscene file. A backup scene is
     /// created before destructive mutation and restored if deserialization fails; the editor camera
     /// remains outside the document root set.
     [[nodiscard]] bool LoadSceneUVE();
@@ -813,7 +813,7 @@ public:
     /// decide whether to offer a "Scripting" action at all.
     [[nodiscard]] bool OpenScriptGraphForEntityUVE(Scene::EntityUVE entity);
     /// "Add new C++" on the Scripting slot. Creates a script asset for the selected entity at
-    /// `scripts/<name>.uvescript` (a free name), holding the owner's pinless scene node; points the
+    /// `scripts/<name>.uvscript` (a free name), holding the owner's pinless scene node; points the
     /// entity's Script at it as one undoable edit; and opens its canvas in the Scripting workspace.
     /// Refuses unless authoring is allowed, exactly one document entity is selected, it carries a
     /// Script component and that Script is still empty.
@@ -826,7 +826,7 @@ public:
     /// it can. A path must be project-relative and name a file that decodes as a script graph.
     [[nodiscard]] std::string DescribeScriptAssetProblemUVE(const std::string& path) const;
     /// The script assets Quick Load offers, sorted: every one the document already uses, plus every
-    /// `.uvescript` file in the project's scripts folder.
+    /// `.uvscript` file in the project's scripts folder.
     [[nodiscard]] std::vector<std::string> GetKnownScriptAssetPathsUVE() const;
     /// Metadata on the selected node. Each writes the whole entry list once through the metadata
     /// property path, so every add, edit, rename, retype or removal is exactly one undo entry.
@@ -1035,12 +1035,12 @@ private:
     };
 
     /// A file's primary presentation type. Registry correlation is deliberately a separate badge:
-    /// one registered `.uvemodel` row therefore remains Mesh + Registered, never an ambiguous tag.
+    /// one registered `.uvmodel` row therefore remains Mesh + Registered, never an ambiguous tag.
     enum class ContentBrowserItemTypeUVE {
         Folder,
         Scene,
         Prefab,
-        /// A `.uveentity`: a prefab envelope made from the Content "+ Add" catalogue. It opens as
+        /// A `.uventity`: a prefab envelope made from the Content "+ Add" catalogue. It opens as
         /// a tree (Open Tree) rather than as a plain prefab.
         Entity,
         Bundle,
@@ -1479,7 +1479,7 @@ private:
                                       const Core::TypeMetadataPropertyUVE& property, const void* instance);
     void DrawScriptSlotPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
                                    const Core::TypeMetadataPropertyUVE& property, const void* instance);
-    /// A combo over the project's assets with `extension` (".uveanim"). Returns the pick, if any;
+    /// A combo over the project's assets with `extension` (".uvanim"). Returns the pick, if any;
     /// kInvalidAssetGuidUVE means "(none)" was picked.
     [[nodiscard]] std::optional<Asset::AssetGuidUVE> DrawAssetPickerUVE(const char* id, Asset::AssetGuidUVE value,
                                                                       const std::string& extension);
