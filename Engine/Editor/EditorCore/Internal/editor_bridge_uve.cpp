@@ -91,23 +91,6 @@ namespace {
            kind != EditorBridgeRequestKindUVE::ReadDeveloperConsole;
 }
 
-[[nodiscard]] bool ContainsCaseInsensitiveUVE(const std::string& value, const std::string& needle) {
-    if (needle.empty()) {
-        return true;
-    }
-    if (needle.size() > value.size()) {
-        return false;
-    }
-
-    const auto toLower = [](const unsigned char character) {
-        return static_cast<char>(std::tolower(character));
-    };
-    return std::search(value.begin(), value.end(), needle.begin(), needle.end(),
-                       [&toLower](const char lhs, const char rhs) {
-                           return toLower(static_cast<unsigned char>(lhs)) == toLower(static_cast<unsigned char>(rhs));
-                       }) != value.end();
-}
-
 [[nodiscard]] bool IsBoundedRequestTextUVE(const std::string& value) noexcept {
     return value.size() <= kEditorBridgeMaximumPresentationTextBytesUVE;
 }
@@ -909,13 +892,16 @@ EditorBridgeContentBrowserSnapshotUVE EditorBridgeUVE::CaptureContentBrowserUVE(
     snapshot.lastRefreshSucceeded = m_editor->m_projectFileLastRefreshSucceeded;
 
     for (const Asset::ProjectFileEntryUVE& entry : nativeSnapshot.entries) {
-        if (entry.relativePath.parent_path() != m_editor->m_contentBrowserDirectory) {
-            continue;
+        if (entry.relativePath.parent_path() == m_editor->m_contentBrowserDirectory) {
+            ++snapshot.directEntryCount;
         }
-        ++snapshot.directEntryCount;
-        const std::string entryPath = entry.relativePath.generic_string();
-        if (!ContainsCaseInsensitiveUVE(entryPath, m_editor->m_assetFilter) ||
-            !m_editor->DoesContentBrowserEntryMatchFocusUVE(entry)) {
+    }
+    // The same items the panel lists: a folder's children, or with a search everything under it
+    // whose name matches (a shelf the panel may show is not a bridge location).
+    for (const std::size_t index :
+         ListContentFolderUVE(nativeSnapshot.entries, m_editor->m_contentBrowserDirectory, m_editor->m_assetFilter)) {
+        const Asset::ProjectFileEntryUVE& entry = nativeSnapshot.entries[index];
+        if (!m_editor->DoesContentBrowserEntryMatchFocusUVE(entry)) {
             continue;
         }
         ++snapshot.visibleEntryCount;

@@ -186,6 +186,10 @@ struct EditorUVEAccessUVE final {
                                                          const std::filesystem::path& relativePath) {
         return editor.IsProjectPathFavoritedUVE(relativePath);
     }
+    [[nodiscard]] static ContentShelvesUVE& GetContentShelvesUVE(EditorUVE& editor) { return editor.m_contentShelves; }
+    [[nodiscard]] static const std::string& GetContentStatusMessageUVE(const EditorUVE& editor) {
+        return editor.m_contentStatusMessage;
+    }
     static void ToggleProjectPathFavoriteUVE(EditorUVE& editor, const std::filesystem::path& relativePath) {
         editor.ToggleProjectPathFavoriteUVE(relativePath);
     }
@@ -1715,6 +1719,70 @@ TEST(EditorUVETest, FavoritesUVE_ToggleReflectsImmediatelyAndPersistsAcrossSessi
 
     engine.Shutdown();
     std::filesystem::remove(config.settingsFilePath);
+}
+
+TEST(EditorUVETest, ContentShelvesPersistAcrossSessionReload) {
+    const Core::EngineConfigUVE config = MakeEditorTestConfigUVE();
+    std::filesystem::remove(config.settingsFilePath);
+    Core::EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_shelves.uvscene");
+        editor.InitUVE();
+        ContentShelvesUVE& shelves = EditorUVEAccessUVE::GetContentShelvesUVE(editor);
+        ASSERT_EQ(shelves.CreateUVE("Props"), "Props");
+        ASSERT_EQ(shelves.CreateUVE("Empty"), "Empty");
+        ASSERT_TRUE(shelves.AddItemUVE("Props", "Sea/rock.uvmodel"));
+        ASSERT_TRUE(shelves.AddItemUVE("Props", "Sea/Models"));
+        ASSERT_TRUE(EditorUVEAccessUVE::SaveSessionSettingsUVE(editor));
+        editor.ShutdownUVE();
+    }
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_shelves_reload.uvscene");
+        editor.InitUVE();
+        const ContentShelvesUVE& shelves = EditorUVEAccessUVE::GetContentShelvesUVE(editor);
+        ASSERT_EQ(shelves.GetAllUVE().size(), 2U);
+        EXPECT_EQ(shelves.GetAllUVE()[0].name, "Props");
+        EXPECT_EQ(shelves.GetAllUVE()[0].items,
+                  (std::vector<std::filesystem::path>{"Sea/rock.uvmodel", "Sea/Models"}));
+        EXPECT_EQ(shelves.GetAllUVE()[1].name, "Empty");
+        EXPECT_TRUE(shelves.GetAllUVE()[1].items.empty());
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+    std::filesystem::remove(config.settingsFilePath);
+}
+
+TEST(EditorUVETest, SaveAllWritesOnlyWhatChanged) {
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    const std::filesystem::path scenePath = std::filesystem::temp_directory_path() / "uve_editor_tests_save_all.uvscene";
+    std::filesystem::remove(scenePath);
+    {
+        EditorUVE editor(engine.GetServicesUVE(), scenePath);
+        editor.InitUVE();
+        EXPECT_EQ(editor.SaveAllUVE(), 0U);
+        EXPECT_EQ(EditorUVEAccessUVE::GetContentStatusMessageUVE(editor), "Nothing to save.");
+
+        const Scene::EntityUVE root = engine.GetServicesUVE().GetEntityManagerUVE().CreateEntityUVE();
+        AttachRootUVE(engine, root, Scene::TransformComponentUVE{});
+        editor.SelectEntityUVE(root);
+        Scene::TransformComponentUVE moved{};
+        moved.localPosition = Math::Vector3UVE{1.0F, 2.0F, 3.0F};
+        ASSERT_TRUE(editor.SetSelectedLocalTransformUVE(moved));
+        ASSERT_TRUE(editor.IsSceneDirtyUVE());
+
+        EXPECT_EQ(editor.SaveAllUVE(), 1U);
+        EXPECT_FALSE(editor.IsSceneDirtyUVE());
+        EXPECT_TRUE(std::filesystem::exists(scenePath));
+        EXPECT_EQ(EditorUVEAccessUVE::GetContentStatusMessageUVE(editor), "Saved 1 file.");
+        EXPECT_EQ(editor.SaveAllUVE(), 0U);
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+    std::filesystem::remove(scenePath);
 }
 
 TEST(EditorUVETest, SelectionAndInspectorTransformEdit_ValidateLifetimeAndFiniteValues) {
