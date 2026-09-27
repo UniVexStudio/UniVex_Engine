@@ -37,6 +37,7 @@ add_executable(uve_core_tests
     Core/Asset/uve_file_envelope_uve_tests.cpp
     Core/Asset/asset_database_uve_tests.cpp
     Core/Asset/legacy_extension_migration_uve_tests.cpp
+    UVScript/uvscript_parser_uve_tests.cpp
     Core/Asset/asset_manager_uve_tests.cpp
     Core/Asset/file_system_uve_tests.cpp
     Core/Asset/mesh_asset_uve_tests.cpp
@@ -112,6 +113,7 @@ add_executable(uve_core_tests
     Math/frustum_uve_tests.cpp
 )
 target_link_libraries(uve_core_tests PRIVATE
+    uve_uvscript
     nlohmann_json::nlohmann_json
     uve_platform
     uve_logging
