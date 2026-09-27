@@ -110,6 +110,12 @@ primary     := NUMBER UNIT? | STRING | 'true' | 'false' | 'none' | IDENT | '(' e
      - collections, tuples and `[]`;
      - calling methods on other nodes (`other.hide()`);
      - `wait` inside a `fn`.
-3. **Next:** engine binding (script slot, events, exported fields in the Inspector), then removing
-   the graph scripting.
+3. **Engine binding (this change).** A node whose script slot names a `.uvs` file runs it:
+   - `EngineCoreUVE` compiles it once per path against `UVScriptNodeHostUVE`; errors are logged with
+     `file:line:column` and not retried until the path changes;
+   - `ready` runs once, then `tick(dt)` every frame, in process-priority order, and paused with the
+     rest of the simulation;
+   - the host gives `name`, `position`, `scale`, and on a character body `velocity` and
+     `is_on_floor`, plus `input.pressed/held/released/axis`.
+   - Next: exported fields in the Inspector and a text editor tab, then removing the graph scripting.
 4. **Last:** C++23 output for release builds.

@@ -45,6 +45,8 @@
 #include "uve/core/engine_state_uve.h"
 #include "uve/core/frame_stats_uve.h"
 #include "uve/core/script_gameplay_bindings_uve.h"
+#include "uve/core/uvscript_node_host_uve.h"
+#include "uve/uvscript/uvscript_instance_uve.h"
 #include "uve/core/version_uve.h"
 #include "uve/logging/i_logger_uve.h"
 #include "uve/events/i_event_system_uve.h"
@@ -302,6 +304,10 @@ public:
     /// editor diagnostics alike, not just tests.
     [[nodiscard]] std::size_t GetActiveScriptInstanceCountUVE() const noexcept;
 
+    /// Test/diagnostic hook: the `.uvs` instance running on `entity`, or null when it has none
+    /// (no script, not compiled yet, or compile failed).
+    [[nodiscard]] UVScript::ScriptInstanceUVE* FindUVScriptInstanceUVE(Scene::EntityUVE entity) noexcept;
+
     /// Diagnostic/test hook: the collision enter/exit transitions computed by
     /// SyncCollisionLifecycleUVE() on the most recent Update() call - the same report the
     /// `physics.on_collision_enter`/`physics.on_collision_exit` script bindings read from.
@@ -473,6 +479,9 @@ private:
     /// is remembered in m_scriptReconcileFailedEntities with the path that failed, so a broken
     /// script logs once, not every frame, and changing the component's path retries at once.
     void SyncScriptRuntimeUVE();
+    /// The `.uvs` half of SyncScriptRuntimeUVE(): compiles each node's text script once, drops the
+    /// instance when the node loses it, raises `ready` once and then `tick(dt)` every frame.
+    void SyncUVScriptsUVE(bool simulationPaused);
 
     /// Steps every CharacterBody3D (CharacterControllerComponentUVE) once per fixed step: velocity
     /// from the built-in movement when it is on (keyboard, with air control, coyote time and a
@@ -753,6 +762,14 @@ private:
     ScriptGameplayBindingContextUVE m_scriptBindingContext;
     Scripting::ScriptEngineCallBindingsUVE m_scriptEngineCallBindings;
     std::unordered_map<Scene::EntityUVE, std::string> m_scriptReconcileFailedEntities;
+    /// A node running a `.uvs` script: the path it was compiled from, so a changed path recompiles.
+    struct UVScriptSlotUVE final {
+        std::string path;
+        std::unique_ptr<UVScriptNodeHostUVE> host;
+        std::unique_ptr<UVScript::ScriptInstanceUVE> instance;
+        bool readyRaised = false;
+    };
+    std::unordered_map<Scene::EntityUVE, UVScriptSlotUVE> m_uvScripts;
     /// Clips the animation nodes play, by asset guid. Declared after m_assetManager so the handles
     /// release before the manager is destroyed; clips no node references any more are dropped
     /// each frame.

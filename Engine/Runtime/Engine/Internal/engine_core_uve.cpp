@@ -50,6 +50,7 @@
 #include "uve/commandline/command_line_uve.h"
 #include "uve/config/config_manager_uve.h"
 #include "uve/core/engine_project_settings_uve.h"
+#include "uve/uvscript/uvscript_compiler_uve.h"
 #include "uve/logging/assert_uve.h"
 #include "uve/logging/log_sink_uve.h"
 #include "uve/logging/logger_uve.h"
@@ -720,10 +721,16 @@ void EngineCoreUVE::SyncUIRuntimeUVE() {
     m_uiRuntime.TickUVE(*m_entityManager, *m_inputSystem, localization);
 }
 
+namespace {
+
+[[nodiscard]] bool IsUVScriptPathUVE(const std::string_view path) noexcept { return path.ends_with(".uvs"); }
+
+} // namespace
+
 void EngineCoreUVE::SyncScriptRuntimeUVE() {
     m_entityManager->ForEachUVE<Scene::ScriptComponentUVE>(
         [this](const Scene::EntityUVE entity, const Scene::ScriptComponentUVE& component) {
-            if (m_scriptRuntime.HasInstanceUVE(entity)) {
+            if (m_scriptRuntime.HasInstanceUVE(entity) || IsUVScriptPathUVE(component.scriptAssetPath)) {
                 return;
             }
             // A failure is remembered against the path that failed, so a broken script logs once
@@ -777,6 +784,87 @@ void EngineCoreUVE::SyncScriptRuntimeUVE() {
 
     static_cast<void>(m_scriptRuntime.TickUVE(
         Scripting::ScriptVmExecutionOptionsUVE{.engineCallBindings = &m_scriptEngineCallBindings}));
+
+    SyncUVScriptsUVE(simulationPaused);
+}
+
+void EngineCoreUVE::SyncUVScriptsUVE(const bool simulationPaused) {
+    // Drop instances whose node is gone, lost its script, or now points at another file.
+    std::erase_if(m_uvScripts, [this](const auto& entry) {
+        const Scene::EntityUVE entity = entry.first;
+        return !m_entityManager->IsAliveUVE(entity) ||
+               !m_entityManager->HasComponentUVE<Scene::ScriptComponentUVE>(entity) ||
+               m_entityManager->GetComponentUVE<Scene::ScriptComponentUVE>(entity).scriptAssetPath != entry.second.path;
+    });
+
+    std::vector<Scene::EntityUVE> order;
+    m_entityManager->ForEachUVE<Scene::ScriptComponentUVE>(
+        [this, &order](const Scene::EntityUVE entity, const Scene::ScriptComponentUVE& component) {
+            if (!IsUVScriptPathUVE(component.scriptAssetPath)) {
+                return;
+            }
+            order.push_back(entity);
+            if (m_uvScripts.contains(entity)) {
+                return;
+            }
+            if (const auto failed = m_scriptReconcileFailedEntities.find(entity);
+                failed != m_scriptReconcileFailedEntities.end()) {
+                if (failed->second == component.scriptAssetPath) {
+                    return;
+                }
+                m_scriptReconcileFailedEntities.erase(failed);
+            }
+            const auto fail = [&](const std::string& why) {
+                m_scriptReconcileFailedEntities.insert_or_assign(entity, component.scriptAssetPath);
+                UVE_ERROR("EngineCoreUVE: script \"{}\": {}", component.scriptAssetPath, why);
+            };
+            const std::optional<std::vector<std::byte>> bytes = m_fileSystem->ReadFileUVE(component.scriptAssetPath);
+            if (!bytes.has_value()) {
+                fail("cannot be read");
+                return;
+            }
+            const std::string source(reinterpret_cast<const char*>(bytes->data()), bytes->size());
+            auto host = std::make_unique<UVScriptNodeHostUVE>(*m_entityManager, m_inputSystem.get(), entity);
+            const UVScript::CompileResultUVE compiled = UVScript::CompileUVScriptSourceUVE(source, *host);
+            if (!compiled.IsSuccessUVE()) {
+                for (const UVScript::DiagnosticUVE& diagnostic : compiled.diagnostics) {
+                    UVE_ERROR("{}:{}:{}: {}", component.scriptAssetPath, diagnostic.at.line, diagnostic.at.column,
+                              diagnostic.message);
+                }
+                fail("did not compile");
+                return;
+            }
+            UVScriptSlotUVE slot;
+            slot.path = component.scriptAssetPath;
+            slot.instance = std::make_unique<UVScript::ScriptInstanceUVE>(compiled.program, *host);
+            slot.host = std::move(host);
+            m_uvScripts.emplace(entity, std::move(slot));
+        });
+
+    std::ranges::stable_sort(order, [this](const Scene::EntityUVE a, const Scene::EntityUVE b) {
+        return ProcessSettingsUVE(*m_entityManager, a).priority < ProcessSettingsUVE(*m_entityManager, b).priority;
+    });
+    const double dt = m_timer ? static_cast<double>(m_timer->GetDeltaTimeUVE()) : 0.0;
+    for (const Scene::EntityUVE entity : order) {
+        const auto it = m_uvScripts.find(entity);
+        if (it == m_uvScripts.end() ||
+            !Scene::IsProcessingUVE(ResolvedProcessModeUVE(*m_sceneGraph, entity), simulationPaused)) {
+            continue;
+        }
+        UVScript::ScriptInstanceUVE& instance = *it->second.instance;
+        if (!it->second.readyRaised) {
+            it->second.readyRaised = true;
+            static_cast<void>(instance.RaiseEventUVE("ready"));
+        }
+        const UVScript::ValueUVE args[] = {dt};
+        static_cast<void>(instance.RaiseEventUVE("tick", args));
+        instance.AdvanceUVE(dt);
+    }
+}
+
+UVScript::ScriptInstanceUVE* EngineCoreUVE::FindUVScriptInstanceUVE(const Scene::EntityUVE entity) noexcept {
+    const auto it = m_uvScripts.find(entity);
+    return it == m_uvScripts.end() ? nullptr : it->second.instance.get();
 }
 
 void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physicsStep) {
@@ -2271,6 +2359,7 @@ void EngineCoreUVE::Shutdown() {
     // EventSystem, then Timer, then ThreadPool, then MemoryManager, then
     // Logger, then CommandLine. The final log message is emitted before the
     // logger itself is torn down, so it is guaranteed to be recorded.
+    m_uvScripts.clear(); // hosts point into the entity manager, so they go first
     m_services.reset();
     m_configManager.reset();
     m_checkpointManager.reset();
