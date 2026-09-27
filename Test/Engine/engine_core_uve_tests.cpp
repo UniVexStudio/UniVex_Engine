@@ -31,6 +31,8 @@
 #include "uve/component/auto_translate_component_uve.h"
 
 #include "uve/component/process_component_uve.h"
+#include "uve/component/transform_component_uve.h"
+#include "uve/uvscript/uvscript_instance_uve.h"
 
 #include "Support/test_scratch_uve.h"
 
@@ -1151,6 +1153,68 @@ TEST(EngineCoreUVETest, ScriptComponentEntity_ReconcilesAndTicksAgainstScriptRun
     // attached instance count - proves SyncScriptRuntimeUVE()'s HasInstanceUVE() guard works.
     engine.TickFrameUVE();
     EXPECT_EQ(engine.GetActiveScriptInstanceCountUVE(), 1U);
+
+    std::filesystem::remove_all(mountDirectory);
+    engine.Shutdown();
+}
+
+TEST(EngineCoreUVETest, UVScriptEntity_CompilesOnceRaisesReadyThenTicksEveryFrame) {
+    EngineCoreUVE engine(MakeTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    Asset::IFileSystemUVE& fileSystem = engine.GetServicesUVE().GetFileSystemUVE();
+    const std::filesystem::path mountDirectory = "uve_engine_core_tests_uvs_mount";
+    std::filesystem::remove_all(mountDirectory);
+    std::filesystem::create_directories(mountDirectory);
+    fileSystem.MountDirectoryUVE("", mountDirectory, 0);
+    const auto write = [&](const char* path, const std::string& text) {
+        const auto* const bytes = reinterpret_cast<const std::byte*>(text.data());
+        ASSERT_TRUE(fileSystem.WriteFileUVE(path, std::vector<std::byte>(bytes, bytes + text.size())));
+    };
+    write("counter.uvs", "var readies = 0\nvar ticks = 0\n\non ready:\n    readies += 1\n\n"
+                         "on tick(dt):\n    ticks += 1\n");
+    write("broken.uvs", "on tick(dt):\n    ticks += 1\n");
+
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
+    entityManager.AddComponentUVE<Scene::ScriptComponentUVE>(entity, Scene::ScriptComponentUVE{"counter.uvs"});
+
+    engine.TickFrameUVE();
+    engine.TickFrameUVE();
+    engine.TickFrameUVE();
+    UVScript::ScriptInstanceUVE* const instance = engine.FindUVScriptInstanceUVE(entity);
+    ASSERT_NE(instance, nullptr);
+    EXPECT_EQ(instance->GetFieldUVE("readies"), UVScript::ValueUVE{std::int64_t{1}});
+    EXPECT_EQ(instance->GetFieldUVE("ticks"), UVScript::ValueUVE{std::int64_t{3}});
+    // A `.uvs` script never goes near the graph runtime.
+    EXPECT_EQ(engine.GetActiveScriptInstanceCountUVE(), 0U);
+
+    // An unknown name does not compile: no instance, and it is not retried every frame.
+    entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(entity).scriptAssetPath = "broken.uvs";
+    engine.TickFrameUVE();
+    engine.TickFrameUVE();
+    EXPECT_EQ(engine.FindUVScriptInstanceUVE(entity), nullptr);
+
+    // Pointing back at a good script starts it fresh.
+    entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(entity).scriptAssetPath = "counter.uvs";
+    engine.TickFrameUVE();
+    ASSERT_NE(engine.FindUVScriptInstanceUVE(entity), nullptr);
+    EXPECT_EQ(engine.FindUVScriptInstanceUVE(entity)->GetFieldUVE("ticks"), UVScript::ValueUVE{std::int64_t{1}});
+
+    entityManager.RemoveComponentUVE<Scene::ScriptComponentUVE>(entity);
+    engine.TickFrameUVE();
+    EXPECT_EQ(engine.FindUVScriptInstanceUVE(entity), nullptr);
+
+    // A node with a transform moves itself through `position`.
+    write("mover.uvs", "on tick(dt):\n    position.x += 2.0\n");
+    const Scene::EntityUVE mover = entityManager.CreateEntityUVE();
+    entityManager.AddComponentUVE<Scene::TransformComponentUVE>(mover, Scene::TransformComponentUVE{});
+    entityManager.AddComponentUVE<Scene::ScriptComponentUVE>(mover, Scene::ScriptComponentUVE{"mover.uvs"});
+    engine.TickFrameUVE();
+    engine.TickFrameUVE();
+    ASSERT_NE(engine.FindUVScriptInstanceUVE(mover), nullptr);
+    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Scene::TransformComponentUVE>(mover).localPosition.x, 4.0F);
 
     std::filesystem::remove_all(mountDirectory);
     engine.Shutdown();
