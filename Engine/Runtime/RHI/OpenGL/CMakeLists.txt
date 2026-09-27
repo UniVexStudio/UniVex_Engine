@@ -32,5 +32,5 @@ target_link_libraries(uve_rhi_opengl
     PUBLIC uve_rhi uve_window uve_platform uve_logging
     PRIVATE glfw OpenGL::GL
 )
-target_compile_features(uve_rhi_opengl PUBLIC cxx_std_20)
+target_compile_features(uve_rhi_opengl PUBLIC cxx_std_23)
 uve_set_warnings(uve_rhi_opengl)

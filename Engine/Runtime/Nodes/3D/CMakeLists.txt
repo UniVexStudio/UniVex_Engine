@@ -56,5 +56,5 @@ add_library(uve_nodes_3d STATIC
 )
 target_include_directories(uve_nodes_3d PUBLIC Expose)
 target_link_libraries(uve_nodes_3d PUBLIC uve_math uve_component uve_entity uve_animation)
-target_compile_features(uve_nodes_3d PUBLIC cxx_std_20)
+target_compile_features(uve_nodes_3d PUBLIC cxx_std_23)
 uve_set_warnings(uve_nodes_3d)

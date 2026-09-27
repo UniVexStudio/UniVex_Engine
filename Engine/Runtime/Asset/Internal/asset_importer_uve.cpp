@@ -97,7 +97,7 @@ using ImportFuncUVE = std::function<bool(const std::filesystem::path&, const std
                   kMaximumTextImportBytesUVE, source.string());
         return false;
     }
-    if (sourceText.find('\0') != std::string::npos) {
+    if (sourceText.contains('\0')) {
         UVE_ERROR("AssetImporterUVE: text source contains a NUL byte \"{}\"", source.string());
         return false;
     }

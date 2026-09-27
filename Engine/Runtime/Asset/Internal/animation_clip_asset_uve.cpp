@@ -104,7 +104,7 @@ bool IsAnimationClipAssetValidUVE(const AnimationClipAssetUVE& clip) noexcept {
         if (!std::isfinite(event.timeSeconds) || event.timeSeconds < 0.0 ||
             event.timeSeconds > clip.durationSeconds || event.timeSeconds < previousTime || event.eventId.empty() ||
             event.eventId.size() > kMaximumAnimationAssetIdentifierBytesUVE ||
-            event.eventId.find('\0') != std::string::npos) {
+            event.eventId.contains('\0')) {
             return false;
         }
         previousTime = event.timeSeconds;

@@ -426,20 +426,20 @@ namespace {
     // Only `mode` is the authored switch (the component's own doc comment). The pose fields are
     // runtime-computed by SceneGraphUVE::UpdateUVE every frame and must never be persisted - a
     // saved pose from one session would be stale the instant it loaded into another.
-    return {{"mode", static_cast<std::underlying_type_t<PhysicsInterpolationModeUVE>>(component.mode)}};
+    return {{"mode", std::to_underlying(component.mode)}};
 }
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const ProcessComponentUVE& component) {
     // resolvedModeInHierarchy is deliberately absent, for the same reason the interpolation
     // component's pose fields are: SceneGraphUVE::UpdateUVE recomputes it from the hierarchy on
     // every update, so persisting it would restore an answer that is already being replaced.
-    return {{"mode", static_cast<std::underlying_type_t<ProcessModeUVE>>(component.mode)},
+    return {{"mode", std::to_underlying(component.mode)},
             {"priority", component.priority},
             {"physicsPriority", component.physicsPriority}};
 }
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const ThreadGroupComponentUVE& component) {
-    return {{"mode", static_cast<std::underlying_type_t<ThreadGroupModeUVE>>(component.mode)},
+    return {{"mode", std::to_underlying(component.mode)},
             {"order", component.order}};
 }
 
@@ -448,7 +448,7 @@ namespace {
 }
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const PhysicsObjectComponentUVE& component) {
-    return {{"disableMode", static_cast<std::underlying_type_t<PhysicsObjectDisableModeUVE>>(component.disableMode)},
+    return {{"disableMode", std::to_underlying(component.disableMode)},
             {"collisionPriority", component.collisionPriority},
             {"inputRayPickable", component.inputRayPickable},
             {"inputCaptureOnDrag", component.inputCaptureOnDrag}};
@@ -467,7 +467,7 @@ namespace {
 }
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const AutoTranslateComponentUVE& component) {
-    return {{"mode", static_cast<std::underlying_type_t<AutoTranslateModeUVE>>(component.mode)}};
+    return {{"mode", std::to_underlying(component.mode)}};
 }
 
 // ---- VariantUVE <-> JSON ------------------------------------------------------------------------

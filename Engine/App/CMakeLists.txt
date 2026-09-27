@@ -30,11 +30,11 @@
 
 add_executable(uve_runtime Internal/main.cpp)
 target_link_libraries(uve_runtime PRIVATE uve_core uve_pack_lib)
-target_compile_features(uve_runtime PRIVATE cxx_std_20)
+target_compile_features(uve_runtime PRIVATE cxx_std_23)
 uve_set_warnings(uve_runtime)
 
 add_executable(uve_editor_app Internal/editor/main.cpp)
 set_target_properties(uve_editor_app PROPERTIES OUTPUT_NAME uve_editor)
 target_link_libraries(uve_editor_app PRIVATE uve_editor univex_viewport_engine_bridge uve_editor_imgui)
-target_compile_features(uve_editor_app PRIVATE cxx_std_20)
+target_compile_features(uve_editor_app PRIVATE cxx_std_23)
 uve_set_warnings(uve_editor_app)

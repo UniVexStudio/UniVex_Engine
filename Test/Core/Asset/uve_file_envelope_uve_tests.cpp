@@ -116,7 +116,7 @@ TEST(UveFileEnvelopeUVETest, ReadUveFileUVE_BadMagic_ReturnsNulloptAndLogsError)
     const bool foundError =
         std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessageUVE& message) {
             return message.level == Debug::LogLevelUVE::Error &&
-                   message.message.find("bad magic") != std::string::npos;
+                   message.message.contains("bad magic");
         });
     EXPECT_TRUE(foundError);
 
@@ -183,7 +183,7 @@ TEST(UveFileEnvelopeUVETest, ReadUveFileUVE_UnsupportedCompression_ReturnsNullop
     const bool foundError =
         std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessageUVE& message) {
             return message.level == Debug::LogLevelUVE::Error &&
-                   message.message.find("compression") != std::string::npos;
+                   message.message.contains("compression");
         });
     EXPECT_TRUE(foundError);
 

@@ -2720,7 +2720,7 @@ TEST(EngineCoreUVETest, SetEditorViewportRegionUVE_DrivesRenderTargetToRegionNot
     const std::vector<Debug::LogMessageUVE> messages = memorySinkPtr->GetMessagesUVE();
     const bool foundViewportRejection =
         std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessageUVE& message) {
-            return message.message.find("does not fit within") != std::string::npos;
+            return message.message.contains("does not fit within");
         });
     EXPECT_FALSE(foundViewportRejection);
 

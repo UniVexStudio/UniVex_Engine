@@ -1693,7 +1693,7 @@ TEST_F(SceneSerializerUVETest, LoadUVE_BadMagic_ReturnsEmptyAndLogsError) {
     const bool foundError =
         std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessageUVE& message) {
             return message.level == Debug::LogLevelUVE::Error &&
-                   message.message.find("bad magic") != std::string::npos;
+                   message.message.contains("bad magic");
         });
     EXPECT_TRUE(foundError);
 

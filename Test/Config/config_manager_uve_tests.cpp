@@ -159,7 +159,7 @@ TEST(ConfigManagerUVETest, LoadUVE_MalformedJson_ReturnsFalseAndLogsError) {
     const bool foundParseError =
         std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessageUVE& message) {
             return message.level == Debug::LogLevelUVE::Error &&
-                   message.message.find("failed to parse") != std::string::npos;
+                   message.message.contains("failed to parse");
         });
     EXPECT_TRUE(foundParseError);
 
@@ -181,7 +181,7 @@ TEST(ConfigManagerUVETest, LoadUVE_MissingFile_LogsWarning) {
     const bool foundWarning =
         std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessageUVE& message) {
             return message.level == Debug::LogLevelUVE::Warning &&
-                   message.message.find("not found") != std::string::npos;
+                   message.message.contains("not found");
         });
     EXPECT_TRUE(foundWarning);
 

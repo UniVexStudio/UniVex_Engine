@@ -26,5 +26,5 @@ add_library(uve_physics STATIC
 )
 target_include_directories(uve_physics PUBLIC Expose)
 target_link_libraries(uve_physics PUBLIC uve_platform uve_logging uve_math uve_scene)
-target_compile_features(uve_physics PUBLIC cxx_std_20)
+target_compile_features(uve_physics PUBLIC cxx_std_23)
 uve_set_warnings(uve_physics)

@@ -133,7 +133,7 @@ TEST(MaterialAssetUVETest, LoadMaterialAssetUVE_WrongAssetKind_FailsCleanlyAndLo
     const bool foundError =
         std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessageUVE& message) {
             return message.level == Debug::LogLevelUVE::Error &&
-                   message.message.find("not a material file") != std::string::npos;
+                   message.message.contains("not a material file");
         });
     EXPECT_TRUE(foundError);
 
@@ -170,7 +170,7 @@ TEST(MaterialAssetUVETest, LoadMaterialAssetUVE_MissingField_FailsAndLogsError) 
     const bool foundError =
         std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessageUVE& message) {
             return message.level == Debug::LogLevelUVE::Error &&
-                   message.message.find("missing an expected field") != std::string::npos;
+                   message.message.contains("missing an expected field");
         });
     EXPECT_TRUE(foundError);
 

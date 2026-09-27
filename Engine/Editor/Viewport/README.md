@@ -1,4 +1,4 @@
-# UNIVEX — Editor Viewport (C++20 / OpenGL)
+# UNIVEX — Editor Viewport (C++23 / OpenGL)
 
 A real editor viewport: perspective/orthographic camera, an infinite ground
 grid that adjusts its own spacing as you zoom, all four transform gizmos, a

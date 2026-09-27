@@ -137,7 +137,7 @@ target_link_libraries(uve_core_tests PRIVATE
     GTest::gtest
     GTest::gtest_main
 )
-target_compile_features(uve_core_tests PRIVATE cxx_std_20)
+target_compile_features(uve_core_tests PRIVATE cxx_std_23)
 target_compile_definitions(uve_core_tests PRIVATE UVE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 uve_set_warnings(uve_core_tests)
 
@@ -284,7 +284,7 @@ target_link_libraries(uve_integration_tests PRIVATE
     GTest::gtest
     GTest::gtest_main
 )
-target_compile_features(uve_integration_tests PRIVATE cxx_std_20)
+target_compile_features(uve_integration_tests PRIVATE cxx_std_23)
 target_compile_definitions(uve_integration_tests PRIVATE UVE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 uve_set_warnings(uve_integration_tests)
 
@@ -338,7 +338,7 @@ target_link_libraries(uve_engine_tests PRIVATE
     GTest::gtest
     GTest::gtest_main
 )
-target_compile_features(uve_engine_tests PRIVATE cxx_std_20)
+target_compile_features(uve_engine_tests PRIVATE cxx_std_23)
 target_compile_definitions(uve_engine_tests PRIVATE UVE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 uve_set_warnings(uve_engine_tests)
 
@@ -411,7 +411,7 @@ target_link_libraries(uve_editor_tests PRIVATE uve_editor_imgui)
 # EditorMeshLayer), so the test reaches it as "integration/EntityPicker.h" the same way the
 # module's own sources do.
 target_link_libraries(uve_editor_tests PRIVATE univex_viewport_engine_bridge)
-target_compile_features(uve_editor_tests PRIVATE cxx_std_20)
+target_compile_features(uve_editor_tests PRIVATE cxx_std_23)
 target_compile_definitions(uve_editor_tests PRIVATE UVE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 uve_set_warnings(uve_editor_tests)
 

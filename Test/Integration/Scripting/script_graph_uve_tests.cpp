@@ -3259,7 +3259,7 @@ TEST(ScriptVmUVETest, ExecuteScriptBytecodeUVE_ConditionalJumpSelfLoopStopsAtBud
     EXPECT_EQ(result.instructionsExecuted, 3U);
     ASSERT_EQ(result.trace.size(), 4U);
     EXPECT_EQ(result.trace.back().kind, ScriptVmTraceEventKindUVE::Failed);
-    EXPECT_TRUE(result.trace.back().message.find("Instruction budget") != std::string::npos);
+    EXPECT_TRUE(result.trace.back().message.contains("Instruction budget"));
 }
 
 TEST(ScriptVmUVETest, ExecuteScriptBytecodeUVE_ConditionalJumpRejectsInvalidTarget) {
@@ -3272,7 +3272,7 @@ TEST(ScriptVmUVETest, ExecuteScriptBytecodeUVE_ConditionalJumpRejectsInvalidTarg
     EXPECT_EQ(result.status, ScriptVmStatusUVE::NodeExecutionFailed);
     ASSERT_EQ(result.trace.size(), 1U);
     EXPECT_EQ(result.trace.front().kind, ScriptVmTraceEventKindUVE::Failed);
-    EXPECT_TRUE(result.trace.front().message.find("outside") != std::string::npos);
+    EXPECT_TRUE(result.trace.front().message.contains("outside"));
 }
 
 TEST(ScriptVmUVETest, ExecuteScriptBytecodeUVE_CapturesNodeAndCompletionTraceInOrder) {

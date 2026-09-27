@@ -5,5 +5,5 @@ add_library(uve_commandline STATIC
 )
 target_include_directories(uve_commandline PUBLIC Expose)
 target_link_libraries(uve_commandline PUBLIC uve_platform)
-target_compile_features(uve_commandline PUBLIC cxx_std_20)
+target_compile_features(uve_commandline PUBLIC cxx_std_23)
 uve_set_warnings(uve_commandline)

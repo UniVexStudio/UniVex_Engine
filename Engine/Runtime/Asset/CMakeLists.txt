@@ -128,5 +128,5 @@ target_link_libraries(uve_asset
 if(NOT ANDROID)
     target_link_libraries(uve_asset PRIVATE JPEG::JPEG)
 endif()
-target_compile_features(uve_asset PUBLIC cxx_std_20)
+target_compile_features(uve_asset PUBLIC cxx_std_23)
 uve_set_warnings(uve_asset)

@@ -43,5 +43,5 @@ target_link_libraries(uve_core
            uve_rhi uve_rhi_shader uve_rhi_opengl uve_rhi_vulkan uve_rhi_null uve_render_systems uve_scripting uve_ui
     PRIVATE nlohmann_json::nlohmann_json
 )
-target_compile_features(uve_core PUBLIC cxx_std_20)
+target_compile_features(uve_core PUBLIC cxx_std_23)
 uve_set_warnings(uve_core)

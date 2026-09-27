@@ -162,7 +162,7 @@ TEST(MeshAssetUVETest, LoadMeshAssetUVE_WrongAssetKind_FailsCleanlyAndLogsError)
     const std::vector<Debug::LogMessageUVE> messages = memorySinkPtr->GetMessagesUVE();
     const bool foundError =
         std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessageUVE& message) {
-            return message.level == Debug::LogLevelUVE::Error && message.message.find("not a mesh file") != std::string::npos;
+            return message.level == Debug::LogLevelUVE::Error && message.message.contains("not a mesh file");
         });
     EXPECT_TRUE(foundError);
 
@@ -216,7 +216,7 @@ TEST(MeshAssetUVETest, LoadMeshAssetUVE_OutOfBoundsIndex_FailsAndLogsError) {
     const bool foundError =
         std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessageUVE& message) {
             return message.level == Debug::LogLevelUVE::Error &&
-                   message.message.find("out-of-bounds index") != std::string::npos;
+                   message.message.contains("out-of-bounds index");
         });
     EXPECT_TRUE(foundError);
 

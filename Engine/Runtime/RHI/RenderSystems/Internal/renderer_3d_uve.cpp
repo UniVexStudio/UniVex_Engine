@@ -229,8 +229,8 @@ inline constexpr std::size_t kMaximumInstancesPerFrameUVE = 65'536U;
 /// that lie is silent (every instance drawn at the first one's transform). The source either reads
 /// the instance buffer or it does not, and that is the only thing worth trusting here.
 [[nodiscard]] bool VertexSourceSupportsInstancingUVE(const std::string_view vertexSource) noexcept {
-    return vertexSource.find("uInstanceBaseIndex") != std::string_view::npos &&
-           vertexSource.find("gl_InstanceID") != std::string_view::npos;
+    return vertexSource.contains("uInstanceBaseIndex") &&
+           vertexSource.contains("gl_InstanceID");
 }
 
 inline constexpr std::size_t kMaximumParticleGpuDrawCommandsUVE = 16'384U;

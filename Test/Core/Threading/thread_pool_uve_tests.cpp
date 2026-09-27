@@ -142,7 +142,7 @@ TEST(ThreadPoolUVETest, ExceptionInJob_IsCaughtAndLoggedAsError_PoolKeepsRunning
     const bool foundExceptionError =
         std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessageUVE& message) {
             return message.level == Debug::LogLevelUVE::Error &&
-                   message.message.find("boom") != std::string::npos;
+                   message.message.contains("boom");
         });
     EXPECT_TRUE(foundExceptionError);
 
@@ -165,7 +165,7 @@ TEST(ThreadPoolUVETest, UnknownExceptionInJob_IsCaughtAndLoggedGenerically) {
     const bool foundGenericError =
         std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessageUVE& message) {
             return message.level == Debug::LogLevelUVE::Error &&
-                   message.message.find("unknown") != std::string::npos;
+                   message.message.contains("unknown");
         });
     EXPECT_TRUE(foundGenericError);
 

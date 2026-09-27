@@ -16,4 +16,4 @@ add_library(uve_nodes_canvas_layer STATIC
 )
 target_include_directories(uve_nodes_canvas_layer PUBLIC Expose)
 target_link_libraries(uve_nodes_canvas_layer PUBLIC uve_math uve_component uve_entity)
-target_compile_features(uve_nodes_canvas_layer PUBLIC cxx_std_20)
+target_compile_features(uve_nodes_canvas_layer PUBLIC cxx_std_23)

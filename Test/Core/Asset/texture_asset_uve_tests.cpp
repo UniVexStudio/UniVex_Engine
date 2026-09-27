@@ -77,7 +77,7 @@ TEST(TextureAssetUVETest, LoadTextureAssetUVE_WrongAssetKind_FailsCleanlyAndLogs
     const bool foundError =
         std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessageUVE& message) {
             return message.level == Debug::LogLevelUVE::Error &&
-                   message.message.find("not a texture file") != std::string::npos;
+                   message.message.contains("not a texture file");
         });
     EXPECT_TRUE(foundError);
 
@@ -145,7 +145,7 @@ TEST(TextureAssetUVETest, LoadTextureAssetUVE_PixelByteCountMismatch_FailsAndLog
     const bool foundError =
         std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessageUVE& message) {
             return message.level == Debug::LogLevelUVE::Error &&
-                   message.message.find("pixel bytes") != std::string::npos;
+                   message.message.contains("pixel bytes");
         });
     EXPECT_TRUE(foundError);
 

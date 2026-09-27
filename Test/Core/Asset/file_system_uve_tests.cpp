@@ -235,7 +235,7 @@ TEST_F(FileSystemUVETest, WriteFileUVE_OnlyBundleMountMatches_ReturnsFalseAndLog
     const bool foundError =
         std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessageUVE& message) {
             return message.level == Debug::LogLevelUVE::Error &&
-                   message.message.find("no writable") != std::string::npos;
+                   message.message.contains("no writable");
         });
     EXPECT_TRUE(foundError);
 
@@ -303,7 +303,7 @@ TEST_F(FileSystemUVETest, ReadFileUVE_NoMountResolves_ReturnsNulloptAndLogsError
     const bool foundError =
         std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessageUVE& message) {
             return message.level == Debug::LogLevelUVE::Error &&
-                   message.message.find("no mount resolves") != std::string::npos;
+                   message.message.contains("no mount resolves");
         });
     EXPECT_TRUE(foundError);
 

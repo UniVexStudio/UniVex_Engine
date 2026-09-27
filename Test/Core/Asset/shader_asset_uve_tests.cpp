@@ -67,7 +67,7 @@ TEST(ShaderAssetUVETest, LoadShaderAssetUVE_WrongAssetKind_FailsCleanlyAndLogsEr
     const bool foundError =
         std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessageUVE& message) {
             return message.level == Debug::LogLevelUVE::Error &&
-                   message.message.find("not a shader file") != std::string::npos;
+                   message.message.contains("not a shader file");
         });
     EXPECT_TRUE(foundError);
 
@@ -104,7 +104,7 @@ TEST(ShaderAssetUVETest, LoadShaderAssetUVE_EmptySourceCode_FailsAndLogsError) {
     const bool foundError =
         std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessageUVE& message) {
             return message.level == Debug::LogLevelUVE::Error &&
-                   message.message.find("empty source code") != std::string::npos;
+                   message.message.contains("empty source code");
         });
     EXPECT_TRUE(foundError);
 

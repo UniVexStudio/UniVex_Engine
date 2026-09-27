@@ -103,7 +103,7 @@ TEST(ComputeKernelPortabilityUVETest, GlslKernels_AvoidTheConstructsSpirvCannotE
             const bool isCommentary = firstNonSpace != std::string_view::npos &&
                                       line.substr(firstNonSpace, 2U) == "//";
             if (!isCommentary) {
-                EXPECT_TRUE(line.find("layout") != std::string_view::npos)
+                EXPECT_TRUE(line.contains("layout"))
                     << "bare `uniform` in " << kernel.name
                     << " cannot compile to SPIR-V, so this kernel would never run on Vulkan: " << line;
             }
