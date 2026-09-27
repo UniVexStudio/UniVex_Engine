@@ -94,10 +94,10 @@ TEST(SceneComponentAuthoringUVETest, SetSelectedSceneComponentUVE_AddsAllSupport
         ASSERT_TRUE(editor.SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::ParticleEmitter, particles));
         EXPECT_EQ(entityManager.GetComponentUVE<Scene::ParticleEmitterComponentUVE>(entity).maxParticles, 2048U);
 
-        const Scene::ScriptComponentUVE script{"scripts/player.uvscript"};
+        const Scene::ScriptComponentUVE script{"scripts/player.uvs"};
         ASSERT_TRUE(editor.SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::Script, script));
         EXPECT_EQ(entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(entity).scriptAssetPath,
-                  "scripts/player.uvscript");
+                  "scripts/player.uvs");
 
         Scene::AnimationPlayerComponentUVE animation;
         animation.clip = Asset::AssetGuidUVE{77U};
@@ -232,7 +232,7 @@ TEST(SceneComponentAuthoringUVETest, SetSelectedSceneComponentUVE_RejectsInvalid
         EXPECT_FALSE(editor.SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::ParticleEmitter, invalidParticles));
         EXPECT_FALSE(entityManager.HasComponentUVE<Scene::ParticleEmitterComponentUVE>(entity));
 
-        const Scene::ScriptComponentUVE invalidScript{"../player.uvscript"};
+        const Scene::ScriptComponentUVE invalidScript{"../player.uvs"};
         EXPECT_FALSE(editor.SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::Script, invalidScript));
         EXPECT_FALSE(entityManager.HasComponentUVE<Scene::ScriptComponentUVE>(entity));
 

@@ -18,7 +18,6 @@ namespace UVE::Core {
 enum class TypeMetadataKindUVE : std::uint8_t {
     Component = 0,
     Resource,
-    VisualScriptNode,
     InspectorTarget,
     Other,
 };

@@ -95,9 +95,7 @@
 #include "uve/component/ui_image_component_uve.h"
 #include "uve/component/ui_text_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
-#include "uve/scripting/script_graph_persistence_uve.h"
 #include "uve/rhi_null/null_render_device_uve.h"
-#include "uve/scripting/script_graph_uve.h"
 #include "uve/window/i_window_manager_uve.h"
 #include "uve/core/engine_project_settings_uve.h"
 #include "uve/config/config_manager_uve.h"
@@ -1112,52 +1110,6 @@ TEST(EngineCoreUVETest, FileSystem_ReachableAndReadWriteRoundTripAfterInit) {
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, ScriptComponentEntity_ReconcilesAndTicksAgainstScriptRuntimeUVE) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
-    engine.Init();
-    ASSERT_TRUE(engine.Load());
-
-    Asset::IFileSystemUVE& fileSystem = engine.GetServicesUVE().GetFileSystemUVE();
-    const std::filesystem::path mountDirectory = "uve_engine_core_tests_script_vfs_mount";
-    std::filesystem::remove_all(mountDirectory);
-    std::filesystem::create_directories(mountDirectory);
-    fileSystem.MountDirectoryUVE("", mountDirectory, 0);
-
-    // The simplest real graph that exercises SyncScriptRuntimeUVE()'s full production path (real
-    // asset load -> real compile -> real ScriptRuntimeUVE attach -> real per-frame tick against the
-    // real engine-owned bindings): one standalone data-producer node reading real keyboard state.
-    // input.key_down is a pure query node (no execution-flow pins), so it needs no execution entry
-    // point to compile - confirmed against CompileScriptGraphToIrUVE's own existing test coverage
-    // for standalone input query nodes in Test/Integration/Scripting/script_graph_uve_tests.cpp.
-    Scripting::ScriptGraphSchemaUVE schema;
-    ASSERT_TRUE(schema.graph.AddNodeUVE({1U, "input.key_down"}));
-    std::vector<Scripting::ScriptPersistenceDiagnosticUVE> encodeDiagnostics;
-    const std::string encoded = Scripting::EncodeScriptGraphSchemaUVE(schema, encodeDiagnostics);
-    ASSERT_TRUE(encodeDiagnostics.empty());
-    ASSERT_FALSE(encoded.empty());
-
-    const auto* const encodedBytes = reinterpret_cast<const std::byte*>(encoded.data());
-    const std::vector<std::byte> encodedData(encodedBytes, encodedBytes + encoded.size());
-    ASSERT_TRUE(fileSystem.WriteFileUVE("test_script.uvscript", encodedData));
-
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-    entityManager.AddComponentUVE<Scene::ScriptComponentUVE>(
-        entity, Scene::ScriptComponentUVE{"test_script.uvscript"});
-
-    EXPECT_EQ(engine.GetActiveScriptInstanceCountUVE(), 0U);
-    engine.TickFrameUVE();
-    EXPECT_EQ(engine.GetActiveScriptInstanceCountUVE(), 1U);
-
-    // A second frame must not re-reconcile (ReconcileUVE rejects a duplicate attach) or regress the
-    // attached instance count - proves SyncScriptRuntimeUVE()'s HasInstanceUVE() guard works.
-    engine.TickFrameUVE();
-    EXPECT_EQ(engine.GetActiveScriptInstanceCountUVE(), 1U);
-
-    std::filesystem::remove_all(mountDirectory);
-    engine.Shutdown();
-}
-
 TEST(EngineCoreUVETest, UVScriptEntity_CompilesOnceRaisesReadyThenTicksEveryFrame) {
     EngineCoreUVE engine(MakeTestConfigUVE());
     engine.Init();
@@ -1187,8 +1139,7 @@ TEST(EngineCoreUVETest, UVScriptEntity_CompilesOnceRaisesReadyThenTicksEveryFram
     ASSERT_NE(instance, nullptr);
     EXPECT_EQ(instance->GetFieldUVE("readies"), UVScript::ValueUVE{std::int64_t{1}});
     EXPECT_EQ(instance->GetFieldUVE("ticks"), UVScript::ValueUVE{std::int64_t{3}});
-    // A `.uvs` script never goes near the graph runtime.
-    EXPECT_EQ(engine.GetActiveScriptInstanceCountUVE(), 0U);
+    EXPECT_EQ(engine.GetActiveScriptInstanceCountUVE(), 1U);
 
     // An unknown name does not compile: no instance, and it is not retried every frame.
     entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(entity).scriptAssetPath = "broken.uvs";
@@ -1252,7 +1203,7 @@ TEST(EngineCoreUVETest, UVScriptEntity_CompilesOnceRaisesReadyThenTicksEveryFram
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, ScriptComponentEntity_FindsAProjectScriptAndRetriesWhenItsPathChanges) {
+TEST(EngineCoreUVETest, ScriptComponentEntity_FindsAProjectScriptOnceItIsWritten) {
     // No manual mount: the project directory itself is mounted at the VFS root, so a node's
     // project-relative script path resolves to the file the editor wrote beside the scene.
     const std::filesystem::path projectRoot = "uve_engine_core_tests_project_root";
@@ -1264,28 +1215,20 @@ TEST(EngineCoreUVETest, ScriptComponentEntity_FindsAProjectScriptAndRetriesWhenI
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    Scripting::ScriptGraphSchemaUVE schema;
-    ASSERT_TRUE(schema.graph.AddNodeUVE({1U, "scene.self"}));
-    std::vector<Scripting::ScriptPersistenceDiagnosticUVE> diagnostics;
-    const std::string encoded = Scripting::EncodeScriptGraphSchemaUVE(schema, diagnostics);
-    ASSERT_TRUE(diagnostics.empty());
-
     Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
     const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-    // First the script does not exist yet: a failure, remembered for that path.
-    entityManager.AddComponentUVE<Scene::ScriptComponentUVE>(entity, Scene::ScriptComponentUVE{"scripts/main.uvscript"});
+    // A node-graph script no longer runs at all.
+    entityManager.AddComponentUVE<Scene::ScriptComponentUVE>(entity, Scene::ScriptComponentUVE{"scripts/old.uvscript"});
     engine.TickFrameUVE();
     EXPECT_EQ(engine.GetActiveScriptInstanceCountUVE(), 0U);
 
-    // Written, but the same path is not retried every frame...
-    {
-        std::ofstream(projectRoot / "scripts" / "main.uvscript", std::ios::binary) << encoded;
-        std::ofstream(projectRoot / "scripts" / "other.uvscript", std::ios::binary) << encoded;
-    }
+    // A `.uvs` script that does not exist yet fails, and runs once the file is written.
+    entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(entity).scriptAssetPath = "scripts/main.uvs";
     engine.TickFrameUVE();
     EXPECT_EQ(engine.GetActiveScriptInstanceCountUVE(), 0U);
-    // ...while pointing the node at a script is tried at once.
-    entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(entity).scriptAssetPath = "scripts/other.uvscript";
+    std::ofstream(projectRoot / "scripts" / "main.uvs", std::ios::binary) << "var ticks = 0\n";
+    std::this_thread::sleep_for(std::chrono::milliseconds(600));
+    engine.TickFrameUVE();
     engine.TickFrameUVE();
     EXPECT_EQ(engine.GetActiveScriptInstanceCountUVE(), 1U);
 

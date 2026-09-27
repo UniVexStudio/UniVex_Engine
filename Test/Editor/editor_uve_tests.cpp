@@ -124,9 +124,6 @@ struct EditorUVEAccessUVE final {
                                                                                   const Scene::EntityUVE entity) {
         return editor.m_inspectorDrawerRegistry.GetEligibleDrawerIdsUVE(entity);
     }
-    [[nodiscard]] static std::string GetScriptNodeTitleUVE(const EditorUVE& editor) {
-        return editor.GetScriptNodeTitleUVE("scene.self", "Scene Node");
-    }
     [[nodiscard]] static std::size_t GetInspectorDrawerCountUVE(const EditorUVE& editor) {
         return editor.m_inspectorDrawerRegistry.GetDrawerCountUVE();
     }
@@ -207,22 +204,6 @@ struct EditorUVEAccessUVE final {
         return editor.m_meshThumbnailCache.size();
     }
 
-    static void CompileVisualScriptUVE(EditorUVE& editor) { editor.CompileVisualScriptUVE(); }
-
-    [[nodiscard]] static bool IsVisualScriptCompileSuccessfulUVE(const EditorUVE& editor) noexcept {
-        return editor.m_scriptCompileSucceeded;
-    }
-
-    [[nodiscard]] static std::uint64_t GetLastCompiledVisualScriptGraphRevisionUVE(
-        const EditorUVE& editor) noexcept {
-        return editor.m_scriptLastCompiledGraphRevision;
-    }
-
-    [[nodiscard]] static std::size_t GetVisualScriptCompileInstructionCountUVE(
-        const EditorUVE& editor) noexcept {
-        return editor.m_scriptCompileInstructionCount;
-    }
-
     [[nodiscard]] static bool IsLibraryWorkspaceActiveUVE(const EditorUVE& editor) noexcept {
         return editor.m_activeWorkspace == EditorUVE::EditorWorkspaceUVE::Library;
     }
@@ -231,10 +212,6 @@ struct EditorUVEAccessUVE final {
     }
     [[nodiscard]] static bool IsScriptingWorkspaceActiveUVE(const EditorUVE& editor) noexcept {
         return editor.m_activeWorkspace == EditorUVE::EditorWorkspaceUVE::Scripting;
-    }
-
-    [[nodiscard]] static Scene::EntityUVE GetActiveVisualScriptBranchOwnerUVE(const EditorUVE& editor) noexcept {
-        return editor.m_visualScriptBranches[editor.m_activeVisualScriptBranch].ownerEntity;
     }
 };
 
@@ -286,44 +263,6 @@ TEST(EditorUVETest, InitUVE_StartsRunningWithEmptyDocumentRootsAndSupportsHeadle
     engine.Shutdown();
 }
 
-TEST(EditorUVETest, VisualScriptBranchesAreEditorOnlyAndPersisted) {
-    const std::filesystem::path scenePath = "uve_editor_tests_script_branches.uvscene";
-    const std::filesystem::path scriptPath = scenePath.parent_path() /
-                                             (scenePath.stem().string() + ".scripting");
-    std::error_code error;
-    std::filesystem::remove(scriptPath, error);
-
-    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
-    engine.Init();
-    ASSERT_TRUE(engine.Load());
-    {
-        EditorUVE editor(engine.GetServicesUVE(), scenePath);
-        editor.InitUVE();
-        ASSERT_EQ(editor.GetVisualScriptBranchNamesUVE(), (std::vector<std::string>{"Type 1 Scene"}));
-
-        ASSERT_TRUE(editor.GetVisualScriptCanvasUVE().AddNodeTypeUVE("engine.log", {8.0F, 12.0F}).IsAppliedUVE());
-        ASSERT_TRUE(editor.CreateVisualScriptBranchUVE("Type 2 Scene"));
-        ASSERT_EQ(editor.GetActiveVisualScriptBranchNameUVE(), "Type 2 Scene");
-        EXPECT_TRUE(editor.GetVisualScriptCanvasUVE().GetSnapshotUVE().nodes.empty());
-        ASSERT_TRUE(editor.RenameActiveVisualScriptBranchUVE("Boss Scene"));
-        ASSERT_TRUE(editor.SelectVisualScriptBranchUVE("Type 1 Scene"));
-        EXPECT_EQ(editor.GetVisualScriptCanvasUVE().GetSnapshotUVE().nodes.size(), 1U);
-        ASSERT_TRUE(editor.SaveVisualScriptWorkspaceUVE());
-        editor.ShutdownUVE();
-    }
-    {
-        EditorUVE restored(engine.GetServicesUVE(), scenePath);
-        restored.InitUVE();
-        EXPECT_EQ(restored.GetVisualScriptBranchNamesUVE(),
-                  (std::vector<std::string>{"Type 1 Scene", "Boss Scene"}));
-        ASSERT_TRUE(restored.SelectVisualScriptBranchUVE("Boss Scene"));
-        EXPECT_TRUE(restored.GetVisualScriptCanvasUVE().GetSnapshotUVE().nodes.empty());
-        restored.ShutdownUVE();
-    }
-    engine.Shutdown();
-    std::filesystem::remove(scriptPath, error);
-}
-
 TEST(EditorUVETest, OpenScriptGraphForEntity_NoScriptComponent_ReturnsFalse) {
     Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
     engine.Init();
@@ -338,105 +277,6 @@ TEST(EditorUVETest, OpenScriptGraphForEntity_NoScriptComponent_ReturnsFalse) {
 
     EXPECT_FALSE(editor.OpenScriptGraphForEntityUVE(entity));
     EXPECT_FALSE(EditorUVEAccessUVE::IsScriptingWorkspaceActiveUVE(editor));
-
-    editor.ShutdownUVE();
-    engine.Shutdown();
-}
-
-TEST(EditorUVETest, OpenScriptGraphForEntity_NoBranchYet_CreatesOneNamedFromAssetPath) {
-    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
-    engine.Init();
-    ASSERT_TRUE(engine.Load());
-    EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_open_script_graph_create.uvscene");
-    editor.InitUVE();
-    Core::EngineServicesUVE& services = engine.GetServicesUVE();
-    Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
-
-    const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-    AttachRootUVE(engine, entity, Scene::TransformComponentUVE{});
-    entityManager.AddComponentUVE<Scene::ScriptComponentUVE>(
-        entity, Scene::ScriptComponentUVE{"Scripts/Boss.scripting"});
-
-    ASSERT_TRUE(editor.OpenScriptGraphForEntityUVE(entity));
-    EXPECT_TRUE(EditorUVEAccessUVE::IsScriptingWorkspaceActiveUVE(editor));
-    // The raw path contains '/', which CreateVisualScriptBranchUVE would reject as a branch name -
-    // the branch is named for the script itself, and found again by its asset path, not by name.
-    EXPECT_EQ(editor.GetActiveVisualScriptBranchNameUVE(), "Boss");
-    EXPECT_EQ(EditorUVEAccessUVE::GetActiveVisualScriptBranchOwnerUVE(editor), entity);
-
-    editor.ShutdownUVE();
-    engine.Shutdown();
-}
-
-TEST(EditorUVETest, OpenScriptGraphForEntity_EmptyScriptAssetPath_NamesBranchFromEntityName) {
-    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
-    engine.Init();
-    ASSERT_TRUE(engine.Load());
-    EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_open_script_graph_empty_path.uvscene");
-    editor.InitUVE();
-    Core::EngineServicesUVE& services = engine.GetServicesUVE();
-    Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
-
-    const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-    AttachRootUVE(engine, entity, Scene::TransformComponentUVE{});
-    entityManager.AddComponentUVE<Scene::NameComponentUVE>(entity, Scene::NameComponentUVE{"Boss"});
-    entityManager.AddComponentUVE<Scene::ScriptComponentUVE>(entity, Scene::ScriptComponentUVE{});
-
-    ASSERT_TRUE(editor.OpenScriptGraphForEntityUVE(entity));
-    EXPECT_EQ(editor.GetActiveVisualScriptBranchNameUVE(), "Boss Script");
-
-    editor.ShutdownUVE();
-    engine.Shutdown();
-}
-
-TEST(EditorUVETest, OpenScriptGraphForEntity_NameCollision_DeduplicatesBranchName) {
-    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
-    engine.Init();
-    ASSERT_TRUE(engine.Load());
-    EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_open_script_graph_collision.uvscene");
-    editor.InitUVE();
-    Core::EngineServicesUVE& services = engine.GetServicesUVE();
-    Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
-
-    ASSERT_TRUE(editor.CreateVisualScriptBranchUVE("Boss Script"));
-    ASSERT_TRUE(editor.SelectVisualScriptBranchUVE("Type 1 Scene"));
-
-    const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-    AttachRootUVE(engine, entity, Scene::TransformComponentUVE{});
-    entityManager.AddComponentUVE<Scene::NameComponentUVE>(entity, Scene::NameComponentUVE{"Boss"});
-    entityManager.AddComponentUVE<Scene::ScriptComponentUVE>(entity, Scene::ScriptComponentUVE{});
-
-    ASSERT_TRUE(editor.OpenScriptGraphForEntityUVE(entity));
-    EXPECT_EQ(editor.GetActiveVisualScriptBranchNameUVE(), "Boss Script (2)");
-
-    editor.ShutdownUVE();
-    engine.Shutdown();
-}
-
-TEST(EditorUVETest, OpenScriptGraphForEntity_ExistingOwnedBranch_SelectsItWithoutCreatingAnother) {
-    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
-    engine.Init();
-    ASSERT_TRUE(engine.Load());
-    EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_open_script_graph_reopen.uvscene");
-    editor.InitUVE();
-    Core::EngineServicesUVE& services = engine.GetServicesUVE();
-    Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
-
-    const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-    AttachRootUVE(engine, entity, Scene::TransformComponentUVE{});
-    entityManager.AddComponentUVE<Scene::ScriptComponentUVE>(
-        entity, Scene::ScriptComponentUVE{"Scripts/Boss.scripting"});
-
-    ASSERT_TRUE(editor.OpenScriptGraphForEntityUVE(entity));
-    const std::size_t branchCountAfterFirstOpen = editor.GetVisualScriptBranchNamesUVE().size();
-    ASSERT_TRUE(editor.GetVisualScriptCanvasUVE().AddNodeTypeUVE("engine.log", {4.0F, 4.0F}).IsAppliedUVE());
-
-    ASSERT_TRUE(editor.SelectVisualScriptBranchUVE("Type 1 Scene"));
-    ASSERT_TRUE(editor.OpenScriptGraphForEntityUVE(entity));
-
-    EXPECT_EQ(editor.GetVisualScriptBranchNamesUVE().size(), branchCountAfterFirstOpen);
-    EXPECT_EQ(editor.GetActiveVisualScriptBranchNameUVE(), "Boss");
-    EXPECT_EQ(editor.GetVisualScriptCanvasUVE().GetSnapshotUVE().nodes.size(), 1U);
 
     editor.ShutdownUVE();
     engine.Shutdown();
@@ -795,7 +635,7 @@ TEST(EditorUVETest, ContentBrowserWorkflowUVE_ScriptsAudioAndFontsAreTheirOwnTyp
         entry.kind = Asset::ProjectFileEntryKindUVE::File;
         return EditorUVEAccessUVE::GetContentBrowserItemTypeLabelUVE(entry);
     };
-    EXPECT_EQ(labelOf("Scripts/player.uvscript"), "Script");
+    EXPECT_EQ(labelOf("Scripts/player.uvs"), "Script");
     EXPECT_EQ(labelOf("Audio/step.uvaudio"), "Audio");
     EXPECT_EQ(labelOf("Audio/Step.WAV"), "Audio");
     EXPECT_EQ(labelOf("Fonts/title.ttf"), "Font");
@@ -2262,11 +2102,11 @@ TEST(EditorUVETest, NodeWarningsUVE_ReportSetupProblemsAndScriptPath) {
         // A script: a valid path is reported as the node's script; an invalid one is a warning too.
         const Scene::EntityUVE scripted = entityManager.CreateEntityUVE();
         AttachRootUVE(engine, scripted, Scene::TransformComponentUVE{});
-        entityManager.AddComponentUVE<Scene::ScriptComponentUVE>(scripted, Scene::ScriptComponentUVE{"scripts/player.uvscript"});
+        entityManager.AddComponentUVE<Scene::ScriptComponentUVE>(scripted, Scene::ScriptComponentUVE{"scripts/player.uvs"});
         ASSERT_TRUE(editor.GetNodeScriptPathUVE(scripted).has_value());
-        EXPECT_EQ(*editor.GetNodeScriptPathUVE(scripted), "scripts/player.uvscript");
+        EXPECT_EQ(*editor.GetNodeScriptPathUVE(scripted), "scripts/player.uvs");
         EXPECT_TRUE(editor.GetNodeWarningsUVE(scripted).empty());
-        entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(scripted).scriptAssetPath = "../outside.uvscript";
+        entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(scripted).scriptAssetPath = "../outside.uvs";
         EXPECT_EQ(editor.GetNodeWarningsUVE(scripted).size(), 1U);
 
         // A Skeleton3D with no source model has no bones to show.
@@ -4535,42 +4375,6 @@ TEST(EditorUVETest, PlayModeSandbox_HandlesEmptyDocumentAndMissingControlSafely)
     engine.Shutdown();
 }
 
-TEST(EditorUVETest, VisualScriptSearchInsertionPreservesPositionAndCompilerUsesNativeGraph) {
-    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
-    engine.Init();
-    ASSERT_TRUE(engine.Load());
-
-    {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_scripting_workspace.uvscene");
-        editor.InitUVE();
-        Scripting::ScriptGraphCanvasUVE& canvas = editor.GetVisualScriptCanvasUVE();
-        const Scripting::ScriptGraphCanvasSnapshotUVE before = canvas.GetSnapshotUVE();
-        ASSERT_TRUE(std::any_of(
-            before.paletteDescriptors.cbegin(), before.paletteDescriptors.cend(),
-            [](const Scripting::ScriptGraphCanvasPaletteEntryUVE& entry) { return entry.typeId == "engine.log"; }));
-
-        const Scripting::ScriptGraphCanvasPointUVE insertionPosition{-37.5F, 82.25F};
-        const auto addResult = canvas.AddNodeTypeUVE("engine.log", insertionPosition, before.revision);
-        ASSERT_TRUE(addResult.IsAppliedUVE());
-        const Scripting::ScriptGraphCanvasSnapshotUVE after = canvas.GetSnapshotUVE();
-        ASSERT_EQ(after.nodes.size(), 1U);
-        EXPECT_EQ(after.nodes.front().typeId, "engine.log");
-        EXPECT_EQ(after.nodes.front().position, insertionPosition);
-        EXPECT_EQ(after.revision, addResult.revision);
-
-        EditorUVEAccessUVE::CompileVisualScriptUVE(editor);
-        EXPECT_TRUE(EditorUVEAccessUVE::IsVisualScriptCompileSuccessfulUVE(editor));
-        EXPECT_EQ(EditorUVEAccessUVE::GetLastCompiledVisualScriptGraphRevisionUVE(editor), after.graphRevision);
-        EXPECT_GT(EditorUVEAccessUVE::GetVisualScriptCompileInstructionCountUVE(editor), 0U);
-
-        editor.ShutdownUVE();
-    }
-
-    engine.Shutdown();
-}
-
-
-
 // ---------------------------------------------------------------------------------------------
 // Transform gestures.
 //
@@ -4940,50 +4744,6 @@ TEST(EditorUVETest, ScriptExportsUVE_ShowTheScriptsExportsAndStoreTheNodesValues
         ASSERT_TRUE(editor.RedoUVE());
         ASSERT_TRUE(editor.SetSelectedScriptExportUVE("speed", std::nullopt));
         EXPECT_TRUE(entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(root).exportValues.empty());
-
-        std::error_code error;
-        std::filesystem::remove(path, error);
-        editor.ShutdownUVE();
-    }
-    engine.Shutdown();
-}
-
-TEST(EditorUVETest, ScriptSlotUVE_AddNewCppCreatesALinkedScriptTitledWithTheNode) {
-    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
-    engine.Init();
-    ASSERT_TRUE(engine.Load());
-    {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_script_slot.uvscene");
-        editor.InitUVE();
-        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-        const Scene::EntityUVE root = editor.GetDocumentSceneRootUVE();
-        editor.SelectEntityUVE(root);
-        ASSERT_TRUE(editor.SetSelectedEntityNameUVE("main"));
-
-        ASSERT_TRUE(editor.CreateScriptForSelectedEntityUVE());
-        const std::string path = entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(root).scriptAssetPath;
-        EXPECT_EQ(path.rfind("scripts/main", 0), 0U);
-        EXPECT_TRUE(editor.DescribeScriptAssetProblemUVE(path).empty()); // A real, decodable script file.
-        EXPECT_TRUE(EditorUVEAccessUVE::IsScriptingWorkspaceActiveUVE(editor));
-        const auto nodes = editor.GetVisualScriptCanvasUVE().GetSnapshotUVE().nodes;
-        ASSERT_EQ(nodes.size(), 1U);
-        EXPECT_EQ(nodes.front().typeId, "scene.self");
-        EXPECT_TRUE(nodes.front().pins.empty());
-        EXPECT_EQ(EditorUVEAccessUVE::GetScriptNodeTitleUVE(editor), "main");
-
-        // Connected: renaming the node renames it on the canvas.
-        ASSERT_TRUE(editor.SetSelectedEntityNameUVE("game"));
-        EXPECT_EQ(EditorUVEAccessUVE::GetScriptNodeTitleUVE(editor), "game");
-
-        // A second Add is refused while the slot is filled; Clear then Load puts it back.
-        EXPECT_FALSE(editor.CreateScriptForSelectedEntityUVE());
-        ASSERT_TRUE(editor.AssignScriptToSelectedEntityUVE({}));
-        EXPECT_TRUE(entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(root).scriptAssetPath.empty());
-        EXPECT_FALSE(editor.AssignScriptToSelectedEntityUVE("scripts/missing.uvscript"));
-        EXPECT_FALSE(editor.AssignScriptToSelectedEntityUVE("../escape.uvscript"));
-        ASSERT_TRUE(editor.AssignScriptToSelectedEntityUVE(path));
-        ASSERT_TRUE(editor.UndoUVE());
-        EXPECT_TRUE(entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(root).scriptAssetPath.empty());
 
         std::error_code error;
         std::filesystem::remove(path, error);
