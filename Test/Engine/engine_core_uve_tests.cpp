@@ -1202,6 +1202,25 @@ TEST(EngineCoreUVETest, UVScriptEntity_CompilesOnceRaisesReadyThenTicksEveryFram
     ASSERT_NE(engine.FindUVScriptInstanceUVE(entity), nullptr);
     EXPECT_EQ(engine.FindUVScriptInstanceUVE(entity)->GetFieldUVE("ticks"), UVScript::ValueUVE{std::int64_t{1}});
 
+    // Saving new text restarts the script within half a second - no path change needed. The same
+    // goes for a script that failed: fixing the file is enough.
+    write("counter.uvs", "var version = 2\n");
+    std::this_thread::sleep_for(std::chrono::milliseconds(600));
+    engine.TickFrameUVE();
+    engine.TickFrameUVE();
+    ASSERT_NE(engine.FindUVScriptInstanceUVE(entity), nullptr);
+    EXPECT_EQ(engine.FindUVScriptInstanceUVE(entity)->GetFieldUVE("version"), UVScript::ValueUVE{std::int64_t{2}});
+
+    entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(entity).scriptAssetPath = "broken.uvs";
+    engine.TickFrameUVE();
+    EXPECT_EQ(engine.FindUVScriptInstanceUVE(entity), nullptr);
+    write("broken.uvs", "var fixed = true\n");
+    std::this_thread::sleep_for(std::chrono::milliseconds(600));
+    engine.TickFrameUVE();
+    engine.TickFrameUVE();
+    ASSERT_NE(engine.FindUVScriptInstanceUVE(entity), nullptr);
+    EXPECT_EQ(engine.FindUVScriptInstanceUVE(entity)->GetFieldUVE("fixed"), UVScript::ValueUVE{true});
+
     entityManager.RemoveComponentUVE<Scene::ScriptComponentUVE>(entity);
     engine.TickFrameUVE();
     EXPECT_EQ(engine.FindUVScriptInstanceUVE(entity), nullptr);

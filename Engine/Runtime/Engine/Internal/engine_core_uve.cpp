@@ -14,6 +14,7 @@
 #include "uve/asset/legacy_extension_migration_uve.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -789,6 +790,31 @@ void EngineCoreUVE::SyncScriptRuntimeUVE() {
 }
 
 void EngineCoreUVE::SyncUVScriptsUVE(const bool simulationPaused) {
+    // Edits are picked up by re-reading every script in use a few times a second: a script whose
+    // text changed is dropped (and so recompiled and restarted below), and a failed one is retried.
+    // The files are small and few, so this is cheaper than wiring every writer to a notification.
+    constexpr auto kRecheckIntervalUVE = std::chrono::milliseconds(500);
+    if (const auto now = std::chrono::steady_clock::now(); now - m_uvScriptLastRecheck >= kRecheckIntervalUVE) {
+        m_uvScriptLastRecheck = now;
+        const auto readText = [this](const std::string& path) -> std::optional<std::string> {
+            const std::optional<std::vector<std::byte>> bytes = m_fileSystem->ReadFileUVE(path);
+            if (!bytes.has_value()) {
+                return std::nullopt;
+            }
+            return std::string(reinterpret_cast<const char*>(bytes->data()), bytes->size());
+        };
+        std::erase_if(m_uvScripts,
+                      [&readText](const auto& entry) { return readText(entry.second.path) != entry.second.source; });
+        std::erase_if(m_uvScriptFailedSources, [this, &readText](const auto& entry) {
+            if (readText(entry.first) == entry.second) {
+                return false;
+            }
+            std::erase_if(m_scriptReconcileFailedEntities,
+                          [&entry](const auto& failed) { return failed.second == entry.first; });
+            return true;
+        });
+    }
+
     // Drop instances whose node is gone, lost its script, or now points at another file.
     std::erase_if(m_uvScripts, [this](const auto& entry) {
         const Scene::EntityUVE entity = entry.first;
@@ -821,6 +847,7 @@ void EngineCoreUVE::SyncUVScriptsUVE(const bool simulationPaused) {
             const std::optional<std::vector<std::byte>> bytes = m_fileSystem->ReadFileUVE(component.scriptAssetPath);
             if (!bytes.has_value()) {
                 fail("cannot be read");
+                m_uvScriptFailedSources.insert_or_assign(component.scriptAssetPath, std::nullopt);
                 return;
             }
             const std::string source(reinterpret_cast<const char*>(bytes->data()), bytes->size());
@@ -832,10 +859,12 @@ void EngineCoreUVE::SyncUVScriptsUVE(const bool simulationPaused) {
                               diagnostic.message);
                 }
                 fail("did not compile");
+                m_uvScriptFailedSources.insert_or_assign(component.scriptAssetPath, source);
                 return;
             }
             UVScriptSlotUVE slot;
             slot.path = component.scriptAssetPath;
+            slot.source = source;
             slot.instance = std::make_unique<UVScript::ScriptInstanceUVE>(compiled.program, *host);
             slot.host = std::move(host);
             m_uvScripts.emplace(entity, std::move(slot));
@@ -2359,6 +2388,7 @@ void EngineCoreUVE::Shutdown() {
     // EventSystem, then Timer, then ThreadPool, then MemoryManager, then
     // Logger, then CommandLine. The final log message is emitted before the
     // logger itself is torn down, so it is guaranteed to be recorded.
+    m_uvScriptFailedSources.clear();
     m_uvScripts.clear(); // hosts point into the entity manager, so they go first
     m_services.reset();
     m_configManager.reset();

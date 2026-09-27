@@ -156,6 +156,7 @@ add_library(uve_editor STATIC
     Internal/editor_panel_inspector_animation_graph_uve.cpp
     Internal/editor_panel_inspector_node_metadata_uve.cpp
     Internal/editor_script_slot_uve.cpp
+    Internal/editor_uvscript_editor_uve.cpp
     Internal/editor_panel_inspector_skeleton_uve.cpp
     Internal/editor_panel_content_browser_uve.cpp
     Internal/editor_panel_content_create_uve.cpp

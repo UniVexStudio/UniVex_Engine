@@ -4,6 +4,7 @@
 #include <cmath>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <limits>
 #include <numbers>
 #include <optional>
@@ -4831,6 +4832,63 @@ TEST(EditorUVETest, SceneRootInspectorUVE_ShowsExactlyTheNodeSectionInOrder) {
         entityManager.AddComponentUVE<Scene::ThreadGroupComponentUVE>(node, Scene::ThreadGroupComponentUVE{});
         const std::vector<std::string> ids = EditorUVEAccessUVE::GetEligibleInspectorDrawerIdsUVE(editor, node);
         EXPECT_NE(std::find(ids.begin(), ids.end(), "thread-group"), ids.end());
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
+TEST(EditorUVETest, ScriptSlotUVE_NewUVScriptOpensATextEditorThatChecksAsYouType) {
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_uvscript_slot.uvscene");
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        const Scene::EntityUVE root = editor.GetDocumentSceneRootUVE();
+        editor.SelectEntityUVE(root);
+        ASSERT_TRUE(editor.SetSelectedEntityNameUVE("hero"));
+
+        ASSERT_TRUE(editor.CreateUVScriptForSelectedEntityUVE());
+        const std::string path = entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(root).scriptAssetPath;
+        EXPECT_EQ(path.rfind("scripts/hero", 0), 0U);
+        EXPECT_TRUE(path.ends_with(".uvs"));
+        EXPECT_TRUE(editor.DescribeScriptAssetProblemUVE(path).empty());
+        EXPECT_TRUE(EditorUVEAccessUVE::IsScriptingWorkspaceActiveUVE(editor));
+        ASSERT_TRUE(editor.GetOpenUVScriptUVE().has_value());
+        const EditorUVE::UVScriptDocumentUVE& document = *editor.GetOpenUVScriptUVE();
+        EXPECT_EQ(document.path, path);
+        EXPECT_EQ(document.text.rfind("entity hero : ", 0), 0U);
+        EXPECT_TRUE(document.diagnostics.empty()); // The template compiles against the node.
+        EXPECT_FALSE(document.IsDirtyUVE());
+        EXPECT_FALSE(editor.CreateUVScriptForSelectedEntityUVE()); // The slot is filled now.
+
+        // A mistake is reported while typing, with its line.
+        editor.SetOpenUVScriptTextUVE("on tick(dt):\n    nope += 1\n");
+        ASSERT_FALSE(editor.GetOpenUVScriptUVE()->diagnostics.empty());
+        EXPECT_EQ(editor.GetOpenUVScriptUVE()->diagnostics.front().at.line, 2U);
+
+        // Fixed and saved: the file holds the new text and nothing is unsaved.
+        const std::string fixed = "var ticks = 0\n\non tick(dt):\n    ticks += 1\n";
+        editor.SetOpenUVScriptTextUVE(fixed);
+        EXPECT_TRUE(editor.GetOpenUVScriptUVE()->diagnostics.empty());
+        EXPECT_TRUE(editor.GetOpenUVScriptUVE()->IsDirtyUVE());
+        ASSERT_TRUE(editor.SaveOpenUVScriptUVE());
+        EXPECT_FALSE(editor.GetOpenUVScriptUVE()->IsDirtyUVE());
+        std::ifstream file(path, std::ios::binary);
+        EXPECT_EQ(std::string(std::istreambuf_iterator<char>(file), {}), fixed);
+
+        // Close returns to the scene; opening the node's script comes back to the text editor.
+        editor.CloseOpenUVScriptUVE();
+        EXPECT_FALSE(editor.GetOpenUVScriptUVE().has_value());
+        EXPECT_FALSE(EditorUVEAccessUVE::IsScriptingWorkspaceActiveUVE(editor));
+        ASSERT_TRUE(editor.OpenScriptGraphForEntityUVE(root));
+        ASSERT_TRUE(editor.GetOpenUVScriptUVE().has_value());
+        EXPECT_EQ(editor.GetOpenUVScriptUVE()->text, fixed);
+
+        editor.CloseOpenUVScriptUVE();
+        std::error_code error;
+        std::filesystem::remove(path, error);
         editor.ShutdownUVE();
     }
     engine.Shutdown();

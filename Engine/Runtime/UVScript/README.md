@@ -110,12 +110,17 @@ primary     := NUMBER UNIT? | STRING | 'true' | 'false' | 'none' | IDENT | '(' e
      - collections, tuples and `[]`;
      - calling methods on other nodes (`other.hide()`);
      - `wait` inside a `fn`.
-3. **Engine binding (this change).** A node whose script slot names a `.uvs` file runs it:
+3. **Engine binding.** A node whose script slot names a `.uvs` file runs it:
    - `EngineCoreUVE` compiles it once per path against `UVScriptNodeHostUVE`; errors are logged with
-     `file:line:column` and not retried until the path changes;
+     `file:line:column` once, not every frame;
    - `ready` runs once, then `tick(dt)` every frame, in process-priority order, and paused with the
      rest of the simulation;
    - the host gives `name`, `position`, `scale`, and on a character body `velocity` and
      `is_on_floor`, plus `input.pressed/held/released/axis`.
-   - Next: exported fields in the Inspector and a text editor tab, then removing the graph scripting.
-4. **Last:** C++23 output for release builds.
+   - a saved edit restarts the script within half a second, and fixing a broken file is enough
+     for it to be retried.
+4. **Editor (this change).** The Inspector's script slot has **New UVScript**: it writes `scripts/<node>.uvs`
+   with an `entity <Node> : <Kind>` header and opens it in the Scripting workspace's text editor,
+   which checks the text against the node on every edit and lists problems by line and column.
+   - Next: exported fields in the Inspector, then removing the graph scripting.
+5. **Last:** C++23 output for release builds.

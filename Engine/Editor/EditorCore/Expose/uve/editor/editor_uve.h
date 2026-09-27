@@ -67,6 +67,7 @@
 #include "uve/component/entity_uve.h"
 #include "uve/scene/i_scene_serializer_uve.h"
 #include "uve/scripting/script_graph_canvas_uve.h"
+#include "uve/uvscript/uvscript_ast_uve.h"
 
 namespace UVE::Editor::Tests {
 struct EditorUVEAccessUVE;
@@ -818,6 +819,33 @@ public:
     /// Refuses unless authoring is allowed, exactly one document entity is selected, it carries a
     /// Script component and that Script is still empty.
     [[nodiscard]] bool CreateScriptForSelectedEntityUVE();
+    /// "New UVScript" on the Scripting slot: the text-script twin of CreateScriptForSelectedEntityUVE.
+    /// Writes `scripts/<name>.uvs` (a free name) whose header names the node and its kind, points
+    /// the Script at it as one undoable edit, and opens it in the script text editor. Same refusals.
+    [[nodiscard]] bool CreateUVScriptForSelectedEntityUVE();
+
+    /// A `.uvs` file open in the Scripting workspace's text editor.
+    struct UVScriptDocumentUVE final {
+        std::string path;
+        /// The node the script is checked against: its components decide which properties exist.
+        Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
+        std::string text;
+        std::string savedText;
+        /// Every problem the compiler found in `text`, in source order; empty when it compiles.
+        std::vector<UVScript::DiagnosticUVE> diagnostics;
+
+        [[nodiscard]] bool IsDirtyUVE() const noexcept { return text != savedText; }
+    };
+    /// Opens `entity`'s `.uvs` script in the text editor and switches to the Scripting workspace.
+    /// A missing file opens empty; saving creates it. False when the entity has no `.uvs` script.
+    [[nodiscard]] bool OpenUVScriptForEntityUVE(Scene::EntityUVE entity);
+    [[nodiscard]] const std::optional<UVScriptDocumentUVE>& GetOpenUVScriptUVE() const noexcept;
+    /// Replaces the open script's text and re-checks it. No effect when nothing is open.
+    void SetOpenUVScriptTextUVE(std::string text);
+    /// Writes the open script to its file. The running game picks the change up on its own.
+    [[nodiscard]] bool SaveOpenUVScriptUVE();
+    /// Closes the text editor (unsaved text is dropped) and returns to the scene.
+    void CloseOpenUVScriptUVE();
     /// "Quick Load" and "Load": points the selected entity's Script at an existing script asset, as
     /// one undoable edit. An empty path clears the slot. Any other path must pass
     /// DescribeScriptAssetProblemUVE.
@@ -1562,6 +1590,8 @@ private:
     void DrawPrefabInspectorDrawerUVE(Scene::EntityUVE entity);
     void DrawImportQueueMonitorUVE();
     void DrawScriptingWorkspaceUVE();
+    /// The Scripting workspace while a `.uvs` file is open: toolbar, text, and the compiler's list.
+    void DrawUVScriptEditorUVE();
     void CompileVisualScriptUVE();
     [[nodiscard]] static ContentBrowserItemTypeUVE ClassifyContentBrowserEntryUVE(
         const Asset::ProjectFileEntryUVE& entry);
@@ -1776,6 +1806,7 @@ private:
     /// checking reads and decodes the file.
     std::optional<std::string> m_scriptLoadCheckedPath;
     std::string m_scriptLoadProblem;
+    std::optional<UVScriptDocumentUVE> m_openUVScript;
     /// The Add Metadata popup's draft. The type is remembered between uses: the next property an
     /// author adds is most often the same kind as the last.
     std::string m_metadataAddName;
