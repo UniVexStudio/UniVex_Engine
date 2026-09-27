@@ -20,5 +20,5 @@ add_library(uve_animation STATIC
 )
 target_include_directories(uve_animation PUBLIC Expose)
 target_link_libraries(uve_animation PUBLIC uve_math PRIVATE nlohmann_json::nlohmann_json)
-target_compile_features(uve_animation PUBLIC cxx_std_20)
+target_compile_features(uve_animation PUBLIC cxx_std_23)
 uve_set_warnings(uve_animation)

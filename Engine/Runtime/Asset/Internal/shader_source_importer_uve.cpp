@@ -56,7 +56,7 @@ constexpr std::string_view kShaderTemporarySuffixUVE = ".uve_shader_tmp";
                   sourcePath.string());
         return false;
     }
-    if (source.empty() || source.find('\0') != std::string::npos) {
+    if (source.empty() || source.contains('\0')) {
         UVE_ERROR("ShaderSourceImporterUVE: shader source \"{}\" is empty or contains a NUL byte",
                   sourcePath.string());
         return false;

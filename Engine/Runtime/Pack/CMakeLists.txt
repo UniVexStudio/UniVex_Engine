@@ -15,10 +15,10 @@ add_library(uve_pack_lib STATIC
 )
 target_include_directories(uve_pack_lib PUBLIC Expose)
 target_link_libraries(uve_pack_lib PUBLIC uve_core)
-target_compile_features(uve_pack_lib PUBLIC cxx_std_20)
+target_compile_features(uve_pack_lib PUBLIC cxx_std_23)
 uve_set_warnings(uve_pack_lib)
 
 add_executable(uve_pack app/main.cpp)
 target_link_libraries(uve_pack PRIVATE uve_pack_lib)
-target_compile_features(uve_pack PRIVATE cxx_std_20)
+target_compile_features(uve_pack PRIVATE cxx_std_23)
 uve_set_warnings(uve_pack)

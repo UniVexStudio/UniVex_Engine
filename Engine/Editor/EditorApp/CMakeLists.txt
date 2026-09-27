@@ -22,5 +22,5 @@ target_link_libraries(univex_editor PRIVATE
     uve_window
     uve_input
 )
-target_compile_features(univex_editor PRIVATE cxx_std_20)
+target_compile_features(univex_editor PRIVATE cxx_std_23)
 uve_set_warnings(univex_editor)

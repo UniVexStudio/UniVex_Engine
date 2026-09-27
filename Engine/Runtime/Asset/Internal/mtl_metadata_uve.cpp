@@ -20,7 +20,7 @@ bool Has(std::string_view& rest, const std::size_t count) noexcept { for (std::s
 
 bool ValidateMtlTextureReferenceUVE(const std::string_view path) noexcept {
     if (path.empty() || path.size() > kMaximumMtlTextureReferenceBytesUVE ||
-        path.front() == '/' || path.front() == '\\' || path.find('\0') != std::string_view::npos ||
+        path.front() == '/' || path.front() == '\\' || path.contains('\0') ||
         (path.size() >= 2U && path[1U] == ':')) {
         return false;
     }

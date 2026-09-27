@@ -67,7 +67,7 @@ target_include_directories(uve_editor_imgui SYSTEM PUBLIC
     ${uve_imgui_SOURCE_DIR}/backends
 )
 target_link_libraries(uve_editor_imgui PRIVATE glfw OpenGL::GL)
-target_compile_features(uve_editor_imgui PUBLIC cxx_std_20)
+target_compile_features(uve_editor_imgui PUBLIC cxx_std_23)
 # ImGui is third-party source with its own deliberate warning profile - this project's
 # warning-as-error policy stays active for every UVE source target, while this pinned dependency
 # compiles without project-specific diagnostics (matches the reference module's own policy).
@@ -170,7 +170,7 @@ add_library(uve_editor STATIC
 )
 target_include_directories(uve_editor PUBLIC Expose)
 target_include_directories(uve_editor PRIVATE "${_uve_editor_generated_dir}")
-target_compile_features(uve_editor PUBLIC cxx_std_20)
+target_compile_features(uve_editor PUBLIC cxx_std_23)
 target_link_libraries(uve_editor
     PUBLIC uve_core uve_scripting uve_plugins
     PRIVATE uve_editor_imgui nlohmann_json::nlohmann_json glfw

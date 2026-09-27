@@ -31,7 +31,7 @@ struct MountRecordUVE {
 /// True iff `virtualPath` matches `prefix` on a whole-segment boundary: either exactly equal, or
 /// `virtualPath` starts with `prefix + "/"`. An empty `prefix` (root mount) matches everything.
 [[nodiscard]] bool MatchesPrefixUVE(std::string_view virtualPath, std::string_view prefix) {
-    if (virtualPath.find('\\') != std::string_view::npos || prefix.find('\\') != std::string_view::npos) {
+    if (virtualPath.contains('\\') || prefix.contains('\\')) {
         return false;
     }
     if (prefix.empty()) {
@@ -57,7 +57,7 @@ struct MountRecordUVE {
 
 [[nodiscard]] bool IsSafeVirtualRemainderUVE(std::string_view remainder) {
     const std::filesystem::path path{std::string(remainder)};
-    if (remainder.empty() || remainder.find('\\') != std::string_view::npos || path.is_absolute() ||
+    if (remainder.empty() || remainder.contains('\\') || path.is_absolute() ||
         path.has_root_name() || path.has_root_directory()) {
         return false;
     }

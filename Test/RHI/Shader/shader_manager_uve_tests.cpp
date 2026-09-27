@@ -311,7 +311,7 @@ TEST_F(ShaderManagerUVETest, HotReload_FileChangeOnDisk_TriggersRecompileWithNew
     bool sawUpdatedMarker = false;
     for (int iteration = 0; iteration < 200000 && !sawUpdatedMarker; ++iteration) {
         shaderManager->UpdateUVE(1.0);
-        if (source->GetResolvedSourceUVE().find("marker-v2") != std::string::npos) {
+        if (source->GetResolvedSourceUVE().contains("marker-v2")) {
             sawUpdatedMarker = true;
         }
         std::this_thread::yield();

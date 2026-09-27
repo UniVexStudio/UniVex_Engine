@@ -84,7 +84,7 @@ add_library(uve_<name> STATIC
     ...)
 target_include_directories(uve_<name> PUBLIC Expose)
 target_link_libraries(uve_<name> PUBLIC <dependencies>)
-target_compile_features(uve_<name> PUBLIC cxx_std_20)
+target_compile_features(uve_<name> PUBLIC cxx_std_23)
 uve_set_warnings(uve_<name>)
 ```
 

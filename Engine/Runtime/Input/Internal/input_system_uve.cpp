@@ -226,7 +226,7 @@ float InputSystemUVE::GetMouseScrollDeltaUVE() const {
 
 void InputSystemUVE::RegisterActionUVE(InputActionUVE&& action) {
     if (action.name.empty() || action.name.size() > kMaximumInputActionNameBytesUVE ||
-        action.name.find('\0') != std::string::npos ||
+        action.name.contains('\0') ||
         (action.type != InputActionTypeUVE::Button && action.type != InputActionTypeUVE::Axis1D) ||
         !AreBindingsValidUVE(action.positiveBindings) || !AreBindingsValidUVE(action.negativeBindings)) {
         return;

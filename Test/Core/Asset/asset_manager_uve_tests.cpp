@@ -60,7 +60,7 @@ template <typename T>
         const std::vector<Debug::LogMessageUVE> messages = sink.GetMessagesUVE();
         const bool found =
             std::any_of(messages.begin(), messages.end(), [level, substring](const Debug::LogMessageUVE& message) {
-                return message.level == level && message.message.find(substring) != std::string::npos;
+                return message.level == level && message.message.contains(substring);
             });
         if (found) {
             return true;

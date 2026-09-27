@@ -36,7 +36,7 @@ namespace UVE::Scene {
         }
         if (!readSucceeded || previousValue.empty() ||
             previousValue.size() > kMaximumPrefabOverrideValueBytesUVE ||
-            previousValue.find('\0') != std::string::npos) {
+            previousValue.contains('\0')) {
             return {PrefabOverrideOperationCodeUVE::ReadFailed, previousValues.size(),
                     "Prefab override apply could not read the existing target property."};
         }
@@ -107,7 +107,7 @@ namespace UVE::Scene {
         }
         if (!readSucceeded || actualValue.empty() ||
             actualValue.size() > kMaximumPrefabOverrideValueBytesUVE ||
-            actualValue.find('\0') != std::string::npos) {
+            actualValue.contains('\0')) {
             report.code = PrefabOverrideOperationCodeUVE::ReadFailed;
             return report;
         }
@@ -235,8 +235,8 @@ namespace UVE::Scene {
     for (const PrefabPropertyOverrideUVE& override : component.overrides) {
         if (override.propertyPath.empty() || override.propertyPath.size() > kMaximumPrefabOverridePathBytesUVE ||
             override.serializedValue.empty() || override.serializedValue.size() > kMaximumPrefabOverrideValueBytesUVE ||
-            override.propertyPath.find('\0') != std::string_view::npos ||
-            override.serializedValue.find('\0') != std::string_view::npos ||
+            override.propertyPath.contains('\0') ||
+            override.serializedValue.contains('\0') ||
             (!previousPath.empty() && override.propertyPath <= previousPath)) {
             return false;
         }

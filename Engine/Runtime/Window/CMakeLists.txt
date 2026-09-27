@@ -27,5 +27,5 @@ target_link_libraries(uve_window
     PUBLIC uve_platform uve_logging uve_events uve_input
     PRIVATE glfw
 )
-target_compile_features(uve_window PUBLIC cxx_std_20)
+target_compile_features(uve_window PUBLIC cxx_std_23)
 uve_set_warnings(uve_window)
