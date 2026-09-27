@@ -57,7 +57,7 @@ TEST(Expanded3DNodeComponentsUVETest, ExplicitSkeletonAssetBindingIsFailureAtomi
     EXPECT_TRUE(skeleton.bones.empty());
     EXPECT_EQ(skeleton.enabled, original.enabled);
 
-    EXPECT_FALSE(TryBindExplicitSkeleton3DAssetUVE(skeleton, "assets/character.uveskel", {}));
+    EXPECT_FALSE(TryBindExplicitSkeleton3DAssetUVE(skeleton, "assets/character.uvskel", {}));
     EXPECT_EQ(skeleton.skeletonAssetPath, original.skeletonAssetPath);
     EXPECT_TRUE(skeleton.bones.empty());
 }
@@ -69,8 +69,8 @@ TEST(Expanded3DNodeComponentsUVETest, ExplicitSkeletonAssetBindingHydratesOnlySu
         SkeletonBoneUVE{"hand", 0, {1.0F, 0.0F, 0.0F}, {}, {1.0F, 1.0F, 1.0F}}};
 
     EXPECT_TRUE(TryBindExplicitSkeleton3DAssetUVE(
-        skeleton, "assets/character.uveskel", authoredBones));
-    EXPECT_EQ(skeleton.skeletonAssetPath, "assets/character.uveskel");
+        skeleton, "assets/character.uvskel", authoredBones));
+    EXPECT_EQ(skeleton.skeletonAssetPath, "assets/character.uvskel");
     ASSERT_EQ(skeleton.bones.size(), authoredBones.size());
     EXPECT_EQ(skeleton.bones[0].name, authoredBones[0].name);
     EXPECT_EQ(skeleton.bones[1].name, authoredBones[1].name);

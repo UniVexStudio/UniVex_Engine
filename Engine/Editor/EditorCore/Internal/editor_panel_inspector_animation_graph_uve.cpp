@@ -357,7 +357,7 @@ void EditorUVE::DrawAnimationGraphPropertyUVE(const Core::TypeMetadataEntryUVE& 
                     case Kind::Clip: {
                         RowUVE("Clip");
                         if (const std::optional<Asset::AssetGuidUVE> picked =
-                                DrawAssetPickerUVE("##clip", node.clip, ".uveanim")) {
+                                DrawAssetPickerUVE("##clip", node.clip, ".uvanim")) {
                             node.clip = *picked;
                             changed = true;
                         }

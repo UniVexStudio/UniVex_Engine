@@ -53,7 +53,7 @@ TEST(MaterialAssetUVETest, DefaultConstruction_HasSensibleDefaults) {
 }
 
 TEST(MaterialAssetUVETest, SaveThenLoad_RoundTripsFieldExact) {
-    const std::filesystem::path path = "uve_material_asset_tests_round_trip.uvemat";
+    const std::filesystem::path path = "uve_material_asset_tests_round_trip.uvmat";
     std::filesystem::remove(path);
     const MaterialAssetUVE original = MakeTestMaterialUVE();
     ASSERT_TRUE(SaveMaterialAssetUVE(original, path));
@@ -76,7 +76,7 @@ TEST(MaterialAssetUVETest, SaveThenLoad_RoundTripsFieldExact) {
 }
 
 TEST(MaterialAssetUVETest, SaveMaterialAssetUVE_RejectsInvalidValuesBeforeReplacingDestination) {
-    const std::filesystem::path path = "uve_material_asset_tests_invalid_save.uvemat";
+    const std::filesystem::path path = "uve_material_asset_tests_invalid_save.uvmat";
     std::filesystem::remove(path);
     const MaterialAssetUVE original = MakeTestMaterialUVE();
     ASSERT_TRUE(SaveMaterialAssetUVE(original, path));
@@ -100,7 +100,7 @@ TEST(MaterialAssetUVETest, SaveMaterialAssetUVE_RejectsInvalidValuesBeforeReplac
 }
 
 TEST(MaterialAssetUVETest, LoadMaterialAssetUVE_RejectsOutOfRangeDecodedValuesBeforePublication) {
-    const std::filesystem::path path = "uve_material_asset_tests_invalid_values.uvemat";
+    const std::filesystem::path path = "uve_material_asset_tests_invalid_values.uvmat";
     std::filesystem::remove(path);
     const std::string invalidJson =
         R"({"albedoColor":{"x":1.0,"y":1.0,"z":1.0},"albedoTexture":0,"normalTexture":0,"metallic":2.0,"roughness":0.5,"aoTexture":0,"emissiveColor":{"x":0.0,"y":0.0,"z":0.0},"vertexShader":0,"fragmentShader":0,"isTransparent":false})";
@@ -116,7 +116,7 @@ TEST(MaterialAssetUVETest, LoadMaterialAssetUVE_RejectsOutOfRangeDecodedValuesBe
 }
 
 TEST(MaterialAssetUVETest, LoadMaterialAssetUVE_WrongAssetKind_FailsCleanlyAndLogsError) {
-    const std::filesystem::path path = "uve_material_asset_tests_wrong_kind.uveblob";
+    const std::filesystem::path path = "uve_material_asset_tests_wrong_kind.uvblob";
     std::filesystem::remove(path);
     ASSERT_TRUE(WriteUveFileUVE(path, AssetKindUVE::Blob, {}));
 
@@ -142,7 +142,7 @@ TEST(MaterialAssetUVETest, LoadMaterialAssetUVE_WrongAssetKind_FailsCleanlyAndLo
 }
 
 TEST(MaterialAssetUVETest, LoadMaterialAssetUVE_MissingFile_ReturnsFalse) {
-    const std::filesystem::path path = "uve_material_asset_tests_nonexistent.uvemat";
+    const std::filesystem::path path = "uve_material_asset_tests_nonexistent.uvmat";
     std::filesystem::remove(path);
 
     MaterialAssetUVE material;
@@ -150,7 +150,7 @@ TEST(MaterialAssetUVETest, LoadMaterialAssetUVE_MissingFile_ReturnsFalse) {
 }
 
 TEST(MaterialAssetUVETest, LoadMaterialAssetUVE_MissingField_FailsAndLogsError) {
-    const std::filesystem::path path = "uve_material_asset_tests_missing_field.uvemat";
+    const std::filesystem::path path = "uve_material_asset_tests_missing_field.uvmat";
     std::filesystem::remove(path);
     const std::string incompleteJson = "{\"albedoColor\": {\"x\": 1.0, \"y\": 1.0, \"z\": 1.0}}";
     const auto* const jsonBytes = reinterpret_cast<const std::byte*>(incompleteJson.data());
@@ -179,7 +179,7 @@ TEST(MaterialAssetUVETest, LoadMaterialAssetUVE_MissingField_FailsAndLogsError) 
 }
 
 TEST(MaterialAssetUVETest, EndToEnd_RegisterLoaderThenLoadUVE_ReachesLoadedWithMatchingData) {
-    const std::filesystem::path path = "uve_material_asset_tests_end_to_end.uvemat";
+    const std::filesystem::path path = "uve_material_asset_tests_end_to_end.uvmat";
     std::filesystem::remove(path);
     const MaterialAssetUVE original = MakeTestMaterialUVE();
     ASSERT_TRUE(SaveMaterialAssetUVE(original, path));

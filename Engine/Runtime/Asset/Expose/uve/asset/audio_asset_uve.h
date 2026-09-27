@@ -20,7 +20,7 @@ struct AudioAssetUVE final {
     std::vector<float> samples;
 };
 
-/// Loads a `.uveaudio` envelope as a validated AudioAssetUVE, publishing output only after all
+/// Loads a `.uvaudio` envelope as a validated AudioAssetUVE, publishing output only after all
 /// metadata, sample-count, finite-value, and payload checks succeed.
 [[nodiscard]] bool LoadAudioAssetUVE(const std::filesystem::path& path, AudioAssetUVE& outAudio);
 

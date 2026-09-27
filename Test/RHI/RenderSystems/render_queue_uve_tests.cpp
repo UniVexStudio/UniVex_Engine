@@ -44,9 +44,9 @@ protected:
     [[nodiscard]] RenderItemUVE MakeItemUVE(float sortDepth) {
         static int nextPathSuffix = 0;
         const Asset::AssetGuidUVE meshGuid =
-            assetDatabase.RegisterUVE("render_queue_tests_mesh_" + std::to_string(nextPathSuffix++) + ".uvemodel");
+            assetDatabase.RegisterUVE("render_queue_tests_mesh_" + std::to_string(nextPathSuffix++) + ".uvmodel");
         const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE(
-            "render_queue_tests_material_" + std::to_string(nextPathSuffix++) + ".uvemat");
+            "render_queue_tests_material_" + std::to_string(nextPathSuffix++) + ".uvmat");
         Asset::AssetHandleUVE<Asset::MeshAssetUVE> meshHandle =
             assetManager.LoadUVE<Asset::MeshAssetUVE>(meshGuid, assetDatabase);
         Asset::AssetHandleUVE<Asset::MaterialAssetUVE> materialHandle =
@@ -60,9 +60,9 @@ protected:
     /// produce, since it registers a new asset every call.
     [[nodiscard]] RenderItemUVE MakeItemOnMeshUVE(float sortDepth, int meshIndex) {
         const Asset::AssetGuidUVE meshGuid =
-            assetDatabase.RegisterUVE("render_queue_tests_shared_mesh_" + std::to_string(meshIndex) + ".uvemodel");
+            assetDatabase.RegisterUVE("render_queue_tests_shared_mesh_" + std::to_string(meshIndex) + ".uvmodel");
         const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE(
-            "render_queue_tests_shared_material_" + std::to_string(meshIndex) + ".uvemat");
+            "render_queue_tests_shared_material_" + std::to_string(meshIndex) + ".uvmat");
         Asset::AssetHandleUVE<Asset::MeshAssetUVE> meshHandle =
             assetManager.LoadUVE<Asset::MeshAssetUVE>(meshGuid, assetDatabase);
         Asset::AssetHandleUVE<Asset::MaterialAssetUVE> materialHandle =

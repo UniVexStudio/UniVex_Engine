@@ -87,12 +87,12 @@ TEST_F(FileSystemUVETest, HasFileUVE_PrefixMatchesOnSegmentBoundaryOnly) {
     const std::filesystem::path dir = "uve_file_system_tests_tex";
     std::filesystem::remove_all(dir);
     std::filesystem::create_directories(dir);
-    WriteFixtureFileUVE(dir / "rock.uvetex", "data");
+    WriteFixtureFileUVE(dir / "rock.uvtex", "data");
 
     fileSystem.MountDirectoryUVE("tex", dir, 0);
 
-    EXPECT_FALSE(fileSystem.HasFileUVE("textures/rock.uvetex")); // "tex" must not match "textures/..."
-    EXPECT_TRUE(fileSystem.HasFileUVE("tex/rock.uvetex"));
+    EXPECT_FALSE(fileSystem.HasFileUVE("textures/rock.uvtex")); // "tex" must not match "textures/..."
+    EXPECT_TRUE(fileSystem.HasFileUVE("tex/rock.uvtex"));
 
     std::filesystem::remove_all(dir);
 }
@@ -100,18 +100,18 @@ TEST_F(FileSystemUVETest, HasFileUVE_PrefixMatchesOnSegmentBoundaryOnly) {
 TEST_F(FileSystemUVETest, ReadFileUVE_BundleMount_ReturnsBundledBytes) {
     const std::filesystem::path source = "uve_file_system_tests_bundle_source.txt";
     WriteFixtureFileUVE(source, "bundled content");
-    const std::filesystem::path bundlePath = "uve_file_system_tests_basic.uvebundle";
+    const std::filesystem::path bundlePath = "uve_file_system_tests_basic.uvbundle";
     std::filesystem::remove(bundlePath);
 
     AssetBundleEntryUVE entry;
     entry.guid = AssetGuidUVE{4001};
     entry.sourcePath = source;
-    entry.virtualName = "meshes/cube.uvemodel";
+    entry.virtualName = "meshes/cube.uvmodel";
     ASSERT_TRUE(assetBundle.PackUVE({entry}, bundlePath));
 
     fileSystem.MountBundleUVE("", bundlePath, 0);
 
-    const std::optional<std::vector<std::byte>> data = fileSystem.ReadFileUVE("meshes/cube.uvemodel");
+    const std::optional<std::vector<std::byte>> data = fileSystem.ReadFileUVE("meshes/cube.uvmodel");
     ASSERT_TRUE(data.has_value());
     EXPECT_EQ(ToStringUVE(*data), "bundled content");
 
@@ -127,7 +127,7 @@ TEST_F(FileSystemUVETest, ReadFileUVE_DirectoryMountOverridesBundleMount_WhenHig
 
     const std::filesystem::path bundleSource = "uve_file_system_tests_override_bundle_source.txt";
     WriteFixtureFileUVE(bundleSource, "bundle content");
-    const std::filesystem::path bundlePath = "uve_file_system_tests_override.uvebundle";
+    const std::filesystem::path bundlePath = "uve_file_system_tests_override.uvbundle";
     std::filesystem::remove(bundlePath);
     AssetBundleEntryUVE entry;
     entry.guid = AssetGuidUVE{5001};
@@ -155,7 +155,7 @@ TEST_F(FileSystemUVETest, ReadFileUVE_BundleMountOverridesDirectoryMount_WhenHig
 
     const std::filesystem::path bundleSource = "uve_file_system_tests_underride_bundle_source.txt";
     WriteFixtureFileUVE(bundleSource, "bundle wins content");
-    const std::filesystem::path bundlePath = "uve_file_system_tests_underride.uvebundle";
+    const std::filesystem::path bundlePath = "uve_file_system_tests_underride.uvbundle";
     std::filesystem::remove(bundlePath);
     AssetBundleEntryUVE entry;
     entry.guid = AssetGuidUVE{5002};
@@ -214,7 +214,7 @@ TEST_F(FileSystemUVETest, WriteFileUVE_TraversalPath_ReturnsFalseWithoutEscaping
 TEST_F(FileSystemUVETest, WriteFileUVE_OnlyBundleMountMatches_ReturnsFalseAndLogsError) {
     const std::filesystem::path source = "uve_file_system_tests_write_bundle_source.txt";
     WriteFixtureFileUVE(source, "data");
-    const std::filesystem::path bundlePath = "uve_file_system_tests_write.uvebundle";
+    const std::filesystem::path bundlePath = "uve_file_system_tests_write.uvbundle";
     std::filesystem::remove(bundlePath);
     AssetBundleEntryUVE entry;
     entry.guid = AssetGuidUVE{6001};
@@ -275,7 +275,7 @@ TEST_F(FileSystemUVETest, ResolveRealPathUVE_DirectoryMount_ReturnsRealPathAndEm
 TEST_F(FileSystemUVETest, ResolveRealPathUVE_BundleBackedVirtualPath_ReturnsEmptyPath) {
     const std::filesystem::path source = "uve_file_system_tests_resolve_bundle_source.txt";
     WriteFixtureFileUVE(source, "data");
-    const std::filesystem::path bundlePath = "uve_file_system_tests_resolve.uvebundle";
+    const std::filesystem::path bundlePath = "uve_file_system_tests_resolve.uvbundle";
     std::filesystem::remove(bundlePath);
     AssetBundleEntryUVE entry;
     entry.guid = AssetGuidUVE{7001};

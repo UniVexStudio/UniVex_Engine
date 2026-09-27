@@ -276,7 +276,7 @@ TEST_F(SettingsRegistryUVETest, ValuesSurviveASaveAndReload) {
     ASSERT_TRUE(registry.SetValueUVE(store, "editor.grid.opacity", 0.125));
     ASSERT_TRUE(registry.SetValueUVE(store, "editor.clear.color", SettingColorUVE{1.0F, 0.0F, 0.5F, 0.75F}));
     ASSERT_TRUE(registry.SetValueUVE(store, "render.quality", std::int64_t{0}));
-    const std::string path = "uve_settings_registry_roundtrip.uvesettings";
+    const std::string path = "uve_settings_registry_roundtrip.uvsettings";
     ASSERT_TRUE(store.SaveUVE(path));
 
     ConfigManagerUVE reloaded;
@@ -299,7 +299,7 @@ TEST(ConfigManagerRemoveKeyUVETest, RemovesTheLeafAndPrunesObjectsLeftEmpty) {
     EXPECT_TRUE(store.HasKeyUVE("a.b"));
     EXPECT_TRUE(store.RemoveKeyUVE("a.d"));
     EXPECT_TRUE(store.RemoveKeyUVE("a.b"));
-    const std::string path = "uve_remove_key_pruned.uvesettings";
+    const std::string path = "uve_remove_key_pruned.uvsettings";
     ASSERT_TRUE(store.SaveUVE(path));
     ConfigManagerUVE reloaded;
     ASSERT_TRUE(reloaded.LoadUVE(path));
@@ -392,7 +392,7 @@ protected:
     }
     void TearDown() override { std::remove(path.c_str()); }
 
-    const std::string path = "uve_settings_document_test.uvesettings";
+    const std::string path = "uve_settings_document_test.uvsettings";
     SettingsDocumentUVE document;
 };
 

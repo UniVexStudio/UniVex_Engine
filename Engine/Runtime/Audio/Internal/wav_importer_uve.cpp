@@ -79,8 +79,8 @@ constexpr std::uint64_t kMaximumWavImporterSourceBytesUVE = 64ULL * 1024ULL * 10
                                       const std::filesystem::path& destinationPath,
                                       const Asset::AssetImportSettingsUVE& /*settings*/) {
     try {
-        if (destinationPath.extension() != ".uveaudio") {
-            UVE_ERROR("WavImporterUVE: destination \"{}\" must use the .uveaudio extension",
+        if (destinationPath.extension() != ".uvaudio") {
+            UVE_ERROR("WavImporterUVE: destination \"{}\" must use the .uvaudio extension",
                       destinationPath.string());
             return false;
         }

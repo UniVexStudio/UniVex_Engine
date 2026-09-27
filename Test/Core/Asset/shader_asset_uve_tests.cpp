@@ -34,7 +34,7 @@ namespace {
 }
 
 TEST(ShaderAssetUVETest, SaveThenLoad_RoundTripsFieldExact) {
-    const std::filesystem::path path = "uve_shader_asset_tests_round_trip.uveshader";
+    const std::filesystem::path path = "uve_shader_asset_tests_round_trip.uvshader";
     std::filesystem::remove(path);
     const ShaderAssetUVE original = MakeTestShaderUVE();
     ASSERT_TRUE(SaveShaderAssetUVE(original, path));
@@ -50,7 +50,7 @@ TEST(ShaderAssetUVETest, SaveThenLoad_RoundTripsFieldExact) {
 }
 
 TEST(ShaderAssetUVETest, LoadShaderAssetUVE_WrongAssetKind_FailsCleanlyAndLogsError) {
-    const std::filesystem::path path = "uve_shader_asset_tests_wrong_kind.uveblob";
+    const std::filesystem::path path = "uve_shader_asset_tests_wrong_kind.uvblob";
     std::filesystem::remove(path);
     ASSERT_TRUE(WriteUveFileUVE(path, AssetKindUVE::Blob, {}));
 
@@ -76,7 +76,7 @@ TEST(ShaderAssetUVETest, LoadShaderAssetUVE_WrongAssetKind_FailsCleanlyAndLogsEr
 }
 
 TEST(ShaderAssetUVETest, LoadShaderAssetUVE_MissingFile_ReturnsFalse) {
-    const std::filesystem::path path = "uve_shader_asset_tests_nonexistent.uveshader";
+    const std::filesystem::path path = "uve_shader_asset_tests_nonexistent.uvshader";
     std::filesystem::remove(path);
 
     ShaderAssetUVE shader;
@@ -84,7 +84,7 @@ TEST(ShaderAssetUVETest, LoadShaderAssetUVE_MissingFile_ReturnsFalse) {
 }
 
 TEST(ShaderAssetUVETest, LoadShaderAssetUVE_EmptySourceCode_FailsAndLogsError) {
-    const std::filesystem::path path = "uve_shader_asset_tests_empty_source.uveshader";
+    const std::filesystem::path path = "uve_shader_asset_tests_empty_source.uvshader";
     std::filesystem::remove(path);
 
     ShaderAssetUVE invalidShader = MakeTestShaderUVE();
@@ -113,7 +113,7 @@ TEST(ShaderAssetUVETest, LoadShaderAssetUVE_EmptySourceCode_FailsAndLogsError) {
 }
 
 TEST(ShaderAssetUVETest, LoadShaderAssetUVE_UnknownStageFailsBeforePublication) {
-    const std::filesystem::path path = "uve_shader_asset_tests_unknown_stage.uveshader";
+    const std::filesystem::path path = "uve_shader_asset_tests_unknown_stage.uvshader";
     std::filesystem::remove(path);
     const std::string invalidPayload =
         R"({"stage":255,"sourceCode":"void main() { }","entryPointName":"main"})";
@@ -131,7 +131,7 @@ TEST(ShaderAssetUVETest, LoadShaderAssetUVE_UnknownStageFailsBeforePublication) 
 }
 
 TEST(ShaderAssetUVETest, SaveShaderAssetUVE_UnknownStagePreservesExistingEnvelope) {
-    const std::filesystem::path path = "uve_shader_asset_tests_unknown_stage_save.uveshader";
+    const std::filesystem::path path = "uve_shader_asset_tests_unknown_stage_save.uvshader";
     std::filesystem::remove(path);
     const ShaderAssetUVE original = MakeTestShaderUVE();
     ASSERT_TRUE(SaveShaderAssetUVE(original, path));
@@ -149,7 +149,7 @@ TEST(ShaderAssetUVETest, SaveShaderAssetUVE_UnknownStagePreservesExistingEnvelop
 }
 
 TEST(ShaderAssetUVETest, LoadShaderAssetUVE_MalformedJson_FailsAndLogsError) {
-    const std::filesystem::path path = "uve_shader_asset_tests_malformed_json.uveshader";
+    const std::filesystem::path path = "uve_shader_asset_tests_malformed_json.uvshader";
     std::filesystem::remove(path);
     const std::string garbage = "{ not valid json";
     const auto* const garbageBytes = reinterpret_cast<const std::byte*>(garbage.data());
@@ -177,7 +177,7 @@ TEST(ShaderAssetUVETest, LoadShaderAssetUVE_MalformedJson_FailsAndLogsError) {
 }
 
 TEST(ShaderAssetUVETest, EndToEnd_RegisterLoaderThenLoadUVE_ReachesLoadedWithMatchingData) {
-    const std::filesystem::path path = "uve_shader_asset_tests_end_to_end.uveshader";
+    const std::filesystem::path path = "uve_shader_asset_tests_end_to_end.uvshader";
     std::filesystem::remove(path);
     const ShaderAssetUVE original = MakeTestShaderUVE();
     ASSERT_TRUE(SaveShaderAssetUVE(original, path));

@@ -16,7 +16,7 @@ namespace UVE::Asset {
 /// anything built so far.
 enum class ShaderStageKindUVE : std::uint8_t { Vertex, Fragment, Compute };
 
-/// The CPU-side, engine-native representation of a `.uveshader` asset (Part 2's file-format
+/// The CPU-side, engine-native representation of a `.uvshader` asset (Part 2's file-format
 /// table): shader source text, stored and validated as-is. `ShaderManagerUVE`'s real "compile
 /// GLSL/HLSL/Metal at runtime" step (Part 7.2) is blocked in this environment — no glslang/
 /// shaderc/DXC is available — so this asset only carries source text; compilation is future work

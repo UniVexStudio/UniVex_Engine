@@ -79,7 +79,7 @@ const std::filesystem::path tempCacheDirectory = "uve_shader_manager_tests_cache
 
 ```cpp
 // Test/Engine/engine_core_uve_tests.cpp:2569
-const std::filesystem::path kStreamerTestLevelPath = "uve_engine_core_streamer_test_level.uvescene";
+const std::filesystem::path kStreamerTestLevelPath = "uve_engine_core_streamer_test_level.uvscene";
 ```
 
 `kStreamerTestLevelPath` is shared by 6 test cases. Each calls `WriteStreamerTestLevelFileUVE()`, which begins with `std::filesystem::remove(kStreamerTestLevelPath)` (line 2574), and each holds a `StreamerTestCleanupUVE` whose destructor removes the same path (line 2597). `Test/Engine/engine_core_uve_tests.cpp:94-97` shares fixed relative names for the log, settings, and asset-database files across the whole `EngineCoreUVETest` suite.

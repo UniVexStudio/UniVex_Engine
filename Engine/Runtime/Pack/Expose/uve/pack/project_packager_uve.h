@@ -9,7 +9,7 @@
 namespace UVE::Pack {
 
 struct ProjectPackOptionsUVE final {
-    /// Path to the project's `.uveditor` package (see Platform::EditorProjectPackageCodecUVE).
+    /// Path to the project's `.uvproject` package (see Platform::EditorProjectPackageCodecUVE).
     std::filesystem::path projectFile;
     /// Path to the already-built `uve_runtime` executable to copy into the distributable folder.
     std::filesystem::path runtimeExecutablePath;
@@ -39,7 +39,7 @@ struct ProjectPackResultUVE final {
 /// Roadmap item #7's minimal packaging/export pipeline: produces one self-contained, runnable
 /// distributable folder from an authored project - exactly the roadmap's own stated bar ("copy the
 /// runtime binary + content folder + a manifest naming the startup scene into one distributable
-/// folder"). No new manifest format is invented: the project's own `.uveditor` package (already
+/// folder"). No new manifest format is invented: the project's own `.uvproject` package (already
 /// real, tested, and now carrying `startupScenePath` - see EditorProjectPackageUVE) is copied
 /// verbatim alongside the content it references, so every relative path inside it still resolves
 /// unchanged in the copy. The result is directly runnable in place:

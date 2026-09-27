@@ -26,8 +26,8 @@ constexpr std::string_view kPngTemporarySuffixUVE = ".uve_png_tmp";
 [[nodiscard]] bool ImportPngSourceUVE(const std::filesystem::path& sourcePath,
                                       const std::filesystem::path& destinationPath,
                                       const AssetImportSettingsUVE& /*settings*/) {
-    if (destinationPath.extension() != ".uvetex") {
-        UVE_ERROR("PngImporterUVE: destination \"{}\" must use the .uvetex extension", destinationPath.string());
+    if (destinationPath.extension() != ".uvtex") {
+        UVE_ERROR("PngImporterUVE: destination \"{}\" must use the .uvtex extension", destinationPath.string());
         return false;
     }
 

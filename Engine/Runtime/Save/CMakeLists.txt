@@ -6,7 +6,7 @@
 #
 # uve_scene: ISceneSerializerUVE/IEntityManagerUVE (mirrors uve_physics's own uve_scene
 # dependency for PhysicsSystemUVE). uve_asset: WriteUveFileUVE/ReadUveFileUVE/AssetKindUVE for
-# the .uvesave envelope.
+# the .uvsave envelope.
 
 add_library(uve_save STATIC
     Internal/save_game_system_uve.cpp

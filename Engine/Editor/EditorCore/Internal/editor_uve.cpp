@@ -768,7 +768,7 @@ std::optional<std::filesystem::path> EditorUVE::CreateContentCatalogueItemUVE(
 
     // The tree is built in the live entity manager, saved, and destroyed again in this call: it is
     // never a document node, never selected and never in the undo history.
-    const std::filesystem::path path = MakeUniqueContentPathUVE(directory, item->label, ".uveentity");
+    const std::filesystem::path path = MakeUniqueContentPathUVE(directory, item->label, ".uventity");
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
     Scene::ISceneGraphUVE& sceneGraph = m_services->GetSceneGraphUVE();
     std::vector<Scene::EntityUVE> built;
@@ -814,7 +814,7 @@ Scene::EntityUVE EditorUVE::PlaceEntityAssetUVE(const std::filesystem::path& pat
     std::transform(extension.begin(), extension.end(), extension.begin(),
                    [](const unsigned char character) { return static_cast<char>(std::tolower(character)); });
     std::error_code error;
-    if (!IsAuthoringCommandAllowedUVE() || (extension != ".uveentity" && extension != ".uveprefab") ||
+    if (!IsAuthoringCommandAllowedUVE() || (extension != ".uventity" && extension != ".uvprefab") ||
         !std::filesystem::is_regular_file(path, error)) {
         return Scene::kInvalidEntityUVE;
     }
@@ -960,7 +960,7 @@ bool EditorUVE::LoadSceneUVE() {
     if (sceneRoot != Scene::kInvalidEntityUVE) {
         Scene::ISceneGraphUVE& sceneGraph = m_services->GetSceneGraphUVE();
 
-        // Strip any marker other than the one root this document keeps. A .uvescene is plain JSON
+        // Strip any marker other than the one root this document keeps. A .uvscene is plain JSON
         // on disk, so a file can arrive carrying two of them - a badly resolved merge, a
         // hand-edit, a future tool - and the loop below would then reparent the second one UNDER
         // the first, leaving a root inside a root. That is not cosmetic: the editor refuses to
@@ -3740,7 +3740,7 @@ bool EditorUVE::OpenScriptGraphForEntityUVE(const Scene::EntityUVE entity) {
         return true;
     }
 
-    // Named for the script - "Boss" for scripts/Boss.uvescript - or, with no script yet, for the node.
+    // Named for the script - "Boss" for scripts/Boss.uvscript - or, with no script yet, for the node.
     std::string candidateName;
     if (!assetPath.empty()) {
         candidateName = SanitizeScriptBranchNameCandidateUVE(std::filesystem::path{assetPath}.stem().string());
@@ -4585,50 +4585,50 @@ EditorUVE::ContentBrowserItemTypeUVE EditorUVE::ClassifyContentBrowserEntryUVE(
     std::transform(extension.begin(), extension.end(), extension.begin(), [](const unsigned char character) {
         return static_cast<char>(std::tolower(character));
     });
-    if (extension == ".uvescene") {
+    if (extension == ".uvscene") {
         return ContentBrowserItemTypeUVE::Scene;
     }
-    if (extension == ".uveprefab") {
+    if (extension == ".uvprefab") {
         return ContentBrowserItemTypeUVE::Prefab;
     }
-    if (extension == ".uveentity") {
+    if (extension == ".uventity") {
         return ContentBrowserItemTypeUVE::Entity;
     }
-    if (extension == ".uvebundle") {
+    if (extension == ".uvbundle") {
         return ContentBrowserItemTypeUVE::Bundle;
     }
     // Model sources are shown as what they are - a mesh - and imported automatically behind the
     // scenes (see QueueModelAutoImportsUVE); a rigged one is relabelled Model by the caller, which
     // knows the file's contents.
-    if (extension == ".uvemodel" || IsModelSourcePathUVE(entry.relativePath)) {
+    if (extension == ".uvmodel" || IsModelSourcePathUVE(entry.relativePath)) {
         return ContentBrowserItemTypeUVE::Mesh;
     }
-    if (extension == ".uvetex") {
+    if (extension == ".uvtex") {
         return ContentBrowserItemTypeUVE::Texture;
     }
     // Raw, not-yet-imported source images. Godot-style engines preview these directly rather than
     // requiring an import step first; this repo already has standalone decoders for all four
     // (uve/asset/{png,jpeg,bmp,tga}_metadata_uve.h) that GetTextureThumbnailUVE() falls back to
-    // when the file isn't a `.uvetex` envelope. Reusing Texture rather than adding a new enum value
+    // when the file isn't a `.uvtex` envelope. Reusing Texture rather than adding a new enum value
     // since both content-browser call sites already dispatch thumbnails on this exact type.
     if (extension == ".png" || extension == ".jpg" || extension == ".jpeg" || extension == ".bmp" ||
         extension == ".tga") {
         return ContentBrowserItemTypeUVE::Texture;
     }
-    if (extension == ".uveshader") {
+    if (extension == ".uvshader") {
         return ContentBrowserItemTypeUVE::Shader;
     }
-    if (extension == ".uvemat") {
+    if (extension == ".uvmat") {
         return ContentBrowserItemTypeUVE::Material;
     }
-    if (extension == ".uvesave") {
+    if (extension == ".uvsave") {
         return ContentBrowserItemTypeUVE::Save;
     }
-    if (extension == ".uvescript") {
+    if (extension == ".uvscript") {
         return ContentBrowserItemTypeUVE::Script;
     }
     // Imported clips and the WAV sources the importer reads them from.
-    if (extension == ".uveaudio" || extension == ".wav") {
+    if (extension == ".uvaudio" || extension == ".wav") {
         return ContentBrowserItemTypeUVE::Audio;
     }
     if (extension == ".ttf" || extension == ".otf") {
@@ -4833,7 +4833,7 @@ std::uintptr_t EditorUVE::GetTextureThumbnailUVE(const std::filesystem::path& re
                                                                 static_cast<int>(texture.width),
                                                                 static_cast<int>(texture.height));
     } else {
-        // Not a `.uvetex` envelope - it may still be a raw, un-imported source image.
+        // Not a `.uvtex` envelope - it may still be a raw, un-imported source image.
         std::uint32_t rawWidth = 0U;
         std::uint32_t rawHeight = 0U;
         std::vector<std::byte> rawPixels;
@@ -4894,7 +4894,7 @@ std::filesystem::path EditorUVE::GetImportedModelPathUVE(const std::filesystem::
     const std::filesystem::path cacheRoot = m_services->GetDerivedArtifactCacheUVE().GetCacheRootUVE();
     std::filesystem::path importedRoot = cacheRoot.has_filename() ? cacheRoot.parent_path() : cacheRoot.parent_path().parent_path();
     importedRoot /= "Imported";
-    return (importedRoot / relativeSource).concat(".uvemodel").lexically_normal();
+    return (importedRoot / relativeSource).concat(".uvmodel").lexically_normal();
 }
 
 namespace {

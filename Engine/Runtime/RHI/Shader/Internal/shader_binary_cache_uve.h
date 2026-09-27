@@ -18,7 +18,7 @@ struct CacheEntryUVE {
     std::vector<std::byte> payload;
 };
 
-/// Returns `<cachePath>/<platform>/<contentHash as 16 lowercase hex digits>.uveshadercache` — the
+/// Returns `<cachePath>/<platform>/<contentHash as 16 lowercase hex digits>.uvshadercache` — the
 /// platform subdirectory (`"linux"`/`"windows"`/`"macos"`) is chosen at compile time, mirroring
 /// engine/platform's own `#if defined(...)` idiom. Never touches the filesystem itself (no
 /// existence check, no directory creation) — purely a deterministic path computation, so it's

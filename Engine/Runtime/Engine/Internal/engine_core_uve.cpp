@@ -11,6 +11,8 @@
 
 #include "uve/core/engine_core_uve.h"
 
+#include "uve/asset/legacy_extension_migration_uve.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -239,6 +241,15 @@ void EngineCoreUVE::Init() {
     m_logger = std::move(logger);
 
     UVE_INFO("EngineCoreUVE: initializing UniVex Engine {}", GetEngineVersionUVE().ToStringUVE());
+
+    // Projects saved before the .uve* -> .uv* rename are moved over before anything reads them:
+    // the config files by name, the content folder file by file, then the asset registry's paths.
+    for (const std::filesystem::path* const file : {&m_config.projectSettingsFilePath, &m_config.settingsFilePath,
+                                                    &m_config.inputMapFilePath, &m_config.assetDatabaseFilePath}) {
+        static_cast<void>(Asset::MigrateLegacyFileUVE(*file));
+    }
+    static_cast<void>(Asset::MigrateLegacyContentUVE(m_config.projectContentRootUVE));
+    static_cast<void>(Asset::RewriteLegacyExtensionsInTextFileUVE(m_config.assetDatabaseFilePath));
 
     // The project's settings next, before anything below reads the fields they override: the
     // project file sits above the application's EngineConfigUVE, so a project carries its tick

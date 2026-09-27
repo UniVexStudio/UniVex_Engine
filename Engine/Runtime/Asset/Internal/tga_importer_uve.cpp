@@ -25,8 +25,8 @@ constexpr std::string_view kTgaTemporarySuffixUVE = ".uve_tga_tmp";
 [[nodiscard]] bool ImportTgaSourceUVE(const std::filesystem::path& sourcePath,
                                       const std::filesystem::path& destinationPath,
                                       const AssetImportSettingsUVE& /*settings*/) {
-    if (destinationPath.extension() != ".uvetex") {
-        UVE_ERROR("TgaImporterUVE: destination \"{}\" must use the .uvetex extension", destinationPath.string());
+    if (destinationPath.extension() != ".uvtex") {
+        UVE_ERROR("TgaImporterUVE: destination \"{}\" must use the .uvtex extension", destinationPath.string());
         return false;
     }
     std::vector<std::byte> sourceBytes;

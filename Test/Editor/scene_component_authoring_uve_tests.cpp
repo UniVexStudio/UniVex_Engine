@@ -47,7 +47,7 @@ TEST(SceneComponentAuthoringUVETest, SetSelectedSceneComponentUVE_AddsAllSupport
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_scene_component_authoring.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_scene_component_authoring.uvscene");
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
         const Scene::EntityUVE entity = editor.CreateDocumentEntityUVE(EditorEntityKindUVE::Empty);
@@ -94,10 +94,10 @@ TEST(SceneComponentAuthoringUVETest, SetSelectedSceneComponentUVE_AddsAllSupport
         ASSERT_TRUE(editor.SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::ParticleEmitter, particles));
         EXPECT_EQ(entityManager.GetComponentUVE<Scene::ParticleEmitterComponentUVE>(entity).maxParticles, 2048U);
 
-        const Scene::ScriptComponentUVE script{"scripts/player.uvescript"};
+        const Scene::ScriptComponentUVE script{"scripts/player.uvscript"};
         ASSERT_TRUE(editor.SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::Script, script));
         EXPECT_EQ(entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(entity).scriptAssetPath,
-                  "scripts/player.uvescript");
+                  "scripts/player.uvscript");
 
         Scene::AnimationPlayerComponentUVE animation;
         animation.clip = Asset::AssetGuidUVE{77U};
@@ -124,7 +124,7 @@ TEST(SceneComponentAuthoringUVETest, SetSelectedSceneComponentUVE_CharacterContr
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_scene_component_authoring_character_controller.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_scene_component_authoring_character_controller.uvscene");
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
         const Scene::EntityUVE entity = editor.CreateDocumentEntityUVE(EditorEntityKindUVE::Empty);
@@ -158,7 +158,7 @@ TEST(SceneComponentAuthoringUVETest, SetSelectedSceneComponentUVE_UIComponentsAd
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_scene_component_authoring_ui.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_scene_component_authoring_ui.uvscene");
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
         const Scene::EntityUVE entity = editor.CreateDocumentEntityUVE(EditorEntityKindUVE::Empty);
@@ -204,7 +204,7 @@ TEST(SceneComponentAuthoringUVETest, SetSelectedSceneComponentUVE_RejectsInvalid
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_scene_component_authoring_invalid.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_scene_component_authoring_invalid.uvscene");
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
         const Scene::EntityUVE entity = editor.CreateDocumentEntityUVE(EditorEntityKindUVE::Empty);
@@ -232,7 +232,7 @@ TEST(SceneComponentAuthoringUVETest, SetSelectedSceneComponentUVE_RejectsInvalid
         EXPECT_FALSE(editor.SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::ParticleEmitter, invalidParticles));
         EXPECT_FALSE(entityManager.HasComponentUVE<Scene::ParticleEmitterComponentUVE>(entity));
 
-        const Scene::ScriptComponentUVE invalidScript{"../player.uvescript"};
+        const Scene::ScriptComponentUVE invalidScript{"../player.uvscript"};
         EXPECT_FALSE(editor.SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::Script, invalidScript));
         EXPECT_FALSE(entityManager.HasComponentUVE<Scene::ScriptComponentUVE>(entity));
 

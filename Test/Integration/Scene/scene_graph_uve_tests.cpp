@@ -1237,7 +1237,7 @@ TEST_F(SceneGraphUVETest, UpdateUVE_RedirectsFollowAChainOfRedirects) {
 }
 
 TEST_F(SceneGraphUVETest, UpdateUVE_ARedirectCycleFallsBackInsteadOfHanging) {
-    // Nothing prevents an author pointing two nodes at each other, and a .uvescene can be
+    // Nothing prevents an author pointing two nodes at each other, and a .uvscene can be
     // hand-edited into one. The resolver must terminate and must not pick an arbitrary winner:
     // falling back to the transform-parent answer leaves the entities visible and predictable.
     const EntityUVE first = entityManager.CreateEntityUVE();

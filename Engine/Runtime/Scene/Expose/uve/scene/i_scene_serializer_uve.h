@@ -38,8 +38,8 @@ struct SceneSnapshotUVE final {
 /// via HierarchyComponentUVE) to/from the universal `.uve*` binary envelope: magic `"UVE\0"`,
 /// `version uint32`, `assetType uint32`, `compressionMethod uint32` (`0 = None` — the only value
 /// implemented this increment), `payloadLength uint64`, then that many bytes of UTF-8 JSON. Used
-/// directly for `.uvescene` (potentially many root entities) and, via PrefabSystemUVE, for
-/// `.uveprefab` (always one root) — the payload format is identical either way.
+/// directly for `.uvscene` (potentially many root entities) and, via PrefabSystemUVE, for
+/// `.uvprefab` (always one root) — the payload format is identical either way.
 /// `WorldTransformComponentUVE` is never serialized (it's derived/cached; SceneGraphUVE
 /// recomputes it after load) and `HierarchyComponentUVE.parent` is written as a file-local id,
 /// never a raw runtime `EntityUVE` (which is only meaningful within one process's session).

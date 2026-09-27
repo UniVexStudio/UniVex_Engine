@@ -21,7 +21,7 @@ namespace UVE::Asset {
 /// increment touches engine/render at all.
 enum class TextureFormatUVE : std::uint8_t { RGBA8Unorm, RGBA16Float };
 
-/// The CPU-side, engine-native representation of a `.uvetex` asset (Part 2's file-format table):
+/// The CPU-side, engine-native representation of a `.uvtex` asset (Part 2's file-format table):
 /// raw, uncompressed pixel data. Deliberately minimal — no mipmaps or block compression
 /// (ASTC/ETC2/BC7) yet; Part 7.9's `TextureCompressorUVE` is blocked (needs a compressor library
 /// not available in this environment) and is future-increment work.

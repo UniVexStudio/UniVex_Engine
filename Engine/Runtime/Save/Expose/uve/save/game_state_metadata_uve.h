@@ -12,7 +12,7 @@ namespace UVE::Save {
 inline constexpr std::uint32_t kCurrentSavePayloadSchemaVersionUVE = 1U;
 inline constexpr std::size_t kMaximumSaveNameBytesUVE = 128U;
 
-/// Metadata section of a `.uvesave` file: timestamp, engine version, playtime — the spec's
+/// Metadata section of a `.uvsave` file: timestamp, engine version, playtime — the spec's
 /// "Metadata (timestamp, version, playtime)" (Part 17). Carries engine version as four raw
 /// uint32 fields rather than reusing Core::VersionUVE: engine/save sits below engine/core in the
 /// dependency graph (EngineCoreUVE owns/constructs SaveGameSystemUVE, never the reverse), so this
@@ -33,7 +33,7 @@ struct GameStateMetadataUVE {
     std::uint32_t engineVersionPatch = 0;
     std::uint32_t engineVersionBuild = 0;
 
-    /// The `.uvesave` payload layout version this save was written with (independent of
+    /// The `.uvsave` payload layout version this save was written with (independent of
     /// `engineVersion*` above). SaveGameSystemUVE writes the current
     /// `kCurrentSavePayloadSchemaVersionUVE`; LoadUVE dispatches this value through the bounded
     /// migration seam before scene deserialization.

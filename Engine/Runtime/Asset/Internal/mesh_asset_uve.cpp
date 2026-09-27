@@ -316,7 +316,7 @@ bool LoadMeshAssetUVE(const std::filesystem::path& path, MeshAssetUVE& outMesh) 
     }
 
     // The skinning section is OPTIONAL and trails the bounds, which is what keeps every existing
-    // .uvemodel loadable byte for byte. The envelope's version field is global across every asset
+    // .uvmodel loadable byte for byte. The envelope's version field is global across every asset
     // kind, so bumping it to advertise skinning would invalidate scenes, materials and textures
     // that have nothing to do with meshes; the payload's own natural end is the honest place to
     // detect "this file predates skinning". A file that stops here is a static mesh, not an error.

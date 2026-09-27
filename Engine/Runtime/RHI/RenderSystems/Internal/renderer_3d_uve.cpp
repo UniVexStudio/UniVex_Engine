@@ -251,7 +251,7 @@ struct MaterialGpuResourcesUVE {
     std::shared_ptr<Shader::ShaderProgramUVE> program;
     /// True only when this material's own vertex source actually declares the instancing
     /// contract. Instancing is OPT-IN per material and DETECTED, never assumed: material shaders
-    /// come from `.uveshader` assets a project authors, so most of them know nothing about
+    /// come from `.uvshader` assets a project authors, so most of them know nothing about
     /// gl_InstanceID. Drawing such a material with instanceCount > 1 would not fail - it would
     /// silently stack every instance on top of the first one's uModel, which looks like missing
     /// objects rather than like a bug in the renderer.
@@ -1010,7 +1010,7 @@ struct Renderer3DUVE::ImplUVE {
             return existingIt->second;
         }
 
-        // Asset loaders derive tangents for legacy `.uvemodel` payloads, but runtime/custom mesh
+        // Asset loaders derive tangents for legacy `.uvmodel` payloads, but runtime/custom mesh
         // loaders may construct MeshAssetUVE directly. Regenerate into this one-time GPU-upload copy
         // so every material draw has the canonical TBN input without mutating shared asset data.
         std::vector<Asset::MeshVertexUVE> vertices = mesh->vertices;
@@ -1172,7 +1172,7 @@ struct Renderer3DUVE::ImplUVE {
         const Asset::ShaderAssetUVE* const vertexShaderAsset = vertexShaderHandle.TryGetUVE();
         const Asset::ShaderAssetUVE* const fragmentShaderAsset = fragmentShaderHandle.TryGetUVE();
 
-        // `.uveshader` assets are envelope files rather than raw GLSL files, so their already
+        // `.uvshader` assets are envelope files rather than raw GLSL files, so their already
         // decoded source is supplied as the manager fallback and the root virtual path stays empty.
         // Includes inside that source still use the normal virtual include paths and participate in
         // program-level dependency tracking; AssetReloaded events invalidate root shader assets.

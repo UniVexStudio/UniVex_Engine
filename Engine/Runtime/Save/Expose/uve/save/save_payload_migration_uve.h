@@ -82,7 +82,7 @@ private:
     std::vector<EntryUVE> m_entries;
 };
 
-/// Bounded schema-dispatch seam for the fixed `.uvesave` payload. Current-version payloads pass
+/// Bounded schema-dispatch seam for the fixed `.uvsave` payload. Current-version payloads pass
 /// through unchanged; registered transforms can be composed through a deterministic shortest path
 /// of at most the bounded registry capacity, with failure-atomic staging before scene deserialization.
 /// Compression, encryption, cloud sync, and gameplay-domain transforms remain outside this seam.

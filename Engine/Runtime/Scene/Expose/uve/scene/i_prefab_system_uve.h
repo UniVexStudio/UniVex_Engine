@@ -42,7 +42,7 @@ struct PrefabRefreshResultUVE final {
     const std::filesystem::path& path);
 
 /// IPrefabSystemUVE is a thin layer over ISceneSerializerUVE providing the "reusable entity
-/// template" workflow the master spec names (Part 7.3): save a subtree as a `.uveprefab`, then
+/// template" workflow the master spec names (Part 7.3): save a subtree as a `.uvprefab`, then
 /// instantiate independent copies of it later. Overrides are whole-component: an instantiated
 /// entity is an ordinary live ECS entity, so any later AddComponentUVE/RemoveComponentUVE/
 /// GetComponentUVE-mutation on it *is* the override — there is no separate override-tracking

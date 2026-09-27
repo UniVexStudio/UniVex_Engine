@@ -43,7 +43,7 @@ TEST(TextureAssetUVETest, BytesPerPixelUVE_ReturnsExpectedValues) {
 }
 
 TEST(TextureAssetUVETest, SaveThenLoad_RoundTripsByteExact) {
-    const std::filesystem::path path = "uve_texture_asset_tests_round_trip.uvetex";
+    const std::filesystem::path path = "uve_texture_asset_tests_round_trip.uvtex";
     std::filesystem::remove(path);
     const TextureAssetUVE original = MakeTestTextureUVE();
     ASSERT_TRUE(SaveTextureAssetUVE(original, path));
@@ -60,7 +60,7 @@ TEST(TextureAssetUVETest, SaveThenLoad_RoundTripsByteExact) {
 }
 
 TEST(TextureAssetUVETest, LoadTextureAssetUVE_WrongAssetKind_FailsCleanlyAndLogsError) {
-    const std::filesystem::path path = "uve_texture_asset_tests_wrong_kind.uveblob";
+    const std::filesystem::path path = "uve_texture_asset_tests_wrong_kind.uvblob";
     std::filesystem::remove(path);
     ASSERT_TRUE(WriteUveFileUVE(path, AssetKindUVE::Blob, {}));
 
@@ -86,7 +86,7 @@ TEST(TextureAssetUVETest, LoadTextureAssetUVE_WrongAssetKind_FailsCleanlyAndLogs
 }
 
 TEST(TextureAssetUVETest, LoadTextureAssetUVE_MissingFile_ReturnsFalse) {
-    const std::filesystem::path path = "uve_texture_asset_tests_nonexistent.uvetex";
+    const std::filesystem::path path = "uve_texture_asset_tests_nonexistent.uvtex";
     std::filesystem::remove(path);
 
     TextureAssetUVE texture;
@@ -94,7 +94,7 @@ TEST(TextureAssetUVETest, LoadTextureAssetUVE_MissingFile_ReturnsFalse) {
 }
 
 TEST(TextureAssetUVETest, SaveTextureAssetUVE_RejectsInvalidDescriptorBeforeReplacingDestination) {
-    const std::filesystem::path path = "uve_texture_asset_tests_invalid_save.uvetex";
+    const std::filesystem::path path = "uve_texture_asset_tests_invalid_save.uvtex";
     std::filesystem::remove(path);
     const TextureAssetUVE original = MakeTestTextureUVE();
     ASSERT_TRUE(SaveTextureAssetUVE(original, path));
@@ -114,7 +114,7 @@ TEST(TextureAssetUVETest, SaveTextureAssetUVE_RejectsInvalidDescriptorBeforeRepl
 }
 
 TEST(TextureAssetUVETest, LoadTextureAssetUVE_PixelByteCountMismatch_FailsAndLogsError) {
-    const std::filesystem::path path = "uve_texture_asset_tests_bad_pixel_count.uvetex";
+    const std::filesystem::path path = "uve_texture_asset_tests_bad_pixel_count.uvtex";
     std::filesystem::remove(path);
 
     std::vector<std::byte> malformedPayload(3U * sizeof(std::uint32_t) + sizeof(std::uint64_t) + 3U);
@@ -154,7 +154,7 @@ TEST(TextureAssetUVETest, LoadTextureAssetUVE_PixelByteCountMismatch_FailsAndLog
 }
 
 TEST(TextureAssetUVETest, LoadTextureAssetUVE_RejectsOverflowingPixelByteCountBeforePublication) {
-    const std::filesystem::path path = "uve_texture_asset_tests_overflowing_pixel_count.uvetex";
+    const std::filesystem::path path = "uve_texture_asset_tests_overflowing_pixel_count.uvtex";
     std::filesystem::remove(path);
     std::vector<std::byte> malformedPayload(3U * sizeof(std::uint32_t) + sizeof(std::uint64_t));
     const std::uint32_t width = 1U;
@@ -182,7 +182,7 @@ TEST(TextureAssetUVETest, LoadTextureAssetUVE_RejectsOverflowingPixelByteCountBe
 }
 
 TEST(TextureAssetUVETest, EndToEnd_RegisterLoaderThenLoadUVE_ReachesLoadedWithMatchingData) {
-    const std::filesystem::path path = "uve_texture_asset_tests_end_to_end.uvetex";
+    const std::filesystem::path path = "uve_texture_asset_tests_end_to_end.uvtex";
     std::filesystem::remove(path);
     const TextureAssetUVE original = MakeTestTextureUVE();
     ASSERT_TRUE(SaveTextureAssetUVE(original, path));

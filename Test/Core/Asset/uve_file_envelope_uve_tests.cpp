@@ -33,7 +33,7 @@ TEST(UveFileEnvelopeUVETest, IsUveFilePayloadSizeValidUVE_EnforcesMaximumWithout
 }
 
 TEST(UveFileEnvelopeUVETest, WriteThenRead_RoundTripsPayloadAndAssetKind) {
-    const std::filesystem::path path = "uve_file_envelope_tests_roundtrip.uveblob";
+    const std::filesystem::path path = "uve_file_envelope_tests_roundtrip.uvblob";
     std::filesystem::remove(path);
 
     const std::vector<std::byte> payload = MakePayloadUVE("hello universe");
@@ -49,7 +49,7 @@ TEST(UveFileEnvelopeUVETest, WriteThenRead_RoundTripsPayloadAndAssetKind) {
 }
 
 TEST(UveFileEnvelopeUVETest, WriteThenRead_EmptyPayload_RoundTrips) {
-    const std::filesystem::path path = "uve_file_envelope_tests_empty.uveblob";
+    const std::filesystem::path path = "uve_file_envelope_tests_empty.uvblob";
     std::filesystem::remove(path);
 
     ASSERT_TRUE(WriteUveFileUVE(path, AssetKindUVE::Bundle, {}));
@@ -62,7 +62,7 @@ TEST(UveFileEnvelopeUVETest, WriteThenRead_EmptyPayload_RoundTrips) {
 }
 
 TEST(UveFileEnvelopeUVETest, WriteThenRead_SaveAssetKind_RoundTrips) {
-    const std::filesystem::path path = "uve_file_envelope_tests_save.uvesave";
+    const std::filesystem::path path = "uve_file_envelope_tests_save.uvsave";
     std::filesystem::remove(path);
 
     const std::vector<std::byte> payload = MakePayloadUVE("save payload bytes");
@@ -83,7 +83,7 @@ TEST(UveFileEnvelopeUVETest, ReadUveFileUVE_MissingFile_ReturnsNulloptAndLogsErr
     Debug::MemorySinkUVE* const memorySinkPtr = memorySink.get();
     logger.AddSink(std::move(memorySink));
 
-    const auto result = ReadUveFileUVE("uve_file_envelope_tests_nonexistent.uveblob");
+    const auto result = ReadUveFileUVE("uve_file_envelope_tests_nonexistent.uvblob");
     EXPECT_FALSE(result.has_value());
 
     const std::vector<Debug::LogMessageUVE> messages = memorySinkPtr->GetMessagesUVE();
@@ -97,7 +97,7 @@ TEST(UveFileEnvelopeUVETest, ReadUveFileUVE_MissingFile_ReturnsNulloptAndLogsErr
 }
 
 TEST(UveFileEnvelopeUVETest, ReadUveFileUVE_BadMagic_ReturnsNulloptAndLogsError) {
-    const std::filesystem::path path = "uve_file_envelope_tests_bad_magic.uveblob";
+    const std::filesystem::path path = "uve_file_envelope_tests_bad_magic.uvblob";
     {
         std::ofstream file(path, std::ios::binary);
         file << "NOT A VALID UVE FILE";
@@ -125,7 +125,7 @@ TEST(UveFileEnvelopeUVETest, ReadUveFileUVE_BadMagic_ReturnsNulloptAndLogsError)
 }
 
 TEST(UveFileEnvelopeUVETest, WriteUveFileUVE_InvalidAssetKindPreservesExistingDestination) {
-    const std::filesystem::path path = "uve_file_envelope_tests_invalid_write_kind.uveblob";
+    const std::filesystem::path path = "uve_file_envelope_tests_invalid_write_kind.uvblob";
     std::filesystem::remove(path);
     const std::vector<std::byte> originalPayload = MakePayloadUVE("original");
     ASSERT_TRUE(WriteUveFileUVE(path, AssetKindUVE::Blob, originalPayload));
@@ -139,7 +139,7 @@ TEST(UveFileEnvelopeUVETest, WriteUveFileUVE_InvalidAssetKindPreservesExistingDe
 }
 
 TEST(UveFileEnvelopeUVETest, ReadUveFileUVE_InvalidAssetKind_ReturnsNullopt) {
-    const std::filesystem::path path = "uve_file_envelope_tests_bad_asset_kind.uveblob";
+    const std::filesystem::path path = "uve_file_envelope_tests_bad_asset_kind.uvblob";
     std::filesystem::remove(path);
     ASSERT_TRUE(WriteUveFileUVE(path, AssetKindUVE::Blob, MakePayloadUVE("data")));
 
@@ -156,7 +156,7 @@ TEST(UveFileEnvelopeUVETest, ReadUveFileUVE_InvalidAssetKind_ReturnsNullopt) {
 }
 
 TEST(UveFileEnvelopeUVETest, ReadUveFileUVE_UnsupportedCompression_ReturnsNulloptAndLogsError) {
-    const std::filesystem::path path = "uve_file_envelope_tests_bad_compression.uveblob";
+    const std::filesystem::path path = "uve_file_envelope_tests_bad_compression.uvblob";
     std::filesystem::remove(path);
     ASSERT_TRUE(WriteUveFileUVE(path, AssetKindUVE::Blob, MakePayloadUVE("data")));
 
@@ -192,7 +192,7 @@ TEST(UveFileEnvelopeUVETest, ReadUveFileUVE_UnsupportedCompression_ReturnsNullop
 }
 
 TEST(UveFileEnvelopeUVETest, ReadUveFileUVE_OversizedDeclaredPayload_ReturnsNulloptWithoutAllocating) {
-    const std::filesystem::path path = "uve_file_envelope_tests_oversized_payload.uveblob";
+    const std::filesystem::path path = "uve_file_envelope_tests_oversized_payload.uvblob";
     std::filesystem::remove(path);
     ASSERT_TRUE(WriteUveFileUVE(path, AssetKindUVE::Blob, {}));
 

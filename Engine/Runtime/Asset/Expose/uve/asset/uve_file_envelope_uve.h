@@ -20,13 +20,13 @@ namespace UVE::Asset {
 /// `AssetBundleUVE`'s packed-multi-asset format (a variable-length name-indexed entry table);
 /// `Mesh`/`Texture`/`Shader`/`Material` are `MeshAssetUVE`/`TextureAssetUVE`/`ShaderAssetUVE`/
 /// `MaterialAssetUVE`'s native `.uve*` formats (Part 7.2's rendering-facing asset types); `Save`
-/// is `Save::SaveGameSystemUVE`'s `.uvesave` format (Part 17) — a *fixed* two-section payload
+/// is `Save::SaveGameSystemUVE`'s `.uvsave` format (Part 17) — a *fixed* two-section payload
 /// (a length-prefixed metadata JSON section, then a length-prefixed embedded world-state JSON
 /// section), deliberately distinct in shape from `Bundle`'s variable-length entry table, since a
 /// save file always has exactly these two sections, never a variable named set. `DataTable` is the
 /// envelope-backed typed data-table asset format. `Audio` is the bounded
-/// interleaved PCM16-derived normalized sample envelope used by `.uveaudio` importer output. `Animation`
-/// is the bounded JSON transform-sample/event envelope used by `.uveanim` importer output. The
+/// interleaved PCM16-derived normalized sample envelope used by `.uvaudio` importer output. `Animation`
+/// is the bounded JSON transform-sample/event envelope used by `.uvanim` importer output. The
 /// `assetType` value is never reused.
 inline constexpr std::size_t kMaximumUveFilePayloadBytesUVE = 512U * 1024U * 1024U;
 

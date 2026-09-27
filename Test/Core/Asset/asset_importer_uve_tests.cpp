@@ -69,9 +69,9 @@ TEST_F(AssetImporterUVETest, ClassifySourceUVE_ReportsAuthorityAndRawParserBound
     constexpr std::array<ClassificationCaseUVE, 15> kCases = {{
         {"Readme.TXT", AssetImportSourceKindUVE::PlainText, "txt", true, false,
          "built-in text parser is registered"},
-        {"Character.UVEMODEL", AssetImportSourceKindUVE::MeshEnvelope, "uvemodel", true, false,
+        {"Character.UVMODEL", AssetImportSourceKindUVE::MeshEnvelope, "uvmodel", true, false,
          "built-in generic copy importer is registered"},
-        {"Walk.UVEANIM", AssetImportSourceKindUVE::AnimationEnvelope, "uveanim", true, false,
+        {"Walk.UVANIM", AssetImportSourceKindUVE::AnimationEnvelope, "uvanim", true, false,
          "built-in generic copy importer is registered"},
         {"Character.FBX", AssetImportSourceKindUVE::RawModel, "fbx", true, true,
          "format-specific parser is registered"},
@@ -163,9 +163,9 @@ TEST_F(AssetImporterUVETest, ImportUVE_GenericImporter_CopiesFileAndRegistersGui
 }
 
 TEST_F(AssetImporterUVETest, ImportUVE_GenericImporter_CreatesMissingDestinationDirectories) {
-    const std::filesystem::path sourcePath = "uve_asset_importer_nested_source.uvemodel";
+    const std::filesystem::path sourcePath = "uve_asset_importer_nested_source.uvmodel";
     const std::filesystem::path destinationDirectory = "uve_asset_importer_nested_destination";
-    const std::filesystem::path destinationPath = destinationDirectory / "nested" / "asset.uvemodel";
+    const std::filesystem::path destinationPath = destinationDirectory / "nested" / "asset.uvmodel";
     std::filesystem::remove(sourcePath);
     std::filesystem::remove_all(destinationDirectory);
     WriteFixtureFileUVE(sourcePath, "typed UVE envelope import");
@@ -294,7 +294,7 @@ TEST(AssetImportSettingsUVETest, TextImportSettingsUVE_CacheVersionIsStable) {
 
 TEST_F(AssetImporterUVETest, ImportUVE_TypedUVEEnvelopeExtensions_CopyAndRegisterGuid) {
     constexpr std::array<std::string_view, 4> kTypedEnvelopeExtensions = {
-        ".uvemodel", ".uvetex", ".uveshader", ".uvemat"};
+        ".uvmodel", ".uvtex", ".uvshader", ".uvmat"};
 
     for (const std::string_view extension : kTypedEnvelopeExtensions) {
         const std::filesystem::path sourcePath =
@@ -331,7 +331,7 @@ TEST_F(AssetImporterUVETest, ImportUVE_RawShaderSource_InfersStageAndPublishesTy
         const std::filesystem::path sourcePath =
             std::string("uve_asset_importer_raw_shader_source") + std::string(expected.extension);
         const std::filesystem::path destinationPath =
-            std::string("uve_asset_importer_raw_shader_destination") + std::string(expected.extension) + ".uveshader";
+            std::string("uve_asset_importer_raw_shader_destination") + std::string(expected.extension) + ".uvshader";
         std::filesystem::remove(sourcePath);
         std::filesystem::remove(destinationPath);
         WriteFixtureFileUVE(sourcePath, "#version 450\nvoid main() {}\n");
@@ -352,7 +352,7 @@ TEST_F(AssetImporterUVETest, ImportUVE_RawShaderSource_InfersStageAndPublishesTy
 
 TEST_F(AssetImporterUVETest, ImportUVE_RawShaderSource_RejectsEmptySourceAndPreservesDestination) {
     const std::filesystem::path sourcePath = "uve_asset_importer_raw_shader_empty.vert";
-    const std::filesystem::path destinationPath = "uve_asset_importer_raw_shader_empty.uveshader";
+    const std::filesystem::path destinationPath = "uve_asset_importer_raw_shader_empty.uvshader";
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
     WriteFixtureFileUVE(destinationPath, "prior typed shader");

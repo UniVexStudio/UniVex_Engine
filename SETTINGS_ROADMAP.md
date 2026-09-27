@@ -49,7 +49,7 @@ single "Save Editor Preferences" menu item and the axis-colour submenu.
 
 **Project settings do not exist.** `EngineConfigUVE` is a struct of compile-time defaults
 (target FPS, fixed-update rate, max delta time, log level and log path, thread-pool size, settings
-and asset-database paths, project root) with a handful of command-line overrides. The `.uveditor`
+and asset-database paths, project root) with a handful of command-line overrides. The `.uvproject`
 file is a path-locator manifest, not a settings document. There is no project-settings file, no
 project-settings UI, and no per-platform override mechanism.
 
@@ -187,7 +187,7 @@ collects them.
 
 - [~] Resolution order, lowest to highest priority: **engine default → project setting → user
       preference → per-platform override → command-line override**. The project layer exists:
-      `project.uvesettings` is read at the start of `EngineCoreUVE::Init()` and overrides the
+      `project.uvsettings` is read at the start of `EngineCoreUVE::Init()` and overrides the
       application's `EngineConfigUVE` wherever it sets a legal value. The user, platform and
       command-line layers are not stacked on it yet.
 - [ ] `EngineConfigUVE`'s existing command-line overrides become the top layer of this stack
@@ -197,8 +197,8 @@ collects them.
       `GetStoredValueUVE` answers what one layer contributes (nothing, or a legal value); the
       query across a full stack comes with the stack.
 - [x] Per-layer save targets: user preferences never write into the project file, and vice versa.
-      Editor preferences go to `.uvesettings`, project settings to `project.uvesettings`
-      (committed; the ignore rule for `*.uvesettings` makes an exception for it).
+      Editor preferences go to `.uvsettings`, project settings to `project.uvsettings`
+      (committed; the ignore rule for `*.uvsettings` makes an exception for it).
 
 ## 0.8 Versioning and migration
 
@@ -440,7 +440,7 @@ The largest group by far, and the one most dependent on the renderer maturing.
 ## 1.5 Input
 
 - [x] The input map itself: named actions, each with positive and negative bindings.
-      `project.uveinput`, read by `EngineCoreUVE::Init()` into `InputMapDocumentUVE` and
+      `project.uvinput`, read by `EngineCoreUVE::Init()` into `InputMapDocumentUVE` and
       registered with the input system; `EngineServicesUVE::GetInputMapUVE()` reaches it.
 - [ ] Per-action deadzone, sensitivity, and whether it is analog or digital.
 - [ ] Device classes: keyboard, mouse, gamepad, touch, pen.

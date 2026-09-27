@@ -37,7 +37,7 @@ enum class AnimationProcessCallbackUVE : std::uint8_t {
     Physics,
 };
 
-/// AnimationPlayer's own state: plays a `.uveanim` clip on a target node's transform. The player is
+/// AnimationPlayer's own state: plays a `.uvanim` clip on a target node's transform. The player is
 /// a pure Node - it has no transform of its own - so what it moves is `target`, or its parent when
 /// no target is set.
 ///

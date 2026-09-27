@@ -66,7 +66,7 @@ protected:
 };
 
 TEST_F(HotReloadUVETest, PollUVE_DetectsOnDiskChange_ReloadsAssetAndPublishesEvent) {
-    const std::filesystem::path path = "uve_hot_reload_tests_change.uveblob";
+    const std::filesystem::path path = "uve_hot_reload_tests_change.uvblob";
     std::filesystem::remove(path);
     ASSERT_TRUE(WriteUveFileUVE(path, AssetKindUVE::Blob, MakePayloadUVE("version1")));
     const AssetGuidUVE guid = assetDatabase.RegisterUVE(path);
@@ -112,7 +112,7 @@ TEST_F(HotReloadUVETest, PollUVE_DetectsOnDiskChange_ReloadsAssetAndPublishesEve
 }
 
 TEST_F(HotReloadUVETest, PollUVE_InvalidDeltaTimes_DoNotMutateAccumulatorOrTriggerReload) {
-    const std::filesystem::path path = "uve_hot_reload_tests_invalid_delta.uveblob";
+    const std::filesystem::path path = "uve_hot_reload_tests_invalid_delta.uvblob";
     std::filesystem::remove(path);
     ASSERT_TRUE(WriteUveFileUVE(path, AssetKindUVE::Blob, MakePayloadUVE("version1")));
     const AssetGuidUVE guid = assetDatabase.RegisterUVE(path);
@@ -154,7 +154,7 @@ TEST_F(HotReloadUVETest, PollUVE_BelowConfiguredInterval_NeverReloads) {
     AssetManagerUVE localAssetManager(threadPool, eventSystem, &localHotReload);
     localAssetManager.RegisterLoaderUVE<BlobAssetUVE>(LoadBlobUVE);
 
-    const std::filesystem::path path = "uve_hot_reload_tests_below_interval.uveblob";
+    const std::filesystem::path path = "uve_hot_reload_tests_below_interval.uvblob";
     std::filesystem::remove(path);
     ASSERT_TRUE(WriteUveFileUVE(path, AssetKindUVE::Blob, MakePayloadUVE("version1")));
     const AssetGuidUVE guid = assetDatabase.RegisterUVE(path);
@@ -177,7 +177,7 @@ TEST_F(HotReloadUVETest, PollUVE_BelowConfiguredInterval_NeverReloads) {
 }
 
 TEST_F(HotReloadUVETest, PollUVE_TrackedFileDeleted_LogsWarningAndDoesNotCrash) {
-    const std::filesystem::path path = "uve_hot_reload_tests_deleted.uveblob";
+    const std::filesystem::path path = "uve_hot_reload_tests_deleted.uvblob";
     std::filesystem::remove(path);
     ASSERT_TRUE(WriteUveFileUVE(path, AssetKindUVE::Blob, MakePayloadUVE("version1")));
     const AssetGuidUVE guid = assetDatabase.RegisterUVE(path);

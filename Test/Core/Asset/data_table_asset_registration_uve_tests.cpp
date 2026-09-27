@@ -28,7 +28,7 @@ namespace {
 class TemporaryRegistrationFilesUVE final {
 public:
     TemporaryRegistrationFilesUVE() {
-        for (const std::string name : {"valid.uvetable", "wrong_kind.uvetable", "wrong_extension.txt"}) {
+        for (const std::string name : {"valid.uvtable", "wrong_kind.uvtable", "wrong_extension.txt"}) {
             m_paths.emplace_back(::UVE::Tests::ScratchRootUVE() / ("uve_data_table_registration_" + name));
             static_cast<void>(std::filesystem::remove(m_paths.back()));
         }
@@ -78,7 +78,7 @@ TEST(DataTableAssetRegistrationUVE, RejectsInvalidFilesBeforeChangingDatabase) {
     EXPECT_FALSE(RegisterDataTableAssetUVE(database, files.WrongExtensionUVE()).has_value());
     EXPECT_FALSE(RegisterDataTableAssetUVE(database,
                                            ::UVE::Tests::ScratchRootUVE() /
-                                               "uve_data_table_registration_missing.uvetable").has_value());
+                                               "uve_data_table_registration_missing.uvtable").has_value());
     EXPECT_TRUE(database.GetRegisteredAssetsUVE().empty());
 }
 

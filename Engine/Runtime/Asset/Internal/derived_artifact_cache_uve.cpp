@@ -34,7 +34,7 @@ constexpr std::uint64_t kFnvPrimeUVE = 1099511628211ULL;
     }
     std::ostringstream stream;
     stream << std::hex << std::setfill('0') << std::setw(16) << hash;
-    return stream.str() + ".uveimportcache";
+    return stream.str() + ".uvimportcache";
 }
 
 [[nodiscard]] nlohmann::json FingerprintToJsonUVE(const AssetContentFingerprintUVE& fingerprint) {
@@ -209,7 +209,7 @@ std::size_t DerivedArtifactCacheUVE::MarkStaleForSourceUVE(const std::filesystem
         if (errorCode) {
             return markedCount;
         }
-        if (std::filesystem::is_regular_file(entryStatus) && entry.path().extension() == ".uveimportcache") {
+        if (std::filesystem::is_regular_file(entryStatus) && entry.path().extension() == ".uvimportcache") {
             std::ifstream file(entry.path());
             if (file.is_open()) {
                 try {

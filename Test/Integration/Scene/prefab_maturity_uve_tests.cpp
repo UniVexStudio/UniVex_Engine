@@ -33,7 +33,7 @@ TEST_F(PrefabMaturityUVETest, SourceRevisionUVE_ChangesWhenPrefabEnvelopeChanges
     const EntityUVE source = entityManager.CreateEntityUVE();
     entityManager.AddComponentUVE<MeshComponentUVE>(source,
                                                      MeshComponentUVE{Asset::AssetGuidUVE{11U}, Asset::AssetGuidUVE{12U}});
-    const std::filesystem::path path = "uve_prefab_maturity_revision.uveprefab";
+    const std::filesystem::path path = "uve_prefab_maturity_revision.uvprefab";
     std::filesystem::remove(path);
 
     ASSERT_NE(prefabSystem.SavePrefabUVE(entityManager, assetDatabase, source, path), Asset::kInvalidAssetGuidUVE);
@@ -53,7 +53,7 @@ TEST_F(PrefabMaturityUVETest, RefreshInstanceUVE_ReplacesCleanInstanceAfterSourc
     const EntityUVE source = entityManager.CreateEntityUVE();
     entityManager.AddComponentUVE<MeshComponentUVE>(source,
                                                      MeshComponentUVE{Asset::AssetGuidUVE{21U}, Asset::AssetGuidUVE{22U}});
-    const std::filesystem::path path = "uve_prefab_maturity_refresh.uveprefab";
+    const std::filesystem::path path = "uve_prefab_maturity_refresh.uvprefab";
     std::filesystem::remove(path);
     const Asset::AssetGuidUVE guid = prefabSystem.SavePrefabUVE(entityManager, assetDatabase, source, path);
     ASSERT_NE(guid, Asset::kInvalidAssetGuidUVE);
@@ -80,7 +80,7 @@ TEST_F(PrefabMaturityUVETest, RefreshInstanceUVE_RejectsLocalOverridesWithMergeR
     const EntityUVE source = entityManager.CreateEntityUVE();
     entityManager.AddComponentUVE<MeshComponentUVE>(source,
                                                      MeshComponentUVE{Asset::AssetGuidUVE{31U}, Asset::AssetGuidUVE{32U}});
-    const std::filesystem::path path = "uve_prefab_maturity_merge_required.uveprefab";
+    const std::filesystem::path path = "uve_prefab_maturity_merge_required.uvprefab";
     std::filesystem::remove(path);
     const Asset::AssetGuidUVE guid = prefabSystem.SavePrefabUVE(entityManager, assetDatabase, source, path);
     ASSERT_NE(guid, Asset::kInvalidAssetGuidUVE);
@@ -107,7 +107,7 @@ TEST_F(PrefabMaturityUVETest, RefreshInstanceUVE_ForceRefreshExplicitlyDiscardsO
     const EntityUVE source = entityManager.CreateEntityUVE();
     entityManager.AddComponentUVE<MeshComponentUVE>(source,
                                                      MeshComponentUVE{Asset::AssetGuidUVE{41U}, Asset::AssetGuidUVE{42U}});
-    const std::filesystem::path path = "uve_prefab_maturity_force_refresh.uveprefab";
+    const std::filesystem::path path = "uve_prefab_maturity_force_refresh.uvprefab";
     std::filesystem::remove(path);
     const Asset::AssetGuidUVE guid = prefabSystem.SavePrefabUVE(entityManager, assetDatabase, source, path);
     ASSERT_NE(guid, Asset::kInvalidAssetGuidUVE);

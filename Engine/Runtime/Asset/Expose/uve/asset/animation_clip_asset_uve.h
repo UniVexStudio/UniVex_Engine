@@ -46,7 +46,7 @@ struct AnimationClipAssetUVE final {
 /// Validates the bounded serialized animation payload without performing runtime sampling.
 [[nodiscard]] bool IsAnimationClipAssetValidUVE(const AnimationClipAssetUVE& clip) noexcept;
 
-/// Loads a `.uveanim` envelope containing the stable `uve-animation-v1` JSON payload.
+/// Loads a `.uvanim` envelope containing the stable `uve-animation-v1` JSON payload.
 /// Output is published only after envelope, schema, bounds, and finite-pose validation succeed.
 [[nodiscard]] bool LoadAnimationClipAssetUVE(const std::filesystem::path& path,
                                               AnimationClipAssetUVE& outClip);

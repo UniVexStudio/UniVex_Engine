@@ -33,7 +33,7 @@ void WriteMtlFixtureUVE(const std::filesystem::path& path, const std::string_vie
 
 TEST(MtlImporterUVETest, ImportUVE_ValidMtlPublishesUveMatAndRegistersGuid) {
     const std::filesystem::path sourcePath = "uve_mtl_importer_tests_material.mtl";
-    const std::filesystem::path destinationPath = "uve_mtl_importer_tests_material.uvemat";
+    const std::filesystem::path destinationPath = "uve_mtl_importer_tests_material.uvmat";
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
     WriteMtlFixtureUVE(sourcePath, "newmtl Painted\nKd 0.2 0.4 0.6\nKs 0.75 0.75 0.75\nNs 500\n");
@@ -58,7 +58,7 @@ TEST(MtlImporterUVETest, ImportUVE_ValidMtlPublishesUveMatAndRegistersGuid) {
 
 TEST(MtlImporterUVETest, ImportUVE_InvalidMtlPreservesExistingDestinationAndDoesNotRegister) {
     const std::filesystem::path sourcePath = "uve_mtl_importer_tests_invalid.mtl";
-    const std::filesystem::path destinationPath = "uve_mtl_importer_tests_existing.uvemat";
+    const std::filesystem::path destinationPath = "uve_mtl_importer_tests_existing.uvmat";
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
     WriteMtlFixtureUVE(sourcePath, "newmtl Broken\nd 1.5\n");
@@ -83,7 +83,7 @@ TEST(MtlImporterUVETest, ImportUVE_InvalidMtlPreservesExistingDestinationAndDoes
 
 TEST(MtlImporterUVETest, ImportUVE_WrongDestinationExtensionFailsBeforePublish) {
     const std::filesystem::path sourcePath = "uve_mtl_importer_tests_wrong_destination.mtl";
-    const std::filesystem::path destinationPath = "uve_mtl_importer_tests_wrong_destination.uvemat.tmp";
+    const std::filesystem::path destinationPath = "uve_mtl_importer_tests_wrong_destination.uvmat.tmp";
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
     WriteMtlFixtureUVE(sourcePath, "newmtl Valid\nKd 1 1 1\n");

@@ -148,10 +148,10 @@ public:
     [[nodiscard]] Threading::IThreadPoolUVE& GetThreadPoolUVE() const noexcept;
     [[nodiscard]] CommandLine::ICommandLineUVE& GetCommandLineUVE() const noexcept;
     [[nodiscard]] Config::IConfigManagerUVE& GetConfigManagerUVE() const noexcept;
-    /// The project's settings (project.uvesettings): the settings that belong to the project and
+    /// The project's settings (project.uvsettings): the settings that belong to the project and
     /// ship with it, as opposed to one person's editor preferences in GetConfigManagerUVE().
     [[nodiscard]] Config::SettingsDocumentUVE& GetProjectSettingsUVE() const noexcept;
-    /// The project's input map (project.uveinput): its named actions and their bindings.
+    /// The project's input map (project.uvinput): its named actions and their bindings.
     [[nodiscard]] Core::InputMapDocumentUVE& GetInputMapUVE() const noexcept;
     [[nodiscard]] Scene::IEntityManagerUVE& GetEntityManagerUVE() const noexcept;
     [[nodiscard]] Scene::ISceneGraphUVE& GetSceneGraphUVE() const noexcept;

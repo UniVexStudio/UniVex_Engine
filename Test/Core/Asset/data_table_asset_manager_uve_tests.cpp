@@ -44,8 +44,8 @@ namespace {
 
 class TemporaryDataTableAssetUVE final {
 public:
-    TemporaryDataTableAssetUVE() : m_valid("uve_data_table_manager_valid.uvetable"),
-                                   m_wrongKind("uve_data_table_manager_wrong_kind.uvetable") {
+    TemporaryDataTableAssetUVE() : m_valid("uve_data_table_manager_valid.uvtable"),
+                                   m_wrongKind("uve_data_table_manager_wrong_kind.uvtable") {
         static_cast<void>(std::filesystem::remove(m_valid));
         static_cast<void>(std::filesystem::remove(m_wrongKind));
     }

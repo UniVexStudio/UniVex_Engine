@@ -36,14 +36,14 @@ namespace {
 
 [[nodiscard]] std::optional<Asset::AssetKindUVE> ExpectedKindUVE(const std::filesystem::path& path) {
     const std::string extension = path.extension().string();
-    if (extension == ".uvescene") return Asset::AssetKindUVE::Scene;
-    if (extension == ".uveprefab" || extension == ".uveentity") return Asset::AssetKindUVE::Prefab;
-    if (extension == ".uvebundle") return Asset::AssetKindUVE::Bundle;
-    if (extension == ".uvemodel") return Asset::AssetKindUVE::Mesh;
-    if (extension == ".uvetex") return Asset::AssetKindUVE::Texture;
-    if (extension == ".uveshader") return Asset::AssetKindUVE::Shader;
-    if (extension == ".uvemat") return Asset::AssetKindUVE::Material;
-    if (extension == ".uvesave") return Asset::AssetKindUVE::Save;
+    if (extension == ".uvscene") return Asset::AssetKindUVE::Scene;
+    if (extension == ".uvprefab" || extension == ".uventity") return Asset::AssetKindUVE::Prefab;
+    if (extension == ".uvbundle") return Asset::AssetKindUVE::Bundle;
+    if (extension == ".uvmodel") return Asset::AssetKindUVE::Mesh;
+    if (extension == ".uvtex") return Asset::AssetKindUVE::Texture;
+    if (extension == ".uvshader") return Asset::AssetKindUVE::Shader;
+    if (extension == ".uvmat") return Asset::AssetKindUVE::Material;
+    if (extension == ".uvsave") return Asset::AssetKindUVE::Save;
     return std::nullopt;
 }
 
@@ -81,14 +81,14 @@ ProjectCheckReportUVE ProjectCheckerUVE::RunUVE(const ProjectCheckOptionsUVE& op
     }
 
     const std::filesystem::path databasePath = options.assetDatabasePath.empty()
-        ? report.projectRoot / ".uveassetdb"
+        ? report.projectRoot / ".uvassetdb"
         : (options.assetDatabasePath.is_absolute() ? options.assetDatabasePath
                                                    : report.projectRoot / options.assetDatabasePath);
     const std::filesystem::path normalizedDatabasePath = databasePath.lexically_normal();
     Asset::AssetDatabaseUVE database;
     if (std::filesystem::exists(normalizedDatabasePath, error) && !database.LoadUVE(normalizedDatabasePath)) {
         AddUVE(report, ProjectCheckSeverityUVE::Error, "registry.load.failed", normalizedDatabasePath,
-               "Asset registry could not be parsed.", "Restore valid .uveassetdb JSON from source control.");
+               "Asset registry could not be parsed.", "Restore valid .uvassetdb JSON from source control.");
     } else if (!std::filesystem::exists(normalizedDatabasePath, error)) {
         AddUVE(report, ProjectCheckSeverityUVE::Warning, "registry.missing", normalizedDatabasePath,
                "Asset registry is absent; project content remains inspectable.",

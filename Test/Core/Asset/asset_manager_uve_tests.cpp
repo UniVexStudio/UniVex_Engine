@@ -135,7 +135,7 @@ TEST_F(AssetManagerUVETest, LoadUVE_ResolverExceptionBecomesFailedHandleAndCompl
 }
 
 TEST_F(AssetManagerUVETest, ReloadUVE_ResolverExceptionPreservesLoadedValueAndReportsFailure) {
-    const std::filesystem::path path = "uve_asset_manager_tests_resolver_exception.uveblob";
+    const std::filesystem::path path = "uve_asset_manager_tests_resolver_exception.uvblob";
     std::filesystem::remove(path);
     const std::string text = "resolver exception keeps this value";
     const auto* const textBytes = reinterpret_cast<const std::byte*>(text.data());
@@ -174,7 +174,7 @@ TEST_F(AssetManagerUVETest, LoadUVE_MissingLoaderReturnsFailedHandleWithoutWorke
 }
 
 TEST_F(AssetManagerUVETest, LoadUVE_RealFile_BecomesReadyWithMatchingBytes) {
-    const std::filesystem::path path = "uve_asset_manager_tests_basic.uveblob";
+    const std::filesystem::path path = "uve_asset_manager_tests_basic.uvblob";
     std::filesystem::remove(path);
     const std::string text = "hello asset manager";
     const auto* const textBytes = reinterpret_cast<const std::byte*>(text.data());
@@ -194,7 +194,7 @@ TEST_F(AssetManagerUVETest, LoadUVE_RealFile_BecomesReadyWithMatchingBytes) {
 }
 
 TEST_F(AssetManagerUVETest, LoadUVE_CalledTwiceForSameGuid_LoadsOnlyOnce) {
-    const std::filesystem::path path = "uve_asset_manager_tests_shared.uveblob";
+    const std::filesystem::path path = "uve_asset_manager_tests_shared.uvblob";
     std::filesystem::remove(path);
     ASSERT_TRUE(WriteUveFileUVE(path, AssetKindUVE::Blob, {}));
     const AssetGuidUVE guid = assetDatabase.RegisterUVE(path);
@@ -217,7 +217,7 @@ TEST_F(AssetManagerUVETest, LoadUVE_CalledTwiceForSameGuid_LoadsOnlyOnce) {
 }
 
 TEST_F(AssetManagerUVETest, CollectGarbageUVE_DoesNotUnloadWhileAnotherHandleIsAlive) {
-    const std::filesystem::path path = "uve_asset_manager_tests_refcount.uveblob";
+    const std::filesystem::path path = "uve_asset_manager_tests_refcount.uvblob";
     std::filesystem::remove(path);
     ASSERT_TRUE(WriteUveFileUVE(path, AssetKindUVE::Blob, {}));
     const AssetGuidUVE guid = assetDatabase.RegisterUVE(path);
@@ -237,7 +237,7 @@ TEST_F(AssetManagerUVETest, CollectGarbageUVE_DoesNotUnloadWhileAnotherHandleIsA
 }
 
 TEST_F(AssetManagerUVETest, CollectGarbageUVE_UnloadsOnceLastHandleIsReleased) {
-    const std::filesystem::path path = "uve_asset_manager_tests_gc.uveblob";
+    const std::filesystem::path path = "uve_asset_manager_tests_gc.uvblob";
     std::filesystem::remove(path);
     ASSERT_TRUE(WriteUveFileUVE(path, AssetKindUVE::Blob, {}));
     const AssetGuidUVE guid = assetDatabase.RegisterUVE(path);
@@ -275,7 +275,7 @@ TEST_F(AssetManagerUVETest, LoadUVE_UnknownGuid_BecomesFailedAndLogsError) {
 }
 
 TEST_F(AssetManagerUVETest, LoadUVE_LoaderRejectsExistingFile_ReportsReasonAndSuccessfulReloadClearsIt) {
-    const std::filesystem::path path = "uve_asset_manager_tests_failure_reason.uveblob";
+    const std::filesystem::path path = "uve_asset_manager_tests_failure_reason.uvblob";
     std::filesystem::remove(path);
     ASSERT_TRUE(WriteUveFileUVE(path, AssetKindUVE::Blob, {}));
     const AssetGuidUVE guid = assetDatabase.RegisterUVE(path);
@@ -296,7 +296,7 @@ TEST_F(AssetManagerUVETest, LoadUVE_LoaderRejectsExistingFile_ReportsReasonAndSu
 }
 
 TEST_F(AssetManagerUVETest, LoaderExceptionFailsInitialLoadAndPreservesLastKnownGoodDataOnReload) {
-    const std::filesystem::path path = "uve_asset_manager_tests_loader_exception.uveblob";
+    const std::filesystem::path path = "uve_asset_manager_tests_loader_exception.uvblob";
     std::filesystem::remove(path);
     const std::string text = "stable asset";
     const auto* const textBytes = reinterpret_cast<const std::byte*>(text.data());
@@ -343,7 +343,7 @@ TEST_F(AssetManagerUVETest, LoaderExceptionFailsInitialLoadAndPreservesLastKnown
 }
 
 TEST_F(AssetManagerUVETest, ReloadUVE_FailurePreservesLastKnownGoodDataAndReportsReason) {
-    const std::filesystem::path path = "uve_asset_manager_tests_last_known_good.uveblob";
+    const std::filesystem::path path = "uve_asset_manager_tests_last_known_good.uvblob";
     std::filesystem::remove(path);
     const std::string text = "last known good";
     const auto* const textBytes = reinterpret_cast<const std::byte*>(text.data());
@@ -372,7 +372,7 @@ TEST_F(AssetManagerUVETest, ReloadUVE_FailurePreservesLastKnownGoodDataAndReport
 }
 
 TEST_F(AssetManagerUVETest, LoadCompletion_PublishesAssetLoadCompletedEvent) {
-    const std::filesystem::path path = "uve_asset_manager_tests_event.uveblob";
+    const std::filesystem::path path = "uve_asset_manager_tests_event.uvblob";
     std::filesystem::remove(path);
     ASSERT_TRUE(WriteUveFileUVE(path, AssetKindUVE::Blob, {}));
     const AssetGuidUVE guid = assetDatabase.RegisterUVE(path);

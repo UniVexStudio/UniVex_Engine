@@ -19,12 +19,12 @@ namespace UVE::Asset {
 using MountHandleUVE = std::uint32_t;
 
 /// IFileSystemUVE is the engine's virtual file system (the spec's Part 7.8 "Cross-platform file
-/// I/O, virtual file system (VFS)"): zero or more mounts (real directories, or `.uvebundle`
+/// I/O, virtual file system (VFS)"): zero or more mounts (real directories, or `.uvbundle`
 /// archives) are searched, in descending-priority order, to resolve a virtual path. A virtual
 /// path is a forward-slash-separated string with no leading slash (e.g.
-/// `"textures/rock.uvetex"`); mount prefixes use the same shape (`""` = root). A virtual path
+/// `"textures/rock.uvtex"`); mount prefixes use the same shape (`""` = root). A virtual path
 /// matches a mount iff it equals the mount's prefix or starts with `prefix + "/"` — matching is
-/// always on whole path segments, so a mount at `"tex"` never matches `"textures/rock.uvetex"`.
+/// always on whole path segments, so a mount at `"tex"` never matches `"textures/rock.uvtex"`.
 /// This lets a loose directory mount transparently override (or be overridden by) a bundle
 /// mount at the same or a covering prefix, simply by priority — the classic PAK-file/mod-override
 /// pattern. Deliberately standalone this increment: `AssetDatabaseUVE`, `uve_file_envelope_uve`,
@@ -46,7 +46,7 @@ public:
     virtual MountHandleUVE MountDirectoryUVE(std::string virtualPrefix, std::filesystem::path realDirectory,
                                               int priority) = 0;
 
-    /// Mounts the entries inside the `.uvebundle` at `bundlePath` under `virtualPrefix`, keyed by
+    /// Mounts the entries inside the `.uvbundle` at `bundlePath` under `virtualPrefix`, keyed by
     /// each entry's `AssetBundleEntryUVE::virtualName` (or its GUID's hex string, if it had
     /// none). Read-only — WriteFileUVE() never targets a bundle mount. `bundlePath` is validated
     /// lazily on each read (not at mount time), matching `AssetBundleUVE`'s own error-handling

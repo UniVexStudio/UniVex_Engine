@@ -42,8 +42,8 @@ enum class DataTableSourceFormatUVE : std::uint8_t {
                                              const DataTableSourceFormatUVE format) {
     const auto* const settings = dynamic_cast<const DataTableImportSettingsUVE*>(&baseSettings);
     if (settings == nullptr || settings->tableName.empty() || settings->columns.empty() ||
-        destinationPath.extension() != ".uvetable") {
-        UVE_ERROR("DataTableImporterUVE: missing schema settings or invalid .uvetable destination");
+        destinationPath.extension() != ".uvtable") {
+        UVE_ERROR("DataTableImporterUVE: missing schema settings or invalid .uvtable destination");
         return false;
     }
 

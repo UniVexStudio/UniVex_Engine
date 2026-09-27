@@ -25,7 +25,7 @@ struct ProjectLaunchResultUVE final {
     [[nodiscard]] bool IsAcceptedUVE() const noexcept { return code == ProjectLaunchCodeUVE::Loaded; }
 };
 
-/// Roadmap item #7's "played project" bridge: loads `projectFile` (a `.uveditor` package, see
+/// Roadmap item #7's "played project" bridge: loads `projectFile` (a `.uvproject` package, see
 /// Platform::EditorProjectPackageCodecUVE), loads its configured startup scene into `engine`'s own
 /// live entity manager, refreshes the scene graph so authored WorldTransformComponentUVE data is
 /// correct before the first render, and activates the first entity found with both

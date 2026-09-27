@@ -59,7 +59,7 @@ void WriteBytesUVE(const std::filesystem::path& path, const std::vector<std::byt
 
 TEST(BmpImporterUVETest, ImportUVE_DecodesBmpToTextureEnvelopeAndRegistersGuid) {
     const std::filesystem::path sourcePath = "uve_bmp_importer_source.bmp";
-    const std::filesystem::path destinationPath = "uve_bmp_importer_destination.uvetex";
+    const std::filesystem::path destinationPath = "uve_bmp_importer_destination.uvtex";
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
     WriteBytesUVE(sourcePath, MakeBmp24OneByOneUVE());
@@ -83,7 +83,7 @@ TEST(BmpImporterUVETest, ImportUVE_DecodesBmpToTextureEnvelopeAndRegistersGuid) 
 
 TEST(BmpImporterUVETest, ImportUVE_InvalidBmpPreservesExistingDestination) {
     const std::filesystem::path sourcePath = "uve_bmp_importer_invalid_source.bmp";
-    const std::filesystem::path destinationPath = "uve_bmp_importer_existing_destination.uvetex";
+    const std::filesystem::path destinationPath = "uve_bmp_importer_existing_destination.uvtex";
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
     WriteBytesUVE(sourcePath, {std::byte{0x01}, std::byte{0x02}, std::byte{0x03}});
@@ -107,7 +107,7 @@ TEST(BmpImporterUVETest, ImportUVE_InvalidBmpPreservesExistingDestination) {
 
 TEST(BmpImporterUVETest, ImportUVE_WrongDestinationExtensionFailsBeforePublish) {
     const std::filesystem::path sourcePath = "uve_bmp_importer_wrong_destination.bmp";
-    const std::filesystem::path destinationPath = "uve_bmp_importer_wrong_destination.uvemodel";
+    const std::filesystem::path destinationPath = "uve_bmp_importer_wrong_destination.uvmodel";
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
     WriteBytesUVE(sourcePath, MakeBmp24OneByOneUVE());

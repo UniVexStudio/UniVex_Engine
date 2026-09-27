@@ -303,7 +303,7 @@ separately in `SETTINGS_ROADMAP.md`, which follows the same status legend.
   CS9 then unblocked skinning by building what was missing: MeshAssetUVE now carries per-vertex
   joint influences and a skeleton, and TrySkinMeshUVE is the CPU linear-blend implementation a
   GPU kernel can be verified against - the baseline whose absence was the actual blocker.
-  The skinning section is an OPTIONAL trailing part of the .uvemodel payload, so every existing
+  The skinning section is an OPTIONAL trailing part of the .uvmodel payload, so every existing
   static mesh serializes to byte-identical output (the envelope's version field is global across
   all asset kinds, so bumping it would have invalidated scenes and textures to describe a mesh
   feature).
@@ -362,7 +362,7 @@ and one of the highest-priority areas below.
     limb chains, so every target ends up with the same IK set as the source.
   - Both rigs are brought to a common A-pose automatically before mapping, so a source and a
     target authored in different rest poses (A vs T) still line up.
-  - Needs a multi-track (per-bone) clip format first: `.uveanim` holds one track today.
+  - Needs a multi-track (per-bone) clip format first: `.uvanim` holds one track today.
 - [ ] Animation compression (both curve compression and a runtime decompression path)
 - [ ] Additive animation layers (e.g. aim offsets, lean, breathing) on top of a base pose
 - [ ] Blend spaces (1D and 2D) for locomotion blending, distinct from the existing blend

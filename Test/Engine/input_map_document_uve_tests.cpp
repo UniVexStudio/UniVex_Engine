@@ -52,7 +52,7 @@ class InputMapDocumentUVETest : public ::testing::Test {
 protected:
     void SetUp() override { std::filesystem::remove(path); }
     void TearDown() override { std::filesystem::remove(path); }
-    const std::filesystem::path path = "uve_input_map_document_tests.uveinput";
+    const std::filesystem::path path = "uve_input_map_document_tests.uvinput";
 };
 
 TEST_F(InputMapDocumentUVETest, AMissingFileIsAnEmptyMap) {
@@ -164,9 +164,9 @@ TEST_F(InputMapDocumentUVETest, TheEngineRegistersTheProjectsActionsAtStartup) {
     config.headlessUVE = true;
     config.enableConsoleLogging = false;
     config.logFilePath = "uve_input_map_document_tests.log";
-    config.settingsFilePath = "uve_input_map_document_tests.uvesettings";
-    config.projectSettingsFilePath = "uve_input_map_document_tests.project.uvesettings";
-    config.assetDatabaseFilePath = "uve_input_map_document_tests.uveassetdb";
+    config.settingsFilePath = "uve_input_map_document_tests.uvsettings";
+    config.projectSettingsFilePath = "uve_input_map_document_tests.project.uvsettings";
+    config.assetDatabaseFilePath = "uve_input_map_document_tests.uvassetdb";
     config.inputMapFilePath = path;
     EngineCoreUVE engine(config);
     engine.Init();

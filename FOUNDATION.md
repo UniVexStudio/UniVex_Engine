@@ -423,7 +423,7 @@ with the same name, both public.
 4. `[x]` **`AssetHandleUVE`** (`asset_handle_uve.h`) — ref-counted typed handle.
    `AssetLoadStateUVE` reports where a record is in its lifecycle.
 5. `[x]` **`IFileSystemUVE` / `FileSystemUVE`** — a real VFS that mounts either a
-   directory or a `.uvebundle`, so the same virtual path resolves in development
+   directory or a `.uvbundle`, so the same virtual path resolves in development
    and in a packaged build.
 
 Supporting infrastructure, all real: `AssetImporterUVE` (per-extension registry
@@ -432,7 +432,7 @@ scheduler, one job per tick, with a full diagnostic taxonomy),
 `DerivedArtifactCacheUVE` (proves an import result still matches source bytes plus
 settings version), `ProjectFileIndexUVE` and `ProjectChangeWatcherUVE` (the asset
 browser's tree and change journal), `ResourceDependencyGraphUVE` (BFS invalidation
-plan for reimport), `AssetBundleUVE` (`.uvebundle` pack/unpack), and
+plan for reimport), `AssetBundleUVE` (`.uvbundle` pack/unpack), and
 `UveFileHeaderUVE` — a universal envelope with an `AssetKindUVE` covering Scene,
 Prefab, Blob, Bundle, Mesh, Texture, Shader, Material, Save, DataTable, Audio and
 Animation.
@@ -444,10 +444,10 @@ reload latency is the poll interval and a rename reads as remove-plus-create.
 
 | Asset | Holds | Importer | Status |
 |---|---|---|---|
-| `MeshAssetUVE` | `MeshVertexUVE` array (position, normal, uv, tangent, handedness), `uint32` indices, `AabbUVE localBounds`, skinning influences, joints | **OBJ** and **glTF/GLB**, plus a `.uvemodel` envelope | `[x]` |
-| `TextureAssetUVE` | width, height, format, raw uncompressed pixels | **PNG, JPEG, BMP, TGA**, plus `.uvetex` | `[~]` no mips, no compression |
-| `MaterialAssetUVE` | albedo colour, albedo/normal/AO texture GUIDs, metallic, roughness, emissive colour, shader GUIDs, transparency flag | **MTL**, plus `.uvemat` | `[~]` see below |
-| `ShaderAssetUVE` | stage, source text, entry point — stored as-is, not compiled at asset level | source importer + `.uveshader` | `[x]` |
+| `MeshAssetUVE` | `MeshVertexUVE` array (position, normal, uv, tangent, handedness), `uint32` indices, `AabbUVE localBounds`, skinning influences, joints | **OBJ** and **glTF/GLB**, plus a `.uvmodel` envelope | `[x]` |
+| `TextureAssetUVE` | width, height, format, raw uncompressed pixels | **PNG, JPEG, BMP, TGA**, plus `.uvtex` | `[~]` no mips, no compression |
+| `MaterialAssetUVE` | albedo colour, albedo/normal/AO texture GUIDs, metallic, roughness, emissive colour, shader GUIDs, transparency flag | **MTL**, plus `.uvmat` | `[~]` see below |
+| `ShaderAssetUVE` | stage, source text, entry point — stored as-is, not compiled at asset level | source importer + `.uvshader` | `[x]` |
 | `AudioAssetUVE` | channels, sample rate, interleaved normalized float samples | **WAV** | `[~]` WAV only |
 | `AnimationClipAssetUVE` | clip id, duration, sampled TRS poses, timed string events | envelope only | `[~]` see below |
 | `DataTableUVE` | typed schema'd rows (bool / int64 / double / string) | **CSV, TSV, JSON** | `[x]` the most built-out asset in the module |

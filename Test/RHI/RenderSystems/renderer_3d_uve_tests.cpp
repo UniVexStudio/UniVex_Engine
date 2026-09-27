@@ -100,8 +100,8 @@ protected:
     std::unique_ptr<Renderer3DUVE> renderer3D;
 
     Renderer3DUVETest() {
-        vertexShaderGuid = assetDatabase.RegisterUVE("renderer3d_tests_vertex.uveshader");
-        fragmentShaderGuid = assetDatabase.RegisterUVE("renderer3d_tests_fragment.uveshader");
+        vertexShaderGuid = assetDatabase.RegisterUVE("renderer3d_tests_vertex.uvshader");
+        fragmentShaderGuid = assetDatabase.RegisterUVE("renderer3d_tests_fragment.uvshader");
 
         assetManager.RegisterLoaderUVE<Asset::ShaderAssetUVE>(
             [](const std::filesystem::path&, Asset::ShaderAssetUVE& shader) {
@@ -429,8 +429,8 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_VisiblePrimitive_ReportsEvidenceSpecifi
 
 TEST_F(Renderer3DUVETest, RenderFrameUVE_VisibleMesh_RecordsExpectedCommandSequence) {
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_mesh.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_material.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_mesh.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_material.uvmat");
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
 
@@ -488,8 +488,8 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_VisibleMesh_RecordsExpectedCommandSeque
 
 TEST_F(Renderer3DUVETest, RenderFrameUVE_ManagedMaterialProgram_SkipsUntilReadyThenDraws) {
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_managed_program_mesh.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_managed_program_material.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_managed_program_mesh.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_managed_program_material.uvmat");
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid, false);
 
@@ -518,8 +518,8 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_ManagedMaterialProgram_SkipsUntilReadyT
 
 TEST_F(Renderer3DUVETest, RenderFrameUVE_ShadowPcfKernelRadiusAboveTwo_ClampsToTwo) {
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_pcf_clamp_mesh.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_pcf_clamp_material.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_pcf_clamp_mesh.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_pcf_clamp_material.uvmat");
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid, false);
 
@@ -545,8 +545,8 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_ShadowPcfKernelRadiusAboveTwo_ClampsToT
 
 TEST_F(Renderer3DUVETest, RenderFrameUVE_ShadowCascadeBlendRatioAboveQuarter_ClampsToQuarter) {
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_blend_clamp_mesh.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_blend_clamp_material.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_blend_clamp_mesh.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_blend_clamp_material.uvmat");
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid, false);
 
@@ -572,8 +572,8 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_ShadowCascadeBlendRatioAboveQuarter_Cla
 
 TEST_F(Renderer3DUVETest, RenderFrameUVE_ActiveLightEntity_PushesComputedLightUniformsInSlotZero) {
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_lit_mesh.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_lit_material.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_lit_mesh.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_lit_material.uvmat");
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     // Identity rotation, so LightSystemUVE derives direction {0,0,-1} (see
     // LightSystemUVETest's own RotateVectorUVE-based coverage for the rotated case). A Point
@@ -598,8 +598,8 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_ActiveLightEntity_PushesComputedLightUn
 
 TEST_F(Renderer3DUVETest, RenderFrameUVE_TwoLightsOfDifferentTypes_PopulateSlotsZeroAndOneOthersStaySentinel) {
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_multilight_mesh.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_multilight_material.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_multilight_mesh.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_multilight_material.uvmat");
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     Scene::LightComponentUVE directionalLight{Math::Vector3UVE{1.0F, 0.0F, 0.0F}, 2.0F};
     Scene::LightComponentUVE spotLight{Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 3.0F};
@@ -629,8 +629,8 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_TwoLightsOfDifferentTypes_PopulateSlots
 
 TEST_F(Renderer3DUVETest, RenderFrameUVE_AmbientColorFromConstructor_AlwaysPushedRegardlessOfLight) {
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_ambient_mesh.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_ambient_material.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_ambient_mesh.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_ambient_material.uvmat");
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
 
@@ -657,8 +657,8 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_CameraAtKnownPosition_PushesMatchingVie
     // no recorded item to assert uniforms on.
     const Math::Vector3UVE cameraPosition{0.0F, 0.0F, 5.0F};
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE(cameraPosition);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_viewpos_mesh.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_viewpos_material.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_viewpos_mesh.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_viewpos_material.uvmat");
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
 
@@ -675,9 +675,9 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_CameraAtKnownPosition_PushesMatchingVie
 
 TEST_F(Renderer3DUVETest, RenderFrameUVE_MaterialWithoutTextures_UsesFallbackTexturesForAllThreeSlots) {
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_fallback_mesh.uvemodel");
-    const Asset::AssetGuidUVE materialAGuid = assetDatabase.RegisterUVE("renderer3d_tests_fallback_material_a.uvemat");
-    const Asset::AssetGuidUVE materialBGuid = assetDatabase.RegisterUVE("renderer3d_tests_fallback_material_b.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_fallback_mesh.uvmodel");
+    const Asset::AssetGuidUVE materialAGuid = assetDatabase.RegisterUVE("renderer3d_tests_fallback_material_a.uvmat");
+    const Asset::AssetGuidUVE materialBGuid = assetDatabase.RegisterUVE("renderer3d_tests_fallback_material_b.uvmat");
     // Both materials resolve through the same default (no-texture) loader from the fixture, but
     // are registered under two distinct AssetGuidUVEs, so each gets its own materialCache entry
     // and independently resolves its fallback texture handles.
@@ -729,8 +729,8 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_ReadyEmptyMeshSkipsInvalidGpuBuffers) {
         });
 
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_empty_mesh.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_empty_mesh.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_empty_mesh.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_empty_mesh.uvmat");
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -2.0F}, meshGuid, materialGuid);
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
 
@@ -757,9 +757,9 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_InvalidReadyMaterialPayloadSkipsGpuDraw
         });
 
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_invalid_material_mesh.uvemodel");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_invalid_material_mesh.uvmodel");
     const Asset::AssetGuidUVE materialGuid =
-        assetDatabase.RegisterUVE("renderer3d_tests_invalid_material_payload.uvemat");
+        assetDatabase.RegisterUVE("renderer3d_tests_invalid_material_payload.uvmat");
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -2.0F}, meshGuid, materialGuid);
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
 
@@ -771,10 +771,10 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_InvalidReadyMaterialPayloadSkipsGpuDraw
 
 TEST_F(Renderer3DUVETest, RenderFrameUVE_InvalidReadyTexturePayloadUsesFallbackInRelease) {
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_invalid_texture_mesh.uvemodel");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_invalid_texture_mesh.uvmodel");
     const Asset::AssetGuidUVE materialGuid =
-        assetDatabase.RegisterUVE("renderer3d_tests_invalid_texture_material.uvemat");
-    const Asset::AssetGuidUVE textureGuid = assetDatabase.RegisterUVE("renderer3d_tests_invalid_texture.uvetex");
+        assetDatabase.RegisterUVE("renderer3d_tests_invalid_texture_material.uvmat");
+    const Asset::AssetGuidUVE textureGuid = assetDatabase.RegisterUVE("renderer3d_tests_invalid_texture.uvtex");
     UseAlbedoTextureInMaterialUVE(textureGuid);
     assetManager.RegisterLoaderUVE<Asset::TextureAssetUVE>(
         [](const std::filesystem::path&, Asset::TextureAssetUVE& texture) {
@@ -805,9 +805,9 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_OverflowedCascadeSplitsDisableShadowPas
     Scene::CameraComponentUVE& camera = entityManager.GetComponentUVE<Scene::CameraComponentUVE>(cameraEntity);
     camera.nearPlane = std::numeric_limits<float>::min();
     camera.farPlane = std::numeric_limits<float>::max();
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_overflowed_cascade_mesh.uvemodel");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_overflowed_cascade_mesh.uvmodel");
     const Asset::AssetGuidUVE materialGuid =
-        assetDatabase.RegisterUVE("renderer3d_overflowed_cascade_material.uvemat");
+        assetDatabase.RegisterUVE("renderer3d_overflowed_cascade_material.uvmat");
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     MakeLightEntityUVE(Scene::LightComponentUVE{Math::Vector3UVE{1.0F, 1.0F, 1.0F}, 2.0F});
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
@@ -837,9 +837,9 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_MaterialWithAlbedoTexture_UploadsAndBin
     const std::size_t baselineLiveResources = renderDevice.GetLiveResourceCountUVE();
 
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_textured_mesh.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_textured_material.uvemat");
-    const Asset::AssetGuidUVE textureGuid = assetDatabase.RegisterUVE("renderer3d_tests_albedo.uvetex");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_textured_mesh.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_textured_material.uvmat");
+    const Asset::AssetGuidUVE textureGuid = assetDatabase.RegisterUVE("renderer3d_tests_albedo.uvtex");
     UseAlbedoTextureInMaterialUVE(textureGuid);
 
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
@@ -861,9 +861,9 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_Rgba16FloatAlbedoTexture_UploadsSuccess
     const std::size_t baselineLiveResources = renderDevice.GetLiveResourceCountUVE();
 
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_f16_mesh.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_f16_material.uvemat");
-    const Asset::AssetGuidUVE textureGuid = assetDatabase.RegisterUVE("renderer3d_tests_f16_albedo.uvetex");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_f16_mesh.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_f16_material.uvmat");
+    const Asset::AssetGuidUVE textureGuid = assetDatabase.RegisterUVE("renderer3d_tests_f16_albedo.uvtex");
     UseAlbedoTextureInMaterialUVE(textureGuid);
     assetManager.RegisterLoaderUVE<Asset::TextureAssetUVE>(
         [](const std::filesystem::path&, Asset::TextureAssetUVE& texture) {
@@ -890,9 +890,9 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_Rgba16FloatAlbedoTexture_UploadsSuccess
 
 TEST_F(Renderer3DUVETest, RenderFrameUVE_FailedTextureUsesFallbackAndReportsDiagnostic) {
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_failed_texture_mesh.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_failed_texture_material.uvemat");
-    const Asset::AssetGuidUVE textureGuid = assetDatabase.RegisterUVE("renderer3d_tests_failed_texture.uvetex");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_failed_texture_mesh.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_failed_texture_material.uvmat");
+    const Asset::AssetGuidUVE textureGuid = assetDatabase.RegisterUVE("renderer3d_tests_failed_texture.uvtex");
     UseAlbedoTextureInMaterialUVE(textureGuid);
     assetManager.RegisterLoaderUVE<Asset::TextureAssetUVE>(
         [](const std::filesystem::path&, Asset::TextureAssetUVE&) { return false; });
@@ -924,9 +924,9 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_FailedTextureUsesFallbackAndReportsDiag
 
 TEST_F(Renderer3DUVETest, RenderFrameUVE_FailedTextureUploadIsMemoizedUntilTextureReload) {
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_upload_failure_mesh.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_upload_failure_material.uvemat");
-    const Asset::AssetGuidUVE textureGuid = assetDatabase.RegisterUVE("renderer3d_tests_upload_failure.uvetex");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_upload_failure_mesh.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_upload_failure_material.uvmat");
+    const Asset::AssetGuidUVE textureGuid = assetDatabase.RegisterUVE("renderer3d_tests_upload_failure.uvtex");
     UseAlbedoTextureInMaterialUVE(textureGuid);
     assetManager.RegisterLoaderUVE<Asset::TextureAssetUVE>(
         [](const std::filesystem::path&, Asset::TextureAssetUVE& texture) {
@@ -959,9 +959,9 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_FailedTextureUploadIsMemoizedUntilTextu
 
 TEST_F(Renderer3DUVETest, RenderFrameUVE_TextureAssetNotYetReady_SkipsItemUntilLoaded) {
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_pending_mesh.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_pending_material.uvemat");
-    const Asset::AssetGuidUVE textureGuid = assetDatabase.RegisterUVE("renderer3d_tests_pending_albedo.uvetex");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_pending_mesh.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_pending_material.uvmat");
+    const Asset::AssetGuidUVE textureGuid = assetDatabase.RegisterUVE("renderer3d_tests_pending_albedo.uvtex");
     UseAlbedoTextureInMaterialUVE(textureGuid);
 
     std::atomic<bool> textureLoadGateUVE{false};
@@ -1011,8 +1011,8 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_TextureAssetNotYetReady_SkipsItemUntilL
 
 TEST_F(Renderer3DUVETest, RenderFrameUVE_CalledTwiceWithSameScene_ReusesGpuResourceCache) {
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_reuse_mesh.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_reuse_material.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_reuse_mesh.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_reuse_material.uvmat");
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
 
@@ -1027,8 +1027,8 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_CalledTwiceWithSameScene_ReusesGpuResou
 
 TEST_F(Renderer3DUVETest, AssetReloadedEventUVE_ForCachedMesh_EvictsAndRecreatesGpuResources) {
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_reload_mesh.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_reload_material.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_reload_mesh.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_reload_material.uvmat");
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
 
@@ -1048,9 +1048,9 @@ TEST_F(Renderer3DUVETest, AssetReloadedEventUVE_ForCachedMesh_EvictsAndRecreates
 
 TEST_F(Renderer3DUVETest, AssetReloadedEventUVE_ForCachedTexture_EvictsTextureAndInvalidatesMaterialCache) {
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_texreload_mesh.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_texreload_material.uvemat");
-    const Asset::AssetGuidUVE textureGuid = assetDatabase.RegisterUVE("renderer3d_tests_texreload_albedo.uvetex");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_texreload_mesh.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_texreload_material.uvmat");
+    const Asset::AssetGuidUVE textureGuid = assetDatabase.RegisterUVE("renderer3d_tests_texreload_albedo.uvtex");
     UseAlbedoTextureInMaterialUVE(textureGuid);
 
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
@@ -1075,10 +1075,10 @@ TEST_F(Renderer3DUVETest, AssetReloadedEventUVE_ForCachedTexture_EvictsTextureAn
 
 TEST_F(Renderer3DUVETest, AssetReloadedEventUVE_ForMaterialTextureSwap_EvictsOldTextureCacheEntry) {
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_material_swap_mesh.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_material_swap_material.uvemat");
-    const Asset::AssetGuidUVE textureAGuid = assetDatabase.RegisterUVE("renderer3d_tests_material_swap_a.uvetex");
-    const Asset::AssetGuidUVE textureBGuid = assetDatabase.RegisterUVE("renderer3d_tests_material_swap_b.uvetex");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_material_swap_mesh.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_material_swap_material.uvmat");
+    const Asset::AssetGuidUVE textureAGuid = assetDatabase.RegisterUVE("renderer3d_tests_material_swap_a.uvtex");
+    const Asset::AssetGuidUVE textureBGuid = assetDatabase.RegisterUVE("renderer3d_tests_material_swap_b.uvtex");
     UseAlbedoTextureInMaterialUVE(textureAGuid);
 
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
@@ -1159,8 +1159,8 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_ActiveCameraPath_MatchesEngineCoreInteg
     // been called: RenderFrameUVE(*entityManager, activeCamera) against a scene with both a
     // camera and a visible mesh, driven end-to-end through real (not fake) collaborators.
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_active_camera_mesh.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_active_camera_material.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_active_camera_mesh.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_active_camera_material.uvmat");
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid, false);
 
@@ -1173,8 +1173,8 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_ActiveCameraPath_MatchesEngineCoreInteg
 
 TEST_F(Renderer3DUVETest, RenderFrameUVE_DirectionalLight_PushesThreeOrderedCascadeSplits) {
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_cascade_mesh.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_cascade_material.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_cascade_mesh.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_cascade_material.uvmat");
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     MakeLightEntityUVE(Scene::LightComponentUVE{Math::Vector3UVE{1.0F, 1.0F, 1.0F}, 2.0F});
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
@@ -1222,8 +1222,8 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_DirectionalLight_PushesThreeOrderedCasc
 }
 
 TEST_F(Renderer3DUVETest, RenderFrameUVE_DirectionalCascadeMatrices_SnapToShadowTexelGrid) {
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_stabilization_mesh.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_stabilization_material.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_stabilization_mesh.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_stabilization_material.uvmat");
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     MakeLightEntityUVE(Scene::LightComponentUVE{Math::Vector3UVE{1.0F, 1.0F, 1.0F}, 2.0F});
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
@@ -1278,8 +1278,8 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_NoDirectionalLight_SkipsShadowPassEvenW
     // become valid (polled to readiness below) - but with no Directional light entity at all,
     // FindShadowCasterUVE() finds no caster, so no shadow pass is recorded.
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_noshadow_mesh.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_noshadow_material.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_noshadow_mesh.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_noshadow_material.uvmat");
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
     WaitUntilShadowProgramReadyUVE();
@@ -1299,8 +1299,8 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_NoDirectionalLight_SkipsShadowPassEvenW
 TEST_F(Renderer3DUVETest, RenderFrameUVE_InvalidShadowTargetsSkipShadowPassSafely) {
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
     MakeLightEntityUVE(Scene::LightComponentUVE{Math::Vector3UVE{1.0F, 1.0F, 1.0F}, 2.0F});
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_invalid_shadow_mesh.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_invalid_shadow_material.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_invalid_shadow_mesh.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_invalid_shadow_material.uvmat");
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
 
@@ -1359,10 +1359,10 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_InvalidMainTargetsSkipFrameSafely) {
 
 TEST_F(Renderer3DUVETest, RenderFrameUVE_FittedLightFrustum_CastsOffCameraOccluderWithoutMainPassDraw) {
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
-    const Asset::AssetGuidUVE visibleMeshGuid = assetDatabase.RegisterUVE("renderer3d_fitted_visible.uvemodel");
-    const Asset::AssetGuidUVE visibleMaterialGuid = assetDatabase.RegisterUVE("renderer3d_fitted_visible.uvemat");
-    const Asset::AssetGuidUVE offCameraMeshGuid = assetDatabase.RegisterUVE("renderer3d_fitted_offcamera.uvemodel");
-    const Asset::AssetGuidUVE offCameraMaterialGuid = assetDatabase.RegisterUVE("renderer3d_fitted_offcamera.uvemat");
+    const Asset::AssetGuidUVE visibleMeshGuid = assetDatabase.RegisterUVE("renderer3d_fitted_visible.uvmodel");
+    const Asset::AssetGuidUVE visibleMaterialGuid = assetDatabase.RegisterUVE("renderer3d_fitted_visible.uvmat");
+    const Asset::AssetGuidUVE offCameraMeshGuid = assetDatabase.RegisterUVE("renderer3d_fitted_offcamera.uvmodel");
+    const Asset::AssetGuidUVE offCameraMaterialGuid = assetDatabase.RegisterUVE("renderer3d_fitted_offcamera.uvmat");
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, visibleMeshGuid, visibleMaterialGuid);
     // At z=-10 the default camera's 60-degree view only reaches roughly +/-5.8 on X, while the
     // fitted directional-light frustum includes this potential caster across its far-range width.
@@ -1394,8 +1394,8 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_FittedLightFrustum_CastsOffCameraOcclud
 
 TEST_F(Renderer3DUVETest, RenderFrameUVE_DirectionalLightAndReadyShadowProgram_ShadowPassDrawsOpaqueItem) {
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_shadowdraw_mesh.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_shadowdraw_material.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_shadowdraw_mesh.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_shadowdraw_material.uvmat");
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     MakeLightEntityUVE(Scene::LightComponentUVE{Math::Vector3UVE{1.0F, 1.0F, 1.0F}, 3.0F});
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
@@ -1484,9 +1484,9 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_InvalidCameraWorldTransformIsSafeNoOpIn
 TEST_F(Renderer3DUVETest, RenderFrameUVE_NonFiniteShadowTuningUsesFiniteReleaseDefaults) {
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
     MakeLightEntityUVE(Scene::LightComponentUVE{Math::Vector3UVE{1.0F, 1.0F, 1.0F}, 2.0F});
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_nonfinite_shadow_tuning_mesh.uvemodel");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_nonfinite_shadow_tuning_mesh.uvmodel");
     const Asset::AssetGuidUVE materialGuid =
-        assetDatabase.RegisterUVE("renderer3d_nonfinite_shadow_tuning_material.uvemat");
+        assetDatabase.RegisterUVE("renderer3d_nonfinite_shadow_tuning_material.uvmat");
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
 
@@ -1615,8 +1615,8 @@ void UseInstancingAwareShaderUVE(Asset::AssetManagerUVE& assetManager) {
 TEST_F(Renderer3DUVETest, RenderFrameUVE_LegacyMaterial_StaysOnThePerObjectPath) {
     // The regression case, stated explicitly rather than left implicit in the other tests: a
     // material that predates the instancing contract must still get one draw call per object.
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_instancing_legacy.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_instancing_legacy.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_instancing_legacy.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_instancing_legacy.uvmat");
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
     for (int index = 0; index < 3; ++index) {
         MakeMeshEntityUVE(Math::Vector3UVE{static_cast<float>(index), 0.0F, -5.0F}, meshGuid, materialGuid);
@@ -1634,8 +1634,8 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_LegacyMaterial_StaysOnThePerObjectPath)
 
 TEST_F(Renderer3DUVETest, RenderFrameUVE_InstancingAwareMaterial_CollapsesRepeatsIntoOneDraw) {
     UseInstancingAwareShaderUVE(assetManager);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_instancing_shared.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_instancing_shared.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_instancing_shared.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_instancing_shared.uvmat");
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
     // Same mesh, same material, laid out along a line so they sort into one contiguous run.
     for (int index = 0; index < 4; ++index) {
@@ -1659,8 +1659,8 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_InstancedDiagnosticsResetBetweenFrames)
     // The counters are frame-local. If they accumulated, a long-running session would report a
     // growing instanced count for a static scene - a diagnostic that lies slowly.
     UseInstancingAwareShaderUVE(assetManager);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_instancing_reset.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_instancing_reset.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_instancing_reset.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_instancing_reset.uvmat");
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
     for (int index = 0; index < 3; ++index) {
         MakeMeshEntityUVE(Math::Vector3UVE{static_cast<float>(index) * 0.1F, 0.0F, -5.0F}, meshGuid,
@@ -1683,8 +1683,8 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_SingleInstancingAwareObject_StillDrawsE
     // separate leftover path. Correct either way; this pins which one, so the consumer stays a
     // single loop.
     UseInstancingAwareShaderUVE(assetManager);
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_instancing_single.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_instancing_single.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_instancing_single.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_instancing_single.uvmat");
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -5.0F}, meshGuid, materialGuid);
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid, false);
@@ -1756,8 +1756,8 @@ TEST_F(Renderer3DUVETest, ResizeTargetsUVE_AfterEviction_StillRendersCorrectly) 
     // Eviction clears sets that a later resize may ask for again. The rebuilt set must be just as
     // usable as the original - an evicted-then-recreated size that renders nothing would be a
     // pane that goes black after the user resizes a window enough times.
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_evict.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_evict.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_evict.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_evict.uvmat");
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
     MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -5.0F}, meshGuid, materialGuid);
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid, false);
@@ -1802,8 +1802,8 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_StaticSceneSecondFrame_ServesPlacements
     // through MeshRendererUVE directly - the renderer owns the set across frames, and a set
     // rebuilt or reset per frame would silently never hit while every unit test still passed.
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_cache_mesh.uvemodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_cache_material.uvemat");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_cache_mesh.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_cache_material.uvmat");
     const Scene::EntityUVE movingEntity =
         MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
     MakeMeshEntityUVE(Math::Vector3UVE{2.0F, 0.0F, -10.0F}, meshGuid, materialGuid);

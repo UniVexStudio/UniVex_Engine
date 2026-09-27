@@ -23,11 +23,11 @@ protected:
 
         std::filesystem::create_directories(projectRoot / "content" / "scenes");
         {
-            std::ofstream scene(projectRoot / "content" / "scenes" / "main.uvescene");
+            std::ofstream scene(projectRoot / "content" / "scenes" / "main.uvscene");
             scene << "{}";
         }
         {
-            std::ofstream texture(projectRoot / "content" / "hero.uvetex", std::ios::binary);
+            std::ofstream texture(projectRoot / "content" / "hero.uvtex", std::ios::binary);
             texture << "fake-texture-bytes";
         }
 
@@ -46,9 +46,9 @@ protected:
         package.displayName = "Packager Test Project";
         package.engineVersion = {0U, 1U, 0U, 1U};
         package.contentRoot = "content";
-        package.assetDatabasePath = ".uveassetdb";
-        package.settingsPath = ".uvesettings";
-        package.startupScenePath = "scenes/main.uvescene";
+        package.assetDatabasePath = ".uvassetdb";
+        package.settingsPath = ".uvsettings";
+        package.startupScenePath = "scenes/main.uvscene";
     }
 
     void TearDown() override {
@@ -56,7 +56,7 @@ protected:
         std::filesystem::remove_all(outputDirectory);
     }
 
-    [[nodiscard]] std::filesystem::path projectFile() const { return projectRoot / "project.uveditor"; }
+    [[nodiscard]] std::filesystem::path projectFile() const { return projectRoot / "project.uvproject"; }
 
     [[nodiscard]] ProjectPackOptionsUVE MakeOptionsUVE() const {
         ProjectPackOptionsUVE options;
@@ -79,13 +79,13 @@ TEST_F(ProjectPackagerUVETest, PackUVE_CopiesRuntimeManifestAndContentIntoOneFol
 
     ASSERT_TRUE(result.IsSuccessUVE()) << result.message;
     EXPECT_TRUE(std::filesystem::is_regular_file(outputDirectory / "fake_uve_runtime"));
-    EXPECT_TRUE(std::filesystem::is_regular_file(outputDirectory / "project.uveditor"));
-    EXPECT_TRUE(std::filesystem::is_regular_file(outputDirectory / "content" / "scenes" / "main.uvescene"));
-    EXPECT_TRUE(std::filesystem::is_regular_file(outputDirectory / "content" / "hero.uvetex"));
+    EXPECT_TRUE(std::filesystem::is_regular_file(outputDirectory / "project.uvproject"));
+    EXPECT_TRUE(std::filesystem::is_regular_file(outputDirectory / "content" / "scenes" / "main.uvscene"));
+    EXPECT_TRUE(std::filesystem::is_regular_file(outputDirectory / "content" / "hero.uvtex"));
 
-    // The copied .uveditor's relative paths must still resolve unchanged against the copy.
+    // The copied .uvproject's relative paths must still resolve unchanged against the copy.
     const Platform::EditorProjectPackageLoadResultUVE reloaded =
-        Platform::EditorProjectPackageCodecUVE::LoadUVE(outputDirectory / "project.uveditor");
+        Platform::EditorProjectPackageCodecUVE::LoadUVE(outputDirectory / "project.uvproject");
     ASSERT_TRUE(reloaded.IsAcceptedUVE());
     EXPECT_TRUE(std::filesystem::is_regular_file(outputDirectory / reloaded.package->contentRoot /
                                                  reloaded.package->startupScenePath));

@@ -24,7 +24,7 @@ struct ContentCatalogueNodeUVE final {
 enum class ContentCatalogueActionUVE : std::uint8_t {
     /// A real directory in the current Content folder.
     Folder = 0,
-    /// A `.uveentity` asset holding `nodes`.
+    /// A `.uventity` asset holding `nodes`.
     EntityAsset,
 };
 

@@ -36,7 +36,7 @@ void WriteObjFixtureUVE(const std::filesystem::path& path, const std::string_vie
 
 TEST(ObjImporterUVETest, ImportUVE_ValidObjPublishesUveModelAndRegistersGuid) {
     const std::filesystem::path sourcePath = "uve_obj_importer_tests_triangle.obj";
-    const std::filesystem::path destinationPath = "uve_obj_importer_tests_triangle.uvemodel";
+    const std::filesystem::path destinationPath = "uve_obj_importer_tests_triangle.uvmodel";
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
     WriteObjFixtureUVE(sourcePath, "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n");
@@ -60,7 +60,7 @@ TEST(ObjImporterUVETest, ImportUVE_ValidObjPublishesUveModelAndRegistersGuid) {
 
 TEST(ObjImporterUVETest, ImportUVE_InvalidObjPreservesExistingDestinationAndDoesNotRegister) {
     const std::filesystem::path sourcePath = "uve_obj_importer_tests_invalid.obj";
-    const std::filesystem::path destinationPath = "uve_obj_importer_tests_existing.uvemodel";
+    const std::filesystem::path destinationPath = "uve_obj_importer_tests_existing.uvmodel";
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
     WriteObjFixtureUVE(sourcePath, "v 0 0 0\nf 1 2 3\n");
@@ -84,7 +84,7 @@ TEST(ObjImporterUVETest, ImportUVE_InvalidObjPreservesExistingDestinationAndDoes
 
 TEST(ObjImporterUVETest, ImportUVE_WrongDestinationExtensionFailsBeforePublish) {
     const std::filesystem::path sourcePath = "uve_obj_importer_tests_wrong_destination.obj";
-    const std::filesystem::path destinationPath = "uve_obj_importer_tests_wrong_destination.uvemodel.tmp";
+    const std::filesystem::path destinationPath = "uve_obj_importer_tests_wrong_destination.uvmodel.tmp";
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
     WriteObjFixtureUVE(sourcePath, "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n");

@@ -36,7 +36,7 @@ struct EditorProjectPackageUVE final {
     /// should load and play first (roadmap item #7's own "manifest naming the startup scene").
     /// Empty means "not configured yet" - a project with no startup scene can still be authored
     /// and saved, it just cannot be packaged/launched standalone until one is set (see
-    /// `ProjectPackagerUVE`/`LoadAndActivateProjectSceneUVE`). Absent from older `.uveditor` files
+    /// `ProjectPackagerUVE`/`LoadAndActivateProjectSceneUVE`). Absent from older `.uvproject` files
     /// written before this field existed; the codec defaults it to empty on load for those.
     std::filesystem::path startupScenePath;
 
@@ -73,7 +73,7 @@ struct EditorProjectPackageLoadResultUVE final {
     }
 };
 
-/// Stateless `.uveditor` project descriptor authority. The format is intentionally a portable
+/// Stateless `.uvproject` project descriptor authority. The format is intentionally a portable
 /// project/content manifest: it references existing relative content, asset-database, and settings
 /// authorities but does not embed scene/assets, own credentials, or generate platform binaries.
 /// Thread-safety: stateless and safe to call concurrently; each operation owns its local file data.

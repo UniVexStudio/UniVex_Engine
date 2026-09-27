@@ -20,7 +20,7 @@ struct DataTableImportSettingsUVE final : AssetImportSettingsUVE {
 };
 
 /// Registers schema-driven CSV, TSV, and JSON source importers. Each importer writes one validated
-/// `.uvetable` destination and lets the generic importer register that destination in the database.
+/// `.uvtable` destination and lets the generic importer register that destination in the database.
 void RegisterDataTableImportersUVE(IAssetImporterUVE& importer);
 
 } // namespace UVE::Asset

@@ -82,7 +82,7 @@ int main(int argc, char** argv) {
     config.logFilePath = "uve_engine.log";
     config.commandLineArgs = std::vector<std::string>(argv + 1, argv + argc);
 
-    // Roadmap item #7: plays an authored/packaged project standalone - loads its .uveditor
+    // Roadmap item #7: plays an authored/packaged project standalone - loads its .uvproject
     // manifest's configured startup scene and activates its camera (see
     // Pack::LoadAndActivateProjectSceneUVE), then runs until the window is closed (or,
     // headlessly, until the safety frame cap below - there is no window-close signal to wait on
@@ -93,7 +93,7 @@ int main(int argc, char** argv) {
     if (projectFlagIt != config.commandLineArgs.end()) {
         const auto projectPathIt = std::next(projectFlagIt);
         if (projectPathIt == config.commandLineArgs.end()) {
-            std::cerr << "uve_runtime: --project requires a path to a .uveditor file\n";
+            std::cerr << "uve_runtime: --project requires a path to a .uvproject file\n";
             return 1;
         }
         const std::filesystem::path projectPath = *projectPathIt;

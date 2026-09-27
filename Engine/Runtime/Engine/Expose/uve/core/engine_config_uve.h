@@ -92,17 +92,17 @@ struct EngineConfigUVE {
     /// missing file at this path is not an error (see
     /// IConfigManagerUVE::LoadUVE()) — a first-run engine has no settings
     /// file yet.
-    std::filesystem::path settingsFilePath = ".uvesettings";
+    std::filesystem::path settingsFilePath = ".uvsettings";
 
     /// Path of the project's own settings file (see EngineServicesUVE::GetProjectSettingsUVE()),
     /// read during Init(). Its values override the matching fields of this struct - the tick rate,
     /// shadow quality and so on - so a project carries its settings with it. A missing file is
     /// every default, not an error.
-    std::filesystem::path projectSettingsFilePath = "project.uvesettings";
+    std::filesystem::path projectSettingsFilePath = "project.uvsettings";
 
     /// Path of the project's input map (see Core::InputMapDocumentUVE), read during Init() and
     /// registered with the input system. A missing file is an empty map, not an error.
-    std::filesystem::path inputMapFilePath = "project.uveinput";
+    std::filesystem::path inputMapFilePath = "project.uvinput";
 
     /// Raw startup argument tokens (excluding the program path) that
     /// CommandLineUVE parses during Init(). Populated by main() from
@@ -114,7 +114,7 @@ struct EngineConfigUVE {
     /// missing file at this path is not an error (see
     /// IAssetDatabaseUVE::LoadUVE()) — a first-run project has no asset
     /// registry yet.
-    std::filesystem::path assetDatabaseFilePath = ".uveassetdb";
+    std::filesystem::path assetDatabaseFilePath = ".uvassetdb";
 
     /// Root directory the read-only ProjectFileIndexUVE explicitly scans for
     /// editor Asset Browser presentation. Missing or empty roots are valid
@@ -122,7 +122,7 @@ struct EngineConfigUVE {
     /// change AssetDatabaseUVE ownership, import behavior, or VFS mounts.
     std::filesystem::path projectContentRootUVE = "assets/";
     /// The project directory, mounted at the root of the virtual file system at the lowest
-    /// priority, so a project-relative path such as "scripts/player.uvescript" - what a Script
+    /// priority, so a project-relative path such as "scripts/player.uvscript" - what a Script
     /// component stores - resolves to the same file the editor wrote. The default is the working
     /// directory, which is exactly where the editor already saves scenes, workspaces and scripts
     /// when nothing else is mounted, so mounting it moves no file. Empty disables the mount.

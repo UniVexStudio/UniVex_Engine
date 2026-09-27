@@ -25,8 +25,8 @@ namespace {
     config.headlessUVE = true;
     config.enableConsoleLogging = false;
     config.logFilePath = scratchDirectory / "uve_project_launcher_tests.log";
-    config.settingsFilePath = scratchDirectory / "uve_project_launcher_tests.uvesettings";
-    config.assetDatabaseFilePath = scratchDirectory / "uve_project_launcher_tests.uveassetdb";
+    config.settingsFilePath = scratchDirectory / "uve_project_launcher_tests.uvsettings";
+    config.assetDatabaseFilePath = scratchDirectory / "uve_project_launcher_tests.uvassetdb";
     config.threadPoolWorkerCount = 2;
     return config;
 }
@@ -41,7 +41,7 @@ protected:
     void TearDown() override { std::filesystem::remove_all(projectRoot); }
 
     // Authors one entity with a real camera + world transform into a fresh in-memory entity
-    // manager, saves it as the project's own scene file, then writes a matching .uveditor package
+    // manager, saves it as the project's own scene file, then writes a matching .uvproject package
     // naming it as the startup scene - the same shape ProjectPackagerUVE expects a real authored
     // project to already have on disk.
     void WriteProjectWithCameraSceneUVE(Core::EngineCoreUVE& authoringEngine) {
@@ -52,7 +52,7 @@ protected:
         entityManager.AddComponentUVE<Scene::CameraComponentUVE>(camera);
 
         Scene::SceneSerializerUVE serializer;
-        ASSERT_TRUE(serializer.SaveUVE(entityManager, {camera}, projectRoot / "content" / "scenes" / "main.uvescene",
+        ASSERT_TRUE(serializer.SaveUVE(entityManager, {camera}, projectRoot / "content" / "scenes" / "main.uvscene",
                                        Scene::SceneAssetTypeUVE::Scene));
 
         Platform::EditorProjectPackageUVE package;
@@ -61,13 +61,13 @@ protected:
         package.displayName = "Launcher Test Project";
         package.engineVersion = {0U, 1U, 0U, 1U};
         package.contentRoot = "content";
-        package.assetDatabasePath = ".uveassetdb";
-        package.settingsPath = ".uvesettings";
-        package.startupScenePath = "scenes/main.uvescene";
+        package.assetDatabasePath = ".uvassetdb";
+        package.settingsPath = ".uvsettings";
+        package.startupScenePath = "scenes/main.uvscene";
         ASSERT_TRUE(Platform::EditorProjectPackageCodecUVE::SaveUVE(projectFile(), package).IsAcceptedUVE());
     }
 
-    [[nodiscard]] std::filesystem::path projectFile() const { return projectRoot / "project.uveditor"; }
+    [[nodiscard]] std::filesystem::path projectFile() const { return projectRoot / "project.uvproject"; }
 
     std::filesystem::path projectRoot;
 };
@@ -99,8 +99,8 @@ TEST_F(ProjectLauncherUVETest, LoadAndActivate_RejectsProjectWithNoStartupSceneC
     package.displayName = "No Startup Scene";
     package.engineVersion = {0U, 1U, 0U, 1U};
     package.contentRoot = "content";
-    package.assetDatabasePath = ".uveassetdb";
-    package.settingsPath = ".uvesettings";
+    package.assetDatabasePath = ".uvassetdb";
+    package.settingsPath = ".uvsettings";
     ASSERT_TRUE(Platform::EditorProjectPackageCodecUVE::SaveUVE(projectFile(), package).IsAcceptedUVE());
 
     Core::EngineCoreUVE engine(MakeHeadlessConfigUVE(projectRoot));
@@ -121,7 +121,7 @@ TEST_F(ProjectLauncherUVETest, LoadAndActivate_RejectsMissingProjectFile) {
     ASSERT_TRUE(engine.Load());
 
     const ProjectLaunchResultUVE result =
-        LoadAndActivateProjectSceneUVE(engine, projectRoot / "does_not_exist.uveditor");
+        LoadAndActivateProjectSceneUVE(engine, projectRoot / "does_not_exist.uvproject");
 
     EXPECT_FALSE(result.IsAcceptedUVE());
     EXPECT_EQ(result.code, ProjectLaunchCodeUVE::InvalidProjectFile);

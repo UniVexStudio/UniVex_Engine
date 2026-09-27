@@ -72,6 +72,7 @@ add_library(uve_asset STATIC
     Internal/audio_asset_uve.cpp
     Internal/uve_file_envelope_uve.cpp
     Internal/asset_database_uve.cpp
+    Internal/legacy_extension_migration_uve.cpp
     Internal/asset_content_fingerprint_uve.cpp
     Internal/asset_manager_uve.cpp
     Internal/asset_bundle_uve.cpp

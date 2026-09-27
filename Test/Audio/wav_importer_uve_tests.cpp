@@ -65,7 +65,7 @@ void RemoveFilesUVE(const std::initializer_list<std::filesystem::path>& paths) {
 
 TEST(WavImporterUVETest, ImportUVE_ValidPcm16PublishesUveAudioAndRegistersGuid) {
     const std::filesystem::path sourcePath = "uve_wav_importer_tests_triangle.wav";
-    const std::filesystem::path destinationPath = "uve_wav_importer_tests_triangle.uveaudio";
+    const std::filesystem::path destinationPath = "uve_wav_importer_tests_triangle.uvaudio";
     RemoveFilesUVE({sourcePath, destinationPath});
     WriteBytesUVE(sourcePath, BuildWav16UVE({-32768, 0, 16384, 32767}));
 
@@ -95,7 +95,7 @@ TEST(WavImporterUVETest, ImportUVE_ValidPcm16PublishesUveAudioAndRegistersGuid) 
 
 TEST(WavImporterUVETest, ImportUVE_InvalidWavPreservesExistingDestinationAndDoesNotRegister) {
     const std::filesystem::path sourcePath = "uve_wav_importer_tests_invalid.wav";
-    const std::filesystem::path destinationPath = "uve_wav_importer_tests_existing.uveaudio";
+    const std::filesystem::path destinationPath = "uve_wav_importer_tests_existing.uvaudio";
     RemoveFilesUVE({sourcePath, destinationPath});
     WriteBytesUVE(sourcePath, {std::byte{'R'}, std::byte{'I'}, std::byte{'F'}});
     Asset::AudioAssetUVE original{2U, 44100U, {-0.5F, 0.5F}};
@@ -118,7 +118,7 @@ TEST(WavImporterUVETest, ImportUVE_InvalidWavPreservesExistingDestinationAndDoes
 
 TEST(WavImporterUVETest, ImportUVE_WrongDestinationExtensionFailsBeforePublish) {
     const std::filesystem::path sourcePath = "uve_wav_importer_tests_wrong_destination.wav";
-    const std::filesystem::path destinationPath = "uve_wav_importer_tests_wrong_destination.uvetex";
+    const std::filesystem::path destinationPath = "uve_wav_importer_tests_wrong_destination.uvtex";
     RemoveFilesUVE({sourcePath, destinationPath});
     WriteBytesUVE(sourcePath, BuildWav16UVE({0, 1}));
 

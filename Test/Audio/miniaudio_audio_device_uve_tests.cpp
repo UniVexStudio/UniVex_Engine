@@ -28,7 +28,7 @@ namespace {
 }
 
 [[nodiscard]] std::filesystem::path ScratchUveAudioUVE(const char* name) {
-    return std::filesystem::path{std::string{name} + ".miniaudio_tests.uveaudio"};
+    return std::filesystem::path{std::string{name} + ".miniaudio_tests.uvaudio"};
 }
 
 void RemoveScratchUVE(std::initializer_list<std::filesystem::path> paths) {
@@ -38,7 +38,7 @@ void RemoveScratchUVE(std::initializer_list<std::filesystem::path> paths) {
     }
 }
 
-/// Writes a real .uveaudio asset through the engine's own envelope writer - the exact format
+/// Writes a real .uvaudio asset through the engine's own envelope writer - the exact format
 /// CreateVoiceUVE() will load back.
 [[nodiscard]] std::filesystem::path WriteTestClipUVE(
     const char* name, const std::vector<float>& interleavedSamples, const std::uint16_t channels = 1U,
@@ -84,7 +84,7 @@ TEST(MiniaudioAudioDeviceUVETest, CreateVoiceUVE_MissingAssetReturnsInvalidHandl
     const auto device = MiniaudioAudioDeviceUVE::CreateUVE(TestOptionsUVE());
     ASSERT_NE(device, nullptr);
     AudioVoiceDescUVE desc;
-    desc.audioAssetPath = "definitely_missing_clip.miniaudio_tests.uveaudio";
+    desc.audioAssetPath = "definitely_missing_clip.miniaudio_tests.uvaudio";
     EXPECT_EQ(device->CreateVoiceUVE(desc), kInvalidVoiceHandleUVE);
 }
 

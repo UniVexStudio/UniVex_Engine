@@ -31,7 +31,7 @@ protected:
 };
 
 TEST_F(ProjectCheckerUVETest, RunUVE_IsReadOnlyAndRendersStableTextAndJson) {
-    const std::filesystem::path scene = WriteEnvelopeUVE("valid.uvescene", Asset::AssetKindUVE::Scene);
+    const std::filesystem::path scene = WriteEnvelopeUVE("valid.uvscene", Asset::AssetKindUVE::Scene);
     const std::string before = [] (const std::filesystem::path& path) {
         std::ifstream input(path, std::ios::binary);
         return std::string{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
@@ -48,20 +48,20 @@ TEST_F(ProjectCheckerUVETest, RunUVE_IsReadOnlyAndRendersStableTextAndJson) {
     std::ifstream input(scene, std::ios::binary);
     const std::string after{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
     EXPECT_EQ(before, after);
-    EXPECT_FALSE(std::filesystem::exists(m_root / ".uveassetdb"));
+    EXPECT_FALSE(std::filesystem::exists(m_root / ".uvassetdb"));
 }
 
 TEST_F(ProjectCheckerUVETest, RunUVE_ResolvesRelativeAssetDatabasePathFromProjectRoot) {
     const std::filesystem::path databaseDirectory = m_root / "registry";
     ASSERT_TRUE(std::filesystem::create_directories(databaseDirectory));
-    const std::filesystem::path databasePath = databaseDirectory / "custom.uveassetdb";
+    const std::filesystem::path databasePath = databaseDirectory / "custom.uvassetdb";
     {
         std::ofstream databaseFile(databasePath);
         databaseFile << "malformed registry";
     }
 
     const ProjectCheckReportUVE report =
-        ProjectCheckerUVE{}.RunUVE(ProjectCheckOptionsUVE{m_root, "registry/custom.uveassetdb"});
+        ProjectCheckerUVE{}.RunUVE(ProjectCheckOptionsUVE{m_root, "registry/custom.uvassetdb"});
     const auto iterator = std::find_if(report.diagnostics.begin(), report.diagnostics.end(),
                                        [&databasePath](const ProjectCheckDiagnosticUVE& diagnostic) {
                                            return diagnostic.code == "registry.load.failed" &&
@@ -71,10 +71,10 @@ TEST_F(ProjectCheckerUVETest, RunUVE_ResolvesRelativeAssetDatabasePathFromProjec
 }
 
 TEST_F(ProjectCheckerUVETest, RunUVE_IsolatesCorruptFilesAndAggregatesIndependentDiagnostics) {
-    static_cast<void>(WriteEnvelopeUVE("good.uvescene", Asset::AssetKindUVE::Scene));
-    static_cast<void>(WriteEnvelopeUVE("wrong.uvemodel", Asset::AssetKindUVE::Blob));
+    static_cast<void>(WriteEnvelopeUVE("good.uvscene", Asset::AssetKindUVE::Scene));
+    static_cast<void>(WriteEnvelopeUVE("wrong.uvmodel", Asset::AssetKindUVE::Blob));
     {
-        std::ofstream corrupt(m_root / "broken.uvemodel", std::ios::binary);
+        std::ofstream corrupt(m_root / "broken.uvmodel", std::ios::binary);
         corrupt << "not-a-uve-envelope";
     }
 
@@ -85,10 +85,10 @@ TEST_F(ProjectCheckerUVETest, RunUVE_IsolatesCorruptFilesAndAggregatesIndependen
     bool foundWrongUnregistered = false;
     bool foundGoodUnregistered = false;
     for (const ProjectCheckDiagnosticUVE& diagnostic : report.diagnostics) {
-        foundDecodeFailure |= diagnostic.code == "envelope.decode.failed" && diagnostic.path.filename() == "broken.uvemodel";
-        foundKindMismatch |= diagnostic.code == "envelope.kind.mismatch" && diagnostic.path.filename() == "wrong.uvemodel";
-        foundWrongUnregistered |= diagnostic.code == "registry.file.unregistered" && diagnostic.path.filename() == "wrong.uvemodel";
-        foundGoodUnregistered |= diagnostic.code == "registry.file.unregistered" && diagnostic.path.filename() == "good.uvescene";
+        foundDecodeFailure |= diagnostic.code == "envelope.decode.failed" && diagnostic.path.filename() == "broken.uvmodel";
+        foundKindMismatch |= diagnostic.code == "envelope.kind.mismatch" && diagnostic.path.filename() == "wrong.uvmodel";
+        foundWrongUnregistered |= diagnostic.code == "registry.file.unregistered" && diagnostic.path.filename() == "wrong.uvmodel";
+        foundGoodUnregistered |= diagnostic.code == "registry.file.unregistered" && diagnostic.path.filename() == "good.uvscene";
     }
     EXPECT_TRUE(foundDecodeFailure);
     EXPECT_TRUE(foundKindMismatch);

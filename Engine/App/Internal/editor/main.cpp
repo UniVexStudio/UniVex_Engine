@@ -1283,7 +1283,7 @@ private:
 };
 
 struct EditorLaunchOptionsUVE final {
-    std::filesystem::path scenePath = "editor_scene.uvescene";
+    std::filesystem::path scenePath = "editor_scene.uvscene";
     std::optional<int> frameLimit;
     std::optional<std::uint32_t> glMajor;
     std::optional<std::uint32_t> glMinor;
@@ -1351,7 +1351,7 @@ struct EditorLaunchOptionsUVE final {
 
 } // namespace
 
-/// Starts the standalone UniVex Editor Foundation v1. `--scene <path>` selects the `.uvescene`
+/// Starts the standalone UniVex Editor Foundation v1. `--scene <path>` selects the `.uvscene`
 /// document. `--frames <n>` bounds a run for automation, while the normal windowed invocation runs
 /// until the user closes the editor. `--gl-version <major.minor>` overrides the requested desktop
 /// OpenGL version for an explicitly chosen platform capability (for example virtual-display CI).

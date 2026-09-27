@@ -141,7 +141,7 @@ TEST_F(SaveGameSystemUVETest, SaveThenLoad_MultipleRootEntitiesWithHierarchy_Rou
 TEST_F(SaveGameSystemUVETest, GetSaveMetadataUVE_RejectsTruncatedAndTrailingWorldSections) {
     const EntityUVE entity = entityManager.CreateEntityUVE();
     ASSERT_TRUE(saveGameSystem.SaveUVE(16, entityManager, {entity}, GameStateMetadataUVE{}));
-    const std::filesystem::path slotPath = saveDirectory / "slot_16.uvesave";
+    const std::filesystem::path slotPath = saveDirectory / "slot_16.uvsave";
     const auto originalFile = Asset::ReadUveFileUVE(slotPath);
     ASSERT_TRUE(originalFile.has_value());
 
@@ -167,7 +167,7 @@ TEST_F(SaveGameSystemUVETest, LoadUVE_RejectsTrailingWorldSection) {
     const EntityUVE entity = entityManager.CreateEntityUVE();
     ASSERT_TRUE(saveGameSystem.SaveUVE(21, entityManager, {entity}, GameStateMetadataUVE{}));
 
-    const std::filesystem::path slotPath = saveDirectory / "slot_21.uvesave";
+    const std::filesystem::path slotPath = saveDirectory / "slot_21.uvsave";
     const auto originalFile = Asset::ReadUveFileUVE(slotPath);
     ASSERT_TRUE(originalFile.has_value());
     std::vector<std::byte> expandedPayload;
@@ -232,7 +232,7 @@ TEST_F(SaveGameSystemUVETest, GetSaveMetadataUVE_ReturnsMetadataWithoutCreatingE
 TEST_F(SaveGameSystemUVETest, GetSaveMetadataUVE_RejectsEmbeddedSlotIdentityMismatch) {
     const EntityUVE entity = entityManager.CreateEntityUVE();
     ASSERT_TRUE(saveGameSystem.SaveUVE(16, entityManager, {entity}, GameStateMetadataUVE{}));
-    const std::filesystem::path slotPath = saveDirectory / "slot_16.uvesave";
+    const std::filesystem::path slotPath = saveDirectory / "slot_16.uvsave";
     const auto originalFile = Asset::ReadUveFileUVE(slotPath);
     ASSERT_TRUE(originalFile.has_value());
 
@@ -261,7 +261,7 @@ TEST_F(SaveGameSystemUVETest, LoadUVE_RejectsTamperedNegativeTimestampMetadata) 
     const EntityUVE entity = entityManager.CreateEntityUVE();
     ASSERT_TRUE(saveGameSystem.SaveUVE(18, entityManager, {entity}, GameStateMetadataUVE{}));
 
-    const std::filesystem::path slotPath = saveDirectory / "slot_18.uvesave";
+    const std::filesystem::path slotPath = saveDirectory / "slot_18.uvsave";
     const auto originalFile = Asset::ReadUveFileUVE(slotPath);
     ASSERT_TRUE(originalFile.has_value());
     std::vector<std::byte> payload = originalFile->second;
@@ -292,7 +292,7 @@ TEST_F(SaveGameSystemUVETest, LoadUVE_RejectsTamperedNegativePlaytimeMetadata) {
     metadata.playtimeSeconds = 100.0;
     ASSERT_TRUE(saveGameSystem.SaveUVE(17, entityManager, {entity}, metadata));
 
-    const std::filesystem::path slotPath = saveDirectory / "slot_17.uvesave";
+    const std::filesystem::path slotPath = saveDirectory / "slot_17.uvsave";
     const auto originalFile = Asset::ReadUveFileUVE(slotPath);
     ASSERT_TRUE(originalFile.has_value());
     std::vector<std::byte> payload = originalFile->second;
@@ -411,7 +411,7 @@ TEST_F(SaveGameSystemUVETest, LoadUVE_TruncatedFile_ReturnsEmptyVectorWithoutCra
     const EntityUVE entity = entityManager.CreateEntityUVE();
     ASSERT_TRUE(saveGameSystem.SaveUVE(6, entityManager, {entity}, GameStateMetadataUVE{}));
 
-    const std::filesystem::path slotPath = saveDirectory / "slot_06.uvesave";
+    const std::filesystem::path slotPath = saveDirectory / "slot_06.uvsave";
     ASSERT_TRUE(std::filesystem::exists(slotPath));
     std::error_code errorCode;
     std::filesystem::resize_file(slotPath, 10, errorCode);
@@ -425,7 +425,7 @@ TEST_F(SaveGameSystemUVETest, HasSaveUVE_RejectsTruncatedSlotAndListUsedSlotsHid
     const EntityUVE entity = entityManager.CreateEntityUVE();
     ASSERT_TRUE(saveGameSystem.SaveUVE(12, entityManager, {entity}, GameStateMetadataUVE{}));
 
-    const std::filesystem::path slotPath = saveDirectory / "slot_12.uvesave";
+    const std::filesystem::path slotPath = saveDirectory / "slot_12.uvsave";
     std::error_code errorCode;
     std::filesystem::resize_file(slotPath, 10, errorCode);
     ASSERT_FALSE(errorCode);
@@ -438,7 +438,7 @@ TEST_F(SaveGameSystemUVETest, LoadUVE_PayloadWithBogusLengthPrefix_ReturnsEmptyV
     const EntityUVE entity = entityManager.CreateEntityUVE();
     ASSERT_TRUE(saveGameSystem.SaveUVE(12, entityManager, {entity}, GameStateMetadataUVE{}));
 
-    const std::filesystem::path slotPath = saveDirectory / "slot_12.uvesave";
+    const std::filesystem::path slotPath = saveDirectory / "slot_12.uvsave";
     std::optional<std::pair<Asset::UveFileHeaderUVE, std::vector<std::byte>>> file =
         Asset::ReadUveFileUVE(slotPath);
     ASSERT_TRUE(file.has_value());
@@ -459,7 +459,7 @@ TEST_F(SaveGameSystemUVETest, LoadUVE_WorldLengthUint64OverflowIsRejectedWithout
     const EntityUVE entity = entityManager.CreateEntityUVE();
     ASSERT_TRUE(saveGameSystem.SaveUVE(15, entityManager, {entity}, GameStateMetadataUVE{}));
 
-    const std::filesystem::path slotPath = saveDirectory / "slot_15.uvesave";
+    const std::filesystem::path slotPath = saveDirectory / "slot_15.uvsave";
     std::optional<std::pair<Asset::UveFileHeaderUVE, std::vector<std::byte>>> file =
         Asset::ReadUveFileUVE(slotPath);
     ASSERT_TRUE(file.has_value());
@@ -630,7 +630,7 @@ TEST_F(SaveGameSystemUVETest, SaveGameSystemUVE_LoadsRegisteredVersionTransformA
     const EntityUVE entity = entityManager.CreateEntityUVE();
     ASSERT_TRUE(saveGameSystem.SaveUVE(15, entityManager, {entity}, GameStateMetadataUVE{}));
 
-    const std::filesystem::path slotPath = saveDirectory / "slot_15.uvesave";
+    const std::filesystem::path slotPath = saveDirectory / "slot_15.uvsave";
     std::optional<std::pair<Asset::UveFileHeaderUVE, std::vector<std::byte>>> file =
         Asset::ReadUveFileUVE(slotPath);
     ASSERT_TRUE(file.has_value());
@@ -678,7 +678,7 @@ TEST_F(SaveGameSystemUVETest, LegacyMetadataMigrationRunsBeforeDecodeForLoadAndM
     metadata.playtimeSeconds = 321.5;
     ASSERT_TRUE(saveGameSystem.SaveUVE(16, entityManager, {entity}, metadata));
 
-    const std::filesystem::path slotPath = saveDirectory / "slot_16.uvesave";
+    const std::filesystem::path slotPath = saveDirectory / "slot_16.uvsave";
     std::optional<std::pair<Asset::UveFileHeaderUVE, std::vector<std::byte>>> file =
         Asset::ReadUveFileUVE(slotPath);
     ASSERT_TRUE(file.has_value());
@@ -740,7 +740,7 @@ TEST_F(SaveGameSystemUVETest, LoadUVE_SerializerExceptionReturnsEmptyAndCleansSc
     SaveGameSystemUVE throwingLoadSystem(throwingSerializer, saveDirectory);
     EntityManagerUVE loadedManager(memoryManager.GetDefaultAllocatorUVE(), eventSystem);
     EXPECT_TRUE(throwingLoadSystem.LoadUVE(22, loadedManager).empty());
-    EXPECT_FALSE(std::filesystem::exists(saveDirectory / ".slot_22_scratch.uvescene"));
+    EXPECT_FALSE(std::filesystem::exists(saveDirectory / ".slot_22_scratch.uvscene"));
 }
 
 TEST_F(SaveGameSystemUVETest, SaveThenLoad_CurrentSchemaReportsNoMigrationRequired) {
@@ -760,7 +760,7 @@ TEST_F(SaveGameSystemUVETest, LoadUVE_UnsupportedSchemaReportsBoundedMigrationDi
     const EntityUVE entity = entityManager.CreateEntityUVE();
     ASSERT_TRUE(saveGameSystem.SaveUVE(14, entityManager, {entity}, GameStateMetadataUVE{}));
 
-    const std::filesystem::path slotPath = saveDirectory / "slot_14.uvesave";
+    const std::filesystem::path slotPath = saveDirectory / "slot_14.uvsave";
     std::optional<std::pair<Asset::UveFileHeaderUVE, std::vector<std::byte>>> file =
         Asset::ReadUveFileUVE(slotPath);
     ASSERT_TRUE(file.has_value());
@@ -796,7 +796,7 @@ TEST_F(SaveGameSystemUVETest, LoadUVE_UnsupportedSchemaReportsBoundedMigrationDi
 
 TEST_F(SaveGameSystemUVETest, SaveUVE_RejectsWrongScratchAssetTypeBeforePublication) {
     const EntityUVE entity = entityManager.CreateEntityUVE();
-    const std::filesystem::path finalPath = saveDirectory / "slot_14.uvesave";
+    const std::filesystem::path finalPath = saveDirectory / "slot_14.uvsave";
     ASSERT_TRUE(saveGameSystem.SaveUVE(14, entityManager, {entity}, GameStateMetadataUVE{}));
     const auto priorFile = Asset::ReadUveFileUVE(finalPath);
     ASSERT_TRUE(priorFile.has_value());
@@ -811,13 +811,13 @@ TEST_F(SaveGameSystemUVETest, SaveUVE_RejectsWrongScratchAssetTypeBeforePublicat
     const auto afterFile = Asset::ReadUveFileUVE(finalPath);
     ASSERT_TRUE(afterFile.has_value());
     EXPECT_EQ(afterFile->second, priorFile->second);
-    EXPECT_FALSE(std::filesystem::exists(saveDirectory / ".slot_14_scratch.uvescene"));
-    EXPECT_FALSE(std::filesystem::exists(saveDirectory / "slot_14.uvesave.tmp"));
+    EXPECT_FALSE(std::filesystem::exists(saveDirectory / ".slot_14_scratch.uvscene"));
+    EXPECT_FALSE(std::filesystem::exists(saveDirectory / "slot_14.uvsave.tmp"));
 }
 
 TEST_F(SaveGameSystemUVETest, SaveUVE_OversizedCompressedPayloadPreservesPriorSaveAndCleansScratch) {
     const EntityUVE entity = entityManager.CreateEntityUVE();
-    const std::filesystem::path finalPath = saveDirectory / "slot_15.uvesave";
+    const std::filesystem::path finalPath = saveDirectory / "slot_15.uvsave";
     ASSERT_TRUE(saveGameSystem.SaveUVE(15, entityManager, {entity}, GameStateMetadataUVE{}));
     const auto priorFile = Asset::ReadUveFileUVE(finalPath);
     ASSERT_TRUE(priorFile.has_value());
@@ -831,13 +831,13 @@ TEST_F(SaveGameSystemUVETest, SaveUVE_OversizedCompressedPayloadPreservesPriorSa
     const auto afterFile = Asset::ReadUveFileUVE(finalPath);
     ASSERT_TRUE(afterFile.has_value());
     EXPECT_EQ(afterFile->second, priorFile->second);
-    EXPECT_FALSE(std::filesystem::exists(saveDirectory / ".slot_15_scratch.uvescene"));
-    EXPECT_FALSE(std::filesystem::exists(saveDirectory / "slot_15.uvesave.tmp"));
+    EXPECT_FALSE(std::filesystem::exists(saveDirectory / ".slot_15_scratch.uvscene"));
+    EXPECT_FALSE(std::filesystem::exists(saveDirectory / "slot_15.uvsave.tmp"));
 }
 
 TEST_F(SaveGameSystemUVETest, SaveUVE_SerializerExceptionPreservesPriorSaveAndCleansScratch) {
     const EntityUVE entity = entityManager.CreateEntityUVE();
-    const std::filesystem::path finalPath = saveDirectory / "slot_15.uvesave";
+    const std::filesystem::path finalPath = saveDirectory / "slot_15.uvsave";
     ASSERT_TRUE(saveGameSystem.SaveUVE(15, entityManager, {entity}, GameStateMetadataUVE{}));
     ASSERT_TRUE(std::filesystem::exists(finalPath));
 
@@ -847,8 +847,8 @@ TEST_F(SaveGameSystemUVETest, SaveUVE_SerializerExceptionPreservesPriorSaveAndCl
     EXPECT_FALSE(throwingSystem.SaveUVE(15, entityManager, {entity}, GameStateMetadataUVE{}));
     EXPECT_EQ(throwingSerializer.saveCallCount, 1);
     EXPECT_TRUE(std::filesystem::exists(finalPath));
-    EXPECT_FALSE(std::filesystem::exists(saveDirectory / ".slot_15_scratch.uvescene"));
-    EXPECT_FALSE(std::filesystem::exists(saveDirectory / "slot_15.uvesave.tmp"));
+    EXPECT_FALSE(std::filesystem::exists(saveDirectory / ".slot_15_scratch.uvscene"));
+    EXPECT_FALSE(std::filesystem::exists(saveDirectory / "slot_15.uvsave.tmp"));
 }
 
 TEST_F(SaveGameSystemUVETest, SaveUVE_NegativePlaytimeMetadataFailsBeforeDirectoryMutation) {

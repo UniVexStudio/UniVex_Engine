@@ -60,7 +60,7 @@ TEST(EditorBridgeUVETest, ContentBrowserImportCapabilityUVE_ReportsRawParserBoun
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_bridge_content_import_capability.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_bridge_content_import_capability.uvscene");
         editor.InitUVE();
         EditorBridgeUVE bridge(editor);
 
@@ -150,7 +150,7 @@ TEST(EditorBridgeUVETest, ContentBrowserAnimationEnvelopeUVE_ReportsTypedImporte
     std::filesystem::remove_all(contentRoot);
     std::filesystem::create_directories(contentRoot);
     {
-        std::ofstream fixture(contentRoot / "walk.uveanim", std::ios::binary);
+        std::ofstream fixture(contentRoot / "walk.uvanim", std::ios::binary);
         ASSERT_TRUE(fixture.is_open());
         fixture << "typed animation envelope placeholder";
     }
@@ -161,7 +161,7 @@ TEST(EditorBridgeUVETest, ContentBrowserAnimationEnvelopeUVE_ReportsTypedImporte
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_bridge_animation_asset.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_bridge_animation_asset.uvscene");
         editor.InitUVE();
         EditorBridgeUVE bridge(editor);
         const EditorBridgeSnapshotUVE initial = bridge.GetSnapshotUVE();
@@ -179,7 +179,7 @@ TEST(EditorBridgeUVETest, ContentBrowserAnimationEnvelopeUVE_ReportsTypedImporte
         select.requestId = 2U;
         select.expectedRevision = refreshed.snapshot.revision;
         select.kind = EditorBridgeRequestKindUVE::SelectContentBrowserEntry;
-        select.contentEntryPath = "walk.uveanim";
+        select.contentEntryPath = "walk.uvanim";
         const EditorBridgeResponseUVE selected = bridge.DispatchUVE(select);
         ASSERT_TRUE(selected.applied);
         ASSERT_TRUE(selected.snapshot.contentBrowser.importAction.hasSelection);
@@ -213,7 +213,7 @@ TEST(EditorBridgeUVETest, VisualScriptGraphSchemaUVE_IsAdvertisedAndUsesNativeAu
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_bridge_graph_schema.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_bridge_graph_schema.uvscene");
         editor.InitUVE();
         EditorBridgeUVE bridge(editor);
         const EditorBridgeSnapshotUVE initial = bridge.GetSnapshotUVE();
@@ -298,7 +298,7 @@ TEST(EditorBridgeUVETest, ReadScriptRuntimeUVE_IsAdvertisedAndReadOnly) {
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_bridge_script_runtime_request.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_bridge_script_runtime_request.uvscene");
         editor.InitUVE();
         EditorBridgeUVE bridge(editor);
         const EditorBridgeSnapshotUVE initial = bridge.GetSnapshotUVE();
@@ -334,7 +334,7 @@ TEST(EditorBridgeUVETest, ReadScriptRuntimeTickDiagnosticsUVE_IsAdvertisedAndDis
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_bridge_script_runtime_tick.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_bridge_script_runtime_tick.uvscene");
         editor.InitUVE();
         const Scene::EntityUVE entity = editor.CreateDocumentEntityUVE(EditorEntityKindUVE::Cube);
         ASSERT_NE(entity, Scene::kInvalidEntityUVE);
@@ -390,7 +390,7 @@ TEST(EditorBridgeUVETest, SnapshotUVE_ObservesNativeEditorChangesAndIncrementsRe
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_bridge_native_state.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_bridge_native_state.uvscene");
         editor.InitUVE();
         EditorBridgeUVE bridge(editor);
 
@@ -419,7 +419,7 @@ TEST(EditorBridgeUVETest, DispatchUVE_RejectsStaleMutationAfterNativeEditorChang
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_bridge_stale_request.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_bridge_stale_request.uvscene");
         editor.InitUVE();
         EditorBridgeUVE bridge(editor);
         const EditorBridgeSnapshotUVE initial = bridge.GetSnapshotUVE();
@@ -445,7 +445,7 @@ TEST(EditorBridgeUVETest, DispatchUVE_RoutesCreateNameUndoRedoThroughNativeComma
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_bridge_commands.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_bridge_commands.uvscene");
         editor.InitUVE();
         EditorBridgeUVE bridge(editor);
         EditorBridgeSnapshotUVE snapshot = bridge.GetSnapshotUVE();
@@ -494,7 +494,7 @@ TEST(EditorBridgeUVETest, DispatchUVE_RejectsUnsupportedProtocolAndInvalidEntity
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_bridge_rejection.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_bridge_rejection.uvscene");
         editor.InitUVE();
         EditorBridgeUVE bridge(editor);
         const EditorBridgeSnapshotUVE snapshot = bridge.GetSnapshotUVE();
@@ -530,7 +530,7 @@ TEST(EditorBridgeUVETest, SnapshotUVE_CopiesHierarchyInspectorAndNativePanelSess
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_bridge_panel_snapshot.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_bridge_panel_snapshot.uvscene");
         editor.InitUVE();
         EditorBridgeUVE bridge(editor);
 
@@ -808,7 +808,7 @@ TEST(EditorBridgeUVETest, SnapshotUVE_BoundsCopiedPanelRowsWithoutClaimingDeleti
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_bridge_panel_bound.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_bridge_panel_bound.uvscene");
         editor.InitUVE();
         EditorBridgeUVE bridge(editor);
         for (std::size_t index = 0U; index < kEditorBridgeMaximumPanelEntriesUVE + 1U; ++index) {

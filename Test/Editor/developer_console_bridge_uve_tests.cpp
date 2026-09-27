@@ -27,7 +27,7 @@ TEST(EditorDeveloperConsoleBridgeUVE, RoutesBoundedCommandsAndCopiesGeneration) 
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_developer_console_bridge.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_developer_console_bridge.uvscene");
         editor.InitUVE();
         EditorBridgeUVE bridge(editor);
         EditorBridgeSnapshotUVE initial = bridge.GetSnapshotUVE();
@@ -83,7 +83,7 @@ TEST(EditorDeveloperConsoleBridgeUVE, CopiesReadOnlyDataTableCatalogAndAdvancesR
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_data_table_catalog_bridge.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_data_table_catalog_bridge.uvscene");
         editor.InitUVE();
         EditorBridgeUVE bridge(editor);
         const EditorBridgeSnapshotUVE initial = bridge.GetSnapshotUVE();
@@ -119,7 +119,7 @@ TEST(EditorDeveloperConsoleBridgeUVE, CopiesBoundedDataTablePreviewAsReadOnlyFac
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_data_table_preview_bridge.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_data_table_preview_bridge.uvscene");
         editor.InitUVE();
         EditorBridgeUVE bridge(editor);
         const EditorBridgeSnapshotUVE initial = bridge.GetSnapshotUVE();
@@ -157,7 +157,7 @@ TEST(EditorDeveloperConsoleBridgeUVE, RoutesDiscoveryFilterAndHistoryThroughName
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_developer_console_discovery_bridge.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_developer_console_discovery_bridge.uvscene");
         editor.InitUVE();
         EditorBridgeUVE bridge(editor);
         EditorBridgeSnapshotUVE snapshot = bridge.GetSnapshotUVE();

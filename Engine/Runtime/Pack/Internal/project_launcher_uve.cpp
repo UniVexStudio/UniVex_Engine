@@ -42,7 +42,7 @@ ProjectLaunchResultUVE LoadAndActivateProjectSceneUVE(Core::EngineCoreUVE& engin
         Platform::EditorProjectPackageCodecUVE::LoadUVE(projectFile);
     if (!loaded.IsAcceptedUVE()) {
         return MakeResultUVE(ProjectLaunchCodeUVE::InvalidProjectFile,
-                             "Unable to load the .uveditor project file: " + loaded.result.message);
+                             "Unable to load the .uvproject project file: " + loaded.result.message);
     }
     const Platform::EditorProjectPackageUVE& package = *loaded.package;
     if (package.startupScenePath.empty()) {

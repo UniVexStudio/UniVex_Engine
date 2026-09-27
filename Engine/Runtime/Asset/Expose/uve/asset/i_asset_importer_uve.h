@@ -73,8 +73,8 @@ struct TextImportSettingsUVE final : AssetImportSettingsUVE {
 /// IAssetImporterUVE is the spec's "import pipeline with settings per asset type" (Part 7.4):
 /// register an import function per source file extension, then ImportUVE() any source file
 /// through whichever one matches. Built-in registrations include the bounded text parser for `.txt`,
-/// deterministic generic envelope copying for UVE-owned formats, including `.uveanim`, and bounded PNG/BMP/TGA-to-`.uvetex`,
-/// OBJ-to-`.uvemodel`, MTL-to-`.uvemat`, glTF/GLB-to-`.uvemodel`, and JPEG-to-`.uvetex` bridges. FBX/raw animation
+/// deterministic generic envelope copying for UVE-owned formats, including `.uvanim`, and bounded PNG/BMP/TGA-to-`.uvtex`,
+/// OBJ-to-`.uvmodel`, MTL-to-`.uvmat`, glTF/GLB-to-`.uvmodel`, and JPEG-to-`.uvtex` bridges. FBX/raw animation
 /// decoding and broader glTF scene/material/image conversion remain independently registered through RegisterImporterUVE().
 
 /// Thread-safety: thread-safe. Every method is guarded by an internal mutex, matching

@@ -10,8 +10,8 @@ namespace UVE::Asset {
 
 std::optional<AssetGuidUVE> RegisterDataTableAssetUVE(IAssetDatabaseUVE& database,
                                                       const std::filesystem::path& path) {
-    if (path.empty() || path.extension() != ".uvetable") {
-        UVE_ERROR("DataTableAssetRegistrationUVE: path must use the .uvetable extension");
+    if (path.empty() || path.extension() != ".uvtable") {
+        UVE_ERROR("DataTableAssetRegistrationUVE: path must use the .uvtable extension");
         return std::nullopt;
     }
 

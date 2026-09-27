@@ -89,22 +89,22 @@ TEST(ContentCatalogueUVETest, RecentKeepsFiveNewestFirstWithoutRepeats) {
 
 TEST(ContentCatalogueUVETest, ContentFileNamesNeverCollide) {
     const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("content_names");
-    EXPECT_EQ(EditorUVE::MakeUniqueContentPathUVE(root, "Hero", ".uveentity"), root / "Hero.uveentity");
-    std::ofstream(root / "Hero.uveentity") << "x";
-    std::ofstream(root / "Hero 2.uveentity") << "x";
-    EXPECT_EQ(EditorUVE::MakeUniqueContentPathUVE(root, "Hero", ".uveentity"), root / "Hero 3.uveentity");
+    EXPECT_EQ(EditorUVE::MakeUniqueContentPathUVE(root, "Hero", ".uventity"), root / "Hero.uventity");
+    std::ofstream(root / "Hero.uventity") << "x";
+    std::ofstream(root / "Hero 2.uventity") << "x";
+    EXPECT_EQ(EditorUVE::MakeUniqueContentPathUVE(root, "Hero", ".uventity"), root / "Hero 3.uventity");
 
-    const auto renamed = EditorUVE::RenameContentFileUVE(root / "Hero.uveentity", "Player");
+    const auto renamed = EditorUVE::RenameContentFileUVE(root / "Hero.uventity", "Player");
     ASSERT_TRUE(renamed.has_value());
-    EXPECT_EQ(*renamed, root / "Player.uveentity");
-    EXPECT_FALSE(EditorUVE::RenameContentFileUVE(root / "Player.uveentity", "Hero 2").has_value()); // taken
-    EXPECT_FALSE(EditorUVE::RenameContentFileUVE(root / "Player.uveentity", "a/b").has_value());
-    EXPECT_FALSE(EditorUVE::RenameContentFileUVE(root / "Player.uveentity", "").has_value());
+    EXPECT_EQ(*renamed, root / "Player.uventity");
+    EXPECT_FALSE(EditorUVE::RenameContentFileUVE(root / "Player.uventity", "Hero 2").has_value()); // taken
+    EXPECT_FALSE(EditorUVE::RenameContentFileUVE(root / "Player.uventity", "a/b").has_value());
+    EXPECT_FALSE(EditorUVE::RenameContentFileUVE(root / "Player.uventity", "").has_value());
 
-    const auto copy = EditorUVE::DuplicateContentFileUVE(root / "Player.uveentity");
+    const auto copy = EditorUVE::DuplicateContentFileUVE(root / "Player.uventity");
     ASSERT_TRUE(copy.has_value());
-    EXPECT_EQ(*copy, root / "Player 2.uveentity");
-    EXPECT_TRUE(std::filesystem::is_regular_file(root / "Player.uveentity"));
+    EXPECT_EQ(*copy, root / "Player 2.uventity");
+    EXPECT_TRUE(std::filesystem::is_regular_file(root / "Player.uventity"));
 }
 
 [[nodiscard]] Core::EngineConfigUVE MakeCatalogueEditorConfigUVE(const std::filesystem::path& root) {
@@ -113,7 +113,7 @@ TEST(ContentCatalogueUVETest, ContentFileNamesNeverCollide) {
     config.logFilePath = root / "log.txt";
     config.settingsFilePath = root / "settings.json";
     config.assetDatabaseFilePath = root / "assets.json";
-    config.projectSettingsFilePath = root / "project.uvesettings";
+    config.projectSettingsFilePath = root / "project.uvsettings";
     config.saveDirectoryPath = root / "saves";
     config.shaderCachePath = root / "shader_cache";
     config.shaderSourceRealDirectoryUVE = ::UVE::Tests::RepositoryRootUVE() / "Engine/Runtime/RHI/Shader/built_in";
@@ -139,7 +139,7 @@ TEST(ContentCatalogueEditorUVETest, CharacterAssetPlacesAsItsWholeTreeWithOneUnd
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), root / "main.uvescene", 100U, &engine);
+        EditorUVE editor(engine.GetServicesUVE(), root / "main.uvscene", 100U, &engine);
         editor.InitUVE();
         Core::EngineServicesUVE& services = engine.GetServicesUVE();
         Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
@@ -148,7 +148,7 @@ TEST(ContentCatalogueEditorUVETest, CharacterAssetPlacesAsItsWholeTreeWithOneUnd
 
         const auto created = editor.CreateContentCatalogueItemUVE("character", content);
         ASSERT_TRUE(created.has_value());
-        EXPECT_EQ(*created, content / "Character.uveentity");
+        EXPECT_EQ(*created, content / "Character.uventity");
         EXPECT_TRUE(std::filesystem::is_regular_file(*created));
         // Making the asset leaves the open scene alone.
         EXPECT_EQ(editor.GetDocumentRootsUVE().size(), rootsBefore);
@@ -157,7 +157,7 @@ TEST(ContentCatalogueEditorUVETest, CharacterAssetPlacesAsItsWholeTreeWithOneUnd
 
         const auto second = editor.CreateContentCatalogueItemUVE("character", content);
         ASSERT_TRUE(second.has_value());
-        EXPECT_EQ(*second, content / "Character 2.uveentity");
+        EXPECT_EQ(*second, content / "Character 2.uventity");
         const auto folder = editor.CreateContentCatalogueItemUVE("folder", content);
         ASSERT_TRUE(folder.has_value());
         EXPECT_TRUE(std::filesystem::is_directory(*folder));
@@ -187,15 +187,15 @@ TEST(ContentCatalogueEditorUVETest, CharacterAssetPlacesAsItsWholeTreeWithOneUnd
         EXPECT_EQ(Scene::ResolveSceneNodeKindUVE(entityManager, redone), Kind::CharacterBody3D);
         EXPECT_EQ(ChildKindsUVE(services, redone).size(), 3U);
 
-        EXPECT_EQ(editor.PlaceEntityAssetUVE(root / "nothing.uveentity"), Scene::kInvalidEntityUVE);
+        EXPECT_EQ(editor.PlaceEntityAssetUVE(root / "nothing.uventity"), Scene::kInvalidEntityUVE);
         EXPECT_EQ(editor.PlaceEntityAssetUVE(root / "log.txt"), Scene::kInvalidEntityUVE);
 
         EXPECT_TRUE(editor.GetDefaultPlayerEntityUVE().empty());
-        ASSERT_TRUE(editor.SetDefaultPlayerEntityUVE("Character.uveentity"));
-        EXPECT_EQ(editor.GetDefaultPlayerEntityUVE(), "Character.uveentity");
+        ASSERT_TRUE(editor.SetDefaultPlayerEntityUVE("Character.uventity"));
+        EXPECT_EQ(editor.GetDefaultPlayerEntityUVE(), "Character.uventity");
         EXPECT_EQ(std::get<std::string>(*services.GetProjectSettingsUVE().GetValueUVE(
                       Core::EngineProjectSettingIdUVE::kDefaultPlayerEntityUVE)),
-                  "Character.uveentity");
+                  "Character.uventity");
         ASSERT_TRUE(editor.SetDefaultPlayerEntityUVE({}));
         EXPECT_TRUE(editor.GetDefaultPlayerEntityUVE().empty());
 
