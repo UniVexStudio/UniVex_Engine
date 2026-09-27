@@ -158,6 +158,13 @@ private:
         return static_cast<std::int32_t>(m_program.constants.size() - 1U);
     }
 
+    /// A host property or function name, remembered with its type so native code can use it.
+    std::int32_t HostName(const std::string& name, const TypeUVE& type) {
+        const std::int32_t index = Constant(name);
+        m_program.hostTypes.emplace_back(static_cast<std::uint32_t>(index), type);
+        return index;
+    }
+
     void PushValue(ValueUVE value, const SourceLocationUVE at) { Emit(OpUVE::PushConst, Constant(std::move(value)), 0, at); }
 
     [[nodiscard]] static ValueUVE DefaultValue(const TypeUVE& type) {
@@ -226,7 +233,7 @@ private:
                                    ? ResolveType(*function.returnType).value_or(TypeUVE::ErrorUVE())
                                    : TypeUVE::NoneUVE();
             signature.index = static_cast<std::uint32_t>(m_program.functions.size());
-            m_program.functions.push_back({function.name, static_cast<std::uint32_t>(function.params.size()), 0U, {}, signature.result});
+            m_program.functions.push_back({function.name, static_cast<std::uint32_t>(function.params.size()), 0U, {}, {}, signature.result});
             m_functions.emplace(function.name, std::move(signature));
         }
     }
@@ -251,9 +258,18 @@ private:
             Error(at, "'" + name + "' is already declared in this block");
         }
         const std::uint32_t slot = m_nextSlot++;
+        SetLocalTypeUVE(slot, type);
         m_scopes.back()[name] = {slot, std::move(type)};
         m_chunk->localCount = std::max(m_chunk->localCount, m_nextSlot);
         return slot;
+    }
+
+    /// Slots are never reused within a chunk, so each has exactly one type.
+    void SetLocalTypeUVE(const std::uint32_t slot, const TypeUVE& type) {
+        if (m_chunk->localTypes.size() <= slot) {
+            m_chunk->localTypes.resize(slot + 1U);
+        }
+        m_chunk->localTypes[slot] = type;
     }
 
     [[nodiscard]] const LocalUVE* FindLocal(const std::string& name) const {
@@ -322,7 +338,7 @@ private:
             return;
         }
         const auto index = static_cast<std::uint32_t>(m_program.functions.size());
-        m_program.functions.push_back({"on " + handler.event, static_cast<std::uint32_t>(params->size()), 0U, {}, TypeUVE::NoneUVE()});
+        m_program.functions.push_back({"on " + handler.event, static_cast<std::uint32_t>(params->size()), 0U, {}, {}, TypeUVE::NoneUVE()});
         m_program.handlers.emplace_back(handler.event, index);
         BeginChunk(m_program.functions.back());
         m_inHandler = true;
@@ -476,6 +492,7 @@ private:
         Emit(OpUVE::StoreLocal, static_cast<std::int32_t>(counter), 0, stmt.at);
         const TypeUVE end = CompileExpr(*range.operands[1]);
         const std::uint32_t limit = m_nextSlot++;
+        SetLocalTypeUVE(limit, TypeUVE::IntUVE());
         m_chunk->localCount = std::max(m_chunk->localCount, m_nextSlot);
         Emit(OpUVE::StoreLocal, static_cast<std::int32_t>(limit), 0, stmt.at);
         for (const TypeUVE& bound : {start, end}) {
@@ -537,7 +554,7 @@ private:
                     Error(target.at, "'" + path + "' can be read but not changed");
                     return std::nullopt;
                 }
-                const std::int32_t name = Constant(path);
+                const std::int32_t name = HostName(path, property->type);
                 return PlaceUVE{OpUVE::LoadProp, OpUVE::StoreProp, name, property->type};
             }
         }
@@ -794,7 +811,7 @@ private:
             return m_program.fields[field->second].type;
         }
         if (const std::optional<HostPropertyUVE> property = m_host.DescribePropertyUVE(expr.text)) {
-            Emit(OpUVE::LoadProp, Constant(expr.text), 0, expr.at);
+            Emit(OpUVE::LoadProp, HostName(expr.text, property->type), 0, expr.at);
             return property->type;
         }
         if (m_functions.contains(expr.text) || FindBuiltinUVE(expr.text) != nullptr) {
@@ -811,7 +828,7 @@ private:
                                     (FindLocal(expr.operands[0]->text) != nullptr || m_fields.contains(expr.operands[0]->text));
         if (!path.empty() && !baseIsVariable) {
             if (const std::optional<HostPropertyUVE> property = m_host.DescribePropertyUVE(path)) {
-                Emit(OpUVE::LoadProp, Constant(path), 0, expr.at);
+                Emit(OpUVE::LoadProp, HostName(path, property->type), 0, expr.at);
                 return property->type;
             }
         }
@@ -857,7 +874,7 @@ private:
         if (!path.empty()) {
             if (const std::optional<HostFunctionUVE> fn = m_host.DescribeFunctionUVE(path)) {
                 CompileArguments(call, fn->params, path);
-                Emit(OpUVE::CallHost, Constant(path), argc, call.at);
+                Emit(OpUVE::CallHost, HostName(path, fn->result), argc, call.at);
                 return fn->result;
             }
         }
@@ -1000,6 +1017,10 @@ std::uint64_t ComputeProgramFingerprintUVE(const ProgramUVE& program) {
         number(value.paramCount);
         number(value.localCount);
         type(value.result);
+        number(value.localTypes.size());
+        for (const TypeUVE& local : value.localTypes) {
+            type(local);
+        }
         number(value.code.size());
         for (const InstructionUVE& in : value.code) {
             number(static_cast<std::uint64_t>(in.op));
@@ -1030,6 +1051,11 @@ std::uint64_t ComputeProgramFingerprintUVE(const ProgramUVE& program) {
     number(program.functions.size());
     for (const ChunkUVE& function : program.functions) {
         chunk(function);
+    }
+    number(program.hostTypes.size());
+    for (const auto& [constant, hostType] : program.hostTypes) {
+        number(constant);
+        type(hostType);
     }
     number(program.handlers.size());
     for (const auto& [event, index] : program.handlers) {

@@ -1,6 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <fstream>
@@ -344,6 +345,9 @@ TEST(UVScriptNativeUVETest, ArithmeticControlFlowAndBuiltinsMatchTheInterpreter)
             results.push_back(ResultTextUVE(instance.CallUVE("first_over", arg), instance));
         }
         results.push_back(ResultTextUVE(instance.CallUVE("mix"), instance));
+        // A value of the wrong type from outside is refused the same way by both.
+        const std::array<ValueUVE, 1> wrong{2.5};
+        results.push_back(ResultTextUVE(instance.CallUVE("fib", wrong), instance));
         for (const double x : {0.5, 2.0, 5.0, 12.0}) {
             const std::array<ValueUVE, 1> arg{x};
             results.push_back(ResultTextUVE(instance.CallUVE("shapes", arg), instance));
@@ -401,6 +405,41 @@ TEST(UVScriptNativeUVETest, GeneratedCodeNamesItsProgramAndRegistersIt) {
               GetProgramFingerprintUVE(*program));
     EXPECT_NE(GetProgramFingerprintUVE(*CompileOrFailUVE("var n = 2\n\nfn twice() -> int:\n    return n * 2\n", host)),
               GetProgramFingerprintUVE(*program));
+}
+
+TEST(UVScriptNativeUVETest, StraightLineFunctionsGetUnboxedCode) {
+    FakeHostUVE host;
+    const auto math = CompileOrFailUVE(ReadNativeScriptUVE("math.uvs"), host);
+    ASSERT_NE(math, nullptr);
+    const std::string cpp = GenerateUVScriptNativeCppUVE(*math, "math.uvs");
+    // sum_to(n: int) -> int, mix() -> float and shapes(x: float) -> vec3 run on plain C++ values.
+    EXPECT_NE(cpp.find("std::int64_t T0(ContextUVE& c, std::int64_t a0)"), std::string::npos);
+    EXPECT_NE(cpp.find("double T3(ContextUVE& c)"), std::string::npos);
+    EXPECT_NE(cpp.find("Vec3ValueUVE T4(ContextUVE& c, double a0)"), std::string::npos);
+    // A handler that waits keeps the resumable form.
+    const auto waits = CompileOrFailUVE(ReadNativeScriptUVE("waits.uvs"), host);
+    ASSERT_NE(waits, nullptr);
+    EXPECT_EQ(GenerateUVScriptNativeCppUVE(*waits, "waits.uvs").find(" T0(ContextUVE& c"), std::string::npos);
+}
+
+// Not a pass/fail check on speed (CI machines vary); it prints both times so a change can be seen.
+TEST(UVScriptNativeUVETest, ReportsNativeAndInterpretedTimeForFib) {
+    FakeHostUVE host;
+    const auto program = CompileOrFailUVE(ReadNativeScriptUVE("math.uvs"), host);
+    ASSERT_NE(program, nullptr);
+    const std::array<ValueUVE, 1> arg{std::int64_t{20}};
+    const auto time = [&](const ExecutionUVE execution) {
+        ScriptInstanceUVE instance(program, host, execution);
+        const auto start = std::chrono::steady_clock::now();
+        const std::optional<ValueUVE> result = instance.CallUVE("fib", arg);
+        const auto elapsed = std::chrono::steady_clock::now() - start;
+        EXPECT_EQ(std::get<std::int64_t>(*result), 6765);
+        return std::chrono::duration<double, std::milli>(elapsed).count();
+    };
+    const double interpreted = time(ExecutionUVE::Interpreted);
+    const double native = time(ExecutionUVE::Auto);
+    std::printf("fib(20): interpreted %.3f ms, native %.3f ms (%.1fx)\n", interpreted, native,
+                native > 0.0 ? interpreted / native : 0.0);
 }
 
 TEST(UVScriptNativeUVETest, HostDescriptionsParseAndReportTheirMistakes) {
