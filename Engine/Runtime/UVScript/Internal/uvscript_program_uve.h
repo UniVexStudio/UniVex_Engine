@@ -93,6 +93,11 @@ struct ProgramUVE final {
     std::vector<ChunkUVE> functions;
     /// Index into `functions` of each handler, by event name.
     std::vector<std::pair<std::string, std::uint32_t>> handlers;
+    /// A hash of everything above: two programs with the same fingerprint run the same code, which
+    /// is how generated native code finds the program it was generated from.
+    std::uint64_t fingerprint = 0U;
 };
+
+[[nodiscard]] std::uint64_t ComputeProgramFingerprintUVE(const ProgramUVE& program);
 
 } // namespace UVE::UVScript

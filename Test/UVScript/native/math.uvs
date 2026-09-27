@@ -1,0 +1,34 @@
+const TURN = 90 deg
+const SHORT = 250 ms
+var label = "tab\there \"quoted\" ?? done"
+
+fn sum_to(n: int) -> int:
+    let total = 0
+    for i in 0..n + 1:
+        if i % 2 == 0:
+            continue
+        total += i
+    return total
+
+fn fib(n: int) -> int:
+    if n < 2:
+        return n
+    return fib(n - 1) + fib(n - 2)
+
+fn first_over(limit: int) -> int:
+    let i = 0
+    while true:
+        i += 1
+        if i * i > limit:
+            break
+    return i
+
+fn mix() -> float:
+    return 7 / 2 + 1 * 2.5 - -1
+
+fn shapes(x: float) -> vec3:
+    let v = vec3(x, 2.0, -3.5) * 2.0
+    v.y = clamp(v.y, 0.0, 1.5) + length(vec3(3.0, 4.0, 0.0))
+    if not (x > 1.0 and x < 10.0) or x == 5.0:
+        return normalize(v)
+    return v

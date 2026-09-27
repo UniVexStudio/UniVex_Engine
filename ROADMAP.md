@@ -437,7 +437,9 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
 - [ ] Collections and tuples, calling methods on other nodes, `wait` inside a `fn`
 - [ ] More host bindings: collision/overlap events, audio, physics forces, other node kinds
 - [ ] An in-editor debugger (breakpoints, stepping, live values)
-- [ ] C++23 output for release builds
+- [x] C++23 output for release builds: bytecode translated to C++, registered by program fingerprint,
+  checked against the interpreter
+- [ ] Typed C++ output (unboxed locals) and a measured speed-up
 
 ### 7.2 Gameplay framework
 - [ ] A formal actor/pawn/controller-style gameplay object model above raw ECS entities +

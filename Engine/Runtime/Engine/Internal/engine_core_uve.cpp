@@ -20,6 +20,8 @@
 #include <cstdint>
 #include <exception>
 #include <filesystem>
+#include <cstdio>
+#include <fstream>
 #include <optional>
 #include <string>
 #include <unordered_set>
@@ -51,6 +53,7 @@
 #include "uve/commandline/command_line_uve.h"
 #include "uve/config/config_manager_uve.h"
 #include "uve/core/engine_project_settings_uve.h"
+#include "uve/uvscript/uvscript_codegen_uve.h"
 #include "uve/uvscript/uvscript_compiler_uve.h"
 #include "uve/logging/assert_uve.h"
 #include "uve/logging/log_sink_uve.h"
@@ -807,6 +810,7 @@ void EngineCoreUVE::SyncUVScriptsUVE(const bool simulationPaused) {
             UVScriptSlotUVE slot;
             slot.path = component.scriptAssetPath;
             slot.source = source;
+            slot.program = compiled.program;
             slot.instance = std::make_unique<UVScript::ScriptInstanceUVE>(compiled.program, *host);
             // The node's own values for the script's exports, before `ready` sees them. A value
             // for a field the script no longer exports, or of the wrong type, is skipped.
@@ -843,6 +847,29 @@ void EngineCoreUVE::SyncUVScriptsUVE(const bool simulationPaused) {
         static_cast<void>(instance.RaiseEventUVE("tick", args));
         instance.AdvanceUVE(dt);
     }
+}
+
+std::optional<std::size_t> EngineCoreUVE::WriteNativeUVScriptsUVE(const std::filesystem::path& directory) const {
+    std::error_code error;
+    std::filesystem::create_directories(directory, error);
+    std::unordered_set<std::uint64_t> written;
+    for (const auto& [entity, slot] : m_uvScripts) {
+        const std::uint64_t fingerprint = UVScript::GetProgramFingerprintUVE(*slot.program);
+        if (!written.insert(fingerprint).second) {
+            continue;
+        }
+        char suffix[24];
+        std::snprintf(suffix, sizeof(suffix), "_%016llx", static_cast<unsigned long long>(fingerprint));
+        const std::filesystem::path file =
+            directory / (std::filesystem::path{slot.path}.stem().string() + suffix + ".uvs.cpp");
+        std::ofstream out(file, std::ios::binary | std::ios::trunc);
+        out << UVScript::GenerateUVScriptNativeCppUVE(*slot.program, slot.path);
+        if (!out) {
+            UVE_ERROR("EngineCoreUVE: could not write native script \"{}\"", file.generic_string());
+            return std::nullopt;
+        }
+    }
+    return written.size();
 }
 
 UVScript::ScriptInstanceUVE* EngineCoreUVE::FindUVScriptInstanceUVE(const Scene::EntityUVE entity) noexcept {

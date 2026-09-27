@@ -1,0 +1,9 @@
+# The node FakeHostUVE in uvscript_vm_uve_tests.cpp pretends to be. Keep the two in step: a script
+# compiled against a different description gets a different fingerprint and runs interpreted.
+property velocity vec3
+property is_on_floor bool readonly
+property health int
+function input.axis(str, str) -> float
+event ready()
+event tick(float)
+event body_entered(Node3D)
