@@ -29,6 +29,7 @@
 #include "uve/config/settings_registry_uve.h"
 #include "uve/editor/editor_color_uve.h"
 #include "uve/editor/editor_commands_uve.h"
+#include "uve/editor/editor_content_browser_model_uve.h"
 #include "uve/editor/editor_hierarchy_view_uve.h"
 #include "uve/input/input_action_uve.h"
 #include "uve/editor/editor_tool_session_uve.h"
@@ -425,6 +426,10 @@ public:
     /// Saves every document root except the editor camera to the active .uvscene path. Dirty state
     /// is cleared only after the scene serializer reports success.
     [[nodiscard]] bool SaveSceneUVE();
+
+    /// Saves everything with unsaved changes: the scene and the open UVScript. Returns how many
+    /// were written; a failure is reported in the Content status line.
+    std::size_t SaveAllUVE();
 
     /// Saves the sole selected document subtree as a canonical `.uvprefab` and registers its source
     /// GUID through the existing PrefabSystemUVE. This command never runs during Play or a viewport gesture.
@@ -1726,17 +1731,25 @@ private:
     };
     std::optional<ComponentClipboardUVE> m_componentClipboard;
     std::optional<Scene::TransformComponentUVE> m_transformClipboard;
-    /// True while the Filesystem panel shows the flattened Favorites list instead of the direct
-    /// children of m_contentBrowserDirectory.
-    bool m_contentBrowserShowingFavorites = false;
+    /// The shelf the Content item area shows instead of m_contentBrowserDirectory, or empty.
+    std::string m_contentBrowserShelf;
+    /// The user's shelves; saved with the session like the pinned paths.
+    ContentShelvesUVE m_contentShelves;
+    /// Back/forward; follows m_contentBrowserDirectory/m_contentBrowserShelf each frame, so a
+    /// change made anywhere (tree, breadcrumb, bridge) is a step Back can undo.
+    ContentNavigationHistoryUVE m_contentHistory;
+    /// The folder tree's own search, shown while its magnifier is on.
+    std::string m_contentTreeFilter;
+    bool m_contentTreeSearchOpen = false;
+    /// The shelf being renamed inline in the sidebar, and its text.
+    std::string m_contentShelfRenaming;
+    std::string m_contentShelfRenameText;
     /// Fraction of the merged Content Browser panel's width given to its left file/folder list
     /// (the remainder goes to the right thumbnail grid); adjusted by dragging the splitter between
     /// them. Matches the ~35% left / ~65% right proportions of the design this panel was built to.
     float m_contentBrowserSplitRatio = 0.35F;
-    /// Whether the Content Browser shows its left folder tree beside the grid (split mode, default)
-    /// or the grid alone at full width (single mode). Toggled by clicking the divider handle between
-    /// the two panes - the "filesystem flip mode" the design calls for, mirroring Godot's own
-    /// FileSystem dock split toggle.
+    /// Whether the Content Browser shows its sidebar (pinned, folders, shelves) beside the items,
+    /// or the items alone at full width. Toggled from the panel's Settings menu.
     bool m_contentBrowserSplitModeUVE = true;
     /// How the Content Browser shows files, picked from its "..." menu.
     enum class ContentBrowserViewModeUVE : std::uint8_t {
@@ -1745,9 +1758,6 @@ private:
         List,
     };
     ContentBrowserViewModeUVE m_contentBrowserViewMode = ContentBrowserViewModeUVE::SmallTiles;
-    /// Transient: set while the divider handle is being dragged so the release that ends a drag is
-    /// not mistaken for a click that would flip the split mode.
-    bool m_contentBrowserSplitterDraggingUVE = false;
     /// Content-derived thumbnail textures for Content Browser entries (currently texture assets
     /// only), keyed by project-relative generic path. A cached 0 means a prior load attempt
     /// failed (not a texture, corrupt, or unsupported format) and callers should fall back to the

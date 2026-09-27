@@ -214,6 +214,19 @@ bool EditorUVE::DrawContentRenameFieldUVE(const std::filesystem::path& contentRo
             if (GetDefaultPlayerEntityUVE() == entry.relativePath.generic_string()) {
                 static_cast<void>(SetDefaultPlayerEntityUVE(relative));
             }
+            // Shelves, pins and the folder on screen follow the file to its new name.
+            m_contentShelves.MovePathUVE(entry.relativePath, relative);
+            for (std::filesystem::path& pinned : m_favoriteProjectPaths) {
+                if (pinned == entry.relativePath) {
+                    pinned = relative;
+                } else if (IsInsideContentDirectoryUVE(pinned, entry.relativePath)) {
+                    pinned = relative / pinned.lexically_relative(entry.relativePath);
+                }
+            }
+            if (m_contentBrowserDirectory == entry.relativePath ||
+                IsInsideContentDirectoryUVE(m_contentBrowserDirectory, entry.relativePath)) {
+                m_contentBrowserDirectory = relative / m_contentBrowserDirectory.lexically_relative(entry.relativePath);
+            }
             m_projectFileSnapshotInitialized = false;
             RefreshProjectFileIndexUVE();
         }
@@ -430,7 +443,7 @@ void EditorUVE::DrawFilesystemContextPopupUVE() {
     }
     if (directory && ImGui::MenuItem("Open")) {
         m_contentBrowserDirectory = contextEntry.relativePath;
-        m_contentBrowserShowingFavorites = false;
+        m_contentBrowserShelf.clear();
         m_selectedProjectFile = contextEntry;
         m_selectedAsset.reset();
     }
@@ -462,14 +475,46 @@ void EditorUVE::DrawFilesystemContextPopupUVE() {
         ImGui::Separator();
     }
 
-    const bool favorited = IsProjectPathFavoritedUVE(contextEntry.relativePath);
-    if (ImGui::MenuItem(favorited ? "Remove from Favorites" : "Add to Favorites")) {
+    const bool pinned = IsProjectPathFavoritedUVE(contextEntry.relativePath);
+    if (ImGui::MenuItem(pinned ? "Unpin" : "Pin")) {
         ToggleProjectPathFavoriteUVE(contextEntry.relativePath);
     }
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+        ImGui::SetTooltip("Pinned files and folders are listed at the top of the Content sidebar.");
+    }
+    // Shelves: tick to put it on a shelf or take it off; a new shelf starts with it on.
+    if (ImGui::BeginMenu("Shelves")) {
+        for (const ContentShelfUVE& shelf : m_contentShelves.GetAllUVE()) {
+            const bool onShelf = m_contentShelves.ContainsUVE(shelf.name, contextEntry.relativePath);
+            if (ImGui::MenuItem(shelf.name.c_str(), nullptr, onShelf)) {
+                const std::string name = shelf.name; // the item call below may not outlive the span
+                if (onShelf) {
+                    static_cast<void>(m_contentShelves.RemoveItemUVE(name, contextEntry.relativePath));
+                } else if (!m_contentShelves.AddItemUVE(name, contextEntry.relativePath)) {
+                    m_contentStatusMessage = "The shelf \"" + name + "\" is full.";
+                }
+                break;
+            }
+        }
+        if (!m_contentShelves.GetAllUVE().empty()) {
+            ImGui::Separator();
+        }
+        if (ImGui::MenuItem("New Shelf with This")) {
+            const std::string name = m_contentShelves.CreateUVE("Shelf");
+            if (name.empty()) {
+                m_contentStatusMessage = "There are as many shelves as there can be.";
+            } else {
+                static_cast<void>(m_contentShelves.AddItemUVE(name, contextEntry.relativePath));
+                m_contentShelfRenaming = name;
+                m_contentShelfRenameText = name;
+            }
+        }
+        ImGui::EndMenu();
+    }
     if (ImGui::MenuItem("Show in Folder")) {
-        // Useful from Favorites or a search: go to where it lives and select it there.
+        // Useful from a shelf, a pin or a search: go to where it lives and select it there.
         m_contentBrowserDirectory = contextEntry.relativePath.parent_path();
-        m_contentBrowserShowingFavorites = false;
+        m_contentBrowserShelf.clear();
         m_assetFilter.clear();
         m_selectedProjectFile = directory ? std::optional<Asset::ProjectFileEntryUVE>{} : contextEntry;
         m_selectedAsset.reset();

@@ -578,6 +578,35 @@ bool EditorUVE::SaveSceneUVE() {
     return saved;
 }
 
+std::size_t EditorUVE::SaveAllUVE() {
+    std::size_t saved = 0U;
+    std::vector<std::string> failed;
+    if (m_sceneDirty && !m_activeScenePath.empty()) {
+        if (SaveSceneUVE()) {
+            ++saved;
+        } else {
+            failed.emplace_back(m_activeScenePath.filename().string());
+        }
+    }
+    if (m_openUVScript.has_value() && m_openUVScript->IsDirtyUVE()) {
+        if (SaveOpenUVScriptUVE()) {
+            ++saved;
+        } else {
+            failed.emplace_back(std::filesystem::path{m_openUVScript->path}.filename().string());
+        }
+    }
+    if (!failed.empty()) {
+        std::string names;
+        for (const std::string& name : failed) {
+            names += (names.empty() ? "" : ", ") + name;
+        }
+        m_contentStatusMessage = "Could not save " + names + ".";
+    } else {
+        m_contentStatusMessage = saved == 0U ? "Nothing to save." : "Saved " + std::to_string(saved) + (saved == 1U ? " file." : " files.");
+    }
+    return saved;
+}
+
 bool EditorUVE::SaveSelectedPrefabUVE(const std::filesystem::path& path) {
     if (!IsLifecycleCommandAllowedUVE() || path.empty() || !IsDocumentEntityUVE(m_selectedEntity)) {
         return false;
@@ -3985,6 +4014,28 @@ void EditorUVE::LoadSessionSettingsUVE() {
             m_favoriteProjectPaths.emplace_back(stored);
         }
     }
+    // Shelves: a name and its items each, bounded like the pins. A shelf whose stored name is
+    // empty or repeated is skipped rather than renamed behind the user's back.
+    m_contentShelves.ClearUVE();
+    const std::int64_t shelfCount =
+        std::clamp(config.GetIntUVE("editor.shelves.count", 0), std::int64_t{0},
+                   static_cast<std::int64_t>(ContentShelvesUVE::kMaxShelvesUVE));
+    for (std::int64_t index = 0; index < shelfCount; ++index) {
+        const std::string prefix = "editor.shelves." + std::to_string(index) + ".";
+        const std::string name = config.GetStringUVE(prefix + "name", "");
+        if (name.empty() || m_contentShelves.FindUVE(name) != nullptr || m_contentShelves.CreateUVE(name) != name) {
+            continue;
+        }
+        const std::int64_t itemCount =
+            std::clamp(config.GetIntUVE(prefix + "items.count", 0), std::int64_t{0},
+                       static_cast<std::int64_t>(ContentShelvesUVE::kMaxItemsPerShelfUVE));
+        for (std::int64_t item = 0; item < itemCount; ++item) {
+            const std::string stored = config.GetStringUVE(prefix + "items." + std::to_string(item), "");
+            if (!stored.empty()) {
+                static_cast<void>(m_contentShelves.AddItemUVE(name, stored));
+            }
+        }
+    }
 }
 
 bool EditorUVE::SaveSessionSettingsUVE() {
@@ -4044,6 +4095,16 @@ bool EditorUVE::SaveSessionSettingsUVE() {
     for (std::size_t index = 0U; index < favoritesToPersist; ++index) {
         config.SetStringUVE("editor.favorites." + std::to_string(index),
                              m_favoriteProjectPaths[index].generic_string());
+    }
+    const std::span<const ContentShelfUVE> shelves = m_contentShelves.GetAllUVE();
+    config.SetIntUVE("editor.shelves.count", static_cast<std::int64_t>(shelves.size()));
+    for (std::size_t index = 0U; index < shelves.size(); ++index) {
+        const std::string prefix = "editor.shelves." + std::to_string(index) + ".";
+        config.SetStringUVE(prefix + "name", shelves[index].name);
+        config.SetIntUVE(prefix + "items.count", static_cast<std::int64_t>(shelves[index].items.size()));
+        for (std::size_t item = 0U; item < shelves[index].items.size(); ++item) {
+            config.SetStringUVE(prefix + "items." + std::to_string(item), shelves[index].items[item].generic_string());
+        }
     }
     return config.SaveUVE();
 }

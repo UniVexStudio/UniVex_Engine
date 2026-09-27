@@ -72,6 +72,8 @@ void EditorUVE::RegisterEditorCommandsUVE() {
     add("file.saveScene", "Save Scene", "File", {KeyUVE(ImGuiKey_S, true)},
         [this] { return IsAuthoringCommandAllowedUVE() && !m_activeScenePath.empty(); },
         [this] { static_cast<void>(SaveSceneUVE()); }, true);
+    add("file.saveAll", "Save All", "File", {KeyUVE(ImGuiKey_S, true, true)},
+        [this] { return IsAuthoringCommandAllowedUVE(); }, [this] { static_cast<void>(SaveAllUVE()); }, true);
     add("file.loadScene", "Load Scene", "File", {}, always, [this] { static_cast<void>(LoadSceneUVE()); });
     add("file.projectSettings", "Project Settings", "File", {}, always, [this] { OpenProjectSettingsUVE(); });
     add("file.inputMap", "Input Map", "File", {}, always, [this] { OpenInputMapUVE(); });
