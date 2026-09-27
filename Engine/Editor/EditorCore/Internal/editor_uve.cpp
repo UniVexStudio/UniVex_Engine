@@ -3720,6 +3720,9 @@ bool EditorUVE::OpenScriptGraphForEntityUVE(const Scene::EntityUVE entity) {
         return false;
     }
     const std::string& assetPath = entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(entity).scriptAssetPath;
+    if (assetPath.ends_with(".uvs")) {
+        return OpenUVScriptForEntityUVE(entity); // a text script opens in the text editor, not on a canvas
+    }
 
     // The branch already editing this entity's script, found by the asset first - which survives an
     // editor restart and is shared by every entity running the same script - and by owner identity
@@ -5088,6 +5091,10 @@ void EditorUVE::CompileVisualScriptUVE() {
 }
 
 void EditorUVE::DrawScriptingWorkspaceUVE() {
+    if (m_openUVScript.has_value()) {
+        DrawUVScriptEditorUVE();
+        return;
+    }
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
     const ImVec2 position{mainViewport->WorkPos.x,
                           mainViewport->WorkPos.y + kEditorTopChromeHeightUVE};
