@@ -765,11 +765,19 @@ private:
     /// A node running a `.uvs` script: the path it was compiled from, so a changed path recompiles.
     struct UVScriptSlotUVE final {
         std::string path;
+        /// The text it was compiled from; a file that now reads differently is recompiled.
+        std::string source;
         std::unique_ptr<UVScriptNodeHostUVE> host;
         std::unique_ptr<UVScript::ScriptInstanceUVE> instance;
         bool readyRaised = false;
     };
     std::unordered_map<Scene::EntityUVE, UVScriptSlotUVE> m_uvScripts;
+    /// The text of each `.uvs` path that failed (none when it could not be read), so an edit to it -
+    /// or the file appearing - is retried.
+    std::unordered_map<std::string, std::optional<std::string>> m_uvScriptFailedSources;
+    /// When `.uvs` files were last re-read for edits. Wall time, not frame time: a paused or
+    /// fixed-step game still picks up a saved script.
+    std::chrono::steady_clock::time_point m_uvScriptLastRecheck{};
     /// Clips the animation nodes play, by asset guid. Declared after m_assetManager so the handles
     /// release before the manager is destroyed; clips no node references any more are dropped
     /// each frame.
