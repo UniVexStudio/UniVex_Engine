@@ -1,13 +1,11 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 // The Scripting slot: the Inspector row that says which script a node runs, and the commands
-// behind its three actions - Add new C++, Quick Load and Load.
+// behind its actions - New UVScript, Open, Quick Load, Load and Clear.
 //
-// A node's script is one file, the asset its Script component names. "Add new C++" creates that
-// file with the node's own scene node already on its canvas and opens it in the Scripting
-// workspace; the canvas branch it opens is linked to the file, so saving the canvas saves the
-// script the node runs, and reopening the node's script - even after a restart - finds the same
-// graph. Quick Load and Load point the node at a script that already exists.
+// A node's script is one `.uvs` file, the asset its Script component names. New UVScript writes
+// that file with a header naming the node and its kind and opens it in the text editor; Quick
+// Load and Load point the node at a script that already exists.
 
 #include "uve/editor/editor_uve.h"
 
@@ -28,14 +26,11 @@
 #include "uve/component/script_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
 #include "uve/scene/nodes/scene_node_type_uve.h"
-#include "uve/scripting/script_builtin_nodes_uve.h"
-#include "uve/scripting/script_graph_persistence_uve.h"
 
 namespace UVE::Editor {
 namespace {
 
 constexpr std::string_view kScriptFolderUVE = "scripts";
-constexpr std::string_view kScriptExtensionUVE = ".uvscript";
 constexpr std::string_view kUVScriptExtensionUVE = ".uvs";
 
 /// A file stem from a node name: letters, digits, '-' and '_' kept, anything else an underscore,
@@ -117,13 +112,12 @@ template <typename ExistsFn>
     return identifier;
 }
 
-/// A small language tag - "C++" for a graph script, "UVS" for a text one - so the slot reads as a
-/// typed reference at a glance. Returns the tag's width.
-float DrawLanguageBadgeUVE(ImDrawList& drawList, const ImVec2 position, const float height, const bool text) {
-    const char* const label = text ? "UVS" : "C++";
+/// A small "UVS" tag, so the slot reads as a typed reference at a glance. Returns its width.
+float DrawLanguageBadgeUVE(ImDrawList& drawList, const ImVec2 position, const float height) {
+    constexpr const char* label = "UVS";
     const ImVec2 textSize = ImGui::CalcTextSize(label);
     const ImVec2 max{position.x + textSize.x + 10.0F, position.y + height};
-    drawList.AddRectFilled(position, max, text ? IM_COL32(46, 122, 96, 255) : IM_COL32(52, 94, 150, 255), 3.0F);
+    drawList.AddRectFilled(position, max, IM_COL32(46, 122, 96, 255), 3.0F);
     drawList.AddText(ImVec2{position.x + 5.0F, position.y + ((height - textSize.y) * 0.5F)},
                      IM_COL32(228, 238, 250, 255), label);
     return max.x - position.x;
@@ -133,21 +127,18 @@ float DrawLanguageBadgeUVE(ImDrawList& drawList, const ImVec2 position, const fl
 
 std::string EditorUVE::DescribeScriptAssetProblemUVE(const std::string& path) const {
     if (path.empty()) {
-        return "Enter the path of a script, such as scripts/player.uvscript.";
+        return "Enter the path of a script, such as scripts/player.uvs.";
     }
     if (!Scene::IsScriptAssetPathValidUVE(path)) {
         return "Use a project-relative path: no drive, no leading '/', no '..'.";
     }
-    const std::optional<std::string> text = ReadProjectTextFileUVE(path);
-    if (!text.has_value()) {
+    if (!IsUVScriptPathUVE(path)) {
+        return "A script is a UVScript file ending in .uvs.";
+    }
+    if (!ReadProjectTextFileUVE(path).has_value()) {
         return "There is no file at this path.";
     }
-    if (IsUVScriptPathUVE(path)) {
-        return {}; // A text script is assignable even with errors: the editor shows them.
-    }
-    if (!Scripting::DecodeScriptGraphSchemaUVE(*text).IsSuccessUVE()) {
-        return "This file is not a script graph.";
-    }
+    // A script with errors is still assignable: the text editor shows them.
     return {};
 }
 
@@ -168,8 +159,7 @@ std::vector<std::string> EditorUVE::GetKnownScriptAssetPathsUVE() const {
     if (std::filesystem::is_directory(folder, error)) {
         for (std::filesystem::recursive_directory_iterator iterator{folder, error}, end; !error && iterator != end;
              iterator.increment(error)) {
-            if (iterator->is_regular_file(error) && (iterator->path().extension() == kScriptExtensionUVE ||
-                                                     iterator->path().extension() == kUVScriptExtensionUVE)) {
+            if (iterator->is_regular_file(error) && iterator->path().extension() == kUVScriptExtensionUVE) {
                 const std::filesystem::path relative = std::filesystem::relative(iterator->path(), folder, error);
                 if (!error) {
                     paths.push_back((std::filesystem::path{kScriptFolderUVE} / relative).generic_string());
@@ -190,76 +180,6 @@ bool EditorUVE::AssignScriptToSelectedEntityUVE(const std::string& path) {
     }
     const ScriptPathPropertyUVE target = FindScriptPathPropertyUVE();
     return target.entry != nullptr && SetSelectedComponentPropertyUVE(*target.entry, *target.property, &path);
-}
-
-bool EditorUVE::CreateScriptForSelectedEntityUVE() {
-    if (!IsAuthoringCommandAllowedUVE() || !HasSingleDocumentSelectionUVE()) {
-        return false;
-    }
-    const Scene::EntityUVE entity = m_selectedEntity;
-    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    if (!entityManager.HasComponentUVE<Scene::ScriptComponentUVE>(entity) ||
-        !entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(entity).scriptAssetPath.empty()) {
-        return false;
-    }
-    const ScriptPathPropertyUVE target = FindScriptPathPropertyUVE();
-    if (target.entry == nullptr) {
-        return false;
-    }
-
-    // A free name: not a file that exists, and not a path another node already names (it may not
-    // have been saved yet). Bounded, so a folder full of collisions fails instead of spinning.
-    const std::string path =
-        FindFreeScriptPathUVE(ScriptFileStemUVE(GetEntityDisplayLabelUVE(entity)), GetKnownScriptAssetPathsUVE(),
-                              kScriptExtensionUVE,
-                              [this](const std::string& candidate) { return ReadProjectTextFileUVE(candidate).has_value(); });
-    if (path.empty() || !Scene::IsScriptAssetPathValidUVE(path)) {
-        return false;
-    }
-
-    // A graph the author already drafted for this node, before it had a script, is kept: it
-    // becomes the new script instead of being stranded beside it. Otherwise the canvas starts with
-    // just the node itself.
-    const auto drafted = std::find_if(m_visualScriptBranches.begin(), m_visualScriptBranches.end(),
-                                      [entity](const ScriptBranchUVE& branch) {
-                                          return branch.ownerEntity == entity && branch.assetPath.empty();
-                                      });
-    std::string encoded;
-    std::vector<Scripting::ScriptPersistenceDiagnosticUVE> diagnostics;
-    if (drafted != m_visualScriptBranches.end()) {
-        const Scripting::ScriptGraphCanvasSnapshotUVE snapshot = drafted->canvas->GetSnapshotUVE();
-        const bool hasSceneNode = std::any_of(snapshot.nodes.cbegin(), snapshot.nodes.cend(), [](const auto& node) {
-            return node.typeId == Scripting::kSceneSelfScriptNodeTypeIdUVE;
-        });
-        if (!hasSceneNode) {
-            static_cast<void>(drafted->canvas->AddNodeTypeUVE(std::string{Scripting::kSceneSelfScriptNodeTypeIdUVE},
-                                                              {80.0F, 80.0F}));
-        }
-        Scripting::ScriptGraphSchemaUVE schema{};
-        schema.graph = drafted->canvas->GetGraphUVE();
-        for (const auto& entry : drafted->canvas->GetLayoutSnapshotUVE().entries) {
-            schema.layout.push_back(Scripting::ScriptGraphLayoutEntryUVE{entry.nodeId, entry.position.x, entry.position.y});
-        }
-        encoded = Scripting::EncodeScriptGraphSchemaUVE(schema, diagnostics);
-    } else {
-        Scripting::ScriptGraphSchemaUVE schema{};
-        if (!schema.graph.AddNodeUVE({1U, std::string{Scripting::kSceneSelfScriptNodeTypeIdUVE}})) {
-            return false;
-        }
-        schema.layout.push_back(Scripting::ScriptGraphLayoutEntryUVE{1U, 80.0F, 80.0F});
-        encoded = Scripting::EncodeScriptGraphSchemaUVE(schema, diagnostics);
-    }
-    // The file first: if it cannot be written, nothing about the node has changed yet.
-    if (encoded.empty() || !diagnostics.empty() || !WriteProjectTextFileUVE(path, encoded)) {
-        return false;
-    }
-    if (!SetSelectedComponentPropertyUVE(*target.entry, *target.property, &path)) {
-        return false;
-    }
-    if (drafted != m_visualScriptBranches.end()) {
-        drafted->assetPath = path;
-    }
-    return OpenScriptGraphForEntityUVE(entity);
 }
 
 bool EditorUVE::CreateUVScriptForSelectedEntityUVE() {
@@ -318,7 +238,7 @@ void EditorUVE::DrawScriptSlotPropertyUVE(const Core::TypeMetadataEntryUVE& entr
     static_cast<void>(DrawMetadataPropertyLabelUVE(entry, property, instance, writable));
     ImGui::TableSetColumnIndex(1);
 
-    // The slot: a framed control reading "C++  <empty>" or "C++  main". Clicking it floats a small
+    // The slot: a framed control reading "UVS  <empty>" or "UVS  main". Clicking it floats a small
     // action menu just under it; double-clicking a filled slot goes straight to the script.
     ImGui::BeginDisabled(!writable);
     const float height = ImGui::GetFrameHeight();
@@ -334,7 +254,7 @@ void EditorUVE::DrawScriptSlotPropertyUVE(const Core::TypeMetadataEntryUVE& entr
     ImDrawList& drawList = *ImGui::GetWindowDrawList();
     const float badgeHeight = height - 6.0F;
     const float badgeWidth =
-        DrawLanguageBadgeUVE(drawList, ImVec2{origin.x + 4.0F, origin.y + 3.0F}, badgeHeight, IsUVScriptPathUVE(path));
+        DrawLanguageBadgeUVE(drawList, ImVec2{origin.x + 4.0F, origin.y + 3.0F}, badgeHeight);
     const float textX = origin.x + badgeWidth + 10.0F;
     const float textY = origin.y + ((height - ImGui::GetTextLineHeight()) * 0.5F);
     if (path.empty()) {
@@ -372,9 +292,6 @@ void EditorUVE::DrawScriptSlotPropertyUVE(const Core::TypeMetadataEntryUVE& entr
     if (path.empty()) {
         if (action("New UVScript", "Create a text script (.uvs) for this node and open it.")) {
             closeMenu = CreateUVScriptForSelectedEntityUVE();
-        }
-        if (action("Add new C++", "Create a script for this node and open it in Scripting.")) {
-            closeMenu = CreateScriptForSelectedEntityUVE();
         }
     } else if (action("Open", "Open this node's script in Scripting.")) {
         closeMenu = OpenScriptGraphForEntityUVE(entity);
@@ -442,7 +359,7 @@ void EditorUVE::DrawScriptSlotPropertyUVE(const Core::TypeMetadataEntryUVE& entr
         std::array<char, Scene::kMaximumScriptAssetPathBytesUVE + 1U> buffer{};
         m_scriptLoadPath.copy(buffer.data(), buffer.size() - 1U);
         ImGui::SetNextItemWidth(400.0F);
-        const bool submitted = ImGui::InputTextWithHint("##path", "scripts/player.uvscript", buffer.data(),
+        const bool submitted = ImGui::InputTextWithHint("##path", "scripts/player.uvs", buffer.data(),
                                                         buffer.size(), ImGuiInputTextFlags_EnterReturnsTrue);
         m_scriptLoadPath = buffer.data();
         if (m_scriptLoadCheckedPath != m_scriptLoadPath) {

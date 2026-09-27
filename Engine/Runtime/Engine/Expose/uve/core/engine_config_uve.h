@@ -122,7 +122,7 @@ struct EngineConfigUVE {
     /// change AssetDatabaseUVE ownership, import behavior, or VFS mounts.
     std::filesystem::path projectContentRootUVE = "assets/";
     /// The project directory, mounted at the root of the virtual file system at the lowest
-    /// priority, so a project-relative path such as "scripts/player.uvscript" - what a Script
+    /// priority, so a project-relative path such as "scripts/player.uvs" - what a Script
     /// component stores - resolves to the same file the editor wrote. The default is the working
     /// directory, which is exactly where the editor already saves scenes, workspaces and scripts
     /// when nothing else is mounted, so mounting it moves no file. Empty disables the mount.

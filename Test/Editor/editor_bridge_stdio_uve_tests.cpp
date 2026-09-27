@@ -17,7 +17,6 @@
 #include "uve/core/engine_core_uve.h"
 #include "uve/editor/editor_bridge_stdio_uve.h"
 #include "uve/component/mesh_component_uve.h"
-#include "uve/scripting/script_debugger_uve.h"
 
 namespace UVE::Editor::Tests {
 namespace {
@@ -75,22 +74,11 @@ TEST(EditorBridgeStdioUVETest, ServeUVE_HandshakesAndRoutesExistingBridgeDispatc
     {
         EditorUVE editor(engine.GetServicesUVE(), "uve_editor_bridge_stdio_roundtrip.uvscene");
         editor.InitUVE();
-        Scripting::ScriptDebuggerUVE debugger;
-        Scripting::ScriptBytecodeProgramUVE program;
-        program.instructions.push_back({Scripting::ScriptIrInstructionKindUVE::ExecuteNode, 10U, 0U, "test.source", {}, {}});
-        program.instructions.push_back({Scripting::ScriptIrInstructionKindUVE::TransferValue, 20U, 30U, {}, "Out", "In"});
-        ASSERT_TRUE(debugger.AttachUVE(std::move(program)));
-        ASSERT_TRUE(debugger.SetBreakpointUVE(20U, true));
-        ASSERT_EQ(debugger.ContinueUVE().state, Scripting::ScriptDebuggerStateUVE::Paused);
-        const Scene::EntityUVE runtimeEntity = editor.CreateDocumentEntityUVE(EditorEntityKindUVE::Cube);
-        ASSERT_NE(runtimeEntity, Scene::kInvalidEntityUVE);
+        const Scene::EntityUVE meshEntity = editor.CreateDocumentEntityUVE(EditorEntityKindUVE::Cube);
+        ASSERT_NE(meshEntity, Scene::kInvalidEntityUVE);
         engine.GetServicesUVE().GetEntityManagerUVE().AddComponentUVE<Scene::MeshComponentUVE>(
-            runtimeEntity, Scene::MeshComponentUVE{Asset::AssetGuidUVE{0x3333U}, Asset::AssetGuidUVE{0x4444U}});
-        Scripting::ScriptRuntimeUVE runtime;
-        Scripting::ScriptBytecodeProgramUVE runtimeProgram;
-        runtimeProgram.instructions.resize(2U);
-        ASSERT_TRUE(runtime.AttachUVE(runtimeEntity, std::move(runtimeProgram)));
-        EditorBridgeUVE bridge(editor, nullptr, &debugger, &runtime);
+            meshEntity, Scene::MeshComponentUVE{Asset::AssetGuidUVE{0x3333U}, Asset::AssetGuidUVE{0x4444U}});
+        EditorBridgeUVE bridge(editor);
         Asset::DataTableUVE previewTable("weapons");
         ASSERT_TRUE(previewTable.DefineColumnUVE("damage", Asset::DataTableColumnTypeUVE::Integer));
         ASSERT_TRUE(previewTable.AddRowUVE("pistol", {std::int64_t{25}}));
@@ -116,29 +104,8 @@ TEST(EditorBridgeStdioUVETest, ServeUVE_HandshakesAndRoutesExistingBridgeDispatc
                                       {"id", 3U},
                                       {"method", "bridge.dispatch"},
                                       {"params", {{"protocolVersion", kEditorBridgeProtocolVersionUVE},
-                                                  {"requestId", 43U},
-                                                  {"expectedRevision", 999U},
-                                                  {"kind", "readScriptRuntime"}}}});
-        AppendFrameUVE(input, JsonUVE{{"jsonrpc", "2.0"},
-                                      {"id", 4U},
-                                      {"method", "bridge.dispatch"},
-                                      {"params", {{"protocolVersion", kEditorBridgeProtocolVersionUVE},
-                                                  {"requestId", 44U},
-                                                  {"expectedRevision", 999U},
-                                                  {"kind", "readScriptRuntimeTickDiagnostics"}}}});
-        AppendFrameUVE(input, JsonUVE{{"jsonrpc", "2.0"},
-                                      {"id", 5U},
-                                      {"method", "bridge.dispatch"},
-                                      {"params", {{"protocolVersion", kEditorBridgeProtocolVersionUVE},
-                                                  {"requestId", 45U},
-                                                  {"expectedRevision", 0U},
-                                                  {"kind", "serializeGraph"}}}});
-        AppendFrameUVE(input, JsonUVE{{"jsonrpc", "2.0"},
-                                      {"id", 6U},
-                                      {"method", "bridge.dispatch"},
-                                      {"params", {{"protocolVersion", kEditorBridgeProtocolVersionUVE},
                                                   {"requestId", 46U},
-                                                  {"expectedRevision", 2U},
+                                                  {"expectedRevision", 999U},
                                                   {"kind", "queueContentBrowserImport"},
                                                   {"contentEntryPath", "notes.txt"},
                                                   {"contentImportDestinationPath", "notes_imported.txt"}}}});
@@ -146,7 +113,7 @@ TEST(EditorBridgeStdioUVETest, ServeUVE_HandshakesAndRoutesExistingBridgeDispatc
         EXPECT_EQ(server.ServeUVE(input, output, diagnostics), 0);
         EXPECT_TRUE(diagnostics.str().empty());
         const std::vector<JsonUVE> frames = ReadFramesUVE(output);
-        ASSERT_EQ(frames.size(), 6U);
+        ASSERT_EQ(frames.size(), 3U);
         EXPECT_TRUE(frames[0U].at("result").at("compatible").get<bool>());
         EXPECT_EQ(frames[0U].at("result").at("protocolVersion").get<std::uint32_t>(),
                   kEditorBridgeProtocolVersionUVE);
@@ -176,47 +143,6 @@ TEST(EditorBridgeStdioUVETest, ServeUVE_HandshakesAndRoutesExistingBridgeDispatc
         EXPECT_TRUE(handshakeSnapshot.at("viewportSurface").at("nativeRendererOwnsSurface").get<bool>());
         EXPECT_FALSE(handshakeSnapshot.at("viewportSurface").at("managedAttachAllowed").get<bool>());
         EXPECT_TRUE(handshakeSnapshot.at("viewportSurface").at("reason").is_string());
-        ASSERT_TRUE(handshakeSnapshot.at("visualScripting").is_object());
-        EXPECT_TRUE(handshakeSnapshot.at("visualScripting").at("available").get<bool>());
-        EXPECT_EQ(handshakeSnapshot.at("visualScripting").at("graphRevision").get<std::uint64_t>(), 1U);
-        EXPECT_EQ(handshakeSnapshot.at("visualScripting").at("nodeCount").get<std::size_t>(), 0U);
-        EXPECT_EQ(handshakeSnapshot.at("visualScripting").at("linkCount").get<std::size_t>(), 0U);
-        EXPECT_TRUE(handshakeSnapshot.at("visualScripting").at("canEdit").get<bool>());
-        EXPECT_TRUE(handshakeSnapshot.at("visualScripting").at("reason").is_string());
-        ASSERT_TRUE(handshakeSnapshot.at("visualScripting").at("canvas").is_object());
-        EXPECT_TRUE(handshakeSnapshot.at("visualScripting").at("canvas").at("nodes").is_array());
-        EXPECT_TRUE(handshakeSnapshot.at("visualScripting").at("canvas").at("links").is_array());
-        EXPECT_TRUE(handshakeSnapshot.at("visualScripting").at("canvas").at("paletteNodeTypeIds").is_array());
-        EXPECT_TRUE(handshakeSnapshot.at("visualScripting").at("canvas").at("paletteDescriptors").is_array());
-        ASSERT_TRUE(handshakeSnapshot.at("visualScripting").at("debugger").is_object());
-        EXPECT_TRUE(handshakeSnapshot.at("visualScripting").at("debugger").at("available").get<bool>());
-        EXPECT_EQ(handshakeSnapshot.at("visualScripting").at("debugger").at("state").get<std::uint8_t>(), 2U);
-        EXPECT_EQ(handshakeSnapshot.at("visualScripting").at("debugger").at("sourceNodeId").get<std::uint32_t>(), 20U);
-        EXPECT_EQ(handshakeSnapshot.at("visualScripting").at("debugger").at("breakpointNodeIds").front().get<std::uint32_t>(), 20U);
-        const JsonUVE& debuggerTrace = handshakeSnapshot.at("visualScripting").at("debugger").at("trace");
-        ASSERT_TRUE(debuggerTrace.is_array());
-        ASSERT_EQ(debuggerTrace.size(), 1U);
-        EXPECT_EQ(debuggerTrace.front().at("kind").get<std::uint8_t>(), 0U);
-        EXPECT_EQ(debuggerTrace.front().at("instructionIndex").get<std::size_t>(), 0U);
-        EXPECT_EQ(debuggerTrace.front().at("sourceNodeId").get<std::uint32_t>(), 10U);
-        EXPECT_EQ(debuggerTrace.front().at("nodeTypeId").get<std::string>(), "test.source");
-        EXPECT_FALSE(handshakeSnapshot.at("visualScripting").at("debugger").at("traceTruncated").get<bool>());
-        ASSERT_TRUE(handshakeSnapshot.at("scriptRuntime").is_object());
-        EXPECT_TRUE(handshakeSnapshot.at("scriptRuntime").at("available").get<bool>());
-        EXPECT_EQ(handshakeSnapshot.at("scriptRuntime").at("reason").get<std::string>(),
-                  "The native ScriptRuntime snapshot is available as copied read-only state.");
-        EXPECT_EQ(handshakeSnapshot.at("scriptRuntime").at("instanceCount").get<std::size_t>(), 1U);
-        EXPECT_FALSE(handshakeSnapshot.at("scriptRuntime").at("entriesTruncated").get<bool>());
-        ASSERT_EQ(handshakeSnapshot.at("scriptRuntime").at("entries").size(), 1U);
-        const JsonUVE& runtimeEntry = handshakeSnapshot.at("scriptRuntime").at("entries").front();
-        EXPECT_EQ(runtimeEntry.at("entityIndex").get<std::uint32_t>(), runtimeEntity.index);
-        EXPECT_EQ(runtimeEntry.at("entityGeneration").get<std::uint32_t>(), runtimeEntity.generation);
-        EXPECT_EQ(runtimeEntry.at("generation").get<std::uint64_t>(), 1U);
-        EXPECT_EQ(runtimeEntry.at("programVersion").get<std::uint32_t>(),
-                  Scripting::ScriptBytecodeProgramUVE::kCurrentVersionUVE);
-        EXPECT_EQ(runtimeEntry.at("instructionCount").get<std::size_t>(), 2U);
-        EXPECT_EQ(runtimeEntry.at("stateValueCount").get<std::size_t>(), 0U);
-        EXPECT_TRUE(runtimeEntry.at("enabled").get<bool>());
         ASSERT_TRUE(handshakeSnapshot.at("dataTableCatalog").is_object());
         EXPECT_TRUE(handshakeSnapshot.at("dataTableCatalog").at("generation").is_number_unsigned());
         EXPECT_TRUE(handshakeSnapshot.at("dataTableCatalog").at("entriesTruncated").is_boolean());
@@ -229,30 +155,11 @@ TEST(EditorBridgeStdioUVETest, ServeUVE_HandshakesAndRoutesExistingBridgeDispatc
         EXPECT_EQ(handshakeSnapshot.at("dataTablePreview").at("rows").front().at("values").front().get<std::string>(), "25");
         EXPECT_TRUE(frames[1U].at("result").at("applied").get<bool>());
         EXPECT_EQ(frames[1U].at("result").at("code").get<std::string>(), "bridge.command.applied");
-        EXPECT_TRUE(frames[2U].at("result").at("applied").get<bool>());
-        EXPECT_EQ(frames[2U].at("result").at("code").get<std::string>(), "bridge.script_runtime.snapshot.read");
-        EXPECT_EQ(frames[2U].at("result").at("snapshot").at("scriptRuntime").at("instanceCount").get<std::size_t>(), 1U);
-        EXPECT_EQ(frames[2U].at("result").at("snapshot").at("scriptRuntime").at("entries").size(), 1U);
-        EXPECT_TRUE(frames[3U].at("result").at("applied").get<bool>());
-        EXPECT_EQ(frames[3U].at("result").at("code").get<std::string>(), "bridge.script_runtime.tick.completed");
-        const JsonUVE& tickSummary = frames[3U].at("result").at("snapshot").at("scriptRuntimeTickSummary");
-        EXPECT_TRUE(tickSummary.at("available").get<bool>());
-        EXPECT_EQ(tickSummary.at("enabledInstanceCount").get<std::size_t>(), 1U);
-        EXPECT_EQ(tickSummary.at("completedCount").get<std::size_t>(), 1U);
         EXPECT_TRUE(frames[1U].at("result").at("createdEntity").is_object());
-        EXPECT_TRUE(frames[4U].at("result").at("applied").get<bool>());
-        EXPECT_EQ(frames[4U].at("result").at("code").get<std::string>(),
-                  "bridge.visual_scripting.graph_schema.serialized");
-        EXPECT_FALSE(frames[5U].at("result").at("applied").get<bool>());
-        EXPECT_EQ(frames[5U].at("result").at("code").get<std::string>(),
+        EXPECT_FALSE(frames[2U].at("result").at("applied").get<bool>());
+        EXPECT_EQ(frames[2U].at("result").at("code").get<std::string>(),
                   "bridge.snapshot.stale");
-        EXPECT_TRUE(frames[5U].at("result").at("contentImportJobId").is_null());
-        const JsonUVE& graphSchema = frames[4U].at("result").at("graphSchema");
-        EXPECT_EQ(graphSchema.at("schemaVersion").get<std::uint32_t>(), 1U);
-        EXPECT_TRUE(graphSchema.at("nodes").is_array());
-        EXPECT_TRUE(graphSchema.at("links").is_array());
-        EXPECT_TRUE(graphSchema.at("layout").is_array());
-        EXPECT_EQ(graphSchema.at("metadata").at("assetType").get<std::string>(), "visual-script-graph");
+        EXPECT_TRUE(frames[2U].at("result").at("contentImportJobId").is_null());
         EXPECT_TRUE(editor.IsSceneDirtyUVE());
 
         editor.ShutdownUVE();

@@ -45,7 +45,6 @@
 #include "uve/core/i_simulation_control_uve.h"
 #include "uve/core/engine_state_uve.h"
 #include "uve/core/frame_stats_uve.h"
-#include "uve/core/script_gameplay_bindings_uve.h"
 #include "uve/core/uvscript_node_host_uve.h"
 #include "uve/uvscript/uvscript_instance_uve.h"
 #include "uve/core/version_uve.h"
@@ -79,8 +78,6 @@
 #include "uve/scene/i_prefab_system_uve.h"
 #include "uve/scene/i_scene_graph_uve.h"
 #include "uve/scene/i_scene_serializer_uve.h"
-#include "uve/scripting/script_graph_uve.h"
-#include "uve/scripting/script_runtime_uve.h"
 #include "uve/threading/i_thread_pool_uve.h"
 #include "uve/localization/localization_uve.h"
 #include "uve/ui/ui_runtime_uve.h"
@@ -299,10 +296,8 @@ public:
     /// first tick) to still exit correctly when the user closes the window.
     [[nodiscard]] bool IsQuitRequestedUVE() const noexcept { return m_quitRequested; }
 
-    /// Diagnostic hook (mirrors GlRenderDeviceUVE::GetLiveResourceCountUVE()'s own role): how many
-    /// ScriptComponentUVE entities currently have a live, attached ScriptRuntimeUVE instance -
-    /// i.e. were successfully loaded/compiled by SyncScriptRuntimeUVE(). Useful for tests and future
-    /// editor diagnostics alike, not just tests.
+    /// Diagnostic hook: how many nodes are running a `.uvs` script right now (compiled and
+    /// started by SyncScriptRuntimeUVE()).
     [[nodiscard]] std::size_t GetActiveScriptInstanceCountUVE() const noexcept;
 
     /// Test/diagnostic hook: the `.uvs` instance running on `entity`, or null when it has none
@@ -310,8 +305,7 @@ public:
     [[nodiscard]] UVScript::ScriptInstanceUVE* FindUVScriptInstanceUVE(Scene::EntityUVE entity) noexcept;
 
     /// Diagnostic/test hook: the collision enter/exit transitions computed by
-    /// SyncCollisionLifecycleUVE() on the most recent Update() call - the same report the
-    /// `physics.on_collision_enter`/`physics.on_collision_exit` script bindings read from.
+    /// SyncCollisionLifecycleUVE() on the most recent Update() call.
     [[nodiscard]] const Physics::CollisionLifecycleReportUVE& GetLastCollisionLifecycleReportUVE() const noexcept {
         return m_collisionLifecycleReport;
     }
@@ -473,14 +467,10 @@ private:
     /// resource is touched here - rendering that batch is a later phase.
     void SyncUIRuntimeUVE();
 
-    /// Attaches a compiled ScriptGraphUVE to ScriptRuntimeUVE for every live ScriptComponentUVE
-    /// entity that isn't already reconciled, then ticks every attached instance once against the
-    /// real, engine-owned ScriptEngineCallBindingsUVE (see script_gameplay_bindings_uve.h - only
-    /// keyboard/mouse input is wired for real so far). An entity whose script fails to load/compile
-    /// is remembered in m_scriptReconcileFailedEntities with the path that failed, so a broken
-    /// script logs once, not every frame, and changing the component's path retries at once.
+    /// Runs every node's `.uvs` script for this frame (see SyncUVScriptsUVE). A node whose script
+    /// path is not a `.uvs` file is reported once in m_scriptReconcileFailedEntities and skipped.
     void SyncScriptRuntimeUVE();
-    /// The `.uvs` half of SyncScriptRuntimeUVE(): compiles each node's text script once, drops the
+    /// Compiles each node's text script once, drops the
     /// instance when the node loses it, raises `ready` once and then `tick(dt)` every frame.
     void SyncUVScriptsUVE(bool simulationPaused);
 
@@ -512,10 +502,8 @@ private:
 
     /// Diffs a fresh Physics::ICollisionSystemUVE::DetectCollisionsUVE() snapshot against the
     /// previous tick's via m_collisionLifecycleTracker, storing the resulting enter/exit
-    /// transitions in m_collisionLifecycleReport and pointing m_scriptBindingContext at them -
-    /// called before SyncScriptRuntimeUVE() (not from LateUpdate(), unlike
-    /// PublishAreaOverlapLifecycleEventsUVE()) so the same tick's script bindings see zero-latency
-    /// results, since a poll-based binding has no event-queue drain delay to wait out.
+    /// transitions in m_collisionLifecycleReport, before scripts run so they see this tick's
+    /// results.
     void SyncCollisionLifecycleUVE();
 
     /// Casts a real ray for every live, enabled RayCast3DNodeComponentUVE entity (that also has a
@@ -758,10 +746,6 @@ private:
     std::unique_ptr<Audio::IAudioDeviceUVE> m_audioDevice;
     std::unique_ptr<Audio::IAudioSystemUVE> m_audioSystem;
     std::unique_ptr<Audio::IAudioSourceSystemUVE> m_audioSourceSystem;
-    Scripting::ScriptNodeRegistryUVE m_scriptNodeRegistry;
-    Scripting::ScriptRuntimeUVE m_scriptRuntime;
-    ScriptGameplayBindingContextUVE m_scriptBindingContext;
-    Scripting::ScriptEngineCallBindingsUVE m_scriptEngineCallBindings;
     std::unordered_map<Scene::EntityUVE, std::string> m_scriptReconcileFailedEntities;
     /// A node running a `.uvs` script: the path it was compiled from, so a changed path recompiles.
     struct UVScriptSlotUVE final {

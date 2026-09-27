@@ -67,7 +67,6 @@
 #include "uve/scene/nodes/scene_node_registry_uve.h"
 #include "uve/component/entity_uve.h"
 #include "uve/scene/i_scene_serializer_uve.h"
-#include "uve/scripting/script_graph_canvas_uve.h"
 #include "uve/uvscript/uvscript_ast_uve.h"
 #include "uve/uvscript/uvscript_value_uve.h"
 
@@ -801,29 +800,14 @@ public:
     [[nodiscard]] const std::string& GetAssetFilterUVE() const noexcept;
     [[nodiscard]] const std::filesystem::path& GetActiveScenePathUVE() const noexcept;
     void SetActiveScenePathUVE(std::filesystem::path path);
-    [[nodiscard]] Scripting::ScriptGraphCanvasUVE& GetVisualScriptCanvasUVE() noexcept;
-    [[nodiscard]] const Scripting::ScriptNodeRegistryUVE& GetVisualScriptRegistryUVE() const noexcept;
-    [[nodiscard]] std::vector<std::string> GetVisualScriptBranchNamesUVE() const;
-    [[nodiscard]] const std::string& GetActiveVisualScriptBranchNameUVE() const noexcept;
-    [[nodiscard]] bool CreateVisualScriptBranchUVE(std::string name);
-    [[nodiscard]] bool SelectVisualScriptBranchUVE(std::string name);
-    [[nodiscard]] bool RenameActiveVisualScriptBranchUVE(std::string name);
-    [[nodiscard]] bool SaveVisualScriptWorkspaceUVE();
-    [[nodiscard]] bool LoadVisualScriptWorkspaceUVE();
-    /// Resolves (creating on first use) the script branch owned by `entity` and switches the
-    /// active workspace to Scripting with that branch selected. Returns false if `entity` carries
-    /// no ScriptComponentUVE - the caller (the viewport's entity context toolbar) uses that to
-    /// decide whether to offer a "Scripting" action at all.
+    /// Opens `entity`'s script in the Scripting workspace (its `.uvs` file in the text editor).
+    /// False when `entity` has no Script component or its script is not a `.uvs` file - the
+    /// viewport's entity toolbar uses that to decide whether to offer "Scripting" at all.
     [[nodiscard]] bool OpenScriptGraphForEntityUVE(Scene::EntityUVE entity);
-    /// "Add new C++" on the Scripting slot. Creates a script asset for the selected entity at
-    /// `scripts/<name>.uvscript` (a free name), holding the owner's pinless scene node; points the
-    /// entity's Script at it as one undoable edit; and opens its canvas in the Scripting workspace.
-    /// Refuses unless authoring is allowed, exactly one document entity is selected, it carries a
-    /// Script component and that Script is still empty.
-    [[nodiscard]] bool CreateScriptForSelectedEntityUVE();
-    /// "New UVScript" on the Scripting slot: the text-script twin of CreateScriptForSelectedEntityUVE.
-    /// Writes `scripts/<name>.uvs` (a free name) whose header names the node and its kind, points
-    /// the Script at it as one undoable edit, and opens it in the script text editor. Same refusals.
+    /// "New UVScript" on the Scripting slot. Writes `scripts/<name>.uvs` (a free name) whose header
+    /// names the node and its kind, points the Script at it as one undoable edit, and opens it in
+    /// the script text editor. Refuses unless authoring is allowed, exactly one document entity is
+    /// selected, it carries a Script component and that Script is still empty.
     [[nodiscard]] bool CreateUVScriptForSelectedEntityUVE();
 
     /// A `.uvs` file open in the Scripting workspace's text editor.
@@ -871,10 +855,10 @@ public:
     /// DescribeScriptAssetProblemUVE.
     [[nodiscard]] bool AssignScriptToSelectedEntityUVE(const std::string& path);
     /// Why `path` cannot be assigned as a script, in words fit to show beside the field; empty when
-    /// it can. A path must be project-relative and name a file that decodes as a script graph.
+    /// it can. A path must be project-relative and name an existing `.uvs` file.
     [[nodiscard]] std::string DescribeScriptAssetProblemUVE(const std::string& path) const;
     /// The script assets Quick Load offers, sorted: every one the document already uses, plus every
-    /// `.uvscript` file in the project's scripts folder.
+    /// `.uvs` file in the project's scripts folder.
     [[nodiscard]] std::vector<std::string> GetKnownScriptAssetPathsUVE() const;
     /// Metadata on the selected node. Each writes the whole entry list once through the metadata
     /// property path, so every add, edit, rename, retype or removal is exactly one undo entry.
@@ -1003,21 +987,6 @@ private:
         std::optional<EditorSelectionPathUVE> activePath;
     };
 
-    struct ScriptBranchUVE final {
-        std::string name;
-        std::unique_ptr<Scripting::ScriptGraphCanvasUVE> canvas;
-        /// The entity OpenScriptGraphForEntityUVE created this branch for, or kInvalidEntityUVE for
-        /// a branch made through the free-text branch UI (CreateVisualScriptBranchUVE directly).
-        /// Looked up by identity, never by name - a scriptAssetPath can contain '/' and therefore
-        /// can never be a valid branch name (see CreateVisualScriptBranchUVE's invalidName check).
-        Scene::EntityUVE ownerEntity = Scene::kInvalidEntityUVE;
-        /// The script asset this canvas edits, or empty for a free-standing branch. A linked branch
-        /// is loaded from and saved to that asset rather than the .scripting workspace: the asset
-        /// is what the entity runs, so it is the one copy of the graph that must never go stale.
-        /// It is also how an entity finds its canvas again after the editor restarts, when the
-        /// owner handle above no longer means anything.
-        std::string assetPath{};
-    };
 
     struct PlayModeSessionUVE final {
         Scene::SceneSnapshotUVE documentSnapshot;
@@ -1246,16 +1215,11 @@ private:
                      ReparentHistoryEntryUVE>;
 
     /// Writes `text` to a project file: through the VFS when a mount covers `path`, else at `path`
-    /// itself relative to the working directory - the rule the .scripting workspace established.
+    /// itself relative to the working directory.
     /// Written to a temporary and renamed, so a failed write never leaves a half-written file.
     [[nodiscard]] bool WriteProjectTextFileUVE(const std::filesystem::path& path, std::string_view text);
     /// Reads a project file by the same rule as WriteProjectTextFileUVE.
     [[nodiscard]] std::optional<std::string> ReadProjectTextFileUVE(const std::filesystem::path& path) const;
-    /// Writes every linked script branch back to its asset. Returns false if any write failed.
-    [[nodiscard]] bool WriteLinkedScriptAssetsUVE();
-    /// The title a script canvas shows for a node: the owner's live name for the scene node, so the
-    /// canvas reads "main" the moment the root is renamed, and the descriptor's name otherwise.
-    [[nodiscard]] std::string GetScriptNodeTitleUVE(const std::string& typeId, const std::string& displayName) const;
     [[nodiscard]] bool IsDocumentEntityUVE(Scene::EntityUVE entity) const noexcept;
     [[nodiscard]] bool HasSceneGraphNodeUVE(Scene::EntityUVE entity) const noexcept;
     /// True for any live document entity in the hierarchy, spatial or not. This, not
@@ -1615,7 +1579,6 @@ private:
     void DrawScriptingWorkspaceUVE();
     /// The Scripting workspace while a `.uvs` file is open: toolbar, text, and the compiler's list.
     void DrawUVScriptEditorUVE();
-    void CompileVisualScriptUVE();
     [[nodiscard]] static ContentBrowserItemTypeUVE ClassifyContentBrowserEntryUVE(
         const Asset::ProjectFileEntryUVE& entry);
     [[nodiscard]] static const char* GetContentBrowserItemTypeLabelUVE(ContentBrowserItemTypeUVE type) noexcept;
@@ -1674,8 +1637,6 @@ private:
     [[nodiscard]] const EditorModelSourceInfoUVE* FindModelSourceInfoUVE(const std::filesystem::path& relativeSource) const;
     /// True for a model source whose file declares a skeleton (read once per project refresh).
     [[nodiscard]] bool IsRiggedModelSourceUVE(const std::filesystem::path& relativeSource) const;
-    [[nodiscard]] Scripting::ScriptGraphCanvasUVE& ActiveVisualScriptCanvasUVE() noexcept;
-    [[nodiscard]] const Scripting::ScriptGraphCanvasUVE& ActiveVisualScriptCanvasUVE() const noexcept;
 
     Core::EngineServicesUVE* m_services = nullptr;
     /// The editor's own settings, declared by RegisterEditorSettingsUVE; read and written in the
@@ -1747,11 +1708,6 @@ private:
     EditorRightPanelTabUVE m_drawnRightPanelTab = EditorRightPanelTabUVE::Inspector;
     InspectorDrawerRegistryUVE m_inspectorDrawerRegistry;
     DeveloperConsoleUVE m_developerConsole;
-    Scripting::ScriptNodeRegistryUVE m_visualScriptRegistry;
-    std::vector<ScriptBranchUVE> m_visualScriptBranches;
-    std::size_t m_activeVisualScriptBranch = 0U;
-    std::string m_scriptBranchDialogBuffer;
-    bool m_scriptBranchDialogRenaming = false;
     EditorBottomDockUVE m_activeBottomDock = EditorBottomDockUVE::FileSystem;
     /// Empty is the ProjectFileIndexUVE content root. This value is session-only and must name a
     /// directory in the latest successful copied snapshot before it is used as a browser location.
@@ -1943,35 +1899,6 @@ private:
     bool m_sceneDirty = false;
     bool m_uiInitialized = false;
     EditorUiAssetsUVE m_uiAssets;
-    std::uint32_t m_scriptCanvasDragNodeId = 0U;
-    Scripting::ScriptGraphCanvasPointUVE m_scriptCanvasDragStartPosition{};
-    Scripting::ScriptGraphCanvasPointUVE m_scriptCanvasDragStartPointer{};
-    Scripting::ScriptGraphCanvasPointUVE m_scriptCanvasDragPreviewPosition{};
-    std::uint64_t m_scriptCanvasDragRevision = 0U;
-    bool m_scriptCanvasDragging = false;
-    std::uint32_t m_scriptCanvasLinkSourceNodeId = 0U;
-    std::string m_scriptCanvasLinkSourcePin;
-    // True only while the node-search popup is open because a dragged wire was released without a
-    // valid target (Unreal's own "drop a wire into empty space to search+connect" convention) -
-    // distinguishes that state from an ordinary in-progress drag (popup not open yet) so the popup's
-    // own dismiss/close path knows whether to auto-link a freshly picked node back to the source pin.
-    bool m_scriptCanvasLinkAwaitingPick = false;
-    std::uint32_t m_scriptCanvasDefaultEditNodeId = 0U;
-    std::string m_scriptCanvasDefaultEditPin;
-    std::string m_scriptCanvasDefaultEditBuffer;
-    Scripting::ScriptGraphCanvasPointUVE m_scriptCanvasContextMenuPosition{};
-    std::string m_scriptCanvasContextFilter;
-    bool m_scriptCanvasLongPressPending = false;
-    float m_scriptCanvasLongPressSeconds = 0.0F;
-    Scripting::ScriptGraphCanvasPointUVE m_scriptCanvasLongPressStartPointer{};
-    bool m_scriptCompileAttempted = false;
-    bool m_scriptCompileSucceeded = false;
-    std::uint64_t m_scriptLastCompiledGraphRevision = 0U;
-    std::size_t m_scriptCompileInstructionCount = 0U;
-    std::string m_scriptCompileMessage;
-    bool m_scriptCanvasPanning = false;
-    Scripting::ScriptGraphCanvasPointUVE m_scriptCanvasPanStart{};
-    Scripting::ScriptGraphCanvasViewUVE m_scriptCanvasPanViewStart{};
 };
 
 } // namespace UVE::Editor

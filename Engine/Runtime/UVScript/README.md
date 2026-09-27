@@ -1,7 +1,8 @@
 # UVScript
 
 UVScript (`.uvs`) is UniVex's scripting language: one text file per entity node that says what the
-node does. It replaces the visual script graph, which was hard to keep in step with the engine.
+node does. It replaced the visual script graph, which was hard to keep in step with the engine
+and has been removed.
 
 ## What it has to beat
 
@@ -87,8 +88,8 @@ primary     := NUMBER UNIT? | STRING | 'true' | 'false' | 'none' | IDENT | '(' e
 ## Module
 
 - **What it does:** turns `.uvs` source into a checked tree, then into something that runs.
-- **Why it is separate:** the old `Scripting` module interprets node graphs. Its IR is
-  "execute node N" and cannot hold a text program. It is removed once UVScript runs every script.
+- **Why it is separate:** it depends on nothing but the standard library, so the language can be
+  tested and reused without the engine; the engine plugs in through `UVScriptHostUVE`.
 - **Depends on:** nothing but the standard library.
 - **Exposes:**
   - `ParseUVScriptUVE` and the AST types in `uvscript_ast_uve.h`;
@@ -126,5 +127,6 @@ primary     := NUMBER UNIT? | STRING | 'true' | 'false' | 'none' | IDENT | '(' e
      its type (checkbox, number, text, three numbers). The node stores only the values it changes,
      as text in its Script component, so one edit is one undo step; right-clicking a changed name
      resets it. The engine sets them before `ready`, and changing one restarts the script.
-   - Next: removing the graph scripting.
+   - The node-graph scripting (the old `Scripting` module, its canvas and bridge commands) has
+     been removed. A node whose script is not a `.uvs` file logs one warning and does not run.
 5. **Last:** C++23 output for release builds.

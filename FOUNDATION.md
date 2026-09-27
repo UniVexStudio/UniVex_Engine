@@ -112,9 +112,9 @@ Foundation types belong in `uve_core_tests`.
 # Part I — Foundation
 
 The foundation is the thinnest part of this engine. `Core/` declares **58 public
-types** in total; the scripting module alone declares 134. That imbalance is the
-single most useful fact in this document: the layer everything depends on is the
-layer that has had the least work.
+types** in total, while the (since removed) node-graph scripting module alone declared
+134. That imbalance was the single most useful fact in this document: the layer everything
+depends on is the layer that has had the least work.
 
 ## 1. Math — `Engine/Runtime/Core/Math`, namespace `UVE::Math`
 
@@ -685,11 +685,9 @@ driven by nothing.
 - `[x]` **UI** — `UIRuntimeUVE` hit-tests buttons against real input and emits a
   quad batch; font atlas via stb_truetype. `[ ]` No layout, no clipping, no focus
   or keyboard navigation, no widgets beyond text/image/button.
-- `[x]` **Scripting** — the most built-out area: graph model, node registry,
-  validator, VM with flow latches/gates/loops/delays, debugger, canvas model,
-  persistence, hot-reload manager. `[~]` The IR and bytecode pipeline is a real
-  encoder/decoder that **nothing executes** — the runtime walks the graph through
-  the VM instead. `[~]` `ScriptHotReloadManagerUVE` has no consumer.
+- `[x]` **Scripting** — UVScript (`Engine/Runtime/UVScript`): parser, type checker,
+  bytecode VM, engine binding with reload on save, and a text editor. The node-graph
+  scripting module was removed. `[ ]` No collections, no cross-node calls, no debugger.
 - `[~]` **Network** — one header of reliable-packet-window value logic with **no
   consumer anywhere**. No socket, no transport, no replication.
 - `[~]` **Plugins** — manifest validation and an in-memory registry that **never
