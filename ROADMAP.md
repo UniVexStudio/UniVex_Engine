@@ -424,29 +424,20 @@ real utility file) — networked multiplayer is a from-scratch, long-term projec
 
 ## 7. Scripting, Gameplay Framework & AI
 
-### 7.1 Visual scripting (the strongest area right now)
-- [x] A real node-based visual scripting graph: authoring, a persistent node/pin/link data
-  model, undo/redo, branching graphs
-- [x] A real compiler pipeline: graph → intermediate representation → bytecode, with real
-  diagnostics on failure
-- [x] A bytecode virtual machine that actually executes compiled graphs at runtime, ticked
-  per-frame against live entities
-- [x] Real, non-test-only bindings from script nodes to engine systems: keyboard/mouse
-  input, and on-collision-enter/exit callbacks
-- [x] Hot-reload support for scripts (a dedicated hot-reload path exists in the module)
-- [x] A script debugger module exists in the codebase
-- [ ] Full language-completeness parity: loop control (break/continue), user-defined
-  functions/subgraphs with parameters and return values, arrays/maps as first-class script
-  values, user-defined structs
-- [ ] Real bindings for the remaining unwired categories: gamepad/action-mapped input,
-  direct entity transform read/write from script, audio playback (`play sound`), physics
-  forces/impulses beyond raycast queries
-- [ ] A visible, steppable in-editor debugger (breakpoints, single-step, live variable
-  inspection) — distinct from the debugger module's existence, which needs a real UI on
-  top of it
-- [ ] A text-based scripting language option (for programmers who prefer code over graphs),
-  or first-class embedding of an existing scripting language, sharing the same engine
-  bindings as the visual graph
+### 7.1 Scripting (UVScript)
+The node-graph scripting was removed in favour of UVScript (`.uvs`), a text language with one
+script per node; see `Engine/Runtime/UVScript/README.md`.
+- [x] Lexer and parser (indentation, unit literals, string interpolation), with line/column
+  diagnostics and recovery
+- [x] Static type checker against the node's host, and a bytecode VM (handlers, functions,
+  fields, `wait`, an instruction budget)
+- [x] Engine binding: a node's `.uvs` runs `ready`/`tick(dt)` in process order, reloads on save
+- [x] Editor: New UVScript on the script slot, a text editor with live diagnostics, `export`
+  fields in the Inspector
+- [ ] Collections and tuples, calling methods on other nodes, `wait` inside a `fn`
+- [ ] More host bindings: collision/overlap events, audio, physics forces, other node kinds
+- [ ] An in-editor debugger (breakpoints, stepping, live values)
+- [ ] C++23 output for release builds
 
 ### 7.2 Gameplay framework
 - [ ] A formal actor/pawn/controller-style gameplay object model above raw ECS entities +
@@ -459,7 +450,7 @@ real utility file) — networked multiplayer is a from-scratch, long-term projec
   reusable framework rather than one-off components per game
 - [ ] A cinematic/sequencer tool for cutscenes (keyframing cameras, animation, audio, and
   gameplay events on a shared timeline)
-- [ ] A trigger/event graph layer for level scripting distinct from full visual scripting
+- [ ] A trigger/event layer for level scripting lighter than a full script
   (lightweight "on overlap, do X" level logic)
 
 ### 7.3 AI
@@ -548,10 +539,8 @@ real utility file) — networked multiplayer is a from-scratch, long-term projec
   contextual component list (only offers components relevant to what an entity already is)
 - [x] A merged Content Browser (file tree + thumbnail grid) with real thumbnails, search,
   and favorites
-- [x] A visual scripting workspace: a real node-graph canvas with category-colored/iconed
-  nodes, a persistent zoom/fit control, a floating searchable node picker reachable by
-  right-click, long-press, or dragging a wire into empty space, and real drag-to-wire
-  connection
+- [x] A Scripting workspace: a UVScript text editor that checks the script against its node as
+  you type
 - [x] A developer console / bridge for programmatic/scripted control of the editor
 - [x] Play-mode simulation with a real game-camera switch and correct state
   snapshot/restore on stop (a real crash in this exact path was found and fixed)

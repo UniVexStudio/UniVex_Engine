@@ -261,199 +261,6 @@ enum class FrameReadResultUVE : std::uint8_t {
                    {"reason", surface.reason}};
 }
 
-[[nodiscard]] JsonUVE ToJsonUVE(const Scripting::ScriptGraphCanvasPinSnapshotUVE& pin) {
-    return JsonUVE{{"name", pin.name}, {"direction", static_cast<std::uint8_t>(pin.direction)},
-                   {"type", static_cast<std::uint8_t>(pin.type)},
-                   {"role", static_cast<std::uint8_t>(pin.role)},
-                   {"defaultValue", pin.defaultValue.has_value() ? JsonUVE(*pin.defaultValue) : JsonUVE(nullptr)}};
-}
-
-[[nodiscard]] JsonUVE ToJsonUVE(const Scripting::ScriptGraphCanvasNodeSnapshotUVE& node) {
-    JsonUVE pins = JsonUVE::array();
-    for (const auto& pin : node.pins) {
-        pins.push_back(ToJsonUVE(pin));
-    }
-    return JsonUVE{{"id", node.id}, {"typeId", node.typeId}, {"displayName", node.displayName},
-                   {"category", node.category}, {"iconId", node.iconId},
-                   {"displayOrder", node.displayOrder}, {"presentationFlags", node.presentationFlags},
-                   {"x", node.position.x}, {"y", node.position.y}, {"selected", node.selected},
-                   {"pins", std::move(pins)}};
-}
-
-[[nodiscard]] JsonUVE ToJsonUVE(const Scripting::ScriptGraphCanvasLinkSnapshotUVE& link) {
-    return JsonUVE{{"output", {{"nodeId", link.link.output.nodeId}, {"pinName", link.link.output.pinName}}},
-                   {"input", {{"nodeId", link.link.input.nodeId}, {"pinName", link.link.input.pinName}}}};
-}
-
-[[nodiscard]] JsonUVE ToJsonUVE(const Scripting::ScriptGraphCanvasPaletteEntryUVE& entry) {
-    JsonUVE pins = JsonUVE::array();
-    for (const auto& pin : entry.pins) {
-        pins.push_back(ToJsonUVE(pin));
-    }
-    return JsonUVE{{"typeId", entry.typeId}, {"displayName", entry.displayName},
-                   {"category", entry.category}, {"iconId", entry.iconId},
-                   {"displayOrder", entry.displayOrder}, {"presentationFlags", entry.presentationFlags},
-                   {"pins", std::move(pins)}};
-}
-
-[[nodiscard]] JsonUVE ToJsonUVE(const Scripting::ScriptValidationDiagnosticUVE& diagnostic) {
-    JsonUVE result{{"code", static_cast<std::uint8_t>(diagnostic.code)},
-                   {"severity", static_cast<std::uint8_t>(diagnostic.severity)},
-                   {"nodeId", diagnostic.nodeId}, {"pinName", diagnostic.pinName},
-                   {"message", diagnostic.message}, {"sourceContext", diagnostic.sourceContext}};
-    result["relatedEndpoint"] = diagnostic.relatedEndpoint.has_value()
-        ? JsonUVE{{"nodeId", diagnostic.relatedEndpoint->nodeId}, {"pinName", diagnostic.relatedEndpoint->pinName}}
-        : JsonUVE{};
-    return result;
-}
-
-[[nodiscard]] JsonUVE ToJsonUVE(const Scripting::ScriptGraphSchemaUVE& schema) {
-    JsonUVE nodes = JsonUVE::array();
-    std::vector<Scripting::ScriptNodeUVE> sortedNodes = schema.graph.GetNodesUVE();
-    std::sort(sortedNodes.begin(), sortedNodes.end(), [](const auto& left, const auto& right) {
-        return left.id < right.id;
-    });
-    for (const Scripting::ScriptNodeUVE& node : sortedNodes) {
-        nodes.push_back({{"id", node.id}, {"typeId", node.typeId}});
-    }
-    JsonUVE links = JsonUVE::array();
-    std::vector<Scripting::ScriptLinkUVE> sortedLinks = schema.graph.GetLinksUVE();
-    std::sort(sortedLinks.begin(), sortedLinks.end(), [](const auto& left, const auto& right) {
-        if (left.output.nodeId != right.output.nodeId) return left.output.nodeId < right.output.nodeId;
-        if (left.output.pinName != right.output.pinName) return left.output.pinName < right.output.pinName;
-        if (left.input.nodeId != right.input.nodeId) return left.input.nodeId < right.input.nodeId;
-        return left.input.pinName < right.input.pinName;
-    });
-    for (const Scripting::ScriptLinkUVE& link : sortedLinks) {
-        links.push_back({{"output", {{"nodeId", link.output.nodeId}, {"pinName", link.output.pinName}}},
-                         {"input", {{"nodeId", link.input.nodeId}, {"pinName", link.input.pinName}}}});
-    }
-    JsonUVE layout = JsonUVE::array();
-    std::vector<Scripting::ScriptGraphLayoutEntryUVE> sortedLayout = schema.layout;
-    std::sort(sortedLayout.begin(), sortedLayout.end(), [](const auto& left, const auto& right) {
-        return left.nodeId < right.nodeId;
-    });
-    for (const Scripting::ScriptGraphLayoutEntryUVE& entry : sortedLayout) {
-        layout.push_back({{"nodeId", entry.nodeId}, {"x", entry.x}, {"y", entry.y}});
-    }
-    JsonUVE metadata = JsonUVE::object();
-    for (const auto& [key, value] : schema.metadata) metadata[key] = value;
-    return JsonUVE{{"schemaVersion", schema.schemaVersion}, {"nodes", std::move(nodes)},
-                   {"links", std::move(links)}, {"layout", std::move(layout)}, {"metadata", std::move(metadata)}};
-}
-
-[[nodiscard]] JsonUVE ToJsonUVE(const Scripting::ScriptGraphCanvasSnapshotUVE& canvas) {
-    JsonUVE nodes = JsonUVE::array();
-    for (const auto& node : canvas.nodes) {
-        nodes.push_back(ToJsonUVE(node));
-    }
-    JsonUVE links = JsonUVE::array();
-    for (const auto& link : canvas.links) {
-        links.push_back(ToJsonUVE(link));
-    }
-    JsonUVE selection = JsonUVE::array();
-    for (const std::uint32_t nodeId : canvas.selectedNodeIds) {
-        selection.push_back(nodeId);
-    }
-    JsonUVE palette = JsonUVE::array();
-    for (const std::string& typeId : canvas.paletteNodeTypeIds) {
-        palette.push_back(typeId);
-    }
-    JsonUVE paletteDescriptors = JsonUVE::array();
-    for (const auto& descriptor : canvas.paletteDescriptors) {
-        paletteDescriptors.push_back(ToJsonUVE(descriptor));
-    }
-    JsonUVE diagnostics = JsonUVE::array();
-    for (const auto& diagnostic : canvas.diagnostics) {
-        diagnostics.push_back(ToJsonUVE(diagnostic));
-    }
-    return JsonUVE{{"revision", canvas.revision}, {"graphRevision", canvas.graphRevision},
-                   {"pan", {{"x", canvas.view.pan.x}, {"y", canvas.view.pan.y}}},
-                   {"zoom", canvas.view.zoom}, {"nodesTruncated", canvas.nodesTruncated},
-                   {"linksTruncated", canvas.linksTruncated}, {"paletteTruncated", canvas.paletteTruncated},
-                   {"diagnosticsTruncated", canvas.diagnosticsTruncated}, {"dirty", canvas.dirty},
-                   {"canUndo", canvas.canUndo}, {"canRedo", canvas.canRedo}, {"nodes", std::move(nodes)},
-                   {"links", std::move(links)}, {"selectedNodeIds", std::move(selection)},
-                   {"paletteNodeTypeIds", std::move(palette)}, {"paletteDescriptors", std::move(paletteDescriptors)},
-                   {"diagnostics", std::move(diagnostics)}};
-}
-
-[[nodiscard]] JsonUVE ToJsonUVE(const EditorBridgeVisualScriptDebuggerSnapshotUVE& debugger) {
-    JsonUVE breakpoints = JsonUVE::array();
-    for (const std::uint32_t nodeId : debugger.breakpointNodeIds) {
-        breakpoints.push_back(nodeId);
-    }
-    JsonUVE trace = JsonUVE::array();
-    for (const Scripting::ScriptVmTraceEventUVE& event : debugger.trace) {
-        trace.push_back(JsonUVE{{"kind", static_cast<std::uint8_t>(event.kind)},
-                                {"entityIndex", event.entity.index},
-                                {"entityGeneration", event.entity.generation},
-                                {"instructionIndex", event.instructionIndex},
-                                {"sourceNodeId", event.sourceNodeId},
-                                {"targetNodeId", event.targetNodeId},
-                                {"nodeTypeId", event.nodeTypeId},
-                                {"message", event.message}});
-    }
-    return JsonUVE{{"available", debugger.available},
-                   {"state", static_cast<std::uint8_t>(debugger.state)},
-                   {"instructionIndex", debugger.instructionIndex},
-                   {"sourceNodeId", debugger.sourceNodeId},
-                   {"executedInstructions", debugger.executedInstructions},
-                   {"pauseReason", debugger.pauseReason},
-                   {"breakpointNodeIds", std::move(breakpoints)},
-                   {"trace", std::move(trace)},
-                   {"traceTruncated", debugger.traceTruncated},
-                   {"reason", debugger.reason}};
-}
-
-[[nodiscard]] JsonUVE ToJsonUVE(const EditorBridgeVisualScriptingSnapshotUVE& scripting) {
-    return JsonUVE{{"available", scripting.available},
-                   {"graphRevision", scripting.graphRevision},
-                   {"nodeCount", scripting.nodeCount},
-                   {"linkCount", scripting.linkCount},
-                   {"canEdit", scripting.canEdit},
-                   {"reason", scripting.reason},
-                   {"canvas", ToJsonUVE(scripting.canvas)},
-                   {"debugger", ToJsonUVE(scripting.debugger)}};
-}
-
-[[nodiscard]] JsonUVE ToJsonUVE(const EditorBridgeScriptRuntimeInstanceEntryUVE& entry) {
-    return JsonUVE{{"entityIndex", entry.entityIndex},
-                   {"entityGeneration", entry.entityGeneration},
-                   {"generation", entry.generation},
-                   {"programVersion", entry.programVersion},
-                   {"instructionCount", entry.instructionCount},
-                   {"stateValueCount", entry.stateValueCount},
-                   {"stateLocalVariableCount", entry.stateLocalVariableCount},
-                   {"enabled", entry.enabled}};
-}
-
-[[nodiscard]] JsonUVE ToJsonUVE(const EditorBridgeScriptRuntimeSnapshotUVE& snapshot) {
-    JsonUVE entries = JsonUVE::array();
-    for (const EditorBridgeScriptRuntimeInstanceEntryUVE& entry : snapshot.entries) {
-        entries.push_back(ToJsonUVE(entry));
-    }
-    return JsonUVE{{"available", snapshot.available},
-                   {"instanceCount", snapshot.instanceCount},
-                   {"entriesTruncated", snapshot.entriesTruncated},
-                   {"reason", snapshot.reason},
-                   {"entries", std::move(entries)}};
-}
-
-[[nodiscard]] JsonUVE ToJsonUVE(const EditorBridgeScriptRuntimeTickSummaryUVE& summary) {
-    return JsonUVE{{"available", summary.available},
-                   {"reason", summary.reason},
-                   {"enabledInstanceCount", summary.enabledInstanceCount},
-                   {"completedCount", summary.completedCount},
-                   {"instructionBudgetExceededCount", summary.instructionBudgetExceededCount},
-                   {"invalidInstructionCount", summary.invalidInstructionCount},
-                   {"diagnosticCount", summary.diagnosticCount}};
-}
-
-[[nodiscard]] JsonUVE ToJsonUVE(const EditorBridgeScriptRuntimeTickHistoryEntryUVE& entry) {
-    return JsonUVE{{"sequence", entry.sequence}, {"summary", ToJsonUVE(entry.summary)}};
-}
-
 [[nodiscard]] JsonUVE ToJsonUVE(const EditorBridgeSnapshotUVE& snapshot) {
     JsonUVE selectedEntities = JsonUVE::array();
     for (const EditorBridgeEntitySnapshotUVE& entity : snapshot.selectedEntities) {
@@ -462,10 +269,6 @@ enum class FrameReadResultUVE : std::uint8_t {
     JsonUVE capabilities = JsonUVE::array();
     for (const EditorBridgeCapabilityUVE capability : snapshot.capabilities) {
         capabilities.push_back(static_cast<std::uint8_t>(capability));
-    }
-    JsonUVE tickHistory = JsonUVE::array();
-    for (const EditorBridgeScriptRuntimeTickHistoryEntryUVE& entry : snapshot.scriptRuntimeTickHistory) {
-        tickHistory.push_back(ToJsonUVE(entry));
     }
 
     return JsonUVE{{"protocolVersion", snapshot.protocolVersion},
@@ -484,12 +287,7 @@ enum class FrameReadResultUVE : std::uint8_t {
                    {"inspector", ToJsonUVE(snapshot.inspector)},
                    {"contentBrowser", ToJsonUVE(snapshot.contentBrowser)},
                    {"viewportSurface", ToJsonUVE(snapshot.viewportSurface)},
-                   {"visualScripting", ToJsonUVE(snapshot.visualScripting)},
                    {"developerConsole", ToJsonUVE(snapshot.developerConsole)},
-                   {"scriptRuntime", ToJsonUVE(snapshot.scriptRuntime)},
-                   {"scriptRuntimeTickSummary", ToJsonUVE(snapshot.scriptRuntimeTickSummary)},
-                   {"scriptRuntimeTickHistoryTruncated", snapshot.scriptRuntimeTickHistoryTruncated},
-                   {"scriptRuntimeTickHistory", std::move(tickHistory)},
                    {"dataTableCatalog", ToJsonUVE(snapshot.dataTableCatalog)},
                    {"dataTablePreview", ToJsonUVE(snapshot.dataTablePreview)},
                    {"capabilities", std::move(capabilities)}};
@@ -506,10 +304,7 @@ enum class FrameReadResultUVE : std::uint8_t {
                                                                          : JsonUVE(nullptr)},
                    {"contentImportJobId", response.contentImportJobId.has_value()
                                                 ? JsonUVE(*response.contentImportJobId)
-                                                : JsonUVE(nullptr)},
-                   {"graphSchema", response.visualScriptGraphSchema.has_value()
-                                        ? ToJsonUVE(*response.visualScriptGraphSchema)
-                                        : JsonUVE(nullptr)}};
+                                                : JsonUVE(nullptr)}};
 }
 
 [[nodiscard]] FrameReadResultUVE ReadFrameUVE(std::istream& input, std::string& body) {
@@ -569,62 +364,6 @@ enum class FrameReadResultUVE : std::uint8_t {
     return JsonUVE{{"jsonrpc", "2.0"}, {"id", id}, {"result", std::move(result)}};
 }
 
-[[nodiscard]] std::optional<Scripting::ScriptGraphCanvasPointUVE> ParseCanvasPointUVE(const JsonUVE& value) {
-    if (!value.is_object() || !value.contains("x") || !value.contains("y")) {
-        return std::nullopt;
-    }
-    return Scripting::ScriptGraphCanvasPointUVE{value.at("x").get<float>(), value.at("y").get<float>()};
-}
-
-[[nodiscard]] std::optional<Scripting::ScriptGraphCanvasViewUVE> ParseCanvasViewUVE(const JsonUVE& value) {
-    if (!value.is_object() || !value.contains("pan") || !value.contains("zoom")) {
-        return std::nullopt;
-    }
-    const auto pan = ParseCanvasPointUVE(value.at("pan"));
-    if (!pan.has_value()) {
-        return std::nullopt;
-    }
-    return Scripting::ScriptGraphCanvasViewUVE{*pan, value.at("zoom").get<float>()};
-}
-
-[[nodiscard]] std::optional<Scripting::ScriptNodeUVE> ParseScriptNodeUVE(const JsonUVE& value) {
-    if (!value.is_object() || !value.contains("id") || !value.contains("typeId")) {
-        return std::nullopt;
-    }
-    return Scripting::ScriptNodeUVE{value.at("id").get<std::uint32_t>(), value.at("typeId").get<std::string>()};
-}
-
-[[nodiscard]] std::optional<Scripting::ScriptLinkUVE> ParseScriptLinkUVE(const JsonUVE& value) {
-    if (!value.is_object() || !value.contains("output") || !value.contains("input") ||
-        !value.at("output").is_object() || !value.at("input").is_object()) {
-        return std::nullopt;
-    }
-    const JsonUVE& output = value.at("output");
-    const JsonUVE& input = value.at("input");
-    if (!output.contains("nodeId") || !output.contains("pinName") ||
-        !input.contains("nodeId") || !input.contains("pinName")) {
-        return std::nullopt;
-    }
-    return Scripting::ScriptLinkUVE{
-        {output.at("nodeId").get<std::uint32_t>(), output.at("pinName").get<std::string>()},
-        {input.at("nodeId").get<std::uint32_t>(), input.at("pinName").get<std::string>()}};
-}
-
-[[nodiscard]] std::optional<std::vector<std::uint32_t>> ParseScriptSelectionUVE(const JsonUVE& value) {
-    if (!value.is_array() || value.size() > Scripting::kMaximumScriptGraphCanvasSelectionUVE) {
-        return std::nullopt;
-    }
-    std::vector<std::uint32_t> selection;
-    selection.reserve(value.size());
-    for (const JsonUVE& nodeId : value) {
-        if (!nodeId.is_number_unsigned()) {
-            return std::nullopt;
-        }
-        selection.push_back(nodeId.get<std::uint32_t>());
-    }
-    return selection;
-}
-
 [[nodiscard]] std::optional<EditorBridgeRequestKindUVE> ParseRequestKindUVE(const std::string_view value) {
     if (value == "readSnapshot") {
         return EditorBridgeRequestKindUVE::ReadSnapshot;
@@ -671,39 +410,6 @@ enum class FrameReadResultUVE : std::uint8_t {
     if (value == "queueContentBrowserImport") {
         return EditorBridgeRequestKindUVE::QueueContentBrowserImport;
     }
-    if (value == "readVisualScriptCanvas") {
-        return EditorBridgeRequestKindUVE::ReadVisualScriptCanvas;
-    }
-    if (value == "readVisualScriptDebugger") {
-        return EditorBridgeRequestKindUVE::ReadVisualScriptDebugger;
-    }
-    if (value == "addVisualScriptNode") {
-        return EditorBridgeRequestKindUVE::AddVisualScriptNode;
-    }
-    if (value == "removeVisualScriptNode") {
-        return EditorBridgeRequestKindUVE::RemoveVisualScriptNode;
-    }
-    if (value == "moveVisualScriptNode") {
-        return EditorBridgeRequestKindUVE::MoveVisualScriptNode;
-    }
-    if (value == "addVisualScriptLink") {
-        return EditorBridgeRequestKindUVE::AddVisualScriptLink;
-    }
-    if (value == "removeVisualScriptLink") {
-        return EditorBridgeRequestKindUVE::RemoveVisualScriptLink;
-    }
-    if (value == "setVisualScriptSelection") {
-        return EditorBridgeRequestKindUVE::SetVisualScriptSelection;
-    }
-    if (value == "setVisualScriptView") {
-        return EditorBridgeRequestKindUVE::SetVisualScriptView;
-    }
-    if (value == "undoVisualScript") {
-        return EditorBridgeRequestKindUVE::UndoVisualScript;
-    }
-    if (value == "redoVisualScript") {
-        return EditorBridgeRequestKindUVE::RedoVisualScript;
-    }
     if (value == "readDeveloperConsole") {
         return EditorBridgeRequestKindUVE::ReadDeveloperConsole;
     }
@@ -724,24 +430,6 @@ enum class FrameReadResultUVE : std::uint8_t {
     }
     if (value == "selectDataTablePreview") {
         return EditorBridgeRequestKindUVE::SelectDataTablePreview;
-    }
-    if (value == "readScriptRuntime") {
-        return EditorBridgeRequestKindUVE::ReadScriptRuntime;
-    }
-    if (value == "readScriptRuntimeTickDiagnostics") {
-        return EditorBridgeRequestKindUVE::ReadScriptRuntimeTickDiagnostics;
-    }
-    if (value == "serializeGraph") {
-        return EditorBridgeRequestKindUVE::SerializeVisualScriptGraph;
-    }
-    if (value == "deserializeGraph") {
-        return EditorBridgeRequestKindUVE::DeserializeVisualScriptGraph;
-    }
-    if (value == "addVisualScriptNodeType") {
-        return EditorBridgeRequestKindUVE::AddVisualScriptNodeType;
-    }
-    if (value == "setVisualScriptPinDefault") {
-        return EditorBridgeRequestKindUVE::SetVisualScriptPinDefault;
     }
     return std::nullopt;
 }
@@ -828,71 +516,6 @@ enum class FrameReadResultUVE : std::uint8_t {
     }
     if (params.contains("contentImportDestinationPath") && !params.at("contentImportDestinationPath").is_null()) {
         request.contentImportDestinationPath = params.at("contentImportDestinationPath").get<std::string>();
-    }
-    if (params.contains("visualScriptNodeId") && !params.at("visualScriptNodeId").is_null()) {
-        request.visualScriptNodeId = params.at("visualScriptNodeId").get<std::uint32_t>();
-    }
-    if (params.contains("visualScriptNode") && !params.at("visualScriptNode").is_null()) {
-        request.visualScriptNode = ParseScriptNodeUVE(params.at("visualScriptNode"));
-        if (!request.visualScriptNode.has_value()) {
-            return std::nullopt;
-        }
-    }
-    if (params.contains("visualScriptNodeTypeId") && !params.at("visualScriptNodeTypeId").is_null()) {
-        if (!params.at("visualScriptNodeTypeId").is_string() ||
-            params.at("visualScriptNodeTypeId").get_ref<const std::string&>().empty() ||
-            params.at("visualScriptNodeTypeId").get_ref<const std::string&>().size() > 256U) {
-            return std::nullopt;
-        }
-        request.visualScriptNodeTypeId = params.at("visualScriptNodeTypeId").get<std::string>();
-    }
-    if (params.contains("visualScriptPosition") && !params.at("visualScriptPosition").is_null()) {
-        request.visualScriptPosition = ParseCanvasPointUVE(params.at("visualScriptPosition"));
-        if (!request.visualScriptPosition.has_value()) {
-            return std::nullopt;
-        }
-    }
-    if (params.contains("visualScriptLink") && !params.at("visualScriptLink").is_null()) {
-        request.visualScriptLink = ParseScriptLinkUVE(params.at("visualScriptLink"));
-        if (!request.visualScriptLink.has_value()) {
-            return std::nullopt;
-        }
-    }
-    if (params.contains("visualScriptSelection") && !params.at("visualScriptSelection").is_null()) {
-        request.visualScriptSelection = ParseScriptSelectionUVE(params.at("visualScriptSelection"));
-        if (!request.visualScriptSelection.has_value()) {
-            return std::nullopt;
-        }
-    }
-    if (params.contains("visualScriptView") && !params.at("visualScriptView").is_null()) {
-        request.visualScriptView = ParseCanvasViewUVE(params.at("visualScriptView"));
-        if (!request.visualScriptView.has_value()) {
-            return std::nullopt;
-        }
-    }
-    if (params.contains("visualScriptGraphSchema") && !params.at("visualScriptGraphSchema").is_null()) {
-        if (!params.at("visualScriptGraphSchema").is_string() ||
-            params.at("visualScriptGraphSchema").get_ref<const std::string&>().size() >
-                EditorBridgeStdioServerUVE::kMaximumFrameBytesUVE) {
-            return std::nullopt;
-        }
-        request.visualScriptGraphSchema = params.at("visualScriptGraphSchema").get<std::string>();
-    }
-    if (params.contains("visualScriptPinName") && !params.at("visualScriptPinName").is_null()) {
-        if (!params.at("visualScriptPinName").is_string() ||
-            params.at("visualScriptPinName").get_ref<const std::string&>().empty() ||
-            params.at("visualScriptPinName").get_ref<const std::string&>().size() > 256U) {
-            return std::nullopt;
-        }
-        request.visualScriptPinName = params.at("visualScriptPinName").get<std::string>();
-    }
-    if (params.contains("visualScriptDefaultValue") && !params.at("visualScriptDefaultValue").is_null()) {
-        if (!params.at("visualScriptDefaultValue").is_string() ||
-            params.at("visualScriptDefaultValue").get_ref<const std::string&>().size() >
-                Scripting::kMaximumScriptGraphCanvasDefaultValueBytesUVE) {
-            return std::nullopt;
-        }
-        request.visualScriptDefaultValue = params.at("visualScriptDefaultValue").get<std::string>();
     }
     if (params.contains("dataTableName") && !params.at("dataTableName").is_null()) {
         request.dataTableName = params.at("dataTableName").get<std::string>();

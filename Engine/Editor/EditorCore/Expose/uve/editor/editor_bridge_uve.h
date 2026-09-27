@@ -4,7 +4,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <deque>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -14,9 +13,6 @@
 #include "uve/asset/data_table_registry_uve.h"
 #include "uve/asset/data_table_uve.h"
 #include "uve/editor/editor_uve.h"
-#include "uve/scripting/script_debugger_uve.h"
-#include "uve/scripting/script_graph_canvas_uve.h"
-#include "uve/scripting/script_runtime_uve.h"
 #include "uve/editor/developer_console_uve.h"
 
 namespace UVE::Editor {
@@ -57,17 +53,6 @@ enum class EditorBridgeCapabilityUVE : std::uint8_t {
     SelectContentBrowserEntry,
     QueueContentBrowserImport,
     ReadViewportSurface,
-    ReadVisualScriptCanvas,
-    ReadVisualScriptDebugger,
-    AddVisualScriptNode,
-    RemoveVisualScriptNode,
-    MoveVisualScriptNode,
-    AddVisualScriptLink,
-    RemoveVisualScriptLink,
-    SetVisualScriptSelection,
-    SetVisualScriptView,
-    UndoVisualScript,
-    RedoVisualScript,
     ReadDeveloperConsole,
     SubmitDeveloperConsoleCommand,
     ClearDeveloperConsole,
@@ -75,12 +60,6 @@ enum class EditorBridgeCapabilityUVE : std::uint8_t {
     SetDeveloperConsoleCompletionPrefix,
     MoveDeveloperConsoleHistory,
     SelectDataTablePreview,
-    ReadScriptRuntime,
-    ReadScriptRuntimeTickDiagnostics,
-    SerializeVisualScriptGraph,
-    DeserializeVisualScriptGraph,
-    AddVisualScriptNodeType,
-    SetVisualScriptPinDefault,
 };
 
 /// The deliberately small v1 request vocabulary. No generic command string is accepted because
@@ -102,17 +81,6 @@ enum class EditorBridgeRequestKindUVE : std::uint8_t {
     SelectContentBrowserEntry,
     QueueContentBrowserImport,
     ReadViewportSurface,
-    ReadVisualScriptCanvas,
-    ReadVisualScriptDebugger,
-    AddVisualScriptNode,
-    RemoveVisualScriptNode,
-    MoveVisualScriptNode,
-    AddVisualScriptLink,
-    RemoveVisualScriptLink,
-    SetVisualScriptSelection,
-    SetVisualScriptView,
-    UndoVisualScript,
-    RedoVisualScript,
     ReadDeveloperConsole,
     SubmitDeveloperConsoleCommand,
     ClearDeveloperConsole,
@@ -120,12 +88,6 @@ enum class EditorBridgeRequestKindUVE : std::uint8_t {
     SetDeveloperConsoleCompletionPrefix,
     MoveDeveloperConsoleHistory,
     SelectDataTablePreview,
-    ReadScriptRuntime,
-    ReadScriptRuntimeTickDiagnostics,
-    SerializeVisualScriptGraph,
-    DeserializeVisualScriptGraph,
-    AddVisualScriptNodeType,
-    SetVisualScriptPinDefault,
 };
 
 /// Explicitly describes whether this bridge session has a native-owned viewport surface. No raw
@@ -169,7 +131,6 @@ struct EditorBridgeAssetBindingSnapshotUVE final {
 /// The bridge deliberately bounds presentation records before serializing them. A client must show
 /// the explicit truncation fact and never infer that an omitted entry was deleted from the editor.
 inline constexpr std::size_t kEditorBridgeMaximumPanelEntriesUVE = 256U;
-inline constexpr std::size_t kEditorBridgeMaximumScriptRuntimeTickHistoryUVE = 8U;
 inline constexpr std::size_t kEditorBridgeMaximumPresentationTextBytesUVE = 256U;
 /// Relative content paths double as native-validated request identities, so they use a separate
 /// conservative bound rather than the shorter display-text bound. 128 such rows remain well below
@@ -290,36 +251,6 @@ struct EditorBridgeContentBrowserSnapshotUVE final {
     [[nodiscard]] bool operator==(const EditorBridgeContentBrowserSnapshotUVE&) const = default;
 };
 
-/// Copied visual-scripting presentation facts. The managed host receives counts and capability state,
-/// never native graph objects or runtime ownership. Editing remains a separately named native command path.
-struct EditorBridgeVisualScriptDebuggerSnapshotUVE final {
-    bool available = false;
-    Scripting::ScriptDebuggerStateUVE state = Scripting::ScriptDebuggerStateUVE::Detached;
-    std::size_t instructionIndex = 0U;
-    std::uint32_t sourceNodeId = 0U;
-    std::size_t executedInstructions = 0U;
-    std::string pauseReason;
-    std::vector<std::uint32_t> breakpointNodeIds;
-    std::vector<Scripting::ScriptVmTraceEventUVE> trace;
-    bool traceTruncated = false;
-    std::string reason;
-
-    [[nodiscard]] bool operator==(const EditorBridgeVisualScriptDebuggerSnapshotUVE&) const = default;
-};
-
-struct EditorBridgeVisualScriptingSnapshotUVE final {
-    bool available = false;
-    std::uint64_t graphRevision = 0U;
-    std::size_t nodeCount = 0U;
-    std::size_t linkCount = 0U;
-    bool canEdit = false;
-    std::string reason;
-    Scripting::ScriptGraphCanvasSnapshotUVE canvas;
-    EditorBridgeVisualScriptDebuggerSnapshotUVE debugger;
-
-    [[nodiscard]] bool operator==(const EditorBridgeVisualScriptingSnapshotUVE&) const = default;
-};
-
 /// Immutable bridge-visible state. A revision is incremented whenever any field observable through
 /// this snapshot changes, whether native ImGui or the bridge initiated that change.
 struct EditorBridgeDeveloperConsoleSnapshotUVE final {
@@ -355,50 +286,6 @@ struct EditorBridgeDataTablePreviewRowUVE final {
     [[nodiscard]] bool operator==(const EditorBridgeDataTablePreviewRowUVE&) const = default;
 };
 
-struct EditorBridgeScriptRuntimeInstanceEntryUVE final {
-    std::uint32_t entityIndex = Scene::kInvalidEntityUVE.index;
-    std::uint32_t entityGeneration = Scene::kInvalidEntityUVE.generation;
-    std::uint64_t generation = 0U;
-    std::uint32_t programVersion = 0U;
-    std::size_t instructionCount = 0U;
-    std::size_t stateValueCount = 0U;
-    std::size_t stateLocalVariableCount = 0U;
-    bool enabled = false;
-
-    [[nodiscard]] bool operator==(const EditorBridgeScriptRuntimeInstanceEntryUVE&) const = default;
-};
-
-struct EditorBridgeScriptRuntimeSnapshotUVE final {
-    bool available = false;
-    std::size_t instanceCount = 0U;
-    bool entriesTruncated = false;
-    std::string reason;
-    std::vector<EditorBridgeScriptRuntimeInstanceEntryUVE> entries;
-
-    [[nodiscard]] bool operator==(const EditorBridgeScriptRuntimeSnapshotUVE&) const = default;
-};
-
-/// Copied counters from one explicitly requested native ScriptRuntime diagnostic tick. The managed
-/// host may request this DTO but never executes VM work or receives a runtime pointer.
-struct EditorBridgeScriptRuntimeTickSummaryUVE final {
-    bool available = false;
-    std::string reason = "No ScriptRuntime diagnostic tick has been requested.";
-    std::size_t enabledInstanceCount = 0U;
-    std::size_t completedCount = 0U;
-    std::size_t instructionBudgetExceededCount = 0U;
-    std::size_t invalidInstructionCount = 0U;
-    std::size_t diagnosticCount = 0U;
-
-    [[nodiscard]] bool operator==(const EditorBridgeScriptRuntimeTickSummaryUVE&) const = default;
-};
-
-struct EditorBridgeScriptRuntimeTickHistoryEntryUVE final {
-    std::uint64_t sequence = 0U;
-    EditorBridgeScriptRuntimeTickSummaryUVE summary;
-
-    [[nodiscard]] bool operator==(const EditorBridgeScriptRuntimeTickHistoryEntryUVE&) const = default;
-};
-
 struct EditorBridgeDataTablePreviewSnapshotUVE final {
     bool available = false;
     std::uint64_t generation = 0U;
@@ -430,12 +317,7 @@ struct EditorBridgeSnapshotUVE final {
     EditorBridgeInspectorSnapshotUVE inspector;
     EditorBridgeContentBrowserSnapshotUVE contentBrowser;
     EditorBridgeViewportSurfaceSnapshotUVE viewportSurface;
-    EditorBridgeVisualScriptingSnapshotUVE visualScripting;
     EditorBridgeDeveloperConsoleSnapshotUVE developerConsole;
-    EditorBridgeScriptRuntimeSnapshotUVE scriptRuntime;
-    EditorBridgeScriptRuntimeTickSummaryUVE scriptRuntimeTickSummary;
-    bool scriptRuntimeTickHistoryTruncated = false;
-    std::vector<EditorBridgeScriptRuntimeTickHistoryEntryUVE> scriptRuntimeTickHistory;
     EditorBridgeDataTableCatalogSnapshotUVE dataTableCatalog;
     EditorBridgeDataTablePreviewSnapshotUVE dataTablePreview;
     std::vector<EditorBridgeCapabilityUVE> capabilities;
@@ -457,21 +339,11 @@ struct EditorBridgeRequestUVE final {
     std::optional<std::string> contentFocus;
     std::optional<std::string> contentEntryPath;
     std::optional<std::string> contentImportDestinationPath;
-    std::optional<std::uint32_t> visualScriptNodeId;
-    std::optional<Scripting::ScriptNodeUVE> visualScriptNode;
-    std::optional<std::string> visualScriptNodeTypeId;
-    std::optional<Scripting::ScriptGraphCanvasPointUVE> visualScriptPosition;
-    std::optional<Scripting::ScriptLinkUVE> visualScriptLink;
-    std::optional<std::vector<std::uint32_t>> visualScriptSelection;
-    std::optional<Scripting::ScriptGraphCanvasViewUVE> visualScriptView;
-    std::optional<std::string> visualScriptGraphSchema;
     std::optional<std::string> dataTableName;
     std::optional<std::string> developerConsoleCommand;
     std::optional<DeveloperConsoleSeverityFilterUVE> developerConsoleSeverityFilter;
     std::optional<std::string> developerConsoleCompletionPrefix;
     std::optional<std::int32_t> developerConsoleHistoryDelta;
-    std::optional<std::string> visualScriptPinName;
-    std::optional<std::string> visualScriptDefaultValue;
 
     EditorBridgeRequestUVE() = default;
 
@@ -502,7 +374,6 @@ struct EditorBridgeResponseUVE final {
     EditorBridgeSnapshotUVE snapshot;
     std::optional<EditorBridgeEntityRefUVE> createdEntity;
     std::optional<std::uint64_t> contentImportJobId;
-    std::optional<Scripting::ScriptGraphSchemaUVE> visualScriptGraphSchema;
 };
 
 /// Main-thread adapter over EditorUVE. It supports coexistence with the native ImGui editor: every
@@ -513,10 +384,7 @@ public:
     /// The optional registry is non-owning and must outlive this bridge. When supplied, it is the
     /// authoritative source for catalog facts and selected preview snapshots; the legacy injection
     /// seams remain available only for bridge sessions without a registry dependency.
-    explicit EditorBridgeUVE(EditorUVE& editor,
-                             const Asset::DataTableRegistryUVE* dataTableRegistry = nullptr,
-                             const Scripting::ScriptDebuggerUVE* scriptDebugger = nullptr,
-                             Scripting::ScriptRuntimeUVE* scriptRuntime = nullptr);
+    explicit EditorBridgeUVE(EditorUVE& editor, const Asset::DataTableRegistryUVE* dataTableRegistry = nullptr);
 
     [[nodiscard]] EditorBridgeSnapshotUVE GetSnapshotUVE();
     [[nodiscard]] EditorBridgeResponseUVE DispatchUVE(const EditorBridgeRequestUVE& request);
@@ -543,9 +411,7 @@ private:
         EditorBridgeInspectorSnapshotUVE inspector;
         EditorBridgeContentBrowserSnapshotUVE contentBrowser;
         EditorBridgeViewportSurfaceSnapshotUVE viewportSurface;
-        EditorBridgeVisualScriptingSnapshotUVE visualScripting;
         EditorBridgeDeveloperConsoleSnapshotUVE developerConsole;
-        EditorBridgeScriptRuntimeSnapshotUVE scriptRuntime;
         EditorBridgeDataTableCatalogSnapshotUVE dataTableCatalog;
         EditorBridgeDataTablePreviewSnapshotUVE dataTablePreview;
 
@@ -562,8 +428,6 @@ private:
     [[nodiscard]] bool IsSupportedEntityKindUVE(EditorEntityKindUVE kind) const noexcept;
     [[nodiscard]] static std::string BoundPresentationTextUVE(std::string value);
     [[nodiscard]] static std::string BoundContentPathUVE(std::string value);
-    [[nodiscard]] EditorBridgeVisualScriptingSnapshotUVE CaptureVisualScriptingUVE() const;
-    [[nodiscard]] EditorBridgeScriptRuntimeSnapshotUVE CaptureScriptRuntimeUVE() const;
     [[nodiscard]] EditorBridgeDeveloperConsoleSnapshotUVE CaptureDeveloperConsoleUVE() const;
     [[nodiscard]] EditorBridgeDataTableCatalogSnapshotUVE CaptureDataTableCatalogUVE() const;
     [[nodiscard]] EditorBridgeDataTablePreviewSnapshotUVE CaptureDataTablePreviewUVE() const;
@@ -578,16 +442,10 @@ private:
     EditorUVE* m_editor = nullptr;
     DeveloperConsoleUVE m_developerConsole;
     const Asset::DataTableRegistryUVE* m_dataTableRegistry = nullptr;
-    const Scripting::ScriptDebuggerUVE* m_scriptDebugger = nullptr;
-    Scripting::ScriptRuntimeUVE* m_scriptRuntime = nullptr;
     std::optional<std::string> m_dataTablePreviewName;
     Asset::DataTableCatalogSnapshotUVE m_dataTableCatalogSnapshot;
     Asset::DataTableSnapshotUVE m_dataTablePreviewSnapshot;
     std::optional<ObservedStateUVE> m_lastObservedState;
-    EditorBridgeScriptRuntimeTickSummaryUVE m_lastScriptRuntimeTickSummary;
-    std::deque<EditorBridgeScriptRuntimeTickHistoryEntryUVE> m_scriptRuntimeTickHistory;
-    bool m_scriptRuntimeTickHistoryTruncated = false;
-    std::uint64_t m_nextScriptRuntimeTickSequence = 1U;
     std::uint64_t m_revision = 0U;
 };
 

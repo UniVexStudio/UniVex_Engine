@@ -11,7 +11,7 @@ namespace UVE::Core {
 TEST(TypeMetadataRegistryUVETest, RegisterTypeUVE_OrdersCopiedSnapshotAndAdvancesGeneration) {
     TypeMetadataRegistryUVE registry;
     ASSERT_TRUE(registry.RegisterTypeUVE(TypeMetadataEntryUVE{
-        TypeMetadataKindUVE::VisualScriptNode,
+        TypeMetadataKindUVE::InspectorTarget,
         "node.zeta",
         "Zeta Node",
         1U,
@@ -62,7 +62,7 @@ TEST(TypeMetadataRegistryUVETest, RegisterTypeUVE_RejectsDuplicateAndMalformedMe
 
 TEST(TypeMetadataRegistryUVETest, RegisterTypeUVE_RejectsOversizedMemberCollectionsBeforeMutation) {
     TypeMetadataRegistryUVE registry;
-    TypeMetadataEntryUVE oversized{TypeMetadataKindUVE::VisualScriptNode,
+    TypeMetadataEntryUVE oversized{TypeMetadataKindUVE::InspectorTarget,
                                    "node.oversized",
                                    "Oversized Node",
                                    1U,

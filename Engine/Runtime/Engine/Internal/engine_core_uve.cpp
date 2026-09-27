@@ -111,9 +111,6 @@
 #include "uve/scene/prefab_system_uve.h"
 #include "uve/scene/scene_graph_uve.h"
 #include "uve/scene/scene_serializer_uve.h"
-#include "uve/scripting/script_asset_loader_uve.h"
-#include "uve/scripting/script_builtin_nodes_uve.h"
-#include "uve/scripting/script_component_runtime_ownership_uve.h"
 #include "uve/threading/thread_pool_uve.h"
 #include "uve/utilities/timer_uve.h"
 #include "uve/window/adaptive_render_resolution_uve.h"
@@ -583,18 +580,6 @@ void EngineCoreUVE::Init() {
     // MeshRendererUVE::ExtractRenderQueueUVE().
     m_audioSourceSystem = std::make_unique<Audio::AudioSourceSystemUVE>();
 
-    // ScriptNodeRegistry/ScriptRuntime thirty-second: needs InputSystem to already exist so the
-    // real gameplay bindings below have something to wire (Scripting itself has no InputSystem
-    // dependency of its own - EngineCoreUVE is what closes that loop). RegisterBuiltInScriptNodesUVE
-    // populates the full ~161 built-in node-type descriptor set (same call EditorUVE's own
-    // m_visualScriptRegistry already makes) - without it every ScriptComponentUVE's graph would
-    // fail compilation with "unknown node type" for every single node.
-    if (!Scripting::RegisterBuiltInScriptNodesUVE(m_scriptNodeRegistry)) {
-        UVE_ERROR("EngineCoreUVE: failed to register built-in Scripting node types - "
-                  "ScriptComponentUVE entities will not run this session");
-    }
-    m_scriptBindingContext.inputSystem = m_inputSystem.get();
-    m_scriptEngineCallBindings = MakeScriptGameplayBindingsUVE(m_scriptBindingContext);
 
     // SaveGameSystem thirty-second: needs SceneSerializer (composed by reference) and
     // EngineConfigUVE::saveDirectoryPath.
@@ -729,64 +714,10 @@ namespace {
 } // namespace
 
 void EngineCoreUVE::SyncScriptRuntimeUVE() {
-    m_entityManager->ForEachUVE<Scene::ScriptComponentUVE>(
-        [this](const Scene::EntityUVE entity, const Scene::ScriptComponentUVE& component) {
-            if (m_scriptRuntime.HasInstanceUVE(entity) || IsUVScriptPathUVE(component.scriptAssetPath)) {
-                return;
-            }
-            // A failure is remembered against the path that failed, so a broken script logs once
-            // but pointing the node at another script - or creating it - is tried straight away.
-            if (const auto failed = m_scriptReconcileFailedEntities.find(entity);
-                failed != m_scriptReconcileFailedEntities.end()) {
-                if (failed->second == component.scriptAssetPath) {
-                    return;
-                }
-                m_scriptReconcileFailedEntities.erase(failed);
-            }
-            const Scripting::ScriptAssetLoadResultUVE loaded = Scripting::ScriptAssetLoaderUVE::LoadSchemaUVE(
-                component, *m_fileSystem, Scripting::ScriptGraphPersistenceLimitsUVE{});
-            if (loaded.IsNoScriptUVE()) {
-                // No script assigned yet - a normal authoring state, not a failure. Skip silently
-                // and re-check next frame in case a path gets assigned later.
-                return;
-            }
-            if (!loaded.IsLoadedUVE()) {
-                m_scriptReconcileFailedEntities.insert_or_assign(entity, component.scriptAssetPath);
-                UVE_ERROR("EngineCoreUVE: ScriptComponentUVE on entity failed to load its script asset "
-                          "\"{}\": {}",
-                          component.scriptAssetPath, loaded.message);
-                return;
-            }
-            const Scripting::ScriptComponentRuntimeOwnershipResultUVE reconciled =
-                Scripting::ScriptComponentRuntimeOwnershipUVE::ReconcileUVE(
-                    component, loaded.schema->graph, m_scriptNodeRegistry, m_scriptRuntime, entity);
-            if (!reconciled.IsAcceptedUVE()) {
-                m_scriptReconcileFailedEntities.insert_or_assign(entity, component.scriptAssetPath);
-                UVE_ERROR("EngineCoreUVE: ScriptComponentUVE on entity failed to attach to ScriptRuntimeUVE: {}",
-                          reconciled.message);
-            }
-        });
-
-    // Process mode decides which instances tick this frame, and priority decides their order.
-    // Pausable - the default - stops while the simulation is paused, which is what pausing Play
-    // mode now means for scripts; before this, pausing stopped physics and left every script
-    // running. WhenPaused and Always are how a pause menu keeps working over a stopped world.
-    const bool simulationPaused = m_simulationExecutionMode == SimulationExecutionModeUVE::Paused;
-    m_entityManager->ForEachUVE<Scene::ScriptComponentUVE>(
-        [this, simulationPaused](const Scene::EntityUVE entity, const Scene::ScriptComponentUVE&) {
-            if (!m_scriptRuntime.HasInstanceUVE(entity)) {
-                return;
-            }
-            static_cast<void>(m_scriptRuntime.SetEnabledUVE(
-                entity, Scene::IsProcessingUVE(ResolvedProcessModeUVE(*m_sceneGraph, entity), simulationPaused)));
-            static_cast<void>(
-                m_scriptRuntime.SetPriorityUVE(entity, ProcessSettingsUVE(*m_entityManager, entity).priority));
-        });
-
-    static_cast<void>(m_scriptRuntime.TickUVE(
-        Scripting::ScriptVmExecutionOptionsUVE{.engineCallBindings = &m_scriptEngineCallBindings}));
-
-    SyncUVScriptsUVE(simulationPaused);
+    // Process mode decides which scripts run this frame, and priority decides their order.
+    // Pausable - the default - stops while the simulation is paused; WhenPaused and Always are
+    // how a pause menu keeps working over a stopped world.
+    SyncUVScriptsUVE(m_simulationExecutionMode == SimulationExecutionModeUVE::Paused);
 }
 
 void EngineCoreUVE::SyncUVScriptsUVE(const bool simulationPaused) {
@@ -829,6 +760,15 @@ void EngineCoreUVE::SyncUVScriptsUVE(const bool simulationPaused) {
     m_entityManager->ForEachUVE<Scene::ScriptComponentUVE>(
         [this, &order](const Scene::EntityUVE entity, const Scene::ScriptComponentUVE& component) {
             if (!IsUVScriptPathUVE(component.scriptAssetPath)) {
+                // Node-graph scripts were removed; say so once per node rather than run nothing
+                // silently.
+                const auto reported = m_scriptReconcileFailedEntities.find(entity);
+                if (!component.scriptAssetPath.empty() && (reported == m_scriptReconcileFailedEntities.end() ||
+                                                           reported->second != component.scriptAssetPath)) {
+                    m_scriptReconcileFailedEntities.insert_or_assign(entity, component.scriptAssetPath);
+                    UVE_WARNING("EngineCoreUVE: script \"{}\" is not a UVScript (.uvs) file and will not run",
+                             component.scriptAssetPath);
+                }
                 return;
             }
             order.push_back(entity);
@@ -1143,7 +1083,6 @@ void EngineCoreUVE::SyncProjectile3DNodesUVE(const float fixedDeltaTimeSeconds) 
 void EngineCoreUVE::SyncCollisionLifecycleUVE() {
     const std::vector<Physics::CollisionPairUVE> pairs = m_collisionSystem->DetectCollisionsUVE(*m_entityManager);
     m_collisionLifecycleReport = m_collisionLifecycleTracker.UpdateUVE(pairs);
-    m_scriptBindingContext.collisionTransitionsThisTick = &m_collisionLifecycleReport.transitions;
 }
 
 void EngineCoreUVE::SyncRayCast3DNodesUVE() {
@@ -2379,7 +2318,7 @@ void EngineCoreUVE::RequestQuitUVE() noexcept {
 }
 
 std::size_t EngineCoreUVE::GetActiveScriptInstanceCountUVE() const noexcept {
-    return m_scriptRuntime.GetInstanceCountUVE();
+    return m_uvScripts.size();
 }
 
 void EngineCoreUVE::Shutdown() {

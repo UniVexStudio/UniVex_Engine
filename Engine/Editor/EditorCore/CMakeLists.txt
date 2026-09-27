@@ -2,22 +2,20 @@
 
 #
 # Editor Foundation v1 is intentionally an upper-layer module: this may compose Engine/Runtime's
-# Engine, Scripting, and Plugins services, but no Engine/Runtime module may depend on it (matches
+# Engine and Plugins services, but no Engine/Runtime module may depend on it (matches
 # the reference module's own boundary comment verbatim).
 #
 # An earlier, pre-survey scaffolding stage speculatively pre-created a whole Unreal-style editor
 # UI taxonomy here (AssetBrowser/ContentBrowser/Inspector/Outliner/Menus/SceneEditor/
 # EditorWidgets/VisualScripting/Tools/Theme/Panels/Gizmos placeholder subfolders, sibling to this
-# one) before the actual reference structure was ever surveyed. Removed as part of this port,
-# same reasoning as Engine/Runtime/Scripting's own Pins/Graph/Compiler/etc. cleanup: the real
+# one) before the actual reference structure was ever surveyed. Removed as part of this port: the real
 # reference engine/editor/ module is one flat library (EditorUVE, EditorBridgeUVE/
 # EditorBridgeStdioUVE, DeveloperConsoleUVE, EditorThemeUVE, EditorUiAssetsUVE,
-# MeshThumbnailRendererUVE, InspectorDrawerRegistryUVE, EditorToolSessionUVE,
-# RegressionHarnessUVE) with no internal sub-target split, and this port follows that real
+# MeshThumbnailRendererUVE, InspectorDrawerRegistryUVE, EditorToolSessionUVE) with no internal
+# sub-target split, and this port follows that real
 # structure rather than the earlier speculative guess.
 #
-# EditorUVE/EditorBridgeUVE compose uve_core, uve_scripting, and uve_plugins directly - all three
-# are now real (EngineCoreUVE and the full Scripting module both landed this session).
+# EditorUVE/EditorBridgeUVE compose uve_core (which carries UVScript) and uve_plugins directly.
 #
 # ImGui's GLFW backend (imgui_impl_glfw, vendored below) installs its own GLFW key/mouse/scroll/
 # char callbacks on the native window via ImGui_ImplGlfw_InitForOpenGL(window, true) - the
@@ -166,7 +164,6 @@ add_library(uve_editor STATIC
     Internal/editor_panel_preferences_uve.cpp
     Internal/editor_panel_input_map_uve.cpp
     Internal/inspector_drawer_registry_uve.cpp
-    Internal/regression_harness_uve.cpp
     ${_uve_editor_font_incs}
     "${_uve_editor_generated_dir}/uve_editor_icon_set.inc"
 )
@@ -174,7 +171,7 @@ target_include_directories(uve_editor PUBLIC Expose)
 target_include_directories(uve_editor PRIVATE "${_uve_editor_generated_dir}")
 target_compile_features(uve_editor PUBLIC cxx_std_23)
 target_link_libraries(uve_editor
-    PUBLIC uve_core uve_scripting uve_plugins
+    PUBLIC uve_core uve_plugins
     PRIVATE uve_editor_imgui nlohmann_json::nlohmann_json glfw
 )
 uve_set_warnings(uve_editor)

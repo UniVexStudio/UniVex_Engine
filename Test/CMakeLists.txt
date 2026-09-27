@@ -194,12 +194,6 @@ add_executable(uve_integration_tests
     Integration/Object/property_accessor_uve_tests.cpp
     Integration/Object/type_metadata_bridge_uve_tests.cpp
     Integration/Object/variant_uve_tests.cpp
-    Integration/Scripting/script_asset_loader_uve_tests.cpp
-    Integration/Scripting/script_graph_uve_tests.cpp
-    Integration/Scripting/script_rotation_value_uve_tests.cpp
-    Integration/Scripting/script_source_mapping_uve_tests.cpp
-    Integration/Scripting/script_transform_value_uve_tests.cpp
-    Integration/Scripting/script_vector3_value_uve_tests.cpp
     Physics/angular_dynamics_uve_tests.cpp
     Physics/area_overlap_lifecycle_tracker_uve_tests.cpp
     Physics/area_overlap_system_uve_tests.cpp
@@ -259,7 +253,6 @@ target_link_libraries(uve_integration_tests PRIVATE
     uve_component
     uve_entity
     uve_scene
-    uve_scripting
     uve_asset
     uve_memory
     uve_animation
@@ -330,7 +323,6 @@ add_executable(uve_engine_tests
     Engine/engine_services_uve_tests.cpp
     Engine/engine_core_uve_tests.cpp
     Engine/input_map_document_uve_tests.cpp
-    Engine/script_gameplay_bindings_uve_tests.cpp
     Pack/project_launcher_uve_tests.cpp
     Pack/project_packager_uve_tests.cpp
 )
@@ -358,10 +350,10 @@ gtest_discover_tests(uve_engine_tests)
 # RegressionHarnessUVE. Every test in this suite either runs EngineCoreUVE in headlessUVE mode
 # (no real GL/GLFW/ImGui context needed - EditorUVE skips ImGui init when the window manager
 # isn't valid) or tests a standalone class with no EngineCoreUVE dependency at all
-# (DeveloperConsoleUVE/EditorToolSessionUVE/InspectorDrawerRegistryUVE/RegressionHarnessUVE), so
+# (DeveloperConsoleUVE/EditorToolSessionUVE/InspectorDrawerRegistryUVE), so
 # this doesn't need Xvfb or any GL/GLFW link wiring the way uve_engine_tests and
 # gl_render_device_uve_tests.cpp do. Linking uve_editor is sufficient for every dependency - it
-# PUBLIC-links uve_core, uve_scripting, and uve_plugins, which propagate transitively.
+# PUBLIC-links uve_core and uve_plugins, which propagate transitively.
 add_executable(uve_editor_tests
     Support/test_scratch_uve.cpp
     Editor/editor_bridge_stdio_uve_tests.cpp
@@ -381,7 +373,6 @@ add_executable(uve_editor_tests
     Editor/editor_hierarchy_view_uve_tests.cpp
     Editor/entity_picker_uve_tests.cpp
     Editor/inspector_drawer_registry_uve_tests.cpp
-    Editor/regression_harness_uve_tests.cpp
     Editor/data_table_registry_bridge_uve_tests.cpp
     Editor/prefab_maturity_editor_uve_tests.cpp
     Editor/content_catalogue_editor_uve_tests.cpp
