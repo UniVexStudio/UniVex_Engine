@@ -7,6 +7,8 @@
 #include <iterator>
 #include <set>
 
+#include <nlohmann/json.hpp>
+
 #include "editor_text_search_uve.h"
 
 namespace UVE::Editor {
@@ -84,7 +86,7 @@ ContentShelfUVE* ContentShelvesUVE::FindMutableUVE(const std::string_view name) 
     return it == m_shelves.end() ? nullptr : &*it;
 }
 
-std::string ContentShelvesUVE::CreateUVE(const std::string_view baseName) {
+std::string ContentShelvesUVE::CreateUVE(const std::string_view baseName, const bool shared) {
     if (m_shelves.size() >= kMaxShelvesUVE) {
         return {};
     }
@@ -93,8 +95,21 @@ std::string ContentShelvesUVE::CreateUVE(const std::string_view baseName) {
     for (int suffix = 2; FindUVE(name) != nullptr; ++suffix) {
         name = base + " " + std::to_string(suffix);
     }
-    m_shelves.push_back(ContentShelfUVE{name, {}});
+    m_shelves.push_back(ContentShelfUVE{name, {}, shared});
     return name;
+}
+
+bool ContentShelvesUVE::SetSharedUVE(const std::string_view name, const bool shared) {
+    ContentShelfUVE* const shelf = FindMutableUVE(name);
+    if (shelf == nullptr) {
+        return false;
+    }
+    shelf->shared = shared;
+    return true;
+}
+
+void ContentShelvesUVE::RemoveAllUVE(const bool shared) {
+    std::erase_if(m_shelves, [shared](const ContentShelfUVE& shelf) { return shelf.shared == shared; });
 }
 
 bool ContentShelvesUVE::RenameUVE(const std::string_view from, const std::string_view to) {
@@ -146,6 +161,74 @@ void ContentShelvesUVE::MovePathUVE(const std::filesystem::path& from, const std
             }
         }
     }
+}
+
+std::string WriteSharedShelvesTextUVE(const ContentShelvesUVE& shelves) {
+    nlohmann::json list = nlohmann::json::array();
+    for (const ContentShelfUVE& shelf : shelves.GetAllUVE()) {
+        if (!shelf.shared) {
+            continue;
+        }
+        nlohmann::json items = nlohmann::json::array();
+        for (const std::filesystem::path& item : shelf.items) {
+            items.push_back(item.generic_string());
+        }
+        list.push_back({{"name", shelf.name}, {"items", std::move(items)}});
+    }
+    return nlohmann::json{{"version", 1}, {"shelves", std::move(list)}}.dump(2) + "\n";
+}
+
+bool ReadSharedShelvesTextUVE(const std::string_view text, ContentShelvesUVE& shelves, std::string& error) {
+    const nlohmann::json document = nlohmann::json::parse(text, nullptr, false);
+    if (document.is_discarded() || !document.is_object() || !document.contains("shelves") ||
+        !document["shelves"].is_array()) {
+        error = "not a shelves file";
+        return false;
+    }
+    if (document.value("version", 0) != 1) {
+        error = "written by a newer editor";
+        return false;
+    }
+    // Personal shelves are set aside and put back after, so a team shelf keeps its name.
+    std::vector<ContentShelfUVE> personal;
+    for (const ContentShelfUVE& shelf : shelves.GetAllUVE()) {
+        if (!shelf.shared) {
+            personal.push_back(shelf);
+        }
+    }
+    shelves.ClearUVE();
+    for (const nlohmann::json& entry : document["shelves"]) {
+        if (!entry.is_object() || !entry.contains("name") || !entry["name"].is_string()) {
+            continue;
+        }
+        const std::string wanted = entry["name"].get<std::string>();
+        if (wanted.empty() || shelves.FindUVE(wanted) != nullptr) {
+            continue; // a repeated team shelf is one too many, not a rename
+        }
+        const std::string name = shelves.CreateUVE(wanted, true);
+        if (name.empty() || !entry.contains("items") || !entry["items"].is_array()) {
+            continue;
+        }
+        for (const nlohmann::json& item : entry["items"]) {
+            if (!item.is_string()) {
+                continue;
+            }
+            const std::filesystem::path path = std::filesystem::path{item.get<std::string>()}.lexically_normal();
+            const bool escapes = path.empty() || path.is_absolute() || path.has_root_name() ||
+                                 (path.begin() != path.end() && *path.begin() == "..");
+            if (!escapes) {
+                static_cast<void>(shelves.AddItemUVE(name, path));
+            }
+        }
+    }
+    for (ContentShelfUVE& shelf : personal) {
+        const std::string name = shelves.CreateUVE(shelf.name, false);
+        for (const std::filesystem::path& item : shelf.items) {
+            static_cast<void>(shelves.AddItemUVE(name, item));
+        }
+    }
+    error.clear();
+    return true;
 }
 
 bool IsInsideContentDirectoryUVE(const std::filesystem::path& path, const std::filesystem::path& directory) {

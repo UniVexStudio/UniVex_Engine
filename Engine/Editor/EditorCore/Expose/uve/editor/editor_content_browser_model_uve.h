@@ -50,10 +50,12 @@ private:
 
 /// A named, hand-picked list of files and folders from anywhere in the project. Items are
 /// project-relative paths; an item that is no longer on disk is not shown but is kept, the same
-/// as a pinned path, so a file that has not been scanned yet is not lost.
+/// as a pinned path, so a file that has not been scanned yet is not lost. A shared shelf belongs
+/// to the team and lives in the project (project.uvshelves); the rest are one person's.
 struct ContentShelfUVE final {
     std::string name;
     std::vector<std::filesystem::path> items;
+    bool shared = false;
 };
 
 class ContentShelvesUVE final {
@@ -65,7 +67,11 @@ public:
     [[nodiscard]] const ContentShelfUVE* FindUVE(std::string_view name) const noexcept;
     /// Adds an empty shelf named `baseName`, or "baseName 2", "baseName 3"... when that is taken.
     /// Returns the name used, or an empty string when the limit is reached.
-    std::string CreateUVE(std::string_view baseName);
+    std::string CreateUVE(std::string_view baseName, bool shared = false);
+    /// Moves a shelf between the team's and one person's. False when it does not exist.
+    bool SetSharedUVE(std::string_view name, bool shared);
+    /// Removes every shared (or every personal) shelf, leaving the other kind alone.
+    void RemoveAllUVE(bool shared);
     /// Refuses an empty name, a name another shelf has, or a shelf that does not exist.
     bool RenameUVE(std::string_view from, std::string_view to);
     bool RemoveUVE(std::string_view name);
@@ -82,6 +88,14 @@ private:
 
     std::vector<ContentShelfUVE> m_shelves;
 };
+
+/// The team's shelves as the text of project.uvshelves (JSON); personal shelves are left out.
+[[nodiscard]] std::string WriteSharedShelvesTextUVE(const ContentShelvesUVE& shelves);
+/// Replaces the shared shelves in `shelves` with those in `text`. The file comes from someone
+/// else, so an item that is absolute or climbs out with ".." is skipped, and a shelf whose name
+/// a personal shelf already has keeps it while the personal one is renamed. False, with `error`
+/// set and `shelves` untouched, when the text is not a shelves file.
+bool ReadSharedShelvesTextUVE(std::string_view text, ContentShelvesUVE& shelves, std::string& error);
 
 /// True when `path` is strictly inside `directory`, at any depth. Every path is inside the
 /// content root (an empty `directory`) except the root itself.

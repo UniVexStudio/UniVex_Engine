@@ -546,8 +546,8 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
   arrows list the folders inside), a sidebar with Pinned, the project's folder tree (with its own
   folder search) and Shelves (hand-picked groups of files, saved per user), a type filter, a search
   that looks through every folder below, and an item count
-- [ ] Content Browser: shelves shared with the team (stored in the project, not per user), and
-  dragging files onto a shelf
+- [x] Content Browser: team shelves saved in the project (project.uvshelves, reloaded when it
+  changes on disk) beside personal ones, and dragging files and folders onto a shelf
 - [x] A Scripting workspace: a UVScript text editor that checks the script against its node as
   you type
 - [x] A developer console / bridge for programmatic/scripted control of the editor

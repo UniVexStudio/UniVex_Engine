@@ -171,5 +171,76 @@ TEST(ContentBrowserModelUVETest, ShelvesAreBounded) {
     EXPECT_FALSE(shelves.AddItemUVE("S", "one-too-many"));
 }
 
+TEST(ContentBrowserModelUVETest, TeamAndPersonalShelvesAreKeptApart) {
+    ContentShelvesUVE shelves;
+    ASSERT_EQ(shelves.CreateUVE("Props", true), "Props");
+    ASSERT_EQ(shelves.CreateUVE("Mine"), "Mine");
+    EXPECT_TRUE(shelves.FindUVE("Props")->shared);
+    EXPECT_FALSE(shelves.FindUVE("Mine")->shared);
+    EXPECT_TRUE(shelves.SetSharedUVE("Mine", true));
+    EXPECT_FALSE(shelves.SetSharedUVE("Missing", true));
+    ASSERT_TRUE(shelves.SetSharedUVE("Mine", false));
+    shelves.RemoveAllUVE(true);
+    ASSERT_EQ(shelves.GetAllUVE().size(), 1U);
+    EXPECT_EQ(shelves.GetAllUVE()[0].name, "Mine");
+}
+
+TEST(ContentBrowserModelUVETest, TheTeamFileHoldsOnlyTeamShelvesAndReadsBack) {
+    ContentShelvesUVE written;
+    ASSERT_EQ(written.CreateUVE("Props", true), "Props");
+    ASSERT_TRUE(written.AddItemUVE("Props", "Sea/rock.uvmodel"));
+    ASSERT_TRUE(written.AddItemUVE("Props", "Sea/Models"));
+    ASSERT_EQ(written.CreateUVE("Mine"), "Mine");
+    const std::string text = WriteSharedShelvesTextUVE(written);
+    EXPECT_EQ(text.find("Mine"), std::string::npos);
+
+    ContentShelvesUVE read;
+    ASSERT_EQ(read.CreateUVE("Scratch"), "Scratch"); // a personal shelf already there stays
+    std::string error;
+    ASSERT_TRUE(ReadSharedShelvesTextUVE(text, read, error)) << error;
+    ASSERT_NE(read.FindUVE("Props"), nullptr);
+    EXPECT_TRUE(read.FindUVE("Props")->shared);
+    EXPECT_EQ(read.FindUVE("Props")->items, (std::vector<std::filesystem::path>{"Sea/rock.uvmodel", "Sea/Models"}));
+    ASSERT_NE(read.FindUVE("Scratch"), nullptr);
+    EXPECT_FALSE(read.FindUVE("Scratch")->shared);
+    EXPECT_EQ(read.GetAllUVE().size(), 2U);
+}
+
+TEST(ContentBrowserModelUVETest, ATeamShelfWinsANameAndThePersonalOneIsRenamed) {
+    ContentShelvesUVE shelves;
+    ASSERT_EQ(shelves.CreateUVE("Props"), "Props");
+    ASSERT_TRUE(shelves.AddItemUVE("Props", "mine.uvmodel"));
+    std::string error;
+    ASSERT_TRUE(ReadSharedShelvesTextUVE(R"({"version":1,"shelves":[{"name":"Props","items":["team.uvmodel"]}]})",
+                                         shelves, error));
+    ASSERT_NE(shelves.FindUVE("Props"), nullptr);
+    EXPECT_TRUE(shelves.FindUVE("Props")->shared);
+    EXPECT_TRUE(shelves.ContainsUVE("Props", "team.uvmodel"));
+    ASSERT_NE(shelves.FindUVE("Props 2"), nullptr);
+    EXPECT_FALSE(shelves.FindUVE("Props 2")->shared);
+    EXPECT_TRUE(shelves.ContainsUVE("Props 2", "mine.uvmodel"));
+}
+
+TEST(ContentBrowserModelUVETest, TheTeamFileIsReadWarily) {
+    ContentShelvesUVE shelves;
+    ASSERT_EQ(shelves.CreateUVE("Mine"), "Mine");
+    std::string error;
+    EXPECT_FALSE(ReadSharedShelvesTextUVE("not json", shelves, error));
+    EXPECT_FALSE(error.empty());
+    EXPECT_FALSE(ReadSharedShelvesTextUVE(R"({"version":2,"shelves":[]})", shelves, error));
+    EXPECT_FALSE(ReadSharedShelvesTextUVE(R"({"version":1})", shelves, error));
+    ASSERT_EQ(shelves.GetAllUVE().size(), 1U) << "a refused file leaves the shelves as they were";
+
+    // Paths that leave the content folder are skipped; the rest of the file still loads.
+    ASSERT_TRUE(ReadSharedShelvesTextUVE(
+        R"({"version":1,"shelves":[{"name":"S","items":["../../etc/passwd","/abs/x","a/../../b","ok/file.uvtex",7,""]},)"
+        R"({"name":"S","items":["dupe"]},{"items":["nameless"]}]})",
+        shelves, error))
+        << error;
+    ASSERT_NE(shelves.FindUVE("S"), nullptr);
+    EXPECT_EQ(shelves.FindUVE("S")->items, (std::vector<std::filesystem::path>{"ok/file.uvtex"}));
+    EXPECT_EQ(shelves.GetAllUVE().size(), 2U); // S and Mine; the repeated S and the nameless one are dropped
+}
+
 } // namespace
 } // namespace UVE::Editor
