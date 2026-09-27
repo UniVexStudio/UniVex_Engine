@@ -542,6 +542,12 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
   contextual component list (only offers components relevant to what an entity already is)
 - [x] A merged Content Browser (file tree + thumbnail grid) with real thumbnails, search,
   and favorites
+- [x] Content Browser layout: one toolbar (Add, Import, Save All, back/forward, a path whose
+  arrows list the folders inside), a sidebar with Pinned, the project's folder tree (with its own
+  folder search) and Shelves (hand-picked groups of files, saved per user), a type filter, a search
+  that looks through every folder below, and an item count
+- [ ] Content Browser: shelves shared with the team (stored in the project, not per user), and
+  dragging files onto a shelf
 - [x] A Scripting workspace: a UVScript text editor that checks the script against its node as
   you type
 - [x] A developer console / bridge for programmatic/scripted control of the editor

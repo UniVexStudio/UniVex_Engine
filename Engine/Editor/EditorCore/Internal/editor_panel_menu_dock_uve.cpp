@@ -219,6 +219,7 @@ void EditorUVE::DrawMenuBarUVE() {
         if (ImGui::BeginMenu("Menu")) {
             if (ImGui::BeginMenu(kMenuLabelFileUVE)) {
                 DrawCommandMenuItemUVE("file.saveScene");
+                DrawCommandMenuItemUVE("file.saveAll");
                 DrawCommandMenuItemUVE("file.loadScene");
                 ImGui::Separator();
                 // The viewport's X/Y/Z hues, edited here rather than in a viewport-anchored popup:
