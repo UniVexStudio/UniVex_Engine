@@ -221,7 +221,7 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
     entityManager.AddComponentUVE<AnimatableBody3DNodeComponentUVE>(
         source, AnimatableBody3DNodeComponentUVE{Math::Vector3UVE{1.0F, 0.0F, 0.0F}, 0.75F, true});
     NavigationRegion3DNodeComponentUVE navigationRegion;
-    navigationRegion.navigationMeshAssetPath = "navigation/courtyard.uvenav";
+    navigationRegion.navigationMeshAssetPath = "navigation/courtyard.uvnav";
     entityManager.AddComponentUVE<NavigationRegion3DNodeComponentUVE>(source, navigationRegion);
     NavigationAgent3DNodeComponentUVE navigationAgent;
     navigationAgent.targetPosition = Math::Vector3UVE{8.0F, 0.0F, -4.0F};
@@ -267,7 +267,7 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
     spawn.spawnTag = "player_start";
     entityManager.AddComponentUVE<SpawnPoint3DNodeComponentUVE>(source, spawn);
     LevelStreamer3DNodeComponentUVE streamer;
-    streamer.levelPath = "levels/courtyard.uvescene";
+    streamer.levelPath = "levels/courtyard.uvscene";
     streamer.enabled = true;
     entityManager.AddComponentUVE<LevelStreamer3DNodeComponentUVE>(source, streamer);
     entityManager.AddComponentUVE<WorldPartition3DNodeComponentUVE>(source, WorldPartition3DNodeComponentUVE{});
@@ -337,7 +337,7 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
     EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<RayCast3DNodeComponentUVE>(restored).length, 42.0F);
     EXPECT_EQ(entityManager.GetComponentUVE<RayCast3DNodeComponentUVE>(restored).exclusions[0], 7U);
     EXPECT_EQ(entityManager.GetComponentUVE<NavigationRegion3DNodeComponentUVE>(restored).navigationMeshAssetPath,
-              "navigation/courtyard.uvenav");
+              "navigation/courtyard.uvnav");
     EXPECT_EQ(entityManager.GetComponentUVE<Skeleton3DNodeComponentUVE>(restored).bones.size(), 1U);
     EXPECT_EQ(entityManager.GetComponentUVE<Hitbox3DNodeComponentUVE>(restored).damageChannel, "melee");
     EXPECT_EQ(entityManager.GetComponentUVE<InteractionArea3DNodeComponentUVE>(restored).interactionTag, "door");
@@ -368,7 +368,7 @@ TEST_F(SceneSerializerUVETest, SaveUVE_InvalidAuthoredTransformFailsBeforeDestin
     transform.localPosition.x = std::numeric_limits<float>::quiet_NaN();
     entityManager.AddComponentUVE<TransformComponentUVE>(entity, transform);
 
-    const std::filesystem::path path = "uve_scene_serializer_tests_invalid_authored_transform.uvescene";
+    const std::filesystem::path path = "uve_scene_serializer_tests_invalid_authored_transform.uvscene";
     std::filesystem::remove(path);
     EXPECT_FALSE(serializer.SaveUVE(entityManager, {entity}, path, SceneAssetTypeUVE::Scene));
     EXPECT_FALSE(std::filesystem::exists(path));
@@ -719,7 +719,7 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_TwoClipAnimationTreeBecomesABlendGraph
 
 TEST_F(SceneSerializerUVETest, RestoreUVE_LegacyAnimationPlayerFieldsCarryOver) {
     const std::string payloadText =
-        R"({"entities":[{"localId":0,"components":{"AnimationPlayerComponentUVE":{"clipAssetPath":"anims/run.uveclip","playbackSpeed":2.0,"looping":false,"playOnAwake":true,"enabled":false}}}]})";
+        R"({"entities":[{"localId":0,"components":{"AnimationPlayerComponentUVE":{"clipAssetPath":"anims/run.uvclip","playbackSpeed":2.0,"looping":false,"playOnAwake":true,"enabled":false}}}]})";
     const auto* const payloadBytes = reinterpret_cast<const std::byte*>(payloadText.data());
     const SceneSnapshotUVE snapshot{
         Asset::EncodeUveFileEnvelopeUVE(SceneAssetTypeUVE::Scene,
@@ -851,7 +851,7 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AbstractNodeBasesKeepTheirAuth
 TEST_F(SceneSerializerUVETest, RoundTripUVE_RenderInstanceFamilyKeepsEveryField) {
     const EntityUVE source = entityManager.CreateEntityUVE();
     SurfaceInstanceComponentUVE surface{};
-    surface.materialOverridePath = "materials/red.uvemat";
+    surface.materialOverridePath = "materials/red.uvmat";
     surface.transparency = 0.4F;
     surface.castShadow = SurfaceShadowModeUVE::ShadowsOnly;
     surface.visibilityRangeBegin = 2.0F;
@@ -892,7 +892,7 @@ TEST_F(SceneSerializerUVETest, RoundTripUVE_RenderInstanceFamilyKeepsEveryField)
 TEST_F(SceneSerializerUVETest, RestoreUVE_DecalSavedBeforeItsNewFieldsLoadsWithDefaults) {
     const std::string payloadText =
         R"({"entities":[{"localId":0,"components":{"Decal3DNodeComponentUVE":)"
-        R"({"materialAssetPath":"decals/hole.uvemat","size":[2,1,2],"projection":1,"lifetime":5,"enabled":true}}}]})";
+        R"({"materialAssetPath":"decals/hole.uvmat","size":[2,1,2],"projection":1,"lifetime":5,"enabled":true}}}]})";
     const auto* const payloadBytes = reinterpret_cast<const std::byte*>(payloadText.data());
     const SceneSnapshotUVE snapshot{
         Asset::EncodeUveFileEnvelopeUVE(SceneAssetTypeUVE::Scene,
@@ -901,7 +901,7 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_DecalSavedBeforeItsNewFieldsLoadsWithD
     const std::vector<EntityUVE> roots = serializer.RestoreUVE(entityManager, snapshot);
     ASSERT_EQ(roots.size(), 1U);
     Decal3DNodeComponentUVE expected{};
-    expected.materialAssetPath = "decals/hole.uvemat";
+    expected.materialAssetPath = "decals/hole.uvmat";
     expected.size = {2.0F, 1.0F, 2.0F};
     expected.projection = DecalProjectionModeUVE::Cylinder;
     expected.lifetime = 5.0F;
@@ -993,7 +993,7 @@ TEST_F(SceneSerializerUVETest, SaveThenLoad_PrefabInstanceOverrides_RoundTripsDe
         6U};
     entityManager.AddComponentUVE<PrefabInstanceComponentUVE>(entity, component);
 
-    const std::filesystem::path path = "uve_scene_serializer_tests_prefab_overrides.uvescene";
+    const std::filesystem::path path = "uve_scene_serializer_tests_prefab_overrides.uvscene";
     std::filesystem::remove(path);
     ASSERT_TRUE(serializer.SaveUVE(entityManager, {entity}, path, SceneAssetTypeUVE::Scene));
 
@@ -1038,7 +1038,7 @@ TEST_F(SceneSerializerUVETest, SaveThenLoad_SingleEntityWithMultipleComponents_R
         entity, LightComponentUVE{Math::Vector3UVE{0.2F, 0.4F, 0.6F}, 2.5F});
     entityManager.AddComponentUVE<RigidBodyComponentUVE>(entity, RigidBodyComponentUVE{5.0F, true});
 
-    const std::filesystem::path path = "uve_scene_serializer_tests_single.uvescene";
+    const std::filesystem::path path = "uve_scene_serializer_tests_single.uvscene";
     std::filesystem::remove(path);
     ASSERT_TRUE(serializer.SaveUVE(entityManager, {entity}, path, SceneAssetTypeUVE::Scene));
 
@@ -1080,7 +1080,7 @@ TEST_F(SceneSerializerUVETest, SaveThenLoad_CharacterControllerComponentUVE_Roun
     characterController.isOnFloor = true;
     entityManager.AddComponentUVE<CharacterControllerComponentUVE>(entity, characterController);
 
-    const std::filesystem::path path = "uve_scene_serializer_tests_character_controller.uvescene";
+    const std::filesystem::path path = "uve_scene_serializer_tests_character_controller.uvscene";
     std::filesystem::remove(path);
     ASSERT_TRUE(serializer.SaveUVE(entityManager, {entity}, path, SceneAssetTypeUVE::Scene));
 
@@ -1170,7 +1170,7 @@ TEST_F(SceneSerializerUVETest, SaveThenLoad_UIComponentsUVE_RoundTripExactly) {
     button.wasClickedThisFrame = false;
     entityManager.AddComponentUVE<UIButtonComponentUVE>(entity, button);
 
-    const std::filesystem::path path = "uve_scene_serializer_tests_ui_components.uvescene";
+    const std::filesystem::path path = "uve_scene_serializer_tests_ui_components.uvscene";
     std::filesystem::remove(path);
     ASSERT_TRUE(serializer.SaveUVE(entityManager, {entity}, path, SceneAssetTypeUVE::Scene));
 
@@ -1222,7 +1222,7 @@ TEST_F(SceneSerializerUVETest, SaveThenLoad_AnimationPlayerComponentUVE_RoundTri
     animation.currentTimeSeconds = 3.0F;
     entityManager.AddComponentUVE<AnimationPlayerComponentUVE>(entity, animation);
 
-    const std::filesystem::path path = "uve_scene_serializer_tests_animation_player.uvescene";
+    const std::filesystem::path path = "uve_scene_serializer_tests_animation_player.uvscene";
     std::filesystem::remove(path);
     ASSERT_TRUE(serializer.SaveUVE(entityManager, {entity}, path, SceneAssetTypeUVE::Scene));
 
@@ -1247,7 +1247,7 @@ TEST_F(SceneSerializerUVETest, SaveThenLoad_RigidBodyAngularState_RoundTripsExac
     rigidBody.inverseInertia = Math::Vector3UVE{0.2F, 0.3F, 0.4F};
     entityManager.AddComponentUVE<RigidBodyComponentUVE>(entity, rigidBody);
 
-    const std::filesystem::path path = "uve_scene_serializer_tests_rigidbody_angular.uvescene";
+    const std::filesystem::path path = "uve_scene_serializer_tests_rigidbody_angular.uvscene";
     std::filesystem::remove(path);
     ASSERT_TRUE(serializer.SaveUVE(entityManager, {entity}, path, SceneAssetTypeUVE::Scene));
 
@@ -1268,7 +1268,7 @@ TEST_F(SceneSerializerUVETest, LoadUVE_LegacyRigidBodyWithoutAngularFields_UsesZ
     const auto* const payloadBytesPtr = reinterpret_cast<const std::byte*>(payloadText.data());
     const std::vector<std::byte> payloadBytes(payloadBytesPtr, payloadBytesPtr + payloadText.size());
 
-    const std::filesystem::path path = "uve_scene_serializer_tests_rigidbody_angular_legacy.uvescene";
+    const std::filesystem::path path = "uve_scene_serializer_tests_rigidbody_angular_legacy.uvscene";
     std::filesystem::remove(path);
     ASSERT_TRUE(Asset::WriteUveFileUVE(path, SceneAssetTypeUVE::Scene, payloadBytes));
 
@@ -1286,7 +1286,7 @@ TEST_F(SceneSerializerUVETest, SaveThenLoad_NameComponentUVE_RoundTripsExactly) 
     const EntityUVE entity = entityManager.CreateEntityUVE();
     entityManager.AddComponentUVE<NameComponentUVE>(entity, NameComponentUVE{"Gameplay Root"});
 
-    const std::filesystem::path path = "uve_scene_serializer_tests_name.uvescene";
+    const std::filesystem::path path = "uve_scene_serializer_tests_name.uvscene";
     std::filesystem::remove(path);
     ASSERT_TRUE(serializer.SaveUVE(entityManager, {entity}, path, SceneAssetTypeUVE::Scene));
 
@@ -1305,7 +1305,7 @@ TEST_F(SceneSerializerUVETest, LoadUVE_LegacyDocumentWithoutNameComponent_Remain
     const auto* const payloadBytesPtr = reinterpret_cast<const std::byte*>(payloadText.data());
     const std::vector<std::byte> payloadBytes(payloadBytesPtr, payloadBytesPtr + payloadText.size());
 
-    const std::filesystem::path path = "uve_scene_serializer_tests_name_legacy.uvescene";
+    const std::filesystem::path path = "uve_scene_serializer_tests_name_legacy.uvscene";
     std::filesystem::remove(path);
     ASSERT_TRUE(Asset::WriteUveFileUVE(path, SceneAssetTypeUVE::Scene, payloadBytes));
 
@@ -1321,7 +1321,7 @@ TEST_F(SceneSerializerUVETest, SaveThenLoad_AreaComponentUVE_RoundTripsExtentsAn
     const AreaComponentUVE area{Math::Vector3UVE{2.0F, 3.0F, 4.0F}, 4U, 0x0000FFFFU};
     entityManager.AddComponentUVE<AreaComponentUVE>(entity, area);
 
-    const std::filesystem::path path = "uve_scene_serializer_tests_area.uvescene";
+    const std::filesystem::path path = "uve_scene_serializer_tests_area.uvscene";
     std::filesystem::remove(path);
     ASSERT_TRUE(serializer.SaveUVE(entityManager, {entity}, path, SceneAssetTypeUVE::Scene));
 
@@ -1347,7 +1347,7 @@ TEST_F(SceneSerializerUVETest, SaveThenLoad_ColliderComponentUVE_RoundTripsFrict
     collider.density = 2.5F;
     entityManager.AddComponentUVE<ColliderComponentUVE>(entity, collider);
 
-    const std::filesystem::path path = "uve_scene_serializer_tests_collider.uvescene";
+    const std::filesystem::path path = "uve_scene_serializer_tests_collider.uvscene";
     std::filesystem::remove(path);
     ASSERT_TRUE(serializer.SaveUVE(entityManager, {entity}, path, SceneAssetTypeUVE::Scene));
 
@@ -1382,7 +1382,7 @@ TEST_F(SceneSerializerUVETest, SaveThenLoad_ColliderComponentUVE_RoundTripsSpher
     capsule.height = 2.4F;
     entityManager.AddComponentUVE<ColliderComponentUVE>(capsuleEntity, capsule);
 
-    const std::filesystem::path path = "uve_scene_serializer_tests_expanded_collider.uvescene";
+    const std::filesystem::path path = "uve_scene_serializer_tests_expanded_collider.uvscene";
     std::filesystem::remove(path);
     ASSERT_TRUE(serializer.SaveUVE(entityManager, {sphereEntity, capsuleEntity}, path, SceneAssetTypeUVE::Scene));
 
@@ -1424,7 +1424,7 @@ TEST_F(SceneSerializerUVETest, SaveThenLoad_LightComponentUVE_RoundTripsTypeRang
     light.spotAngleDegrees = 30.0F;
     entityManager.AddComponentUVE<LightComponentUVE>(entity, light);
 
-    const std::filesystem::path path = "uve_scene_serializer_tests_light.uvescene";
+    const std::filesystem::path path = "uve_scene_serializer_tests_light.uvscene";
     std::filesystem::remove(path);
     ASSERT_TRUE(serializer.SaveUVE(entityManager, {entity}, path, SceneAssetTypeUVE::Scene));
 
@@ -1453,7 +1453,7 @@ TEST_F(SceneSerializerUVETest, LoadUVE_OldFormatLightComponentUVEMissingNewField
     const auto* const payloadBytesPtr = reinterpret_cast<const std::byte*>(payloadText.data());
     const std::vector<std::byte> payloadBytes(payloadBytesPtr, payloadBytesPtr + payloadText.size());
 
-    const std::filesystem::path path = "uve_scene_serializer_tests_light_old_format.uvescene";
+    const std::filesystem::path path = "uve_scene_serializer_tests_light_old_format.uvscene";
     std::filesystem::remove(path);
     ASSERT_TRUE(Asset::WriteUveFileUVE(path, SceneAssetTypeUVE::Scene, payloadBytes));
 
@@ -1485,7 +1485,7 @@ TEST_F(SceneSerializerUVETest, SaveThenLoad_AudioSourceComponentUVE_RoundTripsAl
     audioSource.playOnAwake = false;
     entityManager.AddComponentUVE<AudioSourceComponentUVE>(entity, audioSource);
 
-    const std::filesystem::path path = "uve_scene_serializer_tests_audio_source.uvescene";
+    const std::filesystem::path path = "uve_scene_serializer_tests_audio_source.uvscene";
     std::filesystem::remove(path);
     ASSERT_TRUE(serializer.SaveUVE(entityManager, {entity}, path, SceneAssetTypeUVE::Scene));
 
@@ -1515,7 +1515,7 @@ TEST_F(SceneSerializerUVETest, SaveThenLoad_AudioSourceComponentUVE_DefaultsRoun
     const EntityUVE entity = entityManager.CreateEntityUVE();
     entityManager.AddComponentUVE<AudioSourceComponentUVE>(entity, AudioSourceComponentUVE{});
 
-    const std::filesystem::path path = "uve_scene_serializer_tests_audio_source_defaults.uvescene";
+    const std::filesystem::path path = "uve_scene_serializer_tests_audio_source_defaults.uvscene";
     std::filesystem::remove(path);
     ASSERT_TRUE(serializer.SaveUVE(entityManager, {entity}, path, SceneAssetTypeUVE::Scene));
 
@@ -1542,7 +1542,7 @@ TEST_F(SceneSerializerUVETest, SaveThenLoad_Hierarchy_RemapsParentCorrectly) {
     const EntityUVE child = entityManager.CreateEntityUVE();
     entityManager.AddComponentUVE<HierarchyComponentUVE>(child, HierarchyComponentUVE{parent});
 
-    const std::filesystem::path path = "uve_scene_serializer_tests_hierarchy.uvescene";
+    const std::filesystem::path path = "uve_scene_serializer_tests_hierarchy.uvscene";
     std::filesystem::remove(path);
     ASSERT_TRUE(serializer.SaveUVE(entityManager, {parent}, path, SceneAssetTypeUVE::Scene));
 
@@ -1569,8 +1569,8 @@ TEST_F(SceneSerializerUVETest, PrefabSerializationRequiresSingleRootBeforeEntity
     const EntityUVE rootB = entityManager.CreateEntityUVE();
     entityManager.AddComponentUVE<MeshComponentUVE>(rootB, MeshComponentUVE{Asset::AssetGuidUVE{303}, Asset::AssetGuidUVE{304}});
 
-    const std::filesystem::path rejectedSavePath = "uve_scene_serializer_tests_multi_root_prefab.uveprefab";
-    const std::filesystem::path malformedPath = "uve_scene_serializer_tests_malformed_multi_root.uveprefab";
+    const std::filesystem::path rejectedSavePath = "uve_scene_serializer_tests_multi_root_prefab.uvprefab";
+    const std::filesystem::path malformedPath = "uve_scene_serializer_tests_malformed_multi_root.uvprefab";
     std::filesystem::remove(rejectedSavePath);
     std::filesystem::remove(malformedPath);
     EXPECT_FALSE(serializer.SaveUVE(entityManager, {rootA, rootB}, rejectedSavePath, SceneAssetTypeUVE::Prefab));
@@ -1595,7 +1595,7 @@ TEST_F(SceneSerializerUVETest, SaveUVE_FailedTemporaryPublicationPreservesExisti
     const EntityUVE root = entityManager.CreateEntityUVE();
     entityManager.AddComponentUVE<MeshComponentUVE>(root, MeshComponentUVE{Asset::AssetGuidUVE{101}, Asset::AssetGuidUVE{202}});
 
-    const std::filesystem::path path = "uve_scene_serializer_tests_atomic_destination.uvescene";
+    const std::filesystem::path path = "uve_scene_serializer_tests_atomic_destination.uvscene";
     const std::filesystem::path temporaryPath = path.string() + ".uve_scene_tmp";
     std::filesystem::remove(path);
     std::filesystem::remove_all(temporaryPath);
@@ -1626,7 +1626,7 @@ TEST_F(SceneSerializerUVETest, SaveThenLoad_MultipleRoots_AllPresentInFileOrder)
     const EntityUVE rootB = entityManager.CreateEntityUVE();
     entityManager.AddComponentUVE<MeshComponentUVE>(rootB, MeshComponentUVE{Asset::AssetGuidUVE{3}, Asset::AssetGuidUVE{4}});
 
-    const std::filesystem::path path = "uve_scene_serializer_tests_multi_root.uvescene";
+    const std::filesystem::path path = "uve_scene_serializer_tests_multi_root.uvscene";
     std::filesystem::remove(path);
     ASSERT_TRUE(serializer.SaveUVE(entityManager, {rootA, rootB}, path, SceneAssetTypeUVE::Scene));
 
@@ -1647,7 +1647,7 @@ TEST_F(SceneSerializerUVETest, SaveUVE_NeverSerializesWorldTransformComponent_An
     sceneGraph.AttachTransformUVE(entityManager, entity, local);
     sceneGraph.UpdateUVE(entityManager);
 
-    const std::filesystem::path path = "uve_scene_serializer_tests_no_world_transform.uvescene";
+    const std::filesystem::path path = "uve_scene_serializer_tests_no_world_transform.uvscene";
     std::filesystem::remove(path);
     ASSERT_TRUE(serializer.SaveUVE(entityManager, {entity}, path, SceneAssetTypeUVE::Scene));
 
@@ -1669,12 +1669,12 @@ TEST_F(SceneSerializerUVETest, SaveUVE_NeverSerializesWorldTransformComponent_An
 
 TEST_F(SceneSerializerUVETest, LoadUVE_MissingFile_ReturnsEmptyVector) {
     const std::vector<EntityUVE> roots =
-        serializer.LoadUVE(entityManager, "uve_scene_serializer_tests_nonexistent.uvescene");
+        serializer.LoadUVE(entityManager, "uve_scene_serializer_tests_nonexistent.uvscene");
     EXPECT_TRUE(roots.empty());
 }
 
 TEST_F(SceneSerializerUVETest, LoadUVE_BadMagic_ReturnsEmptyAndLogsError) {
-    const std::filesystem::path path = "uve_scene_serializer_tests_bad_magic.uvescene";
+    const std::filesystem::path path = "uve_scene_serializer_tests_bad_magic.uvscene";
     {
         std::ofstream file(path, std::ios::binary);
         file << "NOT A VALID UVE FILE AT ALL";
@@ -1717,7 +1717,7 @@ TEST_F(SceneSerializerUVETest, SaveLoadUVE_SceneRootMarkerRoundTrips) {
     entityManager.AddComponentUVE<NameComponentUVE>(child, NameComponentUVE{"Empty"});
     sceneGraph.SetParentUVE(entityManager, child, root);
 
-    const std::filesystem::path path = "uve_scene_serializer_tests_scene_root_marker.uvescene";
+    const std::filesystem::path path = "uve_scene_serializer_tests_scene_root_marker.uvscene";
     std::filesystem::remove(path);
     ASSERT_TRUE(serializer.SaveUVE(entityManager, {root}, path, Asset::AssetKindUVE::Scene));
 
@@ -1766,7 +1766,7 @@ TEST_F(SceneSerializerUVETest, SaveLoadUVE_VisibilityRoundTripsTheAuthoredFlagOn
     entityManager.AddComponentUVE<VisibilityComponentUVE>(
         source, VisibilityComponentUVE{/*visible=*/false, /*visibleInHierarchy=*/false});
 
-    const std::filesystem::path path = "uve_scene_serializer_tests_visibility.uvescene";
+    const std::filesystem::path path = "uve_scene_serializer_tests_visibility.uvscene";
     std::filesystem::remove(path);
     ASSERT_TRUE(serializer.SaveUVE(entityManager, {source}, path, Asset::AssetKindUVE::Scene));
 
@@ -1837,7 +1837,7 @@ TEST_F(SceneSerializerUVETest, SaveLoadUVE_VisibilityParentIsRemappedToTheRestor
     entityManager.AddComponentUVE<VisibilityComponentUVE>(follower, redirect);
     sceneGraph.SetParentUVE(entityManager, follower, root);
 
-    const std::filesystem::path path = "uve_scene_serializer_tests_visibility_parent.uvescene";
+    const std::filesystem::path path = "uve_scene_serializer_tests_visibility_parent.uvscene";
     std::filesystem::remove(path);
     ASSERT_TRUE(serializer.SaveUVE(entityManager, {root}, path, Asset::AssetKindUVE::Scene));
 

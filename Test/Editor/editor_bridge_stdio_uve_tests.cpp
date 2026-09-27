@@ -73,7 +73,7 @@ TEST(EditorBridgeStdioUVETest, ServeUVE_HandshakesAndRoutesExistingBridgeDispatc
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_bridge_stdio_roundtrip.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_bridge_stdio_roundtrip.uvscene");
         editor.InitUVE();
         Scripting::ScriptDebuggerUVE debugger;
         Scripting::ScriptBytecodeProgramUVE program;
@@ -265,7 +265,7 @@ TEST(EditorBridgeStdioUVETest, ServeUVE_RoutesRegistryBackedDataTablePreviewSele
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_bridge_stdio_data_table_selection.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_bridge_stdio_data_table_selection.uvscene");
         editor.InitUVE();
         Asset::DataTableRegistryUVE registry;
         Asset::DataTableUVE table("weapons");
@@ -314,7 +314,7 @@ TEST(EditorBridgeStdioUVETest, ServeUVE_ReportsIncompatibleHelloWithoutMutatingE
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_bridge_stdio_incompatible.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_bridge_stdio_incompatible.uvscene");
         editor.InitUVE();
         EditorBridgeUVE bridge(editor);
         EditorBridgeStdioServerUVE server(bridge);
@@ -347,7 +347,7 @@ TEST(EditorBridgeStdioUVETest, ServeUVE_RejectsMalformedJsonWithoutDispatchingEd
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_bridge_stdio_invalid_json.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_bridge_stdio_invalid_json.uvscene");
         editor.InitUVE();
         EditorBridgeUVE bridge(editor);
         EditorBridgeStdioServerUVE server(bridge);
@@ -383,7 +383,7 @@ TEST(EditorBridgeStdioUVETest, ServeUVE_RejectsZeroLengthFrameBeforeDispatchingE
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_bridge_stdio_invalid_frame.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_bridge_stdio_invalid_frame.uvscene");
         editor.InitUVE();
         EditorBridgeUVE bridge(editor);
         EditorBridgeStdioServerUVE server(bridge);
@@ -414,7 +414,7 @@ TEST(EditorBridgeStdioUVETest, ServeUVE_ClassifiesTruncatedAndOversizedFramesBef
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_bridge_stdio_frame_classification.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_bridge_stdio_frame_classification.uvscene");
         editor.InitUVE();
         EditorBridgeUVE bridge(editor);
 
@@ -462,13 +462,13 @@ TEST(EditorBridgeStdioUVETest, ServeUVE_ClassifiesTruncatedAndOversizedFramesBef
 }
 
 TEST(EditorBridgeStdioUVETest, ServeUVE_SerializesPrefabRevisionSnapshot) {
-    const std::filesystem::path prefabPath = "uve_editor_bridge_stdio_prefab.uveprefab";
+    const std::filesystem::path prefabPath = "uve_editor_bridge_stdio_prefab.uvprefab";
     std::filesystem::remove(prefabPath);
     Core::EngineCoreUVE engine(MakeBridgeStdioTestConfigUVE());
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_bridge_stdio_prefab.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_bridge_stdio_prefab.uvscene");
         editor.InitUVE();
         Core::EngineServicesUVE& services = engine.GetServicesUVE();
         Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();

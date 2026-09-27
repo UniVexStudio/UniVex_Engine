@@ -2708,7 +2708,7 @@ TEST(ScriptComponentRuntimeOwnershipUVETest, ReconcileUVE_AttachesValidatedPathT
 
     const ScriptComponentRuntimeOwnershipResultUVE result =
         ScriptComponentRuntimeOwnershipUVE::ReconcileUVE(
-            Scene::ScriptComponentUVE{"scripts/player.uvescript"}, graph, registry, runtime, {8U, 1U});
+            Scene::ScriptComponentUVE{"scripts/player.uvscript"}, graph, registry, runtime, {8U, 1U});
 
     EXPECT_EQ(result.code, ScriptComponentRuntimeOwnershipCodeUVE::Attached);
     EXPECT_TRUE(result.IsAcceptedUVE());
@@ -2757,7 +2757,7 @@ TEST(ScriptComponentRuntimeOwnershipUVETest, ReconcileUVE_AFreshScriptHoldingOnl
     ScriptRuntimeUVE runtime;
 
     const ScriptComponentRuntimeOwnershipResultUVE result = ScriptComponentRuntimeOwnershipUVE::ReconcileUVE(
-        Scene::ScriptComponentUVE{"scripts/main.uvescript"}, graph, registry, runtime, {4U, 1U});
+        Scene::ScriptComponentUVE{"scripts/main.uvscript"}, graph, registry, runtime, {4U, 1U});
     ASSERT_TRUE(result.IsAcceptedUVE());
     ASSERT_EQ(runtime.GetInstanceCountUVE(), 1U);
 
@@ -2796,13 +2796,13 @@ TEST(ScriptComponentRuntimeOwnershipUVETest, ReconcileUVE_RejectsInvalidPathAndG
 
     const ScriptComponentRuntimeOwnershipResultUVE invalidPath =
         ScriptComponentRuntimeOwnershipUVE::ReconcileUVE(
-            Scene::ScriptComponentUVE{"../outside.uvescript"}, invalidGraph, registry, runtime, entity);
+            Scene::ScriptComponentUVE{"../outside.uvscript"}, invalidGraph, registry, runtime, entity);
     EXPECT_EQ(invalidPath.code, ScriptComponentRuntimeOwnershipCodeUVE::InvalidComponent);
     EXPECT_EQ(runtime.GetInstanceCountUVE(), 0U);
 
     const ScriptComponentRuntimeOwnershipResultUVE rejectedGraph =
         ScriptComponentRuntimeOwnershipUVE::ReconcileUVE(
-            Scene::ScriptComponentUVE{"scripts/player.uvescript"}, invalidGraph, registry, runtime, entity);
+            Scene::ScriptComponentUVE{"scripts/player.uvscript"}, invalidGraph, registry, runtime, entity);
     EXPECT_EQ(rejectedGraph.code, ScriptComponentRuntimeOwnershipCodeUVE::GraphRejected);
     EXPECT_EQ(runtime.GetInstanceCountUVE(), 0U);
 }
@@ -2818,7 +2818,7 @@ TEST(ScriptComponentRuntimeOwnershipUVETest, ReconcileUVE_RejectsReplacementWhil
 
     const ScriptComponentRuntimeOwnershipResultUVE result =
         ScriptComponentRuntimeOwnershipUVE::ReconcileUVE(
-            Scene::ScriptComponentUVE{"scripts/replacement.uvescript"}, graph, registry, runtime, entity);
+            Scene::ScriptComponentUVE{"scripts/replacement.uvscript"}, graph, registry, runtime, entity);
 
     EXPECT_EQ(result.code, ScriptComponentRuntimeOwnershipCodeUVE::DuplicateRuntime);
     EXPECT_EQ(runtime.GetInstanceCountUVE(), 1U);

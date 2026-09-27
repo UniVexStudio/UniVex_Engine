@@ -9,7 +9,7 @@ namespace UVE::Scene {
 /// Whether an entity and its subtree are drawn.
 ///
 /// WHY TWO FIELDS. `visible` is the author's switch - what the eye toggle in the outliner sets,
-/// what a .uvescene stores, the only field anyone writes. `visibleInHierarchy` is the derived
+/// what a .uvscene stores, the only field anyone writes. `visibleInHierarchy` is the derived
 /// answer that includes every ancestor: hiding a parent must hide its children, and a child that
 /// was independently hidden must STAY hidden when its parent is shown again. One flag cannot do
 /// both - overwriting the author's choice to propagate a parent's state loses the child's own

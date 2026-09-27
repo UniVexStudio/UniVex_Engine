@@ -30,13 +30,13 @@ void WriteFixtureFileUVE(const std::filesystem::path& path, std::string_view con
 
 TEST(ConfigManagerUVETest, LoadUVE_NonexistentPath_ReturnsFalseAndDefaultsAreReturned) {
     ConfigManagerUVE config;
-    EXPECT_FALSE(config.LoadUVE("uve_config_tests_nonexistent.uvesettings"));
+    EXPECT_FALSE(config.LoadUVE("uve_config_tests_nonexistent.uvsettings"));
     EXPECT_EQ(config.GetStringUVE("editor.theme", "light"), "light");
     EXPECT_EQ(config.GetIntUVE("window.width", 1280), 1280);
 }
 
 TEST(ConfigManagerUVETest, LoadUVE_ValidFixture_ReadsAllFourScalarTypesAcrossNestedPaths) {
-    const std::filesystem::path fixturePath = "uve_config_tests_valid.uvesettings";
+    const std::filesystem::path fixturePath = "uve_config_tests_valid.uvsettings";
     WriteFixtureFileUVE(fixturePath, R"({
         "version": 1,
         "editor": {
@@ -104,7 +104,7 @@ TEST(ConfigManagerUVETest, SetStringUVE_OnBrandNewNestedPath_CreatesIntermediate
 }
 
 TEST(ConfigManagerUVETest, SaveThenLoad_RoundTripsThroughDisk) {
-    const std::filesystem::path savePath = "uve_config_tests_roundtrip.uvesettings";
+    const std::filesystem::path savePath = "uve_config_tests_roundtrip.uvsettings";
     std::filesystem::remove(savePath);
 
     {
@@ -127,7 +127,7 @@ TEST(ConfigManagerUVETest, SaveThenLoad_RoundTripsThroughDisk) {
 }
 
 TEST(ConfigManagerUVETest, SaveUVE_NoArg_WritesToMostRecentlyLoadedPath) {
-    const std::filesystem::path savePath = "uve_config_tests_save_no_arg.uvesettings";
+    const std::filesystem::path savePath = "uve_config_tests_save_no_arg.uvsettings";
     std::filesystem::remove(savePath);
 
     ConfigManagerUVE config;
@@ -143,7 +143,7 @@ TEST(ConfigManagerUVETest, SaveUVE_NoArg_WritesToMostRecentlyLoadedPath) {
 }
 
 TEST(ConfigManagerUVETest, LoadUVE_MalformedJson_ReturnsFalseAndLogsError) {
-    const std::filesystem::path fixturePath = "uve_config_tests_malformed.uvesettings";
+    const std::filesystem::path fixturePath = "uve_config_tests_malformed.uvsettings";
     WriteFixtureFileUVE(fixturePath, "{ not valid json");
 
     Debug::LoggerUVE logger;
@@ -175,7 +175,7 @@ TEST(ConfigManagerUVETest, LoadUVE_MissingFile_LogsWarning) {
     logger.AddSink(std::move(memorySink));
 
     ConfigManagerUVE config;
-    EXPECT_FALSE(config.LoadUVE("uve_config_tests_still_nonexistent.uvesettings"));
+    EXPECT_FALSE(config.LoadUVE("uve_config_tests_still_nonexistent.uvsettings"));
 
     const std::vector<Debug::LogMessageUVE> messages = memorySinkPtr->GetMessagesUVE();
     const bool foundWarning =

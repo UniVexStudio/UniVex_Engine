@@ -53,11 +53,11 @@ using JsonUVE = nlohmann::json;
 }
 
 [[nodiscard]] bool IsPackagePathUVE(const std::filesystem::path& path) noexcept {
-    return path.extension() == ".uveditor" && !path.filename().empty();
+    return path.extension() == ".uvproject" && !path.filename().empty();
 }
 
 [[nodiscard]] std::optional<EditorProjectPackageUVE> DecodePackageUVE(const JsonUVE& json) {
-    if (!json.is_object() || json.value("format", "") != "uveditor") {
+    if (!json.is_object() || json.value("format", "") != "uvproject") {
         return std::nullopt;
     }
 
@@ -74,14 +74,14 @@ using JsonUVE = nlohmann::json;
     package.contentRoot = json.at("contentRoot").get<std::string>();
     package.assetDatabasePath = json.at("assetDatabasePath").get<std::string>();
     package.settingsPath = json.at("settingsPath").get<std::string>();
-    // value(...) rather than at(...): older .uveditor files predate this field and have no
+    // value(...) rather than at(...): older .uvproject files predate this field and have no
     // "startupScenePath" key at all - they must still load, just with no startup scene configured.
     package.startupScenePath = json.value("startupScenePath", std::string{});
     return package;
 }
 
 [[nodiscard]] JsonUVE EncodePackageUVE(const EditorProjectPackageUVE& package) {
-    return JsonUVE{{"format", "uveditor"},
+    return JsonUVE{{"format", "uvproject"},
                    {"schemaVersion", package.schemaVersion},
                    {"revision", package.revision},
                    {"projectId", package.projectId},
@@ -104,7 +104,7 @@ using JsonUVE = nlohmann::json;
         std::filesystem::create_directories(parent, error);
         if (error) {
             return MakeResultUVE(EditorProjectPackageCodeUVE::WriteFailed,
-                                 "Unable to create the .uveditor parent directory.");
+                                 "Unable to create the .uvproject parent directory.");
         }
     }
 
@@ -113,7 +113,7 @@ using JsonUVE = nlohmann::json;
         std::ofstream output(temporaryPath, std::ios::binary | std::ios::trunc);
         if (!output.is_open()) {
             return MakeResultUVE(EditorProjectPackageCodeUVE::WriteFailed,
-                                 "Unable to open the temporary .uveditor file.");
+                                 "Unable to open the temporary .uvproject file.");
         }
         output << json.dump(2) << '\n';
         output.flush();
@@ -121,7 +121,7 @@ using JsonUVE = nlohmann::json;
             output.close();
             std::filesystem::remove(temporaryPath, error);
             return MakeResultUVE(EditorProjectPackageCodeUVE::WriteFailed,
-                                 "Unable to write the complete temporary .uveditor file.");
+                                 "Unable to write the complete temporary .uvproject file.");
         }
     }
 
@@ -130,9 +130,9 @@ using JsonUVE = nlohmann::json;
     if (error) {
         std::filesystem::remove(temporaryPath, error);
         return MakeResultUVE(EditorProjectPackageCodeUVE::WriteFailed,
-                             "Unable to atomically publish the .uveditor file.");
+                             "Unable to atomically publish the .uvproject file.");
     }
-    return MakeResultUVE(EditorProjectPackageCodeUVE::Applied, "The .uveditor package was published.");
+    return MakeResultUVE(EditorProjectPackageCodeUVE::Applied, "The .uvproject package was published.");
 }
 
 } // namespace
@@ -141,46 +141,56 @@ EditorProjectPackageResultUVE EditorProjectPackageCodecUVE::ValidateUVE(
     const EditorProjectPackageUVE& package) noexcept {
     if (package.schemaVersion != kCurrentEditorProjectSchemaVersionUVE) {
         return MakeResultUVE(EditorProjectPackageCodeUVE::UnsupportedSchema,
-                             "The .uveditor schema version is unsupported.");
+                             "The .uvproject schema version is unsupported.");
     }
     if (package.revision == 0U) {
         return MakeResultUVE(EditorProjectPackageCodeUVE::InvalidPackage,
-                             "The .uveditor revision must be nonzero.");
+                             "The .uvproject revision must be nonzero.");
     }
     if (!IsProjectIdUVE(package.projectId)) {
         return MakeResultUVE(EditorProjectPackageCodeUVE::InvalidPackage,
-                             "The .uveditor project ID is empty or contains unsupported characters.");
+                             "The .uvproject project ID is empty or contains unsupported characters.");
     }
     if (!IsBoundedTextUVE(package.displayName, kMaximumEditorProjectNameBytesUVE, true)) {
         return MakeResultUVE(EditorProjectPackageCodeUVE::InvalidPackage,
-                             "The .uveditor display name is empty or exceeds its bound.");
+                             "The .uvproject display name is empty or exceeds its bound.");
     }
     if (!IsRelativePathUVE(package.contentRoot) || !IsRelativePathUVE(package.assetDatabasePath) ||
         !IsRelativePathUVE(package.settingsPath)) {
         return MakeResultUVE(EditorProjectPackageCodeUVE::InvalidPath,
-                             "The .uveditor paths must be bounded, relative, normalized, and traversal-free.");
+                             "The .uvproject paths must be bounded, relative, normalized, and traversal-free.");
     }
     // startupScenePath is allowed to be empty (no startup scene configured yet), unlike the three
     // paths above which every project always has - but once set, it must be just as safe.
     if (!package.startupScenePath.empty() && !IsRelativePathUVE(package.startupScenePath)) {
         return MakeResultUVE(EditorProjectPackageCodeUVE::InvalidPath,
-                             "The .uveditor startup scene path must be bounded, relative, normalized, and "
+                             "The .uvproject startup scene path must be bounded, relative, normalized, and "
                              "traversal-free.");
     }
-    return MakeResultUVE(EditorProjectPackageCodeUVE::Applied, "The .uveditor package is valid.");
+    return MakeResultUVE(EditorProjectPackageCodeUVE::Applied, "The .uvproject package is valid.");
 }
 
 EditorProjectPackageLoadResultUVE EditorProjectPackageCodecUVE::LoadUVE(
     const std::filesystem::path& packagePath) {
     if (!IsPackagePathUVE(packagePath)) {
         return {MakeResultUVE(EditorProjectPackageCodeUVE::InvalidPath,
-                              "The project package path must use the .uveditor extension."), std::nullopt};
+                              "The project package path must use the .uvproject extension."), std::nullopt};
+    }
+
+    // A project saved before the rename is still "Name.uveditor": take it over under the new name.
+    std::error_code migrateError;
+    if (!std::filesystem::exists(packagePath, migrateError)) {
+        std::filesystem::path legacyPath = packagePath;
+        legacyPath.replace_extension(".uveditor");
+        if (std::filesystem::is_regular_file(legacyPath, migrateError)) {
+            std::filesystem::rename(legacyPath, packagePath, migrateError);
+        }
     }
 
     std::ifstream input(packagePath, std::ios::binary);
     if (!input.is_open()) {
         return {MakeResultUVE(EditorProjectPackageCodeUVE::ReadFailed,
-                              "Unable to open the .uveditor package."), std::nullopt};
+                              "Unable to open the .uvproject package."), std::nullopt};
     }
 
     try {
@@ -188,7 +198,7 @@ EditorProjectPackageLoadResultUVE EditorProjectPackageCodecUVE::LoadUVE(
         const std::optional<EditorProjectPackageUVE> package = DecodePackageUVE(json);
         if (!package.has_value()) {
             return {MakeResultUVE(EditorProjectPackageCodeUVE::ParseFailed,
-                                  "The .uveditor package has an invalid format marker."), std::nullopt};
+                                  "The .uvproject package has an invalid format marker."), std::nullopt};
         }
         const EditorProjectPackageResultUVE validation = ValidateUVE(*package);
         if (!validation.IsAcceptedUVE()) {
@@ -197,7 +207,7 @@ EditorProjectPackageLoadResultUVE EditorProjectPackageCodecUVE::LoadUVE(
         return {validation, package};
     } catch (const std::exception&) {
         return {MakeResultUVE(EditorProjectPackageCodeUVE::ParseFailed,
-                              "The .uveditor package is malformed or missing required fields."), std::nullopt};
+                              "The .uvproject package is malformed or missing required fields."), std::nullopt};
     }
 }
 
@@ -205,7 +215,7 @@ EditorProjectPackageResultUVE EditorProjectPackageCodecUVE::SaveUVE(
     const std::filesystem::path& packagePath, const EditorProjectPackageUVE& package) {
     if (!IsPackagePathUVE(packagePath)) {
         return MakeResultUVE(EditorProjectPackageCodeUVE::InvalidPath,
-                             "The project package path must use the .uveditor extension.");
+                             "The project package path must use the .uvproject extension.");
     }
     const EditorProjectPackageResultUVE validation = ValidateUVE(package);
     if (!validation.IsAcceptedUVE()) {
@@ -223,15 +233,15 @@ EditorProjectPackageResultUVE EditorProjectPackageCodecUVE::ApplyUpdateUVE(
     }
     if (current.package->revision != expectedRevision) {
         return MakeResultUVE(EditorProjectPackageCodeUVE::RevisionConflict,
-                             "The .uveditor update expected a different current revision.");
+                             "The .uvproject update expected a different current revision.");
     }
     if (current.package->projectId != replacement.projectId) {
         return MakeResultUVE(EditorProjectPackageCodeUVE::ProjectIdentityConflict,
-                             "The .uveditor update belongs to a different project.");
+                             "The .uvproject update belongs to a different project.");
     }
     if (replacement.revision <= current.package->revision) {
         return MakeResultUVE(EditorProjectPackageCodeUVE::RevisionConflict,
-                             "The .uveditor replacement revision must be strictly newer.");
+                             "The .uvproject replacement revision must be strictly newer.");
     }
     const EditorProjectPackageResultUVE validation = ValidateUVE(replacement);
     if (!validation.IsAcceptedUVE()) {

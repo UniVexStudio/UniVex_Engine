@@ -1152,15 +1152,15 @@ TEST(EngineServicesUVETest, Accessors_ProveInterfacesAreGenuinelySubstitutable) 
                                                                    services.GetDerivedArtifactCacheUVE()));
     static_cast<void>(services.GetAssetImportQueueUVE().TickUVE());
     static_cast<void>(services.GetSceneSerializerUVE().SaveUVE(
-        services.GetEntityManagerUVE(), {}, "unused.uvescene", Scene::SceneAssetTypeUVE::Scene));
+        services.GetEntityManagerUVE(), {}, "unused.uvscene", Scene::SceneAssetTypeUVE::Scene));
     static_cast<void>(services.GetPrefabSystemUVE().SavePrefabUVE(
         services.GetEntityManagerUVE(), services.GetAssetDatabaseUVE(), Scene::kInvalidEntityUVE,
-        "unused.uveprefab"));
+        "unused.uvprefab"));
     services.GetHotReloadUVE().PollUVE(services.GetAssetManagerUVE(), services.GetAssetDatabaseUVE(), 0.0);
     services.GetAssetManagerUVE().CollectGarbageUVE();
     static_cast<void>(
         services.GetAssetImporterUVE().ImportUVE("unused_source", "unused_dest", services.GetAssetDatabaseUVE()));
-    static_cast<void>(services.GetAssetBundleUVE().PackUVE({}, "unused.uvebundle"));
+    static_cast<void>(services.GetAssetBundleUVE().PackUVE({}, "unused.uvbundle"));
     static_cast<void>(services.GetFileSystemUVE().WriteFileUVE("unused.txt", {}));
     static_cast<void>(services.GetRenderDeviceUVE().CreateBufferUVE(Render::BufferDescUVE{}));
     services.GetShaderManagerUVE().UpdateUVE(0.0);

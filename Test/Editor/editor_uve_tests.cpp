@@ -270,7 +270,7 @@ TEST(EditorUVETest, InitUVE_StartsRunningWithEmptyDocumentRootsAndSupportsHeadle
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_lifecycle.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_lifecycle.uvscene");
         editor.InitUVE();
 
         EXPECT_EQ(editor.GetStateUVE(), EditorStateUVE::Running);
@@ -286,7 +286,7 @@ TEST(EditorUVETest, InitUVE_StartsRunningWithEmptyDocumentRootsAndSupportsHeadle
 }
 
 TEST(EditorUVETest, VisualScriptBranchesAreEditorOnlyAndPersisted) {
-    const std::filesystem::path scenePath = "uve_editor_tests_script_branches.uvescene";
+    const std::filesystem::path scenePath = "uve_editor_tests_script_branches.uvscene";
     const std::filesystem::path scriptPath = scenePath.parent_path() /
                                              (scenePath.stem().string() + ".scripting");
     std::error_code error;
@@ -327,7 +327,7 @@ TEST(EditorUVETest, OpenScriptGraphForEntity_NoScriptComponent_ReturnsFalse) {
     Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_open_script_graph_none.uvescene");
+    EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_open_script_graph_none.uvscene");
     editor.InitUVE();
     Core::EngineServicesUVE& services = engine.GetServicesUVE();
     Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
@@ -346,7 +346,7 @@ TEST(EditorUVETest, OpenScriptGraphForEntity_NoBranchYet_CreatesOneNamedFromAsse
     Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_open_script_graph_create.uvescene");
+    EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_open_script_graph_create.uvscene");
     editor.InitUVE();
     Core::EngineServicesUVE& services = engine.GetServicesUVE();
     Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
@@ -371,7 +371,7 @@ TEST(EditorUVETest, OpenScriptGraphForEntity_EmptyScriptAssetPath_NamesBranchFro
     Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_open_script_graph_empty_path.uvescene");
+    EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_open_script_graph_empty_path.uvscene");
     editor.InitUVE();
     Core::EngineServicesUVE& services = engine.GetServicesUVE();
     Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
@@ -392,7 +392,7 @@ TEST(EditorUVETest, OpenScriptGraphForEntity_NameCollision_DeduplicatesBranchNam
     Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_open_script_graph_collision.uvescene");
+    EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_open_script_graph_collision.uvscene");
     editor.InitUVE();
     Core::EngineServicesUVE& services = engine.GetServicesUVE();
     Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
@@ -416,7 +416,7 @@ TEST(EditorUVETest, OpenScriptGraphForEntity_ExistingOwnedBranch_SelectsItWithou
     Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_open_script_graph_reopen.uvescene");
+    EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_open_script_graph_reopen.uvscene");
     editor.InitUVE();
     Core::EngineServicesUVE& services = engine.GetServicesUVE();
     Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
@@ -447,7 +447,7 @@ TEST(EditorUVETest, InitUVE_DoesNotCreateAutomaticPreviewLighting) {
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_no_preview_light.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_no_preview_light.uvscene");
         editor.InitUVE();
         Core::EngineServicesUVE& services = engine.GetServicesUVE();
         Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
@@ -494,7 +494,7 @@ TEST(EditorUVETest, TwoDCanvasStateUVE_IsEditorOnlyAndValidated) {
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_2d_canvas.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_2d_canvas.uvscene");
         editor.InitUVE();
         const Editor2DCanvasStateUVE initial = editor.Get2DCanvasStateUVE();
         EXPECT_FLOAT_EQ(initial.zoom, 0.36F);
@@ -536,7 +536,7 @@ TEST(EditorUVETest, RenderOverlayUVE_HeadlessWorkspaceCompositionDoesNotMutateEd
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_workspace_layout.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_workspace_layout.uvscene");
         editor.InitUVE();
         Core::EngineServicesUVE& services = engine.GetServicesUVE();
         const Scene::EntityUVE root = services.GetEntityManagerUVE().CreateEntityUVE();
@@ -563,7 +563,7 @@ TEST(EditorUVETest, InspectorDrawerRegistrationUVE_IncludesStableHierarchyDrawer
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_hierarchy_drawer_registration.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_hierarchy_drawer_registration.uvscene");
         // 27, not the original 22: every one of the twenty-two ids below still registers, and
         // five sections were added - Visibility, which never had one, plus the four the common
         // Node section gained (Process, Thread Group, Auto Translate, Metadata). None of those
@@ -624,7 +624,7 @@ TEST(EditorUVETest, WorldEnvironmentComponentUVE_AttachEditUndoRedoThroughEditor
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_world_environment.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_world_environment.uvscene");
         editor.InitUVE();
         Core::EngineServicesUVE& services = engine.GetServicesUVE();
         Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
@@ -636,7 +636,7 @@ TEST(EditorUVETest, WorldEnvironmentComponentUVE_AttachEditUndoRedoThroughEditor
         EXPECT_FALSE(entityManager.HasComponentUVE<Scene::WorldEnvironment3DNodeComponentUVE>(entity));
 
         Scene::WorldEnvironment3DNodeComponentUVE environment;
-        environment.skyAssetPath = "environments/sunset.uvesky";
+        environment.skyAssetPath = "environments/sunset.uvsky";
         environment.ambientColor = Math::Vector3UVE{0.15F, 0.25F, 0.40F};
         environment.ambientEnergy = 1.75F;
         environment.exposure = 1.25F;
@@ -672,7 +672,7 @@ TEST(EditorUVETest, OutlinerContextUVE_UsesFixedSpecializedTagPriority) {
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_outliner_tags.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_outliner_tags.uvscene");
         editor.InitUVE();
         Core::EngineServicesUVE& services = engine.GetServicesUVE();
         Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
@@ -716,7 +716,7 @@ TEST(EditorUVETest, OutlinerContextUVE_AncestryAndEligibleParentsExcludeSelected
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_outliner_hierarchy_context.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_outliner_hierarchy_context.uvscene");
         editor.InitUVE();
         Core::EngineServicesUVE& services = engine.GetServicesUVE();
         Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
@@ -753,9 +753,9 @@ TEST(EditorUVETest, ContentBrowserWorkflowUVE_UsesPrimaryExtensionTagAndIndepend
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_content_browser_tags.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_content_browser_tags.uvscene");
         Asset::ProjectFileEntryUVE registeredMesh;
-        registeredMesh.relativePath = "Characters/Hero.UVEMODEL";
+        registeredMesh.relativePath = "Characters/Hero.UVMODEL";
         registeredMesh.kind = Asset::ProjectFileEntryKindUVE::File;
         registeredMesh.registeredAssetGuid = Asset::AssetGuidUVE{42U};
 
@@ -794,12 +794,12 @@ TEST(EditorUVETest, ContentBrowserWorkflowUVE_ScriptsAudioAndFontsAreTheirOwnTyp
         entry.kind = Asset::ProjectFileEntryKindUVE::File;
         return EditorUVEAccessUVE::GetContentBrowserItemTypeLabelUVE(entry);
     };
-    EXPECT_EQ(labelOf("Scripts/player.uvescript"), "Script");
-    EXPECT_EQ(labelOf("Audio/step.uveaudio"), "Audio");
+    EXPECT_EQ(labelOf("Scripts/player.uvscript"), "Script");
+    EXPECT_EQ(labelOf("Audio/step.uvaudio"), "Audio");
     EXPECT_EQ(labelOf("Audio/Step.WAV"), "Audio");
     EXPECT_EQ(labelOf("Fonts/title.ttf"), "Font");
     EXPECT_EQ(labelOf("Fonts/body.otf"), "Font");
-    EXPECT_EQ(labelOf("Content/Hero.uveentity"), "Entity");
+    EXPECT_EQ(labelOf("Content/Hero.uventity"), "Entity");
     EXPECT_EQ(labelOf("Notes/readme.txt"), "File");
     // FBX is a model source like glTF and OBJ: shown as a mesh and imported behind the scenes.
     EXPECT_EQ(labelOf("Characters/hero.fbx"), "Mesh");
@@ -821,11 +821,11 @@ TEST(EditorUVETest, ContentBrowserWorkflowUVE_PersistsFiltersAndSafelyFallsBackW
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_content_browser_navigation.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_content_browser_navigation.uvscene");
         Asset::ProjectFileSnapshotUVE snapshot;
         snapshot.entries.push_back(
             Asset::ProjectFileEntryUVE{std::filesystem::path{"Scenes"}, Asset::ProjectFileEntryKindUVE::Directory, std::nullopt});
-        snapshot.entries.push_back(Asset::ProjectFileEntryUVE{std::filesystem::path{"Scenes/City.uvescene"},
+        snapshot.entries.push_back(Asset::ProjectFileEntryUVE{std::filesystem::path{"Scenes/City.uvscene"},
                                                                Asset::ProjectFileEntryKindUVE::File, std::nullopt});
 
         EditorUVEAccessUVE::SetAssetFilterUVE(editor, "city");
@@ -869,7 +869,7 @@ TEST(EditorUVETest, ContentBrowserAutoRefreshUVE_RefreshesAfterEngineWatcherSequ
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_content_browser_auto_refresh.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_content_browser_auto_refresh.uvscene");
         editor.InitUVE();
 
         engine.TickFrameUVE();
@@ -916,7 +916,7 @@ TEST(EditorUVETest, TextureThumbnailUVE_GracefullyReturnsZeroForMissingCorruptOr
     ASSERT_TRUE(std::filesystem::create_directories(root));
 
     {
-        std::ofstream corrupt(root / "corrupt.uvetex", std::ios::binary | std::ios::trunc);
+        std::ofstream corrupt(root / "corrupt.uvtex", std::ios::binary | std::ios::trunc);
         ASSERT_TRUE(corrupt.is_open());
         corrupt << "not-a-uve-envelope";
     }
@@ -929,7 +929,7 @@ TEST(EditorUVETest, TextureThumbnailUVE_GracefullyReturnsZeroForMissingCorruptOr
         unsupported.height = 1U;
         unsupported.format = Asset::TextureFormatUVE::RGBA16Float;
         unsupported.pixels.resize(Asset::BytesPerPixelUVE(Asset::TextureFormatUVE::RGBA16Float));
-        ASSERT_TRUE(Asset::SaveTextureAssetUVE(unsupported, root / "unsupported.uvetex"));
+        ASSERT_TRUE(Asset::SaveTextureAssetUVE(unsupported, root / "unsupported.uvtex"));
     }
 
     Core::EngineConfigUVE config = MakeEditorTestConfigUVE();
@@ -939,17 +939,17 @@ TEST(EditorUVETest, TextureThumbnailUVE_GracefullyReturnsZeroForMissingCorruptOr
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_texture_thumbnail.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_texture_thumbnail.uvscene");
         editor.InitUVE();
         engine.TickFrameUVE();
         editor.TickUVE();
 
-        EXPECT_EQ(EditorUVEAccessUVE::GetTextureThumbnailUVE(editor, "missing.uvetex"), 0U);
-        EXPECT_EQ(EditorUVEAccessUVE::GetTextureThumbnailUVE(editor, "corrupt.uvetex"), 0U);
-        EXPECT_EQ(EditorUVEAccessUVE::GetTextureThumbnailUVE(editor, "unsupported.uvetex"), 0U);
+        EXPECT_EQ(EditorUVEAccessUVE::GetTextureThumbnailUVE(editor, "missing.uvtex"), 0U);
+        EXPECT_EQ(EditorUVEAccessUVE::GetTextureThumbnailUVE(editor, "corrupt.uvtex"), 0U);
+        EXPECT_EQ(EditorUVEAccessUVE::GetTextureThumbnailUVE(editor, "unsupported.uvtex"), 0U);
         // All three attempts are cached (as failures) rather than retried every call.
         EXPECT_EQ(EditorUVEAccessUVE::GetTextureThumbnailCacheSizeUVE(editor), 3U);
-        EXPECT_EQ(EditorUVEAccessUVE::GetTextureThumbnailUVE(editor, "missing.uvetex"), 0U);
+        EXPECT_EQ(EditorUVEAccessUVE::GetTextureThumbnailUVE(editor, "missing.uvtex"), 0U);
         EXPECT_EQ(EditorUVEAccessUVE::GetTextureThumbnailCacheSizeUVE(editor), 3U);
 
         editor.ShutdownUVE();
@@ -965,7 +965,7 @@ TEST(EditorUVETest, MeshThumbnailUVE_GracefullyReturnsZeroForMissingCorruptOrEmp
     ASSERT_TRUE(std::filesystem::create_directories(root));
 
     {
-        std::ofstream corrupt(root / "corrupt.uvemodel", std::ios::binary | std::ios::trunc);
+        std::ofstream corrupt(root / "corrupt.uvmodel", std::ios::binary | std::ios::trunc);
         ASSERT_TRUE(corrupt.is_open());
         corrupt << "not-a-uve-envelope";
     }
@@ -974,7 +974,7 @@ TEST(EditorUVETest, MeshThumbnailUVE_GracefullyReturnsZeroForMissingCorruptOrEmp
         // RenderThumbnailUVE has nothing to draw and must decline rather than issuing an empty
         // draw call.
         const Asset::MeshAssetUVE empty;
-        ASSERT_TRUE(Asset::SaveMeshAssetUVE(empty, root / "empty.uvemodel"));
+        ASSERT_TRUE(Asset::SaveMeshAssetUVE(empty, root / "empty.uvmodel"));
     }
 
     Core::EngineConfigUVE config = MakeEditorTestConfigUVE();
@@ -984,17 +984,17 @@ TEST(EditorUVETest, MeshThumbnailUVE_GracefullyReturnsZeroForMissingCorruptOrEmp
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_mesh_thumbnail.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_mesh_thumbnail.uvscene");
         editor.InitUVE();
         engine.TickFrameUVE();
         editor.TickUVE();
 
-        EXPECT_EQ(EditorUVEAccessUVE::GetMeshThumbnailUVE(editor, "missing.uvemodel"), 0U);
-        EXPECT_EQ(EditorUVEAccessUVE::GetMeshThumbnailUVE(editor, "corrupt.uvemodel"), 0U);
-        EXPECT_EQ(EditorUVEAccessUVE::GetMeshThumbnailUVE(editor, "empty.uvemodel"), 0U);
+        EXPECT_EQ(EditorUVEAccessUVE::GetMeshThumbnailUVE(editor, "missing.uvmodel"), 0U);
+        EXPECT_EQ(EditorUVEAccessUVE::GetMeshThumbnailUVE(editor, "corrupt.uvmodel"), 0U);
+        EXPECT_EQ(EditorUVEAccessUVE::GetMeshThumbnailUVE(editor, "empty.uvmodel"), 0U);
         // All three attempts are cached (as failures) rather than retried every call.
         EXPECT_EQ(EditorUVEAccessUVE::GetMeshThumbnailCacheSizeUVE(editor), 3U);
-        EXPECT_EQ(EditorUVEAccessUVE::GetMeshThumbnailUVE(editor, "missing.uvemodel"), 0U);
+        EXPECT_EQ(EditorUVEAccessUVE::GetMeshThumbnailUVE(editor, "missing.uvmodel"), 0U);
         EXPECT_EQ(EditorUVEAccessUVE::GetMeshThumbnailCacheSizeUVE(editor), 3U);
 
         editor.ShutdownUVE();
@@ -1023,7 +1023,7 @@ TEST(EditorUVETest, SessionSettingsUVE_MigratesWithoutHiddenWriteAndPreservesDoc
         settings.SetDoubleUVE("editor.viewport.snap.rotateStepDegrees", 45.0);
         settings.SetDoubleUVE("editor.viewport.snap.scaleStep", 0.25);
 
-        EditorUVE editor(services, "uve_editor_tests_session_settings.uvescene");
+        EditorUVE editor(services, "uve_editor_tests_session_settings.uvscene");
         editor.InitUVE();
         EXPECT_FALSE(EditorUVEAccessUVE::IsScenePanelVisibleUVE(editor));
         EXPECT_FALSE(EditorUVEAccessUVE::IsInspectorPanelVisibleUVE(editor));
@@ -1061,7 +1061,7 @@ TEST(EditorUVETest, EditorSettingsUVE_DescriptorDefaultsMatchTheEditorsOwnDefaul
     ASSERT_TRUE(engine.Load());
     {
         // Not initialised, so nothing has been loaded: every value is the editor's in-class default.
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_setting_defaults.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_setting_defaults.uvscene");
         const Config::SettingsRegistryUVE& registry = editor.GetSettingsRegistryUVE();
         // The declared preferences, and a primary and alternate shortcut for every command.
         ASSERT_EQ(registry.GetCountUVE(), 36U + (2U * editor.GetEditorCommandsUVE().size()));
@@ -1079,7 +1079,7 @@ TEST(EditorUVETest, EditorSettingsUVE_SetAppliesAtOnceAndRefusesWhatItsDescripto
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_setting_set.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_setting_set.uvscene");
         editor.InitUVE();
         namespace Id = EditorSettingIdUVE;
         ASSERT_TRUE(editor.SetEditorSettingUVE(Id::kGridOpacityUVE, 0.5));
@@ -1114,7 +1114,7 @@ TEST(EditorUVETest, ProjectSettingsUVE_ChangesAreSavedAndTheNextSessionRunsWithT
         Core::EngineCoreUVE engine(config);
         engine.Init();
         ASSERT_TRUE(engine.Load());
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_project_settings.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_project_settings.uvscene");
         editor.InitUVE();
         Config::SettingsDocumentUVE& project = engine.GetServicesUVE().GetProjectSettingsUVE();
         ASSERT_TRUE(project.SetValueUVE(Core::EngineProjectSettingIdUVE::kPhysicsTicksPerSecondUVE, 120.0));
@@ -1143,7 +1143,7 @@ TEST(EditorUVETest, NewNodeDefaultsUVE_ParentAndPlacementFollowThePreferences) {
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_new_node_defaults.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_new_node_defaults.uvscene");
         editor.InitUVE();
         Scene::IEntityManagerUVE& entities = engine.GetServicesUVE().GetEntityManagerUVE();
         Scene::ISceneGraphUVE& graph = engine.GetServicesUVE().GetSceneGraphUVE();
@@ -1205,7 +1205,7 @@ TEST(EditorUVETest, PlayModePreferencesUVE_PauseSaveAndStayInTheTab) {
     Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    const std::filesystem::path scenePath = "uve_editor_tests_play_prefs.uvescene";
+    const std::filesystem::path scenePath = "uve_editor_tests_play_prefs.uvscene";
     std::filesystem::remove(scenePath);
     {
         EditorUVE editor(engine.GetServicesUVE(), scenePath, 100U, &engine);
@@ -1241,7 +1241,7 @@ TEST(EditorUVETest, NodeTypesUVE_EveryNodeIsTypedAndKeepsItThroughDuplicateUndoA
     Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    const std::filesystem::path scenePath = "uve_editor_tests_node_types.uvescene";
+    const std::filesystem::path scenePath = "uve_editor_tests_node_types.uvscene";
     std::filesystem::remove(scenePath);
     {
         EditorUVE editor(engine.GetServicesUVE(), scenePath);
@@ -1300,7 +1300,7 @@ TEST(EditorUVETest, SiblingOrderUVE_MoveDuplicateAndDeleteKeepPlacesThroughUndo)
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_sibling_order.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_sibling_order.uvscene");
         editor.InitUVE();
         Core::EngineServicesUVE& services = engine.GetServicesUVE();
         Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
@@ -1365,7 +1365,7 @@ TEST(EditorUVETest, HierarchyPreferencesUVE_ApplyRefuseWhatIsOutOfRangeAndPersis
     engine.Init();
     ASSERT_TRUE(engine.Load());
     namespace Id = EditorSettingIdUVE;
-    const std::string_view scenePath = "uve_editor_tests_hierarchy_prefs.uvescene";
+    const std::string_view scenePath = "uve_editor_tests_hierarchy_prefs.uvscene";
     const auto expectChosen = [](const HierarchyViewSettingsUVE& view) {
         EXPECT_FALSE(view.revealSelection);
         EXPECT_FALSE(view.showTypeName);
@@ -1418,7 +1418,7 @@ TEST(EditorUVETest, EditorCommandsUVE_RunOnlyWhenAvailableAndKeepRebindsAcrossSe
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_commands.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_commands.uvscene");
         editor.InitUVE();
         const std::vector<EditorCommandUVE>& commands = editor.GetEditorCommandsUVE();
         // Ids are unique, and every default shortcut is one only its command has.
@@ -1454,7 +1454,7 @@ TEST(EditorUVETest, EditorCommandsUVE_RunOnlyWhenAvailableAndKeepRebindsAcrossSe
         editor.ShutdownUVE();
     }
     {
-        EditorUVE reloaded(engine.GetServicesUVE(), "uve_editor_tests_commands_reload.uvescene");
+        EditorUVE reloaded(engine.GetServicesUVE(), "uve_editor_tests_commands_reload.uvscene");
         reloaded.InitUVE();
         const auto find = [&reloaded](const std::string_view id) {
             const auto& commands = reloaded.GetEditorCommandsUVE();
@@ -1468,7 +1468,7 @@ TEST(EditorUVETest, EditorCommandsUVE_RunOnlyWhenAvailableAndKeepRebindsAcrossSe
     // A shortcut the file garbled falls back to its default.
     engine.GetServicesUVE().GetConfigManagerUVE().SetStringUVE("editor.shortcuts.edit.undo.primary", "Ctrl+Nope");
     {
-        EditorUVE corrupt(engine.GetServicesUVE(), "uve_editor_tests_commands_corrupt.uvescene");
+        EditorUVE corrupt(engine.GetServicesUVE(), "uve_editor_tests_commands_corrupt.uvscene");
         corrupt.InitUVE();
         const auto& commands = corrupt.GetEditorCommandsUVE();
         const auto undo = std::find_if(commands.begin(), commands.end(), [](const auto& c) { return c.id == "edit.undo"; });
@@ -1490,7 +1490,7 @@ TEST(EditorUVETest, SessionSettingsUVE_NeverRestoresTheGameWorkspace) {
     // Leaving the editor in Game keeps the last workspace a session can reopen into.
     settings.SetIntUVE("editor.workspace.active", 2);
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_workspace_game.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_workspace_game.uvscene");
         editor.InitUVE();
         EXPECT_TRUE(EditorUVEAccessUVE::IsScriptingWorkspaceActiveUVE(editor));
         EditorUVEAccessUVE::ActivateGameWorkspaceUVE(editor);
@@ -1501,7 +1501,7 @@ TEST(EditorUVETest, SessionSettingsUVE_NeverRestoresTheGameWorkspace) {
     // A file that names Game anyway opens in Library.
     settings.SetIntUVE("editor.workspace.active", 5);
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_workspace_game_file.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_workspace_game_file.uvscene");
         editor.InitUVE();
         EXPECT_TRUE(EditorUVEAccessUVE::IsLibraryWorkspaceActiveUVE(editor));
         editor.ShutdownUVE();
@@ -1515,7 +1515,7 @@ TEST(EditorUVETest, ViewportViewUVE_NamedViewsGoOrthographicAutomaticallyUntilOr
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_viewport_views.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_viewport_views.uvscene");
         editor.InitUVE();
         using View = EditorUVE::ViewportViewUVE;
         EXPECT_EQ(editor.GetViewportViewUVE(), View::User);
@@ -1572,7 +1572,7 @@ TEST(EditorUVETest, InspectorFoldsUVE_RememberedAcrossSessionReloadAndBounded) {
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_inspector_folds.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_inspector_folds.uvscene");
         editor.InitUVE();
         // An unknown key answers the caller's default, open or closed.
         EXPECT_TRUE(editor.IsInspectorFoldOpenUVE("section:transform", true));
@@ -1588,7 +1588,7 @@ TEST(EditorUVETest, InspectorFoldsUVE_RememberedAcrossSessionReloadAndBounded) {
         editor.ShutdownUVE();
     }
     {
-        EditorUVE reloaded(engine.GetServicesUVE(), "uve_editor_tests_inspector_folds_reload.uvescene");
+        EditorUVE reloaded(engine.GetServicesUVE(), "uve_editor_tests_inspector_folds_reload.uvscene");
         reloaded.InitUVE();
         EXPECT_FALSE(reloaded.IsInspectorFoldOpenUVE("section:transform", true));
         EXPECT_TRUE(reloaded.IsInspectorFoldOpenUVE("group:light/Shadow", false));
@@ -1615,7 +1615,7 @@ TEST(EditorUVETest, ViewportGridUVE_RefusesBadOpacityAndPersistsAcrossSessionRel
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_grid_prefs.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_grid_prefs.uvscene");
         editor.InitUVE();
         EXPECT_TRUE(editor.IsViewportGridVisibleUVE());
         EXPECT_FLOAT_EQ(editor.GetViewportGridOpacityUVE(), 1.0F);
@@ -1632,7 +1632,7 @@ TEST(EditorUVETest, ViewportGridUVE_RefusesBadOpacityAndPersistsAcrossSessionRel
         editor.ShutdownUVE();
     }
     {
-        EditorUVE reloaded(engine.GetServicesUVE(), "uve_editor_tests_grid_prefs_reload.uvescene");
+        EditorUVE reloaded(engine.GetServicesUVE(), "uve_editor_tests_grid_prefs_reload.uvscene");
         reloaded.InitUVE();
         EXPECT_FALSE(reloaded.IsViewportGridVisibleUVE());
         EXPECT_FLOAT_EQ(reloaded.GetViewportGridOpacityUVE(), 0.35F);
@@ -1642,7 +1642,7 @@ TEST(EditorUVETest, ViewportGridUVE_RefusesBadOpacityAndPersistsAcrossSessionRel
     // A corrupt stored opacity falls back to its default alone; the stored visibility survives it.
     engine.GetServicesUVE().GetConfigManagerUVE().SetDoubleUVE("editor.viewport.grid.opacity", 7.0);
     {
-        EditorUVE corrupt(engine.GetServicesUVE(), "uve_editor_tests_grid_prefs_corrupt.uvescene");
+        EditorUVE corrupt(engine.GetServicesUVE(), "uve_editor_tests_grid_prefs_corrupt.uvscene");
         corrupt.InitUVE();
         EXPECT_FALSE(corrupt.IsViewportGridVisibleUVE());
         EXPECT_FLOAT_EQ(corrupt.GetViewportGridOpacityUVE(), 1.0F);
@@ -1661,7 +1661,7 @@ TEST(EditorUVETest, ViewportGridCellSizeUVE_RefusesBadSizesAndPersistsAcrossSess
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_grid_cell.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_grid_cell.uvscene");
         editor.InitUVE();
         EXPECT_FLOAT_EQ(editor.GetViewportGridCellSizeUVE(), 1.0F);
 
@@ -1681,7 +1681,7 @@ TEST(EditorUVETest, ViewportGridCellSizeUVE_RefusesBadSizesAndPersistsAcrossSess
         editor.ShutdownUVE();
     }
     {
-        EditorUVE reloaded(engine.GetServicesUVE(), "uve_editor_tests_grid_cell_reload.uvescene");
+        EditorUVE reloaded(engine.GetServicesUVE(), "uve_editor_tests_grid_cell_reload.uvscene");
         reloaded.InitUVE();
         EXPECT_FLOAT_EQ(reloaded.GetViewportGridCellSizeUVE(), 0.25F);
         reloaded.ShutdownUVE();
@@ -1690,7 +1690,7 @@ TEST(EditorUVETest, ViewportGridCellSizeUVE_RefusesBadSizesAndPersistsAcrossSess
     // A corrupt stored size falls back to the 1 m default.
     engine.GetServicesUVE().GetConfigManagerUVE().SetDoubleUVE("editor.viewport.grid.cellSize", -3.0);
     {
-        EditorUVE corrupt(engine.GetServicesUVE(), "uve_editor_tests_grid_cell_corrupt.uvescene");
+        EditorUVE corrupt(engine.GetServicesUVE(), "uve_editor_tests_grid_cell_corrupt.uvscene");
         corrupt.InitUVE();
         EXPECT_FLOAT_EQ(corrupt.GetViewportGridCellSizeUVE(), 1.0F);
         corrupt.ShutdownUVE();
@@ -1708,7 +1708,7 @@ TEST(EditorUVETest, ViewportSelectionOutlineUVE_RefusesBadValuesAndPersistsAcros
     ASSERT_TRUE(engine.Load());
     using Color = EditorUVE::ViewportAxisColorUVE;
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_outline_prefs.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_outline_prefs.uvscene");
         editor.InitUVE();
         EXPECT_TRUE(editor.IsViewportSelectionOutlineVisibleUVE());
         EXPECT_FLOAT_EQ(editor.GetViewportSelectionOutlineThicknessUVE(), 2.0F);
@@ -1726,7 +1726,7 @@ TEST(EditorUVETest, ViewportSelectionOutlineUVE_RefusesBadValuesAndPersistsAcros
         editor.ShutdownUVE();
     }
     {
-        EditorUVE reloaded(engine.GetServicesUVE(), "uve_editor_tests_outline_prefs_reload.uvescene");
+        EditorUVE reloaded(engine.GetServicesUVE(), "uve_editor_tests_outline_prefs_reload.uvscene");
         reloaded.InitUVE();
         EXPECT_FALSE(reloaded.IsViewportSelectionOutlineVisibleUVE());
         EXPECT_FLOAT_EQ(reloaded.GetViewportSelectionOutlineColorUVE().g, 0.6F);
@@ -1736,7 +1736,7 @@ TEST(EditorUVETest, ViewportSelectionOutlineUVE_RefusesBadValuesAndPersistsAcros
     // A corrupt stored thickness falls back to its default alone; visibility and colour survive it.
     engine.GetServicesUVE().GetConfigManagerUVE().SetDoubleUVE("editor.viewport.selectionOutline.thickness", 40.0);
     {
-        EditorUVE corrupt(engine.GetServicesUVE(), "uve_editor_tests_outline_prefs_corrupt.uvescene");
+        EditorUVE corrupt(engine.GetServicesUVE(), "uve_editor_tests_outline_prefs_corrupt.uvscene");
         corrupt.InitUVE();
         EXPECT_FALSE(corrupt.IsViewportSelectionOutlineVisibleUVE());
         EXPECT_FLOAT_EQ(corrupt.GetViewportSelectionOutlineColorUVE().g, 0.6F);
@@ -1746,7 +1746,7 @@ TEST(EditorUVETest, ViewportSelectionOutlineUVE_RefusesBadValuesAndPersistsAcros
     // One bad colour channel sends the whole colour back to its default, never a mixed colour.
     engine.GetServicesUVE().GetConfigManagerUVE().SetDoubleUVE("editor.viewport.selectionOutline.b", 3.0);
     {
-        EditorUVE corrupt(engine.GetServicesUVE(), "uve_editor_tests_outline_prefs_corrupt_color.uvescene");
+        EditorUVE corrupt(engine.GetServicesUVE(), "uve_editor_tests_outline_prefs_corrupt_color.uvscene");
         corrupt.InitUVE();
         const Color color = corrupt.GetViewportSelectionOutlineColorUVE();
         EXPECT_FLOAT_EQ(color.r, 1.0F);
@@ -1772,7 +1772,7 @@ TEST(EditorUVETest, ViewportAxisColorsUVE_RefuseInvalidChannelsAndPersistAcrossS
     const AxisColorUVE chosenZ{0.15F, 0.45F, 0.95F};
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_axis_colors.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_axis_colors.uvscene");
         editor.InitUVE();
 
         // Nothing is seeded until the host - which owns the viewport's default hues - supplies
@@ -1800,7 +1800,7 @@ TEST(EditorUVETest, ViewportAxisColorsUVE_RefuseInvalidChannelsAndPersistAcrossS
         editor.ShutdownUVE();
     }
     {
-        EditorUVE reloaded(engine.GetServicesUVE(), "uve_editor_tests_axis_colors_reload.uvescene");
+        EditorUVE reloaded(engine.GetServicesUVE(), "uve_editor_tests_axis_colors_reload.uvscene");
         reloaded.InitUVE();
         ASSERT_TRUE(reloaded.AreViewportAxisColorsSetUVE())
             << "a saved palette must survive LoadSessionSettingsUVE on the next InitUVE()";
@@ -1823,7 +1823,7 @@ TEST(EditorUVETest, ViewportAxisColorsUVE_RefuseInvalidChannelsAndPersistAcrossS
         settings.SetDoubleUVE("editor.viewport.axisColors.x.r", 7.5);
         ASSERT_TRUE(settings.SaveUVE());
 
-        EditorUVE corrupt(engine.GetServicesUVE(), "uve_editor_tests_axis_colors_corrupt.uvescene");
+        EditorUVE corrupt(engine.GetServicesUVE(), "uve_editor_tests_axis_colors_corrupt.uvscene");
         corrupt.InitUVE();
         EXPECT_FALSE(corrupt.AreViewportAxisColorsSetUVE())
             << "an out-of-range persisted channel must fall back to unset, not be clamped in";
@@ -1845,7 +1845,7 @@ TEST(EditorUVETest, FavoritesUVE_ToggleReflectsImmediatelyAndPersistsAcrossSessi
     const std::filesystem::path secondFavorite{"retarget/UNIVEX_bone_retarget_map.json"};
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_favorites.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_favorites.uvscene");
         editor.InitUVE();
         EXPECT_FALSE(EditorUVEAccessUVE::IsProjectPathFavoritedUVE(editor, firstFavorite));
 
@@ -1863,7 +1863,7 @@ TEST(EditorUVETest, FavoritesUVE_ToggleReflectsImmediatelyAndPersistsAcrossSessi
         editor.ShutdownUVE();
     }
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_favorites_reload.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_favorites_reload.uvscene");
         editor.InitUVE();
         EXPECT_TRUE(EditorUVEAccessUVE::IsProjectPathFavoritedUVE(editor, firstFavorite))
             << "a favorite saved before shutdown must survive LoadSessionSettingsUVE on the next InitUVE()";
@@ -1882,7 +1882,7 @@ TEST(EditorUVETest, SelectionAndInspectorTransformEdit_ValidateLifetimeAndFinite
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_selection.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_selection.uvscene");
         editor.InitUVE();
 
         Core::EngineServicesUVE& services = engine.GetServicesUVE();
@@ -1919,7 +1919,7 @@ TEST(EditorUVETest, MultiSelectionUVE_ToggleMaintainsOrderActiveFallbackAndSingl
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_multi_selection.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_multi_selection.uvscene");
         editor.InitUVE();
         Core::EngineServicesUVE& services = engine.GetServicesUVE();
         Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
@@ -1973,7 +1973,7 @@ TEST(EditorUVETest, MultiSelectionUVE_TickPrunesStaleEntitiesAndPromotesLastLive
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_multi_selection_stale.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_multi_selection_stale.uvscene");
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
         const Scene::EntityUVE first = entityManager.CreateEntityUVE();
@@ -2006,7 +2006,7 @@ TEST(EditorUVETest, CreateDocumentEntityUVE_CreatesSelectedDirtyRootArchetypes) 
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_create_entities.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_create_entities.uvscene");
         editor.InitUVE();
         Core::EngineServicesUVE& services = engine.GetServicesUVE();
         Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
@@ -2107,7 +2107,7 @@ TEST(EditorUVETest, PrimitiveAppearanceUVE_UpdatesColliderAndSupportsAtomicUndoR
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_primitive_appearance.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_primitive_appearance.uvscene");
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
         const Scene::EntityUVE cube = editor.CreateDocumentEntityUVE(EditorEntityKindUVE::Cube);
@@ -2152,7 +2152,7 @@ TEST(EditorUVETest, CreateDocumentEntityUVE_RejectsInvalidKindsAndNonRunningStat
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_create_invalid.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_create_invalid.uvscene");
         EXPECT_EQ(editor.CreateDocumentEntityUVE(EditorEntityKindUVE::Empty), Scene::kInvalidEntityUVE);
 
         editor.InitUVE();
@@ -2176,7 +2176,7 @@ TEST(EditorUVETest, CreateDocumentEntityUVE_AllocatesUniqueNames) {
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_create_names.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_create_names.uvscene");
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
 
@@ -2199,7 +2199,7 @@ TEST(EditorUVETest, SetSelectedEntityNameUVE_ValidatesInputAndMarksDocumentDirty
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_rename.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_rename.uvscene");
         editor.InitUVE();
         Core::EngineServicesUVE& services = engine.GetServicesUVE();
         Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
@@ -2233,7 +2233,7 @@ TEST(EditorUVETest, NodeWarningsUVE_ReportSetupProblemsAndScriptPath) {
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_node_warnings.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_node_warnings.uvscene");
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
 
@@ -2261,11 +2261,11 @@ TEST(EditorUVETest, NodeWarningsUVE_ReportSetupProblemsAndScriptPath) {
         // A script: a valid path is reported as the node's script; an invalid one is a warning too.
         const Scene::EntityUVE scripted = entityManager.CreateEntityUVE();
         AttachRootUVE(engine, scripted, Scene::TransformComponentUVE{});
-        entityManager.AddComponentUVE<Scene::ScriptComponentUVE>(scripted, Scene::ScriptComponentUVE{"scripts/player.uvescript"});
+        entityManager.AddComponentUVE<Scene::ScriptComponentUVE>(scripted, Scene::ScriptComponentUVE{"scripts/player.uvscript"});
         ASSERT_TRUE(editor.GetNodeScriptPathUVE(scripted).has_value());
-        EXPECT_EQ(*editor.GetNodeScriptPathUVE(scripted), "scripts/player.uvescript");
+        EXPECT_EQ(*editor.GetNodeScriptPathUVE(scripted), "scripts/player.uvscript");
         EXPECT_TRUE(editor.GetNodeWarningsUVE(scripted).empty());
-        entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(scripted).scriptAssetPath = "../outside.uvescript";
+        entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(scripted).scriptAssetPath = "../outside.uvscript";
         EXPECT_EQ(editor.GetNodeWarningsUVE(scripted).size(), 1U);
 
         // A Skeleton3D with no source model has no bones to show.
@@ -2286,7 +2286,7 @@ TEST(EditorUVETest, InspectorClipboardUVE_CopyPasteResetComponentsAndTransformUn
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_inspector_clipboard.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_inspector_clipboard.uvscene");
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
         const Core::TypeMetadataRegistryUVE& registry = Scene::GetSceneComponentMetadataRegistryUVE();
@@ -2362,7 +2362,7 @@ TEST(EditorUVETest, SetEntityVisibleUVE_TogglesAnyRowUndoablyWithoutTouchingSele
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_visibility_toggle.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_visibility_toggle.uvscene");
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
         const Scene::EntityUVE shown = entityManager.CreateEntityUVE();
@@ -2406,7 +2406,7 @@ TEST(EditorUVETest, ViewportFocusRequest_OnlyForNodesWithAPlaceInTheScene) {
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_viewport_focus.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_viewport_focus.uvscene");
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
         const Scene::EntityUVE placed = entityManager.CreateEntityUVE();
@@ -2443,7 +2443,7 @@ TEST(EditorUVETest, HierarchyBranchOpen_QueuesEveryRowWithChildrenInTheBranch) {
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_hierarchy_branch.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_hierarchy_branch.uvscene");
         editor.InitUVE();
         Core::EngineServicesUVE& services = engine.GetServicesUVE();
         Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
@@ -2499,7 +2499,7 @@ TEST(EditorUVETest, EditorHistoryUVE_TransformUndoRedoRestoresSelectionAndDirtyS
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_history_transform.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_history_transform.uvscene");
         editor.InitUVE();
         Core::EngineServicesUVE& services = engine.GetServicesUVE();
         Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
@@ -2540,7 +2540,7 @@ TEST(EditorUVETest, EditorHistoryUVE_NameUndoRedoRestoresOptionalComponentState)
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_history_name.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_history_name.uvscene");
         editor.InitUVE();
         Core::EngineServicesUVE& services = engine.GetServicesUVE();
         Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
@@ -2571,7 +2571,7 @@ TEST(EditorUVETest, EditorHistoryUVE_CreationUndoRedoRecreatesArchetypeAndName) 
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_history_create.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_history_create.uvscene");
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
 
@@ -2607,7 +2607,7 @@ TEST(EditorUVETest, EditorHistoryUVE_NewMutationClearsRedoAndCapacityDiscardsOld
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_history_capacity.uvescene", 1U);
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_history_capacity.uvscene", 1U);
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
         const Scene::EntityUVE root = entityManager.CreateEntityUVE();
@@ -2644,7 +2644,7 @@ TEST(EditorUVETest, EditorHistoryUVE_StaleTargetsAndNonRunningStateFailWithoutMu
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_history_stale.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_history_stale.uvscene");
         EXPECT_FALSE(editor.UndoUVE());
         EXPECT_FALSE(editor.RedoUVE());
         editor.InitUVE();
@@ -2676,7 +2676,7 @@ TEST(EditorUVETest, DuplicateSelectedEntityUVE_RootCreatesNamedSiblingWithCopied
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_duplicate_root.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_duplicate_root.uvscene");
         editor.InitUVE();
         Core::EngineServicesUVE& services = engine.GetServicesUVE();
         Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
@@ -2715,7 +2715,7 @@ TEST(EditorUVETest, DuplicateSelectedEntityUVE_ChildRestoresAsSiblingUnderSamePa
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_duplicate_child.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_duplicate_child.uvscene");
         editor.InitUVE();
         Core::EngineServicesUVE& services = engine.GetServicesUVE();
         Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
@@ -2749,7 +2749,7 @@ TEST(EditorUVETest, DeleteSelectedEntityUVE_DeletesSubtreeAndSelectsLiveParent) 
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_delete_subtree.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_delete_subtree.uvscene");
         editor.InitUVE();
         Core::EngineServicesUVE& services = engine.GetServicesUVE();
         Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
@@ -2783,7 +2783,7 @@ TEST(EditorUVETest, DeleteSelectedEntityUVE_RootClearsSelection) {
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_delete_root.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_delete_root.uvscene");
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
         const Scene::EntityUVE root = entityManager.CreateEntityUVE();
@@ -2807,7 +2807,7 @@ TEST(EditorUVETest, EditorHistoryUVE_DuplicateUndoRedoUsesFreshHandlesAndRestore
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_duplicate_history.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_duplicate_history.uvscene");
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
         const Scene::EntityUVE source = entityManager.CreateEntityUVE();
@@ -2840,7 +2840,7 @@ TEST(EditorUVETest, EditorHistoryUVE_DeleteUndoRedoRestoresSubtreeUnderOriginalP
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_delete_history.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_delete_history.uvscene");
         editor.InitUVE();
         Core::EngineServicesUVE& services = engine.GetServicesUVE();
         Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
@@ -2880,7 +2880,7 @@ TEST(EditorUVETest, EditorHistoryUVE_DeleteUndoRejectsStaleParentAndClearsTimeli
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_delete_stale_parent.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_delete_stale_parent.uvscene");
         editor.InitUVE();
         Core::EngineServicesUVE& services = engine.GetServicesUVE();
         Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
@@ -2911,7 +2911,7 @@ TEST(EditorUVETest, EditorHistoryUVE_NewMutationAfterDuplicateUndoInvalidatesRed
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_duplicate_redo_invalidation.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_duplicate_redo_invalidation.uvscene");
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
         const Scene::EntityUVE source = entityManager.CreateEntityUVE();
@@ -2937,7 +2937,7 @@ TEST(EditorUVETest, EntityLifecycleUVE_RejectsUnselectedStaleNonRunningAndUnsupp
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_lifecycle_safety.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_lifecycle_safety.uvscene");
         EXPECT_EQ(editor.DuplicateSelectedEntityUVE(), Scene::kInvalidEntityUVE);
         EXPECT_FALSE(editor.DeleteSelectedEntityUVE());
         editor.InitUVE();
@@ -2975,7 +2975,7 @@ TEST(EditorUVETest, ReparentSelectedEntityUVE_RootMovesBelowTargetAndPreservesLo
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_reparent_root.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_reparent_root.uvscene");
         editor.InitUVE();
         Core::EngineServicesUVE& services = engine.GetServicesUVE();
         Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
@@ -3012,7 +3012,7 @@ TEST(EditorUVETest, ReparentSelectedEntityUVE_ChildCanReturnToRootWithoutDetachi
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_reparent_root_detach.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_reparent_root_detach.uvscene");
         editor.InitUVE();
         Core::EngineServicesUVE& services = engine.GetServicesUVE();
         Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
@@ -3051,7 +3051,7 @@ TEST(EditorUVETest, EditorHistoryUVE_ReparentUndoRedoRestoresParentsSelectionAnd
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_reparent_history.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_reparent_history.uvscene");
         editor.InitUVE();
         Core::EngineServicesUVE& services = engine.GetServicesUVE();
         Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
@@ -3100,7 +3100,7 @@ TEST(EditorUVETest, SceneRootUVE_ChildrenOfTheTransformlessRootStayFullyEditable
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_scene_root_children.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_scene_root_children.uvscene");
         editor.InitUVE();
         Core::EngineServicesUVE& services = engine.GetServicesUVE();
         Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
@@ -3165,7 +3165,7 @@ TEST(EditorUVETest, EditorHistoryUVE_RedoOfMoveToDocumentRootLandsUnderTheSceneR
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_reparent_to_root_redo.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_reparent_to_root_redo.uvscene");
         editor.InitUVE();
         Core::EngineServicesUVE& services = engine.GetServicesUVE();
         Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
@@ -3198,7 +3198,7 @@ TEST(EditorUVETest, ReparentSelectedEntityUVE_RejectsCyclesNoOpNonDocumentStaleA
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_reparent_safety.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_reparent_safety.uvscene");
         EXPECT_FALSE(editor.ReparentSelectedEntityUVE(Scene::kInvalidEntityUVE));
         editor.InitUVE();
         Core::EngineServicesUVE& services = engine.GetServicesUVE();
@@ -3242,7 +3242,7 @@ TEST(EditorUVETest, EditorHistoryUVE_ReparentUndoRejectsStalePriorParentAndClear
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_reparent_stale_parent.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_reparent_stale_parent.uvscene");
         editor.InitUVE();
         Core::EngineServicesUVE& services = engine.GetServicesUVE();
         Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
@@ -3272,7 +3272,7 @@ TEST(EditorUVETest, KeepWorldReparentUVE_PreservesCompatibleWorldTrsAndHistory) 
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_keep_world_reparent.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_keep_world_reparent.uvscene");
         editor.InitUVE();
         Core::EngineServicesUVE& services = engine.GetServicesUVE();
         Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
@@ -3322,7 +3322,7 @@ TEST(EditorUVETest, KeepWorldReparentUVE_RejectsShearProneAndNearZeroScaleParent
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_keep_world_reject.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_keep_world_reject.uvscene");
         editor.InitUVE();
         Core::EngineServicesUVE& services = engine.GetServicesUVE();
         Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
@@ -3359,7 +3359,7 @@ TEST(EditorUVETest, KeepWorldReparentUVE_RejectsShearProneAndNearZeroScaleParent
 }
 
 TEST(EditorUVETest, SaveThenLoadScene_RoundTripsDocumentRootsWithoutSerializingEditorCamera) {
-    const std::filesystem::path scenePath = "uve_editor_tests_round_trip.uvescene";
+    const std::filesystem::path scenePath = "uve_editor_tests_round_trip.uvscene";
     std::filesystem::remove(scenePath);
     std::filesystem::remove(scenePath.string() + ".editor-recovery");
 
@@ -3429,7 +3429,7 @@ TEST(EditorUVETest, TranslateSelectedAlongAxis_UpdatesLocalTransformAndConvertsP
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_gizmo.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_gizmo.uvscene");
         editor.InitUVE();
         Core::EngineServicesUVE& services = engine.GetServicesUVE();
         Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
@@ -3476,7 +3476,7 @@ TEST(EditorUVETest, RotateSelectedAroundWorldAxis_RotatesRootPreservesOtherLocal
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_rotate_root.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_rotate_root.uvscene");
         editor.InitUVE();
         Core::EngineServicesUVE& services = engine.GetServicesUVE();
         Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
@@ -3522,7 +3522,7 @@ TEST(EditorUVETest, RotateSelectedAroundWorldAxis_ConvertsParentWorldRotationToL
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_rotate_parented.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_rotate_parented.uvscene");
         editor.InitUVE();
         Core::EngineServicesUVE& services = engine.GetServicesUVE();
         Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
@@ -3578,7 +3578,7 @@ TEST(EditorUVETest, RotateSelectedAroundWorldAxis_RejectsInvalidOrUnsafeStateWit
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_rotate_safety.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_rotate_safety.uvscene");
         editor.InitUVE();
         EXPECT_FALSE(editor.RotateSelectedAroundWorldAxisUVE(EditorTransformAxisUVE::Z, 1.0F));
 
@@ -3608,7 +3608,7 @@ TEST(EditorUVETest, ScaleSelectedAlongAxis_UpdatesOnlyPositiveLocalScaleAndRepla
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_scale.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_scale.uvscene");
         editor.InitUVE();
         Core::EngineServicesUVE& services = engine.GetServicesUVE();
         Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
@@ -3650,7 +3650,7 @@ TEST(EditorUVETest, ScaleSelectedAlongAxis_RejectsUnsafeInputWithoutMutation) {
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_scale_safety.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_scale_safety.uvscene");
         editor.InitUVE();
         EXPECT_FALSE(editor.ScaleSelectedAlongAxisUVE(EditorTransformAxisUVE::X, 1.0F));
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
@@ -3675,7 +3675,7 @@ TEST(EditorUVETest, ScaleSelectedUniformlyUVE_AppliesAdditiveOffsetAndSnapping) 
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_uniform_scale_offset.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_uniform_scale_offset.uvscene");
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
         const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
@@ -3709,7 +3709,7 @@ TEST(EditorUVETest, ScaleSelectedUniformlyUVE_RejectsAsymmetricFloorWithoutParti
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_uniform_scale_floor.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_uniform_scale_floor.uvscene");
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
         const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
@@ -3733,7 +3733,7 @@ TEST(EditorUVETest, SelectedBoundsQuery_BuildsIdentityWorldBoxWithoutMutatingEdi
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_selection_bounds_identity.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_selection_bounds_identity.uvscene");
         editor.InitUVE();
         Core::EngineServicesUVE& services = engine.GetServicesUVE();
         Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
@@ -3777,7 +3777,7 @@ TEST(EditorUVETest, SelectedBoundsQuery_UsesDerivedParentTransformAndRejectsUnsa
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_selection_bounds_parented.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_selection_bounds_parented.uvscene");
         editor.InitUVE();
         Core::EngineServicesUVE& services = engine.GetServicesUVE();
         Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
@@ -3851,7 +3851,7 @@ TEST(EditorUVETest, TransformSnappingSettings_ExposeSafeDefaultsAndRejectInvalid
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_snapping_settings.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_snapping_settings.uvscene");
         editor.InitUVE();
 
         const EditorTransformSnappingSettingsUVE defaults = editor.GetTransformSnappingSettingsUVE();
@@ -3892,7 +3892,7 @@ TEST(EditorUVETest, TransformSnapping_QuantizesCommandsWithoutHistoryDriftAndRep
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_snapping_commands.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_snapping_commands.uvscene");
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
         const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
@@ -3945,7 +3945,7 @@ TEST(EditorUVETest, TransformSnapping_QuantizesCommandsWithoutHistoryDriftAndRep
 }
 
 TEST(EditorUVETest, LoadMissingScene_FailsWithoutDestroyingCurrentDocument) {
-    const std::filesystem::path missingScenePath = "uve_editor_tests_missing.uvescene";
+    const std::filesystem::path missingScenePath = "uve_editor_tests_missing.uvscene";
     std::filesystem::remove(missingScenePath);
 
     Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
@@ -3976,7 +3976,7 @@ TEST(EditorUVETest, PlayModeSandbox_RestoresSnapshotRejectsAuthoringAndPreserves
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_play_restore.uvescene", 100U, &engine);
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_play_restore.uvscene", 100U, &engine);
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
         const Scene::EntityUVE root = entityManager.CreateEntityUVE();
@@ -4032,7 +4032,7 @@ TEST(EditorUVETest, GetDocumentRootsUVE_ExcludesEditorInternalEntitiesAndTheySur
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_internal_entity.uvescene", 100U, &engine);
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_internal_entity.uvscene", 100U, &engine);
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
 
@@ -4073,7 +4073,7 @@ TEST(EditorUVETest, PlayModeSandbox_SpawnPointTeleportsThePlayerAndStopGivesEver
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_play_spawn.uvescene", 100U, &engine);
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_play_spawn.uvscene", 100U, &engine);
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
         Core::EngineServicesUVE& services = engine.GetServicesUVE();
@@ -4149,7 +4149,7 @@ TEST(EditorUVETest, PlayModeSandbox_SpawnPointWithOffsetAndParentPlacesRespectin
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_play_spawn_offset.uvescene", 100U,
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_play_spawn_offset.uvscene", 100U,
                          &engine);
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
@@ -4209,7 +4209,7 @@ TEST(EditorUVETest, PlayModeSandbox_SpawnPointWithNoPlayerJustPlays) {
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_play_spawn_noop_a.uvescene", 100U,
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_play_spawn_noop_a.uvscene", 100U,
                          &engine);
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
@@ -4239,7 +4239,7 @@ TEST(EditorUVETest, PlayModeSandbox_PlayerWithNoSpawnPointKeepsItsAuthoredPose) 
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_play_spawn_noop_b.uvescene", 100U,
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_play_spawn_noop_b.uvscene", 100U,
                          &engine);
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
@@ -4276,7 +4276,7 @@ TEST(EditorUVETest, ViewportBookmarks_StoreRestoreClearAndRejectBadInput) {
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_bookmarks.uvescene", 100U, &engine);
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_bookmarks.uvscene", 100U, &engine);
         editor.InitUVE();
 
         // An untouched slot answers no value, and every slot index out of range fails closed.
@@ -4337,7 +4337,7 @@ TEST(EditorUVETest, Marker3DFocusBookmark_FliesTheCameraIntoTheMarkerViewpoint) 
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_marker_focus.uvescene", 100U, &engine);
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_marker_focus.uvscene", 100U, &engine);
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
         Core::EngineServicesUVE& services = engine.GetServicesUVE();
@@ -4476,7 +4476,7 @@ TEST(EditorUVETest, PlayModeSandbox_RestoresOrderedMultiSelectionAndActiveEntity
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_play_multi_selection.uvescene", 100U, &engine);
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_play_multi_selection.uvscene", 100U, &engine);
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
         const Scene::EntityUVE first = entityManager.CreateEntityUVE();
@@ -4512,12 +4512,12 @@ TEST(EditorUVETest, PlayModeSandbox_HandlesEmptyDocumentAndMissingControlSafely)
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE withoutControl(engine.GetServicesUVE(), "uve_editor_tests_play_no_control.uvescene");
+        EditorUVE withoutControl(engine.GetServicesUVE(), "uve_editor_tests_play_no_control.uvscene");
         withoutControl.InitUVE();
         EXPECT_FALSE(withoutControl.EnterPlayModeUVE());
         withoutControl.ShutdownUVE();
 
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_play_empty.uvescene", 100U, &engine);
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_play_empty.uvscene", 100U, &engine);
         editor.InitUVE();
         // One-root documents: an otherwise-empty document holds exactly the scene root.
         ASSERT_EQ(editor.GetDocumentRootsUVE().size(), 1U);
@@ -4540,7 +4540,7 @@ TEST(EditorUVETest, VisualScriptSearchInsertionPreservesPositionAndCompilerUsesN
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_scripting_workspace.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_scripting_workspace.uvscene");
         editor.InitUVE();
         Scripting::ScriptGraphCanvasUVE& canvas = editor.GetVisualScriptCanvasUVE();
         const Scripting::ScriptGraphCanvasSnapshotUVE before = canvas.GetSnapshotUVE();
@@ -4596,7 +4596,7 @@ TEST(EditorUVETest, TransformGesture_ManyPreviewsCollapseIntoExactlyOneUndoStep)
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_gesture_commit.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_gesture_commit.uvscene");
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
         const Scene::EntityUVE entity = SelectFreshRootUVE(engine, editor, Math::Vector3UVE{});
@@ -4637,7 +4637,7 @@ TEST(EditorUVETest, TransformGesture_CancelRestoresTheBaselineAndLeavesNoHistory
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_gesture_cancel.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_gesture_cancel.uvscene");
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
         const Scene::EntityUVE entity =
@@ -4668,7 +4668,7 @@ TEST(EditorUVETest, TransformGesture_CancelRefusesToOverwriteAnExternalChange) {
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_gesture_conflict.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_gesture_conflict.uvscene");
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
         const Scene::EntityUVE entity = SelectFreshRootUVE(engine, editor, Math::Vector3UVE{});
@@ -4700,7 +4700,7 @@ TEST(EditorUVETest, TransformGesture_RejectsMultiSelectionAndOutOfOrderCalls) {
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_gesture_guards.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_gesture_guards.uvscene");
         editor.InitUVE();
 
         // Nothing is in flight, so preview/commit/cancel have nothing to act on.
@@ -4748,7 +4748,7 @@ TEST(EditorUVETest, TransformGesture_NoOpDragCommitsWithoutHistoryOrDirtyingTheS
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_gesture_noop.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_gesture_noop.uvscene");
         editor.InitUVE();
         static_cast<void>(SelectFreshRootUVE(engine, editor, Math::Vector3UVE{}));
         const bool dirtyBeforeGesture = editor.IsSceneDirtyUVE();
@@ -4774,7 +4774,7 @@ TEST(EditorUVETest, TransformGesture_SnappingQuantisesIdenticallyToTheEquivalent
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_gesture_snap.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_gesture_snap.uvscene");
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
 
@@ -4816,7 +4816,7 @@ TEST(EditorUVETest, SceneRootInspectorUVE_ShowsExactlyTheNodeSectionInOrder) {
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_scene_root_inspector.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_scene_root_inspector.uvscene");
         editor.InitUVE();
         const Scene::EntityUVE root = editor.GetDocumentSceneRootUVE();
         // No Name, Hierarchy or Transform; Thread Group lives inside Process.
@@ -4841,7 +4841,7 @@ TEST(EditorUVETest, ScriptSlotUVE_AddNewCppCreatesALinkedScriptTitledWithTheNode
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_script_slot.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_script_slot.uvscene");
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
         const Scene::EntityUVE root = editor.GetDocumentSceneRootUVE();
@@ -4867,8 +4867,8 @@ TEST(EditorUVETest, ScriptSlotUVE_AddNewCppCreatesALinkedScriptTitledWithTheNode
         EXPECT_FALSE(editor.CreateScriptForSelectedEntityUVE());
         ASSERT_TRUE(editor.AssignScriptToSelectedEntityUVE({}));
         EXPECT_TRUE(entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(root).scriptAssetPath.empty());
-        EXPECT_FALSE(editor.AssignScriptToSelectedEntityUVE("scripts/missing.uvescript"));
-        EXPECT_FALSE(editor.AssignScriptToSelectedEntityUVE("../escape.uvescript"));
+        EXPECT_FALSE(editor.AssignScriptToSelectedEntityUVE("scripts/missing.uvscript"));
+        EXPECT_FALSE(editor.AssignScriptToSelectedEntityUVE("../escape.uvscript"));
         ASSERT_TRUE(editor.AssignScriptToSelectedEntityUVE(path));
         ASSERT_TRUE(editor.UndoUVE());
         EXPECT_TRUE(entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(root).scriptAssetPath.empty());
@@ -4885,7 +4885,7 @@ TEST(EditorUVETest, NodeMetadataUVE_EveryEditIsOneUndoStep) {
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_node_metadata.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_node_metadata.uvscene");
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
         const Scene::EntityUVE root = editor.GetDocumentSceneRootUVE();
@@ -4921,7 +4921,7 @@ TEST(EditorUVETest, RenderInstanceChildInspectorUVE_IsOwnSectionThenBasesThenNod
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_render_instance_inspector.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_render_instance_inspector.uvscene");
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
         const Scene::EntityUVE decal = entityManager.CreateEntityUVE();
@@ -4947,7 +4947,7 @@ TEST(EditorUVETest, SurfaceInstanceChildInspectorUVE_IsOwnSectionThenSurfaceRend
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_surface_instance_inspector.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_surface_instance_inspector.uvscene");
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
         const auto create = [&](const auto& apply) {
@@ -5004,7 +5004,7 @@ TEST(EditorUVETest, CharacterBodyInspectorUVE_IsItsChainToTheRootAndNothingElse)
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_character_body_inspector.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_character_body_inspector.uvscene");
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
         const Scene::EntityUVE body = entityManager.CreateEntityUVE();
@@ -5033,7 +5033,7 @@ TEST(EditorUVETest, FolderUVE_GroupsNodesWithoutMovingThem) {
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_folder.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_folder.uvscene");
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
         const Scene::EntityUVE cube = editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::BoxMesh3D);
@@ -5060,7 +5060,7 @@ TEST(EditorUVETest, InspectorHeadersUVE_SpellOutTheClassChain) {
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_chain_headers.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_chain_headers.uvscene");
         editor.InitUVE();
         const Scene::EntityUVE body =
             editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::CharacterBody3D);
@@ -5085,7 +5085,7 @@ TEST(EditorUVETest, AnimationNodesUVE_InspectorIsTheirOwnSectionThenTheNodeSecti
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_animation_inspector.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_animation_inspector.uvscene");
         editor.InitUVE();
         const Scene::EntityUVE player =
             editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::AnimationPlayer);
@@ -5110,7 +5110,7 @@ TEST(EditorUVETest, AnimationNodesUVE_APureNodeReparentsAndUndoes) {
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_animation_reparent.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_animation_reparent.uvscene");
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
         const Scene::EntityUVE player =
@@ -5139,7 +5139,7 @@ TEST(EditorUVETest, ColorPickerSessionUVE_ManyLiveChangesAreOneUndoStep) {
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_color_session.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_color_session.uvscene");
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
         const Scene::EntityUVE light = entityManager.CreateEntityUVE();
@@ -5234,7 +5234,7 @@ TEST(EditorUVETest, ColorPickerPreferencesUVE_SanitiseAndPersistAcrossSessionRel
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_color_prefs.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_color_prefs.uvscene");
         editor.InitUVE();
         EXPECT_TRUE(editor.GetColorPickerPreferencesUVE().advancedOpen);
         EXPECT_TRUE(editor.GetColorPickerPreferencesUVE().saved.empty());
@@ -5256,7 +5256,7 @@ TEST(EditorUVETest, ColorPickerPreferencesUVE_SanitiseAndPersistAcrossSessionRel
         editor.ShutdownUVE();
     }
     {
-        EditorUVE reloaded(engine.GetServicesUVE(), "uve_editor_tests_color_prefs_reload.uvescene");
+        EditorUVE reloaded(engine.GetServicesUVE(), "uve_editor_tests_color_prefs_reload.uvscene");
         reloaded.InitUVE();
         const Editor::ColorPickerPreferencesUVE& preferences = reloaded.GetColorPickerPreferencesUVE();
         EXPECT_FALSE(preferences.advancedOpen);
@@ -5269,7 +5269,7 @@ TEST(EditorUVETest, ColorPickerPreferencesUVE_SanitiseAndPersistAcrossSessionRel
     // A stored entry that is not a colour is skipped; the rest of the list still loads.
     engine.GetServicesUVE().GetConfigManagerUVE().SetStringUVE("editor.colorPicker.saved.0", "not a colour");
     {
-        EditorUVE corrupt(engine.GetServicesUVE(), "uve_editor_tests_color_prefs_corrupt.uvescene");
+        EditorUVE corrupt(engine.GetServicesUVE(), "uve_editor_tests_color_prefs_corrupt.uvscene");
         corrupt.InitUVE();
         ASSERT_EQ(corrupt.GetColorPickerPreferencesUVE().saved.size(), 1U);
         EXPECT_EQ(Editor::FormatColorHexUVE(corrupt.GetColorPickerPreferencesUVE().saved[0], true), "#FF004080");
@@ -5284,7 +5284,7 @@ TEST(EditorUVETest, InspectorTransformDragUVE_IsOneUndoStepAndCanBeCancelled) {
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_inspector_transform_drag.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_inspector_transform_drag.uvscene");
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
         const Scene::EntityUVE node = entityManager.CreateEntityUVE();
@@ -5336,7 +5336,7 @@ TEST(EditorUVETest, InspectorMetadataDragUVE_IsOneUndoStepAndOnlyItsOwnEditIsCom
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_inspector_metadata_drag.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_inspector_metadata_drag.uvscene");
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
         const Scene::EntityUVE root = editor.GetDocumentSceneRootUVE();
@@ -5384,7 +5384,7 @@ TEST(EditorUVETest, InspectorPropertyEditUVE_RefusesAValueTheComponentRuleReject
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_mesh_rule.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_mesh_rule.uvscene");
         editor.InitUVE();
         const Scene::EntityUVE entity =
             editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::MeshInstance3D);
@@ -5461,7 +5461,7 @@ Connections:  {
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_model_auto_import.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_model_auto_import.uvscene");
         editor.InitUVE();
         const std::filesystem::path imported = EditorUVEAccessUVE::GetImportedModelPathUVE(editor, "Models/tri.obj");
         for (int frame = 0; frame < 8 && !std::filesystem::exists(imported); ++frame) {
@@ -5471,10 +5471,10 @@ Connections:  {
         // Converted without any action, into derived data - the content folder holds only sources.
         EXPECT_TRUE(std::filesystem::exists(imported));
         EXPECT_TRUE(imported.generic_string().ends_with(
-            "uve_editor_tests_model_auto_import_derived/Imported/Models/tri.obj.uvemodel"))
+            "uve_editor_tests_model_auto_import_derived/Imported/Models/tri.obj.uvmodel"))
             << imported;
         for (const auto& file : std::filesystem::recursive_directory_iterator(root)) {
-            EXPECT_NE(file.path().extension(), ".uvemodel") << file.path();
+            EXPECT_NE(file.path().extension(), ".uvmodel") << file.path();
         }
         // Mesh plus bones reads as a model; a plain mesh does not.
         EXPECT_TRUE(EditorUVEAccessUVE::IsRiggedModelSourceUVE(editor, "Models/rig.gltf"));
@@ -5514,7 +5514,7 @@ TEST(EditorUVETest, Skeleton3DUVE_StartsEmptyAndTakesItsBonesFromARiggedModel) {
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_skeleton.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_skeleton.uvscene");
         editor.InitUVE();
         editor.TickUVE(); // first project refresh
         const Scene::EntityUVE skeleton = editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Skeleton3D);
@@ -5554,7 +5554,7 @@ TEST(EditorUVETest, Node3DInspectorUVE_IsTransformVisibilityAndTheNodeSection) {
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_node3d_inspector.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_node3d_inspector.uvscene");
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
         const Scene::EntityUVE node = entityManager.CreateEntityUVE();

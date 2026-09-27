@@ -47,7 +47,7 @@ TEST(SceneNodeEditorUVETest, CentralizedRegistryCreationUVE_AttachesExpectedAuth
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_scene_node_editor_tests.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_scene_node_editor_tests.uvscene");
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
 
@@ -111,7 +111,7 @@ TEST(SceneNodeEditorUVETest, CentralizedCreationUVE_CreatesEveryExpandedNodeKind
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_scene_node_editor_expanded_tests.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_scene_node_editor_expanded_tests.uvscene");
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
         constexpr std::array<Scene::Nodes::SceneNodeKindUVE, 27U> expandedKinds{
@@ -161,7 +161,7 @@ TEST(SceneNodeEditorUVETest, CharacterBodyCreationUVE_IsOneAtomicUndoRedoTransac
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_scene_node_editor_history_tests.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_scene_node_editor_history_tests.uvscene");
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
 
@@ -195,7 +195,7 @@ TEST(SceneNodeEditorUVETest, CentralizedCreationUVE_RejectsMultiSelectionAndPlay
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_scene_node_editor_safety_tests.uvescene", 100U, &engine);
+        EditorUVE editor(engine.GetServicesUVE(), "uve_scene_node_editor_safety_tests.uvscene", 100U, &engine);
         editor.InitUVE();
         const Scene::EntityUVE first =
             editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Node3D);
@@ -231,7 +231,7 @@ TEST(SceneNodeEditorUVETest, SceneRootUVE_FreshDocumentHasExactlyOneNamedRoot) {
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_scene_node_editor_scene_root_tests.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_scene_node_editor_scene_root_tests.uvscene");
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
 
@@ -256,7 +256,7 @@ TEST(SceneNodeEditorUVETest, SceneRootUVE_NewNodesJoinHierarchyUnderSelectionOrR
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_scene_node_editor_scene_root_join_tests.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_scene_node_editor_scene_root_join_tests.uvscene");
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
         Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
@@ -289,7 +289,7 @@ TEST(SceneNodeEditorUVETest, SceneRootUVE_RootCannotBeDeletedReparentedOrDuplica
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_scene_node_editor_scene_root_guard_tests.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_scene_node_editor_scene_root_guard_tests.uvscene");
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
 
@@ -318,7 +318,7 @@ TEST(SceneNodeEditorUVETest, SceneRootUVE_UndoRedoKeepsCreatedNodeUnderItsParent
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_scene_node_editor_scene_root_history_tests.uvescene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_scene_node_editor_scene_root_history_tests.uvscene");
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
         Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
@@ -358,7 +358,7 @@ TEST(SceneNodeEditorUVETest, SceneRootUVE_LegacyMultiRootSceneFileAutoMigratesUn
         Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
 
         // Author a legacy-style file by hand: two top-level entities, NO scene-root marker -
-        // exactly what every .uvescene saved before the root existed looks like.
+        // exactly what every .uvscene saved before the root existed looks like.
         const Scene::EntityUVE legacyA = entityManager.CreateEntityUVE();
         sceneGraph.AttachTransformUVE(entityManager, legacyA, Scene::TransformComponentUVE{});
         entityManager.AddComponentUVE<Scene::NameComponentUVE>(legacyA, Scene::NameComponentUVE{"LegacyA"});
@@ -366,7 +366,7 @@ TEST(SceneNodeEditorUVETest, SceneRootUVE_LegacyMultiRootSceneFileAutoMigratesUn
         sceneGraph.AttachTransformUVE(entityManager, legacyB, Scene::TransformComponentUVE{});
         entityManager.AddComponentUVE<Scene::NameComponentUVE>(legacyB, Scene::NameComponentUVE{"LegacyB"});
 
-        const std::string path = "uve_scene_node_editor_scene_root_migrate_tests.uvescene";
+        const std::string path = "uve_scene_node_editor_scene_root_migrate_tests.uvscene";
         std::filesystem::remove(path);
         ASSERT_TRUE(engine.GetServicesUVE().GetSceneSerializerUVE().SaveUVE(
             entityManager, {legacyA, legacyB}, path, Asset::AssetKindUVE::Scene));
@@ -411,7 +411,7 @@ TEST(SceneNodeEditorUVETest, SceneRootUVE_LegacyMultiRootSceneFileAutoMigratesUn
 TEST(SceneNodeEditorUVETest, SceneRootUVE_FileCarryingTwoRootMarkersStillLoadsWithOneRoot) {
     // The migration test above covers a LEGACY file - no marker at all. This covers the other
     // direction: a file that carries two SceneRoot markers. That is not a file the editor can
-    // currently produce, but .uvescene is plain JSON on disk, so it is a file the editor can be
+    // currently produce, but .uvscene is plain JSON on disk, so it is a file the editor can be
     // handed - by a merge conflict resolved badly, a hand-edit, or a future tool.
     //
     // It matters more than it looks. The editor forbids deleting or reparenting a scene root, so
@@ -440,7 +440,7 @@ TEST(SceneNodeEditorUVETest, SceneRootUVE_FileCarryingTwoRootMarkersStillLoadsWi
         entityManager.AddComponentUVE<Scene::NameComponentUVE>(surplusChild, Scene::NameComponentUVE{"KeepMe"});
         sceneGraph.SetParentUVE(entityManager, surplusChild, secondRoot);
 
-        const std::string path = "uve_scene_node_editor_two_root_markers_tests.uvescene";
+        const std::string path = "uve_scene_node_editor_two_root_markers_tests.uvscene";
         std::filesystem::remove(path);
         ASSERT_TRUE(engine.GetServicesUVE().GetSceneSerializerUVE().SaveUVE(
             entityManager, {firstRoot, secondRoot}, path, Asset::AssetKindUVE::Scene));

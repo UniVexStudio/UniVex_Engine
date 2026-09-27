@@ -19,7 +19,7 @@ TEST(ShaderBinaryCacheUVETest, GetCacheFilePathUVE_IncludesPlatformSubdirectoryA
     const std::string pathString = path.generic_string();
 
     EXPECT_NE(pathString.find("shader_cache/"), std::string::npos);
-    EXPECT_NE(pathString.find("0123456789abcdef.uveshadercache"), std::string::npos);
+    EXPECT_NE(pathString.find("0123456789abcdef.uvshadercache"), std::string::npos);
 }
 
 TEST(ShaderBinaryCacheUVETest, GetCacheFilePathUVE_DifferentHashes_ProduceDifferentPaths) {
@@ -27,11 +27,11 @@ TEST(ShaderBinaryCacheUVETest, GetCacheFilePathUVE_DifferentHashes_ProduceDiffer
 }
 
 TEST(ShaderBinaryCacheUVETest, ReadCacheEntryUVE_MissingFile_ReturnsNullopt) {
-    EXPECT_FALSE(ReadCacheEntryUVE("uve_shader_binary_cache_tests_does_not_exist.uveshadercache").has_value());
+    EXPECT_FALSE(ReadCacheEntryUVE("uve_shader_binary_cache_tests_does_not_exist.uvshadercache").has_value());
 }
 
 TEST(ShaderBinaryCacheUVETest, WriteThenReadCacheEntryUVE_RoundTripsPayloadAndFormat) {
-    const std::filesystem::path path = "uve_shader_binary_cache_tests_round_trip/linux/aaaa.uveshadercache";
+    const std::filesystem::path path = "uve_shader_binary_cache_tests_round_trip/linux/aaaa.uvshadercache";
     std::filesystem::remove_all("uve_shader_binary_cache_tests_round_trip");
 
     const std::vector<std::byte> payload = {std::byte{0x01}, std::byte{0x02}, std::byte{0x03}, std::byte{0xFF}};
@@ -47,7 +47,7 @@ TEST(ShaderBinaryCacheUVETest, WriteThenReadCacheEntryUVE_RoundTripsPayloadAndFo
 }
 
 TEST(ShaderBinaryCacheUVETest, WriteCacheEntryUVE_CreatesParentDirectoriesAsNeeded) {
-    const std::filesystem::path path = "uve_shader_binary_cache_tests_mkdirs/nested/dir/x.uveshadercache";
+    const std::filesystem::path path = "uve_shader_binary_cache_tests_mkdirs/nested/dir/x.uvshadercache";
     std::filesystem::remove_all("uve_shader_binary_cache_tests_mkdirs");
 
     const std::vector<std::byte> payload = {std::byte{0x7A}};
@@ -58,7 +58,7 @@ TEST(ShaderBinaryCacheUVETest, WriteCacheEntryUVE_CreatesParentDirectoriesAsNeed
 }
 
 TEST(ShaderBinaryCacheUVETest, ReadCacheEntryUVE_BadMagic_ReturnsNulloptRatherThanCrashing) {
-    const std::filesystem::path path = "uve_shader_binary_cache_tests_bad_magic.uveshadercache";
+    const std::filesystem::path path = "uve_shader_binary_cache_tests_bad_magic.uvshadercache";
     {
         std::ofstream file(path, std::ios::binary);
         file << "NOT-A-VALID-CACHE-FILE-HEADER";
@@ -69,7 +69,7 @@ TEST(ShaderBinaryCacheUVETest, ReadCacheEntryUVE_BadMagic_ReturnsNulloptRatherTh
 }
 
 TEST(ShaderBinaryCacheUVETest, ReadCacheEntryUVE_TruncatedPayload_ReturnsNulloptRatherThanCrashing) {
-    const std::filesystem::path path = "uve_shader_binary_cache_tests_truncated/linux/x.uveshadercache";
+    const std::filesystem::path path = "uve_shader_binary_cache_tests_truncated/linux/x.uvshadercache";
     std::filesystem::remove_all("uve_shader_binary_cache_tests_truncated");
     ASSERT_TRUE(WriteCacheEntryUVE(path, 1, std::vector<std::byte>{std::byte{1}, std::byte{2}, std::byte{3}}));
 
@@ -81,7 +81,7 @@ TEST(ShaderBinaryCacheUVETest, ReadCacheEntryUVE_TruncatedPayload_ReturnsNullopt
 }
 
 TEST(ShaderBinaryCacheUVETest, WriteThenReadCacheEntryUVE_EmptyPayload_RoundTrips) {
-    const std::filesystem::path path = "uve_shader_binary_cache_tests_empty_payload/linux/x.uveshadercache";
+    const std::filesystem::path path = "uve_shader_binary_cache_tests_empty_payload/linux/x.uvshadercache";
     std::filesystem::remove_all("uve_shader_binary_cache_tests_empty_payload");
     ASSERT_TRUE(WriteCacheEntryUVE(path, 42, {}));
 

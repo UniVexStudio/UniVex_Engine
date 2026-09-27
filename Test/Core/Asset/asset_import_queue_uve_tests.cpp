@@ -281,7 +281,7 @@ TEST_F(AssetImportQueueUVETest, CacheUVE_HitsForMatchingBytesAndInvalidatesOutOf
 
 TEST_F(AssetImportQueueUVETest, DataTableSettingsFingerprintForcesCacheMissWhenSchemaChanges) {
     const std::filesystem::path source = root / "weapons.csv";
-    const std::filesystem::path destination = contentRoot / "weapons.uvetable";
+    const std::filesystem::path destination = contentRoot / "weapons.uvtable";
     WriteFixtureFileUVE(source, "id,damage\npistol,25\n");
     std::filesystem::create_directories(contentRoot);
 

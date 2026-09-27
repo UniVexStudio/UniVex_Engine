@@ -57,9 +57,9 @@ TEST_F(ScriptAssetLoaderUVETest, LoadSchemaUVE_ReadsVfsPathAndReturnsCopiedSchem
     std::vector<ScriptPersistenceDiagnosticUVE> diagnostics;
     const std::string encoded = EncodeScriptGraphSchemaUVE(expected, diagnostics);
     ASSERT_TRUE(diagnostics.empty());
-    WriteTextUVE(fixtureDirectory / "scripts" / "player.uvescript", encoded);
+    WriteTextUVE(fixtureDirectory / "scripts" / "player.uvscript", encoded);
 
-    const Scene::ScriptComponentUVE component{"scripts/player.uvescript"};
+    const Scene::ScriptComponentUVE component{"scripts/player.uvscript"};
     const ScriptAssetLoadResultUVE result = ScriptAssetLoaderUVE::LoadSchemaUVE(component, fileSystem);
 
     ASSERT_TRUE(result.IsLoadedUVE());
@@ -74,8 +74,8 @@ TEST_F(ScriptAssetLoaderUVETest, LoadSchemaUVE_RepeatedLoadReflectsUpdatedVfsCon
     std::vector<ScriptPersistenceDiagnosticUVE> diagnostics;
     const std::string firstEncoded = EncodeScriptGraphSchemaUVE(first, diagnostics);
     ASSERT_TRUE(diagnostics.empty());
-    WriteTextUVE(fixtureDirectory / "reload.uvescript", firstEncoded);
-    const Scene::ScriptComponentUVE component{"reload.uvescript"};
+    WriteTextUVE(fixtureDirectory / "reload.uvscript", firstEncoded);
+    const Scene::ScriptComponentUVE component{"reload.uvscript"};
 
     const ScriptAssetLoadResultUVE firstResult = ScriptAssetLoaderUVE::LoadSchemaUVE(component, fileSystem);
     ASSERT_TRUE(firstResult.IsLoadedUVE());
@@ -83,7 +83,7 @@ TEST_F(ScriptAssetLoaderUVETest, LoadSchemaUVE_RepeatedLoadReflectsUpdatedVfsCon
     diagnostics.clear();
     const std::string secondEncoded = EncodeScriptGraphSchemaUVE(second, diagnostics);
     ASSERT_TRUE(diagnostics.empty());
-    WriteTextUVE(fixtureDirectory / "reload.uvescript", secondEncoded);
+    WriteTextUVE(fixtureDirectory / "reload.uvscript", secondEncoded);
     const ScriptAssetLoadResultUVE secondResult = ScriptAssetLoaderUVE::LoadSchemaUVE(component, fileSystem);
 
     ASSERT_TRUE(secondResult.IsLoadedUVE());
@@ -102,34 +102,34 @@ TEST_F(ScriptAssetLoaderUVETest, LoadSchemaUVE_EmptyPathIsNoScriptWithoutVfsRead
 
 TEST_F(ScriptAssetLoaderUVETest, LoadSchemaUVE_RejectsInvalidPathAndMissingFile) {
     const ScriptAssetLoadResultUVE invalid = ScriptAssetLoaderUVE::LoadSchemaUVE(
-        Scene::ScriptComponentUVE{"../escape.uvescript"}, fileSystem);
+        Scene::ScriptComponentUVE{"../escape.uvscript"}, fileSystem);
     EXPECT_EQ(invalid.code, ScriptAssetLoadCodeUVE::InvalidPath);
 
     const ScriptAssetLoadResultUVE missing = ScriptAssetLoaderUVE::LoadSchemaUVE(
-        Scene::ScriptComponentUVE{"missing.uvescript"}, fileSystem);
+        Scene::ScriptComponentUVE{"missing.uvscript"}, fileSystem);
     EXPECT_EQ(missing.code, ScriptAssetLoadCodeUVE::MissingFile);
 }
 
 TEST_F(ScriptAssetLoaderUVETest, LoadSchemaUVE_RejectsOversizeAndEmbeddedNulBeforeDecode) {
-    WriteTextUVE(fixtureDirectory / "large.uvescript", "123456789");
+    WriteTextUVE(fixtureDirectory / "large.uvscript", "123456789");
     ScriptGraphPersistenceLimitsUVE limits;
     limits.maximumTextBytes = 4U;
     const ScriptAssetLoadResultUVE oversize = ScriptAssetLoaderUVE::LoadSchemaUVE(
-        Scene::ScriptComponentUVE{"large.uvescript"}, fileSystem, limits);
+        Scene::ScriptComponentUVE{"large.uvscript"}, fileSystem, limits);
     EXPECT_EQ(oversize.code, ScriptAssetLoadCodeUVE::TextTooLarge);
     EXPECT_EQ(oversize.sourceByteCount, 9U);
 
-    WriteBytesUVE(fixtureDirectory / "nul.uvescript", {std::byte{'{'}, std::byte{0}, std::byte{'}'}});
+    WriteBytesUVE(fixtureDirectory / "nul.uvscript", {std::byte{'{'}, std::byte{0}, std::byte{'}'}});
     const ScriptAssetLoadResultUVE nul = ScriptAssetLoaderUVE::LoadSchemaUVE(
-        Scene::ScriptComponentUVE{"nul.uvescript"}, fileSystem);
+        Scene::ScriptComponentUVE{"nul.uvscript"}, fileSystem);
     EXPECT_EQ(nul.code, ScriptAssetLoadCodeUVE::EmbeddedNul);
 }
 
 TEST_F(ScriptAssetLoaderUVETest, LoadSchemaUVE_PropagatesDecodeDiagnosticsForMalformedGraphSchema) {
-    WriteTextUVE(fixtureDirectory / "malformed.uvescript", R"({"schemaVersion":1,"nodes":[]})");
+    WriteTextUVE(fixtureDirectory / "malformed.uvscript", R"({"schemaVersion":1,"nodes":[]})");
 
     const ScriptAssetLoadResultUVE result = ScriptAssetLoaderUVE::LoadSchemaUVE(
-        Scene::ScriptComponentUVE{"malformed.uvescript"}, fileSystem);
+        Scene::ScriptComponentUVE{"malformed.uvscript"}, fileSystem);
 
     EXPECT_EQ(result.code, ScriptAssetLoadCodeUVE::DecodeRejected);
     EXPECT_FALSE(result.diagnostics.empty());

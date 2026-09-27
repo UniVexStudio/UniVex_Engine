@@ -291,7 +291,7 @@ TEST(FbxMeshConverterUVETest, WhatIsNotAnFbxWithTrianglesIsRefusedAndLeavesTheMe
 
 TEST(FbxMeshConverterUVETest, TheImporterPublishesAUveModelAndRegistersIt) {
     const std::filesystem::path sourcePath = "uve_fbx_importer_tests_floor.fbx";
-    const std::filesystem::path destinationPath = "uve_fbx_importer_tests_floor.uvemodel";
+    const std::filesystem::path destinationPath = "uve_fbx_importer_tests_floor.uvmodel";
     std::filesystem::remove(destinationPath);
     {
         const std::string fbx = MakeFbxUVE(kFloorGeometryUVE, kFloorConnectionsUVE);
@@ -310,8 +310,8 @@ TEST(FbxMeshConverterUVETest, TheImporterPublishesAUveModelAndRegistersIt) {
     EXPECT_EQ(mesh.vertices.size(), 4U);
     EXPECT_EQ(mesh.indices.size(), 6U);
 
-    // A destination that is not a .uvemodel is refused before anything is written.
-    EXPECT_EQ(importer.ImportUVE(sourcePath, "uve_fbx_importer_tests_floor.uvetex", database), kInvalidAssetGuidUVE);
+    // A destination that is not a .uvmodel is refused before anything is written.
+    EXPECT_EQ(importer.ImportUVE(sourcePath, "uve_fbx_importer_tests_floor.uvtex", database), kInvalidAssetGuidUVE);
 
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);

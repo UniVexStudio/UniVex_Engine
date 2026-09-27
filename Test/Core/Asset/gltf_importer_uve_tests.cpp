@@ -122,7 +122,7 @@ void RemoveFilesUVE(const std::initializer_list<std::filesystem::path>& paths) {
 TEST(GltfImporterUVETest, ImportUVE_ValidExternalBufferPublishesUveModelAndRegistersGuid) {
     const std::filesystem::path sourcePath = "uve_gltf_importer_tests_triangle.gltf";
     const std::filesystem::path bufferPath = "uve_gltf_importer_tests_triangle.bin";
-    const std::filesystem::path destinationPath = "uve_gltf_importer_tests_triangle.uvemodel";
+    const std::filesystem::path destinationPath = "uve_gltf_importer_tests_triangle.uvmodel";
     RemoveFilesUVE({sourcePath, bufferPath, destinationPath});
     const auto binary = MakeTriangleBufferUVE();
     WriteBytesUVE(bufferPath, binary);
@@ -151,7 +151,7 @@ TEST(GltfImporterUVETest, ImportUVE_ValidExternalBufferPublishesUveModelAndRegis
 
 TEST(GltfImporterUVETest, ImportUVE_ValidGlbPublishesUveModelAndRegistersBothExtensions) {
     const std::filesystem::path sourcePath = "uve_gltf_importer_tests_triangle.glb";
-    const std::filesystem::path destinationPath = "uve_gltf_importer_tests_triangle_glb.uvemodel";
+    const std::filesystem::path destinationPath = "uve_gltf_importer_tests_triangle_glb.uvmodel";
     RemoveFilesUVE({sourcePath, destinationPath});
     const auto binary = MakeTriangleBufferUVE();
     WriteGlbUVE(sourcePath, MakeGltfJsonUVE(""), binary);
@@ -174,7 +174,7 @@ TEST(GltfImporterUVETest, ImportUVE_ValidGlbPublishesUveModelAndRegistersBothExt
 
 TEST(GltfImporterUVETest, ImportUVE_InvalidSourcePreservesExistingDestinationAndDoesNotRegister) {
     const std::filesystem::path sourcePath = "uve_gltf_importer_tests_invalid.gltf";
-    const std::filesystem::path destinationPath = "uve_gltf_importer_tests_existing.uvemodel";
+    const std::filesystem::path destinationPath = "uve_gltf_importer_tests_existing.uvmodel";
     RemoveFilesUVE({sourcePath, destinationPath});
     WriteTextUVE(sourcePath, "{\"asset\":{\"version\":\"2.0\"},\"buffers\":[]}");
     MeshAssetUVE original;
@@ -199,7 +199,7 @@ TEST(GltfImporterUVETest, ImportUVE_InvalidSourcePreservesExistingDestinationAnd
 
 TEST(GltfImporterUVETest, ImportUVE_WrongDestinationExtensionFailsBeforePublish) {
     const std::filesystem::path sourcePath = "uve_gltf_importer_tests_wrong_destination.gltf";
-    const std::filesystem::path destinationPath = "uve_gltf_importer_tests_wrong_destination.uvemat";
+    const std::filesystem::path destinationPath = "uve_gltf_importer_tests_wrong_destination.uvmat";
     RemoveFilesUVE({sourcePath, destinationPath});
     WriteTextUVE(sourcePath, MakeGltfJsonUVE("missing.bin"));
 

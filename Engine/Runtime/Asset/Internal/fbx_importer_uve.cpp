@@ -22,8 +22,8 @@ constexpr std::string_view kFbxTemporarySuffixUVE = ".uve_fbx_tmp";
 [[nodiscard]] bool ImportFbxSourceUVE(const std::filesystem::path& sourcePath,
                                       const std::filesystem::path& destinationPath,
                                       const AssetImportSettingsUVE& /*settings*/) {
-    if (destinationPath.extension() != ".uvemodel") {
-        UVE_ERROR("FbxImporterUVE: destination \"{}\" must use the .uvemodel extension",
+    if (destinationPath.extension() != ".uvmodel") {
+        UVE_ERROR("FbxImporterUVE: destination \"{}\" must use the .uvmodel extension",
                   destinationPath.string());
         return false;
     }

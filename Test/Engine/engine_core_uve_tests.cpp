@@ -108,10 +108,10 @@ EngineConfigUVE MakeTestConfigUVE() {
     config.enableConsoleLogging = false;
     config.logFilePath = "uve_engine_core_tests.log";
     config.threadPoolWorkerCount = 2; // keep the whole suite's thread churn small and fast
-    config.settingsFilePath = "uve_engine_core_tests.uvesettings"; // never touch a real settings file
-    config.assetDatabaseFilePath = "uve_engine_core_tests.uveassetdb"; // never touch a real asset db
-    config.projectSettingsFilePath = "uve_engine_core_tests.project.uvesettings"; // nor a real project file
-    config.inputMapFilePath = "uve_engine_core_tests.project.uveinput";
+    config.settingsFilePath = "uve_engine_core_tests.uvsettings"; // never touch a real settings file
+    config.assetDatabaseFilePath = "uve_engine_core_tests.uvassetdb"; // never touch a real asset db
+    config.projectSettingsFilePath = "uve_engine_core_tests.project.uvsettings"; // nor a real project file
+    config.inputMapFilePath = "uve_engine_core_tests.project.uvinput";
     config.headlessUVE = true; // NullWindowManagerUVE/NullRenderDeviceUVE - no display required;
                                 // every pre-Increment-20 test opts into this by default, matching
                                 // its exact prior (headless-only) behavior. Tests that specifically
@@ -121,7 +121,7 @@ EngineConfigUVE MakeTestConfigUVE() {
 
 TEST(EngineCoreUVETest, ProjectSettings_OverrideTheApplicationsConfigWhereTheProjectSetsThem) {
     EngineConfigUVE config = MakeTestConfigUVE();
-    config.projectSettingsFilePath = "uve_engine_core_tests_overrides.project.uvesettings";
+    config.projectSettingsFilePath = "uve_engine_core_tests_overrides.project.uvsettings";
     config.autoSaveIntervalSecondsUVE = 123.0; // the application's choice, kept unless overridden
     {
         std::ofstream file(config.projectSettingsFilePath);
@@ -763,7 +763,7 @@ TEST(EngineCoreUVETest, AssetDatabaseSceneSerializerPrefabSystem_ReachableAndRou
     entityManager.AddComponentUVE<Scene::MeshComponentUVE>(
         source, Scene::MeshComponentUVE{Asset::AssetGuidUVE{51}, Asset::AssetGuidUVE{52}});
 
-    const std::filesystem::path prefabPath = "uve_engine_core_tests.uveprefab";
+    const std::filesystem::path prefabPath = "uve_engine_core_tests.uvprefab";
     std::filesystem::remove(prefabPath);
     const Asset::AssetGuidUVE guid = prefabSystem.SavePrefabUVE(entityManager, assetDatabase, source, prefabPath);
     ASSERT_NE(guid, Asset::kInvalidAssetGuidUVE);
@@ -858,10 +858,10 @@ TEST(EngineCoreUVETest, AssetManagerImporterHotReloadBundle_ReachableAndRoundTri
 TEST(EngineCoreUVETest, TypedUVEEnvelopeImporters_ComposedAndReachableAfterInit) {
     EngineConfigUVE config = MakeTestConfigUVE();
     const std::filesystem::path root = ::UVE::Tests::ScratchRootUVE();
-    config.assetDatabaseFilePath = root / "uve_engine_core_typed_envelope_tests.uveassetdb";
+    config.assetDatabaseFilePath = root / "uve_engine_core_typed_envelope_tests.uvassetdb";
 
     constexpr std::array<std::string_view, 4> kTypedEnvelopeExtensions = {
-        ".uvemodel", ".uvetex", ".uveshader", ".uvemat"};
+        ".uvmodel", ".uvtex", ".uvshader", ".uvmat"};
     struct CleanupUVE final {
         std::filesystem::path database;
         std::array<std::filesystem::path, 4> sources;
@@ -905,9 +905,9 @@ TEST(EngineCoreUVETest, TypedUVEEnvelopeImporters_ComposedAndReachableAfterInit)
 TEST(EngineCoreUVETest, AudioAssetLoader_RegisteredAndReachableThroughBuiltInPipeline) {
     EngineConfigUVE config = MakeTestConfigUVE();
     const std::filesystem::path root = ::UVE::Tests::ScratchRootUVE();
-    config.assetDatabaseFilePath = root / "uve_engine_core_audio_asset_tests.uveassetdb";
+    config.assetDatabaseFilePath = root / "uve_engine_core_audio_asset_tests.uvassetdb";
     const std::filesystem::path sourcePath = root / "uve_engine_core_audio_asset_tests.wav";
-    const std::filesystem::path destinationPath = root / "uve_engine_core_audio_asset_tests.uveaudio";
+    const std::filesystem::path destinationPath = root / "uve_engine_core_audio_asset_tests.uvaudio";
     std::filesystem::remove(config.assetDatabaseFilePath);
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
@@ -966,9 +966,9 @@ TEST(EngineCoreUVETest, AudioAssetLoader_RegisteredAndReachableThroughBuiltInPip
 TEST(EngineCoreUVETest, AnimationAssetLoader_RegisteredAndReachableThroughBuiltInPipeline) {
     EngineConfigUVE config = MakeTestConfigUVE();
     const std::filesystem::path root = ::UVE::Tests::ScratchRootUVE();
-    config.assetDatabaseFilePath = root / "uve_engine_core_animation_asset_tests.uveassetdb";
-    const std::filesystem::path sourcePath = root / "uve_engine_core_animation_asset_tests_source.uveanim";
-    const std::filesystem::path destinationPath = root / "uve_engine_core_animation_asset_tests_dest.uveanim";
+    config.assetDatabaseFilePath = root / "uve_engine_core_animation_asset_tests.uvassetdb";
+    const std::filesystem::path sourcePath = root / "uve_engine_core_animation_asset_tests_source.uvanim";
+    const std::filesystem::path destinationPath = root / "uve_engine_core_animation_asset_tests_dest.uvanim";
     std::filesystem::remove(config.assetDatabaseFilePath);
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
@@ -1023,9 +1023,9 @@ TEST(EngineCoreUVETest, AnimationAssetLoader_RegisteredAndReachableThroughBuiltI
 TEST(EngineCoreUVETest, DataTablePipeline_RegisteredAndReachableThroughServicesAfterInit) {
     EngineConfigUVE config = MakeTestConfigUVE();
     const std::filesystem::path root = ::UVE::Tests::ScratchRootUVE();
-    config.assetDatabaseFilePath = root / "uve_engine_core_data_table_tests.uveassetdb";
+    config.assetDatabaseFilePath = root / "uve_engine_core_data_table_tests.uvassetdb";
     const std::filesystem::path sourcePath = root / "uve_engine_core_data_table_tests.csv";
-    const std::filesystem::path destinationPath = root / "uve_engine_core_data_table_tests.uvetable";
+    const std::filesystem::path destinationPath = root / "uve_engine_core_data_table_tests.uvtable";
     std::filesystem::remove(config.assetDatabaseFilePath);
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
@@ -1136,12 +1136,12 @@ TEST(EngineCoreUVETest, ScriptComponentEntity_ReconcilesAndTicksAgainstScriptRun
 
     const auto* const encodedBytes = reinterpret_cast<const std::byte*>(encoded.data());
     const std::vector<std::byte> encodedData(encodedBytes, encodedBytes + encoded.size());
-    ASSERT_TRUE(fileSystem.WriteFileUVE("test_script.uvescript", encodedData));
+    ASSERT_TRUE(fileSystem.WriteFileUVE("test_script.uvscript", encodedData));
 
     Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
     const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
     entityManager.AddComponentUVE<Scene::ScriptComponentUVE>(
-        entity, Scene::ScriptComponentUVE{"test_script.uvescript"});
+        entity, Scene::ScriptComponentUVE{"test_script.uvscript"});
 
     EXPECT_EQ(engine.GetActiveScriptInstanceCountUVE(), 0U);
     engine.TickFrameUVE();
@@ -1177,19 +1177,19 @@ TEST(EngineCoreUVETest, ScriptComponentEntity_FindsAProjectScriptAndRetriesWhenI
     Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
     const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
     // First the script does not exist yet: a failure, remembered for that path.
-    entityManager.AddComponentUVE<Scene::ScriptComponentUVE>(entity, Scene::ScriptComponentUVE{"scripts/main.uvescript"});
+    entityManager.AddComponentUVE<Scene::ScriptComponentUVE>(entity, Scene::ScriptComponentUVE{"scripts/main.uvscript"});
     engine.TickFrameUVE();
     EXPECT_EQ(engine.GetActiveScriptInstanceCountUVE(), 0U);
 
     // Written, but the same path is not retried every frame...
     {
-        std::ofstream(projectRoot / "scripts" / "main.uvescript", std::ios::binary) << encoded;
-        std::ofstream(projectRoot / "scripts" / "other.uvescript", std::ios::binary) << encoded;
+        std::ofstream(projectRoot / "scripts" / "main.uvscript", std::ios::binary) << encoded;
+        std::ofstream(projectRoot / "scripts" / "other.uvscript", std::ios::binary) << encoded;
     }
     engine.TickFrameUVE();
     EXPECT_EQ(engine.GetActiveScriptInstanceCountUVE(), 0U);
     // ...while pointing the node at a script is tried at once.
-    entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(entity).scriptAssetPath = "scripts/other.uvescript";
+    entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(entity).scriptAssetPath = "scripts/other.uvscript";
     engine.TickFrameUVE();
     EXPECT_EQ(engine.GetActiveScriptInstanceCountUVE(), 1U);
 
@@ -1788,7 +1788,7 @@ TEST(EngineCoreUVETest, AnimationPlayer_PlaysItsClipOnItsParentNode) {
     end.timeSeconds = 2.0;
     end.pose.position = Math::Vector3UVE{10.0F, 0.0F, 0.0F};
     clip.samples = {start, end};
-    const std::filesystem::path clipPath = "uve_engine_core_tests_slide.uveanim";
+    const std::filesystem::path clipPath = "uve_engine_core_tests_slide.uvanim";
     ASSERT_TRUE(Asset::SaveAnimationClipAssetUVE(clip, clipPath));
     const Asset::AssetGuidUVE guid = assetDatabase.RegisterUVE(clipPath);
     ASSERT_NE(guid, Asset::kInvalidAssetGuidUVE);
@@ -3064,7 +3064,7 @@ TEST(EngineCoreUVETest, GetServicesUVEBeforeInit_ThrowsBadOptionalAccessInsteadO
 // slice, so the file is the real interchange - not an in-memory shortcut.
 namespace {
 
-const std::filesystem::path kStreamerTestLevelPath = "uve_engine_core_streamer_test_level.uvescene";
+const std::filesystem::path kStreamerTestLevelPath = "uve_engine_core_streamer_test_level.uvscene";
 
 // Writes `kStreamerTestLevelPath` and returns true on success. Two entities: a root at (0,0,0)
 // with a child offset at (1,2,3), so "one loaded level" is measurable as +2 entities.
@@ -3275,7 +3275,7 @@ TEST(EngineCoreUVETest, LevelStreamer3D_FailedLoadLatchesClosedAndNeverRetriesIn
     const Scene::EntityUVE streamer = entityManager.CreateEntityUVE();
     sceneGraph.AttachTransformUVE(entityManager, streamer, Scene::TransformComponentUVE{});
     Scene::LevelStreamer3DNodeComponentUVE component;
-    component.levelPath = "uve_engine_core_streamer_file_that_does_not_exist.uvescene";
+    component.levelPath = "uve_engine_core_streamer_file_that_does_not_exist.uvscene";
     component.loadDistance = 10.0F;
     component.unloadDistance = 20.0F;
     component.enabled = true;

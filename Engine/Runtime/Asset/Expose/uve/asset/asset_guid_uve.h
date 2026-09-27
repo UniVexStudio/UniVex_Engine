@@ -8,7 +8,7 @@
 
 namespace UVE::Asset {
 
-/// AssetGuidUVE identifies an asset (a .uveprefab, and in the future any other .uve* asset)
+/// AssetGuidUVE identifies an asset (a .uvprefab, and in the future any other .uve* asset)
 /// independent of its file path — the mechanism the master spec requires scenes/prefabs to use
 /// instead of embedding file-path dependencies. Deliberately an engine-custom 64-bit id, not a
 /// full 128-bit UUID: a real GUID scheme (with generation/collision guarantees suitable for a

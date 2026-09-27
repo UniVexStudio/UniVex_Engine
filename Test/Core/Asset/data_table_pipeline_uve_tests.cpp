@@ -38,7 +38,7 @@ namespace {
 TEST(DataTablePipelineUVE, BootstrapComposesImportAndTypedLoadServices) {
     const std::filesystem::path source = ::UVE::Tests::ScratchRootUVE() / "uve_data_table_pipeline.csv";
     const std::filesystem::path destination =
-        ::UVE::Tests::ScratchRootUVE() / "uve_data_table_pipeline.uvetable";
+        ::UVE::Tests::ScratchRootUVE() / "uve_data_table_pipeline.uvtable";
     static_cast<void>(std::filesystem::remove(source));
     static_cast<void>(std::filesystem::remove(destination));
     struct CleanupUVE final {

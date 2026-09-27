@@ -10,7 +10,7 @@
 
 namespace UVE::Asset {
 
-/// The CPU-side, engine-native representation of a `.uvemat` asset (Part 2's file-format table):
+/// The CPU-side, engine-native representation of a `.uvmat` asset (Part 2's file-format table):
 /// a PBR material — Albedo, Normal, Metallic, Roughness, AO, Emissive (Part 7.2's
 /// `MaterialSystemUVE` workflow). Textures and shaders are referenced by `AssetGuidUVE`, never a
 /// file path — matching the master spec's "No file path dependencies in scenes" rule

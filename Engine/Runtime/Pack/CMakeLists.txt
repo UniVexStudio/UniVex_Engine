@@ -2,7 +2,7 @@
 
 #
 # Roadmap item #7 (minimal packaging/export pipeline): ProjectPackagerUVE (pure filesystem
-# copy - runtime binary + content root + the project's own .uveditor manifest into one
+# copy - runtime binary + content root + the project's own .uvproject manifest into one
 # distributable folder) and LoadAndActivateProjectSceneUVE (the EngineCoreUVE-side counterpart:
 # loads a packaged/authored project's startup scene and activates its camera, used by both
 # uve_runtime's own --project flag and this module's tests). Mirrors ProjectCheck's own

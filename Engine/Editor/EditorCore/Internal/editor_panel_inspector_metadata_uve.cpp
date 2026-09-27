@@ -626,7 +626,7 @@ void EditorUVE::DrawMetadataPropertyRowUVE(const TypeMetadataEntryUVE& entry,
         }
     } else if (property.typeId == Scene::kPropertyTypeAssetGuidUVE) {
         // A picker over the registered assets of the kind the property declares
-        // ("asset:uvemodel"). Picking, never typing: a typed 64-bit number is a way to author a
+        // ("asset:uvmodel"). Picking, never typing: a typed 64-bit number is a way to author a
         // dangling reference. A property that declares no kind is shown read-only.
         Asset::AssetGuidUVE value{};
         property.getValue(instance, &value);
@@ -726,7 +726,7 @@ std::optional<Asset::AssetGuidUVE> EditorUVE::DrawAssetPickerUVE(const char* con
             // A model source (.glb/.gltf/.obj) stands for the mesh it was imported to, once
             // that import has produced it; the author picks the file they know.
             std::filesystem::path path;
-            if (extension == ".uvemodel" && IsModelSourcePathUVE(file.relativePath)) {
+            if (extension == ".uvmodel" && IsModelSourcePathUVE(file.relativePath)) {
                 path = GetImportedModelPathUVE(file.relativePath);
                 std::error_code error;
                 if (!std::filesystem::is_regular_file(path, error)) {

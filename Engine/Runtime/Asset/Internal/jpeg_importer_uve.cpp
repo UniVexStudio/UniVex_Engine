@@ -28,8 +28,8 @@ constexpr std::string_view kJpegTemporarySuffixUVE = ".uve_jpeg_tmp";
                                        const std::filesystem::path& destinationPath,
                                        const AssetImportSettingsUVE& /*settings*/) {
     try {
-        if (destinationPath.extension() != ".uvetex") {
-            UVE_ERROR("JpegImporterUVE: destination \"{}\" must use the .uvetex extension",
+        if (destinationPath.extension() != ".uvtex") {
+            UVE_ERROR("JpegImporterUVE: destination \"{}\" must use the .uvtex extension",
                       destinationPath.string());
             return false;
         }

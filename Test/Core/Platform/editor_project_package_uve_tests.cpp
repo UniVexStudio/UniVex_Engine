@@ -14,7 +14,7 @@ namespace {
 
 class EditorProjectPackageUVETest : public ::testing::Test {
 protected:
-    void SetUp() override { packagePath = ::UVE::Tests::MakeTestCaseDirectoryUVE() / "package.uveditor"; }
+    void SetUp() override { packagePath = ::UVE::Tests::MakeTestCaseDirectoryUVE() / "package.uvproject"; }
 
     [[nodiscard]] EditorProjectPackageUVE MakePackage() const {
         EditorProjectPackageUVE package;
@@ -23,8 +23,8 @@ protected:
         package.displayName = "UniVex Demo";
         package.engineVersion = {0U, 1U, 0U, 42U};
         package.contentRoot = "assets";
-        package.assetDatabasePath = ".uveassetdb";
-        package.settingsPath = ".uvesettings";
+        package.assetDatabasePath = ".uvassetdb";
+        package.settingsPath = ".uvsettings";
         return package;
     }
 
@@ -135,27 +135,27 @@ TEST_F(EditorProjectPackageUVETest, ApplyUpdate_RejectsNonNewerReplacementWithou
 
 TEST_F(EditorProjectPackageUVETest, SaveAndLoad_RoundTripsStartupScenePath) {
     EditorProjectPackageUVE expected = MakePackage();
-    expected.startupScenePath = "scenes/main.uvescene";
+    expected.startupScenePath = "scenes/main.uvscene";
 
     ASSERT_TRUE(EditorProjectPackageCodecUVE::SaveUVE(packagePath, expected).IsAcceptedUVE());
     const EditorProjectPackageLoadResultUVE loadResult = EditorProjectPackageCodecUVE::LoadUVE(packagePath);
 
     ASSERT_TRUE(loadResult.IsAcceptedUVE()) << loadResult.result.message;
-    EXPECT_EQ(loadResult.package->startupScenePath, "scenes/main.uvescene");
+    EXPECT_EQ(loadResult.package->startupScenePath, "scenes/main.uvscene");
 }
 
 TEST_F(EditorProjectPackageUVETest, Load_DefaultsMissingStartupScenePathToEmptyForOlderFiles) {
-    // Simulates a .uveditor file written before startupScenePath existed - no such key at all,
+    // Simulates a .uvproject file written before startupScenePath existed - no such key at all,
     // not merely an empty string for it.
-    const nlohmann::json legacyJson{{"format", "uveditor"},
+    const nlohmann::json legacyJson{{"format", "uvproject"},
                                     {"schemaVersion", kCurrentEditorProjectSchemaVersionUVE},
                                     {"revision", 1U},
                                     {"projectId", "legacy-project"},
                                     {"displayName", "Legacy"},
                                     {"engineVersion", {{"major", 0U}, {"minor", 1U}, {"patch", 0U}, {"build", 1U}}},
                                     {"contentRoot", "assets"},
-                                    {"assetDatabasePath", ".uveassetdb"},
-                                    {"settingsPath", ".uvesettings"}};
+                                    {"assetDatabasePath", ".uvassetdb"},
+                                    {"settingsPath", ".uvsettings"}};
     {
         std::ofstream output(packagePath, std::ios::binary | std::ios::trunc);
         output << legacyJson.dump();
@@ -171,7 +171,7 @@ TEST_F(EditorProjectPackageUVETest, Validate_RejectsTraversalStartupScenePathBut
     EditorProjectPackageUVE package = MakePackage();
     EXPECT_TRUE(EditorProjectPackageCodecUVE::ValidateUVE(package).IsAcceptedUVE());
 
-    package.startupScenePath = "../outside.uvescene";
+    package.startupScenePath = "../outside.uvscene";
     EXPECT_EQ(EditorProjectPackageCodecUVE::ValidateUVE(package).code, EditorProjectPackageCodeUVE::InvalidPath);
 }
 
