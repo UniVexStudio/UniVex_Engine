@@ -141,6 +141,11 @@ primary     := NUMBER UNIT? | STRING | 'true' | 'false' | 'none' | IDENT | '(' e
      `uvsc`, which compiles each script against the node described in the `.uvhost` file.
    - From a running game: `EngineCoreUVE::WriteNativeUVScriptsUVE(dir)` writes the C++ of every
      program in use, compiled against the real node, ready to add to the release build.
-   - Not yet: values are still the tagged `ValueUVE`, so this removes the dispatch loop but not the
-     type checks on each operation. Typed code (plain `double` and `int64_t` locals where the
-     checker knows the type) is the next step. No speed measurement has been made yet.
+   - **Typed code (this change).** A function or handler whose stack types are known at every
+     instruction, and that has no `wait` and touches no node values, also gets an unboxed twin:
+     `int64_t`/`double`/`bool`/`std::string`/`Vec3ValueUVE` locals, direct calls between such
+     twins, and the same zero checks, error text and per-instruction budget as the interpreter.
+     Anything else keeps the `ValueUVE` form. Arguments handed in from outside (`CallUVE`,
+     `RaiseEventUVE`) are checked against the parameter types first, both ways.
+   - Measured once, in a Debug build: `fib(20)` took 68.8 ms interpreted and 0.62 ms native. A
+     test prints this each run; it is not a benchmark, and Release numbers were not taken.

@@ -81,6 +81,8 @@ struct ChunkUVE final {
     std::string name;
     std::uint32_t paramCount = 0U;
     std::uint32_t localCount = 0U;
+    /// The type of each local slot (parameters first); slots are never shared within a chunk.
+    std::vector<TypeUVE> localTypes;
     std::vector<InstructionUVE> code;
     TypeUVE result;
 };
@@ -93,6 +95,9 @@ struct ProgramUVE final {
     std::vector<ChunkUVE> functions;
     /// Index into `functions` of each handler, by event name.
     std::vector<std::pair<std::string, std::uint32_t>> handlers;
+    /// For each LoadProp/StoreProp/CallHost name constant: the property's type or the function's
+    /// result type, as the host described it.
+    std::vector<std::pair<std::uint32_t, TypeUVE>> hostTypes;
     /// A hash of everything above: two programs with the same fingerprint run the same code, which
     /// is how generated native code finds the program it was generated from.
     std::uint64_t fingerprint = 0U;

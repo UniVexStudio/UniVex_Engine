@@ -439,7 +439,8 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
 - [ ] An in-editor debugger (breakpoints, stepping, live values)
 - [x] C++23 output for release builds: bytecode translated to C++, registered by program fingerprint,
   checked against the interpreter
-- [ ] Typed C++ output (unboxed locals) and a measured speed-up
+- [x] Typed C++ output: unboxed locals for functions whose types are known throughout (Debug
+  `fib(20)`: 68.8 ms interpreted, 0.62 ms native; Release not measured)
 
 ### 7.2 Gameplay framework
 - [ ] A formal actor/pawn/controller-style gameplay object model above raw ECS entities +

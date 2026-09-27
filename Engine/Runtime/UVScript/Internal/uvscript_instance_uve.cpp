@@ -255,6 +255,31 @@ struct ScriptInstanceUVE::StateUVE final {
     }
 };
 
+namespace {
+
+/// Whether a value handed in from outside fits a parameter's declared type. Both ways of running
+/// rely on it: generated code unboxes parameters as their declared type.
+[[nodiscard]] bool ArgsFitUVE(const ChunkUVE& chunk, const std::span<const ValueUVE> args) {
+    for (std::size_t i = 0U; i < args.size() && i < chunk.localTypes.size(); ++i) {
+        const ValueUVE& v = args[i];
+        bool fits = true;
+        switch (chunk.localTypes[i].kind) {
+            case TypeUVE::KindUVE::Bool: fits = std::holds_alternative<bool>(v); break;
+            case TypeUVE::KindUVE::Int: fits = std::holds_alternative<std::int64_t>(v); break;
+            case TypeUVE::KindUVE::Float: fits = std::holds_alternative<double>(v); break;
+            case TypeUVE::KindUVE::Str: fits = std::holds_alternative<std::string>(v); break;
+            case TypeUVE::KindUVE::Vec3: fits = std::holds_alternative<Vec3ValueUVE>(v); break;
+            default: break;
+        }
+        if (!fits) {
+            return false;
+        }
+    }
+    return true;
+}
+
+} // namespace
+
 ScriptInstanceUVE::ScriptInstanceUVE(std::shared_ptr<const ProgramUVE> program, UVScriptHostUVE& host,
                                      const ExecutionUVE execution)
     : m_state(std::make_unique<StateUVE>()) {
@@ -283,6 +308,10 @@ bool ScriptInstanceUVE::RaiseEventUVE(const std::string_view event, const std::s
     const ChunkUVE& chunk = m_state->program->functions[it->second];
     if (args.size() != chunk.paramCount) {
         m_state->lastError = "'" + std::string{event} + "' was raised with the wrong number of values";
+        return false;
+    }
+    if (!ArgsFitUVE(chunk, args)) {
+        m_state->lastError = "'" + std::string{event} + "' was raised with a value of the wrong type";
         return false;
     }
     const std::string before = m_state->lastError;
@@ -322,6 +351,10 @@ std::optional<ValueUVE> ScriptInstanceUVE::CallUVE(const std::string_view name, 
     for (std::size_t index = 0U; index < functions.size(); ++index) {
         const ChunkUVE& chunk = functions[index];
         if (chunk.name == name && chunk.paramCount == args.size()) {
+            if (!ArgsFitUVE(chunk, args)) {
+                m_state->lastError = "'" + std::string{name} + "' was called with a value of the wrong type";
+                return std::nullopt;
+            }
             m_state->lastError.clear();
             CoroutineUVE co = m_state->StartChunk(index, args);
             std::optional<ValueUVE> result = m_state->Resume(co);
