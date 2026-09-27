@@ -11,6 +11,7 @@
 #include <limits>
 #include <optional>
 #include <stdexcept>
+#include <map>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -415,7 +416,11 @@ namespace {
 }
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const ScriptComponentUVE& component) {
-    return {{"scriptAssetPath", component.scriptAssetPath}};
+    nlohmann::json json{{"scriptAssetPath", component.scriptAssetPath}};
+    if (!component.exportValues.empty()) {
+        json["exportValues"] = component.exportValues;
+    }
+    return json;
 }
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const ParticleEmitterComponentUVE& component) {
@@ -1748,7 +1753,10 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                           return source;
                       }, IsAudioSourceComponentValidUVE));
         table.emplace("ScriptComponentUVE", MakeRegistrationUVE<ScriptComponentUVE>([](const nlohmann::json& json) {
-                          const ScriptComponentUVE script{json.at("scriptAssetPath").get<std::string>()};
+                          // exportValues came later; a scene saved before it has none.
+                          const ScriptComponentUVE script{
+                              json.at("scriptAssetPath").get<std::string>(),
+                              json.value("exportValues", std::map<std::string, std::string>{})};
                           if (!IsScriptComponentValidUVE(script)) {
                               throw std::runtime_error("Invalid ScriptComponentUVE payload");
                           }

@@ -1225,6 +1225,19 @@ TEST(EngineCoreUVETest, UVScriptEntity_CompilesOnceRaisesReadyThenTicksEveryFram
     engine.TickFrameUVE();
     EXPECT_EQ(engine.FindUVScriptInstanceUVE(entity), nullptr);
 
+    // The node's own export values are in place before `ready` runs; changing them restarts it.
+    write("exports.uvs", "export speed = 1.0\nvar seen = 0.0\n\non ready:\n    seen = speed\n");
+    const Scene::EntityUVE exporter = entityManager.CreateEntityUVE();
+    entityManager.AddComponentUVE<Scene::ScriptComponentUVE>(
+        exporter, Scene::ScriptComponentUVE{"exports.uvs", {{"speed", "7.5"}, {"gone", "1"}}});
+    engine.TickFrameUVE();
+    ASSERT_NE(engine.FindUVScriptInstanceUVE(exporter), nullptr);
+    EXPECT_EQ(engine.FindUVScriptInstanceUVE(exporter)->GetFieldUVE("seen"), UVScript::ValueUVE{7.5});
+    entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(exporter).exportValues["speed"] = "2.0";
+    engine.TickFrameUVE();
+    ASSERT_NE(engine.FindUVScriptInstanceUVE(exporter), nullptr);
+    EXPECT_EQ(engine.FindUVScriptInstanceUVE(exporter)->GetFieldUVE("seen"), UVScript::ValueUVE{2.0});
+
     // A node with a transform moves itself through `position`.
     write("mover.uvs", "on tick(dt):\n    position.x += 2.0\n");
     const Scene::EntityUVE mover = entityManager.CreateEntityUVE();

@@ -14,6 +14,7 @@
 #include <chrono>
 #include <functional>
 #include <unordered_map>
+#include <map>
 #include <memory>
 #include <optional>
 #include <unordered_set>
@@ -767,6 +768,8 @@ private:
         std::string path;
         /// The text it was compiled from; a file that now reads differently is recompiled.
         std::string source;
+        /// The node's export values it started with; changing them restarts the script.
+        std::map<std::string, std::string> exportValues;
         std::unique_ptr<UVScriptNodeHostUVE> host;
         std::unique_ptr<UVScript::ScriptInstanceUVE> instance;
         bool readyRaised = false;

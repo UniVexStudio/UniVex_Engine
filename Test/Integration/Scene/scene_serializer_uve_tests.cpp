@@ -9,6 +9,7 @@
 #include <iterator>
 #include <limits>
 #include <memory>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -156,7 +157,8 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
     audio.audioAssetPath = "sounds/lifecycle.wav";
     audio.looping = true;
     entityManager.AddComponentUVE<AudioSourceComponentUVE>(source, audio);
-    entityManager.AddComponentUVE<ScriptComponentUVE>(source, ScriptComponentUVE{"scripts/lifecycle.lua"});
+    entityManager.AddComponentUVE<ScriptComponentUVE>(
+        source, ScriptComponentUVE{"scripts/lifecycle.lua", {{"speed", "9.5"}, {"label", "hero"}}});
     entityManager.AddComponentUVE<ParticleEmitterComponentUVE>(source, ParticleEmitterComponentUVE{128U});
     entityManager.AddComponentUVE<PrefabInstanceComponentUVE>(source,
                                                                PrefabInstanceComponentUVE{Asset::AssetGuidUVE{9001}, {}});
@@ -297,6 +299,8 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
               "sounds/lifecycle.wav");
     EXPECT_TRUE(entityManager.GetComponentUVE<AudioSourceComponentUVE>(restored).looping);
     EXPECT_EQ(entityManager.GetComponentUVE<ScriptComponentUVE>(restored).scriptAssetPath, "scripts/lifecycle.lua");
+    EXPECT_EQ(entityManager.GetComponentUVE<ScriptComponentUVE>(restored).exportValues,
+              (std::map<std::string, std::string>{{"label", "hero"}, {"speed", "9.5"}}));
     EXPECT_EQ(entityManager.GetComponentUVE<ParticleEmitterComponentUVE>(restored).maxParticles, 128U);
     EXPECT_EQ(entityManager.GetComponentUVE<PrefabInstanceComponentUVE>(restored).sourcePrefabGuid,
               Asset::AssetGuidUVE{9001});
@@ -774,6 +778,27 @@ TEST(ParticleEmitterComponentUVE, IsParticleEmitterComponentValidUVE_EnforcesBou
         ParticleEmitterComponentUVE{kMaximumParticleEmitterParticlesUVE}));
     EXPECT_FALSE(IsParticleEmitterComponentValidUVE(
         ParticleEmitterComponentUVE{kMaximumParticleEmitterParticlesUVE + 1U}));
+}
+
+TEST_F(SceneSerializerUVETest, RestoreUVE_ScriptSavedBeforeExportValuesLoadsWithNone) {
+    const std::string payloadText =
+        R"({"entities":[{"localId":0,"components":{"ScriptComponentUVE":{"scriptAssetPath":"scripts/a.uvs"}}}]})";
+    const auto* const payloadBytes = reinterpret_cast<const std::byte*>(payloadText.data());
+    const SceneSnapshotUVE snapshot{
+        Asset::EncodeUveFileEnvelopeUVE(SceneAssetTypeUVE::Scene,
+                                        std::vector<std::byte>{payloadBytes, payloadBytes + payloadText.size()}),
+        SceneAssetTypeUVE::Scene};
+    const std::vector<EntityUVE> roots = serializer.RestoreUVE(entityManager, snapshot);
+    ASSERT_EQ(roots.size(), 1U);
+    EXPECT_EQ(entityManager.GetComponentUVE<ScriptComponentUVE>(roots.front()).scriptAssetPath, "scripts/a.uvs");
+    EXPECT_TRUE(entityManager.GetComponentUVE<ScriptComponentUVE>(roots.front()).exportValues.empty());
+}
+
+TEST(ScriptComponentUVE, IsScriptComponentValidUVE_BoundsExportValues) {
+    EXPECT_TRUE(IsScriptComponentValidUVE(ScriptComponentUVE{"scripts/a.uvs", {{"speed", "1.0"}}}));
+    EXPECT_FALSE(IsScriptComponentValidUVE(ScriptComponentUVE{"scripts/a.uvs", {{"", "1.0"}}}));
+    EXPECT_FALSE(IsScriptComponentValidUVE(
+        ScriptComponentUVE{"scripts/a.uvs", {{"speed", std::string(kMaximumScriptExportValueBytesUVE + 1U, 'x')}}}));
 }
 
 TEST_F(SceneSerializerUVETest, RestoreUVE_InvalidScriptPayload_RollsBackCreatedEntities) {
