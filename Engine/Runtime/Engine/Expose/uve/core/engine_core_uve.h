@@ -12,6 +12,7 @@
 #pragma once
 
 #include <chrono>
+#include <filesystem>
 #include <functional>
 #include <unordered_map>
 #include <map>
@@ -303,6 +304,12 @@ public:
     /// Test/diagnostic hook: the `.uvs` instance running on `entity`, or null when it has none
     /// (no script, not compiled yet, or compile failed).
     [[nodiscard]] UVScript::ScriptInstanceUVE* FindUVScriptInstanceUVE(Scene::EntityUVE entity) noexcept;
+
+    /// Release builds: writes the C++ for every distinct `.uvs` program running right now into
+    /// `directory` (`<script>_<fingerprint>.uvs.cpp`), compiled against each node's real host, so
+    /// adding those files to the game makes the same scripts run native there. Returns how many
+    /// files were written, or nothing if one could not be.
+    [[nodiscard]] std::optional<std::size_t> WriteNativeUVScriptsUVE(const std::filesystem::path& directory) const;
 
     /// Diagnostic/test hook: the collision enter/exit transitions computed by
     /// SyncCollisionLifecycleUVE() on the most recent Update() call.
@@ -754,6 +761,7 @@ private:
         std::string source;
         /// The node's export values it started with; changing them restarts the script.
         std::map<std::string, std::string> exportValues;
+        std::shared_ptr<const UVScript::ProgramUVE> program;
         std::unique_ptr<UVScriptNodeHostUVE> host;
         std::unique_ptr<UVScript::ScriptInstanceUVE> instance;
         bool readyRaised = false;

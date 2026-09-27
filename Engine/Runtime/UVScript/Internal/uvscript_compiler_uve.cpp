@@ -955,6 +955,7 @@ CompileResultUVE CompileUVScriptUVE(const FileUVE& file, const UVScriptHostUVE& 
         return a.at.line != b.at.line ? a.at.line < b.at.line : a.at.column < b.at.column;
     });
     if (result.diagnostics.empty()) {
+        program->fingerprint = ComputeProgramFingerprintUVE(*program);
         result.program = std::move(program);
     }
     return result;
@@ -970,6 +971,72 @@ CompileResultUVE CompileUVScriptSourceUVE(const std::string_view source, const U
 
 std::vector<FieldInfoUVE> GetProgramFieldsUVE(const ProgramUVE& program) {
     return program.fields;
+}
+
+std::uint64_t GetProgramFingerprintUVE(const ProgramUVE& program) {
+    return program.fingerprint;
+}
+
+std::uint64_t ComputeProgramFingerprintUVE(const ProgramUVE& program) {
+    // FNV-1a over a plain serialization; stable across runs and builds.
+    std::uint64_t hash = 0xcbf29ce484222325ULL;
+    const auto bytes = [&hash](const void* const data, const std::size_t size) {
+        const auto* const p = static_cast<const unsigned char*>(data);
+        for (std::size_t i = 0U; i < size; ++i) {
+            hash = (hash ^ p[i]) * 0x100000001b3ULL;
+        }
+    };
+    const auto number = [&bytes](const std::uint64_t value) { bytes(&value, sizeof(value)); };
+    const auto text = [&bytes, &number](const std::string& value) {
+        number(value.size());
+        bytes(value.data(), value.size());
+    };
+    const auto type = [&number, &text](const TypeUVE& value) {
+        number(static_cast<std::uint64_t>(value.kind));
+        text(value.node);
+    };
+    const auto chunk = [&](const ChunkUVE& value) {
+        text(value.name);
+        number(value.paramCount);
+        number(value.localCount);
+        type(value.result);
+        number(value.code.size());
+        for (const InstructionUVE& in : value.code) {
+            number(static_cast<std::uint64_t>(in.op));
+            number(static_cast<std::uint64_t>(static_cast<std::int64_t>(in.a)));
+            number(static_cast<std::uint64_t>(static_cast<std::int64_t>(in.b)));
+            number(in.line);
+        }
+    };
+    number(program.constants.size());
+    for (const ValueUVE& constant : program.constants) {
+        number(constant.index());
+        text(FormatValueUVE(constant));
+        if (const auto* real = std::get_if<double>(&constant)) {
+            bytes(real, sizeof(*real)); // exact bits: the text form rounds
+        } else if (const auto* vector = std::get_if<Vec3ValueUVE>(&constant)) {
+            bytes(&vector->x, sizeof(double));
+            bytes(&vector->y, sizeof(double));
+            bytes(&vector->z, sizeof(double));
+        }
+    }
+    number(program.fields.size());
+    for (const FieldInfoUVE& field : program.fields) {
+        text(field.name);
+        type(field.type);
+        number(static_cast<std::uint64_t>(field.kind));
+    }
+    chunk(program.init);
+    number(program.functions.size());
+    for (const ChunkUVE& function : program.functions) {
+        chunk(function);
+    }
+    number(program.handlers.size());
+    for (const auto& [event, index] : program.handlers) {
+        text(event);
+        number(index);
+    }
+    return hash;
 }
 
 } // namespace UVE::UVScript

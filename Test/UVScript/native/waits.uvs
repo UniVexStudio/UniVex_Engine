@@ -1,0 +1,9 @@
+var count = 0
+
+on ready:
+    print("a")
+    wait 0.5 s
+    count += 1
+    print("b {count}")
+    wait 100 ms
+    print("c")
