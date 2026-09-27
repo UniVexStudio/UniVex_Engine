@@ -1202,7 +1202,7 @@ bool EditorUVE::AreSceneComponentValuesEqualUVE(const EditorSceneComponentValueU
             } else if constexpr (std::is_same_v<LeftType, Scene::ParticleEmitterComponentUVE>) {
                 return left.maxParticles == right.maxParticles;
             } else if constexpr (std::is_same_v<LeftType, Scene::ScriptComponentUVE>) {
-                return left.scriptAssetPath == right.scriptAssetPath;
+                return left.scriptAssetPath == right.scriptAssetPath && left.exportValues == right.exportValues;
             } else if constexpr (std::is_same_v<LeftType, Scene::AnimationPlayerComponentUVE>) {
                 return left.HasSameSettingsUVE(right);
             } else if constexpr (std::is_same_v<LeftType, Scene::WorldEnvironment3DNodeComponentUVE>) {

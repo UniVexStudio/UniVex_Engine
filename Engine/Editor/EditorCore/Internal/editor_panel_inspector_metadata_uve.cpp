@@ -132,11 +132,12 @@ void DrawTooltipUVE(const TypeMetadataPropertyUVE& property) {
 /// Custom drawers that lay out their own rows - a multi-line box, a slot with an action strip, a
 /// list with an add button - rather than filling a value cell. Any other id falls back to the
 /// generic editor for its value type, which is where the rotation and entity-picker ids still go.
-constexpr std::array<std::string_view, 7> kBlockPropertyDrawerIdsUVE{
+constexpr std::array<std::string_view, 8> kBlockPropertyDrawerIdsUVE{
     "animation-parameters",
     "animation-graph",
     "multiline-text",
     "script-slot",
+    "script-exports",
     "node-metadata",
     "skeleton-source",
     "skeleton-bones",
@@ -785,6 +786,10 @@ bool EditorUVE::DrawCustomPropertyUVE(const TypeMetadataEntryUVE& entry, const T
     }
     if (property.customDrawerId == "script-slot") {
         DrawScriptSlotPropertyUVE(entry, property, instance);
+        return true;
+    }
+    if (property.customDrawerId == "script-exports") {
+        DrawScriptExportsPropertyUVE(entry, property, instance);
         return true;
     }
     if (property.customDrawerId == "node-metadata") {

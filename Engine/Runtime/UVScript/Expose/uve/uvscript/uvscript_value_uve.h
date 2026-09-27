@@ -3,7 +3,9 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <variant>
 
 namespace UVE::UVScript {
@@ -60,5 +62,10 @@ using ValueUVE = std::variant<std::monostate, bool, std::int64_t, double, std::s
 
 /// How `print` and string interpolation show a value: 3, 2.5, true, (1, 2, 3), none.
 [[nodiscard]] std::string FormatValueUVE(const ValueUVE& value);
+
+/// Reads text written by FormatValueUVE (or typed by a person) back as a value of `type`:
+/// `true`/`false`, `12`, `1.5`, any text for `str`, and `(x, y, z)` or `x, y, z` for `vec3`.
+/// Nothing when the text is not a value of that type; node values have no text form.
+[[nodiscard]] std::optional<ValueUVE> ParseValueTextUVE(std::string_view text, const TypeUVE& type);
 
 } // namespace UVE::UVScript

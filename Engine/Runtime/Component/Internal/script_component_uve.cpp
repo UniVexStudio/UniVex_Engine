@@ -30,7 +30,17 @@ namespace UVE::Scene {
 }
 
 [[nodiscard]] bool IsScriptComponentValidUVE(const ScriptComponentUVE& component) noexcept {
-    return IsScriptAssetPathValidUVE(component.scriptAssetPath);
+    if (!IsScriptAssetPathValidUVE(component.scriptAssetPath) ||
+        component.exportValues.size() > kMaximumScriptExportValuesUVE) {
+        return false;
+    }
+    for (const auto& [name, value] : component.exportValues) {
+        if (name.empty() || name.size() > kMaximumScriptExportNameBytesUVE || name.contains('\0') ||
+            value.size() > kMaximumScriptExportValueBytesUVE) {
+            return false;
+        }
+    }
+    return true;
 }
 
 } // namespace UVE::Scene

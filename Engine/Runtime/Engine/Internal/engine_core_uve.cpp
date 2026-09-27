@@ -820,7 +820,9 @@ void EngineCoreUVE::SyncUVScriptsUVE(const bool simulationPaused) {
         const Scene::EntityUVE entity = entry.first;
         return !m_entityManager->IsAliveUVE(entity) ||
                !m_entityManager->HasComponentUVE<Scene::ScriptComponentUVE>(entity) ||
-               m_entityManager->GetComponentUVE<Scene::ScriptComponentUVE>(entity).scriptAssetPath != entry.second.path;
+               m_entityManager->GetComponentUVE<Scene::ScriptComponentUVE>(entity).scriptAssetPath != entry.second.path ||
+               m_entityManager->GetComponentUVE<Scene::ScriptComponentUVE>(entity).exportValues !=
+                   entry.second.exportValues;
     });
 
     std::vector<Scene::EntityUVE> order;
@@ -866,6 +868,18 @@ void EngineCoreUVE::SyncUVScriptsUVE(const bool simulationPaused) {
             slot.path = component.scriptAssetPath;
             slot.source = source;
             slot.instance = std::make_unique<UVScript::ScriptInstanceUVE>(compiled.program, *host);
+            // The node's own values for the script's exports, before `ready` sees them. A value
+            // for a field the script no longer exports, or of the wrong type, is skipped.
+            slot.exportValues = component.exportValues;
+            for (const UVScript::FieldInfoUVE& field : UVScript::GetProgramFieldsUVE(*compiled.program)) {
+                const auto stored = component.exportValues.find(field.name);
+                if (field.kind != UVScript::FieldKindUVE::Export || stored == component.exportValues.end()) {
+                    continue;
+                }
+                if (const std::optional<UVScript::ValueUVE> value = UVScript::ParseValueTextUVE(stored->second, field.type)) {
+                    static_cast<void>(slot.instance->SetFieldUVE(field.name, *value));
+                }
+            }
             slot.host = std::move(host);
             m_uvScripts.emplace(entity, std::move(slot));
         });

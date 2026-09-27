@@ -1262,7 +1262,12 @@ void DeclareNodeCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
         MakeEntryUVE("component.script", "Script", kScriptOrder,
                      {WithCustomDrawerUVE(DeclareUVE<&ScriptComponentUVE::scriptAssetPath>(
                                               "scriptAssetPath", "Scripting", kPropertyTypeStringUVE),
-                                          "script-slot")});
+                                          "script-slot"),
+                      // A `.uvs` script's `export` fields, drawn from the script itself; this
+                      // node's values are stored here, so each edit is one undo step.
+                      WithCustomDrawerUVE(DeclareUVE<&ScriptComponentUVE::exportValues>(
+                                              "exportValues", "Exports", "ScriptExportValues"),
+                                          "script-exports")});
     script.presentedInline = true;
     AddUVE<ScriptComponentUVE>(entries, std::move(script));
 
