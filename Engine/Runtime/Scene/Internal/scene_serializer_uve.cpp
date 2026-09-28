@@ -177,6 +177,7 @@ namespace {
             {"animatePosition", component.animatePosition},
             {"animateRotation", component.animateRotation},
             {"animateScale", component.animateScale},
+            {"transition", static_cast<std::uint8_t>(component.transition)},
             {"rootMotion", static_cast<std::uint8_t>(component.rootMotion)},
             {"rootMotionBone", component.rootMotionBone}};
 }
@@ -191,6 +192,7 @@ namespace {
     mixer.animatePosition = json.value("animatePosition", true);
     mixer.animateRotation = json.value("animateRotation", true);
     mixer.animateScale = json.value("animateScale", true);
+    mixer.transition = static_cast<AnimationTransitionModeUVE>(json.value("transition", std::uint8_t{0}));
     mixer.rootMotion = static_cast<AnimationRootMotionModeUVE>(json.value("rootMotion", std::uint8_t{0}));
     mixer.rootMotionBone = json.value("rootMotionBone", std::string{});
     return mixer;

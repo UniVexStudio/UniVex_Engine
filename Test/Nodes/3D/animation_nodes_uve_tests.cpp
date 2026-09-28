@@ -542,5 +542,30 @@ TEST(AnimationPlayerUVETest, CollectsTheEventsThePlayheadPasses) {
         << "backwards, in the order passed";
 }
 
+TEST(AnimationPlayerUVETest, InertializationCarriesTheOldPoseAndFadesItOutSmoothly) {
+    // A clip that holds the hips still at z = 0; the skeleton was left at z = 5 by the last clip.
+    Asset::AnimationClipAssetUVE clip;
+    clip.clipId = "idle";
+    clip.durationSeconds = 2.0;
+    Asset::AnimationAssetSampleUVE still;
+    still.pose.position = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+    clip.bones = {Asset::AnimationAssetBoneTrackUVE{"Hips", {still}}};
+    Skeleton3DNodeComponentUVE skeleton = MakeTwoBoneSkeletonUVE();
+    skeleton.pose = GetSkeletonCurrentPoseUVE(skeleton);
+    skeleton.pose[0].position = Math::Vector3UVE{0.0F, 1.0F, 5.0F};
+
+    AnimationPlayerComponentUVE settings;
+    settings.blendInSeconds = 1.0F;
+    AnimationPlayerComponentUVE player = StartedUVE(settings, TransformComponentUVE{}, clip);
+    AnimationMixerComponentUVE mixer; // Inertialize is the default
+    ASSERT_TRUE(StepSkeletalAnimationPlayerUVE(player, clip, 0.001F, skeleton, mixer));
+    EXPECT_NEAR(skeleton.pose[0].position.z, 5.0F, 1e-3F) << "no pop: it starts where it was";
+    ASSERT_TRUE(StepSkeletalAnimationPlayerUVE(player, clip, 0.499F, skeleton, mixer));
+    EXPECT_NEAR(skeleton.pose[0].position.z, 2.5F, 1e-3F) << "halfway through the fade, half the difference";
+    ASSERT_TRUE(StepSkeletalAnimationPlayerUVE(player, clip, 0.5F, skeleton, mixer));
+    EXPECT_NEAR(skeleton.pose[0].position.z, 0.0F, 1e-4F) << "the new clip, exactly, when the blend ends";
+    EXPECT_TRUE(player.inertialPosition.empty()) << "the carried difference is dropped once it has faded";
+}
+
 } // namespace
 } // namespace UVE::Scene
