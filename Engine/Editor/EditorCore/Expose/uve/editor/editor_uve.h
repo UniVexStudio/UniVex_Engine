@@ -448,6 +448,26 @@ public:
     [[nodiscard]] Scene::EntityUVE PlaceEntityAssetUVE(const std::filesystem::path& path,
                                                        Scene::EntityUVE parent = Scene::kInvalidEntityUVE);
 
+    /// The Entity Editor: an entity asset opened on its own, in its own window. While it is open
+    /// the entity *is* the document - the scene is put aside in a snapshot (the way Play does),
+    /// so every tool (Scene tree, Inspector, gizmos, undo) works on the entity unchanged, and the
+    /// main window stops drawing. Undo starts empty and is cleared again on close: entity handles
+    /// are fresh on both sides. Refused in Play or while another entity is open.
+    bool OpenEntityEditorUVE(const std::filesystem::path& assetPath);
+    [[nodiscard]] bool IsEntityEditorOpenUVE() const noexcept;
+    /// The open entity's file, or empty.
+    [[nodiscard]] std::filesystem::path GetEntityEditorAssetPathUVE() const;
+    /// The open entity's root node (the one child of the scene root), or kInvalidEntityUVE.
+    [[nodiscard]] Scene::EntityUVE GetEntityEditorRootUVE();
+    /// Writes the entity back to its file. Refused (with a Content status line) when the root is
+    /// gone or other nodes sit beside it: an entity has exactly one root.
+    bool SaveEntityEditorUVE();
+    /// Throws away the edits and loads the file again.
+    bool RevertEntityEditorUVE();
+    /// Closes the Entity Editor, saving first when `save`, and brings the scene back. After a save,
+    /// clean instances of the entity in the scene are refreshed from the file.
+    bool CloseEntityEditorUVE(bool save);
+
     /// Stores `contentRelativePath` (a `.uventity`) as the project's Default Player and saves the
     /// project settings. An empty path clears it.
     [[nodiscard]] bool SetDefaultPlayerEntityUVE(const std::filesystem::path& contentRelativePath);
@@ -993,6 +1013,27 @@ private:
     };
 
 
+    struct EntityEditSessionUVE final {
+        std::filesystem::path assetPath;
+        Asset::AssetGuidUVE guid = Asset::kInvalidAssetGuidUVE;
+        Scene::SceneSnapshotUVE sceneSnapshot;
+        bool sceneWasEmpty = false;
+        bool sceneDirtyBefore = false;
+        EditorSelectionPathsUVE selectionBefore;
+        /// Set once the entity was written, so closing refreshes its instances in the scene.
+        bool savedOnce = false;
+        /// The window's X was pressed with unsaved changes: ask before closing.
+        bool confirmClose = false;
+        /// The simulation is held while an entity is open (a character would otherwise fall and
+        /// be saved where it landed); this is what to go back to.
+        std::optional<Core::SimulationExecutionModeUVE> simulationBefore;
+    };
+    /// Instantiates the entity asset as the document's only content (below the scene root).
+    [[nodiscard]] Scene::EntityUVE LoadEntityIntoDocumentUVE(Asset::AssetGuidUVE guid);
+    /// The Entity Editor's own window, and what the main window shows meanwhile.
+    void DrawEntityEditorWindowUVE();
+    void DrawEntityEditorPlaceholderUVE();
+
     struct PlayModeSessionUVE final {
         Scene::SceneSnapshotUVE documentSnapshot;
         bool capturedEmptyDocument = false;
@@ -1366,6 +1407,9 @@ private:
     void ApplyLayoutPresetUVE(EditorLayoutPresetUVE preset) noexcept;
     void DrawMenuBarUVE();
     void DrawViewportPanelUVE();
+    /// The rendered scene and its overlay, filling the rest of the current window (the main
+    /// Viewport panel and the Entity Editor both use it).
+    void DrawViewportImageUVE();
     void DrawViewportOverlayBubblesUVE(Math::Vector2UVE imageOrigin, Math::Vector2UVE imageSize);
     void DrawEntityContextToolbarUVE(Math::Vector2UVE imageOrigin, Math::Vector2UVE imageSize);
     void DrawViewportAxisColorPickerUVE();
@@ -1444,6 +1488,8 @@ private:
     /// The Console dock: the developer console's output and its command line.
     void DrawConsoleDockUVE();
     void DrawHierarchyPanelUVE();
+    /// The Scene tree with its "+" and search, filling the rest of the current window.
+    void DrawHierarchyBodyUVE();
     void DrawHierarchyNodeContextMenuUVE(Scene::EntityUVE entity);
     void DrawNodePickerUVE();
     // A collapsing header (`asHeader`) or tree node whose open state lives in m_inspectorFoldOpen.
@@ -1687,6 +1733,7 @@ private:
     EditorStateUVE m_state = EditorStateUVE::Uninitialized;
     EditorPlayModeStateUVE m_playModeState = EditorPlayModeStateUVE::Edit;
     std::optional<PlayModeSessionUVE> m_playModeSession;
+    std::optional<EntityEditSessionUVE> m_entityEditSession;
     // Which workspace tab was active before EnterPlayModeUVE() switched to Game, so StopPlayModeUVE()
     // can restore it - mirrors Unity's own Scene<->Game auto-switch on Play/Stop.
     EditorWorkspaceUVE m_workspaceBeforePlayMode = EditorWorkspaceUVE::Library;

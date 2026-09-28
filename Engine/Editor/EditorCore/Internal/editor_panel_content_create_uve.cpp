@@ -428,8 +428,14 @@ void EditorUVE::DrawFilesystemContextPopupUVE() {
         }
     }
     if (isEntity) {
-        if (ImGui::MenuItem("Open Tree")) {
-            m_contentStatusMessage = "Opening an entity's tree needs the Entity Editor, which is not in this build yet.";
+        ImGui::BeginDisabled(!allowed);
+        const bool openTree = ImGui::MenuItem("Open Tree");
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort)) {
+            ImGui::SetTooltip("Edit it on its own in the Entity Editor window (also: double-click)");
+        }
+        if (openTree && !OpenEntityEditorUVE(absolute)) {
+            m_contentStatusMessage = "Could not open " + contextEntry.relativePath.filename().string() + " in the Entity Editor.";
         }
         const bool isDefault = GetDefaultPlayerEntityUVE() == contextEntry.relativePath.generic_string();
         if (ImGui::MenuItem("Default Player", nullptr, isDefault)) {

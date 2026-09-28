@@ -26,6 +26,7 @@
 #include <vector>
 
 #include <imgui.h>
+#include <GLFW/glfw3.h>
 #include <backends/imgui_impl_glfw.h>
 #include <backends/imgui_impl_opengl3.h>
 
@@ -153,7 +154,11 @@ void EditorUVE::RenderOverlayUVE() {
     DrawInputMapWindowUVE();
     DrawKeyboardShortcutsWindowUVE();
 
-    if (m_activeWorkspace == EditorWorkspaceUVE::Scripting) {
+    if (m_entityEditSession.has_value()) {
+        // The main window rests while an entity is open in its own window.
+        DrawEntityEditorPlaceholderUVE();
+        DrawEntityEditorWindowUVE();
+    } else if (m_activeWorkspace == EditorWorkspaceUVE::Scripting) {
         DrawScriptingWorkspaceUVE();
     } else {
         DrawHierarchyPanelUVE();
@@ -167,6 +172,14 @@ void EditorUVE::RenderOverlayUVE() {
     ImGui::PopStyleColor(tintedColors);
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    // Windows that live in their own OS window (the Entity Editor) are drawn and presented here;
+    // the main window's context is current again afterwards for the host's own swap.
+    if ((ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable) != 0) {
+        GLFWwindow* const mainContext = glfwGetCurrentContext();
+        ImGui::UpdatePlatformWindows();
+        ImGui::RenderPlatformWindowsDefault();
+        glfwMakeContextCurrent(mainContext);
+    }
 }
 
 void EditorUVE::SetViewportPanelRendererUVE(ViewportPanelRendererUVE renderer) {
@@ -204,6 +217,12 @@ void EditorUVE::DrawViewportPanelUVE() {
         ImGui::PopStyleVar();
         return;
     }
+    DrawViewportImageUVE();
+    ImGui::End();
+    ImGui::PopStyleVar();
+}
+
+void EditorUVE::DrawViewportImageUVE() {
     const ImVec2 availableRegion = ImGui::GetContentRegionAvail();
     if (m_viewportPanelRenderer && availableRegion.x > 0.0F && availableRegion.y > 0.0F) {
         m_viewportOverlayState.gameWorkspaceActive = m_activeWorkspace == EditorWorkspaceUVE::Game;
@@ -244,8 +263,6 @@ void EditorUVE::DrawViewportPanelUVE() {
             }
         }
     }
-    ImGui::End();
-    ImGui::PopStyleVar();
 }
 
 void EditorUVE::DrawViewportOverlayBubblesUVE(const Math::Vector2UVE imageOriginUVE,

@@ -395,10 +395,13 @@ private:
             return;
         }
         EnsureUIFontAtlasTextureUVE(engine_.GetUIRuntimeUVE().GetFontAtlasUVE());
-        ImDrawList* const drawList = ImGui::GetForegroundDrawList();
+        // Window pixels, placed where the window is: with viewports on, ImGui draws in screen
+        // coordinates, so the main window's own screen position is added.
+        const ImVec2 origin = ImGui::GetMainViewport()->Pos;
+        ImDrawList* const drawList = ImGui::GetForegroundDrawList(ImGui::GetMainViewport());
         for (const UVE::UI::UIQuadUVE& quad : batch.quads) {
-            const ImVec2 pMin{quad.positionPixels.x, quad.positionPixels.y};
-            const ImVec2 pMax{quad.positionPixels.x + quad.sizePixels.x, quad.positionPixels.y + quad.sizePixels.y};
+            const ImVec2 pMin{origin.x + quad.positionPixels.x, origin.y + quad.positionPixels.y};
+            const ImVec2 pMax{pMin.x + quad.sizePixels.x, pMin.y + quad.sizePixels.y};
             const ImU32 tint = ImGui::ColorConvertFloat4ToU32(
                 ImVec4{quad.color.x, quad.color.y, quad.color.z, quad.alpha});
             if (quad.kind == UVE::UI::UIDrawItemKindUVE::Glyph && uiFontAtlasTexture_ != 0U) {

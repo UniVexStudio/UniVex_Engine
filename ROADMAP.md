@@ -546,6 +546,12 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
   arrows list the folders inside), a sidebar with Pinned, the project's folder tree (with its own
   folder search) and Shelves (hand-picked groups of files, saved per user), a type filter, a search
   that looks through every folder below, and an item count
+- [x] Entity Editor (first part): an entity asset opens in its own OS window (Open Tree or
+  double-click) with its node tree, a live view and the Inspector; Save (Ctrl+S), Revert, and the
+  window's X (asks when there are unsaved changes). The scene waits untouched meanwhile, the
+  simulation is held so nothing moves, and placed copies in the scene follow a saved change
+- [ ] Entity Editor: Scripting and Signals tabs, a Compile check with a list of problems, and a
+  bottom dock (Content, Timeline, Anim Graph)
 - [x] Content Browser modes, each its own way of working: Tiles (one folder by picture),
   Columns (walk down folder levels side by side, with a preview of the picked file), Details
   (a table sorted by name, kind, size, last change or folder), Recent (what changed lately below

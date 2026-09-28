@@ -163,6 +163,11 @@ void EditorUVE::DrawHierarchyPanelUVE() {
     ImGui::SetNextWindowPos(layout.scenePos, ImGuiCond_Always);
     ImGui::SetNextWindowSize(layout.sceneSize, ImGuiCond_Always);
     ImGui::Begin(kPanelLabelSceneUVE);
+    DrawHierarchyBodyUVE();
+    ImGui::End();
+}
+
+void EditorUVE::DrawHierarchyBodyUVE() {
     std::array<char, 256> filterBuffer{};
     m_hierarchyFilter.copy(filterBuffer.data(), filterBuffer.size() - 1U);
     const float addNodeButtonWidth = ImGui::GetFrameHeight();
@@ -229,7 +234,6 @@ void EditorUVE::DrawHierarchyPanelUVE() {
         ImGui::EndDisabled();
         ImGui::EndChild();
     }
-    ImGui::End();
 }
 
 void EditorUVE::DrawHierarchyNodeUVE(const Scene::EntityUVE entity) {

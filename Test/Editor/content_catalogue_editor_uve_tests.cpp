@@ -13,6 +13,8 @@
 
 #include "uve/component/name_component_uve.h"
 #include "uve/component/prefab_instance_component_uve.h"
+#include "uve/component/transform_component_uve.h"
+#include "uve/component/hierarchy_component_uve.h"
 #include "uve/core/engine_core_uve.h"
 #include "uve/core/engine_project_settings_uve.h"
 #include "uve/editor/editor_content_catalogue_uve.h"
@@ -205,6 +207,105 @@ TEST(ContentCatalogueEditorUVETest, CharacterAssetPlacesAsItsWholeTreeWithOneUnd
         EXPECT_EQ(editor.PlaceEntityAssetUVE(*created), Scene::kInvalidEntityUVE);
         ASSERT_TRUE(editor.StopPlayModeUVE());
 
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
+TEST(ContentCatalogueEditorUVETest, EntityEditorEditsTheAssetAloneAndGivesTheSceneBack) {
+    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("entity_editor");
+    const std::filesystem::path content = root / "Content";
+    std::filesystem::create_directories(content);
+
+    Core::EngineCoreUVE engine(MakeCatalogueEditorConfigUVE(root));
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), root / "main.uvscene", 100U, &engine);
+        editor.InitUVE();
+        Core::EngineServicesUVE& services = engine.GetServicesUVE();
+        Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
+        const auto created = editor.CreateContentCatalogueItemUVE("character", content);
+        ASSERT_TRUE(created.has_value());
+        const Scene::EntityUVE placed = editor.PlaceEntityAssetUVE(*created);
+        ASSERT_NE(placed, Scene::kInvalidEntityUVE);
+        ASSERT_TRUE(editor.SaveSceneUVE());
+        ASSERT_FALSE(editor.IsSceneDirtyUVE());
+
+        const auto positionY = [&entityManager](const Scene::EntityUVE entity) {
+            return entityManager.GetComponentUVE<Scene::TransformComponentUVE>(entity).localPosition.y;
+        };
+        const auto moveTo = [&editor](const Scene::EntityUVE entity, const float y) {
+            editor.SelectEntityUVE(entity);
+            Scene::TransformComponentUVE moved{};
+            moved.localPosition = Math::Vector3UVE{0.0F, y, 0.0F};
+            return editor.SetSelectedLocalTransformUVE(moved);
+        };
+
+        EXPECT_FALSE(editor.OpenEntityEditorUVE(root / "nothing.uventity"));
+        ASSERT_TRUE(editor.OpenEntityEditorUVE(*created));
+        EXPECT_TRUE(editor.IsEntityEditorOpenUVE());
+        EXPECT_EQ(editor.GetEntityEditorAssetPathUVE(), *created);
+        // The entity is the document now; the scene is put aside and undo starts fresh.
+        EXPECT_FALSE(entityManager.IsAliveUVE(placed));
+        EXPECT_FALSE(editor.IsSceneDirtyUVE());
+        EXPECT_FALSE(editor.UndoUVE());
+        const Scene::EntityUVE entityRoot = editor.GetEntityEditorRootUVE();
+        ASSERT_NE(entityRoot, Scene::kInvalidEntityUVE);
+        EXPECT_EQ(Scene::ResolveSceneNodeKindUVE(entityManager, entityRoot), Kind::CharacterBody3D);
+        EXPECT_FALSE(entityManager.HasComponentUVE<Scene::PrefabInstanceComponentUVE>(entityRoot))
+            << "edited as itself, not as an instance of itself";
+        EXPECT_EQ(ChildKindsUVE(services, entityRoot).size(), 3U);
+        EXPECT_FALSE(editor.EnterPlayModeUVE()) << "the scene plays, not an open entity";
+        EXPECT_EQ(engine.GetSimulationExecutionModeUVE(), Core::SimulationExecutionModeUVE::Paused)
+            << "an entity is edited as authored, not simulated";
+        EXPECT_FALSE(editor.OpenEntityEditorUVE(content / "Other.uventity"));
+
+        // Save (Ctrl+S saves the entity while it is open), then change it again and revert.
+        ASSERT_TRUE(moveTo(entityRoot, 2.0F));
+        EXPECT_TRUE(editor.IsSceneDirtyUVE());
+        ASSERT_TRUE(editor.SaveSceneUVE());
+        EXPECT_FALSE(editor.IsSceneDirtyUVE());
+        ASSERT_TRUE(moveTo(entityRoot, 5.0F));
+        ASSERT_TRUE(editor.RevertEntityEditorUVE());
+        EXPECT_FLOAT_EQ(positionY(editor.GetEntityEditorRootUVE()), 2.0F);
+        EXPECT_FALSE(editor.UndoUVE());
+
+        // One root only: a node beside the root is refused on save.
+        const Scene::EntityUVE sceneRoot = editor.GetDocumentSceneRootUVE();
+        const Scene::EntityUVE stray = entityManager.CreateEntityUVE();
+        entityManager.AddComponentUVE<Scene::TransformComponentUVE>(stray, Scene::TransformComponentUVE{});
+        entityManager.AddComponentUVE<Scene::HierarchyComponentUVE>(stray, Scene::HierarchyComponentUVE{});
+        services.GetSceneGraphUVE().SetParentUVE(entityManager, stray, sceneRoot);
+        EXPECT_EQ(editor.GetEntityEditorRootUVE(), Scene::kInvalidEntityUVE);
+        EXPECT_FALSE(editor.SaveEntityEditorUVE());
+        ASSERT_TRUE(editor.RevertEntityEditorUVE());
+
+        // An unsaved change closed without saving is not written.
+        ASSERT_TRUE(moveTo(editor.GetEntityEditorRootUVE(), 9.0F));
+        ASSERT_TRUE(editor.CloseEntityEditorUVE(false));
+        EXPECT_FALSE(editor.IsEntityEditorOpenUVE());
+        EXPECT_EQ(engine.GetSimulationExecutionModeUVE(), Core::SimulationExecutionModeUVE::Running);
+
+        // The scene is back, with its placed Character.
+        const std::vector<Scene::EntityUVE> sceneChildren =
+            services.GetSceneGraphUVE().GetChildrenUVE(entityManager, editor.GetDocumentSceneRootUVE());
+        const auto character = std::ranges::find_if(sceneChildren, [&entityManager](const Scene::EntityUVE child) {
+            return entityManager.HasComponentUVE<Scene::NameComponentUVE>(child) &&
+                   entityManager.GetComponentUVE<Scene::NameComponentUVE>(child).name == "Character";
+        });
+        ASSERT_NE(character, sceneChildren.end());
+        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::PrefabInstanceComponentUVE>(*character));
+
+        // What was saved is in the file.
+        ASSERT_TRUE(editor.OpenEntityEditorUVE(*created));
+        EXPECT_FLOAT_EQ(positionY(editor.GetEntityEditorRootUVE()), 2.0F);
+        // Closing with save writes an unsaved change.
+        ASSERT_TRUE(moveTo(editor.GetEntityEditorRootUVE(), 3.0F));
+        ASSERT_TRUE(editor.CloseEntityEditorUVE(true));
+        ASSERT_TRUE(editor.OpenEntityEditorUVE(*created));
+        EXPECT_FLOAT_EQ(positionY(editor.GetEntityEditorRootUVE()), 3.0F);
+        ASSERT_TRUE(editor.CloseEntityEditorUVE(false));
         editor.ShutdownUVE();
     }
     engine.Shutdown();
