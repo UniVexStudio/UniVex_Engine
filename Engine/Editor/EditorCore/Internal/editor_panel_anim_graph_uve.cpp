@@ -17,6 +17,7 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -199,6 +200,62 @@ bool PickParameterUVE(const char* const id, const std::vector<AnimationParameter
     return changed;
 }
 
+void DrawBlendSpaceSettingsUVE(const AnimationGraphNodeUVE& node,
+                               const std::function<void(std::function<void(AnimationGraphNodeUVE&)>)>& edit) {
+    static constexpr std::array<const char*, 3> kModes{"Blend", "Nearest", "Nearest, in step"};
+    static constexpr std::array<const char*, 3> kModeHelp{
+        "Mix the points around the position.",
+        "Play the nearest point alone; a point that becomes clearly nearer takes over across Switch.",
+        "Nearest, and the point taking over starts at the phase the last one reached, so the stride carries on."};
+    const auto mode = static_cast<std::size_t>(node.blendMode);
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextDisabled("Blend");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(128.0F);
+    if (ImGui::BeginCombo("##blend-mode", kModes[std::min(mode, kModes.size() - 1U)])) {
+        for (std::size_t option = 0U; option < kModes.size(); ++option) {
+            if (ImGui::Selectable(kModes[option], option == mode)) {
+                const auto picked = static_cast<Scene::AnimationBlendModeUVE>(option);
+                edit([picked](AnimationGraphNodeUVE& n) { n.blendMode = picked; });
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("%s", kModeHelp[option]);
+            }
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::SameLine();
+    ImGui::TextDisabled("Smoothing");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(72.0F);
+    float smoothing = node.smoothingSeconds;
+    ImGui::DragFloat("##blend-smoothing", &smoothing, 0.005F, 0.0F, 5.0F, smoothing > 0.0F ? "%.2f s" : "off");
+    if (ImGui::IsItemDeactivatedAfterEdit()) {
+        const float value = std::clamp(smoothing, 0.0F, 5.0F);
+        edit([value](AnimationGraphNodeUVE& n) { n.smoothingSeconds = value; });
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("How long the position takes to close half the gap to its parameters. It eases there and never\n"
+                          "overshoots, so a sudden change of input still moves the character smoothly.");
+    }
+    if (node.blendMode != Scene::AnimationBlendModeUVE::Blend) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("Switch");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(72.0F);
+        float fade = node.fadeSeconds;
+        ImGui::DragFloat("##blend-switch", &fade, 0.005F, 0.0F, 5.0F, fade > 0.0F ? "%.2f s" : "cut");
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            const float value = std::clamp(fade, 0.0F, 5.0F);
+            edit([value](AnimationGraphNodeUVE& n) { n.fadeSeconds = value; });
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("How long one point hands over to the next: inertialized or crossfaded, as the mixer's\n"
+                              "transitions are set.");
+        }
+    }
+}
+
 } // namespace
 
 const std::string& EditorUVE::AnimationClipNameUVE(const Asset::AssetGuidUVE clip) {
@@ -328,7 +385,8 @@ void EditorUVE::DrawBlendSpaceEditorUVE(const Scene::EntityUVE tree, const std::
     const ImVec2 avail = ImGui::GetContentRegionAvail();
     const float plotLeft = start.x + (twoD ? rangeWidth + style.ItemSpacing.x : 0.0F);
     const float plotWidth = std::max(60.0F, avail.x - (plotLeft - start.x));
-    const float fullHeight = std::max(60.0F, avail.y - rowHeight * 2.0F - style.ItemSpacing.y * 2.0F);
+    // Under the plane: the X range row, then the blend settings row.
+    const float fullHeight = std::max(60.0F, avail.y - rowHeight * 3.0F - style.ItemSpacing.y * 3.0F);
     const float plotHeight = twoD ? fullHeight : std::min(fullHeight, 96.0F);
     const float plotTop = start.y + (twoD ? 0.0F : (fullHeight - plotHeight) * 0.5F);
     const Math::Vector2UVE areaMin = node.areaMin;
@@ -414,15 +472,55 @@ void EditorUVE::DrawBlendSpaceEditorUVE(const Scene::EntityUVE tree, const std::
         draw->AddLine(ImVec2{lo.x, (lo.y + hi.y) * 0.5F}, ImVec2{hi.x, (lo.y + hi.y) * 0.5F}, IM_COL32(255, 255, 255, 60), 2.0F);
     }
 
-    // Weights at the position, as the runtime computes them.
+    // What plays: while the tree runs, the weights and smoothed position it used; otherwise what
+    // it would use at the parameters' position.
     std::vector<Math::Vector2UVE> positions;
     std::vector<float> positionsX;
     for (std::size_t slot = 0U; slot < pointCount; ++slot) {
         positions.push_back(pointAt(slot));
         positionsX.push_back(positions.back().x);
     }
-    const std::vector<float> weights = twoD ? Scene::AnimationBlendSpace2DWeightsUVE(positions, cursor)
-                                            : Scene::AnimationBlendSpace1DWeightsUVE(positionsX, cursor.x);
+    const std::vector<std::array<std::uint32_t, 3>> triangles =
+        twoD ? Scene::TriangulateBlendSpaceUVE(positions) : std::vector<std::array<std::uint32_t, 3>>{};
+    const Scene::AnimationGraphNodeStateUVE* const running =
+        live.nodeStates.size() == live.nodes.size() && live.nodeStates[nodeIndex].blendAtSet &&
+                live.nodeStates[nodeIndex].pointWeights.size() == pointCount
+            ? &live.nodeStates[nodeIndex]
+            : nullptr;
+    const Math::Vector2UVE blendAt = running != nullptr ? Math::Vector2UVE{running->blendAt.x, twoD ? running->blendAt.y : 0.0F} : cursor;
+    std::vector<float> weights;
+    if (running != nullptr) {
+        weights = running->pointWeights;
+    } else {
+        weights = twoD ? Scene::AnimationBlendSpace2DWeightsUVE(positions, triangles, cursor)
+                       : Scene::AnimationBlendSpace1DWeightsUVE(positionsX, cursor.x);
+        const bool any = std::ranges::any_of(weights, [](const float w) { return w > 0.0F; });
+        if (node.blendMode != Scene::AnimationBlendModeUVE::Blend && any) {
+            // Nearest: the closest point alone.
+            std::size_t nearest = 0U;
+            const auto distance = [&](const std::size_t slot) {
+                const Math::Vector2UVE gap = cursor - positions[slot];
+                return gap.x * gap.x + gap.y * gap.y;
+            };
+            for (std::size_t slot = 1U; slot < pointCount; ++slot) {
+                nearest = distance(slot) < distance(nearest) ? slot : nearest;
+            }
+            std::ranges::fill(weights, 0.0F);
+            weights[nearest] = 1.0F;
+        }
+    }
+    // The triangles the plane blends inside; the one the position is in, lit.
+    for (const auto& triangle : triangles) {
+        const ImVec2 a = toScreen(positions[triangle[0]]);
+        const ImVec2 b = toScreen(positions[triangle[1]]);
+        const ImVec2 c = toScreen(positions[triangle[2]]);
+        const bool lit = weights[triangle[0]] + weights[triangle[1]] + weights[triangle[2]] > 0.999F &&
+                         node.blendMode == Scene::AnimationBlendModeUVE::Blend;
+        if (lit) {
+            draw->AddTriangleFilled(a, b, c, IM_COL32(110, 210, 140, 28));
+        }
+        draw->AddTriangle(a, b, c, lit ? IM_COL32(110, 210, 140, 150) : IM_COL32(255, 255, 255, 45), lit ? 1.5F : 1.0F);
+    }
     const ImVec2 mouse = ImGui::GetIO().MousePos;
     int hoveredPoint = -1;
     for (std::size_t slot = 0U; slot < pointCount; ++slot) {
@@ -431,6 +529,7 @@ void EditorUVE::DrawBlendSpaceEditorUVE(const Scene::EntityUVE tree, const std::
             hoveredPoint = static_cast<int>(slot);
         }
     }
+    std::vector<ImVec4> placedLabels;
     for (std::size_t slot = 0U; slot < pointCount; ++slot) {
         const ImVec2 at = toScreen(pointAt(slot));
         const float weight = slot < weights.size() ? weights[slot] : 0.0F;
@@ -449,12 +548,38 @@ void EditorUVE::DrawBlendSpaceEditorUVE(const Scene::EntityUVE tree, const std::
             std::snprintf(share, sizeof(share), "  %d%%", static_cast<int>(std::lround(weight * 100.0F)));
             label += share;
         }
+        // Beside the point, on the first side that neither leaves the plane nor covers a label
+        // already placed: above-right, below-right, above-left, below-left.
         const ImVec2 labelSize = ImGui::CalcTextSize(label.c_str());
-        const float labelX = at.x + 9.0F + labelSize.x <= hi.x ? at.x + 9.0F : at.x - 9.0F - labelSize.x;
-        draw->AddText(ImVec2{labelX, at.y - labelSize.y - 2.0F}, hot ? kTextUVE : kTextDimUVE, label.c_str());
+        const std::array<ImVec2, 4> spots{ImVec2{at.x + 9.0F, at.y - labelSize.y - 2.0F}, ImVec2{at.x + 9.0F, at.y + 3.0F},
+                                          ImVec2{at.x - 9.0F - labelSize.x, at.y - labelSize.y - 2.0F},
+                                          ImVec2{at.x - 9.0F - labelSize.x, at.y + 3.0F}};
+        const auto fits = [&](const ImVec2 spot) {
+            const ImVec4 box{spot.x, spot.y, spot.x + labelSize.x, spot.y + labelSize.y};
+            if (box.x < lo.x || box.z > hi.x || box.y < lo.y || box.w > hi.y) {
+                return false;
+            }
+            return std::ranges::none_of(placedLabels, [&box](const ImVec4& other) {
+                return box.x < other.z && other.x < box.z && box.y < other.w && other.y < box.w;
+            });
+        };
+        const auto chosen = std::ranges::find_if(spots, fits);
+        const ImVec2 spot = chosen != spots.end() ? *chosen : spots[0];
+        placedLabels.push_back(ImVec4{spot.x, spot.y, spot.x + labelSize.x, spot.y + labelSize.y});
+        draw->AddText(spot, hot ? kTextUVE : kTextDimUVE, label.c_str());
     }
-    // The position: a cross, and for 1D a line through it.
+    // The position: a cross where the parameters are; while smoothing, a ring where the space has
+    // got to on its way there, tied to it.
     const ImVec2 cross = toScreen(cursor);
+    const ImVec2 follow = toScreen(blendAt);
+    const float lagX = follow.x - cross.x;
+    const float lagY = follow.y - cross.y;
+    if (running != nullptr && lagX * lagX + lagY * lagY > 4.0F) {
+        draw->AddLine(cross, follow, IM_COL32(245, 190, 90, 120), 1.0F);
+    }
+    if (running != nullptr) {
+        draw->AddCircle(follow, 7.0F, IM_COL32(245, 190, 90, 230), 0, 2.0F);
+    }
     draw->AddLine(ImVec2{cross.x - 8.0F, cross.y}, ImVec2{cross.x + 8.0F, cross.y}, kSelectedUVE, 2.0F);
     draw->AddLine(ImVec2{cross.x, cross.y - 8.0F}, ImVec2{cross.x, cross.y + 8.0F}, kSelectedUVE, 2.0F);
     // Adding: where the point would land.
@@ -464,10 +589,23 @@ void EditorUVE::DrawBlendSpaceEditorUVE(const Scene::EntityUVE tree, const std::
         draw->AddLine(ImVec2{ghost.x - 3.0F, ghost.y}, ImVec2{ghost.x + 3.0F, ghost.y}, kWireGoodUVE);
         draw->AddLine(ImVec2{ghost.x, ghost.y - 3.0F}, ImVec2{ghost.x, ghost.y + 3.0F}, kWireGoodUVE);
     }
+    const char* hint = nullptr;
     if (pointCount == 0U) {
-        const char* hint = "No points yet: choose Add, then click where an animation belongs.";
+        hint = "No points yet: choose Add, then click where an animation belongs.";
+    } else if (twoD && triangles.empty()) {
+        hint = "A plane blends inside triangles: place points until three of them make one.";
+    }
+    if (hint != nullptr) {
+        // An empty plane says so in its middle; a plane with points warns along its top edge, out of
+        // the way of the points and the position.
         const ImVec2 hintSize = ImGui::CalcTextSize(hint);
-        draw->AddText(ImVec2{(lo.x + hi.x - hintSize.x) * 0.5F, (lo.y + hi.y - hintSize.y) * 0.5F}, kTextDimUVE, hint);
+        const bool empty = pointCount == 0U;
+        const ImVec2 hintAt{(lo.x + hi.x - hintSize.x) * 0.5F, empty ? (lo.y + hi.y - hintSize.y) * 0.5F : lo.y + 6.0F};
+        if (!empty) {
+            draw->AddRectFilled(ImVec2{hintAt.x - 8.0F, hintAt.y - 3.0F}, ImVec2{hintAt.x + hintSize.x + 8.0F, hintAt.y + hintSize.y + 3.0F},
+                                IM_COL32(70, 52, 20, 220), 3.0F);
+        }
+        draw->AddText(hintAt, empty ? kTextDimUVE : IM_COL32(245, 200, 120, 255), hint);
     }
     draw->PopClipRect();
     draw->AddRect(lo, hi, kBorderUVE, 3.0F);
@@ -550,6 +688,14 @@ void EditorUVE::DrawBlendSpaceEditorUVE(const Scene::EntityUVE tree, const std::
     ImGui::GetWindowDrawList()->AddText(ImVec2{plotLeft + (plotWidth - readoutSize.x) * 0.5F, rangeY + (rowHeight - readoutSize.y) * 0.5F},
                                         kTextDimUVE, readout);
     rangeField("##max-x", node.areaMax.x, ImVec2{plotLeft + plotWidth - rangeWidth, rangeY}, true, false);
+
+    // ---- How the position becomes what plays -------------------------------------------------------
+    ImGui::SetCursorScreenPos(ImVec2{plotLeft, rangeY + rowHeight + style.ItemSpacing.y});
+    ImGui::BeginDisabled(!writable);
+    DrawBlendSpaceSettingsUVE(node, [&editSpace](std::function<void(AnimationGraphNodeUVE&)> change) {
+        editSpace(std::move(change));
+    });
+    ImGui::EndDisabled();
 
     // ---- A point's own settings (after Add, or from its right-click menu) -----------------------------
     if (ImGui::BeginPopup("##point-menu")) {
@@ -1639,6 +1785,24 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
                                   "so a walk and a run blend with their feet together.");
             }
         };
+        const auto blendModeRows = [&]() {
+            row("Blend");
+            static constexpr std::array<const char*, 3> kModes{"Blend", "Nearest", "Nearest, in step"};
+            const auto mode = std::min(static_cast<std::size_t>(node.blendMode), kModes.size() - 1U);
+            if (ImGui::BeginCombo("##blend-mode", kModes[mode])) {
+                for (std::size_t option = 0U; option < kModes.size(); ++option) {
+                    if (ImGui::Selectable(kModes[option], option == mode)) {
+                        const auto picked = static_cast<Scene::AnimationBlendModeUVE>(option);
+                        editNode([picked](AnimationGraphNodeUVE& n) { n.blendMode = picked; });
+                    }
+                }
+                ImGui::EndCombo();
+            }
+            dragRow("Smoothing", node.smoothingSeconds, 0.005F, 0.0F, 5.0F, &AnimationGraphNodeUVE::smoothingSeconds);
+            if (node.blendMode != Scene::AnimationBlendModeUVE::Blend) {
+                dragRow("Switch", node.fadeSeconds, 0.005F, 0.0F, 5.0F, &AnimationGraphNodeUVE::fadeSeconds);
+            }
+        };
         row("Name");
         std::string renamed;
         if (EditNameUVE("##node-name", node.name, renamed)) {
@@ -1672,6 +1836,7 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
                 if (node.parameter.empty()) {
                     dragRow("Value", node.value, 0.01F, -1000.0F, 1000.0F, &AnimationGraphNodeUVE::value);
                 }
+                blendModeRows();
                 syncRow();
                 if (ImGui::Button("Open Editor##1d", ImVec2{-FLT_MIN, 0.0F})) {
                     view.focus = id;
@@ -1696,6 +1861,7 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
                         editNode([name](AnimationGraphNodeUVE& n) { n.parameterY = name; });
                     }
                 }
+                blendModeRows();
                 syncRow();
                 if (ImGui::Button("Open Editor", ImVec2{-FLT_MIN, 0.0F})) {
                     view.focus = id;

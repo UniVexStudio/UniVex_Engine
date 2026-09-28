@@ -155,7 +155,7 @@ public:
             case Kind::StateMachine:
                 return EvaluateStateMachineUVE(node, state, deltaSeconds, weight);
             case Kind::BlendSpace2D:
-                return EvaluateBlendSpace2DUVE(node, state, deltaSeconds, weight, phase);
+                return EvaluateBlendSpaceUVE(node, state, deltaSeconds, weight, phase);
             case Kind::Select:
                 return EvaluateSelectUVE(node, state, deltaSeconds, weight);
             case Kind::LayeredBlend:
@@ -402,16 +402,125 @@ private:
         return MixManyUVE(results, weights);
     }
 
+    /// A Blend Space, 1D or 2D: its position follows the parameters (smoothed), then its blend mode
+    /// turns that into weights - a mix, or the nearest point alone with a hand-over.
     [[nodiscard]] ResultUVE EvaluateBlendSpaceUVE(const AnimationGraphNodeUVE& node, AnimationGraphNodeStateUVE& state,
                                                   const float deltaSeconds, const float weight,
                                                   const std::optional<float> phase) {
-        std::vector<float> positions;
-        positions.reserve(node.blendPoints.size());
+        const bool twoD = node.kind == Kind::BlendSpace2D;
+        const std::size_t count = node.blendPoints.size();
+        std::vector<Math::Vector2UVE> positions;
+        positions.reserve(count);
         for (const AnimationBlendPointUVE& point : node.blendPoints) {
-            positions.push_back(point.position.x);
+            positions.push_back(twoD ? point.position : Math::Vector2UVE{point.position.x, 0.0F});
         }
-        return PlayBlendPointsUVE(node, state, AnimationBlendSpace1DWeightsUVE(positions, ReadUVE(node.parameter, node.value)),
-                                  deltaSeconds, weight, phase);
+        const Math::Vector2UVE goal{ReadUVE(node.parameter, node.value), twoD ? ReadUVE(node.parameterY, node.valueY) : 0.0F};
+        if (!state.blendAtSet) {
+            state.blendAt = goal;
+            state.blendVelocity = Math::Vector2UVE{};
+            state.blendAtSet = true;
+        } else {
+            SmoothBlendPositionUVE(state.blendAt, state.blendVelocity, goal, node.smoothingSeconds, deltaSeconds);
+        }
+        std::vector<float> weights;
+        if (twoD) {
+            if (state.triangulatedPoints != positions) {
+                state.triangles = TriangulateBlendSpaceUVE(positions);
+                state.triangulatedPoints = positions;
+            }
+            weights = AnimationBlendSpace2DWeightsUVE(positions, state.triangles, state.blendAt);
+        } else {
+            std::vector<float> xs;
+            xs.reserve(count);
+            for (const Math::Vector2UVE& at : positions) {
+                xs.push_back(at.x);
+            }
+            weights = AnimationBlendSpace1DWeightsUVE(xs, state.blendAt.x);
+        }
+        // A plane without a triangle blends nothing: there is no pose until three points make one.
+        if (std::ranges::none_of(weights, [](const float w) { return w > 0.0F; })) {
+            state.pointWeights.assign(count, 0.0F);
+            return {};
+        }
+        if (node.blendMode == AnimationBlendModeUVE::Blend) {
+            state.pointWeights = weights;
+            return PlayBlendPointsUVE(node, state, weights, deltaSeconds, weight, phase);
+        }
+        return PlayNearestPointUVE(node, state, positions, deltaSeconds, weight, phase);
+    }
+
+    /// Nearest and Nearest In Step: one point plays. Another takes over once the position is
+    /// clearly nearer to it (a tenth closer, so standing on the border does not flicker), handed
+    /// over as the mixer's transitions are: inertialized, or crossfaded through the weights.
+    [[nodiscard]] ResultUVE PlayNearestPointUVE(const AnimationGraphNodeUVE& node, AnimationGraphNodeStateUVE& state,
+                                                const std::vector<Math::Vector2UVE>& positions, const float deltaSeconds,
+                                                const float weight, const std::optional<float> phase) {
+        const std::size_t count = positions.size();
+        const auto distanceTo = [&](const std::size_t slot) {
+            const Math::Vector2UVE gap = state.blendAt - positions[slot];
+            return gap.x * gap.x + gap.y * gap.y;
+        };
+        std::size_t nearest = 0U;
+        for (std::size_t slot = 1U; slot < count; ++slot) {
+            nearest = distanceTo(slot) < distanceTo(nearest) ? slot : nearest;
+        }
+        if (state.pointTimes.size() != count) {
+            state.pointTimes.assign(count, 0.0);
+            state.pointStarted.assign(count, false);
+        }
+        if (state.nearestPoint >= count) {
+            state.nearestPoint = static_cast<std::uint32_t>(nearest);
+            state.previousState = kAnyAnimationStateUVE;
+            ClearInertialUVE(state);
+        }
+        const bool fading = state.previousState < count;
+        float fade = 1.0F;
+        if (fading) {
+            state.fadeElapsedSeconds += deltaSeconds;
+            fade = state.fadeSeconds > 0.0F ? std::min(state.fadeElapsedSeconds / state.fadeSeconds, 1.0F) : 1.0F;
+        }
+        std::vector<float> weights(count, 0.0F);
+        weights[state.nearestPoint] = fade;
+        if (fading) {
+            weights[state.previousState] = 1.0F - fade;
+        }
+        state.pointWeights = weights;
+        ResultUVE result = PlayBlendPointsUVE(node, state, weights, deltaSeconds, weight, phase);
+        if (fading && fade >= 1.0F) {
+            state.previousState = kAnyAnimationStateUVE;
+        }
+        ApplyInertialUVE(state, result, deltaSeconds);
+        constexpr float kClearlyNearer = 0.81F; // (9/10)^2: distances are squared
+        if (nearest != state.nearestPoint && distanceTo(nearest) < distanceTo(state.nearestPoint) * kClearlyNearer) {
+            SwitchNearestPointUVE(node, state, static_cast<std::uint32_t>(nearest), result);
+        }
+        return result;
+    }
+
+    /// Makes point `to` the one playing, from its start or, In Step, at the phase just shown.
+    void SwitchNearestPointUVE(const AnimationGraphNodeUVE& node, AnimationGraphNodeStateUVE& state, const std::uint32_t to,
+                               const ResultUVE& showing) {
+        const std::uint32_t leaving = state.nearestPoint;
+        const AnimationBlendPointUVE& point = node.blendPoints[to];
+        double& time = state.pointTimes[to];
+        bool started = false;
+        time = 0.0;
+        const std::optional<float> startPhase =
+            node.blendMode == AnimationBlendModeUVE::NearestInStep ? showing.phase : std::nullopt;
+        // Put the point where it starts; weight 0 so no events fire for the placement.
+        const ResultUVE fresh = PlayClipUVE(point.clip, point.speed, point.loop, time, started, 0.0F, 0.0F, startPhase);
+        state.pointStarted[to] = started;
+        state.nearestPoint = to;
+        state.fadeElapsedSeconds = 0.0F;
+        state.fadeSeconds = node.fadeSeconds;
+        ClearInertialUVE(state);
+        const bool inertialize = m_mixer.transition == AnimationTransitionModeUVE::Inertialize && node.fadeSeconds > 0.0F;
+        if (inertialize) {
+            state.previousState = kAnyAnimationStateUVE;
+            CaptureInertialUVE(state, showing, fresh, node.fadeSeconds);
+        } else {
+            state.previousState = node.fadeSeconds > 0.0F ? leaving : kAnyAnimationStateUVE;
+        }
     }
 
     [[nodiscard]] ResultUVE EvaluateAdditiveUVE(const AnimationGraphNodeUVE& node, const float deltaSeconds,
@@ -524,20 +633,48 @@ private:
             }
         }
         result.atEnd = activeAtEnd;
-        if (state.inertialSeconds > 0.0F && result.pose.has_value() && state.inertialPosition.size() == result.pose->size()) {
-            state.inertialElapsedSeconds += deltaSeconds;
-            const float decay = AnimationInertialDecayUVE(state.inertialElapsedSeconds / state.inertialSeconds);
-            for (std::size_t index = 0U; index < result.pose->size(); ++index) {
-                PoseUVE& out = (*result.pose)[index];
-                out.position = out.position + state.inertialPosition[index] * decay;
-                out.rotation = Math::MultiplyUVE(SlerpUVE(Math::QuaternionUVE{}, state.inertialRotation[index], decay), out.rotation);
-                out.scale = out.scale + state.inertialScale[index] * decay;
-            }
-            if (state.inertialElapsedSeconds >= state.inertialSeconds) {
-                ClearInertialUVE(state);
-            }
-        }
+        ApplyInertialUVE(state, result, deltaSeconds);
         return result;
+    }
+
+    /// Adds what is left of an inertialized hand-over to `result`, fading it out; clears it when done.
+    static void ApplyInertialUVE(AnimationGraphNodeStateUVE& state, ResultUVE& result, const float deltaSeconds) {
+        if (!(state.inertialSeconds > 0.0F) || !result.pose.has_value() || state.inertialPosition.size() != result.pose->size()) {
+            return;
+        }
+        state.inertialElapsedSeconds += deltaSeconds;
+        const float decay = AnimationInertialDecayUVE(state.inertialElapsedSeconds / state.inertialSeconds);
+        for (std::size_t index = 0U; index < result.pose->size(); ++index) {
+            PoseUVE& out = (*result.pose)[index];
+            out.position = out.position + state.inertialPosition[index] * decay;
+            out.rotation = Math::MultiplyUVE(SlerpUVE(Math::QuaternionUVE{}, state.inertialRotation[index], decay), out.rotation);
+            out.scale = out.scale + state.inertialScale[index] * decay;
+        }
+        if (state.inertialElapsedSeconds >= state.inertialSeconds) {
+            ClearInertialUVE(state);
+        }
+    }
+
+    /// Starts an inertialized hand-over: the gap from `fresh` (where the new source starts) to
+    /// `showing` (the pose shown so far) is carried and fades out over `seconds`.
+    static void CaptureInertialUVE(AnimationGraphNodeStateUVE& state, const ResultUVE& showing, const ResultUVE& fresh,
+                                   const float seconds) {
+        ClearInertialUVE(state);
+        if (!showing.pose.has_value() || !fresh.pose.has_value() || fresh.pose->size() != showing.pose->size()) {
+            return;
+        }
+        const std::size_t count = showing.pose->size();
+        state.inertialPosition.resize(count);
+        state.inertialRotation.resize(count);
+        state.inertialScale.resize(count);
+        for (std::size_t index = 0U; index < count; ++index) {
+            const PoseUVE& from = (*showing.pose)[index];
+            const PoseUVE& onto = (*fresh.pose)[index];
+            state.inertialPosition[index] = from.position - onto.position;
+            state.inertialRotation[index] = Math::MultiplyUVE(from.rotation, InverseOrIdentityUVE(onto.rotation));
+            state.inertialScale[index] = from.scale - onto.scale;
+        }
+        state.inertialSeconds = seconds;
     }
 
     static void ClearInertialUVE(AnimationGraphNodeStateUVE& state) {
@@ -564,26 +701,10 @@ private:
         const bool inertialize = m_mixer.transition == AnimationTransitionModeUVE::Inertialize && fadeSeconds > 0.0F;
         if (inertialize) {
             state.previousState = kAnyAnimationStateUVE;
-            if (!entered.has_value() || !showing.pose.has_value()) {
-                return;
+            if (entered.has_value() && showing.pose.has_value()) {
+                // Hand over now: how far the pose showing is from where the new input starts.
+                CaptureInertialUVE(state, showing, EvaluateUVE(*entered, 0.0F, 0.0F, std::nullopt), fadeSeconds);
             }
-            // Hand over now: how far the pose showing is from where the new input starts.
-            const ResultUVE fresh = EvaluateUVE(*entered, 0.0F, 0.0F, std::nullopt);
-            if (!fresh.pose.has_value() || fresh.pose->size() != showing.pose->size()) {
-                return;
-            }
-            const std::size_t count = showing.pose->size();
-            state.inertialPosition.resize(count);
-            state.inertialRotation.resize(count);
-            state.inertialScale.resize(count);
-            for (std::size_t index = 0U; index < count; ++index) {
-                const PoseUVE& from = (*showing.pose)[index];
-                const PoseUVE& onto = (*fresh.pose)[index];
-                state.inertialPosition[index] = from.position - onto.position;
-                state.inertialRotation[index] = Math::MultiplyUVE(from.rotation, InverseOrIdentityUVE(onto.rotation));
-                state.inertialScale[index] = from.scale - onto.scale;
-            }
-            state.inertialSeconds = fadeSeconds;
         } else {
             state.previousState = fadeSeconds > 0.0F && leaving != to ? leaving : kAnyAnimationStateUVE;
         }
@@ -626,18 +747,6 @@ private:
             SwitchInputUVE(node, state, picked, node.fadeSeconds, node.restart, result);
         }
         return result;
-    }
-
-    [[nodiscard]] ResultUVE EvaluateBlendSpace2DUVE(const AnimationGraphNodeUVE& node, AnimationGraphNodeStateUVE& state,
-                                                    const float deltaSeconds, const float weight,
-                                                    const std::optional<float> phase) {
-        std::vector<Math::Vector2UVE> positions;
-        positions.reserve(node.blendPoints.size());
-        for (const AnimationBlendPointUVE& point : node.blendPoints) {
-            positions.push_back(point.position);
-        }
-        const Math::Vector2UVE at{ReadUVE(node.parameter, node.value), ReadUVE(node.parameterY, node.valueY)};
-        return PlayBlendPointsUVE(node, state, AnimationBlendSpace2DWeightsUVE(positions, at), deltaSeconds, weight, phase);
     }
 
     /// 1 for a bone the layer reaches (a named bone or any bone under one), else 0; the one node
@@ -838,57 +947,177 @@ bool StepSkeletalAnimationTreeUVE(AnimationTreeComponentUVE& tree, const Animati
     return true;
 }
 
+std::vector<std::array<std::uint32_t, 3>> TriangulateBlendSpaceUVE(const std::vector<Math::Vector2UVE>& points) {
+    using TriangleUVE = std::array<std::uint32_t, 3>;
+    std::vector<TriangleUVE> result;
+    const std::size_t count = points.size();
+    if (count < 3U) {
+        return result;
+    }
+    // Bowyer-Watson in doubles, inside a triangle far larger than the points (its corners are the
+    // indices count..count+2); every triangle touching it is dropped at the end.
+    double minX = points[0].x;
+    double minY = points[0].y;
+    double maxX = minX;
+    double maxY = minY;
+    for (const Math::Vector2UVE& point : points) {
+        minX = std::min(minX, static_cast<double>(point.x));
+        minY = std::min(minY, static_cast<double>(point.y));
+        maxX = std::max(maxX, static_cast<double>(point.x));
+        maxY = std::max(maxY, static_cast<double>(point.y));
+    }
+    const double span = std::max({maxX - minX, maxY - minY, 1.0e-3});
+    const double midX = (minX + maxX) * 0.5;
+    const double midY = (minY + maxY) * 0.5;
+    struct PointUVE final {
+        double x;
+        double y;
+    };
+    std::vector<PointUVE> at;
+    at.reserve(count + 3U);
+    for (const Math::Vector2UVE& point : points) {
+        at.push_back(PointUVE{point.x, point.y});
+    }
+    at.push_back(PointUVE{midX - 1000.0 * span, midY - 1000.0 * span});
+    at.push_back(PointUVE{midX + 1000.0 * span, midY - 1000.0 * span});
+    at.push_back(PointUVE{midX, midY + 1000.0 * span});
+    const auto super = static_cast<std::uint32_t>(count);
+    std::vector<TriangleUVE> triangles{TriangleUVE{super, super + 1U, super + 2U}};
+    const auto inCircle = [&at](const TriangleUVE& t, const PointUVE& p) {
+        // The circumcircle test, with the triangle's winding folded in.
+        const PointUVE& a = at[t[0]];
+        const PointUVE& b = at[t[1]];
+        const PointUVE& c = at[t[2]];
+        const double ax = a.x - p.x;
+        const double ay = a.y - p.y;
+        const double bx = b.x - p.x;
+        const double by = b.y - p.y;
+        const double cx = c.x - p.x;
+        const double cy = c.y - p.y;
+        const double det = (ax * ax + ay * ay) * (bx * cy - cx * by) - (bx * bx + by * by) * (ax * cy - cx * ay) +
+                           (cx * cx + cy * cy) * (ax * by - bx * ay);
+        const double orientation = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+        return orientation > 0.0 ? det > 1.0e-12 : det < -1.0e-12;
+    };
+    for (std::uint32_t index = 0U; index < super; ++index) {
+        const PointUVE& p = at[index];
+        std::vector<std::array<std::uint32_t, 2>> edges;
+        std::vector<TriangleUVE> kept;
+        kept.reserve(triangles.size());
+        for (const TriangleUVE& t : triangles) {
+            if (!inCircle(t, p)) {
+                kept.push_back(t);
+                continue;
+            }
+            for (std::size_t e = 0U; e < 3U; ++e) {
+                std::array<std::uint32_t, 2> edge{t[e], t[(e + 1U) % 3U]};
+                if (edge[0] > edge[1]) {
+                    std::swap(edge[0], edge[1]);
+                }
+                // An edge two removed triangles share is inside the hole; one used once is its rim.
+                const auto shared = std::ranges::find(edges, edge);
+                if (shared != edges.end()) {
+                    edges.erase(shared);
+                } else {
+                    edges.push_back(edge);
+                }
+            }
+        }
+        for (const auto& edge : edges) {
+            kept.push_back(TriangleUVE{edge[0], edge[1], index});
+        }
+        triangles = std::move(kept);
+    }
+    for (const TriangleUVE& t : triangles) {
+        if (t[0] >= super || t[1] >= super || t[2] >= super) {
+            continue;
+        }
+        const PointUVE& a = at[t[0]];
+        const PointUVE& b = at[t[1]];
+        const PointUVE& c = at[t[2]];
+        const double area = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+        if (std::abs(area) <= 1.0e-9 * span * span) {
+            continue; // a sliver along a line blends nothing
+        }
+        // Counter-clockwise, lowest index first: the same points always give the same list.
+        TriangleUVE ordered = area > 0.0 ? t : TriangleUVE{t[0], t[2], t[1]};
+        while (ordered[0] > ordered[1] || ordered[0] > ordered[2]) {
+            ordered = TriangleUVE{ordered[1], ordered[2], ordered[0]};
+        }
+        result.push_back(ordered);
+    }
+    std::ranges::sort(result);
+    return result;
+}
+
 std::vector<float> AnimationBlendSpace2DWeightsUVE(const std::vector<Math::Vector2UVE>& points,
+                                                  const std::vector<std::array<std::uint32_t, 3>>& triangles,
                                                   const Math::Vector2UVE at) {
     std::vector<float> weights(points.size(), 0.0F);
-    if (points.empty()) {
-        return weights;
-    }
-    if (points.size() == 1U) {
-        weights[0] = 1.0F;
-        return weights;
-    }
-    // Gradient band interpolation: each point's influence is how far the position still is from
-    // crossing over to any other point, the least of those; then everything is normalized.
-    float total = 0.0F;
-    for (std::size_t i = 0U; i < points.size(); ++i) {
-        const Math::Vector2UVE toAt = at - points[i];
-        float influence = 1.0F;
-        for (std::size_t j = 0U; j < points.size(); ++j) {
-            if (j == i) {
-                continue;
-            }
-            const Math::Vector2UVE toOther = points[j] - points[i];
-            const float lengthSquared = toOther.x * toOther.x + toOther.y * toOther.y;
-            if (lengthSquared <= 1.0e-12F) {
-                continue;
-            }
-            const float along = (toAt.x * toOther.x + toAt.y * toOther.y) / lengthSquared;
-            influence = std::min(influence, 1.0F - along);
+    float bestDistance = FLT_MAX;
+    std::array<std::uint32_t, 2> bestEdge{};
+    float bestAlong = 0.0F;
+    for (const auto& t : triangles) {
+        if (t[0] >= points.size() || t[1] >= points.size() || t[2] >= points.size()) {
+            continue;
         }
-        weights[i] = std::max(influence, 0.0F);
-        total += weights[i];
-    }
-    if (total <= 0.0F) {
-        // Outside every band (cannot happen for finite input, but stay safe): the nearest point.
-        std::size_t nearest = 0U;
-        float best = FLT_MAX;
-        for (std::size_t i = 0U; i < points.size(); ++i) {
-            const Math::Vector2UVE d = at - points[i];
-            const float distance = d.x * d.x + d.y * d.y;
-            if (distance < best) {
-                best = distance;
-                nearest = i;
+        const Math::Vector2UVE a = points[t[0]];
+        const Math::Vector2UVE b = points[t[1]];
+        const Math::Vector2UVE c = points[t[2]];
+        const float area = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+        if (std::abs(area) <= 1.0e-12F) {
+            continue;
+        }
+        const float wb = ((at.x - a.x) * (c.y - a.y) - (at.y - a.y) * (c.x - a.x)) / area;
+        const float wc = ((b.x - a.x) * (at.y - a.y) - (b.y - a.y) * (at.x - a.x)) / area;
+        const float wa = 1.0F - wb - wc;
+        constexpr float kInside = -1.0e-5F;
+        if (wa >= kInside && wb >= kInside && wc >= kInside) {
+            const float total = std::max(wa, 0.0F) + std::max(wb, 0.0F) + std::max(wc, 0.0F);
+            weights[t[0]] = std::max(wa, 0.0F) / total;
+            weights[t[1]] = std::max(wb, 0.0F) / total;
+            weights[t[2]] = std::max(wc, 0.0F) / total;
+            return weights;
+        }
+        // Outside this one: remember the nearest place on its edges, in case it is outside all.
+        for (std::size_t e = 0U; e < 3U; ++e) {
+            const std::uint32_t from = t[e];
+            const std::uint32_t to = t[(e + 1U) % 3U];
+            const Math::Vector2UVE edge = points[to] - points[from];
+            const Math::Vector2UVE offset = at - points[from];
+            const float lengthSquared = edge.x * edge.x + edge.y * edge.y;
+            const float along = std::clamp((offset.x * edge.x + offset.y * edge.y) / lengthSquared, 0.0F, 1.0F);
+            const Math::Vector2UVE gap = offset - edge * along;
+            const float distance = gap.x * gap.x + gap.y * gap.y;
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                bestEdge = {from, to};
+                bestAlong = along;
             }
         }
-        std::fill(weights.begin(), weights.end(), 0.0F);
-        weights[nearest] = 1.0F;
-        return weights;
     }
-    for (float& weight : weights) {
-        weight /= total;
+    if (bestDistance < FLT_MAX) {
+        weights[bestEdge[0]] += 1.0F - bestAlong;
+        weights[bestEdge[1]] += bestAlong;
     }
     return weights;
+}
+
+void SmoothBlendPositionUVE(Math::Vector2UVE& value, Math::Vector2UVE& velocity, const Math::Vector2UVE goal,
+                            const float halfLifeSeconds, const float deltaSeconds) noexcept {
+    if (!(halfLifeSeconds > 0.0F)) {
+        value = goal;
+        velocity = Math::Vector2UVE{};
+        return;
+    }
+    // The exact step of a critically damped spring from rest toward a goal: the gap is
+    // e^(-yt)(1 + yt), which is one half at yt = 1.67835, so y puts that at the half-life.
+    const float y = 1.6783470F / halfLifeSeconds;
+    const float decay = std::exp(-y * deltaSeconds);
+    const Math::Vector2UVE j0 = value - goal;
+    const Math::Vector2UVE j1 = velocity + j0 * y;
+    value = (j0 + j1 * deltaSeconds) * decay + goal;
+    velocity = (velocity - j1 * (y * deltaSeconds)) * decay;
 }
 
 std::vector<float> AnimationBlendSpace1DWeightsUVE(const std::vector<float>& points, const float at) {

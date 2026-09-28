@@ -235,6 +235,8 @@ namespace {
                          {"value", node.value},
                          {"fadeSeconds", node.fadeSeconds},
                          {"sync", node.sync},
+                         {"blendMode", static_cast<std::uint8_t>(node.blendMode)},
+                         {"smoothingSeconds", node.smoothingSeconds},
                          {"blendPoints", std::move(blendPoints)},
                          {"parameterY", node.parameterY},
                          {"valueY", node.valueY},
@@ -310,6 +312,8 @@ namespace {
             node.value = item.value("value", 0.5F);
             node.fadeSeconds = item.value("fadeSeconds", 0.2F);
             node.sync = item.value("sync", false);
+            node.blendMode = static_cast<AnimationBlendModeUVE>(item.value("blendMode", std::uint8_t{0}));
+            node.smoothingSeconds = item.value("smoothingSeconds", 0.0F);
             node.parameterY = item.value("parameterY", std::string{});
             node.valueY = item.value("valueY", 0.0F);
             node.bones = item.value("bones", std::vector<std::string>{});
