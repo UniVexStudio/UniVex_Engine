@@ -485,7 +485,30 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
         ImGui::OpenPopup("##content-settings-menu");
     }
     if (ImGui::BeginPopup("##content-settings-menu")) {
-        ImGui::TextDisabled("Tiles mode");
+        // The mode sets how the whole panel works and where pinned, folders and shelves sit.
+        ImGui::TextDisabled("Mode");
+        struct ModeChoiceUVE final {
+            const char* label;
+            ContentBrowserModeUVE mode;
+            const char* hint;
+        };
+        constexpr std::array<ModeChoiceUVE, 5> kModeChoices{{
+            {"Tiles", ContentBrowserModeUVE::Tiles, "One folder by picture; sidebar on the left"},
+            {"Columns", ContentBrowserModeUVE::Columns, "Walk down folders side by side; pinned and shelves are the first column"},
+            {"Details", ContentBrowserModeUVE::Details, "A table to sort by size, date, kind or folder; sidebar on the right"},
+            {"Recent", ContentBrowserModeUVE::Recent, "What changed lately below this folder; pinned and shelves along the top"},
+            {"Board", ContentBrowserModeUVE::Board, "Everything below this folder by kind; pinned and shelves along the bottom"},
+        }};
+        for (const ModeChoiceUVE& choice : kModeChoices) {
+            if (ImGui::MenuItem(choice.label, nullptr, m_contentBrowserMode == choice.mode)) {
+                m_contentBrowserMode = choice.mode;
+            }
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+                ImGui::SetTooltip("%s", choice.hint);
+            }
+        }
+        ImGui::Separator();
+        ImGui::TextDisabled("Tile size (Tiles)");
         struct ModeUVE final {
             const char* label;
             ContentBrowserViewModeUVE mode;
@@ -499,7 +522,7 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
             }
         }
         ImGui::Separator();
-        if (ImGui::MenuItem("Show Sidebar", nullptr, m_contentBrowserSplitModeUVE)) {
+        if (ImGui::MenuItem("Show Sidebar (Tiles, Details)", nullptr, m_contentBrowserSplitModeUVE)) {
             m_contentBrowserSplitModeUVE = !m_contentBrowserSplitModeUVE;
         }
         if (ImGui::MenuItem("Hide Dock")) {
@@ -565,183 +588,168 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
         return m_uiAssets.GetContentTypeIconTextureIdUVE(open ? "folder_open" : "Folder");
     };
 
-    if (m_contentBrowserSplitModeUVE) {
-        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4{0.105F, 0.115F, 0.135F, 1.0F});
-        ImGui::BeginChild("##content-sidebar", ImVec2{listWidth, bodyHeight}, false, ImGuiWindowFlags_NoScrollbar);
-        ImGui::PopStyleColor();
-        const float rowHeight = ImGui::GetFrameHeight();
-        // Shelves keep their place at the bottom; the rest scrolls above them.
-        const std::span<const ContentShelfUVE> shelves = m_contentShelves.GetAllUVE();
-        const bool shelvesOpen = ImGui::GetStateStorage()->GetBool(ImGui::GetID("##section-shelves"), true);
-        const float shelvesHeight =
-            rowHeight + (shelvesOpen ? static_cast<float>(std::clamp<std::size_t>(shelves.size(), 1U, 5U)) *
-                                               (line + ImGui::GetStyle().ItemSpacing.y) +
-                                           ImGui::GetStyle().ItemSpacing.y * 2.0F
-                                     : 0.0F);
-        ImGui::BeginChild("##content-sidebar-scroll",
-                          ImVec2{0.0F, std::max(rowHeight * 2.0F, ImGui::GetContentRegionAvail().y - shelvesHeight)}, false);
-        {
-            // Pinned: files and folders the user keeps at hand.
-            std::vector<const Asset::ProjectFileEntryUVE*> pinned;
-            for (const std::filesystem::path& path : m_favoriteProjectPaths) {
-                const auto it = std::ranges::find(snapshot.entries, path, &Asset::ProjectFileEntryUVE::relativePath);
-                if (it != snapshot.entries.end()) {
-                    pinned.push_back(&*it);
-                }
-            }
-            if (SidebarSectionUVE("##section-pinned", kIconStarUVE, "Pinned", pinned.size(), 0.0F)) {
-                if (pinned.empty()) {
-                    ImGui::Indent(8.0F);
-                    ImGui::TextDisabled("Right-click a file or folder > Pin");
-                    ImGui::Unindent(8.0F);
-                }
-                for (const Asset::ProjectFileEntryUVE* const entry : pinned) {
-                    const bool folder = entry->kind == Asset::ProjectFileEntryKindUVE::Directory;
-                    const bool selected = folder ? shownShelf == nullptr && m_contentBrowserDirectory == entry->relativePath
-                                                 : m_selectedProjectFile.has_value() &&
-                                                       m_selectedProjectFile->relativePath == entry->relativePath;
-                    ImGui::PushID(entry->relativePath.generic_string().c_str());
-                    const float rowX = ImGui::GetCursorScreenPos().x;
-                    if (ImGui::Selectable((iconGap + entry->relativePath.filename().generic_string()).c_str(), selected)) {
-                        if (folder) {
-                            goToFolder(entry->relativePath);
-                        } else {
-                            goToFolder(entry->relativePath.parent_path());
-                            selectEntry(*entry);
-                        }
-                    }
-                    drawRowIcon(rowX, folder ? folderIcon(false)
-                                             : m_uiAssets.GetContentTypeIconTextureIdUVE(GetContentBrowserItemTypeLabelUVE(
-                                                   ClassifyContentBrowserEntryUVE(*entry))));
-                    dragContentItem(*entry, false);
-                    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
-                        ImGui::SetTooltip("%s", entry->relativePath.generic_string().c_str());
-                    }
-                    if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
-                        selectEntry(*entry);
-                        openContext(*entry);
-                    }
-                    ImGui::PopID();
-                }
-            }
-
-            // The project's folders, from the content root down. Its magnifier finds a folder.
-            // Named after the folder the project lives in; the content root may be given relative.
-            std::error_code rootError;
-            std::string projectName =
-                std::filesystem::absolute(snapshot.contentRoot, rootError).parent_path().filename().generic_string();
-            if (projectName.empty()) {
-                projectName = "Project";
-            }
-            std::size_t folderCount = 0U;
-            for (const auto& [parent, children] : directoryChildren) {
-                folderCount += children.size();
-            }
-            const float searchButtonWidth = ImGui::GetFrameHeight();
-            const bool projectOpen = SidebarSectionUVE("##section-project", nullptr, projectName, folderCount, searchButtonWidth);
-            ImGui::SameLine(0.0F, 0.0F);
-            if (GlyphButtonUVE("##tree-search", GlyphUVE::Search, true, "Find a folder")) {
-                m_contentTreeSearchOpen = !m_contentTreeSearchOpen;
-                if (!m_contentTreeSearchOpen) {
-                    m_contentTreeFilter.clear();
-                } else {
-                    ImGui::SetKeyboardFocusHere(1);
-                }
-            }
-            if (projectOpen) {
-                if (m_contentTreeSearchOpen) {
-                    std::array<char, 128> treeFilter{};
-                    m_contentTreeFilter.copy(treeFilter.data(), std::min(m_contentTreeFilter.size(), treeFilter.size() - 1U));
-                    ImGui::SetNextItemWidth(-1.0F);
-                    if (ImGui::InputTextWithHint("##tree-filter", "Folder name", treeFilter.data(), treeFilter.size())) {
-                        m_contentTreeFilter = treeFilter.data();
-                    }
-                }
-                if (!m_projectFileLastRefreshSucceeded && snapshot.refreshGeneration == 0U) {
-                    ImGui::TextWrapped("The content folder could not be scanned. The next automatic scan retries.");
-                } else if (!snapshot.contentRootExists) {
-                    ImGui::TextWrapped("The content folder does not exist yet. Add content and it is picked up.");
-                } else {
-                    const bool filtering = !m_contentTreeFilter.empty();
-                    const std::vector<std::string> visible =
-                        filtering ? CollectVisibleContentFoldersUVE(snapshot.entries, m_contentTreeFilter)
-                                  : std::vector<std::string>{};
-                    const auto isVisible = [&](const std::string& key) {
-                        return !filtering || std::ranges::binary_search(visible, key);
-                    };
-                    ImGuiTreeNodeFlags rootFlags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick |
-                                                   ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_DefaultOpen;
-                    if (shownShelf == nullptr && m_contentBrowserDirectory.empty()) {
-                        rootFlags |= ImGuiTreeNodeFlags_Selected;
-                    }
-                    const float rootX = ImGui::GetCursorScreenPos().x;
-                    const bool rootOpen = ImGui::TreeNodeEx((iconGap + "Content##content-tree-root").c_str(), rootFlags);
-                    drawRowIcon(rootX + ImGui::GetTreeNodeToLabelSpacing(), folderIcon(rootOpen));
-                    if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
-                        goToFolder({});
-                    }
-                    std::function<void(const std::string&)> renderDirectory = [&](const std::string& parentKey) {
-                        const auto childrenIt = directoryChildren.find(parentKey);
-                        if (childrenIt == directoryChildren.end()) {
-                            return;
-                        }
-                        for (const Asset::ProjectFileEntryUVE* const dirEntry : childrenIt->second) {
-                            const std::string childKey = dirEntry->relativePath.generic_string();
-                            if (!isVisible(childKey)) {
-                                continue;
-                            }
-                            const bool hasSubdirectories = directoryChildren.contains(childKey);
-                            ImGuiTreeNodeFlags treeFlags = ImGuiTreeNodeFlags_OpenOnArrow |
-                                                           ImGuiTreeNodeFlags_OpenOnDoubleClick |
-                                                           ImGuiTreeNodeFlags_SpanAvailWidth;
-                            if (!hasSubdirectories) {
-                                treeFlags |= ImGuiTreeNodeFlags_Leaf;
-                            }
-                            if (shownShelf == nullptr && m_contentBrowserDirectory == dirEntry->relativePath) {
-                                treeFlags |= ImGuiTreeNodeFlags_Selected;
-                            }
-                            ImGui::PushID(childKey.c_str());
-                            if (filtering && hasSubdirectories) {
-                                ImGui::SetNextItemOpen(true); // a match deep down stays in sight
-                            } else if (IsInsideContentDirectoryUVE(m_contentBrowserDirectory, dirEntry->relativePath)) {
-                                ImGui::SetNextItemOpen(true, ImGuiCond_Appearing);
-                            }
-                            const float rowX = ImGui::GetCursorScreenPos().x;
-                            const bool open = ImGui::TreeNodeEx(
-                                (iconGap + dirEntry->relativePath.filename().generic_string()).c_str(), treeFlags);
-                            drawRowIcon(rowX + ImGui::GetTreeNodeToLabelSpacing(), folderIcon(open && hasSubdirectories));
-                            dragContentItem(*dirEntry, false);
-                            if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
-                                goToFolder(dirEntry->relativePath);
-                            }
-                            if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
-                                selectEntry(*dirEntry);
-                                openContext(*dirEntry);
-                            }
-                            if (open) {
-                                if (hasSubdirectories) {
-                                    renderDirectory(childKey);
-                                }
-                                ImGui::TreePop();
-                            }
-                            ImGui::PopID();
-                        }
-                    };
-                    if (rootOpen) {
-                        renderDirectory("");
-                        ImGui::TreePop();
-                    }
-                    if (filtering && visible.empty()) {
-                        ImGui::TextDisabled("No folder is named like that.");
-                    }
-                }
-            }
-            if (ImGui::IsWindowHovered() && !ImGui::IsAnyItemHovered() && ImGui::IsMouseReleased(ImGuiMouseButton_Right)) {
-                m_contentCreateMenuRequested = true;
+    // The sidebar's three parts, drawn at the cursor. Each mode places them its own way.
+    const auto drawPinned = [&]() {
+        // Pinned: files and folders the user keeps at hand.
+        std::vector<const Asset::ProjectFileEntryUVE*> pinned;
+        for (const std::filesystem::path& path : m_favoriteProjectPaths) {
+            const auto it = std::ranges::find(snapshot.entries, path, &Asset::ProjectFileEntryUVE::relativePath);
+            if (it != snapshot.entries.end()) {
+                pinned.push_back(&*it);
             }
         }
-        ImGui::EndChild();
+        if (SidebarSectionUVE("##section-pinned", kIconStarUVE, "Pinned", pinned.size(), 0.0F)) {
+            if (pinned.empty()) {
+                ImGui::Indent(8.0F);
+                ImGui::TextDisabled("Right-click a file or folder > Pin");
+                ImGui::Unindent(8.0F);
+            }
+            for (const Asset::ProjectFileEntryUVE* const entry : pinned) {
+                const bool folder = entry->kind == Asset::ProjectFileEntryKindUVE::Directory;
+                const bool selected = folder ? shownShelf == nullptr && m_contentBrowserDirectory == entry->relativePath
+                                             : m_selectedProjectFile.has_value() &&
+                                                   m_selectedProjectFile->relativePath == entry->relativePath;
+                ImGui::PushID(entry->relativePath.generic_string().c_str());
+                const float rowX = ImGui::GetCursorScreenPos().x;
+                if (ImGui::Selectable((iconGap + entry->relativePath.filename().generic_string()).c_str(), selected)) {
+                    if (folder) {
+                        goToFolder(entry->relativePath);
+                    } else {
+                        goToFolder(entry->relativePath.parent_path());
+                        selectEntry(*entry);
+                    }
+                }
+                drawRowIcon(rowX, folder ? folderIcon(false)
+                                         : m_uiAssets.GetContentTypeIconTextureIdUVE(GetContentBrowserItemTypeLabelUVE(
+                                               ClassifyContentBrowserEntryUVE(*entry))));
+                dragContentItem(*entry, false);
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+                    ImGui::SetTooltip("%s", entry->relativePath.generic_string().c_str());
+                }
+                if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+                    selectEntry(*entry);
+                    openContext(*entry);
+                }
+                ImGui::PopID();
+            }
+        }
 
+    };
+    const auto drawTree = [&]() {
+        // The project's folders, from the content root down. Its magnifier finds a folder.
+        // Named after the folder the project lives in; the content root may be given relative.
+        std::error_code rootError;
+        std::string projectName =
+            std::filesystem::absolute(snapshot.contentRoot, rootError).parent_path().filename().generic_string();
+        if (projectName.empty()) {
+            projectName = "Project";
+        }
+        std::size_t folderCount = 0U;
+        for (const auto& [parent, children] : directoryChildren) {
+            folderCount += children.size();
+        }
+        const float searchButtonWidth = ImGui::GetFrameHeight();
+        const bool projectOpen = SidebarSectionUVE("##section-project", nullptr, projectName, folderCount, searchButtonWidth);
+        ImGui::SameLine(0.0F, 0.0F);
+        if (GlyphButtonUVE("##tree-search", GlyphUVE::Search, true, "Find a folder")) {
+            m_contentTreeSearchOpen = !m_contentTreeSearchOpen;
+            if (!m_contentTreeSearchOpen) {
+                m_contentTreeFilter.clear();
+            } else {
+                ImGui::SetKeyboardFocusHere(1);
+            }
+        }
+        if (projectOpen) {
+            if (m_contentTreeSearchOpen) {
+                std::array<char, 128> treeFilter{};
+                m_contentTreeFilter.copy(treeFilter.data(), std::min(m_contentTreeFilter.size(), treeFilter.size() - 1U));
+                ImGui::SetNextItemWidth(-1.0F);
+                if (ImGui::InputTextWithHint("##tree-filter", "Folder name", treeFilter.data(), treeFilter.size())) {
+                    m_contentTreeFilter = treeFilter.data();
+                }
+            }
+            if (!m_projectFileLastRefreshSucceeded && snapshot.refreshGeneration == 0U) {
+                ImGui::TextWrapped("The content folder could not be scanned. The next automatic scan retries.");
+            } else if (!snapshot.contentRootExists) {
+                ImGui::TextWrapped("The content folder does not exist yet. Add content and it is picked up.");
+            } else {
+                const bool filtering = !m_contentTreeFilter.empty();
+                const std::vector<std::string> visible =
+                    filtering ? CollectVisibleContentFoldersUVE(snapshot.entries, m_contentTreeFilter)
+                              : std::vector<std::string>{};
+                const auto isVisible = [&](const std::string& key) {
+                    return !filtering || std::ranges::binary_search(visible, key);
+                };
+                ImGuiTreeNodeFlags rootFlags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick |
+                                               ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_DefaultOpen;
+                if (shownShelf == nullptr && m_contentBrowserDirectory.empty()) {
+                    rootFlags |= ImGuiTreeNodeFlags_Selected;
+                }
+                const float rootX = ImGui::GetCursorScreenPos().x;
+                const bool rootOpen = ImGui::TreeNodeEx((iconGap + "Content##content-tree-root").c_str(), rootFlags);
+                drawRowIcon(rootX + ImGui::GetTreeNodeToLabelSpacing(), folderIcon(rootOpen));
+                if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
+                    goToFolder({});
+                }
+                std::function<void(const std::string&)> renderDirectory = [&](const std::string& parentKey) {
+                    const auto childrenIt = directoryChildren.find(parentKey);
+                    if (childrenIt == directoryChildren.end()) {
+                        return;
+                    }
+                    for (const Asset::ProjectFileEntryUVE* const dirEntry : childrenIt->second) {
+                        const std::string childKey = dirEntry->relativePath.generic_string();
+                        if (!isVisible(childKey)) {
+                            continue;
+                        }
+                        const bool hasSubdirectories = directoryChildren.contains(childKey);
+                        ImGuiTreeNodeFlags treeFlags = ImGuiTreeNodeFlags_OpenOnArrow |
+                                                       ImGuiTreeNodeFlags_OpenOnDoubleClick |
+                                                       ImGuiTreeNodeFlags_SpanAvailWidth;
+                        if (!hasSubdirectories) {
+                            treeFlags |= ImGuiTreeNodeFlags_Leaf;
+                        }
+                        if (shownShelf == nullptr && m_contentBrowserDirectory == dirEntry->relativePath) {
+                            treeFlags |= ImGuiTreeNodeFlags_Selected;
+                        }
+                        ImGui::PushID(childKey.c_str());
+                        if (filtering && hasSubdirectories) {
+                            ImGui::SetNextItemOpen(true); // a match deep down stays in sight
+                        } else if (IsInsideContentDirectoryUVE(m_contentBrowserDirectory, dirEntry->relativePath)) {
+                            ImGui::SetNextItemOpen(true, ImGuiCond_Appearing);
+                        }
+                        const float rowX = ImGui::GetCursorScreenPos().x;
+                        const bool open = ImGui::TreeNodeEx(
+                            (iconGap + dirEntry->relativePath.filename().generic_string()).c_str(), treeFlags);
+                        drawRowIcon(rowX + ImGui::GetTreeNodeToLabelSpacing(), folderIcon(open && hasSubdirectories));
+                        dragContentItem(*dirEntry, false);
+                        if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
+                            goToFolder(dirEntry->relativePath);
+                        }
+                        if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+                            selectEntry(*dirEntry);
+                            openContext(*dirEntry);
+                        }
+                        if (open) {
+                            if (hasSubdirectories) {
+                                renderDirectory(childKey);
+                            }
+                            ImGui::TreePop();
+                        }
+                        ImGui::PopID();
+                    }
+                };
+                if (rootOpen) {
+                    renderDirectory("");
+                    ImGui::TreePop();
+                }
+                if (filtering && visible.empty()) {
+                    ImGui::TextDisabled("No folder is named like that.");
+                }
+            }
+        }
+    };
+    const auto drawShelves = [&]() {
+        const std::span<const ContentShelfUVE> shelves = m_contentShelves.GetAllUVE();
         // Shelves: hand-picked groups of files from anywhere, shown together in the items area.
         // The team's come first and are saved in the project; the rest are this person's.
         const float addButtonWidth = ImGui::GetFrameHeight();
@@ -876,14 +884,38 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
             }
             ImGui::EndChild();
         }
+    };
+    // The classic sidebar: pinned and the folder tree scrolling, shelves kept at the bottom.
+    const auto drawSidebar = [&]() {
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4{0.105F, 0.115F, 0.135F, 1.0F});
+        ImGui::BeginChild("##content-sidebar", ImVec2{listWidth, bodyHeight}, false, ImGuiWindowFlags_NoScrollbar);
+        ImGui::PopStyleColor();
+        const float rowHeight = ImGui::GetFrameHeight();
+        const std::size_t shelfCount = m_contentShelves.GetAllUVE().size();
+        const bool shelvesOpen = ImGui::GetStateStorage()->GetBool(ImGui::GetID("##section-shelves"), true);
+        const float shelvesHeight =
+            rowHeight + (shelvesOpen ? static_cast<float>(std::clamp<std::size_t>(shelfCount, 1U, 5U)) *
+                                               (line + ImGui::GetStyle().ItemSpacing.y) +
+                                           ImGui::GetStyle().ItemSpacing.y * 2.0F
+                                     : 0.0F);
+        ImGui::BeginChild("##content-sidebar-scroll",
+                          ImVec2{0.0F, std::max(rowHeight * 2.0F, ImGui::GetContentRegionAvail().y - shelvesHeight)}, false);
+        drawPinned();
+        drawTree();
+        if (ImGui::IsWindowHovered() && !ImGui::IsAnyItemHovered() && ImGui::IsMouseReleased(ImGuiMouseButton_Right)) {
+            m_contentCreateMenuRequested = true;
+        }
         ImGui::EndChild();
-        ImGui::SameLine(0.0F, 0.0F);
-
-        // Divider: drag to resize the sidebar. Hiding it is in Settings.
+        drawShelves();
+        ImGui::EndChild();
+    };
+    // Divider: drag to resize the sidebar, which sits left (Tiles) or right (Details).
+    const auto drawSplitter = [&](const bool sidebarOnRight) {
         constexpr float kSplitterHitWidthUVE = 8.0F;
         ImGui::InvisibleButton("##content-browser-splitter", ImVec2{kSplitterHitWidthUVE, bodyHeight});
         if (ImGui::IsItemActive() && std::abs(ImGui::GetIO().MouseDelta.x) > 0.0F) {
-            m_contentBrowserSplitRatio = std::clamp((listWidth + ImGui::GetIO().MouseDelta.x) / bodyWidth, 0.12F, 0.6F);
+            const float delta = sidebarOnRight ? -ImGui::GetIO().MouseDelta.x : ImGui::GetIO().MouseDelta.x;
+            m_contentBrowserSplitRatio = std::clamp((listWidth + delta) / bodyWidth, 0.12F, 0.6F);
         }
         if (ImGui::IsItemHovered() || ImGui::IsItemActive()) {
             ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
@@ -896,6 +928,67 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
                                                 ? ImGui::GetColorU32(kAccentUVE)
                                                 : IM_COL32(28, 32, 39, 255),
                                             ImGui::IsItemActive() ? 2.0F : 1.0F);
+    };
+    // Recent and Board have no folder tree (they already look through every folder below):
+    // pinned paths and shelves ride along as one strip of chips; a chip takes drops too.
+    const auto drawPlacesStrip = [&]() {
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextDisabled("%s", kIconStarUVE);
+        ImGui::SameLine(0.0F, 4.0F);
+        bool any = false;
+        for (const std::filesystem::path& path : m_favoriteProjectPaths) {
+            const auto it = std::ranges::find(snapshot.entries, path, &Asset::ProjectFileEntryUVE::relativePath);
+            if (it == snapshot.entries.end()) {
+                continue;
+            }
+            any = true;
+            if (ImGui::SmallButton((path.filename().generic_string() + "##pin-chip-" + path.generic_string()).c_str())) {
+                if (it->kind == Asset::ProjectFileEntryKindUVE::Directory) {
+                    goToFolder(it->relativePath);
+                } else {
+                    goToFolder(it->relativePath.parent_path());
+                    selectEntry(*it);
+                }
+            }
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+                ImGui::SetTooltip("%s", path.generic_string().c_str());
+            }
+            ImGui::SameLine(0.0F, 4.0F);
+        }
+        if (!any) {
+            ImGui::TextDisabled("nothing pinned");
+            ImGui::SameLine(0.0F, 4.0F);
+        }
+        ImGui::TextDisabled("|  Shelves");
+        ImGui::SameLine(0.0F, 4.0F);
+        for (const ContentShelfUVE& shelf : m_contentShelves.GetAllUVE()) {
+            const std::string name = shelf.name;
+            const bool on = m_contentBrowserShelf == name;
+            if (on) {
+                ImGui::PushStyleColor(ImGuiCol_Button, kAccentUVE);
+            }
+            if (ImGui::SmallButton((name + (shelf.shared ? " (team)" : "") + "##shelf-chip").c_str())) {
+                goToShelf(name);
+            }
+            if (on) {
+                ImGui::PopStyleColor();
+            }
+            acceptShelfDrop(name);
+            ImGui::SameLine(0.0F, 4.0F);
+        }
+        if (m_contentShelves.GetAllUVE().empty()) {
+            ImGui::TextDisabled("none yet");
+            ImGui::SameLine(0.0F, 4.0F);
+        }
+        ImGui::NewLine();
+    };
+
+    const bool sidebarLeft = m_contentBrowserSplitModeUVE && m_contentBrowserMode == ContentBrowserModeUVE::Tiles;
+    const bool sidebarRight = m_contentBrowserSplitModeUVE && m_contentBrowserMode == ContentBrowserModeUVE::Details;
+    if (sidebarLeft) {
+        drawSidebar();
+        ImGui::SameLine(0.0F, 0.0F);
+        drawSplitter(false);
         ImGui::SameLine(0.0F, 0.0F);
     }
 
@@ -904,37 +997,9 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
     // memory; look the shown one up again.
     shownShelf = m_contentBrowserShelf.empty() ? nullptr : m_contentShelves.FindUVE(m_contentBrowserShelf);
     const std::filesystem::path itemsDirectory = shownShelf != nullptr ? std::filesystem::path{} : m_contentBrowserDirectory;
-    ImGui::BeginChild("##content-items", ImVec2{0.0F, bodyHeight}, false);
+    const float itemsWidth = sidebarRight ? std::max(kMinimumGridWidthUVE, bodyWidth - listWidth - 8.0F) : 0.0F;
+    ImGui::BeginChild("##content-items", ImVec2{itemsWidth, bodyHeight}, false);
     {
-        // The five modes, side by side; the lit one is on.
-        struct ModeChoiceUVE final {
-            const char* label;
-            ContentBrowserModeUVE mode;
-            const char* tooltip;
-        };
-        constexpr std::array<ModeChoiceUVE, 5> kModeChoices{{
-            {"Tiles", ContentBrowserModeUVE::Tiles, "One folder, by picture"},
-            {"Columns", ContentBrowserModeUVE::Columns, "Walk down folders side by side; a picked file shows its details"},
-            {"Details", ContentBrowserModeUVE::Details, "A table to sort by size, date, kind or folder"},
-            {"Recent", ContentBrowserModeUVE::Recent, "What changed lately, in this folder and everything below"},
-            {"Board", ContentBrowserModeUVE::Board, "Everything below this folder, laid out by kind"},
-        }};
-        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{1.0F, ImGui::GetStyle().ItemSpacing.y});
-        for (const ModeChoiceUVE& choice : kModeChoices) {
-            const bool on = m_contentBrowserMode == choice.mode;
-            ImGui::PushStyleColor(ImGuiCol_Button, on ? kAccentUVE : ImGui::GetStyleColorVec4(ImGuiCol_FrameBg));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, on ? kAccentHoveredUVE : ImGui::GetStyleColorVec4(ImGuiCol_FrameBgHovered));
-            if (ImGui::Button((std::string{choice.label} + "##content-mode").c_str())) {
-                m_contentBrowserMode = choice.mode;
-            }
-            ImGui::PopStyleColor(2);
-            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
-                ImGui::SetTooltip("%s", choice.tooltip);
-            }
-            ImGui::SameLine();
-        }
-        ImGui::PopStyleVar();
-        ImGui::SameLine(0.0F, 8.0F);
         const bool focused = m_contentBrowserTypeFocus != ContentBrowserTypeFocusUVE::All;
         const std::string filterLabel = focused ? std::string{"Only "} + GetContentBrowserFocusLabelUVE(m_contentBrowserTypeFocus)
                                                 : std::string{"Filter"};
@@ -1138,7 +1203,11 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
         const float tileIcon = m_contentBrowserViewMode == ContentBrowserViewModeUVE::LargeTiles ? 72.0F : 44.0F;
         const float tileWidth = tileIcon + 40.0F;
         const float tileHeight = tileIcon + 14.0F + line * 2.0F;
-        const float statusHeight = line + ImGui::GetStyle().ItemSpacing.y * 2.0F;
+        if (mode == ContentBrowserModeUVE::Recent) {
+            drawPlacesStrip();
+        }
+        const float stripHeight = mode == ContentBrowserModeUVE::Board ? ImGui::GetFrameHeightWithSpacing() : 0.0F;
+        const float statusHeight = line + ImGui::GetStyle().ItemSpacing.y * 2.0F + stripHeight;
         const ImVec2 areaSize{0.0F, std::max(line * 2.0F, ImGui::GetContentRegionAvail().y - statusHeight)};
         std::string statusNote;
 
@@ -1307,6 +1376,12 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
                     chain.push_back(chain.back() / segment);
                 }
                 const float columnHeight = std::max(line * 2.0F, ImGui::GetContentRegionAvail().y - ImGui::GetStyle().ScrollbarSize);
+                // Places: pinned and shelves are the first column; the columns after it are the tree.
+                ImGui::BeginChild("##column-places", ImVec2{kColumnWidthUVE, columnHeight}, true);
+                drawPinned();
+                drawShelves();
+                ImGui::EndChild();
+                ImGui::SameLine(0.0F, 2.0F);
                 for (std::size_t level = 0U; level < chain.size(); ++level) {
                     const bool last = level + 1U == chain.size();
                     std::vector<std::size_t> listing =
@@ -1423,6 +1498,9 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
             acceptShelfDrop(shownShelf->name);
         }
 
+        if (mode == ContentBrowserModeUVE::Board) {
+            drawPlacesStrip();
+        }
         // Status line: how many items, how many selected, and what the mode is looking at.
         std::string status = std::to_string(items.size()) + (items.size() == 1U ? " item" : " items");
         if (selectedShown > 0U) {
@@ -1437,6 +1515,12 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
         ImGui::TextDisabled("%s", status.c_str());
     }
     ImGui::EndChild();
+    if (sidebarRight) {
+        ImGui::SameLine(0.0F, 0.0F);
+        drawSplitter(true);
+        ImGui::SameLine(0.0F, 0.0F);
+        drawSidebar();
+    }
 
     constexpr const char* kCreateMenuId = "##content-create-menu";
     const bool createMenuOpened = m_contentCreateMenuRequested;
