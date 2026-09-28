@@ -81,13 +81,13 @@ const char* AnimationGraphKindHelpUVE(const Kind kind) noexcept {
         case Kind::Clip: return "Plays a clip.";
         case Kind::Blend2: return "Mixes A and B by a weight: 0 is A, 1 is B.";
         case Kind::BlendSpace1D:
-            return "Places its inputs along a line and mixes the two either side of a value - walk, jog, run by speed.";
+            return "Places animations along a line and mixes the two either side of a value - walk, jog, run by speed.";
         case Kind::Additive: return "Lays the Layer's motion on top of the Base, scaled by a weight.";
         case Kind::OneShot: return "Plays Shot once over Base when a trigger fires, fading in and out.";
         case Kind::TimeScale: return "Runs its input faster or slower.";
         case Kind::StateMachine: return "Its inputs are states. Transitions move between them and crossfade.";
         case Kind::BlendSpace2D:
-            return "Places its inputs on a plane and mixes them by how close a two-value position is - strafe by X and Z.";
+            return "Places animations on a plane and blends inside the triangle a two-value position is in - strafe by X and Z.";
         case Kind::Select:
             return "Plays the input a Bool or number picks, fading when the pick changes - stance by weapon.";
         case Kind::LayeredBlend:

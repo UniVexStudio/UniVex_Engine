@@ -689,6 +689,8 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_AnimationTargetsRemapToTheRestoredEnti
                          AnimationBlendPointUVE{{-1.5F, 2.0F}, Asset::AssetGuidUVE{22U}}};
     space.parameterY = "speed";
     space.valueY = 0.75F;
+    space.blendMode = AnimationBlendModeUVE::NearestInStep;
+    space.smoothingSeconds = 0.15F;
     blend.nodes.push_back(space);
     AnimationGraphNodeUVE layered;
     layered.id = 5U;

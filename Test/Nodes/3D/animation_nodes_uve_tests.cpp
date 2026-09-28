@@ -748,28 +748,43 @@ namespace {
 
 // ---- New nodes: Blend Space 2D, Select, Layered Blend, Time Seek -------------------------------
 
-TEST(AnimationTreeUVETest, BlendSpace2DWeightsFavourTheNearestPointsAndAddUpToOne) {
-    const std::vector<Math::Vector2UVE> points{{0.0F, 0.0F}, {1.0F, 0.0F}, {0.0F, 1.0F}, {1.0F, 1.0F}};
-    const std::vector<float> onPoint = AnimationBlendSpace2DWeightsUVE(points, Math::Vector2UVE{1.0F, 0.0F});
-    EXPECT_NEAR(onPoint[1], 1.0F, 1e-5F) << "on a point: that point alone";
-    const std::vector<float> middle = AnimationBlendSpace2DWeightsUVE(points, Math::Vector2UVE{0.5F, 0.5F});
-    for (const float weight : middle) {
-        EXPECT_NEAR(weight, 0.25F, 1e-5F) << "the middle of a square: all four the same";
+TEST(AnimationTreeUVETest, BlendSpace2DTriangulatesItsPoints) {
+    EXPECT_TRUE(TriangulateBlendSpaceUVE({{0.0F, 0.0F}, {1.0F, 0.0F}}).empty()) << "two points make no triangle";
+    EXPECT_TRUE(TriangulateBlendSpaceUVE({{0.0F, 0.0F}, {1.0F, 0.0F}, {2.0F, 0.0F}, {3.0F, 0.0F}}).empty())
+        << "points on one line make none";
+    const auto one = TriangulateBlendSpaceUVE({{0.0F, 0.0F}, {1.0F, 0.0F}, {0.0F, 1.0F}});
+    ASSERT_EQ(one.size(), 1U);
+    EXPECT_EQ(one[0], (std::array<std::uint32_t, 3>{0U, 1U, 2U})) << "counter-clockwise, lowest index first";
+    EXPECT_EQ(TriangulateBlendSpaceUVE({{0.0F, 0.0F}, {1.0F, 0.0F}, {0.0F, 1.0F}, {1.0F, 1.0F}}).size(), 2U);
+    // Idle in the middle, walks at the four sides: a fan of four around the centre.
+    const std::vector<Math::Vector2UVE> cross{{0.0F, 0.0F}, {0.0F, 1.0F}, {1.0F, 0.0F}, {0.0F, -1.0F}, {-1.0F, 0.0F}};
+    const auto fan = TriangulateBlendSpaceUVE(cross);
+    ASSERT_EQ(fan.size(), 4U);
+    for (const auto& triangle : fan) {
+        EXPECT_EQ(triangle[0], 0U) << "every triangle has the centre";
     }
-    const std::vector<float> edge = AnimationBlendSpace2DWeightsUVE(points, Math::Vector2UVE{0.25F, 0.0F});
-    EXPECT_NEAR(edge[0], 0.75F, 1e-5F);
-    EXPECT_NEAR(edge[1], 0.25F, 1e-5F);
-    EXPECT_NEAR(edge[2] + edge[3], 0.0F, 1e-5F) << "the far side of the square takes nothing";
-    const std::vector<float> outside = AnimationBlendSpace2DWeightsUVE(points, Math::Vector2UVE{5.0F, -3.0F});
-    float total = 0.0F;
-    for (const float weight : outside) {
-        EXPECT_GE(weight, 0.0F);
-        total += weight;
-    }
-    EXPECT_NEAR(total, 1.0F, 1e-5F) << "outside the points still adds up";
+    EXPECT_EQ(TriangulateBlendSpaceUVE(cross), fan) << "the same points give the same triangles";
 }
 
-TEST(AnimationTreeUVETest, BlendSpace2DMixesItsPoints) {
+TEST(AnimationTreeUVETest, BlendSpace2DWeightsAreTheTrianglesCorners) {
+    const std::vector<Math::Vector2UVE> points{{0.0F, 0.0F}, {1.0F, 0.0F}, {0.0F, 1.0F}};
+    const auto triangles = TriangulateBlendSpaceUVE(points);
+    const std::vector<float> onPoint = AnimationBlendSpace2DWeightsUVE(points, triangles, Math::Vector2UVE{1.0F, 0.0F});
+    EXPECT_NEAR(onPoint[1], 1.0F, 1e-5F) << "on a point: that point alone";
+    const std::vector<float> inside = AnimationBlendSpace2DWeightsUVE(points, triangles, Math::Vector2UVE{0.25F, 0.25F});
+    EXPECT_NEAR(inside[0], 0.5F, 1e-5F);
+    EXPECT_NEAR(inside[1], 0.25F, 1e-5F);
+    EXPECT_NEAR(inside[2], 0.25F, 1e-5F);
+    // Outside: the nearest place on the outline, here halfway along the long edge.
+    const std::vector<float> outside = AnimationBlendSpace2DWeightsUVE(points, triangles, Math::Vector2UVE{2.0F, 2.0F});
+    EXPECT_NEAR(outside[0], 0.0F, 1e-5F);
+    EXPECT_NEAR(outside[1], 0.5F, 1e-5F);
+    EXPECT_NEAR(outside[2], 0.5F, 1e-5F);
+    const std::vector<float> none = AnimationBlendSpace2DWeightsUVE(points, {}, Math::Vector2UVE{0.25F, 0.25F});
+    EXPECT_EQ(none, (std::vector<float>{0.0F, 0.0F, 0.0F})) << "no triangles, no blend";
+}
+
+TEST(AnimationTreeUVETest, BlendSpace2DMixesInsideItsTriangleAndNeedsOne) {
     GraphFixtureUVE fixture;
     AnimationTreeComponentUVE tree;
     tree.parameters = {AnimationParameterUVE{"x", AnimationParameterTypeUVE::Float, 0.25F}};
@@ -778,8 +793,119 @@ TEST(AnimationTreeUVETest, BlendSpace2DMixesItsPoints) {
                          AnimationBlendPointUVE{{1.0F, 0.0F}, fixture.AddClipUVE(40.0F)}};
     space.parameter = "x";
     tree.nodes = {GraphFixtureUVE::NodeUVE(1U, Kind::Output, {2U}), space};
+    TransformComponentUVE target;
+    EXPECT_FALSE(StepAnimationTreeUVE(tree, fixture.ResolverUVE(), 0.5F, target, fixture.mixer))
+        << "two points are a line, not a plane: nothing plays";
+    tree.nodes[1].blendPoints.push_back(AnimationBlendPointUVE{{0.0F, 1.0F}, fixture.AddClipUVE(0.0F)});
+    tree.nodeStates.clear();
     // A quarter of the way to the 40 m clip, which is at 20 after half a second: 5.
     EXPECT_NEAR(fixture.StepUVE(tree, 0.5F), 5.0F, 1e-3F);
+    ASSERT_EQ(tree.nodeStates[1].triangles.size(), 1U) << "triangulated once and kept";
+    EXPECT_NEAR(tree.nodeStates[1].pointWeights[1], 0.25F, 1e-5F);
+}
+
+TEST(AnimationTreeUVETest, SmoothingEasesThePositionWithoutOvershoot) {
+    Math::Vector2UVE at{};
+    Math::Vector2UVE velocity{};
+    SmoothBlendPositionUVE(at, velocity, Math::Vector2UVE{1.0F, 2.0F}, 0.5F, 0.5F);
+    EXPECT_NEAR(at.x, 0.5F, 1e-4F) << "half the gap closed after one half-life";
+    EXPECT_NEAR(at.y, 1.0F, 1e-4F);
+    Math::Vector2UVE stepped{};
+    Math::Vector2UVE steppedVelocity{};
+    float previous = 0.0F;
+    for (int step = 0; step < 300; ++step) {
+        SmoothBlendPositionUVE(stepped, steppedVelocity, Math::Vector2UVE{1.0F, 2.0F}, 0.5F, 0.01F);
+        EXPECT_GE(stepped.x, previous) << "it only ever moves toward the goal";
+        EXPECT_LE(stepped.x, 1.0F) << "and never past it";
+        previous = stepped.x;
+        if (step == 49) {
+            EXPECT_NEAR(stepped.x, 0.5F, 1e-3F) << "the same after fifty small steps as after one big one";
+        }
+    }
+    Math::Vector2UVE instant{};
+    Math::Vector2UVE instantVelocity{3.0F, 3.0F};
+    SmoothBlendPositionUVE(instant, instantVelocity, Math::Vector2UVE{4.0F, 5.0F}, 0.0F, 0.016F);
+    EXPECT_EQ(instant, (Math::Vector2UVE{4.0F, 5.0F})) << "no smoothing: straight there";
+    EXPECT_EQ(instantVelocity, (Math::Vector2UVE{}));
+}
+
+TEST(AnimationTreeUVETest, SmoothedBlendSpaceFollowsItsParameterOverTime) {
+    GraphFixtureUVE fixture;
+    AnimationTreeComponentUVE tree;
+    tree.parameters = {AnimationParameterUVE{"speed", AnimationParameterTypeUVE::Float, 0.0F}};
+    AnimationGraphNodeUVE space = GraphFixtureUVE::NodeUVE(2U, Kind::BlendSpace1D);
+    space.parameter = "speed";
+    space.smoothingSeconds = 0.25F;
+    space.blendPoints = {AnimationBlendPointUVE{{0.0F, 0.0F}, fixture.AddClipUVE(10.0F)},
+                         AnimationBlendPointUVE{{1.0F, 0.0F}, fixture.AddClipUVE(20.0F)}};
+    tree.nodes = {GraphFixtureUVE::NodeUVE(1U, Kind::Output, {2U}), space};
+    static_cast<void>(fixture.StepUVE(tree, 0.0F));
+    EXPECT_EQ(tree.nodeStates[1].blendAt.x, 0.0F) << "starts where its parameter is";
+    ASSERT_TRUE(SetAnimationTreeParameterUVE(tree, "speed", 1.0F));
+    static_cast<void>(fixture.StepUVE(tree, 0.25F));
+    EXPECT_NEAR(tree.nodeStates[1].blendAt.x, 0.5F, 1e-3F) << "halfway after one half-life";
+    EXPECT_NEAR(tree.nodeStates[1].pointWeights[1], 0.5F, 1e-3F);
+}
+
+TEST(AnimationTreeUVETest, NearestPlaysOnePointAndSwitchesOnlyWhenClearlyNearer) {
+    GraphFixtureUVE fixture;
+    fixture.mixer.transition = AnimationTransitionModeUVE::Crossfade;
+    AnimationTreeComponentUVE tree;
+    tree.parameters = {AnimationParameterUVE{"speed", AnimationParameterTypeUVE::Float, 0.2F}};
+    AnimationGraphNodeUVE space = GraphFixtureUVE::NodeUVE(2U, Kind::BlendSpace1D);
+    space.parameter = "speed";
+    space.blendMode = AnimationBlendModeUVE::Nearest;
+    space.fadeSeconds = 0.0F;
+    space.blendPoints = {AnimationBlendPointUVE{{0.0F, 0.0F}, fixture.AddClipUVE(10.0F)},
+                         AnimationBlendPointUVE{{1.0F, 0.0F}, fixture.AddClipUVE(20.0F)}};
+    tree.nodes = {GraphFixtureUVE::NodeUVE(1U, Kind::Output, {2U}), space};
+    EXPECT_NEAR(fixture.StepUVE(tree, 0.5F), 5.0F, 1e-4F) << "the near point alone, not a mix";
+    ASSERT_TRUE(SetAnimationTreeParameterUVE(tree, "speed", 0.52F));
+    static_cast<void>(fixture.StepUVE(tree, 0.1F));
+    EXPECT_EQ(tree.nodeStates[1].nearestPoint, 0U) << "just past halfway is not clearly nearer: no flicker";
+    ASSERT_TRUE(SetAnimationTreeParameterUVE(tree, "speed", 0.9F));
+    static_cast<void>(fixture.StepUVE(tree, 0.1F));
+    EXPECT_EQ(tree.nodeStates[1].nearestPoint, 1U);
+    EXPECT_NEAR(fixture.StepUVE(tree, 0.25F), 5.0F, 1e-4F) << "the new point starts from its beginning: 20 m at 0.25";
+}
+
+TEST(AnimationTreeUVETest, NearestInStepCarriesThePhaseAcross) {
+    GraphFixtureUVE fixture;
+    fixture.mixer.transition = AnimationTransitionModeUVE::Crossfade;
+    AnimationTreeComponentUVE tree;
+    tree.parameters = {AnimationParameterUVE{"speed", AnimationParameterTypeUVE::Float, 0.0F}};
+    AnimationGraphNodeUVE space = GraphFixtureUVE::NodeUVE(2U, Kind::BlendSpace1D);
+    space.parameter = "speed";
+    space.blendMode = AnimationBlendModeUVE::NearestInStep;
+    space.fadeSeconds = 0.0F;
+    space.blendPoints = {AnimationBlendPointUVE{{0.0F, 0.0F}, fixture.AddClipUVE(10.0F, 1.0)},
+                         AnimationBlendPointUVE{{1.0F, 0.0F}, fixture.AddClipUVE(10.0F, 2.0)}};
+    tree.nodes = {GraphFixtureUVE::NodeUVE(1U, Kind::Output, {2U}), space};
+    static_cast<void>(fixture.StepUVE(tree, 0.25F)); // a quarter through the 1 s cycle
+    ASSERT_TRUE(SetAnimationTreeParameterUVE(tree, "speed", 1.0F));
+    static_cast<void>(fixture.StepUVE(tree, 0.0F));
+    EXPECT_EQ(tree.nodeStates[1].nearestPoint, 1U);
+    EXPECT_NEAR(tree.nodeStates[1].pointTimes[1], 0.5, 1e-6) << "a quarter through the 2 s cycle too";
+}
+
+TEST(AnimationTreeUVETest, NearestInertializesTheSwitchSoThereIsNoPop) {
+    GraphFixtureUVE fixture; // the mixer inertializes by default
+    AnimationTreeComponentUVE tree;
+    tree.parameters = {AnimationParameterUVE{"speed", AnimationParameterTypeUVE::Float, 0.0F}};
+    AnimationGraphNodeUVE space = GraphFixtureUVE::NodeUVE(2U, Kind::BlendSpace1D);
+    space.parameter = "speed";
+    space.blendMode = AnimationBlendModeUVE::Nearest;
+    space.fadeSeconds = 0.5F;
+    space.blendPoints = {AnimationBlendPointUVE{{0.0F, 0.0F}, fixture.AddClipUVE(10.0F)},
+                         AnimationBlendPointUVE{{1.0F, 0.0F}, fixture.AddClipUVE(-10.0F)}};
+    tree.nodes = {GraphFixtureUVE::NodeUVE(1U, Kind::Output, {2U}), space};
+    const float before = fixture.StepUVE(tree, 0.5F); // 5 m along the first clip
+    ASSERT_TRUE(SetAnimationTreeParameterUVE(tree, "speed", 1.0F));
+    static_cast<void>(fixture.StepUVE(tree, 0.0F)); // the switch is seen here
+    const float right = fixture.StepUVE(tree, 0.01F);
+    EXPECT_NEAR(right, before, 0.5F) << "just after the switch the pose is still where it was";
+    const float settled = fixture.StepUVE(tree, 0.6F);
+    EXPECT_NEAR(settled, -6.1F, 1e-3F) << "and once the hand-over ends, the new point alone";
 }
 
 TEST(AnimationTreeUVETest, SelectPlaysThePickedInputAndFadesOnChange) {
