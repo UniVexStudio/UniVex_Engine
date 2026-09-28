@@ -15,10 +15,13 @@
 
 #include <gtest/gtest.h>
 
+#include "Support/test_scratch_uve.h"
+
 #include "uve/asset/asset_database_uve.h"
 #include "uve/asset/asset_importer_uve.h"
 #include "uve/asset/animation_clip_asset_uve.h"
 #include "uve/asset/mesh_asset_uve.h"
+#include "uve/asset/mesh_skinning_uve.h"
 
 namespace UVE::Asset::Tests {
 namespace {
@@ -167,11 +170,57 @@ TEST(FbxMeshConverterUVETest, ASkinIsWhatMakesItRigged) {
     EXPECT_FALSE(staticSummary->hasSkin);
     EXPECT_FALSE(staticSummary->IsAnimationOnlyUVE());
 
-    // The mesh itself still imports, in its bind pose.
+    // The mesh imports with its skin: one joint per bone, named like the skeleton's.
     MeshAssetUVE mesh;
     ASSERT_TRUE(ConvertFbxMeshUVE(BytesUVE(rigged), mesh));
     EXPECT_EQ(mesh.vertices.size(), 4U);
-    EXPECT_FALSE(mesh.IsSkinnedUVE());
+    ASSERT_TRUE(mesh.IsSkinnedUVE());
+    EXPECT_TRUE(IsMeshSkinningDataValidUVE(mesh));
+    const std::optional<GltfSkeletonUVE> skeleton = ReadFbxSkeletonUVE(BytesUVE(rigged), 16U);
+    ASSERT_TRUE(skeleton.has_value());
+    ASSERT_EQ(mesh.joints.size(), skeleton->joints.size());
+    EXPECT_EQ(mesh.joints[0].name, skeleton->joints[0].name);
+    for (const MeshSkinningInfluenceUVE& influence : mesh.skinningInfluences) {
+        EXPECT_EQ(influence.joints[0], 0U);
+        EXPECT_FLOAT_EQ(influence.weights[0], 1.0F);
+    }
+
+    // Skinned in the skeleton's rest pose, the floor stays exactly where the static import puts it.
+    std::vector<Math::Matrix4x4UVE> localPose;
+    for (const GltfJointUVE& joint : skeleton->joints) {
+        localPose.push_back(Math::Matrix4x4UVE::ComposeTrsUVE(joint.translation, joint.rotation, joint.scale));
+    }
+    std::vector<Math::Matrix4x4UVE> skinning;
+    ASSERT_TRUE(TryResolvePoseUVE(mesh.joints, localPose, skinning));
+    std::vector<MeshVertexUVE> posed;
+    ASSERT_TRUE(TrySkinMeshUVE(mesh, skinning, posed));
+    MeshAssetUVE plain;
+    ASSERT_TRUE(ConvertFbxMeshUVE(BytesUVE(MakeFbxUVE(kFloorGeometryUVE, kFloorConnectionsUVE)), plain));
+    ASSERT_EQ(posed.size(), plain.vertices.size());
+    for (std::size_t index = 0U; index < posed.size(); ++index) {
+        EXPECT_NEAR(posed[index].position.x, plain.vertices[index].position.x, 1.0e-4F);
+        EXPECT_NEAR(posed[index].position.y, plain.vertices[index].position.y, 1.0e-4F);
+        EXPECT_NEAR(posed[index].position.z, plain.vertices[index].position.z, 1.0e-4F);
+    }
+
+    // Lifting the bone lifts the floor with it.
+    localPose[0] = Math::Matrix4x4UVE::ComposeTrsUVE(
+        Math::Vector3UVE{skeleton->joints[0].translation.x, skeleton->joints[0].translation.y + 1.0F,
+                         skeleton->joints[0].translation.z},
+        skeleton->joints[0].rotation, skeleton->joints[0].scale);
+    ASSERT_TRUE(TryResolvePoseUVE(mesh.joints, localPose, skinning));
+    ASSERT_TRUE(TrySkinMeshUVE(mesh, skinning, posed));
+    EXPECT_NEAR(posed[0].position.y, plain.vertices[0].position.y + 1.0F, 1.0e-4F);
+
+    // And the skin survives a save and load, names included.
+    const std::filesystem::path path = ::UVE::Tests::ScratchRootUVE() / "uve_fbx_skinned_floor.uvmodel";
+    ASSERT_TRUE(SaveMeshAssetUVE(mesh, path));
+    MeshAssetUVE loaded;
+    ASSERT_TRUE(LoadMeshAssetUVE(path, loaded));
+    ASSERT_EQ(loaded.joints.size(), mesh.joints.size());
+    EXPECT_EQ(loaded.joints[0].name, mesh.joints[0].name);
+    EXPECT_EQ(loaded.skinningInfluences.size(), mesh.skinningInfluences.size());
+    std::filesystem::remove(path);
 }
 
 TEST(FbxMeshConverterUVETest, ASkeletonWithAnimationAndNoMeshIsAnAnimationNotAModel) {

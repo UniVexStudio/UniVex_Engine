@@ -373,6 +373,25 @@ bool LoadMeshAssetUVE(const std::filesystem::path& path, MeshAssetUVE& outMesh) 
             }
             skinningInfluences.push_back(influence);
         }
+
+        if (offset < payload.size()) {
+            std::uint32_t nameCount = 0;
+            if (!Utilities::ReadUint32FromBufferUVE(payload, offset, nameCount) || nameCount != joints.size()) {
+                UVE_ERROR("MeshAssetUVE: \"{}\" has a joint name table that does not match its joints", path.string());
+                return false;
+            }
+            constexpr std::uint32_t kMaximumJointNameBytesUVE = 256U;
+            for (MeshJointUVE& joint : joints) {
+                std::uint32_t length = 0;
+                if (!Utilities::ReadUint32FromBufferUVE(payload, offset, length) || length > kMaximumJointNameBytesUVE ||
+                    payload.size() - offset < length) {
+                    UVE_ERROR("MeshAssetUVE: \"{}\" has a truncated joint name", path.string());
+                    return false;
+                }
+                joint.name.assign(reinterpret_cast<const char*>(payload.data() + offset), length);
+                offset += length;
+            }
+        }
     }
 
     if (!TryGenerateMeshTangentsUVE(vertices, indices)) {
@@ -433,6 +452,14 @@ bool SaveMeshAssetUVE(const MeshAssetUVE& mesh, const std::filesystem::path& pat
             for (const float weight : influence.weights) {
                 Utilities::AppendFloatUVE(payload, weight);
             }
+        }
+        // Joint names trail the influences for the same reason the skin trails the bounds: a file
+        // from before they were kept simply ends here.
+        Utilities::AppendUint32UVE(payload, static_cast<std::uint32_t>(mesh.joints.size()));
+        for (const MeshJointUVE& joint : mesh.joints) {
+            Utilities::AppendUint32UVE(payload, static_cast<std::uint32_t>(joint.name.size()));
+            const auto* const bytes = reinterpret_cast<const std::byte*>(joint.name.data());
+            payload.insert(payload.end(), bytes, bytes + joint.name.size());
         }
     }
 
