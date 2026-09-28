@@ -17,6 +17,7 @@
 
 #include "uve/asset/asset_database_uve.h"
 #include "uve/asset/asset_importer_uve.h"
+#include "uve/asset/animation_clip_asset_uve.h"
 #include "uve/asset/mesh_asset_uve.h"
 
 namespace UVE::Asset::Tests {
@@ -271,6 +272,102 @@ TEST(FbxMeshConverterUVETest, TheSkeletonComesOutInMetresUprightWithParentsFirst
     const std::string garbage = "not an fbx";
     EXPECT_FALSE(ReadFbxSkeletonUVE(BytesUVE(garbage), 16U).has_value());
     EXPECT_FALSE(ReadFbxSkeletonUVE(BytesUVE(MakeFbxUVE(kFloorGeometryUVE, kFloorConnectionsUVE)), 16U).has_value());
+}
+
+TEST(FbxMeshConverterUVETest, EveryTakeBecomesASkeletalClipOnTheSkeletonsBones) {
+    // Hips one metre up with a spine above it; the take "Armature|Walk" slides the hips 100 cm
+    // along the file's X over one second. The spine never moves.
+    const std::string fbx = MakeFbxUVE(R"(	Model: 3000, "Model::Hips", "LimbNode" {
+		Version: 232
+		Properties70:  {
+			P: "Lcl Translation", "Lcl Translation", "", "A",0,0,100
+		}
+	}
+	NodeAttribute: 3100, "NodeAttribute::Hips", "LimbNode" {
+		TypeFlags: "Skeleton"
+	}
+	Model: 3300, "Model::Spine", "LimbNode" {
+		Version: 232
+		Properties70:  {
+			P: "Lcl Translation", "Lcl Translation", "", "A",0,0,20
+		}
+	}
+	NodeAttribute: 3400, "NodeAttribute::Spine", "LimbNode" {
+		TypeFlags: "Skeleton"
+	}
+	AnimationStack: 5000, "AnimStack::Armature|Walk", "" {
+		Properties70:  {
+			P: "LocalStart", "KTime", "Time", "",0
+			P: "LocalStop", "KTime", "Time", "",46186158000
+		}
+	}
+	AnimationLayer: 5100, "AnimLayer::Base", "" {
+	}
+	AnimationCurveNode: 6000, "AnimCurveNode::T", "" {
+		Properties70:  {
+			P: "d|X", "Number", "", "A",0
+			P: "d|Y", "Number", "", "A",0
+			P: "d|Z", "Number", "", "A",100
+		}
+	}
+	AnimationCurve: 7000, "AnimCurve::", "" {
+		Default: 0
+		KeyVer: 4009
+		KeyTime: *2 {
+			a: 0,46186158000
+		}
+		KeyValueFloat: *2 {
+			a: 0,100
+		}
+		KeyAttrFlags: *1 {
+			a: 260
+		}
+		KeyAttrDataFloat: *4 {
+			a: 0,0,0,0
+		}
+		KeyAttrRefCount: *1 {
+			a: 2
+		}
+	}
+)",
+                                       "\tC: \"OO\",3100,3000\n\tC: \"OO\",3400,3300\n\tC: \"OO\",3300,3000\n"
+                                       "\tC: \"OO\",3000,0\n\tC: \"OO\",5100,5000\n\tC: \"OO\",6000,5100\n"
+                                       "\tC: \"OP\",6000,3000,\"Lcl Translation\"\n\tC: \"OP\",7000,6000,\"d|X\"\n");
+    const std::optional<GltfSkeletonUVE> skeleton = ReadFbxSkeletonUVE(BytesUVE(fbx), 16U);
+    ASSERT_TRUE(skeleton.has_value());
+    const std::vector<AnimationClipAssetUVE> clips = ReadFbxAnimationsUVE(BytesUVE(fbx), 16U);
+    ASSERT_EQ(clips.size(), 1U);
+    const AnimationClipAssetUVE& walk = clips[0];
+    EXPECT_EQ(walk.clipId, "Walk") << "the armature prefix is not part of the take's name";
+    EXPECT_NEAR(walk.durationSeconds, 1.0, 1.0e-6);
+    EXPECT_TRUE(walk.IsSkeletalUVE());
+    EXPECT_TRUE(IsAnimationClipAssetValidUVE(walk));
+    ASSERT_EQ(walk.bones.size(), skeleton->joints.size());
+    for (std::size_t index = 0U; index < walk.bones.size(); ++index) {
+        EXPECT_EQ(walk.bones[index].bone, skeleton->joints[index].name) << "tracks follow the skeleton's bones";
+    }
+
+    // The hips: sampled every frame, starting at the rest pose and ending one metre along X.
+    const AnimationAssetBoneTrackUVE& hips = walk.bones[0];
+    ASSERT_GT(hips.samples.size(), 2U);
+    EXPECT_DOUBLE_EQ(hips.samples.front().timeSeconds, 0.0);
+    EXPECT_DOUBLE_EQ(hips.samples.back().timeSeconds, walk.durationSeconds);
+    EXPECT_NEAR(hips.samples.front().pose.position.x, skeleton->joints[0].translation.x, 1.0e-4F);
+    EXPECT_NEAR(hips.samples.front().pose.position.y, 1.0F, 1.0e-4F) << "metres, +Y up, like the skeleton";
+    EXPECT_NEAR(hips.samples.back().pose.position.x, 1.0F, 1.0e-3F);
+    EXPECT_NEAR(hips.samples.back().pose.position.y, 1.0F, 1.0e-4F);
+
+    // The spine never moves: one sample, its rest pose.
+    const AnimationAssetBoneTrackUVE& spine = walk.bones[1];
+    ASSERT_EQ(spine.samples.size(), 1U);
+    EXPECT_NEAR(spine.samples[0].pose.position.x, skeleton->joints[1].translation.x, 1.0e-4F);
+    EXPECT_NEAR(spine.samples[0].pose.position.y, skeleton->joints[1].translation.y, 1.0e-4F);
+    EXPECT_NEAR(spine.samples[0].pose.position.z, skeleton->joints[1].translation.z, 1.0e-4F);
+
+    // No bones or no FBX: no clips.
+    EXPECT_TRUE(ReadFbxAnimationsUVE(BytesUVE(MakeFbxUVE(kFloorGeometryUVE, kFloorConnectionsUVE)), 16U).empty());
+    const std::string garbage = "not an fbx";
+    EXPECT_TRUE(ReadFbxAnimationsUVE(BytesUVE(garbage), 16U).empty());
 }
 
 TEST(FbxMeshConverterUVETest, WhatIsNotAnFbxWithTrianglesIsRefusedAndLeavesTheMeshAlone) {
