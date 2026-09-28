@@ -1377,6 +1377,9 @@ private:
     /// Returns whether `entity` carries the scene-root marker. The root is never deletable,
     /// re-parentable, or duplicable - every one of those commands checks this first.
     [[nodiscard]] bool IsSceneRootEntityUVE(Scene::EntityUVE entity) const;
+    /// A node the tree is built on and that cannot be deleted, duplicated or moved: the scene
+    /// root, and while the Entity Editor is open, the entity's own root.
+    [[nodiscard]] bool IsStructuralRootUVE(Scene::EntityUVE entity);
     /// Gives a node the recipe parts it was saved without - Visibility for a spatial node and the
     /// common Node section - so its Inspector always shows the full recipe.
     void RepairInspectorRecipeUVE(Scene::EntityUVE entity);
