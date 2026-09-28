@@ -224,7 +224,7 @@ void EditorUVE::DispatchEditorShortcutsUVE() {
         return;
     }
     for (EditorCommandUVE& command : m_commands) {
-        if (io.WantTextInput && !command.worksWhileTyping) {
+        if ((io.WantTextInput || m_timelineOwnsKeys) && !command.worksWhileTyping) {
             continue;
         }
         for (const EditorShortcutUVE& shortcut : command.shortcuts) {
