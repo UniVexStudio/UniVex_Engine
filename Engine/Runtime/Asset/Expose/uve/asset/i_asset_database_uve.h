@@ -55,6 +55,15 @@ public:
     /// `guid` is unknown. It is a persisted path representation, not the normalized lookup key.
     [[nodiscard]] virtual std::filesystem::path ResolveUVE(AssetGuidUVE guid) const = 0;
 
+    /// Points `guid` at `newPath` after its file was renamed or moved, so everything that refers
+    /// to the GUID keeps working. False when `guid` is unknown or `newPath` already belongs to
+    /// another GUID. The default refuses: a registry that cannot move records says so.
+    virtual bool RelocateUVE(AssetGuidUVE guid, const std::filesystem::path& newPath) {
+        static_cast<void>(guid);
+        static_cast<void>(newPath);
+        return false;
+    }
+
     /// True iff `guid` is currently registered.
     [[nodiscard]] virtual bool HasGuidUVE(AssetGuidUVE guid) const = 0;
 

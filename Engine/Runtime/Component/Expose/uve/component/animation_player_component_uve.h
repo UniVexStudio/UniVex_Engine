@@ -40,6 +40,9 @@ enum class AnimationFinishActionUVE : std::uint8_t {
 struct AnimationPlayerComponentUVE final {
     /// The clip to play. Invalid means nothing to play.
     Asset::AssetGuidUVE clip{};
+    /// Every animation this player has, in the order the Timeline lists them; `clip` is the one it
+    /// plays. A clip missing from here still plays; the list is what the editor offers.
+    std::vector<Asset::AssetGuidUVE> library;
     /// Starts playing as soon as the scene runs.
     bool autoplay = true;
     /// Playback rate: 1 is normal, 2 twice as fast, negative plays backwards. 0 holds the pose.
@@ -76,7 +79,7 @@ struct AnimationPlayerComponentUVE final {
 
     /// Authored settings only: runtime state is ignored, so a playing player equals its saved self.
     [[nodiscard]] bool HasSameSettingsUVE(const AnimationPlayerComponentUVE& other) const noexcept {
-        return clip == other.clip && autoplay == other.autoplay &&
+        return clip == other.clip && library == other.library && autoplay == other.autoplay &&
                speed == other.speed && loopMode == other.loopMode && onFinish == other.onFinish &&
                startOffsetSeconds == other.startOffsetSeconds && blendInSeconds == other.blendInSeconds &&
                relative == other.relative;
