@@ -63,6 +63,10 @@ using AnimationClipResolverUVE = std::function<const Asset::AnimationClipAssetUV
                                                 float deltaSeconds, Skeleton3DNodeComponentUVE& skeleton,
                                                 const AnimationMixerComponentUVE& mixer = {});
 
+/// A Blend Space 1D's weight for each of its (rising) points at `at`: the two either side share it
+/// by distance; before the first or past the last, that end takes everything.
+[[nodiscard]] std::vector<float> AnimationBlendSpace1DWeightsUVE(const std::vector<float>& points, float at);
+
 /// A Blend Space 2D's weight for each of its points at `at`, adding up to one: gradient band
 /// interpolation, which suits points laid out anywhere (no grid or triangle layout needed). A
 /// position on a point gives it everything.

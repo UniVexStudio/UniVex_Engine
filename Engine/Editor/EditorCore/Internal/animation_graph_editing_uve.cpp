@@ -3,6 +3,7 @@
 #include "uve/editor/animation_graph_editing_uve.h"
 
 #include <algorithm>
+#include <optional>
 #include <cmath>
 #include <unordered_map>
 #include <utility>
@@ -51,7 +52,7 @@ using Scene::AnimationGraphNodeUVE;
 }
 
 [[nodiscard]] bool HasVariableSlotsUVE(const Kind kind) noexcept {
-    return kind == Kind::BlendSpace1D || kind == Kind::BlendSpace2D || kind == Kind::Select || kind == Kind::StateMachine;
+    return kind == Kind::Select || kind == Kind::StateMachine;
 }
 
 } // namespace
@@ -131,18 +132,13 @@ std::uint32_t AddAnimationGraphNodeUVE(std::vector<AnimationGraphNodeUVE>& nodes
             added.inputs = {0U};
             break;
         case Kind::BlendSpace1D:
-            added.inputs = {0U, 0U};
-            added.points = {0.0F, 1.0F};
+            // Empty: its animations are added in its editor, each at a point on the line.
             added.value = 0.0F;
             added.areaMin = Math::Vector2UVE{-0.25F, -1.0F};
             added.areaMax = Math::Vector2UVE{1.25F, 1.0F};
             break;
         case Kind::BlendSpace2D:
-            // Idle in the middle, forward above it, right beside it: a start for directional motion.
-            added.inputs = {0U, 0U, 0U};
-            added.points2D = {Math::Vector2UVE{0.0F, 0.0F}, Math::Vector2UVE{0.0F, 1.0F}, Math::Vector2UVE{1.0F, 0.0F}};
             added.value = 0.0F;
-            // Room around the points, so none sits on the edge of the editor's area.
             added.areaMin = Math::Vector2UVE{-1.25F, -1.25F};
             added.areaMax = Math::Vector2UVE{1.25F, 1.25F};
             break;
@@ -258,17 +254,6 @@ bool AddAnimationGraphInputSlotUVE(std::vector<AnimationGraphNodeUVE>& nodes, co
         return false;
     }
     node->inputs.push_back(0U);
-    if (node->kind == Kind::BlendSpace1D) {
-        node->points.push_back(node->points.empty() ? 0.0F : node->points.back() + 1.0F);
-    }
-    if (node->kind == Kind::BlendSpace2D) {
-        // Somewhere free: along the X axis past the furthest point.
-        float furthest = 0.0F;
-        for (const Math::Vector2UVE& point : node->points2D) {
-            furthest = std::max(furthest, point.x);
-        }
-        node->points2D.push_back(Math::Vector2UVE{furthest + 1.0F, 0.0F});
-    }
     return true;
 }
 
@@ -280,12 +265,6 @@ bool RemoveAnimationGraphInputSlotUVE(std::vector<AnimationGraphNodeUVE>& nodes,
         return false;
     }
     node->inputs.erase(node->inputs.begin() + static_cast<std::ptrdiff_t>(slot));
-    if (node->kind == Kind::BlendSpace1D && slot < node->points.size()) {
-        node->points.erase(node->points.begin() + static_cast<std::ptrdiff_t>(slot));
-    }
-    if (node->kind == Kind::BlendSpace2D && slot < node->points2D.size()) {
-        node->points2D.erase(node->points2D.begin() + static_cast<std::ptrdiff_t>(slot));
-    }
     if (node->kind == Kind::StateMachine) {
         const auto state = static_cast<std::uint32_t>(slot);
         std::erase_if(node->transitions, [state](const Scene::AnimationTransitionUVE& transition) {
@@ -304,82 +283,66 @@ bool RemoveAnimationGraphInputSlotUVE(std::vector<AnimationGraphNodeUVE>& nodes,
     return true;
 }
 
-std::uint32_t AddBlendSpacePointUVE(std::vector<AnimationGraphNodeUVE>& nodes, const std::uint32_t space,
-                                    const Math::Vector2UVE position, const Asset::AssetGuidUVE clip,
-                                    const std::string& clipName) {
-    AnimationGraphNodeUVE* node = FindNodeUVE(nodes, space);
+std::optional<std::size_t> AddBlendSpacePointUVE(std::vector<AnimationGraphNodeUVE>& nodes, const std::uint32_t space,
+                                                 const Math::Vector2UVE position, const Asset::AssetGuidUVE clip) {
+    AnimationGraphNodeUVE* const node = FindNodeUVE(nodes, space);
     if (node == nullptr || (node->kind != Kind::BlendSpace1D && node->kind != Kind::BlendSpace2D) ||
-        node->inputs.size() >= Scene::kMaximumAnimationNodeInputsUVE ||
-        nodes.size() >= Scene::kMaximumAnimationGraphNodesUVE || !std::isfinite(position.x) || !std::isfinite(position.y)) {
-        return 0U;
+        node->blendPoints.size() >= Scene::kMaximumAnimationNodeInputsUVE || !std::isfinite(position.x) ||
+        !std::isfinite(position.y)) {
+        return std::nullopt;
     }
-    std::size_t slot = node->inputs.size();
+    Scene::AnimationBlendPointUVE point;
+    point.position = node->kind == Kind::BlendSpace1D ? Math::Vector2UVE{position.x, 0.0F} : position;
+    point.clip = clip;
+    if (std::ranges::find(node->blendPoints, point.position, &Scene::AnimationBlendPointUVE::position) !=
+        node->blendPoints.end()) {
+        return std::nullopt;
+    }
+    // A line keeps its points rising, so the new one goes where its x belongs.
+    std::size_t slot = node->blendPoints.size();
     if (node->kind == Kind::BlendSpace1D) {
-        if (std::ranges::find(node->points, position.x) != node->points.end()) {
-            return 0U;
-        }
-        slot = static_cast<std::size_t>(std::ranges::upper_bound(node->points, position.x) - node->points.begin());
-        node->points.insert(node->points.begin() + static_cast<std::ptrdiff_t>(slot), position.x);
-    } else {
-        if (std::ranges::find(node->points2D, position) != node->points2D.end()) {
-            return 0U;
-        }
-        node->points2D.push_back(position);
+        slot = static_cast<std::size_t>(std::ranges::find_if(node->blendPoints, [&point](const Scene::AnimationBlendPointUVE& other) {
+                                            return other.position.x > point.position.x;
+                                        }) -
+                                        node->blendPoints.begin());
     }
-    node->inputs.insert(node->inputs.begin() + static_cast<std::ptrdiff_t>(slot), 0U);
-    // Left of the space, stacked by slot, so a new point's clip is easy to find.
-    AnimationGraphNodeUVE added;
-    added.id = Scene::NextAnimationGraphNodeIdUVE(nodes);
-    added.kind = Kind::Clip;
-    added.name = clipName.empty() ? std::string{"Clip"} : clipName.substr(0U, Scene::kMaximumAnimationNameBytesUVE);
-    added.clip = clip;
-    added.position = Math::Vector2UVE{node->position.x - 240.0F, node->position.y + 56.0F * static_cast<float>(slot)};
-    const std::uint32_t addedId = added.id;
-    node->inputs[slot] = addedId;
-    nodes.push_back(std::move(added)); // `node` may dangle from here on
-    return addedId;
+    node->blendPoints.insert(node->blendPoints.begin() + static_cast<std::ptrdiff_t>(slot), point);
+    return slot;
 }
 
 bool RemoveBlendSpacePointUVE(std::vector<AnimationGraphNodeUVE>& nodes, const std::uint32_t space, const std::size_t slot) {
-    const AnimationGraphNodeUVE* const node = FindNodeUVE(std::as_const(nodes), space);
+    AnimationGraphNodeUVE* const node = FindNodeUVE(nodes, space);
     if (node == nullptr || (node->kind != Kind::BlendSpace1D && node->kind != Kind::BlendSpace2D) ||
-        slot >= node->inputs.size() || node->inputs.size() <= 1U) {
+        slot >= node->blendPoints.size()) {
         return false;
     }
-    const std::uint32_t fed = node->inputs[slot];
-    if (!RemoveAnimationGraphInputSlotUVE(nodes, space, slot)) {
-        return false;
-    }
-    const AnimationGraphNodeUVE* const player = FindNodeUVE(std::as_const(nodes), fed);
-    if (player != nullptr && player->kind == Kind::Clip) {
-        static_cast<void>(DeleteAnimationGraphNodesUVE(nodes, {fed}));
-    }
+    node->blendPoints.erase(node->blendPoints.begin() + static_cast<std::ptrdiff_t>(slot));
     return true;
 }
 
 bool MoveBlendSpacePointUVE(std::vector<AnimationGraphNodeUVE>& nodes, const std::uint32_t space, const std::size_t slot,
                             const Math::Vector2UVE position) {
     AnimationGraphNodeUVE* const node = FindNodeUVE(nodes, space);
-    if (node == nullptr || !std::isfinite(position.x) || !std::isfinite(position.y)) {
+    if (node == nullptr || (node->kind != Kind::BlendSpace1D && node->kind != Kind::BlendSpace2D) ||
+        slot >= node->blendPoints.size() || !std::isfinite(position.x) || !std::isfinite(position.y)) {
         return false;
     }
+    std::vector<Scene::AnimationBlendPointUVE>& points = node->blendPoints;
     if (node->kind == Kind::BlendSpace1D) {
-        if (slot >= node->points.size() || (slot > 0U && position.x <= node->points[slot - 1U]) ||
-            (slot + 1U < node->points.size() && position.x >= node->points[slot + 1U])) {
+        // Between its neighbours, so the line stays in order.
+        if ((slot > 0U && position.x <= points[slot - 1U].position.x) ||
+            (slot + 1U < points.size() && position.x >= points[slot + 1U].position.x)) {
             return false;
         }
-        node->points[slot] = position.x;
+        points[slot].position = Math::Vector2UVE{position.x, 0.0F};
         return true;
     }
-    if (node->kind != Kind::BlendSpace2D || slot >= node->points2D.size()) {
-        return false;
-    }
-    for (std::size_t other = 0U; other < node->points2D.size(); ++other) {
-        if (other != slot && node->points2D[other] == position) {
+    for (std::size_t other = 0U; other < points.size(); ++other) {
+        if (other != slot && points[other].position == position) {
             return false;
         }
     }
-    node->points2D[slot] = position;
+    points[slot].position = position;
     return true;
 }
 

@@ -685,8 +685,8 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_AnimationTargetsRemapToTheRestoredEnti
     AnimationGraphNodeUVE space;
     space.id = 4U;
     space.kind = AnimationGraphNodeKindUVE::BlendSpace2D;
-    space.inputs = {0U, 0U};
-    space.points2D = {Math::Vector2UVE{0.0F, 0.0F}, Math::Vector2UVE{-1.5F, 2.0F}};
+    space.blendPoints = {AnimationBlendPointUVE{{0.0F, 0.0F}, Asset::AssetGuidUVE{21U}, 1.25F, false},
+                         AnimationBlendPointUVE{{-1.5F, 2.0F}, Asset::AssetGuidUVE{22U}}};
     space.parameterY = "speed";
     space.valueY = 0.75F;
     blend.nodes.push_back(space);
@@ -740,6 +740,35 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_TwoClipAnimationTreeBecomesABlendGraph
     EXPECT_EQ(tree.nodes[2].clip.value, 11U);
     EXPECT_EQ(tree.nodes[3].clip.value, 12U);
     EXPECT_FLOAT_EQ(tree.nodes[3].speed, 1.5F);
+}
+
+TEST_F(SceneSerializerUVETest, RestoreUVE_OldBlendSpaceInputsBecomeItsOwnPoints) {
+    // Saved before blend spaces held their animations: Clips wired into slots, placed by "points".
+    const std::string payloadText =
+        R"({"entities":[{"localId":0,"components":{"AnimationTreeComponentUVE":{"parameters":[],"nodes":[)"
+        R"({"id":1,"kind":0,"inputs":[2]},)"
+        R"({"id":2,"kind":3,"inputs":[3,4],"points":[1.0,6.0],"parameter":"speed"},)"
+        R"({"id":3,"kind":1,"clip":31,"speed":1.25,"loop":true},)"
+        R"({"id":4,"kind":1,"clip":32,"loop":false}]}}}]})";
+    const auto* const payloadBytes = reinterpret_cast<const std::byte*>(payloadText.data());
+    const SceneSnapshotUVE snapshot{
+        Asset::EncodeUveFileEnvelopeUVE(SceneAssetTypeUVE::Scene,
+                                        std::vector<std::byte>{payloadBytes, payloadBytes + payloadText.size()}),
+        SceneAssetTypeUVE::Scene};
+    const std::vector<EntityUVE> roots = serializer.RestoreUVE(entityManager, snapshot);
+    ASSERT_EQ(roots.size(), 1U);
+    const AnimationTreeComponentUVE& tree = entityManager.GetComponentUVE<AnimationTreeComponentUVE>(roots[0]);
+    EXPECT_TRUE(DescribeAnimationGraphProblemUVE(tree).empty()) << DescribeAnimationGraphProblemUVE(tree);
+    ASSERT_EQ(tree.nodes.size(), 2U) << "the two Clips were folded into the space";
+    const AnimationGraphNodeUVE& space = tree.nodes[1];
+    EXPECT_TRUE(space.inputs.empty());
+    ASSERT_EQ(space.blendPoints.size(), 2U);
+    EXPECT_EQ(space.blendPoints[0].clip.value, 31U);
+    EXPECT_FLOAT_EQ(space.blendPoints[0].speed, 1.25F);
+    EXPECT_FLOAT_EQ(space.blendPoints[1].position.x, 6.0F);
+    EXPECT_FALSE(space.blendPoints[1].loop);
+    EXPECT_LT(space.areaMin.x, 1.0F) << "an area around the old points";
+    EXPECT_GT(space.areaMax.x, 6.0F);
 }
 
 TEST_F(SceneSerializerUVETest, RestoreUVE_LegacyAnimationPlayerFieldsCarryOver) {

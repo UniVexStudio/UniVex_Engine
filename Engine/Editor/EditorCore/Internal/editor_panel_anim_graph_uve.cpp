@@ -108,8 +108,8 @@ constexpr std::array<Kind, 11> kAddableKindsUVE{Kind::Clip,         Kind::Blend2
 }
 
 [[nodiscard]] float NodeHeightUVE(const AnimationGraphNodeUVE& node) {
-    const std::size_t rows = std::max<std::size_t>(node.inputs.size(), node.kind == Kind::Clip ? 0U : 1U) +
-                             InlineRowsUVE(node.kind);
+    // Its inputs' rows under its inline values; a node with neither still shows one row.
+    const std::size_t rows = node.inputs.size() + InlineRowsUVE(node.kind);
     return kHeaderHeightUVE + static_cast<float>(std::max<std::size_t>(rows, 1U)) * kSlotHeightUVE + kBodyPaddingUVE;
 }
 
@@ -222,6 +222,7 @@ void EditorUVE::DrawBlendSpaceEditorUVE(const Scene::EntityUVE tree, const std::
     const bool writable = IsAuthoringCommandAllowedUVE();
     const ImGuiStyle& style = ImGui::GetStyle();
     std::optional<std::function<void(Scene::AnimationTreeComponentUVE&)>> edit;
+    const auto addedSlot = std::make_shared<std::optional<std::size_t>>();
     const auto editSpace = [&edit, spaceId](std::function<void(AnimationGraphNodeUVE&)> change) {
         edit = [spaceId, change = std::move(change)](Scene::AnimationTreeComponentUVE& t) {
             const auto it = std::ranges::find(t.nodes, spaceId, &AnimationGraphNodeUVE::id);
@@ -236,9 +237,10 @@ void EditorUVE::DrawBlendSpaceEditorUVE(const Scene::EntityUVE tree, const std::
     };
     const Math::Vector2UVE cursor{readParameter(node.parameter, node.value),
                                   twoD ? readParameter(node.parameterY, node.valueY) : 0.0F};
-    const std::size_t pointCount = twoD ? node.points2D.size() : node.points.size();
+    const std::size_t pointCount = node.blendPoints.size();
     const auto pointAt = [&node, twoD](const std::size_t slot) {
-        return twoD ? node.points2D[slot] : Math::Vector2UVE{node.points[slot], 0.0F};
+        const Math::Vector2UVE at = node.blendPoints[slot].position;
+        return twoD ? at : Math::Vector2UVE{at.x, 0.0F};
     };
 
     // ---- Toolbar: tools, snapping, sync, what the axes read ----------------------------------------
@@ -413,22 +415,14 @@ void EditorUVE::DrawBlendSpaceEditorUVE(const Scene::EntityUVE tree, const std::
     }
 
     // Weights at the position, as the runtime computes them.
-    std::vector<float> weights(pointCount, 0.0F);
-    if (twoD) {
-        weights = Scene::AnimationBlendSpace2DWeightsUVE(node.points2D, cursor);
-    } else if (pointCount > 0U) {
-        const float x = cursor.x;
-        if (x <= node.points.front()) {
-            weights.front() = 1.0F;
-        } else if (x >= node.points.back()) {
-            weights.back() = 1.0F;
-        } else {
-            const auto right = static_cast<std::size_t>(std::ranges::upper_bound(node.points, x) - node.points.begin());
-            const float mix = (x - node.points[right - 1U]) / (node.points[right] - node.points[right - 1U]);
-            weights[right - 1U] = 1.0F - mix;
-            weights[right] = mix;
-        }
+    std::vector<Math::Vector2UVE> positions;
+    std::vector<float> positionsX;
+    for (std::size_t slot = 0U; slot < pointCount; ++slot) {
+        positions.push_back(pointAt(slot));
+        positionsX.push_back(positions.back().x);
     }
+    const std::vector<float> weights = twoD ? Scene::AnimationBlendSpace2DWeightsUVE(positions, cursor)
+                                            : Scene::AnimationBlendSpace1DWeightsUVE(positionsX, cursor.x);
     const ImVec2 mouse = ImGui::GetIO().MousePos;
     int hoveredPoint = -1;
     for (std::size_t slot = 0U; slot < pointCount; ++slot) {
@@ -447,17 +441,9 @@ void EditorUVE::DrawBlendSpaceEditorUVE(const Scene::EntityUVE tree, const std::
         const ImU32 fill = view.spaceTool == 2 && hot ? kWireBadUVE : hot ? kSelectedUVE : weight > 0.0F ? kWireGoodUVE : IM_COL32(150, 158, 170, 255);
         draw->AddCircleFilled(at, 5.5F, fill);
         draw->AddCircle(at, 5.5F, kBorderUVE, 0, 1.5F);
-        // What the point plays: its clip's file, else the input node's name, else its slot.
-        std::string label = AnimationGraphSlotLabelUVE(node.kind, slot);
-        if (slot < node.inputs.size()) {
-            const auto input = std::ranges::find(live.nodes, node.inputs[slot], &AnimationGraphNodeUVE::id);
-            if (input != live.nodes.end()) {
-                const std::string& clipName = input->kind == Kind::Clip ? AnimationClipNameUVE(input->clip) : std::string{};
-                label = !clipName.empty() ? clipName : !input->name.empty() ? input->name : label;
-            } else {
-                label += " (empty)";
-            }
-        }
+        // What the point plays: its animation's name, or that it has none yet.
+        const std::string& clipName = AnimationClipNameUVE(node.blendPoints[slot].clip);
+        std::string label = clipName.empty() ? "Point " + std::to_string(slot + 1U) + " (no animation)" : clipName;
         if (weight > 0.005F) {
             char share[16];
             std::snprintf(share, sizeof(share), "  %d%%", static_cast<int>(std::lround(weight * 100.0F)));
@@ -499,14 +485,10 @@ void EditorUVE::DrawBlendSpaceEditorUVE(const Scene::EntityUVE tree, const std::
     if (writable && ImGui::IsItemActivated() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
         if (view.spaceTool == 1 && hoveredPoint < 0) {
             const Math::Vector2UVE at = toArea(mouse);
-            edit = [spaceId, at](Scene::AnimationTreeComponentUVE& t) {
-                static_cast<void>(AddBlendSpacePointUVE(t.nodes, spaceId, at, Asset::AssetGuidUVE{}, "Clip"));
+            // The new point's index, known once the edit runs; then its animation is asked for.
+            edit = [spaceId, at, addedSlot](Scene::AnimationTreeComponentUVE& t) {
+                *addedSlot = AddBlendSpacePointUVE(t.nodes, spaceId, at, Asset::AssetGuidUVE{});
             };
-            // Pick its animation next: the slot is found once the point exists.
-            view.pickClipForSlot = -2;
-            view.plotBefore.nodes.clear();
-            view.plotBefore.nodes.push_back(AnimationGraphNodeUVE{});
-            view.plotBefore.nodes.back().position = at;
         } else if (view.spaceTool == 2 && hoveredPoint >= 0) {
             const auto slot = static_cast<std::size_t>(hoveredPoint);
             edit = [spaceId, slot](Scene::AnimationTreeComponentUVE& t) {
@@ -569,75 +551,61 @@ void EditorUVE::DrawBlendSpaceEditorUVE(const Scene::EntityUVE tree, const std::
                                         kTextDimUVE, readout);
     rangeField("##max-x", node.areaMax.x, ImVec2{plotLeft + plotWidth - rangeWidth, rangeY}, true, false);
 
-    // ---- The animation picker for a point (after Add, or from its right-click menu) ------------------
+    // ---- A point's own settings (after Add, or from its right-click menu) -----------------------------
     if (ImGui::BeginPopup("##point-menu")) {
         const auto slot = static_cast<std::size_t>(std::max(view.pickClipForSlot, 0));
-        const auto current = live.nodes[nodeIndex];
-        const std::uint32_t inputId = slot < current.inputs.size() ? current.inputs[slot] : 0U;
-        const auto input = std::ranges::find(live.nodes, inputId, &AnimationGraphNodeUVE::id);
-        const bool isClip = input != live.nodes.end() && input->kind == Kind::Clip;
-        ImGui::TextDisabled("%s", AnimationGraphSlotLabelUVE(current.kind, slot).c_str());
-        if (inputId == 0U || isClip) {
+        const AnimationGraphNodeUVE& current = live.nodes[nodeIndex];
+        if (slot < current.blendPoints.size()) {
+            const Scene::AnimationBlendPointUVE point = current.blendPoints[slot];
+            const auto editPoint = [&editSpace, slot](std::function<void(Scene::AnimationBlendPointUVE&)> change) {
+                editSpace([slot, change = std::move(change)](AnimationGraphNodeUVE& n) {
+                    if (slot < n.blendPoints.size()) {
+                        change(n.blendPoints[slot]);
+                    }
+                });
+            };
+            ImGui::TextDisabled("Point %zu", slot + 1U);
+            ImGui::AlignTextToFramePadding();
             ImGui::TextUnformatted("Animation");
-            ImGui::SameLine();
+            ImGui::SameLine(84.0F);
             ImGui::SetNextItemWidth(220.0F);
-            if (const std::optional<Asset::AssetGuidUVE> picked =
-                    DrawAssetPickerUVE("##point-clip", isClip ? input->clip : Asset::AssetGuidUVE{}, ".uvanim")) {
+            if (const std::optional<Asset::AssetGuidUVE> picked = DrawAssetPickerUVE("##point-clip", point.clip, ".uvanim")) {
                 const Asset::AssetGuidUVE guid = *picked;
-                const std::string name = AnimationClipNameUVE(guid);
-                edit = [spaceId, slot, guid, name](Scene::AnimationTreeComponentUVE& t) {
-                    const auto space = std::ranges::find(t.nodes, spaceId, &AnimationGraphNodeUVE::id);
-                    if (space == t.nodes.end() || slot >= space->inputs.size()) {
-                        return;
-                    }
-                    const std::uint32_t fed = space->inputs[slot];
-                    auto clipNode = std::ranges::find(t.nodes, fed, &AnimationGraphNodeUVE::id);
-                    if (fed == 0U || clipNode == t.nodes.end()) {
-                        // An empty point gets a Clip node of its own, wired in.
-                        const Math::Vector2UVE at = space->position;
-                        const std::uint32_t added = AddAnimationGraphNodeUVE(t.nodes, Kind::Clip,
-                                                                             Math::Vector2UVE{at.x - 240.0F, at.y + 56.0F * static_cast<float>(slot)});
-                        static_cast<void>(ConnectAnimationGraphNodesUVE(t.nodes, spaceId, slot, added));
-                        clipNode = std::ranges::find(t.nodes, added, &AnimationGraphNodeUVE::id);
-                    }
-                    if (clipNode != t.nodes.end() && clipNode->kind == Kind::Clip) {
-                        clipNode->clip = guid;
-                        clipNode->name = name.empty() ? std::string{"Clip"} : name;
-                    }
+                editPoint([guid](Scene::AnimationBlendPointUVE& p) { p.clip = guid; });
+            }
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted("Speed");
+            ImGui::SameLine(84.0F);
+            ImGui::SetNextItemWidth(120.0F);
+            float speed = point.speed;
+            ImGui::DragFloat("##point-speed", &speed, 0.01F, -100.0F, 100.0F, "x%.2f");
+            if (ImGui::IsItemDeactivatedAfterEdit()) {
+                editPoint([speed](Scene::AnimationBlendPointUVE& p) { p.speed = speed; });
+            }
+            ImGui::SameLine();
+            bool loop = point.loop;
+            if (ImGui::Checkbox("Loop", &loop)) {
+                editPoint([loop](Scene::AnimationBlendPointUVE& p) { p.loop = loop; });
+            }
+            ImGui::Separator();
+            if (ImGui::MenuItem("Remove Point")) {
+                edit = [spaceId, slot](Scene::AnimationTreeComponentUVE& t) {
+                    static_cast<void>(RemoveBlendSpacePointUVE(t.nodes, spaceId, slot));
                 };
                 ImGui::CloseCurrentPopup();
             }
         } else {
-            ImGui::TextDisabled("Played by %s - edit it in the graph.", input->name.c_str());
-        }
-        if (ImGui::MenuItem("Remove Point", nullptr, false, current.inputs.size() > 1U)) {
-            edit = [spaceId, slot](Scene::AnimationTreeComponentUVE& t) {
-                static_cast<void>(RemoveBlendSpacePointUVE(t.nodes, spaceId, slot));
-            };
+            ImGui::CloseCurrentPopup();
         }
         ImGui::EndPopup();
     }
 
     if (edit.has_value()) {
-        const bool added = view.pickClipForSlot == -2;
-        const std::size_t countBefore = pointCount;
         static_cast<void>(EditAnimationTreeUVE(tree, *edit));
-        if (added) {
-            // The point just added: open its animation picker.
-            view.pickClipForSlot = -1;
-            const AnimationGraphNodeUVE& now = entityManager.GetComponentUVE<Scene::AnimationTreeComponentUVE>(tree).nodes[nodeIndex];
-            const std::size_t countNow = twoD ? now.points2D.size() : now.points.size();
-            if (countNow > countBefore) {
-                const Math::Vector2UVE at = view.plotBefore.nodes.empty() ? Math::Vector2UVE{} : view.plotBefore.nodes.front().position;
-                for (std::size_t slot = 0U; slot < countNow; ++slot) {
-                    const Math::Vector2UVE point = twoD ? now.points2D[slot] : Math::Vector2UVE{now.points[slot], 0.0F};
-                    if (point.x == at.x && (!twoD || point.y == at.y)) {
-                        view.pickClipForSlot = static_cast<int>(slot);
-                    }
-                }
-                ImGui::OpenPopup("##point-menu");
-            }
-            view.plotBefore = Scene::AnimationTreeComponentUVE{};
+        if (addedSlot->has_value()) {
+            // The point just added: straight to its animation.
+            view.pickClipForSlot = static_cast<int>(**addedSlot);
+            ImGui::OpenPopup("##point-menu");
         }
     }
 }
@@ -1090,11 +1058,6 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
                 if (slot == node.entryState) {
                     label = "> " + label;
                 }
-            }
-            if (node.kind == Kind::BlendSpace1D && slot < node.points.size()) {
-                char at[32];
-                std::snprintf(at, sizeof(at), "  @ %.2f", static_cast<double>(node.points[slot]));
-                label += at;
             }
             draw->AddText(font, fontSize, ImVec2{pin.x + 10.0F * view.zoom, pin.y - fontSize * 0.5F},
                           activeState ? kActiveUVE : kTextDimUVE, label.c_str());
@@ -1713,21 +1676,6 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
                 if (ImGui::Button("Open Editor##1d", ImVec2{-FLT_MIN, 0.0F})) {
                     view.focus = id;
                 }
-                for (std::size_t slot = 0U; slot < node.points.size(); ++slot) {
-                    ImGui::PushID(static_cast<int>(slot));
-                    const std::string label = AnimationGraphSlotLabelUVE(node.kind, slot);
-                    row(label.c_str());
-                    float point = node.points[slot];
-                    ImGui::DragFloat("##point", &point, 0.01F, -1000.0F, 1000.0F, "%.2f");
-                    if (ImGui::IsItemDeactivatedAfterEdit()) {
-                        editNode([slot, point](AnimationGraphNodeUVE& n) {
-                            if (slot < n.points.size()) {
-                                n.points[slot] = point;
-                            }
-                        });
-                    }
-                    ImGui::PopID();
-                }
                 break;
             case Kind::OneShot:
                 parameterRow("Fire On", {AnimationParameterTypeUVE::Trigger, AnimationParameterTypeUVE::Bool}, "(never)");
@@ -1855,9 +1803,8 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
                 ImGui::TextDisabled("Wire the pose the target shows into it.");
                 break;
         }
-        if (node.kind == Kind::BlendSpace1D || node.kind == Kind::BlendSpace2D || node.kind == Kind::Select ||
-            node.kind == Kind::StateMachine) {
-            if (ImGui::Button(node.kind == Kind::StateMachine ? "+ State" : node.kind == Kind::Select ? "+ Option" : "+ Point")) {
+        if (node.kind == Kind::Select || node.kind == Kind::StateMachine) {
+            if (ImGui::Button(node.kind == Kind::StateMachine ? "+ State" : "+ Option")) {
                 edit = [id](Scene::AnimationTreeComponentUVE& t) { static_cast<void>(AddAnimationGraphInputSlotUVE(t.nodes, id)); };
             }
             ImGui::SameLine();

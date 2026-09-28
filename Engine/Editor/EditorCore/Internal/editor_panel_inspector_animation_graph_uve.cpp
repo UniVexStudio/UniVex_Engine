@@ -472,8 +472,7 @@ void EditorUVE::DrawAnimationGraphPropertyUVE(const Core::TypeMetadataEntryUVE& 
                     const auto currentIt = indexById.find(current);
                     const std::string preview =
                         currentIt == indexById.end() ? std::string{"(empty)"} : NodeLabelUVE(nodes[currentIt->second]);
-                    const bool removable = node.kind == Kind::BlendSpace1D || node.kind == Kind::BlendSpace2D ||
-                                           node.kind == Kind::Select || node.kind == Kind::StateMachine;
+                    const bool removable = node.kind == Kind::Select || node.kind == Kind::StateMachine;
                     if (removable) {
                         ImGui::SetNextItemWidth(-ImGui::GetFrameHeight() - ImGui::GetStyle().ItemSpacing.x);
                     }
@@ -499,12 +498,6 @@ void EditorUVE::DrawAnimationGraphPropertyUVE(const Core::TypeMetadataEntryUVE& 
                         ImGui::SameLine();
                         if (ImGui::Button("x", ImVec2(ImGui::GetFrameHeight(), 0.0F)) && node.inputs.size() > 1U) {
                             node.inputs.erase(node.inputs.begin() + static_cast<std::ptrdiff_t>(slot));
-                            if (node.kind == Kind::BlendSpace1D && slot < node.points.size()) {
-                                node.points.erase(node.points.begin() + static_cast<std::ptrdiff_t>(slot));
-                            }
-                            if (node.kind == Kind::BlendSpace2D && slot < node.points2D.size()) {
-                                node.points2D.erase(node.points2D.begin() + static_cast<std::ptrdiff_t>(slot));
-                            }
                             if (node.kind == Kind::StateMachine) {
                                 // Transitions touching the removed state go; later states shift down.
                                 const auto state = static_cast<std::uint32_t>(slot);
@@ -526,30 +519,76 @@ void EditorUVE::DrawAnimationGraphPropertyUVE(const Core::TypeMetadataEntryUVE& 
                             break;
                         }
                     }
-                    if (node.kind == Kind::BlendSpace1D && slot < node.points.size()) {
-                        const std::string pointLabel = "  at";
-                        drag(pointLabel.c_str(), node.points[slot], 0.01F, -1000.0F, 1000.0F);
-                    }
-                    if (node.kind == Kind::BlendSpace2D && slot < node.points2D.size()) {
+                    ImGui::PopID();
+                }
+                // A blend space's own animations, one row each: where, what, how fast.
+                if (node.kind == Kind::BlendSpace1D || node.kind == Kind::BlendSpace2D) {
+                    std::optional<std::size_t> removePoint;
+                    for (std::size_t slot = 0U; slot < node.blendPoints.size(); ++slot) {
+                        Scene::AnimationBlendPointUVE& point = node.blendPoints[slot];
+                        ImGui::PushID(static_cast<int>(slot) + 3000);
+                        const std::string pointLabel = "Point " + std::to_string(slot + 1U);
+                        RowUVE(pointLabel.c_str());
+                        ImGui::SetNextItemWidth(-ImGui::GetFrameHeight() - ImGui::GetStyle().ItemSpacing.x);
+                        if (const std::optional<Asset::AssetGuidUVE> picked = DrawAssetPickerUVE("##point-clip", point.clip, ".uvanim")) {
+                            point.clip = *picked;
+                            changed = true;
+                        }
+                        ImGui::SameLine();
+                        if (ImGui::Button("x", ImVec2(ImGui::GetFrameHeight(), 0.0F))) {
+                            removePoint = slot;
+                        }
                         RowUVE("  at");
-                        float xy[2] = {node.points2D[slot].x, node.points2D[slot].y};
-                        if (ImGui::DragFloat2("##at2", xy, 0.01F)) {
-                            node.points2D[slot] = Math::Vector2UVE{xy[0], xy[1]};
+                        if (node.kind == Kind::BlendSpace2D) {
+                            float xy[2] = {point.position.x, point.position.y};
+                            if (ImGui::DragFloat2("##at", xy, 0.01F)) {
+                                point.position = Math::Vector2UVE{xy[0], xy[1]};
+                                continuous = true;
+                            }
+                        } else if (ImGui::DragFloat("##at", &point.position.x, 0.01F)) {
                             continuous = true;
                         }
                         if (ImGui::IsItemDeactivated()) {
                             static_cast<void>(CommitComponentPropertyPreviewForUVE(entry, property));
                         }
+                        RowUVE("  speed / loop");
+                        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - ImGui::GetFrameHeight() -
+                                                ImGui::GetStyle().ItemSpacing.x);
+                        if (ImGui::DragFloat("##speed", &point.speed, 0.01F, -100.0F, 100.0F, "x%.2f")) {
+                            continuous = true;
+                        }
+                        if (ImGui::IsItemDeactivated()) {
+                            static_cast<void>(CommitComponentPropertyPreviewForUVE(entry, property));
+                        }
+                        ImGui::SameLine();
+                        if (ImGui::Checkbox("##loop", &point.loop)) {
+                            changed = true;
+                        }
+                        ImGui::PopID();
                     }
-                    ImGui::PopID();
+                    if (removePoint.has_value()) {
+                        node.blendPoints.erase(node.blendPoints.begin() + static_cast<std::ptrdiff_t>(*removePoint));
+                        changed = true;
+                    }
                 }
                 ImGui::EndTable();
             }
-            if (node.kind == Kind::BlendSpace1D || node.kind == Kind::BlendSpace2D || node.kind == Kind::Select ||
-                node.kind == Kind::StateMachine) {
-                const char* const label = node.kind == Kind::StateMachine ? "+ State"
-                                          : node.kind == Kind::Select    ? "+ Option"
-                                                                         : "+ Point";
+            if (node.kind == Kind::BlendSpace1D || node.kind == Kind::BlendSpace2D) {
+                if (ImGui::SmallButton("+ Point")) {
+                    // Past the furthest point along X; the animation is picked on its row.
+                    float furthest = -1.0F;
+                    for (const Scene::AnimationBlendPointUVE& point : node.blendPoints) {
+                        furthest = std::max(furthest, point.position.x);
+                    }
+                    std::vector<AnimationGraphNodeUVE> grown{node};
+                    if (AddBlendSpacePointUVE(grown, node.id, Math::Vector2UVE{furthest + 1.0F, 0.0F}, Asset::AssetGuidUVE{})) {
+                        node = std::move(grown.front());
+                        changed = true;
+                    }
+                }
+            }
+            if (node.kind == Kind::Select || node.kind == Kind::StateMachine) {
+                const char* const label = node.kind == Kind::StateMachine ? "+ State" : "+ Option";
                 if (ImGui::SmallButton(label)) {
                     std::vector<AnimationGraphNodeUVE> grown{node};
                     if (AddAnimationGraphInputSlotUVE(grown, node.id)) {
