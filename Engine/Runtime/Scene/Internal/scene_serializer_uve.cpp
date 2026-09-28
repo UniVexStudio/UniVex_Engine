@@ -154,7 +154,12 @@ namespace {
 // The target is an entity reference and is written beside these by the entity-aware encoder
 // (targetLocalId), because only it knows the file-local ids. Runtime state is never written.
 [[nodiscard]] nlohmann::json ToJsonUVE(const AnimationPlayerComponentUVE& component) {
+    nlohmann::json library = nlohmann::json::array();
+    for (const Asset::AssetGuidUVE& guid : component.library) {
+        library.push_back(guid.value);
+    }
     return {{"clip", component.clip.value},
+            {"library", std::move(library)},
             {"autoplay", component.autoplay},
             {"speed", component.speed},
             {"loopMode", static_cast<std::uint8_t>(component.loopMode)},
@@ -1293,6 +1298,13 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                       MakeRegistrationUVE<AnimationPlayerComponentUVE>([](const nlohmann::json& json) {
                           AnimationPlayerComponentUVE animation;
                           animation.clip = Asset::AssetGuidUVE{json.value("clip", std::uint64_t{0})};
+                          if (const auto library = json.find("library"); library != json.end() && library->is_array()) {
+                              for (const nlohmann::json& guid : *library) {
+                                  if (guid.is_number_unsigned() && guid.get<std::uint64_t>() != 0U) {
+                                      animation.library.push_back(Asset::AssetGuidUVE{guid.get<std::uint64_t>()});
+                                  }
+                              }
+                          }
                           // Players saved before the node was rebuilt: speed, looping and play-on-awake
                           // carry over; a disabled one no longer autoplays. Their clip was a path no
                           // runtime ever played, and cannot be resolved to an asset here, so it is dropped.

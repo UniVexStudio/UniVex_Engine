@@ -94,6 +94,18 @@ TEST(AssetDatabaseUVETest, RegisterUVE_SamePathTwice_ReturnsSameGuid) {
     EXPECT_EQ(first, second);
 }
 
+TEST(AssetDatabaseUVETest, RelocateUVE_KeepsTheGuidAtTheNewPath) {
+    AssetDatabaseUVE db;
+    const AssetGuidUVE run = db.RegisterUVE("anims/Run.uvanim");
+    const AssetGuidUVE walk = db.RegisterUVE("anims/Walk.uvanim");
+    ASSERT_TRUE(db.RelocateUVE(run, "anims/Sprint.uvanim"));
+    EXPECT_EQ(db.ResolveUVE(run), std::filesystem::path("anims/Sprint.uvanim"));
+    EXPECT_EQ(db.RegisterUVE("anims/Sprint.uvanim"), run) << "the new path is the same asset";
+    EXPECT_NE(db.RegisterUVE("anims/Run.uvanim"), run) << "the old path is free again";
+    EXPECT_FALSE(db.RelocateUVE(walk, "anims/Sprint.uvanim")) << "taken by another asset";
+    EXPECT_FALSE(db.RelocateUVE(AssetGuidUVE{12345U}, "anims/X.uvanim")) << "unknown guid";
+}
+
 TEST(AssetDatabaseUVETest, RegisterUVE_DifferentPaths_ReturnDifferentGuids) {
     AssetDatabaseUVE database;
     const AssetGuidUVE first = database.RegisterUVE("meshes/cube.uvmodel");

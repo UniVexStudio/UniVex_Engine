@@ -165,6 +165,25 @@ AssetGuidUVE AssetDatabaseUVE::RegisterUVE(const std::filesystem::path& assetPat
     return guid;
 }
 
+bool AssetDatabaseUVE::RelocateUVE(const AssetGuidUVE guid, const std::filesystem::path& newPath) {
+    const std::lock_guard<std::mutex> lock(m_impl->mutex);
+    const auto record = m_impl->guidToPath.find(guid);
+    if (record == m_impl->guidToPath.end()) {
+        return false;
+    }
+    const std::string newKey = AssetPathIdentityKeyUVE(newPath);
+    if (const auto taken = m_impl->pathToGuid.find(newKey); taken != m_impl->pathToGuid.end()) {
+        return taken->second == guid;
+    }
+    const std::string oldKey = AssetPathIdentityKeyUVE(record->second);
+    if (const auto old = m_impl->pathToGuid.find(oldKey); old != m_impl->pathToGuid.end() && old->second == guid) {
+        m_impl->pathToGuid.erase(old);
+    }
+    record->second = newPath.lexically_normal();
+    m_impl->pathToGuid.emplace(newKey, guid);
+    return true;
+}
+
 std::filesystem::path AssetDatabaseUVE::ResolveUVE(AssetGuidUVE guid) const {
     const std::lock_guard<std::mutex> lock(m_impl->mutex);
     const auto it = m_impl->guidToPath.find(guid);

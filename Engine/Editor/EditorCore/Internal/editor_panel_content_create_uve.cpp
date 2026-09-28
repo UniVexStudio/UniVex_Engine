@@ -142,6 +142,22 @@ std::optional<std::filesystem::path> EditorUVE::RenameContentFileUVE(const std::
     return target;
 }
 
+std::optional<std::filesystem::path> EditorUVE::RenameContentAssetUVE(const std::filesystem::path& file,
+                                                                      const std::string_view newStem) {
+    const std::optional<std::filesystem::path> target = RenameContentFileUVE(file, newStem);
+    if (!target.has_value() || *target == file) {
+        return target;
+    }
+    // The file keeps its GUID under the new name, so scenes and players that use it still do.
+    Asset::IAssetDatabaseUVE& assetDatabase = m_services->GetAssetDatabaseUVE();
+    for (const Asset::AssetRecordUVE& record : assetDatabase.GetRegisteredAssetsUVE()) {
+        if (record.path == file.lexically_normal()) {
+            static_cast<void>(assetDatabase.RelocateUVE(record.guid, *target));
+        }
+    }
+    return target;
+}
+
 std::optional<std::filesystem::path> EditorUVE::DuplicateContentFileUVE(const std::filesystem::path& file) {
     std::error_code error;
     if (!std::filesystem::exists(file, error)) {
@@ -202,7 +218,7 @@ bool EditorUVE::DrawContentRenameFieldUVE(const std::filesystem::path& contentRo
     // Enter or clicking away keeps the name; Escape keeps the old one.
     if (!ImGui::IsKeyPressed(ImGuiKey_Escape) && valid) {
         const std::optional<std::filesystem::path> renamed =
-            RenameContentFileUVE(contentRoot / entry.relativePath, m_contentRenameText);
+            RenameContentAssetUVE(contentRoot / entry.relativePath, m_contentRenameText);
         if (!renamed.has_value()) {
             m_contentStatusMessage = "Could not rename to \"" + m_contentRenameText + "\" - is the name taken?";
         } else if (*renamed != contentRoot / entry.relativePath) {
