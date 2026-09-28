@@ -163,6 +163,8 @@ add_library(uve_editor STATIC
     Internal/editor_panel_timeline_uve.cpp
     Internal/editor_panel_timeline_library_uve.cpp
     Internal/animation_clip_editing_uve.cpp
+    Internal/animation_graph_editing_uve.cpp
+    Internal/editor_panel_anim_graph_uve.cpp
     Internal/editor_panel_content_browser_uve.cpp
     Internal/editor_panel_content_create_uve.cpp
     Internal/editor_panel_viewport_uve.cpp
