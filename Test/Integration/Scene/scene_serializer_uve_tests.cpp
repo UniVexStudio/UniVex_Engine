@@ -649,12 +649,15 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_AnimationTargetsRemapToTheRestoredEnti
     entityManager.AddComponentUVE<HierarchyComponentUVE>(door, HierarchyComponentUVE{});
     const EntityUVE player = entityManager.CreateEntityUVE();
     entityManager.AddComponentUVE<HierarchyComponentUVE>(player, HierarchyComponentUVE{door});
-    AnimationPlayerComponentUVE animation;
-    animation.target = door;
-    entityManager.AddComponentUVE<AnimationPlayerComponentUVE>(player, animation);
+    AnimationMixerComponentUVE mixer;
+    mixer.target = door;
+    mixer.speedScale = 0.5F;
+    mixer.animateScale = false;
+    mixer.processCallback = AnimationProcessCallbackUVE::Physics;
+    entityManager.AddComponentUVE<AnimationMixerComponentUVE>(player, mixer);
+    entityManager.AddComponentUVE<AnimationPlayerComponentUVE>(player, AnimationPlayerComponentUVE{});
     // A state machine with a transition and a parameter, so the whole graph goes through the file.
     AnimationTreeComponentUVE blend;
-    blend.target = door;
     blend.parameters = {AnimationParameterUVE{"speed", AnimationParameterTypeUVE::Float, 0.25F},
                         AnimationParameterUVE{"jump", AnimationParameterTypeUVE::Trigger, 0.0F}};
     AnimationGraphNodeUVE machine;
@@ -687,14 +690,10 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_AnimationTargetsRemapToTheRestoredEnti
     restoredManager.ForEachUVE<AnimationPlayerComponentUVE>(
         [&restoredPlayer](const EntityUVE entity, const AnimationPlayerComponentUVE&) { restoredPlayer = entity; });
     ASSERT_NE(restoredPlayer, kInvalidEntityUVE);
-    EXPECT_EQ(restoredManager.GetComponentUVE<AnimationPlayerComponentUVE>(restoredPlayer).target, restoredDoor);
-    EXPECT_EQ(restoredManager.GetComponentUVE<AnimationTreeComponentUVE>(restoredPlayer).target, restoredDoor);
-    EXPECT_TRUE(restoredManager.GetComponentUVE<AnimationTreeComponentUVE>(restoredPlayer).HasSameSettingsUVE(
-        [&] {
-            AnimationTreeComponentUVE expected = blend;
-            expected.target = restoredDoor; // the one authored field that is remapped
-            return expected;
-        }()));
+    AnimationMixerComponentUVE expectedMixer = mixer;
+    expectedMixer.target = restoredDoor; // the one authored field that is remapped
+    EXPECT_EQ(restoredManager.GetComponentUVE<AnimationMixerComponentUVE>(restoredPlayer), expectedMixer);
+    EXPECT_TRUE(restoredManager.GetComponentUVE<AnimationTreeComponentUVE>(restoredPlayer).HasSameSettingsUVE(blend));
     // A pure Node stays one: no transform appears on the way through the file.
     EXPECT_FALSE(restoredManager.HasComponentUVE<TransformComponentUVE>(restoredPlayer));
 }
@@ -736,7 +735,34 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_LegacyAnimationPlayerFieldsCarryOver) 
     EXPECT_EQ(loaded.loopMode, AnimationLoopModeUVE::Once);
     EXPECT_FALSE(loaded.autoplay); // it was disabled
     EXPECT_EQ(loaded.clip, Asset::kInvalidAssetGuidUVE);
-    EXPECT_EQ(loaded.target, kInvalidEntityUVE);
+    ASSERT_TRUE(entityManager.HasComponentUVE<AnimationMixerComponentUVE>(roots[0])) << "an old player gains its base";
+    EXPECT_EQ(entityManager.GetComponentUVE<AnimationMixerComponentUVE>(roots[0]).target, kInvalidEntityUVE);
+}
+
+TEST_F(SceneSerializerUVETest, RestoreUVE_PlayerSavedBeforeAnimationMixerMovesItsSettingsIntoTheMixer) {
+    // A door and a player aimed at it, saved when target, masks and clock lived on the player.
+    const std::string payloadText =
+        R"({"entities":[{"localId":0,"components":{"HierarchyComponentUVE":{"parentLocalId":-1}}},)"
+        R"({"localId":1,"components":{"HierarchyComponentUVE":{"parentLocalId":0},"AnimationPlayerComponentUVE":)"
+        R"({"clip":5,"animateScale":false,"processCallback":1,"targetLocalId":0}}}]})";
+    const auto* const payloadBytes = reinterpret_cast<const std::byte*>(payloadText.data());
+    const SceneSnapshotUVE snapshot{
+        Asset::EncodeUveFileEnvelopeUVE(SceneAssetTypeUVE::Scene,
+                                        std::vector<std::byte>{payloadBytes, payloadBytes + payloadText.size()}),
+        SceneAssetTypeUVE::Scene};
+    const std::vector<EntityUVE> roots = serializer.RestoreUVE(entityManager, snapshot);
+    ASSERT_EQ(roots.size(), 1U);
+    EntityUVE player = kInvalidEntityUVE;
+    entityManager.ForEachUVE<AnimationPlayerComponentUVE>(
+        [&player](const EntityUVE entity, const AnimationPlayerComponentUVE&) { player = entity; });
+    ASSERT_NE(player, kInvalidEntityUVE);
+    ASSERT_TRUE(entityManager.HasComponentUVE<AnimationMixerComponentUVE>(player));
+    const AnimationMixerComponentUVE& mixer = entityManager.GetComponentUVE<AnimationMixerComponentUVE>(player);
+    EXPECT_EQ(mixer.target, roots[0]);
+    EXPECT_FALSE(mixer.animateScale);
+    EXPECT_TRUE(mixer.animatePosition);
+    EXPECT_EQ(mixer.processCallback, AnimationProcessCallbackUVE::Physics);
+    EXPECT_EQ(entityManager.GetComponentUVE<AnimationPlayerComponentUVE>(player).clip.value, 5U);
 }
 
 TEST(AudioSourceComponentUVE, IsAudioSourceComponentValidUVE_EnforcesBoundedNulFreePath) {
@@ -1241,8 +1267,6 @@ TEST_F(SceneSerializerUVETest, SaveThenLoad_AnimationPlayerComponentUVE_RoundTri
     animation.startOffsetSeconds = 0.5F;
     animation.blendInSeconds = 0.25F;
     animation.relative = true;
-    animation.animateScale = false;
-    animation.processCallback = AnimationProcessCallbackUVE::Physics;
     animation.isPlaying = true; // runtime state: must not be saved
     animation.currentTimeSeconds = 3.0F;
     entityManager.AddComponentUVE<AnimationPlayerComponentUVE>(entity, animation);

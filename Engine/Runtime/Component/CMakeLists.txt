@@ -19,6 +19,7 @@
 # depend on this module without a cycle.
 
 add_library(uve_component STATIC
+    Internal/animation_mixer_component_uve.cpp
     Internal/animation_player_component_uve.cpp
     Internal/animation_tree_component_uve.cpp
     Internal/area_component_uve.cpp

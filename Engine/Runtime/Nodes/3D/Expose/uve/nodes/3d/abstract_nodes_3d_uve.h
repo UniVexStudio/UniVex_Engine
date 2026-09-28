@@ -48,6 +48,16 @@ struct LightEmitter3DNodeDefinitionUVE final {
     static constexpr std::string_view typeName = "LightEmitter3D";
 };
 
+/// A pure-Node base, not a Node3D one: AnimationPlayer and AnimationTree both derive from it.
+///
+///   Node
+///   +- AnimationMixer       moves a target's transform   (AnimationMixerComponentUVE)
+///      +- AnimationPlayer
+///      +- AnimationTree
+struct AnimationMixerNodeDefinitionUVE final {
+    static constexpr std::string_view typeName = "AnimationMixer";
+};
+
 /// The Node3D recipe - transform baseline, Visibility and the common Node section - under `name`.
 /// Every Node3D child applies this first, directly or through its abstract base.
 void ApplyNode3DRecipeUVE(IEntityManagerUVE& entityManager, EntityUVE entity, std::string_view name);
@@ -64,5 +74,7 @@ void ApplyRenderInstance3DBaseUVE(IEntityManagerUVE& entityManager, EntityUVE en
 /// The RenderInstance3D recipe, then the base's own component.
 void ApplySurfaceInstance3DBaseUVE(IEntityManagerUVE& entityManager, EntityUVE entity, std::string_view nameFallback);
 void ApplyLightEmitter3DBaseUVE(IEntityManagerUVE& entityManager, EntityUVE entity, std::string_view nameFallback);
+/// The pure Node baseline (no transform, no visibility), then the mixer when it is missing.
+void ApplyAnimationMixerBaseUVE(IEntityManagerUVE& entityManager, EntityUVE entity, std::string_view nameFallback);
 
 } // namespace UVE::Scene

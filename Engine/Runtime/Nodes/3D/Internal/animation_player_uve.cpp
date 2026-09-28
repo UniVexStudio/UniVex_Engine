@@ -8,6 +8,7 @@
 #include "uve/asset/animation_clip_asset_uve.h"
 #include "uve/component/transform_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
+#include "uve/nodes/3d/abstract_nodes_3d_uve.h"
 #include "uve/math/quaternion_uve.h"
 #include "uve/nodes/3d/node_3d_uve.h"
 
@@ -62,8 +63,8 @@ using PoseUVE = Core::TransformPoseUVE;
     return result;
 }
 
-void WritePoseUVE(const AnimationPlayerComponentUVE& player, const PoseUVE& pose, TransformComponentUVE& target) noexcept {
-    WriteAnimatedPoseUVE(pose, player.animatePosition, player.animateRotation, player.animateScale, target);
+void WritePoseUVE(const AnimationMixerComponentUVE& mixer, const PoseUVE& pose, TransformComponentUVE& target) noexcept {
+    WriteAnimatedPoseUVE(pose, mixer.animatePosition, mixer.animateRotation, mixer.animateScale, target);
 }
 
 /// Moves the clock and applies the loop mode. Returns false when a Once clip reached its end.
@@ -145,12 +146,16 @@ void WriteAnimatedPoseUVE(const Core::TransformPoseUVE& pose, const bool positio
 }
 
 bool IsAnimationPlayerNodeDefinitionValidUVE(const AnimationPlayerNodeDefinitionUVE& value) noexcept {
-    return IsAnimationPlayerComponentValidUVE(value.player);
+    return IsAnimationPlayerComponentValidUVE(value.player) && IsAnimationMixerComponentValidUVE(value.mixer);
 }
 
 void ApplyAnimationPlayerNodeDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
                                            const AnimationPlayerNodeDefinitionUVE& value) {
-    EnsureNodeBaselineUVE(entityManager, entity, AnimationPlayerNodeDefinitionUVE::defaultName);
+    // The definition's mixer settings win over the base's defaults: added first, kept by the base.
+    if (entityManager.IsAliveUVE(entity) && !entityManager.HasComponentUVE<AnimationMixerComponentUVE>(entity)) {
+        entityManager.AddComponentUVE<AnimationMixerComponentUVE>(entity, value.mixer);
+    }
+    ApplyAnimationMixerBaseUVE(entityManager, entity, AnimationPlayerNodeDefinitionUVE::defaultName);
     if (entityManager.IsAliveUVE(entity) && !entityManager.HasComponentUVE<AnimationPlayerComponentUVE>(entity)) {
         entityManager.AddComponentUVE<AnimationPlayerComponentUVE>(entity, value.player);
     }
@@ -177,7 +182,8 @@ void StopAnimationPlayerUVE(AnimationPlayerComponentUVE& player) noexcept {
 }
 
 bool StepAnimationPlayerUVE(AnimationPlayerComponentUVE& player, const Asset::AnimationClipAssetUVE& clip,
-                            const float deltaSeconds, TransformComponentUVE& target) noexcept {
+                            const float deltaSeconds, TransformComponentUVE& target,
+                            const AnimationMixerComponentUVE& mixer) noexcept {
     if (!player.isPlaying) {
         return false;
     }
@@ -195,7 +201,7 @@ bool StepAnimationPlayerUVE(AnimationPlayerComponentUVE& player, const Asset::An
         player.isPlaying = false;
         player.finished = true;
         if (player.onFinish == AnimationFinishActionUVE::ReturnToStart && player.hasStartPose) {
-            WritePoseUVE(player, StartPoseUVE(player), target);
+            WritePoseUVE(mixer, StartPoseUVE(player), target);
             return true;
         }
     }
@@ -210,7 +216,7 @@ bool StepAnimationPlayerUVE(AnimationPlayerComponentUVE& player, const Asset::An
         pose = PoseUVE{LerpUVE(start.position, pose.position, weight),
                        SlerpOrKeepUVE(start.rotation, pose.rotation, weight), LerpUVE(start.scale, pose.scale, weight)};
     }
-    WritePoseUVE(player, pose, target);
+    WritePoseUVE(mixer, pose, target);
     return true;
 }
 
