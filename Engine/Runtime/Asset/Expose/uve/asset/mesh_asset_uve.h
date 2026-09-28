@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <span>
+#include <string>
 #include <vector>
 
 #include "uve/math/aabb_uve.h"
@@ -73,6 +74,9 @@ inline constexpr std::uint32_t kInvalidJointParentUVE = 0xFFFFFFFFU;
 struct MeshJointUVE {
     std::uint32_t parentIndex = kInvalidJointParentUVE;
     Math::Matrix4x4UVE inverseBindMatrix;
+    /// The bone's name, which is how a skeleton's pose and a clip's tracks find this joint. Empty
+    /// for joints saved before names were kept.
+    std::string name;
 };
 
 /// The CPU-side, engine-native representation of a `.uvmodel` asset (Part 2's file-format

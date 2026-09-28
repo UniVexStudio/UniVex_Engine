@@ -27,9 +27,13 @@ inline constexpr std::uint32_t kMaximumFbxMeshVerticesUVE = 1'000'000U;
 /// size and standing up. Faces are triangulated, missing normals are generated, the first UV set
 /// is kept, identical corners are shared and tangents are derived.
 ///
-/// A skinned mesh imports in its bind pose, without its skin, the same as the glTF path: skinning,
-/// materials, textures, cameras, lights and animation are not converted. Embedded and external
-/// files are never read. Returns false and leaves `outMesh` untouched when the bytes do not parse,
+/// A file with a skin keeps it: every bone becomes a joint (the bones, order and names
+/// ReadFbxSkeletonUVE gives, so a skeleton's pose and a clip's tracks line up by name), each
+/// joint's inverse bind comes from its cluster, and every vertex keeps its four strongest weights,
+/// normalized. Skinned vertices sit where the skin puts them in bind pose; a part with no skin
+/// rides the nearest bone above it. Materials, textures, cameras, lights and animation are not
+/// converted here (ReadFbxAnimationsUVE reads the takes). Embedded and external files are never
+/// read. Returns false and leaves `outMesh` untouched when the bytes do not parse,
 /// hold no triangles, exceed kMaximumFbxMeshVerticesUVE or produce a non-finite value.
 [[nodiscard]] bool ConvertFbxMeshUVE(std::span<const std::byte> source, MeshAssetUVE& outMesh);
 

@@ -21,6 +21,7 @@
 #include <ufbx.h>
 
 #include "uve/logging/logging_macros_uve.h"
+#include "uve/math/matrix4x4_uve.h"
 #include "uve/math/vector3_uve.h"
 
 namespace UVE::Asset {
@@ -84,7 +85,7 @@ using ScenePtrUVE = std::unique_ptr<ufbx_scene, SceneDeleterUVE>;
 // eight floats: a hash of the values would treat 0.0 and -0.0 as one and NaN as never equal, and
 // sharing is only safe for corners that are bit-for-bit the same.
 struct CornerKeyUVE final {
-    std::array<float, 8> values{};
+    std::array<float, 16> values{};
     bool operator==(const CornerKeyUVE& other) const noexcept {
         return std::memcmp(values.data(), other.values.data(), sizeof(values)) == 0;
     }
@@ -101,138 +102,27 @@ struct CornerKeyHashUVE final {
     }
 };
 
-[[nodiscard]] CornerKeyUVE MakeCornerKeyUVE(const MeshVertexUVE& vertex) noexcept {
+/// Corners that share a position but not their skin weights are two vertices: the influences are
+/// part of the key (all zero for a static mesh).
+[[nodiscard]] CornerKeyUVE MakeCornerKeyUVE(const MeshVertexUVE& vertex, const MeshSkinningInfluenceUVE& skin) noexcept {
     return CornerKeyUVE{{vertex.position.x, vertex.position.y, vertex.position.z, vertex.normal.x, vertex.normal.y,
-                         vertex.normal.z, vertex.u, vertex.v}};
+                         vertex.normal.z, vertex.u, vertex.v, static_cast<float>(skin.joints[0]),
+                         static_cast<float>(skin.joints[1]), static_cast<float>(skin.joints[2]),
+                         static_cast<float>(skin.joints[3]), skin.weights[0], skin.weights[1], skin.weights[2],
+                         skin.weights[3]}};
 }
 
-} // namespace
-
-bool ConvertFbxMeshUVE(const std::span<const std::byte> source, MeshAssetUVE& outMesh) {
-    try {
-        const ScenePtrUVE scene = LoadSceneUVE(source, true);
-        if (!scene) {
-            return false;
+[[nodiscard]] Math::Matrix4x4UVE ToMatrixUVE(const ufbx_matrix& m) noexcept {
+    Math::Matrix4x4UVE result;
+    const double rows[3][4] = {{m.m00, m.m01, m.m02, m.m03}, {m.m10, m.m11, m.m12, m.m13}, {m.m20, m.m21, m.m22, m.m23}};
+    for (std::size_t row = 0U; row < 3U; ++row) {
+        for (std::size_t column = 0U; column < 4U; ++column) {
+            result.m[row][column] = static_cast<float>(rows[row][column]);
         }
-
-        MeshAssetUVE candidate;
-        std::unordered_map<CornerKeyUVE, std::uint32_t, CornerKeyHashUVE> shared;
-        std::vector<std::uint32_t> triangle;
-        bool hasBounds = false;
-
-        for (const ufbx_mesh* const mesh : scene->meshes) {
-            if (mesh == nullptr || !mesh->vertex_position.exists || mesh->num_triangles == 0U) {
-                continue;
-            }
-            triangle.assign(mesh->max_face_triangles * 3U, 0U);
-            for (const ufbx_node* const node : mesh->instances) {
-                const ufbx_matrix toWorld = node->geometry_to_world;
-                const ufbx_matrix normalToWorld = ufbx_matrix_for_normals(&toWorld);
-                // A mirrored instance (negative scale) turns its triangles inside out; swapping two
-                // corners keeps them facing the way the surface does.
-                const bool mirrored = MatrixDeterminantUVE(toWorld) < 0.0;
-                for (const ufbx_face face : mesh->faces) {
-                    const std::uint32_t triangles = ufbx_triangulate_face(triangle.data(), triangle.size(), mesh, face);
-                    for (std::size_t corner = 0U; corner < static_cast<std::size_t>(triangles) * 3U; ++corner) {
-                        // Mirrored: read each triangle as corners 0, 2, 1.
-                        std::size_t pick = corner;
-                        if (mirrored && corner % 3U == 1U) {
-                            pick = corner + 1U;
-                        } else if (mirrored && corner % 3U == 2U) {
-                            pick = corner - 1U;
-                        }
-                        const std::uint32_t index = triangle[pick];
-                        MeshVertexUVE vertex;
-                        vertex.position = ToVectorUVE(
-                            ufbx_transform_position(&toWorld, ufbx_get_vertex_vec3(&mesh->vertex_position, index)));
-                        const ufbx_vec3 normal =
-                            mesh->vertex_normal.exists
-                                ? ufbx_transform_direction(&normalToWorld,
-                                                           ufbx_get_vertex_vec3(&mesh->vertex_normal, index))
-                                : ufbx_vec3{0.0, 1.0, 0.0};
-                        vertex.normal = ToVectorUVE(normal);
-                        const float length = std::sqrt((vertex.normal.x * vertex.normal.x) +
-                                                       (vertex.normal.y * vertex.normal.y) +
-                                                       (vertex.normal.z * vertex.normal.z));
-                        vertex.normal = length > 0.0F && std::isfinite(length)
-                                            ? Math::Vector3UVE{vertex.normal.x / length, vertex.normal.y / length,
-                                                               vertex.normal.z / length}
-                                            : Math::Vector3UVE{0.0F, 1.0F, 0.0F};
-                        if (mesh->vertex_uv.exists) {
-                            const ufbx_vec2 uv = ufbx_get_vertex_vec2(&mesh->vertex_uv, index);
-                            vertex.u = static_cast<float>(uv.x);
-                            vertex.v = static_cast<float>(uv.y);
-                        }
-                        if (!IsFiniteVertexUVE(vertex)) {
-                            return false;
-                        }
-
-                        const auto [found, inserted] =
-                            shared.try_emplace(MakeCornerKeyUVE(vertex), static_cast<std::uint32_t>(candidate.vertices.size()));
-                        if (inserted) {
-                            if (candidate.vertices.size() >= kMaximumFbxMeshVerticesUVE) {
-                                UVE_ERROR("FbxMeshConverterUVE: more than {} vertices", kMaximumFbxMeshVerticesUVE);
-                                return false;
-                            }
-                            candidate.vertices.push_back(vertex);
-                            if (!hasBounds) {
-                                candidate.localBounds = Math::AabbUVE{vertex.position, vertex.position};
-                                hasBounds = true;
-                            } else {
-                                Math::AabbUVE& bounds = candidate.localBounds;
-                                bounds.min = Math::Vector3UVE{std::min(bounds.min.x, vertex.position.x),
-                                                              std::min(bounds.min.y, vertex.position.y),
-                                                              std::min(bounds.min.z, vertex.position.z)};
-                                bounds.max = Math::Vector3UVE{std::max(bounds.max.x, vertex.position.x),
-                                                              std::max(bounds.max.y, vertex.position.y),
-                                                              std::max(bounds.max.z, vertex.position.z)};
-                            }
-                        }
-                        candidate.indices.push_back(found->second);
-                    }
-                }
-            }
-        }
-
-        if (candidate.vertices.empty() || candidate.indices.empty() || candidate.indices.size() % 3U != 0U) {
-            UVE_ERROR("FbxMeshConverterUVE: the file holds no triangles");
-            return false;
-        }
-        if (!TryGenerateMeshTangentsUVE(candidate.vertices, candidate.indices)) {
-            return false;
-        }
-        outMesh = std::move(candidate);
-        return true;
-    } catch (const std::bad_alloc&) {
-        UVE_ERROR("FbxMeshConverterUVE: out of memory");
-        return false;
     }
+    return result;
 }
 
-std::optional<FbxSourceSummaryUVE> DescribeFbxSourceUVE(const std::span<const std::byte> source) {
-    try {
-        const ScenePtrUVE scene = LoadSceneUVE(source, false);
-        if (!scene) {
-            return std::nullopt;
-        }
-        FbxSourceSummaryUVE summary;
-        summary.meshCount = scene->meshes.count;
-        summary.boneCount = scene->bones.count;
-        summary.animationCount = scene->anim_stacks.count;
-        for (const ufbx_anim_stack* const stack : scene->anim_stacks) {
-            const double length = stack->time_end - stack->time_begin;
-            if (std::isfinite(length) && length > summary.longestAnimationSeconds) {
-                summary.longestAnimationSeconds = length;
-            }
-        }
-        summary.hasSkin = scene->skin_deformers.count > 0U;
-        return summary;
-    } catch (const std::bad_alloc&) {
-        return std::nullopt;
-    }
-}
-
-namespace {
 
 /// One bone of the file, in the order the skeleton lists them: parents first.
 struct FbxBoneNodeUVE final {
@@ -306,6 +196,224 @@ struct FbxBoneNodeUVE final {
 }
 
 } // namespace
+
+bool ConvertFbxMeshUVE(const std::span<const std::byte> source, MeshAssetUVE& outMesh) {
+    try {
+        const ScenePtrUVE scene = LoadSceneUVE(source, true);
+        if (!scene) {
+            return false;
+        }
+
+        MeshAssetUVE candidate;
+        std::unordered_map<CornerKeyUVE, std::uint32_t, CornerKeyHashUVE> shared;
+
+        // A skinned file keeps its skin: every bone becomes a joint (the same bones, order and
+        // names the skeleton and its clips use), and each corner its strongest four influences.
+        std::unordered_map<const ufbx_node*, std::uint32_t> jointOfNode;
+        const bool skinned = scene->skin_deformers.count > 0U;
+        if (skinned) {
+            const std::optional<std::vector<FbxBoneNodeUVE>> bones =
+                CollectFbxBonesUVE(*scene, kMaximumAnimationAssetBonesUVE);
+            if (!bones.has_value() || bones->empty()) {
+                return false;
+            }
+            for (const FbxBoneNodeUVE& bone : *bones) {
+                MeshJointUVE joint;
+                joint.name = bone.name;
+                joint.parentIndex = bone.parentIndex < 0 ? kInvalidJointParentUVE
+                                                         : static_cast<std::uint32_t>(bone.parentIndex);
+                // A bone no cluster binds keeps its current pose as its bind pose.
+                const ufbx_matrix inverse = ufbx_matrix_invert(&bone.node->node_to_world);
+                joint.inverseBindMatrix = ToMatrixUVE(inverse);
+                jointOfNode.emplace(bone.node, static_cast<std::uint32_t>(candidate.joints.size()));
+                candidate.joints.push_back(std::move(joint));
+            }
+            for (const ufbx_skin_deformer* const skin : scene->skin_deformers) {
+                for (const ufbx_skin_cluster* const cluster : skin->clusters) {
+                    if (cluster->bone_node == nullptr) {
+                        continue;
+                    }
+                    if (const auto found = jointOfNode.find(cluster->bone_node); found != jointOfNode.end()) {
+                        const ufbx_matrix inverse = ufbx_matrix_invert(&cluster->bind_to_world);
+                        candidate.joints[found->second].inverseBindMatrix = ToMatrixUVE(inverse);
+                    }
+                }
+            }
+        }
+        std::vector<std::uint32_t> triangle;
+        bool hasBounds = false;
+
+        for (const ufbx_mesh* const mesh : scene->meshes) {
+            if (mesh == nullptr || !mesh->vertex_position.exists || mesh->num_triangles == 0U) {
+                continue;
+            }
+            triangle.assign(mesh->max_face_triangles * 3U, 0U);
+            const ufbx_skin_deformer* const skin =
+                skinned && mesh->skin_deformers.count > 0U ? mesh->skin_deformers.data[0] : nullptr;
+            for (const ufbx_node* const node : mesh->instances) {
+                // A part with no skin of its own rides the nearest bone above it (or the first).
+                std::uint32_t rigidJoint = 0U;
+                for (const ufbx_node* ancestor = node; skinned && ancestor != nullptr; ancestor = ancestor->parent) {
+                    if (const auto found = jointOfNode.find(ancestor); found != jointOfNode.end()) {
+                        rigidJoint = found->second;
+                        break;
+                    }
+                }
+                const ufbx_matrix toWorld = node->geometry_to_world;
+                const ufbx_matrix normalToWorld = ufbx_matrix_for_normals(&toWorld);
+                // A mirrored instance (negative scale) turns its triangles inside out; swapping two
+                // corners keeps them facing the way the surface does.
+                const bool mirrored = MatrixDeterminantUVE(toWorld) < 0.0;
+                for (const ufbx_face face : mesh->faces) {
+                    const std::uint32_t triangles = ufbx_triangulate_face(triangle.data(), triangle.size(), mesh, face);
+                    for (std::size_t corner = 0U; corner < static_cast<std::size_t>(triangles) * 3U; ++corner) {
+                        // Mirrored: read each triangle as corners 0, 2, 1.
+                        std::size_t pick = corner;
+                        if (mirrored && corner % 3U == 1U) {
+                            pick = corner + 1U;
+                        } else if (mirrored && corner % 3U == 2U) {
+                            pick = corner - 1U;
+                        }
+                        const std::uint32_t index = triangle[pick];
+                        MeshVertexUVE vertex;
+                        vertex.position = ToVectorUVE(
+                            ufbx_transform_position(&toWorld, ufbx_get_vertex_vec3(&mesh->vertex_position, index)));
+                        const ufbx_vec3 normal =
+                            mesh->vertex_normal.exists
+                                ? ufbx_transform_direction(&normalToWorld,
+                                                           ufbx_get_vertex_vec3(&mesh->vertex_normal, index))
+                                : ufbx_vec3{0.0, 1.0, 0.0};
+                        vertex.normal = ToVectorUVE(normal);
+                        const float length = std::sqrt((vertex.normal.x * vertex.normal.x) +
+                                                       (vertex.normal.y * vertex.normal.y) +
+                                                       (vertex.normal.z * vertex.normal.z));
+                        vertex.normal = length > 0.0F && std::isfinite(length)
+                                            ? Math::Vector3UVE{vertex.normal.x / length, vertex.normal.y / length,
+                                                               vertex.normal.z / length}
+                                            : Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+                        if (mesh->vertex_uv.exists) {
+                            const ufbx_vec2 uv = ufbx_get_vertex_vec2(&mesh->vertex_uv, index);
+                            vertex.u = static_cast<float>(uv.x);
+                            vertex.v = static_cast<float>(uv.y);
+                        }
+                        if (!IsFiniteVertexUVE(vertex)) {
+                            return false;
+                        }
+                        MeshSkinningInfluenceUVE influence;
+                        if (skinned) {
+                            influence.joints[0] = rigidJoint;
+                            influence.weights[0] = 1.0F;
+                        }
+                        if (skin != nullptr) {
+                            const std::uint32_t meshVertex = mesh->vertex_indices.data[index];
+                            if (meshVertex < skin->vertices.count) {
+                                // ufbx lists each vertex's weights strongest first.
+                                const ufbx_skin_vertex& weights = skin->vertices.data[meshVertex];
+                                MeshSkinningInfluenceUVE picked;
+                                float total = 0.0F;
+                                std::size_t slot = 0U;
+                                for (std::uint32_t w = 0U; w < weights.num_weights && slot < kMaxJointInfluencesUVE; ++w) {
+                                    const ufbx_skin_weight& weight = skin->weights.data[weights.weight_begin + w];
+                                    const ufbx_skin_cluster* const cluster = skin->clusters.data[weight.cluster_index];
+                                    const auto joint = cluster->bone_node != nullptr ? jointOfNode.find(cluster->bone_node)
+                                                                                      : jointOfNode.end();
+                                    const float value = static_cast<float>(weight.weight);
+                                    if (joint == jointOfNode.end() || !std::isfinite(value) || value <= 0.0F) {
+                                        continue;
+                                    }
+                                    picked.joints[slot] = joint->second;
+                                    picked.weights[slot] = value;
+                                    total += value;
+                                    ++slot;
+                                }
+                                if (total > 0.0F) {
+                                    for (float& value : picked.weights) {
+                                        value /= total;
+                                    }
+                                    influence = picked;
+                                    // In bind pose: where the skin puts it when every bone is at its bind.
+                                    const ufbx_skin_cluster* const strongest =
+                                        skin->clusters.data[skin->weights.data[weights.weight_begin].cluster_index];
+                                    const ufbx_matrix bind = ufbx_matrix_mul(&strongest->bind_to_world,
+                                                                             &strongest->geometry_to_bone);
+                                    vertex.position = ToVectorUVE(
+                                        ufbx_transform_position(&bind, ufbx_get_vertex_vec3(&mesh->vertex_position, index)));
+                                }
+                            }
+                        }
+
+                        const auto [found, inserted] = shared.try_emplace(
+                            MakeCornerKeyUVE(vertex, influence), static_cast<std::uint32_t>(candidate.vertices.size()));
+                        if (inserted) {
+                            if (candidate.vertices.size() >= kMaximumFbxMeshVerticesUVE) {
+                                UVE_ERROR("FbxMeshConverterUVE: more than {} vertices", kMaximumFbxMeshVerticesUVE);
+                                return false;
+                            }
+                            candidate.vertices.push_back(vertex);
+                            if (skinned) {
+                                candidate.skinningInfluences.push_back(influence);
+                            }
+                            if (!hasBounds) {
+                                candidate.localBounds = Math::AabbUVE{vertex.position, vertex.position};
+                                hasBounds = true;
+                            } else {
+                                Math::AabbUVE& bounds = candidate.localBounds;
+                                bounds.min = Math::Vector3UVE{std::min(bounds.min.x, vertex.position.x),
+                                                              std::min(bounds.min.y, vertex.position.y),
+                                                              std::min(bounds.min.z, vertex.position.z)};
+                                bounds.max = Math::Vector3UVE{std::max(bounds.max.x, vertex.position.x),
+                                                              std::max(bounds.max.y, vertex.position.y),
+                                                              std::max(bounds.max.z, vertex.position.z)};
+                            }
+                        }
+                        candidate.indices.push_back(found->second);
+                    }
+                }
+            }
+        }
+
+        if (candidate.vertices.empty() || candidate.indices.empty() || candidate.indices.size() % 3U != 0U) {
+            UVE_ERROR("FbxMeshConverterUVE: the file holds no triangles");
+            return false;
+        }
+        if (!TryGenerateMeshTangentsUVE(candidate.vertices, candidate.indices)) {
+            return false;
+        }
+        if (skinned && !IsMeshSkinningDataValidUVE(candidate)) {
+            UVE_ERROR("FbxMeshConverterUVE: the skin did not convert into valid skinning data");
+            return false;
+        }
+        outMesh = std::move(candidate);
+        return true;
+    } catch (const std::bad_alloc&) {
+        UVE_ERROR("FbxMeshConverterUVE: out of memory");
+        return false;
+    }
+}
+
+std::optional<FbxSourceSummaryUVE> DescribeFbxSourceUVE(const std::span<const std::byte> source) {
+    try {
+        const ScenePtrUVE scene = LoadSceneUVE(source, false);
+        if (!scene) {
+            return std::nullopt;
+        }
+        FbxSourceSummaryUVE summary;
+        summary.meshCount = scene->meshes.count;
+        summary.boneCount = scene->bones.count;
+        summary.animationCount = scene->anim_stacks.count;
+        for (const ufbx_anim_stack* const stack : scene->anim_stacks) {
+            const double length = stack->time_end - stack->time_begin;
+            if (std::isfinite(length) && length > summary.longestAnimationSeconds) {
+                summary.longestAnimationSeconds = length;
+            }
+        }
+        summary.hasSkin = scene->skin_deformers.count > 0U;
+        return summary;
+    } catch (const std::bad_alloc&) {
+        return std::nullopt;
+    }
+}
+
 
 std::optional<GltfSkeletonUVE> ReadFbxSkeletonUVE(const std::span<const std::byte> source,
                                                   const std::size_t maximumJoints) {
