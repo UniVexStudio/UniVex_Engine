@@ -28,6 +28,16 @@ enum class AnimationRootMotionModeUVE : std::uint8_t {
     ApplyToTarget,
 };
 
+/// How a clip that starts takes over from the pose that was there (over the player's Blend In).
+enum class AnimationTransitionModeUVE : std::uint8_t {
+    /// The new clip plays at full weight at once; the difference from the old pose is carried
+    /// along and fades out smoothly (zero speed at both ends). No cost of evaluating two clips,
+    /// no sliding feet halfway through, and it keeps the new motion's timing from the first frame.
+    Inertialize = 0,
+    /// The old pose and the new clip are mixed, the mix moving to the new clip over the blend.
+    Crossfade,
+};
+
 /// AnimationMixer: the abstract base AnimationPlayer and AnimationTree share - what they move, which
 /// channels, on which clock and how fast. Not a node of its own; the section both show between
 /// their own and the Node section.
@@ -43,6 +53,8 @@ struct AnimationMixerComponentUVE final {
     bool animatePosition = true;
     bool animateRotation = true;
     bool animateScale = true;
+    /// How a newly started clip takes over, over the player's Blend In.
+    AnimationTransitionModeUVE transition = AnimationTransitionModeUVE::Inertialize;
     /// Root motion, for skeletal clips.
     AnimationRootMotionModeUVE rootMotion = AnimationRootMotionModeUVE::Off;
     /// The bone whose ground travel is root motion. Empty picks it: the first bone, parents first,

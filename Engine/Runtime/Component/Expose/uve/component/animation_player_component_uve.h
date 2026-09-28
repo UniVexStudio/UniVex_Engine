@@ -74,6 +74,14 @@ struct AnimationPlayerComponentUVE final {
     Math::Vector3UVE startScale{1.0F, 1.0F, 1.0F};
     /// Root motion of the last step: the root bone's ground travel, in the skeleton's space.
     Math::Vector3UVE rootMotionDelta{};
+    /// The clip playback was started with; when `clip` changes mid-play, the new one takes over
+    /// through the mixer's transition.
+    Asset::AssetGuidUVE playingClip{};
+    /// Inertialization: per bone, the old pose's difference from the new clip when it started
+    /// (position, rotation, scale), faded out over Blend In.
+    std::vector<Math::Vector3UVE> inertialPosition;
+    std::vector<Math::QuaternionUVE> inertialRotation;
+    std::vector<Math::Vector3UVE> inertialScale;
     /// The clip's events the playhead passed in the last step, in the order it passed them.
     std::vector<std::string> firedEvents;
 
