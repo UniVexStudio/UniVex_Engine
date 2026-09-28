@@ -211,8 +211,14 @@ void EditorUVE::DrawHierarchyBodyUVE() {
                            ImGuiWindowFlags_AlwaysVerticalScrollbar)) {
         ImGui::BeginDisabled(!IsAuthoringCommandAllowedUVE());
         ImGui::PushStyleVar(ImGuiStyleVar_IndentSpacing, m_hierarchyView.indentWidth);
-        for (const Scene::EntityUVE root : GetDocumentRootsUVE()) {
-            DrawHierarchyNodeUVE(root);
+        // In the Entity Editor the entity is the top of the tree; the scene root is not shown.
+        const Scene::EntityUVE entityRoot = m_entityEditSession.has_value() ? GetEntityEditorRootUVE() : Scene::kInvalidEntityUVE;
+        if (entityRoot != Scene::kInvalidEntityUVE) {
+            DrawHierarchyNodeUVE(entityRoot);
+        } else {
+            for (const Scene::EntityUVE root : GetDocumentRootsUVE()) {
+                DrawHierarchyNodeUVE(root);
+            }
         }
         ImGui::PopStyleVar();
         if (m_hierarchyView.dragToReparent && !GetDocumentRootsUVE().empty()) {
@@ -223,7 +229,7 @@ void EditorUVE::DrawHierarchyBodyUVE() {
                                     m_services->GetSceneGraphUVE()
                                         .GetChildrenUVE(m_services->GetEntityManagerUVE(), sceneRoot)
                                         .empty();
-            if (sceneEmpty) {
+            if (sceneEmpty && !m_entityEditSession.has_value()) {
                 ImGui::Separator();
                 ImGui::TextDisabled("Drop entity here to make it a root");
             } else {
@@ -431,7 +437,7 @@ void EditorUVE::DrawHierarchyNodeUVE(const Scene::EntityUVE entity) {
     }
     // The scene root is the document itself: it has no parent to leave, so it is never a drag source.
     if (m_hierarchyView.dragToReparent && IsLifecycleCommandAllowedUVE() && IsDocumentEntityUVE(entity) &&
-        !IsSceneRootEntityUVE(entity) && ImGui::BeginDragDropSource()) {
+        !IsStructuralRootUVE(entity) && ImGui::BeginDragDropSource()) {
         ImGui::SetDragDropPayload(kHierarchyEntityPayloadUVE, &entity, sizeof(entity));
         ImGui::Text("Move %s", GetEntityDisplayLabelUVE(entity).c_str());
         ImGui::EndDragDropSource();
@@ -461,7 +467,7 @@ void EditorUVE::DrawHierarchyNodeContextMenuUVE(const Scene::EntityUVE entity) {
     const bool authoring = IsAuthoringCommandAllowedUVE();
     const bool lifecycle = IsLifecycleCommandAllowedUVE();
     const bool single = HasSingleDocumentSelectionUVE() && entity == m_selectedEntity;
-    const bool sceneRoot = IsSceneRootEntityUVE(entity);
+    const bool sceneRoot = IsStructuralRootUVE(entity);
 
     ImGui::TextDisabled("%s", GetEntityDisplayLabelUVE(entity).c_str());
     ImGui::Separator();

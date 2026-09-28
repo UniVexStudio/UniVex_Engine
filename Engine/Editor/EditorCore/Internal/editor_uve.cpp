@@ -2152,7 +2152,7 @@ Scene::EntityUVE EditorUVE::CreateDocumentSceneNodeUVE(
 
 Scene::EntityUVE EditorUVE::DuplicateSelectedEntityUVE() {
     if (!IsLifecycleCommandAllowedUVE() || !IsDocumentEntityUVE(m_selectedEntity) ||
-        IsSceneRootEntityUVE(m_selectedEntity)) {
+        IsStructuralRootUVE(m_selectedEntity)) {
         return Scene::kInvalidEntityUVE;
     }
 
@@ -2202,7 +2202,7 @@ Scene::EntityUVE EditorUVE::DuplicateSelectedEntityUVE() {
 
 bool EditorUVE::DeleteSelectedEntityUVE() {
     if (!IsLifecycleCommandAllowedUVE() || !IsDocumentEntityUVE(m_selectedEntity) ||
-        IsSceneRootEntityUVE(m_selectedEntity)) {
+        IsStructuralRootUVE(m_selectedEntity)) {
         return false;
     }
 
@@ -2297,7 +2297,7 @@ bool EditorUVE::ComputeKeepWorldLocalTransformUVE(const Scene::EntityUVE entity,
 }
 
 bool EditorUVE::ReparentDocumentEntityUVE(const Scene::EntityUVE entity, const Scene::EntityUVE newParent) {
-    if (!IsLifecycleCommandAllowedUVE() || IsSceneRootEntityUVE(entity) || !IsReparentableNodeUVE(entity) ||
+    if (!IsLifecycleCommandAllowedUVE() || IsStructuralRootUVE(entity) || !IsReparentableNodeUVE(entity) ||
         !IsDocumentSubtreeUVE(entity) ||
         (newParent != Scene::kInvalidEntityUVE && !IsHierarchyNodeUVE(newParent)) ||
         entity == newParent || DoesSubtreeContainEntityUVE(entity, newParent)) {
@@ -2305,8 +2305,11 @@ bool EditorUVE::ReparentDocumentEntityUVE(const Scene::EntityUVE entity, const S
     }
     // One-root documents: "move to document root" means becoming a direct child of the
     // scene root - nothing but the root itself may sit at top level.
+    // In the Entity Editor the entity's root plays that part.
     const Scene::EntityUVE effectiveParent =
-        newParent == Scene::kInvalidEntityUVE ? EnsureDocumentSceneRootUVE() : newParent;
+        newParent != Scene::kInvalidEntityUVE ? newParent
+        : m_entityEditSession.has_value()     ? GetEntityEditorRootUVE()
+                                              : EnsureDocumentSceneRootUVE();
     if (effectiveParent == Scene::kInvalidEntityUVE || entity == effectiveParent ||
         DoesSubtreeContainEntityUVE(entity, effectiveParent)) {
         return false;
@@ -2348,7 +2351,7 @@ bool EditorUVE::ReparentDocumentEntityUVE(const Scene::EntityUVE entity, const S
 }
 
 bool EditorUVE::CanMoveDocumentEntityUVE(const Scene::EntityUVE entity, const EditorSiblingMoveUVE move) {
-    if (!IsLifecycleCommandAllowedUVE() || !IsDocumentEntityUVE(entity) || IsSceneRootEntityUVE(entity)) {
+    if (!IsLifecycleCommandAllowedUVE() || !IsDocumentEntityUVE(entity) || IsStructuralRootUVE(entity)) {
         return false;
     }
     Scene::EntityUVE parent = Scene::kInvalidEntityUVE;
@@ -2969,6 +2972,13 @@ Scene::EntityUVE EditorUVE::ResolveNewNodeParentUVE() {
         IsDocumentSubtreeUVE(m_selectedEntity)) {
         return m_selectedEntity;
     }
+    // In the Entity Editor, new nodes belong to the entity.
+    if (m_entityEditSession.has_value()) {
+        const Scene::EntityUVE entityRoot = GetEntityEditorRootUVE();
+        if (entityRoot != Scene::kInvalidEntityUVE) {
+            return entityRoot;
+        }
+    }
     return EnsureDocumentSceneRootUVE();
 }
 
@@ -3261,6 +3271,11 @@ bool EditorUVE::RedoHistoryEntryUVE(HistoryEntryUVE& entry) {
             }
         },
         entry);
+}
+
+bool EditorUVE::IsStructuralRootUVE(const Scene::EntityUVE entity) {
+    return IsSceneRootEntityUVE(entity) ||
+           (m_entityEditSession.has_value() && entity != Scene::kInvalidEntityUVE && entity == GetEntityEditorRootUVE());
 }
 
 bool EditorUVE::IsSceneRootEntityUVE(const Scene::EntityUVE entity) const {
@@ -4214,7 +4229,7 @@ void EditorUVE::AcceptHierarchyDropTargetUVE(const Scene::EntityUVE targetParent
     if (asset != nullptr && asset->DataSize > 1) {
         const std::string path(static_cast<const char*>(asset->Data), static_cast<std::size_t>(asset->DataSize - 1));
         static_cast<void>(PlaceEntityAssetUVE(
-            path, targetParent != Scene::kInvalidEntityUVE ? targetParent : EnsureDocumentSceneRootUVE()));
+            path, targetParent != Scene::kInvalidEntityUVE ? targetParent : ResolveNewNodeParentUVE()));
     }
     ImGui::EndDragDropTarget();
 }
