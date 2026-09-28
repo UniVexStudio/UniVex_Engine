@@ -20,6 +20,8 @@ inline constexpr std::size_t kMaximumAnimationParametersUVE = 128U;
 inline constexpr std::size_t kMaximumAnimationNodeInputsUVE = 32U;
 inline constexpr std::size_t kMaximumAnimationTransitionsUVE = 128U;
 inline constexpr std::size_t kMaximumAnimationNameBytesUVE = 128U;
+/// LayeredBlend: most bone branches one node can name.
+inline constexpr std::size_t kMaximumAnimationLayerBonesUVE = 256U;
 /// A transition whose From is this leaves whichever state is active: an "any state" transition.
 inline constexpr std::uint32_t kAnyAnimationStateUVE = 0xFFFFFFFFU;
 
@@ -45,6 +47,17 @@ enum class AnimationGraphNodeKindUVE : std::uint8_t {
     TimeScale,
     /// Its inputs are states; transitions move between them on conditions, crossfading.
     StateMachine,
+    /// Places its inputs on a plane at `points2D` and mixes them by how close a two-parameter
+    /// position is to each - strafing by velocity X and Z, aiming by yaw and pitch.
+    BlendSpace2D,
+    /// Plays the input a parameter picks (a Bool 0/1, or a Float rounded to an index), fading when
+    /// the pick changes: stance by weapon, idle by mood.
+    Select,
+    /// Lays the second input over the first on the bones under `bones` only (each named bone and
+    /// everything below it), by a weight: shoot with the upper body while the legs run.
+    LayeredBlend,
+    /// Jumps its input to `value` seconds when its trigger fires, then plays on from there.
+    TimeSeek,
 };
 
 enum class AnimationParameterTypeUVE : std::uint8_t {
@@ -113,6 +126,18 @@ struct AnimationGraphNodeUVE final {
     float value = 0.5F;
     /// BlendSpace1D: one ascending position per input.
     std::vector<float> points;
+    /// BlendSpace2D: one position per input, anywhere on the plane.
+    std::vector<Math::Vector2UVE> points2D;
+    /// Blend Space 1D / 2D: the area its editor shows (1D uses X only). Points may sit outside it.
+    Math::Vector2UVE areaMin{-1.0F, -1.0F};
+    Math::Vector2UVE areaMax{1.0F, 1.0F};
+    /// BlendSpace2D: the second axis's parameter, and its value when there is none.
+    std::string parameterY;
+    float valueY = 0.0F;
+    /// LayeredBlend: the bones whose branches take the layer. Empty takes the whole body.
+    std::vector<std::string> bones;
+    /// Select: start the picked input over from its beginning when it is picked.
+    bool restart = true;
     /// OneShot fade in and out, in seconds.
     float fadeSeconds = 0.2F;
     /// Blend / Blend Space / Additive: the inputs keep in step - the heaviest one leads, the others

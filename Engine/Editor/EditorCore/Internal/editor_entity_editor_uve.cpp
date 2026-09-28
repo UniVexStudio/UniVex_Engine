@@ -527,6 +527,11 @@ void EditorUVE::DrawEntityEditorDockUVE(EntityEditSessionUVE& session) {
         } else if (hasTree) {
             follow = EntityEditorDockTabUVE::AnimGraph;
         }
+        // Tracks and graphs need room: opening one grows a short dock (the layout keeps it
+        // inside the window); a taller one the user set is left alone.
+        if (follow.has_value()) {
+            session.dockHeight = std::max(session.dockHeight, 320.0F);
+        }
     }
     const auto tab = [&session, &follow](const char* label, const EntityEditorDockTabUVE which) {
         const ImGuiTabItemFlags flags =

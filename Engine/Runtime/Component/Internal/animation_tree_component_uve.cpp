@@ -38,8 +38,14 @@ struct InputRuleUVE final {
         case Kind::OneShot:
             return {2U, false};
         case Kind::BlendSpace1D:
+        case Kind::BlendSpace2D:
+        case Kind::Select:
         case Kind::StateMachine:
             return {1U, true};
+        case Kind::LayeredBlend:
+            return {2U, false};
+        case Kind::TimeSeek:
+            return {1U, false};
     }
     return {0U, false};
 }
@@ -54,6 +60,10 @@ struct InputRuleUVE final {
         case Kind::OneShot: return "OneShot";
         case Kind::TimeScale: return "TimeScale";
         case Kind::StateMachine: return "StateMachine";
+        case Kind::BlendSpace2D: return "BlendSpace2D";
+        case Kind::Select: return "Select";
+        case Kind::LayeredBlend: return "LayeredBlend";
+        case Kind::TimeSeek: return "TimeSeek";
     }
     return "?";
 }
@@ -89,7 +99,7 @@ std::string DescribeAnimationGraphProblemUVE(const AnimationTreeComponentUVE& co
         if (node.id == 0U || !indexById.emplace(node.id, index).second) {
             return "node ids must be unique and non-zero";
         }
-        if (node.kind > Kind::StateMachine || !IsNameValidUVE(node.name)) {
+        if (node.kind > Kind::TimeSeek || !IsNameValidUVE(node.name)) {
             return "a node has an invalid kind or name";
         }
         outputs += node.kind == Kind::Output ? 1U : 0U;
@@ -123,8 +133,33 @@ std::string DescribeAnimationGraphProblemUVE(const AnimationTreeComponentUVE& co
         }
         if (!std::isfinite(node.position.x) || !std::isfinite(node.position.y) || !std::isfinite(node.speed) ||
             !std::isfinite(node.value) || !IsFiniteNonNegativeUVE(node.fadeSeconds) ||
-            !IsNameValidUVE(node.parameter)) {
+            !IsNameValidUVE(node.parameter) || !std::isfinite(node.valueY) || !IsNameValidUVE(node.parameterY)) {
             return label + ": invalid value";
+        }
+        if (!std::isfinite(node.areaMin.x) || !std::isfinite(node.areaMin.y) || !std::isfinite(node.areaMax.x) ||
+            !std::isfinite(node.areaMax.y) || node.areaMax.x <= node.areaMin.x || node.areaMax.y <= node.areaMin.y) {
+            return label + ": its area's maximum must be above its minimum";
+        }
+        if (node.kind == Kind::BlendSpace2D) {
+            if (node.points2D.size() != node.inputs.size()) {
+                return label + ": needs one point per input";
+            }
+            for (std::size_t point = 0U; point < node.points2D.size(); ++point) {
+                if (!std::isfinite(node.points2D[point].x) || !std::isfinite(node.points2D[point].y)) {
+                    return label + ": a point is not a number";
+                }
+                for (std::size_t other = 0U; other < point; ++other) {
+                    if (node.points2D[other] == node.points2D[point]) {
+                        return label + ": two points are in the same place";
+                    }
+                }
+            }
+        } else if (!node.points2D.empty()) {
+            return label + ": only a BlendSpace2D has 2D points";
+        }
+        if (node.bones.size() > kMaximumAnimationLayerBonesUVE ||
+            std::ranges::any_of(node.bones, [](const std::string& bone) { return bone.empty() || !IsNameValidUVE(bone); })) {
+            return label + ": a layer bone has no name, or too long a one";
         }
         if (node.kind == Kind::BlendSpace1D) {
             if (node.points.size() != node.inputs.size()) {

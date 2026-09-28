@@ -32,8 +32,9 @@ using Scene::AnimationParameterTypeUVE;
 using Scene::AnimationParameterUVE;
 using Scene::AnimationTransitionUVE;
 
-constexpr std::array<Kind, 7> kAddableKindsUVE{Kind::Clip,     Kind::Blend2,    Kind::BlendSpace1D, Kind::Additive,
-                                               Kind::OneShot, Kind::TimeScale, Kind::StateMachine};
+constexpr std::array<Kind, 11> kAddableKindsUVE{Kind::Clip,         Kind::Blend2,       Kind::BlendSpace1D, Kind::BlendSpace2D,
+                                                Kind::Select,       Kind::Additive,     Kind::LayeredBlend, Kind::OneShot,
+                                                Kind::TimeScale,    Kind::TimeSeek,     Kind::StateMachine};
 
 [[nodiscard]] const char* KindLabelUVE(const Kind kind) noexcept { return AnimationGraphKindLabelUVE(kind); }
 [[nodiscard]] const char* KindHelpUVE(const Kind kind) noexcept { return AnimationGraphKindHelpUVE(kind); }
@@ -387,6 +388,71 @@ void EditorUVE::DrawAnimationGraphPropertyUVE(const Core::TypeMetadataEntryUVE& 
                         }
                         break;
                     }
+                    case Kind::BlendSpace2D: {
+                        parameterRow("X From", {AnimationParameterTypeUVE::Float}, "(fixed value)");
+                        if (node.parameter.empty()) {
+                            drag("X", node.value, 0.01F, -1000.0F, 1000.0F);
+                        }
+                        RowUVE("Y From");
+                        if (PickParameterUVE("##parameter-y", tree.parameters, {AnimationParameterTypeUVE::Float},
+                                             "(fixed value)", node.parameterY)) {
+                            changed = true;
+                        }
+                        if (node.parameterY.empty()) {
+                            drag("Y", node.valueY, 0.01F, -1000.0F, 1000.0F);
+                        }
+                        syncRow();
+                        break;
+                    }
+                    case Kind::Select:
+                        parameterRow("Pick From", {AnimationParameterTypeUVE::Float, AnimationParameterTypeUVE::Bool},
+                                     "(fixed index)");
+                        if (node.parameter.empty()) {
+                            drag("Index", node.value, 0.05F, 0.0F, static_cast<float>(node.inputs.size() - 1U));
+                        }
+                        drag("Fade", node.fadeSeconds, 0.01F, 0.0F, 10.0F);
+                        RowUVE("Restart");
+                        if (ImGui::Checkbox("##restart", &node.restart)) {
+                            changed = true;
+                        }
+                        break;
+                    case Kind::LayeredBlend: {
+                        parameterRow("Weight From", {AnimationParameterTypeUVE::Float}, "(fixed value)");
+                        if (node.parameter.empty()) {
+                            drag("Weight", node.value, 0.01F, 0.0F, 1.0F);
+                        }
+                        RowUVE("Bones");
+                        ImGui::TextDisabled("%s", node.bones.empty() ? "whole body" : "branches below:");
+                        std::optional<std::size_t> removeBone;
+                        for (std::size_t bone = 0U; bone < node.bones.size(); ++bone) {
+                            ImGui::PushID(static_cast<int>(bone) + 7000);
+                            RowUVE("");
+                            ImGui::TextUnformatted(node.bones[bone].c_str());
+                            ImGui::SameLine();
+                            if (ImGui::SmallButton("x")) {
+                                removeBone = bone;
+                            }
+                            ImGui::PopID();
+                        }
+                        if (removeBone.has_value()) {
+                            node.bones.erase(node.bones.begin() + static_cast<std::ptrdiff_t>(*removeBone));
+                            changed = true;
+                        }
+                        RowUVE("Add Bone");
+                        std::string added;
+                        if (EditTextUVE("##add-bone", std::string{}, added) && !added.empty() &&
+                            std::ranges::find(node.bones, added) == node.bones.end() &&
+                            node.bones.size() < Scene::kMaximumAnimationLayerBonesUVE) {
+                            node.bones.push_back(added);
+                            changed = true;
+                        }
+                        break;
+                    }
+                    case Kind::TimeSeek:
+                        parameterRow("Seek On", {AnimationParameterTypeUVE::Trigger, AnimationParameterTypeUVE::Bool},
+                                     "(never)");
+                        drag("Seek To (s)", node.value, 0.01F, 0.0F, 3600.0F);
+                        break;
                     case Kind::Output:
                         break;
                 }
@@ -406,7 +472,8 @@ void EditorUVE::DrawAnimationGraphPropertyUVE(const Core::TypeMetadataEntryUVE& 
                     const auto currentIt = indexById.find(current);
                     const std::string preview =
                         currentIt == indexById.end() ? std::string{"(empty)"} : NodeLabelUVE(nodes[currentIt->second]);
-                    const bool removable = node.kind == Kind::BlendSpace1D || node.kind == Kind::StateMachine;
+                    const bool removable = node.kind == Kind::BlendSpace1D || node.kind == Kind::BlendSpace2D ||
+                                           node.kind == Kind::Select || node.kind == Kind::StateMachine;
                     if (removable) {
                         ImGui::SetNextItemWidth(-ImGui::GetFrameHeight() - ImGui::GetStyle().ItemSpacing.x);
                     }
@@ -435,6 +502,9 @@ void EditorUVE::DrawAnimationGraphPropertyUVE(const Core::TypeMetadataEntryUVE& 
                             if (node.kind == Kind::BlendSpace1D && slot < node.points.size()) {
                                 node.points.erase(node.points.begin() + static_cast<std::ptrdiff_t>(slot));
                             }
+                            if (node.kind == Kind::BlendSpace2D && slot < node.points2D.size()) {
+                                node.points2D.erase(node.points2D.begin() + static_cast<std::ptrdiff_t>(slot));
+                            }
                             if (node.kind == Kind::StateMachine) {
                                 // Transitions touching the removed state go; later states shift down.
                                 const auto state = static_cast<std::uint32_t>(slot);
@@ -460,18 +530,32 @@ void EditorUVE::DrawAnimationGraphPropertyUVE(const Core::TypeMetadataEntryUVE& 
                         const std::string pointLabel = "  at";
                         drag(pointLabel.c_str(), node.points[slot], 0.01F, -1000.0F, 1000.0F);
                     }
+                    if (node.kind == Kind::BlendSpace2D && slot < node.points2D.size()) {
+                        RowUVE("  at");
+                        float xy[2] = {node.points2D[slot].x, node.points2D[slot].y};
+                        if (ImGui::DragFloat2("##at2", xy, 0.01F)) {
+                            node.points2D[slot] = Math::Vector2UVE{xy[0], xy[1]};
+                            continuous = true;
+                        }
+                        if (ImGui::IsItemDeactivated()) {
+                            static_cast<void>(CommitComponentPropertyPreviewForUVE(entry, property));
+                        }
+                    }
                     ImGui::PopID();
                 }
                 ImGui::EndTable();
             }
-            if (node.kind == Kind::BlendSpace1D || node.kind == Kind::StateMachine) {
-                if (ImGui::SmallButton(node.kind == Kind::StateMachine ? "+ State" : "+ Point") &&
-                    node.inputs.size() < Scene::kMaximumAnimationNodeInputsUVE) {
-                    node.inputs.push_back(0U);
-                    if (node.kind == Kind::BlendSpace1D) {
-                        node.points.push_back(node.points.empty() ? 0.0F : node.points.back() + 1.0F);
+            if (node.kind == Kind::BlendSpace1D || node.kind == Kind::BlendSpace2D || node.kind == Kind::Select ||
+                node.kind == Kind::StateMachine) {
+                const char* const label = node.kind == Kind::StateMachine ? "+ State"
+                                          : node.kind == Kind::Select    ? "+ Option"
+                                                                         : "+ Point";
+                if (ImGui::SmallButton(label)) {
+                    std::vector<AnimationGraphNodeUVE> grown{node};
+                    if (AddAnimationGraphInputSlotUVE(grown, node.id)) {
+                        node = std::move(grown.front());
+                        changed = true;
                     }
-                    changed = true;
                 }
             }
 
@@ -593,30 +677,8 @@ void EditorUVE::DrawAnimationGraphPropertyUVE(const Core::TypeMetadataEntryUVE& 
     }
     if (ImGui::BeginPopup("##add-node")) {
         for (const Kind kind : kAddableKindsUVE) {
-            if (ImGui::MenuItem(KindLabelUVE(kind)) && nodes.size() < Scene::kMaximumAnimationGraphNodesUVE) {
-                AnimationGraphNodeUVE added;
-                added.id = Scene::NextAnimationGraphNodeIdUVE(nodes);
-                added.kind = kind;
-                added.name = KindLabelUVE(kind);
-                switch (kind) {
-                    case Kind::Blend2:
-                    case Kind::Additive:
-                    case Kind::OneShot:
-                        added.inputs = {0U, 0U};
-                        break;
-                    case Kind::TimeScale:
-                    case Kind::StateMachine:
-                        added.inputs = {0U};
-                        break;
-                    case Kind::BlendSpace1D:
-                        added.inputs = {0U, 0U};
-                        added.points = {0.0F, 1.0F};
-                        added.value = 0.0F;
-                        break;
-                    default:
-                        break;
-                }
-                nodes.push_back(std::move(added));
+            if (ImGui::MenuItem(KindLabelUVE(kind)) &&
+                AddAnimationGraphNodeUVE(nodes, kind, Math::Vector2UVE{}) != 0U) {
                 changed = true;
             }
             if (ImGui::IsItemHovered()) {

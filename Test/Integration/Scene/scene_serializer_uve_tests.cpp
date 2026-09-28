@@ -681,6 +681,22 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_AnimationTargetsRemapToTheRestoredEnti
     blend.nodes[1].loop = false;
     blend.nodes[1].sync = true; // round-trips even where it has no effect
     blend.nodes.push_back(machine);
+    // The later kinds' own fields, on loose nodes (a graph half-built is still saved).
+    AnimationGraphNodeUVE space;
+    space.id = 4U;
+    space.kind = AnimationGraphNodeKindUVE::BlendSpace2D;
+    space.inputs = {0U, 0U};
+    space.points2D = {Math::Vector2UVE{0.0F, 0.0F}, Math::Vector2UVE{-1.5F, 2.0F}};
+    space.parameterY = "speed";
+    space.valueY = 0.75F;
+    blend.nodes.push_back(space);
+    AnimationGraphNodeUVE layered;
+    layered.id = 5U;
+    layered.kind = AnimationGraphNodeKindUVE::LayeredBlend;
+    layered.inputs = {0U, 0U};
+    layered.bones = {"Spine", "LeftShoulder"};
+    layered.restart = false;
+    blend.nodes.push_back(layered);
     ASSERT_TRUE(IsAnimationTreeComponentValidUVE(blend)) << DescribeAnimationGraphProblemUVE(blend);
     entityManager.AddComponentUVE<AnimationTreeComponentUVE>(player, blend);
 

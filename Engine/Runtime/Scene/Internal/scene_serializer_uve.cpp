@@ -216,6 +216,10 @@ namespace {
                                    {"threshold", transition.threshold},
                                    {"fadeSeconds", transition.fadeSeconds}});
         }
+        nlohmann::json points2D = nlohmann::json::array();
+        for (const Math::Vector2UVE& point : node.points2D) {
+            points2D.push_back({point.x, point.y});
+        }
         nodes.push_back({{"id", node.id},
                          {"kind", static_cast<std::uint8_t>(node.kind)},
                          {"name", node.name},
@@ -229,6 +233,13 @@ namespace {
                          {"points", node.points},
                          {"fadeSeconds", node.fadeSeconds},
                          {"sync", node.sync},
+                         {"points2D", std::move(points2D)},
+                         {"parameterY", node.parameterY},
+                         {"valueY", node.valueY},
+                         {"bones", node.bones},
+                         {"restart", node.restart},
+                         {"areaMin", {node.areaMin.x, node.areaMin.y}},
+                         {"areaMax", {node.areaMax.x, node.areaMax.y}},
                          {"entryState", node.entryState},
                          {"transitions", std::move(transitions)}});
     }
@@ -294,6 +305,24 @@ namespace {
             node.points = item.value("points", std::vector<float>{});
             node.fadeSeconds = item.value("fadeSeconds", 0.2F);
             node.sync = item.value("sync", false);
+            node.parameterY = item.value("parameterY", std::string{});
+            node.valueY = item.value("valueY", 0.0F);
+            node.bones = item.value("bones", std::vector<std::string>{});
+            node.restart = item.value("restart", true);
+            const auto readPair = [&item](const char* key, Math::Vector2UVE& out) {
+                if (const auto found = item.find(key); found != item.end() && found->is_array() && found->size() == 2U) {
+                    out = Math::Vector2UVE{(*found)[0].get<float>(), (*found)[1].get<float>()};
+                }
+            };
+            readPair("areaMin", node.areaMin);
+            readPair("areaMax", node.areaMax);
+            if (const auto found = item.find("points2D"); found != item.end() && found->is_array()) {
+                for (const auto& point : *found) {
+                    if (point.is_array() && point.size() == 2U) {
+                        node.points2D.push_back(Math::Vector2UVE{point[0].get<float>(), point[1].get<float>()});
+                    }
+                }
+            }
             node.entryState = item.value("entryState", std::uint32_t{0});
             for (const nlohmann::json& transitionJson : item.value("transitions", nlohmann::json::array())) {
                 AnimationTransitionUVE transition;

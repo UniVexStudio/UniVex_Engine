@@ -97,5 +97,49 @@ TEST(AnimationGraphEditingUVETest, RemovingAStateFixesItsTransitions) {
     EXPECT_FALSE(AddAnimationGraphInputSlotUVE(nodes, 2U)) << "a Clip has no slots to add";
 }
 
+TEST(AnimationGraphEditingUVETest, TheNewKindsStartReadyToWire) {
+    auto nodes = Scene::AnimationTreeComponentUVE::MakeDefaultAnimationGraphUVE();
+    const std::uint32_t space = AddAnimationGraphNodeUVE(nodes, Kind::BlendSpace2D, {});
+    EXPECT_EQ(NodeUVE(nodes, space).inputs.size(), 3U);
+    ASSERT_TRUE(AddAnimationGraphInputSlotUVE(nodes, space));
+    EXPECT_EQ(NodeUVE(nodes, space).points2D.size(), 4U);
+    EXPECT_EQ(NodeUVE(nodes, space).points2D.back().x, 2.0F) << "past the furthest point";
+    ASSERT_TRUE(RemoveAnimationGraphInputSlotUVE(nodes, space, 0U));
+    EXPECT_EQ(NodeUVE(nodes, space).points2D.size(), 3U);
+    const std::uint32_t select = AddAnimationGraphNodeUVE(nodes, Kind::Select, {});
+    EXPECT_TRUE(AddAnimationGraphInputSlotUVE(nodes, select));
+    EXPECT_EQ(AnimationGraphSlotLabelUVE(Kind::Select, 2U), "Option 2");
+    static_cast<void>(AddAnimationGraphNodeUVE(nodes, Kind::LayeredBlend, {}));
+    static_cast<void>(AddAnimationGraphNodeUVE(nodes, Kind::TimeSeek, {}));
+    EXPECT_TRUE(Scene::DescribeAnimationGraphProblemUVE(TreeOfUVE(nodes)).empty())
+        << Scene::DescribeAnimationGraphProblemUVE(TreeOfUVE(nodes));
+}
+
+TEST(AnimationGraphEditingUVETest, BlendSpacePointsBringTheirOwnClip) {
+    auto nodes = Scene::AnimationTreeComponentUVE::MakeDefaultAnimationGraphUVE();
+    const std::uint32_t line = AddAnimationGraphNodeUVE(nodes, Kind::BlendSpace1D, {}); // points 0 and 1
+    const std::uint32_t walk = AddBlendSpacePointUVE(nodes, line, {0.5F, 0.0F}, Asset::AssetGuidUVE{7U}, "walk");
+    ASSERT_NE(walk, 0U);
+    EXPECT_EQ(NodeUVE(nodes, line).points, (std::vector<float>{0.0F, 0.5F, 1.0F})) << "landed in order";
+    EXPECT_EQ(NodeUVE(nodes, line).inputs[1], walk) << "wired to its slot";
+    EXPECT_EQ(NodeUVE(nodes, walk).clip, Asset::AssetGuidUVE{7U});
+    EXPECT_EQ(NodeUVE(nodes, walk).name, "walk");
+    EXPECT_EQ(AddBlendSpacePointUVE(nodes, line, {0.5F, 0.0F}, {}, "again"), 0U) << "a 1D point on another";
+
+    EXPECT_FALSE(MoveBlendSpacePointUVE(nodes, line, 1U, {1.5F, 0.0F})) << "past its right neighbour";
+    EXPECT_TRUE(MoveBlendSpacePointUVE(nodes, line, 1U, {0.75F, 0.0F}));
+
+    ASSERT_TRUE(RemoveBlendSpacePointUVE(nodes, line, 1U));
+    EXPECT_EQ(NodeUVE(nodes, line).points, (std::vector<float>{0.0F, 1.0F}));
+    EXPECT_EQ(std::ranges::find(nodes, walk, &Scene::AnimationGraphNodeUVE::id), nodes.end()) << "its clip went too";
+
+    const std::uint32_t plane = AddAnimationGraphNodeUVE(nodes, Kind::BlendSpace2D, {});
+    ASSERT_NE(AddBlendSpacePointUVE(nodes, plane, {-1.0F, 0.0F}, {}, ""), 0U);
+    EXPECT_EQ(NodeUVE(nodes, plane).points2D.size(), 4U);
+    EXPECT_FALSE(MoveBlendSpacePointUVE(nodes, plane, 3U, {0.0F, 0.0F})) << "onto another point";
+    EXPECT_TRUE(Scene::DescribeAnimationGraphProblemUVE(TreeOfUVE(nodes)).empty())
+        << Scene::DescribeAnimationGraphProblemUVE(TreeOfUVE(nodes));
+}
+
 } // namespace
 } // namespace UVE::Editor
