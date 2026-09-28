@@ -37,7 +37,11 @@
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/math/matrix4x4_uve.h"
 #include "uve/math/quaternion_uve.h"
+#include "uve/nodes/3d/animation_player_uve.h"
+#include "uve/nodes/3d/mesh_instance_3d_uve.h"
+#include "uve/nodes/3d/node_3d_uve.h"
 #include "uve/nodes/3d/skeleton_3d_uve.h"
+#include "uve/scene/nodes/scene_node_type_uve.h"
 #include "uve/scene/scene_component_metadata_uve.h"
 
 namespace UVE::Editor {
@@ -80,6 +84,111 @@ void ReadOnlyRowUVE(const char* const label, const char* const value) {
 }
 
 } // namespace
+
+Scene::EntityUVE EditorUVE::PlaceModelSourceUVE(const std::filesystem::path& relativeSource,
+                                                Scene::EntityUVE parent) {
+    if (!IsAuthoringCommandAllowedUVE() || !IsModelSourcePathUVE(relativeSource)) {
+        return Scene::kInvalidEntityUVE;
+    }
+    const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    const std::filesystem::path source = project.contentRoot / relativeSource;
+    std::error_code error;
+    if (!std::filesystem::is_regular_file(source, error)) {
+        return Scene::kInvalidEntityUVE;
+    }
+    const std::optional<Asset::GltfSkeletonUVE> skeleton = ReadSkeletonSourceUVE(source, Scene::kMaximumSkeletonBonesUVE);
+    const std::filesystem::path importedModel = GetImportedModelPathUVE(relativeSource);
+    const bool hasMesh = std::filesystem::is_regular_file(importedModel, error);
+    if (!hasMesh && !skeleton.has_value()) {
+        m_contentStatusMessage = relativeSource.filename().string() + " is still importing.";
+        return Scene::kInvalidEntityUVE;
+    }
+    // The file's takes, imported beside it as <file>_<take>.uvanim (importing them now if needed).
+    std::vector<std::filesystem::path> clips;
+    if (skeleton.has_value()) {
+        static_cast<void>(ImportModelAnimationsUVE(source));
+        const std::string prefix = source.stem().string() + "_";
+        for (const std::filesystem::directory_entry& entry :
+             std::filesystem::directory_iterator(source.parent_path(), error)) {
+            const std::string name = entry.path().filename().string();
+            if (entry.path().extension() == ".uvanim" && name.starts_with(prefix)) {
+                clips.push_back(entry.path());
+            }
+        }
+        std::sort(clips.begin(), clips.end());
+    }
+
+    if (parent == Scene::kInvalidEntityUVE || !IsDocumentEntityUVE(parent)) {
+        parent = ResolveNewNodeParentUVE();
+    }
+    const EditorSelectionSnapshotUVE selectionBefore = CaptureSelectionSnapshotUVE();
+    const bool dirtyBefore = m_sceneDirty;
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = m_services->GetSceneGraphUVE();
+    const std::string stem = relativeSource.stem().string();
+    using Kind = Scene::Nodes::SceneNodeKindUVE;
+    const auto make = [&](const std::string& name, const Kind kind, const auto& definition, const auto& apply,
+                          const Scene::EntityUVE under) {
+        const Scene::EntityUVE entity = CreateDocumentEntityShellInternalUVE(MakeUniqueDocumentEntityNameUVE(name));
+        if (entity != Scene::kInvalidEntityUVE) {
+            apply(entityManager, entity, definition);
+            Scene::SetSceneNodeKindUVE(entityManager, entity, kind);
+            if (under != Scene::kInvalidEntityUVE) {
+                sceneGraph.SetParentUVE(entityManager, entity, under);
+            }
+        }
+        return entity;
+    };
+    const Asset::AssetGuidUVE meshGuid =
+        hasMesh ? m_services->GetAssetDatabaseUVE().RegisterUVE(importedModel) : Asset::kInvalidAssetGuidUVE;
+    Scene::EntityUVE root = Scene::kInvalidEntityUVE;
+    if (!skeleton.has_value()) {
+        Scene::MeshInstance3DNodeDefinitionUVE definition;
+        definition.mesh.meshGuid = meshGuid;
+        root = make(stem, Kind::MeshInstance3D, definition, Scene::ApplyMeshInstance3DNodeDefinitionUVE, parent);
+    } else {
+        root = make(stem, Kind::Node3D, Scene::Node3DNodeDefinitionUVE{}, Scene::ApplyNode3DNodeDefinitionUVE, parent);
+        const Scene::EntityUVE armature =
+            make("Armature", Kind::Node3D, Scene::Node3DNodeDefinitionUVE{}, Scene::ApplyNode3DNodeDefinitionUVE, root);
+        Scene::Skeleton3DNodeDefinitionUVE skeletonDefinition;
+        skeletonDefinition.skeleton.skeletonAssetPath = relativeSource.generic_string();
+        for (const Asset::GltfJointUVE& joint : skeleton->joints) {
+            skeletonDefinition.skeleton.bones.push_back(
+                Scene::SkeletonBoneUVE{joint.name, joint.parentIndex, joint.translation, joint.rotation, joint.scale});
+        }
+        const Scene::EntityUVE skeletonEntity =
+            make("Skeleton3D", Kind::Skeleton3D, skeletonDefinition, Scene::ApplySkeleton3DNodeDefinitionUVE, armature);
+        if (hasMesh) {
+            Scene::MeshInstance3DNodeDefinitionUVE mesh;
+            mesh.mesh.meshGuid = meshGuid;
+            static_cast<void>(make(stem + " Mesh", Kind::MeshInstance3D, mesh, Scene::ApplyMeshInstance3DNodeDefinitionUVE, skeletonEntity));
+        }
+        if (!clips.empty()) {
+            Scene::AnimationPlayerNodeDefinitionUVE player;
+            player.player.clip = m_services->GetAssetDatabaseUVE().RegisterUVE(clips.front());
+            player.player.loopMode = Scene::AnimationLoopModeUVE::Loop;
+            static_cast<void>(make("AnimationPlayer", Kind::AnimationPlayer, player, Scene::ApplyAnimationPlayerNodeDefinitionUVE, root));
+        }
+    }
+    if (root == Scene::kInvalidEntityUVE) {
+        return Scene::kInvalidEntityUVE;
+    }
+    InvalidateHierarchyFilterCacheUVE();
+    PlaceNewDocumentNodeUVE(root);
+    const std::optional<Scene::SceneSnapshotUVE> snapshot = CaptureSubtreeUVE(root);
+    if (!snapshot.has_value()) {
+        DestroyDocumentSubtreeUVE(root);
+        RestoreSelectionUVE(selectionBefore);
+        m_sceneDirty = dirtyBefore;
+        return Scene::kInvalidEntityUVE;
+    }
+    SelectEntityUVE(root);
+    m_sceneDirty = true;
+    RecordHistoryUVE(SceneNodeCreationHistoryEntryUVE{*snapshot, Scene::ResolveSceneNodeKindUVE(entityManager, root),
+                                                      root, selectionBefore, CaptureSelectionSnapshotUVE(),
+                                                      dirtyBefore, true, parent});
+    return root;
+}
 
 bool EditorUVE::BindSelectedSkeletonSourceUVE(const std::filesystem::path& relativeSource) {
     const Core::TypeMetadataEntryUVE* const entry =
@@ -300,9 +409,11 @@ void EditorUVE::BuildSkeletonOverlayUVE(std::vector<ViewportBoneUVE>& outBones) 
                     return;
                 }
             }
-            // Rest pose in world space: each bone is its parent's frame times its own local TRS,
-            // and bones are stored parent-first, so one forward pass is enough.
+            // Current pose (the animated one while a player drives it, else rest) in world space:
+            // each bone is its parent's frame times its own local TRS, and bones are stored
+            // parent-first, so one forward pass is enough.
             const std::size_t count = skeleton.bones.size();
+            const std::vector<Scene::SkeletonBonePoseUVE> pose = Scene::GetSkeletonCurrentPoseUVE(skeleton);
             std::vector<Math::Matrix4x4UVE> frames(count);
             std::vector<Math::Vector3UVE> heads(count);
             std::vector<Math::Vector3UVE> upAxes(count);
@@ -310,8 +421,9 @@ void EditorUVE::BuildSkeletonOverlayUVE(std::vector<ViewportBoneUVE>& outBones) 
                 Math::Matrix4x4UVE::ComposeTrsUVE(world.worldPosition, world.worldRotation, world.worldScale);
             for (std::size_t index = 0U; index < count; ++index) {
                 const Scene::SkeletonBoneUVE& bone = skeleton.bones[index];
+                const Scene::SkeletonBonePoseUVE& bonePose = pose[index];
                 const Math::Matrix4x4UVE local =
-                    Math::Matrix4x4UVE::ComposeTrsUVE(bone.localPosition, bone.localRotation, bone.localScale);
+                    Math::Matrix4x4UVE::ComposeTrsUVE(bonePose.position, bonePose.rotation, bonePose.scale);
                 frames[index] = (bone.parentIndex < 0 ? root : frames[static_cast<std::size_t>(bone.parentIndex)]) * local;
                 heads[index] = Math::TransformPointUVE(frames[index], Math::Vector3UVE{});
                 upAxes[index] = subtract(Math::TransformPointUVE(frames[index], Math::Vector3UVE{0.0F, 1.0F, 0.0F}),
