@@ -17,6 +17,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <optional>
+#include <ctime>
+#include <cstdio>
 #include <filesystem>
 #include <functional>
 #include <map>
@@ -482,7 +485,7 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
         ImGui::OpenPopup("##content-settings-menu");
     }
     if (ImGui::BeginPopup("##content-settings-menu")) {
-        ImGui::TextDisabled("Items");
+        ImGui::TextDisabled("Tiles mode");
         struct ModeUVE final {
             const char* label;
             ContentBrowserViewModeUVE mode;
@@ -903,6 +906,35 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
     const std::filesystem::path itemsDirectory = shownShelf != nullptr ? std::filesystem::path{} : m_contentBrowserDirectory;
     ImGui::BeginChild("##content-items", ImVec2{0.0F, bodyHeight}, false);
     {
+        // The five modes, side by side; the lit one is on.
+        struct ModeChoiceUVE final {
+            const char* label;
+            ContentBrowserModeUVE mode;
+            const char* tooltip;
+        };
+        constexpr std::array<ModeChoiceUVE, 5> kModeChoices{{
+            {"Tiles", ContentBrowserModeUVE::Tiles, "One folder, by picture"},
+            {"Columns", ContentBrowserModeUVE::Columns, "Walk down folders side by side; a picked file shows its details"},
+            {"Details", ContentBrowserModeUVE::Details, "A table to sort by size, date, kind or folder"},
+            {"Recent", ContentBrowserModeUVE::Recent, "What changed lately, in this folder and everything below"},
+            {"Board", ContentBrowserModeUVE::Board, "Everything below this folder, laid out by kind"},
+        }};
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{1.0F, ImGui::GetStyle().ItemSpacing.y});
+        for (const ModeChoiceUVE& choice : kModeChoices) {
+            const bool on = m_contentBrowserMode == choice.mode;
+            ImGui::PushStyleColor(ImGuiCol_Button, on ? kAccentUVE : ImGui::GetStyleColorVec4(ImGuiCol_FrameBg));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, on ? kAccentHoveredUVE : ImGui::GetStyleColorVec4(ImGuiCol_FrameBgHovered));
+            if (ImGui::Button((std::string{choice.label} + "##content-mode").c_str())) {
+                m_contentBrowserMode = choice.mode;
+            }
+            ImGui::PopStyleColor(2);
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+                ImGui::SetTooltip("%s", choice.tooltip);
+            }
+            ImGui::SameLine();
+        }
+        ImGui::PopStyleVar();
+        ImGui::SameLine(0.0F, 8.0F);
         const bool focused = m_contentBrowserTypeFocus != ContentBrowserTypeFocusUVE::All;
         const std::string filterLabel = focused ? std::string{"Only "} + GetContentBrowserFocusLabelUVE(m_contentBrowserTypeFocus)
                                                 : std::string{"Filter"};
@@ -939,169 +971,466 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
         }
         ImGui::PopStyleVar();
 
-        std::vector<std::size_t> items = shownShelf != nullptr
-                                             ? ListContentShelfUVE(snapshot.entries, *shownShelf, m_assetFilter)
-                                             : ListContentFolderUVE(snapshot.entries, itemsDirectory, m_assetFilter);
-        std::erase_if(items, [&](const std::size_t index) { return !DoesContentBrowserEntryMatchFocusUVE(snapshot.entries[index]); });
+        const std::filesystem::path treeRoot = itemsDirectory;
         const bool searching = m_assetFilter.find_first_not_of(' ') != std::string::npos;
+        // Columns walks folders, which a shelf does not have; a shelf shows as Tiles there.
+        const ContentBrowserModeUVE mode = shownShelf != nullptr && m_contentBrowserMode == ContentBrowserModeUVE::Columns
+                                               ? ContentBrowserModeUVE::Tiles
+                                               : m_contentBrowserMode;
+        const bool wholeTree = mode == ContentBrowserModeUVE::Recent || mode == ContentBrowserModeUVE::Board;
+        std::vector<std::size_t> items = shownShelf != nullptr ? ListContentShelfUVE(snapshot.entries, *shownShelf, m_assetFilter)
+                                         : wholeTree ? ListContentTreeUVE(snapshot.entries, treeRoot, m_assetFilter)
+                                                     : ListContentFolderUVE(snapshot.entries, itemsDirectory, m_assetFilter);
+        std::erase_if(items, [&](const std::size_t index) { return !DoesContentBrowserEntryMatchFocusUVE(snapshot.entries[index]); });
+        if (mode == ContentBrowserModeUVE::Recent) {
+            std::erase_if(items, [&](const std::size_t index) {
+                return snapshot.entries[index].kind == Asset::ProjectFileEntryKindUVE::Directory;
+            });
+        }
 
-        const bool listMode = m_contentBrowserViewMode == ContentBrowserViewModeUVE::List;
-        const bool largeTiles = m_contentBrowserViewMode == ContentBrowserViewModeUVE::LargeTiles;
-        const float iconSize = listMode ? 18.0F : (largeTiles ? 72.0F : 44.0F);
-        // A tile: icon, then the name, then the kind of file in the muted colour.
-        const float cardHeight = listMode ? 24.0F : iconSize + 14.0F + line * 2.0F;
-        constexpr float kCardPaddingUVE = 4.0F;
-        const float statusHeight = line + ImGui::GetStyle().ItemSpacing.y * 2.0F;
+        // What each item looks like: its kind (a model source is relabelled by what its file turned
+        // out to hold) and its picture (a preview of the file itself when there is one).
+        struct ItemLookUVE final {
+            ContentBrowserItemTypeUVE type = ContentBrowserItemTypeUVE::File;
+            const char* typeLabel = "";
+            const EditorModelSourceInfoUVE* modelSource = nullptr;
+            std::uintptr_t icon = 0U;
+        };
+        const auto lookOf = [this](const Asset::ProjectFileEntryUVE& entry) {
+            ItemLookUVE look;
+            look.type = ClassifyContentBrowserEntryUVE(entry);
+            look.modelSource = look.type == ContentBrowserItemTypeUVE::Mesh ? FindModelSourceInfoUVE(entry.relativePath) : nullptr;
+            if (look.modelSource != nullptr && look.modelSource->animationOnly) {
+                look.type = ContentBrowserItemTypeUVE::Animation;
+            } else if (look.modelSource != nullptr && look.modelSource->rigged) {
+                look.type = ContentBrowserItemTypeUVE::Model;
+            }
+            look.typeLabel = GetContentBrowserItemTypeLabelUVE(look.type);
+            const std::uintptr_t preview =
+                look.type == ContentBrowserItemTypeUVE::Texture ? GetTextureThumbnailUVE(entry.relativePath)
+                : look.type == ContentBrowserItemTypeUVE::Mesh || look.type == ContentBrowserItemTypeUVE::Model
+                    ? GetMeshThumbnailUVE(entry.relativePath)
+                    : 0U;
+            look.icon = preview != 0U ? preview : m_uiAssets.GetContentTypeIconTextureIdUVE(look.typeLabel);
+            return look;
+        };
+        const auto factsOf = [&](const Asset::ProjectFileEntryUVE& entry, const ItemLookUVE& look) {
+            const ContentFileFactsUVE disk = GetContentFileFactsUVE(snapshot.contentRoot, entry, snapshot.refreshGeneration);
+            const std::string folder = entry.relativePath.parent_path().generic_string();
+            return ContentItemFactsUVE{entry.relativePath.filename().generic_string(), look.typeLabel,
+                                       folder.empty() ? std::string{"Content"} : folder, disk.size, disk.modified,
+                                       entry.kind == Asset::ProjectFileEntryKindUVE::Directory};
+        };
         std::size_t selectedShown = 0U;
+        // Everything an item does besides being drawn: tooltip, drag, select, open, menus. Called
+        // right after the item's own Selectable.
+        const auto interact = [&](const Asset::ProjectFileEntryUVE& entry, const ItemLookUVE& look, const bool clicked) {
+            const bool hovered = ImGui::IsItemHovered();
+            dragContentItem(entry, look.type == ContentBrowserItemTypeUVE::Entity || look.type == ContentBrowserItemTypeUVE::Prefab);
+            const std::string displayLabel = entry.relativePath.filename().generic_string();
+            if (hovered && !ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
+                // Anything but a plain folder listing mixes folders, so say where the file lives.
+                const bool mixed = searching || shownShelf != nullptr || wholeTree;
+                const std::string where = entry.relativePath.parent_path().generic_string();
+                const std::string whereLine = mixed ? "\nIn: " + (where.empty() ? std::string{"Content"} : where) : std::string{};
+                if (look.modelSource != nullptr && !look.modelSource->summary.empty()) {
+                    ImGui::SetTooltip("%s\nType: %s%s\n%s", displayLabel.c_str(), look.typeLabel, whereLine.c_str(),
+                                      look.modelSource->summary.c_str());
+                } else {
+                    ImGui::SetTooltip("%s\nType: %s%s", displayLabel.c_str(), look.typeLabel, whereLine.c_str());
+                }
+            }
+            const bool contextClicked =
+                hovered && (ImGui::IsMouseClicked(ImGuiMouseButton_Right) || ImGui::IsMouseReleased(ImGuiMouseButton_Right));
+            if (clicked) {
+                selectEntry(entry);
+                if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                    if (entry.kind == Asset::ProjectFileEntryKindUVE::Directory) {
+                        goToFolder(entry.relativePath);
+                    } else if (look.type == ContentBrowserItemTypeUVE::Entity) {
+                        m_contentStatusMessage = "Opening an entity's tree needs the Entity Editor, which is not in this build yet.";
+                    }
+                }
+            }
+            if (contextClicked) {
+                selectEntry(entry);
+                openContext(entry);
+            } else {
+                trackLongPress(entry, hovered);
+            }
+        };
+        const auto isSelected = [this](const Asset::ProjectFileEntryUVE& entry) {
+            return m_selectedProjectFile.has_value() && m_selectedProjectFile->relativePath == entry.relativePath;
+        };
+        // A row: icon, name, and a muted note right-aligned (the type, a time...).
+        const auto drawRow = [&](const Asset::ProjectFileEntryUVE& entry, const ItemLookUVE& look, const std::string& note,
+                                 const float rowHeight) {
+            const bool selected = isSelected(entry);
+            selectedShown += selected ? 1U : 0U;
+            const ImVec2 rowMin = ImGui::GetCursorScreenPos();
+            const float width = std::max(40.0F, ImGui::GetContentRegionAvail().x);
+            const bool clicked = ImGui::Selectable("##row", selected, ImGuiSelectableFlags_AllowDoubleClick, ImVec2{width, rowHeight});
+            interact(entry, look, clicked);
+            ImDrawList& drawList = *ImGui::GetWindowDrawList();
+            const float iconSize = std::min(18.0F, rowHeight - 2.0F);
+            const float iconY = std::floor(rowMin.y + (rowHeight - iconSize) * 0.5F);
+            if (look.icon != 0U) {
+                drawList.AddImage(static_cast<ImTextureID>(look.icon), ImVec2{rowMin.x + 4.0F, iconY},
+                                  ImVec2{rowMin.x + 4.0F + iconSize, iconY + iconSize});
+            }
+            const float textY = rowMin.y + (rowHeight - line) * 0.5F;
+            const float noteWidth = ImGui::CalcTextSize(note.c_str()).x;
+            const float nameMax = std::max(20.0F, width - iconSize - noteWidth - 32.0F);
+            if (!DrawContentRenameFieldUVE(snapshot.contentRoot, entry, rowMin.x + iconSize + 10.0F, rowMin.y, nameMax)) {
+                drawList.AddText(ImVec2{rowMin.x + iconSize + 12.0F, textY}, ImGui::GetColorU32(ImGuiCol_Text),
+                                 FitLabelUVE(entry.relativePath.filename().generic_string(), nameMax).c_str());
+            }
+            drawList.AddText(ImVec2{rowMin.x + width - noteWidth - 8.0F, textY}, ImGui::GetColorU32(ImGuiCol_TextDisabled),
+                             note.c_str());
+        };
+        // A tile at the cursor: picture, then the name, then the kind in the muted colour.
+        const auto drawTile = [&](const Asset::ProjectFileEntryUVE& entry, const ItemLookUVE& look, const float tileWidth,
+                                  const float tileHeight, const float iconSize) {
+            constexpr float kPadding = 4.0F;
+            const bool selected = isSelected(entry);
+            selectedShown += selected ? 1U : 0U;
+            const ImVec2 cardMin = ImGui::GetCursorScreenPos();
+            const bool clicked = ImGui::Selectable("##card", selected, ImGuiSelectableFlags_AllowDoubleClick,
+                                                   ImVec2{tileWidth - kPadding, tileHeight - kPadding});
+            interact(entry, look, clicked);
+            ImDrawList& drawList = *ImGui::GetWindowDrawList();
+            if (look.icon != 0U) {
+                const float iconX = std::floor(cardMin.x + (tileWidth - iconSize) * 0.5F);
+                const float iconY = std::floor(cardMin.y + 6.0F);
+                drawList.AddImage(static_cast<ImTextureID>(look.icon), ImVec2{iconX, iconY}, ImVec2{iconX + iconSize, iconY + iconSize});
+            }
+            const float textMax = tileWidth - kPadding - 6.0F;
+            const float nameY = cardMin.y + iconSize + 10.0F;
+            if (!DrawContentRenameFieldUVE(snapshot.contentRoot, entry, cardMin.x + 2.0F, nameY - 2.0F, textMax)) {
+                drawList.AddText(ImVec2{cardMin.x + 5.0F, nameY}, ImGui::GetColorU32(ImGuiCol_Text),
+                                 FitLabelUVE(entry.relativePath.filename().generic_string(), textMax).c_str());
+            }
+            drawList.AddText(ImVec2{cardMin.x + 5.0F, nameY + line}, ImGui::GetColorU32(ImGuiCol_TextDisabled),
+                             FitLabelUVE(look.typeLabel, textMax).c_str());
+        };
+        const auto formatSize = [](const std::uintmax_t bytes) {
+            char text[32];
+            if (bytes < 1024U) {
+                std::snprintf(text, sizeof(text), "%ju B", bytes);
+            } else if (bytes < 1024U * 1024U) {
+                std::snprintf(text, sizeof(text), "%.1f KB", static_cast<double>(bytes) / 1024.0);
+            } else {
+                std::snprintf(text, sizeof(text), "%.1f MB", static_cast<double>(bytes) / (1024.0 * 1024.0));
+            }
+            return std::string{text};
+        };
+        const auto formatTime = [](const std::int64_t seconds, const char* format) {
+            if (seconds == 0) {
+                return std::string{"-"};
+            }
+            const std::time_t time = static_cast<std::time_t>(seconds);
+            std::tm local{};
+            localtime_r(&time, &local);
+            char text[32];
+            std::strftime(text, sizeof(text), format, &local);
+            return std::string{text};
+        };
+        const float tileIcon = m_contentBrowserViewMode == ContentBrowserViewModeUVE::LargeTiles ? 72.0F : 44.0F;
+        const float tileWidth = tileIcon + 40.0F;
+        const float tileHeight = tileIcon + 14.0F + line * 2.0F;
+        const float statusHeight = line + ImGui::GetStyle().ItemSpacing.y * 2.0F;
+        const ImVec2 areaSize{0.0F, std::max(line * 2.0F, ImGui::GetContentRegionAvail().y - statusHeight)};
+        std::string statusNote;
 
         ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4{0.0F, 0.0F, 0.0F, 0.0F});
-        if (ImGui::BeginChild("##content-browser-grid",
-                              ImVec2{0.0F, std::max(line * 2.0F, ImGui::GetContentRegionAvail().y - statusHeight)}, false,
-                              ImGuiWindowFlags_AlwaysVerticalScrollbar)) {
-            const float tileWidth = iconSize + 40.0F;
-            const float availableWidth = std::max(tileWidth, ImGui::GetContentRegionAvail().x);
-            const float cardWidth = listMode ? availableWidth : tileWidth;
-            const int columns = listMode ? 1 : std::max(1, static_cast<int>(availableWidth / cardWidth));
-            const ImVec2 gridOrigin = ImGui::GetCursorPos();
-            ImDrawList* const gridDrawList = ImGui::GetWindowDrawList();
-            for (std::size_t position = 0U; position < items.size(); ++position) {
-                const Asset::ProjectFileEntryUVE& entry = snapshot.entries[items[position]];
-                const int column = static_cast<int>(position) % columns;
-                const int row = static_cast<int>(position) / columns;
-                ContentBrowserItemTypeUVE type = ClassifyContentBrowserEntryUVE(entry);
-                // A model source is relabelled by what its file turned out to hold.
-                const EditorModelSourceInfoUVE* const modelSource =
-                    type == ContentBrowserItemTypeUVE::Mesh ? FindModelSourceInfoUVE(entry.relativePath) : nullptr;
-                if (modelSource != nullptr && modelSource->animationOnly) {
-                    type = ContentBrowserItemTypeUVE::Animation;
-                } else if (modelSource != nullptr && modelSource->rigged) {
-                    type = ContentBrowserItemTypeUVE::Model;
+        if (mode == ContentBrowserModeUVE::Details) {
+            // A table to sort: by name, kind, size, last change or folder.
+            constexpr ImGuiTableFlags tableFlags = ImGuiTableFlags_Sortable | ImGuiTableFlags_Resizable | ImGuiTableFlags_RowBg |
+                                                   ImGuiTableFlags_ScrollY | ImGuiTableFlags_BordersInnerV |
+                                                   ImGuiTableFlags_SizingStretchProp;
+            if (ImGui::BeginTable("##content-details", 5, tableFlags, areaSize)) {
+                ImGui::TableSetupScrollFreeze(0, 1);
+                ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_DefaultSort, 3.0F, static_cast<ImGuiID>(ContentSortKeyUVE::Name));
+                ImGui::TableSetupColumn("Type", 0, 1.2F, static_cast<ImGuiID>(ContentSortKeyUVE::Type));
+                ImGui::TableSetupColumn("Size", ImGuiTableColumnFlags_PreferSortDescending, 1.0F,
+                                        static_cast<ImGuiID>(ContentSortKeyUVE::Size));
+                ImGui::TableSetupColumn("Modified", ImGuiTableColumnFlags_PreferSortDescending, 1.6F,
+                                        static_cast<ImGuiID>(ContentSortKeyUVE::Modified));
+                ImGui::TableSetupColumn("Folder", 0, 1.6F, static_cast<ImGuiID>(ContentSortKeyUVE::Folder));
+                ImGui::TableHeadersRow();
+                if (ImGuiTableSortSpecs* const specs = ImGui::TableGetSortSpecs(); specs != nullptr && specs->SpecsCount > 0) {
+                    m_contentSortKey = static_cast<ContentSortKeyUVE>(specs->Specs[0].ColumnUserID);
+                    m_contentSortAscending = specs->Specs[0].SortDirection != ImGuiSortDirection_Descending;
+                    specs->SpecsDirty = false;
                 }
-                const char* const typeLabel = GetContentBrowserItemTypeLabelUVE(type);
-                const std::string displayLabel = entry.relativePath.filename().generic_string();
-                ImGui::PushID(("content-item-" + entry.relativePath.generic_string()).c_str());
-                ImGui::SetCursorPos(ImVec2{gridOrigin.x + static_cast<float>(column) * cardWidth,
-                                           gridOrigin.y + static_cast<float>(row) * cardHeight});
-                const ImVec2 cardMin = ImGui::GetCursorScreenPos();
-                const bool selected = m_selectedProjectFile.has_value() &&
-                                      m_selectedProjectFile->relativePath == entry.relativePath;
-                selectedShown += selected ? 1U : 0U;
-                const bool clicked = ImGui::Selectable("##card", selected, ImGuiSelectableFlags_AllowDoubleClick,
-                                                       ImVec2{cardWidth - kCardPaddingUVE, cardHeight - kCardPaddingUVE});
-                const bool rowHovered = ImGui::IsItemHovered();
-                // An entity asset drags into the Scene panel or the viewport to be placed there; any
-                // item drags onto a shelf.
-                dragContentItem(entry, type == ContentBrowserItemTypeUVE::Entity || type == ContentBrowserItemTypeUVE::Prefab);
-                if (rowHovered && !ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
-                    // A search or a shelf mixes folders, so the tooltip says where the file lives.
-                    const std::string where = entry.relativePath.parent_path().generic_string();
-                    const std::string whereLine = (searching || shownShelf != nullptr)
-                                                      ? "\nIn: " + (where.empty() ? std::string{"Content"} : where)
-                                                      : std::string{};
-                    if (modelSource != nullptr && !modelSource->summary.empty()) {
-                        ImGui::SetTooltip("%s\nType: %s%s\n%s", displayLabel.c_str(), typeLabel, whereLine.c_str(),
-                                          modelSource->summary.c_str());
+                std::vector<ItemLookUVE> looks;
+                std::vector<ContentItemFactsUVE> facts;
+                looks.reserve(items.size());
+                facts.reserve(items.size());
+                for (const std::size_t index : items) {
+                    looks.push_back(lookOf(snapshot.entries[index]));
+                    facts.push_back(factsOf(snapshot.entries[index], looks.back()));
+                }
+                std::vector<std::size_t> order(items.size());
+                for (std::size_t i = 0U; i < order.size(); ++i) {
+                    order[i] = i;
+                }
+                SortContentFactsUVE(order, facts, m_contentSortKey, m_contentSortAscending);
+                for (const std::size_t i : order) {
+                    const Asset::ProjectFileEntryUVE& entry = snapshot.entries[items[i]];
+                    ImGui::PushID(("details-" + entry.relativePath.generic_string()).c_str());
+                    ImGui::TableNextRow();
+                    ImGui::TableNextColumn();
+                    const bool selected = isSelected(entry);
+                    selectedShown += selected ? 1U : 0U;
+                    const float rowX = ImGui::GetCursorScreenPos().x;
+                    const bool clicked = ImGui::Selectable((iconGap + facts[i].name).c_str(), selected,
+                                                           ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowDoubleClick);
+                    interact(entry, looks[i], clicked);
+                    drawRowIcon(rowX, looks[i].icon);
+                    ImGui::TableNextColumn();
+                    ImGui::TextDisabled("%s", facts[i].type.c_str());
+                    ImGui::TableNextColumn();
+                    ImGui::TextUnformatted(facts[i].isFolder ? "-" : formatSize(facts[i].size).c_str());
+                    ImGui::TableNextColumn();
+                    ImGui::TextUnformatted(formatTime(facts[i].modified, "%Y-%m-%d %H:%M").c_str());
+                    ImGui::TableNextColumn();
+                    ImGui::TextDisabled("%s", facts[i].folder.c_str());
+                    ImGui::PopID();
+                }
+                ImGui::EndTable();
+            }
+        } else if (ImGui::BeginChild("##content-browser-grid", areaSize, false,
+                                     mode == ContentBrowserModeUVE::Columns ? ImGuiWindowFlags_HorizontalScrollbar
+                                                                            : ImGuiWindowFlags_AlwaysVerticalScrollbar)) {
+            if (mode == ContentBrowserModeUVE::Tiles) {
+                // One folder by picture (or as a list, from Settings).
+                const bool listRows = m_contentBrowserViewMode == ContentBrowserViewModeUVE::List;
+                const float availableWidth = std::max(tileWidth, ImGui::GetContentRegionAvail().x);
+                const int columns = listRows ? 1 : std::max(1, static_cast<int>(availableWidth / tileWidth));
+                const ImVec2 origin = ImGui::GetCursorPos();
+                const float rowStep = listRows ? 24.0F : tileHeight;
+                for (std::size_t position = 0U; position < items.size(); ++position) {
+                    const Asset::ProjectFileEntryUVE& entry = snapshot.entries[items[position]];
+                    const ItemLookUVE look = lookOf(entry);
+                    ImGui::PushID(("content-item-" + entry.relativePath.generic_string()).c_str());
+                    ImGui::SetCursorPos(ImVec2{origin.x + static_cast<float>(static_cast<int>(position) % columns) * tileWidth,
+                                               origin.y + static_cast<float>(static_cast<int>(position) / columns) * rowStep});
+                    if (listRows) {
+                        drawRow(entry, look, look.typeLabel, 22.0F);
                     } else {
-                        ImGui::SetTooltip("%s\nType: %s%s", displayLabel.c_str(), typeLabel, whereLine.c_str());
+                        drawTile(entry, look, tileWidth, tileHeight, tileIcon);
                     }
+                    ImGui::PopID();
                 }
-                const std::uintptr_t contentThumbnail =
-                    type == ContentBrowserItemTypeUVE::Texture ? GetTextureThumbnailUVE(entry.relativePath)
-                    : type == ContentBrowserItemTypeUVE::Mesh || type == ContentBrowserItemTypeUVE::Model
-                        ? GetMeshThumbnailUVE(entry.relativePath)
-                        : 0U;
-                // A preview of the file itself when there is one, its type's icon otherwise - a rig
-                // with no geometry (bones only) has no mesh preview, and shows the Model icon.
-                const std::uintptr_t iconTexture =
-                    contentThumbnail != 0U ? contentThumbnail : m_uiAssets.GetContentTypeIconTextureIdUVE(typeLabel);
-                if (listMode) {
-                    // One row: icon, name, and the type right-aligned in the muted colour.
-                    const float iconY = std::floor(cardMin.y + (cardHeight - kCardPaddingUVE - iconSize) * 0.5F);
-                    if (iconTexture != 0U) {
-                        gridDrawList->AddImage(static_cast<ImTextureID>(iconTexture), ImVec2{cardMin.x + 4.0F, iconY},
-                                               ImVec2{cardMin.x + 4.0F + iconSize, iconY + iconSize});
-                    }
-                    const float textY = cardMin.y + (cardHeight - kCardPaddingUVE - line) * 0.5F;
-                    const float typeWidth = ImGui::CalcTextSize(typeLabel).x;
-                    const float nameMax = std::max(20.0F, cardWidth - iconSize - typeWidth - 32.0F);
-                    if (!DrawContentRenameFieldUVE(snapshot.contentRoot, entry, cardMin.x + iconSize + 10.0F, cardMin.y,
-                                                   nameMax)) {
-                        gridDrawList->AddText(ImVec2{cardMin.x + iconSize + 12.0F, textY}, ImGui::GetColorU32(ImGuiCol_Text),
-                                              FitLabelUVE(displayLabel, nameMax).c_str());
-                    }
-                    gridDrawList->AddText(ImVec2{cardMin.x + cardWidth - typeWidth - 12.0F, textY},
-                                          ImGui::GetColorU32(ImGuiCol_TextDisabled), typeLabel);
-                } else {
-                    if (iconTexture != 0U) {
-                        const float iconX = std::floor(cardMin.x + (cardWidth - iconSize) * 0.5F);
-                        const float iconY = std::floor(cardMin.y + 6.0F);
-                        gridDrawList->AddImage(static_cast<ImTextureID>(iconTexture), ImVec2{iconX, iconY},
-                                               ImVec2{iconX + iconSize, iconY + iconSize});
-                    }
-                    const float textMax = cardWidth - kCardPaddingUVE - 6.0F;
-                    const float nameY = cardMin.y + iconSize + 10.0F;
-                    if (!DrawContentRenameFieldUVE(snapshot.contentRoot, entry, cardMin.x + 2.0F, nameY - 2.0F, textMax)) {
-                        const std::string name = FitLabelUVE(displayLabel, textMax);
-                        gridDrawList->AddText(ImVec2{cardMin.x + 5.0F, nameY}, ImGui::GetColorU32(ImGuiCol_Text), name.c_str());
-                    }
-                    gridDrawList->AddText(ImVec2{cardMin.x + 5.0F, nameY + line}, ImGui::GetColorU32(ImGuiCol_TextDisabled),
-                                          FitLabelUVE(typeLabel, textMax).c_str());
+                if (!items.empty()) {
+                    const int totalRows = (static_cast<int>(items.size()) + columns - 1) / columns;
+                    ImGui::SetCursorPos(ImVec2{origin.x, origin.y + static_cast<float>(totalRows) * rowStep});
+                    ImGui::Dummy(ImVec2{0.0F, 0.0F});
                 }
-                const bool contextClicked = rowHovered && (ImGui::IsMouseClicked(ImGuiMouseButton_Right) ||
-                                                           ImGui::IsMouseReleased(ImGuiMouseButton_Right));
-                const bool opened = clicked && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
-                const Asset::ProjectFileEntryUVE clickedEntry = entry;
-                ImGui::PopID();
-                if (clicked) {
-                    selectEntry(clickedEntry);
-                    if (opened && clickedEntry.kind == Asset::ProjectFileEntryKindUVE::Directory) {
-                        goToFolder(clickedEntry.relativePath);
-                    } else if (opened && type == ContentBrowserItemTypeUVE::Entity) {
-                        m_contentStatusMessage =
-                            "Opening an entity's tree needs the Entity Editor, which is not in this build yet.";
-                    }
+            } else if (mode == ContentBrowserModeUVE::Recent) {
+                // What changed lately anywhere below, newest first, under Today / Yesterday / ...
+                std::vector<ItemLookUVE> looks;
+                std::vector<ContentItemFactsUVE> facts;
+                for (const std::size_t index : items) {
+                    looks.push_back(lookOf(snapshot.entries[index]));
+                    facts.push_back(factsOf(snapshot.entries[index], looks.back()));
                 }
-                if (contextClicked) {
-                    selectEntry(clickedEntry);
-                    openContext(clickedEntry);
-                } else {
-                    trackLongPress(clickedEntry, rowHovered);
+                std::vector<std::size_t> order(items.size());
+                for (std::size_t i = 0U; i < order.size(); ++i) {
+                    order[i] = i;
+                }
+                SortContentFactsUVE(order, facts, ContentSortKeyUVE::Modified, false);
+                const std::time_t now = std::time(nullptr);
+                std::tm midnight{};
+                localtime_r(&now, &midnight);
+                midnight.tm_hour = 0;
+                midnight.tm_min = 0;
+                midnight.tm_sec = 0;
+                const std::int64_t startOfToday = static_cast<std::int64_t>(std::mktime(&midnight));
+                std::optional<ContentAgeUVE> currentAge;
+                for (const std::size_t i : order) {
+                    const ContentAgeUVE age = ClassifyContentAgeUVE(facts[i].modified, startOfToday);
+                    if (age != currentAge) {
+                        currentAge = age;
+                        ImGui::Spacing();
+                        ImGui::TextDisabled("%s", GetContentAgeLabelUVE(age));
+                        ImGui::Separator();
+                    }
+                    const Asset::ProjectFileEntryUVE& entry = snapshot.entries[items[i]];
+                    ImGui::PushID(("recent-" + entry.relativePath.generic_string()).c_str());
+                    const char* const format = age == ContentAgeUVE::Today || age == ContentAgeUVE::Yesterday ? "%H:%M"
+                                                                                                              : "%b %d";
+                    drawRow(entry, looks[i], facts[i].folder + "   " + formatTime(facts[i].modified, format), 22.0F);
+                    ImGui::PopID();
+                }
+                statusNote = "changed files in " + placeName + " and everything in it";
+            } else if (mode == ContentBrowserModeUVE::Board) {
+                // Everything below by kind: one lane per kind, a strip of tiles in each.
+                std::vector<ItemLookUVE> looks;
+                std::vector<ContentItemFactsUVE> facts;
+                for (const std::size_t index : items) {
+                    looks.push_back(lookOf(snapshot.entries[index]));
+                    facts.push_back(factsOf(snapshot.entries[index], looks.back()));
+                }
+                std::vector<std::size_t> order(items.size());
+                for (std::size_t i = 0U; i < order.size(); ++i) {
+                    order[i] = i;
+                }
+                std::size_t fileCount = 0U;
+                for (const auto& [kind, lane] : GroupContentByTypeUVE(order, facts)) {
+                    fileCount += lane.size();
+                    ImGui::PushID(kind.c_str());
+                    if (SidebarSectionUVE("##lane", nullptr, kind, lane.size(), 0.0F)) {
+                        ImGui::BeginChild("##strip", ImVec2{0.0F, tileHeight + ImGui::GetStyle().ScrollbarSize + 4.0F}, false,
+                                          ImGuiWindowFlags_HorizontalScrollbar);
+                        const ImVec2 origin = ImGui::GetCursorPos();
+                        for (std::size_t n = 0U; n < lane.size(); ++n) {
+                            const Asset::ProjectFileEntryUVE& entry = snapshot.entries[items[lane[n]]];
+                            ImGui::PushID(entry.relativePath.generic_string().c_str());
+                            ImGui::SetCursorPos(ImVec2{origin.x + static_cast<float>(n) * tileWidth, origin.y});
+                            drawTile(entry, looks[lane[n]], tileWidth, tileHeight, tileIcon);
+                            ImGui::PopID();
+                        }
+                        ImGui::EndChild();
+                    }
+                    ImGui::PopID();
+                }
+                items.resize(fileCount); // the count below is of files; folders have no lane
+                statusNote = "files in " + placeName + " and everything in it, by kind";
+            } else {
+                // Columns: one per folder level from Content down to the folder on screen, and a
+                // preview of the file picked in the last one.
+                constexpr float kColumnWidthUVE = 220.0F;
+                std::vector<std::filesystem::path> chain{std::filesystem::path{}};
+                for (const std::filesystem::path& segment : m_contentBrowserDirectory) {
+                    chain.push_back(chain.back() / segment);
+                }
+                const float columnHeight = std::max(line * 2.0F, ImGui::GetContentRegionAvail().y - ImGui::GetStyle().ScrollbarSize);
+                for (std::size_t level = 0U; level < chain.size(); ++level) {
+                    const bool last = level + 1U == chain.size();
+                    std::vector<std::size_t> listing =
+                        last ? items : ListContentFolderUVE(snapshot.entries, chain[level], "");
+                    ImGui::PushID(static_cast<int>(level));
+                    ImGui::BeginChild("##column", ImVec2{kColumnWidthUVE, columnHeight}, true);
+                    for (const std::size_t index : listing) {
+                        const Asset::ProjectFileEntryUVE& entry = snapshot.entries[index];
+                        const ItemLookUVE look = lookOf(entry);
+                        const bool folder = entry.kind == Asset::ProjectFileEntryKindUVE::Directory;
+                        // The folder opened from this column stays lit, as the way back.
+                        const bool onPath = folder && !last && chain[level + 1U] == entry.relativePath;
+                        ImGui::PushID(entry.relativePath.generic_string().c_str());
+                        if (onPath) {
+                            ImGui::PushStyleColor(ImGuiCol_Header, ImVec4{kAccentUVE.x, kAccentUVE.y, kAccentUVE.z, 0.45F});
+                        }
+                        const float rowX = ImGui::GetCursorScreenPos().x;
+                        const bool selected = onPath || isSelected(entry);
+                        selectedShown += (!onPath && isSelected(entry)) ? 1U : 0U;
+                        const std::string label = iconGap + entry.relativePath.filename().generic_string() + (folder ? "  >" : "");
+                        const bool clicked = ImGui::Selectable(label.c_str(), selected, ImGuiSelectableFlags_AllowDoubleClick);
+                        if (onPath) {
+                            ImGui::PopStyleColor();
+                        }
+                        drawRowIcon(rowX, look.icon);
+                        // One click opens a folder here: that is what walking down columns is.
+                        interact(entry, look, clicked && !folder);
+                        if (clicked && folder) {
+                            goToFolder(entry.relativePath);
+                            selectEntry(entry);
+                        }
+                        ImGui::PopID();
+                    }
+                    if (listing.empty()) {
+                        ImGui::TextDisabled(last && (searching || m_contentBrowserTypeFocus != ContentBrowserTypeFocusUVE::All)
+                                                ? "Nothing matches."
+                                                : "Empty.");
+                    }
+                    ImGui::EndChild();
+                    ImGui::PopID();
+                    ImGui::SameLine(0.0F, 2.0F);
+                }
+                // Preview of the file picked in the folder on screen.
+                if (m_selectedProjectFile.has_value() && m_selectedProjectFile->kind == Asset::ProjectFileEntryKindUVE::File &&
+                    m_selectedProjectFile->relativePath.parent_path() == m_contentBrowserDirectory) {
+                    const Asset::ProjectFileEntryUVE picked = *m_selectedProjectFile;
+                    const ItemLookUVE look = lookOf(picked);
+                    const ContentItemFactsUVE facts = factsOf(picked, look);
+                    ImGui::BeginChild("##column-preview", ImVec2{std::max(kColumnWidthUVE, 240.0F), columnHeight}, true);
+                    constexpr float kPreviewSize = 128.0F;
+                    const float x = std::max(0.0F, (ImGui::GetContentRegionAvail().x - kPreviewSize) * 0.5F);
+                    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + x);
+                    if (look.icon != 0U) {
+                        ImGui::Image(static_cast<ImTextureID>(look.icon), ImVec2{kPreviewSize, kPreviewSize});
+                    }
+                    ImGui::TextWrapped("%s", facts.name.c_str());
+                    ImGui::TextDisabled("%s", facts.type.c_str());
+                    ImGui::Separator();
+                    ImGui::TextDisabled("Size");
+                    ImGui::SameLine(80.0F);
+                    ImGui::TextUnformatted(formatSize(facts.size).c_str());
+                    ImGui::TextDisabled("Changed");
+                    ImGui::SameLine(80.0F);
+                    ImGui::TextUnformatted(formatTime(facts.modified, "%Y-%m-%d %H:%M").c_str());
+                    ImGui::TextDisabled("Folder");
+                    ImGui::SameLine(80.0F);
+                    ImGui::TextWrapped("%s", facts.folder.c_str());
+                    if (look.modelSource != nullptr && !look.modelSource->summary.empty()) {
+                        ImGui::Separator();
+                        ImGui::TextWrapped("%s", look.modelSource->summary.c_str());
+                    }
+                    ImGui::Separator();
+                    const bool pinned = IsProjectPathFavoritedUVE(picked.relativePath);
+                    if (ImGui::Button(pinned ? "Unpin" : "Pin")) {
+                        ToggleProjectPathFavoriteUVE(picked.relativePath);
+                    }
+                    if (look.type == ContentBrowserItemTypeUVE::Entity || look.type == ContentBrowserItemTypeUVE::Prefab) {
+                        ImGui::SameLine();
+                        ImGui::BeginDisabled(!IsAuthoringCommandAllowedUVE());
+                        if (ImGui::Button("Place in Scene") &&
+                            PlaceEntityAssetUVE(snapshot.contentRoot / picked.relativePath) == Scene::kInvalidEntityUVE) {
+                            m_contentStatusMessage = "Could not place " + facts.name + ".";
+                        }
+                        ImGui::EndDisabled();
+                    }
+                    ImGui::EndChild();
                 }
             }
             // Right-click on empty space: the same menu as "Add".
-            if (ImGui::IsWindowHovered() && !ImGui::IsAnyItemHovered() && ImGui::IsMouseReleased(ImGuiMouseButton_Right)) {
+            if (ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows) && !ImGui::IsAnyItemHovered() &&
+                ImGui::IsMouseReleased(ImGuiMouseButton_Right)) {
                 m_contentCreateMenuRequested = true;
             }
-            if (items.empty()) {
-                ImGui::SetCursorPos(gridOrigin);
+            if (items.empty() && mode != ContentBrowserModeUVE::Columns) {
                 if (!snapshot.contentRootExists) {
                     ImGui::TextDisabled("The content folder does not exist yet.");
                 } else if (searching || m_contentBrowserTypeFocus != ContentBrowserTypeFocusUVE::All) {
                     ImGui::TextDisabled("Nothing here matches.");
                 } else if (shownShelf != nullptr) {
-                    ImGui::TextDisabled("This shelf is empty. Right-click a file > Shelves to put it here.");
+                    ImGui::TextDisabled("This shelf is empty. Drag files onto it, or right-click a file > Shelves.");
+                } else if (wholeTree) {
+                    ImGui::TextDisabled("There are no files in this folder or below it.");
                 } else {
                     ImGui::TextDisabled("This folder is empty. Add or drop files here.");
                 }
-            } else {
-                const int totalRows = (static_cast<int>(items.size()) + columns - 1) / columns;
-                ImGui::SetCursorPos(ImVec2{gridOrigin.x, gridOrigin.y + static_cast<float>(totalRows) * cardHeight});
-                ImGui::Dummy(ImVec2{0.0F, 0.0F});
             }
         }
-        ImGui::EndChild();
+        if (mode != ContentBrowserModeUVE::Details) {
+            ImGui::EndChild();
+        }
         ImGui::PopStyleColor();
         // With a shelf open, dropping anywhere on its items puts the file on it.
         if (shownShelf != nullptr) {
             acceptShelfDrop(shownShelf->name);
         }
 
-        // Status line: how many items, how many selected, and where a search looks.
+        // Status line: how many items, how many selected, and what the mode is looking at.
         std::string status = std::to_string(items.size()) + (items.size() == 1U ? " item" : " items");
         if (selectedShown > 0U) {
             status += "  |  " + std::to_string(selectedShown) + " selected";
         }
-        if (searching && shownShelf == nullptr) {
+        if (!statusNote.empty() && shownShelf == nullptr) {
+            status += "  |  " + statusNote;
+        } else if (searching && shownShelf == nullptr) {
             status += "  |  searching " + placeName + " and everything in it";
         }
         ImGui::Separator();
