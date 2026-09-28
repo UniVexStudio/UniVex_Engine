@@ -261,12 +261,24 @@ TEST(ContentCatalogueEditorUVETest, EntityEditorEditsTheAssetAloneAndGivesTheSce
             << "an entity is edited as authored, not simulated";
         EXPECT_FALSE(editor.OpenEntityEditorUVE(content / "Other.uventity"));
 
+        // The entity is the top of the tree: new nodes go under it, and it cannot be removed.
+        editor.ClearSelectionUVE();
+        const Scene::EntityUVE added = editor.CreateDocumentSceneNodeUVE(Kind::Node3D);
+        ASSERT_NE(added, Scene::kInvalidEntityUVE);
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(added).parent, entityRoot);
+        EXPECT_EQ(editor.GetEntityEditorRootUVE(), entityRoot) << "still one root";
+        editor.SelectEntityUVE(entityRoot);
+        EXPECT_FALSE(editor.DeleteSelectedEntityUVE());
+        EXPECT_EQ(editor.DuplicateSelectedEntityUVE(), Scene::kInvalidEntityUVE);
+        ASSERT_TRUE(editor.RevertEntityEditorUVE());
+        const Scene::EntityUVE root2 = editor.GetEntityEditorRootUVE(); // Revert makes fresh entities
+
         // Save (Ctrl+S saves the entity while it is open), then change it again and revert.
-        ASSERT_TRUE(moveTo(entityRoot, 2.0F));
+        ASSERT_TRUE(moveTo(root2, 2.0F));
         EXPECT_TRUE(editor.IsSceneDirtyUVE());
         ASSERT_TRUE(editor.SaveSceneUVE());
         EXPECT_FALSE(editor.IsSceneDirtyUVE());
-        ASSERT_TRUE(moveTo(entityRoot, 5.0F));
+        ASSERT_TRUE(moveTo(root2, 5.0F));
         ASSERT_TRUE(editor.RevertEntityEditorUVE());
         EXPECT_FLOAT_EQ(positionY(editor.GetEntityEditorRootUVE()), 2.0F);
         EXPECT_FALSE(editor.UndoUVE());
