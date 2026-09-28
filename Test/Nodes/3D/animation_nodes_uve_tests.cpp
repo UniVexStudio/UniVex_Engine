@@ -449,5 +449,82 @@ TEST(AnimationPlayerUVETest, ASkeletalClipBlendsInReturnsToRestAndHonoursTheMixe
     EXPECT_FALSE(player.isPlaying);
 }
 
+/// Hips travel 2 m forward (+Z) over one second while a still root bone stays put.
+[[nodiscard]] Asset::AnimationClipAssetUVE MakeRunClipUVE() {
+    Asset::AnimationClipAssetUVE clip;
+    clip.clipId = "run";
+    clip.durationSeconds = 1.0;
+    Asset::AnimationAssetSampleUVE start;
+    start.pose.position = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+    Asset::AnimationAssetSampleUVE end;
+    end.timeSeconds = 1.0;
+    end.pose.position = Math::Vector3UVE{0.0F, 1.0F, 2.0F};
+    Asset::AnimationAssetSampleUVE spine;
+    spine.pose.position = Math::Vector3UVE{0.0F, 0.3F, 0.0F};
+    clip.bones = {Asset::AnimationAssetBoneTrackUVE{"Spine", {spine}},
+                  Asset::AnimationAssetBoneTrackUVE{"Hips", {start, end}}};
+    return clip;
+}
+
+TEST(AnimationPlayerUVETest, RootMotionPicksTheTravellingBone) {
+    const Asset::AnimationClipAssetUVE clip = MakeRunClipUVE();
+    const Skeleton3DNodeComponentUVE skeleton = MakeTwoBoneSkeletonUVE();
+    EXPECT_EQ(ResolveRootMotionBoneUVE(skeleton, clip, ""), std::optional<std::size_t>{0U});
+    EXPECT_EQ(ResolveRootMotionBoneUVE(skeleton, clip, "Spine"), std::optional<std::size_t>{1U});
+    EXPECT_EQ(ResolveRootMotionBoneUVE(skeleton, clip, "Tail"), std::nullopt) << "no such bone";
+    EXPECT_EQ(ResolveRootMotionBoneUVE(skeleton, MakeLiftClipUVE(1.0F), ""), std::nullopt)
+        << "moving only up is not ground travel";
+}
+
+TEST(AnimationPlayerUVETest, RootMotionKeepsThePoseInPlaceAndReportsTravelAcrossTheLoop) {
+    const Asset::AnimationClipAssetUVE clip = MakeRunClipUVE();
+    Skeleton3DNodeComponentUVE skeleton = MakeTwoBoneSkeletonUVE();
+    AnimationMixerComponentUVE mixer;
+    mixer.rootMotion = AnimationRootMotionModeUVE::ApplyToTarget;
+    AnimationPlayerComponentUVE player = StartedUVE(AnimationPlayerComponentUVE{}, TransformComponentUVE{}, clip);
+
+    ASSERT_TRUE(StepSkeletalAnimationPlayerUVE(player, clip, 0.25F, skeleton, mixer));
+    EXPECT_NEAR(player.rootMotionDelta.z, 0.5F, 1e-4F);
+    EXPECT_NEAR(skeleton.pose[0].position.z, 0.0F, 1e-4F) << "the travel is taken out of the pose";
+    EXPECT_NEAR(skeleton.pose[0].position.y, 1.0F, 1e-4F) << "height stays in the pose";
+
+    // 0.25 -> 0.85 is 1.2 m; 0.85 wraps to 0.1: 0.3 m to the end plus 0.2 m from the start.
+    ASSERT_TRUE(StepSkeletalAnimationPlayerUVE(player, clip, 0.6F, skeleton, mixer));
+    EXPECT_NEAR(player.rootMotionDelta.z, 1.2F, 1e-4F);
+    ASSERT_TRUE(StepSkeletalAnimationPlayerUVE(player, clip, 0.25F, skeleton, mixer));
+    EXPECT_NEAR(player.currentTimeSeconds, 0.1F, 1e-4F);
+    EXPECT_NEAR(player.rootMotionDelta.z, 0.5F, 1e-4F) << "never a jump back at the wrap";
+
+    // Off: the bone travels in the pose and nothing is reported.
+    Skeleton3DNodeComponentUVE authored = MakeTwoBoneSkeletonUVE();
+    player = StartedUVE(AnimationPlayerComponentUVE{}, TransformComponentUVE{}, clip);
+    ASSERT_TRUE(StepSkeletalAnimationPlayerUVE(player, clip, 0.25F, authored));
+    EXPECT_NEAR(authored.pose[0].position.z, 0.5F, 1e-4F);
+    EXPECT_NEAR(player.rootMotionDelta.z, 0.0F, 1e-6F);
+}
+
+TEST(AnimationPlayerUVETest, ScrubbingPosesTheSkeletonAtATimeWithoutAPlayer) {
+    const Asset::AnimationClipAssetUVE clip = MakeRunClipUVE();
+    Skeleton3DNodeComponentUVE skeleton = MakeTwoBoneSkeletonUVE();
+    ASSERT_TRUE(PoseSkeletonAtTimeUVE(clip, 0.5, skeleton));
+    ASSERT_EQ(skeleton.pose.size(), 2U);
+    EXPECT_NEAR(skeleton.pose[0].position.z, 1.0F, 1e-4F);
+    EXPECT_NEAR(skeleton.pose[1].position.y, 0.3F, 1e-4F);
+    ASSERT_TRUE(PoseSkeletonAtTimeUVE(clip, 9.0, skeleton)) << "past the end holds the last frame";
+    EXPECT_NEAR(skeleton.pose[0].position.z, 2.0F, 1e-4F);
+
+    // With root motion on, the scrubbed pose runs in place like the played one.
+    AnimationMixerComponentUVE mixer;
+    mixer.rootMotion = AnimationRootMotionModeUVE::InPlace;
+    ASSERT_TRUE(PoseSkeletonAtTimeUVE(clip, 0.5, skeleton, mixer));
+    EXPECT_NEAR(skeleton.pose[0].position.z, 0.0F, 1e-4F);
+    EXPECT_EQ(skeleton, MakeTwoBoneSkeletonUVE()) << "scrubbing is not an edit";
+
+    // A clip with no bones leaves the skeleton alone.
+    Skeleton3DNodeComponentUVE untouched = MakeTwoBoneSkeletonUVE();
+    EXPECT_FALSE(PoseSkeletonAtTimeUVE(MakeSlideClipUVE(), 0.5, untouched));
+    EXPECT_TRUE(untouched.pose.empty());
+}
+
 } // namespace
 } // namespace UVE::Scene

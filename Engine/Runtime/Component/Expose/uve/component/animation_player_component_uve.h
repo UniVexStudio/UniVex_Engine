@@ -67,6 +67,8 @@ struct AnimationPlayerComponentUVE final {
     Math::Vector3UVE startPosition{};
     Math::QuaternionUVE startRotation{};
     Math::Vector3UVE startScale{1.0F, 1.0F, 1.0F};
+    /// Root motion of the last step: the root bone's ground travel, in the skeleton's space.
+    Math::Vector3UVE rootMotionDelta{};
 
     /// Authored settings only: runtime state is ignored, so a playing player equals its saved self.
     [[nodiscard]] bool HasSameSettingsUVE(const AnimationPlayerComponentUVE& other) const noexcept {

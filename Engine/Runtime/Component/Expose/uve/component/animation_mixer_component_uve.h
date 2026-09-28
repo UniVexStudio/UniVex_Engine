@@ -3,6 +3,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 
 #include "uve/component/entity_uve.h"
 
@@ -14,6 +15,17 @@ enum class AnimationProcessCallbackUVE : std::uint8_t {
     Frame = 0,
     /// Every physics step, in step with the physics bodies it moves.
     Physics,
+};
+
+/// What a skeletal clip's travel (its root bone moving across the ground) does.
+enum class AnimationRootMotionModeUVE : std::uint8_t {
+    /// The root bone moves as authored: a run cycle runs away from its node.
+    Off = 0,
+    /// The root bone's ground travel is taken out of the pose; nothing moves the node.
+    InPlace,
+    /// Taken out of the pose and added to the target instead, so the node goes where the feet go.
+    /// A CharacterBody3D target gets it as velocity, so collisions still stop it.
+    ApplyToTarget,
 };
 
 /// AnimationMixer: the abstract base AnimationPlayer and AnimationTree share - what they move, which
@@ -31,6 +43,11 @@ struct AnimationMixerComponentUVE final {
     bool animatePosition = true;
     bool animateRotation = true;
     bool animateScale = true;
+    /// Root motion, for skeletal clips.
+    AnimationRootMotionModeUVE rootMotion = AnimationRootMotionModeUVE::Off;
+    /// The bone whose ground travel is root motion. Empty picks it: the first bone, parents first,
+    /// whose track travels across the ground (usually the root or the hips).
+    std::string rootMotionBone;
 
     [[nodiscard]] bool operator==(const AnimationMixerComponentUVE&) const = default;
 };

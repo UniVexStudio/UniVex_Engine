@@ -524,6 +524,8 @@ void EditorUVE::DrawEntityEditorDockUVE(EntityEditSessionUVE& session) {
         ImGui::BeginChild("##entity-dock-content", ImVec2{0.0F, 0.0F}, false);
         DrawContentBrowserBodyUVE();
         ImGui::EndChild();
+        // The item right-click menu; the main window's dock draws it only while that dock is shown.
+        DrawFilesystemContextPopupUVE();
         ImGui::EndTabItem();
     }
     const auto upcoming = [](const char* what, const char* detail) {
@@ -542,10 +544,14 @@ void EditorUVE::DrawEntityEditorDockUVE(EntityEditSessionUVE& session) {
         hasPlayer = hasPlayer || entityManager.HasComponentUVE<Scene::AnimationPlayerComponentUVE>(node);
         hasTree = hasTree || entityManager.HasComponentUVE<Scene::AnimationTreeComponentUVE>(node);
     }
+    bool timelineShown = false;
     if (hasPlayer && tab("Timeline", EntityEditorDockTabUVE::Timeline)) {
-        upcoming("The Timeline is not built yet.",
-                 "Keyframes for position, rotation, scale and events, played on this entity, come next.");
+        timelineShown = true;
+        DrawAnimationTimelineUVE();
         ImGui::EndTabItem();
+    }
+    if (!timelineShown) {
+        StopAnimationTimelinePreviewUVE();
     }
     if (hasTree && tab("Anim Graph", EntityEditorDockTabUVE::AnimGraph)) {
         upcoming("The Anim Graph is not built yet.",
