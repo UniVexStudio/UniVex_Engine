@@ -228,6 +228,7 @@ namespace {
                          {"value", node.value},
                          {"points", node.points},
                          {"fadeSeconds", node.fadeSeconds},
+                         {"sync", node.sync},
                          {"entryState", node.entryState},
                          {"transitions", std::move(transitions)}});
     }
@@ -292,6 +293,7 @@ namespace {
             node.value = item.value("value", 0.5F);
             node.points = item.value("points", std::vector<float>{});
             node.fadeSeconds = item.value("fadeSeconds", 0.2F);
+            node.sync = item.value("sync", false);
             node.entryState = item.value("entryState", std::uint32_t{0});
             for (const nlohmann::json& transitionJson : item.value("transitions", nlohmann::json::array())) {
                 AnimationTransitionUVE transition;

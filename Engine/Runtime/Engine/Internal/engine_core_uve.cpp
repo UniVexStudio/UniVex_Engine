@@ -1086,10 +1086,25 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
             continue;
         }
         Scene::AnimationTreeComponentUVE& tree = m_entityManager->GetComponentUVE<Scene::AnimationTreeComponentUVE>(entity);
+        // A character's tree poses its skeleton, bone by bone; with no skeleton under the target it
+        // animates the target node itself.
+        const Scene::EntityUVE skeletonEntity = resolveSkeleton(entity, mixer.target);
+        if (skeletonEntity != Scene::kInvalidEntityUVE) {
+            Scene::Skeleton3DNodeComponentUVE& skeleton =
+                m_entityManager->GetComponentUVE<Scene::Skeleton3DNodeComponentUVE>(skeletonEntity);
+            const bool posed = Scene::StepSkeletalAnimationTreeUVE(tree, clipFor, deltaSeconds * mixer.speedScale,
+                                                                   skeleton, mixer);
+            raiseAnimationEvents(entity, mixer.target, tree.firedEvents);
+            if (posed && mixer.rootMotion == Scene::AnimationRootMotionModeUVE::ApplyToTarget) {
+                applyRootMotion(entity, mixer.target, skeletonEntity, tree.rootMotionDelta, deltaSeconds);
+            }
+            continue;
+        }
         Scene::TransformComponentUVE* const target = resolveTarget(entity, mixer.target);
         if (target != nullptr) {
             static_cast<void>(
                 Scene::StepAnimationTreeUVE(tree, clipFor, deltaSeconds * mixer.speedScale, *target, mixer));
+            raiseAnimationEvents(entity, mixer.target, tree.firedEvents);
         }
     }
 

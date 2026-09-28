@@ -18,6 +18,7 @@ namespace UVE::Scene {
 
 class IEntityManagerUVE;
 struct TransformComponentUVE;
+struct Skeleton3DNodeComponentUVE;
 
 /// Authoring definition for the AnimationTree node: a pure Node - no transform, no visibility -
 /// whose Inspector is its own section, its AnimationMixer base, then the Node section. It evaluates
@@ -46,6 +47,20 @@ using AnimationClipResolverUVE = std::function<const Asset::AnimationClipAssetUV
 [[nodiscard]] bool StepAnimationTreeUVE(AnimationTreeComponentUVE& tree, const AnimationClipResolverUVE& clips,
                                         float deltaSeconds, TransformComponentUVE& target,
                                         const AnimationMixerComponentUVE& mixer = {});
+
+/// Advances the graph by `deltaSeconds` and writes the Output node's pose into `skeleton.pose`: every
+/// bone takes its track in each clip (its rest pose where a clip has none), and the graph's blends,
+/// layers and transitions mix bone by bone through the mixer's channel masks.
+/// - Root motion (mixer on): each clip keeps its root bone over its first frame's ground position
+///   and reports its travel; the travel mixes like the pose and lands in `tree.rootMotionDelta`.
+/// - State machine transitions follow the mixer's Transition: Inertialize hands over at once and
+///   fades the difference out; Crossfade evaluates both states over the fade.
+/// - Clip events passed by the clips that count at least half go to `tree.firedEvents`.
+/// Returns true when the pose was written; false for an inactive tree, an invalid graph, a skeleton
+/// with no bones, or a graph none of whose clips is loaded.
+[[nodiscard]] bool StepSkeletalAnimationTreeUVE(AnimationTreeComponentUVE& tree, const AnimationClipResolverUVE& clips,
+                                                float deltaSeconds, Skeleton3DNodeComponentUVE& skeleton,
+                                                const AnimationMixerComponentUVE& mixer = {});
 
 /// Puts every node back to its start: clips at 0, state machines in their entry state.
 void ResetAnimationTreeUVE(AnimationTreeComponentUVE& tree);

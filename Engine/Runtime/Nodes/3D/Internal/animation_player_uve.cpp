@@ -143,6 +143,15 @@ namespace {
 
 } // namespace
 
+Core::TransformPoseUVE SampleAnimationTrackUVE(const std::vector<Asset::AnimationAssetSampleUVE>& samples,
+                                               const double timeSeconds) noexcept {
+    return SampleTrackUVE(samples, timeSeconds);
+}
+
+float AnimationInertialDecayUVE(const float progress) noexcept {
+    return InertialDecayUVE(progress);
+}
+
 Core::TransformPoseUVE SampleAnimationClipAssetUVE(const Asset::AnimationClipAssetUVE& clip,
                                                          const double timeSeconds) noexcept {
     return SampleTrackUVE(clip.samples, timeSeconds);

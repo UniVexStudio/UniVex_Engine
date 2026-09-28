@@ -679,6 +679,7 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_AnimationTargetsRemapToTheRestoredEnti
     blend.nodes[0].inputs = {3U};
     blend.nodes[1].clip = Asset::AssetGuidUVE{77U};
     blend.nodes[1].loop = false;
+    blend.nodes[1].sync = true; // round-trips even where it has no effect
     blend.nodes.push_back(machine);
     ASSERT_TRUE(IsAnimationTreeComponentValidUVE(blend)) << DescribeAnimationGraphProblemUVE(blend);
     entityManager.AddComponentUVE<AnimationTreeComponentUVE>(player, blend);

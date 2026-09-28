@@ -320,6 +320,16 @@ void EditorUVE::DrawAnimationGraphPropertyUVE(const Core::TypeMetadataEntryUVE& 
                     }
                 };
 
+                const auto syncRow = [&]() {
+                    RowUVE("Sync");
+                    if (ImGui::Checkbox("##sync", &node.sync)) {
+                        changed = true;
+                    }
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("Keep the inputs in step: the heaviest leads, the others play at its phase.");
+                    }
+                };
+
                 switch (node.kind) {
                     case Kind::Clip: {
                         RowUVE("Clip");
@@ -341,12 +351,14 @@ void EditorUVE::DrawAnimationGraphPropertyUVE(const Core::TypeMetadataEntryUVE& 
                         if (node.parameter.empty()) {
                             drag("Weight", node.value, 0.01F, 0.0F, 1.0F);
                         }
+                        syncRow();
                         break;
                     case Kind::BlendSpace1D:
                         parameterRow("Position From", {AnimationParameterTypeUVE::Float}, "(fixed value)");
                         if (node.parameter.empty()) {
                             drag("Position", node.value, 0.01F, -1000.0F, 1000.0F);
                         }
+                        syncRow();
                         break;
                     case Kind::OneShot:
                         parameterRow("Fire On", {AnimationParameterTypeUVE::Trigger, AnimationParameterTypeUVE::Bool},
