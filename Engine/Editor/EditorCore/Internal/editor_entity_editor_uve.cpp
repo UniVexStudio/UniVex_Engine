@@ -511,8 +511,27 @@ void EditorUVE::DrawEntityEditorDockUVE(EntityEditSessionUVE& session) {
     if (!ImGui::BeginTabBar("##entity-dock-tabs")) {
         return;
     }
-    const auto tab = [&session](const char* label, const EntityEditorDockTabUVE which) {
-        const bool open = ImGui::BeginTabItem(label);
+    // The animation tabs belong to their node: the Timeline shows while an AnimationPlayer is
+    // selected, the Anim Graph while an AnimationTree is. Anything else leaves Content alone.
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    const Scene::EntityUVE selected = m_selectedEntity;
+    const bool selectedAlive = selected != Scene::kInvalidEntityUVE && entityManager.IsAliveUVE(selected);
+    const bool hasPlayer = selectedAlive && entityManager.HasComponentUVE<Scene::AnimationPlayerComponentUVE>(selected);
+    const bool hasTree = selectedAlive && entityManager.HasComponentUVE<Scene::AnimationTreeComponentUVE>(selected);
+    // Selecting one opens its tab once; after that the tab is the user's choice.
+    std::optional<EntityEditorDockTabUVE> follow;
+    if (selected != session.dockFollowed) {
+        session.dockFollowed = selected;
+        if (hasPlayer) {
+            follow = EntityEditorDockTabUVE::Timeline;
+        } else if (hasTree) {
+            follow = EntityEditorDockTabUVE::AnimGraph;
+        }
+    }
+    const auto tab = [&session, &follow](const char* label, const EntityEditorDockTabUVE which) {
+        const ImGuiTabItemFlags flags =
+            follow.has_value() && *follow == which ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None;
+        const bool open = ImGui::BeginTabItem(label, nullptr, flags);
         if (open) {
             session.dockTab = which;
         }
@@ -527,14 +546,6 @@ void EditorUVE::DrawEntityEditorDockUVE(EntityEditSessionUVE& session) {
         // The item right-click menu; the main window's dock draws it only while that dock is shown.
         DrawFilesystemContextPopupUVE();
         ImGui::EndTabItem();
-    }
-    // The animation tabs only exist once the entity has a node that uses them.
-    bool hasPlayer = false;
-    bool hasTree = false;
-    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    for (const Scene::EntityUVE node : CollectEntityEditorNodesUVE()) {
-        hasPlayer = hasPlayer || entityManager.HasComponentUVE<Scene::AnimationPlayerComponentUVE>(node);
-        hasTree = hasTree || entityManager.HasComponentUVE<Scene::AnimationTreeComponentUVE>(node);
     }
     bool timelineShown = false;
     if (hasPlayer && tab("Timeline", EntityEditorDockTabUVE::Timeline)) {

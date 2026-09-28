@@ -1107,6 +1107,9 @@ private:
         /// The window selects `tab` on its next frame (GoTo from a problem or a signal).
         bool forceTab = false;
         EntityEditorDockTabUVE dockTab = EntityEditorDockTabUVE::Content;
+        /// The node the dock last followed: selecting an AnimationPlayer or AnimationTree opens its
+        /// tab once, and the tab stays the user's choice until the selection moves again.
+        Scene::EntityUVE dockFollowed = Scene::kInvalidEntityUVE;
         float dockHeight = 220.0F;
     };
     /// The entity's nodes in tree order (root first). Empty when no entity is open.
