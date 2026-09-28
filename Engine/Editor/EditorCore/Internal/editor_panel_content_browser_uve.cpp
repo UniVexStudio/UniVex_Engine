@@ -1112,8 +1112,9 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
                 if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
                     if (entry.kind == Asset::ProjectFileEntryKindUVE::Directory) {
                         goToFolder(entry.relativePath);
-                    } else if (look.type == ContentBrowserItemTypeUVE::Entity) {
-                        m_contentStatusMessage = "Opening an entity's tree needs the Entity Editor, which is not in this build yet.";
+                    } else if (look.type == ContentBrowserItemTypeUVE::Entity &&
+                               !OpenEntityEditorUVE(snapshot.contentRoot / entry.relativePath)) {
+                        m_contentStatusMessage = "Could not open " + entry.relativePath.filename().string() + " in the Entity Editor.";
                     }
                 }
             }
