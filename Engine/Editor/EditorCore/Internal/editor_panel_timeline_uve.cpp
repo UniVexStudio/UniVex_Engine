@@ -40,8 +40,11 @@ constexpr ImU32 kRowSelectedUVE = IM_COL32(44, 62, 92, 255);
 constexpr ImU32 kTickMajorUVE = IM_COL32(120, 128, 140, 255);
 constexpr ImU32 kTickMinorUVE = IM_COL32(70, 76, 86, 255);
 constexpr ImU32 kGridLineUVE = IM_COL32(255, 255, 255, 14);
-constexpr ImU32 kKeyUVE = IM_COL32(222, 190, 92, 255);
-constexpr ImU32 kKeyBandUVE = IM_COL32(222, 190, 92, 90);
+// One colour per channel, used for the keys, their held spans and the legend.
+constexpr ImU32 kChannelColourUVE[3] = {IM_COL32(236, 146, 72, 255),  // Position: orange
+                                        IM_COL32(96, 200, 132, 255),  // Rotation: green
+                                        IM_COL32(150, 128, 236, 255)}; // Scale: violet
+constexpr const char* kChannelNameUVE[3] = {"Position", "Rotation", "Scale"};
 constexpr ImU32 kEventUVE = IM_COL32(112, 196, 255, 255);
 constexpr ImU32 kPlayheadUVE = IM_COL32(236, 86, 86, 255);
 constexpr ImU32 kOutOfRangeUVE = IM_COL32(0, 0, 0, 70);
@@ -67,6 +70,25 @@ constexpr ImU32 kOutOfRangeUVE = IM_COL32(0, 0, 0, 70);
         }
     }
     return 120.0;
+}
+
+/// True when `channel` (0 position, 1 rotation, 2 scale) differs between two samples: a key worth
+/// showing. A baked clip stores every channel every frame; only the ones that move are keys.
+[[nodiscard]] bool ChannelChangesUVE(const Asset::AnimationAssetPoseUVE& before, const Asset::AnimationAssetPoseUVE& after,
+                                     const int channel) {
+    constexpr float kEpsilonUVE = 1.0e-5F;
+    const auto differs = [](const float a, const float b) { return std::abs(a - b) > kEpsilonUVE; };
+    switch (channel) {
+        case 0:
+            return differs(before.position.x, after.position.x) || differs(before.position.y, after.position.y) ||
+                   differs(before.position.z, after.position.z);
+        case 1:
+            return differs(before.rotation.x, after.rotation.x) || differs(before.rotation.y, after.rotation.y) ||
+                   differs(before.rotation.z, after.rotation.z) || differs(before.rotation.w, after.rotation.w);
+        default:
+            return differs(before.scale.x, after.scale.x) || differs(before.scale.y, after.scale.y) ||
+                   differs(before.scale.z, after.scale.z);
+    }
 }
 
 } // namespace
@@ -253,6 +275,18 @@ void EditorUVE::DrawAnimationTimelineUVE() {
                   clip != nullptr ? clip->durationSeconds : 0.0, frameOf(m_timeline.timeSeconds), frameOf(duration),
                   frameRate);
     ImGui::TextUnformatted(clock);
+    for (int channel = 0; channel < 3; ++channel) {
+        ImGui::SameLine(0.0F, channel == 0 ? 16.0F : 10.0F);
+        const ImVec2 at = ImGui::GetCursorScreenPos();
+        const float size = ImGui::GetTextLineHeight() * 0.6F;
+        const float top = at.y + (ImGui::GetTextLineHeight() - size) * 0.5F;
+        ImGui::GetWindowDrawList()->AddRectFilled(ImVec2{at.x, top}, ImVec2{at.x + size, top + size},
+                                                  kChannelColourUVE[channel], 2.0F);
+        ImGui::Dummy(ImVec2{size + 3.0F, ImGui::GetTextLineHeight()});
+        ImGui::SameLine(0.0F, 0.0F);
+        ImGui::TextDisabled("%s", kChannelNameUVE[channel]);
+    }
+    const float afterLegend = ImGui::GetItemRectMax().x - ImGui::GetWindowPos().x + 16.0F;
 
     // Right side: which player and clip, zoom and the track filter.
     const std::string clipLabel = (players.size() > 1U ? std::string{} : nameOf(playerEntity) + "  >  ") +
@@ -262,7 +296,7 @@ void EditorUVE::DrawAnimationTimelineUVE() {
     const float filterWidth = 150.0F;
     const float zoomWidth = 110.0F;
     const float rightWidth = ImGui::CalcTextSize(clipLabel.c_str()).x + filterWidth + zoomWidth + 40.0F;
-    ImGui::SameLine(std::max(ImGui::GetCursorPosX() + 12.0F, ImGui::GetWindowContentRegionMax().x - rightWidth));
+    ImGui::SameLine(std::max(afterLegend, ImGui::GetWindowContentRegionMax().x - rightWidth));
     ImGui::TextUnformatted(clipLabel.c_str());
     ImGui::SameLine();
     ImGui::SetNextItemWidth(zoomWidth);
@@ -276,7 +310,8 @@ void EditorUVE::DrawAnimationTimelineUVE() {
     ImGui::SameLine();
     char filter[128];
     std::snprintf(filter, sizeof(filter), "%s", m_timeline.filter.c_str());
-    ImGui::SetNextItemWidth(filterWidth);
+    // Whatever room is left, so a narrow window squeezes the filter instead of cutting it off.
+    ImGui::SetNextItemWidth(std::clamp(ImGui::GetContentRegionAvail().x, 60.0F, filterWidth));
     if (ImGui::InputTextWithHint("##tl-filter", "Filter bones", filter, sizeof(filter))) {
         m_timeline.filter = filter;
     }
@@ -306,18 +341,36 @@ void EditorUVE::DrawAnimationTimelineUVE() {
     }
 
     // ---- Rows: events first, then each bone with a track, in the skeleton's order -------------------
+    // A track row shows all three channels as stacked lanes; opened, it is followed by one row per
+    // channel.
     struct RowUVE {
         std::string label;
         int depth = 0;
         const std::vector<Asset::AnimationAssetSampleUVE>* samples = nullptr;
         bool events = false;
+        /// -1 for the track row itself, else the channel (0 position, 1 rotation, 2 scale).
+        int channel = -1;
+        std::string track;
     };
     std::vector<RowUVE> rows;
+    const auto isExpanded = [this](const std::string& track) {
+        return std::find(m_timeline.expandedTracks.begin(), m_timeline.expandedTracks.end(), track) !=
+               m_timeline.expandedTracks.end();
+    };
+    const auto pushTrack = [&rows, &isExpanded](const std::string& label, const int depth,
+                                                const std::vector<Asset::AnimationAssetSampleUVE>* samples) {
+        rows.push_back(RowUVE{label, depth, samples, false, -1, label});
+        if (isExpanded(label)) {
+            for (int channel = 0; channel < 3; ++channel) {
+                rows.push_back(RowUVE{kChannelNameUVE[channel], depth + 1, samples, false, channel, label});
+            }
+        }
+    };
     if (!clip->events.empty()) {
-        rows.push_back(RowUVE{"Events", 0, nullptr, true});
+        rows.push_back(RowUVE{"Events", 0, nullptr, true, -1, {}});
     }
     if (!clip->samples.empty()) {
-        rows.push_back(RowUVE{"Transform", 0, &clip->samples, false});
+        pushTrack("Transform", 0, &clip->samples);
     }
     std::unordered_map<std::string, const Asset::AnimationAssetBoneTrackUVE*> tracks;
     for (const Asset::AnimationAssetBoneTrackUVE& track : clip->bones) {
@@ -347,13 +400,13 @@ void EditorUVE::DrawAnimationTimelineUVE() {
             }
             const auto found = tracks.find(bone.name);
             if (found != tracks.end() && matches(bone.name)) {
-                rows.push_back(RowUVE{bone.name, depth[index], &found->second->samples, false});
+                pushTrack(bone.name, depth[index], &found->second->samples);
             }
         }
     } else {
         for (const Asset::AnimationAssetBoneTrackUVE& track : clip->bones) {
             if (matches(track.bone)) {
-                rows.push_back(RowUVE{track.bone, 0, &track.samples, false});
+                pushTrack(track.bone, 0, &track.samples);
             }
         }
     }
@@ -438,19 +491,52 @@ void EditorUVE::DrawAnimationTimelineUVE() {
         for (int index = clipper.DisplayStart; index < clipper.DisplayEnd; ++index) {
             const RowUVE& row = rows[static_cast<std::size_t>(index)];
             const float y = rowsOrigin.y + static_cast<float>(index) * kRowHeightUVE;
-            const bool selected = !row.events && row.label == m_selectedSkeletonBone;
+            const bool selected = !row.events && row.channel < 0 && row.track == m_selectedSkeletonBone;
             const ImU32 background = selected ? kRowSelectedUVE : (index % 2 == 0 ? kRowEvenUVE : kRowOddUVE);
             rowDraw->AddRectFilled(ImVec2{origin.x, y}, ImVec2{origin.x + area.x, y + kRowHeightUVE}, background);
             ImGui::SetCursorScreenPos(ImVec2{origin.x, y});
             ImGui::PushID(index);
+            const float indent = 8.0F + static_cast<float>(std::min(row.depth, 24)) * 10.0F;
             if (ImGui::InvisibleButton("##row", ImVec2{kTrackListWidthUVE, kRowHeightUVE}) && !row.events) {
-                m_selectedSkeletonBone = row.label;
+                // The arrow opens the track into its channels; the name selects the bone.
+                const bool onArrow = row.channel < 0 && ImGui::GetIO().MousePos.x < origin.x + indent + 12.0F;
+                if (onArrow) {
+                    const auto open = std::find(m_timeline.expandedTracks.begin(), m_timeline.expandedTracks.end(),
+                                                row.track);
+                    if (open != m_timeline.expandedTracks.end()) {
+                        m_timeline.expandedTracks.erase(open);
+                    } else {
+                        m_timeline.expandedTracks.push_back(row.track);
+                    }
+                } else {
+                    m_selectedSkeletonBone = row.track;
+                }
             }
             ImGui::PopID();
-            const float indent = 8.0F + static_cast<float>(std::min(row.depth, 24)) * 10.0F;
             rowDraw->PushClipRect(ImVec2{origin.x, y}, ImVec2{keysLeft - 6.0F, y + kRowHeightUVE}, true);
-            rowDraw->AddText(ImVec2{origin.x + indent, y + 3.0F},
-                             row.events ? kEventUVE : ImGui::GetColorU32(ImGuiCol_Text), row.label.c_str());
+            if (row.events) {
+                rowDraw->AddText(ImVec2{origin.x + indent, y + 3.0F}, kEventUVE, row.label.c_str());
+            } else if (row.channel < 0) {
+                const bool open = isExpanded(row.track);
+                const float ax = origin.x + indent + 3.0F;
+                const float ay = y + kRowHeightUVE * 0.5F;
+                const ImU32 arrow = ImGui::GetColorU32(ImGuiCol_TextDisabled);
+                if (open) {
+                    rowDraw->AddTriangleFilled(ImVec2{ax - 3.5F, ay - 2.0F}, ImVec2{ax + 3.5F, ay - 2.0F},
+                                               ImVec2{ax, ay + 2.5F}, arrow);
+                } else {
+                    rowDraw->AddTriangleFilled(ImVec2{ax - 2.0F, ay - 3.5F}, ImVec2{ax - 2.0F, ay + 3.5F},
+                                               ImVec2{ax + 2.5F, ay}, arrow);
+                }
+                rowDraw->AddText(ImVec2{origin.x + indent + 12.0F, y + 3.0F}, ImGui::GetColorU32(ImGuiCol_Text),
+                                 row.label.c_str());
+            } else {
+                const float sx = origin.x + indent + 12.0F;
+                rowDraw->AddRectFilled(ImVec2{sx, y + 6.0F}, ImVec2{sx + 8.0F, y + 14.0F},
+                                       kChannelColourUVE[row.channel], 2.0F);
+                rowDraw->AddText(ImVec2{sx + 13.0F, y + 3.0F}, ImGui::GetColorU32(ImGuiCol_TextDisabled),
+                                 row.label.c_str());
+            }
             rowDraw->PopClipRect();
 
             rowDraw->PushClipRect(ImVec2{keysLeft, y}, ImVec2{keysLeft + keysWidth, y + kRowHeightUVE}, true);
@@ -463,28 +549,54 @@ void EditorUVE::DrawAnimationTimelineUVE() {
                 }
             } else if (row.samples != nullptr && !row.samples->empty()) {
                 const auto& samples = *row.samples;
-                // A baked track has a key every frame: when keys would touch, draw the span as a band
-                // with keys at its ends, like a dope sheet's held range.
+                // A track row stacks its three channels in thin lanes; a channel row gives one the
+                // full height. Keys are the frames where the channel moves: a baked track has one
+                // every frame, and when they would touch they merge into a held span.
                 const double spacing = samples.size() > 1U
                                            ? (samples.back().timeSeconds - samples.front().timeSeconds) /
                                                  static_cast<double>(samples.size() - 1U)
                                            : duration;
-                if (spacing * scale < 7.0 && samples.size() > 1U) {
-                    rowDraw->AddRectFilled(ImVec2{toX(samples.front().timeSeconds), mid - 3.0F},
-                                           ImVec2{toX(samples.back().timeSeconds), mid + 3.0F}, kKeyBandUVE, 2.0F);
-                    for (const double t : {samples.front().timeSeconds, samples.back().timeSeconds}) {
-                        const float x = toX(t);
-                        rowDraw->AddQuadFilled(ImVec2{x, mid - 5.0F}, ImVec2{x + 5.0F, mid}, ImVec2{x, mid + 5.0F},
-                                               ImVec2{x - 5.0F, mid}, kKeyUVE);
-                    }
-                } else {
-                    for (const Asset::AnimationAssetSampleUVE& sample : samples) {
-                        const float x = toX(sample.timeSeconds);
-                        if (x < keysLeft - 6.0F || x > keysLeft + keysWidth + 6.0F) {
-                            continue;
+                const bool dense = spacing * scale < 7.0;
+                const int first = row.channel < 0 ? 0 : row.channel;
+                const int last = row.channel < 0 ? 2 : row.channel;
+                for (int channel = first; channel <= last; ++channel) {
+                    const float laneHeight = row.channel < 0 ? (kRowHeightUVE - 4.0F) / 3.0F : kRowHeightUVE - 6.0F;
+                    const float laneTop = row.channel < 0 ? y + 2.0F + laneHeight * static_cast<float>(channel)
+                                                          : y + 3.0F;
+                    const float laneMid = laneTop + laneHeight * 0.5F;
+                    const float half = std::max(2.0F, laneHeight * 0.5F - (row.channel < 0 ? 0.5F : 1.5F));
+                    const ImU32 colour = kChannelColourUVE[channel];
+                    const ImU32 span = (colour & 0x00FFFFFFU) | (static_cast<ImU32>(row.channel < 0 ? 150 : 110) << 24);
+                    const auto moves = [&](const std::size_t i) {
+                        return (i > 0U && ChannelChangesUVE(samples[i - 1U].pose, samples[i].pose, channel)) ||
+                               (i + 1U < samples.size() && ChannelChangesUVE(samples[i].pose, samples[i + 1U].pose, channel));
+                    };
+                    if (dense) {
+                        std::size_t i = 0U;
+                        while (i < samples.size()) {
+                            if (!moves(i)) {
+                                ++i;
+                                continue;
+                            }
+                            std::size_t j = i;
+                            while (j + 1U < samples.size() && moves(j + 1U)) {
+                                ++j;
+                            }
+                            rowDraw->AddRectFilled(ImVec2{toX(samples[i].timeSeconds), laneMid - half * 0.6F},
+                                                   ImVec2{std::max(toX(samples[j].timeSeconds), toX(samples[i].timeSeconds) + 2.0F),
+                                                          laneMid + half * 0.6F},
+                                                   span, 1.5F);
+                            i = j + 1U;
                         }
-                        rowDraw->AddQuadFilled(ImVec2{x, mid - 5.0F}, ImVec2{x + 5.0F, mid}, ImVec2{x, mid + 5.0F},
-                                               ImVec2{x - 5.0F, mid}, kKeyUVE);
+                    } else {
+                        for (std::size_t i = 0U; i < samples.size(); ++i) {
+                            const float x = toX(samples[i].timeSeconds);
+                            if (x < keysLeft - 6.0F || x > keysLeft + keysWidth + 6.0F || !moves(i)) {
+                                continue;
+                            }
+                            rowDraw->AddQuadFilled(ImVec2{x, laneMid - half}, ImVec2{x + half, laneMid},
+                                                   ImVec2{x, laneMid + half}, ImVec2{x - half, laneMid}, colour);
+                        }
                     }
                 }
             }

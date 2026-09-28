@@ -1948,6 +1948,8 @@ private:
         /// The time at the left edge of the track area while zoomed in.
         double scrollSeconds = 0.0;
         std::string filter;
+        /// Tracks opened into their Position / Rotation / Scale rows, by name.
+        std::vector<std::string> expandedTracks;
         /// The skeleton whose pose the Timeline wrote, to put back at rest when it stops.
         Scene::EntityUVE previewSkeleton = Scene::kInvalidEntityUVE;
     };
