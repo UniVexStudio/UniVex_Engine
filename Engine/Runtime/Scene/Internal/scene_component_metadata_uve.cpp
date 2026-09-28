@@ -573,11 +573,45 @@ void DeclareAnimationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     // AnimationPlayer's own section. Its target is an entity reference: flagged so the serializer
     // remaps it, and drawn as a node picker. Empty means the player's parent, which is the common
     // case and needs no picking at all.
+    // AnimationMixer: the base AnimationPlayer and AnimationTree share, shown between their own
+    // section and the Node section. Its target is an entity reference: flagged so the serializer
+    // remaps it, and drawn as a node picker. Empty means the parent, the common case.
+    using M = AnimationMixerComponentUVE;
+    TypeMetadataPropertyUVE mixerTarget = WithTooltipUVE(
+        DeclareUVE<&M::target>("target", "Target", kPropertyTypeEntityUVE),
+        "The node that is moved. Empty means this node's parent.");
+    mixerTarget.flags = TypeMetadataPropertyFlagsUVE::EntityReference;
+    AddValidatedUVE<AnimationMixerComponentUVE, &IsAnimationMixerComponentValidUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.animation_mixer", "AnimationMixer", kSectionOrderNodeBaseUVE + 20,
+            {
+                WithTooltipUVE(DeclareUVE<&M::active>("active", "Active", kPropertyTypeBoolUVE),
+                               "Off, nothing is evaluated and the target is left alone."),
+                std::move(mixerTarget),
+                WithTooltipUVE(WithRangeUVE(DeclareUVE<&M::speedScale>("speedScale", "Speed Scale",
+                                                                       kPropertyTypeFloatUVE),
+                                            0.0, 100.0, 0.01),
+                               "Multiplies every clock under this node: 0.5 is slow motion, 0 freezes."),
+                WithTooltipUVE(DeclareEnumUVE<&M::processCallback>("processCallback", "Update",
+                                                                   {{0, "Every Frame"}, {1, "Physics Step"}}),
+                               "Every Frame is smoothest on screen. Physics Step keeps the target in step "
+                               "with the bodies it pushes."),
+                InGroupUVE(WithTooltipUVE(DeclareUVE<&M::animatePosition>("animatePosition", "Position",
+                                                                          kPropertyTypeBoolUVE),
+                                          "Off, the target's position is left alone."),
+                           "Channels"),
+                InGroupUVE(WithTooltipUVE(DeclareUVE<&M::animateRotation>("animateRotation", "Rotation",
+                                                                          kPropertyTypeBoolUVE),
+                                          "Off, the target's rotation is left alone."),
+                           "Channels"),
+                InGroupUVE(WithTooltipUVE(DeclareUVE<&M::animateScale>("animateScale", "Scale", kPropertyTypeBoolUVE),
+                                          "Off, the target's scale is left alone."),
+                           "Channels"),
+            }));
+
+    // AnimationPlayer's own section.
     using P = AnimationPlayerComponentUVE;
-    TypeMetadataPropertyUVE playerTarget = WithTooltipUVE(
-        DeclareUVE<&P::target>("target", "Target", kPropertyTypeEntityUVE),
-        "The node the clip moves. Empty means this player's parent.");
-    playerTarget.flags = TypeMetadataPropertyFlagsUVE::EntityReference;
     const auto whenOnce = [](TypeMetadataPropertyUVE property) {
         property.isVisible = +[](const void* instance) {
             return static_cast<const P*>(instance)->loopMode == AnimationLoopModeUVE::Once;
@@ -592,7 +626,6 @@ void DeclareAnimationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                 WithTooltipUVE(WithCustomDrawerUVE(DeclareUVE<&P::clip>("clip", "Clip", kPropertyTypeAssetGuidUVE),
                                                    "asset:uvanim"),
                                "The .uvanim clip to play."),
-                std::move(playerTarget),
                 WithTooltipUVE(DeclareUVE<&P::autoplay>("autoplay", "Autoplay", kPropertyTypeBoolUVE),
                                "Starts playing as soon as the scene runs."),
                 InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&P::speed>("speed", "Speed", kPropertyTypeFloatUVE),
@@ -615,11 +648,6 @@ void DeclareAnimationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                           "Seconds into the clip where playback starts. Offsetting copies of one "
                                           "clip keeps a crowd from moving in lockstep."),
                            "Playback"),
-                InGroupUVE(WithTooltipUVE(DeclareEnumUVE<&P::processCallback>("processCallback", "Update",
-                                                                              {{0, "Every Frame"}, {1, "Physics Step"}}),
-                                          "Every Frame is smoothest on screen. Physics Step keeps the target in step "
-                                          "with the bodies it pushes."),
-                           "Playback"),
                 InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&P::blendInSeconds>(
                                                            "blendInSeconds", "Blend In", kPropertyTypeFloatUVE),
                                                        0.0, 60.0, 0.01),
@@ -630,17 +658,6 @@ void DeclareAnimationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                           "Plays the clip's motion on top of where the target already is, so one "
                                           "clip works on any node wherever it was placed."),
                            "Blending"),
-                InGroupUVE(WithTooltipUVE(DeclareUVE<&P::animatePosition>("animatePosition", "Position",
-                                                                          kPropertyTypeBoolUVE),
-                                          "Off, the clip leaves the target's position alone."),
-                           "Channels"),
-                InGroupUVE(WithTooltipUVE(DeclareUVE<&P::animateRotation>("animateRotation", "Rotation",
-                                                                          kPropertyTypeBoolUVE),
-                                          "Off, the clip leaves the target's rotation alone."),
-                           "Channels"),
-                InGroupUVE(WithTooltipUVE(DeclareUVE<&P::animateScale>("animateScale", "Scale", kPropertyTypeBoolUVE),
-                                          "Off, the clip leaves the target's scale alone."),
-                           "Channels"),
                 InGroupUVE(DeclareRuntimeStateUVE<&P::isPlaying>("isPlaying", "Playing", kPropertyTypeBoolUVE), "State"),
                 InGroupUVE(DeclareRuntimeStateUVE<&P::currentTimeSeconds>("currentTimeSeconds", "Time",
                                                                          kPropertyTypeFloatUVE),
@@ -649,10 +666,6 @@ void DeclareAnimationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
             }));
 
     using T = AnimationTreeComponentUVE;
-    TypeMetadataPropertyUVE treeTarget = WithTooltipUVE(
-        DeclareUVE<&T::target>("target", "Target", kPropertyTypeEntityUVE),
-        "The node the graph moves. Empty means this tree's parent.");
-    treeTarget.flags = TypeMetadataPropertyFlagsUVE::EntityReference;
     // The parameters and the graph are lists with their own add, remove and wiring, which a
     // property row cannot express, so each is one custom-drawn block.
     AddValidatedUVE<AnimationTreeComponentUVE, &IsAnimationTreeComponentValidUVE>(
@@ -660,9 +673,6 @@ void DeclareAnimationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
         MakeEntryUVE(
             "component.animation_tree", "AnimationTree", kSectionOrderTypeSpecificUVE,
             {
-                WithTooltipUVE(DeclareUVE<&T::active>("active", "Active", kPropertyTypeBoolUVE),
-                               "Evaluates the graph every frame while the scene runs."),
-                std::move(treeTarget),
                 InGroupUVE(WithCustomDrawerUVE(DeclareUVE<&T::parameters>("parameters", "Parameters",
                                                                          "AnimationParameterList"),
                                                "animation-parameters"),
@@ -670,11 +680,6 @@ void DeclareAnimationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                 InGroupUVE(WithCustomDrawerUVE(DeclareUVE<&T::nodes>("nodes", "Graph", "AnimationGraphNodeList"),
                                                "animation-graph"),
                            "Graph"),
-                InGroupUVE(DeclareUVE<&T::animatePosition>("animatePosition", "Position", kPropertyTypeBoolUVE),
-                           "Channels"),
-                InGroupUVE(DeclareUVE<&T::animateRotation>("animateRotation", "Rotation", kPropertyTypeBoolUVE),
-                           "Channels"),
-                InGroupUVE(DeclareUVE<&T::animateScale>("animateScale", "Scale", kPropertyTypeBoolUVE), "Channels"),
                 InGroupUVE(DeclareRuntimeStateUVE<&T::activeStates>("activeStates", "Active States",
                                                                     kPropertyTypeStringUVE),
                            "State"),

@@ -5,6 +5,7 @@
 #include <cstdint>
 
 #include "uve/asset/asset_guid_uve.h"
+#include "uve/component/animation_mixer_component_uve.h"
 #include "uve/component/entity_uve.h"
 #include "uve/math/quaternion_uve.h"
 #include "uve/math/vector3_uve.h"
@@ -29,25 +30,14 @@ enum class AnimationFinishActionUVE : std::uint8_t {
     ReturnToStart,
 };
 
-/// Which clock advances the clip.
-enum class AnimationProcessCallbackUVE : std::uint8_t {
-    /// Every rendered frame: smoothest for anything the camera looks at.
-    Frame = 0,
-    /// Every physics step, in step with the physics bodies it moves.
-    Physics,
-};
-
-/// AnimationPlayer's own state: plays a `.uvanim` clip on a target node's transform. The player is
-/// a pure Node - it has no transform of its own - so what it moves is `target`, or its parent when
-/// no target is set.
+/// AnimationPlayer's own state: plays a `.uvanim` clip on a target node's transform. What it moves,
+/// which channels and on which clock live in its AnimationMixer base (AnimationMixerComponentUVE).
 ///
 /// Authored settings first; the runtime state the player writes back each step comes last and is
 /// shown in the Inspector only while playing, never saved.
 struct AnimationPlayerComponentUVE final {
     /// The clip to play. Invalid means nothing to play.
     Asset::AssetGuidUVE clip{};
-    /// The node the clip moves. Invalid means the player's parent.
-    EntityUVE target = kInvalidEntityUVE;
     /// Starts playing as soon as the scene runs.
     bool autoplay = true;
     /// Playback rate: 1 is normal, 2 twice as fast, negative plays backwards. 0 holds the pose.
@@ -61,11 +51,6 @@ struct AnimationPlayerComponentUVE final {
     /// Plays the clip on top of where the target already is, so one clip (a bob, a sway, a door
     /// swing) works on any node wherever it was placed. Off, the clip's poses are absolute.
     bool relative = false;
-    /// Per-channel masks: a clip can drive rotation alone and leave position to physics or a script.
-    bool animatePosition = true;
-    bool animateRotation = true;
-    bool animateScale = true;
-    AnimationProcessCallbackUVE processCallback = AnimationProcessCallbackUVE::Frame;
 
     // ---- Runtime state, written by the player; never saved --------------------------------------
     bool isPlaying = false;
@@ -85,12 +70,10 @@ struct AnimationPlayerComponentUVE final {
 
     /// Authored settings only: runtime state is ignored, so a playing player equals its saved self.
     [[nodiscard]] bool HasSameSettingsUVE(const AnimationPlayerComponentUVE& other) const noexcept {
-        return clip == other.clip && target == other.target && autoplay == other.autoplay &&
+        return clip == other.clip && autoplay == other.autoplay &&
                speed == other.speed && loopMode == other.loopMode && onFinish == other.onFinish &&
                startOffsetSeconds == other.startOffsetSeconds && blendInSeconds == other.blendInSeconds &&
-               relative == other.relative && animatePosition == other.animatePosition &&
-               animateRotation == other.animateRotation && animateScale == other.animateScale &&
-               processCallback == other.processCallback;
+               relative == other.relative;
     }
 
     [[nodiscard]] bool operator==(const AnimationPlayerComponentUVE&) const = default;

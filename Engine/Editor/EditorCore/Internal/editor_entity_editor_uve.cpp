@@ -19,6 +19,8 @@
 
 #include <imgui.h>
 
+#include "uve/component/animation_player_component_uve.h"
+#include "uve/component/animation_tree_component_uve.h"
 #include "uve/component/prefab_instance_component_uve.h"
 #include "uve/component/script_component_uve.h"
 #include "uve/core/uvscript_node_host_uve.h"
@@ -532,12 +534,20 @@ void EditorUVE::DrawEntityEditorDockUVE(EntityEditSessionUVE& session) {
         ImGui::SetCursorPosX((area.x - ImGui::CalcTextSize(detail).x) * 0.5F);
         ImGui::TextDisabled("%s", detail);
     };
-    if (tab("Timeline", EntityEditorDockTabUVE::Timeline)) {
+    // The animation tabs only exist once the entity has a node that uses them.
+    bool hasPlayer = false;
+    bool hasTree = false;
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    for (const Scene::EntityUVE node : CollectEntityEditorNodesUVE()) {
+        hasPlayer = hasPlayer || entityManager.HasComponentUVE<Scene::AnimationPlayerComponentUVE>(node);
+        hasTree = hasTree || entityManager.HasComponentUVE<Scene::AnimationTreeComponentUVE>(node);
+    }
+    if (hasPlayer && tab("Timeline", EntityEditorDockTabUVE::Timeline)) {
         upcoming("The Timeline is not built yet.",
                  "Keyframes for position, rotation, scale and events, played on this entity, come next.");
         ImGui::EndTabItem();
     }
-    if (tab("Anim Graph", EntityEditorDockTabUVE::AnimGraph)) {
+    if (hasTree && tab("Anim Graph", EntityEditorDockTabUVE::AnimGraph)) {
         upcoming("The Anim Graph is not built yet.",
                  "The AnimationTree as boxes and wires, with its state machine, comes with the Timeline.");
         ImGui::EndTabItem();

@@ -18,18 +18,19 @@ class IEntityManagerUVE;
 struct TransformComponentUVE;
 
 /// Authoring definition for the AnimationPlayer node: a pure Node - no transform, no visibility -
-/// whose Inspector is its own section and then the Node section, exactly like the scene root's.
+/// whose Inspector is its own section, its AnimationMixer base, then the Node section.
 /// It plays a clip on another node (`target`, or its parent), so it can sit anywhere in the tree,
 /// directly under the scene root included.
 struct AnimationPlayerNodeDefinitionUVE final {
     static constexpr std::string_view defaultName = "AnimationPlayer";
 
     AnimationPlayerComponentUVE player{};
+    AnimationMixerComponentUVE mixer{};
 };
 
 [[nodiscard]] bool IsAnimationPlayerNodeDefinitionValidUVE(const AnimationPlayerNodeDefinitionUVE& value) noexcept;
 
-/// Makes `entity` a pure Node (EnsureNodeBaselineUVE) and adds the player when it is missing.
+/// Applies the AnimationMixer base (ApplyAnimationMixerBaseUVE) and adds the player when it is missing.
 void ApplyAnimationPlayerNodeDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
                                            const AnimationPlayerNodeDefinitionUVE& value);
 
@@ -46,10 +47,11 @@ void PlayAnimationPlayerUVE(AnimationPlayerComponentUVE& player, const Transform
 void StopAnimationPlayerUVE(AnimationPlayerComponentUVE& player) noexcept;
 
 /// Advances a playing player by `deltaSeconds` and writes the clip's pose into `target`, through the
-/// channel masks, the blend-in and relative mode. Returns true when `target` was written. A clip
-/// that is empty or invalid stops the player and writes nothing.
+/// mixer's channel masks, the blend-in and relative mode. Returns true when `target` was written. A
+/// clip that is empty or invalid stops the player and writes nothing.
 [[nodiscard]] bool StepAnimationPlayerUVE(AnimationPlayerComponentUVE& player, const Asset::AnimationClipAssetUVE& clip,
-                                          float deltaSeconds, TransformComponentUVE& target) noexcept;
+                                          float deltaSeconds, TransformComponentUVE& target,
+                                          const AnimationMixerComponentUVE& mixer = {}) noexcept;
 
 /// The clip's pose at `timeSeconds`: linear position and scale, spherical rotation between the two
 /// samples around it, clamped to the first and last. The clip must have at least one sample.

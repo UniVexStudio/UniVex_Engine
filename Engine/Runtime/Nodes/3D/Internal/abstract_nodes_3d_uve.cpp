@@ -2,6 +2,7 @@
 
 #include "uve/nodes/3d/abstract_nodes_3d_uve.h"
 
+#include "uve/component/animation_mixer_component_uve.h"
 #include "uve/component/bone_modifier_component_uve.h"
 #include "uve/component/light_emitter_component_uve.h"
 #include "uve/component/physics_object_component_uve.h"
@@ -78,6 +79,14 @@ void ApplyLightEmitter3DBaseUVE(IEntityManagerUVE& entityManager, const EntityUV
                                 const std::string_view nameFallback) {
     ApplyRenderInstance3DBaseUVE(entityManager, entity, nameFallback);
     EnsureUVE<LightEmitterComponentUVE>(entityManager, entity);
+}
+
+void ApplyAnimationMixerBaseUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
+                                const std::string_view nameFallback) {
+    EnsureNodeBaselineUVE(entityManager, entity, nameFallback);
+    if (entityManager.IsAliveUVE(entity) && !entityManager.HasComponentUVE<AnimationMixerComponentUVE>(entity)) {
+        entityManager.AddComponentUVE<AnimationMixerComponentUVE>(entity, AnimationMixerComponentUVE{});
+    }
 }
 
 } // namespace UVE::Scene

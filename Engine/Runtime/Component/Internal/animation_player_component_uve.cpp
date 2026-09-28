@@ -21,7 +21,7 @@ bool IsAnimationPlayerComponentValidUVE(const AnimationPlayerComponentUVE& compo
     const AnimationPlayerComponentUVE& c = component;
     return std::isfinite(c.speed) && c.loopMode <= AnimationLoopModeUVE::PingPong &&
            c.onFinish <= AnimationFinishActionUVE::ReturnToStart &&
-           c.processCallback <= AnimationProcessCallbackUVE::Physics && IsNonNegativeUVE(c.startOffsetSeconds) &&
+           IsNonNegativeUVE(c.startOffsetSeconds) &&
            IsNonNegativeUVE(c.blendInSeconds) && IsNonNegativeUVE(c.currentTimeSeconds) &&
            (c.direction == 1.0F || c.direction == -1.0F) && IsNonNegativeUVE(c.blendElapsedSeconds) &&
            IsFiniteVectorUVE(c.startPosition) && Math::IsFiniteUVE(c.startRotation) &&

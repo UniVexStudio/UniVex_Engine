@@ -424,8 +424,9 @@ TEST(EditorUVETest, InspectorDrawerRegistrationUVE_IncludesStableHierarchyDrawer
         // 27 before the three abstract 3D bases, each of which brings one section; 30 before the
         // old Name and Hierarchy drawers were removed and SurfaceInstance3D, LightEmitter3D,
         // Decal3D and FogVolume3D each brought one.
-        // 33 with Skeleton3D's own section; 34 with SolidBody3D's.
-        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorDrawerCountUVE(editor), 35U);
+        // 33 with Skeleton3D's own section; 34 with SolidBody3D's; 36 with AnimationMixer's.
+        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorDrawerCountUVE(editor), 36U);
+        EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "animation-mixer"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "solid-body"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "animation-tree"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "skeleton-3d"));
@@ -5091,9 +5092,9 @@ TEST(EditorUVETest, AnimationNodesUVE_InspectorIsTheirOwnSectionThenTheNodeSecti
         const Scene::EntityUVE tree = editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::AnimationTree);
         ASSERT_NE(player, Scene::kInvalidEntityUVE);
         ASSERT_NE(tree, Scene::kInvalidEntityUVE);
-        // AnimationPlayer > Node, exactly like the scene root: no Transform, no Visibility.
-        const std::vector<std::string> nodeSection{"process", "physics-interpolation", "auto-translate",
-                                                   "editor-description", "script", "node-metadata"};
+        // AnimationPlayer > AnimationMixer > Node: a pure Node, no Transform, no Visibility.
+        const std::vector<std::string> nodeSection{"animation-mixer", "process", "physics-interpolation",
+                                                   "auto-translate", "editor-description", "script", "node-metadata"};
         std::vector<std::string> expected{"animation-player"};
         expected.insert(expected.end(), nodeSection.begin(), nodeSection.end());
         EXPECT_EQ(EditorUVEAccessUVE::GetEligibleInspectorDrawerIdsUVE(editor, player), expected);
