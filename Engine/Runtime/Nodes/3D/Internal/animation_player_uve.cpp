@@ -30,6 +30,13 @@ using PoseUVE = Core::TransformPoseUVE;
     return from + (to - from) * alpha;
 }
 
+/// Inertialization's fade: 1 at the start, 0 at the end, with zero speed and acceleration at both
+/// (the complement of the quintic smoothstep), so the hand-over has no pop and no kink.
+[[nodiscard]] float InertialDecayUVE(const float progress) noexcept {
+    const float x = std::clamp(progress, 0.0F, 1.0F);
+    return 1.0F - x * x * x * (x * (x * 6.0F - 15.0F) + 10.0F);
+}
+
 [[nodiscard]] Math::QuaternionUVE SlerpOrKeepUVE(const Math::QuaternionUVE& from, const Math::QuaternionUVE& to,
                                                  const float alpha) noexcept {
     Math::QuaternionUVE result = to;
@@ -188,6 +195,10 @@ void PlayAnimationPlayerUVE(AnimationPlayerComponentUVE& player, const Transform
     player.finished = false;
     player.isPlaying = true;
     player.hasStartPose = true;
+    player.playingClip = player.clip;
+    player.inertialPosition.clear();
+    player.inertialRotation.clear();
+    player.inertialScale.clear();
     player.startPosition = targetNow.localPosition;
     player.startRotation = targetNow.localRotation;
     player.startScale = targetNow.localScale;
@@ -285,7 +296,20 @@ bool StepSkeletalAnimationPlayerUVE(AnimationPlayerComponentUVE& player, const A
         weight = remaining > 0.0F ? std::clamp(deltaSeconds / remaining, 0.0F, 1.0F) : 1.0F;
     }
     const double time = static_cast<double>(player.currentTimeSeconds);
-    for (std::size_t index = 0U; index < skeleton.bones.size(); ++index) {
+    // Inertialization: on the blend's first step, remember how far the pose that was there is from
+    // the new clip; then play the clip at full weight with that difference fading out.
+    const bool inertial = mixer.transition == AnimationTransitionModeUVE::Inertialize && player.blendInSeconds > 0.0F;
+    const std::size_t boneCount = skeleton.bones.size();
+    const bool captureOffsets = inertial && blendBefore <= 0.0F;
+    if (captureOffsets) {
+        player.inertialPosition.assign(boneCount, Math::Vector3UVE{});
+        player.inertialRotation.assign(boneCount, Math::QuaternionUVE{});
+        player.inertialScale.assign(boneCount, Math::Vector3UVE{});
+    }
+    const bool haveOffsets = inertial && player.inertialPosition.size() == boneCount &&
+                             player.inertialRotation.size() == boneCount && player.inertialScale.size() == boneCount;
+    const float decay = haveOffsets ? InertialDecayUVE(player.blendElapsedSeconds / player.blendInSeconds) : 0.0F;
+    for (std::size_t index = 0U; index < boneCount; ++index) {
         const SkeletonBoneUVE& bone = skeleton.bones[index];
         PoseUVE target{bone.localPosition, bone.localRotation, bone.localScale};
         if (!returnToRest) {
@@ -294,9 +318,26 @@ bool StepSkeletalAnimationPlayerUVE(AnimationPlayerComponentUVE& player, const A
             }
         }
         SkeletonBonePoseUVE& out = current[index];
-        const PoseUVE blended{LerpUVE(out.position, target.position, weight),
+        if (captureOffsets) {
+            Math::QuaternionUVE inverse{};
+            if (!Math::TryInverseUVE(target.rotation, inverse)) {
+                inverse = Math::QuaternionUVE{};
+            }
+            player.inertialPosition[index] = out.position - target.position;
+            player.inertialRotation[index] = Math::MultiplyUVE(out.rotation, inverse);
+            player.inertialScale[index] = out.scale - target.scale;
+        }
+        PoseUVE blended;
+        if (haveOffsets) {
+            blended = PoseUVE{target.position + player.inertialPosition[index] * decay,
+                              Math::MultiplyUVE(SlerpOrKeepUVE(Math::QuaternionUVE{}, player.inertialRotation[index], decay),
+                                                target.rotation),
+                              target.scale + player.inertialScale[index] * decay};
+        } else {
+            blended = PoseUVE{LerpUVE(out.position, target.position, weight),
                               SlerpOrKeepUVE(out.rotation, target.rotation, weight),
                               LerpUVE(out.scale, target.scale, weight)};
+        }
         if (mixer.animatePosition) {
             out.position = blended.position;
         }
@@ -309,6 +350,11 @@ bool StepSkeletalAnimationPlayerUVE(AnimationPlayerComponentUVE& player, const A
         if (mixer.animateScale) {
             out.scale = blended.scale;
         }
+    }
+    if (haveOffsets && player.blendElapsedSeconds >= player.blendInSeconds) {
+        player.inertialPosition.clear();
+        player.inertialRotation.clear();
+        player.inertialScale.clear();
     }
     // Root motion: the root bone's ground travel over this step, across a loop's wrap too, is
     // handed to the caller; the pose keeps the bone over its first frame's ground position.

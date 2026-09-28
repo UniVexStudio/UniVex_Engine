@@ -1053,6 +1053,10 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
                 m_entityManager->GetComponentUVE<Scene::Skeleton3DNodeComponentUVE>(skeletonEntity);
             if (!player.hasStartPose && player.autoplay) {
                 Scene::PlayAnimationPlayerUVE(player, Scene::TransformComponentUVE{}, clip->durationSeconds);
+            } else if (player.isPlaying && player.playingClip != player.clip) {
+                // Switched mid-play (a script, a state change): the new clip takes over from the
+                // pose that is there, through the mixer's transition.
+                Scene::PlayAnimationPlayerUVE(player, Scene::TransformComponentUVE{}, clip->durationSeconds);
             }
             const bool posed = Scene::StepSkeletalAnimationPlayerUVE(player, *clip, deltaSeconds * mixer.speedScale,
                                                                      skeleton, mixer);

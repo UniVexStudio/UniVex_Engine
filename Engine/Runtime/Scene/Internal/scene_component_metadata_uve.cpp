@@ -608,6 +608,11 @@ void DeclareAnimationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                 InGroupUVE(WithTooltipUVE(DeclareUVE<&M::animateScale>("animateScale", "Scale", kPropertyTypeBoolUVE),
                                           "Off, the target's scale is left alone."),
                            "Channels"),
+                WithTooltipUVE(DeclareEnumUVE<&M::transition>("transition", "Transition",
+                                                              {{0, "Inertialize"}, {1, "Crossfade"}}),
+                               "How a clip that starts takes over, over the player's Blend In. Inertialize "
+                               "plays the new clip at once and fades out the old pose's difference smoothly: "
+                               "cheaper, and no sliding. Crossfade mixes the two."),
                 InGroupUVE(WithTooltipUVE(DeclareEnumUVE<&M::rootMotion>("rootMotion", "Mode",
                                                                          {{0, "Off"}, {1, "In Place"},
                                                                           {2, "Apply To Target"}}),
