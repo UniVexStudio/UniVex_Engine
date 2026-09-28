@@ -8,6 +8,7 @@
 #include "uve/editor/editor_uve.h"
 
 #include "editor_chrome_layout_uve.h"
+#include "editor_uvscript_highlight_uve.h"
 
 #include <algorithm>
 #include <cfloat>
@@ -18,6 +19,7 @@
 #include <utility>
 
 #include <imgui.h>
+#include <imgui_internal.h>
 
 #include "uve/core/uvscript_node_host_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
@@ -44,6 +46,8 @@ void RecheckUVScriptUVE(EditorUVE::UVScriptDocumentUVE& document, Scene::IEntity
 struct TextBoxStateUVE final {
     std::string* text = nullptr;
     std::uint32_t* jumpLine = nullptr;
+    /// Enter was typed this frame: indent the new line once ImGui has inserted it.
+    bool indentPending = false;
 };
 
 /// Byte offset of the start of 1-based `line` in `text` (its end when there are fewer lines).
@@ -66,6 +70,21 @@ int TextBoxCallbackUVE(ImGuiInputTextCallbackData* const data) {
     if (data->EventFlag == ImGuiInputTextFlags_CallbackResize) {
         state->text->resize(static_cast<std::size_t>(data->BufTextLen));
         data->Buf = state->text->data();
+    } else if (data->EventFlag == ImGuiInputTextFlags_CallbackCharFilter) {
+        state->indentPending = state->indentPending || data->EventChar == '\n';
+    } else if (data->EventFlag == ImGuiInputTextFlags_CallbackAlways && state->indentPending) {
+        state->indentPending = false;
+        // The caret sits just after the new '\n': indent like the line before it.
+        const std::string_view before{data->Buf, static_cast<std::size_t>(data->CursorPos)};
+        if (before.ends_with('\n')) {
+            const std::string_view head = before.substr(0U, before.size() - 1U);
+            const std::size_t lineStart = head.rfind('\n');
+            const std::string indent =
+                ComputeUVScriptNewLineIndentUVE(head.substr(lineStart == std::string_view::npos ? 0U : lineStart + 1U));
+            if (!indent.empty()) {
+                data->InsertChars(data->CursorPos, indent.c_str());
+            }
+        }
     } else if (data->EventFlag == ImGuiInputTextFlags_CallbackAlways && *state->jumpLine != 0U) {
         const int offset = LineStartOffsetUVE(std::string_view{data->Buf, static_cast<std::size_t>(data->BufTextLen)},
                                               *state->jumpLine);
@@ -77,7 +96,133 @@ int TextBoxCallbackUVE(ImGuiInputTextCallbackData* const data) {
     return 0;
 }
 
+[[nodiscard]] ImU32 TokenColourUVE(const UVScriptTokenKindUVE kind) noexcept {
+    switch (kind) {
+    case UVScriptTokenKindUVE::Keyword:
+        return IM_COL32(198, 146, 234, 255);
+    case UVScriptTokenKindUVE::Declaration:
+        return IM_COL32(110, 168, 254, 255);
+    case UVScriptTokenKindUVE::Literal:
+        return IM_COL32(236, 146, 96, 255);
+    case UVScriptTokenKindUVE::Type:
+        return IM_COL32(78, 201, 176, 255);
+    case UVScriptTokenKindUVE::Definition:
+        return IM_COL32(230, 205, 120, 255);
+    case UVScriptTokenKindUVE::Number:
+        return IM_COL32(181, 206, 138, 255);
+    case UVScriptTokenKindUVE::String:
+        return IM_COL32(214, 157, 133, 255);
+    case UVScriptTokenKindUVE::Comment:
+        return IM_COL32(106, 121, 138, 255);
+    case UVScriptTokenKindUVE::Plain:
+        break;
+    }
+    return IM_COL32(212, 218, 226, 255);
+}
+
 } // namespace
+
+void EditorUVE::DrawUVScriptTextBoxUVE(UVScriptDocumentUVE& document, const float height) {
+    const ImGuiStyle& style = ImGui::GetStyle();
+    const float lineHeight = ImGui::GetFontSize();
+    const std::size_t lineCount = static_cast<std::size_t>(std::count(document.text.begin(), document.text.end(), '\n')) + 1U;
+    const std::string widest = std::to_string(std::max<std::size_t>(lineCount, 99U));
+    const float gutterWidth = ImGui::CalcTextSize(widest.c_str()).x + style.FramePadding.x * 2.0F + 8.0F;
+    const ImVec2 gutterMin = ImGui::GetCursorScreenPos();
+    ImGui::SetCursorScreenPos(ImVec2{gutterMin.x + gutterWidth, gutterMin.y});
+
+    // ImGui's text box does the editing (caret, selection, undo, clipboard); its own glyphs are
+    // transparent and the coloured text is drawn over them, glyph for glyph.
+    std::string text = document.text;
+    TextBoxStateUVE textBox{&text, &m_uvscriptJumpLine};
+    if (m_uvscriptJumpLine != 0U) {
+        ImGui::SetKeyboardFocusHere();
+    }
+    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 0));
+    ImGui::PushStyleColor(ImGuiCol_InputTextCursor, IM_COL32(236, 240, 246, 255));
+    const bool edited = ImGui::InputTextMultiline(
+        "##uvs-text", text.data(), text.capacity() + 1U, ImVec2{-FLT_MIN, height},
+        ImGuiInputTextFlags_AllowTabInput | ImGuiInputTextFlags_CallbackResize | ImGuiInputTextFlags_CallbackAlways |
+            ImGuiInputTextFlags_CallbackCharFilter,
+        TextBoxCallbackUVE, &textBox);
+    ImGui::PopStyleColor(2);
+    const ImGuiID textId = ImGui::GetItemID();
+    const ImVec2 boxMin = ImGui::GetItemRectMin();
+    const ImVec2 boxMax = ImGui::GetItemRectMax();
+    if (edited) {
+        SetOpenUVScriptTextUVE(text);
+    }
+
+    // The scrolling child ImGui made for the box, found by the name it gives such children.
+    ImGuiWindow* const parent = ImGui::GetCurrentWindow();
+    char childName[512];
+    ImFormatString(childName, sizeof(childName), "%s/%s_%08X", parent->Name, "##uvs-text", textId);
+    const ImGuiWindow* const child = ImGui::FindWindowByName(childName);
+    const ImVec2 scroll = child != nullptr ? child->Scroll : ImVec2{0.0F, 0.0F};
+    ImDrawList& drawList = child != nullptr ? *child->DrawList : *ImGui::GetWindowDrawList();
+    const ImVec2 origin{boxMin.x + style.FramePadding.x - scroll.x, boxMin.y + style.FramePadding.y - scroll.y};
+
+    // The caret's line, for the gutter.
+    std::size_t caretLine = 0U;
+    if (const ImGuiInputTextState* const state = ImGui::GetInputTextState(textId); state != nullptr) {
+        const int caret = std::clamp(state->GetCursorPos(), 0, static_cast<int>(text.size()));
+        caretLine = static_cast<std::size_t>(std::count(text.begin(), text.begin() + caret, '\n'));
+    }
+
+    ImDrawList& gutterList = *ImGui::GetWindowDrawList();
+    gutterList.AddRectFilled(ImVec2{gutterMin.x, boxMin.y}, ImVec2{boxMin.x - 2.0F, boxMax.y},
+                             ImGui::GetColorU32(ImGuiCol_FrameBg), style.FrameRounding);
+    gutterList.PushClipRect(ImVec2{gutterMin.x, boxMin.y + 1.0F}, ImVec2{boxMin.x, boxMax.y - 1.0F}, true);
+    drawList.PushClipRect(ImVec2{boxMin.x + 1.0F, boxMin.y + 1.0F}, ImVec2{boxMax.x - 1.0F, boxMax.y - 1.0F}, true);
+    const auto hasProblem = [&document](const std::size_t line) {
+        return std::ranges::any_of(document.diagnostics, [line](const UVScript::DiagnosticUVE& diagnostic) {
+            return diagnostic.at.line == line + 1U;
+        });
+    };
+    const std::size_t first = static_cast<std::size_t>(std::max(0.0F, scroll.y - style.FramePadding.y) / lineHeight);
+    const std::size_t visible = static_cast<std::size_t>(height / lineHeight) + 2U;
+    std::string_view rest{text};
+    for (std::size_t line = 0U; line < lineCount && line < first + visible; ++line) {
+        const std::size_t newline = rest.find('\n');
+        const std::string_view content = rest.substr(0U, newline);
+        rest = newline == std::string_view::npos ? std::string_view{} : rest.substr(newline + 1U);
+        if (line < first) {
+            continue;
+        }
+        const float y = origin.y + static_cast<float>(line) * lineHeight;
+
+        // Gutter: the number, bright on the caret's line, orange where the compiler complains.
+        const std::string number = std::to_string(line + 1U);
+        const bool problem = hasProblem(line);
+        const ImU32 numberColour = problem ? IM_COL32(242, 140, 80, 255)
+                                   : line == caretLine ? IM_COL32(220, 226, 236, 255)
+                                                       : IM_COL32(104, 114, 128, 255);
+        gutterList.AddText(ImVec2{boxMin.x - 8.0F - ImGui::CalcTextSize(number.c_str()).x, y}, numberColour,
+                           number.c_str());
+        if (problem) {
+            gutterList.AddCircleFilled(ImVec2{gutterMin.x + 6.0F, y + lineHeight * 0.5F}, 2.5F,
+                                       IM_COL32(242, 140, 80, 255));
+        }
+
+        // Text: each span in its colour, the gaps between them plain.
+        const char* const lineBegin = content.data();
+        std::size_t drawn = 0U;
+        const auto drawPiece = [&](const std::size_t start, const std::size_t end, const ImU32 colour) {
+            if (end > start) {
+                const float x = origin.x + ImGui::CalcTextSize(lineBegin, lineBegin + start).x;
+                drawList.AddText(ImVec2{x, y}, colour, lineBegin + start, lineBegin + end);
+            }
+        };
+        for (const UVScriptTokenSpanUVE& span : HighlightUVScriptLineUVE(content)) {
+            drawPiece(drawn, span.start, TokenColourUVE(UVScriptTokenKindUVE::Plain));
+            drawPiece(span.start, span.start + span.length, TokenColourUVE(span.kind));
+            drawn = span.start + span.length;
+        }
+        drawPiece(drawn, content.size(), TokenColourUVE(UVScriptTokenKindUVE::Plain));
+    }
+    drawList.PopClipRect();
+    gutterList.PopClipRect();
+}
 
 bool EditorUVE::OpenUVScriptForEntityUVE(const Scene::EntityUVE entity) {
     if (m_state != EditorStateUVE::Running || m_services == nullptr) {
@@ -190,18 +335,7 @@ bool EditorUVE::DrawUVScriptEditorBodyUVE(const bool offerClose) {
     const float lineHeight = ImGui::GetTextLineHeightWithSpacing();
     const float listHeight = std::min(ImGui::GetContentRegionAvail().y / 3.0F,
                                       lineHeight * static_cast<float>(std::max<std::size_t>(document.diagnostics.size(), 1U) + 1U));
-    std::string text = document.text;
-    TextBoxStateUVE textBox{&text, &m_uvscriptJumpLine};
-    if (m_uvscriptJumpLine != 0U) {
-        ImGui::SetKeyboardFocusHere();
-    }
-    if (ImGui::InputTextMultiline("##uvs-text", text.data(), text.capacity() + 1U,
-                                  ImVec2{-FLT_MIN, ImGui::GetContentRegionAvail().y - listHeight - 6.0F},
-                                  ImGuiInputTextFlags_AllowTabInput | ImGuiInputTextFlags_CallbackResize |
-                                      ImGuiInputTextFlags_CallbackAlways,
-                                  TextBoxCallbackUVE, &textBox)) {
-        SetOpenUVScriptTextUVE(std::move(text));
-    }
+    DrawUVScriptTextBoxUVE(document, ImGui::GetContentRegionAvail().y - listHeight - 6.0F);
 
     if (ImGui::BeginChild("##uvs-problems", ImVec2{0.0F, listHeight}, ImGuiChildFlags_Borders)) {
         if (document.diagnostics.empty()) {
