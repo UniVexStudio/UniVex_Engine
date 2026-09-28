@@ -265,10 +265,12 @@ void EditorUVE::InitUVE() {
     if (windowManager.IsValidUVE() && windowManager.GetNativeWindowHandleUVE() != nullptr) {
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
-        // Docking only - no ImGuiConfigFlags_ViewportsEnable: multi-OS-window docking pulls in a
-        // second GLFW/OpenGL presentation path this editor's single-window WindowManagerUVE
-        // integration was never built for, and nothing in this pass's scope needs it.
-        ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+        // Docking, and viewports: a window may live in its own OS window (the Entity Editor
+        // does). The extra windows share the main GL context's objects, so the viewport's
+        // rendered texture shows in them too; RenderOverlayUVE() presents them each frame.
+        // The editor's own panels stay inside the main window - they are placed there and
+        // cannot be dragged out.
+        ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable | ImGuiConfigFlags_ViewportsEnable;
         ImGui::StyleColorsDark();
         ApplyEditorVisualThemeUVE();
 
@@ -352,6 +354,10 @@ void EditorUVE::TickUVE() {
 }
 
 bool EditorUVE::EnterPlayModeUVE() {
+    // The document is an entity while the Entity Editor is open; the scene plays, not it.
+    if (m_entityEditSession.has_value()) {
+        return false;
+    }
     // A colour still being picked belongs to the document being played; finish it first.
     static_cast<void>(CommitComponentPropertyPreviewUVE());
     if (m_state != EditorStateUVE::Running || m_playModeState != EditorPlayModeStateUVE::Edit ||
@@ -567,6 +573,10 @@ EditorPlayModeStateUVE EditorUVE::GetPlayModeStateUVE() const noexcept {
 
 
 bool EditorUVE::SaveSceneUVE() {
+    // While the Entity Editor is open the document is the entity: saving writes the entity.
+    if (m_entityEditSession.has_value()) {
+        return SaveEntityEditorUVE();
+    }
     if (!IsAuthoringCommandAllowedUVE() || m_activeScenePath.empty()) {
         return false;
     }
@@ -583,7 +593,7 @@ bool EditorUVE::SaveSceneUVE() {
 std::size_t EditorUVE::SaveAllUVE() {
     std::size_t saved = 0U;
     std::vector<std::string> failed;
-    if (m_sceneDirty && !m_activeScenePath.empty()) {
+    if (m_sceneDirty && (!m_activeScenePath.empty() || m_entityEditSession.has_value())) {
         if (SaveSceneUVE()) {
             ++saved;
         } else {
@@ -803,6 +813,9 @@ bool EditorUVE::DiscardSelectedPrefabOverridesAndRefreshUVE() {
 }
 
 bool EditorUVE::LoadSceneUVE() {
+    if (m_entityEditSession.has_value()) {
+        return false;
+    }
     static_cast<void>(CommitComponentPropertyPreviewUVE());
     if (!IsAuthoringCommandAllowedUVE() || m_activeScenePath.empty() ||
         !std::filesystem::exists(m_activeScenePath)) {
@@ -3597,6 +3610,11 @@ void EditorUVE::ShutdownUVE() {
         return;
     }
     static_cast<void>(CommitComponentPropertyPreviewUVE());
+    // An open entity is closed without saving (nothing here can ask), so the scene is back in
+    // place for whatever runs after the editor.
+    if (m_entityEditSession.has_value()) {
+        static_cast<void>(CloseEntityEditorUVE(false));
+    }
 
     // An interactive session keeps its editor preferences (panels, snapping, grid, Inspector folds,
     // favourites) without the author having to remember "Save Editor Preferences" first. Headless
