@@ -1941,6 +1941,71 @@ TEST(EngineCoreUVETest, AnimationPlayer_PosesTheSkeletonInsideTheCharacterWithAS
     engine.Shutdown();
 }
 
+TEST(EngineCoreUVETest, AnimationPlayer_RootMotionMovesTheCharacterThroughTheSkeletonsFrame) {
+    EngineCoreUVE engine(MakeTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+    Asset::IAssetDatabaseUVE& assetDatabase = engine.GetServicesUVE().GetAssetDatabaseUVE();
+
+    // "Hips" run 2 m along +Z in one second.
+    Asset::AnimationClipAssetUVE clip;
+    clip.clipId = "run";
+    clip.durationSeconds = 1.0;
+    Asset::AnimationAssetSampleUVE start;
+    start.pose.position = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+    Asset::AnimationAssetSampleUVE end;
+    end.timeSeconds = 1.0;
+    end.pose.position = Math::Vector3UVE{0.0F, 1.0F, 2.0F};
+    clip.bones = {Asset::AnimationAssetBoneTrackUVE{"Hips", {start, end}}};
+    const std::filesystem::path clipPath = "uve_engine_core_tests_run.uvanim";
+    ASSERT_TRUE(Asset::SaveAnimationClipAssetUVE(clip, clipPath));
+    const Asset::AssetGuidUVE guid = assetDatabase.RegisterUVE(clipPath);
+
+    // The skeleton is turned a quarter left inside the character, so its +Z is the world's +X.
+    const Scene::EntityUVE character = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, character, Scene::TransformComponentUVE{});
+    const Scene::EntityUVE skeletonEntity = entityManager.CreateEntityUVE();
+    Scene::Skeleton3DNodeDefinitionUVE skeletonDefinition;
+    skeletonDefinition.skeleton.skeletonAssetPath = "Hero.fbx";
+    Scene::SkeletonBoneUVE hips;
+    hips.name = "Hips";
+    hips.localPosition = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+    skeletonDefinition.skeleton.bones = {hips};
+    Scene::ApplySkeleton3DNodeDefinitionUVE(entityManager, skeletonEntity, skeletonDefinition);
+    sceneGraph.SetParentUVE(entityManager, skeletonEntity, character);
+    auto& skeletonTransform = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(skeletonEntity);
+    ASSERT_TRUE(Math::TryMakeAxisAngleUVE(Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 1.5707963F,
+                                          skeletonTransform.localRotation));
+    const Scene::EntityUVE player = entityManager.CreateEntityUVE();
+    Scene::AnimationPlayerNodeDefinitionUVE definition;
+    definition.player.clip = guid;
+    definition.player.loopMode = Scene::AnimationLoopModeUVE::Once;
+    definition.mixer.rootMotion = Scene::AnimationRootMotionModeUVE::ApplyToTarget;
+    Scene::ApplyAnimationPlayerNodeDefinitionUVE(entityManager, player, definition);
+    sceneGraph.SetParentUVE(entityManager, player, character);
+
+    const auto startedAt = std::chrono::steady_clock::now();
+    while (std::chrono::steady_clock::now() - startedAt < std::chrono::seconds(10) &&
+           !entityManager.GetComponentUVE<Scene::AnimationPlayerComponentUVE>(player).finished) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        engine.TickFrameUVE();
+    }
+    ASSERT_TRUE(entityManager.GetComponentUVE<Scene::AnimationPlayerComponentUVE>(player).finished);
+    const Math::Vector3UVE moved = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(character).localPosition;
+    EXPECT_NEAR(moved.x, 2.0F, 1e-3F) << "the clip's 2 m, turned into the world by the skeleton";
+    EXPECT_NEAR(moved.z, 0.0F, 1e-3F);
+    const Scene::Skeleton3DNodeComponentUVE& posed =
+        entityManager.GetComponentUVE<Scene::Skeleton3DNodeComponentUVE>(skeletonEntity);
+    ASSERT_EQ(posed.pose.size(), 1U);
+    EXPECT_NEAR(posed.pose[0].position.z, 0.0F, 1e-4F) << "the skeleton runs in place";
+
+    std::filesystem::remove(clipPath);
+    std::filesystem::remove(MakeTestConfigUVE().assetDatabaseFilePath);
+    engine.Shutdown();
+}
+
 TEST(EngineCoreUVETest, RayCast3DNode_HitsRealGroundColliderExcludesItselfAndMissesBeyondLength) {
     // EngineCoreUVE::SyncRayCast3DNodesUVE() is new wiring: previously RayCast3DNodeComponentUVE
     // was pure authored data with nothing evaluating it. This proves a real per-frame raycast

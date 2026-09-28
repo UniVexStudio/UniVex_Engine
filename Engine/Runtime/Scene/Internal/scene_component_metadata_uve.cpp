@@ -608,6 +608,18 @@ void DeclareAnimationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                 InGroupUVE(WithTooltipUVE(DeclareUVE<&M::animateScale>("animateScale", "Scale", kPropertyTypeBoolUVE),
                                           "Off, the target's scale is left alone."),
                            "Channels"),
+                InGroupUVE(WithTooltipUVE(DeclareEnumUVE<&M::rootMotion>("rootMotion", "Mode",
+                                                                         {{0, "Off"}, {1, "In Place"},
+                                                                          {2, "Apply To Target"}}),
+                                          "Skeletal clips only. In Place takes the root bone's ground travel "
+                                          "out of the pose. Apply To Target also moves the target by it; a "
+                                          "CharacterBody3D gets it as velocity, so walls still stop it."),
+                           "Root Motion"),
+                InGroupUVE(WithTooltipUVE(DeclareUVE<&M::rootMotionBone>("rootMotionBone", "Bone",
+                                                                         kPropertyTypeStringUVE),
+                                          "The bone whose travel is root motion. Empty picks the first bone "
+                                          "whose track moves across the ground (the root or the hips)."),
+                           "Root Motion"),
             }));
 
     // AnimationPlayer's own section.

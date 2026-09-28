@@ -71,6 +71,10 @@
 #include "uve/uvscript/uvscript_ast_uve.h"
 #include "uve/uvscript/uvscript_value_uve.h"
 
+namespace UVE::Asset {
+struct AnimationClipAssetUVE;
+} // namespace UVE::Asset
+
 namespace UVE::Editor::Tests {
 struct EditorUVEAccessUVE;
 }
@@ -1929,6 +1933,29 @@ private:
     std::string m_skeletonSourceStatus;
     /// The bone whose rest pose the Skeleton3D Inspector shows, by name.
     std::string m_selectedSkeletonBone;
+    /// The Entity Editor's Timeline: the AnimationPlayer it shows, that player's clip, and the
+    /// preview playhead. Previewing writes the skeleton's runtime pose only, never a saved value.
+    struct AnimationTimelineStateUVE final {
+        Scene::EntityUVE player = Scene::kInvalidEntityUVE;
+        Asset::AssetGuidUVE clipGuid{};
+        std::shared_ptr<const Asset::AnimationClipAssetUVE> clip;
+        std::string loadError;
+        double timeSeconds = 0.0;
+        bool playing = false;
+        bool loop = true;
+        /// Horizontal zoom; 0 fits the whole clip.
+        float pixelsPerSecond = 0.0F;
+        /// The time at the left edge of the track area while zoomed in.
+        double scrollSeconds = 0.0;
+        std::string filter;
+        /// The skeleton whose pose the Timeline wrote, to put back at rest when it stops.
+        Scene::EntityUVE previewSkeleton = Scene::kInvalidEntityUVE;
+    };
+    AnimationTimelineStateUVE m_timeline;
+    /// The Timeline tab's body: transport, ruler, bone tracks and the preview on the skeleton.
+    void DrawAnimationTimelineUVE();
+    /// Puts the previewed skeleton back at rest and stops the preview.
+    void StopAnimationTimelinePreviewUVE();
     /// In-flight automatic model imports, by content-relative source path.
     std::map<std::string, Asset::AssetImportJobIdUVE> m_modelImportJobs;
     /// Every content-relative model source, as the last project refresh read it.

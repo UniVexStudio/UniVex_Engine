@@ -2,6 +2,8 @@
 
 #pragma once
 
+#include <cstddef>
+#include <optional>
 #include <string_view>
 
 #include "uve/animation/time_pose_contract_uve.h"
@@ -63,6 +65,21 @@ void StopAnimationPlayerUVE(AnimationPlayerComponentUVE& player) noexcept;
                                                   const Asset::AnimationClipAssetUVE& clip, float deltaSeconds,
                                                   Skeleton3DNodeComponentUVE& skeleton,
                                                   const AnimationMixerComponentUVE& mixer = {});
+
+/// The bone whose ground travel is root motion: `boneName` when it names a bone with a track, else
+/// (empty name) the first bone, parents first, whose track moves over 1 cm across the ground.
+/// nullopt when there is none. With a root motion mode on, StepSkeletalAnimationPlayerUVE keeps
+/// that bone over its first frame's ground position and reports its travel in rootMotionDelta.
+[[nodiscard]] std::optional<std::size_t> ResolveRootMotionBoneUVE(const Skeleton3DNodeComponentUVE& skeleton,
+                                                                  const Asset::AnimationClipAssetUVE& clip,
+                                                                  std::string_view boneName);
+
+/// Poses `skeleton` at `timeSeconds` of a skeletal clip without a player: what scrubbing shows.
+/// Each bone takes its track, else its rest pose, through the mixer's channel masks; with a root
+/// motion mode on, the root motion bone stays over its first frame's ground position. Returns false,
+/// leaving the skeleton alone, when the clip has no bone tracks or the skeleton no bones.
+bool PoseSkeletonAtTimeUVE(const Asset::AnimationClipAssetUVE& clip, double timeSeconds,
+                           Skeleton3DNodeComponentUVE& skeleton, const AnimationMixerComponentUVE& mixer = {});
 
 /// The clip's pose at `timeSeconds`: linear position and scale, spherical rotation between the two
 /// samples around it, clamped to the first and last. The clip must have at least one sample.

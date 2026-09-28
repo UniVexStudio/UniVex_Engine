@@ -8,7 +8,8 @@ namespace UVE::Scene {
 
 bool IsAnimationMixerComponentValidUVE(const AnimationMixerComponentUVE& component) noexcept {
     return std::isfinite(component.speedScale) && component.speedScale >= 0.0F &&
-           component.processCallback <= AnimationProcessCallbackUVE::Physics;
+           component.processCallback <= AnimationProcessCallbackUVE::Physics &&
+           component.rootMotion <= AnimationRootMotionModeUVE::ApplyToTarget;
 }
 
 } // namespace UVE::Scene
