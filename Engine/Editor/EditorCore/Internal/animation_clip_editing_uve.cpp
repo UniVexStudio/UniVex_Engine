@@ -196,4 +196,51 @@ bool InsertClipKeyUVE(Asset::AnimationClipAssetUVE& clip, const std::string& tra
     return true;
 }
 
+float GetClipPoseComponentUVE(const Asset::AnimationAssetPoseUVE& pose, const int channel, const int axis) {
+    const auto pick = [axis](const Math::Vector3UVE& v) { return axis == 0 ? v.x : (axis == 1 ? v.y : v.z); };
+    if (channel == 0) {
+        return pick(pose.position);
+    }
+    if (channel == 2) {
+        return pick(pose.scale);
+    }
+    Math::Vector3UVE radians{};
+    if (!Math::TryToEulerUVE(pose.rotation, radians)) {
+        return 0.0F;
+    }
+    constexpr float kDegreesPerRadianUVE = 57.29577951308232F;
+    return pick(radians) * kDegreesPerRadianUVE;
+}
+
+bool SetClipKeyComponentUVE(Asset::AnimationClipAssetUVE& clip, const std::string& track, const double timeSeconds,
+                            const int channel, const int axis, const float value) {
+    SamplesUVE* const samples = FindClipTrackSamplesUVE(clip, track);
+    if (samples == nullptr || !std::isfinite(value) || channel < 0 || channel > 2 || axis < 0 || axis > 2) {
+        return false;
+    }
+    const auto found = std::find_if(samples->begin(), samples->end(), [timeSeconds](const Asset::AnimationAssetSampleUVE& s) {
+        return SameTimeUVE(s.timeSeconds, timeSeconds);
+    });
+    if (found == samples->end()) {
+        return false;
+    }
+    const auto set = [axis, value](Math::Vector3UVE& v) { (axis == 0 ? v.x : (axis == 1 ? v.y : v.z)) = value; };
+    Asset::AnimationAssetPoseUVE& pose = found->pose;
+    if (channel == 0) {
+        set(pose.position);
+        return true;
+    }
+    if (channel == 2) {
+        set(pose.scale);
+        return true;
+    }
+    Math::Vector3UVE radians{};
+    if (!Math::TryToEulerUVE(pose.rotation, radians)) {
+        return false;
+    }
+    constexpr float kRadiansPerDegreeUVE = 0.017453292519943295F;
+    (axis == 0 ? radians.x : (axis == 1 ? radians.y : radians.z)) = value * kRadiansPerDegreeUVE;
+    return Math::TryMakeEulerUVE(radians, pose.rotation);
+}
+
 } // namespace UVE::Editor

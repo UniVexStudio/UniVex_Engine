@@ -12,6 +12,7 @@
 #include <cmath>
 #include <cctype>
 #include <cstdio>
+#include <limits>
 #include <filesystem>
 #include <memory>
 #include <optional>
@@ -602,7 +603,9 @@ void EditorUVE::DrawAnimationTimelineUVE() {
         for (int index = clipper.DisplayStart; index < clipper.DisplayEnd; ++index) {
             const RowUVE& row = rows[static_cast<std::size_t>(index)];
             const float y = rowsOrigin.y + static_cast<float>(index) * kRowHeightUVE;
-            const bool selected = !row.events && row.channel < 0 && row.track == m_selectedSkeletonBone;
+            // The selected bone's row, or its channel row when a channel was picked.
+            const bool selected = !row.events && row.track == m_selectedSkeletonBone &&
+                                  row.channel == m_timeline.curveChannel;
             const ImU32 background = selected ? kRowSelectedUVE : (index % 2 == 0 ? kRowEvenUVE : kRowOddUVE);
             rowDraw->AddRectFilled(ImVec2{origin.x, y}, ImVec2{origin.x + area.x, y + kRowHeightUVE}, background);
             ImGui::SetCursorScreenPos(ImVec2{origin.x, y});
@@ -621,6 +624,7 @@ void EditorUVE::DrawAnimationTimelineUVE() {
                     }
                 } else {
                     m_selectedSkeletonBone = row.track;
+                    m_timeline.curveChannel = row.channel;
                 }
             }
             ImGui::PopID();
@@ -650,94 +654,310 @@ void EditorUVE::DrawAnimationTimelineUVE() {
             }
             rowDraw->PopClipRect();
 
-            rowDraw->PushClipRect(ImVec2{keysLeft, y}, ImVec2{keysLeft + keysWidth, y + kRowHeightUVE}, true);
-            const float mid = y + kRowHeightUVE * 0.5F;
-            if (row.events) {
-                for (const Asset::AnimationAssetEventUVE& event : clip->events) {
-                    const float x = toX(event.timeSeconds);
-                    rowDraw->AddTriangleFilled(ImVec2{x, mid - 6.0F}, ImVec2{x + 5.0F, mid + 5.0F},
-                                               ImVec2{x - 5.0F, mid + 5.0F}, kEventUVE);
-                }
-            } else if (row.samples != nullptr && !row.samples->empty()) {
-                const auto& samples = *row.samples;
-                // A track row stacks its three channels in thin lanes; a channel row gives one the
-                // full height. Keys are the frames where the channel moves: a baked track has one
-                // every frame, and when they would touch they merge into a held span.
-                const double spacing = samples.size() > 1U
-                                           ? (samples.back().timeSeconds - samples.front().timeSeconds) /
-                                                 static_cast<double>(samples.size() - 1U)
-                                           : duration;
-                // Stacked lanes are thin: keys there read as bars until they are well apart.
-                const bool dense = spacing * scale < (row.channel < 0 ? 18.0 : 7.0);
-                const int first = row.channel < 0 ? 0 : row.channel;
-                const int last = row.channel < 0 ? 2 : row.channel;
-                for (int channel = first; channel <= last; ++channel) {
-                    const float laneHeight = row.channel < 0 ? (kRowHeightUVE - 4.0F) / 3.0F : kRowHeightUVE - 6.0F;
-                    const float laneTop = row.channel < 0 ? y + 2.0F + laneHeight * static_cast<float>(channel)
-                                                          : y + 3.0F;
-                    const float laneMid = laneTop + laneHeight * 0.5F;
-                    const float half = std::max(2.0F, laneHeight * 0.5F - (row.channel < 0 ? 0.5F : 1.5F));
-                    const ImU32 colour = kChannelColourUVE[channel];
-                    const ImU32 span = (colour & 0x00FFFFFFU) | (static_cast<ImU32>(row.channel < 0 ? 150 : 110) << 24);
-                    const auto moves = [&](const std::size_t i) { return ShowsKeyUVE(samples, i, channel); };
-                    if (dense) {
-                        std::size_t i = 0U;
-                        while (i < samples.size()) {
-                            if (!moves(i)) {
-                                ++i;
-                                continue;
+            if (!m_timeline.curves) {
+                rowDraw->PushClipRect(ImVec2{keysLeft, y}, ImVec2{keysLeft + keysWidth, y + kRowHeightUVE}, true);
+                const float mid = y + kRowHeightUVE * 0.5F;
+                if (row.events) {
+                    for (const Asset::AnimationAssetEventUVE& event : clip->events) {
+                        const float x = toX(event.timeSeconds);
+                        rowDraw->AddTriangleFilled(ImVec2{x, mid - 6.0F}, ImVec2{x + 5.0F, mid + 5.0F},
+                                                   ImVec2{x - 5.0F, mid + 5.0F}, kEventUVE);
+                    }
+                } else if (row.samples != nullptr && !row.samples->empty()) {
+                    const auto& samples = *row.samples;
+                    // A track row stacks its three channels in thin lanes; a channel row gives one the
+                    // full height. Keys are the frames where the channel moves: a baked track has one
+                    // every frame, and when they would touch they merge into a held span.
+                    const double spacing = samples.size() > 1U
+                                               ? (samples.back().timeSeconds - samples.front().timeSeconds) /
+                                                     static_cast<double>(samples.size() - 1U)
+                                               : duration;
+                    // Stacked lanes are thin: keys there read as bars until they are well apart.
+                    const bool dense = spacing * scale < (row.channel < 0 ? 18.0 : 7.0);
+                    const int first = row.channel < 0 ? 0 : row.channel;
+                    const int last = row.channel < 0 ? 2 : row.channel;
+                    for (int channel = first; channel <= last; ++channel) {
+                        const float laneHeight = row.channel < 0 ? (kRowHeightUVE - 4.0F) / 3.0F : kRowHeightUVE - 6.0F;
+                        const float laneTop = row.channel < 0 ? y + 2.0F + laneHeight * static_cast<float>(channel)
+                                                              : y + 3.0F;
+                        const float laneMid = laneTop + laneHeight * 0.5F;
+                        const float half = std::max(2.0F, laneHeight * 0.5F - (row.channel < 0 ? 0.5F : 1.5F));
+                        const ImU32 colour = kChannelColourUVE[channel];
+                        const ImU32 span = (colour & 0x00FFFFFFU) | (static_cast<ImU32>(row.channel < 0 ? 150 : 110) << 24);
+                        const auto moves = [&](const std::size_t i) { return ShowsKeyUVE(samples, i, channel); };
+                        if (dense) {
+                            std::size_t i = 0U;
+                            while (i < samples.size()) {
+                                if (!moves(i)) {
+                                    ++i;
+                                    continue;
+                                }
+                                std::size_t j = i;
+                                while (j + 1U < samples.size() && moves(j + 1U)) {
+                                    ++j;
+                                }
+                                rowDraw->AddRectFilled(ImVec2{toX(samples[i].timeSeconds), laneMid - half * 0.6F},
+                                                       ImVec2{std::max(toX(samples[j].timeSeconds), toX(samples[i].timeSeconds) + 2.0F),
+                                                              laneMid + half * 0.6F},
+                                                       span, 1.5F);
+                                i = j + 1U;
                             }
-                            std::size_t j = i;
-                            while (j + 1U < samples.size() && moves(j + 1U)) {
-                                ++j;
+                        } else {
+                            for (std::size_t i = 0U; i < samples.size(); ++i) {
+                                const float x = toX(samples[i].timeSeconds);
+                                if (x < keysLeft - 6.0F || x > keysLeft + keysWidth + 6.0F || !moves(i)) {
+                                    continue;
+                                }
+                                rowDraw->AddQuadFilled(ImVec2{x, laneMid - half}, ImVec2{x + half, laneMid},
+                                                       ImVec2{x, laneMid + half}, ImVec2{x - half, laneMid}, colour);
                             }
-                            rowDraw->AddRectFilled(ImVec2{toX(samples[i].timeSeconds), laneMid - half * 0.6F},
-                                                   ImVec2{std::max(toX(samples[j].timeSeconds), toX(samples[i].timeSeconds) + 2.0F),
-                                                          laneMid + half * 0.6F},
-                                                   span, 1.5F);
-                            i = j + 1U;
-                        }
-                    } else {
-                        for (std::size_t i = 0U; i < samples.size(); ++i) {
-                            const float x = toX(samples[i].timeSeconds);
-                            if (x < keysLeft - 6.0F || x > keysLeft + keysWidth + 6.0F || !moves(i)) {
-                                continue;
-                            }
-                            rowDraw->AddQuadFilled(ImVec2{x, laneMid - half}, ImVec2{x + half, laneMid},
-                                                   ImVec2{x, laneMid + half}, ImVec2{x - half, laneMid}, colour);
                         }
                     }
                 }
-            }
-            // Selected keys: a white outline, drawn where a drag would put them.
-            if (!row.events && row.samples != nullptr && !m_timeline.selectedKeys.empty()) {
-                const auto& samples = *row.samples;
-                for (std::size_t i = 0U; i < samples.size(); ++i) {
-                    if (!isSelected(row.track, samples[i].timeSeconds) || !ShowsKeyUVE(samples, i, row.channel)) {
-                        continue;
+                // Selected keys: a white outline, drawn where a drag would put them.
+                if (!row.events && row.samples != nullptr && !m_timeline.selectedKeys.empty()) {
+                    const auto& samples = *row.samples;
+                    for (std::size_t i = 0U; i < samples.size(); ++i) {
+                        if (!isSelected(row.track, samples[i].timeSeconds) || !ShowsKeyUVE(samples, i, row.channel)) {
+                            continue;
+                        }
+                        const double shown = std::clamp(samples[i].timeSeconds + dragDelta, 0.0, duration);
+                        const float x = toX(shown);
+                        const float half = row.channel < 0 ? 6.0F : 6.5F;
+                        rowDraw->AddQuad(ImVec2{x, mid - half}, ImVec2{x + half, mid}, ImVec2{x, mid + half},
+                                         ImVec2{x - half, mid}, IM_COL32_WHITE, 1.5F);
                     }
-                    const double shown = std::clamp(samples[i].timeSeconds + dragDelta, 0.0, duration);
-                    const float x = toX(shown);
-                    const float half = row.channel < 0 ? 6.0F : 6.5F;
-                    rowDraw->AddQuad(ImVec2{x, mid - half}, ImVec2{x + half, mid}, ImVec2{x, mid + half},
-                                     ImVec2{x - half, mid}, IM_COL32_WHITE, 1.5F);
                 }
-            }
-            rowDraw->PopClipRect();
-            // The key area takes the clicks: select, drag and box-select.
-            if (!row.events) {
-                ImGui::SetCursorScreenPos(ImVec2{keysLeft, y});
-                ImGui::PushID(index);
-                ImGui::InvisibleButton("##keys", ImVec2{keysWidth, kRowHeightUVE});
-                if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
-                    clickedRow = index;
+                rowDraw->PopClipRect();
+                // The key area takes the clicks: select, drag and box-select.
+                if (!row.events) {
+                    ImGui::SetCursorScreenPos(ImVec2{keysLeft, y});
+                    ImGui::PushID(index);
+                    ImGui::InvisibleButton("##keys", ImVec2{keysWidth, kRowHeightUVE});
+                    if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
+                        clickedRow = index;
+                    }
+                    ImGui::PopID();
                 }
-                ImGui::PopID();
             }
         }
     }
     clipper.End();
     ImGui::Dummy(ImVec2{1.0F, 0.0F});
+
+    // ---- Curves view: the selected bone's channels as value-over-time lines -----------------------
+    if (m_timeline.curves) {
+        const ImVec2 windowPos = ImGui::GetWindowPos();
+        const ImVec2 windowSize = ImGui::GetWindowSize();
+        const float graphTop = windowPos.y + 2.0F;
+        const float graphBottom = windowPos.y + windowSize.y - 2.0F;
+        const float graphRight = keysLeft + keysWidth;
+        rowDraw->PushClipRect(ImVec2{keysLeft, windowPos.y}, ImVec2{graphRight + 8.0F, windowPos.y + windowSize.y},
+                              true);
+        rowDraw->AddRectFilled(ImVec2{keysLeft, graphTop}, ImVec2{graphRight, graphBottom}, IM_COL32(22, 25, 31, 255));
+        std::string track = m_selectedSkeletonBone;
+        const std::vector<Asset::AnimationAssetSampleUVE>* samples = FindClipTrackSamplesUVE(*clip, track);
+        if (samples == nullptr && !clip->samples.empty()) {
+            track.clear();
+            samples = &clip->samples;
+        }
+        if (samples == nullptr || samples->empty()) {
+            const char* hint = "Pick a bone on the left to see its curves.";
+            const ImVec2 size = ImGui::CalcTextSize(hint);
+            rowDraw->AddText(ImVec2{keysLeft + (keysWidth - size.x) * 0.5F, (graphTop + graphBottom - size.y) * 0.5F},
+                             ImGui::GetColorU32(ImGuiCol_TextDisabled), hint);
+        } else {
+            // Which channels: the one picked on the left, else every one that moves.
+            std::vector<int> channels;
+            for (int channel = 0; channel < 3; ++channel) {
+                bool moves = false;
+                for (std::size_t i = 1U; i < samples->size() && !moves; ++i) {
+                    moves = ChannelChangesUVE((*samples)[i - 1U].pose, (*samples)[i].pose, channel);
+                }
+                if (m_timeline.curveChannel == channel || (m_timeline.curveChannel < 0 && moves)) {
+                    channels.push_back(channel);
+                }
+            }
+            if (channels.empty()) {
+                channels.push_back(0);
+            }
+            // Each line's values; rotation angles are unwrapped so a turn past 180 degrees stays one line.
+            struct LineUVE {
+                int channel = 0;
+                int axis = 0;
+                std::vector<float> values;
+                std::vector<float> unwrap;
+            };
+            std::vector<LineUVE> lines;
+            // Each channel has its own range; with more than one channel shown they are drawn
+            // normalized, each filling the height, since metres and degrees share no scale.
+            float low[3] = {std::numeric_limits<float>::max(), std::numeric_limits<float>::max(),
+                            std::numeric_limits<float>::max()};
+            float high[3] = {std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(),
+                             std::numeric_limits<float>::lowest()};
+            for (const int channel : channels) {
+                for (int axis = 0; axis < 3; ++axis) {
+                    LineUVE line{channel, axis, {}, {}};
+                    float offset = 0.0F;
+                    for (std::size_t i = 0U; i < samples->size(); ++i) {
+                        const float raw = GetClipPoseComponentUVE((*samples)[i].pose, channel, axis);
+                        if (channel == 1 && i > 0U) {
+                            while (raw + offset - line.values.back() > 180.0F) {
+                                offset -= 360.0F;
+                            }
+                            while (raw + offset - line.values.back() < -180.0F) {
+                                offset += 360.0F;
+                            }
+                        }
+                        line.values.push_back(raw + offset);
+                        line.unwrap.push_back(offset);
+                        low[channel] = std::min(low[channel], raw + offset);
+                        high[channel] = std::max(high[channel], raw + offset);
+                    }
+                    lines.push_back(std::move(line));
+                }
+            }
+            for (const int channel : channels) {
+                if (high[channel] - low[channel] < 1.0e-3F) {
+                    low[channel] -= 1.0F;
+                    high[channel] += 1.0F;
+                }
+                const float pad = (high[channel] - low[channel]) * 0.08F;
+                low[channel] -= pad;
+                high[channel] += pad;
+            }
+            if (m_timeline.curveDragging) {
+                low[m_timeline.curveComponent / 3] = m_timeline.curveRangeMin;
+                high[m_timeline.curveComponent / 3] = m_timeline.curveRangeMax;
+            }
+            const bool normalized = channels.size() > 1U;
+            const float plotTop = graphTop + 22.0F;
+            const float plotBottom = graphBottom - 8.0F;
+            const auto toY = [&](const float value, const int channel) {
+                return plotBottom - (value - low[channel]) / (high[channel] - low[channel]) * (plotBottom - plotTop);
+            };
+            const auto fromY = [&](const float y, const int channel) {
+                return low[channel] + (plotBottom - y) / (plotBottom - plotTop) * (high[channel] - low[channel]);
+            };
+            // Value grid with labels, for a single channel; normalized lines get plain guides.
+            if (normalized) {
+                for (int line = 0; line <= 4; ++line) {
+                    const float y = plotTop + (plotBottom - plotTop) * static_cast<float>(line) / 4.0F;
+                    rowDraw->AddLine(ImVec2{keysLeft, y}, ImVec2{graphRight, y}, kGridLineUVE);
+                }
+            } else {
+                const int only = channels.front();
+                const float rawStep = (high[only] - low[only]) / 4.0F;
+                const float magnitude = std::pow(10.0F, std::floor(std::log10(std::max(rawStep, 1.0e-6F))));
+                float step = magnitude;
+                for (const float factor : {1.0F, 2.0F, 5.0F, 10.0F}) {
+                    if (magnitude * factor >= rawStep) {
+                        step = magnitude * factor;
+                        break;
+                    }
+                }
+                for (float value = std::ceil(low[only] / step) * step; value <= high[only]; value += step) {
+                    const float y = toY(value, only);
+                    rowDraw->AddLine(ImVec2{keysLeft, y}, ImVec2{graphRight, y},
+                                     std::abs(value) < step * 0.01F ? IM_COL32(255, 255, 255, 40) : kGridLineUVE);
+                    char label[32];
+                    std::snprintf(label, sizeof(label), step >= 1.0F ? "%.0f" : (step >= 0.1F ? "%.1f" : "%.2f"),
+                                  static_cast<double>(value));
+                    rowDraw->AddText(ImVec2{keysLeft + 4.0F, y - ImGui::GetTextLineHeight() - 1.0F}, kTickMinorUVE,
+                                     label);
+                }
+            }
+            // The lines: X light, Y the channel's colour, Z dark.
+            const auto shade = [](const ImU32 colour, const int axis) {
+                const float factor = axis == 0 ? 1.35F : (axis == 1 ? 1.0F : 0.7F);
+                const auto part = [&](const int shift) {
+                    const float value = static_cast<float>((colour >> shift) & 0xFFU) * factor;
+                    return static_cast<ImU32>(std::clamp(value, 0.0F, 255.0F)) << shift;
+                };
+                return part(IM_COL32_R_SHIFT) | part(IM_COL32_G_SHIFT) | part(IM_COL32_B_SHIFT) | (0xFFU << IM_COL32_A_SHIFT);
+            };
+            const bool showKeys = samples->size() < 2U ||
+                                  ((*samples)[1].timeSeconds - (*samples)[0].timeSeconds) * scale >= 6.0;
+            std::vector<ImVec2> points;
+            for (const LineUVE& line : lines) {
+                const ImU32 colour = shade(kChannelColourUVE[line.channel], line.axis);
+                points.clear();
+                for (std::size_t i = 0U; i < samples->size(); ++i) {
+                    points.emplace_back(toX((*samples)[i].timeSeconds), toY(line.values[i], line.channel));
+                }
+                rowDraw->AddPolyline(points.data(), static_cast<int>(points.size()), colour, ImDrawFlags_None, 1.5F);
+                if (showKeys) {
+                    for (const ImVec2& point : points) {
+                        rowDraw->AddCircleFilled(point, 2.5F, colour);
+                    }
+                }
+            }
+            // Legend: which channel, which axis.
+            float legendX = keysLeft + 8.0F;
+            for (const int channel : channels) {
+                rowDraw->AddText(ImVec2{legendX, graphTop + 3.0F}, kChannelColourUVE[channel], kChannelNameUVE[channel]);
+                legendX += ImGui::CalcTextSize(kChannelNameUVE[channel]).x + 6.0F;
+                for (int axis = 0; axis < 3; ++axis) {
+                    const char* name = axis == 0 ? "X" : (axis == 1 ? "Y" : "Z");
+                    rowDraw->AddText(ImVec2{legendX, graphTop + 3.0F}, shade(kChannelColourUVE[channel], axis), name);
+                    legendX += ImGui::CalcTextSize(name).x + 4.0F;
+                }
+                legendX += 14.0F;
+            }
+            const std::string caption = (track.empty() ? std::string{"Transform"} : track) +
+                                        (normalized ? "  (each channel scaled to fit; open a channel row for values)" : "");
+            rowDraw->AddText(ImVec2{legendX, graphTop + 3.0F}, ImGui::GetColorU32(ImGuiCol_TextDisabled),
+                             caption.c_str());
+
+            // Drag a point up or down to change that number of that key.
+            const ImVec2 mousePos = ImGui::GetIO().MousePos;
+            ImGui::SetCursorScreenPos(ImVec2{keysLeft, plotTop});
+            ImGui::InvisibleButton("##curves", ImVec2{keysWidth, std::max(1.0F, plotBottom - plotTop)});
+            if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
+                float best = 8.0F;
+                for (const LineUVE& line : lines) {
+                    for (std::size_t i = 0U; i < samples->size(); ++i) {
+                        const float dx = toX((*samples)[i].timeSeconds) - mousePos.x;
+                        const float dy = toY(line.values[i], line.channel) - mousePos.y;
+                        const float distance = std::sqrt(dx * dx + dy * dy);
+                        if (distance < best) {
+                            best = distance;
+                            m_timeline.curveDragging = true;
+                            m_timeline.curveComponent = line.channel * 3 + line.axis;
+                            m_timeline.curveKeySeconds = (*samples)[i].timeSeconds;
+                            m_timeline.curveUnwrap = line.unwrap[i];
+                        }
+                    }
+                }
+                if (m_timeline.curveDragging) {
+                    m_timeline.curveRangeMin = low[m_timeline.curveComponent / 3];
+                    m_timeline.curveRangeMax = high[m_timeline.curveComponent / 3];
+                    m_timeline.playing = false;
+                    m_timeline.timeSeconds = m_timeline.curveKeySeconds;
+                }
+            }
+            if (m_timeline.curveDragging) {
+                const int channel = m_timeline.curveComponent / 3;
+                const int axis = m_timeline.curveComponent % 3;
+                const float value = fromY(std::clamp(mousePos.y, plotTop, plotBottom), channel);
+                const ImVec2 at{toX(m_timeline.curveKeySeconds), toY(value, channel)};
+                rowDraw->AddCircle(at, 5.0F, IM_COL32_WHITE, 0, 1.5F);
+                char label[48];
+                std::snprintf(label, sizeof(label), "%s %s  %.3f", kChannelNameUVE[channel],
+                              axis == 0 ? "X" : (axis == 1 ? "Y" : "Z"), static_cast<double>(value));
+                rowDraw->AddText(ImVec2{at.x + 8.0F, at.y - 8.0F}, IM_COL32_WHITE, label);
+                if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+                    m_timeline.curveDragging = false;
+                    const double keySeconds = m_timeline.curveKeySeconds;
+                    const float stored = value - m_timeline.curveUnwrap;
+                    edit([&](Asset::AnimationClipAssetUVE& next) {
+                        static_cast<void>(SetClipKeyComponentUVE(next, track, keySeconds, channel, axis, stored));
+                    });
+                }
+            }
+        }
+        rowDraw->PopClipRect();
+    }
     // Clicks in the key area: on a key, select it (Shift adds, Ctrl toggles) and start dragging the
     // selection; on empty space, start a selection box.
     const ImVec2 mouse = ImGui::GetIO().MousePos;
@@ -913,8 +1133,33 @@ void EditorUVE::DrawAnimationTimelineUVE() {
     }
     ImGui::EndChild();
 
-    // ---- Bottom bar: what the colours mean, the clip, and the zoom ----------------------------------
+    // ---- Bottom bar: the view, what the colours mean, the clip, and the zoom ------------------------
     ImGui::Separator();
+    {
+        const auto viewButton = [this](const char* label, const bool curves) {
+            const bool active = m_timeline.curves == curves;
+            if (active) {
+                ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+            }
+            if (ImGui::Button(label)) {
+                m_timeline.curves = curves;
+                m_timeline.curveDragging = false;
+            }
+            if (active) {
+                ImGui::PopStyleColor();
+            }
+        };
+        viewButton("Dope Sheet##tl-view", false);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Keys per bone and channel");
+        }
+        ImGui::SameLine(0.0F, 2.0F);
+        viewButton("Curves##tl-view", true);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("The selected bone's values over time; drag a point to change it");
+        }
+        ImGui::SameLine(0.0F, 18.0F);
+    }
     for (int channel = 0; channel < 3; ++channel) {
         if (channel > 0) {
             ImGui::SameLine(0.0F, 12.0F);

@@ -1,5 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
+#include <cmath>
+
 #include <gtest/gtest.h>
 
 #include "uve/editor/animation_clip_editing_uve.h"
@@ -93,6 +95,24 @@ TEST(AnimationClipEditingUVETest, InsertsAKeyHoldingTheCurrentMotion) {
     EXPECT_NEAR(inserted.pose.position.z, 0.6F, 1e-5F) << "on the line between its neighbours";
     EXPECT_FALSE(InsertClipKeyUVE(clip, "Hips", 0.3, 10.0)) << "already a key there";
     EXPECT_FALSE(InsertClipKeyUVE(clip, "Tail", 0.3, 10.0));
+}
+
+TEST(AnimationClipEditingUVETest, ReadsAndSetsOneNumberOfAKey) {
+    Asset::AnimationClipAssetUVE clip = MakeClipUVE();
+    ASSERT_TRUE(SetClipKeyComponentUVE(clip, "Hips", 0.5, 0, 1, 2.5F));
+    EXPECT_NEAR(clip.bones.front().samples[1].pose.position.y, 2.5F, 1e-6F);
+    EXPECT_NEAR(clip.bones.front().samples[1].pose.position.z, 1.0F, 1e-6F) << "the other axes stay";
+
+    // Rotation goes through Euler degrees and back.
+    ASSERT_TRUE(SetClipKeyComponentUVE(clip, "Hips", 0.5, 1, 1, 30.0F));
+    EXPECT_NEAR(GetClipPoseComponentUVE(clip.bones.front().samples[1].pose, 1, 1), 30.0F, 1e-3F);
+    EXPECT_NEAR(GetClipPoseComponentUVE(clip.bones.front().samples[1].pose, 1, 0), 0.0F, 1e-3F);
+
+    ASSERT_TRUE(SetClipKeyComponentUVE(clip, "Hips", 1.0, 2, 0, 2.0F));
+    EXPECT_NEAR(clip.bones.front().samples[2].pose.scale.x, 2.0F, 1e-6F);
+
+    EXPECT_FALSE(SetClipKeyComponentUVE(clip, "Hips", 0.25, 0, 0, 1.0F)) << "no key at 0.25 s";
+    EXPECT_FALSE(SetClipKeyComponentUVE(clip, "Hips", 0.5, 0, 0, std::nanf(""))) << "not finite";
 }
 
 } // namespace

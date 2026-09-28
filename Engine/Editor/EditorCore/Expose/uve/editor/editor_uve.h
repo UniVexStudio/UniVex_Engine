@@ -1966,6 +1966,18 @@ private:
         float boxFromX = 0.0F;
         float boxFromY = 0.0F;
         std::string status;
+        /// Curves view instead of the dope sheet, and which channel it draws (-1: all that move).
+        bool curves = false;
+        int curveChannel = -1;
+        /// A drag of one curve point: channel * 3 + axis, the key's time, the value range frozen
+        /// at the start (so the graph does not rescale under the mouse), and the unwrap offset of
+        /// a rotation angle.
+        bool curveDragging = false;
+        int curveComponent = 0;
+        double curveKeySeconds = 0.0;
+        float curveRangeMin = 0.0F;
+        float curveRangeMax = 1.0F;
+        float curveUnwrap = 0.0F;
         /// The skeleton whose pose the Timeline wrote, to put back at rest when it stops.
         Scene::EntityUVE previewSkeleton = Scene::kInvalidEntityUVE;
     };

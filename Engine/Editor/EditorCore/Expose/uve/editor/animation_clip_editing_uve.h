@@ -66,4 +66,14 @@ std::vector<ClipKeyUVE> PasteClipKeysUVE(Asset::AnimationClipAssetUVE& clip, con
 bool InsertClipKeyUVE(Asset::AnimationClipAssetUVE& clip, const std::string& track, double atSeconds,
                       double frameRate);
 
+/// One number of a key, as a curve shows it: `channel` 0 position (metres), 1 rotation (XYZ Euler
+/// degrees), 2 scale; `axis` 0 x, 1 y, 2 z.
+[[nodiscard]] float GetClipPoseComponentUVE(const Asset::AnimationAssetPoseUVE& pose, int channel, int axis);
+
+/// Sets that number on the key of `track` at `timeSeconds`. A rotation is rebuilt from its Euler
+/// angles with the one angle changed. Returns false when there is no such key or the value is not
+/// finite.
+bool SetClipKeyComponentUVE(Asset::AnimationClipAssetUVE& clip, const std::string& track, double timeSeconds,
+                            int channel, int axis, float value);
+
 } // namespace UVE::Editor
