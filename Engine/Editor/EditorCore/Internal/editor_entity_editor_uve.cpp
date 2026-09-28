@@ -528,14 +528,6 @@ void EditorUVE::DrawEntityEditorDockUVE(EntityEditSessionUVE& session) {
         DrawFilesystemContextPopupUVE();
         ImGui::EndTabItem();
     }
-    const auto upcoming = [](const char* what, const char* detail) {
-        const ImVec2 area = ImGui::GetContentRegionAvail();
-        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + std::max(0.0F, area.y * 0.35F));
-        ImGui::SetCursorPosX((area.x - ImGui::CalcTextSize(what).x) * 0.5F);
-        ImGui::TextUnformatted(what);
-        ImGui::SetCursorPosX((area.x - ImGui::CalcTextSize(detail).x) * 0.5F);
-        ImGui::TextDisabled("%s", detail);
-    };
     // The animation tabs only exist once the entity has a node that uses them.
     bool hasPlayer = false;
     bool hasTree = false;
@@ -557,8 +549,9 @@ void EditorUVE::DrawEntityEditorDockUVE(EntityEditSessionUVE& session) {
         StopAnimationTimelinePreviewUVE();
     }
     if (hasTree && tab("Anim Graph", EntityEditorDockTabUVE::AnimGraph)) {
-        upcoming("The Anim Graph is not built yet.",
-                 "The AnimationTree as boxes and wires, with its state machine, comes with the Timeline.");
+        ImGui::BeginChild("##anim-graph", ImVec2{0.0F, 0.0F}, false, ImGuiWindowFlags_NoScrollbar);
+        DrawAnimationGraphCanvasUVE();
+        ImGui::EndChild();
         ImGui::EndTabItem();
     }
     ImGui::EndTabBar();

@@ -43,6 +43,7 @@
 #include "uve/math/vector2_uve.h"
 #include "uve/math/vector3_uve.h"
 #include "uve/component/animation_player_component_uve.h"
+#include "uve/component/animation_tree_component_uve.h"
 #include "uve/component/audio_source_component_uve.h"
 #include "uve/component/camera_component_uve.h"
 #include "uve/component/canvas_component_uve.h"
@@ -2024,6 +2025,38 @@ private:
     void DrawAnimationPickerUVE(Scene::EntityUVE player, Scene::EntityUVE skeleton);
     /// A .uvanim dragged from Content onto the Timeline joins the player's list.
     void AcceptTimelineClipDropUVE(Scene::EntityUVE player);
+    /// The Entity Editor's Anim Graph: the AnimationTree it shows as boxes and wires, the view
+    /// onto the canvas, and what the mouse is doing to it.
+    struct AnimationGraphViewStateUVE final {
+        Scene::EntityUVE tree = Scene::kInvalidEntityUVE;
+        /// Canvas point at the panel's top-left, and pixels per canvas unit.
+        float panX = -40.0F;
+        float panY = -120.0F;
+        float zoom = 1.0F;
+        bool framed = false;
+        std::vector<std::uint32_t> selected;
+        /// A drag of the selected nodes: the graph before it, restored and re-applied as one
+        /// undo step on release.
+        bool draggingNodes = false;
+        std::vector<Scene::AnimationGraphNodeUVE> dragBefore;
+        /// A wire being drawn from this node's output (0: none).
+        std::uint32_t wireFrom = 0U;
+        bool boxSelecting = false;
+        float boxFromX = 0.0F;
+        float boxFromY = 0.0F;
+        /// Where the Add Node menu will place the node, in canvas units.
+        float addAtX = 0.0F;
+        float addAtY = 0.0F;
+        std::string addSearch;
+        std::string status;
+    };
+    AnimationGraphViewStateUVE m_animGraph;
+    /// The Anim Graph tab's body.
+    void DrawAnimationGraphCanvasUVE();
+    /// Changes the AnimationTree's nodes or parameters as one undo step, like an Inspector edit.
+    /// False when nothing changed or the result is not a valid graph (the change is dropped).
+    bool EditAnimationTreeUVE(Scene::EntityUVE tree,
+                              const std::function<void(Scene::AnimationTreeComponentUVE&)>& change);
     /// In-flight automatic model imports, by content-relative source path.
     std::map<std::string, Asset::AssetImportJobIdUVE> m_modelImportJobs;
     /// Every content-relative model source, as the last project refresh read it.
