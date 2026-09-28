@@ -547,7 +547,10 @@ void EditorUVE::DrawEntityEditorDockUVE(EntityEditSessionUVE& session) {
     bool timelineShown = false;
     if (hasPlayer && tab("Timeline", EntityEditorDockTabUVE::Timeline)) {
         timelineShown = true;
+        // Its own child window, so "the Timeline has focus" means this panel, not the whole editor.
+        ImGui::BeginChild("##timeline", ImVec2{0.0F, 0.0F}, false, ImGuiWindowFlags_NoScrollbar);
         DrawAnimationTimelineUVE();
+        ImGui::EndChild();
         ImGui::EndTabItem();
     }
     if (!timelineShown) {
