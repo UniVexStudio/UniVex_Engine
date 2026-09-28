@@ -552,6 +552,9 @@ public:
     /// Renames `file` (a file or folder) to `newStem` plus its old extension, in the same folder.
     /// Nothing happens for an empty or path-like stem, or when the name is taken. Returns the new
     /// path. An asset already placed in a scene keeps pointing at the old name.
+    /// RenameContentFileUVE, and the renamed file keeps its GUID in the asset database.
+    std::optional<std::filesystem::path> RenameContentAssetUVE(const std::filesystem::path& file,
+                                                               std::string_view newStem);
     [[nodiscard]] static std::optional<std::filesystem::path> RenameContentFileUVE(const std::filesystem::path& file,
                                                                                    std::string_view newStem);
 

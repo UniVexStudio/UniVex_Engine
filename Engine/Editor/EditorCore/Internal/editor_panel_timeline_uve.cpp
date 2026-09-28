@@ -420,7 +420,8 @@ void EditorUVE::DrawAnimationTimelineUVE() {
     }
     ImGui::EndDisabled();
 
-    const std::string clipLabel = clip != nullptr ? clip->clipId
+    // An animation is called by its file's name, everywhere.
+    const std::string clipLabel = clip != nullptr ? m_services->GetAssetDatabaseUVE().ResolveUVE(m_timeline.clipGuid).stem().string()
                                   : (player.clip != Asset::AssetGuidUVE{}) ? std::string{"(unreadable clip)"}
                                                                            : std::string{"(no clip)"};
     if (clip == nullptr) {

@@ -4731,10 +4731,19 @@ std::vector<std::filesystem::path> EditorUVE::ImportModelAnimationsUVE(const std
         return written;
     }
     const std::vector<char> bytes{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
-    const auto clipPath = [&absoluteSource](const std::string& clipId) {
-        // The take's name as a file name: anything a path cannot hold becomes '_'.
+    const std::vector<Asset::AnimationClipAssetUVE> takes =
+        Asset::ReadFbxAnimationsUVE(std::as_bytes(std::span<const char>(bytes)), Asset::kMaximumAnimationAssetBonesUVE);
+    // The animation is named after its file, everywhere: one take is "<FBX>.uvanim"; several are
+    // "<FBX>_<take>.uvanim", the take without its "Armature|"-style prefix. The DCC tool's own take
+    // label ("Take 001", an exporter's name) is not a name anyone chose.
+    const auto clipPath = [&absoluteSource, &takes](const std::string& clipId) {
+        if (takes.size() == 1U) {
+            return absoluteSource.parent_path() / (absoluteSource.stem().string() + ".uvanim");
+        }
+        const std::size_t bar = clipId.find_last_of('|');
+        const std::string take = bar == std::string::npos ? clipId : clipId.substr(bar + 1U);
         std::string safe;
-        for (const char character : clipId) {
+        for (const char character : take) {
             const bool keep = (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') ||
                               (character >= '0' && character <= '9') || character == '-' || character == '_' ||
                               character == ' ';
@@ -4742,9 +4751,9 @@ std::vector<std::filesystem::path> EditorUVE::ImportModelAnimationsUVE(const std
         }
         return absoluteSource.parent_path() / (absoluteSource.stem().string() + "_" + safe + ".uvanim");
     };
-    for (const Asset::AnimationClipAssetUVE& clip :
-         Asset::ReadFbxAnimationsUVE(std::as_bytes(std::span<const char>(bytes)), Asset::kMaximumAnimationAssetBonesUVE)) {
+    for (Asset::AnimationClipAssetUVE clip : takes) {
         const std::filesystem::path destination = clipPath(clip.clipId);
+        clip.clipId = destination.stem().string();
         const std::filesystem::file_time_type existing = std::filesystem::last_write_time(destination, error);
         if (!error && existing >= sourceTime) {
             continue; // imported since the FBX last changed

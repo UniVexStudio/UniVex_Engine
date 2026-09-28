@@ -445,10 +445,11 @@ Connections:  {
         editor.InitUVE();
         const std::vector<std::filesystem::path> written = editor.ImportModelAnimationsUVE(source);
         ASSERT_EQ(written.size(), 1U);
-        EXPECT_EQ(written[0], content / "Anims" / "Hero_Idle.uvanim");
+        // One take: the animation is named after its file, not the DCC tool's take label.
+        EXPECT_EQ(written[0], content / "Anims" / "Hero.uvanim");
         Asset::AnimationClipAssetUVE clip;
         ASSERT_TRUE(Asset::LoadAnimationClipAssetUVE(written[0], clip));
-        EXPECT_EQ(clip.clipId, "Idle");
+        EXPECT_EQ(clip.clipId, "Hero");
         EXPECT_TRUE(clip.IsSkeletalUVE());
         ASSERT_EQ(clip.bones.size(), 1U);
         EXPECT_EQ(clip.bones[0].bone, "Hips");
@@ -530,7 +531,10 @@ Connections:  {
             entityManager.GetComponentUVE<Scene::AnimationPlayerComponentUVE>(children[1]);
         EXPECT_NE(player.clip, Asset::kInvalidAssetGuidUVE);
         EXPECT_EQ(player.loopMode, Scene::AnimationLoopModeUVE::Loop);
-        EXPECT_TRUE(std::filesystem::exists(content / "Anims" / "Hero_Run.uvanim"));
+        EXPECT_TRUE(std::filesystem::exists(content / "Anims" / "Hero.uvanim")) << "one take: named after its file";
+        Asset::AnimationClipAssetUVE imported;
+        ASSERT_TRUE(Asset::LoadAnimationClipAssetUVE(content / "Anims" / "Hero.uvanim", imported));
+        EXPECT_EQ(imported.clipId, "Hero") << "not the DCC tool's take label";
         EXPECT_EQ(player.library, std::vector<Asset::AssetGuidUVE>{player.clip}) << "every take is on the player";
 
         // Another clip from the project joins the player's list and plays; one undo takes it back.

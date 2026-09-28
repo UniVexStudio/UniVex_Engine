@@ -11,6 +11,7 @@
 #include <cctype>
 #include <cstdio>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <system_error>
 #include <vector>
@@ -120,7 +121,7 @@ void EditorUVE::DrawAnimationPickerUVE(const Scene::EntityUVE player, const Scen
             Asset::AnimationClipAssetUVE clip;
             if (!card.path.empty() && Asset::LoadAnimationClipAssetUVE(card.path, clip)) {
                 card.readable = true;
-                card.name = clip.clipId.empty() ? card.path.stem().string() : clip.clipId;
+                card.name = card.path.stem().string(); // the file's name is the animation's name
                 card.durationSeconds = clip.durationSeconds;
                 card.skeletal = clip.IsSkeletalUVE();
             } else {
@@ -132,13 +133,9 @@ void EditorUVE::DrawAnimationPickerUVE(const Scene::EntityUVE player, const Scen
     };
 
     // The button: the current animation's name, opening the picker.
-    const std::string current = component.clip != Asset::AssetGuidUVE{}
-                                    ? (m_timeline.clip != nullptr && m_timeline.clipGuid == component.clip
-                                           ? m_timeline.clip->clipId
-                                           : cardOf(component.clip).name)
-                                    : std::string{"No animation"};
-    const std::string label = current + (list.size() > 1U ? "  (" + std::to_string(list.size()) + ")" : "") +
-                              "##tl-anim";
+    const std::string current =
+        component.clip != Asset::AssetGuidUVE{} ? cardOf(component.clip).name : std::string{"No animation"};
+    const std::string label = current + "##tl-anim";
     const float width = std::min(260.0F, ImGui::CalcTextSize(label.c_str(), nullptr, true).x + 34.0F);
     const bool clicked = ImGui::Button(label.c_str(), ImVec2{std::max(140.0F, width) + 14.0F, 0.0F});
     const ImVec2 buttonMin = ImGui::GetItemRectMin();
@@ -158,13 +155,14 @@ void EditorUVE::DrawAnimationPickerUVE(const Scene::EntityUVE player, const Scen
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("This player's animations: switch, add, rename, duplicate, remove");
     }
-    // Opens under the button, never over it.
+    // Opens upwards, over the tall part of the window, never over the button or down into the
+    // Timeline's little space at the bottom.
     if (ImGui::IsPopupOpen("##tl-anim-picker")) {
-        ImGui::SetNextWindowPos(ImVec2{buttonMin.x, buttonMax.y + 2.0F}, ImGuiCond_Appearing);
+        ImGui::SetNextWindowPos(ImVec2{buttonMin.x, buttonMin.y - 2.0F}, ImGuiCond_Appearing, ImVec2{0.0F, 1.0F});
     }
 
     const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-    ImGui::SetNextWindowSizeConstraints(ImVec2{340.0F, 0.0F}, ImVec2{460.0F, 520.0F});
+    ImGui::SetNextWindowSizeConstraints(ImVec2{340.0F, 0.0F}, ImVec2{460.0F, 560.0F});
     if (ImGui::BeginPopup("##tl-anim-picker")) {
         char search[128];
         std::snprintf(search, sizeof(search), "%s", m_timeline.pickerSearch.c_str());
@@ -349,7 +347,7 @@ void EditorUVE::DrawAnimationPickerUVE(const Scene::EntityUVE player, const Scen
     // Naming the current clip: the name scripts and trees use; the file keeps its name.
     if (m_timeline.renameClipRequested && m_timeline.clip != nullptr && m_timeline.clipGuid == component.clip) {
         m_timeline.renameClipRequested = false;
-        m_timeline.clipName = m_timeline.clip->clipId;
+        m_timeline.clipName = assetDatabase.ResolveUVE(m_timeline.clipGuid).stem().string();
         ImGui::OpenPopup("##tl-anim-name");
     }
     if (ImGui::BeginPopup("##tl-anim-name")) {
@@ -364,16 +362,25 @@ void EditorUVE::DrawAnimationPickerUVE(const Scene::EntityUVE player, const Scen
                                               ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll);
         m_timeline.clipName = buffer;
         if (entered && !m_timeline.clipName.empty() && m_timeline.clip != nullptr) {
-            // Written at once, with any unsaved key edits, so the name is never only in memory.
-            auto renamed = std::make_shared<Asset::AnimationClipAssetUVE>(*m_timeline.clip);
-            renamed->clipId = m_timeline.clipName;
+            // The name is the file's: the .uvanim is renamed (keeping its GUID, so everything that
+            // uses it still does) and the clip inside is written with the same name and any
+            // unsaved key edits.
             const std::filesystem::path path = assetDatabase.ResolveUVE(m_timeline.clipGuid);
-            if (Asset::SaveAnimationClipAssetUVE(*renamed, path)) {
-                m_timeline.retired = m_timeline.clip;
-                m_timeline.clip = std::move(renamed);
-                m_timeline.dirty = false;
-                m_timeline.clipCards.erase(m_timeline.clipGuid.value);
-                m_timeline.status = "Renamed to " + m_timeline.clipName;
+            const std::optional<std::filesystem::path> renamedPath =
+                path.stem().string() == m_timeline.clipName ? std::optional<std::filesystem::path>{path}
+                                                            : RenameContentAssetUVE(path, m_timeline.clipName);
+            if (!renamedPath.has_value()) {
+                m_timeline.status = "Cannot rename to \"" + m_timeline.clipName + "\": not a valid file name, or taken";
+            } else {
+                auto renamed = std::make_shared<Asset::AnimationClipAssetUVE>(*m_timeline.clip);
+                renamed->clipId = renamedPath->stem().string();
+                if (Asset::SaveAnimationClipAssetUVE(*renamed, *renamedPath)) {
+                    m_timeline.retired = m_timeline.clip;
+                    m_timeline.clip = std::move(renamed);
+                    m_timeline.dirty = false;
+                    m_timeline.clipCards.erase(m_timeline.clipGuid.value);
+                    m_timeline.status = "Renamed to " + renamedPath->filename().string();
+                }
             }
             ImGui::CloseCurrentPopup();
         }

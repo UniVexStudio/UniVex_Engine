@@ -111,7 +111,9 @@ Scene::EntityUVE EditorUVE::PlaceModelSourceUVE(const std::filesystem::path& rel
         for (const std::filesystem::directory_entry& entry :
              std::filesystem::directory_iterator(source.parent_path(), error)) {
             const std::string name = entry.path().filename().string();
-            if (entry.path().extension() == ".uvanim" && name.starts_with(prefix)) {
+            // "<FBX>.uvanim" (one take) or "<FBX>_<take>.uvanim" (several).
+            if (entry.path().extension() == ".uvanim" &&
+                (name.starts_with(prefix) || entry.path().stem() == source.stem())) {
                 clips.push_back(entry.path());
             }
         }
