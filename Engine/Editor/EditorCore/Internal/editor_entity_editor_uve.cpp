@@ -511,8 +511,27 @@ void EditorUVE::DrawEntityEditorDockUVE(EntityEditSessionUVE& session) {
     if (!ImGui::BeginTabBar("##entity-dock-tabs")) {
         return;
     }
-    const auto tab = [&session](const char* label, const EntityEditorDockTabUVE which) {
-        const bool open = ImGui::BeginTabItem(label);
+    // The animation tabs belong to their node: the Timeline shows while an AnimationPlayer is
+    // selected, the Anim Graph while an AnimationTree is. Anything else leaves Content alone.
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    const Scene::EntityUVE selected = m_selectedEntity;
+    const bool selectedAlive = selected != Scene::kInvalidEntityUVE && entityManager.IsAliveUVE(selected);
+    const bool hasPlayer = selectedAlive && entityManager.HasComponentUVE<Scene::AnimationPlayerComponentUVE>(selected);
+    const bool hasTree = selectedAlive && entityManager.HasComponentUVE<Scene::AnimationTreeComponentUVE>(selected);
+    // Selecting one opens its tab once; after that the tab is the user's choice.
+    std::optional<EntityEditorDockTabUVE> follow;
+    if (selected != session.dockFollowed) {
+        session.dockFollowed = selected;
+        if (hasPlayer) {
+            follow = EntityEditorDockTabUVE::Timeline;
+        } else if (hasTree) {
+            follow = EntityEditorDockTabUVE::AnimGraph;
+        }
+    }
+    const auto tab = [&session, &follow](const char* label, const EntityEditorDockTabUVE which) {
+        const ImGuiTabItemFlags flags =
+            follow.has_value() && *follow == which ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None;
+        const bool open = ImGui::BeginTabItem(label, nullptr, flags);
         if (open) {
             session.dockTab = which;
         }
@@ -528,22 +547,6 @@ void EditorUVE::DrawEntityEditorDockUVE(EntityEditSessionUVE& session) {
         DrawFilesystemContextPopupUVE();
         ImGui::EndTabItem();
     }
-    const auto upcoming = [](const char* what, const char* detail) {
-        const ImVec2 area = ImGui::GetContentRegionAvail();
-        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + std::max(0.0F, area.y * 0.35F));
-        ImGui::SetCursorPosX((area.x - ImGui::CalcTextSize(what).x) * 0.5F);
-        ImGui::TextUnformatted(what);
-        ImGui::SetCursorPosX((area.x - ImGui::CalcTextSize(detail).x) * 0.5F);
-        ImGui::TextDisabled("%s", detail);
-    };
-    // The animation tabs only exist once the entity has a node that uses them.
-    bool hasPlayer = false;
-    bool hasTree = false;
-    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    for (const Scene::EntityUVE node : CollectEntityEditorNodesUVE()) {
-        hasPlayer = hasPlayer || entityManager.HasComponentUVE<Scene::AnimationPlayerComponentUVE>(node);
-        hasTree = hasTree || entityManager.HasComponentUVE<Scene::AnimationTreeComponentUVE>(node);
-    }
     bool timelineShown = false;
     if (hasPlayer && tab("Timeline", EntityEditorDockTabUVE::Timeline)) {
         timelineShown = true;
@@ -557,8 +560,9 @@ void EditorUVE::DrawEntityEditorDockUVE(EntityEditSessionUVE& session) {
         StopAnimationTimelinePreviewUVE();
     }
     if (hasTree && tab("Anim Graph", EntityEditorDockTabUVE::AnimGraph)) {
-        upcoming("The Anim Graph is not built yet.",
-                 "The AnimationTree as boxes and wires, with its state machine, comes with the Timeline.");
+        ImGui::BeginChild("##anim-graph", ImVec2{0.0F, 0.0F}, false, ImGuiWindowFlags_NoScrollbar);
+        DrawAnimationGraphCanvasUVE();
+        ImGui::EndChild();
         ImGui::EndTabItem();
     }
     ImGui::EndTabBar();

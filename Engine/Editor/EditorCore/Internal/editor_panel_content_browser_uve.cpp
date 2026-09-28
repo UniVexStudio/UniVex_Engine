@@ -398,11 +398,16 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
         m_contentBrowserShelf.empty() ? nullptr : m_contentShelves.FindUVE(m_contentBrowserShelf);
 
     // ---- toolbar: create / import / save | back forward | path ............ settings ----
-    if (GlyphTextButtonUVE("##content-add", GlyphUVE::Plus, "Add", true,
-                           "Create an entity, light, shape, folder... here (or right-click empty space)")) {
-        m_contentCreateMenuRequested = true;
+    // Inside the Entity Editor, Content is where the entity's parts come from: it browses and
+    // drags, and does not make new assets (no Add, no right-click create).
+    const bool canCreate = !IsEntityEditorOpenUVE();
+    if (canCreate) {
+        if (GlyphTextButtonUVE("##content-add", GlyphUVE::Plus, "Add", true,
+                               "Create an entity, light, shape, folder... here (or right-click empty space)")) {
+            m_contentCreateMenuRequested = true;
+        }
+        ImGui::SameLine(0.0F, 4.0F);
     }
-    ImGui::SameLine(0.0F, 4.0F);
     if (GlyphTextButtonUVE("##content-import", GlyphUVE::Import, "Import", false,
                            "Rescan the content folder to pick up newly added files")) {
         refreshNow();
@@ -1477,7 +1482,7 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
                 }
             }
             // Right-click on empty space: the same menu as "Add".
-            if (ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows) && !ImGui::IsAnyItemHovered() &&
+            if (canCreate && ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows) && !ImGui::IsAnyItemHovered() &&
                 ImGui::IsMouseReleased(ImGuiMouseButton_Right)) {
                 m_contentCreateMenuRequested = true;
             }

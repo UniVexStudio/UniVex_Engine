@@ -21,6 +21,7 @@
 #include <imgui.h>
 
 #include "uve/component/animation_tree_component_uve.h"
+#include "uve/editor/animation_graph_editing_uve.h"
 
 namespace UVE::Editor {
 namespace {
@@ -34,44 +35,10 @@ using Scene::AnimationTransitionUVE;
 constexpr std::array<Kind, 7> kAddableKindsUVE{Kind::Clip,     Kind::Blend2,    Kind::BlendSpace1D, Kind::Additive,
                                                Kind::OneShot, Kind::TimeScale, Kind::StateMachine};
 
-[[nodiscard]] const char* KindLabelUVE(const Kind kind) noexcept {
-    switch (kind) {
-        case Kind::Output: return "Output";
-        case Kind::Clip: return "Clip";
-        case Kind::Blend2: return "Blend";
-        case Kind::BlendSpace1D: return "Blend Space";
-        case Kind::Additive: return "Additive";
-        case Kind::OneShot: return "One Shot";
-        case Kind::TimeScale: return "Time Scale";
-        case Kind::StateMachine: return "State Machine";
-    }
-    return "?";
-}
-
-[[nodiscard]] const char* KindHelpUVE(const Kind kind) noexcept {
-    switch (kind) {
-        case Kind::Output: return "What the target shows.";
-        case Kind::Clip: return "Plays a clip.";
-        case Kind::Blend2: return "Mixes A and B by a weight: 0 is A, 1 is B.";
-        case Kind::BlendSpace1D: return "Places its inputs along a line and mixes the two either side of a value - walk, jog, run by speed.";
-        case Kind::Additive: return "Lays the Layer's motion on top of the Base, scaled by a weight.";
-        case Kind::OneShot: return "Plays Shot once over Base when a trigger fires, fading in and out.";
-        case Kind::TimeScale: return "Runs its input faster or slower.";
-        case Kind::StateMachine: return "Its inputs are states. Transitions move between them and crossfade.";
-    }
-    return "";
-}
-
-/// What each input slot of a kind means, for its label.
+[[nodiscard]] const char* KindLabelUVE(const Kind kind) noexcept { return AnimationGraphKindLabelUVE(kind); }
+[[nodiscard]] const char* KindHelpUVE(const Kind kind) noexcept { return AnimationGraphKindHelpUVE(kind); }
 [[nodiscard]] std::string SlotLabelUVE(const Kind kind, const std::size_t slot) {
-    switch (kind) {
-        case Kind::Blend2: return slot == 0U ? "A" : "B";
-        case Kind::Additive: return slot == 0U ? "Base" : "Layer";
-        case Kind::OneShot: return slot == 0U ? "Base" : "Shot";
-        case Kind::StateMachine: return "State " + std::to_string(slot + 1U);
-        case Kind::BlendSpace1D: return "Point " + std::to_string(slot + 1U);
-        default: return "Input";
-    }
+    return AnimationGraphSlotLabelUVE(kind, slot);
 }
 
 [[nodiscard]] std::string NodeLabelUVE(const AnimationGraphNodeUVE& node) {
