@@ -242,5 +242,63 @@ TEST(ContentBrowserModelUVETest, TheTeamFileIsReadWarily) {
     EXPECT_EQ(shelves.GetAllUVE().size(), 2U); // S and Mine; the repeated S and the nameless one are dropped
 }
 
+TEST(ContentBrowserModelUVETest, TheTreeListingHoldsEverythingBelow) {
+    const auto entries = ProjectUVE();
+    EXPECT_EQ(NamesUVE(entries, ListContentTreeUVE(entries, "Sea/Models", "")),
+              (std::vector<std::string>{"Sea/Models/Characters", "Sea/Models/Environment",
+                                        "Sea/Models/Characters/Diver.uventity"}));
+    EXPECT_EQ(ListContentTreeUVE(entries, "", "").size(), entries.size());
+    EXPECT_EQ(NamesUVE(entries, ListContentTreeUVE(entries, "Sea", "wav")),
+              (std::vector<std::string>{"Sea/Wave.uvtex", "Sea/Audio/waves.wav"}));
+}
+
+TEST(ContentBrowserModelUVETest, DetailsSortKeepsFoldersFirstAndFallsBackToTheName) {
+    const std::vector<ContentItemFactsUVE> facts{
+        {"b.png", "Texture", "Sea", 300U, 30, false}, {"a.png", "Texture", "Sea", 100U, 50, false},
+        {"Zeta", "Folder", "Sea", 0U, 10, true},      {"c.wav", "Audio", "Sea/Audio", 300U, 20, false},
+    };
+    const auto sorted = [&](const ContentSortKeyUVE key, const bool ascending) {
+        std::vector<std::size_t> order{0U, 1U, 2U, 3U};
+        SortContentFactsUVE(order, facts, key, ascending);
+        std::vector<std::string> names;
+        for (const std::size_t i : order) {
+            names.push_back(facts[i].name);
+        }
+        return names;
+    };
+    EXPECT_EQ(sorted(ContentSortKeyUVE::Name, true), (std::vector<std::string>{"Zeta", "a.png", "b.png", "c.wav"}));
+    EXPECT_EQ(sorted(ContentSortKeyUVE::Size, false), (std::vector<std::string>{"Zeta", "c.wav", "b.png", "a.png"}));
+    EXPECT_EQ(sorted(ContentSortKeyUVE::Modified, false), (std::vector<std::string>{"Zeta", "a.png", "b.png", "c.wav"}));
+    EXPECT_EQ(sorted(ContentSortKeyUVE::Type, true), (std::vector<std::string>{"Zeta", "c.wav", "a.png", "b.png"}));
+    EXPECT_EQ(sorted(ContentSortKeyUVE::Folder, false), (std::vector<std::string>{"Zeta", "c.wav", "b.png", "a.png"}));
+}
+
+TEST(ContentBrowserModelUVETest, RecentBucketsCountFromMidnight) {
+    constexpr std::int64_t kDay = 24 * 60 * 60;
+    const std::int64_t midnight = 1'790'000'000;
+    EXPECT_EQ(ClassifyContentAgeUVE(midnight + 5, midnight), ContentAgeUVE::Today);
+    EXPECT_EQ(ClassifyContentAgeUVE(midnight + 3 * kDay, midnight), ContentAgeUVE::Today); // clock skew counts as now
+    EXPECT_EQ(ClassifyContentAgeUVE(midnight - 1, midnight), ContentAgeUVE::Yesterday);
+    EXPECT_EQ(ClassifyContentAgeUVE(midnight - kDay, midnight), ContentAgeUVE::Yesterday);
+    EXPECT_EQ(ClassifyContentAgeUVE(midnight - kDay - 1, midnight), ContentAgeUVE::ThisWeek);
+    EXPECT_EQ(ClassifyContentAgeUVE(midnight - 6 * kDay, midnight), ContentAgeUVE::ThisWeek);
+    EXPECT_EQ(ClassifyContentAgeUVE(midnight - 6 * kDay - 1, midnight), ContentAgeUVE::Earlier);
+    EXPECT_EQ(ClassifyContentAgeUVE(0, midnight), ContentAgeUVE::Earlier);
+    EXPECT_STREQ(GetContentAgeLabelUVE(ContentAgeUVE::Today), "Today");
+}
+
+TEST(ContentBrowserModelUVETest, BoardLanesGroupFilesByKind) {
+    const std::vector<ContentItemFactsUVE> facts{
+        {"rock", "Mesh", "", 0U, 0, false}, {"Sea", "Folder", "", 0U, 0, true},  {"wave", "Texture", "", 0U, 0, false},
+        {"reef", "Mesh", "", 0U, 0, false}, {"hit", "Audio", "", 0U, 0, false},
+    };
+    const auto lanes = GroupContentByTypeUVE({0U, 1U, 2U, 3U, 4U}, facts);
+    ASSERT_EQ(lanes.size(), 3U);
+    EXPECT_EQ(lanes[0].first, "Audio");
+    EXPECT_EQ(lanes[1].first, "Mesh");
+    EXPECT_EQ(lanes[1].second, (std::vector<std::size_t>{0U, 3U}));
+    EXPECT_EQ(lanes[2].first, "Texture");
+}
+
 } // namespace
 } // namespace UVE::Editor

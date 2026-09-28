@@ -14,6 +14,7 @@
 #include "editor_node_icons_uve.h"
 #include "uve/editor/editor_theme_uve.h"
 #include <algorithm>
+#include <chrono>
 #include <array>
 #include <cctype>
 #include <cmath>
@@ -4432,6 +4433,34 @@ void EditorUVE::ReloadSharedShelvesIfChangedUVE() {
     if (now != m_sharedShelvesWriteTime) {
         LoadSharedShelvesUVE();
     }
+}
+
+ContentFileFactsUVE EditorUVE::GetContentFileFactsUVE(const std::filesystem::path& contentRoot,
+                                                                 const Asset::ProjectFileEntryUVE& entry,
+                                                                 const std::uint64_t refreshGeneration) {
+    if (refreshGeneration != m_contentFileFactsGeneration) {
+        m_contentFileFacts.clear();
+        m_contentFileFactsGeneration = refreshGeneration;
+    }
+    const std::string key = entry.relativePath.generic_string();
+    if (const auto it = m_contentFileFacts.find(key); it != m_contentFileFacts.end()) {
+        return it->second;
+    }
+    ContentFileFactsUVE facts;
+    std::error_code error;
+    const std::filesystem::path absolute = contentRoot / entry.relativePath;
+    if (entry.kind == Asset::ProjectFileEntryKindUVE::File) {
+        const std::uintmax_t size = std::filesystem::file_size(absolute, error);
+        facts.size = error ? 0U : size;
+    }
+    const std::filesystem::file_time_type written = std::filesystem::last_write_time(absolute, error);
+    if (!error) {
+        facts.modified = std::chrono::duration_cast<std::chrono::seconds>(
+                             std::chrono::file_clock::to_sys(written).time_since_epoch())
+                             .count();
+    }
+    m_contentFileFacts.emplace(key, facts);
+    return facts;
 }
 
 void EditorUVE::ToggleProjectPathFavoriteUVE(const std::filesystem::path& relativePath) {
