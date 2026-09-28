@@ -7,6 +7,18 @@
 
 namespace UVE::Scene {
 
+std::vector<SkeletonBonePoseUVE> GetSkeletonCurrentPoseUVE(const Skeleton3DNodeComponentUVE& skeleton) {
+    if (skeleton.pose.size() == skeleton.bones.size()) {
+        return skeleton.pose;
+    }
+    std::vector<SkeletonBonePoseUVE> rest;
+    rest.reserve(skeleton.bones.size());
+    for (const SkeletonBoneUVE& bone : skeleton.bones) {
+        rest.push_back(SkeletonBonePoseUVE{bone.localPosition, bone.localRotation, bone.localScale});
+    }
+    return rest;
+}
+
 bool IsSkeleton3DNodeComponentValidUVE(const Skeleton3DNodeComponentUVE& value) noexcept {
     if (!IsBounded3DNodeStringUVE(value.skeletonAssetPath) || value.bones.size() > kMaximumSkeletonBonesUVE) {
         return false;

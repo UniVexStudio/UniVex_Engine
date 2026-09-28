@@ -12,6 +12,7 @@
 #include "uve/component/transform_component_uve.h"
 #include "uve/nodes/3d/animation_player_uve.h"
 #include "uve/nodes/3d/animation_tree_uve.h"
+#include "uve/nodes/3d/skeleton_3d_uve.h"
 
 namespace UVE::Scene {
 namespace {
@@ -359,6 +360,93 @@ TEST(AnimationTreeUVETest, ValidationCatchesMalformedGraphsButAllowsEmptySlots) 
     tree.parameters = {AnimationParameterUVE{"a", AnimationParameterTypeUVE::Float, 0.0F},
                        AnimationParameterUVE{"a", AnimationParameterTypeUVE::Bool, 0.0F}};
     EXPECT_FALSE(IsAnimationTreeComponentValidUVE(tree)); // two parameters with one name
+}
+
+// ---- Skeletal clips ---------------------------------------------------------------------------
+
+/// Two bones at rest one metre apart; a one-second clip that raises "Hips" by `lift` and has no
+/// track for "Spine".
+[[nodiscard]] Skeleton3DNodeComponentUVE MakeTwoBoneSkeletonUVE() {
+    Skeleton3DNodeComponentUVE skeleton;
+    skeleton.skeletonAssetPath = "Hero.fbx";
+    SkeletonBoneUVE hips;
+    hips.name = "Hips";
+    hips.localPosition = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+    SkeletonBoneUVE spine;
+    spine.name = "Spine";
+    spine.parentIndex = 0;
+    spine.localPosition = Math::Vector3UVE{0.0F, 0.3F, 0.0F};
+    skeleton.bones = {hips, spine};
+    return skeleton;
+}
+
+[[nodiscard]] Asset::AnimationClipAssetUVE MakeLiftClipUVE(const float lift) {
+    Asset::AnimationClipAssetUVE clip;
+    clip.clipId = "lift";
+    clip.durationSeconds = 1.0;
+    Asset::AnimationAssetSampleUVE start;
+    start.pose.position = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+    Asset::AnimationAssetSampleUVE end;
+    end.timeSeconds = 1.0;
+    end.pose.position = Math::Vector3UVE{0.0F, 1.0F + lift, 0.0F};
+    clip.bones = {Asset::AnimationAssetBoneTrackUVE{"Hips", {start, end}}};
+    return clip;
+}
+
+TEST(AnimationPlayerUVETest, ASkeletalClipPosesEachBoneByName) {
+    const Asset::AnimationClipAssetUVE clip = MakeLiftClipUVE(1.0F);
+    Skeleton3DNodeComponentUVE skeleton = MakeTwoBoneSkeletonUVE();
+    EXPECT_EQ(GetSkeletonCurrentPoseUVE(skeleton).size(), 2U) << "no pose yet means the rest pose";
+    AnimationPlayerComponentUVE settings;
+    settings.loopMode = AnimationLoopModeUVE::Once;
+    AnimationPlayerComponentUVE player = StartedUVE(settings, TransformComponentUVE{}, clip);
+    ASSERT_TRUE(StepSkeletalAnimationPlayerUVE(player, clip, 0.5F, skeleton));
+    ASSERT_EQ(skeleton.pose.size(), 2U);
+    EXPECT_NEAR(skeleton.pose[0].position.y, 1.5F, 1e-4F) << "halfway up";
+    EXPECT_NEAR(skeleton.pose[1].position.y, 0.3F, 1e-4F) << "no track: the rest pose";
+    EXPECT_EQ(skeleton, MakeTwoBoneSkeletonUVE()) << "the pose is runtime state, not an edit";
+
+    // The end of a Once clip holds its last pose.
+    ASSERT_TRUE(StepSkeletalAnimationPlayerUVE(player, clip, 1.0F, skeleton));
+    EXPECT_FALSE(player.isPlaying);
+    EXPECT_TRUE(player.finished);
+    EXPECT_NEAR(skeleton.pose[0].position.y, 2.0F, 1e-4F);
+}
+
+TEST(AnimationPlayerUVETest, ASkeletalClipBlendsInReturnsToRestAndHonoursTheMixer) {
+    const Asset::AnimationClipAssetUVE clip = MakeLiftClipUVE(2.0F);
+    // Blend In: half the blend time in, the pose is halfway from rest to the clip.
+    Skeleton3DNodeComponentUVE skeleton = MakeTwoBoneSkeletonUVE();
+    AnimationPlayerComponentUVE settings;
+    settings.blendInSeconds = 1.0F;
+    settings.startOffsetSeconds = 1.0F; // the clip holds y = 3 from here on
+    settings.loopMode = AnimationLoopModeUVE::Once;
+    AnimationPlayerComponentUVE player = StartedUVE(settings, TransformComponentUVE{}, clip);
+    ASSERT_TRUE(StepSkeletalAnimationPlayerUVE(player, clip, 0.5F, skeleton));
+    EXPECT_NEAR(skeleton.pose[0].position.y, 2.0F, 1e-4F);
+
+    // Return To Start puts every bone back at rest when the clip ends.
+    Skeleton3DNodeComponentUVE back = MakeTwoBoneSkeletonUVE();
+    settings = AnimationPlayerComponentUVE{};
+    settings.loopMode = AnimationLoopModeUVE::Once;
+    settings.onFinish = AnimationFinishActionUVE::ReturnToStart;
+    player = StartedUVE(settings, TransformComponentUVE{}, clip);
+    ASSERT_TRUE(StepSkeletalAnimationPlayerUVE(player, clip, 2.0F, back));
+    EXPECT_NEAR(back.pose[0].position.y, 1.0F, 1e-4F);
+
+    // A mixer that leaves position alone leaves it at rest.
+    Skeleton3DNodeComponentUVE masked = MakeTwoBoneSkeletonUVE();
+    AnimationMixerComponentUVE mixer;
+    mixer.animatePosition = false;
+    player = StartedUVE(AnimationPlayerComponentUVE{}, TransformComponentUVE{}, clip);
+    ASSERT_TRUE(StepSkeletalAnimationPlayerUVE(player, clip, 0.5F, masked, mixer));
+    EXPECT_NEAR(masked.pose[0].position.y, 1.0F, 1e-4F);
+
+    // A clip with no bone tracks cannot pose a skeleton.
+    Asset::AnimationClipAssetUVE nodeClip = MakeSlideClipUVE();
+    player = StartedUVE(AnimationPlayerComponentUVE{}, TransformComponentUVE{}, nodeClip);
+    EXPECT_FALSE(StepSkeletalAnimationPlayerUVE(player, nodeClip, 0.1F, masked));
+    EXPECT_FALSE(player.isPlaying);
 }
 
 } // namespace
