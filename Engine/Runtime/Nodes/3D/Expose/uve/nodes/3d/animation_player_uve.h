@@ -15,6 +15,7 @@
 namespace UVE::Asset {
 struct AnimationClipAssetUVE;
 struct AnimationAssetEventUVE;
+struct AnimationAssetSampleUVE;
 } // namespace UVE::Asset
 
 namespace UVE::Scene {
@@ -95,6 +96,14 @@ bool PoseSkeletonAtTimeUVE(const Asset::AnimationClipAssetUVE& clip, double time
 /// samples around it, clamped to the first and last. The clip must have at least one sample.
 [[nodiscard]] Core::TransformPoseUVE SampleAnimationClipAssetUVE(const Asset::AnimationClipAssetUVE& clip,
                                                                 double timeSeconds) noexcept;
+
+/// One track's pose at `timeSeconds`: linear position and scale, spherical rotation, clamped to the
+/// first and last sample. `samples` must not be empty.
+[[nodiscard]] Core::TransformPoseUVE SampleAnimationTrackUVE(const std::vector<Asset::AnimationAssetSampleUVE>& samples,
+                                                             double timeSeconds) noexcept;
+
+/// Inertialization's fade: 1 at `progress` 0, 0 at 1, with zero speed and acceleration at both ends.
+[[nodiscard]] float AnimationInertialDecayUVE(float progress) noexcept;
 
 /// Writes the chosen channels of `pose` into `target`. Rotation is normalized and mirrored into the
 /// stored Euler angles, so the Inspector shows what is on screen.

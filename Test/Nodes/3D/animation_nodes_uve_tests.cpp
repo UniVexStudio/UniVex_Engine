@@ -195,9 +195,18 @@ public:
 
     [[nodiscard]] float StepUVE(AnimationTreeComponentUVE& tree, const float seconds) {
         EXPECT_TRUE(IsAnimationTreeComponentValidUVE(tree)) << DescribeAnimationGraphProblemUVE(tree);
-        EXPECT_TRUE(StepAnimationTreeUVE(tree, ResolverUVE(), seconds, m_target));
+        EXPECT_TRUE(StepAnimationTreeUVE(tree, ResolverUVE(), seconds, m_target, mixer));
         return m_target.localPosition.x;
     }
+
+    /// Adds a clip as it is, for skeletal graphs.
+    Asset::AssetGuidUVE AddUVE(Asset::AnimationClipAssetUVE clip) {
+        const Asset::AssetGuidUVE guid{m_clips.size() + 100U};
+        m_clips.emplace(guid.value, std::move(clip));
+        return guid;
+    }
+
+    AnimationMixerComponentUVE mixer;
 
 private:
     std::unordered_map<std::uint64_t, Asset::AnimationClipAssetUVE> m_clips;
@@ -294,6 +303,7 @@ TEST(AnimationTreeUVETest, StateMachineCrossfadesAndCanWaitForTheEnd) {
     tree.nodes = {GraphFixtureUVE::NodeUVE(1U, Kind::Output, {2U}), machine,
                   GraphFixtureUVE::ClipNodeUVE(3U, fixture.AddClipUVE(10.0F), false, "Jump"),
                   GraphFixtureUVE::ClipNodeUVE(4U, fixture.AddClipUVE(20.0F), true, "Land")};
+    fixture.mixer.transition = AnimationTransitionModeUVE::Crossfade;
     EXPECT_NEAR(fixture.StepUVE(tree, 0.5F), 5.0F, 1e-4F);
     EXPECT_EQ(tree.activeStates, "Jump");
     EXPECT_NEAR(fixture.StepUVE(tree, 0.6F), 10.0F, 1e-4F); // reached the end: the move is made
@@ -302,6 +312,29 @@ TEST(AnimationTreeUVETest, StateMachineCrossfadesAndCanWaitForTheEnd) {
     EXPECT_NEAR(fixture.StepUVE(tree, 0.5F), 10.0F, 1e-4F);
     // Three quarters through the fade: Jump's 10 mixed 75% toward Land's 15.
     EXPECT_NEAR(fixture.StepUVE(tree, 0.25F), 13.75F, 1e-3F);
+}
+
+TEST(AnimationTreeUVETest, StateMachineInertializesByDefault) {
+    GraphFixtureUVE fixture;
+    AnimationTreeComponentUVE tree;
+    AnimationGraphNodeUVE machine = GraphFixtureUVE::NodeUVE(2U, Kind::StateMachine, {3U, 4U});
+    AnimationTransitionUVE atEnd;
+    atEnd.fromState = 0U;
+    atEnd.toState = 1U;
+    atEnd.condition = AnimationConditionUVE::AtEnd;
+    atEnd.fadeSeconds = 1.0F;
+    machine.transitions = {atEnd};
+    tree.nodes = {GraphFixtureUVE::NodeUVE(1U, Kind::Output, {2U}), machine,
+                  GraphFixtureUVE::ClipNodeUVE(3U, fixture.AddClipUVE(10.0F), false, "Jump"),
+                  GraphFixtureUVE::ClipNodeUVE(4U, fixture.AddClipUVE(20.0F), true, "Land")};
+    static_cast<void>(fixture.StepUVE(tree, 0.5F));
+    EXPECT_NEAR(fixture.StepUVE(tree, 0.6F), 10.0F, 1e-4F) << "the step that switches still shows Jump";
+    EXPECT_EQ(tree.activeStates, "Land");
+    // Land alone would be at 10 after 0.5 s; the hand-over's 10 of difference is half decayed.
+    EXPECT_NEAR(fixture.StepUVE(tree, 0.5F), 15.0F, 1e-3F);
+    // Once the second is up only Land shows: 1.25 s wraps to 0.25 s, 5.
+    static_cast<void>(fixture.StepUVE(tree, 0.25F));
+    EXPECT_NEAR(fixture.StepUVE(tree, 0.5F), 5.0F, 1e-3F);
 }
 
 TEST(AnimationTreeUVETest, OneShotPlaysOverTheBaseAndHandsBack) {
@@ -565,6 +598,145 @@ TEST(AnimationPlayerUVETest, InertializationCarriesTheOldPoseAndFadesItOutSmooth
     ASSERT_TRUE(StepSkeletalAnimationPlayerUVE(player, clip, 0.5F, skeleton, mixer));
     EXPECT_NEAR(skeleton.pose[0].position.z, 0.0F, 1e-4F) << "the new clip, exactly, when the blend ends";
     EXPECT_TRUE(player.inertialPosition.empty()) << "the carried difference is dropped once it has faded";
+}
+
+} // namespace
+} // namespace UVE::Scene
+
+namespace UVE::Scene {
+namespace {
+
+// ---- AnimationTree on a skeleton ---------------------------------------------------------------
+
+[[nodiscard]] AnimationGraphNodeUVE TreeNodeUVE(const std::uint32_t id, const AnimationGraphNodeKindUVE kind,
+                                                std::vector<std::uint32_t> inputs = {}) {
+    AnimationGraphNodeUVE node;
+    node.id = id;
+    node.kind = kind;
+    node.inputs = std::move(inputs);
+    return node;
+}
+
+[[nodiscard]] AnimationGraphNodeUVE TreeClipUVE(const std::uint32_t id, const Asset::AssetGuidUVE clip) {
+    AnimationGraphNodeUVE node = TreeNodeUVE(id, AnimationGraphNodeKindUVE::Clip);
+    node.clip = clip;
+    return node;
+}
+
+/// "Hips" walking along X from 0 to `distance` over `duration`, one sample per tenth.
+[[nodiscard]] Asset::AnimationClipAssetUVE MakeWalkClipUVE(const float distance, const double duration = 1.0) {
+    Asset::AnimationClipAssetUVE clip;
+    clip.clipId = "walk";
+    clip.durationSeconds = duration;
+    std::vector<Asset::AnimationAssetSampleUVE> samples;
+    for (int step = 0; step <= 10; ++step) {
+        Asset::AnimationAssetSampleUVE sample;
+        sample.timeSeconds = duration * step / 10.0;
+        sample.pose.position = Math::Vector3UVE{distance * static_cast<float>(step) / 10.0F, 1.0F, 0.0F};
+        samples.push_back(sample);
+    }
+    clip.bones = {Asset::AnimationAssetBoneTrackUVE{"Hips", samples}};
+    return clip;
+}
+
+struct SkeletalGraphUVE {
+    std::unordered_map<std::uint64_t, Asset::AnimationClipAssetUVE> clips;
+    Skeleton3DNodeComponentUVE skeleton = MakeTwoBoneSkeletonUVE();
+    AnimationMixerComponentUVE mixer;
+
+    Asset::AssetGuidUVE AddUVE(Asset::AnimationClipAssetUVE clip) {
+        const Asset::AssetGuidUVE guid{clips.size() + 500U};
+        clips.emplace(guid.value, std::move(clip));
+        return guid;
+    }
+
+    bool StepUVE(AnimationTreeComponentUVE& tree, const float seconds) {
+        EXPECT_TRUE(IsAnimationTreeComponentValidUVE(tree)) << DescribeAnimationGraphProblemUVE(tree);
+        return StepSkeletalAnimationTreeUVE(
+            tree,
+            [this](const Asset::AssetGuidUVE guid) -> const Asset::AnimationClipAssetUVE* {
+                const auto found = clips.find(guid.value);
+                return found == clips.end() ? nullptr : &found->second;
+            },
+            seconds, skeleton, mixer);
+    }
+};
+
+TEST(AnimationTreeUVETest, ASkeletalTreeBlendsBoneByBoneAndKeepsUntrackedBonesAtRest) {
+    SkeletalGraphUVE graph;
+    AnimationTreeComponentUVE tree;
+    AnimationGraphNodeUVE blend = TreeNodeUVE(2U, AnimationGraphNodeKindUVE::Blend2, {3U, 4U});
+    blend.value = 0.5F;
+    tree.nodes = {TreeNodeUVE(1U, AnimationGraphNodeKindUVE::Output, {2U}), blend,
+                  TreeClipUVE(3U, graph.AddUVE(MakeLiftClipUVE(0.0F))), TreeClipUVE(4U, graph.AddUVE(MakeLiftClipUVE(2.0F)))};
+    ASSERT_TRUE(graph.StepUVE(tree, 0.5F));
+    ASSERT_EQ(graph.skeleton.pose.size(), 2U);
+    // Lift 0 and lift 2 at half time (0 and 1), mixed half and half: hips at 1 + 0.5.
+    EXPECT_NEAR(graph.skeleton.pose[0].position.y, 1.5F, 1e-4F);
+    EXPECT_NEAR(graph.skeleton.pose[1].position.y, 0.3F, 1e-6F) << "no track: the rest pose";
+    EXPECT_NEAR(tree.nodeStates[2].weight, 0.5F, 1e-6F) << "each clip counted half";
+}
+
+TEST(AnimationTreeUVETest, ASkeletalTreeHandsOverRootMotion) {
+    SkeletalGraphUVE graph;
+    graph.mixer.rootMotion = AnimationRootMotionModeUVE::InPlace;
+    AnimationTreeComponentUVE tree;
+    tree.nodes[1].clip = graph.AddUVE(MakeWalkClipUVE(2.0F));
+    ASSERT_TRUE(graph.StepUVE(tree, 0.0F));
+    ASSERT_TRUE(graph.StepUVE(tree, 0.25F));
+    EXPECT_NEAR(tree.rootMotionDelta.x, 0.5F, 1e-4F);
+    EXPECT_NEAR(graph.skeleton.pose[0].position.x, 0.0F, 1e-6F) << "the hips stay over their start";
+    EXPECT_NEAR(graph.skeleton.pose[0].position.y, 1.0F, 1e-6F) << "only the ground travel is taken";
+    ASSERT_TRUE(graph.StepUVE(tree, 0.9F)); // 0.25 -> 1.15, wrapping at 1
+    EXPECT_NEAR(tree.rootMotionDelta.x, 1.8F, 1e-3F) << "the travel carries across the wrap";
+}
+
+TEST(AnimationTreeUVETest, SyncedBlendKeepsItsInputsInStep) {
+    SkeletalGraphUVE graph;
+    AnimationTreeComponentUVE tree;
+    AnimationGraphNodeUVE blend = TreeNodeUVE(2U, AnimationGraphNodeKindUVE::Blend2, {3U, 4U});
+    blend.value = 0.25F;
+    blend.sync = true;
+    tree.nodes = {TreeNodeUVE(1U, AnimationGraphNodeKindUVE::Output, {2U}), blend,
+                  TreeClipUVE(3U, graph.AddUVE(MakeWalkClipUVE(1.0F, 1.0))),
+                  TreeClipUVE(4U, graph.AddUVE(MakeWalkClipUVE(4.0F, 2.0)))};
+    ASSERT_TRUE(graph.StepUVE(tree, 0.4F));
+    // The 1 s walk leads (it counts 75%) at 40%; the 2 s run is put at 40% too, not at 0.4 s.
+    EXPECT_NEAR(tree.nodeStates[2].timeSeconds, 0.4, 1e-6);
+    EXPECT_NEAR(tree.nodeStates[3].timeSeconds, 0.8, 1e-6);
+    blend.sync = false;
+    tree.nodes[1] = blend;
+    tree.nodeStates.clear();
+    ASSERT_TRUE(graph.StepUVE(tree, 0.4F));
+    EXPECT_NEAR(tree.nodeStates[3].timeSeconds, 0.4, 1e-6) << "unsynced, each runs on its own clock";
+}
+
+TEST(AnimationTreeUVETest, EventsComeFromTheClipsThatCount) {
+    SkeletalGraphUVE graph;
+    Asset::AnimationClipAssetUVE step = MakeWalkClipUVE(1.0F);
+    step.events = {Asset::AnimationAssetEventUVE{0.5, "footstep"}};
+    Asset::AnimationClipAssetUVE wave = MakeWalkClipUVE(1.0F);
+    wave.events = {Asset::AnimationAssetEventUVE{0.5, "wave"}};
+    AnimationTreeComponentUVE tree;
+    AnimationGraphNodeUVE blend = TreeNodeUVE(2U, AnimationGraphNodeKindUVE::Blend2, {3U, 4U});
+    blend.value = 0.2F;
+    tree.nodes = {TreeNodeUVE(1U, AnimationGraphNodeKindUVE::Output, {2U}), blend, TreeClipUVE(3U, graph.AddUVE(step)),
+                  TreeClipUVE(4U, graph.AddUVE(wave))};
+    ASSERT_TRUE(graph.StepUVE(tree, 0.3F));
+    EXPECT_TRUE(tree.firedEvents.empty());
+    ASSERT_TRUE(graph.StepUVE(tree, 0.3F));
+    EXPECT_EQ(tree.firedEvents, (std::vector<std::string>{"footstep"})) << "the 20% clip's event is not raised";
+}
+
+TEST(AnimationTreeUVETest, ASkeletalTreeWritesOnlyTheMixersChannels) {
+    SkeletalGraphUVE graph;
+    graph.mixer.animatePosition = false;
+    AnimationTreeComponentUVE tree;
+    tree.nodes[1].clip = graph.AddUVE(MakeLiftClipUVE(1.0F));
+    ASSERT_TRUE(graph.StepUVE(tree, 0.5F));
+    EXPECT_NEAR(graph.skeleton.pose[0].position.y, 1.0F, 1e-6F) << "position is not animated";
+    graph.skeleton.bones.clear();
+    EXPECT_FALSE(graph.StepUVE(tree, 0.1F)) << "no bones, nothing to pose";
 }
 
 } // namespace
