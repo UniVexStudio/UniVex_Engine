@@ -49,6 +49,8 @@ struct Renderer3DFrameDiagnosticsUVE final {
     std::size_t primitivePlacementCacheHits = 0U;
     std::size_t primitivePlacementCacheMisses = 0U;
     std::size_t primitiveItemsExtracted = 0U;
+    /// Skinned meshes posed by a skeleton and drawn from their own vertex buffer this frame.
+    std::size_t skinnedMeshesDrawn = 0U;
     std::size_t meshDrawCallsRecorded = 0U;
     /// How many of `meshDrawCallsRecorded` were instanced draws, and how many objects those draws
     /// covered. Both name what instancing ACTUALLY did this frame, not what it was offered: a

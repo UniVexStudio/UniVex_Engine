@@ -16,6 +16,7 @@ namespace UVE::Scene {
 
 class IEntityManagerUVE;
 struct TransformComponentUVE;
+struct Skeleton3DNodeComponentUVE;
 
 /// Authoring definition for the AnimationPlayer node: a pure Node - no transform, no visibility -
 /// whose Inspector is its own section, its AnimationMixer base, then the Node section.
@@ -52,6 +53,16 @@ void StopAnimationPlayerUVE(AnimationPlayerComponentUVE& player) noexcept;
 [[nodiscard]] bool StepAnimationPlayerUVE(AnimationPlayerComponentUVE& player, const Asset::AnimationClipAssetUVE& clip,
                                           float deltaSeconds, TransformComponentUVE& target,
                                           const AnimationMixerComponentUVE& mixer = {}) noexcept;
+
+/// Advances a playing player by `deltaSeconds` and writes a skeletal clip's pose into `skeleton`:
+/// each bone takes the track of the same name, sampled like a node track; a bone with no track
+/// keeps its rest pose. The loop mode, speed and On Finish work as for a node; Blend In eases from
+/// the pose the skeleton had; Relative does not apply. Returns true when the pose was written. A
+/// clip without bone tracks stops the player and writes nothing.
+[[nodiscard]] bool StepSkeletalAnimationPlayerUVE(AnimationPlayerComponentUVE& player,
+                                                  const Asset::AnimationClipAssetUVE& clip, float deltaSeconds,
+                                                  Skeleton3DNodeComponentUVE& skeleton,
+                                                  const AnimationMixerComponentUVE& mixer = {});
 
 /// The clip's pose at `timeSeconds`: linear position and scale, spherical rotation between the two
 /// samples around it, clamped to the first and last. The clip must have at least one sample.

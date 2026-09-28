@@ -38,13 +38,30 @@ struct SkeletonBoneUVE final {
 /// Skeleton3D: a bone hierarchy in its rest pose. A new one is empty - bones are authored in a DCC
 /// tool (a Blender armature, say) and arrive with the model they were exported with; this node
 /// never invents them. `skeletonAssetPath` names that model, content-relative.
+/// One bone's pose right now: local to its parent bone, like SkeletonBoneUVE's rest pose.
+struct SkeletonBonePoseUVE final {
+    Math::Vector3UVE position{};
+    Math::QuaternionUVE rotation{};
+    Math::Vector3UVE scale{1.0F, 1.0F, 1.0F};
+};
+
 struct Skeleton3DNodeComponentUVE final {
     std::string skeletonAssetPath;
     std::vector<SkeletonBoneUVE> bones;
     bool enabled = true;
 
-    [[nodiscard]] bool operator==(const Skeleton3DNodeComponentUVE&) const = default;
+    // ---- Runtime state, written by animation; never saved --------------------------------------
+    /// One entry per bone while something animates the skeleton; empty means the rest pose.
+    std::vector<SkeletonBonePoseUVE> pose;
+
+    /// Authored data only: a playing skeleton equals its saved self.
+    [[nodiscard]] bool operator==(const Skeleton3DNodeComponentUVE& other) const {
+        return skeletonAssetPath == other.skeletonAssetPath && bones == other.bones && enabled == other.enabled;
+    }
 };
+
+/// The pose a renderer should draw: `pose` when it covers every bone, else the rest pose.
+[[nodiscard]] std::vector<SkeletonBonePoseUVE> GetSkeletonCurrentPoseUVE(const Skeleton3DNodeComponentUVE& skeleton);
 
 [[nodiscard]] bool IsSkeleton3DNodeComponentValidUVE(const Skeleton3DNodeComponentUVE& value) noexcept;
 

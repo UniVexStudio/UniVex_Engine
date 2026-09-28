@@ -76,6 +76,7 @@
 #include "uve/scene/scene_graph_uve.h"
 #include "uve/scene/scene_serializer_uve.h"
 #include "uve/nodes/3d/animation_player_uve.h"
+#include "uve/nodes/3d/skeleton_3d_uve.h"
 #include "uve/nodes/3d/hitbox_3d_uve.h"
 #include "uve/nodes/3d/hurtbox_3d_uve.h"
 #include "uve/nodes/3d/interaction_area_3d_uve.h"
@@ -1873,6 +1874,67 @@ TEST(EngineCoreUVETest, AnimationPlayer_PlaysItsClipOnItsParentNode) {
     EXPECT_NEAR(entityManager.GetComponentUVE<Scene::TransformComponentUVE>(door).localPosition.x, 10.0F, 1e-4F);
     EXPECT_NEAR(entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(door).worldPosition.x, 10.0F, 1e-4F);
     EXPECT_FALSE(entityManager.HasComponentUVE<Scene::TransformComponentUVE>(player));
+
+    std::filesystem::remove(clipPath);
+    std::filesystem::remove(MakeTestConfigUVE().assetDatabaseFilePath);
+    engine.Shutdown();
+}
+
+TEST(EngineCoreUVETest, AnimationPlayer_PosesTheSkeletonInsideTheCharacterWithASkeletalClip) {
+    EngineCoreUVE engine(MakeTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+    Asset::IAssetDatabaseUVE& assetDatabase = engine.GetServicesUVE().GetAssetDatabaseUVE();
+
+    // A one-second skeletal clip raising "Hips" from 1 m to 2 m.
+    Asset::AnimationClipAssetUVE clip;
+    clip.clipId = "stand";
+    clip.durationSeconds = 1.0;
+    Asset::AnimationAssetSampleUVE start;
+    start.pose.position = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+    Asset::AnimationAssetSampleUVE end;
+    end.timeSeconds = 1.0;
+    end.pose.position = Math::Vector3UVE{0.0F, 2.0F, 0.0F};
+    clip.bones = {Asset::AnimationAssetBoneTrackUVE{"Hips", {start, end}}};
+    const std::filesystem::path clipPath = "uve_engine_core_tests_stand.uvanim";
+    ASSERT_TRUE(Asset::SaveAnimationClipAssetUVE(clip, clipPath));
+    const Asset::AssetGuidUVE guid = assetDatabase.RegisterUVE(clipPath);
+
+    // Character > { Skeleton3D, AnimationPlayer }: the player targets its parent, the character,
+    // and finds the skeleton inside it.
+    const Scene::EntityUVE character = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, character, Scene::TransformComponentUVE{});
+    const Scene::EntityUVE skeletonEntity = entityManager.CreateEntityUVE();
+    Scene::Skeleton3DNodeDefinitionUVE skeletonDefinition;
+    skeletonDefinition.skeleton.skeletonAssetPath = "Hero.fbx";
+    Scene::SkeletonBoneUVE hips;
+    hips.name = "Hips";
+    hips.localPosition = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+    skeletonDefinition.skeleton.bones = {hips};
+    Scene::ApplySkeleton3DNodeDefinitionUVE(entityManager, skeletonEntity, skeletonDefinition);
+    sceneGraph.SetParentUVE(entityManager, skeletonEntity, character);
+    const Scene::EntityUVE player = entityManager.CreateEntityUVE();
+    Scene::AnimationPlayerNodeDefinitionUVE definition;
+    definition.player.clip = guid;
+    definition.player.loopMode = Scene::AnimationLoopModeUVE::Once;
+    Scene::ApplyAnimationPlayerNodeDefinitionUVE(entityManager, player, definition);
+    sceneGraph.SetParentUVE(entityManager, player, character);
+
+    const auto startedAt = std::chrono::steady_clock::now();
+    while (std::chrono::steady_clock::now() - startedAt < std::chrono::seconds(10) &&
+           !entityManager.GetComponentUVE<Scene::AnimationPlayerComponentUVE>(player).finished) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        engine.TickFrameUVE();
+    }
+    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::AnimationPlayerComponentUVE>(player).finished);
+    const Scene::Skeleton3DNodeComponentUVE& posed =
+        entityManager.GetComponentUVE<Scene::Skeleton3DNodeComponentUVE>(skeletonEntity);
+    ASSERT_EQ(posed.pose.size(), 1U);
+    EXPECT_NEAR(posed.pose[0].position.y, 2.0F, 1e-4F);
+    // The character itself was not moved: a skeletal clip poses bones, not nodes.
+    EXPECT_NEAR(entityManager.GetComponentUVE<Scene::TransformComponentUVE>(character).localPosition.y, 0.0F, 1e-6F);
 
     std::filesystem::remove(clipPath);
     std::filesystem::remove(MakeTestConfigUVE().assetDatabaseFilePath);

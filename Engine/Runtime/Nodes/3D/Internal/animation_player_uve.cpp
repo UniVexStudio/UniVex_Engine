@@ -4,6 +4,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <vector>
+#include <unordered_map>
+#include <string_view>
 
 #include "uve/asset/animation_clip_asset_uve.h"
 #include "uve/component/transform_component_uve.h"
@@ -11,6 +14,7 @@
 #include "uve/nodes/3d/abstract_nodes_3d_uve.h"
 #include "uve/math/quaternion_uve.h"
 #include "uve/nodes/3d/node_3d_uve.h"
+#include "uve/nodes/3d/skeleton_3d_uve.h"
 
 namespace UVE::Scene {
 namespace {
@@ -104,17 +108,21 @@ void WritePoseUVE(const AnimationMixerComponentUVE& mixer, const PoseUVE& pose, 
 
 } // namespace
 
-Core::TransformPoseUVE SampleAnimationClipAssetUVE(const Asset::AnimationClipAssetUVE& clip,
-                                                         const double timeSeconds) noexcept {
-    const auto upper = std::upper_bound(clip.samples.begin(), clip.samples.end(), timeSeconds,
+namespace {
+
+/// A track's pose at `timeSeconds`: linear position and scale, spherical rotation, clamped to the
+/// first and last sample. `samples` is never empty.
+[[nodiscard]] Core::TransformPoseUVE SampleTrackUVE(const std::vector<Asset::AnimationAssetSampleUVE>& samples,
+                                                    const double timeSeconds) noexcept {
+    const auto upper = std::upper_bound(samples.begin(), samples.end(), timeSeconds,
                                         [](const double value, const Asset::AnimationAssetSampleUVE& sample) {
                                             return value < sample.timeSeconds;
                                         });
-    if (upper == clip.samples.begin()) {
-        return ToPoseUVE(clip.samples.front().pose);
+    if (upper == samples.begin()) {
+        return ToPoseUVE(samples.front().pose);
     }
-    if (upper == clip.samples.end()) {
-        return ToPoseUVE(clip.samples.back().pose);
+    if (upper == samples.end()) {
+        return ToPoseUVE(samples.back().pose);
     }
     const Asset::AnimationAssetSampleUVE& right = *upper;
     const Asset::AnimationAssetSampleUVE& left = *(upper - 1);
@@ -123,6 +131,13 @@ Core::TransformPoseUVE SampleAnimationClipAssetUVE(const Asset::AnimationClipAss
     return Core::TransformPoseUVE{LerpUVE(left.pose.position, right.pose.position, alpha),
                                   SlerpOrKeepUVE(left.pose.rotation, right.pose.rotation, alpha),
                                   LerpUVE(left.pose.scale, right.pose.scale, alpha)};
+}
+
+} // namespace
+
+Core::TransformPoseUVE SampleAnimationClipAssetUVE(const Asset::AnimationClipAssetUVE& clip,
+                                                         const double timeSeconds) noexcept {
+    return SampleTrackUVE(clip.samples, timeSeconds);
 }
 
 void WriteAnimatedPoseUVE(const Core::TransformPoseUVE& pose, const bool position, const bool rotation, const bool scale,
@@ -217,6 +232,72 @@ bool StepAnimationPlayerUVE(AnimationPlayerComponentUVE& player, const Asset::An
                        SlerpOrKeepUVE(start.rotation, pose.rotation, weight), LerpUVE(start.scale, pose.scale, weight)};
     }
     WritePoseUVE(mixer, pose, target);
+    return true;
+}
+
+bool StepSkeletalAnimationPlayerUVE(AnimationPlayerComponentUVE& player, const Asset::AnimationClipAssetUVE& clip,
+                                    const float deltaSeconds, Skeleton3DNodeComponentUVE& skeleton,
+                                    const AnimationMixerComponentUVE& mixer) {
+    if (!player.isPlaying) {
+        return false;
+    }
+    const double duration = clip.durationSeconds;
+    if (!clip.IsSkeletalUVE() || skeleton.bones.empty() || !std::isfinite(duration) || duration <= 0.0 ||
+        !std::isfinite(deltaSeconds) || deltaSeconds < 0.0F) {
+        player.isPlaying = false;
+        return false;
+    }
+    std::vector<SkeletonBonePoseUVE> current = GetSkeletonCurrentPoseUVE(skeleton);
+    const float blendBefore = player.blendElapsedSeconds;
+    const bool stillPlaying = AdvanceClockUVE(player, duration, deltaSeconds);
+    player.blendElapsedSeconds = std::min(player.blendElapsedSeconds + deltaSeconds, 3600.0F);
+
+    std::unordered_map<std::string_view, const Asset::AnimationAssetBoneTrackUVE*> tracks;
+    tracks.reserve(clip.bones.size());
+    for (const Asset::AnimationAssetBoneTrackUVE& track : clip.bones) {
+        if (!track.samples.empty()) {
+            tracks.emplace(track.bone, &track);
+        }
+    }
+    const bool returnToRest = !stillPlaying && player.onFinish == AnimationFinishActionUVE::ReturnToStart;
+    // Blend In eases from where the skeleton was: each step covers this step's share of what is
+    // left of the blend, so the pose arrives exactly when the blend ends.
+    float weight = 1.0F;
+    if (player.blendInSeconds > 0.0F && blendBefore < player.blendInSeconds) {
+        const float remaining = player.blendInSeconds - blendBefore;
+        weight = remaining > 0.0F ? std::clamp(deltaSeconds / remaining, 0.0F, 1.0F) : 1.0F;
+    }
+    const double time = static_cast<double>(player.currentTimeSeconds);
+    for (std::size_t index = 0U; index < skeleton.bones.size(); ++index) {
+        const SkeletonBoneUVE& bone = skeleton.bones[index];
+        PoseUVE target{bone.localPosition, bone.localRotation, bone.localScale};
+        if (!returnToRest) {
+            if (const auto found = tracks.find(bone.name); found != tracks.end()) {
+                target = SampleTrackUVE(found->second->samples, time);
+            }
+        }
+        SkeletonBonePoseUVE& out = current[index];
+        const PoseUVE blended{LerpUVE(out.position, target.position, weight),
+                              SlerpOrKeepUVE(out.rotation, target.rotation, weight),
+                              LerpUVE(out.scale, target.scale, weight)};
+        if (mixer.animatePosition) {
+            out.position = blended.position;
+        }
+        if (mixer.animateRotation) {
+            Math::QuaternionUVE normalized{};
+            if (Math::TryNormalizeUVE(blended.rotation, normalized)) {
+                out.rotation = normalized;
+            }
+        }
+        if (mixer.animateScale) {
+            out.scale = blended.scale;
+        }
+    }
+    skeleton.pose = std::move(current);
+    if (!stillPlaying) {
+        player.isPlaying = false;
+        player.finished = true;
+    }
     return true;
 }
 

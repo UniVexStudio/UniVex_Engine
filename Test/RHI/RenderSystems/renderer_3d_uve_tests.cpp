@@ -47,6 +47,7 @@
 #include "uve/component/ui_button_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/entity/entity_manager_uve.h"
+#include "uve/nodes/3d/skeleton_3d_uve.h"
 #include "uve/scene/scene_graph_uve.h"
 #include "uve/threading/thread_pool_uve.h"
 #include "uve/ui/ui_runtime_uve.h"
@@ -1999,4 +2000,89 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_DestroyedPrimitive_IsPrunedFromThePlace
 }
 
 } // namespace
+TEST_F(Renderer3DUVETest, RenderFrameUVE_ASkinnedMeshUnderASkeletonIsDrawnInTheSkeletonsPose) {
+    // One triangle bound wholly to joint "Hips"; no material, so it takes the unmaterialed path.
+    assetManager.RegisterLoaderUVE<Asset::MeshAssetUVE>([](const std::filesystem::path&, Asset::MeshAssetUVE& mesh) {
+        mesh.vertices = {
+            Asset::MeshVertexUVE{Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{0.0F, 0.0F, 1.0F}, 0.0F, 0.0F},
+            Asset::MeshVertexUVE{Math::Vector3UVE{1.0F, 0.0F, 0.0F}, Math::Vector3UVE{0.0F, 0.0F, 1.0F}, 1.0F, 0.0F},
+            Asset::MeshVertexUVE{Math::Vector3UVE{0.0F, 1.0F, 0.0F}, Math::Vector3UVE{0.0F, 0.0F, 1.0F}, 0.0F, 1.0F},
+        };
+        mesh.indices = {0, 1, 2};
+        mesh.localBounds = Math::AabbUVE{Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 0.0F}};
+        Asset::MeshJointUVE hips;
+        hips.name = "Hips";
+        mesh.joints = {hips};
+        Asset::MeshSkinningInfluenceUVE influence;
+        influence.weights[0] = 1.0F;
+        mesh.skinningInfluences = {influence, influence, influence};
+        return true;
+    });
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_skinned_mesh.uvmodel");
+    const Scene::EntityUVE skeletonEntity = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE skeletonTransform;
+    skeletonTransform.localPosition = Math::Vector3UVE{0.0F, 0.0F, -10.0F};
+    sceneGraph.AttachTransformUVE(entityManager, skeletonEntity, skeletonTransform);
+    Scene::Skeleton3DNodeComponentUVE skeleton;
+    skeleton.skeletonAssetPath = "Hero.fbx";
+    Scene::SkeletonBoneUVE bone;
+    bone.name = "Hips";
+    skeleton.bones = {bone};
+    entityManager.AddComponentUVE<Scene::Skeleton3DNodeComponentUVE>(skeletonEntity, skeleton);
+    const Scene::EntityUVE meshEntity = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, meshEntity, Scene::TransformComponentUVE{});
+    sceneGraph.SetParentUVE(entityManager, meshEntity, skeletonEntity);
+    entityManager.AddComponentUVE<Scene::MeshComponentUVE>(meshEntity, Scene::MeshComponentUVE{meshGuid, Asset::kInvalidAssetGuidUVE});
+    sceneGraph.UpdateUVE(entityManager);
+    Asset::AssetHandleUVE<Asset::MeshAssetUVE> meshHandle = assetManager.LoadUVE<Asset::MeshAssetUVE>(meshGuid, assetDatabase);
+    for (int iteration = 0; iteration < kMaxPollIterationsUVE && !meshHandle.IsReadyUVE(); ++iteration) {
+        std::this_thread::yield();
+    }
+    ASSERT_TRUE(meshHandle.IsReadyUVE());
+
+    // The vertex buffer bound for the last indexed draw of three indices, read back.
+    const auto drawnVertices = [this]() {
+        std::vector<Asset::MeshVertexUVE> vertices;
+        BufferHandleUVE bound{};
+        for (const RecordedCommandUVE& command : renderDevice.GetLastSubmittedCommandsUVE()) {
+            if (std::holds_alternative<BindVertexBufferCommandUVE>(command)) {
+                bound = std::get<BindVertexBufferCommandUVE>(command).buffer;
+            } else if (std::holds_alternative<DrawIndexedCommandUVE>(command) &&
+                       std::get<DrawIndexedCommandUVE>(command).indexCount == 3U) {
+                vertices.assign(3U, Asset::MeshVertexUVE{});
+                if (!renderDevice.ReadbackBufferUVE(bound, std::as_writable_bytes(std::span(vertices)))) {
+                    vertices.clear();
+                }
+            }
+        }
+        return vertices;
+    };
+
+    // The skeleton at rest: the triangle as authored. (The first frame starts the built-in
+    // programs compiling; the drawn one comes after.)
+    PrimeMaterialProgramUVE(*renderer3D, cameraEntity);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().skinnedMeshesDrawn, 1U);
+    std::vector<Asset::MeshVertexUVE> vertices = drawnVertices();
+    ASSERT_EQ(vertices.size(), 3U);
+    EXPECT_NEAR(vertices[2].position.y, 1.0F, 1e-5F);
+
+    // Posing the bone moves the triangle with it.
+    entityManager.GetComponentUVE<Scene::Skeleton3DNodeComponentUVE>(skeletonEntity).pose = {
+        Scene::SkeletonBonePoseUVE{Math::Vector3UVE{0.0F, 2.0F, 0.0F}, Math::QuaternionUVE{},
+                                   Math::Vector3UVE{1.0F, 1.0F, 1.0F}}};
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    vertices = drawnVertices();
+    ASSERT_EQ(vertices.size(), 3U);
+    EXPECT_NEAR(vertices[0].position.y, 2.0F, 1e-5F);
+    EXPECT_NEAR(vertices[2].position.y, 3.0F, 1e-5F);
+
+    // Without its skeleton the mesh is drawn in bind pose from the shared buffer.
+    sceneGraph.SetParentUVE(entityManager, meshEntity, Scene::kInvalidEntityUVE);
+    sceneGraph.UpdateUVE(entityManager);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().skinnedMeshesDrawn, 0U);
+}
+
 } // namespace UVE::Render::Tests

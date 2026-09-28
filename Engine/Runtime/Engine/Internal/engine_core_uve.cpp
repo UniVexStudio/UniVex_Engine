@@ -72,6 +72,7 @@
 #include "uve/component/mesh_component_uve.h"
 #include "uve/component/process_component_uve.h"
 #include "uve/nodes/3d/animation_player_uve.h"
+#include "uve/nodes/3d/skeleton_3d_uve.h"
 #include "uve/nodes/3d/animation_tree_uve.h"
 #include "uve/nodes/3d/hitbox_3d_uve.h"
 #include "uve/nodes/3d/hurtbox_3d_uve.h"
@@ -913,6 +914,29 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
         }
         return &m_entityManager->GetComponentUVE<Scene::TransformComponentUVE>(chosen);
     };
+    const auto resolveSkeleton = [this](const Scene::EntityUVE self,
+                                        const Scene::EntityUVE target) -> Scene::Skeleton3DNodeComponentUVE* {
+        Scene::EntityUVE root = target;
+        if (root == Scene::kInvalidEntityUVE || !m_entityManager->IsAliveUVE(root)) {
+            root = m_entityManager->HasComponentUVE<Scene::HierarchyComponentUVE>(self)
+                       ? m_entityManager->GetComponentUVE<Scene::HierarchyComponentUVE>(self).parent
+                       : Scene::kInvalidEntityUVE;
+        }
+        if (root == Scene::kInvalidEntityUVE || !m_entityManager->IsAliveUVE(root)) {
+            return nullptr;
+        }
+        // Breadth first, so the skeleton nearest the target wins.
+        std::vector<Scene::EntityUVE> queue{root};
+        for (std::size_t next = 0U; next < queue.size() && next < 4096U; ++next) {
+            const Scene::EntityUVE candidate = queue[next];
+            if (m_entityManager->HasComponentUVE<Scene::Skeleton3DNodeComponentUVE>(candidate)) {
+                return &m_entityManager->GetComponentUVE<Scene::Skeleton3DNodeComponentUVE>(candidate);
+            }
+            const std::vector<Scene::EntityUVE> children = m_sceneGraph->GetChildrenUVE(*m_entityManager, candidate);
+            queue.insert(queue.end(), children.begin(), children.end());
+        }
+        return nullptr;
+    };
     // A player or tree loaded without its mixer (an older save) runs with the mixer's defaults.
     const auto mixerOf = [this](const Scene::EntityUVE entity) {
         return m_entityManager->HasComponentUVE<Scene::AnimationMixerComponentUVE>(entity)
@@ -933,6 +957,20 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
         const Asset::AnimationClipAssetUVE* const clip = clipFor(player.clip);
         if (clip == nullptr) {
             continue; // not set, still loading, or failed - the player waits
+        }
+        // A skeletal clip poses a skeleton: the target when it is one, else the first Skeleton3D
+        // under it (a character's AnimationPlayer targets the character; its skeleton is inside).
+        if (clip->IsSkeletalUVE()) {
+            Scene::Skeleton3DNodeComponentUVE* const skeleton = resolveSkeleton(entity, mixer.target);
+            if (skeleton == nullptr) {
+                continue;
+            }
+            if (!player.hasStartPose && player.autoplay) {
+                Scene::PlayAnimationPlayerUVE(player, Scene::TransformComponentUVE{}, clip->durationSeconds);
+            }
+            static_cast<void>(Scene::StepSkeletalAnimationPlayerUVE(player, *clip, deltaSeconds * mixer.speedScale,
+                                                                    *skeleton, mixer));
+            continue;
         }
         // Resolved before playback starts, so a player with nothing to move never "plays".
         Scene::TransformComponentUVE* const target = resolveTarget(entity, mixer.target);

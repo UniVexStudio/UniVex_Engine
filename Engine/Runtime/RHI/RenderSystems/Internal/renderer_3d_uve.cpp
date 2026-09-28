@@ -13,6 +13,7 @@
 #include <utility>
 #include <span>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -20,9 +21,11 @@
 #include "uve/asset/asset_reloaded_event_uve.h"
 #include "uve/asset/material_asset_uve.h"
 #include "uve/asset/mesh_asset_uve.h"
+#include "uve/asset/mesh_skinning_uve.h"
 #include "uve/asset/shader_asset_uve.h"
 #include "uve/asset/texture_asset_uve.h"
 #include "uve/component/camera_component_uve.h"
+#include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/mesh_component_uve.h"
 #include "uve/component/primitive_mesh_component_uve.h"
 #include "uve/component/visibility_component_uve.h"
@@ -147,6 +150,8 @@ struct PrimitiveRenderItemUVE {
     /// loaded through `unmaterialedMeshHandles` for as long as an item can name it.
     Asset::AssetGuidUVE meshGuid = Asset::kInvalidAssetGuidUVE;
     const Asset::MeshAssetUVE* mesh = nullptr;
+    /// Set for a skinned mesh posed by a skeleton this frame: that entity's own vertex buffer.
+    const MeshGpuResourcesUVE* skinned = nullptr;
 };
 
 /// Identity of a primitive's placement inputs. Two placements with equal keys must produce equal
@@ -704,6 +709,16 @@ struct Renderer3DUVE::ImplUVE {
     TextureHandleUVE fallbackNormalTexture;
 
     std::unordered_map<Asset::AssetGuidUVE, MeshGpuResourcesUVE> meshCache;
+    /// Per-entity vertex buffers of skinned meshes, re-skinned every frame. The index buffer is the
+    /// mesh's shared one. Entries an extraction did not touch are released at the next one.
+    struct SkinnedMeshGpuUVE final {
+        MeshGpuResourcesUVE resources;
+        std::size_t vertexBytes = 0U;
+        std::uint64_t frame = 0U;
+    };
+    std::unordered_map<std::uint64_t, SkinnedMeshGpuUVE> skinnedMeshCache;
+    std::uint64_t skinnedFrame = 0U;
+    std::size_t skinnedMeshesThisFrame = 0U;
     std::unordered_map<std::uint8_t, MeshGpuResourcesUVE> primitiveMeshCache;
     /// Keeps each imported mesh that is drawn without a material loaded between frames. Pruned
     /// when no entity names the mesh any more.
@@ -1307,10 +1322,100 @@ struct Renderer3DUVE::ImplUVE {
     /// lit shader in a neutral grey - so a model brought in from a DCC tool shows up the moment it
     /// is assigned, instead of staying invisible until a material and its shaders are authored.
     /// Appended to the primitive items; call after ExtractPrimitiveItemsUVE and before sorting.
+    /// Poses `mesh` with the nearest Skeleton3D above `entity` and uploads the result into that
+    /// entity's own vertex buffer. Null when there is no skeleton, a joint has no bone of its name,
+    /// or skinning fails - the mesh is then drawn in its bind pose. `outBounds` receives the posed
+    /// mesh's local bounds, which the rest pose's no longer contain.
+    [[nodiscard]] const MeshGpuResourcesUVE* SkinForEntityUVE(Scene::IEntityManagerUVE& entityManager,
+                                                              const Scene::EntityUVE entity,
+                                                              const Asset::AssetGuidUVE guid,
+                                                              const Asset::MeshAssetUVE& mesh, Math::AabbUVE& outBounds) {
+        const Scene::Skeleton3DNodeComponentUVE* skeleton = nullptr;
+        Scene::EntityUVE cursor = entity;
+        for (std::size_t depth = 0U; depth < 256U && cursor != Scene::kInvalidEntityUVE; ++depth) {
+            if (entityManager.HasComponentUVE<Scene::Skeleton3DNodeComponentUVE>(cursor)) {
+                skeleton = &entityManager.GetComponentUVE<Scene::Skeleton3DNodeComponentUVE>(cursor);
+                break;
+            }
+            cursor = entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(cursor)
+                         ? entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(cursor).parent
+                         : Scene::kInvalidEntityUVE;
+        }
+        if (skeleton == nullptr || !skeleton->enabled || skeleton->bones.empty()) {
+            return nullptr;
+        }
+        const std::vector<Scene::SkeletonBonePoseUVE> pose = Scene::GetSkeletonCurrentPoseUVE(*skeleton);
+        std::unordered_map<std::string_view, std::size_t> boneOfName;
+        for (std::size_t index = 0U; index < skeleton->bones.size(); ++index) {
+            boneOfName.emplace(skeleton->bones[index].name, index);
+        }
+        std::vector<Math::Matrix4x4UVE> locals;
+        locals.reserve(mesh.joints.size());
+        for (const Asset::MeshJointUVE& joint : mesh.joints) {
+            const auto bone = boneOfName.find(joint.name);
+            if (joint.name.empty() || bone == boneOfName.end()) {
+                return nullptr;
+            }
+            const Scene::SkeletonBonePoseUVE& local = pose[bone->second];
+            locals.push_back(Math::Matrix4x4UVE::ComposeTrsUVE(local.position, local.rotation, local.scale));
+        }
+        std::vector<Math::Matrix4x4UVE> skinning;
+        std::vector<Asset::MeshVertexUVE> vertices;
+        if (!Asset::TryResolvePoseUVE(mesh.joints, locals, skinning) || !Asset::TrySkinMeshUVE(mesh, skinning, vertices) ||
+            vertices.empty()) {
+            return nullptr;
+        }
+        Asset::GenerateMeshTangentsUVE(vertices, mesh.indices);
+        outBounds = Math::AabbUVE{vertices.front().position, vertices.front().position};
+        for (const Asset::MeshVertexUVE& vertex : vertices) {
+            outBounds.min = Math::Vector3UVE{std::min(outBounds.min.x, vertex.position.x),
+                                             std::min(outBounds.min.y, vertex.position.y),
+                                             std::min(outBounds.min.z, vertex.position.z)};
+            outBounds.max = Math::Vector3UVE{std::max(outBounds.max.x, vertex.position.x),
+                                             std::max(outBounds.max.y, vertex.position.y),
+                                             std::max(outBounds.max.z, vertex.position.z)};
+        }
+
+        const MeshGpuResourcesUVE& shared = ResolveMeshGpuResourcesUVE(guid, &mesh);
+        if (!IsValidMeshGpuResourcesUVE(shared)) {
+            return nullptr;
+        }
+        const std::span<const std::byte> bytes = std::as_bytes(std::span<const Asset::MeshVertexUVE>(vertices));
+        const std::uint64_t key = (static_cast<std::uint64_t>(entity.generation) << 32U) | entity.index;
+        SkinnedMeshGpuUVE& entry = skinnedMeshCache[key];
+        if (entry.resources.vertexBuffer.value == 0U || entry.vertexBytes != bytes.size()) {
+            DestroyBufferIfValidUVE(renderDevice, entry.resources.vertexBuffer);
+            entry.resources.vertexBuffer =
+                renderDevice.CreateBufferUVE(BufferDescUVE{bytes.size(), BufferUsageUVE::Vertex}, bytes);
+            entry.vertexBytes = bytes.size();
+        } else if (!renderDevice.UpdateBufferUVE(entry.resources.vertexBuffer, bytes)) {
+            return nullptr;
+        }
+        entry.resources.indexBuffer = shared.indexBuffer;
+        entry.resources.indexCount = shared.indexCount;
+        entry.frame = skinnedFrame;
+        if (!IsValidMeshGpuResourcesUVE(entry.resources)) {
+            return nullptr;
+        }
+        ++skinnedMeshesThisFrame;
+        return &entry.resources;
+    }
+
     void ExtractUnmaterialedMeshItemsUVE(Scene::IEntityManagerUVE& entityManager, const Math::FrustumUVE& frustum,
                                           std::vector<PrimitiveRenderItemUVE>& outItems) {
         static constexpr Math::Vector3UVE kUnmaterialedColor{0.72F, 0.72F, 0.74F};
         std::unordered_map<Asset::AssetGuidUVE, bool> named;
+        // Skinned buffers nobody drew last frame belong to entities that are gone or hidden.
+        for (auto it = skinnedMeshCache.begin(); it != skinnedMeshCache.end();) {
+            if (it->second.frame != skinnedFrame) {
+                DestroyBufferIfValidUVE(renderDevice, it->second.resources.vertexBuffer);
+                it = skinnedMeshCache.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        ++skinnedFrame;
+        skinnedMeshesThisFrame = 0U;
         entityManager.ForEachUVE<Scene::WorldTransformComponentUVE, Scene::MeshComponentUVE>(
             [&](Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE& worldTransform,
                 const Scene::MeshComponentUVE& meshComponent) {
@@ -1341,7 +1446,12 @@ struct Renderer3DUVE::ImplUVE {
                 if (!IsFiniteMatrixUVE(worldMatrix)) {
                     return;
                 }
-                const Math::AabbUVE worldBounds = mesh->localBounds.TransformUVE(worldMatrix);
+                Math::AabbUVE localBounds = mesh->localBounds;
+                const MeshGpuResourcesUVE* const skinned =
+                    mesh->IsSkinnedUVE()
+                        ? SkinForEntityUVE(entityManager, entity, meshComponent.meshGuid, *mesh, localBounds)
+                        : nullptr;
+                const Math::AabbUVE worldBounds = localBounds.TransformUVE(worldMatrix);
                 if (!IsOrderedFiniteAabbUVE(worldBounds) || !frustum.IntersectsUVE(worldBounds)) {
                     return;
                 }
@@ -1352,6 +1462,7 @@ struct Renderer3DUVE::ImplUVE {
                 PrimitiveRenderItemUVE item{worldMatrix, Scene::PrimitiveMeshKindUVE::Cube, kUnmaterialedColor, sortDepth};
                 item.meshGuid = meshComponent.meshGuid;
                 item.mesh = mesh;
+                item.skinned = skinned;
                 outItems.push_back(item);
             });
         for (auto it = unmaterialedMeshHandles.begin(); it != unmaterialedMeshHandles.end();) {
@@ -1757,9 +1868,10 @@ struct Renderer3DUVE::ImplUVE {
         }
         std::size_t drawCalls = 0U;
         for (const PrimitiveRenderItemUVE& item : items) {
-            const MeshGpuResourcesUVE& meshResources = item.mesh != nullptr
-                                                           ? ResolveMeshGpuResourcesUVE(item.meshGuid, item.mesh)
-                                                           : ResolvePrimitiveMeshGpuResourcesUVE(item.kind);
+            const MeshGpuResourcesUVE& meshResources =
+                item.skinned != nullptr ? *item.skinned
+                : item.mesh != nullptr  ? ResolveMeshGpuResourcesUVE(item.meshGuid, item.mesh)
+                                        : ResolvePrimitiveMeshGpuResourcesUVE(item.kind);
             if (!IsValidMeshGpuResourcesUVE(meshResources)) {
                 continue;
             }
@@ -2013,6 +2125,9 @@ Renderer3DUVE::~Renderer3DUVE() {
         DestroyBufferIfValidUVE(m_impl->renderDevice, meshResources.vertexBuffer);
         DestroyBufferIfValidUVE(m_impl->renderDevice, meshResources.indexBuffer);
     }
+    for (const auto& [entity, skinned] : m_impl->skinnedMeshCache) {
+        DestroyBufferIfValidUVE(m_impl->renderDevice, skinned.resources.vertexBuffer);
+    }
     for (const auto& [kind, meshResources] : m_impl->primitiveMeshCache) {
         DestroyBufferIfValidUVE(m_impl->renderDevice, meshResources.vertexBuffer);
         DestroyBufferIfValidUVE(m_impl->renderDevice, meshResources.indexBuffer);
@@ -2236,6 +2351,7 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     m_impl->ExtractPrimitiveItemsUVE(entityManager, frustum, m_impl->primitiveItems);
     m_impl->ExtractUnmaterialedMeshItemsUVE(entityManager, frustum, m_impl->primitiveItems);
     m_impl->lastFrameDiagnostics.primitiveItemsExtracted = m_impl->primitiveItems.size();
+    m_impl->lastFrameDiagnostics.skinnedMeshesDrawn = m_impl->skinnedMeshesThisFrame;
 
     RenderGraphUVE& renderGraph = m_impl->renderGraph;
     renderGraph.ClearUVE();
