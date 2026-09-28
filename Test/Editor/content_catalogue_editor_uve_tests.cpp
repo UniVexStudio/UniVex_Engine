@@ -323,5 +323,79 @@ TEST(ContentCatalogueEditorUVETest, EntityEditorEditsTheAssetAloneAndGivesTheSce
     engine.Shutdown();
 }
 
+TEST(ContentCatalogueEditorUVETest, EntityEditorCompilesScriptsListsSignalsAndGoesToProblems) {
+    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("entity_editor_scripts");
+    const std::filesystem::path content = root / "Content";
+    std::filesystem::create_directories(content);
+
+    Core::EngineCoreUVE engine(MakeCatalogueEditorConfigUVE(root));
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), root / "main.uvscene", 100U, &engine);
+        editor.InitUVE();
+        const auto created = editor.CreateContentCatalogueItemUVE("character", content);
+        ASSERT_TRUE(created.has_value());
+        EXPECT_FALSE(editor.HasEntityEditorCompiledUVE());
+        EXPECT_EQ(editor.CompileEntityEditorUVE(), 0U) << "nothing open, nothing to compile";
+        ASSERT_TRUE(editor.OpenEntityEditorUVE(*created));
+        EXPECT_EQ(editor.GetEntityEditorTabUVE(), EditorUVE::EntityEditorTabUVE::Viewport);
+
+        // A fresh Character has no scripts: it compiles clean and answers to nothing.
+        EXPECT_EQ(editor.CompileEntityEditorUVE(), 0U);
+        EXPECT_TRUE(editor.HasEntityEditorCompiledUVE());
+        EXPECT_TRUE(editor.GetEntityEditorSignalsUVE().empty());
+
+        // New UVScript on the root: its handlers are the entity's signals.
+        const Scene::EntityUVE entityRoot = editor.GetEntityEditorRootUVE();
+        editor.SelectEntityUVE(entityRoot);
+        ASSERT_TRUE(editor.CreateUVScriptForSelectedEntityUVE());
+        ASSERT_TRUE(editor.GetOpenUVScriptUVE().has_value());
+        std::vector<EditorUVE::EntitySignalRowUVE> signals = editor.GetEntityEditorSignalsUVE();
+        ASSERT_EQ(signals.size(), 2U);
+        EXPECT_EQ(signals[0].event, "ready");
+        EXPECT_EQ(signals[1].event, "tick");
+        EXPECT_EQ(signals[1].params, "(dt)");
+        EXPECT_EQ(signals[1].entity, entityRoot);
+        EXPECT_GT(signals[1].line, signals[0].line);
+
+        // Unsaved text is what Compile checks: a mistake on line 3 is found there.
+        editor.SetOpenUVScriptTextUVE("on ready:\n    pass\n\non tick(dt):\n    nope += 1\n");
+        EXPECT_TRUE(editor.HasEntityEditorUnsavedChangesUVE());
+        ASSERT_GE(editor.CompileEntityEditorUVE(), 1U);
+        const EditorUVE::EntityCompileProblemUVE problem = editor.GetEntityEditorProblemsUVE().front();
+        EXPECT_EQ(problem.entity, entityRoot);
+        EXPECT_EQ(problem.at.line, 5U);
+        EXPECT_FALSE(problem.scriptPath.empty());
+
+        // Going to a problem selects the node and shows its script.
+        editor.ClearSelectionUVE();
+        ASSERT_TRUE(editor.GoToEntityScriptUVE(problem.entity, problem.at.line));
+        EXPECT_EQ(editor.GetSelectedEntityUVE(), entityRoot);
+        EXPECT_EQ(editor.GetEntityEditorTabUVE(), EditorUVE::EntityEditorTabUVE::Scripting);
+
+        // A script file that is gone is a problem, not a crash.
+        const Scene::EntityUVE child =
+            engine.GetServicesUVE().GetSceneGraphUVE().GetChildrenUVE(engine.GetServicesUVE().GetEntityManagerUVE(), entityRoot).front();
+        engine.GetServicesUVE().GetEntityManagerUVE().GetComponentUVE<Scene::ScriptComponentUVE>(child).scriptAssetPath =
+            "scripts/missing.uvs";
+        editor.SetOpenUVScriptTextUVE("on ready:\n    pass\n");
+        ASSERT_EQ(editor.CompileEntityEditorUVE(), 1U);
+        EXPECT_EQ(editor.GetEntityEditorProblemsUVE().front().entity, child);
+        EXPECT_EQ(editor.GetEntityEditorProblemsUVE().front().at.line, 0U);
+
+        // Save writes the script with the entity; Revert clears Compile's list.
+        ASSERT_TRUE(editor.SaveEntityEditorUVE());
+        EXPECT_FALSE(editor.HasEntityEditorUnsavedChangesUVE());
+        ASSERT_TRUE(editor.RevertEntityEditorUVE());
+        EXPECT_FALSE(editor.HasEntityEditorCompiledUVE());
+        EXPECT_TRUE(editor.GetEntityEditorProblemsUVE().empty());
+        ASSERT_TRUE(editor.CloseEntityEditorUVE(false));
+        EXPECT_FALSE(editor.GetOpenUVScriptUVE().has_value()) << "the script went with the entity";
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
 } // namespace
 } // namespace UVE::Editor::Tests

@@ -11,8 +11,10 @@
 
 #include <algorithm>
 #include <cfloat>
+#include <cstdint>
 #include <filesystem>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include <imgui.h>
@@ -38,12 +40,39 @@ void RecheckUVScriptUVE(EditorUVE::UVScriptDocumentUVE& document, Scene::IEntity
     }
 }
 
-/// ImGui grows a std::string-backed text box through this callback.
-int ResizeStringCallbackUVE(ImGuiInputTextCallbackData* const data) {
+/// What the text box's callback works on: the text it grows, and a pending caret move.
+struct TextBoxStateUVE final {
+    std::string* text = nullptr;
+    std::uint32_t* jumpLine = nullptr;
+};
+
+/// Byte offset of the start of 1-based `line` in `text` (its end when there are fewer lines).
+[[nodiscard]] int LineStartOffsetUVE(const std::string_view text, const std::uint32_t line) noexcept {
+    std::size_t offset = 0U;
+    for (std::uint32_t current = 1U; current < line; ++current) {
+        const std::size_t newline = text.find('\n', offset);
+        if (newline == std::string_view::npos) {
+            return static_cast<int>(text.size());
+        }
+        offset = newline + 1U;
+    }
+    return static_cast<int>(offset);
+}
+
+/// ImGui grows a std::string-backed text box through this callback; it also places the caret
+/// when a problem was clicked.
+int TextBoxCallbackUVE(ImGuiInputTextCallbackData* const data) {
+    auto* const state = static_cast<TextBoxStateUVE*>(data->UserData);
     if (data->EventFlag == ImGuiInputTextFlags_CallbackResize) {
-        auto* const text = static_cast<std::string*>(data->UserData);
-        text->resize(static_cast<std::size_t>(data->BufTextLen));
-        data->Buf = text->data();
+        state->text->resize(static_cast<std::size_t>(data->BufTextLen));
+        data->Buf = state->text->data();
+    } else if (data->EventFlag == ImGuiInputTextFlags_CallbackAlways && *state->jumpLine != 0U) {
+        const int offset = LineStartOffsetUVE(std::string_view{data->Buf, static_cast<std::size_t>(data->BufTextLen)},
+                                              *state->jumpLine);
+        data->CursorPos = offset;
+        data->SelectionStart = offset;
+        data->SelectionEnd = offset;
+        *state->jumpLine = 0U;
     }
     return 0;
 }
@@ -116,6 +145,14 @@ void EditorUVE::DrawUVScriptEditorUVE() {
         ImGui::End();
         return;
     }
+    const bool close = DrawUVScriptEditorBodyUVE(true);
+    ImGui::End();
+    if (close) {
+        CloseOpenUVScriptUVE();
+    }
+}
+
+bool EditorUVE::DrawUVScriptEditorBodyUVE(const bool offerClose) {
     UVScriptDocumentUVE& document = *m_openUVScript;
     bool close = false;
 
@@ -138,12 +175,14 @@ void EditorUVE::DrawUVScriptEditorUVE() {
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
         ImGui::SetTooltip("Write the file (Ctrl+S). A game that is running restarts this script.");
     }
-    ImGui::SameLine();
-    if (ImGui::SmallButton("Close")) {
-        close = true;
-    }
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Back to the scene. Unsaved text is dropped.");
+    if (offerClose) {
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Close")) {
+            close = true;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Back to the scene. Unsaved text is dropped.");
+        }
     }
     ImGui::Separator();
 
@@ -152,10 +191,15 @@ void EditorUVE::DrawUVScriptEditorUVE() {
     const float listHeight = std::min(ImGui::GetContentRegionAvail().y / 3.0F,
                                       lineHeight * static_cast<float>(std::max<std::size_t>(document.diagnostics.size(), 1U) + 1U));
     std::string text = document.text;
+    TextBoxStateUVE textBox{&text, &m_uvscriptJumpLine};
+    if (m_uvscriptJumpLine != 0U) {
+        ImGui::SetKeyboardFocusHere();
+    }
     if (ImGui::InputTextMultiline("##uvs-text", text.data(), text.capacity() + 1U,
                                   ImVec2{-FLT_MIN, ImGui::GetContentRegionAvail().y - listHeight - 6.0F},
-                                  ImGuiInputTextFlags_AllowTabInput | ImGuiInputTextFlags_CallbackResize,
-                                  ResizeStringCallbackUVE, &text)) {
+                                  ImGuiInputTextFlags_AllowTabInput | ImGuiInputTextFlags_CallbackResize |
+                                      ImGuiInputTextFlags_CallbackAlways,
+                                  TextBoxCallbackUVE, &textBox)) {
         SetOpenUVScriptTextUVE(std::move(text));
     }
 
@@ -163,17 +207,25 @@ void EditorUVE::DrawUVScriptEditorUVE() {
         if (document.diagnostics.empty()) {
             ImGui::TextColored(ImVec4{0.45F, 0.80F, 0.55F, 1.0F}, "No problems.");
         }
-        for (const UVScript::DiagnosticUVE& diagnostic : m_openUVScript->diagnostics) {
-            ImGui::TextColored(ImVec4{0.95F, 0.62F, 0.35F, 1.0F}, "%u:%u", diagnostic.at.line, diagnostic.at.column);
+        for (const UVScript::DiagnosticUVE& diagnostic : document.diagnostics) {
+            ImGui::PushID(&diagnostic);
+            const std::string place = std::to_string(diagnostic.at.line) + ":" + std::to_string(diagnostic.at.column);
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4{0.95F, 0.62F, 0.35F, 1.0F});
+            if (ImGui::Selectable(place.c_str(), false, ImGuiSelectableFlags_None,
+                                  ImVec2{ImGui::CalcTextSize(place.c_str()).x, 0.0F})) {
+                m_uvscriptJumpLine = std::max<std::uint32_t>(diagnostic.at.line, 1U);
+            }
+            ImGui::PopStyleColor();
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+                ImGui::SetTooltip("Go to line %u", diagnostic.at.line);
+            }
             ImGui::SameLine();
-            ImGui::TextUnformatted(diagnostic.message.c_str());
+            ImGui::TextWrapped("%s", diagnostic.message.c_str());
+            ImGui::PopID();
         }
     }
     ImGui::EndChild();
-    ImGui::End();
-    if (close) {
-        CloseOpenUVScriptUVE();
-    }
+    return close;
 }
 
 } // namespace UVE::Editor
