@@ -8,6 +8,7 @@
 #include "uve/editor/editor_uve.h"
 
 #include <algorithm>
+#include <cfloat>
 #include <cstdint>
 #include <filesystem>
 #include <optional>
@@ -504,6 +505,46 @@ void EditorUVE::DrawEntityEditorMiddleUVE(EntityEditSessionUVE& session) {
     ImGui::EndChild();
 }
 
+void EditorUVE::DrawEntityEditorDockUVE(EntityEditSessionUVE& session) {
+    if (!ImGui::BeginTabBar("##entity-dock-tabs")) {
+        return;
+    }
+    const auto tab = [&session](const char* label, const EntityEditorDockTabUVE which) {
+        const bool open = ImGui::BeginTabItem(label);
+        if (open) {
+            session.dockTab = which;
+        }
+        return open;
+    };
+    if (tab("Content", EntityEditorDockTabUVE::Content)) {
+        // The project's Content Browser, the same one as the main window's: drag an entity or
+        // model from here onto the tree to add it under the entity.
+        ImGui::BeginChild("##entity-dock-content", ImVec2{0.0F, 0.0F}, false);
+        DrawContentBrowserBodyUVE();
+        ImGui::EndChild();
+        ImGui::EndTabItem();
+    }
+    const auto upcoming = [](const char* what, const char* detail) {
+        const ImVec2 area = ImGui::GetContentRegionAvail();
+        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + std::max(0.0F, area.y * 0.35F));
+        ImGui::SetCursorPosX((area.x - ImGui::CalcTextSize(what).x) * 0.5F);
+        ImGui::TextUnformatted(what);
+        ImGui::SetCursorPosX((area.x - ImGui::CalcTextSize(detail).x) * 0.5F);
+        ImGui::TextDisabled("%s", detail);
+    };
+    if (tab("Timeline", EntityEditorDockTabUVE::Timeline)) {
+        upcoming("The Timeline is not built yet.",
+                 "Keyframes for position, rotation, scale and events, played on this entity, come next.");
+        ImGui::EndTabItem();
+    }
+    if (tab("Anim Graph", EntityEditorDockTabUVE::AnimGraph)) {
+        upcoming("The Anim Graph is not built yet.",
+                 "The AnimationTree as boxes and wires, with its state machine, comes with the Timeline.");
+        ImGui::EndTabItem();
+    }
+    ImGui::EndTabBar();
+}
+
 void EditorUVE::DrawEntityEditorScriptingTabUVE() {
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
     const Scene::EntityUVE entity = m_selectedEntity;
@@ -695,7 +736,11 @@ void EditorUVE::DrawEntityEditorWindowUVE() {
 
     // Scene tree | Viewport, Scripting, Signals | Inspector, with Compile's problems under the
     // middle once it has found any.
-    const float height = std::max(80.0F, ImGui::GetContentRegionAvail().y);
+    // The dock (Content, Timeline, Anim Graph) takes the bottom, resized by the bar above it.
+    constexpr float kSplitterUVE = 6.0F;
+    const float available = ImGui::GetContentRegionAvail().y;
+    session.dockHeight = std::clamp(session.dockHeight, 90.0F, std::max(90.0F, available - 160.0F));
+    const float height = std::max(80.0F, available - session.dockHeight - kSplitterUVE);
     const float width = ImGui::GetContentRegionAvail().x;
     const float treeWidth = std::clamp(width * 0.22F, 200.0F, 320.0F);
     const float inspectorWidth = std::clamp(width * 0.28F, 260.0F, 420.0F);
@@ -710,6 +755,26 @@ void EditorUVE::DrawEntityEditorWindowUVE() {
     ImGui::SameLine();
     ImGui::BeginChild("##entity-inspector", ImVec2{0.0F, height}, true);
     DrawInspectorContentUVE();
+    ImGui::EndChild();
+
+    ImGui::InvisibleButton("##entity-dock-splitter", ImVec2{-FLT_MIN, kSplitterUVE});
+    if (ImGui::IsItemHovered() || ImGui::IsItemActive()) {
+        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
+    }
+    if (ImGui::IsItemActive()) {
+        session.dockHeight -= ImGui::GetIO().MouseDelta.y;
+    }
+    {
+        const ImVec2 min = ImGui::GetItemRectMin();
+        const ImVec2 max = ImGui::GetItemRectMax();
+        const float y = (min.y + max.y) * 0.5F;
+        ImGui::GetWindowDrawList()->AddLine(ImVec2{min.x, y}, ImVec2{max.x, y},
+                                            ImGui::GetColorU32(ImGui::IsItemActive() || ImGui::IsItemHovered()
+                                                                   ? ImGuiCol_SeparatorHovered
+                                                                   : ImGuiCol_Separator));
+    }
+    ImGui::BeginChild("##entity-dock", ImVec2{0.0F, 0.0F}, true);
+    DrawEntityEditorDockUVE(session);
     ImGui::EndChild();
 
     // The X with unsaved changes asks first; without them it just closes.
