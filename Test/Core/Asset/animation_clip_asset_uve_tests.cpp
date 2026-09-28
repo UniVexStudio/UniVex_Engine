@@ -3,6 +3,7 @@
 #include "uve/asset/animation_clip_asset_uve.h"
 
 #include <filesystem>
+#include <string>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -74,6 +75,69 @@ TEST(AnimationClipAssetUVETest, LoadWrongEnvelopeKindPreservesExistingOutput) {
     EXPECT_EQ(retained.clipId, original.clipId);
     EXPECT_EQ(retained.samples, original.samples);
     EXPECT_EQ(retained.events, original.events);
+    std::filesystem::remove(path);
+}
+
+TEST(AnimationClipAssetUVETest, SkeletalClipRoundTripsItsBoneTracks) {
+    const std::filesystem::path path = TestPathUVE("uve_animation_clip_asset_skeletal.uvanim");
+    std::filesystem::remove(path);
+    AnimationClipAssetUVE clip;
+    clip.clipId = "run";
+    clip.durationSeconds = 0.5;
+    const AnimationAssetPoseUVE rest{Math::Vector3UVE{0.0F, 1.0F, 0.0F}, Math::QuaternionUVE{},
+                                     Math::Vector3UVE{1.0F, 1.0F, 1.0F}};
+    AnimationAssetPoseUVE forward = rest;
+    forward.position.z = 0.4F;
+    clip.bones = {AnimationAssetBoneTrackUVE{"Hips", {{0.0, rest}, {0.5, forward}}},
+                  AnimationAssetBoneTrackUVE{"Spine", {{0.0, rest}}}};
+    ASSERT_TRUE(IsAnimationClipAssetValidUVE(clip)) << "bones alone are enough: no node track needed";
+    ASSERT_TRUE(SaveAnimationClipAssetUVE(clip, path));
+    AnimationClipAssetUVE loaded;
+    ASSERT_TRUE(LoadAnimationClipAssetUVE(path, loaded));
+    EXPECT_TRUE(loaded.IsSkeletalUVE());
+    EXPECT_TRUE(loaded.samples.empty());
+    EXPECT_EQ(loaded.bones, clip.bones);
+    std::filesystem::remove(path);
+}
+
+TEST(AnimationClipAssetUVETest, BoneTracksAreValidatedLikeTheNodeTrack) {
+    AnimationClipAssetUVE clip;
+    clip.clipId = "run";
+    clip.durationSeconds = 1.0;
+    const AnimationAssetPoseUVE rest{};
+    clip.bones = {AnimationAssetBoneTrackUVE{"Hips", {{0.0, rest}}}};
+    EXPECT_TRUE(IsAnimationClipAssetValidUVE(clip));
+
+    AnimationClipAssetUVE twice = clip;
+    twice.bones.push_back(AnimationAssetBoneTrackUVE{"Hips", {{0.5, rest}}});
+    EXPECT_FALSE(IsAnimationClipAssetValidUVE(twice)) << "one track per bone";
+
+    AnimationClipAssetUVE late = clip;
+    late.bones[0].samples[0].timeSeconds = 2.0;
+    EXPECT_FALSE(IsAnimationClipAssetValidUVE(late)) << "past the end";
+
+    AnimationClipAssetUVE unnamed = clip;
+    unnamed.bones[0].bone.clear();
+    EXPECT_FALSE(IsAnimationClipAssetValidUVE(unnamed));
+
+    AnimationClipAssetUVE empty = clip;
+    empty.bones[0].samples.clear();
+    EXPECT_FALSE(IsAnimationClipAssetValidUVE(empty)) << "nothing moves";
+}
+
+TEST(AnimationClipAssetUVETest, AVersionOneFileStillLoads) {
+    const std::filesystem::path path = TestPathUVE("uve_animation_clip_asset_v1.uvanim");
+    std::filesystem::remove(path);
+    const std::string text =
+        R"({"schema":"uve-animation-v1","clipId":"door","durationSeconds":1.0,"events":[],"samples":[)"
+        R"({"timeSeconds":0.0,"pose":{"position":[0,0,0],"rotation":[0,0,0,1],"scale":[1,1,1]}}]})";
+    const auto* const bytes = reinterpret_cast<const std::byte*>(text.data());
+    ASSERT_TRUE(WriteUveFileUVE(path, AssetKindUVE::Animation, std::vector<std::byte>(bytes, bytes + text.size())));
+    AnimationClipAssetUVE loaded;
+    ASSERT_TRUE(LoadAnimationClipAssetUVE(path, loaded));
+    EXPECT_EQ(loaded.clipId, "door");
+    EXPECT_EQ(loaded.samples.size(), 1U);
+    EXPECT_FALSE(loaded.IsSkeletalUVE());
     std::filesystem::remove(path);
 }
 

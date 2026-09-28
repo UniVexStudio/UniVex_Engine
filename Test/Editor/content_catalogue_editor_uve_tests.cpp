@@ -11,6 +11,7 @@
 
 #include "Support/test_scratch_uve.h"
 
+#include "uve/asset/animation_clip_asset_uve.h"
 #include "uve/component/name_component_uve.h"
 #include "uve/component/prefab_instance_component_uve.h"
 #include "uve/component/transform_component_uve.h"
@@ -392,6 +393,64 @@ TEST(ContentCatalogueEditorUVETest, EntityEditorCompilesScriptsListsSignalsAndGo
         EXPECT_TRUE(editor.GetEntityEditorProblemsUVE().empty());
         ASSERT_TRUE(editor.CloseEntityEditorUVE(false));
         EXPECT_FALSE(editor.GetOpenUVScriptUVE().has_value()) << "the script went with the entity";
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
+TEST(ContentCatalogueEditorUVETest, AnFbxsTakesAreImportedAsClipsBesideIt) {
+    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("fbx_takes");
+    const std::filesystem::path content = root / "Content";
+    std::filesystem::create_directories(content / "Anims");
+    // One bone and one take, "Armature|Idle", a second long (ASCII FBX 7.4).
+    const std::string fbx = R"(; FBX 7.4.0 project file
+FBXHeaderExtension:  {
+	FBXVersion: 7400
+}
+Objects:  {
+	Model: 3000, "Model::Hips", "LimbNode" {
+		Version: 232
+	}
+	NodeAttribute: 3100, "NodeAttribute::Hips", "LimbNode" {
+		TypeFlags: "Skeleton"
+	}
+	AnimationStack: 5000, "AnimStack::Armature|Idle", "" {
+		Properties70:  {
+			P: "LocalStart", "KTime", "Time", "",0
+			P: "LocalStop", "KTime", "Time", "",46186158000
+		}
+	}
+	AnimationLayer: 5100, "AnimLayer::Base", "" {
+	}
+}
+Connections:  {
+	C: "OO",3100,3000
+	C: "OO",3000,0
+	C: "OO",5100,5000
+}
+)";
+    const std::filesystem::path source = content / "Anims" / "Hero.fbx";
+    {
+        std::ofstream out(source, std::ios::binary);
+        out << fbx;
+    }
+
+    Core::EngineCoreUVE engine(MakeCatalogueEditorConfigUVE(root));
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), root / "main.uvscene", 100U, &engine);
+        editor.InitUVE();
+        const std::vector<std::filesystem::path> written = editor.ImportModelAnimationsUVE(source);
+        ASSERT_EQ(written.size(), 1U);
+        EXPECT_EQ(written[0], content / "Anims" / "Hero_Idle.uvanim");
+        Asset::AnimationClipAssetUVE clip;
+        ASSERT_TRUE(Asset::LoadAnimationClipAssetUVE(written[0], clip));
+        EXPECT_EQ(clip.clipId, "Idle");
+        EXPECT_TRUE(clip.IsSkeletalUVE());
+        ASSERT_EQ(clip.bones.size(), 1U);
+        EXPECT_EQ(clip.bones[0].bone, "Hips");
+        EXPECT_TRUE(editor.ImportModelAnimationsUVE(source).empty()) << "up to date: nothing written again";
         editor.ShutdownUVE();
     }
     engine.Shutdown();

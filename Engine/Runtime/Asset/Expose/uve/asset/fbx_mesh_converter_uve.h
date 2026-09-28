@@ -7,6 +7,9 @@
 #include <optional>
 #include <span>
 
+#include <vector>
+
+#include "uve/asset/animation_clip_asset_uve.h"
 #include "uve/asset/gltf_skeleton_uve.h"
 #include "uve/asset/mesh_asset_uve.h"
 
@@ -59,5 +62,14 @@ struct FbxSourceSummaryUVE final {
 /// hold more than `maximumJoints`. skinCount is the number of skin deformers.
 [[nodiscard]] std::optional<GltfSkeletonUVE> ReadFbxSkeletonUVE(std::span<const std::byte> source,
                                                                 std::size_t maximumJoints);
+
+/// Reads every take (animation stack) as one skeletal clip: a track per bone of ReadFbxSkeletonUVE's
+/// skeleton - same names, same local space (metres, +Y up, relative to the parent bone) - sampled
+/// once a frame at the file's frame rate (30 when it has none), fewer times when a take is longer
+/// than kMaximumAnimationAssetSamplesUVE frames. A bone that never moves keeps a single sample.
+/// The clip id is the take's name ("Armature|Run" becomes "Run"), made unique. Takes that are
+/// empty or produce a non-finite pose are skipped; no bones, or bytes that do not parse, give none.
+[[nodiscard]] std::vector<AnimationClipAssetUVE> ReadFbxAnimationsUVE(std::span<const std::byte> source,
+                                                                      std::size_t maximumBones);
 
 } // namespace UVE::Asset
