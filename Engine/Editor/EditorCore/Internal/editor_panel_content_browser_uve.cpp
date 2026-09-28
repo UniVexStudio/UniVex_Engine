@@ -237,6 +237,11 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
     constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar |
                                        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize;
     ImGui::Begin(kPanelLabelContentBrowserUVE, nullptr, flags);
+    DrawContentBrowserBodyUVE();
+    ImGui::End();
+}
+
+void EditorUVE::DrawContentBrowserBodyUVE() {
 
     Asset::IProjectFileIndexUVE& projectFileIndex = m_services->GetProjectFileIndexUVE();
     const Asset::ProjectChangeSnapshotUVE changeSnapshot = m_services->GetProjectChangeWatcherUVE().GetSnapshotUVE();
@@ -1541,7 +1546,6 @@ void EditorUVE::DrawContentBrowserPanelUVE() {
         DrawContentCreateMenuUVE(snapshot.contentRoot, itemsDirectory);
         ImGui::EndPopup();
     }
-    ImGui::End();
 }
 
 } // namespace UVE::Editor

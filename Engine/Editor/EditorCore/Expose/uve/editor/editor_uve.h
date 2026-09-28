@@ -470,6 +470,8 @@ public:
 
     /// The Entity Editor's middle area.
     enum class EntityEditorTabUVE : std::uint8_t { Viewport, Scripting, Signals };
+    /// The Entity Editor's bottom dock.
+    enum class EntityEditorDockTabUVE : std::uint8_t { Content, Timeline, AnimGraph };
     [[nodiscard]] EntityEditorTabUVE GetEntityEditorTabUVE() const noexcept;
     void SetEntityEditorTabUVE(EntityEditorTabUVE tab) noexcept;
     /// One thing Compile found wrong with the open entity. `entity` is the node it belongs to
@@ -1071,6 +1073,8 @@ private:
         bool compiled = false;
         /// The window selects `tab` on its next frame (GoTo from a problem or a signal).
         bool forceTab = false;
+        EntityEditorDockTabUVE dockTab = EntityEditorDockTabUVE::Content;
+        float dockHeight = 220.0F;
     };
     /// The entity's nodes in tree order (root first). Empty when no entity is open.
     [[nodiscard]] std::vector<Scene::EntityUVE> CollectEntityEditorNodesUVE();
@@ -1082,6 +1086,7 @@ private:
     /// The Entity Editor's middle: the Viewport / Scripting / Signals tabs and Compile's problems.
     void DrawEntityEditorMiddleUVE(EntityEditSessionUVE& session);
     void DrawEntityEditorScriptingTabUVE();
+    void DrawEntityEditorDockUVE(EntityEditSessionUVE& session);
     void DrawEntityEditorSignalsTabUVE();
     /// "Not compiled", "Compiled" or "3 problems", in the toolbar.
     static void DrawEntityCompileBadgeUVE(const EntityEditSessionUVE& session);
@@ -1728,6 +1733,8 @@ private:
     /// right, separated by a draggable splitter) - replaces the former separate Filesystem and
     /// Contents panels, which showed the same underlying directory from two windows.
     void DrawContentBrowserPanelUVE();
+    /// The Content Browser inside the current window: the main dock and the Entity Editor's dock.
+    void DrawContentBrowserBodyUVE();
     /// Refreshes the read-only project index after the engine-owned watcher observes a new
     /// filesystem baseline. It never schedules imports or mutates project files.
     void RefreshProjectFileIndexUVE();
