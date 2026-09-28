@@ -1,6 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 #include <algorithm>
+#include <optional>
 
 #include <gtest/gtest.h>
 
@@ -29,7 +30,8 @@ TEST(AnimationGraphEditingUVETest, AddsNodesWithTheSlotsTheirKindNeeds) {
     EXPECT_EQ(NodeUVE(nodes, blend).inputs.size(), 2U);
     EXPECT_EQ(NodeUVE(nodes, blend).position.x, 10.0F);
     const std::uint32_t space = AddAnimationGraphNodeUVE(nodes, Kind::BlendSpace1D, {});
-    EXPECT_EQ(NodeUVE(nodes, space).points.size(), 2U);
+    EXPECT_TRUE(NodeUVE(nodes, space).inputs.empty()) << "a blend space has no inputs";
+    EXPECT_TRUE(NodeUVE(nodes, space).blendPoints.empty()) << "its points are added in its editor";
     EXPECT_EQ(AddAnimationGraphNodeUVE(nodes, Kind::Output, {}), 0U) << "one Output per graph";
     EXPECT_TRUE(Scene::DescribeAnimationGraphProblemUVE(TreeOfUVE(nodes)).empty());
 }
@@ -95,6 +97,51 @@ TEST(AnimationGraphEditingUVETest, RemovingAStateFixesItsTransitions) {
     EXPECT_EQ(after.transitions[0].toState, 1U) << "state 2 shifted down";
     EXPECT_EQ(after.entryState, 1U);
     EXPECT_FALSE(AddAnimationGraphInputSlotUVE(nodes, 2U)) << "a Clip has no slots to add";
+}
+
+TEST(AnimationGraphEditingUVETest, TheNewKindsStartReadyToWire) {
+    auto nodes = Scene::AnimationTreeComponentUVE::MakeDefaultAnimationGraphUVE();
+    const std::uint32_t space = AddAnimationGraphNodeUVE(nodes, Kind::BlendSpace2D, {});
+    EXPECT_TRUE(NodeUVE(nodes, space).inputs.empty());
+    EXPECT_FALSE(AddAnimationGraphInputSlotUVE(nodes, space)) << "points, not slots";
+    EXPECT_LT(NodeUVE(nodes, space).areaMin.x, NodeUVE(nodes, space).areaMax.x);
+    const std::uint32_t select = AddAnimationGraphNodeUVE(nodes, Kind::Select, {});
+    EXPECT_TRUE(AddAnimationGraphInputSlotUVE(nodes, select));
+    EXPECT_EQ(AnimationGraphSlotLabelUVE(Kind::Select, 2U), "Option 2");
+    static_cast<void>(AddAnimationGraphNodeUVE(nodes, Kind::LayeredBlend, {}));
+    static_cast<void>(AddAnimationGraphNodeUVE(nodes, Kind::TimeSeek, {}));
+    EXPECT_TRUE(Scene::DescribeAnimationGraphProblemUVE(TreeOfUVE(nodes)).empty())
+        << Scene::DescribeAnimationGraphProblemUVE(TreeOfUVE(nodes));
+}
+
+TEST(AnimationGraphEditingUVETest, BlendSpacePointsHoldTheirOwnAnimation) {
+    auto nodes = Scene::AnimationTreeComponentUVE::MakeDefaultAnimationGraphUVE();
+    const std::size_t before = nodes.size() + 1U;
+    const std::uint32_t line = AddAnimationGraphNodeUVE(nodes, Kind::BlendSpace1D, {});
+    ASSERT_EQ(AddBlendSpacePointUVE(nodes, line, {0.0F, 0.0F}, Asset::AssetGuidUVE{5U}), std::optional<std::size_t>{0U});
+    ASSERT_EQ(AddBlendSpacePointUVE(nodes, line, {1.0F, 0.0F}, Asset::AssetGuidUVE{6U}), std::optional<std::size_t>{1U});
+    EXPECT_EQ(AddBlendSpacePointUVE(nodes, line, {0.5F, 3.0F}, Asset::AssetGuidUVE{7U}), std::optional<std::size_t>{1U})
+        << "a line keeps its points rising: 0.5 lands between, y ignored";
+    EXPECT_EQ(nodes.size(), before) << "no Clip nodes made: the point holds its animation";
+    const auto& points = NodeUVE(nodes, line).blendPoints;
+    ASSERT_EQ(points.size(), 3U);
+    EXPECT_EQ(points[1].clip, Asset::AssetGuidUVE{7U});
+    EXPECT_EQ(points[1].position.y, 0.0F);
+    EXPECT_FALSE(AddBlendSpacePointUVE(nodes, line, {0.5F, 0.0F}, {}).has_value()) << "a point already there";
+
+    EXPECT_FALSE(MoveBlendSpacePointUVE(nodes, line, 1U, {1.5F, 0.0F})) << "past its right neighbour";
+    EXPECT_TRUE(MoveBlendSpacePointUVE(nodes, line, 1U, {0.75F, 0.0F}));
+    ASSERT_TRUE(RemoveBlendSpacePointUVE(nodes, line, 1U));
+    EXPECT_EQ(NodeUVE(nodes, line).blendPoints.size(), 2U);
+    EXPECT_FALSE(RemoveBlendSpacePointUVE(nodes, line, 9U));
+
+    const std::uint32_t plane = AddAnimationGraphNodeUVE(nodes, Kind::BlendSpace2D, {});
+    ASSERT_TRUE(AddBlendSpacePointUVE(nodes, plane, {0.0F, 0.0F}, {}).has_value());
+    ASSERT_EQ(AddBlendSpacePointUVE(nodes, plane, {-1.0F, 0.5F}, {}), std::optional<std::size_t>{1U}) << "a plane appends";
+    EXPECT_FALSE(MoveBlendSpacePointUVE(nodes, plane, 1U, {0.0F, 0.0F})) << "onto another point";
+    EXPECT_FALSE(AddBlendSpacePointUVE(nodes, 1U, {2.0F, 0.0F}, {}).has_value()) << "the Output is not a blend space";
+    EXPECT_TRUE(Scene::DescribeAnimationGraphProblemUVE(TreeOfUVE(nodes)).empty())
+        << Scene::DescribeAnimationGraphProblemUVE(TreeOfUVE(nodes));
 }
 
 } // namespace

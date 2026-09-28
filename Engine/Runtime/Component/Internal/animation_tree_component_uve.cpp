@@ -37,9 +37,16 @@ struct InputRuleUVE final {
         case Kind::Additive:
         case Kind::OneShot:
             return {2U, false};
-        case Kind::BlendSpace1D:
+        case Kind::Select:
         case Kind::StateMachine:
             return {1U, true};
+        case Kind::BlendSpace1D:
+        case Kind::BlendSpace2D:
+            return {0U, false};
+        case Kind::LayeredBlend:
+            return {2U, false};
+        case Kind::TimeSeek:
+            return {1U, false};
     }
     return {0U, false};
 }
@@ -54,6 +61,10 @@ struct InputRuleUVE final {
         case Kind::OneShot: return "OneShot";
         case Kind::TimeScale: return "TimeScale";
         case Kind::StateMachine: return "StateMachine";
+        case Kind::BlendSpace2D: return "BlendSpace2D";
+        case Kind::Select: return "Select";
+        case Kind::LayeredBlend: return "LayeredBlend";
+        case Kind::TimeSeek: return "TimeSeek";
     }
     return "?";
 }
@@ -89,7 +100,7 @@ std::string DescribeAnimationGraphProblemUVE(const AnimationTreeComponentUVE& co
         if (node.id == 0U || !indexById.emplace(node.id, index).second) {
             return "node ids must be unique and non-zero";
         }
-        if (node.kind > Kind::StateMachine || !IsNameValidUVE(node.name)) {
+        if (node.kind > Kind::TimeSeek || !IsNameValidUVE(node.name)) {
             return "a node has an invalid kind or name";
         }
         outputs += node.kind == Kind::Output ? 1U : 0U;
@@ -123,19 +134,37 @@ std::string DescribeAnimationGraphProblemUVE(const AnimationTreeComponentUVE& co
         }
         if (!std::isfinite(node.position.x) || !std::isfinite(node.position.y) || !std::isfinite(node.speed) ||
             !std::isfinite(node.value) || !IsFiniteNonNegativeUVE(node.fadeSeconds) ||
-            !IsNameValidUVE(node.parameter)) {
+            !IsNameValidUVE(node.parameter) || !std::isfinite(node.valueY) || !IsNameValidUVE(node.parameterY)) {
             return label + ": invalid value";
         }
-        if (node.kind == Kind::BlendSpace1D) {
-            if (node.points.size() != node.inputs.size()) {
-                return label + ": needs one point per input";
+        if (!std::isfinite(node.areaMin.x) || !std::isfinite(node.areaMin.y) || !std::isfinite(node.areaMax.x) ||
+            !std::isfinite(node.areaMax.y) || node.areaMax.x <= node.areaMin.x || node.areaMax.y <= node.areaMin.y) {
+            return label + ": its area's maximum must be above its minimum";
+        }
+        const bool blendSpace = node.kind == Kind::BlendSpace1D || node.kind == Kind::BlendSpace2D;
+        if (!blendSpace && !node.blendPoints.empty()) {
+            return label + ": only a Blend Space has blend points";
+        }
+        if (node.blendPoints.size() > kMaximumAnimationNodeInputsUVE) {
+            return label + ": too many points";
+        }
+        for (std::size_t point = 0U; point < node.blendPoints.size(); ++point) {
+            const AnimationBlendPointUVE& at = node.blendPoints[point];
+            if (!std::isfinite(at.position.x) || !std::isfinite(at.position.y) || !std::isfinite(at.speed)) {
+                return label + ": a point is not a number";
             }
-            for (std::size_t point = 0U; point < node.points.size(); ++point) {
-                if (!std::isfinite(node.points[point]) ||
-                    (point > 0U && node.points[point] <= node.points[point - 1U])) {
-                    return label + ": points must rise from left to right";
+            if (node.kind == Kind::BlendSpace1D && point > 0U && at.position.x <= node.blendPoints[point - 1U].position.x) {
+                return label + ": points must rise from left to right";
+            }
+            for (std::size_t other = 0U; other < point; ++other) {
+                if (node.blendPoints[other].position == at.position) {
+                    return label + ": two points are in the same place";
                 }
             }
+        }
+        if (node.bones.size() > kMaximumAnimationLayerBonesUVE ||
+            std::ranges::any_of(node.bones, [](const std::string& bone) { return bone.empty() || !IsNameValidUVE(bone); })) {
+            return label + ": a layer bone has no name, or too long a one";
         }
         if (node.kind == Kind::StateMachine) {
             if (node.entryState >= node.inputs.size() || node.transitions.size() > kMaximumAnimationTransitionsUVE) {
@@ -195,6 +224,41 @@ std::uint32_t NextAnimationGraphNodeIdUVE(const std::vector<AnimationGraphNodeUV
         highest = std::max(highest, node.id);
     }
     return highest + 1U;
+}
+
+std::size_t MigrateBlendSpaceInputsUVE(std::vector<AnimationGraphNodeUVE>& nodes,
+                                       const std::vector<std::vector<Math::Vector2UVE>>& legacyPositions) {
+    std::size_t kept = 0U;
+    std::vector<std::uint32_t> folded;
+    for (std::size_t index = 0U; index < nodes.size() && index < legacyPositions.size(); ++index) {
+        AnimationGraphNodeUVE& space = nodes[index];
+        if ((space.kind != Kind::BlendSpace1D && space.kind != Kind::BlendSpace2D) || space.inputs.empty()) {
+            continue;
+        }
+        const std::vector<Math::Vector2UVE>& positions = legacyPositions[index];
+        for (std::size_t slot = 0U; slot < space.inputs.size(); ++slot) {
+            AnimationBlendPointUVE point;
+            point.position = slot < positions.size() ? positions[slot]
+                                                     : Math::Vector2UVE{static_cast<float>(slot), 0.0F};
+            const std::uint32_t input = space.inputs[slot];
+            const auto fed = std::find_if(nodes.begin(), nodes.end(),
+                                          [input](const AnimationGraphNodeUVE& node) { return input != 0U && node.id == input; });
+            if (fed != nodes.end() && fed->kind == Kind::Clip) {
+                point.clip = fed->clip;
+                point.speed = fed->speed;
+                point.loop = fed->loop;
+                folded.push_back(input);
+            } else if (fed != nodes.end()) {
+                ++kept; // left in the graph, unconnected
+            }
+            space.blendPoints.push_back(point);
+        }
+        space.inputs.clear();
+    }
+    std::erase_if(nodes, [&folded](const AnimationGraphNodeUVE& node) {
+        return std::find(folded.begin(), folded.end(), node.id) != folded.end();
+    });
+    return kept;
 }
 
 } // namespace UVE::Scene

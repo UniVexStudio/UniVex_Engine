@@ -3,6 +3,8 @@
 #include "uve/editor/animation_graph_editing_uve.h"
 
 #include <algorithm>
+#include <optional>
+#include <cmath>
 #include <unordered_map>
 #include <utility>
 
@@ -50,7 +52,7 @@ using Scene::AnimationGraphNodeUVE;
 }
 
 [[nodiscard]] bool HasVariableSlotsUVE(const Kind kind) noexcept {
-    return kind == Kind::BlendSpace1D || kind == Kind::StateMachine;
+    return kind == Kind::Select || kind == Kind::StateMachine;
 }
 
 } // namespace
@@ -65,6 +67,10 @@ const char* AnimationGraphKindLabelUVE(const Kind kind) noexcept {
         case Kind::OneShot: return "One Shot";
         case Kind::TimeScale: return "Time Scale";
         case Kind::StateMachine: return "State Machine";
+        case Kind::BlendSpace2D: return "Blend Space 2D";
+        case Kind::Select: return "Select";
+        case Kind::LayeredBlend: return "Layered Blend";
+        case Kind::TimeSeek: return "Time Seek";
     }
     return "?";
 }
@@ -80,6 +86,13 @@ const char* AnimationGraphKindHelpUVE(const Kind kind) noexcept {
         case Kind::OneShot: return "Plays Shot once over Base when a trigger fires, fading in and out.";
         case Kind::TimeScale: return "Runs its input faster or slower.";
         case Kind::StateMachine: return "Its inputs are states. Transitions move between them and crossfade.";
+        case Kind::BlendSpace2D:
+            return "Places its inputs on a plane and mixes them by how close a two-value position is - strafe by X and Z.";
+        case Kind::Select:
+            return "Plays the input a Bool or number picks, fading when the pick changes - stance by weapon.";
+        case Kind::LayeredBlend:
+            return "Lays the Layer over the Base on chosen bone branches only - shoot with the upper body while running.";
+        case Kind::TimeSeek: return "Jumps its input to a time when its trigger fires, then plays on.";
     }
     return "";
 }
@@ -90,7 +103,10 @@ std::string AnimationGraphSlotLabelUVE(const Kind kind, const std::size_t slot) 
         case Kind::Additive: return slot == 0U ? "Base" : "Layer";
         case Kind::OneShot: return slot == 0U ? "Base" : "Shot";
         case Kind::StateMachine: return "State " + std::to_string(slot + 1U);
-        case Kind::BlendSpace1D: return "Point " + std::to_string(slot + 1U);
+        case Kind::BlendSpace1D:
+        case Kind::BlendSpace2D: return "Point " + std::to_string(slot + 1U);
+        case Kind::Select: return "Option " + std::to_string(slot);
+        case Kind::LayeredBlend: return slot == 0U ? "Base" : "Layer";
         default: return "Input";
     }
 }
@@ -116,8 +132,26 @@ std::uint32_t AddAnimationGraphNodeUVE(std::vector<AnimationGraphNodeUVE>& nodes
             added.inputs = {0U};
             break;
         case Kind::BlendSpace1D:
+            // Empty: its animations are added in its editor, each at a point on the line.
+            added.value = 0.0F;
+            added.areaMin = Math::Vector2UVE{-0.25F, -1.0F};
+            added.areaMax = Math::Vector2UVE{1.25F, 1.0F};
+            break;
+        case Kind::BlendSpace2D:
+            added.value = 0.0F;
+            added.areaMin = Math::Vector2UVE{-1.25F, -1.25F};
+            added.areaMax = Math::Vector2UVE{1.25F, 1.25F};
+            break;
+        case Kind::Select:
             added.inputs = {0U, 0U};
-            added.points = {0.0F, 1.0F};
+            added.value = 0.0F;
+            break;
+        case Kind::LayeredBlend:
+            added.inputs = {0U, 0U};
+            added.value = 1.0F;
+            break;
+        case Kind::TimeSeek:
+            added.inputs = {0U};
             added.value = 0.0F;
             break;
         default:
@@ -220,9 +254,6 @@ bool AddAnimationGraphInputSlotUVE(std::vector<AnimationGraphNodeUVE>& nodes, co
         return false;
     }
     node->inputs.push_back(0U);
-    if (node->kind == Kind::BlendSpace1D) {
-        node->points.push_back(node->points.empty() ? 0.0F : node->points.back() + 1.0F);
-    }
     return true;
 }
 
@@ -234,9 +265,6 @@ bool RemoveAnimationGraphInputSlotUVE(std::vector<AnimationGraphNodeUVE>& nodes,
         return false;
     }
     node->inputs.erase(node->inputs.begin() + static_cast<std::ptrdiff_t>(slot));
-    if (node->kind == Kind::BlendSpace1D && slot < node->points.size()) {
-        node->points.erase(node->points.begin() + static_cast<std::ptrdiff_t>(slot));
-    }
     if (node->kind == Kind::StateMachine) {
         const auto state = static_cast<std::uint32_t>(slot);
         std::erase_if(node->transitions, [state](const Scene::AnimationTransitionUVE& transition) {
@@ -252,6 +280,69 @@ bool RemoveAnimationGraphInputSlotUVE(std::vector<AnimationGraphNodeUVE>& nodes,
         }
         node->entryState = std::min(node->entryState, static_cast<std::uint32_t>(node->inputs.size() - 1U));
     }
+    return true;
+}
+
+std::optional<std::size_t> AddBlendSpacePointUVE(std::vector<AnimationGraphNodeUVE>& nodes, const std::uint32_t space,
+                                                 const Math::Vector2UVE position, const Asset::AssetGuidUVE clip) {
+    AnimationGraphNodeUVE* const node = FindNodeUVE(nodes, space);
+    if (node == nullptr || (node->kind != Kind::BlendSpace1D && node->kind != Kind::BlendSpace2D) ||
+        node->blendPoints.size() >= Scene::kMaximumAnimationNodeInputsUVE || !std::isfinite(position.x) ||
+        !std::isfinite(position.y)) {
+        return std::nullopt;
+    }
+    Scene::AnimationBlendPointUVE point;
+    point.position = node->kind == Kind::BlendSpace1D ? Math::Vector2UVE{position.x, 0.0F} : position;
+    point.clip = clip;
+    if (std::ranges::find(node->blendPoints, point.position, &Scene::AnimationBlendPointUVE::position) !=
+        node->blendPoints.end()) {
+        return std::nullopt;
+    }
+    // A line keeps its points rising, so the new one goes where its x belongs.
+    std::size_t slot = node->blendPoints.size();
+    if (node->kind == Kind::BlendSpace1D) {
+        slot = static_cast<std::size_t>(std::ranges::find_if(node->blendPoints, [&point](const Scene::AnimationBlendPointUVE& other) {
+                                            return other.position.x > point.position.x;
+                                        }) -
+                                        node->blendPoints.begin());
+    }
+    node->blendPoints.insert(node->blendPoints.begin() + static_cast<std::ptrdiff_t>(slot), point);
+    return slot;
+}
+
+bool RemoveBlendSpacePointUVE(std::vector<AnimationGraphNodeUVE>& nodes, const std::uint32_t space, const std::size_t slot) {
+    AnimationGraphNodeUVE* const node = FindNodeUVE(nodes, space);
+    if (node == nullptr || (node->kind != Kind::BlendSpace1D && node->kind != Kind::BlendSpace2D) ||
+        slot >= node->blendPoints.size()) {
+        return false;
+    }
+    node->blendPoints.erase(node->blendPoints.begin() + static_cast<std::ptrdiff_t>(slot));
+    return true;
+}
+
+bool MoveBlendSpacePointUVE(std::vector<AnimationGraphNodeUVE>& nodes, const std::uint32_t space, const std::size_t slot,
+                            const Math::Vector2UVE position) {
+    AnimationGraphNodeUVE* const node = FindNodeUVE(nodes, space);
+    if (node == nullptr || (node->kind != Kind::BlendSpace1D && node->kind != Kind::BlendSpace2D) ||
+        slot >= node->blendPoints.size() || !std::isfinite(position.x) || !std::isfinite(position.y)) {
+        return false;
+    }
+    std::vector<Scene::AnimationBlendPointUVE>& points = node->blendPoints;
+    if (node->kind == Kind::BlendSpace1D) {
+        // Between its neighbours, so the line stays in order.
+        if ((slot > 0U && position.x <= points[slot - 1U].position.x) ||
+            (slot + 1U < points.size() && position.x >= points[slot + 1U].position.x)) {
+            return false;
+        }
+        points[slot].position = Math::Vector2UVE{position.x, 0.0F};
+        return true;
+    }
+    for (std::size_t other = 0U; other < points.size(); ++other) {
+        if (other != slot && points[other].position == position) {
+            return false;
+        }
+    }
+    points[slot].position = position;
     return true;
 }
 

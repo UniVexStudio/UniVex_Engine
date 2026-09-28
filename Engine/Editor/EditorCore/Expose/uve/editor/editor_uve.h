@@ -2055,12 +2055,35 @@ private:
         /// The tree runs on the entity's skeleton while the tab is open: pose only, never saved.
         bool previewing = true;
         Scene::EntityUVE previewSkeleton = Scene::kInvalidEntityUVE;
+        /// A drag in the Blend Space 2D plot: -1 the position, 0.. a point, -2 none; and the tree
+        /// before it, restored and re-applied as one undo step on release.
+        int plotDrag = -2;
+        Scene::AnimationTreeComponentUVE plotBefore;
+        std::string boneSearch;
+        /// The node opened in its own editor (a Blend Space), 0 for the graph.
+        std::uint32_t focus = 0U;
+        /// The Blend Space editor's tool (0 select and move, 1 add a point, 2 remove a point), its
+        /// snapping, and the point whose animation is being picked (-1: none).
+        int spaceTool = 0;
+        bool snap = true;
+        float snapStep = 0.1F;
+        int pickClipForSlot = -1;
+        /// An inline value on a node being dragged: the tree before it, for one undo step.
+        bool inlineEditing = false;
+        Scene::AnimationTreeComponentUVE inlineBefore;
+        /// Clip file names by guid, for labels.
+        std::unordered_map<std::uint64_t, std::string> clipNames;
         /// Clips the preview has read, by guid; null for one that could not be read.
         std::unordered_map<std::uint64_t, std::shared_ptr<const Asset::AnimationClipAssetUVE>> clips;
     };
     AnimationGraphViewStateUVE m_animGraph;
     /// Puts the previewed skeleton back at rest and the tree back at its start.
     void StopAnimationGraphPreviewUVE();
+    /// A Blend Space opened in the Anim Graph's own editor: tools, snapping, the axes' areas, and
+    /// points to add (picking their animation at once), move and remove.
+    void DrawBlendSpaceEditorUVE(Scene::EntityUVE tree, std::size_t nodeIndex);
+    /// A clip's file name for labels, "" for none.
+    [[nodiscard]] const std::string& AnimationClipNameUVE(Asset::AssetGuidUVE clip);
     /// The Anim Graph tab's body.
     void DrawAnimationGraphCanvasUVE();
     /// Changes the AnimationTree's nodes or parameters as one undo step, like an Inspector edit.

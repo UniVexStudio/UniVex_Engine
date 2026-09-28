@@ -1,5 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
+#include <algorithm>
 #include <cmath>
 #include <string>
 #include <unordered_map>
@@ -242,13 +243,13 @@ TEST(AnimationTreeUVETest, BlendSpaceMixesTheTwoPointsAroundItsValue) {
     GraphFixtureUVE fixture;
     AnimationTreeComponentUVE tree;
     tree.parameters = {AnimationParameterUVE{"speed", AnimationParameterTypeUVE::Float, 1.5F}};
-    AnimationGraphNodeUVE space = GraphFixtureUVE::NodeUVE(2U, Kind::BlendSpace1D, {3U, 4U, 5U});
+    AnimationGraphNodeUVE space = GraphFixtureUVE::NodeUVE(2U, Kind::BlendSpace1D);
     space.parameter = "speed";
-    space.points = {0.0F, 1.0F, 2.0F};
-    tree.nodes = {GraphFixtureUVE::NodeUVE(1U, Kind::Output, {2U}), space,
-                  GraphFixtureUVE::ClipNodeUVE(3U, fixture.AddClipUVE(10.0F)),
-                  GraphFixtureUVE::ClipNodeUVE(4U, fixture.AddClipUVE(20.0F)),
-                  GraphFixtureUVE::ClipNodeUVE(5U, fixture.AddClipUVE(30.0F))};
+    // The space holds its animations itself: no inputs.
+    space.blendPoints = {AnimationBlendPointUVE{{0.0F, 0.0F}, fixture.AddClipUVE(10.0F)},
+                         AnimationBlendPointUVE{{1.0F, 0.0F}, fixture.AddClipUVE(20.0F)},
+                         AnimationBlendPointUVE{{2.0F, 0.0F}, fixture.AddClipUVE(30.0F)}};
+    tree.nodes = {GraphFixtureUVE::NodeUVE(1U, Kind::Output, {2U}), space};
     // Halfway between walk (20 -> 10 at t=0.5) and run (30 -> 15): 12.5.
     EXPECT_NEAR(fixture.StepUVE(tree, 0.5F), 12.5F, 1e-4F);
 }
@@ -385,8 +386,8 @@ TEST(AnimationTreeUVETest, ValidationCatchesMalformedGraphsButAllowsEmptySlots) 
                   GraphFixtureUVE::NodeUVE(3U, Kind::TimeScale, {2U})};
     EXPECT_FALSE(IsAnimationTreeComponentValidUVE(tree)); // a loop
 
-    AnimationGraphNodeUVE space = GraphFixtureUVE::NodeUVE(2U, Kind::BlendSpace1D, {0U, 0U});
-    space.points = {1.0F, 0.0F};
+    AnimationGraphNodeUVE space = GraphFixtureUVE::NodeUVE(2U, Kind::BlendSpace1D);
+    space.blendPoints = {AnimationBlendPointUVE{{1.0F, 0.0F}}, AnimationBlendPointUVE{{0.0F, 0.0F}}};
     tree.nodes = {GraphFixtureUVE::NodeUVE(1U, Kind::Output, {2U}), space};
     EXPECT_FALSE(IsAnimationTreeComponentValidUVE(tree)); // points going backwards
 
@@ -737,6 +738,190 @@ TEST(AnimationTreeUVETest, ASkeletalTreeWritesOnlyTheMixersChannels) {
     EXPECT_NEAR(graph.skeleton.pose[0].position.y, 1.0F, 1e-6F) << "position is not animated";
     graph.skeleton.bones.clear();
     EXPECT_FALSE(graph.StepUVE(tree, 0.1F)) << "no bones, nothing to pose";
+}
+
+} // namespace
+} // namespace UVE::Scene
+
+namespace UVE::Scene {
+namespace {
+
+// ---- New nodes: Blend Space 2D, Select, Layered Blend, Time Seek -------------------------------
+
+TEST(AnimationTreeUVETest, BlendSpace2DWeightsFavourTheNearestPointsAndAddUpToOne) {
+    const std::vector<Math::Vector2UVE> points{{0.0F, 0.0F}, {1.0F, 0.0F}, {0.0F, 1.0F}, {1.0F, 1.0F}};
+    const std::vector<float> onPoint = AnimationBlendSpace2DWeightsUVE(points, Math::Vector2UVE{1.0F, 0.0F});
+    EXPECT_NEAR(onPoint[1], 1.0F, 1e-5F) << "on a point: that point alone";
+    const std::vector<float> middle = AnimationBlendSpace2DWeightsUVE(points, Math::Vector2UVE{0.5F, 0.5F});
+    for (const float weight : middle) {
+        EXPECT_NEAR(weight, 0.25F, 1e-5F) << "the middle of a square: all four the same";
+    }
+    const std::vector<float> edge = AnimationBlendSpace2DWeightsUVE(points, Math::Vector2UVE{0.25F, 0.0F});
+    EXPECT_NEAR(edge[0], 0.75F, 1e-5F);
+    EXPECT_NEAR(edge[1], 0.25F, 1e-5F);
+    EXPECT_NEAR(edge[2] + edge[3], 0.0F, 1e-5F) << "the far side of the square takes nothing";
+    const std::vector<float> outside = AnimationBlendSpace2DWeightsUVE(points, Math::Vector2UVE{5.0F, -3.0F});
+    float total = 0.0F;
+    for (const float weight : outside) {
+        EXPECT_GE(weight, 0.0F);
+        total += weight;
+    }
+    EXPECT_NEAR(total, 1.0F, 1e-5F) << "outside the points still adds up";
+}
+
+TEST(AnimationTreeUVETest, BlendSpace2DMixesItsPoints) {
+    GraphFixtureUVE fixture;
+    AnimationTreeComponentUVE tree;
+    tree.parameters = {AnimationParameterUVE{"x", AnimationParameterTypeUVE::Float, 0.25F}};
+    AnimationGraphNodeUVE space = GraphFixtureUVE::NodeUVE(2U, Kind::BlendSpace2D);
+    space.blendPoints = {AnimationBlendPointUVE{{0.0F, 0.0F}, fixture.AddClipUVE(0.0F)},
+                         AnimationBlendPointUVE{{1.0F, 0.0F}, fixture.AddClipUVE(40.0F)}};
+    space.parameter = "x";
+    tree.nodes = {GraphFixtureUVE::NodeUVE(1U, Kind::Output, {2U}), space};
+    // A quarter of the way to the 40 m clip, which is at 20 after half a second: 5.
+    EXPECT_NEAR(fixture.StepUVE(tree, 0.5F), 5.0F, 1e-3F);
+}
+
+TEST(AnimationTreeUVETest, SelectPlaysThePickedInputAndFadesOnChange) {
+    GraphFixtureUVE fixture;
+    fixture.mixer.transition = AnimationTransitionModeUVE::Crossfade;
+    AnimationTreeComponentUVE tree;
+    tree.parameters = {AnimationParameterUVE{"armed", AnimationParameterTypeUVE::Bool, 0.0F}};
+    AnimationGraphNodeUVE select = GraphFixtureUVE::NodeUVE(2U, Kind::Select, {3U, 4U});
+    select.parameter = "armed";
+    select.fadeSeconds = 1.0F;
+    tree.nodes = {GraphFixtureUVE::NodeUVE(1U, Kind::Output, {2U}), select,
+                  GraphFixtureUVE::ClipNodeUVE(3U, fixture.AddClipUVE(10.0F)),
+                  GraphFixtureUVE::ClipNodeUVE(4U, fixture.AddClipUVE(20.0F))};
+    EXPECT_NEAR(fixture.StepUVE(tree, 0.5F), 5.0F, 1e-4F) << "option 0";
+    ASSERT_TRUE(SetAnimationTreeParameterUVE(tree, "armed", 1.0F));
+    static_cast<void>(fixture.StepUVE(tree, 0.0F)); // the pick is seen; option 1 restarts
+    // Half a second into a one-second fade: option 0 at 1.0 s wraps to 0 -> 0, option 1 at 0.5 -> 10.
+    EXPECT_NEAR(fixture.StepUVE(tree, 0.5F), 5.0F, 1e-3F);
+    EXPECT_NEAR(fixture.StepUVE(tree, 0.5F), 0.0F, 1e-3F) << "fade done: option 1 alone, wrapped to 0";
+}
+
+TEST(AnimationTreeUVETest, LayeredBlendTouchesOnlyTheChosenBranch) {
+    SkeletalGraphUVE graph;
+    // Three bones: Hips > Spine > Head. The layer lifts every bone; only Spine's branch takes it.
+    SkeletonBoneUVE head;
+    head.name = "Head";
+    head.parentIndex = 1;
+    head.localPosition = Math::Vector3UVE{0.0F, 0.2F, 0.0F};
+    graph.skeleton.bones.push_back(head);
+    Asset::AnimationClipAssetUVE lifted;
+    lifted.clipId = "lifted";
+    lifted.durationSeconds = 1.0;
+    for (const auto& [bone, y] : {std::pair<const char*, float>{"Hips", 2.0F}, {"Spine", 1.3F}, {"Head", 1.2F}}) {
+        Asset::AnimationAssetSampleUVE sample;
+        sample.pose.position = Math::Vector3UVE{0.0F, y, 0.0F};
+        lifted.bones.push_back(Asset::AnimationAssetBoneTrackUVE{bone, {sample}});
+    }
+    AnimationTreeComponentUVE tree;
+    AnimationGraphNodeUVE layered = TreeNodeUVE(2U, AnimationGraphNodeKindUVE::LayeredBlend, {3U, 4U});
+    layered.value = 1.0F;
+    layered.bones = {"Spine"};
+    tree.nodes = {TreeNodeUVE(1U, AnimationGraphNodeKindUVE::Output, {2U}), layered,
+                  TreeClipUVE(3U, graph.AddUVE(MakeLiftClipUVE(0.0F))), TreeClipUVE(4U, graph.AddUVE(lifted))};
+    ASSERT_TRUE(graph.StepUVE(tree, 0.1F));
+    EXPECT_NEAR(graph.skeleton.pose[0].position.y, 1.0F, 1e-5F) << "Hips: the base";
+    EXPECT_NEAR(graph.skeleton.pose[1].position.y, 1.3F, 1e-5F) << "Spine: the layer";
+    EXPECT_NEAR(graph.skeleton.pose[2].position.y, 1.2F, 1e-5F) << "Head, under Spine: the layer";
+}
+
+TEST(AnimationTreeUVETest, TimeSeekJumpsWhenItsTriggerFires) {
+    GraphFixtureUVE fixture;
+    AnimationTreeComponentUVE tree;
+    tree.parameters = {AnimationParameterUVE{"rewind", AnimationParameterTypeUVE::Trigger, 0.0F}};
+    AnimationGraphNodeUVE seek = GraphFixtureUVE::NodeUVE(2U, Kind::TimeSeek, {3U});
+    seek.parameter = "rewind";
+    seek.value = 0.25F;
+    tree.nodes = {GraphFixtureUVE::NodeUVE(1U, Kind::Output, {2U}), seek,
+                  GraphFixtureUVE::ClipNodeUVE(3U, fixture.AddClipUVE(10.0F))};
+    EXPECT_NEAR(fixture.StepUVE(tree, 0.75F), 7.5F, 1e-4F);
+    ASSERT_TRUE(SetAnimationTreeParameterUVE(tree, "rewind", 1.0F));
+    EXPECT_NEAR(fixture.StepUVE(tree, 0.1F), 2.5F, 1e-4F) << "at the seek point this step";
+    EXPECT_EQ(tree.parameters[0].value, 0.0F) << "the trigger was used";
+    EXPECT_NEAR(fixture.StepUVE(tree, 0.1F), 3.5F, 1e-4F) << "and plays on from there";
+}
+
+TEST(AnimationTreeUVETest, TheNewKindsAreValidatedToo) {
+    AnimationTreeComponentUVE tree;
+    AnimationGraphNodeUVE space;
+    space.id = 3U;
+    space.kind = AnimationGraphNodeKindUVE::BlendSpace2D;
+    space.inputs = {0U};
+    tree.nodes.push_back(space);
+    EXPECT_NE(DescribeAnimationGraphProblemUVE(tree).find("wrong number of inputs"), std::string::npos)
+        << "a blend space has no inputs: its points hold the animations";
+    tree.nodes.back().inputs.clear();
+    tree.nodes.back().blendPoints = {AnimationBlendPointUVE{{0.0F, 0.0F}}, AnimationBlendPointUVE{{0.0F, 0.0F}}};
+    EXPECT_NE(DescribeAnimationGraphProblemUVE(tree).find("same place"), std::string::npos);
+    tree.nodes.back().blendPoints.back().position = Math::Vector2UVE{1.0F, 0.0F};
+    EXPECT_TRUE(DescribeAnimationGraphProblemUVE(tree).empty()) << DescribeAnimationGraphProblemUVE(tree);
+    AnimationGraphNodeUVE layered;
+    layered.id = 4U;
+    layered.kind = AnimationGraphNodeKindUVE::LayeredBlend;
+    layered.inputs = {0U};
+    tree.nodes.push_back(layered);
+    EXPECT_NE(DescribeAnimationGraphProblemUVE(tree).find("wrong number of inputs"), std::string::npos);
+    tree.nodes.back().inputs = {0U, 0U};
+    tree.nodes.back().bones = {""};
+    EXPECT_NE(DescribeAnimationGraphProblemUVE(tree).find("layer bone"), std::string::npos);
+}
+
+} // namespace
+} // namespace UVE::Scene
+
+namespace UVE::Scene {
+namespace {
+
+TEST(AnimationTreeUVETest, SyncedBlendSpacePointsKeepInStep) {
+    GraphFixtureUVE fixture;
+    AnimationTreeComponentUVE tree;
+    AnimationGraphNodeUVE space = GraphFixtureUVE::NodeUVE(2U, Kind::BlendSpace1D);
+    space.value = 0.25F;
+    space.sync = true;
+    space.blendPoints = {AnimationBlendPointUVE{{0.0F, 0.0F}, fixture.AddClipUVE(10.0F, 1.0)},
+                         AnimationBlendPointUVE{{1.0F, 0.0F}, fixture.AddClipUVE(10.0F, 2.0)}};
+    tree.nodes = {GraphFixtureUVE::NodeUVE(1U, Kind::Output, {2U}), space};
+    static_cast<void>(fixture.StepUVE(tree, 0.4F));
+    ASSERT_EQ(tree.nodeStates[1].pointTimes.size(), 2U);
+    EXPECT_NEAR(tree.nodeStates[1].pointTimes[0], 0.4, 1e-6) << "the heavier point leads";
+    EXPECT_NEAR(tree.nodeStates[1].pointTimes[1], 0.8, 1e-6) << "the 2 s one follows at the same phase";
+}
+
+TEST(AnimationTreeUVETest, OldBlendSpaceInputsFoldIntoTheirPoints) {
+    std::vector<AnimationGraphNodeUVE> nodes = AnimationTreeComponentUVE::MakeDefaultAnimationGraphUVE();
+    AnimationGraphNodeUVE space;
+    space.id = 3U;
+    space.kind = AnimationGraphNodeKindUVE::BlendSpace1D;
+    space.inputs = {2U, 4U, 0U}; // a Clip, a Time Scale, and an empty slot
+    nodes[0].inputs = {3U};
+    nodes[1].clip = Asset::AssetGuidUVE{9U};
+    nodes[1].speed = 1.5F;
+    nodes[1].loop = false;
+    AnimationGraphNodeUVE scale;
+    scale.id = 4U;
+    scale.kind = AnimationGraphNodeKindUVE::TimeScale;
+    scale.inputs = {0U};
+    nodes.push_back(space);
+    nodes.push_back(scale);
+    const std::vector<std::vector<Math::Vector2UVE>> positions{{}, {}, {{0.0F, 0.0F}, {1.0F, 0.0F}, {2.0F, 0.0F}}, {}};
+    EXPECT_EQ(MigrateBlendSpaceInputsUVE(nodes, positions), 1U) << "the Time Scale could not be folded in";
+    const auto folded = std::ranges::find(nodes, 3U, &AnimationGraphNodeUVE::id);
+    ASSERT_NE(folded, nodes.end());
+    EXPECT_TRUE(folded->inputs.empty());
+    ASSERT_EQ(folded->blendPoints.size(), 3U);
+    EXPECT_EQ(folded->blendPoints[0].clip, Asset::AssetGuidUVE{9U});
+    EXPECT_EQ(folded->blendPoints[0].speed, 1.5F);
+    EXPECT_FALSE(folded->blendPoints[0].loop);
+    EXPECT_EQ(folded->blendPoints[2].position.x, 2.0F);
+    EXPECT_EQ(std::ranges::find(nodes, 2U, &AnimationGraphNodeUVE::id), nodes.end()) << "the folded Clip is gone";
+    EXPECT_NE(std::ranges::find(nodes, 4U, &AnimationGraphNodeUVE::id), nodes.end()) << "the Time Scale stays";
+    AnimationTreeComponentUVE tree;
+    tree.nodes = nodes;
+    EXPECT_TRUE(DescribeAnimationGraphProblemUVE(tree).empty()) << DescribeAnimationGraphProblemUVE(tree);
 }
 
 } // namespace

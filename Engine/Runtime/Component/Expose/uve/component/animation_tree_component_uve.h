@@ -20,6 +20,8 @@ inline constexpr std::size_t kMaximumAnimationParametersUVE = 128U;
 inline constexpr std::size_t kMaximumAnimationNodeInputsUVE = 32U;
 inline constexpr std::size_t kMaximumAnimationTransitionsUVE = 128U;
 inline constexpr std::size_t kMaximumAnimationNameBytesUVE = 128U;
+/// LayeredBlend: most bone branches one node can name.
+inline constexpr std::size_t kMaximumAnimationLayerBonesUVE = 256U;
 /// A transition whose From is this leaves whichever state is active: an "any state" transition.
 inline constexpr std::uint32_t kAnyAnimationStateUVE = 0xFFFFFFFFU;
 
@@ -32,8 +34,8 @@ enum class AnimationGraphNodeKindUVE : std::uint8_t {
     Clip,
     /// Mixes two inputs by a weight: 0 is the first, 1 the second.
     Blend2,
-    /// Places its inputs along a line at `points` and mixes the two either side of a parameter -
-    /// walk at 1, jog at 3, run at 6, driven by speed.
+    /// Places its animations (`blendPoints`) along a line and mixes the two either side of a
+    /// parameter - walk at 1, jog at 3, run at 6, driven by speed. No inputs.
     BlendSpace1D,
     /// Lays the second input's motion on top of the first, scaled by a weight: a breathing or
     /// recoil layer that works over any base.
@@ -45,6 +47,17 @@ enum class AnimationGraphNodeKindUVE : std::uint8_t {
     TimeScale,
     /// Its inputs are states; transitions move between them on conditions, crossfading.
     StateMachine,
+    /// Places its animations (`blendPoints`) on a plane and mixes them by how close a
+    /// two-parameter position is to each - strafing by velocity X and Z, aiming by yaw and pitch.
+    BlendSpace2D,
+    /// Plays the input a parameter picks (a Bool 0/1, or a Float rounded to an index), fading when
+    /// the pick changes: stance by weapon, idle by mood.
+    Select,
+    /// Lays the second input over the first on the bones under `bones` only (each named bone and
+    /// everything below it), by a weight: shoot with the upper body while the legs run.
+    LayeredBlend,
+    /// Jumps its input to `value` seconds when its trigger fires, then plays on from there.
+    TimeSeek,
 };
 
 enum class AnimationParameterTypeUVE : std::uint8_t {
@@ -90,6 +103,19 @@ struct AnimationTransitionUVE final {
     [[nodiscard]] bool operator==(const AnimationTransitionUVE&) const = default;
 };
 
+/// One animation of a Blend Space, where it sits. A blend space holds its animations itself, the
+/// way a Clip holds its clip: they are not graph inputs, so the graph shows the space as one box
+/// and its editor shows the points.
+struct AnimationBlendPointUVE final {
+    /// On the line (1D uses x only) or the plane.
+    Math::Vector2UVE position{};
+    Asset::AssetGuidUVE clip{};
+    float speed = 1.0F;
+    bool loop = true;
+
+    [[nodiscard]] bool operator==(const AnimationBlendPointUVE&) const = default;
+};
+
 struct AnimationGraphNodeUVE final {
     /// Unique within the graph and never 0; inputs refer to nodes by it.
     std::uint32_t id = 0U;
@@ -111,8 +137,18 @@ struct AnimationGraphNodeUVE final {
     std::string parameter;
     /// The weight or position used when there is no parameter.
     float value = 0.5F;
-    /// BlendSpace1D: one ascending position per input.
-    std::vector<float> points;
+    /// Blend Space 1D / 2D: its animations. A 1D space keeps them in rising x.
+    std::vector<AnimationBlendPointUVE> blendPoints;
+    /// Blend Space 1D / 2D: the area its editor shows (1D uses X only). Points may sit outside it.
+    Math::Vector2UVE areaMin{-1.0F, -1.0F};
+    Math::Vector2UVE areaMax{1.0F, 1.0F};
+    /// BlendSpace2D: the second axis's parameter, and its value when there is none.
+    std::string parameterY;
+    float valueY = 0.0F;
+    /// LayeredBlend: the bones whose branches take the layer. Empty takes the whole body.
+    std::vector<std::string> bones;
+    /// Select: start the picked input over from its beginning when it is picked.
+    bool restart = true;
     /// OneShot fade in and out, in seconds.
     float fadeSeconds = 0.2F;
     /// Blend / Blend Space / Additive: the inputs keep in step - the heaviest one leads, the others
@@ -139,6 +175,9 @@ struct AnimationGraphNodeStateUVE final {
     bool shotActive = false;
     float shotElapsedSeconds = 0.0F;
     bool started = false;
+    /// Blend Space: each point's place in its clip, and whether it has played yet.
+    std::vector<double> pointTimes;
+    std::vector<bool> pointStarted;
     /// How much this node counted in the last step's output, 0..1: what the editor shows on wires.
     float weight = 0.0F;
     /// StateMachine, inertialized transition: how far the pose that was showing is from the state
@@ -199,6 +238,13 @@ struct AnimationTreeComponentUVE final {
 
 /// DescribeAnimationGraphProblemUVE finds nothing. False, too, if checking runs out of memory.
 [[nodiscard]] bool IsAnimationTreeComponentValidUVE(const AnimationTreeComponentUVE& component) noexcept;
+
+/// Older graphs fed a Blend Space's points through input slots. Moves each Clip on such a slot into
+/// the space's own points (its clip, speed and loop) and removes the Clip node; any other node on a
+/// slot is left in the graph, unconnected, and its point keeps its place with no animation.
+/// Returns how many inputs could not be folded in (0 when all were Clips or empty).
+std::size_t MigrateBlendSpaceInputsUVE(std::vector<AnimationGraphNodeUVE>& nodes,
+                                       const std::vector<std::vector<Math::Vector2UVE>>& legacyPositions);
 
 /// A fresh id one past the highest in use.
 [[nodiscard]] std::uint32_t NextAnimationGraphNodeIdUVE(const std::vector<AnimationGraphNodeUVE>& nodes) noexcept;

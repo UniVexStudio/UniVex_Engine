@@ -216,6 +216,13 @@ namespace {
                                    {"threshold", transition.threshold},
                                    {"fadeSeconds", transition.fadeSeconds}});
         }
+        nlohmann::json blendPoints = nlohmann::json::array();
+        for (const AnimationBlendPointUVE& point : node.blendPoints) {
+            blendPoints.push_back({{"position", {point.position.x, point.position.y}},
+                                   {"clip", point.clip.value},
+                                   {"speed", point.speed},
+                                   {"loop", point.loop}});
+        }
         nodes.push_back({{"id", node.id},
                          {"kind", static_cast<std::uint8_t>(node.kind)},
                          {"name", node.name},
@@ -226,9 +233,15 @@ namespace {
                          {"speed", node.speed},
                          {"parameter", node.parameter},
                          {"value", node.value},
-                         {"points", node.points},
                          {"fadeSeconds", node.fadeSeconds},
                          {"sync", node.sync},
+                         {"blendPoints", std::move(blendPoints)},
+                         {"parameterY", node.parameterY},
+                         {"valueY", node.valueY},
+                         {"bones", node.bones},
+                         {"restart", node.restart},
+                         {"areaMin", {node.areaMin.x, node.areaMin.y}},
+                         {"areaMax", {node.areaMax.x, node.areaMax.y}},
                          {"entryState", node.entryState},
                          {"transitions", std::move(transitions)}});
     }
@@ -276,6 +289,10 @@ namespace {
     }
     if (json.contains("nodes")) {
         tree.nodes.clear();
+        // Older saves placed a blend space's animations on its inputs, positioned by "points" (1D)
+        // or "points2D"; they are folded into its own points once every node is read.
+        std::vector<std::vector<Math::Vector2UVE>> legacyPositions;
+        std::vector<std::uint32_t> fitArea; // ids of spaces saved before they had an area
         for (const nlohmann::json& item : json.at("nodes")) {
             AnimationGraphNodeUVE node;
             node.id = item.at("id").get<std::uint32_t>();
@@ -291,9 +308,47 @@ namespace {
             node.speed = item.value("speed", 1.0F);
             node.parameter = item.value("parameter", std::string{});
             node.value = item.value("value", 0.5F);
-            node.points = item.value("points", std::vector<float>{});
             node.fadeSeconds = item.value("fadeSeconds", 0.2F);
             node.sync = item.value("sync", false);
+            node.parameterY = item.value("parameterY", std::string{});
+            node.valueY = item.value("valueY", 0.0F);
+            node.bones = item.value("bones", std::vector<std::string>{});
+            node.restart = item.value("restart", true);
+            const auto readPair = [&item](const char* key, Math::Vector2UVE& out) {
+                if (const auto found = item.find(key); found != item.end() && found->is_array() && found->size() == 2U) {
+                    out = Math::Vector2UVE{(*found)[0].get<float>(), (*found)[1].get<float>()};
+                }
+            };
+            readPair("areaMin", node.areaMin);
+            readPair("areaMax", node.areaMax);
+            std::vector<Math::Vector2UVE> legacy;
+            for (const float x : item.value("points", std::vector<float>{})) {
+                legacy.push_back(Math::Vector2UVE{x, 0.0F});
+            }
+            if (const auto found = item.find("points2D"); found != item.end() && found->is_array()) {
+                for (const auto& point : *found) {
+                    if (point.is_array() && point.size() == 2U) {
+                        legacy.push_back(Math::Vector2UVE{point[0].get<float>(), point[1].get<float>()});
+                    }
+                }
+            }
+            legacyPositions.push_back(std::move(legacy));
+            if (!item.contains("areaMin")) {
+                fitArea.push_back(node.id);
+            }
+            if (const auto found = item.find("blendPoints"); found != item.end() && found->is_array()) {
+                for (const auto& pointJson : *found) {
+                    AnimationBlendPointUVE point;
+                    const std::vector<float> at = pointJson.value("position", std::vector<float>{0.0F, 0.0F});
+                    if (at.size() == 2U) {
+                        point.position = Math::Vector2UVE{at[0], at[1]};
+                    }
+                    point.clip = Asset::AssetGuidUVE{pointJson.value("clip", std::uint64_t{0})};
+                    point.speed = pointJson.value("speed", 1.0F);
+                    point.loop = pointJson.value("loop", true);
+                    node.blendPoints.push_back(point);
+                }
+            }
             node.entryState = item.value("entryState", std::uint32_t{0});
             for (const nlohmann::json& transitionJson : item.value("transitions", nlohmann::json::array())) {
                 AnimationTransitionUVE transition;
@@ -307,6 +362,24 @@ namespace {
                 node.transitions.push_back(std::move(transition));
             }
             tree.nodes.push_back(std::move(node));
+        }
+        static_cast<void>(MigrateBlendSpaceInputsUVE(tree.nodes, legacyPositions));
+        // A space saved before it had an area gets one around its points.
+        for (AnimationGraphNodeUVE& node : tree.nodes) {
+            if (std::find(fitArea.begin(), fitArea.end(), node.id) == fitArea.end() || node.blendPoints.empty() ||
+                (node.kind != AnimationGraphNodeKindUVE::BlendSpace1D && node.kind != AnimationGraphNodeKindUVE::BlendSpace2D)) {
+                continue;
+            }
+            Math::Vector2UVE lo = node.blendPoints.front().position;
+            Math::Vector2UVE hi = lo;
+            for (const AnimationBlendPointUVE& point : node.blendPoints) {
+                lo = Math::Vector2UVE{std::min(lo.x, point.position.x), std::min(lo.y, point.position.y)};
+                hi = Math::Vector2UVE{std::max(hi.x, point.position.x), std::max(hi.y, point.position.y)};
+            }
+            const float marginX = std::max((hi.x - lo.x) * 0.15F, 0.5F);
+            const float marginY = std::max((hi.y - lo.y) * 0.15F, 0.5F);
+            node.areaMin = Math::Vector2UVE{lo.x - marginX, lo.y - marginY};
+            node.areaMax = Math::Vector2UVE{hi.x + marginX, hi.y + marginY};
         }
     }
     return tree;
