@@ -1688,6 +1688,8 @@ private:
     /// The editor's text, toolbar and problem list inside the current window; shared by the
     /// Scripting workspace and the Entity Editor's Scripting tab. Returns true on Close.
     bool DrawUVScriptEditorBodyUVE(bool offerClose);
+    /// The script's text box: line numbers in a gutter, and the text coloured by kind.
+    void DrawUVScriptTextBoxUVE(UVScriptDocumentUVE& document, float height);
     [[nodiscard]] static ContentBrowserItemTypeUVE ClassifyContentBrowserEntryUVE(
         const Asset::ProjectFileEntryUVE& entry);
     [[nodiscard]] static const char* GetContentBrowserItemTypeLabelUVE(ContentBrowserItemTypeUVE type) noexcept;
