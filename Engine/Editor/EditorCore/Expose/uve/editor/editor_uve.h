@@ -1602,6 +1602,10 @@ private:
     bool SaveSharedShelvesUVE();
     /// Loads the file again when it changed on disk since it was last read or written.
     void ReloadSharedShelvesIfChangedUVE();
+    /// Size and last change of a content file, from m_contentFileFacts (read on first ask).
+    [[nodiscard]] ContentFileFactsUVE GetContentFileFactsUVE(const std::filesystem::path& contentRoot,
+                                                             const Asset::ProjectFileEntryUVE& entry,
+                                                             std::uint64_t refreshGeneration);
     /// Returns a GL texture id showing relativePath's own decoded image content, loading and
     /// uploading it on first request and caching the result thereafter. Returns 0 if the file
     /// cannot be loaded as a texture asset (not a texture, corrupt, or an unsupported pixel
@@ -1770,6 +1774,15 @@ private:
         List,
     };
     ContentBrowserViewModeUVE m_contentBrowserViewMode = ContentBrowserViewModeUVE::SmallTiles;
+    /// Which of the five modes the item area is in (Settings > Mode, or the mode strip).
+    ContentBrowserModeUVE m_contentBrowserMode = ContentBrowserModeUVE::Tiles;
+    /// Details' sort, for this session.
+    ContentSortKeyUVE m_contentSortKey = ContentSortKeyUVE::Name;
+    bool m_contentSortAscending = true;
+    /// Size and last change of files the Details, Recent and Columns modes have asked about, by
+    /// content-relative path; read from disk once each and forgotten when the project is rescanned.
+    std::unordered_map<std::string, ContentFileFactsUVE> m_contentFileFacts;
+    std::uint64_t m_contentFileFactsGeneration = 0U;
     /// Content-derived thumbnail textures for Content Browser entries (currently texture assets
     /// only), keyed by project-relative generic path. A cached 0 means a prior load attempt
     /// failed (not a texture, corrupt, or unsupported format) and callers should fall back to the

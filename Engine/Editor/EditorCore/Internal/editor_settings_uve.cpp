@@ -116,6 +116,19 @@ const std::vector<EditorSettingBindingUVE>& EditorUVE::GetSettingBindingsUVE() {
              editor.m_contentBrowserViewMode = static_cast<ViewMode>(std::get<std::int64_t>(value));
              return true;
          }},
+        {HiddenUVE(Config::MakeEnumSettingUVE(
+             IdUVE(Id::kContentBrowserModeUVE), static_cast<std::int64_t>(ContentBrowserModeUVE::Tiles),
+             {EntryUVE(ContentBrowserModeUVE::Tiles, "Tiles"), EntryUVE(ContentBrowserModeUVE::Columns, "Columns"),
+              EntryUVE(ContentBrowserModeUVE::Details, "Details"), EntryUVE(ContentBrowserModeUVE::Recent, "Recent"),
+              EntryUVE(ContentBrowserModeUVE::Board, "Board")},
+             "Content Browser Mode", kSessionCategoryUVE)),
+         [](const EditorUVE& editor) -> SettingValueUVE {
+             return static_cast<std::int64_t>(editor.m_contentBrowserMode);
+         },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_contentBrowserMode = static_cast<ContentBrowserModeUVE>(std::get<std::int64_t>(value));
+             return true;
+         }},
         // Game is not among the entries, so a session is never restored into it: saving while in
         // Game is refused and leaves the last restorable workspace stored.
         {HiddenUVE(Config::MakeEnumSettingUVE(IdUVE(Id::kActiveWorkspaceUVE),

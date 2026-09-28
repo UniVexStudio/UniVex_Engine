@@ -7,7 +7,9 @@
 // free of ImGui and GL so the rules can be tested on their own, and so the editor bridge lists
 // exactly what the panel shows.
 
+#include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <span>
 #include <string>
@@ -113,6 +115,11 @@ bool ReadSharedShelvesTextUVE(std::string_view text, ContentShelvesUVE& shelves,
                                                             const std::filesystem::path& directory,
                                                             std::string_view query);
 
+/// Everything anywhere under `directory` (files and folders), matching `query` when given, in
+/// the same order. What the Board and Recent modes start from.
+[[nodiscard]] std::vector<std::size_t> ListContentTreeUVE(std::span<const Asset::ProjectFileEntryUVE> entries,
+                                                          const std::filesystem::path& directory, std::string_view query);
+
 /// The same for a shelf: its items that exist in `entries` and match the query, in shelf order.
 [[nodiscard]] std::vector<std::size_t> ListContentShelfUVE(std::span<const Asset::ProjectFileEntryUVE> entries,
                                                            const ContentShelfUVE& shelf, std::string_view query);
@@ -122,5 +129,65 @@ bool ReadSharedShelvesTextUVE(std::string_view text, ContentShelvesUVE& shelves,
 /// sorted. An empty query returns every folder.
 [[nodiscard]] std::vector<std::string> CollectVisibleContentFoldersUVE(std::span<const Asset::ProjectFileEntryUVE> entries,
                                                                        std::string_view query);
+
+/// The five ways the Content Browser shows things. Each is its own way of working, not only a look:
+/// Tiles browses one folder by picture; Columns walks down folder levels side by side with a
+/// preview of the file picked; Details is a table to sort by size or date; Recent lists what
+/// changed lately across everything below; Board lays everything below out by kind.
+enum class ContentBrowserModeUVE : std::uint8_t {
+    Tiles = 0,
+    Columns,
+    Details,
+    Recent,
+    Board,
+};
+
+/// What the disk says about one file: its size and when it last changed (seconds since the
+/// epoch; 0 when unknown).
+struct ContentFileFactsUVE final {
+    std::uintmax_t size = 0U;
+    std::int64_t modified = 0;
+};
+
+/// What a sorting or grouping mode needs to know about one item.
+struct ContentItemFactsUVE final {
+    std::string name;
+    std::string type;
+    std::string folder;
+    std::uintmax_t size = 0U;
+    /// Seconds since the epoch of the last change; 0 when not known.
+    std::int64_t modified = 0;
+    bool isFolder = false;
+};
+
+enum class ContentSortKeyUVE : std::uint8_t {
+    Name = 0,
+    Type,
+    Size,
+    Modified,
+    Folder,
+};
+
+/// Orders `order` (indices into `facts`) by `key`. Folders stay ahead of files either way; ties
+/// fall back to the name so the order never jumps between frames.
+void SortContentFactsUVE(std::vector<std::size_t>& order, std::span<const ContentItemFactsUVE> facts,
+                         ContentSortKeyUVE key, bool ascending);
+
+/// Recent's buckets, newest first.
+enum class ContentAgeUVE : std::uint8_t {
+    Today = 0,
+    Yesterday,
+    ThisWeek,
+    Earlier,
+};
+[[nodiscard]] const char* GetContentAgeLabelUVE(ContentAgeUVE age) noexcept;
+/// Which bucket a change at `modified` falls in, given when today began (local midnight), both in
+/// seconds since the epoch. A time in the future counts as today.
+[[nodiscard]] ContentAgeUVE ClassifyContentAgeUVE(std::int64_t modified, std::int64_t startOfToday) noexcept;
+
+/// Board's lanes: the items of `order` grouped by type, lanes by type name, items keeping their
+/// order within a lane. Folders are left out; the Board lays out files.
+[[nodiscard]] std::vector<std::pair<std::string, std::vector<std::size_t>>> GroupContentByTypeUVE(
+    const std::vector<std::size_t>& order, std::span<const ContentItemFactsUVE> facts);
 
 } // namespace UVE::Editor

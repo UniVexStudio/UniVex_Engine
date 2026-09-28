@@ -21,6 +21,7 @@ inline constexpr std::string_view kInspectorPanelVisibleUVE = "editor.panels.ins
 inline constexpr std::string_view kBottomDockVisibleUVE = "editor.panels.bottomDockVisible";
 inline constexpr std::string_view kBottomDockHeightUVE = "editor.panels.bottomDockHeight";
 inline constexpr std::string_view kContentBrowserViewModeUVE = "editor.contentBrowser.viewMode";
+inline constexpr std::string_view kContentBrowserModeUVE = "editor.contentBrowser.mode";
 inline constexpr std::string_view kActiveWorkspaceUVE = "editor.workspace.active";
 inline constexpr std::string_view kActiveRightPanelTabUVE = "editor.rightPanel.activeTab";
 inline constexpr std::string_view kActiveBottomDockUVE = "editor.bottomDock.active";

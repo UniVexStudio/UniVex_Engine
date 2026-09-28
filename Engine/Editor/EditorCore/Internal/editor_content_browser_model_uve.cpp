@@ -280,6 +280,20 @@ std::vector<std::size_t> ListContentFolderUVE(const std::span<const Asset::Proje
     return indices;
 }
 
+std::vector<std::size_t> ListContentTreeUVE(const std::span<const Asset::ProjectFileEntryUVE> entries,
+                                            const std::filesystem::path& directory, const std::string_view query) {
+    std::vector<std::size_t> indices;
+    for (std::size_t index = 0U; index < entries.size(); ++index) {
+        const std::filesystem::path& path = entries[index].relativePath;
+        if (IsInsideContentDirectoryUVE(path, directory) &&
+            DoesContentNameMatchUVE(path.filename().generic_string(), query)) {
+            indices.push_back(index);
+        }
+    }
+    SortForDisplayUVE(indices, entries);
+    return indices;
+}
+
 std::vector<std::size_t> ListContentShelfUVE(const std::span<const Asset::ProjectFileEntryUVE> entries,
                                              const ContentShelfUVE& shelf, const std::string_view query) {
     std::vector<std::size_t> indices;
@@ -306,6 +320,75 @@ std::vector<std::string> CollectVisibleContentFoldersUVE(const std::span<const A
         }
     }
     return {visible.begin(), visible.end()};
+}
+
+void SortContentFactsUVE(std::vector<std::size_t>& order, const std::span<const ContentItemFactsUVE> facts,
+                         const ContentSortKeyUVE key, const bool ascending) {
+    std::ranges::stable_sort(order, [&](const std::size_t a, const std::size_t b) {
+        const ContentItemFactsUVE& x = facts[a];
+        const ContentItemFactsUVE& y = facts[b];
+        if (x.isFolder != y.isFolder) {
+            return x.isFolder;
+        }
+        const std::string xName = LowerUVE(x.name);
+        const std::string yName = LowerUVE(y.name);
+        int compare = 0;
+        switch (key) {
+            case ContentSortKeyUVE::Name: break;
+            case ContentSortKeyUVE::Type: compare = LowerUVE(x.type).compare(LowerUVE(y.type)); break;
+            case ContentSortKeyUVE::Size: compare = x.size < y.size ? -1 : (x.size > y.size ? 1 : 0); break;
+            case ContentSortKeyUVE::Modified:
+                compare = x.modified < y.modified ? -1 : (x.modified > y.modified ? 1 : 0);
+                break;
+            case ContentSortKeyUVE::Folder: compare = LowerUVE(x.folder).compare(LowerUVE(y.folder)); break;
+        }
+        if (compare == 0) {
+            compare = xName.compare(yName);
+        }
+        return ascending ? compare < 0 : compare > 0;
+    });
+}
+
+const char* GetContentAgeLabelUVE(const ContentAgeUVE age) noexcept {
+    switch (age) {
+        case ContentAgeUVE::Today: return "Today";
+        case ContentAgeUVE::Yesterday: return "Yesterday";
+        case ContentAgeUVE::ThisWeek: return "Earlier this week";
+        case ContentAgeUVE::Earlier: return "Before that";
+    }
+    return "Before that";
+}
+
+ContentAgeUVE ClassifyContentAgeUVE(const std::int64_t modified, const std::int64_t startOfToday) noexcept {
+    constexpr std::int64_t kDay = 24 * 60 * 60;
+    if (modified >= startOfToday) {
+        return ContentAgeUVE::Today;
+    }
+    if (modified >= startOfToday - kDay) {
+        return ContentAgeUVE::Yesterday;
+    }
+    if (modified >= startOfToday - 6 * kDay) {
+        return ContentAgeUVE::ThisWeek;
+    }
+    return ContentAgeUVE::Earlier;
+}
+
+std::vector<std::pair<std::string, std::vector<std::size_t>>> GroupContentByTypeUVE(
+    const std::vector<std::size_t>& order, const std::span<const ContentItemFactsUVE> facts) {
+    std::vector<std::pair<std::string, std::vector<std::size_t>>> lanes;
+    for (const std::size_t index : order) {
+        if (facts[index].isFolder) {
+            continue;
+        }
+        auto lane = std::ranges::find(lanes, facts[index].type, &std::pair<std::string, std::vector<std::size_t>>::first);
+        if (lane == lanes.end()) {
+            lanes.emplace_back(facts[index].type, std::vector<std::size_t>{});
+            lane = std::prev(lanes.end());
+        }
+        lane->second.push_back(index);
+    }
+    std::ranges::sort(lanes, [](const auto& a, const auto& b) { return LowerUVE(a.first) < LowerUVE(b.first); });
+    return lanes;
 }
 
 } // namespace UVE::Editor

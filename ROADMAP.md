@@ -546,6 +546,12 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
   arrows list the folders inside), a sidebar with Pinned, the project's folder tree (with its own
   folder search) and Shelves (hand-picked groups of files, saved per user), a type filter, a search
   that looks through every folder below, and an item count
+- [x] Content Browser modes, each its own way of working: Tiles (one folder by picture),
+  Columns (walk down folder levels side by side, with a preview of the picked file), Details
+  (a table sorted by name, kind, size, last change or folder), Recent (what changed lately below
+  this folder, by day) and Board (everything below laid out in lanes by kind)
+- [ ] Content Browser: a dependency view (which asset uses which) once assets record their
+  references
 - [x] Content Browser: team shelves saved in the project (project.uvshelves, reloaded when it
   changes on disk) beside personal ones, and dragging files and folders onto a shelf
 - [x] A Scripting workspace: a UVScript text editor that checks the script against its node as
