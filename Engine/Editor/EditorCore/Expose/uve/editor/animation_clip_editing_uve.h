@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -75,5 +76,23 @@ bool InsertClipKeyUVE(Asset::AnimationClipAssetUVE& clip, const std::string& tra
 /// finite.
 bool SetClipKeyComponentUVE(Asset::AnimationClipAssetUVE& clip, const std::string& track, double timeSeconds,
                             int channel, int axis, float value);
+
+// ---- Events ------------------------------------------------------------------------------------
+// A clip's events stay sorted by time; every function returns where the event ended up.
+
+/// Adds an event at `atSeconds` (snapped to `frameRate`) named "event", "event_2", ... - a name no
+/// other event of the clip has. Returns its index.
+std::size_t AddClipEventUVE(Asset::AnimationClipAssetUVE& clip, double atSeconds, double frameRate);
+
+/// Moves event `index` to `toSeconds` (snapped, inside the clip). Returns its new index, or nullopt
+/// for a bad index.
+std::optional<std::size_t> MoveClipEventUVE(Asset::AnimationClipAssetUVE& clip, std::size_t index, double toSeconds,
+                                            double frameRate);
+
+/// Renames event `index`. False for a bad index or a name that is empty or longer than 128 bytes.
+bool RenameClipEventUVE(Asset::AnimationClipAssetUVE& clip, std::size_t index, const std::string& name);
+
+/// Removes event `index`. False for a bad index.
+bool RemoveClipEventUVE(Asset::AnimationClipAssetUVE& clip, std::size_t index);
 
 } // namespace UVE::Editor

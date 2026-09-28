@@ -1,6 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 #include <cmath>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -524,6 +525,21 @@ TEST(AnimationPlayerUVETest, ScrubbingPosesTheSkeletonAtATimeWithoutAPlayer) {
     Skeleton3DNodeComponentUVE untouched = MakeTwoBoneSkeletonUVE();
     EXPECT_FALSE(PoseSkeletonAtTimeUVE(MakeSlideClipUVE(), 0.5, untouched));
     EXPECT_TRUE(untouched.pose.empty());
+}
+
+TEST(AnimationPlayerUVETest, CollectsTheEventsThePlayheadPasses) {
+    const std::vector<Asset::AnimationAssetEventUVE> events = {
+        {0.75, "right"}, {0.0, "start"}, {0.25, "left"}};
+    using List = std::vector<std::string>;
+    EXPECT_EQ(CollectPassedAnimationEventsUVE(events, 0.0, 0.5, 1.0, true, false, true), (List{"start", "left"}));
+    EXPECT_EQ(CollectPassedAnimationEventsUVE(events, 0.0, 0.5, 1.0, true, false, false), (List{"left"}))
+        << "the start event only on the first step";
+    EXPECT_EQ(CollectPassedAnimationEventsUVE(events, 0.25, 0.5, 1.0, true, false, false), (List{}))
+        << "an event already passed is not passed again";
+    EXPECT_EQ(CollectPassedAnimationEventsUVE(events, 0.5, 0.3, 1.0, true, true, false), (List{"right", "start", "left"}))
+        << "a loop's wrap passes the end, then the start";
+    EXPECT_EQ(CollectPassedAnimationEventsUVE(events, 0.8, 0.1, 1.0, false, false, false), (List{"right", "left"}))
+        << "backwards, in the order passed";
 }
 
 } // namespace

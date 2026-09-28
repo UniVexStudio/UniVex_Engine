@@ -2006,6 +2006,66 @@ TEST(EngineCoreUVETest, AnimationPlayer_RootMotionMovesTheCharacterThroughTheSke
     engine.Shutdown();
 }
 
+TEST(EngineCoreUVETest, AnimationPlayer_SendsClipEventsToTheScriptOfTheNodeItAnimates) {
+    EngineCoreUVE engine(MakeTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+    Asset::IAssetDatabaseUVE& assetDatabase = engine.GetServicesUVE().GetAssetDatabaseUVE();
+
+    Asset::IFileSystemUVE& fileSystem = engine.GetServicesUVE().GetFileSystemUVE();
+    const std::filesystem::path mountDirectory = "uve_engine_core_tests_anim_events_mount";
+    std::filesystem::remove_all(mountDirectory);
+    std::filesystem::create_directories(mountDirectory);
+    fileSystem.MountDirectoryUVE("", mountDirectory, 0);
+    const std::string script = "var steps = 0\nvar last = \"\"\n\non animation_event(name):\n    steps += 1\n"
+                               "    last = name\n";
+    const auto* const bytes = reinterpret_cast<const std::byte*>(script.data());
+    ASSERT_TRUE(fileSystem.WriteFileUVE("feet.uvs", std::vector<std::byte>(bytes, bytes + script.size())));
+
+    // A one-second node clip with two footsteps.
+    Asset::AnimationClipAssetUVE clip;
+    clip.clipId = "walk";
+    clip.durationSeconds = 1.0;
+    Asset::AnimationAssetSampleUVE start;
+    Asset::AnimationAssetSampleUVE end;
+    end.timeSeconds = 1.0;
+    end.pose.position = Math::Vector3UVE{1.0F, 0.0F, 0.0F};
+    clip.samples = {start, end};
+    clip.events = {Asset::AnimationAssetEventUVE{0.25, "step_left"}, Asset::AnimationAssetEventUVE{0.75, "step_right"}};
+    const std::filesystem::path clipPath = "uve_engine_core_tests_walk_events.uvanim";
+    ASSERT_TRUE(Asset::SaveAnimationClipAssetUVE(clip, clipPath));
+    const Asset::AssetGuidUVE guid = assetDatabase.RegisterUVE(clipPath);
+
+    const Scene::EntityUVE character = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, character, Scene::TransformComponentUVE{});
+    entityManager.AddComponentUVE<Scene::ScriptComponentUVE>(character, Scene::ScriptComponentUVE{"feet.uvs"});
+    const Scene::EntityUVE player = entityManager.CreateEntityUVE();
+    Scene::AnimationPlayerNodeDefinitionUVE definition;
+    definition.player.clip = guid;
+    definition.player.loopMode = Scene::AnimationLoopModeUVE::Once;
+    Scene::ApplyAnimationPlayerNodeDefinitionUVE(entityManager, player, definition);
+    sceneGraph.SetParentUVE(entityManager, player, character);
+
+    const auto startedAt = std::chrono::steady_clock::now();
+    while (std::chrono::steady_clock::now() - startedAt < std::chrono::seconds(10) &&
+           !entityManager.GetComponentUVE<Scene::AnimationPlayerComponentUVE>(player).finished) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        engine.TickFrameUVE();
+    }
+    ASSERT_TRUE(entityManager.GetComponentUVE<Scene::AnimationPlayerComponentUVE>(player).finished);
+    UVScript::ScriptInstanceUVE* const instance = engine.FindUVScriptInstanceUVE(character);
+    ASSERT_NE(instance, nullptr);
+    EXPECT_EQ(instance->GetFieldUVE("steps"), UVScript::ValueUVE{std::int64_t{2}}) << "each footstep once";
+    EXPECT_EQ(instance->GetFieldUVE("last"), UVScript::ValueUVE{std::string{"step_right"}});
+
+    std::filesystem::remove(clipPath);
+    std::filesystem::remove_all(mountDirectory);
+    std::filesystem::remove(MakeTestConfigUVE().assetDatabaseFilePath);
+    engine.Shutdown();
+}
+
 TEST(EngineCoreUVETest, RayCast3DNode_HitsRealGroundColliderExcludesItselfAndMissesBeyondLength) {
     // EngineCoreUVE::SyncRayCast3DNodesUVE() is new wiring: previously RayCast3DNodeComponentUVE
     // was pure authored data with nothing evaluating it. This proves a real per-frame raycast

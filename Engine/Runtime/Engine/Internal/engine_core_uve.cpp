@@ -991,6 +991,28 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
     };
     const Scene::AnimationProcessCallbackUVE callback =
         physicsStep ? Scene::AnimationProcessCallbackUVE::Physics : Scene::AnimationProcessCallbackUVE::Frame;
+    // Clip events the playhead passed go to the player's script and to its target's.
+    const auto raiseAnimationEvents = [this](const Scene::EntityUVE self, Scene::EntityUVE target,
+                                             const std::vector<std::string>& events) {
+        if (events.empty()) {
+            return;
+        }
+        if (target == Scene::kInvalidEntityUVE || !m_entityManager->IsAliveUVE(target)) {
+            target = m_entityManager->HasComponentUVE<Scene::HierarchyComponentUVE>(self)
+                         ? m_entityManager->GetComponentUVE<Scene::HierarchyComponentUVE>(self).parent
+                         : Scene::kInvalidEntityUVE;
+        }
+        for (const Scene::EntityUVE listener : {self, target}) {
+            const auto slot = m_uvScripts.find(listener);
+            if (listener == Scene::kInvalidEntityUVE || slot == m_uvScripts.end() || slot->second.instance == nullptr) {
+                continue;
+            }
+            for (const std::string& name : events) {
+                const UVScript::ValueUVE args[] = {UVScript::ValueUVE{name}};
+                static_cast<void>(slot->second.instance->RaiseEventUVE("animation_event", args));
+            }
+        }
+    };
 
     for (const Scene::EntityUVE entity :
          CollectFixedStepOrderUVE<Scene::AnimationPlayerComponentUVE>(*m_entityManager, *m_sceneGraph)) {
@@ -1018,6 +1040,7 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
             }
             const bool posed = Scene::StepSkeletalAnimationPlayerUVE(player, *clip, deltaSeconds * mixer.speedScale,
                                                                      skeleton, mixer);
+            raiseAnimationEvents(entity, mixer.target, player.firedEvents);
             if (posed && mixer.rootMotion == Scene::AnimationRootMotionModeUVE::ApplyToTarget) {
                 applyRootMotion(entity, mixer.target, skeletonEntity, player.rootMotionDelta, deltaSeconds);
             }
@@ -1033,6 +1056,7 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
         }
         static_cast<void>(
             Scene::StepAnimationPlayerUVE(player, *clip, deltaSeconds * mixer.speedScale, *target, mixer));
+        raiseAnimationEvents(entity, mixer.target, player.firedEvents);
     }
 
     for (const Scene::EntityUVE entity :
