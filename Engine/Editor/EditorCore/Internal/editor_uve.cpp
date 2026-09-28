@@ -4287,6 +4287,11 @@ EditorUVE::ContentBrowserItemTypeUVE EditorUVE::ClassifyContentBrowserEntryUVE(
     if (extension == ".uvs") {
         return ContentBrowserItemTypeUVE::Script;
     }
+    // A clip (a take imported from an FBX, or authored): the same Animation an animation-only
+    // model source shows as.
+    if (extension == ".uvanim") {
+        return ContentBrowserItemTypeUVE::Animation;
+    }
     // Imported clips and the WAV sources the importer reads them from.
     if (extension == ".uvaudio" || extension == ".wav") {
         return ContentBrowserItemTypeUVE::Audio;
@@ -4764,7 +4769,8 @@ void EditorUVE::QueueModelAutoImportsUVE(const Asset::ProjectFileSnapshotUVE& sn
         const std::string key = entry.relativePath.generic_string();
         const std::filesystem::path source = snapshot.contentRoot / entry.relativePath;
         const EditorModelSourceInfoUVE& info = m_modelSources[key] = ReadModelSourceInfoUVE(source);
-        if (info.animationCount > 0U && source.extension() == ".fbx") {
+        // An FBX's takes (the extension is compared as the model check compares it: any case).
+        if (info.animationCount > 0U) {
             static_cast<void>(ImportModelAnimationsUVE(source));
         }
         if (info.animationOnly) {
