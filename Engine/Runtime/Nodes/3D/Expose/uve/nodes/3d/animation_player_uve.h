@@ -4,7 +4,9 @@
 
 #include <cstddef>
 #include <optional>
+#include <string>
 #include <string_view>
+#include <vector>
 
 #include "uve/animation/time_pose_contract_uve.h"
 #include "uve/component/animation_player_component_uve.h"
@@ -12,6 +14,7 @@
 
 namespace UVE::Asset {
 struct AnimationClipAssetUVE;
+struct AnimationAssetEventUVE;
 } // namespace UVE::Asset
 
 namespace UVE::Scene {
@@ -65,6 +68,13 @@ void StopAnimationPlayerUVE(AnimationPlayerComponentUVE& player) noexcept;
                                                   const Asset::AnimationClipAssetUVE& clip, float deltaSeconds,
                                                   Skeleton3DNodeComponentUVE& skeleton,
                                                   const AnimationMixerComponentUVE& mixer = {});
+
+/// The events of `events` the playhead passes going from `beforeSeconds` to `afterSeconds` in a clip
+/// of `durationSeconds`: forwards or backwards, across a loop's wrap when `wrapped`. An event exactly
+/// at the start is passed only when `includeStart` (the very first step). In passing order.
+[[nodiscard]] std::vector<std::string> CollectPassedAnimationEventsUVE(
+    const std::vector<Asset::AnimationAssetEventUVE>& events, double beforeSeconds, double afterSeconds,
+    double durationSeconds, bool forward, bool wrapped, bool includeStart);
 
 /// The bone whose ground travel is root motion: `boneName` when it names a bone with a track, else
 /// (empty name) the first bone, parents first, whose track moves over 1 cm across the ground.

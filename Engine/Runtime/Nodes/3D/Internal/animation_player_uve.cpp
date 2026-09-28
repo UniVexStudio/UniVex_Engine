@@ -210,8 +210,16 @@ bool StepAnimationPlayerUVE(AnimationPlayerComponentUVE& player, const Asset::An
         return false;
     }
 
+    const double eventsBefore = static_cast<double>(player.currentTimeSeconds);
+    const bool eventsForward = player.speed * player.direction >= 0.0F;
+    const bool firstStep = player.blendElapsedSeconds <= 0.0F;
     const bool stillPlaying = AdvanceClockUVE(player, duration, deltaSeconds);
     player.blendElapsedSeconds = std::min(player.blendElapsedSeconds + deltaSeconds, 3600.0F);
+    player.firedEvents = CollectPassedAnimationEventsUVE(
+        clip.events, eventsBefore, static_cast<double>(player.currentTimeSeconds), duration, eventsForward,
+        player.loopMode == AnimationLoopModeUVE::Loop &&
+            (eventsForward ? player.currentTimeSeconds < eventsBefore : player.currentTimeSeconds > eventsBefore),
+        firstStep);
 
     if (!stillPlaying) {
         player.isPlaying = false;
@@ -252,7 +260,13 @@ bool StepSkeletalAnimationPlayerUVE(AnimationPlayerComponentUVE& player, const A
     const float blendBefore = player.blendElapsedSeconds;
     const double timeBefore = static_cast<double>(player.currentTimeSeconds);
     const bool forward = player.speed * player.direction >= 0.0F;
+    const bool firstStep = player.blendElapsedSeconds <= 0.0F;
     const bool stillPlaying = AdvanceClockUVE(player, duration, deltaSeconds);
+    player.firedEvents = CollectPassedAnimationEventsUVE(
+        clip.events, timeBefore, static_cast<double>(player.currentTimeSeconds), duration, forward,
+        player.loopMode == AnimationLoopModeUVE::Loop &&
+            (forward ? player.currentTimeSeconds < timeBefore : player.currentTimeSeconds > timeBefore),
+        firstStep);
     player.blendElapsedSeconds = std::min(player.blendElapsedSeconds + deltaSeconds, 3600.0F);
 
     std::unordered_map<std::string_view, const Asset::AnimationAssetBoneTrackUVE*> tracks;
@@ -412,6 +426,44 @@ bool PoseSkeletonAtTimeUVE(const Asset::AnimationClipAssetUVE& clip, const doubl
     }
     skeleton.pose = std::move(pose);
     return true;
+}
+
+std::vector<std::string> CollectPassedAnimationEventsUVE(const std::vector<Asset::AnimationAssetEventUVE>& events,
+                                                         const double beforeSeconds, const double afterSeconds,
+                                                         const double durationSeconds, const bool forward,
+                                                         const bool wrapped, const bool includeStart) {
+    // Passing order: forwards the events sorted by time, backwards reversed. A wrap passes the rest
+    // of the clip first, then the part from the other end.
+    std::vector<const Asset::AnimationAssetEventUVE*> sorted;
+    sorted.reserve(events.size());
+    for (const Asset::AnimationAssetEventUVE& event : events) {
+        sorted.push_back(&event);
+    }
+    std::ranges::stable_sort(sorted, [](const auto* a, const auto* b) { return a->timeSeconds < b->timeSeconds; });
+    if (!forward) {
+        std::ranges::reverse(sorted);
+    }
+    std::vector<std::string> passed;
+    const auto collect = [&](const double from, const double to, const bool fromInclusive) {
+        for (const Asset::AnimationAssetEventUVE* event : sorted) {
+            const double t = event->timeSeconds;
+            const bool inside = forward ? ((fromInclusive ? t >= from : t > from) && t <= to)
+                                        : ((fromInclusive ? t <= from : t < from) && t >= to);
+            if (inside) {
+                passed.push_back(event->eventId);
+            }
+        }
+    };
+    if (!wrapped) {
+        collect(beforeSeconds, afterSeconds, includeStart);
+    } else if (forward) {
+        collect(beforeSeconds, durationSeconds, includeStart);
+        collect(0.0, afterSeconds, true);
+    } else {
+        collect(beforeSeconds, 0.0, includeStart);
+        collect(durationSeconds, afterSeconds, true);
+    }
+    return passed;
 }
 
 } // namespace UVE::Scene

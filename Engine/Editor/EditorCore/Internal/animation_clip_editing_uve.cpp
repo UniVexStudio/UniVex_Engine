@@ -243,4 +243,68 @@ bool SetClipKeyComponentUVE(Asset::AnimationClipAssetUVE& clip, const std::strin
     return Math::TryMakeEulerUVE(radians, pose.rotation);
 }
 
+namespace {
+
+/// Re-sorts the events by time and returns where `moved` (identified by address before sorting)
+/// now is.
+std::size_t SortEventsUVE(Asset::AnimationClipAssetUVE& clip, const std::size_t moved) {
+    std::vector<std::size_t> order(clip.events.size());
+    for (std::size_t i = 0U; i < order.size(); ++i) {
+        order[i] = i;
+    }
+    std::ranges::stable_sort(order, [&clip](const std::size_t a, const std::size_t b) {
+        return clip.events[a].timeSeconds < clip.events[b].timeSeconds;
+    });
+    std::vector<Asset::AnimationAssetEventUVE> sorted;
+    sorted.reserve(order.size());
+    std::size_t where = 0U;
+    for (std::size_t i = 0U; i < order.size(); ++i) {
+        if (order[i] == moved) {
+            where = i;
+        }
+        sorted.push_back(std::move(clip.events[order[i]]));
+    }
+    clip.events = std::move(sorted);
+    return where;
+}
+
+} // namespace
+
+std::size_t AddClipEventUVE(Asset::AnimationClipAssetUVE& clip, const double atSeconds, const double frameRate) {
+    const auto taken = [&clip](const std::string& name) {
+        return std::ranges::any_of(clip.events, [&name](const auto& event) { return event.eventId == name; });
+    };
+    std::string name = "event";
+    for (int suffix = 2; taken(name); ++suffix) {
+        name = "event_" + std::to_string(suffix);
+    }
+    clip.events.push_back(Asset::AnimationAssetEventUVE{SnapUVE(atSeconds, frameRate, clip.durationSeconds), name});
+    return SortEventsUVE(clip, clip.events.size() - 1U);
+}
+
+std::optional<std::size_t> MoveClipEventUVE(Asset::AnimationClipAssetUVE& clip, const std::size_t index,
+                                            const double toSeconds, const double frameRate) {
+    if (index >= clip.events.size()) {
+        return std::nullopt;
+    }
+    clip.events[index].timeSeconds = SnapUVE(toSeconds, frameRate, clip.durationSeconds);
+    return SortEventsUVE(clip, index);
+}
+
+bool RenameClipEventUVE(Asset::AnimationClipAssetUVE& clip, const std::size_t index, const std::string& name) {
+    if (index >= clip.events.size() || name.empty() || name.size() > Asset::kMaximumAnimationAssetIdentifierBytesUVE) {
+        return false;
+    }
+    clip.events[index].eventId = name;
+    return true;
+}
+
+bool RemoveClipEventUVE(Asset::AnimationClipAssetUVE& clip, const std::size_t index) {
+    if (index >= clip.events.size()) {
+        return false;
+    }
+    clip.events.erase(clip.events.begin() + static_cast<std::ptrdiff_t>(index));
+    return true;
+}
+
 } // namespace UVE::Editor

@@ -3,6 +3,8 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
+#include <vector>
 
 #include "uve/asset/asset_guid_uve.h"
 #include "uve/component/animation_mixer_component_uve.h"
@@ -69,6 +71,8 @@ struct AnimationPlayerComponentUVE final {
     Math::Vector3UVE startScale{1.0F, 1.0F, 1.0F};
     /// Root motion of the last step: the root bone's ground travel, in the skeleton's space.
     Math::Vector3UVE rootMotionDelta{};
+    /// The clip's events the playhead passed in the last step, in the order it passed them.
+    std::vector<std::string> firedEvents;
 
     /// Authored settings only: runtime state is ignored, so a playing player equals its saved self.
     [[nodiscard]] bool HasSameSettingsUVE(const AnimationPlayerComponentUVE& other) const noexcept {
