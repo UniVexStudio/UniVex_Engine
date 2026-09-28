@@ -270,52 +270,19 @@ void EditorUVE::DrawAnimationTimelineUVE() {
     ImGui::SameLine();
     ImGui::TextDisabled("|");
     ImGui::SameLine();
-    char clock[96];
-    std::snprintf(clock, sizeof(clock), "%.2f / %.2f s   frame %ld / %ld   %.0f fps", m_timeline.timeSeconds,
-                  clip != nullptr ? clip->durationSeconds : 0.0, frameOf(m_timeline.timeSeconds), frameOf(duration),
-                  frameRate);
-    ImGui::TextUnformatted(clock);
-    for (int channel = 0; channel < 3; ++channel) {
-        ImGui::SameLine(0.0F, channel == 0 ? 16.0F : 10.0F);
-        const ImVec2 at = ImGui::GetCursorScreenPos();
-        const float size = ImGui::GetTextLineHeight() * 0.6F;
-        const float top = at.y + (ImGui::GetTextLineHeight() - size) * 0.5F;
-        ImGui::GetWindowDrawList()->AddRectFilled(ImVec2{at.x, top}, ImVec2{at.x + size, top + size},
-                                                  kChannelColourUVE[channel], 2.0F);
-        ImGui::Dummy(ImVec2{size + 3.0F, ImGui::GetTextLineHeight()});
-        ImGui::SameLine(0.0F, 0.0F);
-        ImGui::TextDisabled("%s", kChannelNameUVE[channel]);
-    }
-    const float afterLegend = ImGui::GetItemRectMax().x - ImGui::GetWindowPos().x + 16.0F;
-
-    // Right side: which player and clip, zoom and the track filter.
-    const std::string clipLabel = (players.size() > 1U ? std::string{} : nameOf(playerEntity) + "  >  ") +
-                                  (clip != nullptr ? clip->clipId
-                                                   : ((player.clip != Asset::AssetGuidUVE{}) ? std::string{"(unreadable clip)"}
-                                                                               : std::string{"(no clip)"}));
-    const float filterWidth = 150.0F;
-    const float zoomWidth = 110.0F;
-    const float rightWidth = ImGui::CalcTextSize(clipLabel.c_str()).x + filterWidth + zoomWidth + 40.0F;
-    ImGui::SameLine(std::max(afterLegend, ImGui::GetWindowContentRegionMax().x - rightWidth));
-    ImGui::TextUnformatted(clipLabel.c_str());
+    // The playhead's frame and time; everything else about the clip lives in the bottom bar.
+    char clock[64];
+    std::snprintf(clock, sizeof(clock), "%ld / %ld", frameOf(m_timeline.timeSeconds), frameOf(duration));
+    ImGui::SetNextItemWidth(ImGui::CalcTextSize("0000 / 0000").x + ImGui::GetStyle().FramePadding.x * 2.0F);
+    ImGui::BeginDisabled();
+    ImGui::InputText("##tl-frame", clock, sizeof(clock), ImGuiInputTextFlags_ReadOnly);
+    ImGui::EndDisabled();
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(zoomWidth);
-    float zoom = m_timeline.pixelsPerSecond;
-    ImGui::SliderFloat("##tl-zoom", &zoom, 0.0F, 2000.0F, zoom <= 0.0F ? "Fit" : "%.0f px/s",
-                       ImGuiSliderFlags_Logarithmic);
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Zoom. Far left fits the whole clip; Ctrl + wheel over the tracks zooms too.");
-    }
-    m_timeline.pixelsPerSecond = zoom < 10.0F ? 0.0F : zoom;
-    ImGui::SameLine();
-    char filter[128];
-    std::snprintf(filter, sizeof(filter), "%s", m_timeline.filter.c_str());
-    // Whatever room is left, so a narrow window squeezes the filter instead of cutting it off.
-    ImGui::SetNextItemWidth(std::clamp(ImGui::GetContentRegionAvail().x, 60.0F, filterWidth));
-    if (ImGui::InputTextWithHint("##tl-filter", "Filter bones", filter, sizeof(filter))) {
-        m_timeline.filter = filter;
-    }
+    ImGui::TextDisabled("%.2f s", m_timeline.timeSeconds);
 
+    const std::string clipLabel = clip != nullptr ? clip->clipId
+                                  : (player.clip != Asset::AssetGuidUVE{}) ? std::string{"(unreadable clip)"}
+                                                                           : std::string{"(no clip)"};
     if (clip == nullptr) {
         ImGui::Spacing();
         ImGui::TextDisabled("%s", !m_timeline.loadError.empty()
@@ -423,7 +390,8 @@ void EditorUVE::DrawAnimationTimelineUVE() {
     }
 
     // ---- Track area --------------------------------------------------------------------------------
-    ImGui::BeginChild("##tl-body", ImVec2{0.0F, 0.0F}, false, ImGuiWindowFlags_NoScrollWithMouse);
+    const float bottomBarHeight = ImGui::GetFrameHeight() + 6.0F;
+    ImGui::BeginChild("##tl-body", ImVec2{0.0F, -bottomBarHeight}, false, ImGuiWindowFlags_NoScrollWithMouse);
     ImDrawList* const draw = ImGui::GetWindowDrawList();
     const ImVec2 origin = ImGui::GetCursorScreenPos();
     const ImVec2 area = ImGui::GetContentRegionAvail();
@@ -467,8 +435,19 @@ void EditorUVE::DrawAnimationTimelineUVE() {
             draw->AddLine(ImVec2{x, origin.y + kRulerHeightUVE}, ImVec2{x, rowsBottom}, kGridLineUVE);
         }
     }
-    draw->AddText(ImVec2{origin.x + 8.0F, origin.y + 4.0F}, kTickMajorUVE,
-                  skeleton != nullptr ? "Bones" : "Tracks");
+    // The track list's own header: its filter.
+    {
+        char filter[128];
+        std::snprintf(filter, sizeof(filter), "%s", m_timeline.filter.c_str());
+        ImGui::SetCursorScreenPos(ImVec2{origin.x + 4.0F, origin.y + 1.0F});
+        ImGui::SetNextItemWidth(kTrackListWidthUVE - 12.0F);
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2{6.0F, 2.0F});
+        if (ImGui::InputTextWithHint("##tl-filter", skeleton != nullptr ? "Filter bones" : "Filter tracks", filter,
+                                     sizeof(filter))) {
+            m_timeline.filter = filter;
+        }
+        ImGui::PopStyleVar();
+    }
 
     // Scrubbing: drag on the ruler or click in the key area moves the playhead.
     ImGui::SetCursorScreenPos(ImVec2{keysLeft, origin.y});
@@ -556,7 +535,8 @@ void EditorUVE::DrawAnimationTimelineUVE() {
                                            ? (samples.back().timeSeconds - samples.front().timeSeconds) /
                                                  static_cast<double>(samples.size() - 1U)
                                            : duration;
-                const bool dense = spacing * scale < 7.0;
+                // Stacked lanes are thin: keys there read as bars until they are well apart.
+                const bool dense = spacing * scale < (row.channel < 0 ? 18.0 : 7.0);
                 const int first = row.channel < 0 ? 0 : row.channel;
                 const int last = row.channel < 0 ? 2 : row.channel;
                 for (int channel = first; channel <= last; ++channel) {
@@ -668,6 +648,50 @@ void EditorUVE::DrawAnimationTimelineUVE() {
         }
     }
     ImGui::EndChild();
+
+    // ---- Bottom bar: what the colours mean, the clip, and the zoom ----------------------------------
+    ImGui::Separator();
+    for (int channel = 0; channel < 3; ++channel) {
+        if (channel > 0) {
+            ImGui::SameLine(0.0F, 12.0F);
+        }
+        const ImVec2 at = ImGui::GetCursorScreenPos();
+        const float size = ImGui::GetTextLineHeight() * 0.6F;
+        const float top = at.y + (ImGui::GetFrameHeight() - size) * 0.5F;
+        ImGui::GetWindowDrawList()->AddRectFilled(ImVec2{at.x, top}, ImVec2{at.x + size, top + size},
+                                                  kChannelColourUVE[channel], 2.0F);
+        ImGui::Dummy(ImVec2{size + 4.0F, ImGui::GetFrameHeight()});
+        ImGui::SameLine(0.0F, 0.0F);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextDisabled("%s", kChannelNameUVE[channel]);
+    }
+    ImGui::SameLine(0.0F, 24.0F);
+    ImGui::AlignTextToFramePadding();
+    ImGui::Text("%s", clipLabel.c_str());
+    ImGui::SameLine();
+    ImGui::TextDisabled("%.2f s  |  %ld frames  |  %.0f fps  |  %zu tracks", clip->durationSeconds, frameOf(duration),
+                        frameRate, clip->bones.size());
+    const float zoomWidth = 140.0F;
+    const float fitWidth = ImGui::CalcTextSize("Fit").x + ImGui::GetStyle().FramePadding.x * 2.0F;
+    const float rightStart = ImGui::GetWindowContentRegionMax().x - zoomWidth - fitWidth - ImGui::GetStyle().ItemSpacing.x;
+    ImGui::SameLine(std::max(rightStart, ImGui::GetItemRectMax().x - ImGui::GetWindowPos().x + 16.0F));
+    if (ImGui::Button("Fit##tl-fit")) {
+        m_timeline.pixelsPerSecond = 0.0F;
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Show the whole clip");
+    }
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(zoomWidth);
+    float zoom = m_timeline.pixelsPerSecond > 0.0F ? m_timeline.pixelsPerSecond : static_cast<float>(fitScale);
+    if (ImGui::SliderFloat("##tl-zoom", &zoom, static_cast<float>(fitScale), 4000.0F,
+                           m_timeline.pixelsPerSecond <= 0.0F ? "Zoom: fit" : "Zoom: %.0f px/s",
+                           ImGuiSliderFlags_Logarithmic)) {
+        m_timeline.pixelsPerSecond = zoom <= static_cast<float>(fitScale) * 1.001F ? 0.0F : zoom;
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Zoom. Ctrl + wheel over the tracks zooms around the mouse; Shift + wheel pans.");
+    }
 }
 
 } // namespace UVE::Editor
