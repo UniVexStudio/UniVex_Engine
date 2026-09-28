@@ -1,5 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
+#include "uve/asset/animation_clip_asset_uve.h"
 #include "uve/asset/fbx_mesh_converter_uve.h"
 #include "uve/asset/gltf_metadata_uve.h"
 #include "uve/editor/editor_uve.h"
@@ -4681,6 +4682,7 @@ namespace {
         info.rigged = summary->hasSkin;
         info.hasSkeleton = summary->boneCount > 0U;
         info.animationOnly = summary->IsAnimationOnlyUVE();
+        info.animationCount = summary->animationCount;
         if (info.animationOnly) {
             char length[32] = {};
             std::snprintf(length, sizeof(length), "%.2f s", summary->longestAnimationSeconds);
@@ -4711,6 +4713,47 @@ bool EditorUVE::IsRiggedModelSourceUVE(const std::filesystem::path& relativeSour
     return info != nullptr && info->rigged;
 }
 
+std::vector<std::filesystem::path> EditorUVE::ImportModelAnimationsUVE(const std::filesystem::path& absoluteSource) {
+    std::vector<std::filesystem::path> written;
+    std::error_code error;
+    const std::filesystem::file_time_type sourceTime = std::filesystem::last_write_time(absoluteSource, error);
+    if (error) {
+        return written;
+    }
+    std::ifstream file(absoluteSource, std::ios::binary);
+    const std::uintmax_t size = std::filesystem::file_size(absoluteSource, error);
+    if (!file || error || size > Asset::kMaximumFbxMeshSourceBytesUVE) {
+        return written;
+    }
+    const std::vector<char> bytes{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
+    const auto clipPath = [&absoluteSource](const std::string& clipId) {
+        // The take's name as a file name: anything a path cannot hold becomes '_'.
+        std::string safe;
+        for (const char character : clipId) {
+            const bool keep = (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') ||
+                              (character >= '0' && character <= '9') || character == '-' || character == '_' ||
+                              character == ' ';
+            safe.push_back(keep ? character : '_');
+        }
+        return absoluteSource.parent_path() / (absoluteSource.stem().string() + "_" + safe + ".uvanim");
+    };
+    for (const Asset::AnimationClipAssetUVE& clip :
+         Asset::ReadFbxAnimationsUVE(std::as_bytes(std::span<const char>(bytes)), Asset::kMaximumAnimationAssetBonesUVE)) {
+        const std::filesystem::path destination = clipPath(clip.clipId);
+        const std::filesystem::file_time_type existing = std::filesystem::last_write_time(destination, error);
+        if (!error && existing >= sourceTime) {
+            continue; // imported since the FBX last changed
+        }
+        error.clear();
+        if (Asset::SaveAnimationClipAssetUVE(clip, destination)) {
+            written.push_back(destination);
+        } else {
+            UVE_WARNING("EditorUVE: could not write animation {}", destination.string());
+        }
+    }
+    return written;
+}
+
 void EditorUVE::QueueModelAutoImportsUVE(const Asset::ProjectFileSnapshotUVE& snapshot) {
     Asset::IAssetImportQueueUVE& queue = m_services->GetAssetImportQueueUVE();
     m_modelSources.clear();
@@ -4721,6 +4764,9 @@ void EditorUVE::QueueModelAutoImportsUVE(const Asset::ProjectFileSnapshotUVE& sn
         const std::string key = entry.relativePath.generic_string();
         const std::filesystem::path source = snapshot.contentRoot / entry.relativePath;
         const EditorModelSourceInfoUVE& info = m_modelSources[key] = ReadModelSourceInfoUVE(source);
+        if (info.animationCount > 0U && source.extension() == ".fbx") {
+            static_cast<void>(ImportModelAnimationsUVE(source));
+        }
         if (info.animationOnly) {
             continue; // Motion with nothing to draw: there is no mesh to import.
         }

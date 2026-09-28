@@ -21,7 +21,8 @@ namespace UVE::Asset {
 namespace {
 
 using JsonUVE = nlohmann::json;
-constexpr std::string_view kAnimationSchemaUVE = "uve-animation-v1";
+constexpr std::string_view kAnimationSchemaUVE = "uve-animation-v2";
+constexpr std::string_view kAnimationSchemaV1UVE = "uve-animation-v1";
 
 [[nodiscard]] bool IsFinitePoseUVE(const AnimationAssetPoseUVE& pose) noexcept {
     return Math::IsFiniteUVE(pose.position) && Math::IsFiniteUVE(pose.rotation) &&
@@ -77,20 +78,16 @@ constexpr std::string_view kAnimationSchemaUVE = "uve-animation-v1";
     return true;
 }
 
-} // namespace
-
-bool IsAnimationClipAssetValidUVE(const AnimationClipAssetUVE& clip) noexcept {
-    if (clip.clipId.empty() || clip.clipId.size() > kMaximumAnimationAssetIdentifierBytesUVE ||
-        !std::isfinite(clip.durationSeconds) || clip.durationSeconds <= 0.0 || clip.samples.empty() ||
-        clip.samples.size() > kMaximumAnimationAssetSamplesUVE ||
-        clip.events.size() > kMaximumAnimationAssetEventsUVE) {
+/// Times sorted, inside [0, duration], poses finite with a usable rotation.
+[[nodiscard]] bool AreSamplesValidUVE(const std::vector<AnimationAssetSampleUVE>& samples,
+                                      const double durationSeconds) noexcept {
+    if (samples.size() > kMaximumAnimationAssetSamplesUVE) {
         return false;
     }
     double previousTime = -std::numeric_limits<double>::infinity();
-    for (const AnimationAssetSampleUVE& sample : clip.samples) {
-        if (!std::isfinite(sample.timeSeconds) || sample.timeSeconds < 0.0 ||
-            sample.timeSeconds > clip.durationSeconds || sample.timeSeconds < previousTime ||
-            !IsFinitePoseUVE(sample.pose)) {
+    for (const AnimationAssetSampleUVE& sample : samples) {
+        if (!std::isfinite(sample.timeSeconds) || sample.timeSeconds < 0.0 || sample.timeSeconds > durationSeconds ||
+            sample.timeSeconds < previousTime || !IsFinitePoseUVE(sample.pose)) {
             return false;
         }
         Math::QuaternionUVE normalized;
@@ -99,7 +96,66 @@ bool IsAnimationClipAssetValidUVE(const AnimationClipAssetUVE& clip) noexcept {
         }
         previousTime = sample.timeSeconds;
     }
-    previousTime = -std::numeric_limits<double>::infinity();
+    return true;
+}
+
+[[nodiscard]] JsonUVE ToSamplesJsonUVE(const std::vector<AnimationAssetSampleUVE>& samples) {
+    JsonUVE result = JsonUVE::array();
+    for (const AnimationAssetSampleUVE& sample : samples) {
+        result.push_back({{"timeSeconds", sample.timeSeconds},
+                          {"pose", {{"position", ToVectorJsonUVE(sample.pose.position)},
+                                    {"rotation", ToQuaternionJsonUVE(sample.pose.rotation)},
+                                    {"scale", ToVectorJsonUVE(sample.pose.scale)}}}});
+    }
+    return result;
+}
+
+[[nodiscard]] bool ReadSamplesJsonUVE(const JsonUVE& samples, std::vector<AnimationAssetSampleUVE>& outSamples) {
+    if (!samples.is_array() || samples.size() > kMaximumAnimationAssetSamplesUVE) {
+        return false;
+    }
+    outSamples.reserve(samples.size());
+    for (const JsonUVE& value : samples) {
+        if (!value.is_object() || !value.contains("timeSeconds") || !value.contains("pose")) {
+            return false;
+        }
+        AnimationAssetSampleUVE sample;
+        sample.timeSeconds = value.at("timeSeconds").get<double>();
+        if (!ReadPoseJsonUVE(value.at("pose"), sample.pose)) {
+            return false;
+        }
+        outSamples.push_back(std::move(sample));
+    }
+    return true;
+}
+
+} // namespace
+
+bool IsAnimationClipAssetValidUVE(const AnimationClipAssetUVE& clip) noexcept {
+    if (clip.clipId.empty() || clip.clipId.size() > kMaximumAnimationAssetIdentifierBytesUVE ||
+        !std::isfinite(clip.durationSeconds) || clip.durationSeconds <= 0.0 ||
+        clip.events.size() > kMaximumAnimationAssetEventsUVE || clip.bones.size() > kMaximumAnimationAssetBonesUVE ||
+        !AreSamplesValidUVE(clip.samples, clip.durationSeconds)) {
+        return false;
+    }
+    bool anyBoneSamples = false;
+    for (std::size_t index = 0U; index < clip.bones.size(); ++index) {
+        const AnimationAssetBoneTrackUVE& track = clip.bones[index];
+        if (track.bone.empty() || track.bone.size() > kMaximumAnimationAssetIdentifierBytesUVE ||
+            track.bone.contains('\0') || !AreSamplesValidUVE(track.samples, clip.durationSeconds)) {
+            return false;
+        }
+        for (std::size_t other = 0U; other < index; ++other) {
+            if (clip.bones[other].bone == track.bone) {
+                return false; // one track per bone
+            }
+        }
+        anyBoneSamples = anyBoneSamples || !track.samples.empty();
+    }
+    if (clip.samples.empty() && !anyBoneSamples) {
+        return false; // nothing moves
+    }
+    double previousTime = -std::numeric_limits<double>::infinity();
     for (const AnimationAssetEventUVE& event : clip.events) {
         if (!std::isfinite(event.timeSeconds) || event.timeSeconds < 0.0 ||
             event.timeSeconds > clip.durationSeconds || event.timeSeconds < previousTime || event.eventId.empty() ||
@@ -119,12 +175,10 @@ bool SaveAnimationClipAssetUVE(const AnimationClipAssetUVE& clip, const std::fil
     }
     JsonUVE document{{"schema", kAnimationSchemaUVE}, {"clipId", clip.clipId},
                      {"durationSeconds", clip.durationSeconds}, {"samples", JsonUVE::array()},
-                     {"events", JsonUVE::array()}};
-    for (const AnimationAssetSampleUVE& sample : clip.samples) {
-        document["samples"].push_back({{"timeSeconds", sample.timeSeconds},
-                                       {"pose", {{"position", ToVectorJsonUVE(sample.pose.position)},
-                                                  {"rotation", ToQuaternionJsonUVE(sample.pose.rotation)},
-                                                  {"scale", ToVectorJsonUVE(sample.pose.scale)}}}});
+                     {"events", JsonUVE::array()}, {"bones", JsonUVE::array()}};
+    document["samples"] = ToSamplesJsonUVE(clip.samples);
+    for (const AnimationAssetBoneTrackUVE& track : clip.bones) {
+        document["bones"].push_back({{"bone", track.bone}, {"samples", ToSamplesJsonUVE(track.samples)}});
     }
     for (const AnimationAssetEventUVE& event : clip.events) {
         document["events"].push_back({{"timeSeconds", event.timeSeconds}, {"eventId", event.eventId}});
@@ -148,7 +202,8 @@ bool LoadAnimationClipAssetUVE(const std::filesystem::path& path, AnimationClipA
     try {
         const std::string serialized(reinterpret_cast<const char*>(file->second.data()), file->second.size());
         const JsonUVE document = JsonUVE::parse(serialized);
-        if (!document.is_object() || document.value("schema", "") != kAnimationSchemaUVE ||
+        const std::string schema = document.is_object() ? document.value("schema", std::string{}) : std::string{};
+        if (!document.is_object() || (schema != kAnimationSchemaUVE && schema != kAnimationSchemaV1UVE) ||
             !document.contains("clipId") || !document.contains("durationSeconds") ||
             !document.contains("samples") || !document.contains("events")) {
             return false;
@@ -156,23 +211,28 @@ bool LoadAnimationClipAssetUVE(const std::filesystem::path& path, AnimationClipA
         AnimationClipAssetUVE candidate;
         candidate.clipId = document.at("clipId").get<std::string>();
         candidate.durationSeconds = document.at("durationSeconds").get<double>();
-        const JsonUVE& samples = document.at("samples");
         const JsonUVE& events = document.at("events");
-        if (!samples.is_array() || !events.is_array() || samples.size() > kMaximumAnimationAssetSamplesUVE ||
-            events.size() > kMaximumAnimationAssetEventsUVE) {
+        if (!events.is_array() || events.size() > kMaximumAnimationAssetEventsUVE ||
+            !ReadSamplesJsonUVE(document.at("samples"), candidate.samples)) {
             return false;
         }
-        candidate.samples.reserve(samples.size());
-        for (const JsonUVE& value : samples) {
-            if (!value.is_object() || !value.contains("timeSeconds") || !value.contains("pose")) {
+        if (document.contains("bones")) {
+            const JsonUVE& bones = document.at("bones");
+            if (!bones.is_array() || bones.size() > kMaximumAnimationAssetBonesUVE) {
                 return false;
             }
-            AnimationAssetSampleUVE sample;
-            sample.timeSeconds = value.at("timeSeconds").get<double>();
-            if (!ReadPoseJsonUVE(value.at("pose"), sample.pose)) {
-                return false;
+            candidate.bones.reserve(bones.size());
+            for (const JsonUVE& value : bones) {
+                if (!value.is_object() || !value.contains("bone") || !value.contains("samples")) {
+                    return false;
+                }
+                AnimationAssetBoneTrackUVE track;
+                track.bone = value.at("bone").get<std::string>();
+                if (!ReadSamplesJsonUVE(value.at("samples"), track.samples)) {
+                    return false;
+                }
+                candidate.bones.push_back(std::move(track));
             }
-            candidate.samples.push_back(std::move(sample));
         }
         candidate.events.reserve(events.size());
         for (const JsonUVE& value : events) {

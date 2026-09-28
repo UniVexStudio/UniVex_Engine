@@ -249,6 +249,8 @@ struct EditorModelSourceInfoUVE final {
     bool animationOnly = false;
     /// A one-line description for the Content Browser tooltip ("162 bones, 1 animation, 0.27 s").
     std::string summary;
+    /// Takes in the file: each is imported as a `.uvanim` clip beside it.
+    std::size_t animationCount = 0U;
 };
 
 class EditorUVE final {
@@ -467,6 +469,11 @@ public:
     /// Closes the Entity Editor, saving first when `save`, and brings the scene back. After a save,
     /// clean instances of the entity in the scene are refreshed from the file.
     bool CloseEntityEditorUVE(bool save);
+
+    /// Imports every take of the FBX at `absoluteSource` as a skeletal `.uvanim` beside it, named
+    /// "<file>_<take>.uvanim". A clip newer than the FBX is left alone, so this is cheap to call on
+    /// every refresh. Returns the paths written.
+    std::vector<std::filesystem::path> ImportModelAnimationsUVE(const std::filesystem::path& absoluteSource);
 
     /// The Entity Editor's middle area.
     enum class EntityEditorTabUVE : std::uint8_t { Viewport, Scripting, Signals };
