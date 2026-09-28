@@ -465,6 +465,24 @@ void EditorUVE::DrawFilesystemContextPopupUVE() {
     const bool modelReady = !importedModel.empty() && std::filesystem::is_regular_file(importedModel, importedError);
     const bool uvmodel = contextEntry.registeredAssetGuid.has_value() &&
                           contextEntry.relativePath.extension().string() == ".uvmodel";
+    const EditorModelSourceInfoUVE* const sourceInfo =
+        IsModelSourcePathUVE(contextEntry.relativePath) ? FindModelSourceInfoUVE(contextEntry.relativePath) : nullptr;
+    const bool placeable = modelReady || (sourceInfo != nullptr && sourceInfo->hasSkeleton);
+    if (placeable) {
+        ImGui::BeginDisabled(!IsAuthoringCommandAllowedUVE());
+        if (ImGui::MenuItem("Place in Scene")) {
+            if (PlaceModelSourceUVE(contextEntry.relativePath) == Scene::kInvalidEntityUVE &&
+                m_contentStatusMessage.empty()) {
+                m_contentStatusMessage = "Could not place " + contextEntry.relativePath.filename().string() + ".";
+            }
+        }
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort | ImGuiHoveredFlags_AllowWhenDisabled)) {
+            ImGui::SetTooltip(sourceInfo != nullptr && sourceInfo->hasSkeleton
+                                  ? "Adds it with its skeleton and an AnimationPlayer playing its first take."
+                                  : "Adds it as a MeshInstance3D.");
+        }
+    }
     if (modelReady || uvmodel) {
         const bool canAssign = IsDocumentEntityUVE(m_selectedEntity) && IsAuthoringCommandAllowedUVE() &&
                                m_services->GetEntityManagerUVE().HasComponentUVE<Scene::MeshComponentUVE>(m_selectedEntity);
@@ -478,7 +496,7 @@ void EditorUVE::DrawFilesystemContextPopupUVE() {
         }
         ImGui::EndDisabled();
     }
-    if (entityAsset || directory || modelReady || uvmodel) {
+    if (entityAsset || directory || modelReady || uvmodel || placeable) {
         ImGui::Separator();
     }
 

@@ -450,6 +450,18 @@ public:
     [[nodiscard]] Scene::EntityUVE PlaceEntityAssetUVE(const std::filesystem::path& path,
                                                        Scene::EntityUVE parent = Scene::kInvalidEntityUVE);
 
+    /// Brings a model source (an FBX, glTF or OBJ in Content, by its content-relative path) into the
+    /// scene as one undo step and returns its root. A file with bones becomes
+    ///   <File> (Node3D)
+    ///   +- Armature (Node3D)
+    ///   |  +- Skeleton3D          bound to the file's bones
+    ///   |     +- <File> Mesh      (MeshInstance3D, when the file has a mesh)
+    ///   +- AnimationPlayer        playing the file's first take, looping (when it has takes)
+    /// and a file without bones becomes one MeshInstance3D. Refused while the converted mesh a
+    /// file needs is not imported yet.
+    [[nodiscard]] Scene::EntityUVE PlaceModelSourceUVE(const std::filesystem::path& relativeSource,
+                                                       Scene::EntityUVE parent = Scene::kInvalidEntityUVE);
+
     /// The Entity Editor: an entity asset opened on its own, in its own window. While it is open
     /// the entity *is* the document - the scene is put aside in a snapshot (the way Play does),
     /// so every tool (Scene tree, Inspector, gizmos, undo) works on the entity unchanged, and the

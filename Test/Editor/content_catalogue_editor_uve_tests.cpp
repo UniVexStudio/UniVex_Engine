@@ -13,6 +13,8 @@
 
 #include "uve/asset/animation_clip_asset_uve.h"
 #include "uve/component/name_component_uve.h"
+#include "uve/nodes/3d/skeleton_3d_uve.h"
+#include "uve/component/animation_player_component_uve.h"
 #include "uve/component/prefab_instance_component_uve.h"
 #include "uve/component/transform_component_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
@@ -451,6 +453,88 @@ Connections:  {
         ASSERT_EQ(clip.bones.size(), 1U);
         EXPECT_EQ(clip.bones[0].bone, "Hips");
         EXPECT_TRUE(editor.ImportModelAnimationsUVE(source).empty()) << "up to date: nothing written again";
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
+TEST(ContentCatalogueEditorUVETest, PlacingAnAnimationFbxBuildsItsSkeletonAndPlayer) {
+    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("place_model");
+    const std::string fbx = R"(; FBX 7.4.0 project file
+FBXHeaderExtension:  {
+	FBXVersion: 7400
+}
+Objects:  {
+	Model: 3000, "Model::Hips", "LimbNode" {
+		Version: 232
+	}
+	NodeAttribute: 3100, "NodeAttribute::Hips", "LimbNode" {
+		TypeFlags: "Skeleton"
+	}
+	AnimationStack: 5000, "AnimStack::Armature|Run", "" {
+		Properties70:  {
+			P: "LocalStart", "KTime", "Time", "",0
+			P: "LocalStop", "KTime", "Time", "",46186158000
+		}
+	}
+	AnimationLayer: 5100, "AnimLayer::Base", "" {
+	}
+}
+Connections:  {
+	C: "OO",3100,3000
+	C: "OO",3000,0
+	C: "OO",5100,5000
+}
+)";
+    Core::EngineCoreUVE engine(MakeCatalogueEditorConfigUVE(root));
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    // Written where this project's Content Browser looks.
+    const std::filesystem::path content = engine.GetServicesUVE().GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot;
+    std::filesystem::create_directories(content / "Anims");
+    {
+        std::ofstream out(content / "Anims" / "Hero.FBX", std::ios::binary);
+        out << fbx;
+    }
+    {
+        EditorUVE editor(engine.GetServicesUVE(), root / "main.uvscene", 100U, &engine);
+        editor.InitUVE();
+        Core::EngineServicesUVE& services = engine.GetServicesUVE();
+        Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
+        ASSERT_TRUE(services.GetProjectFileIndexUVE().RefreshUVE(services.GetAssetDatabaseUVE()));
+        const Scene::EntityUVE placed = editor.PlaceModelSourceUVE("Anims/Hero.FBX");
+        ASSERT_NE(placed, Scene::kInvalidEntityUVE);
+
+        // Hero (Node3D) > { Armature (Node3D) > Skeleton3D, AnimationPlayer }
+        const auto nameOf = [&entityManager](const Scene::EntityUVE entity) {
+            return entityManager.GetComponentUVE<Scene::NameComponentUVE>(entity).name;
+        };
+        EXPECT_EQ(nameOf(placed), "Hero");
+        EXPECT_EQ(Scene::ResolveSceneNodeKindUVE(entityManager, placed), Kind::Node3D);
+        const std::vector<Scene::EntityUVE> children = services.GetSceneGraphUVE().GetChildrenUVE(entityManager, placed);
+        ASSERT_EQ(children.size(), 2U);
+        EXPECT_EQ(nameOf(children[0]), "Armature");
+        EXPECT_EQ(Scene::ResolveSceneNodeKindUVE(entityManager, children[0]), Kind::Node3D);
+        const std::vector<Scene::EntityUVE> skeletons = services.GetSceneGraphUVE().GetChildrenUVE(entityManager, children[0]);
+        ASSERT_EQ(skeletons.size(), 1U);
+        ASSERT_TRUE(entityManager.HasComponentUVE<Scene::Skeleton3DNodeComponentUVE>(skeletons[0]));
+        const Scene::Skeleton3DNodeComponentUVE& skeleton =
+            entityManager.GetComponentUVE<Scene::Skeleton3DNodeComponentUVE>(skeletons[0]);
+        EXPECT_EQ(skeleton.skeletonAssetPath, "Anims/Hero.FBX");
+        ASSERT_EQ(skeleton.bones.size(), 1U);
+        EXPECT_EQ(skeleton.bones[0].name, "Hips");
+        EXPECT_TRUE(services.GetSceneGraphUVE().GetChildrenUVE(entityManager, skeletons[0]).empty())
+            << "an animation file has no mesh";
+        ASSERT_TRUE(entityManager.HasComponentUVE<Scene::AnimationPlayerComponentUVE>(children[1]));
+        const Scene::AnimationPlayerComponentUVE& player =
+            entityManager.GetComponentUVE<Scene::AnimationPlayerComponentUVE>(children[1]);
+        EXPECT_NE(player.clip, Asset::kInvalidAssetGuidUVE);
+        EXPECT_EQ(player.loopMode, Scene::AnimationLoopModeUVE::Loop);
+        EXPECT_TRUE(std::filesystem::exists(content / "Anims" / "Hero_Run.uvanim"));
+
+        // One undo removes the whole placement.
+        ASSERT_TRUE(editor.UndoUVE());
+        EXPECT_FALSE(entityManager.IsAliveUVE(placed));
         editor.ShutdownUVE();
     }
     engine.Shutdown();
