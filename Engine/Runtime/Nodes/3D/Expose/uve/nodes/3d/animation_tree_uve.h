@@ -4,6 +4,7 @@
 
 #include <functional>
 #include <string_view>
+#include <vector>
 
 #include "uve/asset/asset_guid_uve.h"
 #include "uve/component/animation_mixer_component_uve.h"
@@ -61,6 +62,16 @@ using AnimationClipResolverUVE = std::function<const Asset::AnimationClipAssetUV
 [[nodiscard]] bool StepSkeletalAnimationTreeUVE(AnimationTreeComponentUVE& tree, const AnimationClipResolverUVE& clips,
                                                 float deltaSeconds, Skeleton3DNodeComponentUVE& skeleton,
                                                 const AnimationMixerComponentUVE& mixer = {});
+
+/// A Blend Space 1D's weight for each of its (rising) points at `at`: the two either side share it
+/// by distance; before the first or past the last, that end takes everything.
+[[nodiscard]] std::vector<float> AnimationBlendSpace1DWeightsUVE(const std::vector<float>& points, float at);
+
+/// A Blend Space 2D's weight for each of its points at `at`, adding up to one: gradient band
+/// interpolation, which suits points laid out anywhere (no grid or triangle layout needed). A
+/// position on a point gives it everything.
+[[nodiscard]] std::vector<float> AnimationBlendSpace2DWeightsUVE(const std::vector<Math::Vector2UVE>& points,
+                                                                 Math::Vector2UVE at);
 
 /// Puts every node back to its start: clips at 0, state machines in their entry state.
 void ResetAnimationTreeUVE(AnimationTreeComponentUVE& tree);

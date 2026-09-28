@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cfloat>
 #include <iterator>
 #include <string_view>
 #include <cmath>
@@ -86,6 +87,28 @@ struct ResultUVE final {
     return mixed;
 }
 
+/// Mixes many results by weights that need not add up to one: each joins the running mix in
+/// proportion to its share so far, so the outcome is the weighted average.
+[[nodiscard]] ResultUVE MixManyUVE(const std::vector<ResultUVE>& results, const std::vector<float>& weights) {
+    ResultUVE mixed;
+    float total = 0.0F;
+    float heaviest = -1.0F;
+    for (std::size_t index = 0U; index < results.size(); ++index) {
+        const float weight = weights[index];
+        if (weight <= 0.0F || !results[index].pose.has_value()) {
+            continue;
+        }
+        total += weight;
+        mixed = mixed.pose.has_value() ? MixUVE(mixed, results[index], weight / total) : results[index];
+        if (weight > heaviest) {
+            heaviest = weight;
+            mixed.atEnd = results[index].atEnd;
+            mixed.phase = results[index].phase;
+        }
+    }
+    return mixed;
+}
+
 class EvaluatorUVE final {
 public:
     /// `skeleton` null: the graph animates one node, its clips' own node track.
@@ -124,13 +147,21 @@ public:
                 return EvaluatePairUVE(node, deltaSeconds, weight, phase,
                                        std::clamp(ReadUVE(node.parameter, node.value), 0.0F, 1.0F));
             case Kind::BlendSpace1D:
-                return EvaluateBlendSpaceUVE(node, deltaSeconds, weight, phase);
+                return EvaluateBlendSpaceUVE(node, state, deltaSeconds, weight, phase);
             case Kind::Additive:
                 return EvaluateAdditiveUVE(node, deltaSeconds, weight, phase);
             case Kind::OneShot:
                 return EvaluateOneShotUVE(node, state, deltaSeconds, weight);
             case Kind::StateMachine:
                 return EvaluateStateMachineUVE(node, state, deltaSeconds, weight);
+            case Kind::BlendSpace2D:
+                return EvaluateBlendSpace2DUVE(node, state, deltaSeconds, weight, phase);
+            case Kind::Select:
+                return EvaluateSelectUVE(node, state, deltaSeconds, weight);
+            case Kind::LayeredBlend:
+                return EvaluateLayeredBlendUVE(index, node, deltaSeconds, weight, phase);
+            case Kind::TimeSeek:
+                return EvaluateTimeSeekUVE(node, deltaSeconds, weight, phase);
         }
         return {};
     }
@@ -232,24 +263,31 @@ private:
     [[nodiscard]] ResultUVE EvaluateClipUVE(const AnimationGraphNodeUVE& node, AnimationGraphNodeStateUVE& state,
                                             const float deltaSeconds, const float weight,
                                             const std::optional<float> phase) {
-        const Asset::AnimationClipAssetUVE* const clip = m_clips ? m_clips(node.clip) : nullptr;
+        return PlayClipUVE(node.clip, node.speed, node.loop, state.timeSeconds, state.started, deltaSeconds, weight, phase);
+    }
+
+    /// Plays a clip on its own clock (`timeSeconds`, `started`): a Clip node's, or a blend point's.
+    [[nodiscard]] ResultUVE PlayClipUVE(const Asset::AssetGuidUVE clipGuid, const float speed, const bool loop,
+                                        double& timeSeconds, bool& started, const float deltaSeconds, const float weight,
+                                        const std::optional<float> phase) {
+        const Asset::AnimationClipAssetUVE* const clip = m_clips ? m_clips(clipGuid) : nullptr;
         const bool skeletal = m_skeleton != nullptr;
         if (clip == nullptr || !(clip->durationSeconds > 0.0) || (skeletal ? !clip->IsSkeletalUVE() : clip->samples.empty())) {
             return {};
         }
         const double duration = clip->durationSeconds;
-        const double before = state.timeSeconds;
-        const bool forward = node.speed >= 0.0F;
+        const double before = timeSeconds;
+        const bool forward = speed >= 0.0F;
         double time = before;
         bool atEnd = false;
         bool wrapped = false;
         if (phase.has_value()) {
             // Led by a syncing parent: this clip is where the leader is, in proportion.
             time = std::clamp(static_cast<double>(*phase), 0.0, 1.0) * duration;
-            wrapped = node.loop && (forward ? time < before : time > before);
+            wrapped = loop && (forward ? time < before : time > before);
         } else {
-            time = before + static_cast<double>(deltaSeconds) * static_cast<double>(node.speed);
-            if (node.loop) {
+            time = before + static_cast<double>(deltaSeconds) * static_cast<double>(speed);
+            if (loop) {
                 wrapped = time >= duration || time < 0.0;
                 atEnd = wrapped;
                 time = std::fmod(time, duration);
@@ -261,9 +299,9 @@ private:
                 time = std::clamp(time, 0.0, duration);
             }
         }
-        const bool firstStep = !state.started;
-        state.started = true;
-        state.timeSeconds = time;
+        const bool firstStep = !started;
+        started = true;
+        timeSeconds = time;
         if (weight >= 0.5F) {
             std::vector<std::string> passed =
                 CollectPassedAnimationEventsUVE(clip->events, before, time, duration, forward, wrapped, firstStep);
@@ -327,49 +365,53 @@ private:
         return MixUVE(results[0], results[1], mix);
     }
 
-    [[nodiscard]] ResultUVE EvaluateBlendSpaceUVE(const AnimationGraphNodeUVE& node, const float deltaSeconds,
-                                                  const float weight, const std::optional<float> phase) {
-        const std::vector<float>& points = node.points;
-        const float x = ReadUVE(node.parameter, node.value);
-        std::size_t left = 0U;
-        std::size_t right = 0U;
-        float mix = 0.0F;
-        if (x >= points.back()) {
-            left = right = points.size() - 1U;
-        } else if (x > points.front()) {
-            right = static_cast<std::size_t>(std::upper_bound(points.begin(), points.end(), x) - points.begin());
-            left = right - 1U;
-            mix = (x - points[left]) / (points[right] - points[left]);
+    /// Plays a blend space's points by `weights`: every point's clock runs (so each keeps its place
+    /// in its cycle while unseen), or with sync the heaviest leads and the others take its phase.
+    [[nodiscard]] ResultUVE PlayBlendPointsUVE(const AnimationGraphNodeUVE& node, AnimationGraphNodeStateUVE& state,
+                                               const std::vector<float>& weights, const float deltaSeconds,
+                                               const float weight, const std::optional<float> phase) {
+        const std::size_t count = node.blendPoints.size();
+        if (count == 0U) {
+            return {};
         }
-        const auto shareOf = [&](const std::size_t slot) {
-            float share = 0.0F;
-            if (slot == left) {
-                share += left == right ? 1.0F : 1.0F - mix;
-            }
-            if (slot == right && right != left) {
-                share += mix;
-            }
-            return share;
+        if (state.pointTimes.size() != count) {
+            state.pointTimes.assign(count, 0.0);
+            state.pointStarted.assign(count, false);
+        }
+        std::vector<ResultUVE> results(count);
+        const auto play = [&](const std::size_t slot, const std::optional<float> at) {
+            const AnimationBlendPointUVE& point = node.blendPoints[slot];
+            bool started = state.pointStarted[slot];
+            results[slot] = PlayClipUVE(point.clip, point.speed, point.loop, state.pointTimes[slot], started, deltaSeconds,
+                                        weight * weights[slot], at);
+            state.pointStarted[slot] = started;
         };
-        // Every input advances, so each keeps its place in its cycle while it is not being shown;
-        // with sync they all follow the heaviest one instead.
-        std::vector<ResultUVE> results(node.inputs.size());
-        std::optional<float> leadPhase = phase;
         if (node.sync && !phase.has_value()) {
-            const std::size_t leader = mix < 0.5F ? left : right;
-            results[leader] = EvaluateInputUVE(node, leader, deltaSeconds, weight * shareOf(leader), std::nullopt);
-            leadPhase = results[leader].phase;
-            for (std::size_t slot = 0U; slot < results.size(); ++slot) {
+            const auto leader = static_cast<std::size_t>(std::max_element(weights.begin(), weights.end()) - weights.begin());
+            play(leader, std::nullopt);
+            for (std::size_t slot = 0U; slot < count; ++slot) {
                 if (slot != leader) {
-                    results[slot] = EvaluateInputUVE(node, slot, deltaSeconds, weight * shareOf(slot), leadPhase);
+                    play(slot, results[leader].phase);
                 }
             }
         } else {
-            for (std::size_t slot = 0U; slot < results.size(); ++slot) {
-                results[slot] = EvaluateInputUVE(node, slot, deltaSeconds, weight * shareOf(slot), leadPhase);
+            for (std::size_t slot = 0U; slot < count; ++slot) {
+                play(slot, phase);
             }
         }
-        return left == right ? results[left] : MixUVE(results[left], results[right], mix);
+        return MixManyUVE(results, weights);
+    }
+
+    [[nodiscard]] ResultUVE EvaluateBlendSpaceUVE(const AnimationGraphNodeUVE& node, AnimationGraphNodeStateUVE& state,
+                                                  const float deltaSeconds, const float weight,
+                                                  const std::optional<float> phase) {
+        std::vector<float> positions;
+        positions.reserve(node.blendPoints.size());
+        for (const AnimationBlendPointUVE& point : node.blendPoints) {
+            positions.push_back(point.position.x);
+        }
+        return PlayBlendPointsUVE(node, state, AnimationBlendSpace1DWeightsUVE(positions, ReadUVE(node.parameter, node.value)),
+                                  deltaSeconds, weight, phase);
     }
 
     [[nodiscard]] ResultUVE EvaluateAdditiveUVE(const AnimationGraphNodeUVE& node, const float deltaSeconds,
@@ -462,14 +504,10 @@ private:
         return false;
     }
 
-    [[nodiscard]] ResultUVE EvaluateStateMachineUVE(const AnimationGraphNodeUVE& node, AnimationGraphNodeStateUVE& state,
-                                                    const float deltaSeconds, const float weight) {
-        if (!state.started) {
-            state.started = true;
-            state.activeState = node.entryState;
-            state.previousState = kAnyAnimationStateUVE;
-        }
-        // Crossfading: the state being left still plays, fading out.
+    /// The input a switching node (StateMachine, Select) shows: the active one, still crossfading
+    /// from the one it left, or inertializing the difference from the pose it replaced.
+    [[nodiscard]] ResultUVE PlayActiveInputUVE(const AnimationGraphNodeUVE& node, AnimationGraphNodeStateUVE& state,
+                                               const float deltaSeconds, const float weight) {
         float fade = 1.0F;
         if (state.previousState != kAnyAnimationStateUVE) {
             state.fadeElapsedSeconds += deltaSeconds;
@@ -485,7 +523,7 @@ private:
                 state.previousState = kAnyAnimationStateUVE;
             }
         }
-        // Inertialized: the entered state plays at full weight with the old pose's difference fading.
+        result.atEnd = activeAtEnd;
         if (state.inertialSeconds > 0.0F && result.pose.has_value() && state.inertialPosition.size() == result.pose->size()) {
             state.inertialElapsedSeconds += deltaSeconds;
             const float decay = AnimationInertialDecayUVE(state.inertialElapsedSeconds / state.inertialSeconds);
@@ -496,60 +534,188 @@ private:
                 out.scale = out.scale + state.inertialScale[index] * decay;
             }
             if (state.inertialElapsedSeconds >= state.inertialSeconds) {
-                state.inertialSeconds = 0.0F;
-                state.inertialPosition.clear();
-                state.inertialRotation.clear();
-                state.inertialScale.clear();
+                ClearInertialUVE(state);
             }
         }
+        return result;
+    }
 
+    static void ClearInertialUVE(AnimationGraphNodeStateUVE& state) {
+        state.inertialSeconds = 0.0F;
+        state.inertialElapsedSeconds = 0.0F;
+        state.inertialPosition.clear();
+        state.inertialRotation.clear();
+        state.inertialScale.clear();
+    }
+
+    /// Makes input `to` the active one over `fadeSeconds`, handing over from `showing` (the pose
+    /// shown this step): inertialized or crossfaded as the mixer says.
+    void SwitchInputUVE(const AnimationGraphNodeUVE& node, AnimationGraphNodeStateUVE& state, const std::uint32_t to,
+                        const float fadeSeconds, const bool restart, const ResultUVE& showing) {
+        const std::uint32_t leaving = state.activeState;
+        const std::optional<std::size_t> entered = to < node.inputs.size() ? IndexOfUVE(node.inputs[to]) : std::nullopt;
+        if (restart && entered.has_value()) {
+            ResetSubtreeUVE(*entered);
+        }
+        state.activeState = to;
+        state.fadeElapsedSeconds = 0.0F;
+        state.fadeSeconds = fadeSeconds;
+        ClearInertialUVE(state);
+        const bool inertialize = m_mixer.transition == AnimationTransitionModeUVE::Inertialize && fadeSeconds > 0.0F;
+        if (inertialize) {
+            state.previousState = kAnyAnimationStateUVE;
+            if (!entered.has_value() || !showing.pose.has_value()) {
+                return;
+            }
+            // Hand over now: how far the pose showing is from where the new input starts.
+            const ResultUVE fresh = EvaluateUVE(*entered, 0.0F, 0.0F, std::nullopt);
+            if (!fresh.pose.has_value() || fresh.pose->size() != showing.pose->size()) {
+                return;
+            }
+            const std::size_t count = showing.pose->size();
+            state.inertialPosition.resize(count);
+            state.inertialRotation.resize(count);
+            state.inertialScale.resize(count);
+            for (std::size_t index = 0U; index < count; ++index) {
+                const PoseUVE& from = (*showing.pose)[index];
+                const PoseUVE& onto = (*fresh.pose)[index];
+                state.inertialPosition[index] = from.position - onto.position;
+                state.inertialRotation[index] = Math::MultiplyUVE(from.rotation, InverseOrIdentityUVE(onto.rotation));
+                state.inertialScale[index] = from.scale - onto.scale;
+            }
+            state.inertialSeconds = fadeSeconds;
+        } else {
+            state.previousState = fadeSeconds > 0.0F && leaving != to ? leaving : kAnyAnimationStateUVE;
+        }
+    }
+
+    [[nodiscard]] ResultUVE EvaluateStateMachineUVE(const AnimationGraphNodeUVE& node, AnimationGraphNodeStateUVE& state,
+                                                    const float deltaSeconds, const float weight) {
+        if (!state.started) {
+            state.started = true;
+            state.activeState = node.entryState;
+            state.previousState = kAnyAnimationStateUVE;
+        }
+        const ResultUVE result = PlayActiveInputUVE(node, state, deltaSeconds, weight);
         // The first transition out of the active state whose condition holds is taken. A move to
         // the state already active is ignored, so an "any state" transition cannot restart itself.
         for (const AnimationTransitionUVE& transition : node.transitions) {
             const bool fromHere =
                 transition.fromState == kAnyAnimationStateUVE || transition.fromState == state.activeState;
-            if (!fromHere || transition.toState == state.activeState || !ConditionHoldsUVE(transition, activeAtEnd)) {
+            if (!fromHere || transition.toState == state.activeState || !ConditionHoldsUVE(transition, result.atEnd)) {
                 continue;
             }
-            const std::uint32_t leaving = state.activeState;
-            const std::optional<std::size_t> entered = IndexOfUVE(node.inputs[transition.toState]);
-            if (entered.has_value()) {
-                ResetSubtreeUVE(*entered);
-            }
-            state.activeState = transition.toState;
-            state.fadeElapsedSeconds = 0.0F;
-            state.fadeSeconds = transition.fadeSeconds;
-            state.inertialSeconds = 0.0F;
-            state.inertialPosition.clear();
-            state.inertialRotation.clear();
-            state.inertialScale.clear();
-            const bool inertialize =
-                m_mixer.transition == AnimationTransitionModeUVE::Inertialize && transition.fadeSeconds > 0.0F;
-            if (inertialize && entered.has_value() && result.pose.has_value()) {
-                // Hand over now: how far the pose showing is from where the new state starts.
-                const ResultUVE fresh = EvaluateUVE(*entered, 0.0F, 0.0F, std::nullopt);
-                if (fresh.pose.has_value() && fresh.pose->size() == result.pose->size()) {
-                    const std::size_t count = result.pose->size();
-                    state.inertialPosition.resize(count);
-                    state.inertialRotation.resize(count);
-                    state.inertialScale.resize(count);
-                    for (std::size_t index = 0U; index < count; ++index) {
-                        const PoseUVE& from = (*result.pose)[index];
-                        const PoseUVE& to = (*fresh.pose)[index];
-                        state.inertialPosition[index] = from.position - to.position;
-                        state.inertialRotation[index] = Math::MultiplyUVE(from.rotation, InverseOrIdentityUVE(to.rotation));
-                        state.inertialScale[index] = from.scale - to.scale;
-                    }
-                    state.inertialSeconds = transition.fadeSeconds;
-                    state.inertialElapsedSeconds = 0.0F;
-                }
-                state.previousState = kAnyAnimationStateUVE;
-            } else {
-                state.previousState = transition.fadeSeconds > 0.0F ? leaving : kAnyAnimationStateUVE;
-            }
+            SwitchInputUVE(node, state, transition.toState, transition.fadeSeconds, true, result);
             break;
         }
         return result;
+    }
+
+    [[nodiscard]] ResultUVE EvaluateSelectUVE(const AnimationGraphNodeUVE& node, AnimationGraphNodeStateUVE& state,
+                                              const float deltaSeconds, const float weight) {
+        const float value = ReadUVE(node.parameter, node.value);
+        const auto last = static_cast<float>(node.inputs.size() - 1U);
+        const auto picked = static_cast<std::uint32_t>(std::clamp(std::round(std::isfinite(value) ? value : 0.0F), 0.0F, last));
+        if (!state.started) {
+            state.started = true;
+            state.activeState = picked;
+            state.previousState = kAnyAnimationStateUVE;
+        }
+        const ResultUVE result = PlayActiveInputUVE(node, state, deltaSeconds, weight);
+        if (picked != state.activeState) {
+            SwitchInputUVE(node, state, picked, node.fadeSeconds, node.restart, result);
+        }
+        return result;
+    }
+
+    [[nodiscard]] ResultUVE EvaluateBlendSpace2DUVE(const AnimationGraphNodeUVE& node, AnimationGraphNodeStateUVE& state,
+                                                    const float deltaSeconds, const float weight,
+                                                    const std::optional<float> phase) {
+        std::vector<Math::Vector2UVE> positions;
+        positions.reserve(node.blendPoints.size());
+        for (const AnimationBlendPointUVE& point : node.blendPoints) {
+            positions.push_back(point.position);
+        }
+        const Math::Vector2UVE at{ReadUVE(node.parameter, node.value), ReadUVE(node.parameterY, node.valueY)};
+        return PlayBlendPointsUVE(node, state, AnimationBlendSpace2DWeightsUVE(positions, at), deltaSeconds, weight, phase);
+    }
+
+    /// 1 for a bone the layer reaches (a named bone or any bone under one), else 0; the one node
+    /// channel always. Bones are parents first, so one pass settles every branch.
+    [[nodiscard]] const std::vector<float>& LayerMaskUVE(const std::size_t index, const AnimationGraphNodeUVE& node) {
+        auto [it, added] = m_masks.try_emplace(index);
+        if (!added) {
+            return it->second;
+        }
+        std::vector<float>& mask = it->second;
+        if (m_skeleton == nullptr) {
+            mask.assign(1U, 1.0F);
+            return mask;
+        }
+        const std::vector<SkeletonBoneUVE>& bones = m_skeleton->bones;
+        mask.assign(bones.size(), node.bones.empty() ? 1.0F : 0.0F);
+        if (node.bones.empty()) {
+            return mask;
+        }
+        for (std::size_t bone = 0U; bone < bones.size(); ++bone) {
+            const bool named = std::ranges::find(node.bones, bones[bone].name) != node.bones.end();
+            const std::int32_t parent = bones[bone].parentIndex;
+            const bool underNamed = parent >= 0 && static_cast<std::size_t>(parent) < bone && mask[static_cast<std::size_t>(parent)] > 0.0F;
+            mask[bone] = named || underNamed ? 1.0F : 0.0F;
+        }
+        return mask;
+    }
+
+    [[nodiscard]] ResultUVE EvaluateLayeredBlendUVE(const std::size_t index, const AnimationGraphNodeUVE& node,
+                                                    const float deltaSeconds, const float weight,
+                                                    const std::optional<float> phase) {
+        const float amount = std::clamp(ReadUVE(node.parameter, node.value), 0.0F, 1.0F);
+        const ResultUVE base = EvaluateInputUVE(node, 0U, deltaSeconds, weight, phase);
+        const ResultUVE layer = EvaluateInputUVE(node, 1U, deltaSeconds, weight * amount,
+                                                 node.sync && !phase.has_value() ? base.phase : phase);
+        if (!base.pose.has_value()) {
+            return layer;
+        }
+        if (!layer.pose.has_value() || layer.pose->size() != base.pose->size() || amount <= 0.0F) {
+            return base;
+        }
+        const std::vector<float>& mask = LayerMaskUVE(index, node);
+        ResultUVE result = base;
+        for (std::size_t channel = 0U; channel < result.pose->size() && channel < mask.size(); ++channel) {
+            if (mask[channel] > 0.0F) {
+                (*result.pose)[channel] = MixPoseUVE((*base.pose)[channel], (*layer.pose)[channel], amount * mask[channel]);
+            }
+        }
+        return result;
+    }
+
+    /// Puts every clip under `index` at `seconds` (clamped to each clip), as if it had played there.
+    void SeekSubtreeUVE(const std::size_t index, const double seconds) {
+        const AnimationGraphNodeUVE& node = m_tree.nodes[index];
+        AnimationGraphNodeStateUVE& state = m_tree.nodeStates[index];
+        if (node.kind == Kind::Clip) {
+            const Asset::AnimationClipAssetUVE* const clip = m_clips ? m_clips(node.clip) : nullptr;
+            const double duration = clip != nullptr ? std::max(clip->durationSeconds, 0.0) : 0.0;
+            state.timeSeconds = std::clamp(seconds, 0.0, duration);
+            state.started = true;
+            return;
+        }
+        for (const std::uint32_t input : node.inputs) {
+            if (const std::optional<std::size_t> child = IndexOfUVE(input)) {
+                SeekSubtreeUVE(*child, seconds);
+            }
+        }
+    }
+
+    [[nodiscard]] ResultUVE EvaluateTimeSeekUVE(const AnimationGraphNodeUVE& node, const float deltaSeconds,
+                                                const float weight, const std::optional<float> phase) {
+        if (ConsumeTriggerUVE(node.parameter)) {
+            if (const std::optional<std::size_t> child = IndexOfUVE(node.inputs[0])) {
+                SeekSubtreeUVE(*child, static_cast<double>(std::max(node.value, 0.0F)));
+                return EvaluateUVE(*child, 0.0F, weight, std::nullopt);
+            }
+        }
+        return EvaluateInputUVE(node, 0U, deltaSeconds, weight, phase);
     }
 
     AnimationTreeComponentUVE& m_tree;
@@ -561,6 +727,7 @@ private:
                        std::unordered_map<std::string_view, const Asset::AnimationAssetBoneTrackUVE*>>
         m_tracks;
     std::vector<std::string> m_events;
+    std::unordered_map<std::size_t, std::vector<float>> m_masks;
 };
 
 /// Runs one step: shape check, evaluation, and the tree's per-step outputs. The pose, or nothing.
@@ -669,6 +836,77 @@ bool StepSkeletalAnimationTreeUVE(AnimationTreeComponentUVE& tree, const Animati
     }
     skeleton.pose = std::move(current);
     return true;
+}
+
+std::vector<float> AnimationBlendSpace2DWeightsUVE(const std::vector<Math::Vector2UVE>& points,
+                                                  const Math::Vector2UVE at) {
+    std::vector<float> weights(points.size(), 0.0F);
+    if (points.empty()) {
+        return weights;
+    }
+    if (points.size() == 1U) {
+        weights[0] = 1.0F;
+        return weights;
+    }
+    // Gradient band interpolation: each point's influence is how far the position still is from
+    // crossing over to any other point, the least of those; then everything is normalized.
+    float total = 0.0F;
+    for (std::size_t i = 0U; i < points.size(); ++i) {
+        const Math::Vector2UVE toAt = at - points[i];
+        float influence = 1.0F;
+        for (std::size_t j = 0U; j < points.size(); ++j) {
+            if (j == i) {
+                continue;
+            }
+            const Math::Vector2UVE toOther = points[j] - points[i];
+            const float lengthSquared = toOther.x * toOther.x + toOther.y * toOther.y;
+            if (lengthSquared <= 1.0e-12F) {
+                continue;
+            }
+            const float along = (toAt.x * toOther.x + toAt.y * toOther.y) / lengthSquared;
+            influence = std::min(influence, 1.0F - along);
+        }
+        weights[i] = std::max(influence, 0.0F);
+        total += weights[i];
+    }
+    if (total <= 0.0F) {
+        // Outside every band (cannot happen for finite input, but stay safe): the nearest point.
+        std::size_t nearest = 0U;
+        float best = FLT_MAX;
+        for (std::size_t i = 0U; i < points.size(); ++i) {
+            const Math::Vector2UVE d = at - points[i];
+            const float distance = d.x * d.x + d.y * d.y;
+            if (distance < best) {
+                best = distance;
+                nearest = i;
+            }
+        }
+        std::fill(weights.begin(), weights.end(), 0.0F);
+        weights[nearest] = 1.0F;
+        return weights;
+    }
+    for (float& weight : weights) {
+        weight /= total;
+    }
+    return weights;
+}
+
+std::vector<float> AnimationBlendSpace1DWeightsUVE(const std::vector<float>& points, const float at) {
+    std::vector<float> weights(points.size(), 0.0F);
+    if (points.empty()) {
+        return weights;
+    }
+    if (at <= points.front()) {
+        weights.front() = 1.0F;
+    } else if (at >= points.back()) {
+        weights.back() = 1.0F;
+    } else {
+        const auto right = static_cast<std::size_t>(std::upper_bound(points.begin(), points.end(), at) - points.begin());
+        const float mix = (at - points[right - 1U]) / (points[right] - points[right - 1U]);
+        weights[right - 1U] = 1.0F - mix;
+        weights[right] = mix;
+    }
+    return weights;
 }
 
 } // namespace UVE::Scene

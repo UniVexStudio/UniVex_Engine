@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -25,7 +26,8 @@ namespace UVE::Editor {
 [[nodiscard]] std::string AnimationGraphSlotLabelUVE(Scene::AnimationGraphNodeKindUVE kind, std::size_t slot);
 
 /// Adds a node of `kind` at `position` with the empty input slots the kind needs (two for Blend,
-/// Additive, One Shot and Blend Space, one for Time Scale and State Machine). Returns its id, or 0
+/// Additive, One Shot, Select and Layered Blend; one for Time Scale, Time Seek and State Machine).
+/// A Blend Space starts with no points and no inputs: its editor adds them. Returns its id, or 0
 /// for Output (a graph has exactly one) or a full graph.
 std::uint32_t AddAnimationGraphNodeUVE(std::vector<Scene::AnimationGraphNodeUVE>& nodes,
                                        Scene::AnimationGraphNodeKindUVE kind, Math::Vector2UVE position);
@@ -56,13 +58,29 @@ std::vector<std::uint32_t> DuplicateAnimationGraphNodesUVE(std::vector<Scene::An
                                                            const std::vector<std::uint32_t>& ids,
                                                            Math::Vector2UVE offset);
 
-/// Adds an empty input slot to a Blend Space (with a point one past the last) or a State Machine.
+/// Adds an empty input slot to a Select or a State Machine.
 /// False for other kinds or at the input limit.
 bool AddAnimationGraphInputSlotUVE(std::vector<Scene::AnimationGraphNodeUVE>& nodes, std::uint32_t target);
 
-/// Removes input `slot` of a Blend Space or State Machine, keeping at least one. A State Machine's
+/// Removes input `slot` of a Select or State Machine, keeping one. A State Machine's
 /// transitions touching that state go, later states shift down, and the entry state stays in range.
 bool RemoveAnimationGraphInputSlotUVE(std::vector<Scene::AnimationGraphNodeUVE>& nodes, std::uint32_t target,
                                       std::size_t slot);
+
+// ---- Blend Spaces hold their animations as points, not graph inputs ----------------------------
+
+/// Adds a point at `position` playing `clip` (empty: pick it later). A 1D space uses x only and
+/// keeps its points rising, so the point lands in order. Returns its index, or nothing when
+/// `space` is not a blend space, is full, or a point is already there.
+std::optional<std::size_t> AddBlendSpacePointUVE(std::vector<Scene::AnimationGraphNodeUVE>& nodes, std::uint32_t space,
+                                                 Math::Vector2UVE position, Asset::AssetGuidUVE clip);
+
+/// Removes point `slot`. False for a bad slot.
+bool RemoveBlendSpacePointUVE(std::vector<Scene::AnimationGraphNodeUVE>& nodes, std::uint32_t space, std::size_t slot);
+
+/// Moves point `slot` to `position`. A 1D point stays between its neighbours; a 2D point may not
+/// land on another. Returns false, changing nothing, when it cannot move there.
+bool MoveBlendSpacePointUVE(std::vector<Scene::AnimationGraphNodeUVE>& nodes, std::uint32_t space, std::size_t slot,
+                            Math::Vector2UVE position);
 
 } // namespace UVE::Editor
