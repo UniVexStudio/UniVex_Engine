@@ -559,11 +559,16 @@ void EditorUVE::DrawEntityEditorDockUVE(EntityEditSessionUVE& session) {
     if (!timelineShown) {
         StopAnimationTimelinePreviewUVE();
     }
+    bool graphShown = false;
     if (hasTree && tab("Anim Graph", EntityEditorDockTabUVE::AnimGraph)) {
+        graphShown = true;
         ImGui::BeginChild("##anim-graph", ImVec2{0.0F, 0.0F}, false, ImGuiWindowFlags_NoScrollbar);
         DrawAnimationGraphCanvasUVE();
         ImGui::EndChild();
         ImGui::EndTabItem();
+    }
+    if (!graphShown) {
+        StopAnimationGraphPreviewUVE();
     }
     ImGui::EndTabBar();
 }

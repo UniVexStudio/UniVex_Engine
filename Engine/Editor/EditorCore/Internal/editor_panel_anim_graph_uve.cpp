@@ -16,6 +16,8 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
+#include <memory>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -23,8 +25,13 @@
 
 #include <imgui.h>
 
+#include "uve/asset/animation_clip_asset_uve.h"
+#include "uve/component/animation_mixer_component_uve.h"
 #include "uve/component/animation_tree_component_uve.h"
+#include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/name_component_uve.h"
+#include "uve/nodes/3d/animation_tree_uve.h"
+#include "uve/nodes/3d/skeleton_3d_uve.h"
 #include "uve/object/type_metadata_uve.h"
 #include "uve/scene/scene_component_metadata_uve.h"
 
@@ -149,6 +156,20 @@ bool PickParameterUVE(const char* const id, const std::vector<AnimationParameter
 
 } // namespace
 
+void EditorUVE::StopAnimationGraphPreviewUVE() {
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (m_animGraph.previewSkeleton != Scene::kInvalidEntityUVE && entityManager.IsAliveUVE(m_animGraph.previewSkeleton) &&
+        entityManager.HasComponentUVE<Scene::Skeleton3DNodeComponentUVE>(m_animGraph.previewSkeleton)) {
+        entityManager.GetComponentUVE<Scene::Skeleton3DNodeComponentUVE>(m_animGraph.previewSkeleton).pose.clear();
+    }
+    m_animGraph.previewSkeleton = Scene::kInvalidEntityUVE;
+    if (m_animGraph.tree != Scene::kInvalidEntityUVE && entityManager.IsAliveUVE(m_animGraph.tree) &&
+        entityManager.HasComponentUVE<Scene::AnimationTreeComponentUVE>(m_animGraph.tree)) {
+        // Back to the start, so the next preview (and Play) begins from the entry state.
+        entityManager.GetComponentUVE<Scene::AnimationTreeComponentUVE>(m_animGraph.tree).nodeStates.clear();
+    }
+}
+
 bool EditorUVE::EditAnimationTreeUVE(const Scene::EntityUVE tree,
                                      const std::function<void(Scene::AnimationTreeComponentUVE&)>& change) {
     if (!IsAuthoringCommandAllowedUVE()) {
@@ -215,13 +236,79 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
         }
     }
     if (tree != view.tree) {
+        StopAnimationGraphPreviewUVE();
+        const bool previewing = view.previewing;
+        auto clips = std::move(view.clips);
         view = AnimationGraphViewStateUVE{};
         view.tree = tree;
+        view.previewing = previewing;
+        view.clips = std::move(clips);
     }
     if (tree == Scene::kInvalidEntityUVE) {
         ImGui::TextDisabled("This entity has no AnimationTree.");
         return;
     }
+    // ---- Preview: the tree runs on the entity's skeleton, the mixer's target or else the tree's
+    // parent, searched down. Only the skeleton's runtime pose changes; nothing is saved.
+    Scene::EntityUVE skeletonEntity = Scene::kInvalidEntityUVE;
+    const Scene::AnimationMixerComponentUVE mixer = entityManager.HasComponentUVE<Scene::AnimationMixerComponentUVE>(tree)
+                                                        ? entityManager.GetComponentUVE<Scene::AnimationMixerComponentUVE>(tree)
+                                                        : Scene::AnimationMixerComponentUVE{};
+    {
+        Scene::EntityUVE root = mixer.target;
+        if (root == Scene::kInvalidEntityUVE || !entityManager.IsAliveUVE(root)) {
+            root = entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(tree)
+                       ? entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(tree).parent
+                       : Scene::kInvalidEntityUVE;
+        }
+        std::vector<Scene::EntityUVE> queue;
+        if (root != Scene::kInvalidEntityUVE && entityManager.IsAliveUVE(root)) {
+            queue.push_back(root);
+        }
+        Scene::ISceneGraphUVE& sceneGraph = m_services->GetSceneGraphUVE();
+        for (std::size_t next = 0U; next < queue.size() && next < 4096U; ++next) {
+            if (entityManager.HasComponentUVE<Scene::Skeleton3DNodeComponentUVE>(queue[next])) {
+                skeletonEntity = queue[next];
+                break;
+            }
+            const std::vector<Scene::EntityUVE> children = sceneGraph.GetChildrenUVE(entityManager, queue[next]);
+            queue.insert(queue.end(), children.begin(), children.end());
+        }
+    }
+    if (view.previewing && skeletonEntity != Scene::kInvalidEntityUVE && !view.draggingNodes) {
+        const Scene::AnimationClipResolverUVE clipFor = [this](const Asset::AssetGuidUVE guid)
+            -> const Asset::AnimationClipAssetUVE* {
+            if (guid == Asset::AssetGuidUVE{}) {
+                return nullptr;
+            }
+            auto found = m_animGraph.clips.find(guid.value);
+            if (found == m_animGraph.clips.end()) {
+                auto loaded = std::make_shared<Asset::AnimationClipAssetUVE>();
+                const std::filesystem::path path = m_services->GetAssetDatabaseUVE().ResolveUVE(guid);
+                found = m_animGraph.clips
+                            .emplace(guid.value, Asset::LoadAnimationClipAssetUVE(path, *loaded) ? std::move(loaded) : nullptr)
+                            .first;
+            }
+            return found->second.get();
+        };
+        if (view.previewSkeleton != skeletonEntity) {
+            StopAnimationGraphPreviewUVE();
+            view.previewSkeleton = skeletonEntity;
+        }
+        auto& live = entityManager.GetComponentUVE<Scene::AnimationTreeComponentUVE>(tree);
+        auto& skeleton = entityManager.GetComponentUVE<Scene::Skeleton3DNodeComponentUVE>(skeletonEntity);
+        Scene::AnimationMixerComponentUVE previewMixer = mixer;
+        previewMixer.active = true;
+        const float step = std::clamp(ImGui::GetIO().DeltaTime, 0.0F, 0.1F) * mixer.speedScale;
+        static_cast<void>(Scene::StepSkeletalAnimationTreeUVE(live, clipFor, step, skeleton, previewMixer));
+    } else if (!view.previewing && view.previewSkeleton != Scene::kInvalidEntityUVE) {
+        StopAnimationGraphPreviewUVE();
+    }
+    const auto clipDuration = [this](const Asset::AssetGuidUVE guid) {
+        const auto found = m_animGraph.clips.find(guid.value);
+        return found != m_animGraph.clips.end() && found->second != nullptr ? found->second->durationSeconds : 0.0;
+    };
+
     const Scene::AnimationTreeComponentUVE& component = entityManager.GetComponentUVE<Scene::AnimationTreeComponentUVE>(tree);
     // A copy: edits below replace the component, and this frame keeps drawing what it started with.
     const std::vector<AnimationGraphNodeUVE> nodes = component.nodes;
@@ -394,8 +481,26 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
                 continue;
             }
             const bool live = std::ranges::find(reached, node.id) != reached.end();
-            wireCurve(outputPin(nodes[source->second]), inputPin(node, slot), live ? kWireUVE : IM_COL32(120, 126, 136, 120),
-                      live ? 2.2F : 1.6F);
+            const ImVec2 from = outputPin(nodes[source->second]);
+            const ImVec2 to = inputPin(node, slot);
+            if (!states.empty() && view.previewing && live) {
+                // Previewing: a wire is as bright and thick as the share of the pose it carries.
+                const float weight = states[source->second].weight;
+                const auto alpha = static_cast<int>(70.0F + 185.0F * weight);
+                wireCurve(from, to, IM_COL32(110, 210, 140, alpha), 1.4F + 2.6F * weight);
+                if (weight > 0.005F && weight < 0.995F && view.zoom >= 0.6F) {
+                    char label[16];
+                    std::snprintf(label, sizeof(label), "%d%%", static_cast<int>(std::lround(weight * 100.0F)));
+                    const ImVec2 middle{(from.x + to.x) * 0.5F, (from.y + to.y) * 0.5F};
+                    const ImVec2 textSize = ImGui::CalcTextSize(label);
+                    draw->AddRectFilled(ImVec2{middle.x - textSize.x * 0.5F - 3.0F, middle.y - textSize.y * 0.5F - 1.0F},
+                                        ImVec2{middle.x + textSize.x * 0.5F + 3.0F, middle.y + textSize.y * 0.5F + 1.0F},
+                                        IM_COL32(20, 22, 26, 220), 3.0F);
+                    draw->AddText(ImVec2{middle.x - textSize.x * 0.5F, middle.y - textSize.y * 0.5F}, kTextUVE, label);
+                }
+            } else {
+                wireCurve(from, to, live ? kWireUVE : IM_COL32(120, 126, 136, 120), live ? 2.2F : 1.6F);
+            }
         }
     }
 
@@ -430,6 +535,17 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
                           IM_COL32(255, 255, 255, 150), kindLabel);
         }
 
+        // Previewing: where a clip is, as a bar under its header, lit while it counts.
+        if (node.kind == Kind::Clip && view.previewing && index < states.size()) {
+            const double duration = clipDuration(node.clip);
+            if (duration > 0.0) {
+                const float progress = static_cast<float>(std::clamp(states[index].timeSeconds / duration, 0.0, 1.0));
+                const float barY = lo.y + header;
+                draw->AddRectFilled(ImVec2{lo.x + 1.0F, barY}, ImVec2{hi.x - 1.0F, barY + 3.0F}, IM_COL32(20, 22, 26, 255));
+                draw->AddRectFilled(ImVec2{lo.x + 1.0F, barY}, ImVec2{lo.x + 1.0F + (hi.x - lo.x - 2.0F) * progress, barY + 3.0F},
+                                    states[index].weight > 0.0F ? kActiveUVE : IM_COL32(90, 96, 108, 255));
+            }
+        }
         // Input slots, each with its meaning and what feeds it.
         const auto* const state = index < states.size() ? &states[index] : nullptr;
         for (std::size_t slot = 0U; slot < node.inputs.size(); ++slot) {
@@ -883,6 +999,17 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
                 editNode([name](AnimationGraphNodeUVE& n) { n.parameter = name; });
             }
         };
+        const auto syncRow = [&]() {
+            row("Sync");
+            bool sync = node.sync;
+            if (ImGui::Checkbox("##sync", &sync)) {
+                editNode([sync](AnimationGraphNodeUVE& n) { n.sync = sync; });
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Keep the inputs in step: the heaviest leads and the others play at its phase,\n"
+                                  "so a walk and a run blend with their feet together.");
+            }
+        };
         row("Name");
         std::string renamed;
         if (EditNameUVE("##node-name", node.name, renamed)) {
@@ -909,12 +1036,14 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
                 if (node.parameter.empty()) {
                     dragRow("Value", node.value, 0.01F, 0.0F, 1.0F, &AnimationGraphNodeUVE::value);
                 }
+                syncRow();
                 break;
             case Kind::BlendSpace1D:
                 parameterRow("Position", {AnimationParameterTypeUVE::Float}, "(fixed)");
                 if (node.parameter.empty()) {
                     dragRow("Value", node.value, 0.01F, -1000.0F, 1000.0F, &AnimationGraphNodeUVE::value);
                 }
+                syncRow();
                 for (std::size_t slot = 0U; slot < node.points.size(); ++slot) {
                     ImGui::PushID(static_cast<int>(slot));
                     const std::string label = AnimationGraphSlotLabelUVE(node.kind, slot);
@@ -994,7 +1123,27 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
     std::snprintf(zoomText, sizeof(zoomText), "%d%%", static_cast<int>(std::lround(view.zoom * 100.0F)));
     const float buttons = ImGui::CalcTextSize("Frame All").x + ImGui::CalcTextSize("100%").x + ImGui::CalcTextSize("200%").x +
                           style.FramePadding.x * 6.0F + style.ItemSpacing.x * 3.0F;
-    ImGui::SameLine(std::max(ImGui::GetCursorPosX() + style.ItemSpacing.x, right - buttons));
+    const float previewWidth = ImGui::CalcTextSize("Preview Off").x + style.FramePadding.x * 2.0F + style.ItemSpacing.x;
+    ImGui::SameLine(std::max(ImGui::GetCursorPosX() + style.ItemSpacing.x, right - buttons - previewWidth));
+    if (skeletonEntity == Scene::kInvalidEntityUVE) {
+        ImGui::BeginDisabled();
+    }
+    ImGui::PushStyleColor(ImGuiCol_Button, view.previewing && skeletonEntity != Scene::kInvalidEntityUVE
+                                               ? ImVec4{0.20F, 0.42F, 0.28F, 1.0F}
+                                               : style.Colors[ImGuiCol_Button]);
+    if (ImGui::Button(view.previewing ? "Preview On" : "Preview Off")) {
+        view.previewing = !view.previewing;
+    }
+    ImGui::PopStyleColor();
+    if (skeletonEntity == Scene::kInvalidEntityUVE) {
+        ImGui::EndDisabled();
+    }
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip(skeletonEntity == Scene::kInvalidEntityUVE
+                              ? "No Skeleton3D under the tree's target to preview on."
+                              : "Run the tree on the skeleton while this tab is open (pose only, never saved).");
+    }
+    ImGui::SameLine();
     if (ImGui::Button("Frame All")) {
         frameAll();
     }

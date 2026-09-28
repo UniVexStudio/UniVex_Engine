@@ -115,6 +115,9 @@ struct AnimationGraphNodeUVE final {
     std::vector<float> points;
     /// OneShot fade in and out, in seconds.
     float fadeSeconds = 0.2F;
+    /// Blend / Blend Space / Additive: the inputs keep in step - the heaviest one leads, the others
+    /// play at its phase, so a walk and a run blend with their feet together.
+    bool sync = false;
     /// StateMachine: the state it starts in, and the moves between states.
     std::uint32_t entryState = 0U;
     std::vector<AnimationTransitionUVE> transitions;
@@ -136,6 +139,15 @@ struct AnimationGraphNodeStateUVE final {
     bool shotActive = false;
     float shotElapsedSeconds = 0.0F;
     bool started = false;
+    /// How much this node counted in the last step's output, 0..1: what the editor shows on wires.
+    float weight = 0.0F;
+    /// StateMachine, inertialized transition: how far the pose that was showing is from the state
+    /// just entered, per channel, fading out over `inertialSeconds`.
+    std::vector<Math::Vector3UVE> inertialPosition;
+    std::vector<Math::QuaternionUVE> inertialRotation;
+    std::vector<Math::Vector3UVE> inertialScale;
+    float inertialElapsedSeconds = 0.0F;
+    float inertialSeconds = 0.0F;
 
     [[nodiscard]] bool operator==(const AnimationGraphNodeStateUVE&) const = default;
 };
@@ -151,6 +163,10 @@ struct AnimationTreeComponentUVE final {
     std::vector<AnimationGraphNodeStateUVE> nodeStates;
     /// The state machine state names currently active, for the Inspector while playing.
     std::string activeStates;
+    /// The root bone's ground travel over the last step, in the skeleton's space (root motion on).
+    Math::Vector3UVE rootMotionDelta{};
+    /// Clip events the last step passed, in the clips that counted most (weight at least a half).
+    std::vector<std::string> firedEvents;
 
     [[nodiscard]] static std::vector<AnimationGraphNodeUVE> MakeDefaultAnimationGraphUVE() {
         AnimationGraphNodeUVE output;

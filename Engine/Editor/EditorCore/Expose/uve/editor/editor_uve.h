@@ -2052,8 +2052,15 @@ private:
         float addAtY = 0.0F;
         std::string addSearch;
         std::string status;
+        /// The tree runs on the entity's skeleton while the tab is open: pose only, never saved.
+        bool previewing = true;
+        Scene::EntityUVE previewSkeleton = Scene::kInvalidEntityUVE;
+        /// Clips the preview has read, by guid; null for one that could not be read.
+        std::unordered_map<std::uint64_t, std::shared_ptr<const Asset::AnimationClipAssetUVE>> clips;
     };
     AnimationGraphViewStateUVE m_animGraph;
+    /// Puts the previewed skeleton back at rest and the tree back at its start.
+    void StopAnimationGraphPreviewUVE();
     /// The Anim Graph tab's body.
     void DrawAnimationGraphCanvasUVE();
     /// Changes the AnimationTree's nodes or parameters as one undo step, like an Inspector edit.
