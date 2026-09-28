@@ -115,5 +115,29 @@ TEST(AnimationClipEditingUVETest, ReadsAndSetsOneNumberOfAKey) {
     EXPECT_FALSE(SetClipKeyComponentUVE(clip, "Hips", 0.5, 0, 0, std::nanf(""))) << "not finite";
 }
 
+TEST(AnimationClipEditingUVETest, AddsMovesRenamesAndRemovesEventsKeepingThemInOrder) {
+    Asset::AnimationClipAssetUVE clip = MakeClipUVE();
+    EXPECT_EQ(AddClipEventUVE(clip, 0.62, 10.0), 0U);
+    EXPECT_NEAR(clip.events[0].timeSeconds, 0.6, 1e-9) << "snapped to a frame";
+    EXPECT_EQ(clip.events[0].eventId, "event");
+    EXPECT_EQ(AddClipEventUVE(clip, 0.2, 10.0), 0U) << "earlier, so first";
+    EXPECT_EQ(clip.events[0].eventId, "event_2") << "a name no other event has";
+
+    const std::optional<std::size_t> moved = MoveClipEventUVE(clip, 0U, 0.9, 10.0);
+    ASSERT_TRUE(moved.has_value());
+    EXPECT_EQ(*moved, 1U);
+    EXPECT_EQ(clip.events[1].eventId, "event_2");
+    EXPECT_FALSE(MoveClipEventUVE(clip, 5U, 0.1, 10.0).has_value());
+
+    EXPECT_TRUE(RenameClipEventUVE(clip, 1U, "footstep"));
+    EXPECT_EQ(clip.events[1].eventId, "footstep");
+    EXPECT_FALSE(RenameClipEventUVE(clip, 1U, "")) << "an event needs a name";
+
+    EXPECT_TRUE(RemoveClipEventUVE(clip, 0U));
+    ASSERT_EQ(clip.events.size(), 1U);
+    EXPECT_EQ(clip.events[0].eventId, "footstep");
+    EXPECT_FALSE(RemoveClipEventUVE(clip, 3U));
+}
+
 } // namespace
 } // namespace UVE::Editor

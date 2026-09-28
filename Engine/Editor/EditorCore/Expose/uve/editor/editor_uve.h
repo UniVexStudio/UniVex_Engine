@@ -1966,6 +1966,12 @@ private:
         float boxFromX = 0.0F;
         float boxFromY = 0.0F;
         std::string status;
+        /// The selected event (-1: none), a drag of it from this mouse x, and the rename field.
+        int selectedEvent = -1;
+        bool draggingEvent = false;
+        float eventDragFromX = 0.0F;
+        bool renameEventRequested = false;
+        std::string eventName;
         /// Curves view instead of the dope sheet, and which channel it draws (-1: all that move).
         bool curves = false;
         int curveChannel = -1;
