@@ -31,6 +31,7 @@
 #include "uve/math/quaternion_uve.h"
 #include "uve/math/vector2_uve.h"
 #include "uve/math/vector3_uve.h"
+#include "uve/component/animation_mixer_component_uve.h"
 #include "uve/component/animation_player_component_uve.h"
 #include "uve/component/animation_tree_component_uve.h"
 #include "uve/component/area_component_uve.h"
@@ -160,11 +161,30 @@ namespace {
             {"onFinish", static_cast<std::uint8_t>(component.onFinish)},
             {"startOffsetSeconds", component.startOffsetSeconds},
             {"blendInSeconds", component.blendInSeconds},
-            {"relative", component.relative},
+            {"relative", component.relative}};
+}
+
+// The target is written beside these as targetLocalId, like the players' used to be.
+[[nodiscard]] nlohmann::json ToJsonUVE(const AnimationMixerComponentUVE& component) {
+    return {{"active", component.active},
+            {"speedScale", component.speedScale},
+            {"processCallback", static_cast<std::uint8_t>(component.processCallback)},
             {"animatePosition", component.animatePosition},
             {"animateRotation", component.animateRotation},
-            {"animateScale", component.animateScale},
-            {"processCallback", static_cast<std::uint8_t>(component.processCallback)}};
+            {"animateScale", component.animateScale}};
+}
+
+/// A mixer from its own payload, or - for a player or tree saved before AnimationMixer existed -
+/// from the same keys on that component's payload. The target is resolved by the caller.
+[[nodiscard]] AnimationMixerComponentUVE AnimationMixerFromJsonUVE(const nlohmann::json& json) {
+    AnimationMixerComponentUVE mixer;
+    mixer.active = json.value("active", true);
+    mixer.speedScale = json.value("speedScale", 1.0F);
+    mixer.processCallback = static_cast<AnimationProcessCallbackUVE>(json.value("processCallback", std::uint8_t{0}));
+    mixer.animatePosition = json.value("animatePosition", true);
+    mixer.animateRotation = json.value("animateRotation", true);
+    mixer.animateScale = json.value("animateScale", true);
+    return mixer;
 }
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const AnimationTreeComponentUVE& component) {
@@ -200,11 +220,7 @@ namespace {
                          {"entryState", node.entryState},
                          {"transitions", std::move(transitions)}});
     }
-    return {{"active", component.active},
-            {"animatePosition", component.animatePosition},
-            {"animateRotation", component.animateRotation},
-            {"animateScale", component.animateScale},
-            {"parameters", std::move(parameters)},
+    return {{"parameters", std::move(parameters)},
             {"nodes", std::move(nodes)}};
 }
 
@@ -212,10 +228,6 @@ namespace {
 /// Output fed by a Blend2 of Clip A and Clip B, weighted by a "blend" parameter.
 [[nodiscard]] AnimationTreeComponentUVE AnimationTreeFromJsonUVE(const nlohmann::json& json) {
     AnimationTreeComponentUVE tree;
-    tree.active = json.value("active", true);
-    tree.animatePosition = json.value("animatePosition", true);
-    tree.animateRotation = json.value("animateRotation", true);
-    tree.animateScale = json.value("animateScale", true);
     if (!json.contains("nodes") && (json.contains("clipA") || json.contains("clipB"))) {
         tree.parameters = {AnimationParameterUVE{"blend", AnimationParameterTypeUVE::Float, json.value("blend", 0.0F)}};
         const auto makeNode = [](const std::uint32_t id, const AnimationGraphNodeKindUVE kind, std::string name) {
@@ -1297,16 +1309,19 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                           animation.startOffsetSeconds = json.value("startOffsetSeconds", 0.0F);
                           animation.blendInSeconds = json.value("blendInSeconds", 0.0F);
                           animation.relative = json.value("relative", false);
-                          animation.animatePosition = json.value("animatePosition", true);
-                          animation.animateRotation = json.value("animateRotation", true);
-                          animation.animateScale = json.value("animateScale", true);
-                          animation.processCallback = static_cast<AnimationProcessCallbackUVE>(
-                              json.value("processCallback", std::uint8_t{0}));
                           if (!IsAnimationPlayerComponentValidUVE(animation)) {
                               throw std::runtime_error("Invalid AnimationPlayerComponentUVE payload");
                           }
                           return animation;
                       }, IsAnimationPlayerComponentValidUVE));
+        table.emplace("AnimationMixerComponentUVE",
+                      MakeRegistrationUVE<AnimationMixerComponentUVE>([](const nlohmann::json& json) {
+                          const AnimationMixerComponentUVE mixer = AnimationMixerFromJsonUVE(json);
+                          if (!IsAnimationMixerComponentValidUVE(mixer)) {
+                              throw std::runtime_error("Invalid AnimationMixerComponentUVE payload");
+                          }
+                          return mixer;
+                      }, IsAnimationMixerComponentValidUVE));
         table.emplace("AnimationTreeComponentUVE",
                       MakeRegistrationUVE<AnimationTreeComponentUVE>([](const nlohmann::json& json) {
                           AnimationTreeComponentUVE tree = AnimationTreeFromJsonUVE(json);
@@ -2055,10 +2070,8 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                 }
                 componentsJson[*name]["targetLocalId"] = targetLocalId;
             };
-            if (type == std::type_index(typeid(AnimationPlayerComponentUVE))) {
-                writeTarget(entityManager.GetComponentUVE<AnimationPlayerComponentUVE>(entity).target);
-            } else if (type == std::type_index(typeid(AnimationTreeComponentUVE))) {
-                writeTarget(entityManager.GetComponentUVE<AnimationTreeComponentUVE>(entity).target);
+            if (type == std::type_index(typeid(AnimationMixerComponentUVE))) {
+                writeTarget(entityManager.GetComponentUVE<AnimationMixerComponentUVE>(entity).target);
             }
         }
         entitiesJson.push_back({{"localId", entityToLocalId.at(entity)}, {"components", std::move(componentsJson)}});
@@ -2275,7 +2288,10 @@ void RollbackRestoredEntitiesUVE(IEntityManagerUVE& entityManager, std::vector<E
                 }
                 registrationIt->second.fromJson(entityManager, entity, componentJson);
                 hasTransform = hasTransform || componentName == "TransformComponentUVE";
-                if (componentName == "AnimationPlayerComponentUVE" || componentName == "AnimationTreeComponentUVE") {
+                const bool isMixer = componentName == "AnimationMixerComponentUVE";
+                const bool isMixerChild =
+                    componentName == "AnimationPlayerComponentUVE" || componentName == "AnimationTreeComponentUVE";
+                if (isMixer || isMixerChild) {
                     // A target the file does not contain stays unset, which means "the parent".
                     EntityUVE target = kInvalidEntityUVE;
                     const std::int64_t targetLocalId = componentJson.value("targetLocalId", static_cast<std::int64_t>(-1));
@@ -2286,10 +2302,17 @@ void RollbackRestoredEntitiesUVE(IEntityManagerUVE& entityManager, std::vector<E
                             target = targetIt->second;
                         }
                     }
-                    if (componentName == "AnimationPlayerComponentUVE") {
-                        entityManager.GetComponentUVE<AnimationPlayerComponentUVE>(entity).target = target;
-                    } else {
-                        entityManager.GetComponentUVE<AnimationTreeComponentUVE>(entity).target = target;
+                    // Keys are read in name order, so a saved mixer is already here; a player or tree
+                    // from before AnimationMixer existed brings its old settings into a new one.
+                    if (isMixerChild && !entityManager.HasComponentUVE<AnimationMixerComponentUVE>(entity)) {
+                        AnimationMixerComponentUVE legacy = AnimationMixerFromJsonUVE(componentJson);
+                        if (!IsAnimationMixerComponentValidUVE(legacy)) {
+                            legacy = AnimationMixerComponentUVE{};
+                        }
+                        legacy.target = target;
+                        entityManager.AddComponentUVE<AnimationMixerComponentUVE>(entity, legacy);
+                    } else if (isMixer) {
+                        entityManager.GetComponentUVE<AnimationMixerComponentUVE>(entity).target = target;
                     }
                 }
             }

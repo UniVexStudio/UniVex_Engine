@@ -129,10 +129,10 @@ TEST(AnimationPlayerUVETest, ChannelMasksLeaveTheOtherChannelsAlone) {
     const Asset::AnimationClipAssetUVE clip = MakeSlideClipUVE();
     TransformComponentUVE target;
     target.localPosition = Math::Vector3UVE{-1.0F, -1.0F, -1.0F};
-    AnimationPlayerComponentUVE settings;
-    settings.animatePosition = false;
-    AnimationPlayerComponentUVE player = StartedUVE(settings, target, clip);
-    ASSERT_TRUE(StepAnimationPlayerUVE(player, clip, 0.5F, target));
+    AnimationMixerComponentUVE mixer;
+    mixer.animatePosition = false;
+    AnimationPlayerComponentUVE player = StartedUVE(AnimationPlayerComponentUVE{}, target, clip);
+    ASSERT_TRUE(StepAnimationPlayerUVE(player, clip, 0.5F, target, mixer));
     EXPECT_EQ(target.localPosition, (Math::Vector3UVE{-1.0F, -1.0F, -1.0F}));
     EXPECT_NEAR(target.localScale.x, 1.5F, 1e-4F);
 }

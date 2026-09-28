@@ -6,6 +6,7 @@
 #include <string_view>
 
 #include "uve/asset/asset_guid_uve.h"
+#include "uve/component/animation_mixer_component_uve.h"
 #include "uve/component/animation_tree_component_uve.h"
 #include "uve/component/entity_uve.h"
 
@@ -19,17 +20,18 @@ class IEntityManagerUVE;
 struct TransformComponentUVE;
 
 /// Authoring definition for the AnimationTree node: a pure Node - no transform, no visibility -
-/// whose Inspector is its own section and then the Node section. It evaluates an animation graph
-/// onto a target node (`target`, or its parent).
+/// whose Inspector is its own section, its AnimationMixer base, then the Node section. It evaluates
+/// an animation graph onto the mixer's target (or its parent).
 struct AnimationTreeNodeDefinitionUVE final {
     static constexpr std::string_view defaultName = "AnimationTree";
 
     AnimationTreeComponentUVE tree{};
+    AnimationMixerComponentUVE mixer{};
 };
 
 [[nodiscard]] bool IsAnimationTreeNodeDefinitionValidUVE(const AnimationTreeNodeDefinitionUVE& value);
 
-/// Makes `entity` a pure Node (EnsureNodeBaselineUVE) and adds the tree when it is missing.
+/// Applies the AnimationMixer base (ApplyAnimationMixerBaseUVE) and adds the tree when it is missing.
 void ApplyAnimationTreeNodeDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
                                          const AnimationTreeNodeDefinitionUVE& value);
 
@@ -42,7 +44,8 @@ using AnimationClipResolverUVE = std::function<const Asset::AnimationClipAssetUV
 /// uses them. Returns true when `target` was written: an inactive tree, an invalid graph, or one
 /// whose clips are all missing writes nothing.
 [[nodiscard]] bool StepAnimationTreeUVE(AnimationTreeComponentUVE& tree, const AnimationClipResolverUVE& clips,
-                                        float deltaSeconds, TransformComponentUVE& target);
+                                        float deltaSeconds, TransformComponentUVE& target,
+                                        const AnimationMixerComponentUVE& mixer = {});
 
 /// Puts every node back to its start: clips at 0, state machines in their entry state.
 void ResetAnimationTreeUVE(AnimationTreeComponentUVE& tree);

@@ -140,15 +140,9 @@ struct AnimationGraphNodeStateUVE final {
     [[nodiscard]] bool operator==(const AnimationGraphNodeStateUVE&) const = default;
 };
 
-/// AnimationTree's own state: an animation graph evaluated every frame onto a target node - its
-/// `target`, or its parent when none is set. Like AnimationPlayer it is a pure Node.
+/// AnimationTree's own state: an animation graph evaluated every frame. What it moves, which
+/// channels and whether it runs live in its AnimationMixer base (AnimationMixerComponentUVE).
 struct AnimationTreeComponentUVE final {
-    /// Evaluates the graph while the scene runs.
-    bool active = true;
-    EntityUVE target = kInvalidEntityUVE;
-    bool animatePosition = true;
-    bool animateRotation = true;
-    bool animateScale = true;
     std::vector<AnimationParameterUVE> parameters;
     /// A new tree starts as Output fed by one Clip, so picking a clip is all it takes to play.
     std::vector<AnimationGraphNodeUVE> nodes = MakeDefaultAnimationGraphUVE();
@@ -174,9 +168,7 @@ struct AnimationTreeComponentUVE final {
 
     /// Authored data only: runtime state is ignored.
     [[nodiscard]] bool HasSameSettingsUVE(const AnimationTreeComponentUVE& other) const {
-        return active == other.active && target == other.target && animatePosition == other.animatePosition &&
-               animateRotation == other.animateRotation && animateScale == other.animateScale &&
-               parameters == other.parameters && nodes == other.nodes;
+        return parameters == other.parameters && nodes == other.nodes;
     }
 
     [[nodiscard]] bool operator==(const AnimationTreeComponentUVE&) const = default;

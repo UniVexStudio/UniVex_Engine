@@ -913,6 +913,12 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
         }
         return &m_entityManager->GetComponentUVE<Scene::TransformComponentUVE>(chosen);
     };
+    // A player or tree loaded without its mixer (an older save) runs with the mixer's defaults.
+    const auto mixerOf = [this](const Scene::EntityUVE entity) {
+        return m_entityManager->HasComponentUVE<Scene::AnimationMixerComponentUVE>(entity)
+                   ? m_entityManager->GetComponentUVE<Scene::AnimationMixerComponentUVE>(entity)
+                   : Scene::AnimationMixerComponentUVE{};
+    };
     const Scene::AnimationProcessCallbackUVE callback =
         physicsStep ? Scene::AnimationProcessCallbackUVE::Physics : Scene::AnimationProcessCallbackUVE::Frame;
 
@@ -920,7 +926,8 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
          CollectFixedStepOrderUVE<Scene::AnimationPlayerComponentUVE>(*m_entityManager, *m_sceneGraph)) {
         Scene::AnimationPlayerComponentUVE& player =
             m_entityManager->GetComponentUVE<Scene::AnimationPlayerComponentUVE>(entity);
-        if (player.processCallback != callback) {
+        const Scene::AnimationMixerComponentUVE mixer = mixerOf(entity);
+        if (!mixer.active || mixer.processCallback != callback) {
             continue;
         }
         const Asset::AnimationClipAssetUVE* const clip = clipFor(player.clip);
@@ -928,27 +935,32 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
             continue; // not set, still loading, or failed - the player waits
         }
         // Resolved before playback starts, so a player with nothing to move never "plays".
-        Scene::TransformComponentUVE* const target = resolveTarget(entity, player.target);
+        Scene::TransformComponentUVE* const target = resolveTarget(entity, mixer.target);
         if (target == nullptr) {
             continue;
         }
         if (!player.hasStartPose && player.autoplay) {
             Scene::PlayAnimationPlayerUVE(player, *target, clip->durationSeconds);
         }
-        static_cast<void>(Scene::StepAnimationPlayerUVE(player, *clip, deltaSeconds, *target));
+        static_cast<void>(
+            Scene::StepAnimationPlayerUVE(player, *clip, deltaSeconds * mixer.speedScale, *target, mixer));
     }
 
-    // A tree has no update setting of its own: it follows the frame, the smoothest for a character.
-    if (!physicsStep) {
-        for (const Scene::EntityUVE entity :
-             CollectFixedStepOrderUVE<Scene::AnimationTreeComponentUVE>(*m_entityManager, *m_sceneGraph)) {
-            Scene::AnimationTreeComponentUVE& tree =
-                m_entityManager->GetComponentUVE<Scene::AnimationTreeComponentUVE>(entity);
-            Scene::TransformComponentUVE* const target = resolveTarget(entity, tree.target);
-            if (target != nullptr) {
-                static_cast<void>(Scene::StepAnimationTreeUVE(tree, clipFor, deltaSeconds, *target));
-            }
+    for (const Scene::EntityUVE entity :
+         CollectFixedStepOrderUVE<Scene::AnimationTreeComponentUVE>(*m_entityManager, *m_sceneGraph)) {
+        const Scene::AnimationMixerComponentUVE mixer = mixerOf(entity);
+        if (mixer.processCallback != callback) {
+            continue;
         }
+        Scene::AnimationTreeComponentUVE& tree = m_entityManager->GetComponentUVE<Scene::AnimationTreeComponentUVE>(entity);
+        Scene::TransformComponentUVE* const target = resolveTarget(entity, mixer.target);
+        if (target != nullptr) {
+            static_cast<void>(
+                Scene::StepAnimationTreeUVE(tree, clipFor, deltaSeconds * mixer.speedScale, *target, mixer));
+        }
+    }
+
+    if (!physicsStep) {
 
         // Drop clips nothing references any more, so a swapped clip does not stay loaded.
         std::unordered_set<std::uint64_t> referenced;

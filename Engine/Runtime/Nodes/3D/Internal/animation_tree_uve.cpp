@@ -11,6 +11,7 @@
 #include "uve/asset/animation_clip_asset_uve.h"
 #include "uve/component/transform_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
+#include "uve/nodes/3d/abstract_nodes_3d_uve.h"
 #include "uve/math/quaternion_uve.h"
 #include "uve/nodes/3d/animation_player_uve.h"
 #include "uve/nodes/3d/node_3d_uve.h"
@@ -336,12 +337,16 @@ private:
 } // namespace
 
 bool IsAnimationTreeNodeDefinitionValidUVE(const AnimationTreeNodeDefinitionUVE& value) {
-    return IsAnimationTreeComponentValidUVE(value.tree);
+    return IsAnimationTreeComponentValidUVE(value.tree) && IsAnimationMixerComponentValidUVE(value.mixer);
 }
 
 void ApplyAnimationTreeNodeDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
                                          const AnimationTreeNodeDefinitionUVE& value) {
-    EnsureNodeBaselineUVE(entityManager, entity, AnimationTreeNodeDefinitionUVE::defaultName);
+    // The definition's mixer settings win over the base's defaults: added first, kept by the base.
+    if (entityManager.IsAliveUVE(entity) && !entityManager.HasComponentUVE<AnimationMixerComponentUVE>(entity)) {
+        entityManager.AddComponentUVE<AnimationMixerComponentUVE>(entity, value.mixer);
+    }
+    ApplyAnimationMixerBaseUVE(entityManager, entity, AnimationTreeNodeDefinitionUVE::defaultName);
     if (entityManager.IsAliveUVE(entity) && !entityManager.HasComponentUVE<AnimationTreeComponentUVE>(entity)) {
         entityManager.AddComponentUVE<AnimationTreeComponentUVE>(entity, value.tree);
     }
@@ -366,8 +371,9 @@ bool SetAnimationTreeParameterUVE(AnimationTreeComponentUVE& tree, const std::st
 }
 
 bool StepAnimationTreeUVE(AnimationTreeComponentUVE& tree, const AnimationClipResolverUVE& clips,
-                          const float deltaSeconds, TransformComponentUVE& target) {
-    if (!tree.active || !std::isfinite(deltaSeconds) || deltaSeconds < 0.0F) {
+                          const float deltaSeconds, TransformComponentUVE& target,
+                          const AnimationMixerComponentUVE& mixer) {
+    if (!mixer.active || !std::isfinite(deltaSeconds) || deltaSeconds < 0.0F) {
         return false;
     }
     if (tree.nodeStates.size() != tree.nodes.size()) {
@@ -387,7 +393,7 @@ bool StepAnimationTreeUVE(AnimationTreeComponentUVE& tree, const AnimationClipRe
     if (!result.pose.has_value()) {
         return false;
     }
-    WriteAnimatedPoseUVE(*result.pose, tree.animatePosition, tree.animateRotation, tree.animateScale, target);
+    WriteAnimatedPoseUVE(*result.pose, mixer.animatePosition, mixer.animateRotation, mixer.animateScale, target);
     return true;
 }
 
