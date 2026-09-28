@@ -938,17 +938,37 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
         return Scene::kInvalidEntityUVE;
     };
     // Root motion is measured in the skeleton's space; the target moves in its parent's. Both go
-    // through world space. A CharacterBody3D is driven by velocity, so collisions still apply.
-    const auto applyRootMotion = [this, &resolveTarget](const Scene::EntityUVE self, const Scene::EntityUVE target,
-                                                        const Scene::EntityUVE skeletonEntity,
-                                                        const Math::Vector3UVE& delta, const float stepSeconds) {
-        Math::Vector3UVE world = delta;
-        if (m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(skeletonEntity)) {
-            const auto& frame = m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(skeletonEntity);
-            world = Math::RotateVectorUVE(frame.worldRotation, Math::Vector3UVE{delta.x * frame.worldScale.x,
-                                                                                 delta.y * frame.worldScale.y,
-                                                                                 delta.z * frame.worldScale.z});
+    // through world space, composed from the local transforms up the hierarchy so a transform
+    // edited this frame (not yet propagated to the world transform) still counts.
+    // A CharacterBody3D is driven by velocity, so collisions still apply.
+    struct FrameUVE {
+        Math::QuaternionUVE rotation{};
+        Math::Vector3UVE scale{1.0F, 1.0F, 1.0F};
+    };
+    const auto worldFrameOf = [this](Scene::EntityUVE entity) {
+        FrameUVE frame;
+        for (int depth = 0; depth < 1024 && entity != Scene::kInvalidEntityUVE && m_entityManager->IsAliveUVE(entity);
+             ++depth) {
+            if (m_entityManager->HasComponentUVE<Scene::TransformComponentUVE>(entity)) {
+                const auto& local = m_entityManager->GetComponentUVE<Scene::TransformComponentUVE>(entity);
+                frame.rotation = Math::MultiplyUVE(local.localRotation, frame.rotation);
+                frame.scale = Math::Vector3UVE{frame.scale.x * local.localScale.x, frame.scale.y * local.localScale.y,
+                                               frame.scale.z * local.localScale.z};
+            }
+            entity = m_entityManager->HasComponentUVE<Scene::HierarchyComponentUVE>(entity)
+                         ? m_entityManager->GetComponentUVE<Scene::HierarchyComponentUVE>(entity).parent
+                         : Scene::kInvalidEntityUVE;
         }
+        return frame;
+    };
+    const auto applyRootMotion = [this, &resolveTarget, &worldFrameOf](
+                                     const Scene::EntityUVE self, const Scene::EntityUVE target,
+                                     const Scene::EntityUVE skeletonEntity, const Math::Vector3UVE& delta,
+                                     const float stepSeconds) {
+        const FrameUVE skeletonFrame = worldFrameOf(skeletonEntity);
+        const Math::Vector3UVE world = Math::RotateVectorUVE(
+            skeletonFrame.rotation, Math::Vector3UVE{delta.x * skeletonFrame.scale.x, delta.y * skeletonFrame.scale.y,
+                                                     delta.z * skeletonFrame.scale.z});
         Scene::TransformComponentUVE* const moved = resolveTarget(self, target);
         if (moved == nullptr) {
             return;
@@ -965,22 +985,18 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
             }
             return;
         }
-        Math::Vector3UVE local = world;
         const Scene::EntityUVE parent = m_entityManager->HasComponentUVE<Scene::HierarchyComponentUVE>(movedEntity)
                                             ? m_entityManager->GetComponentUVE<Scene::HierarchyComponentUVE>(movedEntity).parent
                                             : Scene::kInvalidEntityUVE;
-        if (parent != Scene::kInvalidEntityUVE && m_entityManager->IsAliveUVE(parent) &&
-            m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(parent)) {
-            const auto& frame = m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(parent);
-            Math::QuaternionUVE inverse{};
-            if (!Math::TryInverseUVE(frame.worldRotation, inverse)) {
-                inverse = Math::QuaternionUVE{};
-            }
-            const Math::Vector3UVE unrotated = Math::RotateVectorUVE(inverse, world);
-            const auto safe = [](const float value) { return std::abs(value) > 1.0e-6F ? value : 1.0F; };
-            local = Math::Vector3UVE{unrotated.x / safe(frame.worldScale.x), unrotated.y / safe(frame.worldScale.y),
-                                     unrotated.z / safe(frame.worldScale.z)};
+        const FrameUVE parentFrame = worldFrameOf(parent);
+        Math::QuaternionUVE inverse{};
+        if (!Math::TryInverseUVE(parentFrame.rotation, inverse)) {
+            inverse = Math::QuaternionUVE{};
         }
+        const Math::Vector3UVE unrotated = Math::RotateVectorUVE(inverse, world);
+        const auto safe = [](const float value) { return std::abs(value) > 1.0e-6F ? value : 1.0F; };
+        const Math::Vector3UVE local{unrotated.x / safe(parentFrame.scale.x), unrotated.y / safe(parentFrame.scale.y),
+                                     unrotated.z / safe(parentFrame.scale.z)};
         moved->localPosition = moved->localPosition + local;
     };
     // A player or tree loaded without its mixer (an older save) runs with the mixer's defaults.
