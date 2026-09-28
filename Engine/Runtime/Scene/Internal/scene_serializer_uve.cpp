@@ -171,7 +171,9 @@ namespace {
             {"processCallback", static_cast<std::uint8_t>(component.processCallback)},
             {"animatePosition", component.animatePosition},
             {"animateRotation", component.animateRotation},
-            {"animateScale", component.animateScale}};
+            {"animateScale", component.animateScale},
+            {"rootMotion", static_cast<std::uint8_t>(component.rootMotion)},
+            {"rootMotionBone", component.rootMotionBone}};
 }
 
 /// A mixer from its own payload, or - for a player or tree saved before AnimationMixer existed -
@@ -184,6 +186,8 @@ namespace {
     mixer.animatePosition = json.value("animatePosition", true);
     mixer.animateRotation = json.value("animateRotation", true);
     mixer.animateScale = json.value("animateScale", true);
+    mixer.rootMotion = static_cast<AnimationRootMotionModeUVE>(json.value("rootMotion", std::uint8_t{0}));
+    mixer.rootMotionBone = json.value("rootMotionBone", std::string{});
     return mixer;
 }
 

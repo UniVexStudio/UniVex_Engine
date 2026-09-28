@@ -6,6 +6,7 @@
 #include <cmath>
 #include <vector>
 #include <unordered_map>
+#include <optional>
 #include <string_view>
 
 #include "uve/asset/animation_clip_asset_uve.h"
@@ -249,6 +250,8 @@ bool StepSkeletalAnimationPlayerUVE(AnimationPlayerComponentUVE& player, const A
     }
     std::vector<SkeletonBonePoseUVE> current = GetSkeletonCurrentPoseUVE(skeleton);
     const float blendBefore = player.blendElapsedSeconds;
+    const double timeBefore = static_cast<double>(player.currentTimeSeconds);
+    const bool forward = player.speed * player.direction >= 0.0F;
     const bool stillPlaying = AdvanceClockUVE(player, duration, deltaSeconds);
     player.blendElapsedSeconds = std::min(player.blendElapsedSeconds + deltaSeconds, 3600.0F);
 
@@ -293,11 +296,121 @@ bool StepSkeletalAnimationPlayerUVE(AnimationPlayerComponentUVE& player, const A
             out.scale = blended.scale;
         }
     }
+    // Root motion: the root bone's ground travel over this step, across a loop's wrap too, is
+    // handed to the caller; the pose keeps the bone over its first frame's ground position.
+    player.rootMotionDelta = Math::Vector3UVE{};
+    if (mixer.rootMotion != AnimationRootMotionModeUVE::Off && mixer.animatePosition) {
+        if (const std::optional<std::size_t> rootIndex = ResolveRootMotionBoneUVE(skeleton, clip, mixer.rootMotionBone)) {
+            const auto found = tracks.find(skeleton.bones[*rootIndex].name);
+            if (found != tracks.end()) {
+                const auto& samples = found->second->samples;
+                const auto at = [&samples](const double t) { return SampleTrackUVE(samples, t).position; };
+                const Math::Vector3UVE first = at(0.0);
+                if (!returnToRest) {
+                    Math::Vector3UVE travel = at(time) - at(timeBefore);
+                    if (player.loopMode == AnimationLoopModeUVE::Loop) {
+                        if (forward && time < timeBefore) {
+                            travel = (at(duration) - at(timeBefore)) + (at(time) - first);
+                        } else if (!forward && time > timeBefore) {
+                            travel = (first - at(timeBefore)) + (at(time) - at(duration));
+                        }
+                    }
+                    player.rootMotionDelta = Math::Vector3UVE{travel.x * weight, 0.0F, travel.z * weight};
+                }
+                SkeletonBonePoseUVE& root = current[*rootIndex];
+                root.position.x = first.x;
+                root.position.z = first.z;
+            }
+        }
+    }
     skeleton.pose = std::move(current);
     if (!stillPlaying) {
         player.isPlaying = false;
         player.finished = true;
     }
+    return true;
+}
+
+std::optional<std::size_t> ResolveRootMotionBoneUVE(const Skeleton3DNodeComponentUVE& skeleton,
+                                                    const Asset::AnimationClipAssetUVE& clip,
+                                                    const std::string_view boneName) {
+    const auto trackOf = [&clip](const std::string_view name) -> const Asset::AnimationAssetBoneTrackUVE* {
+        for (const Asset::AnimationAssetBoneTrackUVE& track : clip.bones) {
+            if (track.bone == name && !track.samples.empty()) {
+                return &track;
+            }
+        }
+        return nullptr;
+    };
+    if (!boneName.empty()) {
+        for (std::size_t index = 0U; index < skeleton.bones.size(); ++index) {
+            if (skeleton.bones[index].name == boneName) {
+                return trackOf(boneName) != nullptr ? std::optional<std::size_t>{index} : std::nullopt;
+            }
+        }
+        return std::nullopt;
+    }
+    // Bones are parents first, so the first one that travels is the highest in the rig.
+    constexpr float kMinimumTravelMetresUVE = 0.01F;
+    for (std::size_t index = 0U; index < skeleton.bones.size(); ++index) {
+        const Asset::AnimationAssetBoneTrackUVE* const track = trackOf(skeleton.bones[index].name);
+        if (track == nullptr) {
+            continue;
+        }
+        const Math::Vector3UVE first = track->samples.front().pose.position;
+        for (const Asset::AnimationAssetSampleUVE& sample : track->samples) {
+            const float dx = sample.pose.position.x - first.x;
+            const float dz = sample.pose.position.z - first.z;
+            if (dx * dx + dz * dz > kMinimumTravelMetresUVE * kMinimumTravelMetresUVE) {
+                return index;
+            }
+        }
+    }
+    return std::nullopt;
+}
+
+bool PoseSkeletonAtTimeUVE(const Asset::AnimationClipAssetUVE& clip, const double timeSeconds,
+                           Skeleton3DNodeComponentUVE& skeleton, const AnimationMixerComponentUVE& mixer) {
+    if (!clip.IsSkeletalUVE() || skeleton.bones.empty() || !std::isfinite(timeSeconds)) {
+        return false;
+    }
+    const double time = std::clamp(timeSeconds, 0.0, std::max(clip.durationSeconds, 0.0));
+    std::vector<SkeletonBonePoseUVE> pose(skeleton.bones.size());
+    for (std::size_t index = 0U; index < skeleton.bones.size(); ++index) {
+        const SkeletonBoneUVE& bone = skeleton.bones[index];
+        SkeletonBonePoseUVE& out = pose[index];
+        out = SkeletonBonePoseUVE{bone.localPosition, bone.localRotation, bone.localScale};
+        for (const Asset::AnimationAssetBoneTrackUVE& track : clip.bones) {
+            if (track.bone != bone.name || track.samples.empty()) {
+                continue;
+            }
+            const PoseUVE sampled = SampleTrackUVE(track.samples, time);
+            if (mixer.animatePosition) {
+                out.position = sampled.position;
+            }
+            Math::QuaternionUVE normalized{};
+            if (mixer.animateRotation && Math::TryNormalizeUVE(sampled.rotation, normalized)) {
+                out.rotation = normalized;
+            }
+            if (mixer.animateScale) {
+                out.scale = sampled.scale;
+            }
+            break;
+        }
+    }
+    if (mixer.rootMotion != AnimationRootMotionModeUVE::Off && mixer.animatePosition) {
+        if (const std::optional<std::size_t> rootIndex = ResolveRootMotionBoneUVE(skeleton, clip, mixer.rootMotionBone)) {
+            for (const Asset::AnimationAssetBoneTrackUVE& track : clip.bones) {
+                if (track.bone == skeleton.bones[*rootIndex].name && !track.samples.empty()) {
+                    const Math::Vector3UVE first = SampleTrackUVE(track.samples, 0.0).position;
+                    pose[*rootIndex].position.x = first.x;
+                    pose[*rootIndex].position.z = first.z;
+                    break;
+                }
+            }
+        }
+    }
+    skeleton.pose = std::move(pose);
     return true;
 }
 

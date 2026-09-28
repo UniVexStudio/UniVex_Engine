@@ -915,7 +915,7 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
         return &m_entityManager->GetComponentUVE<Scene::TransformComponentUVE>(chosen);
     };
     const auto resolveSkeleton = [this](const Scene::EntityUVE self,
-                                        const Scene::EntityUVE target) -> Scene::Skeleton3DNodeComponentUVE* {
+                                        const Scene::EntityUVE target) -> Scene::EntityUVE {
         Scene::EntityUVE root = target;
         if (root == Scene::kInvalidEntityUVE || !m_entityManager->IsAliveUVE(root)) {
             root = m_entityManager->HasComponentUVE<Scene::HierarchyComponentUVE>(self)
@@ -923,19 +923,65 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
                        : Scene::kInvalidEntityUVE;
         }
         if (root == Scene::kInvalidEntityUVE || !m_entityManager->IsAliveUVE(root)) {
-            return nullptr;
+            return Scene::kInvalidEntityUVE;
         }
         // Breadth first, so the skeleton nearest the target wins.
         std::vector<Scene::EntityUVE> queue{root};
         for (std::size_t next = 0U; next < queue.size() && next < 4096U; ++next) {
             const Scene::EntityUVE candidate = queue[next];
             if (m_entityManager->HasComponentUVE<Scene::Skeleton3DNodeComponentUVE>(candidate)) {
-                return &m_entityManager->GetComponentUVE<Scene::Skeleton3DNodeComponentUVE>(candidate);
+                return candidate;
             }
             const std::vector<Scene::EntityUVE> children = m_sceneGraph->GetChildrenUVE(*m_entityManager, candidate);
             queue.insert(queue.end(), children.begin(), children.end());
         }
-        return nullptr;
+        return Scene::kInvalidEntityUVE;
+    };
+    // Root motion is measured in the skeleton's space; the target moves in its parent's. Both go
+    // through world space. A CharacterBody3D is driven by velocity, so collisions still apply.
+    const auto applyRootMotion = [this, &resolveTarget](const Scene::EntityUVE self, const Scene::EntityUVE target,
+                                                        const Scene::EntityUVE skeletonEntity,
+                                                        const Math::Vector3UVE& delta, const float stepSeconds) {
+        Math::Vector3UVE world = delta;
+        if (m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(skeletonEntity)) {
+            const auto& frame = m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(skeletonEntity);
+            world = Math::RotateVectorUVE(frame.worldRotation, Math::Vector3UVE{delta.x * frame.worldScale.x,
+                                                                                 delta.y * frame.worldScale.y,
+                                                                                 delta.z * frame.worldScale.z});
+        }
+        Scene::TransformComponentUVE* const moved = resolveTarget(self, target);
+        if (moved == nullptr) {
+            return;
+        }
+        Scene::EntityUVE movedEntity = target;
+        if (movedEntity == Scene::kInvalidEntityUVE || !m_entityManager->IsAliveUVE(movedEntity)) {
+            movedEntity = m_entityManager->GetComponentUVE<Scene::HierarchyComponentUVE>(self).parent;
+        }
+        if (m_entityManager->HasComponentUVE<Scene::CharacterControllerComponentUVE>(movedEntity)) {
+            if (stepSeconds > 0.0F) {
+                auto& body = m_entityManager->GetComponentUVE<Scene::CharacterControllerComponentUVE>(movedEntity);
+                body.velocity.x = world.x / stepSeconds;
+                body.velocity.z = world.z / stepSeconds;
+            }
+            return;
+        }
+        Math::Vector3UVE local = world;
+        const Scene::EntityUVE parent = m_entityManager->HasComponentUVE<Scene::HierarchyComponentUVE>(movedEntity)
+                                            ? m_entityManager->GetComponentUVE<Scene::HierarchyComponentUVE>(movedEntity).parent
+                                            : Scene::kInvalidEntityUVE;
+        if (parent != Scene::kInvalidEntityUVE && m_entityManager->IsAliveUVE(parent) &&
+            m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(parent)) {
+            const auto& frame = m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(parent);
+            Math::QuaternionUVE inverse{};
+            if (!Math::TryInverseUVE(frame.worldRotation, inverse)) {
+                inverse = Math::QuaternionUVE{};
+            }
+            const Math::Vector3UVE unrotated = Math::RotateVectorUVE(inverse, world);
+            const auto safe = [](const float value) { return std::abs(value) > 1.0e-6F ? value : 1.0F; };
+            local = Math::Vector3UVE{unrotated.x / safe(frame.worldScale.x), unrotated.y / safe(frame.worldScale.y),
+                                     unrotated.z / safe(frame.worldScale.z)};
+        }
+        moved->localPosition = moved->localPosition + local;
     };
     // A player or tree loaded without its mixer (an older save) runs with the mixer's defaults.
     const auto mixerOf = [this](const Scene::EntityUVE entity) {
@@ -961,15 +1007,20 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
         // A skeletal clip poses a skeleton: the target when it is one, else the first Skeleton3D
         // under it (a character's AnimationPlayer targets the character; its skeleton is inside).
         if (clip->IsSkeletalUVE()) {
-            Scene::Skeleton3DNodeComponentUVE* const skeleton = resolveSkeleton(entity, mixer.target);
-            if (skeleton == nullptr) {
+            const Scene::EntityUVE skeletonEntity = resolveSkeleton(entity, mixer.target);
+            if (skeletonEntity == Scene::kInvalidEntityUVE) {
                 continue;
             }
+            Scene::Skeleton3DNodeComponentUVE& skeleton =
+                m_entityManager->GetComponentUVE<Scene::Skeleton3DNodeComponentUVE>(skeletonEntity);
             if (!player.hasStartPose && player.autoplay) {
                 Scene::PlayAnimationPlayerUVE(player, Scene::TransformComponentUVE{}, clip->durationSeconds);
             }
-            static_cast<void>(Scene::StepSkeletalAnimationPlayerUVE(player, *clip, deltaSeconds * mixer.speedScale,
-                                                                    *skeleton, mixer));
+            const bool posed = Scene::StepSkeletalAnimationPlayerUVE(player, *clip, deltaSeconds * mixer.speedScale,
+                                                                     skeleton, mixer);
+            if (posed && mixer.rootMotion == Scene::AnimationRootMotionModeUVE::ApplyToTarget) {
+                applyRootMotion(entity, mixer.target, skeletonEntity, player.rootMotionDelta, deltaSeconds);
+            }
             continue;
         }
         // Resolved before playback starts, so a player with nothing to move never "plays".

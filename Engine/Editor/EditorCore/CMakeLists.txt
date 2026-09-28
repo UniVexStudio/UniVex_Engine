@@ -160,6 +160,7 @@ add_library(uve_editor STATIC
     Internal/editor_uvscript_highlight_uve.cpp
     Internal/editor_script_exports_uve.cpp
     Internal/editor_panel_inspector_skeleton_uve.cpp
+    Internal/editor_panel_timeline_uve.cpp
     Internal/editor_panel_content_browser_uve.cpp
     Internal/editor_panel_content_create_uve.cpp
     Internal/editor_panel_viewport_uve.cpp
