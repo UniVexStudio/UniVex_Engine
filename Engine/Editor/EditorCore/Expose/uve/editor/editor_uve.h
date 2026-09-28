@@ -27,6 +27,7 @@
 #include "uve/core/engine_services_uve.h"
 #include "uve/core/i_simulation_control_uve.h"
 #include "uve/config/settings_registry_uve.h"
+#include "uve/editor/animation_clip_editing_uve.h"
 #include "uve/editor/editor_color_uve.h"
 #include "uve/editor/editor_commands_uve.h"
 #include "uve/editor/editor_content_browser_model_uve.h"
@@ -1950,10 +1951,28 @@ private:
         std::string filter;
         /// Tracks opened into their Position / Rotation / Scale rows, by name.
         std::vector<std::string> expandedTracks;
+        /// Editing: the selected keys, what Ctrl+C copied, and the clip's own undo history.
+        std::vector<ClipKeyUVE> selectedKeys;
+        ClipKeyClipboardUVE clipboard;
+        std::vector<std::shared_ptr<const Asset::AnimationClipAssetUVE>> undo;
+        std::vector<std::shared_ptr<const Asset::AnimationClipAssetUVE>> redo;
+        /// Edited since it was loaded or saved.
+        bool dirty = false;
+        /// A drag of the selected keys, from this mouse x.
+        bool draggingKeys = false;
+        float dragFromX = 0.0F;
+        /// A selection box, from this screen point.
+        bool boxSelecting = false;
+        float boxFromX = 0.0F;
+        float boxFromY = 0.0F;
+        std::string status;
         /// The skeleton whose pose the Timeline wrote, to put back at rest when it stops.
         Scene::EntityUVE previewSkeleton = Scene::kInvalidEntityUVE;
     };
     AnimationTimelineStateUVE m_timeline;
+    /// The Timeline had keyboard focus last frame: its keys (Delete, Ctrl+Z, arrows...) are its own,
+    /// so the editor's shortcuts stand aside, as they do while typing.
+    bool m_timelineOwnsKeys = false;
     /// The Timeline tab's body: transport, ruler, bone tracks and the preview on the skeleton.
     void DrawAnimationTimelineUVE();
     /// Puts the previewed skeleton back at rest and stops the preview.

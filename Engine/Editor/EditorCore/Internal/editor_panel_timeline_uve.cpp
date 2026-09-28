@@ -6,12 +6,15 @@
 // pose only, so it never dirties the entity or reaches its file.
 
 #include "uve/editor/editor_uve.h"
+#include "uve/editor/animation_clip_editing_uve.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cctype>
 #include <cstdio>
+#include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -91,10 +94,27 @@ constexpr ImU32 kOutOfRangeUVE = IM_COL32(0, 0, 0, 70);
     }
 }
 
+/// True when sample `i` is a key worth showing on a row: the channel (or, for -1, any channel)
+/// moves into or out of it.
+[[nodiscard]] bool ShowsKeyUVE(const std::vector<Asset::AnimationAssetSampleUVE>& samples, const std::size_t i,
+                               const int channel) {
+    if (samples.size() == 1U) {
+        return true;
+    }
+    for (int c = channel < 0 ? 0 : channel; c <= (channel < 0 ? 2 : channel); ++c) {
+        if ((i > 0U && ChannelChangesUVE(samples[i - 1U].pose, samples[i].pose, c)) ||
+            (i + 1U < samples.size() && ChannelChangesUVE(samples[i].pose, samples[i + 1U].pose, c))) {
+            return true;
+        }
+    }
+    return false;
+}
+
 } // namespace
 
 void EditorUVE::StopAnimationTimelinePreviewUVE() {
     m_timeline.playing = false;
+    m_timelineOwnsKeys = false;
     if (m_timeline.previewSkeleton == Scene::kInvalidEntityUVE) {
         return;
     }
@@ -152,6 +172,13 @@ void EditorUVE::DrawAnimationTimelineUVE() {
         StopAnimationTimelinePreviewUVE();
         m_timeline.clipGuid = player.clip;
         m_timeline.clip.reset();
+        m_timeline.selectedKeys.clear();
+        m_timeline.undo.clear();
+        m_timeline.redo.clear();
+        m_timeline.dirty = false;
+        m_timeline.draggingKeys = false;
+        m_timeline.boxSelecting = false;
+        m_timeline.status.clear();
         m_timeline.loadError.clear();
         m_timeline.timeSeconds = 0.0;
         m_timeline.scrollSeconds = 0.0;
@@ -195,6 +222,78 @@ void EditorUVE::DrawAnimationTimelineUVE() {
     const double frame = 1.0 / frameRate;
     const auto frameOf = [frameRate](const double seconds) {
         return static_cast<long>(std::lround(seconds * frameRate));
+    };
+
+    // ---- Editing ----------------------------------------------------------------------------------
+    // Every change to the clip goes through `edit`: one undo step, and the preview shows it at once.
+    const auto edit = [this](const auto& change) {
+        auto next = std::make_shared<Asset::AnimationClipAssetUVE>(*m_timeline.clip);
+        change(*next);
+        m_timeline.undo.push_back(m_timeline.clip);
+        if (m_timeline.undo.size() > 64U) {
+            m_timeline.undo.erase(m_timeline.undo.begin());
+        }
+        m_timeline.redo.clear();
+        m_timeline.clip = std::move(next);
+        m_timeline.dirty = true;
+    };
+    const auto undoEdit = [this]() {
+        if (!m_timeline.undo.empty()) {
+            m_timeline.redo.push_back(m_timeline.clip);
+            m_timeline.clip = m_timeline.undo.back();
+            m_timeline.undo.pop_back();
+            m_timeline.selectedKeys.clear();
+            m_timeline.dirty = true;
+        }
+    };
+    const auto redoEdit = [this]() {
+        if (!m_timeline.redo.empty()) {
+            m_timeline.undo.push_back(m_timeline.clip);
+            m_timeline.clip = m_timeline.redo.back();
+            m_timeline.redo.pop_back();
+            m_timeline.selectedKeys.clear();
+            m_timeline.dirty = true;
+        }
+    };
+    // K: a key on the selected bone at the playhead, holding the motion it already has there.
+    const auto insertKey = [this, &edit, frameRate]() {
+        if (m_timeline.clip == nullptr) {
+            return;
+        }
+        // The selected bone's track, else the clip's own node track.
+        std::optional<std::string> chosen;
+        if (FindClipTrackSamplesUVE(*m_timeline.clip, m_selectedSkeletonBone) != nullptr) {
+            chosen = m_selectedSkeletonBone;
+        } else if (!m_timeline.clip->samples.empty()) {
+            chosen = std::string{};
+        }
+        if (!chosen.has_value()) {
+            m_timeline.status = "Select a bone's row first, then press K.";
+            return;
+        }
+        const std::string track = *chosen;
+        Asset::AnimationClipAssetUVE probe = *m_timeline.clip;
+        if (!InsertClipKeyUVE(probe, track, m_timeline.timeSeconds, frameRate)) {
+            m_timeline.status = "There is already a key there.";
+            return;
+        }
+        edit([&](Asset::AnimationClipAssetUVE& next) {
+            static_cast<void>(InsertClipKeyUVE(next, track, m_timeline.timeSeconds, frameRate));
+        });
+        m_timeline.selectedKeys = {ClipKeyUVE{track, std::round(m_timeline.timeSeconds * frameRate) / frameRate}};
+        m_timeline.status = "Key added to " + (track.empty() ? std::string{"Transform"} : track);
+    };
+    const auto saveClip = [this]() {
+        if (m_timeline.clip == nullptr || !m_timeline.dirty) {
+            return;
+        }
+        const std::filesystem::path path = m_services->GetAssetDatabaseUVE().ResolveUVE(m_timeline.clipGuid);
+        if (Asset::SaveAnimationClipAssetUVE(*m_timeline.clip, path)) {
+            m_timeline.dirty = false;
+            m_timeline.status = "Saved " + path.filename().string();
+        } else {
+            m_timeline.status = "Could not save " + path.filename().string();
+        }
     };
 
     // ---- Which player, when the entity has several ---------------------------------------------------
@@ -279,6 +378,24 @@ void EditorUVE::DrawAnimationTimelineUVE() {
     ImGui::EndDisabled();
     ImGui::SameLine();
     ImGui::TextDisabled("%.2f s", m_timeline.timeSeconds);
+    ImGui::SameLine(0.0F, 16.0F);
+    ImGui::BeginDisabled(clip == nullptr);
+    if (ImGui::SmallButton("Key##tl-key")) {
+        insertKey();
+    }
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip("Add a key to the selected bone at the playhead (K)");
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!m_timeline.dirty);
+    if (ImGui::SmallButton(m_timeline.dirty ? "Save Clip*##tl-save" : "Save Clip##tl-save")) {
+        saveClip();
+    }
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip("Write the edited clip to its .uvanim (Ctrl+S)");
+    }
+    ImGui::EndDisabled();
 
     const std::string clipLabel = clip != nullptr ? clip->clipId
                                   : (player.clip != Asset::AssetGuidUVE{}) ? std::string{"(unreadable clip)"}
@@ -458,6 +575,21 @@ void EditorUVE::DrawAnimationTimelineUVE() {
         m_timeline.timeSeconds = std::clamp(snapped, 0.0, duration);
     }
 
+    // Key selection and dragging. A drag shows the keys where they would land, snapped to frames.
+    const double dragDelta =
+        m_timeline.draggingKeys
+            ? std::round(static_cast<double>(ImGui::GetIO().MousePos.x - m_timeline.dragFromX) / scale * frameRate) /
+                  frameRate
+            : 0.0;
+    const auto isSelected = [this](const std::string& track, const double seconds) {
+        return std::any_of(m_timeline.selectedKeys.begin(), m_timeline.selectedKeys.end(),
+                           [&](const ClipKeyUVE& key) {
+                               return key.track == track &&
+                                      std::abs(key.timeSeconds - seconds) < kClipKeyTimeToleranceUVE;
+                           });
+    };
+    int clickedRow = -1;
+
     // Rows, clipped to what is on screen.
     const float rowsTop = origin.y + kRulerHeightUVE;
     ImGui::SetCursorScreenPos(ImVec2{origin.x, rowsTop});
@@ -547,10 +679,7 @@ void EditorUVE::DrawAnimationTimelineUVE() {
                     const float half = std::max(2.0F, laneHeight * 0.5F - (row.channel < 0 ? 0.5F : 1.5F));
                     const ImU32 colour = kChannelColourUVE[channel];
                     const ImU32 span = (colour & 0x00FFFFFFU) | (static_cast<ImU32>(row.channel < 0 ? 150 : 110) << 24);
-                    const auto moves = [&](const std::size_t i) {
-                        return (i > 0U && ChannelChangesUVE(samples[i - 1U].pose, samples[i].pose, channel)) ||
-                               (i + 1U < samples.size() && ChannelChangesUVE(samples[i].pose, samples[i + 1U].pose, channel));
-                    };
+                    const auto moves = [&](const std::size_t i) { return ShowsKeyUVE(samples, i, channel); };
                     if (dense) {
                         std::size_t i = 0U;
                         while (i < samples.size()) {
@@ -580,17 +709,112 @@ void EditorUVE::DrawAnimationTimelineUVE() {
                     }
                 }
             }
+            // Selected keys: a white outline, drawn where a drag would put them.
+            if (!row.events && row.samples != nullptr && !m_timeline.selectedKeys.empty()) {
+                const auto& samples = *row.samples;
+                for (std::size_t i = 0U; i < samples.size(); ++i) {
+                    if (!isSelected(row.track, samples[i].timeSeconds) || !ShowsKeyUVE(samples, i, row.channel)) {
+                        continue;
+                    }
+                    const double shown = std::clamp(samples[i].timeSeconds + dragDelta, 0.0, duration);
+                    const float x = toX(shown);
+                    const float half = row.channel < 0 ? 6.0F : 6.5F;
+                    rowDraw->AddQuad(ImVec2{x, mid - half}, ImVec2{x + half, mid}, ImVec2{x, mid + half},
+                                     ImVec2{x - half, mid}, IM_COL32_WHITE, 1.5F);
+                }
+            }
             rowDraw->PopClipRect();
+            // The key area takes the clicks: select, drag and box-select.
+            if (!row.events) {
+                ImGui::SetCursorScreenPos(ImVec2{keysLeft, y});
+                ImGui::PushID(index);
+                ImGui::InvisibleButton("##keys", ImVec2{keysWidth, kRowHeightUVE});
+                if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
+                    clickedRow = index;
+                }
+                ImGui::PopID();
+            }
         }
     }
     clipper.End();
     ImGui::Dummy(ImVec2{1.0F, 0.0F});
-    // Clicking in the key area scrubs too; Ctrl + wheel zooms around the mouse, Shift + wheel pans.
-    const bool hovered = ImGui::IsWindowHovered();
+    // Clicks in the key area: on a key, select it (Shift adds, Ctrl toggles) and start dragging the
+    // selection; on empty space, start a selection box.
     const ImVec2 mouse = ImGui::GetIO().MousePos;
-    if (hovered && mouse.x >= keysLeft && ImGui::IsMouseDown(ImGuiMouseButton_Left) && !ImGui::IsAnyItemActive()) {
-        m_timeline.playing = false;
-        m_timeline.timeSeconds = std::clamp(std::round(toSeconds(mouse.x) * frameRate) / frameRate, 0.0, duration);
+    const bool shift = ImGui::GetIO().KeyShift;
+    const bool ctrl = ImGui::GetIO().KeyCtrl;
+    if (clickedRow >= 0) {
+        const RowUVE& row = rows[static_cast<std::size_t>(clickedRow)];
+        std::optional<double> hit;
+        float best = 7.0F;
+        if (row.samples != nullptr) {
+            for (std::size_t i = 0U; i < row.samples->size(); ++i) {
+                const float distance = std::abs(toX((*row.samples)[i].timeSeconds) - mouse.x);
+                if (distance < best && ShowsKeyUVE(*row.samples, i, row.channel)) {
+                    best = distance;
+                    hit = (*row.samples)[i].timeSeconds;
+                }
+            }
+        }
+        if (hit.has_value()) {
+            const ClipKeyUVE key{row.track, *hit};
+            const bool already = isSelected(key.track, key.timeSeconds);
+            if (ctrl && already) {
+                std::erase(m_timeline.selectedKeys, key);
+            } else {
+                if (!shift && !ctrl && !already) {
+                    m_timeline.selectedKeys.clear();
+                }
+                if (!already) {
+                    m_timeline.selectedKeys.push_back(key);
+                }
+                m_timeline.draggingKeys = true;
+                m_timeline.dragFromX = mouse.x;
+            }
+        } else {
+            if (!shift && !ctrl) {
+                m_timeline.selectedKeys.clear();
+            }
+            m_timeline.boxSelecting = true;
+            m_timeline.boxFromX = mouse.x;
+            m_timeline.boxFromY = mouse.y;
+        }
+    }
+    if (m_timeline.draggingKeys && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+        m_timeline.draggingKeys = false;
+        if (std::abs(dragDelta) > kClipKeyTimeToleranceUVE) {
+            std::vector<ClipKeyUVE> landed;
+            edit([&](Asset::AnimationClipAssetUVE& next) {
+                landed = MoveClipKeysUVE(next, m_timeline.selectedKeys, dragDelta, frameRate);
+            });
+            m_timeline.selectedKeys = std::move(landed);
+        }
+    }
+    if (m_timeline.boxSelecting) {
+        const float left = std::min(m_timeline.boxFromX, mouse.x);
+        const float right = std::max(m_timeline.boxFromX, mouse.x);
+        const float top = std::min(m_timeline.boxFromY, mouse.y);
+        const float bottom = std::max(m_timeline.boxFromY, mouse.y);
+        rowDraw->AddRectFilled(ImVec2{left, top}, ImVec2{right, bottom}, IM_COL32(120, 170, 255, 40));
+        rowDraw->AddRect(ImVec2{left, top}, ImVec2{right, bottom}, IM_COL32(120, 170, 255, 200));
+        if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+            m_timeline.boxSelecting = false;
+            for (std::size_t index = 0U; index < rows.size(); ++index) {
+                const RowUVE& row = rows[index];
+                const float rowTop = rowsOrigin.y + static_cast<float>(index) * kRowHeightUVE;
+                if (row.events || row.samples == nullptr || rowTop + kRowHeightUVE < top || rowTop > bottom) {
+                    continue;
+                }
+                for (std::size_t i = 0U; i < row.samples->size(); ++i) {
+                    const double t = (*row.samples)[i].timeSeconds;
+                    const float x = toX(t);
+                    if (x >= left && x <= right && ShowsKeyUVE(*row.samples, i, row.channel) &&
+                        !isSelected(row.track, t)) {
+                        m_timeline.selectedKeys.push_back(ClipKeyUVE{row.track, t});
+                    }
+                }
+            }
+        }
     }
     ImGui::EndChild();
 
@@ -628,7 +852,9 @@ void EditorUVE::DrawAnimationTimelineUVE() {
     }
 
     // Keys while the Timeline has focus.
-    if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !ImGui::GetIO().WantTextInput) {
+    // The keys belong to the Timeline while its tracks have focus (a click on a key or a row).
+    m_timelineOwnsKeys = ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows) && !ImGui::GetIO().WantTextInput;
+    if (m_timelineOwnsKeys) {
         if (ImGui::IsKeyPressed(ImGuiKey_Space, false)) {
             m_timeline.playing = !m_timeline.playing;
         }
@@ -645,6 +871,44 @@ void EditorUVE::DrawAnimationTimelineUVE() {
         }
         if (ImGui::IsKeyPressed(ImGuiKey_End, false)) {
             m_timeline.timeSeconds = duration;
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
+            m_timeline.selectedKeys.clear();
+        }
+        if (!m_timeline.selectedKeys.empty() &&
+            (ImGui::IsKeyPressed(ImGuiKey_Delete, false) || ImGui::IsKeyPressed(ImGuiKey_Backspace, false))) {
+            std::size_t removed = 0U;
+            edit([&](Asset::AnimationClipAssetUVE& next) { removed = DeleteClipKeysUVE(next, m_timeline.selectedKeys); });
+            m_timeline.status = "Deleted " + std::to_string(removed) + " key" + (removed == 1U ? "" : "s") +
+                                (removed < m_timeline.selectedKeys.size() ? " (a track keeps its last key)" : "");
+            m_timeline.selectedKeys.clear();
+        }
+        if (ctrl && ImGui::IsKeyPressed(ImGuiKey_C, false) && !m_timeline.selectedKeys.empty()) {
+            m_timeline.clipboard = CopyClipKeysUVE(*m_timeline.clip, m_timeline.selectedKeys);
+            m_timeline.status = "Copied " + std::to_string(m_timeline.clipboard.entries.size()) + " keys";
+        }
+        if (ctrl && ImGui::IsKeyPressed(ImGuiKey_V, false) && !m_timeline.clipboard.IsEmptyUVE()) {
+            std::vector<ClipKeyUVE> pasted;
+            edit([&](Asset::AnimationClipAssetUVE& next) {
+                pasted = PasteClipKeysUVE(next, m_timeline.clipboard, m_timeline.timeSeconds, frameRate);
+            });
+            m_timeline.selectedKeys = std::move(pasted);
+        }
+        if (!ctrl && ImGui::IsKeyPressed(ImGuiKey_K, false)) {
+            insertKey();
+        }
+        if (ctrl && ImGui::IsKeyPressed(ImGuiKey_Z, false)) {
+            if (shift) {
+                redoEdit();
+            } else {
+                undoEdit();
+            }
+        }
+        if (ctrl && ImGui::IsKeyPressed(ImGuiKey_Y, false)) {
+            redoEdit();
+        }
+        if (ctrl && ImGui::IsKeyPressed(ImGuiKey_S, false)) {
+            saveClip();
         }
     }
     ImGui::EndChild();
@@ -671,6 +935,14 @@ void EditorUVE::DrawAnimationTimelineUVE() {
     ImGui::SameLine();
     ImGui::TextDisabled("%.2f s  |  %ld frames  |  %.0f fps  |  %zu tracks", clip->durationSeconds, frameOf(duration),
                         frameRate, clip->bones.size());
+    if (!m_timeline.selectedKeys.empty() || !m_timeline.status.empty()) {
+        ImGui::SameLine(0.0F, 16.0F);
+        if (m_timeline.status.empty()) {
+            ImGui::TextDisabled("%zu selected", m_timeline.selectedKeys.size());
+        } else {
+            ImGui::TextDisabled("%s", m_timeline.status.c_str());
+        }
+    }
     const float zoomWidth = 140.0F;
     const float fitWidth = ImGui::CalcTextSize("Fit").x + ImGui::GetStyle().FramePadding.x * 2.0F;
     const float rightStart = ImGui::GetWindowContentRegionMax().x - zoomWidth - fitWidth - ImGui::GetStyle().ItemSpacing.x;
