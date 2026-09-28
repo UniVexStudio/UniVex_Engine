@@ -7,6 +7,7 @@
 
 #include "uve/editor/editor_uve.h"
 #include "uve/editor/animation_clip_editing_uve.h"
+#include "editor_chrome_layout_uve.h"
 
 #include <algorithm>
 #include <cmath>
@@ -21,6 +22,7 @@
 #include <vector>
 
 #include <imgui.h>
+#include <imgui_internal.h>
 
 #include "uve/asset/animation_clip_asset_uve.h"
 #include "uve/component/animation_mixer_component_uve.h"
@@ -63,7 +65,9 @@ constexpr ImU32 kOutOfRangeUVE = IM_COL32(0, 0, 0, 70);
     if (most < 2U || clip.durationSeconds <= 0.0) {
         return 30.0;
     }
-    return std::clamp(std::round(static_cast<double>(most - 1U) / clip.durationSeconds), 1.0, 240.0);
+    // A baked clip has a key every frame; a hand-made one with a few keys was still made at 30.
+    const double rate = static_cast<double>(most - 1U) / clip.durationSeconds;
+    return rate < 10.0 ? 30.0 : std::clamp(std::round(rate), 1.0, 240.0);
 }
 
 /// A tick spacing, in seconds, that keeps labels at least `minimumPixels` apart.
@@ -100,7 +104,9 @@ constexpr ImU32 kOutOfRangeUVE = IM_COL32(0, 0, 0, 70);
 /// moves into or out of it.
 [[nodiscard]] bool ShowsKeyUVE(const std::vector<Asset::AnimationAssetSampleUVE>& samples, const std::size_t i,
                                const int channel) {
-    if (samples.size() == 1U) {
+    // The ends of a track are always keys, so a track that holds still still shows where it starts
+    // and stops.
+    if (samples.size() == 1U || i == 0U || i + 1U == samples.size()) {
         return true;
     }
     for (int c = channel < 0 ? 0 : channel; c <= (channel < 0 ? 2 : channel); ++c) {
@@ -129,6 +135,8 @@ void EditorUVE::StopAnimationTimelinePreviewUVE() {
 }
 
 void EditorUVE::DrawAnimationTimelineUVE() {
+    // Last frame's replaced clip is no longer read by anything.
+    m_timeline.retired.reset();
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
     Scene::ISceneGraphUVE& sceneGraph = m_services->GetSceneGraphUVE();
     const auto nameOf = [&entityManager](const Scene::EntityUVE entity) {
@@ -171,6 +179,13 @@ void EditorUVE::DrawAnimationTimelineUVE() {
 
     // ---- The clip, reloaded when the player's clip changes ----------------------------------------
     if (player.clip != m_timeline.clipGuid) {
+        // Switching away keeps the work: edits not yet saved are written to their clip first.
+        if (m_timeline.dirty && m_timeline.clip != nullptr) {
+            const std::filesystem::path previous = m_services->GetAssetDatabaseUVE().ResolveUVE(m_timeline.clipGuid);
+            if (!previous.empty() && Asset::SaveAnimationClipAssetUVE(*m_timeline.clip, previous)) {
+                m_timeline.status = "Saved your edits to " + previous.filename().string();
+            }
+        }
         StopAnimationTimelinePreviewUVE();
         m_timeline.clipGuid = player.clip;
         m_timeline.clip.reset();
@@ -181,7 +196,6 @@ void EditorUVE::DrawAnimationTimelineUVE() {
         m_timeline.dirty = false;
         m_timeline.draggingKeys = false;
         m_timeline.boxSelecting = false;
-        m_timeline.status.clear();
         m_timeline.loadError.clear();
         m_timeline.timeSeconds = 0.0;
         m_timeline.scrollSeconds = 0.0;
@@ -320,6 +334,10 @@ void EditorUVE::DrawAnimationTimelineUVE() {
         ImGui::SameLine();
     }
 
+    // ---- Which animation: the player's list, and the ways to grow it --------------------------------
+    DrawAnimationPickerUVE(playerEntity, skeletonEntity);
+    ImGui::SameLine(0.0F, 12.0F);
+
     // ---- Transport ---------------------------------------------------------------------------------
     const bool canPlay = clip != nullptr;
     ImGui::BeginDisabled(!canPlay);
@@ -409,7 +427,7 @@ void EditorUVE::DrawAnimationTimelineUVE() {
         ImGui::Spacing();
         ImGui::TextDisabled("%s", !m_timeline.loadError.empty()
                                       ? m_timeline.loadError.c_str()
-                                      : "This AnimationPlayer has no clip. Set its Clip in the Inspector.");
+                                      : "No animation yet: open the animation menu for New Animation or Add from Project, or drag a .uvanim here.");
         StopAnimationTimelinePreviewUVE();
         return;
     }
@@ -1319,6 +1337,27 @@ void EditorUVE::DrawAnimationTimelineUVE() {
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("Zoom. Ctrl + wheel over the tracks zooms around the mouse; Shift + wheel pans.");
     }
+    AcceptTimelineClipDropUVE(playerEntity);
+}
+
+void EditorUVE::AcceptTimelineClipDropUVE(const Scene::EntityUVE player) {
+    // A .uvanim dropped anywhere on the Timeline joins the player's list and starts playing.
+    const ImGuiWindow* const window = ImGui::GetCurrentWindow();
+    if (window == nullptr || !ImGui::BeginDragDropTargetCustom(window->Rect(), window->ID)) {
+        return;
+    }
+    if (const ImGuiPayload* const payload = ImGui::AcceptDragDropPayload(kContentItemPayloadUVE);
+        payload != nullptr && payload->DataSize > 1) {
+        const std::filesystem::path relative{
+            std::string(static_cast<const char*>(payload->Data), static_cast<std::size_t>(payload->DataSize - 1))};
+        if (relative.extension() == ".uvanim") {
+            const std::filesystem::path root = m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot;
+            static_cast<void>(AddClipToAnimationPlayerUVE(player, root / relative));
+        } else {
+            m_timeline.status = "Only .uvanim clips can be dropped on the Timeline";
+        }
+    }
+    ImGui::EndDragDropTarget();
 }
 
 } // namespace UVE::Editor

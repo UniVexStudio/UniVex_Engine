@@ -655,7 +655,10 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_AnimationTargetsRemapToTheRestoredEnti
     mixer.animateScale = false;
     mixer.processCallback = AnimationProcessCallbackUVE::Physics;
     entityManager.AddComponentUVE<AnimationMixerComponentUVE>(player, mixer);
-    entityManager.AddComponentUVE<AnimationPlayerComponentUVE>(player, AnimationPlayerComponentUVE{});
+    AnimationPlayerComponentUVE animations;
+    animations.clip = Asset::AssetGuidUVE{21U};
+    animations.library = {Asset::AssetGuidUVE{20U}, Asset::AssetGuidUVE{21U}, Asset::AssetGuidUVE{22U}};
+    entityManager.AddComponentUVE<AnimationPlayerComponentUVE>(player, animations);
     // A state machine with a transition and a parameter, so the whole graph goes through the file.
     AnimationTreeComponentUVE blend;
     blend.parameters = {AnimationParameterUVE{"speed", AnimationParameterTypeUVE::Float, 0.25F},
@@ -693,6 +696,8 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_AnimationTargetsRemapToTheRestoredEnti
     AnimationMixerComponentUVE expectedMixer = mixer;
     expectedMixer.target = restoredDoor; // the one authored field that is remapped
     EXPECT_EQ(restoredManager.GetComponentUVE<AnimationMixerComponentUVE>(restoredPlayer), expectedMixer);
+    EXPECT_TRUE(restoredManager.GetComponentUVE<AnimationPlayerComponentUVE>(restoredPlayer).HasSameSettingsUVE(animations))
+        << "the clip and the player's whole animation list, in order";
     EXPECT_TRUE(restoredManager.GetComponentUVE<AnimationTreeComponentUVE>(restoredPlayer).HasSameSettingsUVE(blend));
     // A pure Node stays one: no transform appears on the way through the file.
     EXPECT_FALSE(restoredManager.HasComponentUVE<TransformComponentUVE>(restoredPlayer));

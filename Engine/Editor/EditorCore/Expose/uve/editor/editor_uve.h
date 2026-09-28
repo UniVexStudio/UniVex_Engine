@@ -454,6 +454,11 @@ public:
     /// undo step. Returns the new root, or kInvalidEntityUVE.
     [[nodiscard]] Scene::EntityUVE PlaceEntityAssetUVE(const std::filesystem::path& path,
                                                        Scene::EntityUVE parent = Scene::kInvalidEntityUVE);
+    /// Changes an AnimationPlayer as one undo step (its animation list, its current clip).
+    bool EditAnimationPlayerUVE(Scene::EntityUVE player,
+                                const std::function<void(Scene::AnimationPlayerComponentUVE&)>& change);
+    /// Adds a project clip to the player's list and makes it the one playing.
+    bool AddClipToAnimationPlayerUVE(Scene::EntityUVE player, const std::filesystem::path& absoluteClip);
 
     /// Brings a model source (an FBX, glTF or OBJ in Content, by its content-relative path) into the
     /// scene as one undo step and returns its root. A file with bones becomes
@@ -1940,6 +1945,9 @@ private:
         Scene::EntityUVE player = Scene::kInvalidEntityUVE;
         Asset::AssetGuidUVE clipGuid{};
         std::shared_ptr<const Asset::AnimationClipAssetUVE> clip;
+        /// The clip `clip` replaced this frame, kept alive until the next one: the frame's drawing
+        /// still reads it through a plain pointer.
+        std::shared_ptr<const Asset::AnimationClipAssetUVE> retired;
         std::string loadError;
         double timeSeconds = 0.0;
         bool playing = false;
@@ -1972,6 +1980,19 @@ private:
         float eventDragFromX = 0.0F;
         bool renameEventRequested = false;
         std::string eventName;
+        /// The animation picker: what each clip is called and how long it runs, read when the
+        /// picker opens; its search text; and a request to name the current clip.
+        struct ClipCardUVE final {
+            std::string name;
+            std::filesystem::path path;
+            double durationSeconds = 0.0;
+            bool skeletal = false;
+            bool readable = false;
+        };
+        std::unordered_map<std::uint64_t, ClipCardUVE> clipCards;
+        std::string pickerSearch;
+        bool renameClipRequested = false;
+        std::string clipName;
         /// Curves view instead of the dope sheet, and which channel it draws (-1: all that move).
         bool curves = false;
         int curveChannel = -1;
@@ -1995,6 +2016,11 @@ private:
     void DrawAnimationTimelineUVE();
     /// Puts the previewed skeleton back at rest and stops the preview.
     void StopAnimationTimelinePreviewUVE();
+    /// The Timeline's animation picker: the player's animations, switching, New, Add from Project,
+    /// Rename, Duplicate and Remove.
+    void DrawAnimationPickerUVE(Scene::EntityUVE player, Scene::EntityUVE skeleton);
+    /// A .uvanim dragged from Content onto the Timeline joins the player's list.
+    void AcceptTimelineClipDropUVE(Scene::EntityUVE player);
     /// In-flight automatic model imports, by content-relative source path.
     std::map<std::string, Asset::AssetImportJobIdUVE> m_modelImportJobs;
     /// Every content-relative model source, as the last project refresh read it.

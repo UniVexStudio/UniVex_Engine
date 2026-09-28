@@ -531,6 +531,24 @@ Connections:  {
         EXPECT_NE(player.clip, Asset::kInvalidAssetGuidUVE);
         EXPECT_EQ(player.loopMode, Scene::AnimationLoopModeUVE::Loop);
         EXPECT_TRUE(std::filesystem::exists(content / "Anims" / "Hero_Run.uvanim"));
+        EXPECT_EQ(player.library, std::vector<Asset::AssetGuidUVE>{player.clip}) << "every take is on the player";
+
+        // Another clip from the project joins the player's list and plays; one undo takes it back.
+        Asset::AnimationClipAssetUVE walk;
+        walk.clipId = "Walk";
+        walk.durationSeconds = 1.0;
+        walk.bones = {Asset::AnimationAssetBoneTrackUVE{"Hips", {Asset::AnimationAssetSampleUVE{}}}};
+        ASSERT_TRUE(Asset::SaveAnimationClipAssetUVE(walk, content / "Anims" / "Walk.uvanim"));
+        const Asset::AssetGuidUVE run = player.clip;
+        ASSERT_TRUE(editor.AddClipToAnimationPlayerUVE(children[1], content / "Anims" / "Walk.uvanim"));
+        ASSERT_EQ(player.library.size(), 2U);
+        EXPECT_EQ(player.library[0], run);
+        EXPECT_EQ(player.clip, player.library[1]) << "the added clip plays";
+        EXPECT_FALSE(editor.AddClipToAnimationPlayerUVE(children[1], content / "Anims" / "Hero.FBX"))
+            << "only an animation can join";
+        ASSERT_TRUE(editor.UndoUVE());
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::AnimationPlayerComponentUVE>(children[1]).library.size(), 1U);
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::AnimationPlayerComponentUVE>(children[1]).clip, run);
 
         // One undo removes the whole placement.
         ASSERT_TRUE(editor.UndoUVE());

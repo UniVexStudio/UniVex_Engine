@@ -165,7 +165,11 @@ Scene::EntityUVE EditorUVE::PlaceModelSourceUVE(const std::filesystem::path& rel
         }
         if (!clips.empty()) {
             Scene::AnimationPlayerNodeDefinitionUVE player;
-            player.player.clip = m_services->GetAssetDatabaseUVE().RegisterUVE(clips.front());
+            // Every take of the file is the player's; the first one plays.
+            for (const std::filesystem::path& clipPath : clips) {
+                player.player.library.push_back(m_services->GetAssetDatabaseUVE().RegisterUVE(clipPath));
+            }
+            player.player.clip = player.player.library.front();
             player.player.loopMode = Scene::AnimationLoopModeUVE::Loop;
             static_cast<void>(make("AnimationPlayer", Kind::AnimationPlayer, player, Scene::ApplyAnimationPlayerNodeDefinitionUVE, root));
         }
