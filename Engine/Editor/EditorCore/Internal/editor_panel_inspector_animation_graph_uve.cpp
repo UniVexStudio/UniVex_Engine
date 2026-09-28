@@ -330,6 +330,24 @@ void EditorUVE::DrawAnimationGraphPropertyUVE(const Core::TypeMetadataEntryUVE& 
                         ImGui::SetTooltip("Keep the inputs in step: the heaviest leads, the others play at its phase.");
                     }
                 };
+                const auto blendModeRows = [&]() {
+                    RowUVE("Blend");
+                    static constexpr std::array<const char*, 3> kModes{"Blend", "Nearest", "Nearest, in step"};
+                    const auto mode = std::min(static_cast<std::size_t>(node.blendMode), kModes.size() - 1U);
+                    if (ImGui::BeginCombo("##blend-mode", kModes[mode])) {
+                        for (std::size_t option = 0U; option < kModes.size(); ++option) {
+                            if (ImGui::Selectable(kModes[option], option == mode)) {
+                                node.blendMode = static_cast<Scene::AnimationBlendModeUVE>(option);
+                                changed = true;
+                            }
+                        }
+                        ImGui::EndCombo();
+                    }
+                    drag("Smoothing", node.smoothingSeconds, 0.005F, 0.0F, 5.0F);
+                    if (node.blendMode != Scene::AnimationBlendModeUVE::Blend) {
+                        drag("Switch", node.fadeSeconds, 0.005F, 0.0F, 5.0F);
+                    }
+                };
 
                 switch (node.kind) {
                     case Kind::Clip: {
@@ -359,6 +377,7 @@ void EditorUVE::DrawAnimationGraphPropertyUVE(const Core::TypeMetadataEntryUVE& 
                         if (node.parameter.empty()) {
                             drag("Position", node.value, 0.01F, -1000.0F, 1000.0F);
                         }
+                        blendModeRows();
                         syncRow();
                         break;
                     case Kind::OneShot:
@@ -401,6 +420,7 @@ void EditorUVE::DrawAnimationGraphPropertyUVE(const Core::TypeMetadataEntryUVE& 
                         if (node.parameterY.empty()) {
                             drag("Y", node.valueY, 0.01F, -1000.0F, 1000.0F);
                         }
+                        blendModeRows();
                         syncRow();
                         break;
                     }

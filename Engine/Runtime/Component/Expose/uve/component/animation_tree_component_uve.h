@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -47,8 +48,9 @@ enum class AnimationGraphNodeKindUVE : std::uint8_t {
     TimeScale,
     /// Its inputs are states; transitions move between them on conditions, crossfading.
     StateMachine,
-    /// Places its animations (`blendPoints`) on a plane and mixes them by how close a
-    /// two-parameter position is to each - strafing by velocity X and Z, aiming by yaw and pitch.
+    /// Places its animations (`blendPoints`) on a plane, joins them into triangles, and mixes the
+    /// corners of the triangle a two-parameter position is in - strafing by velocity X and Z,
+    /// aiming by yaw and pitch. Needs three points that make a triangle before it plays.
     BlendSpace2D,
     /// Plays the input a parameter picks (a Bool 0/1, or a Float rounded to an index), fading when
     /// the pick changes: stance by weapon, idle by mood.
@@ -103,6 +105,19 @@ struct AnimationTransitionUVE final {
     [[nodiscard]] bool operator==(const AnimationTransitionUVE&) const = default;
 };
 
+/// How a Blend Space turns its position into what plays.
+enum class AnimationBlendModeUVE : std::uint8_t {
+    /// Mixes the points around the position: the two either side on a line, the three corners of
+    /// the triangle it is in on a plane.
+    Blend = 0,
+    /// Plays the nearest point alone. When another point becomes clearly nearer it takes over,
+    /// handed over across `fadeSeconds` (inertialized or crossfaded, as the mixer's transitions are).
+    Nearest,
+    /// Nearest, and the point taking over starts at the phase the last one had, so a stride carries
+    /// on through the switch.
+    NearestInStep,
+};
+
 /// One animation of a Blend Space, where it sits. A blend space holds its animations itself, the
 /// way a Clip holds its clip: they are not graph inputs, so the graph shows the space as one box
 /// and its editor shows the points.
@@ -145,11 +160,16 @@ struct AnimationGraphNodeUVE final {
     /// BlendSpace2D: the second axis's parameter, and its value when there is none.
     std::string parameterY;
     float valueY = 0.0F;
+    /// Blend Space 1D / 2D: how the position picks what plays.
+    AnimationBlendModeUVE blendMode = AnimationBlendModeUVE::Blend;
+    /// Blend Space 1D / 2D: how long the position takes to follow its parameters, as the time to
+    /// close half the gap (a critically damped spring, so it never overshoots). 0 follows at once.
+    float smoothingSeconds = 0.0F;
     /// LayeredBlend: the bones whose branches take the layer. Empty takes the whole body.
     std::vector<std::string> bones;
     /// Select: start the picked input over from its beginning when it is picked.
     bool restart = true;
-    /// OneShot fade in and out, in seconds.
+    /// OneShot fade in and out, Select's fade, and a Nearest blend space's hand-over, in seconds.
     float fadeSeconds = 0.2F;
     /// Blend / Blend Space / Additive: the inputs keep in step - the heaviest one leads, the others
     /// play at its phase, so a walk and a run blend with their feet together.
@@ -178,6 +198,17 @@ struct AnimationGraphNodeStateUVE final {
     /// Blend Space: each point's place in its clip, and whether it has played yet.
     std::vector<double> pointTimes;
     std::vector<bool> pointStarted;
+    /// Blend Space: the smoothed position and how fast it is moving; `blendAtSet` once it has one.
+    Math::Vector2UVE blendAt{};
+    Math::Vector2UVE blendVelocity{};
+    bool blendAtSet = false;
+    /// Blend Space: how much each point counted in the last step (what the editor shows).
+    std::vector<float> pointWeights;
+    /// Blend Space, Nearest: the point playing; kAnyAnimationStateUVE before the first step.
+    std::uint32_t nearestPoint = kAnyAnimationStateUVE;
+    /// Blend Space 2D: its triangles (point indices), and the points they were made from.
+    std::vector<std::array<std::uint32_t, 3>> triangles;
+    std::vector<Math::Vector2UVE> triangulatedPoints;
     /// How much this node counted in the last step's output, 0..1: what the editor shows on wires.
     float weight = 0.0F;
     /// StateMachine, inertialized transition: how far the pose that was showing is from the state

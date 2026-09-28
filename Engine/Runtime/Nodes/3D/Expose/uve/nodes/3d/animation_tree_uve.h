@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <array>
 #include <functional>
 #include <string_view>
 #include <vector>
@@ -67,11 +68,24 @@ using AnimationClipResolverUVE = std::function<const Asset::AnimationClipAssetUV
 /// by distance; before the first or past the last, that end takes everything.
 [[nodiscard]] std::vector<float> AnimationBlendSpace1DWeightsUVE(const std::vector<float>& points, float at);
 
-/// A Blend Space 2D's weight for each of its points at `at`, adding up to one: gradient band
-/// interpolation, which suits points laid out anywhere (no grid or triangle layout needed). A
-/// position on a point gives it everything.
+/// A Blend Space 2D's triangles: a Delaunay triangulation of its points (no triangle has another
+/// point inside its circumcircle, so the triangles are as close to equilateral as the layout
+/// allows), as index triples. Empty until three points stand off one line: a plane blends inside
+/// triangles, so fewer points, or points all on one line, blend nothing.
+[[nodiscard]] std::vector<std::array<std::uint32_t, 3>> TriangulateBlendSpaceUVE(const std::vector<Math::Vector2UVE>& points);
+
+/// A Blend Space 2D's weight for each of its points at `at`, adding up to one: the corners of the
+/// triangle `at` is in, by its barycentric coordinates. Outside every triangle, the nearest place on
+/// the triangles' edges is used, so the result slides along the outline. All zero without triangles.
 [[nodiscard]] std::vector<float> AnimationBlendSpace2DWeightsUVE(const std::vector<Math::Vector2UVE>& points,
+                                                                 const std::vector<std::array<std::uint32_t, 3>>& triangles,
                                                                  Math::Vector2UVE at);
+
+/// Moves `value` toward `goal` over `deltaSeconds` as a critically damped spring whose gap halves
+/// every `halfLifeSeconds`, with `velocity` carried between calls. It never overshoots, and it lands
+/// the same whatever the step sizes. A half-life of 0 jumps to the goal.
+void SmoothBlendPositionUVE(Math::Vector2UVE& value, Math::Vector2UVE& velocity, Math::Vector2UVE goal,
+                            float halfLifeSeconds, float deltaSeconds) noexcept;
 
 /// Puts every node back to its start: clips at 0, state machines in their entry state.
 void ResetAnimationTreeUVE(AnimationTreeComponentUVE& tree);

@@ -134,6 +134,7 @@ std::string DescribeAnimationGraphProblemUVE(const AnimationTreeComponentUVE& co
         }
         if (!std::isfinite(node.position.x) || !std::isfinite(node.position.y) || !std::isfinite(node.speed) ||
             !std::isfinite(node.value) || !IsFiniteNonNegativeUVE(node.fadeSeconds) ||
+            !IsFiniteNonNegativeUVE(node.smoothingSeconds) || node.blendMode > AnimationBlendModeUVE::NearestInStep ||
             !IsNameValidUVE(node.parameter) || !std::isfinite(node.valueY) || !IsNameValidUVE(node.parameterY)) {
             return label + ": invalid value";
         }
