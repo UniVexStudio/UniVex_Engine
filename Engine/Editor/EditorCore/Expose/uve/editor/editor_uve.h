@@ -468,6 +468,45 @@ public:
     /// clean instances of the entity in the scene are refreshed from the file.
     bool CloseEntityEditorUVE(bool save);
 
+    /// The Entity Editor's middle area.
+    enum class EntityEditorTabUVE : std::uint8_t { Viewport, Scripting, Signals };
+    [[nodiscard]] EntityEditorTabUVE GetEntityEditorTabUVE() const noexcept;
+    void SetEntityEditorTabUVE(EntityEditorTabUVE tab) noexcept;
+    /// One thing Compile found wrong with the open entity. `entity` is the node it belongs to
+    /// (kInvalidEntityUVE for a problem with the entity as a whole); `at` is zero when it has no
+    /// place in a script.
+    struct EntityCompileProblemUVE final {
+        Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
+        std::string nodeName;
+        std::string scriptPath;
+        UVScript::SourceLocationUVE at;
+        std::string message;
+    };
+    /// Checks the whole open entity: one root, and every node's `.uvs` script (read from the
+    /// open text editor when it has unsaved text, else from disk) compiled against that node.
+    /// Returns the problem count; the list stays until the next Compile, Revert or close.
+    std::size_t CompileEntityEditorUVE();
+    [[nodiscard]] const std::vector<EntityCompileProblemUVE>& GetEntityEditorProblemsUVE() const noexcept;
+    /// False until Compile has run for this session (so "no problems" means something).
+    [[nodiscard]] bool HasEntityEditorCompiledUVE() const noexcept;
+    /// One `on <event>` handler in a node's script: what the node answers to.
+    struct EntitySignalRowUVE final {
+        Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
+        std::string nodeName;
+        std::string scriptPath;
+        std::string event;
+        /// "(other, impulse)" or empty for a handler without parameters.
+        std::string params;
+        std::uint32_t line = 0U;
+    };
+    /// Every handler of every script in the open entity, in tree order then source order.
+    [[nodiscard]] std::vector<EntitySignalRowUVE> GetEntityEditorSignalsUVE();
+    /// Selects `entity`, opens its script in the Scripting tab and puts the caret on `line`
+    /// (1-based; 0 leaves it). False when the node has no `.uvs` script.
+    bool GoToEntityScriptUVE(Scene::EntityUVE entity, std::uint32_t line);
+    /// Unsaved edits anywhere in the Entity Editor: the tree or the open script.
+    [[nodiscard]] bool HasEntityEditorUnsavedChangesUVE() const noexcept;
+
     /// Stores `contentRelativePath` (a `.uventity`) as the project's Default Player and saves the
     /// project settings. An empty path clears it.
     [[nodiscard]] bool SetDefaultPlayerEntityUVE(const std::filesystem::path& contentRelativePath);
@@ -1027,12 +1066,25 @@ private:
         /// The simulation is held while an entity is open (a character would otherwise fall and
         /// be saved where it landed); this is what to go back to.
         std::optional<Core::SimulationExecutionModeUVE> simulationBefore;
+        EntityEditorTabUVE tab = EntityEditorTabUVE::Viewport;
+        std::vector<EntityCompileProblemUVE> problems;
+        bool compiled = false;
+        /// The window selects `tab` on its next frame (GoTo from a problem or a signal).
+        bool forceTab = false;
     };
+    /// The entity's nodes in tree order (root first). Empty when no entity is open.
+    [[nodiscard]] std::vector<Scene::EntityUVE> CollectEntityEditorNodesUVE();
     /// Instantiates the entity asset as the document's only content (below the scene root).
     [[nodiscard]] Scene::EntityUVE LoadEntityIntoDocumentUVE(Asset::AssetGuidUVE guid);
     /// The Entity Editor's own window, and what the main window shows meanwhile.
     void DrawEntityEditorWindowUVE();
     void DrawEntityEditorPlaceholderUVE();
+    /// The Entity Editor's middle: the Viewport / Scripting / Signals tabs and Compile's problems.
+    void DrawEntityEditorMiddleUVE(EntityEditSessionUVE& session);
+    void DrawEntityEditorScriptingTabUVE();
+    void DrawEntityEditorSignalsTabUVE();
+    /// "Not compiled", "Compiled" or "3 problems", in the toolbar.
+    static void DrawEntityCompileBadgeUVE(const EntityEditSessionUVE& session);
 
     struct PlayModeSessionUVE final {
         Scene::SceneSnapshotUVE documentSnapshot;
@@ -1633,6 +1685,9 @@ private:
     void DrawScriptingWorkspaceUVE();
     /// The Scripting workspace while a `.uvs` file is open: toolbar, text, and the compiler's list.
     void DrawUVScriptEditorUVE();
+    /// The editor's text, toolbar and problem list inside the current window; shared by the
+    /// Scripting workspace and the Entity Editor's Scripting tab. Returns true on Close.
+    bool DrawUVScriptEditorBodyUVE(bool offerClose);
     [[nodiscard]] static ContentBrowserItemTypeUVE ClassifyContentBrowserEntryUVE(
         const Asset::ProjectFileEntryUVE& entry);
     [[nodiscard]] static const char* GetContentBrowserItemTypeLabelUVE(ContentBrowserItemTypeUVE type) noexcept;
@@ -1871,6 +1926,8 @@ private:
     std::optional<std::string> m_scriptLoadCheckedPath;
     std::string m_scriptLoadProblem;
     std::optional<UVScriptDocumentUVE> m_openUVScript;
+    /// A caret move the text editor applies on its next frame (1-based line), set by GoTo.
+    std::uint32_t m_uvscriptJumpLine = 0U;
     /// The export rows the Inspector last drew, reused until the node, its script or its values
     /// change, or half a second passes (the file may have been edited).
     struct ScriptExportsCacheUVE final {
