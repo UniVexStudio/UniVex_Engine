@@ -131,12 +131,9 @@ void EditorUVE::DrawInspectorPanelUVE() {
     // Always, not FirstUseEver - see DrawHierarchyPanelUVE()'s comment on the same change.
     ImGui::SetNextWindowPos(layout.inspectorPos, ImGuiCond_Always);
     ImGui::SetNextWindowSize(layout.inspectorSize, ImGuiCond_Always);
-    // NoTitleBar dropped (was the only flag actually blocking dragging - dockable/draggable
-    // windows need a title bar as their default drag handle) and given a real title: an internal
-    // Inspector/Import/Signals tab strip already exists below via Selectable(), so the window
-    // title identifies the *panel* to dock/drag by, while that internal strip still switches the
-    // panel's *content* - two different, non-conflicting notions of "tab".
-    constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse;
+    // No title row: the Inspector / Import / Signals tabs are the panel's top edge, so the name is
+    // not said twice. The panel is fixed in the layout, so there is nothing to drag it by anyway.
+    constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar;
     ImGui::Begin(kPanelLabelInspectorUVE, nullptr, flags);
 
     // Real tabs rather than three selectable labels. The active tab can also be changed from
@@ -218,7 +215,7 @@ void EditorUVE::DrawInspectorContentUVE() {
     if (m_selectedEntities.empty()) {
         ImGui::BeginChild("##inspector-empty-state", ImVec2{0.0F, 64.0F}, true);
         ImGui::TextColored(ImVec4{0.80F, 0.82F, 0.85F, 1.0F}, "NO ENTITY SELECTED");
-        ImGui::TextDisabled("Select an entity in Scene or Viewport to inspect it.");
+        ImGui::TextDisabled("Select an entity in the Outliner or the Viewport to inspect it.");
         ImGui::EndChild();
         return;
     }

@@ -32,16 +32,26 @@ TEST(EditorChromeLayoutUVETest, ThreeColumnsExactlyFillTheWidthWithNoGapOrOverla
 }
 
 TEST(EditorChromeLayoutUVETest, SidePanelsRunFullHeightAndTheDockSitsUnderTheViewport) {
-    // Scene and Inspector run from the top chrome down to the dock tab strip; the viewport and the
-    // dock share the centre column between them, the dock directly under the viewport.
+    // Outliner and Inspector run from under the title bar down to the dock tab strip; the centre
+    // column holds the tool strip, the viewport under it and the dock under that.
     const EditorChromeLayoutUVE layout = ComputeEditorChromeLayoutUVE(MakeViewportUVE(1920.0F, 1080.0F), true);
 
+    // Header row: the Outliner's name beside the logo, the viewport's header, the Inspector's tabs.
+    EXPECT_FLOAT_EQ(layout.inspectorPos.y, kEditorTitleBarHeightUVE);
+    EXPECT_FLOAT_EQ(layout.viewportHeaderPos.y, kEditorTitleBarHeightUVE);
+    EXPECT_FLOAT_EQ(layout.outlinerHeaderPos.y, kEditorTitleBarHeightUVE);
     EXPECT_FLOAT_EQ(layout.scenePos.y, kEditorTopChromeHeightUVE);
     EXPECT_FLOAT_EQ(layout.viewportPos.y, kEditorTopChromeHeightUVE);
-    EXPECT_FLOAT_EQ(layout.inspectorPos.y, kEditorTopChromeHeightUVE);
-    EXPECT_FLOAT_EQ(layout.sceneSize.y, layout.inspectorSize.y);
-    EXPECT_FLOAT_EQ(layout.sceneSize.y, 1080.0F - kEditorTopChromeHeightUVE - kDockTabBarHeightUVE);
+    EXPECT_FLOAT_EQ(layout.inspectorSize.y, 1080.0F - kEditorTitleBarHeightUVE - kDockTabBarHeightUVE);
+    EXPECT_FLOAT_EQ(layout.sceneSize.y + kEditorToolbarHeightUVE, layout.inspectorSize.y);
     EXPECT_FLOAT_EQ(layout.viewportSize.y + layout.contentBrowserSize.y, layout.sceneSize.y);
+    // The viewport's header spans exactly its column; the logo spans both top rows, and the
+    // Outliner's header fills the rest of its column beside it.
+    EXPECT_FLOAT_EQ(layout.viewportHeaderPos.x, layout.viewportPos.x);
+    EXPECT_FLOAT_EQ(layout.viewportHeaderSize.x, layout.viewportSize.x);
+    EXPECT_FLOAT_EQ(layout.logoSize.y, kEditorTopChromeHeightUVE);
+    EXPECT_FLOAT_EQ(layout.outlinerHeaderPos.x, layout.logoPos.x + layout.logoSize.x);
+    EXPECT_FLOAT_EQ(layout.outlinerHeaderPos.x + layout.outlinerHeaderSize.x, layout.scenePos.x + layout.sceneSize.x);
     EXPECT_FLOAT_EQ(layout.contentBrowserPos.x, layout.viewportPos.x);
     EXPECT_FLOAT_EQ(layout.contentBrowserSize.x, layout.viewportSize.x);
     EXPECT_FLOAT_EQ(layout.contentBrowserPos.y, layout.viewportPos.y + layout.viewportSize.y);
@@ -108,6 +118,7 @@ TEST(EditorChromeLayoutUVETest, LayoutIsOffsetByTheViewportOrigin) {
 
     EXPECT_FLOAT_EQ(layout.scenePos.x, kOriginX);
     EXPECT_FLOAT_EQ(layout.scenePos.y, kOriginY + kEditorTopChromeHeightUVE);
+    EXPECT_FLOAT_EQ(layout.logoPos.y, kOriginY);
     EXPECT_FLOAT_EQ(layout.contentBrowserPos.x, kOriginX + layout.sceneSize.x);
     EXPECT_FLOAT_EQ(layout.dockTabBarPos.x, kOriginX);
 }

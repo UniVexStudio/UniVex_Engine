@@ -33,6 +33,15 @@ struct EditorChromeLayoutUVE final {
     /// The strip of dock tabs along the very bottom, full width.
     ImVec2 dockTabBarPos;
     ImVec2 dockTabBarSize;
+    /// The viewport's header row, over its image: its name, the play controls, and the editor's tools.
+    ImVec2 viewportHeaderPos;
+    ImVec2 viewportHeaderSize;
+    /// The logo's box in the top-left corner, as tall as the title bar and the header row together.
+    ImVec2 logoPos;
+    ImVec2 logoSize;
+    /// The Outliner's header row, beside the logo; the Outliner's tree starts under it.
+    ImVec2 outlinerHeaderPos;
+    ImVec2 outlinerHeaderSize;
 };
 
 /// Shared across the editor's panel translation units.
@@ -51,7 +60,7 @@ constexpr const char* kContentEntityPayloadUVE = "UVE_CONTENT_ENTITY_ASSET";
 /// Any other file or folder dragged out of Content (onto a shelf): its content-relative path,
 /// NUL-terminated.
 constexpr const char* kContentItemPayloadUVE = "UVE_CONTENT_ITEM";
-constexpr const char* kPanelLabelSceneUVE = "\xEF\xAB\xBA Scene##scene-panel";
+constexpr const char* kPanelLabelSceneUVE = "\xEF\xAB\xBA Outliner##scene-panel";
 constexpr std::size_t kMaximumEntityNameBytesUVE = 96U;
 // A node icon is 16 px: its texture is 64 px, so 16 is an exact mip level and draws crisp.
 constexpr float kHierarchyNodeIconSizeUVE = 16.0F;
@@ -72,9 +81,16 @@ constexpr float kInspectorPanelWidthFractionUVE = 0.18F;
 constexpr float kInspectorPanelWidthMinUVE = 220.0F;
 constexpr float kInspectorPanelWidthMaxUVE = 300.0F;
 
-/// The editor's panel rectangles. The Scene and Inspector columns run the full height, from the top
-/// chrome down to the dock tab strip; the viewport and, under it, the bottom dock share the centre
-/// column. The tab strip spans the full width at the very bottom and stays when the dock is hidden,
+/// The editor's panel rectangles.
+///
+///   [logo][ title bar: Menu, status ...................................................... ]
+///   [logo][ Outliner   ][ Viewport name  > []  tools ................... ][ Inspector tabs ]
+///   [ Outliner tree    ][ viewport image                                ][ Inspector      ]
+///   [                  ][ bottom dock                                   ][                ]
+///   [ dock tabs ............................................................................ ]
+///
+/// The logo's box spans the title bar and the header row. The Inspector runs from under the title
+/// bar; the Outliner's tree and the viewport's image start under the header row. The tab strip spans the full width at the very bottom and stays when the dock is hidden,
 /// since it is how the dock is brought back. `dockHeight` is the dock body's height, clamped so the
 /// viewport keeps its minimum.
 [[nodiscard]] inline EditorChromeLayoutUVE ComputeEditorChromeLayoutUVE(const ImGuiViewport& viewport,
@@ -86,8 +102,12 @@ constexpr float kInspectorPanelWidthMaxUVE = 300.0F;
     const float totalHeight = viewport.WorkSize.y;
 
     const float chromeHeight = kEditorTopChromeHeightUVE;
+    // The centre column, under the tool strip.
     const float columnHeight =
         std::max(kMinimumViewportHeightUVE, totalHeight - chromeHeight - kDockTabBarHeightUVE);
+    // The side columns also take the tool strip's height: they start right under the title bar.
+    const float sideTop = originY + kEditorTitleBarHeightUVE;
+    const float sideHeight = columnHeight + kEditorToolbarHeightUVE;
     const float maximumDock = std::max(kMinimumBottomDockHeightUVE, columnHeight - kMinimumViewportHeightUVE);
     const float dock =
         bottomDockVisible ? std::clamp(dockHeight, kMinimumBottomDockHeightUVE, maximumDock) : 0.0F;
@@ -101,12 +121,18 @@ constexpr float kInspectorPanelWidthMaxUVE = 300.0F;
     const float top = originY + chromeHeight;
 
     EditorChromeLayoutUVE layout{};
+    layout.logoPos = ImVec2{originX, originY};
+    layout.logoSize = ImVec2{kEditorTopChromeHeightUVE, kEditorTopChromeHeightUVE};
+    layout.outlinerHeaderPos = ImVec2{originX + kEditorTopChromeHeightUVE, sideTop};
+    layout.outlinerHeaderSize = ImVec2{std::max(0.0F, sceneWidth - kEditorTopChromeHeightUVE), kEditorToolbarHeightUVE};
     layout.scenePos = ImVec2{originX, top};
     layout.sceneSize = ImVec2{sceneWidth, columnHeight};
+    layout.viewportHeaderPos = ImVec2{originX + sceneWidth, sideTop};
+    layout.viewportHeaderSize = ImVec2{viewportWidth, kEditorToolbarHeightUVE};
     layout.viewportPos = ImVec2{originX + sceneWidth, top};
     layout.viewportSize = ImVec2{viewportWidth, std::max(kMinimumViewportHeightUVE, columnHeight - dock)};
-    layout.inspectorPos = ImVec2{originX + sceneWidth + viewportWidth, top};
-    layout.inspectorSize = ImVec2{inspectorWidth, columnHeight};
+    layout.inspectorPos = ImVec2{originX + sceneWidth + viewportWidth, sideTop};
+    layout.inspectorSize = ImVec2{inspectorWidth, sideHeight};
     layout.contentBrowserPos = ImVec2{originX + sceneWidth, top + layout.viewportSize.y};
     layout.contentBrowserSize = ImVec2{viewportWidth, dock};
     layout.dockTabBarPos = ImVec2{originX, top + columnHeight};
