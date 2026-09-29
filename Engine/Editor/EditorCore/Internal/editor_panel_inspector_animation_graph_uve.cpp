@@ -20,6 +20,8 @@
 
 #include <imgui.h>
 
+#include "editor_animation_graph_widgets_uve.h"
+
 #include "uve/component/animation_tree_component_uve.h"
 #include "uve/editor/animation_graph_editing_uve.h"
 
@@ -59,34 +61,6 @@ constexpr std::array<Kind, 11> kAddableKindsUVE{Kind::Clip,         Kind::Blend2
     return false;
 }
 
-/// A combo over the parameters of `wanted` types, plus "(value)" meaning none. True when changed.
-[[nodiscard]] bool PickParameterUVE(const char* const id, const std::vector<AnimationParameterUVE>& parameters,
-                                    std::initializer_list<AnimationParameterTypeUVE> wanted, const char* const noneLabel,
-                                    std::string& inOutName) {
-    const bool known = std::any_of(parameters.begin(), parameters.end(),
-                                   [&inOutName](const AnimationParameterUVE& p) { return p.name == inOutName; });
-    const std::string preview = inOutName.empty() ? std::string{noneLabel}
-                                : known           ? inOutName
-                                                  : inOutName + " (missing)";
-    bool changed = false;
-    if (ImGui::BeginCombo(id, preview.c_str())) {
-        if (ImGui::Selectable(noneLabel, inOutName.empty()) && !inOutName.empty()) {
-            inOutName.clear();
-            changed = true;
-        }
-        for (const AnimationParameterUVE& parameter : parameters) {
-            if (std::find(wanted.begin(), wanted.end(), parameter.type) == wanted.end()) {
-                continue;
-            }
-            if (ImGui::Selectable(parameter.name.c_str(), parameter.name == inOutName) && parameter.name != inOutName) {
-                inOutName = parameter.name;
-                changed = true;
-            }
-        }
-        ImGui::EndCombo();
-    }
-    return changed;
-}
 
 /// A labelled row: the label in the left column, the widget filling the right.
 void RowUVE(const char* const label) {
@@ -209,14 +183,18 @@ void EditorUVE::DrawAnimationGraphPropertyUVE(const Core::TypeMetadataEntryUVE& 
         const auto [from, to] = *m_pendingAnimationParameterRename;
         m_pendingAnimationParameterRename.reset();
         for (AnimationGraphNodeUVE& node : nodes) {
-            if (node.parameter == from) {
-                node.parameter = to;
-                changed = true;
+            for (std::string* const reads : {&node.parameter, &node.parameterY}) {
+                if (*reads == from) {
+                    *reads = to;
+                    changed = true;
+                }
             }
             for (AnimationTransitionUVE& transition : node.transitions) {
-                if (transition.parameter == from) {
-                    transition.parameter = to;
-                    changed = true;
+                for (Scene::AnimationTransitionConditionUVE& test : transition.conditions) {
+                    if (test.parameter == from) {
+                        test.parameter = to;
+                        changed = true;
+                    }
                 }
             }
         }
@@ -517,23 +495,9 @@ void EditorUVE::DrawAnimationGraphPropertyUVE(const Core::TypeMetadataEntryUVE& 
                     if (removable) {
                         ImGui::SameLine();
                         if (ImGui::Button("x", ImVec2(ImGui::GetFrameHeight(), 0.0F)) && node.inputs.size() > 1U) {
-                            node.inputs.erase(node.inputs.begin() + static_cast<std::ptrdiff_t>(slot));
-                            if (node.kind == Kind::StateMachine) {
-                                // Transitions touching the removed state go; later states shift down.
-                                const auto state = static_cast<std::uint32_t>(slot);
-                                std::erase_if(node.transitions, [state](const AnimationTransitionUVE& transition) {
-                                    return transition.fromState == state || transition.toState == state;
-                                });
-                                for (AnimationTransitionUVE& transition : node.transitions) {
-                                    if (transition.fromState != Scene::kAnyAnimationStateUVE && transition.fromState > state) {
-                                        --transition.fromState;
-                                    }
-                                    if (transition.toState > state) {
-                                        --transition.toState;
-                                    }
-                                }
-                                node.entryState = std::min(node.entryState, static_cast<std::uint32_t>(node.inputs.size() - 1U));
-                            }
+                            std::vector<AnimationGraphNodeUVE> shrunk{node};
+                            static_cast<void>(RemoveAnimationGraphInputSlotUVE(shrunk, node.id, slot));
+                            node = std::move(shrunk.front());
                             changed = true;
                             ImGui::PopID();
                             break;
@@ -622,6 +586,7 @@ void EditorUVE::DrawAnimationGraphPropertyUVE(const Core::TypeMetadataEntryUVE& 
                 ImGui::Spacing();
                 ImGui::TextDisabled("Transitions");
                 std::optional<std::size_t> removeTransition;
+                std::optional<std::pair<std::size_t, std::size_t>> moveTransition;
                 const auto stateLabel = [&node](const std::uint32_t state) {
                     return state == Scene::kAnyAnimationStateUVE ? std::string{"Any"}
                                                                  : SlotLabelUVE(Kind::StateMachine, state);
@@ -629,8 +594,8 @@ void EditorUVE::DrawAnimationGraphPropertyUVE(const Core::TypeMetadataEntryUVE& 
                 for (std::size_t t = 0U; t < node.transitions.size(); ++t) {
                     AnimationTransitionUVE& transition = node.transitions[t];
                     ImGui::PushID(static_cast<int>(t) + 5000);
-                    const float width = ImGui::GetContentRegionAvail().x;
-                    ImGui::SetNextItemWidth(width * 0.30F);
+                    const float width = ImGui::GetContentRegionAvail().x - ImGui::GetFrameHeight() * 3.0F;
+                    ImGui::SetNextItemWidth(width * 0.38F);
                     if (ImGui::BeginCombo("##from", stateLabel(transition.fromState).c_str())) {
                         if (ImGui::Selectable("Any", transition.fromState == Scene::kAnyAnimationStateUVE)) {
                             transition.fromState = Scene::kAnyAnimationStateUVE;
@@ -647,7 +612,7 @@ void EditorUVE::DrawAnimationGraphPropertyUVE(const Core::TypeMetadataEntryUVE& 
                     ImGui::SameLine();
                     ImGui::TextUnformatted("->");
                     ImGui::SameLine();
-                    ImGui::SetNextItemWidth(width * 0.30F);
+                    ImGui::SetNextItemWidth(width * 0.38F);
                     if (ImGui::BeginCombo("##to", stateLabel(transition.toState).c_str())) {
                         for (std::uint32_t state = 0U; state < node.inputs.size(); ++state) {
                             if (ImGui::Selectable(stateLabel(state).c_str(), transition.toState == state)) {
@@ -658,50 +623,41 @@ void EditorUVE::DrawAnimationGraphPropertyUVE(const Core::TypeMetadataEntryUVE& 
                         ImGui::EndCombo();
                     }
                     ImGui::SameLine();
+                    ImGui::BeginDisabled(t == 0U);
+                    if (ImGui::ArrowButton("##earlier", ImGuiDir_Up)) {
+                        moveTransition = std::pair<std::size_t, std::size_t>{t, t - 1U};
+                    }
+                    ImGui::EndDisabled();
+                    ImGui::SameLine();
+                    ImGui::BeginDisabled(t + 1U >= node.transitions.size());
+                    if (ImGui::ArrowButton("##later", ImGuiDir_Down)) {
+                        moveTransition = std::pair<std::size_t, std::size_t>{t, t + 1U};
+                    }
+                    ImGui::EndDisabled();
+                    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                        ImGui::SetTooltip("Transitions are tried top to bottom: the first ready one is taken.");
+                    }
+                    ImGui::SameLine();
                     if (ImGui::SmallButton("x")) {
                         removeTransition = t;
                     }
                     ImGui::Indent(12.0F);
-                    ImGui::SetNextItemWidth(width * 0.5F);
-                    int condition = static_cast<int>(transition.condition);
-                    if (ImGui::Combo("##when", &condition,
-                                     "Always\0At End\0Parameter >\0Parameter <\0Parameter Is True\0Parameter Is False\0Triggered\0")) {
-                        transition.condition = static_cast<Scene::AnimationConditionUVE>(condition);
-                        changed = true;
-                    }
-                    using Condition = Scene::AnimationConditionUVE;
-                    if (transition.condition != Condition::Always && transition.condition != Condition::AtEnd) {
-                        ImGui::SameLine();
-                        ImGui::SetNextItemWidth(-FLT_MIN);
-                        const bool wantsTrigger = transition.condition == Condition::Triggered;
-                        if (PickParameterUVE("##param", tree.parameters,
-                                             wantsTrigger ? std::initializer_list<AnimationParameterTypeUVE>{AnimationParameterTypeUVE::Trigger}
-                                                          : std::initializer_list<AnimationParameterTypeUVE>{
-                                                                AnimationParameterTypeUVE::Float,
-                                                                AnimationParameterTypeUVE::Bool},
-                                             "(pick)", transition.parameter)) {
-                            changed = true;
-                        }
-                    }
-                    if (transition.condition == Condition::ParameterGreater ||
-                        transition.condition == Condition::ParameterLess) {
-                        ImGui::SetNextItemWidth(width * 0.5F);
-                        if (ImGui::DragFloat("threshold", &transition.threshold, 0.01F)) {
-                            continuous = true;
-                        }
-                        if (ImGui::IsItemDeactivated()) {
-                            static_cast<void>(CommitComponentPropertyPreviewForUVE(entry, property));
-                        }
-                    }
-                    ImGui::SetNextItemWidth(width * 0.5F);
-                    if (ImGui::DragFloat("fade (s)", &transition.fadeSeconds, 0.01F, 0.0F, 10.0F, "%.2f")) {
-                        continuous = true;
-                    }
-                    if (ImGui::IsItemDeactivated()) {
+                    const TransitionEditUVE edited = DrawAnimationTransitionUVE(transition, tree.parameters);
+                    changed = changed || edited.changed;
+                    continuous = continuous || edited.dragging;
+                    if (edited.released) {
                         static_cast<void>(CommitComponentPropertyPreviewForUVE(entry, property));
                     }
                     ImGui::Unindent(12.0F);
+                    ImGui::Separator();
                     ImGui::PopID();
+                }
+                if (moveTransition.has_value()) {
+                    std::vector<AnimationGraphNodeUVE> reordered{node};
+                    if (MoveAnimationTransitionUVE(reordered, node.id, moveTransition->first, moveTransition->second)) {
+                        node = std::move(reordered.front());
+                        changed = true;
+                    }
                 }
                 if (removeTransition.has_value()) {
                     node.transitions.erase(node.transitions.begin() + static_cast<std::ptrdiff_t>(*removeTransition));

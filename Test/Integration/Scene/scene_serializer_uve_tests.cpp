@@ -672,10 +672,18 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_AnimationTargetsRemapToTheRestoredEnti
     AnimationTransitionUVE transition;
     transition.fromState = kAnyAnimationStateUVE;
     transition.toState = 1U;
-    transition.condition = AnimationConditionUVE::Triggered;
-    transition.parameter = "jump";
+    transition.conditions = {AnimationTransitionConditionUVE{AnimationConditionUVE::Triggered, "jump", 0.0F},
+                             AnimationTransitionConditionUVE{AnimationConditionUVE::ParameterLess, "speed", 2.5F}};
+    transition.exitPhase = 0.6F;
+    transition.start = AnimationTransitionStartUVE::InStep;
+    transition.curve = AnimationTransitionCurveUVE::EaseInOut;
+    transition.interruptible = false;
+    transition.enabled = false;
     transition.fadeSeconds = 0.05F;
     machine.transitions = {transition};
+    machine.statePositions = {Math::Vector2UVE{40.0F, -20.0F}};
+    machine.entryPosition = Math::Vector2UVE{-300.0F, 10.0F};
+    machine.anyPosition = Math::Vector2UVE{-300.0F, 90.0F};
     blend.nodes[0].inputs = {3U};
     blend.nodes[1].clip = Asset::AssetGuidUVE{77U};
     blend.nodes[1].loop = false;
@@ -771,6 +779,36 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_OldBlendSpaceInputsBecomeItsOwnPoints)
     EXPECT_FALSE(space.blendPoints[1].loop);
     EXPECT_LT(space.areaMin.x, 1.0F) << "an area around the old points";
     EXPECT_GT(space.areaMax.x, 6.0F);
+}
+
+TEST_F(SceneSerializerUVETest, RestoreUVE_OldSingleConditionTransitionsBecomeAList) {
+    // Saved when a transition had one condition in its own fields.
+    const std::string payloadText =
+        R"({"entities":[{"localId":0,"components":{"AnimationTreeComponentUVE":{"parameters":[],"nodes":[)"
+        R"({"id":1,"kind":0,"inputs":[2]},)"
+        R"({"id":2,"kind":7,"inputs":[0,0],"transitions":[)"
+        R"({"from":0,"to":1,"condition":2,"parameter":"speed","threshold":0.5,"fadeSeconds":0.3},)"
+        R"({"from":1,"to":0,"condition":0,"fadeSeconds":0.1}]}]}}}]})";
+    const auto* const payloadBytes = reinterpret_cast<const std::byte*>(payloadText.data());
+    const SceneSnapshotUVE snapshot{
+        Asset::EncodeUveFileEnvelopeUVE(SceneAssetTypeUVE::Scene,
+                                        std::vector<std::byte>{payloadBytes, payloadBytes + payloadText.size()}),
+        SceneAssetTypeUVE::Scene};
+    const std::vector<EntityUVE> roots = serializer.RestoreUVE(entityManager, snapshot);
+    ASSERT_EQ(roots.size(), 1U);
+    const AnimationTreeComponentUVE& tree = entityManager.GetComponentUVE<AnimationTreeComponentUVE>(roots[0]);
+    EXPECT_TRUE(DescribeAnimationGraphProblemUVE(tree).empty()) << DescribeAnimationGraphProblemUVE(tree);
+    const std::vector<AnimationTransitionUVE>& transitions = tree.nodes[1].transitions;
+    ASSERT_EQ(transitions.size(), 2U);
+    ASSERT_EQ(transitions[0].conditions.size(), 1U);
+    EXPECT_EQ(transitions[0].conditions[0].condition, AnimationConditionUVE::ParameterGreater);
+    EXPECT_EQ(transitions[0].conditions[0].parameter, "speed");
+    EXPECT_FLOAT_EQ(transitions[0].conditions[0].threshold, 0.5F);
+    EXPECT_FLOAT_EQ(transitions[0].fadeSeconds, 0.3F);
+    EXPECT_TRUE(transitions[1].conditions.empty()) << "Always is no condition";
+    EXPECT_LT(transitions[1].exitPhase, 0.0F);
+    EXPECT_TRUE(transitions[1].enabled);
+    EXPECT_TRUE(transitions[1].interruptible);
 }
 
 TEST_F(SceneSerializerUVETest, RestoreUVE_LegacyAnimationPlayerFieldsCarryOver) {
