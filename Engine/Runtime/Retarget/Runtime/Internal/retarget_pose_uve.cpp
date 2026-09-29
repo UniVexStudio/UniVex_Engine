@@ -3,7 +3,9 @@
 #include "retarget_pose_uve.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
+#include <optional>
 
 namespace UVE::Retarget {
 namespace {
@@ -21,7 +23,56 @@ constexpr float kMinimumElbowBendSineUVE = 0.1736482F;
     return found == byKey.end() ? -1 : found->second;
 }
 
+[[nodiscard]] Math::QuaternionUVE NormalizedUVE(const Math::QuaternionUVE& value) noexcept {
+    Math::QuaternionUVE out{};
+    return Math::TryNormalizeUVE(value, out) ? out : Math::QuaternionUVE{};
+}
+
 } // namespace
+
+/// The turn that stands a rig up +Y and turns its left side to +X, read from its own bones: up is
+/// hips to head (or the highest spine or neck bone), left is right thigh to left thigh. Identity
+/// when the rig already stands that way, or when it lacks the bones to tell.
+Math::QuaternionUVE OrientationOfRigUVE(const std::vector<WorldTransformUVE>& rigWorld,
+                                                      const HumanoidMatchUVE& match, const HumanoidReferenceUVE& reference) {
+    const auto positionOf = [&](const char* key) -> std::optional<Math::Vector3UVE> {
+        for (std::size_t index = 0U; index < reference.info.size(); ++index) {
+            if (reference.info[index].key == key && match.joints[index].bone >= 0) {
+                return rigWorld[static_cast<std::size_t>(match.joints[index].bone)].position;
+            }
+        }
+        return std::nullopt;
+    };
+    const std::optional<Math::Vector3UVE> hips = positionOf("C|hips");
+    std::optional<Math::Vector3UVE> top = positionOf("C|head");
+    for (const char* key : {"C|neck 1", "C|neck", "C|spine 5", "C|spine 3", "C|spine"}) {
+        if (top.has_value()) {
+            break;
+        }
+        top = positionOf(key);
+    }
+    const std::optional<Math::Vector3UVE> left = positionOf("L|thigh");
+    const std::optional<Math::Vector3UVE> right = positionOf("R|thigh");
+    if (!hips.has_value() || !top.has_value()) {
+        return Math::QuaternionUVE{};
+    }
+    const Math::Vector3UVE up = *top - *hips;
+    if (!(Math::LengthUVE(up) > 1e-6F)) {
+        return Math::QuaternionUVE{};
+    }
+    const Math::QuaternionUVE stand = RotationBetweenUVE(up, kUpUVE);
+    Math::QuaternionUVE yaw{};
+    if (left.has_value() && right.has_value()) {
+        const Math::Vector3UVE across = Math::RotateVectorUVE(stand, *left - *right);
+        if (across.x * across.x + across.z * across.z > 1e-10F &&
+            !Math::TryMakeAxisAngleUVE(kUpUVE, std::atan2(across.z, across.x), yaw)) {
+            yaw = Math::QuaternionUVE{};
+        }
+    }
+    const Math::QuaternionUVE both = NormalizedUVE(Math::MultiplyUVE(yaw, stand));
+    // A rig that already stands right keeps its exact numbers rather than an almost-identity.
+    return std::abs(both.w) > 0.999999F ? Math::QuaternionUVE{} : both;
+}
 
 bool IsBelowUVE(const RetargetSkeletonUVE& skeleton, std::int32_t bone, const std::int32_t ancestor) {
     while (bone >= 0) {

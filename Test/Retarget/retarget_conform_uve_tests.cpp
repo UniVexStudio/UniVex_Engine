@@ -8,6 +8,8 @@
 
 #include <gtest/gtest.h>
 
+#include "Retarget/retarget_test_rig_uve.h"
+#include "uve/asset/mesh_skinning_uve.h"
 #include "uve/retarget/retarget_conform_uve.h"
 
 namespace UVE::Retarget {
@@ -15,80 +17,13 @@ namespace {
 
 using Math::QuaternionUVE;
 using Math::Vector3UVE;
+using namespace TestRigUVE;
 
 void ExpectNear(const Vector3UVE& actual, const Vector3UVE& expected, const float tolerance, const std::string& what) {
     EXPECT_NEAR(actual.x, expected.x, tolerance) << what;
     EXPECT_NEAR(actual.y, expected.y, tolerance) << what;
     EXPECT_NEAR(actual.z, expected.z, tolerance) << what;
 }
-
-[[nodiscard]] QuaternionUVE AxisAngle(const Vector3UVE& axis, const float radians) {
-    QuaternionUVE out{};
-    EXPECT_TRUE(Math::TryMakeAxisAngleUVE(axis, radians, out));
-    return out;
-}
-
-/// An auto-rigger's character in a T-pose, 1.1 times the humanoid's size: fewer bones (no root,
-/// three spine bones, one neck bone, no twists, metacarpals or IK), arms level, and every bone
-/// with a frame of its own that has nothing to do with the humanoid's.
-struct TPoseRigUVE final {
-    RetargetSkeletonUVE skeleton;
-    std::vector<WorldTransformUVE> world;
-
-    TPoseRigUVE() {
-        const HumanoidReferenceUVE& reference = GetHumanoidReferenceUVE();
-        const std::vector<WorldTransformUVE> referenceWorld = ComputeWorldTransformsUVE(reference.skeleton);
-        const auto at = [&](const std::string& name) {
-            return referenceWorld[static_cast<std::size_t>(FindBoneUVE(reference.skeleton, name))].position;
-        };
-        std::vector<std::tuple<std::string, std::string, std::string>> bones{
-            {"Hips", "", "Hips"},          {"Spine", "Hips", "Spine1"},     {"Spine1", "Spine", "Spine3"},
-            {"Spine2", "Spine1", "Spine5"}, {"Neck", "Spine2", "Neck1"},     {"Head", "Neck", "Head"},
-            {"HeadTop_End", "Head", "Head"},
-        };
-        for (const std::string side : {"Left", "Right"}) {
-            const std::string r = side == "Left" ? "_L" : "_R";
-            bones.emplace_back(side + "Shoulder", "Spine2", "Clavicle" + r);
-            bones.emplace_back(side + "Arm", side + "Shoulder", "UpperArm" + r);
-            bones.emplace_back(side + "ForeArm", side + "Arm", "ForeArm" + r);
-            bones.emplace_back(side + "Hand", side + "ForeArm", "Hand" + r);
-            bones.emplace_back(side + "HandIndex1", side + "Hand", "Index1" + r);
-            bones.emplace_back(side + "HandIndex2", side + "HandIndex1", "Index2" + r);
-            bones.emplace_back(side + "HandPinky1", side + "Hand", "Pinky1" + r);
-            bones.emplace_back(side + "UpLeg", "Hips", "Thigh" + r);
-            bones.emplace_back(side + "Leg", side + "UpLeg", "Shin" + r);
-            bones.emplace_back(side + "Foot", side + "Leg", "Foot" + r);
-            bones.emplace_back(side + "ToeBase", side + "Foot", "Toe" + r);
-        }
-        int turn = 0;
-        for (const auto& [name, parent, on] : bones) {
-            Vector3UVE position = at(on);
-            // Raise the arms from the humanoid's 45 degrees down to level, about the shoulder.
-            const bool left = name.starts_with("Left");
-            const bool arm = name.find("Arm") != std::string::npos || name.find("Hand") != std::string::npos;
-            if (arm) {
-                const Vector3UVE shoulder = at(left ? "UpperArm_L" : "UpperArm_R");
-                position = shoulder + Math::RotateVectorUVE(AxisAngle({0.0F, 0.0F, 1.0F}, left ? 0.7853982F : -0.7853982F),
-                                                            position - shoulder);
-            }
-            WorldTransformUVE transform;
-            transform.position = position * 1.1F;
-            transform.rotation = AxisAngle(Math::NormalizeUVE(Vector3UVE{0.3F, 1.0F, static_cast<float>(turn % 3)}),
-                                           0.4F * static_cast<float>(turn));
-            ++turn;
-            RetargetBoneUVE bone;
-            bone.name = name;
-            bone.parent = parent.empty() ? -1 : FindBoneUVE(skeleton, parent);
-            skeleton.bones.push_back(bone);
-            world.push_back(transform);
-        }
-        skeleton = SkeletonFromWorldUVE(skeleton, world);
-    }
-
-    [[nodiscard]] Vector3UVE At(const std::string& name) const {
-        return world[static_cast<std::size_t>(FindBoneUVE(skeleton, name))].position;
-    }
-};
 
 struct ConformedFixtureUVE final {
     TPoseRigUVE rig;
@@ -201,36 +136,6 @@ TEST(RetargetConformUVETest, ConformSkeletonUVE_RefusesARigWithoutHips) {
     EXPECT_NE(error.find("hips"), std::string::npos) << error;
 }
 
-/// The T-pose rig as a skinned mesh: one joint per bone (inverse binds from its frames) and one
-/// vertex half way along the left upper arm, bound to it.
-[[nodiscard]] Asset::MeshAssetUVE MakeMeshUVE(const TPoseRigUVE& rig) {
-    Asset::MeshAssetUVE mesh;
-    for (std::size_t index = 0U; index < rig.skeleton.bones.size(); ++index) {
-        Asset::MeshJointUVE joint;
-        joint.name = rig.skeleton.bones[index].name;
-        joint.parentIndex = rig.skeleton.bones[index].parent < 0 ? Asset::kInvalidJointParentUVE
-                                                                 : static_cast<std::uint32_t>(rig.skeleton.bones[index].parent);
-        const QuaternionUVE inverse = [&] {
-            QuaternionUVE out{};
-            EXPECT_TRUE(Math::TryInverseUVE(rig.world[index].rotation, out));
-            return out;
-        }();
-        joint.inverseBindMatrix = Math::Matrix4x4UVE::ComposeTrsUVE(-Math::RotateVectorUVE(inverse, rig.world[index].position), inverse,
-                                                                    {1.0F, 1.0F, 1.0F});
-        mesh.joints.push_back(joint);
-    }
-    Asset::MeshVertexUVE vertex;
-    vertex.position = (rig.At("LeftArm") + rig.At("LeftForeArm")) * 0.5F;
-    vertex.normal = {0.0F, 1.0F, 0.0F};
-    mesh.vertices.push_back(vertex);
-    mesh.indices = {0U, 0U, 0U};
-    Asset::MeshSkinningInfluenceUVE influence;
-    influence.joints[0] = static_cast<std::uint32_t>(FindBoneUVE(rig.skeleton, "LeftArm"));
-    influence.weights[0] = 1.0F;
-    mesh.skinningInfluences.push_back(influence);
-    return mesh;
-}
-
 TEST(RetargetConformUVETest, ConformMeshUVE_CarriesTheSkinIntoTheAPoseAndRebindsIt) {
     const TPoseRigUVE rig;
     Asset::MeshAssetUVE mesh = MakeMeshUVE(rig);
@@ -267,28 +172,7 @@ TEST(RetargetConformUVETest, ConformMeshUVE_CarriesTheSkinIntoTheAPoseAndRebinds
 TEST(RetargetConformUVETest, ConformClipUVE_KeepsEveryBoneWhereTheClipPutItInTheHumanoidsNames) {
     const ConformedFixtureUVE fixture;
     const TPoseRigUVE& rig = fixture.rig;
-    // A clip on the rig: the hips travel and the left forearm bends over two frames.
-    Asset::AnimationClipAssetUVE clip;
-    clip.clipId = "Wave";
-    clip.durationSeconds = 1.0;
-    for (std::size_t bone = 0U; bone < rig.skeleton.bones.size(); ++bone) {
-        Asset::AnimationAssetBoneTrackUVE track;
-        track.bone = rig.skeleton.bones[bone].name;
-        for (int frame = 0; frame < 3; ++frame) {
-            Asset::AnimationAssetSampleUVE sample;
-            sample.timeSeconds = 0.5 * frame;
-            sample.pose.position = rig.skeleton.bones[bone].position;
-            sample.pose.rotation = rig.skeleton.bones[bone].rotation;
-            if (track.bone == "Hips") {
-                sample.pose.position = sample.pose.position + Vector3UVE{0.0F, -0.05F, 0.4F} * static_cast<float>(frame);
-            }
-            if (track.bone == "LeftForeArm") {
-                sample.pose.rotation = Math::MultiplyUVE(sample.pose.rotation, AxisAngle({0.0F, 1.0F, 0.0F}, 0.6F * static_cast<float>(frame)));
-            }
-            track.samples.push_back(sample);
-        }
-        clip.bones.push_back(track);
-    }
+    const Asset::AnimationClipAssetUVE clip = MakeClipUVE(rig, "Wave");
     std::string error;
     const std::optional<Asset::AnimationClipAssetUVE> result =
         ConformClipUVE(clip, rig.skeleton, fixture.conformed, GetHumanoidReferenceUVE(), &error);
@@ -330,6 +214,213 @@ TEST(RetargetConformUVETest, ConformClipUVE_KeepsEveryBoneWhereTheClipPutItInThe
     EXPECT_EQ(samplesOf("Hand_L"), 1U);
     EXPECT_EQ(samplesOf("ForeArm_L"), 3U);
     EXPECT_EQ(samplesOf("Hips"), 3U);
+}
+
+// Rigs from other tools face any way and stand any way up. Every one comes out the same humanoid.
+struct TurnedRigCaseUVE final {
+    const char* what;
+    QuaternionUVE turn;
+};
+
+[[nodiscard]] std::vector<TurnedRigCaseUVE> TurnedRigCasesUVE() {
+    return {{"facing -Z", AxisAngle({0.0F, 1.0F, 0.0F}, 3.1415927F)},
+            {"facing +X", AxisAngle({0.0F, 1.0F, 0.0F}, 1.5707964F)},
+            {"facing -X", AxisAngle({0.0F, 1.0F, 0.0F}, -1.5707964F)},
+            {"Z up", AxisAngle({1.0F, 0.0F, 0.0F}, 1.5707964F)},
+            {"Z up, turned", Math::MultiplyUVE(AxisAngle({0.0F, 1.0F, 0.0F}, 0.9F), AxisAngle({1.0F, 0.0F, 0.0F}, 1.5707964F))}};
+}
+
+[[nodiscard]] ConformedRigUVE ConformUVE(const TPoseRigUVE& rig) {
+    const HumanoidMatchUVE match = MatchHumanoidUVE(rig.skeleton, GetHumanoidReferenceUVE());
+    std::string error;
+    const std::optional<ConformedRigUVE> result = ConformSkeletonUVE(rig.skeleton, match, GetHumanoidReferenceUVE(), &error);
+    EXPECT_TRUE(result.has_value()) << error;
+    return result.value_or(ConformedRigUVE{});
+}
+
+TEST(RetargetConformUVETest, ConformSkeletonUVE_StandsRigsUpFacingForwardWhateverWayTheyCame) {
+    const TPoseRigUVE upright;
+    const ConformedRigUVE reference = ConformUVE(upright);
+    EXPECT_NEAR(std::abs(reference.orientation.w), 1.0F, 1e-6F) << "an upright rig is left exactly as it stands";
+    const std::vector<WorldTransformUVE> referenceWorld = ComputeWorldTransformsUVE(reference.skeleton);
+    for (const auto& [what, turn] : TurnedRigCasesUVE()) {
+        const TPoseRigUVE turned(turn);
+        const ConformedRigUVE conformed = ConformUVE(turned);
+        EXPECT_LT(std::abs(conformed.orientation.w), 0.9999F) << what << ": it was turned";
+        ASSERT_EQ(conformed.skeleton.bones.size(), reference.skeleton.bones.size()) << what;
+        const std::vector<WorldTransformUVE> world = ComputeWorldTransformsUVE(conformed.skeleton);
+        for (std::size_t index = 0U; index < world.size(); ++index) {
+            ExpectNear(world[index].position, referenceWorld[index].position, 2e-3F,
+                       std::string{what} + ": " + conformed.skeleton.bones[index].name);
+        }
+    }
+}
+
+TEST(RetargetConformUVETest, ConformClipUVE_TurnsTheAnimationWithTheRig) {
+    for (const auto& [what, turn] : TurnedRigCasesUVE()) {
+        const TPoseRigUVE rig(turn);
+        const ConformedRigUVE conformed = ConformUVE(rig);
+        const Asset::AnimationClipAssetUVE clip = MakeClipUVE(rig, "Wave");
+        std::string error;
+        const std::optional<Asset::AnimationClipAssetUVE> result =
+            ConformClipUVE(clip, rig.skeleton, conformed, GetHumanoidReferenceUVE(), &error);
+        ASSERT_TRUE(result.has_value()) << what << ": " << error;
+        RetargetSkeletonUVE source = rig.skeleton;
+        for (std::size_t bone = 0U; bone < source.bones.size(); ++bone) {
+            source.bones[bone].position = clip.bones[bone].samples[2].pose.position;
+            source.bones[bone].rotation = clip.bones[bone].samples[2].pose.rotation;
+        }
+        RetargetSkeletonUVE played = conformed.skeleton;
+        for (std::size_t index = 0U; index < played.bones.size(); ++index) {
+            const auto& samples = result->bones[index].samples;
+            played.bones[index].position = samples[samples.size() == 1U ? 0U : 2U].pose.position;
+            played.bones[index].rotation = samples[samples.size() == 1U ? 0U : 2U].pose.rotation;
+        }
+        const std::vector<WorldTransformUVE> sourceWorld = ComputeWorldTransformsUVE(source);
+        const std::vector<WorldTransformUVE> playedWorld = ComputeWorldTransformsUVE(played);
+        for (std::size_t bone = 0U; bone < source.bones.size(); ++bone) {
+            const auto index = static_cast<std::size_t>(conformed.boneOfRigBone[bone]);
+            ExpectNear(playedWorld[index].position, Math::RotateVectorUVE(conformed.orientation, sourceWorld[bone].position), 2e-4F,
+                       std::string{what} + ": " + source.bones[bone].name);
+        }
+        // The hips travel exactly as far as they did in the source (0.4 forward and 0.05 down a frame).
+        const auto hips = static_cast<std::size_t>(FindBoneUVE(conformed.skeleton, "Hips"));
+        const Vector3UVE travelled = playedWorld[hips].position - ComputeWorldTransformsUVE(conformed.skeleton)[hips].position;
+        EXPECT_NEAR(Math::LengthUVE(travelled), std::sqrt(0.8F * 0.8F + 0.1F * 0.1F), 1e-3F) << what;
+    }
+}
+
+/// One vertex on every bone, bound to it alone, so the skin is exact and any difference is the
+/// animation's.
+[[nodiscard]] Asset::MeshAssetUVE MakeRigidMeshUVE(const TPoseRigUVE& rig) {
+    Asset::MeshAssetUVE mesh = MakeMeshUVE(rig);
+    mesh.vertices.clear();
+    mesh.skinningInfluences.clear();
+    for (std::size_t bone = 0U; bone < rig.world.size(); ++bone) {
+        Asset::MeshVertexUVE vertex;
+        vertex.position = rig.world[bone].position + Vector3UVE{0.02F, 0.03F, 0.01F};
+        vertex.normal = {0.0F, 1.0F, 0.0F};
+        mesh.vertices.push_back(vertex);
+        Asset::MeshSkinningInfluenceUVE influence;
+        influence.joints[0] = static_cast<std::uint32_t>(bone);
+        influence.weights[0] = 1.0F;
+        mesh.skinningInfluences.push_back(influence);
+    }
+    mesh.indices = {0U, 1U, 2U};
+    return mesh;
+}
+
+[[nodiscard]] std::vector<Asset::MeshVertexUVE> PlayUVE(const Asset::MeshAssetUVE& mesh, const std::vector<RetargetBoneUVE>& bones,
+                                                        const std::vector<Asset::AnimationAssetBoneTrackUVE>& tracks, const std::size_t frame) {
+    std::vector<Math::Matrix4x4UVE> local;
+    for (std::size_t index = 0U; index < bones.size(); ++index) {
+        const auto& samples = tracks[index].samples;
+        const Asset::AnimationAssetPoseUVE& pose = samples[samples.size() == 1U ? 0U : frame].pose;
+        local.push_back(Math::Matrix4x4UVE::ComposeTrsUVE(pose.position, pose.rotation, {1.0F, 1.0F, 1.0F}));
+    }
+    std::vector<Math::Matrix4x4UVE> skin;
+    std::vector<Asset::MeshVertexUVE> out;
+    EXPECT_TRUE(Asset::TryResolvePoseUVE(mesh.joints, local, skin));
+    EXPECT_TRUE(Asset::TrySkinMeshUVE(mesh, skin, out));
+    return out;
+}
+
+// The point of retargeting: the character and its animation keep looking exactly as they did.
+// Played through the engine's own skinner, the conformed model with the conformed clip lands every
+// vertex where the original model with the original clip did (turned to face +Z if it faced away).
+TEST(RetargetConformUVETest, ConformedModelWithConformedClipLooksExactlyLikeTheOriginal) {
+    std::vector<TurnedRigCaseUVE> cases = TurnedRigCasesUVE();
+    cases.insert(cases.begin(), TurnedRigCaseUVE{"as it came", QuaternionUVE{}});
+    for (const auto& [what, turn] : cases) {
+        const TPoseRigUVE rig(turn);
+        const Asset::MeshAssetUVE original = MakeRigidMeshUVE(rig);
+        const Asset::AnimationClipAssetUVE clip = MakeClipUVE(rig, "Wave");
+        std::string error;
+        const std::optional<RetargetSkeletonUVE> fromMesh = RigFromMeshUVE(original, &error);
+        ASSERT_TRUE(fromMesh.has_value()) << error;
+        const HumanoidMatchUVE match = MatchHumanoidUVE(*fromMesh, GetHumanoidReferenceUVE());
+        const std::optional<ConformedRigUVE> conformed = ConformSkeletonUVE(*fromMesh, match, GetHumanoidReferenceUVE(), &error);
+        ASSERT_TRUE(conformed.has_value()) << error;
+        Asset::MeshAssetUVE mesh = original;
+        ASSERT_TRUE(ConformMeshUVE(mesh, *conformed, &error)) << error;
+        const std::optional<Asset::AnimationClipAssetUVE> result =
+            ConformClipUVE(clip, *fromMesh, *conformed, GetHumanoidReferenceUVE(), &error);
+        ASSERT_TRUE(result.has_value()) << error;
+
+        for (const std::size_t frame : {0U, 1U, 2U}) {
+            const std::vector<Asset::MeshVertexUVE> before = PlayUVE(original, rig.skeleton.bones, clip.bones, frame);
+            const std::vector<Asset::MeshVertexUVE> after = PlayUVE(mesh, conformed->skeleton.bones, result->bones, frame);
+            ASSERT_EQ(before.size(), after.size());
+            for (std::size_t vertex = 0U; vertex < before.size(); ++vertex) {
+                ExpectNear(after[vertex].position, Math::RotateVectorUVE(conformed->orientation, before[vertex].position), 2e-4F,
+                           std::string{what} + ", frame " + std::to_string(frame) + ", " + rig.skeleton.bones[vertex].name);
+            }
+        }
+    }
+}
+
+/// A tube from the left shoulder along the arm, its middle ring held half by the shoulder and half
+/// by the arm: the place lowering an arm pinches.
+[[nodiscard]] Asset::MeshAssetUVE MakeShoulderTubeUVE(const TPoseRigUVE& rig) {
+    Asset::MeshAssetUVE mesh = MakeMeshUVE(rig);
+    mesh.vertices.clear();
+    mesh.skinningInfluences.clear();
+    const Vector3UVE shoulder = rig.At("LeftShoulder");
+    const Vector3UVE elbow = rig.At("LeftForeArm");
+    const std::uint32_t clavicle = static_cast<std::uint32_t>(FindBoneUVE(rig.skeleton, "LeftShoulder"));
+    const std::uint32_t arm = static_cast<std::uint32_t>(FindBoneUVE(rig.skeleton, "LeftArm"));
+    constexpr int kSides = 8;
+    for (int ring = 0; ring < 3; ++ring) {
+        const Vector3UVE centre = shoulder + (elbow - shoulder) * (0.05F + 0.15F * static_cast<float>(ring));
+        for (int side = 0; side < kSides; ++side) {
+            const float angle = 6.2831853F * static_cast<float>(side) / static_cast<float>(kSides);
+            Asset::MeshVertexUVE vertex;
+            vertex.position = centre + Vector3UVE{0.0F, 0.06F * std::cos(angle), 0.06F * std::sin(angle)};
+            vertex.normal = {0.0F, std::cos(angle), std::sin(angle)};
+            mesh.vertices.push_back(vertex);
+            Asset::MeshSkinningInfluenceUVE influence;
+            influence.joints[0] = clavicle;
+            influence.joints[1] = arm;
+            influence.weights[0] = ring == 0 ? 1.0F : (ring == 1 ? 0.5F : 0.0F);
+            influence.weights[1] = 1.0F - influence.weights[0];
+            mesh.skinningInfluences.push_back(influence);
+        }
+    }
+    mesh.indices.clear();
+    for (int ring = 0; ring < 2; ++ring) {
+        for (int side = 0; side < kSides; ++side) {
+            const auto a = static_cast<std::uint32_t>(ring * kSides + side);
+            const auto b = static_cast<std::uint32_t>(ring * kSides + (side + 1) % kSides);
+            const std::uint32_t c = a + kSides;
+            const std::uint32_t d = b + kSides;
+            mesh.indices.insert(mesh.indices.end(), {a, b, c, b, d, c});
+        }
+    }
+    return mesh;
+}
+
+TEST(RetargetConformUVETest, ConformMeshUVE_DualQuaternionBlendingPinchesTheShoulderLessThanLinear) {
+    const TPoseRigUVE rig;
+    const Asset::MeshAssetUVE original = MakeShoulderTubeUVE(rig);
+    const ConformedRigUVE conformed = ConformUVE(rig);
+    Asset::MeshAssetUVE linear = original;
+    Asset::MeshAssetUVE dual = original;
+    std::string error;
+    ASSERT_TRUE(ConformMeshUVE(linear, conformed, &error, SkinBlendUVE::Linear)) << error;
+    ASSERT_TRUE(ConformMeshUVE(dual, conformed, &error, SkinBlendUVE::DualQuaternion)) << error;
+    const MeshDistortionUVE linearChange = MeasureMeshDistortionUVE(original, linear);
+    const MeshDistortionUVE dualChange = MeasureMeshDistortionUVE(original, dual);
+    EXPECT_GT(linearChange.maximumEdgeChange, 0.02F) << "lowering the arm 45 degrees does pinch a linear blend";
+    EXPECT_LT(dualChange.maximumEdgeChange, linearChange.maximumEdgeChange);
+    EXPECT_LE(dualChange.fractionOverTenPercent, linearChange.fractionOverTenPercent);
+    // The mesh was moved, not rebuilt: same triangles, same weights, same UVs.
+    EXPECT_EQ(dual.indices, original.indices);
+    ASSERT_EQ(dual.vertices.size(), original.vertices.size());
+    for (std::size_t vertex = 0U; vertex < dual.vertices.size(); ++vertex) {
+        EXPECT_EQ(dual.vertices[vertex].u, original.vertices[vertex].u);
+        EXPECT_EQ(dual.skinningInfluences[vertex].weights[0], original.skinningInfluences[vertex].weights[0]);
+    }
+    EXPECT_FLOAT_EQ(MeasureMeshDistortionUVE(original, original).maximumEdgeChange, 0.0F);
 }
 
 } // namespace

@@ -116,6 +116,7 @@ add_executable(uve_core_tests
     Retarget/retarget_humanoid_uve_tests.cpp
     Retarget/retarget_match_uve_tests.cpp
     Retarget/retarget_conform_uve_tests.cpp
+    Retarget/retarget_files_uve_tests.cpp
 )
 target_link_libraries(uve_core_tests PRIVATE
     uve_uvscript
