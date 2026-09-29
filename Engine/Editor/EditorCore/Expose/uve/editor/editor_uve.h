@@ -2054,6 +2054,23 @@ private:
         std::string status;
         /// The tree runs on the entity's skeleton while the tab is open: pose only, never saved.
         bool previewing = true;
+        /// Preview transport: held, one frame asked for, and how fast it runs (1 is real time); the
+        /// preview's own clock, for the log.
+        bool previewPaused = false;
+        bool previewStepOnce = false;
+        float previewRate = 1.0F;
+        double previewClock = 0.0;
+        /// What the preview did, newest last: clip events and state changes, with when.
+        struct PreviewLogLineUVE final {
+            double at = 0.0;
+            std::string text;
+            bool stateChange = false;
+        };
+        std::vector<PreviewLogLineUVE> previewLog;
+        /// Each state machine's active state at the last step, by node id, to see it change.
+        std::unordered_map<std::uint32_t, std::uint32_t> previewActive;
+        /// Recent values of each Float parameter, oldest first, for its sparkline.
+        std::unordered_map<std::string, std::vector<float>> parameterHistory;
         Scene::EntityUVE previewSkeleton = Scene::kInvalidEntityUVE;
         /// A drag in the Blend Space 2D plot: -1 the position, 0.. a point, -2 none; and the tree
         /// before it, restored and re-applied as one undo step on release.
@@ -2092,6 +2109,8 @@ private:
         std::unordered_map<std::uint64_t, std::shared_ptr<const Asset::AnimationClipAssetUVE>> clips;
     };
     AnimationGraphViewStateUVE m_animGraph;
+    /// Notes what the preview's last step did: clip events, state changes, parameter values.
+    void RecordAnimationGraphPreviewUVE(const Scene::AnimationTreeComponentUVE& tree);
     /// Puts the previewed skeleton back at rest and the tree back at its start.
     void StopAnimationGraphPreviewUVE();
     /// A Blend Space opened in the Anim Graph's own editor: tools, snapping, the axes' areas, and
