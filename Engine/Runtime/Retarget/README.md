@@ -110,6 +110,20 @@ Conforming moves things; it never rebuilds them.
   then blends them linearly, so a vertex in a blend zone can differ slightly from the original
   animation there. Vertices held by one bone are exact.
 
+## Playing a conformed clip
+
+A conformed clip stores each bone's translation for the rig it came from. Played literally on a
+character with longer or shorter limbs it would stretch them. So `ConformedPlaybackUVE` (used by
+the player, the scrubber and the animation tree) changes what a conformed clip may drive:
+
+- **Root, Hips and the IK targets** take the clip's translation, scaled by the character's hips
+  height over the clip rig's.
+- **Every other bone** keeps the character's own length and takes only the clip's rotation.
+- Root motion is scaled the same way, so a taller character covers more ground.
+
+A clip that is not conformed is played exactly as before. The plan is built on each step; that
+cost has not been measured.
+
 ## Matching any rig
 
 `MakeBoneKeyUVE` reduces a bone name to what it means: `"<side>|<words>"`.
@@ -186,5 +200,5 @@ with neither a skeleton nor the flag still saves as v2, so nothing existing chan
 | R1b: matcher and joint statuses | Done |
 | R1c: conform skeleton, mesh and clip | Done |
 | R2a: `.uvanim` v3 carries its skeleton; files conformed in place with backup and undo | Done |
-| R2b: runtime rule: a conformed character takes translation only for Root, Hips and IK, scaled by its height | Next |
+| R2b: playback rule: a conformed clip drives translation only for Root, Hips and IK, scaled by height | Done |
 | R3: Retarget window (multi-select in Content, own viewport, joint colours, Generate) | Planned |

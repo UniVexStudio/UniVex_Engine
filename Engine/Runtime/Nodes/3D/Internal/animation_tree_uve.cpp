@@ -2,6 +2,8 @@
 
 #include "uve/nodes/3d/animation_tree_uve.h"
 
+#include "conformed_playback_uve.h"
+
 #include <algorithm>
 #include <array>
 #include <cfloat>
@@ -316,19 +318,27 @@ private:
             return result;
         }
         const auto& tracks = TracksOfUVE(*clip);
+        const Retarget::ConformedPlaybackUVE conformed = PlanConformedPlaybackForUVE(*clip, *m_skeleton);
         ChannelsUVE pose(m_skeleton->bones.size());
         for (std::size_t bone = 0U; bone < pose.size(); ++bone) {
             const SkeletonBoneUVE& rest = m_skeleton->bones[bone];
             const auto found = tracks.find(rest.name);
             pose[bone] = found != tracks.end() ? SampleAnimationTrackUVE(found->second->samples, time)
                                                : PoseUVE{rest.localPosition, rest.localRotation, rest.localScale};
+            if (found != tracks.end()) {
+                pose[bone].position = conformed.PositionUVE(rest.name, pose[bone].position, rest.localPosition);
+                pose[bone].scale = conformed.ScaleUVE(pose[bone].scale, rest.localScale);
+            }
         }
         // Root motion: the root bone stays over its first frame's ground position and its travel
         // this step - across a loop's wrap too - is handed up to be mixed like the pose.
         if (m_mixer.rootMotion != AnimationRootMotionModeUVE::Off && m_mixer.animatePosition) {
             if (const std::optional<std::size_t> root = ResolveRootMotionBoneUVE(*m_skeleton, *clip, m_mixer.rootMotionBone)) {
                 const auto& samples = tracks.at(m_skeleton->bones[*root].name)->samples;
-                const auto at = [&samples](const double t) { return SampleAnimationTrackUVE(samples, t).position; };
+                const std::string& rootName = m_skeleton->bones[*root].name;
+                const auto at = [&](const double t) {
+                    return conformed.PositionUVE(rootName, SampleAnimationTrackUVE(samples, t).position, Math::Vector3UVE{});
+                };
                 const Math::Vector3UVE first = at(0.0);
                 Math::Vector3UVE travel = at(time) - at(before);
                 if (wrapped) {
