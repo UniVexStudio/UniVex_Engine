@@ -159,5 +159,22 @@ TEST(RetargetMatchUVETest, MatchHumanoidNamesUVE_MatchesAClipsTracksByName) {
     EXPECT_STREQ(JointStatusNameUVE(JointStatusUVE::Missing), "missing");
 }
 
+TEST(RetargetMatchUVETest, AreHumanoidNamesUVE_RecognisesAConformedRigAndNotOneFromAnotherTool) {
+    const HumanoidReferenceUVE& reference = GetHumanoidReferenceUVE();
+    std::vector<std::string> conformed;
+    for (const RetargetBoneUVE& bone : reference.skeleton.bones) {
+        conformed.push_back(bone.name);
+    }
+    conformed.emplace_back("HeadTop_End"); // a kept extra bone does not matter
+    EXPECT_TRUE(AreHumanoidNamesUVE(conformed, reference));
+    // Missing a fifth of the bones is no longer the humanoid.
+    conformed.resize(reference.skeleton.bones.size() * 3U / 4U);
+    EXPECT_FALSE(AreHumanoidNamesUVE(conformed, reference));
+    // A rig from another tool names its bones its own way, even where the meaning is the same.
+    EXPECT_FALSE(AreHumanoidNamesUVE({"mixamorig:Hips", "mixamorig:Spine", "mixamorig:Head"}, reference));
+    EXPECT_FALSE(AreHumanoidNamesUVE({"pelvis", "spine_01", "upperarm_l", "thigh_r"}, reference));
+    EXPECT_FALSE(AreHumanoidNamesUVE({}, reference));
+}
+
 } // namespace
 } // namespace UVE::Retarget
