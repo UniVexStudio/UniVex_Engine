@@ -258,6 +258,8 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
         ReloadSharedShelvesIfChangedUVE();
     }
 
+    m_contentShownOrderPrevious.swap(m_contentShownOrder);
+    m_contentShownOrder.clear();
     if (m_selectedProjectFile.has_value()) {
         const auto selectedIt = std::find_if(
             snapshot.entries.begin(), snapshot.entries.end(), [this](const Asset::ProjectFileEntryUVE& entry) {
@@ -288,6 +290,7 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
     const auto clearSelection = [this] {
         m_selectedProjectFile.reset();
         m_selectedAsset.reset();
+        m_contentSelection.ClearUVE();
     };
     const auto goToFolder = [this, &clearSelection](const std::filesystem::path& directory) {
         m_contentBrowserDirectory = directory;
@@ -1101,6 +1104,8 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
         // right after the item's own Selectable.
         const auto interact = [&](const Asset::ProjectFileEntryUVE& entry, const ItemLookUVE& look, const bool clicked) {
             const bool hovered = ImGui::IsItemHovered();
+            const std::string itemKey = entry.relativePath.generic_string();
+            m_contentShownOrder.push_back(itemKey);
             dragContentItem(entry, look.type == ContentBrowserItemTypeUVE::Entity || look.type == ContentBrowserItemTypeUVE::Prefab);
             const std::string displayLabel = entry.relativePath.filename().generic_string();
             if (hovered && !ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
@@ -1118,6 +1123,8 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
             const bool contextClicked =
                 hovered && (ImGui::IsMouseClicked(ImGuiMouseButton_Right) || ImGui::IsMouseReleased(ImGuiMouseButton_Right));
             if (clicked) {
+                const ImGuiIO& io = ImGui::GetIO();
+                m_contentSelection.ClickUVE(m_contentShownOrderPrevious, itemKey, io.KeyCtrl || io.KeySuper, io.KeyShift);
                 selectEntry(entry);
                 if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
                     if (entry.kind == Asset::ProjectFileEntryKindUVE::Directory) {
@@ -1129,6 +1136,10 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
                 }
             }
             if (contextClicked) {
+                // A right-click inside what is picked keeps it all; outside, it picks just that item.
+                if (!m_contentSelection.ContainsUVE(itemKey)) {
+                    m_contentSelection.ClickUVE(m_contentShownOrderPrevious, itemKey, false, false);
+                }
                 selectEntry(entry);
                 openContext(entry);
             } else {
@@ -1136,7 +1147,12 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
             }
         };
         const auto isSelected = [this](const Asset::ProjectFileEntryUVE& entry) {
-            return m_selectedProjectFile.has_value() && m_selectedProjectFile->relativePath == entry.relativePath;
+            if (m_contentSelection.ContainsUVE(entry.relativePath.generic_string())) {
+                return true;
+            }
+            // Picked by something other than a click (a new file, a rename): the one item.
+            return m_contentSelection.IsEmptyUVE() && m_selectedProjectFile.has_value() &&
+                   m_selectedProjectFile->relativePath == entry.relativePath;
         };
         // A row: icon, name, and a muted note right-aligned (the type, a time...).
         const auto drawRow = [&](const Asset::ProjectFileEntryUVE& entry, const ItemLookUVE& look, const std::string& note,
@@ -1511,6 +1527,58 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
 
         if (mode == ContentBrowserModeUVE::Board) {
             drawPlacesStrip();
+        }
+        // The floating Retarget button: there while animations are picked. Picking a character too
+        // (a model source or a .uvmodel) chooses it for the window.
+        {
+            std::vector<std::filesystem::path> pickedAnimations;
+            std::filesystem::path pickedCharacter;
+            if (!m_contentSelection.IsEmptyUVE() && !m_retargetWindow.has_value()) {
+                for (const std::string& item : m_contentSelection.ItemsUVE()) {
+                    const std::filesystem::path relative{item};
+                    const auto found = std::ranges::find(snapshot.entries, relative, &Asset::ProjectFileEntryUVE::relativePath);
+                    if (found == snapshot.entries.end() || found->kind == Asset::ProjectFileEntryKindUVE::Directory) {
+                        continue;
+                    }
+                    std::string extension = relative.extension().string();
+                    std::ranges::transform(extension, extension.begin(),
+                                           [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                    if (extension == ".uvanim") {
+                        pickedAnimations.push_back(snapshot.contentRoot / relative);
+                    } else if (pickedCharacter.empty() && (extension == ".uvmodel" || IsRiggedModelSourceUVE(relative))) {
+                        pickedCharacter = relative;
+                    }
+                }
+            }
+            const ImVec2 below = ImGui::GetCursorScreenPos();
+            const std::string label = "Retarget " + std::to_string(pickedAnimations.size()) +
+                                      (pickedAnimations.size() == 1U ? " animation" : " animations");
+            constexpr float kHeight = 28.0F;
+            const float width = ImGui::CalcTextSize(label.c_str()).x + 40.0F;
+            const ImVec2 windowMin = ImGui::GetWindowPos();
+            const float windowWidth = ImGui::GetWindowSize().x;
+            if (!pickedAnimations.empty() && below.y - windowMin.y > kHeight + 90.0F) {
+                ImGui::SetCursorScreenPos(ImVec2{std::floor(windowMin.x + (windowWidth - width) * 0.5F),
+                                                 std::floor(below.y - kHeight - 6.0F)});
+                ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 6.0F);
+                if (ImGui::BeginChild("##retarget-float", ImVec2{width, kHeight}, ImGuiChildFlags_None,
+                                      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoBackground)) {
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{kAccentUVE.x, kAccentUVE.y, kAccentUVE.z, 0.95F});
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, kAccentHoveredUVE);
+                    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 6.0F);
+                    if (ImGui::Button(label.c_str(), ImVec2{width, kHeight})) {
+                        OpenRetargetWindowUVE(pickedAnimations, pickedCharacter);
+                    }
+                    ImGui::PopStyleVar();
+                    ImGui::PopStyleColor(2);
+                    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+                        ImGui::SetTooltip("Make these animations and a character the UniVex humanoid's.\nFiles change in place; a backup is kept.");
+                    }
+                }
+                ImGui::EndChild();
+                ImGui::PopStyleVar();
+                ImGui::SetCursorScreenPos(below);
+            }
         }
         // Status line: how many items, how many selected, and what the mode is looking at.
         std::string status = std::to_string(items.size()) + (items.size() == 1U ? " item" : " items");

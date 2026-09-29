@@ -121,7 +121,28 @@ struct PlannedFileUVE final {
     return true;
 }
 
+[[nodiscard]] RetargetAnimationCheckUVE CheckClipUVE(const Asset::AnimationClipAssetUVE& clip) {
+    if (clip.conformed) {
+        return {RetargetAnimationStateUVE::AlreadyConformed, "already conformed"};
+    }
+    if (clip.rest.empty()) {
+        return {RetargetAnimationStateUVE::NoSkeleton, "it has no skeleton, import the FBX again"};
+    }
+    if (!clip.IsSkeletalUVE()) {
+        return {RetargetAnimationStateUVE::NoBones, "it moves no bones"};
+    }
+    return {RetargetAnimationStateUVE::Ready, {}};
+}
+
 } // namespace
+
+RetargetAnimationCheckUVE CheckAnimationForRetargetUVE(const fs::path& file) {
+    Asset::AnimationClipAssetUVE clip;
+    if (!Asset::LoadAnimationClipAssetUVE(file, clip)) {
+        return {RetargetAnimationStateUVE::Unreadable, "cannot read it"};
+    }
+    return CheckClipUVE(clip);
+}
 
 RetargetFilesResultUVE RetargetFilesUVE(const RetargetFilesRequestUVE& request, const HumanoidReferenceUVE& reference,
                                         const RetargetProgressUVE& progress) {
@@ -173,14 +194,11 @@ RetargetFilesResultUVE RetargetFilesUVE(const RetargetFilesRequestUVE& request, 
         PlannedFileUVE animation;
         animation.file = path;
         Asset::AnimationClipAssetUVE clip;
-        if (!Asset::LoadAnimationClipAssetUVE(path, clip)) {
-            animation.note = "left alone: cannot read it";
-        } else if (clip.conformed) {
-            animation.note = "left alone: already conformed";
-        } else if (clip.rest.empty()) {
-            animation.note = "left alone: it has no skeleton, import the FBX again";
-        } else if (!clip.IsSkeletalUVE()) {
-            animation.note = "left alone: it moves no bones";
+        const RetargetAnimationCheckUVE check = Asset::LoadAnimationClipAssetUVE(path, clip)
+                                                     ? CheckClipUVE(clip)
+                                                     : RetargetAnimationCheckUVE{RetargetAnimationStateUVE::Unreadable, "cannot read it"};
+        if (check.state != RetargetAnimationStateUVE::Ready) {
+            animation.note = "left alone: " + check.note;
         } else {
             std::string error;
             const RetargetSkeletonUVE rig = RigFromClipUVE(clip);

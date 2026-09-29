@@ -3,6 +3,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <string>
@@ -48,6 +49,27 @@ struct RetargetFilesResultUVE final {
     /// was far from the A-pose; check the shoulders.
     MeshDistortionUVE meshDistortion;
 };
+
+/// Whether an animation can be conformed, and if not, why not.
+enum class RetargetAnimationStateUVE : std::uint8_t {
+    Ready = 0,
+    /// Already the humanoid's: nothing to do.
+    AlreadyConformed,
+    /// Saved before clips carried their skeleton: import the FBX again.
+    NoSkeleton,
+    /// Moves no bones (a node animation).
+    NoBones,
+    Unreadable,
+};
+
+struct RetargetAnimationCheckUVE final {
+    RetargetAnimationStateUVE state = RetargetAnimationStateUVE::Unreadable;
+    /// The reason in a line, for anything but Ready.
+    std::string note;
+};
+
+/// Reads `file` and says whether RetargetFilesUVE would conform it.
+[[nodiscard]] RetargetAnimationCheckUVE CheckAnimationForRetargetUVE(const std::filesystem::path& file);
 
 /// Called as work proceeds: files done so far, files in all, and what is being worked on.
 using RetargetProgressUVE = std::function<void(std::size_t done, std::size_t total, const std::string& what)>;
