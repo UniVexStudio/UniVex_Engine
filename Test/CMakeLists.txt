@@ -112,9 +112,13 @@ add_executable(uve_core_tests
     Math/aabb_uve_tests.cpp
     Math/plane_uve_tests.cpp
     Math/frustum_uve_tests.cpp
+    Retarget/retarget_names_uve_tests.cpp
+    Retarget/retarget_humanoid_uve_tests.cpp
+    Retarget/retarget_match_uve_tests.cpp
 )
 target_link_libraries(uve_core_tests PRIVATE
     uve_uvscript
+    uve_retarget
     nlohmann_json::nlohmann_json
     uve_platform
     uve_logging
