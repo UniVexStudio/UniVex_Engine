@@ -336,14 +336,16 @@ void EditorUVE::DrawMenuBarUVE() {
         constexpr float kTransportButtonGapUVE = 2.0F;
         constexpr float kStripPaddingUVE = 8.0F;
         float cursorX = toolbarMin.x + kStripPaddingUVE;
-        // ---- The viewport's name -----------------------------------------------------------------
+        // ---- The viewport's name, as its own tab: the tab's edge is what separates it -----------
         if (sidePanelsShown) {
             const char* const name = "Viewport";
-            const float textY = toolbarMin.y + (kEditorToolbarHeightUVE - ImGui::GetTextLineHeight()) * 0.5F;
-            toolbarDrawList->AddText(ImVec2{cursorX, textY}, ImGui::GetColorU32(ImGuiCol_Text), name);
-            cursorX += ImGui::CalcTextSize(name).x + 14.0F;
-            toolbarDrawList->AddLine(ImVec2{cursorX - 7.0F, toolbarMin.y + 6.0F}, ImVec2{cursorX - 7.0F, toolbarMax.y - 6.0F},
-                                     IM_COL32(58, 66, 76, 255), 1.0F);
+            const float tabWidth = ImGui::CalcTextSize(name).x + 28.0F;
+            const ImVec2 tabMin{toolbarMin.x, toolbarMin.y + 3.0F};
+            const ImVec2 tabMax{toolbarMin.x + tabWidth, toolbarMax.y};
+            toolbarDrawList->AddRectFilled(tabMin, tabMax, IM_COL32(21, 25, 31, 255), 4.0F, ImDrawFlags_RoundCornersTop);
+            toolbarDrawList->AddText(ImVec2{tabMin.x + 14.0F, toolbarMin.y + 3.0F + (kEditorToolbarHeightUVE - 3.0F - ImGui::GetTextLineHeight()) * 0.5F},
+                                     ImGui::GetColorU32(ImGuiCol_Text), name);
+            cursorX = tabMax.x + 8.0F;
         }
         // ---- Play/Pause/Stop -----------------------------------------------------------------------
         ImGui::SetCursorScreenPos(ImVec2{cursorX, toolbarMin.y + (kEditorToolbarHeightUVE - kTransportButtonHeightUVE) * 0.5F});
@@ -418,10 +420,6 @@ void EditorUVE::DrawMenuBarUVE() {
             static_cast<void>(StopPlayModeUVE());
         }
         // The editor's tools go after the play controls; kept empty until they move in.
-        ImGui::SameLine(0.0F, 8.0F);
-        const ImVec2 dividerTop = ImGui::GetCursorScreenPos();
-        toolbarDrawList->AddLine(ImVec2{dividerTop.x, toolbarMin.y + 6.0F},
-                                 ImVec2{dividerTop.x, toolbarMax.y - 6.0F}, IM_COL32(58, 66, 76, 255), 1.0F);
         ImGui::End();
     }
 
