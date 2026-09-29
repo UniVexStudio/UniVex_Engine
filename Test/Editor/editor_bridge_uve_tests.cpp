@@ -379,7 +379,7 @@ TEST(EditorBridgeUVETest, SnapshotUVE_CopiesHierarchyInspectorAndNativePanelSess
         EXPECT_EQ(snapshot.hierarchy.entries[0].displayLabel, "SceneRoot");
         EXPECT_EQ(snapshot.hierarchy.entries[0].depth, 0U);
         EXPECT_EQ(snapshot.hierarchy.entries[0].childCount, 1U);
-        EXPECT_EQ(snapshot.hierarchy.entries[1].displayLabel, "Viewport");
+        EXPECT_EQ(snapshot.hierarchy.entries[1].displayLabel, "uve_editor_bridge_panel_snapshot"); // the open level's asset name
         EXPECT_EQ(snapshot.hierarchy.entries[2].displayLabel, "World");
         EXPECT_EQ(snapshot.hierarchy.entries[2].depth, 2U);
         EXPECT_EQ(snapshot.hierarchy.entries[3].entity, (EditorBridgeEntityRefUVE{root.index, root.generation}));
