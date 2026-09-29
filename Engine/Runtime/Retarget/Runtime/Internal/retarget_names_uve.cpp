@@ -60,7 +60,7 @@ namespace {
 
 /// Words that name one thing several ways, folded to one.
 [[nodiscard]] std::string CanonicalWordUVE(const std::string& word) {
-    static const std::array<std::pair<const char*, const char*>, 31> kSynonyms{{
+    static constexpr std::pair<const char*, const char*> kSynonyms[]{
         {"pelvis", "hips"},     {"hip", "hips"},          {"lowerarm", "forearm"}, {"arm", "upperarm"},
         {"calf", "shin"},       {"leg", "shin"},          {"lowerleg", "shin"},    {"upleg", "thigh"},
         {"upperleg", "thigh"},  {"ball", "toe"},          {"toebase", "toe"},      {"toes", "toe"},
@@ -69,7 +69,12 @@ namespace {
         {"forward", "front"},   {"bck", "back"},          {"lwr", "lower"},        {"inner", "in"},
         {"outer", "out"},       {"scapula", "scap"},      {"centerofmass", "com"}, {"left", "l"},
         {"right", "r"},         {"centre", "center"},     {"thumbs", "thumb"},
-    }};
+        // Unity and Rokoko name a finger's bones by their anatomy.
+        {"proximal", "1"},      {"intermediate", "2"},    {"distal", "3"},
+        // Xsens, Perception Neuron, DAZ and other mocap and character rigs.
+        {"ab", "spine"},        {"shldr", "upperarm"},
+        {"uarm", "upperarm"},   {"farm", "forearm"},
+    };
     for (const auto& [from, to] : kSynonyms) {
         if (word == from) {
             return to;
@@ -80,12 +85,54 @@ namespace {
 
 /// Names a rig adds around the bone's own name: namespaces, "def_" and "jnt_" prefixes.
 [[nodiscard]] bool IsFillerUVE(const std::string& word) {
-    static const std::array<const char*, 6> kFiller{"mixamorig", "def", "jnt", "joint", "bip", "bone"};
+    static const std::array<const char*, 7> kFiller{"mixamorig", "def", "jnt", "joint", "bip", "bone", "bend"};
     return std::ranges::find(kFiller, word) != kFiller.end();
 }
 
 [[nodiscard]] bool IsFingerUVE(const std::string& word) {
     return word == "thumb" || word == "index" || word == "middle" || word == "ring" || word == "pinky";
+}
+
+[[nodiscard]] bool IsAllDigitsUVE(const std::string& word) {
+    return !word.empty() && std::ranges::all_of(word, [](const char c) { return IsDigitUVE(c); });
+}
+
+[[nodiscard]] std::string LowerUVE(const std::string_view text) {
+    std::string out(text);
+    std::ranges::transform(out, out.begin(), [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return out;
+}
+
+/// Blender's Rigify names its deform bones "DEF-..." and numbers them ".001": the numbers mean
+/// different things than in other rigs, so they are read by their own rules.
+void ApplyRigifyRulesUVE(std::vector<std::string>& parts) {
+    if (parts.empty()) {
+        return;
+    }
+    if (parts.size() == 1U && parts[0] == "spine") {
+        parts = {"hips"}; // DEF-spine sits at the hips; the numbered ones climb from there
+        return;
+    }
+    if (parts.size() == 2U && parts[0] == "spine" && IsAllDigitsUVE(parts[1])) {
+        const int number = std::stoi(parts[1]);
+        if (number >= 4 && number <= 5) {
+            parts = {"neck", std::to_string(number - 3)};
+        } else if (number == 6) {
+            parts = {"head"};
+        }
+        return;
+    }
+    if (parts.size() == 2U && IsAllDigitsUVE(parts[1]) &&
+        (parts[0] == "upperarm" || parts[0] == "forearm" || parts[0] == "thigh" || parts[0] == "shin")) {
+        parts.insert(parts.begin() + 1, "twist"); // DEF-upper_arm.L.001 is the first twist bone
+        return;
+    }
+    if (parts.size() == 2U && parts[0] == "palm" && IsAllDigitsUVE(parts[1])) {
+        static const std::array<const char*, 4> kFingers{"index", "middle", "ring", "pinky"};
+        if (const int number = std::stoi(parts[1]); number >= 1 && number <= 4) {
+            parts = {kFingers[static_cast<std::size_t>(number - 1)], "metacarpal"};
+        }
+    }
 }
 
 } // namespace
@@ -96,8 +143,28 @@ std::string MakeBoneKeyUVE(const std::string_view rawName) {
     if (const auto cut = name.find_last_of(":|"); cut != std::string_view::npos) {
         name = name.substr(cut + 1U);
     }
+    const std::string lowered = LowerUVE(name);
+    // Xsens names its spine after the vertebra it sits at; "L5" is not a left "5".
+    if (lowered == "l5" || lowered == "l3" || lowered == "t12" || lowered == "t8") {
+        return "C|spine";
+    }
+    const bool rigify = lowered.starts_with("def-") || lowered.starts_with("def_");
     std::vector<std::string> words;
-    for (const std::string& word : SplitWordsUVE(name)) {
+    const std::vector<std::string> split = SplitWordsUVE(name);
+    for (std::size_t i = 0U; i < split.size(); ++i) {
+        const std::string& word = split[i];
+        // "Bip01" and "Character1_" are a rig's prefix, number included.
+        if ((word == "bip" || word == "character") && i + 1U < split.size() && IsAllDigitsUVE(split[i + 1U])) {
+            ++i;
+            continue;
+        }
+        // A toe's "0" ("Toe0"), and Rigify's "f_" in front of a finger, say nothing.
+        if (word == "0" && i > 0U && split[i - 1U] == "toe") {
+            continue;
+        }
+        if (word == "f" && i + 1U < split.size() && IsFingerUVE(CanonicalWordUVE(split[i + 1U]))) {
+            continue;
+        }
         if (!IsFillerUVE(word)) {
             words.push_back(word);
         }
@@ -127,6 +194,11 @@ std::string MakeBoneKeyUVE(const std::string_view rawName) {
         } else if (word == "center" && next == "of" && after == "mass") {
             merged.emplace_back("com");
             i += 2U;
+        } else if (word == "in" && next == "hand" && IsFingerUVE(CanonicalWordUVE(after))) {
+            // Rokoko's "LeftInHandIndex" is the bone inside the hand: the metacarpal.
+            merged.push_back(after);
+            merged.emplace_back("metacarpal");
+            i += 2U;
         } else if (word == "hand" && IsFingerUVE(CanonicalWordUVE(next))) {
             // "HandIndex1": the finger, not the hand.
         } else {
@@ -134,14 +206,21 @@ std::string MakeBoneKeyUVE(const std::string_view rawName) {
         }
     }
     char side = 'C';
-    std::string key;
+    std::vector<std::string> parts;
     for (const std::string& word : merged) {
         const std::string canonical = CanonicalWordUVE(word);
         if (canonical == "l" || canonical == "r") {
             side = canonical == "l" ? 'L' : 'R';
             continue;
         }
-        key += key.empty() ? canonical : " " + canonical;
+        parts.push_back(canonical);
+    }
+    if (rigify) {
+        ApplyRigifyRulesUVE(parts);
+    }
+    std::string key;
+    for (const std::string& part : parts) {
+        key += key.empty() ? part : " " + part;
     }
     return std::string{side} + "|" + key;
 }

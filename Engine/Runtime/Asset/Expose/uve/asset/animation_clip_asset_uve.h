@@ -47,6 +47,18 @@ struct AnimationAssetBoneTrackUVE final {
     [[nodiscard]] bool operator==(const AnimationAssetBoneTrackUVE&) const noexcept = default;
 };
 
+/// One bone of the skeleton a clip was made for, at rest: its parent (an index into the list, lower
+/// than its own, -1 for a root) and its local pose. A clip's tracks say how bones move but not how
+/// they are joined or how long they are; this is what retargeting needs to know.
+struct AnimationAssetRestBoneUVE final {
+    std::string bone;
+    std::int32_t parent = -1;
+    Math::Vector3UVE position;
+    Math::QuaternionUVE rotation;
+    Math::Vector3UVE scale{1.0F, 1.0F, 1.0F};
+    [[nodiscard]] bool operator==(const AnimationAssetRestBoneUVE&) const noexcept = default;
+};
+
 /// A clip moves a node (`samples`), a skeleton (`bones`), or both. At least one of them has
 /// samples; every track's times are sorted and inside [0, durationSeconds].
 struct AnimationClipAssetUVE final {
@@ -56,14 +68,23 @@ struct AnimationClipAssetUVE final {
     std::vector<AnimationAssetEventUVE> events;
     std::vector<AnimationAssetBoneTrackUVE> bones;
 
+    /// The skeleton the tracks were made for, parents first; empty when the file did not say (older
+    /// clips).
+    std::vector<AnimationAssetRestBoneUVE> rest;
+    /// True once retargeting has made the clip the humanoid's: its bones carry the humanoid's names
+    /// and frames, and `rest` is the conformed skeleton (the humanoid's bones and frames, in the
+    /// proportions of the rig the clip came from).
+    bool conformed = false;
     [[nodiscard]] bool IsSkeletalUVE() const noexcept { return !bones.empty(); }
 };
 
 /// Validates the bounded serialized animation payload without performing runtime sampling.
 [[nodiscard]] bool IsAnimationClipAssetValidUVE(const AnimationClipAssetUVE& clip) noexcept;
 
-/// Loads a `.uvanim` envelope: the `uve-animation-v2` JSON payload, or the older
-/// `uve-animation-v1` one (a node track with no bones).
+/// Loads a `.uvanim` envelope: the `uve-animation-v3` JSON payload (v2 plus the rest skeleton and
+/// the conformed flag), the `uve-animation-v2` one, or the older `uve-animation-v1` (a node track
+/// with no bones). Saving writes v3 only when the clip has a rest skeleton or is conformed, so a
+/// clip with neither is byte-for-byte what it always was.
 /// Output is published only after envelope, schema, bounds, and finite-pose validation succeed.
 [[nodiscard]] bool LoadAnimationClipAssetUVE(const std::filesystem::path& path,
                                               AnimationClipAssetUVE& outClip);

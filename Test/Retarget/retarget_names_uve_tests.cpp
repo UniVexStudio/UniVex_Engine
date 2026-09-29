@@ -48,6 +48,83 @@ TEST(RetargetNamesUVETest, MakeBoneKeyUVE_ReadsAnAutoRiggerSkeleton) {
     }
 }
 
+using NameCasesUVE = std::vector<std::pair<const char*, const char*>>;
+
+void ExpectKeysUVE(const NameCasesUVE& cases) {
+    for (const auto& [name, key] : cases) {
+        EXPECT_EQ(MakeBoneKeyUVE(name), key) << name;
+    }
+}
+
+TEST(RetargetNamesUVETest, MakeBoneKeyUVE_ReadsUnityHumanoidBones) {
+    ExpectKeysUVE({{"Hips", "C|hips"},
+                   {"Spine", "C|spine"},
+                   {"UpperChest", "C|upper chest"},
+                   {"LeftShoulder", "L|clavicle"},
+                   {"LeftUpperArm", "L|upperarm"},
+                   {"LeftLowerArm", "L|forearm"},
+                   {"RightUpperLeg", "R|thigh"},
+                   {"RightLowerLeg", "R|shin"},
+                   {"RightToes", "R|toe"},
+                   {"Left Thumb Proximal", "L|thumb 1"},
+                   {"LeftThumbIntermediate", "L|thumb 2"},
+                   {"LeftIndexDistal", "L|index 3"}});
+}
+
+TEST(RetargetNamesUVETest, MakeBoneKeyUVE_ReadsRokokoBones) {
+    ExpectKeysUVE({{"LeftInHandIndex", "L|index metacarpal"},
+                   {"RightInHandPinky", "R|pinky metacarpal"},
+                   {"LeftIndexProximal", "L|index 1"},
+                   {"RightMiddleDistal", "R|middle 3"},
+                   {"LeftHand", "L|hand"},
+                   {"RightLowerLeg", "R|shin"}});
+}
+
+TEST(RetargetNamesUVETest, MakeBoneKeyUVE_ReadsRigifyDeformBones) {
+    ExpectKeysUVE({{"DEF-spine", "C|hips"},
+                   {"DEF-spine.001", "C|spine 1"},
+                   {"DEF-spine.003", "C|spine 3"},
+                   {"DEF-spine.004", "C|neck 1"},
+                   {"DEF-spine.005", "C|neck 2"},
+                   {"DEF-spine.006", "C|head"},
+                   {"DEF-shoulder.L", "L|clavicle"},
+                   {"DEF-upper_arm.L", "L|upperarm"},
+                   {"DEF-upper_arm.L.001", "L|upperarm twist 1"},
+                   {"DEF-forearm.R.002", "R|forearm twist 2"},
+                   {"DEF-hand.L", "L|hand"},
+                   {"DEF-thigh.R", "R|thigh"},
+                   {"DEF-shin.L", "L|shin"},
+                   {"DEF-shin.L.001", "L|shin twist 1"},
+                   {"DEF-foot.L", "L|foot"},
+                   {"DEF-toe.R", "R|toe"},
+                   {"DEF-f_index.01.L", "L|index 1"},
+                   {"DEF-f_pinky.03.R", "R|pinky 3"},
+                   {"DEF-thumb.02.L", "L|thumb 2"},
+                   {"DEF-palm.01.L", "L|index metacarpal"},
+                   {"DEF-palm.04.R", "R|pinky metacarpal"}});
+}
+
+TEST(RetargetNamesUVETest, MakeBoneKeyUVE_ReadsMocapAndBipedRigs) {
+    ExpectKeysUVE({{"Bip01 Pelvis", "C|hips"},
+                   {"Bip01 Spine1", "C|spine 1"},
+                   {"Bip01 L Thigh", "L|thigh"},
+                   {"Bip01 L Calf", "L|shin"},
+                   {"Bip01 R UpperArm", "R|upperarm"},
+                   {"Bip01 R Forearm", "R|forearm"},
+                   {"Bip01 L Toe0", "L|toe"},
+                   {"Character1_LeftUpLeg", "L|thigh"},
+                   {"Character1_RightForeArm", "R|forearm"},
+                   {"Pelvis", "C|hips"},
+                   {"L5", "C|spine"},
+                   {"T8", "C|spine"},
+                   {"RightUpperArm", "R|upperarm"},
+                   {"RightToe", "R|toe"},
+                   {"lThigh", "L|thigh"},
+                   {"lThighBend", "L|thigh"},
+                   {"rShldrBend", "R|upperarm"},
+                   {"lCollar", "L|clavicle"}});
+}
+
 TEST(RetargetNamesUVETest, MakeHumanoidBoneNameUVE_SpellsKeysInPascalCaseWithASideSuffix) {
     EXPECT_EQ(MakeHumanoidBoneNameUVE("L|upperarm twist 1"), "UpperArmTwist1_L");
     EXPECT_EQ(MakeHumanoidBoneNameUVE("R|ik hand"), "IKHand_R");

@@ -8,6 +8,7 @@
 #include <unordered_map>
 
 #include "retarget_keys_uve.h"
+#include "retarget_pose_uve.h"
 #include "uve/retarget/retarget_names_uve.h"
 
 namespace UVE::Retarget {
@@ -157,7 +158,13 @@ HumanoidMatchUVE MatchHumanoidUVE(const RetargetSkeletonUVE& rig, const Humanoid
     const RetargetSkeletonUVE folded = FoldScaleUVE(rig);
     const std::vector<WorldTransformUVE> world = ComputeWorldTransformsUVE(folded);
     const std::vector<WorldTransformUVE> referenceWorld = ComputeWorldTransformsUVE(reference.skeleton);
-    const float rigHeight = MeasureHipsHeightUVE(folded, world);
+    // How tall it stands is measured up its own spine, whichever way the rig was authored.
+    std::vector<WorldTransformUVE> upright = world;
+    const Math::QuaternionUVE orientation = OrientationOfRigUVE(world, match, reference);
+    for (WorldTransformUVE& transform : upright) {
+        transform.position = Math::RotateVectorUVE(orientation, transform.position);
+    }
+    const float rigHeight = MeasureHipsHeightUVE(folded, upright);
     match.heightScale = rigHeight > 0.0F && reference.hipsHeight > 0.0F ? rigHeight / reference.hipsHeight : 1.0F;
 
     const auto nameOf = [&](const std::int32_t bone) { return rig.bones[static_cast<std::size_t>(bone)].name; };

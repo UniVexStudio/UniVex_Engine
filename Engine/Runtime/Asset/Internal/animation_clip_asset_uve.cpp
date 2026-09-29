@@ -22,6 +22,7 @@ namespace {
 
 using JsonUVE = nlohmann::json;
 constexpr std::string_view kAnimationSchemaUVE = "uve-animation-v2";
+constexpr std::string_view kAnimationSchemaV3UVE = "uve-animation-v3";
 constexpr std::string_view kAnimationSchemaV1UVE = "uve-animation-v1";
 
 [[nodiscard]] bool IsFinitePoseUVE(const AnimationAssetPoseUVE& pose) noexcept {
@@ -129,13 +130,34 @@ constexpr std::string_view kAnimationSchemaV1UVE = "uve-animation-v1";
     return true;
 }
 
+[[nodiscard]] bool IsRestValidUVE(const std::vector<AnimationAssetRestBoneUVE>& rest) noexcept {
+    if (rest.size() > kMaximumAnimationAssetBonesUVE) {
+        return false;
+    }
+    for (std::size_t index = 0U; index < rest.size(); ++index) {
+        const AnimationAssetRestBoneUVE& bone = rest[index];
+        Math::QuaternionUVE normalized;
+        if (bone.bone.empty() || bone.bone.size() > kMaximumAnimationAssetIdentifierBytesUVE || bone.bone.contains('\0') ||
+            bone.parent < -1 || bone.parent >= static_cast<std::int32_t>(index) || !Math::IsFiniteUVE(bone.position) ||
+            !Math::IsFiniteUVE(bone.scale) || !Math::TryNormalizeUVE(bone.rotation, normalized)) {
+            return false;
+        }
+        for (std::size_t other = 0U; other < index; ++other) {
+            if (rest[other].bone == bone.bone) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 } // namespace
 
 bool IsAnimationClipAssetValidUVE(const AnimationClipAssetUVE& clip) noexcept {
     if (clip.clipId.empty() || clip.clipId.size() > kMaximumAnimationAssetIdentifierBytesUVE ||
         !std::isfinite(clip.durationSeconds) || clip.durationSeconds <= 0.0 ||
         clip.events.size() > kMaximumAnimationAssetEventsUVE || clip.bones.size() > kMaximumAnimationAssetBonesUVE ||
-        !AreSamplesValidUVE(clip.samples, clip.durationSeconds)) {
+        !AreSamplesValidUVE(clip.samples, clip.durationSeconds) || !IsRestValidUVE(clip.rest)) {
         return false;
     }
     bool anyBoneSamples = false;
@@ -173,12 +195,23 @@ bool SaveAnimationClipAssetUVE(const AnimationClipAssetUVE& clip, const std::fil
         UVE_ERROR("AnimationClipAssetUVE: refusing to save invalid clip to {}", path.string());
         return false;
     }
-    JsonUVE document{{"schema", kAnimationSchemaUVE}, {"clipId", clip.clipId},
+    const bool v3 = !clip.rest.empty() || clip.conformed;
+    JsonUVE document{{"schema", v3 ? kAnimationSchemaV3UVE : kAnimationSchemaUVE}, {"clipId", clip.clipId},
                      {"durationSeconds", clip.durationSeconds}, {"samples", JsonUVE::array()},
                      {"events", JsonUVE::array()}, {"bones", JsonUVE::array()}};
     document["samples"] = ToSamplesJsonUVE(clip.samples);
     for (const AnimationAssetBoneTrackUVE& track : clip.bones) {
         document["bones"].push_back({{"bone", track.bone}, {"samples", ToSamplesJsonUVE(track.samples)}});
+    }
+    if (v3) {
+        document["conformed"] = clip.conformed;
+        document["rest"] = JsonUVE::array();
+        for (const AnimationAssetRestBoneUVE& bone : clip.rest) {
+            document["rest"].push_back({{"bone", bone.bone}, {"parent", bone.parent},
+                                        {"position", ToVectorJsonUVE(bone.position)},
+                                        {"rotation", ToQuaternionJsonUVE(bone.rotation)},
+                                        {"scale", ToVectorJsonUVE(bone.scale)}});
+        }
     }
     for (const AnimationAssetEventUVE& event : clip.events) {
         document["events"].push_back({{"timeSeconds", event.timeSeconds}, {"eventId", event.eventId}});
@@ -203,7 +236,7 @@ bool LoadAnimationClipAssetUVE(const std::filesystem::path& path, AnimationClipA
         const std::string serialized(reinterpret_cast<const char*>(file->second.data()), file->second.size());
         const JsonUVE document = JsonUVE::parse(serialized);
         const std::string schema = document.is_object() ? document.value("schema", std::string{}) : std::string{};
-        if (!document.is_object() || (schema != kAnimationSchemaUVE && schema != kAnimationSchemaV1UVE) ||
+        if (!document.is_object() || (schema != kAnimationSchemaV3UVE && schema != kAnimationSchemaUVE && schema != kAnimationSchemaV1UVE) ||
             !document.contains("clipId") || !document.contains("durationSeconds") ||
             !document.contains("samples") || !document.contains("events")) {
             return false;
@@ -232,6 +265,28 @@ bool LoadAnimationClipAssetUVE(const std::filesystem::path& path, AnimationClipA
                     return false;
                 }
                 candidate.bones.push_back(std::move(track));
+            }
+        }
+        if (schema == kAnimationSchemaV3UVE) {
+            candidate.conformed = document.value("conformed", false);
+            const JsonUVE rest = document.value("rest", JsonUVE::array());
+            if (!rest.is_array() || rest.size() > kMaximumAnimationAssetBonesUVE) {
+                return false;
+            }
+            for (const JsonUVE& value : rest) {
+                if (!value.is_object() || !value.contains("bone") || !value.contains("position") ||
+                    !value.contains("rotation")) {
+                    return false;
+                }
+                AnimationAssetRestBoneUVE bone;
+                bone.bone = value.at("bone").get<std::string>();
+                bone.parent = value.value("parent", -1);
+                if (!ReadVectorJsonUVE(value.at("position"), bone.position) ||
+                    !ReadQuaternionJsonUVE(value.at("rotation"), bone.rotation) ||
+                    (value.contains("scale") && !ReadVectorJsonUVE(value.at("scale"), bone.scale))) {
+                    return false;
+                }
+                candidate.rest.push_back(std::move(bone));
             }
         }
         candidate.events.reserve(events.size());

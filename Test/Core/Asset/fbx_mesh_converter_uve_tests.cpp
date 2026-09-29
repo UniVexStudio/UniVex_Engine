@@ -396,6 +396,15 @@ TEST(FbxMeshConverterUVETest, EveryTakeBecomesASkeletalClipOnTheSkeletonsBones) 
         EXPECT_EQ(walk.bones[index].bone, skeleton->joints[index].name) << "tracks follow the skeleton's bones";
     }
 
+    // The take carries the skeleton it was made for: the same bones, parents and rest pose.
+    ASSERT_EQ(walk.rest.size(), skeleton->joints.size());
+    for (std::size_t index = 0U; index < walk.rest.size(); ++index) {
+        EXPECT_EQ(walk.rest[index].bone, skeleton->joints[index].name);
+        EXPECT_EQ(walk.rest[index].parent, skeleton->joints[index].parentIndex);
+        EXPECT_NEAR(walk.rest[index].position.y, skeleton->joints[index].translation.y, 1.0e-5F);
+    }
+    EXPECT_FALSE(walk.conformed);
+
     // The hips: sampled every frame, starting at the rest pose and ending one metre along X.
     const AnimationAssetBoneTrackUVE& hips = walk.bones[0];
     ASSERT_GT(hips.samples.size(), 2U);

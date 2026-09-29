@@ -100,6 +100,50 @@ TEST(AnimationClipAssetUVETest, SkeletalClipRoundTripsItsBoneTracks) {
     std::filesystem::remove(path);
 }
 
+TEST(AnimationClipAssetUVETest, RestSkeletonAndConformedFlagRoundTripAsVersionThree) {
+    const std::filesystem::path path = TestPathUVE("uve_animation_clip_asset_rest.uvanim");
+    std::filesystem::remove(path);
+    AnimationClipAssetUVE clip;
+    clip.clipId = "run";
+    clip.durationSeconds = 0.5;
+    const AnimationAssetPoseUVE pose{Math::Vector3UVE{0.0F, 1.0F, 0.0F}, Math::QuaternionUVE{},
+                                     Math::Vector3UVE{1.0F, 1.0F, 1.0F}};
+    clip.bones = {AnimationAssetBoneTrackUVE{"Hips", {{0.0, pose}}}, AnimationAssetBoneTrackUVE{"Spine", {{0.0, pose}}}};
+    clip.rest = {AnimationAssetRestBoneUVE{"Hips", -1, {0.0F, 1.0F, 0.0F}, {}, {1.0F, 1.0F, 1.0F}},
+                 AnimationAssetRestBoneUVE{"Spine", 0, {0.0F, 0.1F, 0.0F}, {}, {1.0F, 1.0F, 1.0F}}};
+    clip.conformed = true;
+    ASSERT_TRUE(SaveAnimationClipAssetUVE(clip, path));
+    AnimationClipAssetUVE loaded;
+    ASSERT_TRUE(LoadAnimationClipAssetUVE(path, loaded));
+    EXPECT_EQ(loaded.rest, clip.rest);
+    EXPECT_TRUE(loaded.conformed);
+
+    // A clip with neither still saves as version two, so old readers and old files are unchanged.
+    clip.rest.clear();
+    clip.conformed = false;
+    ASSERT_TRUE(SaveAnimationClipAssetUVE(clip, path));
+    ASSERT_TRUE(LoadAnimationClipAssetUVE(path, loaded));
+    EXPECT_TRUE(loaded.rest.empty());
+    EXPECT_FALSE(loaded.conformed);
+    std::filesystem::remove(path);
+}
+
+TEST(AnimationClipAssetUVETest, RestSkeletonMustBeParentsFirstWithUniqueNames) {
+    AnimationClipAssetUVE clip;
+    clip.clipId = "run";
+    clip.durationSeconds = 0.5;
+    const AnimationAssetPoseUVE pose{};
+    clip.bones = {AnimationAssetBoneTrackUVE{"Hips", {{0.0, pose}}}};
+    clip.rest = {AnimationAssetRestBoneUVE{"Hips", -1, {}, {}, {1.0F, 1.0F, 1.0F}},
+                 AnimationAssetRestBoneUVE{"Spine", 0, {}, {}, {1.0F, 1.0F, 1.0F}}};
+    EXPECT_TRUE(IsAnimationClipAssetValidUVE(clip));
+    clip.rest[1].parent = 1; // its own index: not a parent that comes first
+    EXPECT_FALSE(IsAnimationClipAssetValidUVE(clip));
+    clip.rest[1].parent = 0;
+    clip.rest[1].bone = "Hips"; // a repeated name
+    EXPECT_FALSE(IsAnimationClipAssetValidUVE(clip));
+}
+
 TEST(AnimationClipAssetUVETest, BoneTracksAreValidatedLikeTheNodeTrack) {
     AnimationClipAssetUVE clip;
     clip.clipId = "run";
