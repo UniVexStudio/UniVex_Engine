@@ -338,13 +338,22 @@ void EditorUVE::DrawMenuBarUVE() {
         float cursorX = toolbarMin.x + kStripPaddingUVE;
         // ---- The viewport's name, as its own tab: the tab's edge is what separates it -----------
         if (sidePanelsShown) {
-            const char* const name = "Viewport";
-            const float tabWidth = ImGui::CalcTextSize(name).x + 28.0F;
+            // The open Viewport asset (the level): the same name and icon as its Outliner row and its
+            // file in the Content Browser.
+            const std::string stem = m_activeScenePath.stem().string();
+            const std::string name = stem.empty() ? std::string{"Viewport"} : stem;
+            constexpr float kTabIconSizeUVE = 16.0F;
+            const float tabWidth = ImGui::CalcTextSize(name.c_str()).x + kTabIconSizeUVE + 34.0F;
             const ImVec2 tabMin{toolbarMin.x, toolbarMin.y + 3.0F};
             const ImVec2 tabMax{toolbarMin.x + tabWidth, toolbarMax.y};
             toolbarDrawList->AddRectFilled(tabMin, tabMax, IM_COL32(21, 25, 31, 255), 4.0F, ImDrawFlags_RoundCornersTop);
-            toolbarDrawList->AddText(ImVec2{tabMin.x + 14.0F, toolbarMin.y + 3.0F + (kEditorToolbarHeightUVE - 3.0F - ImGui::GetTextLineHeight()) * 0.5F},
-                                     ImGui::GetColorU32(ImGuiCol_Text), name);
+            const float midY = (tabMin.y + tabMax.y) * 0.5F;
+            if (const std::uintptr_t icon = m_uiAssets.GetNodeIconTextureIdUVE(Scene::Nodes::SceneNodeKindUVE::Viewport); icon != 0U) {
+                toolbarDrawList->AddImage(static_cast<ImTextureID>(icon), ImVec2{tabMin.x + 12.0F, midY - kTabIconSizeUVE * 0.5F},
+                                          ImVec2{tabMin.x + 12.0F + kTabIconSizeUVE, midY + kTabIconSizeUVE * 0.5F});
+            }
+            toolbarDrawList->AddText(ImVec2{tabMin.x + 18.0F + kTabIconSizeUVE, midY - ImGui::GetTextLineHeight() * 0.5F},
+                                     ImGui::GetColorU32(ImGuiCol_Text), name.c_str());
             cursorX = tabMax.x + 8.0F;
         }
         // ---- Play/Pause/Stop -----------------------------------------------------------------------

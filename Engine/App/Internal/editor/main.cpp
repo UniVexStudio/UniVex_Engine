@@ -1367,7 +1367,8 @@ private:
 };
 
 struct EditorLaunchOptionsUVE final {
-    std::filesystem::path scenePath = "editor_scene.uvscene";
+    /// Empty means the project's default Viewport: Content/Viewport/Viewport.uvscene.
+    std::filesystem::path scenePath;
     std::optional<int> frameLimit;
     std::optional<std::uint32_t> glMajor;
     std::optional<std::uint32_t> glMinor;
@@ -1452,7 +1453,7 @@ struct EditorLaunchOptionsUVE final {
 /// EngineCoreUVE::kUnhandledExceptionExitCodeUVE instead of letting the exception unwind out of
 /// main() into std::terminate().
 int main(const int argc, char** argv) {
-    const EditorLaunchOptionsUVE options = ParseOptionsUVE(argc, argv);
+    EditorLaunchOptionsUVE options = ParseOptionsUVE(argc, argv);
 
     UVE::Core::EngineConfigUVE config{};
     config.logFilePath = "uve_editor.log";
@@ -1472,11 +1473,31 @@ int main(const int argc, char** argv) {
             return 1;
         }
 
+        // The level is a Viewport asset in the Content Browser: Content/Viewport/Viewport.uvscene
+        // unless --scene names another. A level saved at the old default moves there once.
+        bool createDefaultViewport = false;
+        if (options.scenePath.empty()) {
+            const std::filesystem::path folder =
+                engine.GetServicesUVE().GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot / "Viewport";
+            options.scenePath = folder / "Viewport.uvscene";
+            std::error_code error;
+            std::filesystem::create_directories(folder, error);
+            if (!std::filesystem::exists(options.scenePath, error)) {
+                if (std::filesystem::exists("editor_scene.uvscene", error)) {
+                    std::filesystem::copy_file("editor_scene.uvscene", options.scenePath, error);
+                } else {
+                    createDefaultViewport = true;
+                }
+            }
+        }
+
         UVE::Editor::EditorUVE editor(engine.GetServicesUVE(), options.scenePath, 100U, &engine);
         editor.InitUVE();
 
         if (std::filesystem::exists(options.scenePath)) {
             static_cast<void>(editor.LoadSceneUVE());
+        } else if (createDefaultViewport) {
+            static_cast<void>(editor.SaveSceneUVE()); // the default Viewport asset exists from the start
         }
 
         if (options.bridgeStdio) {

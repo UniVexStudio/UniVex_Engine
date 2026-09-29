@@ -796,6 +796,10 @@ template <typename VectorT>
     return nlohmann::json::object();
 }
 
+[[nodiscard]] nlohmann::json ToJsonUVE(const OutlinerViewportComponentUVE&) {
+    return nlohmann::json::object();
+}
+
 [[nodiscard]] nlohmann::json ToJsonUVE(const SceneRootComponentUVE&) {
     return nlohmann::json::object(); // pure marker: no authored state to persist
 }
@@ -1652,6 +1656,9 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
         table.emplace("FolderComponentUVE", MakeRegistrationUVE<FolderComponentUVE>([](const nlohmann::json&) {
                           return FolderComponentUVE{};
                       }, IsFolderComponentValidUVE));
+        table.emplace("OutlinerViewportComponentUVE", MakeRegistrationUVE<OutlinerViewportComponentUVE>([](const nlohmann::json&) {
+                          return OutlinerViewportComponentUVE{};
+                      }, IsOutlinerViewportComponentValidUVE));
         table.emplace("SceneRootComponentUVE",
                     MakeRegistrationUVE<SceneRootComponentUVE>([](const nlohmann::json&) {
                         return SceneRootComponentUVE{};

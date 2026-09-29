@@ -62,6 +62,8 @@ enum class SceneNodeKindUVE : std::uint8_t {
     Folder,
     /// The sun: LightEmitter3D's directional child.
     DirectionalLight3D,
+    /// The level at the top of the Outliner; its folders hold the level's nodes.
+    Viewport,
 };
 
 struct SceneNodeDescriptorUVE final {

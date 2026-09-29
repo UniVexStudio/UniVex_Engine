@@ -42,7 +42,7 @@ struct HierarchyViewSettingsUVE final {
     bool dragToReparent = true;
     HierarchyTreeLinesUVE treeLines = HierarchyTreeLinesUVE::None;
     /// Pixels each level is indented by.
-    float indentWidth = 21.0F;
+    float indentWidth = 12.0F;
 };
 
 inline constexpr float kMinimumHierarchyIndentUVE = 12.0F;
