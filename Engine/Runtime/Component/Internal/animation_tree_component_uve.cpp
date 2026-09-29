@@ -174,14 +174,30 @@ std::string DescribeAnimationGraphProblemUVE(const AnimationTreeComponentUVE& co
             for (const AnimationTransitionUVE& transition : node.transitions) {
                 const bool fromValid =
                     transition.fromState == kAnyAnimationStateUVE || transition.fromState < node.inputs.size();
-                if (!fromValid || transition.toState >= node.inputs.size() ||
-                    transition.condition > AnimationConditionUVE::Triggered ||
-                    !IsFiniteNonNegativeUVE(transition.fadeSeconds) || !std::isfinite(transition.threshold) ||
-                    !IsNameValidUVE(transition.parameter)) {
+                const bool exitValid = std::isfinite(transition.exitPhase) && transition.exitPhase <= 1.0F;
+                if (!fromValid || transition.toState >= node.inputs.size() || !exitValid ||
+                    !IsFiniteNonNegativeUVE(transition.fadeSeconds) ||
+                    transition.start > AnimationTransitionStartUVE::Continue ||
+                    transition.curve > AnimationTransitionCurveUVE::EaseInOut ||
+                    transition.conditions.size() > kMaximumAnimationTransitionConditionsUVE) {
                     return label + ": a transition is incomplete";
                 }
+                for (const AnimationTransitionConditionUVE& test : transition.conditions) {
+                    if (test.condition > AnimationConditionUVE::Triggered || !std::isfinite(test.threshold) ||
+                        !IsNameValidUVE(test.parameter)) {
+                        return label + ": a transition's condition is incomplete";
+                    }
+                }
             }
-        } else if (!node.transitions.empty()) {
+            if (node.statePositions.size() > node.inputs.size() ||
+                std::ranges::any_of(node.statePositions, [](const Math::Vector2UVE& at) {
+                    return !std::isfinite(at.x) || !std::isfinite(at.y);
+                }) ||
+                !std::isfinite(node.entryPosition.x) || !std::isfinite(node.entryPosition.y) ||
+                !std::isfinite(node.anyPosition.x) || !std::isfinite(node.anyPosition.y)) {
+                return label + ": a state's place in its view is invalid";
+            }
+        } else if (!node.transitions.empty() || !node.statePositions.empty()) {
             return label + ": only a StateMachine has transitions";
         }
     }

@@ -67,6 +67,36 @@ bool AddAnimationGraphInputSlotUVE(std::vector<Scene::AnimationGraphNodeUVE>& no
 bool RemoveAnimationGraphInputSlotUVE(std::vector<Scene::AnimationGraphNodeUVE>& nodes, std::uint32_t target,
                                       std::size_t slot);
 
+// ---- State Machines: states, their places in the state view, and transitions ------------------------
+
+/// Where the state view draws state `slot`: where it was put, or a grid place when it never was.
+[[nodiscard]] Math::Vector2UVE AnimationStatePositionUVE(const Scene::AnimationGraphNodeUVE& machine, std::size_t slot);
+
+/// Puts state `slot` at `position` in the state view. False for a bad machine or slot.
+bool SetAnimationStatePositionUVE(std::vector<Scene::AnimationGraphNodeUVE>& nodes, std::uint32_t machine,
+                                  std::size_t slot, Math::Vector2UVE position);
+
+/// Adds a state at `position` in the view, played by a new Clip node wired into it (a new machine's
+/// empty first state is used instead of adding one). Returns its slot, or nothing when full.
+std::optional<std::size_t> AddAnimationStateUVE(std::vector<Scene::AnimationGraphNodeUVE>& nodes, std::uint32_t machine,
+                                                Math::Vector2UVE position);
+
+/// Adds a transition `from` (a state, or kAnyAnimationStateUVE) `to` a state, last in priority and
+/// with no conditions. Refuses a state to itself. Returns its index.
+std::optional<std::size_t> AddAnimationTransitionUVE(std::vector<Scene::AnimationGraphNodeUVE>& nodes,
+                                                     std::uint32_t machine, std::uint32_t from, std::uint32_t to);
+
+bool RemoveAnimationTransitionUVE(std::vector<Scene::AnimationGraphNodeUVE>& nodes, std::uint32_t machine,
+                                  std::size_t index);
+
+/// Moves transition `index` to `newIndex` in the list: earlier is tried first.
+bool MoveAnimationTransitionUVE(std::vector<Scene::AnimationGraphNodeUVE>& nodes, std::uint32_t machine,
+                                std::size_t index, std::size_t newIndex);
+
+/// One line on what a transition waits for: "speed > 0.5 and grounded", "state finished, after 75%",
+/// "always". "(off)" when it is switched off.
+[[nodiscard]] std::string DescribeAnimationTransitionUVE(const Scene::AnimationTransitionUVE& transition);
+
 // ---- Blend Spaces hold their animations as points, not graph inputs ----------------------------
 
 /// Adds a point at `position` playing `clip` (empty: pick it later). A 1D space uses x only and

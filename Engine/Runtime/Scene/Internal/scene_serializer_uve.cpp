@@ -207,14 +207,27 @@ namespace {
     }
     nlohmann::json nodes = nlohmann::json::array();
     for (const AnimationGraphNodeUVE& node : component.nodes) {
+        nlohmann::json statePositions = nlohmann::json::array();
+        for (const Math::Vector2UVE& at : node.statePositions) {
+            statePositions.push_back({at.x, at.y});
+        }
         nlohmann::json transitions = nlohmann::json::array();
         for (const AnimationTransitionUVE& transition : node.transitions) {
+            nlohmann::json conditions = nlohmann::json::array();
+            for (const AnimationTransitionConditionUVE& test : transition.conditions) {
+                conditions.push_back({{"condition", static_cast<std::uint8_t>(test.condition)},
+                                      {"parameter", test.parameter},
+                                      {"threshold", test.threshold}});
+            }
             transitions.push_back({{"from", transition.fromState},
                                    {"to", transition.toState},
-                                   {"condition", static_cast<std::uint8_t>(transition.condition)},
-                                   {"parameter", transition.parameter},
-                                   {"threshold", transition.threshold},
-                                   {"fadeSeconds", transition.fadeSeconds}});
+                                   {"conditions", std::move(conditions)},
+                                   {"exitPhase", transition.exitPhase},
+                                   {"start", static_cast<std::uint8_t>(transition.start)},
+                                   {"fadeSeconds", transition.fadeSeconds},
+                                   {"curve", static_cast<std::uint8_t>(transition.curve)},
+                                   {"interruptible", transition.interruptible},
+                                   {"enabled", transition.enabled}});
         }
         nlohmann::json blendPoints = nlohmann::json::array();
         for (const AnimationBlendPointUVE& point : node.blendPoints) {
@@ -245,7 +258,10 @@ namespace {
                          {"areaMin", {node.areaMin.x, node.areaMin.y}},
                          {"areaMax", {node.areaMax.x, node.areaMax.y}},
                          {"entryState", node.entryState},
-                         {"transitions", std::move(transitions)}});
+                         {"transitions", std::move(transitions)},
+                         {"statePositions", std::move(statePositions)},
+                         {"entryPosition", {node.entryPosition.x, node.entryPosition.y}},
+                         {"anyPosition", {node.anyPosition.x, node.anyPosition.y}}});
     }
     return {{"parameters", std::move(parameters)},
             {"nodes", std::move(nodes)}};
@@ -358,13 +374,38 @@ namespace {
                 AnimationTransitionUVE transition;
                 transition.fromState = transitionJson.value("from", kAnyAnimationStateUVE);
                 transition.toState = transitionJson.value("to", std::uint32_t{0});
-                transition.condition =
-                    static_cast<AnimationConditionUVE>(transitionJson.value("condition", std::uint8_t{0}));
-                transition.parameter = transitionJson.value("parameter", std::string{});
-                transition.threshold = transitionJson.value("threshold", 0.0F);
+                if (const auto list = transitionJson.find("conditions"); list != transitionJson.end() && list->is_array()) {
+                    for (const nlohmann::json& testJson : *list) {
+                        AnimationTransitionConditionUVE test;
+                        test.condition = static_cast<AnimationConditionUVE>(testJson.value("condition", std::uint8_t{4}));
+                        test.parameter = testJson.value("parameter", std::string{});
+                        test.threshold = testJson.value("threshold", 0.0F);
+                        transition.conditions.push_back(std::move(test));
+                    }
+                } else {
+                    // Saved when a transition had one condition; Always is no condition at all.
+                    const auto condition =
+                        static_cast<AnimationConditionUVE>(transitionJson.value("condition", std::uint8_t{0}));
+                    if (condition != AnimationConditionUVE::Always) {
+                        transition.conditions.push_back(AnimationTransitionConditionUVE{
+                            condition, transitionJson.value("parameter", std::string{}), transitionJson.value("threshold", 0.0F)});
+                    }
+                }
+                transition.exitPhase = transitionJson.value("exitPhase", -1.0F);
+                transition.start = static_cast<AnimationTransitionStartUVE>(transitionJson.value("start", std::uint8_t{0}));
+                transition.curve = static_cast<AnimationTransitionCurveUVE>(transitionJson.value("curve", std::uint8_t{0}));
+                transition.interruptible = transitionJson.value("interruptible", true);
+                transition.enabled = transitionJson.value("enabled", true);
                 transition.fadeSeconds = transitionJson.value("fadeSeconds", 0.2F);
                 node.transitions.push_back(std::move(transition));
             }
+            for (const nlohmann::json& at : item.value("statePositions", nlohmann::json::array())) {
+                if (at.is_array() && at.size() == 2U) {
+                    node.statePositions.push_back(Math::Vector2UVE{at[0].get<float>(), at[1].get<float>()});
+                }
+            }
+            readPair("entryPosition", node.entryPosition);
+            readPair("anyPosition", node.anyPosition);
             tree.nodes.push_back(std::move(node));
         }
         static_cast<void>(MigrateBlendSpaceInputsUVE(tree.nodes, legacyPositions));

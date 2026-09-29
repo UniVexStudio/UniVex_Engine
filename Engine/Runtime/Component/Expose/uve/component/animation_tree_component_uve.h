@@ -21,6 +21,7 @@ inline constexpr std::size_t kMaximumAnimationParametersUVE = 128U;
 inline constexpr std::size_t kMaximumAnimationNodeInputsUVE = 32U;
 inline constexpr std::size_t kMaximumAnimationTransitionsUVE = 128U;
 inline constexpr std::size_t kMaximumAnimationNameBytesUVE = 128U;
+inline constexpr std::size_t kMaximumAnimationTransitionConditionsUVE = 16U;
 /// LayeredBlend: most bone branches one node can name.
 inline constexpr std::size_t kMaximumAnimationLayerBonesUVE = 256U;
 /// A transition whose From is this leaves whichever state is active: an "any state" transition.
@@ -80,7 +81,7 @@ struct AnimationParameterUVE final {
 };
 
 enum class AnimationConditionUVE : std::uint8_t {
-    /// As soon as the From state is active.
+    /// Holds always. Kept so older saves read back; a transition with no conditions is the same.
     Always = 0,
     /// When the From state's animation reaches its end.
     AtEnd,
@@ -88,19 +89,54 @@ enum class AnimationConditionUVE : std::uint8_t {
     ParameterLess,
     ParameterTrue,
     ParameterFalse,
-    /// When the trigger parameter fires; the trigger is consumed.
+    /// When the trigger parameter fires; the trigger is consumed once the transition is taken.
     Triggered,
 };
 
+/// One test a transition makes. A transition's tests must all hold for it to be taken.
+struct AnimationTransitionConditionUVE final {
+    AnimationConditionUVE condition = AnimationConditionUVE::ParameterTrue;
+    std::string parameter;
+    float threshold = 0.0F;
+
+    [[nodiscard]] bool operator==(const AnimationTransitionConditionUVE&) const = default;
+};
+
+/// Where the state entered starts playing.
+enum class AnimationTransitionStartUVE : std::uint8_t {
+    /// From its beginning.
+    Restart = 0,
+    /// At the phase the state it leaves had reached, so a stride carries on through the change.
+    InStep,
+    /// Where it was left last time it played.
+    Continue,
+};
+
+/// The shape of a crossfade's weight over its length. Inertialized transitions keep their own decay.
+enum class AnimationTransitionCurveUVE : std::uint8_t {
+    Linear = 0,
+    EaseIn,
+    EaseOut,
+    EaseInOut,
+};
+
 /// A move between two states of a StateMachine node. States are indices into the node's inputs.
+/// Transitions out of a state are tried in list order, so the first is the most important.
 struct AnimationTransitionUVE final {
     std::uint32_t fromState = kAnyAnimationStateUVE;
     std::uint32_t toState = 0U;
-    AnimationConditionUVE condition = AnimationConditionUVE::Always;
-    std::string parameter;
-    float threshold = 0.0F;
+    /// All must hold. None: the transition is taken as soon as it may be.
+    std::vector<AnimationTransitionConditionUVE> conditions;
+    /// When set (0..1), the From state must have played at least this far through its cycle first.
+    float exitPhase = -1.0F;
+    AnimationTransitionStartUVE start = AnimationTransitionStartUVE::Restart;
     /// Crossfade length in seconds; 0 cuts.
     float fadeSeconds = 0.2F;
+    AnimationTransitionCurveUVE curve = AnimationTransitionCurveUVE::Linear;
+    /// Whether another transition may take over while this one is still fading.
+    bool interruptible = true;
+    /// Off: kept, but never taken.
+    bool enabled = true;
 
     [[nodiscard]] bool operator==(const AnimationTransitionUVE&) const = default;
 };
@@ -177,6 +213,11 @@ struct AnimationGraphNodeUVE final {
     /// StateMachine: the state it starts in, and the moves between states.
     std::uint32_t entryState = 0U;
     std::vector<AnimationTransitionUVE> transitions;
+    /// StateMachine: where its state view draws each state (by slot), and its Entry and Any boxes.
+    /// Fewer positions than states is fine: the rest are laid out on a grid.
+    std::vector<Math::Vector2UVE> statePositions;
+    Math::Vector2UVE entryPosition{-240.0F, 0.0F};
+    Math::Vector2UVE anyPosition{-240.0F, 120.0F};
 
     [[nodiscard]] bool operator==(const AnimationGraphNodeUVE&) const = default;
 };
@@ -191,6 +232,13 @@ struct AnimationGraphNodeStateUVE final {
     std::uint32_t previousState = kAnyAnimationStateUVE;
     float fadeElapsedSeconds = 0.0F;
     float fadeSeconds = 0.0F;
+    /// StateMachine: the curve of the crossfade under way, whether it may be interrupted, the last
+    /// transition taken (an index into `transitions`, kAnyAnimationStateUVE for none) and how long
+    /// the active state has been active.
+    AnimationTransitionCurveUVE fadeCurve = AnimationTransitionCurveUVE::Linear;
+    bool fadeInterruptible = true;
+    std::uint32_t lastTransition = kAnyAnimationStateUVE;
+    float stateSeconds = 0.0F;
     /// OneShot: playing, and for how long.
     bool shotActive = false;
     float shotElapsedSeconds = 0.0F;

@@ -26,6 +26,8 @@
 
 #include <imgui.h>
 
+#include "editor_animation_graph_widgets_uve.h"
+
 #include "uve/asset/animation_clip_asset_uve.h"
 #include "uve/component/animation_mixer_component_uve.h"
 #include "uve/component/animation_tree_component_uve.h"
@@ -53,37 +55,6 @@ constexpr float kSideStripWidthUVE = 250.0F;
 constexpr float kMinimumZoomUVE = 0.3F;
 constexpr float kMaximumZoomUVE = 2.0F;
 
-constexpr ImU32 kCanvasUVE = IM_COL32(26, 29, 35, 255);
-constexpr ImU32 kGridMinorUVE = IM_COL32(255, 255, 255, 10);
-constexpr ImU32 kGridMajorUVE = IM_COL32(255, 255, 255, 22);
-constexpr ImU32 kBodyUVE = IM_COL32(40, 44, 52, 245);
-constexpr ImU32 kBorderUVE = IM_COL32(18, 20, 24, 255);
-constexpr ImU32 kSelectedUVE = IM_COL32(236, 170, 72, 255);
-constexpr ImU32 kWireUVE = IM_COL32(170, 178, 190, 220);
-constexpr ImU32 kWireGoodUVE = IM_COL32(110, 210, 140, 255);
-constexpr ImU32 kWireBadUVE = IM_COL32(230, 96, 86, 255);
-constexpr ImU32 kTextUVE = IM_COL32(230, 232, 236, 255);
-constexpr ImU32 kTextDimUVE = IM_COL32(150, 156, 166, 255);
-constexpr ImU32 kActiveUVE = IM_COL32(110, 210, 140, 255);
-
-/// A header colour per kind, so the graph reads at a glance: sources, mixers, control.
-[[nodiscard]] ImU32 KindColourUVE(const Kind kind) noexcept {
-    switch (kind) {
-        case Kind::Output: return IM_COL32(170, 72, 72, 255);
-        case Kind::Clip: return IM_COL32(58, 110, 170, 255);
-        case Kind::Blend2:
-        case Kind::BlendSpace1D: return IM_COL32(64, 138, 102, 255);
-        case Kind::Additive: return IM_COL32(120, 100, 170, 255);
-        case Kind::OneShot: return IM_COL32(176, 118, 52, 255);
-        case Kind::TimeScale: return IM_COL32(96, 104, 118, 255);
-        case Kind::StateMachine: return IM_COL32(150, 84, 136, 255);
-        case Kind::BlendSpace2D: return IM_COL32(52, 128, 120, 255);
-        case Kind::Select: return IM_COL32(150, 128, 56, 255);
-        case Kind::LayeredBlend: return IM_COL32(96, 90, 170, 255);
-        case Kind::TimeSeek: return IM_COL32(84, 112, 132, 255);
-    }
-    return IM_COL32(96, 104, 118, 255);
-}
 
 constexpr std::array<Kind, 11> kAddableKindsUVE{Kind::Clip,         Kind::Blend2,       Kind::BlendSpace1D, Kind::BlendSpace2D,
                                                 Kind::Select,       Kind::Additive,     Kind::LayeredBlend, Kind::OneShot,
@@ -101,9 +72,9 @@ constexpr std::array<Kind, 11> kAddableKindsUVE{Kind::Clip,         Kind::Blend2
         case Kind::Select:
         case Kind::TimeScale:
         case Kind::TimeSeek: return 1U;
+        case Kind::StateMachine: return 1U; // Open States
         case Kind::Output:
-        case Kind::OneShot:
-        case Kind::StateMachine: return 0U;
+        case Kind::OneShot: return 0U;
     }
     return 0U;
 }
@@ -178,27 +149,6 @@ bool EditNameUVE(const char* const id, const std::string& value, std::string& ou
     return false;
 }
 
-/// A combo over the parameters of the wanted types, with `none` meaning the fixed value.
-bool PickParameterUVE(const char* const id, const std::vector<AnimationParameterUVE>& parameters,
-                      const std::initializer_list<AnimationParameterTypeUVE> wanted, const char* const none,
-                      std::string& inOut) {
-    bool changed = false;
-    if (ImGui::BeginCombo(id, inOut.empty() ? none : inOut.c_str())) {
-        if (ImGui::Selectable(none, inOut.empty()) && !inOut.empty()) {
-            inOut.clear();
-            changed = true;
-        }
-        for (const AnimationParameterUVE& parameter : parameters) {
-            if (std::find(wanted.begin(), wanted.end(), parameter.type) != wanted.end() &&
-                ImGui::Selectable(parameter.name.c_str(), parameter.name == inOut) && parameter.name != inOut) {
-                inOut = parameter.name;
-                changed = true;
-            }
-        }
-        ImGui::EndCombo();
-    }
-    return changed;
-}
 
 void DrawBlendSpaceSettingsUVE(const AnimationGraphNodeUVE& node,
                                const std::function<void(std::function<void(AnimationGraphNodeUVE&)>)>& edit) {
@@ -934,7 +884,9 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
     // ---- Path: the tree, and the node opened in its own editor --------------------------------------
     const auto focusIt = indexById.find(view.focus);
     const bool focused = view.focus != 0U && focusIt != indexById.end() &&
-                         (nodes[focusIt->second].kind == Kind::BlendSpace1D || nodes[focusIt->second].kind == Kind::BlendSpace2D);
+                         (nodes[focusIt->second].kind == Kind::BlendSpace1D || nodes[focusIt->second].kind == Kind::BlendSpace2D ||
+                          nodes[focusIt->second].kind == Kind::StateMachine);
+    const bool focusedMachine = focused && nodes[focusIt->second].kind == Kind::StateMachine;
     if (!focused) {
         view.focus = 0U;
     }
@@ -960,8 +912,13 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
     const float graphHeight = std::max(60.0F, canvasHeight - pathHeight);
 
     if (focused) {
-        ImGui::BeginChild("##space-editor", ImVec2{canvasWidth, graphHeight}, false, ImGuiWindowFlags_NoScrollbar);
-        DrawBlendSpaceEditorUVE(tree, focusIt->second);
+        ImGui::BeginChild("##space-editor", ImVec2{canvasWidth, graphHeight}, false,
+                          ImGuiWindowFlags_NoScrollbar | (focusedMachine ? ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoMove : 0));
+        if (focusedMachine) {
+            DrawStateMachineViewUVE(tree, focusIt->second);
+        } else {
+            DrawBlendSpaceEditorUVE(tree, focusIt->second);
+        }
         m_timelineOwnsKeys = ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows) && !ImGui::GetIO().WantTextInput;
         ImGui::EndChild();
     } else {
@@ -1327,9 +1284,16 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
                     ImGui::BeginDisabled(!writable);
                     break;
                 }
+                case Kind::StateMachine:
+                    ImGui::SetCursorScreenPos(rowAt(0U));
+                    ImGui::EndDisabled();
+                    if (ImGui::Button("Open States", ImVec2{rowWidth, 0.0F})) {
+                        view.focus = nodeId;
+                    }
+                    ImGui::BeginDisabled(!writable);
+                    break;
                 case Kind::Output:
                 case Kind::OneShot:
-                case Kind::StateMachine:
                     break;
             }
             ImGui::EndDisabled();
@@ -1389,7 +1353,8 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
             }
         } else if (hoveredNode != 0U && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) &&
                    (nodes[indexById.at(hoveredNode)].kind == Kind::BlendSpace1D ||
-                    nodes[indexById.at(hoveredNode)].kind == Kind::BlendSpace2D)) {
+                    nodes[indexById.at(hoveredNode)].kind == Kind::BlendSpace2D ||
+                    nodes[indexById.at(hoveredNode)].kind == Kind::StateMachine)) {
             view.focus = hoveredNode;
         } else if (hoveredNode != 0U) {
             const bool selected = std::ranges::find(view.selected, hoveredNode) != view.selected.end();
@@ -1680,12 +1645,16 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
             edit = [index, from, renamed](Scene::AnimationTreeComponentUVE& t) {
                 t.parameters[index].name = renamed;
                 for (AnimationGraphNodeUVE& node : t.nodes) {
-                    if (node.parameter == from) {
-                        node.parameter = renamed;
+                    for (std::string* const reads : {&node.parameter, &node.parameterY}) {
+                        if (*reads == from) {
+                            *reads = renamed;
+                        }
                     }
                     for (Scene::AnimationTransitionUVE& transition : node.transitions) {
-                        if (transition.parameter == from) {
-                            transition.parameter = renamed;
+                        for (Scene::AnimationTransitionConditionUVE& test : transition.conditions) {
+                            if (test.parameter == from) {
+                                test.parameter = renamed;
+                            }
                         }
                     }
                 }
@@ -1724,7 +1693,9 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
     }
 
     ImGui::Separator();
-    if (view.selected.size() != 1U || !indexById.contains(view.selected.front())) {
+    if (focusedMachine) {
+        DrawStateMachineSelectionUVE(tree, focusIt->second, edit);
+    } else if (view.selected.size() != 1U || !indexById.contains(view.selected.front())) {
         ImGui::TextDisabled(view.selected.empty() ? "Select a node to edit it." : "%zu nodes selected.",
                             view.selected.size());
     } else {
@@ -1962,7 +1933,12 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
                     }
                     ImGui::EndCombo();
                 }
-                ImGui::TextDisabled("Transitions are edited in the Inspector.");
+                if (ImGui::Button("Open States##machine", ImVec2{-FLT_MIN, 0.0F})) {
+                    view.focus = id;
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Its states and transitions, drawn and edited (or double-click the node).");
+                }
                 break;
             }
             case Kind::Output:

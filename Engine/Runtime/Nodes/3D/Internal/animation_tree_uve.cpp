@@ -593,24 +593,40 @@ private:
         return mixed;
     }
 
-    [[nodiscard]] bool ConditionHoldsUVE(const AnimationTransitionUVE& transition, const bool activeAtEnd) {
-        switch (transition.condition) {
+    /// Whether one of a transition's tests holds. A trigger is only looked at here: it is used up
+    /// when the transition is taken, so a transition whose other tests fail leaves it for later.
+    [[nodiscard]] bool TestHoldsUVE(const AnimationTransitionConditionUVE& test, const bool activeAtEnd) {
+        switch (test.condition) {
             case AnimationConditionUVE::Always:
                 return true;
             case AnimationConditionUVE::AtEnd:
                 return activeAtEnd;
             case AnimationConditionUVE::ParameterGreater:
-                return ReadUVE(transition.parameter, 0.0F) > transition.threshold;
+                return ReadUVE(test.parameter, 0.0F) > test.threshold;
             case AnimationConditionUVE::ParameterLess:
-                return ReadUVE(transition.parameter, 0.0F) < transition.threshold;
+                return ReadUVE(test.parameter, 0.0F) < test.threshold;
             case AnimationConditionUVE::ParameterTrue:
-                return ReadUVE(transition.parameter, 0.0F) >= 0.5F;
-            case AnimationConditionUVE::ParameterFalse:
-                return ReadUVE(transition.parameter, 0.0F) < 0.5F;
             case AnimationConditionUVE::Triggered:
-                return ConsumeTriggerUVE(transition.parameter);
+                return ReadUVE(test.parameter, 0.0F) >= 0.5F;
+            case AnimationConditionUVE::ParameterFalse:
+                return ReadUVE(test.parameter, 0.0F) < 0.5F;
         }
         return false;
+    }
+
+    /// A transition may be taken now: it is on, the From state has played far enough, and every
+    /// test holds.
+    [[nodiscard]] bool TransitionReadyUVE(const AnimationTransitionUVE& transition, const ResultUVE& active) {
+        if (!transition.enabled) {
+            return false;
+        }
+        if (transition.exitPhase >= 0.0F && !active.atEnd &&
+            (!active.phase.has_value() || *active.phase < transition.exitPhase)) {
+            return false;
+        }
+        return std::ranges::all_of(transition.conditions, [&](const AnimationTransitionConditionUVE& test) {
+            return TestHoldsUVE(test, active.atEnd);
+        });
     }
 
     /// The input a switching node (StateMachine, Select) shows: the active one, still crossfading
@@ -620,8 +636,10 @@ private:
         float fade = 1.0F;
         if (state.previousState != kAnyAnimationStateUVE) {
             state.fadeElapsedSeconds += deltaSeconds;
-            fade = state.fadeSeconds > 0.0F ? std::min(state.fadeElapsedSeconds / state.fadeSeconds, 1.0F) : 1.0F;
+            fade = AnimationTransitionCurveWeightUVE(
+                state.fadeCurve, state.fadeSeconds > 0.0F ? std::min(state.fadeElapsedSeconds / state.fadeSeconds, 1.0F) : 1.0F);
         }
+        state.stateSeconds += deltaSeconds;
         ResultUVE result = EvaluateInputUVE(node, state.activeState, deltaSeconds, weight * fade, std::nullopt);
         const bool activeAtEnd = result.atEnd;
         if (state.previousState != kAnyAnimationStateUVE) {
@@ -686,17 +704,27 @@ private:
     }
 
     /// Makes input `to` the active one over `fadeSeconds`, handing over from `showing` (the pose
-    /// shown this step): inertialized or crossfaded as the mixer says.
+    /// shown this step): inertialized or crossfaded as the mixer says. `start` places the input
+    /// entered: from its beginning, at the phase `showing` had reached, or where it was left.
     void SwitchInputUVE(const AnimationGraphNodeUVE& node, AnimationGraphNodeStateUVE& state, const std::uint32_t to,
-                        const float fadeSeconds, const bool restart, const ResultUVE& showing) {
+                        const float fadeSeconds, const AnimationTransitionStartUVE start, const ResultUVE& showing,
+                        const AnimationTransitionCurveUVE curve = AnimationTransitionCurveUVE::Linear,
+                        const bool interruptible = true) {
         const std::uint32_t leaving = state.activeState;
         const std::optional<std::size_t> entered = to < node.inputs.size() ? IndexOfUVE(node.inputs[to]) : std::nullopt;
-        if (restart && entered.has_value()) {
+        if (entered.has_value() && start != AnimationTransitionStartUVE::Continue) {
             ResetSubtreeUVE(*entered);
+            if (start == AnimationTransitionStartUVE::InStep && showing.phase.has_value()) {
+                // Weight 0: placing it fires no events.
+                static_cast<void>(EvaluateUVE(*entered, 0.0F, 0.0F, showing.phase));
+            }
         }
         state.activeState = to;
         state.fadeElapsedSeconds = 0.0F;
         state.fadeSeconds = fadeSeconds;
+        state.fadeCurve = curve;
+        state.fadeInterruptible = interruptible;
+        state.stateSeconds = 0.0F;
         ClearInertialUVE(state);
         const bool inertialize = m_mixer.transition == AnimationTransitionModeUVE::Inertialize && fadeSeconds > 0.0F;
         if (inertialize) {
@@ -716,17 +744,33 @@ private:
             state.started = true;
             state.activeState = node.entryState;
             state.previousState = kAnyAnimationStateUVE;
+            state.lastTransition = kAnyAnimationStateUVE;
+            state.stateSeconds = 0.0F;
         }
         const ResultUVE result = PlayActiveInputUVE(node, state, deltaSeconds, weight);
-        // The first transition out of the active state whose condition holds is taken. A move to
-        // the state already active is ignored, so an "any state" transition cannot restart itself.
-        for (const AnimationTransitionUVE& transition : node.transitions) {
+        // A transition that may not be interrupted holds the machine until its fade is over.
+        const bool handingOver = state.previousState != kAnyAnimationStateUVE || state.inertialSeconds > 0.0F;
+        if (handingOver && !state.fadeInterruptible) {
+            return result;
+        }
+        // The first transition out of the active state that is ready is taken; the list order is
+        // their priority. A move to the state already active is ignored, so an "any state"
+        // transition cannot restart itself.
+        for (std::size_t index = 0U; index < node.transitions.size(); ++index) {
+            const AnimationTransitionUVE& transition = node.transitions[index];
             const bool fromHere =
                 transition.fromState == kAnyAnimationStateUVE || transition.fromState == state.activeState;
-            if (!fromHere || transition.toState == state.activeState || !ConditionHoldsUVE(transition, result.atEnd)) {
+            if (!fromHere || transition.toState == state.activeState || !TransitionReadyUVE(transition, result)) {
                 continue;
             }
-            SwitchInputUVE(node, state, transition.toState, transition.fadeSeconds, true, result);
+            for (const AnimationTransitionConditionUVE& test : transition.conditions) {
+                if (test.condition == AnimationConditionUVE::Triggered) {
+                    static_cast<void>(ConsumeTriggerUVE(test.parameter));
+                }
+            }
+            SwitchInputUVE(node, state, transition.toState, transition.fadeSeconds, transition.start, result,
+                           transition.curve, transition.interruptible);
+            state.lastTransition = static_cast<std::uint32_t>(index);
             break;
         }
         return result;
@@ -744,7 +788,8 @@ private:
         }
         const ResultUVE result = PlayActiveInputUVE(node, state, deltaSeconds, weight);
         if (picked != state.activeState) {
-            SwitchInputUVE(node, state, picked, node.fadeSeconds, node.restart, result);
+            SwitchInputUVE(node, state, picked, node.fadeSeconds,
+                           node.restart ? AnimationTransitionStartUVE::Restart : AnimationTransitionStartUVE::Continue, result);
         }
         return result;
     }
@@ -1101,6 +1146,21 @@ std::vector<float> AnimationBlendSpace2DWeightsUVE(const std::vector<Math::Vecto
         weights[bestEdge[1]] += bestAlong;
     }
     return weights;
+}
+
+float AnimationTransitionCurveWeightUVE(const AnimationTransitionCurveUVE curve, const float progress) noexcept {
+    const float t = std::clamp(std::isfinite(progress) ? progress : 1.0F, 0.0F, 1.0F);
+    switch (curve) {
+        case AnimationTransitionCurveUVE::Linear:
+            return t;
+        case AnimationTransitionCurveUVE::EaseIn:
+            return t * t;
+        case AnimationTransitionCurveUVE::EaseOut:
+            return 1.0F - (1.0F - t) * (1.0F - t);
+        case AnimationTransitionCurveUVE::EaseInOut:
+            return t * t * (3.0F - 2.0F * t);
+    }
+    return t;
 }
 
 void SmoothBlendPositionUVE(Math::Vector2UVE& value, Math::Vector2UVE& velocity, const Math::Vector2UVE goal,

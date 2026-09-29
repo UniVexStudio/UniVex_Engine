@@ -144,5 +144,54 @@ TEST(AnimationGraphEditingUVETest, BlendSpacePointsHoldTheirOwnAnimation) {
         << Scene::DescribeAnimationGraphProblemUVE(TreeOfUVE(nodes));
 }
 
+TEST(AnimationGraphEditingUVETest, StatesAreAddedWithAClipAndKeepTheirPlaces) {
+    auto nodes = Scene::AnimationTreeComponentUVE::MakeDefaultAnimationGraphUVE();
+    const std::uint32_t machine = AddAnimationGraphNodeUVE(nodes, Kind::StateMachine, {400.0F, 0.0F});
+    const std::size_t before = nodes.size();
+    ASSERT_EQ(AddAnimationStateUVE(nodes, machine, {10.0F, 20.0F}), std::optional<std::size_t>{0U})
+        << "a new machine's empty first state is used";
+    ASSERT_EQ(AddAnimationStateUVE(nodes, machine, {220.0F, 20.0F}), std::optional<std::size_t>{1U});
+    EXPECT_EQ(nodes.size(), before + 2U) << "each state plays a new Clip";
+    const auto& added = NodeUVE(nodes, machine);
+    ASSERT_EQ(added.inputs.size(), 2U);
+    EXPECT_EQ(NodeUVE(nodes, added.inputs[1]).kind, Kind::Clip);
+    EXPECT_EQ(NodeUVE(nodes, added.inputs[1]).name, "State 2");
+    EXPECT_EQ(AnimationStatePositionUVE(added, 1U).x, 220.0F);
+    EXPECT_EQ(AnimationStatePositionUVE(added, 7U).x, 200.0F) << "never placed: a grid spot";
+
+    ASSERT_TRUE(SetAnimationStatePositionUVE(nodes, machine, 1U, {-50.0F, 60.0F}));
+    EXPECT_EQ(AnimationStatePositionUVE(NodeUVE(nodes, machine), 1U).y, 60.0F);
+    ASSERT_TRUE(RemoveAnimationGraphInputSlotUVE(nodes, machine, 0U));
+    EXPECT_EQ(AnimationStatePositionUVE(NodeUVE(nodes, machine), 0U).x, -50.0F) << "the place moves with its state";
+    EXPECT_TRUE(Scene::DescribeAnimationGraphProblemUVE(TreeOfUVE(nodes)).empty())
+        << Scene::DescribeAnimationGraphProblemUVE(TreeOfUVE(nodes));
+}
+
+TEST(AnimationGraphEditingUVETest, TransitionsAreAddedReorderedAndDescribed) {
+    auto nodes = Scene::AnimationTreeComponentUVE::MakeDefaultAnimationGraphUVE();
+    const std::uint32_t machine = AddAnimationGraphNodeUVE(nodes, Kind::StateMachine, {});
+    static_cast<void>(AddAnimationStateUVE(nodes, machine, {}));
+    static_cast<void>(AddAnimationStateUVE(nodes, machine, {200.0F, 0.0F}));
+    EXPECT_FALSE(AddAnimationTransitionUVE(nodes, machine, 1U, 1U).has_value()) << "not a state to itself";
+    EXPECT_FALSE(AddAnimationTransitionUVE(nodes, machine, 0U, 5U).has_value());
+    ASSERT_EQ(AddAnimationTransitionUVE(nodes, machine, 0U, 1U), std::optional<std::size_t>{0U});
+    ASSERT_EQ(AddAnimationTransitionUVE(nodes, machine, Scene::kAnyAnimationStateUVE, 0U), std::optional<std::size_t>{1U});
+    ASSERT_TRUE(MoveAnimationTransitionUVE(nodes, machine, 1U, 0U));
+    EXPECT_EQ(NodeUVE(nodes, machine).transitions[0].fromState, Scene::kAnyAnimationStateUVE) << "now tried first";
+    EXPECT_FALSE(MoveAnimationTransitionUVE(nodes, machine, 0U, 4U));
+    ASSERT_TRUE(RemoveAnimationTransitionUVE(nodes, machine, 0U));
+    EXPECT_EQ(NodeUVE(nodes, machine).transitions.size(), 1U);
+
+    Scene::AnimationTransitionUVE transition;
+    EXPECT_EQ(DescribeAnimationTransitionUVE(transition), "always");
+    transition.conditions = {{Scene::AnimationConditionUVE::ParameterGreater, "speed", 0.5F},
+                             {Scene::AnimationConditionUVE::ParameterFalse, "crouched", 0.0F}};
+    transition.exitPhase = 0.75F;
+    EXPECT_EQ(DescribeAnimationTransitionUVE(transition), "speed > 0.5 and not crouched, after 75%");
+    transition.enabled = false;
+    EXPECT_EQ(DescribeAnimationTransitionUVE(transition), "speed > 0.5 and not crouched, after 75% (off)");
+    EXPECT_TRUE(Scene::DescribeAnimationGraphProblemUVE(TreeOfUVE(nodes)).empty());
+}
+
 } // namespace
 } // namespace UVE::Editor
