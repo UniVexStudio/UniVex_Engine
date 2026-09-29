@@ -151,6 +151,7 @@ add_library(uve_editor STATIC
     Internal/editor_content_catalogue_uve.cpp
     Internal/editor_entity_editor_uve.cpp
     Internal/editor_retarget_plan_uve.cpp
+    Internal/editor_retarget_preview_uve.cpp
     Internal/editor_retarget_window_uve.cpp
     Internal/editor_panel_hierarchy_uve.cpp
     Internal/editor_panel_inspector_metadata_uve.cpp

@@ -291,6 +291,9 @@ struct RetargetWindowStateUVE final {
     std::future<Retarget::RetargetFilesResultUVE> job;
     /// The character file the running job conforms.
     std::filesystem::path jobModel;
+    /// Characters conformed or restored while the window was open: the scene put aside by the
+    /// preview still holds their old bones until it is back.
+    std::vector<std::filesystem::path> changedModels;
 };
 
 class EditorUVE final {
@@ -374,6 +377,9 @@ public:
         std::array<float, 3> linkFrom{};
         bool skeletonSelected = false;
         bool boneSelected = false;
+        /// A colour of its own (the Retarget window's joint colours); otherwise the selection look.
+        bool hasColour = false;
+        std::array<float, 3> colour{};
     };
 
     struct ViewportOverlayStateUVE final {
@@ -1152,6 +1158,36 @@ private:
         Scene::EntityUVE dockFollowed = Scene::kInvalidEntityUVE;
         float dockHeight = 220.0F;
     };
+    /// What the Retarget window's viewport shows while it is open: the scene is put aside (as the
+    /// Entity Editor does) and a preview world stands in its place. Closing brings the scene back.
+    struct RetargetPreviewUVE final {
+        Scene::SceneSnapshotUVE sceneSnapshot;
+        bool sceneWasEmpty = false;
+        bool sceneDirtyBefore = false;
+        EditorSelectionPathsUVE selectionBefore;
+        std::optional<Core::SimulationExecutionModeUVE> simulationBefore;
+        /// Everything of the preview stands under it.
+        Scene::EntityUVE frameRoot = Scene::kInvalidEntityUVE;
+        /// The humanoid and the character stand under it; the viewport frames it.
+        Scene::EntityUVE figures = Scene::kInvalidEntityUVE;
+        Scene::EntityUVE sourceSkeleton = Scene::kInvalidEntityUVE;
+        Scene::EntityUVE targetSkeleton = Scene::kInvalidEntityUVE;
+        /// The joint colour of each humanoid bone, by reference index.
+        std::vector<std::array<float, 3>> sourceColours;
+        /// The same colours on the character's bones, by their own names.
+        std::unordered_map<std::string, std::array<float, 3>> targetColours;
+        /// The character the preview was built for; a change rebuilds it.
+        std::filesystem::path builtFor;
+        bool frameRequested = false;
+    };
+    /// Puts the scene aside for the preview. False (nothing changed) when the editor cannot right now.
+    [[nodiscard]] bool BeginRetargetPreviewUVE();
+    /// Brings the scene back. False, staying in the preview, when it cannot be restored.
+    [[nodiscard]] bool EndRetargetPreviewUVE();
+    /// Builds the world: floor, sun, sky, the humanoid and the character side by side.
+    void RebuildRetargetPreviewUVE(const RetargetPlanUVE& plan, const std::filesystem::path& modelFile);
+    void DrawRetargetPreviewUVE();
+    void DrawRetargetPlaceholderUVE();
     /// The entity's nodes in tree order (root first). Empty when no entity is open.
     [[nodiscard]] std::vector<Scene::EntityUVE> CollectEntityEditorNodesUVE();
     /// Instantiates the entity asset as the document's only content (below the scene root).
@@ -1889,6 +1925,7 @@ private:
     std::optional<PlayModeSessionUVE> m_playModeSession;
     std::optional<EntityEditSessionUVE> m_entityEditSession;
     std::optional<RetargetWindowStateUVE> m_retargetWindow;
+    std::optional<RetargetPreviewUVE> m_retargetPreview;
     // Which workspace tab was active before EnterPlayModeUVE() switched to Game, so StopPlayModeUVE()
     // can restore it - mirrors Unity's own Scene<->Game auto-switch on Play/Stop.
     EditorWorkspaceUVE m_workspaceBeforePlayMode = EditorWorkspaceUVE::Library;

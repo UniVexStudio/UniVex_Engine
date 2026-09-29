@@ -520,6 +520,20 @@ void EditorUVE::BuildSkeletonOverlayUVE(std::vector<ViewportBoneUVE>& outBones) 
                 }
                 bone.skeletonSelected = selected;
                 bone.boneSelected = selected && skeleton.bones[index].name == m_selectedSkeletonBone;
+                if (m_retargetPreview.has_value()) {
+                    // The Retarget preview colours joints by how the character answers the humanoid.
+                    const RetargetPreviewUVE& preview = *m_retargetPreview;
+                    if (entity == preview.sourceSkeleton && index < preview.sourceColours.size()) {
+                        bone.hasColour = true;
+                        bone.colour = preview.sourceColours[index];
+                    } else if (entity == preview.targetSkeleton) {
+                        if (const auto found = preview.targetColours.find(skeleton.bones[index].name);
+                            found != preview.targetColours.end()) {
+                            bone.hasColour = true;
+                            bone.colour = found->second;
+                        }
+                    }
+                }
                 outBones.push_back(bone);
             }
         });
