@@ -547,7 +547,20 @@ def light_3d(ic):
     sphere(ic, 32, 31, 14, SUN)
 
 
-@scene_node("world_environment_3d", "WorldEnvironment3D", "Rendering")
+@scene_node("directional_light_3d", "DirectionalLight3D", "Rendering")
+def directional_light_3d(ic):
+    # The sun from far away: a disc and parallel rays falling one way, not radiating.
+    glow(ic, 22, 20, 20, SUN, 0.45)
+    sphere(ic, 22, 20, 11, SUN)
+    for i, (x, y) in enumerate(((30, 30), (38, 24), (24, 38))):
+        length = 20 if i == 0 else 16
+        ic.add(f'<path d="M {x} {y} l {length * 0.7:.1f} {length * 0.7:.1f}" stroke="{shade(SUN, -0.05)}" '
+               f'stroke-width="4.2" stroke-linecap="round"/>')
+        ic.add(f'<path d="M {x} {y} l {length * 0.7:.1f} {length * 0.7:.1f}" stroke="{OUTLINE}" stroke-opacity="0.35" '
+               f'stroke-width="1" stroke-linecap="round"/>')
+
+
+@scene_node("world_environment_3d", "WorldEnvironment", "Rendering")
 def world_environment_3d(ic):
     shadow(ic, 32, 57, 27, 4)
     ground = ic.linear([(0, "#7cc45d"), (1, "#356e2a")], 0, 0, 0, 1)

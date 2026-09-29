@@ -13,6 +13,8 @@
 #include "uve/logging/logging_macros_uve.h"
 #include "uve/math/quaternion_uve.h"
 #include "uve/component/light_component_uve.h"
+#include "uve/component/light_emitter_component_uve.h"
+#include "uve/nodes/3d/directional_light_3d_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 
 namespace UVE::Render {
@@ -94,23 +96,63 @@ namespace {
     return true;
 }
 
+/// A DirectionalLight3D: its colour, energy and shadow switch are LightEmitter3D's.
+[[nodiscard]] bool TryBuildDirectionalLightDataUVE(const Scene::WorldTransformComponentUVE& worldTransform,
+                                                   const Scene::DirectionalLight3DComponentUVE& directional,
+                                                   const Scene::LightEmitterComponentUVE& emitter,
+                                                   LightDataUVE& outLight) {
+    if (!Scene::IsDirectionalLight3DComponentValidUVE(directional) || !Scene::IsLightEmitterComponentValidUVE(emitter)) {
+        UVE_ERROR("LightSystemUVE: invalid DirectionalLight3D skipped");
+        return false;
+    }
+    Scene::LightComponentUVE light{};
+    light.type = Scene::LightTypeUVE::Directional;
+    light.color = emitter.color;
+    // A negative light subtracts; the forward shader only adds, so it is left out rather than
+    // drawn as a positive one.
+    light.intensity = emitter.negative ? 0.0F : emitter.energy;
+    if (!TryBuildLightDataUVE(worldTransform, light, outLight)) {
+        return false;
+    }
+    outLight.castsShadows = emitter.shadowEnabled;
+    outLight.shadowMaxDistance = directional.shadowMaxDistance;
+    outLight.shadowSplitBlend = directional.shadowSplitBlend;
+    return true;
+}
+
+/// Every light the frame can use, in entity order: Light3D and DirectionalLight3D alike.
+template <typename Visit>
+void ForEachLightDataUVE(Scene::IEntityManagerUVE& entityManager, const Visit& visit) {
+    entityManager.ForEachUVE<Scene::WorldTransformComponentUVE, Scene::LightComponentUVE>(
+        [&](Scene::EntityUVE, const Scene::WorldTransformComponentUVE& worldTransform,
+            const Scene::LightComponentUVE& light) {
+            LightDataUVE slot;
+            if (TryBuildLightDataUVE(worldTransform, light, slot)) {
+                visit(slot);
+            }
+        });
+    entityManager.ForEachUVE<Scene::WorldTransformComponentUVE, Scene::DirectionalLight3DComponentUVE,
+                             Scene::LightEmitterComponentUVE>(
+        [&](Scene::EntityUVE, const Scene::WorldTransformComponentUVE& worldTransform,
+            const Scene::DirectionalLight3DComponentUVE& directional, const Scene::LightEmitterComponentUVE& emitter) {
+            LightDataUVE slot;
+            if (TryBuildDirectionalLightDataUVE(worldTransform, directional, emitter, slot)) {
+                visit(slot);
+            }
+        });
+}
+
 } // namespace
 
 LightListUVE LightSystemUVE::ExtractActiveLightsUVE(Scene::IEntityManagerUVE& entityManager) const {
     LightListUVE result;
     std::size_t filledCount = 0;
 
-    entityManager.ForEachUVE<Scene::WorldTransformComponentUVE, Scene::LightComponentUVE>(
-        [&](Scene::EntityUVE, const Scene::WorldTransformComponentUVE& worldTransform,
-            const Scene::LightComponentUVE& light) {
-            if (filledCount >= kMaxLightsUVE) {
-                return;
-            }
-            if (!TryBuildLightDataUVE(worldTransform, light, result[filledCount])) {
-                return;
-            }
-            ++filledCount;
-        });
+    ForEachLightDataUVE(entityManager, [&](const LightDataUVE& light) {
+        if (filledCount < kMaxLightsUVE) {
+            result[filledCount++] = light;
+        }
+    });
 
     return result;
 }
@@ -127,15 +169,9 @@ LightListUVE LightSystemUVE::ExtractActiveLightsForViewUVE(Scene::IEntityManager
     };
     std::vector<RankedLightUVE> candidates;
 
-    entityManager.ForEachUVE<Scene::WorldTransformComponentUVE, Scene::LightComponentUVE>(
-        [&](Scene::EntityUVE, const Scene::WorldTransformComponentUVE& worldTransform,
-            const Scene::LightComponentUVE& light) {
-            LightDataUVE slot;
-            if (!TryBuildLightDataUVE(worldTransform, light, slot)) {
-                return;
-            }
-            candidates.push_back(RankedLightUVE{slot, EstimateLightContributionUVE(slot, viewPosition)});
-        });
+    ForEachLightDataUVE(entityManager, [&](const LightDataUVE& light) {
+        candidates.push_back(RankedLightUVE{light, EstimateLightContributionUVE(light, viewPosition)});
+    });
 
     // Partial sort: only the top kMaxLightsUVE matter, and a scene with hundreds of lights should
     // not pay a full sort to discard almost all of them. Stable ordering among equal contributions

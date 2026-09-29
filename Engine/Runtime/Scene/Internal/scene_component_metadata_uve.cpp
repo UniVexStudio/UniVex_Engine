@@ -41,6 +41,7 @@
 #include "uve/logging/assert_uve.h"
 #include "uve/logging/logging_macros_uve.h"
 #include "uve/nodes/3d/decal_3d_uve.h"
+#include "uve/nodes/3d/directional_light_3d_uve.h"
 #include "uve/nodes/3d/fog_volume_3d_uve.h"
 #include "uve/nodes/3d/skeleton_3d_uve.h"
 #include "uve/nodes/3d/world_environment_3d_uve.h"
@@ -322,7 +323,7 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     AddUVE<WorldEnvironment3DNodeComponentUVE>(
         entries,
         MakeEntryUVE(
-            "component.world_environment", "World Environment", kSectionOrderTypeSpecificUVE,
+            "component.world_environment", "WorldEnvironment", kSectionOrderTypeSpecificUVE,
             {
                 DeclareUVE<&WorldEnvironment3DNodeComponentUVE::skyAssetPath>("skyAssetPath", "Sky",
                                                                               kPropertyTypeStringUVE),
@@ -1069,6 +1070,25 @@ void DeclareSkeletonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
 /// Concrete RenderInstance3D children. Each brings exactly its own section; everything above it
 /// comes from the bases.
 void DeclareRenderInstanceNodesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
+    AddValidatedUVE<DirectionalLight3DComponentUVE, &IsDirectionalLight3DComponentValidUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.directional_light_3d", "DirectionalLight3D", kSectionOrderTypeSpecificUVE,
+            {
+                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&DirectionalLight3DComponentUVE::shadowMaxDistance>(
+                                                           "shadowMaxDistance", "Max Distance", kPropertyTypeFloatUVE),
+                                                       0.0, 10000.0, 1.0),
+                                          "How far from the camera shadows are drawn, in metres. 0 follows the "
+                                          "camera's far plane. Shorter is sharper."),
+                           "Shadow"),
+                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&DirectionalLight3DComponentUVE::shadowSplitBlend>(
+                                                           "shadowSplitBlend", "Split Blend", kPropertyTypeFloatUVE),
+                                                       0.0, 1.0, 0.01),
+                                          "How the shadow cascades share that distance: 0 evenly, 1 packed near the "
+                                          "camera (sharper up close)."),
+                           "Shadow"),
+            }));
+
     using D = Decal3DNodeComponentUVE;
     AddValidatedUVE<Decal3DNodeComponentUVE, &IsDecal3DNodeComponentValidUVE>(
         entries,
