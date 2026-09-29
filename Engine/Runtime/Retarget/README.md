@@ -102,12 +102,36 @@ Each humanoid bone then gets a status:
 
 Rig bones the humanoid has no place for (such as a head-top end bone) are kept as they are.
 
+## Conforming
+
+`ConformSkeletonUVE(rig, match, reference)` makes a rig the humanoid:
+
+- The humanoid's bones come first, with its names, parents and order. Bones the rig had keep its
+  proportions; bones it lacked are added. The rig's own extra bones are kept after them, under
+  their parents.
+- Arms, hands, fingers and legs turn to the A-pose. Hips, spine, neck, head, clavicles and feet
+  keep the rig's own shape, and the body is lifted back onto the ground.
+- Every humanoid bone's rest rotation becomes the reference's frame, so a humanoid clip's
+  rotations mean the same on every conformed rig.
+- Added bones are fitted to the rig's own limbs: a spine bone between its neighbours at the
+  humanoid's fraction, a twist along its forearm, IK targets on what they follow, the root on the
+  ground under the hips.
+- `moveOfRigBone` records how each original bone moved, which is what carries a skin along.
+
+`RigFromMeshUVE` + `ConformMeshUVE` re-skin a `.uvmodel`: vertices, normals and tangents move with
+their joints into the A-pose, and the joints become the conformed skeleton's, with new inverse
+binds and remeasured bounds. At the new rest every skinning matrix is the identity.
+
+`ConformClipUVE` re-expresses a clip for the conformed rig: at every frame each original bone sits
+where the clip put it, now in the humanoid's names and frames. Added bones ride their parents and
+IK targets follow what they follow.
+
 ## Status
 
 | Phase | State |
 |---|---|
 | R1a: humanoid reference, names, JSON, builder tool | Done |
 | R1b: matcher and joint statuses | Done |
-| R1c: conform skeleton, mesh and clip | Next |
+| R1c: conform skeleton, mesh and clip | Done |
 | R2: `.uvanim` carries its skeleton; `.uvmodel` written back with a backup | Planned |
 | R3: Retarget window (multi-select in Content, own viewport, joint colours, Generate) | Planned |
