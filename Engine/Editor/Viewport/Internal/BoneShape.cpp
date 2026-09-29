@@ -53,7 +53,8 @@ GizmoMesh BuildBoneMeshUVE(const std::vector<BoneOverlayUVE>& bones, const Vec3&
     const Vec3 right = PerpendicularUVE(view, Vec3{0.f, 1.f, 0.f});
     const Vec3 up = Cross(right, view);
     for (const BoneOverlayUVE& bone : bones) {
-        const Vec3 color = bone.boneSelected ? style.activeBoneColor
+        const Vec3 color = bone.hasColor        ? bone.color
+                           : bone.boneSelected  ? style.activeBoneColor
                            : bone.skeletonSelected ? style.selectedColor
                                                    : style.idleColor;
         const Vec3 outline = color * style.outlineShade;

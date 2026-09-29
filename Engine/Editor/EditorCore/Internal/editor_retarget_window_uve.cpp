@@ -30,21 +30,16 @@
 namespace UVE::Editor {
 namespace {
 
-constexpr ImVec4 kGoodUVE{0.36F, 0.78F, 0.47F, 1.0F};
-constexpr ImVec4 kCheckUVE{0.95F, 0.76F, 0.26F, 1.0F};
-constexpr ImVec4 kBrokenUVE{0.90F, 0.36F, 0.34F, 1.0F};
-constexpr ImVec4 kMissingUVE{0.50F, 0.52F, 0.56F, 1.0F};
-constexpr ImVec4 kAccentUVE{0.357F, 0.478F, 0.600F, 1.0F};
-
+// The joint colours come from GetRetargetStatusColourUVE, so the dots here and the bones in the viewport agree.
 [[nodiscard]] ImVec4 ColourOfUVE(const Retarget::JointStatusUVE status) {
-    switch (status) {
-        case Retarget::JointStatusUVE::Good: return kGoodUVE;
-        case Retarget::JointStatusUVE::Warning: return kCheckUVE;
-        case Retarget::JointStatusUVE::Broken: return kBrokenUVE;
-        case Retarget::JointStatusUVE::Missing: return kMissingUVE;
-    }
-    return kMissingUVE;
+    const std::array<float, 3> colour = GetRetargetStatusColourUVE(status);
+    return ImVec4{colour[0], colour[1], colour[2], 1.0F};
 }
+
+const ImVec4 kGoodUVE = ColourOfUVE(Retarget::JointStatusUVE::Good);
+const ImVec4 kBrokenUVE = ColourOfUVE(Retarget::JointStatusUVE::Broken);
+const ImVec4 kMissingUVE = ColourOfUVE(Retarget::JointStatusUVE::Missing);
+constexpr ImVec4 kAccentUVE{0.357F, 0.478F, 0.600F, 1.0F};
 
 void DotUVE(const ImVec4& colour, const float diameter = 9.0F) {
     ImDrawList& drawList = *ImGui::GetWindowDrawList();
@@ -155,12 +150,23 @@ void EditorUVE::OpenRetargetWindowUVE(std::vector<std::filesystem::path> animati
     window.animations = std::move(animations);
     window.target = std::move(target);
     m_retargetWindow = std::move(window);
+    // The window's own world; without it (playing, an entity open) the window still works, minus the picture.
+    static_cast<void>(BeginRetargetPreviewUVE());
 }
 
 void EditorUVE::CloseRetargetWindowUVE() {
     if (m_retargetWindow.has_value() && m_retargetWindow->job.valid()) {
         m_retargetWindow->job.wait(); // never leave files half written
         static_cast<void>(m_retargetWindow->job.get());
+    }
+    if (!EndRetargetPreviewUVE()) {
+        return; // the scene did not come back: the window stays, so nothing is lost
+    }
+    if (m_retargetWindow.has_value()) {
+        // The scene was put aside while files changed: bring its skeletons up to date.
+        for (const std::filesystem::path& model : m_retargetWindow->changedModels) {
+            static_cast<void>(RefreshSkeletonsForRetargetedModelUVE(model));
+        }
     }
     m_retargetWindow.reset();
 }
@@ -224,6 +230,7 @@ void EditorUVE::FinishRetargetJobUVE(RetargetWindowStateUVE& window, Retarget::R
         }
     }
     const std::size_t skeletons = RefreshSkeletonsForRetargetedModelUVE(window.jobModel);
+    window.changedModels.push_back(window.jobModel);
     ClearMeshThumbnailCacheUVE();
     window.lastBackup = result.backupDir;
     std::size_t changed = 0U;
@@ -246,9 +253,13 @@ void EditorUVE::DrawRetargetWindowUVE() {
     const bool running = window.job.valid();
 
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
+    // Its own OS window, like the Entity Editor: never merged into the main one, never docked.
+    ImGuiWindowClass windowClass;
+    windowClass.ViewportFlagsOverrideSet = ImGuiViewportFlags_NoAutoMerge;
+    ImGui::SetNextWindowClass(&windowClass);
     ImGui::SetNextWindowPos(ImVec2{mainViewport->GetCenter().x, mainViewport->GetCenter().y}, ImGuiCond_FirstUseEver,
                             ImVec2{0.5F, 0.5F});
-    ImGui::SetNextWindowSize(ImVec2{1060.0F, 660.0F}, ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2{1320.0F, 760.0F}, ImGuiCond_FirstUseEver);
     bool open = true;
     ImGui::Begin("Retarget###retarget-window", &open, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoDocking);
 
@@ -299,6 +310,8 @@ void EditorUVE::DrawRetargetWindowUVE() {
             }
         }
         window.planStale = false;
+        // The picture follows the plan: a new character, or files that just changed.
+        RebuildRetargetPreviewUVE(window.plan, modelFile);
     }
     const RetargetPlanUVE& plan = window.plan;
 
@@ -322,10 +335,11 @@ void EditorUVE::DrawRetargetWindowUVE() {
     }
     ImGui::Separator();
 
-    // ---- Left: the animations. Right: the humanoid's bones -----------------------------------------
+    // ---- Left: the animations. Middle: the viewport. Right: the humanoid's bones ---------------------
     const float footer = 74.0F;
     const float bodyHeight = std::max(120.0F, ImGui::GetContentRegionAvail().y - footer);
-    const float leftWidth = std::clamp(ImGui::GetContentRegionAvail().x * 0.36F, 260.0F, 420.0F);
+    const float leftWidth = std::clamp(ImGui::GetContentRegionAvail().x * 0.18F, 200.0F, 280.0F);
+    const float rightWidth = std::clamp(ImGui::GetContentRegionAvail().x * 0.30F, 300.0F, 420.0F);
     ImGui::BeginChild("##retarget-left", ImVec2{leftWidth, bodyHeight}, true);
     ImGui::TextDisabled("Animations (%zu)", plan.animations.size());
     for (const RetargetAnimationRowUVE& row : plan.animations) {
@@ -349,6 +363,13 @@ void EditorUVE::DrawRetargetWindowUVE() {
         }
     }
     ImGui::EndChild();
+    ImGui::SameLine();
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{0.0F, 0.0F});
+    ImGui::BeginChild("##retarget-view", ImVec2{ImGui::GetContentRegionAvail().x - rightWidth - ImGui::GetStyle().ItemSpacing.x, bodyHeight}, true,
+                      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    DrawRetargetPreviewUVE();
+    ImGui::EndChild();
+    ImGui::PopStyleVar();
     ImGui::SameLine();
     ImGui::BeginChild("##retarget-right", ImVec2{0.0F, bodyHeight}, true);
     ImGui::SetNextItemWidth(220.0F);
@@ -413,6 +434,7 @@ void EditorUVE::DrawRetargetWindowUVE() {
                 }
             }
             const std::size_t skeletons = RefreshSkeletonsForRetargetedModelUVE(modelFile);
+            window.changedModels.push_back(modelFile);
             ClearMeshThumbnailCacheUVE();
             window.status = "Put the originals back (" + std::to_string(skeletons) + " skeleton" + (skeletons == 1U ? "" : "s") + " updated).";
             window.statusIsError = false;

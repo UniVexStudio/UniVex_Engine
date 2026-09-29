@@ -89,6 +89,19 @@ struct EditorUVEAccessUVE final {
         return editor.m_modelImportJobs.contains(source);
     }
 
+    [[nodiscard]] static bool IsRetargetPreviewActiveUVE(const EditorUVE& editor) {
+        return editor.m_retargetPreview.has_value();
+    }
+    static void RebuildRetargetPreviewUVE(EditorUVE& editor, const RetargetPlanUVE& plan, const std::filesystem::path& model) {
+        editor.RebuildRetargetPreviewUVE(plan, model);
+    }
+    [[nodiscard]] static Scene::EntityUVE GetRetargetSourceSkeletonUVE(const EditorUVE& editor) {
+        return editor.m_retargetPreview.has_value() ? editor.m_retargetPreview->sourceSkeleton : Scene::kInvalidEntityUVE;
+    }
+    [[nodiscard]] static std::size_t GetRetargetSourceColourCountUVE(const EditorUVE& editor) {
+        return editor.m_retargetPreview.has_value() ? editor.m_retargetPreview->sourceColours.size() : 0U;
+    }
+
     [[nodiscard]] static bool IsRiggedModelSourceUVE(const EditorUVE& editor, const std::filesystem::path& source) {
         return editor.IsRiggedModelSourceUVE(source);
     }
@@ -4733,6 +4746,68 @@ TEST(EditorUVETest, TransformGesture_SnappingQuantisesIdenticallyToTheEquivalent
         EXPECT_NEAR(gestureResult, commandResult, 1e-6F);
         EXPECT_NEAR(gestureResult, 1.5F, 1e-6F);
 
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
+TEST(EditorUVETest, RetargetPreviewUVE_PutsTheSceneAsideAndBringsItBack) {
+    Core::EngineConfigUVE config = MakeEditorTestConfigUVE();
+    Core::EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_retarget_preview.uvscene");
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        const Scene::EntityUVE mine = editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Node3D);
+        ASSERT_NE(mine, Scene::kInvalidEntityUVE);
+        const auto namesInWorld = [&entityManager] {
+            std::vector<std::string> names;
+            entityManager.ForEachUVE<Scene::NameComponentUVE>(
+                [&names](const Scene::EntityUVE, const Scene::NameComponentUVE& name) { names.push_back(name.name); });
+            return names;
+        };
+        const auto has = [&namesInWorld](const std::string& name) {
+            const std::vector<std::string> names = namesInWorld();
+            return std::ranges::find(names, name) != names.end();
+        };
+        ASSERT_TRUE(editor.IsSceneDirtyUVE());
+
+        editor.OpenRetargetWindowUVE({});
+        ASSERT_TRUE(editor.IsRetargetWindowOpenUVE());
+        ASSERT_TRUE(EditorUVEAccessUVE::IsRetargetPreviewActiveUVE(editor));
+        // The scene is set aside, and nothing of the preview is authored into it.
+        EXPECT_FALSE(entityManager.IsAliveUVE(mine));
+        EXPECT_FALSE(editor.IsSceneDirtyUVE());
+        EXPECT_FALSE(editor.SaveSceneUVE());
+        EXPECT_FALSE(editor.EnterPlayModeUVE());
+        EXPECT_EQ(editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Node3D), Scene::kInvalidEntityUVE);
+
+        // The world: a floor, a sun, a sky, and the humanoid with a colour for each of its bones.
+        EditorUVEAccessUVE::RebuildRetargetPreviewUVE(editor, RetargetPlanUVE{}, {});
+        for (const char* const name : {"Retarget Preview", "Floor", "Sun", "Sky", "Figures", "Humanoid", "Humanoid Skeleton"}) {
+            EXPECT_TRUE(has(name)) << name;
+        }
+        EXPECT_FALSE(has("Character")) << "no character was picked";
+        const Scene::EntityUVE humanoid = EditorUVEAccessUVE::GetRetargetSourceSkeletonUVE(editor);
+        ASSERT_NE(humanoid, Scene::kInvalidEntityUVE);
+        const auto& bones = entityManager.GetComponentUVE<Scene::Skeleton3DNodeComponentUVE>(humanoid).bones;
+        EXPECT_EQ(bones.size(), 162U);
+        EXPECT_EQ(EditorUVEAccessUVE::GetRetargetSourceColourCountUVE(editor), bones.size());
+        // A rebuild replaces the world, it does not pile a second one on.
+        EditorUVEAccessUVE::RebuildRetargetPreviewUVE(editor, RetargetPlanUVE{}, {});
+        const std::vector<std::string> names = namesInWorld();
+        EXPECT_EQ(std::ranges::count(names, "Floor"), 1);
+
+        editor.CloseRetargetWindowUVE();
+        EXPECT_FALSE(editor.IsRetargetWindowOpenUVE());
+        EXPECT_FALSE(EditorUVEAccessUVE::IsRetargetPreviewActiveUVE(editor));
+        EXPECT_FALSE(has("Floor"));
+        EXPECT_FALSE(has("Humanoid"));
+        EXPECT_TRUE(has("Node3D")) << "the scene is back";
+        EXPECT_TRUE(editor.IsSceneDirtyUVE()) << "as unsaved as it was";
+        EXPECT_TRUE(editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Node3D) != Scene::kInvalidEntityUVE);
         editor.ShutdownUVE();
     }
     engine.Shutdown();

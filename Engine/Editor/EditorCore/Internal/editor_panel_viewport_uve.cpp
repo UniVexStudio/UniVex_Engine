@@ -158,6 +158,9 @@ void EditorUVE::RenderOverlayUVE() {
         // The main window rests while an entity is open in its own window.
         DrawEntityEditorPlaceholderUVE();
         DrawEntityEditorWindowUVE();
+    } else if (m_retargetPreview.has_value()) {
+        // The scene rests while the Retarget window shows its own world.
+        DrawRetargetPlaceholderUVE();
     } else if (m_activeWorkspace == EditorWorkspaceUVE::Scripting) {
         DrawScriptingWorkspaceUVE();
     } else {
