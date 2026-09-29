@@ -15,6 +15,7 @@
 #include <nlohmann/json.hpp>
 
 #include "retarget_keys_uve.h"
+#include "retarget_pose_uve.h"
 #include "uve/retarget/retarget_names_uve.h"
 
 namespace UVE::Retarget {
@@ -25,21 +26,11 @@ namespace {
 constexpr const char* kFormatUVE = "uve-humanoid-v1";
 /// A-pose: how far below level the arms hang.
 constexpr float kArmDropRadiansUVE = 0.7853982F;
-/// sin(10 degrees): an elbow bent less than this in the source pose says too little about which
-/// way it bends to be followed.
-constexpr float kMinimumElbowBendSineUVE = 0.1736482F;
-constexpr Math::Vector3UVE kUpUVE{0.0F, 1.0F, 0.0F};
-constexpr Math::Vector3UVE kForwardUVE{0.0F, 0.0F, 1.0F};
 
 void SetErrorUVE(std::string* error, std::string text) {
     if (error != nullptr) {
         *error = std::move(text);
     }
-}
-
-[[nodiscard]] Math::QuaternionUVE InverseUVE(const Math::QuaternionUVE& value) noexcept {
-    Math::QuaternionUVE out{};
-    return Math::TryInverseUVE(value, out) ? out : Math::QuaternionUVE{};
 }
 
 [[nodiscard]] HumanoidBoneKindUVE KindOfKeyUVE(const BoneKeyPartsUVE& key) {
@@ -135,46 +126,6 @@ void SetErrorUVE(std::string* error, std::string text) {
         return std::string{key.side} + "|hand";
     }
     return {};
-}
-
-[[nodiscard]] bool IsBelowUVE(const RetargetSkeletonUVE& skeleton, std::int32_t bone, const std::int32_t ancestor) {
-    while (bone >= 0) {
-        if (bone == ancestor) {
-            return true;
-        }
-        bone = skeleton.bones[static_cast<std::size_t>(bone)].parent;
-    }
-    return false;
-}
-
-/// The world direction of whichever of the bone's own axes (+-X, +-Y, +-Z) is nearest `toward`.
-[[nodiscard]] Math::Vector3UVE NearestAxisUVE(const Math::QuaternionUVE& rotation, const Math::Vector3UVE& toward) {
-    Math::Vector3UVE best{};
-    float bestDot = -2.0F;
-    for (const Math::Vector3UVE axis : {Math::Vector3UVE{1.0F, 0.0F, 0.0F}, Math::Vector3UVE{0.0F, 1.0F, 0.0F},
-                                        Math::Vector3UVE{0.0F, 0.0F, 1.0F}}) {
-        for (const float sign : {1.0F, -1.0F}) {
-            const Math::Vector3UVE world = Math::RotateVectorUVE(rotation, axis * sign);
-            if (const float dot = Math::DotUVE(world, toward); dot > bestDot) {
-                bestDot = dot;
-                best = world;
-            }
-        }
-    }
-    return best;
-}
-
-[[nodiscard]] float LowestFootUVE(const std::vector<BoneKeyPartsUVE>& keys, const std::vector<WorldTransformUVE>& world,
-                                  bool& found) {
-    float lowest = 0.0F;
-    found = false;
-    for (std::size_t index = 0U; index < keys.size() && index < world.size(); ++index) {
-        if (keys[index].side != 'C' && (keys[index].Is("foot") || keys[index].Is("toe"))) {
-            lowest = found ? std::min(lowest, world[index].position.y) : world[index].position.y;
-            found = true;
-        }
-    }
-    return lowest;
 }
 
 } // namespace
@@ -287,26 +238,12 @@ std::optional<HumanoidReferenceUVE> BuildHumanoidReferenceUVE(const RetargetSkel
     for (std::size_t index = 0U; index < count; ++index) {
         sourceRotation[index] = world[index].rotation;
     }
-    // Which way each elbow bends, read off the source pose in the upper arm's own frame, so the
-    // straightened arm can still bend it forward.
-    std::vector<std::optional<Math::Vector3UVE>> elbowAxis(count);
+    // Which way each elbow bends, read off the source pose before the arms straighten.
+    std::vector<std::int32_t> aims(count);
     for (std::size_t index = 0U; index < count; ++index) {
-        const std::int32_t forearm = reference.info[index].aim;
-        if (!keys[index].Is("upperarm") || forearm < 0) {
-            continue;
-        }
-        const std::int32_t hand = reference.info[static_cast<std::size_t>(forearm)].aim;
-        if (hand < 0) {
-            continue;
-        }
-        const Math::Vector3UVE upper = world[static_cast<std::size_t>(forearm)].position - world[index].position;
-        const Math::Vector3UVE lower =
-            world[static_cast<std::size_t>(hand)].position - world[static_cast<std::size_t>(forearm)].position;
-        const Math::Vector3UVE axis = Math::CrossUVE(upper, lower);
-        if (Math::LengthUVE(axis) > kMinimumElbowBendSineUVE * Math::LengthUVE(upper) * Math::LengthUVE(lower)) {
-            elbowAxis[index] = Math::RotateVectorUVE(InverseUVE(world[index].rotation), Math::NormalizeUVE(axis));
-        }
+        aims[index] = reference.info[index].aim;
     }
+    const std::vector<std::optional<Math::Vector3UVE>> elbowAxes = ReadElbowAxesUVE(keys, aims, world);
     const float drop = kArmDropRadiansUVE;
     for (std::size_t index = 0U; index < count; ++index) {
         const std::int32_t aim = reference.info[index].aim;
@@ -337,34 +274,8 @@ std::optional<HumanoidReferenceUVE> BuildHumanoidReferenceUVE(const RetargetSkel
         const Math::Vector3UVE now = world[static_cast<std::size_t>(aim)].position - world[index].position;
         RotateSubtreeUVE(folded, world, index, RotationBetweenUVE(now, want));
     }
-    // Roll, which pointing leaves open: each elbow bends straight forward, and each hand (turned
-    // with its forearm) has its palm toward the body and its thumb side forward, as a T-pose with
-    // palms down comes out once its arms are lowered.
-    for (std::size_t index = 0U; index < count; ++index) {
-        const std::int32_t aim = reference.info[index].aim;
-        if (aim < 0) {
-            continue;
-        }
-        const Math::Vector3UVE along = world[static_cast<std::size_t>(aim)].position - world[index].position;
-        if (keys[index].Is("upperarm") && elbowAxis[index].has_value()) {
-            const Math::Vector3UVE bendsAbout = Math::RotateVectorUVE(world[index].rotation, *elbowAxis[index]);
-            RotateSubtreeUVE(folded, world, index, TwistBetweenUVE(along, bendsAbout, Math::CrossUVE(along, kForwardUVE)));
-        } else if (keys[index].Is("forearm")) {
-            const std::string side = std::string{keys[index].side} + "|";
-            std::int32_t index1 = find(side + "index 1");
-            std::int32_t pinky1 = find(side + "pinky 1");
-            if (index1 < 0 || pinky1 < 0) {
-                index1 = find(side + "index metacarpal");
-                pinky1 = find(side + "pinky metacarpal");
-            }
-            if (index1 >= 0 && pinky1 >= 0 && IsBelowUVE(folded, index1, static_cast<std::int32_t>(index)) &&
-                IsBelowUVE(folded, pinky1, static_cast<std::int32_t>(index))) {
-                const Math::Vector3UVE knuckles =
-                    world[static_cast<std::size_t>(index1)].position - world[static_cast<std::size_t>(pinky1)].position;
-                RotateSubtreeUVE(folded, world, index, TwistBetweenUVE(along, knuckles, kForwardUVE));
-            }
-        }
-    }
+    // Roll, which pointing leaves open: elbows bend forward, palms face the body.
+    RollArmsUVE(folded, world, keys, aims, elbowAxes, byKey);
     // The head and the feet keep how they sat in the source: the feet as they met the ground, the
     // head looking ahead (and set exactly level); then the body goes down (or up) to stand on the
     // ground again.
@@ -373,7 +284,7 @@ std::optional<HumanoidReferenceUVE> BuildHumanoidReferenceUVE(const RetargetSkel
         if (!head && !(keys[index].Is("foot") && keys[index].side != 'C')) {
             continue;
         }
-        RotateSubtreeUVE(folded, world, index, Math::MultiplyUVE(sourceRotation[index], InverseUVE(world[index].rotation)));
+        RestoreRotationUVE(folded, world, index, sourceRotation[index]);
         if (head) {
             RotateSubtreeUVE(folded, world, index, RotationBetweenUVE(NearestAxisUVE(world[index].rotation, kUpUVE), kUpUVE));
         }
@@ -381,13 +292,7 @@ std::optional<HumanoidReferenceUVE> BuildHumanoidReferenceUVE(const RetargetSkel
     bool hasFeet = false;
     const float groundAfter = LowestFootUVE(keys, world, hasFeet);
     if (hadFeet && hasFeet) {
-        const float lift = groundBefore - groundAfter;
-        const std::int32_t hipsBone = hips;
-        for (std::size_t index = 0U; index < count; ++index) {
-            if (IsBelowUVE(folded, static_cast<std::int32_t>(index), hipsBone)) {
-                world[index].position.y += lift;
-            }
-        }
+        LiftUVE(folded, world, hips, groundBefore - groundAfter);
     }
     // IK bones rest on what they follow.
     for (std::size_t index = 0U; index < count; ++index) {
