@@ -8,9 +8,9 @@
 # physically colocated with EngineCoreUVE in the reference's engine/core/ folder despite depending
 # on nothing outside this module. Depends only on uve_math.
 #
-# AnimationRetargetingUVE/RetargetMapUVE were ported here and then removed: retargeting is not
-# functional runtime engine code - if/when real retargeting support lands, it belongs behind a
-# plugin API boundary (matching the Motion Matching precedent), not as core runtime internals.
+# AnimationRetargetingUVE/RetargetMapUVE were ported here and then removed. Retargeting now lives
+# in its own module, Engine/Runtime/Retarget (uve_retarget), so this one stays free of rig
+# knowledge.
 
 add_library(uve_animation STATIC
     Internal/time_pose_contract_uve.cpp
