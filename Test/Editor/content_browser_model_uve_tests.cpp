@@ -300,5 +300,68 @@ TEST(ContentBrowserModelUVETest, BoardLanesGroupFilesByKind) {
     EXPECT_EQ(lanes[2].first, "Texture");
 }
 
+const std::vector<std::string> kShownUVE{"a.uvanim", "b.uvanim", "c.uvanim", "d.uvanim", "e.uvanim"};
+
+TEST(ContentSelectionUVETest, APlainClickPicksOnlyThatItem) {
+    ContentSelectionUVE selection;
+    selection.ClickUVE(kShownUVE, "b.uvanim", false, false);
+    selection.ClickUVE(kShownUVE, "d.uvanim", false, false);
+    EXPECT_EQ(selection.ItemsUVE(), (std::vector<std::string>{"d.uvanim"}));
+}
+
+TEST(ContentSelectionUVETest, ControlClickAddsAndRemovesOneItem) {
+    ContentSelectionUVE selection;
+    selection.ClickUVE(kShownUVE, "a.uvanim", false, false);
+    selection.ClickUVE(kShownUVE, "c.uvanim", true, false);
+    selection.ClickUVE(kShownUVE, "e.uvanim", true, false);
+    EXPECT_EQ(selection.ItemsUVE(), (std::vector<std::string>{"a.uvanim", "c.uvanim", "e.uvanim"}));
+    selection.ClickUVE(kShownUVE, "c.uvanim", true, false);
+    EXPECT_FALSE(selection.ContainsUVE("c.uvanim"));
+    EXPECT_TRUE(selection.ContainsUVE("a.uvanim"));
+}
+
+TEST(ContentSelectionUVETest, ShiftClickPicksTheRunFromTheAnchorInEitherDirection) {
+    ContentSelectionUVE selection;
+    selection.ClickUVE(kShownUVE, "b.uvanim", false, false);
+    selection.ClickUVE(kShownUVE, "d.uvanim", false, true);
+    EXPECT_EQ(selection.ItemsUVE(), (std::vector<std::string>{"b.uvanim", "c.uvanim", "d.uvanim"}));
+    // The anchor stays at b: shift-clicking above it swaps the run rather than adding to it.
+    selection.ClickUVE(kShownUVE, "a.uvanim", false, true);
+    EXPECT_EQ(selection.ItemsUVE(), (std::vector<std::string>{"a.uvanim", "b.uvanim"}));
+    // Shrinking works from the same end.
+    selection.ClickUVE(kShownUVE, "e.uvanim", false, true);
+    EXPECT_EQ(selection.ItemsUVE().size(), 4U);
+    EXPECT_FALSE(selection.ContainsUVE("a.uvanim"));
+}
+
+TEST(ContentSelectionUVETest, ControlShiftAddsTheRunToWhatIsPicked) {
+    ContentSelectionUVE selection;
+    selection.ClickUVE(kShownUVE, "a.uvanim", false, false);
+    selection.ClickUVE(kShownUVE, "c.uvanim", true, false);
+    selection.ClickUVE(kShownUVE, "e.uvanim", true, true);
+    EXPECT_EQ(selection.ItemsUVE(), (std::vector<std::string>{"a.uvanim", "c.uvanim", "d.uvanim", "e.uvanim"}));
+}
+
+TEST(ContentSelectionUVETest, ShiftWithoutAnAnchorOrForAnItemNotShownActsAsAPlainClick) {
+    ContentSelectionUVE selection;
+    selection.ClickUVE(kShownUVE, "c.uvanim", false, true);
+    EXPECT_EQ(selection.ItemsUVE(), (std::vector<std::string>{"c.uvanim"}));
+    selection.ClickUVE(kShownUVE, "zzz.uvanim", false, true);
+    EXPECT_EQ(selection.ItemsUVE(), (std::vector<std::string>{"zzz.uvanim"}));
+}
+
+TEST(ContentSelectionUVETest, KeepOnlyDropsItemsThatAreGoneAndClearForgetsTheAnchor) {
+    ContentSelectionUVE selection;
+    selection.ClickUVE(kShownUVE, "a.uvanim", false, false);
+    selection.ClickUVE(kShownUVE, "d.uvanim", false, true);
+    ASSERT_EQ(selection.ItemsUVE().size(), 4U);
+    selection.KeepOnlyUVE(std::vector<std::string>{"a.uvanim", "d.uvanim"});
+    EXPECT_EQ(selection.ItemsUVE(), (std::vector<std::string>{"a.uvanim", "d.uvanim"}));
+    selection.ClearUVE();
+    EXPECT_TRUE(selection.IsEmptyUVE());
+    selection.ClickUVE(kShownUVE, "c.uvanim", false, true);
+    EXPECT_EQ(selection.ItemsUVE().size(), 1U) << "no anchor after clearing: a plain click";
+}
+
 } // namespace
 } // namespace UVE::Editor

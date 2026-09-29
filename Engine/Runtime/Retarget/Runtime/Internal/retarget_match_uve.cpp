@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdio>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "retarget_keys_uve.h"
 #include "retarget_pose_uve.h"
@@ -130,6 +131,18 @@ const char* JointStatusNameUVE(const JointStatusUVE status) noexcept {
         case JointStatusUVE::Missing: return "missing";
     }
     return "missing";
+}
+
+bool AreHumanoidNamesUVE(const std::vector<std::string>& names, const HumanoidReferenceUVE& reference) {
+    if (reference.skeleton.bones.empty()) {
+        return false;
+    }
+    const std::unordered_set<std::string> have(names.begin(), names.end());
+    std::size_t found = 0U;
+    for (const RetargetBoneUVE& bone : reference.skeleton.bones) {
+        found += have.contains(bone.name) ? 1U : 0U;
+    }
+    return found * 5U >= reference.skeleton.bones.size() * 4U;
 }
 
 HumanoidMatchUVE MatchHumanoidNamesUVE(const std::vector<std::string>& names, const HumanoidReferenceUVE& reference) {

@@ -64,4 +64,9 @@ struct HumanoidMatchUVE final {
 
 [[nodiscard]] const char* JointStatusNameUVE(JointStatusUVE status) noexcept;
 
+/// True when `names` are the humanoid's own (a rig that has been conformed): at least four in five
+/// of the reference's bone names appear exactly, case included. A rig from another tool names its
+/// bones its own way, so this is not true of one that has not been conformed.
+[[nodiscard]] bool AreHumanoidNamesUVE(const std::vector<std::string>& names, const HumanoidReferenceUVE& reference);
+
 } // namespace UVE::Retarget

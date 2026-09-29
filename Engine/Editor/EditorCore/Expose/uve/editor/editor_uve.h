@@ -7,6 +7,9 @@
 #include <limits>
 #include <map>
 #include <memory>
+#include <atomic>
+#include <future>
+#include <mutex>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
@@ -30,7 +33,9 @@
 #include "uve/editor/animation_clip_editing_uve.h"
 #include "uve/editor/editor_color_uve.h"
 #include "uve/editor/editor_commands_uve.h"
+#include "uve/asset/gltf_skeleton_uve.h"
 #include "uve/editor/editor_content_browser_model_uve.h"
+#include "uve/editor/editor_retarget_plan_uve.h"
 #include "uve/editor/editor_hierarchy_view_uve.h"
 #include "uve/input/input_action_uve.h"
 #include "uve/editor/editor_tool_session_uve.h"
@@ -259,6 +264,35 @@ struct EditorModelSourceInfoUVE final {
     std::size_t animationCount = 0U;
 };
 
+/// The Retarget window's state: the animations picked in Content, the character they are for, what
+/// conforming would do, and Generate's progress.
+struct RetargetWindowStateUVE final {
+    /// The animations to conform, absolute paths.
+    std::vector<std::filesystem::path> animations;
+    /// The character: a content-relative model source (its imported model is conformed) or a `.uvmodel`.
+    std::filesystem::path target;
+    RetargetPlanUVE plan;
+    bool planStale = true;
+    std::string boneFilter;
+    bool problemsOnly = false;
+    /// The last result, one line.
+    std::string status;
+    bool statusIsError = false;
+    /// Where the last run's originals are, for Undo.
+    std::filesystem::path lastBackup;
+    /// Generate's progress, read from the window while a worker conforms the files.
+    struct Progress final {
+        std::atomic<std::size_t> done{0U};
+        std::atomic<std::size_t> total{0U};
+        std::mutex mutex;
+        std::string what;
+    };
+    std::shared_ptr<Progress> progress = std::make_shared<Progress>();
+    std::future<Retarget::RetargetFilesResultUVE> job;
+    /// The character file the running job conforms.
+    std::filesystem::path jobModel;
+};
+
 class EditorUVE final {
     friend struct Tests::EditorUVEAccessUVE;
     friend class EditorBridgeUVE;
@@ -480,6 +514,12 @@ public:
     /// are fresh on both sides. Refused in Play or while another entity is open.
     bool OpenEntityEditorUVE(const std::filesystem::path& assetPath);
     [[nodiscard]] bool IsEntityEditorOpenUVE() const noexcept;
+
+    /// Opens the Retarget window for `animations` (absolute `.uvanim` paths). `target` is the
+    /// character's content-relative model source or `.uvmodel`, or empty to choose in the window.
+    void OpenRetargetWindowUVE(std::vector<std::filesystem::path> animations, std::filesystem::path target = {});
+    [[nodiscard]] bool IsRetargetWindowOpenUVE() const noexcept { return m_retargetWindow.has_value(); }
+    void CloseRetargetWindowUVE();
     /// The open entity's file, or empty.
     [[nodiscard]] std::filesystem::path GetEntityEditorAssetPathUVE() const;
     /// The open entity's root node (the one child of the scene root), or kInvalidEntityUVE.
@@ -1118,6 +1158,13 @@ private:
     [[nodiscard]] Scene::EntityUVE LoadEntityIntoDocumentUVE(Asset::AssetGuidUVE guid);
     /// The Entity Editor's own window, and what the main window shows meanwhile.
     void DrawEntityEditorWindowUVE();
+    void DrawRetargetWindowUVE();
+    void FinishRetargetJobUVE(RetargetWindowStateUVE& window, Retarget::RetargetFilesResultUVE result);
+    /// Gives every Skeleton3D bound to `modelFile`'s source the bones of the conformed model; the
+    /// number changed.
+    std::size_t RefreshSkeletonsForRetargetedModelUVE(const std::filesystem::path& modelFile);
+    /// The character file behind a Retarget target: the `.uvmodel` itself, or a model source's imported model.
+    [[nodiscard]] std::filesystem::path ResolveRetargetModelFileUVE(const std::filesystem::path& target) const;
     void DrawEntityEditorPlaceholderUVE();
     /// The Entity Editor's middle: the Viewport / Scripting / Signals tabs and Compile's problems.
     void DrawEntityEditorMiddleUVE(EntityEditSessionUVE& session);
@@ -1794,6 +1841,10 @@ private:
     [[nodiscard]] static bool IsModelSourcePathUVE(const std::filesystem::path& path);
     /// Where the converted mesh of the model source at `relativeSource` (content-relative) lives.
     [[nodiscard]] std::filesystem::path GetImportedModelPathUVE(const std::filesystem::path& relativeSource) const;
+    /// The skeleton a model source gives a Skeleton3D: the imported model's when it has been
+    /// conformed to the humanoid (Retarget), else the source file's own bones.
+    [[nodiscard]] std::optional<Asset::GltfSkeletonUVE> ReadSkeletonForSourceUVE(const std::filesystem::path& relativeSource,
+                                                                                 std::size_t maximumBones) const;
     /// Queues an import for every model source in `snapshot` that is not already in flight. An
     /// unchanged source is a cache hit in the import queue, so this costs a hash, not a re-import.
     void QueueModelAutoImportsUVE(const Asset::ProjectFileSnapshotUVE& snapshot);
@@ -1837,6 +1888,7 @@ private:
     EditorPlayModeStateUVE m_playModeState = EditorPlayModeStateUVE::Edit;
     std::optional<PlayModeSessionUVE> m_playModeSession;
     std::optional<EntityEditSessionUVE> m_entityEditSession;
+    std::optional<RetargetWindowStateUVE> m_retargetWindow;
     // Which workspace tab was active before EnterPlayModeUVE() switched to Game, so StopPlayModeUVE()
     // can restore it - mirrors Unity's own Scene<->Game auto-switch on Play/Stop.
     EditorWorkspaceUVE m_workspaceBeforePlayMode = EditorWorkspaceUVE::Library;
@@ -2225,6 +2277,11 @@ private:
     std::string m_nodePickerFilter;
     std::string m_nodePickerScrolledFilter;
     std::optional<Asset::AssetRecordUVE> m_selectedAsset;
+    /// Everything picked in Content (Ctrl and Shift click); m_selectedProjectFile is the last one.
+    ContentSelectionUVE m_contentSelection;
+    /// The items Content drew this frame and the frame before, in order: what Shift+click ranges over.
+    std::vector<std::string> m_contentShownOrder;
+    std::vector<std::string> m_contentShownOrderPrevious;
     std::optional<Asset::ProjectFileEntryUVE> m_selectedProjectFile;
     std::optional<Asset::ProjectFileEntryUVE> m_filesystemContextEntry;
     bool m_filesystemContextVisible = false;

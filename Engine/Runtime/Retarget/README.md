@@ -13,7 +13,7 @@ Retarget/
     Internal/  implementation
     Data/      humanoid_reference.json, embedded into the library at build time
     Tools/     uve_retarget_make_reference, which rebuilds the JSON from a source rig
-  Editor/    the Retarget window (planned: R3)
+  Editor/    the Retarget window (its code lives in Engine/Editor/EditorCore: editor_retarget_*)
 ```
 
 **Why a module of its own.** Retargeting sits between assets and animation, and the editor needs
@@ -192,6 +192,29 @@ that (`rest`: bones, parents and rest pose) plus a `conformed` flag; FBX takes a
 Clips saved before v3 have no skeleton and are asked to be imported again from their FBX. A clip
 with neither a skeleton nor the flag still saves as v2, so nothing existing changes.
 
+## The Retarget window
+
+In Content, click an animation, then Ctrl+click or Shift+click others: the items picked are
+lit, and a **Retarget N animations** button floats at the bottom of the item area. It opens the
+window:
+
+- **Character.** Pick a rigged model (or a `.uvmodel`). Picking one in Content along with the
+  animations chooses it for you.
+- **Bones.** The humanoid's hierarchy, each bone a dot: green (found, fine), yellow (found, check
+  it), red (found, broken), grey (missing: Generate adds it). The character's own name shows in
+  brackets. Filter by name, or show problems only.
+- **Animations.** Each says whether it will be conformed or why it will be left alone.
+- **Generate Retarget** conforms the character and the animations in place on a worker thread with
+  a progress bar; the originals go to `.retarget-backup/` beside the content folder. **Undo Last**
+  puts them back.
+- After Generate or Undo, the assets are reloaded and every Skeleton3D in the open scene that
+  uses that model gets the conformed (or original) bones.
+
+A model source's imported model is what gets conformed. It lives in the import cache, so
+importing the FBX again replaces it with the original: retarget again afterwards. A saved scene or
+entity that is not open keeps the bones it had until it is opened and its Skeleton3D Source is set
+again.
+
 ## Status
 
 | Phase | State |
@@ -201,4 +224,5 @@ with neither a skeleton nor the flag still saves as v2, so nothing existing chan
 | R1c: conform skeleton, mesh and clip | Done |
 | R2a: `.uvanim` v3 carries its skeleton; files conformed in place with backup and undo | Done |
 | R2b: playback rule: a conformed clip drives translation only for Root, Hips and IK, scaled by height | Done |
-| R3: Retarget window (multi-select in Content, own viewport, joint colours, Generate) | Planned |
+| R3a: multi-select in Content, floating button, Retarget window (colours, Generate, Undo, Skeleton3D refresh) | Done |
+| R3b: the window's own viewport (floor, sky, sun) | Planned |

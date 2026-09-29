@@ -167,6 +167,9 @@ void EditorUVE::RenderOverlayUVE() {
         DrawBottomDockContentUVE();
         DrawBottomDockTabBarUVE();
     }
+    if (m_retargetWindow.has_value()) {
+        DrawRetargetWindowUVE();
+    }
     // Last, so it floats over every panel.
     DrawCommandPaletteUVE();
     ImGui::PopStyleColor(tintedColors);

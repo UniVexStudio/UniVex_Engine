@@ -190,4 +190,25 @@ enum class ContentAgeUVE : std::uint8_t {
 [[nodiscard]] std::vector<std::pair<std::string, std::vector<std::size_t>>> GroupContentByTypeUVE(
     const std::vector<std::size_t>& order, std::span<const ContentItemFactsUVE> facts);
 
+/// The items picked in the Content browser, by content-relative path. A click picks one; Ctrl+click
+/// adds or removes one; Shift+click picks the run from the last plain or Ctrl click to this one, in
+/// the order the items are shown (with Ctrl as well, the run is added to what is picked).
+class ContentSelectionUVE final {
+public:
+    /// Applies a click on `item`. `visibleOrder` is every item as currently shown, in order.
+    void ClickUVE(std::span<const std::string> visibleOrder, const std::string& item, bool control, bool shift);
+
+    [[nodiscard]] bool ContainsUVE(const std::string& item) const noexcept;
+    /// The picked items, in the order they were picked.
+    [[nodiscard]] const std::vector<std::string>& ItemsUVE() const noexcept { return m_items; }
+    [[nodiscard]] bool IsEmptyUVE() const noexcept { return m_items.empty(); }
+    void ClearUVE() noexcept;
+    /// Drops every picked item that is not among `existing` (files deleted or renamed since).
+    void KeepOnlyUVE(std::span<const std::string> existing);
+
+private:
+    std::vector<std::string> m_items;
+    std::string m_anchor;
+};
+
 } // namespace UVE::Editor

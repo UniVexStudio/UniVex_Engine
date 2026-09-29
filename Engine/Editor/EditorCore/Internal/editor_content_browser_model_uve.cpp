@@ -391,4 +391,52 @@ std::vector<std::pair<std::string, std::vector<std::size_t>>> GroupContentByType
     return lanes;
 }
 
+void ContentSelectionUVE::ClickUVE(const std::span<const std::string> visibleOrder, const std::string& item,
+                                   const bool control, const bool shift) {
+    const auto position = [&visibleOrder](const std::string& name) {
+        return std::ranges::find(visibleOrder, name);
+    };
+    const auto clicked = position(item);
+    const auto anchored = m_anchor.empty() ? visibleOrder.end() : position(m_anchor);
+    if (shift && clicked != visibleOrder.end() && anchored != visibleOrder.end()) {
+        if (!control) {
+            m_items.clear();
+        }
+        const auto from = std::min(clicked, anchored);
+        const auto to = std::max(clicked, anchored);
+        for (auto at = from; at <= to; ++at) {
+            if (!ContainsUVE(*at)) {
+                m_items.push_back(*at);
+            }
+        }
+        return; // the anchor stays, so the run can be stretched or shrunk from the same end
+    }
+    if (control) {
+        if (const auto found = std::ranges::find(m_items, item); found != m_items.end()) {
+            m_items.erase(found);
+        } else {
+            m_items.push_back(item);
+        }
+    } else {
+        m_items.assign(1U, item);
+    }
+    m_anchor = item;
+}
+
+bool ContentSelectionUVE::ContainsUVE(const std::string& item) const noexcept {
+    return std::ranges::find(m_items, item) != m_items.end();
+}
+
+void ContentSelectionUVE::ClearUVE() noexcept {
+    m_items.clear();
+    m_anchor.clear();
+}
+
+void ContentSelectionUVE::KeepOnlyUVE(const std::span<const std::string> existing) {
+    std::erase_if(m_items, [&existing](const std::string& item) { return std::ranges::find(existing, item) == existing.end(); });
+    if (!m_anchor.empty() && std::ranges::find(existing, m_anchor) == existing.end()) {
+        m_anchor.clear();
+    }
+}
+
 } // namespace UVE::Editor

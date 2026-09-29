@@ -7,6 +7,7 @@
 // is pointed at a rigged model, and pointing it again (Reload) picks up an edited rig.
 
 #include "uve/editor/editor_uve.h"
+#include "uve/retarget/retarget_conform_uve.h"
 
 #include <algorithm>
 #include <array>
@@ -85,6 +86,40 @@ void ReadOnlyRowUVE(const char* const label, const char* const value) {
 
 } // namespace
 
+std::optional<Asset::GltfSkeletonUVE> EditorUVE::ReadSkeletonForSourceUVE(const std::filesystem::path& relativeSource,
+                                                                          const std::size_t maximumBones) const {
+    // A character that has been through Retarget is the humanoid's, and so are its clips: its
+    // skeleton comes from the imported model that was conformed, not from the original file.
+    if (IsModelSourcePathUVE(relativeSource)) {
+        Asset::MeshAssetUVE mesh;
+        if (Asset::LoadMeshAssetUVE(GetImportedModelPathUVE(relativeSource), mesh)) {
+            if (const std::optional<Retarget::RetargetSkeletonUVE> rig = Retarget::RigFromMeshUVE(mesh);
+                rig.has_value() && rig->bones.size() <= maximumBones) {
+                std::vector<std::string> names;
+                for (const Retarget::RetargetBoneUVE& bone : rig->bones) {
+                    names.push_back(bone.name);
+                }
+                if (Retarget::AreHumanoidNamesUVE(names, Retarget::GetHumanoidReferenceUVE())) {
+                    Asset::GltfSkeletonUVE skeleton;
+                    skeleton.skinCount = 1U;
+                    for (const Retarget::RetargetBoneUVE& bone : rig->bones) {
+                        Asset::GltfJointUVE joint;
+                        joint.name = bone.name;
+                        joint.parentIndex = bone.parent;
+                        joint.translation = bone.position;
+                        joint.rotation = bone.rotation;
+                        joint.scale = Math::Vector3UVE{bone.scale, bone.scale, bone.scale};
+                        skeleton.joints.push_back(std::move(joint));
+                    }
+                    return skeleton;
+                }
+            }
+        }
+    }
+    return ReadSkeletonSourceUVE(m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot / relativeSource,
+                                 maximumBones);
+}
+
 Scene::EntityUVE EditorUVE::PlaceModelSourceUVE(const std::filesystem::path& relativeSource,
                                                 Scene::EntityUVE parent) {
     if (!IsAuthoringCommandAllowedUVE() || !IsModelSourcePathUVE(relativeSource)) {
@@ -96,7 +131,7 @@ Scene::EntityUVE EditorUVE::PlaceModelSourceUVE(const std::filesystem::path& rel
     if (!std::filesystem::is_regular_file(source, error)) {
         return Scene::kInvalidEntityUVE;
     }
-    const std::optional<Asset::GltfSkeletonUVE> skeleton = ReadSkeletonSourceUVE(source, Scene::kMaximumSkeletonBonesUVE);
+    const std::optional<Asset::GltfSkeletonUVE> skeleton = ReadSkeletonForSourceUVE(relativeSource, Scene::kMaximumSkeletonBonesUVE);
     const std::filesystem::path importedModel = GetImportedModelPathUVE(relativeSource);
     const bool hasMesh = std::filesystem::is_regular_file(importedModel, error);
     if (!hasMesh && !skeleton.has_value()) {
@@ -209,9 +244,8 @@ bool EditorUVE::BindSelectedSkeletonSourceUVE(const std::filesystem::path& relat
     next.skeletonAssetPath = relativeSource.generic_string();
     next.bones.clear();
     if (!relativeSource.empty()) {
-        const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
         const std::optional<Asset::GltfSkeletonUVE> skeleton =
-            ReadSkeletonSourceUVE(project.contentRoot / relativeSource, Scene::kMaximumSkeletonBonesUVE);
+            ReadSkeletonForSourceUVE(relativeSource, Scene::kMaximumSkeletonBonesUVE);
         if (!skeleton.has_value()) {
             m_skeletonSourceStatus = relativeSource.filename().string() +
                                      " has no skeleton this engine can read (a glTF skin or FBX bones, at most " +

@@ -395,6 +395,7 @@ add_executable(uve_editor_tests
     Editor/content_catalogue_editor_uve_tests.cpp
     Editor/uvscript_highlight_uve_tests.cpp
     Editor/content_browser_model_uve_tests.cpp
+    Editor/retarget_plan_uve_tests.cpp
     Editor/animation_clip_editing_uve_tests.cpp
     Editor/animation_graph_editing_uve_tests.cpp
     Editor/scene_component_authoring_uve_tests.cpp
