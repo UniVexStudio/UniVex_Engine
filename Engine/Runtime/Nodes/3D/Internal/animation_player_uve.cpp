@@ -2,6 +2,8 @@
 
 #include "uve/nodes/3d/animation_player_uve.h"
 
+#include "conformed_playback_uve.h"
+
 #include <algorithm>
 #include <cmath>
 #include <vector>
@@ -297,6 +299,7 @@ bool StepSkeletalAnimationPlayerUVE(AnimationPlayerComponentUVE& player, const A
         }
     }
     const bool returnToRest = !stillPlaying && player.onFinish == AnimationFinishActionUVE::ReturnToStart;
+    const Retarget::ConformedPlaybackUVE conformed = PlanConformedPlaybackForUVE(clip, skeleton);
     // Blend In eases from where the skeleton was: each step covers this step's share of what is
     // left of the blend, so the pose arrives exactly when the blend ends.
     float weight = 1.0F;
@@ -324,6 +327,8 @@ bool StepSkeletalAnimationPlayerUVE(AnimationPlayerComponentUVE& player, const A
         if (!returnToRest) {
             if (const auto found = tracks.find(bone.name); found != tracks.end()) {
                 target = SampleTrackUVE(found->second->samples, time);
+                target.position = conformed.PositionUVE(bone.name, target.position, bone.localPosition);
+                target.scale = conformed.ScaleUVE(target.scale, bone.localScale);
             }
         }
         SkeletonBonePoseUVE& out = current[index];
@@ -373,7 +378,10 @@ bool StepSkeletalAnimationPlayerUVE(AnimationPlayerComponentUVE& player, const A
             const auto found = tracks.find(skeleton.bones[*rootIndex].name);
             if (found != tracks.end()) {
                 const auto& samples = found->second->samples;
-                const auto at = [&samples](const double t) { return SampleTrackUVE(samples, t).position; };
+                const std::string& rootName = skeleton.bones[*rootIndex].name;
+                const auto at = [&](const double t) {
+                    return conformed.PositionUVE(rootName, SampleTrackUVE(samples, t).position, Math::Vector3UVE{});
+                };
                 const Math::Vector3UVE first = at(0.0);
                 if (!returnToRest) {
                     Math::Vector3UVE travel = at(time) - at(timeBefore);
@@ -444,6 +452,7 @@ bool PoseSkeletonAtTimeUVE(const Asset::AnimationClipAssetUVE& clip, const doubl
         return false;
     }
     const double time = std::clamp(timeSeconds, 0.0, std::max(clip.durationSeconds, 0.0));
+    const Retarget::ConformedPlaybackUVE conformed = PlanConformedPlaybackForUVE(clip, skeleton);
     std::vector<SkeletonBonePoseUVE> pose(skeleton.bones.size());
     for (std::size_t index = 0U; index < skeleton.bones.size(); ++index) {
         const SkeletonBoneUVE& bone = skeleton.bones[index];
@@ -455,14 +464,14 @@ bool PoseSkeletonAtTimeUVE(const Asset::AnimationClipAssetUVE& clip, const doubl
             }
             const PoseUVE sampled = SampleTrackUVE(track.samples, time);
             if (mixer.animatePosition) {
-                out.position = sampled.position;
+                out.position = conformed.PositionUVE(bone.name, sampled.position, bone.localPosition);
             }
             Math::QuaternionUVE normalized{};
             if (mixer.animateRotation && Math::TryNormalizeUVE(sampled.rotation, normalized)) {
                 out.rotation = normalized;
             }
             if (mixer.animateScale) {
-                out.scale = sampled.scale;
+                out.scale = conformed.ScaleUVE(sampled.scale, bone.localScale);
             }
             break;
         }
@@ -471,7 +480,7 @@ bool PoseSkeletonAtTimeUVE(const Asset::AnimationClipAssetUVE& clip, const doubl
         if (const std::optional<std::size_t> rootIndex = ResolveRootMotionBoneUVE(skeleton, clip, mixer.rootMotionBone)) {
             for (const Asset::AnimationAssetBoneTrackUVE& track : clip.bones) {
                 if (track.bone == skeleton.bones[*rootIndex].name && !track.samples.empty()) {
-                    const Math::Vector3UVE first = SampleTrackUVE(track.samples, 0.0).position;
+                    const Math::Vector3UVE first = conformed.PositionUVE(track.bone, SampleTrackUVE(track.samples, 0.0).position, Math::Vector3UVE{});
                     pose[*rootIndex].position.x = first.x;
                     pose[*rootIndex].position.z = first.z;
                     break;
