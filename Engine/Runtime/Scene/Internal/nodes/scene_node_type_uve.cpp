@@ -69,6 +69,9 @@ Nodes::SceneNodeKindUVE InferSceneNodeKindUVE(const IEntityManagerUVE& entityMan
     if (entityManager.HasComponentUVE<SceneRootComponentUVE>(entity)) {
         return Kind::SceneRoot;
     }
+    if (entityManager.HasComponentUVE<OutlinerViewportComponentUVE>(entity)) {
+        return Kind::Viewport;
+    }
     if (entityManager.HasComponentUVE<FolderComponentUVE>(entity)) {
         return Kind::Folder;
     }

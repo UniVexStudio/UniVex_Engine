@@ -21,9 +21,9 @@ struct FolderComponentUVE final {
     return true; // a pure marker
 }
 
-/// Marks the Outliner's Viewport: the one folder at the top of a level that every other folder
-/// lives under. It is a Folder in every other respect; the marker is what lets the editor find it
-/// and keep it from being deleted or moved.
+/// Marks the Outliner's Viewport: the level itself, at the top of the Outliner beside its
+/// DirectionalLight3D and WorldEnvironment. Every folder of the level lives under it. A pure Node,
+/// not a folder; the editor keeps it from being deleted or moved.
 struct OutlinerViewportComponentUVE final {
     [[nodiscard]] bool operator==(const OutlinerViewportComponentUVE&) const = default;
 };
@@ -38,5 +38,13 @@ struct FolderNodeDefinitionUVE final {
 
 /// Makes `entity` a pure Node (no transform) carrying the folder marker.
 void ApplyFolderNodeDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity, const FolderNodeDefinitionUVE& value);
+
+struct ViewportNodeDefinitionUVE final {
+    static constexpr std::string_view defaultName = "Viewport";
+};
+
+/// Makes `entity` a pure Node (no transform) carrying the Viewport marker.
+void ApplyViewportNodeDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
+                                    const ViewportNodeDefinitionUVE& value);
 
 } // namespace UVE::Scene

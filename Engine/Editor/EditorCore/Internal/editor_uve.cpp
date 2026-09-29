@@ -2104,6 +2104,9 @@ Scene::EntityUVE EditorUVE::CreateSceneNodeEntityInternalUVE(const Scene::Nodes:
             entity = CreateNodeDefinitionEntityInternalUVE(Scene::FolderNodeDefinitionUVE{},
                                                             Scene::ApplyFolderNodeDefinitionUVE);
             break;
+        case Scene::Nodes::SceneNodeKindUVE::Viewport:
+            // The level's Viewport is created by the document layout (EnsureDocumentLayoutUVE).
+            return Scene::kInvalidEntityUVE;
         case Scene::Nodes::SceneNodeKindUVE::SceneRoot:
             // The scene root is created by the document lifecycle
             // (EnsureDocumentSceneRootUVE), never through the library path.
@@ -2663,9 +2666,6 @@ std::string EditorUVE::GetOutlinerTypeTagUVE(const Scene::EntityUVE entity) cons
     }
 
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    if (entityManager.HasComponentUVE<Scene::OutlinerViewportComponentUVE>(entity)) {
-        return {}; // its name already says what it is
-    }
     if (entityManager.HasComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity)) {
         switch (entityManager.GetComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity).kind) {
             case Scene::PrimitiveMeshKindUVE::Plane:
@@ -3112,9 +3112,8 @@ bool EditorUVE::EnsureDocumentLayoutUVE() {
         if (viewport == Scene::kInvalidEntityUVE) {
             return false;
         }
-        Scene::ApplyFolderNodeDefinitionUVE(entityManager, viewport, Scene::FolderNodeDefinitionUVE{});
-        entityManager.AddComponentUVE<Scene::OutlinerViewportComponentUVE>(viewport, Scene::OutlinerViewportComponentUVE{});
-        Scene::SetSceneNodeKindUVE(entityManager, viewport, Scene::Nodes::SceneNodeKindUVE::Folder);
+        Scene::ApplyViewportNodeDefinitionUVE(entityManager, viewport, Scene::ViewportNodeDefinitionUVE{});
+        Scene::SetSceneNodeKindUVE(entityManager, viewport, Scene::Nodes::SceneNodeKindUVE::Viewport);
         sceneGraph.SetParentUVE(entityManager, viewport, sceneRoot);
         changed = true;
     }
