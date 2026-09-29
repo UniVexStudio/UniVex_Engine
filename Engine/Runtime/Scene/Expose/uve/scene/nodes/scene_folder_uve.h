@@ -21,6 +21,17 @@ struct FolderComponentUVE final {
     return true; // a pure marker
 }
 
+/// Marks the Outliner's Viewport: the one folder at the top of a level that every other folder
+/// lives under. It is a Folder in every other respect; the marker is what lets the editor find it
+/// and keep it from being deleted or moved.
+struct OutlinerViewportComponentUVE final {
+    [[nodiscard]] bool operator==(const OutlinerViewportComponentUVE&) const = default;
+};
+
+[[nodiscard]] constexpr bool IsOutlinerViewportComponentValidUVE(const OutlinerViewportComponentUVE&) noexcept {
+    return true; // a pure marker
+}
+
 struct FolderNodeDefinitionUVE final {
     static constexpr std::string_view defaultName = "Folder";
 };

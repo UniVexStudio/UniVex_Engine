@@ -23,7 +23,10 @@
 #include "uve/component/particle_emitter_component_uve.h"
 #include "uve/component/rigid_body_component_uve.h"
 #include "uve/component/script_component_uve.h"
+#include "uve/component/hierarchy_component_uve.h"
+#include "uve/scene/nodes/scene_folder_uve.h"
 #include "uve/scene/nodes/scene_node_registry_uve.h"
+#include "uve/scene/nodes/scene_node_type_uve.h"
 #include "uve/scene/nodes/scene_root_uve.h"
 
 namespace UVE::Editor::Tests {
@@ -262,12 +265,18 @@ TEST(SceneNodeEditorUVETest, SceneRootUVE_NewNodesJoinHierarchyUnderSelectionOrR
         const Scene::EntityUVE root = editor.GetDocumentSceneRootUVE();
         ASSERT_NE(root, Scene::kInvalidEntityUVE);
 
-        // No selection: a new node becomes a CHILD of the scene root, not a new document root.
+        // No selection: a new node joins the level's node folder (a level node always lives in a
+        // folder inside the Viewport), not a new document root.
         const Scene::EntityUVE first =
             editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Node3D);
         ASSERT_NE(first, Scene::kInvalidEntityUVE);
         EXPECT_EQ(editor.GetDocumentRootsUVE().size(), 1U);
-        EXPECT_TRUE(ContainsEntityUVE(sceneGraph.GetChildrenUVE(entityManager, root), first));
+        const Scene::EntityUVE folder = entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(first).parent;
+        ASSERT_TRUE(entityManager.HasComponentUVE<Scene::FolderComponentUVE>(folder));
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::NameComponentUVE>(folder).name, "World");
+        const Scene::EntityUVE viewport = entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(folder).parent;
+        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::OutlinerViewportComponentUVE>(viewport));
+        EXPECT_EQ(sceneGraph.GetChildrenUVE(entityManager, root), std::vector<Scene::EntityUVE>{viewport});
 
         // With a single selection: the new node becomes that selection's child.
         editor.SelectEntityUVE(first);
@@ -276,9 +285,103 @@ TEST(SceneNodeEditorUVETest, SceneRootUVE_NewNodesJoinHierarchyUnderSelectionOrR
         ASSERT_NE(second, Scene::kInvalidEntityUVE);
         EXPECT_EQ(editor.GetDocumentRootsUVE().size(), 1U);
         EXPECT_TRUE(ContainsEntityUVE(sceneGraph.GetChildrenUVE(entityManager, first), second));
-        EXPECT_FALSE(ContainsEntityUVE(sceneGraph.GetChildrenUVE(entityManager, root), second));
+        EXPECT_FALSE(ContainsEntityUVE(sceneGraph.GetChildrenUVE(entityManager, folder), second));
 
         editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
+TEST(SceneNodeEditorUVETest, OutlinerLayoutUVE_LevelTopIsViewportSunAndEnvironmentWithNodesOnlyInFolders) {
+    using Kind = Scene::Nodes::SceneNodeKindUVE;
+    Core::EngineCoreUVE engine(MakeSceneNodeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_scene_node_editor_outliner_layout_tests.uvscene");
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+        const auto parentOf = [&entityManager](const Scene::EntityUVE entity) {
+            return entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(entity).parent;
+        };
+        const Scene::EntityUVE root = editor.GetDocumentSceneRootUVE();
+
+        // A fresh level: the Viewport at the top holding one folder, and nothing to undo or save.
+        const std::vector<Scene::EntityUVE> top = sceneGraph.GetChildrenUVE(entityManager, root);
+        ASSERT_EQ(top.size(), 1U);
+        const Scene::EntityUVE viewport = top[0U];
+        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::OutlinerViewportComponentUVE>(viewport));
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::NameComponentUVE>(viewport).name, "Viewport");
+        const std::vector<Scene::EntityUVE> folders = sceneGraph.GetChildrenUVE(entityManager, viewport);
+        ASSERT_EQ(folders.size(), 1U);
+        const Scene::EntityUVE world = folders[0U];
+        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::FolderComponentUVE>(world));
+        EXPECT_FALSE(editor.IsSceneDirtyUVE());
+        EXPECT_FALSE(editor.CanUndoUVE());
+
+        // The sun and the environment sit beside the Viewport, one of each, in the order added.
+        const Scene::EntityUVE sun = editor.CreateDocumentSceneNodeUVE(Kind::DirectionalLight3D);
+        ASSERT_NE(sun, Scene::kInvalidEntityUVE);
+        const Scene::EntityUVE environment = editor.CreateDocumentSceneNodeUVE(Kind::WorldEnvironment3D);
+        ASSERT_NE(environment, Scene::kInvalidEntityUVE);
+        EXPECT_EQ(sceneGraph.GetChildrenUVE(entityManager, root),
+                  (std::vector<Scene::EntityUVE>{viewport, sun, environment}));
+        EXPECT_EQ(editor.CreateDocumentSceneNodeUVE(Kind::DirectionalLight3D), Scene::kInvalidEntityUVE);
+        EXPECT_EQ(editor.CreateDocumentSceneNodeUVE(Kind::WorldEnvironment3D), Scene::kInvalidEntityUVE);
+        // Undoing one frees its place again.
+        ASSERT_TRUE(editor.UndoUVE());
+        EXPECT_FALSE(entityManager.IsAliveUVE(environment));
+        ASSERT_NE(editor.CreateDocumentSceneNodeUVE(Kind::WorldEnvironment3D), Scene::kInvalidEntityUVE);
+
+        // Any other node goes into a folder, even with the sun selected.
+        editor.SelectEntityUVE(sun);
+        const Scene::EntityUVE mesh = editor.CreateDocumentSceneNodeUVE(Kind::BoxMesh3D);
+        ASSERT_NE(mesh, Scene::kInvalidEntityUVE);
+        EXPECT_EQ(parentOf(mesh), world);
+        // A new folder with nothing selected goes into the Viewport.
+        editor.ClearSelectionUVE();
+        const Scene::EntityUVE props = editor.CreateDocumentSceneNodeUVE(Kind::Folder);
+        ASSERT_NE(props, Scene::kInvalidEntityUVE);
+        EXPECT_EQ(parentOf(props), viewport);
+
+        // Nodes never leave the folders: not to the top, not straight into the Viewport.
+        editor.SelectEntityUVE(mesh);
+        EXPECT_FALSE(editor.ReparentSelectedEntityUVE(root));
+        EXPECT_FALSE(editor.ReparentSelectedEntityUVE(viewport));
+        EXPECT_FALSE(editor.ReparentSelectedEntityUVE(sun));
+        EXPECT_TRUE(editor.ReparentSelectedEntityUVE(props));
+        EXPECT_EQ(parentOf(mesh), props);
+        // "Move to top" keeps a node in a folder, and a folder in the Viewport.
+        EXPECT_TRUE(editor.ReparentSelectedEntityUVE(Scene::kInvalidEntityUVE));
+        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::FolderComponentUVE>(parentOf(mesh)));
+        editor.SelectEntityUVE(props);
+        EXPECT_FALSE(editor.ReparentSelectedEntityUVE(root));
+        EXPECT_TRUE(editor.ReparentSelectedEntityUVE(world)); // a folder may nest in a folder
+        EXPECT_TRUE(editor.ReparentSelectedEntityUVE(Scene::kInvalidEntityUVE));
+        EXPECT_EQ(parentOf(props), viewport);
+
+        // The Viewport is structure: it cannot be removed, copied or moved.
+        editor.SelectEntityUVE(viewport);
+        EXPECT_FALSE(editor.DeleteSelectedEntityUVE());
+        EXPECT_EQ(editor.DuplicateSelectedEntityUVE(), Scene::kInvalidEntityUVE);
+        EXPECT_FALSE(editor.ReparentSelectedEntityUVE(world));
+        EXPECT_TRUE(entityManager.IsAliveUVE(viewport));
+
+        // The layout survives a save and load as it is: no second Viewport or folder appears.
+        ASSERT_TRUE(editor.SaveSceneUVE());
+        ASSERT_TRUE(editor.LoadSceneUVE());
+        EXPECT_FALSE(editor.IsSceneDirtyUVE());
+        const std::vector<Scene::EntityUVE> loadedTop =
+            sceneGraph.GetChildrenUVE(entityManager, editor.GetDocumentSceneRootUVE());
+        ASSERT_EQ(loadedTop.size(), 3U);
+        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::OutlinerViewportComponentUVE>(loadedTop[0U]));
+        EXPECT_EQ(Scene::ResolveSceneNodeKindUVE(entityManager, loadedTop[1U]), Kind::DirectionalLight3D);
+        EXPECT_EQ(Scene::ResolveSceneNodeKindUVE(entityManager, loadedTop[2U]), Kind::WorldEnvironment3D);
+        EXPECT_EQ(sceneGraph.GetChildrenUVE(entityManager, loadedTop[0U]).size(), 2U);
+
+        editor.ShutdownUVE();
+        std::filesystem::remove("uve_scene_node_editor_outliner_layout_tests.uvscene");
     }
     engine.Shutdown();
 }
@@ -384,8 +487,13 @@ TEST(SceneNodeEditorUVETest, SceneRootUVE_LegacyMultiRootSceneFileAutoMigratesUn
             EXPECT_EQ(entityManager.GetComponentUVE<Scene::NameComponentUVE>(root).name, "SceneRoot");
             // The restored entities are FRESH handles (load recreates entities from the
             // file), so identity is checked by name, not by handle.
-            const std::vector<Scene::EntityUVE> rootChildren =
-                sceneGraph.GetChildrenUVE(entityManager, root);
+            // Then the Outliner layout gave it a Viewport, and moved them into its node folder.
+            const std::vector<Scene::EntityUVE> topRows = sceneGraph.GetChildrenUVE(entityManager, root);
+            ASSERT_EQ(topRows.size(), 1U);
+            EXPECT_TRUE(entityManager.HasComponentUVE<Scene::OutlinerViewportComponentUVE>(topRows[0U]));
+            const std::vector<Scene::EntityUVE> folders = sceneGraph.GetChildrenUVE(entityManager, topRows[0U]);
+            ASSERT_EQ(folders.size(), 1U);
+            const std::vector<Scene::EntityUVE> rootChildren = sceneGraph.GetChildrenUVE(entityManager, folders[0U]);
             ASSERT_EQ(rootChildren.size(), 2U);
             std::size_t matchedNames = 0U;
             for (const Scene::EntityUVE child : rootChildren) {
