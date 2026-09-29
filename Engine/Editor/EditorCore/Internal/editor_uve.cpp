@@ -3123,6 +3123,15 @@ bool EditorUVE::EnsureDocumentLayoutUVE() {
         changed = true;
     }
     static_cast<void>(sceneGraph.SetSiblingIndexUVE(entityManager, viewport, 0U));
+    // The Viewport is the open level: it carries the name of its asset in the Content Browser.
+    if (const std::string stem = m_activeScenePath.stem().string(); !stem.empty()) {
+        if (!entityManager.HasComponentUVE<Scene::NameComponentUVE>(viewport)) {
+            entityManager.AddComponentUVE<Scene::NameComponentUVE>(viewport, Scene::NameComponentUVE{stem});
+        } else if (entityManager.GetComponentUVE<Scene::NameComponentUVE>(viewport).name != stem) {
+            entityManager.GetComponentUVE<Scene::NameComponentUVE>(viewport).name = stem;
+            changed = true;
+        }
+    }
 
     // Anything at the top that is not one of the three moves into a folder; a folder moves into the
     // Viewport. A second DirectionalLight3D or WorldEnvironment is an ordinary node there.
@@ -4558,7 +4567,7 @@ const char* EditorUVE::GetContentBrowserItemTypeLabelUVE(const ContentBrowserIte
         case ContentBrowserItemTypeUVE::Folder:
             return "Folder";
         case ContentBrowserItemTypeUVE::Scene:
-            return "Scene";
+            return "Viewport"; // a level: it opens as the Viewport in the Outliner
         case ContentBrowserItemTypeUVE::Prefab:
             return "Prefab";
         case ContentBrowserItemTypeUVE::Entity:

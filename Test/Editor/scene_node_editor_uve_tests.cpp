@@ -312,7 +312,7 @@ TEST(SceneNodeEditorUVETest, OutlinerLayoutUVE_LevelTopIsViewportSunAndEnvironme
         ASSERT_EQ(top.size(), 1U);
         const Scene::EntityUVE viewport = top[0U];
         EXPECT_TRUE(entityManager.HasComponentUVE<Scene::OutlinerViewportComponentUVE>(viewport));
-        EXPECT_EQ(entityManager.GetComponentUVE<Scene::NameComponentUVE>(viewport).name, "Viewport");
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::NameComponentUVE>(viewport).name, "uve_scene_node_editor_outliner_layout_tests"); // its asset's name
         const std::vector<Scene::EntityUVE> folders = sceneGraph.GetChildrenUVE(entityManager, viewport);
         ASSERT_EQ(folders.size(), 1U);
         const Scene::EntityUVE world = folders[0U];

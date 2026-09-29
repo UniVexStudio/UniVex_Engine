@@ -881,17 +881,10 @@ def folder_open_asset(ic):
     ic.add(f'<path d="M 15 31 h 44" stroke="{shade(GOLD, 0.36)}" stroke-width="1.3" stroke-linecap="round"/>')
 
 
-@content_type("scene", "Scene")
-def scene_asset(ic):
-    shadow(ic, 32, 57, 28, 5)
-    slab(ic, 32, 52, 44, 44, 5, shade(STEEL, -0.1))
-    shadow(ic, 22, 40, 8, 3, 0.35)
-    box(ic, 21, 40, 12, 12, 12, AMBER)
-    shadow(ic, 42, 42, 7, 2.5, 0.35)
-    sphere(ic, 42, 35, 7.5, BLUE)
-    cone = ic.linear([(0, shade(NAV, 0.2)), (0.6, NAV), (1, shade(NAV, -0.2))], 0, 0, 1, 0)
-    ic.add(f'<path d="M 32 13 L 40 31 A 8 3.5 0 0 1 24 31 Z" fill="{cone}" stroke="{OUTLINE}" '
-           f'stroke-opacity="0.7" stroke-width="1.3" stroke-linejoin="round"/>')
+@content_type("viewport", "Viewport")
+def viewport_asset(ic):
+    # A Viewport asset is a level: the same picture as the Viewport row it opens in the Outliner.
+    viewport(ic)
 
 
 @content_type("prefab", "Prefab")
