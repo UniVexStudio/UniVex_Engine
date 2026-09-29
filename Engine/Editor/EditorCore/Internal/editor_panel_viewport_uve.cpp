@@ -218,7 +218,8 @@ void EditorUVE::DrawViewportPanelUVE() {
     // empty border band. Only this window opts out - the overlay bubbles still float on top since
     // they anchor off the image origin, which now sits flush in the panel corner.
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{0.0F, 0.0F});
-    if (!ImGui::Begin(kPanelLabelViewportUVE, &m_viewportPanelVisible, ImGuiWindowFlags_NoCollapse)) {
+    // No title row: the header row above carries the viewport's name and the play controls.
+    if (!ImGui::Begin(kPanelLabelViewportUVE, &m_viewportPanelVisible, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar)) {
         ImGui::End();
         ImGui::PopStyleVar();
         return;
