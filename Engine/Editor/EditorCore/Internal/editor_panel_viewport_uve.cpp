@@ -232,6 +232,7 @@ void EditorUVE::DrawViewportImageUVE() {
     const ImVec2 availableRegion = ImGui::GetContentRegionAvail();
     if (m_viewportPanelRenderer && availableRegion.x > 0.0F && availableRegion.y > 0.0F) {
         m_viewportOverlayState.gameWorkspaceActive = m_activeWorkspace == EditorWorkspaceUVE::Game;
+        m_viewportOverlayState.studioView = m_retargetPreview.has_value();
         m_viewportOverlayState.bones.clear();
         if (!m_viewportOverlayState.gameWorkspaceActive) {
             BuildSkeletonOverlayUVE(m_viewportOverlayState.bones);
@@ -255,7 +256,7 @@ void EditorUVE::DrawViewportImageUVE() {
             // The projection/gizmo-mode overlay bubbles are editor-authoring chrome - hidden while
             // the Game workspace tab is active, matching Unity's own Scene/Game split where the
             // Game view previews what a player would see with no editor overlays on top.
-            if (!m_viewportOverlayState.gameWorkspaceActive) {
+            if (!m_viewportOverlayState.gameWorkspaceActive && !m_viewportOverlayState.studioView) {
                 DrawViewportOverlayBubblesUVE(Math::Vector2UVE{cursorBeforeImage.x, cursorBeforeImage.y},
                                               Math::Vector2UVE{used.x, used.y});
                 DrawEntityContextToolbarUVE(Math::Vector2UVE{cursorBeforeImage.x, cursorBeforeImage.y},

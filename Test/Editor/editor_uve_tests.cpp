@@ -4784,9 +4784,10 @@ TEST(EditorUVETest, RetargetPreviewUVE_PutsTheSceneAsideAndBringsItBack) {
         EXPECT_FALSE(editor.EnterPlayModeUVE());
         EXPECT_EQ(editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Node3D), Scene::kInvalidEntityUVE);
 
-        // The world: a floor, a sun, a sky, and the humanoid with a colour for each of its bones.
+        // The world: a sun and the humanoid with a colour for each of its bones (the sky, the ground
+        // and the floor are the viewport's studio view, not nodes).
         EditorUVEAccessUVE::RebuildRetargetPreviewUVE(editor, RetargetPlanUVE{}, {});
-        for (const char* const name : {"Retarget Preview", "Floor", "Sun", "Sky", "Figures", "Humanoid", "Humanoid Skeleton"}) {
+        for (const char* const name : {"Retarget Preview", "Sun", "Figures", "Humanoid", "Humanoid Skeleton"}) {
             EXPECT_TRUE(has(name)) << name;
         }
         EXPECT_FALSE(has("Character")) << "no character was picked";
@@ -4798,12 +4799,12 @@ TEST(EditorUVETest, RetargetPreviewUVE_PutsTheSceneAsideAndBringsItBack) {
         // A rebuild replaces the world, it does not pile a second one on.
         EditorUVEAccessUVE::RebuildRetargetPreviewUVE(editor, RetargetPlanUVE{}, {});
         const std::vector<std::string> names = namesInWorld();
-        EXPECT_EQ(std::ranges::count(names, "Floor"), 1);
+        EXPECT_EQ(std::ranges::count(names, "Sun"), 1);
 
         editor.CloseRetargetWindowUVE();
         EXPECT_FALSE(editor.IsRetargetWindowOpenUVE());
         EXPECT_FALSE(EditorUVEAccessUVE::IsRetargetPreviewActiveUVE(editor));
-        EXPECT_FALSE(has("Floor"));
+        EXPECT_FALSE(has("Retarget Preview"));
         EXPECT_FALSE(has("Humanoid"));
         EXPECT_TRUE(has("Node3D")) << "the scene is back";
         EXPECT_TRUE(editor.IsSceneDirtyUVE()) << "as unsaved as it was";
