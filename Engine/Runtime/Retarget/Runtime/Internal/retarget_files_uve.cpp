@@ -3,6 +3,7 @@
 #include "uve/retarget/retarget_files_uve.h"
 
 #include <chrono>
+#include <cstdio>
 #include <ctime>
 #include <fstream>
 #include <optional>
@@ -152,12 +153,17 @@ RetargetFilesResultUVE RetargetFilesUVE(const RetargetFilesRequestUVE& request, 
         }
         const HumanoidMatchUVE match = MatchHumanoidUVE(*rig, reference);
         const std::optional<ConformedRigUVE> conformed = ConformSkeletonUVE(*rig, match, reference, &error);
+        const Asset::MeshAssetUVE before = mesh;
         if (!conformed.has_value() || !ConformMeshUVE(mesh, *conformed, &error)) {
             result.error = request.model.filename().string() + ": " + error;
             return result;
         }
         result.heightScale = conformed->heightScale;
-        model.note = std::to_string(conformed->skeleton.bones.size() - rig->bones.size()) + " bones added";
+        result.meshDistortion = MeasureMeshDistortionUVE(before, mesh);
+        char distortion[64];
+        std::snprintf(distortion, sizeof(distortion), "; %.1f%% of edges changed by more than 10%%",
+                      static_cast<double>(result.meshDistortion.fractionOverTenPercent) * 100.0);
+        model.note = std::to_string(conformed->skeleton.bones.size() - rig->bones.size()) + " bones added" + distortion;
         model.mesh = std::move(mesh);
         planned.push_back(std::move(model));
     }

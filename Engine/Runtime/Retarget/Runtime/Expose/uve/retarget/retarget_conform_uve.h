@@ -46,9 +46,15 @@ struct ConformedRigUVE final {
     std::vector<RigidMoveUVE> moveOfRigBone;
     /// The rig's hips height over the reference's.
     float heightScale = 1.0F;
+    /// The turn that stood the rig up +Y and faced it +Z before anything else (identity for a rig
+    /// that already did). Rigs from other tools face any way: Z up, or looking down -X. It is part
+    /// of every entry of `moveOfRigBone`, and clips are turned by it too.
+    Math::QuaternionUVE orientation{};
 };
 
-/// Makes `rig` (any rest pose, any unit scale) the humanoid:
+/// Makes `rig` (any rest pose, any unit scale, any way up or facing) the humanoid:
+///  - it is first stood up +Y with its left side toward +X (facing +Z), read from its hips, head
+///    and thighs;
 ///  - its bones take the humanoid's names and hierarchy (MatchHumanoidUVE's pairing, `match`);
 ///  - arms, hands, fingers and legs turn to the A-pose (feet stay flat on the ground, which the
 ///    body is lifted back onto), elbows bend forward and palms face the body; hips, spine, neck,
@@ -67,12 +73,30 @@ struct ConformedRigUVE final {
 /// or a bind that is not a rotation, translation and uniform scale.
 [[nodiscard]] std::optional<RetargetSkeletonUVE> RigFromMeshUVE(const Asset::MeshAssetUVE& mesh, std::string* error = nullptr);
 
+/// How the bones' moves are blended at a vertex several of them hold. Linear is what the runtime
+/// skins with, but where two bones turn differently (a shoulder, lowering an arm) it pinches the
+/// skin; dual quaternion blending keeps the volume, so it is what conforming a mesh uses.
+enum class SkinBlendUVE : std::uint8_t { Linear = 0, DualQuaternion };
+
 /// Re-skins `mesh` for `conformed` (made from RigFromMeshUVE of the same mesh): every vertex,
 /// normal and tangent moves with its joints into the A-pose, the joints become the conformed
 /// skeleton's (renamed, reordered, added) with inverse binds for its rest, influences point at the
-/// new joints, and the bounds are remeasured. False, leaving `mesh` alone, when the two do not
-/// belong together.
-[[nodiscard]] bool ConformMeshUVE(Asset::MeshAssetUVE& mesh, const ConformedRigUVE& conformed, std::string* error = nullptr);
+/// new joints, and the bounds are remeasured. The weights, UVs and triangles are untouched: the
+/// mesh is moved, never rebuilt. False, leaving `mesh` alone, when the two do not belong together.
+[[nodiscard]] bool ConformMeshUVE(Asset::MeshAssetUVE& mesh, const ConformedRigUVE& conformed, std::string* error = nullptr,
+                                  SkinBlendUVE blend = SkinBlendUVE::DualQuaternion);
+
+/// How much a mesh's shape changed: over every triangle edge, how much it grew or shrank.
+struct MeshDistortionUVE final {
+    /// The worst edge, as a fraction (0.25 = a quarter longer or shorter).
+    float maximumEdgeChange = 0.0F;
+    /// The share of edges that changed by more than 10%.
+    float fractionOverTenPercent = 0.0F;
+};
+
+/// Compares two meshes with the same triangles (a mesh before and after ConformMeshUVE). Zero for
+/// meshes that do not match.
+[[nodiscard]] MeshDistortionUVE MeasureMeshDistortionUVE(const Asset::MeshAssetUVE& before, const Asset::MeshAssetUVE& after);
 
 /// Re-expresses `clip` - made for `rig` at rest as given - for the conformed rig: at every frame,
 /// each bone the rig had sits in the world exactly where the clip put it, now spoken of in the

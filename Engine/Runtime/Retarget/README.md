@@ -77,6 +77,39 @@ build/Engine/Runtime/Retarget/Runtime/uve_retarget_make_reference <source.fbx> \
   parent. Check it before committing a new reference. Only the hips (set on the ground) and the
   IK bones (moved onto what they follow) may change length.
 
+## Rigs from other tools
+
+Names are read by meaning, and the tests cover the conventions in common use: Mixamo, Unreal,
+Unity Humanoid (`LeftUpperArm`, `LeftThumbProximal`), Rokoko (`LeftInHandIndex` is the
+metacarpal), Rigify (`DEF-spine.004` is the first neck bone, `DEF-upper_arm.L.001` the first
+twist, `DEF-palm.01.L` the index metacarpal), 3ds Max Biped (`Bip01 L Calf`), HumanIK
+(`Character1_LeftUpLeg`), Xsens (`L5`, `T8`) and DAZ (`lShldrBend`). A name nothing here reads
+stays unmatched, is kept as it is, and shows grey in the report.
+
+The rig's rest pose can be anything (T-pose, A-pose, in between): directions are measured from
+its actual bones. Which way it stands is measured too: a rig authored Z-up, or facing -Z or +X,
+is stood up +Y and turned to face +Z first (`ConformedRigUVE::orientation`), and its clips are
+turned with it.
+
+## Keeping the animation and the mesh
+
+Conforming moves things; it never rebuilds them.
+
+- **Animation.** Each clip is re-expressed so every bone sits exactly where the clip put it,
+  in the humanoid's names and frames. `ConformedModelWithConformedClipLooksExactlyLikeTheOriginal`
+  plays the original model with its clip and the conformed model with the conformed clip through
+  the engine's own skinner and compares every vertex on every frame: they agree to 0.2 mm, for
+  rigs as they came and for rigs turned every way.
+- **Mesh.** Triangles, weights, UVs and vertex order are untouched; vertices, normals and tangents
+  move with their joints into the A-pose. Where two bones turn differently at a vertex (a shoulder
+  when the arm is lowered), a linear blend pinches the skin, so the move is blended with dual
+  quaternions, which keep the volume. `MeasureMeshDistortionUVE` reports how many edges changed
+  by more than 10% and how far the worst went; `RetargetFilesUVE` puts that in the character's
+  report.
+- **Skin blending caveat.** Vertices held by several bones are re-posed once, and the runtime
+  then blends them linearly, so a vertex in a blend zone can differ slightly from the original
+  animation there. Vertices held by one bone are exact.
+
 ## Matching any rig
 
 `MakeBoneKeyUVE` reduces a bone name to what it means: `"<side>|<words>"`.

@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "uve/retarget/retarget_conform_uve.h"
 #include "uve/retarget/retarget_humanoid_uve.h"
 
 namespace UVE::Retarget {
@@ -42,6 +43,10 @@ struct RetargetFilesResultUVE final {
     std::vector<RetargetFileReportUVE> files;
     /// The conformed character's hips height over the humanoid's, when the character was conformed.
     float heightScale = 1.0F;
+    /// How much the character's shape changed by going into the A-pose (the mesh is only moved, its
+    /// triangles and weights are kept). A large share of stretched edges means the rig's rest pose
+    /// was far from the A-pose; check the shoulders.
+    MeshDistortionUVE meshDistortion;
 };
 
 /// Called as work proceeds: files done so far, files in all, and what is being worked on.

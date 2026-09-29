@@ -9,6 +9,8 @@
 #include <vector>
 
 #include "retarget_keys_uve.h"
+#include "uve/retarget/retarget_humanoid_uve.h"
+#include "uve/retarget/retarget_match_uve.h"
 #include "uve/retarget/retarget_skeleton_uve.h"
 
 namespace UVE::Retarget {
@@ -21,6 +23,13 @@ namespace UVE::Retarget {
 
 inline constexpr Math::Vector3UVE kUpUVE{0.0F, 1.0F, 0.0F};
 inline constexpr Math::Vector3UVE kForwardUVE{0.0F, 0.0F, 1.0F};
+
+/// The turn that stands a rig up +Y and turns its left side to +X (so it faces +Z), read from its
+/// own bones as `match` found them: up is hips to head (or the highest neck or spine bone), left is
+/// right thigh to left thigh. Identity when the rig already stands that way, or lacks the bones to
+/// tell.
+[[nodiscard]] Math::QuaternionUVE OrientationOfRigUVE(const std::vector<WorldTransformUVE>& rigWorld,
+                                                      const HumanoidMatchUVE& match, const HumanoidReferenceUVE& reference);
 
 /// True when `bone` is `ancestor` or lies below it.
 [[nodiscard]] bool IsBelowUVE(const RetargetSkeletonUVE& skeleton, std::int32_t bone, std::int32_t ancestor);

@@ -114,6 +114,18 @@ void SetErrorUVE(std::string* error, std::string text) {
            near(a.rotation.w, b.rotation.w);
 }
 
+/// A rotation and a translation as one dual quaternion, for blending moves without pinching.
+struct DualQuaternionUVE final {
+    Math::QuaternionUVE real{0.0F, 0.0F, 0.0F, 0.0F};
+    Math::QuaternionUVE dual{0.0F, 0.0F, 0.0F, 0.0F};
+};
+
+[[nodiscard]] DualQuaternionUVE ToDualUVE(const RigidMoveUVE& move) {
+    const Math::QuaternionUVE translation{move.translation.x, move.translation.y, move.translation.z, 0.0F};
+    const Math::QuaternionUVE product = Math::MultiplyUVE(translation, move.rotation);
+    return DualQuaternionUVE{move.rotation, Math::QuaternionUVE{0.5F * product.x, 0.5F * product.y, 0.5F * product.z, 0.5F * product.w}};
+}
+
 } // namespace
 
 std::optional<ConformedRigUVE> ConformSkeletonUVE(const RetargetSkeletonUVE& rig, const HumanoidMatchUVE& match,
@@ -180,6 +192,13 @@ std::optional<ConformedRigUVE> ConformSkeletonUVE(const RetargetSkeletonUVE& rig
         out.added.push_back(false);
     }
     const std::size_t count = layout.bones.size();
+
+    // Stand the rig up +Y facing +Z first, so every direction below means what the reference's do.
+    out.orientation = OrientationOfRigUVE(rigWorld, match, reference);
+    for (WorldTransformUVE& transform : world) {
+        transform.position = Math::RotateVectorUVE(out.orientation, transform.position);
+        transform.rotation = NormalizedUVE(Math::MultiplyUVE(out.orientation, transform.rotation));
+    }
 
     // What each bone is, and what it points at, among the bones the rig has.
     std::vector<BoneKeyPartsUVE> keys(count);
@@ -338,7 +357,7 @@ std::optional<RetargetSkeletonUVE> RigFromMeshUVE(const Asset::MeshAssetUVE& mes
     return rig;
 }
 
-bool ConformMeshUVE(Asset::MeshAssetUVE& mesh, const ConformedRigUVE& conformed, std::string* error) {
+bool ConformMeshUVE(Asset::MeshAssetUVE& mesh, const ConformedRigUVE& conformed, std::string* error, const SkinBlendUVE blend) {
     if (!mesh.IsSkinnedUVE() || mesh.joints.size() != conformed.boneOfRigBone.size() ||
         mesh.joints.size() != conformed.moveOfRigBone.size() || mesh.skinningInfluences.size() != mesh.vertices.size()) {
         SetErrorUVE(error, "the mesh and the conformed rig do not belong together");
@@ -352,6 +371,8 @@ bool ConformMeshUVE(Asset::MeshAssetUVE& mesh, const ConformedRigUVE& conformed,
         Math::Vector3UVE normal{};
         Math::Vector3UVE tangent{};
         float total = 0.0F;
+        DualQuaternionUVE blended;
+        const Math::QuaternionUVE* first = nullptr;
         for (std::size_t slot = 0U; slot < Asset::kMaxJointInfluencesUVE; ++slot) {
             const std::uint32_t joint = influence.joints[slot];
             if (joint >= conformed.moveOfRigBone.size()) {
@@ -364,12 +385,44 @@ bool ConformMeshUVE(Asset::MeshAssetUVE& mesh, const ConformedRigUVE& conformed,
                 continue;
             }
             const RigidMoveUVE& move = conformed.moveOfRigBone[joint];
-            position += move.ApplyUVE(vertex.position) * weight;
-            normal += Math::RotateVectorUVE(move.rotation, vertex.normal) * weight;
-            tangent += Math::RotateVectorUVE(move.rotation, vertex.tangent) * weight;
             total += weight;
+            if (blend == SkinBlendUVE::Linear) {
+                position += move.ApplyUVE(vertex.position) * weight;
+                normal += Math::RotateVectorUVE(move.rotation, vertex.normal) * weight;
+                tangent += Math::RotateVectorUVE(move.rotation, vertex.tangent) * weight;
+                continue;
+            }
+            // Dual quaternions: each move enters on the same side of the sphere as the first, so two
+            // rotations that are the same turn do not cancel.
+            const DualQuaternionUVE dual = ToDualUVE(move);
+            if (first == nullptr) {
+                first = &move.rotation;
+            }
+            const float sign = (dual.real.x * first->x + dual.real.y * first->y + dual.real.z * first->z + dual.real.w * first->w) < 0.0F
+                                   ? -weight
+                                   : weight;
+            blended.real = Math::QuaternionUVE{blended.real.x + sign * dual.real.x, blended.real.y + sign * dual.real.y,
+                                               blended.real.z + sign * dual.real.z, blended.real.w + sign * dual.real.w};
+            blended.dual = Math::QuaternionUVE{blended.dual.x + sign * dual.dual.x, blended.dual.y + sign * dual.dual.y,
+                                               blended.dual.z + sign * dual.dual.z, blended.dual.w + sign * dual.dual.w};
         }
         if (total <= 0.0F) {
+            continue;
+        }
+        if (blend == SkinBlendUVE::DualQuaternion) {
+            const float length = std::sqrt(blended.real.x * blended.real.x + blended.real.y * blended.real.y +
+                                           blended.real.z * blended.real.z + blended.real.w * blended.real.w);
+            if (!(length > 1e-8F)) {
+                continue;
+            }
+            const float scale = 1.0F / length;
+            const Math::QuaternionUVE real{blended.real.x * scale, blended.real.y * scale, blended.real.z * scale, blended.real.w * scale};
+            const Math::QuaternionUVE dual{blended.dual.x * scale, blended.dual.y * scale, blended.dual.z * scale, blended.dual.w * scale};
+            const Math::QuaternionUVE conjugate{-real.x, -real.y, -real.z, real.w};
+            const Math::QuaternionUVE shift = Math::MultiplyUVE(dual, conjugate);
+            vertex.position = Math::RotateVectorUVE(real, vertex.position) + Math::Vector3UVE{2.0F * shift.x, 2.0F * shift.y, 2.0F * shift.z};
+            vertex.normal = Math::NormalizeUVE(Math::RotateVectorUVE(real, vertex.normal));
+            vertex.tangent = Math::NormalizeUVE(Math::RotateVectorUVE(real, vertex.tangent));
             continue;
         }
         vertex.position = position * (1.0F / total);
@@ -405,6 +458,33 @@ bool ConformMeshUVE(Asset::MeshAssetUVE& mesh, const ConformedRigUVE& conformed,
     }
     mesh = std::move(result);
     return true;
+}
+
+MeshDistortionUVE MeasureMeshDistortionUVE(const Asset::MeshAssetUVE& before, const Asset::MeshAssetUVE& after) {
+    MeshDistortionUVE result;
+    if (before.vertices.size() != after.vertices.size() || before.indices != after.indices) {
+        return result;
+    }
+    std::size_t edges = 0U;
+    std::size_t changed = 0U;
+    const auto measure = [&](const std::uint32_t a, const std::uint32_t b) {
+        const float was = Math::LengthUVE(before.vertices[a].position - before.vertices[b].position);
+        const float now = Math::LengthUVE(after.vertices[a].position - after.vertices[b].position);
+        if (!(was > 1e-9F)) {
+            return;
+        }
+        const float change = std::abs(now / was - 1.0F);
+        ++edges;
+        changed += change > 0.1F ? 1U : 0U;
+        result.maximumEdgeChange = std::max(result.maximumEdgeChange, change);
+    };
+    for (std::size_t index = 0U; index + 2U < before.indices.size(); index += 3U) {
+        measure(before.indices[index], before.indices[index + 1U]);
+        measure(before.indices[index + 1U], before.indices[index + 2U]);
+        measure(before.indices[index + 2U], before.indices[index]);
+    }
+    result.fractionOverTenPercent = edges > 0U ? static_cast<float>(changed) / static_cast<float>(edges) : 0.0F;
+    return result;
 }
 
 std::optional<Asset::AnimationClipAssetUVE> ConformClipUVE(const Asset::AnimationClipAssetUVE& clip, const RetargetSkeletonUVE& rig,
@@ -489,8 +569,9 @@ std::optional<Asset::AnimationClipAssetUVE> ConformClipUVE(const Asset::Animatio
                 const std::int32_t parent = skeleton.bones[index].parent;
                 if (const std::int32_t bone = rigOfBone[index]; bone >= 0) {
                     const WorldTransformUVE& from = source[static_cast<std::size_t>(bone)];
-                    world[index].position = from.position;
-                    world[index].rotation = NormalizedUVE(Math::MultiplyUVE(from.rotation, toNewFrame[index]));
+                    world[index].position = Math::RotateVectorUVE(conformed.orientation, from.position);
+                    world[index].rotation = NormalizedUVE(
+                        Math::MultiplyUVE(conformed.orientation, Math::MultiplyUVE(from.rotation, toNewFrame[index])));
                 } else if (follows[index] >= 0) {
                     if (!done[static_cast<std::size_t>(follows[index])]) {
                         continue;

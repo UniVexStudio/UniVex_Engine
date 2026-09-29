@@ -24,31 +24,6 @@ using namespace TestRigUVE;
     return std::string{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
 }
 
-/// A clip for the T-pose rig: the hips travel, every bone listed with the rig as its rest skeleton.
-[[nodiscard]] Asset::AnimationClipAssetUVE MakeClipUVE(const TPoseRigUVE& rig, const std::string& id) {
-    Asset::AnimationClipAssetUVE clip;
-    clip.clipId = id;
-    clip.durationSeconds = 1.0;
-    for (const RetargetBoneUVE& bone : rig.skeleton.bones) {
-        clip.rest.push_back(Asset::AnimationAssetRestBoneUVE{bone.name, bone.parent, bone.position, bone.rotation,
-                                                             Math::Vector3UVE{1.0F, 1.0F, 1.0F}});
-        Asset::AnimationAssetBoneTrackUVE track;
-        track.bone = bone.name;
-        for (int frame = 0; frame < 2; ++frame) {
-            Asset::AnimationAssetSampleUVE sample;
-            sample.timeSeconds = static_cast<double>(frame);
-            sample.pose.position = bone.position;
-            sample.pose.rotation = bone.rotation;
-            if (bone.name == "Hips") {
-                sample.pose.position.z += 0.5F * static_cast<float>(frame);
-            }
-            track.samples.push_back(sample);
-        }
-        clip.bones.push_back(std::move(track));
-    }
-    return clip;
-}
-
 struct FilesFixtureUVE {
     fs::path dir = Tests::MakeTestCaseDirectoryUVE();
     TPoseRigUVE rig;
