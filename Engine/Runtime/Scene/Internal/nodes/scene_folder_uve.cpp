@@ -16,4 +16,13 @@ void ApplyFolderNodeDefinitionUVE(IEntityManagerUVE& entityManager, const Entity
     }
 }
 
+void ApplyViewportNodeDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
+                                    const ViewportNodeDefinitionUVE& value) {
+    static_cast<void>(value);
+    EnsureNodeBaselineUVE(entityManager, entity, ViewportNodeDefinitionUVE::defaultName);
+    if (entityManager.IsAliveUVE(entity) && !entityManager.HasComponentUVE<OutlinerViewportComponentUVE>(entity)) {
+        entityManager.AddComponentUVE<OutlinerViewportComponentUVE>(entity, OutlinerViewportComponentUVE{});
+    }
+}
+
 } // namespace UVE::Scene

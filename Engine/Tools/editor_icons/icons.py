@@ -116,6 +116,29 @@ def scene_root(ic):
     node(ic, 32, 16, 8, "#9fb4cf")
 
 
+@scene_node("viewport", "Viewport", "Scene")
+def viewport(ic):
+    # The level seen through the editor's view: a screen frame looking at sky, ground and a
+    # perspective floor grid.
+    shadow(ic, 32, 57, 26, 4)
+    frame = ic.linear([(0, shade(STEEL, 0.1)), (1, shade(STEEL, -0.25))], 0, 0, 0, 1)
+    ic.add(f'<rect x="5" y="11" width="54" height="40" rx="5" fill="{frame}" stroke="{OUTLINE}" '
+           f'stroke-opacity="0.75" stroke-width="1.4"/>')
+    sky = ic.linear([(0, "#bfe4ff"), (1, SKY)], 0, 0, 0, 1)
+    ic.add(f'<rect x="9" y="15" width="46" height="18" fill="{sky}"/>')
+    ground = ic.linear([(0, "#6c7a8c"), (1, "#3b4553")], 0, 0, 0, 1)
+    ic.add(f'<rect x="9" y="33" width="46" height="14" fill="{ground}"/>')
+    for x in (9, 20, 28, 36, 44, 55):
+        ic.add(f'<line x1="32" y1="33" x2="{x}" y2="47" stroke="#dfe6ef" '
+               f'stroke-opacity="0.55" stroke-width="1"/>')
+    for y in (36, 41):
+        ic.add(f'<line x1="9" y1="{y}" x2="55" y2="{y}" stroke="#dfe6ef" stroke-opacity="0.45" stroke-width="1"/>')
+    sphere(ic, 45, 22, 4, SUN, outline=False)
+    ic.add('<rect x="9" y="15" width="46" height="32" fill="none" stroke="#0b0f15" stroke-opacity="0.6" stroke-width="1"/>')
+    ic.add(f'<rect x="24" y="51" width="16" height="4" rx="1.5" fill="{shade(STEEL, -0.3)}" stroke="{OUTLINE}" '
+           f'stroke-opacity="0.7" stroke-width="1.2"/>')
+
+
 @scene_node("node_3d", "Node3D", "Scene")
 def node_3d(ic):
     shadow(ic, 30, 54, 22, 6)

@@ -362,8 +362,7 @@ void EditorUVE::DrawHierarchyNodeUVE(const Scene::EntityUVE entity) {
     // The type goes after the name, dimmed, only when all of it fits in the room the name and the
     // right-hand columns leave: a type cut to "C..." says nothing. Whatever does not fit is in the
     // row's tooltip instead.
-    // The Viewport's name already says what it is; "Folder" beside it would only confuse.
-    const std::string_view typeName = entity == GetDocumentViewportUVE() ? std::string_view{} : GetNodeTypeNameUVE(entity);
+    const std::string_view typeName = GetNodeTypeNameUVE(entity);
     const std::string_view typeHint = GetHierarchyTypeHintUVE(fullName, typeName);
     bool typeHintShown = false;
     if (!renaming && m_hierarchyView.showTypeName && !nameTruncated && !typeHint.empty()) {
