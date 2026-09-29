@@ -126,6 +126,25 @@ binds and remeasured bounds. At the new rest every skinning matrix is the identi
 where the clip put it, now in the humanoid's names and frames. Added bones ride their parents and
 IK targets follow what they follow.
 
+## Files: in place, with a backup
+
+`RetargetFilesUVE(request, reference, progress)` conforms a character (`.uvmodel`) and any number
+of animations (`.uvanim`) where they are; it makes no new files.
+
+1. Everything is read and conformed in memory first. A character that cannot be conformed (missing,
+   static, no hips) stops the run before any file is touched. An animation that cannot be (no
+   skeleton, already conformed, moves no bones) is left alone, with the reason in its report.
+2. The originals are copied into `<backupRoot>/<timestamp>/` with a manifest.
+3. Each result is written beside its file and moved into place. If any write fails, every file is
+   put back from the backup.
+
+`RestoreRetargetBackupUVE(backupDir)` undoes a run byte for byte.
+
+An animation can only be retargeted if it knows the skeleton it was made for. `.uvanim` v3 carries
+that (`rest`: bones, parents and rest pose) plus a `conformed` flag; FBX takes are imported with it.
+Clips saved before v3 have no skeleton and are asked to be imported again from their FBX. A clip
+with neither a skeleton nor the flag still saves as v2, so nothing existing changes.
+
 ## Status
 
 | Phase | State |
@@ -133,5 +152,6 @@ IK targets follow what they follow.
 | R1a: humanoid reference, names, JSON, builder tool | Done |
 | R1b: matcher and joint statuses | Done |
 | R1c: conform skeleton, mesh and clip | Done |
-| R2: `.uvanim` carries its skeleton; `.uvmodel` written back with a backup | Planned |
+| R2a: `.uvanim` v3 carries its skeleton; files conformed in place with backup and undo | Done |
+| R2b: runtime rule: a conformed character takes translation only for Root, Hips and IK, scaled by its height | Next |
 | R3: Retarget window (multi-select in Content, own viewport, joint colours, Generate) | Planned |

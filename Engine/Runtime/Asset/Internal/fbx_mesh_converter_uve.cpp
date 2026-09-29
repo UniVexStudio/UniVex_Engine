@@ -470,6 +470,21 @@ std::vector<AnimationClipAssetUVE> ReadFbxAnimationsUVE(const std::span<const st
             std::isfinite(scene->settings.frames_per_second) && scene->settings.frames_per_second > 0.0
                 ? scene->settings.frames_per_second
                 : 30.0;
+        // The skeleton every take was made for, the same rest pose ReadFbxSkeletonUVE gives.
+        std::vector<AnimationAssetRestBoneUVE> rest;
+        for (const FbxBoneNodeUVE& bone : *bones) {
+            ufbx_matrix local = bone.node->node_to_parent;
+            for (const ufbx_node* const between : bone.between) {
+                local = ufbx_matrix_mul(&between->node_to_parent, &local);
+            }
+            const ufbx_transform pose = ufbx_matrix_to_transform(&local);
+            if (!IsFiniteTransformUVE(pose)) {
+                return clips;
+            }
+            const AnimationAssetPoseUVE converted = ToAnimationPoseUVE(pose);
+            rest.push_back(AnimationAssetRestBoneUVE{bone.name, bone.parentIndex, converted.position, converted.rotation,
+                                                     converted.scale});
+        }
         std::set<std::string> usedIds;
         for (const ufbx_anim_stack* const stack : scene->anim_stacks) {
             const double begin = stack->time_begin;
@@ -500,6 +515,7 @@ std::vector<AnimationClipAssetUVE> ReadFbxAnimationsUVE(const std::span<const st
             usedIds.insert(id);
             clip.clipId = id;
             clip.durationSeconds = duration;
+            clip.rest = rest;
             clip.bones.reserve(bones->size());
             bool valid = true;
             for (const FbxBoneNodeUVE& bone : *bones) {
