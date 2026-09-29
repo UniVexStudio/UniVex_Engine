@@ -454,7 +454,7 @@ constexpr std::array<std::uint8_t, 4> kFlatNormalPixelUVE{0x80, 0x80, 0xFF, 0xFF
 /// selection. Returns nullptr if no active (intensity > 0) Directional light exists this frame.
 [[nodiscard]] const LightDataUVE* FindShadowCasterUVE(const LightListUVE& lights) noexcept {
     for (const LightDataUVE& light : lights) {
-        if (light.type == Scene::LightTypeUVE::Directional && light.intensity > 0.0F) {
+        if (light.type == Scene::LightTypeUVE::Directional && light.intensity > 0.0F && light.castsShadows) {
             return &light;
         }
     }
@@ -2253,7 +2253,14 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     ShadowCascadeSplitsUVE cascadeSplits{};
     std::int32_t cascadeCount = 0;
     if (shadowsReady) {
-        cascadeSplits = ComputeCascadeSplitsUVE(camera.nearPlane, camera.farPlane, m_impl->shadowCascadeSplitLambda);
+        // The caster may keep its shadow closer than the camera sees (a sharper shadow where it
+        // matters) and choose how its cascades share that distance.
+        const float shadowFar = shadowCaster->shadowMaxDistance > 0.0F
+                                    ? std::clamp(shadowCaster->shadowMaxDistance, camera.nearPlane * 2.0F, camera.farPlane)
+                                    : camera.farPlane;
+        const float splitLambda =
+            shadowCaster->shadowSplitBlend >= 0.0F ? shadowCaster->shadowSplitBlend : m_impl->shadowCascadeSplitLambda;
+        cascadeSplits = ComputeCascadeSplitsUVE(camera.nearPlane, shadowFar, splitLambda);
         const bool cascadeSplitsValid = AreCascadeSplitsValidUVE(cascadeSplits, camera.nearPlane, camera.farPlane);
         UVE_ASSERT(cascadeSplitsValid);
         if (!cascadeSplitsValid) {

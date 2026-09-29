@@ -30,6 +30,7 @@ constexpr std::array<std::string_view, 1U> kInteractionAreaContracts{"Interactio
 constexpr std::array<std::string_view, 1U> kEnvironmentContracts{"WorldEnvironment3DNodeComponentUVE"};
 constexpr std::array<std::string_view, 1U> kReflectionProbeContracts{"ReflectionProbe3DNodeComponentUVE"};
 constexpr std::array<std::string_view, 1U> kDecalContracts{"Decal3DNodeComponentUVE"};
+constexpr std::array<std::string_view, 2U> kDirectionalLightContracts{"DirectionalLight3DComponentUVE", "LightEmitterComponentUVE"};
 constexpr std::array<std::string_view, 1U> kFogVolumeContracts{"FogVolume3DNodeComponentUVE"};
 constexpr std::array<std::string_view, 1U> kLodContracts{"LodGroup3DNodeComponentUVE"};
 constexpr std::array<std::string_view, 1U> kOccluderContracts{"Occluder3DNodeComponentUVE"};
@@ -46,7 +47,7 @@ constexpr std::array<std::string_view, 1U> kUITextContracts{"UITextComponentUVE"
 constexpr std::array<std::string_view, 1U> kUIImageContracts{"UIImageComponentUVE"};
 constexpr std::array<std::string_view, 1U> kUIButtonContracts{"UIButtonComponentUVE"};
 
-constexpr std::array<SceneNodeDescriptorUVE, 45U> kDescriptors{
+constexpr std::array<SceneNodeDescriptorUVE, 46U> kDescriptors{
     // The document's structural root: created by the document lifecycle (new document,
     // load-time migration), never through the Add-Node library - libraryCreatable is false.
     SceneNodeDescriptorUVE{SceneNodeKindUVE::SceneRoot, "scene_root", "SceneRoot", "Scene", "Scene/SceneRootNodeDefinitionUVE", kNoContracts, false},
@@ -68,7 +69,7 @@ constexpr std::array<SceneNodeDescriptorUVE, 45U> kDescriptors{
     SceneNodeDescriptorUVE{SceneNodeKindUVE::Hurtbox3D, "hurtbox_3d", "Hurtbox3D", "Combat", "Physics/Hurtbox3DNodeComponentUVE", kHurtboxContracts, true},
     SceneNodeDescriptorUVE{SceneNodeKindUVE::Projectile3D, "projectile_3d", "Projectile3D", "Combat", "Physics/Projectile3DNodeComponentUVE", kProjectileContracts, true},
     SceneNodeDescriptorUVE{SceneNodeKindUVE::InteractionArea3D, "interaction_area_3d", "InteractionArea3D", "Gameplay", "Physics/AreaOverlapSystemUVE", kInteractionAreaContracts, true},
-    SceneNodeDescriptorUVE{SceneNodeKindUVE::WorldEnvironment3D, "world_environment_3d", "WorldEnvironment3D", "Rendering", "Render/WorldEnvironment3DNodeComponentUVE", kEnvironmentContracts, true},
+    SceneNodeDescriptorUVE{SceneNodeKindUVE::WorldEnvironment3D, "world_environment_3d", "WorldEnvironment", "Rendering", "Render/WorldEnvironment3DNodeComponentUVE", kEnvironmentContracts, true},
     SceneNodeDescriptorUVE{SceneNodeKindUVE::ReflectionProbe3D, "reflection_probe_3d", "ReflectionProbe3D", "Rendering", "Render/ReflectionProbe3DNodeComponentUVE", kReflectionProbeContracts, true},
     SceneNodeDescriptorUVE{SceneNodeKindUVE::Decal3D, "decal_3d", "Decal3D", "Rendering", "Render/Decal3DNodeComponentUVE", kDecalContracts, true},
     SceneNodeDescriptorUVE{SceneNodeKindUVE::FogVolume3D, "fog_volume_3d", "FogVolume3D", "Rendering", "Render/FogVolume3DNodeComponentUVE", kFogVolumeContracts, true},
@@ -97,6 +98,7 @@ constexpr std::array<SceneNodeDescriptorUVE, 45U> kDescriptors{
     SceneNodeDescriptorUVE{SceneNodeKindUVE::UIImage, "ui_image", "UI Image", "UI", "UI/UIRuntimeUVE", kUIImageContracts, true},
     SceneNodeDescriptorUVE{SceneNodeKindUVE::UIButton, "ui_button", "UI Button", "UI", "UI/UIRuntimeUVE", kUIButtonContracts, true},
     SceneNodeDescriptorUVE{SceneNodeKindUVE::Folder, "folder", "Folder", "Scene", "Scene/Editor", kNoContracts, true},
+    SceneNodeDescriptorUVE{SceneNodeKindUVE::DirectionalLight3D, "directional_light_3d", "DirectionalLight3D", "Rendering", "Render/LightSystemUVE", kDirectionalLightContracts, true},
 };
 
 } // namespace

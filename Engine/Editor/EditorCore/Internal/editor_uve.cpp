@@ -2055,7 +2055,12 @@ Scene::EntityUVE EditorUVE::CreateSceneNodeEntityInternalUVE(const Scene::Nodes:
             entity = createNodeWithComponent(Scene::InteractionArea3DNodeComponentUVE{});
             break;
         case Scene::Nodes::SceneNodeKindUVE::WorldEnvironment3D:
-            entity = createNodeWithComponent(Scene::WorldEnvironment3DNodeComponentUVE{});
+            entity = CreateNodeDefinitionEntityInternalUVE(Scene::WorldEnvironmentNodeDefinitionUVE{},
+                                                            Scene::ApplyWorldEnvironmentNodeDefinitionUVE);
+            break;
+        case Scene::Nodes::SceneNodeKindUVE::DirectionalLight3D:
+            entity = CreateNodeDefinitionEntityInternalUVE(Scene::DirectionalLight3DNodeDefinitionUVE{},
+                                                            Scene::ApplyDirectionalLight3DNodeDefinitionUVE);
             break;
         case Scene::Nodes::SceneNodeKindUVE::ReflectionProbe3D:
             entity = createNodeWithComponent(Scene::ReflectionProbe3DNodeComponentUVE{});

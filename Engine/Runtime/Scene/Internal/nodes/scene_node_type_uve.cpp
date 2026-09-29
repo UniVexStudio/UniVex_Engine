@@ -101,6 +101,7 @@ Nodes::SceneNodeKindUVE InferSceneNodeKindUVE(const IEntityManagerUVE& entityMan
                            OwnComponentUVE<WorldEnvironment3DNodeComponentUVE>{Kind::WorldEnvironment3D},
                            OwnComponentUVE<ReflectionProbe3DNodeComponentUVE>{Kind::ReflectionProbe3D},
                            OwnComponentUVE<Decal3DNodeComponentUVE>{Kind::Decal3D},
+                           OwnComponentUVE<DirectionalLight3DComponentUVE>{Kind::DirectionalLight3D},
                            OwnComponentUVE<FogVolume3DNodeComponentUVE>{Kind::FogVolume3D},
                            OwnComponentUVE<LodGroup3DNodeComponentUVE>{Kind::LODGroup3D},
                            OwnComponentUVE<Occluder3DNodeComponentUVE>{Kind::Occluder3D},

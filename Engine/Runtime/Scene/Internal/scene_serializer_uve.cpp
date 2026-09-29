@@ -1119,6 +1119,18 @@ template <typename VectorT>
     return value;
 }
 
+[[nodiscard]] nlohmann::json ToJsonUVE(const DirectionalLight3DComponentUVE& value) {
+    return {{"shadowMaxDistance", value.shadowMaxDistance}, {"shadowSplitBlend", value.shadowSplitBlend}};
+}
+
+[[nodiscard]] DirectionalLight3DComponentUVE DirectionalLight3DFromJsonUVE(const nlohmann::json& json) {
+    const DirectionalLight3DComponentUVE defaults{};
+    DirectionalLight3DComponentUVE value{};
+    value.shadowMaxDistance = json.value("shadowMaxDistance", defaults.shadowMaxDistance);
+    value.shadowSplitBlend = json.value("shadowSplitBlend", defaults.shadowSplitBlend);
+    return value;
+}
+
 [[nodiscard]] nlohmann::json ToJsonUVE(const FogVolume3DNodeComponentUVE& value) {
     return {{"shape", static_cast<std::uint8_t>(value.shape)},
             {"size", ToJsonUVE(value.size)},
@@ -1724,6 +1736,14 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                 }
                 return value;
             }, IsDecal3DNodeComponentValidUVE));
+        table.emplace("DirectionalLight3DComponentUVE", MakeRegistrationUVE<DirectionalLight3DComponentUVE>(
+            [](const nlohmann::json& json) {
+                const DirectionalLight3DComponentUVE value = DirectionalLight3DFromJsonUVE(json);
+                if (!IsDirectionalLight3DComponentValidUVE(value)) {
+                    throw std::runtime_error("Invalid DirectionalLight3DComponentUVE payload");
+                }
+                return value;
+            }, IsDirectionalLight3DComponentValidUVE));
         table.emplace("LodGroup3DNodeComponentUVE", MakeRegistrationUVE<LodGroup3DNodeComponentUVE>(
             [](const nlohmann::json& json) {
                 const LodGroup3DNodeComponentUVE value = LodGroup3DNodeFromJsonUVE(json);

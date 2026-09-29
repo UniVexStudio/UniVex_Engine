@@ -58,6 +58,14 @@ struct LightDataUVE {
 
     /// Spot cone half-angle, in degrees. Unused for Directional/Point.
     float spotAngleDegrees = 45.0F;
+
+    /// Directional only: whether this light may be the frame's shadow caster.
+    bool castsShadows = true;
+    /// Directional only: shadows reach this far from the camera; 0 follows the camera's far plane.
+    float shadowMaxDistance = 0.0F;
+    /// Directional only: how cascades share the shadow distance, 0 evenly .. 1 packed near the
+    /// camera; negative keeps the renderer's own setting.
+    float shadowSplitBlend = -1.0F;
 };
 
 /// A fixed-size list of this frame's active lights — see kMaxLightsUVE. Trailing unused slots
