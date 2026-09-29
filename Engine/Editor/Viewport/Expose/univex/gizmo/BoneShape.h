@@ -42,6 +42,9 @@ struct BoneOverlayUVE {
     Vec3 linkFrom{};
     bool skeletonSelected = false;
     bool boneSelected = false;
+    /// A colour of its own, over the selection look (the Retarget window's joint colours).
+    bool hasColor = false;
+    Vec3 color{};
 };
 
 /// Colours and proportions of the bone. One value, so the look is defined in one place.

@@ -200,6 +200,10 @@ window:
 
 - **Character.** Pick a rigged model (or a `.uvmodel`). Picking one in Content along with the
   animations chooses it for you.
+- **Viewport.** Its own world in the middle of the window: a floor, a sun, a sky, the UniVex
+  humanoid and the character side by side. The bones are drawn in the four colours, on both
+  figures: the character's bones take the colour of the humanoid bone they answer. Orbit and zoom
+  like the main viewport.
 - **Bones.** The humanoid's hierarchy, each bone a dot: green (found, fine), yellow (found, check
   it), red (found, broken), grey (missing: Generate adds it). The character's own name shows in
   brackets. Filter by name, or show problems only.
@@ -207,7 +211,12 @@ window:
 - **Generate Retarget** conforms the character and the animations in place on a worker thread with
   a progress bar; the originals go to `.retarget-backup/` beside the content folder. **Undo Last**
   puts them back.
-- After Generate or Undo, the assets are reloaded and every Skeleton3D in the open scene that
+- While the window is open the scene is put aside and the preview takes its place, the way the Entity
+Editor does it; the main window shows a note, nothing is saved or played, and closing the window brings
+the scene back untouched (with its skeletons updated if a character was conformed meanwhile). If the
+editor is playing, or an entity is open, the window works without the picture.
+
+After Generate or Undo, the assets are reloaded and every Skeleton3D in the open scene that
   uses that model gets the conformed (or original) bones.
 
 A model source's imported model is what gets conformed. It lives in the import cache, so
@@ -225,4 +234,4 @@ again.
 | R2a: `.uvanim` v3 carries its skeleton; files conformed in place with backup and undo | Done |
 | R2b: playback rule: a conformed clip drives translation only for Root, Hips and IK, scaled by height | Done |
 | R3a: multi-select in Content, floating button, Retarget window (colours, Generate, Undo, Skeleton3D refresh) | Done |
-| R3b: the window's own viewport (floor, sky, sun) | Planned |
+| R3b: the window's own viewport (floor, sun, sky, joint colours on the bones) | Done |

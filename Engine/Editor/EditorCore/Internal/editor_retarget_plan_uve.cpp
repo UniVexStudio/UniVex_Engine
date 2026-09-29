@@ -19,6 +19,16 @@ const char* GetRetargetStatusLabelUVE(const Retarget::JointStatusUVE status) noe
     return status == Retarget::JointStatusUVE::Missing ? "missing" : Retarget::JointStatusNameUVE(status);
 }
 
+std::array<float, 3> GetRetargetStatusColourUVE(const Retarget::JointStatusUVE status) noexcept {
+    switch (status) {
+        case Retarget::JointStatusUVE::Good: return {0.36F, 0.78F, 0.47F};
+        case Retarget::JointStatusUVE::Warning: return {0.95F, 0.76F, 0.26F};
+        case Retarget::JointStatusUVE::Broken: return {0.90F, 0.36F, 0.34F};
+        case Retarget::JointStatusUVE::Missing: return {0.50F, 0.52F, 0.56F};
+    }
+    return {0.50F, 0.52F, 0.56F};
+}
+
 RetargetPlanUVE PlanRetargetUVE(const std::filesystem::path& modelFile, const std::span<const std::filesystem::path> animations) {
     RetargetPlanUVE plan;
     plan.model = modelFile;

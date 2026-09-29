@@ -68,6 +68,10 @@ struct RetargetPlanUVE final {
 [[nodiscard]] RetargetPlanUVE PlanRetargetUVE(const std::filesystem::path& modelFile,
                                               std::span<const std::filesystem::path> animations);
 
+/// The joint colour as red, green, blue in 0..1: green good, yellow check, red broken, grey missing.
+/// One place, so the window's dots and the viewport's bones always agree.
+[[nodiscard]] std::array<float, 3> GetRetargetStatusColourUVE(Retarget::JointStatusUVE status) noexcept;
+
 /// A joint colour's name for the window: "good", "check", "broken" or "missing" (grey).
 [[nodiscard]] const char* GetRetargetStatusLabelUVE(Retarget::JointStatusUVE status) noexcept;
 

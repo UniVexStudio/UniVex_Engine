@@ -513,7 +513,7 @@ private:
         for (const auto& bone : overlayState.bones) {
             bones.push_back(univex::gizmo::BoneOverlayUVE{toVec3(bone.head), toVec3(bone.tail), toVec3(bone.side),
                                                           bone.hasLink, toVec3(bone.linkFrom), bone.skeletonSelected,
-                                                          bone.boneSelected});
+                                                          bone.boneSelected, bone.hasColour, toVec3(bone.colour)});
         }
         renderPass_->SetBonesUVE(std::move(bones));
         using UVE::Editor::EditorUVE;
