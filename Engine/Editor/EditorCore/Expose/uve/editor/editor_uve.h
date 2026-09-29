@@ -893,6 +893,9 @@ public:
     /// The document's single scene-root entity (the top of the hierarchy), or invalid when the
     /// document somehow has none. Structural only by design: name + identity transform.
     [[nodiscard]] Scene::EntityUVE GetDocumentSceneRootUVE();
+    /// The Outliner's Viewport: the folder at the top of the level that every other folder lives in.
+    /// Invalid while an entity or the Retarget preview stands in for the level.
+    [[nodiscard]] Scene::EntityUVE GetDocumentViewportUVE();
     [[nodiscard]] EditorStateUVE GetStateUVE() const noexcept;
     [[nodiscard]] Scene::EntityUVE GetSelectedEntityUVE() const noexcept;
     /// Returns editor-only 2D canvas state for screen-space authoring. It is not scene data.
@@ -1926,6 +1929,30 @@ private:
     // Where a new node goes: under the single selection when the preference allows and there is
     // one, otherwise under the scene root. Then, for a spatial node, where in space.
     [[nodiscard]] Scene::EntityUVE ResolveNewNodeParentUVE();
+    /// Where a new node of `kind` goes: DirectionalLight3D and WorldEnvironment at the top, a folder
+    /// in the selected folder or the Viewport, anything else in a folder (see ResolveNodeFolderUVE).
+    [[nodiscard]] Scene::EntityUVE ResolveNewNodeParentForUVE(Scene::Nodes::SceneNodeKindUVE kind);
+    // ---- The level's Outliner layout ---------------------------------------------------------------
+    //   (scene root, not shown)
+    //   +- Viewport            folders only
+    //   |  +- Folder ...       any node
+    //   +- DirectionalLight3D  one at most
+    //   +- WorldEnvironment    one at most
+    /// Whether the layout applies: the level is the document (no entity, no Retarget preview open).
+    [[nodiscard]] bool IsOutlinerLayoutActiveUVE() const noexcept;
+    /// Builds the layout if missing: the Viewport, a World folder in a fresh level, and anything a
+    /// level saved before the layout had at the top moved into World. True when it changed anything.
+    bool EnsureDocumentLayoutUVE();
+    /// The folder a new node goes into when none is selected: the last one used, else the Viewport's
+    /// first, else a new "World".
+    [[nodiscard]] Scene::EntityUVE ResolveNodeFolderUVE();
+    /// Whether `entity` may sit under `parent` in the layout.
+    [[nodiscard]] bool IsAllowedOutlinerParentUVE(Scene::EntityUVE entity, Scene::EntityUVE parent);
+    /// DirectionalLight3D and WorldEnvironment: the level's two top-level singletons.
+    [[nodiscard]] bool IsTopLevelSingletonKindUVE(Scene::Nodes::SceneNodeKindUVE kind) const noexcept;
+    /// The top-level DirectionalLight3D or WorldEnvironment, when the level has it.
+    [[nodiscard]] Scene::EntityUVE FindTopLevelNodeUVE(Scene::Nodes::SceneNodeKindUVE kind);
+    Scene::EntityUVE m_lastUsedFolder = Scene::kInvalidEntityUVE;
     void PlaceNewDocumentNodeUVE(Scene::EntityUVE entity);
     friend bool RegisterEditorSettingsUVE(Config::SettingsRegistryUVE& registry);
     Core::ISimulationControlUVE* m_simulationControl = nullptr;

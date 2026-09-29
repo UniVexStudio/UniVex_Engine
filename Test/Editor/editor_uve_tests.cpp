@@ -57,6 +57,10 @@
 namespace UVE::Editor::Tests {
 
 struct EditorUVEAccessUVE final {
+    // The folder new level nodes go to (the Outliner allows nodes only inside folders).
+    [[nodiscard]] static Scene::EntityUVE GetNodeFolderUVE(EditorUVE& editor) { return editor.ResolveNodeFolderUVE(); }
+    [[nodiscard]] static Scene::EntityUVE GetViewportUVE(EditorUVE& editor) { return editor.GetDocumentViewportUVE(); }
+
     [[nodiscard]] static std::string GetOutlinerTypeTagUVE(const EditorUVE& editor,
                                                             const Scene::EntityUVE entity) {
         return editor.GetOutlinerTypeTagUVE(entity);
@@ -259,6 +263,17 @@ void AttachRootUVE(Core::EngineCoreUVE& engine, const Scene::EntityUVE entity,
                    const Scene::TransformComponentUVE& transform) {
     Core::EngineServicesUVE& services = engine.GetServicesUVE();
     services.GetSceneGraphUVE().AttachTransformUVE(services.GetEntityManagerUVE(), entity, transform);
+}
+
+// Level nodes live inside a folder; puts loose test entities into the level's node folder.
+Scene::EntityUVE PutInNodeFolderUVE(Core::EngineCoreUVE& engine, EditorUVE& editor,
+                                    std::initializer_list<Scene::EntityUVE> entities) {
+    Core::EngineServicesUVE& services = engine.GetServicesUVE();
+    const Scene::EntityUVE folder = EditorUVEAccessUVE::GetNodeFolderUVE(editor);
+    for (const Scene::EntityUVE entity : entities) {
+        services.GetSceneGraphUVE().SetParentUVE(services.GetEntityManagerUVE(), entity, folder);
+    }
+    return folder;
 }
 
 struct UnregisteredEditorLifecycleComponentUVE final {
@@ -600,13 +615,19 @@ TEST(EditorUVETest, OutlinerContextUVE_AncestryAndEligibleParentsExcludeSelected
         services.GetSceneGraphUVE().SetParentUVE(entityManager, descendant, selected);
         const Scene::EntityUVE rootB = entityManager.CreateEntityUVE();
         AttachRootUVE(engine, rootB, Scene::TransformComponentUVE{});
+        const Scene::EntityUVE folder = EditorUVEAccessUVE::GetNodeFolderUVE(editor);
+        for (const Scene::EntityUVE top : {rootA, parent, rootB}) {
+            services.GetSceneGraphUVE().SetParentUVE(entityManager, top, folder);
+        }
 
         EXPECT_EQ(EditorUVEAccessUVE::GetDocumentAncestryUVE(editor, selected),
-                  (std::vector<Scene::EntityUVE>{parent, selected}));
-        // The scene root leads, then the stray top-level entities in creation order.
+                  (std::vector<Scene::EntityUVE>{editor.GetDocumentSceneRootUVE(),
+                                                 EditorUVEAccessUVE::GetViewportUVE(editor),
+                                                 folder, parent, selected}));
+        // A node may only move inside a folder: the folder leads, then its nodes in order. The
+        // scene root and the Viewport are not offered.
         EXPECT_EQ(EditorUVEAccessUVE::GetEligibleReparentParentsUVE(editor, selected),
-                  (std::vector<Scene::EntityUVE>{editor.GetDocumentSceneRootUVE(), rootA, parent,
-                                                 rootB}));
+                  (std::vector<Scene::EntityUVE>{folder, rootA, parent, rootB}));
 
         editor.ShutdownUVE();
     }
@@ -1172,7 +1193,7 @@ TEST(EditorUVETest, SiblingOrderUVE_MoveDuplicateAndDeleteKeepPlacesThroughUndo)
         Core::EngineServicesUVE& services = engine.GetServicesUVE();
         Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
         Scene::ISceneGraphUVE& sceneGraph = services.GetSceneGraphUVE();
-        const Scene::EntityUVE root = editor.GetDocumentSceneRootUVE();
+        const Scene::EntityUVE root = EditorUVEAccessUVE::GetNodeFolderUVE(editor); // the level's only folder
         std::vector<Scene::EntityUVE> nodes;
         for (int i = 0; i < 3; ++i) {
             editor.SelectEntityUVE(root);
@@ -2969,6 +2990,7 @@ TEST(EditorUVETest, ReparentSelectedEntityUVE_RootMovesBelowTargetAndPreservesLo
         Scene::TransformComponentUVE localTransform{};
         localTransform.localPosition = Math::Vector3UVE{2.0F, -3.0F, 7.0F};
         AttachRootUVE(engine, moved, localTransform);
+        const Scene::EntityUVE folder = PutInNodeFolderUVE(engine, editor, {target, moved});
         editor.SelectEntityUVE(moved);
 
         ASSERT_TRUE(editor.ReparentSelectedEntityUVE(target));
@@ -2980,9 +3002,9 @@ TEST(EditorUVETest, ReparentSelectedEntityUVE_RootMovesBelowTargetAndPreservesLo
         EXPECT_EQ(editor.GetSelectedEntityUVE(), moved);
         EXPECT_TRUE(editor.IsSceneDirtyUVE());
         EXPECT_TRUE(editor.CanUndoUVE());
-        const std::vector<Scene::EntityUVE> roots = editor.GetDocumentRootsUVE();
-        ASSERT_EQ(roots.size(), 2U); // the scene root + the still-top-level target
-        EXPECT_NE(std::find(roots.begin(), roots.end(), target), roots.end());
+        const std::vector<Scene::EntityUVE> folderChildren =
+            services.GetSceneGraphUVE().GetChildrenUVE(entityManager, folder);
+        EXPECT_EQ(folderChildren, std::vector<Scene::EntityUVE>{target}); // the target stays in the folder
 
         editor.ShutdownUVE();
     }
@@ -3008,16 +3030,15 @@ TEST(EditorUVETest, ReparentSelectedEntityUVE_ChildCanReturnToRootWithoutDetachi
         const Scene::EntityUVE grandchild = entityManager.CreateEntityUVE();
         AttachRootUVE(engine, grandchild, Scene::TransformComponentUVE{});
         services.GetSceneGraphUVE().SetParentUVE(entityManager, grandchild, child);
+        const Scene::EntityUVE folder = PutInNodeFolderUVE(engine, editor, {parent});
         editor.SelectEntityUVE(child);
 
         ASSERT_TRUE(editor.ReparentSelectedEntityUVE(Scene::kInvalidEntityUVE));
-        const std::vector<Scene::EntityUVE> roots = editor.GetDocumentRootsUVE();
-        ASSERT_EQ(roots.size(), 2U); // the scene root + the still-top-level parent
-        EXPECT_NE(std::find(roots.begin(), roots.end(), parent), roots.end());
+        EXPECT_EQ(editor.GetDocumentRootsUVE().size(), 1U);
         EXPECT_TRUE(services.GetSceneGraphUVE().GetChildrenUVE(entityManager, parent).empty());
-        // "Return to root" now means a direct child of the scene root.
+        // "Return to root" in a level means the top of the node's folder.
         const std::vector<Scene::EntityUVE> sceneRootChildren =
-            services.GetSceneGraphUVE().GetChildrenUVE(entityManager, editor.GetDocumentSceneRootUVE());
+            services.GetSceneGraphUVE().GetChildrenUVE(entityManager, folder);
         EXPECT_NE(std::find(sceneRootChildren.begin(), sceneRootChildren.end(), child), sceneRootChildren.end());
         const std::vector<Scene::EntityUVE> childChildren =
             services.GetSceneGraphUVE().GetChildrenUVE(entityManager, child);
@@ -3047,6 +3068,7 @@ TEST(EditorUVETest, EditorHistoryUVE_ReparentUndoRedoRestoresParentsSelectionAnd
         AttachRootUVE(engine, moved, Scene::TransformComponentUVE{});
         services.GetSceneGraphUVE().SetParentUVE(entityManager, moved, oldParent);
         entityManager.AddComponentUVE<Scene::NameComponentUVE>(moved, Scene::NameComponentUVE{"Moved"});
+        static_cast<void>(PutInNodeFolderUVE(engine, editor, {oldParent, newParent}));
         editor.SelectEntityUVE(moved);
 
         ASSERT_TRUE(editor.ReparentSelectedEntityUVE(newParent));
@@ -3088,7 +3110,8 @@ TEST(EditorUVETest, SceneRootUVE_ChildrenOfTheTransformlessRootStayFullyEditable
         editor.InitUVE();
         Core::EngineServicesUVE& services = engine.GetServicesUVE();
         Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
-        const Scene::EntityUVE sceneRoot = editor.GetDocumentSceneRootUVE();
+        // In a level, nodes sit in a folder - a transformless pure Node, like the scene root.
+        const Scene::EntityUVE sceneRoot = EditorUVEAccessUVE::GetNodeFolderUVE(editor);
         ASSERT_NE(sceneRoot, Scene::kInvalidEntityUVE);
         ASSERT_FALSE(entityManager.HasComponentUVE<Scene::TransformComponentUVE>(sceneRoot));
 
@@ -3153,7 +3176,8 @@ TEST(EditorUVETest, EditorHistoryUVE_RedoOfMoveToDocumentRootLandsUnderTheSceneR
         editor.InitUVE();
         Core::EngineServicesUVE& services = engine.GetServicesUVE();
         Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
-        const Scene::EntityUVE sceneRoot = editor.GetDocumentSceneRootUVE();
+        // In a level, "the top" for a node is its folder.
+        const Scene::EntityUVE sceneRoot = EditorUVEAccessUVE::GetNodeFolderUVE(editor);
         const Scene::EntityUVE parent = entityManager.CreateEntityUVE();
         AttachRootUVE(engine, parent, Scene::TransformComponentUVE{});
         services.GetSceneGraphUVE().SetParentUVE(entityManager, parent, sceneRoot);
@@ -3168,7 +3192,7 @@ TEST(EditorUVETest, EditorHistoryUVE_RedoOfMoveToDocumentRootLandsUnderTheSceneR
         EXPECT_EQ(entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(child).parent, parent);
         ASSERT_TRUE(editor.RedoUVE());
         EXPECT_EQ(entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(child).parent, sceneRoot);
-        EXPECT_EQ(editor.GetDocumentRootsUVE(), std::vector<Scene::EntityUVE>{sceneRoot});
+        EXPECT_EQ(editor.GetDocumentRootsUVE(), std::vector<Scene::EntityUVE>{editor.GetDocumentSceneRootUVE()});
 
         editor.ShutdownUVE();
     }
@@ -3237,6 +3261,7 @@ TEST(EditorUVETest, EditorHistoryUVE_ReparentUndoRejectsStalePriorParentAndClear
         const Scene::EntityUVE moved = entityManager.CreateEntityUVE();
         AttachRootUVE(engine, moved, Scene::TransformComponentUVE{});
         services.GetSceneGraphUVE().SetParentUVE(entityManager, moved, oldParent);
+        static_cast<void>(PutInNodeFolderUVE(engine, editor, {oldParent, newParent}));
         editor.SelectEntityUVE(moved);
 
         ASSERT_TRUE(editor.ReparentSelectedEntityUVE(newParent));
@@ -3275,6 +3300,7 @@ TEST(EditorUVETest, KeepWorldReparentUVE_PreservesCompatibleWorldTrsAndHistory) 
                                               movedTransform.localRotation));
         const Scene::EntityUVE moved = entityManager.CreateEntityUVE();
         AttachRootUVE(engine, moved, movedTransform);
+        static_cast<void>(PutInNodeFolderUVE(engine, editor, {parent, moved}));
         services.GetSceneGraphUVE().UpdateUVE(entityManager);
         const Scene::WorldTransformComponentUVE worldBefore =
             entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(moved);
@@ -3323,6 +3349,7 @@ TEST(EditorUVETest, KeepWorldReparentUVE_RejectsShearProneAndNearZeroScaleParent
                                               movedTransform.localRotation));
         const Scene::EntityUVE moved = entityManager.CreateEntityUVE();
         AttachRootUVE(engine, moved, movedTransform);
+        static_cast<void>(PutInNodeFolderUVE(engine, editor, {shearParent, moved}));
         services.GetSceneGraphUVE().UpdateUVE(entityManager);
         editor.SelectEntityUVE(moved);
         ASSERT_TRUE(editor.SetReparentTransformModeUVE(EditorReparentTransformModeUVE::KeepWorld));
@@ -3334,6 +3361,7 @@ TEST(EditorUVETest, KeepWorldReparentUVE_RejectsShearProneAndNearZeroScaleParent
         tinyParentTransform.localScale = Math::Vector3UVE{0.0001F, 1.0F, 1.0F};
         const Scene::EntityUVE tinyParent = entityManager.CreateEntityUVE();
         AttachRootUVE(engine, tinyParent, tinyParentTransform);
+        static_cast<void>(PutInNodeFolderUVE(engine, editor, {tinyParent}));
         services.GetSceneGraphUVE().UpdateUVE(entityManager);
         EXPECT_FALSE(editor.ReparentSelectedEntityUVE(tinyParent));
         EXPECT_FALSE(editor.IsSceneDirtyUVE());
@@ -3382,12 +3410,12 @@ TEST(EditorUVETest, SaveThenLoadScene_RoundTripsDocumentRootsWithoutSerializingE
 
         const std::vector<Scene::EntityUVE> loadedRoots = editor.GetDocumentRootsUVE();
         ASSERT_EQ(loadedRoots.size(), 1U);
-        // The single root is the scene root; the authored root (with its saved transform and
-        // its own child) sits one level under it - the load wrapped the pre-root save's
-        // top-level entities beneath the one-root invariant.
-        const Scene::EntityUVE loadedSceneRoot = loadedRoots.front();
-        const std::vector<Scene::EntityUVE> loadedSceneRootChildren =
-            services.GetSceneGraphUVE().GetChildrenUVE(services.GetEntityManagerUVE(), loadedSceneRoot);
+        // The single root is the scene root; the load wrapped the pre-root save's top-level
+        // entities beneath it, and the Outliner layout then moved the authored root (with its
+        // saved transform and its own child) into the level's node folder.
+        EXPECT_EQ(loadedRoots.front(), editor.GetDocumentSceneRootUVE());
+        const std::vector<Scene::EntityUVE> loadedSceneRootChildren = services.GetSceneGraphUVE().GetChildrenUVE(
+            services.GetEntityManagerUVE(), EditorUVEAccessUVE::GetNodeFolderUVE(editor));
         ASSERT_EQ(loadedSceneRootChildren.size(), 1U);
         const Scene::TransformComponentUVE& loadedTransform =
             services.GetEntityManagerUVE().GetComponentUVE<Scene::TransformComponentUVE>(

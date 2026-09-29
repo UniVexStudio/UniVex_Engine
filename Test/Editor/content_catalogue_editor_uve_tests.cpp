@@ -22,6 +22,7 @@
 #include "uve/core/engine_project_settings_uve.h"
 #include "uve/editor/editor_content_catalogue_uve.h"
 #include "uve/editor/editor_uve.h"
+#include "uve/scene/nodes/scene_folder_uve.h"
 #include "uve/scene/nodes/scene_node_registry_uve.h"
 #include "uve/scene/nodes/scene_node_type_uve.h"
 
@@ -302,15 +303,18 @@ TEST(ContentCatalogueEditorUVETest, EntityEditorEditsTheAssetAloneAndGivesTheSce
         EXPECT_FALSE(editor.IsEntityEditorOpenUVE());
         EXPECT_EQ(engine.GetSimulationExecutionModeUVE(), Core::SimulationExecutionModeUVE::Running);
 
-        // The scene is back, with its placed Character.
-        const std::vector<Scene::EntityUVE> sceneChildren =
-            services.GetSceneGraphUVE().GetChildrenUVE(entityManager, editor.GetDocumentSceneRootUVE());
-        const auto character = std::ranges::find_if(sceneChildren, [&entityManager](const Scene::EntityUVE child) {
-            return entityManager.HasComponentUVE<Scene::NameComponentUVE>(child) &&
-                   entityManager.GetComponentUVE<Scene::NameComponentUVE>(child).name == "Character";
-        });
-        ASSERT_NE(character, sceneChildren.end());
-        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::PrefabInstanceComponentUVE>(*character));
+        // The scene is back, with its placed Character in the level's node folder.
+        Scene::EntityUVE character = Scene::kInvalidEntityUVE;
+        entityManager.ForEachUVE<Scene::NameComponentUVE>(
+            [&character](const Scene::EntityUVE entity, const Scene::NameComponentUVE& name) {
+                if (name.name == "Character") {
+                    character = entity;
+                }
+            });
+        ASSERT_NE(character, Scene::kInvalidEntityUVE);
+        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::PrefabInstanceComponentUVE>(character));
+        const Scene::EntityUVE folder = entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(character).parent;
+        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::FolderComponentUVE>(folder));
 
         // What was saved is in the file.
         ASSERT_TRUE(editor.OpenEntityEditorUVE(*created));
