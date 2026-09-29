@@ -451,6 +451,15 @@ public:
 
         // Every enabled, visible Skeleton3D's bones, rebuilt each frame; empty in the Game workspace.
         std::vector<ViewportBoneUVE> bones;
+
+        // A studio view for presenting rather than editing (the Retarget window): sky, ground and
+        // a faded floor instead of the grid, no toolbar or corner gizmo, no selection, and a
+        // camera that faces the front and does not turn (the wheel still zooms). The camera is
+        // placed on `studioTarget`, far enough to fit `studioRadius`, each time the serial changes.
+        bool studioView = false;
+        std::array<float, 3> studioTarget{0.0F, 1.0F, 0.0F};
+        float studioRadius = 1.5F;
+        std::uint32_t studioFramingSerial = 0U;
     };
 
     /// Render callback for the dockable "Viewport" panel: given the panel's current available
@@ -1184,7 +1193,7 @@ private:
     [[nodiscard]] bool BeginRetargetPreviewUVE();
     /// Brings the scene back. False, staying in the preview, when it cannot be restored.
     [[nodiscard]] bool EndRetargetPreviewUVE();
-    /// Builds the world: floor, sun, sky, the humanoid and the character side by side.
+    /// Builds the world: a sun, the humanoid and the character side by side (the studio view draws the rest).
     void RebuildRetargetPreviewUVE(const RetargetPlanUVE& plan, const std::filesystem::path& modelFile);
     void DrawRetargetPreviewUVE();
     void DrawRetargetPlaceholderUVE();

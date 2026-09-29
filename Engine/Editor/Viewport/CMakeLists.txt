@@ -82,7 +82,8 @@ add_library(univex_viewport_gl STATIC
     Internal/ShaderProgram.cpp
     Internal/InfiniteGridRenderer.cpp
     Internal/GizmoRenderer.cpp
-    Internal/SelectionOutlineRenderer.cpp)
+    Internal/SelectionOutlineRenderer.cpp
+    Internal/StudioBackdropRenderer.cpp)
 target_include_directories(univex_viewport_gl PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/Expose
     ${CMAKE_CURRENT_BINARY_DIR}/generated)
