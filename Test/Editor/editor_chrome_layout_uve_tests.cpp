@@ -32,16 +32,20 @@ TEST(EditorChromeLayoutUVETest, ThreeColumnsExactlyFillTheWidthWithNoGapOrOverla
 }
 
 TEST(EditorChromeLayoutUVETest, SidePanelsRunFullHeightAndTheDockSitsUnderTheViewport) {
-    // Scene and Inspector run from the top chrome down to the dock tab strip; the viewport and the
-    // dock share the centre column between them, the dock directly under the viewport.
+    // Outliner and Inspector run from under the title bar down to the dock tab strip; the centre
+    // column holds the tool strip, the viewport under it and the dock under that.
     const EditorChromeLayoutUVE layout = ComputeEditorChromeLayoutUVE(MakeViewportUVE(1920.0F, 1080.0F), true);
 
-    EXPECT_FLOAT_EQ(layout.scenePos.y, kEditorTopChromeHeightUVE);
+    EXPECT_FLOAT_EQ(layout.scenePos.y, kEditorTitleBarHeightUVE);
+    EXPECT_FLOAT_EQ(layout.inspectorPos.y, kEditorTitleBarHeightUVE);
+    EXPECT_FLOAT_EQ(layout.toolStripPos.y, kEditorTitleBarHeightUVE);
     EXPECT_FLOAT_EQ(layout.viewportPos.y, kEditorTopChromeHeightUVE);
-    EXPECT_FLOAT_EQ(layout.inspectorPos.y, kEditorTopChromeHeightUVE);
     EXPECT_FLOAT_EQ(layout.sceneSize.y, layout.inspectorSize.y);
-    EXPECT_FLOAT_EQ(layout.sceneSize.y, 1080.0F - kEditorTopChromeHeightUVE - kDockTabBarHeightUVE);
-    EXPECT_FLOAT_EQ(layout.viewportSize.y + layout.contentBrowserSize.y, layout.sceneSize.y);
+    EXPECT_FLOAT_EQ(layout.sceneSize.y, 1080.0F - kEditorTitleBarHeightUVE - kDockTabBarHeightUVE);
+    EXPECT_FLOAT_EQ(layout.toolStripSize.y + layout.viewportSize.y + layout.contentBrowserSize.y, layout.sceneSize.y);
+    // The strip spans exactly the centre column.
+    EXPECT_FLOAT_EQ(layout.toolStripPos.x, layout.viewportPos.x);
+    EXPECT_FLOAT_EQ(layout.toolStripSize.x, layout.viewportSize.x);
     EXPECT_FLOAT_EQ(layout.contentBrowserPos.x, layout.viewportPos.x);
     EXPECT_FLOAT_EQ(layout.contentBrowserSize.x, layout.viewportSize.x);
     EXPECT_FLOAT_EQ(layout.contentBrowserPos.y, layout.viewportPos.y + layout.viewportSize.y);
@@ -107,7 +111,8 @@ TEST(EditorChromeLayoutUVETest, LayoutIsOffsetByTheViewportOrigin) {
         ComputeEditorChromeLayoutUVE(MakeViewportUVE(1920.0F, 1080.0F, kOriginX, kOriginY), true);
 
     EXPECT_FLOAT_EQ(layout.scenePos.x, kOriginX);
-    EXPECT_FLOAT_EQ(layout.scenePos.y, kOriginY + kEditorTopChromeHeightUVE);
+    EXPECT_FLOAT_EQ(layout.scenePos.y, kOriginY + kEditorTitleBarHeightUVE);
+    EXPECT_FLOAT_EQ(layout.viewportPos.y, kOriginY + kEditorTopChromeHeightUVE);
     EXPECT_FLOAT_EQ(layout.contentBrowserPos.x, kOriginX + layout.sceneSize.x);
     EXPECT_FLOAT_EQ(layout.dockTabBarPos.x, kOriginX);
 }

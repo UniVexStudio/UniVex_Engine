@@ -440,7 +440,7 @@ void EditorUVE::DrawFilesystemContextPopupUVE() {
         ImGui::EndDisabled();
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort)) {
             ImGui::SetTooltip("Adds it under the selected node, or to the scene. You can also drag it into the "
-                              "Scene panel or the viewport.");
+                              "Outliner or the viewport.");
         }
     }
     if (isEntity) {

@@ -33,6 +33,9 @@ struct EditorChromeLayoutUVE final {
     /// The strip of dock tabs along the very bottom, full width.
     ImVec2 dockTabBarPos;
     ImVec2 dockTabBarSize;
+    /// The tool strip over the viewport, between the side panels: play controls and the editor's tools.
+    ImVec2 toolStripPos;
+    ImVec2 toolStripSize;
 };
 
 /// Shared across the editor's panel translation units.
@@ -51,7 +54,7 @@ constexpr const char* kContentEntityPayloadUVE = "UVE_CONTENT_ENTITY_ASSET";
 /// Any other file or folder dragged out of Content (onto a shelf): its content-relative path,
 /// NUL-terminated.
 constexpr const char* kContentItemPayloadUVE = "UVE_CONTENT_ITEM";
-constexpr const char* kPanelLabelSceneUVE = "\xEF\xAB\xBA Scene##scene-panel";
+constexpr const char* kPanelLabelSceneUVE = "\xEF\xAB\xBA Outliner##scene-panel";
 constexpr std::size_t kMaximumEntityNameBytesUVE = 96U;
 // A node icon is 16 px: its texture is 64 px, so 16 is an exact mip level and draws crisp.
 constexpr float kHierarchyNodeIconSizeUVE = 16.0F;
@@ -72,9 +75,9 @@ constexpr float kInspectorPanelWidthFractionUVE = 0.18F;
 constexpr float kInspectorPanelWidthMinUVE = 220.0F;
 constexpr float kInspectorPanelWidthMaxUVE = 300.0F;
 
-/// The editor's panel rectangles. The Scene and Inspector columns run the full height, from the top
-/// chrome down to the dock tab strip; the viewport and, under it, the bottom dock share the centre
-/// column. The tab strip spans the full width at the very bottom and stays when the dock is hidden,
+/// The editor's panel rectangles. The Outliner and Inspector columns run the full height, from under
+/// the title bar down to the dock tab strip. The centre column holds the tool strip (play controls,
+/// editor tools), the viewport under it, and the bottom dock under that. The tab strip spans the full width at the very bottom and stays when the dock is hidden,
 /// since it is how the dock is brought back. `dockHeight` is the dock body's height, clamped so the
 /// viewport keeps its minimum.
 [[nodiscard]] inline EditorChromeLayoutUVE ComputeEditorChromeLayoutUVE(const ImGuiViewport& viewport,
@@ -86,8 +89,12 @@ constexpr float kInspectorPanelWidthMaxUVE = 300.0F;
     const float totalHeight = viewport.WorkSize.y;
 
     const float chromeHeight = kEditorTopChromeHeightUVE;
+    // The centre column, under the tool strip.
     const float columnHeight =
         std::max(kMinimumViewportHeightUVE, totalHeight - chromeHeight - kDockTabBarHeightUVE);
+    // The side columns also take the tool strip's height: they start right under the title bar.
+    const float sideTop = originY + kEditorTitleBarHeightUVE;
+    const float sideHeight = columnHeight + kEditorToolbarHeightUVE;
     const float maximumDock = std::max(kMinimumBottomDockHeightUVE, columnHeight - kMinimumViewportHeightUVE);
     const float dock =
         bottomDockVisible ? std::clamp(dockHeight, kMinimumBottomDockHeightUVE, maximumDock) : 0.0F;
@@ -101,12 +108,14 @@ constexpr float kInspectorPanelWidthMaxUVE = 300.0F;
     const float top = originY + chromeHeight;
 
     EditorChromeLayoutUVE layout{};
-    layout.scenePos = ImVec2{originX, top};
-    layout.sceneSize = ImVec2{sceneWidth, columnHeight};
+    layout.scenePos = ImVec2{originX, sideTop};
+    layout.sceneSize = ImVec2{sceneWidth, sideHeight};
+    layout.toolStripPos = ImVec2{originX + sceneWidth, sideTop};
+    layout.toolStripSize = ImVec2{viewportWidth, kEditorToolbarHeightUVE};
     layout.viewportPos = ImVec2{originX + sceneWidth, top};
     layout.viewportSize = ImVec2{viewportWidth, std::max(kMinimumViewportHeightUVE, columnHeight - dock)};
-    layout.inspectorPos = ImVec2{originX + sceneWidth + viewportWidth, top};
-    layout.inspectorSize = ImVec2{inspectorWidth, columnHeight};
+    layout.inspectorPos = ImVec2{originX + sceneWidth + viewportWidth, sideTop};
+    layout.inspectorSize = ImVec2{inspectorWidth, sideHeight};
     layout.contentBrowserPos = ImVec2{originX + sceneWidth, top + layout.viewportSize.y};
     layout.contentBrowserSize = ImVec2{viewportWidth, dock};
     layout.dockTabBarPos = ImVec2{originX, top + columnHeight};

@@ -168,12 +168,6 @@ void EditorUVE::DrawMenuBarUVE() {
         ImGui::PopStyleVar();
         return open;
     };
-    const auto beginChrome = [mainViewport, chromeFlags, &beginChromeWindow](const char* const id, const float y,
-                                                                            const float height) {
-        ImGui::SetNextWindowPos(ImVec2{mainViewport->WorkPos.x, mainViewport->WorkPos.y + y}, ImGuiCond_Always);
-        ImGui::SetNextWindowSize(ImVec2{mainViewport->WorkSize.x, height}, ImGuiCond_Always);
-        return beginChromeWindow(id, chromeFlags);
-    };
 
     ImGui::SetNextWindowPos(ImVec2{mainViewport->WorkPos.x, mainViewport->WorkPos.y}, ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2{mainViewport->WorkSize.x, kEditorTitleBarHeightUVE}, ImGuiCond_Always);
@@ -193,23 +187,19 @@ void EditorUVE::DrawMenuBarUVE() {
             ImGui::End();
             return;
         }
-        // "UVE" wordmark badge + version, replacing the old bitmap logo image - our logo IS the
-        // "UVE" name itself now, drawn procedurally (matching this file's own established
-        // icon-drawing convention) rather than a separate texture asset to keep in sync.
+        // The logo's place. A square mark for now, drawn here like the editor's other icons, until
+        // the studio's logo file replaces it.
         {
-            constexpr float kLogoBadgeWidthUVE = 38.0F;
-            constexpr float kLogoBadgeHeightUVE = 20.0F;
-            const ImVec2 badgeMin = ImGui::GetCursorScreenPos();
-            const ImVec2 badgeMax{badgeMin.x + kLogoBadgeWidthUVE, badgeMin.y + kLogoBadgeHeightUVE};
-            titleDrawList->AddRectFilled(badgeMin, badgeMax, IM_COL32(66, 120, 184, 255), 4.0F);
-            const ImVec2 logoTextSize = ImGui::CalcTextSize("UVE");
-            titleDrawList->AddText(ImVec2{badgeMin.x + (kLogoBadgeWidthUVE - logoTextSize.x) * 0.5F,
-                                          badgeMin.y + (kLogoBadgeHeightUVE - logoTextSize.y) * 0.5F},
-                                   IM_COL32(255, 255, 255, 255), "UVE");
-            ImGui::Dummy(ImVec2{kLogoBadgeWidthUVE, kLogoBadgeHeightUVE});
-            ImGui::SameLine(0.0F, 5.0F);
-            ImGui::TextDisabled("0.1");
-            ImGui::SameLine(0.0F, 6.0F);
+            constexpr float kLogoSizeUVE = 18.0F;
+            const ImVec2 logoMin = ImGui::GetCursorScreenPos();
+            const ImVec2 logoMax{logoMin.x + kLogoSizeUVE, logoMin.y + kLogoSizeUVE};
+            titleDrawList->AddRectFilled(logoMin, logoMax, IM_COL32(66, 120, 184, 255), 4.0F);
+            const ImVec2 markSize = ImGui::CalcTextSize("U");
+            titleDrawList->AddText(ImVec2{logoMin.x + (kLogoSizeUVE - markSize.x) * 0.5F,
+                                          logoMin.y + (kLogoSizeUVE - markSize.y) * 0.5F},
+                                   IM_COL32(255, 255, 255, 255), "U");
+            ImGui::Dummy(ImVec2{kLogoSizeUVE, kLogoSizeUVE});
+            ImGui::SameLine(0.0F, 10.0F);
         }
 
         // File/Edit/Assets/GameObject/Plugin/Window/Help all fold into one "Menu" dropdown here in
@@ -275,7 +265,7 @@ void EditorUVE::DrawMenuBarUVE() {
                 m_pluginWindowVisible = true;
             }
             if (ImGui::BeginMenu(kMenuLabelWindowUVE)) {
-                ImGui::MenuItem("Scene", nullptr, &m_scenePanelVisible);
+                ImGui::MenuItem("Outliner", nullptr, &m_scenePanelVisible);
                 ImGui::MenuItem("Viewport", nullptr, &m_viewportPanelVisible);
                 ImGui::MenuItem("Inspector", nullptr, &m_inspectorPanelVisible);
                 ImGui::MenuItem("Content Browser + Debug Dock", nullptr, &m_bottomDockVisible);
@@ -310,17 +300,6 @@ void EditorUVE::DrawMenuBarUVE() {
         }
         ImGui::SameLine(0.0F, 10.0F);
 
-        const char* workspaceLabel = "Library";
-        switch (m_activeWorkspace) {
-            case EditorWorkspaceUVE::Library: workspaceLabel = "Library"; break;
-            case EditorWorkspaceUVE::Asset: workspaceLabel = "Asset"; break;
-            case EditorWorkspaceUVE::Scripting: workspaceLabel = "Scripting"; break;
-            case EditorWorkspaceUVE::Debug: workspaceLabel = "Debug"; break;
-            case EditorWorkspaceUVE::Plugin: workspaceLabel = "Plugin"; break;
-            case EditorWorkspaceUVE::Game: workspaceLabel = "Game"; break;
-        }
-        ImGui::TextDisabled("| %s |", workspaceLabel);
-        ImGui::SameLine();
         {
             // A small colored status dot before the saved/unsaved label, matching Cowork's
             // mockup `.tb-dot.saved`/`.tb-dot.unsaved` (--success #5fc98a / --warning #e0b13f
@@ -343,40 +322,33 @@ void EditorUVE::DrawMenuBarUVE() {
         ImGui::End();
     }
 
-    if (beginChrome("##uve-tool-row", kEditorTitleBarHeightUVE,
-                    kEditorToolbarHeightUVE)) {
+    // The tool strip: over the viewport, between the Outliner and the Inspector, which rise past it
+    // to the title bar. Play controls on the left; the rest is kept for the editor's tools. A
+    // workspace that fills the window (Scripting, an open Entity Editor) gets it full width.
+    const bool sidePanelsShown = m_activeWorkspace != EditorWorkspaceUVE::Scripting && !m_entityEditSession.has_value() &&
+                                 !m_retargetPreview.has_value();
+    const EditorChromeLayoutUVE stripLayout =
+        ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight);
+    const ImVec2 stripPos = sidePanelsShown ? stripLayout.toolStripPos
+                                            : ImVec2{mainViewport->WorkPos.x, mainViewport->WorkPos.y + kEditorTitleBarHeightUVE};
+    const ImVec2 stripSize = sidePanelsShown ? stripLayout.toolStripSize : ImVec2{mainViewport->WorkSize.x, kEditorToolbarHeightUVE};
+    ImGui::SetNextWindowPos(stripPos, ImGuiCond_Always);
+    ImGui::SetNextWindowSize(stripSize, ImGuiCond_Always);
+    if (beginChromeWindow("##uve-tool-row", chromeFlags)) {
         ImDrawList* const toolbarDrawList = ImGui::GetWindowDrawList();
         const ImVec2 toolbarMin = ImGui::GetWindowPos();
         const ImVec2 toolbarMax{toolbarMin.x + ImGui::GetWindowWidth(), toolbarMin.y + kEditorToolbarHeightUVE};
         toolbarDrawList->AddRectFilled(toolbarMin, toolbarMax, IM_COL32(32, 37, 43, 255));
-        toolbarDrawList->AddLine(ImVec2{toolbarMin.x, toolbarMin.y}, ImVec2{toolbarMax.x, toolbarMin.y},
+        toolbarDrawList->AddLine(ImVec2{toolbarMin.x, toolbarMax.y - 1.0F}, ImVec2{toolbarMax.x, toolbarMax.y - 1.0F},
                                  IM_COL32(48, 55, 64, 235), 1.0F);
-        const auto drawWorkspace = [this](const char* const label, const EditorWorkspaceUVE workspace) {
-            const bool active = m_activeWorkspace == workspace;
-            if (active) {
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{0.20F, 0.21F, 0.23F, 1.0F});
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{0.32F, 0.35F, 0.39F, 1.0F});
-            }
-            if (ImGui::SmallButton(label)) {
-                m_activeWorkspace = workspace;
-            }
-            if (active) {
-                ImGui::PopStyleColor(2);
-            }
-            ImGui::SameLine();
-        };
-        drawWorkspace("Scene", EditorWorkspaceUVE::Library);
-        drawWorkspace("Scripting", EditorWorkspaceUVE::Scripting);
-        drawWorkspace("Game", EditorWorkspaceUVE::Game);
 
-        // ---- Play/Pause/Stop transport, relocated here from the menu row and right-aligned ----
-        constexpr float kTransportButtonWidthUVE = 40.0F;
+        // ---- Play/Pause/Stop, at the start of the strip ----------------------------------------
+        constexpr float kTransportButtonWidthUVE = 32.0F;
         constexpr float kTransportButtonHeightUVE = 20.0F;
-        constexpr float kTransportButtonGapUVE = 4.0F;
-        const float transportGroupWidth = 2.0F * kTransportButtonWidthUVE + kTransportButtonGapUVE;
-        ImGui::SetCursorScreenPos(
-            ImVec2{toolbarMax.x - transportGroupWidth - 8.0F,
-                   toolbarMin.y + (kEditorToolbarHeightUVE - kTransportButtonHeightUVE) * 0.5F});
+        constexpr float kTransportButtonGapUVE = 2.0F;
+        constexpr float kStripPaddingUVE = 6.0F;
+        ImGui::SetCursorScreenPos(ImVec2{toolbarMin.x + kStripPaddingUVE,
+                                         toolbarMin.y + (kEditorToolbarHeightUVE - kTransportButtonHeightUVE) * 0.5F});
         const auto drawTransportButton = [](const char* const id, const bool enabled, const auto& drawIcon) {
             ImGui::BeginDisabled(!enabled);
             ImGui::PushID(id);
@@ -447,6 +419,11 @@ void EditorUVE::DrawMenuBarUVE() {
                                 })) {
             static_cast<void>(StopPlayModeUVE());
         }
+        // The editor's tools go after the play controls; kept empty until they move in.
+        ImGui::SameLine(0.0F, 8.0F);
+        const ImVec2 dividerTop = ImGui::GetCursorScreenPos();
+        toolbarDrawList->AddLine(ImVec2{dividerTop.x, toolbarMin.y + 6.0F},
+                                 ImVec2{dividerTop.x, toolbarMax.y - 6.0F}, IM_COL32(58, 66, 76, 255), 1.0F);
         ImGui::End();
     }
 }
