@@ -116,6 +116,29 @@ def scene_root(ic):
     node(ic, 32, 16, 8, "#9fb4cf")
 
 
+@scene_node("viewport", "Viewport", "Scene")
+def viewport(ic):
+    # The level seen through the editor's view: a screen frame looking at sky, ground and a
+    # perspective floor grid.
+    shadow(ic, 32, 57, 26, 4)
+    frame = ic.linear([(0, shade(STEEL, 0.1)), (1, shade(STEEL, -0.25))], 0, 0, 0, 1)
+    ic.add(f'<rect x="5" y="11" width="54" height="40" rx="5" fill="{frame}" stroke="{OUTLINE}" '
+           f'stroke-opacity="0.75" stroke-width="1.4"/>')
+    sky = ic.linear([(0, "#bfe4ff"), (1, SKY)], 0, 0, 0, 1)
+    ic.add(f'<rect x="9" y="15" width="46" height="18" fill="{sky}"/>')
+    ground = ic.linear([(0, "#6c7a8c"), (1, "#3b4553")], 0, 0, 0, 1)
+    ic.add(f'<rect x="9" y="33" width="46" height="14" fill="{ground}"/>')
+    for x in (9, 20, 28, 36, 44, 55):
+        ic.add(f'<line x1="32" y1="33" x2="{x}" y2="47" stroke="#dfe6ef" '
+               f'stroke-opacity="0.55" stroke-width="1"/>')
+    for y in (36, 41):
+        ic.add(f'<line x1="9" y1="{y}" x2="55" y2="{y}" stroke="#dfe6ef" stroke-opacity="0.45" stroke-width="1"/>')
+    sphere(ic, 45, 22, 4, SUN, outline=False)
+    ic.add('<rect x="9" y="15" width="46" height="32" fill="none" stroke="#0b0f15" stroke-opacity="0.6" stroke-width="1"/>')
+    ic.add(f'<rect x="24" y="51" width="16" height="4" rx="1.5" fill="{shade(STEEL, -0.3)}" stroke="{OUTLINE}" '
+           f'stroke-opacity="0.7" stroke-width="1.2"/>')
+
+
 @scene_node("node_3d", "Node3D", "Scene")
 def node_3d(ic):
     shadow(ic, 30, 54, 22, 6)
@@ -858,17 +881,10 @@ def folder_open_asset(ic):
     ic.add(f'<path d="M 15 31 h 44" stroke="{shade(GOLD, 0.36)}" stroke-width="1.3" stroke-linecap="round"/>')
 
 
-@content_type("scene", "Scene")
-def scene_asset(ic):
-    shadow(ic, 32, 57, 28, 5)
-    slab(ic, 32, 52, 44, 44, 5, shade(STEEL, -0.1))
-    shadow(ic, 22, 40, 8, 3, 0.35)
-    box(ic, 21, 40, 12, 12, 12, AMBER)
-    shadow(ic, 42, 42, 7, 2.5, 0.35)
-    sphere(ic, 42, 35, 7.5, BLUE)
-    cone = ic.linear([(0, shade(NAV, 0.2)), (0.6, NAV), (1, shade(NAV, -0.2))], 0, 0, 1, 0)
-    ic.add(f'<path d="M 32 13 L 40 31 A 8 3.5 0 0 1 24 31 Z" fill="{cone}" stroke="{OUTLINE}" '
-           f'stroke-opacity="0.7" stroke-width="1.3" stroke-linejoin="round"/>')
+@content_type("viewport", "Viewport")
+def viewport_asset(ic):
+    # A Viewport asset is a level: the same picture as the Viewport row it opens in the Outliner.
+    viewport(ic)
 
 
 @content_type("prefab", "Prefab")

@@ -216,6 +216,13 @@ void EditorUVE::DrawHierarchyBodyUVE() {
         const Scene::EntityUVE entityRoot = m_entityEditSession.has_value() ? GetEntityEditorRootUVE() : Scene::kInvalidEntityUVE;
         if (entityRoot != Scene::kInvalidEntityUVE) {
             DrawHierarchyNodeUVE(entityRoot);
+        } else if (GetDocumentViewportUVE() != Scene::kInvalidEntityUVE) {
+            // The level: the scene root is not shown; its Viewport, sun and environment are the top.
+            const Scene::EntityUVE sceneRoot = GetDocumentSceneRootUVE();
+            for (const Scene::EntityUVE top :
+                 m_services->GetSceneGraphUVE().GetChildrenUVE(m_services->GetEntityManagerUVE(), sceneRoot)) {
+                DrawHierarchyNodeUVE(top);
+            }
         } else {
             for (const Scene::EntityUVE root : GetDocumentRootsUVE()) {
                 DrawHierarchyNodeUVE(root);
@@ -284,6 +291,8 @@ void EditorUVE::DrawHierarchyNodeUVE(const Scene::EntityUVE entity) {
                std::find(m_hierarchyRevealAncestors.begin(), m_hierarchyRevealAncestors.end(), entity) !=
                    m_hierarchyRevealAncestors.end()) {
         ImGui::SetNextItemOpen(true, ImGuiCond_Always);
+    } else if (entity == GetDocumentViewportUVE()) {
+        ImGui::SetNextItemOpen(true, ImGuiCond_Once); // the level's folders show from the start
     }
 
     const bool renaming = entity == m_hierarchyRenameEntity;
@@ -600,10 +609,19 @@ void EditorUVE::DrawNodePickerUVE() {
          HasSingleDocumentSelectionUVE())
             ? m_selectedEntity
             : Scene::kInvalidEntityUVE;
-    ImGui::TextDisabled("%s", parent != Scene::kInvalidEntityUVE
-                                  ? ("Add to " + GetEntityDisplayLabelUVE(parent)).c_str()
-                                  : "Add to the scene");
+    // In a level the three entries go to different places, so the folder names its own.
+    const bool levelLayout = IsOutlinerLayoutActiveUVE() && GetDocumentViewportUVE() != Scene::kInvalidEntityUVE;
+    if (levelLayout) {
+        ImGui::TextDisabled("Add to the level");
+    } else {
+        ImGui::TextDisabled("%s", parent != Scene::kInvalidEntityUVE
+                                      ? ("Add to " + GetEntityDisplayLabelUVE(parent)).c_str()
+                                      : "Add to the scene");
+    }
     ImGui::Separator();
+    const std::string folderLabel =
+        levelLayout ? "New Folder in " + GetEntityDisplayLabelUVE(ResolveNewNodeParentForUVE(Scene::Nodes::SceneNodeKindUVE::Folder))
+                    : std::string{"New Folder"};
     const auto item = [this](const Scene::Nodes::SceneNodeKindUVE kind, const char* const label,
                              const char* const shortcut, const char* const tooltip) {
         DrawNodePickerIconUVE(m_uiAssets.GetNodeIconTextureIdUVE(kind));
@@ -613,17 +631,21 @@ void EditorUVE::DrawNodePickerUVE() {
         }
         return picked;
     };
-    if (item(Scene::Nodes::SceneNodeKindUVE::Folder, "New Folder", nullptr,
+    if (item(Scene::Nodes::SceneNodeKindUVE::Folder, folderLabel.c_str(), nullptr,
              "Groups nodes in this panel. It has no position, so nothing moves in the world.")) {
         static_cast<void>(CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Folder));
     }
     ImGui::Separator();
-    if (item(Scene::Nodes::SceneNodeKindUVE::DirectionalLight3D, "DirectionalLight3D", nullptr,
-             "The sun: a light from far away that falls on the whole level and casts its shadows.")) {
+    // The level has one of each; once it is there, it is no longer offered.
+    const bool hasSun = FindTopLevelNodeUVE(Scene::Nodes::SceneNodeKindUVE::DirectionalLight3D) != Scene::kInvalidEntityUVE;
+    const bool hasEnvironment =
+        FindTopLevelNodeUVE(Scene::Nodes::SceneNodeKindUVE::WorldEnvironment3D) != Scene::kInvalidEntityUVE;
+    if (!hasSun && item(Scene::Nodes::SceneNodeKindUVE::DirectionalLight3D, "DirectionalLight3D", nullptr,
+                        "The sun: a light from far away that falls on the whole level and casts its shadows.")) {
         static_cast<void>(CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::DirectionalLight3D));
     }
-    if (item(Scene::Nodes::SceneNodeKindUVE::WorldEnvironment3D, "WorldEnvironment", nullptr,
-             "The sky, ambient light and fog of the level.")) {
+    if (!hasEnvironment && item(Scene::Nodes::SceneNodeKindUVE::WorldEnvironment3D, "WorldEnvironment", nullptr,
+                                "The sky, ambient light and fog of the level.")) {
         static_cast<void>(CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::WorldEnvironment3D));
     }
     ImGui::Separator();

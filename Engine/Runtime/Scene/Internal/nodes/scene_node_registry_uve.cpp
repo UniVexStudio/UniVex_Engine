@@ -47,7 +47,7 @@ constexpr std::array<std::string_view, 1U> kUITextContracts{"UITextComponentUVE"
 constexpr std::array<std::string_view, 1U> kUIImageContracts{"UIImageComponentUVE"};
 constexpr std::array<std::string_view, 1U> kUIButtonContracts{"UIButtonComponentUVE"};
 
-constexpr std::array<SceneNodeDescriptorUVE, 46U> kDescriptors{
+constexpr std::array<SceneNodeDescriptorUVE, 47U> kDescriptors{
     // The document's structural root: created by the document lifecycle (new document,
     // load-time migration), never through the Add-Node library - libraryCreatable is false.
     SceneNodeDescriptorUVE{SceneNodeKindUVE::SceneRoot, "scene_root", "SceneRoot", "Scene", "Scene/SceneRootNodeDefinitionUVE", kNoContracts, false},
@@ -99,6 +99,7 @@ constexpr std::array<SceneNodeDescriptorUVE, 46U> kDescriptors{
     SceneNodeDescriptorUVE{SceneNodeKindUVE::UIButton, "ui_button", "UI Button", "UI", "UI/UIRuntimeUVE", kUIButtonContracts, true},
     SceneNodeDescriptorUVE{SceneNodeKindUVE::Folder, "folder", "Folder", "Scene", "Scene/Editor", kNoContracts, true},
     SceneNodeDescriptorUVE{SceneNodeKindUVE::DirectionalLight3D, "directional_light_3d", "DirectionalLight3D", "Rendering", "Render/LightSystemUVE", kDirectionalLightContracts, true},
+    SceneNodeDescriptorUVE{SceneNodeKindUVE::Viewport, "viewport", "Viewport", "Scene", "Scene/Editor", kNoContracts, false},
 };
 
 } // namespace

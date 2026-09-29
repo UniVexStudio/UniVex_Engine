@@ -370,26 +370,28 @@ TEST(EditorBridgeUVETest, SnapshotUVE_CopiesHierarchyInspectorAndNativePanelSess
             child, Scene::MeshComponentUVE{Asset::AssetGuidUVE{0x1111U}, Asset::AssetGuidUVE{0x2222U}});
 
         EditorBridgeSnapshotUVE snapshot = bridge.GetSnapshotUVE();
-        // The hierarchy leads with the document's ever-present SceneRoot, so the authored pair
-        // sits one level deeper than it did before one-root documents.
+        // The hierarchy leads with the document's ever-present SceneRoot, then the level's Viewport
+        // and its node folder; the authored pair sits inside that folder.
         const Scene::EntityUVE sceneRoot = editor.GetDocumentSceneRootUVE();
-        ASSERT_EQ(snapshot.hierarchy.entries.size(), 3U);
+        ASSERT_EQ(snapshot.hierarchy.entries.size(), 5U);
         EXPECT_EQ(snapshot.hierarchy.entries[0].entity,
                   (EditorBridgeEntityRefUVE{sceneRoot.index, sceneRoot.generation}));
         EXPECT_EQ(snapshot.hierarchy.entries[0].displayLabel, "SceneRoot");
         EXPECT_EQ(snapshot.hierarchy.entries[0].depth, 0U);
         EXPECT_EQ(snapshot.hierarchy.entries[0].childCount, 1U);
-        EXPECT_EQ(snapshot.hierarchy.entries[1].entity, (EditorBridgeEntityRefUVE{root.index, root.generation}));
-        ASSERT_TRUE(snapshot.hierarchy.entries[1].parent.has_value());
-        EXPECT_EQ(*snapshot.hierarchy.entries[1].parent,
-                  (EditorBridgeEntityRefUVE{sceneRoot.index, sceneRoot.generation}));
-        EXPECT_EQ(snapshot.hierarchy.entries[1].displayLabel, "Bridge Root");
-        EXPECT_EQ(snapshot.hierarchy.entries[1].depth, 1U);
-        EXPECT_EQ(snapshot.hierarchy.entries[1].childCount, 1U);
-        EXPECT_EQ(snapshot.hierarchy.entries[2].entity, (EditorBridgeEntityRefUVE{child.index, child.generation}));
-        ASSERT_TRUE(snapshot.hierarchy.entries[2].parent.has_value());
-        EXPECT_EQ(*snapshot.hierarchy.entries[2].parent, (EditorBridgeEntityRefUVE{root.index, root.generation}));
+        EXPECT_EQ(snapshot.hierarchy.entries[1].displayLabel, "uve_editor_bridge_panel_snapshot"); // the open level's asset name
+        EXPECT_EQ(snapshot.hierarchy.entries[2].displayLabel, "World");
         EXPECT_EQ(snapshot.hierarchy.entries[2].depth, 2U);
+        EXPECT_EQ(snapshot.hierarchy.entries[3].entity, (EditorBridgeEntityRefUVE{root.index, root.generation}));
+        ASSERT_TRUE(snapshot.hierarchy.entries[3].parent.has_value());
+        EXPECT_EQ(*snapshot.hierarchy.entries[3].parent, snapshot.hierarchy.entries[2].entity);
+        EXPECT_EQ(snapshot.hierarchy.entries[3].displayLabel, "Bridge Root");
+        EXPECT_EQ(snapshot.hierarchy.entries[3].depth, 3U);
+        EXPECT_EQ(snapshot.hierarchy.entries[3].childCount, 1U);
+        EXPECT_EQ(snapshot.hierarchy.entries[4].entity, (EditorBridgeEntityRefUVE{child.index, child.generation}));
+        ASSERT_TRUE(snapshot.hierarchy.entries[4].parent.has_value());
+        EXPECT_EQ(*snapshot.hierarchy.entries[4].parent, (EditorBridgeEntityRefUVE{root.index, root.generation}));
+        EXPECT_EQ(snapshot.hierarchy.entries[4].depth, 4U);
         ASSERT_EQ(snapshot.inspector.mode, EditorBridgeInspectorModeUVE::SingleSelection);
         ASSERT_TRUE(snapshot.inspector.activeEntity.has_value());
         EXPECT_EQ(snapshot.inspector.activeEntity->displayLabel, "Bridge Child");
@@ -439,9 +441,9 @@ TEST(EditorBridgeUVETest, SnapshotUVE_CopiesHierarchyInspectorAndNativePanelSess
         const EditorBridgeResponseUVE filtered = bridge.DispatchUVE(filterRequest);
         ASSERT_TRUE(filtered.applied);
         EXPECT_TRUE(filtered.snapshot.hierarchy.filterActive);
-        // The filter match plus its ancestor chain - which now includes the ever-present
-        // SceneRoot above the authored pair.
-        ASSERT_EQ(filtered.snapshot.hierarchy.entries.size(), 3U);
+        // The filter match plus its ancestor chain: SceneRoot, the Viewport and its folder above
+        // the authored pair.
+        ASSERT_EQ(filtered.snapshot.hierarchy.entries.size(), 5U);
         EXPECT_GT(filtered.snapshot.revision, snapshot.revision);
 
         EditorBridgeRequestUVE toggleRequest{};

@@ -329,6 +329,9 @@ void EditorUVE::InitUVE() {
     // A document always has exactly one scene root - the structural anchor at the top of the
     // hierarchy. A fresh editor start is an empty document with just the root.
     static_cast<void>(EnsureDocumentSceneRootUVE());
+    static_cast<void>(EnsureDocumentLayoutUVE());
+    ClearHistoryUVE();
+    m_sceneDirty = false;
 }
 
 void EditorUVE::TickUVE() {
@@ -888,6 +891,8 @@ bool EditorUVE::LoadSceneUVE() {
             }
         }
     }
+    // Levels saved before the Outliner layout get its Viewport, and their nodes a folder.
+    migrated = EnsureDocumentLayoutUVE() || migrated;
     ClearSelectionUVE();
     ClearHistoryUVE();
     m_sceneDirty = migrated; // a wrapped legacy file no longer matches its bytes on disk
@@ -2099,6 +2104,9 @@ Scene::EntityUVE EditorUVE::CreateSceneNodeEntityInternalUVE(const Scene::Nodes:
             entity = CreateNodeDefinitionEntityInternalUVE(Scene::FolderNodeDefinitionUVE{},
                                                             Scene::ApplyFolderNodeDefinitionUVE);
             break;
+        case Scene::Nodes::SceneNodeKindUVE::Viewport:
+            // The level's Viewport is created by the document layout (EnsureDocumentLayoutUVE).
+            return Scene::kInvalidEntityUVE;
         case Scene::Nodes::SceneNodeKindUVE::SceneRoot:
             // The scene root is created by the document lifecycle
             // (EnsureDocumentSceneRootUVE), never through the library path.
@@ -2123,6 +2131,12 @@ Scene::EntityUVE EditorUVE::CreateDocumentSceneNodeUVE(
         return Scene::kInvalidEntityUVE;
     }
 
+    // The level has one DirectionalLight3D and one WorldEnvironment at its top.
+    if (IsOutlinerLayoutActiveUVE() && IsTopLevelSingletonKindUVE(kind) &&
+        FindTopLevelNodeUVE(kind) != Scene::kInvalidEntityUVE) {
+        return Scene::kInvalidEntityUVE;
+    }
+
     const EditorSelectionSnapshotUVE selectionBefore = CaptureSelectionSnapshotUVE();
     const bool dirtyBefore = m_sceneDirty;
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
@@ -2133,7 +2147,7 @@ Scene::EntityUVE EditorUVE::CreateDocumentSceneNodeUVE(
 
     // New nodes join the hierarchy instead of becoming document roots, and are placed before the
     // snapshot below is taken, so undo and redo restore the same place.
-    const Scene::EntityUVE parentNode = ResolveNewNodeParentUVE();
+    const Scene::EntityUVE parentNode = ResolveNewNodeParentForUVE(kind);
     if (parentNode != Scene::kInvalidEntityUVE) {
         m_services->GetSceneGraphUVE().SetParentUVE(entityManager, entity, parentNode);
         InvalidateHierarchyFilterCacheUVE();
@@ -2312,12 +2326,24 @@ bool EditorUVE::ReparentDocumentEntityUVE(const Scene::EntityUVE entity, const S
     // One-root documents: "move to document root" means becoming a direct child of the
     // scene root - nothing but the root itself may sit at top level.
     // In the Entity Editor the entity's root plays that part.
+    // In the level, "the top" means the node's folder, or the Viewport for a folder.
+    const auto defaultParent = [this, entity] {
+        Scene::IEntityManagerUVE& manager = m_services->GetEntityManagerUVE();
+        if (GetDocumentViewportUVE() == Scene::kInvalidEntityUVE) {
+            return EnsureDocumentSceneRootUVE();
+        }
+        if (IsTopLevelSingletonKindUVE(Scene::ResolveSceneNodeKindUVE(manager, entity))) {
+            return EnsureDocumentSceneRootUVE();
+        }
+        return manager.HasComponentUVE<Scene::FolderComponentUVE>(entity) ? GetDocumentViewportUVE()
+                                                                          : ResolveNodeFolderUVE();
+    };
     const Scene::EntityUVE effectiveParent =
         newParent != Scene::kInvalidEntityUVE ? newParent
         : m_entityEditSession.has_value()     ? GetEntityEditorRootUVE()
-                                              : EnsureDocumentSceneRootUVE();
+                                              : defaultParent();
     if (effectiveParent == Scene::kInvalidEntityUVE || entity == effectiveParent ||
-        DoesSubtreeContainEntityUVE(entity, effectiveParent)) {
+        DoesSubtreeContainEntityUVE(entity, effectiveParent) || !IsAllowedOutlinerParentUVE(entity, effectiveParent)) {
         return false;
     }
     Scene::EntityUVE parentBefore = Scene::kInvalidEntityUVE;
@@ -2728,6 +2754,9 @@ std::vector<Scene::EntityUVE> EditorUVE::GetEligibleReparentParentsUVE(const Sce
     for (const Scene::EntityUVE root : GetDocumentRootsUVE()) {
         visit(visit, root);
     }
+    std::erase_if(candidates, [this, entity](const Scene::EntityUVE parent) {
+        return !IsAllowedOutlinerParentUVE(entity, parent);
+    });
     return candidates;
 }
 
@@ -2977,6 +3006,25 @@ Scene::EntityUVE EditorUVE::CreateDocumentEntityInternalUVE(
 }
 
 Scene::EntityUVE EditorUVE::ResolveNewNodeParentUVE() {
+    // In the level, a node always lives in a folder: under the selection when it is in one, else in
+    // the folder new nodes go to.
+    if (IsOutlinerLayoutActiveUVE() && GetDocumentViewportUVE() != Scene::kInvalidEntityUVE) {
+        Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+        if (m_newNodesUnderSelection && m_selectedEntity != Scene::kInvalidEntityUVE &&
+            IsDocumentSubtreeUVE(m_selectedEntity) && m_selectedEntity != GetDocumentViewportUVE()) {
+            for (Scene::EntityUVE cursor = m_selectedEntity, parent = Scene::kInvalidEntityUVE;
+                 cursor != Scene::kInvalidEntityUVE && TryGetDocumentParentUVE(cursor, parent); cursor = parent) {
+                if (entityManager.HasComponentUVE<Scene::FolderComponentUVE>(cursor) &&
+                    !entityManager.HasComponentUVE<Scene::OutlinerViewportComponentUVE>(cursor)) {
+                    if (cursor == m_selectedEntity) {
+                        m_lastUsedFolder = cursor;
+                    }
+                    return m_selectedEntity;
+                }
+            }
+        }
+        return ResolveNodeFolderUVE();
+    }
     if (m_newNodesUnderSelection && m_selectedEntity != Scene::kInvalidEntityUVE &&
         IsDocumentSubtreeUVE(m_selectedEntity)) {
         return m_selectedEntity;
@@ -2989,6 +3037,208 @@ Scene::EntityUVE EditorUVE::ResolveNewNodeParentUVE() {
         }
     }
     return EnsureDocumentSceneRootUVE();
+}
+
+Scene::EntityUVE EditorUVE::ResolveNewNodeParentForUVE(const Scene::Nodes::SceneNodeKindUVE kind) {
+    if (!IsOutlinerLayoutActiveUVE() || GetDocumentViewportUVE() == Scene::kInvalidEntityUVE) {
+        return ResolveNewNodeParentUVE();
+    }
+    if (IsTopLevelSingletonKindUVE(kind)) {
+        return EnsureDocumentSceneRootUVE();
+    }
+    if (kind == Scene::Nodes::SceneNodeKindUVE::Folder) {
+        // Into the selected folder (or the Viewport itself); otherwise the Viewport.
+        Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+        if (m_selectedEntity != Scene::kInvalidEntityUVE && IsDocumentSubtreeUVE(m_selectedEntity) &&
+            entityManager.HasComponentUVE<Scene::FolderComponentUVE>(m_selectedEntity)) {
+            return m_selectedEntity;
+        }
+        return GetDocumentViewportUVE();
+    }
+    return ResolveNewNodeParentUVE();
+}
+
+bool EditorUVE::IsOutlinerLayoutActiveUVE() const noexcept {
+    return !m_entityEditSession.has_value() && !m_retargetPreview.has_value();
+}
+
+Scene::EntityUVE EditorUVE::GetDocumentViewportUVE() {
+    if (!IsOutlinerLayoutActiveUVE()) {
+        return Scene::kInvalidEntityUVE;
+    }
+    Scene::EntityUVE found = Scene::kInvalidEntityUVE;
+    m_services->GetEntityManagerUVE().ForEachUVE<Scene::OutlinerViewportComponentUVE>(
+        [&found](const Scene::EntityUVE entity, const Scene::OutlinerViewportComponentUVE&) {
+            if (found == Scene::kInvalidEntityUVE) {
+                found = entity;
+            }
+        });
+    return found;
+}
+
+bool EditorUVE::IsTopLevelSingletonKindUVE(const Scene::Nodes::SceneNodeKindUVE kind) const noexcept {
+    return kind == Scene::Nodes::SceneNodeKindUVE::DirectionalLight3D ||
+           kind == Scene::Nodes::SceneNodeKindUVE::WorldEnvironment3D;
+}
+
+Scene::EntityUVE EditorUVE::FindTopLevelNodeUVE(const Scene::Nodes::SceneNodeKindUVE kind) {
+    const Scene::EntityUVE sceneRoot = GetDocumentSceneRootUVE();
+    if (sceneRoot == Scene::kInvalidEntityUVE) {
+        return Scene::kInvalidEntityUVE;
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    for (const Scene::EntityUVE child : m_services->GetSceneGraphUVE().GetChildrenUVE(entityManager, sceneRoot)) {
+        if (Scene::ResolveSceneNodeKindUVE(entityManager, child) == kind) {
+            return child;
+        }
+    }
+    return Scene::kInvalidEntityUVE;
+}
+
+bool EditorUVE::EnsureDocumentLayoutUVE() {
+    if (!IsOutlinerLayoutActiveUVE()) {
+        return false;
+    }
+    const Scene::EntityUVE sceneRoot = EnsureDocumentSceneRootUVE();
+    if (sceneRoot == Scene::kInvalidEntityUVE) {
+        return false;
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = m_services->GetSceneGraphUVE();
+    bool changed = false;
+    Scene::EntityUVE viewport = GetDocumentViewportUVE();
+    if (viewport == Scene::kInvalidEntityUVE) {
+        viewport = CreateDocumentEntityShellInternalUVE("Viewport");
+        if (viewport == Scene::kInvalidEntityUVE) {
+            return false;
+        }
+        Scene::ApplyViewportNodeDefinitionUVE(entityManager, viewport, Scene::ViewportNodeDefinitionUVE{});
+        Scene::SetSceneNodeKindUVE(entityManager, viewport, Scene::Nodes::SceneNodeKindUVE::Viewport);
+        sceneGraph.SetParentUVE(entityManager, viewport, sceneRoot);
+        changed = true;
+    }
+    if (Scene::EntityUVE parent = Scene::kInvalidEntityUVE;
+        !TryGetDocumentParentUVE(viewport, parent) || parent != sceneRoot) {
+        sceneGraph.SetParentUVE(entityManager, viewport, sceneRoot);
+        changed = true;
+    }
+    static_cast<void>(sceneGraph.SetSiblingIndexUVE(entityManager, viewport, 0U));
+    // The Viewport is the open level: it carries the name of its asset in the Content Browser.
+    if (const std::string stem = m_activeScenePath.stem().string(); !stem.empty()) {
+        if (!entityManager.HasComponentUVE<Scene::NameComponentUVE>(viewport)) {
+            entityManager.AddComponentUVE<Scene::NameComponentUVE>(viewport, Scene::NameComponentUVE{stem});
+        } else if (entityManager.GetComponentUVE<Scene::NameComponentUVE>(viewport).name != stem) {
+            entityManager.GetComponentUVE<Scene::NameComponentUVE>(viewport).name = stem;
+            changed = true;
+        }
+    }
+
+    // Anything at the top that is not one of the three moves into a folder; a folder moves into the
+    // Viewport. A second DirectionalLight3D or WorldEnvironment is an ordinary node there.
+    bool seenLight = false;
+    bool seenEnvironment = false;
+    std::vector<Scene::EntityUVE> strays;
+    for (const Scene::EntityUVE child : sceneGraph.GetChildrenUVE(entityManager, sceneRoot)) {
+        if (child == viewport) {
+            continue;
+        }
+        const Scene::Nodes::SceneNodeKindUVE kind = Scene::ResolveSceneNodeKindUVE(entityManager, child);
+        if (kind == Scene::Nodes::SceneNodeKindUVE::DirectionalLight3D && !seenLight) {
+            seenLight = true;
+        } else if (kind == Scene::Nodes::SceneNodeKindUVE::WorldEnvironment3D && !seenEnvironment) {
+            seenEnvironment = true;
+        } else {
+            strays.push_back(child);
+        }
+    }
+    const bool viewportEmpty = sceneGraph.GetChildrenUVE(entityManager, viewport).empty();
+    Scene::EntityUVE world = Scene::kInvalidEntityUVE;
+    for (const Scene::EntityUVE stray : strays) {
+        if (entityManager.HasComponentUVE<Scene::FolderComponentUVE>(stray)) {
+            sceneGraph.SetParentUVE(entityManager, stray, viewport);
+        } else {
+            if (world == Scene::kInvalidEntityUVE) {
+                world = ResolveNodeFolderUVE();
+            }
+            sceneGraph.SetParentUVE(entityManager, stray, world);
+        }
+        changed = true;
+    }
+    // A level always starts with a folder to put things in.
+    if (viewportEmpty && sceneGraph.GetChildrenUVE(entityManager, viewport).empty()) {
+        static_cast<void>(ResolveNodeFolderUVE());
+        changed = true;
+    }
+    InvalidateHierarchyFilterCacheUVE();
+    return changed;
+}
+
+Scene::EntityUVE EditorUVE::ResolveNodeFolderUVE() {
+    const Scene::EntityUVE viewport = GetDocumentViewportUVE();
+    if (viewport == Scene::kInvalidEntityUVE) {
+        return EnsureDocumentSceneRootUVE();
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = m_services->GetSceneGraphUVE();
+    const auto inViewport = [&](const Scene::EntityUVE folder) {
+        for (Scene::EntityUVE cursor = folder, parent = Scene::kInvalidEntityUVE;
+             cursor != Scene::kInvalidEntityUVE && TryGetDocumentParentUVE(cursor, parent); cursor = parent) {
+            if (parent == viewport) {
+                return true;
+            }
+        }
+        return false;
+    };
+    if (m_lastUsedFolder != Scene::kInvalidEntityUVE && entityManager.IsAliveUVE(m_lastUsedFolder) &&
+        entityManager.HasComponentUVE<Scene::FolderComponentUVE>(m_lastUsedFolder) && inViewport(m_lastUsedFolder)) {
+        return m_lastUsedFolder;
+    }
+    for (const Scene::EntityUVE child : sceneGraph.GetChildrenUVE(entityManager, viewport)) {
+        if (entityManager.HasComponentUVE<Scene::FolderComponentUVE>(child)) {
+            return m_lastUsedFolder = child;
+        }
+    }
+    const Scene::EntityUVE world = CreateDocumentEntityShellInternalUVE(MakeUniqueDocumentEntityNameUVE("World"));
+    if (world == Scene::kInvalidEntityUVE) {
+        return viewport;
+    }
+    Scene::ApplyFolderNodeDefinitionUVE(entityManager, world, Scene::FolderNodeDefinitionUVE{});
+    Scene::SetSceneNodeKindUVE(entityManager, world, Scene::Nodes::SceneNodeKindUVE::Folder);
+    sceneGraph.SetParentUVE(entityManager, world, viewport);
+    InvalidateHierarchyFilterCacheUVE();
+    return m_lastUsedFolder = world;
+}
+
+bool EditorUVE::IsAllowedOutlinerParentUVE(const Scene::EntityUVE entity, const Scene::EntityUVE parent) {
+    if (!IsOutlinerLayoutActiveUVE() || GetDocumentViewportUVE() == Scene::kInvalidEntityUVE) {
+        return true;
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    const Scene::EntityUVE sceneRoot = GetDocumentSceneRootUVE();
+    const Scene::EntityUVE viewport = GetDocumentViewportUVE();
+    if (entity == viewport) {
+        return parent == sceneRoot;
+    }
+    const Scene::Nodes::SceneNodeKindUVE kind = Scene::ResolveSceneNodeKindUVE(entityManager, entity);
+    if (parent == sceneRoot) {
+        // Only the level's own sun and environment sit beside the Viewport, one of each.
+        const Scene::EntityUVE existing = IsTopLevelSingletonKindUVE(kind) ? FindTopLevelNodeUVE(kind) : entity;
+        return IsTopLevelSingletonKindUVE(kind) && (existing == Scene::kInvalidEntityUVE || existing == entity);
+    }
+    if (parent == viewport) {
+        return entityManager.HasComponentUVE<Scene::FolderComponentUVE>(entity);
+    }
+    // Anywhere else in the Viewport's tree is inside a folder.
+    for (Scene::EntityUVE cursor = parent, up = Scene::kInvalidEntityUVE;
+         cursor != Scene::kInvalidEntityUVE && TryGetDocumentParentUVE(cursor, up); cursor = up) {
+        if (cursor == viewport) {
+            return true;
+        }
+        if (up == viewport) {
+            return true;
+        }
+    }
+    return false;
 }
 
 void EditorUVE::PlaceNewDocumentNodeUVE(const Scene::EntityUVE entity) {
@@ -3284,6 +3534,7 @@ bool EditorUVE::RedoHistoryEntryUVE(HistoryEntryUVE& entry) {
 
 bool EditorUVE::IsStructuralRootUVE(const Scene::EntityUVE entity) {
     return IsSceneRootEntityUVE(entity) ||
+           (entity != Scene::kInvalidEntityUVE && entity == GetDocumentViewportUVE()) ||
            (m_entityEditSession.has_value() && entity != Scene::kInvalidEntityUVE && entity == GetEntityEditorRootUVE());
 }
 
@@ -4316,7 +4567,7 @@ const char* EditorUVE::GetContentBrowserItemTypeLabelUVE(const ContentBrowserIte
         case ContentBrowserItemTypeUVE::Folder:
             return "Folder";
         case ContentBrowserItemTypeUVE::Scene:
-            return "Scene";
+            return "Viewport"; // a level: it opens as the Viewport in the Outliner
         case ContentBrowserItemTypeUVE::Prefab:
             return "Prefab";
         case ContentBrowserItemTypeUVE::Entity:
