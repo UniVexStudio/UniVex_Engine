@@ -187,20 +187,9 @@ void EditorUVE::DrawMenuBarUVE() {
             ImGui::End();
             return;
         }
-        // The logo's place. A square mark for now, drawn here like the editor's other icons, until
-        // the studio's logo file replaces it.
-        {
-            constexpr float kLogoSizeUVE = 18.0F;
-            const ImVec2 logoMin = ImGui::GetCursorScreenPos();
-            const ImVec2 logoMax{logoMin.x + kLogoSizeUVE, logoMin.y + kLogoSizeUVE};
-            titleDrawList->AddRectFilled(logoMin, logoMax, IM_COL32(66, 120, 184, 255), 4.0F);
-            const ImVec2 markSize = ImGui::CalcTextSize("U");
-            titleDrawList->AddText(ImVec2{logoMin.x + (kLogoSizeUVE - markSize.x) * 0.5F,
-                                          logoMin.y + (kLogoSizeUVE - markSize.y) * 0.5F},
-                                   IM_COL32(255, 255, 255, 255), "U");
-            ImGui::Dummy(ImVec2{kLogoSizeUVE, kLogoSizeUVE});
-            ImGui::SameLine(0.0F, 10.0F);
-        }
+        // The logo's box covers the corner (drawn after this row); the row starts beside it.
+        ImGui::Dummy(ImVec2{kEditorTopChromeHeightUVE - ImGui::GetCursorPosX() + 4.0F, 1.0F});
+        ImGui::SameLine(0.0F, 0.0F);
 
         // File/Edit/Assets/GameObject/Plugin/Window/Help all fold into one "Menu" dropdown here in
         // the title bar, replacing what used to be a separate always-visible menu-bar row below it
@@ -322,16 +311,16 @@ void EditorUVE::DrawMenuBarUVE() {
         ImGui::End();
     }
 
-    // The tool strip: over the viewport, between the Outliner and the Inspector, which rise past it
-    // to the title bar. Play controls on the left; the rest is kept for the editor's tools. A
-    // workspace that fills the window (Scripting, an open Entity Editor) gets it full width.
+    // The header row. Over the viewport it is the viewport's own header: its name, then the play
+    // controls, then room for the editor's tools. A workspace that fills the window (Scripting, an
+    // open Entity Editor, the Retarget preview) gets a plain full-width strip with the play controls.
     const bool sidePanelsShown = m_activeWorkspace != EditorWorkspaceUVE::Scripting && !m_entityEditSession.has_value() &&
                                  !m_retargetPreview.has_value();
     const EditorChromeLayoutUVE stripLayout =
         ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight);
-    const ImVec2 stripPos = sidePanelsShown ? stripLayout.toolStripPos
+    const ImVec2 stripPos = sidePanelsShown ? stripLayout.viewportHeaderPos
                                             : ImVec2{mainViewport->WorkPos.x, mainViewport->WorkPos.y + kEditorTitleBarHeightUVE};
-    const ImVec2 stripSize = sidePanelsShown ? stripLayout.toolStripSize : ImVec2{mainViewport->WorkSize.x, kEditorToolbarHeightUVE};
+    const ImVec2 stripSize = sidePanelsShown ? stripLayout.viewportHeaderSize : ImVec2{mainViewport->WorkSize.x, kEditorToolbarHeightUVE};
     ImGui::SetNextWindowPos(stripPos, ImGuiCond_Always);
     ImGui::SetNextWindowSize(stripSize, ImGuiCond_Always);
     if (beginChromeWindow("##uve-tool-row", chromeFlags)) {
@@ -342,13 +331,22 @@ void EditorUVE::DrawMenuBarUVE() {
         toolbarDrawList->AddLine(ImVec2{toolbarMin.x, toolbarMax.y - 1.0F}, ImVec2{toolbarMax.x, toolbarMax.y - 1.0F},
                                  IM_COL32(48, 55, 64, 235), 1.0F);
 
-        // ---- Play/Pause/Stop, at the start of the strip ----------------------------------------
         constexpr float kTransportButtonWidthUVE = 32.0F;
         constexpr float kTransportButtonHeightUVE = 20.0F;
         constexpr float kTransportButtonGapUVE = 2.0F;
-        constexpr float kStripPaddingUVE = 6.0F;
-        ImGui::SetCursorScreenPos(ImVec2{toolbarMin.x + kStripPaddingUVE,
-                                         toolbarMin.y + (kEditorToolbarHeightUVE - kTransportButtonHeightUVE) * 0.5F});
+        constexpr float kStripPaddingUVE = 8.0F;
+        float cursorX = toolbarMin.x + kStripPaddingUVE;
+        // ---- The viewport's name -----------------------------------------------------------------
+        if (sidePanelsShown) {
+            const char* const name = "Viewport";
+            const float textY = toolbarMin.y + (kEditorToolbarHeightUVE - ImGui::GetTextLineHeight()) * 0.5F;
+            toolbarDrawList->AddText(ImVec2{cursorX, textY}, ImGui::GetColorU32(ImGuiCol_Text), name);
+            cursorX += ImGui::CalcTextSize(name).x + 14.0F;
+            toolbarDrawList->AddLine(ImVec2{cursorX - 7.0F, toolbarMin.y + 6.0F}, ImVec2{cursorX - 7.0F, toolbarMax.y - 6.0F},
+                                     IM_COL32(58, 66, 76, 255), 1.0F);
+        }
+        // ---- Play/Pause/Stop -----------------------------------------------------------------------
+        ImGui::SetCursorScreenPos(ImVec2{cursorX, toolbarMin.y + (kEditorToolbarHeightUVE - kTransportButtonHeightUVE) * 0.5F});
         const auto drawTransportButton = [](const char* const id, const bool enabled, const auto& drawIcon) {
             ImGui::BeginDisabled(!enabled);
             ImGui::PushID(id);
@@ -424,6 +422,48 @@ void EditorUVE::DrawMenuBarUVE() {
         const ImVec2 dividerTop = ImGui::GetCursorScreenPos();
         toolbarDrawList->AddLine(ImVec2{dividerTop.x, toolbarMin.y + 6.0F},
                                  ImVec2{dividerTop.x, toolbarMax.y - 6.0F}, IM_COL32(58, 66, 76, 255), 1.0F);
+        ImGui::End();
+    }
+
+    // The Outliner's header, beside the logo: its name where a title row used to be.
+    if (sidePanelsShown && m_scenePanelVisible && stripLayout.outlinerHeaderSize.x > 0.0F) {
+        ImGui::SetNextWindowPos(stripLayout.outlinerHeaderPos, ImGuiCond_Always);
+        ImGui::SetNextWindowSize(stripLayout.outlinerHeaderSize, ImGuiCond_Always);
+        if (beginChromeWindow("##uve-outliner-header", chromeFlags)) {
+            ImDrawList* const drawList = ImGui::GetWindowDrawList();
+            const ImVec2 min = ImGui::GetWindowPos();
+            const ImVec2 max{min.x + ImGui::GetWindowWidth(), min.y + kEditorToolbarHeightUVE};
+            drawList->AddRectFilled(min, max, IM_COL32(32, 37, 43, 255));
+            drawList->AddLine(ImVec2{min.x, max.y - 1.0F}, ImVec2{max.x, max.y - 1.0F}, IM_COL32(48, 55, 64, 235), 1.0F);
+            drawList->AddText(ImVec2{min.x + 8.0F, min.y + (kEditorToolbarHeightUVE - ImGui::GetTextLineHeight()) * 0.5F},
+                              ImGui::GetColorU32(ImGuiCol_Text), "Outliner");
+            ImGui::End();
+        }
+    }
+
+    // The logo's box: the top-left corner, as tall as the title bar and the header row together,
+    // drawn last so it sits over both. A square mark stands in until the studio's logo file exists.
+    ImGui::SetNextWindowPos(stripLayout.logoPos, ImGuiCond_Always);
+    ImGui::SetNextWindowSize(stripLayout.logoSize, ImGuiCond_Always);
+    if (beginChromeWindow("##uve-logo", chromeFlags & ~ImGuiWindowFlags_NoBringToFrontOnFocus)) {
+        ImDrawList* const drawList = ImGui::GetWindowDrawList();
+        const ImVec2 min = ImGui::GetWindowPos();
+        const ImVec2 max{min.x + stripLayout.logoSize.x, min.y + stripLayout.logoSize.y};
+        drawList->AddRectFilled(min, max, IM_COL32(17, 21, 26, 255));
+        drawList->AddLine(ImVec2{max.x - 1.0F, min.y}, ImVec2{max.x - 1.0F, max.y}, IM_COL32(48, 55, 64, 235), 1.0F);
+        drawList->AddLine(ImVec2{min.x, max.y - 1.0F}, ImVec2{max.x, max.y - 1.0F}, IM_COL32(48, 55, 64, 235), 1.0F);
+        constexpr float kInsetUVE = 7.0F;
+        const ImVec2 markMin{min.x + kInsetUVE, min.y + kInsetUVE};
+        const ImVec2 markMax{max.x - kInsetUVE, max.y - kInsetUVE};
+        drawList->AddRectFilled(markMin, markMax, IM_COL32(66, 120, 184, 255), 6.0F);
+        const float fontSize = ImGui::GetFontSize() * 1.6F;
+        const ImVec2 markSize = ImGui::GetFont()->CalcTextSizeA(fontSize, FLT_MAX, 0.0F, "U");
+        drawList->AddText(ImGui::GetFont(), fontSize,
+                          ImVec2{(markMin.x + markMax.x - markSize.x) * 0.5F, (markMin.y + markMax.y - markSize.y) * 0.5F},
+                          IM_COL32(255, 255, 255, 255), "U");
+        if (ImGui::IsWindowHovered()) {
+            ImGui::SetTooltip("UniVex Engine");
+        }
         ImGui::End();
     }
 }

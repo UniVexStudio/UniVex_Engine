@@ -162,7 +162,8 @@ void EditorUVE::DrawHierarchyPanelUVE() {
     // user-repositionable extras rather than part of the fixed chrome.
     ImGui::SetNextWindowPos(layout.scenePos, ImGuiCond_Always);
     ImGui::SetNextWindowSize(layout.sceneSize, ImGuiCond_Always);
-    ImGui::Begin(kPanelLabelSceneUVE);
+    // No title row: the Outliner's name sits in the header row beside the logo.
+    ImGui::Begin(kPanelLabelSceneUVE, nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse);
     DrawHierarchyBodyUVE();
     ImGui::End();
 }

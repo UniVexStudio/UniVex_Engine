@@ -33,9 +33,15 @@ struct EditorChromeLayoutUVE final {
     /// The strip of dock tabs along the very bottom, full width.
     ImVec2 dockTabBarPos;
     ImVec2 dockTabBarSize;
-    /// The tool strip over the viewport, between the side panels: play controls and the editor's tools.
-    ImVec2 toolStripPos;
-    ImVec2 toolStripSize;
+    /// The viewport's header row, over its image: its name, the play controls, and the editor's tools.
+    ImVec2 viewportHeaderPos;
+    ImVec2 viewportHeaderSize;
+    /// The logo's box in the top-left corner, as tall as the title bar and the header row together.
+    ImVec2 logoPos;
+    ImVec2 logoSize;
+    /// The Outliner's header row, beside the logo; the Outliner's tree starts under it.
+    ImVec2 outlinerHeaderPos;
+    ImVec2 outlinerHeaderSize;
 };
 
 /// Shared across the editor's panel translation units.
@@ -75,9 +81,16 @@ constexpr float kInspectorPanelWidthFractionUVE = 0.18F;
 constexpr float kInspectorPanelWidthMinUVE = 220.0F;
 constexpr float kInspectorPanelWidthMaxUVE = 300.0F;
 
-/// The editor's panel rectangles. The Outliner and Inspector columns run the full height, from under
-/// the title bar down to the dock tab strip. The centre column holds the tool strip (play controls,
-/// editor tools), the viewport under it, and the bottom dock under that. The tab strip spans the full width at the very bottom and stays when the dock is hidden,
+/// The editor's panel rectangles.
+///
+///   [logo][ title bar: Menu, status ...................................................... ]
+///   [logo][ Outliner   ][ Viewport name  > []  tools ................... ][ Inspector tabs ]
+///   [ Outliner tree    ][ viewport image                                ][ Inspector      ]
+///   [                  ][ bottom dock                                   ][                ]
+///   [ dock tabs ............................................................................ ]
+///
+/// The logo's box spans the title bar and the header row. The Inspector runs from under the title
+/// bar; the Outliner's tree and the viewport's image start under the header row. The tab strip spans the full width at the very bottom and stays when the dock is hidden,
 /// since it is how the dock is brought back. `dockHeight` is the dock body's height, clamped so the
 /// viewport keeps its minimum.
 [[nodiscard]] inline EditorChromeLayoutUVE ComputeEditorChromeLayoutUVE(const ImGuiViewport& viewport,
@@ -108,10 +121,14 @@ constexpr float kInspectorPanelWidthMaxUVE = 300.0F;
     const float top = originY + chromeHeight;
 
     EditorChromeLayoutUVE layout{};
-    layout.scenePos = ImVec2{originX, sideTop};
-    layout.sceneSize = ImVec2{sceneWidth, sideHeight};
-    layout.toolStripPos = ImVec2{originX + sceneWidth, sideTop};
-    layout.toolStripSize = ImVec2{viewportWidth, kEditorToolbarHeightUVE};
+    layout.logoPos = ImVec2{originX, originY};
+    layout.logoSize = ImVec2{kEditorTopChromeHeightUVE, kEditorTopChromeHeightUVE};
+    layout.outlinerHeaderPos = ImVec2{originX + kEditorTopChromeHeightUVE, sideTop};
+    layout.outlinerHeaderSize = ImVec2{std::max(0.0F, sceneWidth - kEditorTopChromeHeightUVE), kEditorToolbarHeightUVE};
+    layout.scenePos = ImVec2{originX, top};
+    layout.sceneSize = ImVec2{sceneWidth, columnHeight};
+    layout.viewportHeaderPos = ImVec2{originX + sceneWidth, sideTop};
+    layout.viewportHeaderSize = ImVec2{viewportWidth, kEditorToolbarHeightUVE};
     layout.viewportPos = ImVec2{originX + sceneWidth, top};
     layout.viewportSize = ImVec2{viewportWidth, std::max(kMinimumViewportHeightUVE, columnHeight - dock)};
     layout.inspectorPos = ImVec2{originX + sceneWidth + viewportWidth, sideTop};
