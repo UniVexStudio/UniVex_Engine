@@ -263,15 +263,12 @@ TEST(AnimationTreeUVETest, StateMachineMovesOnConditionsAndConsumesTriggers) {
     AnimationTransitionUVE go;
     go.fromState = 0U;
     go.toState = 1U;
-    go.condition = AnimationConditionUVE::ParameterGreater;
-    go.parameter = "speed";
-    go.threshold = 0.5F;
+    go.conditions = {AnimationTransitionConditionUVE{AnimationConditionUVE::ParameterGreater, "speed", 0.5F}};
     go.fadeSeconds = 0.0F;
     AnimationTransitionUVE stop;
     stop.fromState = kAnyAnimationStateUVE;
     stop.toState = 0U;
-    stop.condition = AnimationConditionUVE::Triggered;
-    stop.parameter = "stop";
+    stop.conditions = {AnimationTransitionConditionUVE{AnimationConditionUVE::Triggered, "stop", 0.0F}};
     stop.fadeSeconds = 0.0F;
     machine.transitions = {go, stop};
     tree.nodes = {GraphFixtureUVE::NodeUVE(1U, Kind::Output, {2U}), machine,
@@ -298,7 +295,7 @@ TEST(AnimationTreeUVETest, StateMachineCrossfadesAndCanWaitForTheEnd) {
     AnimationTransitionUVE atEnd;
     atEnd.fromState = 0U;
     atEnd.toState = 1U;
-    atEnd.condition = AnimationConditionUVE::AtEnd;
+    atEnd.conditions = {AnimationTransitionConditionUVE{AnimationConditionUVE::AtEnd, {}, 0.0F}};
     atEnd.fadeSeconds = 1.0F;
     machine.transitions = {atEnd};
     tree.nodes = {GraphFixtureUVE::NodeUVE(1U, Kind::Output, {2U}), machine,
@@ -322,7 +319,7 @@ TEST(AnimationTreeUVETest, StateMachineInertializesByDefault) {
     AnimationTransitionUVE atEnd;
     atEnd.fromState = 0U;
     atEnd.toState = 1U;
-    atEnd.condition = AnimationConditionUVE::AtEnd;
+    atEnd.conditions = {AnimationTransitionConditionUVE{AnimationConditionUVE::AtEnd, {}, 0.0F}};
     atEnd.fadeSeconds = 1.0F;
     machine.transitions = {atEnd};
     tree.nodes = {GraphFixtureUVE::NodeUVE(1U, Kind::Output, {2U}), machine,
@@ -336,6 +333,149 @@ TEST(AnimationTreeUVETest, StateMachineInertializesByDefault) {
     // Once the second is up only Land shows: 1.25 s wraps to 0.25 s, 5.
     static_cast<void>(fixture.StepUVE(tree, 0.25F));
     EXPECT_NEAR(fixture.StepUVE(tree, 0.5F), 5.0F, 1e-3F);
+}
+
+/// Idle (0 m) and Run (10 m per second) as a two-state machine from Idle to Run, crossfading.
+[[nodiscard]] AnimationTreeComponentUVE TwoStateMachineUVE(GraphFixtureUVE& fixture, const AnimationTransitionUVE& transition,
+                                                          const double runSeconds = 1.0) {
+    AnimationTreeComponentUVE tree;
+    tree.parameters = {AnimationParameterUVE{"speed", AnimationParameterTypeUVE::Float, 0.0F},
+                       AnimationParameterUVE{"grounded", AnimationParameterTypeUVE::Bool, 0.0F},
+                       AnimationParameterUVE{"jump", AnimationParameterTypeUVE::Trigger, 0.0F}};
+    AnimationGraphNodeUVE machine = GraphFixtureUVE::NodeUVE(2U, Kind::StateMachine, {3U, 4U});
+    machine.transitions = {transition};
+    tree.nodes = {GraphFixtureUVE::NodeUVE(1U, Kind::Output, {2U}), machine,
+                  GraphFixtureUVE::ClipNodeUVE(3U, fixture.AddClipUVE(0.0F), true, "Idle"),
+                  GraphFixtureUVE::ClipNodeUVE(4U, fixture.AddClipUVE(10.0F * static_cast<float>(runSeconds), runSeconds), true, "Run")};
+    fixture.mixer.transition = AnimationTransitionModeUVE::Crossfade;
+    return tree;
+}
+
+TEST(AnimationTreeUVETest, TransitionsNeedAllTheirConditionsAndKeepTheTriggerUntilTaken) {
+    GraphFixtureUVE fixture;
+    AnimationTransitionUVE go;
+    go.fromState = 0U;
+    go.toState = 1U;
+    go.fadeSeconds = 0.0F;
+    go.conditions = {AnimationTransitionConditionUVE{AnimationConditionUVE::Triggered, "jump", 0.0F},
+                     AnimationTransitionConditionUVE{AnimationConditionUVE::ParameterTrue, "grounded", 0.0F}};
+    AnimationTreeComponentUVE tree = TwoStateMachineUVE(fixture, go);
+    ASSERT_TRUE(SetAnimationTreeParameterUVE(tree, "jump", 1.0F));
+    static_cast<void>(fixture.StepUVE(tree, 0.1F));
+    EXPECT_EQ(tree.activeStates, "Idle") << "not grounded: the other condition fails";
+    EXPECT_EQ(tree.parameters[2].value, 1.0F) << "so the trigger is still waiting";
+    ASSERT_TRUE(SetAnimationTreeParameterUVE(tree, "grounded", 1.0F));
+    static_cast<void>(fixture.StepUVE(tree, 0.1F));
+    EXPECT_EQ(tree.activeStates, "Run");
+    EXPECT_EQ(tree.parameters[2].value, 0.0F) << "used up by the transition taken";
+    EXPECT_EQ(tree.nodeStates[1].lastTransition, 0U);
+}
+
+TEST(AnimationTreeUVETest, AnOffTransitionIsNeverTaken) {
+    GraphFixtureUVE fixture;
+    AnimationTransitionUVE go;
+    go.fromState = 0U;
+    go.toState = 1U;
+    go.enabled = false;
+    AnimationTreeComponentUVE tree = TwoStateMachineUVE(fixture, go);
+    static_cast<void>(fixture.StepUVE(tree, 0.1F));
+    static_cast<void>(fixture.StepUVE(tree, 0.1F));
+    EXPECT_EQ(tree.activeStates, "Idle");
+}
+
+TEST(AnimationTreeUVETest, LeaveAfterWaitsForThePhase) {
+    GraphFixtureUVE fixture;
+    AnimationTransitionUVE go;
+    go.fromState = 1U; // Run to Idle, once Run is three quarters through
+    go.toState = 0U;
+    go.fadeSeconds = 0.0F;
+    go.exitPhase = 0.75F;
+    AnimationTreeComponentUVE tree = TwoStateMachineUVE(fixture, go);
+    tree.nodes[1].entryState = 1U;
+    static_cast<void>(fixture.StepUVE(tree, 0.5F));
+    EXPECT_EQ(tree.activeStates, "Run") << "half way: not yet";
+    static_cast<void>(fixture.StepUVE(tree, 0.3F));
+    EXPECT_EQ(tree.activeStates, "Idle") << "past 75%: taken";
+}
+
+TEST(AnimationTreeUVETest, InStepStartsTheNextStateAtThePhaseLeft) {
+    GraphFixtureUVE fixture;
+    AnimationTransitionUVE go;
+    go.fromState = 0U;
+    go.toState = 1U;
+    go.fadeSeconds = 0.0F;
+    go.start = AnimationTransitionStartUVE::InStep;
+    go.conditions = {AnimationTransitionConditionUVE{AnimationConditionUVE::ParameterGreater, "speed", 0.5F}};
+    AnimationTreeComponentUVE tree = TwoStateMachineUVE(fixture, go, 2.0);
+    static_cast<void>(fixture.StepUVE(tree, 0.25F)); // Idle a quarter through its 1 s
+    ASSERT_TRUE(SetAnimationTreeParameterUVE(tree, "speed", 1.0F));
+    static_cast<void>(fixture.StepUVE(tree, 0.0F));
+    ASSERT_EQ(tree.activeStates, "Run");
+    EXPECT_NEAR(tree.nodeStates[3].timeSeconds, 0.5, 1e-6) << "a quarter through Run's 2 s";
+}
+
+TEST(AnimationTreeUVETest, ContinuePicksUpWhereTheStateWasLeft) {
+    GraphFixtureUVE fixture;
+    AnimationTransitionUVE back;
+    back.fromState = 1U;
+    back.toState = 0U;
+    back.fadeSeconds = 0.0F;
+    back.conditions = {AnimationTransitionConditionUVE{AnimationConditionUVE::ParameterLess, "speed", 0.5F}};
+    AnimationTransitionUVE go;
+    go.fromState = 0U;
+    go.toState = 1U;
+    go.fadeSeconds = 0.0F;
+    go.start = AnimationTransitionStartUVE::Continue;
+    go.conditions = {AnimationTransitionConditionUVE{AnimationConditionUVE::ParameterGreater, "speed", 0.5F}};
+    AnimationTreeComponentUVE tree = TwoStateMachineUVE(fixture, back, 4.0);
+    tree.nodes[1].transitions.push_back(go);
+    tree.nodes[1].entryState = 1U;
+    ASSERT_TRUE(SetAnimationTreeParameterUVE(tree, "speed", 1.0F));
+    static_cast<void>(fixture.StepUVE(tree, 0.5F)); // Run at 0.5 s
+    ASSERT_TRUE(SetAnimationTreeParameterUVE(tree, "speed", 0.0F));
+    static_cast<void>(fixture.StepUVE(tree, 0.0F));
+    ASSERT_EQ(tree.activeStates, "Idle");
+    ASSERT_TRUE(SetAnimationTreeParameterUVE(tree, "speed", 1.0F));
+    static_cast<void>(fixture.StepUVE(tree, 0.0F));
+    ASSERT_EQ(tree.activeStates, "Run");
+    EXPECT_NEAR(tree.nodeStates[3].timeSeconds, 0.5, 1e-6) << "Run carries on from 0.5 s";
+}
+
+TEST(AnimationTreeUVETest, AFadeThatCannotBeInterruptedHoldsTheMachine) {
+    GraphFixtureUVE fixture;
+    AnimationTransitionUVE go;
+    go.fromState = 0U;
+    go.toState = 1U;
+    go.fadeSeconds = 1.0F;
+    go.interruptible = false;
+    go.conditions = {AnimationTransitionConditionUVE{AnimationConditionUVE::ParameterGreater, "speed", 0.5F}};
+    AnimationTransitionUVE back = go;
+    back.fromState = 1U;
+    back.toState = 0U;
+    back.conditions = {AnimationTransitionConditionUVE{AnimationConditionUVE::ParameterLess, "speed", 0.5F}};
+    AnimationTreeComponentUVE tree = TwoStateMachineUVE(fixture, go);
+    tree.nodes[1].transitions.push_back(back);
+    ASSERT_TRUE(SetAnimationTreeParameterUVE(tree, "speed", 1.0F));
+    static_cast<void>(fixture.StepUVE(tree, 0.1F));
+    ASSERT_EQ(tree.activeStates, "Run");
+    ASSERT_TRUE(SetAnimationTreeParameterUVE(tree, "speed", 0.0F));
+    static_cast<void>(fixture.StepUVE(tree, 0.4F));
+    EXPECT_EQ(tree.activeStates, "Run") << "the fade is under way and may not be interrupted";
+    static_cast<void>(fixture.StepUVE(tree, 0.7F));
+    EXPECT_EQ(tree.activeStates, "Idle") << "once it is over, the next one is taken";
+}
+
+TEST(AnimationTreeUVETest, CrossfadeCurvesShapeTheWeight) {
+    EXPECT_FLOAT_EQ(AnimationTransitionCurveWeightUVE(AnimationTransitionCurveUVE::Linear, 0.25F), 0.25F);
+    EXPECT_FLOAT_EQ(AnimationTransitionCurveWeightUVE(AnimationTransitionCurveUVE::EaseIn, 0.5F), 0.25F);
+    EXPECT_FLOAT_EQ(AnimationTransitionCurveWeightUVE(AnimationTransitionCurveUVE::EaseOut, 0.5F), 0.75F);
+    EXPECT_FLOAT_EQ(AnimationTransitionCurveWeightUVE(AnimationTransitionCurveUVE::EaseInOut, 0.5F), 0.5F);
+    for (const auto curve : {AnimationTransitionCurveUVE::Linear, AnimationTransitionCurveUVE::EaseIn,
+                             AnimationTransitionCurveUVE::EaseOut, AnimationTransitionCurveUVE::EaseInOut}) {
+        EXPECT_EQ(AnimationTransitionCurveWeightUVE(curve, 0.0F), 0.0F);
+        EXPECT_EQ(AnimationTransitionCurveWeightUVE(curve, 1.0F), 1.0F);
+        EXPECT_EQ(AnimationTransitionCurveWeightUVE(curve, 2.0F), 1.0F) << "clamped";
+    }
 }
 
 TEST(AnimationTreeUVETest, OneShotPlaysOverTheBaseAndHandsBack) {

@@ -2060,8 +2060,23 @@ private:
         int plotDrag = -2;
         Scene::AnimationTreeComponentUVE plotBefore;
         std::string boneSearch;
-        /// The node opened in its own editor (a Blend Space), 0 for the graph.
+        /// The node opened in its own editor (a Blend Space or a State Machine), 0 for the graph.
         std::uint32_t focus = 0U;
+        /// The State Machine view: its own pan and zoom (framed on first look), what is picked
+        /// (a state slot or a transition index, -1 for none), a box being dragged (a state slot,
+        /// kEntry/kAny, or -3 none) with the tree before it, a transition being drawn from a state
+        /// (or Any, or Entry to set the entry state), and a transition setting being dragged.
+        float statePanX = 0.0F;
+        float statePanY = 0.0F;
+        float stateZoom = 1.0F;
+        bool stateFramed = false;
+        std::uint32_t stateMachine = 0U;
+        int pickedState = -1;
+        int pickedTransition = -1;
+        int stateDrag = -3;
+        int linkFrom = -3;
+        bool transitionDragging = false;
+        Scene::AnimationTreeComponentUVE stateBefore;
         /// The Blend Space editor's tool (0 select and move, 1 add a point, 2 remove a point), its
         /// snapping, and the point whose animation is being picked (-1: none).
         int spaceTool = 0;
@@ -2082,6 +2097,12 @@ private:
     /// A Blend Space opened in the Anim Graph's own editor: tools, snapping, the axes' areas, and
     /// points to add (picking their animation at once), move and remove.
     void DrawBlendSpaceEditorUVE(Scene::EntityUVE tree, std::size_t nodeIndex);
+    /// A State Machine opened in the Anim Graph: its states as boxes with Entry and Any, the
+    /// transitions as arrows, drawn and edited in place, and what is running shown live.
+    void DrawStateMachineViewUVE(Scene::EntityUVE tree, std::size_t nodeIndex);
+    /// The side strip while a State Machine is open: the picked state or transition's settings.
+    void DrawStateMachineSelectionUVE(Scene::EntityUVE tree, std::size_t nodeIndex,
+                                      std::optional<std::function<void(Scene::AnimationTreeComponentUVE&)>>& edit);
     /// A clip's file name for labels, "" for none.
     [[nodiscard]] const std::string& AnimationClipNameUVE(Asset::AssetGuidUVE clip);
     /// The Anim Graph tab's body.

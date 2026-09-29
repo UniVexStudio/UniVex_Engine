@@ -87,6 +87,9 @@ using AnimationClipResolverUVE = std::function<const Asset::AnimationClipAssetUV
 void SmoothBlendPositionUVE(Math::Vector2UVE& value, Math::Vector2UVE& velocity, Math::Vector2UVE goal,
                             float halfLifeSeconds, float deltaSeconds) noexcept;
 
+/// A crossfade's weight at `progress` (0..1, clamped) along `curve`: 0 at the start, 1 at the end.
+[[nodiscard]] float AnimationTransitionCurveWeightUVE(AnimationTransitionCurveUVE curve, float progress) noexcept;
+
 /// Puts every node back to its start: clips at 0, state machines in their entry state.
 void ResetAnimationTreeUVE(AnimationTreeComponentUVE& tree);
 

@@ -3,6 +3,7 @@
 #include "uve/editor/animation_graph_editing_uve.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <optional>
 #include <cmath>
 #include <unordered_map>
@@ -279,8 +280,137 @@ bool RemoveAnimationGraphInputSlotUVE(std::vector<AnimationGraphNodeUVE>& nodes,
             }
         }
         node->entryState = std::min(node->entryState, static_cast<std::uint32_t>(node->inputs.size() - 1U));
+        if (slot < node->statePositions.size()) {
+            node->statePositions.erase(node->statePositions.begin() + static_cast<std::ptrdiff_t>(slot));
+        }
     }
     return true;
+}
+
+Math::Vector2UVE AnimationStatePositionUVE(const AnimationGraphNodeUVE& machine, const std::size_t slot) {
+    if (slot < machine.statePositions.size()) {
+        return machine.statePositions[slot];
+    }
+    // Not placed yet: a grid three wide, right of Entry.
+    constexpr float kColumnUVE = 200.0F;
+    constexpr float kRowUVE = 110.0F;
+    return Math::Vector2UVE{static_cast<float>(slot % 3U) * kColumnUVE, static_cast<float>(slot / 3U) * kRowUVE};
+}
+
+bool SetAnimationStatePositionUVE(std::vector<AnimationGraphNodeUVE>& nodes, const std::uint32_t machine,
+                                  const std::size_t slot, const Math::Vector2UVE position) {
+    AnimationGraphNodeUVE* const node = FindNodeUVE(nodes, machine);
+    if (node == nullptr || node->kind != Kind::StateMachine || slot >= node->inputs.size() || !std::isfinite(position.x) ||
+        !std::isfinite(position.y)) {
+        return false;
+    }
+    // The states before it keep where they are drawn now.
+    while (node->statePositions.size() <= slot) {
+        node->statePositions.push_back(AnimationStatePositionUVE(*node, node->statePositions.size()));
+    }
+    node->statePositions[slot] = position;
+    return true;
+}
+
+std::optional<std::size_t> AddAnimationStateUVE(std::vector<AnimationGraphNodeUVE>& nodes, const std::uint32_t machine,
+                                                const Math::Vector2UVE position) {
+    AnimationGraphNodeUVE* node = FindNodeUVE(nodes, machine);
+    if (node == nullptr || node->kind != Kind::StateMachine || node->inputs.size() >= Scene::kMaximumAnimationNodeInputsUVE ||
+        nodes.size() >= Scene::kMaximumAnimationGraphNodesUVE) {
+        return std::nullopt;
+    }
+    // A state plays something: it starts as a Clip, set beside the machine in the tree, whose
+    // animation is picked next.
+    const Math::Vector2UVE beside{node->position.x - 240.0F, node->position.y + static_cast<float>(node->inputs.size()) * 70.0F};
+    const std::uint32_t clip = AddAnimationGraphNodeUVE(nodes, Kind::Clip, beside);
+    if (clip == 0U) {
+        return std::nullopt;
+    }
+    node = FindNodeUVE(nodes, machine); // the add may have moved the nodes
+    std::size_t slot = node->inputs.size();
+    if (slot == 1U && node->inputs[0] == 0U) {
+        slot = 0U; // a new machine's empty first state takes it
+    } else {
+        node->inputs.push_back(0U);
+    }
+    node->inputs[slot] = clip;
+    // Named for the state it plays, so the view and the tree read the same.
+    FindNodeUVE(nodes, clip)->name = "State " + std::to_string(slot + 1U);
+    static_cast<void>(SetAnimationStatePositionUVE(nodes, machine, slot, position));
+    return slot;
+}
+
+std::optional<std::size_t> AddAnimationTransitionUVE(std::vector<AnimationGraphNodeUVE>& nodes, const std::uint32_t machine,
+                                                     const std::uint32_t from, const std::uint32_t to) {
+    AnimationGraphNodeUVE* const node = FindNodeUVE(nodes, machine);
+    if (node == nullptr || node->kind != Kind::StateMachine || to >= node->inputs.size() || from == to ||
+        (from != Scene::kAnyAnimationStateUVE && from >= node->inputs.size()) ||
+        node->transitions.size() >= Scene::kMaximumAnimationTransitionsUVE) {
+        return std::nullopt;
+    }
+    Scene::AnimationTransitionUVE transition;
+    transition.fromState = from;
+    transition.toState = to;
+    node->transitions.push_back(transition);
+    return node->transitions.size() - 1U;
+}
+
+bool RemoveAnimationTransitionUVE(std::vector<AnimationGraphNodeUVE>& nodes, const std::uint32_t machine,
+                                  const std::size_t index) {
+    AnimationGraphNodeUVE* const node = FindNodeUVE(nodes, machine);
+    if (node == nullptr || node->kind != Kind::StateMachine || index >= node->transitions.size()) {
+        return false;
+    }
+    node->transitions.erase(node->transitions.begin() + static_cast<std::ptrdiff_t>(index));
+    return true;
+}
+
+bool MoveAnimationTransitionUVE(std::vector<AnimationGraphNodeUVE>& nodes, const std::uint32_t machine,
+                                const std::size_t index, const std::size_t newIndex) {
+    AnimationGraphNodeUVE* const node = FindNodeUVE(nodes, machine);
+    if (node == nullptr || node->kind != Kind::StateMachine || index >= node->transitions.size() ||
+        newIndex >= node->transitions.size() || index == newIndex) {
+        return false;
+    }
+    const Scene::AnimationTransitionUVE moved = node->transitions[index];
+    node->transitions.erase(node->transitions.begin() + static_cast<std::ptrdiff_t>(index));
+    node->transitions.insert(node->transitions.begin() + static_cast<std::ptrdiff_t>(newIndex), moved);
+    return true;
+}
+
+std::string DescribeAnimationTransitionUVE(const Scene::AnimationTransitionUVE& transition) {
+    using Condition = Scene::AnimationConditionUVE;
+    std::string text;
+    const auto name = [](const std::string& parameter) { return parameter.empty() ? std::string{"?"} : parameter; };
+    const auto number = [](const float value) {
+        char buffer[32];
+        std::snprintf(buffer, sizeof(buffer), "%g", static_cast<double>(value));
+        return std::string{buffer};
+    };
+    for (const Scene::AnimationTransitionConditionUVE& test : transition.conditions) {
+        std::string part;
+        switch (test.condition) {
+            case Condition::Always: continue;
+            case Condition::AtEnd: part = "state finished"; break;
+            case Condition::ParameterGreater: part = name(test.parameter) + " > " + number(test.threshold); break;
+            case Condition::ParameterLess: part = name(test.parameter) + " < " + number(test.threshold); break;
+            case Condition::ParameterTrue: part = name(test.parameter); break;
+            case Condition::ParameterFalse: part = "not " + name(test.parameter); break;
+            case Condition::Triggered: part = name(test.parameter) + " fired"; break;
+        }
+        text += text.empty() ? part : " and " + part;
+    }
+    if (transition.exitPhase >= 0.0F) {
+        const std::string wait = "after " + number(std::round(transition.exitPhase * 100.0F)) + "%";
+        text += text.empty() ? wait : ", " + wait;
+    }
+    if (text.empty()) {
+        text = "always";
+    }
+    if (!transition.enabled) {
+        text += " (off)";
+    }
+    return text;
 }
 
 std::optional<std::size_t> AddBlendSpacePointUVE(std::vector<AnimationGraphNodeUVE>& nodes, const std::uint32_t space,
