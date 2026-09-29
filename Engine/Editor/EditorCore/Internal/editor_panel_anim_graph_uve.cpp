@@ -706,6 +706,58 @@ void EditorUVE::DrawBlendSpaceEditorUVE(const Scene::EntityUVE tree, const std::
     }
 }
 
+void EditorUVE::RecordAnimationGraphPreviewUVE(const Scene::AnimationTreeComponentUVE& tree) {
+    AnimationGraphViewStateUVE& view = m_animGraph;
+    constexpr std::size_t kLogLinesUVE = 80U;
+    constexpr std::size_t kHistorySamplesUVE = 180U;
+    const auto log = [&view](std::string text, const bool stateChange) {
+        view.previewLog.push_back(AnimationGraphViewStateUVE::PreviewLogLineUVE{view.previewClock, std::move(text), stateChange});
+        if (view.previewLog.size() > kLogLinesUVE) {
+            view.previewLog.erase(view.previewLog.begin());
+        }
+    };
+    for (const std::string& event : tree.firedEvents) {
+        log("event  " + event, false);
+    }
+    if (tree.nodeStates.size() == tree.nodes.size()) {
+        for (std::size_t index = 0U; index < tree.nodes.size(); ++index) {
+            const AnimationGraphNodeUVE& machine = tree.nodes[index];
+            if (machine.kind != Kind::StateMachine) {
+                continue;
+            }
+            const std::uint32_t active = tree.nodeStates[index].activeState;
+            const auto [it, added] = view.previewActive.try_emplace(machine.id, active);
+            if (added || it->second == active) {
+                continue;
+            }
+            const auto nameOf = [&tree, &machine](const std::uint32_t slot) {
+                if (slot < machine.inputs.size()) {
+                    const auto child = std::ranges::find(tree.nodes, machine.inputs[slot], &AnimationGraphNodeUVE::id);
+                    if (child != tree.nodes.end() && !child->name.empty()) {
+                        return child->name;
+                    }
+                }
+                return AnimationGraphSlotLabelUVE(Kind::StateMachine, slot);
+            };
+            // Which machine only matters when there are several.
+            const bool several = std::ranges::count(tree.nodes, Kind::StateMachine, &AnimationGraphNodeUVE::kind) > 1;
+            const std::string owner = several ? (machine.name.empty() ? std::string{"State Machine"} : machine.name) + ": " : "";
+            log(owner + nameOf(it->second) + " -> " + nameOf(active), true);
+            it->second = active;
+        }
+    }
+    for (const AnimationParameterUVE& parameter : tree.parameters) {
+        if (parameter.type != AnimationParameterTypeUVE::Float) {
+            continue;
+        }
+        std::vector<float>& samples = view.parameterHistory[parameter.name];
+        samples.push_back(parameter.value);
+        if (samples.size() > kHistorySamplesUVE) {
+            samples.erase(samples.begin());
+        }
+    }
+}
+
 void EditorUVE::StopAnimationGraphPreviewUVE() {
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
     if (m_animGraph.previewSkeleton != Scene::kInvalidEntityUVE && entityManager.IsAliveUVE(m_animGraph.previewSkeleton) &&
@@ -849,8 +901,16 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
         auto& skeleton = entityManager.GetComponentUVE<Scene::Skeleton3DNodeComponentUVE>(skeletonEntity);
         Scene::AnimationMixerComponentUVE previewMixer = mixer;
         previewMixer.active = true;
-        const float step = std::clamp(ImGui::GetIO().DeltaTime, 0.0F, 0.1F) * mixer.speedScale;
-        static_cast<void>(Scene::StepSkeletalAnimationTreeUVE(live, clipFor, step, skeleton, previewMixer));
+        // Held: only a frame asked for moves it, and then by one sixtieth of a second.
+        const float frame = view.previewPaused ? (view.previewStepOnce ? 1.0F / 60.0F : 0.0F)
+                                               : std::clamp(ImGui::GetIO().DeltaTime, 0.0F, 0.1F) * view.previewRate;
+        view.previewStepOnce = false;
+        if (frame > 0.0F) {
+            const float step = frame * mixer.speedScale;
+            static_cast<void>(Scene::StepSkeletalAnimationTreeUVE(live, clipFor, step, skeleton, previewMixer));
+            view.previewClock += static_cast<double>(frame);
+            RecordAnimationGraphPreviewUVE(live);
+        }
     } else if (!view.previewing && view.previewSkeleton != Scene::kInvalidEntityUVE) {
         StopAnimationGraphPreviewUVE();
     }
@@ -1677,6 +1737,16 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
             if (ImGui::IsItemDeactivatedAfterEdit()) {
                 edit = [index, value](Scene::AnimationTreeComponentUVE& t) { t.parameters[index].value = value; };
             }
+        } else if (parameter.type == AnimationParameterTypeUVE::Trigger) {
+            // A trigger is an event, not a setting: fire it into the running preview only.
+            ImGui::BeginDisabled(!view.previewing);
+            if (ImGui::SmallButton(value >= 0.5F ? "Armed" : "Fire")) {
+                entityManager.GetComponentUVE<Scene::AnimationTreeComponentUVE>(tree).parameters[index].value = 1.0F;
+            }
+            ImGui::EndDisabled();
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                ImGui::SetTooltip("Fire it in the preview; the first transition or node that reads it uses it up.");
+            }
         } else {
             bool on = value >= 0.5F;
             if (ImGui::Checkbox("##value", &on)) {
@@ -1689,7 +1759,50 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
                 t.parameters.erase(t.parameters.begin() + static_cast<std::ptrdiff_t>(index));
             };
         }
+        // A Float's last few seconds while the preview runs: what drove the graph just now.
+        if (parameter.type == AnimationParameterTypeUVE::Float && view.previewing) {
+            const auto found = view.parameterHistory.find(parameter.name);
+            if (found != view.parameterHistory.end() && found->second.size() > 1U) {
+                const std::vector<float>& samples = found->second;
+                const auto [lowest, highest] = std::ranges::minmax_element(samples);
+                const float low = *lowest;
+                const float span = std::max(*highest - low, 1e-3F);
+                const ImVec2 at = ImGui::GetCursorScreenPos();
+                const float sparkWidth = ImGui::GetContentRegionAvail().x;
+                constexpr float kSparkHeightUVE = 14.0F;
+                ImDrawList* const spark = ImGui::GetWindowDrawList();
+                spark->AddRectFilled(at, ImVec2{at.x + sparkWidth, at.y + kSparkHeightUVE}, IM_COL32(255, 255, 255, 8), 2.0F);
+                for (std::size_t sample = 1U; sample < samples.size(); ++sample) {
+                    const auto x = [&](const std::size_t i) {
+                        return at.x + sparkWidth * static_cast<float>(i) / static_cast<float>(samples.size() - 1U);
+                    };
+                    const auto y = [&](const float v) { return at.y + kSparkHeightUVE - 2.0F - (v - low) / span * (kSparkHeightUVE - 4.0F); };
+                    spark->AddLine(ImVec2{x(sample - 1U), y(samples[sample - 1U])}, ImVec2{x(sample), y(samples[sample])},
+                                   kActiveUVE, 1.2F);
+                }
+                ImGui::Dummy(ImVec2{sparkWidth, kSparkHeightUVE});
+            }
+        }
         ImGui::PopID();
+    }
+
+    // ---- What the preview did: state changes and clip events, newest first --------------------------
+    if (view.previewing && ImGui::CollapsingHeader("Log", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::SameLine(ImGui::GetContentRegionMax().x - ImGui::CalcTextSize("Clear").x - ImGui::GetStyle().FramePadding.x * 2.0F);
+        if (ImGui::SmallButton("Clear")) {
+            view.previewLog.clear();
+        }
+        ImGui::BeginChild("##preview-log", ImVec2{0.0F, 84.0F}, false);
+        if (view.previewLog.empty()) {
+            ImGui::TextDisabled("State changes and clip events show here.");
+        }
+        for (auto line = view.previewLog.rbegin(); line != view.previewLog.rend(); ++line) {
+            ImGui::TextDisabled("%6.2fs", line->at);
+            ImGui::SameLine();
+            ImGui::TextColored(line->stateChange ? ImVec4{0.43F, 0.82F, 0.55F, 1.0F} : ImVec4{0.93F, 0.67F, 0.28F, 1.0F}, "%s",
+                               line->text.c_str());
+        }
+        ImGui::EndChild();
     }
 
     ImGui::Separator();
@@ -1981,7 +2094,42 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
     const float buttons = ImGui::CalcTextSize("Frame All").x + ImGui::CalcTextSize("100%").x + ImGui::CalcTextSize("200%").x +
                           style.FramePadding.x * 6.0F + style.ItemSpacing.x * 3.0F;
     const float previewWidth = ImGui::CalcTextSize("Preview Off").x + style.FramePadding.x * 2.0F + style.ItemSpacing.x;
-    ImGui::SameLine(std::max(ImGui::GetCursorPosX() + style.ItemSpacing.x, right - buttons - previewWidth));
+    const float transportWidth = ImGui::CalcTextSize("Pause").x + ImGui::CalcTextSize("Step").x + 64.0F +
+                                 style.FramePadding.x * 4.0F + style.ItemSpacing.x * 3.0F;
+    ImGui::SameLine(std::max(ImGui::GetCursorPosX() + style.ItemSpacing.x, right - buttons - previewWidth - transportWidth));
+    // The preview's transport: hold it, move it a frame at a time, run it slower to see a blend.
+    ImGui::BeginDisabled(!view.previewing || skeletonEntity == Scene::kInvalidEntityUVE);
+    if (ImGui::Button(view.previewPaused ? "Play" : "Pause")) {
+        view.previewPaused = !view.previewPaused;
+    }
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!view.previewPaused);
+    if (ImGui::Button("Step")) {
+        view.previewStepOnce = true;
+    }
+    ImGui::EndDisabled();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip("One frame (1/60 s) while paused");
+    }
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(64.0F);
+    static constexpr std::array<float, 6> kRatesUVE{0.1F, 0.25F, 0.5F, 1.0F, 1.5F, 2.0F};
+    char rateText[16];
+    std::snprintf(rateText, sizeof(rateText), "%gx", static_cast<double>(view.previewRate));
+    if (ImGui::BeginCombo("##rate", rateText)) {
+        for (const float rate : kRatesUVE) {
+            std::snprintf(rateText, sizeof(rateText), "%gx", static_cast<double>(rate));
+            if (ImGui::Selectable(rateText, rate == view.previewRate)) {
+                view.previewRate = rate;
+            }
+        }
+        ImGui::EndCombo();
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Preview speed");
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
     if (skeletonEntity == Scene::kInvalidEntityUVE) {
         ImGui::BeginDisabled();
     }
