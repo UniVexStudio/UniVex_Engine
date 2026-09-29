@@ -200,10 +200,11 @@ window:
 
 - **Character.** Pick a rigged model (or a `.uvmodel`). Picking one in Content along with the
   animations chooses it for you.
-- **Viewport.** Its own world in the middle of the window: a floor, a sun, a sky, the UniVex
-  humanoid and the character side by side. The bones are drawn in the four colours, on both
-  figures: the character's bones take the colour of the humanoid bone they answer. Orbit and zoom
-  like the main viewport.
+- **Viewport.** Its own world in the middle of the window, a studio: sky over a ground colour, a
+  light floor with metre lines that fades into fog at its edge, the UniVex humanoid and the
+  character side by side. The bones are drawn in the four colours on both figures: the
+  character's bones take the colour of the humanoid bone they answer. The camera faces them from
+  the front and does not turn; the wheel zooms. No grid, axes, toolbar or corner gizmo.
 - **Bones.** The humanoid's hierarchy, each bone a dot: green (found, fine), yellow (found, check
   it), red (found, broken), grey (missing: Generate adds it). The character's own name shows in
   brackets. Filter by name, or show problems only.

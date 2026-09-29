@@ -2,8 +2,9 @@
 
 // The Retarget window's own world. The editor has one viewport that draws whatever the world
 // holds, so the preview works the way the Entity Editor does: the scene is captured and put
-// aside, a small world stands in its place (a floor, a sun, a sky, the humanoid and the character
-// side by side), and closing the window brings the scene back untouched.
+// aside, a small world stands in its place (a sun, the humanoid and the character side by side),
+// and closing the window brings the scene back untouched. The sky, the ground and the floor with
+// its fog are the viewport's studio view (ViewportOverlayStateUVE::studioView), not nodes.
 
 #include <array>
 #include <cmath>
@@ -36,9 +37,9 @@ namespace UVE::Editor {
 namespace {
 
 /// How far each figure stands from the middle, so the two read side by side.
-constexpr float kFigureOffsetUVE = 0.85F;
-/// The floor is a unit plane scaled to this many metres a side.
-constexpr float kFloorSizeUVE = 6.0F;
+constexpr float kFigureOffsetUVE = 1.0F;
+/// About how tall a figure stands, for framing both in the view.
+constexpr float kFigureHeightUVE = 1.8F;
 
 [[nodiscard]] Math::QuaternionUVE EulerUVE(const float x, const float y, const float z) {
     Math::QuaternionUVE rotation;
@@ -178,12 +179,9 @@ void EditorUVE::RebuildRetargetPreviewUVE(const RetargetPlanUVE& plan, const std
     if (preview.frameRoot == Scene::kInvalidEntityUVE) {
         return;
     }
-    place(CreateSceneNodeEntityInternalUVE(Kind::PlaneMesh3D), "Floor", Kind::PlaneMesh3D, preview.frameRoot, {}, {},
-          Math::Vector3UVE{kFloorSizeUVE, 1.0F, kFloorSizeUVE});
     // The sun leans over one shoulder, so the figures are shaded rather than flat.
     place(CreateSceneNodeEntityInternalUVE(Kind::Light3D), "Sun", Kind::Light3D, preview.frameRoot, Math::Vector3UVE{0.0F, 4.0F, 0.0F},
           EulerUVE(-0.95F, 0.55F, 0.0F));
-    place(CreateSceneNodeEntityInternalUVE(Kind::WorldEnvironment3D), "Sky", Kind::WorldEnvironment3D, preview.frameRoot);
 
     // The viewport frames the figures, not the floor under them.
     const Scene::EntityUVE figures = place(CreateSceneNodeEntityInternalUVE(Kind::Node3D), "Figures", Kind::Node3D, preview.frameRoot);
@@ -245,8 +243,12 @@ void EditorUVE::DrawRetargetPreviewUVE() {
         return;
     }
     RetargetPreviewUVE& preview = *m_retargetPreview;
-    // Framing needs the figures' world transforms, which settle a frame after they are made.
-    if (preview.frameRequested && preview.figures != Scene::kInvalidEntityUVE && RequestViewportFocusUVE(preview.figures)) {
+    // The camera faces both figures from the front, a little above the floor, and stays there.
+    if (preview.frameRequested) {
+        m_viewportOverlayState.studioTarget = {0.0F, kFigureHeightUVE * 0.5F, 0.0F};
+        // Wide enough for a T-posed character's arms beside the humanoid.
+        m_viewportOverlayState.studioRadius = kFigureOffsetUVE + kFigureHeightUVE * 0.75F;
+        ++m_viewportOverlayState.studioFramingSerial;
         preview.frameRequested = false;
     }
     DrawViewportImageUVE();

@@ -30,6 +30,7 @@
 #include "integration/MathConversions.h"
 #include "univex/camera/OrbitCamera.h"
 #include "univex/render/ShaderProgram.h"
+#include "univex/render/StudioBackdropRenderer.h"
 
 #include "uve/core/engine_core_uve.h"
 #include "uve/logging/logging_macros_uve.h"
@@ -149,17 +150,25 @@ public:
         }
 
         ApplyOverlayStateUVE(overlayState);
-        UpdateSelectionGizmoUVE();
-        const bool navGizmoOwnsGesture = UpdateNavGizmoInteractionUVE(width, height);
-        // A handle drag outranks both: grabbing an arrow must not also orbit the camera or, on
-        // release, register as a click that selects whatever is behind the gizmo.
-        const bool gizmoOwnsGesture = !navGizmoOwnsGesture && UpdateGizmoDragUVE(width, height);
-        const bool pointerTaken = navGizmoOwnsGesture || gizmoOwnsGesture;
-        UpdateSelectionFromMouseUVE(width, height, pointerTaken);
-        UpdateEntityContextToolbarFromMouseUVE(width, height, pointerTaken);
-        UpdateCameraFromMouseUVE(height, pointerTaken);
-        UpdateViewportViewHotkeysUVE();
-        UpdateViewportBookmarkHotkeysUVE();
+        if (studioView_) {
+            // Looked at, not edited: nothing is selected or moved, and the view does not turn.
+            renderPass_->Settings().viewTransformGizmo = false;
+            if (ImGui::IsWindowHovered() && ImGui::GetIO().MouseWheel != 0.0F) {
+                camera_.Dolly(ImGui::GetIO().MouseWheel);
+            }
+        } else {
+            UpdateSelectionGizmoUVE();
+            const bool navGizmoOwnsGesture = UpdateNavGizmoInteractionUVE(width, height);
+            // A handle drag outranks both: grabbing an arrow must not also orbit the camera or, on
+            // release, register as a click that selects whatever is behind the gizmo.
+            const bool gizmoOwnsGesture = !navGizmoOwnsGesture && UpdateGizmoDragUVE(width, height);
+            const bool pointerTaken = navGizmoOwnsGesture || gizmoOwnsGesture;
+            UpdateSelectionFromMouseUVE(width, height, pointerTaken);
+            UpdateEntityContextToolbarFromMouseUVE(width, height, pointerTaken);
+            UpdateCameraFromMouseUVE(height, pointerTaken);
+            UpdateViewportViewHotkeysUVE();
+            UpdateViewportBookmarkHotkeysUVE();
+        }
         // Advances the eased snap-to-axis animation SnapToDirection() starts (a manual orbit/pan
         // cancels it instead - see OrbitCamera.cpp) - without this the camera would flag itself
         // "animating" and then never actually move, since nothing else ticks it forward. Mirrors
@@ -192,14 +201,22 @@ public:
         glBindFramebuffer(GL_FRAMEBUFFER, msaaFbo_);
         glEnable(GL_MULTISAMPLE);
         renderPass_->ClearUVE(width, height);
-        renderPass_->RenderBackgroundUVE();
+        const univex::render::StudioBackdropRenderer* const studio = studioView_ ? StudioUVE() : nullptr;
+        if (studio != nullptr) {
+            studio->DrawBackdrop(camera_, width, height);
+        } else {
+            renderPass_->RenderBackgroundUVE();
+        }
         if (meshResult.colorTextureId != 0U && EnsureMeshBlitResourcesUVE()) {
             BlitMeshLayerUVE(meshResult);
+        }
+        if (studio != nullptr) {
+            studio->DrawFloor(camera_, width, height);
         }
         renderPass_->RenderGridUVE(camera_, width, height);
         // The selection outline sits over the scene and the grid, under the gizmos. The Game tab
         // previews what a player sees, so no editor outline there.
-        if (!gameWorkspaceActive_) {
+        if (!gameWorkspaceActive_ && !studioView_) {
             renderPass_->RenderSelectionOutlineUVE(
                 camera_, width, height,
                 univex::integration::CollectSelectionOutlineTrianglesUVE(
@@ -492,6 +509,7 @@ private:
         renderPass_->SetGridPlaneUVE(univex::render::GridPlaneFacing(viewAxis.x, viewAxis.y, viewAxis.z));
         gameWorkspaceActive_ = overlayState.gameWorkspaceActive;
         pointerOverOverlay_ = overlayState.pointerOverOverlay;
+        ApplyStudioViewUVE(overlayState);
         // Axis colours drive the gizmo AND the grid's own axis lines, so they go through
         // SetAxisPaletteUVE rather than being written into either one directly - see that method.
         // Skipped until the host has seeded the real defaults, so an unset state cannot paint
@@ -531,6 +549,54 @@ private:
                 renderPass_->SetGizmoMode(univex::gizmo::GizmoMode::Universal);
                 break;
         }
+    }
+
+    // The studio view (the Retarget window): no grid, corner gizmo or dark backdrop, and a camera
+    // placed to face the front. The editing camera's pose is kept and put back afterwards, so
+    // the scene comes back seen from where it was left.
+    void ApplyStudioViewUVE(const UVE::Editor::EditorUVE::ViewportOverlayStateUVE& overlayState) {
+        auto& settings = renderPass_->Settings();
+        if (overlayState.studioView && !studioView_) {
+            poseBeforeStudio_ = CameraPoseUVE{camera_.Target(), camera_.Yaw(), camera_.Pitch(), camera_.Distance(),
+                                              camera_.IsOrthographic()};
+        } else if (!overlayState.studioView && studioView_ && poseBeforeStudio_.has_value()) {
+            camera_.CancelAnimation();
+            camera_.SetTarget(poseBeforeStudio_->target);
+            camera_.SetYawPitch(poseBeforeStudio_->yaw, poseBeforeStudio_->pitch);
+            camera_.SetDistance(poseBeforeStudio_->distance);
+            camera_.SetOrthographic(poseBeforeStudio_->orthographic);
+            poseBeforeStudio_.reset();
+        }
+        studioView_ = overlayState.studioView;
+        settings.viewGizmos = !studioView_;
+        settings.viewEnvironment = !studioView_;
+        if (studioView_) {
+            settings.viewGrid = false;
+            camera_.SetOrthographic(false);
+            if (overlayState.studioFramingSerial != appliedStudioFramingSerial_) {
+                appliedStudioFramingSerial_ = overlayState.studioFramingSerial;
+                // From the front (+Z, where the humanoid faces), a little above, looking slightly down.
+                constexpr float kFrontYaw = 1.5707963f;
+                constexpr float kStudioPitch = 0.10f;
+                camera_.CancelAnimation();
+                camera_.Focus(univex::math::Vec3{overlayState.studioTarget[0], overlayState.studioTarget[1],
+                                                 overlayState.studioTarget[2]},
+                              overlayState.studioRadius);
+                camera_.SetYawPitch(kFrontYaw, kStudioPitch);
+            }
+        }
+    }
+
+    [[nodiscard]] const univex::render::StudioBackdropRenderer* StudioUVE() {
+        if (!studioTried_) {
+            studioTried_ = true;
+            std::string error;
+            studio_ = univex::render::StudioBackdropRenderer::Create(error);
+            if (!studio_.has_value()) {
+                UVE_ERROR("uve_editor_app: studio backdrop unavailable: {}", error);
+            }
+        }
+        return studio_.has_value() ? &*studio_ : nullptr;
     }
 
     // Hands EditorCore the viewport's own default axis hues. It cannot name them itself -
@@ -1238,6 +1304,21 @@ private:
     UVE::Scene::IEntityManagerUVE& entityManager_;
     univex::integration::EditorMeshLayerUVE meshLayer_;
     std::optional<univex::app::ViewportRenderPass> renderPass_;
+    // The studio view's sky, ground and faded floor (see ViewportOverlayStateUVE::studioView).
+    // Optional: a driver that cannot build its shaders shows the plain backdrop instead.
+    std::optional<univex::render::StudioBackdropRenderer> studio_;
+    bool studioTried_ = false;
+    bool studioView_ = false;
+    std::uint32_t appliedStudioFramingSerial_ = 0U;
+    // The editing camera's pose from before the studio view, put back when it ends.
+    struct CameraPoseUVE final {
+        univex::math::Vec3 target{};
+        float yaw = 0.0F;
+        float pitch = 0.0F;
+        float distance = 1.0F;
+        bool orthographic = false;
+    };
+    std::optional<CameraPoseUVE> poseBeforeStudio_;
     // Set each frame by ApplyOverlayStateUVE(), read by UpdateSelectionGizmoUVE() so it can force
     // the transform gizmo off while the Game workspace tab is active (see ApplyOverlayStateUVE's
     // own comment - it already forces the grid off directly, but the gizmo's visibility is decided
