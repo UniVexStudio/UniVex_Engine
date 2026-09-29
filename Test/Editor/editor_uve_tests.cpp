@@ -437,8 +437,10 @@ TEST(EditorUVETest, InspectorDrawerRegistrationUVE_IncludesStableHierarchyDrawer
         // 27 before the three abstract 3D bases, each of which brings one section; 30 before the
         // old Name and Hierarchy drawers were removed and SurfaceInstance3D, LightEmitter3D,
         // Decal3D and FogVolume3D each brought one.
-        // 33 with Skeleton3D's own section; 34 with SolidBody3D's; 36 with AnimationMixer's.
-        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorDrawerCountUVE(editor), 36U);
+        // 33 with Skeleton3D's own section; 34 with SolidBody3D's; 36 with AnimationMixer's; 37 with
+        // DirectionalLight3D's.
+        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorDrawerCountUVE(editor), 37U);
+        EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "directional-light-3d"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "animation-mixer"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "solid-body"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "animation-tree"));
@@ -5013,6 +5015,37 @@ TEST(EditorUVETest, RenderInstanceChildInspectorUVE_IsOwnSectionThenBasesThenNod
         };
         EXPECT_EQ(EditorUVEAccessUVE::GetEligibleInspectorDrawerIdsUVE(editor, decal), expected("decal-3d"));
         EXPECT_EQ(EditorUVEAccessUVE::GetEligibleInspectorDrawerIdsUVE(editor, fog), expected("fog-volume-3d"));
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
+TEST(EditorUVETest, SunAndWorldEnvironmentInspectorsUVE_FollowTheirClassChains) {
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_sun_environment_inspector.uvscene");
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        // DirectionalLight3D: its own section, then LightEmitter3D, RenderInstance3D, Node3D, Node.
+        const Scene::EntityUVE sun = editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::DirectionalLight3D);
+        ASSERT_NE(sun, Scene::kInvalidEntityUVE);
+        EXPECT_EQ(Scene::ResolveSceneNodeKindUVE(entityManager, sun), Scene::Nodes::SceneNodeKindUVE::DirectionalLight3D);
+        EXPECT_TRUE(entityManager.GetComponentUVE<Scene::LightEmitterComponentUVE>(sun).shadowEnabled)
+            << "a sun casts shadows by default";
+        EXPECT_EQ(EditorUVEAccessUVE::GetEligibleInspectorDrawerIdsUVE(editor, sun),
+                  (std::vector<std::string>{"directional-light-3d", "light-emitter", "render-instance", "transform",
+                                            "visibility", "process", "physics-interpolation", "auto-translate",
+                                            "editor-description", "script", "node-metadata"}));
+        // WorldEnvironment: a pure Node - its own section, then Node's; no Transform, no Visibility.
+        const Scene::EntityUVE environment =
+            editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::WorldEnvironment3D);
+        ASSERT_NE(environment, Scene::kInvalidEntityUVE);
+        EXPECT_FALSE(entityManager.HasComponentUVE<Scene::TransformComponentUVE>(environment));
+        EXPECT_EQ(EditorUVEAccessUVE::GetEligibleInspectorDrawerIdsUVE(editor, environment),
+                  (std::vector<std::string>{"world-environment", "process", "physics-interpolation", "auto-translate",
+                                            "editor-description", "script", "node-metadata"}));
         editor.ShutdownUVE();
     }
     engine.Shutdown();

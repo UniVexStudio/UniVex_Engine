@@ -60,6 +60,8 @@ enum class SceneNodeKindUVE : std::uint8_t {
     FogVolume3D,
     /// Groups nodes in the Scene panel; no transform, no effect on the running scene.
     Folder,
+    /// The sun: LightEmitter3D's directional child.
+    DirectionalLight3D,
 };
 
 struct SceneNodeDescriptorUVE final {

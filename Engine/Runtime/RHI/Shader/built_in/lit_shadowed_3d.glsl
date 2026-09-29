@@ -218,6 +218,10 @@ float DirectionalShadowFactorUVE(vec3 normal, vec3 lightDirection) {
     }
 
     float viewDepth = length(vWorldPosition - uViewPosition);
+    // Past the last cascade the light casts no shadow: that is where its shadow distance ends.
+    if (viewDepth > uShadowCascadeSplits[clamp(uShadowCascadeCount - 1, 0, 2)]) {
+        return 1.0;
+    }
     int cascadeIndex = clamp(uShadowCascadeCount - 1, 0, 2);
     for (int candidateIndex = 0; candidateIndex < 2; ++candidateIndex) {
         if (candidateIndex < uShadowCascadeCount && viewDepth <= uShadowCascadeSplits[candidateIndex]) {

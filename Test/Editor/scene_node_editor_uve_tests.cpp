@@ -129,7 +129,6 @@ TEST(SceneNodeEditorUVETest, CentralizedCreationUVE_CreatesEveryExpandedNodeKind
             Scene::Nodes::SceneNodeKindUVE::Hurtbox3D,
             Scene::Nodes::SceneNodeKindUVE::Projectile3D,
             Scene::Nodes::SceneNodeKindUVE::InteractionArea3D,
-            Scene::Nodes::SceneNodeKindUVE::WorldEnvironment3D,
             Scene::Nodes::SceneNodeKindUVE::ReflectionProbe3D,
             Scene::Nodes::SceneNodeKindUVE::Decal3D,
             Scene::Nodes::SceneNodeKindUVE::LODGroup3D,

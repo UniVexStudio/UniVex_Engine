@@ -16,6 +16,7 @@
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/entity/entity_manager_uve.h"
 #include "uve/scene/scene_graph_uve.h"
+#include "uve/nodes/3d/directional_light_3d_uve.h"
 
 namespace UVE::Render::Tests {
 namespace {
@@ -73,6 +74,36 @@ TEST_F(LightSystemUVETest, ExtractActiveLightsUVE_NoLightEntities_AllSlotsReturn
     for (const LightDataUVE& slot : result) {
         EXPECT_FLOAT_EQ(slot.intensity, 0.0F);
     }
+}
+
+TEST_F(LightSystemUVETest, DirectionalLight3DUVE_LightsTheFrameFromItsEmitterAndCarriesItsShadowSettings) {
+    const Scene::EntityUVE sun = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, sun, Scene::TransformComponentUVE{});
+    Scene::DirectionalLight3DNodeDefinitionUVE definition;
+    definition.emitter.color = Math::Vector3UVE{1.0F, 0.9F, 0.8F};
+    definition.emitter.energy = 3.0F;
+    definition.light.shadowMaxDistance = 40.0F;
+    definition.light.shadowSplitBlend = 0.25F;
+    Scene::ApplyDirectionalLight3DNodeDefinitionUVE(entityManager, sun, definition);
+    sceneGraph.UpdateUVE(entityManager);
+
+    const LightListUVE lights = lightSystem.ExtractActiveLightsUVE(entityManager);
+    EXPECT_EQ(lights[0].type, Scene::LightTypeUVE::Directional);
+    EXPECT_FLOAT_EQ(lights[0].intensity, 3.0F);
+    EXPECT_FLOAT_EQ(lights[0].color.y, 0.9F);
+    EXPECT_TRUE(lights[0].castsShadows);
+    EXPECT_FLOAT_EQ(lights[0].shadowMaxDistance, 40.0F);
+    EXPECT_FLOAT_EQ(lights[0].shadowSplitBlend, 0.25F);
+    EXPECT_FLOAT_EQ(lights[1].intensity, 0.0F) << "one light, one slot";
+    // The same light is chosen when ranked for a view.
+    EXPECT_FLOAT_EQ(lightSystem.ExtractActiveLightsForViewUVE(entityManager, Math::Vector3UVE{}).at(0).intensity, 3.0F);
+
+    // Shadows off on the emitter: still lights, no longer casts.
+    entityManager.GetComponentUVE<Scene::LightEmitterComponentUVE>(sun).shadowEnabled = false;
+    EXPECT_FALSE(lightSystem.ExtractActiveLightsUVE(entityManager)[0].castsShadows);
+    // A negative light is left out rather than drawn as a positive one.
+    entityManager.GetComponentUVE<Scene::LightEmitterComponentUVE>(sun).negative = true;
+    EXPECT_FLOAT_EQ(lightSystem.ExtractActiveLightsUVE(entityManager)[0].intensity, 0.0F);
 }
 
 TEST_F(LightSystemUVETest, ExtractActiveLightsUVE_OneDirectionalLight_PopulatesSlotZeroOnly) {

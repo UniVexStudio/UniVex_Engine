@@ -618,13 +618,11 @@ void EditorUVE::DrawNodePickerUVE() {
         static_cast<void>(CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Folder));
     }
     ImGui::Separator();
-    if (item(Scene::Nodes::SceneNodeKindUVE::Light3D, "Sun", nullptr,
-             "A directional light: the sun that lights the whole level.")) {
-        if (CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Light3D) != Scene::kInvalidEntityUVE) {
-            static_cast<void>(SetSelectedEntityNameUVE(MakeUniqueDocumentEntityNameUVE("Sun")));
-        }
+    if (item(Scene::Nodes::SceneNodeKindUVE::DirectionalLight3D, "DirectionalLight3D", nullptr,
+             "The sun: a light from far away that falls on the whole level and casts its shadows.")) {
+        static_cast<void>(CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::DirectionalLight3D));
     }
-    if (item(Scene::Nodes::SceneNodeKindUVE::WorldEnvironment3D, "World Environment", nullptr,
+    if (item(Scene::Nodes::SceneNodeKindUVE::WorldEnvironment3D, "WorldEnvironment", nullptr,
              "The sky, ambient light and fog of the level.")) {
         static_cast<void>(CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::WorldEnvironment3D));
     }

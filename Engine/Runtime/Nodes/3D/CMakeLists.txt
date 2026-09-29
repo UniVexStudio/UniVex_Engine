@@ -30,6 +30,7 @@ add_library(uve_nodes_3d STATIC
     Internal/world_environment_3d_uve.cpp
     Internal/reflection_probe_3d_uve.cpp
     Internal/decal_3d_uve.cpp
+    Internal/directional_light_3d_uve.cpp
     Internal/lod_group_3d_uve.cpp
     Internal/occluder_3d_uve.cpp
     Internal/visibility_region_3d_uve.cpp
