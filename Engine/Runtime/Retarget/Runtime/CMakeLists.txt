@@ -11,6 +11,8 @@ add_library(uve_retarget STATIC
     Internal/retarget_skeleton_uve.cpp
     Internal/retarget_humanoid_uve.cpp
     Internal/retarget_match_uve.cpp
+    Internal/retarget_pose_uve.cpp
+    Internal/retarget_conform_uve.cpp
 )
 
 set(_uve_retarget_generated_dir "${CMAKE_CURRENT_BINARY_DIR}/generated")
