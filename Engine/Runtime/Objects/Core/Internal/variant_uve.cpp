@@ -25,14 +25,14 @@ constexpr std::array<VariantTypeInfoUVE, kVariantTypeCountUVE> kVariantTypeInfoU
     {VariantTypeUVE::Float, "float", "Basic"},
     {VariantTypeUVE::String, "String", "Basic"},
     {VariantTypeUVE::StringName, "StringName", "Basic"},
-    {VariantTypeUVE::NodePath, "NodePath", "Basic"},
+    {VariantTypeUVE::ObjectPath, "NodePath", "Basic"},
     {VariantTypeUVE::Vector2, "Vector2", "Math"},
     {VariantTypeUVE::Vector3, "Vector3", "Math"},
     {VariantTypeUVE::Vector4, "Vector4", "Math"},
     {VariantTypeUVE::Quaternion, "Quaternion", "Math"},
     {VariantTypeUVE::Color, "Color", "Color"},
     {VariantTypeUVE::Resource, "Resource", "Reference"},
-    {VariantTypeUVE::Node, "Node", "Reference"},
+    {VariantTypeUVE::Object, "Node", "Reference"},
     {VariantTypeUVE::Array, "Array", "Collection"},
     {VariantTypeUVE::Dictionary, "Dictionary", "Collection"},
     {VariantTypeUVE::PackedByteArray, "PackedByteArray", "Packed Array"},
@@ -58,7 +58,7 @@ static_assert(IsTableInEnumeratorOrderUVE(), "kVariantTypeInfoUVE must list ever
 
 [[nodiscard]] bool IsTextTypeUVE(const VariantTypeUVE type) noexcept {
     return type == VariantTypeUVE::String || type == VariantTypeUVE::StringName ||
-           type == VariantTypeUVE::NodePath || type == VariantTypeUVE::Node;
+           type == VariantTypeUVE::ObjectPath || type == VariantTypeUVE::Object;
 }
 
 [[nodiscard]] bool IsNumericTypeUVE(const VariantTypeUVE type) noexcept {
@@ -439,8 +439,8 @@ VariantUVE VariantUVE::MakeDefaultUVE(const VariantTypeUVE type) {
         case VariantTypeUVE::Float: return VariantUVE{type, 0.0};
         case VariantTypeUVE::String:
         case VariantTypeUVE::StringName:
-        case VariantTypeUVE::NodePath:
-        case VariantTypeUVE::Node: return VariantUVE{type, std::string{}};
+        case VariantTypeUVE::ObjectPath:
+        case VariantTypeUVE::Object: return VariantUVE{type, std::string{}};
         case VariantTypeUVE::Vector2: return VariantUVE{type, Math::Vector2UVE{}};
         case VariantTypeUVE::Vector3: return VariantUVE{type, Math::Vector3UVE{}};
         case VariantTypeUVE::Vector4: return VariantUVE{type, VariantVector4UVE{}};
@@ -542,7 +542,7 @@ std::optional<VariantConversionUVE> TryConvertVariantUVE(const VariantUVE& value
     if (const std::optional<std::vector<VariantUVE>> elements = ElementsOfUVE(value); elements.has_value()) {
         return BuildFromElementsUVE(*elements, target);
     }
-    // Resource, Node references and Dictionaries have no meaningful reading as anything else.
+    // Resource, Object references and Dictionaries have no meaningful reading as anything else.
     return std::nullopt;
 }
 

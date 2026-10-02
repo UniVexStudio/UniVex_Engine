@@ -1,11 +1,11 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-// The Scripting slot: the Inspector row that says which script a node runs, and the commands
+// The Scripting slot: the Inspector row that says which script a object runs, and the commands
 // behind its actions - New UVScript, Open, Quick Load, Load and Clear.
 //
-// A node's script is one `.uvs` file, the asset its Script component names. New UVScript writes
-// that file with a header naming the node and its kind and opens it in the text editor; Quick
-// Load and Load point the node at a script that already exists.
+// A object's script is one `.uvs` file, the asset its Script component names. New UVScript writes
+// that file with a header naming the object and its kind and opens it in the text editor; Quick
+// Load and Load point the object at a script that already exists.
 
 #include "uve/editor/editor_uve.h"
 
@@ -25,7 +25,7 @@
 
 #include "uve/component/script_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
-#include "uve/scene/nodes/scene_node_type_uve.h"
+#include "uve/scene/objects/scene_object_type_uve.h"
 
 namespace UVE::Editor {
 namespace {
@@ -33,7 +33,7 @@ namespace {
 constexpr std::string_view kScriptFolderUVE = "scripts";
 constexpr std::string_view kUVScriptExtensionUVE = ".uvs";
 
-/// A file stem from a node name: letters, digits, '-' and '_' kept, anything else an underscore,
+/// A file stem from a object name: letters, digits, '-' and '_' kept, anything else an underscore,
 /// runs of underscores collapsed. "Main Menu (old)" becomes "Main_Menu_old".
 [[nodiscard]] std::string ScriptFileStemUVE(const std::string& name) {
     std::string stem;
@@ -78,7 +78,7 @@ struct ScriptPathPropertyUVE final {
 
 [[nodiscard]] bool IsUVScriptPathUVE(const std::string_view path) noexcept { return path.ends_with(kUVScriptExtensionUVE); }
 
-/// A free script path for `stem`: not a file that exists, and not a path another node already
+/// A free script path for `stem`: not a file that exists, and not a path another object already
 /// names (it may not have been saved yet). Bounded, so a folder full of collisions gives up
 /// (empty) instead of spinning.
 template <typename ExistsFn>
@@ -204,13 +204,13 @@ bool EditorUVE::CreateUVScriptForSelectedEntityUVE() {
         return false;
     }
 
-    // The header names the node and the kind it drives; the two handlers every script starts from.
-    const Scene::Nodes::SceneNodeDescriptorUVE* const descriptor =
-        Scene::Nodes::FindSceneNodeDescriptorUVE(Scene::ResolveSceneNodeKindUVE(entityManager, entity));
+    // The header names the object and the kind it drives; the two handlers every script starts from.
+    const Scene::Objects::SceneObjectDescriptorUVE* const descriptor =
+        Scene::Objects::FindSceneObjectDescriptorUVE(Scene::ResolveSceneObjectKindUVE(entityManager, entity));
     const std::string kind = ScriptIdentifierUVE(descriptor != nullptr ? descriptor->displayName : "Node", "Node");
     const std::string text = "entity " + ScriptIdentifierUVE(label, "Node_") + " : " + kind +
                              "\n\non ready:\n    print(\"{name} is ready\")\n\non tick(dt):\n    pass\n";
-    // The file first: if it cannot be written, nothing about the node has changed yet.
+    // The file first: if it cannot be written, nothing about the object has changed yet.
     if (!WriteProjectTextFileUVE(path, text) || !SetSelectedComponentPropertyUVE(*target.entry, *target.property, &path)) {
         return false;
     }

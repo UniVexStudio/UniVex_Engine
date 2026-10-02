@@ -13,7 +13,7 @@
 
 #include "uve/asset/animation_clip_asset_uve.h"
 #include "uve/component/name_component_uve.h"
-#include "uve/nodes/3d/skeleton_3d_uve.h"
+#include "uve/objects/3d/skeleton_3d_uve.h"
 #include "uve/component/animation_player_component_uve.h"
 #include "uve/component/prefab_instance_component_uve.h"
 #include "uve/component/transform_component_uve.h"
@@ -22,14 +22,14 @@
 #include "uve/core/engine_project_settings_uve.h"
 #include "uve/editor/editor_content_catalogue_uve.h"
 #include "uve/editor/editor_uve.h"
-#include "uve/scene/nodes/scene_folder_uve.h"
-#include "uve/scene/nodes/scene_node_registry_uve.h"
-#include "uve/scene/nodes/scene_node_type_uve.h"
+#include "uve/scene/objects/scene_folder_uve.h"
+#include "uve/scene/objects/scene_object_registry_uve.h"
+#include "uve/scene/objects/scene_object_type_uve.h"
 
 namespace UVE::Editor::Tests {
 namespace {
 
-using Kind = Scene::Nodes::SceneNodeKindUVE;
+using Kind = Scene::Objects::SceneObjectKindUVE;
 
 TEST(ContentCatalogueUVETest, EveryItemIsCreatableAndGroupsAreInOrder) {
     const auto items = GetContentCatalogueItemsUVE();
@@ -47,16 +47,16 @@ TEST(ContentCatalogueUVETest, EveryItemIsCreatableAndGroupsAreInOrder) {
         }
         ASSERT_LT(groupIndex, groups.size()) << item.id << " is out of group order";
         if (item.action == ContentCatalogueActionUVE::Folder) {
-            EXPECT_TRUE(item.nodes.empty());
+            EXPECT_TRUE(item.objects.empty());
             continue;
         }
-        ASSERT_FALSE(item.nodes.empty()) << item.id;
-        for (std::size_t index = 0U; index < item.nodes.size(); ++index) {
-            const ContentCatalogueNodeUVE& node = item.nodes[index];
-            EXPECT_EQ(index == 0U, node.parent < 0) << item.id;
-            EXPECT_LT(node.parent, static_cast<std::int32_t>(index)) << item.id;
-            const Scene::Nodes::SceneNodeDescriptorUVE* const descriptor =
-                Scene::Nodes::FindSceneNodeDescriptorUVE(node.kind);
+        ASSERT_FALSE(item.objects.empty()) << item.id;
+        for (std::size_t index = 0U; index < item.objects.size(); ++index) {
+            const ContentCatalogueObjectUVE& object = item.objects[index];
+            EXPECT_EQ(index == 0U, object.parent < 0) << item.id;
+            EXPECT_LT(object.parent, static_cast<std::int32_t>(index)) << item.id;
+            const Scene::Objects::SceneObjectDescriptorUVE* const descriptor =
+                Scene::Objects::FindSceneObjectDescriptorUVE(object.kind);
             ASSERT_NE(descriptor, nullptr) << item.id;
             EXPECT_TRUE(descriptor->libraryCreatable) << item.id;
         }
@@ -131,7 +131,7 @@ TEST(ContentCatalogueUVETest, ContentFileNamesNeverCollide) {
     std::vector<Kind> kinds;
     Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
     for (const Scene::EntityUVE child : services.GetSceneGraphUVE().GetChildrenUVE(entityManager, parent)) {
-        kinds.push_back(Scene::ResolveSceneNodeKindUVE(entityManager, child));
+        kinds.push_back(Scene::ResolveSceneObjectKindUVE(entityManager, child));
     }
     return kinds;
 }
@@ -172,7 +172,7 @@ TEST(ContentCatalogueEditorUVETest, CharacterAssetPlacesAsItsWholeTreeWithOneUnd
         const Scene::EntityUVE placed = editor.PlaceEntityAssetUVE(*created);
         ASSERT_NE(placed, Scene::kInvalidEntityUVE);
         EXPECT_EQ(editor.GetSelectedEntityUVE(), placed);
-        EXPECT_EQ(Scene::ResolveSceneNodeKindUVE(entityManager, placed), Kind::Character3D);
+        EXPECT_EQ(Scene::ResolveSceneObjectKindUVE(entityManager, placed), Kind::Character3D);
         EXPECT_EQ(entityManager.GetComponentUVE<Scene::NameComponentUVE>(placed).name, "Character");
         EXPECT_TRUE(entityManager.HasComponentUVE<Scene::PrefabInstanceComponentUVE>(placed));
         EXPECT_EQ(ChildKindsUVE(services, placed),
@@ -190,7 +190,7 @@ TEST(ContentCatalogueEditorUVETest, CharacterAssetPlacesAsItsWholeTreeWithOneUnd
         EXPECT_FALSE(entityManager.IsAliveUVE(placed));
         ASSERT_TRUE(editor.RedoUVE());
         const Scene::EntityUVE redone = editor.GetSelectedEntityUVE();
-        EXPECT_EQ(Scene::ResolveSceneNodeKindUVE(entityManager, redone), Kind::Character3D);
+        EXPECT_EQ(Scene::ResolveSceneObjectKindUVE(entityManager, redone), Kind::Character3D);
         EXPECT_EQ(ChildKindsUVE(services, redone).size(), 3U);
 
         EXPECT_EQ(editor.PlaceEntityAssetUVE(root / "nothing.uventity"), Scene::kInvalidEntityUVE);
@@ -256,7 +256,7 @@ TEST(ContentCatalogueEditorUVETest, EntityEditorEditsTheAssetAloneAndGivesTheSce
         EXPECT_FALSE(editor.UndoUVE());
         const Scene::EntityUVE entityRoot = editor.GetEntityEditorRootUVE();
         ASSERT_NE(entityRoot, Scene::kInvalidEntityUVE);
-        EXPECT_EQ(Scene::ResolveSceneNodeKindUVE(entityManager, entityRoot), Kind::Character3D);
+        EXPECT_EQ(Scene::ResolveSceneObjectKindUVE(entityManager, entityRoot), Kind::Character3D);
         EXPECT_FALSE(entityManager.HasComponentUVE<Scene::PrefabInstanceComponentUVE>(entityRoot))
             << "edited as itself, not as an instance of itself";
         EXPECT_EQ(ChildKindsUVE(services, entityRoot).size(), 3U);
@@ -265,9 +265,9 @@ TEST(ContentCatalogueEditorUVETest, EntityEditorEditsTheAssetAloneAndGivesTheSce
             << "an entity is edited as authored, not simulated";
         EXPECT_FALSE(editor.OpenEntityEditorUVE(content / "Other.uventity"));
 
-        // The entity is the top of the tree: new nodes go under it, and it cannot be removed.
+        // The entity is the top of the tree: new objects go under it, and it cannot be removed.
         editor.ClearSelectionUVE();
-        const Scene::EntityUVE added = editor.CreateDocumentSceneNodeUVE(Kind::Object3D);
+        const Scene::EntityUVE added = editor.CreateDocumentSceneObjectUVE(Kind::Object3D);
         ASSERT_NE(added, Scene::kInvalidEntityUVE);
         EXPECT_EQ(entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(added).parent, entityRoot);
         EXPECT_EQ(editor.GetEntityEditorRootUVE(), entityRoot) << "still one root";
@@ -287,7 +287,7 @@ TEST(ContentCatalogueEditorUVETest, EntityEditorEditsTheAssetAloneAndGivesTheSce
         EXPECT_FLOAT_EQ(positionY(editor.GetEntityEditorRootUVE()), 2.0F);
         EXPECT_FALSE(editor.UndoUVE());
 
-        // One root only: a node beside the root is refused on save.
+        // One root only: a object beside the root is refused on save.
         const Scene::EntityUVE sceneRoot = editor.GetDocumentSceneRootUVE();
         const Scene::EntityUVE stray = entityManager.CreateEntityUVE();
         entityManager.AddComponentUVE<Scene::TransformComponentUVE>(stray, Scene::TransformComponentUVE{});
@@ -303,7 +303,7 @@ TEST(ContentCatalogueEditorUVETest, EntityEditorEditsTheAssetAloneAndGivesTheSce
         EXPECT_FALSE(editor.IsEntityEditorOpenUVE());
         EXPECT_EQ(engine.GetSimulationExecutionModeUVE(), Core::SimulationExecutionModeUVE::Running);
 
-        // The scene is back, with its placed Character in the level's node folder.
+        // The scene is back, with its placed Character in the level's object folder.
         Scene::EntityUVE character = Scene::kInvalidEntityUVE;
         entityManager.ForEachUVE<Scene::NameComponentUVE>(
             [&character](const Scene::EntityUVE entity, const Scene::NameComponentUVE& name) {
@@ -375,7 +375,7 @@ TEST(ContentCatalogueEditorUVETest, EntityEditorCompilesScriptsListsSignalsAndGo
         EXPECT_EQ(problem.at.line, 5U);
         EXPECT_FALSE(problem.scriptPath.empty());
 
-        // Going to a problem selects the node and shows its script.
+        // Going to a problem selects the object and shows its script.
         editor.ClearSelectionUVE();
         ASSERT_TRUE(editor.GoToEntityScriptUVE(problem.entity, problem.at.line));
         EXPECT_EQ(editor.GetSelectedEntityUVE(), entityRoot);
@@ -414,10 +414,10 @@ FBXHeaderExtension:  {
 	FBXVersion: 7400
 }
 Objects:  {
-	Model: 3000, "Model::Hips", "LimbNode" {
+	Model: 3000, "Model::Hips", "LimbObject" {
 		Version: 232
 	}
-	NodeAttribute: 3100, "NodeAttribute::Hips", "LimbNode" {
+	NodeAttribute: 3100, "ObjectAttribute::Hips", "LimbObject" {
 		TypeFlags: "Skeleton"
 	}
 	AnimationStack: 5000, "AnimStack::Armature|Idle", "" {
@@ -470,10 +470,10 @@ FBXHeaderExtension:  {
 	FBXVersion: 7400
 }
 Objects:  {
-	Model: 3000, "Model::Hips", "LimbNode" {
+	Model: 3000, "Model::Hips", "LimbObject" {
 		Version: 232
 	}
-	NodeAttribute: 3100, "NodeAttribute::Hips", "LimbNode" {
+	NodeAttribute: 3100, "ObjectAttribute::Hips", "LimbObject" {
 		TypeFlags: "Skeleton"
 	}
 	AnimationStack: 5000, "AnimStack::Armature|Run", "" {
@@ -515,16 +515,16 @@ Connections:  {
             return entityManager.GetComponentUVE<Scene::NameComponentUVE>(entity).name;
         };
         EXPECT_EQ(nameOf(placed), "Hero");
-        EXPECT_EQ(Scene::ResolveSceneNodeKindUVE(entityManager, placed), Kind::Object3D);
+        EXPECT_EQ(Scene::ResolveSceneObjectKindUVE(entityManager, placed), Kind::Object3D);
         const std::vector<Scene::EntityUVE> children = services.GetSceneGraphUVE().GetChildrenUVE(entityManager, placed);
         ASSERT_EQ(children.size(), 2U);
         EXPECT_EQ(nameOf(children[0]), "Armature");
-        EXPECT_EQ(Scene::ResolveSceneNodeKindUVE(entityManager, children[0]), Kind::Object3D);
+        EXPECT_EQ(Scene::ResolveSceneObjectKindUVE(entityManager, children[0]), Kind::Object3D);
         const std::vector<Scene::EntityUVE> skeletons = services.GetSceneGraphUVE().GetChildrenUVE(entityManager, children[0]);
         ASSERT_EQ(skeletons.size(), 1U);
-        ASSERT_TRUE(entityManager.HasComponentUVE<Scene::Skeleton3DNodeComponentUVE>(skeletons[0]));
-        const Scene::Skeleton3DNodeComponentUVE& skeleton =
-            entityManager.GetComponentUVE<Scene::Skeleton3DNodeComponentUVE>(skeletons[0]);
+        ASSERT_TRUE(entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(skeletons[0]));
+        const Scene::Skeleton3DComponentUVE& skeleton =
+            entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(skeletons[0]);
         EXPECT_EQ(skeleton.skeletonAssetPath, "Anims/Hero.FBX");
         ASSERT_EQ(skeleton.bones.size(), 1U);
         EXPECT_EQ(skeleton.bones[0].name, "Hips");

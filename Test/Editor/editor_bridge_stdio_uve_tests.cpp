@@ -122,8 +122,8 @@ TEST(EditorBridgeStdioUVETest, ServeUVE_HandshakesAndRoutesExistingBridgeDispatc
         EXPECT_TRUE(handshakeSnapshot.at("hierarchy").at("entries").is_array());
         EXPECT_TRUE(handshakeSnapshot.at("inspector").at("eligibleDrawerIds").is_array());
         ASSERT_TRUE(handshakeSnapshot.at("inspector").at("attachedComponentIds").is_array());
-        // A PlaneMesh3D is a SurfaceInstance3D: its sections run from the node's own (its collision
-        // drawn inside it) through its bases to the common Node section.
+        // A PlaneMesh3D is a SurfaceInstance3D: its sections run from the object's own (its collision
+        // drawn inside it) through its bases to the common Object section.
         EXPECT_EQ(handshakeSnapshot.at("inspector").at("attachedComponentIds"),
                   (JsonUVE{"mesh", "surface-instance", "render-instance", "visibility", "process",
                            "physics-interpolation", "auto-translate", "editor-description", "script",

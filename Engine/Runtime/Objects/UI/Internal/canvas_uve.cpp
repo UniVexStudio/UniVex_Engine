@@ -1,16 +1,16 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-#include "uve/nodes/canvas_layer/canvas_uve.h"
+#include "uve/objects/canvas_layer/canvas_uve.h"
 
 #include "uve/entity/i_entity_manager_uve.h"
 
 namespace UVE::Scene {
 
-bool IsCanvasNodeDefinitionValidUVE(const CanvasNodeDefinitionUVE& value) noexcept {
+bool IsCanvasObjectDefinitionValidUVE(const CanvasObjectDefinitionUVE& value) noexcept {
     return IsCanvasComponentValidUVE(value.canvas);
 }
 
-void ApplyCanvasNodeDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity, const CanvasNodeDefinitionUVE& value) {
+void ApplyCanvasObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity, const CanvasObjectDefinitionUVE& value) {
     entityManager.AddComponentUVE<CanvasComponentUVE>(entity, value.canvas);
 }
 

@@ -5,7 +5,7 @@
 #include <vector>
 
 #include "uve/asset/animation_clip_asset_uve.h"
-#include "uve/nodes/3d/skeleton_3d_uve.h"
+#include "uve/objects/3d/skeleton_3d_uve.h"
 #include "uve/retarget/retarget_playback_uve.h"
 
 namespace UVE::Scene {
@@ -13,7 +13,7 @@ namespace UVE::Scene {
 /// How `clip` is played on `skeleton`: inactive unless the clip is conformed, in which case only the
 /// bones that place the body (root, hips, IK) take its translation, scaled to this character.
 [[nodiscard]] inline Retarget::ConformedPlaybackUVE PlanConformedPlaybackForUVE(
-    const Asset::AnimationClipAssetUVE& clip, const Skeleton3DNodeComponentUVE& skeleton) {
+    const Asset::AnimationClipAssetUVE& clip, const Skeleton3DComponentUVE& skeleton) {
     if (!clip.conformed) {
         return {};
     }

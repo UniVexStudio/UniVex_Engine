@@ -435,8 +435,8 @@ enum class FrameReadResultUVE : std::uint8_t {
 }
 
 [[nodiscard]] std::optional<EditorEntityKindUVE> ParseEntityKindUVE(const std::string_view value) {
-    // "empty" is the legacy protocol word kept for old clients; "node3d" is the same node's
-    // current name (the kind was Object3D in the node registry and is the legacy Empty door here).
+    // "empty" is the legacy protocol word kept for old clients; "node3d" is the same object's
+    // current name (the kind was Object3D in the object registry and is the legacy Empty door here).
     if (value == "empty" || value == "node3d") {
         return EditorEntityKindUVE::Empty;
     }

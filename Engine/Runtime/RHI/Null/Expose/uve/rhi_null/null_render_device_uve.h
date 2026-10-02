@@ -14,7 +14,7 @@
 namespace UVE::Render {
 
 /// NullRenderDeviceUVE is the only IRenderDeviceUVE backend this sandbox can build and test: it
-/// performs zero real GPU work — there is no display server, GPU device node, or graphics SDK
+/// performs zero real GPU work — there is no display server, GPU device object, or graphics SDK
 /// available here (confirmed and documented in docs/CODING_STANDARDS.md) — and instead validates
 /// and bookkeeps every call, handing out a NullCommandBufferUVE "spy" (engine/render/src/,
 /// module-private) that records the exact sequence of RHI calls a real backend would have

@@ -34,7 +34,7 @@ COS = math.cos(math.radians(30))
 # The three icon groups, each one directory under Engine/Editor/EditorCore/assets/icons/. An icon's
 # id is its file stem and the name the editor looks it up by: a node's registry typeId, a palette
 # category in lower case, a content browser type label in lower case.
-NODES, NODE_CATEGORIES, CONTENT_TYPES = "nodes", "node_categories", "content_types"
+OBJECTS, OBJECT_CATEGORIES, CONTENT_TYPES = "objects", "object_categories", "content_types"
 
 ICONS = {}   # (group, id) -> (title, section, draw function), in registration order
 
@@ -50,7 +50,7 @@ def _register(group, icon_id, title, section):
 
 
 def scene_node(type_id, title, section):
-    return _register(NODES, type_id, title, section)
+    return _register(OBJECTS, type_id, title, section)
 
 
 def content_type(icon_id, title):
@@ -835,7 +835,7 @@ def _category(name, colour, path, dots):
 
 
 for _name, _colour, _path, _dots in CATEGORIES:
-    _register(NODE_CATEGORIES, _name.lower(), _name, "Node categories")(_category(_name, _colour, _path, _dots))
+    _register(OBJECT_CATEGORIES, _name.lower(), _name, "Node categories")(_category(_name, _colour, _path, _dots))
 
 
 # =============================================================================================

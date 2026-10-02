@@ -1,22 +1,22 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-#include "uve/nodes/3d/character_3d_uve.h"
+#include "uve/objects/3d/character_3d_uve.h"
 
 #include "uve/entity/i_entity_manager_uve.h"
-#include "uve/nodes/3d/abstract_physics_nodes_3d_uve.h"
+#include "uve/objects/3d/abstract_physics_objects_3d_uve.h"
 
 namespace UVE::Scene {
 
-bool IsCharacter3DNodeDefinitionValidUVE(const Character3DNodeDefinitionUVE& value) noexcept {
+bool IsCharacter3DObjectDefinitionValidUVE(const Character3DObjectDefinitionUVE& value) noexcept {
     return IsColliderComponentValidUVE(value.collider) && IsCharacterControllerComponentValidUVE(value.controller);
 }
 
-void ApplyCharacter3DNodeDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                           const Character3DNodeDefinitionUVE& value) {
+void ApplyCharacter3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
+                                           const Character3DObjectDefinitionUVE& value) {
     if (!entityManager.IsAliveUVE(entity)) {
         return;
     }
-    ApplySolidBody3DBaseUVE(entityManager, entity, Character3DNodeDefinitionUVE::defaultName);
+    ApplySolidBody3DBaseUVE(entityManager, entity, Character3DObjectDefinitionUVE::defaultName);
     if (!entityManager.HasComponentUVE<ColliderComponentUVE>(entity)) {
         entityManager.AddComponentUVE<ColliderComponentUVE>(entity, value.collider);
     }

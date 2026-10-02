@@ -30,7 +30,7 @@ device check all pass.
 | `Engine/Runtime/Object/` | `Engine/Runtime/Objects/Core/` |
 | `Test/Nodes/` | `Test/Objects/` (`CanvasLayer/` → `UI/`) |
 
-Include strings (`uve/nodes/3d/...`, `uve/object/...`) are unchanged on purpose: they resolve through
+Include strings (`uve/objects/3d/...`, `uve/object/...`) are unchanged on purpose: they resolve through
 each library's `Expose/` directory, so Phase 1 could not break a single `#include`. That property is
 what made it safe to land first — and it is verified: all 50 `.cpp` under `Engine/Runtime/Objects/**`
 plus 50 under `Scene`/`Component`/`Animation` compile clean with `g++ -std=c++23 -fsyntax-only`
@@ -54,8 +54,8 @@ Godot derivative whatever the licence says. The plan below removes that reading.
 | Module folder | `Engine/Runtime/Nodes/` — 110 files (3D 78, Animation 13, CanvasLayer 11, AI 7, 2D 1) | ✅ **done** — moved to `Objects/` |
 | Second module | `Engine/Runtime/Object/` — 5 files (the object model itself) | ✅ **done** — moved to `Objects/Core/` |
 | Test folder | `Test/Nodes/` — 5 test files | ✅ **done** — moved to `Test/Objects/` |
-| Registry folder | `Engine/Runtime/Scene/.../nodes/`, `Engine/Runtime/Scene/Internal/nodes/` | ✅ **done** — path references updated |
-| Virtual include path | `uve/nodes/...` — **239** include lines across **110** files | optional Phase 3 (make includes match the `Objects/` folder) |
+| Registry folder | `Engine/Runtime/Scene/.../objects/`, `Engine/Runtime/Scene/Internal/objects/` | ✅ **done** — path references updated |
+| Virtual include path | `uve/objects/...` — **239** include lines across **110** files | optional Phase 3 (make includes match the `Objects/` folder) |
 | The word "Node" in code | **2,734** occurrences, **238** distinct identifiers, **217** files | **dropped** — not requested |
 | User-visible object names | 47 labels + 47 default names + 47 `typeId`s + 47 icon files | **only 6 change** — Section 4 |
 | Docs / comments | 31 path references to `Runtime/Nodes`, plus `SCENE_NODES_ROADMAP.md` (285 lines), `STUB_IMPLEMENTATION_ROADMAP.md`, `AUDIT.md` | follow the renames |
@@ -83,7 +83,7 @@ Engine/Runtime/Objects/          <- the placeable objects built on it
 Cost: `git mv` of one folder, 2 `add_subdirectory` lines in the root `CMakeLists.txt`, the relative
 paths inside `Objects/3D/CMakeLists.txt` stay valid, 31 doc/comment paths updated.
 **Include lines do not change in this option** — they resolve through each library's `Expose/` dir,
-so `#include "uve/nodes/3d/camera_3d_uve.h"` keeps working while the physical folder is renamed.
+so `#include "uve/objects/3d/camera_3d_uve.h"` keeps working while the physical folder is renamed.
 That makes Option A safe with zero compile risk; the virtual path is renamed separately in Phase 3.
 
 ### Option B — one tree (what the request literally described: "ilagay na lang sa object folder")
@@ -168,15 +168,15 @@ machine, root motion) onto the same targets. The graph word is the natural repla
 
 | Touch point | Where | Count |
 |---|---|---|
-| Saved `typeId` + label | `Engine/Runtime/Scene/Internal/nodes/scene_node_registry_uve.cpp` (rows 55, 62, 70, 73, 77-78, 81) | 6 rows + 6 legacy aliases |
+| Saved `typeId` + label | `Engine/Runtime/Scene/Internal/objects/scene_object_registry_uve.cpp` (rows 55, 62, 70, 73, 77-78, 81) | 6 rows + 6 legacy aliases |
 | Legacy alias block | same file, `FindSceneNodeDescriptorUVE(std::string_view)` | 1 spot |
 | Default Outliner name | the 6 per-kind headers (`defaultName`) | 6 lines |
-| Icons | `assets/icons/nodes/{static_body,rigid_body,character_body,animatable_body,animation_player,animation_tree}_3d?.{png,svg}` | 6 icon-file pairs (rename; filename **is** the lookup key) |
-| C++ kind enum | `scene_node_registry_uve.h` (`SceneNodeKindUVE::StaticBody3D` …) | 6 constants |
+| Icons | `assets/icons/objects/{static_body,rigid_body,character_body,animatable_body,animation_player,animation_tree}_3d?.{png,svg}` | 6 icon-file pairs (rename; filename **is** the lookup key) |
+| C++ kind enum | `scene_object_registry_uve.h` (`SceneNodeKindUVE::StaticBody3D` …) | 6 constants |
 | Definition structs | `*NodeDefinitionUVE` in the 6 headers | 6 structs |
 | Content Browser templates | `editor_content_catalogue_uve.cpp:66, 105-108` (`"AnimationPlayer"`, `"AnimationTree"`, the Character description) | 4 lines |
 | Inspector component label | `scene_component_metadata_uve.cpp` (`"CharacterBody3D"` under `component.character_controller`) | 1 line |
-| Tests asserting the strings | `Test/Objects/3D/node_definitions_3d_uve_tests.cpp:137-164, 338-343`, `Test/Editor/editor_uve_tests.cpp:1163-1176`, `Test/Editor/editor_hierarchy_view_uve_tests.cpp:25` | ~14 assertions |
+| Tests asserting the strings | `Test/Objects/3D/object_definitions_3d_uve_tests.cpp:137-164, 338-343`, `Test/Editor/editor_uve_tests.cpp:1163-1176`, `Test/Editor/editor_hierarchy_view_uve_tests.cpp:25` | ~14 assertions |
 | Docs | `SCENE_NODES_ROADMAP.md`, `STUB_IMPLEMENTATION_ROADMAP.md` | a handful of lines |
 | Icon generator | `Engine/Tools/editor_icons/icons.py` | 6 entries |
 
@@ -197,16 +197,16 @@ kind, with one test per alias.
 
 1. **Saved scenes.** Only `typeId` is written into a document. Each renamed `typeId` gets a legacy
    alias in `FindSceneNodeDescriptorUVE(std::string_view)`
-   (`Engine/Runtime/Scene/Internal/nodes/scene_node_registry_uve.cpp:119-126`), exactly like the
+   (`Engine/Runtime/Scene/Internal/objects/scene_object_registry_uve.cpp:119-126`), exactly like the
    existing `"empty"` and `"node_3d"` → `object_3d` rows. Old `.uvscene`/prefab files keep opening with the right kind.
    One test per alias: write a document with the old id, load it, assert the new kind.
 2. **Component JSON keys are not touched.** The component structs keep their names on purpose
    (Section 4), so no save-format migration is needed at all — the only saved string that changes is
    the `typeId`, which has aliases.
-3. **Icons.** `assets/icons/nodes/<typeId>.png` is looked up by `typeId`
+3. **Icons.** `assets/icons/objects/<typeId>.png` is looked up by `typeId`
    (`editor_ui_assets_uve.cpp:181-190`), so each rename is a paired `git mv` of the `.png` + `.svg`;
    `Engine/Tools/editor_icons/icons.py` carries the same six keys and follows.
-4. **Tests + docs.** `Test/Objects/3D/node_definitions_3d_uve_tests.cpp:137-164, 338-343`,
+4. **Tests + docs.** `Test/Objects/3D/object_definitions_3d_uve_tests.cpp:137-164, 338-343`,
    `Test/Editor/editor_uve_tests.cpp:1163-1176`, `Test/Editor/editor_hierarchy_view_uve_tests.cpp:25`,
    plus the two roadmap checklists, in the same change as the rename they describe.
 5. **Registry invariant test** (Phase 0 below): every kind has a unique non-empty `typeId`, an icon
@@ -222,7 +222,7 @@ kind, with one test per alias.
 | **0** | Add the registry invariant test + fix the 16 wrong default names (audit 5.1) so it passes | 1 new test file, 16 headers, 1 editor lambda | new test + existing suite |
 | **1** ✅ | `git mv Engine/Runtime/Nodes Engine/Runtime/Objects`; `CanvasLayer` → `UI`; `Object` → `Objects/Core`; `Test/Nodes` → `Test/Objects`; root CMake 43, 66-67; 20 files' path references | 115 files moved, **0** include lines | 100 `.cpp` files pass `g++ -fsyntax-only`; **CI green** |
 | **2** ✅ | The 6 renames of Section 4: label + `typeId` + `defaultName` + icon pair + C++ enum/definition names + 6 legacy aliases + test/doc updates | 6 kinds, 24 files renamed + 51 files' text + 2 icon-file sets | 122 runtime TUs + 41 editor TUs + 12 test TUs compile clean (`g++ -fsyntax-only`); registry and icon contracts executed locally; 225 tests from 30 suites run locally; **CI green** |
-| **3** *(optional)* | Virtual path: `Expose/uve/nodes/...` → `Expose/uve/objects/...` and the 239 include lines, so the include path matches the physical `Objects/` folder | 110 files, mechanical, zero behavior change | full build + tests |
+| **3** *(optional)* | Virtual path: `Expose/uve/objects/...` → `Expose/uve/objects/...` and the 239 include lines, so the include path matches the physical `Objects/` folder | 110 files, mechanical, zero behavior change | full build + tests |
 | **4** *(optional)* | Docs and comments: `SCENE_NODES_ROADMAP.md` → `SCENE_OBJECTS_ROADMAP.md`, `STUB_IMPLEMENTATION_ROADMAP.md`, `AUDIT.md`, and the comment lines naming other engines (**Godot** 35 lines in 19 files, **Unreal** 25 in 18, **Unity** 6 in 5; docs 48 / 2 / 2) | docs + a few cpp comments | full build + tests |
 | ~~5~~ | ~~`Node` → `Object` identifier pass (2,734 occurrences)~~ — **dropped**: not requested, and the user-facing names are what matter | — | — |
 

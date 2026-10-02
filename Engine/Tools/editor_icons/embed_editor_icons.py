@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 
 # Directory name -> EditorIconGroupUVE enumerator, in the enum's order.
-GROUPS = {"nodes": "Node", "node_categories": "NodeCategory", "content_types": "ContentType"}
+GROUPS = {"objects": "Object", "object_categories": "ObjectCategory", "content_types": "ContentType"}
 BYTES_PER_LINE = 16
 
 

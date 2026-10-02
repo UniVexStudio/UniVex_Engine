@@ -23,7 +23,7 @@
 #include "uve/core/engine_services_uve.h"
 #include "uve/editor/editor_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
-#include "uve/nodes/3d/skeleton_3d_uve.h"
+#include "uve/objects/3d/skeleton_3d_uve.h"
 #include "uve/retarget/retarget_files_uve.h"
 #include "uve/retarget/retarget_humanoid_uve.h"
 
@@ -110,7 +110,7 @@ void DrawBoneUVE(const RetargetPlanUVE& plan, const std::int32_t bone, const std
         ImGui::SetNextItemOpen(true, ImGuiCond_Once);
     }
     ImGui::PushID(bone);
-    const bool open = ImGui::TreeNodeEx("##bone", flags);
+    const bool open = ImGui::TreeObjectEx("##bone", flags);
     ImGui::SameLine(0.0F, 4.0F);
     DotUVE(ColourOfUVE(row.status));
     ImGui::TextUnformatted(reference.skeleton.bones[index].name.c_str());
@@ -186,8 +186,8 @@ std::size_t EditorUVE::RefreshSkeletonsForRetargetedModelUVE(const std::filesyst
     std::size_t changed = 0U;
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
     const std::filesystem::path wanted = modelFile.lexically_normal();
-    entityManager.ForEachUVE<Scene::Skeleton3DNodeComponentUVE>(
-        [&](const Scene::EntityUVE, Scene::Skeleton3DNodeComponentUVE& skeleton) {
+    entityManager.ForEachUVE<Scene::Skeleton3DComponentUVE>(
+        [&](const Scene::EntityUVE, Scene::Skeleton3DComponentUVE& skeleton) {
             const std::filesystem::path source{skeleton.skeletonAssetPath};
             if (source.empty() || !IsModelSourcePathUVE(source) || GetImportedModelPathUVE(source) != wanted) {
                 return;

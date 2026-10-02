@@ -119,7 +119,7 @@ private:
         if (ref.name == "str") return TypeUVE::StrUVE();
         if (ref.name == "vec3") return TypeUVE::Vec3UVE();
         if (!ref.name.empty() && std::isupper(static_cast<unsigned char>(ref.name.front())) != 0) {
-            return TypeUVE::NodeUVE(ref.name);
+            return TypeUVE::ObjectUVE(ref.name);
         }
         Error(ref.at, "'" + ref.name + "' is not a type - use int, float, bool, str, vec3 or a node kind");
         return std::nullopt;
@@ -174,7 +174,7 @@ private:
             case Kind::Float: return 0.0;
             case Kind::Str: return std::string{};
             case Kind::Vec3: return Vec3ValueUVE{};
-            case Kind::Node: return NodeRefUVE{};
+            case Kind::Object: return ObjectRefUVE{};
             default: return std::monostate{};
         }
     }
@@ -1010,7 +1010,7 @@ std::uint64_t ComputeProgramFingerprintUVE(const ProgramUVE& program) {
     };
     const auto type = [&number, &text](const TypeUVE& value) {
         number(static_cast<std::uint64_t>(value.kind));
-        text(value.node);
+        text(value.object);
     };
     const auto chunk = [&](const ChunkUVE& value) {
         text(value.name);

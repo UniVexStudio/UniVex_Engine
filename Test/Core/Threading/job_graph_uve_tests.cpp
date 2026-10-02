@@ -35,7 +35,7 @@ TEST(JobGraphUVETest, IndependentJobs_AllRunExactlyOnce) {
     constexpr int kJobCount = 64;
     for (int i = 0; i < kJobCount; ++i) {
         ASSERT_NE(graph.AddJobUVE([&completed] { completed.fetch_add(1, std::memory_order_relaxed); }),
-                   kInvalidJobGraphNodeHandleUVE);
+                   kInvalidJobGraphObjectHandleUVE);
     }
 
     graph.ExecuteUVE(pool);
@@ -50,15 +50,15 @@ TEST(JobGraphUVETest, LinearChain_RunsInDeclaredOrder) {
     std::mutex orderMutex;
     std::vector<int> order;
 
-    const JobGraphNodeHandleUVE first = graph.AddJobUVE([&] {
+    const JobGraphObjectHandleUVE first = graph.AddJobUVE([&] {
         const std::lock_guard<std::mutex> lock(orderMutex);
         order.push_back(1);
     });
-    const JobGraphNodeHandleUVE second = graph.AddJobUVE([&] {
+    const JobGraphObjectHandleUVE second = graph.AddJobUVE([&] {
         const std::lock_guard<std::mutex> lock(orderMutex);
         order.push_back(2);
     });
-    const JobGraphNodeHandleUVE third = graph.AddJobUVE([&] {
+    const JobGraphObjectHandleUVE third = graph.AddJobUVE([&] {
         const std::lock_guard<std::mutex> lock(orderMutex);
         order.push_back(3);
     });
@@ -80,14 +80,14 @@ TEST(JobGraphUVETest, FanInJoin_DependentRunsOnlyAfterBothPredecessorsFinish) {
     std::atomic<int> predecessorsFinished{0};
     std::atomic<bool> joinSawBothPredecessorsFinished{false};
 
-    const JobGraphNodeHandleUVE predecessorA = graph.AddJobUVE([&] {
+    const JobGraphObjectHandleUVE predecessorA = graph.AddJobUVE([&] {
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
         predecessorsFinished.fetch_add(1, std::memory_order_release);
     });
-    const JobGraphNodeHandleUVE predecessorB = graph.AddJobUVE([&] {
+    const JobGraphObjectHandleUVE predecessorB = graph.AddJobUVE([&] {
         predecessorsFinished.fetch_add(1, std::memory_order_release);
     });
-    const JobGraphNodeHandleUVE join = graph.AddJobUVE([&] {
+    const JobGraphObjectHandleUVE join = graph.AddJobUVE([&] {
         joinSawBothPredecessorsFinished.store(predecessorsFinished.load(std::memory_order_acquire) == 2,
                                                std::memory_order_relaxed);
     });
@@ -107,11 +107,11 @@ TEST(JobGraphUVETest, FanOutSplit_BothDependentsRunAfterOnePredecessor) {
     std::atomic<int> dependentARunCount{0};
     std::atomic<int> dependentBRunCount{0};
 
-    const JobGraphNodeHandleUVE predecessor =
+    const JobGraphObjectHandleUVE predecessor =
         graph.AddJobUVE([&] { predecessorRunCount.fetch_add(1, std::memory_order_relaxed); });
-    const JobGraphNodeHandleUVE dependentA =
+    const JobGraphObjectHandleUVE dependentA =
         graph.AddJobUVE([&] { dependentARunCount.fetch_add(1, std::memory_order_relaxed); });
-    const JobGraphNodeHandleUVE dependentB =
+    const JobGraphObjectHandleUVE dependentB =
         graph.AddJobUVE([&] { dependentBRunCount.fetch_add(1, std::memory_order_relaxed); });
     ASSERT_TRUE(graph.AddDependencyUVE(dependentA, predecessor));
     ASSERT_TRUE(graph.AddDependencyUVE(dependentB, predecessor));
@@ -124,16 +124,16 @@ TEST(JobGraphUVETest, FanOutSplit_BothDependentsRunAfterOnePredecessor) {
     EXPECT_EQ(dependentBRunCount.load(), 1);
 }
 
-TEST(JobGraphUVETest, DiamondGraph_AllFourNodesRunExactlyOnce) {
+TEST(JobGraphUVETest, DiamondGraph_AllFourObjectsRunExactlyOnce) {
     // top -> {left, right} -> bottom (bottom depends on both left and right).
     ThreadPoolUVE pool(4);
     JobGraphUVE graph;
     std::atomic<int> runCount{0};
 
-    const JobGraphNodeHandleUVE top = graph.AddJobUVE([&] { runCount.fetch_add(1, std::memory_order_relaxed); });
-    const JobGraphNodeHandleUVE left = graph.AddJobUVE([&] { runCount.fetch_add(1, std::memory_order_relaxed); });
-    const JobGraphNodeHandleUVE right = graph.AddJobUVE([&] { runCount.fetch_add(1, std::memory_order_relaxed); });
-    const JobGraphNodeHandleUVE bottom = graph.AddJobUVE([&] { runCount.fetch_add(1, std::memory_order_relaxed); });
+    const JobGraphObjectHandleUVE top = graph.AddJobUVE([&] { runCount.fetch_add(1, std::memory_order_relaxed); });
+    const JobGraphObjectHandleUVE left = graph.AddJobUVE([&] { runCount.fetch_add(1, std::memory_order_relaxed); });
+    const JobGraphObjectHandleUVE right = graph.AddJobUVE([&] { runCount.fetch_add(1, std::memory_order_relaxed); });
+    const JobGraphObjectHandleUVE bottom = graph.AddJobUVE([&] { runCount.fetch_add(1, std::memory_order_relaxed); });
     ASSERT_TRUE(graph.AddDependencyUVE(left, top));
     ASSERT_TRUE(graph.AddDependencyUVE(right, top));
     ASSERT_TRUE(graph.AddDependencyUVE(bottom, left));
@@ -147,17 +147,17 @@ TEST(JobGraphUVETest, DiamondGraph_AllFourNodesRunExactlyOnce) {
 
 TEST(JobGraphUVETest, AddDependencyUVE_DirectCycleIsRejected) {
     JobGraphUVE graph;
-    const JobGraphNodeHandleUVE a = graph.AddJobUVE([] {});
-    const JobGraphNodeHandleUVE b = graph.AddJobUVE([] {});
+    const JobGraphObjectHandleUVE a = graph.AddJobUVE([] {});
+    const JobGraphObjectHandleUVE b = graph.AddJobUVE([] {});
     ASSERT_TRUE(graph.AddDependencyUVE(b, a)); // b depends on a
     EXPECT_FALSE(graph.AddDependencyUVE(a, b)); // a depends on b would cycle back to a
 }
 
 TEST(JobGraphUVETest, AddDependencyUVE_IndirectCycleIsRejected) {
     JobGraphUVE graph;
-    const JobGraphNodeHandleUVE a = graph.AddJobUVE([] {});
-    const JobGraphNodeHandleUVE b = graph.AddJobUVE([] {});
-    const JobGraphNodeHandleUVE c = graph.AddJobUVE([] {});
+    const JobGraphObjectHandleUVE a = graph.AddJobUVE([] {});
+    const JobGraphObjectHandleUVE b = graph.AddJobUVE([] {});
+    const JobGraphObjectHandleUVE c = graph.AddJobUVE([] {});
     ASSERT_TRUE(graph.AddDependencyUVE(b, a)); // b depends on a
     ASSERT_TRUE(graph.AddDependencyUVE(c, b)); // c depends on b
     EXPECT_FALSE(graph.AddDependencyUVE(a, c)); // a depends on c would close the a->b->c->a cycle
@@ -165,15 +165,15 @@ TEST(JobGraphUVETest, AddDependencyUVE_IndirectCycleIsRejected) {
 
 TEST(JobGraphUVETest, AddDependencyUVE_SelfDependencyIsRejected) {
     JobGraphUVE graph;
-    const JobGraphNodeHandleUVE a = graph.AddJobUVE([] {});
+    const JobGraphObjectHandleUVE a = graph.AddJobUVE([] {});
     EXPECT_FALSE(graph.AddDependencyUVE(a, a));
 }
 
 TEST(JobGraphUVETest, AddDependencyUVE_InvalidHandleIsRejected) {
     JobGraphUVE graph;
-    const JobGraphNodeHandleUVE a = graph.AddJobUVE([] {});
-    EXPECT_FALSE(graph.AddDependencyUVE(a, kInvalidJobGraphNodeHandleUVE));
-    EXPECT_FALSE(graph.AddDependencyUVE(kInvalidJobGraphNodeHandleUVE, a));
+    const JobGraphObjectHandleUVE a = graph.AddJobUVE([] {});
+    EXPECT_FALSE(graph.AddDependencyUVE(a, kInvalidJobGraphObjectHandleUVE));
+    EXPECT_FALSE(graph.AddDependencyUVE(kInvalidJobGraphObjectHandleUVE, a));
 }
 
 TEST(JobGraphUVETest, AddJobUVE_AfterExecuteIsRejected) {
@@ -181,15 +181,15 @@ TEST(JobGraphUVETest, AddJobUVE_AfterExecuteIsRejected) {
     JobGraphUVE graph;
     static_cast<void>(graph.AddJobUVE([] {}));
     graph.ExecuteUVE(pool);
-    EXPECT_EQ(graph.AddJobUVE([] {}), kInvalidJobGraphNodeHandleUVE);
+    EXPECT_EQ(graph.AddJobUVE([] {}), kInvalidJobGraphObjectHandleUVE);
     graph.WaitUVE();
 }
 
 TEST(JobGraphUVETest, AddDependencyUVE_AfterExecuteIsRejected) {
     ThreadPoolUVE pool(2);
     JobGraphUVE graph;
-    const JobGraphNodeHandleUVE a = graph.AddJobUVE([] {});
-    const JobGraphNodeHandleUVE b = graph.AddJobUVE([] {});
+    const JobGraphObjectHandleUVE a = graph.AddJobUVE([] {});
+    const JobGraphObjectHandleUVE b = graph.AddJobUVE([] {});
     graph.ExecuteUVE(pool);
     EXPECT_FALSE(graph.AddDependencyUVE(b, a));
     graph.WaitUVE();
@@ -222,14 +222,14 @@ TEST(JobGraphUVETest, LargeWideAndDeepGraph_StressCompletesWithoutHangOrDoubleRu
     std::vector<std::mutex> chainMutexes(kChainCount);
 
     for (int chain = 0; chain < kChainCount; ++chain) {
-        JobGraphNodeHandleUVE previous = kInvalidJobGraphNodeHandleUVE;
+        JobGraphObjectHandleUVE previous = kInvalidJobGraphObjectHandleUVE;
         for (int step = 0; step < kChainLength; ++step) {
-            const JobGraphNodeHandleUVE current = graph.AddJobUVE([&totalRunCount, &chainOrder, &chainMutexes, chain, step] {
+            const JobGraphObjectHandleUVE current = graph.AddJobUVE([&totalRunCount, &chainOrder, &chainMutexes, chain, step] {
                 totalRunCount.fetch_add(1, std::memory_order_relaxed);
                 const std::lock_guard<std::mutex> lock(chainMutexes[static_cast<std::size_t>(chain)]);
                 chainOrder[static_cast<std::size_t>(chain)].push_back(step);
             });
-            if (previous != kInvalidJobGraphNodeHandleUVE) {
+            if (previous != kInvalidJobGraphObjectHandleUVE) {
                 ASSERT_TRUE(graph.AddDependencyUVE(current, previous));
             }
             previous = current;

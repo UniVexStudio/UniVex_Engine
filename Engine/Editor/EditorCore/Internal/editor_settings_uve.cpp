@@ -27,7 +27,7 @@ constexpr const char* kSessionCategoryUVE = "Editor/Session";
 constexpr const char* kSnappingCategoryUVE = "Editor/Viewport/Snapping";
 constexpr const char* kGridCategoryUVE = "Editor/Viewport/Grid";
 constexpr const char* kOutlineCategoryUVE = "Editor/Viewport/Selection Outline";
-constexpr const char* kNodesCategoryUVE = "Editor/Nodes";
+constexpr const char* kObjectsCategoryUVE = "Editor/Nodes";
 constexpr const char* kPlayCategoryUVE = "Editor/Play Mode";
 constexpr const char* kHierarchyCategoryUVE = "Editor/Hierarchy";
 
@@ -285,27 +285,27 @@ const std::vector<EditorSettingBindingUVE>& EditorUVE::GetSettingBindingsUVE() {
                                                          FloatUVE(value));
          }},
 
-        // New nodes.
-        {Config::MakeBoolSettingUVE(IdUVE(Id::kNewNodesUnderSelectionUVE), true, "Add Under Selection",
-                                    kNodesCategoryUVE,
+        // New objects.
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kNewObjectsUnderSelectionUVE), true, "Add Under Selection",
+                                    kObjectsCategoryUVE,
                                     "A new node goes under the selected node. Off, it always goes under the scene root."),
-         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_newNodesUnderSelection; },
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_newObjectsUnderSelection; },
          [](EditorUVE& editor, const SettingValueUVE& value) {
-             editor.m_newNodesUnderSelection = std::get<bool>(value);
+             editor.m_newObjectsUnderSelection = std::get<bool>(value);
              return true;
          }},
-        {Config::MakeEnumSettingUVE(IdUVE(Id::kNewNodePlacementUVE),
-                                    static_cast<std::int64_t>(EditorNewNodePlacementUVE::ParentOrigin),
-                                    {EntryUVE(EditorNewNodePlacementUVE::ParentOrigin, "Parent's Origin"),
-                                     EntryUVE(EditorNewNodePlacementUVE::ViewFocus, "View Focus")},
-                                    "Placement", kNodesCategoryUVE,
+        {Config::MakeEnumSettingUVE(IdUVE(Id::kNewObjectPlacementUVE),
+                                    static_cast<std::int64_t>(EditorNewObjectPlacementUVE::ParentOrigin),
+                                    {EntryUVE(EditorNewObjectPlacementUVE::ParentOrigin, "Parent's Origin"),
+                                     EntryUVE(EditorNewObjectPlacementUVE::ViewFocus, "View Focus")},
+                                    "Placement", kObjectsCategoryUVE,
                                     "Where a new 3D node appears: at its parent's origin, or at the point the "
                                     "viewport camera orbits - where you are looking."),
          [](const EditorUVE& editor) -> SettingValueUVE {
-             return static_cast<std::int64_t>(editor.m_newNodePlacement);
+             return static_cast<std::int64_t>(editor.m_newObjectPlacement);
          },
          [](EditorUVE& editor, const SettingValueUVE& value) {
-             editor.m_newNodePlacement = static_cast<EditorNewNodePlacementUVE>(std::get<std::int64_t>(value));
+             editor.m_newObjectPlacement = static_cast<EditorNewObjectPlacementUVE>(std::get<std::int64_t>(value));
              return true;
          }},
 
@@ -486,16 +486,16 @@ namespace {
                        [&lower](const char a, const char b) { return lower(a) == lower(b); }) != text.end();
 }
 
-struct CategoryTreeNodeUVE final {
+struct CategoryTreeObjectUVE final {
     std::string path;
-    std::vector<std::unique_ptr<CategoryTreeNodeUVE>> children;
+    std::vector<std::unique_ptr<CategoryTreeObjectUVE>> children;
 };
 
-void FlattenCategoryTreeUVE(const CategoryTreeNodeUVE& node, const int depth,
-                            std::vector<SettingCategoryNodeUVE>& out) {
-    for (const auto& child : node.children) {
+void FlattenCategoryTreeUVE(const CategoryTreeObjectUVE& object, const int depth,
+                            std::vector<SettingCategoryObjectUVE>& out) {
+    for (const auto& child : object.children) {
         const std::size_t slash = child->path.rfind('/');
-        out.push_back(SettingCategoryNodeUVE{
+        out.push_back(SettingCategoryObjectUVE{
             child->path, slash == std::string::npos ? child->path : child->path.substr(slash + 1U), depth});
         FlattenCategoryTreeUVE(*child, depth + 1, out);
     }
@@ -523,30 +523,30 @@ bool IsInSettingCategoryUVE(const std::string_view category, const std::string_v
     return category.starts_with(path) && (category.size() == path.size() || category[path.size()] == '/');
 }
 
-std::vector<SettingCategoryNodeUVE> BuildSettingCategoryTreeUVE(
+std::vector<SettingCategoryObjectUVE> BuildSettingCategoryTreeUVE(
     const std::vector<const Config::SettingDescriptorUVE*>& descriptors) {
-    CategoryTreeNodeUVE root;
+    CategoryTreeObjectUVE root;
     for (const Config::SettingDescriptorUVE* descriptor : descriptors) {
         const std::string& category = descriptor->category;
         if (category.empty()) {
             continue;
         }
         // Walk down "Editor", "Editor/Viewport", "Editor/Viewport/Grid", adding what is missing.
-        CategoryTreeNodeUVE* node = &root;
+        CategoryTreeObjectUVE* object = &root;
         for (std::size_t slash = category.find('/');; slash = category.find('/', slash + 1U)) {
             std::string path = category.substr(0U, slash);
-            const auto found = std::find_if(node->children.begin(), node->children.end(),
+            const auto found = std::find_if(object->children.begin(), object->children.end(),
                                             [&path](const auto& child) { return child->path == path; });
-            node = found != node->children.end()
+            object = found != object->children.end()
                        ? found->get()
-                       : node->children.emplace_back(std::make_unique<CategoryTreeNodeUVE>()).get();
-            node->path = std::move(path);
+                       : object->children.emplace_back(std::make_unique<CategoryTreeObjectUVE>()).get();
+            object->path = std::move(path);
             if (slash == std::string::npos) {
                 break;
             }
         }
     }
-    std::vector<SettingCategoryNodeUVE> flattened;
+    std::vector<SettingCategoryObjectUVE> flattened;
     FlattenCategoryTreeUVE(root, 0, flattened);
     return flattened;
 }

@@ -178,14 +178,14 @@ bool EditorUiAssetsUVE::InitializeUVE() noexcept {
     for (std::size_t index = 0U; index < icons.size(); ++index) {
         m_iconTextureIds[index] = UploadIconTextureUVE(icons[index].png);
     }
-    for (const Scene::Nodes::SceneNodeDescriptorUVE& descriptor : Scene::Nodes::GetSceneNodeDescriptorsUVE()) {
+    for (const Scene::Objects::SceneObjectDescriptorUVE& descriptor : Scene::Objects::GetSceneObjectDescriptorsUVE()) {
         const auto kind = static_cast<std::size_t>(descriptor.kind);
-        if (kind < m_nodeIconTextureIds.size()) {
+        if (kind < m_objectIconTextureIds.size()) {
             // A Folder in the Scene panel looks like the folders in the Content Browser.
-            m_nodeIconTextureIds[kind] =
-                descriptor.kind == Scene::Nodes::SceneNodeKindUVE::Folder
+            m_objectIconTextureIds[kind] =
+                descriptor.kind == Scene::Objects::SceneObjectKindUVE::Folder
                     ? FindIconTextureIdUVE(m_iconTextureIds, EditorIconGroupUVE::ContentType, "folder")
-                    : FindIconTextureIdUVE(m_iconTextureIds, EditorIconGroupUVE::Node, descriptor.typeId);
+                    : FindIconTextureIdUVE(m_iconTextureIds, EditorIconGroupUVE::Object, descriptor.typeId);
         }
     }
 
@@ -203,7 +203,7 @@ void EditorUiAssetsUVE::ShutdownUVE() noexcept {
         DeleteTextureUVE(textureId);
     }
     m_iconTextureIds.clear();
-    m_nodeIconTextureIds.fill(0U);
+    m_objectIconTextureIds.fill(0U);
 }
 
 bool EditorUiAssetsUVE::IsReadyUVE() const noexcept {
@@ -223,13 +223,13 @@ std::uintptr_t EditorUiAssetsUVE::GetGeneralIconTextureIdUVE(const std::string_v
     return FindTextureIdUVE(kGeneralIconSourcesUVE, m_generalIconTextureIds, iconId);
 }
 
-std::uintptr_t EditorUiAssetsUVE::GetNodeIconTextureIdUVE(const Scene::Nodes::SceneNodeKindUVE kind) const noexcept {
+std::uintptr_t EditorUiAssetsUVE::GetObjectIconTextureIdUVE(const Scene::Objects::SceneObjectKindUVE kind) const noexcept {
     const auto index = static_cast<std::size_t>(kind);
-    return index < m_nodeIconTextureIds.size() ? m_nodeIconTextureIds[index] : 0U;
+    return index < m_objectIconTextureIds.size() ? m_objectIconTextureIds[index] : 0U;
 }
 
-std::uintptr_t EditorUiAssetsUVE::GetNodeCategoryIconTextureIdUVE(const std::string_view category) const noexcept {
-    return FindIconTextureIdUVE(m_iconTextureIds, EditorIconGroupUVE::NodeCategory, category);
+std::uintptr_t EditorUiAssetsUVE::GetObjectCategoryIconTextureIdUVE(const std::string_view category) const noexcept {
+    return FindIconTextureIdUVE(m_iconTextureIds, EditorIconGroupUVE::ObjectCategory, category);
 }
 
 std::uintptr_t EditorUiAssetsUVE::GetContentTypeIconTextureIdUVE(const std::string_view typeId) const noexcept {

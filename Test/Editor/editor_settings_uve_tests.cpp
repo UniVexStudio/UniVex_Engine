@@ -58,8 +58,8 @@ TEST(EditorSettingsUVETest, EveryIdIsDeclaredWithTheTypeTheEditorReadsItAs) {
         {Id::kSelectionOutlineVisibleUVE, SettingTypeUVE::Bool},
         {Id::kSelectionOutlineColorUVE, SettingTypeUVE::Color},
         {Id::kSelectionOutlineThicknessUVE, SettingTypeUVE::Float},
-        {Id::kNewNodesUnderSelectionUVE, SettingTypeUVE::Bool},
-        {Id::kNewNodePlacementUVE, SettingTypeUVE::Enum},
+        {Id::kNewObjectsUnderSelectionUVE, SettingTypeUVE::Bool},
+        {Id::kNewObjectPlacementUVE, SettingTypeUVE::Enum},
         {Id::kPlayPauseOnStartUVE, SettingTypeUVE::Bool},
         {Id::kPlaySaveSceneFirstUVE, SettingTypeUVE::Bool},
         {Id::kPlaySwitchToGameUVE, SettingTypeUVE::Bool},
@@ -142,7 +142,7 @@ TEST(EditorSettingsUVETest, CategoryTreeListsParentsBeforeChildrenInFirstSeenOrd
     const Config::SettingDescriptorUVE c = Config::MakeBoolSettingUVE("a.c", false, "C", "Editor/Viewport/Grid");
     const Config::SettingDescriptorUVE d = Config::MakeBoolSettingUVE("a.d", false, "D", "Editor/Viewport/Snapping");
     const Config::SettingDescriptorUVE e = Config::MakeBoolSettingUVE("a.e", false, "E", "");
-    const std::vector<SettingCategoryNodeUVE> tree = BuildSettingCategoryTreeUVE({&a, &b, &c, &d, &e});
+    const std::vector<SettingCategoryObjectUVE> tree = BuildSettingCategoryTreeUVE({&a, &b, &c, &d, &e});
     const std::vector<std::pair<std::string, int>> expected = {
         {"Editor", 0}, {"Editor/Viewport", 1}, {"Editor/Viewport/Snapping", 2}, {"Editor/Viewport/Grid", 2},
         {"Editor/General", 1}};

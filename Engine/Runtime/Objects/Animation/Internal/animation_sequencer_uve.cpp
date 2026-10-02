@@ -1,6 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-#include "uve/nodes/3d/animation_sequencer_uve.h"
+#include "uve/objects/3d/animation_sequencer_uve.h"
 
 #include "conformed_playback_uve.h"
 
@@ -14,10 +14,10 @@
 #include "uve/asset/animation_clip_asset_uve.h"
 #include "uve/component/transform_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
-#include "uve/nodes/3d/abstract_animation_nodes_3d_uve.h"
+#include "uve/objects/3d/abstract_animation_objects_3d_uve.h"
 #include "uve/math/quaternion_uve.h"
-#include "uve/nodes/3d/object_3d_uve.h"
-#include "uve/nodes/3d/skeleton_3d_uve.h"
+#include "uve/objects/3d/object_3d_uve.h"
+#include "uve/objects/3d/skeleton_3d_uve.h"
 
 namespace UVE::Scene {
 namespace {
@@ -179,17 +179,17 @@ void WriteAnimatedPoseUVE(const Core::TransformPoseUVE& pose, const bool positio
     }
 }
 
-bool IsAnimationSequencerNodeDefinitionValidUVE(const AnimationSequencerNodeDefinitionUVE& value) noexcept {
+bool IsAnimationSequencerObjectDefinitionValidUVE(const AnimationSequencerObjectDefinitionUVE& value) noexcept {
     return IsAnimationPlayerComponentValidUVE(value.player) && IsAnimationMixerComponentValidUVE(value.mixer);
 }
 
-void ApplyAnimationSequencerNodeDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                           const AnimationSequencerNodeDefinitionUVE& value) {
+void ApplyAnimationSequencerObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
+                                           const AnimationSequencerObjectDefinitionUVE& value) {
     // The definition's mixer settings win over the base's defaults: added first, kept by the base.
     if (entityManager.IsAliveUVE(entity) && !entityManager.HasComponentUVE<AnimationMixerComponentUVE>(entity)) {
         entityManager.AddComponentUVE<AnimationMixerComponentUVE>(entity, value.mixer);
     }
-    ApplyAnimationMixerBaseUVE(entityManager, entity, AnimationSequencerNodeDefinitionUVE::defaultName);
+    ApplyAnimationMixerBaseUVE(entityManager, entity, AnimationSequencerObjectDefinitionUVE::defaultName);
     if (entityManager.IsAliveUVE(entity) && !entityManager.HasComponentUVE<AnimationPlayerComponentUVE>(entity)) {
         entityManager.AddComponentUVE<AnimationPlayerComponentUVE>(entity, value.player);
     }
@@ -267,7 +267,7 @@ bool StepAnimationPlayerUVE(AnimationPlayerComponentUVE& player, const Asset::An
 }
 
 bool StepSkeletalAnimationPlayerUVE(AnimationPlayerComponentUVE& player, const Asset::AnimationClipAssetUVE& clip,
-                                    const float deltaSeconds, Skeleton3DNodeComponentUVE& skeleton,
+                                    const float deltaSeconds, Skeleton3DComponentUVE& skeleton,
                                     const AnimationMixerComponentUVE& mixer) {
     if (!player.isPlaying) {
         return false;
@@ -408,7 +408,7 @@ bool StepSkeletalAnimationPlayerUVE(AnimationPlayerComponentUVE& player, const A
     return true;
 }
 
-std::optional<std::size_t> ResolveRootMotionBoneUVE(const Skeleton3DNodeComponentUVE& skeleton,
+std::optional<std::size_t> ResolveRootMotionBoneUVE(const Skeleton3DComponentUVE& skeleton,
                                                     const Asset::AnimationClipAssetUVE& clip,
                                                     const std::string_view boneName) {
     const auto trackOf = [&clip](const std::string_view name) -> const Asset::AnimationAssetBoneTrackUVE* {
@@ -447,7 +447,7 @@ std::optional<std::size_t> ResolveRootMotionBoneUVE(const Skeleton3DNodeComponen
 }
 
 bool PoseSkeletonAtTimeUVE(const Asset::AnimationClipAssetUVE& clip, const double timeSeconds,
-                           Skeleton3DNodeComponentUVE& skeleton, const AnimationMixerComponentUVE& mixer) {
+                           Skeleton3DComponentUVE& skeleton, const AnimationMixerComponentUVE& mixer) {
     if (!clip.IsSkeletalUVE() || skeleton.bones.empty() || !std::isfinite(timeSeconds)) {
         return false;
     }

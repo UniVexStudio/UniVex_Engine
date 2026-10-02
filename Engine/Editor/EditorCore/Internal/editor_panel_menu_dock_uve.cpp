@@ -31,7 +31,7 @@
 #include "editor_chrome_layout_uve.h"
 #include "editor_color_field_uve.h"
 #include "editor_fonts_uve.h"
-#include "editor_node_icons_uve.h"
+#include "editor_object_icons_uve.h"
 
 #include "uve/editor/editor_render_stats_uve.h"
 
@@ -348,7 +348,7 @@ void EditorUVE::DrawMenuBarUVE() {
             const ImVec2 tabMax{toolbarMin.x + tabWidth, toolbarMax.y};
             toolbarDrawList->AddRectFilled(tabMin, tabMax, IM_COL32(21, 25, 31, 255), 4.0F, ImDrawFlags_RoundCornersTop);
             const float midY = (tabMin.y + tabMax.y) * 0.5F;
-            if (const std::uintptr_t icon = m_uiAssets.GetNodeIconTextureIdUVE(Scene::Nodes::SceneNodeKindUVE::Viewport); icon != 0U) {
+            if (const std::uintptr_t icon = m_uiAssets.GetObjectIconTextureIdUVE(Scene::Objects::SceneObjectKindUVE::Viewport); icon != 0U) {
                 toolbarDrawList->AddImage(static_cast<ImTextureID>(icon), ImVec2{tabMin.x + 12.0F, midY - kTabIconSizeUVE * 0.5F},
                                           ImVec2{tabMin.x + 12.0F + kTabIconSizeUVE, midY + kTabIconSizeUVE * 0.5F});
             }

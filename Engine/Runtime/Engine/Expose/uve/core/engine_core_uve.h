@@ -46,7 +46,7 @@
 #include "uve/core/i_simulation_control_uve.h"
 #include "uve/core/engine_state_uve.h"
 #include "uve/core/frame_stats_uve.h"
-#include "uve/core/uvscript_node_host_uve.h"
+#include "uve/core/uvscript_object_host_uve.h"
 #include "uve/uvscript/uvscript_instance_uve.h"
 #include "uve/core/version_uve.h"
 #include "uve/logging/i_logger_uve.h"
@@ -297,7 +297,7 @@ public:
     /// first tick) to still exit correctly when the user closes the window.
     [[nodiscard]] bool IsQuitRequestedUVE() const noexcept { return m_quitRequested; }
 
-    /// Diagnostic hook: how many nodes are running a `.uvs` script right now (compiled and
+    /// Diagnostic hook: how many objects are running a `.uvs` script right now (compiled and
     /// started by SyncScriptRuntimeUVE()).
     [[nodiscard]] std::size_t GetActiveScriptInstanceCountUVE() const noexcept;
 
@@ -306,7 +306,7 @@ public:
     [[nodiscard]] UVScript::ScriptInstanceUVE* FindUVScriptInstanceUVE(Scene::EntityUVE entity) noexcept;
 
     /// Release builds: writes the C++ for every distinct `.uvs` program running right now into
-    /// `directory` (`<script>_<fingerprint>.uvs.cpp`), compiled against each node's real host, so
+    /// `directory` (`<script>_<fingerprint>.uvs.cpp`), compiled against each object's real host, so
     /// adding those files to the game makes the same scripts run native there. Returns how many
     /// files were written, or nothing if one could not be.
     [[nodiscard]] std::optional<std::size_t> WriteNativeUVScriptsUVE(const std::filesystem::path& directory) const;
@@ -474,11 +474,11 @@ private:
     /// resource is touched here - rendering that batch is a later phase.
     void SyncUIRuntimeUVE();
 
-    /// Runs every node's `.uvs` script for this frame (see SyncUVScriptsUVE). A node whose script
+    /// Runs every object's `.uvs` script for this frame (see SyncUVScriptsUVE). A object whose script
     /// path is not a `.uvs` file is reported once in m_scriptReconcileFailedEntities and skipped.
     void SyncScriptRuntimeUVE();
-    /// Compiles each node's text script once, drops the
-    /// instance when the node loses it, raises `ready` once and then `tick(dt)` every frame.
+    /// Compiles each object's text script once, drops the
+    /// instance when the object loses it, raises `ready` once and then `tick(dt)` every frame.
     void SyncUVScriptsUVE(bool simulationPaused);
 
     /// Steps every Character3D (CharacterControllerComponentUVE) once per fixed step: velocity
@@ -493,11 +493,11 @@ private:
 
     /// Plays every AnimationSequencer and evaluates every AnimationGraph whose update runs on this clock
     /// (`physicsStep` true: the fixed step; false: once per frame), writing into each one's target
-    /// node - the set target, or the node's parent - through its transform. Clips load
+    /// object - the set target, or the object's parent - through its transform. Clips load
     /// asynchronously; until one is ready its player waits. Runs only while the simulation runs.
     void SyncAnimationUVE(float deltaSeconds, bool physicsStep);
 
-    /// Simple kinematic integration for every active Projectile3DNodeComponentUVE entity (that
+    /// Simple kinematic integration for every active Projectile3DComponentUVE entity (that
     /// also has a TransformComponentUVE): accumulates `velocity` by `acceleration * dt`, moves the
     /// entity's authored local position by `velocity * dt` via SceneGraphUVE::SetLocalTransformUVE
     /// (so world-transform propagation stays correct), and counts `remainingLifetime` down to zero,
@@ -505,7 +505,7 @@ private:
     /// destroy the entity itself - `collisionMask` and `radius` are authored but not yet consumed
     /// by anything, since resolving a projectile hit needs real gameplay decisions (does it stop,
     /// bounce, apply damage, spawn an effect) this component's own fields don't specify.
-    void SyncProjectile3DNodesUVE(float fixedDeltaTimeSeconds);
+    void SyncProjectile3DObjectsUVE(float fixedDeltaTimeSeconds);
 
     /// Diffs a fresh Physics::ICollisionSystemUVE::DetectCollisionsUVE() snapshot against the
     /// previous tick's via m_collisionLifecycleTracker, storing the resulting enter/exit
@@ -513,19 +513,19 @@ private:
     /// results.
     void SyncCollisionLifecycleUVE();
 
-    /// Casts a real ray for every live, enabled RayCast3DNodeComponentUVE entity (that also has a
+    /// Casts a real ray for every live, enabled RayCast3DComponentUVE entity (that also has a
     /// WorldTransformComponentUVE) through IRaycastSystemUVE, writing the closest result back into
-    /// hit/hitPosition/hitNormal/hitEntity - previously this node type existed only as authored
+    /// hit/hitPosition/hitNormal/hitEntity - previously this object type existed only as authored
     /// data with nothing evaluating it. The authored `direction` is treated as local-space and
     /// rotated by the entity's world rotation (Math::RotateVectorUVE), matching
     /// LightSystemUVE's own local-to-world direction convention. `exclusions` is intentionally not
     /// consumed yet: IRaycastSystemUVE::RaycastUVE() only supports ignoring one entity per query
     /// (already spent on the ray's own origin entity), and this engine has no persistent,
-    /// save/load-stable way to reference another node yet - a real, separate follow-up, not
+    /// save/load-stable way to reference another object yet - a real, separate follow-up, not
     /// silently faked here.
-    void SyncRayCast3DNodesUVE();
+    void SyncRayCast3DObjectsUVE();
 
-    /// Simulates every live, enabled, valid SpringArm3D node, one ray per arm per fixed step:
+    /// Simulates every live, enabled, valid SpringArm3D object, one ray per arm per fixed step:
     /// casts along the arm's local +Z (behind the pivot - the camera convention looks down -Z)
     /// with the arm's own mask, resolves the target through Scene::ResolveSpringArm3DTargetUVE
     /// (full length when unobstructed, hit-distance minus margin otherwise, clamped), and steps
@@ -539,13 +539,13 @@ private:
     /// own, as in the original design. Runs inside the fixed-step loop (with character
     /// controllers and projectiles) because extension is dt-dependent and the raycast must see
     /// the same simulated collider poses the physics step just produced. Like the other syncs
-    /// this lives in the engine core tick, not the node module - the Objects/3D layer holds pure
+    /// this lives in the engine core tick, not the object module - the Objects/3D layer holds pure
     /// authoring data plus the two dependency-free resolvers the tests pin directly; the Physics
     /// include is not part of that layer.
-    void SyncSpringArm3DNodesUVE(float fixedDeltaTimeSeconds);
+    void SyncSpringArm3DObjectsUVE(float fixedDeltaTimeSeconds);
 
     /// The combat pairing, new wiring for previously unconsumed authored data: refreshes every
-    /// Hitbox3D node's runtime strike list against every Hurtbox3D node, every frame. The full
+    /// Hitbox3D object's runtime strike list against every Hurtbox3D object, every frame. The full
     /// contract: only enabled, valid hitboxes and hurtboxes participate (everything else fails
     /// closed - a disabled or invalid hitbox ends the frame with zero strikes, never stale
     /// ones); both volumes are exact oriented boxes (world position/rotation + authored
@@ -554,23 +554,23 @@ private:
     /// a strike requires symmetric layer/mask acceptance (AreaOverlapSystemUVE's rule) and
     /// equal damage channels; a hitbox never strikes a hurtbox on its own entity; overlap is
     /// the exact 15-axis oriented-box test from Physics::Detail, and touching boundaries are
-    /// not strikes. Like SyncRayCast3DNodesUVE()/SyncProjectile3DNodesUVE(), this lives in the
-    /// engine core tick rather than the node module so nodes stay pure authoring data (the
+    /// not strikes. Like SyncRayCast3DObjectsUVE()/SyncProjectile3DObjectsUVE(), this lives in the
+    /// engine core tick rather than the object module so objects stay pure authoring data (the
     /// Physics include the exact test needs is not part of the Objects/3D layer). The bounded
     /// result list (kMaximumHitbox3DStrikesUVE, deterministic entity order, overflow flagged)
     /// is runtime-only, never serialized. Applying what a strike means (damage, knockback,
     /// events) is deliberately not done here - gameplay code no system owns yet.
-    void SyncHitbox3DNodesUVE();
+    void SyncHitbox3DObjectsUVE();
 
     /// The interaction scan, new wiring for previously unconsumed authored data (the
     /// Unreal-Lyra-style interactor/focus loop Godot leaves every game to hand-roll out of
     /// Area3D signals): every frame, every character-controller entity that has a
     /// ColliderComponentUVE and a world transform is an interactor, the first one in
     /// (index,generation) order is the PRIMARY interactor (Scene::ResolvePrimaryInteractorUVE,
-    /// the same decision SpawnPoint3D selection makes), and every InteractionArea3D node's
+    /// the same decision SpawnPoint3D selection makes), and every InteractionArea3D object's
     /// runtime state is refreshed against them. The full contract: only enabled, valid areas
     /// participate (everything else fails closed - a disabled or invalid area ends the frame
-    /// with zero interactors, never stale ones, SyncHitbox3DNodesUVE's discipline); both
+    /// with zero interactors, never stale ones, SyncHitbox3DObjectsUVE's discipline); both
     /// volumes are exact oriented boxes (world position/rotation + authored halfExtents, world
     /// scale intentionally not applied - the ColliderComponentUVE/AreaComponentUVE world-shape
     /// convention - degenerate rotations fall back to identity); an overlap requires symmetric
@@ -585,12 +585,12 @@ private:
     /// (prompt UI, an "interact" binding, focus enter/exit events) is deliberately not done
     /// here - the gameplay layer no system owns yet; the authored interactionTag is carried
     /// for that follow-up and intentionally does not filter anything today. Like
-    /// SyncHitbox3DNodesUVE() this lives in the engine core tick, not the node module: the
+    /// SyncHitbox3DObjectsUVE() this lives in the engine core tick, not the object module: the
     /// Objects/3D layer holds pure authoring data plus the three dependency-free resolvers the
     /// tests pin directly.
-    void SyncInteractionArea3DNodesUVE();
+    void SyncInteractionArea3DObjectsUVE();
 
-    /// The LevelStreamer3D consumer: pure per-tick streaming verdicts on LevelStreamer3D nodes
+    /// The LevelStreamer3D consumer: pure per-tick streaming verdicts on LevelStreamer3D objects
     /// (Godot has no built-in counterpart at all; Unreal's streaming volumes are the inspiration).
     /// Pass 1 (read-only) collects the viewer point cloud for the tick - the active camera's world
     /// position plus every character-controller entity's world position, finite poses only
@@ -606,7 +606,7 @@ private:
     /// streaming is real follow-up, and component.loadRequested documents the future contract);
     /// unload bookkeeping survives Play/Stop naturally because everything is validated through
     /// IsAliveUVE() before destruction.
-    void SyncLevelStreamer3DNodesUVE();
+    void SyncLevelStreamer3DObjectsUVE();
 
     /// The ReflectionProbe3D consumer: the capture scheduler plus per-camera influence mixer
     /// (Godot bakes all probes and ends at the face with a hard clip; this instead resolves a
@@ -624,7 +624,7 @@ private:
     /// binds against. Honest boundary: no cubemap GPU capture exists in this engine yet, so the
     /// sync owns the deterministic scheduler and the measurable blend weights; the imagery side
     /// lands with the reflection BRDF pass.
-    void SyncReflectionProbe3DNodesUVE();
+    void SyncReflectionProbe3DObjectsUVE();
 
     /// The WorldPartition3D consumer: cell-based visibility for a partition's own subtree
     /// (Godot has no built-in equivalent at all; this is Unreal World Partition translated into
@@ -642,7 +642,7 @@ private:
     /// authored `visible` is not the carrier here), and an orphan membership after a partition's
     /// death fails OPEN through the pure resolver check in the renderer gate rather than hiding
     /// content forever.
-    void SyncWorldPartition3DNodesUVE();
+    void SyncWorldPartition3DObjectsUVE();
 
     /// The VisibilityRegion3D consumer: interior culling for the meshes standing inside each
     /// authored visibility box (Godot has no built-in equivalent at all - Godot's
@@ -660,7 +660,7 @@ private:
     /// MeshRendererUVE drops !live members at candidate-build time and counts them in
     /// regionCulledEntities. Honest boundary: like the world partition's membership, this is a
     /// derived verdict about THIS tick; authored VisibilityComponentUVE.visible stays untouched.
-    void SyncVisibilityRegion3DNodesUVE();
+    void SyncVisibilityRegion3DObjectsUVE();
 
     /// Recomputes the bounded aspect-preserving render target from the live drawable size and
     /// transactionally resizes Renderer3DUVE before the frame's scene work begins.
@@ -754,15 +754,15 @@ private:
     std::unique_ptr<Audio::IAudioSystemUVE> m_audioSystem;
     std::unique_ptr<Audio::IAudioSourceSystemUVE> m_audioSourceSystem;
     std::unordered_map<Scene::EntityUVE, std::string> m_scriptReconcileFailedEntities;
-    /// A node running a `.uvs` script: the path it was compiled from, so a changed path recompiles.
+    /// A object running a `.uvs` script: the path it was compiled from, so a changed path recompiles.
     struct UVScriptSlotUVE final {
         std::string path;
         /// The text it was compiled from; a file that now reads differently is recompiled.
         std::string source;
-        /// The node's export values it started with; changing them restarts the script.
+        /// The object's export values it started with; changing them restarts the script.
         std::map<std::string, std::string> exportValues;
         std::shared_ptr<const UVScript::ProgramUVE> program;
-        std::unique_ptr<UVScriptNodeHostUVE> host;
+        std::unique_ptr<UVScriptObjectHostUVE> host;
         std::unique_ptr<UVScript::ScriptInstanceUVE> instance;
         bool readyRaised = false;
     };
@@ -773,8 +773,8 @@ private:
     /// When `.uvs` files were last re-read for edits. Wall time, not frame time: a paused or
     /// fixed-step game still picks up a saved script.
     std::chrono::steady_clock::time_point m_uvScriptLastRecheck{};
-    /// Clips the animation nodes play, by asset guid. Declared after m_assetManager so the handles
-    /// release before the manager is destroyed; clips no node references any more are dropped
+    /// Clips the animation objects play, by asset guid. Declared after m_assetManager so the handles
+    /// release before the manager is destroyed; clips no object references any more are dropped
     /// each frame.
     std::unordered_map<std::uint64_t, Asset::AssetHandleUVE<Asset::AnimationClipAssetUVE>> m_animationClips;
     std::unique_ptr<Save::ISaveGameSystemUVE> m_saveGameSystem;

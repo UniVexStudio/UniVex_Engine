@@ -1,6 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-#include "uve/nodes/3d/spawn_point_3d_uve.h"
+#include "uve/objects/3d/spawn_point_3d_uve.h"
 
 #include <cmath>
 
@@ -20,9 +20,9 @@ constexpr float kMinimumParentScaleAxisMagnitudeUVE = 1.0e-6F;
 
 } // namespace
 
-bool IsSpawnPoint3DNodeComponentValidUVE(const SpawnPoint3DNodeComponentUVE& value) noexcept {
-    return IsBounded3DNodeStringUVE(value.spawnTag, false) && IsFinite3DNodeVectorUVE(value.localPosition) &&
-           IsFinite3DNodeQuaternionUVE(value.localRotation);
+bool IsSpawnPoint3DObjectComponentValidUVE(const SpawnPoint3DComponentUVE& value) noexcept {
+    return IsBounded3DObjectStringUVE(value.spawnTag, false) && IsFinite3DObjectVectorUVE(value.localPosition) &&
+           IsFinite3DObjectQuaternionUVE(value.localRotation);
 }
 
 std::optional<EntityUVE> ResolveSpawnPoint3DSelectionUVE(
@@ -41,20 +41,20 @@ std::optional<EntityUVE> ResolveSpawnPoint3DSelectionUVE(
 }
 
 std::optional<SpawnPoint3DPoseUVE> ComposeSpawnPointPoseUVE(
-    const Math::Vector3UVE nodePosition, const Math::QuaternionUVE nodeRotation,
+    const Math::Vector3UVE objectPosition, const Math::QuaternionUVE objectRotation,
     const Math::Vector3UVE localPosition, const Math::QuaternionUVE localRotation) noexcept {
-    if (!IsFiniteVector3UVE(nodePosition) || !IsFiniteVector3UVE(localPosition) ||
-        !Math::IsFiniteUVE(nodeRotation) || !Math::IsFiniteUVE(localRotation)) {
+    if (!IsFiniteVector3UVE(objectPosition) || !IsFiniteVector3UVE(localPosition) ||
+        !Math::IsFiniteUVE(objectRotation) || !Math::IsFiniteUVE(localRotation)) {
         return std::nullopt;
     }
-    Math::QuaternionUVE nodeRotationNormalized{};
-    if (!Math::TryNormalizeUVE(nodeRotation, nodeRotationNormalized)) {
+    Math::QuaternionUVE objectRotationNormalized{};
+    if (!Math::TryNormalizeUVE(objectRotation, objectRotationNormalized)) {
         return std::nullopt;
     }
     SpawnPoint3DPoseUVE pose{};
     pose.position =
-        nodePosition + Math::RotateVectorUVE(nodeRotationNormalized, localPosition);
-    pose.rotation = Math::MultiplyUVE(nodeRotationNormalized, localRotation);
+        objectPosition + Math::RotateVectorUVE(objectRotationNormalized, localPosition);
+    pose.rotation = Math::MultiplyUVE(objectRotationNormalized, localRotation);
     Math::QuaternionUVE rotationNormalized{};
     if (!Math::TryNormalizeUVE(pose.rotation, rotationNormalized)) {
         return std::nullopt;

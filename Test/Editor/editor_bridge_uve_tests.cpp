@@ -371,7 +371,7 @@ TEST(EditorBridgeUVETest, SnapshotUVE_CopiesHierarchyInspectorAndNativePanelSess
 
         EditorBridgeSnapshotUVE snapshot = bridge.GetSnapshotUVE();
         // The hierarchy leads with the document's ever-present SceneRoot, then the level's Viewport
-        // and its node folder; the authored pair sits inside that folder.
+        // and its object folder; the authored pair sits inside that folder.
         const Scene::EntityUVE sceneRoot = editor.GetDocumentSceneRootUVE();
         ASSERT_EQ(snapshot.hierarchy.entries.size(), 5U);
         EXPECT_EQ(snapshot.hierarchy.entries[0].entity,
@@ -398,15 +398,15 @@ TEST(EditorBridgeUVETest, SnapshotUVE_CopiesHierarchyInspectorAndNativePanelSess
         ASSERT_TRUE(snapshot.inspector.parent.has_value());
         EXPECT_EQ(snapshot.inspector.parent->displayLabel, "Bridge Root");
         // A PlaneMesh3D is a SurfaceInstance3D: its own sections (the collision it was created with
-        // is drawn inside the primitive's section), its bases, Object3D, then the Node section.
-        const std::vector<std::string> nodeSection{"process",           "physics-interpolation", "auto-translate",
+        // is drawn inside the primitive's section), its bases, Object3D, then the Object section.
+        const std::vector<std::string> objectSection{"process",           "physics-interpolation", "auto-translate",
                                                    "editor-description", "script",                "node-metadata"};
         std::vector<std::string> expectedDrawers{"mesh", "primitive-mesh", "surface-instance", "render-instance",
                                                  "transform", "visibility"};
-        expectedDrawers.insert(expectedDrawers.end(), nodeSection.begin(), nodeSection.end());
+        expectedDrawers.insert(expectedDrawers.end(), objectSection.begin(), objectSection.end());
         EXPECT_EQ(snapshot.inspector.eligibleDrawerIds, expectedDrawers);
         std::vector<std::string> expectedAttached{"mesh", "surface-instance", "render-instance", "visibility"};
-        expectedAttached.insert(expectedAttached.end(), nodeSection.begin(), nodeSection.end());
+        expectedAttached.insert(expectedAttached.end(), objectSection.begin(), objectSection.end());
         EXPECT_EQ(snapshot.inspector.attachedComponentIds, expectedAttached);
         ASSERT_TRUE(snapshot.inspector.assetBinding.has_value());
         ASSERT_TRUE(snapshot.inspector.assetBinding->meshGuid.has_value());

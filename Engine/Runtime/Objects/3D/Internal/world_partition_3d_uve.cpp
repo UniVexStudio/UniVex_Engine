@@ -1,12 +1,12 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-#include "uve/nodes/3d/world_partition_3d_uve.h"
+#include "uve/objects/3d/world_partition_3d_uve.h"
 
 #include <cmath>
 
 namespace UVE::Scene {
 
-bool IsWorldPartition3DNodeComponentValidUVE(const WorldPartition3DNodeComponentUVE& value) noexcept {
+bool IsWorldPartition3DObjectComponentValidUVE(const WorldPartition3DComponentUVE& value) noexcept {
     if (!std::isfinite(value.cellSize) || value.cellSize <= 0.0F || value.maximumLoadedCells == 0U ||
         value.maximumLoadedCells > kMaximumStreamedCellsUVE || value.loadedCellCount > value.maximumLoadedCells) {
         return false;
@@ -20,10 +20,10 @@ bool IsWorldPartition3DNodeComponentValidUVE(const WorldPartition3DNodeComponent
 }
 
 std::optional<WorldPartition3DCellIdUVE> ResolveWorldPartition3DCellIdForPositionUVE(
-    const WorldPartition3DNodeComponentUVE& config,
+    const WorldPartition3DComponentUVE& config,
     const Math::Vector3UVE& gridOriginWorld,
     const Math::Vector3UVE& pointWorld) noexcept {
-    if (!IsWorldPartition3DNodeComponentValidUVE(config)) {
+    if (!IsWorldPartition3DObjectComponentValidUVE(config)) {
         return std::nullopt;
     }
     const float localX = pointWorld.x - gridOriginWorld.x;

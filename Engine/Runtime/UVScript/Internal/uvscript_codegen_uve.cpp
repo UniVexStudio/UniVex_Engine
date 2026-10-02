@@ -217,7 +217,7 @@ struct TypedPlanUVE final {
     return std::nullopt;
 }
 
-/// Works out every stack type, or nothing when the chunk cannot be typed (it waits, uses a node
+/// Works out every stack type, or nothing when the chunk cannot be typed (it waits, uses a object
 /// value, or merges different types at a jump target).
 [[nodiscard]] std::optional<TypedPlanUVE> PlanTypedChunkUVE(const ProgramUVE& program, const ChunkUVE& chunk) {
     TypedPlanUVE plan;

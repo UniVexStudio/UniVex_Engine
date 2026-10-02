@@ -174,7 +174,7 @@ public:
         // "animating" and then never actually move, since nothing else ticks it forward. Mirrors
         // app/main.cpp's own per-frame state.camera.Update(deltaSeconds) call in the standalone demo.
         camera_.Update(ImGui::GetIO().DeltaTime);
-        // Where a new node appears when its placement follows the view.
+        // Where a new object appears when its placement follows the view.
         const univex::math::Vec3 cameraFocus = camera_.Target();
         editor_.SetViewportCameraFocusUVE(UVE::Math::Vector3UVE{cameraFocus.x, cameraFocus.y, cameraFocus.z});
 
@@ -625,8 +625,8 @@ private:
     // enough - orbiting the camera must not drag a selected object's gizmo along with it).
     void UpdateSelectionGizmoUVE() {
         // The pivot is the centroid of everything selected, not the active entity's own position.
-        // With one node the two are identical; with several, using the active entity put the gizmo
-        // on whichever node happened to be clicked last, sitting off to one side of the group it
+        // With one object the two are identical; with several, using the active entity put the gizmo
+        // on whichever object happened to be clicked last, sitting off to one side of the group it
         // claims to represent.
         univex::math::Vec3 centroid{0.0F, 0.0F, 0.0F};
         int contributing = 0;
@@ -1182,7 +1182,7 @@ private:
             camera_.SetDistance(bookmark->distance);
         }
         // Goes through the editor like the hierarchy's Focus in Viewport, so both share
-        // FocusCameraOnEntityUVE() and the key does nothing for a node that cannot be focused.
+        // FocusCameraOnEntityUVE() and the key does nothing for a object that cannot be focused.
         if (ImGui::IsKeyPressed(ImGuiKey_F, false) && !io.KeyCtrl) {
             static_cast<void>(editor_.RequestViewportFocusUVE(editor_.GetSelectedEntityUVE()));
         }

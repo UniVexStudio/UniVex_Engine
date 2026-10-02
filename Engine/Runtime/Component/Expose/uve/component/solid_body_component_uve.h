@@ -5,7 +5,7 @@
 namespace UVE::Scene {
 
 /// The shared state of SolidBody3D, the abstract base of every physics object that is a body - one
-/// that is stopped by what it hits, as opposed to an area, which only notices overlaps. No node is
+/// that is stopped by what it hits, as opposed to an area, which only notices overlaps. No object is
 /// a SolidBody3D on its own; its kinds (Character3D, and the other bodies as they join the
 /// chain) carry this component and add their own.
 struct SolidBodyComponentUVE final {

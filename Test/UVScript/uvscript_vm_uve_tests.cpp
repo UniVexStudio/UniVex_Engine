@@ -21,7 +21,7 @@
 namespace UVE::UVScript::Tests {
 namespace {
 
-/// A Character3D-like node: a velocity, a read-only floor flag, input, and three events.
+/// A Character3D-like object: a velocity, a read-only floor flag, input, and three events.
 class FakeHostUVE final : public UVScriptHostUVE {
 public:
     std::optional<HostPropertyUVE> DescribePropertyUVE(const std::string_view name) const override {
@@ -37,7 +37,7 @@ public:
     std::optional<std::vector<TypeUVE>> DescribeEventUVE(const std::string_view event) const override {
         if (event == "ready") return std::vector<TypeUVE>{};
         if (event == "tick") return std::vector<TypeUVE>{TypeUVE::FloatUVE()};
-        if (event == "body_entered") return std::vector<TypeUVE>{TypeUVE::NodeUVE("Object3D")};
+        if (event == "body_entered") return std::vector<TypeUVE>{TypeUVE::ObjectUVE("Object3D")};
         return std::nullopt;
     }
     ValueUVE GetPropertyUVE(const std::string_view name) override {
@@ -449,7 +449,7 @@ TEST(UVScriptNativeUVETest, HostDescriptionsParseAndReportTheirMistakes) {
     EXPECT_EQ(host->DescribePropertyUVE("velocity")->type, TypeUVE::Vec3UVE());
     EXPECT_FALSE(host->DescribePropertyUVE("is_on_floor")->writable);
     EXPECT_EQ(host->DescribeFunctionUVE("input.axis")->params.size(), 2U);
-    EXPECT_EQ(host->DescribeEventUVE("body_entered")->front(), TypeUVE::NodeUVE("Object3D"));
+    EXPECT_EQ(host->DescribeEventUVE("body_entered")->front(), TypeUVE::ObjectUVE("Object3D"));
     EXPECT_FALSE(host->DescribePropertyUVE("missing").has_value());
     // A script compiled against the description is the program the FakeHost gives: same fingerprint.
     FakeHostUVE fake;

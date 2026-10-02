@@ -1,35 +1,35 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-#include "uve/nodes/3d/spring_arm_3d_uve.h"
+#include "uve/objects/3d/spring_arm_3d_uve.h"
 
 #include <algorithm>
 #include <cmath>
 
 #include "uve/entity/i_entity_manager_uve.h"
-#include "uve/nodes/3d/object_3d_uve.h"
+#include "uve/objects/3d/object_3d_uve.h"
 
 namespace UVE::Scene {
 
-bool IsSpringArm3DNodeComponentValidUVE(const SpringArm3DNodeComponentUVE& value) noexcept {
+bool IsSpringArm3DObjectComponentValidUVE(const SpringArm3DComponentUVE& value) noexcept {
     return std::isfinite(value.armLength) && value.armLength > 0.0F && std::isfinite(value.margin) &&
            value.margin >= 0.0F && std::isfinite(value.smoothing) && value.smoothing >= 0.0F &&
            std::isfinite(value.currentLength) && value.currentLength >= 0.0F && value.currentLength <= value.armLength;
 }
 
-bool IsSpringArm3DNodeDefinitionValidUVE(const SpringArm3DNodeDefinitionUVE& value) noexcept {
-    return IsSpringArm3DNodeComponentValidUVE(value.springArm);
+bool IsSpringArm3DObjectDefinitionValidUVE(const SpringArm3DObjectDefinitionUVE& value) noexcept {
+    return IsSpringArm3DObjectComponentValidUVE(value.springArm);
 }
 
-void ApplySpringArm3DNodeDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                       const SpringArm3DNodeDefinitionUVE& value) {
+void ApplySpringArm3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
+                                       const SpringArm3DObjectDefinitionUVE& value) {
     // SpringArm3D is Object3D plus its own component: the shared baseline guarantee comes first,
     // then this kind's part goes on top.
-    EnsureObject3DBaselineUVE(entityManager, entity, SpringArm3DNodeDefinitionUVE::defaultName);
-    SpringArm3DNodeComponentUVE springArm = value.springArm;
+    EnsureObject3DBaselineUVE(entityManager, entity, SpringArm3DObjectDefinitionUVE::defaultName);
+    SpringArm3DComponentUVE springArm = value.springArm;
     // Armed at full reach on day one, the same seeding the deserializer applies on load: the
     // first simulation step resolves the truth, everything before that must still be valid.
     springArm.currentLength = springArm.armLength;
-    entityManager.AddComponentUVE<SpringArm3DNodeComponentUVE>(entity, springArm);
+    entityManager.AddComponentUVE<SpringArm3DComponentUVE>(entity, springArm);
 }
 
 float ResolveSpringArm3DTargetUVE(const std::optional<float> hitDistance, const float margin,

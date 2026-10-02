@@ -92,7 +92,7 @@ std::optional<ValueUVE> ParseValueTextUVE(const std::string_view text, const Typ
             return ValueUVE{Vec3ValueUVE{parts[0], parts[1], parts[2]}};
         }
         case TypeUVE::KindUVE::None:
-        case TypeUVE::KindUVE::Node:
+        case TypeUVE::KindUVE::Object:
         case TypeUVE::KindUVE::Error:
             break;
     }
@@ -107,7 +107,7 @@ std::string TypeUVE::NameUVE() const {
         case KindUVE::Float: return "float";
         case KindUVE::Str: return "str";
         case KindUVE::Vec3: return "vec3";
-        case KindUVE::Node: return node.empty() ? std::string{"Node"} : node;
+        case KindUVE::Object: return object.empty() ? std::string{"Node"} : object;
         case KindUVE::Error: return "?";
     }
     return "?";

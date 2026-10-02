@@ -18,7 +18,7 @@ enum class LightBakeModeUVE : std::uint8_t {
 };
 
 /// The shared state of LightEmitter3D, the abstract base (under RenderInstance3D) of every light.
-/// No node is a LightEmitter3D on its own; its kinds - directional, point, spot - carry this
+/// No object is a LightEmitter3D on its own; its kinds - directional, point, spot - carry this
 /// component and add their own shape.
 struct LightEmitterComponentUVE final {
     Math::Vector3UVE color{1.0F, 1.0F, 1.0F};

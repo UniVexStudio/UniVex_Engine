@@ -20,7 +20,7 @@ enum class UVScriptTokenKindUVE : std::uint8_t {
     Declaration,
     /// true, false, none.
     Literal,
-    /// A type or node kind: int, vec3, Character3D (any capitalised word).
+    /// A type or object kind: int, vec3, Character3D (any capitalised word).
     Type,
     /// The name being declared right after `on` or `fn`.
     Definition,

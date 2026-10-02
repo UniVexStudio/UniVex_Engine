@@ -21,7 +21,7 @@
 #include "uve/component/light_emitter_component_uve.h"
 #include "uve/component/mesh_component_uve.h"
 #include "uve/component/name_component_uve.h"
-#include "uve/component/node_metadata_component_uve.h"
+#include "uve/component/object_metadata_component_uve.h"
 #include "uve/component/particle_emitter_component_uve.h"
 #include "uve/component/process_component_uve.h"
 #include "uve/component/thread_group_component_uve.h"
@@ -40,11 +40,11 @@
 #include "uve/component/visibility_component_uve.h"
 #include "uve/logging/assert_uve.h"
 #include "uve/logging/logging_macros_uve.h"
-#include "uve/nodes/3d/decal_3d_uve.h"
-#include "uve/nodes/3d/directional_light_3d_uve.h"
-#include "uve/nodes/3d/fog_volume_3d_uve.h"
-#include "uve/nodes/3d/skeleton_3d_uve.h"
-#include "uve/nodes/3d/world_environment_3d_uve.h"
+#include "uve/objects/3d/decal_3d_uve.h"
+#include "uve/objects/3d/directional_light_3d_uve.h"
+#include "uve/objects/3d/fog_volume_3d_uve.h"
+#include "uve/objects/3d/skeleton_3d_uve.h"
+#include "uve/objects/3d/world_environment_3d_uve.h"
 #include "uve/math/quaternion_uve.h"
 
 namespace UVE::Scene {
@@ -298,7 +298,7 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                      }));
 
     // One component behind BoxMesh3D, SphereMesh3D and PlaneMesh3D; its section carries the name
-    // of the node it is on.
+    // of the object it is on.
     TypeMetadataEntryUVE primitive =
         MakeEntryUVE("component.primitive_mesh", "PrimitiveMesh3D", kSectionOrderTypeSpecificUVE,
                      {
@@ -320,42 +320,42 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     };
     AddUVE<PrimitiveMeshComponentUVE>(entries, std::move(primitive));
 
-    AddUVE<WorldEnvironment3DNodeComponentUVE>(
+    AddUVE<WorldEnvironment3DComponentUVE>(
         entries,
         MakeEntryUVE(
             "component.world_environment", "WorldEnvironment", kSectionOrderTypeSpecificUVE,
             {
-                DeclareUVE<&WorldEnvironment3DNodeComponentUVE::skyAssetPath>("skyAssetPath", "Sky",
+                DeclareUVE<&WorldEnvironment3DComponentUVE::skyAssetPath>("skyAssetPath", "Sky",
                                                                               kPropertyTypeStringUVE),
-                DeclareUVE<&WorldEnvironment3DNodeComponentUVE::ambientColor>(
+                DeclareUVE<&WorldEnvironment3DComponentUVE::ambientColor>(
                     "ambientColor", "Ambient Color", kPropertyTypeColorUVE),
-                WithRangeUVE(DeclareUVE<&WorldEnvironment3DNodeComponentUVE::ambientEnergy>(
+                WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::ambientEnergy>(
                                  "ambientEnergy", "Ambient Energy", kPropertyTypeFloatUVE),
                              0.0, 100.0, 0.05),
-                WithRangeUVE(DeclareUVE<&WorldEnvironment3DNodeComponentUVE::exposure>(
+                WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::exposure>(
                                  "exposure", "Exposure", kPropertyTypeFloatUVE),
                              0.0, 100.0, 0.05),
-                DeclareUVE<&WorldEnvironment3DNodeComponentUVE::fogEnabled>("fogEnabled", "Fog Enabled",
+                DeclareUVE<&WorldEnvironment3DComponentUVE::fogEnabled>("fogEnabled", "Fog Enabled",
                                                                             kPropertyTypeBoolUVE),
                 [] {
-                    TypeMetadataPropertyUVE property = DeclareUVE<&WorldEnvironment3DNodeComponentUVE::fogColor>(
+                    TypeMetadataPropertyUVE property = DeclareUVE<&WorldEnvironment3DComponentUVE::fogColor>(
                         "fogColor", "Fog Color", kPropertyTypeColorUVE);
                     property.isVisible = +[](const void* instance) {
-                        return static_cast<const WorldEnvironment3DNodeComponentUVE*>(instance)->fogEnabled;
+                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->fogEnabled;
                     };
                     return property;
                 }(),
                 [] {
                     TypeMetadataPropertyUVE property =
-                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DNodeComponentUVE::fogDensity>(
+                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::fogDensity>(
                                          "fogDensity", "Fog Density", kPropertyTypeFloatUVE),
                                      0.0, 1.0, 0.001);
                     property.isVisible = +[](const void* instance) {
-                        return static_cast<const WorldEnvironment3DNodeComponentUVE*>(instance)->fogEnabled;
+                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->fogEnabled;
                     };
                     return property;
                 }(),
-                DeclareUVE<&WorldEnvironment3DNodeComponentUVE::postProcessingEnabled>(
+                DeclareUVE<&WorldEnvironment3DComponentUVE::postProcessingEnabled>(
                     "postProcessingEnabled", "Post Processing", kPropertyTypeBoolUVE),
             }));
 
@@ -424,8 +424,8 @@ void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                                                         kPropertyTypeFloatUVE),
                              0.0, 10000.0, 0.01),
             });
-    // A collider is always part of some node rather than a feature of its own: the collision a
-    // BoxMesh3D/SphereMesh3D/PlaneMesh3D is created with sits in that node's section, and a body's
+    // A collider is always part of some object rather than a feature of its own: the collision a
+    // BoxMesh3D/SphereMesh3D/PlaneMesh3D is created with sits in that object's section, and a body's
     // or area's shape, layer and mask sit in PhysicsObject3D's.
     collider.nestedUnderTypeIds = {"component.primitive_mesh", "component.physics_object"};
     AddUVE<ColliderComponentUVE>(entries, std::move(collider));
@@ -572,11 +572,11 @@ void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
 
 void DeclareAnimationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     // AnimationSequencer's own section. Its target is an entity reference: flagged so the serializer
-    // remaps it, and drawn as a node picker. Empty means the player's parent, which is the common
+    // remaps it, and drawn as a object picker. Empty means the player's parent, which is the common
     // case and needs no picking at all.
     // AnimationMixer: the base AnimationSequencer and AnimationGraph share, shown between their own
-    // section and the Node section. Its target is an entity reference: flagged so the serializer
-    // remaps it, and drawn as a node picker. Empty means the parent, the common case.
+    // section and the Object section. Its target is an entity reference: flagged so the serializer
+    // remaps it, and drawn as a object picker. Empty means the parent, the common case.
     using M = AnimationMixerComponentUVE;
     TypeMetadataPropertyUVE mixerTarget = WithTooltipUVE(
         DeclareUVE<&M::target>("target", "Target", kPropertyTypeEntityUVE),
@@ -585,7 +585,7 @@ void DeclareAnimationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     AddValidatedUVE<AnimationMixerComponentUVE, &IsAnimationMixerComponentValidUVE>(
         entries,
         MakeEntryUVE(
-            "component.animation_mixer", "AnimationMixer", kSectionOrderNodeBaseUVE + 20,
+            "component.animation_mixer", "AnimationMixer", kSectionOrderObjectBaseUVE + 20,
             {
                 WithTooltipUVE(DeclareUVE<&M::active>("active", "Active", kPropertyTypeBoolUVE),
                                "Off, nothing is evaluated and the target is left alone."),
@@ -593,7 +593,7 @@ void DeclareAnimationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                 WithTooltipUVE(WithRangeUVE(DeclareUVE<&M::speedScale>("speedScale", "Speed Scale",
                                                                        kPropertyTypeFloatUVE),
                                             0.0, 100.0, 0.01),
-                               "Multiplies every clock under this node: 0.5 is slow motion, 0 freezes."),
+                               "Multiplies every clock under this object: 0.5 is slow motion, 0 freezes."),
                 WithTooltipUVE(DeclareEnumUVE<&M::processCallback>("processCallback", "Update",
                                                                    {{0, "Every Frame"}, {1, "Physics Step"}}),
                                "Every Frame is smoothest on screen. Physics Step keeps the target in step "
@@ -695,7 +695,7 @@ void DeclareAnimationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                                                          "AnimationParameterList"),
                                                "animation-parameters"),
                            "Parameters"),
-                InGroupUVE(WithCustomDrawerUVE(DeclareUVE<&T::nodes>("nodes", "Graph", "AnimationGraphNodeList"),
+                InGroupUVE(WithCustomDrawerUVE(DeclareUVE<&T::objects>("nodes", "Graph", "AnimationGraphNodeList"),
                                                "animation-graph"),
                            "Graph"),
                 InGroupUVE(DeclareRuntimeStateUVE<&T::activeStates>("activeStates", "Active States",
@@ -834,15 +834,15 @@ void DeclareMediaAndUIUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     return property;
 }
 
-/// The common Node section: what every node has regardless of what it is. These sort last, below
-/// whatever the node itself brings, which is where an author expects them - and in a fixed order
+/// The common Object section: what every object has regardless of what it is. These sort last, below
+/// whatever the object itself brings, which is where an author expects them - and in a fixed order
 /// among themselves, because an author finds a setting by where it was last time.
 /// The abstract 3D bases. Their sections appear on every concrete child, between what the child
-/// itself brings and the common Node section.
-void DeclareNodeBasesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
+/// itself brings and the common Object section.
+void DeclareObjectBasesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     AddUVE<BoneModifierComponentUVE>(
         entries,
-        MakeEntryUVE("component.bone_modifier", "BoneModifier3D", kSectionOrderNodeBaseUVE,
+        MakeEntryUVE("component.bone_modifier", "BoneModifier3D", kSectionOrderObjectBaseUVE,
                      {
                          WithTooltipUVE(DeclareUVE<&BoneModifierComponentUVE::active>("active", "Active",
                                                                                         kPropertyTypeBoolUVE),
@@ -861,7 +861,7 @@ void DeclareNodeBasesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     AddUVE<PhysicsObjectComponentUVE>(
         entries,
         MakeEntryUVE(
-            "component.physics_object", "PhysicsObject3D", kSectionOrderNodeBaseUVE + 1,
+            "component.physics_object", "PhysicsObject3D", kSectionOrderObjectBaseUVE + 1,
             {
                 WithTooltipUVE(DeclareEnumUVE<&PhysicsObjectComponentUVE::disableMode>(
                                    "disableMode", "Disable Mode",
@@ -879,7 +879,7 @@ void DeclareNodeBasesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     // Sorts before PhysicsObject3D: a base that derives from another is drawn above it.
     AddUVE<SolidBodyComponentUVE>(
         entries,
-        MakeEntryUVE("component.solid_body", "SolidBody3D", kSectionOrderNodeBaseUVE,
+        MakeEntryUVE("component.solid_body", "SolidBody3D", kSectionOrderObjectBaseUVE,
                      {
                          InGroupUVE(WithTooltipUVE(DeclareUVE<&SolidBodyComponentUVE::lockMotionX>(
                                                        "lockMotionX", "X", kPropertyTypeBoolUVE),
@@ -897,7 +897,7 @@ void DeclareNodeBasesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
 
     AddUVE<RenderInstanceComponentUVE>(
         entries,
-        MakeEntryUVE("component.render_instance", "RenderInstance3D", kSectionOrderNodeBaseUVE + 10,
+        MakeEntryUVE("component.render_instance", "RenderInstance3D", kSectionOrderObjectBaseUVE + 10,
                      {
                          WithCustomDrawerUVE(
                              WithTooltipUVE(DeclareUVE<&RenderInstanceComponentUVE::renderLayers>(
@@ -916,7 +916,7 @@ void DeclareNodeBasesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     AddValidatedUVE<SurfaceInstanceComponentUVE, &IsSurfaceInstanceComponentValidUVE>(
         entries,
         MakeEntryUVE(
-            "component.surface_instance", "SurfaceInstance3D", kSectionOrderNodeBaseUVE + 3,
+            "component.surface_instance", "SurfaceInstance3D", kSectionOrderObjectBaseUVE + 3,
             {
                 WithTooltipUVE(DeclareUVE<&S::materialOverridePath>("materialOverridePath", "Override",
                                                                     kPropertyTypeStringUVE),
@@ -981,7 +981,7 @@ void DeclareNodeBasesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     AddValidatedUVE<LightEmitterComponentUVE, &IsLightEmitterComponentValidUVE>(
         entries,
         MakeEntryUVE(
-            "component.light_emitter", "LightEmitter3D", kSectionOrderNodeBaseUVE + 4,
+            "component.light_emitter", "LightEmitter3D", kSectionOrderObjectBaseUVE + 4,
             {
                 DeclareUVE<&L::color>("color", "Color", kPropertyTypeColorUVE),
                 WithTooltipUVE(WithRangeUVE(DeclareUVE<&L::energy>("energy", "Energy", kPropertyTypeFloatUVE), 0.0,
@@ -1048,11 +1048,11 @@ void DeclareNodeBasesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
 /// Source names and change only by re-exporting it - so they are declared for display and saving,
 /// with a drawer that shows the hierarchy instead of a generic editor.
 void DeclareSkeletonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
-    using K = Skeleton3DNodeComponentUVE;
+    using K = Skeleton3DComponentUVE;
     TypeMetadataPropertyUVE bones = WithCustomDrawerUVE(DeclareUVE<&K::bones>("bones", "Bones", "SkeletonBones"),
                                                         "skeleton-bones");
     bones.flags = TypeMetadataPropertyFlagsUVE::ReadOnly;
-    AddValidatedUVE<Skeleton3DNodeComponentUVE, &IsSkeleton3DNodeComponentValidUVE>(
+    AddValidatedUVE<Skeleton3DComponentUVE, &IsSkeleton3DObjectComponentValidUVE>(
         entries,
         MakeEntryUVE("component.skeleton_3d", "Skeleton3D", kSectionOrderTypeSpecificUVE,
                      {
@@ -1069,7 +1069,7 @@ void DeclareSkeletonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
 
 /// Concrete RenderInstance3D children. Each brings exactly its own section; everything above it
 /// comes from the bases.
-void DeclareRenderInstanceNodesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
+void DeclareRenderInstanceObjectsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     AddValidatedUVE<DirectionalLight3DComponentUVE, &IsDirectionalLight3DComponentValidUVE>(
         entries,
         MakeEntryUVE(
@@ -1089,20 +1089,20 @@ void DeclareRenderInstanceNodesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                            "Shadow"),
             }));
 
-    using D = Decal3DNodeComponentUVE;
-    AddValidatedUVE<Decal3DNodeComponentUVE, &IsDecal3DNodeComponentValidUVE>(
+    using D = Decal3DComponentUVE;
+    AddValidatedUVE<Decal3DComponentUVE, &IsDecal3DObjectComponentValidUVE>(
         entries,
         MakeEntryUVE(
             "component.decal_3d", "Decal3D", kSectionOrderTypeSpecificUVE,
             {
                 WithTooltipUVE(DeclareUVE<&D::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
-                               "Off stops projecting without removing the node."),
+                               "Off stops projecting without removing the object."),
                 WithTooltipUVE(DeclareUVE<&D::materialAssetPath>("materialAssetPath", "Material",
                                                                  kPropertyTypeStringUVE),
                                "The decal material to project."),
                 WithTooltipUVE(WithRangeUVE(DeclareUVE<&D::size>("size", "Size", kPropertyTypeVector3UVE), 0.001,
                                             100000.0, 0.01),
-                               "The projection volume, centred on the node; it projects along -Y."),
+                               "The projection volume, centred on the object; it projects along -Y."),
                 DeclareEnumUVE<&D::projection>("projection", "Projection", {{0, "Box"}, {1, "Cylinder"}}),
                 WithTooltipUVE(WithRangeUVE(DeclareUVE<&D::lifetime>("lifetime", "Lifetime", kPropertyTypeFloatUVE),
                                             0.0, 100000.0, 0.1),
@@ -1147,8 +1147,8 @@ void DeclareRenderInstanceNodesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                            "Distance Fade"),
             }));
 
-    using F = FogVolume3DNodeComponentUVE;
-    AddValidatedUVE<FogVolume3DNodeComponentUVE, &IsFogVolume3DNodeComponentValidUVE>(
+    using F = FogVolume3DComponentUVE;
+    AddValidatedUVE<FogVolume3DComponentUVE, &IsFogVolume3DObjectComponentValidUVE>(
         entries,
         MakeEntryUVE(
             "component.fog_volume_3d", "FogVolume3D", kSectionOrderTypeSpecificUVE,
@@ -1190,18 +1190,18 @@ void DeclareRenderInstanceNodesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
             }));
 }
 
-void DeclareNodeCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
+void DeclareObjectCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     // Each of these is declared here and nowhere else, and each appears in the Inspector - with
     // its dropdown, its resolved answer and its place in the section - without a line of Inspector
     // code being written for it. That is the whole point of the declaration being the single
     // source of property truth.
-    constexpr std::int32_t kProcessOrder = kSectionOrderNodeCommonUVE;
-    constexpr std::int32_t kThreadGroupOrder = kSectionOrderNodeCommonUVE + 10;
-    constexpr std::int32_t kPhysicsInterpolationOrder = kSectionOrderNodeCommonUVE + 20;
-    constexpr std::int32_t kAutoTranslateOrder = kSectionOrderNodeCommonUVE + 30;
-    constexpr std::int32_t kEditorDescriptionOrder = kSectionOrderNodeCommonUVE + 40;
-    constexpr std::int32_t kScriptOrder = kSectionOrderNodeCommonUVE + 50;
-    constexpr std::int32_t kMetadataOrder = kSectionOrderNodeCommonUVE + 60;
+    constexpr std::int32_t kProcessOrder = kSectionOrderObjectCommonUVE;
+    constexpr std::int32_t kThreadGroupOrder = kSectionOrderObjectCommonUVE + 10;
+    constexpr std::int32_t kPhysicsInterpolationOrder = kSectionOrderObjectCommonUVE + 20;
+    constexpr std::int32_t kAutoTranslateOrder = kSectionOrderObjectCommonUVE + 30;
+    constexpr std::int32_t kEditorDescriptionOrder = kSectionOrderObjectCommonUVE + 40;
+    constexpr std::int32_t kScriptOrder = kSectionOrderObjectCommonUVE + 50;
+    constexpr std::int32_t kMetadataOrder = kSectionOrderObjectCommonUVE + 60;
 
     AddUVE<ProcessComponentUVE>(
         entries,
@@ -1306,7 +1306,7 @@ void DeclareNodeCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                               "scriptAssetPath", "Scripting", kPropertyTypeStringUVE),
                                           "script-slot"),
                       // A `.uvs` script's `export` fields, drawn from the script itself; this
-                      // node's values are stored here, so each edit is one undo step.
+                      // object's values are stored here, so each edit is one undo step.
                       WithCustomDrawerUVE(DeclareUVE<&ScriptComponentUVE::exportValues>(
                                               "exportValues", "Exports", "ScriptExportValues"),
                                           "script-exports")});
@@ -1316,12 +1316,12 @@ void DeclareNodeCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     // Typed key/value pairs. A list needs add, rename, retype and remove, which a single property
     // row cannot express, so the whole list is one custom-drawn property.
     TypeMetadataEntryUVE metadata = MakeEntryUVE(
-        "component.node_metadata", "Metadata", kMetadataOrder,
-        {WithCustomDrawerUVE(DeclareUVE<&NodeMetadataComponentUVE::entries>("entries", "Metadata",
-                                                                            "NodeMetadataEntryList"),
-                             "node-metadata")});
+        "component.object_metadata", "Metadata", kMetadataOrder,
+        {WithCustomDrawerUVE(DeclareUVE<&ObjectMetadataComponentUVE::entries>("entries", "Metadata",
+                                                                            "ObjectMetadataEntryList"),
+                             "object-metadata")});
     metadata.presentedInline = true;
-    AddUVE<NodeMetadataComponentUVE>(entries, std::move(metadata));
+    AddUVE<ObjectMetadataComponentUVE>(entries, std::move(metadata));
 }
 
 [[nodiscard]] TypeMetadataRegistryUVE BuildRegistryUVE() {
@@ -1330,10 +1330,10 @@ void DeclareNodeCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     DeclareRenderingUVE(entries);
     DeclarePhysicsUVE(entries);
     DeclareMediaAndUIUVE(entries);
-    DeclareNodeBasesUVE(entries);
-    DeclareRenderInstanceNodesUVE(entries);
+    DeclareObjectBasesUVE(entries);
+    DeclareRenderInstanceObjectsUVE(entries);
     DeclareSkeletonUVE(entries);
-    DeclareNodeCommonUVE(entries);
+    DeclareObjectCommonUVE(entries);
 
     TypeMetadataRegistryUVE registry;
     for (TypeMetadataEntryUVE& entry : entries) {

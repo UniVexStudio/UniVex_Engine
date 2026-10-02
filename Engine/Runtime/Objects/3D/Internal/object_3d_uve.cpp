@@ -1,6 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-#include "uve/nodes/3d/object_3d_uve.h"
+#include "uve/objects/3d/object_3d_uve.h"
 
 #include <string>
 #include <vector>
@@ -9,7 +9,7 @@
 #include "uve/component/editor_description_component_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/name_component_uve.h"
-#include "uve/component/node_metadata_component_uve.h"
+#include "uve/component/object_metadata_component_uve.h"
 #include "uve/component/physics_interpolation_component_uve.h"
 #include "uve/component/process_component_uve.h"
 #include "uve/component/script_component_uve.h"
@@ -35,33 +35,33 @@ void EnsureComponentUVE(IEntityManagerUVE& entityManager, const EntityUVE entity
            transform.localScale == Math::Vector3UVE{1.0F, 1.0F, 1.0F};
 }
 
-/// Folds the node's old transform into each direct child's local transform, so removing the node's
-/// transform moves nothing on screen. Scenes saved before the node became a pure Node could have
+/// Folds the object's old transform into each direct child's local transform, so removing the object's
+/// transform moves nothing on screen. Scenes saved before the object became a pure Object could have
 /// moved, rotated or scaled it, and every child's world pose was composed through it.
 ///
 /// Uses the same composition SceneGraphUVE::UpdateUVE applies, so the baked local transform is
-/// exactly the world transform the child had. A top-level child never composed from the node, so it
+/// exactly the world transform the child had. A top-level child never composed from the object, so it
 /// is left alone.
-void BakeTransformIntoChildrenUVE(IEntityManagerUVE& entityManager, const EntityUVE node,
-                                      const TransformComponentUVE& nodeTransform) {
-    if (IsIdentityTransformUVE(nodeTransform)) {
+void BakeTransformIntoChildrenUVE(IEntityManagerUVE& entityManager, const EntityUVE object,
+                                      const TransformComponentUVE& objectTransform) {
+    if (IsIdentityTransformUVE(objectTransform)) {
         return; // The common case: nothing to fold in, and nothing to touch.
     }
     std::vector<EntityUVE> children;
     entityManager.ForEachUVE<HierarchyComponentUVE, TransformComponentUVE>(
-        [&children, node](const EntityUVE entity, HierarchyComponentUVE& hierarchy, TransformComponentUVE& local) {
-            if (hierarchy.parent == node && !local.topLevel) {
+        [&children, object](const EntityUVE entity, HierarchyComponentUVE& hierarchy, TransformComponentUVE& local) {
+            if (hierarchy.parent == object && !local.topLevel) {
                 children.push_back(entity);
             }
         });
     for (const EntityUVE child : children) {
         TransformComponentUVE& local = entityManager.GetComponentUVE<TransformComponentUVE>(child);
-        const Math::Vector3UVE scaled = nodeTransform.localScale * local.localPosition;
+        const Math::Vector3UVE scaled = objectTransform.localScale * local.localPosition;
         local.localPosition =
-            nodeTransform.localPosition + Math::RotateVectorUVE(nodeTransform.localRotation, scaled);
-        const bool rotationChanged = !(nodeTransform.localRotation == Math::QuaternionUVE{});
-        local.localRotation = Math::MultiplyUVE(nodeTransform.localRotation, local.localRotation);
-        local.localScale = nodeTransform.localScale * local.localScale;
+            objectTransform.localPosition + Math::RotateVectorUVE(objectTransform.localRotation, scaled);
+        const bool rotationChanged = !(objectTransform.localRotation == Math::QuaternionUVE{});
+        local.localRotation = Math::MultiplyUVE(objectTransform.localRotation, local.localRotation);
+        local.localScale = objectTransform.localScale * local.localScale;
         if (rotationChanged) {
             // The stored Euler angles described the old rotation. Making the quaternion the truth is
             // what a gizmo drag does too; without it the next Euler edit would snap the child back.
@@ -75,27 +75,27 @@ void BakeTransformIntoChildrenUVE(IEntityManagerUVE& entityManager, const Entity
 
 } // namespace
 
-bool IsObject3DNodeDefinitionValidUVE(const Object3DNodeDefinitionUVE& /*value*/) noexcept {
+bool IsObject3DObjectDefinitionValidUVE(const Object3DObjectDefinitionUVE& /*value*/) noexcept {
     // Object3D carries no authored data - a definition with default-initialized (that is,
     // absent) fields is always valid. The validator exists so the kind keeps the same
-    // validate-before-apply seam as every other node kind.
+    // validate-before-apply seam as every other object kind.
     return true;
 }
 
-void ApplyObject3DNodeDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                  const Object3DNodeDefinitionUVE& value) {
+void ApplyObject3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
+                                  const Object3DObjectDefinitionUVE& value) {
     static_cast<void>(value);
-    EnsureObject3DBaselineUVE(entityManager, entity, Object3DNodeDefinitionUVE::defaultName);
+    EnsureObject3DBaselineUVE(entityManager, entity, Object3DObjectDefinitionUVE::defaultName);
     if (!entityManager.IsAliveUVE(entity)) {
         return;
     }
-    // A Object3D's Inspector is Transform, Visibility and the Node section, and it has no Add
+    // A Object3D's Inspector is Transform, Visibility and the Object section, and it has no Add
     // Component, so everything it shows is attached here.
     EnsureComponentUVE<VisibilityComponentUVE>(entityManager, entity);
-    EnsureCommonNodeSectionUVE(entityManager, entity);
+    EnsureCommonObjectSectionUVE(entityManager, entity);
 }
 
-void EnsureCommonNodeSectionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity) {
+void EnsureCommonObjectSectionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity) {
     if (!entityManager.IsAliveUVE(entity)) {
         return;
     }
@@ -105,7 +105,7 @@ void EnsureCommonNodeSectionUVE(IEntityManagerUVE& entityManager, const EntityUV
     EnsureComponentUVE<AutoTranslateComponentUVE>(entityManager, entity);
     EnsureComponentUVE<EditorDescriptionComponentUVE>(entityManager, entity);
     EnsureComponentUVE<ScriptComponentUVE>(entityManager, entity);
-    EnsureComponentUVE<NodeMetadataComponentUVE>(entityManager, entity);
+    EnsureComponentUVE<ObjectMetadataComponentUVE>(entityManager, entity);
 }
 
 void EnsureObject3DBaselineUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
@@ -131,13 +131,13 @@ void EnsureObject3DBaselineUVE(IEntityManagerUVE& entityManager, const EntityUVE
     }
 }
 
-void EnsureNodeBaselineUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
+void EnsureObjectBaselineUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
                            const std::string_view nameFallback) {
     if (!entityManager.IsAliveUVE(entity)) {
         return;
     }
-    // A pure Node has no transform. The creation shell attaches one to every entity, and scenes
-    // saved before a kind became a pure Node carry one too; it is folded into the children, so
+    // A pure Object has no transform. The creation shell attaches one to every entity, and scenes
+    // saved before a kind became a pure Object carry one too; it is folded into the children, so
     // removing it moves nothing on screen, and then removed.
     if (entityManager.HasComponentUVE<TransformComponentUVE>(entity)) {
         BakeTransformIntoChildrenUVE(entityManager, entity,
@@ -147,7 +147,7 @@ void EnsureNodeBaselineUVE(IEntityManagerUVE& entityManager, const EntityUVE ent
     if (entityManager.HasComponentUVE<WorldTransformComponentUVE>(entity)) {
         entityManager.RemoveComponentUVE<WorldTransformComponentUVE>(entity);
     }
-    // Visibility is a Object3D property: a pure Node draws nothing, so it has nothing to hide.
+    // Visibility is a Object3D property: a pure Object draws nothing, so it has nothing to hide.
     if (entityManager.HasComponentUVE<VisibilityComponentUVE>(entity)) {
         entityManager.RemoveComponentUVE<VisibilityComponentUVE>(entity);
     }
@@ -155,7 +155,7 @@ void EnsureNodeBaselineUVE(IEntityManagerUVE& entityManager, const EntityUVE ent
     if (!entityManager.HasComponentUVE<NameComponentUVE>(entity)) {
         entityManager.AddComponentUVE<NameComponentUVE>(entity, NameComponentUVE{std::string{nameFallback}});
     }
-    EnsureCommonNodeSectionUVE(entityManager, entity);
+    EnsureCommonObjectSectionUVE(entityManager, entity);
 }
 
 } // namespace UVE::Scene
