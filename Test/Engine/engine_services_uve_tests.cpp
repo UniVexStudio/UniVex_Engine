@@ -617,6 +617,18 @@ public:
                                                               std::span<const std::byte>) override {
         return Render::TextureHandleUVE{1};
     }
+    [[nodiscard]] bool SupportsTextureFormatUVE(const Render::TextureFormatUVE format,
+                                                const Render::TextureColorSpaceUVE colorSpace) const noexcept override {
+        const bool formatKnown = Render::GetTextureFormatBlockInfoUVE(format).bytes != 0U;
+        switch (colorSpace) {
+            case Render::TextureColorSpaceUVE::Linear:
+                return formatKnown && !Render::IsTextureFormatCompressedUVE(format);
+            case Render::TextureColorSpaceUVE::Srgb:
+                return formatKnown && Render::IsTextureFormatSrgbCapableUVE(format) &&
+                       !Render::IsTextureFormatCompressedUVE(format);
+        }
+        return false;
+    }
     void DestroyTextureUVE(Render::TextureHandleUVE) override {}
     [[nodiscard]] Render::ShaderHandleUVE CreateShaderUVE(const Render::ShaderDescUVE&, std::string*) override {
         return Render::ShaderHandleUVE{1};
