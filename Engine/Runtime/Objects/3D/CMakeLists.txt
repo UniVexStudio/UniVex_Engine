@@ -15,13 +15,13 @@
 
 add_library(uve_nodes_3d STATIC
     Internal/object_3d_common_uve.cpp
-    Internal/abstract_nodes_3d_uve.cpp
-    ../Animation/Internal/abstract_animation_nodes_3d_uve.cpp
+    Internal/abstract_objects_3d_uve.cpp
+    ../Animation/Internal/abstract_animation_objects_3d_uve.cpp
     ../Animation/Internal/animation_sequencer_uve.cpp
     ../Animation/Internal/animation_graph_uve.cpp
     ../Animation/Internal/skeleton_3d_uve.cpp
     ../Animation/Internal/bone_attachment_3d_uve.cpp
-    Physics/Internal/abstract_physics_nodes_3d_uve.cpp
+    Physics/Internal/abstract_physics_objects_3d_uve.cpp
     Physics/Internal/kinematic_3d_uve.cpp
     Physics/Internal/area_3d_uve.cpp
     Physics/Internal/character_3d_uve.cpp

@@ -1,12 +1,12 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-#include "uve/nodes/3d/ray_cast_3d_uve.h"
+#include "uve/objects/3d/ray_cast_3d_uve.h"
 
 namespace UVE::Scene {
 
-bool IsRayCast3DNodeComponentValidUVE(const RayCast3DNodeComponentUVE& value) noexcept {
+bool IsRayCast3DObjectComponentValidUVE(const RayCast3DComponentUVE& value) noexcept {
     const float directionLengthSquared = Math::LengthSquaredUVE(value.direction);
-    if (!IsFinite3DNodeVectorUVE(value.direction) || !std::isfinite(directionLengthSquared) ||
+    if (!IsFinite3DObjectVectorUVE(value.direction) || !std::isfinite(directionLengthSquared) ||
         directionLengthSquared <= 1.0e-8F || !std::isfinite(value.length) || value.length <= 0.0F ||
         value.exclusionCount > kMaximumRayCastExclusionsUVE) {
         return false;
@@ -21,8 +21,8 @@ bool IsRayCast3DNodeComponentValidUVE(const RayCast3DNodeComponentUVE& value) no
             }
         }
     }
-    return !value.hit || (value.hitEntity != kInvalidEntityUVE && IsFinite3DNodeVectorUVE(value.hitPosition) &&
-                           IsFinite3DNodeVectorUVE(value.hitNormal));
+    return !value.hit || (value.hitEntity != kInvalidEntityUVE && IsFinite3DObjectVectorUVE(value.hitPosition) &&
+                           IsFinite3DObjectVectorUVE(value.hitNormal));
 }
 
 } // namespace UVE::Scene

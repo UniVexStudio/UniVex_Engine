@@ -8,16 +8,16 @@
 namespace UVE::Editor {
 namespace {
 
-using Kind = Scene::Nodes::SceneNodeKindUVE;
-using Node = ContentCatalogueNodeUVE;
+using Kind = Scene::Objects::SceneObjectKindUVE;
+using Object = ContentCatalogueObjectUVE;
 using Action = ContentCatalogueActionUVE;
 
 template <std::size_t N>
-using Tree = std::array<Node, N>;
+using Tree = std::array<Object, N>;
 
-constexpr Tree<1> kOne(Kind kind) { return {Node{kind, -1, {}}}; }
+constexpr Tree<1> kOne(Kind kind) { return {Object{kind, -1, {}}}; }
 
-// Templates with more than one node. Everything else is a single node of the kind it names.
+// Templates with more than one object. Everything else is a single object of the kind it names.
 constexpr Tree<4> kCharacter{{{Kind::Character3D, -1, {}},
                               {Kind::MeshInstance3D, 0, "Mesh"},
                               {Kind::AnimationSequencer, 0, "AnimationSequencer"},
@@ -192,11 +192,11 @@ int RankContentCatalogueItemUVE(const ContentCatalogueItemUVE& item, const std::
     return ContainsUVE(item.label, word) ? 2 : 1;
 }
 
-Scene::Nodes::SceneNodeKindUVE GetContentCatalogueIconKindUVE(const ContentCatalogueItemUVE& item) noexcept {
-    if (item.action == ContentCatalogueActionUVE::Folder || item.nodes.empty()) {
+Scene::Objects::SceneObjectKindUVE GetContentCatalogueIconKindUVE(const ContentCatalogueItemUVE& item) noexcept {
+    if (item.action == ContentCatalogueActionUVE::Folder || item.objects.empty()) {
         return Kind::Folder;
     }
-    return item.nodes.front().kind;
+    return item.objects.front().kind;
 }
 
 } // namespace UVE::Editor

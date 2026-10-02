@@ -1,9 +1,9 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-#include "uve/nodes/3d/decal_3d_uve.h"
+#include "uve/objects/3d/decal_3d_uve.h"
 
 #include "uve/entity/i_entity_manager_uve.h"
-#include "uve/nodes/3d/abstract_nodes_3d_uve.h"
+#include "uve/objects/3d/abstract_objects_3d_uve.h"
 
 namespace UVE::Scene {
 namespace {
@@ -18,8 +18,8 @@ namespace {
 
 } // namespace
 
-bool IsDecal3DNodeComponentValidUVE(const Decal3DNodeComponentUVE& value) noexcept {
-    return IsBounded3DNodeStringUVE(value.materialAssetPath) && IsFinite3DNodeVectorUVE(value.size) &&
+bool IsDecal3DObjectComponentValidUVE(const Decal3DComponentUVE& value) noexcept {
+    return IsBounded3DObjectStringUVE(value.materialAssetPath) && IsFinite3DObjectVectorUVE(value.size) &&
            value.size.x > 0.0F && value.size.y > 0.0F && value.size.z > 0.0F && IsNonNegativeUVE(value.lifetime) &&
            value.projection <= DecalProjectionModeUVE::Cylinder && IsNonNegativeUVE(value.modulate.x) &&
            IsNonNegativeUVE(value.modulate.y) && IsNonNegativeUVE(value.modulate.z) &&
@@ -29,11 +29,11 @@ bool IsDecal3DNodeComponentValidUVE(const Decal3DNodeComponentUVE& value) noexce
            IsNonNegativeUVE(value.distanceFadeLength);
 }
 
-void ApplyDecal3DNodeDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                   const Decal3DNodeDefinitionUVE& value) {
-    ApplyRenderInstance3DBaseUVE(entityManager, entity, Decal3DNodeDefinitionUVE::defaultName);
-    if (entityManager.IsAliveUVE(entity) && !entityManager.HasComponentUVE<Decal3DNodeComponentUVE>(entity)) {
-        entityManager.AddComponentUVE<Decal3DNodeComponentUVE>(entity, value.decal);
+void ApplyDecal3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
+                                   const Decal3DObjectDefinitionUVE& value) {
+    ApplyRenderInstance3DBaseUVE(entityManager, entity, Decal3DObjectDefinitionUVE::defaultName);
+    if (entityManager.IsAliveUVE(entity) && !entityManager.HasComponentUVE<Decal3DComponentUVE>(entity)) {
+        entityManager.AddComponentUVE<Decal3DComponentUVE>(entity, value.decal);
     }
 }
 

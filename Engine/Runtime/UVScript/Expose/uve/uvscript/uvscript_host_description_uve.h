@@ -12,15 +12,15 @@
 
 namespace UVE::UVScript {
 
-/// A host that only describes: what a node offers, read from text, for compiling a script where no
-/// node exists (uvsc at build time). It cannot run a script. One declaration per line, `#` comments:
+/// A host that only describes: what a object offers, read from text, for compiling a script where no
+/// object exists (uvsc at build time). It cannot run a script. One declaration per line, `#` comments:
 ///
 ///     property velocity vec3
 ///     property is_on_floor bool readonly
 ///     function input.axis(str, str) -> float
 ///     event tick(float)
 ///
-/// Types are bool, int, float, str, vec3 and none; any other name is a node kind.
+/// Types are bool, int, float, str, vec3 and none; any other name is a object kind.
 class DescribedHostUVE final : public UVScriptHostUVE {
 public:
     /// Nothing, with `error` set ("line 3: ..."), when the text is not a valid description.

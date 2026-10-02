@@ -126,7 +126,7 @@ struct FieldUVE final {
     SourceLocationUVE at;
 };
 
-/// `on <event>(params):` - runs when the node raises `event`.
+/// `on <event>(params):` - runs when the object raises `event`.
 struct HandlerUVE final {
     std::string event;
     std::vector<ParamUVE> params;

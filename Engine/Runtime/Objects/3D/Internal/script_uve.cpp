@@ -1,20 +1,20 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-#include "uve/nodes/3d/script_uve.h"
+#include "uve/objects/3d/script_uve.h"
 
 #include "uve/entity/i_entity_manager_uve.h"
-#include "uve/nodes/3d/object_3d_uve.h"
+#include "uve/objects/3d/object_3d_uve.h"
 
 namespace UVE::Scene {
 
-bool IsScriptNodeDefinitionValidUVE(const ScriptNodeDefinitionUVE& value) noexcept {
+bool IsScriptObjectDefinitionValidUVE(const ScriptObjectDefinitionUVE& value) noexcept {
     return IsScriptComponentValidUVE(value.script);
 }
 
-void ApplyScriptNodeDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity, const ScriptNodeDefinitionUVE& value) {
+void ApplyScriptObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity, const ScriptObjectDefinitionUVE& value) {
     // Script is Object3D plus its own components: the shared baseline guarantee comes first,
     // then this kind's part goes on top.
-    EnsureObject3DBaselineUVE(entityManager, entity, ScriptNodeDefinitionUVE::defaultName);
+    EnsureObject3DBaselineUVE(entityManager, entity, ScriptObjectDefinitionUVE::defaultName);
     entityManager.AddComponentUVE<ScriptComponentUVE>(entity, value.script);
 }
 

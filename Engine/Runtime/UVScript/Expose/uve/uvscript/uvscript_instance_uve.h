@@ -23,8 +23,8 @@ enum class ExecutionUVE : std::uint8_t {
     Interpreted,
 };
 
-/// One node running a program: its field values and any handlers paused on `wait`.
-/// Not thread-safe; a node's script runs on the thread that updates the node.
+/// One object running a program: its field values and any handlers paused on `wait`.
+/// Not thread-safe; a object's script runs on the thread that updates the object.
 class ScriptInstanceUVE final {
 public:
     /// Evaluates the field initializers in source order. `host` must outlive the instance.

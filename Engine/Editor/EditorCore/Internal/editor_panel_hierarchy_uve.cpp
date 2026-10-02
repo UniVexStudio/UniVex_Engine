@@ -33,7 +33,7 @@
 #include <imgui.h>
 
 #include "editor_chrome_layout_uve.h"
-#include "editor_node_icons_uve.h"
+#include "editor_object_icons_uve.h"
 #include "editor_text_search_uve.h"
 
 #include "uve/asset/i_asset_database_uve.h"
@@ -45,16 +45,16 @@
 #include "uve/component/visibility_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
 #include "uve/scene/i_scene_graph_uve.h"
-#include "uve/nodes/3d/skeleton_3d_uve.h"
-#include "uve/scene/nodes/scene_node_registry_uve.h"
-#include "uve/scene/nodes/scene_node_type_uve.h"
+#include "uve/objects/3d/skeleton_3d_uve.h"
+#include "uve/scene/objects/scene_object_registry_uve.h"
+#include "uve/scene/objects/scene_object_type_uve.h"
 
 namespace UVE::Editor {
 
 namespace {
 
 /// An eye, drawn rather than taken from a font so it never depends on the editor font's glyphs.
-/// Open when the node is shown; closed (a lid line with lashes) when it is hidden.
+/// Open when the object is shown; closed (a lid line with lashes) when it is hidden.
 void DrawEyeGlyphUVE(ImDrawList& drawList, const ImVec2 center, const float size, const bool open, const ImU32 color) {
     const float halfWidth = size * 0.42F;
     const float halfHeight = size * 0.24F;
@@ -171,12 +171,12 @@ void EditorUVE::DrawHierarchyPanelUVE() {
 void EditorUVE::DrawHierarchyBodyUVE() {
     std::array<char, 256> filterBuffer{};
     m_hierarchyFilter.copy(filterBuffer.data(), filterBuffer.size() - 1U);
-    const float addNodeButtonWidth = ImGui::GetFrameHeight();
-    const bool canCreateNode = IsAuthoringCommandAllowedUVE();
+    const float addObjectButtonWidth = ImGui::GetFrameHeight();
+    const bool canCreateObject = IsAuthoringCommandAllowedUVE();
     ImGui::PushID("scene-add-node");
-    ImGui::BeginDisabled(!canCreateNode);
-    if (ImGui::Button("+", ImVec2{addNodeButtonWidth, addNodeButtonWidth})) {
-        m_nodePickerOpenRequested = true;
+    ImGui::BeginDisabled(!canCreateObject);
+    if (ImGui::Button("+", ImVec2{addObjectButtonWidth, addObjectButtonWidth})) {
+        m_objectPickerOpenRequested = true;
     }
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
@@ -191,7 +191,7 @@ void EditorUVE::DrawHierarchyBodyUVE() {
         m_hierarchyFilter = filterBuffer.data();
         InvalidateHierarchyFilterCacheUVE();
     }
-    DrawNodePickerUVE();
+    DrawObjectPickerUVE();
     RebuildHierarchyFilterCacheUVE();
     if (m_selectedEntity != m_hierarchyRevealedEntity) {
         m_hierarchyRevealedEntity = m_selectedEntity;
@@ -215,22 +215,22 @@ void EditorUVE::DrawHierarchyBodyUVE() {
         // In the Entity Editor the entity is the top of the tree; the scene root is not shown.
         const Scene::EntityUVE entityRoot = m_entityEditSession.has_value() ? GetEntityEditorRootUVE() : Scene::kInvalidEntityUVE;
         if (entityRoot != Scene::kInvalidEntityUVE) {
-            DrawHierarchyNodeUVE(entityRoot);
+            DrawHierarchyObjectUVE(entityRoot);
         } else if (GetDocumentViewportUVE() != Scene::kInvalidEntityUVE) {
             // The level: the scene root is not shown; its Viewport, sun and environment are the top.
             const Scene::EntityUVE sceneRoot = GetDocumentSceneRootUVE();
             for (const Scene::EntityUVE top :
                  m_services->GetSceneGraphUVE().GetChildrenUVE(m_services->GetEntityManagerUVE(), sceneRoot)) {
-                DrawHierarchyNodeUVE(top);
+                DrawHierarchyObjectUVE(top);
             }
         } else {
             for (const Scene::EntityUVE root : GetDocumentRootsUVE()) {
-                DrawHierarchyNodeUVE(root);
+                DrawHierarchyObjectUVE(root);
             }
         }
         ImGui::PopStyleVar();
         if (m_hierarchyView.dragToReparent && !GetDocumentRootsUVE().empty()) {
-            // The hint is for an empty scene only; once there are nodes the rest of the panel is still
+            // The hint is for an empty scene only; once there are objects the rest of the panel is still
             // the drop area for "move to the top", just without words in the way.
             const Scene::EntityUVE sceneRoot = GetDocumentSceneRootUVE();
             const bool sceneEmpty = sceneRoot == Scene::kInvalidEntityUVE ||
@@ -250,7 +250,7 @@ void EditorUVE::DrawHierarchyBodyUVE() {
     }
 }
 
-void EditorUVE::DrawHierarchyNodeUVE(const Scene::EntityUVE entity) {
+void EditorUVE::DrawHierarchyObjectUVE(const Scene::EntityUVE entity) {
     if (!IsHierarchyEntityVisibleUVE(entity)) {
         return;
     }
@@ -296,8 +296,8 @@ void EditorUVE::DrawHierarchyNodeUVE(const Scene::EntityUVE entity) {
     }
 
     const bool renaming = entity == m_hierarchyRenameEntity;
-    // Just enough leading space for the node icon drawn into it (see below) plus
-    // a small gap - was 4 spaces, which (combined with TreeNodeEx's own arrow-toggle spacing that
+    // Just enough leading space for the object icon drawn into it (see below) plus
+    // a small gap - was 4 spaces, which (combined with TreeObjectEx's own arrow-toggle spacing that
     // every row reserves, leaf or not) pushed the icon+name noticeably right of the panel's left
     // edge instead of hugging it.
     // The gap is measured, not guessed: as many spaces as it takes to clear the icon plus a gap,
@@ -306,13 +306,13 @@ void EditorUVE::DrawHierarchyNodeUVE(const Scene::EntityUVE entity) {
     const float spaceWidth = std::max(1.0F, ImGui::CalcTextSize(" ").x);
     const auto gapSpaces = m_hierarchyView.showIcons
                                ? static_cast<std::size_t>(
-                                     std::ceil((kHierarchyNodeIconSizeUVE + 6.0F) / spaceWidth))
+                                     std::ceil((kHierarchyObjectIconSizeUVE + 6.0F) / spaceWidth))
                                : std::size_t{0U};
     // The row's right-hand columns (eye, warning, script) are fixed; the name gives way to them.
     // A name that would run under the leftmost column this row uses is cut short with "..." and
     // shown in full on hover, instead of being painted over by the badges.
-    const std::vector<std::string> warnings = GetNodeWarningsUVE(entity);
-    const std::optional<std::string> script = GetNodeScriptPathUVE(entity);
+    const std::vector<std::string> warnings = GetObjectWarningsUVE(entity);
+    const std::optional<std::string> script = GetObjectScriptPathUVE(entity);
     // With the eyes hidden their column is given back, and the badges move over into it.
     const float eyeColumns = m_hierarchyView.visibilityColumn == HierarchyVisibilityColumnUVE::Hidden ? 0.0F : 1.0F;
     float usedColumns = entityManager.HasComponentUVE<Scene::VisibilityComponentUVE>(entity) ? eyeColumns : 0.0F;
@@ -323,7 +323,7 @@ void EditorUVE::DrawHierarchyNodeUVE(const Scene::EntityUVE entity) {
         usedColumns = eyeColumns + 2.0F;
     }
     const std::string fullName = GetEntityDisplayLabelUVE(entity);
-    const float labelStart = ImGui::GetCursorPosX() + ImGui::GetTreeNodeToLabelSpacing() +
+    const float labelStart = ImGui::GetCursorPosX() + ImGui::GetTreeObjectToLabelSpacing() +
                              (static_cast<float>(gapSpaces) * spaceWidth);
     const float labelLimit = ImGui::GetWindowContentRegionMax().x - (usedColumns * ImGui::GetFrameHeight()) -
                              ImGui::GetStyle().ItemSpacing.x;
@@ -331,16 +331,16 @@ void EditorUVE::DrawHierarchyNodeUVE(const Scene::EntityUVE entity) {
     const bool nameTruncated = shownName.size() != fullName.size();
     const std::string visibleLabel = renaming ? "" : std::string(gapSpaces, ' ') + shownName;
     // "###" keys the row on the entity alone. With "##" the visible text was part of the ID, so
-    // renaming a node, or narrowing the panel until its name was cut short, gave the row a new
+    // renaming a object, or narrowing the panel until its name was cut short, gave the row a new
     // ID and it forgot it was open.
-    const std::string nodeLabel = visibleLabel + "###entity-" + std::to_string(entity.index) + ":" +
+    const std::string objectLabel = visibleLabel + "###entity-" + std::to_string(entity.index) + ":" +
                                   std::to_string(entity.generation);
     if (active) {
         ImGui::PushStyleColor(ImGuiCol_Header, IM_COL32(66, 84, 101, 235));
         ImGui::PushStyleColor(ImGuiCol_HeaderActive, IM_COL32(101, 130, 154, 245));
         ImGui::PushStyleColor(ImGuiCol_HeaderHovered, IM_COL32(88, 112, 133, 240));
     }
-    const bool open = ImGui::TreeNodeEx(nodeLabel.c_str(), flags);
+    const bool open = ImGui::TreeObjectEx(objectLabel.c_str(), flags);
     if (active) {
         ImGui::PopStyleColor(3);
     }
@@ -362,12 +362,12 @@ void EditorUVE::DrawHierarchyNodeUVE(const Scene::EntityUVE entity) {
     // The type goes after the name, dimmed, only when all of it fits in the room the name and the
     // right-hand columns leave: a type cut to "C..." says nothing. Whatever does not fit is in the
     // row's tooltip instead.
-    const std::string_view typeName = GetNodeTypeNameUVE(entity);
+    const std::string_view typeName = GetObjectTypeNameUVE(entity);
     const std::string_view typeHint = GetHierarchyTypeHintUVE(fullName, typeName);
     bool typeHintShown = false;
     if (!renaming && m_hierarchyView.showTypeName && !nameTruncated && !typeHint.empty()) {
         const std::string hint(typeHint);
-        const float hintStart = rowMin.x + ImGui::GetTreeNodeToLabelSpacing() +
+        const float hintStart = rowMin.x + ImGui::GetTreeObjectToLabelSpacing() +
                                 ImGui::CalcTextSize(visibleLabel.c_str()).x + ImGui::GetStyle().ItemSpacing.x;
         const float hintLimit = ImGui::GetWindowPos().x - ImGui::GetScrollX() + labelLimit;
         if (ImGui::CalcTextSize(hint.c_str()).x <= hintLimit - hintStart) {
@@ -381,13 +381,13 @@ void EditorUVE::DrawHierarchyNodeUVE(const Scene::EntityUVE entity) {
         // up with the name without a second ImGui column or child window just for one picture.
         // Whole pixels, so the texture's texels land on screen pixels and stay sharp.
         const std::uintptr_t icon =
-            m_uiAssets.GetNodeIconTextureIdUVE(Scene::ResolveSceneNodeKindUVE(entityManager, entity));
+            m_uiAssets.GetObjectIconTextureIdUVE(Scene::ResolveSceneObjectKindUVE(entityManager, entity));
         if (icon != 0U) {
-            const ImVec2 iconMin{std::floor(rowMin.x + ImGui::GetTreeNodeToLabelSpacing()),
-                                 std::floor(((rowMin.y + rowMax.y) - kHierarchyNodeIconSizeUVE) * 0.5F)};
+            const ImVec2 iconMin{std::floor(rowMin.x + ImGui::GetTreeObjectToLabelSpacing()),
+                                 std::floor(((rowMin.y + rowMax.y) - kHierarchyObjectIconSizeUVE) * 0.5F)};
             ImGui::GetWindowDrawList()->AddImage(
                 static_cast<ImTextureID>(icon), iconMin,
-                ImVec2{iconMin.x + kHierarchyNodeIconSizeUVE, iconMin.y + kHierarchyNodeIconSizeUVE});
+                ImVec2{iconMin.x + kHierarchyObjectIconSizeUVE, iconMin.y + kHierarchyObjectIconSizeUVE});
         }
     }
     const bool typeHidden = m_hierarchyView.showTypeName && !typeHint.empty() && !typeHintShown;
@@ -407,10 +407,10 @@ void EditorUVE::DrawHierarchyNodeUVE(const Scene::EntityUVE entity) {
         }
     }
     if (!renaming) {
-        DrawHierarchyNodeContextMenuUVE(entity);
+        DrawHierarchyObjectContextMenuUVE(entity);
     }
     // F2 renames the selected row. A double-click does what the Double-Click preference says:
-    // rename, focus the node in the viewport, or open and close the row (handled by the tree node).
+    // rename, focus the object in the viewport, or open and close the row (handled by the tree object).
     const bool doubleClicked = !renaming && ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
     if (doubleClicked && m_hierarchyView.doubleClick == HierarchyDoubleClickUVE::FocusInViewport &&
         CanFocusEntityInViewportUVE(entity)) {
@@ -459,13 +459,13 @@ void EditorUVE::DrawHierarchyNodeUVE(const Scene::EntityUVE entity) {
     }
     if (open) {
         for (const Scene::EntityUVE child : children) {
-            DrawHierarchyNodeUVE(child);
+            DrawHierarchyObjectUVE(child);
         }
         ImGui::TreePop();
     }
 }
 
-void EditorUVE::DrawHierarchyNodeContextMenuUVE(const Scene::EntityUVE entity) {
+void EditorUVE::DrawHierarchyObjectContextMenuUVE(const Scene::EntityUVE entity) {
     // Right-click acts on the row under the cursor: it becomes the selection first (unless it is
     // already part of it), so every command below targets what the user pointed at.
     if (ImGui::IsItemClicked(ImGuiMouseButton_Right) && !IsEntitySelectedUVE(entity)) {
@@ -482,10 +482,10 @@ void EditorUVE::DrawHierarchyNodeContextMenuUVE(const Scene::EntityUVE entity) {
     ImGui::TextDisabled("%s", GetEntityDisplayLabelUVE(entity).c_str());
     ImGui::Separator();
     ImGui::BeginDisabled(!authoring || !single);
-    // Opens the same searchable picker as the + button. New nodes go under the single selection,
+    // Opens the same searchable picker as the + button. New objects go under the single selection,
     // which the right-click has just made this row.
     if (ImGui::MenuItem("Add Child Node...")) {
-        m_nodePickerOpenRequested = true;
+        m_objectPickerOpenRequested = true;
     }
     if (ImGui::MenuItem("Rename", "F2")) {
         m_hierarchyRenameEntity = entity;
@@ -551,7 +551,7 @@ bool EditorUVE::SetHierarchyBranchOpenUVE(const Scene::EntityUVE entity, const b
     std::erase_if(m_hierarchyPendingRowOpen,
                   [this](const auto& pending) { return !IsDocumentEntityUVE(pending.first); });
 
-    // One pass over the parent links instead of a children query per node, which scans the whole
+    // One pass over the parent links instead of a children query per object, which scans the whole
     // scene each time.
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
     std::vector<std::pair<Scene::EntityUVE, Scene::EntityUVE>> links;
@@ -592,13 +592,13 @@ std::optional<bool> EditorUVE::GetPendingHierarchyRowOpenUVE(const Scene::Entity
 }
 
 
-void EditorUVE::DrawNodePickerUVE() {
+void EditorUVE::DrawObjectPickerUVE() {
     // The Scene panel's "+" is small on purpose: the level's own furniture - a folder to organise it,
     // the sun and the sky. Everything else is made in the Content Browser ("+ Add" or right-click)
-    // and dragged into the level, so the world is built from assets instead of loose nodes.
+    // and dragged into the level, so the world is built from assets instead of loose objects.
     constexpr const char* kPopupId = "##node-picker";
-    if (m_nodePickerOpenRequested) {
-        m_nodePickerOpenRequested = false;
+    if (m_objectPickerOpenRequested) {
+        m_objectPickerOpenRequested = false;
         ImGui::OpenPopup(kPopupId);
     }
     if (!ImGui::BeginPopup(kPopupId)) {
@@ -620,33 +620,33 @@ void EditorUVE::DrawNodePickerUVE() {
     }
     ImGui::Separator();
     const std::string folderLabel =
-        levelLayout ? "New Folder in " + GetEntityDisplayLabelUVE(ResolveNewNodeParentForUVE(Scene::Nodes::SceneNodeKindUVE::Folder))
+        levelLayout ? "New Folder in " + GetEntityDisplayLabelUVE(ResolveNewObjectParentForUVE(Scene::Objects::SceneObjectKindUVE::Folder))
                     : std::string{"New Folder"};
-    const auto item = [this](const Scene::Nodes::SceneNodeKindUVE kind, const char* const label,
+    const auto item = [this](const Scene::Objects::SceneObjectKindUVE kind, const char* const label,
                              const char* const shortcut, const char* const tooltip) {
-        DrawNodePickerIconUVE(m_uiAssets.GetNodeIconTextureIdUVE(kind));
+        DrawObjectPickerIconUVE(m_uiAssets.GetObjectIconTextureIdUVE(kind));
         const bool picked = ImGui::MenuItem(label, shortcut);
         if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip("%s", tooltip);
         }
         return picked;
     };
-    if (item(Scene::Nodes::SceneNodeKindUVE::Folder, folderLabel.c_str(), nullptr,
+    if (item(Scene::Objects::SceneObjectKindUVE::Folder, folderLabel.c_str(), nullptr,
              "Groups nodes in this panel. It has no position, so nothing moves in the world.")) {
-        static_cast<void>(CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Folder));
+        static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Folder));
     }
     ImGui::Separator();
     // The level has one of each; once it is there, it is no longer offered.
-    const bool hasSun = FindTopLevelNodeUVE(Scene::Nodes::SceneNodeKindUVE::DirectionalLight3D) != Scene::kInvalidEntityUVE;
+    const bool hasSun = FindTopLevelObjectUVE(Scene::Objects::SceneObjectKindUVE::DirectionalLight3D) != Scene::kInvalidEntityUVE;
     const bool hasEnvironment =
-        FindTopLevelNodeUVE(Scene::Nodes::SceneNodeKindUVE::WorldEnvironment3D) != Scene::kInvalidEntityUVE;
-    if (!hasSun && item(Scene::Nodes::SceneNodeKindUVE::DirectionalLight3D, "DirectionalLight3D", nullptr,
+        FindTopLevelObjectUVE(Scene::Objects::SceneObjectKindUVE::WorldEnvironment3D) != Scene::kInvalidEntityUVE;
+    if (!hasSun && item(Scene::Objects::SceneObjectKindUVE::DirectionalLight3D, "DirectionalLight3D", nullptr,
                         "The sun: a light from far away that falls on the whole level and casts its shadows.")) {
-        static_cast<void>(CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::DirectionalLight3D));
+        static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::DirectionalLight3D));
     }
-    if (!hasEnvironment && item(Scene::Nodes::SceneNodeKindUVE::WorldEnvironment3D, "WorldEnvironment", nullptr,
+    if (!hasEnvironment && item(Scene::Objects::SceneObjectKindUVE::WorldEnvironment3D, "WorldEnvironment", nullptr,
                                 "The sky, ambient light and fog of the level.")) {
-        static_cast<void>(CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::WorldEnvironment3D));
+        static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::WorldEnvironment3D));
     }
     ImGui::Separator();
     ImGui::TextDisabled("Meshes, characters and the rest:");
@@ -656,7 +656,7 @@ void EditorUVE::DrawNodePickerUVE() {
 
 void EditorUVE::DrawHierarchyVisibilityToggleUVE(const Scene::EntityUVE entity, const bool rowHovered) {
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    // Only nodes that can be hidden get an eye; the scene root and plain Nodes have no Visibility.
+    // Only objects that can be hidden get an eye; the scene root and plain Objects have no Visibility.
     if (!entityManager.HasComponentUVE<Scene::VisibilityComponentUVE>(entity)) {
         return;
     }
@@ -675,7 +675,7 @@ void EditorUVE::DrawHierarchyVisibilityToggleUVE(const Scene::EntityUVE entity, 
     const ImVec2 min = ImGui::GetItemRectMin();
     const ImVec2 max = ImGui::GetItemRectMax();
     // Bright when shown, dim when hidden, and dimmer still when shown but hidden by a parent - so
-    // a node that is invisible only because of its parent does not look like it was switched off.
+    // a object that is invisible only because of its parent does not look like it was switched off.
     ImU32 color = ImGui::GetColorU32(ImGuiCol_Text);
     if (!visibility.visible) {
         color = ImGui::GetColorU32(ImGuiCol_TextDisabled);
@@ -697,7 +697,7 @@ void EditorUVE::DrawHierarchyVisibilityToggleUVE(const Scene::EntityUVE entity, 
     }
 }
 
-std::vector<std::string> EditorUVE::GetNodeWarningsUVE(const Scene::EntityUVE entity) const {
+std::vector<std::string> EditorUVE::GetObjectWarningsUVE(const Scene::EntityUVE entity) const {
     std::vector<std::string> warnings;
     if (!IsDocumentEntityUVE(entity)) {
         return warnings;
@@ -725,14 +725,14 @@ std::vector<std::string> EditorUVE::GetNodeWarningsUVE(const Scene::EntityUVE en
             warnings.emplace_back("The assigned material is no longer in the project.");
         }
     }
-    if (entityManager.HasComponentUVE<Scene::Skeleton3DNodeComponentUVE>(entity) &&
-        entityManager.GetComponentUVE<Scene::Skeleton3DNodeComponentUVE>(entity).skeletonAssetPath.empty()) {
+    if (entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(entity) &&
+        entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(entity).skeletonAssetPath.empty()) {
         warnings.emplace_back("No source model is set, so the skeleton has no bones.");
     }
     return warnings;
 }
 
-std::optional<std::string> EditorUVE::GetNodeScriptPathUVE(const Scene::EntityUVE entity) const {
+std::optional<std::string> EditorUVE::GetObjectScriptPathUVE(const Scene::EntityUVE entity) const {
     const Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
     if (!IsDocumentEntityUVE(entity) || !entityManager.HasComponentUVE<Scene::ScriptComponentUVE>(entity)) {
         return std::nullopt;

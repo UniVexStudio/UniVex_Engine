@@ -29,8 +29,8 @@
 #include "uve/component/animation_player_component_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/name_component_uve.h"
-#include "uve/nodes/3d/animation_sequencer_uve.h"
-#include "uve/nodes/3d/skeleton_3d_uve.h"
+#include "uve/objects/3d/animation_sequencer_uve.h"
+#include "uve/objects/3d/skeleton_3d_uve.h"
 
 namespace UVE::Editor {
 namespace {
@@ -128,8 +128,8 @@ void EditorUVE::StopAnimationTimelinePreviewUVE() {
     }
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
     if (entityManager.IsAliveUVE(m_timeline.previewSkeleton) &&
-        entityManager.HasComponentUVE<Scene::Skeleton3DNodeComponentUVE>(m_timeline.previewSkeleton)) {
-        entityManager.GetComponentUVE<Scene::Skeleton3DNodeComponentUVE>(m_timeline.previewSkeleton).pose.clear();
+        entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(m_timeline.previewSkeleton)) {
+        entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(m_timeline.previewSkeleton).pose.clear();
     }
     m_timeline.previewSkeleton = Scene::kInvalidEntityUVE;
 }
@@ -147,9 +147,9 @@ void EditorUVE::DrawAnimationTimelineUVE() {
 
     // ---- Which player: the selected one, else the one shown last, else the entity's first -------
     std::vector<Scene::EntityUVE> players;
-    for (const Scene::EntityUVE node : CollectEntityEditorNodesUVE()) {
-        if (entityManager.HasComponentUVE<Scene::AnimationPlayerComponentUVE>(node)) {
-            players.push_back(node);
+    for (const Scene::EntityUVE object : CollectEntityEditorObjectsUVE()) {
+        if (entityManager.HasComponentUVE<Scene::AnimationPlayerComponentUVE>(object)) {
+            players.push_back(object);
         }
     }
     if (players.empty()) {
@@ -224,7 +224,7 @@ void EditorUVE::DrawAnimationTimelineUVE() {
             queue.push_back(root);
         }
         for (std::size_t next = 0U; next < queue.size() && next < 4096U; ++next) {
-            if (entityManager.HasComponentUVE<Scene::Skeleton3DNodeComponentUVE>(queue[next])) {
+            if (entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(queue[next])) {
                 skeletonEntity = queue[next];
                 break;
             }
@@ -279,7 +279,7 @@ void EditorUVE::DrawAnimationTimelineUVE() {
         if (m_timeline.clip == nullptr) {
             return;
         }
-        // The selected bone's track, else the clip's own node track.
+        // The selected bone's track, else the clip's own object track.
         std::optional<std::string> chosen;
         if (FindClipTrackSamplesUVE(*m_timeline.clip, m_selectedSkeletonBone) != nullptr) {
             chosen = m_selectedSkeletonBone;
@@ -494,9 +494,9 @@ void EditorUVE::DrawAnimationTimelineUVE() {
         };
         return lower(label).find(lower(m_timeline.filter)) != std::string::npos;
     };
-    const Scene::Skeleton3DNodeComponentUVE* const skeleton =
+    const Scene::Skeleton3DComponentUVE* const skeleton =
         skeletonEntity != Scene::kInvalidEntityUVE
-            ? &entityManager.GetComponentUVE<Scene::Skeleton3DNodeComponentUVE>(skeletonEntity)
+            ? &entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity)
             : nullptr;
     if (skeleton != nullptr) {
         std::vector<int> depth(skeleton->bones.size(), 0);
@@ -523,7 +523,7 @@ void EditorUVE::DrawAnimationTimelineUVE() {
         StopAnimationTimelinePreviewUVE();
     }
     if (clip->IsSkeletalUVE() && skeletonEntity != Scene::kInvalidEntityUVE) {
-        auto& posed = entityManager.GetComponentUVE<Scene::Skeleton3DNodeComponentUVE>(skeletonEntity);
+        auto& posed = entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity);
         if (Scene::PoseSkeletonAtTimeUVE(*clip, m_timeline.timeSeconds, posed, mixer)) {
             m_timeline.previewSkeleton = skeletonEntity;
         }

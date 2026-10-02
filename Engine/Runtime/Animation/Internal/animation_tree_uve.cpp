@@ -14,7 +14,7 @@ namespace {
 constexpr std::size_t kMaximumIdentifierBytesUVE = 128U;
 
 struct AnimationTreeCacheKeyUVE final {
-    std::uint32_t nodeId = 0U;
+    std::uint32_t objectId = 0U;
     double localTime = 0.0;
 
     [[nodiscard]] bool operator==(const AnimationTreeCacheKeyUVE&) const noexcept = default;
@@ -22,19 +22,19 @@ struct AnimationTreeCacheKeyUVE final {
 
 struct AnimationTreeCacheKeyHashUVE final {
     [[nodiscard]] std::size_t operator()(const AnimationTreeCacheKeyUVE& key) const noexcept {
-        const std::size_t nodeHash = std::hash<std::uint32_t>{}(key.nodeId);
+        const std::size_t objectHash = std::hash<std::uint32_t>{}(key.objectId);
         const std::size_t timeHash = std::hash<double>{}(key.localTime);
-        return nodeHash ^ (timeHash + static_cast<std::size_t>(0x9e3779b9U) +
-                           (nodeHash << 6U) + (nodeHash >> 2U));
+        return objectHash ^ (timeHash + static_cast<std::size_t>(0x9e3779b9U) +
+                           (objectHash << 6U) + (objectHash >> 2U));
     }
 };
 
-[[nodiscard]] const AnimationTreeNodeUVE* FindNodeUVE(
+[[nodiscard]] const AnimationTreeObjectUVE* FindObjectUVE(
     const AnimationTreeUVE& tree, const std::uint32_t id) noexcept {
-    const auto iterator = std::find_if(tree.nodes.cbegin(), tree.nodes.cend(), [id](const auto& node) {
-        return node.id == id;
+    const auto iterator = std::find_if(tree.objects.cbegin(), tree.objects.cend(), [id](const auto& object) {
+        return object.id == id;
     });
-    return iterator == tree.nodes.cend() ? nullptr : &*iterator;
+    return iterator == tree.objects.cend() ? nullptr : &*iterator;
 }
 
 [[nodiscard]] const AnimationClipUVE* FindClipUVE(
@@ -70,35 +70,35 @@ struct AnimationTreeCacheKeyHashUVE final {
     return TryNormalizeTransformPoseUVE(blended, normalized) ? normalized : left;
 }
 
-[[nodiscard]] bool UsesInputAUVE(const AnimationTreeNodeKindUVE kind) noexcept {
-    return kind != AnimationTreeNodeKindUVE::ClipPlayer;
+[[nodiscard]] bool UsesInputAUVE(const AnimationTreeObjectKindUVE kind) noexcept {
+    return kind != AnimationTreeObjectKindUVE::ClipPlayer;
 }
 
-[[nodiscard]] bool UsesInputBUVE(const AnimationTreeNodeKindUVE kind) noexcept {
-    return kind == AnimationTreeNodeKindUVE::Blend || kind == AnimationTreeNodeKindUVE::Transition;
+[[nodiscard]] bool UsesInputBUVE(const AnimationTreeObjectKindUVE kind) noexcept {
+    return kind == AnimationTreeObjectKindUVE::Blend || kind == AnimationTreeObjectKindUVE::Transition;
 }
 
 } // namespace
 
 AnimationTreeValidationResultUVE ValidateAnimationTreeUVE(const AnimationTreeUVE& tree) noexcept {
-    if (tree.nodes.empty()) {
+    if (tree.objects.empty()) {
         return {AnimationTreeValidationCodeUVE::EmptyTree, 0U, "AnimationTree requires at least one node."};
     }
-    if (tree.nodes.size() > AnimationTreeUVE::kMaximumNodesUVE) {
+    if (tree.objects.size() > AnimationTreeUVE::kMaximumObjectsUVE) {
         return {AnimationTreeValidationCodeUVE::CapacityExceeded, 0U,
                 "AnimationTree node count exceeds the bounded limit."};
     }
-    std::unordered_set<std::uint32_t> nodeIds;
-    nodeIds.reserve(tree.nodes.size());
-    for (const AnimationTreeNodeUVE& node : tree.nodes) {
-        if (node.id == 0U || node.name.empty() || node.name.size() > kMaximumIdentifierBytesUVE ||
-            !std::isfinite(node.weight) || node.weight < 0.0F || node.weight > 1.0F ||
-            !std::isfinite(node.timeScale) || node.timeScale < 0.0F) {
-            return {AnimationTreeValidationCodeUVE::InvalidNode, node.id,
+    std::unordered_set<std::uint32_t> objectIds;
+    objectIds.reserve(tree.objects.size());
+    for (const AnimationTreeObjectUVE& object : tree.objects) {
+        if (object.id == 0U || object.name.empty() || object.name.size() > kMaximumIdentifierBytesUVE ||
+            !std::isfinite(object.weight) || object.weight < 0.0F || object.weight > 1.0F ||
+            !std::isfinite(object.timeScale) || object.timeScale < 0.0F) {
+            return {AnimationTreeValidationCodeUVE::InvalidObject, object.id,
                     "AnimationTree node identity or bounded numeric configuration is invalid."};
         }
-        if (!nodeIds.insert(node.id).second) {
-            return {AnimationTreeValidationCodeUVE::DuplicateNode, node.id,
+        if (!objectIds.insert(object.id).second) {
+            return {AnimationTreeValidationCodeUVE::DuplicateObject, object.id,
                     "AnimationTree node identifiers must be unique."};
         }
     }
@@ -110,34 +110,34 @@ AnimationTreeValidationResultUVE ValidateAnimationTreeUVE(const AnimationTreeUVE
         }
     }
     std::size_t outputCount = 0U;
-    for (const AnimationTreeNodeUVE& node : tree.nodes) {
-        if (node.kind == AnimationTreeNodeKindUVE::ClipPlayer &&
-            (node.clipId.empty() || FindClipUVE(tree, node.clipId) == nullptr)) {
-            return {AnimationTreeValidationCodeUVE::UnknownClip, node.id,
+    for (const AnimationTreeObjectUVE& object : tree.objects) {
+        if (object.kind == AnimationTreeObjectKindUVE::ClipPlayer &&
+            (object.clipId.empty() || FindClipUVE(tree, object.clipId) == nullptr)) {
+            return {AnimationTreeValidationCodeUVE::UnknownClip, object.id,
                     "AnimationTree ClipPlayer references an unknown clip."};
         }
-        if (node.kind == AnimationTreeNodeKindUVE::Parameter &&
-            (node.parameterId.empty() || node.parameterId.size() > kMaximumIdentifierBytesUVE)) {
-            return {AnimationTreeValidationCodeUVE::InvalidParameter, node.id,
+        if (object.kind == AnimationTreeObjectKindUVE::Parameter &&
+            (object.parameterId.empty() || object.parameterId.size() > kMaximumIdentifierBytesUVE)) {
+            return {AnimationTreeValidationCodeUVE::InvalidParameter, object.id,
                     "AnimationTree Parameter requires a bounded parameter identifier."};
         }
-        if (node.kind == AnimationTreeNodeKindUVE::OutputPose) {
+        if (object.kind == AnimationTreeObjectKindUVE::OutputPose) {
             ++outputCount;
         }
-        if (UsesInputAUVE(node.kind) && node.inputA == 0U) {
-            return {AnimationTreeValidationCodeUVE::InvalidNode, node.id,
+        if (UsesInputAUVE(object.kind) && object.inputA == 0U) {
+            return {AnimationTreeValidationCodeUVE::InvalidObject, object.id,
                     "AnimationTree node requires inputA."};
         }
-        if (UsesInputBUVE(node.kind) && node.inputB == 0U) {
-            return {AnimationTreeValidationCodeUVE::InvalidNode, node.id,
+        if (UsesInputBUVE(object.kind) && object.inputB == 0U) {
+            return {AnimationTreeValidationCodeUVE::InvalidObject, object.id,
                     "AnimationTree node requires inputB."};
         }
-        if (node.inputA != 0U && FindNodeUVE(tree, node.inputA) == nullptr) {
-            return {AnimationTreeValidationCodeUVE::UnknownInput, node.id,
+        if (object.inputA != 0U && FindObjectUVE(tree, object.inputA) == nullptr) {
+            return {AnimationTreeValidationCodeUVE::UnknownInput, object.id,
                     "AnimationTree inputA references an unknown node."};
         }
-        if (node.inputB != 0U && FindNodeUVE(tree, node.inputB) == nullptr) {
-            return {AnimationTreeValidationCodeUVE::UnknownInput, node.id,
+        if (object.inputB != 0U && FindObjectUVE(tree, object.inputB) == nullptr) {
+            return {AnimationTreeValidationCodeUVE::UnknownInput, object.id,
                     "AnimationTree inputB references an unknown node."};
         }
     }
@@ -147,26 +147,26 @@ AnimationTreeValidationResultUVE ValidateAnimationTreeUVE(const AnimationTreeUVE
     }
 
     std::unordered_map<std::uint32_t, std::uint8_t> visitState;
-    visitState.reserve(tree.nodes.size());
-    const std::function<bool(const AnimationTreeNodeUVE&)> visit = [&](const AnimationTreeNodeUVE& node) {
-        const std::uint8_t state = visitState[node.id];
+    visitState.reserve(tree.objects.size());
+    const std::function<bool(const AnimationTreeObjectUVE&)> visit = [&](const AnimationTreeObjectUVE& object) {
+        const std::uint8_t state = visitState[object.id];
         if (state == 1U) {
             return false;
         }
         if (state == 2U) {
             return true;
         }
-        visitState[node.id] = 1U;
-        if ((node.inputA != 0U && !visit(*FindNodeUVE(tree, node.inputA))) ||
-            (node.inputB != 0U && !visit(*FindNodeUVE(tree, node.inputB)))) {
+        visitState[object.id] = 1U;
+        if ((object.inputA != 0U && !visit(*FindObjectUVE(tree, object.inputA))) ||
+            (object.inputB != 0U && !visit(*FindObjectUVE(tree, object.inputB)))) {
             return false;
         }
-        visitState[node.id] = 2U;
+        visitState[object.id] = 2U;
         return true;
     };
-    for (const AnimationTreeNodeUVE& node : tree.nodes) {
-        if (!visit(node)) {
-            return {AnimationTreeValidationCodeUVE::CycleDetected, node.id,
+    for (const AnimationTreeObjectUVE& object : tree.objects) {
+        if (!visit(object)) {
+            return {AnimationTreeValidationCodeUVE::CycleDetected, object.id,
                     "AnimationTree node inputs must be acyclic."};
         }
     }
@@ -181,74 +181,74 @@ AnimationTreeEvaluationResultUVE EvaluateAnimationTreeUVE(
         result.message = "AnimationTree evaluation rejected an invalid tree or time.";
         return result;
     }
-    const auto output = std::find_if(tree.nodes.cbegin(), tree.nodes.cend(), [](const auto& node) {
-        return node.kind == AnimationTreeNodeKindUVE::OutputPose;
+    const auto output = std::find_if(tree.objects.cbegin(), tree.objects.cend(), [](const auto& object) {
+        return object.kind == AnimationTreeObjectKindUVE::OutputPose;
     });
-    if (output == tree.nodes.cend()) {
+    if (output == tree.objects.cend()) {
         result.message = "AnimationTree has no output node.";
         return result;
     }
     std::unordered_map<AnimationTreeCacheKeyUVE, TransformPoseUVE, AnimationTreeCacheKeyHashUVE> cache;
     std::unordered_set<std::uint32_t> evaluating;
-    std::function<bool(const AnimationTreeNodeUVE&, double, TransformPoseUVE&)> evaluate =
-        [&](const AnimationTreeNodeUVE& node, const double localTime, TransformPoseUVE& outPose) {
-            const AnimationTreeCacheKeyUVE cacheKey{node.id, localTime};
+    std::function<bool(const AnimationTreeObjectUVE&, double, TransformPoseUVE&)> evaluate =
+        [&](const AnimationTreeObjectUVE& object, const double localTime, TransformPoseUVE& outPose) {
+            const AnimationTreeCacheKeyUVE cacheKey{object.id, localTime};
             if (const auto cached = cache.find(cacheKey); cached != cache.end()) {
                 outPose = cached->second;
                 return true;
             }
-            if (!evaluating.insert(node.id).second) {
+            if (!evaluating.insert(object.id).second) {
                 return false;
             }
             bool success = true;
-            switch (node.kind) {
-                case AnimationTreeNodeKindUVE::ClipPlayer: {
-                    const AnimationClipUVE* clip = FindClipUVE(tree, node.clipId);
+            switch (object.kind) {
+                case AnimationTreeObjectKindUVE::ClipPlayer: {
+                    const AnimationClipUVE* clip = FindClipUVE(tree, object.clipId);
                     success = clip != nullptr && TrySampleAnimationClipUVE(*clip, localTime, true, outPose);
                     break;
                 }
-                case AnimationTreeNodeKindUVE::Blend: {
+                case AnimationTreeObjectKindUVE::Blend: {
                     TransformPoseUVE left;
                     TransformPoseUVE right;
-                    success = evaluate(*FindNodeUVE(tree, node.inputA), localTime, left) &&
-                              evaluate(*FindNodeUVE(tree, node.inputB), localTime, right);
+                    success = evaluate(*FindObjectUVE(tree, object.inputA), localTime, left) &&
+                              evaluate(*FindObjectUVE(tree, object.inputB), localTime, right);
                     if (success) {
-                        outPose = BlendPoseUVE(left, right, node.weight);
+                        outPose = BlendPoseUVE(left, right, object.weight);
                     }
                     break;
                 }
-                case AnimationTreeNodeKindUVE::Transition: {
-                    const float parameter = FindParameterValueUVE(parameters, node.parameterId);
-                    const AnimationTreeNodeUVE* selected = parameter > 0.5F
-                        ? FindNodeUVE(tree, node.inputB) : FindNodeUVE(tree, node.inputA);
+                case AnimationTreeObjectKindUVE::Transition: {
+                    const float parameter = FindParameterValueUVE(parameters, object.parameterId);
+                    const AnimationTreeObjectUVE* selected = parameter > 0.5F
+                        ? FindObjectUVE(tree, object.inputB) : FindObjectUVE(tree, object.inputA);
                     success = selected != nullptr && evaluate(*selected, localTime, outPose);
                     break;
                 }
-                case AnimationTreeNodeKindUVE::TimeScale: {
-                    const double scaledTime = localTime * static_cast<double>(node.timeScale);
+                case AnimationTreeObjectKindUVE::TimeScale: {
+                    const double scaledTime = localTime * static_cast<double>(object.timeScale);
                     success = std::isfinite(scaledTime) &&
-                              evaluate(*FindNodeUVE(tree, node.inputA), scaledTime, outPose);
+                              evaluate(*FindObjectUVE(tree, object.inputA), scaledTime, outPose);
                     break;
                 }
-                case AnimationTreeNodeKindUVE::Parameter:
-                case AnimationTreeNodeKindUVE::State:
-                case AnimationTreeNodeKindUVE::OneShot:
-                case AnimationTreeNodeKindUVE::Sync:
-                case AnimationTreeNodeKindUVE::Subtree:
-                case AnimationTreeNodeKindUVE::PoseCache:
-                case AnimationTreeNodeKindUVE::OutputPose:
-                    success = evaluate(*FindNodeUVE(tree, node.inputA), localTime, outPose);
+                case AnimationTreeObjectKindUVE::Parameter:
+                case AnimationTreeObjectKindUVE::State:
+                case AnimationTreeObjectKindUVE::OneShot:
+                case AnimationTreeObjectKindUVE::Sync:
+                case AnimationTreeObjectKindUVE::Subtree:
+                case AnimationTreeObjectKindUVE::PoseCache:
+                case AnimationTreeObjectKindUVE::OutputPose:
+                    success = evaluate(*FindObjectUVE(tree, object.inputA), localTime, outPose);
                     break;
             }
-            evaluating.erase(node.id);
+            evaluating.erase(object.id);
             if (success) {
                 cache.emplace(cacheKey, outPose);
-                ++result.evaluatedNodeCount;
+                ++result.evaluatedObjectCount;
             }
             return success;
         };
-    result.usedOutputNode = evaluate(*output, timeSeconds, result.pose);
-    result.message = result.usedOutputNode ? "AnimationTree evaluated successfully." :
+    result.usedOutputObject = evaluate(*output, timeSeconds, result.pose);
+    result.message = result.usedOutputObject ? "AnimationTree evaluated successfully." :
                                              "AnimationTree evaluation failed.";
     return result;
 }

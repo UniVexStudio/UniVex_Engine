@@ -4,8 +4,8 @@
 
 namespace UVE::Scene {
 
-/// The shared state of BoneModifier3D, the abstract base of every node that adjusts a skeleton's
-/// pose after animation has posed it - look-at, IK, spring bones. No node is a BoneModifier3D on
+/// The shared state of BoneModifier3D, the abstract base of every object that adjusts a skeleton's
+/// pose after animation has posed it - look-at, IK, spring bones. No object is a BoneModifier3D on
 /// its own; its kinds carry this component and add their own.
 struct BoneModifierComponentUVE final {
     /// Off skips the modifier entirely, as if it were not there.

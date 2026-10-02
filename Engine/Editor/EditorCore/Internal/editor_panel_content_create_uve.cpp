@@ -21,7 +21,7 @@
 
 #include "uve/editor/editor_content_catalogue_uve.h"
 #include "editor_chrome_layout_uve.h"
-#include "editor_node_icons_uve.h"
+#include "editor_object_icons_uve.h"
 
 namespace UVE::Editor {
 namespace {
@@ -293,7 +293,7 @@ void EditorUVE::DrawContentCreateMenuUVE(const std::filesystem::path& contentRoo
     };
     const auto drawItem = [&](const ContentCatalogueItemUVE& item, const bool showGroup) {
         ImGui::PushID(item.id.data(), item.id.data() + item.id.size());
-        DrawNodePickerIconUVE(m_uiAssets.GetNodeIconTextureIdUVE(GetContentCatalogueIconKindUVE(item)));
+        DrawObjectPickerIconUVE(m_uiAssets.GetObjectIconTextureIdUVE(GetContentCatalogueIconKindUVE(item)));
         const std::string label{item.label};
         const std::string group = showGroup ? std::string{item.group} : std::string{};
         ImGui::BeginDisabled(!allowed);
@@ -356,7 +356,7 @@ void EditorUVE::DrawContentCreateMenuUVE(const std::filesystem::path& contentRoo
                 ImGui::Separator();
                 continue;
             }
-            DrawNodePickerIconUVE(m_uiAssets.GetNodeIconTextureIdUVE(GetContentCatalogueIconKindUVE(*firstInGroup)));
+            DrawObjectPickerIconUVE(m_uiAssets.GetObjectIconTextureIdUVE(GetContentCatalogueIconKindUVE(*firstInGroup)));
             const std::string groupLabel{group};
             if (ImGui::BeginMenu(groupLabel.c_str())) {
                 for (const ContentCatalogueItemUVE& item : items) {
@@ -471,8 +471,8 @@ void EditorUVE::DrawFilesystemContextPopupUVE() {
         m_selectedAsset.reset();
     }
 
-    // A model source is imported automatically; this puts it on the selected node's mesh. The
-    // converted mesh must exist first - naming one that is still importing would leave the node
+    // A model source is imported automatically; this puts it on the selected object's mesh. The
+    // converted mesh must exist first - naming one that is still importing would leave the object
     // pointing at nothing.
     const std::filesystem::path importedModel =
         IsModelSourcePathUVE(contextEntry.relativePath) ? GetImportedModelPathUVE(contextEntry.relativePath)

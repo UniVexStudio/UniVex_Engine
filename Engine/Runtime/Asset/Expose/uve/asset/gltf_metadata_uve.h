@@ -35,7 +35,7 @@ enum class GltfResourceUriKindUVE : std::uint8_t { Invalid, RelativePath, DataUr
 
 struct GltfMetadataUVE final {
     GltfContainerKindUVE container = GltfContainerKindUVE::Json;
-    std::uint32_t nodeCount = 0U;
+    std::uint32_t objectCount = 0U;
     std::uint32_t meshCount = 0U;
     std::uint32_t materialCount = 0U;
     std::uint32_t imageCount = 0U;

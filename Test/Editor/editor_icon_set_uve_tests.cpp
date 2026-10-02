@@ -10,26 +10,26 @@
 
 #include <gtest/gtest.h>
 
-#include "uve/scene/nodes/scene_node_registry_uve.h"
+#include "uve/scene/objects/scene_object_registry_uve.h"
 
 namespace UVE::Editor::Tests {
 namespace {
 
-TEST(EditorIconSetUVETest, EveryNodeTypeHasItsOwnIcon) {
-    for (const Scene::Nodes::SceneNodeDescriptorUVE& descriptor : Scene::Nodes::GetSceneNodeDescriptorsUVE()) {
-        EXPECT_NE(FindEditorIconSourceUVE(EditorIconGroupUVE::Node, descriptor.typeId), nullptr)
+TEST(EditorIconSetUVETest, EveryObjectTypeHasItsOwnIcon) {
+    for (const Scene::Objects::SceneObjectDescriptorUVE& descriptor : Scene::Objects::GetSceneObjectDescriptorsUVE()) {
+        EXPECT_NE(FindEditorIconSourceUVE(EditorIconGroupUVE::Object, descriptor.typeId), nullptr)
             << "no icon for node type " << descriptor.typeId;
     }
 }
 
 TEST(EditorIconSetUVETest, EveryPaletteCategoryHasAnIconByItsDisplayName) {
     std::set<std::string_view> categories;
-    for (const Scene::Nodes::SceneNodeDescriptorUVE& descriptor : Scene::Nodes::GetSceneNodeDescriptorsUVE()) {
+    for (const Scene::Objects::SceneObjectDescriptorUVE& descriptor : Scene::Objects::GetSceneObjectDescriptorsUVE()) {
         categories.insert(descriptor.category);
     }
     ASSERT_FALSE(categories.empty());
     for (const std::string_view category : categories) {
-        EXPECT_NE(FindEditorIconSourceUVE(EditorIconGroupUVE::NodeCategory, category), nullptr)
+        EXPECT_NE(FindEditorIconSourceUVE(EditorIconGroupUVE::ObjectCategory, category), nullptr)
             << "no icon for category " << category;
     }
 }
@@ -43,16 +43,16 @@ TEST(EditorIconSetUVETest, AnOpenFolderHasItsOwnIcon) {
 }
 
 TEST(EditorIconSetUVETest, LookupIsPerGroupAndIgnoresOnlyCase) {
-    // "script" is both a node and a content type; the group decides which picture comes back.
-    const EditorIconSourceUVE* const node = FindEditorIconSourceUVE(EditorIconGroupUVE::Node, "script");
+    // "script" is both a object and a content type; the group decides which picture comes back.
+    const EditorIconSourceUVE* const object = FindEditorIconSourceUVE(EditorIconGroupUVE::Object, "script");
     const EditorIconSourceUVE* const file = FindEditorIconSourceUVE(EditorIconGroupUVE::ContentType, "Script");
-    ASSERT_NE(node, nullptr);
+    ASSERT_NE(object, nullptr);
     ASSERT_NE(file, nullptr);
-    EXPECT_NE(node, file);
-    EXPECT_EQ(FindEditorIconSourceUVE(EditorIconGroupUVE::NodeCategory, "PHYSICS"),
-              FindEditorIconSourceUVE(EditorIconGroupUVE::NodeCategory, "physics"));
-    EXPECT_EQ(FindEditorIconSourceUVE(EditorIconGroupUVE::Node, "box_mesh"), nullptr);
-    EXPECT_EQ(FindEditorIconSourceUVE(EditorIconGroupUVE::Node, ""), nullptr);
+    EXPECT_NE(object, file);
+    EXPECT_EQ(FindEditorIconSourceUVE(EditorIconGroupUVE::ObjectCategory, "PHYSICS"),
+              FindEditorIconSourceUVE(EditorIconGroupUVE::ObjectCategory, "physics"));
+    EXPECT_EQ(FindEditorIconSourceUVE(EditorIconGroupUVE::Object, "box_mesh"), nullptr);
+    EXPECT_EQ(FindEditorIconSourceUVE(EditorIconGroupUVE::Object, ""), nullptr);
     EXPECT_EQ(FindEditorIconSourceUVE(EditorIconGroupUVE::ContentType, "box_mesh_3d"), nullptr);
 }
 

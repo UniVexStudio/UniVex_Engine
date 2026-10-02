@@ -28,8 +28,8 @@ inline constexpr ImU32 kTextDimUVE = IM_COL32(150, 156, 166, 255);
 inline constexpr ImU32 kActiveUVE = IM_COL32(110, 210, 140, 255);
 
 /// A header colour per kind, so the graph reads at a glance: sources, mixers, control.
-[[nodiscard]] inline ImU32 KindColourUVE(const Scene::AnimationGraphNodeKindUVE kind) noexcept {
-    using Kind = Scene::AnimationGraphNodeKindUVE;
+[[nodiscard]] inline ImU32 KindColourUVE(const Scene::AnimationGraphObjectKindUVE kind) noexcept {
+    using Kind = Scene::AnimationGraphObjectKindUVE;
     switch (kind) {
         case Kind::Output: return IM_COL32(170, 72, 72, 255);
         case Kind::Clip: return IM_COL32(58, 110, 170, 255);

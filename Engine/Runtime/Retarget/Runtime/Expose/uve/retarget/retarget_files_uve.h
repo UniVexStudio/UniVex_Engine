@@ -57,7 +57,7 @@ enum class RetargetAnimationStateUVE : std::uint8_t {
     AlreadyConformed,
     /// Saved before clips carried their skeleton: import the FBX again.
     NoSkeleton,
-    /// Moves no bones (a node animation).
+    /// Moves no bones (a object animation).
     NoBones,
     Unreadable,
 };

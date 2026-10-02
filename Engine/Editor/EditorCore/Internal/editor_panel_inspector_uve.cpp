@@ -37,7 +37,7 @@
 #include "editor_chrome_layout_uve.h"
 #include "editor_fonts_uve.h"
 #include "editor_entity_label_uve.h"
-#include "editor_node_icons_uve.h"
+#include "editor_object_icons_uve.h"
 
 #include "uve/asset/asset_import_queue_uve.h"
 #include "uve/component/animation_player_component_uve.h"
@@ -60,7 +60,7 @@
 #include "uve/component/ui_text_component_uve.h"
 #include "uve/component/visibility_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
-#include "uve/nodes/3d/world_environment_3d_uve.h"
+#include "uve/objects/3d/world_environment_3d_uve.h"
 #include "uve/scene/i_scene_graph_uve.h"
 
 namespace UVE::Editor {
@@ -117,7 +117,7 @@ void DrawInspectorChainHeaderUVE(const std::string& label) {
 } // namespace
 
 void EditorUVE::DrawInspectorPanelUVE() {
-    // A colour edit whose node is no longer the one selected - picked elsewhere while its picker
+    // A colour edit whose object is no longer the one selected - picked elsewhere while its picker
     // was open - is finished as it stands rather than left waiting for a picker nobody can see.
     if (m_componentPropertyPreview.has_value() &&
         (m_componentPropertyPreview->entity != m_selectedEntity || !HasSingleDocumentSelectionUVE())) {
@@ -189,7 +189,7 @@ void EditorUVE::DrawImportQueueMonitorUVE() {
         const std::string header = "Job #" + std::to_string(job.id.value) + " — " +
                                    ImportJobStateLabelUVE(job.state) + "##import-job-" +
                                    std::to_string(job.id.value);
-        if (ImGui::TreeNodeEx(header.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
+        if (ImGui::TreeObjectEx(header.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
             const std::string sourcePath = job.request.sourcePath.generic_string();
             const std::string destinationPath = job.request.destinationPath.generic_string();
             ImGui::TextWrapped("Source: %s", sourcePath.c_str());
@@ -237,8 +237,8 @@ void EditorUVE::DrawInspectorContentUVE() {
 
     ImGui::BeginDisabled(!IsAuthoringCommandAllowedUVE());
     ImGui::Text("%s", GetEntityDisplayLabelUVE(m_selectedEntity).c_str());
-    // Every Inspector is its node's recipe and nothing else: the node's own section, its bases,
-    // Object3D's Transform and Visibility, then the common Node section. Nodes are renamed and
+    // Every Inspector is its object's recipe and nothing else: the object's own section, its bases,
+    // Object3D's Transform and Visibility, then the common Object section. Objects are renamed and
     // reparented from the Scene panel and get their parts from their recipe, so there is no name
     // field, hierarchy block, search box, Add Component or Remove here.
     RepairInspectorRecipeUVE(m_selectedEntity);
@@ -260,7 +260,7 @@ void EditorUVE::RegisterTransformInspectorDrawerUVE() {
 }
 
 void EditorUVE::RepairInspectorRecipeUVE(const Scene::EntityUVE entity) {
-    // A node saved before its recipe included Visibility and the Node section is given them here,
+    // A object saved before its recipe included Visibility and the Object section is given them here,
     // where they are first needed. Every default is Inherit or empty, so this changes nothing
     // about how the scene runs.
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
@@ -271,7 +271,7 @@ void EditorUVE::RepairInspectorRecipeUVE(const Scene::EntityUVE entity) {
         !entityManager.HasComponentUVE<Scene::VisibilityComponentUVE>(entity)) {
         entityManager.AddComponentUVE<Scene::VisibilityComponentUVE>(entity, Scene::VisibilityComponentUVE{});
     }
-    Scene::EnsureCommonNodeSectionUVE(entityManager, entity);
+    Scene::EnsureCommonObjectSectionUVE(entityManager, entity);
 }
 
 void EditorUVE::RegisterBuiltInInspectorDrawersUVE() {
@@ -447,7 +447,7 @@ bool EditorUVE::DrawInspectorFoldUVE(const char* const label, const std::string&
     const bool open = IsInspectorFoldOpenUVE(key, defaultOpen);
     ImGui::SetNextItemOpen(open, ImGuiCond_Always);
     const auto treeFlags = static_cast<ImGuiTreeNodeFlags>(flags);
-    const bool nowOpen = asHeader ? ImGui::CollapsingHeader(label, treeFlags) : ImGui::TreeNodeEx(label, treeFlags);
+    const bool nowOpen = asHeader ? ImGui::CollapsingHeader(label, treeFlags) : ImGui::TreeObjectEx(label, treeFlags);
     if (nowOpen != open) {
         SetInspectorFoldOpenUVE(key, nowOpen);
     }

@@ -105,10 +105,10 @@ TEST(GltfMetadataUVETest, ValidateGltfAccessorSpanUVE_RejectsInvalidAndOverflowi
 }
 
 TEST(GltfMetadataUVETest, ParseGltfMetadataUVE_ReturnsCopiedJsonCounts) {
-    const auto metadata = ParseGltfMetadataUVE(R"({"asset":{"version":"2.0"},"nodes":[{}],"meshes":[{},{}],"materials":[{}],"images":[{}],"buffers":[{},{}]})");
+    const auto metadata = ParseGltfMetadataUVE(R"({"asset":{"version":"2.0"},"objects":[{}],"meshes":[{},{}],"materials":[{}],"images":[{}],"buffers":[{},{}]})");
     ASSERT_TRUE(metadata.has_value());
     EXPECT_EQ(metadata->container, GltfContainerKindUVE::Json);
-    EXPECT_EQ(metadata->nodeCount, 1U); EXPECT_EQ(metadata->meshCount, 2U); EXPECT_EQ(metadata->materialCount, 1U);
+    EXPECT_EQ(metadata->objectCount, 1U); EXPECT_EQ(metadata->meshCount, 2U); EXPECT_EQ(metadata->materialCount, 1U);
     EXPECT_EQ(metadata->imageCount, 1U); EXPECT_EQ(metadata->bufferCount, 2U); EXPECT_FALSE(metadata->hasBinaryChunk);
     EXPECT_EQ(metadata->skinCount, 0U);
 }
@@ -119,7 +119,7 @@ TEST(GltfMetadataUVETest, ParseGltfMetadataUVE_CountsSkinsForRiggedModels) {
     EXPECT_FALSE(ParseGltfMetadataUVE(R"({"asset":{"version":"2.0"},"skins":{}})").has_value());
 }
 TEST(GltfMetadataUVETest, ParseGlbMetadataUVE_ValidatesHeaderJsonChunkAndBinaryTail) {
-    const std::string json = R"({"asset":{"version":"2.0"},"nodes":[{}],"meshes":[]})";
+    const std::string json = R"({"asset":{"version":"2.0"},"objects":[{}],"meshes":[]})";
     std::vector<std::byte> bytes;
     AppendU32LEUVE(bytes, 0x46546C67U); AppendU32LEUVE(bytes, 2U);
     AppendU32LEUVE(bytes, static_cast<std::uint32_t>(20U + json.size() + 8U));
@@ -128,7 +128,7 @@ TEST(GltfMetadataUVETest, ParseGlbMetadataUVE_ValidatesHeaderJsonChunkAndBinaryT
     AppendU32LEUVE(bytes, 0U); AppendU32LEUVE(bytes, 0x004E4942U);
     const auto metadata = ParseGlbMetadataUVE(bytes);
     ASSERT_TRUE(metadata.has_value()); EXPECT_EQ(metadata->container, GltfContainerKindUVE::Binary);
-    EXPECT_EQ(metadata->nodeCount, 1U); EXPECT_TRUE(metadata->hasBinaryChunk);
+    EXPECT_EQ(metadata->objectCount, 1U); EXPECT_TRUE(metadata->hasBinaryChunk);
 }
 TEST(GltfMetadataUVETest, ParseGlbMetadataUVE_RejectsTruncatedAndDuplicateBinaryChunks) {
     const std::string json = R"({"asset":{"version":"2.0"}})";

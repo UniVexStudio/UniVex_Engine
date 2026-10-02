@@ -144,7 +144,7 @@ TEST(AnimationClipAssetUVETest, RestSkeletonMustBeParentsFirstWithUniqueNames) {
     EXPECT_FALSE(IsAnimationClipAssetValidUVE(clip));
 }
 
-TEST(AnimationClipAssetUVETest, BoneTracksAreValidatedLikeTheNodeTrack) {
+TEST(AnimationClipAssetUVETest, BoneTracksAreValidatedLikeTheObjectTrack) {
     AnimationClipAssetUVE clip;
     clip.clipId = "run";
     clip.durationSeconds = 1.0;

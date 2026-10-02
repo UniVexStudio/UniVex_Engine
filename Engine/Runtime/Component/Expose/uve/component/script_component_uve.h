@@ -16,7 +16,7 @@ namespace UVE::Scene {
 /// only records which script is attached.
 struct ScriptComponentUVE final {
     std::string scriptAssetPath;
-    /// This node's values for its script's `export` fields, by field name, as UVScript text
+    /// This object's values for its script's `export` fields, by field name, as UVScript text
     /// (`6.0`, `true`, `(0.0, 1.0, 0.0)`). A field not listed keeps the script's own default, and
     /// an entry the script no longer declares - or no longer reads as its type - is ignored, so
     /// editing the script never breaks the scene.

@@ -1,23 +1,23 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-#include "uve/nodes/3d/occluder_3d_uve.h"
+#include "uve/objects/3d/occluder_3d_uve.h"
 
 #include <algorithm>
 #include <cmath>
 
 namespace UVE::Scene {
 
-bool IsOccluder3DNodeComponentValidUVE(const Occluder3DNodeComponentUVE& value) noexcept {
-    return IsFinite3DNodeVectorUVE(value.halfExtents) && value.halfExtents.x > 0.0F &&
+bool IsOccluder3DObjectComponentValidUVE(const Occluder3DComponentUVE& value) noexcept {
+    return IsFinite3DObjectVectorUVE(value.halfExtents) && value.halfExtents.x > 0.0F &&
            value.halfExtents.y > 0.0F && value.halfExtents.z > 0.0F &&
-           value.mode == Occluder3DNodeModeUVE::ConservativeBox;
+           value.mode == Occluder3DObjectModeUVE::ConservativeBox;
 }
 
-bool ResolveOccluder3DFullyHiddenUVE(const Occluder3DNodeComponentUVE& config,
+bool ResolveOccluder3DFullyHiddenUVE(const Occluder3DComponentUVE& config,
                                      const Math::Vector3UVE& occluderWorldPosition,
                                      const Math::Vector3UVE& viewerWorldPosition,
                                      const Math::Vector3UVE& pointWorld) noexcept {
-    if (!IsOccluder3DNodeComponentValidUVE(config)) {
+    if (!IsOccluder3DObjectComponentValidUVE(config)) {
         return false;
     }
     // The strictly-contained check is INCLUSIVE on the surface: standing on the cover counts as

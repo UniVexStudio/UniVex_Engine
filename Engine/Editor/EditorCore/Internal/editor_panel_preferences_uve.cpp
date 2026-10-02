@@ -355,21 +355,21 @@ void EditorUVE::DrawSettingsWindowBodyUVE(SettingsWindowStateUVE& state, const S
     for (const PreferenceRowUVE& row : rows) {
         descriptors.push_back(row.descriptor);
     }
-    const std::vector<SettingCategoryNodeUVE> tree = BuildSettingCategoryTreeUVE(descriptors);
+    const std::vector<SettingCategoryObjectUVE> tree = BuildSettingCategoryTreeUVE(descriptors);
     const float treeWidth = fontSize * 12.0F;
     if (ImGui::BeginChild("##preferences-tree", ImVec2{treeWidth, -footerHeight}, ImGuiChildFlags_Borders)) {
         ImGui::BeginDisabled(searching);
         if (ImGui::Selectable("All Settings", searching || state.category.empty())) {
             state.category.clear();
         }
-        for (const SettingCategoryNodeUVE& node : tree) {
-            const bool anyModified = std::any_of(rows.begin(), rows.end(), [&node](const PreferenceRowUVE& row) {
-                return row.modified && IsInSettingCategoryUVE(row.descriptor->category, node.path);
+        for (const SettingCategoryObjectUVE& object : tree) {
+            const bool anyModified = std::any_of(rows.begin(), rows.end(), [&object](const PreferenceRowUVE& row) {
+                return row.modified && IsInSettingCategoryUVE(row.descriptor->category, object.path);
             });
-            ImGui::PushID(node.path.c_str());
-            ImGui::Indent(ImGui::GetStyle().IndentSpacing * static_cast<float>(node.depth + 1));
-            if (ImGui::Selectable(node.name.c_str(), !searching && state.category == node.path)) {
-                state.category = node.path;
+            ImGui::PushID(object.path.c_str());
+            ImGui::Indent(ImGui::GetStyle().IndentSpacing * static_cast<float>(object.depth + 1));
+            if (ImGui::Selectable(object.name.c_str(), !searching && state.category == object.path)) {
+                state.category = object.path;
             }
             if (anyModified) {
                 const ImVec2 max = ImGui::GetItemRectMax();
@@ -378,7 +378,7 @@ void EditorUVE::DrawSettingsWindowBodyUVE(SettingsWindowStateUVE& state, const S
                     ImVec2{max.x - (radius * 3.0F), (ImGui::GetItemRectMin().y + max.y) * 0.5F}, radius,
                     ImGui::GetColorU32(kModifiedAccentUVE), 12);
             }
-            ImGui::Unindent(ImGui::GetStyle().IndentSpacing * static_cast<float>(node.depth + 1));
+            ImGui::Unindent(ImGui::GetStyle().IndentSpacing * static_cast<float>(object.depth + 1));
             ImGui::PopID();
         }
         ImGui::EndDisabled();
@@ -387,23 +387,23 @@ void EditorUVE::DrawSettingsWindowBodyUVE(SettingsWindowStateUVE& state, const S
 
     // Right: the settings, grouped under their category in tree order.
     const bool singleRoot =
-        std::count_if(tree.begin(), tree.end(), [](const SettingCategoryNodeUVE& node) { return node.depth == 0; }) == 1;
+        std::count_if(tree.begin(), tree.end(), [](const SettingCategoryObjectUVE& object) { return object.depth == 0; }) == 1;
     ImGui::SameLine();
     std::size_t shownCount = 0U;
     std::size_t shownModifiedCount = 0U;
     if (ImGui::BeginChild("##preferences-rows", ImVec2{0.0F, -footerHeight}, ImGuiChildFlags_Borders)) {
-        for (const SettingCategoryNodeUVE& node : tree) {
+        for (const SettingCategoryObjectUVE& object : tree) {
             bool groupOpen = false;
             for (const PreferenceRowUVE& row : rows) {
-                if (row.descriptor->category != node.path || !isShown(row)) {
+                if (row.descriptor->category != object.path || !isShown(row)) {
                     continue;
                 }
                 if (!groupOpen) {
                     if (shownCount != 0U) {
                         ImGui::Spacing();
                     }
-                    ImGui::SeparatorText(CategoryTitleUVE(node.path, singleRoot).c_str());
-                    groupOpen = ImGui::BeginTable(node.path.c_str(), 3, ImGuiTableFlags_SizingStretchProp);
+                    ImGui::SeparatorText(CategoryTitleUVE(object.path, singleRoot).c_str());
+                    groupOpen = ImGui::BeginTable(object.path.c_str(), 3, ImGuiTableFlags_SizingStretchProp);
                     if (!groupOpen) {
                         break;
                     }

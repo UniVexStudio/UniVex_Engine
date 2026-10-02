@@ -16,14 +16,14 @@
 
 namespace UVE::Scene {
 
-/// The three inherited node modes as resolved for one entity by the most recent UpdateUVE().
+/// The three inherited object modes as resolved for one entity by the most recent UpdateUVE().
 /// Always fully resolved - never Inherit - so a consumer uses the value as-is.
-struct ResolvedNodeModesUVE final {
+struct ResolvedObjectModesUVE final {
     ProcessModeUVE process = ProcessModeUVE::Pausable;
     ThreadGroupModeUVE threadGroup = ThreadGroupModeUVE::MainThread;
     AutoTranslateModeUVE autoTranslate = AutoTranslateModeUVE::Always;
 
-    [[nodiscard]] bool operator==(const ResolvedNodeModesUVE&) const = default;
+    [[nodiscard]] bool operator==(const ResolvedObjectModesUVE&) const = default;
 };
 
 /// ISceneGraphUVE is the hierarchical-transform-tree interface: parent/child relationships and
@@ -38,7 +38,7 @@ class ISceneGraphUVE {
 public:
     virtual ~ISceneGraphUVE() = default;
 
-    /// Makes `entity` a scene-graph node: adds TransformComponentUVE (set to `localTransform`),
+    /// Makes `entity` a scene-graph object: adds TransformComponentUVE (set to `localTransform`),
     /// WorldTransformComponentUVE (dirty), and HierarchyComponentUVE (parent = invalid) in one
     /// call, so callers never have to remember all three individually. Debug builds assert that
     /// `entity` is alive, has no scene-graph components, and receives a valid transform; release
@@ -84,16 +84,16 @@ public:
     [[nodiscard]] virtual bool SetSiblingIndexUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
                                                   std::size_t index) = 0;
 
-    /// The inherited node modes UpdateUVE() resolved for `entity`, or nothing when the entity was
-    /// not part of the last update (not a scene-graph node, or created since).
+    /// The inherited object modes UpdateUVE() resolved for `entity`, or nothing when the entity was
+    /// not part of the last update (not a scene-graph object, or created since).
     ///
     /// WHY CONSUMERS ASK HERE RATHER THAN READING THE COMPONENT. The resolved answer is written
     /// onto a ProcessComponentUVE / AutoTranslateComponentUVE only when the entity carries one.
     /// An entity without the component still HAS an answer - inherited from its ancestors - and a
     /// consumer that read only the component would ignore it: a label with no Auto Translate
     /// component under a Disabled menu would still be translated, which is exactly the
-    /// inheritance the mode promises. This returns the answer for every node, carrier or not.
-    [[nodiscard]] virtual std::optional<ResolvedNodeModesUVE> TryGetResolvedNodeModesUVE(
+    /// inheritance the mode promises. This returns the answer for every object, carrier or not.
+    [[nodiscard]] virtual std::optional<ResolvedObjectModesUVE> TryGetResolvedObjectModesUVE(
         EntityUVE entity) const = 0;
 };
 

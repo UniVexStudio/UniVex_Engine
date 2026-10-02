@@ -411,8 +411,8 @@ private:
         HeaderUVE header;
         header.at = Take().at;
         header.name = ExpectName("the entity's name after 'entity'");
-        Expect(":", "':' and the node kind it drives, as in 'entity Player : Character3D'");
-        header.baseKind = ExpectName("a node kind such as Character3D");
+        Expect(":", "':' and the object kind it drives, as in 'entity Player : Character3D'");
+        header.baseKind = ExpectName("a object kind such as Character3D");
         ExpectNewline();
         return header;
     }

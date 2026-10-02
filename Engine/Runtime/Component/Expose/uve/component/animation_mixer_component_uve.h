@@ -19,11 +19,11 @@ enum class AnimationProcessCallbackUVE : std::uint8_t {
 
 /// What a skeletal clip's travel (its root bone moving across the ground) does.
 enum class AnimationRootMotionModeUVE : std::uint8_t {
-    /// The root bone moves as authored: a run cycle runs away from its node.
+    /// The root bone moves as authored: a run cycle runs away from its object.
     Off = 0,
-    /// The root bone's ground travel is taken out of the pose; nothing moves the node.
+    /// The root bone's ground travel is taken out of the pose; nothing moves the object.
     InPlace,
-    /// Taken out of the pose and added to the target instead, so the node goes where the feet go.
+    /// Taken out of the pose and added to the target instead, so the object goes where the feet go.
     /// A Character3D target gets it as velocity, so collisions still stop it.
     ApplyToTarget,
 };
@@ -39,12 +39,12 @@ enum class AnimationTransitionModeUVE : std::uint8_t {
 };
 
 /// AnimationMixer: the abstract base AnimationSequencer and AnimationGraph share - what they move, which
-/// channels, on which clock and how fast. Not a node of its own; the section both show between
-/// their own and the Node section.
+/// channels, on which clock and how fast. Not a object of its own; the section both show between
+/// their own and the Object section.
 struct AnimationMixerComponentUVE final {
     /// Off, nothing is evaluated or written: the target is left alone.
     bool active = true;
-    /// The node that is moved. Invalid means the mixer's parent.
+    /// The object that is moved. Invalid means the mixer's parent.
     EntityUVE target = kInvalidEntityUVE;
     /// Multiplies every clock under this mixer: 0.5 is slow motion, 0 freezes.
     float speedScale = 1.0F;

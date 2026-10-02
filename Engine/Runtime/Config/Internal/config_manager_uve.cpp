@@ -35,9 +35,9 @@ std::vector<std::string> SplitKeyPathUVE(std::string_view keyPath) {
     return segments;
 }
 
-/// Walks `segments` through `document`, returning a pointer to the node
+/// Walks `segments` through `document`, returning a pointer to the object
 /// reached, or nullptr if any segment along the way is missing or the
-/// current node is not an object to walk into.
+/// current object is not an object to walk into.
 const nlohmann::json* ResolveConstUVE(const nlohmann::json& document,
                                        const std::vector<std::string>& segments) {
     const nlohmann::json* current = &document;
@@ -55,8 +55,8 @@ const nlohmann::json* ResolveConstUVE(const nlohmann::json& document,
 }
 
 /// Walks `segments` through `document`, creating intermediate objects
-/// along the way as needed (overwriting any non-object node found in an
-/// intermediate position), and returns a reference to the final node.
+/// along the way as needed (overwriting any non-object object found in an
+/// intermediate position), and returns a reference to the final object.
 nlohmann::json& ResolveOrCreateUVE(nlohmann::json& document, const std::vector<std::string>& segments) {
     nlohmann::json* current = &document;
     for (const std::string& segment : segments) {

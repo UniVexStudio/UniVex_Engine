@@ -11,7 +11,7 @@
 
 namespace UVE::Core {
 
-enum class AnimationTreeNodeKindUVE : std::uint8_t {
+enum class AnimationTreeObjectKindUVE : std::uint8_t {
     ClipPlayer = 0,
     Blend,
     Parameter,
@@ -25,9 +25,9 @@ enum class AnimationTreeNodeKindUVE : std::uint8_t {
     OutputPose,
 };
 
-struct AnimationTreeNodeUVE final {
+struct AnimationTreeObjectUVE final {
     std::uint32_t id = 0U;
-    AnimationTreeNodeKindUVE kind = AnimationTreeNodeKindUVE::OutputPose;
+    AnimationTreeObjectKindUVE kind = AnimationTreeObjectKindUVE::OutputPose;
     std::string name;
     std::string clipId;
     std::string parameterId;
@@ -39,10 +39,10 @@ struct AnimationTreeNodeUVE final {
 };
 
 struct AnimationTreeUVE final {
-    static constexpr std::size_t kMaximumNodesUVE = 512U;
+    static constexpr std::size_t kMaximumObjectsUVE = 512U;
     static constexpr std::size_t kMaximumParametersUVE = 128U;
 
-    std::vector<AnimationTreeNodeUVE> nodes;
+    std::vector<AnimationTreeObjectUVE> objects;
     std::vector<AnimationClipUVE> clips;
 };
 
@@ -50,8 +50,8 @@ enum class AnimationTreeValidationCodeUVE : std::uint8_t {
     Valid = 0,
     EmptyTree,
     CapacityExceeded,
-    InvalidNode,
-    DuplicateNode,
+    InvalidObject,
+    DuplicateObject,
     UnknownInput,
     InvalidClip,
     UnknownClip,
@@ -62,7 +62,7 @@ enum class AnimationTreeValidationCodeUVE : std::uint8_t {
 
 struct AnimationTreeValidationResultUVE final {
     AnimationTreeValidationCodeUVE code = AnimationTreeValidationCodeUVE::EmptyTree;
-    std::uint32_t nodeId = 0U;
+    std::uint32_t objectId = 0U;
     std::string message;
 
     [[nodiscard]] bool IsValidUVE() const noexcept {
@@ -77,20 +77,20 @@ struct AnimationTreeParameterUVE final {
 
 struct AnimationTreeEvaluationResultUVE final {
     TransformPoseUVE pose;
-    bool usedOutputNode = false;
-    std::size_t evaluatedNodeCount = 0U;
+    bool usedOutputObject = false;
+    std::size_t evaluatedObjectCount = 0U;
     std::string message;
 
     [[nodiscard]] bool IsSuccessUVE() const noexcept {
-        return usedOutputNode && evaluatedNodeCount > 0U;
+        return usedOutputObject && evaluatedObjectCount > 0U;
     }
 };
 
 [[nodiscard]] AnimationTreeValidationResultUVE ValidateAnimationTreeUVE(
     const AnimationTreeUVE& tree) noexcept;
 
-/// Evaluates shared nodes independently for distinct local times; memoization is keyed by node ID
-/// and exact local evaluation time, while active recursion remains cycle-checked by node ID.
+/// Evaluates shared objects independently for distinct local times; memoization is keyed by object ID
+/// and exact local evaluation time, while active recursion remains cycle-checked by object ID.
 [[nodiscard]] AnimationTreeEvaluationResultUVE EvaluateAnimationTreeUVE(
     const AnimationTreeUVE& tree, double timeSeconds, const std::vector<AnimationTreeParameterUVE>& parameters = {});
 

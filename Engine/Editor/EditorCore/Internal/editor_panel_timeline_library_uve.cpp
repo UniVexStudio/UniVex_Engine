@@ -23,7 +23,7 @@
 #include "uve/component/animation_player_component_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/name_component_uve.h"
-#include "uve/nodes/3d/skeleton_3d_uve.h"
+#include "uve/objects/3d/skeleton_3d_uve.h"
 #include "uve/object/type_metadata_uve.h"
 #include "uve/scene/scene_component_metadata_uve.h"
 
@@ -192,7 +192,7 @@ void EditorUVE::DrawAnimationPickerUVE(const Scene::EntityUVE player, const Scen
             ImGui::PushID(static_cast<int>(guid.value & 0x7FFFFFFFU));
             const bool isCurrent = guid == component.clip;
             char right[48];
-            std::snprintf(right, sizeof(right), "%s  %.2f s", card.skeletal ? "bones" : "node", card.durationSeconds);
+            std::snprintf(right, sizeof(right), "%s  %.2f s", card.skeletal ? "bones" : "object", card.durationSeconds);
             const float rightWidth = ImGui::CalcTextSize(right).x;
             if (ImGui::Selectable(card.name.c_str(), isCurrent, ImGuiSelectableFlags_AllowOverlap)) {
                 choose = guid;
@@ -317,9 +317,9 @@ void EditorUVE::DrawAnimationPickerUVE(const Scene::EntityUVE player, const Scen
             clip.clipId = path.stem().string();
             clip.durationSeconds = 1.0;
             if (skeletonEntity != Scene::kInvalidEntityUVE && entityManager.IsAliveUVE(skeletonEntity) &&
-                entityManager.HasComponentUVE<Scene::Skeleton3DNodeComponentUVE>(skeletonEntity)) {
+                entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity)) {
                 for (const Scene::SkeletonBoneUVE& bone :
-                     entityManager.GetComponentUVE<Scene::Skeleton3DNodeComponentUVE>(skeletonEntity).bones) {
+                     entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity).bones) {
                     Asset::AnimationAssetSampleUVE rest;
                     rest.pose.position = bone.localPosition;
                     rest.pose.rotation = bone.localRotation;

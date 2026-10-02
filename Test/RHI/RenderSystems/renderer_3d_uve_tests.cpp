@@ -48,7 +48,7 @@
 #include "uve/component/ui_button_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/entity/entity_manager_uve.h"
-#include "uve/nodes/3d/skeleton_3d_uve.h"
+#include "uve/objects/3d/skeleton_3d_uve.h"
 #include "uve/scene/scene_graph_uve.h"
 #include "uve/threading/thread_pool_uve.h"
 #include "uve/ui/ui_runtime_uve.h"
@@ -2099,12 +2099,12 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_ASkinnedMeshUnderASkeletonIsDrawnInTheS
     Scene::TransformComponentUVE skeletonTransform;
     skeletonTransform.localPosition = Math::Vector3UVE{0.0F, 0.0F, -10.0F};
     sceneGraph.AttachTransformUVE(entityManager, skeletonEntity, skeletonTransform);
-    Scene::Skeleton3DNodeComponentUVE skeleton;
+    Scene::Skeleton3DComponentUVE skeleton;
     skeleton.skeletonAssetPath = "Hero.fbx";
     Scene::SkeletonBoneUVE bone;
     bone.name = "Hips";
     skeleton.bones = {bone};
-    entityManager.AddComponentUVE<Scene::Skeleton3DNodeComponentUVE>(skeletonEntity, skeleton);
+    entityManager.AddComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity, skeleton);
     const Scene::EntityUVE meshEntity = entityManager.CreateEntityUVE();
     sceneGraph.AttachTransformUVE(entityManager, meshEntity, Scene::TransformComponentUVE{});
     sceneGraph.SetParentUVE(entityManager, meshEntity, skeletonEntity);
@@ -2144,7 +2144,7 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_ASkinnedMeshUnderASkeletonIsDrawnInTheS
     EXPECT_NEAR(vertices[2].position.y, 1.0F, 1e-5F);
 
     // Posing the bone moves the triangle with it.
-    entityManager.GetComponentUVE<Scene::Skeleton3DNodeComponentUVE>(skeletonEntity).pose = {
+    entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity).pose = {
         Scene::SkeletonBonePoseUVE{Math::Vector3UVE{0.0F, 2.0F, 0.0F}, Math::QuaternionUVE{},
                                    Math::Vector3UVE{1.0F, 1.0F, 1.0F}}};
     renderer3D->RenderFrameUVE(entityManager, cameraEntity);

@@ -1,12 +1,12 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-#include "uve/nodes/3d/lod_group_3d_uve.h"
+#include "uve/objects/3d/lod_group_3d_uve.h"
 
 #include <cmath>
 
 namespace UVE::Scene {
 
-bool IsLodGroup3DNodeComponentValidUVE(const LodGroup3DNodeComponentUVE& value) noexcept {
+bool IsLodGroup3DObjectComponentValidUVE(const LodGroup3DComponentUVE& value) noexcept {
     if (value.levelCount == 0U || value.levelCount > kMaximumLodLevelsUVE || value.currentLevel >= value.levelCount) {
         return false;
     }
@@ -19,7 +19,7 @@ bool IsLodGroup3DNodeComponentValidUVE(const LodGroup3DNodeComponentUVE& value) 
     return true;
 }
 
-void ResolveLodGroup3DLevelUVE(LodGroup3DNodeComponentUVE& value, const float distanceToCamera) noexcept {
+void ResolveLodGroup3DLevelUVE(LodGroup3DComponentUVE& value, const float distanceToCamera) noexcept {
     // Every degenerate case resolves to "draw at full detail". A configuration mistake should be
     // visible so it gets fixed, not silently hide geometry and look like a missing asset.
     if (!value.enabled || value.levelCount == 0U || value.levelCount > kMaximumLodLevelsUVE ||

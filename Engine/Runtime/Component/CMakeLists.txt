@@ -46,7 +46,7 @@ add_library(uve_component STATIC
     Internal/render_instance_component_uve.cpp
     Internal/surface_instance_component_uve.cpp
     Internal/light_emitter_component_uve.cpp
-    Internal/node_metadata_component_uve.cpp
+    Internal/object_metadata_component_uve.cpp
     Internal/process_component_uve.cpp
     Internal/thread_group_component_uve.cpp
     Internal/transform_component_uve.cpp

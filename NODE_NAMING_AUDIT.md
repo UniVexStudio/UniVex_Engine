@@ -60,10 +60,10 @@ A name is not stored in one place; every kind has up to five, and they can drift
 
 | # | Layer | Where it lives | Example |
 |---|---|---|---|
-| 1 | **C++ kind** (`SceneNodeKindUVE`) | `Engine/Runtime/Scene/Expose/uve/scene/nodes/scene_node_registry_uve.h:13-64` | `WorldEnvironment3D` |
-| 2 | **Saved type id** (`typeId`) | `Engine/Runtime/Scene/Internal/nodes/scene_node_registry_uve.cpp:50-102` | `world_environment_3d` |
+| 1 | **C++ kind** (`SceneNodeKindUVE`) | `Engine/Runtime/Scene/Expose/uve/scene/objects/scene_object_registry_uve.h:13-64` | `WorldEnvironment3D` |
+| 2 | **Saved type id** (`typeId`) | `Engine/Runtime/Scene/Internal/objects/scene_object_registry_uve.cpp:50-102` | `world_environment_3d` |
 | 3 | **Add/create label** (`displayName`) | same registry rows | `WorldEnvironment` |
-| 4 | **Default node name** (`defaultName`) | per-kind definition header, e.g. `Engine/Runtime/Nodes/3D/Expose/uve/nodes/3d/world_environment_3d_uve.h:32` | `WorldEnvironment` |
+| 4 | **Default node name** (`defaultName`) | per-kind definition header, e.g. `Engine/Runtime/Nodes/3D/Expose/uve/objects/3d/world_environment_3d_uve.h:32` | `WorldEnvironment` |
 | 5 | **Component label** (inspector) | `Engine/Runtime/Scene/Internal/scene_component_metadata_uve.cpp` | `WorldEnvironment` |
 
 Two more surfaces reuse names on top of those: the Content Browser's "+ Add" templates
@@ -84,15 +84,15 @@ called in the Outliner. **Bold** marks a broken default name.
 
 | # | Kind (C++) | typeId | Create label | Default node name | Category | Definition / component header | Godot 4.4 counterpart |
 |---|---|---|---|---|---|---|---|
-| 1 | `SceneRoot` | `scene_root` | SceneRoot | SceneRoot | Scene | `Scene/Expose/uve/scene/nodes/scene_root_uve.h` | none — a Godot scene root is just any node |
-| 2 | `Object3D` | `object_3d` | Object3D | Object3D | Scene | `Nodes/3D/Expose/uve/nodes/3d/object_3d_uve.h` | **Object3D** ✅ |
-| 3 | `Area3D` | `area_3d` | Area3D | Area3D | Physics | `Nodes/3D/Physics/Expose/uve/nodes/3d/area_3d_uve.h` | **Area3D** ✅ |
+| 1 | `SceneRoot` | `scene_root` | SceneRoot | SceneRoot | Scene | `Scene/Expose/uve/scene/objects/scene_root_uve.h` | none — a Godot scene root is just any node |
+| 2 | `Object3D` | `object_3d` | Object3D | Object3D | Scene | `Nodes/3D/Expose/uve/objects/3d/object_3d_uve.h` | **Object3D** ✅ |
+| 3 | `Area3D` | `area_3d` | Area3D | Area3D | Physics | `Nodes/3D/Physics/Expose/uve/objects/3d/area_3d_uve.h` | **Area3D** ✅ |
 | 4 | `RayCast3D` | `ray_cast_3d` | RayCast3D | **Object3D** | Physics | `.../3d/ray_cast_3d_uve.h` | **RayCast3D** ✅ |
 | 5 | `StaticBody3D` | `static_body_3d` | StaticBody3D | StaticBody3D | Physics | `.../3d/static_body_3d_uve.h` | **StaticBody3D** ✅ |
 | 6 | `AnimatableBody3D` | `animatable_body_3d` | AnimatableBody3D | AnimatableBody3D | Physics | `.../3d/animatable_body_3d_uve.h` | **AnimatableBody3D** ✅ |
-| 7 | `NavigationRegion3D` | `navigation_region_3d` | NavigationRegion3D | **Object3D** | Navigation | `Nodes/AI/3D/Expose/uve/nodes/3d/navigation_region_3d_uve.h` | **NavigationRegion3D** ✅ |
+| 7 | `NavigationRegion3D` | `navigation_region_3d` | NavigationRegion3D | **Object3D** | Navigation | `Nodes/AI/3D/Expose/uve/objects/3d/navigation_region_3d_uve.h` | **NavigationRegion3D** ✅ |
 | 8 | `NavigationAgent3D` | `navigation_agent_3d` | NavigationAgent3D | **Object3D** | Navigation | `.../3d/navigation_agent_3d_uve.h` | **NavigationAgent3D** ✅ |
-| 9 | `Skeleton3D` | `skeleton_3d` | Skeleton3D | Skeleton3D | Animation | `Nodes/Animation/Expose/uve/nodes/3d/skeleton_3d_uve.h` | **Skeleton3D** ✅ |
+| 9 | `Skeleton3D` | `skeleton_3d` | Skeleton3D | Skeleton3D | Animation | `Nodes/Animation/Expose/uve/objects/3d/skeleton_3d_uve.h` | **Skeleton3D** ✅ |
 | 10 | `BoneAttachment3D` | `bone_attachment_3d` | BoneAttachment3D | **Object3D** | Animation | `.../3d/bone_attachment_3d_uve.h` | **BoneAttachment3D** ✅ |
 | 11 | `SpringArm3D` | `spring_arm_3d` | SpringArm3D | SpringArm3D | Camera | `.../3d/spring_arm_3d_uve.h` | **SpringArm3D** ✅ |
 | 12 | `Marker3D` | `marker_3d` | Marker3D | **Object3D** | Scene | `.../3d/marker_3d_uve.h` | **Marker3D** ✅ |
@@ -110,9 +110,9 @@ called in the Outliner. **Bold** marks a broken default name.
 | 24 | `SpawnPoint3D` | `spawn_point_3d` | SpawnPoint3D | **Object3D** | Gameplay | `.../3d/spawn_point_3d_uve.h` | none — a Godot game uses `Marker3D` |
 | 25 | `LevelStreamer3D` | `level_streamer_3d` | LevelStreamer3D | **Object3D** | World | `.../3d/level_streamer_3d_uve.h` | none |
 | 26 | `WorldPartition3D` | `world_partition_3d` | WorldPartition3D | **Object3D** | World | `.../3d/world_partition_3d_uve.h` | none |
-| 27 | `AnimationTree` | `animation_tree` | AnimationTree | AnimationTree | Animation | `Nodes/Animation/Expose/uve/nodes/3d/animation_tree_uve.h` | **AnimationTree** ✅ |
+| 27 | `AnimationTree` | `animation_tree` | AnimationTree | AnimationTree | Animation | `Nodes/Animation/Expose/uve/objects/3d/animation_tree_uve.h` | **AnimationTree** ✅ |
 | 28 | `AnimationPlayer` | `animation_player` | AnimationPlayer | AnimationPlayer | Animation | `.../3d/animation_player_uve.h` | **AnimationPlayer** ✅ |
-| 29 | `CharacterBody3D` | `character_body_3d` | CharacterBody3D | CharacterBody3D | Physics | `Nodes/3D/Physics/Expose/uve/nodes/3d/character_body_3d_uve.h` | **CharacterBody3D** ✅ |
+| 29 | `CharacterBody3D` | `character_body_3d` | CharacterBody3D | CharacterBody3D | Physics | `Nodes/3D/Physics/Expose/uve/objects/3d/character_body_3d_uve.h` | **CharacterBody3D** ✅ |
 | 30 | `Camera3D` | `camera_3d` | Camera3D | **Camera** | Rendering | `.../3d/camera_3d_uve.h` | **Camera3D** ✅ |
 | 31 | `MeshInstance3D` | `mesh_instance_3d` | MeshInstance3D | MeshInstance3D | Rendering | `.../3d/mesh_instance_3d_uve.h` | **MeshInstance3D** ✅ |
 | 32 | `BoxMesh3D` | `box_mesh_3d` | BoxMesh3D | **Cube** | Rendering | `.../3d/box_mesh_3d_uve.h` | none — Godot's `BoxMesh` is a **Mesh resource** used on `MeshInstance3D` |
@@ -124,13 +124,13 @@ called in the Outliner. **Bold** marks a broken default name.
 | 38 | `AudioSource3D` | `audio_source_3d` | AudioSource3D | AudioSource3D | Audio | `.../3d/audio_source_3d_uve.h` | `AudioStreamPlayer3D` |
 | 39 | `ParticleEmitter3D` | `particle_emitter_3d` | ParticleEmitter3D | ParticleEmitter3D | VFX | `.../3d/particle_emitter_3d_uve.h` | `GPUParticles3D` / `CPUParticles3D` |
 | 40 | `Script` | `script` | Script | Script | Logic | `.../3d/script_uve.h` | ⚠ name taken: Godot's `Script` is a **Resource**; behavior is attached to any node |
-| 41 | `Canvas` | `canvas` | Canvas | Canvas | UI | `Nodes/CanvasLayer/Expose/uve/nodes/canvas_layer/canvas_uve.h` | `CanvasLayer` (node) / `Control` (widgets) |
+| 41 | `Canvas` | `canvas` | Canvas | Canvas | UI | `Nodes/CanvasLayer/Expose/uve/objects/canvas_layer/canvas_uve.h` | `CanvasLayer` (node) / `Control` (widgets) |
 | 42 | `UIText` | `ui_text` | UI Text | UI Text | UI | `.../canvas_layer/ui_text_uve.h` | `Label` |
 | 43 | `UIImage` | `ui_image` | UI Image | UI Image | UI | `.../canvas_layer/ui_image_uve.h` | `TextureRect` |
 | 44 | `UIButton` | `ui_button` | UI Button | UI Button | UI | `.../canvas_layer/ui_button_uve.h` | `Button` |
-| 45 | `Folder` | `folder` | Folder | Folder | Scene | `Scene/Expose/uve/scene/nodes/scene_folder_uve.h` | none — Godot groups with plain `Node`s / node groups |
+| 45 | `Folder` | `folder` | Folder | Folder | Scene | `Scene/Expose/uve/scene/objects/scene_folder_uve.h` | none — Godot groups with plain `Node`s / node groups |
 | 46 | `DirectionalLight3D` | `directional_light_3d` | DirectionalLight3D | DirectionalLight3D | Rendering | `.../3d/directional_light_3d_uve.h` | **DirectionalLight3D** ✅ |
-| 47 | `Viewport` | `viewport` | Viewport | Viewport | Scene | `Scene/Expose/uve/scene/nodes/scene_folder_uve.h` | ⚠ name taken: Godot's `Viewport` is an **abstract render-target node** (`SubViewport`, `Window` are the real ones); UniVex's `Viewport` is the Outliner's level root |
+| 47 | `Viewport` | `viewport` | Viewport | Viewport | Scene | `Scene/Expose/uve/scene/objects/scene_folder_uve.h` | ⚠ name taken: Godot's `Viewport` is an **abstract render-target node** (`SubViewport`, `Window` are the real ones); UniVex's `Viewport` is the Outliner's level root |
 
 Exact-name matches (rows marked ✅, 18 node kinds): `Object3D`, `Area3D`, `RayCast3D`,
 `StaticBody3D`, `AnimatableBody3D`, `NavigationRegion3D`, `NavigationAgent3D`, `Skeleton3D`,
@@ -146,20 +146,20 @@ it matches is an abstract base, so a UniVex `Light3D` and a Godot `Light3D` are 
 
 | Layer | File | Lines |
 |---|---|---|
-| Kind enum | `Engine/Runtime/Scene/Expose/uve/scene/nodes/scene_node_registry_uve.h` | 13-64 |
-| Registry rows (typeId, label, category, contracts, `libraryCreatable`) | `Engine/Runtime/Scene/Internal/nodes/scene_node_registry_uve.cpp` | 13-46 (contracts), 50-102 (rows) |
-| Legacy type-id alias (`"empty"` → `Object3D`) | `Engine/Runtime/Scene/Internal/nodes/scene_node_registry_uve.cpp` | 119-126 |
-| Kind inference from components (for scenes saved before the type was stored) | `Engine/Runtime/Scene/Internal/nodes/scene_node_type_uve.cpp` | whole file |
+| Kind enum | `Engine/Runtime/Scene/Expose/uve/scene/objects/scene_object_registry_uve.h` | 13-64 |
+| Registry rows (typeId, label, category, contracts, `libraryCreatable`) | `Engine/Runtime/Scene/Internal/objects/scene_object_registry_uve.cpp` | 13-46 (contracts), 50-102 (rows) |
+| Legacy type-id alias (`"empty"` → `Object3D`) | `Engine/Runtime/Scene/Internal/objects/scene_object_registry_uve.cpp` | 119-126 |
+| Kind inference from components (for scenes saved before the type was stored) | `Engine/Runtime/Scene/Internal/objects/scene_object_type_uve.cpp` | whole file |
 | Per-kind default node names | `Engine/Runtime/Nodes/**/<kind>_uve.h` (`defaultName`) | 31 headers, see Section 5.2 |
 | Creation switch (definition vs bare component) | `Engine/Editor/EditorCore/Internal/editor_uve.cpp` | 1919-2115 |
 | Legacy editor kinds → node kinds mapper | `Engine/Editor/EditorCore/Internal/editor_uve.cpp` | 2937-3010 |
 | Outliner type tag / type name | `Engine/Editor/EditorCore/Internal/editor_uve.cpp` | 2654-2690 |
-| Node icons (filename **is** the typeId) | `Engine/Editor/EditorCore/assets/icons/nodes/<typeId>.png` | 47 files |
+| Node icons (filename **is** the typeId) | `Engine/Editor/EditorCore/assets/icons/objects/<typeId>.png` | 47 files |
 | Icon lookup | `Engine/Editor/EditorCore/Internal/editor_ui_assets_uve.cpp` | 181-190 |
 | Content Browser templates (third naming layer) | `Engine/Editor/EditorCore/Internal/editor_content_catalogue_uve.cpp` | 58-125 |
 | Inspector component labels | `Engine/Runtime/Scene/Internal/scene_component_metadata_uve.cpp` | 173-430 (file is 1370 lines) |
 | Scene "+" popup (Folder / sun / sky only) | `Engine/Editor/EditorCore/Internal/editor_panel_hierarchy_uve.cpp` | 595-670 |
-| Tests that lock names | `Test/Nodes/3D/node_definitions_3d_uve_tests.cpp:131-160`, `Test/Nodes/CanvasLayer/node_definitions_canvas_layer_uve_tests.cpp`, `Test/Editor/editor_uve_tests.cpp:564-590, 2020-2100, 1148-1170` | — |
+| Tests that lock names | `Test/Nodes/3D/object_definitions_3d_uve_tests.cpp:131-160`, `Test/Nodes/CanvasLayer/object_definitions_canvas_layer_uve_tests.cpp`, `Test/Editor/editor_uve_tests.cpp:564-590, 2020-2100, 1148-1170` | — |
 
 ---
 
@@ -169,7 +169,7 @@ it matches is an abstract base, so a UniVex `Light3D` and a Godot `Light3D` are 
   (`scene_serializer_uve.cpp:810`, `"type"` key). On load, an unknown id is *silently dropped*
   (`scene_serializer_uve.cpp:1645-1656`) — the node keeps its components but loses its explicit
   type and falls back to component inference. Renaming a `typeId` therefore needs the same legacy
-  alias the `"empty"` → `node_3d` rename used (`scene_node_registry_uve.cpp:119-126`).
+  alias the `"empty"` → `node_3d` rename used (`scene_object_registry_uve.cpp:119-126`).
 * **Component names** are also saved, as JSON object keys taken from the C++ struct name
   (`scene_serializer_uve.cpp:1403-1700`). Renaming a `*NodeComponentUVE` struct needs a migration
   or an alias entry in that table; there is currently **no** generic alias mechanism for component
@@ -217,7 +217,7 @@ for the other 29.
 | `SphereMesh3D` | SphereMesh3D | `UV Sphere` | `sphere_mesh_3d_uve.h:26` |
 | `PlaneMesh3D` | PlaneMesh3D | `Plane` | `plane_mesh_3d_uve.h:26` |
 
-These are locked by tests (`Test/Nodes/3D/node_definitions_3d_uve_tests.cpp:131-135, 148-160`;
+These are locked by tests (`Test/Nodes/3D/object_definitions_3d_uve_tests.cpp:131-135, 148-160`;
 `Test/Editor/editor_uve_tests.cpp:2035-2088`), so changing them is a deliberate, test-visible
 change — not an accident. Note `UV Sphere` is Blender terminology and `Cube` clashes with the fact
 that the node is a *BoxMesh*; Godot's own primitives are `BoxMesh`, `SphereMesh`, `PlaneMesh`.
@@ -246,7 +246,7 @@ two different names. This is a naming problem on top of a real design question (
 
 The kind, typeId, label and icon all say **LOD**; the component struct, its validity function and
 its free function say **Lod** (`lod_group_3d_uve.h:27,61,63`), and the registry's contract string
-is `"LodGroup3DNodeComponentUVE"` (`scene_node_registry_uve.cpp:35`). Harmless to the build, but it
+is `"LodGroup3DNodeComponentUVE"` (`scene_object_registry_uve.cpp:35`). Harmless to the build, but it
 is the one acronym in the node set that is not spelled the same way twice. Note the struct name is
 also a **saved component key** (Section 4), so renaming it needs an alias.
 
@@ -303,16 +303,16 @@ object is called "Cube".
 "ParticleEmitter3D", `component.script` → "Script". A reader inspecting a `StaticBody3D` sees a
 component literally called "MeshInstance3D". Naming the component after its node kind is exactly
 the confusion the registry was introduced to end (see `SceneNodeTypeComponentUVE`'s own comment,
-`scene_node_type_uve.h:9-17`).
+`scene_object_type_uve.h:9-17`).
 
 ### 5.10 🟢 Verified consistent (no action)
 
-* Every one of the 47 `typeId`s has a matching `assets/icons/nodes/<typeId>.png`; no orphan icon,
+* Every one of the 47 `typeId`s has a matching `assets/icons/objects/<typeId>.png`; no orphan icon,
   no missing icon.
-* All 14 registry categories have a matching `assets/icons/node_categories/<name>.png` and vice
+* All 14 registry categories have a matching `assets/icons/object_categories/<name>.png` and vice
   versa — no unused category icon, no iconless category.
 * All 47 `typeId`s are unique and non-empty; `kMaximumSceneNodeDescriptorsUVE = 64`
-  (`scene_node_registry_uve.h:79`, which also sizes the editor's node-icon texture array,
+  (`scene_object_registry_uve.h:79`, which also sizes the editor's node-icon texture array,
   `editor_ui_assets_uve.h:53`) leaves 17 slots of headroom before the array needs growing.
 * `kDescriptors` holds exactly 47 rows, one per enumerator; `SceneNodeKindUVE` and the row list
   agree in both directions.
@@ -337,7 +337,7 @@ the confusion the registry was introduced to end (see `SceneNodeTypeComponentUVE
 
 ### Level B — renames `typeId` (needs a legacy alias, or old scenes lose their node type)
 
-Follow the `"empty"` → `Object3D` pattern (`scene_node_registry_uve.cpp:119-126`): add
+Follow the `"empty"` → `Object3D` pattern (`scene_object_registry_uve.cpp:119-126`): add
 `if (typeId == "<old id>") return FindSceneNodeDescriptorUVE(SceneNodeKindUVE::<Kind>);` before the
 lookup loop, keep the icon file renamed to match, and add a test that loads a document written with
 the old id. Candidate id renames, if strict Godot spelling is wanted:

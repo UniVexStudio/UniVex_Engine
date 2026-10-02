@@ -32,7 +32,7 @@ enum class AnimationFinishActionUVE : std::uint8_t {
     ReturnToStart,
 };
 
-/// AnimationPlayer's own state: plays a `.uvanim` clip on a target node's transform. What it moves,
+/// AnimationPlayer's own state: plays a `.uvanim` clip on a target object's transform. What it moves,
 /// which channels and on which clock live in its AnimationMixer base (AnimationMixerComponentUVE).
 ///
 /// Authored settings first; the runtime state the player writes back each step comes last and is
@@ -54,7 +54,7 @@ struct AnimationPlayerComponentUVE final {
     /// Eases from wherever the target is into the clip over this many seconds, instead of snapping.
     float blendInSeconds = 0.0F;
     /// Plays the clip on top of where the target already is, so one clip (a bob, a sway, a door
-    /// swing) works on any node wherever it was placed. Off, the clip's poses are absolute.
+    /// swing) works on any object wherever it was placed. Off, the clip's poses are absolute.
     bool relative = false;
 
     // ---- Runtime state, written by the player; never saved --------------------------------------

@@ -35,7 +35,7 @@ enum class MeshRenderEligibilityReasonUVE : std::uint8_t {
 /// frustum test there was nowhere for either to hook in.
 ///
 /// ON OCCLUSION CULLING, since this is where someone will come looking for it.
-/// Occluder3DNodeComponentUVE exists and is wired through the editor, the node registry and the
+/// Occluder3DComponentUVE exists and is wired through the editor, the object registry and the
 /// serializer, but nothing consumes it. I costed a conservative screen-space box rejection here
 /// before writing one, against the cull as it now stands - clustered, roughly 1100 candidates
 /// surviving cluster rejection per view:

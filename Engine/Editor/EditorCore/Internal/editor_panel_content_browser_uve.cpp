@@ -36,7 +36,7 @@
 #include "uve/editor/editor_content_browser_model_uve.h"
 
 #include "editor_chrome_layout_uve.h"
-#include "editor_node_icons_uve.h"
+#include "editor_object_icons_uve.h"
 
 namespace UVE::Editor {
 namespace {
@@ -699,8 +699,8 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
                     rootFlags |= ImGuiTreeNodeFlags_Selected;
                 }
                 const float rootX = ImGui::GetCursorScreenPos().x;
-                const bool rootOpen = ImGui::TreeNodeEx((iconGap + "Content##content-tree-root").c_str(), rootFlags);
-                drawRowIcon(rootX + ImGui::GetTreeNodeToLabelSpacing(), folderIcon(rootOpen));
+                const bool rootOpen = ImGui::TreeObjectEx((iconGap + "Content##content-tree-root").c_str(), rootFlags);
+                drawRowIcon(rootX + ImGui::GetTreeObjectToLabelSpacing(), folderIcon(rootOpen));
                 if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
                     goToFolder({});
                 }
@@ -731,9 +731,9 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
                             ImGui::SetNextItemOpen(true, ImGuiCond_Appearing);
                         }
                         const float rowX = ImGui::GetCursorScreenPos().x;
-                        const bool open = ImGui::TreeNodeEx(
+                        const bool open = ImGui::TreeObjectEx(
                             (iconGap + dirEntry->relativePath.filename().generic_string()).c_str(), treeFlags);
-                        drawRowIcon(rowX + ImGui::GetTreeNodeToLabelSpacing(), folderIcon(open && hasSubdirectories));
+                        drawRowIcon(rowX + ImGui::GetTreeObjectToLabelSpacing(), folderIcon(open && hasSubdirectories));
                         dragContentItem(*dirEntry, false);
                         if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
                             goToFolder(dirEntry->relativePath);
@@ -803,7 +803,7 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
             std::string removeShelf;
             std::string toggleShared;
             bool listChanged = false;
-            const std::uintptr_t teamIcon = m_uiAssets.GetNodeCategoryIconTextureIdUVE("world");
+            const std::uintptr_t teamIcon = m_uiAssets.GetObjectCategoryIconTextureIdUVE("world");
             const std::uintptr_t personalIcon = m_uiAssets.GetContentTypeIconTextureIdUVE("Bundle");
             for (const bool teamPass : {true, false}) {
                 for (const ContentShelfUVE& shelf : m_contentShelves.GetAllUVE()) {
