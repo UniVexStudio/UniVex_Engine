@@ -69,14 +69,22 @@ public:
     [[nodiscard]] virtual bool ReadbackBufferUVE(BufferHandleUVE buffer, std::span<std::byte> outData,
                                                   std::uint64_t offsetBytes = 0) = 0;
 
-    /// Creates a GPU texture per `desc`, optionally uploading `initialData`. The backend must
-    /// reject invalid descriptors or partial non-empty level-0 data through
-    /// `ValidateTextureUploadUVE` before allocating a resource; valid creation never returns
-    /// kInvalidTextureHandleUVE.
+    /// Creates a GPU texture per `desc`, optionally uploading `initialData`. A non-empty upload
+    /// is tightly packed in mip-level order (level 0 first, then levels 1..N) and must contain
+    /// exactly the bytes required by every declared level. Empty data is legal only for a
+    /// one-level render target. The backend must reject invalid descriptors or partial uploads
+    /// through `ValidateTextureUploadUVE` before allocating a resource; valid creation never
+    /// returns kInvalidTextureHandleUVE.
     [[nodiscard]] virtual TextureHandleUVE CreateTextureUVE(const TextureDescUVE& desc,
                                                              std::span<const std::byte> initialData = {}) = 0;
 
-    /// Destroys `texture`. A handle already destroyed (or never valid) is a safe no-op (logged).
+    /// Reports whether this device can sample a texture using `format`. RenderSystems uses this
+    /// capability to choose a native Basis transcode target; compressed formats unsupported by
+    /// the active GPU fall back to RGBA8. Null deliberately reports no compressed support.
+    [[nodiscard]] virtual bool SupportsTextureFormatUVE(
+        TextureFormatUVE format, TextureColorSpaceUVE colorSpace = TextureColorSpaceUVE::Linear) const noexcept = 0;
+
+    /// Destroys `texture`.  A handle already destroyed (or never valid) is a safe no-op (logged).
     virtual void DestroyTextureUVE(TextureHandleUVE texture) = 0;
 
     /// Creates a shader per `desc`. Never returns kInvalidShaderHandleUVE on success. If

@@ -93,6 +93,8 @@ GlFunctionsUVE LoadGlFunctionsUVE(void* (*getProcAddress)(const char*)) {
         LoadOneUVE<PFNGLRENDERBUFFERSTORAGEPROC>(getProcAddress, "glRenderbufferStorage");
 
     functions.glActiveTexture = LoadOneUVE<PFNGLACTIVETEXTUREPROC>(getProcAddress, "glActiveTexture");
+    functions.glCompressedTexImage2D =
+        LoadOneUVE<PFNGLCOMPRESSEDTEXIMAGE2DPROC>(getProcAddress, "glCompressedTexImage2D");
 
     functions.glGetUniformLocation = LoadOneUVE<PFNGLGETUNIFORMLOCATIONPROC>(getProcAddress, "glGetUniformLocation");
     functions.glUniform1f = LoadOneUVE<PFNGLUNIFORM1FPROC>(getProcAddress, "glUniform1f");

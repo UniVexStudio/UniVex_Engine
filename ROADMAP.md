@@ -485,7 +485,6 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
   deliberate decision to standardize on glTF only and require artists to export to it
 - [ ] Texture compression (BCn on desktop, ASTC/ETC on mobile) baked at import time, not
   just raw decoded pixels
-- [ ] Mipmap generation as a first-class import step
 - [ ] SVG/vector asset support (a real rasterizer — confirmed not to exist anywhere in this
   codebase today, so raw vector source files fall back to a generic icon)
 - [ ] An asset "cooking"/bake step that produces a platform-optimized, shippable form of

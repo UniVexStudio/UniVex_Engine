@@ -900,6 +900,239 @@ TEST_F(GlRenderDeviceUVETest, ReadbackBufferUVE_UnknownHandleOrOutOfRange_Return
     renderDevice->DestroyBufferUVE(buffer);
 }
 
+TEST_F(GlRenderDeviceUVETest, CreateTextureUVE_SrgbColorSpaceUsesSrgbInternalFormat) {
+    const std::array<std::uint8_t, 4U> pixels{128U, 64U, 32U, 255U};
+    TextureDescUVE desc{};
+    desc.width = 1U;
+    desc.height = 1U;
+    desc.colorSpace = TextureColorSpaceUVE::Srgb;
+    const TextureHandleUVE texture = renderDevice->CreateTextureUVE(desc, std::as_bytes(std::span(pixels)));
+    ASSERT_NE(texture, kInvalidTextureHandleUVE);
+
+    GLint previousTextureBinding = 0;
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &previousTextureBinding);
+    glBindTexture(GL_TEXTURE_2D, renderDevice->GetNativeTextureIdUVE(texture));
+    GLint internalFormat = 0;
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_INTERNAL_FORMAT, &internalFormat);
+    glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previousTextureBinding));
+    EXPECT_EQ(internalFormat, static_cast<GLint>(GL_SRGB8_ALPHA8));
+    EXPECT_EQ(glGetError(), GL_NO_ERROR);
+    renderDevice->DestroyTextureUVE(texture);
+}
+
+TEST_F(GlRenderDeviceUVETest, CreateTextureUVE_UploadsBlockCompressedSrgbMipChainWhenAvailable) {
+    if (!renderDevice->SupportsTextureFormatUVE(TextureFormatUVE::ETC2RGBA8, TextureColorSpaceUVE::Srgb)) {
+        GTEST_SKIP() << "active GL context does not advertise ETC2 sRGB texture support";
+    }
+    const TextureDescUVE desc{7U, 5U, TextureFormatUVE::ETC2RGBA8, 2U, TextureColorSpaceUVE::Srgb};
+    std::array<std::byte, 80U> blocks{}; // 4 level-0 blocks and 1 3x2 mip block, 16 bytes each
+    const TextureHandleUVE texture = renderDevice->CreateTextureUVE(desc, blocks);
+    ASSERT_NE(texture, kInvalidTextureHandleUVE);
+
+    GLint previousTextureBinding = 0;
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &previousTextureBinding);
+    glBindTexture(GL_TEXTURE_2D, renderDevice->GetNativeTextureIdUVE(texture));
+    GLint level0Compressed = GL_FALSE;
+    GLint level1Compressed = GL_FALSE;
+    GLint level0Size = 0;
+    GLint level1Size = 0;
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_COMPRESSED, &level0Compressed);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 1, GL_TEXTURE_COMPRESSED, &level1Compressed);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_COMPRESSED_IMAGE_SIZE, &level0Size);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 1, GL_TEXTURE_COMPRESSED_IMAGE_SIZE, &level1Size);
+    glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previousTextureBinding));
+    EXPECT_EQ(level0Compressed, GL_TRUE);
+    EXPECT_EQ(level1Compressed, GL_TRUE);
+    EXPECT_EQ(level0Size, 64);
+    EXPECT_EQ(level1Size, 16);
+    EXPECT_EQ(glGetError(), GL_NO_ERROR);
+    renderDevice->DestroyTextureUVE(texture);
+}
+
+constexpr std::string_view kMipSampleVertexSource = R"(#version 330 core
+void main() {
+    vec2 position = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+    gl_Position = vec4(position * 2.0 - 1.0, 0.0, 1.0);
+}
+)";
+
+constexpr std::string_view kMipSampleFragmentSource = R"(#version 330 core
+uniform sampler2D uTexture;
+out vec4 FragColor;
+void main() {
+    FragColor = textureLod(uTexture, vec2(0.5, 0.5), 1.0);
+}
+)";
+
+TEST_F(GlRenderDeviceUVETest, CreateTextureUVE_UploadsAndSamplesExplicitMipLevel) {
+    // Level 0 is opaque blue; level 1 is opaque red. Read back the stored level and
+    // sample with explicit LOD 1 so the pixel proof cannot accidentally use level 0.
+    constexpr std::array<std::uint8_t, 20U> mipPixels{
+        0U, 0U, 255U, 255U,  0U, 0U, 255U, 255U,
+        0U, 0U, 255U, 255U,  0U, 0U, 255U, 255U,
+        255U, 0U, 0U, 255U};
+    TextureDescUVE sourceDesc{};
+    sourceDesc.width = 2U;
+    sourceDesc.height = 2U;
+    sourceDesc.mipLevels = 2U;
+    const TextureHandleUVE source = renderDevice->CreateTextureUVE(
+        sourceDesc, std::as_bytes(std::span(mipPixels)));
+    ASSERT_NE(source, kInvalidTextureHandleUVE);
+
+    GLint previousTextureBinding = 0;
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &previousTextureBinding);
+    glBindTexture(GL_TEXTURE_2D, renderDevice->GetNativeTextureIdUVE(source));
+    GLint level1Width = 0;
+    GLint level1Height = 0;
+    GLint minFilter = 0;
+    GLint maxLevel = -1;
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 1, GL_TEXTURE_WIDTH, &level1Width);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 1, GL_TEXTURE_HEIGHT, &level1Height);
+    glGetTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, &minFilter);
+    glGetTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, &maxLevel);
+    std::array<std::uint8_t, 4U> level1Pixels{};
+    glGetTexImage(GL_TEXTURE_2D, 1, GL_RGBA, GL_UNSIGNED_BYTE, level1Pixels.data());
+    glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previousTextureBinding));
+    EXPECT_EQ(level1Width, 1);
+    EXPECT_EQ(level1Height, 1);
+    EXPECT_EQ(minFilter, static_cast<GLint>(GL_LINEAR_MIPMAP_LINEAR));
+    EXPECT_EQ(maxLevel, 1);
+    EXPECT_EQ(level1Pixels, (std::array<std::uint8_t, 4U>{255U, 0U, 0U, 255U}));
+
+    TextureDescUVE targetDesc{};
+    targetDesc.width = 1U;
+    targetDesc.height = 1U;
+    const TextureHandleUVE target = renderDevice->CreateTextureUVE(targetDesc);
+    ASSERT_NE(target, kInvalidTextureHandleUVE);
+    const ShaderHandleUVE vertexShader = renderDevice->CreateShaderUVE(
+        ShaderDescUVE{ShaderStageUVE::Vertex, std::string(kMipSampleVertexSource)});
+    const ShaderHandleUVE fragmentShader = renderDevice->CreateShaderUVE(
+        ShaderDescUVE{ShaderStageUVE::Fragment, std::string(kMipSampleFragmentSource)});
+    ASSERT_NE(vertexShader, kInvalidShaderHandleUVE);
+    ASSERT_NE(fragmentShader, kInvalidShaderHandleUVE);
+    PipelineDescUVE pipelineDesc{};
+    pipelineDesc.vertexShader = vertexShader;
+    pipelineDesc.fragmentShader = fragmentShader;
+    pipelineDesc.depthTestEnabled = false;
+    pipelineDesc.depthWriteEnabled = false;
+    const PipelineHandleUVE pipeline = renderDevice->CreatePipelineUVE(pipelineDesc);
+    ASSERT_NE(pipeline, kInvalidPipelineHandleUVE);
+
+    std::unique_ptr<ICommandBufferUVE> commandBuffer = renderDevice->CreateCommandBufferUVE();
+    ASSERT_NE(commandBuffer, nullptr);
+    RenderPassDescUVE passDesc{};
+    passDesc.colorAttachment = target;
+    passDesc.colorLoadOp = LoadOpUVE::Clear;
+    passDesc.depthLoadOp = LoadOpUVE::DontCare;
+    commandBuffer->BeginRenderPassUVE(passDesc);
+    commandBuffer->BindPipelineUVE(pipeline);
+    commandBuffer->BindTextureUVE(source, 0U);
+    commandBuffer->DrawUVE(3U);
+    commandBuffer->EndRenderPassUVE();
+    renderDevice->SubmitUVE(std::move(commandBuffer));
+
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &previousTextureBinding);
+    glBindTexture(GL_TEXTURE_2D, renderDevice->GetNativeTextureIdUVE(target));
+    std::array<std::uint8_t, 4U> sampledPixel{};
+    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, sampledPixel.data());
+    glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previousTextureBinding));
+    EXPECT_EQ(sampledPixel, (std::array<std::uint8_t, 4U>{255U, 0U, 0U, 255U}));
+    EXPECT_EQ(glGetError(), GL_NO_ERROR);
+
+    renderDevice->DestroyPipelineUVE(pipeline);
+    renderDevice->DestroyShaderUVE(fragmentShader);
+    renderDevice->DestroyShaderUVE(vertexShader);
+    renderDevice->DestroyTextureUVE(target);
+    renderDevice->DestroyTextureUVE(source);
+}
+
+constexpr std::string_view kSrgbSampleVertexSource = R"(#version 330 core
+void main() {
+    vec2 position = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+    gl_Position = vec4(position * 2.0 - 1.0, 0.0, 1.0);
+}
+)";
+
+constexpr std::string_view kSrgbSampleFragmentSource = R"(#version 330 core
+uniform sampler2D uTexture;
+out vec4 FragColor;
+void main() {
+    FragColor = texture(uTexture, vec2(0.5, 0.5));
+}
+)";
+
+TEST_F(GlRenderDeviceUVETest, SamplingSrgbTextureDecodesToLinearValues) {
+    const std::array<std::uint8_t, 4U> encodedSrgbPixel{128U, 0U, 0U, 255U};
+    TextureDescUVE sourceDesc{};
+    sourceDesc.width = 1U;
+    sourceDesc.height = 1U;
+    sourceDesc.colorSpace = TextureColorSpaceUVE::Srgb;
+    const TextureHandleUVE source = renderDevice->CreateTextureUVE(
+        sourceDesc, std::as_bytes(std::span(encodedSrgbPixel)));
+    ASSERT_NE(source, kInvalidTextureHandleUVE);
+
+    TextureDescUVE targetDesc{};
+    targetDesc.width = 1U;
+    targetDesc.height = 1U;
+    const TextureHandleUVE target = renderDevice->CreateTextureUVE(targetDesc);
+    ASSERT_NE(target, kInvalidTextureHandleUVE);
+
+    const ShaderHandleUVE vertexShader = renderDevice->CreateShaderUVE(
+        ShaderDescUVE{ShaderStageUVE::Vertex, std::string(kSrgbSampleVertexSource)});
+    const ShaderHandleUVE fragmentShader = renderDevice->CreateShaderUVE(
+        ShaderDescUVE{ShaderStageUVE::Fragment, std::string(kSrgbSampleFragmentSource)});
+    ASSERT_NE(vertexShader, kInvalidShaderHandleUVE);
+    ASSERT_NE(fragmentShader, kInvalidShaderHandleUVE);
+    PipelineDescUVE pipelineDesc{};
+    pipelineDesc.vertexShader = vertexShader;
+    pipelineDesc.fragmentShader = fragmentShader;
+    pipelineDesc.depthTestEnabled = false;
+    pipelineDesc.depthWriteEnabled = false;
+    const PipelineHandleUVE pipeline = renderDevice->CreatePipelineUVE(pipelineDesc);
+    ASSERT_NE(pipeline, kInvalidPipelineHandleUVE);
+
+    const GLboolean previousFramebufferSrgbEnabled = glIsEnabled(GL_FRAMEBUFFER_SRGB);
+    glDisable(GL_FRAMEBUFFER_SRGB);
+    while (glGetError() != GL_NO_ERROR) {
+    }
+    std::unique_ptr<ICommandBufferUVE> commandBuffer = renderDevice->CreateCommandBufferUVE();
+    ASSERT_NE(commandBuffer, nullptr);
+    RenderPassDescUVE passDesc{};
+    passDesc.colorAttachment = target;
+    passDesc.colorLoadOp = LoadOpUVE::Clear;
+    passDesc.clearColor = {0.0F, 0.0F, 0.0F, 1.0F};
+    passDesc.depthLoadOp = LoadOpUVE::DontCare;
+    commandBuffer->BeginRenderPassUVE(passDesc);
+    commandBuffer->BindPipelineUVE(pipeline);
+    commandBuffer->BindTextureUVE(source, 0U);
+    commandBuffer->DrawUVE(3U);
+    commandBuffer->EndRenderPassUVE();
+    renderDevice->SubmitUVE(std::move(commandBuffer));
+
+    GLint previousTextureBinding = 0;
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &previousTextureBinding);
+    glBindTexture(GL_TEXTURE_2D, renderDevice->GetNativeTextureIdUVE(target));
+    std::array<std::uint8_t, 4U> readback{};
+    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, readback.data());
+    glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previousTextureBinding));
+    if (previousFramebufferSrgbEnabled == GL_TRUE) {
+        glEnable(GL_FRAMEBUFFER_SRGB);
+    }
+
+    EXPECT_EQ(glGetError(), GL_NO_ERROR);
+    EXPECT_NEAR(static_cast<int>(readback[0]), 55, 2)
+        << "sRGB 128/255 red should be sampled as about 0.216 linear (55/255), not 128/255";
+    EXPECT_EQ(readback[1], 0U);
+    EXPECT_EQ(readback[2], 0U);
+    EXPECT_EQ(readback[3], 255U);
+
+    renderDevice->DestroyPipelineUVE(pipeline);
+    renderDevice->DestroyShaderUVE(vertexShader);
+    renderDevice->DestroyShaderUVE(fragmentShader);
+    renderDevice->DestroyTextureUVE(target);
+    renderDevice->DestroyTextureUVE(source);
+}
+
 TEST_F(GlRenderDeviceUVETest, CreateThenDestroyTexture_UpdatesLiveResourceCount) {
     ASSERT_EQ(renderDevice->GetLiveResourceCountUVE(), 0U);
     const TextureHandleUVE texture =
@@ -2403,11 +2636,11 @@ TEST_F(GlRenderDeviceUVETest, DispatchUVE_RejectsGraphicsPipelineWithoutGlError)
 
 // ---------------------------------------------------------------------------
 // M5b: storage images (GL). BindTextureUVE feeds ONE unified slot space — when the
-// current program declares GL_IMAGE_2D uniforms, the texture is ALSO bound to the
-// image unit of the same index (glBindImageTexture, GL_READ_WRITE), so imageLoad/
-// imageStore reach the caller's texture. Both proofs read the texture back with raw
-// glGetTexImage through the binding the RHI left behind (the SSBO-test precedent):
-// a ZERO-initialized texture can only turn green/red through a real image store.
+// current program declares GL_IMAGE_2D uniforms, storage-capable textures are ALSO
+// bound to the image unit of the same index (glBindImageTexture, GL_READ_WRITE).
+// Linear RGBA8 compute/fragment tests prove imageStore writes with glGetTexImage;
+// the sRGB case verifies that OpenGL keeps the texture sampled-only and clears the
+// image unit instead of silently discarding storage writes.
 // ---------------------------------------------------------------------------
 
 constexpr std::string_view kImageFillComputeSource = R"(#version 430 core
@@ -2419,13 +2652,60 @@ void main() {
 }
 )";
 
-TEST_F(GlRenderDeviceUVETest, BindTextureUVE_ComputeImageStore_ProvenByGlGetTexImage) {
-    // The GL M5b compute-side proof: a zero-initialized 4x4 RGBA8 texture, one
-    // outside-pass dispatch of the image filler (bind compute pipeline → BindTextureUVE
-    // at slot 0 → DispatchUVE(1,1,1); GL executes at record time and the dispatch
-    // barrier covers shader image access), then a raw glGetTexImage readback must show
-    // all sixteen texels GREEN. Without a real glBindImageTexture + glDispatchCompute
-    // the texture stays zeroed — the green cannot be faked.
+TEST_F(GlRenderDeviceUVETest, BindTextureUVE_ComputeStorageImageOnSrgbTexture_LeavesImageUnitUnbound) {
+    // An sRGB texture remains valid for sampling but is not a supported OpenGL storage
+    // image. BindTextureUVE must preserve the texture-unit binding while clearing the
+    // corresponding image unit, rather than relying on driver-specific by-size aliasing.
+    constexpr std::array<std::uint8_t, 4U * 4U * 4U> kZeroPixels{};
+    TextureDescUVE targetDesc{};
+    targetDesc.width = 4U;
+    targetDesc.height = 4U;
+    targetDesc.colorSpace = TextureColorSpaceUVE::Srgb;
+    const TextureHandleUVE target = renderDevice->CreateTextureUVE(
+        targetDesc, std::as_bytes(std::span(kZeroPixels)));
+    ASSERT_NE(target, kInvalidTextureHandleUVE);
+
+    const ShaderHandleUVE computeShader = renderDevice->CreateShaderUVE(
+        ShaderDescUVE{ShaderStageUVE::Compute, std::string(kImageFillComputeSource)});
+    if (computeShader == kInvalidShaderHandleUVE) {
+        renderDevice->DestroyTextureUVE(target);
+        GTEST_SKIP() << "context lacks compute shaders (GL 4.3+)";
+    }
+    ComputePipelineDescUVE pipelineDesc{};
+    pipelineDesc.computeShader = computeShader;
+    std::string infoLog;
+    const PipelineHandleUVE computePipeline =
+        renderDevice->CreateComputePipelineUVE(pipelineDesc, &infoLog);
+    if (computePipeline == kInvalidPipelineHandleUVE) {
+        renderDevice->DestroyShaderUVE(computeShader);
+        renderDevice->DestroyTextureUVE(target);
+        GTEST_SKIP() << "compute pipeline refused: " << infoLog;
+    }
+
+    std::unique_ptr<ICommandBufferUVE> commandBuffer = renderDevice->CreateCommandBufferUVE();
+    ASSERT_NE(commandBuffer, nullptr);
+    while (glGetError() != GL_NO_ERROR) {
+    }
+    commandBuffer->BindPipelineUVE(computePipeline);
+    commandBuffer->BindTextureUVE(target, 0U); // M5b: legal outside pass while compute is bound
+    renderDevice->SubmitUVE(std::move(commandBuffer));
+
+    GLint textureName = 0;
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &textureName);
+    EXPECT_NE(textureName, 0) << "the sRGB texture must remain bound for sampler access";
+    GLint imageName = -1;
+    glGetIntegeri_v(GL_IMAGE_BINDING_NAME, 0U, &imageName);
+    EXPECT_EQ(imageName, 0) << "unsupported sRGB storage-image bindings must be cleared";
+    EXPECT_EQ(glGetError(), GL_NO_ERROR);
+
+    renderDevice->DestroyPipelineUVE(computePipeline);
+    renderDevice->DestroyShaderUVE(computeShader);
+    renderDevice->DestroyTextureUVE(target);
+}
+
+TEST_F(GlRenderDeviceUVETest, BindTextureUVE_ComputeImageStoreOnLinearTexture_ProvenByGlGetTexImage) {
+    // Linear RGBA8 remains a supported compute storage image. A zero-initialized target
+    // must read back green after the compute pipeline binds it and dispatches one workgroup.
     constexpr std::array<std::uint8_t, 4U * 4U * 4U> kZeroPixels{};
     const TextureHandleUVE target = renderDevice->CreateTextureUVE(
         TextureDescUVE{4U, 4U, TextureFormatUVE::RGBA8Unorm, 1U},
@@ -2451,14 +2731,14 @@ TEST_F(GlRenderDeviceUVETest, BindTextureUVE_ComputeImageStore_ProvenByGlGetTexI
 
     std::unique_ptr<ICommandBufferUVE> commandBuffer = renderDevice->CreateCommandBufferUVE();
     ASSERT_NE(commandBuffer, nullptr);
+    while (glGetError() != GL_NO_ERROR) {
+    }
     commandBuffer->BindPipelineUVE(computePipeline);
-    commandBuffer->BindTextureUVE(target, 0U); // M5b: legal outside pass while compute is bound
+    commandBuffer->BindTextureUVE(target, 0U);
     commandBuffer->DispatchUVE(1U, 1U, 1U);
     EXPECT_EQ(glGetError(), GL_NO_ERROR);
     renderDevice->SubmitUVE(std::move(commandBuffer));
 
-    // Readback through the unit-0 binding the RHI's glBindTexture left behind (GetTexImage
-    // implicitly flushes, so the dispatch's stores are complete).
     GLint textureName = 0;
     glGetIntegerv(GL_TEXTURE_BINDING_2D, &textureName);
     ASSERT_NE(textureName, 0) << "the target texture must still be bound at unit 0";

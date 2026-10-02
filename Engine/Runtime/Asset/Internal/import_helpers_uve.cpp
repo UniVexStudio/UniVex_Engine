@@ -5,7 +5,24 @@
 #include <fstream>
 #include <limits>
 
+#include "uve/asset/texture_compression_uve.h"
+#include "uve/asset/texture_mipmap_uve.h"
+
 namespace UVE::Asset::Detail {
+
+[[nodiscard]] bool PrepareTextureForImportUVE(TextureAssetUVE& texture,
+                                               const TextureImportSettingsUVE& settings) {
+    if (settings.generateMipmaps &&
+        !GenerateTextureMipmapsUVE(texture, settings.mipFilter, settings.maxMipLevels)) {
+        return false;
+    }
+    if (settings.compressionMode != TextureCompressionModeUVE::None &&
+        !CompressTextureAssetWithBasisUVE(texture, settings.compressionMode, settings.compressionQuality,
+                                          settings.compressionEffort)) {
+        return false;
+    }
+    return IsTextureAssetValidUVE(texture);
+}
 
 [[nodiscard]] bool ReadBoundedSourceBytesUVE(const std::filesystem::path& sourcePath,
                                              const char* importerName,
