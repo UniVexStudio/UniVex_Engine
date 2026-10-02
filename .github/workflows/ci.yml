@@ -52,13 +52,10 @@ jobs:
       # so compiler errors are surfaced as check-run annotations instead.
       - name: Build
         run: |
-          set -o pipefail
-          cmake --build build --parallel "$(nproc)" 2>&1 | tee /tmp/build.log
-          rc=$?
-          if [ $rc -ne 0 ]; then
-            grep -E "error:|Error" /tmp/build.log | head -30 | sed 's/^/::error::/'
+          if ! cmake --build build --parallel "$(nproc)" 2>&1 | tee /tmp/build.log; then
+            grep -E "error:|FAILED:" /tmp/build.log | head -40 | sed 's/^/::error::/'
+            exit 1
           fi
-          exit $rc
 
       - name: Test
         # Parallel, and both things that blocked it are fixed: every test process gets its own
