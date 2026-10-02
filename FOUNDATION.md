@@ -367,7 +367,7 @@ Missing primitives:
   the only two modules in this layer without them, which is jarring against a
   codebase where every other header explains its own trade-offs.
 
-## 6. Reflection — `Engine/Runtime/Object`, namespace `UVE::Core`
+## 6. Reflection — `Engine/Runtime/Objects/Core`, namespace `UVE::Core`
 
 - `[x]` **`TypeMetadataRegistryUVE`** — bounded (≤256 types, ≤128 members each)
   registry of `TypeMetadataEntryUVE`, each carrying a kind (Component / Resource /
@@ -460,7 +460,7 @@ Three things about this table matter more than the rest:
   the clip format cannot address it — there are no per-joint channels. So the two
   halves of a skeletal animation pipeline exist in the same directory and cannot
   be connected. This is the largest coherence gap in the asset layer, and it is
-  why `Skeleton3D`, `BoneAttachment3D`, `AnimationPlayer` and `AnimationTree` are
+  why `Skeleton3D`, `BoneAttachment3D`, `AnimationSequencer` and `AnimationGraph` are
   all authored-data-only nodes.
 - `[~]` **`MaterialAssetUVE` has three of the six PBR texture slots** its own doc
   comment describes: albedo, normal and AO are present; metallic, roughness and
@@ -701,7 +701,7 @@ driven by nothing.
 
 **Empty module directories** (README only, zero code): `Core/Containers`,
 `Core/Types`, `Core/Strings`, `Core/Delegates`, `FileSystem`, `Gameplay`,
-`Networking`, `Renderer`, `Serialization`, `VFX`, `Nodes/2D`, `Nodes/AI`. Two of
+`Networking`, `Renderer`, `Serialization`, `VFX`, `Objects/2D`, `Objects/AI`. Two of
 those are placeholders guarding against duplication — `Renderer/README.md`
 explicitly says not to start a second renderer there — and the rest are
 unimplemented intent.

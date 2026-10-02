@@ -75,7 +75,7 @@ TEST(ContentCatalogueUVETest, SearchMatchesEveryWordAnywhere) {
     EXPECT_TRUE(DoesContentCatalogueItemMatchUVE(*character, "CHAR"));
     EXPECT_TRUE(DoesContentCatalogueItemMatchUVE(*character, "entity anim")); // group + tooltip
     EXPECT_FALSE(DoesContentCatalogueItemMatchUVE(*character, "char light"));
-    EXPECT_EQ(GetContentCatalogueIconKindUVE(*character), Kind::CharacterBody3D);
+    EXPECT_EQ(GetContentCatalogueIconKindUVE(*character), Kind::Character3D);
     EXPECT_EQ(GetContentCatalogueIconKindUVE(*FindContentCatalogueItemUVE("folder")), Kind::Folder);
     EXPECT_EQ(FindContentCatalogueItemUVE("nope"), nullptr);
     // Names beat descriptions: "li" puts Light above Collider, which only has it in its tooltip.
@@ -172,11 +172,11 @@ TEST(ContentCatalogueEditorUVETest, CharacterAssetPlacesAsItsWholeTreeWithOneUnd
         const Scene::EntityUVE placed = editor.PlaceEntityAssetUVE(*created);
         ASSERT_NE(placed, Scene::kInvalidEntityUVE);
         EXPECT_EQ(editor.GetSelectedEntityUVE(), placed);
-        EXPECT_EQ(Scene::ResolveSceneNodeKindUVE(entityManager, placed), Kind::CharacterBody3D);
+        EXPECT_EQ(Scene::ResolveSceneNodeKindUVE(entityManager, placed), Kind::Character3D);
         EXPECT_EQ(entityManager.GetComponentUVE<Scene::NameComponentUVE>(placed).name, "Character");
         EXPECT_TRUE(entityManager.HasComponentUVE<Scene::PrefabInstanceComponentUVE>(placed));
         EXPECT_EQ(ChildKindsUVE(services, placed),
-                  (std::vector<Kind>{Kind::MeshInstance3D, Kind::AnimationPlayer, Kind::AnimationTree}));
+                  (std::vector<Kind>{Kind::MeshInstance3D, Kind::AnimationSequencer, Kind::AnimationGraph}));
         EXPECT_TRUE(editor.IsSceneDirtyUVE());
 
         // A second placement is named apart from the first.
@@ -190,7 +190,7 @@ TEST(ContentCatalogueEditorUVETest, CharacterAssetPlacesAsItsWholeTreeWithOneUnd
         EXPECT_FALSE(entityManager.IsAliveUVE(placed));
         ASSERT_TRUE(editor.RedoUVE());
         const Scene::EntityUVE redone = editor.GetSelectedEntityUVE();
-        EXPECT_EQ(Scene::ResolveSceneNodeKindUVE(entityManager, redone), Kind::CharacterBody3D);
+        EXPECT_EQ(Scene::ResolveSceneNodeKindUVE(entityManager, redone), Kind::Character3D);
         EXPECT_EQ(ChildKindsUVE(services, redone).size(), 3U);
 
         EXPECT_EQ(editor.PlaceEntityAssetUVE(root / "nothing.uventity"), Scene::kInvalidEntityUVE);
@@ -256,7 +256,7 @@ TEST(ContentCatalogueEditorUVETest, EntityEditorEditsTheAssetAloneAndGivesTheSce
         EXPECT_FALSE(editor.UndoUVE());
         const Scene::EntityUVE entityRoot = editor.GetEntityEditorRootUVE();
         ASSERT_NE(entityRoot, Scene::kInvalidEntityUVE);
-        EXPECT_EQ(Scene::ResolveSceneNodeKindUVE(entityManager, entityRoot), Kind::CharacterBody3D);
+        EXPECT_EQ(Scene::ResolveSceneNodeKindUVE(entityManager, entityRoot), Kind::Character3D);
         EXPECT_FALSE(entityManager.HasComponentUVE<Scene::PrefabInstanceComponentUVE>(entityRoot))
             << "edited as itself, not as an instance of itself";
         EXPECT_EQ(ChildKindsUVE(services, entityRoot).size(), 3U);
@@ -510,7 +510,7 @@ Connections:  {
         const Scene::EntityUVE placed = editor.PlaceModelSourceUVE("Anims/Hero.FBX");
         ASSERT_NE(placed, Scene::kInvalidEntityUVE);
 
-        // Hero (Node3D) > { Armature (Node3D) > Skeleton3D, AnimationPlayer }
+        // Hero (Node3D) > { Armature (Node3D) > Skeleton3D, AnimationSequencer }
         const auto nameOf = [&entityManager](const Scene::EntityUVE entity) {
             return entityManager.GetComponentUVE<Scene::NameComponentUVE>(entity).name;
         };

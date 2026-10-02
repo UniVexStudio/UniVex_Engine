@@ -12,7 +12,7 @@
 
 namespace UVE::Editor {
 
-/// The Anim Graph's editing operations on an AnimationTree's nodes, as pure functions so they are
+/// The Anim Graph's editing operations on an AnimationGraph's nodes, as pure functions so they are
 /// testable without a window. Every one leaves a valid graph valid: it refuses what would break it
 /// (a cycle, a second Output, deleting the Output) rather than repairing afterwards.
 

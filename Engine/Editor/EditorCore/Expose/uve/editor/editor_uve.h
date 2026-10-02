@@ -205,7 +205,7 @@ enum class EditorSceneComponentKindUVE : std::uint8_t {
     AudioSource,
     ParticleEmitter,
     Script,
-    AnimationPlayer,
+    AnimationSequencer,
     WorldEnvironment,
     CharacterController,
     Canvas,
@@ -504,7 +504,7 @@ public:
     /// undo step. Returns the new root, or kInvalidEntityUVE.
     [[nodiscard]] Scene::EntityUVE PlaceEntityAssetUVE(const std::filesystem::path& path,
                                                        Scene::EntityUVE parent = Scene::kInvalidEntityUVE);
-    /// Changes an AnimationPlayer as one undo step (its animation list, its current clip).
+    /// Changes an AnimationSequencer as one undo step (its animation list, its current clip).
     bool EditAnimationPlayerUVE(Scene::EntityUVE player,
                                 const std::function<void(Scene::AnimationPlayerComponentUVE&)>& change);
     /// Adds a project clip to the player's list and makes it the one playing.
@@ -516,7 +516,7 @@ public:
     ///   +- Armature (Node3D)
     ///   |  +- Skeleton3D          bound to the file's bones
     ///   |     +- <File> Mesh      (MeshInstance3D, when the file has a mesh)
-    ///   +- AnimationPlayer        playing the file's first take, looping (when it has takes)
+    ///   +- AnimationSequencer        playing the file's first take, looping (when it has takes)
     /// and a file without bones becomes one MeshInstance3D. Refused while the converted mesh a
     /// file needs is not imported yet.
     [[nodiscard]] Scene::EntityUVE PlaceModelSourceUVE(const std::filesystem::path& relativeSource,
@@ -695,7 +695,7 @@ public:
     /// request until it is next drawn, so reopening the branch later shows it closed. Returns
     /// false for anything that is not a document entity.
     [[nodiscard]] bool SetHierarchyBranchOpenUVE(Scene::EntityUVE entity, bool open);
-    /// The display name of `entity`'s node type ("StaticBody3D"): its stored type, or for a node
+    /// The display name of `entity`'s node type ("Static3D"): its stored type, or for a node
     /// saved before types were stored, the best reading of its components
     /// (Scene::ResolveSceneNodeKindUVE). Empty for anything that is not a document entity.
     [[nodiscard]] std::string_view GetNodeTypeNameUVE(Scene::EntityUVE entity) const;
@@ -1165,7 +1165,7 @@ private:
         /// The window selects `tab` on its next frame (GoTo from a problem or a signal).
         bool forceTab = false;
         EntityEditorDockTabUVE dockTab = EntityEditorDockTabUVE::Content;
-        /// The node the dock last followed: selecting an AnimationPlayer or AnimationTree opens its
+        /// The node the dock last followed: selecting an AnimationSequencer or AnimationGraph opens its
         /// tab once, and the tab stays the user's choice until the selection moves again.
         Scene::EntityUVE dockFollowed = Scene::kInvalidEntityUVE;
         float dockHeight = 220.0F;
@@ -1381,7 +1381,7 @@ private:
     };
 
     /// A centralized scene node is restored from one complete authored snapshot so compound node
-    /// creation (for example CharacterBody3D plus Collider and kinematic RigidBody) is one history unit.
+    /// creation (for example Character3D plus Collider and kinematic RigidBody) is one history unit.
     struct SceneNodeCreationHistoryEntryUVE final {
         Scene::SceneSnapshotUVE snapshot;
         Scene::Nodes::SceneNodeKindUVE kind = Scene::Nodes::SceneNodeKindUVE::Node3D;
@@ -1559,7 +1559,7 @@ private:
         EditorEntityKindUVE kind, const std::optional<std::string>& explicitName);
     /// Creates the document-entity shell every scene node starts from: a live entity with a
     /// default TransformComponentUVE and the given (already finalized) NameComponentUVE.
-    /// Node definitions (Engine/Runtime/Nodes/3D) attach their kind-specific components on top.
+    /// Node definitions (Engine/Runtime/Objects/3D) attach their kind-specific components on top.
     [[nodiscard]] Scene::EntityUVE CreateDocumentEntityShellInternalUVE(const std::string_view name);
 
     /// Returns whether `entity` carries the scene-root marker. The root is never deletable,
@@ -1740,7 +1740,7 @@ private:
     /// kInvalidAssetGuidUVE means "(none)" was picked.
     [[nodiscard]] std::optional<Asset::AssetGuidUVE> DrawAssetPickerUVE(const char* id, Asset::AssetGuidUVE value,
                                                                       const std::string& extension);
-    /// AnimationTree's parameter table and its graph (nodes, wiring, transitions). Every edit
+    /// AnimationGraph's parameter table and its graph (nodes, wiring, transitions). Every edit
     /// writes the whole list back through SetSelectedComponentPropertyUVE, so it is one undo step
     /// and the graph is re-validated before it lands.
     void DrawAnimationParametersPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
@@ -2071,7 +2071,7 @@ private:
     std::string m_skeletonSourceStatus;
     /// The bone whose rest pose the Skeleton3D Inspector shows, by name.
     std::string m_selectedSkeletonBone;
-    /// The Entity Editor's Timeline: the AnimationPlayer it shows, that player's clip, and the
+    /// The Entity Editor's Timeline: the AnimationSequencer it shows, that player's clip, and the
     /// preview playhead. Previewing writes the skeleton's runtime pose only, never a saved value.
     struct AnimationTimelineStateUVE final {
         Scene::EntityUVE player = Scene::kInvalidEntityUVE;
@@ -2153,7 +2153,7 @@ private:
     void DrawAnimationPickerUVE(Scene::EntityUVE player, Scene::EntityUVE skeleton);
     /// A .uvanim dragged from Content onto the Timeline joins the player's list.
     void AcceptTimelineClipDropUVE(Scene::EntityUVE player);
-    /// The Entity Editor's Anim Graph: the AnimationTree it shows as boxes and wires, the view
+    /// The Entity Editor's Anim Graph: the AnimationGraph it shows as boxes and wires, the view
     /// onto the canvas, and what the mouse is doing to it.
     struct AnimationGraphViewStateUVE final {
         Scene::EntityUVE tree = Scene::kInvalidEntityUVE;
@@ -2251,7 +2251,7 @@ private:
     [[nodiscard]] const std::string& AnimationClipNameUVE(Asset::AssetGuidUVE clip);
     /// The Anim Graph tab's body.
     void DrawAnimationGraphCanvasUVE();
-    /// Changes the AnimationTree's nodes or parameters as one undo step, like an Inspector edit.
+    /// Changes the AnimationGraph's nodes or parameters as one undo step, like an Inspector edit.
     /// False when nothing changed or the result is not a valid graph (the change is dropped).
     bool EditAnimationTreeUVE(Scene::EntityUVE tree,
                               const std::function<void(Scene::AnimationTreeComponentUVE&)>& change);

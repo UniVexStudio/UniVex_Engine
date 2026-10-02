@@ -1,6 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-// AnimationTree's Inspector blocks: the parameter table and the graph itself. The graph is shown
+// AnimationGraph's Inspector blocks: the parameter table and the graph itself. The graph is shown
 // as the tree it is - Output at the top, each node's inputs indented under it - with nodes nothing
 // uses yet listed after, so a graph can be built piece by piece and wired up as it grows.
 

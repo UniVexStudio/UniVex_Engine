@@ -47,7 +47,7 @@ tests. An item's row here is retired to "Done" (bottom of file) only once it rea
 | # | Node | Status | Component | Arrays to give work | The work | Depends on | Size |
 |---|------|--------|-----------|---------------------|----------|------------|------|
 | 1 | SpringArm3D | `[/]` | `SpringArm3DNodeComponentUVE` | — | camera-boom raycast clamp — **implemented**, needs behavior tests | RaycastSystemUVE (exists) | S |
-| 2 | AnimatableBody3D | `[~]` | `AnimatableBody3DNodeComponentUVE` | — | target-velocity kinematic mover | physics kinematic move (exists) | S |
+| 2 | Kinematic3D | `[~]` | `AnimatableBody3DNodeComponentUVE` | — | target-velocity kinematic mover | physics kinematic move (exists) | S |
 | 3 | SpawnPoint3D | `[~]` | `SpawnPoint3DNodeComponentUVE` | — | tag-based spawn query + one-shot | — | S |
 | 4 | InteractionArea3D | `[/]` | `InteractionArea3DNodeComponentUVE` | candidate list (new, bounded by `maximumCandidates`) | per-frame interactable candidate tracking — **implemented**, one test exists, edge cases not separately locked | AreaOverlapSystemUVE (exists) | M |
 | 5 | RayCast3D gap | `[~]` | `RayCast3DNodeComponentUVE` | `exclusions[8]` + `exclusionCount` | multi-entity exclusion queries | query API + stable entity refs | M |
@@ -59,7 +59,7 @@ tests. An item's row here is retired to "Done" (bottom of file) only once it rea
 | 11 | Decal3D | `[~]` | `Decal3DNodeComponentUVE` | — | decal-projection rendering | renderer (big) | L |
 | 12 | ReflectionProbe3D | `[x]` (sync half) | `ReflectionProbe3DNodeComponentUVE` | — | probe capture scheduling — **done**, five dedicated tests; renderer-side sampling still `[~]` | renderer (big) | L |
 | 13 | NavigationRegion3D + NavigationAgent3D | `[~]` | `NavigationRegion3DNodeComponentUVE` / `NavigationAgent3DNodeComponentUVE` | — | navmesh bake + pathfind + steer | new Navigation subsystem | L |
-| 14 | Skeleton3D + BoneAttachment3D + AnimationPlayer + AnimationTree | `[~]` | `Skeleton3DNodeComponentUVE`, `BoneAttachment3DNodeComponentUVE`, `AnimationPlayerComponentUVE`, `AnimationTreeUVE` | `bones` vector | clip sampling → bone pose → skinning | new Animation pipeline | L |
+| 14 | Skeleton3D + BoneAttachment3D + AnimationSequencer + AnimationGraph | `[~]` | `Skeleton3DNodeComponentUVE`, `BoneAttachment3DNodeComponentUVE`, `AnimationPlayerComponentUVE`, `AnimationTreeUVE` | `bones` vector | clip sampling → bone pose → skinning | new Animation pipeline | L |
 | 15 | LevelStreamer3D + WorldPartition3D | `[x]` | `LevelStreamer3DNodeComponentUVE` / `WorldPartition3DNodeComponentUVE` | `cellCounts[3]` | streaming + cell grid load/unload — **done**, five + five dedicated tests each | external-scene lifecycle | L |
 | — | Marker3D | — | `Marker3DNodeComponentUVE` | — | **none, by design** — read by tools/scripts, never ticked | — | — |
 
@@ -78,7 +78,7 @@ tests. An item's row here is retired to "Done" (bottom of file) only once it rea
       `currentLength`.
 - [ ] `SCENE_NODES_ROADMAP.md` `[/]` → `[x]` (once the tests above land)
 
-**Component:** `SpringArm3DNodeComponentUVE` — `Engine/Runtime/Nodes/3D` (own file pair).
+**Component:** `SpringArm3DNodeComponentUVE` — `Engine/Runtime/Objects/3D` (own file pair).
 **Fields to give work:** `armLength`, `margin`, `smoothing`, `collisionMask`, `enabled`;
 runtime result `currentLength` (today a dead copy of the default).
 **The work:** an engine-core sync (RayCast3D precedent) that raycasts from the arm's origin
@@ -87,7 +87,7 @@ along its axis every frame, clamps `currentLength` to the hit distance minus `ma
 clamped distance. Needs a child-resolution rule (nearest Camera3D child, or explicit socket).
 **Depends on:** RaycastSystemUVE — already real. **Size: S.**
 
-### 2. AnimatableBody3D — target-velocity kinematic mover
+### 2. Kinematic3D — target-velocity kinematic mover
 
 - [ ] Implement
 - [ ] Tests lock it (moves at targetVelocity, interpolation eases, inactive = stays put,
@@ -276,17 +276,17 @@ pairs. Nothing between them runs: there is no navmesh, no pathfinder, no steerin
 **Depends on:** a whole new Navigation subsystem (AI nodes in `SCENE_NODES_ROADMAP.md` wait on
 this too). **Size: L.**
 
-### 14. Skeleton3D + BoneAttachment3D + AnimationPlayer + AnimationTree — the animation pipeline (paired)
+### 14. Skeleton3D + BoneAttachment3D + AnimationSequencer + AnimationGraph — the animation pipeline (paired)
 
 - [ ] Clip sampling: decode `AnimationClipAssetUVE` tracks into bone-local pose over time
 - [ ] Skeleton pose: evaluate `bones` hierarchy into per-bone world transforms
 - [ ] Skinning: renderer consumes the posed skeleton for mesh deformation
-- [ ] AnimationPlayer: `clipAssetPath`/`playbackSpeed`/`looping`/`playOnAwake` drive the
-      sampler (data lives in the shared `AnimationPlayerComponentUVE`; the Nodes/3D file holds
+- [ ] AnimationSequencer: `clipAssetPath`/`playbackSpeed`/`looping`/`playOnAwake` drive the
+      sampler (data lives in the shared `AnimationPlayerComponentUVE`; the Objects/3D file holds
       its NodeDefinition recipe)
 - [ ] BoneAttachment3D: `boneIndex`/`boneName` resolve against a posed skeleton and the
       entity follows the bone transform
-- [ ] AnimationTree: becomes editor-creatable once the pipeline exists
+- [ ] AnimationGraph: becomes editor-creatable once the pipeline exists
       (`libraryCreatable = false` today, honestly)
 - [ ] Tests lock each layer
 - [ ] `SCENE_NODES_ROADMAP.md` `[~]` → `[x]` (all four entries)

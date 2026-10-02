@@ -75,7 +75,7 @@
 #include "uve/memory/memory_manager_uve.h"
 #include "uve/scene/scene_graph_uve.h"
 #include "uve/scene/scene_serializer_uve.h"
-#include "uve/nodes/3d/animation_player_uve.h"
+#include "uve/nodes/3d/animation_sequencer_uve.h"
 #include "uve/nodes/3d/skeleton_3d_uve.h"
 #include "uve/nodes/3d/hitbox_3d_uve.h"
 #include "uve/nodes/3d/hurtbox_3d_uve.h"
@@ -1743,7 +1743,7 @@ Scene::EntityUVE AddFloorUVE(Scene::IEntityManagerUVE& entityManager, Scene::ISc
     return floor;
 }
 
-// A script-driven CharacterBody3D (built-in movement off) with a 1 m box, standing on y = `floorTop`.
+// A script-driven Character3D (built-in movement off) with a 1 m box, standing on y = `floorTop`.
 Scene::EntityUVE AddWalkerUVE(Scene::IEntityManagerUVE& entityManager, Scene::ISceneGraphUVE& sceneGraph,
                               const Math::Vector3UVE& feet, const Scene::CharacterControllerComponentUVE& controller) {
     const Scene::EntityUVE walker = entityManager.CreateEntityUVE();
@@ -1795,12 +1795,12 @@ bool LeavesTheFloorWalkingDownAStepUVE(const float floorSnapLength) {
 
 } // namespace
 
-TEST(EngineCoreUVETest, CharacterBody3D_FloorSnapFollowsAStepDownThatWouldOtherwiseLaunchIt) {
+TEST(EngineCoreUVETest, Character3D_FloorSnapFollowsAStepDownThatWouldOtherwiseLaunchIt) {
     EXPECT_FALSE(LeavesTheFloorWalkingDownAStepUVE(0.2F));
     EXPECT_TRUE(LeavesTheFloorWalkingDownAStepUVE(0.0F));
 }
 
-TEST(EngineCoreUVETest, CharacterBody3D_SolidBodyMotionLocksHoldTheirAxis) {
+TEST(EngineCoreUVETest, Character3D_SolidBodyMotionLocksHoldTheirAxis) {
     EngineConfigUVE config = MakeTestConfigUVE();
     config.fixedUpdateFps = 1000.0;
     EngineCoreUVE engine(config);
@@ -1854,10 +1854,10 @@ TEST(EngineCoreUVETest, AnimationPlayer_PlaysItsClipOnItsParentNode) {
     const Scene::EntityUVE door = entityManager.CreateEntityUVE();
     sceneGraph.AttachTransformUVE(entityManager, door, Scene::TransformComponentUVE{});
     const Scene::EntityUVE player = entityManager.CreateEntityUVE();
-    Scene::AnimationPlayerNodeDefinitionUVE definition;
+    Scene::AnimationSequencerNodeDefinitionUVE definition;
     definition.player.clip = guid;
     definition.player.loopMode = Scene::AnimationLoopModeUVE::Once;
-    Scene::ApplyAnimationPlayerNodeDefinitionUVE(entityManager, player, definition);
+    Scene::ApplyAnimationSequencerNodeDefinitionUVE(entityManager, player, definition);
     sceneGraph.SetParentUVE(entityManager, player, door);
 
     const auto startedAt = std::chrono::steady_clock::now();
@@ -1902,7 +1902,7 @@ TEST(EngineCoreUVETest, AnimationPlayer_PosesTheSkeletonInsideTheCharacterWithAS
     ASSERT_TRUE(Asset::SaveAnimationClipAssetUVE(clip, clipPath));
     const Asset::AssetGuidUVE guid = assetDatabase.RegisterUVE(clipPath);
 
-    // Character > { Skeleton3D, AnimationPlayer }: the player targets its parent, the character,
+    // Character > { Skeleton3D, AnimationSequencer }: the player targets its parent, the character,
     // and finds the skeleton inside it.
     const Scene::EntityUVE character = entityManager.CreateEntityUVE();
     sceneGraph.AttachTransformUVE(entityManager, character, Scene::TransformComponentUVE{});
@@ -1916,10 +1916,10 @@ TEST(EngineCoreUVETest, AnimationPlayer_PosesTheSkeletonInsideTheCharacterWithAS
     Scene::ApplySkeleton3DNodeDefinitionUVE(entityManager, skeletonEntity, skeletonDefinition);
     sceneGraph.SetParentUVE(entityManager, skeletonEntity, character);
     const Scene::EntityUVE player = entityManager.CreateEntityUVE();
-    Scene::AnimationPlayerNodeDefinitionUVE definition;
+    Scene::AnimationSequencerNodeDefinitionUVE definition;
     definition.player.clip = guid;
     definition.player.loopMode = Scene::AnimationLoopModeUVE::Once;
-    Scene::ApplyAnimationPlayerNodeDefinitionUVE(entityManager, player, definition);
+    Scene::ApplyAnimationSequencerNodeDefinitionUVE(entityManager, player, definition);
     sceneGraph.SetParentUVE(entityManager, player, character);
 
     const auto startedAt = std::chrono::steady_clock::now();
@@ -1979,11 +1979,11 @@ TEST(EngineCoreUVETest, AnimationPlayer_RootMotionMovesTheCharacterThroughTheSke
     ASSERT_TRUE(Math::TryMakeAxisAngleUVE(Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 1.5707963F,
                                           skeletonTransform.localRotation));
     const Scene::EntityUVE player = entityManager.CreateEntityUVE();
-    Scene::AnimationPlayerNodeDefinitionUVE definition;
+    Scene::AnimationSequencerNodeDefinitionUVE definition;
     definition.player.clip = guid;
     definition.player.loopMode = Scene::AnimationLoopModeUVE::Once;
     definition.mixer.rootMotion = Scene::AnimationRootMotionModeUVE::ApplyToTarget;
-    Scene::ApplyAnimationPlayerNodeDefinitionUVE(entityManager, player, definition);
+    Scene::ApplyAnimationSequencerNodeDefinitionUVE(entityManager, player, definition);
     sceneGraph.SetParentUVE(entityManager, player, character);
 
     const auto startedAt = std::chrono::steady_clock::now();
@@ -2042,10 +2042,10 @@ TEST(EngineCoreUVETest, AnimationPlayer_SendsClipEventsToTheScriptOfTheNodeItAni
     sceneGraph.AttachTransformUVE(entityManager, character, Scene::TransformComponentUVE{});
     entityManager.AddComponentUVE<Scene::ScriptComponentUVE>(character, Scene::ScriptComponentUVE{"feet.uvs"});
     const Scene::EntityUVE player = entityManager.CreateEntityUVE();
-    Scene::AnimationPlayerNodeDefinitionUVE definition;
+    Scene::AnimationSequencerNodeDefinitionUVE definition;
     definition.player.clip = guid;
     definition.player.loopMode = Scene::AnimationLoopModeUVE::Once;
-    Scene::ApplyAnimationPlayerNodeDefinitionUVE(entityManager, player, definition);
+    Scene::ApplyAnimationSequencerNodeDefinitionUVE(entityManager, player, definition);
     sceneGraph.SetParentUVE(entityManager, player, character);
 
     const auto startedAt = std::chrono::steady_clock::now();

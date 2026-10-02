@@ -481,7 +481,7 @@ private:
     /// instance when the node loses it, raises `ready` once and then `tick(dt)` every frame.
     void SyncUVScriptsUVE(bool simulationPaused);
 
-    /// Steps every CharacterBody3D (CharacterControllerComponentUVE) once per fixed step: velocity
+    /// Steps every Character3D (CharacterControllerComponentUVE) once per fixed step: velocity
     /// from the built-in movement when it is on (keyboard, with air control, coyote time and a
     /// jump buffer) or as a script left it, gravity unless Floating, SolidBody3D's motion locks,
     /// then Physics::CharacterControllerUVE::MoveWithToIUVE with the body's step height, slide
@@ -491,7 +491,7 @@ private:
     /// components.
     void SyncCharacterControllersUVE(float fixedDeltaTimeSeconds);
 
-    /// Plays every AnimationPlayer and evaluates every AnimationTree whose update runs on this clock
+    /// Plays every AnimationSequencer and evaluates every AnimationGraph whose update runs on this clock
     /// (`physicsStep` true: the fixed step; false: once per frame), writing into each one's target
     /// node - the set target, or the node's parent - through its transform. Clips load
     /// asynchronously; until one is ready its player waits. Runs only while the simulation runs.
@@ -539,7 +539,7 @@ private:
     /// own, as in the original design. Runs inside the fixed-step loop (with character
     /// controllers and projectiles) because extension is dt-dependent and the raycast must see
     /// the same simulated collider poses the physics step just produced. Like the other syncs
-    /// this lives in the engine core tick, not the node module - the Nodes/3D layer holds pure
+    /// this lives in the engine core tick, not the node module - the Objects/3D layer holds pure
     /// authoring data plus the two dependency-free resolvers the tests pin directly; the Physics
     /// include is not part of that layer.
     void SyncSpringArm3DNodesUVE(float fixedDeltaTimeSeconds);
@@ -556,7 +556,7 @@ private:
     /// the exact 15-axis oriented-box test from Physics::Detail, and touching boundaries are
     /// not strikes. Like SyncRayCast3DNodesUVE()/SyncProjectile3DNodesUVE(), this lives in the
     /// engine core tick rather than the node module so nodes stay pure authoring data (the
-    /// Physics include the exact test needs is not part of the Nodes/3D layer). The bounded
+    /// Physics include the exact test needs is not part of the Objects/3D layer). The bounded
     /// result list (kMaximumHitbox3DStrikesUVE, deterministic entity order, overflow flagged)
     /// is runtime-only, never serialized. Applying what a strike means (damage, knockback,
     /// events) is deliberately not done here - gameplay code no system owns yet.
@@ -586,7 +586,7 @@ private:
     /// here - the gameplay layer no system owns yet; the authored interactionTag is carried
     /// for that follow-up and intentionally does not filter anything today. Like
     /// SyncHitbox3DNodesUVE() this lives in the engine core tick, not the node module: the
-    /// Nodes/3D layer holds pure authoring data plus the three dependency-free resolvers the
+    /// Objects/3D layer holds pure authoring data plus the three dependency-free resolvers the
     /// tests pin directly.
     void SyncInteractionArea3DNodesUVE();
 

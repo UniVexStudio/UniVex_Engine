@@ -57,8 +57,8 @@ constexpr std::array<SceneNodeDescriptorUVE, 47U> kDescriptors{
     SceneNodeDescriptorUVE{SceneNodeKindUVE::Node3D, "node_3d", "Node3D", "Scene", "Scene/ECS", kNoContracts, true},
     SceneNodeDescriptorUVE{SceneNodeKindUVE::Area3D, "area_3d", "Area3D", "Physics", "Physics/AreaOverlapSystemUVE", kAreaContracts, true},
     SceneNodeDescriptorUVE{SceneNodeKindUVE::RayCast3D, "ray_cast_3d", "RayCast3D", "Physics", "Physics/RaycastSystemUVE", kRayCastContracts, true},
-    SceneNodeDescriptorUVE{SceneNodeKindUVE::StaticBody3D, "static_body_3d", "StaticBody3D", "Physics", "Physics/CollisionSystemUVE", kColliderContracts, true},
-    SceneNodeDescriptorUVE{SceneNodeKindUVE::AnimatableBody3D, "animatable_body_3d", "AnimatableBody3D", "Physics", "Scene/AnimatableBody3DNodeComponentUVE", kAnimatableBodyContracts, true},
+    SceneNodeDescriptorUVE{SceneNodeKindUVE::Static3D, "static_3d", "Static3D", "Physics", "Physics/CollisionSystemUVE", kColliderContracts, true},
+    SceneNodeDescriptorUVE{SceneNodeKindUVE::Kinematic3D, "kinematic_3d", "Kinematic3D", "Physics", "Scene/AnimatableBody3DNodeComponentUVE", kAnimatableBodyContracts, true},
     SceneNodeDescriptorUVE{SceneNodeKindUVE::NavigationRegion3D, "navigation_region_3d", "NavigationRegion3D", "Navigation", "Scene/NavigationRegion3DNodeComponentUVE", kNavigationRegionContracts, true},
     SceneNodeDescriptorUVE{SceneNodeKindUVE::NavigationAgent3D, "navigation_agent_3d", "NavigationAgent3D", "Navigation", "Scene/NavigationAgent3DNodeComponentUVE", kNavigationAgentContracts, true},
     SceneNodeDescriptorUVE{SceneNodeKindUVE::Skeleton3D, "skeleton_3d", "Skeleton3D", "Animation", "Scene/Skeleton3DNodeComponentUVE", kSkeletonContracts, true},
@@ -79,9 +79,9 @@ constexpr std::array<SceneNodeDescriptorUVE, 47U> kDescriptors{
     SceneNodeDescriptorUVE{SceneNodeKindUVE::SpawnPoint3D, "spawn_point_3d", "SpawnPoint3D", "Gameplay", "Scene/SpawnPoint3DNodeComponentUVE", kSpawnContracts, true},
     SceneNodeDescriptorUVE{SceneNodeKindUVE::LevelStreamer3D, "level_streamer_3d", "LevelStreamer3D", "World", "Scene/LevelStreamer3DNodeComponentUVE", kStreamerContracts, true},
     SceneNodeDescriptorUVE{SceneNodeKindUVE::WorldPartition3D, "world_partition_3d", "WorldPartition3D", "World", "Scene/WorldPartition3DNodeComponentUVE", kPartitionContracts, true},
-    SceneNodeDescriptorUVE{SceneNodeKindUVE::AnimationTree, "animation_tree", "AnimationTree", "Animation", "Scene/AnimationTreeComponentUVE", kAnimationTreeContracts, true},
-    SceneNodeDescriptorUVE{SceneNodeKindUVE::AnimationPlayer, "animation_player", "AnimationPlayer", "Animation", "Scene/AnimationPlayerComponentUVE", kAnimationPlayerContracts, true},
-    SceneNodeDescriptorUVE{SceneNodeKindUVE::CharacterBody3D, "character_body_3d", "CharacterBody3D", "Physics", "Physics/CharacterControllerUVE", kCharacterContracts, true},
+    SceneNodeDescriptorUVE{SceneNodeKindUVE::AnimationGraph, "animation_graph", "AnimationGraph", "Animation", "Scene/AnimationTreeComponentUVE", kAnimationTreeContracts, true},
+    SceneNodeDescriptorUVE{SceneNodeKindUVE::AnimationSequencer, "animation_sequencer", "AnimationSequencer", "Animation", "Scene/AnimationPlayerComponentUVE", kAnimationPlayerContracts, true},
+    SceneNodeDescriptorUVE{SceneNodeKindUVE::Character3D, "character_3d", "Character3D", "Physics", "Physics/CharacterControllerUVE", kCharacterContracts, true},
     SceneNodeDescriptorUVE{SceneNodeKindUVE::Camera3D, "camera_3d", "Camera3D", "Rendering", "Render/CameraSystemUVE", kCameraContracts, true},
     SceneNodeDescriptorUVE{SceneNodeKindUVE::MeshInstance3D, "mesh_instance_3d", "MeshInstance3D", "Rendering", "Render/MeshRendererUVE", kMeshContracts, true},
     SceneNodeDescriptorUVE{SceneNodeKindUVE::BoxMesh3D, "box_mesh_3d", "BoxMesh3D", "Rendering", "Render/PrimitiveMesh", kNoContracts, true},
@@ -89,7 +89,7 @@ constexpr std::array<SceneNodeDescriptorUVE, 47U> kDescriptors{
     SceneNodeDescriptorUVE{SceneNodeKindUVE::PlaneMesh3D, "plane_mesh_3d", "PlaneMesh3D", "Rendering", "Render/PrimitiveMesh", kNoContracts, true},
     SceneNodeDescriptorUVE{SceneNodeKindUVE::Light3D, "light_3d", "Light3D", "Rendering", "Render/LightSystemUVE", kLightContracts, true},
     SceneNodeDescriptorUVE{SceneNodeKindUVE::Collider3D, "collider_3d", "Collider3D", "Physics", "Physics/CollisionSystemUVE", kColliderContracts, true},
-    SceneNodeDescriptorUVE{SceneNodeKindUVE::RigidBody3D, "rigid_body_3d", "RigidBody3D", "Physics", "Physics/PhysicsSystemUVE", kRigidBodyContracts, true},
+    SceneNodeDescriptorUVE{SceneNodeKindUVE::Rigid3D, "rigid_3d", "Rigid3D", "Physics", "Physics/PhysicsSystemUVE", kRigidBodyContracts, true},
     SceneNodeDescriptorUVE{SceneNodeKindUVE::AudioSource3D, "audio_source_3d", "AudioSource3D", "Audio", "Audio/AudioSourceSystemUVE", kAudioContracts, true},
     SceneNodeDescriptorUVE{SceneNodeKindUVE::ParticleEmitter3D, "particle_emitter_3d", "ParticleEmitter3D", "VFX", "Scene/ParticleRuntimeUVE", kParticleContracts, true},
     SceneNodeDescriptorUVE{SceneNodeKindUVE::Script, "script", "Script", "Logic", "Scripting/ScriptRuntimeUVE", kScriptContracts, true},
@@ -118,10 +118,28 @@ const SceneNodeDescriptorUVE* FindSceneNodeDescriptorUVE(const SceneNodeKindUVE 
 }
 
 const SceneNodeDescriptorUVE* FindSceneNodeDescriptorUVE(const std::string_view typeId) noexcept {
-    // Legacy id accepted on load: this kind was written as "empty" before the rename, and
-    // saved documents and layouts carrying that string must keep resolving to the same node.
+    // Legacy ids accepted on load: a saved document or layout carrying an older string must keep
+    // resolving to the same node, so every rename leaves its previous id readable here forever.
     if (typeId == "empty") {
         return FindSceneNodeDescriptorUVE(SceneNodeKindUVE::Node3D);
+    }
+    if (typeId == "static_body_3d") {
+        return FindSceneNodeDescriptorUVE(SceneNodeKindUVE::Static3D);
+    }
+    if (typeId == "rigid_body_3d") {
+        return FindSceneNodeDescriptorUVE(SceneNodeKindUVE::Rigid3D);
+    }
+    if (typeId == "character_body_3d") {
+        return FindSceneNodeDescriptorUVE(SceneNodeKindUVE::Character3D);
+    }
+    if (typeId == "animatable_body_3d") {
+        return FindSceneNodeDescriptorUVE(SceneNodeKindUVE::Kinematic3D);
+    }
+    if (typeId == "animation_player") {
+        return FindSceneNodeDescriptorUVE(SceneNodeKindUVE::AnimationSequencer);
+    }
+    if (typeId == "animation_tree") {
+        return FindSceneNodeDescriptorUVE(SceneNodeKindUVE::AnimationGraph);
     }
     for (const SceneNodeDescriptorUVE& descriptor : kDescriptors) {
         if (descriptor.typeId == typeId) {
@@ -138,9 +156,9 @@ std::string_view GetSceneNodeTypeIdUVE(const SceneNodeKindUVE kind) noexcept {
 
 SceneNodePlacementUVE GetSceneNodePlacementUVE(const SceneNodeKindUVE kind) noexcept {
     switch (kind) {
-        case SceneNodeKindUVE::CharacterBody3D:
-        case SceneNodeKindUVE::AnimationPlayer:
-        case SceneNodeKindUVE::AnimationTree:
+        case SceneNodeKindUVE::Character3D:
+        case SceneNodeKindUVE::AnimationSequencer:
+        case SceneNodeKindUVE::AnimationGraph:
         case SceneNodeKindUVE::Skeleton3D:
         case SceneNodeKindUVE::BoneAttachment3D:
         case SceneNodeKindUVE::NavigationAgent3D:

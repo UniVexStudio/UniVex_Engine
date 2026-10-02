@@ -455,7 +455,7 @@ void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                                                    kPropertyTypeVector3UVE),
             }));
 
-    // CharacterBody3D's own section. Grouped by what an author is thinking about - how it moves,
+    // Character3D's own section. Grouped by what an author is thinking about - how it moves,
     // what it stands on, what it hits - with the state the controller writes each step last, shown
     // only while playing because that is when it describes something real.
     using C = CharacterControllerComponentUVE;
@@ -487,7 +487,7 @@ void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     AddValidatedUVE<CharacterControllerComponentUVE, &IsCharacterControllerComponentValidUVE>(
         entries,
         MakeEntryUVE(
-            "component.character_controller", "CharacterBody3D", kSectionOrderTypeSpecificUVE,
+            "component.character_controller", "Character3D", kSectionOrderTypeSpecificUVE,
             {
                 WithTooltipUVE(DeclareEnumUVE<&C::motionMode>("motionMode", "Motion Mode",
                                                               {{0, "Grounded"}, {1, "Floating"}}),
@@ -571,10 +571,10 @@ void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
 }
 
 void DeclareAnimationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
-    // AnimationPlayer's own section. Its target is an entity reference: flagged so the serializer
+    // AnimationSequencer's own section. Its target is an entity reference: flagged so the serializer
     // remaps it, and drawn as a node picker. Empty means the player's parent, which is the common
     // case and needs no picking at all.
-    // AnimationMixer: the base AnimationPlayer and AnimationTree share, shown between their own
+    // AnimationMixer: the base AnimationSequencer and AnimationGraph share, shown between their own
     // section and the Node section. Its target is an entity reference: flagged so the serializer
     // remaps it, and drawn as a node picker. Empty means the parent, the common case.
     using M = AnimationMixerComponentUVE;
@@ -619,7 +619,7 @@ void DeclareAnimationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                                                           {2, "Apply To Target"}}),
                                           "Skeletal clips only. In Place takes the root bone's ground travel "
                                           "out of the pose. Apply To Target also moves the target by it; a "
-                                          "CharacterBody3D gets it as velocity, so walls still stop it."),
+                                          "Character3D gets it as velocity, so walls still stop it."),
                            "Root Motion"),
                 InGroupUVE(WithTooltipUVE(DeclareUVE<&M::rootMotionBone>("rootMotionBone", "Bone",
                                                                          kPropertyTypeStringUVE),
@@ -628,7 +628,7 @@ void DeclareAnimationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                            "Root Motion"),
             }));
 
-    // AnimationPlayer's own section.
+    // AnimationSequencer's own section.
     using P = AnimationPlayerComponentUVE;
     const auto whenOnce = [](TypeMetadataPropertyUVE property) {
         property.isVisible = +[](const void* instance) {
@@ -639,7 +639,7 @@ void DeclareAnimationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     AddValidatedUVE<AnimationPlayerComponentUVE, &IsAnimationPlayerComponentValidUVE>(
         entries,
         MakeEntryUVE(
-            "component.animation_player", "AnimationPlayer", kSectionOrderTypeSpecificUVE,
+            "component.animation_player", "AnimationSequencer", kSectionOrderTypeSpecificUVE,
             {
                 WithTooltipUVE(WithCustomDrawerUVE(DeclareUVE<&P::clip>("clip", "Clip", kPropertyTypeAssetGuidUVE),
                                                    "asset:uvanim"),
@@ -689,7 +689,7 @@ void DeclareAnimationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     AddValidatedUVE<AnimationTreeComponentUVE, &IsAnimationTreeComponentValidUVE>(
         entries,
         MakeEntryUVE(
-            "component.animation_tree", "AnimationTree", kSectionOrderTypeSpecificUVE,
+            "component.animation_tree", "AnimationGraph", kSectionOrderTypeSpecificUVE,
             {
                 InGroupUVE(WithCustomDrawerUVE(DeclareUVE<&T::parameters>("parameters", "Parameters",
                                                                          "AnimationParameterList"),

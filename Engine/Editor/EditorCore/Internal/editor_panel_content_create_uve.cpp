@@ -495,7 +495,7 @@ void EditorUVE::DrawFilesystemContextPopupUVE() {
         ImGui::EndDisabled();
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort | ImGuiHoveredFlags_AllowWhenDisabled)) {
             ImGui::SetTooltip(sourceInfo != nullptr && sourceInfo->hasSkeleton
-                                  ? "Adds it with its skeleton and an AnimationPlayer playing its first take."
+                                  ? "Adds it with its skeleton and an AnimationSequencer playing its first take."
                                   : "Adds it as a MeshInstance3D.");
         }
     }

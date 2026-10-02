@@ -12,7 +12,7 @@ class IEntityManagerUVE;
 /// The node type an entity was created as. Stamped when a node is made, saved with the scene by
 /// its stable type id, and copied with the rest of the node by duplicate, undo and prefabs.
 ///
-/// It exists because the type cannot be read back from components alone: a StaticBody3D and a
+/// It exists because the type cannot be read back from components alone: a Static3D and a
 /// Collider3D carry the same collider, and a Node3D, a BoxMesh3D and a SphereMesh3D share every
 /// component but one. Without it, anything that wants to say what a node is guesses, and the
 /// guesses disagree.

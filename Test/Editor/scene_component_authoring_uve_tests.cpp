@@ -102,10 +102,10 @@ TEST(SceneComponentAuthoringUVETest, SetSelectedSceneComponentUVE_AddsAllSupport
         Scene::AnimationPlayerComponentUVE animation;
         animation.clip = Asset::AssetGuidUVE{77U};
         animation.speed = 1.25F;
-        ASSERT_TRUE(editor.SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::AnimationPlayer, animation));
+        ASSERT_TRUE(editor.SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::AnimationSequencer, animation));
         EXPECT_EQ(entityManager.GetComponentUVE<Scene::AnimationPlayerComponentUVE>(entity).clip.value, 77U);
 
-        ASSERT_TRUE(editor.RemoveSelectedSceneComponentUVE(EditorSceneComponentKindUVE::AnimationPlayer));
+        ASSERT_TRUE(editor.RemoveSelectedSceneComponentUVE(EditorSceneComponentKindUVE::AnimationSequencer));
         EXPECT_FALSE(entityManager.HasComponentUVE<Scene::AnimationPlayerComponentUVE>(entity));
         ASSERT_TRUE(editor.UndoUVE());
         EXPECT_TRUE(entityManager.HasComponentUVE<Scene::AnimationPlayerComponentUVE>(entity));
@@ -238,7 +238,7 @@ TEST(SceneComponentAuthoringUVETest, SetSelectedSceneComponentUVE_RejectsInvalid
 
         Scene::AnimationPlayerComponentUVE invalidAnimation;
         invalidAnimation.speed = std::numeric_limits<float>::quiet_NaN();
-        EXPECT_FALSE(editor.SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::AnimationPlayer, invalidAnimation));
+        EXPECT_FALSE(editor.SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::AnimationSequencer, invalidAnimation));
         EXPECT_FALSE(entityManager.HasComponentUVE<Scene::AnimationPlayerComponentUVE>(entity));
 
         editor.ShutdownUVE();

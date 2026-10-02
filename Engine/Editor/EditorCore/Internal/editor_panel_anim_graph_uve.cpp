@@ -1,6 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-// The Entity Editor's Anim Graph tab: an AnimationTree as boxes and wires on a canvas. Nodes are
+// The Entity Editor's Anim Graph tab: an AnimationGraph as boxes and wires on a canvas. Nodes are
 // added from a searchable menu where the right-click was, wired by dragging from an output to an
 // input, and moved, duplicated and deleted in place. A strip on the right edits the parameters and
 // the selected node; a bar along the bottom holds the view controls and what is wrong with the
@@ -33,7 +33,7 @@
 #include "uve/component/animation_tree_component_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/name_component_uve.h"
-#include "uve/nodes/3d/animation_tree_uve.h"
+#include "uve/nodes/3d/animation_graph_uve.h"
 #include "uve/nodes/3d/skeleton_3d_uve.h"
 #include "uve/object/type_metadata_uve.h"
 #include "uve/scene/scene_component_metadata_uve.h"
@@ -847,7 +847,7 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
         view.clips = std::move(clips);
     }
     if (tree == Scene::kInvalidEntityUVE) {
-        ImGui::TextDisabled("This entity has no AnimationTree.");
+        ImGui::TextDisabled("This entity has no AnimationGraph.");
         return;
     }
     // ---- Preview: the tree runs on the entity's skeleton, the mixer's target or else the tree's
@@ -2084,7 +2084,7 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
     } else {
         const std::string name = entityManager.HasComponentUVE<Scene::NameComponentUVE>(tree)
                                      ? entityManager.GetComponentUVE<Scene::NameComponentUVE>(tree).name
-                                     : std::string{"AnimationTree"};
+                                     : std::string{"AnimationGraph"};
         ImGui::TextDisabled("%s  -  %zu nodes, %zu parameters%s%s", name.c_str(), nodes.size(), component.parameters.size(),
                             component.activeStates.empty() ? "" : "  -  ", component.activeStates.c_str());
     }

@@ -65,7 +65,7 @@ TEST(SceneNodeEditorUVETest, CentralizedRegistryCreationUVE_AttachesExpectedAuth
         EXPECT_TRUE(entityManager.HasComponentUVE<Scene::MeshComponentUVE>(mesh));
 
         const Scene::EntityUVE character =
-            editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::CharacterBody3D);
+            editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Character3D);
         ASSERT_NE(character, Scene::kInvalidEntityUVE);
         EXPECT_TRUE(entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(character));
         EXPECT_TRUE(entityManager.HasComponentUVE<Scene::CharacterControllerComponentUVE>(character));
@@ -73,7 +73,7 @@ TEST(SceneNodeEditorUVETest, CentralizedRegistryCreationUVE_AttachesExpectedAuth
         EXPECT_FALSE(entityManager.HasComponentUVE<Scene::RigidBodyComponentUVE>(character));
 
         const Scene::EntityUVE animationPlayer =
-            editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::AnimationPlayer);
+            editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::AnimationSequencer);
         ASSERT_NE(animationPlayer, Scene::kInvalidEntityUVE);
         EXPECT_TRUE(entityManager.HasComponentUVE<Scene::AnimationPlayerComponentUVE>(animationPlayer));
 
@@ -93,12 +93,12 @@ TEST(SceneNodeEditorUVETest, CentralizedRegistryCreationUVE_AttachesExpectedAuth
         EXPECT_TRUE(entityManager.HasComponentUVE<Scene::ScriptComponentUVE>(script));
 
         const Scene::EntityUVE rigidBody =
-            editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::RigidBody3D);
+            editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Rigid3D);
         ASSERT_NE(rigidBody, Scene::kInvalidEntityUVE);
         EXPECT_TRUE(entityManager.HasComponentUVE<Scene::RigidBodyComponentUVE>(rigidBody));
 
         const Scene::EntityUVE animationTree =
-            editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::AnimationTree);
+            editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::AnimationGraph);
         ASSERT_NE(animationTree, Scene::kInvalidEntityUVE);
         EXPECT_TRUE(entityManager.HasComponentUVE<Scene::AnimationTreeComponentUVE>(animationTree));
         // Both animation nodes are pure Nodes: no transform of their own.
@@ -120,8 +120,8 @@ TEST(SceneNodeEditorUVETest, CentralizedCreationUVE_CreatesEveryExpandedNodeKind
         constexpr std::array<Scene::Nodes::SceneNodeKindUVE, 27U> expandedKinds{
             Scene::Nodes::SceneNodeKindUVE::Area3D,
             Scene::Nodes::SceneNodeKindUVE::RayCast3D,
-            Scene::Nodes::SceneNodeKindUVE::StaticBody3D,
-            Scene::Nodes::SceneNodeKindUVE::AnimatableBody3D,
+            Scene::Nodes::SceneNodeKindUVE::Static3D,
+            Scene::Nodes::SceneNodeKindUVE::Kinematic3D,
             Scene::Nodes::SceneNodeKindUVE::NavigationRegion3D,
             Scene::Nodes::SceneNodeKindUVE::NavigationAgent3D,
             Scene::Nodes::SceneNodeKindUVE::Skeleton3D,
@@ -168,7 +168,7 @@ TEST(SceneNodeEditorUVETest, CharacterBodyCreationUVE_IsOneAtomicUndoRedoTransac
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
 
         const Scene::EntityUVE created =
-            editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::CharacterBody3D);
+            editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Character3D);
         ASSERT_NE(created, Scene::kInvalidEntityUVE);
         ASSERT_TRUE(editor.CanUndoUVE());
         EXPECT_TRUE(editor.IsSceneDirtyUVE());
