@@ -12,7 +12,7 @@ bool IsMeshInstance3DNodeDefinitionValidUVE(const MeshInstance3DNodeDefinitionUV
 }
 
 void ApplyMeshInstance3DNodeDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity, const MeshInstance3DNodeDefinitionUVE& value) {
-    // A SurfaceInstance3D: that base (RenderInstance3D, Node3D, the Node section) first, then
+    // A SurfaceInstance3D: that base (RenderInstance3D, Object3D, the Node section) first, then
     // this kind's own part.
     ApplySurfaceInstance3DBaseUVE(entityManager, entity, MeshInstance3DNodeDefinitionUVE::defaultName);
     entityManager.AddComponentUVE<MeshComponentUVE>(entity, value.mesh);

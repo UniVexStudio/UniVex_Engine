@@ -48,7 +48,7 @@ namespace {
 // Every one of the 18 component-backed node kinds' definition is reachable from the aggregate
 // header, mirroring the registry test's guarantee for the 21 data-carrying node components:
 // no node kind's home file can be silently dropped without breaking this compile.
-static_assert(std::is_class_v<Node3DNodeDefinitionUVE>);            // Node3D
+static_assert(std::is_class_v<Object3DNodeDefinitionUVE>);            // Object3D
 static_assert(std::is_class_v<Area3DNodeDefinitionUVE>);           // Area3D
 static_assert(std::is_class_v<Static3DNodeDefinitionUVE>);     // Static3D
 static_assert(std::is_class_v<Character3DNodeDefinitionUVE>);  // Character3D
@@ -67,7 +67,7 @@ static_assert(std::is_class_v<SpringArm3DNodeDefinitionUVE>);      // SpringArm3
 static_assert(std::is_class_v<AnimationSequencerNodeDefinitionUVE>);  // AnimationSequencer
 static_assert(std::is_class_v<AnimationGraphNodeDefinitionUVE>);    // AnimationGraph
 
-class Node3DDefinitionsUVETest : public ::testing::Test {
+class Object3DDefinitionsUVETest : public ::testing::Test {
 protected:
     Memory::MemoryManagerUVE memoryManager;
     Events::EventSystemUVE eventSystem;
@@ -79,9 +79,9 @@ protected:
     }
 };
 
-// Every 3D scene-node recipe stands on the Node3D baseline; asserting it once per kind (instead
+// Every 3D scene-node recipe stands on the Object3D baseline; asserting it once per kind (instead
 // of re-typing four component checks in every block) pins the composition, not just its effect.
-void ExpectNode3DBaselineUVE(EntityManagerUVE& entityManager, const EntityUVE entity,
+void ExpectObject3DBaselineUVE(EntityManagerUVE& entityManager, const EntityUVE entity,
                              const std::string_view expectedName) {
     EXPECT_TRUE(entityManager.HasComponentUVE<TransformComponentUVE>(entity));
     EXPECT_TRUE(entityManager.HasComponentUVE<WorldTransformComponentUVE>(entity));
@@ -102,8 +102,8 @@ void ExpectPureNodeUVE(EntityManagerUVE& entityManager, const EntityUVE entity, 
     EXPECT_EQ(entityManager.GetComponentUVE<NameComponentUVE>(entity).name, expectedName);
 }
 
-TEST_F(Node3DDefinitionsUVETest, AllDefinitionDefaultsAreValid) {
-    EXPECT_TRUE(IsNode3DNodeDefinitionValidUVE(Node3DNodeDefinitionUVE{}));
+TEST_F(Object3DDefinitionsUVETest, AllDefinitionDefaultsAreValid) {
+    EXPECT_TRUE(IsObject3DNodeDefinitionValidUVE(Object3DNodeDefinitionUVE{}));
     EXPECT_TRUE(IsArea3DNodeDefinitionValidUVE(Area3DNodeDefinitionUVE{}));
     EXPECT_TRUE(IsStatic3DNodeDefinitionValidUVE(Static3DNodeDefinitionUVE{}));
     EXPECT_TRUE(IsCharacter3DNodeDefinitionValidUVE(Character3DNodeDefinitionUVE{}));
@@ -127,7 +127,7 @@ TEST_F(Node3DDefinitionsUVETest, AllDefinitionDefaultsAreValid) {
 // The seven names the editor's legacy EditorEntityKindUVE path surfaces are locked at compile
 // time: the editor now sources every default name from these definitions, so any drift here
 // would silently rename what legacy creation produces.
-static_assert(Node3DNodeDefinitionUVE::defaultName == "Node3D");
+static_assert(Object3DNodeDefinitionUVE::defaultName == "Object3D");
 static_assert(Camera3DNodeDefinitionUVE::defaultName == "Camera");
 static_assert(Light3DNodeDefinitionUVE::defaultName == "Directional Light");
 static_assert(Collider3DNodeDefinitionUVE::defaultName == "Collision Box");
@@ -137,14 +137,14 @@ static_assert(PlaneMesh3DNodeDefinitionUVE::defaultName == "Plane");
 static_assert(Kinematic3DNodeDefinitionUVE::defaultName == "Kinematic3D");
 static_assert(SpringArm3DNodeDefinitionUVE::defaultName == "SpringArm3D");
 
-TEST_F(Node3DDefinitionsUVETest, DefaultNamesAreAuthoredPerKindNotGeneric) {
+TEST_F(Object3DDefinitionsUVETest, DefaultNamesAreAuthoredPerKindNotGeneric) {
     // The six kinds that previously lived behind legacy EditorEntityKindUVE values keep their
     // exact historical names; the kinds the editor used to name "Empty" now carry their own.
     //
-    // The transform-only base is Node3D every way an author can meet it: display name, kind
-    // enumerator, and the "node_3d" on-disk id. The legacy "empty" id still resolves to it at
-    // load (covered below) so the rename broke no saved file.
-    EXPECT_EQ(Node3DNodeDefinitionUVE::defaultName, "Node3D");
+    // The transform-only base is Object3D every way an author can meet it: display name, kind
+    // enumerator, and the "object_3d" on-disk id. Its two earlier ids, "node_3d" and "empty",
+    // still resolve to it at load (covered below) so the renames broke no saved file.
+    EXPECT_EQ(Object3DNodeDefinitionUVE::defaultName, "Object3D");
     EXPECT_EQ(Camera3DNodeDefinitionUVE::defaultName, "Camera");
     EXPECT_EQ(Light3DNodeDefinitionUVE::defaultName, "Directional Light");
     EXPECT_EQ(Collider3DNodeDefinitionUVE::defaultName, "Collision Box");
@@ -164,68 +164,68 @@ TEST_F(Node3DDefinitionsUVETest, DefaultNamesAreAuthoredPerKindNotGeneric) {
     EXPECT_EQ(Kinematic3DNodeDefinitionUVE::defaultName, "Kinematic3D");
 }
 
-TEST_F(Node3DDefinitionsUVETest, ApplyAttachesEachKindsExactComponentRecipe) {
+TEST_F(Object3DDefinitionsUVETest, ApplyAttachesEachKindsExactComponentRecipe) {
     {
         const EntityUVE entity = CreateEntityUVE();
-        ApplyNode3DNodeDefinitionUVE(entityManager, entity, Node3DNodeDefinitionUVE{});
-        // Node3D's recipe is the baseline itself, not "nothing": the guarantee is pinned
+        ApplyObject3DNodeDefinitionUVE(entityManager, entity, Object3DNodeDefinitionUVE{});
+        // Object3D's recipe is the baseline itself, not "nothing": the guarantee is pinned
         // behaviour-for-behaviour in the dedicated tests below.
-        ExpectNode3DBaselineUVE(entityManager, entity, Node3DNodeDefinitionUVE::defaultName);
+        ExpectObject3DBaselineUVE(entityManager, entity, Object3DNodeDefinitionUVE::defaultName);
         EXPECT_FALSE(entityManager.HasComponentUVE<CameraComponentUVE>(entity));
     }
     {
         const EntityUVE entity = CreateEntityUVE();
         ApplyArea3DNodeDefinitionUVE(entityManager, entity, Area3DNodeDefinitionUVE{});
-        ExpectNode3DBaselineUVE(entityManager, entity, Area3DNodeDefinitionUVE::defaultName);
+        ExpectObject3DBaselineUVE(entityManager, entity, Area3DNodeDefinitionUVE::defaultName);
         EXPECT_TRUE(entityManager.HasComponentUVE<AreaComponentUVE>(entity));
     }
     {
         const EntityUVE entity = CreateEntityUVE();
         ApplyStatic3DNodeDefinitionUVE(entityManager, entity, Static3DNodeDefinitionUVE{});
-        ExpectNode3DBaselineUVE(entityManager, entity, Static3DNodeDefinitionUVE::defaultName);
+        ExpectObject3DBaselineUVE(entityManager, entity, Static3DNodeDefinitionUVE::defaultName);
         EXPECT_TRUE(entityManager.HasComponentUVE<ColliderComponentUVE>(entity));
         EXPECT_FALSE(entityManager.HasComponentUVE<RigidBodyComponentUVE>(entity));
     }
     {
         const EntityUVE entity = CreateEntityUVE();
         ApplyCamera3DNodeDefinitionUVE(entityManager, entity, Camera3DNodeDefinitionUVE{});
-        ExpectNode3DBaselineUVE(entityManager, entity, Camera3DNodeDefinitionUVE::defaultName);
+        ExpectObject3DBaselineUVE(entityManager, entity, Camera3DNodeDefinitionUVE::defaultName);
         EXPECT_TRUE(entityManager.HasComponentUVE<CameraComponentUVE>(entity));
     }
     {
         const EntityUVE entity = CreateEntityUVE();
         ApplyMeshInstance3DNodeDefinitionUVE(entityManager, entity, MeshInstance3DNodeDefinitionUVE{});
-        ExpectNode3DBaselineUVE(entityManager, entity, MeshInstance3DNodeDefinitionUVE::defaultName);
+        ExpectObject3DBaselineUVE(entityManager, entity, MeshInstance3DNodeDefinitionUVE::defaultName);
         EXPECT_TRUE(entityManager.HasComponentUVE<MeshComponentUVE>(entity));
     }
     {
         const EntityUVE entity = CreateEntityUVE();
         ApplyCollider3DNodeDefinitionUVE(entityManager, entity, Collider3DNodeDefinitionUVE{});
-        ExpectNode3DBaselineUVE(entityManager, entity, Collider3DNodeDefinitionUVE::defaultName);
+        ExpectObject3DBaselineUVE(entityManager, entity, Collider3DNodeDefinitionUVE::defaultName);
         EXPECT_TRUE(entityManager.HasComponentUVE<ColliderComponentUVE>(entity));
     }
     {
         const EntityUVE entity = CreateEntityUVE();
         ApplyRigid3DNodeDefinitionUVE(entityManager, entity, Rigid3DNodeDefinitionUVE{});
-        ExpectNode3DBaselineUVE(entityManager, entity, Rigid3DNodeDefinitionUVE::defaultName);
+        ExpectObject3DBaselineUVE(entityManager, entity, Rigid3DNodeDefinitionUVE::defaultName);
         EXPECT_TRUE(entityManager.HasComponentUVE<RigidBodyComponentUVE>(entity));
     }
     {
         const EntityUVE entity = CreateEntityUVE();
         ApplyAudioSource3DNodeDefinitionUVE(entityManager, entity, AudioSource3DNodeDefinitionUVE{});
-        ExpectNode3DBaselineUVE(entityManager, entity, AudioSource3DNodeDefinitionUVE::defaultName);
+        ExpectObject3DBaselineUVE(entityManager, entity, AudioSource3DNodeDefinitionUVE::defaultName);
         EXPECT_TRUE(entityManager.HasComponentUVE<AudioSourceComponentUVE>(entity));
     }
     {
         const EntityUVE entity = CreateEntityUVE();
         ApplyParticleEmitter3DNodeDefinitionUVE(entityManager, entity, ParticleEmitter3DNodeDefinitionUVE{});
-        ExpectNode3DBaselineUVE(entityManager, entity, ParticleEmitter3DNodeDefinitionUVE::defaultName);
+        ExpectObject3DBaselineUVE(entityManager, entity, ParticleEmitter3DNodeDefinitionUVE::defaultName);
         EXPECT_TRUE(entityManager.HasComponentUVE<ParticleEmitterComponentUVE>(entity));
     }
     {
         const EntityUVE entity = CreateEntityUVE();
         ApplyScriptNodeDefinitionUVE(entityManager, entity, ScriptNodeDefinitionUVE{});
-        ExpectNode3DBaselineUVE(entityManager, entity, ScriptNodeDefinitionUVE::defaultName);
+        ExpectObject3DBaselineUVE(entityManager, entity, ScriptNodeDefinitionUVE::defaultName);
         EXPECT_TRUE(entityManager.HasComponentUVE<ScriptComponentUVE>(entity));
     }
     {
@@ -243,7 +243,7 @@ TEST_F(Node3DDefinitionsUVETest, ApplyAttachesEachKindsExactComponentRecipe) {
     {
         const EntityUVE entity = CreateEntityUVE();
         ApplySpringArm3DNodeDefinitionUVE(entityManager, entity, SpringArm3DNodeDefinitionUVE{});
-        ExpectNode3DBaselineUVE(entityManager, entity, SpringArm3DNodeDefinitionUVE::defaultName);
+        ExpectObject3DBaselineUVE(entityManager, entity, SpringArm3DNodeDefinitionUVE::defaultName);
         ASSERT_TRUE(entityManager.HasComponentUVE<SpringArm3DNodeComponentUVE>(entity));
         // The recipe seeds the runtime state exactly the way the deserializer does: an arm that
         // has never been simulated reads as fully extended, valid before the first step.
@@ -254,7 +254,7 @@ TEST_F(Node3DDefinitionsUVETest, ApplyAttachesEachKindsExactComponentRecipe) {
     }
 }
 
-TEST_F(Node3DDefinitionsUVETest, PrimitiveMeshRecipesKeepTheirDistinctShapesColorsAndColliders) {
+TEST_F(Object3DDefinitionsUVETest, PrimitiveMeshRecipesKeepTheirDistinctShapesColorsAndColliders) {
     {
         const EntityUVE entity = CreateEntityUVE();
         ApplyBoxMesh3DNodeDefinitionUVE(entityManager, entity, BoxMesh3DNodeDefinitionUVE{});
@@ -291,11 +291,11 @@ TEST_F(Node3DDefinitionsUVETest, PrimitiveMeshRecipesKeepTheirDistinctShapesColo
     }
 }
 
-TEST_F(Node3DDefinitionsUVETest, CharacterBodyIsItsChainPlusAReadyToWalkCapsule) {
+TEST_F(Object3DDefinitionsUVETest, CharacterBodyIsItsChainPlusAReadyToWalkCapsule) {
     const EntityUVE entity = CreateEntityUVE();
     ApplyCharacter3DNodeDefinitionUVE(entityManager, entity, Character3DNodeDefinitionUVE{});
-    // Node3D > PhysicsObject3D > SolidBody3D > Character3D, and nothing from another branch.
-    ExpectNode3DBaselineUVE(entityManager, entity, Character3DNodeDefinitionUVE::defaultName);
+    // Object3D > PhysicsObject3D > SolidBody3D > Character3D, and nothing from another branch.
+    ExpectObject3DBaselineUVE(entityManager, entity, Character3DNodeDefinitionUVE::defaultName);
     EXPECT_TRUE(entityManager.HasComponentUVE<PhysicsObjectComponentUVE>(entity));
     EXPECT_TRUE(entityManager.HasComponentUVE<SolidBodyComponentUVE>(entity));
     ASSERT_TRUE(entityManager.HasComponentUVE<CharacterControllerComponentUVE>(entity));
@@ -315,7 +315,7 @@ TEST_F(Node3DDefinitionsUVETest, CharacterBodyIsItsChainPlusAReadyToWalkCapsule)
     EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<CharacterControllerComponentUVE>(entity).moveSpeed, 9.0F);
 }
 
-TEST_F(Node3DDefinitionsUVETest, CharacterBodyRefusesSettingsItCannotRunWith) {
+TEST_F(Object3DDefinitionsUVETest, CharacterBodyRefusesSettingsItCannotRunWith) {
     EXPECT_TRUE(IsCharacter3DNodeDefinitionValidUVE(Character3DNodeDefinitionUVE{}));
     const auto invalid = [](auto change) {
         Character3DNodeDefinitionUVE definition{};
@@ -333,10 +333,10 @@ TEST_F(Node3DDefinitionsUVETest, CharacterBodyRefusesSettingsItCannotRunWith) {
     }));
 }
 
-TEST_F(Node3DDefinitionsUVETest, SolidBodyBaseSitsOnPhysicsObject) {
+TEST_F(Object3DDefinitionsUVETest, SolidBodyBaseSitsOnPhysicsObject) {
     const EntityUVE entity = CreateEntityUVE();
     ApplySolidBody3DBaseUVE(entityManager, entity, "Static3D");
-    ExpectNode3DBaselineUVE(entityManager, entity, "Static3D");
+    ExpectObject3DBaselineUVE(entityManager, entity, "Static3D");
     EXPECT_TRUE(entityManager.HasComponentUVE<PhysicsObjectComponentUVE>(entity));
     EXPECT_TRUE(entityManager.HasComponentUVE<SolidBodyComponentUVE>(entity));
     entityManager.GetComponentUVE<SolidBodyComponentUVE>(entity).lockMotionZ = true;
@@ -344,7 +344,7 @@ TEST_F(Node3DDefinitionsUVETest, SolidBodyBaseSitsOnPhysicsObject) {
     EXPECT_TRUE(entityManager.GetComponentUVE<SolidBodyComponentUVE>(entity).lockMotionZ);
 }
 
-TEST_F(Node3DDefinitionsUVETest, AnimatableBodyRecipeMatchesTheFormerInlineEditorRecipe) {
+TEST_F(Object3DDefinitionsUVETest, AnimatableBodyRecipeMatchesTheFormerInlineEditorRecipe) {
     // The last inline multi-component recipe the editor's creation switch used to hardcode:
     // collider + kinematic body + the animatable body's own component, in that spirit unchanged.
     const EntityUVE entity = CreateEntityUVE();
@@ -360,45 +360,46 @@ TEST_F(Node3DDefinitionsUVETest, AnimatableBodyRecipeMatchesTheFormerInlineEdito
     EXPECT_FALSE(IsKinematic3DNodeDefinitionValidUVE(nonKinematic));
 }
 
-TEST_F(Node3DDefinitionsUVETest, LightRecipeDefaultsToDirectionalSunLight) {
+TEST_F(Object3DDefinitionsUVETest, LightRecipeDefaultsToDirectionalSunLight) {
     const EntityUVE entity = CreateEntityUVE();
     ApplyLight3DNodeDefinitionUVE(entityManager, entity, Light3DNodeDefinitionUVE{});
     ASSERT_TRUE(entityManager.HasComponentUVE<LightComponentUVE>(entity));
     EXPECT_EQ(entityManager.GetComponentUVE<LightComponentUVE>(entity).type, LightTypeUVE::Directional);
 }
 
-TEST_F(Node3DDefinitionsUVETest, Node3DIsReachableUnderBothItsNewAndLegacyTypeIds) {
+TEST_F(Object3DDefinitionsUVETest, Object3DIsReachableUnderBothItsNewAndLegacyTypeIds) {
     const Nodes::SceneNodeDescriptorUVE* descriptor =
-        Nodes::FindSceneNodeDescriptorUVE(Nodes::SceneNodeKindUVE::Node3D);
+        Nodes::FindSceneNodeDescriptorUVE(Nodes::SceneNodeKindUVE::Object3D);
     ASSERT_NE(descriptor, nullptr);
-    EXPECT_EQ(descriptor->typeId, "node_3d");
-    EXPECT_EQ(descriptor->displayName, "Node3D");
+    EXPECT_EQ(descriptor->typeId, "object_3d");
+    EXPECT_EQ(descriptor->displayName, "Object3D");
     EXPECT_TRUE(descriptor->libraryCreatable);
 
-    // New writes use the canonical id; the legacy id from before the rename must resolve to the
-    // very same node, since saved documents and layouts carrying "empty" have no way to upgrade
-    // themselves.
+    // New writes use the canonical id; both ids this kind had before it must resolve to the very
+    // same row, since saved documents and layouts carrying either have no way to upgrade
+    // themselves: "node_3d" from the Node3D -> Object3D rename, "empty" from before that.
+    EXPECT_EQ(Nodes::FindSceneNodeDescriptorUVE("object_3d"), descriptor);
     EXPECT_EQ(Nodes::FindSceneNodeDescriptorUVE("node_3d"), descriptor);
     EXPECT_EQ(Nodes::FindSceneNodeDescriptorUVE("empty"), descriptor);
-    EXPECT_EQ(Nodes::GetSceneNodeTypeIdUVE(Nodes::SceneNodeKindUVE::Node3D), "node_3d");
+    EXPECT_EQ(Nodes::GetSceneNodeTypeIdUVE(Nodes::SceneNodeKindUVE::Object3D), "object_3d");
 }
 
-TEST_F(Node3DDefinitionsUVETest, Node3DApplyAttachesALocalTransformToABareEntity) {
+TEST_F(Object3DDefinitionsUVETest, Object3DApplyAttachesALocalTransformToABareEntity) {
     const EntityUVE entity = CreateEntityUVE();
-    ApplyNode3DNodeDefinitionUVE(entityManager, entity, Node3DNodeDefinitionUVE{});
+    ApplyObject3DNodeDefinitionUVE(entityManager, entity, Object3DNodeDefinitionUVE{});
 
-    // The meaningful part of the guarantee: a Node3D reached without the creation shell still
-    // ends up with the transform every SceneNode3D needs, at identity and named after its kind.
+    // The meaningful part of the guarantee: an Object3D reached without the creation shell still
+    // ends up with the transform every scene object needs, at identity and named after its kind.
     const TransformComponentUVE& local = entityManager.GetComponentUVE<TransformComponentUVE>(entity);
     EXPECT_EQ(local.localPosition.x, 0.0F);
     EXPECT_EQ(local.localPosition.y, 0.0F);
     EXPECT_EQ(local.localPosition.z, 0.0F);
     EXPECT_EQ(entityManager.GetComponentUVE<NameComponentUVE>(entity).name,
-              Node3DNodeDefinitionUVE::defaultName);
+              Object3DNodeDefinitionUVE::defaultName);
     EXPECT_EQ(entityManager.GetComponentUVE<HierarchyComponentUVE>(entity).parent, kInvalidEntityUVE);
 }
 
-TEST_F(Node3DDefinitionsUVETest, Node3DApplyPreservesAuthoredValuesAndRepairsOnlyWhatIsMissing) {
+TEST_F(Object3DDefinitionsUVETest, Object3DApplyPreservesAuthoredValuesAndRepairsOnlyWhatIsMissing) {
     const EntityUVE entity = CreateEntityUVE();
     // A partially-baselined entity, as a partial deserialization leaves behind: transform is
     // present and authored, the rest of the baseline is not.
@@ -407,7 +408,7 @@ TEST_F(Node3DDefinitionsUVETest, Node3DApplyPreservesAuthoredValuesAndRepairsOnl
     entityManager.AddComponentUVE<TransformComponentUVE>(entity, authored);
     entityManager.AddComponentUVE<NameComponentUVE>(entity, NameComponentUVE{"AuthoredPivot"});
 
-    ApplyNode3DNodeDefinitionUVE(entityManager, entity, Node3DNodeDefinitionUVE{});
+    ApplyObject3DNodeDefinitionUVE(entityManager, entity, Object3DNodeDefinitionUVE{});
 
     // Authored state is sacred: position and name survive application untouched, and the missing
     // half of the baseline is what got repaired.
@@ -418,9 +419,9 @@ TEST_F(Node3DDefinitionsUVETest, Node3DApplyPreservesAuthoredValuesAndRepairsOnl
     EXPECT_TRUE(entityManager.HasComponentUVE<HierarchyComponentUVE>(entity));
 }
 
-TEST_F(Node3DDefinitionsUVETest, Node3DCarriesVisibilityAndTheCommonNodeSection) {
+TEST_F(Object3DDefinitionsUVETest, Object3DCarriesVisibilityAndTheCommonNodeSection) {
     const EntityUVE entity = CreateEntityUVE();
-    ApplyNode3DNodeDefinitionUVE(entityManager, entity, Node3DNodeDefinitionUVE{});
+    ApplyObject3DNodeDefinitionUVE(entityManager, entity, Object3DNodeDefinitionUVE{});
     // Its Inspector has no Add Component, so every section it shows is attached by the recipe.
     EXPECT_TRUE(entityManager.HasComponentUVE<VisibilityComponentUVE>(entity));
     EXPECT_TRUE(entityManager.HasComponentUVE<ProcessComponentUVE>(entity));
@@ -432,16 +433,16 @@ TEST_F(Node3DDefinitionsUVETest, Node3DCarriesVisibilityAndTheCommonNodeSection)
     EXPECT_TRUE(entityManager.HasComponentUVE<NodeMetadataComponentUVE>(entity));
 }
 
-TEST_F(Node3DDefinitionsUVETest, AbstractBasesAreNode3DPlusTheirOwnComponent) {
+TEST_F(Object3DDefinitionsUVETest, AbstractBasesAreObject3DPlusTheirOwnComponent) {
     const EntityUVE bone = CreateEntityUVE();
     const EntityUVE physics = CreateEntityUVE();
     const EntityUVE render = CreateEntityUVE();
     ApplyBoneModifier3DBaseUVE(entityManager, bone, "LookAtModifier3D");
     ApplyPhysicsObject3DBaseUVE(entityManager, physics, "Area3D");
     ApplyRenderInstance3DBaseUVE(entityManager, render, "MeshInstance3D");
-    ExpectNode3DBaselineUVE(entityManager, bone, "LookAtModifier3D");
-    ExpectNode3DBaselineUVE(entityManager, physics, "Area3D");
-    ExpectNode3DBaselineUVE(entityManager, render, "MeshInstance3D");
+    ExpectObject3DBaselineUVE(entityManager, bone, "LookAtModifier3D");
+    ExpectObject3DBaselineUVE(entityManager, physics, "Area3D");
+    ExpectObject3DBaselineUVE(entityManager, render, "MeshInstance3D");
     for (const EntityUVE entity : {bone, physics, render}) {
         EXPECT_TRUE(entityManager.HasComponentUVE<VisibilityComponentUVE>(entity));
         EXPECT_TRUE(entityManager.HasComponentUVE<ProcessComponentUVE>(entity));
@@ -458,7 +459,7 @@ TEST_F(Node3DDefinitionsUVETest, AbstractBasesAreNode3DPlusTheirOwnComponent) {
     EXPECT_EQ(entityManager.GetComponentUVE<BoneModifierComponentUVE>(bone).influence, 0.5F);
 }
 
-TEST_F(Node3DDefinitionsUVETest, AbstractBaseComponentsRejectValuesTheySaveBadly) {
+TEST_F(Object3DDefinitionsUVETest, AbstractBaseComponentsRejectValuesTheySaveBadly) {
     EXPECT_TRUE(IsBoneModifierComponentValidUVE(BoneModifierComponentUVE{}));
     EXPECT_FALSE(IsBoneModifierComponentValidUVE(BoneModifierComponentUVE{true, 1.5F}));
     EXPECT_FALSE(IsBoneModifierComponentValidUVE(BoneModifierComponentUVE{true, std::numeric_limits<float>::quiet_NaN()}));
@@ -473,13 +474,13 @@ TEST_F(Node3DDefinitionsUVETest, AbstractBaseComponentsRejectValuesTheySaveBadly
         RenderInstanceComponentUVE{1U, std::numeric_limits<float>::infinity(), true}));
 }
 
-TEST_F(Node3DDefinitionsUVETest, RenderInstanceChildBasesCarryRenderInstanceAndTheirOwnComponent) {
+TEST_F(Object3DDefinitionsUVETest, RenderInstanceChildBasesCarryRenderInstanceAndTheirOwnComponent) {
     const EntityUVE surface = CreateEntityUVE();
     const EntityUVE light = CreateEntityUVE();
     ApplySurfaceInstance3DBaseUVE(entityManager, surface, "MeshInstance3D");
     ApplyLightEmitter3DBaseUVE(entityManager, light, "OmniLight3D");
-    ExpectNode3DBaselineUVE(entityManager, surface, "MeshInstance3D");
-    ExpectNode3DBaselineUVE(entityManager, light, "OmniLight3D");
+    ExpectObject3DBaselineUVE(entityManager, surface, "MeshInstance3D");
+    ExpectObject3DBaselineUVE(entityManager, light, "OmniLight3D");
     for (const EntityUVE entity : {surface, light}) {
         EXPECT_TRUE(entityManager.HasComponentUVE<RenderInstanceComponentUVE>(entity));
         EXPECT_TRUE(entityManager.HasComponentUVE<VisibilityComponentUVE>(entity));
@@ -491,16 +492,16 @@ TEST_F(Node3DDefinitionsUVETest, RenderInstanceChildBasesCarryRenderInstanceAndT
     EXPECT_FALSE(entityManager.HasComponentUVE<SurfaceInstanceComponentUVE>(light));
 }
 
-TEST_F(Node3DDefinitionsUVETest, MeshAndParticleNodesAreSurfaceInstances) {
+TEST_F(Object3DDefinitionsUVETest, MeshAndParticleNodesAreSurfaceInstances) {
     const EntityUVE mesh = CreateEntityUVE();
     const EntityUVE box = CreateEntityUVE();
     const EntityUVE particles = CreateEntityUVE();
     ApplyMeshInstance3DNodeDefinitionUVE(entityManager, mesh, MeshInstance3DNodeDefinitionUVE{});
     ApplyBoxMesh3DNodeDefinitionUVE(entityManager, box, BoxMesh3DNodeDefinitionUVE{});
     ApplyParticleEmitter3DNodeDefinitionUVE(entityManager, particles, ParticleEmitter3DNodeDefinitionUVE{});
-    ExpectNode3DBaselineUVE(entityManager, mesh, "MeshInstance3D");
-    ExpectNode3DBaselineUVE(entityManager, box, "Cube");
-    ExpectNode3DBaselineUVE(entityManager, particles, "ParticleEmitter3D");
+    ExpectObject3DBaselineUVE(entityManager, mesh, "MeshInstance3D");
+    ExpectObject3DBaselineUVE(entityManager, box, "Cube");
+    ExpectObject3DBaselineUVE(entityManager, particles, "ParticleEmitter3D");
     for (const EntityUVE entity : {mesh, box, particles}) {
         EXPECT_TRUE(entityManager.HasComponentUVE<SurfaceInstanceComponentUVE>(entity));
         EXPECT_TRUE(entityManager.HasComponentUVE<RenderInstanceComponentUVE>(entity));
@@ -509,15 +510,15 @@ TEST_F(Node3DDefinitionsUVETest, MeshAndParticleNodesAreSurfaceInstances) {
     }
 }
 
-TEST_F(Node3DDefinitionsUVETest, Decal3DAndFogVolume3DAreRenderInstancesPlusTheirOwnComponent) {
+TEST_F(Object3DDefinitionsUVETest, Decal3DAndFogVolume3DAreRenderInstancesPlusTheirOwnComponent) {
     const EntityUVE decal = CreateEntityUVE();
     const EntityUVE fog = CreateEntityUVE();
     Decal3DNodeDefinitionUVE decalDefinition{};
     decalDefinition.decal.albedoMix = 0.25F;
     ApplyDecal3DNodeDefinitionUVE(entityManager, decal, decalDefinition);
     ApplyFogVolume3DNodeDefinitionUVE(entityManager, fog, FogVolume3DNodeDefinitionUVE{});
-    ExpectNode3DBaselineUVE(entityManager, decal, "Decal3D");
-    ExpectNode3DBaselineUVE(entityManager, fog, "FogVolume3D");
+    ExpectObject3DBaselineUVE(entityManager, decal, "Decal3D");
+    ExpectObject3DBaselineUVE(entityManager, fog, "FogVolume3D");
     for (const EntityUVE entity : {decal, fog}) {
         EXPECT_TRUE(entityManager.HasComponentUVE<RenderInstanceComponentUVE>(entity));
         EXPECT_FALSE(entityManager.HasComponentUVE<SurfaceInstanceComponentUVE>(entity));
@@ -531,7 +532,7 @@ TEST_F(Node3DDefinitionsUVETest, Decal3DAndFogVolume3DAreRenderInstancesPlusThei
     EXPECT_EQ(entityManager.GetComponentUVE<FogVolume3DNodeComponentUVE>(fog).density, -0.5F);
 }
 
-TEST_F(Node3DDefinitionsUVETest, RenderInstanceFamilyComponentsRejectValuesTheySaveBadly) {
+TEST_F(Object3DDefinitionsUVETest, RenderInstanceFamilyComponentsRejectValuesTheySaveBadly) {
     EXPECT_TRUE(IsSurfaceInstanceComponentValidUVE(SurfaceInstanceComponentUVE{}));
     SurfaceInstanceComponentUVE surface{};
     surface.transparency = 1.5F;
@@ -568,40 +569,40 @@ TEST_F(Node3DDefinitionsUVETest, RenderInstanceFamilyComponentsRejectValuesTheyS
     EXPECT_FALSE(IsFogVolume3DNodeComponentValidUVE(fog));
 }
 
-TEST_F(Node3DDefinitionsUVETest, Skeleton3DIsANode3DChildThatStartsWithNoBones) {
+TEST_F(Object3DDefinitionsUVETest, Skeleton3DIsAObject3DChildThatStartsWithNoBones) {
     const EntityUVE skeleton = CreateEntityUVE();
     ApplySkeleton3DNodeDefinitionUVE(entityManager, skeleton, Skeleton3DNodeDefinitionUVE{});
-    ExpectNode3DBaselineUVE(entityManager, skeleton, "Skeleton3D");
+    ExpectObject3DBaselineUVE(entityManager, skeleton, "Skeleton3D");
     EXPECT_TRUE(entityManager.HasComponentUVE<VisibilityComponentUVE>(skeleton));
     EXPECT_TRUE(entityManager.HasComponentUVE<NodeMetadataComponentUVE>(skeleton));
     EXPECT_TRUE(entityManager.GetComponentUVE<Skeleton3DNodeComponentUVE>(skeleton).bones.empty());
 }
 
-TEST_F(Node3DDefinitionsUVETest, Node3DApplyIsIdempotent) {
+TEST_F(Object3DDefinitionsUVETest, Object3DApplyIsIdempotent) {
     const EntityUVE entity = CreateEntityUVE();
-    ApplyNode3DNodeDefinitionUVE(entityManager, entity, Node3DNodeDefinitionUVE{});
+    ApplyObject3DNodeDefinitionUVE(entityManager, entity, Object3DNodeDefinitionUVE{});
     entityManager.GetComponentUVE<TransformComponentUVE>(entity).localPosition =
         Math::Vector3UVE{1.0F, 2.0F, 3.0F};
 
-    ApplyNode3DNodeDefinitionUVE(entityManager, entity, Node3DNodeDefinitionUVE{});
+    ApplyObject3DNodeDefinitionUVE(entityManager, entity, Object3DNodeDefinitionUVE{});
     EXPECT_EQ(entityManager.GetComponentUVE<TransformComponentUVE>(entity).localPosition.y, 2.0F);
     EXPECT_EQ(entityManager.GetComponentUVE<NameComponentUVE>(entity).name,
-              Node3DNodeDefinitionUVE::defaultName);
+              Object3DNodeDefinitionUVE::defaultName);
 }
 
-TEST_F(Node3DDefinitionsUVETest, Node3DApplyRefusesADestroyedEntity) {
+TEST_F(Object3DDefinitionsUVETest, Object3DApplyRefusesADestroyedEntity) {
     const EntityUVE entity = CreateEntityUVE();
     entityManager.DestroyEntityUVE(entity);
     // Same refusal as the scene-root apply: dead entities get nothing, and nothing crashes.
-    ApplyNode3DNodeDefinitionUVE(entityManager, entity, Node3DNodeDefinitionUVE{});
+    ApplyObject3DNodeDefinitionUVE(entityManager, entity, Object3DNodeDefinitionUVE{});
     EXPECT_FALSE(entityManager.IsAliveUVE(entity));
 }
 
-TEST_F(Node3DDefinitionsUVETest, SceneRootIsAPureNodeCarryingTheCommonNodeSection) {
+TEST_F(Object3DDefinitionsUVETest, SceneRootIsAPureNodeCarryingTheCommonNodeSection) {
     const EntityUVE root = CreateEntityUVE();
     ApplySceneRootNodeDefinitionUVE(entityManager, root, SceneRootNodeDefinitionUVE{});
 
-    // In the hierarchy and named, but with no transform: placing things in space is what Node3D
+    // In the hierarchy and named, but with no transform: placing things in space is what Object3D
     // adds, and the root has nothing to place. Its children start their own transform chains.
     EXPECT_FALSE(entityManager.HasComponentUVE<TransformComponentUVE>(root));
     EXPECT_FALSE(entityManager.HasComponentUVE<WorldTransformComponentUVE>(root));
@@ -631,7 +632,7 @@ TEST_F(Node3DDefinitionsUVETest, SceneRootIsAPureNodeCarryingTheCommonNodeSectio
     EXPECT_FALSE(entityManager.HasComponentUVE<TransformComponentUVE>(root));
 }
 
-TEST_F(Node3DDefinitionsUVETest, SceneRootMigrationBakesAnOldRootTransformIntoItsChildren) {
+TEST_F(Object3DDefinitionsUVETest, SceneRootMigrationBakesAnOldRootTransformIntoItsChildren) {
     // A scene saved when the root still had a transform: the root moved, rotated and scaled, and
     // every child's world pose was composed through it. Dropping the transform must move nothing.
     const EntityUVE root = CreateEntityUVE();
@@ -697,7 +698,7 @@ TEST_F(Node3DDefinitionsUVETest, SceneRootMigrationBakesAnOldRootTransformIntoIt
                 childBefore.worldPosition.x, kTolerance);
 }
 
-TEST_F(Node3DDefinitionsUVETest, SpringArm3DIsRegisteredCreatableAsACameraNode) {
+TEST_F(Object3DDefinitionsUVETest, SpringArm3DIsRegisteredCreatableAsACameraNode) {
     // The registry row and the editor switch must keep agreeing about this kind: the registry
     // advertises it as a creatable camera node, and the switch now creates it from the same
     // definition this test file pins.
@@ -709,7 +710,7 @@ TEST_F(Node3DDefinitionsUVETest, SpringArm3DIsRegisteredCreatableAsACameraNode) 
     EXPECT_TRUE(descriptor->libraryCreatable);
 }
 
-TEST_F(Node3DDefinitionsUVETest, SpringArmTargetResolutionMatchesTheAuthoredEnvelope) {
+TEST_F(Object3DDefinitionsUVETest, SpringArmTargetResolutionMatchesTheAuthoredEnvelope) {
     // Unobstructed: full reach.
     EXPECT_EQ(ResolveSpringArm3DTargetUVE(std::nullopt, 0.1F, 4.0F), 4.0F);
     // Hit reported by the raycast: distance minus margin.
@@ -725,7 +726,7 @@ TEST_F(Node3DDefinitionsUVETest, SpringArmTargetResolutionMatchesTheAuthoredEnve
     EXPECT_EQ(ResolveSpringArm3DTargetUVE(1.0F, 0.1F, 0.0F), 0.0F);
 }
 
-TEST_F(Node3DDefinitionsUVETest, SpringArmRetractionSnapsSoTheCameraNeverClips) {
+TEST_F(Object3DDefinitionsUVETest, SpringArmRetractionSnapsSoTheCameraNeverClips) {
     // Obstruction appears mid-frame: the arm arrives at the target THIS step, not after a
     // smooth glide through the wall.
     EXPECT_EQ(ResolveSpringArm3DLengthUVE(4.0F, 1.4F, 8.0F, 1.0F / 60.0F), 1.4F);
@@ -733,7 +734,7 @@ TEST_F(Node3DDefinitionsUVETest, SpringArmRetractionSnapsSoTheCameraNeverClips) 
     EXPECT_EQ(ResolveSpringArm3DLengthUVE(2.0F, 1.4F, 8.0F, 1.0F / 60.0F), 1.4F);
 }
 
-TEST_F(Node3DDefinitionsUVETest, SpringArmExtensionBlendsMonotonicallyAndNeverOvershoots) {
+TEST_F(Object3DDefinitionsUVETest, SpringArmExtensionBlendsMonotonicallyAndNeverOvershoots) {
     float current = 1.4F;
     constexpr float kDt = 1.0F / 60.0F;
     for (int step = 0; step < 240; ++step) {
@@ -753,13 +754,13 @@ TEST_F(Node3DDefinitionsUVETest, SpringArmExtensionBlendsMonotonicallyAndNeverOv
     EXPECT_EQ(current, 4.0F);
 }
 
-TEST_F(Node3DDefinitionsUVETest, SpringArmSmoothingZeroMatchesGodotSnapBothWays) {
+TEST_F(Object3DDefinitionsUVETest, SpringArmSmoothingZeroMatchesGodotSnapBothWays) {
     // The authored escape hatch: smoothing 0 reproduces Godot's SpringArm3D behaviour exactly
     // (Godot ships no smoothing member at all - snap on the way out as well).
     EXPECT_EQ(ResolveSpringArm3DLengthUVE(1.4F, 4.0F, 0.0F, 1.0F / 60.0F), 4.0F);
 }
 
-TEST_F(Node3DDefinitionsUVETest, SpringArmLengthRefusesDegenerateCallsWithoutMoving) {
+TEST_F(Object3DDefinitionsUVETest, SpringArmLengthRefusesDegenerateCallsWithoutMoving) {
     EXPECT_EQ(ResolveSpringArm3DLengthUVE(2.0F, 4.0F, 8.0F, 0.0F), 2.0F);   // dt 0: frozen
     EXPECT_EQ(ResolveSpringArm3DLengthUVE(2.0F, 4.0F, 8.0F, -1.0F), 2.0F);  // dt negative: frozen
     // A NaN input stays the caller's (the validator's) problem: the law returns its own current
@@ -770,7 +771,7 @@ TEST_F(Node3DDefinitionsUVETest, SpringArmLengthRefusesDegenerateCallsWithoutMov
     EXPECT_EQ(ResolveSpringArm3DLengthUVE(2.0F, nan, 8.0F, 1.0F / 60.0F), 2.0F);
 }
 
-TEST_F(Node3DDefinitionsUVETest, SpringArmObstructThenClearRestoresTheAuthoredPose) {
+TEST_F(Object3DDefinitionsUVETest, SpringArmObstructThenClearRestoresTheAuthoredPose) {
     // The drift claim the whole child-delta design rests on, measured on the motion law itself:
     // an arm that snaps to a wall and springs back home must return to EXACTLY its authored
     // length, so the sum of every per-step child shift telescopes back to precisely zero extra
@@ -804,7 +805,7 @@ TEST_F(Node3DDefinitionsUVETest, SpringArmObstructThenClearRestoresTheAuthoredPo
     EXPECT_LE(maximumDrift, 1.0e-5F);
 }
 
-TEST_F(Node3DDefinitionsUVETest, SpawnPointSelectionIsDeterministicContentOrder) {
+TEST_F(Object3DDefinitionsUVETest, SpawnPointSelectionIsDeterministicContentOrder) {
     // No candidates, no spawn.
     EXPECT_EQ(ResolveSpawnPoint3DSelectionUVE(std::span<const SpawnPoint3DCandidateUVE>{}),
               std::nullopt);
@@ -844,7 +845,7 @@ TEST_F(Node3DDefinitionsUVETest, SpawnPointSelectionIsDeterministicContentOrder)
     }
 }
 
-TEST_F(Node3DDefinitionsUVETest, SpawnPoseComposeAppliesTheAuthoredOffsetInNodeSpace) {
+TEST_F(Object3DDefinitionsUVETest, SpawnPoseComposeAppliesTheAuthoredOffsetInNodeSpace) {
     // Identity node: the offset is the pose.
     const std::optional<SpawnPoint3DPoseUVE> flat =
         ComposeSpawnPointPoseUVE({}, {}, Math::Vector3UVE{0.0F, 1.0F, 0.0F}, {});
@@ -871,7 +872,7 @@ TEST_F(Node3DDefinitionsUVETest, SpawnPoseComposeAppliesTheAuthoredOffsetInNodeS
                      .has_value());
 }
 
-TEST_F(Node3DDefinitionsUVETest, SpawnPlayerLocalIsTheSweepInverse) {
+TEST_F(Object3DDefinitionsUVETest, SpawnPlayerLocalIsTheSweepInverse) {
     const SpawnPoint3DPoseUVE worldPose{Math::Vector3UVE{9.0F, 2.0F, -2.0F}, {}};
 
     // Root-level player (identity parent TRS): the pose falls straight through.
@@ -931,7 +932,7 @@ TEST_F(Node3DDefinitionsUVETest, SpawnPlayerLocalIsTheSweepInverse) {
                      .has_value());
 }
 
-TEST_F(Node3DDefinitionsUVETest, InteractionAreaCandidateCapHonoursAuthoredBudgetAndStorageBound) {
+TEST_F(Object3DDefinitionsUVETest, InteractionAreaCandidateCapHonoursAuthoredBudgetAndStorageBound) {
     // The per-tick interactor list is storage-bounded AND authored-bounded; the effective cap is
     // the smaller of the two, so an authored value above the fixed array can never scribble past
     // it, and a tighter authored budget is respected exactly.
@@ -944,7 +945,7 @@ TEST_F(Node3DDefinitionsUVETest, InteractionAreaCandidateCapHonoursAuthoredBudge
     EXPECT_EQ(ResolveInteractionAreaCandidateCapUVE(8U, 3U), 3U);
 }
 
-TEST_F(Node3DDefinitionsUVETest, PrimaryInteractorSelectionMatchesTheSpawnPointPlayerRule) {
+TEST_F(Object3DDefinitionsUVETest, PrimaryInteractorSelectionMatchesTheSpawnPointPlayerRule) {
     // Same contract as SpawnPoint3D selection: content order (index, generation) decides, never
     // ECS pool order, and an empty or garbage-only input fails closed to no value.
     EXPECT_EQ(ResolvePrimaryInteractorUVE(std::span<const EntityUVE>{}), std::nullopt);
@@ -970,7 +971,7 @@ TEST_F(Node3DDefinitionsUVETest, PrimaryInteractorSelectionMatchesTheSpawnPointP
     }
 }
 
-TEST_F(Node3DDefinitionsUVETest, InteractionFocusPicksTheNearestAreaWithDeterministicTies) {
+TEST_F(Object3DDefinitionsUVETest, InteractionFocusPicksTheNearestAreaWithDeterministicTies) {
     // The Lyra-style best-candidate rule this engine owns so games do not re-implement it: the
     // nearest overlapping area wins; equal distances fall back to (index,generation) ordering so
     // the answer never depends on iteration/pool order. Empty or garbage input means no focus.
@@ -1003,7 +1004,7 @@ TEST_F(Node3DDefinitionsUVETest, InteractionFocusPicksTheNearestAreaWithDetermin
     }
 }
 
-TEST_F(Node3DDefinitionsUVETest, MarkerPoseComposeSharesTheSpawnPointCompositionContract) {
+TEST_F(Object3DDefinitionsUVETest, MarkerPoseComposeSharesTheSpawnPointCompositionContract) {
     // The pure half of fly-to-marker: the same measured composition contract the spawn point
     // owns - position = node position + node rotation * authored offset, rotation composes,
     // node scale stays out of it - so a marker's viewpoint tracks prefab-level transforms
@@ -1047,7 +1048,7 @@ TEST_F(Node3DDefinitionsUVETest, MarkerPoseComposeSharesTheSpawnPointComposition
     EXPECT_FALSE(ComposeMarker3DPoseUVE({}, {}, Math::Vector3UVE{nan, 0.0F, 0.0F}, {}).has_value());
 }
 
-TEST_F(Node3DDefinitionsUVETest, AnimationTreeIsCreatableAndValidatesItsBlend) {
+TEST_F(Object3DDefinitionsUVETest, AnimationTreeIsCreatableAndValidatesItsBlend) {
     EXPECT_TRUE(IsAnimationGraphNodeDefinitionValidUVE(AnimationGraphNodeDefinitionUVE{}));
     AnimationGraphNodeDefinitionUVE noOutput;
     noOutput.tree.nodes.erase(noOutput.tree.nodes.begin());

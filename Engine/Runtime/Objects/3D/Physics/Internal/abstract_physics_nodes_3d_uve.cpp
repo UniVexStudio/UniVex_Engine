@@ -16,7 +16,7 @@ void ApplyPhysicsBaseUVE(IEntityManagerUVE& entityManager, const EntityUVE entit
     if (!entityManager.IsAliveUVE(entity)) {
         return;
     }
-    ApplyNode3DRecipeUVE(entityManager, entity, nameFallback);
+    ApplyObject3DRecipeUVE(entityManager, entity, nameFallback);
     if (!entityManager.HasComponentUVE<BaseComponentT>(entity)) {
         entityManager.AddComponentUVE<BaseComponentT>(entity, BaseComponentT{});
     }

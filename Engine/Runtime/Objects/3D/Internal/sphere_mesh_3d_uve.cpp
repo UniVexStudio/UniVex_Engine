@@ -13,7 +13,7 @@ bool IsSphereMesh3DNodeDefinitionValidUVE(const SphereMesh3DNodeDefinitionUVE& v
 
 void ApplySphereMesh3DNodeDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
                                         const SphereMesh3DNodeDefinitionUVE& value) {
-    // A SurfaceInstance3D: that base (RenderInstance3D, Node3D, the Node section) first, then
+    // A SurfaceInstance3D: that base (RenderInstance3D, Object3D, the Node section) first, then
     // this kind's own part.
     ApplySurfaceInstance3DBaseUVE(entityManager, entity, SphereMesh3DNodeDefinitionUVE::defaultName);
     entityManager.AddComponentUVE<PrimitiveMeshComponentUVE>(entity, value.mesh);

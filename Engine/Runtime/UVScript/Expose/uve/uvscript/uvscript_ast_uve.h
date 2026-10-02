@@ -23,7 +23,7 @@ struct DiagnosticUVE final {
     std::string message;
 };
 
-/// A written type: `float`, `list[int]`, `map[str, Node3D]`.
+/// A written type: `float`, `list[int]`, `map[str, Object3D]`.
 struct TypeRefUVE final {
     std::string name;
     std::vector<TypeRefUVE> arguments;

@@ -7,7 +7,7 @@
 #include "uve/component/collider_component_uve.h"
 #include "uve/component/entity_uve.h"
 #include "uve/component/rigid_body_component_uve.h"
-#include "uve/nodes/3d/node_3d_common_uve.h"
+#include "uve/nodes/3d/object_3d_common_uve.h"
 
 namespace UVE::Scene {
 
@@ -52,8 +52,8 @@ struct Kinematic3DNodeDefinitionUVE final {
 
 /// Attaches this node's components to `entity` using the definition's authored defaults. The
 /// entity must be alive and must not already have any of the attached component types.
-/// Every application first guarantees the Node3D baseline (Transform/WorldTransform/
-/// Hierarchy/Name) through EnsureNode3DBaselineUVE - this kind is Node3D plus its recipe.
+/// Every application first guarantees the Object3D baseline (Transform/WorldTransform/
+/// Hierarchy/Name) through EnsureObject3DBaselineUVE - this kind is Object3D plus its recipe.
 void ApplyKinematic3DNodeDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
                                             const Kinematic3DNodeDefinitionUVE& value);
 

@@ -643,7 +643,7 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_InvalidAudioSourcePayload_RollsBackCre
 }
 
 TEST_F(SceneSerializerUVETest, RestoreUVE_AnimationTargetsRemapToTheRestoredEntities) {
-    // A door (Node3D) with an AnimationSequencer and an AnimationGraph beside it, both aimed at it.
+    // A door (Object3D) with an AnimationSequencer and an AnimationGraph beside it, both aimed at it.
     const EntityUVE door = entityManager.CreateEntityUVE();
     entityManager.AddComponentUVE<TransformComponentUVE>(door, TransformComponentUVE{});
     entityManager.AddComponentUVE<HierarchyComponentUVE>(door, HierarchyComponentUVE{});

@@ -7,7 +7,7 @@
 #include <string_view>
 
 #include "uve/component/entity_uve.h"
-#include "uve/nodes/3d/node_3d_common_uve.h"
+#include "uve/nodes/3d/object_3d_common_uve.h"
 
 namespace UVE::Scene {
 
@@ -19,7 +19,7 @@ enum class DecalProjectionModeUVE : std::uint8_t {
 };
 
 /// Decal3D: projects a material onto whatever surfaces fall inside its box - bullet holes,
-/// footprints, puddles, graffiti. A RenderInstance3D: its render layers, sorting and the Node3D
+/// footprints, puddles, graffiti. A RenderInstance3D: its render layers, sorting and the Object3D
 /// transform and visibility above that come from its bases.
 struct Decal3DNodeComponentUVE final {
     std::string materialAssetPath;

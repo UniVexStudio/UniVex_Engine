@@ -489,7 +489,7 @@ private:
     TypeRefUVE ParseType() {
         TypeRefUVE type;
         type.at = Current().at;
-        type.name = ExpectName("a type such as int, float or Node3D");
+        type.name = ExpectName("a type such as int, float or Object3D");
         if (Accept("[")) {
             do {
                 type.arguments.push_back(ParseType());

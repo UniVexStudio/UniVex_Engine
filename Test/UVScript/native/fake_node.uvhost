@@ -6,4 +6,4 @@ property health int
 function input.axis(str, str) -> float
 event ready()
 event tick(float)
-event body_entered(Node3D)
+event body_entered(Object3D)

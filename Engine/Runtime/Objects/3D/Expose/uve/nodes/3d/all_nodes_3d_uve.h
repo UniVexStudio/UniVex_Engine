@@ -23,7 +23,7 @@
 #include "uve/nodes/3d/all_physics_nodes_3d_uve.h"
 
 // Remaining creation recipes for kinds whose authored state lives in shared components:
-#include "uve/nodes/3d/node_3d_uve.h"
+#include "uve/nodes/3d/object_3d_uve.h"
 #include "uve/nodes/3d/camera_3d_uve.h"
 #include "uve/nodes/3d/mesh_instance_3d_uve.h"
 #include "uve/nodes/3d/box_mesh_3d_uve.h"

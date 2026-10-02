@@ -139,8 +139,8 @@ def viewport(ic):
            f'stroke-opacity="0.7" stroke-width="1.2"/>')
 
 
-@scene_node("node_3d", "Node3D", "Scene")
-def node_3d(ic):
+@scene_node("object_3d", "Object3D", "Scene")
+def object_3d(ic):
     shadow(ic, 30, 54, 22, 6)
     axes(ic, 29, 41, 27)
     sphere(ic, 29, 41, 8.5, STEEL)

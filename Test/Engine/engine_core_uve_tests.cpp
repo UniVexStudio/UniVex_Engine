@@ -1850,7 +1850,7 @@ TEST(EngineCoreUVETest, AnimationSequencer_PlaysItsClipOnItsParentNode) {
     const Asset::AssetGuidUVE guid = assetDatabase.RegisterUVE(clipPath);
     ASSERT_NE(guid, Asset::kInvalidAssetGuidUVE);
 
-    // The door is a Node3D; the player is a pure Node under it, with no target set.
+    // The door is a Object3D; the player is a pure Node under it, with no target set.
     const Scene::EntityUVE door = entityManager.CreateEntityUVE();
     sceneGraph.AttachTransformUVE(entityManager, door, Scene::TransformComponentUVE{});
     const Scene::EntityUVE player = entityManager.CreateEntityUVE();

@@ -512,8 +512,8 @@ public:
 
     /// Brings a model source (an FBX, glTF or OBJ in Content, by its content-relative path) into the
     /// scene as one undo step and returns its root. A file with bones becomes
-    ///   <File> (Node3D)
-    ///   +- Armature (Node3D)
+    ///   <File> (Object3D)
+    ///   +- Armature (Object3D)
     ///   |  +- Skeleton3D          bound to the file's bones
     ///   |     +- <File> Mesh      (MeshInstance3D, when the file has a mesh)
     ///   +- AnimationSequencer        playing the file's first take, looping (when it has takes)
@@ -1384,7 +1384,7 @@ private:
     /// creation (for example Character3D plus Collider and kinematic RigidBody) is one history unit.
     struct SceneNodeCreationHistoryEntryUVE final {
         Scene::SceneSnapshotUVE snapshot;
-        Scene::Nodes::SceneNodeKindUVE kind = Scene::Nodes::SceneNodeKindUVE::Node3D;
+        Scene::Nodes::SceneNodeKindUVE kind = Scene::Nodes::SceneNodeKindUVE::Object3D;
         Scene::EntityUVE activeEntity = Scene::kInvalidEntityUVE;
         EditorSelectionSnapshotUVE selectionBefore;
         EditorSelectionSnapshotUVE selectionAfter;

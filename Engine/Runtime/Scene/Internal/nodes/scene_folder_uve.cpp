@@ -3,7 +3,7 @@
 #include "uve/scene/nodes/scene_folder_uve.h"
 
 #include "uve/entity/i_entity_manager_uve.h"
-#include "uve/nodes/3d/node_3d_uve.h"
+#include "uve/nodes/3d/object_3d_uve.h"
 
 namespace UVE::Scene {
 

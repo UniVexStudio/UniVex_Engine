@@ -7,14 +7,14 @@
 #include "uve/component/surface_instance_component_uve.h"
 #include "uve/component/visibility_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
-#include "uve/nodes/3d/node_3d_uve.h"
+#include "uve/nodes/3d/object_3d_uve.h"
 
 namespace UVE::Scene {
-void ApplyNode3DRecipeUVE(IEntityManagerUVE& entityManager, const EntityUVE entity, const std::string_view name) {
+void ApplyObject3DRecipeUVE(IEntityManagerUVE& entityManager, const EntityUVE entity, const std::string_view name) {
     if (!entityManager.IsAliveUVE(entity)) {
         return;
     }
-    EnsureNode3DBaselineUVE(entityManager, entity, name);
+    EnsureObject3DBaselineUVE(entityManager, entity, name);
     if (!entityManager.HasComponentUVE<VisibilityComponentUVE>(entity)) {
         entityManager.AddComponentUVE<VisibilityComponentUVE>(entity, VisibilityComponentUVE{});
     }
@@ -23,13 +23,13 @@ void ApplyNode3DRecipeUVE(IEntityManagerUVE& entityManager, const EntityUVE enti
 
 namespace {
 
-/// The Node3D recipe under the child's name, then the base component.
+/// The Object3D recipe under the child's name, then the base component.
 template <typename BaseComponentT>
 void ApplyBaseUVE(IEntityManagerUVE& entityManager, const EntityUVE entity, const std::string_view nameFallback) {
     if (!entityManager.IsAliveUVE(entity)) {
         return;
     }
-    ApplyNode3DRecipeUVE(entityManager, entity, nameFallback);
+    ApplyObject3DRecipeUVE(entityManager, entity, nameFallback);
     if (!entityManager.HasComponentUVE<BaseComponentT>(entity)) {
         entityManager.AddComponentUVE<BaseComponentT>(entity, BaseComponentT{});
     }

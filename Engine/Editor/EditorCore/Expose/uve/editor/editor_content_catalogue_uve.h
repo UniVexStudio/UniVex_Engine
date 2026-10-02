@@ -13,7 +13,7 @@ namespace UVE::Editor {
 /// One node of a catalogue template. `parent` indexes an earlier node of the same template; the
 /// first node is the root and has no parent (-1).
 struct ContentCatalogueNodeUVE final {
-    Scene::Nodes::SceneNodeKindUVE kind = Scene::Nodes::SceneNodeKindUVE::Node3D;
+    Scene::Nodes::SceneNodeKindUVE kind = Scene::Nodes::SceneNodeKindUVE::Object3D;
     std::int32_t parent = -1;
     /// Name of the node inside the asset. Empty keeps the node's default name; the root is always
     /// named after the asset file instead.

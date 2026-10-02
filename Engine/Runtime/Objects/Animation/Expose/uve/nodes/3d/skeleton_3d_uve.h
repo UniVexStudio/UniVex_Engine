@@ -10,7 +10,7 @@
 #include <vector>
 
 #include "uve/component/entity_uve.h"
-#include "uve/nodes/3d/node_3d_common_uve.h"
+#include "uve/nodes/3d/object_3d_common_uve.h"
 
 namespace UVE::Scene {
 
@@ -86,7 +86,7 @@ struct Skeleton3DNodeDefinitionUVE final {
     Skeleton3DNodeComponentUVE skeleton{};
 };
 
-/// The Node3D recipe under this node's name, then the skeleton component.
+/// The Object3D recipe under this node's name, then the skeleton component.
 void ApplySkeleton3DNodeDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
                                       const Skeleton3DNodeDefinitionUVE& value);
 

@@ -99,7 +99,7 @@ constexpr const char* kPanelLabelInspectorUVE = "\xEE\xA8\x83 Inspector##right-p
 }
 
 
-/// A class-chain heading ("Node3D", "Node"): the ancestor the sections below it come from. A
+/// A class-chain heading ("Object3D", "Node"): the ancestor the sections below it come from. A
 /// quiet label with a rule to the edge, so it groups without competing with the section headers.
 void DrawInspectorChainHeaderUVE(const std::string& label) {
     ImGui::Dummy(ImVec2(0.0F, 4.0F));
@@ -238,7 +238,7 @@ void EditorUVE::DrawInspectorContentUVE() {
     ImGui::BeginDisabled(!IsAuthoringCommandAllowedUVE());
     ImGui::Text("%s", GetEntityDisplayLabelUVE(m_selectedEntity).c_str());
     // Every Inspector is its node's recipe and nothing else: the node's own section, its bases,
-    // Node3D's Transform and Visibility, then the common Node section. Nodes are renamed and
+    // Object3D's Transform and Visibility, then the common Node section. Nodes are renamed and
     // reparented from the Scene panel and get their parts from their recipe, so there is no name
     // field, hierarchy block, search box, Add Component or Remove here.
     RepairInspectorRecipeUVE(m_selectedEntity);
@@ -256,7 +256,7 @@ void EditorUVE::RegisterTransformInspectorDrawerUVE() {
         },
         [this](const Scene::EntityUVE entity) { DrawTransformInspectorDrawerUVE(entity); },
     }));
-    static_cast<void>(m_inspectorDrawerRegistry.SetDrawerGroupUVE("transform", "Node3D"));
+    static_cast<void>(m_inspectorDrawerRegistry.SetDrawerGroupUVE("transform", "Object3D"));
 }
 
 void EditorUVE::RepairInspectorRecipeUVE(const Scene::EntityUVE entity) {

@@ -211,7 +211,7 @@ constexpr float kMaximum2DCanvasZoomUVE = 4.00F;
     using Kind = Scene::Nodes::SceneNodeKindUVE;
     switch (kind) {
         case EditorEntityKindUVE::Empty:
-            return Kind::Node3D;
+            return Kind::Object3D;
         case EditorEntityKindUVE::Camera:
             return Kind::Camera3D;
         case EditorEntityKindUVE::DirectionalLight:
@@ -225,7 +225,7 @@ constexpr float kMaximum2DCanvasZoomUVE = 4.00F;
         case EditorEntityKindUVE::Plane:
             return Kind::PlaneMesh3D;
     }
-    return Kind::Node3D;
+    return Kind::Object3D;
 }
 
 } // namespace
@@ -1934,9 +1934,9 @@ Scene::EntityUVE EditorUVE::CreateSceneNodeEntityInternalUVE(const Scene::Nodes:
         // Objects/UI — one .h + .cpp per kind holds the recipe: components to attach,
         // authored defaults, default entity name). No node-kind-specific recipe is authored in
         // this switch anymore.
-        case Scene::Nodes::SceneNodeKindUVE::Node3D:
-            entity = CreateNodeDefinitionEntityInternalUVE(Scene::Node3DNodeDefinitionUVE{},
-                                                            Scene::ApplyNode3DNodeDefinitionUVE);
+        case Scene::Nodes::SceneNodeKindUVE::Object3D:
+            entity = CreateNodeDefinitionEntityInternalUVE(Scene::Object3DNodeDefinitionUVE{},
+                                                            Scene::ApplyObject3DNodeDefinitionUVE);
             break;
         case Scene::Nodes::SceneNodeKindUVE::Camera3D:
             entity = CreateNodeDefinitionEntityInternalUVE(Scene::Camera3DNodeDefinitionUVE{},
@@ -2038,7 +2038,7 @@ Scene::EntityUVE EditorUVE::CreateSceneNodeEntityInternalUVE(const Scene::Nodes:
             entity = createNodeWithComponent(Scene::BoneAttachment3DNodeComponentUVE{});
             break;
         // SpringArm3D carries its own component like its neighbours, but its recipe
-        // (Node3D baseline plus seeding currentLength to the authored armLength the same way the
+        // (Object3D baseline plus seeding currentLength to the authored armLength the same way the
         // deserializer seeds it) is a definition's worth of behaviour, so it reads like the rest.
         case Scene::Nodes::SceneNodeKindUVE::SpringArm3D:
             entity = CreateNodeDefinitionEntityInternalUVE(Scene::SpringArm3DNodeDefinitionUVE{},
@@ -4000,7 +4000,7 @@ std::string EditorUVE::GetDefaultEntityNameUVE(const EditorEntityKindUVE kind) c
     // this legacy-kind mapper only picks which definition to ask, never authors a name itself.
     switch (kind) {
         case EditorEntityKindUVE::Empty:
-            return std::string{Scene::Node3DNodeDefinitionUVE::defaultName};
+            return std::string{Scene::Object3DNodeDefinitionUVE::defaultName};
         case EditorEntityKindUVE::Camera:
             return std::string{Scene::Camera3DNodeDefinitionUVE::defaultName};
         case EditorEntityKindUVE::DirectionalLight:

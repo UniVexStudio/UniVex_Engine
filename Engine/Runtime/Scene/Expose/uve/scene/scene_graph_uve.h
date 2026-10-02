@@ -81,7 +81,7 @@ private:
         /// then never opt into a worker at all.
         /// False for a pure Node, which is in the hierarchy but has no transform. A child never
         /// composes its world transform from a non-spatial parent; it starts a new transform chain
-        /// there, the way a Node3D under a plain Node does.
+        /// there, the way a Object3D under a plain Node does.
         bool spatial = true;
 
         ProcessModeUVE processModeInHierarchy = ProcessModeUVE::Inherit;

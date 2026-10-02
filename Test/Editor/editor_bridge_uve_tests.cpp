@@ -398,7 +398,7 @@ TEST(EditorBridgeUVETest, SnapshotUVE_CopiesHierarchyInspectorAndNativePanelSess
         ASSERT_TRUE(snapshot.inspector.parent.has_value());
         EXPECT_EQ(snapshot.inspector.parent->displayLabel, "Bridge Root");
         // A PlaneMesh3D is a SurfaceInstance3D: its own sections (the collision it was created with
-        // is drawn inside the primitive's section), its bases, Node3D, then the Node section.
+        // is drawn inside the primitive's section), its bases, Object3D, then the Node section.
         const std::vector<std::string> nodeSection{"process",           "physics-interpolation", "auto-translate",
                                                    "editor-description", "script",                "node-metadata"};
         std::vector<std::string> expectedDrawers{"mesh", "primitive-mesh", "surface-instance", "render-instance",

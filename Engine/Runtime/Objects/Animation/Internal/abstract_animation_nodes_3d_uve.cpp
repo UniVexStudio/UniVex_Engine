@@ -6,7 +6,7 @@
 #include "uve/component/bone_modifier_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
 #include "uve/nodes/3d/abstract_nodes_3d_uve.h"
-#include "uve/nodes/3d/node_3d_uve.h"
+#include "uve/nodes/3d/object_3d_uve.h"
 
 namespace UVE::Scene {
 
@@ -15,7 +15,7 @@ void ApplyBoneModifier3DBaseUVE(IEntityManagerUVE& entityManager, const EntityUV
     if (!entityManager.IsAliveUVE(entity)) {
         return;
     }
-    ApplyNode3DRecipeUVE(entityManager, entity, nameFallback);
+    ApplyObject3DRecipeUVE(entityManager, entity, nameFallback);
     if (!entityManager.HasComponentUVE<BoneModifierComponentUVE>(entity)) {
         entityManager.AddComponentUVE<BoneModifierComponentUVE>(entity, BoneModifierComponentUVE{});
     }

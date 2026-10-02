@@ -15,7 +15,7 @@ device check all pass.
 | Name strategy (final) | **Keep every existing object name** except two small families: the four **`*Body3D`** physics kinds (the word "Body" goes) and the two **`Animation*`** kinds (the word "Animation" stays, `Player`/`Tree` go) | 2026-10-02 |
 | The six new names | `Static3D`, `Rigid3D`, `Character3D`, `Kinematic3D` (short, direct — chosen from three options) and `AnimationSequencer`, `AnimationGraph` | 2026-10-02 |
 | Phase 2 (the six renames) | **Applied** — registry rows + legacy ids, `defaultName`s, C++ enum/definition names, file names, icon pairs, content catalogue, inspector labels, tests and docs | 2026-10-02 |
-| Everything else | `Camera3D`, `Light3D`, `DirectionalLight3D`, `WorldEnvironment3D`, `ReflectionProbe3D`, `Decal3D`, `FogVolume3D`, `MeshInstance3D`, `BoxMesh3D`, `SphereMesh3D`, `PlaneMesh3D`, `ParticleEmitter3D`, `AudioSource3D`, `Area3D`, `RayCast3D`, `SpringArm3D`, `Collider3D`, `Hitbox3D`, `Hurtbox3D`, `Projectile3D`, `InteractionArea3D`, `LODGroup3D`, `Occluder3D`, `VisibilityRegion3D`, `SpawnPoint3D`, `LevelStreamer3D`, `WorldPartition3D`, `NavigationRegion3D`, `NavigationAgent3D`, `Skeleton3D`, `BoneAttachment3D`, `Marker3D`, `SceneRoot`, `Folder`, `Viewport`, `Script`, `Canvas`, `UIText`, `UIImage`, `UIButton`, `Node3D` — **unchanged** | 2026-10-02 |
+| Everything else | `Camera3D`, `Light3D`, `DirectionalLight3D`, `WorldEnvironment3D`, `ReflectionProbe3D`, `Decal3D`, `FogVolume3D`, `MeshInstance3D`, `BoxMesh3D`, `SphereMesh3D`, `PlaneMesh3D`, `ParticleEmitter3D`, `AudioSource3D`, `Area3D`, `RayCast3D`, `SpringArm3D`, `Collider3D`, `Hitbox3D`, `Hurtbox3D`, `Projectile3D`, `InteractionArea3D`, `LODGroup3D`, `Occluder3D`, `VisibilityRegion3D`, `SpawnPoint3D`, `LevelStreamer3D`, `WorldPartition3D`, `NavigationRegion3D`, `NavigationAgent3D`, `Skeleton3D`, `BoneAttachment3D`, `Marker3D`, `SceneRoot`, `Folder`, `Viewport`, `Script`, `Canvas`, `UIText`, `UIImage`, `UIButton`, `Object3D` — **unchanged** | 2026-10-02 |
 | Phase 1 (folders) | **Applied** — 110 runtime files + 5 test files moved, 20 files' path references updated, no include line changed | 2026-10-02 |
 
 ### Phase 1 — what actually moved
@@ -118,7 +118,7 @@ authorable things live — and the singular/plural pair `Object/` + `Objects/` n
    physics) and the `Player`/`Tree` pair in the two animation kinds (the word `Animation` stays).
    New strings must be plain words that already exist in the field — nothing invented.
 3. **One string per object.** The placeable label and the default Outliner name are the *same
-   string*. Today 16 kinds break this badly (a new `Hitbox3D` is called "Node3D") and 6 break it
+   string*. Today 16 kinds break this badly (a new `Hitbox3D` is called "Object3D") and 6 break it
    mildly — Phase 0 fixes the label/default-name drift for every kind, renamed or not.
 4. **`typeId` = snake_case of the label**, icon file = `typeId`, and the icon follows every rename.
 5. **Locked by a test.** A registry invariant test (every kind: unique `typeId`, icon exists,
@@ -188,7 +188,7 @@ for zero user-visible gain. The node's user-facing name is what changes.
 
 ### Legacy names the engine must keep loading
 
-Old `typeId` strings stay readable forever through aliases (the existing `"empty"` → `node_3d` row
+Old `typeId` strings stay readable forever through aliases (the `"empty"` and `"node_3d"` → `object_3d` rows
 plus the 6 new ones: `static_body_3d`, `rigid_body_3d`, `character_body_3d`, `animatable_body_3d`,
 `animation_player`, `animation_tree`). Old `.uvscene` and prefab files therefore open with the right
 kind, with one test per alias.
@@ -198,7 +198,7 @@ kind, with one test per alias.
 1. **Saved scenes.** Only `typeId` is written into a document. Each renamed `typeId` gets a legacy
    alias in `FindSceneNodeDescriptorUVE(std::string_view)`
    (`Engine/Runtime/Scene/Internal/nodes/scene_node_registry_uve.cpp:119-126`), exactly like the
-   existing `"empty"` → `node_3d` row. Old `.uvscene`/prefab files keep opening with the right kind.
+   existing `"empty"` and `"node_3d"` → `object_3d` rows. Old `.uvscene`/prefab files keep opening with the right kind.
    One test per alias: write a document with the old id, load it, assert the new kind.
 2. **Component JSON keys are not touched.** The component structs keep their names on purpose
    (Section 4), so no save-format migration is needed at all — the only saved string that changes is

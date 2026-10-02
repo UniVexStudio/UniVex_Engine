@@ -13,7 +13,7 @@ namespace UVE::Scene::Nodes {
 enum class SceneNodeKindUVE : std::uint8_t {
     // The transform-only base node. Formerly spelled `Empty`; value 0 is unchanged so anything
     // that stored the raw enumerator still decodes.
-    Node3D = 0,
+    Object3D = 0,
     Area3D,
     RayCast3D,
     Static3D,
@@ -67,7 +67,7 @@ enum class SceneNodeKindUVE : std::uint8_t {
 };
 
 struct SceneNodeDescriptorUVE final {
-    SceneNodeKindUVE kind = SceneNodeKindUVE::Node3D;
+    SceneNodeKindUVE kind = SceneNodeKindUVE::Object3D;
     std::string_view typeId;
     std::string_view displayName;
     std::string_view category;

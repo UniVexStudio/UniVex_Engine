@@ -1044,7 +1044,7 @@ void DeclareNodeBasesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
             }));
 }
 
-/// Skeleton3D: a Node3D child. Its bones are read-only here - they come from the rigged model the
+/// Skeleton3D: a Object3D child. Its bones are read-only here - they come from the rigged model the
 /// Source names and change only by re-exporting it - so they are declared for display and saving,
 /// with a drawer that shows the hierarchy instead of a generic editor.
 void DeclareSkeletonUVE(std::vector<TypeMetadataEntryUVE>& entries) {

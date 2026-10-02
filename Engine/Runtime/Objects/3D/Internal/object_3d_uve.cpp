@@ -1,6 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-#include "uve/nodes/3d/node_3d_uve.h"
+#include "uve/nodes/3d/object_3d_uve.h"
 
 #include <string>
 #include <vector>
@@ -75,21 +75,21 @@ void BakeTransformIntoChildrenUVE(IEntityManagerUVE& entityManager, const Entity
 
 } // namespace
 
-bool IsNode3DNodeDefinitionValidUVE(const Node3DNodeDefinitionUVE& /*value*/) noexcept {
-    // Node3D carries no authored data - a definition with default-initialized (that is,
+bool IsObject3DNodeDefinitionValidUVE(const Object3DNodeDefinitionUVE& /*value*/) noexcept {
+    // Object3D carries no authored data - a definition with default-initialized (that is,
     // absent) fields is always valid. The validator exists so the kind keeps the same
     // validate-before-apply seam as every other node kind.
     return true;
 }
 
-void ApplyNode3DNodeDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                  const Node3DNodeDefinitionUVE& value) {
+void ApplyObject3DNodeDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
+                                  const Object3DNodeDefinitionUVE& value) {
     static_cast<void>(value);
-    EnsureNode3DBaselineUVE(entityManager, entity, Node3DNodeDefinitionUVE::defaultName);
+    EnsureObject3DBaselineUVE(entityManager, entity, Object3DNodeDefinitionUVE::defaultName);
     if (!entityManager.IsAliveUVE(entity)) {
         return;
     }
-    // A Node3D's Inspector is Transform, Visibility and the Node section, and it has no Add
+    // A Object3D's Inspector is Transform, Visibility and the Node section, and it has no Add
     // Component, so everything it shows is attached here.
     EnsureComponentUVE<VisibilityComponentUVE>(entityManager, entity);
     EnsureCommonNodeSectionUVE(entityManager, entity);
@@ -108,7 +108,7 @@ void EnsureCommonNodeSectionUVE(IEntityManagerUVE& entityManager, const EntityUV
     EnsureComponentUVE<NodeMetadataComponentUVE>(entityManager, entity);
 }
 
-void EnsureNode3DBaselineUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
+void EnsureObject3DBaselineUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
                              const std::string_view nameFallback) {
     if (!entityManager.IsAliveUVE(entity)) {
         return;
@@ -147,7 +147,7 @@ void EnsureNodeBaselineUVE(IEntityManagerUVE& entityManager, const EntityUVE ent
     if (entityManager.HasComponentUVE<WorldTransformComponentUVE>(entity)) {
         entityManager.RemoveComponentUVE<WorldTransformComponentUVE>(entity);
     }
-    // Visibility is a Node3D property: a pure Node draws nothing, so it has nothing to hide.
+    // Visibility is a Object3D property: a pure Node draws nothing, so it has nothing to hide.
     if (entityManager.HasComponentUVE<VisibilityComponentUVE>(entity)) {
         entityManager.RemoveComponentUVE<VisibilityComponentUVE>(entity);
     }

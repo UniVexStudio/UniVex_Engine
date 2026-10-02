@@ -13,7 +13,7 @@ bool IsPlaneMesh3DNodeDefinitionValidUVE(const PlaneMesh3DNodeDefinitionUVE& val
 
 void ApplyPlaneMesh3DNodeDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
                                        const PlaneMesh3DNodeDefinitionUVE& value) {
-    // A SurfaceInstance3D: that base (RenderInstance3D, Node3D, the Node section) first, then
+    // A SurfaceInstance3D: that base (RenderInstance3D, Object3D, the Node section) first, then
     // this kind's own part.
     ApplySurfaceInstance3DBaseUVE(entityManager, entity, PlaneMesh3DNodeDefinitionUVE::defaultName);
     entityManager.AddComponentUVE<PrimitiveMeshComponentUVE>(entity, value.mesh);

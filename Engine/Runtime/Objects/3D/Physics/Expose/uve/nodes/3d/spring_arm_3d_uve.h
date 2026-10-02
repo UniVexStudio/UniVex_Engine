@@ -7,7 +7,7 @@
 #include <string_view>
 
 #include "uve/component/entity_uve.h"
-#include "uve/nodes/3d/node_3d_common_uve.h"
+#include "uve/nodes/3d/object_3d_common_uve.h"
 
 namespace UVE::Scene {
 
@@ -47,7 +47,7 @@ struct SpringArm3DNodeComponentUVE final {
 
 [[nodiscard]] bool IsSpringArm3DNodeComponentValidUVE(const SpringArm3DNodeComponentUVE& value) noexcept;
 
-/// Authoring definition for the SpringArm3D node: the Node3D baseline plus the arm component,
+/// Authoring definition for the SpringArm3D node: the Object3D baseline plus the arm component,
 /// seeded at full length the same way the deserializer seeds it. `defaultName` is what a
 /// freshly created arm is called.
 struct SpringArm3DNodeDefinitionUVE final {
@@ -58,9 +58,9 @@ struct SpringArm3DNodeDefinitionUVE final {
 
 [[nodiscard]] bool IsSpringArm3DNodeDefinitionValidUVE(const SpringArm3DNodeDefinitionUVE& value) noexcept;
 
-/// Attaches this node's components to `entity`. Every application first guarantees the Node3D
-/// baseline (Transform/WorldTransform/Hierarchy/Name) through EnsureNode3DBaselineUVE - this
-/// kind is Node3D plus its recipe. The entity must be alive and must not already have a
+/// Attaches this node's components to `entity`. Every application first guarantees the Object3D
+/// baseline (Transform/WorldTransform/Hierarchy/Name) through EnsureObject3DBaselineUVE - this
+/// kind is Object3D plus its recipe. The entity must be alive and must not already have a
 /// SpringArm3DNodeComponentUVE.
 void ApplySpringArm3DNodeDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
                                        const SpringArm3DNodeDefinitionUVE& value);

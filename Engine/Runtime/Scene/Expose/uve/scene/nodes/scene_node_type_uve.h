@@ -13,25 +13,25 @@ class IEntityManagerUVE;
 /// its stable type id, and copied with the rest of the node by duplicate, undo and prefabs.
 ///
 /// It exists because the type cannot be read back from components alone: a Static3D and a
-/// Collider3D carry the same collider, and a Node3D, a BoxMesh3D and a SphereMesh3D share every
+/// Collider3D carry the same collider, and a Object3D, a BoxMesh3D and a SphereMesh3D share every
 /// component but one. Without it, anything that wants to say what a node is guesses, and the
 /// guesses disagree.
 struct SceneNodeTypeComponentUVE final {
-    Nodes::SceneNodeKindUVE kind = Nodes::SceneNodeKindUVE::Node3D;
+    Nodes::SceneNodeKindUVE kind = Nodes::SceneNodeKindUVE::Object3D;
 };
 
 /// True when `value` names a kind the node registry knows.
 [[nodiscard]] bool IsSceneNodeTypeComponentValidUVE(const SceneNodeTypeComponentUVE& value) noexcept;
 
 /// The node kind `entity` is: its stored type when it has one, otherwise InferSceneNodeKindUVE.
-/// Node3D for a dead entity.
+/// Object3D for a dead entity.
 [[nodiscard]] Nodes::SceneNodeKindUVE ResolveSceneNodeKindUVE(const IEntityManagerUVE& entityManager,
                                                               EntityUVE entity);
 
 /// The best reading of `entity`'s kind from its components alone, for nodes that have no stored
 /// type: those in scenes saved before the type was stored, and entities made in code. Exact for
 /// every kind with a component of its own; where two kinds are built from the same components
-/// it picks one and says which in the implementation. Node3D when nothing more specific fits.
+/// it picks one and says which in the implementation. Object3D when nothing more specific fits.
 [[nodiscard]] Nodes::SceneNodeKindUVE InferSceneNodeKindUVE(const IEntityManagerUVE& entityManager,
                                                             EntityUVE entity);
 

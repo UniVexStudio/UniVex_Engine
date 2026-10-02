@@ -61,7 +61,7 @@ protected:
 };
 
 TEST_F(SceneNodeTypeUVETest, InferenceReadsEveryKindThatHasComponentsOfItsOwn) {
-    EXPECT_EQ(InferSceneNodeKindUVE(entityManager, MakeUVE()), Kind::Node3D);
+    EXPECT_EQ(InferSceneNodeKindUVE(entityManager, MakeUVE()), Kind::Object3D);
     EXPECT_EQ(InferSceneNodeKindUVE(entityManager, MakeWithUVE(SceneRootComponentUVE{})), Kind::SceneRoot);
     EXPECT_EQ(InferSceneNodeKindUVE(entityManager, MakeWithUVE(CameraComponentUVE{})), Kind::Camera3D);
     EXPECT_EQ(InferSceneNodeKindUVE(entityManager, MakeWithUVE(MeshComponentUVE{})), Kind::MeshInstance3D);
@@ -109,7 +109,7 @@ TEST_F(SceneNodeTypeUVETest, AStoredTypeWinsOverWhatTheComponentsSuggest) {
 
     const EntityUVE dead = MakeUVE();
     entityManager.DestroyEntityUVE(dead);
-    EXPECT_EQ(ResolveSceneNodeKindUVE(entityManager, dead), Kind::Node3D);
+    EXPECT_EQ(ResolveSceneNodeKindUVE(entityManager, dead), Kind::Object3D);
 }
 
 TEST_F(SceneNodeTypeUVETest, TheTypeSurvivesASaveByItsStableId) {
@@ -139,13 +139,13 @@ TEST_F(SceneNodeTypeUVETest, UnknownAndLegacyIdsLoadWithoutFailingTheScene) {
     const std::vector<EntityUVE> future = restoreWithType("hover_car_3d");
     ASSERT_EQ(future.size(), 1U);
     EXPECT_FALSE(entityManager.HasComponentUVE<SceneNodeTypeComponentUVE>(future.front()));
-    EXPECT_EQ(ResolveSceneNodeKindUVE(entityManager, future.front()), Kind::Node3D);
+    EXPECT_EQ(ResolveSceneNodeKindUVE(entityManager, future.front()), Kind::Object3D);
 
-    // The id Node3D had before it was renamed still names it.
+    // The id Object3D had before it was renamed still names it.
     const std::vector<EntityUVE> legacy = restoreWithType("empty");
     ASSERT_EQ(legacy.size(), 1U);
     ASSERT_TRUE(entityManager.HasComponentUVE<SceneNodeTypeComponentUVE>(legacy.front()));
-    EXPECT_EQ(ResolveSceneNodeKindUVE(entityManager, legacy.front()), Kind::Node3D);
+    EXPECT_EQ(ResolveSceneNodeKindUVE(entityManager, legacy.front()), Kind::Object3D);
 
     // Scenes saved before the rename keep naming the four 3D body kinds and the two animation kinds
     // by their old ids: the alias has to land on the same kind, not on an untyped node.
