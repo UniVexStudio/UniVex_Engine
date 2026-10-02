@@ -512,7 +512,7 @@ TEST(EditorUVETest, WorldEnvironmentComponentUVE_AttachEditUndoRedoThroughEditor
         Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
 
         const Scene::EntityUVE entity =
-            editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Node3D);
+            editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Object3D);
         ASSERT_NE(entity, Scene::kInvalidEntityUVE);
         ASSERT_TRUE(entityManager.HasComponentUVE<Scene::TransformComponentUVE>(entity));
         EXPECT_FALSE(entityManager.HasComponentUVE<Scene::WorldEnvironment3DNodeComponentUVE>(entity));
@@ -1045,7 +1045,7 @@ TEST(EditorUVETest, NewNodeDefaultsUVE_ParentAndPlacementFollowThePreferences) {
 
         // By default: under the selection, at its origin, whatever the camera looks at.
         editor.SetViewportCameraFocusUVE(Math::Vector3UVE{3.0F, 0.0F, -2.0F});
-        const Scene::EntityUVE parent = editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Node3D);
+        const Scene::EntityUVE parent = editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Object3D);
         ASSERT_NE(parent, Scene::kInvalidEntityUVE);
         const Scene::EntityUVE root = parentOf(parent);
         const Scene::EntityUVE child = editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::BoxMesh3D);
@@ -1056,13 +1056,13 @@ TEST(EditorUVETest, NewNodeDefaultsUVE_ParentAndPlacementFollowThePreferences) {
         // Not under the selection: straight under the scene root.
         ASSERT_TRUE(editor.SetEditorSettingUVE(Id::kNewNodesUnderSelectionUVE, false));
         editor.SelectEntityUVE(parent);
-        const Scene::EntityUVE sibling = editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Node3D);
+        const Scene::EntityUVE sibling = editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Object3D);
         EXPECT_EQ(parentOf(sibling), root);
 
         // At the view focus: under the root, that point itself...
         ASSERT_TRUE(editor.SetEditorSettingUVE(Id::kNewNodePlacementUVE,
                                                static_cast<std::int64_t>(EditorNewNodePlacementUVE::ViewFocus)));
-        const Scene::EntityUVE focused = editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Node3D);
+        const Scene::EntityUVE focused = editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Object3D);
         EXPECT_FLOAT_EQ(localPositionOf(focused).x, 3.0F);
         EXPECT_FLOAT_EQ(localPositionOf(focused).z, -2.0F);
 
@@ -1073,7 +1073,7 @@ TEST(EditorUVETest, NewNodeDefaultsUVE_ParentAndPlacementFollowThePreferences) {
         graph.SetLocalTransformUVE(entities, parent, moved);
         graph.UpdateUVE(entities);
         editor.SelectEntityUVE(parent);
-        const Scene::EntityUVE nested = editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Node3D);
+        const Scene::EntityUVE nested = editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Object3D);
         EXPECT_EQ(parentOf(nested), parent);
         EXPECT_FLOAT_EQ(localPositionOf(nested).x, 2.0F);
         EXPECT_FLOAT_EQ(localPositionOf(nested).z, -2.0F);
@@ -1111,7 +1111,7 @@ TEST(EditorUVETest, PlayModePreferencesUVE_PauseSaveAndStayInTheTab) {
         ASSERT_TRUE(editor.SetEditorSettingUVE(Id::kPlayPauseOnStartUVE, true));
         ASSERT_TRUE(editor.SetEditorSettingUVE(Id::kPlaySwitchToGameUVE, false));
         ASSERT_TRUE(editor.SetEditorSettingUVE(Id::kPlaySaveSceneFirstUVE, true));
-        ASSERT_NE(editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Node3D), Scene::kInvalidEntityUVE);
+        ASSERT_NE(editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Object3D), Scene::kInvalidEntityUVE);
         ASSERT_TRUE(editor.IsSceneDirtyUVE());
         ASSERT_TRUE(editor.EnterPlayModeUVE());
         EXPECT_EQ(editor.GetPlayModeStateUVE(), EditorPlayModeStateUVE::Paused);
@@ -1197,7 +1197,7 @@ TEST(EditorUVETest, SiblingOrderUVE_MoveDuplicateAndDeleteKeepPlacesThroughUndo)
         std::vector<Scene::EntityUVE> nodes;
         for (int i = 0; i < 3; ++i) {
             editor.SelectEntityUVE(root);
-            nodes.push_back(editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Node3D));
+            nodes.push_back(editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Object3D));
             ASSERT_NE(nodes.back(), Scene::kInvalidEntityUVE);
         }
         const auto order = [&] { return sceneGraph.GetChildrenUVE(entityManager, root); };
@@ -2023,7 +2023,7 @@ TEST(EditorUVETest, CreateDocumentEntityUVE_CreatesSelectedDirtyRootArchetypes) 
         EXPECT_FALSE(entityManager.HasComponentUVE<Scene::LightComponentUVE>(empty));
         EXPECT_FALSE(entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(empty));
         ASSERT_TRUE(entityManager.HasComponentUVE<Scene::NameComponentUVE>(empty));
-        EXPECT_EQ(entityManager.GetComponentUVE<Scene::NameComponentUVE>(empty).name, "Node3D");
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::NameComponentUVE>(empty).name, "Object3D");
         EXPECT_EQ(editor.GetSelectedEntityUVE(), empty);
         EXPECT_TRUE(editor.IsSceneDirtyUVE());
 
@@ -4790,7 +4790,7 @@ TEST(EditorUVETest, RetargetPreviewUVE_PutsTheSceneAsideAndBringsItBack) {
         EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_retarget_preview.uvscene");
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-        const Scene::EntityUVE mine = editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Node3D);
+        const Scene::EntityUVE mine = editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Object3D);
         ASSERT_NE(mine, Scene::kInvalidEntityUVE);
         const auto namesInWorld = [&entityManager] {
             std::vector<std::string> names;
@@ -4812,7 +4812,7 @@ TEST(EditorUVETest, RetargetPreviewUVE_PutsTheSceneAsideAndBringsItBack) {
         EXPECT_FALSE(editor.IsSceneDirtyUVE());
         EXPECT_FALSE(editor.SaveSceneUVE());
         EXPECT_FALSE(editor.EnterPlayModeUVE());
-        EXPECT_EQ(editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Node3D), Scene::kInvalidEntityUVE);
+        EXPECT_EQ(editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Object3D), Scene::kInvalidEntityUVE);
 
         // The world: a sun and the humanoid with a colour for each of its bones (the sky, the ground
         // and the floor are the viewport's studio view, not nodes).
@@ -4836,9 +4836,9 @@ TEST(EditorUVETest, RetargetPreviewUVE_PutsTheSceneAsideAndBringsItBack) {
         EXPECT_FALSE(EditorUVEAccessUVE::IsRetargetPreviewActiveUVE(editor));
         EXPECT_FALSE(has("Retarget Preview"));
         EXPECT_FALSE(has("Humanoid"));
-        EXPECT_TRUE(has("Node3D")) << "the scene is back";
+        EXPECT_TRUE(has("Object3D")) << "the scene is back";
         EXPECT_TRUE(editor.IsSceneDirtyUVE()) << "as unsaved as it was";
-        EXPECT_TRUE(editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Node3D) != Scene::kInvalidEntityUVE);
+        EXPECT_TRUE(editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Object3D) != Scene::kInvalidEntityUVE);
         editor.ShutdownUVE();
     }
     engine.Shutdown();
@@ -5022,7 +5022,7 @@ TEST(EditorUVETest, NodeMetadataUVE_EveryEditIsOneUndoStep) {
     engine.Shutdown();
 }
 
-TEST(EditorUVETest, RenderInstanceChildInspectorUVE_IsOwnSectionThenBasesThenNode3DThenNode) {
+TEST(EditorUVETest, RenderInstanceChildInspectorUVE_IsOwnSectionThenBasesThenObject3DThenNode) {
     Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
     engine.Init();
     ASSERT_TRUE(engine.Load());
@@ -5056,7 +5056,7 @@ TEST(EditorUVETest, SunAndWorldEnvironmentInspectorsUVE_FollowTheirClassChains) 
         EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_sun_environment_inspector.uvscene");
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-        // DirectionalLight3D: its own section, then LightEmitter3D, RenderInstance3D, Node3D, Node.
+        // DirectionalLight3D: its own section, then LightEmitter3D, RenderInstance3D, Object3D, Node.
         const Scene::EntityUVE sun = editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::DirectionalLight3D);
         ASSERT_NE(sun, Scene::kInvalidEntityUVE);
         EXPECT_EQ(Scene::ResolveSceneNodeKindUVE(entityManager, sun), Scene::Nodes::SceneNodeKindUVE::DirectionalLight3D);
@@ -5079,7 +5079,7 @@ TEST(EditorUVETest, SunAndWorldEnvironmentInspectorsUVE_FollowTheirClassChains) 
     engine.Shutdown();
 }
 
-TEST(EditorUVETest, SurfaceInstanceChildInspectorUVE_IsOwnSectionThenSurfaceRenderNode3DNode) {
+TEST(EditorUVETest, SurfaceInstanceChildInspectorUVE_IsOwnSectionThenSurfaceRenderObject3DNode) {
     Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
     engine.Init();
     ASSERT_TRUE(engine.Load());
@@ -5147,7 +5147,7 @@ TEST(EditorUVETest, CharacterBodyInspectorUVE_IsItsChainToTheRootAndNothingElse)
         const Scene::EntityUVE body = entityManager.CreateEntityUVE();
         AttachRootUVE(engine, body, Scene::TransformComponentUVE{});
         Scene::ApplyCharacter3DNodeDefinitionUVE(entityManager, body, Scene::Character3DNodeDefinitionUVE{});
-        // Character3D > SolidBody3D > PhysicsObject3D > Node3D > Node. The capsule, layer and mask
+        // Character3D > SolidBody3D > PhysicsObject3D > Object3D > Node. The capsule, layer and mask
         // are drawn inside PhysicsObject3D, so the collider has no section of its own.
         EXPECT_EQ(EditorUVEAccessUVE::GetEligibleInspectorDrawerIdsUVE(editor, body),
                   (std::vector<std::string>{"character-controller", "solid-body", "physics-object", "transform",
@@ -5205,10 +5205,10 @@ TEST(EditorUVETest, InspectorHeadersUVE_SpellOutTheClassChain) {
             editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::AnimationSequencer);
         ASSERT_NE(body, Scene::kInvalidEntityUVE);
         ASSERT_NE(player, Scene::kInvalidEntityUVE);
-        // Transform and Visibility sit under Node3D, the common section under Node.
+        // Transform and Visibility sit under Object3D, the common section under Node.
         EXPECT_EQ(EditorUVEAccessUVE::GetInspectorGroupHeadersUVE(editor, body),
-                  (std::vector<std::string>{"Node3D", "Node"}));
-        // A pure Node has no Node3D part to name.
+                  (std::vector<std::string>{"Object3D", "Node"}));
+        // A pure Node has no Object3D part to name.
         EXPECT_EQ(EditorUVEAccessUVE::GetInspectorGroupHeadersUVE(editor, player), (std::vector<std::string>{"Node"}));
         EXPECT_EQ(EditorUVEAccessUVE::GetInspectorGroupHeadersUVE(editor, editor.GetDocumentSceneRootUVE()),
                   (std::vector<std::string>{"Node"}));
@@ -5253,7 +5253,7 @@ TEST(EditorUVETest, AnimationNodesUVE_APureNodeReparentsAndUndoes) {
         const Scene::EntityUVE player =
             editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::AnimationSequencer);
         editor.SelectEntityUVE(editor.GetDocumentSceneRootUVE());
-        const Scene::EntityUVE door = editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Node3D);
+        const Scene::EntityUVE door = editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Object3D);
         ASSERT_NE(door, Scene::kInvalidEntityUVE);
         ASSERT_NE(player, Scene::kInvalidEntityUVE);
         const Scene::EntityUVE rootParent = entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(player).parent;
@@ -5657,7 +5657,7 @@ TEST(EditorUVETest, Skeleton3DUVE_StartsEmptyAndTakesItsBonesFromARiggedModel) {
         const Scene::EntityUVE skeleton = editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Skeleton3D);
         ASSERT_NE(skeleton, Scene::kInvalidEntityUVE);
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-        // A Node3D child, empty until pointed at a rig, and named for what it is.
+        // A Object3D child, empty until pointed at a rig, and named for what it is.
         EXPECT_EQ(entityManager.GetComponentUVE<Scene::NameComponentUVE>(skeleton).name, "Skeleton3D");
         EXPECT_TRUE(entityManager.GetComponentUVE<Scene::Skeleton3DNodeComponentUVE>(skeleton).bones.empty());
         EXPECT_EQ(EditorUVEAccessUVE::GetEligibleInspectorDrawerIdsUVE(editor, skeleton),
@@ -5686,7 +5686,7 @@ TEST(EditorUVETest, Skeleton3DUVE_StartsEmptyAndTakesItsBonesFromARiggedModel) {
     std::filesystem::remove_all("uve_editor_tests_skeleton_derived");
 }
 
-TEST(EditorUVETest, Node3DInspectorUVE_IsTransformVisibilityAndTheNodeSection) {
+TEST(EditorUVETest, Object3DInspectorUVE_IsTransformVisibilityAndTheNodeSection) {
     Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
     engine.Init();
     ASSERT_TRUE(engine.Load());
@@ -5696,7 +5696,7 @@ TEST(EditorUVETest, Node3DInspectorUVE_IsTransformVisibilityAndTheNodeSection) {
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
         const Scene::EntityUVE node = entityManager.CreateEntityUVE();
         AttachRootUVE(engine, node, Scene::TransformComponentUVE{});
-        Scene::ApplyNode3DNodeDefinitionUVE(entityManager, node, Scene::Node3DNodeDefinitionUVE{});
+        Scene::ApplyObject3DNodeDefinitionUVE(entityManager, node, Scene::Object3DNodeDefinitionUVE{});
         EXPECT_EQ(EditorUVEAccessUVE::GetEligibleInspectorDrawerIdsUVE(editor, node),
                   (std::vector<std::string>{"transform", "visibility", "process", "physics-interpolation",
                                             "auto-translate", "editor-description", "script", "node-metadata"}));

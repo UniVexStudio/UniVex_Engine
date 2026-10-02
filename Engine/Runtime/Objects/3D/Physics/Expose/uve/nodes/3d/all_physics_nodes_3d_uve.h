@@ -2,7 +2,7 @@
 
 #pragma once
 
-// Public aggregate for Node3D kinds owned by the 3D physics-node subdomain.
+// Public aggregate for Object3D kinds owned by the 3D physics-node subdomain.
 #include "uve/nodes/3d/abstract_physics_nodes_3d_uve.h"
 #include "uve/nodes/3d/kinematic_3d_uve.h"
 #include "uve/nodes/3d/area_3d_uve.h"

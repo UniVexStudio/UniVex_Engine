@@ -36,7 +36,7 @@ struct DirectionalLight3DNodeDefinitionUVE final {
     }();
 };
 
-/// LightEmitter3D's recipe (RenderInstance3D, Node3D, Node), then this node's own component.
+/// LightEmitter3D's recipe (RenderInstance3D, Object3D, Node), then this node's own component.
 /// Components already on the entity keep their values.
 void ApplyDirectionalLight3DNodeDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
                                               const DirectionalLight3DNodeDefinitionUVE& value);

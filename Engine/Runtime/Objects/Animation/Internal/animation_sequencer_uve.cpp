@@ -16,7 +16,7 @@
 #include "uve/entity/i_entity_manager_uve.h"
 #include "uve/nodes/3d/abstract_animation_nodes_3d_uve.h"
 #include "uve/math/quaternion_uve.h"
-#include "uve/nodes/3d/node_3d_uve.h"
+#include "uve/nodes/3d/object_3d_uve.h"
 #include "uve/nodes/3d/skeleton_3d_uve.h"
 
 namespace UVE::Scene {

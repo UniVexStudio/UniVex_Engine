@@ -85,31 +85,31 @@ called in the Outliner. **Bold** marks a broken default name.
 | # | Kind (C++) | typeId | Create label | Default node name | Category | Definition / component header | Godot 4.4 counterpart |
 |---|---|---|---|---|---|---|---|
 | 1 | `SceneRoot` | `scene_root` | SceneRoot | SceneRoot | Scene | `Scene/Expose/uve/scene/nodes/scene_root_uve.h` | none — a Godot scene root is just any node |
-| 2 | `Node3D` | `node_3d` | Node3D | Node3D | Scene | `Nodes/3D/Expose/uve/nodes/3d/node_3d_uve.h` | **Node3D** ✅ |
+| 2 | `Object3D` | `object_3d` | Object3D | Object3D | Scene | `Nodes/3D/Expose/uve/nodes/3d/object_3d_uve.h` | **Object3D** ✅ |
 | 3 | `Area3D` | `area_3d` | Area3D | Area3D | Physics | `Nodes/3D/Physics/Expose/uve/nodes/3d/area_3d_uve.h` | **Area3D** ✅ |
-| 4 | `RayCast3D` | `ray_cast_3d` | RayCast3D | **Node3D** | Physics | `.../3d/ray_cast_3d_uve.h` | **RayCast3D** ✅ |
+| 4 | `RayCast3D` | `ray_cast_3d` | RayCast3D | **Object3D** | Physics | `.../3d/ray_cast_3d_uve.h` | **RayCast3D** ✅ |
 | 5 | `StaticBody3D` | `static_body_3d` | StaticBody3D | StaticBody3D | Physics | `.../3d/static_body_3d_uve.h` | **StaticBody3D** ✅ |
 | 6 | `AnimatableBody3D` | `animatable_body_3d` | AnimatableBody3D | AnimatableBody3D | Physics | `.../3d/animatable_body_3d_uve.h` | **AnimatableBody3D** ✅ |
-| 7 | `NavigationRegion3D` | `navigation_region_3d` | NavigationRegion3D | **Node3D** | Navigation | `Nodes/AI/3D/Expose/uve/nodes/3d/navigation_region_3d_uve.h` | **NavigationRegion3D** ✅ |
-| 8 | `NavigationAgent3D` | `navigation_agent_3d` | NavigationAgent3D | **Node3D** | Navigation | `.../3d/navigation_agent_3d_uve.h` | **NavigationAgent3D** ✅ |
+| 7 | `NavigationRegion3D` | `navigation_region_3d` | NavigationRegion3D | **Object3D** | Navigation | `Nodes/AI/3D/Expose/uve/nodes/3d/navigation_region_3d_uve.h` | **NavigationRegion3D** ✅ |
+| 8 | `NavigationAgent3D` | `navigation_agent_3d` | NavigationAgent3D | **Object3D** | Navigation | `.../3d/navigation_agent_3d_uve.h` | **NavigationAgent3D** ✅ |
 | 9 | `Skeleton3D` | `skeleton_3d` | Skeleton3D | Skeleton3D | Animation | `Nodes/Animation/Expose/uve/nodes/3d/skeleton_3d_uve.h` | **Skeleton3D** ✅ |
-| 10 | `BoneAttachment3D` | `bone_attachment_3d` | BoneAttachment3D | **Node3D** | Animation | `.../3d/bone_attachment_3d_uve.h` | **BoneAttachment3D** ✅ |
+| 10 | `BoneAttachment3D` | `bone_attachment_3d` | BoneAttachment3D | **Object3D** | Animation | `.../3d/bone_attachment_3d_uve.h` | **BoneAttachment3D** ✅ |
 | 11 | `SpringArm3D` | `spring_arm_3d` | SpringArm3D | SpringArm3D | Camera | `.../3d/spring_arm_3d_uve.h` | **SpringArm3D** ✅ |
-| 12 | `Marker3D` | `marker_3d` | Marker3D | **Node3D** | Scene | `.../3d/marker_3d_uve.h` | **Marker3D** ✅ |
-| 13 | `Hitbox3D` | `hitbox_3d` | Hitbox3D | **Node3D** | Combat | `.../3d/hitbox_3d_uve.h` | none — Godot games build these out of `Area3D` |
-| 14 | `Hurtbox3D` | `hurtbox_3d` | Hurtbox3D | **Node3D** | Combat | `.../3d/hurtbox_3d_uve.h` | none — same |
-| 15 | `Projectile3D` | `projectile_3d` | Projectile3D | **Node3D** | Combat | `.../3d/projectile_3d_uve.h` | none |
-| 16 | `InteractionArea3D` | `interaction_area_3d` | InteractionArea3D | **Node3D** | Gameplay | `.../3d/interaction_area_3d_uve.h` | none — the interactor/focus loop is per-game in Godot |
+| 12 | `Marker3D` | `marker_3d` | Marker3D | **Object3D** | Scene | `.../3d/marker_3d_uve.h` | **Marker3D** ✅ |
+| 13 | `Hitbox3D` | `hitbox_3d` | Hitbox3D | **Object3D** | Combat | `.../3d/hitbox_3d_uve.h` | none — Godot games build these out of `Area3D` |
+| 14 | `Hurtbox3D` | `hurtbox_3d` | Hurtbox3D | **Object3D** | Combat | `.../3d/hurtbox_3d_uve.h` | none — same |
+| 15 | `Projectile3D` | `projectile_3d` | Projectile3D | **Object3D** | Combat | `.../3d/projectile_3d_uve.h` | none |
+| 16 | `InteractionArea3D` | `interaction_area_3d` | InteractionArea3D | **Object3D** | Gameplay | `.../3d/interaction_area_3d_uve.h` | none — the interactor/focus loop is per-game in Godot |
 | 17 | `WorldEnvironment3D` | `world_environment_3d` | **WorldEnvironment** | WorldEnvironment | Rendering | `.../3d/world_environment_3d_uve.h` | `WorldEnvironment` (no `3D`) |
-| 18 | `ReflectionProbe3D` | `reflection_probe_3d` | ReflectionProbe3D | **Node3D** | Rendering | `.../3d/reflection_probe_3d_uve.h` | `ReflectionProbe` (no `3D`) |
+| 18 | `ReflectionProbe3D` | `reflection_probe_3d` | ReflectionProbe3D | **Object3D** | Rendering | `.../3d/reflection_probe_3d_uve.h` | `ReflectionProbe` (no `3D`) |
 | 19 | `Decal3D` | `decal_3d` | Decal3D | Decal3D | Rendering | `.../3d/decal_3d_uve.h` | `Decal` (no `3D`) |
 | 20 | `FogVolume3D` | `fog_volume_3d` | FogVolume3D | FogVolume3D | Rendering | `.../3d/fog_volume_3d_uve.h` | `FogVolume` (no `3D`) |
-| 21 | `LODGroup3D` | `lod_group_3d` | LODGroup3D | **Node3D** | Optimization | `.../3d/lod_group_3d_uve.h` | none — Godot does LOD inside the mesh/importer |
-| 22 | `Occluder3D` | `occluder_3d` | Occluder3D | **Node3D** | Optimization | `.../3d/occluder_3d_uve.h` | ⚠ name taken: Godot's `Occluder3D` is an abstract **Resource**; the node is `OccluderInstance3D` |
-| 23 | `VisibilityRegion3D` | `visibility_region_3d` | VisibilityRegion3D | **Node3D** | Optimization | `.../3d/visibility_region_3d_uve.h` | none — nearest relative is `VisibleOnScreenNotifier3D` |
-| 24 | `SpawnPoint3D` | `spawn_point_3d` | SpawnPoint3D | **Node3D** | Gameplay | `.../3d/spawn_point_3d_uve.h` | none — a Godot game uses `Marker3D` |
-| 25 | `LevelStreamer3D` | `level_streamer_3d` | LevelStreamer3D | **Node3D** | World | `.../3d/level_streamer_3d_uve.h` | none |
-| 26 | `WorldPartition3D` | `world_partition_3d` | WorldPartition3D | **Node3D** | World | `.../3d/world_partition_3d_uve.h` | none |
+| 21 | `LODGroup3D` | `lod_group_3d` | LODGroup3D | **Object3D** | Optimization | `.../3d/lod_group_3d_uve.h` | none — Godot does LOD inside the mesh/importer |
+| 22 | `Occluder3D` | `occluder_3d` | Occluder3D | **Object3D** | Optimization | `.../3d/occluder_3d_uve.h` | ⚠ name taken: Godot's `Occluder3D` is an abstract **Resource**; the node is `OccluderInstance3D` |
+| 23 | `VisibilityRegion3D` | `visibility_region_3d` | VisibilityRegion3D | **Object3D** | Optimization | `.../3d/visibility_region_3d_uve.h` | none — nearest relative is `VisibleOnScreenNotifier3D` |
+| 24 | `SpawnPoint3D` | `spawn_point_3d` | SpawnPoint3D | **Object3D** | Gameplay | `.../3d/spawn_point_3d_uve.h` | none — a Godot game uses `Marker3D` |
+| 25 | `LevelStreamer3D` | `level_streamer_3d` | LevelStreamer3D | **Object3D** | World | `.../3d/level_streamer_3d_uve.h` | none |
+| 26 | `WorldPartition3D` | `world_partition_3d` | WorldPartition3D | **Object3D** | World | `.../3d/world_partition_3d_uve.h` | none |
 | 27 | `AnimationTree` | `animation_tree` | AnimationTree | AnimationTree | Animation | `Nodes/Animation/Expose/uve/nodes/3d/animation_tree_uve.h` | **AnimationTree** ✅ |
 | 28 | `AnimationPlayer` | `animation_player` | AnimationPlayer | AnimationPlayer | Animation | `.../3d/animation_player_uve.h` | **AnimationPlayer** ✅ |
 | 29 | `CharacterBody3D` | `character_body_3d` | CharacterBody3D | CharacterBody3D | Physics | `Nodes/3D/Physics/Expose/uve/nodes/3d/character_body_3d_uve.h` | **CharacterBody3D** ✅ |
@@ -132,7 +132,7 @@ called in the Outliner. **Bold** marks a broken default name.
 | 46 | `DirectionalLight3D` | `directional_light_3d` | DirectionalLight3D | DirectionalLight3D | Rendering | `.../3d/directional_light_3d_uve.h` | **DirectionalLight3D** ✅ |
 | 47 | `Viewport` | `viewport` | Viewport | Viewport | Scene | `Scene/Expose/uve/scene/nodes/scene_folder_uve.h` | ⚠ name taken: Godot's `Viewport` is an **abstract render-target node** (`SubViewport`, `Window` are the real ones); UniVex's `Viewport` is the Outliner's level root |
 
-Exact-name matches (rows marked ✅, 18 node kinds): `Node3D`, `Area3D`, `RayCast3D`,
+Exact-name matches (rows marked ✅, 18 node kinds): `Object3D`, `Area3D`, `RayCast3D`,
 `StaticBody3D`, `AnimatableBody3D`, `NavigationRegion3D`, `NavigationAgent3D`, `Skeleton3D`,
 `BoneAttachment3D`, `SpringArm3D`, `Marker3D`, `AnimationTree`, `AnimationPlayer`,
 `CharacterBody3D`, `Camera3D`, `MeshInstance3D`, `RigidBody3D`, `DirectionalLight3D`.
@@ -148,7 +148,7 @@ it matches is an abstract base, so a UniVex `Light3D` and a Godot `Light3D` are 
 |---|---|---|
 | Kind enum | `Engine/Runtime/Scene/Expose/uve/scene/nodes/scene_node_registry_uve.h` | 13-64 |
 | Registry rows (typeId, label, category, contracts, `libraryCreatable`) | `Engine/Runtime/Scene/Internal/nodes/scene_node_registry_uve.cpp` | 13-46 (contracts), 50-102 (rows) |
-| Legacy type-id alias (`"empty"` → `Node3D`) | `Engine/Runtime/Scene/Internal/nodes/scene_node_registry_uve.cpp` | 119-126 |
+| Legacy type-id alias (`"empty"` → `Object3D`) | `Engine/Runtime/Scene/Internal/nodes/scene_node_registry_uve.cpp` | 119-126 |
 | Kind inference from components (for scenes saved before the type was stored) | `Engine/Runtime/Scene/Internal/nodes/scene_node_type_uve.cpp` | whole file |
 | Per-kind default node names | `Engine/Runtime/Nodes/**/<kind>_uve.h` (`defaultName`) | 31 headers, see Section 5.2 |
 | Creation switch (definition vs bare component) | `Engine/Editor/EditorCore/Internal/editor_uve.cpp` | 1919-2115 |
@@ -181,23 +181,23 @@ it matches is an abstract base, so a UniVex `Light3D` and a Godot `Light3D` are 
 
 ## 5. Findings
 
-### 5.1 🔴 Sixteen of the 45 creatable kinds are created as "Node3D"
+### 5.1 🔴 Sixteen of the 45 creatable kinds are created as "Object3D"
 
 `EditorUVE::CreateSceneNodeEntityInternalUVE` (`editor_uve.cpp:1919-2115`) has two creation paths:
 
 * 29 kinds go through `CreateNodeDefinitionEntityInternalUVE`, which creates the entity **with that
   kind's `defaultName`** (the recipe headers in `Engine/Runtime/Nodes/**`);
 * 16 kinds call the local `createNodeWithComponent` lambda (`editor_uve.cpp:1922-1930`), which
-  creates the entity through `EditorEntityKindUVE::Empty` — i.e. with **`Node3DNodeDefinitionUVE::defaultName`**,
-  the string `"Node3D"` — and only then attaches the component.
+  creates the entity through `EditorEntityKindUVE::Empty` — i.e. with **`Object3DNodeDefinitionUVE::defaultName`**,
+  the string `"Object3D"` — and only then attaches the component.
 
 The 16 affected kinds: `RayCast3D`, `NavigationRegion3D`, `NavigationAgent3D`, `BoneAttachment3D`,
 `Marker3D`, `Hitbox3D`, `Hurtbox3D`, `Projectile3D`, `InteractionArea3D`, `ReflectionProbe3D`,
 `LODGroup3D`, `Occluder3D`, `VisibilityRegion3D`, `SpawnPoint3D`, `LevelStreamer3D`,
 `WorldPartition3D`.
 
-Consequence: adding a `Hitbox3D` in the editor produces an Outliner row named **"Node3D"** (then
-"Node3D 2", …), while the row's type tag says `Hitbox3D`. The user-visible name and the node's type
+Consequence: adding a `Hitbox3D` in the editor produces an Outliner row named **"Object3D"** (then
+"Object3D 2", …), while the row's type tag says `Hitbox3D`. The user-visible name and the node's type
 disagree for a third of the library.
 
 Not locked by tests: the one test that creates every creatable kind in a loop
@@ -337,7 +337,7 @@ the confusion the registry was introduced to end (see `SceneNodeTypeComponentUVE
 
 ### Level B — renames `typeId` (needs a legacy alias, or old scenes lose their node type)
 
-Follow the `"empty"` → `Node3D` pattern (`scene_node_registry_uve.cpp:119-126`): add
+Follow the `"empty"` → `Object3D` pattern (`scene_node_registry_uve.cpp:119-126`): add
 `if (typeId == "<old id>") return FindSceneNodeDescriptorUVE(SceneNodeKindUVE::<Kind>);` before the
 lookup loop, keep the icon file renamed to match, and add a test that loads a document written with
 the old id. Candidate id renames, if strict Godot spelling is wanted:
@@ -368,7 +368,7 @@ useful when `SCENE_NODES_ROADMAP.md` is next updated:
   `VisibleOnScreenEnabler3D`.
 * **Animation extras:** `SkeletonIK3D`, `LookAtModifier3D`, `RetargetModifier3D`,
   `SpringBoneSimulator3D`, `SpringBoneCollision*3D`, `XRBodyModifier3D`, `XRHandModifier3D`.
-* **XR:** `XROrigin3D`, `XRNode3D`, `XRController3D`, `XRAnchor3D`, `XRCamera3D`,
+* **XR:** `XROrigin3D`, `XRObject3D`, `XRController3D`, `XRAnchor3D`, `XRCamera3D`,
   `XRFaceModifier3D`.
 * **Audio/utility:** `AudioStreamPlayer`, `AudioListener3D`, `Timer`, `HTTPRequest`,
   `ResourcePreloader`, `ShaderGlobalsOverride`, `MultiplayerSpawner`, `MultiplayerSynchronizer`,
@@ -398,4 +398,4 @@ recommended by this audit.
 | `SphereMesh3D` | `sphere_mesh_3d` (keep) | `SphereMesh3D` (keep) | `UV Sphere` | → `SphereMesh3D` or `Sphere` |
 | `PlaneMesh3D` | `plane_mesh_3d` (keep) | `PlaneMesh3D` (keep) | `Plane` | → `PlaneMesh3D` or `Plane` (already `Plane`) |
 | `WorldEnvironment3D` | `world_environment_3d` (keep) | `WorldEnvironment` (keep) | `WorldEnvironment` (keep) | rename the *kind* to `WorldEnvironment`, or the label to `WorldEnvironment3D` |
-| 16 kinds in 5.1 | keep | keep | `Node3D` | → each kind's own label |
+| 16 kinds in 5.1 | keep | keep | `Object3D` | → each kind's own label |

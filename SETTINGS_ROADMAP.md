@@ -1346,7 +1346,7 @@ constantly and they belong in the same inventory.
       into the parent's space) and **Add Under Selection**. The ground plane under the cursor is
       open.
 - [~] Default component set for each node type. Each node type's recipe attaches its
-      components (its own, its bases', and Node3D's); missing: editing that set as a setting.
+      components (its own, its bases', and Object3D's); missing: editing that set as a setting.
 - [ ] A "save current node as the default" action.
 - [ ] Per-project node templates.
 

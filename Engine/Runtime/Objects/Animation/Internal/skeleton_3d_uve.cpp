@@ -42,7 +42,7 @@ bool IsSkeleton3DNodeComponentValidUVE(const Skeleton3DNodeComponentUVE& value) 
 
 void ApplySkeleton3DNodeDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
                                       const Skeleton3DNodeDefinitionUVE& value) {
-    ApplyNode3DRecipeUVE(entityManager, entity, Skeleton3DNodeDefinitionUVE::defaultName);
+    ApplyObject3DRecipeUVE(entityManager, entity, Skeleton3DNodeDefinitionUVE::defaultName);
     if (entityManager.IsAliveUVE(entity) && !entityManager.HasComponentUVE<Skeleton3DNodeComponentUVE>(entity)) {
         entityManager.AddComponentUVE<Skeleton3DNodeComponentUVE>(entity, value.skeleton);
     }

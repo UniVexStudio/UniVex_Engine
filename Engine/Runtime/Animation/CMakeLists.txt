@@ -2,7 +2,7 @@
 
 #
 # Started as a minimal partial port: only the data-model trio (TimePoseContractUVE,
-# AnimationClipUVE, AnimationTreeUVE) that Engine/Runtime/Scene's AnimationTreeNode3D node facade
+# AnimationClipUVE, AnimationTreeUVE) that Engine/Runtime/Scene's AnimationTreeObject3D node facade
 # needs to declare its own type. Grown here to add the rest of the animation system
 # EngineCoreUVE needs: AnimationStateMachineUVE (playback scheduling over AnimationClipUVE) -
 # physically colocated with EngineCoreUVE in the reference's engine/core/ folder despite depending

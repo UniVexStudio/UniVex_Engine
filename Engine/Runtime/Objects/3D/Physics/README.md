@@ -1,6 +1,6 @@
 # 3D physics nodes
 
-This folder owns the Node3D authoring data and creation recipes that directly represent or query
+This folder owns the Object3D authoring data and creation recipes that directly represent or query
 3D physics: bodies, areas, colliders, hit/hurt boxes, interaction areas, projectiles, ray casts,
 and spring arms. Their public headers are under `Expose/` and their implementations are under
 `Internal/`.

@@ -9,7 +9,7 @@
 
 #include "uve/component/entity_uve.h"
 #include "uve/math/vector3_uve.h"
-#include "uve/nodes/3d/node_3d_common_uve.h"
+#include "uve/nodes/3d/object_3d_common_uve.h"
 
 namespace UVE::Scene {
 

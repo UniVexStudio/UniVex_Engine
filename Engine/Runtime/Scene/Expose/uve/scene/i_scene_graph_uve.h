@@ -29,7 +29,7 @@ struct ResolvedNodeModesUVE final {
 /// ISceneGraphUVE is the hierarchical-transform-tree interface: parent/child relationships and
 /// dirty-flag-propagated world-space transforms, built on top of IEntityManagerUVE's
 /// TransformComponentUVE/HierarchyComponentUVE/WorldTransformComponentUVE rather than a
-/// separate tree structure (see docs — "Node3D is a thin handle over ECS data"). Stateless:
+/// separate tree structure (see docs — "Object3D is a thin handle over ECS data"). Stateless:
 /// every method takes the IEntityManagerUVE it operates on explicitly, so a conforming
 /// implementation has no ordering dependency on any specific manager instance's construction.
 /// Thread-safety: not thread-safe — every method must be called only from the main/scene

@@ -24,7 +24,7 @@
 #include "uve/entity/i_entity_manager_uve.h"
 #include "uve/math/quaternion_uve.h"
 #include "uve/nodes/3d/mesh_instance_3d_uve.h"
-#include "uve/nodes/3d/node_3d_uve.h"
+#include "uve/nodes/3d/object_3d_uve.h"
 #include "uve/nodes/3d/skeleton_3d_uve.h"
 #include "uve/retarget/retarget_conform_uve.h"
 #include "uve/retarget/retarget_humanoid_uve.h"
@@ -175,7 +175,7 @@ void EditorUVE::RebuildRetargetPreviewUVE(const RetargetPlanUVE& plan, const std
     };
     const auto shell = [&](const std::string& name) { return CreateDocumentEntityShellInternalUVE(name); };
 
-    preview.frameRoot = place(CreateSceneNodeEntityInternalUVE(Kind::Node3D), "Retarget Preview", Kind::Node3D, sceneRoot);
+    preview.frameRoot = place(CreateSceneNodeEntityInternalUVE(Kind::Object3D), "Retarget Preview", Kind::Object3D, sceneRoot);
     if (preview.frameRoot == Scene::kInvalidEntityUVE) {
         return;
     }
@@ -184,15 +184,15 @@ void EditorUVE::RebuildRetargetPreviewUVE(const RetargetPlanUVE& plan, const std
           EulerUVE(-0.95F, 0.55F, 0.0F));
 
     // The viewport frames the figures, not the floor under them.
-    const Scene::EntityUVE figures = place(CreateSceneNodeEntityInternalUVE(Kind::Node3D), "Figures", Kind::Node3D, preview.frameRoot);
+    const Scene::EntityUVE figures = place(CreateSceneNodeEntityInternalUVE(Kind::Object3D), "Figures", Kind::Object3D, preview.frameRoot);
     preview.figures = figures;
 
     // ---- The humanoid, on the left ---------------------------------------------------------------
     const Retarget::HumanoidReferenceUVE& reference = Retarget::GetHumanoidReferenceUVE();
     {
         const Scene::EntityUVE figure = shell("Humanoid");
-        Scene::ApplyNode3DNodeDefinitionUVE(entityManager, figure, Scene::Node3DNodeDefinitionUVE{});
-        place(figure, "Humanoid", Kind::Node3D, figures, Math::Vector3UVE{-kFigureOffsetUVE, 0.0F, 0.0F});
+        Scene::ApplyObject3DNodeDefinitionUVE(entityManager, figure, Scene::Object3DNodeDefinitionUVE{});
+        place(figure, "Humanoid", Kind::Object3D, figures, Math::Vector3UVE{-kFigureOffsetUVE, 0.0F, 0.0F});
         Scene::Skeleton3DNodeDefinitionUVE definition;
         definition.skeleton.bones = BonesOfUVE(reference.skeleton);
         const Scene::EntityUVE skeleton = shell("Humanoid Skeleton");
@@ -213,8 +213,8 @@ void EditorUVE::RebuildRetargetPreviewUVE(const RetargetPlanUVE& plan, const std
     std::error_code error;
     if (!modelFile.empty() && std::filesystem::is_regular_file(modelFile, error) && Asset::LoadMeshAssetUVE(modelFile, mesh)) {
         const Scene::EntityUVE figure = shell("Character");
-        Scene::ApplyNode3DNodeDefinitionUVE(entityManager, figure, Scene::Node3DNodeDefinitionUVE{});
-        place(figure, "Character", Kind::Node3D, figures, Math::Vector3UVE{kFigureOffsetUVE, 0.0F, 0.0F});
+        Scene::ApplyObject3DNodeDefinitionUVE(entityManager, figure, Scene::Object3DNodeDefinitionUVE{});
+        place(figure, "Character", Kind::Object3D, figures, Math::Vector3UVE{kFigureOffsetUVE, 0.0F, 0.0F});
         Scene::EntityUVE meshParent = figure;
         if (const std::optional<Retarget::RetargetSkeletonUVE> rig = Retarget::RigFromMeshUVE(mesh);
             rig.has_value() && rig->bones.size() <= Scene::kMaximumSkeletonBonesUVE) {

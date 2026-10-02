@@ -28,7 +28,7 @@ constexpr Tree<3> kPhysicsProp{
 constexpr Tree<2> kTrigger{{{Kind::Area3D, -1, {}}, {Kind::Collider3D, 0, "Shape"}}};
 constexpr Tree<2> kFollowCamera{{{Kind::SpringArm3D, -1, {}}, {Kind::Camera3D, 0, "Camera"}}};
 
-constexpr Tree<1> kEmpty = kOne(Kind::Node3D);
+constexpr Tree<1> kEmpty = kOne(Kind::Object3D);
 constexpr Tree<1> kSpawner = kOne(Kind::SpawnPoint3D);
 constexpr Tree<1> kBox = kOne(Kind::BoxMesh3D);
 constexpr Tree<1> kSphere = kOne(Kind::SphereMesh3D);
@@ -60,7 +60,7 @@ constexpr std::array<std::string_view, 9> kGroups{"Basic",     "Entity",    "Sha
 
 constexpr std::array<ContentCatalogueItemUVE, 33> kItems{{
     {"folder", "Folder", "Basic", "A new folder here in Content", Action::Folder, {}},
-    {"empty", "Empty Entity", "Basic", "A bare Node3D to build your own tree on", Action::EntityAsset, kEmpty},
+    {"empty", "Empty Entity", "Basic", "A bare Object3D to build your own tree on", Action::EntityAsset, kEmpty},
 
     {"character", "Character", "Entity",
      "A playable body: Character3D with a Mesh, an AnimationSequencer and an AnimationGraph", Action::EntityAsset,

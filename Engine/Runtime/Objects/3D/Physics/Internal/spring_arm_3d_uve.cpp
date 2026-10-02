@@ -6,7 +6,7 @@
 #include <cmath>
 
 #include "uve/entity/i_entity_manager_uve.h"
-#include "uve/nodes/3d/node_3d_uve.h"
+#include "uve/nodes/3d/object_3d_uve.h"
 
 namespace UVE::Scene {
 
@@ -22,9 +22,9 @@ bool IsSpringArm3DNodeDefinitionValidUVE(const SpringArm3DNodeDefinitionUVE& val
 
 void ApplySpringArm3DNodeDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
                                        const SpringArm3DNodeDefinitionUVE& value) {
-    // SpringArm3D is Node3D plus its own component: the shared baseline guarantee comes first,
+    // SpringArm3D is Object3D plus its own component: the shared baseline guarantee comes first,
     // then this kind's part goes on top.
-    EnsureNode3DBaselineUVE(entityManager, entity, SpringArm3DNodeDefinitionUVE::defaultName);
+    EnsureObject3DBaselineUVE(entityManager, entity, SpringArm3DNodeDefinitionUVE::defaultName);
     SpringArm3DNodeComponentUVE springArm = value.springArm;
     // Armed at full reach on day one, the same seeding the deserializer applies on load: the
     // first simulation step resolves the truth, everything before that must still be valid.

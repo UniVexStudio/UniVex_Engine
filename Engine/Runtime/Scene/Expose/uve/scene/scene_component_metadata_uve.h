@@ -39,7 +39,7 @@ inline constexpr std::string_view kPropertyTypeAssetGuidUVE = "AssetGuid";
 
 /// Section sort keys. A component's own section sorts by TypeMetadataEntryUVE::order. The order
 /// follows the node's class chain from most to least derived: what the concrete node brings, then
-/// its abstract bases (the nearer base first), then Node3D's Transform and Visibility, then the
+/// its abstract bases (the nearer base first), then Object3D's Transform and Visibility, then the
 /// common Node section every node has.
 inline constexpr std::int32_t kSectionOrderIdentityUVE = 5;
 /// Everything a specific node type brings with it.
@@ -47,7 +47,7 @@ inline constexpr std::int32_t kSectionOrderTypeSpecificUVE = 100;
 /// The abstract 3D bases. A base that derives from another sorts before it: SurfaceInstance3D and
 /// LightEmitter3D before RenderInstance3D.
 inline constexpr std::int32_t kSectionOrderNodeBaseUVE = 500;
-/// Node3D's own sections.
+/// Object3D's own sections.
 inline constexpr std::int32_t kSectionOrderTransformUVE = 900;
 inline constexpr std::int32_t kSectionOrderVisibilityUVE = 910;
 /// The common Node section, last.

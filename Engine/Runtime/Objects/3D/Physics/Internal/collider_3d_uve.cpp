@@ -3,7 +3,7 @@
 #include "uve/nodes/3d/collider_3d_uve.h"
 
 #include "uve/entity/i_entity_manager_uve.h"
-#include "uve/nodes/3d/node_3d_uve.h"
+#include "uve/nodes/3d/object_3d_uve.h"
 
 namespace UVE::Scene {
 
@@ -12,9 +12,9 @@ bool IsCollider3DNodeDefinitionValidUVE(const Collider3DNodeDefinitionUVE& value
 }
 
 void ApplyCollider3DNodeDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity, const Collider3DNodeDefinitionUVE& value) {
-    // Collider3D is Node3D plus its own components: the shared baseline guarantee comes first,
+    // Collider3D is Object3D plus its own components: the shared baseline guarantee comes first,
     // then this kind's part goes on top.
-    EnsureNode3DBaselineUVE(entityManager, entity, Collider3DNodeDefinitionUVE::defaultName);
+    EnsureObject3DBaselineUVE(entityManager, entity, Collider3DNodeDefinitionUVE::defaultName);
     entityManager.AddComponentUVE<ColliderComponentUVE>(entity, value.collider);
 }
 

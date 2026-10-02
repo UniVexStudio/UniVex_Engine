@@ -51,10 +51,10 @@ constexpr std::array<SceneNodeDescriptorUVE, 47U> kDescriptors{
     // The document's structural root: created by the document lifecycle (new document,
     // load-time migration), never through the Add-Node library - libraryCreatable is false.
     SceneNodeDescriptorUVE{SceneNodeKindUVE::SceneRoot, "scene_root", "SceneRoot", "Scene", "Scene/SceneRootNodeDefinitionUVE", kNoContracts, false},
-    // The transform-only base node, type id "node_3d". Documents and layouts written while the
-    // kind was still called "empty" keep loading: FindSceneNodeDescriptorUVE(typeId) resolves
-    // the legacy id to this same row, so the rename touches no saved file.
-    SceneNodeDescriptorUVE{SceneNodeKindUVE::Node3D, "node_3d", "Node3D", "Scene", "Scene/ECS", kNoContracts, true},
+    // The transform-only base node, type id "object_3d". Documents and layouts written while the
+    // kind was called "node_3d", or "empty" before that, keep loading: FindSceneNodeDescriptorUVE
+    // (typeId) resolves both legacy ids to this same row, so neither rename touches a saved file.
+    SceneNodeDescriptorUVE{SceneNodeKindUVE::Object3D, "object_3d", "Object3D", "Scene", "Scene/ECS", kNoContracts, true},
     SceneNodeDescriptorUVE{SceneNodeKindUVE::Area3D, "area_3d", "Area3D", "Physics", "Physics/AreaOverlapSystemUVE", kAreaContracts, true},
     SceneNodeDescriptorUVE{SceneNodeKindUVE::RayCast3D, "ray_cast_3d", "RayCast3D", "Physics", "Physics/RaycastSystemUVE", kRayCastContracts, true},
     SceneNodeDescriptorUVE{SceneNodeKindUVE::Static3D, "static_3d", "Static3D", "Physics", "Physics/CollisionSystemUVE", kColliderContracts, true},
@@ -120,8 +120,8 @@ const SceneNodeDescriptorUVE* FindSceneNodeDescriptorUVE(const SceneNodeKindUVE 
 const SceneNodeDescriptorUVE* FindSceneNodeDescriptorUVE(const std::string_view typeId) noexcept {
     // Legacy ids accepted on load: a saved document or layout carrying an older string must keep
     // resolving to the same node, so every rename leaves its previous id readable here forever.
-    if (typeId == "empty") {
-        return FindSceneNodeDescriptorUVE(SceneNodeKindUVE::Node3D);
+    if (typeId == "empty" || typeId == "node_3d") {
+        return FindSceneNodeDescriptorUVE(SceneNodeKindUVE::Object3D);
     }
     if (typeId == "static_body_3d") {
         return FindSceneNodeDescriptorUVE(SceneNodeKindUVE::Static3D);

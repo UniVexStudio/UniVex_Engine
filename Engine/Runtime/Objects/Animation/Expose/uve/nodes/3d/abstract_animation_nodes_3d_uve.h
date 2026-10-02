@@ -20,7 +20,7 @@ struct AnimationMixerNodeDefinitionUVE final {
     static constexpr std::string_view typeName = "AnimationMixer";
 };
 
-/// Applies the Node3D recipe and BoneModifier component where missing.
+/// Applies the Object3D recipe and BoneModifier component where missing.
 void ApplyBoneModifier3DBaseUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
                                 std::string_view nameFallback);
 /// Applies the pure Node baseline and AnimationMixer component where missing.

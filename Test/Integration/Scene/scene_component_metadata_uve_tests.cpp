@@ -196,7 +196,7 @@ TEST(SceneComponentMetadataUVETest, ConditionalVisibilityFollowsTheSiblingFieldI
     EXPECT_TRUE(height->isVisible(&component));
 }
 
-// Sections follow the class chain from most to least derived: the node's own, then Node3D's
+// Sections follow the class chain from most to least derived: the node's own, then Object3D's
 // Transform, then the common Node section.
 TEST(SceneComponentMetadataUVETest, TheCommonNodeSectionSortsBelowEverythingTypeSpecific) {
     const TypeMetadataEntryUVE* transform =

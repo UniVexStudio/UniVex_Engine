@@ -267,7 +267,7 @@ TEST(ContentCatalogueEditorUVETest, EntityEditorEditsTheAssetAloneAndGivesTheSce
 
         // The entity is the top of the tree: new nodes go under it, and it cannot be removed.
         editor.ClearSelectionUVE();
-        const Scene::EntityUVE added = editor.CreateDocumentSceneNodeUVE(Kind::Node3D);
+        const Scene::EntityUVE added = editor.CreateDocumentSceneNodeUVE(Kind::Object3D);
         ASSERT_NE(added, Scene::kInvalidEntityUVE);
         EXPECT_EQ(entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(added).parent, entityRoot);
         EXPECT_EQ(editor.GetEntityEditorRootUVE(), entityRoot) << "still one root";
@@ -510,16 +510,16 @@ Connections:  {
         const Scene::EntityUVE placed = editor.PlaceModelSourceUVE("Anims/Hero.FBX");
         ASSERT_NE(placed, Scene::kInvalidEntityUVE);
 
-        // Hero (Node3D) > { Armature (Node3D) > Skeleton3D, AnimationSequencer }
+        // Hero (Object3D) > { Armature (Object3D) > Skeleton3D, AnimationSequencer }
         const auto nameOf = [&entityManager](const Scene::EntityUVE entity) {
             return entityManager.GetComponentUVE<Scene::NameComponentUVE>(entity).name;
         };
         EXPECT_EQ(nameOf(placed), "Hero");
-        EXPECT_EQ(Scene::ResolveSceneNodeKindUVE(entityManager, placed), Kind::Node3D);
+        EXPECT_EQ(Scene::ResolveSceneNodeKindUVE(entityManager, placed), Kind::Object3D);
         const std::vector<Scene::EntityUVE> children = services.GetSceneGraphUVE().GetChildrenUVE(entityManager, placed);
         ASSERT_EQ(children.size(), 2U);
         EXPECT_EQ(nameOf(children[0]), "Armature");
-        EXPECT_EQ(Scene::ResolveSceneNodeKindUVE(entityManager, children[0]), Kind::Node3D);
+        EXPECT_EQ(Scene::ResolveSceneNodeKindUVE(entityManager, children[0]), Kind::Object3D);
         const std::vector<Scene::EntityUVE> skeletons = services.GetSceneGraphUVE().GetChildrenUVE(entityManager, children[0]);
         ASSERT_EQ(skeletons.size(), 1U);
         ASSERT_TRUE(entityManager.HasComponentUVE<Scene::Skeleton3DNodeComponentUVE>(skeletons[0]));

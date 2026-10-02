@@ -200,9 +200,9 @@ TEST(SceneNodeEditorUVETest, CentralizedCreationUVE_RejectsMultiSelectionAndPlay
         EditorUVE editor(engine.GetServicesUVE(), "uve_scene_node_editor_safety_tests.uvscene", 100U, &engine);
         editor.InitUVE();
         const Scene::EntityUVE first =
-            editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Node3D);
+            editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Object3D);
         const Scene::EntityUVE second =
-            editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Node3D);
+            editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Object3D);
         ASSERT_NE(first, Scene::kInvalidEntityUVE);
         ASSERT_NE(second, Scene::kInvalidEntityUVE);
         editor.SelectEntityUVE(first);
@@ -268,7 +268,7 @@ TEST(SceneNodeEditorUVETest, SceneRootUVE_NewNodesJoinHierarchyUnderSelectionOrR
         // No selection: a new node joins the level's node folder (a level node always lives in a
         // folder inside the Viewport), not a new document root.
         const Scene::EntityUVE first =
-            editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Node3D);
+            editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Object3D);
         ASSERT_NE(first, Scene::kInvalidEntityUVE);
         EXPECT_EQ(editor.GetDocumentRootsUVE().size(), 1U);
         const Scene::EntityUVE folder = entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(first).parent;
@@ -398,7 +398,7 @@ TEST(SceneNodeEditorUVETest, SceneRootUVE_RootCannotBeDeletedReparentedOrDuplica
         const Scene::EntityUVE root = editor.GetDocumentSceneRootUVE();
         ASSERT_NE(root, Scene::kInvalidEntityUVE);
         const Scene::EntityUVE other =
-            editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Node3D);
+            editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Object3D);
         ASSERT_NE(other, Scene::kInvalidEntityUVE);
 
         editor.SelectEntityUVE(root);
@@ -428,7 +428,7 @@ TEST(SceneNodeEditorUVETest, SceneRootUVE_UndoRedoKeepsCreatedNodeUnderItsParent
         ASSERT_NE(root, Scene::kInvalidEntityUVE);
 
         const Scene::EntityUVE parent =
-            editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Node3D);
+            editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Object3D);
         ASSERT_NE(parent, Scene::kInvalidEntityUVE);
         editor.SelectEntityUVE(parent);
         const Scene::EntityUVE child =

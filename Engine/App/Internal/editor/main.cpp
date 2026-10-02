@@ -617,7 +617,7 @@ private:
     }
 
     // Only shows the transform gizmo (and its pivot dot) while a real entity is selected
-    // in EditorUVE, like a Node3D-style engine - the reference standalone demo always draws it at
+    // in EditorUVE, like a Object3D-style engine - the reference standalone demo always draws it at
     // the camera's own orbit target since it has no independent "selected object" concept, which
     // read as a stray gizmo floating with nothing selected once wired into a real editor.
     // Repositions the gizmo to the selected entity's actual world transform via

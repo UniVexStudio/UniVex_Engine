@@ -40,7 +40,7 @@
 #include "uve/math/quaternion_uve.h"
 #include "uve/nodes/3d/animation_sequencer_uve.h"
 #include "uve/nodes/3d/mesh_instance_3d_uve.h"
-#include "uve/nodes/3d/node_3d_uve.h"
+#include "uve/nodes/3d/object_3d_uve.h"
 #include "uve/nodes/3d/skeleton_3d_uve.h"
 #include "uve/scene/nodes/scene_node_type_uve.h"
 #include "uve/scene/scene_component_metadata_uve.h"
@@ -184,9 +184,9 @@ Scene::EntityUVE EditorUVE::PlaceModelSourceUVE(const std::filesystem::path& rel
         definition.mesh.meshGuid = meshGuid;
         root = make(stem, Kind::MeshInstance3D, definition, Scene::ApplyMeshInstance3DNodeDefinitionUVE, parent);
     } else {
-        root = make(stem, Kind::Node3D, Scene::Node3DNodeDefinitionUVE{}, Scene::ApplyNode3DNodeDefinitionUVE, parent);
+        root = make(stem, Kind::Object3D, Scene::Object3DNodeDefinitionUVE{}, Scene::ApplyObject3DNodeDefinitionUVE, parent);
         const Scene::EntityUVE armature =
-            make("Armature", Kind::Node3D, Scene::Node3DNodeDefinitionUVE{}, Scene::ApplyNode3DNodeDefinitionUVE, root);
+            make("Armature", Kind::Object3D, Scene::Object3DNodeDefinitionUVE{}, Scene::ApplyObject3DNodeDefinitionUVE, root);
         Scene::Skeleton3DNodeDefinitionUVE skeletonDefinition;
         skeletonDefinition.skeleton.skeletonAssetPath = relativeSource.generic_string();
         for (const Asset::GltfJointUVE& joint : skeleton->joints) {

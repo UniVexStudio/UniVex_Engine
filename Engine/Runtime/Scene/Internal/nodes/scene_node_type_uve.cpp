@@ -51,7 +51,7 @@ bool IsSceneNodeTypeComponentValidUVE(const SceneNodeTypeComponentUVE& value) no
 
 Nodes::SceneNodeKindUVE ResolveSceneNodeKindUVE(const IEntityManagerUVE& entityManager, const EntityUVE entity) {
     if (!entityManager.IsAliveUVE(entity)) {
-        return Kind::Node3D;
+        return Kind::Object3D;
     }
     if (entityManager.HasComponentUVE<SceneNodeTypeComponentUVE>(entity)) {
         const SceneNodeTypeComponentUVE& type = entityManager.GetComponentUVE<SceneNodeTypeComponentUVE>(entity);
@@ -64,7 +64,7 @@ Nodes::SceneNodeKindUVE ResolveSceneNodeKindUVE(const IEntityManagerUVE& entityM
 
 Nodes::SceneNodeKindUVE InferSceneNodeKindUVE(const IEntityManagerUVE& entityManager, const EntityUVE entity) {
     if (!entityManager.IsAliveUVE(entity)) {
-        return Kind::Node3D;
+        return Kind::Object3D;
     }
     if (entityManager.HasComponentUVE<SceneRootComponentUVE>(entity)) {
         return Kind::SceneRoot;
@@ -87,7 +87,7 @@ Nodes::SceneNodeKindUVE InferSceneNodeKindUVE(const IEntityManagerUVE& entityMan
         }
     }
 
-    Kind kind = Kind::Node3D;
+    Kind kind = Kind::Object3D;
     if (TryOwnComponentUVE(entityManager, entity, kind,
                            OwnComponentUVE<AnimatableBody3DNodeComponentUVE>{Kind::Kinematic3D},
                            OwnComponentUVE<RayCast3DNodeComponentUVE>{Kind::RayCast3D},
@@ -146,7 +146,7 @@ Nodes::SceneNodeKindUVE InferSceneNodeKindUVE(const IEntityManagerUVE& entityMan
     if (entityManager.HasComponentUVE<ScriptComponentUVE>(entity)) {
         return Kind::Script;
     }
-    return Kind::Node3D;
+    return Kind::Object3D;
 }
 
 void SetSceneNodeKindUVE(IEntityManagerUVE& entityManager, const EntityUVE entity, const Nodes::SceneNodeKindUVE kind) {

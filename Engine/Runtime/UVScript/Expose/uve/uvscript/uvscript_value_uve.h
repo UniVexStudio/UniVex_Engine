@@ -10,7 +10,7 @@
 
 namespace UVE::UVScript {
 
-/// A type the checker knows. `node` names the node kind for `Node` (Node3D, Character3D...).
+/// A type the checker knows. `node` names the node kind for `Node` (Object3D, Character3D...).
 struct TypeUVE final {
     enum class KindUVE : std::uint8_t {
         None,

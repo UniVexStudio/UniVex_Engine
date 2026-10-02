@@ -7,14 +7,14 @@
 # meshes, the physics bodies, etc.) each define a NodeDefinition here instead — the kind's
 # creation recipe (components to attach, authored defaults, default entity name) — so every
 # node kind has its own discoverable, customizable home rather than one shared header or one
-# editor-side switch. Physics-specific Node3D kinds live under Physics/{Expose,Internal}, AI
+# editor-side switch. Physics-specific Object3D kinds live under Physics/{Expose,Internal}, AI
 # navigation nodes under ../AI/3D, and animation nodes under ../Animation. They remain part of
 # this one uve_nodes_3d library. uve_component supplies the component structs + EntityUVE,
 # uve_entity supplies IEntityManagerUVE for the definition Apply functions, and uve_animation
 # supplies the runtime animation types.
 
 add_library(uve_nodes_3d STATIC
-    Internal/node_3d_common_uve.cpp
+    Internal/object_3d_common_uve.cpp
     Internal/abstract_nodes_3d_uve.cpp
     ../Animation/Internal/abstract_animation_nodes_3d_uve.cpp
     ../Animation/Internal/animation_sequencer_uve.cpp
@@ -48,7 +48,7 @@ add_library(uve_nodes_3d STATIC
     Internal/spawn_point_3d_uve.cpp
     Internal/level_streamer_3d_uve.cpp
     Internal/world_partition_3d_uve.cpp
-    Internal/node_3d_uve.cpp
+    Internal/object_3d_uve.cpp
     Internal/camera_3d_uve.cpp
     Internal/light_3d_uve.cpp
     Internal/mesh_instance_3d_uve.cpp
