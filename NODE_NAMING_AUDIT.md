@@ -19,6 +19,15 @@ Section 8 lists the fixes that *would* change behavior, each with its blast radi
 > name in this audit — including the 16 wrong default names of 5.1 and the label/default-name
 > mismatches of 5.2 — is unchanged and still open.
 >
+> **Note 2a (same day):** that change is applied and verified. The registry was executed against the
+> new table (each old `typeId` returns the same descriptor row as its new one), the editor icon
+> contract was executed against the real embedded artwork (47/47 kinds have an icon that decodes),
+> 225 tests from 30 suites were run locally, and CI ran the whole build plus the full test suite
+> green on the branch. CI did catch one thing the local runs could not reach, and it is fixed:
+> `UVScriptHighlightUVETest.ColoursEachKindOfWord` asserted a 15-byte span for the base kind,
+> the length of the old `CharacterBody3D`, while the line it highlights already said
+> `Character3D` (11 bytes).
+>
 > **Note 1 (same day, after this audit):** Phase 1 of `NAMING_PLAN.md` landed. The physical folders
 > moved — `Engine/Runtime/Nodes` → `Engine/Runtime/Objects`, `CanvasLayer/` → `UI/`,
 > `Engine/Runtime/Object` → `Objects/Core/`, `Test/Nodes` → `Test/Objects` — while every `#include`

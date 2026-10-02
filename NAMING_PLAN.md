@@ -1,7 +1,9 @@
 # Naming Plan — making the object set UniVex's own
 
 **Date:** 2026-10-02
-**Status:** decisions taken (see the log below); Phase 1 applied, Phase 2 open (narrowed to 6 objects).
+**Status:** done. Phase 1 (folders) and Phase 2 (the 6 renames) are both applied, committed and green
+in CI on `arena/01a0fd0d-univex-engine` (`376d097`): full build, the whole test suite, and the Vulkan
+device check all pass.
 **Companion:** `NODE_NAMING_AUDIT.md` (what the names are today, where they live, what is broken).
 
 ## Decision log
@@ -218,8 +220,8 @@ kind, with one test per alias.
 | Phase | What | Blast radius | Verification |
 |---|---|---|---|
 | **0** | Add the registry invariant test + fix the 16 wrong default names (audit 5.1) so it passes | 1 new test file, 16 headers, 1 editor lambda | new test + existing suite |
-| **1** ✅ | `git mv Engine/Runtime/Nodes Engine/Runtime/Objects`; `CanvasLayer` → `UI`; `Object` → `Objects/Core`; `Test/Nodes` → `Test/Objects`; root CMake 43, 66-67; 20 files' path references | 115 files moved, **0** include lines | 100 `.cpp` files pass `g++ -fsyntax-only`; full build + 2,519 tests in CI |
-| **2** ✅ | The 6 renames of Section 4: label + `typeId` + `defaultName` + icon pair + C++ enum/definition names + 6 legacy aliases + test/doc updates | 6 kinds, 24 files renamed + 51 files' text + 2 icon-file sets | 122 runtime TUs + 41 editor TUs + 12 test TUs compile clean (`g++ -fsyntax-only`); full build + tests in CI |
+| **1** ✅ | `git mv Engine/Runtime/Nodes Engine/Runtime/Objects`; `CanvasLayer` → `UI`; `Object` → `Objects/Core`; `Test/Nodes` → `Test/Objects`; root CMake 43, 66-67; 20 files' path references | 115 files moved, **0** include lines | 100 `.cpp` files pass `g++ -fsyntax-only`; **CI green** |
+| **2** ✅ | The 6 renames of Section 4: label + `typeId` + `defaultName` + icon pair + C++ enum/definition names + 6 legacy aliases + test/doc updates | 6 kinds, 24 files renamed + 51 files' text + 2 icon-file sets | 122 runtime TUs + 41 editor TUs + 12 test TUs compile clean (`g++ -fsyntax-only`); registry and icon contracts executed locally; 225 tests from 30 suites run locally; **CI green** |
 | **3** *(optional)* | Virtual path: `Expose/uve/nodes/...` → `Expose/uve/objects/...` and the 239 include lines, so the include path matches the physical `Objects/` folder | 110 files, mechanical, zero behavior change | full build + tests |
 | **4** *(optional)* | Docs and comments: `SCENE_NODES_ROADMAP.md` → `SCENE_OBJECTS_ROADMAP.md`, `STUB_IMPLEMENTATION_ROADMAP.md`, `AUDIT.md`, and the comment lines naming other engines (**Godot** 35 lines in 19 files, **Unreal** 25 in 18, **Unity** 6 in 5; docs 48 / 2 / 2) | docs + a few cpp comments | full build + tests |
 | ~~5~~ | ~~`Node` → `Object` identifier pass (2,734 occurrences)~~ — **dropped**: not requested, and the user-facing names are what matter | — | — |
