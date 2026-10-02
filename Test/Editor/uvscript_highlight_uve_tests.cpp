@@ -15,7 +15,7 @@ TEST(UVScriptHighlightUVETest, ColoursEachKindOfWord) {
     ASSERT_EQ(spans.size(), 3U);
     EXPECT_EQ(spans[0], (UVScriptTokenSpanUVE{0U, 6U, Kind::Declaration}));
     EXPECT_EQ(spans[1], (UVScriptTokenSpanUVE{7U, 6U, Kind::Type}));
-    EXPECT_EQ(spans[2], (UVScriptTokenSpanUVE{16U, 15U, Kind::Type}));
+    EXPECT_EQ(spans[2], (UVScriptTokenSpanUVE{16U, 11U, Kind::Type}));
 }
 
 TEST(UVScriptHighlightUVETest, HandlerAndFunctionNamesAreDefinitions) {

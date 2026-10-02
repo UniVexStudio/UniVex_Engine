@@ -1828,7 +1828,7 @@ TEST(EngineCoreUVETest, Character3D_SolidBodyMotionLocksHoldTheirAxis) {
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, AnimationPlayer_PlaysItsClipOnItsParentNode) {
+TEST(EngineCoreUVETest, AnimationSequencer_PlaysItsClipOnItsParentNode) {
     EngineCoreUVE engine(MakeTestConfigUVE());
     engine.Init();
     ASSERT_TRUE(engine.Load());
@@ -1880,7 +1880,7 @@ TEST(EngineCoreUVETest, AnimationPlayer_PlaysItsClipOnItsParentNode) {
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, AnimationPlayer_PosesTheSkeletonInsideTheCharacterWithASkeletalClip) {
+TEST(EngineCoreUVETest, AnimationSequencer_PosesTheSkeletonInsideTheCharacterWithASkeletalClip) {
     EngineCoreUVE engine(MakeTestConfigUVE());
     engine.Init();
     ASSERT_TRUE(engine.Load());
@@ -1941,7 +1941,7 @@ TEST(EngineCoreUVETest, AnimationPlayer_PosesTheSkeletonInsideTheCharacterWithAS
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, AnimationPlayer_RootMotionMovesTheCharacterThroughTheSkeletonsFrame) {
+TEST(EngineCoreUVETest, AnimationSequencer_RootMotionMovesTheCharacterThroughTheSkeletonsFrame) {
     EngineCoreUVE engine(MakeTestConfigUVE());
     engine.Init();
     ASSERT_TRUE(engine.Load());
@@ -2006,7 +2006,7 @@ TEST(EngineCoreUVETest, AnimationPlayer_RootMotionMovesTheCharacterThroughTheSke
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, AnimationPlayer_SendsClipEventsToTheScriptOfTheNodeItAnimates) {
+TEST(EngineCoreUVETest, AnimationSequencer_SendsClipEventsToTheScriptOfTheNodeItAnimates) {
     EngineCoreUVE engine(MakeTestConfigUVE());
     engine.Init();
     ASSERT_TRUE(engine.Load());
