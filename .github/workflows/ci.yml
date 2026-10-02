@@ -58,26 +58,6 @@ jobs:
         # leaves a worker holding the last reference to something it is about to outlive.
         run: xvfb-run -a ctest --test-dir build --output-on-failure -j"$(nproc)"
 
-      # TEMPORARY DEBUG (remove before merge): surface the failing test names as check-run
-      # annotations, which are readable over the API when the raw job log cannot be fetched.
-      - name: Report failing tests
-        if: failure()
-        run: |
-          python3 - <<'PY'
-          import glob, re
-          log = "build/Testing/Temporary/LastTest.log"
-          try:
-              text = open(log, errors="replace").read()
-          except OSError:
-              print("::error::no LastTest.log"); raise SystemExit(0)
-          names = sorted(set(re.findall(r"^\s*\d+ - \S+ \(Failed\)", text, re.M)))[:40]
-          for name in names:
-              print(f"::error::{name.strip()[:200]}")
-          tail = [l for l in text.splitlines() if l.startswith("[  FAILED  ]")][:20]
-          for line in tail:
-              print(f"::warning::{line[:200]}")
-          PY
-
       - name: Verify the Vulkan device tests actually ran
         # These cases skip themselves when no Vulkan device is present, which would leave
         # the backend untested while CI stayed green. Fail loudly if the runner loses it.
