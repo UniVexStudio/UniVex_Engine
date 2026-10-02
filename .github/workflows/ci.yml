@@ -48,8 +48,17 @@ jobs:
       - name: Configure
         run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DUVE_BUILD_TESTS=ON
 
+      # TEMPORARY DEBUG (remove before merge): the job log cannot be fetched from this sandbox,
+      # so compiler errors are surfaced as check-run annotations instead.
       - name: Build
-        run: cmake --build build --parallel "$(nproc)"
+        run: |
+          set -o pipefail
+          cmake --build build --parallel "$(nproc)" 2>&1 | tee /tmp/build.log
+          rc=$?
+          if [ $rc -ne 0 ]; then
+            grep -E "error:|Error" /tmp/build.log | head -30 | sed 's/^/::error::/'
+          fi
+          exit $rc
 
       - name: Test
         # Parallel, and both things that blocked it are fixed: every test process gets its own
