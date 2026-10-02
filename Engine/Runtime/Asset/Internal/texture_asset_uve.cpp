@@ -154,8 +154,14 @@ constexpr std::uint32_t kTexturePayloadVersionUVE = 3U;
         std::uint64_t uncompressedLength = 0U;
         if (!Utilities::ReadUint64FromBufferUVE(bytes, offset, levelOffset) ||
             !Utilities::ReadUint64FromBufferUVE(bytes, offset, levelLength) ||
-            !Utilities::ReadUint64FromBufferUVE(bytes, offset, uncompressedLength) ||
-            levelOffset < levelIndexEnd || levelLength == 0U || uncompressedLength == 0U ||
+            !Utilities::ReadUint64FromBufferUVE(bytes, offset, uncompressedLength)) {
+            return false;
+        }
+        // KTX2 BasisLZ (ETC1S) requires uncompressedByteLength == 0; uncompressed UASTC
+        // levels require it to equal byteLength.
+        const bool uncompressedLengthMatchesScheme =
+            supercompressionScheme == 1U ? uncompressedLength == 0U : uncompressedLength == levelLength;
+        if (levelOffset < levelIndexEnd || levelLength == 0U || !uncompressedLengthMatchesScheme ||
             levelOffset > bytes.size() || levelLength > bytes.size() - levelOffset) {
             return false;
         }

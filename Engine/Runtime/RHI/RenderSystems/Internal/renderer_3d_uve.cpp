@@ -1242,8 +1242,9 @@ struct Renderer3DUVE::ImplUVE {
             UVE_ERROR("Renderer3DUVE: ready texture handle has no payload - falling back to the default texture");
             return fallbackHandle;
         }
+        // Asset payloads can come from disk, custom loaders, or hot reload. Treat malformed texture
+        // contents as a recoverable load/upload failure rather than an assertion on a render thread.
         const bool textureAssetValid = Asset::IsTextureAssetValidUVE(*textureAsset);
-        UVE_ASSERT(textureAssetValid);
         if (!textureAssetValid) {
             failedTextureGuids.insert(textureGuid);
             ++lastFrameDiagnostics.textureFallbacks;

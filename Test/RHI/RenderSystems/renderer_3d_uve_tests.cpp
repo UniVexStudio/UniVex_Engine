@@ -994,16 +994,16 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_FailedTextureUsesFallbackAndReportsDiag
     EXPECT_EQ(afterMaterialEviction.textureFallbacks, 1U);
 }
 
-TEST_F(Renderer3DUVETest, RenderFrameUVE_FailedTextureUploadIsMemoizedUntilTextureReload) {
+TEST_F(Renderer3DUVETest, RenderFrameUVE_InvalidTexturePayloadIsRejectedAndMemoizedUntilReload) {
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_upload_failure_mesh.uvmodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_upload_failure_material.uvmat");
-    const Asset::AssetGuidUVE textureGuid = assetDatabase.RegisterUVE("renderer3d_tests_upload_failure.uvtex");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_invalid_texture_mesh.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_invalid_texture_material.uvmat");
+    const Asset::AssetGuidUVE textureGuid = assetDatabase.RegisterUVE("renderer3d_tests_invalid_texture.uvtex");
     UseAlbedoTextureInMaterialUVE(textureGuid);
     assetManager.RegisterLoaderUVE<Asset::TextureAssetUVE>(
         [](const std::filesystem::path&, Asset::TextureAssetUVE& texture) {
-            // The custom loader returns a ready CPU asset, but the renderer's shared texture
-            // validator rejects zero dimensions before any backend allocation.
+            // The custom loader returns a ready CPU asset with invalid dimensions. The renderer
+            // must reject it before making a backend allocation attempt.
             texture.width = 0U;
             texture.height = 2U;
             texture.format = Asset::TextureFormatUVE::RGBA8Unorm;
@@ -1016,17 +1016,21 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_FailedTextureUploadIsMemoizedUntilTextu
 
     const std::uint64_t initialTextureAttempts = renderDevice.GetTextureCreateAttemptCountUVE();
     renderer3D->RenderFrameUVE(entityManager, cameraEntity);
-    EXPECT_EQ(renderDevice.GetTextureCreateAttemptCountUVE(), initialTextureAttempts + 1U);
+    EXPECT_EQ(renderDevice.GetTextureCreateAttemptCountUVE(), initialTextureAttempts);
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().textureFallbacks, 1U);
 
-    // Material cache invalidation must not retry the same permanently rejected GPU upload.
+    // Material cache invalidation must not send the same invalid asset to the backend.
     eventSystem.Publish(Asset::AssetReloadedEventUVE{materialGuid});
     renderer3D->RenderFrameUVE(entityManager, cameraEntity);
-    EXPECT_EQ(renderDevice.GetTextureCreateAttemptCountUVE(), initialTextureAttempts + 1U);
+    EXPECT_EQ(renderDevice.GetTextureCreateAttemptCountUVE(), initialTextureAttempts);
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().textureFallbacks, 1U);
 
-    // An explicit texture reload clears the memo and permits a deliberate retry.
+    // An explicit texture reload clears the failure memo. The asset is still invalid in this test,
+    // so it is revalidated and safely falls back without reaching the render device.
     eventSystem.Publish(Asset::AssetReloadedEventUVE{textureGuid});
     renderer3D->RenderFrameUVE(entityManager, cameraEntity);
-    EXPECT_EQ(renderDevice.GetTextureCreateAttemptCountUVE(), initialTextureAttempts + 2U);
+    EXPECT_EQ(renderDevice.GetTextureCreateAttemptCountUVE(), initialTextureAttempts);
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().textureFallbacks, 1U);
 }
 
 TEST_F(Renderer3DUVETest, RenderFrameUVE_TextureAssetNotYetReady_SkipsItemUntilLoaded) {
