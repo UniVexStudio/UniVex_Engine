@@ -70,15 +70,19 @@ jobs:
         if: failure()
         run: |
           python3 - <<'PY'
-          import re
-          try:
-              text = open("build/Testing/Temporary/LastTest.log", errors="replace").read()
-          except OSError:
-              print("::error::no LastTest.log"); raise SystemExit(0)
-          for line in sorted(set(re.findall(r"^\s*\d+ - \S+ \(Failed\)", text, re.M)))[:40]:
-              print(f"::error::{line.strip()[:200]}")
-          for line in [l for l in text.splitlines() if l.startswith("[  FAILED  ]")][:25]:
-              print(f"::warning::{line[:200]}")
+          import os
+          paths = ["build/Testing/Temporary/LastTestsFailed.log",
+                   "build/Testing/Temporary/LastTest.log"]
+          for path in paths:
+              if not os.path.exists(path):
+                  print(f"::warning::missing {path}")
+                  continue
+              for line in open(path, errors="replace").read().splitlines():
+                  line = line.strip()
+                  if path.endswith("LastTestsFailed.log") and line:
+                      print(f"::error::FAILED {line[:200]}")
+                  elif line.startswith("[  FAILED  ]"):
+                      print(f"::warning::{line[:200]}")
           PY
 
       - name: Verify the Vulkan device tests actually ran
