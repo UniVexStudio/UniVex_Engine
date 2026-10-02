@@ -40,8 +40,9 @@
 // lazily with vkCmdBeginRendering at the first marker of a run, and interleaved
 // default/offscreen passes are legal (a re-opened swapchain instance resumes with LOAD —
 // GL's FBO semantics preserved exactly). Textures allocate in the swapchain's own format via
-// MUTABLE_FORMAT + an unorm-sibling SAMPLED view and an image-native ATTACHMENT view, so
-// every RGBA8 texture is attachable by construction; color-only offscreen passes borrow an
+// MUTABLE_FORMAT + a color-space-matched SAMPLED view (UNORM for linear, sRGB for decoded color)
+// and an image-native ATTACHMENT view, so every RGBA8 texture is attachable by construction;
+// color-only offscreen passes borrow an
 // extent-keyed scratch depth image; caller Depth32Float textures attach when the device
 // depth is D32. Honest boundaries (one-shot warns + skip/degrade, never silent wrong
 // pixels): classic-mode devices (no 1.3 entry points) keep byte-identical M2c behavior and
@@ -57,7 +58,8 @@
 // — GL shader-storage binding-point semantics, i-th reflected storage binding reads global slot
 // i) and separate SAMPLED_IMAGE + SAMPLER pairs (fed from the same BindTextureUVE slots as
 // combined samplers; every standalone SAMPLER binding is written with ONE device-owned fixed
-// sampler — the RHI's single GL-mirrored linear/clamp/maxLod-0 shape). Storage buffers live in
+// sampler — the RHI's single GL-mirrored linear/trilinear/clamp shape, bounded by the image view).
+// Storage buffers live in
 // real per-handle VkBuffers (the M2a host-visible policy), join the per-tuple descriptor-set
 // cache under an 's'-prefixed key section, and are invalidated from it at DestroyBufferUVE
 // exactly like textures. Unbound or destroyed-after-bind storage slots read a device-owned
@@ -228,6 +230,8 @@ public:
                                          std::uint64_t offsetBytes = 0) override;
     [[nodiscard]] TextureHandleUVE CreateTextureUVE(const TextureDescUVE& desc,
                                                     std::span<const std::byte> initialData = {}) override;
+    [[nodiscard]] bool SupportsTextureFormatUVE(
+        TextureFormatUVE format, TextureColorSpaceUVE colorSpace = TextureColorSpaceUVE::Linear) const noexcept override;
     void DestroyTextureUVE(TextureHandleUVE texture) override;
     [[nodiscard]] ShaderHandleUVE CreateShaderUVE(const ShaderDescUVE& desc,
                                                   std::string* outInfoLog = nullptr) override;

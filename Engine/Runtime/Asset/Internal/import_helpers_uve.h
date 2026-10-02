@@ -22,6 +22,8 @@
 #include <utility>
 #include <vector>
 
+#include "uve/asset/texture_asset_uve.h"
+#include "uve/asset/texture_import_settings_uve.h"
 #include "uve/logging/logging_macros_uve.h"
 
 namespace UVE::Asset::Detail {
@@ -33,6 +35,11 @@ namespace UVE::Asset::Detail {
                                              const char* importerName,
                                              std::uint64_t maximumBytes,
                                              std::vector<std::byte>& outBytes);
+
+/// Applies the shared texture post-decode pipeline: generate configured mip levels, encode the
+/// optional portable Basis/KTX2 payload, then validate the complete asset before publication.
+[[nodiscard]] bool PrepareTextureForImportUVE(TextureAssetUVE& texture,
+                                               const TextureImportSettingsUVE& settings);
 
 /// Publishes a converted asset atomically: creates the destination's parent directories, asks
 /// saveAsset to persist to "<destination><temporarySuffix>", then renames onto the destination.

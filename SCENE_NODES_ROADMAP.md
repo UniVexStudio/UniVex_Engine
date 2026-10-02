@@ -255,20 +255,18 @@ system behind them.
 
 ## Suggested near-term order
 
-1. **Done**: every 3D node's data definition now has its own real `.h`+`.cpp` under
-   `Engine/Runtime/Nodes/3D` (moved out of one shared header; the old thin compatibility-alias
-   facade layer in `Engine/Runtime/Scene` was also removed once confirmed nothing used it) — so
-   future systems have a clean, discoverable home to attach real behavior to. This was purely a
-   structural move: no `[~]` entry above changed status from it, since organizing where a stub's
-   data lives is not the same as giving it a real backing system. Follow-up, also done: the 17
-   kinds whose authored data already lives in a shared component (Empty, Camera3D, Light3D, the
-   three primitive meshes, the physics bodies, Area3D, AudioSource3D, ParticleEmitter3D, Script,
-   AnimationPlayer, AnimationTree) each got their own `NodeDefinition` `.h`+`.cpp` in the same
-   folder — the kind's creation recipe (components to attach, authored defaults, default entity
-   name) — and the editor's creation switch now sources every one of those recipes from those
-   files instead of hardcoding them inline. Still purely structural: no `[~]` entry changed
-   status, and the save format is untouched (a definition is a recipe, never a serialized
-   component).
+1. **Done**: every scene-node kind has its own `.h`+`.cpp` home under `Engine/Runtime/Nodes`,
+   grouped by domain: general 3D nodes under `3D`, physics-dependent 3D nodes under `3D/Physics`,
+   AI/navigation nodes under `AI/3D`, and animation nodes under `Animation`. This grew out of
+   splitting one shared node header; the old thin compatibility-alias facade layer in
+   `Engine/Runtime/Scene` was also removed once confirmed nothing used it. This is purely
+   structural: no `[~]` entry above changed status, since organizing a stub's data is not giving it
+   a backing system. The 17 kinds whose authored data already lives in a shared component (Empty,
+   Camera3D, Light3D, the three primitive meshes, physics bodies, Area3D, AudioSource3D,
+   ParticleEmitter3D, Script, AnimationPlayer, AnimationTree) each have their own `NodeDefinition`
+   recipe in the owning folder, and the editor's creation switch sources those recipes instead of
+   hardcoding them. The save format is untouched: a definition is a recipe, never a serialized
+   component.
 2. **RayCast3D, Projectile3D, and Hitbox3D/Hurtbox3D done** (real per-frame raycast against the
    actual query system with correct self-exclusion; real kinematic integration + lifetime expiry
    for projectiles; real per-frame hitbox-vs-hurtbox strike pairing — see the entries above for

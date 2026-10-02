@@ -79,6 +79,8 @@ TEST(JpegImporterUVETest, ImportUVE_ValidJpgPublishesUveTexAndRegistersGuid) {
     EXPECT_EQ(texture.width, 1U);
     EXPECT_EQ(texture.height, 1U);
     EXPECT_EQ(texture.format, TextureFormatUVE::RGBA8Unorm);
+    EXPECT_EQ(texture.colorSpace, TextureColorSpaceUVE::Srgb);
+    EXPECT_EQ(texture.usage, TextureUsageUVE::Color);
     ASSERT_EQ(texture.pixels.size(), 4U);
     EXPECT_GT(std::to_integer<unsigned int>(texture.pixels[0]), 200U);
     EXPECT_LT(std::to_integer<unsigned int>(texture.pixels[1]), 50U);
