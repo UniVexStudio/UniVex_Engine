@@ -455,8 +455,8 @@ void GlCommandBufferUVE::BindTextureUVE(TextureHandleUVE texture, std::uint32_t 
     // texture to the image unit of the same index so imageLoad/imageStore see it. Image units
     // follow the same slot==unit convention samplers do (callers point an image uniform at the
     // slot they bound, exactly like a sampler uniform; the reflected default is unit 0).
-    // Depth textures are never image-bound by this RHI — the same M5b scope the Vulkan arm
-    // documents (color formats only).
+    // Only supported linear, uncompressed color formats are image-bound here; depth,
+    // block-compressed and sRGB textures remain available to samplers only.
     if (m_state->gl.glBindImageTexture != nullptr) {
         const auto* const pipelineRecord = FindCurrentPipelineUVE();
         if (pipelineRecord != nullptr) {
@@ -471,10 +471,12 @@ void GlCommandBufferUVE::BindTextureUVE(TextureHandleUVE texture, std::uint32_t 
                 GLenum imageFormat = 0;
                 switch (textureIt->second.desc.format) {
                     case TextureFormatUVE::RGBA8Unorm:
-                        // Image access uses the normalized RGBA8 by-size-compatible format even
-                        // when the sampled texture storage is GL_SRGB8_ALPHA8; sRGB decoding is
-                        // a sampler operation, not a storage-image format change.
-                        imageFormat = GL_RGBA8;
+                        // OpenGL does not provide storage-image access to sRGB texture storage.
+                        // Keep sRGB textures available to samplers, but refuse their image-unit
+                        // binding instead of issuing writes that drivers may silently discard.
+                        imageFormat = textureIt->second.desc.colorSpace == TextureColorSpaceUVE::Srgb
+                                          ? 0U
+                                          : GL_RGBA8;
                         break;
                     case TextureFormatUVE::RGBA16Float:
                         imageFormat = GL_RGBA16F;
@@ -499,6 +501,9 @@ void GlCommandBufferUVE::BindTextureUVE(TextureHandleUVE texture, std::uint32_t 
                     if (IsTextureFormatCompressedUVE(textureIt->second.desc.format)) {
                         UVE_ERROR("GlCommandBufferUVE: block-compressed textures cannot be bound as storage "
                                   "images; the image unit is left unbound");
+                    } else if (textureIt->second.desc.colorSpace == TextureColorSpaceUVE::Srgb) {
+                        UVE_ERROR("GlCommandBufferUVE: sRGB textures cannot be bound as storage images; "
+                                  "the image unit is left unbound");
                     } else {
                         UVE_ERROR("GlCommandBufferUVE: depth textures cannot be bound as storage "
                                   "images; the image unit is left unbound");

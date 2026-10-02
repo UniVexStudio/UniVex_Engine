@@ -2636,11 +2636,11 @@ TEST_F(GlRenderDeviceUVETest, DispatchUVE_RejectsGraphicsPipelineWithoutGlError)
 
 // ---------------------------------------------------------------------------
 // M5b: storage images (GL). BindTextureUVE feeds ONE unified slot space — when the
-// current program declares GL_IMAGE_2D uniforms, the texture is ALSO bound to the
-// image unit of the same index (glBindImageTexture, GL_READ_WRITE), so imageLoad/
-// imageStore reach the caller's texture. Both proofs read the texture back with raw
-// glGetTexImage through the binding the RHI left behind (the SSBO-test precedent):
-// a ZERO-initialized texture can only turn green/red through a real image store.
+// current program declares GL_IMAGE_2D uniforms, storage-capable textures are ALSO
+// bound to the image unit of the same index (glBindImageTexture, GL_READ_WRITE).
+// Linear RGBA8 compute/fragment tests prove imageStore writes with glGetTexImage;
+// the sRGB case verifies that OpenGL keeps the texture sampled-only and clears the
+// image unit instead of silently discarding storage writes.
 // ---------------------------------------------------------------------------
 
 constexpr std::string_view kImageFillComputeSource = R"(#version 430 core
@@ -2652,13 +2652,10 @@ void main() {
 }
 )";
 
-TEST_F(GlRenderDeviceUVETest, BindTextureUVE_ComputeImageStoreOnSrgbTexture_ProvenByGlGetTexImage) {
-    // The GL M5b compute-side proof: a zero-initialized 4x4 sRGB RGBA8 texture, one
-    // outside-pass dispatch of the image filler (bind compute pipeline → BindTextureUVE
-    // at slot 0 → DispatchUVE(1,1,1); GL executes at record time and the dispatch
-    // barrier covers shader image access), then a raw glGetTexImage readback must show
-    // all sixteen texels GREEN. Without a real glBindImageTexture + glDispatchCompute
-    // the texture stays zeroed — the green cannot be faked.
+TEST_F(GlRenderDeviceUVETest, BindTextureUVE_ComputeStorageImageOnSrgbTexture_LeavesImageUnitUnbound) {
+    // An sRGB texture remains valid for sampling but is not a supported OpenGL storage
+    // image. BindTextureUVE must preserve the texture-unit binding while clearing the
+    // corresponding image unit, rather than relying on driver-specific by-size aliasing.
     constexpr std::array<std::uint8_t, 4U * 4U * 4U> kZeroPixels{};
     TextureDescUVE targetDesc{};
     targetDesc.width = 4U;
@@ -2687,14 +2684,61 @@ TEST_F(GlRenderDeviceUVETest, BindTextureUVE_ComputeImageStoreOnSrgbTexture_Prov
 
     std::unique_ptr<ICommandBufferUVE> commandBuffer = renderDevice->CreateCommandBufferUVE();
     ASSERT_NE(commandBuffer, nullptr);
+    while (glGetError() != GL_NO_ERROR) {
+    }
     commandBuffer->BindPipelineUVE(computePipeline);
     commandBuffer->BindTextureUVE(target, 0U); // M5b: legal outside pass while compute is bound
+    renderDevice->SubmitUVE(std::move(commandBuffer));
+
+    GLint textureName = 0;
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &textureName);
+    EXPECT_NE(textureName, 0) << "the sRGB texture must remain bound for sampler access";
+    GLint imageName = -1;
+    glGetIntegeri_v(GL_IMAGE_BINDING_NAME, 0U, &imageName);
+    EXPECT_EQ(imageName, 0) << "unsupported sRGB storage-image bindings must be cleared";
+    EXPECT_EQ(glGetError(), GL_NO_ERROR);
+
+    renderDevice->DestroyPipelineUVE(computePipeline);
+    renderDevice->DestroyShaderUVE(computeShader);
+    renderDevice->DestroyTextureUVE(target);
+}
+
+TEST_F(GlRenderDeviceUVETest, BindTextureUVE_ComputeImageStoreOnLinearTexture_ProvenByGlGetTexImage) {
+    // Linear RGBA8 remains a supported compute storage image. A zero-initialized target
+    // must read back green after the compute pipeline binds it and dispatches one workgroup.
+    constexpr std::array<std::uint8_t, 4U * 4U * 4U> kZeroPixels{};
+    const TextureHandleUVE target = renderDevice->CreateTextureUVE(
+        TextureDescUVE{4U, 4U, TextureFormatUVE::RGBA8Unorm, 1U},
+        std::as_bytes(std::span(kZeroPixels)));
+    ASSERT_NE(target, kInvalidTextureHandleUVE);
+
+    const ShaderHandleUVE computeShader = renderDevice->CreateShaderUVE(
+        ShaderDescUVE{ShaderStageUVE::Compute, std::string(kImageFillComputeSource)});
+    if (computeShader == kInvalidShaderHandleUVE) {
+        renderDevice->DestroyTextureUVE(target);
+        GTEST_SKIP() << "context lacks compute shaders (GL 4.3+)";
+    }
+    ComputePipelineDescUVE pipelineDesc{};
+    pipelineDesc.computeShader = computeShader;
+    std::string infoLog;
+    const PipelineHandleUVE computePipeline =
+        renderDevice->CreateComputePipelineUVE(pipelineDesc, &infoLog);
+    if (computePipeline == kInvalidPipelineHandleUVE) {
+        renderDevice->DestroyShaderUVE(computeShader);
+        renderDevice->DestroyTextureUVE(target);
+        GTEST_SKIP() << "compute pipeline refused: " << infoLog;
+    }
+
+    std::unique_ptr<ICommandBufferUVE> commandBuffer = renderDevice->CreateCommandBufferUVE();
+    ASSERT_NE(commandBuffer, nullptr);
+    while (glGetError() != GL_NO_ERROR) {
+    }
+    commandBuffer->BindPipelineUVE(computePipeline);
+    commandBuffer->BindTextureUVE(target, 0U);
     commandBuffer->DispatchUVE(1U, 1U, 1U);
     EXPECT_EQ(glGetError(), GL_NO_ERROR);
     renderDevice->SubmitUVE(std::move(commandBuffer));
 
-    // Readback through the unit-0 binding the RHI's glBindTexture left behind (GetTexImage
-    // implicitly flushes, so the dispatch's stores are complete).
     GLint textureName = 0;
     glGetIntegerv(GL_TEXTURE_BINDING_2D, &textureName);
     ASSERT_NE(textureName, 0) << "the target texture must still be bound at unit 0";
