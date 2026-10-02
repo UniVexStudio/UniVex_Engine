@@ -643,7 +643,7 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_InvalidAudioSourcePayload_RollsBackCre
 }
 
 TEST_F(SceneSerializerUVETest, RestoreUVE_AnimationTargetsRemapToTheRestoredEntities) {
-    // A door (Node3D) with an AnimationPlayer and an AnimationTree beside it, both aimed at it.
+    // A door (Node3D) with an AnimationSequencer and an AnimationGraph beside it, both aimed at it.
     const EntityUVE door = entityManager.CreateEntityUVE();
     entityManager.AddComponentUVE<TransformComponentUVE>(door, TransformComponentUVE{});
     entityManager.AddComponentUVE<HierarchyComponentUVE>(door, HierarchyComponentUVE{});
@@ -1255,7 +1255,7 @@ TEST_F(SceneSerializerUVETest, SaveThenLoad_CharacterControllerComponentUVE_Roun
 }
 
 TEST_F(SceneSerializerUVETest, Load_OlderCharacterControllerPayloadKeepsItsValuesAndDefaultsTheRest) {
-    // Before CharacterBody3D had its full set of settings, only these five were saved.
+    // Before Character3D had its full set of settings, only these five were saved.
     const std::string payload =
         R"({"entities":[{"localId":0,"components":{"CharacterControllerComponentUVE":)"
         R"({"moveSpeed":6.5,"jumpHeight":2.25,"gravityScale":1.5,"verticalVelocity":-3.0,"isGrounded":true}}}]})";

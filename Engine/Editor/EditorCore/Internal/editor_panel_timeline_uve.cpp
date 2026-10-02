@@ -1,6 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-// The Entity Editor's Timeline tab: the clip of the entity's AnimationPlayer as a dope sheet - one
+// The Entity Editor's Timeline tab: the clip of the entity's AnimationSequencer as a dope sheet - one
 // row per bone with its keys - under a ruler with a playhead, and a transport that previews the
 // clip on the entity's skeleton while the tab is open. The preview writes the skeleton's runtime
 // pose only, so it never dirties the entity or reaches its file.
@@ -29,7 +29,7 @@
 #include "uve/component/animation_player_component_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/name_component_uve.h"
-#include "uve/nodes/3d/animation_player_uve.h"
+#include "uve/nodes/3d/animation_sequencer_uve.h"
 #include "uve/nodes/3d/skeleton_3d_uve.h"
 
 namespace UVE::Editor {
@@ -142,7 +142,7 @@ void EditorUVE::DrawAnimationTimelineUVE() {
     const auto nameOf = [&entityManager](const Scene::EntityUVE entity) {
         return entityManager.HasComponentUVE<Scene::NameComponentUVE>(entity)
                    ? entityManager.GetComponentUVE<Scene::NameComponentUVE>(entity).name
-                   : std::string{"AnimationPlayer"};
+                   : std::string{"AnimationSequencer"};
     };
 
     // ---- Which player: the selected one, else the one shown last, else the entity's first -------
@@ -329,7 +329,7 @@ void EditorUVE::DrawAnimationTimelineUVE() {
             ImGui::EndCombo();
         }
         if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("The AnimationPlayer this Timeline shows. Selecting a player in the tree picks it too.");
+            ImGui::SetTooltip("The AnimationSequencer this Timeline shows. Selecting a player in the tree picks it too.");
         }
         ImGui::SameLine();
     }

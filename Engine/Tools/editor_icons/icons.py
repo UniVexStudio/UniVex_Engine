@@ -212,8 +212,8 @@ def ray_cast_3d(ic):
     sphere(ic, 15, 15, 7.5, BLUE)
 
 
-@scene_node("static_body_3d", "StaticBody3D", "Physics")
-def static_body_3d(ic):
+@scene_node("static_3d", "Static3D", "Physics")
+def static_3d(ic):
     shadow(ic, 32, 57, 27, 6)
     box(ic, 32, 51, 34, 18, 34, "#6a86ad")
     # a bolt on the top face says "fixed in place"
@@ -221,8 +221,8 @@ def static_body_3d(ic):
     cylinder(ic, cx, cy + 1, 4.2, 5, "#c7d2df", ry=2.2)
 
 
-@scene_node("animatable_body_3d", "AnimatableBody3D", "Physics")
-def animatable_body_3d(ic):
+@scene_node("kinematic_3d", "Kinematic3D", "Physics")
+def kinematic_3d(ic):
     shadow(ic, 32, 55, 22, 4.5)
     slab(ic, 32, 45, 30, 20, 6, BLUE)
     left, right = iso(32, 45, -30, 3, 0), iso(32, 45, 30, 3, 0)
@@ -235,8 +235,8 @@ def animatable_body_3d(ic):
     box(ic, 30, 36, 9, 9, 9, shade(STEEL, 0.05))
 
 
-@scene_node("character_body_3d", "CharacterBody3D", "Physics")
-def character_body_3d(ic):
+@scene_node("character_3d", "Character3D", "Physics")
+def character_3d(ic):
     shadow(ic, 31, 57, 20, 4.5)
     # the body's collision capsule, drawn around the runner
     ic.add(f'<rect x="14" y="3" width="36" height="55" rx="18" fill="{BLUE}" fill-opacity="0.1" stroke="{MINT}" '
@@ -251,8 +251,8 @@ def collider_3d(ic):
     wire_box(ic, 32, 51, 27, 28, 27, MINT, dash="3 2.2", width=2.2)
 
 
-@scene_node("rigid_body_3d", "RigidBody3D", "Physics")
-def rigid_body_3d(ic):
+@scene_node("rigid_3d", "Rigid3D", "Physics")
+def rigid_3d(ic):
     wood = "#bf8a52"
     shadow(ic, 34, 58, 17, 4)
     for i, (x, y) in enumerate(((13, 10), (8, 20), (12, 30))):
@@ -357,8 +357,8 @@ def bone_attachment_3d(ic):
     stroke_line(ic, [(36, 26), (40, 36)], "#d9c9ff", 2.4)
 
 
-@scene_node("animation_player", "AnimationPlayer", "Animation")
-def animation_player(ic):
+@scene_node("animation_sequencer", "AnimationSequencer", "Animation")
+def animation_sequencer(ic):
     shadow(ic, 32, 57, 26, 4.5)
     strip = "#3a3446"
     fill = ic.linear([(0, shade(strip, 0.1)), (1, shade(strip, -0.08))], 0, 0, 0, 1)
@@ -374,8 +374,8 @@ def animation_player(ic):
     ic.add('<path d="M 27 24.5 L 38.5 31.4" stroke="#fff" stroke-opacity="0.7" stroke-width="1.5" stroke-linecap="round"/>')
 
 
-@scene_node("animation_tree", "AnimationTree", "Animation")
-def animation_tree(ic):
+@scene_node("animation_graph", "AnimationGraph", "Animation")
+def animation_graph(ic):
     shadow(ic, 32, 58, 26, 3.5)
     def state(x, y, w, h, colour):
         ic.add(f'<rect x="{x + 1.5}" y="{y + 2.5}" width="{w}" height="{h}" rx="5" fill="{shade(colour, -0.35)}"/>')
@@ -898,7 +898,7 @@ def prefab_asset(ic):
 @content_type("entity", "Entity")
 def entity_asset(ic):
     # An entity asset is a ready-made node tree - drawn as the character body it usually holds.
-    character_body_3d(ic)
+    character_3d(ic)
 
 
 @content_type("bundle", "Bundle")

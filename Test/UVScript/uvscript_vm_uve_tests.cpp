@@ -21,7 +21,7 @@
 namespace UVE::UVScript::Tests {
 namespace {
 
-/// A CharacterBody3D-like node: a velocity, a read-only floor flag, input, and three events.
+/// A Character3D-like node: a velocity, a read-only floor flag, input, and three events.
 class FakeHostUVE final : public UVScriptHostUVE {
 public:
     std::optional<HostPropertyUVE> DescribePropertyUVE(const std::string_view name) const override {
@@ -82,7 +82,7 @@ public:
 
 TEST(UVScriptVmUVETest, RunsAPlayerController) {
     FakeHostUVE host;
-    const auto program = CompileOrFailUVE(R"(entity Player : CharacterBody3D
+    const auto program = CompileOrFailUVE(R"(entity Player : Character3D
 export speed: float = 6.0
 export jump = 2.0 m
 var jumps = 0

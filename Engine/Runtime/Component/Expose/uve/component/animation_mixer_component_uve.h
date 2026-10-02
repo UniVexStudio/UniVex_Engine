@@ -24,7 +24,7 @@ enum class AnimationRootMotionModeUVE : std::uint8_t {
     /// The root bone's ground travel is taken out of the pose; nothing moves the node.
     InPlace,
     /// Taken out of the pose and added to the target instead, so the node goes where the feet go.
-    /// A CharacterBody3D target gets it as velocity, so collisions still stop it.
+    /// A Character3D target gets it as velocity, so collisions still stop it.
     ApplyToTarget,
 };
 
@@ -38,7 +38,7 @@ enum class AnimationTransitionModeUVE : std::uint8_t {
     Crossfade,
 };
 
-/// AnimationMixer: the abstract base AnimationPlayer and AnimationTree share - what they move, which
+/// AnimationMixer: the abstract base AnimationSequencer and AnimationGraph share - what they move, which
 /// channels, on which clock and how fast. Not a node of its own; the section both show between
 /// their own and the Node section.
 struct AnimationMixerComponentUVE final {

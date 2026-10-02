@@ -2,7 +2,7 @@
 
 #
 # One real .h + .cpp pair per component — matching the per-file discipline of
-# Engine/Runtime/Nodes/3D. Each component's struct + function declarations live in its own
+# Engine/Runtime/Objects/3D. Each component's struct + function declarations live in its own
 # header under Expose/uve/component; its validators/behavior are defined in a matching .cpp
 # under Internal (pure-data components — Hierarchy, WorldTransform, EditorInternalEntity — get
 # a deliberately-empty .cpp placeholder so every component still has the same pair, ready for

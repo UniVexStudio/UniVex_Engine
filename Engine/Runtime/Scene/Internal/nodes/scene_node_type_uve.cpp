@@ -30,7 +30,7 @@ namespace {
 using Kind = Nodes::SceneNodeKindUVE;
 
 /// The kinds whose own node component says exactly what they are. Checked before the shared
-/// components below, since several of these nodes also carry one (an AnimatableBody3D has a
+/// components below, since several of these nodes also carry one (an Kinematic3D has a
 /// collider and a body).
 template <typename Component>
 struct OwnComponentUVE final {
@@ -89,7 +89,7 @@ Nodes::SceneNodeKindUVE InferSceneNodeKindUVE(const IEntityManagerUVE& entityMan
 
     Kind kind = Kind::Node3D;
     if (TryOwnComponentUVE(entityManager, entity, kind,
-                           OwnComponentUVE<AnimatableBody3DNodeComponentUVE>{Kind::AnimatableBody3D},
+                           OwnComponentUVE<AnimatableBody3DNodeComponentUVE>{Kind::Kinematic3D},
                            OwnComponentUVE<RayCast3DNodeComponentUVE>{Kind::RayCast3D},
                            OwnComponentUVE<NavigationRegion3DNodeComponentUVE>{Kind::NavigationRegion3D},
                            OwnComponentUVE<NavigationAgent3DNodeComponentUVE>{Kind::NavigationAgent3D},
@@ -117,27 +117,27 @@ Nodes::SceneNodeKindUVE InferSceneNodeKindUVE(const IEntityManagerUVE& entityMan
                            OwnComponentUVE<MeshComponentUVE>{Kind::MeshInstance3D},
                            OwnComponentUVE<AudioSourceComponentUVE>{Kind::AudioSource3D},
                            OwnComponentUVE<ParticleEmitterComponentUVE>{Kind::ParticleEmitter3D},
-                           OwnComponentUVE<AnimationPlayerComponentUVE>{Kind::AnimationPlayer},
-                           OwnComponentUVE<AnimationTreeComponentUVE>{Kind::AnimationTree},
+                           OwnComponentUVE<AnimationPlayerComponentUVE>{Kind::AnimationSequencer},
+                           OwnComponentUVE<AnimationTreeComponentUVE>{Kind::AnimationGraph},
                            OwnComponentUVE<CanvasComponentUVE>{Kind::Canvas},
                            OwnComponentUVE<UITextComponentUVE>{Kind::UIText},
                            OwnComponentUVE<UIImageComponentUVE>{Kind::UIImage},
                            OwnComponentUVE<UIButtonComponentUVE>{Kind::UIButton},
                            OwnComponentUVE<AreaComponentUVE>{Kind::Area3D},
-                           OwnComponentUVE<CharacterControllerComponentUVE>{Kind::CharacterBody3D})) {
+                           OwnComponentUVE<CharacterControllerComponentUVE>{Kind::Character3D})) {
         return kind;
     }
 
     // The bodies are told apart by what they combine. A collider with a body is how a
-    // CharacterBody3D is built; a collider alone is either a Collider3D or a StaticBody3D, which are
+    // Character3D is built; a collider alone is either a Collider3D or a Static3D, which are
     // built identically, and reads as Collider3D, the older of the two.
     const bool collider = entityManager.HasComponentUVE<ColliderComponentUVE>(entity);
     const bool body = entityManager.HasComponentUVE<RigidBodyComponentUVE>(entity);
     if (collider && body) {
-        return Kind::CharacterBody3D;
+        return Kind::Character3D;
     }
     if (body) {
-        return Kind::RigidBody3D;
+        return Kind::Rigid3D;
     }
     if (collider) {
         return Kind::Collider3D;

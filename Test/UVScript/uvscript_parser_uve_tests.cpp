@@ -9,7 +9,7 @@
 namespace UVE::UVScript::Tests {
 namespace {
 
-constexpr const char* kPlayerUVE = R"(entity Player : CharacterBody3D
+constexpr const char* kPlayerUVE = R"(entity Player : Character3D
 
 # fields
 export speed: float = 6.0
@@ -51,7 +51,7 @@ TEST(UVScriptParserUVETest, ParsesAWholeEntityScript) {
     const FileUVE& file = result.file;
     ASSERT_TRUE(file.header.has_value());
     EXPECT_EQ(file.header->name, "Player");
-    EXPECT_EQ(file.header->baseKind, "CharacterBody3D");
+    EXPECT_EQ(file.header->baseKind, "Character3D");
 
     ASSERT_EQ(file.fields.size(), 4U);
     EXPECT_EQ(file.fields[0].kind, FieldKindUVE::Export);

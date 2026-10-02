@@ -71,9 +71,9 @@
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/mesh_component_uve.h"
 #include "uve/component/process_component_uve.h"
-#include "uve/nodes/3d/animation_player_uve.h"
+#include "uve/nodes/3d/animation_sequencer_uve.h"
 #include "uve/nodes/3d/skeleton_3d_uve.h"
-#include "uve/nodes/3d/animation_tree_uve.h"
+#include "uve/nodes/3d/animation_graph_uve.h"
 #include "uve/nodes/3d/hitbox_3d_uve.h"
 #include "uve/nodes/3d/hurtbox_3d_uve.h"
 #include "uve/nodes/3d/interaction_area_3d_uve.h"
@@ -940,7 +940,7 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
     // Root motion is measured in the skeleton's space; the target moves in its parent's. Both go
     // through world space, composed from the local transforms up the hierarchy so a transform
     // edited this frame (not yet propagated to the world transform) still counts.
-    // A CharacterBody3D is driven by velocity, so collisions still apply.
+    // A Character3D is driven by velocity, so collisions still apply.
     struct FrameUVE {
         Math::QuaternionUVE rotation{};
         Math::Vector3UVE scale{1.0F, 1.0F, 1.0F};
@@ -1043,7 +1043,7 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
             continue; // not set, still loading, or failed - the player waits
         }
         // A skeletal clip poses a skeleton: the target when it is one, else the first Skeleton3D
-        // under it (a character's AnimationPlayer targets the character; its skeleton is inside).
+        // under it (a character's AnimationSequencer targets the character; its skeleton is inside).
         if (clip->IsSkeletalUVE()) {
             const Scene::EntityUVE skeletonEntity = resolveSkeleton(entity, mixer.target);
             if (skeletonEntity == Scene::kInvalidEntityUVE) {

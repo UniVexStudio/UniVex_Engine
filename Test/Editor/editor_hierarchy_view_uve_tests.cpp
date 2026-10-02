@@ -22,7 +22,7 @@ TEST(EditorHierarchyViewUVETest, EyeIsDrawnPerModeAndAlwaysOnAHiddenNodeWhenOnHo
 }
 
 TEST(EditorHierarchyViewUVETest, TypeHintIsLeftOutWhenItWouldOnlyRepeatTheName) {
-    EXPECT_EQ(GetHierarchyTypeHintUVE("Player", "CharacterBody3D"), "CharacterBody3D");
+    EXPECT_EQ(GetHierarchyTypeHintUVE("Player", "Character3D"), "Character3D");
     EXPECT_EQ(GetHierarchyTypeHintUVE("BoxMesh3D", "BoxMesh3D"), "");
     EXPECT_EQ(GetHierarchyTypeHintUVE("Player", ""), "");
     // Only an exact repeat is left out; a name that differs only in case still shows the type.

@@ -77,14 +77,14 @@ TEST_F(SceneNodeTypeUVETest, InferenceReadsEveryKindThatHasComponentsOfItsOwn) {
         EXPECT_EQ(InferSceneNodeKindUVE(entityManager, MakeWithUVE(mesh, ColliderComponentUVE{})), kind);
     }
 
-    // Bodies are read from what they combine; an AnimatableBody3D's own component outranks both.
+    // Bodies are read from what they combine; an Kinematic3D's own component outranks both.
     EXPECT_EQ(InferSceneNodeKindUVE(entityManager, MakeWithUVE(ColliderComponentUVE{}, RigidBodyComponentUVE{})),
-              Kind::CharacterBody3D);
-    EXPECT_EQ(InferSceneNodeKindUVE(entityManager, MakeWithUVE(RigidBodyComponentUVE{})), Kind::RigidBody3D);
+              Kind::Character3D);
+    EXPECT_EQ(InferSceneNodeKindUVE(entityManager, MakeWithUVE(RigidBodyComponentUVE{})), Kind::Rigid3D);
     EXPECT_EQ(InferSceneNodeKindUVE(entityManager, MakeWithUVE(ColliderComponentUVE{})), Kind::Collider3D);
     EXPECT_EQ(InferSceneNodeKindUVE(entityManager, MakeWithUVE(ColliderComponentUVE{}, RigidBodyComponentUVE{},
                                                                AnimatableBody3DNodeComponentUVE{})),
-              Kind::AnimatableBody3D);
+              Kind::Kinematic3D);
 
     // A script names the node only when nothing else does.
     EXPECT_EQ(InferSceneNodeKindUVE(entityManager, MakeWithUVE(ScriptComponentUVE{})), Kind::Script);
@@ -93,11 +93,11 @@ TEST_F(SceneNodeTypeUVETest, InferenceReadsEveryKindThatHasComponentsOfItsOwn) {
 }
 
 TEST_F(SceneNodeTypeUVETest, AStoredTypeWinsOverWhatTheComponentsSuggest) {
-    // A StaticBody3D is built exactly like a Collider3D; only the stored type tells them apart.
+    // A Static3D is built exactly like a Collider3D; only the stored type tells them apart.
     const EntityUVE body = MakeWithUVE(ColliderComponentUVE{});
     EXPECT_EQ(ResolveSceneNodeKindUVE(entityManager, body), Kind::Collider3D);
-    SetSceneNodeKindUVE(entityManager, body, Kind::StaticBody3D);
-    EXPECT_EQ(ResolveSceneNodeKindUVE(entityManager, body), Kind::StaticBody3D);
+    SetSceneNodeKindUVE(entityManager, body, Kind::Static3D);
+    EXPECT_EQ(ResolveSceneNodeKindUVE(entityManager, body), Kind::Static3D);
     SetSceneNodeKindUVE(entityManager, body, Kind::Collider3D);
     EXPECT_EQ(ResolveSceneNodeKindUVE(entityManager, body), Kind::Collider3D);
 
@@ -114,16 +114,17 @@ TEST_F(SceneNodeTypeUVETest, AStoredTypeWinsOverWhatTheComponentsSuggest) {
 
 TEST_F(SceneNodeTypeUVETest, TheTypeSurvivesASaveByItsStableId) {
     const EntityUVE body = MakeWithUVE(ColliderComponentUVE{});
-    SetSceneNodeKindUVE(entityManager, body, Kind::StaticBody3D);
+    SetSceneNodeKindUVE(entityManager, body, Kind::Static3D);
     const std::optional<SceneSnapshotUVE> snapshot =
         serializer.CaptureUVE(entityManager, {body}, SceneAssetTypeUVE::Scene);
     ASSERT_TRUE(snapshot.has_value());
     const std::string text(reinterpret_cast<const char*>(snapshot->bytes.data()), snapshot->bytes.size());
-    EXPECT_NE(text.find("\"static_body_3d\""), std::string::npos);
+    EXPECT_NE(text.find("\"static_3d\""), std::string::npos);
+    EXPECT_EQ(text.find("\"static_body_3d\""), std::string::npos);
 
     const std::vector<EntityUVE> restored = serializer.RestoreUVE(entityManager, *snapshot);
     ASSERT_EQ(restored.size(), 1U);
-    EXPECT_EQ(ResolveSceneNodeKindUVE(entityManager, restored.front()), Kind::StaticBody3D);
+    EXPECT_EQ(ResolveSceneNodeKindUVE(entityManager, restored.front()), Kind::Static3D);
 }
 
 TEST_F(SceneNodeTypeUVETest, UnknownAndLegacyIdsLoadWithoutFailingTheScene) {
@@ -145,6 +146,23 @@ TEST_F(SceneNodeTypeUVETest, UnknownAndLegacyIdsLoadWithoutFailingTheScene) {
     ASSERT_EQ(legacy.size(), 1U);
     ASSERT_TRUE(entityManager.HasComponentUVE<SceneNodeTypeComponentUVE>(legacy.front()));
     EXPECT_EQ(ResolveSceneNodeKindUVE(entityManager, legacy.front()), Kind::Node3D);
+
+    // Scenes saved before the rename keep naming the four 3D body kinds and the two animation kinds
+    // by their old ids: the alias has to land on the same kind, not on an untyped node.
+    const std::pair<std::string_view, Kind> renamed[] = {
+        {"static_body_3d", Kind::Static3D},
+        {"rigid_body_3d", Kind::Rigid3D},
+        {"character_body_3d", Kind::Character3D},
+        {"animatable_body_3d", Kind::Kinematic3D},
+        {"animation_player", Kind::AnimationSequencer},
+        {"animation_tree", Kind::AnimationGraph},
+    };
+    for (const auto& [oldId, expected] : renamed) {
+        const std::vector<EntityUVE> aliased = restoreWithType(oldId);
+        ASSERT_EQ(aliased.size(), 1U) << oldId;
+        ASSERT_TRUE(entityManager.HasComponentUVE<SceneNodeTypeComponentUVE>(aliased.front())) << oldId;
+        EXPECT_EQ(ResolveSceneNodeKindUVE(entityManager, aliased.front()), expected) << oldId;
+    }
 }
 
 } // namespace

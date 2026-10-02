@@ -21,7 +21,7 @@ The comparison point is GDScript (Godot 4.x). The weaknesses that shaped UVScrip
 ## A script
 
 ```
-entity Player : CharacterBody3D
+entity Player : Character3D
 
 export speed: float = 6.0
 export jump_height = 1.2 m

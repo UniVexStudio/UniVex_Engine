@@ -511,8 +511,8 @@ void EditorUVE::DrawEntityEditorDockUVE(EntityEditSessionUVE& session) {
     if (!ImGui::BeginTabBar("##entity-dock-tabs")) {
         return;
     }
-    // The animation tabs belong to their node: the Timeline shows while an AnimationPlayer is
-    // selected, the Anim Graph while an AnimationTree is. Anything else leaves Content alone.
+    // The animation tabs belong to their node: the Timeline shows while an AnimationSequencer is
+    // selected, the Anim Graph while an AnimationGraph is. Anything else leaves Content alone.
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
     const Scene::EntityUVE selected = m_selectedEntity;
     const bool selectedAlive = selected != Scene::kInvalidEntityUVE && entityManager.IsAliveUVE(selected);

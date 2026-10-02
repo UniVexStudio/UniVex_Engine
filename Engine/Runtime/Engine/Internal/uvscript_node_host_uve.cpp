@@ -71,7 +71,7 @@ std::optional<std::vector<TypeUVE>> UVScriptNodeHostUVE::DescribeEventUVE(const 
     if (event == "tick") {
         return std::vector<TypeUVE>{TypeUVE::FloatUVE()};
     }
-    // An AnimationPlayer's clip passed one of its events: sent to the player's own script and to
+    // An AnimationSequencer's clip passed one of its events: sent to the player's own script and to
     // the script of the node it animates (a character's script hears its footsteps).
     if (event == "animation_event") {
         return std::vector<TypeUVE>{TypeUVE::StrUVE()};

@@ -142,7 +142,7 @@ struct FunctionUVE final {
     SourceLocationUVE at;
 };
 
-/// `entity Player : CharacterBody3D`
+/// `entity Player : Character3D`
 struct HeaderUVE final {
     std::string name;
     std::string baseKind;

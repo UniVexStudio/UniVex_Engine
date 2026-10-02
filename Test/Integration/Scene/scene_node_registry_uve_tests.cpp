@@ -46,8 +46,8 @@ TEST(SceneNodeRegistryUVETest, RealNodeTypesUVE_AreReachableFromTheAggregateHead
     static_assert(std::is_class_v<EntityUVE>);                                 // Empty
     static_assert(std::is_class_v<AreaComponentUVE>);                          // Area3D
     static_assert(std::is_class_v<RayCast3DNodeComponentUVE>);                 // RayCast3D
-    static_assert(std::is_class_v<ColliderComponentUVE>);                      // StaticBody3D, Collider3D
-    static_assert(std::is_class_v<AnimatableBody3DNodeComponentUVE>);          // AnimatableBody3D
+    static_assert(std::is_class_v<ColliderComponentUVE>);                      // Static3D, Collider3D
+    static_assert(std::is_class_v<AnimatableBody3DNodeComponentUVE>);          // Kinematic3D
     static_assert(std::is_class_v<NavigationRegion3DNodeComponentUVE>);        // NavigationRegion3D
     static_assert(std::is_class_v<NavigationAgent3DNodeComponentUVE>);         // NavigationAgent3D
     static_assert(std::is_class_v<Skeleton3DNodeComponentUVE>);                // Skeleton3D
@@ -67,14 +67,14 @@ TEST(SceneNodeRegistryUVETest, RealNodeTypesUVE_AreReachableFromTheAggregateHead
     static_assert(std::is_class_v<SpawnPoint3DNodeComponentUVE>);              // SpawnPoint3D
     static_assert(std::is_class_v<LevelStreamer3DNodeComponentUVE>);           // LevelStreamer3D
     static_assert(std::is_class_v<WorldPartition3DNodeComponentUVE>);          // WorldPartition3D
-    static_assert(std::is_class_v<Core::AnimationTreeUVE>);                    // AnimationTree
-    static_assert(std::is_class_v<AnimationPlayerComponentUVE>);               // AnimationPlayer
-    static_assert(std::is_class_v<Physics::CharacterControllerInputUVE>);      // CharacterBody3D
+    static_assert(std::is_class_v<Core::AnimationTreeUVE>);                    // AnimationGraph
+    static_assert(std::is_class_v<AnimationPlayerComponentUVE>);               // AnimationSequencer
+    static_assert(std::is_class_v<Physics::CharacterControllerInputUVE>);      // Character3D
     static_assert(std::is_class_v<CameraComponentUVE>);                       // Camera3D
     static_assert(std::is_class_v<MeshComponentUVE>);                         // MeshInstance3D
     static_assert(std::is_class_v<PrimitiveMeshComponentUVE>);                // BoxMesh3D, SphereMesh3D, PlaneMesh3D
     static_assert(std::is_class_v<LightComponentUVE>);                        // Light3D
-    static_assert(std::is_class_v<RigidBodyComponentUVE>);                    // RigidBody3D
+    static_assert(std::is_class_v<RigidBodyComponentUVE>);                    // Rigid3D
     static_assert(std::is_class_v<AudioSourceComponentUVE>);                  // AudioSource3D
     static_assert(std::is_class_v<ParticleEmitterComponentUVE>);              // ParticleEmitter3D
     static_assert(std::is_class_v<ScriptComponentUVE>);                       // Script
@@ -91,8 +91,8 @@ TEST(SceneNodeRegistryUVETest, PlacementSeparatesTheLevelFromEntityParts) {
     EXPECT_EQ(GetSceneNodePlacementUVE(SceneNodeKindUVE::Light3D), SceneNodePlacementUVE::World);
     EXPECT_EQ(GetSceneNodePlacementUVE(SceneNodeKindUVE::BoxMesh3D), SceneNodePlacementUVE::World);
     EXPECT_EQ(GetSceneNodePlacementUVE(SceneNodeKindUVE::WorldEnvironment3D), SceneNodePlacementUVE::World);
-    EXPECT_EQ(GetSceneNodePlacementUVE(SceneNodeKindUVE::CharacterBody3D), SceneNodePlacementUVE::Entity);
-    EXPECT_EQ(GetSceneNodePlacementUVE(SceneNodeKindUVE::AnimationTree), SceneNodePlacementUVE::Entity);
+    EXPECT_EQ(GetSceneNodePlacementUVE(SceneNodeKindUVE::Character3D), SceneNodePlacementUVE::Entity);
+    EXPECT_EQ(GetSceneNodePlacementUVE(SceneNodeKindUVE::AnimationGraph), SceneNodePlacementUVE::Entity);
     EXPECT_EQ(GetSceneNodePlacementUVE(SceneNodeKindUVE::Hitbox3D), SceneNodePlacementUVE::Entity);
 }
 

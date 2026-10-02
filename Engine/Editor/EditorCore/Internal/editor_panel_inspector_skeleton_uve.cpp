@@ -38,7 +38,7 @@
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/math/matrix4x4_uve.h"
 #include "uve/math/quaternion_uve.h"
-#include "uve/nodes/3d/animation_player_uve.h"
+#include "uve/nodes/3d/animation_sequencer_uve.h"
 #include "uve/nodes/3d/mesh_instance_3d_uve.h"
 #include "uve/nodes/3d/node_3d_uve.h"
 #include "uve/nodes/3d/skeleton_3d_uve.h"
@@ -201,14 +201,14 @@ Scene::EntityUVE EditorUVE::PlaceModelSourceUVE(const std::filesystem::path& rel
             static_cast<void>(make(stem + " Mesh", Kind::MeshInstance3D, mesh, Scene::ApplyMeshInstance3DNodeDefinitionUVE, skeletonEntity));
         }
         if (!clips.empty()) {
-            Scene::AnimationPlayerNodeDefinitionUVE player;
+            Scene::AnimationSequencerNodeDefinitionUVE player;
             // Every take of the file is the player's; the first one plays.
             for (const std::filesystem::path& clipPath : clips) {
                 player.player.library.push_back(m_services->GetAssetDatabaseUVE().RegisterUVE(clipPath));
             }
             player.player.clip = player.player.library.front();
             player.player.loopMode = Scene::AnimationLoopModeUVE::Loop;
-            static_cast<void>(make("AnimationPlayer", Kind::AnimationPlayer, player, Scene::ApplyAnimationPlayerNodeDefinitionUVE, root));
+            static_cast<void>(make("AnimationSequencer", Kind::AnimationSequencer, player, Scene::ApplyAnimationSequencerNodeDefinitionUVE, root));
         }
     }
     if (root == Scene::kInvalidEntityUVE) {

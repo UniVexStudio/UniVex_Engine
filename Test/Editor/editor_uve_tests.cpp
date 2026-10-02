@@ -1139,7 +1139,7 @@ TEST(EditorUVETest, NodeTypesUVE_EveryNodeIsTypedAndKeepsItThroughDuplicateUndoA
         EXPECT_EQ(editor.GetNodeTypeNameUVE(root), "SceneRoot");
 
         // Every node the Add Node list makes reads back as the type it was made as, including the
-        // ones whose components alone could not say (StaticBody3D is built like a Collider3D).
+        // ones whose components alone could not say (Static3D is built like a Collider3D).
         for (const Scene::Nodes::SceneNodeDescriptorUVE& descriptor : Scene::Nodes::GetSceneNodeDescriptorsUVE()) {
             if (!descriptor.libraryCreatable) {
                 continue;
@@ -1156,24 +1156,24 @@ TEST(EditorUVETest, NodeTypesUVE_EveryNodeIsTypedAndKeepsItThroughDuplicateUndoA
 
         // Duplicate, and undo then redo of a creation, carry the type with the node.
         editor.SelectEntityUVE(root);
-        const Scene::EntityUVE body = editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::StaticBody3D);
+        const Scene::EntityUVE body = editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Static3D);
         ASSERT_NE(body, Scene::kInvalidEntityUVE);
         editor.SelectEntityUVE(body);
         const Scene::EntityUVE copy = editor.DuplicateSelectedEntityUVE();
-        EXPECT_EQ(editor.GetNodeTypeNameUVE(copy), "StaticBody3D");
+        EXPECT_EQ(editor.GetNodeTypeNameUVE(copy), "Static3D");
         ASSERT_TRUE(editor.UndoUVE());
         ASSERT_TRUE(editor.UndoUVE());
         ASSERT_TRUE(editor.RedoUVE());
-        EXPECT_EQ(editor.GetNodeTypeNameUVE(editor.GetSelectedEntityUVE()), "StaticBody3D");
+        EXPECT_EQ(editor.GetNodeTypeNameUVE(editor.GetSelectedEntityUVE()), "Static3D");
 
         ASSERT_TRUE(editor.SaveSceneUVE());
         ASSERT_TRUE(editor.LoadSceneUVE());
         std::size_t staticBodies = 0U;
         entityManager.ForEachUVE<Scene::NameComponentUVE>(
             [&](const Scene::EntityUVE entity, const Scene::NameComponentUVE& name) {
-                if (name.name.starts_with("StaticBody3D")) {
+                if (name.name.starts_with("Static3D")) {
                     ++staticBodies;
-                    EXPECT_EQ(editor.GetNodeTypeNameUVE(entity), "StaticBody3D");
+                    EXPECT_EQ(editor.GetNodeTypeNameUVE(entity), "Static3D");
                 }
             });
         EXPECT_EQ(staticBodies, 2U); // the one from the list, and the one brought back by redo
@@ -5146,8 +5146,8 @@ TEST(EditorUVETest, CharacterBodyInspectorUVE_IsItsChainToTheRootAndNothingElse)
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
         const Scene::EntityUVE body = entityManager.CreateEntityUVE();
         AttachRootUVE(engine, body, Scene::TransformComponentUVE{});
-        Scene::ApplyCharacterBody3DNodeDefinitionUVE(entityManager, body, Scene::CharacterBody3DNodeDefinitionUVE{});
-        // CharacterBody3D > SolidBody3D > PhysicsObject3D > Node3D > Node. The capsule, layer and mask
+        Scene::ApplyCharacter3DNodeDefinitionUVE(entityManager, body, Scene::Character3DNodeDefinitionUVE{});
+        // Character3D > SolidBody3D > PhysicsObject3D > Node3D > Node. The capsule, layer and mask
         // are drawn inside PhysicsObject3D, so the collider has no section of its own.
         EXPECT_EQ(EditorUVEAccessUVE::GetEligibleInspectorDrawerIdsUVE(editor, body),
                   (std::vector<std::string>{"character-controller", "solid-body", "physics-object", "transform",
@@ -5200,9 +5200,9 @@ TEST(EditorUVETest, InspectorHeadersUVE_SpellOutTheClassChain) {
         EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_chain_headers.uvscene");
         editor.InitUVE();
         const Scene::EntityUVE body =
-            editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::CharacterBody3D);
+            editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Character3D);
         const Scene::EntityUVE player =
-            editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::AnimationPlayer);
+            editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::AnimationSequencer);
         ASSERT_NE(body, Scene::kInvalidEntityUVE);
         ASSERT_NE(player, Scene::kInvalidEntityUVE);
         // Transform and Visibility sit under Node3D, the common section under Node.
@@ -5225,11 +5225,11 @@ TEST(EditorUVETest, AnimationNodesUVE_InspectorIsTheirOwnSectionThenTheNodeSecti
         EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_animation_inspector.uvscene");
         editor.InitUVE();
         const Scene::EntityUVE player =
-            editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::AnimationPlayer);
-        const Scene::EntityUVE tree = editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::AnimationTree);
+            editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::AnimationSequencer);
+        const Scene::EntityUVE tree = editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::AnimationGraph);
         ASSERT_NE(player, Scene::kInvalidEntityUVE);
         ASSERT_NE(tree, Scene::kInvalidEntityUVE);
-        // AnimationPlayer > AnimationMixer > Node: a pure Node, no Transform, no Visibility.
+        // AnimationSequencer > AnimationMixer > Node: a pure Node, no Transform, no Visibility.
         const std::vector<std::string> nodeSection{"animation-mixer", "process", "physics-interpolation",
                                                    "auto-translate", "editor-description", "script", "node-metadata"};
         std::vector<std::string> expected{"animation-player"};
@@ -5251,7 +5251,7 @@ TEST(EditorUVETest, AnimationNodesUVE_APureNodeReparentsAndUndoes) {
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
         const Scene::EntityUVE player =
-            editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::AnimationPlayer);
+            editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::AnimationSequencer);
         editor.SelectEntityUVE(editor.GetDocumentSceneRootUVE());
         const Scene::EntityUVE door = editor.CreateDocumentSceneNodeUVE(Scene::Nodes::SceneNodeKindUVE::Node3D);
         ASSERT_NE(door, Scene::kInvalidEntityUVE);

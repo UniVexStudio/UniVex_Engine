@@ -1030,7 +1030,7 @@ bool EditorUVE::IsSceneComponentValueValidUVE(
             } else if constexpr (std::is_same_v<ValueType, Scene::ScriptComponentUVE>) {
                 return kind == EditorSceneComponentKindUVE::Script && Scene::IsScriptComponentValidUVE(typedValue);
             } else if constexpr (std::is_same_v<ValueType, Scene::AnimationPlayerComponentUVE>) {
-                return kind == EditorSceneComponentKindUVE::AnimationPlayer &&
+                return kind == EditorSceneComponentKindUVE::AnimationSequencer &&
                        Scene::IsAnimationPlayerComponentValidUVE(typedValue);
             } else if constexpr (std::is_same_v<ValueType, Scene::WorldEnvironment3DNodeComponentUVE>) {
                 return kind == EditorSceneComponentKindUVE::WorldEnvironment &&
@@ -1190,7 +1190,7 @@ bool EditorUVE::ApplySceneComponentStateUVE(
             return apply.template operator()<Scene::ParticleEmitterComponentUVE>();
         case EditorSceneComponentKindUVE::Script:
             return apply.template operator()<Scene::ScriptComponentUVE>();
-        case EditorSceneComponentKindUVE::AnimationPlayer:
+        case EditorSceneComponentKindUVE::AnimationSequencer:
             return apply.template operator()<Scene::AnimationPlayerComponentUVE>();
         case EditorSceneComponentKindUVE::WorldEnvironment:
             return apply.template operator()<Scene::WorldEnvironment3DNodeComponentUVE>();
@@ -1270,7 +1270,7 @@ bool EditorUVE::SetSelectedSceneComponentUVE(const EditorSceneComponentKindUVE k
                 before = entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(m_selectedEntity);
             }
             break;
-        case EditorSceneComponentKindUVE::AnimationPlayer:
+        case EditorSceneComponentKindUVE::AnimationSequencer:
             if (entityManager.HasComponentUVE<Scene::AnimationPlayerComponentUVE>(m_selectedEntity)) {
                 before = entityManager.GetComponentUVE<Scene::AnimationPlayerComponentUVE>(m_selectedEntity);
             }
@@ -1383,7 +1383,7 @@ bool EditorUVE::RemoveSelectedSceneComponentUVE(const EditorSceneComponentKindUV
         case EditorSceneComponentKindUVE::Script:
             if (entityManager.HasComponentUVE<Scene::ScriptComponentUVE>(m_selectedEntity)) before = entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(m_selectedEntity);
             break;
-        case EditorSceneComponentKindUVE::AnimationPlayer:
+        case EditorSceneComponentKindUVE::AnimationSequencer:
             if (entityManager.HasComponentUVE<Scene::AnimationPlayerComponentUVE>(m_selectedEntity)) before = entityManager.GetComponentUVE<Scene::AnimationPlayerComponentUVE>(m_selectedEntity);
             break;
         case EditorSceneComponentKindUVE::WorldEnvironment:
@@ -1930,8 +1930,8 @@ Scene::EntityUVE EditorUVE::CreateSceneNodeEntityInternalUVE(const Scene::Nodes:
     };
 
     switch (kind) {
-        // Every case creates from its own NodeDefinition (Engine/Runtime/Nodes/3D or
-        // Nodes/CanvasLayer — one .h + .cpp per kind holds the recipe: components to attach,
+        // Every case creates from its own NodeDefinition (Engine/Runtime/Objects/3D or
+        // Objects/UI — one .h + .cpp per kind holds the recipe: components to attach,
         // authored defaults, default entity name). No node-kind-specific recipe is authored in
         // this switch anymore.
         case Scene::Nodes::SceneNodeKindUVE::Node3D:
@@ -1966,17 +1966,17 @@ Scene::EntityUVE EditorUVE::CreateSceneNodeEntityInternalUVE(const Scene::Nodes:
             entity = CreateNodeDefinitionEntityInternalUVE(Scene::Collider3DNodeDefinitionUVE{},
                                                             Scene::ApplyCollider3DNodeDefinitionUVE);
             break;
-        case Scene::Nodes::SceneNodeKindUVE::CharacterBody3D:
-            entity = CreateNodeDefinitionEntityInternalUVE(Scene::CharacterBody3DNodeDefinitionUVE{},
-                                                            Scene::ApplyCharacterBody3DNodeDefinitionUVE);
+        case Scene::Nodes::SceneNodeKindUVE::Character3D:
+            entity = CreateNodeDefinitionEntityInternalUVE(Scene::Character3DNodeDefinitionUVE{},
+                                                            Scene::ApplyCharacter3DNodeDefinitionUVE);
             break;
-        case Scene::Nodes::SceneNodeKindUVE::RigidBody3D:
-            entity = CreateNodeDefinitionEntityInternalUVE(Scene::RigidBody3DNodeDefinitionUVE{},
-                                                            Scene::ApplyRigidBody3DNodeDefinitionUVE);
+        case Scene::Nodes::SceneNodeKindUVE::Rigid3D:
+            entity = CreateNodeDefinitionEntityInternalUVE(Scene::Rigid3DNodeDefinitionUVE{},
+                                                            Scene::ApplyRigid3DNodeDefinitionUVE);
             break;
-        case Scene::Nodes::SceneNodeKindUVE::AnimationPlayer:
-            entity = CreateNodeDefinitionEntityInternalUVE(Scene::AnimationPlayerNodeDefinitionUVE{},
-                                                            Scene::ApplyAnimationPlayerNodeDefinitionUVE);
+        case Scene::Nodes::SceneNodeKindUVE::AnimationSequencer:
+            entity = CreateNodeDefinitionEntityInternalUVE(Scene::AnimationSequencerNodeDefinitionUVE{},
+                                                            Scene::ApplyAnimationSequencerNodeDefinitionUVE);
             break;
         case Scene::Nodes::SceneNodeKindUVE::AudioSource3D:
             entity = CreateNodeDefinitionEntityInternalUVE(Scene::AudioSource3DNodeDefinitionUVE{},
@@ -1992,7 +1992,7 @@ Scene::EntityUVE EditorUVE::CreateSceneNodeEntityInternalUVE(const Scene::Nodes:
             break;
         // CanvasLayer family — the four UI kinds promoted out of the Inspector-only world, so
         // UI authoring uses the same Add-Node entry point (definitions live in
-        // Engine/Runtime/Nodes/CanvasLayer).
+        // Engine/Runtime/Objects/UI).
         case Scene::Nodes::SceneNodeKindUVE::Canvas:
             entity = CreateNodeDefinitionEntityInternalUVE(Scene::CanvasNodeDefinitionUVE{},
                                                             Scene::ApplyCanvasNodeDefinitionUVE);
@@ -2016,13 +2016,13 @@ Scene::EntityUVE EditorUVE::CreateSceneNodeEntityInternalUVE(const Scene::Nodes:
         case Scene::Nodes::SceneNodeKindUVE::RayCast3D:
             entity = createNodeWithComponent(Scene::RayCast3DNodeComponentUVE{});
             break;
-        case Scene::Nodes::SceneNodeKindUVE::StaticBody3D:
-            entity = CreateNodeDefinitionEntityInternalUVE(Scene::StaticBody3DNodeDefinitionUVE{},
-                                                            Scene::ApplyStaticBody3DNodeDefinitionUVE);
+        case Scene::Nodes::SceneNodeKindUVE::Static3D:
+            entity = CreateNodeDefinitionEntityInternalUVE(Scene::Static3DNodeDefinitionUVE{},
+                                                            Scene::ApplyStatic3DNodeDefinitionUVE);
             break;
-        case Scene::Nodes::SceneNodeKindUVE::AnimatableBody3D:
-            entity = CreateNodeDefinitionEntityInternalUVE(Scene::AnimatableBody3DNodeDefinitionUVE{},
-                                                            Scene::ApplyAnimatableBody3DNodeDefinitionUVE);
+        case Scene::Nodes::SceneNodeKindUVE::Kinematic3D:
+            entity = CreateNodeDefinitionEntityInternalUVE(Scene::Kinematic3DNodeDefinitionUVE{},
+                                                            Scene::ApplyKinematic3DNodeDefinitionUVE);
             break;
         case Scene::Nodes::SceneNodeKindUVE::NavigationRegion3D:
             entity = createNodeWithComponent(Scene::NavigationRegion3DNodeComponentUVE{});
@@ -2096,9 +2096,9 @@ Scene::EntityUVE EditorUVE::CreateSceneNodeEntityInternalUVE(const Scene::Nodes:
         case Scene::Nodes::SceneNodeKindUVE::WorldPartition3D:
             entity = createNodeWithComponent(Scene::WorldPartition3DNodeComponentUVE{});
             break;
-        case Scene::Nodes::SceneNodeKindUVE::AnimationTree:
-            entity = CreateNodeDefinitionEntityInternalUVE(Scene::AnimationTreeNodeDefinitionUVE{},
-                                                            Scene::ApplyAnimationTreeNodeDefinitionUVE);
+        case Scene::Nodes::SceneNodeKindUVE::AnimationGraph:
+            entity = CreateNodeDefinitionEntityInternalUVE(Scene::AnimationGraphNodeDefinitionUVE{},
+                                                            Scene::ApplyAnimationGraphNodeDefinitionUVE);
             break;
         case Scene::Nodes::SceneNodeKindUVE::Folder:
             entity = CreateNodeDefinitionEntityInternalUVE(Scene::FolderNodeDefinitionUVE{},
@@ -2962,7 +2962,7 @@ Scene::EntityUVE EditorUVE::CreateDocumentEntityInternalUVE(
     }
 
     // The per-kind recipes below deliberately live with their node definitions in
-    // Engine/Runtime/Nodes/3D (one .h + .cpp per kind), not inline here: these legacy editor
+    // Engine/Runtime/Objects/3D (one .h + .cpp per kind), not inline here: these legacy editor
     // entity kinds are alternate doors into the exact same recipes the scene-node Add-Node list
     // uses, so a kind's defaults have one home, not two.
     switch (kind) {
@@ -3945,7 +3945,7 @@ bool EditorUVE::HasSceneGraphNodeUVE(const Scene::EntityUVE entity) const noexce
 }
 
 bool EditorUVE::IsReparentableNodeUVE(const Scene::EntityUVE entity) const noexcept {
-    // A spatial node carries the full transform set; a pure Node (AnimationPlayer, the scene root)
+    // A spatial node carries the full transform set; a pure Node (AnimationSequencer, the scene root)
     // carries none of it. Anything in between is a half-built entity and is refused.
     if (HasSceneGraphNodeUVE(entity)) {
         return true;
@@ -3996,7 +3996,7 @@ std::string EditorUVE::GetEntityDisplayLabelUVE(const Scene::EntityUVE entity) c
 }
 
 std::string EditorUVE::GetDefaultEntityNameUVE(const EditorEntityKindUVE kind) const {
-    // The names themselves live with each node kind's definition in Engine/Runtime/Nodes/3D —
+    // The names themselves live with each node kind's definition in Engine/Runtime/Objects/3D —
     // this legacy-kind mapper only picks which definition to ask, never authors a name itself.
     switch (kind) {
         case EditorEntityKindUVE::Empty:
@@ -4450,7 +4450,7 @@ void EditorUVE::RebuildHierarchyFilterCacheUVE() {
         const std::string typeTag = GetOutlinerTypeTagUVE(entity);
         const bool hasTypeQuery = m_hierarchyFilter.rfind("type:", 0U) == 0U;
         const std::string_view typeQuery = hasTypeQuery ? std::string_view{m_hierarchyFilter}.substr(5U) : std::string_view{};
-        // The node's type ("StaticBody3D") or its older specialised tag ("Collision Box") both count.
+        // The node's type ("Static3D") or its older specialised tag ("Collision Box") both count.
         const bool typeMatches = !hasTypeQuery || ContainsCaseInsensitiveUVE(typeTag, typeQuery) ||
                                  ContainsCaseInsensitiveUVE(GetNodeTypeNameUVE(entity), typeQuery);
         Scene::EntityUVE parent = Scene::kInvalidEntityUVE;

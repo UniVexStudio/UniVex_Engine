@@ -1,6 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-// The Timeline's animation picker: an AnimationPlayer's own list of animations, which one it
+// The Timeline's animation picker: an AnimationSequencer's own list of animations, which one it
 // plays, and the ways to grow the list - a new blank clip, any clip already in the project, or a
 // .uvanim dragged in from Content. Every change to the player is one undo step; clip files are
 // written only by New, Rename and Duplicate, which say so in the status line.
