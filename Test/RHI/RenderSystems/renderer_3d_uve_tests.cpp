@@ -29,6 +29,7 @@
 #include "uve/asset/mesh_asset_uve.h"
 #include "uve/asset/shader_asset_uve.h"
 #include "uve/asset/texture_asset_uve.h"
+#include "uve/asset/texture_compression_uve.h"
 #include "uve/events/event_system_uve.h"
 #include "uve/input/input_system_uve.h"
 #include "uve/memory/memory_manager_uve.h"
@@ -857,6 +858,76 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_MaterialWithAlbedoTexture_UploadsAndBin
     renderer3D->RenderFrameUVE(entityManager, cameraEntity);
     EXPECT_EQ(renderDevice.GetLiveResourceCountUVE(), liveResourcesAfterFirstFrame);
 }
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_SrgbAlbedoMetadataReachesRhiDescriptor) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_srgb_mesh.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_srgb_material.uvmat");
+    const Asset::AssetGuidUVE textureGuid = assetDatabase.RegisterUVE("renderer3d_tests_srgb_albedo.uvtex");
+    UseAlbedoTextureInMaterialUVE(textureGuid);
+    assetManager.RegisterLoaderUVE<Asset::TextureAssetUVE>(
+        [](const std::filesystem::path&, Asset::TextureAssetUVE& texture) {
+            texture.width = 2U;
+            texture.height = 2U;
+            texture.format = Asset::TextureFormatUVE::RGBA8Unorm;
+            texture.colorSpace = Asset::TextureColorSpaceUVE::Srgb;
+            texture.usage = Asset::TextureUsageUVE::Color;
+            texture.pixels.assign(2U * 2U * 4U, std::byte{0x7F});
+            texture.mipLevels.push_back(Asset::TextureMipLevelUVE{
+                1U, 1U, std::vector<std::byte>(4U, std::byte{0x3F})});
+            return true;
+        });
+
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+    WaitUntilTextureReadyUVE(textureGuid);
+    PrimeMaterialProgramUVE(*renderer3D, cameraEntity);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+
+    const std::vector<TextureDescUVE> liveTextureDescs = renderDevice.GetLiveTextureDescsUVE();
+    EXPECT_TRUE(std::any_of(liveTextureDescs.cbegin(), liveTextureDescs.cend(), [](const TextureDescUVE& desc) {
+        return desc.format == TextureFormatUVE::RGBA8Unorm && desc.colorSpace == TextureColorSpaceUVE::Srgb &&
+               desc.mipLevels == 2U;
+    }));
+}
+
+#if defined(UVE_HAS_BASIS_ENCODER) && UVE_HAS_BASIS_ENCODER
+TEST_F(Renderer3DUVETest, RenderFrameUVE_BasisTextureFallsBackToRgbaOnNullDevice) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_basis_mesh.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_basis_material.uvmat");
+    const Asset::AssetGuidUVE textureGuid = assetDatabase.RegisterUVE("renderer3d_tests_basis_albedo.uvtex");
+    UseAlbedoTextureInMaterialUVE(textureGuid);
+
+    Asset::TextureAssetUVE basisTexture;
+    basisTexture.width = 4U;
+    basisTexture.height = 4U;
+    basisTexture.format = Asset::TextureFormatUVE::RGBA8Unorm;
+    basisTexture.colorSpace = Asset::TextureColorSpaceUVE::Srgb;
+    basisTexture.usage = Asset::TextureUsageUVE::Color;
+    basisTexture.pixels.resize(4U * 4U * 4U, std::byte{0xFF});
+    ASSERT_TRUE(Asset::CompressTextureAssetWithBasisUVE(
+        basisTexture, Asset::TextureCompressionModeUVE::BasisUASTC, 60U, 1U));
+    assetManager.RegisterLoaderUVE<Asset::TextureAssetUVE>(
+        [basisTexture](const std::filesystem::path&, Asset::TextureAssetUVE& texture) {
+            texture = basisTexture;
+            return true;
+        });
+
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+    WaitUntilTextureReadyUVE(textureGuid);
+    PrimeMaterialProgramUVE(*renderer3D, cameraEntity);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+
+    EXPECT_FALSE(renderDevice.SupportsTextureFormatUVE(TextureFormatUVE::BC7RGBA));
+    const std::vector<TextureDescUVE> liveTextureDescs = renderDevice.GetLiveTextureDescsUVE();
+    EXPECT_TRUE(std::any_of(liveTextureDescs.cbegin(), liveTextureDescs.cend(), [](const TextureDescUVE& desc) {
+        return desc.format == TextureFormatUVE::RGBA8Unorm && desc.colorSpace == TextureColorSpaceUVE::Srgb &&
+               desc.mipLevels == 1U;
+    }));
+}
+#endif
 
 TEST_F(Renderer3DUVETest, RenderFrameUVE_Rgba16FloatAlbedoTexture_UploadsSuccessfully) {
     const std::size_t baselineLiveResources = renderDevice.GetLiveResourceCountUVE();

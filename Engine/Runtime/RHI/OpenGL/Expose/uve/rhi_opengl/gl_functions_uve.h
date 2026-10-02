@@ -91,6 +91,9 @@ struct GlFunctionsUVE {
     PFNGLRENDERBUFFERSTORAGEPROC glRenderbufferStorage = nullptr;
 
     PFNGLACTIVETEXTUREPROC glActiveTexture = nullptr;
+    // Optional GL 1.3 / GLES 2 compressed upload path. It is not required to keep an otherwise
+    // usable context alive; compressed SupportsTextureFormatUVE() returns false when absent.
+    PFNGLCOMPRESSEDTEXIMAGE2DPROC glCompressedTexImage2D = nullptr;
 
     // Uniform-related (Increment 21: ShaderManagerUVE's reflection + ICommandBufferUVE's
     // SetUniform*UVE calls) and program-binary-cache (Increment 21's on-disk shader cache).

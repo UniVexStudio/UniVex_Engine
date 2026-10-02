@@ -49,6 +49,7 @@ endif()
 # header or consumer ever sees an FBX type.
 enable_language(C)
 include(FetchContent)
+include(CMake/basis_universal.cmake)
 FetchContent_Declare(
     uve_ufbx
     GIT_REPOSITORY https://github.com/ufbx/ufbx.git
@@ -80,6 +81,10 @@ add_library(uve_asset STATIC
     Internal/mesh_asset_uve.cpp
     Internal/mesh_skinning_uve.cpp
     Internal/texture_asset_uve.cpp
+    Internal/texture_import_settings_uve.cpp
+    Internal/texture_mipmap_uve.cpp
+    Internal/texture_compression_uve.cpp
+    Internal/texture_compression_basis_init_uve.cpp
     Internal/shader_asset_uve.cpp
     Internal/material_asset_uve.cpp
     Internal/asset_importer_uve.cpp
@@ -121,10 +126,18 @@ add_library(uve_asset STATIC
     Internal/data_table_pipeline_uve.cpp
     Internal/data_table_registry_uve.cpp
 )
+if(UVE_BASIS_ENCODER_AVAILABLE)
+    target_sources(uve_asset PRIVATE Internal/texture_compression_encode_uve.cpp)
+    target_link_libraries(uve_asset PRIVATE uve_basisu_encoder)
+    target_compile_definitions(uve_asset PUBLIC UVE_HAS_BASIS_ENCODER=1)
+else()
+    target_sources(uve_asset PRIVATE Internal/texture_compression_encode_stub_uve.cpp)
+    target_compile_definitions(uve_asset PUBLIC UVE_HAS_BASIS_ENCODER=0)
+endif()
 target_include_directories(uve_asset PUBLIC Expose)
 target_link_libraries(uve_asset
     PUBLIC uve_logging uve_math uve_threading uve_events
-    PRIVATE uve_utilities nlohmann_json::nlohmann_json ZLIB::ZLIB uve_ufbx
+    PRIVATE uve_utilities nlohmann_json::nlohmann_json ZLIB::ZLIB uve_ufbx uve_basisu_transcoder
 )
 if(NOT ANDROID)
     target_link_libraries(uve_asset PRIVATE JPEG::JPEG)

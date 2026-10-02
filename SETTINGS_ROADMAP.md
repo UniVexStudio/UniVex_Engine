@@ -1134,8 +1134,6 @@ is no sidecar file to persist a choice in. Part 5.1 covers the sidecar mechanism
 - [ ] Compression quality and per-format selection (block compression family, ASTC block size).
 - [ ] Compress only on specific platforms.
 - [ ] High-quality compression toggle, with the build-time cost noted.
-- [ ] Mipmaps: generate, mip filter, and mip count limit.
-- [ ] Mipmap generation in linear vs. sRGB space.
 - [ ] Alpha handling: premultiply, keep, discard; and whether to detect a fully-opaque alpha and
       drop it.
 - [ ] Normal-map flag, which changes both compression format and mip filtering.
