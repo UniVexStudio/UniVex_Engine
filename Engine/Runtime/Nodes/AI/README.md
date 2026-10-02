@@ -1,7 +1,10 @@
 # Engine/Runtime/Nodes/AI
 
-Placeholder — no AI scene node has been implemented yet. See `SCENE_NODES_ROADMAP.md` at the
-repository root for the full checklist of AI node/component types still to build (behavior tree,
-blackboard, perception, navigation crowd following, smart objects, state trees). When the first
-real AI node lands, it gets its own `Expose/uve/nodes/ai/<name>_uve.h` + `Internal/<name>_uve.cpp`
-pair here, matching the convention established in `Engine/Runtime/Nodes/3D`.
+AI-facing scene nodes are organized by dimensionality. The `3D/` folder currently contains the
+3D navigation authoring nodes, `NavigationAgent3D` and `NavigationRegion3D`. They validate and
+serialize authored navigation data, but are not yet backed by pathfinding or steering systems.
+
+Future AI node families should live under the matching dimension (`3D/`, `2D/`) rather than being
+mixed into the general `Nodes/3D` folder. Behavior trees, blackboards, perception, world queries,
+crowd following, smart objects, and state trees are still planned; see
+`SCENE_NODES_ROADMAP.md` at the repository root.

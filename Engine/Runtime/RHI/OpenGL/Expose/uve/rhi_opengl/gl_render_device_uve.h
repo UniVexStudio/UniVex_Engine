@@ -45,6 +45,8 @@ public:
 
     [[nodiscard]] TextureHandleUVE CreateTextureUVE(const TextureDescUVE& desc,
                                                      std::span<const std::byte> initialData = {}) override;
+    [[nodiscard]] bool SupportsTextureFormatUVE(
+        TextureFormatUVE format, TextureColorSpaceUVE colorSpace = TextureColorSpaceUVE::Linear) const noexcept override;
     void DestroyTextureUVE(TextureHandleUVE texture) override;
 
     [[nodiscard]] ShaderHandleUVE CreateShaderUVE(const ShaderDescUVE& desc, std::string* outInfoLog = nullptr) override;

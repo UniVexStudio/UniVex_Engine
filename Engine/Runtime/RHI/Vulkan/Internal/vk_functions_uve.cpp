@@ -101,6 +101,7 @@ bool VkFunctionsUVE::LoadInstanceUVE(const VkInstance instance) {
     allResolved &= ResolveInstance(vkDestroyInstance, gipa, instance, "vkDestroyInstance");
     allResolved &= ResolveInstance(vkEnumeratePhysicalDevices, gipa, instance, "vkEnumeratePhysicalDevices");
     allResolved &= ResolveInstance(vkGetPhysicalDeviceProperties, gipa, instance, "vkGetPhysicalDeviceProperties");
+    allResolved &= ResolveInstance(vkGetPhysicalDeviceFeatures, gipa, instance, "vkGetPhysicalDeviceFeatures");
     allResolved &= ResolveInstance(vkGetPhysicalDeviceQueueFamilyProperties, gipa, instance, "vkGetPhysicalDeviceQueueFamilyProperties");
     allResolved &= ResolveInstance(vkEnumerateDeviceExtensionProperties, gipa, instance, "vkEnumerateDeviceExtensionProperties");
     allResolved &= ResolveInstance(vkGetPhysicalDeviceSurfaceSupportKHR, gipa, instance, "vkGetPhysicalDeviceSurfaceSupportKHR");

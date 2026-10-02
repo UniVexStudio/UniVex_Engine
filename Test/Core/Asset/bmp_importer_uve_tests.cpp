@@ -75,6 +75,8 @@ TEST(BmpImporterUVETest, ImportUVE_DecodesBmpToTextureEnvelopeAndRegistersGuid) 
     EXPECT_EQ(texture.width, 1U);
     EXPECT_EQ(texture.height, 1U);
     EXPECT_EQ(texture.format, TextureFormatUVE::RGBA8Unorm);
+    EXPECT_EQ(texture.colorSpace, TextureColorSpaceUVE::Srgb);
+    EXPECT_EQ(texture.usage, TextureUsageUVE::Color);
     EXPECT_EQ(texture.pixels, (std::vector<std::byte>{std::byte{0xFF}, std::byte{0x00}, std::byte{0x00}, std::byte{0xFF}}));
 
     std::filesystem::remove(sourcePath);

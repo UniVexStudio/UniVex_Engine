@@ -2,12 +2,8 @@
 
 #include "uve/nodes/3d/abstract_nodes_3d_uve.h"
 
-#include "uve/component/animation_mixer_component_uve.h"
-#include "uve/component/bone_modifier_component_uve.h"
 #include "uve/component/light_emitter_component_uve.h"
-#include "uve/component/physics_object_component_uve.h"
 #include "uve/component/render_instance_component_uve.h"
-#include "uve/component/solid_body_component_uve.h"
 #include "uve/component/surface_instance_component_uve.h"
 #include "uve/component/visibility_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
@@ -48,22 +44,6 @@ void EnsureUVE(IEntityManagerUVE& entityManager, const EntityUVE entity) {
 
 } // namespace
 
-void ApplyBoneModifier3DBaseUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                const std::string_view nameFallback) {
-    ApplyBaseUVE<BoneModifierComponentUVE>(entityManager, entity, nameFallback);
-}
-
-void ApplyPhysicsObject3DBaseUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                 const std::string_view nameFallback) {
-    ApplyBaseUVE<PhysicsObjectComponentUVE>(entityManager, entity, nameFallback);
-}
-
-void ApplySolidBody3DBaseUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                             const std::string_view nameFallback) {
-    ApplyPhysicsObject3DBaseUVE(entityManager, entity, nameFallback);
-    EnsureUVE<SolidBodyComponentUVE>(entityManager, entity);
-}
-
 void ApplyRenderInstance3DBaseUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
                                   const std::string_view nameFallback) {
     ApplyBaseUVE<RenderInstanceComponentUVE>(entityManager, entity, nameFallback);
@@ -79,14 +59,6 @@ void ApplyLightEmitter3DBaseUVE(IEntityManagerUVE& entityManager, const EntityUV
                                 const std::string_view nameFallback) {
     ApplyRenderInstance3DBaseUVE(entityManager, entity, nameFallback);
     EnsureUVE<LightEmitterComponentUVE>(entityManager, entity);
-}
-
-void ApplyAnimationMixerBaseUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                const std::string_view nameFallback) {
-    EnsureNodeBaselineUVE(entityManager, entity, nameFallback);
-    if (entityManager.IsAliveUVE(entity) && !entityManager.HasComponentUVE<AnimationMixerComponentUVE>(entity)) {
-        entityManager.AddComponentUVE<AnimationMixerComponentUVE>(entity, AnimationMixerComponentUVE{});
-    }
 }
 
 } // namespace UVE::Scene
