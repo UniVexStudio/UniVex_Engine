@@ -179,6 +179,18 @@ def iter_files(repo_root: Path, extensions):
         yield path
 
 
+# Renaming a noun silently breaks the article in front of it: a blanket sed turned "an object"
+# into "an node" in 16 places, four of them user-visible editor strings ("Select an node to edit
+# it."), and it shipped. The compiler cannot see prose, so the agreement is checked here.
+# Two lists, and only these nouns, to keep false positives out ("a UVE", "an hour", "a one-off").
+VOWEL_NOUNS = ("object", "output", "input", "asset", "entity", "animation", "area")
+CONSONANT_NOUNS = ("node", "clip", "blend", "state", "graph", "skeleton", "bone", "mixer", "driver")
+ARTICLE_PATTERNS = (
+    [(re.compile(r"\b[Aa]n " + noun + r"\b"), "a " + noun) for noun in CONSONANT_NOUNS]
+    + [(re.compile(r"\b[Aa] " + noun + r"\b"), "an " + noun) for noun in VOWEL_NOUNS]
+)
+
+
 def main() -> int:
     repo_root = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else Path(__file__).resolve().parents[2]
 
@@ -225,6 +237,14 @@ def main() -> int:
                         f"    This whole family was renamed; rename this identifier too, or move it\n"
                         f"    into one of the three legacy-alias tables and add that file to\n"
                         f"    ALLOWED_PREFIXES in Engine/Tools/check_engine_vocabulary.py."
+                    )
+            for pattern, correction in ARTICLE_PATTERNS:
+                if pattern.search(line):
+                    violations.append(
+                        f"{rel}:{number}: article does not agree ({pattern.pattern!r}) - use '{correction}'.\n"
+                        f"    {line.strip()}\n"
+                        f"    A rename that swaps a noun has to swap its article too; prose and UI\n"
+                        f"    strings are not checked by the compiler, so this is."
                     )
             if rel.startswith("Engine/") or rel.startswith("Test/"):
                 for name, pattern in foreign_patterns.items():

@@ -14,7 +14,7 @@ namespace {
 constexpr std::size_t kMaximumIdentifierBytesUVE = 128U;
 
 struct PoseGraphCacheKeyUVE final {
-    std::uint32_t objectId = 0U;
+    std::uint32_t nodeId = 0U;
     double localTime = 0.0;
 
     [[nodiscard]] bool operator==(const PoseGraphCacheKeyUVE&) const noexcept = default;
@@ -22,14 +22,14 @@ struct PoseGraphCacheKeyUVE final {
 
 struct PoseGraphCacheKeyHashUVE final {
     [[nodiscard]] std::size_t operator()(const PoseGraphCacheKeyUVE& key) const noexcept {
-        const std::size_t objectHash = std::hash<std::uint32_t>{}(key.objectId);
+        const std::size_t objectHash = std::hash<std::uint32_t>{}(key.nodeId);
         const std::size_t timeHash = std::hash<double>{}(key.localTime);
         return objectHash ^ (timeHash + static_cast<std::size_t>(0x9e3779b9U) +
                            (objectHash << 6U) + (objectHash >> 2U));
     }
 };
 
-[[nodiscard]] const PoseGraphNodeUVE* FindObjectUVE(
+[[nodiscard]] const PoseGraphNodeUVE* FindNodeUVE(
     const PoseGraphUVE& tree, const std::uint32_t id) noexcept {
     const auto iterator = std::find_if(tree.nodes.cbegin(), tree.nodes.cend(), [id](const auto& node) {
         return node.id == id;
@@ -94,11 +94,11 @@ PoseGraphValidationResultUVE ValidatePoseGraphUVE(const PoseGraphUVE& tree) noex
         if (node.id == 0U || node.name.empty() || node.name.size() > kMaximumIdentifierBytesUVE ||
             !std::isfinite(node.weight) || node.weight < 0.0F || node.weight > 1.0F ||
             !std::isfinite(node.timeScale) || node.timeScale < 0.0F) {
-            return {PoseGraphValidationCodeUVE::InvalidObject, node.id,
+            return {PoseGraphValidationCodeUVE::InvalidNode, node.id,
                     "PoseGraph node identity or bounded numeric configuration is invalid."};
         }
         if (!nodeIds.insert(node.id).second) {
-            return {PoseGraphValidationCodeUVE::DuplicateObject, node.id,
+            return {PoseGraphValidationCodeUVE::DuplicateNode, node.id,
                     "PoseGraph node identifiers must be unique."};
         }
     }
@@ -125,18 +125,18 @@ PoseGraphValidationResultUVE ValidatePoseGraphUVE(const PoseGraphUVE& tree) noex
             ++outputCount;
         }
         if (UsesInputAUVE(node.kind) && node.inputA == 0U) {
-            return {PoseGraphValidationCodeUVE::InvalidObject, node.id,
+            return {PoseGraphValidationCodeUVE::InvalidNode, node.id,
                     "PoseGraph node requires inputA."};
         }
         if (UsesInputBUVE(node.kind) && node.inputB == 0U) {
-            return {PoseGraphValidationCodeUVE::InvalidObject, node.id,
+            return {PoseGraphValidationCodeUVE::InvalidNode, node.id,
                     "PoseGraph node requires inputB."};
         }
-        if (node.inputA != 0U && FindObjectUVE(tree, node.inputA) == nullptr) {
+        if (node.inputA != 0U && FindNodeUVE(tree, node.inputA) == nullptr) {
             return {PoseGraphValidationCodeUVE::UnknownInput, node.id,
                     "PoseGraph inputA references an unknown node."};
         }
-        if (node.inputB != 0U && FindObjectUVE(tree, node.inputB) == nullptr) {
+        if (node.inputB != 0U && FindNodeUVE(tree, node.inputB) == nullptr) {
             return {PoseGraphValidationCodeUVE::UnknownInput, node.id,
                     "PoseGraph inputB references an unknown node."};
         }
@@ -157,8 +157,8 @@ PoseGraphValidationResultUVE ValidatePoseGraphUVE(const PoseGraphUVE& tree) noex
             return true;
         }
         visitState[node.id] = 1U;
-        if ((node.inputA != 0U && !visit(*FindObjectUVE(tree, node.inputA))) ||
-            (node.inputB != 0U && !visit(*FindObjectUVE(tree, node.inputB)))) {
+        if ((node.inputA != 0U && !visit(*FindNodeUVE(tree, node.inputA))) ||
+            (node.inputB != 0U && !visit(*FindNodeUVE(tree, node.inputB)))) {
             return false;
         }
         visitState[node.id] = 2U;
@@ -210,8 +210,8 @@ PoseGraphEvaluationResultUVE EvaluatePoseGraphUVE(
                 case PoseGraphNodeKindUVE::Blend: {
                     TransformPoseUVE left;
                     TransformPoseUVE right;
-                    success = evaluate(*FindObjectUVE(tree, node.inputA), localTime, left) &&
-                              evaluate(*FindObjectUVE(tree, node.inputB), localTime, right);
+                    success = evaluate(*FindNodeUVE(tree, node.inputA), localTime, left) &&
+                              evaluate(*FindNodeUVE(tree, node.inputB), localTime, right);
                     if (success) {
                         outPose = BlendPoseUVE(left, right, node.weight);
                     }
@@ -220,14 +220,14 @@ PoseGraphEvaluationResultUVE EvaluatePoseGraphUVE(
                 case PoseGraphNodeKindUVE::Transition: {
                     const float parameter = FindParameterValueUVE(parameters, node.parameterId);
                     const PoseGraphNodeUVE* selected = parameter > 0.5F
-                        ? FindObjectUVE(tree, node.inputB) : FindObjectUVE(tree, node.inputA);
+                        ? FindNodeUVE(tree, node.inputB) : FindNodeUVE(tree, node.inputA);
                     success = selected != nullptr && evaluate(*selected, localTime, outPose);
                     break;
                 }
                 case PoseGraphNodeKindUVE::TimeScale: {
                     const double scaledTime = localTime * static_cast<double>(node.timeScale);
                     success = std::isfinite(scaledTime) &&
-                              evaluate(*FindObjectUVE(tree, node.inputA), scaledTime, outPose);
+                              evaluate(*FindNodeUVE(tree, node.inputA), scaledTime, outPose);
                     break;
                 }
                 case PoseGraphNodeKindUVE::Parameter:
@@ -237,18 +237,18 @@ PoseGraphEvaluationResultUVE EvaluatePoseGraphUVE(
                 case PoseGraphNodeKindUVE::Subtree:
                 case PoseGraphNodeKindUVE::PoseCache:
                 case PoseGraphNodeKindUVE::OutputPose:
-                    success = evaluate(*FindObjectUVE(tree, node.inputA), localTime, outPose);
+                    success = evaluate(*FindNodeUVE(tree, node.inputA), localTime, outPose);
                     break;
             }
             evaluating.erase(node.id);
             if (success) {
                 cache.emplace(cacheKey, outPose);
-                ++result.evaluatedObjectCount;
+                ++result.evaluatedNodeCount;
             }
             return success;
         };
-    result.usedOutputObject = evaluate(*output, timeSeconds, result.pose);
-    result.message = result.usedOutputObject ? "PoseGraph evaluated successfully." :
+    result.usedOutputNode = evaluate(*output, timeSeconds, result.pose);
+    result.message = result.usedOutputNode ? "PoseGraph evaluated successfully." :
                                              "PoseGraph evaluation failed.";
     return result;
 }

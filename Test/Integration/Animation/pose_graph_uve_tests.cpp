@@ -45,7 +45,7 @@ TEST(PoseGraphUVETest, EvaluatePoseGraphUVE_BlendsValidatedClipPosesDeterministi
 
     ASSERT_TRUE(result.IsSuccessUVE());
     EXPECT_EQ(result.pose.position, (Math::Vector3UVE{7.5F, 0.0F, 0.0F}));
-    EXPECT_EQ(result.evaluatedObjectCount, 4U);
+    EXPECT_EQ(result.evaluatedNodeCount, 4U);
 }
 
 TEST(PoseGraphUVETest, EvaluatePoseGraphUVE_SelectsTransitionAndPropagatesTimeScale) {
@@ -63,10 +63,10 @@ TEST(PoseGraphUVETest, EvaluatePoseGraphUVE_SelectsTransitionAndPropagatesTimeSc
 
     ASSERT_TRUE(result.IsSuccessUVE());
     EXPECT_EQ(result.pose.position, (Math::Vector3UVE{14.0F, 0.0F, 0.0F}));
-    EXPECT_EQ(result.evaluatedObjectCount, 4U);
+    EXPECT_EQ(result.evaluatedNodeCount, 4U);
 }
 
-TEST(PoseGraphUVETest, EvaluatePoseGraphUVE_SharedObjectCacheIncludesLocalTime) {
+TEST(PoseGraphUVETest, EvaluatePoseGraphUVE_SharedNodeCacheIncludesLocalTime) {
     PoseGraphUVE tree;
     tree.clips = {MakeClipUVE("shared", 0.0F, 10.0F)};
     tree.nodes = {
@@ -82,7 +82,7 @@ TEST(PoseGraphUVETest, EvaluatePoseGraphUVE_SharedObjectCacheIncludesLocalTime) 
     ASSERT_TRUE(result.IsSuccessUVE());
     EXPECT_FLOAT_EQ(result.pose.position.x, 6.0F);
     // The shared clip is evaluated once for each distinct local time.
-    EXPECT_EQ(result.evaluatedObjectCount, 6U);
+    EXPECT_EQ(result.evaluatedNodeCount, 6U);
 }
 
 TEST(PoseGraphUVETest, EvaluatePoseGraphUVE_RejectsNonFiniteScaledTimeBeforeRecursion) {
@@ -98,7 +98,7 @@ TEST(PoseGraphUVETest, EvaluatePoseGraphUVE_RejectsNonFiniteScaledTimeBeforeRecu
     const PoseGraphEvaluationResultUVE result =
         EvaluatePoseGraphUVE(tree, std::numeric_limits<double>::max());
     EXPECT_FALSE(result.IsSuccessUVE());
-    EXPECT_EQ(result.evaluatedObjectCount, 0U);
+    EXPECT_EQ(result.evaluatedNodeCount, 0U);
 }
 
 TEST(PoseGraphUVETest, ValidatePoseGraphUVE_RejectsUnknownClipAndCycle) {

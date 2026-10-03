@@ -436,8 +436,12 @@ against the `// AnimationGraph` comment. The assert passed, so the mismatch was 
 aggregate now includes the real backing type and the assert names it; the comment records why the old
 one was wrong.
 
-**The finding that matters more than the rename: `uve_animation` is orphaned.** Every public type in
-the module has zero production callers:
+**The finding that matters more than the rename: `uve_animation` is *almost* entirely orphaned.**
+The five headline types have zero production callers — but that is not the whole module.
+`TransformPoseUVE`, declared in the same `time_pose_contract_uve.h`, **is** used in production, by
+`Objects/Animation`'s sequencer and graph runtime. "Every public type has 0 callers" was the wrong
+summary, and it led to a deletion proposal that would have broken the build. Per-type counts are in
+§5b's "The animation graph's leftovers".
 
 | Type | Files outside its own module and test |
 |---|---|
@@ -446,6 +450,7 @@ the module has zero production callers:
 | `TimePoseContractUVE` | 0 |
 | `PoseGraphUVE` | 0 |
 | `RetargetMapUVE` | 0 |
+| `TransformPoseUVE` | **2** — `animation_sequencer_uve.h:97,102,110`, `animation_graph_uve.cpp:30` |
 
 Its own CMake comment says it "started as a minimal partial port … that Engine/Runtime/Scene's
 AnimationGraphObject3D node facade needs", but that facade layer was since removed — the aggregate
@@ -599,6 +604,51 @@ the point of the line: `uvscript_object_host_uve.cpp` (the live alias) and
 `uvscript_vm_uve_tests.cpp` (the test proving the alias reads, reports read-only, and is not
 described). Reintroducing `isOnFloor` via a probe header makes the check exit 1; removing the probe
 returns it to green.
+
+### The animation graph's leftovers — and a user-visible bug the graph rename shipped
+
+Two things were wrong, and both were self-inflicted.
+
+**The Core evaluation model still called its graph elements "objects".** Phase 11 renamed
+`UVE::Core::AnimationGraph*` to `PoseGraph*` but only the type names. `InvalidObject`,
+`DuplicateObject`, `objectId`, `usedOutputObject`, `evaluatedObjectCount`, `FindObjectUVE` and a
+test name all survived — 30 places saying "object" about something the graph calls a node. All now
+`Node`/`node`. Contained: nothing outside the module and its own test used any of them (verified
+per identifier before renaming).
+
+**The graph-node rename shipped 16 broken English articles, four of them user-visible.** `f411ee5`
+ran `object` → `node` over prose without touching the article in front of it. `git show
+f411ee5~1` has 0 occurrences of "an node"; after it, 16. What users would have seen:
+
+```
+editor_panel_anim_graph_uve.cpp:1815              "Select an node to edit it."
+editor_panel_anim_states_uve.cpp:786              "...wire an node into it in the tree."
+editor_panel_inspector_animation_graph_uve.cpp:147 "Add one for an node or transition to read."
+animation_graph_component_uve.cpp:104,126,132      validation messages returned to the UI
+```
+
+All fixed to "a node". The compiler cannot see prose, so the guard now checks article agreement
+directly: `an` + a consonant-initial engine noun and `a` + a vowel-initial one, over a fixed noun
+list to keep false positives out. A probe header containing "an node" and "a object" makes the check
+exit 1.
+
+Also finished in the same pass: the editor's `FindObjectUVE` (it searches a
+`std::vector<AnimationGraphNodeUVE>`) is now `FindNodeUVE`, its `objects` parameters are `nodes`,
+and `animation_graph_uve.cpp`'s 108 local `object` identifiers are `node`.
+
+Four prose occurrences were deliberately **left as "object"** because they mean the animated
+`Object3D`, not a graph element — `animation_graph_uve.cpp:31, 116, 546, 807` ("the one object
+transform", "the graph animates one object"). Same distinction in `engine_core_uve.cpp`, where only
+the loop variable at :1121 is a graph node and the other 19 "object" mentions are scene-graph,
+script or GL objects. A blanket sed here would have been wrong in 23 places.
+
+`Engine/Runtime/Animation`'s module comment claimed it existed to back a Scene facade called
+`PoseGraphObject3D`. **No such type exists** — one hit repo-wide, the comment itself. The comment
+now says what is true: the authored graph is `Scene::AnimationGraphComponentUVE`, evaluated by
+`Objects/Animation`; this module is a separate evaluation model whose only production consumer is
+`TransformPoseUVE`. It is kept, not deleted: it has `Sync`, `Subtree` and `PoseCache`, node kinds
+the authored graph does not have. `pose_graph_uve.h` carries the same explanation at the top, so the
+two vocabularies cannot be mistaken for each other again.
 
 ### Verification actually run
 

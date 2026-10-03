@@ -63,7 +63,7 @@ constexpr std::array<Kind, 11> kAddableKindsUVE{Kind::Clip,         Kind::Blend2
                                                 Kind::Select,       Kind::Additive,     Kind::LayeredBlend, Kind::OneShot,
                                                 Kind::TimeScale,    Kind::TimeSeek,     Kind::StateMachine};
 
-/// Rows of values edited right on an node, under its header: what one tunes most.
+/// Rows of values edited right on a node, under its header: what one tunes most.
 [[nodiscard]] std::size_t InlineRowsUVE(const Kind kind) noexcept {
     switch (kind) {
         case Kind::BlendSpace2D: return 3U; // x, y, Open
@@ -83,7 +83,7 @@ constexpr std::array<Kind, 11> kAddableKindsUVE{Kind::Clip,         Kind::Blend2
 }
 
 [[nodiscard]] float ObjectHeightUVE(const AnimationGraphNodeUVE& node) {
-    // Its inputs' rows under its inline values; an node with neither still shows one row.
+    // Its inputs' rows under its inline values; a node with neither still shows one row.
     const std::size_t rows = node.inputs.size() + InlineRowsUVE(node.kind);
     return kHeaderHeightUVE + static_cast<float>(std::max<std::size_t>(rows, 1U)) * kSlotHeightUVE + kBodyPaddingUVE;
 }
@@ -93,7 +93,7 @@ constexpr std::array<Kind, 11> kAddableKindsUVE{Kind::Clip,         Kind::Blend2
     return text;
 }
 
-/// One line under an node's title: what it reads, so the graph explains itself without a click.
+/// One line under a node's title: what it reads, so the graph explains itself without a click.
 [[nodiscard]] std::string ObjectSummaryUVE(const AnimationGraphNodeUVE& node) {
     char text[96];
     switch (node.kind) {
@@ -1075,7 +1075,7 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
         return (a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y) <= pinHit * pinHit;
     };
 
-    // What is under the mouse: an input pin, an output pin, or an node (topmost = last drawn).
+    // What is under the mouse: an input pin, an output pin, or a node (topmost = last drawn).
     struct SlotHitUVE {
         std::uint32_t node = 0U;
         std::size_t slot = 0U;
@@ -1494,7 +1494,7 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
                     view.status = "That wire would loop back on itself.";
                 }
             } else if (hovered && hoveredObject == 0U) {
-                // Dropped on empty canvas: offer an node to plug it into, right there.
+                // Dropped on empty canvas: offer a node to plug it into, right there.
                 view.addAtX = toCanvas(mouse).x;
                 view.addAtY = toCanvas(mouse).y;
                 view.addSearch.clear();
@@ -1525,7 +1525,7 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
         }
     }
 
-    // Right-click: an node's menu, or Add Object where the click was.
+    // Right-click: a node's menu, or Add Object where the click was.
     if (hovered && ImGui::IsMouseReleased(ImGuiMouseButton_Right) &&
         ImGui::GetMouseDragDelta(ImGuiMouseButton_Right).x == 0.0F) {
         if (hoveredObject != 0U) {
@@ -1812,7 +1812,7 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
     if (focusedMachine) {
         DrawStateMachineSelectionUVE(tree, focusIt->second, edit);
     } else if (view.selected.size() != 1U || !indexById.contains(view.selected.front())) {
-        ImGui::TextDisabled(view.selected.empty() ? "Select an node to edit it." : "%zu nodes selected.",
+        ImGui::TextDisabled(view.selected.empty() ? "Select a node to edit it." : "%zu nodes selected.",
                             view.selected.size());
     } else {
         const std::size_t objectIndex = indexById.at(view.selected.front());

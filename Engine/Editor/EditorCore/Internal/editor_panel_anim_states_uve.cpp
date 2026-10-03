@@ -783,7 +783,7 @@ void EditorUVE::DrawStateMachineSelectionUVE(const Scene::EntityUVE tree, const 
                 view.selected = {childId};
             }
         } else {
-            ImGui::TextDisabled("Nothing plays in this state: wire an node into it in the tree.");
+            ImGui::TextDisabled("Nothing plays in this state: wire a node into it in the tree.");
         }
         label("Start here");
         bool entry = machine.entryState == slot;
