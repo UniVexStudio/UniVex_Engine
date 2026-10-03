@@ -4234,9 +4234,18 @@ void EditorUVE::LoadSessionSettingsUVE() {
     if (version > kSessionVersion) {
         return;
     }
+    // A settings file written before a setting was renamed still carries the old key. Move each
+    // such value to its new name once, so the loop below reads one name per setting.
+    MigrateRenamedSettingIdsUVE(config);
     // Every value read through the registry is legal for its setting - anything missing, mistyped
     // or out of range comes back as that one setting's default - so each binding applies it.
     for (const Config::SettingDescriptorUVE* descriptor : m_settingsRegistry.GetAllUVE()) {
+        // A renamed setting's old name is an alias for the migration above only: its value was
+        // just moved to the new name, and applying it again would overwrite what the new name
+        // already holds.
+        if (descriptor->HasFlagUVE(Config::kSettingFlagDeprecatedUVE)) {
+            continue;
+        }
         if (const std::optional<Config::SettingValueUVE> value = m_settingsRegistry.GetValueUVE(config, descriptor->id)) {
             static_cast<void>(SetEditorSettingUVE(descriptor->id, *value));
         }
@@ -4334,6 +4343,25 @@ void EditorUVE::LoadSessionSettingsUVE() {
                 static_cast<void>(m_contentShelves.AddItemUVE(name, stored));
             }
         }
+    }
+}
+
+void EditorUVE::MigrateRenamedSettingIdsUVE(Config::IConfigManagerUVE& config) {
+    for (const RenamedSettingIdUVE& renamed : kRenamedSettingIdsUVE) {
+        // A value already stored under the new name wins: the rename fallback is only for files
+        // written before it, never a way for a stale key to override a current one.
+        if (m_settingsRegistry.GetStoredValueUVE(config, renamed.newId)) {
+            continue;
+        }
+        const std::optional<Config::SettingValueUVE> legacy =
+            m_settingsRegistry.GetStoredValueUVE(config, renamed.oldId);
+        if (!legacy) {
+            continue; // nothing stored under the old name either
+        }
+        // The alias descriptor carries the current setting's own type and bounds, so the old value
+        // is read the way the new one validates; a stale or hand-edited value that no longer fits
+        // is refused here and the setting keeps its default.
+        static_cast<void>(m_settingsRegistry.SetValueUVE(config, renamed.newId, *legacy));
     }
 }
 

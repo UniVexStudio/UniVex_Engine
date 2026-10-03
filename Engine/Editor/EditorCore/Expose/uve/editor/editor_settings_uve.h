@@ -56,6 +56,22 @@ inline constexpr std::string_view kHierarchyTreeLinesUVE = "editor.hierarchy.tre
 inline constexpr std::string_view kHierarchyIndentWidthUVE = "editor.hierarchy.indentWidth";
 } // namespace EditorSettingIdUVE
 
+/// One setting id that was renamed, and the id it now has. A settings file written before the
+/// rename still carries the old key; the editor moves its value across once at load, so the
+/// author keeps their choice (see the flag descriptions on the alias descriptors in
+/// RegisterEditorSettingsUVE and MigrateRenamedSettingIdsUVE).
+struct RenamedSettingIdUVE final {
+    std::string_view oldId;
+    std::string_view newId;
+};
+
+/// The renames so far. `editor.nodes.*` became `editor.objects.*` when the engine's word for a
+/// scene node became object.
+inline constexpr RenamedSettingIdUVE kRenamedSettingIdsUVE[] = {
+    {"editor.nodes.addUnderSelection", EditorSettingIdUVE::kNewObjectsUnderSelectionUVE},
+    {"editor.nodes.placement", EditorSettingIdUVE::kNewObjectPlacementUVE},
+};
+
 /// Declares every editor setting in `registry`, with defaults and legal ranges taken from the
 /// editor's own defaults and setters, so a stored value the registry accepts is one the editor
 /// accepts too. False if any declaration is refused - a programming error the editor's settings

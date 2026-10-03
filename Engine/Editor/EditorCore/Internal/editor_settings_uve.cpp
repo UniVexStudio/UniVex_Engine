@@ -581,10 +581,37 @@ std::string FormatSettingValueUVE(const Config::SettingDescriptorUVE& descriptor
     return text != nullptr ? *text : std::string{};
 }
 
+namespace {
+
+/// The old name of a renamed setting, declared as an alias of the setting that replaced it: same
+/// type, bounds and enum entries, so a value stored under the old name is read exactly as the new
+/// one validates. Hidden, so the preferences window never offers a name the editor no longer
+/// uses, and Deprecated, so a save never writes it back - the rename is one-way, and the alias
+/// exists only for files written before it.
+[[nodiscard]] Config::SettingDescriptorUVE MakeRenamedSettingAliasUVE(const Config::SettingDescriptorUVE& current,
+                                                                     const RenamedSettingIdUVE& renamed) {
+    Config::SettingDescriptorUVE alias = current;
+    alias.id = std::string(renamed.oldId);
+    alias.flags |= Config::kSettingFlagHiddenUVE | Config::kSettingFlagDeprecatedUVE;
+    return alias;
+}
+
+} // namespace
+
 bool RegisterEditorSettingsUVE(Config::SettingsRegistryUVE& registry) {
+    const std::vector<EditorSettingBindingUVE>& bindings = EditorUVE::GetSettingBindingsUVE();
     bool allRegistered = true;
-    for (const EditorSettingBindingUVE& binding : EditorUVE::GetSettingBindingsUVE()) {
+    for (const EditorSettingBindingUVE& binding : bindings) {
         allRegistered = registry.RegisterUVE(binding.descriptor) && allRegistered;
+    }
+    for (const RenamedSettingIdUVE& renamed : kRenamedSettingIdsUVE) {
+        const auto binding = std::find_if(bindings.cbegin(), bindings.cend(), [&renamed](const EditorSettingBindingUVE& candidate) {
+            return candidate.descriptor.id == renamed.newId;
+        });
+        // A rename that names a setting nobody declares is a programming error, not a runtime
+        // condition: fail registration so the editor's settings test catches it.
+        allRegistered = binding != bindings.cend() &&
+                        registry.RegisterUVE(MakeRenamedSettingAliasUVE(binding->descriptor, renamed)) && allRegistered;
     }
     return allRegistered;
 }

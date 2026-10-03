@@ -3,6 +3,7 @@
 #include "uve/editor/editor_settings_uve.h"
 
 #include <cstdint>
+#include <iterator>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -20,7 +21,8 @@ using Config::SettingTypeUVE;
 TEST(EditorSettingsUVETest, EveryEditorSettingRegistersOnceWithALegalDefault) {
     Config::SettingsRegistryUVE registry;
     ASSERT_TRUE(RegisterEditorSettingsUVE(registry));
-    EXPECT_EQ(registry.GetCountUVE(), 37U);
+    // Every declared preference, plus one alias per renamed setting's old name.
+    EXPECT_EQ(registry.GetCountUVE(), 37U + std::size(kRenamedSettingIdsUVE));
     for (const Config::SettingDescriptorUVE* descriptor : registry.GetAllUVE()) {
         EXPECT_EQ(Config::ValidateSettingDescriptorUVE(*descriptor), "") << descriptor->id;
         EXPECT_TRUE(descriptor->id.starts_with("editor.")) << descriptor->id;
@@ -29,7 +31,7 @@ TEST(EditorSettingsUVETest, EveryEditorSettingRegistersOnceWithALegalDefault) {
     }
     // A second declaration of the same settings is refused as duplicates.
     EXPECT_FALSE(RegisterEditorSettingsUVE(registry));
-    EXPECT_EQ(registry.GetCountUVE(), 37U);
+    EXPECT_EQ(registry.GetCountUVE(), 37U + std::size(kRenamedSettingIdsUVE));
 }
 
 TEST(EditorSettingsUVETest, EveryIdIsDeclaredWithTheTypeTheEditorReadsItAs) {
@@ -86,8 +88,11 @@ TEST(EditorSettingsUVETest, SessionStateIsHiddenAndPreferencesAreNot) {
     Config::SettingsRegistryUVE registry;
     ASSERT_TRUE(RegisterEditorSettingsUVE(registry));
     for (const Config::SettingDescriptorUVE* descriptor : registry.GetAllUVE()) {
-        EXPECT_EQ(descriptor->HasFlagUVE(Config::kSettingFlagHiddenUVE), descriptor->category == "Editor/Session")
-            << descriptor->id;
+        // Session state is hidden, and so is a renamed setting's old name: neither is a preference
+        // a person chooses, and the alias only exists so a file written before a rename still reads.
+        const bool expectedHidden = descriptor->category == "Editor/Session" ||
+                                    descriptor->HasFlagUVE(Config::kSettingFlagDeprecatedUVE);
+        EXPECT_EQ(descriptor->HasFlagUVE(Config::kSettingFlagHiddenUVE), expectedHidden) << descriptor->id;
     }
 }
 
@@ -101,6 +106,31 @@ TEST(EditorSettingsUVETest, StoredKeysStayWhereExistingSettingsFilesHaveThem) {
     EXPECT_DOUBLE_EQ(store.GetDoubleUVE("editor.viewport.selectionOutline.g", 0.0), 0.5);
     EXPECT_DOUBLE_EQ(store.GetDoubleUVE("editor.viewport.selectionOutline.b", 0.0), 0.75);
     EXPECT_FALSE(store.HasKeyUVE("editor.viewport.selectionOutline.a"));
+}
+
+TEST(EditorSettingsUVETest, ARenamedIdKeepsAnAliasThatReadsButIsNeverWritten) {
+    Config::SettingsRegistryUVE registry;
+    ASSERT_TRUE(RegisterEditorSettingsUVE(registry));
+    namespace Id = EditorSettingIdUVE;
+    Config::ConfigManagerUVE store;
+    for (const RenamedSettingIdUVE& renamed : kRenamedSettingIdsUVE) {
+        const Config::SettingDescriptorUVE* current = registry.FindUVE(renamed.newId);
+        const Config::SettingDescriptorUVE* alias = registry.FindUVE(renamed.oldId);
+        ASSERT_NE(current, nullptr) << renamed.newId;
+        ASSERT_NE(alias, nullptr) << renamed.oldId;
+        // The alias declares the setting that replaced it: same type, bounds, legal values and
+        // default, so a value stored under the old name is read as the new one validates it.
+        EXPECT_EQ(alias->type, current->type) << renamed.oldId;
+        EXPECT_EQ(alias->defaultValue, current->defaultValue) << renamed.oldId;
+        EXPECT_EQ(alias->enumEntries.size(), current->enumEntries.size()) << renamed.oldId;
+        EXPECT_TRUE(alias->HasFlagUVE(Config::kSettingFlagDeprecatedUVE)) << renamed.oldId;
+    }
+    // A file written before the rename carries the old key; the registry reads it, and a write
+    // through the old name is refused, so a save can never put the retired name back.
+    store.SetBoolUVE("editor.nodes.addUnderSelection", false);
+    EXPECT_EQ(registry.GetStoredValueUVE(store, "editor.nodes.addUnderSelection"), Config::SettingValueUVE{false});
+    EXPECT_FALSE(registry.SetValueUVE(store, "editor.nodes.addUnderSelection", true));
+    EXPECT_FALSE(registry.GetStoredValueUVE(store, "editor.objects.addUnderSelection").has_value());
 }
 
 TEST(EditorSettingsUVETest, SnapStepsOutsideTheirRangeFallBackInsteadOfReachingAFloat) {
