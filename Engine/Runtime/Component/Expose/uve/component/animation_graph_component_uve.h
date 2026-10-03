@@ -122,7 +122,7 @@ enum class AnimationTransitionCurveUVE : std::uint8_t {
 
 /// A move between two states of a StateMachine node. States are indices into the node's inputs.
 /// Transitions out of a state are tried in list order, so the first is the most important.
-struct AnimationTransitionUVE final {
+struct AnimationGraphTransitionUVE final {
     std::uint32_t fromState = kAnyAnimationStateUVE;
     std::uint32_t toState = 0U;
     /// All must hold. None: the transition is taken as soon as it may be.
@@ -138,7 +138,7 @@ struct AnimationTransitionUVE final {
     /// Off: kept, but never taken.
     bool enabled = true;
 
-    [[nodiscard]] bool operator==(const AnimationTransitionUVE&) const = default;
+    [[nodiscard]] bool operator==(const AnimationGraphTransitionUVE&) const = default;
 };
 
 /// How a Blend Space turns its position into what plays.
@@ -212,7 +212,7 @@ struct AnimationGraphNodeUVE final {
     bool sync = false;
     /// StateMachine: the state it starts in, and the moves between states.
     std::uint32_t entryState = 0U;
-    std::vector<AnimationTransitionUVE> transitions;
+    std::vector<AnimationGraphTransitionUVE> transitions;
     /// StateMachine: where its state view draws each state (by slot), and its Entry and Any boxes.
     /// Fewer positions than states is fine: the rest are laid out on a grid.
     std::vector<Math::Vector2UVE> statePositions;

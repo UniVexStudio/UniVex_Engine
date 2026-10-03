@@ -1713,7 +1713,7 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
                             *reads = renamed;
                         }
                     }
-                    for (Scene::AnimationTransitionUVE& transition : node.transitions) {
+                    for (Scene::AnimationGraphTransitionUVE& transition : node.transitions) {
                         for (Scene::AnimationTransitionConditionUVE& test : transition.conditions) {
                             if (test.parameter == from) {
                                 test.parameter = renamed;

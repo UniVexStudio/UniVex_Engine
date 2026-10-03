@@ -76,7 +76,7 @@ bool PickParameterUVE(const char* const id, const std::vector<Scene::AnimationPa
     return changed;
 }
 
-TransitionEditUVE DrawAnimationTransitionUVE(Scene::AnimationTransitionUVE& transition,
+TransitionEditUVE DrawAnimationTransitionUVE(Scene::AnimationGraphTransitionUVE& transition,
                                              const std::vector<Scene::AnimationParameterUVE>& parameters) {
     TransitionEditUVE edit;
     const auto track = [&edit]() {

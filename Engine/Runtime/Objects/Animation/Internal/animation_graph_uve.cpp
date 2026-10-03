@@ -626,7 +626,7 @@ private:
 
     /// A transition may be taken now: it is on, the From state has played far enough, and every
     /// test holds.
-    [[nodiscard]] bool TransitionReadyUVE(const AnimationTransitionUVE& transition, const ResultUVE& active) {
+    [[nodiscard]] bool TransitionReadyUVE(const AnimationGraphTransitionUVE& transition, const ResultUVE& active) {
         if (!transition.enabled) {
             return false;
         }
@@ -767,7 +767,7 @@ private:
         // their priority. A move to the state already active is ignored, so an "any state"
         // transition cannot restart itself.
         for (std::size_t index = 0U; index < node.transitions.size(); ++index) {
-            const AnimationTransitionUVE& transition = node.transitions[index];
+            const AnimationGraphTransitionUVE& transition = node.transitions[index];
             const bool fromHere =
                 transition.fromState == kAnyAnimationStateUVE || transition.fromState == state.activeState;
             if (!fromHere || transition.toState == state.activeState || !TransitionReadyUVE(transition, result)) {
