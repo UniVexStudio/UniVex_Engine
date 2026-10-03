@@ -203,7 +203,7 @@ add_executable(uve_integration_tests
     Integration/Scene/scene_object_registry_uve_tests.cpp
     Integration/Animation/time_pose_contract_uve_tests.cpp
     Integration/Animation/animation_clip_uve_tests.cpp
-    Integration/Animation/animation_graph_uve_tests.cpp
+    Integration/Animation/pose_graph_uve_tests.cpp
     Integration/Animation/animation_state_machine_uve_tests.cpp
     Integration/World/world_uve_tests.cpp
     Integration/Object/type_metadata_uve_tests.cpp

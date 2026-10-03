@@ -67,7 +67,11 @@ TEST(SceneObjectRegistryUVETest, RealObjectTypesUVE_AreReachableFromTheAggregate
     static_assert(std::is_class_v<SpawnPoint3DComponentUVE>);              // SpawnPoint3D
     static_assert(std::is_class_v<LevelStreamer3DComponentUVE>);           // LevelStreamer3D
     static_assert(std::is_class_v<WorldPartition3DComponentUVE>);          // WorldPartition3D
-    static_assert(std::is_class_v<Core::AnimationGraphUVE>);                    // AnimationGraph
+    // Was Core::AnimationGraphUVE, which is not what backs this kind: the registry's own runtimeOwner
+    // for AnimationGraph is "Scene/AnimationGraphComponentUVE". The old assert passed only because the
+    // aggregate header happened to include an unrelated animation module that nothing in the engine
+    // calls, so the wrong type was reachable and the right one was not.
+    static_assert(std::is_class_v<AnimationGraphComponentUVE>);              // AnimationGraph
     static_assert(std::is_class_v<AnimationSequencerComponentUVE>);               // AnimationSequencer
     static_assert(std::is_class_v<Physics::CharacterControllerInputUVE>);      // Character3D
     static_assert(std::is_class_v<CameraComponentUVE>);                       // Camera3D
