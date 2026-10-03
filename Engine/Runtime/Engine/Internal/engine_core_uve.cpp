@@ -1118,7 +1118,7 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
             });
         m_entityManager->ForEachUVE<Scene::AnimationGraphComponentUVE>(
             [&referenced](const Scene::EntityUVE, const Scene::AnimationGraphComponentUVE& tree) {
-                for (const Scene::AnimationGraphObjectUVE& object : tree.objects) {
+                for (const Scene::AnimationGraphNodeUVE& object : tree.objects) {
                     referenced.insert(object.clip.value);
                 }
             });

@@ -2169,7 +2169,7 @@ private:
         /// A drag of the selected objects: the graph before it, restored and re-applied as one
         /// undo step on release.
         bool draggingObjects = false;
-        std::vector<Scene::AnimationGraphObjectUVE> dragBefore;
+        std::vector<Scene::AnimationGraphNodeUVE> dragBefore;
         /// A wire being drawn from this object's output (0: none).
         std::uint32_t wireFrom = 0U;
         bool boxSelecting = false;

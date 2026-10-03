@@ -23,11 +23,11 @@ AnimationClipUVE MakeClipUVE(const std::string& id, const float start, const flo
 PoseGraphUVE MakeBlendTreeUVE() {
     PoseGraphUVE tree;
     tree.clips = {MakeClipUVE("a", 0.0F, 10.0F), MakeClipUVE("b", 10.0F, 20.0F)};
-    tree.objects = {
-        PoseGraphObjectUVE{1U, PoseGraphObjectKindUVE::ClipPlayer, "A", "a", {}, 0U, 0U, 0.5F, 1.0F, true},
-        PoseGraphObjectUVE{2U, PoseGraphObjectKindUVE::ClipPlayer, "B", "b", {}, 0U, 0U, 0.5F, 1.0F, true},
-        PoseGraphObjectUVE{3U, PoseGraphObjectKindUVE::Blend, "Blend", {}, {}, 1U, 2U, 0.25F, 1.0F, true},
-        PoseGraphObjectUVE{4U, PoseGraphObjectKindUVE::OutputPose, "Output", {}, {}, 3U, 0U, 0.5F, 1.0F, true},
+    tree.nodes = {
+        PoseGraphNodeUVE{1U, PoseGraphNodeKindUVE::ClipPlayer, "A", "a", {}, 0U, 0U, 0.5F, 1.0F, true},
+        PoseGraphNodeUVE{2U, PoseGraphNodeKindUVE::ClipPlayer, "B", "b", {}, 0U, 0U, 0.5F, 1.0F, true},
+        PoseGraphNodeUVE{3U, PoseGraphNodeKindUVE::Blend, "Blend", {}, {}, 1U, 2U, 0.25F, 1.0F, true},
+        PoseGraphNodeUVE{4U, PoseGraphNodeKindUVE::OutputPose, "Output", {}, {}, 3U, 0U, 0.5F, 1.0F, true},
     };
     return tree;
 }
@@ -50,12 +50,12 @@ TEST(PoseGraphUVETest, EvaluatePoseGraphUVE_BlendsValidatedClipPosesDeterministi
 
 TEST(PoseGraphUVETest, EvaluatePoseGraphUVE_SelectsTransitionAndPropagatesTimeScale) {
     PoseGraphUVE tree = MakeBlendTreeUVE();
-    tree.objects = {
-        PoseGraphObjectUVE{1U, PoseGraphObjectKindUVE::ClipPlayer, "A", "a", {}, 0U, 0U, 0.5F, 1.0F, true},
-        PoseGraphObjectUVE{2U, PoseGraphObjectKindUVE::ClipPlayer, "B", "b", {}, 0U, 0U, 0.5F, 1.0F, true},
-        PoseGraphObjectUVE{3U, PoseGraphObjectKindUVE::Transition, "Transition", {}, "useB", 1U, 2U, 0.5F, 1.0F, true},
-        PoseGraphObjectUVE{4U, PoseGraphObjectKindUVE::TimeScale, "Slow", {}, {}, 3U, 0U, 0.5F, 0.5F, true},
-        PoseGraphObjectUVE{5U, PoseGraphObjectKindUVE::OutputPose, "Output", {}, {}, 4U, 0U, 0.5F, 1.0F, true},
+    tree.nodes = {
+        PoseGraphNodeUVE{1U, PoseGraphNodeKindUVE::ClipPlayer, "A", "a", {}, 0U, 0U, 0.5F, 1.0F, true},
+        PoseGraphNodeUVE{2U, PoseGraphNodeKindUVE::ClipPlayer, "B", "b", {}, 0U, 0U, 0.5F, 1.0F, true},
+        PoseGraphNodeUVE{3U, PoseGraphNodeKindUVE::Transition, "Transition", {}, "useB", 1U, 2U, 0.5F, 1.0F, true},
+        PoseGraphNodeUVE{4U, PoseGraphNodeKindUVE::TimeScale, "Slow", {}, {}, 3U, 0U, 0.5F, 0.5F, true},
+        PoseGraphNodeUVE{5U, PoseGraphNodeKindUVE::OutputPose, "Output", {}, {}, 4U, 0U, 0.5F, 1.0F, true},
     };
 
     const PoseGraphEvaluationResultUVE result = EvaluatePoseGraphUVE(
@@ -69,12 +69,12 @@ TEST(PoseGraphUVETest, EvaluatePoseGraphUVE_SelectsTransitionAndPropagatesTimeSc
 TEST(PoseGraphUVETest, EvaluatePoseGraphUVE_SharedObjectCacheIncludesLocalTime) {
     PoseGraphUVE tree;
     tree.clips = {MakeClipUVE("shared", 0.0F, 10.0F)};
-    tree.objects = {
-        PoseGraphObjectUVE{1U, PoseGraphObjectKindUVE::ClipPlayer, "Shared", "shared", {}, 0U, 0U, 0.5F, 1.0F, true},
-        PoseGraphObjectUVE{2U, PoseGraphObjectKindUVE::TimeScale, "Slow", {}, {}, 1U, 0U, 0.5F, 0.5F, true},
-        PoseGraphObjectUVE{3U, PoseGraphObjectKindUVE::TimeScale, "Full", {}, {}, 1U, 0U, 0.5F, 1.0F, true},
-        PoseGraphObjectUVE{4U, PoseGraphObjectKindUVE::Blend, "Blend", {}, {}, 2U, 3U, 0.5F, 1.0F, true},
-        PoseGraphObjectUVE{5U, PoseGraphObjectKindUVE::OutputPose, "Output", {}, {}, 4U, 0U, 0.5F, 1.0F, true},
+    tree.nodes = {
+        PoseGraphNodeUVE{1U, PoseGraphNodeKindUVE::ClipPlayer, "Shared", "shared", {}, 0U, 0U, 0.5F, 1.0F, true},
+        PoseGraphNodeUVE{2U, PoseGraphNodeKindUVE::TimeScale, "Slow", {}, {}, 1U, 0U, 0.5F, 0.5F, true},
+        PoseGraphNodeUVE{3U, PoseGraphNodeKindUVE::TimeScale, "Full", {}, {}, 1U, 0U, 0.5F, 1.0F, true},
+        PoseGraphNodeUVE{4U, PoseGraphNodeKindUVE::Blend, "Blend", {}, {}, 2U, 3U, 0.5F, 1.0F, true},
+        PoseGraphNodeUVE{5U, PoseGraphNodeKindUVE::OutputPose, "Output", {}, {}, 4U, 0U, 0.5F, 1.0F, true},
     };
 
     const PoseGraphEvaluationResultUVE result = EvaluatePoseGraphUVE(tree, 0.8);
@@ -88,11 +88,11 @@ TEST(PoseGraphUVETest, EvaluatePoseGraphUVE_SharedObjectCacheIncludesLocalTime) 
 TEST(PoseGraphUVETest, EvaluatePoseGraphUVE_RejectsNonFiniteScaledTimeBeforeRecursion) {
     PoseGraphUVE tree;
     tree.clips = {MakeClipUVE("a", 0.0F, 1.0F)};
-    tree.objects = {
-        PoseGraphObjectUVE{1U, PoseGraphObjectKindUVE::ClipPlayer, "A", "a", {}, 0U, 0U, 0.5F, 1.0F, true},
-        PoseGraphObjectUVE{2U, PoseGraphObjectKindUVE::TimeScale, "Scale", {}, {}, 1U, 0U, 0.5F,
+    tree.nodes = {
+        PoseGraphNodeUVE{1U, PoseGraphNodeKindUVE::ClipPlayer, "A", "a", {}, 0U, 0U, 0.5F, 1.0F, true},
+        PoseGraphNodeUVE{2U, PoseGraphNodeKindUVE::TimeScale, "Scale", {}, {}, 1U, 0U, 0.5F,
                               std::numeric_limits<float>::max(), true},
-        PoseGraphObjectUVE{3U, PoseGraphObjectKindUVE::OutputPose, "Output", {}, {}, 2U, 0U, 0.5F, 1.0F, true},
+        PoseGraphNodeUVE{3U, PoseGraphNodeKindUVE::OutputPose, "Output", {}, {}, 2U, 0U, 0.5F, 1.0F, true},
     };
 
     const PoseGraphEvaluationResultUVE result =
@@ -103,11 +103,11 @@ TEST(PoseGraphUVETest, EvaluatePoseGraphUVE_RejectsNonFiniteScaledTimeBeforeRecu
 
 TEST(PoseGraphUVETest, ValidatePoseGraphUVE_RejectsUnknownClipAndCycle) {
     PoseGraphUVE unknownClip = MakeBlendTreeUVE();
-    unknownClip.objects[0].clipId = "missing";
+    unknownClip.nodes[0].clipId = "missing";
     EXPECT_EQ(ValidatePoseGraphUVE(unknownClip).code, PoseGraphValidationCodeUVE::UnknownClip);
 
     PoseGraphUVE cycle = MakeBlendTreeUVE();
-    cycle.objects[2].inputA = 4U;
+    cycle.nodes[2].inputA = 4U;
     EXPECT_EQ(ValidatePoseGraphUVE(cycle).code, PoseGraphValidationCodeUVE::CycleDetected);
 }
 
