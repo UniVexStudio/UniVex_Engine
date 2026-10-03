@@ -29,29 +29,11 @@ struct StudioColor {
 };
 
 struct StudioSettings {
-    // Neutral, mid-dark, ash-grey. Three constraints set these values, in order of importance:
-    //
-    // 1. This backdrop is not a light source. There is no environment/IBL in the editor viewport
-    //    - EditorMeshLayerUVE::SyncHeadlightUVE supplies a single directional headlight at 1.25
-    //    against a default ambient of 0.05. A bright sky therefore promises light that nothing
-    //    delivers: the subject reads dark against it, its silhouette loses edge, and the eye
-    //    adapts to the bright surround and then misjudges material values. So the horizon sits at
-    //    ~0.24 rather than ~0.9.
-    // 2. Achromatic. The previous zenith was a saturated blue, which pulls colour judgement: an
-    //    artist grading albedo is grading it against that blue. Every channel below is held within
-    //    ~0.012 of its neighbours, which is far too little to tint anything and just enough to keep
-    //    the grey from looking flat and dead.
-    // 3. Dark enough to carry a highlight. The floor is ~0.29, below mid-grey, so a specular
-    //    highlight on the subject still has somewhere to go. The old 0.93 floor had no headroom
-    //    left and bloomed against everything standing on it.
-    //
-    // The sky is a shade cool and the floor a shade warm - the "ash" look - which separates them
-    // at the horizon without introducing a hue either one could be mistaken for.
-    StudioColor skyZenith{0.141f, 0.145f, 0.157f};  // #242528
-    StudioColor skyHorizon{0.235f, 0.243f, 0.255f}; // #3C3E41
-    StudioColor ground{0.118f, 0.122f, 0.133f};     // #1E1F22
-    StudioColor floor{0.294f, 0.290f, 0.282f};      // #4B4A48
-    StudioColor line{0.392f, 0.384f, 0.373f};       // #64625F
+    StudioColor skyZenith{0.40f, 0.58f, 0.80f};
+    StudioColor skyHorizon{0.82f, 0.87f, 0.92f};
+    StudioColor ground{0.60f, 0.61f, 0.60f};
+    StudioColor floor{0.93f, 0.93f, 0.92f};
+    StudioColor line{0.64f, 0.65f, 0.66f};
     /// Half the floor's side, in metres; the floor ends (fully faded) at this distance from the centre.
     float floorRadius = 5.0f;
     /// Where the fade begins, as a fraction of floorRadius.
