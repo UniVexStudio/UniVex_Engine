@@ -2040,11 +2040,11 @@ Scene::EntityUVE EditorUVE::CreateSceneObjectEntityInternalUVE(const Scene::Obje
             entity = CreateObjectDefinitionEntityInternalUVE(Scene::Kinematic3DObjectDefinitionUVE{},
                                                             Scene::ApplyKinematic3DObjectDefinitionUVE);
             break;
-        case Scene::Objects::SceneObjectKindUVE::NavigationRegion3D:
-            entity = createObjectWithComponent(Scene::NavigationRegion3DComponentUVE{});
+        case Scene::Objects::SceneObjectKindUVE::NavMeshVolume3D:
+            entity = createObjectWithComponent(Scene::NavMeshVolume3DComponentUVE{});
             break;
-        case Scene::Objects::SceneObjectKindUVE::NavigationAgent3D:
-            entity = createObjectWithComponent(Scene::NavigationAgent3DComponentUVE{});
+        case Scene::Objects::SceneObjectKindUVE::NavSeeker3D:
+            entity = createObjectWithComponent(Scene::NavSeeker3DComponentUVE{});
             break;
         case Scene::Objects::SceneObjectKindUVE::Skeleton3D:
             entity = CreateObjectDefinitionEntityInternalUVE(Scene::Skeleton3DObjectDefinitionUVE{},

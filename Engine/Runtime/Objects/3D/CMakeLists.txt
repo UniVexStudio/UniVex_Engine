@@ -35,8 +35,8 @@ add_library(uve_objects_3d STATIC
     Physics/Internal/spring_arm_3d_uve.cpp
     Physics/Internal/static_3d_uve.cpp
     Internal/fog_volume_3d_uve.cpp
-    ../AI/3D/Internal/navigation_region_3d_uve.cpp
-    ../AI/3D/Internal/navigation_agent_3d_uve.cpp
+    ../AI/3D/Internal/nav_mesh_volume_3d_uve.cpp
+    ../AI/3D/Internal/nav_seeker_3d_uve.cpp
     Internal/marker_3d_uve.cpp
     Internal/world_environment_3d_uve.cpp
     Internal/reflection_probe_3d_uve.cpp

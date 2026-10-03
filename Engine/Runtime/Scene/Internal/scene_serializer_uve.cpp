@@ -850,15 +850,15 @@ template <typename VectorT>
                                             json.value("interpolation", 1.0F), json.value("active", true)};
 }
 
-[[nodiscard]] nlohmann::json ToJsonUVE(const NavigationRegion3DComponentUVE& value) {
+[[nodiscard]] nlohmann::json ToJsonUVE(const NavMeshVolume3DComponentUVE& value) {
     return {{"boundsHalfExtents", ToJsonUVE(value.boundsHalfExtents)},
             {"navigationMeshAssetPath", value.navigationMeshAssetPath},
             {"navigationLayers", value.navigationLayers},
             {"enabled", value.enabled}};
 }
 
-[[nodiscard]] NavigationRegion3DComponentUVE NavigationRegion3DObjectFromJsonUVE(const nlohmann::json& json) {
-    NavigationRegion3DComponentUVE value;
+[[nodiscard]] NavMeshVolume3DComponentUVE NavMeshVolume3DObjectFromJsonUVE(const nlohmann::json& json) {
+    NavMeshVolume3DComponentUVE value;
     value.boundsHalfExtents = Vector3FromJsonUVE(json.at("boundsHalfExtents"));
     value.navigationMeshAssetPath = json.value("navigationMeshAssetPath", std::string{});
     value.navigationLayers = json.value("navigationLayers", std::uint32_t{1});
@@ -866,7 +866,7 @@ template <typename VectorT>
     return value;
 }
 
-[[nodiscard]] nlohmann::json ToJsonUVE(const NavigationAgent3DComponentUVE& value) {
+[[nodiscard]] nlohmann::json ToJsonUVE(const NavSeeker3DComponentUVE& value) {
     return {{"targetPosition", ToJsonUVE(value.targetPosition)},
             {"radius", value.radius},
             {"height", value.height},
@@ -877,8 +877,8 @@ template <typename VectorT>
             {"enabled", value.enabled}};
 }
 
-[[nodiscard]] NavigationAgent3DComponentUVE NavigationAgent3DObjectFromJsonUVE(const nlohmann::json& json) {
-    NavigationAgent3DComponentUVE value;
+[[nodiscard]] NavSeeker3DComponentUVE NavSeeker3DObjectFromJsonUVE(const nlohmann::json& json) {
+    NavSeeker3DComponentUVE value;
     value.targetPosition = Vector3FromJsonUVE(json.at("targetPosition"));
     value.radius = json.value("radius", 0.5F);
     value.height = json.value("height", 1.8F);
@@ -1419,8 +1419,8 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
         {"LevelStreamer3DNodeComponentUVE", "LevelStreamer3DComponentUVE"},
         {"LodGroup3DNodeComponentUVE", "LodGroup3DComponentUVE"},
         {"Marker3DNodeComponentUVE", "Marker3DComponentUVE"},
-        {"NavigationAgent3DNodeComponentUVE", "NavigationAgent3DComponentUVE"},
-        {"NavigationRegion3DNodeComponentUVE", "NavigationRegion3DComponentUVE"},
+        {"NavigationAgent3DNodeComponentUVE", "NavSeeker3DComponentUVE"},
+        {"NavigationRegion3DNodeComponentUVE", "NavMeshVolume3DComponentUVE"},
         {"Occluder3DNodeComponentUVE", "Occluder3DComponentUVE"},
         {"Projectile3DNodeComponentUVE", "Projectile3DComponentUVE"},
         {"RayCast3DNodeComponentUVE", "RayCast3DComponentUVE"},
@@ -1444,6 +1444,10 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
         // engine's other base components are named for what they make an object (PhysicsObject3D,
         // RenderInstance3D, LightEmitter3D), so this one follows them instead of borrowing a name.
         {"AnimationMixerComponentUVE", "AnimationDriverComponentUVE"},
+        // The navigation pass: those two were the last kinds named after another engine's own
+        // navigation classes. A document written before this carries the left-hand name.
+        {"NavigationRegion3DComponentUVE", "NavMeshVolume3DComponentUVE"},
+        {"NavigationAgent3DComponentUVE", "NavSeeker3DComponentUVE"},
     };
     const auto it = kLegacyNames.find(name);
     return it != kLegacyNames.end() ? it->second : name;
@@ -1630,22 +1634,22 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                 }
                 return value;
             }, IsKinematic3DObjectComponentValidUVE));
-        table.emplace("NavigationRegion3DComponentUVE", MakeRegistrationUVE<NavigationRegion3DComponentUVE>(
+        table.emplace("NavMeshVolume3DComponentUVE", MakeRegistrationUVE<NavMeshVolume3DComponentUVE>(
             [](const nlohmann::json& json) {
-                const NavigationRegion3DComponentUVE value = NavigationRegion3DObjectFromJsonUVE(json);
-                if (!IsNavigationRegion3DObjectComponentValidUVE(value)) {
-                    throw std::runtime_error("Invalid NavigationRegion3DComponentUVE payload");
+                const NavMeshVolume3DComponentUVE value = NavMeshVolume3DObjectFromJsonUVE(json);
+                if (!IsNavMeshVolume3DObjectComponentValidUVE(value)) {
+                    throw std::runtime_error("Invalid NavMeshVolume3DComponentUVE payload");
                 }
                 return value;
-            }, IsNavigationRegion3DObjectComponentValidUVE));
-        table.emplace("NavigationAgent3DComponentUVE", MakeRegistrationUVE<NavigationAgent3DComponentUVE>(
+            }, IsNavMeshVolume3DObjectComponentValidUVE));
+        table.emplace("NavSeeker3DComponentUVE", MakeRegistrationUVE<NavSeeker3DComponentUVE>(
             [](const nlohmann::json& json) {
-                const NavigationAgent3DComponentUVE value = NavigationAgent3DObjectFromJsonUVE(json);
-                if (!IsNavigationAgent3DObjectComponentValidUVE(value)) {
-                    throw std::runtime_error("Invalid NavigationAgent3DComponentUVE payload");
+                const NavSeeker3DComponentUVE value = NavSeeker3DObjectFromJsonUVE(json);
+                if (!IsNavSeeker3DObjectComponentValidUVE(value)) {
+                    throw std::runtime_error("Invalid NavSeeker3DComponentUVE payload");
                 }
                 return value;
-            }, IsNavigationAgent3DObjectComponentValidUVE));
+            }, IsNavSeeker3DObjectComponentValidUVE));
         table.emplace("Skeleton3DComponentUVE", MakeRegistrationUVE<Skeleton3DComponentUVE>(
             [](const nlohmann::json& json) {
                 const Skeleton3DComponentUVE value = Skeleton3DObjectFromJsonUVE(json);

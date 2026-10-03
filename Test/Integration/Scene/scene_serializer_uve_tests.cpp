@@ -222,12 +222,12 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
     entityManager.AddComponentUVE<RayCast3DComponentUVE>(source, ray);
     entityManager.AddComponentUVE<Kinematic3DComponentUVE>(
         source, Kinematic3DComponentUVE{Math::Vector3UVE{1.0F, 0.0F, 0.0F}, 0.75F, true});
-    NavigationRegion3DComponentUVE navigationRegion;
+    NavMeshVolume3DComponentUVE navigationRegion;
     navigationRegion.navigationMeshAssetPath = "navigation/courtyard.uvnav";
-    entityManager.AddComponentUVE<NavigationRegion3DComponentUVE>(source, navigationRegion);
-    NavigationAgent3DComponentUVE navigationAgent;
+    entityManager.AddComponentUVE<NavMeshVolume3DComponentUVE>(source, navigationRegion);
+    NavSeeker3DComponentUVE navigationAgent;
     navigationAgent.targetPosition = Math::Vector3UVE{8.0F, 0.0F, -4.0F};
-    entityManager.AddComponentUVE<NavigationAgent3DComponentUVE>(source, navigationAgent);
+    entityManager.AddComponentUVE<NavSeeker3DComponentUVE>(source, navigationAgent);
     Skeleton3DComponentUVE skeleton;
     skeleton.bones.push_back(SkeletonBoneUVE{"root", -1, {}, {}, {1.0F, 1.0F, 1.0F}});
     entityManager.AddComponentUVE<Skeleton3DComponentUVE>(source, skeleton);
@@ -340,7 +340,7 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
     EXPECT_FALSE(entityManager.GetComponentUVE<AreaComponentUVE>(restored).monitorable);
     EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<RayCast3DComponentUVE>(restored).length, 42.0F);
     EXPECT_EQ(entityManager.GetComponentUVE<RayCast3DComponentUVE>(restored).exclusions[0], 7U);
-    EXPECT_EQ(entityManager.GetComponentUVE<NavigationRegion3DComponentUVE>(restored).navigationMeshAssetPath,
+    EXPECT_EQ(entityManager.GetComponentUVE<NavMeshVolume3DComponentUVE>(restored).navigationMeshAssetPath,
               "navigation/courtyard.uvnav");
     EXPECT_EQ(entityManager.GetComponentUVE<Skeleton3DComponentUVE>(restored).bones.size(), 1U);
     EXPECT_EQ(entityManager.GetComponentUVE<Hitbox3DComponentUVE>(restored).damageChannel, "melee");
@@ -352,7 +352,7 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
     EXPECT_EQ(entityManager.GetComponentUVE<SpawnPoint3DComponentUVE>(restored).spawnTag, "player_start");
     EXPECT_TRUE(entityManager.GetComponentUVE<LevelStreamer3DComponentUVE>(restored).enabled);
     EXPECT_TRUE(entityManager.HasComponentUVE<Kinematic3DComponentUVE>(restored));
-    EXPECT_TRUE(entityManager.HasComponentUVE<NavigationAgent3DComponentUVE>(restored));
+    EXPECT_TRUE(entityManager.HasComponentUVE<NavSeeker3DComponentUVE>(restored));
     EXPECT_TRUE(entityManager.HasComponentUVE<BoneAttachment3DComponentUVE>(restored));
     EXPECT_TRUE(entityManager.HasComponentUVE<SpringArm3DComponentUVE>(restored));
     EXPECT_TRUE(entityManager.HasComponentUVE<Marker3DComponentUVE>(restored));

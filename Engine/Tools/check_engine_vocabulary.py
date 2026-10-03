@@ -80,6 +80,12 @@ RETIRED = {
     "AnimationGraphCacheKeyHashUVE": "PoseGraphCacheKeyHashUVE",
     "ValidateAnimationGraphUVE": "ValidatePoseGraphUVE",
     "EvaluateAnimationGraphUVE": "EvaluatePoseGraphUVE",
+    # The navigation pass (GODOT_STYLE_AUDIT.md Finding D). These two kinds carried another engine's
+    # own navigation class names verbatim. Entries, not stems: bare "Navigation" is legitimate
+    # elsewhere in the tree - ContentNavigationHistoryUVE and
+    # DeveloperConsoleHistoryNavigationCodeUVE are editor history, not pathfinding.
+    "NavigationRegion3D": "NavMeshVolume3D",
+    "NavigationAgent3D": "NavSeeker3D",
     # The Godot class name used as a folder and library name (Finding F).
     "CanvasLayer": "Canvas (folder Engine/Runtime/Objects/UI/Expose/uve/objects/canvas)",
     "all_objects_canvas_layer_uve.h": "all_objects_canvas_uve.h",

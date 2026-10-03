@@ -147,8 +147,8 @@ TEST_F(SceneObjectTypeUVETest, UnknownAndLegacyIdsLoadWithoutFailingTheScene) {
     ASSERT_TRUE(entityManager.HasComponentUVE<SceneObjectTypeComponentUVE>(legacy.front()));
     EXPECT_EQ(ResolveSceneObjectKindUVE(entityManager, legacy.front()), Kind::Object3D);
 
-    // Scenes saved before the rename keep naming the four 3D body kinds and the two animation kinds
-    // by their old ids: the alias has to land on the same kind, not on an untyped object.
+    // Scenes saved before a rename keep naming a kind by its old id: the alias has to land on the
+    // same kind, not on an untyped object.
     const std::pair<std::string_view, Kind> renamed[] = {
         {"static_body_3d", Kind::Static3D},
         {"rigid_body_3d", Kind::Rigid3D},
@@ -156,6 +156,8 @@ TEST_F(SceneObjectTypeUVETest, UnknownAndLegacyIdsLoadWithoutFailingTheScene) {
         {"animatable_body_3d", Kind::Kinematic3D},
         {"animation_player", Kind::AnimationSequencer},
         {"animation_tree", Kind::AnimationGraph},
+        {"navigation_region_3d", Kind::NavMeshVolume3D},
+        {"navigation_agent_3d", Kind::NavSeeker3D},
     };
     for (const auto& [oldId, expected] : renamed) {
         const std::vector<EntityUVE> aliased = restoreWithType(oldId);

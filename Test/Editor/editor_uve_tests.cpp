@@ -5159,8 +5159,8 @@ TEST(EditorUVETest, ComponentOnlySceneObjectsUVE_AreNamedForTheirOwnKindNotObjec
 
         constexpr std::array<Scene::Objects::SceneObjectKindUVE, 16> kComponentOnlyKinds{
             Scene::Objects::SceneObjectKindUVE::RayCast3D,
-            Scene::Objects::SceneObjectKindUVE::NavigationRegion3D,
-            Scene::Objects::SceneObjectKindUVE::NavigationAgent3D,
+            Scene::Objects::SceneObjectKindUVE::NavMeshVolume3D,
+            Scene::Objects::SceneObjectKindUVE::NavSeeker3D,
             Scene::Objects::SceneObjectKindUVE::BoneAttachment3D,
             Scene::Objects::SceneObjectKindUVE::Marker3D,
             Scene::Objects::SceneObjectKindUVE::Hitbox3D,
