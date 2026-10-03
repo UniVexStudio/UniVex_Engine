@@ -1118,7 +1118,7 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
             });
         m_entityManager->ForEachUVE<Scene::AnimationGraphComponentUVE>(
             [&referenced](const Scene::EntityUVE, const Scene::AnimationGraphComponentUVE& tree) {
-                for (const Scene::AnimationGraphNodeUVE& object : tree.objects) {
+                for (const Scene::AnimationGraphNodeUVE& object : tree.nodes) {
                     referenced.insert(object.clip.value);
                 }
             });
@@ -1214,7 +1214,7 @@ void EngineCoreUVE::SyncCharacterControllersUVE(const float fixedDeltaTimeSecond
         bool onFloor = !floating && result.grounded;
         Math::Vector3UVE floorNormal = result.groundNormal;
         const bool falling = c.velocity.y <= 0.0F && !hitCeiling;
-        if (!floating && !onFloor && !jumped && falling && c.isOnFloor && !locks.lockMotionY) {
+        if (!floating && !onFloor && !jumped && falling && c.grounded && !locks.lockMotionY) {
             // Only a body that was just on the floor snaps, and only as far as Snap Length: it
             // follows a step down instead of launching off it. Nothing found, and it is put back
             // exactly where it was, to fall normally.

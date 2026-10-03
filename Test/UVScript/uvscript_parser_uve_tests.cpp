@@ -23,10 +23,10 @@ on ready:
 on tick(dt):
     let move = input.axis("left", "right")
     velocity.x = move * speed
-    if is_on_floor and input.pressed("jump"):
+    if grounded and input.pressed("jump"):
         velocity.y = sqrt(2.0 * gravity * jump_height)
         jumps += 1
-    elif not is_on_floor:
+    elif not grounded:
         pass
     else:
         jumps = 0

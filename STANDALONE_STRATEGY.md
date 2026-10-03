@@ -543,16 +543,73 @@ broken editor.
 Also settled here: the three remaining kind-rename candidates from Phase 7 — `Area3D`, `Marker3D`,
 `BoneAttachment3D` — are **kept as they are**. Their names stay.
 
+### Phase 8 — the script property `is_on_floor`, and the rename that ran the wrong way
+
+The last Godot-spelled name in the script API was the character controller's `is_on_floor`.
+Godot's `CharacterBody3D::is_on_floor()` (`scene/3d/physics/character_body_3d.h:56`) is the source,
+and UniVex had it in two spellings: `is_on_floor` for scripts, `isOnFloor` for C++.
+
+What decides the replacement is the company it keeps. Every other property this host exposes is a
+bare lowercase noun — `name`, `position`, `scale`, `velocity`. So the answer is **`grounded`**: one
+word, no `is_` prefix, no snake_case. It is deliberately *not* Unity's `isGrounded`; that would be a
+lateral move into a second engine's vocabulary, which is the exact mistake the Phase 7 candidates
+were rejected for.
+
+The serializer gave up the history. `scene_serializer_uve.cpp` already accepted `"isGrounded"` as a
+fallback key alongside `"isOnFloor"` — meaning this field was named `isGrounded` once and someone
+renamed it **toward** the Godot name. This phase walks that back.
+
+Landed:
+
+| surface | before | after |
+|---|---|---|
+| script property | `is_on_floor` | `grounded` (`is_on_floor` kept as a read alias) |
+| C++ field | `isOnFloor` | `grounded` (`character_controller_component_uve.h:75`) |
+| JSON write key | `"isOnFloor"` | `"grounded"` |
+| JSON read chain | `"isOnFloor"` → `"isGrounded"` | `"grounded"` → `"isOnFloor"` → `"isGrounded"` |
+| inspector label | `"On Floor"` | `"Grounded"` (group `"State"`, id `"grounded"`) |
+
+The alias is asymmetric on purpose. A C++ host accepts both spellings, because the host is ours and
+old scripts exist. A `.uvhost`-declared host answers **only** to what its file says —
+`DescribePropertyUVE("is_on_floor")` returns nothing for it, and
+`uvscript_vm_uve_tests.cpp:458` asserts exactly that. A described host has one source of truth: its
+description file. An alias is a second spelling of one property, not a second property.
+
+Three traps this pass walked into, all worth keeping:
+
+1. **A `sed` over a field name also rewrites its JSON key and silently deletes the alias chain.**
+   `json.value("isOnFloor", json.value("isGrounded", false))` became a single-key read. Re-read every
+   `json.value` line after renaming anything that touches serialization.
+2. **A green test count proves nothing about coverage.** 264 tests were passing and *not one of them
+   was a UVScript test* — `grep -c uvscript` on the subset driver returned `0`. Worse, once added, the
+   suite turned out to test `FakeHostUVE`, a test double, so it never touched the real host at all.
+   The driver now compiles `uvscript_parser`/`uvscript_vm` tests, links `uve_uvscript`, and runs `uvsc`
+   over `fake_object.uvhost` + 4 scripts so `UVScriptNativeUVETest` actually links native code.
+   285 tests / 41 suites now.
+3. **The previous commit shipped a compile error.** `engine_core_uve.cpp:1121` still read
+   `tree.objects` after the graph-node rename, and that file is in neither the subset nor the
+   editor syntax-check list, so nothing caught it. The rule now is a sweep of **every** Engine
+   translation unit the subset does not build — 160 files, checked individually. That sweep's only
+   20 failures are missing third-party headers (GLEW, Vulkan, miniaudio, stb_truetype, generated
+   `.inc`), none of them from a rename.
+
+Guard: `is_on_floor` moved from the reported-only `FOREIGN_CLASS_NAMES` list into enforced `RETIRED`
+(as `"grounded"`), together with `isOnFloor`. Two files are allowlisted because the old spelling is
+the point of the line: `uvscript_object_host_uve.cpp` (the live alias) and
+`uvscript_vm_uve_tests.cpp` (the test proving the alias reads, reports read-only, and is not
+described). Reintroducing `isOnFloor` via a probe header makes the check exit 1; removing the probe
+returns it to green.
+
 ### Verification actually run
 
 ```
 cmake --build /tmp/sbuild --target uve_audit_subset_tests -j 2      # 0 errors
 ./uve_audit_subset_tests
-[==========] 264 tests from 38 test suites ran.
-[  PASSED  ] 264 tests.
+[==========] 285 tests from 41 test suites ran.
+[  PASSED  ] 285 tests.
 
 python3 Engine/Tools/check_math_boundary.py         → math boundary check passed   (exit 0)
-python3 Engine/Tools/check_engine_vocabulary.py     → 42 retired names + 5 stems, 0 reintroductions (exit 0)
+python3 Engine/Tools/check_engine_vocabulary.py     → 42 retired names + 7 stems, 0 reintroductions (exit 0)
 bash    Engine/Tools/check_panel_includes.sh        → include audit: clean         (exit 0)
 ```
 
