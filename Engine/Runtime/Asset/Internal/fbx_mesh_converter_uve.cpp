@@ -142,7 +142,7 @@ struct FbxBoneObjectUVE final {
     std::vector<FbxBoneObjectUVE> bones;
     std::unordered_map<const ufbx_node*, std::int32_t> boneOfObject;
     std::set<std::string> usedNames;
-    std::vector<const ufbx_node*> pending{scene.root_object};
+    std::vector<const ufbx_node*> pending{scene.root_node};
     while (!pending.empty()) {
         const ufbx_node* const object = pending.back();
         pending.pop_back();
@@ -223,17 +223,17 @@ bool ConvertFbxMeshUVE(const std::span<const std::byte> source, MeshAssetUVE& ou
                 joint.parentIndex = bone.parentIndex < 0 ? kInvalidJointParentUVE
                                                          : static_cast<std::uint32_t>(bone.parentIndex);
                 // A bone no cluster binds keeps its current pose as its bind pose.
-                const ufbx_matrix inverse = ufbx_matrix_invert(&bone.object->object_to_world);
+                const ufbx_matrix inverse = ufbx_matrix_invert(&bone.object->node_to_world);
                 joint.inverseBindMatrix = ToMatrixUVE(inverse);
                 jointOfObject.emplace(bone.object, static_cast<std::uint32_t>(candidate.joints.size()));
                 candidate.joints.push_back(std::move(joint));
             }
             for (const ufbx_skin_deformer* const skin : scene->skin_deformers) {
                 for (const ufbx_skin_cluster* const cluster : skin->clusters) {
-                    if (cluster->bone_object == nullptr) {
+                    if (cluster->bone_node == nullptr) {
                         continue;
                     }
-                    if (const auto found = jointOfObject.find(cluster->bone_object); found != jointOfObject.end()) {
+                    if (const auto found = jointOfObject.find(cluster->bone_node); found != jointOfObject.end()) {
                         const ufbx_matrix inverse = ufbx_matrix_invert(&cluster->bind_to_world);
                         candidate.joints[found->second].inverseBindMatrix = ToMatrixUVE(inverse);
                     }
@@ -315,7 +315,7 @@ bool ConvertFbxMeshUVE(const std::span<const std::byte> source, MeshAssetUVE& ou
                                 for (std::uint32_t w = 0U; w < weights.num_weights && slot < kMaxJointInfluencesUVE; ++w) {
                                     const ufbx_skin_weight& weight = skin->weights.data[weights.weight_begin + w];
                                     const ufbx_skin_cluster* const cluster = skin->clusters.data[weight.cluster_index];
-                                    const auto joint = cluster->bone_object != nullptr ? jointOfObject.find(cluster->bone_object)
+                                    const auto joint = cluster->bone_node != nullptr ? jointOfObject.find(cluster->bone_node)
                                                                                       : jointOfObject.end();
                                     const float value = static_cast<float>(weight.weight);
                                     if (joint == jointOfObject.end() || !std::isfinite(value) || value <= 0.0F) {
@@ -431,9 +431,9 @@ std::optional<GltfSkeletonUVE> ReadFbxSkeletonUVE(const std::span<const std::byt
         for (const FbxBoneObjectUVE& bone : *bones) {
             // The pose relative to the nearest bone above it: everything between is folded in, so
             // the chain still meets up.
-            ufbx_matrix local = bone.object->object_to_parent;
+            ufbx_matrix local = bone.object->node_to_parent;
             for (const ufbx_node* const between : bone.between) {
-                local = ufbx_matrix_mul(&between->object_to_parent, &local);
+                local = ufbx_matrix_mul(&between->node_to_parent, &local);
             }
             const ufbx_transform pose = ufbx_matrix_to_transform(&local);
             if (!IsFiniteTransformUVE(pose)) {
@@ -473,9 +473,9 @@ std::vector<AnimationClipAssetUVE> ReadFbxAnimationsUVE(const std::span<const st
         // The skeleton every take was made for, the same rest pose ReadFbxSkeletonUVE gives.
         std::vector<AnimationAssetRestBoneUVE> rest;
         for (const FbxBoneObjectUVE& bone : *bones) {
-            ufbx_matrix local = bone.object->object_to_parent;
+            ufbx_matrix local = bone.object->node_to_parent;
             for (const ufbx_node* const between : bone.between) {
-                local = ufbx_matrix_mul(&between->object_to_parent, &local);
+                local = ufbx_matrix_mul(&between->node_to_parent, &local);
             }
             const ufbx_transform pose = ufbx_matrix_to_transform(&local);
             if (!IsFiniteTransformUVE(pose)) {
