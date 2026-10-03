@@ -460,6 +460,21 @@ public:
         std::array<float, 3> studioTarget{0.0F, 1.0F, 0.0F};
         float studioRadius = 1.5F;
         std::uint32_t studioFramingSerial = 0U;
+
+        // True while the Entity Editor window owns the document (see DrawEntityEditorPlaceholderUVE:
+        // the main window stops drawing and the scene waits in a snapshot).
+        //
+        // The editor has one viewport that draws whatever world is loaded, so all three places that
+        // draw it - the Scene workspace, the Entity Editor and the Retarget window - share one
+        // OrbitCamera. Without this flag the host cannot tell which of them the operator is looking
+        // through, so orbiting inside the Entity Editor moved the Scene workspace's camera too: the
+        // views were adjustable only at each other's expense.
+        //
+        // The host uses it to keep one camera pose per view and swap poses on the transition, which
+        // is what studioView already did for the Retarget window. Both can be true at once if the
+        // Retarget window is opened from the Entity Editor; the host gives the studio view
+        // precedence, since that is the view actually on screen.
+        bool entityEditActive = false;
     };
 
     /// Render callback for the dockable "Viewport" panel: given the panel's current available
