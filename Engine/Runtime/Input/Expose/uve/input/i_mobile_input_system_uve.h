@@ -10,6 +10,20 @@
 #include "uve/math/vector2_uve.h"
 #include "uve/math/vector3_uve.h"
 
+// Scope boundary - read before concluding that the Evaluate* helpers below are dead code.
+//
+// MobileInputSystemUVE is wired into EngineServices and is live: UpdateUVE() and GetSnapshotUVE()
+// have hundreds of in-tree callers. The three free Evaluate* helpers are a different story - they
+// are written for Android/iOS platform adapters, which this project deliberately does not ship.
+// Engine/Runtime/Window/CMakeLists.txt records that decision: "The reference module also has an
+// Android backend (android_window_manager_uve.*, EGL/GLESv3) behind an ANDROID branch - not ported
+// here since this project doesn't target Android." No android_window_manager exists in the tree.
+//
+// So the absence of an Engine/ caller for EvaluateMobileInputPolicyUVE,
+// EvaluateMobileLifecycleTransitionUVE and EvaluateTouchLifecycleTransitionUVE is that decision's
+// direct consequence, not a missing integration. Adding a caller here means first writing the
+// mobile platform backend the project chose to exclude.
+
 namespace UVE::Input {
 
 inline constexpr std::size_t kMaximumTouchCountUVE = 10U;

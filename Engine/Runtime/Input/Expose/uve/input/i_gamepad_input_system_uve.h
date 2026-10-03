@@ -61,6 +61,11 @@ enum class GamepadConnectionTransitionUVE : std::uint8_t {
 };
 
 /// Classifies a copied gamepad connection edge without polling hardware or owning device state.
+///
+/// Caller scope: the intended caller is a platform input adapter that polls gamepad devices and
+/// feeds this helper one previous/current snapshot pair. No such adapter exists in this tree, so
+/// this helper currently has no Engine/ caller - that is a scope boundary, not an unfinished
+/// integration. See the matching mobile helpers in i_mobile_input_system_uve.h.
 [[nodiscard]] inline bool EvaluateGamepadConnectionTransitionUVE(
     const GamepadStateSnapshotUVE& previous, const GamepadStateSnapshotUVE& current,
     GamepadConnectionTransitionUVE& outTransition) noexcept {
