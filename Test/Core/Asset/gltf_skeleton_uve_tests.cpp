@@ -14,7 +14,7 @@ namespace {
 // the skin listing the joints child-first to prove the reader orders them parent-first.
 constexpr const char* kArmatureGltfUVE = R"({
   "asset":{"version":"2.0"},
-  "objects":[
+  "nodes":[
     {"name":"Armature","children":[1]},
     {"name":"Hips","translation":[0,1,0],"children":[2]},
     {"name":"Spine","translation":[0,0.5,0],"rotation":[0,0,0.70710677,0.70710677],"children":[3]},
@@ -44,7 +44,7 @@ TEST(GltfSkeletonUVETest, ParseGltfSkeletonUVE_OrdersJointsParentFirstAndSkipsNo
 
 TEST(GltfSkeletonUVETest, ParseGltfSkeletonUVE_MakesDuplicateBoneNamesUnique) {
     const std::optional<GltfSkeletonUVE> skeleton = ParseGltfSkeletonUVE(
-        R"({"asset":{"version":"2.0"},"objects":[{"name":"Bone","children":[1]},{"name":"Bone"}],"skins":[{"joints":[0,1]}]})",
+        R"({"asset":{"version":"2.0"},"nodes":[{"name":"Bone","children":[1]},{"name":"Bone"}],"skins":[{"joints":[0,1]}]})",
         256U);
     ASSERT_TRUE(skeleton.has_value());
     EXPECT_EQ(skeleton->joints[0].name, "Bone");
@@ -53,15 +53,15 @@ TEST(GltfSkeletonUVETest, ParseGltfSkeletonUVE_MakesDuplicateBoneNamesUnique) {
 
 TEST(GltfSkeletonUVETest, ParseGltfSkeletonUVE_RejectsWhatItCannotRepresent) {
     // No skin: a static mesh has no skeleton.
-    EXPECT_FALSE(ParseGltfSkeletonUVE(R"({"asset":{"version":"2.0"},"objects":[{}]})", 256U).has_value());
+    EXPECT_FALSE(ParseGltfSkeletonUVE(R"({"asset":{"version":"2.0"},"nodes":[{}]})", 256U).has_value());
     // A joint naming a object that does not exist.
-    EXPECT_FALSE(ParseGltfSkeletonUVE(R"({"asset":{"version":"2.0"},"objects":[{}],"skins":[{"joints":[4]}]})", 256U)
+    EXPECT_FALSE(ParseGltfSkeletonUVE(R"({"asset":{"version":"2.0"},"nodes":[{}],"skins":[{"joints":[4]}]})", 256U)
                      .has_value());
     // Over the bone budget.
     EXPECT_FALSE(ParseGltfSkeletonUVE(kArmatureGltfUVE, 2U).has_value());
     // A cycle in the hierarchy.
     EXPECT_FALSE(ParseGltfSkeletonUVE(
-                     R"({"asset":{"version":"2.0"},"objects":[{"children":[1]},{"children":[0]}],"skins":[{"joints":[0,1]}]})",
+                     R"({"asset":{"version":"2.0"},"nodes":[{"children":[1]},{"children":[0]}],"skins":[{"joints":[0,1]}]})",
                      256U)
                      .has_value());
     EXPECT_FALSE(ParseGltfSkeletonUVE("not json", 256U).has_value());

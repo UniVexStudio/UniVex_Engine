@@ -414,10 +414,10 @@ FBXHeaderExtension:  {
 	FBXVersion: 7400
 }
 Objects:  {
-	Model: 3000, "Model::Hips", "LimbObject" {
+	Model: 3000, "Model::Hips", "LimbNode" {
 		Version: 232
 	}
-	NodeAttribute: 3100, "ObjectAttribute::Hips", "LimbObject" {
+	NodeAttribute: 3100, "NodeAttribute::Hips", "LimbNode" {
 		TypeFlags: "Skeleton"
 	}
 	AnimationStack: 5000, "AnimStack::Armature|Idle", "" {
@@ -470,10 +470,10 @@ FBXHeaderExtension:  {
 	FBXVersion: 7400
 }
 Objects:  {
-	Model: 3000, "Model::Hips", "LimbObject" {
+	Model: 3000, "Model::Hips", "LimbNode" {
 		Version: 232
 	}
-	NodeAttribute: 3100, "ObjectAttribute::Hips", "LimbObject" {
+	NodeAttribute: 3100, "NodeAttribute::Hips", "LimbNode" {
 		TypeFlags: "Skeleton"
 	}
 	AnimationStack: 5000, "AnimStack::Armature|Run", "" {

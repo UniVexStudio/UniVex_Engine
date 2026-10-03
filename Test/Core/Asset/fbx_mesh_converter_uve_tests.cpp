@@ -129,10 +129,10 @@ TEST(FbxMeshConverterUVETest, EveryInstanceIsMergedWhereItsObjectPlacesItAndAMir
 }
 
 TEST(FbxMeshConverterUVETest, ASkinIsWhatMakesItRigged) {
-    const std::string objects = std::string(kFloorGeometryUVE) + R"(	Model: 3000, "Model::Bone", "LimbObject" {
+    const std::string objects = std::string(kFloorGeometryUVE) + R"(	Model: 3000, "Model::Bone", "LimbNode" {
 		Version: 232
 	}
-	NodeAttribute: 3100, "ObjectAttribute::Bone", "LimbObject" {
+	NodeAttribute: 3100, "NodeAttribute::Bone", "LimbNode" {
 		TypeFlags: "Skeleton"
 	}
 	Deformer: 4000, "Deformer::Skin", "Skin" {
@@ -226,10 +226,10 @@ TEST(FbxMeshConverterUVETest, ASkinIsWhatMakesItRigged) {
 TEST(FbxMeshConverterUVETest, ASkeletonWithAnimationAndNoMeshIsAnAnimationNotAModel) {
     // The shape exported motion usually takes: bones and a take, nothing to draw. One second long
     // (FBX time counts 46186158000 ticks a second).
-    const std::string fbx = MakeFbxUVE(R"(	Model: 3000, "Model::Hips", "LimbObject" {
+    const std::string fbx = MakeFbxUVE(R"(	Model: 3000, "Model::Hips", "LimbNode" {
 		Version: 232
 	}
-	NodeAttribute: 3100, "ObjectAttribute::Hips", "LimbObject" {
+	NodeAttribute: 3100, "NodeAttribute::Hips", "LimbNode" {
 		TypeFlags: "Skeleton"
 	}
 	AnimationStack: 5000, "AnimStack::Strafe", "" {
@@ -259,13 +259,13 @@ TEST(FbxMeshConverterUVETest, ASkeletonWithAnimationAndNoMeshIsAnAnimationNotAMo
 TEST(FbxMeshConverterUVETest, TheSkeletonComesOutInMetresUprightWithParentsFirst) {
     // Hips one metre up (100 cm along Z in this Z-up file) with a spine child, under a null the
     // exporter put between them: the null is folded into the spine's pose so the chain still meets.
-    const std::string fbx = MakeFbxUVE(R"(	Model: 3000, "Model::Hips", "LimbObject" {
+    const std::string fbx = MakeFbxUVE(R"(	Model: 3000, "Model::Hips", "LimbNode" {
 		Version: 232
 		Properties70:  {
 			P: "Lcl Translation", "Lcl Translation", "", "A",0,0,100
 		}
 	}
-	NodeAttribute: 3100, "ObjectAttribute::Hips", "LimbObject" {
+	NodeAttribute: 3100, "NodeAttribute::Hips", "LimbNode" {
 		TypeFlags: "Skeleton"
 	}
 	Model: 3200, "Model::Offset", "Null" {
@@ -274,13 +274,13 @@ TEST(FbxMeshConverterUVETest, TheSkeletonComesOutInMetresUprightWithParentsFirst
 			P: "Lcl Translation", "Lcl Translation", "", "A",0,0,10
 		}
 	}
-	Model: 3300, "Model::Hips", "LimbObject" {
+	Model: 3300, "Model::Hips", "LimbNode" {
 		Version: 232
 		Properties70:  {
 			P: "Lcl Translation", "Lcl Translation", "", "A",0,0,20
 		}
 	}
-	NodeAttribute: 3400, "ObjectAttribute::Spine", "LimbObject" {
+	NodeAttribute: 3400, "NodeAttribute::Spine", "LimbNode" {
 		TypeFlags: "Skeleton"
 	}
 )",
@@ -326,22 +326,22 @@ TEST(FbxMeshConverterUVETest, TheSkeletonComesOutInMetresUprightWithParentsFirst
 TEST(FbxMeshConverterUVETest, EveryTakeBecomesASkeletalClipOnTheSkeletonsBones) {
     // Hips one metre up with a spine above it; the take "Armature|Walk" slides the hips 100 cm
     // along the file's X over one second. The spine never moves.
-    const std::string fbx = MakeFbxUVE(R"(	Model: 3000, "Model::Hips", "LimbObject" {
+    const std::string fbx = MakeFbxUVE(R"(	Model: 3000, "Model::Hips", "LimbNode" {
 		Version: 232
 		Properties70:  {
 			P: "Lcl Translation", "Lcl Translation", "", "A",0,0,100
 		}
 	}
-	NodeAttribute: 3100, "ObjectAttribute::Hips", "LimbObject" {
+	NodeAttribute: 3100, "NodeAttribute::Hips", "LimbNode" {
 		TypeFlags: "Skeleton"
 	}
-	Model: 3300, "Model::Spine", "LimbObject" {
+	Model: 3300, "Model::Spine", "LimbNode" {
 		Version: 232
 		Properties70:  {
 			P: "Lcl Translation", "Lcl Translation", "", "A",0,0,20
 		}
 	}
-	NodeAttribute: 3400, "ObjectAttribute::Spine", "LimbObject" {
+	NodeAttribute: 3400, "NodeAttribute::Spine", "LimbNode" {
 		TypeFlags: "Skeleton"
 	}
 	AnimationStack: 5000, "AnimStack::Armature|Walk", "" {

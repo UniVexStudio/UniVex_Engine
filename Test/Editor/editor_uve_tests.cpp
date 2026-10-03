@@ -5559,7 +5559,7 @@ TEST(EditorUVETest, ModelSourcesUVE_AreImportedAutomaticallyOutsideTheContentFol
         std::ofstream obj(root / "Models" / "tri.obj", std::ios::binary | std::ios::trunc);
         obj << "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n";
         std::ofstream rig(root / "Models" / "rig.gltf", std::ios::binary | std::ios::trunc);
-        rig << R"({"asset":{"version":"2.0"},"meshes":[{}],"skins":[{"joints":[0]}],"objects":[{}]})";
+        rig << R"({"asset":{"version":"2.0"},"meshes":[{}],"skins":[{"joints":[0]}],"nodes":[{}]})";
         // Exported motion: one bone and a one-second take, nothing to draw.
         std::ofstream motion(root / "Models" / "strafe.fbx", std::ios::binary | std::ios::trunc);
         motion << R"(; FBX 7.4.0 project file
@@ -5568,10 +5568,10 @@ FBXHeaderExtension:  {
 	FBXVersion: 7400
 }
 Objects:  {
-	Model: 3000, "Model::Hips", "LimbObject" {
+	Model: 3000, "Model::Hips", "LimbNode" {
 		Version: 232
 	}
-	NodeAttribute: 3100, "ObjectAttribute::Hips", "LimbObject" {
+	NodeAttribute: 3100, "NodeAttribute::Hips", "LimbNode" {
 		TypeFlags: "Skeleton"
 	}
 	AnimationStack: 5000, "AnimStack::Strafe", "" {
@@ -5639,10 +5639,10 @@ TEST(EditorUVETest, Skeleton3DUVE_StartsEmptyAndTakesItsBonesFromARiggedModel) {
     std::filesystem::create_directories(root / "Characters");
     {
         std::ofstream rig(root / "Characters" / "hero.gltf", std::ios::binary | std::ios::trunc);
-        rig << R"({"asset":{"version":"2.0"},"objects":[{"name":"Armature","children":[1]},)"
+        rig << R"({"asset":{"version":"2.0"},"nodes":[{"name":"Armature","children":[1]},)"
                R"({"name":"Hips","translation":[0,1,0],"children":[2]},{"name":"Spine"}],"skins":[{"joints":[1,2]}]})";
         std::ofstream plain(root / "Characters" / "rock.gltf", std::ios::binary | std::ios::trunc);
-        plain << R"({"asset":{"version":"2.0"},"objects":[{}]})";
+        plain << R"({"asset":{"version":"2.0"},"nodes":[{}]})";
     }
     Core::EngineConfigUVE config = MakeEditorTestConfigUVE();
     config.projectContentRootUVE = root;
