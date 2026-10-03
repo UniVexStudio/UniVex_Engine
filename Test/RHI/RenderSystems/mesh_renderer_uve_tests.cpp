@@ -1228,7 +1228,7 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_InterpolatedPoseIsDrawnBetween
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
 
     Scene::PhysicsInterpolationComponentUVE interpolation;
-    interpolation.mode = Scene::PhysicsInterpolationModeUVE::On;
+    interpolation.mode = Scene::PoseSmoothingUVE::Blended;
     interpolation.interpolatedInHierarchy = true;
     interpolation.hasPreviousPose = true;
     interpolation.previousPosition = Math::Vector3UVE{0.0F, 0.0F, -10.0F};
@@ -1255,7 +1255,7 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_AlphaZeroDrawsThePreviousPoseA
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
 
     Scene::PhysicsInterpolationComponentUVE interpolation;
-    interpolation.mode = Scene::PhysicsInterpolationModeUVE::On;
+    interpolation.mode = Scene::PoseSmoothingUVE::Blended;
     interpolation.hasPreviousPose = true;
     interpolation.previousPosition = Math::Vector3UVE{-4.0F, 0.0F, -10.0F};
     interpolation.currentPosition = Math::Vector3UVE{6.0F, 0.0F, -10.0F};
@@ -1304,7 +1304,7 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_InterpolationDoesNotDefeatTheP
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
 
     Scene::PhysicsInterpolationComponentUVE interpolation;
-    interpolation.mode = Scene::PhysicsInterpolationModeUVE::On;
+    interpolation.mode = Scene::PoseSmoothingUVE::Blended;
     interpolation.hasPreviousPose = true;
     interpolation.previousPosition = Math::Vector3UVE{0.0F, 0.0F, -10.0F};
     interpolation.currentPosition = Math::Vector3UVE{1.0F, 0.0F, -10.0F};
@@ -1334,7 +1334,7 @@ TEST_F(MeshRendererUVETest, BuildVisibilitySetUVE_InterpolationOffUsesTheSimulat
     WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
 
     Scene::PhysicsInterpolationComponentUVE interpolation;
-    interpolation.mode = Scene::PhysicsInterpolationModeUVE::Off;
+    interpolation.mode = Scene::PoseSmoothingUVE::Exact;
     interpolation.interpolatedInHierarchy = false;
     interpolation.hasPreviousPose = true;
     interpolation.previousPosition = Math::Vector3UVE{-100.0F, 0.0F, -10.0F};

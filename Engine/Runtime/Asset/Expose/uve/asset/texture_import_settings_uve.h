@@ -31,7 +31,7 @@ enum class TextureCompressionModeUVE : std::uint8_t {
 /// defaults on, builds the full chain, and can be capped by total level count (0 means no cap).
 /// Every option is persisted in TextureAssetUVE output or participates in the import cache key.
 struct TextureImportSettingsUVE final : AssetImportSettingsUVE {
-    TextureColorSpaceUVE colorSpace = TextureColorSpaceUVE::Srgb;
+    TextureAssetColorSpaceUVE colorSpace = TextureAssetColorSpaceUVE::Srgb;
     TextureUsageUVE usage = TextureUsageUVE::Color;
     bool generateMipmaps = true;
     TextureMipmapFilterUVE mipFilter = TextureMipmapFilterUVE::Box;

@@ -12,22 +12,22 @@
 namespace UVE::Editor {
 namespace {
 
-using Kind = Scene::AnimationGraphObjectKindUVE;
-using Scene::AnimationGraphObjectUVE;
+using Kind = Scene::AnimationGraphNodeKindUVE;
+using Scene::AnimationGraphNodeUVE;
 
-[[nodiscard]] AnimationGraphObjectUVE* FindObjectUVE(std::vector<AnimationGraphObjectUVE>& objects, const std::uint32_t id) {
-    const auto it = std::ranges::find(objects, id, &AnimationGraphObjectUVE::id);
-    return it == objects.end() || id == 0U ? nullptr : &*it;
+[[nodiscard]] AnimationGraphNodeUVE* FindNodeUVE(std::vector<AnimationGraphNodeUVE>& nodes, const std::uint32_t id) {
+    const auto it = std::ranges::find(nodes, id, &AnimationGraphNodeUVE::id);
+    return it == nodes.end() || id == 0U ? nullptr : &*it;
 }
 
-[[nodiscard]] const AnimationGraphObjectUVE* FindObjectUVE(const std::vector<AnimationGraphObjectUVE>& objects,
+[[nodiscard]] const AnimationGraphNodeUVE* FindNodeUVE(const std::vector<AnimationGraphNodeUVE>& nodes,
                                                        const std::uint32_t id) {
-    const auto it = std::ranges::find(objects, id, &AnimationGraphObjectUVE::id);
-    return it == objects.end() || id == 0U ? nullptr : &*it;
+    const auto it = std::ranges::find(nodes, id, &AnimationGraphNodeUVE::id);
+    return it == nodes.end() || id == 0U ? nullptr : &*it;
 }
 
-/// True when `wanted` is `from` or feeds it, directly or through other objects.
-[[nodiscard]] bool IsUpstreamUVE(const std::vector<AnimationGraphObjectUVE>& objects, const std::uint32_t from,
+/// True when `wanted` is `from` or feeds it, directly or through other nodes.
+[[nodiscard]] bool IsUpstreamUVE(const std::vector<AnimationGraphNodeUVE>& nodes, const std::uint32_t from,
                                  const std::uint32_t wanted) {
     std::vector<std::uint32_t> pending{from};
     std::vector<std::uint32_t> seen;
@@ -41,8 +41,8 @@ using Scene::AnimationGraphObjectUVE;
             continue;
         }
         seen.push_back(id);
-        if (const AnimationGraphObjectUVE* const object = FindObjectUVE(objects, id)) {
-            for (const std::uint32_t input : object->inputs) {
+        if (const AnimationGraphNodeUVE* const node = FindNodeUVE(nodes, id)) {
+            for (const std::uint32_t input : node->inputs) {
                 if (input != 0U) {
                     pending.push_back(input);
                 }
@@ -112,13 +112,13 @@ std::string AnimationGraphSlotLabelUVE(const Kind kind, const std::size_t slot) 
     }
 }
 
-std::uint32_t AddAnimationGraphObjectUVE(std::vector<AnimationGraphObjectUVE>& objects, const Kind kind,
+std::uint32_t AddAnimationGraphNodeUVE(std::vector<AnimationGraphNodeUVE>& nodes, const Kind kind,
                                        const Math::Vector2UVE position) {
-    if (kind == Kind::Output || objects.size() >= Scene::kMaximumAnimationGraphObjectsUVE) {
+    if (kind == Kind::Output || nodes.size() >= Scene::kMaximumAnimationGraphNodesUVE) {
         return 0U;
     }
-    AnimationGraphObjectUVE added;
-    added.id = Scene::NextAnimationGraphObjectIdUVE(objects);
+    AnimationGraphNodeUVE added;
+    added.id = Scene::NextAnimationGraphNodeIdUVE(nodes);
     added.kind = kind;
     added.name = AnimationGraphKindLabelUVE(kind);
     added.position = position;
@@ -158,58 +158,58 @@ std::uint32_t AddAnimationGraphObjectUVE(std::vector<AnimationGraphObjectUVE>& o
         default:
             break;
     }
-    objects.push_back(std::move(added));
-    return objects.back().id;
+    nodes.push_back(std::move(added));
+    return nodes.back().id;
 }
 
-bool CanConnectAnimationGraphObjectsUVE(const std::vector<AnimationGraphObjectUVE>& objects, const std::uint32_t target,
+bool CanConnectAnimationGraphNodesUVE(const std::vector<AnimationGraphNodeUVE>& nodes, const std::uint32_t target,
                                       const std::size_t slot, const std::uint32_t source) {
-    const AnimationGraphObjectUVE* const to = FindObjectUVE(objects, target);
-    const AnimationGraphObjectUVE* const from = FindObjectUVE(objects, source);
+    const AnimationGraphNodeUVE* const to = FindNodeUVE(nodes, target);
+    const AnimationGraphNodeUVE* const from = FindNodeUVE(nodes, source);
     if (to == nullptr || from == nullptr || slot >= to->inputs.size() || from->kind == Kind::Output ||
         source == target) {
         return false;
     }
     // A cycle: the target already feeds the source.
-    return !IsUpstreamUVE(objects, source, target);
+    return !IsUpstreamUVE(nodes, source, target);
 }
 
-bool ConnectAnimationGraphObjectsUVE(std::vector<AnimationGraphObjectUVE>& objects, const std::uint32_t target,
+bool ConnectAnimationGraphNodesUVE(std::vector<AnimationGraphNodeUVE>& nodes, const std::uint32_t target,
                                    const std::size_t slot, const std::uint32_t source) {
-    if (!CanConnectAnimationGraphObjectsUVE(objects, target, slot, source)) {
+    if (!CanConnectAnimationGraphNodesUVE(nodes, target, slot, source)) {
         return false;
     }
-    for (AnimationGraphObjectUVE& object : objects) {
-        std::ranges::replace(object.inputs, source, 0U);
+    for (AnimationGraphNodeUVE& node : nodes) {
+        std::ranges::replace(node.inputs, source, 0U);
     }
-    FindObjectUVE(objects, target)->inputs[slot] = source;
+    FindNodeUVE(nodes, target)->inputs[slot] = source;
     return true;
 }
 
-bool DisconnectAnimationGraphInputUVE(std::vector<AnimationGraphObjectUVE>& objects, const std::uint32_t target,
+bool DisconnectAnimationGraphInputUVE(std::vector<AnimationGraphNodeUVE>& nodes, const std::uint32_t target,
                                       const std::size_t slot) {
-    AnimationGraphObjectUVE* const object = FindObjectUVE(objects, target);
-    if (object == nullptr || slot >= object->inputs.size() || object->inputs[slot] == 0U) {
+    AnimationGraphNodeUVE* const node = FindNodeUVE(nodes, target);
+    if (node == nullptr || slot >= node->inputs.size() || node->inputs[slot] == 0U) {
         return false;
     }
-    object->inputs[slot] = 0U;
+    node->inputs[slot] = 0U;
     return true;
 }
 
-std::size_t DeleteAnimationGraphObjectsUVE(std::vector<AnimationGraphObjectUVE>& objects,
+std::size_t DeleteAnimationGraphNodesUVE(std::vector<AnimationGraphNodeUVE>& nodes,
                                          const std::vector<std::uint32_t>& ids) {
-    const auto doomed = [&ids](const AnimationGraphObjectUVE& object) {
-        return object.kind != Kind::Output && std::ranges::find(ids, object.id) != ids.end();
+    const auto doomed = [&ids](const AnimationGraphNodeUVE& node) {
+        return node.kind != Kind::Output && std::ranges::find(ids, node.id) != ids.end();
     };
     std::vector<std::uint32_t> removed;
-    for (const AnimationGraphObjectUVE& object : objects) {
-        if (doomed(object)) {
-            removed.push_back(object.id);
+    for (const AnimationGraphNodeUVE& node : nodes) {
+        if (doomed(node)) {
+            removed.push_back(node.id);
         }
     }
-    std::erase_if(objects, doomed);
-    for (AnimationGraphObjectUVE& object : objects) {
-        for (std::uint32_t& input : object.inputs) {
+    std::erase_if(nodes, doomed);
+    for (AnimationGraphNodeUVE& node : nodes) {
+        for (std::uint32_t& input : node.inputs) {
             if (std::ranges::find(removed, input) != removed.end()) {
                 input = 0U;
             }
@@ -218,60 +218,60 @@ std::size_t DeleteAnimationGraphObjectsUVE(std::vector<AnimationGraphObjectUVE>&
     return removed.size();
 }
 
-std::vector<std::uint32_t> DuplicateAnimationGraphObjectsUVE(std::vector<AnimationGraphObjectUVE>& objects,
+std::vector<std::uint32_t> DuplicateAnimationGraphNodesUVE(std::vector<AnimationGraphNodeUVE>& nodes,
                                                            const std::vector<std::uint32_t>& ids,
                                                            const Math::Vector2UVE offset) {
     std::unordered_map<std::uint32_t, std::uint32_t> copyOf;
-    std::vector<AnimationGraphObjectUVE> copies;
-    std::uint32_t nextId = Scene::NextAnimationGraphObjectIdUVE(objects);
+    std::vector<AnimationGraphNodeUVE> copies;
+    std::uint32_t nextId = Scene::NextAnimationGraphNodeIdUVE(nodes);
     for (const std::uint32_t id : ids) {
-        const AnimationGraphObjectUVE* const original = FindObjectUVE(std::as_const(objects), id);
+        const AnimationGraphNodeUVE* const original = FindNodeUVE(std::as_const(nodes), id);
         if (original == nullptr || original->kind == Kind::Output || copyOf.contains(id) ||
-            objects.size() + copies.size() >= Scene::kMaximumAnimationGraphObjectsUVE) {
+            nodes.size() + copies.size() >= Scene::kMaximumAnimationGraphNodesUVE) {
             continue;
         }
-        AnimationGraphObjectUVE copy = *original;
+        AnimationGraphNodeUVE copy = *original;
         copy.id = nextId++;
         copy.position = copy.position + offset;
         copyOf.emplace(id, copy.id);
         copies.push_back(std::move(copy));
     }
     std::vector<std::uint32_t> created;
-    for (AnimationGraphObjectUVE& copy : copies) {
+    for (AnimationGraphNodeUVE& copy : copies) {
         for (std::uint32_t& input : copy.inputs) {
             const auto it = copyOf.find(input);
             input = it == copyOf.end() ? 0U : it->second;
         }
         created.push_back(copy.id);
-        objects.push_back(std::move(copy));
+        nodes.push_back(std::move(copy));
     }
     return created;
 }
 
-bool AddAnimationGraphInputSlotUVE(std::vector<AnimationGraphObjectUVE>& objects, const std::uint32_t target) {
-    AnimationGraphObjectUVE* const object = FindObjectUVE(objects, target);
-    if (object == nullptr || !HasVariableSlotsUVE(object->kind) ||
-        object->inputs.size() >= Scene::kMaximumAnimationObjectInputsUVE) {
+bool AddAnimationGraphInputSlotUVE(std::vector<AnimationGraphNodeUVE>& nodes, const std::uint32_t target) {
+    AnimationGraphNodeUVE* const node = FindNodeUVE(nodes, target);
+    if (node == nullptr || !HasVariableSlotsUVE(node->kind) ||
+        node->inputs.size() >= Scene::kMaximumAnimationObjectInputsUVE) {
         return false;
     }
-    object->inputs.push_back(0U);
+    node->inputs.push_back(0U);
     return true;
 }
 
-bool RemoveAnimationGraphInputSlotUVE(std::vector<AnimationGraphObjectUVE>& objects, const std::uint32_t target,
+bool RemoveAnimationGraphInputSlotUVE(std::vector<AnimationGraphNodeUVE>& nodes, const std::uint32_t target,
                                       const std::size_t slot) {
-    AnimationGraphObjectUVE* const object = FindObjectUVE(objects, target);
-    if (object == nullptr || !HasVariableSlotsUVE(object->kind) || slot >= object->inputs.size() ||
-        object->inputs.size() <= 1U) {
+    AnimationGraphNodeUVE* const node = FindNodeUVE(nodes, target);
+    if (node == nullptr || !HasVariableSlotsUVE(node->kind) || slot >= node->inputs.size() ||
+        node->inputs.size() <= 1U) {
         return false;
     }
-    object->inputs.erase(object->inputs.begin() + static_cast<std::ptrdiff_t>(slot));
-    if (object->kind == Kind::StateMachine) {
+    node->inputs.erase(node->inputs.begin() + static_cast<std::ptrdiff_t>(slot));
+    if (node->kind == Kind::StateMachine) {
         const auto state = static_cast<std::uint32_t>(slot);
-        std::erase_if(object->transitions, [state](const Scene::AnimationTransitionUVE& transition) {
+        std::erase_if(node->transitions, [state](const Scene::AnimationGraphTransitionUVE& transition) {
             return transition.fromState == state || transition.toState == state;
         });
-        for (Scene::AnimationTransitionUVE& transition : object->transitions) {
+        for (Scene::AnimationGraphTransitionUVE& transition : node->transitions) {
             if (transition.fromState != Scene::kAnyAnimationStateUVE && transition.fromState > state) {
                 --transition.fromState;
             }
@@ -279,15 +279,15 @@ bool RemoveAnimationGraphInputSlotUVE(std::vector<AnimationGraphObjectUVE>& obje
                 --transition.toState;
             }
         }
-        object->entryState = std::min(object->entryState, static_cast<std::uint32_t>(object->inputs.size() - 1U));
-        if (slot < object->statePositions.size()) {
-            object->statePositions.erase(object->statePositions.begin() + static_cast<std::ptrdiff_t>(slot));
+        node->entryState = std::min(node->entryState, static_cast<std::uint32_t>(node->inputs.size() - 1U));
+        if (slot < node->statePositions.size()) {
+            node->statePositions.erase(node->statePositions.begin() + static_cast<std::ptrdiff_t>(slot));
         }
     }
     return true;
 }
 
-Math::Vector2UVE AnimationStatePositionUVE(const AnimationGraphObjectUVE& machine, const std::size_t slot) {
+Math::Vector2UVE AnimationStatePositionUVE(const AnimationGraphNodeUVE& machine, const std::size_t slot) {
     if (slot < machine.statePositions.size()) {
         return machine.statePositions[slot];
     }
@@ -297,88 +297,88 @@ Math::Vector2UVE AnimationStatePositionUVE(const AnimationGraphObjectUVE& machin
     return Math::Vector2UVE{static_cast<float>(slot % 3U) * kColumnUVE, static_cast<float>(slot / 3U) * kRowUVE};
 }
 
-bool SetAnimationStatePositionUVE(std::vector<AnimationGraphObjectUVE>& objects, const std::uint32_t machine,
+bool SetAnimationStatePositionUVE(std::vector<AnimationGraphNodeUVE>& nodes, const std::uint32_t machine,
                                   const std::size_t slot, const Math::Vector2UVE position) {
-    AnimationGraphObjectUVE* const object = FindObjectUVE(objects, machine);
-    if (object == nullptr || object->kind != Kind::StateMachine || slot >= object->inputs.size() || !std::isfinite(position.x) ||
+    AnimationGraphNodeUVE* const node = FindNodeUVE(nodes, machine);
+    if (node == nullptr || node->kind != Kind::StateMachine || slot >= node->inputs.size() || !std::isfinite(position.x) ||
         !std::isfinite(position.y)) {
         return false;
     }
     // The states before it keep where they are drawn now.
-    while (object->statePositions.size() <= slot) {
-        object->statePositions.push_back(AnimationStatePositionUVE(*object, object->statePositions.size()));
+    while (node->statePositions.size() <= slot) {
+        node->statePositions.push_back(AnimationStatePositionUVE(*node, node->statePositions.size()));
     }
-    object->statePositions[slot] = position;
+    node->statePositions[slot] = position;
     return true;
 }
 
-std::optional<std::size_t> AddAnimationStateUVE(std::vector<AnimationGraphObjectUVE>& objects, const std::uint32_t machine,
+std::optional<std::size_t> AddAnimationStateUVE(std::vector<AnimationGraphNodeUVE>& nodes, const std::uint32_t machine,
                                                 const Math::Vector2UVE position) {
-    AnimationGraphObjectUVE* object = FindObjectUVE(objects, machine);
-    if (object == nullptr || object->kind != Kind::StateMachine || object->inputs.size() >= Scene::kMaximumAnimationObjectInputsUVE ||
-        objects.size() >= Scene::kMaximumAnimationGraphObjectsUVE) {
+    AnimationGraphNodeUVE* node = FindNodeUVE(nodes, machine);
+    if (node == nullptr || node->kind != Kind::StateMachine || node->inputs.size() >= Scene::kMaximumAnimationObjectInputsUVE ||
+        nodes.size() >= Scene::kMaximumAnimationGraphNodesUVE) {
         return std::nullopt;
     }
     // A state plays something: it starts as a Clip, set beside the machine in the tree, whose
     // animation is picked next.
-    const Math::Vector2UVE beside{object->position.x - 240.0F, object->position.y + static_cast<float>(object->inputs.size()) * 70.0F};
-    const std::uint32_t clip = AddAnimationGraphObjectUVE(objects, Kind::Clip, beside);
+    const Math::Vector2UVE beside{node->position.x - 240.0F, node->position.y + static_cast<float>(node->inputs.size()) * 70.0F};
+    const std::uint32_t clip = AddAnimationGraphNodeUVE(nodes, Kind::Clip, beside);
     if (clip == 0U) {
         return std::nullopt;
     }
-    object = FindObjectUVE(objects, machine); // the add may have moved the objects
-    std::size_t slot = object->inputs.size();
-    if (slot == 1U && object->inputs[0] == 0U) {
+    node = FindNodeUVE(nodes, machine); // the add may have moved the nodes
+    std::size_t slot = node->inputs.size();
+    if (slot == 1U && node->inputs[0] == 0U) {
         slot = 0U; // a new machine's empty first state takes it
     } else {
-        object->inputs.push_back(0U);
+        node->inputs.push_back(0U);
     }
-    object->inputs[slot] = clip;
+    node->inputs[slot] = clip;
     // Named for the state it plays, so the view and the tree read the same.
-    FindObjectUVE(objects, clip)->name = "State " + std::to_string(slot + 1U);
-    static_cast<void>(SetAnimationStatePositionUVE(objects, machine, slot, position));
+    FindNodeUVE(nodes, clip)->name = "State " + std::to_string(slot + 1U);
+    static_cast<void>(SetAnimationStatePositionUVE(nodes, machine, slot, position));
     return slot;
 }
 
-std::optional<std::size_t> AddAnimationTransitionUVE(std::vector<AnimationGraphObjectUVE>& objects, const std::uint32_t machine,
+std::optional<std::size_t> AddAnimationTransitionUVE(std::vector<AnimationGraphNodeUVE>& nodes, const std::uint32_t machine,
                                                      const std::uint32_t from, const std::uint32_t to) {
-    AnimationGraphObjectUVE* const object = FindObjectUVE(objects, machine);
-    if (object == nullptr || object->kind != Kind::StateMachine || to >= object->inputs.size() || from == to ||
-        (from != Scene::kAnyAnimationStateUVE && from >= object->inputs.size()) ||
-        object->transitions.size() >= Scene::kMaximumAnimationTransitionsUVE) {
+    AnimationGraphNodeUVE* const node = FindNodeUVE(nodes, machine);
+    if (node == nullptr || node->kind != Kind::StateMachine || to >= node->inputs.size() || from == to ||
+        (from != Scene::kAnyAnimationStateUVE && from >= node->inputs.size()) ||
+        node->transitions.size() >= Scene::kMaximumAnimationTransitionsUVE) {
         return std::nullopt;
     }
-    Scene::AnimationTransitionUVE transition;
+    Scene::AnimationGraphTransitionUVE transition;
     transition.fromState = from;
     transition.toState = to;
-    object->transitions.push_back(transition);
-    return object->transitions.size() - 1U;
+    node->transitions.push_back(transition);
+    return node->transitions.size() - 1U;
 }
 
-bool RemoveAnimationTransitionUVE(std::vector<AnimationGraphObjectUVE>& objects, const std::uint32_t machine,
+bool RemoveAnimationTransitionUVE(std::vector<AnimationGraphNodeUVE>& nodes, const std::uint32_t machine,
                                   const std::size_t index) {
-    AnimationGraphObjectUVE* const object = FindObjectUVE(objects, machine);
-    if (object == nullptr || object->kind != Kind::StateMachine || index >= object->transitions.size()) {
+    AnimationGraphNodeUVE* const node = FindNodeUVE(nodes, machine);
+    if (node == nullptr || node->kind != Kind::StateMachine || index >= node->transitions.size()) {
         return false;
     }
-    object->transitions.erase(object->transitions.begin() + static_cast<std::ptrdiff_t>(index));
+    node->transitions.erase(node->transitions.begin() + static_cast<std::ptrdiff_t>(index));
     return true;
 }
 
-bool MoveAnimationTransitionUVE(std::vector<AnimationGraphObjectUVE>& objects, const std::uint32_t machine,
+bool MoveAnimationTransitionUVE(std::vector<AnimationGraphNodeUVE>& nodes, const std::uint32_t machine,
                                 const std::size_t index, const std::size_t newIndex) {
-    AnimationGraphObjectUVE* const object = FindObjectUVE(objects, machine);
-    if (object == nullptr || object->kind != Kind::StateMachine || index >= object->transitions.size() ||
-        newIndex >= object->transitions.size() || index == newIndex) {
+    AnimationGraphNodeUVE* const node = FindNodeUVE(nodes, machine);
+    if (node == nullptr || node->kind != Kind::StateMachine || index >= node->transitions.size() ||
+        newIndex >= node->transitions.size() || index == newIndex) {
         return false;
     }
-    const Scene::AnimationTransitionUVE moved = object->transitions[index];
-    object->transitions.erase(object->transitions.begin() + static_cast<std::ptrdiff_t>(index));
-    object->transitions.insert(object->transitions.begin() + static_cast<std::ptrdiff_t>(newIndex), moved);
+    const Scene::AnimationGraphTransitionUVE moved = node->transitions[index];
+    node->transitions.erase(node->transitions.begin() + static_cast<std::ptrdiff_t>(index));
+    node->transitions.insert(node->transitions.begin() + static_cast<std::ptrdiff_t>(newIndex), moved);
     return true;
 }
 
-std::string DescribeAnimationTransitionUVE(const Scene::AnimationTransitionUVE& transition) {
+std::string DescribeAnimationTransitionUVE(const Scene::AnimationGraphTransitionUVE& transition) {
     using Condition = Scene::AnimationConditionUVE;
     std::string text;
     const auto name = [](const std::string& parameter) { return parameter.empty() ? std::string{"?"} : parameter; };
@@ -413,52 +413,52 @@ std::string DescribeAnimationTransitionUVE(const Scene::AnimationTransitionUVE& 
     return text;
 }
 
-std::optional<std::size_t> AddBlendSpacePointUVE(std::vector<AnimationGraphObjectUVE>& objects, const std::uint32_t space,
+std::optional<std::size_t> AddBlendSpacePointUVE(std::vector<AnimationGraphNodeUVE>& nodes, const std::uint32_t space,
                                                  const Math::Vector2UVE position, const Asset::AssetGuidUVE clip) {
-    AnimationGraphObjectUVE* const object = FindObjectUVE(objects, space);
-    if (object == nullptr || (object->kind != Kind::BlendSpace1D && object->kind != Kind::BlendSpace2D) ||
-        object->blendPoints.size() >= Scene::kMaximumAnimationObjectInputsUVE || !std::isfinite(position.x) ||
+    AnimationGraphNodeUVE* const node = FindNodeUVE(nodes, space);
+    if (node == nullptr || (node->kind != Kind::BlendSpace1D && node->kind != Kind::BlendSpace2D) ||
+        node->blendPoints.size() >= Scene::kMaximumAnimationObjectInputsUVE || !std::isfinite(position.x) ||
         !std::isfinite(position.y)) {
         return std::nullopt;
     }
     Scene::AnimationBlendPointUVE point;
-    point.position = object->kind == Kind::BlendSpace1D ? Math::Vector2UVE{position.x, 0.0F} : position;
+    point.position = node->kind == Kind::BlendSpace1D ? Math::Vector2UVE{position.x, 0.0F} : position;
     point.clip = clip;
-    if (std::ranges::find(object->blendPoints, point.position, &Scene::AnimationBlendPointUVE::position) !=
-        object->blendPoints.end()) {
+    if (std::ranges::find(node->blendPoints, point.position, &Scene::AnimationBlendPointUVE::position) !=
+        node->blendPoints.end()) {
         return std::nullopt;
     }
     // A line keeps its points rising, so the new one goes where its x belongs.
-    std::size_t slot = object->blendPoints.size();
-    if (object->kind == Kind::BlendSpace1D) {
-        slot = static_cast<std::size_t>(std::ranges::find_if(object->blendPoints, [&point](const Scene::AnimationBlendPointUVE& other) {
+    std::size_t slot = node->blendPoints.size();
+    if (node->kind == Kind::BlendSpace1D) {
+        slot = static_cast<std::size_t>(std::ranges::find_if(node->blendPoints, [&point](const Scene::AnimationBlendPointUVE& other) {
                                             return other.position.x > point.position.x;
                                         }) -
-                                        object->blendPoints.begin());
+                                        node->blendPoints.begin());
     }
-    object->blendPoints.insert(object->blendPoints.begin() + static_cast<std::ptrdiff_t>(slot), point);
+    node->blendPoints.insert(node->blendPoints.begin() + static_cast<std::ptrdiff_t>(slot), point);
     return slot;
 }
 
-bool RemoveBlendSpacePointUVE(std::vector<AnimationGraphObjectUVE>& objects, const std::uint32_t space, const std::size_t slot) {
-    AnimationGraphObjectUVE* const object = FindObjectUVE(objects, space);
-    if (object == nullptr || (object->kind != Kind::BlendSpace1D && object->kind != Kind::BlendSpace2D) ||
-        slot >= object->blendPoints.size()) {
+bool RemoveBlendSpacePointUVE(std::vector<AnimationGraphNodeUVE>& nodes, const std::uint32_t space, const std::size_t slot) {
+    AnimationGraphNodeUVE* const node = FindNodeUVE(nodes, space);
+    if (node == nullptr || (node->kind != Kind::BlendSpace1D && node->kind != Kind::BlendSpace2D) ||
+        slot >= node->blendPoints.size()) {
         return false;
     }
-    object->blendPoints.erase(object->blendPoints.begin() + static_cast<std::ptrdiff_t>(slot));
+    node->blendPoints.erase(node->blendPoints.begin() + static_cast<std::ptrdiff_t>(slot));
     return true;
 }
 
-bool MoveBlendSpacePointUVE(std::vector<AnimationGraphObjectUVE>& objects, const std::uint32_t space, const std::size_t slot,
+bool MoveBlendSpacePointUVE(std::vector<AnimationGraphNodeUVE>& nodes, const std::uint32_t space, const std::size_t slot,
                             const Math::Vector2UVE position) {
-    AnimationGraphObjectUVE* const object = FindObjectUVE(objects, space);
-    if (object == nullptr || (object->kind != Kind::BlendSpace1D && object->kind != Kind::BlendSpace2D) ||
-        slot >= object->blendPoints.size() || !std::isfinite(position.x) || !std::isfinite(position.y)) {
+    AnimationGraphNodeUVE* const node = FindNodeUVE(nodes, space);
+    if (node == nullptr || (node->kind != Kind::BlendSpace1D && node->kind != Kind::BlendSpace2D) ||
+        slot >= node->blendPoints.size() || !std::isfinite(position.x) || !std::isfinite(position.y)) {
         return false;
     }
-    std::vector<Scene::AnimationBlendPointUVE>& points = object->blendPoints;
-    if (object->kind == Kind::BlendSpace1D) {
+    std::vector<Scene::AnimationBlendPointUVE>& points = node->blendPoints;
+    if (node->kind == Kind::BlendSpace1D) {
         // Between its neighbours, so the line stays in order.
         if ((slot > 0U && position.x <= points[slot - 1U].position.x) ||
             (slot + 1U < points.size() && position.x >= points[slot + 1U].position.x)) {

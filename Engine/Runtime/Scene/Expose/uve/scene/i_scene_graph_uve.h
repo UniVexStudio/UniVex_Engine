@@ -19,9 +19,9 @@ namespace UVE::Scene {
 /// The three inherited object modes as resolved for one entity by the most recent UpdateUVE().
 /// Always fully resolved - never Inherit - so a consumer uses the value as-is.
 struct ResolvedObjectModesUVE final {
-    ProcessModeUVE process = ProcessModeUVE::Pausable;
+    TickModeUVE process = TickModeUVE::Running;
     ThreadGroupModeUVE threadGroup = ThreadGroupModeUVE::MainThread;
-    AutoTranslateModeUVE autoTranslate = AutoTranslateModeUVE::Always;
+    LocalizeModeUVE autoTranslate = LocalizeModeUVE::Localized;
 
     [[nodiscard]] bool operator==(const ResolvedObjectModesUVE&) const = default;
 };

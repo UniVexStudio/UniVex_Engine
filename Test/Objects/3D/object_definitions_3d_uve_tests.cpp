@@ -27,7 +27,7 @@
 #include "uve/component/physics_interpolation_component_uve.h"
 #include "uve/component/primitive_mesh_component_uve.h"
 #include "uve/component/process_component_uve.h"
-#include "uve/component/rigid_body_component_uve.h"
+#include "uve/component/rigid_3d_component_uve.h"
 #include "uve/component/script_component_uve.h"
 #include "uve/component/thread_group_component_uve.h"
 #include "uve/component/transform_component_uve.h"
@@ -184,7 +184,7 @@ TEST_F(Object3DDefinitionsUVETest, ApplyAttachesEachKindsExactComponentRecipe) {
         ApplyStatic3DObjectDefinitionUVE(entityManager, entity, Static3DObjectDefinitionUVE{});
         ExpectObject3DBaselineUVE(entityManager, entity, Static3DObjectDefinitionUVE::defaultName);
         EXPECT_TRUE(entityManager.HasComponentUVE<ColliderComponentUVE>(entity));
-        EXPECT_FALSE(entityManager.HasComponentUVE<RigidBodyComponentUVE>(entity));
+        EXPECT_FALSE(entityManager.HasComponentUVE<Rigid3DComponentUVE>(entity));
     }
     {
         const EntityUVE entity = CreateEntityUVE();
@@ -208,7 +208,7 @@ TEST_F(Object3DDefinitionsUVETest, ApplyAttachesEachKindsExactComponentRecipe) {
         const EntityUVE entity = CreateEntityUVE();
         ApplyRigid3DObjectDefinitionUVE(entityManager, entity, Rigid3DObjectDefinitionUVE{});
         ExpectObject3DBaselineUVE(entityManager, entity, Rigid3DObjectDefinitionUVE::defaultName);
-        EXPECT_TRUE(entityManager.HasComponentUVE<RigidBodyComponentUVE>(entity));
+        EXPECT_TRUE(entityManager.HasComponentUVE<Rigid3DComponentUVE>(entity));
     }
     {
         const EntityUVE entity = CreateEntityUVE();
@@ -232,13 +232,13 @@ TEST_F(Object3DDefinitionsUVETest, ApplyAttachesEachKindsExactComponentRecipe) {
         const EntityUVE entity = CreateEntityUVE();
         ApplyAnimationSequencerObjectDefinitionUVE(entityManager, entity, AnimationSequencerObjectDefinitionUVE{});
         ExpectPureObjectUVE(entityManager, entity, AnimationSequencerObjectDefinitionUVE::defaultName);
-        EXPECT_TRUE(entityManager.HasComponentUVE<AnimationPlayerComponentUVE>(entity));
+        EXPECT_TRUE(entityManager.HasComponentUVE<AnimationSequencerComponentUVE>(entity));
     }
     {
         const EntityUVE entity = CreateEntityUVE();
         ApplyAnimationGraphObjectDefinitionUVE(entityManager, entity, AnimationGraphObjectDefinitionUVE{});
         ExpectPureObjectUVE(entityManager, entity, AnimationGraphObjectDefinitionUVE::defaultName);
-        EXPECT_TRUE(entityManager.HasComponentUVE<AnimationTreeComponentUVE>(entity));
+        EXPECT_TRUE(entityManager.HasComponentUVE<AnimationGraphComponentUVE>(entity));
     }
     {
         const EntityUVE entity = CreateEntityUVE();
@@ -299,7 +299,7 @@ TEST_F(Object3DDefinitionsUVETest, CharacterBodyIsItsChainPlusAReadyToWalkCapsul
     EXPECT_TRUE(entityManager.HasComponentUVE<PhysicsObjectComponentUVE>(entity));
     EXPECT_TRUE(entityManager.HasComponentUVE<SolidBodyComponentUVE>(entity));
     ASSERT_TRUE(entityManager.HasComponentUVE<CharacterControllerComponentUVE>(entity));
-    EXPECT_FALSE(entityManager.HasComponentUVE<RigidBodyComponentUVE>(entity));
+    EXPECT_FALSE(entityManager.HasComponentUVE<Rigid3DComponentUVE>(entity));
     EXPECT_FALSE(entityManager.HasComponentUVE<RenderInstanceComponentUVE>(entity));
     // A person-sized capsule, so it walks the moment Play starts.
     ASSERT_TRUE(entityManager.HasComponentUVE<ColliderComponentUVE>(entity));
@@ -344,16 +344,16 @@ TEST_F(Object3DDefinitionsUVETest, SolidBodyBaseSitsOnPhysicsObject) {
     EXPECT_TRUE(entityManager.GetComponentUVE<SolidBodyComponentUVE>(entity).lockMotionZ);
 }
 
-TEST_F(Object3DDefinitionsUVETest, AnimatableBodyRecipeMatchesTheFormerInlineEditorRecipe) {
+TEST_F(Object3DDefinitionsUVETest, KinematicRecipeMatchesTheFormerInlineEditorRecipe) {
     // The last inline multi-component recipe the editor's creation switch used to hardcode:
     // collider + kinematic body + the animatable body's own component, in that spirit unchanged.
     const EntityUVE entity = CreateEntityUVE();
     ApplyKinematic3DObjectDefinitionUVE(entityManager, entity, Kinematic3DObjectDefinitionUVE{});
     ASSERT_TRUE(entityManager.HasComponentUVE<ColliderComponentUVE>(entity));
-    ASSERT_TRUE(entityManager.HasComponentUVE<RigidBodyComponentUVE>(entity));
-    ASSERT_TRUE(entityManager.HasComponentUVE<AnimatableBody3DComponentUVE>(entity));
-    EXPECT_TRUE(entityManager.GetComponentUVE<RigidBodyComponentUVE>(entity).isKinematic);
-    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<AnimatableBody3DComponentUVE>(entity).interpolation, 1.0F);
+    ASSERT_TRUE(entityManager.HasComponentUVE<Rigid3DComponentUVE>(entity));
+    ASSERT_TRUE(entityManager.HasComponentUVE<Kinematic3DComponentUVE>(entity));
+    EXPECT_TRUE(entityManager.GetComponentUVE<Rigid3DComponentUVE>(entity).isKinematic);
+    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Kinematic3DComponentUVE>(entity).interpolation, 1.0F);
 
     Kinematic3DObjectDefinitionUVE nonKinematic{};
     nonKinematic.body.isKinematic = false;
@@ -1048,10 +1048,10 @@ TEST_F(Object3DDefinitionsUVETest, MarkerPoseComposeSharesTheSpawnPointCompositi
     EXPECT_FALSE(ComposeMarker3DPoseUVE({}, {}, Math::Vector3UVE{nan, 0.0F, 0.0F}, {}).has_value());
 }
 
-TEST_F(Object3DDefinitionsUVETest, AnimationTreeIsCreatableAndValidatesItsBlend) {
+TEST_F(Object3DDefinitionsUVETest, AnimationGraphIsCreatableAndValidatesItsBlend) {
     EXPECT_TRUE(IsAnimationGraphObjectDefinitionValidUVE(AnimationGraphObjectDefinitionUVE{}));
     AnimationGraphObjectDefinitionUVE noOutput;
-    noOutput.tree.objects.erase(noOutput.tree.objects.begin());
+    noOutput.tree.nodes.erase(noOutput.tree.nodes.begin());
     EXPECT_FALSE(IsAnimationGraphObjectDefinitionValidUVE(noOutput));
     const Objects::SceneObjectDescriptorUVE* descriptor =
         Objects::FindSceneObjectDescriptorUVE(Objects::SceneObjectKindUVE::AnimationGraph);

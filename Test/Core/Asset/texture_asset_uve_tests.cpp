@@ -34,8 +34,8 @@ namespace {
     TextureAssetUVE texture;
     texture.width = 2;
     texture.height = 2;
-    texture.format = TextureFormatUVE::RGBA8Unorm;
-    texture.colorSpace = TextureColorSpaceUVE::Srgb;
+    texture.format = TextureAssetFormatUVE::RGBA8Unorm;
+    texture.colorSpace = TextureAssetColorSpaceUVE::Srgb;
     texture.usage = TextureUsageUVE::Color;
     texture.pixels.resize(2 * 2 * 4);
     for (std::size_t index = 0; index < texture.pixels.size(); ++index) {
@@ -95,7 +95,7 @@ TEST(TextureImportSettingsUVETest, CacheVersionIncludesColorSpaceUsageAndMipmapP
     TextureImportSettingsUVE defaultSettings;
     TextureImportSettingsUVE sameSettings;
     TextureImportSettingsUVE linearNormalSettings;
-    linearNormalSettings.colorSpace = TextureColorSpaceUVE::Linear;
+    linearNormalSettings.colorSpace = TextureAssetColorSpaceUVE::Linear;
     linearNormalSettings.usage = TextureUsageUVE::Normal;
     linearNormalSettings.generateMipmaps = false;
     TextureImportSettingsUVE nearestSettings;
@@ -122,7 +122,7 @@ TEST(TextureImportSettingsUVETest, CacheVersionIncludesColorSpaceUsageAndMipmapP
 
 TEST(TextureAssetUVETest, DefaultMetadataIsLinearGenericAndRaw) {
     const TextureAssetUVE texture{};
-    EXPECT_EQ(texture.colorSpace, TextureColorSpaceUVE::Linear);
+    EXPECT_EQ(texture.colorSpace, TextureAssetColorSpaceUVE::Linear);
     EXPECT_EQ(texture.usage, TextureUsageUVE::Generic);
     EXPECT_EQ(texture.payloadEncoding, TexturePayloadEncodingUVE::RawPixels);
     EXPECT_TRUE(texture.basisKtx2Data.empty());
@@ -132,7 +132,7 @@ TEST(TextureMipmapUVETest, BoxFilterAveragesSrgbColorInLinearSpace) {
     TextureAssetUVE srgbTexture;
     srgbTexture.width = 2U;
     srgbTexture.height = 2U;
-    srgbTexture.colorSpace = TextureColorSpaceUVE::Srgb;
+    srgbTexture.colorSpace = TextureAssetColorSpaceUVE::Srgb;
     srgbTexture.usage = TextureUsageUVE::Color;
     srgbTexture.pixels = {
         std::byte{0}, std::byte{0}, std::byte{0}, std::byte{255},
@@ -149,7 +149,7 @@ TEST(TextureMipmapUVETest, BoxFilterAveragesSrgbColorInLinearSpace) {
     EXPECT_EQ(std::to_integer<std::uint8_t>(srgbTexture.mipLevels[0].pixels[3]), 255U);
 
     TextureAssetUVE linearTexture = srgbTexture;
-    linearTexture.colorSpace = TextureColorSpaceUVE::Linear;
+    linearTexture.colorSpace = TextureAssetColorSpaceUVE::Linear;
     linearTexture.mipLevels.clear();
     ASSERT_TRUE(GenerateTextureMipmapsUVE(linearTexture, TextureMipmapFilterUVE::Box));
     EXPECT_EQ(std::to_integer<std::uint8_t>(linearTexture.mipLevels[0].pixels[0]), 128U);
@@ -159,7 +159,7 @@ TEST(TextureMipmapUVETest, NearestFilterAndLevelCapAreHonored) {
     TextureAssetUVE texture;
     texture.width = 4U;
     texture.height = 2U;
-    texture.format = TextureFormatUVE::RGBA8Unorm;
+    texture.format = TextureAssetFormatUVE::RGBA8Unorm;
     texture.pixels.resize(4U * 2U * 4U);
     for (std::size_t index = 0U; index < texture.pixels.size(); ++index) {
         texture.pixels[index] = static_cast<std::byte>(index);
@@ -176,8 +176,8 @@ TEST(TextureMipmapUVETest, NearestFilterAndLevelCapAreHonored) {
 }
 
 TEST(TextureAssetUVETest, BytesPerPixelUVE_ReturnsExpectedValues) {
-    EXPECT_EQ(BytesPerPixelUVE(TextureFormatUVE::RGBA8Unorm), 4U);
-    EXPECT_EQ(BytesPerPixelUVE(TextureFormatUVE::RGBA16Float), 8U);
+    EXPECT_EQ(BytesPerPixelUVE(TextureAssetFormatUVE::RGBA8Unorm), 4U);
+    EXPECT_EQ(BytesPerPixelUVE(TextureAssetFormatUVE::RGBA16Float), 8U);
 }
 
 #if defined(UVE_HAS_BASIS_ENCODER) && UVE_HAS_BASIS_ENCODER
@@ -187,8 +187,8 @@ TEST(TextureCompressionUVETest, EncodesBothBasisModesAndTranscodesEveryMip) {
         TextureAssetUVE source;
         source.width = 7U;
         source.height = 5U;
-        source.format = TextureFormatUVE::RGBA8Unorm;
-        source.colorSpace = TextureColorSpaceUVE::Srgb;
+        source.format = TextureAssetFormatUVE::RGBA8Unorm;
+        source.colorSpace = TextureAssetColorSpaceUVE::Srgb;
         source.usage = TextureUsageUVE::Color;
         source.pixels.resize(static_cast<std::size_t>(source.width) * source.height * 4U);
         for (std::size_t pixel = 0U; pixel < source.pixels.size() / 4U; ++pixel) {
@@ -242,7 +242,7 @@ TEST(TextureCompressionUVETest, RejectsAlphaDroppingTargetsWithoutChangingOutput
     TextureAssetUVE source;
     source.width = 4U;
     source.height = 4U;
-    source.format = TextureFormatUVE::RGBA8Unorm;
+    source.format = TextureAssetFormatUVE::RGBA8Unorm;
     source.pixels.resize(4U * 4U * 4U);
     for (std::size_t pixel = 0U; pixel < source.pixels.size() / 4U; ++pixel) {
         source.pixels[pixel * 4U] = std::byte{0x20};
@@ -355,7 +355,7 @@ TEST(TextureAssetUVETest, LoadLegacyPayload_DefaultsNewMetadataWithoutChangingPi
     EXPECT_EQ(loaded.width, original.width);
     EXPECT_EQ(loaded.height, original.height);
     EXPECT_EQ(loaded.format, original.format);
-    EXPECT_EQ(loaded.colorSpace, TextureColorSpaceUVE::Linear);
+    EXPECT_EQ(loaded.colorSpace, TextureAssetColorSpaceUVE::Linear);
     EXPECT_EQ(loaded.usage, TextureUsageUVE::Generic);
     EXPECT_EQ(loaded.pixels, original.pixels);
 
@@ -454,11 +454,11 @@ TEST(TextureAssetUVETest, SaveTextureAssetUVE_RejectsInvalidDescriptorBeforeRepl
     EXPECT_FALSE(SaveTextureAssetUVE(invalidPixelCount, path));
 
     TextureAssetUVE invalidFormat = original;
-    invalidFormat.format = static_cast<TextureFormatUVE>(99U);
+    invalidFormat.format = static_cast<TextureAssetFormatUVE>(99U);
     EXPECT_FALSE(SaveTextureAssetUVE(invalidFormat, path));
 
     TextureAssetUVE invalidColorSpace = original;
-    invalidColorSpace.colorSpace = static_cast<TextureColorSpaceUVE>(99U);
+    invalidColorSpace.colorSpace = static_cast<TextureAssetColorSpaceUVE>(99U);
     EXPECT_FALSE(SaveTextureAssetUVE(invalidColorSpace, path));
 
     TextureAssetUVE invalidUsage = original;
@@ -466,7 +466,7 @@ TEST(TextureAssetUVETest, SaveTextureAssetUVE_RejectsInvalidDescriptorBeforeRepl
     EXPECT_FALSE(SaveTextureAssetUVE(invalidUsage, path));
 
     TextureAssetUVE invalidColorSpaceFormat = original;
-    invalidColorSpaceFormat.format = TextureFormatUVE::RGBA16Float;
+    invalidColorSpaceFormat.format = TextureAssetFormatUVE::RGBA16Float;
     invalidColorSpaceFormat.pixels.resize(2U * 2U * 8U);
     EXPECT_FALSE(IsTextureAssetMetadataValidUVE(invalidColorSpaceFormat));
     EXPECT_FALSE(IsTextureAssetValidUVE(invalidColorSpaceFormat));
@@ -505,7 +505,7 @@ TEST(TextureAssetUVETest, LoadTextureAssetUVE_PixelByteCountMismatch_FailsAndLog
     std::vector<std::byte> malformedPayload(3U * sizeof(std::uint32_t) + sizeof(std::uint64_t) + 3U);
     const std::uint32_t width = 2U;
     const std::uint32_t height = 2U;
-    const std::uint32_t format = static_cast<std::uint32_t>(TextureFormatUVE::RGBA8Unorm);
+    const std::uint32_t format = static_cast<std::uint32_t>(TextureAssetFormatUVE::RGBA8Unorm);
     const std::uint64_t pixelByteCount = 3U;
     std::size_t offset = 0U;
     std::memcpy(malformedPayload.data() + offset, &width, sizeof(width));
@@ -544,7 +544,7 @@ TEST(TextureAssetUVETest, LoadTextureAssetUVE_RejectsOverflowingPixelByteCountBe
     std::vector<std::byte> malformedPayload(3U * sizeof(std::uint32_t) + sizeof(std::uint64_t));
     const std::uint32_t width = 1U;
     const std::uint32_t height = 1U;
-    const std::uint32_t format = static_cast<std::uint32_t>(TextureFormatUVE::RGBA8Unorm);
+    const std::uint32_t format = static_cast<std::uint32_t>(TextureAssetFormatUVE::RGBA8Unorm);
     const std::uint64_t pixelByteCount = std::numeric_limits<std::uint64_t>::max();
     std::size_t offset = 0U;
     std::memcpy(malformedPayload.data() + offset, &width, sizeof(width));

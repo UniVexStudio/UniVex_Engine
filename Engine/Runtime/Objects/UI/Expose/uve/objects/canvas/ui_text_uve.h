@@ -11,7 +11,7 @@ namespace UVE::Scene {
 
 class IEntityManagerUVE;
 
-/// Authoring definition for the UI Text scene object (CanvasLayer family): the component set and
+/// Authoring definition for the UI Text scene object (Canvas family): the component set and
 /// defaults a freshly created UI Text entity attaches — one empty text line at the origin in
 /// raw window-pixel coordinates. Until now UI Text was reachable only through the Inspector's
 /// "Add Component" list; promoting it to the Scene object registry gives UI authoring the same

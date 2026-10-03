@@ -11,7 +11,7 @@ namespace UVE::Scene {
 
 class IEntityManagerUVE;
 
-/// Authoring definition for the UI Image scene object (CanvasLayer family): the component set and
+/// Authoring definition for the UI Image scene object (Canvas family): the component set and
 /// defaults a freshly created UI Image entity attaches — one untextured white 64x64 quad (an
 /// unset texture guid is a valid authored state: it renders as a flat tint quad). Until now
 /// UI Image was reachable only through the Inspector's "Add Component" list; promoting it to

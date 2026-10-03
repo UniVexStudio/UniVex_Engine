@@ -103,7 +103,7 @@ namespace UVE::Core {
 /// Update() runs zero or
 /// more fixed PhysicsSystemUVE steps (via Utilities::FixedStepResultUVE)
 /// before SceneGraphUVE::UpdateUVE() each frame — entirely data-driven off
-/// which entities have a RigidBodyComponentUVE/ColliderComponentUVE, so a
+/// which entities have a Rigid3DComponentUVE/ColliderComponentUVE, so a
 /// scene with none behaves exactly as it did before Increment 15, no opt-in
 /// needed. RaycastSystemUVE (Increment 16) is a stateless, on-demand query
 /// service — like CameraSystem/MeshRenderer, it has no Update()-loop hook
@@ -487,7 +487,7 @@ private:
     /// then Physics::CharacterControllerUVE::MoveWithToIUVE with the body's step height, slide
     /// count and push settings, a snap down to the floor after walking off a step, and the floor
     /// and ceiling state written back. An entity missing a ColliderComponentUVE, or whose optional
-    /// RigidBodyComponentUVE isn't kinematic, is skipped - this function never adds or removes
+    /// Rigid3DComponentUVE isn't kinematic, is skipped - this function never adds or removes
     /// components.
     void SyncCharacterControllersUVE(float fixedDeltaTimeSeconds);
 

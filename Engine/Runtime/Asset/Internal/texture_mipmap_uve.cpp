@@ -136,7 +136,7 @@ namespace {
 
 bool GenerateTextureMipmapsUVE(TextureAssetUVE& texture, const TextureMipmapFilterUVE filter,
                                const std::uint32_t maxMipLevels) {
-    if (!IsTextureAssetMetadataValidUVE(texture) || texture.format != TextureFormatUVE::RGBA8Unorm ||
+    if (!IsTextureAssetMetadataValidUVE(texture) || texture.format != TextureAssetFormatUVE::RGBA8Unorm ||
         texture.width == 0U || texture.height == 0U || !IsTextureMipmapFilterValidUVE(filter)) {
         return false;
     }
@@ -160,7 +160,7 @@ bool GenerateTextureMipmapsUVE(TextureAssetUVE& texture, const TextureMipmapFilt
 
     std::vector<TextureMipLevelUVE> generatedMipLevels;
     generatedMipLevels.reserve(static_cast<std::size_t>(targetMipLevelCount - 1U));
-    const bool sourceIsSrgb = texture.colorSpace == TextureColorSpaceUVE::Srgb;
+    const bool sourceIsSrgb = texture.colorSpace == TextureAssetColorSpaceUVE::Srgb;
     std::uint32_t sourceWidth = texture.width;
     std::uint32_t sourceHeight = texture.height;
     const std::vector<std::byte>* sourcePixels = &texture.pixels;

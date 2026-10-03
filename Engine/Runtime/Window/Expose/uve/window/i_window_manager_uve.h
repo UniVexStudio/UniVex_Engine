@@ -20,7 +20,7 @@ namespace UVE::Window {
 /// IWindowManagerUVE& and assumes a current context already exists — it never creates, destroys,
 /// or activates a context itself, and never creates or destroys the window.
 /// Never exposes a backend-specific type: GetNativeWindowHandleUVE() is intentionally type-erased
-/// (matching this codebase's established void* type-erasure precedent — ChunkUVE,
+/// (matching this codebase's established void* type-erasure precedent — ArchetypeChunkUVE,
 /// IAssetManagerUVE::RegisterLoaderUVE<T>) so a future backend (SDL3, a mobile-native window) can
 /// satisfy this same interface without it ever naming GLFW.
 /// Thread-safety: not thread-safe. Every method here must be called only from EngineCoreUVE's

@@ -2,7 +2,7 @@
 
 #
 # EntityUVE/ComponentUVE (uve_component) and IEntityManagerUVE/EntityManagerUVE plus their private
-# ArchetypeUVE/ChunkUVE/ArchetypeSignatureUVE storage internals (uve_entity) live in
+# ArchetypeUVE/ArchetypeChunkUVE/ArchetypeSignatureUVE storage internals (uve_entity) live in
 # Engine/Runtime/Component and Engine/Runtime/Entity - uve_scene depends on both rather than
 # compiling them directly. What lives here is the node/scene facade layer: SceneGraphUVE, the
 # Object3D catalog, PrefabSystemUVE, and SceneSerializerUVE.
@@ -23,7 +23,7 @@ add_library(uve_scene STATIC
 )
 target_include_directories(uve_scene PUBLIC Expose)
 target_link_libraries(uve_scene
-    PUBLIC uve_platform uve_logging uve_memory uve_events uve_math uve_asset uve_component uve_entity uve_object uve_threading uve_animation uve_nodes_3d uve_nodes_canvas_layer
+    PUBLIC uve_platform uve_logging uve_memory uve_events uve_math uve_asset uve_component uve_entity uve_object uve_threading uve_animation uve_objects_3d uve_objects_canvas
     PRIVATE nlohmann_json::nlohmann_json
 )
 target_compile_features(uve_scene PUBLIC cxx_std_23)

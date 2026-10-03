@@ -32,7 +32,7 @@ namespace {
                                                 basist::ktx2_transcoder& transcoder,
                                                 TextureCompressionInfoUVE& outInfo) noexcept {
     if (texture.payloadEncoding != TexturePayloadEncodingUVE::BasisUniversalKtx2 ||
-        texture.format != TextureFormatUVE::RGBA8Unorm || !texture.pixels.empty() ||
+        texture.format != TextureAssetFormatUVE::RGBA8Unorm || !texture.pixels.empty() ||
         !texture.mipLevels.empty() || !IsTextureAssetMetadataValidUVE(texture) ||
         !IsTextureAssetValidUVE(texture) || !Detail::EnsureBasisUniversalInitializedUVE()) {
         return false;
@@ -49,7 +49,7 @@ namespace {
         transcoder.get_height() != texture.height || transcoder.get_levels() == 0U ||
         transcoder.get_faces() != 1U || transcoder.get_layers() != 0U ||
         header.m_pixel_depth.get_uint32() != 0U ||
-        transcoder.is_srgb() != (texture.colorSpace == TextureColorSpaceUVE::Srgb)) {
+        transcoder.is_srgb() != (texture.colorSpace == TextureAssetColorSpaceUVE::Srgb)) {
         return false;
     }
     const std::uint32_t maximumMipLevels = MaximumMipLevelCountUVE(texture.width, texture.height);

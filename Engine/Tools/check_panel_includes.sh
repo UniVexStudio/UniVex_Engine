@@ -11,7 +11,14 @@
 # Deliberately a text check rather than a compile: the point is to catch the transitive rescue,
 # and any compile on this machine has the same transitive includes available that hid the bug.
 # Run it after adding code to a panel TU.
-cd /home/user/UNIVEX
+#
+# The repo root is derived from this script's own location, the same way
+# check_math_boundary.py derives it (Path(__file__).resolve().parents[2]). It used to be a
+# hardcoded absolute path from another machine; that `cd` failed, and because there is no `set -e`
+# the script silently continued in the caller's working directory - correct only when invoked from
+# the repo root, and quietly wrong from anywhere else.
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$REPO_ROOT" || exit 1
 INC=$(find Engine -type d -name Expose | sed 's/^/-I/' | tr '\n' ' ')
 fail=0
 for f in Engine/Editor/EditorCore/Internal/editor_panel_*.cpp; do

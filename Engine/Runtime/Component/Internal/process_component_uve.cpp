@@ -11,33 +11,33 @@ bool IsProcessComponentValidUVE(const ProcessComponentUVE&) noexcept {
     return true;
 }
 
-ProcessModeUVE ResolveProcessModeUVE(const ProcessModeUVE mode, const ProcessModeUVE parentMode) noexcept {
+TickModeUVE ResolveTickModeUVE(const TickModeUVE mode, const TickModeUVE parentMode) noexcept {
     // Inherit passes the parent's answer through. An intermediate object that never opted in must not
     // break a subtree's chain - the same rule visibility and physics interpolation already follow.
-    if (mode == ProcessModeUVE::Inherit) {
+    if (mode == TickModeUVE::Inherit) {
         // A parent that is itself unresolved (only possible at a root, or after a cycle fallback)
         // means the hierarchy default.
-        return parentMode == ProcessModeUVE::Inherit ? ProcessModeUVE::Pausable : parentMode;
+        return parentMode == TickModeUVE::Inherit ? TickModeUVE::Running : parentMode;
     }
     // Deliberately NOT "the most restrictive of parent and child wins". A pause menu parented under
-    // something Pausable has to be able to say Always and be believed, which is the whole reason
+    // something Running has to be able to say Always and be believed, which is the whole reason
     // the mode is authored per entity rather than inherited outright.
     return mode;
 }
 
-bool IsProcessingUVE(const ProcessModeUVE resolvedMode, const bool simulationPaused) noexcept {
+bool IsTickingUVE(const TickModeUVE resolvedMode, const bool simulationPaused) noexcept {
     switch (resolvedMode) {
-        case ProcessModeUVE::Inherit:
+        case TickModeUVE::Inherit:
             // Unresolved at the top of a hierarchy: treated as the default rather than as an error,
             // so an entity created without a parent still behaves like everything around it.
             return !simulationPaused;
-        case ProcessModeUVE::Pausable:
+        case TickModeUVE::Running:
             return !simulationPaused;
-        case ProcessModeUVE::WhenPaused:
+        case TickModeUVE::PausedOnly:
             return simulationPaused;
-        case ProcessModeUVE::Always:
+        case TickModeUVE::Always:
             return true;
-        case ProcessModeUVE::Disabled:
+        case TickModeUVE::Never:
             return false;
     }
     return false;

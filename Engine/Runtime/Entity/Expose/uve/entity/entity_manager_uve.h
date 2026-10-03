@@ -15,7 +15,7 @@
 namespace UVE::Scene {
 
 /// EntityManagerUVE is the concrete, engine-standard implementation of IEntityManagerUVE: an
-/// archetype ECS with chunk-based component storage (see ArchetypeUVE/ChunkUVE in
+/// archetype ECS with chunk-based component storage (see ArchetypeUVE/ArchetypeChunkUVE in
 /// engine/scene/src/ — private implementation details hidden entirely behind this PIMPL, the
 /// same "no internals in the public header" idiom ConfigManagerUVE established; here it's
 /// motivated by avoiding incomplete-type risk in a public header rather than hiding a
@@ -25,7 +25,7 @@ namespace UVE::Scene {
 /// own single-threaded contract.
 class EntityManagerUVE final : public IEntityManagerUVE {
 public:
-    /// `allocator` backs every chunk's component storage (see ChunkUVE); `eventSystem` receives
+    /// `allocator` backs every chunk's component storage (see ArchetypeChunkUVE); `eventSystem` receives
     /// EntityCreatedEventUVE/EntityDestroyedEventUVE publications. Both references must outlive
     /// this EntityManagerUVE.
     EntityManagerUVE(Memory::IAllocatorUVE& allocator, Events::IEventSystemUVE& eventSystem);

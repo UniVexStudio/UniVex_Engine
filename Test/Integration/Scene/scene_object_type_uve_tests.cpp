@@ -18,7 +18,7 @@
 #include "uve/component/mesh_component_uve.h"
 #include "uve/component/name_component_uve.h"
 #include "uve/component/primitive_mesh_component_uve.h"
-#include "uve/component/rigid_body_component_uve.h"
+#include "uve/component/rigid_3d_component_uve.h"
 #include "uve/component/script_component_uve.h"
 #include "uve/entity/entity_manager_uve.h"
 #include "uve/events/event_system_uve.h"
@@ -78,12 +78,12 @@ TEST_F(SceneObjectTypeUVETest, InferenceReadsEveryKindThatHasComponentsOfItsOwn)
     }
 
     // Bodies are read from what they combine; an Kinematic3D's own component outranks both.
-    EXPECT_EQ(InferSceneObjectKindUVE(entityManager, MakeWithUVE(ColliderComponentUVE{}, RigidBodyComponentUVE{})),
+    EXPECT_EQ(InferSceneObjectKindUVE(entityManager, MakeWithUVE(ColliderComponentUVE{}, Rigid3DComponentUVE{})),
               Kind::Character3D);
-    EXPECT_EQ(InferSceneObjectKindUVE(entityManager, MakeWithUVE(RigidBodyComponentUVE{})), Kind::Rigid3D);
+    EXPECT_EQ(InferSceneObjectKindUVE(entityManager, MakeWithUVE(Rigid3DComponentUVE{})), Kind::Rigid3D);
     EXPECT_EQ(InferSceneObjectKindUVE(entityManager, MakeWithUVE(ColliderComponentUVE{})), Kind::Collider3D);
-    EXPECT_EQ(InferSceneObjectKindUVE(entityManager, MakeWithUVE(ColliderComponentUVE{}, RigidBodyComponentUVE{},
-                                                               AnimatableBody3DComponentUVE{})),
+    EXPECT_EQ(InferSceneObjectKindUVE(entityManager, MakeWithUVE(ColliderComponentUVE{}, Rigid3DComponentUVE{},
+                                                               Kinematic3DComponentUVE{})),
               Kind::Kinematic3D);
 
     // A script names the object only when nothing else does.
@@ -147,8 +147,8 @@ TEST_F(SceneObjectTypeUVETest, UnknownAndLegacyIdsLoadWithoutFailingTheScene) {
     ASSERT_TRUE(entityManager.HasComponentUVE<SceneObjectTypeComponentUVE>(legacy.front()));
     EXPECT_EQ(ResolveSceneObjectKindUVE(entityManager, legacy.front()), Kind::Object3D);
 
-    // Scenes saved before the rename keep naming the four 3D body kinds and the two animation kinds
-    // by their old ids: the alias has to land on the same kind, not on an untyped object.
+    // Scenes saved before a rename keep naming a kind by its old id: the alias has to land on the
+    // same kind, not on an untyped object.
     const std::pair<std::string_view, Kind> renamed[] = {
         {"static_body_3d", Kind::Static3D},
         {"rigid_body_3d", Kind::Rigid3D},
@@ -156,6 +156,8 @@ TEST_F(SceneObjectTypeUVETest, UnknownAndLegacyIdsLoadWithoutFailingTheScene) {
         {"animatable_body_3d", Kind::Kinematic3D},
         {"animation_player", Kind::AnimationSequencer},
         {"animation_tree", Kind::AnimationGraph},
+        {"navigation_region_3d", Kind::NavMeshVolume3D},
+        {"navigation_agent_3d", Kind::NavSeeker3D},
     };
     for (const auto& [oldId, expected] : renamed) {
         const std::vector<EntityUVE> aliased = restoreWithType(oldId);

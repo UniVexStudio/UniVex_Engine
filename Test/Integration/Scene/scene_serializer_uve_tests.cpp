@@ -22,8 +22,8 @@
 #include "uve/events/event_system_uve.h"
 #include "uve/math/vector3_uve.h"
 #include "uve/memory/memory_manager_uve.h"
-#include "uve/component/animation_player_component_uve.h"
-#include "uve/component/animation_tree_component_uve.h"
+#include "uve/component/animation_sequencer_component_uve.h"
+#include "uve/component/animation_graph_component_uve.h"
 #include "uve/component/area_component_uve.h"
 #include "uve/component/audio_source_component_uve.h"
 #include "uve/component/camera_component_uve.h"
@@ -47,7 +47,7 @@
 #include "uve/component/physics_interpolation_component_uve.h"
 #include "uve/component/primitive_mesh_component_uve.h"
 #include "uve/component/prefab_instance_component_uve.h"
-#include "uve/component/rigid_body_component_uve.h"
+#include "uve/component/rigid_3d_component_uve.h"
 #include "uve/component/script_component_uve.h"
 #include "uve/component/transform_component_uve.h"
 #include "uve/component/visibility_component_uve.h"
@@ -149,10 +149,10 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
     ColliderComponentUVE collider{};
     collider.friction = 0.25F;
     entityManager.AddComponentUVE<ColliderComponentUVE>(source, collider);
-    RigidBodyComponentUVE body{};
+    Rigid3DComponentUVE body{};
     body.mass = 9.5F;
     body.isKinematic = true;
-    entityManager.AddComponentUVE<RigidBodyComponentUVE>(source, body);
+    entityManager.AddComponentUVE<Rigid3DComponentUVE>(source, body);
     AudioSourceComponentUVE audio{};
     audio.audioAssetPath = "sounds/lifecycle.wav";
     audio.looping = true;
@@ -163,7 +163,7 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
     entityManager.AddComponentUVE<PrefabInstanceComponentUVE>(source,
                                                                PrefabInstanceComponentUVE{Asset::AssetGuidUVE{9001}, {}});
     PhysicsInterpolationComponentUVE interpolation{};
-    interpolation.mode = PhysicsInterpolationModeUVE::On;
+    interpolation.mode = PoseSmoothingUVE::Blended;
     // Populated pose state to prove it deliberately does NOT round-trip - only `mode` is authored.
     interpolation.hasPreviousPose = true;
     interpolation.currentPosition = Math::Vector3UVE{5.0F, 6.0F, 7.0F};
@@ -172,12 +172,12 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
         source, EditorDescriptionComponentUVE{"Why this object exists."});
 
     ProcessComponentUVE process{};
-    process.mode = ProcessModeUVE::WhenPaused;
+    process.mode = TickModeUVE::PausedOnly;
     process.priority = -5;
     process.physicsPriority = 12;
     // Populated resolved state, to prove it deliberately does NOT round-trip: the scene graph
     // recomputes it from the hierarchy on the first update after load.
-    process.resolvedModeInHierarchy = ProcessModeUVE::Disabled;
+    process.resolvedModeInHierarchy = TickModeUVE::Never;
     entityManager.AddComponentUVE<ProcessComponentUVE>(source, process);
     ThreadGroupComponentUVE threadGroup{};
     threadGroup.mode = ThreadGroupModeUVE::SubThread;
@@ -185,7 +185,7 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
     threadGroup.resolvedModeInHierarchy = ThreadGroupModeUVE::SubThread;
     entityManager.AddComponentUVE<ThreadGroupComponentUVE>(source, threadGroup);
     AutoTranslateComponentUVE autoTranslate{};
-    autoTranslate.mode = AutoTranslateModeUVE::Disabled;
+    autoTranslate.mode = LocalizeModeUVE::Literal;
     entityManager.AddComponentUVE<AutoTranslateComponentUVE>(source, autoTranslate);
     ObjectMetadataComponentUVE objectMetadata{};
     // One value of each shape the codec handles differently: a scalar, text, a vector, a colour
@@ -194,7 +194,7 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
     *spawnOffset.TryGetMutableUVE<Math::Vector3UVE>() = {1.5F, -2.0F, 0.25F};
     Core::VariantUVE tint = Core::VariantUVE::MakeDefaultUVE(Core::VariantTypeUVE::Color);
     *tint.TryGetMutableUVE<Core::VariantColorUVE>() = {0.1F, 0.2F, 0.3F, 0.5F};
-    Core::VariantUVE bytes = Core::VariantUVE::MakeDefaultUVE(Core::VariantTypeUVE::PackedByteArray);
+    Core::VariantUVE bytes = Core::VariantUVE::MakeDefaultUVE(Core::VariantTypeUVE::ByteArray);
     *bytes.TryGetMutableUVE<std::vector<std::uint8_t>>() = {0U, 127U, 255U};
     Core::VariantUVE waves = Core::VariantUVE::MakeDefaultUVE(Core::VariantTypeUVE::Array);
     waves.TryGetMutableUVE<std::vector<Core::VariantUVE>>()->push_back(Core::VariantUVE::MakeIntUVE(4));
@@ -220,14 +220,14 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
     ray.exclusions[0] = 7U;
     ray.exclusionCount = 1U;
     entityManager.AddComponentUVE<RayCast3DComponentUVE>(source, ray);
-    entityManager.AddComponentUVE<AnimatableBody3DComponentUVE>(
-        source, AnimatableBody3DComponentUVE{Math::Vector3UVE{1.0F, 0.0F, 0.0F}, 0.75F, true});
-    NavigationRegion3DComponentUVE navigationRegion;
+    entityManager.AddComponentUVE<Kinematic3DComponentUVE>(
+        source, Kinematic3DComponentUVE{Math::Vector3UVE{1.0F, 0.0F, 0.0F}, 0.75F, true});
+    NavMeshVolume3DComponentUVE navigationRegion;
     navigationRegion.navigationMeshAssetPath = "navigation/courtyard.uvnav";
-    entityManager.AddComponentUVE<NavigationRegion3DComponentUVE>(source, navigationRegion);
-    NavigationAgent3DComponentUVE navigationAgent;
+    entityManager.AddComponentUVE<NavMeshVolume3DComponentUVE>(source, navigationRegion);
+    NavSeeker3DComponentUVE navigationAgent;
     navigationAgent.targetPosition = Math::Vector3UVE{8.0F, 0.0F, -4.0F};
-    entityManager.AddComponentUVE<NavigationAgent3DComponentUVE>(source, navigationAgent);
+    entityManager.AddComponentUVE<NavSeeker3DComponentUVE>(source, navigationAgent);
     Skeleton3DComponentUVE skeleton;
     skeleton.bones.push_back(SkeletonBoneUVE{"root", -1, {}, {}, {1.0F, 1.0F, 1.0F}});
     entityManager.AddComponentUVE<Skeleton3DComponentUVE>(source, skeleton);
@@ -293,8 +293,8 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
     EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<CameraComponentUVE>(restored).farPlane, 250.0F);
     EXPECT_EQ(entityManager.GetComponentUVE<NameComponentUVE>(restored).name, "Complete Snapshot");
     EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<ColliderComponentUVE>(restored).friction, 0.25F);
-    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<RigidBodyComponentUVE>(restored).mass, 9.5F);
-    EXPECT_TRUE(entityManager.GetComponentUVE<RigidBodyComponentUVE>(restored).isKinematic);
+    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Rigid3DComponentUVE>(restored).mass, 9.5F);
+    EXPECT_TRUE(entityManager.GetComponentUVE<Rigid3DComponentUVE>(restored).isKinematic);
     EXPECT_EQ(entityManager.GetComponentUVE<AudioSourceComponentUVE>(restored).audioAssetPath,
               "sounds/lifecycle.wav");
     EXPECT_TRUE(entityManager.GetComponentUVE<AudioSourceComponentUVE>(restored).looping);
@@ -306,7 +306,7 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
               Asset::AssetGuidUVE{9001});
     ASSERT_TRUE(entityManager.HasComponentUVE<PhysicsInterpolationComponentUVE>(restored));
     EXPECT_EQ(entityManager.GetComponentUVE<PhysicsInterpolationComponentUVE>(restored).mode,
-              PhysicsInterpolationModeUVE::On);
+              PoseSmoothingUVE::Blended);
     // The pose fields are runtime state and must NOT survive the round trip: a restored entity
     // starts as if freshly spawned, never with a possibly-stale pose from whatever session wrote
     // the file.
@@ -317,7 +317,7 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
               "Why this object exists.");
 
     ASSERT_TRUE(entityManager.HasComponentUVE<ProcessComponentUVE>(restored));
-    EXPECT_EQ(entityManager.GetComponentUVE<ProcessComponentUVE>(restored).mode, ProcessModeUVE::WhenPaused);
+    EXPECT_EQ(entityManager.GetComponentUVE<ProcessComponentUVE>(restored).mode, TickModeUVE::PausedOnly);
     EXPECT_EQ(entityManager.GetComponentUVE<ProcessComponentUVE>(restored).priority, -5);
     EXPECT_EQ(entityManager.GetComponentUVE<ProcessComponentUVE>(restored).physicsPriority, 12);
     // Same rule as the interpolation pose above: the resolved answer is derived from the hierarchy
@@ -330,7 +330,7 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
     EXPECT_EQ(entityManager.GetComponentUVE<ThreadGroupComponentUVE>(restored).resolvedModeInHierarchy,
               ThreadGroupComponentUVE{}.resolvedModeInHierarchy);
     EXPECT_EQ(entityManager.GetComponentUVE<AutoTranslateComponentUVE>(restored).mode,
-              AutoTranslateModeUVE::Disabled);
+              LocalizeModeUVE::Literal);
     // Authored order survives, which is why the entries serialize as an array rather than as a
     // JSON object whose member order a reader is not obliged to keep.
     // Every value, type included, comes back exactly: a ObjectPath stays a ObjectPath rather than
@@ -340,7 +340,7 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
     EXPECT_FALSE(entityManager.GetComponentUVE<AreaComponentUVE>(restored).monitorable);
     EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<RayCast3DComponentUVE>(restored).length, 42.0F);
     EXPECT_EQ(entityManager.GetComponentUVE<RayCast3DComponentUVE>(restored).exclusions[0], 7U);
-    EXPECT_EQ(entityManager.GetComponentUVE<NavigationRegion3DComponentUVE>(restored).navigationMeshAssetPath,
+    EXPECT_EQ(entityManager.GetComponentUVE<NavMeshVolume3DComponentUVE>(restored).navigationMeshAssetPath,
               "navigation/courtyard.uvnav");
     EXPECT_EQ(entityManager.GetComponentUVE<Skeleton3DComponentUVE>(restored).bones.size(), 1U);
     EXPECT_EQ(entityManager.GetComponentUVE<Hitbox3DComponentUVE>(restored).damageChannel, "melee");
@@ -351,8 +351,8 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
               "materials/warning.uemat");
     EXPECT_EQ(entityManager.GetComponentUVE<SpawnPoint3DComponentUVE>(restored).spawnTag, "player_start");
     EXPECT_TRUE(entityManager.GetComponentUVE<LevelStreamer3DComponentUVE>(restored).enabled);
-    EXPECT_TRUE(entityManager.HasComponentUVE<AnimatableBody3DComponentUVE>(restored));
-    EXPECT_TRUE(entityManager.HasComponentUVE<NavigationAgent3DComponentUVE>(restored));
+    EXPECT_TRUE(entityManager.HasComponentUVE<Kinematic3DComponentUVE>(restored));
+    EXPECT_TRUE(entityManager.HasComponentUVE<NavSeeker3DComponentUVE>(restored));
     EXPECT_TRUE(entityManager.HasComponentUVE<BoneAttachment3DComponentUVE>(restored));
     EXPECT_TRUE(entityManager.HasComponentUVE<SpringArm3DComponentUVE>(restored));
     EXPECT_TRUE(entityManager.HasComponentUVE<Marker3DComponentUVE>(restored));
@@ -606,11 +606,11 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_InvalidColliderPayload_RollsBackCreate
     EXPECT_EQ(entityManager.GetEntityCountUVE(), entityCountBefore);
 }
 
-TEST_F(SceneSerializerUVETest, RestoreUVE_InvalidRigidBodyPayload_RollsBackCreatedEntities) {
+TEST_F(SceneSerializerUVETest, RestoreUVE_InvalidRigid3DPayload_RollsBackCreatedEntities) {
     const EntityUVE existing = entityManager.CreateEntityUVE();
     const std::size_t entityCountBefore = entityManager.GetEntityCountUVE();
     const std::string payloadText =
-        R"({"entities":[{"localId":0,"components":{"RigidBodyComponentUVE":{"mass":1.0,"isKinematic":false,"velocity":[0.0,0.0,0.0],"drag":-0.1,"gravityScale":1.0}}}]})";
+        R"({"entities":[{"localId":0,"components":{"Rigid3DComponentUVE":{"mass":1.0,"isKinematic":false,"velocity":[0.0,0.0,0.0],"drag":-0.1,"gravityScale":1.0}}}]})";
     const auto* const payloadBytes = reinterpret_cast<const std::byte*>(payloadText.data());
     const SceneSnapshotUVE snapshot{
         Asset::EncodeUveFileEnvelopeUVE(SceneAssetTypeUVE::Scene,
@@ -649,27 +649,27 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_AnimationTargetsRemapToTheRestoredEnti
     entityManager.AddComponentUVE<HierarchyComponentUVE>(door, HierarchyComponentUVE{});
     const EntityUVE player = entityManager.CreateEntityUVE();
     entityManager.AddComponentUVE<HierarchyComponentUVE>(player, HierarchyComponentUVE{door});
-    AnimationMixerComponentUVE mixer;
+    AnimationDriverComponentUVE mixer;
     mixer.target = door;
     mixer.speedScale = 0.5F;
     mixer.animateScale = false;
     mixer.processCallback = AnimationProcessCallbackUVE::Physics;
-    entityManager.AddComponentUVE<AnimationMixerComponentUVE>(player, mixer);
-    AnimationPlayerComponentUVE animations;
+    entityManager.AddComponentUVE<AnimationDriverComponentUVE>(player, mixer);
+    AnimationSequencerComponentUVE animations;
     animations.clip = Asset::AssetGuidUVE{21U};
     animations.library = {Asset::AssetGuidUVE{20U}, Asset::AssetGuidUVE{21U}, Asset::AssetGuidUVE{22U}};
-    entityManager.AddComponentUVE<AnimationPlayerComponentUVE>(player, animations);
+    entityManager.AddComponentUVE<AnimationSequencerComponentUVE>(player, animations);
     // A state machine with a transition and a parameter, so the whole graph goes through the file.
-    AnimationTreeComponentUVE blend;
+    AnimationGraphComponentUVE blend;
     blend.parameters = {AnimationParameterUVE{"speed", AnimationParameterTypeUVE::Float, 0.25F},
                         AnimationParameterUVE{"jump", AnimationParameterTypeUVE::Trigger, 0.0F}};
-    AnimationGraphObjectUVE machine;
+    AnimationGraphNodeUVE machine;
     machine.id = 3U;
-    machine.kind = AnimationGraphObjectKindUVE::StateMachine;
+    machine.kind = AnimationGraphNodeKindUVE::StateMachine;
     machine.name = "Locomotion";
     machine.position = Math::Vector2UVE{12.0F, -4.0F};
     machine.inputs = {2U, 0U};
-    AnimationTransitionUVE transition;
+    AnimationGraphTransitionUVE transition;
     transition.fromState = kAnyAnimationStateUVE;
     transition.toState = 1U;
     transition.conditions = {AnimationTransitionConditionUVE{AnimationConditionUVE::Triggered, "jump", 0.0F},
@@ -684,31 +684,31 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_AnimationTargetsRemapToTheRestoredEnti
     machine.statePositions = {Math::Vector2UVE{40.0F, -20.0F}};
     machine.entryPosition = Math::Vector2UVE{-300.0F, 10.0F};
     machine.anyPosition = Math::Vector2UVE{-300.0F, 90.0F};
-    blend.objects[0].inputs = {3U};
-    blend.objects[1].clip = Asset::AssetGuidUVE{77U};
-    blend.objects[1].loop = false;
-    blend.objects[1].sync = true; // round-trips even where it has no effect
-    blend.objects.push_back(machine);
+    blend.nodes[0].inputs = {3U};
+    blend.nodes[1].clip = Asset::AssetGuidUVE{77U};
+    blend.nodes[1].loop = false;
+    blend.nodes[1].sync = true; // round-trips even where it has no effect
+    blend.nodes.push_back(machine);
     // The later kinds' own fields, on loose objects (a graph half-built is still saved).
-    AnimationGraphObjectUVE space;
+    AnimationGraphNodeUVE space;
     space.id = 4U;
-    space.kind = AnimationGraphObjectKindUVE::BlendSpace2D;
+    space.kind = AnimationGraphNodeKindUVE::BlendSpace2D;
     space.blendPoints = {AnimationBlendPointUVE{{0.0F, 0.0F}, Asset::AssetGuidUVE{21U}, 1.25F, false},
                          AnimationBlendPointUVE{{-1.5F, 2.0F}, Asset::AssetGuidUVE{22U}}};
     space.parameterY = "speed";
     space.valueY = 0.75F;
     space.blendMode = AnimationBlendModeUVE::NearestInStep;
     space.smoothingSeconds = 0.15F;
-    blend.objects.push_back(space);
-    AnimationGraphObjectUVE layered;
+    blend.nodes.push_back(space);
+    AnimationGraphNodeUVE layered;
     layered.id = 5U;
-    layered.kind = AnimationGraphObjectKindUVE::LayeredBlend;
+    layered.kind = AnimationGraphNodeKindUVE::LayeredBlend;
     layered.inputs = {0U, 0U};
     layered.bones = {"Spine", "LeftShoulder"};
     layered.restart = false;
-    blend.objects.push_back(layered);
-    ASSERT_TRUE(IsAnimationTreeComponentValidUVE(blend)) << DescribeAnimationGraphProblemUVE(blend);
-    entityManager.AddComponentUVE<AnimationTreeComponentUVE>(player, blend);
+    blend.nodes.push_back(layered);
+    ASSERT_TRUE(IsAnimationGraphComponentValidUVE(blend)) << DescribeAnimationGraphProblemUVE(blend);
+    entityManager.AddComponentUVE<AnimationGraphComponentUVE>(player, blend);
 
     const std::optional<SceneSnapshotUVE> snapshot = serializer.CaptureUVE(entityManager, {door}, SceneAssetTypeUVE::Scene);
     ASSERT_TRUE(snapshot.has_value());
@@ -717,22 +717,22 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_AnimationTargetsRemapToTheRestoredEnti
     ASSERT_EQ(roots.size(), 1U);
     const EntityUVE restoredDoor = roots[0];
     EntityUVE restoredPlayer = kInvalidEntityUVE;
-    restoredManager.ForEachUVE<AnimationPlayerComponentUVE>(
-        [&restoredPlayer](const EntityUVE entity, const AnimationPlayerComponentUVE&) { restoredPlayer = entity; });
+    restoredManager.ForEachUVE<AnimationSequencerComponentUVE>(
+        [&restoredPlayer](const EntityUVE entity, const AnimationSequencerComponentUVE&) { restoredPlayer = entity; });
     ASSERT_NE(restoredPlayer, kInvalidEntityUVE);
-    AnimationMixerComponentUVE expectedMixer = mixer;
+    AnimationDriverComponentUVE expectedMixer = mixer;
     expectedMixer.target = restoredDoor; // the one authored field that is remapped
-    EXPECT_EQ(restoredManager.GetComponentUVE<AnimationMixerComponentUVE>(restoredPlayer), expectedMixer);
-    EXPECT_TRUE(restoredManager.GetComponentUVE<AnimationPlayerComponentUVE>(restoredPlayer).HasSameSettingsUVE(animations))
+    EXPECT_EQ(restoredManager.GetComponentUVE<AnimationDriverComponentUVE>(restoredPlayer), expectedMixer);
+    EXPECT_TRUE(restoredManager.GetComponentUVE<AnimationSequencerComponentUVE>(restoredPlayer).HasSameSettingsUVE(animations))
         << "the clip and the player's whole animation list, in order";
-    EXPECT_TRUE(restoredManager.GetComponentUVE<AnimationTreeComponentUVE>(restoredPlayer).HasSameSettingsUVE(blend));
+    EXPECT_TRUE(restoredManager.GetComponentUVE<AnimationGraphComponentUVE>(restoredPlayer).HasSameSettingsUVE(blend));
     // A pure Object stays one: no transform appears on the way through the file.
     EXPECT_FALSE(restoredManager.HasComponentUVE<TransformComponentUVE>(restoredPlayer));
 }
 
-TEST_F(SceneSerializerUVETest, RestoreUVE_TwoClipAnimationTreeBecomesABlendGraph) {
+TEST_F(SceneSerializerUVETest, RestoreUVE_TwoClipAnimationGraphBecomesABlendGraph) {
     const std::string payloadText =
-        R"({"entities":[{"localId":0,"components":{"AnimationTreeComponentUVE":{"active":true,"clipA":11,"clipB":12,"blend":0.75,"speed":1.5}}}]})";
+        R"({"entities":[{"localId":0,"components":{"AnimationGraphComponentUVE":{"active":true,"clipA":11,"clipB":12,"blend":0.75,"speed":1.5}}}]})";
     const auto* const payloadBytes = reinterpret_cast<const std::byte*>(payloadText.data());
     const SceneSnapshotUVE snapshot{
         Asset::EncodeUveFileEnvelopeUVE(SceneAssetTypeUVE::Scene,
@@ -740,22 +740,22 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_TwoClipAnimationTreeBecomesABlendGraph
         SceneAssetTypeUVE::Scene};
     const std::vector<EntityUVE> roots = serializer.RestoreUVE(entityManager, snapshot);
     ASSERT_EQ(roots.size(), 1U);
-    const AnimationTreeComponentUVE& tree = entityManager.GetComponentUVE<AnimationTreeComponentUVE>(roots[0]);
+    const AnimationGraphComponentUVE& tree = entityManager.GetComponentUVE<AnimationGraphComponentUVE>(roots[0]);
     ASSERT_EQ(tree.parameters.size(), 1U);
     EXPECT_EQ(tree.parameters[0].name, "blend");
     EXPECT_FLOAT_EQ(tree.parameters[0].value, 0.75F);
-    ASSERT_EQ(tree.objects.size(), 4U);
-    EXPECT_EQ(tree.objects[1].kind, AnimationGraphObjectKindUVE::Blend2);
-    EXPECT_EQ(tree.objects[1].parameter, "blend");
-    EXPECT_EQ(tree.objects[2].clip.value, 11U);
-    EXPECT_EQ(tree.objects[3].clip.value, 12U);
-    EXPECT_FLOAT_EQ(tree.objects[3].speed, 1.5F);
+    ASSERT_EQ(tree.nodes.size(), 4U);
+    EXPECT_EQ(tree.nodes[1].kind, AnimationGraphNodeKindUVE::Blend2);
+    EXPECT_EQ(tree.nodes[1].parameter, "blend");
+    EXPECT_EQ(tree.nodes[2].clip.value, 11U);
+    EXPECT_EQ(tree.nodes[3].clip.value, 12U);
+    EXPECT_FLOAT_EQ(tree.nodes[3].speed, 1.5F);
 }
 
 TEST_F(SceneSerializerUVETest, RestoreUVE_OldBlendSpaceInputsBecomeItsOwnPoints) {
     // Saved before blend spaces held their animations: Clips wired into slots, placed by "points".
     const std::string payloadText =
-        R"({"entities":[{"localId":0,"components":{"AnimationTreeComponentUVE":{"parameters":[],"nodes":[)"
+        R"({"entities":[{"localId":0,"components":{"AnimationGraphComponentUVE":{"parameters":[],"nodes":[)"
         R"({"id":1,"kind":0,"inputs":[2]},)"
         R"({"id":2,"kind":3,"inputs":[3,4],"points":[1.0,6.0],"parameter":"speed"},)"
         R"({"id":3,"kind":1,"clip":31,"speed":1.25,"loop":true},)"
@@ -767,10 +767,10 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_OldBlendSpaceInputsBecomeItsOwnPoints)
         SceneAssetTypeUVE::Scene};
     const std::vector<EntityUVE> roots = serializer.RestoreUVE(entityManager, snapshot);
     ASSERT_EQ(roots.size(), 1U);
-    const AnimationTreeComponentUVE& tree = entityManager.GetComponentUVE<AnimationTreeComponentUVE>(roots[0]);
+    const AnimationGraphComponentUVE& tree = entityManager.GetComponentUVE<AnimationGraphComponentUVE>(roots[0]);
     EXPECT_TRUE(DescribeAnimationGraphProblemUVE(tree).empty()) << DescribeAnimationGraphProblemUVE(tree);
-    ASSERT_EQ(tree.objects.size(), 2U) << "the two Clips were folded into the space";
-    const AnimationGraphObjectUVE& space = tree.objects[1];
+    ASSERT_EQ(tree.nodes.size(), 2U) << "the two Clips were folded into the space";
+    const AnimationGraphNodeUVE& space = tree.nodes[1];
     EXPECT_TRUE(space.inputs.empty());
     ASSERT_EQ(space.blendPoints.size(), 2U);
     EXPECT_EQ(space.blendPoints[0].clip.value, 31U);
@@ -784,7 +784,7 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_OldBlendSpaceInputsBecomeItsOwnPoints)
 TEST_F(SceneSerializerUVETest, RestoreUVE_OldSingleConditionTransitionsBecomeAList) {
     // Saved when a transition had one condition in its own fields.
     const std::string payloadText =
-        R"({"entities":[{"localId":0,"components":{"AnimationTreeComponentUVE":{"parameters":[],"nodes":[)"
+        R"({"entities":[{"localId":0,"components":{"AnimationGraphComponentUVE":{"parameters":[],"nodes":[)"
         R"({"id":1,"kind":0,"inputs":[2]},)"
         R"({"id":2,"kind":7,"inputs":[0,0],"transitions":[)"
         R"({"from":0,"to":1,"condition":2,"parameter":"speed","threshold":0.5,"fadeSeconds":0.3},)"
@@ -796,9 +796,9 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_OldSingleConditionTransitionsBecomeALi
         SceneAssetTypeUVE::Scene};
     const std::vector<EntityUVE> roots = serializer.RestoreUVE(entityManager, snapshot);
     ASSERT_EQ(roots.size(), 1U);
-    const AnimationTreeComponentUVE& tree = entityManager.GetComponentUVE<AnimationTreeComponentUVE>(roots[0]);
+    const AnimationGraphComponentUVE& tree = entityManager.GetComponentUVE<AnimationGraphComponentUVE>(roots[0]);
     EXPECT_TRUE(DescribeAnimationGraphProblemUVE(tree).empty()) << DescribeAnimationGraphProblemUVE(tree);
-    const std::vector<AnimationTransitionUVE>& transitions = tree.objects[1].transitions;
+    const std::vector<AnimationGraphTransitionUVE>& transitions = tree.nodes[1].transitions;
     ASSERT_EQ(transitions.size(), 2U);
     ASSERT_EQ(transitions[0].conditions.size(), 1U);
     EXPECT_EQ(transitions[0].conditions[0].condition, AnimationConditionUVE::ParameterGreater);
@@ -811,9 +811,9 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_OldSingleConditionTransitionsBecomeALi
     EXPECT_TRUE(transitions[1].interruptible);
 }
 
-TEST_F(SceneSerializerUVETest, RestoreUVE_LegacyAnimationPlayerFieldsCarryOver) {
+TEST_F(SceneSerializerUVETest, RestoreUVE_LegacyAnimationSequencerFieldsCarryOver) {
     const std::string payloadText =
-        R"({"entities":[{"localId":0,"components":{"AnimationPlayerComponentUVE":{"clipAssetPath":"anims/run.uvclip","playbackSpeed":2.0,"looping":false,"playOnAwake":true,"enabled":false}}}]})";
+        R"({"entities":[{"localId":0,"components":{"AnimationSequencerComponentUVE":{"clipAssetPath":"anims/run.uvclip","playbackSpeed":2.0,"looping":false,"playOnAwake":true,"enabled":false}}}]})";
     const auto* const payloadBytes = reinterpret_cast<const std::byte*>(payloadText.data());
     const SceneSnapshotUVE snapshot{
         Asset::EncodeUveFileEnvelopeUVE(SceneAssetTypeUVE::Scene,
@@ -821,20 +821,20 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_LegacyAnimationPlayerFieldsCarryOver) 
         SceneAssetTypeUVE::Scene};
     const std::vector<EntityUVE> roots = serializer.RestoreUVE(entityManager, snapshot);
     ASSERT_EQ(roots.size(), 1U);
-    const AnimationPlayerComponentUVE& loaded = entityManager.GetComponentUVE<AnimationPlayerComponentUVE>(roots[0]);
+    const AnimationSequencerComponentUVE& loaded = entityManager.GetComponentUVE<AnimationSequencerComponentUVE>(roots[0]);
     EXPECT_FLOAT_EQ(loaded.speed, 2.0F);
     EXPECT_EQ(loaded.loopMode, AnimationLoopModeUVE::Once);
     EXPECT_FALSE(loaded.autoplay); // it was disabled
     EXPECT_EQ(loaded.clip, Asset::kInvalidAssetGuidUVE);
-    ASSERT_TRUE(entityManager.HasComponentUVE<AnimationMixerComponentUVE>(roots[0])) << "an old player gains its base";
-    EXPECT_EQ(entityManager.GetComponentUVE<AnimationMixerComponentUVE>(roots[0]).target, kInvalidEntityUVE);
+    ASSERT_TRUE(entityManager.HasComponentUVE<AnimationDriverComponentUVE>(roots[0])) << "an old player gains its base";
+    EXPECT_EQ(entityManager.GetComponentUVE<AnimationDriverComponentUVE>(roots[0]).target, kInvalidEntityUVE);
 }
 
-TEST_F(SceneSerializerUVETest, RestoreUVE_PlayerSavedBeforeAnimationMixerMovesItsSettingsIntoTheMixer) {
+TEST_F(SceneSerializerUVETest, RestoreUVE_SequencerSavedBeforeTheAnimationDriverBaseMovesItsSettingsIntoOne) {
     // A door and a player aimed at it, saved when target, masks and clock lived on the player.
     const std::string payloadText =
         R"({"entities":[{"localId":0,"components":{"HierarchyComponentUVE":{"parentLocalId":-1}}},)"
-        R"({"localId":1,"components":{"HierarchyComponentUVE":{"parentLocalId":0},"AnimationPlayerComponentUVE":)"
+        R"({"localId":1,"components":{"HierarchyComponentUVE":{"parentLocalId":0},"AnimationSequencerComponentUVE":)"
         R"({"clip":5,"animateScale":false,"processCallback":1,"targetLocalId":0}}}]})";
     const auto* const payloadBytes = reinterpret_cast<const std::byte*>(payloadText.data());
     const SceneSnapshotUVE snapshot{
@@ -844,16 +844,16 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_PlayerSavedBeforeAnimationMixerMovesIt
     const std::vector<EntityUVE> roots = serializer.RestoreUVE(entityManager, snapshot);
     ASSERT_EQ(roots.size(), 1U);
     EntityUVE player = kInvalidEntityUVE;
-    entityManager.ForEachUVE<AnimationPlayerComponentUVE>(
-        [&player](const EntityUVE entity, const AnimationPlayerComponentUVE&) { player = entity; });
+    entityManager.ForEachUVE<AnimationSequencerComponentUVE>(
+        [&player](const EntityUVE entity, const AnimationSequencerComponentUVE&) { player = entity; });
     ASSERT_NE(player, kInvalidEntityUVE);
-    ASSERT_TRUE(entityManager.HasComponentUVE<AnimationMixerComponentUVE>(player));
-    const AnimationMixerComponentUVE& mixer = entityManager.GetComponentUVE<AnimationMixerComponentUVE>(player);
+    ASSERT_TRUE(entityManager.HasComponentUVE<AnimationDriverComponentUVE>(player));
+    const AnimationDriverComponentUVE& mixer = entityManager.GetComponentUVE<AnimationDriverComponentUVE>(player);
     EXPECT_EQ(mixer.target, roots[0]);
     EXPECT_FALSE(mixer.animateScale);
     EXPECT_TRUE(mixer.animatePosition);
     EXPECT_EQ(mixer.processCallback, AnimationProcessCallbackUVE::Physics);
-    EXPECT_EQ(entityManager.GetComponentUVE<AnimationPlayerComponentUVE>(player).clip.value, 5U);
+    EXPECT_EQ(entityManager.GetComponentUVE<AnimationSequencerComponentUVE>(player).clip.value, 5U);
 }
 
 TEST(AudioSourceComponentUVE, IsAudioSourceComponentValidUVE_EnforcesBoundedNulFreePath) {
@@ -1178,7 +1178,7 @@ TEST_F(SceneSerializerUVETest, SaveThenLoad_SingleEntityWithMultipleComponents_R
         entity, MeshComponentUVE{Asset::AssetGuidUVE{111}, Asset::AssetGuidUVE{222}});
     entityManager.AddComponentUVE<LightComponentUVE>(
         entity, LightComponentUVE{Math::Vector3UVE{0.2F, 0.4F, 0.6F}, 2.5F});
-    entityManager.AddComponentUVE<RigidBodyComponentUVE>(entity, RigidBodyComponentUVE{5.0F, true});
+    entityManager.AddComponentUVE<Rigid3DComponentUVE>(entity, Rigid3DComponentUVE{5.0F, true});
 
     const std::filesystem::path path = "uve_scene_serializer_tests_single.uvscene";
     std::filesystem::remove(path);
@@ -1194,8 +1194,8 @@ TEST_F(SceneSerializerUVETest, SaveThenLoad_SingleEntityWithMultipleComponents_R
     EXPECT_FLOAT_EQ(loadedManager.GetComponentUVE<LightComponentUVE>(loaded).intensity, 2.5F);
     const Math::Vector3UVE expectedColor{0.2F, 0.4F, 0.6F};
     EXPECT_TRUE(loadedManager.GetComponentUVE<LightComponentUVE>(loaded).color == expectedColor);
-    EXPECT_FLOAT_EQ(loadedManager.GetComponentUVE<RigidBodyComponentUVE>(loaded).mass, 5.0F);
-    EXPECT_TRUE(loadedManager.GetComponentUVE<RigidBodyComponentUVE>(loaded).isKinematic);
+    EXPECT_FLOAT_EQ(loadedManager.GetComponentUVE<Rigid3DComponentUVE>(loaded).mass, 5.0F);
+    EXPECT_TRUE(loadedManager.GetComponentUVE<Rigid3DComponentUVE>(loaded).isKinematic);
 
     std::filesystem::remove(path);
 }
@@ -1219,7 +1219,7 @@ TEST_F(SceneSerializerUVETest, SaveThenLoad_CharacterControllerComponentUVE_Roun
     characterController.maxPushSpeed = 7.0F;
     characterController.maxSlides = 12U;
     characterController.velocity = Math::Vector3UVE{1.0F, -3.0F, 2.0F};
-    characterController.isOnFloor = true;
+    characterController.grounded = true;
     entityManager.AddComponentUVE<CharacterControllerComponentUVE>(entity, characterController);
 
     const std::filesystem::path path = "uve_scene_serializer_tests_character_controller.uvscene";
@@ -1249,7 +1249,7 @@ TEST_F(SceneSerializerUVETest, SaveThenLoad_CharacterControllerComponentUVE_Roun
     EXPECT_FLOAT_EQ(loadedController.maxPushSpeed, 7.0F);
     EXPECT_EQ(loadedController.maxSlides, 12U);
     EXPECT_EQ(loadedController.velocity, (Math::Vector3UVE{1.0F, -3.0F, 2.0F}));
-    EXPECT_TRUE(loadedController.isOnFloor);
+    EXPECT_TRUE(loadedController.grounded);
 
     std::filesystem::remove(path);
 }
@@ -1271,7 +1271,7 @@ TEST_F(SceneSerializerUVETest, Load_OlderCharacterControllerPayloadKeepsItsValue
     EXPECT_FLOAT_EQ(loaded.jumpHeight, 2.25F);
     EXPECT_FLOAT_EQ(loaded.gravityScale, 1.5F);
     EXPECT_EQ(loaded.velocity, (Math::Vector3UVE{0.0F, -3.0F, 0.0F}));
-    EXPECT_TRUE(loaded.isOnFloor);
+    EXPECT_TRUE(loaded.grounded);
     const CharacterControllerComponentUVE defaults{};
     EXPECT_EQ(loaded.motionMode, defaults.motionMode);
     EXPECT_EQ(loaded.builtInMovement, defaults.builtInMovement);
@@ -1347,9 +1347,9 @@ TEST_F(SceneSerializerUVETest, SaveThenLoad_UIComponentsUVE_RoundTripExactly) {
     std::filesystem::remove(path);
 }
 
-TEST_F(SceneSerializerUVETest, SaveThenLoad_AnimationPlayerComponentUVE_RoundTripsExactly) {
+TEST_F(SceneSerializerUVETest, SaveThenLoad_AnimationSequencerComponentUVE_RoundTripsExactly) {
     const EntityUVE entity = entityManager.CreateEntityUVE();
-    AnimationPlayerComponentUVE animation;
+    AnimationSequencerComponentUVE animation;
     animation.clip = Asset::AssetGuidUVE{0x1234U};
     animation.autoplay = false;
     animation.speed = -1.25F;
@@ -1360,7 +1360,7 @@ TEST_F(SceneSerializerUVETest, SaveThenLoad_AnimationPlayerComponentUVE_RoundTri
     animation.relative = true;
     animation.isPlaying = true; // runtime state: must not be saved
     animation.currentTimeSeconds = 3.0F;
-    entityManager.AddComponentUVE<AnimationPlayerComponentUVE>(entity, animation);
+    entityManager.AddComponentUVE<AnimationSequencerComponentUVE>(entity, animation);
 
     const std::filesystem::path path = "uve_scene_serializer_tests_animation_player.uvscene";
     std::filesystem::remove(path);
@@ -1369,8 +1369,8 @@ TEST_F(SceneSerializerUVETest, SaveThenLoad_AnimationPlayerComponentUVE_RoundTri
     EntityManagerUVE loadedManager(memoryManager.GetDefaultAllocatorUVE(), eventSystem);
     const std::vector<EntityUVE> roots = serializer.LoadUVE(loadedManager, path);
     ASSERT_EQ(roots.size(), 1U);
-    const AnimationPlayerComponentUVE& loaded =
-        loadedManager.GetComponentUVE<AnimationPlayerComponentUVE>(roots[0]);
+    const AnimationSequencerComponentUVE& loaded =
+        loadedManager.GetComponentUVE<AnimationSequencerComponentUVE>(roots[0]);
     EXPECT_TRUE(loaded.HasSameSettingsUVE(animation));
     EXPECT_FALSE(loaded.isPlaying);
     EXPECT_EQ(loaded.currentTimeSeconds, 0.0F);
@@ -1378,14 +1378,14 @@ TEST_F(SceneSerializerUVETest, SaveThenLoad_AnimationPlayerComponentUVE_RoundTri
     std::filesystem::remove(path);
 }
 
-TEST_F(SceneSerializerUVETest, SaveThenLoad_RigidBodyAngularState_RoundTripsExactly) {
+TEST_F(SceneSerializerUVETest, SaveThenLoad_Rigid3DAngularState_RoundTripsExactly) {
     const EntityUVE entity = entityManager.CreateEntityUVE();
-    RigidBodyComponentUVE rigidBody;
+    Rigid3DComponentUVE rigidBody;
     rigidBody.mass = 4.0F;
     rigidBody.angularVelocity = Math::Vector3UVE{1.0F, 2.0F, 3.0F};
     rigidBody.torque = Math::Vector3UVE{0.5F, 0.25F, 0.125F};
     rigidBody.inverseInertia = Math::Vector3UVE{0.2F, 0.3F, 0.4F};
-    entityManager.AddComponentUVE<RigidBodyComponentUVE>(entity, rigidBody);
+    entityManager.AddComponentUVE<Rigid3DComponentUVE>(entity, rigidBody);
 
     const std::filesystem::path path = "uve_scene_serializer_tests_rigidbody_angular.uvscene";
     std::filesystem::remove(path);
@@ -1394,7 +1394,7 @@ TEST_F(SceneSerializerUVETest, SaveThenLoad_RigidBodyAngularState_RoundTripsExac
     EntityManagerUVE loadedManager(memoryManager.GetDefaultAllocatorUVE(), eventSystem);
     const std::vector<EntityUVE> roots = serializer.LoadUVE(loadedManager, path);
     ASSERT_EQ(roots.size(), 1U);
-    const RigidBodyComponentUVE& loaded = loadedManager.GetComponentUVE<RigidBodyComponentUVE>(roots[0]);
+    const Rigid3DComponentUVE& loaded = loadedManager.GetComponentUVE<Rigid3DComponentUVE>(roots[0]);
     EXPECT_EQ(loaded.angularVelocity, rigidBody.angularVelocity);
     EXPECT_EQ(loaded.torque, rigidBody.torque);
     EXPECT_EQ(loaded.inverseInertia, rigidBody.inverseInertia);
@@ -1402,9 +1402,9 @@ TEST_F(SceneSerializerUVETest, SaveThenLoad_RigidBodyAngularState_RoundTripsExac
     std::filesystem::remove(path);
 }
 
-TEST_F(SceneSerializerUVETest, LoadUVE_LegacyRigidBodyWithoutAngularFields_UsesZeroDefaults) {
+TEST_F(SceneSerializerUVETest, LoadUVE_LegacyRigid3DWithoutAngularFields_UsesZeroDefaults) {
     const std::string payloadText =
-        R"({"entities":[{"localId":0,"components":{"RigidBodyComponentUVE":{"mass":1.0,"isKinematic":false,"velocity":[0.0,0.0,0.0],"drag":0.0,"gravityScale":1.0}}}]})";
+        R"({"entities":[{"localId":0,"components":{"Rigid3DComponentUVE":{"mass":1.0,"isKinematic":false,"velocity":[0.0,0.0,0.0],"drag":0.0,"gravityScale":1.0}}}]})";
     const auto* const payloadBytesPtr = reinterpret_cast<const std::byte*>(payloadText.data());
     const std::vector<std::byte> payloadBytes(payloadBytesPtr, payloadBytesPtr + payloadText.size());
 
@@ -1414,7 +1414,7 @@ TEST_F(SceneSerializerUVETest, LoadUVE_LegacyRigidBodyWithoutAngularFields_UsesZ
 
     const std::vector<EntityUVE> roots = serializer.LoadUVE(entityManager, path);
     ASSERT_EQ(roots.size(), 1U);
-    const RigidBodyComponentUVE& loaded = entityManager.GetComponentUVE<RigidBodyComponentUVE>(roots[0]);
+    const Rigid3DComponentUVE& loaded = entityManager.GetComponentUVE<Rigid3DComponentUVE>(roots[0]);
     EXPECT_EQ(loaded.angularVelocity, Math::Vector3UVE{});
     EXPECT_EQ(loaded.torque, Math::Vector3UVE{});
     EXPECT_EQ(loaded.inverseInertia, Math::Vector3UVE{});

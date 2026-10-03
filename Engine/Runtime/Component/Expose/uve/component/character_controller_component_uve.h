@@ -72,7 +72,7 @@ struct CharacterControllerComponentUVE final {
     /// Metres per second. With built-in movement off, set this and the body goes there, sliding
     /// along walls. With it on and Floating, Space rises and Left Ctrl sinks.
     Math::Vector3UVE velocity{};
-    bool isOnFloor = false;
+    bool grounded = false;
     bool isOnCeiling = false;
     /// The floor's normal while on it; straight up otherwise.
     Math::Vector3UVE floorNormal{0.0F, 1.0F, 0.0F};

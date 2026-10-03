@@ -7,7 +7,7 @@
 #include <vector>
 
 #include "uve/asset/asset_guid_uve.h"
-#include "uve/component/animation_mixer_component_uve.h"
+#include "uve/component/animation_driver_component_uve.h"
 #include "uve/component/entity_uve.h"
 #include "uve/math/quaternion_uve.h"
 #include "uve/math/vector3_uve.h"
@@ -32,12 +32,12 @@ enum class AnimationFinishActionUVE : std::uint8_t {
     ReturnToStart,
 };
 
-/// AnimationPlayer's own state: plays a `.uvanim` clip on a target object's transform. What it moves,
-/// which channels and on which clock live in its AnimationMixer base (AnimationMixerComponentUVE).
+/// AnimationSequencer's own state: plays a `.uvanim` clip on a target object's transform. What it moves,
+/// which channels and on which clock live in its AnimationDriver base (AnimationDriverComponentUVE).
 ///
 /// Authored settings first; the runtime state the player writes back each step comes last and is
 /// shown in the Inspector only while playing, never saved.
-struct AnimationPlayerComponentUVE final {
+struct AnimationSequencerComponentUVE final {
     /// The clip to play. Invalid means nothing to play.
     Asset::AssetGuidUVE clip{};
     /// Every animation this player has, in the order the Timeline lists them; `clip` is the one it
@@ -86,17 +86,17 @@ struct AnimationPlayerComponentUVE final {
     std::vector<std::string> firedEvents;
 
     /// Authored settings only: runtime state is ignored, so a playing player equals its saved self.
-    [[nodiscard]] bool HasSameSettingsUVE(const AnimationPlayerComponentUVE& other) const noexcept {
+    [[nodiscard]] bool HasSameSettingsUVE(const AnimationSequencerComponentUVE& other) const noexcept {
         return clip == other.clip && library == other.library && autoplay == other.autoplay &&
                speed == other.speed && loopMode == other.loopMode && onFinish == other.onFinish &&
                startOffsetSeconds == other.startOffsetSeconds && blendInSeconds == other.blendInSeconds &&
                relative == other.relative;
     }
 
-    [[nodiscard]] bool operator==(const AnimationPlayerComponentUVE&) const = default;
+    [[nodiscard]] bool operator==(const AnimationSequencerComponentUVE&) const = default;
 };
 
 /// Every setting finite and in range, and every runtime value finite.
-[[nodiscard]] bool IsAnimationPlayerComponentValidUVE(const AnimationPlayerComponentUVE& component) noexcept;
+[[nodiscard]] bool IsAnimationSequencerComponentValidUVE(const AnimationSequencerComponentUVE& component) noexcept;
 
 } // namespace UVE::Scene

@@ -2,8 +2,8 @@
 
 #include "uve/scene/objects/scene_object_type_uve.h"
 
-#include "uve/component/animation_player_component_uve.h"
-#include "uve/component/animation_tree_component_uve.h"
+#include "uve/component/animation_sequencer_component_uve.h"
+#include "uve/component/animation_graph_component_uve.h"
 #include "uve/component/area_component_uve.h"
 #include "uve/component/audio_source_component_uve.h"
 #include "uve/component/camera_component_uve.h"
@@ -14,7 +14,7 @@
 #include "uve/component/mesh_component_uve.h"
 #include "uve/component/particle_emitter_component_uve.h"
 #include "uve/component/primitive_mesh_component_uve.h"
-#include "uve/component/rigid_body_component_uve.h"
+#include "uve/component/rigid_3d_component_uve.h"
 #include "uve/component/script_component_uve.h"
 #include "uve/component/ui_button_component_uve.h"
 #include "uve/component/ui_image_component_uve.h"
@@ -89,10 +89,10 @@ Objects::SceneObjectKindUVE InferSceneObjectKindUVE(const IEntityManagerUVE& ent
 
     Kind kind = Kind::Object3D;
     if (TryOwnComponentUVE(entityManager, entity, kind,
-                           OwnComponentUVE<AnimatableBody3DComponentUVE>{Kind::Kinematic3D},
+                           OwnComponentUVE<Kinematic3DComponentUVE>{Kind::Kinematic3D},
                            OwnComponentUVE<RayCast3DComponentUVE>{Kind::RayCast3D},
-                           OwnComponentUVE<NavigationRegion3DComponentUVE>{Kind::NavigationRegion3D},
-                           OwnComponentUVE<NavigationAgent3DComponentUVE>{Kind::NavigationAgent3D},
+                           OwnComponentUVE<NavMeshVolume3DComponentUVE>{Kind::NavMeshVolume3D},
+                           OwnComponentUVE<NavSeeker3DComponentUVE>{Kind::NavSeeker3D},
                            OwnComponentUVE<Skeleton3DComponentUVE>{Kind::Skeleton3D},
                            OwnComponentUVE<BoneAttachment3DComponentUVE>{Kind::BoneAttachment3D},
                            OwnComponentUVE<SpringArm3DComponentUVE>{Kind::SpringArm3D},
@@ -117,8 +117,8 @@ Objects::SceneObjectKindUVE InferSceneObjectKindUVE(const IEntityManagerUVE& ent
                            OwnComponentUVE<MeshComponentUVE>{Kind::MeshInstance3D},
                            OwnComponentUVE<AudioSourceComponentUVE>{Kind::AudioSource3D},
                            OwnComponentUVE<ParticleEmitterComponentUVE>{Kind::ParticleEmitter3D},
-                           OwnComponentUVE<AnimationPlayerComponentUVE>{Kind::AnimationSequencer},
-                           OwnComponentUVE<AnimationTreeComponentUVE>{Kind::AnimationGraph},
+                           OwnComponentUVE<AnimationSequencerComponentUVE>{Kind::AnimationSequencer},
+                           OwnComponentUVE<AnimationGraphComponentUVE>{Kind::AnimationGraph},
                            OwnComponentUVE<CanvasComponentUVE>{Kind::Canvas},
                            OwnComponentUVE<UITextComponentUVE>{Kind::UIText},
                            OwnComponentUVE<UIImageComponentUVE>{Kind::UIImage},
@@ -132,7 +132,7 @@ Objects::SceneObjectKindUVE InferSceneObjectKindUVE(const IEntityManagerUVE& ent
     // Character3D is built; a collider alone is either a Collider3D or a Static3D, which are
     // built identically, and reads as Collider3D, the older of the two.
     const bool collider = entityManager.HasComponentUVE<ColliderComponentUVE>(entity);
-    const bool body = entityManager.HasComponentUVE<RigidBodyComponentUVE>(entity);
+    const bool body = entityManager.HasComponentUVE<Rigid3DComponentUVE>(entity);
     if (collider && body) {
         return Kind::Character3D;
     }

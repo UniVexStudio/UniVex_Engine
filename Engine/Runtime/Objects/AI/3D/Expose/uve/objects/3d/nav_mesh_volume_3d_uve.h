@@ -9,7 +9,7 @@
 
 namespace UVE::Scene {
 
-struct NavigationRegion3DComponentUVE final {
+struct NavMeshVolume3DComponentUVE final {
     Math::Vector3UVE boundsHalfExtents{10.0F, 2.0F, 10.0F};
     std::string navigationMeshAssetPath;
     std::uint32_t navigationLayers = 1U;
@@ -17,6 +17,6 @@ struct NavigationRegion3DComponentUVE final {
     bool rebuildRequested = false;
 };
 
-[[nodiscard]] bool IsNavigationRegion3DObjectComponentValidUVE(const NavigationRegion3DComponentUVE& value) noexcept;
+[[nodiscard]] bool IsNavMeshVolume3DObjectComponentValidUVE(const NavMeshVolume3DComponentUVE& value) noexcept;
 
 } // namespace UVE::Scene

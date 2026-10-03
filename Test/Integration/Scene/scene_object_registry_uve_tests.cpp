@@ -47,9 +47,9 @@ TEST(SceneObjectRegistryUVETest, RealObjectTypesUVE_AreReachableFromTheAggregate
     static_assert(std::is_class_v<AreaComponentUVE>);                          // Area3D
     static_assert(std::is_class_v<RayCast3DComponentUVE>);                 // RayCast3D
     static_assert(std::is_class_v<ColliderComponentUVE>);                      // Static3D, Collider3D
-    static_assert(std::is_class_v<AnimatableBody3DComponentUVE>);          // Kinematic3D
-    static_assert(std::is_class_v<NavigationRegion3DComponentUVE>);        // NavigationRegion3D
-    static_assert(std::is_class_v<NavigationAgent3DComponentUVE>);         // NavigationAgent3D
+    static_assert(std::is_class_v<Kinematic3DComponentUVE>);          // Kinematic3D
+    static_assert(std::is_class_v<NavMeshVolume3DComponentUVE>);        // NavMeshVolume3D
+    static_assert(std::is_class_v<NavSeeker3DComponentUVE>);         // NavSeeker3D
     static_assert(std::is_class_v<Skeleton3DComponentUVE>);                // Skeleton3D
     static_assert(std::is_class_v<BoneAttachment3DComponentUVE>);          // BoneAttachment3D
     static_assert(std::is_class_v<SpringArm3DComponentUVE>);               // SpringArm3D
@@ -67,14 +67,18 @@ TEST(SceneObjectRegistryUVETest, RealObjectTypesUVE_AreReachableFromTheAggregate
     static_assert(std::is_class_v<SpawnPoint3DComponentUVE>);              // SpawnPoint3D
     static_assert(std::is_class_v<LevelStreamer3DComponentUVE>);           // LevelStreamer3D
     static_assert(std::is_class_v<WorldPartition3DComponentUVE>);          // WorldPartition3D
-    static_assert(std::is_class_v<Core::AnimationTreeUVE>);                    // AnimationGraph
-    static_assert(std::is_class_v<AnimationPlayerComponentUVE>);               // AnimationSequencer
+    // Was Core::AnimationGraphUVE, which is not what backs this kind: the registry's own runtimeOwner
+    // for AnimationGraph is "Scene/AnimationGraphComponentUVE". The old assert passed only because the
+    // aggregate header happened to include an unrelated animation module that nothing in the engine
+    // calls, so the wrong type was reachable and the right one was not.
+    static_assert(std::is_class_v<AnimationGraphComponentUVE>);              // AnimationGraph
+    static_assert(std::is_class_v<AnimationSequencerComponentUVE>);               // AnimationSequencer
     static_assert(std::is_class_v<Physics::CharacterControllerInputUVE>);      // Character3D
     static_assert(std::is_class_v<CameraComponentUVE>);                       // Camera3D
     static_assert(std::is_class_v<MeshComponentUVE>);                         // MeshInstance3D
     static_assert(std::is_class_v<PrimitiveMeshComponentUVE>);                // BoxMesh3D, SphereMesh3D, PlaneMesh3D
     static_assert(std::is_class_v<LightComponentUVE>);                        // Light3D
-    static_assert(std::is_class_v<RigidBodyComponentUVE>);                    // Rigid3D
+    static_assert(std::is_class_v<Rigid3DComponentUVE>);                    // Rigid3D
     static_assert(std::is_class_v<AudioSourceComponentUVE>);                  // AudioSource3D
     static_assert(std::is_class_v<ParticleEmitterComponentUVE>);              // ParticleEmitter3D
     static_assert(std::is_class_v<ScriptComponentUVE>);                       // Script

@@ -30,6 +30,7 @@
 #include <limits>
 #include <map>
 #include <numbers>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -60,7 +61,7 @@
 #include "uve/component/character_controller_component_uve.h"
 #include "uve/component/collider_component_uve.h"
 #include "uve/objects/3d/all_objects_3d_uve.h"
-#include "uve/objects/canvas_layer/all_objects_canvas_layer_uve.h"
+#include "uve/objects/canvas/all_objects_canvas_uve.h"
 #include "uve/scene/objects/scene_object_type_uve.h"
 #include "uve/editor/editor_content_catalogue_uve.h"
 #include "uve/core/engine_project_settings_uve.h"
@@ -1020,8 +1021,8 @@ bool EditorUVE::IsSceneComponentValueValidUVE(
                 return kind == EditorSceneComponentKindUVE::Light && Scene::IsLightComponentValidUVE(typedValue);
             } else if constexpr (std::is_same_v<ValueType, Scene::ColliderComponentUVE>) {
                 return kind == EditorSceneComponentKindUVE::Collider && Scene::IsColliderComponentValidUVE(typedValue);
-            } else if constexpr (std::is_same_v<ValueType, Scene::RigidBodyComponentUVE>) {
-                return kind == EditorSceneComponentKindUVE::RigidBody && Scene::IsRigidBodyComponentValidUVE(typedValue);
+            } else if constexpr (std::is_same_v<ValueType, Scene::Rigid3DComponentUVE>) {
+                return kind == EditorSceneComponentKindUVE::Rigid3D && Scene::IsRigid3DComponentValidUVE(typedValue);
             } else if constexpr (std::is_same_v<ValueType, Scene::AudioSourceComponentUVE>) {
                 return kind == EditorSceneComponentKindUVE::AudioSource && Scene::IsAudioSourceComponentValidUVE(typedValue);
             } else if constexpr (std::is_same_v<ValueType, Scene::ParticleEmitterComponentUVE>) {
@@ -1029,9 +1030,9 @@ bool EditorUVE::IsSceneComponentValueValidUVE(
                        Scene::IsParticleEmitterComponentValidUVE(typedValue);
             } else if constexpr (std::is_same_v<ValueType, Scene::ScriptComponentUVE>) {
                 return kind == EditorSceneComponentKindUVE::Script && Scene::IsScriptComponentValidUVE(typedValue);
-            } else if constexpr (std::is_same_v<ValueType, Scene::AnimationPlayerComponentUVE>) {
+            } else if constexpr (std::is_same_v<ValueType, Scene::AnimationSequencerComponentUVE>) {
                 return kind == EditorSceneComponentKindUVE::AnimationSequencer &&
-                       Scene::IsAnimationPlayerComponentValidUVE(typedValue);
+                       Scene::IsAnimationSequencerComponentValidUVE(typedValue);
             } else if constexpr (std::is_same_v<ValueType, Scene::WorldEnvironment3DComponentUVE>) {
                 return kind == EditorSceneComponentKindUVE::WorldEnvironment &&
                        Scene::IsWorldEnvironment3DObjectComponentValidUVE(typedValue);
@@ -1091,7 +1092,7 @@ bool EditorUVE::AreSceneComponentValuesEqualUVE(const EditorSceneComponentValueU
                        left.collisionMask == right.collisionMask && left.friction == right.friction &&
                        left.restitution == right.restitution && left.density == right.density &&
                        left.shapeType == right.shapeType && left.radius == right.radius && left.height == right.height;
-            } else if constexpr (std::is_same_v<LeftType, Scene::RigidBodyComponentUVE>) {
+            } else if constexpr (std::is_same_v<LeftType, Scene::Rigid3DComponentUVE>) {
                 return left.mass == right.mass && left.isKinematic == right.isKinematic &&
                        left.velocity == right.velocity && left.angularVelocity == right.angularVelocity &&
                        left.torque == right.torque && left.inverseInertia == right.inverseInertia &&
@@ -1106,7 +1107,7 @@ bool EditorUVE::AreSceneComponentValuesEqualUVE(const EditorSceneComponentValueU
                 return left.maxParticles == right.maxParticles;
             } else if constexpr (std::is_same_v<LeftType, Scene::ScriptComponentUVE>) {
                 return left.scriptAssetPath == right.scriptAssetPath && left.exportValues == right.exportValues;
-            } else if constexpr (std::is_same_v<LeftType, Scene::AnimationPlayerComponentUVE>) {
+            } else if constexpr (std::is_same_v<LeftType, Scene::AnimationSequencerComponentUVE>) {
                 return left.HasSameSettingsUVE(right);
             } else if constexpr (std::is_same_v<LeftType, Scene::WorldEnvironment3DComponentUVE>) {
                 return left.skyAssetPath == right.skyAssetPath && left.ambientColor == right.ambientColor &&
@@ -1182,8 +1183,8 @@ bool EditorUVE::ApplySceneComponentStateUVE(
             return apply.template operator()<Scene::LightComponentUVE>();
         case EditorSceneComponentKindUVE::Collider:
             return apply.template operator()<Scene::ColliderComponentUVE>();
-        case EditorSceneComponentKindUVE::RigidBody:
-            return apply.template operator()<Scene::RigidBodyComponentUVE>();
+        case EditorSceneComponentKindUVE::Rigid3D:
+            return apply.template operator()<Scene::Rigid3DComponentUVE>();
         case EditorSceneComponentKindUVE::AudioSource:
             return apply.template operator()<Scene::AudioSourceComponentUVE>();
         case EditorSceneComponentKindUVE::ParticleEmitter:
@@ -1191,7 +1192,7 @@ bool EditorUVE::ApplySceneComponentStateUVE(
         case EditorSceneComponentKindUVE::Script:
             return apply.template operator()<Scene::ScriptComponentUVE>();
         case EditorSceneComponentKindUVE::AnimationSequencer:
-            return apply.template operator()<Scene::AnimationPlayerComponentUVE>();
+            return apply.template operator()<Scene::AnimationSequencerComponentUVE>();
         case EditorSceneComponentKindUVE::WorldEnvironment:
             return apply.template operator()<Scene::WorldEnvironment3DComponentUVE>();
         case EditorSceneComponentKindUVE::CharacterController:
@@ -1250,9 +1251,9 @@ bool EditorUVE::SetSelectedSceneComponentUVE(const EditorSceneComponentKindUVE k
                 before = entityManager.GetComponentUVE<Scene::ColliderComponentUVE>(m_selectedEntity);
             }
             break;
-        case EditorSceneComponentKindUVE::RigidBody:
-            if (entityManager.HasComponentUVE<Scene::RigidBodyComponentUVE>(m_selectedEntity)) {
-                before = entityManager.GetComponentUVE<Scene::RigidBodyComponentUVE>(m_selectedEntity);
+        case EditorSceneComponentKindUVE::Rigid3D:
+            if (entityManager.HasComponentUVE<Scene::Rigid3DComponentUVE>(m_selectedEntity)) {
+                before = entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(m_selectedEntity);
             }
             break;
         case EditorSceneComponentKindUVE::AudioSource:
@@ -1271,8 +1272,8 @@ bool EditorUVE::SetSelectedSceneComponentUVE(const EditorSceneComponentKindUVE k
             }
             break;
         case EditorSceneComponentKindUVE::AnimationSequencer:
-            if (entityManager.HasComponentUVE<Scene::AnimationPlayerComponentUVE>(m_selectedEntity)) {
-                before = entityManager.GetComponentUVE<Scene::AnimationPlayerComponentUVE>(m_selectedEntity);
+            if (entityManager.HasComponentUVE<Scene::AnimationSequencerComponentUVE>(m_selectedEntity)) {
+                before = entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(m_selectedEntity);
             }
             break;
         case EditorSceneComponentKindUVE::WorldEnvironment:
@@ -1371,8 +1372,8 @@ bool EditorUVE::RemoveSelectedSceneComponentUVE(const EditorSceneComponentKindUV
         case EditorSceneComponentKindUVE::Collider:
             if (entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(m_selectedEntity)) before = entityManager.GetComponentUVE<Scene::ColliderComponentUVE>(m_selectedEntity);
             break;
-        case EditorSceneComponentKindUVE::RigidBody:
-            if (entityManager.HasComponentUVE<Scene::RigidBodyComponentUVE>(m_selectedEntity)) before = entityManager.GetComponentUVE<Scene::RigidBodyComponentUVE>(m_selectedEntity);
+        case EditorSceneComponentKindUVE::Rigid3D:
+            if (entityManager.HasComponentUVE<Scene::Rigid3DComponentUVE>(m_selectedEntity)) before = entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(m_selectedEntity);
             break;
         case EditorSceneComponentKindUVE::AudioSource:
             if (entityManager.HasComponentUVE<Scene::AudioSourceComponentUVE>(m_selectedEntity)) before = entityManager.GetComponentUVE<Scene::AudioSourceComponentUVE>(m_selectedEntity);
@@ -1384,7 +1385,7 @@ bool EditorUVE::RemoveSelectedSceneComponentUVE(const EditorSceneComponentKindUV
             if (entityManager.HasComponentUVE<Scene::ScriptComponentUVE>(m_selectedEntity)) before = entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(m_selectedEntity);
             break;
         case EditorSceneComponentKindUVE::AnimationSequencer:
-            if (entityManager.HasComponentUVE<Scene::AnimationPlayerComponentUVE>(m_selectedEntity)) before = entityManager.GetComponentUVE<Scene::AnimationPlayerComponentUVE>(m_selectedEntity);
+            if (entityManager.HasComponentUVE<Scene::AnimationSequencerComponentUVE>(m_selectedEntity)) before = entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(m_selectedEntity);
             break;
         case EditorSceneComponentKindUVE::WorldEnvironment:
             if (entityManager.HasComponentUVE<Scene::WorldEnvironment3DComponentUVE>(m_selectedEntity)) before = entityManager.GetComponentUVE<Scene::WorldEnvironment3DComponentUVE>(m_selectedEntity);
@@ -1920,8 +1921,23 @@ Scene::EntityUVE EditorUVE::CreateDocumentEntityUVE(const EditorEntityKindUVE ki
 Scene::EntityUVE EditorUVE::CreateSceneObjectEntityInternalUVE(const Scene::Objects::SceneObjectKindUVE kind) {
     Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    const auto createObjectWithComponent = [this, &entityManager](auto component) {
-        Scene::EntityUVE created = CreateDocumentEntityInternalUVE(EditorEntityKindUVE::Empty, std::nullopt);
+    const auto createObjectWithComponent = [this, &entityManager, kind](auto component) {
+        // These kinds carry a component but no ObjectDefinition of their own, so they have no
+        // `defaultName` to route through. Going via EditorEntityKindUVE::Empty alone resolved every
+        // one of them to Object3DObjectDefinitionUVE::defaultName - a freshly added RayCast3D, a
+        // Marker3D and a LevelStreamer3D all appeared in the Outliner as "Object3D", "Object3D 2",
+        // "Object3D 3", with nothing but their component list telling them apart. The registry's
+        // displayName is already the kind's own name and unique per kind, so it is the name to use.
+        // It still goes through MakeUniqueDocumentEntityNameUVE, matching the 29 kinds that DO have
+        // a definition (CreateObjectDefinitionEntityInternalUVE does the same), so adding two of a
+        // kind yields "RayCast3D" then "RayCast3D 2" rather than a duplicate name.
+        const Scene::Objects::SceneObjectDescriptorUVE* const descriptor =
+            Scene::Objects::FindSceneObjectDescriptorUVE(kind);
+        std::optional<std::string> explicitName;
+        if (descriptor != nullptr) {
+            explicitName = MakeUniqueDocumentEntityNameUVE(descriptor->displayName);
+        }
+        Scene::EntityUVE created = CreateDocumentEntityInternalUVE(EditorEntityKindUVE::Empty, explicitName);
         if (created != Scene::kInvalidEntityUVE) {
             using Component = std::decay_t<decltype(component)>;
             entityManager.AddComponentUVE<Component>(created, std::move(component));
@@ -1990,7 +2006,7 @@ Scene::EntityUVE EditorUVE::CreateSceneObjectEntityInternalUVE(const Scene::Obje
             entity = CreateObjectDefinitionEntityInternalUVE(Scene::ScriptObjectDefinitionUVE{},
                                                             Scene::ApplyScriptObjectDefinitionUVE);
             break;
-        // CanvasLayer family — the four UI kinds promoted out of the Inspector-only world, so
+        // Canvas family — the four UI kinds promoted out of the Inspector-only world, so
         // UI authoring uses the same Add-Object entry point (definitions live in
         // Engine/Runtime/Objects/UI).
         case Scene::Objects::SceneObjectKindUVE::Canvas:
@@ -2024,11 +2040,11 @@ Scene::EntityUVE EditorUVE::CreateSceneObjectEntityInternalUVE(const Scene::Obje
             entity = CreateObjectDefinitionEntityInternalUVE(Scene::Kinematic3DObjectDefinitionUVE{},
                                                             Scene::ApplyKinematic3DObjectDefinitionUVE);
             break;
-        case Scene::Objects::SceneObjectKindUVE::NavigationRegion3D:
-            entity = createObjectWithComponent(Scene::NavigationRegion3DComponentUVE{});
+        case Scene::Objects::SceneObjectKindUVE::NavMeshVolume3D:
+            entity = createObjectWithComponent(Scene::NavMeshVolume3DComponentUVE{});
             break;
-        case Scene::Objects::SceneObjectKindUVE::NavigationAgent3D:
-            entity = createObjectWithComponent(Scene::NavigationAgent3DComponentUVE{});
+        case Scene::Objects::SceneObjectKindUVE::NavSeeker3D:
+            entity = createObjectWithComponent(Scene::NavSeeker3DComponentUVE{});
             break;
         case Scene::Objects::SceneObjectKindUVE::Skeleton3D:
             entity = CreateObjectDefinitionEntityInternalUVE(Scene::Skeleton3DObjectDefinitionUVE{},
@@ -4861,7 +4877,7 @@ std::uintptr_t EditorUVE::GetTextureThumbnailUVE(const std::filesystem::path& re
     std::uintptr_t textureId = 0U;
     Asset::TextureAssetUVE texture;
     if (Asset::LoadTextureAssetUVE(absolutePath, texture) && texture.width > 0U && texture.height > 0U &&
-        texture.format == Asset::TextureFormatUVE::RGBA8Unorm) {
+        texture.format == Asset::TextureAssetFormatUVE::RGBA8Unorm) {
         textureId = EditorUiAssetsUVE::UploadDynamicTextureUVE(reinterpret_cast<const std::uint8_t*>(texture.pixels.data()),
                                                                 static_cast<int>(texture.width),
                                                                 static_cast<int>(texture.height));

@@ -1,6 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <chrono>
 #include <filesystem>
@@ -452,7 +453,7 @@ TEST(EditorUVETest, InspectorDrawerRegistrationUVE_IncludesStableHierarchyDrawer
         // 27 before the three abstract 3D bases, each of which brings one section; 30 before the
         // old Name and Hierarchy drawers were removed and SurfaceInstance3D, LightEmitter3D,
         // Decal3D and FogVolume3D each brought one.
-        // 33 with Skeleton3D's own section; 34 with SolidBody3D's; 36 with AnimationMixer's; 37 with
+        // 33 with Skeleton3D's own section; 34 with SolidBody3D's; 36 with AnimationDriver's; 37 with
         // DirectionalLight3D's.
         EXPECT_EQ(EditorUVEAccessUVE::GetInspectorDrawerCountUVE(editor), 37U);
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "directional-light-3d"));
@@ -815,8 +816,8 @@ TEST(EditorUVETest, TextureThumbnailUVE_GracefullyReturnsZeroForMissingCorruptOr
         Asset::TextureAssetUVE unsupported;
         unsupported.width = 1U;
         unsupported.height = 1U;
-        unsupported.format = Asset::TextureFormatUVE::RGBA16Float;
-        unsupported.pixels.resize(Asset::BytesPerPixelUVE(Asset::TextureFormatUVE::RGBA16Float));
+        unsupported.format = Asset::TextureAssetFormatUVE::RGBA16Float;
+        unsupported.pixels.resize(Asset::BytesPerPixelUVE(Asset::TextureAssetFormatUVE::RGBA16Float));
         ASSERT_TRUE(Asset::SaveTextureAssetUVE(unsupported, root / "unsupported.uvtex"));
     }
 
@@ -5143,6 +5144,61 @@ TEST(EditorUVETest, SunAndWorldEnvironmentInspectorsUVE_FollowTheirClassChains) 
     engine.Shutdown();
 }
 
+// The 16 kinds that carry a component but no ObjectDefinition of their own used to be named through
+// EditorEntityKindUVE::Empty, so every one of them appeared in the Outliner as "Object3D". This
+// locks each to its own registry displayName, and locks the uniqueness rule that keeps a second one
+// from colliding with the first.
+TEST(EditorUVETest, ComponentOnlySceneObjectsUVE_AreNamedForTheirOwnKindNotObject3D) {
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_component_only_names.uvscene");
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+
+        constexpr std::array<Scene::Objects::SceneObjectKindUVE, 16> kComponentOnlyKinds{
+            Scene::Objects::SceneObjectKindUVE::RayCast3D,
+            Scene::Objects::SceneObjectKindUVE::NavMeshVolume3D,
+            Scene::Objects::SceneObjectKindUVE::NavSeeker3D,
+            Scene::Objects::SceneObjectKindUVE::BoneAttachment3D,
+            Scene::Objects::SceneObjectKindUVE::Marker3D,
+            Scene::Objects::SceneObjectKindUVE::Hitbox3D,
+            Scene::Objects::SceneObjectKindUVE::Hurtbox3D,
+            Scene::Objects::SceneObjectKindUVE::Projectile3D,
+            Scene::Objects::SceneObjectKindUVE::InteractionArea3D,
+            Scene::Objects::SceneObjectKindUVE::ReflectionProbe3D,
+            Scene::Objects::SceneObjectKindUVE::LODGroup3D,
+            Scene::Objects::SceneObjectKindUVE::Occluder3D,
+            Scene::Objects::SceneObjectKindUVE::VisibilityRegion3D,
+            Scene::Objects::SceneObjectKindUVE::SpawnPoint3D,
+            Scene::Objects::SceneObjectKindUVE::LevelStreamer3D,
+            Scene::Objects::SceneObjectKindUVE::WorldPartition3D,
+        };
+
+        for (const Scene::Objects::SceneObjectKindUVE kind : kComponentOnlyKinds) {
+            const Scene::Objects::SceneObjectDescriptorUVE* const descriptor =
+                Scene::Objects::FindSceneObjectDescriptorUVE(kind);
+            ASSERT_NE(descriptor, nullptr);
+
+            const Scene::EntityUVE first = editor.CreateDocumentSceneObjectUVE(kind);
+            ASSERT_NE(first, Scene::kInvalidEntityUVE) << descriptor->displayName;
+            EXPECT_EQ(entityManager.GetComponentUVE<Scene::NameComponentUVE>(first).name, descriptor->displayName)
+                << "a freshly added " << descriptor->displayName << " must not be called Object3D";
+
+            // Same rule the 29 kinds with an ObjectDefinition follow: the second one is suffixed
+            // rather than given a duplicate name.
+            const Scene::EntityUVE second = editor.CreateDocumentSceneObjectUVE(kind);
+            ASSERT_NE(second, Scene::kInvalidEntityUVE) << descriptor->displayName;
+            EXPECT_EQ(entityManager.GetComponentUVE<Scene::NameComponentUVE>(second).name,
+                      std::string{descriptor->displayName} + " 2")
+                << "the second " << descriptor->displayName << " must not collide with the first";
+        }
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
 TEST(EditorUVETest, SurfaceInstanceChildInspectorUVE_IsOwnSectionThenSurfaceRenderObject3DObject) {
     Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
     engine.Init();
@@ -5293,7 +5349,7 @@ TEST(EditorUVETest, AnimationObjectsUVE_InspectorIsTheirOwnSectionThenTheObjectS
         const Scene::EntityUVE tree = editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::AnimationGraph);
         ASSERT_NE(player, Scene::kInvalidEntityUVE);
         ASSERT_NE(tree, Scene::kInvalidEntityUVE);
-        // AnimationSequencer > AnimationMixer > Object: a pure Object, no Transform, no Visibility.
+        // AnimationSequencer > AnimationDriver > Object: a pure Object, no Transform, no Visibility.
         const std::vector<std::string> objectSection{"animation-mixer", "process", "physics-interpolation",
                                                    "auto-translate", "editor-description", "script", "object-metadata"};
         std::vector<std::string> expected{"animation-player"};

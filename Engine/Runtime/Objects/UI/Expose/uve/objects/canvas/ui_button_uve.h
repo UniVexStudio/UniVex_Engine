@@ -11,7 +11,7 @@ namespace UVE::Scene {
 
 class IEntityManagerUVE;
 
-/// Authoring definition for the UI Button scene object (CanvasLayer family): the component set and
+/// Authoring definition for the UI Button scene object (Canvas family): the component set and
 /// defaults a freshly created UI Button entity attaches — one hit-testable 120x32 button with
 /// the established normal/hover/pressed palette. Until now UI Button was reachable only through
 /// the Inspector's "Add Component" list; promoting it to the Scene object registry gives UI

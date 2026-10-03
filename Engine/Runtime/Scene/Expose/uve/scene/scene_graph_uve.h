@@ -84,9 +84,9 @@ private:
         /// there, the way a Object3D under a plain Object does.
         bool spatial = true;
 
-        ProcessModeUVE processModeInHierarchy = ProcessModeUVE::Inherit;
+        TickModeUVE processModeInHierarchy = TickModeUVE::Inherit;
         ThreadGroupModeUVE threadGroupModeInHierarchy = ThreadGroupModeUVE::Inherit;
-        AutoTranslateModeUVE autoTranslateModeInHierarchy = AutoTranslateModeUVE::Inherit;
+        LocalizeModeUVE autoTranslateModeInHierarchy = LocalizeModeUVE::Inherit;
     };
 
     /// One entity awaiting processing, with its components resolved once by the initial walk

@@ -31,7 +31,7 @@ enum class VariantTypeUVE : std::uint8_t {
     Int,
     Float,
     String,
-    StringName,
+    InternedString,
     ObjectPath,
     Vector2,
     Vector3,
@@ -42,18 +42,18 @@ enum class VariantTypeUVE : std::uint8_t {
     Object,
     Array,
     Dictionary,
-    PackedByteArray,
-    PackedInt32Array,
-    PackedInt64Array,
-    PackedFloat32Array,
-    PackedFloat64Array,
-    PackedStringArray,
-    PackedVector2Array,
-    PackedVector3Array,
-    PackedColorArray,
+    ByteArray,
+    Int32Array,
+    Int64Array,
+    Float32Array,
+    Float64Array,
+    StringArray,
+    Vector2Array,
+    Vector3Array,
+    ColorArray,
 };
 
-inline constexpr std::size_t kVariantTypeCountUVE = static_cast<std::size_t>(VariantTypeUVE::PackedColorArray) + 1U;
+inline constexpr std::size_t kVariantTypeCountUVE = static_cast<std::size_t>(VariantTypeUVE::ColorArray) + 1U;
 
 /// A four-component vector. Kept here rather than in the Math module because nothing in the engine
 /// computes with one yet - it exists to be stored and edited - and a Math type should arrive with
@@ -84,7 +84,7 @@ struct VariantDictionaryEntryUVE; // Defined after VariantUVE, which it holds by
 /// A typed value: one of VariantTypeUVE, with storage that matches it.
 ///
 /// The type is stored explicitly, not inferred from the storage, because several types share a
-/// representation and must stay distinct: String, StringName, ObjectPath and Object are all text; an
+/// representation and must stay distinct: String, InternedString, ObjectPath and Object are all text; an
 /// Int and a Resource are both integers. Losing that distinction would turn an object reference into
 /// an ordinary string the moment it was saved.
 ///
@@ -108,7 +108,7 @@ public:
     [[nodiscard]] static VariantUVE MakeBoolUVE(bool value);
     [[nodiscard]] static VariantUVE MakeIntUVE(std::int64_t value);
     [[nodiscard]] static VariantUVE MakeFloatUVE(double value);
-    /// String, StringName, ObjectPath or Object. Any other type yields the default of `type`.
+    /// String, InternedString, ObjectPath or Object. Any other type yields the default of `type`.
     [[nodiscard]] static VariantUVE MakeTextUVE(VariantTypeUVE type, std::string value);
 
     [[nodiscard]] VariantTypeUVE GetTypeUVE() const noexcept { return m_type; }
@@ -156,15 +156,17 @@ struct VariantDictionaryEntryUVE final {
     }
 };
 
-/// The persisted and displayed name of a type ("Vector3", "PackedByteArray"). Stable: scene files
-/// store these, so a name, once shipped, is never changed.
+/// The persisted and displayed name of a type ("Vector3", "ByteArray"). Scene files store these, so
+/// a rename is a load-time alias, never a silent break: writing always uses the current name, and
+/// every name this vocabulary has retired stays readable through TryParseVariantTypeNameUVE below.
 [[nodiscard]] std::string_view GetVariantTypeNameUVE(VariantTypeUVE type) noexcept;
 
-/// The inverse of GetVariantTypeNameUVE, or nothing for a name no type answers to.
+/// The inverse of GetVariantTypeNameUVE, or nothing for a name no type answers to. Also accepts the
+/// retired names, so a document written before a rename still loads.
 [[nodiscard]] std::optional<VariantTypeUVE> TryParseVariantTypeNameUVE(std::string_view name) noexcept;
 
 /// The type picker's grouping: "Basic", "Math", "Color", "Reference", "Collection" or
-/// "Packed Array". Grouping is what makes a two-dozen-entry list scannable.
+/// "Typed Array". Grouping is what makes a two-dozen-entry list scannable.
 [[nodiscard]] std::string_view GetVariantTypeCategoryUVE(VariantTypeUVE type) noexcept;
 
 /// Every type, in picker order.

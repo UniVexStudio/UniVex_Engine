@@ -41,18 +41,18 @@ constexpr Tree<1> kFog = kOne(Kind::FogVolume3D);
 constexpr Tree<1> kDecal = kOne(Kind::Decal3D);
 constexpr Tree<1> kCamera = kOne(Kind::Camera3D);
 constexpr Tree<1> kStaticBody = kOne(Kind::Static3D);
-constexpr Tree<1> kRigidBody = kOne(Kind::Rigid3D);
+constexpr Tree<1> kRigid3D = kOne(Kind::Rigid3D);
 constexpr Tree<1> kCollider = kOne(Kind::Collider3D);
 constexpr Tree<1> kArea = kOne(Kind::Area3D);
 constexpr Tree<1> kRayCast = kOne(Kind::RayCast3D);
-constexpr Tree<1> kAnimationPlayer = kOne(Kind::AnimationSequencer);
-constexpr Tree<1> kAnimationTree = kOne(Kind::AnimationGraph);
+constexpr Tree<1> kAnimationSequencer = kOne(Kind::AnimationSequencer);
+constexpr Tree<1> kAnimationGraph = kOne(Kind::AnimationGraph);
 constexpr Tree<1> kAudio = kOne(Kind::AudioSource3D);
 constexpr Tree<1> kParticles = kOne(Kind::ParticleEmitter3D);
 constexpr Tree<1> kCanvas = kOne(Kind::Canvas);
 constexpr Tree<1> kLevelStreamer = kOne(Kind::LevelStreamer3D);
 constexpr Tree<1> kWorldPartition = kOne(Kind::WorldPartition3D);
-constexpr Tree<1> kNavigation = kOne(Kind::NavigationRegion3D);
+constexpr Tree<1> kNavigation = kOne(Kind::NavMeshVolume3D);
 constexpr Tree<1> kOccluder = kOne(Kind::Occluder3D);
 
 constexpr std::array<std::string_view, 9> kGroups{"Basic",     "Entity",    "Shapes",     "Lighting", "Camera",
@@ -95,7 +95,7 @@ constexpr std::array<ContentCatalogueItemUVE, 33> kItems{{
     {"static-body", "Static3D", "Physics", "A Static3D: collides but never moves", Action::EntityAsset,
      kStaticBody},
     {"rigid-body", "Rigid3D", "Physics", "A Rigid3D: moved by gravity and forces", Action::EntityAsset,
-     kRigidBody},
+     kRigid3D},
     {"collider", "Collider", "Physics", "A Collider3D shape for the body it is placed under", Action::EntityAsset,
      kCollider},
     {"area", "Area", "Physics", "An Area3D: detects overlaps without blocking", Action::EntityAsset, kArea},
@@ -103,9 +103,9 @@ constexpr std::array<ContentCatalogueItemUVE, 33> kItems{{
      kRayCast},
 
     {"animation-player", "AnimationSequencer", "Animation", "Plays animation clips on its parent", Action::EntityAsset,
-     kAnimationPlayer},
+     kAnimationSequencer},
     {"animation-tree", "AnimationGraph", "Animation", "Blends clips with a graph and a state machine",
-     Action::EntityAsset, kAnimationTree},
+     Action::EntityAsset, kAnimationGraph},
 
     {"audio", "Audio Source", "Audio, VFX & UI", "An AudioSource3D that plays a clip in 3D", Action::EntityAsset,
      kAudio},

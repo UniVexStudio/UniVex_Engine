@@ -16,7 +16,7 @@ namespace UVE::UVScript {
 /// object exists (uvsc at build time). It cannot run a script. One declaration per line, `#` comments:
 ///
 ///     property velocity vec3
-///     property is_on_floor bool readonly
+///     property grounded bool readonly
 ///     function input.axis(str, str) -> float
 ///     event tick(float)
 ///

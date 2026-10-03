@@ -19,9 +19,9 @@
 # depend on this module without a cycle.
 
 add_library(uve_component STATIC
-    Internal/animation_mixer_component_uve.cpp
-    Internal/animation_player_component_uve.cpp
-    Internal/animation_tree_component_uve.cpp
+    Internal/animation_driver_component_uve.cpp
+    Internal/animation_sequencer_component_uve.cpp
+    Internal/animation_graph_component_uve.cpp
     Internal/area_component_uve.cpp
     Internal/audio_source_component_uve.cpp
     Internal/camera_component_uve.cpp
@@ -38,7 +38,7 @@ add_library(uve_component STATIC
     Internal/physics_interpolation_component_uve.cpp
     Internal/prefab_instance_component_uve.cpp
     Internal/primitive_mesh_component_uve.cpp
-    Internal/rigid_body_component_uve.cpp
+    Internal/rigid_3d_component_uve.cpp
     Internal/script_component_uve.cpp
     Internal/auto_translate_component_uve.cpp
     Internal/bone_modifier_component_uve.cpp

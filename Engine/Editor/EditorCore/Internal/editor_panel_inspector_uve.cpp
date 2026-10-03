@@ -40,7 +40,7 @@
 #include "editor_object_icons_uve.h"
 
 #include "uve/asset/asset_import_queue_uve.h"
-#include "uve/component/animation_player_component_uve.h"
+#include "uve/component/animation_sequencer_component_uve.h"
 #include "uve/component/audio_source_component_uve.h"
 #include "uve/component/camera_component_uve.h"
 #include "uve/component/canvas_component_uve.h"
@@ -52,7 +52,7 @@
 #include "uve/component/particle_emitter_component_uve.h"
 #include "uve/component/prefab_instance_component_uve.h"
 #include "uve/component/primitive_mesh_component_uve.h"
-#include "uve/component/rigid_body_component_uve.h"
+#include "uve/component/rigid_3d_component_uve.h"
 #include "uve/component/script_component_uve.h"
 #include "uve/component/transform_component_uve.h"
 #include "uve/component/ui_button_component_uve.h"
@@ -131,7 +131,7 @@ void EditorUVE::DrawInspectorPanelUVE() {
     // Always, not FirstUseEver - see DrawHierarchyPanelUVE()'s comment on the same change.
     ImGui::SetNextWindowPos(layout.inspectorPos, ImGuiCond_Always);
     ImGui::SetNextWindowSize(layout.inspectorSize, ImGuiCond_Always);
-    // No title row: the Inspector / Import / Signals tabs are the panel's top edge, so the name is
+    // No title row: the Inspector / Import / Events tabs are the panel's top edge, so the name is
     // not said twice. The panel is fixed in the layout, so there is nothing to drag it by anyway.
     constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar;
     ImGui::Begin(kPanelLabelInspectorUVE, nullptr, flags);
@@ -153,7 +153,7 @@ void EditorUVE::DrawInspectorPanelUVE() {
         };
         drawTab("Inspector", EditorRightPanelTabUVE::Inspector);
         drawTab("Import", EditorRightPanelTabUVE::Import);
-        drawTab("Signals", EditorRightPanelTabUVE::Signals);
+        drawTab("Events", EditorRightPanelTabUVE::Events);
         ImGui::EndTabBar();
     }
     m_drawnRightPanelTab = m_activeRightPanelTab;
@@ -165,9 +165,9 @@ void EditorUVE::DrawInspectorPanelUVE() {
         case EditorRightPanelTabUVE::Import:
             DrawImportQueueMonitorUVE();
             break;
-        case EditorRightPanelTabUVE::Signals:
-            ImGui::TextUnformatted("Signals");
-            ImGui::TextDisabled("Signal bindings remain unavailable until the scripting runtime is added.");
+        case EditorRightPanelTabUVE::Events:
+            ImGui::TextUnformatted("Events");
+            ImGui::TextDisabled("Event bindings remain unavailable until the scripting runtime is added.");
             break;
     }
     ImGui::End();
