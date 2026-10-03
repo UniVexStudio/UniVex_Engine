@@ -943,6 +943,64 @@ TEST(EditorUVETest, SessionSettingsUVE_MigratesWithoutHiddenWriteAndPreservesDoc
     std::filesystem::remove(config.settingsFilePath);
 }
 
+TEST(EditorUVETest, SessionSettingsUVE_ReadsValuesSavedUnderTheOldNodeKeys) {
+    const Core::EngineConfigUVE config = MakeEditorTestConfigUVE();
+    std::filesystem::remove(config.settingsFilePath);
+    Core::EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Config::IConfigManagerUVE& settings = engine.GetServicesUVE().GetConfigManagerUVE();
+    namespace Id = EditorSettingIdUVE;
+    const auto placement = [](const EditorNewObjectPlacementUVE value) {
+        return Config::SettingValueUVE{static_cast<std::int64_t>(value)};
+    };
+
+    // A settings file written before the object rename carries only the old editor.nodes.* keys.
+    settings.SetBoolUVE("editor.nodes.addUnderSelection", false);
+    settings.SetIntUVE("editor.nodes.placement", static_cast<std::int64_t>(EditorNewObjectPlacementUVE::ViewFocus));
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_renamed_settings.uvscene");
+        editor.InitUVE();
+        EXPECT_EQ(editor.GetEditorSettingUVE(Id::kNewObjectsUnderSelectionUVE), Config::SettingValueUVE{false});
+        EXPECT_EQ(editor.GetEditorSettingUVE(Id::kNewObjectPlacementUVE), placement(EditorNewObjectPlacementUVE::ViewFocus));
+        // The value moved to the new name; the old one is left exactly as the file had it.
+        EXPECT_EQ(settings.GetBoolUVE("editor.objects.addUnderSelection", true), false);
+        EXPECT_EQ(settings.GetIntUVE("editor.objects.placement", -1),
+                  static_cast<std::int64_t>(EditorNewObjectPlacementUVE::ViewFocus));
+        EXPECT_EQ(settings.GetIntUVE("editor.nodes.placement", -1),
+                  static_cast<std::int64_t>(EditorNewObjectPlacementUVE::ViewFocus));
+        editor.ShutdownUVE();
+    }
+
+    // Next file: nothing stored under the new names, so the old ones decide again.
+    ASSERT_TRUE(settings.RemoveKeyUVE("editor.objects.addUnderSelection"));
+    ASSERT_TRUE(settings.RemoveKeyUVE("editor.objects.placement"));
+    // An old value the setting's own rules refuse is not applied: a stale number never reaches the
+    // editor, and neither does a value of the wrong type. Each setting keeps its default.
+    settings.SetIntUVE("editor.nodes.placement", 99);
+    settings.SetStringUVE("editor.nodes.addUnderSelection", "yes");
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_renamed_settings_stale.uvscene");
+        editor.InitUVE();
+        EXPECT_EQ(editor.GetEditorSettingUVE(Id::kNewObjectsUnderSelectionUVE), Config::SettingValueUVE{true});
+        EXPECT_EQ(editor.GetEditorSettingUVE(Id::kNewObjectPlacementUVE), placement(EditorNewObjectPlacementUVE::ParentOrigin));
+        editor.ShutdownUVE();
+    }
+
+    // A file that speaks both names keeps the new one: the rename is a fallback, never an override.
+    settings.SetIntUVE("editor.nodes.placement", static_cast<std::int64_t>(EditorNewObjectPlacementUVE::ViewFocus));
+    settings.SetIntUVE(Id::kNewObjectPlacementUVE, static_cast<std::int64_t>(EditorNewObjectPlacementUVE::ParentOrigin));
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_renamed_settings_both.uvscene");
+        editor.InitUVE();
+        EXPECT_EQ(editor.GetEditorSettingUVE(Id::kNewObjectPlacementUVE), placement(EditorNewObjectPlacementUVE::ParentOrigin));
+        editor.ShutdownUVE();
+    }
+
+    engine.Shutdown();
+    std::filesystem::remove(config.settingsFilePath);
+}
+
 TEST(EditorUVETest, EditorSettingsUVE_DescriptorDefaultsMatchTheEditorsOwnDefaults) {
     Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
     engine.Init();
@@ -952,8 +1010,14 @@ TEST(EditorUVETest, EditorSettingsUVE_DescriptorDefaultsMatchTheEditorsOwnDefaul
         EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_setting_defaults.uvscene");
         const Config::SettingsRegistryUVE& registry = editor.GetSettingsRegistryUVE();
         // The declared preferences, and a primary and alternate shortcut for every command.
-        ASSERT_EQ(registry.GetCountUVE(), 37U + (2U * editor.GetEditorCommandsUVE().size()));
+        ASSERT_EQ(registry.GetCountUVE(),
+                  37U + std::size(kRenamedSettingIdsUVE) + (2U * editor.GetEditorCommandsUVE().size()));
         for (const Config::SettingDescriptorUVE* descriptor : registry.GetAllUVE()) {
+            // A renamed setting's old name has no member behind it: it is read once at load by
+            // MigrateRenamedSettingIdsUVE, not a preference with a value of its own.
+            if (descriptor->HasFlagUVE(Config::kSettingFlagDeprecatedUVE)) {
+                continue;
+            }
             const std::optional<Config::SettingValueUVE> value = editor.GetEditorSettingUVE(descriptor->id);
             ASSERT_TRUE(value.has_value()) << descriptor->id;
             EXPECT_EQ(*value, descriptor->defaultValue) << descriptor->id;

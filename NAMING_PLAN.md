@@ -256,13 +256,19 @@ as a guess:
 | Surface | Before | After |
 |---|---|---|
 | The 3D base object | `Node3D` / `node_3d` | `Object3D` / `object_3d` (the old `typeId`s stay readable) |
-| Scene component names | `SceneObjectTypeComponentUVE`, `ObjectMetadataComponentUVE` | `SceneObjectTypeComponentUVE`, `ObjectMetadataComponentUVE` |
-| The 22 `*3DNodeComponentUVE` components | e.g. `RayCast3DComponentUVE` | `RayCast3DComponentUVE` — every retired name reads back through `CanonicalComponentNameUVE` |
-| Folders | `Scene/.../nodes/`, `Objects/**/Expose/uve/nodes/` | `.../objects/` |
-| C++ identifiers | `SceneObjectDescriptorUVE`, `FbxBoneNodeUVE`, `FbxBoneNodeUVE`-style names, `uvscript_node_host_uve.*` | `SceneObjectDescriptorUVE`, `FbxBoneObjectUVE`, `uvscript_object_host_uve.*` |
+| Scene component names | `SceneNodeTypeComponentUVE`, `NodeMetadataComponentUVE` | `SceneObjectTypeComponentUVE`, `ObjectMetadataComponentUVE` |
+| The 23 `*3DNodeComponentUVE` components | e.g. `RayCast3DNodeComponentUVE` | `RayCast3DComponentUVE` — every retired name reads back through `CanonicalComponentNameUVE` |
+| Folders | `Scene/.../nodes/`, `Objects/**/Expose/uve/nodes/`, `assets/icons/nodes/`, `assets/icons/node_categories/` | `.../objects/`, `assets/icons/objects/`, `assets/icons/object_categories/` |
+| C++ identifiers | `SceneNodeDescriptorUVE`, `SceneNodeKindUVE`, `FbxBoneNodeUVE`, `uvscript_node_host_uve.*` | `SceneObjectDescriptorUVE`, `SceneObjectKindUVE`, `FbxBoneObjectUVE`, `uvscript_object_host_uve.*` |
 | Registry metadata | `authoredContracts` naming `...NodeComponentUVE` | the component names that exist, e.g. `Scene/AnimatableBody3DComponentUVE` |
-| Strings, labels, ids | hierarchy/inspector/settings labels, `node-metadata` drawer id, `editor.nodes.*` settings ids, UVScript messages | object wording; settings and drawer ids renamed, variant type names get read aliases |
+| Strings, labels, ids | hierarchy/inspector/settings labels, `node-metadata` drawer id, `editor.nodes.*` settings ids, UVScript messages | object wording; settings and drawer ids renamed, variant type names get read aliases, `editor.nodes.*` still read once at load |
 | Variant names in saved documents | `NodePath`, `Node` | `ObjectPath`, `Object` — `TryParseVariantTypeNameUVE` still reads the two retired names |
+
+The settings ids are the one rename a saved file cannot be edited out of: a value already written
+under `editor.nodes.*` stays where it is, and `EditorUVE` reads it once at load through an alias
+descriptor (Hidden, Deprecated, declaring the current setting's own type, bounds and legal values)
+and writes it to the new name — the old key is never written back, and an old value the setting
+would refuse leaves the setting at its default. See `kRenamedSettingIdsUVE`.
 
 What did not change: third-party names (`ImGui::TreeNodeEx`, `ufbx_node`, `stbrp_node`), glTF's own
 `"nodes"` keys, the animation graph's persisted `"nodes"` JSON key, and every legacy read alias

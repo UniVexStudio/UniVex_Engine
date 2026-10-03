@@ -1594,6 +1594,9 @@ private:
     void DestroyDocumentSubtreeUVE(Scene::EntityUVE root);
     void ClearDocumentSceneUVE();
     void LoadSessionSettingsUVE();
+    /// Moves the value of every renamed setting id from its old key to its new one, once, when the
+    /// file still carries the old name and the new one holds nothing (see kRenamedSettingIdsUVE).
+    void MigrateRenamedSettingIdsUVE(Config::IConfigManagerUVE& config);
     [[nodiscard]] bool SaveSessionSettingsUVE();
     void ApplyLayoutPresetUVE(EditorLayoutPresetUVE preset) noexcept;
     void DrawMenuBarUVE();
