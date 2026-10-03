@@ -7,7 +7,6 @@
 #include "univex/render/GlApi.h"
 
 #include <algorithm>
-#include <array>
 #include <charconv>
 #include <cmath>
 #include <cstdint>
@@ -552,67 +551,22 @@ private:
         }
     }
 
-    struct CameraPoseUVE final {
-        univex::math::Vec3 target{};
-        float yaw = 0.0F;
-        float pitch = 0.0F;
-        float distance = 1.0F;
-        bool orthographic = false;
-    };
-
-    // The three places that draw the editor's one viewport. Each keeps its own camera pose so that
-    // orbiting inside one leaves the others where they were: the Scene workspace, the Entity Editor
-    // and the Retarget window are separately adjustable instead of sharing a single OrbitCamera that
-    // whichever was open last had moved.
-    //
-    // Studio takes precedence over EntityEditor when both are set - the Retarget window is what is
-    // actually on screen in that case. Scene is what is left when neither is.
-    //
-    // These three declarations sit above their first use as a parameter type on purpose: a nested
-    // name is not visible to an earlier member declaration, even though it is visible inside an
-    // earlier member function's body.
-    enum class ViewportSlotUVE : std::uint8_t { Scene = 0, EntityEditor = 1, Studio = 2 };
-
-    struct ViewportSlotStateUVE final {
-        CameraPoseUVE pose{};
-        // False until the slot has been left once, so a first visit starts from wherever the camera
-        // already is rather than snapping to a default-constructed pose at the origin.
-        bool hasPose = false;
-    };
-
-    // Moves the live camera out of the slot being left and into the one being entered, so each of
-    // the three views that share the editor's single viewport keeps its own framing. Orbiting in the
-    // Entity Editor no longer moves the Scene workspace's camera, and neither moves the Retarget one.
-    void ApplyViewportSlotUVE(const ViewportSlotUVE next) {
-        if (next == activeViewportSlot_) {
-            return;
-        }
-        auto& leaving = viewportSlots_[static_cast<std::size_t>(activeViewportSlot_)];
-        leaving.pose = CameraPoseUVE{camera_.Target(), camera_.Yaw(), camera_.Pitch(), camera_.Distance(),
-                                     camera_.IsOrthographic()};
-        leaving.hasPose = true;
-        activeViewportSlot_ = next;
-
-        const auto& entering = viewportSlots_[static_cast<std::size_t>(activeViewportSlot_)];
-        if (!entering.hasPose) {
-            return; // first visit to this view: keep whatever framing the camera already has
-        }
-        camera_.CancelAnimation();
-        camera_.SetTarget(entering.pose.target);
-        camera_.SetYawPitch(entering.pose.yaw, entering.pose.pitch);
-        camera_.SetDistance(entering.pose.distance);
-        camera_.SetOrthographic(entering.pose.orthographic);
-    }
-
     // The studio view (the Retarget window): no grid, corner gizmo or dark backdrop, and a camera
     // placed to face the front. The editing camera's pose is kept and put back afterwards, so
     // the scene comes back seen from where it was left.
     void ApplyStudioViewUVE(const UVE::Editor::EditorUVE::ViewportOverlayStateUVE& overlayState) {
         auto& settings = renderPass_->Settings();
-        const auto slot = overlayState.studioView         ? ViewportSlotUVE::Studio
-                          : overlayState.entityEditActive ? ViewportSlotUVE::EntityEditor
-                                                          : ViewportSlotUVE::Scene;
-        ApplyViewportSlotUVE(slot);
+        if (overlayState.studioView && !studioView_) {
+            poseBeforeStudio_ = CameraPoseUVE{camera_.Target(), camera_.Yaw(), camera_.Pitch(), camera_.Distance(),
+                                              camera_.IsOrthographic()};
+        } else if (!overlayState.studioView && studioView_ && poseBeforeStudio_.has_value()) {
+            camera_.CancelAnimation();
+            camera_.SetTarget(poseBeforeStudio_->target);
+            camera_.SetYawPitch(poseBeforeStudio_->yaw, poseBeforeStudio_->pitch);
+            camera_.SetDistance(poseBeforeStudio_->distance);
+            camera_.SetOrthographic(poseBeforeStudio_->orthographic);
+            poseBeforeStudio_.reset();
+        }
         studioView_ = overlayState.studioView;
         settings.viewGizmos = !studioView_;
         settings.viewEnvironment = !studioView_;
@@ -1357,8 +1311,14 @@ private:
     bool studioView_ = false;
     std::uint32_t appliedStudioFramingSerial_ = 0U;
     // The editing camera's pose from before the studio view, put back when it ends.
-    std::array<ViewportSlotStateUVE, 3> viewportSlots_{};
-    ViewportSlotUVE activeViewportSlot_ = ViewportSlotUVE::Scene;
+    struct CameraPoseUVE final {
+        univex::math::Vec3 target{};
+        float yaw = 0.0F;
+        float pitch = 0.0F;
+        float distance = 1.0F;
+        bool orthographic = false;
+    };
+    std::optional<CameraPoseUVE> poseBeforeStudio_;
     // Set each frame by ApplyOverlayStateUVE(), read by UpdateSelectionGizmoUVE() so it can force
     // the transform gizmo off while the Game workspace tab is active (see ApplyOverlayStateUVE's
     // own comment - it already forces the grid off directly, but the gizmo's visibility is decided

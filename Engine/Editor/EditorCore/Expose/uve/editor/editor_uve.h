@@ -460,21 +460,6 @@ public:
         std::array<float, 3> studioTarget{0.0F, 1.0F, 0.0F};
         float studioRadius = 1.5F;
         std::uint32_t studioFramingSerial = 0U;
-
-        // True while the Entity Editor window owns the document (see DrawEntityEditorPlaceholderUVE:
-        // the main window stops drawing and the scene waits in a snapshot).
-        //
-        // The editor has one viewport that draws whatever world is loaded, so all three places that
-        // draw it - the Scene workspace, the Entity Editor and the Retarget window - share one
-        // OrbitCamera. Without this flag the host cannot tell which of them the operator is looking
-        // through, so orbiting inside the Entity Editor moved the Scene workspace's camera too: the
-        // views were adjustable only at each other's expense.
-        //
-        // The host uses it to keep one camera pose per view and swap poses on the transition, which
-        // is what studioView already did for the Retarget window. Both can be true at once if the
-        // Retarget window is opened from the Entity Editor; the host gives the studio view
-        // precedence, since that is the view actually on screen.
-        bool entityEditActive = false;
     };
 
     /// Render callback for the dockable "Viewport" panel: given the panel's current available
@@ -1619,11 +1604,6 @@ private:
     /// The rendered scene and its overlay, filling the rest of the current window (the main
     /// Viewport panel and the Entity Editor both use it).
     void DrawViewportImageUVE();
-
-    /// Swaps m_viewportOverlayState between the per-view slots when the view being drawn changes.
-    /// Called at the top of DrawViewportImageUVE, before the per-frame fields are written, so every
-    /// write a panel makes during the frame lands in the view that is actually on screen.
-    void ApplyViewportOverlaySlotUVE();
     void DrawViewportOverlayBubblesUVE(Math::Vector2UVE imageOrigin, Math::Vector2UVE imageSize);
     void DrawEntityContextToolbarUVE(Math::Vector2UVE imageOrigin, Math::Vector2UVE imageSize);
     void DrawViewportAxisColorPickerUVE();
@@ -2420,25 +2400,6 @@ private:
     bool m_viewportPanelVisible = true;
     ViewportPanelRendererUVE m_viewportPanelRenderer;
     ViewportOverlayStateUVE m_viewportOverlayState;
-
-    // The overlay state above is a persistent accumulator: the toolbar, menu dock and settings
-    // panels write to it across frames, and the viewport renderer reads it once a frame. Because the
-    // editor has one viewport that the Scene workspace, the Entity Editor and the Retarget window all
-    // draw through, one accumulator meant one set of display settings for all three - turning the
-    // grid off while editing an entity turned it off for the scene too.
-    //
-    // These slots hold one accumulator per view, swapped on the transition the same way
-    // ViewportPanelBackendUVE swaps camera poses. A slot that has never been left keeps no state, so
-    // a first visit inherits whatever the previous view had rather than snapping to defaults - after
-    // that the two diverge and stay diverged.
-    //
-    // Studio takes precedence over the Entity Editor when both are open, matching the host.
-    struct ViewportOverlaySlotUVE final {
-        ViewportOverlayStateUVE state{};
-        bool hasState = false;
-    };
-    std::array<ViewportOverlaySlotUVE, 3> m_viewportOverlaySlots{};
-    std::uint8_t m_activeViewportOverlaySlot = 0U;
     bool m_sceneDirty = false;
     bool m_uiInitialized = false;
     EditorUiAssetsUVE m_uiAssets;
