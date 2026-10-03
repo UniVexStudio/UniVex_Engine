@@ -3,7 +3,7 @@
 #pragma once
 
 // Every scene object kind's real backing type, reachable from one include - no compatibility-alias
-// facade layer anymore. That layer (a "using XNodeUVE = XComponentUVE;" file per object type) was
+// facade layer anymore. That layer (a "using XObjectUVE = XComponentUVE;" file per object type) was
 // removed once it was confirmed nothing in the codebase actually used the alias names: every real
 // consumer already reaches for the component/type name directly (LightComponentUVE, not
 // Light3DObjectUVE). Keeping this single aggregate header instead - it documents which real type
