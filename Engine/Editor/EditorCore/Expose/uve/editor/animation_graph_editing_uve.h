@@ -95,7 +95,7 @@ bool MoveAnimationTransitionUVE(std::vector<Scene::AnimationGraphNodeUVE>& nodes
 
 /// One line on what a transition waits for: "speed > 0.5 and grounded", "state finished, after 75%",
 /// "always". "(off)" when it is switched off.
-[[nodiscard]] std::string DescribeAnimationTransitionUVE(const Scene::AnimationTransitionUVE& transition);
+[[nodiscard]] std::string DescribeAnimationTransitionUVE(const Scene::AnimationGraphTransitionUVE& transition);
 
 // ---- Blend Spaces hold their animations as points, not graph inputs ----------------------------
 

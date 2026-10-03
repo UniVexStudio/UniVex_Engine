@@ -171,7 +171,7 @@ std::string DescribeAnimationGraphProblemUVE(const AnimationGraphComponentUVE& c
             if (node.entryState >= node.inputs.size() || node.transitions.size() > kMaximumAnimationTransitionsUVE) {
                 return label + ": invalid entry state";
             }
-            for (const AnimationTransitionUVE& transition : node.transitions) {
+            for (const AnimationGraphTransitionUVE& transition : node.transitions) {
                 const bool fromValid =
                     transition.fromState == kAnyAnimationStateUVE || transition.fromState < node.inputs.size();
                 const bool exitValid = std::isfinite(transition.exitPhase) && transition.exitPhase <= 1.0F;

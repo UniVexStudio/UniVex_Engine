@@ -268,10 +268,10 @@ bool RemoveAnimationGraphInputSlotUVE(std::vector<AnimationGraphNodeUVE>& nodes,
     node->inputs.erase(node->inputs.begin() + static_cast<std::ptrdiff_t>(slot));
     if (node->kind == Kind::StateMachine) {
         const auto state = static_cast<std::uint32_t>(slot);
-        std::erase_if(node->transitions, [state](const Scene::AnimationTransitionUVE& transition) {
+        std::erase_if(node->transitions, [state](const Scene::AnimationGraphTransitionUVE& transition) {
             return transition.fromState == state || transition.toState == state;
         });
-        for (Scene::AnimationTransitionUVE& transition : node->transitions) {
+        for (Scene::AnimationGraphTransitionUVE& transition : node->transitions) {
             if (transition.fromState != Scene::kAnyAnimationStateUVE && transition.fromState > state) {
                 --transition.fromState;
             }
@@ -348,7 +348,7 @@ std::optional<std::size_t> AddAnimationTransitionUVE(std::vector<AnimationGraphN
         node->transitions.size() >= Scene::kMaximumAnimationTransitionsUVE) {
         return std::nullopt;
     }
-    Scene::AnimationTransitionUVE transition;
+    Scene::AnimationGraphTransitionUVE transition;
     transition.fromState = from;
     transition.toState = to;
     node->transitions.push_back(transition);
@@ -372,13 +372,13 @@ bool MoveAnimationTransitionUVE(std::vector<AnimationGraphNodeUVE>& nodes, const
         newIndex >= node->transitions.size() || index == newIndex) {
         return false;
     }
-    const Scene::AnimationTransitionUVE moved = node->transitions[index];
+    const Scene::AnimationGraphTransitionUVE moved = node->transitions[index];
     node->transitions.erase(node->transitions.begin() + static_cast<std::ptrdiff_t>(index));
     node->transitions.insert(node->transitions.begin() + static_cast<std::ptrdiff_t>(newIndex), moved);
     return true;
 }
 
-std::string DescribeAnimationTransitionUVE(const Scene::AnimationTransitionUVE& transition) {
+std::string DescribeAnimationTransitionUVE(const Scene::AnimationGraphTransitionUVE& transition) {
     using Condition = Scene::AnimationConditionUVE;
     std::string text;
     const auto name = [](const std::string& parameter) { return parameter.empty() ? std::string{"?"} : parameter; };

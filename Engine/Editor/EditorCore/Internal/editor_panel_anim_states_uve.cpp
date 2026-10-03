@@ -31,7 +31,7 @@ namespace {
 
 using Kind = Scene::AnimationGraphNodeKindUVE;
 using Scene::AnimationGraphNodeUVE;
-using Scene::AnimationTransitionUVE;
+using Scene::AnimationGraphTransitionUVE;
 
 /// Box identities in the view besides state slots.
 constexpr int kEntryBoxUVE = -1;
@@ -222,7 +222,7 @@ void EditorUVE::DrawStateMachineViewUVE(const Scene::EntityUVE tree, const std::
     // ---- Transitions: one arrow per pair of boxes, a count when several share it ---------------------
     std::map<std::pair<int, int>, std::vector<std::size_t>> pairs;
     for (std::size_t index = 0U; index < machine.transitions.size(); ++index) {
-        const AnimationTransitionUVE& transition = machine.transitions[index];
+        const AnimationGraphTransitionUVE& transition = machine.transitions[index];
         const int from = transition.fromState == Scene::kAnyAnimationStateUVE ? kAnyBoxUVE : static_cast<int>(transition.fromState);
         pairs[{from, static_cast<int>(transition.toState)}].push_back(index);
     }
@@ -398,7 +398,7 @@ void EditorUVE::DrawStateMachineViewUVE(const Scene::EntityUVE tree, const std::
 
     // ---- Tooltips -----------------------------------------------------------------------------------
     if (hoveredTransition >= 0 && view.linkFrom == kNoBoxUVE && view.stateDrag == kNoBoxUVE) {
-        const AnimationTransitionUVE& transition = machine.transitions[static_cast<std::size_t>(hoveredTransition)];
+        const AnimationGraphTransitionUVE& transition = machine.transitions[static_cast<std::size_t>(hoveredTransition)];
         const std::string from = transition.fromState == Scene::kAnyAnimationStateUVE ? std::string{"Any State"}
                                                                                        : stateName(transition.fromState);
         ImGui::SetTooltip("%s -> %s\n%s", from.c_str(), stateName(transition.toState).c_str(),
@@ -677,7 +677,7 @@ void EditorUVE::DrawStateMachineSelectionUVE(const Scene::EntityUVE tree, const 
     // ---- A transition ---------------------------------------------------------------------------------
     if (view.pickedTransition >= 0 && static_cast<std::size_t>(view.pickedTransition) < machine.transitions.size()) {
         const auto index = static_cast<std::size_t>(view.pickedTransition);
-        AnimationTransitionUVE transition = machine.transitions[index];
+        AnimationGraphTransitionUVE transition = machine.transitions[index];
         ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(kSelectedUVE), "%s  ->  %s", stateName(transition.fromState).c_str(),
                            stateName(transition.toState).c_str());
         // Its place among the transitions leaving the same state: the first ready one wins.
@@ -799,7 +799,7 @@ void EditorUVE::DrawStateMachineSelectionUVE(const Scene::EntityUVE tree, const 
         ImGui::TextDisabled("Leaves by");
         bool any = false;
         for (std::size_t index = 0U; index < machine.transitions.size(); ++index) {
-            const AnimationTransitionUVE& transition = machine.transitions[index];
+            const AnimationGraphTransitionUVE& transition = machine.transitions[index];
             if (transition.fromState != slot && transition.fromState != Scene::kAnyAnimationStateUVE) {
                 continue;
             }

@@ -188,7 +188,7 @@ add_executable(uve_integration_tests
     Objects/3D/conformed_playback_uve_tests.cpp
     Objects/UI/object_definitions_canvas_uve_tests.cpp
     Integration/Entity/archetype_uve_tests.cpp
-    Integration/Entity/chunk_uve_tests.cpp
+    Integration/Entity/archetype_chunk_uve_tests.cpp
     Integration/Entity/entity_manager_uve_tests.cpp
     Integration/Localization/localization_uve_tests.cpp
     Integration/Scene/scene_graph_uve_tests.cpp
@@ -306,8 +306,8 @@ uve_set_warnings(uve_integration_tests)
 # so they are reached as "Support/<name>.h" from any subdirectory.
 target_include_directories(uve_integration_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
-# archetype_uve_tests.cpp and chunk_uve_tests.cpp unit-test the module-private
-# ArchetypeUVE/ChunkUVE Detail:: classes directly - this include path exposes only those
+# archetype_uve_tests.cpp and archetype_chunk_uve_tests.cpp unit-test the module-private
+# ArchetypeUVE/ArchetypeChunkUVE Detail:: classes directly - this include path exposes only those
 # module-private headers, never anything from Engine/Runtime/Entity/Internal as part of uve_entity's
 # own public interface.
 target_include_directories(uve_integration_tests PRIVATE ${CMAKE_SOURCE_DIR}/Engine/Runtime/Entity/Internal)

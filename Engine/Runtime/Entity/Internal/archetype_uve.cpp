@@ -19,7 +19,7 @@ const ArchetypeSignatureUVE& ArchetypeUVE::GetSignatureUVE() const noexcept {
 
 std::size_t ArchetypeUVE::GetEntityCountUVE() const noexcept {
     std::size_t total = 0;
-    for (const std::unique_ptr<ChunkUVE>& chunk : m_chunks) {
+    for (const std::unique_ptr<ArchetypeChunkUVE>& chunk : m_chunks) {
         total += chunk->GetCountUVE();
     }
     return total;
@@ -28,7 +28,7 @@ std::size_t ArchetypeUVE::GetEntityCountUVE() const noexcept {
 ArchetypeUVE::LocationUVE ArchetypeUVE::ReserveEntityUVE(EntityUVE entity) {
     if (m_chunks.empty() || m_chunks.back()->IsFullUVE()) {
         m_chunks.push_back(
-            std::make_unique<ChunkUVE>(m_allocator, m_signature.GetTypesUVE(), m_typeInfos));
+            std::make_unique<ArchetypeChunkUVE>(m_allocator, m_signature.GetTypesUVE(), m_typeInfos));
     }
     const std::size_t chunkIndex = m_chunks.size() - 1;
     const std::size_t row = m_chunks[chunkIndex]->ReserveRowUVE(entity);
@@ -42,7 +42,7 @@ EntityUVE ArchetypeUVE::DestroyEntityAtUVE(LocationUVE location) {
                    location.chunkIndex, m_chunks.size());
         return kInvalidEntityUVE;
     }
-    ChunkUVE& chunk = *m_chunks[location.chunkIndex];
+    ArchetypeChunkUVE& chunk = *m_chunks[location.chunkIndex];
     chunk.DestroyAllColumnsUVE(location.row);
     return chunk.VacateRowUVE(location.row);
 }
@@ -57,12 +57,12 @@ EntityUVE ArchetypeUVE::VacateWithoutDestroyUVE(LocationUVE location) {
     return m_chunks[location.chunkIndex]->VacateRowUVE(location.row);
 }
 
-ChunkUVE& ArchetypeUVE::GetChunkUVE(std::size_t chunkIndex) {
+ArchetypeChunkUVE& ArchetypeUVE::GetChunkUVE(std::size_t chunkIndex) {
     UVE_ASSERT(chunkIndex < m_chunks.size());
     return *m_chunks.at(chunkIndex); // throws std::out_of_range in Release if chunkIndex is invalid
 }
 
-const ChunkUVE& ArchetypeUVE::GetChunkUVE(std::size_t chunkIndex) const {
+const ArchetypeChunkUVE& ArchetypeUVE::GetChunkUVE(std::size_t chunkIndex) const {
     UVE_ASSERT(chunkIndex < m_chunks.size());
     return *m_chunks.at(chunkIndex); // throws std::out_of_range in Release if chunkIndex is invalid
 }

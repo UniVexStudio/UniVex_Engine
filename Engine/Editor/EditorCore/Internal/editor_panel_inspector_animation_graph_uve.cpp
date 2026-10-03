@@ -35,7 +35,7 @@ using Kind = Scene::AnimationGraphNodeKindUVE;
 using Scene::AnimationGraphNodeUVE;
 using Scene::AnimationParameterTypeUVE;
 using Scene::AnimationParameterUVE;
-using Scene::AnimationTransitionUVE;
+using Scene::AnimationGraphTransitionUVE;
 
 constexpr std::array<Kind, 11> kAddableKindsUVE{Kind::Clip,         Kind::Blend2,       Kind::BlendSpace1D, Kind::BlendSpace2D,
                                                 Kind::Select,       Kind::Additive,     Kind::LayeredBlend, Kind::OneShot,
@@ -192,7 +192,7 @@ void EditorUVE::DrawAnimationGraphPropertyUVE(const Core::TypeMetadataEntryUVE& 
                     changed = true;
                 }
             }
-            for (AnimationTransitionUVE& transition : node.transitions) {
+            for (AnimationGraphTransitionUVE& transition : node.transitions) {
                 for (Scene::AnimationTransitionConditionUVE& test : transition.conditions) {
                     if (test.parameter == from) {
                         test.parameter = to;
@@ -595,7 +595,7 @@ void EditorUVE::DrawAnimationGraphPropertyUVE(const Core::TypeMetadataEntryUVE& 
                                                                  : SlotLabelUVE(Kind::StateMachine, state);
                 };
                 for (std::size_t t = 0U; t < node.transitions.size(); ++t) {
-                    AnimationTransitionUVE& transition = node.transitions[t];
+                    AnimationGraphTransitionUVE& transition = node.transitions[t];
                     ImGui::PushID(static_cast<int>(t) + 5000);
                     const float width = ImGui::GetContentRegionAvail().x - ImGui::GetFrameHeight() * 3.0F;
                     ImGui::SetNextItemWidth(width * 0.38F);
@@ -668,7 +668,7 @@ void EditorUVE::DrawAnimationGraphPropertyUVE(const Core::TypeMetadataEntryUVE& 
                 }
                 if (ImGui::SmallButton("+ Transition") && !node.inputs.empty() &&
                     node.transitions.size() < Scene::kMaximumAnimationTransitionsUVE) {
-                    AnimationTransitionUVE transition;
+                    AnimationGraphTransitionUVE transition;
                     transition.fromState = 0U;
                     transition.toState = node.inputs.size() > 1U ? 1U : 0U;
                     node.transitions.push_back(transition);

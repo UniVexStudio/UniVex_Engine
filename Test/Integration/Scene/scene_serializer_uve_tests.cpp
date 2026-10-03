@@ -669,7 +669,7 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_AnimationTargetsRemapToTheRestoredEnti
     machine.name = "Locomotion";
     machine.position = Math::Vector2UVE{12.0F, -4.0F};
     machine.inputs = {2U, 0U};
-    AnimationTransitionUVE transition;
+    AnimationGraphTransitionUVE transition;
     transition.fromState = kAnyAnimationStateUVE;
     transition.toState = 1U;
     transition.conditions = {AnimationTransitionConditionUVE{AnimationConditionUVE::Triggered, "jump", 0.0F},
@@ -798,7 +798,7 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_OldSingleConditionTransitionsBecomeALi
     ASSERT_EQ(roots.size(), 1U);
     const AnimationGraphComponentUVE& tree = entityManager.GetComponentUVE<AnimationGraphComponentUVE>(roots[0]);
     EXPECT_TRUE(DescribeAnimationGraphProblemUVE(tree).empty()) << DescribeAnimationGraphProblemUVE(tree);
-    const std::vector<AnimationTransitionUVE>& transitions = tree.nodes[1].transitions;
+    const std::vector<AnimationGraphTransitionUVE>& transitions = tree.nodes[1].transitions;
     ASSERT_EQ(transitions.size(), 2U);
     ASSERT_EQ(transitions[0].conditions.size(), 1U);
     EXPECT_EQ(transitions[0].conditions[0].condition, AnimationConditionUVE::ParameterGreater);

@@ -2,7 +2,7 @@
 
 #
 # EntityUVE/ComponentUVE (uve_component) and IEntityManagerUVE/EntityManagerUVE plus their private
-# ArchetypeUVE/ChunkUVE/ArchetypeSignatureUVE storage internals (uve_entity) live in
+# ArchetypeUVE/ArchetypeChunkUVE/ArchetypeSignatureUVE storage internals (uve_entity) live in
 # Engine/Runtime/Component and Engine/Runtime/Entity - uve_scene depends on both rather than
 # compiling them directly. What lives here is the node/scene facade layer: SceneGraphUVE, the
 # Object3D catalog, PrefabSystemUVE, and SceneSerializerUVE.

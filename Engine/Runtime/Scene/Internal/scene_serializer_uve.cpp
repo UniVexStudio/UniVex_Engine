@@ -212,7 +212,7 @@ namespace {
             statePositions.push_back({at.x, at.y});
         }
         nlohmann::json transitions = nlohmann::json::array();
-        for (const AnimationTransitionUVE& transition : object.transitions) {
+        for (const AnimationGraphTransitionUVE& transition : object.transitions) {
             nlohmann::json conditions = nlohmann::json::array();
             for (const AnimationTransitionConditionUVE& test : transition.conditions) {
                 conditions.push_back({{"condition", static_cast<std::uint8_t>(test.condition)},
@@ -371,7 +371,7 @@ namespace {
             }
             object.entryState = item.value("entryState", std::uint32_t{0});
             for (const nlohmann::json& transitionJson : item.value("transitions", nlohmann::json::array())) {
-                AnimationTransitionUVE transition;
+                AnimationGraphTransitionUVE transition;
                 transition.fromState = transitionJson.value("from", kAnyAnimationStateUVE);
                 transition.toState = transitionJson.value("to", std::uint32_t{0});
                 if (const auto list = transitionJson.find("conditions"); list != transitionJson.end() && list->is_array()) {

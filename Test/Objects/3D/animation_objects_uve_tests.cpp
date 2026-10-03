@@ -176,7 +176,7 @@ public:
         };
     }
 
-    [[nodiscard]] static AnimationGraphNodeUVE ObjectUVE(const std::uint32_t id, const AnimationGraphNodeKindUVE kind,
+    [[nodiscard]] static AnimationGraphNodeUVE NodeUVE(const std::uint32_t id, const AnimationGraphNodeKindUVE kind,
                                                       std::vector<std::uint32_t> inputs = {}) {
         AnimationGraphNodeUVE object;
         object.id = id;
@@ -185,9 +185,9 @@ public:
         return object;
     }
 
-    [[nodiscard]] static AnimationGraphNodeUVE ClipObjectUVE(const std::uint32_t id, const Asset::AssetGuidUVE clip,
+    [[nodiscard]] static AnimationGraphNodeUVE ClipNodeUVE(const std::uint32_t id, const Asset::AssetGuidUVE clip,
                                                           const bool loop = true, std::string name = {}) {
-        AnimationGraphNodeUVE object = ObjectUVE(id, AnimationGraphNodeKindUVE::Clip);
+        AnimationGraphNodeUVE object = NodeUVE(id, AnimationGraphNodeKindUVE::Clip);
         object.clip = clip;
         object.loop = loop;
         object.name = std::move(name);
@@ -220,7 +220,7 @@ TEST(AnimationGraphUVETest, TheDefaultGraphPlaysItsClip) {
     GraphFixtureUVE fixture;
     AnimationGraphComponentUVE tree;
     ASSERT_TRUE(IsAnimationGraphComponentValidUVE(tree));
-    tree.objects[1].clip = fixture.AddClipUVE(10.0F);
+    tree.nodes[1].clip = fixture.AddClipUVE(10.0F);
     EXPECT_NEAR(fixture.StepUVE(tree, 0.5F), 5.0F, 1e-4F);
 }
 
@@ -228,11 +228,11 @@ TEST(AnimationGraphUVETest, BlendMixesByItsParameter) {
     GraphFixtureUVE fixture;
     AnimationGraphComponentUVE tree;
     tree.parameters = {AnimationParameterUVE{"blend", AnimationParameterTypeUVE::Float, 0.5F}};
-    AnimationGraphNodeUVE blend = GraphFixtureUVE::ObjectUVE(2U, Kind::Blend2, {3U, 4U});
+    AnimationGraphNodeUVE blend = GraphFixtureUVE::NodeUVE(2U, Kind::Blend2, {3U, 4U});
     blend.parameter = "blend";
-    tree.objects = {GraphFixtureUVE::ObjectUVE(1U, Kind::Output, {2U}), blend,
-                  GraphFixtureUVE::ClipObjectUVE(3U, fixture.AddClipUVE(10.0F)),
-                  GraphFixtureUVE::ClipObjectUVE(4U, fixture.AddClipUVE(20.0F))};
+    tree.nodes = {GraphFixtureUVE::NodeUVE(1U, Kind::Output, {2U}), blend,
+                  GraphFixtureUVE::ClipNodeUVE(3U, fixture.AddClipUVE(10.0F)),
+                  GraphFixtureUVE::ClipNodeUVE(4U, fixture.AddClipUVE(20.0F))};
     EXPECT_NEAR(fixture.StepUVE(tree, 0.5F), 7.5F, 1e-4F);
     ASSERT_TRUE(SetAnimationGraphParameterUVE(tree, "blend", 1.0F));
     EXPECT_NEAR(fixture.StepUVE(tree, 0.25F), 15.0F, 1e-4F);
@@ -243,13 +243,13 @@ TEST(AnimationGraphUVETest, BlendSpaceMixesTheTwoPointsAroundItsValue) {
     GraphFixtureUVE fixture;
     AnimationGraphComponentUVE tree;
     tree.parameters = {AnimationParameterUVE{"speed", AnimationParameterTypeUVE::Float, 1.5F}};
-    AnimationGraphNodeUVE space = GraphFixtureUVE::ObjectUVE(2U, Kind::BlendSpace1D);
+    AnimationGraphNodeUVE space = GraphFixtureUVE::NodeUVE(2U, Kind::BlendSpace1D);
     space.parameter = "speed";
     // The space holds its animations itself: no inputs.
     space.blendPoints = {AnimationBlendPointUVE{{0.0F, 0.0F}, fixture.AddClipUVE(10.0F)},
                          AnimationBlendPointUVE{{1.0F, 0.0F}, fixture.AddClipUVE(20.0F)},
                          AnimationBlendPointUVE{{2.0F, 0.0F}, fixture.AddClipUVE(30.0F)}};
-    tree.objects = {GraphFixtureUVE::ObjectUVE(1U, Kind::Output, {2U}), space};
+    tree.nodes = {GraphFixtureUVE::NodeUVE(1U, Kind::Output, {2U}), space};
     // Halfway between walk (20 -> 10 at t=0.5) and run (30 -> 15): 12.5.
     EXPECT_NEAR(fixture.StepUVE(tree, 0.5F), 12.5F, 1e-4F);
 }
@@ -259,21 +259,21 @@ TEST(AnimationGraphUVETest, StateMachineMovesOnConditionsAndConsumesTriggers) {
     AnimationGraphComponentUVE tree;
     tree.parameters = {AnimationParameterUVE{"speed", AnimationParameterTypeUVE::Float, 0.0F},
                        AnimationParameterUVE{"stop", AnimationParameterTypeUVE::Trigger, 0.0F}};
-    AnimationGraphNodeUVE machine = GraphFixtureUVE::ObjectUVE(2U, Kind::StateMachine, {3U, 4U});
-    AnimationTransitionUVE go;
+    AnimationGraphNodeUVE machine = GraphFixtureUVE::NodeUVE(2U, Kind::StateMachine, {3U, 4U});
+    AnimationGraphTransitionUVE go;
     go.fromState = 0U;
     go.toState = 1U;
     go.conditions = {AnimationTransitionConditionUVE{AnimationConditionUVE::ParameterGreater, "speed", 0.5F}};
     go.fadeSeconds = 0.0F;
-    AnimationTransitionUVE stop;
+    AnimationGraphTransitionUVE stop;
     stop.fromState = kAnyAnimationStateUVE;
     stop.toState = 0U;
     stop.conditions = {AnimationTransitionConditionUVE{AnimationConditionUVE::Triggered, "stop", 0.0F}};
     stop.fadeSeconds = 0.0F;
     machine.transitions = {go, stop};
-    tree.objects = {GraphFixtureUVE::ObjectUVE(1U, Kind::Output, {2U}), machine,
-                  GraphFixtureUVE::ClipObjectUVE(3U, fixture.AddClipUVE(1.0F), true, "Idle"),
-                  GraphFixtureUVE::ClipObjectUVE(4U, fixture.AddClipUVE(10.0F), true, "Run")};
+    tree.nodes = {GraphFixtureUVE::NodeUVE(1U, Kind::Output, {2U}), machine,
+                  GraphFixtureUVE::ClipNodeUVE(3U, fixture.AddClipUVE(1.0F), true, "Idle"),
+                  GraphFixtureUVE::ClipNodeUVE(4U, fixture.AddClipUVE(10.0F), true, "Run")};
 
     EXPECT_NEAR(fixture.StepUVE(tree, 0.5F), 0.5F, 1e-4F);
     EXPECT_EQ(tree.activeStates, "Idle");
@@ -291,16 +291,16 @@ TEST(AnimationGraphUVETest, StateMachineMovesOnConditionsAndConsumesTriggers) {
 TEST(AnimationGraphUVETest, StateMachineCrossfadesAndCanWaitForTheEnd) {
     GraphFixtureUVE fixture;
     AnimationGraphComponentUVE tree;
-    AnimationGraphNodeUVE machine = GraphFixtureUVE::ObjectUVE(2U, Kind::StateMachine, {3U, 4U});
-    AnimationTransitionUVE atEnd;
+    AnimationGraphNodeUVE machine = GraphFixtureUVE::NodeUVE(2U, Kind::StateMachine, {3U, 4U});
+    AnimationGraphTransitionUVE atEnd;
     atEnd.fromState = 0U;
     atEnd.toState = 1U;
     atEnd.conditions = {AnimationTransitionConditionUVE{AnimationConditionUVE::AtEnd, {}, 0.0F}};
     atEnd.fadeSeconds = 1.0F;
     machine.transitions = {atEnd};
-    tree.objects = {GraphFixtureUVE::ObjectUVE(1U, Kind::Output, {2U}), machine,
-                  GraphFixtureUVE::ClipObjectUVE(3U, fixture.AddClipUVE(10.0F), false, "Jump"),
-                  GraphFixtureUVE::ClipObjectUVE(4U, fixture.AddClipUVE(20.0F), true, "Land")};
+    tree.nodes = {GraphFixtureUVE::NodeUVE(1U, Kind::Output, {2U}), machine,
+                  GraphFixtureUVE::ClipNodeUVE(3U, fixture.AddClipUVE(10.0F), false, "Jump"),
+                  GraphFixtureUVE::ClipNodeUVE(4U, fixture.AddClipUVE(20.0F), true, "Land")};
     fixture.mixer.transition = AnimationTransitionModeUVE::Crossfade;
     EXPECT_NEAR(fixture.StepUVE(tree, 0.5F), 5.0F, 1e-4F);
     EXPECT_EQ(tree.activeStates, "Jump");
@@ -315,16 +315,16 @@ TEST(AnimationGraphUVETest, StateMachineCrossfadesAndCanWaitForTheEnd) {
 TEST(AnimationGraphUVETest, StateMachineInertializesByDefault) {
     GraphFixtureUVE fixture;
     AnimationGraphComponentUVE tree;
-    AnimationGraphNodeUVE machine = GraphFixtureUVE::ObjectUVE(2U, Kind::StateMachine, {3U, 4U});
-    AnimationTransitionUVE atEnd;
+    AnimationGraphNodeUVE machine = GraphFixtureUVE::NodeUVE(2U, Kind::StateMachine, {3U, 4U});
+    AnimationGraphTransitionUVE atEnd;
     atEnd.fromState = 0U;
     atEnd.toState = 1U;
     atEnd.conditions = {AnimationTransitionConditionUVE{AnimationConditionUVE::AtEnd, {}, 0.0F}};
     atEnd.fadeSeconds = 1.0F;
     machine.transitions = {atEnd};
-    tree.objects = {GraphFixtureUVE::ObjectUVE(1U, Kind::Output, {2U}), machine,
-                  GraphFixtureUVE::ClipObjectUVE(3U, fixture.AddClipUVE(10.0F), false, "Jump"),
-                  GraphFixtureUVE::ClipObjectUVE(4U, fixture.AddClipUVE(20.0F), true, "Land")};
+    tree.nodes = {GraphFixtureUVE::NodeUVE(1U, Kind::Output, {2U}), machine,
+                  GraphFixtureUVE::ClipNodeUVE(3U, fixture.AddClipUVE(10.0F), false, "Jump"),
+                  GraphFixtureUVE::ClipNodeUVE(4U, fixture.AddClipUVE(20.0F), true, "Land")};
     static_cast<void>(fixture.StepUVE(tree, 0.5F));
     EXPECT_NEAR(fixture.StepUVE(tree, 0.6F), 10.0F, 1e-4F) << "the step that switches still shows Jump";
     EXPECT_EQ(tree.activeStates, "Land");
@@ -336,24 +336,24 @@ TEST(AnimationGraphUVETest, StateMachineInertializesByDefault) {
 }
 
 /// Idle (0 m) and Run (10 m per second) as a two-state machine from Idle to Run, crossfading.
-[[nodiscard]] AnimationGraphComponentUVE TwoStateMachineUVE(GraphFixtureUVE& fixture, const AnimationTransitionUVE& transition,
+[[nodiscard]] AnimationGraphComponentUVE TwoStateMachineUVE(GraphFixtureUVE& fixture, const AnimationGraphTransitionUVE& transition,
                                                           const double runSeconds = 1.0) {
     AnimationGraphComponentUVE tree;
     tree.parameters = {AnimationParameterUVE{"speed", AnimationParameterTypeUVE::Float, 0.0F},
                        AnimationParameterUVE{"grounded", AnimationParameterTypeUVE::Bool, 0.0F},
                        AnimationParameterUVE{"jump", AnimationParameterTypeUVE::Trigger, 0.0F}};
-    AnimationGraphNodeUVE machine = GraphFixtureUVE::ObjectUVE(2U, Kind::StateMachine, {3U, 4U});
+    AnimationGraphNodeUVE machine = GraphFixtureUVE::NodeUVE(2U, Kind::StateMachine, {3U, 4U});
     machine.transitions = {transition};
-    tree.objects = {GraphFixtureUVE::ObjectUVE(1U, Kind::Output, {2U}), machine,
-                  GraphFixtureUVE::ClipObjectUVE(3U, fixture.AddClipUVE(0.0F), true, "Idle"),
-                  GraphFixtureUVE::ClipObjectUVE(4U, fixture.AddClipUVE(10.0F * static_cast<float>(runSeconds), runSeconds), true, "Run")};
+    tree.nodes = {GraphFixtureUVE::NodeUVE(1U, Kind::Output, {2U}), machine,
+                  GraphFixtureUVE::ClipNodeUVE(3U, fixture.AddClipUVE(0.0F), true, "Idle"),
+                  GraphFixtureUVE::ClipNodeUVE(4U, fixture.AddClipUVE(10.0F * static_cast<float>(runSeconds), runSeconds), true, "Run")};
     fixture.mixer.transition = AnimationTransitionModeUVE::Crossfade;
     return tree;
 }
 
 TEST(AnimationGraphUVETest, TransitionsNeedAllTheirConditionsAndKeepTheTriggerUntilTaken) {
     GraphFixtureUVE fixture;
-    AnimationTransitionUVE go;
+    AnimationGraphTransitionUVE go;
     go.fromState = 0U;
     go.toState = 1U;
     go.fadeSeconds = 0.0F;
@@ -373,7 +373,7 @@ TEST(AnimationGraphUVETest, TransitionsNeedAllTheirConditionsAndKeepTheTriggerUn
 
 TEST(AnimationGraphUVETest, AnOffTransitionIsNeverTaken) {
     GraphFixtureUVE fixture;
-    AnimationTransitionUVE go;
+    AnimationGraphTransitionUVE go;
     go.fromState = 0U;
     go.toState = 1U;
     go.enabled = false;
@@ -385,13 +385,13 @@ TEST(AnimationGraphUVETest, AnOffTransitionIsNeverTaken) {
 
 TEST(AnimationGraphUVETest, LeaveAfterWaitsForThePhase) {
     GraphFixtureUVE fixture;
-    AnimationTransitionUVE go;
+    AnimationGraphTransitionUVE go;
     go.fromState = 1U; // Run to Idle, once Run is three quarters through
     go.toState = 0U;
     go.fadeSeconds = 0.0F;
     go.exitPhase = 0.75F;
     AnimationGraphComponentUVE tree = TwoStateMachineUVE(fixture, go);
-    tree.objects[1].entryState = 1U;
+    tree.nodes[1].entryState = 1U;
     static_cast<void>(fixture.StepUVE(tree, 0.5F));
     EXPECT_EQ(tree.activeStates, "Run") << "half way: not yet";
     static_cast<void>(fixture.StepUVE(tree, 0.3F));
@@ -400,7 +400,7 @@ TEST(AnimationGraphUVETest, LeaveAfterWaitsForThePhase) {
 
 TEST(AnimationGraphUVETest, InStepStartsTheNextStateAtThePhaseLeft) {
     GraphFixtureUVE fixture;
-    AnimationTransitionUVE go;
+    AnimationGraphTransitionUVE go;
     go.fromState = 0U;
     go.toState = 1U;
     go.fadeSeconds = 0.0F;
@@ -416,20 +416,20 @@ TEST(AnimationGraphUVETest, InStepStartsTheNextStateAtThePhaseLeft) {
 
 TEST(AnimationGraphUVETest, ContinuePicksUpWhereTheStateWasLeft) {
     GraphFixtureUVE fixture;
-    AnimationTransitionUVE back;
+    AnimationGraphTransitionUVE back;
     back.fromState = 1U;
     back.toState = 0U;
     back.fadeSeconds = 0.0F;
     back.conditions = {AnimationTransitionConditionUVE{AnimationConditionUVE::ParameterLess, "speed", 0.5F}};
-    AnimationTransitionUVE go;
+    AnimationGraphTransitionUVE go;
     go.fromState = 0U;
     go.toState = 1U;
     go.fadeSeconds = 0.0F;
     go.start = AnimationTransitionStartUVE::Continue;
     go.conditions = {AnimationTransitionConditionUVE{AnimationConditionUVE::ParameterGreater, "speed", 0.5F}};
     AnimationGraphComponentUVE tree = TwoStateMachineUVE(fixture, back, 4.0);
-    tree.objects[1].transitions.push_back(go);
-    tree.objects[1].entryState = 1U;
+    tree.nodes[1].transitions.push_back(go);
+    tree.nodes[1].entryState = 1U;
     ASSERT_TRUE(SetAnimationGraphParameterUVE(tree, "speed", 1.0F));
     static_cast<void>(fixture.StepUVE(tree, 0.5F)); // Run at 0.5 s
     ASSERT_TRUE(SetAnimationGraphParameterUVE(tree, "speed", 0.0F));
@@ -443,18 +443,18 @@ TEST(AnimationGraphUVETest, ContinuePicksUpWhereTheStateWasLeft) {
 
 TEST(AnimationGraphUVETest, AFadeThatCannotBeInterruptedHoldsTheMachine) {
     GraphFixtureUVE fixture;
-    AnimationTransitionUVE go;
+    AnimationGraphTransitionUVE go;
     go.fromState = 0U;
     go.toState = 1U;
     go.fadeSeconds = 1.0F;
     go.interruptible = false;
     go.conditions = {AnimationTransitionConditionUVE{AnimationConditionUVE::ParameterGreater, "speed", 0.5F}};
-    AnimationTransitionUVE back = go;
+    AnimationGraphTransitionUVE back = go;
     back.fromState = 1U;
     back.toState = 0U;
     back.conditions = {AnimationTransitionConditionUVE{AnimationConditionUVE::ParameterLess, "speed", 0.5F}};
     AnimationGraphComponentUVE tree = TwoStateMachineUVE(fixture, go);
-    tree.objects[1].transitions.push_back(back);
+    tree.nodes[1].transitions.push_back(back);
     ASSERT_TRUE(SetAnimationGraphParameterUVE(tree, "speed", 1.0F));
     static_cast<void>(fixture.StepUVE(tree, 0.1F));
     ASSERT_EQ(tree.activeStates, "Run");
@@ -482,12 +482,12 @@ TEST(AnimationGraphUVETest, OneShotPlaysOverTheBaseAndHandsBack) {
     GraphFixtureUVE fixture;
     AnimationGraphComponentUVE tree;
     tree.parameters = {AnimationParameterUVE{"attack", AnimationParameterTypeUVE::Trigger, 0.0F}};
-    AnimationGraphNodeUVE shot = GraphFixtureUVE::ObjectUVE(2U, Kind::OneShot, {3U, 4U});
+    AnimationGraphNodeUVE shot = GraphFixtureUVE::NodeUVE(2U, Kind::OneShot, {3U, 4U});
     shot.parameter = "attack";
     shot.fadeSeconds = 0.0F;
-    tree.objects = {GraphFixtureUVE::ObjectUVE(1U, Kind::Output, {2U}), shot,
-                  GraphFixtureUVE::ClipObjectUVE(3U, fixture.AddClipUVE(10.0F)),
-                  GraphFixtureUVE::ClipObjectUVE(4U, fixture.AddClipUVE(100.0F), false)};
+    tree.nodes = {GraphFixtureUVE::NodeUVE(1U, Kind::Output, {2U}), shot,
+                  GraphFixtureUVE::ClipNodeUVE(3U, fixture.AddClipUVE(10.0F)),
+                  GraphFixtureUVE::ClipNodeUVE(4U, fixture.AddClipUVE(100.0F), false)};
     EXPECT_NEAR(fixture.StepUVE(tree, 0.25F), 2.5F, 1e-4F);
     ASSERT_TRUE(SetAnimationGraphParameterUVE(tree, "attack", 1.0F));
     EXPECT_NEAR(fixture.StepUVE(tree, 0.5F), 50.0F, 1e-4F);
@@ -499,36 +499,36 @@ TEST(AnimationGraphUVETest, OneShotPlaysOverTheBaseAndHandsBack) {
 TEST(AnimationGraphUVETest, AdditiveLayersAndTimeScaleRescales) {
     GraphFixtureUVE fixture;
     AnimationGraphComponentUVE tree;
-    AnimationGraphNodeUVE additive = GraphFixtureUVE::ObjectUVE(3U, Kind::Additive, {4U, 5U});
+    AnimationGraphNodeUVE additive = GraphFixtureUVE::NodeUVE(3U, Kind::Additive, {4U, 5U});
     additive.value = 0.5F;
-    AnimationGraphNodeUVE scale = GraphFixtureUVE::ObjectUVE(2U, Kind::TimeScale, {3U});
+    AnimationGraphNodeUVE scale = GraphFixtureUVE::NodeUVE(2U, Kind::TimeScale, {3U});
     scale.speed = 2.0F;
-    tree.objects = {GraphFixtureUVE::ObjectUVE(1U, Kind::Output, {2U}), scale, additive,
-                  GraphFixtureUVE::ClipObjectUVE(4U, fixture.AddClipUVE(10.0F)),
-                  GraphFixtureUVE::ClipObjectUVE(5U, fixture.AddClipUVE(2.0F))};
+    tree.nodes = {GraphFixtureUVE::NodeUVE(1U, Kind::Output, {2U}), scale, additive,
+                  GraphFixtureUVE::ClipNodeUVE(4U, fixture.AddClipUVE(10.0F)),
+                  GraphFixtureUVE::ClipNodeUVE(5U, fixture.AddClipUVE(2.0F))};
     // 0.25 s at double speed is 0.5 s in: base 5 plus half of the layer's 1.
     EXPECT_NEAR(fixture.StepUVE(tree, 0.25F), 5.5F, 1e-4F);
 }
 
 TEST(AnimationGraphUVETest, ValidationCatchesMalformedGraphsButAllowsEmptySlots) {
     AnimationGraphComponentUVE tree;
-    tree.objects = {GraphFixtureUVE::ObjectUVE(1U, Kind::Output, {0U})};
+    tree.nodes = {GraphFixtureUVE::NodeUVE(1U, Kind::Output, {0U})};
     EXPECT_TRUE(IsAnimationGraphComponentValidUVE(tree)); // being built: nothing wired yet
 
-    tree.objects.push_back(GraphFixtureUVE::ObjectUVE(2U, Kind::Output, {0U}));
+    tree.nodes.push_back(GraphFixtureUVE::NodeUVE(2U, Kind::Output, {0U}));
     EXPECT_FALSE(IsAnimationGraphComponentValidUVE(tree)); // two outputs
 
-    tree.objects = {GraphFixtureUVE::ObjectUVE(1U, Kind::Output, {2U}), GraphFixtureUVE::ObjectUVE(2U, Kind::Blend2, {3U, 3U}),
-                  GraphFixtureUVE::ObjectUVE(3U, Kind::Clip)};
+    tree.nodes = {GraphFixtureUVE::NodeUVE(1U, Kind::Output, {2U}), GraphFixtureUVE::NodeUVE(2U, Kind::Blend2, {3U, 3U}),
+                  GraphFixtureUVE::NodeUVE(3U, Kind::Clip)};
     EXPECT_FALSE(IsAnimationGraphComponentValidUVE(tree)); // one object feeding two inputs
 
-    tree.objects = {GraphFixtureUVE::ObjectUVE(1U, Kind::Output, {2U}), GraphFixtureUVE::ObjectUVE(2U, Kind::TimeScale, {3U}),
-                  GraphFixtureUVE::ObjectUVE(3U, Kind::TimeScale, {2U})};
+    tree.nodes = {GraphFixtureUVE::NodeUVE(1U, Kind::Output, {2U}), GraphFixtureUVE::NodeUVE(2U, Kind::TimeScale, {3U}),
+                  GraphFixtureUVE::NodeUVE(3U, Kind::TimeScale, {2U})};
     EXPECT_FALSE(IsAnimationGraphComponentValidUVE(tree)); // a loop
 
-    AnimationGraphNodeUVE space = GraphFixtureUVE::ObjectUVE(2U, Kind::BlendSpace1D);
+    AnimationGraphNodeUVE space = GraphFixtureUVE::NodeUVE(2U, Kind::BlendSpace1D);
     space.blendPoints = {AnimationBlendPointUVE{{1.0F, 0.0F}}, AnimationBlendPointUVE{{0.0F, 0.0F}}};
-    tree.objects = {GraphFixtureUVE::ObjectUVE(1U, Kind::Output, {2U}), space};
+    tree.nodes = {GraphFixtureUVE::NodeUVE(1U, Kind::Output, {2U}), space};
     EXPECT_FALSE(IsAnimationGraphComponentValidUVE(tree)); // points going backwards
 
     tree = AnimationGraphComponentUVE{};
@@ -749,7 +749,7 @@ namespace {
 
 // ---- AnimationGraph on a skeleton ---------------------------------------------------------------
 
-[[nodiscard]] AnimationGraphNodeUVE TreeObjectUVE(const std::uint32_t id, const AnimationGraphNodeKindUVE kind,
+[[nodiscard]] AnimationGraphNodeUVE TreeNodeUVE(const std::uint32_t id, const AnimationGraphNodeKindUVE kind,
                                                 std::vector<std::uint32_t> inputs = {}) {
     AnimationGraphNodeUVE object;
     object.id = id;
@@ -759,7 +759,7 @@ namespace {
 }
 
 [[nodiscard]] AnimationGraphNodeUVE TreeClipUVE(const std::uint32_t id, const Asset::AssetGuidUVE clip) {
-    AnimationGraphNodeUVE object = TreeObjectUVE(id, AnimationGraphNodeKindUVE::Clip);
+    AnimationGraphNodeUVE object = TreeNodeUVE(id, AnimationGraphNodeKindUVE::Clip);
     object.clip = clip;
     return object;
 }
@@ -806,9 +806,9 @@ struct SkeletalGraphUVE {
 TEST(AnimationGraphUVETest, ASkeletalTreeBlendsBoneByBoneAndKeepsUntrackedBonesAtRest) {
     SkeletalGraphUVE graph;
     AnimationGraphComponentUVE tree;
-    AnimationGraphNodeUVE blend = TreeObjectUVE(2U, AnimationGraphNodeKindUVE::Blend2, {3U, 4U});
+    AnimationGraphNodeUVE blend = TreeNodeUVE(2U, AnimationGraphNodeKindUVE::Blend2, {3U, 4U});
     blend.value = 0.5F;
-    tree.objects = {TreeObjectUVE(1U, AnimationGraphNodeKindUVE::Output, {2U}), blend,
+    tree.nodes = {TreeNodeUVE(1U, AnimationGraphNodeKindUVE::Output, {2U}), blend,
                   TreeClipUVE(3U, graph.AddUVE(MakeLiftClipUVE(0.0F))), TreeClipUVE(4U, graph.AddUVE(MakeLiftClipUVE(2.0F)))};
     ASSERT_TRUE(graph.StepUVE(tree, 0.5F));
     ASSERT_EQ(graph.skeleton.pose.size(), 2U);
@@ -822,7 +822,7 @@ TEST(AnimationGraphUVETest, ASkeletalTreeHandsOverRootMotion) {
     SkeletalGraphUVE graph;
     graph.mixer.rootMotion = AnimationRootMotionModeUVE::InPlace;
     AnimationGraphComponentUVE tree;
-    tree.objects[1].clip = graph.AddUVE(MakeWalkClipUVE(2.0F));
+    tree.nodes[1].clip = graph.AddUVE(MakeWalkClipUVE(2.0F));
     ASSERT_TRUE(graph.StepUVE(tree, 0.0F));
     ASSERT_TRUE(graph.StepUVE(tree, 0.25F));
     EXPECT_NEAR(tree.rootMotionDelta.x, 0.5F, 1e-4F);
@@ -835,10 +835,10 @@ TEST(AnimationGraphUVETest, ASkeletalTreeHandsOverRootMotion) {
 TEST(AnimationGraphUVETest, SyncedBlendKeepsItsInputsInStep) {
     SkeletalGraphUVE graph;
     AnimationGraphComponentUVE tree;
-    AnimationGraphNodeUVE blend = TreeObjectUVE(2U, AnimationGraphNodeKindUVE::Blend2, {3U, 4U});
+    AnimationGraphNodeUVE blend = TreeNodeUVE(2U, AnimationGraphNodeKindUVE::Blend2, {3U, 4U});
     blend.value = 0.25F;
     blend.sync = true;
-    tree.objects = {TreeObjectUVE(1U, AnimationGraphNodeKindUVE::Output, {2U}), blend,
+    tree.nodes = {TreeNodeUVE(1U, AnimationGraphNodeKindUVE::Output, {2U}), blend,
                   TreeClipUVE(3U, graph.AddUVE(MakeWalkClipUVE(1.0F, 1.0))),
                   TreeClipUVE(4U, graph.AddUVE(MakeWalkClipUVE(4.0F, 2.0)))};
     ASSERT_TRUE(graph.StepUVE(tree, 0.4F));
@@ -846,7 +846,7 @@ TEST(AnimationGraphUVETest, SyncedBlendKeepsItsInputsInStep) {
     EXPECT_NEAR(tree.nodeStates[2].timeSeconds, 0.4, 1e-6);
     EXPECT_NEAR(tree.nodeStates[3].timeSeconds, 0.8, 1e-6);
     blend.sync = false;
-    tree.objects[1] = blend;
+    tree.nodes[1] = blend;
     tree.nodeStates.clear();
     ASSERT_TRUE(graph.StepUVE(tree, 0.4F));
     EXPECT_NEAR(tree.nodeStates[3].timeSeconds, 0.4, 1e-6) << "unsynced, each runs on its own clock";
@@ -859,9 +859,9 @@ TEST(AnimationGraphUVETest, EventsComeFromTheClipsThatCount) {
     Asset::AnimationClipAssetUVE wave = MakeWalkClipUVE(1.0F);
     wave.events = {Asset::AnimationAssetEventUVE{0.5, "wave"}};
     AnimationGraphComponentUVE tree;
-    AnimationGraphNodeUVE blend = TreeObjectUVE(2U, AnimationGraphNodeKindUVE::Blend2, {3U, 4U});
+    AnimationGraphNodeUVE blend = TreeNodeUVE(2U, AnimationGraphNodeKindUVE::Blend2, {3U, 4U});
     blend.value = 0.2F;
-    tree.objects = {TreeObjectUVE(1U, AnimationGraphNodeKindUVE::Output, {2U}), blend, TreeClipUVE(3U, graph.AddUVE(step)),
+    tree.nodes = {TreeNodeUVE(1U, AnimationGraphNodeKindUVE::Output, {2U}), blend, TreeClipUVE(3U, graph.AddUVE(step)),
                   TreeClipUVE(4U, graph.AddUVE(wave))};
     ASSERT_TRUE(graph.StepUVE(tree, 0.3F));
     EXPECT_TRUE(tree.firedEvents.empty());
@@ -873,7 +873,7 @@ TEST(AnimationGraphUVETest, ASkeletalTreeWritesOnlyTheMixersChannels) {
     SkeletalGraphUVE graph;
     graph.mixer.animatePosition = false;
     AnimationGraphComponentUVE tree;
-    tree.objects[1].clip = graph.AddUVE(MakeLiftClipUVE(1.0F));
+    tree.nodes[1].clip = graph.AddUVE(MakeLiftClipUVE(1.0F));
     ASSERT_TRUE(graph.StepUVE(tree, 0.5F));
     EXPECT_NEAR(graph.skeleton.pose[0].position.y, 1.0F, 1e-6F) << "position is not animated";
     graph.skeleton.bones.clear();
@@ -928,15 +928,15 @@ TEST(AnimationGraphUVETest, BlendSpace2DMixesInsideItsTriangleAndNeedsOne) {
     GraphFixtureUVE fixture;
     AnimationGraphComponentUVE tree;
     tree.parameters = {AnimationParameterUVE{"x", AnimationParameterTypeUVE::Float, 0.25F}};
-    AnimationGraphNodeUVE space = GraphFixtureUVE::ObjectUVE(2U, Kind::BlendSpace2D);
+    AnimationGraphNodeUVE space = GraphFixtureUVE::NodeUVE(2U, Kind::BlendSpace2D);
     space.blendPoints = {AnimationBlendPointUVE{{0.0F, 0.0F}, fixture.AddClipUVE(0.0F)},
                          AnimationBlendPointUVE{{1.0F, 0.0F}, fixture.AddClipUVE(40.0F)}};
     space.parameter = "x";
-    tree.objects = {GraphFixtureUVE::ObjectUVE(1U, Kind::Output, {2U}), space};
+    tree.nodes = {GraphFixtureUVE::NodeUVE(1U, Kind::Output, {2U}), space};
     TransformComponentUVE target;
     EXPECT_FALSE(StepAnimationGraphUVE(tree, fixture.ResolverUVE(), 0.5F, target, fixture.mixer))
         << "two points are a line, not a plane: nothing plays";
-    tree.objects[1].blendPoints.push_back(AnimationBlendPointUVE{{0.0F, 1.0F}, fixture.AddClipUVE(0.0F)});
+    tree.nodes[1].blendPoints.push_back(AnimationBlendPointUVE{{0.0F, 1.0F}, fixture.AddClipUVE(0.0F)});
     tree.nodeStates.clear();
     // A quarter of the way to the 40 m clip, which is at 20 after half a second: 5.
     EXPECT_NEAR(fixture.StepUVE(tree, 0.5F), 5.0F, 1e-3F);
@@ -973,12 +973,12 @@ TEST(AnimationGraphUVETest, SmoothedBlendSpaceFollowsItsParameterOverTime) {
     GraphFixtureUVE fixture;
     AnimationGraphComponentUVE tree;
     tree.parameters = {AnimationParameterUVE{"speed", AnimationParameterTypeUVE::Float, 0.0F}};
-    AnimationGraphNodeUVE space = GraphFixtureUVE::ObjectUVE(2U, Kind::BlendSpace1D);
+    AnimationGraphNodeUVE space = GraphFixtureUVE::NodeUVE(2U, Kind::BlendSpace1D);
     space.parameter = "speed";
     space.smoothingSeconds = 0.25F;
     space.blendPoints = {AnimationBlendPointUVE{{0.0F, 0.0F}, fixture.AddClipUVE(10.0F)},
                          AnimationBlendPointUVE{{1.0F, 0.0F}, fixture.AddClipUVE(20.0F)}};
-    tree.objects = {GraphFixtureUVE::ObjectUVE(1U, Kind::Output, {2U}), space};
+    tree.nodes = {GraphFixtureUVE::NodeUVE(1U, Kind::Output, {2U}), space};
     static_cast<void>(fixture.StepUVE(tree, 0.0F));
     EXPECT_EQ(tree.nodeStates[1].blendAt.x, 0.0F) << "starts where its parameter is";
     ASSERT_TRUE(SetAnimationGraphParameterUVE(tree, "speed", 1.0F));
@@ -992,13 +992,13 @@ TEST(AnimationGraphUVETest, NearestPlaysOnePointAndSwitchesOnlyWhenClearlyNearer
     fixture.mixer.transition = AnimationTransitionModeUVE::Crossfade;
     AnimationGraphComponentUVE tree;
     tree.parameters = {AnimationParameterUVE{"speed", AnimationParameterTypeUVE::Float, 0.2F}};
-    AnimationGraphNodeUVE space = GraphFixtureUVE::ObjectUVE(2U, Kind::BlendSpace1D);
+    AnimationGraphNodeUVE space = GraphFixtureUVE::NodeUVE(2U, Kind::BlendSpace1D);
     space.parameter = "speed";
     space.blendMode = AnimationBlendModeUVE::Nearest;
     space.fadeSeconds = 0.0F;
     space.blendPoints = {AnimationBlendPointUVE{{0.0F, 0.0F}, fixture.AddClipUVE(10.0F)},
                          AnimationBlendPointUVE{{1.0F, 0.0F}, fixture.AddClipUVE(20.0F)}};
-    tree.objects = {GraphFixtureUVE::ObjectUVE(1U, Kind::Output, {2U}), space};
+    tree.nodes = {GraphFixtureUVE::NodeUVE(1U, Kind::Output, {2U}), space};
     EXPECT_NEAR(fixture.StepUVE(tree, 0.5F), 5.0F, 1e-4F) << "the near point alone, not a mix";
     ASSERT_TRUE(SetAnimationGraphParameterUVE(tree, "speed", 0.52F));
     static_cast<void>(fixture.StepUVE(tree, 0.1F));
@@ -1014,13 +1014,13 @@ TEST(AnimationGraphUVETest, NearestInStepCarriesThePhaseAcross) {
     fixture.mixer.transition = AnimationTransitionModeUVE::Crossfade;
     AnimationGraphComponentUVE tree;
     tree.parameters = {AnimationParameterUVE{"speed", AnimationParameterTypeUVE::Float, 0.0F}};
-    AnimationGraphNodeUVE space = GraphFixtureUVE::ObjectUVE(2U, Kind::BlendSpace1D);
+    AnimationGraphNodeUVE space = GraphFixtureUVE::NodeUVE(2U, Kind::BlendSpace1D);
     space.parameter = "speed";
     space.blendMode = AnimationBlendModeUVE::NearestInStep;
     space.fadeSeconds = 0.0F;
     space.blendPoints = {AnimationBlendPointUVE{{0.0F, 0.0F}, fixture.AddClipUVE(10.0F, 1.0)},
                          AnimationBlendPointUVE{{1.0F, 0.0F}, fixture.AddClipUVE(10.0F, 2.0)}};
-    tree.objects = {GraphFixtureUVE::ObjectUVE(1U, Kind::Output, {2U}), space};
+    tree.nodes = {GraphFixtureUVE::NodeUVE(1U, Kind::Output, {2U}), space};
     static_cast<void>(fixture.StepUVE(tree, 0.25F)); // a quarter through the 1 s cycle
     ASSERT_TRUE(SetAnimationGraphParameterUVE(tree, "speed", 1.0F));
     static_cast<void>(fixture.StepUVE(tree, 0.0F));
@@ -1032,13 +1032,13 @@ TEST(AnimationGraphUVETest, NearestInertializesTheSwitchSoThereIsNoPop) {
     GraphFixtureUVE fixture; // the mixer inertializes by default
     AnimationGraphComponentUVE tree;
     tree.parameters = {AnimationParameterUVE{"speed", AnimationParameterTypeUVE::Float, 0.0F}};
-    AnimationGraphNodeUVE space = GraphFixtureUVE::ObjectUVE(2U, Kind::BlendSpace1D);
+    AnimationGraphNodeUVE space = GraphFixtureUVE::NodeUVE(2U, Kind::BlendSpace1D);
     space.parameter = "speed";
     space.blendMode = AnimationBlendModeUVE::Nearest;
     space.fadeSeconds = 0.5F;
     space.blendPoints = {AnimationBlendPointUVE{{0.0F, 0.0F}, fixture.AddClipUVE(10.0F)},
                          AnimationBlendPointUVE{{1.0F, 0.0F}, fixture.AddClipUVE(-10.0F)}};
-    tree.objects = {GraphFixtureUVE::ObjectUVE(1U, Kind::Output, {2U}), space};
+    tree.nodes = {GraphFixtureUVE::NodeUVE(1U, Kind::Output, {2U}), space};
     const float before = fixture.StepUVE(tree, 0.5F); // 5 m along the first clip
     ASSERT_TRUE(SetAnimationGraphParameterUVE(tree, "speed", 1.0F));
     static_cast<void>(fixture.StepUVE(tree, 0.0F)); // the switch is seen here
@@ -1053,12 +1053,12 @@ TEST(AnimationGraphUVETest, SelectPlaysThePickedInputAndFadesOnChange) {
     fixture.mixer.transition = AnimationTransitionModeUVE::Crossfade;
     AnimationGraphComponentUVE tree;
     tree.parameters = {AnimationParameterUVE{"armed", AnimationParameterTypeUVE::Bool, 0.0F}};
-    AnimationGraphNodeUVE select = GraphFixtureUVE::ObjectUVE(2U, Kind::Select, {3U, 4U});
+    AnimationGraphNodeUVE select = GraphFixtureUVE::NodeUVE(2U, Kind::Select, {3U, 4U});
     select.parameter = "armed";
     select.fadeSeconds = 1.0F;
-    tree.objects = {GraphFixtureUVE::ObjectUVE(1U, Kind::Output, {2U}), select,
-                  GraphFixtureUVE::ClipObjectUVE(3U, fixture.AddClipUVE(10.0F)),
-                  GraphFixtureUVE::ClipObjectUVE(4U, fixture.AddClipUVE(20.0F))};
+    tree.nodes = {GraphFixtureUVE::NodeUVE(1U, Kind::Output, {2U}), select,
+                  GraphFixtureUVE::ClipNodeUVE(3U, fixture.AddClipUVE(10.0F)),
+                  GraphFixtureUVE::ClipNodeUVE(4U, fixture.AddClipUVE(20.0F))};
     EXPECT_NEAR(fixture.StepUVE(tree, 0.5F), 5.0F, 1e-4F) << "option 0";
     ASSERT_TRUE(SetAnimationGraphParameterUVE(tree, "armed", 1.0F));
     static_cast<void>(fixture.StepUVE(tree, 0.0F)); // the pick is seen; option 1 restarts
@@ -1084,10 +1084,10 @@ TEST(AnimationGraphUVETest, LayeredBlendTouchesOnlyTheChosenBranch) {
         lifted.bones.push_back(Asset::AnimationAssetBoneTrackUVE{bone, {sample}});
     }
     AnimationGraphComponentUVE tree;
-    AnimationGraphNodeUVE layered = TreeObjectUVE(2U, AnimationGraphNodeKindUVE::LayeredBlend, {3U, 4U});
+    AnimationGraphNodeUVE layered = TreeNodeUVE(2U, AnimationGraphNodeKindUVE::LayeredBlend, {3U, 4U});
     layered.value = 1.0F;
     layered.bones = {"Spine"};
-    tree.objects = {TreeObjectUVE(1U, AnimationGraphNodeKindUVE::Output, {2U}), layered,
+    tree.nodes = {TreeNodeUVE(1U, AnimationGraphNodeKindUVE::Output, {2U}), layered,
                   TreeClipUVE(3U, graph.AddUVE(MakeLiftClipUVE(0.0F))), TreeClipUVE(4U, graph.AddUVE(lifted))};
     ASSERT_TRUE(graph.StepUVE(tree, 0.1F));
     EXPECT_NEAR(graph.skeleton.pose[0].position.y, 1.0F, 1e-5F) << "Hips: the base";
@@ -1099,11 +1099,11 @@ TEST(AnimationGraphUVETest, TimeSeekJumpsWhenItsTriggerFires) {
     GraphFixtureUVE fixture;
     AnimationGraphComponentUVE tree;
     tree.parameters = {AnimationParameterUVE{"rewind", AnimationParameterTypeUVE::Trigger, 0.0F}};
-    AnimationGraphNodeUVE seek = GraphFixtureUVE::ObjectUVE(2U, Kind::TimeSeek, {3U});
+    AnimationGraphNodeUVE seek = GraphFixtureUVE::NodeUVE(2U, Kind::TimeSeek, {3U});
     seek.parameter = "rewind";
     seek.value = 0.25F;
-    tree.objects = {GraphFixtureUVE::ObjectUVE(1U, Kind::Output, {2U}), seek,
-                  GraphFixtureUVE::ClipObjectUVE(3U, fixture.AddClipUVE(10.0F))};
+    tree.nodes = {GraphFixtureUVE::NodeUVE(1U, Kind::Output, {2U}), seek,
+                  GraphFixtureUVE::ClipNodeUVE(3U, fixture.AddClipUVE(10.0F))};
     EXPECT_NEAR(fixture.StepUVE(tree, 0.75F), 7.5F, 1e-4F);
     ASSERT_TRUE(SetAnimationGraphParameterUVE(tree, "rewind", 1.0F));
     EXPECT_NEAR(fixture.StepUVE(tree, 0.1F), 2.5F, 1e-4F) << "at the seek point this step";
@@ -1117,22 +1117,22 @@ TEST(AnimationGraphUVETest, TheNewKindsAreValidatedToo) {
     space.id = 3U;
     space.kind = AnimationGraphNodeKindUVE::BlendSpace2D;
     space.inputs = {0U};
-    tree.objects.push_back(space);
+    tree.nodes.push_back(space);
     EXPECT_NE(DescribeAnimationGraphProblemUVE(tree).find("wrong number of inputs"), std::string::npos)
         << "a blend space has no inputs: its points hold the animations";
-    tree.objects.back().inputs.clear();
-    tree.objects.back().blendPoints = {AnimationBlendPointUVE{{0.0F, 0.0F}}, AnimationBlendPointUVE{{0.0F, 0.0F}}};
+    tree.nodes.back().inputs.clear();
+    tree.nodes.back().blendPoints = {AnimationBlendPointUVE{{0.0F, 0.0F}}, AnimationBlendPointUVE{{0.0F, 0.0F}}};
     EXPECT_NE(DescribeAnimationGraphProblemUVE(tree).find("same place"), std::string::npos);
-    tree.objects.back().blendPoints.back().position = Math::Vector2UVE{1.0F, 0.0F};
+    tree.nodes.back().blendPoints.back().position = Math::Vector2UVE{1.0F, 0.0F};
     EXPECT_TRUE(DescribeAnimationGraphProblemUVE(tree).empty()) << DescribeAnimationGraphProblemUVE(tree);
     AnimationGraphNodeUVE layered;
     layered.id = 4U;
     layered.kind = AnimationGraphNodeKindUVE::LayeredBlend;
     layered.inputs = {0U};
-    tree.objects.push_back(layered);
+    tree.nodes.push_back(layered);
     EXPECT_NE(DescribeAnimationGraphProblemUVE(tree).find("wrong number of inputs"), std::string::npos);
-    tree.objects.back().inputs = {0U, 0U};
-    tree.objects.back().bones = {""};
+    tree.nodes.back().inputs = {0U, 0U};
+    tree.nodes.back().bones = {""};
     EXPECT_NE(DescribeAnimationGraphProblemUVE(tree).find("layer bone"), std::string::npos);
 }
 
@@ -1145,12 +1145,12 @@ namespace {
 TEST(AnimationGraphUVETest, SyncedBlendSpacePointsKeepInStep) {
     GraphFixtureUVE fixture;
     AnimationGraphComponentUVE tree;
-    AnimationGraphNodeUVE space = GraphFixtureUVE::ObjectUVE(2U, Kind::BlendSpace1D);
+    AnimationGraphNodeUVE space = GraphFixtureUVE::NodeUVE(2U, Kind::BlendSpace1D);
     space.value = 0.25F;
     space.sync = true;
     space.blendPoints = {AnimationBlendPointUVE{{0.0F, 0.0F}, fixture.AddClipUVE(10.0F, 1.0)},
                          AnimationBlendPointUVE{{1.0F, 0.0F}, fixture.AddClipUVE(10.0F, 2.0)}};
-    tree.objects = {GraphFixtureUVE::ObjectUVE(1U, Kind::Output, {2U}), space};
+    tree.nodes = {GraphFixtureUVE::NodeUVE(1U, Kind::Output, {2U}), space};
     static_cast<void>(fixture.StepUVE(tree, 0.4F));
     ASSERT_EQ(tree.nodeStates[1].pointTimes.size(), 2U);
     EXPECT_NEAR(tree.nodeStates[1].pointTimes[0], 0.4, 1e-6) << "the heavier point leads";
@@ -1186,7 +1186,7 @@ TEST(AnimationGraphUVETest, OldBlendSpaceInputsFoldIntoTheirPoints) {
     EXPECT_EQ(std::ranges::find(objects, 2U, &AnimationGraphNodeUVE::id), objects.end()) << "the folded Clip is gone";
     EXPECT_NE(std::ranges::find(objects, 4U, &AnimationGraphNodeUVE::id), objects.end()) << "the Time Scale stays";
     AnimationGraphComponentUVE tree;
-    tree.objects = objects;
+    tree.nodes = objects;
     EXPECT_TRUE(DescribeAnimationGraphProblemUVE(tree).empty()) << DescribeAnimationGraphProblemUVE(tree);
 }
 

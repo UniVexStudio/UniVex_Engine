@@ -14,7 +14,7 @@ using Kind = Scene::AnimationGraphNodeKindUVE;
 
 [[nodiscard]] Scene::AnimationGraphComponentUVE TreeOfUVE(const std::vector<Scene::AnimationGraphNodeUVE>& objects) {
     Scene::AnimationGraphComponentUVE tree;
-    tree.objects = objects;
+    tree.nodes = objects;
     return tree;
 }
 
@@ -84,7 +84,7 @@ TEST(AnimationGraphEditingUVETest, RemovingAStateFixesItsTransitions) {
     auto& object = *std::ranges::find(objects, machine, &Scene::AnimationGraphNodeUVE::id);
     object.entryState = 2U;
     const auto move = [](const std::uint32_t from, const std::uint32_t to) {
-        Scene::AnimationTransitionUVE transition;
+        Scene::AnimationGraphTransitionUVE transition;
         transition.fromState = from;
         transition.toState = to;
         return transition;
@@ -182,7 +182,7 @@ TEST(AnimationGraphEditingUVETest, TransitionsAreAddedReorderedAndDescribed) {
     ASSERT_TRUE(RemoveAnimationTransitionUVE(objects, machine, 0U));
     EXPECT_EQ(ObjectUVE(objects, machine).transitions.size(), 1U);
 
-    Scene::AnimationTransitionUVE transition;
+    Scene::AnimationGraphTransitionUVE transition;
     EXPECT_EQ(DescribeAnimationTransitionUVE(transition), "always");
     transition.conditions = {{Scene::AnimationConditionUVE::ParameterGreater, "speed", 0.5F},
                              {Scene::AnimationConditionUVE::ParameterFalse, "crouched", 0.0F}};
