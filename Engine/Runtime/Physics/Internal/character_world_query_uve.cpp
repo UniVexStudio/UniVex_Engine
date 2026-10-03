@@ -14,6 +14,7 @@
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
 #include "uve/math/aabb_uve.h"
+#include "uve/objects/3d/abstract_physics_objects_3d_uve.h"
 #include "uve/objects/3d/kinematic_3d_uve.h"
 #include "uve/physics/i_collision_system_uve.h"
 #include "uve/scene/i_scene_graph_uve.h"
@@ -401,6 +402,12 @@ std::size_t PushBodiesFromCharacterMoveUVE(
         }
         if (!entityManager.IsAliveUVE(contact.entity) ||
             !entityManager.HasComponentUVE<Scene::Rigid3DComponentUVE>(contact.entity)) {
+            continue;
+        }
+        // A body the simulation is not moving - a PhysicsObject3D kept as a static obstacle, or
+        // one taken out of the world - is not something a walk into it can push, however it came
+        // to be in the contact list.
+        if (!Scene::IsPhysicsObjectSimulatedUVE(entityManager, contact.entity)) {
             continue;
         }
         Scene::Rigid3DComponentUVE& rigidBody =
