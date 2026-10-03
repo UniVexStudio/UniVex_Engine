@@ -101,7 +101,7 @@ std::string DescribeAnimationGraphProblemUVE(const AnimationGraphComponentUVE& c
             return "node ids must be unique and non-zero";
         }
         if (node.kind > Kind::TimeSeek || !IsNameValidUVE(node.name)) {
-            return "an node has an invalid kind or name";
+            return "a node has an invalid kind or name";
         }
         outputs += node.kind == Kind::Output ? 1U : 0U;
     }
@@ -123,13 +123,13 @@ std::string DescribeAnimationGraphProblemUVE(const AnimationGraphComponentUVE& c
             }
             const auto found = indexById.find(input);
             if (found == indexById.end()) {
-                return label + ": an input is not connected to an node";
+                return label + ": an input is not connected to a node";
             }
             if (nodes[found->second].kind == Kind::Output) {
                 return label + ": the Output node cannot feed another node";
             }
             if (!used.insert(input).second) {
-                return label + ": an node feeds more than one input";
+                return label + ": a node feeds more than one input";
             }
         }
         if (!std::isfinite(node.position.x) || !std::isfinite(node.position.y) || !std::isfinite(node.speed) ||

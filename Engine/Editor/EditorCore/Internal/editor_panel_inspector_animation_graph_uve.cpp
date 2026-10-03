@@ -144,7 +144,7 @@ void EditorUVE::DrawAnimationParametersPropertyUVE(const Core::TypeMetadataEntry
         }
         ImGui::EndTable();
     } else if (parameters.empty()) {
-        ImGui::TextDisabled("No parameters. Add one for an node or transition to read.");
+        ImGui::TextDisabled("No parameters. Add one for a node or transition to read.");
     }
     if (removeIndex.has_value()) {
         parameters.erase(parameters.begin() + static_cast<std::ptrdiff_t>(*removeIndex));
@@ -458,7 +458,7 @@ void EditorUVE::DrawAnimationGraphPropertyUVE(const Core::TypeMetadataEntryUVE& 
                         break;
                 }
 
-                // Inputs: each slot picks an node that nothing else uses yet.
+                // Inputs: each slot picks a node that nothing else uses yet.
                 for (std::size_t slot = 0U; slot < node.inputs.size(); ++slot) {
                     ImGui::PushID(static_cast<int>(slot) + 1000);
                     std::string slotLabel = SlotLabelUVE(node.kind, slot);

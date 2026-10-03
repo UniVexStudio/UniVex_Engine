@@ -1,5 +1,20 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
+// The pose graph EVALUATION model. Not the authored animation graph.
+//
+// Two graph vocabularies live in this engine and they are easy to mistake for each other:
+//
+//   UVE::Scene::AnimationGraphComponentUVE  the authored graph - what the editor draws, what the
+//                                           serializer writes, 12 node kinds, asset GUIDs, N
+//                                           inputs, editor positions, blend spaces.
+//   UVE::Core::PoseGraphUVE (this file)     the evaluation model - 11 node kinds, string clipId,
+//                                           fixed inputA/inputB, no editor state.
+//
+// Each has kinds the other lacks: this one has Sync, Subtree and PoseCache; the authored graph has
+// BlendSpace1D/2D, Additive, Select, LayeredBlend and TimeSeek. Nothing converts between them yet.
+// Graph elements are called NODES in both - see the retired-name guard in
+// Engine/Tools/check_engine_vocabulary.py.
+
 #pragma once
 
 #include "uve/animation/animation_clip_uve.h"
@@ -50,8 +65,8 @@ enum class PoseGraphValidationCodeUVE : std::uint8_t {
     Valid = 0,
     EmptyTree,
     CapacityExceeded,
-    InvalidObject,
-    DuplicateObject,
+    InvalidNode,
+    DuplicateNode,
     UnknownInput,
     InvalidClip,
     UnknownClip,
@@ -62,7 +77,7 @@ enum class PoseGraphValidationCodeUVE : std::uint8_t {
 
 struct PoseGraphValidationResultUVE final {
     PoseGraphValidationCodeUVE code = PoseGraphValidationCodeUVE::EmptyTree;
-    std::uint32_t objectId = 0U;
+    std::uint32_t nodeId = 0U;
     std::string message;
 
     [[nodiscard]] bool IsValidUVE() const noexcept {
@@ -77,12 +92,12 @@ struct PoseGraphParameterUVE final {
 
 struct PoseGraphEvaluationResultUVE final {
     TransformPoseUVE pose;
-    bool usedOutputObject = false;
-    std::size_t evaluatedObjectCount = 0U;
+    bool usedOutputNode = false;
+    std::size_t evaluatedNodeCount = 0U;
     std::string message;
 
     [[nodiscard]] bool IsSuccessUVE() const noexcept {
-        return usedOutputObject && evaluatedObjectCount > 0U;
+        return usedOutputNode && evaluatedNodeCount > 0U;
     }
 };
 

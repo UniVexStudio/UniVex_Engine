@@ -1118,8 +1118,8 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
             });
         m_entityManager->ForEachUVE<Scene::AnimationGraphComponentUVE>(
             [&referenced](const Scene::EntityUVE, const Scene::AnimationGraphComponentUVE& tree) {
-                for (const Scene::AnimationGraphNodeUVE& object : tree.nodes) {
-                    referenced.insert(object.clip.value);
+                for (const Scene::AnimationGraphNodeUVE& node : tree.nodes) {
+                    referenced.insert(node.clip.value);
                 }
             });
         std::erase_if(m_animationClips, [&referenced](const auto& entry) { return !referenced.contains(entry.first); });
