@@ -229,9 +229,30 @@ void EditorUVE::DrawViewportPanelUVE() {
     ImGui::PopStyleVar();
 }
 
+void EditorUVE::ApplyViewportOverlaySlotUVE() {
+    const std::uint8_t next = m_retargetPreview.has_value()   ? 2U
+                              : m_entityEditSession.has_value() ? 1U
+                                                                : 0U;
+    if (next == m_activeViewportOverlaySlot) {
+        return;
+    }
+    auto& leaving = m_viewportOverlaySlots[m_activeViewportOverlaySlot];
+    leaving.state = m_viewportOverlayState;
+    leaving.hasState = true;
+    m_activeViewportOverlaySlot = next;
+
+    const auto& entering = m_viewportOverlaySlots[next];
+    if (entering.hasState) {
+        m_viewportOverlayState = entering.state;
+    }
+    // A first visit keeps whatever the previous view had, which is a better starting point than
+    // defaults; it is saved into this slot on the way out, so the two diverge from then on.
+}
+
 void EditorUVE::DrawViewportImageUVE() {
     const ImVec2 availableRegion = ImGui::GetContentRegionAvail();
     if (m_viewportPanelRenderer && availableRegion.x > 0.0F && availableRegion.y > 0.0F) {
+        ApplyViewportOverlaySlotUVE();
         m_viewportOverlayState.gameWorkspaceActive = m_activeWorkspace == EditorWorkspaceUVE::Game;
         m_viewportOverlayState.studioView = m_retargetPreview.has_value();
         m_viewportOverlayState.entityEditActive = m_entityEditSession.has_value();
