@@ -23,7 +23,7 @@
 #include "uve/component/animation_tree_component_uve.h"
 #include "uve/component/prefab_instance_component_uve.h"
 #include "uve/component/script_component_uve.h"
-#include "uve/core/uvscript_node_host_uve.h"
+#include "uve/core/uvscript_object_host_uve.h"
 #include "uve/uvscript/uvscript_compiler_uve.h"
 #include "uve/uvscript/uvscript_parser_uve.h"
 
@@ -104,7 +104,7 @@ bool EditorUVE::OpenEntityEditorUVE(const std::filesystem::path& assetPath) {
     }
     ClearHistoryUVE();
     m_sceneDirty = false;
-    // The script editor worked on scene nodes; the entity brings its own.
+    // The script editor worked on scene objects; the entity brings its own.
     CloseOpenUVScriptUVE();
     // Nothing runs on its own while an entity is edited: it is saved as authored.
     if (m_simulationControl != nullptr) {
@@ -143,7 +143,7 @@ bool EditorUVE::SaveEntityEditorUVE() {
     static_cast<void>(CommitComponentPropertyPreviewUVE());
     const Scene::EntityUVE root = GetEntityEditorRootUVE();
     if (root == Scene::kInvalidEntityUVE) {
-        m_contentStatusMessage = "An entity has exactly one root node: put the other top-level nodes under it, then save.";
+        m_contentStatusMessage = "An entity has exactly one root object: put the other top-level objects under it, then save.";
         return false;
     }
     const Asset::AssetGuidUVE guid = m_services->GetPrefabSystemUVE().SavePrefabUVE(
@@ -173,7 +173,7 @@ bool EditorUVE::RevertEntityEditorUVE() {
     }
     ClearHistoryUVE();
     m_sceneDirty = false;
-    // Node handles are new; the script text goes back to what is on disk.
+    // Object handles are new; the script text goes back to what is on disk.
     CloseOpenUVScriptUVE();
     m_entityEditSession->problems.clear();
     m_entityEditSession->compiled = false;
@@ -263,14 +263,14 @@ bool EditorUVE::HasEntityEditorUnsavedChangesUVE() const noexcept {
     return m_entityEditSession.has_value() && (m_sceneDirty || (m_openUVScript.has_value() && m_openUVScript->IsDirtyUVE()));
 }
 
-std::vector<Scene::EntityUVE> EditorUVE::CollectEntityEditorNodesUVE() {
-    std::vector<Scene::EntityUVE> nodes;
+std::vector<Scene::EntityUVE> EditorUVE::CollectEntityEditorObjectsUVE() {
+    std::vector<Scene::EntityUVE> objects;
     if (!m_entityEditSession.has_value()) {
-        return nodes;
+        return objects;
     }
     const Scene::EntityUVE sceneRoot = GetDocumentSceneRootUVE();
     if (sceneRoot == Scene::kInvalidEntityUVE) {
-        return nodes;
+        return objects;
     }
     // Depth first, children in their authored order: the order the Scene tree shows.
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
@@ -279,11 +279,11 @@ std::vector<Scene::EntityUVE> EditorUVE::CollectEntityEditorNodesUVE() {
     while (!pending.empty()) {
         const Scene::EntityUVE entity = pending.back();
         pending.pop_back();
-        nodes.push_back(entity);
+        objects.push_back(entity);
         std::vector<Scene::EntityUVE> children = m_services->GetSceneGraphUVE().GetChildrenUVE(entityManager, entity);
         pending.insert(pending.end(), children.rbegin(), children.rend());
     }
-    return nodes;
+    return objects;
 }
 
 std::size_t EditorUVE::CompileEntityEditorUVE() {
@@ -292,15 +292,15 @@ std::size_t EditorUVE::CompileEntityEditorUVE() {
     }
     static_cast<void>(CommitComponentPropertyPreviewUVE());
     std::vector<EntityCompileProblemUVE> problems;
-    const std::vector<Scene::EntityUVE> nodes = CollectEntityEditorNodesUVE();
+    const std::vector<Scene::EntityUVE> objects = CollectEntityEditorObjectsUVE();
     if (GetEntityEditorRootUVE() == Scene::kInvalidEntityUVE) {
         EntityCompileProblemUVE problem;
-        problem.message = nodes.empty() ? "The entity has no nodes." :
-                                          "An entity has exactly one root node: put the other top-level nodes under it.";
+        problem.message = objects.empty() ? "The entity has no objects." :
+                                          "An entity has exactly one root object: put the other top-level objects under it.";
         problems.push_back(std::move(problem));
     }
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    for (const Scene::EntityUVE entity : nodes) {
+    for (const Scene::EntityUVE entity : objects) {
         if (!entityManager.HasComponentUVE<Scene::ScriptComponentUVE>(entity)) {
             continue;
         }
@@ -310,7 +310,7 @@ std::size_t EditorUVE::CompileEntityEditorUVE() {
         }
         EntityCompileProblemUVE base;
         base.entity = entity;
-        base.nodeName = GetEntityDisplayLabelUVE(entity);
+        base.objectName = GetEntityDisplayLabelUVE(entity);
         base.scriptPath = path;
         if (!IsUVScriptFileUVE(path)) {
             base.message = "The script is not a UVScript file (.uvs).";
@@ -329,7 +329,7 @@ std::size_t EditorUVE::CompileEntityEditorUVE() {
             problems.push_back(std::move(base));
             continue;
         }
-        Core::UVScriptNodeHostUVE host(entityManager, nullptr, entity);
+        Core::UVScriptObjectHostUVE host(entityManager, nullptr, entity);
         for (const UVScript::DiagnosticUVE& diagnostic : UVScript::CompileUVScriptSourceUVE(*text, host).diagnostics) {
             EntityCompileProblemUVE problem = base;
             problem.at = diagnostic.at;
@@ -354,7 +354,7 @@ bool EditorUVE::HasEntityEditorCompiledUVE() const noexcept {
 std::vector<EditorUVE::EntitySignalRowUVE> EditorUVE::GetEntityEditorSignalsUVE() {
     std::vector<EntitySignalRowUVE> rows;
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    for (const Scene::EntityUVE entity : CollectEntityEditorNodesUVE()) {
+    for (const Scene::EntityUVE entity : CollectEntityEditorObjectsUVE()) {
         if (!entityManager.HasComponentUVE<Scene::ScriptComponentUVE>(entity)) {
             continue;
         }
@@ -368,12 +368,12 @@ std::vector<EditorUVE::EntitySignalRowUVE> EditorUVE::GetEntityEditorSignalsUVE(
         if (!text.has_value()) {
             continue;
         }
-        const std::string nodeName = GetEntityDisplayLabelUVE(entity);
+        const std::string objectName = GetEntityDisplayLabelUVE(entity);
         // Whatever parsed is listed, even while the file has mistakes elsewhere.
         for (const UVScript::HandlerUVE& handler : UVScript::ParseUVScriptUVE(*text).file.handlers) {
             EntitySignalRowUVE row;
             row.entity = entity;
-            row.nodeName = nodeName;
+            row.objectName = objectName;
             row.scriptPath = path;
             row.event = handler.event;
             if (!handler.params.empty()) {
@@ -470,7 +470,7 @@ void EditorUVE::DrawEntityEditorMiddleUVE(EntityEditSessionUVE& session) {
     ImGui::TextDisabled("- click one to go there");
     if (ImGui::BeginTable("##entity-problem-list", 3,
                           ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_NoSavedSettings)) {
-        ImGui::TableSetupColumn("Node");
+        ImGui::TableSetupColumn("Object");
         ImGui::TableSetupColumn("Where");
         ImGui::TableSetupColumn("Problem", ImGuiTableColumnFlags_WidthStretch);
         std::optional<std::size_t> clicked;
@@ -479,8 +479,8 @@ void EditorUVE::DrawEntityEditorMiddleUVE(EntityEditSessionUVE& session) {
             ImGui::PushID(static_cast<int>(index));
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
-            const std::string node = problem.nodeName.empty() ? std::string{"(entity)"} : problem.nodeName;
-            if (ImGui::Selectable(node.c_str(), false, ImGuiSelectableFlags_SpanAllColumns)) {
+            const std::string object = problem.objectName.empty() ? std::string{"(entity)"} : problem.objectName;
+            if (ImGui::Selectable(object.c_str(), false, ImGuiSelectableFlags_SpanAllColumns)) {
                 clicked = index;
             }
             ImGui::TableSetColumnIndex(1);
@@ -511,8 +511,8 @@ void EditorUVE::DrawEntityEditorDockUVE(EntityEditSessionUVE& session) {
     if (!ImGui::BeginTabBar("##entity-dock-tabs")) {
         return;
     }
-    // The animation tabs belong to their node: the Timeline shows while an AnimationPlayer is
-    // selected, the Anim Graph while an AnimationTree is. Anything else leaves Content alone.
+    // The animation tabs belong to their object: the Timeline shows while an AnimationSequencer is
+    // selected, the Anim Graph while an AnimationGraph is. Anything else leaves Content alone.
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
     const Scene::EntityUVE selected = m_selectedEntity;
     const bool selectedAlive = selected != Scene::kInvalidEntityUVE && entityManager.IsAliveUVE(selected);
@@ -585,7 +585,7 @@ void EditorUVE::DrawEntityEditorScriptingTabUVE() {
     const std::string path = alive && entityManager.HasComponentUVE<Scene::ScriptComponentUVE>(entity)
                                  ? entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(entity).scriptAssetPath
                                  : std::string{};
-    // Follow the selection: the tab always shows the selected node's script.
+    // Follow the selection: the tab always shows the selected object's script.
     if (alive && IsUVScriptFileUVE(path) && (!m_openUVScript.has_value() || m_openUVScript->entity != entity)) {
         if (!m_openUVScript.has_value() || !m_openUVScript->IsDirtyUVE() || m_openUVScript->path == path) {
             static_cast<void>(OpenUVScriptForEntityUVE(entity));
@@ -609,7 +609,7 @@ void EditorUVE::DrawEntityEditorScriptingTabUVE() {
         }
     };
     if (!alive) {
-        centred("Select a node to see its script.", true);
+        centred("Select an object to see its script.", true);
         return;
     }
     const std::string name = GetEntityDisplayLabelUVE(entity);
@@ -635,8 +635,8 @@ void EditorUVE::DrawEntityEditorScriptingTabUVE() {
     }
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort | ImGuiHoveredFlags_AllowWhenDisabled)) {
-        ImGui::SetTooltip(canCreate ? "Write scripts/%s.uvs for this node and open it here" :
-                                      "This node has no Script slot",
+        ImGui::SetTooltip(canCreate ? "Write scripts/%s.uvs for this object and open it here" :
+                                      "This object has no Script slot",
                           name.c_str());
     }
 }
@@ -645,18 +645,18 @@ void EditorUVE::DrawEntityEditorSignalsTabUVE() {
     const std::vector<EntitySignalRowUVE> rows = GetEntityEditorSignalsUVE();
     if (rows.empty()) {
         ImGui::Spacing();
-        ImGui::TextDisabled("No node answers to anything yet.");
-        ImGui::TextDisabled("Add an `on <event>:` block to a node's script (Scripting tab) and it is listed here.");
+        ImGui::TextDisabled("No object answers to anything yet.");
+        ImGui::TextDisabled("Add an `on <event>:` block to an object's script (Scripting tab) and it is listed here.");
         return;
     }
-    ImGui::TextDisabled("What each node answers to. Double-click a row to open the handler.");
+    ImGui::TextDisabled("What each object answers to. Double-click a row to open the handler.");
     if (!ImGui::BeginTable("##entity-signals", 4,
                            ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_ScrollY |
                                ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_NoSavedSettings)) {
         return;
     }
     ImGui::TableSetupScrollFreeze(0, 1);
-    ImGui::TableSetupColumn("Node");
+    ImGui::TableSetupColumn("Object");
     ImGui::TableSetupColumn("Event");
     ImGui::TableSetupColumn("Parameters", ImGuiTableColumnFlags_WidthStretch);
     ImGui::TableSetupColumn("Script");
@@ -667,9 +667,9 @@ void EditorUVE::DrawEntityEditorSignalsTabUVE() {
         ImGui::PushID(static_cast<int>(index));
         ImGui::TableNextRow();
         ImGui::TableSetColumnIndex(0);
-        // The node name only on its first row, so each node reads as one group.
-        const bool firstOfNode = index == 0U || rows[index - 1U].entity != row.entity;
-        if (ImGui::Selectable(firstOfNode ? row.nodeName.c_str() : "", m_selectedEntity == row.entity,
+        // The object name only on its first row, so each object reads as one group.
+        const bool firstOfObject = index == 0U || rows[index - 1U].entity != row.entity;
+        if (ImGui::Selectable(firstOfObject ? row.objectName.c_str() : "", m_selectedEntity == row.entity,
                               ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowDoubleClick) &&
             ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
             opened = index;
@@ -732,7 +732,7 @@ void EditorUVE::DrawEntityEditorWindowUVE() {
         static_cast<void>(CompileEntityEditorUVE());
     }
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
-        ImGui::SetTooltip("Check the whole entity: one root, and every node's script against its node (F7)");
+        ImGui::SetTooltip("Check the whole entity: one root, and every object's script against its object (F7)");
     }
     if (ImGui::IsKeyPressed(ImGuiKey_F7, false)) {
         static_cast<void>(CompileEntityEditorUVE());

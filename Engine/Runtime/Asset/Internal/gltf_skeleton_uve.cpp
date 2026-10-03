@@ -20,12 +20,12 @@ constexpr std::uint32_t kGlbMagicUVE = 0x46546C67U;
 constexpr std::uint32_t kGlbJsonChunkUVE = 0x4E4F534AU;
 constexpr std::uint32_t kMaximumJsonBytesUVE = 64U * 1024U * 1024U;
 
-[[nodiscard]] bool ReadFloatsUVE(const nlohmann::json& node, const char* const key, float* const out,
+[[nodiscard]] bool ReadFloatsUVE(const nlohmann::json& object, const char* const key, float* const out,
                                  const std::size_t count) {
-    if (!node.contains(key)) {
+    if (!object.contains(key)) {
         return true;
     }
-    const nlohmann::json& value = node.at(key);
+    const nlohmann::json& value = object.at(key);
     if (!value.is_array() || value.size() != count) {
         return false;
     }
@@ -82,48 +82,48 @@ std::optional<GltfSkeletonUVE> ParseGltfSkeletonUVE(const std::string_view json,
             document.at("skins").empty() || !document.contains("nodes") || !document.at("nodes").is_array()) {
             return std::nullopt;
         }
-        const nlohmann::json& nodes = document.at("nodes");
+        const nlohmann::json& objects = document.at("nodes");
         const nlohmann::json& skin = document.at("skins").at(0);
         if (!skin.is_object() || !skin.contains("joints") || !skin.at("joints").is_array() ||
             skin.at("joints").empty() || skin.at("joints").size() > maximumJoints) {
             return std::nullopt;
         }
 
-        // Every node's parent, from the children lists (glTF stores the hierarchy top-down).
-        std::vector<std::int64_t> nodeParent(nodes.size(), -1);
-        for (std::size_t index = 0U; index < nodes.size(); ++index) {
-            const nlohmann::json& node = nodes[index];
-            if (!node.is_object()) {
+        // Every object's parent, from the children lists (glTF stores the hierarchy top-down).
+        std::vector<std::int64_t> objectParent(objects.size(), -1);
+        for (std::size_t index = 0U; index < objects.size(); ++index) {
+            const nlohmann::json& object = objects[index];
+            if (!object.is_object()) {
                 return std::nullopt;
             }
-            if (node.contains("children")) {
-                for (const nlohmann::json& child : node.at("children")) {
-                    if (!child.is_number_unsigned() || child.get<std::size_t>() >= nodes.size()) {
+            if (object.contains("children")) {
+                for (const nlohmann::json& child : object.at("children")) {
+                    if (!child.is_number_unsigned() || child.get<std::size_t>() >= objects.size()) {
                         return std::nullopt;
                     }
-                    nodeParent[child.get<std::size_t>()] = static_cast<std::int64_t>(index);
+                    objectParent[child.get<std::size_t>()] = static_cast<std::int64_t>(index);
                 }
             }
         }
 
-        std::vector<std::size_t> jointNodes;
+        std::vector<std::size_t> jointObjects;
         std::unordered_set<std::size_t> jointSet;
         for (const nlohmann::json& joint : skin.at("joints")) {
-            if (!joint.is_number_unsigned() || joint.get<std::size_t>() >= nodes.size() ||
+            if (!joint.is_number_unsigned() || joint.get<std::size_t>() >= objects.size() ||
                 !jointSet.insert(joint.get<std::size_t>()).second) {
                 return std::nullopt;
             }
-            jointNodes.push_back(joint.get<std::size_t>());
+            jointObjects.push_back(joint.get<std::size_t>());
         }
-        // A joint's bone parent is its nearest ancestor that is also a joint; nodes in between
+        // A joint's bone parent is its nearest ancestor that is also a joint; objects in between
         // (an armature object, say) are not bones.
-        const auto jointParentNode = [&](std::size_t node) -> std::int64_t {
-            std::int64_t current = nodeParent[node];
-            for (std::size_t guard = 0U; current >= 0 && guard <= nodes.size(); ++guard) {
+        const auto jointParentObject = [&](std::size_t object) -> std::int64_t {
+            std::int64_t current = objectParent[object];
+            for (std::size_t guard = 0U; current >= 0 && guard <= objects.size(); ++guard) {
                 if (jointSet.count(static_cast<std::size_t>(current)) != 0U) {
                     return current;
                 }
-                current = nodeParent[static_cast<std::size_t>(current)];
+                current = objectParent[static_cast<std::size_t>(current)];
             }
             return -1;
         };
@@ -131,21 +131,21 @@ std::optional<GltfSkeletonUVE> ParseGltfSkeletonUVE(const std::string_view json,
         // Parents before children: a depth-first walk from the roots, in the skin's own order.
         std::unordered_map<std::size_t, std::vector<std::size_t>> children;
         std::vector<std::size_t> roots;
-        for (const std::size_t node : jointNodes) {
-            const std::int64_t parent = jointParentNode(node);
+        for (const std::size_t object : jointObjects) {
+            const std::int64_t parent = jointParentObject(object);
             if (parent < 0) {
-                roots.push_back(node);
+                roots.push_back(object);
             } else {
-                children[static_cast<std::size_t>(parent)].push_back(node);
+                children[static_cast<std::size_t>(parent)].push_back(object);
             }
         }
         GltfSkeletonUVE skeleton;
         skeleton.skinCount = document.at("skins").size();
         std::unordered_map<std::size_t, std::int32_t> jointIndex;
         std::unordered_set<std::string> usedNames;
-        const std::function<bool(std::size_t, std::int32_t)> emit = [&](const std::size_t node,
+        const std::function<bool(std::size_t, std::int32_t)> emit = [&](const std::size_t object,
                                                                         const std::int32_t parent) {
-            const nlohmann::json& source = nodes[node];
+            const nlohmann::json& source = objects[object];
             GltfJointUVE joint;
             std::string name = source.value("name", std::string{"Bone"});
             if (name.empty()) {
@@ -175,8 +175,8 @@ std::optional<GltfSkeletonUVE> ParseGltfSkeletonUVE(const std::string_view json,
             }
             const auto self = static_cast<std::int32_t>(skeleton.joints.size());
             skeleton.joints.push_back(std::move(joint));
-            jointIndex[node] = self;
-            for (const std::size_t child : children[node]) {
+            jointIndex[object] = self;
+            for (const std::size_t child : children[object]) {
                 if (!emit(child, self)) {
                     return false;
                 }
@@ -188,8 +188,8 @@ std::optional<GltfSkeletonUVE> ParseGltfSkeletonUVE(const std::string_view json,
                 return std::nullopt;
             }
         }
-        // A cycle in the node hierarchy leaves joints unreachable from any root.
-        if (skeleton.joints.size() != jointNodes.size()) {
+        // A cycle in the object hierarchy leaves joints unreachable from any root.
+        if (skeleton.joints.size() != jointObjects.size()) {
             return std::nullopt;
         }
         return skeleton;

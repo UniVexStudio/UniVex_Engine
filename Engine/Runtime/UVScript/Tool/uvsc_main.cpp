@@ -2,9 +2,9 @@
 
 // uvsc: compiles a .uvs script to C++23 for a release build.
 //
-//     uvsc --host <node.uvhost> --out <script.uvs.cpp> <script.uvs>
+//     uvsc --host <object.uvhost> --out <script.uvs.cpp> <script.uvs>
 //
-// The host file describes what the node offers (see DescribedHostUVE). Problems are printed as
+// The host file describes what the object offers (see DescribedHostUVE). Problems are printed as
 // `file:line:column: message` and the exit code is non-zero; nothing is written then.
 
 #include <filesystem>
@@ -31,7 +31,7 @@ namespace {
 }
 
 int UsageUVE() {
-    std::cerr << "usage: uvsc --host <node.uvhost> --out <script.uvs.cpp> <script.uvs>\n";
+    std::cerr << "usage: uvsc --host <object.uvhost> --out <script.uvs.cpp> <script.uvs>\n";
     return 2;
 }
 

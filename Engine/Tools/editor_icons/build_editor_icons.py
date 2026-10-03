@@ -29,7 +29,7 @@ from gallery import write_gallery  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 ICON_ROOT = REPO_ROOT / "Engine" / "Editor" / "EditorCore" / "assets" / "icons"
-GROUPS = (icons.NODES, icons.NODE_CATEGORIES, icons.CONTENT_TYPES)
+GROUPS = (icons.OBJECTS, icons.OBJECT_CATEGORIES, icons.CONTENT_TYPES)
 RASTER_SIZE = 64
 CHROMIUM_CANDIDATES = ("headless_shell", "chromium", "chromium-browser", "google-chrome")
 

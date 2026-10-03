@@ -13,7 +13,7 @@
 namespace UVE::Asset {
 
 /// A skeletal clip is one track per bone, so the payload bound is sized for a long take on a full
-/// humanoid (about 70 bones, 30 fps, a couple of minutes) rather than for one node's motion.
+/// humanoid (about 70 bones, 30 fps, a couple of minutes) rather than for one object's motion.
 inline constexpr std::size_t kMaximumAnimationAssetPayloadBytesUVE = 96U * 1024U * 1024U;
 inline constexpr std::size_t kMaximumAnimationAssetSamplesUVE = 4096U;
 inline constexpr std::size_t kMaximumAnimationAssetEventsUVE = 1024U;
@@ -59,7 +59,7 @@ struct AnimationAssetRestBoneUVE final {
     [[nodiscard]] bool operator==(const AnimationAssetRestBoneUVE&) const noexcept = default;
 };
 
-/// A clip moves a node (`samples`), a skeleton (`bones`), or both. At least one of them has
+/// A clip moves an object (`samples`), a skeleton (`bones`), or both. At least one of them has
 /// samples; every track's times are sorted and inside [0, durationSeconds].
 struct AnimationClipAssetUVE final {
     std::string clipId;
@@ -82,7 +82,7 @@ struct AnimationClipAssetUVE final {
 [[nodiscard]] bool IsAnimationClipAssetValidUVE(const AnimationClipAssetUVE& clip) noexcept;
 
 /// Loads a `.uvanim` envelope: the `uve-animation-v3` JSON payload (v2 plus the rest skeleton and
-/// the conformed flag), the `uve-animation-v2` one, or the older `uve-animation-v1` (a node track
+/// the conformed flag), the `uve-animation-v2` one, or the older `uve-animation-v1` (an object track
 /// with no bones). Saving writes v3 only when the clip has a rest skeleton or is conformed, so a
 /// clip with neither is byte-for-byte what it always was.
 /// Output is published only after envelope, schema, bounds, and finite-pose validation succeed.

@@ -5,8 +5,8 @@
 // This used to be two functions that disagreed. GizmoRenderer::ScaleForPixelRadius had an
 // orthographic branch; WorldPerPixelAtPivot did not, and both derived their answer from
 // camera.Distance() - the eye-to-ORBIT-TARGET distance - even though the transform gizmo is drawn
-// at the selected node's own pivot, which is only at the orbit target immediately after a focus.
-// Select a node and then orbit, and the widget was sized for a depth it no longer sits at: too
+// at the selected object's own pivot, which is only at the orbit target immediately after a focus.
+// Select an object and then orbit, and the widget was sized for a depth it no longer sits at: too
 // large past the pivot, too small in front of it. The same number converts pixel widths into
 // gizmo units, so the picking regions drifted by exactly the same factor and what was grabbable
 // stopped matching what was drawn.

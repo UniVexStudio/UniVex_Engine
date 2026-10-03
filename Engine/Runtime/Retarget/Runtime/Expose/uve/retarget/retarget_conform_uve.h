@@ -103,7 +103,7 @@ struct MeshDistortionUVE final {
 /// humanoid's names and frames; bones conforming added follow their parents (IK targets follow
 /// what they follow). Every bone of the conformed skeleton gets a track, sampled on the clip's own
 /// frames; a bone that never moves keeps one sample. Scale is folded away (metres, scale 1). The
-/// clip's node track and events are kept.
+/// clip's object track and events are kept.
 [[nodiscard]] std::optional<Asset::AnimationClipAssetUVE> ConformClipUVE(const Asset::AnimationClipAssetUVE& clip,
                                                                         const RetargetSkeletonUVE& rig,
                                                                         const ConformedRigUVE& conformed,

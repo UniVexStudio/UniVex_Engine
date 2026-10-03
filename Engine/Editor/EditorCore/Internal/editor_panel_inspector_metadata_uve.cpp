@@ -138,7 +138,7 @@ constexpr std::array<std::string_view, 8> kBlockPropertyDrawerIdsUVE{
     "multiline-text",
     "script-slot",
     "script-exports",
-    "node-metadata",
+    "object-metadata",
     "skeleton-source",
     "skeleton-bones",
 };
@@ -249,8 +249,8 @@ int TextInputCallbackUVE(ImGuiInputTextCallbackData* const data) {
 
 void EditorUVE::RegisterMetadataInspectorDrawersUVE() {
     // Registration order is the Inspector's section order: by the declared section key, then by
-    // type id for a stable result. That is how the properties every node has in common end up
-    // below whatever the node itself brings, without this loop knowing which are which.
+    // type id for a stable result. That is how the properties every object has in common end up
+    // below whatever the object itself brings, without this loop knowing which are which.
     std::vector<const TypeMetadataEntryUVE*> entries;
     const Core::TypeMetadataRegistryUVE& registry = Scene::GetSceneComponentMetadataRegistryUVE();
     for (const TypeMetadataEntryUVE& snapshotEntry : registry.GetSnapshotUVE().entries) {
@@ -317,13 +317,13 @@ void EditorUVE::RegisterMetadataInspectorDrawersUVE() {
                 DrawMetadataComponentDrawerUVE(entity, *entry, nested);
             },
         }));
-        // The class chain, spelled out: Node3D's own sections under a "Node3D" heading and the
-        // common Node section under "Node", so the Inspector reads as the node's ancestry.
-        if (entry->order >= Scene::kSectionOrderNodeCommonUVE) {
-            static_cast<void>(m_inspectorDrawerRegistry.SetDrawerGroupUVE(DrawerIdForTypeIdUVE(entry->typeId), "Node"));
+        // The class chain, spelled out: Object3D's own sections under a "Object3D" heading and the
+        // common Object section under "Object", so the Inspector reads as the object's ancestry.
+        if (entry->order >= Scene::kSectionOrderObjectCommonUVE) {
+            static_cast<void>(m_inspectorDrawerRegistry.SetDrawerGroupUVE(DrawerIdForTypeIdUVE(entry->typeId), "Object"));
         } else if (entry->order >= Scene::kSectionOrderTransformUVE) {
             static_cast<void>(
-                m_inspectorDrawerRegistry.SetDrawerGroupUVE(DrawerIdForTypeIdUVE(entry->typeId), "Node3D"));
+                m_inspectorDrawerRegistry.SetDrawerGroupUVE(DrawerIdForTypeIdUVE(entry->typeId), "Object3D"));
         }
     }
     if (!transformRegistered) {
@@ -644,14 +644,14 @@ void EditorUVE::DrawMetadataPropertyRowUVE(const TypeMetadataEntryUVE& entry,
         }
     } else if (property.typeId == Scene::kPropertyTypeEntityUVE) {
         // Same reasoning as an asset guid: an entity reference is picked, not typed. The list is
-        // every document node with a transform - the only nodes a reference can act on - in
+        // every document object with a transform - the only objects a reference can act on - in
         // outliner order, minus the selection itself.
         Scene::EntityUVE value = Scene::kInvalidEntityUVE;
         property.getValue(instance, &value);
         const Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
         const bool dangling = value != Scene::kInvalidEntityUVE && !IsDocumentEntityUVE(value);
         const std::string preview = value == Scene::kInvalidEntityUVE ? std::string{"(default)"}
-                                    : dangling                        ? std::string{"(missing node)"}
+                                    : dangling                        ? std::string{"(missing object)"}
                                                                       : GetEntityDisplayLabelUVE(value);
         if (ImGui::BeginCombo("##value", preview.c_str())) {
             if (ImGui::Selectable("(default)", value == Scene::kInvalidEntityUVE) &&
@@ -792,8 +792,8 @@ bool EditorUVE::DrawCustomPropertyUVE(const TypeMetadataEntryUVE& entry, const T
         DrawScriptExportsPropertyUVE(entry, property, instance);
         return true;
     }
-    if (property.customDrawerId == "node-metadata") {
-        DrawNodeMetadataPropertyUVE(entry, property, instance);
+    if (property.customDrawerId == "object-metadata") {
+        DrawObjectMetadataPropertyUVE(entry, property, instance);
         return true;
     }
     if (property.customDrawerId == "skeleton-source") {

@@ -15,7 +15,7 @@ namespace UVE::Scene {
 /// hand-written "am I allowed to run right now" check, and each one gets it slightly wrong.
 enum class ProcessModeUVE : std::uint8_t {
     /// Take the parent's answer, or Pausable at the top of the hierarchy. The default, so a whole
-    /// subtree is switched by its root rather than node by node.
+    /// subtree is switched by its root rather than object by object.
     Inherit = 0,
     /// Runs while the simulation is running, stops while it is paused. What almost everything in a
     /// level wants.

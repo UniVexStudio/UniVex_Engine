@@ -1,4 +1,4 @@
-entity Player : CharacterBody3D
+entity Player : Character3D
 export speed: float = 6.0
 export jump = 2.0 m
 var jumps = 0

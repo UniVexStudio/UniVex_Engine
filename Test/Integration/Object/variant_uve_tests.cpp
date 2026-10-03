@@ -30,8 +30,8 @@ TEST(VariantUVETest, MakeDefaultUVE_StoresTheTypeItWasAskedForWithAMatchingValue
         EXPECT_EQ(value.GetTypeUVE(), type) << GetVariantTypeNameUVE(type);
         EXPECT_TRUE(IsVariantWithinBoundsUVE(value));
     }
-    // Types that share a representation stay distinct: a node reference is not a plain string.
-    EXPECT_NE(VariantUVE::MakeTextUVE(VariantTypeUVE::Node, "Player"),
+    // Types that share a representation stay distinct: an object reference is not a plain string.
+    EXPECT_NE(VariantUVE::MakeTextUVE(VariantTypeUVE::Object, "Player"),
               VariantUVE::MakeTextUVE(VariantTypeUVE::String, "Player"));
     EXPECT_EQ(VariantUVE::MakeDefaultUVE(VariantTypeUVE::Quaternion).TryGetUVE<Math::QuaternionUVE>()->w, 1.0F);
     EXPECT_EQ(VariantUVE::MakeDefaultUVE(VariantTypeUVE::Color).TryGetUVE<VariantColorUVE>()->a, 1.0F);
@@ -81,7 +81,7 @@ TEST(VariantUVETest, TryConvertVariantUVE_ReportsWhetherAnythingWasLost) {
     EXPECT_FALSE(result.lossless);
 
     // Some pairs have no meaningful conversion at all, and say so instead of inventing one.
-    EXPECT_FALSE(TryConvertVariantUVE(VariantUVE::MakeDefaultUVE(VariantTypeUVE::Color), VariantTypeUVE::NodePath)
+    EXPECT_FALSE(TryConvertVariantUVE(VariantUVE::MakeDefaultUVE(VariantTypeUVE::Color), VariantTypeUVE::ObjectPath)
                      .has_value());
     EXPECT_FALSE(TryConvertVariantUVE(VariantUVE::MakeDefaultUVE(VariantTypeUVE::Dictionary), VariantTypeUVE::Int)
                      .has_value());

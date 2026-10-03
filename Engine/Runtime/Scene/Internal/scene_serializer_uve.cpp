@@ -41,10 +41,10 @@
 #include "uve/component/canvas_component_uve.h"
 #include "uve/component/character_controller_component_uve.h"
 #include "uve/component/collider_component_uve.h"
-#include "uve/nodes/3d/all_nodes_3d_uve.h"
-#include "uve/scene/nodes/scene_node_type_uve.h"
-#include "uve/scene/nodes/scene_folder_uve.h"
-#include "uve/scene/nodes/scene_root_uve.h"
+#include "uve/objects/3d/all_objects_3d_uve.h"
+#include "uve/scene/objects/scene_object_type_uve.h"
+#include "uve/scene/objects/scene_folder_uve.h"
+#include "uve/scene/objects/scene_root_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/light_component_uve.h"
 #include "uve/component/light_emitter_component_uve.h"
@@ -52,7 +52,7 @@
 #include "uve/component/name_component_uve.h"
 #include "uve/component/auto_translate_component_uve.h"
 #include "uve/component/editor_description_component_uve.h"
-#include "uve/component/node_metadata_component_uve.h"
+#include "uve/component/object_metadata_component_uve.h"
 #include "uve/component/process_component_uve.h"
 #include "uve/component/thread_group_component_uve.h"
 #include "uve/component/particle_emitter_component_uve.h"
@@ -205,14 +205,14 @@ namespace {
                               {"type", static_cast<std::uint8_t>(parameter.type)},
                               {"value", parameter.value}});
     }
-    nlohmann::json nodes = nlohmann::json::array();
-    for (const AnimationGraphNodeUVE& node : component.nodes) {
+    nlohmann::json objects = nlohmann::json::array();
+    for (const AnimationGraphObjectUVE& object : component.objects) {
         nlohmann::json statePositions = nlohmann::json::array();
-        for (const Math::Vector2UVE& at : node.statePositions) {
+        for (const Math::Vector2UVE& at : object.statePositions) {
             statePositions.push_back({at.x, at.y});
         }
         nlohmann::json transitions = nlohmann::json::array();
-        for (const AnimationTransitionUVE& transition : node.transitions) {
+        for (const AnimationTransitionUVE& transition : object.transitions) {
             nlohmann::json conditions = nlohmann::json::array();
             for (const AnimationTransitionConditionUVE& test : transition.conditions) {
                 conditions.push_back({{"condition", static_cast<std::uint8_t>(test.condition)},
@@ -230,41 +230,41 @@ namespace {
                                    {"enabled", transition.enabled}});
         }
         nlohmann::json blendPoints = nlohmann::json::array();
-        for (const AnimationBlendPointUVE& point : node.blendPoints) {
+        for (const AnimationBlendPointUVE& point : object.blendPoints) {
             blendPoints.push_back({{"position", {point.position.x, point.position.y}},
                                    {"clip", point.clip.value},
                                    {"speed", point.speed},
                                    {"loop", point.loop}});
         }
-        nodes.push_back({{"id", node.id},
-                         {"kind", static_cast<std::uint8_t>(node.kind)},
-                         {"name", node.name},
-                         {"position", {node.position.x, node.position.y}},
-                         {"inputs", node.inputs},
-                         {"clip", node.clip.value},
-                         {"loop", node.loop},
-                         {"speed", node.speed},
-                         {"parameter", node.parameter},
-                         {"value", node.value},
-                         {"fadeSeconds", node.fadeSeconds},
-                         {"sync", node.sync},
-                         {"blendMode", static_cast<std::uint8_t>(node.blendMode)},
-                         {"smoothingSeconds", node.smoothingSeconds},
+        objects.push_back({{"id", object.id},
+                         {"kind", static_cast<std::uint8_t>(object.kind)},
+                         {"name", object.name},
+                         {"position", {object.position.x, object.position.y}},
+                         {"inputs", object.inputs},
+                         {"clip", object.clip.value},
+                         {"loop", object.loop},
+                         {"speed", object.speed},
+                         {"parameter", object.parameter},
+                         {"value", object.value},
+                         {"fadeSeconds", object.fadeSeconds},
+                         {"sync", object.sync},
+                         {"blendMode", static_cast<std::uint8_t>(object.blendMode)},
+                         {"smoothingSeconds", object.smoothingSeconds},
                          {"blendPoints", std::move(blendPoints)},
-                         {"parameterY", node.parameterY},
-                         {"valueY", node.valueY},
-                         {"bones", node.bones},
-                         {"restart", node.restart},
-                         {"areaMin", {node.areaMin.x, node.areaMin.y}},
-                         {"areaMax", {node.areaMax.x, node.areaMax.y}},
-                         {"entryState", node.entryState},
+                         {"parameterY", object.parameterY},
+                         {"valueY", object.valueY},
+                         {"bones", object.bones},
+                         {"restart", object.restart},
+                         {"areaMin", {object.areaMin.x, object.areaMin.y}},
+                         {"areaMax", {object.areaMax.x, object.areaMax.y}},
+                         {"entryState", object.entryState},
                          {"transitions", std::move(transitions)},
                          {"statePositions", std::move(statePositions)},
-                         {"entryPosition", {node.entryPosition.x, node.entryPosition.y}},
-                         {"anyPosition", {node.anyPosition.x, node.anyPosition.y}}});
+                         {"entryPosition", {object.entryPosition.x, object.entryPosition.y}},
+                         {"anyPosition", {object.anyPosition.x, object.anyPosition.y}}});
     }
     return {{"parameters", std::move(parameters)},
-            {"nodes", std::move(nodes)}};
+            {"nodes", std::move(objects)}};
 }
 
 /// Reads a tree. A tree saved as the earlier two-clip blend becomes the same thing as a graph:
@@ -273,29 +273,29 @@ namespace {
     AnimationTreeComponentUVE tree;
     if (!json.contains("nodes") && (json.contains("clipA") || json.contains("clipB"))) {
         tree.parameters = {AnimationParameterUVE{"blend", AnimationParameterTypeUVE::Float, json.value("blend", 0.0F)}};
-        const auto makeNode = [](const std::uint32_t id, const AnimationGraphNodeKindUVE kind, std::string name) {
-            AnimationGraphNodeUVE node;
-            node.id = id;
-            node.kind = kind;
-            node.name = std::move(name);
-            return node;
+        const auto makeObject = [](const std::uint32_t id, const AnimationGraphObjectKindUVE kind, std::string name) {
+            AnimationGraphObjectUVE object;
+            object.id = id;
+            object.kind = kind;
+            object.name = std::move(name);
+            return object;
         };
-        AnimationGraphNodeUVE output = makeNode(1U, AnimationGraphNodeKindUVE::Output, "Output");
+        AnimationGraphObjectUVE output = makeObject(1U, AnimationGraphObjectKindUVE::Output, "Output");
         output.inputs = {2U};
         output.position = Math::Vector2UVE{480.0F, 0.0F};
-        AnimationGraphNodeUVE blend = makeNode(2U, AnimationGraphNodeKindUVE::Blend2, "Blend");
+        AnimationGraphObjectUVE blend = makeObject(2U, AnimationGraphObjectKindUVE::Blend2, "Blend");
         blend.inputs = {3U, 4U};
         blend.parameter = "blend";
         blend.position = Math::Vector2UVE{240.0F, 0.0F};
         const float speed = json.value("speed", 1.0F);
-        AnimationGraphNodeUVE clipA = makeNode(3U, AnimationGraphNodeKindUVE::Clip, "Clip A");
+        AnimationGraphObjectUVE clipA = makeObject(3U, AnimationGraphObjectKindUVE::Clip, "Clip A");
         clipA.clip = Asset::AssetGuidUVE{json.value("clipA", std::uint64_t{0})};
         clipA.speed = speed;
-        AnimationGraphNodeUVE clipB = makeNode(4U, AnimationGraphNodeKindUVE::Clip, "Clip B");
+        AnimationGraphObjectUVE clipB = makeObject(4U, AnimationGraphObjectKindUVE::Clip, "Clip B");
         clipB.clip = Asset::AssetGuidUVE{json.value("clipB", std::uint64_t{0})};
         clipB.speed = speed;
         clipB.position = Math::Vector2UVE{0.0F, 120.0F};
-        tree.nodes = {output, blend, clipA, clipB};
+        tree.objects = {output, blend, clipA, clipB};
         return tree;
     }
     tree.parameters.clear();
@@ -306,41 +306,41 @@ namespace {
                                                         item.value("value", 0.0F)});
     }
     if (json.contains("nodes")) {
-        tree.nodes.clear();
+        tree.objects.clear();
         // Older saves placed a blend space's animations on its inputs, positioned by "points" (1D)
-        // or "points2D"; they are folded into its own points once every node is read.
+        // or "points2D"; they are folded into its own points once every object is read.
         std::vector<std::vector<Math::Vector2UVE>> legacyPositions;
         std::vector<std::uint32_t> fitArea; // ids of spaces saved before they had an area
         for (const nlohmann::json& item : json.at("nodes")) {
-            AnimationGraphNodeUVE node;
-            node.id = item.at("id").get<std::uint32_t>();
-            node.kind = static_cast<AnimationGraphNodeKindUVE>(item.at("kind").get<std::uint8_t>());
-            node.name = item.value("name", std::string{});
+            AnimationGraphObjectUVE object;
+            object.id = item.at("id").get<std::uint32_t>();
+            object.kind = static_cast<AnimationGraphObjectKindUVE>(item.at("kind").get<std::uint8_t>());
+            object.name = item.value("name", std::string{});
             const std::vector<float> position = item.value("position", std::vector<float>{0.0F, 0.0F});
             if (position.size() == 2U) {
-                node.position = Math::Vector2UVE{position[0], position[1]};
+                object.position = Math::Vector2UVE{position[0], position[1]};
             }
-            node.inputs = item.value("inputs", std::vector<std::uint32_t>{});
-            node.clip = Asset::AssetGuidUVE{item.value("clip", std::uint64_t{0})};
-            node.loop = item.value("loop", true);
-            node.speed = item.value("speed", 1.0F);
-            node.parameter = item.value("parameter", std::string{});
-            node.value = item.value("value", 0.5F);
-            node.fadeSeconds = item.value("fadeSeconds", 0.2F);
-            node.sync = item.value("sync", false);
-            node.blendMode = static_cast<AnimationBlendModeUVE>(item.value("blendMode", std::uint8_t{0}));
-            node.smoothingSeconds = item.value("smoothingSeconds", 0.0F);
-            node.parameterY = item.value("parameterY", std::string{});
-            node.valueY = item.value("valueY", 0.0F);
-            node.bones = item.value("bones", std::vector<std::string>{});
-            node.restart = item.value("restart", true);
+            object.inputs = item.value("inputs", std::vector<std::uint32_t>{});
+            object.clip = Asset::AssetGuidUVE{item.value("clip", std::uint64_t{0})};
+            object.loop = item.value("loop", true);
+            object.speed = item.value("speed", 1.0F);
+            object.parameter = item.value("parameter", std::string{});
+            object.value = item.value("value", 0.5F);
+            object.fadeSeconds = item.value("fadeSeconds", 0.2F);
+            object.sync = item.value("sync", false);
+            object.blendMode = static_cast<AnimationBlendModeUVE>(item.value("blendMode", std::uint8_t{0}));
+            object.smoothingSeconds = item.value("smoothingSeconds", 0.0F);
+            object.parameterY = item.value("parameterY", std::string{});
+            object.valueY = item.value("valueY", 0.0F);
+            object.bones = item.value("bones", std::vector<std::string>{});
+            object.restart = item.value("restart", true);
             const auto readPair = [&item](const char* key, Math::Vector2UVE& out) {
                 if (const auto found = item.find(key); found != item.end() && found->is_array() && found->size() == 2U) {
                     out = Math::Vector2UVE{(*found)[0].get<float>(), (*found)[1].get<float>()};
                 }
             };
-            readPair("areaMin", node.areaMin);
-            readPair("areaMax", node.areaMax);
+            readPair("areaMin", object.areaMin);
+            readPair("areaMax", object.areaMax);
             std::vector<Math::Vector2UVE> legacy;
             for (const float x : item.value("points", std::vector<float>{})) {
                 legacy.push_back(Math::Vector2UVE{x, 0.0F});
@@ -354,7 +354,7 @@ namespace {
             }
             legacyPositions.push_back(std::move(legacy));
             if (!item.contains("areaMin")) {
-                fitArea.push_back(node.id);
+                fitArea.push_back(object.id);
             }
             if (const auto found = item.find("blendPoints"); found != item.end() && found->is_array()) {
                 for (const auto& pointJson : *found) {
@@ -366,10 +366,10 @@ namespace {
                     point.clip = Asset::AssetGuidUVE{pointJson.value("clip", std::uint64_t{0})};
                     point.speed = pointJson.value("speed", 1.0F);
                     point.loop = pointJson.value("loop", true);
-                    node.blendPoints.push_back(point);
+                    object.blendPoints.push_back(point);
                 }
             }
-            node.entryState = item.value("entryState", std::uint32_t{0});
+            object.entryState = item.value("entryState", std::uint32_t{0});
             for (const nlohmann::json& transitionJson : item.value("transitions", nlohmann::json::array())) {
                 AnimationTransitionUVE transition;
                 transition.fromState = transitionJson.value("from", kAnyAnimationStateUVE);
@@ -397,34 +397,34 @@ namespace {
                 transition.interruptible = transitionJson.value("interruptible", true);
                 transition.enabled = transitionJson.value("enabled", true);
                 transition.fadeSeconds = transitionJson.value("fadeSeconds", 0.2F);
-                node.transitions.push_back(std::move(transition));
+                object.transitions.push_back(std::move(transition));
             }
             for (const nlohmann::json& at : item.value("statePositions", nlohmann::json::array())) {
                 if (at.is_array() && at.size() == 2U) {
-                    node.statePositions.push_back(Math::Vector2UVE{at[0].get<float>(), at[1].get<float>()});
+                    object.statePositions.push_back(Math::Vector2UVE{at[0].get<float>(), at[1].get<float>()});
                 }
             }
-            readPair("entryPosition", node.entryPosition);
-            readPair("anyPosition", node.anyPosition);
-            tree.nodes.push_back(std::move(node));
+            readPair("entryPosition", object.entryPosition);
+            readPair("anyPosition", object.anyPosition);
+            tree.objects.push_back(std::move(object));
         }
-        static_cast<void>(MigrateBlendSpaceInputsUVE(tree.nodes, legacyPositions));
+        static_cast<void>(MigrateBlendSpaceInputsUVE(tree.objects, legacyPositions));
         // A space saved before it had an area gets one around its points.
-        for (AnimationGraphNodeUVE& node : tree.nodes) {
-            if (std::find(fitArea.begin(), fitArea.end(), node.id) == fitArea.end() || node.blendPoints.empty() ||
-                (node.kind != AnimationGraphNodeKindUVE::BlendSpace1D && node.kind != AnimationGraphNodeKindUVE::BlendSpace2D)) {
+        for (AnimationGraphObjectUVE& object : tree.objects) {
+            if (std::find(fitArea.begin(), fitArea.end(), object.id) == fitArea.end() || object.blendPoints.empty() ||
+                (object.kind != AnimationGraphObjectKindUVE::BlendSpace1D && object.kind != AnimationGraphObjectKindUVE::BlendSpace2D)) {
                 continue;
             }
-            Math::Vector2UVE lo = node.blendPoints.front().position;
+            Math::Vector2UVE lo = object.blendPoints.front().position;
             Math::Vector2UVE hi = lo;
-            for (const AnimationBlendPointUVE& point : node.blendPoints) {
+            for (const AnimationBlendPointUVE& point : object.blendPoints) {
                 lo = Math::Vector2UVE{std::min(lo.x, point.position.x), std::min(lo.y, point.position.y)};
                 hi = Math::Vector2UVE{std::max(hi.x, point.position.x), std::max(hi.y, point.position.y)};
             }
             const float marginX = std::max((hi.x - lo.x) * 0.15F, 0.5F);
             const float marginY = std::max((hi.y - lo.y) * 0.15F, 0.5F);
-            node.areaMin = Math::Vector2UVE{lo.x - marginX, lo.y - marginY};
-            node.areaMax = Math::Vector2UVE{hi.x + marginX, hi.y + marginY};
+            object.areaMin = Math::Vector2UVE{lo.x - marginX, lo.y - marginY};
+            object.areaMax = Math::Vector2UVE{hi.x + marginX, hi.y + marginY};
         }
     }
     return tree;
@@ -777,12 +777,12 @@ template <typename VectorT>
     return value;
 }
 
-[[nodiscard]] nlohmann::json ToJsonUVE(const NodeMetadataComponentUVE& component) {
+[[nodiscard]] nlohmann::json ToJsonUVE(const ObjectMetadataComponentUVE& component) {
     // An array of key/value objects rather than one JSON object, so authored order survives a
     // round trip - a JSON object's member order is not something a reader is obliged to keep, and
     // losing it would reorder an inspector's rows and dirty a scene file for no reason.
     nlohmann::json entries = nlohmann::json::array();
-    for (const NodeMetadataEntryUVE& entry : component.entries) {
+    for (const ObjectMetadataEntryUVE& entry : component.entries) {
         entries.push_back({{"key", entry.key}, {"value", VariantToJsonUVE(entry.value)}});
     }
     return {{"entries", std::move(entries)}};
@@ -805,12 +805,12 @@ template <typename VectorT>
 }
 
 // The type is written by its stable id ("box_mesh_3d"), never the enum's number, so reordering
-// the enum can never retype a saved node.
-[[nodiscard]] nlohmann::json ToJsonUVE(const SceneNodeTypeComponentUVE& value) {
-    return {{"type", std::string{Nodes::GetSceneNodeTypeIdUVE(value.kind)}}};
+// the enum can never retype a saved object.
+[[nodiscard]] nlohmann::json ToJsonUVE(const SceneObjectTypeComponentUVE& value) {
+    return {{"type", std::string{Objects::GetSceneObjectTypeIdUVE(value.kind)}}};
 }
 
-[[nodiscard]] nlohmann::json ToJsonUVE(const RayCast3DNodeComponentUVE& value) {
+[[nodiscard]] nlohmann::json ToJsonUVE(const RayCast3DComponentUVE& value) {
     nlohmann::json exclusions = nlohmann::json::array();
     for (std::size_t index = 0U; index < value.exclusionCount; ++index) {
         exclusions.push_back(value.exclusions[index]);
@@ -822,15 +822,15 @@ template <typename VectorT>
             {"exclusions", std::move(exclusions)}};
 }
 
-[[nodiscard]] RayCast3DNodeComponentUVE RayCast3DNodeFromJsonUVE(const nlohmann::json& json) {
-    RayCast3DNodeComponentUVE value;
+[[nodiscard]] RayCast3DComponentUVE RayCast3DObjectFromJsonUVE(const nlohmann::json& json) {
+    RayCast3DComponentUVE value;
     value.direction = Vector3FromJsonUVE(json.at("direction"));
     value.length = json.value("length", 100.0F);
     value.collisionMask = json.value("collisionMask", std::uint32_t{0xFFFFFFFFU});
     value.enabled = json.value("enabled", true);
     const nlohmann::json exclusions = json.value("exclusions", nlohmann::json::array());
     if (!exclusions.is_array() || exclusions.size() > kMaximumRayCastExclusionsUVE) {
-        throw std::runtime_error("RayCast3DNodeComponentUVE exclusions must be a bounded array");
+        throw std::runtime_error("RayCast3DComponentUVE exclusions must be a bounded array");
     }
     value.exclusionCount = static_cast<std::uint8_t>(exclusions.size());
     for (std::size_t index = 0U; index < exclusions.size(); ++index) {
@@ -839,26 +839,26 @@ template <typename VectorT>
     return value;
 }
 
-[[nodiscard]] nlohmann::json ToJsonUVE(const AnimatableBody3DNodeComponentUVE& value) {
+[[nodiscard]] nlohmann::json ToJsonUVE(const AnimatableBody3DComponentUVE& value) {
     return {{"targetVelocity", ToJsonUVE(value.targetVelocity)},
             {"interpolation", value.interpolation},
             {"active", value.active}};
 }
 
-[[nodiscard]] AnimatableBody3DNodeComponentUVE AnimatableBody3DNodeFromJsonUVE(const nlohmann::json& json) {
-    return AnimatableBody3DNodeComponentUVE{Vector3FromJsonUVE(json.at("targetVelocity")),
+[[nodiscard]] AnimatableBody3DComponentUVE AnimatableBody3DObjectFromJsonUVE(const nlohmann::json& json) {
+    return AnimatableBody3DComponentUVE{Vector3FromJsonUVE(json.at("targetVelocity")),
                                             json.value("interpolation", 1.0F), json.value("active", true)};
 }
 
-[[nodiscard]] nlohmann::json ToJsonUVE(const NavigationRegion3DNodeComponentUVE& value) {
+[[nodiscard]] nlohmann::json ToJsonUVE(const NavigationRegion3DComponentUVE& value) {
     return {{"boundsHalfExtents", ToJsonUVE(value.boundsHalfExtents)},
             {"navigationMeshAssetPath", value.navigationMeshAssetPath},
             {"navigationLayers", value.navigationLayers},
             {"enabled", value.enabled}};
 }
 
-[[nodiscard]] NavigationRegion3DNodeComponentUVE NavigationRegion3DNodeFromJsonUVE(const nlohmann::json& json) {
-    NavigationRegion3DNodeComponentUVE value;
+[[nodiscard]] NavigationRegion3DComponentUVE NavigationRegion3DObjectFromJsonUVE(const nlohmann::json& json) {
+    NavigationRegion3DComponentUVE value;
     value.boundsHalfExtents = Vector3FromJsonUVE(json.at("boundsHalfExtents"));
     value.navigationMeshAssetPath = json.value("navigationMeshAssetPath", std::string{});
     value.navigationLayers = json.value("navigationLayers", std::uint32_t{1});
@@ -866,7 +866,7 @@ template <typename VectorT>
     return value;
 }
 
-[[nodiscard]] nlohmann::json ToJsonUVE(const NavigationAgent3DNodeComponentUVE& value) {
+[[nodiscard]] nlohmann::json ToJsonUVE(const NavigationAgent3DComponentUVE& value) {
     return {{"targetPosition", ToJsonUVE(value.targetPosition)},
             {"radius", value.radius},
             {"height", value.height},
@@ -877,8 +877,8 @@ template <typename VectorT>
             {"enabled", value.enabled}};
 }
 
-[[nodiscard]] NavigationAgent3DNodeComponentUVE NavigationAgent3DNodeFromJsonUVE(const nlohmann::json& json) {
-    NavigationAgent3DNodeComponentUVE value;
+[[nodiscard]] NavigationAgent3DComponentUVE NavigationAgent3DObjectFromJsonUVE(const nlohmann::json& json) {
+    NavigationAgent3DComponentUVE value;
     value.targetPosition = Vector3FromJsonUVE(json.at("targetPosition"));
     value.radius = json.value("radius", 0.5F);
     value.height = json.value("height", 1.8F);
@@ -890,7 +890,7 @@ template <typename VectorT>
     return value;
 }
 
-[[nodiscard]] nlohmann::json ToJsonUVE(const Skeleton3DNodeComponentUVE& value) {
+[[nodiscard]] nlohmann::json ToJsonUVE(const Skeleton3DComponentUVE& value) {
     nlohmann::json bones = nlohmann::json::array();
     for (const SkeletonBoneUVE& bone : value.bones) {
         bones.push_back({{"name", bone.name},
@@ -902,12 +902,12 @@ template <typename VectorT>
     return {{"skeletonAssetPath", value.skeletonAssetPath}, {"bones", std::move(bones)}, {"enabled", value.enabled}};
 }
 
-[[nodiscard]] Skeleton3DNodeComponentUVE Skeleton3DNodeFromJsonUVE(const nlohmann::json& json) {
-    Skeleton3DNodeComponentUVE value;
+[[nodiscard]] Skeleton3DComponentUVE Skeleton3DObjectFromJsonUVE(const nlohmann::json& json) {
+    Skeleton3DComponentUVE value;
     value.skeletonAssetPath = json.value("skeletonAssetPath", std::string{});
     const nlohmann::json bones = json.value("bones", nlohmann::json::array());
     if (!bones.is_array() || bones.size() > kMaximumSkeletonBonesUVE) {
-        throw std::runtime_error("Skeleton3DNodeComponentUVE bones must be a bounded array");
+        throw std::runtime_error("Skeleton3DComponentUVE bones must be a bounded array");
     }
     value.bones.reserve(bones.size());
     for (const nlohmann::json& boneJson : bones) {
@@ -921,7 +921,7 @@ template <typename VectorT>
     return value;
 }
 
-[[nodiscard]] nlohmann::json ToJsonUVE(const BoneAttachment3DNodeComponentUVE& value) {
+[[nodiscard]] nlohmann::json ToJsonUVE(const BoneAttachment3DComponentUVE& value) {
     return {{"skeletonLocalId", value.skeletonLocalId},
             {"boneIndex", value.boneIndex},
             {"boneName", value.boneName},
@@ -931,8 +931,8 @@ template <typename VectorT>
             {"enabled", value.enabled}};
 }
 
-[[nodiscard]] BoneAttachment3DNodeComponentUVE BoneAttachment3DNodeFromJsonUVE(const nlohmann::json& json) {
-    return BoneAttachment3DNodeComponentUVE{json.value("skeletonLocalId", std::numeric_limits<std::uint32_t>::max()),
+[[nodiscard]] BoneAttachment3DComponentUVE BoneAttachment3DObjectFromJsonUVE(const nlohmann::json& json) {
+    return BoneAttachment3DComponentUVE{json.value("skeletonLocalId", std::numeric_limits<std::uint32_t>::max()),
                                             json.value("boneIndex", std::numeric_limits<std::uint32_t>::max()),
                                             json.value("boneName", std::string{}),
                                             Vector3FromJsonUVE(json.at("localPosition")),
@@ -941,7 +941,7 @@ template <typename VectorT>
                                             json.value("enabled", true)};
 }
 
-[[nodiscard]] nlohmann::json ToJsonUVE(const SpringArm3DNodeComponentUVE& value) {
+[[nodiscard]] nlohmann::json ToJsonUVE(const SpringArm3DComponentUVE& value) {
     return {{"armLength", value.armLength},
             {"margin", value.margin},
             {"smoothing", value.smoothing},
@@ -949,8 +949,8 @@ template <typename VectorT>
             {"enabled", value.enabled}};
 }
 
-[[nodiscard]] SpringArm3DNodeComponentUVE SpringArm3DNodeFromJsonUVE(const nlohmann::json& json) {
-    SpringArm3DNodeComponentUVE value;
+[[nodiscard]] SpringArm3DComponentUVE SpringArm3DObjectFromJsonUVE(const nlohmann::json& json) {
+    SpringArm3DComponentUVE value;
     value.armLength = json.value("armLength", 4.0F);
     value.margin = json.value("margin", 0.1F);
     value.smoothing = json.value("smoothing", 8.0F);
@@ -960,21 +960,21 @@ template <typename VectorT>
     return value;
 }
 
-[[nodiscard]] nlohmann::json ToJsonUVE(const Marker3DNodeComponentUVE& value) {
+[[nodiscard]] nlohmann::json ToJsonUVE(const Marker3DComponentUVE& value) {
     return {{"markerName", value.markerName},
             {"localPosition", ToJsonUVE(value.localPosition)},
             {"localRotation", ToJsonUVE(value.localRotation)},
             {"enabled", value.enabled}};
 }
 
-[[nodiscard]] Marker3DNodeComponentUVE Marker3DNodeFromJsonUVE(const nlohmann::json& json) {
-    return Marker3DNodeComponentUVE{json.value("markerName", std::string{"Marker"}),
+[[nodiscard]] Marker3DComponentUVE Marker3DObjectFromJsonUVE(const nlohmann::json& json) {
+    return Marker3DComponentUVE{json.value("markerName", std::string{"Marker"}),
                                     Vector3FromJsonUVE(json.at("localPosition")),
                                     QuaternionFromJsonUVE(json.at("localRotation")),
                                     json.value("enabled", true)};
 }
 
-[[nodiscard]] nlohmann::json ToJsonUVE(const Hitbox3DNodeComponentUVE& value) {
+[[nodiscard]] nlohmann::json ToJsonUVE(const Hitbox3DComponentUVE& value) {
     return {{"halfExtents", ToJsonUVE(value.halfExtents)},
             {"collisionLayer", value.collisionLayer},
             {"collisionMask", value.collisionMask},
@@ -982,15 +982,15 @@ template <typename VectorT>
             {"enabled", value.enabled}};
 }
 
-[[nodiscard]] Hitbox3DNodeComponentUVE Hitbox3DNodeFromJsonUVE(const nlohmann::json& json) {
-    return Hitbox3DNodeComponentUVE{Vector3FromJsonUVE(json.at("halfExtents")),
+[[nodiscard]] Hitbox3DComponentUVE Hitbox3DObjectFromJsonUVE(const nlohmann::json& json) {
+    return Hitbox3DComponentUVE{Vector3FromJsonUVE(json.at("halfExtents")),
                                     json.value("collisionLayer", std::uint32_t{1}),
                                     json.value("collisionMask", std::uint32_t{0xFFFFFFFFU}),
                                     json.value("damageChannel", std::string{"default"}),
                                     json.value("enabled", true)};
 }
 
-[[nodiscard]] nlohmann::json ToJsonUVE(const Hurtbox3DNodeComponentUVE& value) {
+[[nodiscard]] nlohmann::json ToJsonUVE(const Hurtbox3DComponentUVE& value) {
     return {{"halfExtents", ToJsonUVE(value.halfExtents)},
             {"collisionLayer", value.collisionLayer},
             {"collisionMask", value.collisionMask},
@@ -998,15 +998,15 @@ template <typename VectorT>
             {"enabled", value.enabled}};
 }
 
-[[nodiscard]] Hurtbox3DNodeComponentUVE Hurtbox3DNodeFromJsonUVE(const nlohmann::json& json) {
-    return Hurtbox3DNodeComponentUVE{Vector3FromJsonUVE(json.at("halfExtents")),
+[[nodiscard]] Hurtbox3DComponentUVE Hurtbox3DObjectFromJsonUVE(const nlohmann::json& json) {
+    return Hurtbox3DComponentUVE{Vector3FromJsonUVE(json.at("halfExtents")),
                                      json.value("collisionLayer", std::uint32_t{1}),
                                      json.value("collisionMask", std::uint32_t{0xFFFFFFFFU}),
                                      json.value("damageChannel", std::string{"default"}),
                                      json.value("enabled", true)};
 }
 
-[[nodiscard]] nlohmann::json ToJsonUVE(const Projectile3DNodeComponentUVE& value) {
+[[nodiscard]] nlohmann::json ToJsonUVE(const Projectile3DComponentUVE& value) {
     return {{"velocity", ToJsonUVE(value.velocity)},
             {"acceleration", ToJsonUVE(value.acceleration)},
             {"radius", value.radius},
@@ -1015,8 +1015,8 @@ template <typename VectorT>
             {"active", value.active}};
 }
 
-[[nodiscard]] Projectile3DNodeComponentUVE Projectile3DNodeFromJsonUVE(const nlohmann::json& json) {
-    Projectile3DNodeComponentUVE value;
+[[nodiscard]] Projectile3DComponentUVE Projectile3DObjectFromJsonUVE(const nlohmann::json& json) {
+    Projectile3DComponentUVE value;
     value.velocity = Vector3FromJsonUVE(json.at("velocity"));
     value.acceleration = Vector3FromJsonUVE(json.at("acceleration"));
     value.radius = json.value("radius", 0.1F);
@@ -1027,7 +1027,7 @@ template <typename VectorT>
     return value;
 }
 
-[[nodiscard]] nlohmann::json ToJsonUVE(const InteractionArea3DNodeComponentUVE& value) {
+[[nodiscard]] nlohmann::json ToJsonUVE(const InteractionArea3DComponentUVE& value) {
     return {{"halfExtents", ToJsonUVE(value.halfExtents)},
             {"collisionLayer", value.collisionLayer},
             {"collisionMask", value.collisionMask},
@@ -1036,8 +1036,8 @@ template <typename VectorT>
             {"enabled", value.enabled}};
 }
 
-[[nodiscard]] InteractionArea3DNodeComponentUVE InteractionArea3DNodeFromJsonUVE(const nlohmann::json& json) {
-    return InteractionArea3DNodeComponentUVE{Vector3FromJsonUVE(json.at("halfExtents")),
+[[nodiscard]] InteractionArea3DComponentUVE InteractionArea3DObjectFromJsonUVE(const nlohmann::json& json) {
+    return InteractionArea3DComponentUVE{Vector3FromJsonUVE(json.at("halfExtents")),
                                              json.value("collisionLayer", std::uint32_t{1}),
                                              json.value("collisionMask", std::uint32_t{0xFFFFFFFFU}),
                                              json.value("interactionTag", std::string{"interactable"}),
@@ -1045,7 +1045,7 @@ template <typename VectorT>
                                              json.value("enabled", true)};
 }
 
-[[nodiscard]] nlohmann::json ToJsonUVE(const WorldEnvironment3DNodeComponentUVE& value) {
+[[nodiscard]] nlohmann::json ToJsonUVE(const WorldEnvironment3DComponentUVE& value) {
     return {{"skyAssetPath", value.skyAssetPath},
             {"ambientColor", ToJsonUVE(value.ambientColor)},
             {"fogColor", ToJsonUVE(value.fogColor)},
@@ -1056,8 +1056,8 @@ template <typename VectorT>
             {"postProcessingEnabled", value.postProcessingEnabled}};
 }
 
-[[nodiscard]] WorldEnvironment3DNodeComponentUVE WorldEnvironment3DNodeFromJsonUVE(const nlohmann::json& json) {
-    return WorldEnvironment3DNodeComponentUVE{json.value("skyAssetPath", std::string{}),
+[[nodiscard]] WorldEnvironment3DComponentUVE WorldEnvironment3DObjectFromJsonUVE(const nlohmann::json& json) {
+    return WorldEnvironment3DComponentUVE{json.value("skyAssetPath", std::string{}),
                                               Vector3FromJsonUVE(json.at("ambientColor")),
                                               Vector3FromJsonUVE(json.at("fogColor")),
                                               json.value("ambientEnergy", 1.0F),
@@ -1067,15 +1067,15 @@ template <typename VectorT>
                                               json.value("postProcessingEnabled", false)};
 }
 
-[[nodiscard]] nlohmann::json ToJsonUVE(const ReflectionProbe3DNodeComponentUVE& value) {
+[[nodiscard]] nlohmann::json ToJsonUVE(const ReflectionProbe3DComponentUVE& value) {
     return {{"size", ToJsonUVE(value.size)},
             {"visibilityLayers", value.visibilityLayers},
             {"updateMode", static_cast<std::uint8_t>(value.updateMode)},
             {"enabled", value.enabled}};
 }
 
-[[nodiscard]] ReflectionProbe3DNodeComponentUVE ReflectionProbe3DNodeFromJsonUVE(const nlohmann::json& json) {
-    ReflectionProbe3DNodeComponentUVE value;
+[[nodiscard]] ReflectionProbe3DComponentUVE ReflectionProbe3DObjectFromJsonUVE(const nlohmann::json& json) {
+    ReflectionProbe3DComponentUVE value;
     value.size = Vector3FromJsonUVE(json.at("size"));
     value.visibilityLayers = json.value("visibilityLayers", std::uint32_t{0xFFFFFFFFU});
     value.updateMode = static_cast<ReflectionProbeUpdateModeUVE>(json.value("updateMode", std::uint8_t{0}));
@@ -1083,7 +1083,7 @@ template <typename VectorT>
     return value;
 }
 
-[[nodiscard]] nlohmann::json ToJsonUVE(const Decal3DNodeComponentUVE& value) {
+[[nodiscard]] nlohmann::json ToJsonUVE(const Decal3DComponentUVE& value) {
     return {{"materialAssetPath", value.materialAssetPath},
             {"size", ToJsonUVE(value.size)},
             {"projection", static_cast<std::uint8_t>(value.projection)},
@@ -1101,10 +1101,10 @@ template <typename VectorT>
             {"cullMask", value.cullMask}};
 }
 
-[[nodiscard]] Decal3DNodeComponentUVE Decal3DNodeFromJsonUVE(const nlohmann::json& json) {
+[[nodiscard]] Decal3DComponentUVE Decal3DObjectFromJsonUVE(const nlohmann::json& json) {
     // Every field after `enabled` arrived later; a decal saved before them reads with its defaults.
-    const Decal3DNodeComponentUVE defaults{};
-    Decal3DNodeComponentUVE value{};
+    const Decal3DComponentUVE defaults{};
+    Decal3DComponentUVE value{};
     value.materialAssetPath = json.value("materialAssetPath", std::string{});
     value.size = Vector3FromJsonUVE(json.at("size"));
     value.projection = static_cast<DecalProjectionModeUVE>(json.value("projection", std::uint8_t{0}));
@@ -1135,7 +1135,7 @@ template <typename VectorT>
     return value;
 }
 
-[[nodiscard]] nlohmann::json ToJsonUVE(const FogVolume3DNodeComponentUVE& value) {
+[[nodiscard]] nlohmann::json ToJsonUVE(const FogVolume3DComponentUVE& value) {
     return {{"shape", static_cast<std::uint8_t>(value.shape)},
             {"size", ToJsonUVE(value.size)},
             {"density", value.density},
@@ -1146,8 +1146,8 @@ template <typename VectorT>
             {"materialAssetPath", value.materialAssetPath}};
 }
 
-[[nodiscard]] FogVolume3DNodeComponentUVE FogVolume3DNodeFromJsonUVE(const nlohmann::json& json) {
-    FogVolume3DNodeComponentUVE value{};
+[[nodiscard]] FogVolume3DComponentUVE FogVolume3DObjectFromJsonUVE(const nlohmann::json& json) {
+    FogVolume3DComponentUVE value{};
     value.shape = static_cast<FogVolumeShapeUVE>(json.at("shape").get<std::uint8_t>());
     value.size = Vector3FromJsonUVE(json.at("size"));
     value.density = ReadFloatUVE(json.at("density"));
@@ -1236,7 +1236,7 @@ template <typename VectorT>
     return value;
 }
 
-[[nodiscard]] nlohmann::json ToJsonUVE(const LodGroup3DNodeComponentUVE& value) {
+[[nodiscard]] nlohmann::json ToJsonUVE(const LodGroup3DComponentUVE& value) {
     nlohmann::json thresholds = nlohmann::json::array();
     for (std::size_t index = 0U; index < value.levelCount; ++index) {
         thresholds.push_back(value.distanceThresholds[index]);
@@ -1244,11 +1244,11 @@ template <typename VectorT>
     return {{"distanceThresholds", std::move(thresholds)}, {"levelCount", value.levelCount}, {"enabled", value.enabled}};
 }
 
-[[nodiscard]] LodGroup3DNodeComponentUVE LodGroup3DNodeFromJsonUVE(const nlohmann::json& json) {
-    LodGroup3DNodeComponentUVE value;
+[[nodiscard]] LodGroup3DComponentUVE LodGroup3DObjectFromJsonUVE(const nlohmann::json& json) {
+    LodGroup3DComponentUVE value;
     const nlohmann::json thresholds = json.value("distanceThresholds", nlohmann::json::array());
     if (!thresholds.is_array() || thresholds.empty() || thresholds.size() > kMaximumLodLevelsUVE) {
-        throw std::runtime_error("LodGroup3DNodeComponentUVE thresholds must be a bounded non-empty array");
+        throw std::runtime_error("LodGroup3DComponentUVE thresholds must be a bounded non-empty array");
     }
     value.levelCount = static_cast<std::uint8_t>(thresholds.size());
     for (std::size_t index = 0U; index < thresholds.size(); ++index) {
@@ -1258,31 +1258,31 @@ template <typename VectorT>
     return value;
 }
 
-[[nodiscard]] nlohmann::json ToJsonUVE(const Occluder3DNodeComponentUVE& value) {
+[[nodiscard]] nlohmann::json ToJsonUVE(const Occluder3DComponentUVE& value) {
     return {{"halfExtents", ToJsonUVE(value.halfExtents)},
             {"mode", static_cast<std::uint8_t>(value.mode)},
             {"enabled", value.enabled}};
 }
 
-[[nodiscard]] Occluder3DNodeComponentUVE Occluder3DNodeFromJsonUVE(const nlohmann::json& json) {
-    return Occluder3DNodeComponentUVE{Vector3FromJsonUVE(json.at("halfExtents")),
-                                      static_cast<Occluder3DNodeModeUVE>(json.value("mode", std::uint8_t{0})),
+[[nodiscard]] Occluder3DComponentUVE Occluder3DObjectFromJsonUVE(const nlohmann::json& json) {
+    return Occluder3DComponentUVE{Vector3FromJsonUVE(json.at("halfExtents")),
+                                      static_cast<Occluder3DObjectModeUVE>(json.value("mode", std::uint8_t{0})),
                                       json.value("enabled", true)};
 }
 
-[[nodiscard]] nlohmann::json ToJsonUVE(const VisibilityRegion3DNodeComponentUVE& value) {
+[[nodiscard]] nlohmann::json ToJsonUVE(const VisibilityRegion3DComponentUVE& value) {
     return {{"halfExtents", ToJsonUVE(value.halfExtents)},
             {"visibilityLayers", value.visibilityLayers},
             {"enabled", value.enabled}};
 }
 
-[[nodiscard]] VisibilityRegion3DNodeComponentUVE VisibilityRegion3DNodeFromJsonUVE(const nlohmann::json& json) {
-    return VisibilityRegion3DNodeComponentUVE{Vector3FromJsonUVE(json.at("halfExtents")),
+[[nodiscard]] VisibilityRegion3DComponentUVE VisibilityRegion3DObjectFromJsonUVE(const nlohmann::json& json) {
+    return VisibilityRegion3DComponentUVE{Vector3FromJsonUVE(json.at("halfExtents")),
                                               json.value("visibilityLayers", std::uint32_t{0xFFFFFFFFU}),
                                               json.value("enabled", true), true};
 }
 
-[[nodiscard]] nlohmann::json ToJsonUVE(const SpawnPoint3DNodeComponentUVE& value) {
+[[nodiscard]] nlohmann::json ToJsonUVE(const SpawnPoint3DComponentUVE& value) {
     return {{"spawnTag", value.spawnTag},
             {"localPosition", ToJsonUVE(value.localPosition)},
             {"localRotation", ToJsonUVE(value.localRotation)},
@@ -1290,41 +1290,41 @@ template <typename VectorT>
             {"oneShot", value.oneShot}};
 }
 
-[[nodiscard]] SpawnPoint3DNodeComponentUVE SpawnPoint3DNodeFromJsonUVE(const nlohmann::json& json) {
-    return SpawnPoint3DNodeComponentUVE{json.value("spawnTag", std::string{"spawn"}),
+[[nodiscard]] SpawnPoint3DComponentUVE SpawnPoint3DObjectFromJsonUVE(const nlohmann::json& json) {
+    return SpawnPoint3DComponentUVE{json.value("spawnTag", std::string{"spawn"}),
                                         Vector3FromJsonUVE(json.at("localPosition")),
                                         QuaternionFromJsonUVE(json.at("localRotation")),
                                         json.value("enabled", true),
                                         json.value("oneShot", false)};
 }
 
-[[nodiscard]] nlohmann::json ToJsonUVE(const LevelStreamer3DNodeComponentUVE& value) {
+[[nodiscard]] nlohmann::json ToJsonUVE(const LevelStreamer3DComponentUVE& value) {
     return {{"levelPath", value.levelPath},
             {"loadDistance", value.loadDistance},
             {"unloadDistance", value.unloadDistance},
             {"enabled", value.enabled}};
 }
 
-[[nodiscard]] LevelStreamer3DNodeComponentUVE LevelStreamer3DNodeFromJsonUVE(const nlohmann::json& json) {
-    return LevelStreamer3DNodeComponentUVE{json.value("levelPath", std::string{}),
+[[nodiscard]] LevelStreamer3DComponentUVE LevelStreamer3DObjectFromJsonUVE(const nlohmann::json& json) {
+    return LevelStreamer3DComponentUVE{json.value("levelPath", std::string{}),
                                            json.value("loadDistance", 250.0F),
                                            json.value("unloadDistance", 300.0F),
                                            json.value("enabled", false), false, false};
 }
 
-[[nodiscard]] nlohmann::json ToJsonUVE(const WorldPartition3DNodeComponentUVE& value) {
+[[nodiscard]] nlohmann::json ToJsonUVE(const WorldPartition3DComponentUVE& value) {
     return {{"cellSize", value.cellSize},
             {"cellCounts", {value.cellCounts[0], value.cellCounts[1], value.cellCounts[2]}},
             {"maximumLoadedCells", value.maximumLoadedCells},
             {"enabled", value.enabled}};
 }
 
-[[nodiscard]] WorldPartition3DNodeComponentUVE WorldPartition3DNodeFromJsonUVE(const nlohmann::json& json) {
-    WorldPartition3DNodeComponentUVE value;
+[[nodiscard]] WorldPartition3DComponentUVE WorldPartition3DObjectFromJsonUVE(const nlohmann::json& json) {
+    WorldPartition3DComponentUVE value;
     value.cellSize = json.value("cellSize", 128.0F);
     const nlohmann::json counts = json.value("cellCounts", nlohmann::json::array({16U, 1U, 16U}));
     if (!counts.is_array() || counts.size() != 3U) {
-        throw std::runtime_error("WorldPartition3DNodeComponentUVE cellCounts must contain three values");
+        throw std::runtime_error("WorldPartition3DComponentUVE cellCounts must contain three values");
     }
     for (std::size_t index = 0U; index < value.cellCounts.size(); ++index) {
         value.cellCounts[index] = counts.at(index).get<std::uint32_t>();
@@ -1400,6 +1400,42 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
     };
 }
 
+/// Older names of components, mapped to the name they are registered under now. Reading a saved
+/// document goes through this, so a component renamed in code still loads files written before the
+/// rename; writing always uses the current name. Same rule as the scene-object registry's legacy
+/// type ids: every rename leaves its previous name readable here forever.
+[[nodiscard]] std::string_view CanonicalComponentNameUVE(const std::string_view name) noexcept {
+    static const std::unordered_map<std::string_view, std::string_view> kLegacyNames{
+        // The scene-object pass: the word "Node" left these names, nothing else changed.
+        {"SceneNodeTypeComponentUVE", "SceneObjectTypeComponentUVE"},
+        {"NodeMetadataComponentUVE", "ObjectMetadataComponentUVE"},
+        {"AnimatableBody3DNodeComponentUVE", "AnimatableBody3DComponentUVE"},
+        {"BoneAttachment3DNodeComponentUVE", "BoneAttachment3DComponentUVE"},
+        {"Decal3DNodeComponentUVE", "Decal3DComponentUVE"},
+        {"FogVolume3DNodeComponentUVE", "FogVolume3DComponentUVE"},
+        {"Hitbox3DNodeComponentUVE", "Hitbox3DComponentUVE"},
+        {"Hurtbox3DNodeComponentUVE", "Hurtbox3DComponentUVE"},
+        {"InteractionArea3DNodeComponentUVE", "InteractionArea3DComponentUVE"},
+        {"LevelStreamer3DNodeComponentUVE", "LevelStreamer3DComponentUVE"},
+        {"LodGroup3DNodeComponentUVE", "LodGroup3DComponentUVE"},
+        {"Marker3DNodeComponentUVE", "Marker3DComponentUVE"},
+        {"NavigationAgent3DNodeComponentUVE", "NavigationAgent3DComponentUVE"},
+        {"NavigationRegion3DNodeComponentUVE", "NavigationRegion3DComponentUVE"},
+        {"Occluder3DNodeComponentUVE", "Occluder3DComponentUVE"},
+        {"Projectile3DNodeComponentUVE", "Projectile3DComponentUVE"},
+        {"RayCast3DNodeComponentUVE", "RayCast3DComponentUVE"},
+        {"ReflectionProbe3DNodeComponentUVE", "ReflectionProbe3DComponentUVE"},
+        {"Skeleton3DNodeComponentUVE", "Skeleton3DComponentUVE"},
+        {"SpawnPoint3DNodeComponentUVE", "SpawnPoint3DComponentUVE"},
+        {"SpringArm3DNodeComponentUVE", "SpringArm3DComponentUVE"},
+        {"VisibilityRegion3DNodeComponentUVE", "VisibilityRegion3DComponentUVE"},
+        {"WorldEnvironment3DNodeComponentUVE", "WorldEnvironment3DComponentUVE"},
+        {"WorldPartition3DNodeComponentUVE", "WorldPartition3DComponentUVE"},
+    };
+    const auto it = kLegacyNames.find(name);
+    return it != kLegacyNames.end() ? it->second : name;
+}
+
 [[nodiscard]] const std::unordered_map<std::string, ComponentRegistrationUVE>& GetRegistrationsByNameUVE() {
     static const std::unordered_map<std::string, ComponentRegistrationUVE> registrations = [] {
         std::unordered_map<std::string, ComponentRegistrationUVE> table;
@@ -1443,7 +1479,7 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                                   }
                               }
                           }
-                          // Players saved before the node was rebuilt: speed, looping and play-on-awake
+                          // Players saved before the object was rebuilt: speed, looping and play-on-awake
                           // carry over; a disabled one no longer autoplays. Their clip was a path no
                           // runtime ever played, and cannot be resolved to an asset here, so it is dropped.
                           if (json.contains("clipAssetPath") && !json.value("clipAssetPath", std::string{}).empty()) {
@@ -1565,91 +1601,91 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                           }
                           return area;
                       }, IsAreaComponentValidUVE));
-        table.emplace("RayCast3DNodeComponentUVE", MakeRegistrationUVE<RayCast3DNodeComponentUVE>(
+        table.emplace("RayCast3DComponentUVE", MakeRegistrationUVE<RayCast3DComponentUVE>(
             [](const nlohmann::json& json) {
-                const RayCast3DNodeComponentUVE value = RayCast3DNodeFromJsonUVE(json);
-                if (!IsRayCast3DNodeComponentValidUVE(value)) {
-                    throw std::runtime_error("Invalid RayCast3DNodeComponentUVE payload");
+                const RayCast3DComponentUVE value = RayCast3DObjectFromJsonUVE(json);
+                if (!IsRayCast3DObjectComponentValidUVE(value)) {
+                    throw std::runtime_error("Invalid RayCast3DComponentUVE payload");
                 }
                 return value;
-            }, IsRayCast3DNodeComponentValidUVE));
-        table.emplace("AnimatableBody3DNodeComponentUVE", MakeRegistrationUVE<AnimatableBody3DNodeComponentUVE>(
+            }, IsRayCast3DObjectComponentValidUVE));
+        table.emplace("AnimatableBody3DComponentUVE", MakeRegistrationUVE<AnimatableBody3DComponentUVE>(
             [](const nlohmann::json& json) {
-                const AnimatableBody3DNodeComponentUVE value = AnimatableBody3DNodeFromJsonUVE(json);
-                if (!IsAnimatableBody3DNodeComponentValidUVE(value)) {
-                    throw std::runtime_error("Invalid AnimatableBody3DNodeComponentUVE payload");
+                const AnimatableBody3DComponentUVE value = AnimatableBody3DObjectFromJsonUVE(json);
+                if (!IsAnimatableBody3DObjectComponentValidUVE(value)) {
+                    throw std::runtime_error("Invalid AnimatableBody3DComponentUVE payload");
                 }
                 return value;
-            }, IsAnimatableBody3DNodeComponentValidUVE));
-        table.emplace("NavigationRegion3DNodeComponentUVE", MakeRegistrationUVE<NavigationRegion3DNodeComponentUVE>(
+            }, IsAnimatableBody3DObjectComponentValidUVE));
+        table.emplace("NavigationRegion3DComponentUVE", MakeRegistrationUVE<NavigationRegion3DComponentUVE>(
             [](const nlohmann::json& json) {
-                const NavigationRegion3DNodeComponentUVE value = NavigationRegion3DNodeFromJsonUVE(json);
-                if (!IsNavigationRegion3DNodeComponentValidUVE(value)) {
-                    throw std::runtime_error("Invalid NavigationRegion3DNodeComponentUVE payload");
+                const NavigationRegion3DComponentUVE value = NavigationRegion3DObjectFromJsonUVE(json);
+                if (!IsNavigationRegion3DObjectComponentValidUVE(value)) {
+                    throw std::runtime_error("Invalid NavigationRegion3DComponentUVE payload");
                 }
                 return value;
-            }, IsNavigationRegion3DNodeComponentValidUVE));
-        table.emplace("NavigationAgent3DNodeComponentUVE", MakeRegistrationUVE<NavigationAgent3DNodeComponentUVE>(
+            }, IsNavigationRegion3DObjectComponentValidUVE));
+        table.emplace("NavigationAgent3DComponentUVE", MakeRegistrationUVE<NavigationAgent3DComponentUVE>(
             [](const nlohmann::json& json) {
-                const NavigationAgent3DNodeComponentUVE value = NavigationAgent3DNodeFromJsonUVE(json);
-                if (!IsNavigationAgent3DNodeComponentValidUVE(value)) {
-                    throw std::runtime_error("Invalid NavigationAgent3DNodeComponentUVE payload");
+                const NavigationAgent3DComponentUVE value = NavigationAgent3DObjectFromJsonUVE(json);
+                if (!IsNavigationAgent3DObjectComponentValidUVE(value)) {
+                    throw std::runtime_error("Invalid NavigationAgent3DComponentUVE payload");
                 }
                 return value;
-            }, IsNavigationAgent3DNodeComponentValidUVE));
-        table.emplace("Skeleton3DNodeComponentUVE", MakeRegistrationUVE<Skeleton3DNodeComponentUVE>(
+            }, IsNavigationAgent3DObjectComponentValidUVE));
+        table.emplace("Skeleton3DComponentUVE", MakeRegistrationUVE<Skeleton3DComponentUVE>(
             [](const nlohmann::json& json) {
-                const Skeleton3DNodeComponentUVE value = Skeleton3DNodeFromJsonUVE(json);
-                if (!IsSkeleton3DNodeComponentValidUVE(value)) {
-                    throw std::runtime_error("Invalid Skeleton3DNodeComponentUVE payload");
+                const Skeleton3DComponentUVE value = Skeleton3DObjectFromJsonUVE(json);
+                if (!IsSkeleton3DObjectComponentValidUVE(value)) {
+                    throw std::runtime_error("Invalid Skeleton3DComponentUVE payload");
                 }
                 return value;
-            }, IsSkeleton3DNodeComponentValidUVE));
-        table.emplace("BoneAttachment3DNodeComponentUVE", MakeRegistrationUVE<BoneAttachment3DNodeComponentUVE>(
+            }, IsSkeleton3DObjectComponentValidUVE));
+        table.emplace("BoneAttachment3DComponentUVE", MakeRegistrationUVE<BoneAttachment3DComponentUVE>(
             [](const nlohmann::json& json) {
-                const BoneAttachment3DNodeComponentUVE value = BoneAttachment3DNodeFromJsonUVE(json);
-                if (!IsBoneAttachment3DNodeComponentValidUVE(value)) {
-                    throw std::runtime_error("Invalid BoneAttachment3DNodeComponentUVE payload");
+                const BoneAttachment3DComponentUVE value = BoneAttachment3DObjectFromJsonUVE(json);
+                if (!IsBoneAttachment3DObjectComponentValidUVE(value)) {
+                    throw std::runtime_error("Invalid BoneAttachment3DComponentUVE payload");
                 }
                 return value;
-            }, IsBoneAttachment3DNodeComponentValidUVE));
-        table.emplace("SpringArm3DNodeComponentUVE", MakeRegistrationUVE<SpringArm3DNodeComponentUVE>(
+            }, IsBoneAttachment3DObjectComponentValidUVE));
+        table.emplace("SpringArm3DComponentUVE", MakeRegistrationUVE<SpringArm3DComponentUVE>(
             [](const nlohmann::json& json) {
-                const SpringArm3DNodeComponentUVE value = SpringArm3DNodeFromJsonUVE(json);
-                if (!IsSpringArm3DNodeComponentValidUVE(value)) {
-                    throw std::runtime_error("Invalid SpringArm3DNodeComponentUVE payload");
+                const SpringArm3DComponentUVE value = SpringArm3DObjectFromJsonUVE(json);
+                if (!IsSpringArm3DObjectComponentValidUVE(value)) {
+                    throw std::runtime_error("Invalid SpringArm3DComponentUVE payload");
                 }
                 return value;
-            }, IsSpringArm3DNodeComponentValidUVE));
-        table.emplace("Marker3DNodeComponentUVE", MakeRegistrationUVE<Marker3DNodeComponentUVE>(
+            }, IsSpringArm3DObjectComponentValidUVE));
+        table.emplace("Marker3DComponentUVE", MakeRegistrationUVE<Marker3DComponentUVE>(
             [](const nlohmann::json& json) {
-                const Marker3DNodeComponentUVE value = Marker3DNodeFromJsonUVE(json);
-                if (!IsMarker3DNodeComponentValidUVE(value)) {
-                    throw std::runtime_error("Invalid Marker3DNodeComponentUVE payload");
+                const Marker3DComponentUVE value = Marker3DObjectFromJsonUVE(json);
+                if (!IsMarker3DObjectComponentValidUVE(value)) {
+                    throw std::runtime_error("Invalid Marker3DComponentUVE payload");
                 }
                 return value;
-            }, IsMarker3DNodeComponentValidUVE));
+            }, IsMarker3DObjectComponentValidUVE));
         // An id this build does not know (a scene from a newer one) adds nothing rather than failing
-        // the load: the node is then read from its components, like a scene saved before types were.
-        table.emplace("SceneNodeTypeComponentUVE",
+        // the load: the object is then read from its components, like a scene saved before types were.
+        table.emplace("SceneObjectTypeComponentUVE",
                       ComponentRegistrationUVE{
-                          std::type_index(typeid(SceneNodeTypeComponentUVE)),
+                          std::type_index(typeid(SceneObjectTypeComponentUVE)),
                           [](IEntityManagerUVE& entityManager, EntityUVE entity) -> nlohmann::json {
-                              return ToJsonUVE(entityManager.GetComponentUVE<SceneNodeTypeComponentUVE>(entity));
+                              return ToJsonUVE(entityManager.GetComponentUVE<SceneObjectTypeComponentUVE>(entity));
                           },
                           [](IEntityManagerUVE& entityManager, EntityUVE entity) {
-                              return IsSceneNodeTypeComponentValidUVE(
-                                  entityManager.GetComponentUVE<SceneNodeTypeComponentUVE>(entity));
+                              return IsSceneObjectTypeComponentValidUVE(
+                                  entityManager.GetComponentUVE<SceneObjectTypeComponentUVE>(entity));
                           },
                           [](IEntityManagerUVE& entityManager, EntityUVE entity, const nlohmann::json& json) {
                               const auto type = json.find("type");
-                              const Nodes::SceneNodeDescriptorUVE* const descriptor =
+                              const Objects::SceneObjectDescriptorUVE* const descriptor =
                                   type != json.end() && type->is_string()
-                                      ? Nodes::FindSceneNodeDescriptorUVE(type->get<std::string>())
+                                      ? Objects::FindSceneObjectDescriptorUVE(type->get<std::string>())
                                       : nullptr;
                               if (descriptor != nullptr) {
-                                  entityManager.AddComponentUVE<SceneNodeTypeComponentUVE>(
-                                      entity, SceneNodeTypeComponentUVE{descriptor->kind});
+                                  entityManager.AddComponentUVE<SceneObjectTypeComponentUVE>(
+                                      entity, SceneObjectTypeComponentUVE{descriptor->kind});
                               }
                           },
                       });
@@ -1663,62 +1699,62 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                     MakeRegistrationUVE<SceneRootComponentUVE>([](const nlohmann::json&) {
                         return SceneRootComponentUVE{};
                     }, IsSceneRootComponentValidUVE));
-        table.emplace("Hitbox3DNodeComponentUVE", MakeRegistrationUVE<Hitbox3DNodeComponentUVE>(
+        table.emplace("Hitbox3DComponentUVE", MakeRegistrationUVE<Hitbox3DComponentUVE>(
             [](const nlohmann::json& json) {
-                const Hitbox3DNodeComponentUVE value = Hitbox3DNodeFromJsonUVE(json);
-                if (!IsHitbox3DNodeComponentValidUVE(value)) {
-                    throw std::runtime_error("Invalid Hitbox3DNodeComponentUVE payload");
+                const Hitbox3DComponentUVE value = Hitbox3DObjectFromJsonUVE(json);
+                if (!IsHitbox3DObjectComponentValidUVE(value)) {
+                    throw std::runtime_error("Invalid Hitbox3DComponentUVE payload");
                 }
                 return value;
-            }, IsHitbox3DNodeComponentValidUVE));
-        table.emplace("Hurtbox3DNodeComponentUVE", MakeRegistrationUVE<Hurtbox3DNodeComponentUVE>(
+            }, IsHitbox3DObjectComponentValidUVE));
+        table.emplace("Hurtbox3DComponentUVE", MakeRegistrationUVE<Hurtbox3DComponentUVE>(
             [](const nlohmann::json& json) {
-                const Hurtbox3DNodeComponentUVE value = Hurtbox3DNodeFromJsonUVE(json);
-                if (!IsHurtbox3DNodeComponentValidUVE(value)) {
-                    throw std::runtime_error("Invalid Hurtbox3DNodeComponentUVE payload");
+                const Hurtbox3DComponentUVE value = Hurtbox3DObjectFromJsonUVE(json);
+                if (!IsHurtbox3DObjectComponentValidUVE(value)) {
+                    throw std::runtime_error("Invalid Hurtbox3DComponentUVE payload");
                 }
                 return value;
-            }, IsHurtbox3DNodeComponentValidUVE));
-        table.emplace("Projectile3DNodeComponentUVE", MakeRegistrationUVE<Projectile3DNodeComponentUVE>(
+            }, IsHurtbox3DObjectComponentValidUVE));
+        table.emplace("Projectile3DComponentUVE", MakeRegistrationUVE<Projectile3DComponentUVE>(
             [](const nlohmann::json& json) {
-                const Projectile3DNodeComponentUVE value = Projectile3DNodeFromJsonUVE(json);
-                if (!IsProjectile3DNodeComponentValidUVE(value)) {
-                    throw std::runtime_error("Invalid Projectile3DNodeComponentUVE payload");
+                const Projectile3DComponentUVE value = Projectile3DObjectFromJsonUVE(json);
+                if (!IsProjectile3DObjectComponentValidUVE(value)) {
+                    throw std::runtime_error("Invalid Projectile3DComponentUVE payload");
                 }
                 return value;
-            }, IsProjectile3DNodeComponentValidUVE));
-        table.emplace("InteractionArea3DNodeComponentUVE", MakeRegistrationUVE<InteractionArea3DNodeComponentUVE>(
+            }, IsProjectile3DObjectComponentValidUVE));
+        table.emplace("InteractionArea3DComponentUVE", MakeRegistrationUVE<InteractionArea3DComponentUVE>(
             [](const nlohmann::json& json) {
-                const InteractionArea3DNodeComponentUVE value = InteractionArea3DNodeFromJsonUVE(json);
-                if (!IsInteractionArea3DNodeComponentValidUVE(value)) {
-                    throw std::runtime_error("Invalid InteractionArea3DNodeComponentUVE payload");
+                const InteractionArea3DComponentUVE value = InteractionArea3DObjectFromJsonUVE(json);
+                if (!IsInteractionArea3DObjectComponentValidUVE(value)) {
+                    throw std::runtime_error("Invalid InteractionArea3DComponentUVE payload");
                 }
                 return value;
-            }, IsInteractionArea3DNodeComponentValidUVE));
-        table.emplace("WorldEnvironment3DNodeComponentUVE", MakeRegistrationUVE<WorldEnvironment3DNodeComponentUVE>(
+            }, IsInteractionArea3DObjectComponentValidUVE));
+        table.emplace("WorldEnvironment3DComponentUVE", MakeRegistrationUVE<WorldEnvironment3DComponentUVE>(
             [](const nlohmann::json& json) {
-                const WorldEnvironment3DNodeComponentUVE value = WorldEnvironment3DNodeFromJsonUVE(json);
-                if (!IsWorldEnvironment3DNodeComponentValidUVE(value)) {
-                    throw std::runtime_error("Invalid WorldEnvironment3DNodeComponentUVE payload");
+                const WorldEnvironment3DComponentUVE value = WorldEnvironment3DObjectFromJsonUVE(json);
+                if (!IsWorldEnvironment3DObjectComponentValidUVE(value)) {
+                    throw std::runtime_error("Invalid WorldEnvironment3DComponentUVE payload");
                 }
                 return value;
-            }, IsWorldEnvironment3DNodeComponentValidUVE));
-        table.emplace("ReflectionProbe3DNodeComponentUVE", MakeRegistrationUVE<ReflectionProbe3DNodeComponentUVE>(
+            }, IsWorldEnvironment3DObjectComponentValidUVE));
+        table.emplace("ReflectionProbe3DComponentUVE", MakeRegistrationUVE<ReflectionProbe3DComponentUVE>(
             [](const nlohmann::json& json) {
-                const ReflectionProbe3DNodeComponentUVE value = ReflectionProbe3DNodeFromJsonUVE(json);
-                if (!IsReflectionProbe3DNodeComponentValidUVE(value)) {
-                    throw std::runtime_error("Invalid ReflectionProbe3DNodeComponentUVE payload");
+                const ReflectionProbe3DComponentUVE value = ReflectionProbe3DObjectFromJsonUVE(json);
+                if (!IsReflectionProbe3DObjectComponentValidUVE(value)) {
+                    throw std::runtime_error("Invalid ReflectionProbe3DComponentUVE payload");
                 }
                 return value;
-            }, IsReflectionProbe3DNodeComponentValidUVE));
-        table.emplace("FogVolume3DNodeComponentUVE", MakeRegistrationUVE<FogVolume3DNodeComponentUVE>(
+            }, IsReflectionProbe3DObjectComponentValidUVE));
+        table.emplace("FogVolume3DComponentUVE", MakeRegistrationUVE<FogVolume3DComponentUVE>(
             [](const nlohmann::json& json) {
-                const FogVolume3DNodeComponentUVE value = FogVolume3DNodeFromJsonUVE(json);
-                if (!IsFogVolume3DNodeComponentValidUVE(value)) {
-                    throw std::runtime_error("Invalid FogVolume3DNodeComponentUVE payload");
+                const FogVolume3DComponentUVE value = FogVolume3DObjectFromJsonUVE(json);
+                if (!IsFogVolume3DObjectComponentValidUVE(value)) {
+                    throw std::runtime_error("Invalid FogVolume3DComponentUVE payload");
                 }
                 return value;
-            }, IsFogVolume3DNodeComponentValidUVE));
+            }, IsFogVolume3DObjectComponentValidUVE));
         table.emplace("SurfaceInstanceComponentUVE", MakeRegistrationUVE<SurfaceInstanceComponentUVE>(
             [](const nlohmann::json& json) {
                 const SurfaceInstanceComponentUVE value = SurfaceInstanceFromJsonUVE(json);
@@ -1735,14 +1771,14 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                 }
                 return value;
             }, IsLightEmitterComponentValidUVE));
-        table.emplace("Decal3DNodeComponentUVE", MakeRegistrationUVE<Decal3DNodeComponentUVE>(
+        table.emplace("Decal3DComponentUVE", MakeRegistrationUVE<Decal3DComponentUVE>(
             [](const nlohmann::json& json) {
-                const Decal3DNodeComponentUVE value = Decal3DNodeFromJsonUVE(json);
-                if (!IsDecal3DNodeComponentValidUVE(value)) {
-                    throw std::runtime_error("Invalid Decal3DNodeComponentUVE payload");
+                const Decal3DComponentUVE value = Decal3DObjectFromJsonUVE(json);
+                if (!IsDecal3DObjectComponentValidUVE(value)) {
+                    throw std::runtime_error("Invalid Decal3DComponentUVE payload");
                 }
                 return value;
-            }, IsDecal3DNodeComponentValidUVE));
+            }, IsDecal3DObjectComponentValidUVE));
         table.emplace("DirectionalLight3DComponentUVE", MakeRegistrationUVE<DirectionalLight3DComponentUVE>(
             [](const nlohmann::json& json) {
                 const DirectionalLight3DComponentUVE value = DirectionalLight3DFromJsonUVE(json);
@@ -1751,54 +1787,54 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                 }
                 return value;
             }, IsDirectionalLight3DComponentValidUVE));
-        table.emplace("LodGroup3DNodeComponentUVE", MakeRegistrationUVE<LodGroup3DNodeComponentUVE>(
+        table.emplace("LodGroup3DComponentUVE", MakeRegistrationUVE<LodGroup3DComponentUVE>(
             [](const nlohmann::json& json) {
-                const LodGroup3DNodeComponentUVE value = LodGroup3DNodeFromJsonUVE(json);
-                if (!IsLodGroup3DNodeComponentValidUVE(value)) {
-                    throw std::runtime_error("Invalid LodGroup3DNodeComponentUVE payload");
+                const LodGroup3DComponentUVE value = LodGroup3DObjectFromJsonUVE(json);
+                if (!IsLodGroup3DObjectComponentValidUVE(value)) {
+                    throw std::runtime_error("Invalid LodGroup3DComponentUVE payload");
                 }
                 return value;
-            }, IsLodGroup3DNodeComponentValidUVE));
-        table.emplace("Occluder3DNodeComponentUVE", MakeRegistrationUVE<Occluder3DNodeComponentUVE>(
+            }, IsLodGroup3DObjectComponentValidUVE));
+        table.emplace("Occluder3DComponentUVE", MakeRegistrationUVE<Occluder3DComponentUVE>(
             [](const nlohmann::json& json) {
-                const Occluder3DNodeComponentUVE value = Occluder3DNodeFromJsonUVE(json);
-                if (!IsOccluder3DNodeComponentValidUVE(value)) {
-                    throw std::runtime_error("Invalid Occluder3DNodeComponentUVE payload");
+                const Occluder3DComponentUVE value = Occluder3DObjectFromJsonUVE(json);
+                if (!IsOccluder3DObjectComponentValidUVE(value)) {
+                    throw std::runtime_error("Invalid Occluder3DComponentUVE payload");
                 }
                 return value;
-            }, IsOccluder3DNodeComponentValidUVE));
-        table.emplace("VisibilityRegion3DNodeComponentUVE", MakeRegistrationUVE<VisibilityRegion3DNodeComponentUVE>(
+            }, IsOccluder3DObjectComponentValidUVE));
+        table.emplace("VisibilityRegion3DComponentUVE", MakeRegistrationUVE<VisibilityRegion3DComponentUVE>(
             [](const nlohmann::json& json) {
-                const VisibilityRegion3DNodeComponentUVE value = VisibilityRegion3DNodeFromJsonUVE(json);
-                if (!IsVisibilityRegion3DNodeComponentValidUVE(value)) {
-                    throw std::runtime_error("Invalid VisibilityRegion3DNodeComponentUVE payload");
+                const VisibilityRegion3DComponentUVE value = VisibilityRegion3DObjectFromJsonUVE(json);
+                if (!IsVisibilityRegion3DObjectComponentValidUVE(value)) {
+                    throw std::runtime_error("Invalid VisibilityRegion3DComponentUVE payload");
                 }
                 return value;
-            }, IsVisibilityRegion3DNodeComponentValidUVE));
-        table.emplace("SpawnPoint3DNodeComponentUVE", MakeRegistrationUVE<SpawnPoint3DNodeComponentUVE>(
+            }, IsVisibilityRegion3DObjectComponentValidUVE));
+        table.emplace("SpawnPoint3DComponentUVE", MakeRegistrationUVE<SpawnPoint3DComponentUVE>(
             [](const nlohmann::json& json) {
-                const SpawnPoint3DNodeComponentUVE value = SpawnPoint3DNodeFromJsonUVE(json);
-                if (!IsSpawnPoint3DNodeComponentValidUVE(value)) {
-                    throw std::runtime_error("Invalid SpawnPoint3DNodeComponentUVE payload");
+                const SpawnPoint3DComponentUVE value = SpawnPoint3DObjectFromJsonUVE(json);
+                if (!IsSpawnPoint3DObjectComponentValidUVE(value)) {
+                    throw std::runtime_error("Invalid SpawnPoint3DComponentUVE payload");
                 }
                 return value;
-            }, IsSpawnPoint3DNodeComponentValidUVE));
-        table.emplace("LevelStreamer3DNodeComponentUVE", MakeRegistrationUVE<LevelStreamer3DNodeComponentUVE>(
+            }, IsSpawnPoint3DObjectComponentValidUVE));
+        table.emplace("LevelStreamer3DComponentUVE", MakeRegistrationUVE<LevelStreamer3DComponentUVE>(
             [](const nlohmann::json& json) {
-                const LevelStreamer3DNodeComponentUVE value = LevelStreamer3DNodeFromJsonUVE(json);
-                if (!IsLevelStreamer3DNodeComponentValidUVE(value)) {
-                    throw std::runtime_error("Invalid LevelStreamer3DNodeComponentUVE payload");
+                const LevelStreamer3DComponentUVE value = LevelStreamer3DObjectFromJsonUVE(json);
+                if (!IsLevelStreamer3DObjectComponentValidUVE(value)) {
+                    throw std::runtime_error("Invalid LevelStreamer3DComponentUVE payload");
                 }
                 return value;
-            }, IsLevelStreamer3DNodeComponentValidUVE));
-        table.emplace("WorldPartition3DNodeComponentUVE", MakeRegistrationUVE<WorldPartition3DNodeComponentUVE>(
+            }, IsLevelStreamer3DObjectComponentValidUVE));
+        table.emplace("WorldPartition3DComponentUVE", MakeRegistrationUVE<WorldPartition3DComponentUVE>(
             [](const nlohmann::json& json) {
-                const WorldPartition3DNodeComponentUVE value = WorldPartition3DNodeFromJsonUVE(json);
-                if (!IsWorldPartition3DNodeComponentValidUVE(value)) {
-                    throw std::runtime_error("Invalid WorldPartition3DNodeComponentUVE payload");
+                const WorldPartition3DComponentUVE value = WorldPartition3DObjectFromJsonUVE(json);
+                if (!IsWorldPartition3DObjectComponentValidUVE(value)) {
+                    throw std::runtime_error("Invalid WorldPartition3DComponentUVE payload");
                 }
                 return value;
-            }, IsWorldPartition3DNodeComponentValidUVE));
+            }, IsWorldPartition3DObjectComponentValidUVE));
         table.emplace("RigidBodyComponentUVE", MakeRegistrationUVE<RigidBodyComponentUVE>([](const nlohmann::json& json) {
                           RigidBodyComponentUVE rigidBody;
                           rigidBody.mass = json.at("mass").get<float>();
@@ -2042,14 +2078,14 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                           }
                           return autoTranslate;
                       }, IsAutoTranslateComponentValidUVE));
-        table.emplace("NodeMetadataComponentUVE",
-                      MakeRegistrationUVE<NodeMetadataComponentUVE>([](const nlohmann::json& json) {
-                          NodeMetadataComponentUVE metadata{};
+        table.emplace("ObjectMetadataComponentUVE",
+                      MakeRegistrationUVE<ObjectMetadataComponentUVE>([](const nlohmann::json& json) {
+                          ObjectMetadataComponentUVE metadata{};
                           for (const nlohmann::json& entry : json.at("entries")) {
                               const nlohmann::json& value = entry.at("value");
                               // A plain string is the format metadata was saved in before values
                               // were typed; it loads as a String, so no older scene is lost.
-                              metadata.entries.push_back(NodeMetadataEntryUVE{
+                              metadata.entries.push_back(ObjectMetadataEntryUVE{
                                   entry.at("key").get<std::string>(),
                                   value.is_string()
                                       ? Core::VariantUVE::MakeTextUVE(Core::VariantTypeUVE::String,
@@ -2059,11 +2095,11 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                           // The validator rejects a duplicate key, an oversized one and an
                           // over-long list, so a hand-edited or hostile file cannot load an entity
                           // whose metadata lookups would depend on iteration order.
-                          if (!IsNodeMetadataComponentValidUVE(metadata)) {
+                          if (!IsObjectMetadataComponentValidUVE(metadata)) {
                               throw std::runtime_error("Invalid NodeMetadataComponentUVE payload");
                           }
                           return metadata;
-                      }, IsNodeMetadataComponentValidUVE));
+                      }, IsObjectMetadataComponentValidUVE));
         table.emplace("EditorDescriptionComponentUVE",
                       MakeRegistrationUVE<EditorDescriptionComponentUVE>([](const nlohmann::json& json) {
                           const EditorDescriptionComponentUVE description{
@@ -2322,7 +2358,8 @@ void RollbackRestoredEntitiesUVE(IEntityManagerUVE& entityManager, std::vector<E
                     }
                     continue;
                 }
-                if (GetRegistrationsByNameUVE().find(componentName) == GetRegistrationsByNameUVE().end()) {
+                if (GetRegistrationsByNameUVE().find(std::string{CanonicalComponentNameUVE(componentName)}) ==
+                    GetRegistrationsByNameUVE().end()) {
                     UVE_ERROR("SceneSerializerUVE: \"{}\" references unknown component type \"{}\"",
                               sourceDescription, componentName);
                     return std::nullopt;
@@ -2447,7 +2484,8 @@ void RollbackRestoredEntitiesUVE(IEntityManagerUVE& entityManager, std::vector<E
                     continue;
                 }
 
-                const auto registrationIt = GetRegistrationsByNameUVE().find(componentName);
+                const std::string canonicalName{CanonicalComponentNameUVE(componentName)};
+                const auto registrationIt = GetRegistrationsByNameUVE().find(canonicalName);
                 if (registrationIt == GetRegistrationsByNameUVE().end()) {
                     throw std::runtime_error("unknown scene component: " + componentName);
                 }

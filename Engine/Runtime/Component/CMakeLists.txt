@@ -2,7 +2,7 @@
 
 #
 # One real .h + .cpp pair per component — matching the per-file discipline of
-# Engine/Runtime/Nodes/3D. Each component's struct + function declarations live in its own
+# Engine/Runtime/Objects/3D. Each component's struct + function declarations live in its own
 # header under Expose/uve/component; its validators/behavior are defined in a matching .cpp
 # under Internal (pure-data components — Hierarchy, WorldTransform, EditorInternalEntity — get
 # a deliberately-empty .cpp placeholder so every component still has the same pair, ready for
@@ -46,7 +46,7 @@ add_library(uve_component STATIC
     Internal/render_instance_component_uve.cpp
     Internal/surface_instance_component_uve.cpp
     Internal/light_emitter_component_uve.cpp
-    Internal/node_metadata_component_uve.cpp
+    Internal/object_metadata_component_uve.cpp
     Internal/process_component_uve.cpp
     Internal/thread_group_component_uve.cpp
     Internal/transform_component_uve.cpp

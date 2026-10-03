@@ -23,7 +23,7 @@ struct DiagnosticUVE final {
     std::string message;
 };
 
-/// A written type: `float`, `list[int]`, `map[str, Node3D]`.
+/// A written type: `float`, `list[int]`, `map[str, Object3D]`.
 struct TypeRefUVE final {
     std::string name;
     std::vector<TypeRefUVE> arguments;
@@ -126,7 +126,7 @@ struct FieldUVE final {
     SourceLocationUVE at;
 };
 
-/// `on <event>(params):` - runs when the node raises `event`.
+/// `on <event>(params):` - runs when the object raises `event`.
 struct HandlerUVE final {
     std::string event;
     std::vector<ParamUVE> params;
@@ -142,7 +142,7 @@ struct FunctionUVE final {
     SourceLocationUVE at;
 };
 
-/// `entity Player : CharacterBody3D`
+/// `entity Player : Character3D`
 struct HeaderUVE final {
     std::string name;
     std::string baseKind;

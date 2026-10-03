@@ -21,7 +21,7 @@
 
 #include "uve/editor/editor_content_catalogue_uve.h"
 #include "editor_chrome_layout_uve.h"
-#include "editor_node_icons_uve.h"
+#include "editor_object_icons_uve.h"
 
 namespace UVE::Editor {
 namespace {
@@ -293,7 +293,7 @@ void EditorUVE::DrawContentCreateMenuUVE(const std::filesystem::path& contentRoo
     };
     const auto drawItem = [&](const ContentCatalogueItemUVE& item, const bool showGroup) {
         ImGui::PushID(item.id.data(), item.id.data() + item.id.size());
-        DrawNodePickerIconUVE(m_uiAssets.GetNodeIconTextureIdUVE(GetContentCatalogueIconKindUVE(item)));
+        DrawObjectPickerIconUVE(m_uiAssets.GetObjectIconTextureIdUVE(GetContentCatalogueIconKindUVE(item)));
         const std::string label{item.label};
         const std::string group = showGroup ? std::string{item.group} : std::string{};
         ImGui::BeginDisabled(!allowed);
@@ -356,7 +356,7 @@ void EditorUVE::DrawContentCreateMenuUVE(const std::filesystem::path& contentRoo
                 ImGui::Separator();
                 continue;
             }
-            DrawNodePickerIconUVE(m_uiAssets.GetNodeIconTextureIdUVE(GetContentCatalogueIconKindUVE(*firstInGroup)));
+            DrawObjectPickerIconUVE(m_uiAssets.GetObjectIconTextureIdUVE(GetContentCatalogueIconKindUVE(*firstInGroup)));
             const std::string groupLabel{group};
             if (ImGui::BeginMenu(groupLabel.c_str())) {
                 for (const ContentCatalogueItemUVE& item : items) {
@@ -439,7 +439,7 @@ void EditorUVE::DrawFilesystemContextPopupUVE() {
         }
         ImGui::EndDisabled();
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort)) {
-            ImGui::SetTooltip("Adds it under the selected node, or to the scene. You can also drag it into the "
+            ImGui::SetTooltip("Adds it under the selected object, or to the scene. You can also drag it into the "
                               "Outliner or the viewport.");
         }
     }
@@ -471,8 +471,8 @@ void EditorUVE::DrawFilesystemContextPopupUVE() {
         m_selectedAsset.reset();
     }
 
-    // A model source is imported automatically; this puts it on the selected node's mesh. The
-    // converted mesh must exist first - naming one that is still importing would leave the node
+    // A model source is imported automatically; this puts it on the selected object's mesh. The
+    // converted mesh must exist first - naming one that is still importing would leave the object
     // pointing at nothing.
     const std::filesystem::path importedModel =
         IsModelSourcePathUVE(contextEntry.relativePath) ? GetImportedModelPathUVE(contextEntry.relativePath)
@@ -495,7 +495,7 @@ void EditorUVE::DrawFilesystemContextPopupUVE() {
         ImGui::EndDisabled();
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort | ImGuiHoveredFlags_AllowWhenDisabled)) {
             ImGui::SetTooltip(sourceInfo != nullptr && sourceInfo->hasSkeleton
-                                  ? "Adds it with its skeleton and an AnimationPlayer playing its first take."
+                                  ? "Adds it with its skeleton and an AnimationSequencer playing its first take."
                                   : "Adds it as a MeshInstance3D.");
         }
     }
@@ -503,7 +503,7 @@ void EditorUVE::DrawFilesystemContextPopupUVE() {
         const bool canAssign = IsDocumentEntityUVE(m_selectedEntity) && IsAuthoringCommandAllowedUVE() &&
                                m_services->GetEntityManagerUVE().HasComponentUVE<Scene::MeshComponentUVE>(m_selectedEntity);
         ImGui::BeginDisabled(!canAssign);
-        if (ImGui::MenuItem("Use as Mesh on selected node")) {
+        if (ImGui::MenuItem("Use as Mesh on selected object")) {
             Scene::MeshComponentUVE mesh =
                 m_services->GetEntityManagerUVE().GetComponentUVE<Scene::MeshComponentUVE>(m_selectedEntity);
             mesh.meshGuid = modelReady ? m_services->GetAssetDatabaseUVE().RegisterUVE(importedModel)
