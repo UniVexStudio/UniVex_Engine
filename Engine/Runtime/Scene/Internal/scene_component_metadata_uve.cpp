@@ -6,8 +6,8 @@
 #include <utility>
 #include <vector>
 
-#include "uve/component/animation_player_component_uve.h"
-#include "uve/component/animation_tree_component_uve.h"
+#include "uve/component/animation_sequencer_component_uve.h"
+#include "uve/component/animation_graph_component_uve.h"
 #include "uve/component/auto_translate_component_uve.h"
 #include "uve/component/audio_source_component_uve.h"
 #include "uve/component/bone_modifier_component_uve.h"
@@ -30,7 +30,7 @@
 #include "uve/component/primitive_mesh_component_uve.h"
 #include "uve/component/render_instance_component_uve.h"
 #include "uve/component/solid_body_component_uve.h"
-#include "uve/component/rigid_body_component_uve.h"
+#include "uve/component/rigid_3d_component_uve.h"
 #include "uve/component/script_component_uve.h"
 #include "uve/component/surface_instance_component_uve.h"
 #include "uve/component/transform_component_uve.h"
@@ -430,28 +430,28 @@ void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     collider.nestedUnderTypeIds = {"component.primitive_mesh", "component.physics_object"};
     AddUVE<ColliderComponentUVE>(entries, std::move(collider));
 
-    AddUVE<RigidBodyComponentUVE>(
+    AddUVE<Rigid3DComponentUVE>(
         entries,
         MakeEntryUVE(
             "component.rigid_body", "Rigid Body", kSectionOrderTypeSpecificUVE,
             {
-                WithRangeUVE(DeclareUVE<&RigidBodyComponentUVE::mass>("mass", "Mass",
+                WithRangeUVE(DeclareUVE<&Rigid3DComponentUVE::mass>("mass", "Mass",
                                                                        kPropertyTypeFloatUVE),
                              0.0, 100000.0, 0.01),
-                DeclareUVE<&RigidBodyComponentUVE::isKinematic>("isKinematic", "Kinematic",
+                DeclareUVE<&Rigid3DComponentUVE::isKinematic>("isKinematic", "Kinematic",
                                                                 kPropertyTypeBoolUVE),
-                WithRangeUVE(DeclareUVE<&RigidBodyComponentUVE::drag>("drag", "Drag",
+                WithRangeUVE(DeclareUVE<&Rigid3DComponentUVE::drag>("drag", "Drag",
                                                                        kPropertyTypeFloatUVE),
                              0.0, 100.0, 0.01),
-                WithRangeUVE(DeclareUVE<&RigidBodyComponentUVE::gravityScale>(
+                WithRangeUVE(DeclareUVE<&Rigid3DComponentUVE::gravityScale>(
                                  "gravityScale", "Gravity Scale", kPropertyTypeFloatUVE),
                              -100.0, 100.0, 0.05),
-                DeclareUVE<&RigidBodyComponentUVE::velocity>("velocity", "Velocity",
+                DeclareUVE<&Rigid3DComponentUVE::velocity>("velocity", "Velocity",
                                                              kPropertyTypeVector3UVE),
-                DeclareUVE<&RigidBodyComponentUVE::angularVelocity>("angularVelocity", "Angular Velocity",
+                DeclareUVE<&Rigid3DComponentUVE::angularVelocity>("angularVelocity", "Angular Velocity",
                                                                     kPropertyTypeVector3UVE),
-                DeclareUVE<&RigidBodyComponentUVE::torque>("torque", "Torque", kPropertyTypeVector3UVE),
-                DeclareUVE<&RigidBodyComponentUVE::inverseInertia>("inverseInertia", "Inverse Inertia",
+                DeclareUVE<&Rigid3DComponentUVE::torque>("torque", "Torque", kPropertyTypeVector3UVE),
+                DeclareUVE<&Rigid3DComponentUVE::inverseInertia>("inverseInertia", "Inverse Inertia",
                                                                    kPropertyTypeVector3UVE),
             }));
 
@@ -629,14 +629,14 @@ void DeclareAnimationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
             }));
 
     // AnimationSequencer's own section.
-    using P = AnimationPlayerComponentUVE;
+    using P = AnimationSequencerComponentUVE;
     const auto whenOnce = [](TypeMetadataPropertyUVE property) {
         property.isVisible = +[](const void* instance) {
             return static_cast<const P*>(instance)->loopMode == AnimationLoopModeUVE::Once;
         };
         return property;
     };
-    AddValidatedUVE<AnimationPlayerComponentUVE, &IsAnimationPlayerComponentValidUVE>(
+    AddValidatedUVE<AnimationSequencerComponentUVE, &IsAnimationSequencerComponentValidUVE>(
         entries,
         MakeEntryUVE(
             "component.animation_player", "AnimationSequencer", kSectionOrderTypeSpecificUVE,
@@ -683,10 +683,10 @@ void DeclareAnimationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                 InGroupUVE(DeclareRuntimeStateUVE<&P::finished>("finished", "Finished", kPropertyTypeBoolUVE), "State"),
             }));
 
-    using T = AnimationTreeComponentUVE;
+    using T = AnimationGraphComponentUVE;
     // The parameters and the graph are lists with their own add, remove and wiring, which a
     // property row cannot express, so each is one custom-drawn block.
-    AddValidatedUVE<AnimationTreeComponentUVE, &IsAnimationTreeComponentValidUVE>(
+    AddValidatedUVE<AnimationGraphComponentUVE, &IsAnimationGraphComponentValidUVE>(
         entries,
         MakeEntryUVE(
             "component.animation_tree", "AnimationGraph", kSectionOrderTypeSpecificUVE,
@@ -1211,14 +1211,14 @@ void DeclareObjectCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                 WithTooltipUVE(
                     ResolvedByUVE(DeclareEnumUVE<&ProcessComponentUVE::mode>("mode", "Mode",
                                                                              {{0, "Inherit"},
-                                                                              {1, "Pausable"},
-                                                                              {2, "When Paused"},
+                                                                              {1, "Running"},
+                                                                              {2, "Paused Only"},
                                                                               {3, "Always"},
-                                                                              {4, "Disabled"}}),
+                                                                              {4, "Never"}}),
                                   "resolvedModeInHierarchy"),
                     "Whether this entity's work runs while paused. Drives scripts and particle "
-                    "emitters; controllers, projectiles and spring arms skip Disabled and When "
-                    "Paused. Inherit takes the parent's answer (Pausable at the top)."),
+                    "emitters; controllers, projectiles and spring arms skip Never and Paused "
+                    "Only. Inherit takes the parent's answer (Running at the top)."),
                 WithTooltipUVE(DeclareUVE<&ProcessComponentUVE::priority>("priority", "Priority",
                                                                            kPropertyTypeInt32UVE),
                                "Script tick order. Lower runs first; equal priorities keep entity "
@@ -1229,7 +1229,7 @@ void DeclareObjectCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                "arms. Lower runs first. Not inherited."),
                 DeclareRuntimeStateEnumUVE<&ProcessComponentUVE::resolvedModeInHierarchy>(
                     "resolvedModeInHierarchy", "Resolved Mode",
-                    {{0, "Inherit"}, {1, "Pausable"}, {2, "When Paused"}, {3, "Always"}, {4, "Disabled"}}),
+                    {{0, "Inherit"}, {1, "Running"}, {2, "Paused Only"}, {3, "Always"}, {4, "Never"}}),
             }));
 
     // A sub-group of Process: which thread the work runs on is a refinement of when it runs.
@@ -1262,7 +1262,7 @@ void DeclareObjectCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
         MakeEntryUVE("component.physics_interpolation", "Physics Interpolation", kPhysicsInterpolationOrder,
                      {
                          ResolvedByUVE(DeclareEnumUVE<&PhysicsInterpolationComponentUVE::mode>(
-                                           "mode", "Mode", {{0, "Inherit"}, {1, "On"}, {2, "Off"}}),
+                                           "mode", "Mode", {{0, "Inherit"}, {1, "Blended"}, {2, "Exact"}}),
                                        "interpolatedInHierarchy"),
                          DeclareRuntimeStateUVE<&PhysicsInterpolationComponentUVE::interpolatedInHierarchy>(
                              "interpolatedInHierarchy", "Interpolated In Hierarchy",
@@ -1278,14 +1278,14 @@ void DeclareObjectCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
             {
                 WithTooltipUVE(
                     ResolvedByUVE(DeclareEnumUVE<&AutoTranslateComponentUVE::mode>(
-                                      "mode", "Mode", {{0, "Inherit"}, {1, "Always"}, {2, "Disabled"}}),
+                                      "mode", "Mode", {{0, "Inherit"}, {1, "Localized"}, {2, "Literal"}}),
                                   "resolvedModeInHierarchy"),
                     "Whether this entity's UI Text is looked up in the active locale before it is "
                     "drawn. The authored text is its own key. Disable it for debug labels, "
                     "identifiers and player names; a label with no component follows its parent."),
                 DeclareRuntimeStateEnumUVE<&AutoTranslateComponentUVE::resolvedModeInHierarchy>(
                     "resolvedModeInHierarchy", "Resolved Mode",
-                    {{0, "Inherit"}, {1, "Always"}, {2, "Disabled"}}),
+                    {{0, "Inherit"}, {1, "Localized"}, {2, "Literal"}}),
             }));
 
     // A note to the next person, so it gets a box that fits a paragraph rather than one line.

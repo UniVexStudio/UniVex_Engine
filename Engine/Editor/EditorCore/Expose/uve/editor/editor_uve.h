@@ -47,8 +47,8 @@
 #include "uve/editor/mesh_thumbnail_renderer_uve.h"
 #include "uve/math/vector2_uve.h"
 #include "uve/math/vector3_uve.h"
-#include "uve/component/animation_player_component_uve.h"
-#include "uve/component/animation_tree_component_uve.h"
+#include "uve/component/animation_sequencer_component_uve.h"
+#include "uve/component/animation_graph_component_uve.h"
 #include "uve/component/audio_source_component_uve.h"
 #include "uve/component/camera_component_uve.h"
 #include "uve/component/canvas_component_uve.h"
@@ -66,7 +66,7 @@
 #include "uve/component/particle_emitter_component_uve.h"
 #include "uve/component/physics_interpolation_component_uve.h"
 #include "uve/component/primitive_mesh_component_uve.h"
-#include "uve/component/rigid_body_component_uve.h"
+#include "uve/component/rigid_3d_component_uve.h"
 #include "uve/component/script_component_uve.h"
 #include "uve/component/transform_component_uve.h"
 #include "uve/component/ui_button_component_uve.h"
@@ -201,7 +201,7 @@ enum class EditorSceneComponentKindUVE : std::uint8_t {
     Mesh,
     Light,
     Collider,
-    RigidBody,
+    Rigid3D,
     AudioSource,
     ParticleEmitter,
     Script,
@@ -222,9 +222,9 @@ enum class EditorSceneComponentKindUVE : std::uint8_t {
 
 using EditorSceneComponentValueUVE =
     std::variant<Scene::CameraComponentUVE, Scene::MeshComponentUVE, Scene::LightComponentUVE,
-                 Scene::ColliderComponentUVE, Scene::RigidBodyComponentUVE, Scene::AudioSourceComponentUVE,
+                 Scene::ColliderComponentUVE, Scene::Rigid3DComponentUVE, Scene::AudioSourceComponentUVE,
                  Scene::ParticleEmitterComponentUVE, Scene::ScriptComponentUVE,
-                 Scene::AnimationPlayerComponentUVE, Scene::WorldEnvironment3DComponentUVE,
+                 Scene::AnimationSequencerComponentUVE, Scene::WorldEnvironment3DComponentUVE,
                  Scene::CharacterControllerComponentUVE, Scene::CanvasComponentUVE, Scene::UITextComponentUVE,
                  Scene::UIImageComponentUVE, Scene::UIButtonComponentUVE,
                  Scene::PhysicsInterpolationComponentUVE, Scene::EditorDescriptionComponentUVE, Scene::ProcessComponentUVE,
@@ -505,10 +505,10 @@ public:
     [[nodiscard]] Scene::EntityUVE PlaceEntityAssetUVE(const std::filesystem::path& path,
                                                        Scene::EntityUVE parent = Scene::kInvalidEntityUVE);
     /// Changes an AnimationSequencer as one undo step (its animation list, its current clip).
-    bool EditAnimationPlayerUVE(Scene::EntityUVE player,
-                                const std::function<void(Scene::AnimationPlayerComponentUVE&)>& change);
+    bool EditAnimationSequencerUVE(Scene::EntityUVE player,
+                                const std::function<void(Scene::AnimationSequencerComponentUVE&)>& change);
     /// Adds a project clip to the player's list and makes it the one playing.
-    bool AddClipToAnimationPlayerUVE(Scene::EntityUVE player, const std::filesystem::path& absoluteClip);
+    bool AddClipToAnimationSequencerUVE(Scene::EntityUVE player, const std::filesystem::path& absoluteClip);
 
     /// Brings a model source (an FBX, glTF or OBJ in Content, by its content-relative path) into the
     /// scene as one undo step and returns its root. A file with bones becomes
@@ -554,7 +554,7 @@ public:
     std::vector<std::filesystem::path> ImportModelAnimationsUVE(const std::filesystem::path& absoluteSource);
 
     /// The Entity Editor's middle area.
-    enum class EntityEditorTabUVE : std::uint8_t { Viewport, Scripting, Signals };
+    enum class EntityEditorTabUVE : std::uint8_t { Viewport, Scripting, Events };
     /// The Entity Editor's bottom dock.
     enum class EntityEditorDockTabUVE : std::uint8_t { Content, Timeline, AnimGraph };
     [[nodiscard]] EntityEditorTabUVE GetEntityEditorTabUVE() const noexcept;
@@ -1214,7 +1214,7 @@ private:
     /// The character file behind a Retarget target: the `.uvmodel` itself, or a model source's imported model.
     [[nodiscard]] std::filesystem::path ResolveRetargetModelFileUVE(const std::filesystem::path& target) const;
     void DrawEntityEditorPlaceholderUVE();
-    /// The Entity Editor's middle: the Viewport / Scripting / Signals tabs and Compile's problems.
+    /// The Entity Editor's middle: the Viewport / Scripting / Events tabs and Compile's problems.
     void DrawEntityEditorMiddleUVE(EntityEditSessionUVE& session);
     void DrawEntityEditorScriptingTabUVE();
     void DrawEntityEditorDockUVE(EntityEditSessionUVE& session);
@@ -1254,7 +1254,7 @@ private:
     enum class EditorRightPanelTabUVE {
         Inspector,
         Import,
-        Signals,
+        Events,
     };
 
     /// Selects one docked lower-workspace panel. FileSystem is the safe default and keeps the
@@ -1381,7 +1381,7 @@ private:
     };
 
     /// A centralized scene object is restored from one complete authored snapshot so compound object
-    /// creation (for example Character3D plus Collider and kinematic RigidBody) is one history unit.
+    /// creation (for example Character3D plus Collider and kinematic Rigid3D) is one history unit.
     struct SceneObjectCreationHistoryEntryUVE final {
         Scene::SceneSnapshotUVE snapshot;
         Scene::Objects::SceneObjectKindUVE kind = Scene::Objects::SceneObjectKindUVE::Object3D;
@@ -2203,7 +2203,7 @@ private:
         /// A drag in the Blend Space 2D plot: -1 the position, 0.. a point, -2 none; and the tree
         /// before it, restored and re-applied as one undo step on release.
         int plotDrag = -2;
-        Scene::AnimationTreeComponentUVE plotBefore;
+        Scene::AnimationGraphComponentUVE plotBefore;
         std::string boneSearch;
         /// The object opened in its own editor (a Blend Space or a State Machine), 0 for the graph.
         std::uint32_t focus = 0U;
@@ -2221,7 +2221,7 @@ private:
         int stateDrag = -3;
         int linkFrom = -3;
         bool transitionDragging = false;
-        Scene::AnimationTreeComponentUVE stateBefore;
+        Scene::AnimationGraphComponentUVE stateBefore;
         /// The Blend Space editor's tool (0 select and move, 1 add a point, 2 remove a point), its
         /// snapping, and the point whose animation is being picked (-1: none).
         int spaceTool = 0;
@@ -2230,7 +2230,7 @@ private:
         int pickClipForSlot = -1;
         /// An inline value on an object being dragged: the tree before it, for one undo step.
         bool inlineEditing = false;
-        Scene::AnimationTreeComponentUVE inlineBefore;
+        Scene::AnimationGraphComponentUVE inlineBefore;
         /// Clip file names by guid, for labels.
         std::unordered_map<std::uint64_t, std::string> clipNames;
         /// Clips the preview has read, by guid; null for one that could not be read.
@@ -2238,7 +2238,7 @@ private:
     };
     AnimationGraphViewStateUVE m_animGraph;
     /// Notes what the preview's last step did: clip events, state changes, parameter values.
-    void RecordAnimationGraphPreviewUVE(const Scene::AnimationTreeComponentUVE& tree);
+    void RecordAnimationGraphPreviewUVE(const Scene::AnimationGraphComponentUVE& tree);
     /// Puts the previewed skeleton back at rest and the tree back at its start.
     void StopAnimationGraphPreviewUVE();
     /// A Blend Space opened in the Anim Graph's own editor: tools, snapping, the axes' areas, and
@@ -2249,15 +2249,15 @@ private:
     void DrawStateMachineViewUVE(Scene::EntityUVE tree, std::size_t objectIndex);
     /// The side strip while a State Machine is open: the picked state or transition's settings.
     void DrawStateMachineSelectionUVE(Scene::EntityUVE tree, std::size_t objectIndex,
-                                      std::optional<std::function<void(Scene::AnimationTreeComponentUVE&)>>& edit);
+                                      std::optional<std::function<void(Scene::AnimationGraphComponentUVE&)>>& edit);
     /// A clip's file name for labels, "" for none.
     [[nodiscard]] const std::string& AnimationClipNameUVE(Asset::AssetGuidUVE clip);
     /// The Anim Graph tab's body.
     void DrawAnimationGraphCanvasUVE();
     /// Changes the AnimationGraph's objects or parameters as one undo step, like an Inspector edit.
     /// False when nothing changed or the result is not a valid graph (the change is dropped).
-    bool EditAnimationTreeUVE(Scene::EntityUVE tree,
-                              const std::function<void(Scene::AnimationTreeComponentUVE&)>& change);
+    bool EditAnimationGraphUVE(Scene::EntityUVE tree,
+                              const std::function<void(Scene::AnimationGraphComponentUVE&)>& change);
     /// In-flight automatic model imports, by content-relative source path.
     std::map<std::string, Asset::AssetImportJobIdUVE> m_modelImportJobs;
     /// Every content-relative model source, as the last project refresh read it.

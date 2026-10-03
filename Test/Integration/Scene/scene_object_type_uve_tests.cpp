@@ -18,7 +18,7 @@
 #include "uve/component/mesh_component_uve.h"
 #include "uve/component/name_component_uve.h"
 #include "uve/component/primitive_mesh_component_uve.h"
-#include "uve/component/rigid_body_component_uve.h"
+#include "uve/component/rigid_3d_component_uve.h"
 #include "uve/component/script_component_uve.h"
 #include "uve/entity/entity_manager_uve.h"
 #include "uve/events/event_system_uve.h"
@@ -78,12 +78,12 @@ TEST_F(SceneObjectTypeUVETest, InferenceReadsEveryKindThatHasComponentsOfItsOwn)
     }
 
     // Bodies are read from what they combine; an Kinematic3D's own component outranks both.
-    EXPECT_EQ(InferSceneObjectKindUVE(entityManager, MakeWithUVE(ColliderComponentUVE{}, RigidBodyComponentUVE{})),
+    EXPECT_EQ(InferSceneObjectKindUVE(entityManager, MakeWithUVE(ColliderComponentUVE{}, Rigid3DComponentUVE{})),
               Kind::Character3D);
-    EXPECT_EQ(InferSceneObjectKindUVE(entityManager, MakeWithUVE(RigidBodyComponentUVE{})), Kind::Rigid3D);
+    EXPECT_EQ(InferSceneObjectKindUVE(entityManager, MakeWithUVE(Rigid3DComponentUVE{})), Kind::Rigid3D);
     EXPECT_EQ(InferSceneObjectKindUVE(entityManager, MakeWithUVE(ColliderComponentUVE{})), Kind::Collider3D);
-    EXPECT_EQ(InferSceneObjectKindUVE(entityManager, MakeWithUVE(ColliderComponentUVE{}, RigidBodyComponentUVE{},
-                                                               AnimatableBody3DComponentUVE{})),
+    EXPECT_EQ(InferSceneObjectKindUVE(entityManager, MakeWithUVE(ColliderComponentUVE{}, Rigid3DComponentUVE{},
+                                                               Kinematic3DComponentUVE{})),
               Kind::Kinematic3D);
 
     // A script names the object only when nothing else does.

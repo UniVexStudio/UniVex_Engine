@@ -17,40 +17,40 @@ namespace {
 // visibility and physics interpolation already do - no component means the parent's answer passes
 // straight through - and each differs from the others in exactly one way that is worth locking.
 
-TEST(ProcessComponentUVETest, ResolveProcessModeUVE_InheritPassesThroughAndAnythingElseOverrides) {
+TEST(ProcessComponentUVETest, ResolveTickModeUVE_InheritPassesThroughAndAnythingElseOverrides) {
     // An object that never opted in must not break the chain for the objects beneath it.
-    EXPECT_EQ(ResolveProcessModeUVE(ProcessModeUVE::Inherit, ProcessModeUVE::Always), ProcessModeUVE::Always);
-    EXPECT_EQ(ResolveProcessModeUVE(ProcessModeUVE::Inherit, ProcessModeUVE::Disabled),
-              ProcessModeUVE::Disabled);
+    EXPECT_EQ(ResolveTickModeUVE(TickModeUVE::Inherit, TickModeUVE::Always), TickModeUVE::Always);
+    EXPECT_EQ(ResolveTickModeUVE(TickModeUVE::Inherit, TickModeUVE::Never),
+              TickModeUVE::Never);
 
     // At the top of a hierarchy, Inherit means the default rather than nothing.
-    EXPECT_EQ(ResolveProcessModeUVE(ProcessModeUVE::Inherit, ProcessModeUVE::Inherit),
-              ProcessModeUVE::Pausable);
+    EXPECT_EQ(ResolveTickModeUVE(TickModeUVE::Inherit, TickModeUVE::Inherit),
+              TickModeUVE::Running);
 
-    // A pause menu under a Pausable parent has to be able to say Always and be believed. This is
+    // A pause menu under a Running parent has to be able to say Always and be believed. This is
     // the case that makes the mode worth authoring per entity at all, so it is locked explicitly.
-    EXPECT_EQ(ResolveProcessModeUVE(ProcessModeUVE::Always, ProcessModeUVE::Pausable), ProcessModeUVE::Always);
-    EXPECT_EQ(ResolveProcessModeUVE(ProcessModeUVE::Pausable, ProcessModeUVE::Disabled),
-              ProcessModeUVE::Pausable);
+    EXPECT_EQ(ResolveTickModeUVE(TickModeUVE::Always, TickModeUVE::Running), TickModeUVE::Always);
+    EXPECT_EQ(ResolveTickModeUVE(TickModeUVE::Running, TickModeUVE::Never),
+              TickModeUVE::Running);
 }
 
-TEST(ProcessComponentUVETest, IsProcessingUVE_AnswersEachModeAgainstBothSimulationStates) {
-    EXPECT_TRUE(IsProcessingUVE(ProcessModeUVE::Pausable, /*simulationPaused=*/false));
-    EXPECT_FALSE(IsProcessingUVE(ProcessModeUVE::Pausable, /*simulationPaused=*/true));
+TEST(ProcessComponentUVETest, IsTickingUVE_AnswersEachModeAgainstBothSimulationStates) {
+    EXPECT_TRUE(IsTickingUVE(TickModeUVE::Running, /*simulationPaused=*/false));
+    EXPECT_FALSE(IsTickingUVE(TickModeUVE::Running, /*simulationPaused=*/true));
 
-    EXPECT_FALSE(IsProcessingUVE(ProcessModeUVE::WhenPaused, /*simulationPaused=*/false));
-    EXPECT_TRUE(IsProcessingUVE(ProcessModeUVE::WhenPaused, /*simulationPaused=*/true));
+    EXPECT_FALSE(IsTickingUVE(TickModeUVE::PausedOnly, /*simulationPaused=*/false));
+    EXPECT_TRUE(IsTickingUVE(TickModeUVE::PausedOnly, /*simulationPaused=*/true));
 
-    EXPECT_TRUE(IsProcessingUVE(ProcessModeUVE::Always, /*simulationPaused=*/false));
-    EXPECT_TRUE(IsProcessingUVE(ProcessModeUVE::Always, /*simulationPaused=*/true));
+    EXPECT_TRUE(IsTickingUVE(TickModeUVE::Always, /*simulationPaused=*/false));
+    EXPECT_TRUE(IsTickingUVE(TickModeUVE::Always, /*simulationPaused=*/true));
 
-    EXPECT_FALSE(IsProcessingUVE(ProcessModeUVE::Disabled, /*simulationPaused=*/false));
-    EXPECT_FALSE(IsProcessingUVE(ProcessModeUVE::Disabled, /*simulationPaused=*/true));
+    EXPECT_FALSE(IsTickingUVE(TickModeUVE::Never, /*simulationPaused=*/false));
+    EXPECT_FALSE(IsTickingUVE(TickModeUVE::Never, /*simulationPaused=*/true));
 
     // An unresolved mode behaves like the default rather than like an error, so an entity created
     // without a parent still behaves like everything around it.
-    EXPECT_TRUE(IsProcessingUVE(ProcessModeUVE::Inherit, /*simulationPaused=*/false));
-    EXPECT_FALSE(IsProcessingUVE(ProcessModeUVE::Inherit, /*simulationPaused=*/true));
+    EXPECT_TRUE(IsTickingUVE(TickModeUVE::Inherit, /*simulationPaused=*/false));
+    EXPECT_FALSE(IsTickingUVE(TickModeUVE::Inherit, /*simulationPaused=*/true));
 }
 
 TEST(ThreadGroupComponentUVETest, ResolveThreadGroupModeUVE_MainThreadIsAConstraintAChildCannotEscape) {
@@ -59,7 +59,7 @@ TEST(ThreadGroupComponentUVETest, ResolveThreadGroupModeUVE_MainThreadIsAConstra
     EXPECT_EQ(ResolveThreadGroupModeUVE(ThreadGroupModeUVE::Inherit, ThreadGroupModeUVE::Inherit),
               ThreadGroupModeUVE::MainThread);
 
-    // The asymmetry with ProcessModeUVE, locked deliberately: a parent pinned to the main thread is
+    // The asymmetry with TickModeUVE, locked deliberately: a parent pinned to the main thread is
     // pinned because of shared state the child is part of, so a child claiming SubThread underneath
     // it would turn a declared safety property into a race that only appears under load.
     EXPECT_EQ(ResolveThreadGroupModeUVE(ThreadGroupModeUVE::SubThread, ThreadGroupModeUVE::MainThread),
@@ -73,15 +73,15 @@ TEST(ThreadGroupComponentUVETest, ResolveThreadGroupModeUVE_MainThreadIsAConstra
               ThreadGroupModeUVE::MainThread);
 }
 
-TEST(AutoTranslateComponentUVETest, ResolveAutoTranslateModeUVE_ALabelCanOptOutInsideATranslatedMenu) {
-    EXPECT_EQ(ResolveAutoTranslateModeUVE(AutoTranslateModeUVE::Inherit, AutoTranslateModeUVE::Disabled),
-              AutoTranslateModeUVE::Disabled);
-    EXPECT_EQ(ResolveAutoTranslateModeUVE(AutoTranslateModeUVE::Inherit, AutoTranslateModeUVE::Inherit),
-              AutoTranslateModeUVE::Always);
+TEST(AutoTranslateComponentUVETest, ResolveLocalizeModeUVE_ALabelCanOptOutInsideATranslatedMenu) {
+    EXPECT_EQ(ResolveLocalizeModeUVE(LocalizeModeUVE::Inherit, LocalizeModeUVE::Literal),
+              LocalizeModeUVE::Literal);
+    EXPECT_EQ(ResolveLocalizeModeUVE(LocalizeModeUVE::Inherit, LocalizeModeUVE::Inherit),
+              LocalizeModeUVE::Localized);
 
     // A player's own name inside a translated menu must be able to say Disabled and be believed.
-    EXPECT_EQ(ResolveAutoTranslateModeUVE(AutoTranslateModeUVE::Disabled, AutoTranslateModeUVE::Always),
-              AutoTranslateModeUVE::Disabled);
+    EXPECT_EQ(ResolveLocalizeModeUVE(LocalizeModeUVE::Literal, LocalizeModeUVE::Localized),
+              LocalizeModeUVE::Literal);
 }
 
 [[nodiscard]] Core::VariantUVE TextUVE(std::string text) {

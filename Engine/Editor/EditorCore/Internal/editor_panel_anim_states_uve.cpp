@@ -11,7 +11,10 @@
 #include <array>
 #include <cfloat>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <cstdio>
+#include <functional>
 #include <map>
 #include <optional>
 #include <string>
@@ -21,7 +24,7 @@
 #include <imgui.h>
 
 #include "editor_animation_graph_widgets_uve.h"
-#include "uve/component/animation_tree_component_uve.h"
+#include "uve/component/animation_graph_component_uve.h"
 
 namespace UVE::Editor {
 namespace {
@@ -86,7 +89,7 @@ void ArrowHeadUVE(ImDrawList* const draw, const ImVec2 at, const ImVec2 directio
 
 void EditorUVE::DrawStateMachineViewUVE(const Scene::EntityUVE tree, const std::size_t objectIndex) {
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    auto& live = entityManager.GetComponentUVE<Scene::AnimationTreeComponentUVE>(tree);
+    auto& live = entityManager.GetComponentUVE<Scene::AnimationGraphComponentUVE>(tree);
     if (objectIndex >= live.objects.size()) {
         return;
     }
@@ -109,7 +112,7 @@ void EditorUVE::DrawStateMachineViewUVE(const Scene::EntityUVE tree, const std::
     if (view.pickedTransition >= static_cast<int>(machine.transitions.size())) {
         view.pickedTransition = -1;
     }
-    std::optional<std::function<void(Scene::AnimationTreeComponentUVE&)>> edit;
+    std::optional<std::function<void(Scene::AnimationGraphComponentUVE&)>> edit;
 
     // What runs: the machine's active state, the one fading out and the transition last taken.
     const bool running = live.objectStates.size() == live.objects.size() && live.objectStates[objectIndex].started;
@@ -469,7 +472,7 @@ void EditorUVE::DrawStateMachineViewUVE(const Scene::EntityUVE tree, const std::
             if (moved) {
                 const std::vector<AnimationGraphObjectUVE> after = live.objects;
                 live = view.stateBefore;
-                edit = [after](Scene::AnimationTreeComponentUVE& t) { t.objects = after; };
+                edit = [after](Scene::AnimationGraphComponentUVE& t) { t.objects = after; };
             }
             view.stateDrag = kNoBoxUVE;
         }
@@ -479,7 +482,7 @@ void EditorUVE::DrawStateMachineViewUVE(const Scene::EntityUVE tree, const std::
             if (hoveredBox >= 0 && hoveredBox != from) {
                 const auto to = static_cast<std::uint32_t>(hoveredBox);
                 if (from == kEntryBoxUVE) {
-                    edit = [machineId, to](Scene::AnimationTreeComponentUVE& t) {
+                    edit = [machineId, to](Scene::AnimationGraphComponentUVE& t) {
                         const auto it = std::ranges::find(t.objects, machineId, &AnimationGraphObjectUVE::id);
                         if (it != t.objects.end()) {
                             it->entryState = to;
@@ -487,7 +490,7 @@ void EditorUVE::DrawStateMachineViewUVE(const Scene::EntityUVE tree, const std::
                     };
                 } else {
                     const std::uint32_t source = from == kAnyBoxUVE ? Scene::kAnyAnimationStateUVE : static_cast<std::uint32_t>(from);
-                    edit = [machineId, source, to](Scene::AnimationTreeComponentUVE& t) {
+                    edit = [machineId, source, to](Scene::AnimationGraphComponentUVE& t) {
                         static_cast<void>(AddAnimationTransitionUVE(t.objects, machineId, source, to));
                     };
                     view.pickedTransition = static_cast<int>(machine.transitions.size());
@@ -500,7 +503,7 @@ void EditorUVE::DrawStateMachineViewUVE(const Scene::EntityUVE tree, const std::
     if (writable && hovered && hoveredBox == kNoBoxUVE && hoveredTransition < 0 && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
         const Math::Vector2UVE at = toCanvas(mouse) - Math::Vector2UVE{kStateWidthUVE * 0.5F, kStateHeightUVE * 0.5F};
         const bool fillsFirst = stateCount == 1U && machine.inputs[0] == 0U;
-        edit = [machineId, at](Scene::AnimationTreeComponentUVE& t) {
+        edit = [machineId, at](Scene::AnimationGraphComponentUVE& t) {
             static_cast<void>(AddAnimationStateUVE(t.objects, machineId, at));
         };
         view.pickedState = fillsFirst ? 0 : static_cast<int>(stateCount);
@@ -527,13 +530,13 @@ void EditorUVE::DrawStateMachineViewUVE(const Scene::EntityUVE tree, const std::
         (ImGui::IsKeyPressed(ImGuiKey_Delete) || ImGui::IsKeyPressed(ImGuiKey_Backspace))) {
         if (view.pickedTransition >= 0) {
             const auto index = static_cast<std::size_t>(view.pickedTransition);
-            edit = [machineId, index](Scene::AnimationTreeComponentUVE& t) {
+            edit = [machineId, index](Scene::AnimationGraphComponentUVE& t) {
                 static_cast<void>(RemoveAnimationTransitionUVE(t.objects, machineId, index));
             };
             view.pickedTransition = -1;
         } else if (view.pickedState >= 0 && stateCount > 1U) {
             const auto slot = static_cast<std::size_t>(view.pickedState);
-            edit = [machineId, slot](Scene::AnimationTreeComponentUVE& t) {
+            edit = [machineId, slot](Scene::AnimationGraphComponentUVE& t) {
                 static_cast<void>(RemoveAnimationGraphInputSlotUVE(t.objects, machineId, slot));
             };
             view.pickedState = -1;
@@ -544,7 +547,7 @@ void EditorUVE::DrawStateMachineViewUVE(const Scene::EntityUVE tree, const std::
         ImGui::BeginDisabled(!writable);
         if (ImGui::MenuItem("Add State")) {
             const Math::Vector2UVE at{view.addAtX, view.addAtY};
-            edit = [machineId, at](Scene::AnimationTreeComponentUVE& t) {
+            edit = [machineId, at](Scene::AnimationGraphComponentUVE& t) {
                 static_cast<void>(AddAnimationStateUVE(t.objects, machineId, at));
             };
         }
@@ -559,7 +562,7 @@ void EditorUVE::DrawStateMachineViewUVE(const Scene::EntityUVE tree, const std::
         ImGui::BeginDisabled(!writable || slot < 0);
         if (ImGui::MenuItem("Start Here", nullptr, slot >= 0 && machine.entryState == static_cast<std::uint32_t>(slot))) {
             const auto to = static_cast<std::uint32_t>(slot);
-            edit = [machineId, to](Scene::AnimationTreeComponentUVE& t) {
+            edit = [machineId, to](Scene::AnimationGraphComponentUVE& t) {
                 const auto it = std::ranges::find(t.objects, machineId, &AnimationGraphObjectUVE::id);
                 if (it != t.objects.end()) {
                     it->entryState = to;
@@ -571,7 +574,7 @@ void EditorUVE::DrawStateMachineViewUVE(const Scene::EntityUVE tree, const std::
                 if (static_cast<int>(target) != slot && ImGui::MenuItem(stateName(target).c_str())) {
                     const auto from = static_cast<std::uint32_t>(slot);
                     const auto to = static_cast<std::uint32_t>(target);
-                    edit = [machineId, from, to](Scene::AnimationTreeComponentUVE& t) {
+                    edit = [machineId, from, to](Scene::AnimationGraphComponentUVE& t) {
                         static_cast<void>(AddAnimationTransitionUVE(t.objects, machineId, from, to));
                     };
                     view.pickedTransition = static_cast<int>(machine.transitions.size());
@@ -582,7 +585,7 @@ void EditorUVE::DrawStateMachineViewUVE(const Scene::EntityUVE tree, const std::
         }
         if (ImGui::MenuItem("Transition From Any State")) {
             const auto to = static_cast<std::uint32_t>(slot);
-            edit = [machineId, to](Scene::AnimationTreeComponentUVE& t) {
+            edit = [machineId, to](Scene::AnimationGraphComponentUVE& t) {
                 static_cast<void>(AddAnimationTransitionUVE(t.objects, machineId, Scene::kAnyAnimationStateUVE, to));
             };
             view.pickedTransition = static_cast<int>(machine.transitions.size());
@@ -592,7 +595,7 @@ void EditorUVE::DrawStateMachineViewUVE(const Scene::EntityUVE tree, const std::
         ImGui::BeginDisabled(stateCount <= 1U);
         if (ImGui::MenuItem("Remove State", "Del")) {
             const auto removed = static_cast<std::size_t>(slot);
-            edit = [machineId, removed](Scene::AnimationTreeComponentUVE& t) {
+            edit = [machineId, removed](Scene::AnimationGraphComponentUVE& t) {
                 static_cast<void>(RemoveAnimationGraphInputSlotUVE(t.objects, machineId, removed));
             };
             view.pickedState = -1;
@@ -608,7 +611,7 @@ void EditorUVE::DrawStateMachineViewUVE(const Scene::EntityUVE tree, const std::
             const bool on = machine.transitions[static_cast<std::size_t>(index)].enabled;
             if (ImGui::MenuItem(on ? "Switch Off" : "Switch On")) {
                 const auto at = static_cast<std::size_t>(index);
-                edit = [machineId, at, on](Scene::AnimationTreeComponentUVE& t) {
+                edit = [machineId, at, on](Scene::AnimationGraphComponentUVE& t) {
                     const auto it = std::ranges::find(t.objects, machineId, &AnimationGraphObjectUVE::id);
                     if (it != t.objects.end() && at < it->transitions.size()) {
                         it->transitions[at].enabled = !on;
@@ -618,7 +621,7 @@ void EditorUVE::DrawStateMachineViewUVE(const Scene::EntityUVE tree, const std::
         }
         if (ImGui::MenuItem("Remove Transition", "Del")) {
             const auto at = static_cast<std::size_t>(index);
-            edit = [machineId, at](Scene::AnimationTreeComponentUVE& t) {
+            edit = [machineId, at](Scene::AnimationGraphComponentUVE& t) {
                 static_cast<void>(RemoveAnimationTransitionUVE(t.objects, machineId, at));
             };
             view.pickedTransition = -1;
@@ -628,14 +631,14 @@ void EditorUVE::DrawStateMachineViewUVE(const Scene::EntityUVE tree, const std::
     }
 
     if (edit.has_value()) {
-        static_cast<void>(EditAnimationTreeUVE(tree, *edit));
+        static_cast<void>(EditAnimationGraphUVE(tree, *edit));
     }
 }
 
 void EditorUVE::DrawStateMachineSelectionUVE(const Scene::EntityUVE tree, const std::size_t objectIndex,
-                                             std::optional<std::function<void(Scene::AnimationTreeComponentUVE&)>>& edit) {
+                                             std::optional<std::function<void(Scene::AnimationGraphComponentUVE&)>>& edit) {
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    auto& live = entityManager.GetComponentUVE<Scene::AnimationTreeComponentUVE>(tree);
+    auto& live = entityManager.GetComponentUVE<Scene::AnimationGraphComponentUVE>(tree);
     if (objectIndex >= live.objects.size()) {
         return;
     }
@@ -656,7 +659,7 @@ void EditorUVE::DrawStateMachineSelectionUVE(const Scene::EntityUVE tree, const 
         return AnimationGraphSlotLabelUVE(Kind::StateMachine, slot);
     };
     const auto editMachine = [&edit, machineId](std::function<void(AnimationGraphObjectUVE&)> change) {
-        edit = [machineId, change = std::move(change)](Scene::AnimationTreeComponentUVE& t) {
+        edit = [machineId, change = std::move(change)](Scene::AnimationGraphComponentUVE& t) {
             const auto it = std::ranges::find(t.objects, machineId, &AnimationGraphObjectUVE::id);
             if (it != t.objects.end()) {
                 change(*it);
@@ -683,7 +686,7 @@ void EditorUVE::DrawStateMachineSelectionUVE(const Scene::EntityUVE tree, const 
         ImGui::SameLine();
         ImGui::BeginDisabled(index == 0U);
         if (ImGui::ArrowButton("##earlier", ImGuiDir_Up)) {
-            edit = [machineId, index](Scene::AnimationTreeComponentUVE& t) {
+            edit = [machineId, index](Scene::AnimationGraphComponentUVE& t) {
                 static_cast<void>(MoveAnimationTransitionUVE(t.objects, machineId, index, index - 1U));
             };
             view.pickedTransition = static_cast<int>(index) - 1;
@@ -692,7 +695,7 @@ void EditorUVE::DrawStateMachineSelectionUVE(const Scene::EntityUVE tree, const 
         ImGui::SameLine();
         ImGui::BeginDisabled(index + 1U >= machine.transitions.size());
         if (ImGui::ArrowButton("##later", ImGuiDir_Down)) {
-            edit = [machineId, index](Scene::AnimationTreeComponentUVE& t) {
+            edit = [machineId, index](Scene::AnimationGraphComponentUVE& t) {
                 static_cast<void>(MoveAnimationTransitionUVE(t.objects, machineId, index, index + 1U));
             };
             view.pickedTransition = static_cast<int>(index) + 1;
@@ -703,7 +706,7 @@ void EditorUVE::DrawStateMachineSelectionUVE(const Scene::EntityUVE tree, const 
         }
         ImGui::SameLine();
         if (ImGui::SmallButton("Remove")) {
-            edit = [machineId, index](Scene::AnimationTreeComponentUVE& t) {
+            edit = [machineId, index](Scene::AnimationGraphComponentUVE& t) {
                 static_cast<void>(RemoveAnimationTransitionUVE(t.objects, machineId, index));
             };
             view.pickedTransition = -1;
@@ -723,7 +726,7 @@ void EditorUVE::DrawStateMachineSelectionUVE(const Scene::EntityUVE tree, const 
                 live = view.stateBefore;
                 view.transitionDragging = false;
             }
-            edit = [machineId, index, transition](Scene::AnimationTreeComponentUVE& t) {
+            edit = [machineId, index, transition](Scene::AnimationGraphComponentUVE& t) {
                 const auto it = std::ranges::find(t.objects, machineId, &AnimationGraphObjectUVE::id);
                 if (it != t.objects.end() && index < it->transitions.size()) {
                     it->transitions[index] = transition;
@@ -743,7 +746,7 @@ void EditorUVE::DrawStateMachineSelectionUVE(const Scene::EntityUVE tree, const 
         if (child != nullptr) {
             const std::uint32_t childId = child->id;
             const auto editChild = [&edit, childId](std::function<void(AnimationGraphObjectUVE&)> change) {
-                edit = [childId, change = std::move(change)](Scene::AnimationTreeComponentUVE& t) {
+                edit = [childId, change = std::move(change)](Scene::AnimationGraphComponentUVE& t) {
                     const auto it = std::ranges::find(t.objects, childId, &AnimationGraphObjectUVE::id);
                     if (it != t.objects.end()) {
                         change(*it);
@@ -817,7 +820,7 @@ void EditorUVE::DrawStateMachineSelectionUVE(const Scene::EntityUVE tree, const 
         if (ImGui::BeginCombo("##add-transition", "+ Transition to...")) {
             for (std::uint32_t target = 0U; target < machine.inputs.size(); ++target) {
                 if (target != slot && ImGui::Selectable(stateName(target).c_str())) {
-                    edit = [machineId, slot, target](Scene::AnimationTreeComponentUVE& t) {
+                    edit = [machineId, slot, target](Scene::AnimationGraphComponentUVE& t) {
                         static_cast<void>(AddAnimationTransitionUVE(t.objects, machineId, slot, target));
                     };
                     view.pickedTransition = static_cast<int>(machine.transitions.size());
@@ -829,7 +832,7 @@ void EditorUVE::DrawStateMachineSelectionUVE(const Scene::EntityUVE tree, const 
         ImGui::BeginDisabled(machine.inputs.size() <= 1U);
         if (ImGui::Button("Remove State", ImVec2{-FLT_MIN, 0.0F})) {
             const std::size_t removed = slot;
-            edit = [machineId, removed](Scene::AnimationTreeComponentUVE& t) {
+            edit = [machineId, removed](Scene::AnimationGraphComponentUVE& t) {
                 static_cast<void>(RemoveAnimationGraphInputSlotUVE(t.objects, machineId, removed));
             };
             view.pickedState = -1;

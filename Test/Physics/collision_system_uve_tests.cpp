@@ -177,7 +177,7 @@ TEST_F(CollisionSystemUVETest, DetectCollisionsUVE_BvhPreservesLegacyPairOrderAc
 }
 
 TEST_F(CollisionSystemUVETest, DetectCollisionsUVE_StaticVsStaticOverlap_IsStillReported) {
-    // Both entities have ColliderComponentUVE but neither has RigidBodyComponentUVE — pure
+    // Both entities have ColliderComponentUVE but neither has Rigid3DComponentUVE — pure
     // static world geometry. Detection doesn't care; resolution (PhysicsSystemUVE) does.
     const Scene::EntityUVE a = MakeColliderEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 1.0F});
     const Scene::EntityUVE b = MakeColliderEntityUVE(Math::Vector3UVE{0.5F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 1.0F});

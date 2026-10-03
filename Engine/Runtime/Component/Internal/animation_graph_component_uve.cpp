@@ -1,6 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-#include "uve/component/animation_tree_component_uve.h"
+#include "uve/component/animation_graph_component_uve.h"
 
 #include <algorithm>
 #include <cmath>
@@ -71,7 +71,7 @@ struct InputRuleUVE final {
 
 } // namespace
 
-std::string DescribeAnimationGraphProblemUVE(const AnimationTreeComponentUVE& component) {
+std::string DescribeAnimationGraphProblemUVE(const AnimationGraphComponentUVE& component) {
     const std::vector<AnimationGraphObjectUVE>& objects = component.objects;
     if (objects.size() > kMaximumAnimationGraphObjectsUVE) {
         return "too many objects";
@@ -227,7 +227,7 @@ std::string DescribeAnimationGraphProblemUVE(const AnimationTreeComponentUVE& co
     return {};
 }
 
-bool IsAnimationTreeComponentValidUVE(const AnimationTreeComponentUVE& component) noexcept {
+bool IsAnimationGraphComponentValidUVE(const AnimationGraphComponentUVE& component) noexcept {
     try {
         return DescribeAnimationGraphProblemUVE(component).empty();
     } catch (...) {

@@ -14,9 +14,9 @@ namespace UVE::Scene {
 /// velocity and drag. `velocity` is the one piece of state PhysicsSystemUVE needs to persist
 /// across frames — storing it here (rather than inside PhysicsSystemUVE itself) is what lets
 /// PhysicsSystemUVE stay a stateless service, matching CameraSystemUVE/MeshRendererUVE's
-/// precedent. A collider-only entity (ColliderComponentUVE with no RigidBodyComponentUVE) is
+/// precedent. A collider-only entity (ColliderComponentUVE with no Rigid3DComponentUVE) is
 /// static world geometry: detected and collided against, never moved.
-struct RigidBodyComponentUVE final {
+struct Rigid3DComponentUVE final {
     float mass = 1.0F;
     bool isKinematic = false;
     Math::Vector3UVE velocity{};
@@ -36,6 +36,6 @@ struct RigidBodyComponentUVE final {
 /// Validates the value-only rigid-body contract before scene persistence and physics integration.
 /// Zero mass remains valid and means an immovable body under the existing inverse-mass policy;
 /// kinematic state is orthogonal to mass and remains an explicit authoring choice.
-[[nodiscard]] bool IsRigidBodyComponentValidUVE(const RigidBodyComponentUVE& rigidBody) noexcept;
+[[nodiscard]] bool IsRigid3DComponentValidUVE(const Rigid3DComponentUVE& rigidBody) noexcept;
 
 } // namespace UVE::Scene

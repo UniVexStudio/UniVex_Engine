@@ -8,7 +8,7 @@
 
 #include <imgui.h>
 
-#include "uve/component/animation_tree_component_uve.h"
+#include "uve/component/animation_graph_component_uve.h"
 
 namespace UVE::Editor {
 

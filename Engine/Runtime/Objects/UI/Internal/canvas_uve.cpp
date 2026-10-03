@@ -1,6 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-#include "uve/objects/canvas_layer/canvas_uve.h"
+#include "uve/objects/canvas/canvas_uve.h"
 
 #include "uve/entity/i_entity_manager_uve.h"
 

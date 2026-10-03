@@ -10,7 +10,7 @@
 
 #include "uve/core/engine_core_uve.h"
 #include "uve/editor/editor_uve.h"
-#include "uve/component/animation_player_component_uve.h"
+#include "uve/component/animation_sequencer_component_uve.h"
 #include "uve/component/audio_source_component_uve.h"
 #include "uve/component/camera_component_uve.h"
 #include "uve/component/collider_component_uve.h"
@@ -21,7 +21,7 @@
 #include "uve/component/mesh_component_uve.h"
 #include "uve/component/name_component_uve.h"
 #include "uve/component/particle_emitter_component_uve.h"
-#include "uve/component/rigid_body_component_uve.h"
+#include "uve/component/rigid_3d_component_uve.h"
 #include "uve/component/script_component_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/scene/objects/scene_folder_uve.h"
@@ -70,12 +70,12 @@ TEST(SceneObjectEditorUVETest, CentralizedRegistryCreationUVE_AttachesExpectedAu
         EXPECT_TRUE(entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(character));
         EXPECT_TRUE(entityManager.HasComponentUVE<Scene::CharacterControllerComponentUVE>(character));
         // The controller owns all of its motion: no rigid body for gravity to fight over.
-        EXPECT_FALSE(entityManager.HasComponentUVE<Scene::RigidBodyComponentUVE>(character));
+        EXPECT_FALSE(entityManager.HasComponentUVE<Scene::Rigid3DComponentUVE>(character));
 
         const Scene::EntityUVE animationPlayer =
             editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::AnimationSequencer);
         ASSERT_NE(animationPlayer, Scene::kInvalidEntityUVE);
-        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::AnimationPlayerComponentUVE>(animationPlayer));
+        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::AnimationSequencerComponentUVE>(animationPlayer));
 
         const Scene::EntityUVE audio =
             editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::AudioSource3D);
@@ -95,12 +95,12 @@ TEST(SceneObjectEditorUVETest, CentralizedRegistryCreationUVE_AttachesExpectedAu
         const Scene::EntityUVE rigidBody =
             editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Rigid3D);
         ASSERT_NE(rigidBody, Scene::kInvalidEntityUVE);
-        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::RigidBodyComponentUVE>(rigidBody));
+        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::Rigid3DComponentUVE>(rigidBody));
 
         const Scene::EntityUVE animationTree =
             editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::AnimationGraph);
         ASSERT_NE(animationTree, Scene::kInvalidEntityUVE);
-        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::AnimationTreeComponentUVE>(animationTree));
+        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::AnimationGraphComponentUVE>(animationTree));
         // Both animation objects are pure Objects: no transform of their own.
         EXPECT_FALSE(entityManager.HasComponentUVE<Scene::TransformComponentUVE>(animationTree));
         EXPECT_FALSE(entityManager.HasComponentUVE<Scene::TransformComponentUVE>(animationPlayer));

@@ -16,7 +16,7 @@
 #include "uve/physics/collision_pair_uve.h"
 #include "uve/physics/physics_material_uve.h"
 #include "uve/component/collider_component_uve.h"
-#include "uve/component/rigid_body_component_uve.h"
+#include "uve/component/rigid_3d_component_uve.h"
 #include "uve/component/transform_component_uve.h"
 
 namespace UVE::Physics {
@@ -28,7 +28,7 @@ namespace {
 }
 
 /// 0 for a kinematic or non-positive-mass body — the "infinite mass" case (immovable). Computed
-/// on demand rather than stored on RigidBodyComponentUVE, so mass/inverseMass can never desync.
+/// on demand rather than stored on Rigid3DComponentUVE, so mass/inverseMass can never desync.
 [[nodiscard]] float EffectiveInverseMassUVE(bool isKinematic, float mass) noexcept {
     return (isKinematic || mass <= 0.0F) ? 0.0F : 1.0F / mass;
 }
@@ -51,7 +51,7 @@ namespace {
 }
 
 /// Moves `entity` by `positionDelta` (via SetLocalTransformUVE, so dirty-flag propagation stays
-/// correct) and, if it has a non-kinematic RigidBodyComponentUVE, applies `material`'s combined
+/// correct) and, if it has a non-kinematic Rigid3DComponentUVE, applies `material`'s combined
 /// friction/restitution to the velocity component pointing toward `towardOtherBody`: the
 /// tangential (sliding) component is damped by `1 - friction`, and the into-surface component is
 /// reflected and scaled by `restitution` rather than simply zeroed. With `friction = 0,
@@ -65,10 +65,10 @@ void MoveAndDeflectUVE(Scene::IEntityManagerUVE& entityManager, Scene::ISceneGra
     transform.localPosition += positionDelta;
     sceneGraph.SetLocalTransformUVE(entityManager, entity, transform);
 
-    if (!entityManager.HasComponentUVE<Scene::RigidBodyComponentUVE>(entity)) {
+    if (!entityManager.HasComponentUVE<Scene::Rigid3DComponentUVE>(entity)) {
         return;
     }
-    Scene::RigidBodyComponentUVE& rigidBody = entityManager.GetComponentUVE<Scene::RigidBodyComponentUVE>(entity);
+    Scene::Rigid3DComponentUVE& rigidBody = entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(entity);
     if (rigidBody.isKinematic) {
         return;
     }
@@ -87,11 +87,11 @@ void MoveAndDeflectUVE(Scene::IEntityManagerUVE& entityManager, Scene::ISceneGra
 void ResolvePairUVE(Scene::IEntityManagerUVE& entityManager, Scene::ISceneGraphUVE& sceneGraph,
                     const CollisionPairUVE& pair) {
     const auto InverseMassOfUVE = [&entityManager](Scene::EntityUVE entity) {
-        if (!entityManager.HasComponentUVE<Scene::RigidBodyComponentUVE>(entity)) {
+        if (!entityManager.HasComponentUVE<Scene::Rigid3DComponentUVE>(entity)) {
             return 0.0F;
         }
-        const Scene::RigidBodyComponentUVE& rigidBody =
-            entityManager.GetComponentUVE<Scene::RigidBodyComponentUVE>(entity);
+        const Scene::Rigid3DComponentUVE& rigidBody =
+            entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(entity);
         return EffectiveInverseMassUVE(rigidBody.isKinematic, rigidBody.mass);
     };
 
@@ -138,12 +138,12 @@ void PhysicsSystemUVE::StepUVE(Scene::IEntityManagerUVE& entityManager, Scene::I
         !std::isfinite(m_gravity.x) || !std::isfinite(m_gravity.y) || !std::isfinite(m_gravity.z)) {
         return;
     }
-    entityManager.ForEachUVE<Scene::TransformComponentUVE, Scene::RigidBodyComponentUVE>(
+    entityManager.ForEachUVE<Scene::TransformComponentUVE, Scene::Rigid3DComponentUVE>(
         [&entityManager, &sceneGraph, this, fixedDeltaTimeSeconds](
             Scene::EntityUVE entity, const Scene::TransformComponentUVE& transform,
-            Scene::RigidBodyComponentUVE& rigidBody) {
-            if (!Scene::IsRigidBodyComponentValidUVE(rigidBody)) {
-                UVE_ASSERT(Scene::IsRigidBodyComponentValidUVE(rigidBody));
+            Scene::Rigid3DComponentUVE& rigidBody) {
+            if (!Scene::IsRigid3DComponentValidUVE(rigidBody)) {
+                UVE_ASSERT(Scene::IsRigid3DComponentValidUVE(rigidBody));
                 return;
             }
             if (rigidBody.isKinematic) {

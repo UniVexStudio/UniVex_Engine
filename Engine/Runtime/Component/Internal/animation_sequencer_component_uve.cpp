@@ -1,6 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-#include "uve/component/animation_player_component_uve.h"
+#include "uve/component/animation_sequencer_component_uve.h"
 
 #include <cmath>
 
@@ -17,8 +17,8 @@ namespace {
 
 } // namespace
 
-bool IsAnimationPlayerComponentValidUVE(const AnimationPlayerComponentUVE& component) noexcept {
-    const AnimationPlayerComponentUVE& c = component;
+bool IsAnimationSequencerComponentValidUVE(const AnimationSequencerComponentUVE& component) noexcept {
+    const AnimationSequencerComponentUVE& c = component;
     return std::isfinite(c.speed) && c.loopMode <= AnimationLoopModeUVE::PingPong &&
            c.onFinish <= AnimationFinishActionUVE::ReturnToStart &&
            IsNonNegativeUVE(c.startOffsetSeconds) &&

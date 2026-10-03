@@ -24,11 +24,14 @@
 #include <array>
 #include <cfloat>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <limits>
 #include <optional>
 #include <string>
+#include <string_view>
+#include <system_error>
 #include <typeindex>
 #include <utility>
 #include <vector>
@@ -492,7 +495,7 @@ void EditorUVE::DrawMetadataPropertyRowUVE(const TypeMetadataEntryUVE& entry,
     if (!property.enumEntries.empty()) {
         // Collapsed dropdown - an enum never occupies the section with one row per option. When
         // the choice is resolved against the hierarchy, the answer rides along in the preview:
-        // "Inherit (Pausable)" says what Inherit means here without a second row to read.
+        // "Inherit (Running)" says what Inherit means here without a second row to read.
         std::int64_t current = 0;
         property.getValue(instance, &current);
         std::size_t selected = 0U;

@@ -56,12 +56,12 @@ using PoseUVE = Core::TransformPoseUVE;
     return std::fabs(denominator) > 1e-6F ? numerator / denominator : numerator;
 }
 
-[[nodiscard]] PoseUVE StartPoseUVE(const AnimationPlayerComponentUVE& player) noexcept {
+[[nodiscard]] PoseUVE StartPoseUVE(const AnimationSequencerComponentUVE& player) noexcept {
     return PoseUVE{player.startPosition, player.startRotation, player.startScale};
 }
 
 /// The clip's motion since its first frame, laid on top of where the target started.
-[[nodiscard]] PoseUVE MakeRelativeUVE(const AnimationPlayerComponentUVE& player, const PoseUVE& first,
+[[nodiscard]] PoseUVE MakeRelativeUVE(const AnimationSequencerComponentUVE& player, const PoseUVE& first,
                                       const PoseUVE& sampled) noexcept {
     PoseUVE result;
     const Math::Vector3UVE offset = sampled.position - first.position;
@@ -82,7 +82,7 @@ void WritePoseUVE(const AnimationMixerComponentUVE& mixer, const PoseUVE& pose, 
 }
 
 /// Moves the clock and applies the loop mode. Returns false when a Once clip reached its end.
-[[nodiscard]] bool AdvanceClockUVE(AnimationPlayerComponentUVE& player, const double duration,
+[[nodiscard]] bool AdvanceClockUVE(AnimationSequencerComponentUVE& player, const double duration,
                                    const float deltaSeconds) noexcept {
     double time = static_cast<double>(player.currentTimeSeconds) +
                   static_cast<double>(player.speed) * static_cast<double>(player.direction) *
@@ -180,7 +180,7 @@ void WriteAnimatedPoseUVE(const Core::TransformPoseUVE& pose, const bool positio
 }
 
 bool IsAnimationSequencerObjectDefinitionValidUVE(const AnimationSequencerObjectDefinitionUVE& value) noexcept {
-    return IsAnimationPlayerComponentValidUVE(value.player) && IsAnimationMixerComponentValidUVE(value.mixer);
+    return IsAnimationSequencerComponentValidUVE(value.player) && IsAnimationMixerComponentValidUVE(value.mixer);
 }
 
 void ApplyAnimationSequencerObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
@@ -190,12 +190,12 @@ void ApplyAnimationSequencerObjectDefinitionUVE(IEntityManagerUVE& entityManager
         entityManager.AddComponentUVE<AnimationMixerComponentUVE>(entity, value.mixer);
     }
     ApplyAnimationMixerBaseUVE(entityManager, entity, AnimationSequencerObjectDefinitionUVE::defaultName);
-    if (entityManager.IsAliveUVE(entity) && !entityManager.HasComponentUVE<AnimationPlayerComponentUVE>(entity)) {
-        entityManager.AddComponentUVE<AnimationPlayerComponentUVE>(entity, value.player);
+    if (entityManager.IsAliveUVE(entity) && !entityManager.HasComponentUVE<AnimationSequencerComponentUVE>(entity)) {
+        entityManager.AddComponentUVE<AnimationSequencerComponentUVE>(entity, value.player);
     }
 }
 
-void PlayAnimationPlayerUVE(AnimationPlayerComponentUVE& player, const TransformComponentUVE& targetNow,
+void PlayAnimationSequencerUVE(AnimationSequencerComponentUVE& player, const TransformComponentUVE& targetNow,
                             const double clipDurationSeconds) noexcept {
     const double duration = std::isfinite(clipDurationSeconds) ? std::max(clipDurationSeconds, 0.0) : 0.0;
     const double offset = std::min(static_cast<double>(player.startOffsetSeconds), duration);
@@ -215,11 +215,11 @@ void PlayAnimationPlayerUVE(AnimationPlayerComponentUVE& player, const Transform
     player.startScale = targetNow.localScale;
 }
 
-void StopAnimationPlayerUVE(AnimationPlayerComponentUVE& player) noexcept {
+void StopAnimationSequencerUVE(AnimationSequencerComponentUVE& player) noexcept {
     player.isPlaying = false;
 }
 
-bool StepAnimationPlayerUVE(AnimationPlayerComponentUVE& player, const Asset::AnimationClipAssetUVE& clip,
+bool StepAnimationSequencerUVE(AnimationSequencerComponentUVE& player, const Asset::AnimationClipAssetUVE& clip,
                             const float deltaSeconds, TransformComponentUVE& target,
                             const AnimationMixerComponentUVE& mixer) noexcept {
     if (!player.isPlaying) {
@@ -266,7 +266,7 @@ bool StepAnimationPlayerUVE(AnimationPlayerComponentUVE& player, const Asset::An
     return true;
 }
 
-bool StepSkeletalAnimationPlayerUVE(AnimationPlayerComponentUVE& player, const Asset::AnimationClipAssetUVE& clip,
+bool StepSkeletalAnimationSequencerUVE(AnimationSequencerComponentUVE& player, const Asset::AnimationClipAssetUVE& clip,
                                     const float deltaSeconds, Skeleton3DComponentUVE& skeleton,
                                     const AnimationMixerComponentUVE& mixer) {
     if (!player.isPlaying) {

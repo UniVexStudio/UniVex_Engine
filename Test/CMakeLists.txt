@@ -186,7 +186,7 @@ add_executable(uve_integration_tests
     Objects/3D/object_definitions_3d_uve_tests.cpp
     Objects/3D/animation_objects_uve_tests.cpp
     Objects/3D/conformed_playback_uve_tests.cpp
-    Objects/UI/object_definitions_canvas_layer_uve_tests.cpp
+    Objects/UI/object_definitions_canvas_uve_tests.cpp
     Integration/Entity/archetype_uve_tests.cpp
     Integration/Entity/chunk_uve_tests.cpp
     Integration/Entity/entity_manager_uve_tests.cpp
@@ -203,7 +203,7 @@ add_executable(uve_integration_tests
     Integration/Scene/scene_object_registry_uve_tests.cpp
     Integration/Animation/time_pose_contract_uve_tests.cpp
     Integration/Animation/animation_clip_uve_tests.cpp
-    Integration/Animation/animation_tree_uve_tests.cpp
+    Integration/Animation/animation_graph_uve_tests.cpp
     Integration/Animation/animation_state_machine_uve_tests.cpp
     Integration/World/world_uve_tests.cpp
     Integration/Object/type_metadata_uve_tests.cpp

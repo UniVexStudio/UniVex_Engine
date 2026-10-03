@@ -179,9 +179,9 @@ bool SceneGraphUVE::ResolveInterpolationModeUVE(const PendingEntityUVE& item, co
         return parentInterpolated;
     }
     bool resolved = parentInterpolated;
-    if (item.interpolation->mode == PhysicsInterpolationModeUVE::On) {
+    if (item.interpolation->mode == PoseSmoothingUVE::Blended) {
         resolved = true;
-    } else if (item.interpolation->mode == PhysicsInterpolationModeUVE::Off) {
+    } else if (item.interpolation->mode == PoseSmoothingUVE::Exact) {
         resolved = false;
     }
     item.interpolation->interpolatedInHierarchy = resolved;
@@ -247,8 +247,8 @@ void SceneGraphUVE::ResolveInheritedModesUVE(const PendingEntityUVE& item,
     // through, so an intermediate object that never opted in does not break a subtree's chain.
     outState.processModeInHierarchy =
         item.process == nullptr
-            ? ResolveProcessModeUVE(ProcessModeUVE::Inherit, parentState.processModeInHierarchy)
-            : ResolveProcessModeUVE(item.process->mode, parentState.processModeInHierarchy);
+            ? ResolveTickModeUVE(TickModeUVE::Inherit, parentState.processModeInHierarchy)
+            : ResolveTickModeUVE(item.process->mode, parentState.processModeInHierarchy);
     if (item.process != nullptr) {
         item.process->resolvedModeInHierarchy = outState.processModeInHierarchy;
     }
@@ -263,9 +263,9 @@ void SceneGraphUVE::ResolveInheritedModesUVE(const PendingEntityUVE& item,
 
     outState.autoTranslateModeInHierarchy =
         item.autoTranslate == nullptr
-            ? ResolveAutoTranslateModeUVE(AutoTranslateModeUVE::Inherit,
+            ? ResolveLocalizeModeUVE(LocalizeModeUVE::Inherit,
                                           parentState.autoTranslateModeInHierarchy)
-            : ResolveAutoTranslateModeUVE(item.autoTranslate->mode,
+            : ResolveLocalizeModeUVE(item.autoTranslate->mode,
                                           parentState.autoTranslateModeInHierarchy);
     if (item.autoTranslate != nullptr) {
         item.autoTranslate->resolvedModeInHierarchy = outState.autoTranslateModeInHierarchy;
