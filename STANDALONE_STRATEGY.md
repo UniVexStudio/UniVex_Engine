@@ -650,6 +650,58 @@ now says what is true: the authored graph is `Scene::AnimationGraphComponentUVE`
 the authored graph does not have. `pose_graph_uve.h` carries the same explanation at the top, so the
 two vocabularies cannot be mistaken for each other again.
 
+### Five names with two definitions each — split by what they do, never merged
+
+A repo-wide scan of `struct`/`class`/`enum class` declarations found 40 names declared more than
+once. 35 were forward declarations, which is ordinary C++. **Five had two real definitions**, in
+different namespaces — so they compiled, but a grep for the name returned two unrelated things and a
+rename sweep could hit the wrong one.
+
+The rule applied: **nothing is deleted and nothing is merged.** Each pair does different work and
+keeps all of its code; the one whose name says less about its job gets qualified by its owner.
+
+| Name | Definition A | Definition B | Renamed |
+|---|---|---|---|
+| `ChunkUVE` | `UVE::Scene::Detail` — an archetype's rows × component columns | `UVE::UVScript` — one compiled function's bytecode | A → `ArchetypeChunkUVE` |
+| `AnimationTransitionUVE` | `UVE::Core` — scheduler between string-id states; priority, exitTime, interruption | `UVE::Scene` — a StateMachine node's transition; input indices, conditions, exitPhase, crossfade curve | B → `AnimationGraphTransitionUVE` |
+| `ResourceHandleUVE` | `UVE::Asset` — `{guid, generation}`, identity in the dependency graph | `UVE::Render` — opaque `template<Tag>` GPU handle, base of Buffer/Texture/Shader/PipelineHandleUVE | A → `ResourceDependencyHandleUVE` |
+| `TextureFormatUVE` | `UVE::Asset` — 2 formats, what a loadable `TextureAssetUVE` can store | `UVE::Render` — 9 formats, what the GPU can hold | A → `TextureAssetFormatUVE` |
+| `TextureColorSpaceUVE` | `UVE::Asset` | `UVE::Render` | A → `TextureAssetColorSpaceUVE` |
+
+Two judgment calls worth keeping. `UVE::UVScript::ChunkUVE` was **left alone**: "chunk" is the right
+word for a VM compilation unit, and the collision was the ECS side's to resolve. And the
+non-colliding animation family (`AnimationTransitionConditionUVE`, `CurveUVE`, `StartUVE`, `ModeUVE`)
+plus the editor's `Add/Move/Remove/DescribeAnimationTransitionUVE` were **not** renamed — that
+resolves no collision.
+
+**Call sites were enumerated by the compiler, not guessed** for the texture enums: rename the
+definition, build, fix what it reports, repeat. Three passes, 10 files. Two files that looked
+ambiguous were not — `ui_font_atlas`'s mentions are comments about the RHI enum (they cite
+`Depth32Float`, which only the RHI one has), and `EditorMeshLayer` / `engine_services_uve_tests`
+already qualify with `Render::`.
+
+### Two more compile errors the graph rename had shipped, and a broken sweep harness
+
+Adding `Test/Objects/3D/animation_objects_uve_tests.cpp` and
+`Test/Editor/animation_graph_editing_uve_tests.cpp` to the subset exposed ~41 `tree.objects`
+references the `f411ee5` graph-node rename left behind. Those two files had **never been built by
+the subset**, so 51 tests had never run. Adding them: 290 → 341 tests, 42 → 44 suites.
+
+The sweep harness was also wrong, and had been silently wrong for several passes. Its include path
+had only the `Expose` directories, so over a hundred Test files failed on module-private headers —
+and **g++ stops at a fatal missing include, so any real error further down was masked.** A probe
+file with an undefined symbol proved it: silent before the fix, reporting after. Adding `-ITest`
+and `-IEngine/Runtime/Entity/Internal` (what the real build gives `uve_integration_tests`) made the
+sweep trustworthy.
+
+Current state of that sweep, over every Engine and Test TU the subset does not build:
+
+```
+357 files   325 clean   32 blocked on third-party headers   0 real errors
+```
+
+The 32 are libjpeg/libpng, ImGui and SPIRV consumers. Repo-wide duplicate-type scan: **0**.
+
 ### Verification actually run
 
 ```
