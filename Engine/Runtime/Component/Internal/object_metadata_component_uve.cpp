@@ -55,7 +55,7 @@ std::string_view DescribeObjectMetadataKeyIssueUVE(const ObjectMetadataKeyIssueU
         case ObjectMetadataKeyIssueUVE::StartsWithDigit:
             return "A name cannot start with a digit.";
         case ObjectMetadataKeyIssueUVE::Duplicate:
-            return "This node already has metadata with that name.";
+            return "This object already has metadata with that name.";
     }
     return {};
 }

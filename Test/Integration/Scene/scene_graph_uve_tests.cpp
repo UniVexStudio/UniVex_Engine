@@ -567,7 +567,7 @@ TEST_F(SceneGraphUVETest, UpdateUVE_AnEntityWithoutTheComponentPassesVisibilityT
     sceneGraph.UpdateUVE(entityManager);
 
     EXPECT_FALSE(entityManager.GetComponentUVE<VisibilityComponentUVE>(grandchild).visibleInHierarchy)
-        << "a node without the component must pass its parent's state through, not reset it";
+        << "an object without the component must pass its parent's state through, not reset it";
 }
 
 TEST_F(SceneGraphUVETest, UpdateUVE_ResolvesProcessModeThroughAObjectThatDoesNotCarryTheComponent) {
@@ -1153,7 +1153,7 @@ TEST_F(SceneGraphUVETest, UpdateUVE_TopLevelBecomesTheOriginForItsOwnChildren) {
 
     EXPECT_NEAR(entityManager.GetComponentUVE<WorldTransformComponentUVE>(detached).worldPosition.x, 5.0F, kEpsilon);
     EXPECT_NEAR(entityManager.GetComponentUVE<WorldTransformComponentUVE>(grandchild).worldPosition.x, 7.0F, kEpsilon)
-        << "the grandchild composes from the detached node, not from the grandparent";
+        << "the grandchild composes from the detached object, not from the grandparent";
 }
 
 TEST_F(SceneGraphUVETest, UpdateUVE_TopLevelOnARootEntityChangesNothing) {
@@ -1410,7 +1410,7 @@ TEST_F(SceneGraphUVETest, UpdateUVE_AnEntityWithoutTheComponentPassesInterpolati
 
     EXPECT_FALSE(
         entityManager.GetComponentUVE<PhysicsInterpolationComponentUVE>(grandchild).interpolatedInHierarchy)
-        << "a node without the component must pass the parent's setting through";
+        << "an object without the component must pass the parent's setting through";
 }
 
 TEST_F(SceneGraphUVETest, UpdateUVE_ANonFiniteTransformDoesNotRecordAPoseToBlendTowards) {

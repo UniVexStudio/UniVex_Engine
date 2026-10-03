@@ -99,7 +99,7 @@ constexpr const char* kPanelLabelInspectorUVE = "\xEE\xA8\x83 Inspector##right-p
 }
 
 
-/// A class-chain heading ("Object3D", "Node"): the ancestor the sections below it come from. A
+/// A class-chain heading ("Object3D", "Object"): the ancestor the sections below it come from. A
 /// quiet label with a rule to the edge, so it groups without competing with the section headers.
 void DrawInspectorChainHeaderUVE(const std::string& label) {
     ImGui::Dummy(ImVec2(0.0F, 4.0F));
@@ -189,7 +189,7 @@ void EditorUVE::DrawImportQueueMonitorUVE() {
         const std::string header = "Job #" + std::to_string(job.id.value) + " — " +
                                    ImportJobStateLabelUVE(job.state) + "##import-job-" +
                                    std::to_string(job.id.value);
-        if (ImGui::TreeObjectEx(header.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
+        if (ImGui::TreeNodeEx(header.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
             const std::string sourcePath = job.request.sourcePath.generic_string();
             const std::string destinationPath = job.request.destinationPath.generic_string();
             ImGui::TextWrapped("Source: %s", sourcePath.c_str());
@@ -447,7 +447,7 @@ bool EditorUVE::DrawInspectorFoldUVE(const char* const label, const std::string&
     const bool open = IsInspectorFoldOpenUVE(key, defaultOpen);
     ImGui::SetNextItemOpen(open, ImGuiCond_Always);
     const auto treeFlags = static_cast<ImGuiTreeNodeFlags>(flags);
-    const bool nowOpen = asHeader ? ImGui::CollapsingHeader(label, treeFlags) : ImGui::TreeObjectEx(label, treeFlags);
+    const bool nowOpen = asHeader ? ImGui::CollapsingHeader(label, treeFlags) : ImGui::TreeNodeEx(label, treeFlags);
     if (nowOpen != open) {
         SetInspectorFoldOpenUVE(key, nowOpen);
     }

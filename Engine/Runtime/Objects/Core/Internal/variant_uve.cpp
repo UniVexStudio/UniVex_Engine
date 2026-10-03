@@ -25,14 +25,14 @@ constexpr std::array<VariantTypeInfoUVE, kVariantTypeCountUVE> kVariantTypeInfoU
     {VariantTypeUVE::Float, "float", "Basic"},
     {VariantTypeUVE::String, "String", "Basic"},
     {VariantTypeUVE::StringName, "StringName", "Basic"},
-    {VariantTypeUVE::ObjectPath, "NodePath", "Basic"},
+    {VariantTypeUVE::ObjectPath, "ObjectPath", "Basic"},
     {VariantTypeUVE::Vector2, "Vector2", "Math"},
     {VariantTypeUVE::Vector3, "Vector3", "Math"},
     {VariantTypeUVE::Vector4, "Vector4", "Math"},
     {VariantTypeUVE::Quaternion, "Quaternion", "Math"},
     {VariantTypeUVE::Color, "Color", "Color"},
     {VariantTypeUVE::Resource, "Resource", "Reference"},
-    {VariantTypeUVE::Object, "Node", "Reference"},
+    {VariantTypeUVE::Object, "Object", "Reference"},
     {VariantTypeUVE::Array, "Array", "Collection"},
     {VariantTypeUVE::Dictionary, "Dictionary", "Collection"},
     {VariantTypeUVE::PackedByteArray, "PackedByteArray", "Packed Array"},
@@ -491,6 +491,15 @@ std::string_view GetVariantTypeNameUVE(const VariantTypeUVE type) noexcept {
 }
 
 std::optional<VariantTypeUVE> TryParseVariantTypeNameUVE(const std::string_view name) noexcept {
+    // A saved document names a variant's type (see GetVariantTypeNameUVE), so the two names this
+    // vocabulary retired stay readable: "NodePath" and "Node" are what ObjectPath and Object were
+    // called before the object pass. Writing always uses the current name.
+    if (name == "NodePath") {
+        return VariantTypeUVE::ObjectPath;
+    }
+    if (name == "Node") {
+        return VariantTypeUVE::Object;
+    }
     for (const VariantTypeInfoUVE& info : kVariantTypeInfoUVE) {
         if (info.name == name) {
             return info.type;

@@ -493,7 +493,7 @@ TEST(EditorUVETest, InspectorDrawerRegistrationUVE_IncludesStableHierarchyDrawer
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "process"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "thread-group"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "auto-translate"));
-        EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "node-metadata"));
+        EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "object-metadata"));
         editor.ShutdownUVE();
     }
 
@@ -1031,7 +1031,7 @@ TEST(EditorUVETest, NewObjectDefaultsUVE_ParentAndPlacementFollowThePreferences)
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_new_node_defaults.uvscene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_new_object_defaults.uvscene");
         editor.InitUVE();
         Scene::IEntityManagerUVE& entities = engine.GetServicesUVE().GetEntityManagerUVE();
         Scene::ISceneGraphUVE& graph = engine.GetServicesUVE().GetSceneGraphUVE();
@@ -4861,7 +4861,7 @@ TEST(EditorUVETest, SceneRootInspectorUVE_ShowsExactlyTheObjectSectionInOrder) {
         // No Name, Hierarchy or Transform; Thread Group lives inside Process.
         EXPECT_EQ(EditorUVEAccessUVE::GetEligibleInspectorDrawerIdsUVE(editor, root),
                   (std::vector<std::string>{"process", "physics-interpolation", "auto-translate",
-                                            "editor-description", "script", "node-metadata"}));
+                                            "editor-description", "script", "object-metadata"}));
 
         // On a object without Process, Thread Group still has a section of its own.
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
@@ -5039,7 +5039,7 @@ TEST(EditorUVETest, RenderInstanceChildInspectorUVE_IsOwnSectionThenBasesThenObj
         const auto expected = [](const std::string& own) {
             return std::vector<std::string>{own,       "render-instance",       "transform",      "visibility",
                                             "process", "physics-interpolation", "auto-translate", "editor-description",
-                                            "script",  "node-metadata"};
+                                            "script",  "object-metadata"};
         };
         EXPECT_EQ(EditorUVEAccessUVE::GetEligibleInspectorDrawerIdsUVE(editor, decal), expected("decal-3d"));
         EXPECT_EQ(EditorUVEAccessUVE::GetEligibleInspectorDrawerIdsUVE(editor, fog), expected("fog-volume-3d"));
@@ -5065,7 +5065,7 @@ TEST(EditorUVETest, SunAndWorldEnvironmentInspectorsUVE_FollowTheirClassChains) 
         EXPECT_EQ(EditorUVEAccessUVE::GetEligibleInspectorDrawerIdsUVE(editor, sun),
                   (std::vector<std::string>{"directional-light-3d", "light-emitter", "render-instance", "transform",
                                             "visibility", "process", "physics-interpolation", "auto-translate",
-                                            "editor-description", "script", "node-metadata"}));
+                                            "editor-description", "script", "object-metadata"}));
         // WorldEnvironment: a pure Object - its own section, then Object's; no Transform, no Visibility.
         const Scene::EntityUVE environment =
             editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::WorldEnvironment3D);
@@ -5073,7 +5073,7 @@ TEST(EditorUVETest, SunAndWorldEnvironmentInspectorsUVE_FollowTheirClassChains) 
         EXPECT_FALSE(entityManager.HasComponentUVE<Scene::TransformComponentUVE>(environment));
         EXPECT_EQ(EditorUVEAccessUVE::GetEligibleInspectorDrawerIdsUVE(editor, environment),
                   (std::vector<std::string>{"world-environment", "process", "physics-interpolation", "auto-translate",
-                                            "editor-description", "script", "node-metadata"}));
+                                            "editor-description", "script", "object-metadata"}));
         editor.ShutdownUVE();
     }
     engine.Shutdown();
@@ -5104,7 +5104,7 @@ TEST(EditorUVETest, SurfaceInstanceChildInspectorUVE_IsOwnSectionThenSurfaceRend
                                             "auto-translate",
                                             "editor-description",
                                             "script",
-                                            "node-metadata"};
+                                            "object-metadata"};
         };
         const Scene::EntityUVE mesh = create([&](const Scene::EntityUVE entity) {
             Scene::ApplyMeshInstance3DObjectDefinitionUVE(entityManager, entity, Scene::MeshInstance3DObjectDefinitionUVE{});
@@ -5152,7 +5152,7 @@ TEST(EditorUVETest, CharacterBodyInspectorUVE_IsItsChainToTheRootAndNothingElse)
         EXPECT_EQ(EditorUVEAccessUVE::GetEligibleInspectorDrawerIdsUVE(editor, body),
                   (std::vector<std::string>{"character-controller", "solid-body", "physics-object", "transform",
                                             "visibility", "process", "physics-interpolation", "auto-translate",
-                                            "editor-description", "script", "node-metadata"}));
+                                            "editor-description", "script", "object-metadata"}));
         // A primitive still draws its collider in its own section, not in PhysicsObject3D's.
         const Scene::EntityUVE box = entityManager.CreateEntityUVE();
         AttachRootUVE(engine, box, Scene::TransformComponentUVE{});
@@ -5186,7 +5186,7 @@ TEST(EditorUVETest, FolderUVE_GroupsObjectsWithoutMovingThem) {
         editor.SelectEntityUVE(cube);
         ASSERT_TRUE(editor.ReparentSelectedEntityUVE(folder));
         EXPECT_EQ(entityManager.GetComponentUVE<Scene::TransformComponentUVE>(cube).localPosition.x, 3.0F);
-        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorGroupHeadersUVE(editor, folder), (std::vector<std::string>{"Node"}));
+        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorGroupHeadersUVE(editor, folder), (std::vector<std::string>{"Object"}));
         editor.ShutdownUVE();
     }
     engine.Shutdown();
@@ -5207,11 +5207,11 @@ TEST(EditorUVETest, InspectorHeadersUVE_SpellOutTheClassChain) {
         ASSERT_NE(player, Scene::kInvalidEntityUVE);
         // Transform and Visibility sit under Object3D, the common section under Object.
         EXPECT_EQ(EditorUVEAccessUVE::GetInspectorGroupHeadersUVE(editor, body),
-                  (std::vector<std::string>{"Object3D", "Node"}));
+                  (std::vector<std::string>{"Object3D", "Object"}));
         // A pure Object has no Object3D part to name.
-        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorGroupHeadersUVE(editor, player), (std::vector<std::string>{"Node"}));
+        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorGroupHeadersUVE(editor, player), (std::vector<std::string>{"Object"}));
         EXPECT_EQ(EditorUVEAccessUVE::GetInspectorGroupHeadersUVE(editor, editor.GetDocumentSceneRootUVE()),
-                  (std::vector<std::string>{"Node"}));
+                  (std::vector<std::string>{"Object"}));
         editor.ShutdownUVE();
     }
     engine.Shutdown();
@@ -5231,7 +5231,7 @@ TEST(EditorUVETest, AnimationObjectsUVE_InspectorIsTheirOwnSectionThenTheObjectS
         ASSERT_NE(tree, Scene::kInvalidEntityUVE);
         // AnimationSequencer > AnimationMixer > Object: a pure Object, no Transform, no Visibility.
         const std::vector<std::string> objectSection{"animation-mixer", "process", "physics-interpolation",
-                                                   "auto-translate", "editor-description", "script", "node-metadata"};
+                                                   "auto-translate", "editor-description", "script", "object-metadata"};
         std::vector<std::string> expected{"animation-player"};
         expected.insert(expected.end(), objectSection.begin(), objectSection.end());
         EXPECT_EQ(EditorUVEAccessUVE::GetEligibleInspectorDrawerIdsUVE(editor, player), expected);
@@ -5662,7 +5662,7 @@ TEST(EditorUVETest, Skeleton3DUVE_StartsEmptyAndTakesItsBonesFromARiggedModel) {
         EXPECT_TRUE(entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(skeleton).bones.empty());
         EXPECT_EQ(EditorUVEAccessUVE::GetEligibleInspectorDrawerIdsUVE(editor, skeleton),
                   (std::vector<std::string>{"skeleton-3d", "transform", "visibility", "process", "physics-interpolation",
-                                            "auto-translate", "editor-description", "script", "node-metadata"}));
+                                            "auto-translate", "editor-description", "script", "object-metadata"}));
 
         // A model with no armature is refused and the object stays as it was.
         EXPECT_FALSE(EditorUVEAccessUVE::BindSelectedSkeletonSourceUVE(editor, "Characters/rock.gltf"));
@@ -5691,7 +5691,7 @@ TEST(EditorUVETest, Object3DInspectorUVE_IsTransformVisibilityAndTheObjectSectio
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_node3d_inspector.uvscene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_object3d_inspector.uvscene");
         editor.InitUVE();
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
         const Scene::EntityUVE object = entityManager.CreateEntityUVE();
@@ -5699,7 +5699,7 @@ TEST(EditorUVETest, Object3DInspectorUVE_IsTransformVisibilityAndTheObjectSectio
         Scene::ApplyObject3DObjectDefinitionUVE(entityManager, object, Scene::Object3DObjectDefinitionUVE{});
         EXPECT_EQ(EditorUVEAccessUVE::GetEligibleInspectorDrawerIdsUVE(editor, object),
                   (std::vector<std::string>{"transform", "visibility", "process", "physics-interpolation",
-                                            "auto-translate", "editor-description", "script", "node-metadata"}));
+                                            "auto-translate", "editor-description", "script", "object-metadata"}));
         editor.ShutdownUVE();
     }
     engine.Shutdown();

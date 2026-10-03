@@ -169,7 +169,7 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
     interpolation.currentPosition = Math::Vector3UVE{5.0F, 6.0F, 7.0F};
     entityManager.AddComponentUVE<PhysicsInterpolationComponentUVE>(source, interpolation);
     entityManager.AddComponentUVE<EditorDescriptionComponentUVE>(
-        source, EditorDescriptionComponentUVE{"Why this node exists."});
+        source, EditorDescriptionComponentUVE{"Why this object exists."});
 
     ProcessComponentUVE process{};
     process.mode = ProcessModeUVE::WhenPaused;
@@ -314,7 +314,7 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
     EXPECT_EQ(entityManager.GetComponentUVE<PhysicsInterpolationComponentUVE>(restored).currentPosition,
               Math::Vector3UVE{});
     EXPECT_EQ(entityManager.GetComponentUVE<EditorDescriptionComponentUVE>(restored).description,
-              "Why this node exists.");
+              "Why this object exists.");
 
     ASSERT_TRUE(entityManager.HasComponentUVE<ProcessComponentUVE>(restored));
     EXPECT_EQ(entityManager.GetComponentUVE<ProcessComponentUVE>(restored).mode, ProcessModeUVE::WhenPaused);

@@ -36,7 +36,7 @@ class SceneObjectTypeUVETest : public ::testing::Test {
 protected:
     [[nodiscard]] EntityUVE MakeUVE() {
         const EntityUVE entity = entityManager.CreateEntityUVE();
-        entityManager.AddComponentUVE<NameComponentUVE>(entity, NameComponentUVE{"Node"});
+        entityManager.AddComponentUVE<NameComponentUVE>(entity, NameComponentUVE{"Object"});
         return entity;
     }
 

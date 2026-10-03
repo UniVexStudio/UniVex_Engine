@@ -138,7 +138,7 @@ constexpr std::array<std::string_view, 8> kBlockPropertyDrawerIdsUVE{
     "multiline-text",
     "script-slot",
     "script-exports",
-    "node-metadata",
+    "object-metadata",
     "skeleton-source",
     "skeleton-bones",
 };
@@ -318,9 +318,9 @@ void EditorUVE::RegisterMetadataInspectorDrawersUVE() {
             },
         }));
         // The class chain, spelled out: Object3D's own sections under a "Object3D" heading and the
-        // common Object section under "Node", so the Inspector reads as the object's ancestry.
+        // common Object section under "Object", so the Inspector reads as the object's ancestry.
         if (entry->order >= Scene::kSectionOrderObjectCommonUVE) {
-            static_cast<void>(m_inspectorDrawerRegistry.SetDrawerGroupUVE(DrawerIdForTypeIdUVE(entry->typeId), "Node"));
+            static_cast<void>(m_inspectorDrawerRegistry.SetDrawerGroupUVE(DrawerIdForTypeIdUVE(entry->typeId), "Object"));
         } else if (entry->order >= Scene::kSectionOrderTransformUVE) {
             static_cast<void>(
                 m_inspectorDrawerRegistry.SetDrawerGroupUVE(DrawerIdForTypeIdUVE(entry->typeId), "Object3D"));
@@ -651,7 +651,7 @@ void EditorUVE::DrawMetadataPropertyRowUVE(const TypeMetadataEntryUVE& entry,
         const Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
         const bool dangling = value != Scene::kInvalidEntityUVE && !IsDocumentEntityUVE(value);
         const std::string preview = value == Scene::kInvalidEntityUVE ? std::string{"(default)"}
-                                    : dangling                        ? std::string{"(missing node)"}
+                                    : dangling                        ? std::string{"(missing object)"}
                                                                       : GetEntityDisplayLabelUVE(value);
         if (ImGui::BeginCombo("##value", preview.c_str())) {
             if (ImGui::Selectable("(default)", value == Scene::kInvalidEntityUVE) &&
@@ -792,7 +792,7 @@ bool EditorUVE::DrawCustomPropertyUVE(const TypeMetadataEntryUVE& entry, const T
         DrawScriptExportsPropertyUVE(entry, property, instance);
         return true;
     }
-    if (property.customDrawerId == "node-metadata") {
+    if (property.customDrawerId == "object-metadata") {
         DrawObjectMetadataPropertyUVE(entry, property, instance);
         return true;
     }

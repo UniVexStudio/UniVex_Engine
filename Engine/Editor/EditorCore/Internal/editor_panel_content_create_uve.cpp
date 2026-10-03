@@ -439,7 +439,7 @@ void EditorUVE::DrawFilesystemContextPopupUVE() {
         }
         ImGui::EndDisabled();
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort)) {
-            ImGui::SetTooltip("Adds it under the selected node, or to the scene. You can also drag it into the "
+            ImGui::SetTooltip("Adds it under the selected object, or to the scene. You can also drag it into the "
                               "Outliner or the viewport.");
         }
     }
@@ -503,7 +503,7 @@ void EditorUVE::DrawFilesystemContextPopupUVE() {
         const bool canAssign = IsDocumentEntityUVE(m_selectedEntity) && IsAuthoringCommandAllowedUVE() &&
                                m_services->GetEntityManagerUVE().HasComponentUVE<Scene::MeshComponentUVE>(m_selectedEntity);
         ImGui::BeginDisabled(!canAssign);
-        if (ImGui::MenuItem("Use as Mesh on selected node")) {
+        if (ImGui::MenuItem("Use as Mesh on selected object")) {
             Scene::MeshComponentUVE mesh =
                 m_services->GetEntityManagerUVE().GetComponentUVE<Scene::MeshComponentUVE>(m_selectedEntity);
             mesh.meshGuid = modelReady ? m_services->GetAssetDatabaseUVE().RegisterUVE(importedModel)

@@ -143,7 +143,7 @@ bool EditorUVE::SaveEntityEditorUVE() {
     static_cast<void>(CommitComponentPropertyPreviewUVE());
     const Scene::EntityUVE root = GetEntityEditorRootUVE();
     if (root == Scene::kInvalidEntityUVE) {
-        m_contentStatusMessage = "An entity has exactly one root node: put the other top-level nodes under it, then save.";
+        m_contentStatusMessage = "An entity has exactly one root object: put the other top-level objects under it, then save.";
         return false;
     }
     const Asset::AssetGuidUVE guid = m_services->GetPrefabSystemUVE().SavePrefabUVE(
@@ -295,8 +295,8 @@ std::size_t EditorUVE::CompileEntityEditorUVE() {
     const std::vector<Scene::EntityUVE> objects = CollectEntityEditorObjectsUVE();
     if (GetEntityEditorRootUVE() == Scene::kInvalidEntityUVE) {
         EntityCompileProblemUVE problem;
-        problem.message = objects.empty() ? "The entity has no nodes." :
-                                          "An entity has exactly one root node: put the other top-level nodes under it.";
+        problem.message = objects.empty() ? "The entity has no objects." :
+                                          "An entity has exactly one root object: put the other top-level objects under it.";
         problems.push_back(std::move(problem));
     }
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
@@ -470,7 +470,7 @@ void EditorUVE::DrawEntityEditorMiddleUVE(EntityEditSessionUVE& session) {
     ImGui::TextDisabled("- click one to go there");
     if (ImGui::BeginTable("##entity-problem-list", 3,
                           ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_NoSavedSettings)) {
-        ImGui::TableSetupColumn("Node");
+        ImGui::TableSetupColumn("Object");
         ImGui::TableSetupColumn("Where");
         ImGui::TableSetupColumn("Problem", ImGuiTableColumnFlags_WidthStretch);
         std::optional<std::size_t> clicked;
@@ -609,7 +609,7 @@ void EditorUVE::DrawEntityEditorScriptingTabUVE() {
         }
     };
     if (!alive) {
-        centred("Select a node to see its script.", true);
+        centred("Select an object to see its script.", true);
         return;
     }
     const std::string name = GetEntityDisplayLabelUVE(entity);
@@ -635,8 +635,8 @@ void EditorUVE::DrawEntityEditorScriptingTabUVE() {
     }
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort | ImGuiHoveredFlags_AllowWhenDisabled)) {
-        ImGui::SetTooltip(canCreate ? "Write scripts/%s.uvs for this node and open it here" :
-                                      "This node has no Script slot",
+        ImGui::SetTooltip(canCreate ? "Write scripts/%s.uvs for this object and open it here" :
+                                      "This object has no Script slot",
                           name.c_str());
     }
 }
@@ -645,18 +645,18 @@ void EditorUVE::DrawEntityEditorSignalsTabUVE() {
     const std::vector<EntitySignalRowUVE> rows = GetEntityEditorSignalsUVE();
     if (rows.empty()) {
         ImGui::Spacing();
-        ImGui::TextDisabled("No node answers to anything yet.");
-        ImGui::TextDisabled("Add an `on <event>:` block to a node's script (Scripting tab) and it is listed here.");
+        ImGui::TextDisabled("No object answers to anything yet.");
+        ImGui::TextDisabled("Add an `on <event>:` block to an object's script (Scripting tab) and it is listed here.");
         return;
     }
-    ImGui::TextDisabled("What each node answers to. Double-click a row to open the handler.");
+    ImGui::TextDisabled("What each object answers to. Double-click a row to open the handler.");
     if (!ImGui::BeginTable("##entity-signals", 4,
                            ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_ScrollY |
                                ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_NoSavedSettings)) {
         return;
     }
     ImGui::TableSetupScrollFreeze(0, 1);
-    ImGui::TableSetupColumn("Node");
+    ImGui::TableSetupColumn("Object");
     ImGui::TableSetupColumn("Event");
     ImGui::TableSetupColumn("Parameters", ImGuiTableColumnFlags_WidthStretch);
     ImGui::TableSetupColumn("Script");
@@ -732,7 +732,7 @@ void EditorUVE::DrawEntityEditorWindowUVE() {
         static_cast<void>(CompileEntityEditorUVE());
     }
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
-        ImGui::SetTooltip("Check the whole entity: one root, and every node's script against its node (F7)");
+        ImGui::SetTooltip("Check the whole entity: one root, and every object's script against its object (F7)");
     }
     if (ImGui::IsKeyPressed(ImGuiKey_F7, false)) {
         static_cast<void>(CompileEntityEditorUVE());

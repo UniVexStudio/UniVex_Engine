@@ -699,8 +699,8 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
                     rootFlags |= ImGuiTreeNodeFlags_Selected;
                 }
                 const float rootX = ImGui::GetCursorScreenPos().x;
-                const bool rootOpen = ImGui::TreeObjectEx((iconGap + "Content##content-tree-root").c_str(), rootFlags);
-                drawRowIcon(rootX + ImGui::GetTreeObjectToLabelSpacing(), folderIcon(rootOpen));
+                const bool rootOpen = ImGui::TreeNodeEx((iconGap + "Content##content-tree-root").c_str(), rootFlags);
+                drawRowIcon(rootX + ImGui::GetTreeNodeToLabelSpacing(), folderIcon(rootOpen));
                 if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
                     goToFolder({});
                 }
@@ -731,9 +731,9 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
                             ImGui::SetNextItemOpen(true, ImGuiCond_Appearing);
                         }
                         const float rowX = ImGui::GetCursorScreenPos().x;
-                        const bool open = ImGui::TreeObjectEx(
+                        const bool open = ImGui::TreeNodeEx(
                             (iconGap + dirEntry->relativePath.filename().generic_string()).c_str(), treeFlags);
-                        drawRowIcon(rowX + ImGui::GetTreeObjectToLabelSpacing(), folderIcon(open && hasSubdirectories));
+                        drawRowIcon(rowX + ImGui::GetTreeNodeToLabelSpacing(), folderIcon(open && hasSubdirectories));
                         dragContentItem(*dirEntry, false);
                         if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
                             goToFolder(dirEntry->relativePath);

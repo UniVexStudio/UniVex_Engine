@@ -73,7 +73,7 @@ namespace {
                 return "ValueUVE{Vec3ValueUVE{" + DoubleLiteralUVE(v.x) + ", " + DoubleLiteralUVE(v.y) + ", " +
                        DoubleLiteralUVE(v.z) + "}}";
             } else {
-                return "ValueUVE{NodeRefUVE{" + std::to_string(v.id) + "U}}";
+                return "ValueUVE{ObjectRefUVE{" + std::to_string(v.id) + "U}}";
             }
         },
         value);

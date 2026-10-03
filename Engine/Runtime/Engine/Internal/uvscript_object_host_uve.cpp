@@ -133,7 +133,7 @@ ValueUVE UVScriptObjectHostUVE::CallFunctionUVE(const std::string_view name, con
 void UVScriptObjectHostUVE::PrintUVE(const std::string_view text) {
     const std::string object = m_entityManager.HasComponentUVE<Scene::NameComponentUVE>(m_entity)
                                  ? m_entityManager.GetComponentUVE<Scene::NameComponentUVE>(m_entity).name
-                                 : std::string{"node"};
+                                 : std::string{"object"};
     UVE_INFO("[{}] {}", object, text);
 }
 

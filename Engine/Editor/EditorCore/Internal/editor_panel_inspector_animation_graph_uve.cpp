@@ -254,7 +254,7 @@ void EditorUVE::DrawAnimationGraphPropertyUVE(const Core::TypeMetadataEntryUVE& 
         AnimationGraphObjectUVE& object = objects[index];
         ImGui::PushID(static_cast<int>(object.id));
         ImGui::Indent(static_cast<float>(depth) * 12.0F + 0.001F);
-        const bool open = ImGui::TreeObjectEx("##node", ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_FramePadding,
+        const bool open = ImGui::TreeNodeEx("##node", ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_FramePadding,
                                             "%s  %s", KindLabelUVE(object.kind),
                                             object.name.empty() || object.name == KindLabelUVE(object.kind)
                                                 ? ("#" + std::to_string(object.id)).c_str()

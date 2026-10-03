@@ -400,7 +400,7 @@ TEST(EditorBridgeUVETest, SnapshotUVE_CopiesHierarchyInspectorAndNativePanelSess
         // A PlaneMesh3D is a SurfaceInstance3D: its own sections (the collision it was created with
         // is drawn inside the primitive's section), its bases, Object3D, then the Object section.
         const std::vector<std::string> objectSection{"process",           "physics-interpolation", "auto-translate",
-                                                   "editor-description", "script",                "node-metadata"};
+                                                   "editor-description", "script",                "object-metadata"};
         std::vector<std::string> expectedDrawers{"mesh", "primitive-mesh", "surface-instance", "render-instance",
                                                  "transform", "visibility"};
         expectedDrawers.insert(expectedDrawers.end(), objectSection.begin(), objectSection.end());

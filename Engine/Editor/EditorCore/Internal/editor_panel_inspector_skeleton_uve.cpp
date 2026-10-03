@@ -382,7 +382,7 @@ void EditorUVE::DrawSkeletonBonesPropertyUVE(const Core::TypeMetadataEntryUVE&,
                 flags |= ImGuiTreeNodeFlags_Selected;
             }
             ImGui::PushID(static_cast<int>(index));
-            const bool open = ImGui::TreeObjectEx("##bone", flags, "%s", bone.name.c_str());
+            const bool open = ImGui::TreeNodeEx("##bone", flags, "%s", bone.name.c_str());
             if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
                 m_selectedSkeletonBone = bone.name;
             }
