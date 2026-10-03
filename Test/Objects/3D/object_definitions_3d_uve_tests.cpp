@@ -1051,7 +1051,7 @@ TEST_F(Object3DDefinitionsUVETest, MarkerPoseComposeSharesTheSpawnPointCompositi
 TEST_F(Object3DDefinitionsUVETest, AnimationGraphIsCreatableAndValidatesItsBlend) {
     EXPECT_TRUE(IsAnimationGraphObjectDefinitionValidUVE(AnimationGraphObjectDefinitionUVE{}));
     AnimationGraphObjectDefinitionUVE noOutput;
-    noOutput.tree.objects.erase(noOutput.tree.objects.begin());
+    noOutput.tree.nodes.erase(noOutput.tree.nodes.begin());
     EXPECT_FALSE(IsAnimationGraphObjectDefinitionValidUVE(noOutput));
     const Objects::SceneObjectDescriptorUVE* descriptor =
         Objects::FindSceneObjectDescriptorUVE(Objects::SceneObjectKindUVE::AnimationGraph);

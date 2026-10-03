@@ -11,7 +11,7 @@
 
 namespace UVE::Core {
 
-enum class PoseGraphObjectKindUVE : std::uint8_t {
+enum class PoseGraphNodeKindUVE : std::uint8_t {
     ClipPlayer = 0,
     Blend,
     Parameter,
@@ -25,9 +25,9 @@ enum class PoseGraphObjectKindUVE : std::uint8_t {
     OutputPose,
 };
 
-struct PoseGraphObjectUVE final {
+struct PoseGraphNodeUVE final {
     std::uint32_t id = 0U;
-    PoseGraphObjectKindUVE kind = PoseGraphObjectKindUVE::OutputPose;
+    PoseGraphNodeKindUVE kind = PoseGraphNodeKindUVE::OutputPose;
     std::string name;
     std::string clipId;
     std::string parameterId;
@@ -39,10 +39,10 @@ struct PoseGraphObjectUVE final {
 };
 
 struct PoseGraphUVE final {
-    static constexpr std::size_t kMaximumObjectsUVE = 512U;
+    static constexpr std::size_t kMaximumNodesUVE = 512U;
     static constexpr std::size_t kMaximumParametersUVE = 128U;
 
-    std::vector<PoseGraphObjectUVE> objects;
+    std::vector<PoseGraphNodeUVE> nodes;
     std::vector<AnimationClipUVE> clips;
 };
 
@@ -89,8 +89,8 @@ struct PoseGraphEvaluationResultUVE final {
 [[nodiscard]] PoseGraphValidationResultUVE ValidatePoseGraphUVE(
     const PoseGraphUVE& tree) noexcept;
 
-/// Evaluates shared objects independently for distinct local times; memoization is keyed by object ID
-/// and exact local evaluation time, while active recursion remains cycle-checked by object ID.
+/// Evaluates shared nodes independently for distinct local times; memoization is keyed by node ID
+/// and exact local evaluation time, while active recursion remains cycle-checked by node ID.
 [[nodiscard]] PoseGraphEvaluationResultUVE EvaluatePoseGraphUVE(
     const PoseGraphUVE& tree, double timeSeconds, const std::vector<PoseGraphParameterUVE>& parameters = {});
 

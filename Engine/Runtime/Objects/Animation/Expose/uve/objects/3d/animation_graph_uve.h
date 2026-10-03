@@ -42,7 +42,7 @@ void ApplyAnimationGraphObjectDefinitionUVE(IEntityManagerUVE& entityManager, En
 using AnimationClipResolverUVE = std::function<const Asset::AnimationClipAssetUVE*(Asset::AssetGuidUVE)>;
 
 /// Advances the graph by `deltaSeconds` and writes the Output object's pose into `target` through the
-/// channel masks. Object state lives in `tree.objectStates` and is rebuilt (every object back to its
+/// channel masks. Object state lives in `tree.nodeStates` and is rebuilt (every object back to its
 /// start) whenever the graph's shape changes. Triggers are consumed by the object or transition that
 /// uses them. Returns true when `target` was written: an inactive tree, an invalid graph, or one
 /// whose clips are all missing writes nothing.

@@ -499,13 +499,49 @@ deleting the `navigation_agent_3d` alias makes it fail, so the rows have teeth.
 | `Camera3D`, `Skeleton3D`, `Light3D`, `DirectionalLight3D`, `Occluder3D`, `RayCast3D` | keep | generic CG words wearing UniVex's own `3D` suffix; no clearer name exists |
 | `Script`, `Viewport` | keep | single generic words, both universal |
 | `SpringArm3D` | keep | shared with Unreal's `USpringArmComponent`, so renaming it would not increase independence |
-| `Area3D` | candidate | `OverlapVolume3D` is more descriptive and collision-free — needs your go |
-| `Marker3D` | candidate | `Anchor3D` is more descriptive and collision-free — needs your go |
-| `BoneAttachment3D` | candidate | `BoneAnchor3D` is collision-free but arguably lateral — needs your go |
+| `Area3D`, `Marker3D`, `BoneAttachment3D` | **keep — decided** | Reviewed as candidates and rejected; their names stay as they are |
 | `MeshInstance3D`, `WorldEnvironment` | keep | every alternative tried is either another engine's word or lateral |
 
 All four candidate names were collision-checked `FREE`; none is executed here because each is a
 judgement call and two naming calls in this pass's own history were wrong.
+
+### Graph elements are nodes — and the file format already said so
+
+The animation graph's elements were called "objects" in C++ while the serializer had been writing
+them under the key `"nodes"` the whole time (`scene_serializer_uve.cpp`: `{"nodes", std::move(nodes)}`).
+The code disagreed with its own file format. They are now nodes:
+
+| Was | Now |
+|---|---|
+| `AnimationGraphObjectUVE` (295) | `AnimationGraphNodeUVE` |
+| `AnimationGraphObjectKindUVE` (47) | `AnimationGraphNodeKindUVE` |
+| `AnimationGraphObjectStateUVE` (27) | `AnimationGraphNodeStateUVE` |
+| `AnimationGraphObjectsUVE` (30) | `AnimationGraphNodesUVE` |
+| `AnimationGraphObjectIdUVE` (4) | `AnimationGraphNodeIdUVE` |
+| `PoseGraphObjectUVE` / `PoseGraphObjectKindUVE` | `PoseGraphNodeUVE` / `PoseGraphNodeKindUVE` |
+| field `objects` / `objectStates` | `nodes` / `nodeStates` |
+
+**No format change and no alias was needed**, precisely because the JSON already said `"nodes"` —
+which is the strongest possible evidence the rename matches intent rather than inventing vocabulary.
+
+Two things had to be protected from the replace, and both were checked rather than assumed:
+
+- `AnimationGraphObjectDefinitionUVE` is the `ObjectDefinition` for the *AnimationGraph kind*, following
+  the same `<Kind>ObjectDefinitionUVE` pattern as `BoneModifier3DObjectDefinitionUVE`. It is not a
+  graph element and was left alone — verified still present at 23 occurrences afterwards. Word-boundary
+  matching is what keeps it safe, since `AnimationGraphObjectUVE` is not a substring of it.
+- `objects` occurs 976 times across the tree and most of them are not this: `uve/objects/3d/…` include
+  paths, `SceneObjectKindUVE`, `ContentCatalogueObjectUVE::objects` on an unrelated struct, and prose.
+  So the field was renamed at its two declarations and the **compiler was used to enumerate the call
+  sites** rather than a pattern guessed in advance. `#include` lines were skipped by construction.
+
+That last point is worth keeping: the subset build found 4 files, and the editor syntax-check then
+found 3 more the subset never compiles (`editor_panel_anim_graph_uve.cpp`, `editor_panel_anim_states_uve.cpp`,
+`editor_panel_inspector_animation_graph_uve.cpp`). A subset-only green light would have shipped a
+broken editor.
+
+Also settled here: the three remaining kind-rename candidates from Phase 7 — `Area3D`, `Marker3D`,
+`BoneAttachment3D` — are **kept as they are**. Their names stay.
 
 ### Verification actually run
 
@@ -516,7 +552,7 @@ cmake --build /tmp/sbuild --target uve_audit_subset_tests -j 2      # 0 errors
 [  PASSED  ] 264 tests.
 
 python3 Engine/Tools/check_math_boundary.py         → math boundary check passed   (exit 0)
-python3 Engine/Tools/check_engine_vocabulary.py     → 35 retired names + 5 stems, 0 reintroductions (exit 0)
+python3 Engine/Tools/check_engine_vocabulary.py     → 42 retired names + 5 stems, 0 reintroductions (exit 0)
 bash    Engine/Tools/check_panel_includes.sh        → include audit: clean         (exit 0)
 ```
 
@@ -547,7 +583,7 @@ left.
 | ~~**4**~~ | ~~4 component renames that just catch up to existing kind names~~ | ~~64~~ | ~~low~~ | **DONE, see §5b** |
 | ~~**5**~~ | ~~`Packed*Array` + `StringName` (§3 option A)~~ | ~~5~~ | ~~low~~ | **DONE, see §5b** |
 | ~~**6**~~ | ~~`AnimationMixerComponentUVE` — the one needing a new coinage~~ | ~~20~~ | ~~low~~ | **DONE, see §5b** |
-| **7** | Kind renames (§3) — **navigation pair DONE, see §5b**; 3 candidates await a decision, 11 deliberately kept with reasons | 17 so far | low | `SceneObjectTypeUVETest` + **CI** for editor |
+| **7** | Kind renames (§3) — navigation pair renamed; the other 14 reviewed and **deliberately kept**, see §5b | 17 | low | **CLOSED** |
 | **8** | `is_on_floor` → `grounded` + script alias | ~12 | breaks `.uvs` without alias | `uvscript_vm_uve_tests` |
 | ~~**9**~~ | ~~`check_engine_vocabulary.py` + CI step~~ | ~~2~~ | — | **DONE, see §5b** |
 | ~~**10**~~ | ~~Triage the 26 `check_panel_includes.sh` violations, then wire that script into CI~~ | ~~13~~ | ~~none~~ | **DONE, see §5b** |

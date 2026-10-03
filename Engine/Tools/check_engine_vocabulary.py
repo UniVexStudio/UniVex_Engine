@@ -86,6 +86,17 @@ RETIRED = {
     # DeveloperConsoleHistoryNavigationCodeUVE are editor history, not pathfinding.
     "NavigationRegion3D": "NavMeshVolume3D",
     "NavigationAgent3D": "NavSeeker3D",
+    # Graph elements are nodes, not objects - and the serialized field has said "nodes" all along
+    # (scene_serializer_uve.cpp writes {"nodes", ...}), so the C++ was out of step with its own file
+    # format. Word-boundary entries, so AnimationGraphObjectDefinitionUVE - the ObjectDefinition for
+    # the AnimationGraph KIND, which follows the <Kind>ObjectDefinitionUVE pattern - is not caught.
+    "AnimationGraphObjectUVE": "AnimationGraphNodeUVE",
+    "AnimationGraphObjectKindUVE": "AnimationGraphNodeKindUVE",
+    "AnimationGraphObjectStateUVE": "AnimationGraphNodeStateUVE",
+    "AnimationGraphObjectsUVE": "AnimationGraphNodesUVE",
+    "AnimationGraphObjectIdUVE": "AnimationGraphNodeIdUVE",
+    "PoseGraphObjectUVE": "PoseGraphNodeUVE",
+    "PoseGraphObjectKindUVE": "PoseGraphNodeKindUVE",
     # The Godot class name used as a folder and library name (Finding F).
     "CanvasLayer": "Canvas (folder Engine/Runtime/Objects/UI/Expose/uve/objects/canvas)",
     "all_objects_canvas_layer_uve.h": "all_objects_canvas_uve.h",

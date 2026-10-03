@@ -205,8 +205,8 @@ namespace {
                               {"type", static_cast<std::uint8_t>(parameter.type)},
                               {"value", parameter.value}});
     }
-    nlohmann::json objects = nlohmann::json::array();
-    for (const AnimationGraphObjectUVE& object : component.objects) {
+    nlohmann::json nodes = nlohmann::json::array();
+    for (const AnimationGraphNodeUVE& object : component.nodes) {
         nlohmann::json statePositions = nlohmann::json::array();
         for (const Math::Vector2UVE& at : object.statePositions) {
             statePositions.push_back({at.x, at.y});
@@ -236,7 +236,7 @@ namespace {
                                    {"speed", point.speed},
                                    {"loop", point.loop}});
         }
-        objects.push_back({{"id", object.id},
+        nodes.push_back({{"id", object.id},
                          {"kind", static_cast<std::uint8_t>(object.kind)},
                          {"name", object.name},
                          {"position", {object.position.x, object.position.y}},
@@ -264,7 +264,7 @@ namespace {
                          {"anyPosition", {object.anyPosition.x, object.anyPosition.y}}});
     }
     return {{"parameters", std::move(parameters)},
-            {"nodes", std::move(objects)}};
+            {"nodes", std::move(nodes)}};
 }
 
 /// Reads a tree. A tree saved as the earlier two-clip blend becomes the same thing as a graph:
@@ -273,29 +273,29 @@ namespace {
     AnimationGraphComponentUVE tree;
     if (!json.contains("nodes") && (json.contains("clipA") || json.contains("clipB"))) {
         tree.parameters = {AnimationParameterUVE{"blend", AnimationParameterTypeUVE::Float, json.value("blend", 0.0F)}};
-        const auto makeObject = [](const std::uint32_t id, const AnimationGraphObjectKindUVE kind, std::string name) {
-            AnimationGraphObjectUVE object;
+        const auto makeObject = [](const std::uint32_t id, const AnimationGraphNodeKindUVE kind, std::string name) {
+            AnimationGraphNodeUVE object;
             object.id = id;
             object.kind = kind;
             object.name = std::move(name);
             return object;
         };
-        AnimationGraphObjectUVE output = makeObject(1U, AnimationGraphObjectKindUVE::Output, "Output");
+        AnimationGraphNodeUVE output = makeObject(1U, AnimationGraphNodeKindUVE::Output, "Output");
         output.inputs = {2U};
         output.position = Math::Vector2UVE{480.0F, 0.0F};
-        AnimationGraphObjectUVE blend = makeObject(2U, AnimationGraphObjectKindUVE::Blend2, "Blend");
+        AnimationGraphNodeUVE blend = makeObject(2U, AnimationGraphNodeKindUVE::Blend2, "Blend");
         blend.inputs = {3U, 4U};
         blend.parameter = "blend";
         blend.position = Math::Vector2UVE{240.0F, 0.0F};
         const float speed = json.value("speed", 1.0F);
-        AnimationGraphObjectUVE clipA = makeObject(3U, AnimationGraphObjectKindUVE::Clip, "Clip A");
+        AnimationGraphNodeUVE clipA = makeObject(3U, AnimationGraphNodeKindUVE::Clip, "Clip A");
         clipA.clip = Asset::AssetGuidUVE{json.value("clipA", std::uint64_t{0})};
         clipA.speed = speed;
-        AnimationGraphObjectUVE clipB = makeObject(4U, AnimationGraphObjectKindUVE::Clip, "Clip B");
+        AnimationGraphNodeUVE clipB = makeObject(4U, AnimationGraphNodeKindUVE::Clip, "Clip B");
         clipB.clip = Asset::AssetGuidUVE{json.value("clipB", std::uint64_t{0})};
         clipB.speed = speed;
         clipB.position = Math::Vector2UVE{0.0F, 120.0F};
-        tree.objects = {output, blend, clipA, clipB};
+        tree.nodes = {output, blend, clipA, clipB};
         return tree;
     }
     tree.parameters.clear();
@@ -306,15 +306,15 @@ namespace {
                                                         item.value("value", 0.0F)});
     }
     if (json.contains("nodes")) {
-        tree.objects.clear();
+        tree.nodes.clear();
         // Older saves placed a blend space's animations on its inputs, positioned by "points" (1D)
         // or "points2D"; they are folded into its own points once every object is read.
         std::vector<std::vector<Math::Vector2UVE>> legacyPositions;
         std::vector<std::uint32_t> fitArea; // ids of spaces saved before they had an area
         for (const nlohmann::json& item : json.at("nodes")) {
-            AnimationGraphObjectUVE object;
+            AnimationGraphNodeUVE object;
             object.id = item.at("id").get<std::uint32_t>();
-            object.kind = static_cast<AnimationGraphObjectKindUVE>(item.at("kind").get<std::uint8_t>());
+            object.kind = static_cast<AnimationGraphNodeKindUVE>(item.at("kind").get<std::uint8_t>());
             object.name = item.value("name", std::string{});
             const std::vector<float> position = item.value("position", std::vector<float>{0.0F, 0.0F});
             if (position.size() == 2U) {
@@ -406,13 +406,13 @@ namespace {
             }
             readPair("entryPosition", object.entryPosition);
             readPair("anyPosition", object.anyPosition);
-            tree.objects.push_back(std::move(object));
+            tree.nodes.push_back(std::move(object));
         }
-        static_cast<void>(MigrateBlendSpaceInputsUVE(tree.objects, legacyPositions));
+        static_cast<void>(MigrateBlendSpaceInputsUVE(tree.nodes, legacyPositions));
         // A space saved before it had an area gets one around its points.
-        for (AnimationGraphObjectUVE& object : tree.objects) {
+        for (AnimationGraphNodeUVE& object : tree.nodes) {
             if (std::find(fitArea.begin(), fitArea.end(), object.id) == fitArea.end() || object.blendPoints.empty() ||
-                (object.kind != AnimationGraphObjectKindUVE::BlendSpace1D && object.kind != AnimationGraphObjectKindUVE::BlendSpace2D)) {
+                (object.kind != AnimationGraphNodeKindUVE::BlendSpace1D && object.kind != AnimationGraphNodeKindUVE::BlendSpace2D)) {
                 continue;
             }
             Math::Vector2UVE lo = object.blendPoints.front().position;

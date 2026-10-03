@@ -663,9 +663,9 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_AnimationTargetsRemapToTheRestoredEnti
     AnimationGraphComponentUVE blend;
     blend.parameters = {AnimationParameterUVE{"speed", AnimationParameterTypeUVE::Float, 0.25F},
                         AnimationParameterUVE{"jump", AnimationParameterTypeUVE::Trigger, 0.0F}};
-    AnimationGraphObjectUVE machine;
+    AnimationGraphNodeUVE machine;
     machine.id = 3U;
-    machine.kind = AnimationGraphObjectKindUVE::StateMachine;
+    machine.kind = AnimationGraphNodeKindUVE::StateMachine;
     machine.name = "Locomotion";
     machine.position = Math::Vector2UVE{12.0F, -4.0F};
     machine.inputs = {2U, 0U};
@@ -684,29 +684,29 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_AnimationTargetsRemapToTheRestoredEnti
     machine.statePositions = {Math::Vector2UVE{40.0F, -20.0F}};
     machine.entryPosition = Math::Vector2UVE{-300.0F, 10.0F};
     machine.anyPosition = Math::Vector2UVE{-300.0F, 90.0F};
-    blend.objects[0].inputs = {3U};
-    blend.objects[1].clip = Asset::AssetGuidUVE{77U};
-    blend.objects[1].loop = false;
-    blend.objects[1].sync = true; // round-trips even where it has no effect
-    blend.objects.push_back(machine);
+    blend.nodes[0].inputs = {3U};
+    blend.nodes[1].clip = Asset::AssetGuidUVE{77U};
+    blend.nodes[1].loop = false;
+    blend.nodes[1].sync = true; // round-trips even where it has no effect
+    blend.nodes.push_back(machine);
     // The later kinds' own fields, on loose objects (a graph half-built is still saved).
-    AnimationGraphObjectUVE space;
+    AnimationGraphNodeUVE space;
     space.id = 4U;
-    space.kind = AnimationGraphObjectKindUVE::BlendSpace2D;
+    space.kind = AnimationGraphNodeKindUVE::BlendSpace2D;
     space.blendPoints = {AnimationBlendPointUVE{{0.0F, 0.0F}, Asset::AssetGuidUVE{21U}, 1.25F, false},
                          AnimationBlendPointUVE{{-1.5F, 2.0F}, Asset::AssetGuidUVE{22U}}};
     space.parameterY = "speed";
     space.valueY = 0.75F;
     space.blendMode = AnimationBlendModeUVE::NearestInStep;
     space.smoothingSeconds = 0.15F;
-    blend.objects.push_back(space);
-    AnimationGraphObjectUVE layered;
+    blend.nodes.push_back(space);
+    AnimationGraphNodeUVE layered;
     layered.id = 5U;
-    layered.kind = AnimationGraphObjectKindUVE::LayeredBlend;
+    layered.kind = AnimationGraphNodeKindUVE::LayeredBlend;
     layered.inputs = {0U, 0U};
     layered.bones = {"Spine", "LeftShoulder"};
     layered.restart = false;
-    blend.objects.push_back(layered);
+    blend.nodes.push_back(layered);
     ASSERT_TRUE(IsAnimationGraphComponentValidUVE(blend)) << DescribeAnimationGraphProblemUVE(blend);
     entityManager.AddComponentUVE<AnimationGraphComponentUVE>(player, blend);
 
@@ -744,12 +744,12 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_TwoClipAnimationGraphBecomesABlendGrap
     ASSERT_EQ(tree.parameters.size(), 1U);
     EXPECT_EQ(tree.parameters[0].name, "blend");
     EXPECT_FLOAT_EQ(tree.parameters[0].value, 0.75F);
-    ASSERT_EQ(tree.objects.size(), 4U);
-    EXPECT_EQ(tree.objects[1].kind, AnimationGraphObjectKindUVE::Blend2);
-    EXPECT_EQ(tree.objects[1].parameter, "blend");
-    EXPECT_EQ(tree.objects[2].clip.value, 11U);
-    EXPECT_EQ(tree.objects[3].clip.value, 12U);
-    EXPECT_FLOAT_EQ(tree.objects[3].speed, 1.5F);
+    ASSERT_EQ(tree.nodes.size(), 4U);
+    EXPECT_EQ(tree.nodes[1].kind, AnimationGraphNodeKindUVE::Blend2);
+    EXPECT_EQ(tree.nodes[1].parameter, "blend");
+    EXPECT_EQ(tree.nodes[2].clip.value, 11U);
+    EXPECT_EQ(tree.nodes[3].clip.value, 12U);
+    EXPECT_FLOAT_EQ(tree.nodes[3].speed, 1.5F);
 }
 
 TEST_F(SceneSerializerUVETest, RestoreUVE_OldBlendSpaceInputsBecomeItsOwnPoints) {
@@ -769,8 +769,8 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_OldBlendSpaceInputsBecomeItsOwnPoints)
     ASSERT_EQ(roots.size(), 1U);
     const AnimationGraphComponentUVE& tree = entityManager.GetComponentUVE<AnimationGraphComponentUVE>(roots[0]);
     EXPECT_TRUE(DescribeAnimationGraphProblemUVE(tree).empty()) << DescribeAnimationGraphProblemUVE(tree);
-    ASSERT_EQ(tree.objects.size(), 2U) << "the two Clips were folded into the space";
-    const AnimationGraphObjectUVE& space = tree.objects[1];
+    ASSERT_EQ(tree.nodes.size(), 2U) << "the two Clips were folded into the space";
+    const AnimationGraphNodeUVE& space = tree.nodes[1];
     EXPECT_TRUE(space.inputs.empty());
     ASSERT_EQ(space.blendPoints.size(), 2U);
     EXPECT_EQ(space.blendPoints[0].clip.value, 31U);
@@ -798,7 +798,7 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_OldSingleConditionTransitionsBecomeALi
     ASSERT_EQ(roots.size(), 1U);
     const AnimationGraphComponentUVE& tree = entityManager.GetComponentUVE<AnimationGraphComponentUVE>(roots[0]);
     EXPECT_TRUE(DescribeAnimationGraphProblemUVE(tree).empty()) << DescribeAnimationGraphProblemUVE(tree);
-    const std::vector<AnimationTransitionUVE>& transitions = tree.objects[1].transitions;
+    const std::vector<AnimationTransitionUVE>& transitions = tree.nodes[1].transitions;
     ASSERT_EQ(transitions.size(), 2U);
     ASSERT_EQ(transitions[0].conditions.size(), 1U);
     EXPECT_EQ(transitions[0].conditions[0].condition, AnimationConditionUVE::ParameterGreater);
