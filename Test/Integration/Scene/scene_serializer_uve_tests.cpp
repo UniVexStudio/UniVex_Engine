@@ -194,7 +194,7 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
     *spawnOffset.TryGetMutableUVE<Math::Vector3UVE>() = {1.5F, -2.0F, 0.25F};
     Core::VariantUVE tint = Core::VariantUVE::MakeDefaultUVE(Core::VariantTypeUVE::Color);
     *tint.TryGetMutableUVE<Core::VariantColorUVE>() = {0.1F, 0.2F, 0.3F, 0.5F};
-    Core::VariantUVE bytes = Core::VariantUVE::MakeDefaultUVE(Core::VariantTypeUVE::PackedByteArray);
+    Core::VariantUVE bytes = Core::VariantUVE::MakeDefaultUVE(Core::VariantTypeUVE::ByteArray);
     *bytes.TryGetMutableUVE<std::vector<std::uint8_t>>() = {0U, 127U, 255U};
     Core::VariantUVE waves = Core::VariantUVE::MakeDefaultUVE(Core::VariantTypeUVE::Array);
     waves.TryGetMutableUVE<std::vector<Core::VariantUVE>>()->push_back(Core::VariantUVE::MakeIntUVE(4));
