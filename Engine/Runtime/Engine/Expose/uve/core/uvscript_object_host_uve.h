@@ -18,7 +18,7 @@ namespace UVE::Core {
 /// What a `.uvs` script can reach on the object it is attached to. The object's components decide:
 /// - every object: `name` (read-only);
 /// - an object with a transform: `position`, `scale` (local, metres);
-/// - a character body: `velocity`, `is_on_floor` (read-only);
+/// - a character body: `velocity`, `grounded` (read-only);
 /// - always: `input.pressed/held/released(action)` and `input.axis(negative, positive)`, which
 ///   read the project's input map; events `ready` and `tick(dt)`.
 class UVScriptObjectHostUVE final : public UVScript::UVScriptHostUVE {

@@ -17,7 +17,7 @@ constexpr float kStepUVE = 1.0F / 60.0F;
 
 [[nodiscard]] CharacterControllerComponentUVE OnFloorUVE() {
     CharacterControllerComponentUVE c{};
-    c.isOnFloor = true;
+    c.grounded = true;
     return c;
 }
 
@@ -34,7 +34,7 @@ TEST(CharacterBodyMotionUVETest, AJumpReachesItsHeightWhateverTheGravity) {
         // v^2 = 2 g h: the apex of v under g is exactly jumpHeight.
         const float g = -kGravityUVE * gravityScale;
         EXPECT_NEAR((c.velocity.y * c.velocity.y) / (2.0F * g), 2.0F, 1.0e-4F);
-        EXPECT_FALSE(c.isOnFloor);
+        EXPECT_FALSE(c.grounded);
     }
 }
 

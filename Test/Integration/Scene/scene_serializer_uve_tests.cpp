@@ -1219,7 +1219,7 @@ TEST_F(SceneSerializerUVETest, SaveThenLoad_CharacterControllerComponentUVE_Roun
     characterController.maxPushSpeed = 7.0F;
     characterController.maxSlides = 12U;
     characterController.velocity = Math::Vector3UVE{1.0F, -3.0F, 2.0F};
-    characterController.isOnFloor = true;
+    characterController.grounded = true;
     entityManager.AddComponentUVE<CharacterControllerComponentUVE>(entity, characterController);
 
     const std::filesystem::path path = "uve_scene_serializer_tests_character_controller.uvscene";
@@ -1249,7 +1249,7 @@ TEST_F(SceneSerializerUVETest, SaveThenLoad_CharacterControllerComponentUVE_Roun
     EXPECT_FLOAT_EQ(loadedController.maxPushSpeed, 7.0F);
     EXPECT_EQ(loadedController.maxSlides, 12U);
     EXPECT_EQ(loadedController.velocity, (Math::Vector3UVE{1.0F, -3.0F, 2.0F}));
-    EXPECT_TRUE(loadedController.isOnFloor);
+    EXPECT_TRUE(loadedController.grounded);
 
     std::filesystem::remove(path);
 }
@@ -1271,7 +1271,7 @@ TEST_F(SceneSerializerUVETest, Load_OlderCharacterControllerPayloadKeepsItsValue
     EXPECT_FLOAT_EQ(loaded.jumpHeight, 2.25F);
     EXPECT_FLOAT_EQ(loaded.gravityScale, 1.5F);
     EXPECT_EQ(loaded.velocity, (Math::Vector3UVE{0.0F, -3.0F, 0.0F}));
-    EXPECT_TRUE(loaded.isOnFloor);
+    EXPECT_TRUE(loaded.grounded);
     const CharacterControllerComponentUVE defaults{};
     EXPECT_EQ(loaded.motionMode, defaults.motionMode);
     EXPECT_EQ(loaded.builtInMovement, defaults.builtInMovement);

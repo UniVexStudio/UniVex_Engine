@@ -508,7 +508,7 @@ namespace {
             {"maxPushSpeed", component.maxPushSpeed},
             {"maxSlides", component.maxSlides},
             {"velocity", ToJsonUVE(component.velocity)},
-            {"isOnFloor", component.isOnFloor},
+            {"grounded", component.grounded},
             {"isOnCeiling", component.isOnCeiling},
             {"floorNormal", ToJsonUVE(component.floorNormal)},
             {"timeSinceOnFloor", component.timeSinceOnFloor},
@@ -1895,7 +1895,12 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                           c.velocity = json.contains("velocity")
                                            ? Vector3FromJsonUVE(json.at("velocity"))
                                            : Math::Vector3UVE{0.0F, json.value("verticalVelocity", 0.0F), 0.0F};
-                          c.isOnFloor = json.value("isOnFloor", json.value("isGrounded", false));
+                          // Three names, one field, in the order they were used: documents have been
+                          // written with each. "grounded" is current, "isOnFloor" is what the field
+                          // was called when it carried another engine's name, and "isGrounded" is
+                          // older still - the serializer already accepted it before this pass.
+                          c.grounded = json.value("grounded",
+                                                  json.value("isOnFloor", json.value("isGrounded", false)));
                           c.isOnCeiling = json.value("isOnCeiling", false);
                           if (json.contains("floorNormal")) {
                               c.floorNormal = Vector3FromJsonUVE(json.at("floorNormal"));

@@ -1711,7 +1711,7 @@ TEST(EngineCoreUVETest, CharacterController_FallsUnderGravityLandsOnGroundThenJu
 
     const Scene::CharacterControllerComponentUVE& afterFall =
         entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(entity);
-    EXPECT_TRUE(afterFall.isOnFloor);
+    EXPECT_TRUE(afterFall.grounded);
     const Scene::WorldTransformComponentUVE& worldAfterFall =
         entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
     EXPECT_NEAR(worldAfterFall.worldPosition.y, 1.0F, 0.35F);
@@ -1724,7 +1724,7 @@ TEST(EngineCoreUVETest, CharacterController_FallsUnderGravityLandsOnGroundThenJu
     const Scene::CharacterControllerComponentUVE& afterJump =
         entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(entity);
     EXPECT_GT(afterJump.velocity.y, 0.0F);
-    EXPECT_FALSE(afterJump.isOnFloor);
+    EXPECT_FALSE(afterJump.grounded);
 
     engine.Shutdown();
 }
@@ -1777,13 +1777,13 @@ bool LeavesTheFloorWalkingDownAStepUVE(const float floorSnapLength) {
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
         engine.TickFrameUVE();
     }
-    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(walker).isOnFloor);
+    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(walker).grounded);
     bool leftTheFloor = false;
     for (int frame = 0; frame < 700; ++frame) {
         entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(walker).velocity.x = 2.0F;
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
         engine.TickFrameUVE();
-        leftTheFloor = leftTheFloor || !entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(walker).isOnFloor;
+        leftTheFloor = leftTheFloor || !entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(walker).grounded;
     }
     const float x = entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(walker).worldPosition.x;
     const float y = entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(walker).worldPosition.y;

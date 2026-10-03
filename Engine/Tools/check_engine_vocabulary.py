@@ -124,6 +124,12 @@ RETIRED_STEMS = {
     # stem, because the family spans AnimationMixerComponentUVE, AnimationMixerObjectDefinitionUVE,
     # ApplyAnimationMixerBaseUVE and AnimationMixerFromJsonUVE.
     "AnimationMixer": "AnimationDriver",
+    # The character-controller script property. "is_on_floor" is the Godot spelling
+    # (CharacterBody3D::is_on_floor), and the serializer's alias chain showed this field
+    # had earlier been renamed TOWARD that name. It survives only as the read alias the
+    # live host still accepts, in the allowlisted file below.
+    "is_on_floor": "grounded",
+    "isOnFloor": "grounded",
 }
 
 # The three legacy-alias tables MUST keep the old strings forever, because a saved document written
@@ -135,6 +141,12 @@ ALLOWED_PREFIXES = (
     "Engine/Runtime/Scene/Internal/objects/scene_object_registry_uve.cpp",
     # The test that proves those aliases work has to name what it is proving.
     "Test/Integration/Object/variant_uve_tests.cpp",
+    # The live object host keeps `is_on_floor` as a read alias for scripts written against the
+    # old name - a second spelling of one property, not a second property. That string is the
+    # point of the line, so the file is allowlisted rather than rewritten.
+    "Engine/Runtime/Engine/Internal/uvscript_object_host_uve.cpp",
+    # ...and the test that proves that alias reads, reports read-only, and is NOT described.
+    "Test/UVScript/uvscript_vm_uve_tests.cpp",
     # This tool's own denylist obviously names what it forbids.
     "Engine/Tools/check_engine_vocabulary.py",
 )
@@ -155,7 +167,6 @@ FOREIGN_CLASS_NAMES = (
     "Camera3D",
     "DirectionalLight3D",
     "Viewport",
-    "is_on_floor",
 )
 
 

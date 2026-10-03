@@ -47,7 +47,11 @@ std::optional<HostPropertyUVE> UVScriptObjectHostUVE::DescribePropertyUVE(const 
         if (name == "velocity") {
             return HostPropertyUVE{TypeUVE::Vec3UVE(), true};
         }
-        if (name == "is_on_floor") {
+        // "grounded", matching the other properties here: name, position, scale, velocity - a plain
+        // word for the thing, no "is_" prefix and no snake_case. "is_on_floor" is the name this had
+        // before, and a script written against it still reads, because a script out in the world is
+        // not something a rename in here is allowed to break. Writing always uses the current name.
+        if (name == "grounded" || name == "is_on_floor") {
             return HostPropertyUVE{TypeUVE::BoolUVE(), false};
         }
     }
@@ -94,7 +98,7 @@ ValueUVE UVScriptObjectHostUVE::GetPropertyUVE(const std::string_view name) {
     if (name == "velocity") {
         return ToScriptUVE(body.velocity);
     }
-    return body.isOnFloor;
+    return body.grounded;
 }
 
 void UVScriptObjectHostUVE::SetPropertyUVE(const std::string_view name, const ValueUVE& value) {
