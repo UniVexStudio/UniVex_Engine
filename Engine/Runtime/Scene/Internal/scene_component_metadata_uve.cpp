@@ -487,6 +487,10 @@ void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
         DeclareUVE<&C::maxSlides>("maxSlides", "Max Slides", kPropertyTypeUInt32UVE),
         "How many pieces a move is cut into to follow walls and corners. More is smoother and costs more.");
     maxSlides.range = {true, 1.0, 32.0, 1.0};
+    TypeMetadataPropertyUVE maximumContacts = WithTooltipUVE(
+        DeclareUVE<&C::maximumContacts>("maximumContacts", "Max Contacts", kPropertyTypeUInt32UVE),
+        "The most contacts one move reports, deepest first. Extras are dropped, and the step says so.");
+    maximumContacts.range = {true, 1.0, 64.0, 1.0};
     AddValidatedUVE<CharacterControllerComponentUVE, &IsCharacterControllerComponentValidUVE>(
         entries,
         MakeEntryUVE(
@@ -533,12 +537,68 @@ void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                "A jump pressed this many seconds before landing happens on landing.")),
                            "Movement"),
                 InGroupUVE(whenGrounded(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&C::floorMaxAngleDegrees>("floorMaxAngleDegrees", "Floor Angle",
+                                                                                kPropertyTypeFloatUVE),
+                                            0.0, 90.0, 1.0),
+                               "The steepest slope still walked as a floor. Steeper surfaces are walls it slides "
+                               "along.")),
+                           "Floor"),
+                InGroupUVE(whenGrounded(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&C::wallMinSlideAngleDegrees>(
+                                                "wallMinSlideAngleDegrees", "Wall Slide Angle", kPropertyTypeFloatUVE),
+                                            0.0, 90.0, 1.0),
+                               "How far past the floor angle a wall has to lean before the body slides down it "
+                               "instead of being stopped by it.")),
+                           "Floor"),
+                InGroupUVE(whenGrounded(WithTooltipUVE(
                                WithRangeUVE(DeclareUVE<&C::floorSnapLength>("floorSnapLength", "Snap Length",
                                                                           kPropertyTypeFloatUVE),
                                             0.0, 10.0, 0.01),
                                "Stays on the floor walking down steps and ledges up to this far below. 0 lets it "
                                "drop off every edge.")),
                            "Floor"),
+                InGroupUVE(whenGrounded(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&C::minStepWidth>("minStepWidth", "Min Step Width",
+                                                                       kPropertyTypeFloatUVE),
+                                            0.0, 1.0, 0.01),
+                               "How much room a step needs on top to be worth climbing. Narrower than this is a "
+                               "wall with a decoration.")),
+                           "Floor"),
+                InGroupUVE(whenGrounded(WithTooltipUVE(
+                               DeclareUVE<&C::floorStopOnSlope>("floorStopOnSlope", "Stop On Slope",
+                                                                kPropertyTypeBoolUVE),
+                               "Standing still on a slope stays still instead of creeping downhill.")),
+                           "Floor"),
+                InGroupUVE(whenGrounded(WithTooltipUVE(
+                               DeclareUVE<&C::floorConstantSpeed>("floorConstantSpeed", "Constant Speed",
+                                                                  kPropertyTypeBoolUVE),
+                               "Walking up or down a slope keeps the horizontal speed the walk started with.")),
+                           "Floor"),
+                InGroupUVE(whenGrounded(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&C::safeMargin>("safeMargin", "Safe Margin",
+                                                                      kPropertyTypeFloatUVE),
+                                            0.0, 0.25, 0.001),
+                               "How far short of a surface the body stops, so it does not jitter against it.")),
+                           "Floor"),
+                InGroupUVE(whenGrounded(WithTooltipUVE(
+                               DeclareUVE<&C::floorBlockOnWall>("floorBlockOnWall", "Block On Wall",
+                                                                kPropertyTypeBoolUVE),
+                               "On the floor, stop at a wall instead of sliding along it - no corner slipping.")),
+                           "Floor"),
+                InGroupUVE(WithTooltipUVE(
+                               DeclareEnumUVE<&C::platformOnLeave>(
+                                   "platformOnLeave", "On Leave Platform",
+                                   {{0, "Keep Velocity"}, {1, "Add Velocity"}, {2, "Add Upward Velocity"}}),
+                               "What a platform gives a body that walks off it: its whole velocity, only the "
+                               "upward part, or nothing."),
+                           "Platforms"),
+                InGroupUVE(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&C::maximumPlatformSpeed>(
+                                                "maximumPlatformSpeed", "Max Platform Speed", kPropertyTypeFloatUVE),
+                                            0.0, 10000.0, 1.0),
+                               "The fastest platform motion that may carry this body. Past it the platform is "
+                               "treated as standing still, so a teleported platform cannot fling anyone."),
+                           "Platforms"),
                 InGroupUVE(whenGrounded(WithTooltipUVE(
                                WithRangeUVE(DeclareUVE<&C::maxStepHeight>("maxStepHeight", "Step Height",
                                                                         kPropertyTypeFloatUVE),
@@ -564,6 +624,7 @@ void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                "The fastest a push may send a body, in metres per second.")),
                            "Pushing"),
                 InGroupUVE(std::move(maxSlides), "Collision"),
+                InGroupUVE(std::move(maximumContacts), "Collision"),
                 InGroupUVE(DeclareRuntimeStateUVE<&C::velocity>("velocity", "Velocity", kPropertyTypeVector3UVE), "State"),
                 InGroupUVE(DeclareRuntimeStateUVE<&C::grounded>("grounded", "Grounded", kPropertyTypeBoolUVE), "State"),
                 InGroupUVE(DeclareRuntimeStateUVE<&C::isOnCeiling>("isOnCeiling", "On Ceiling", kPropertyTypeBoolUVE),
