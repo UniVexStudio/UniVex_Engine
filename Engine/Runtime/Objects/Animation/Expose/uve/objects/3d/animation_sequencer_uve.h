@@ -25,19 +25,19 @@ struct TransformComponentUVE;
 struct Skeleton3DComponentUVE;
 
 /// Authoring definition for the AnimationSequencer object: a pure Object - no transform, no visibility -
-/// whose Inspector is its own section, its AnimationMixer base, then the Object section.
+/// whose Inspector is its own section, its AnimatedObject base, then the Object section.
 /// It plays a clip on another object (`target`, or its parent), so it can sit anywhere in the tree,
 /// directly under the scene root included.
 struct AnimationSequencerObjectDefinitionUVE final {
     static constexpr std::string_view defaultName = "AnimationSequencer";
 
     AnimationSequencerComponentUVE player{};
-    AnimationMixerComponentUVE mixer{};
+    AnimatedObjectComponentUVE mixer{};
 };
 
 [[nodiscard]] bool IsAnimationSequencerObjectDefinitionValidUVE(const AnimationSequencerObjectDefinitionUVE& value) noexcept;
 
-/// Applies the AnimationMixer base (ApplyAnimationMixerBaseUVE) and adds the player when it is missing.
+/// Applies the AnimatedObject base (ApplyAnimatedObjectBaseUVE) and adds the player when it is missing.
 void ApplyAnimationSequencerObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
                                            const AnimationSequencerObjectDefinitionUVE& value);
 
@@ -58,7 +58,7 @@ void StopAnimationSequencerUVE(AnimationSequencerComponentUVE& player) noexcept;
 /// clip that is empty or invalid stops the player and writes nothing.
 [[nodiscard]] bool StepAnimationSequencerUVE(AnimationSequencerComponentUVE& player, const Asset::AnimationClipAssetUVE& clip,
                                           float deltaSeconds, TransformComponentUVE& target,
-                                          const AnimationMixerComponentUVE& mixer = {}) noexcept;
+                                          const AnimatedObjectComponentUVE& mixer = {}) noexcept;
 
 /// Advances a playing player by `deltaSeconds` and writes a skeletal clip's pose into `skeleton`:
 /// each bone takes the track of the same name, sampled like an object track; a bone with no track
@@ -68,7 +68,7 @@ void StopAnimationSequencerUVE(AnimationSequencerComponentUVE& player) noexcept;
 [[nodiscard]] bool StepSkeletalAnimationSequencerUVE(AnimationSequencerComponentUVE& player,
                                                   const Asset::AnimationClipAssetUVE& clip, float deltaSeconds,
                                                   Skeleton3DComponentUVE& skeleton,
-                                                  const AnimationMixerComponentUVE& mixer = {});
+                                                  const AnimatedObjectComponentUVE& mixer = {});
 
 /// The events of `events` the playhead passes going from `beforeSeconds` to `afterSeconds` in a clip
 /// of `durationSeconds`: forwards or backwards, across a loop's wrap when `wrapped`. An event exactly
@@ -90,7 +90,7 @@ void StopAnimationSequencerUVE(AnimationSequencerComponentUVE& player) noexcept;
 /// motion mode on, the root motion bone stays over its first frame's ground position. Returns false,
 /// leaving the skeleton alone, when the clip has no bone tracks or the skeleton no bones.
 bool PoseSkeletonAtTimeUVE(const Asset::AnimationClipAssetUVE& clip, double timeSeconds,
-                           Skeleton3DComponentUVE& skeleton, const AnimationMixerComponentUVE& mixer = {});
+                           Skeleton3DComponentUVE& skeleton, const AnimatedObjectComponentUVE& mixer = {});
 
 /// The clip's pose at `timeSeconds`: linear position and scale, spherical rotation between the two
 /// samples around it, clamped to the first and last. The clip must have at least one sample.

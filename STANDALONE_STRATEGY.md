@@ -359,6 +359,53 @@ deleting the `PackedVector3Array` row makes it fail at `variant_uve_tests.cpp:49
 relying on a transitive include, the same failure mode as the 26 panel headers in Phase 10, in a
 non-panel TU again.
 
+### Phase 6 — Finding B's last component, named by the engine's own convention
+
+`AnimationMixerComponentUVE` was the one component that needed a coinage rather than a catch-up, so
+it got one from the tree instead of from a guess. It sits in the Inspector's `kSectionOrderObjectBaseUVE`
+group, and every other member of that group is a base component named for what it makes an object:
+
+| Type | Inspector label |
+|---|---|
+| `PhysicsObjectComponentUVE` | `PhysicsObject3D` |
+| `SolidBody…` | `SolidBody3D` |
+| `RenderInstance…` | `RenderInstance3D` |
+| `SurfaceInstance…` | `SurfaceInstance3D` |
+| `LightEmitter…` | `LightEmitter3D` |
+| `BoneModifier…` | `BoneModifier3D` |
+| ~~`AnimationMixerComponentUVE`~~ | ~~`AnimationMixer`~~ ← the only one breaking the pattern, and a verbatim foreign class |
+
+The component's own doc comment already said what it is: *"the abstract base AnimationSequencer and
+AnimationGraph share — what they move, which channels, on which clock and how fast."* It never mixed
+anything; the name was borrowed. It is now `AnimatedObjectComponentUVE` with the label
+`"AnimatedObject3D"`, which follows the group exactly, and `ApplyAnimationMixerBaseUVE` became
+`ApplyAnimatedObjectBaseUVE` — the word "base" was already in the function's name.
+
+20 files, ~113 occurrences (`AnimationMixerComponentUVE` 78, bare `AnimationMixer` 16,
+`IsAnimationMixerComponentValidUVE` 8, `ApplyAnimationMixerBaseUVE` 6, `AnimationMixerFromJsonUVE` 3,
+plus the ObjectDefinition and one test name). Four spots needed handling by hand rather than by `sed`:
+
+- `AnimatedObject3DObjectDefinitionUVE`, not `AnimatedObjectObjectDefinitionUVE` — the ObjectDefinition
+  structs are named after the *label*, matching `BoneModifier3DObjectDefinitionUVE`.
+- `typeName` and the Inspector label both take the `3D` suffix; a blanket replace would have left them
+  `"AnimatedObject"` and out of step with the group.
+- `RestoreUVE_PlayerSavedBeforeAnimationMixerMovesItsSettingsIntoTheMixer` became
+  `RestoreUVE_SequencerSavedBeforeTheAnimatedObjectBaseMovesItsSettingsIntoOne` — the old name was a
+  sentence with two occurrences of the word, and a blind replace made it unreadable.
+- The Phase 4 comment in `RestoreUVE` that explains the ordering bug names `"AnimationMixer"`
+  **on purpose**: that is the name the code actually had when the bug existed, so it stays.
+
+`component.animation_mixer` — the drawer id — was left alone, like every other drawer id in this work:
+it is persisted in editor layout. `AnimationMixerComponentUVE` went into `CanonicalComponentNameUVE`,
+so documents written before this load unchanged.
+
+**A first proposal for this was wrong and was rejected.** `AnimationPlaybackComponentUVE` was proposed
+before reading `animation_sequencer_uve.h`, which already uses "Playback" as the section heading for
+`PlayAnimationSequencerUVE` / `StopAnimationSequencerUVE` / `StepAnimationSequencerUVE`. Two different
+things sharing one word is precisely the confusion this whole pass exists to remove. The lesson is
+recorded here because it is the mechanism, not the slip: a coinage has to be checked against the
+vocabulary already in the tree before it is offered, the same way a rename target is.
+
 ### Verification actually run
 
 ```
@@ -368,7 +415,7 @@ cmake --build /tmp/sbuild --target uve_audit_subset_tests -j 2      # 0 errors
 [  PASSED  ] 264 tests.
 
 python3 Engine/Tools/check_math_boundary.py         → math boundary check passed   (exit 0)
-python3 Engine/Tools/check_engine_vocabulary.py     → 25 retired names + 4 stems, 0 reintroductions (exit 0)
+python3 Engine/Tools/check_engine_vocabulary.py     → 25 retired names + 5 stems, 0 reintroductions (exit 0)
 bash    Engine/Tools/check_panel_includes.sh        → include audit: clean         (exit 0)
 ```
 
@@ -387,7 +434,7 @@ here, but the test itself first executes on CI.**
 
 ## 6. Sequencing
 
-Remaining phases, after §5b. **0, 1, 2, 3, 4, 5, 9 and 10 are already landed** — this table is what is
+Remaining phases, after §5b. **0–6, 9 and 10 are already landed** — this table is what is
 left.
 
 | Phase | Content | Files | Format risk | Guard |
@@ -398,7 +445,7 @@ left.
 | ~~**3**~~ | ~~Fix the 16 kinds whose Outliner name is `"Object3D"`~~ | ~~2~~ | ~~none~~ | **DONE, see §5b** |
 | ~~**4**~~ | ~~4 component renames that just catch up to existing kind names~~ | ~~64~~ | ~~low~~ | **DONE, see §5b** |
 | ~~**5**~~ | ~~`Packed*Array` + `StringName` (§3 option A)~~ | ~~5~~ | ~~low~~ | **DONE, see §5b** |
-| **6** | `AnimationMixerComponentUVE` — the one needing a new coinage | ~13 | low | `AnimationGraphUVETest` |
+| ~~**6**~~ | ~~`AnimationMixerComponentUVE` — the one needing a new coinage~~ | ~~20~~ | ~~low~~ | **DONE, see §5b** |
 | **7** | 8 kind renames + label fixes (§3) | large | low | `SceneObjectRegistryUVETest` + **CI** for editor |
 | **8** | `is_on_floor` → `grounded` + script alias | ~12 | breaks `.uvs` without alias | `uvscript_vm_uve_tests` |
 | ~~**9**~~ | ~~`check_engine_vocabulary.py` + CI step~~ | ~~2~~ | — | **DONE, see §5b** |

@@ -574,18 +574,18 @@ void DeclareAnimationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     // AnimationSequencer's own section. Its target is an entity reference: flagged so the serializer
     // remaps it, and drawn as an object picker. Empty means the player's parent, which is the common
     // case and needs no picking at all.
-    // AnimationMixer: the base AnimationSequencer and AnimationGraph share, shown between their own
+    // AnimatedObject: the base AnimationSequencer and AnimationGraph share, shown between their own
     // section and the Object section. Its target is an entity reference: flagged so the serializer
     // remaps it, and drawn as an object picker. Empty means the parent, the common case.
-    using M = AnimationMixerComponentUVE;
+    using M = AnimatedObjectComponentUVE;
     TypeMetadataPropertyUVE mixerTarget = WithTooltipUVE(
         DeclareUVE<&M::target>("target", "Target", kPropertyTypeEntityUVE),
         "The object that is moved. Empty means this object's parent.");
     mixerTarget.flags = TypeMetadataPropertyFlagsUVE::EntityReference;
-    AddValidatedUVE<AnimationMixerComponentUVE, &IsAnimationMixerComponentValidUVE>(
+    AddValidatedUVE<AnimatedObjectComponentUVE, &IsAnimatedObjectComponentValidUVE>(
         entries,
         MakeEntryUVE(
-            "component.animation_mixer", "AnimationMixer", kSectionOrderObjectBaseUVE + 20,
+            "component.animation_mixer", "AnimatedObject3D", kSectionOrderObjectBaseUVE + 20,
             {
                 WithTooltipUVE(DeclareUVE<&M::active>("active", "Active", kPropertyTypeBoolUVE),
                                "Off, nothing is evaluated and the target is left alone."),

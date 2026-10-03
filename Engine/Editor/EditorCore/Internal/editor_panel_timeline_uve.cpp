@@ -27,7 +27,7 @@
 #include <imgui_internal.h>
 
 #include "uve/asset/animation_clip_asset_uve.h"
-#include "uve/component/animation_mixer_component_uve.h"
+#include "uve/component/animated_object_component_uve.h"
 #include "uve/component/animation_sequencer_component_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/name_component_uve.h"
@@ -174,10 +174,10 @@ void EditorUVE::DrawAnimationTimelineUVE() {
     const Scene::EntityUVE playerEntity = m_timeline.player;
     const Scene::AnimationSequencerComponentUVE& player =
         entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(playerEntity);
-    const Scene::AnimationMixerComponentUVE mixer =
-        entityManager.HasComponentUVE<Scene::AnimationMixerComponentUVE>(playerEntity)
-            ? entityManager.GetComponentUVE<Scene::AnimationMixerComponentUVE>(playerEntity)
-            : Scene::AnimationMixerComponentUVE{};
+    const Scene::AnimatedObjectComponentUVE mixer =
+        entityManager.HasComponentUVE<Scene::AnimatedObjectComponentUVE>(playerEntity)
+            ? entityManager.GetComponentUVE<Scene::AnimatedObjectComponentUVE>(playerEntity)
+            : Scene::AnimatedObjectComponentUVE{};
 
     // ---- The clip, reloaded when the player's clip changes ----------------------------------------
     if (player.clip != m_timeline.clipGuid) {

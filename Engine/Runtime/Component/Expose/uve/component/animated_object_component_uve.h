@@ -38,10 +38,10 @@ enum class AnimationTransitionModeUVE : std::uint8_t {
     Crossfade,
 };
 
-/// AnimationMixer: the abstract base AnimationSequencer and AnimationGraph share - what they move, which
+/// AnimatedObject: the abstract base AnimationSequencer and AnimationGraph share - what they move, which
 /// channels, on which clock and how fast. Not an object of its own; the section both show between
 /// their own and the Object section.
-struct AnimationMixerComponentUVE final {
+struct AnimatedObjectComponentUVE final {
     /// Off, nothing is evaluated or written: the target is left alone.
     bool active = true;
     /// The object that is moved. Invalid means the mixer's parent.
@@ -61,10 +61,10 @@ struct AnimationMixerComponentUVE final {
     /// whose track travels across the ground (usually the root or the hips).
     std::string rootMotionBone;
 
-    [[nodiscard]] bool operator==(const AnimationMixerComponentUVE&) const = default;
+    [[nodiscard]] bool operator==(const AnimatedObjectComponentUVE&) const = default;
 };
 
 /// A finite, non-negative speed scale and a known clock.
-[[nodiscard]] bool IsAnimationMixerComponentValidUVE(const AnimationMixerComponentUVE& component) noexcept;
+[[nodiscard]] bool IsAnimatedObjectComponentValidUVE(const AnimatedObjectComponentUVE& component) noexcept;
 
 } // namespace UVE::Scene

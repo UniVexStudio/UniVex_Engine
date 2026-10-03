@@ -32,7 +32,7 @@
 #include "editor_animation_graph_widgets_uve.h"
 
 #include "uve/asset/animation_clip_asset_uve.h"
-#include "uve/component/animation_mixer_component_uve.h"
+#include "uve/component/animated_object_component_uve.h"
 #include "uve/component/animation_graph_component_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/name_component_uve.h"
@@ -856,9 +856,9 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
     // ---- Preview: the tree runs on the entity's skeleton, the mixer's target or else the tree's
     // parent, searched down. Only the skeleton's runtime pose changes; nothing is saved.
     Scene::EntityUVE skeletonEntity = Scene::kInvalidEntityUVE;
-    const Scene::AnimationMixerComponentUVE mixer = entityManager.HasComponentUVE<Scene::AnimationMixerComponentUVE>(tree)
-                                                        ? entityManager.GetComponentUVE<Scene::AnimationMixerComponentUVE>(tree)
-                                                        : Scene::AnimationMixerComponentUVE{};
+    const Scene::AnimatedObjectComponentUVE mixer = entityManager.HasComponentUVE<Scene::AnimatedObjectComponentUVE>(tree)
+                                                        ? entityManager.GetComponentUVE<Scene::AnimatedObjectComponentUVE>(tree)
+                                                        : Scene::AnimatedObjectComponentUVE{};
     {
         Scene::EntityUVE root = mixer.target;
         if (root == Scene::kInvalidEntityUVE || !entityManager.IsAliveUVE(root)) {
@@ -902,7 +902,7 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
         }
         auto& live = entityManager.GetComponentUVE<Scene::AnimationGraphComponentUVE>(tree);
         auto& skeleton = entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity);
-        Scene::AnimationMixerComponentUVE previewMixer = mixer;
+        Scene::AnimatedObjectComponentUVE previewMixer = mixer;
         previewMixer.active = true;
         // Held: only a frame asked for moves it, and then by one sixtieth of a second.
         const float frame = view.previewPaused ? (view.previewStepOnce ? 1.0F / 60.0F : 0.0F)

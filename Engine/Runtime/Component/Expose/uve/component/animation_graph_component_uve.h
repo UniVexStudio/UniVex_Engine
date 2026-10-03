@@ -271,7 +271,7 @@ struct AnimationGraphObjectStateUVE final {
 };
 
 /// AnimationGraph's own state: an animation graph evaluated every frame. What it moves, which
-/// channels and whether it runs live in its AnimationMixer base (AnimationMixerComponentUVE).
+/// channels and whether it runs live in its AnimatedObject base (AnimatedObjectComponentUVE).
 struct AnimationGraphComponentUVE final {
     std::vector<AnimationParameterUVE> parameters;
     /// A new tree starts as Output fed by one Clip, so picking a clip is all it takes to play.
