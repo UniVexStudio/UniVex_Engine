@@ -67,6 +67,19 @@ RETIRED = {
     "PackedVector3Array": "Vector3Array",
     "PackedColorArray": "ColorArray",
     "StringName": "InternedString",
+    # The pose-graph pass (Phase 11). Engine/Runtime/Animation held a second, older animation library
+    # in UVE::Core whose AnimationGraph* types shared their names with UVE::Scene's live
+    # AnimationGraphComponentUVE family - two different types, same name, different namespace. The
+    # Core one is now PoseGraph*. These eight are Core-only: UVE::Scene has no type of the same name,
+    # so retiring them cannot collide with the live AnimationGraph* vocabulary.
+    "AnimationGraphEvaluationResultUVE": "PoseGraphEvaluationResultUVE",
+    "AnimationGraphValidationCodeUVE": "PoseGraphValidationCodeUVE",
+    "AnimationGraphValidationResultUVE": "PoseGraphValidationResultUVE",
+    "AnimationGraphParameterUVE": "PoseGraphParameterUVE",
+    "AnimationGraphCacheKeyUVE": "PoseGraphCacheKeyUVE",
+    "AnimationGraphCacheKeyHashUVE": "PoseGraphCacheKeyHashUVE",
+    "ValidateAnimationGraphUVE": "ValidatePoseGraphUVE",
+    "EvaluateAnimationGraphUVE": "EvaluatePoseGraphUVE",
     # The Godot class name used as a folder and library name (Finding F).
     "CanvasLayer": "Canvas (folder Engine/Runtime/Objects/UI/Expose/uve/objects/canvas)",
     "all_objects_canvas_layer_uve.h": "all_objects_canvas_uve.h",

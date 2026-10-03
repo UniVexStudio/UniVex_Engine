@@ -9,8 +9,8 @@
 // Light3DObjectUVE). Keeping this single aggregate header instead - it documents which real type
 // backs every UVE::Scene::Objects::SceneObjectKindUVE, matching scene_object_registry_uve.cpp's own
 // runtimeOwner field, without inventing a second name for anything.
-#include "uve/animation/animation_graph_uve.h"
 #include "uve/physics/character_controller_uve.h"
+#include "uve/component/animation_graph_component_uve.h"
 #include "uve/component/animation_sequencer_component_uve.h"
 #include "uve/component/area_component_uve.h"
 #include "uve/component/audio_source_component_uve.h"

@@ -2,7 +2,7 @@
 
 #
 # Started as a minimal partial port: only the data-model trio (TimePoseContractUVE,
-# AnimationClipUVE, AnimationGraphUVE) that Engine/Runtime/Scene's AnimationGraphObject3D node facade
+# AnimationClipUVE, PoseGraphUVE) that Engine/Runtime/Scene's PoseGraphObject3D node facade
 # needs to declare its own type. Grown here to add the rest of the animation system
 # EngineCoreUVE needs: AnimationStateMachineUVE (playback scheduling over AnimationClipUVE) -
 # physically colocated with EngineCoreUVE in the reference's engine/core/ folder despite depending
@@ -15,7 +15,7 @@
 add_library(uve_animation STATIC
     Internal/time_pose_contract_uve.cpp
     Internal/animation_clip_uve.cpp
-    Internal/animation_graph_uve.cpp
+    Internal/pose_graph_uve.cpp
     Internal/animation_state_machine_uve.cpp
 )
 target_include_directories(uve_animation PUBLIC Expose)

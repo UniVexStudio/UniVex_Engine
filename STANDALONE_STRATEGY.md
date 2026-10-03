@@ -417,6 +417,43 @@ mechanism matters more than the slip.**
 The rule both broke is the same one a rename target needs: a name has to be checked against the
 vocabulary already in the tree *and* against what the thing actually is, before it is offered.
 
+### Phase 11 — the two `AnimationGraph*` libraries, and an orphaned module behind them
+
+Phase 4 left two different types sharing one name: `UVE::Scene::AnimationGraphObjectUVE` (the live
+component's authored graph) and `UVE::Core::AnimationGraphObjectUVE` (an older evaluation model with
+string `clipId` and `inputA`/`inputB`). They compiled because no TU included both, which is a
+coincidence, not a design. The `UVE::Core` one is now `PoseGraph*` — 3 files renamed, its whole
+family with it (`PoseGraphUVE`, `PoseGraphObjectUVE`, `PoseGraphObjectKindUVE`,
+`ValidatePoseGraphUVE`, `EvaluatePoseGraphUVE` and the rest). The rename was scoped to the Core module
+and its own test; the Scene `AnimationGraph*` vocabulary was verified untouched afterwards.
+
+**Fixing the collision exposed a real bug underneath it.** `scene_object_uve.h` exists to document
+"which real type backs every `SceneObjectKindUVE`, matching `scene_object_registry_uve.cpp`'s own
+`runtimeOwner` field". For `AnimationGraph` the registry says `"Scene/AnimationGraphComponentUVE"`,
+but the aggregate header did not include that header at all — it included `uve/animation/animation_graph_uve.h`
+instead, and `scene_object_registry_uve_tests.cpp` asserted `std::is_class_v<Core::AnimationGraphUVE>`
+against the `// AnimationGraph` comment. The assert passed, so the mismatch was invisible. The
+aggregate now includes the real backing type and the assert names it; the comment records why the old
+one was wrong.
+
+**The finding that matters more than the rename: `uve_animation` is orphaned.** Every public type in
+the module has zero production callers:
+
+| Type | Files outside its own module and test |
+|---|---|
+| `AnimationClipUVE` | 0 |
+| `AnimationStateMachineUVE` | 0 |
+| `TimePoseContractUVE` | 0 |
+| `PoseGraphUVE` | 0 |
+| `RetargetMapUVE` | 0 |
+
+Its own CMake comment says it "started as a minimal partial port … that Engine/Runtime/Scene's
+AnimationGraphObject3D node facade needs", but that facade layer was since removed — the aggregate
+header's own comment says the alias layer went away once "nothing in the codebase actually used the
+alias names". The module is still built and still linked by `uve_scene` and `uve_objects_3d`, so it
+compiles and its tests pass, but nothing in the engine calls into it. That is a decision about whether
+to wire it up or delete it, not a rename, so it is reported rather than acted on.
+
 ### Verification actually run
 
 ```
@@ -426,7 +463,7 @@ cmake --build /tmp/sbuild --target uve_audit_subset_tests -j 2      # 0 errors
 [  PASSED  ] 264 tests.
 
 python3 Engine/Tools/check_math_boundary.py         → math boundary check passed   (exit 0)
-python3 Engine/Tools/check_engine_vocabulary.py     → 25 retired names + 5 stems, 0 reintroductions (exit 0)
+python3 Engine/Tools/check_engine_vocabulary.py     → 33 retired names + 5 stems, 0 reintroductions (exit 0)
 bash    Engine/Tools/check_panel_includes.sh        → include audit: clean         (exit 0)
 ```
 
@@ -445,7 +482,7 @@ here, but the test itself first executes on CI.**
 
 ## 6. Sequencing
 
-Remaining phases, after §5b. **0–6, 9 and 10 are already landed** — this table is what is
+Remaining phases, after §5b. **0–6, 9, 10 and 11 are already landed** — this table is what is
 left.
 
 | Phase | Content | Files | Format risk | Guard |
@@ -461,7 +498,7 @@ left.
 | **8** | `is_on_floor` → `grounded` + script alias | ~12 | breaks `.uvs` without alias | `uvscript_vm_uve_tests` |
 | ~~**9**~~ | ~~`check_engine_vocabulary.py` + CI step~~ | ~~2~~ | — | **DONE, see §5b** |
 | ~~**10**~~ | ~~Triage the 26 `check_panel_includes.sh` violations, then wire that script into CI~~ | ~~13~~ | ~~none~~ | **DONE, see §5b** |
-| **11** | Resolve the two `AnimationGraph*` libraries in `UVE::Core` vs `UVE::Scene` (see §5b) | ~4 | none | `AnimationGraphUVETest` |
+| ~~**11**~~ | ~~Resolve the two `AnimationGraph*` libraries in `UVE::Core` vs `UVE::Scene`~~ | ~~9~~ | ~~none~~ | **DONE, see §5b** — but it surfaced that `uve_animation` is orphaned, which is an open decision |
 
 Rules for every phase: add the legacy alias in the **same commit**; never reorder an enum; one phase
 per commit; update `NODE_NAMING_AUDIT.md` and `SCENE_NODES_ROADMAP.md` in the same commit (the first

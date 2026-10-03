@@ -11,7 +11,7 @@
 
 namespace UVE::Core {
 
-enum class AnimationGraphObjectKindUVE : std::uint8_t {
+enum class PoseGraphObjectKindUVE : std::uint8_t {
     ClipPlayer = 0,
     Blend,
     Parameter,
@@ -25,9 +25,9 @@ enum class AnimationGraphObjectKindUVE : std::uint8_t {
     OutputPose,
 };
 
-struct AnimationGraphObjectUVE final {
+struct PoseGraphObjectUVE final {
     std::uint32_t id = 0U;
-    AnimationGraphObjectKindUVE kind = AnimationGraphObjectKindUVE::OutputPose;
+    PoseGraphObjectKindUVE kind = PoseGraphObjectKindUVE::OutputPose;
     std::string name;
     std::string clipId;
     std::string parameterId;
@@ -38,15 +38,15 @@ struct AnimationGraphObjectUVE final {
     bool enabled = true;
 };
 
-struct AnimationGraphUVE final {
+struct PoseGraphUVE final {
     static constexpr std::size_t kMaximumObjectsUVE = 512U;
     static constexpr std::size_t kMaximumParametersUVE = 128U;
 
-    std::vector<AnimationGraphObjectUVE> objects;
+    std::vector<PoseGraphObjectUVE> objects;
     std::vector<AnimationClipUVE> clips;
 };
 
-enum class AnimationGraphValidationCodeUVE : std::uint8_t {
+enum class PoseGraphValidationCodeUVE : std::uint8_t {
     Valid = 0,
     EmptyTree,
     CapacityExceeded,
@@ -60,22 +60,22 @@ enum class AnimationGraphValidationCodeUVE : std::uint8_t {
     MissingOutput,
 };
 
-struct AnimationGraphValidationResultUVE final {
-    AnimationGraphValidationCodeUVE code = AnimationGraphValidationCodeUVE::EmptyTree;
+struct PoseGraphValidationResultUVE final {
+    PoseGraphValidationCodeUVE code = PoseGraphValidationCodeUVE::EmptyTree;
     std::uint32_t objectId = 0U;
     std::string message;
 
     [[nodiscard]] bool IsValidUVE() const noexcept {
-        return code == AnimationGraphValidationCodeUVE::Valid;
+        return code == PoseGraphValidationCodeUVE::Valid;
     }
 };
 
-struct AnimationGraphParameterUVE final {
+struct PoseGraphParameterUVE final {
     std::string parameterId;
     float value = 0.0F;
 };
 
-struct AnimationGraphEvaluationResultUVE final {
+struct PoseGraphEvaluationResultUVE final {
     TransformPoseUVE pose;
     bool usedOutputObject = false;
     std::size_t evaluatedObjectCount = 0U;
@@ -86,12 +86,12 @@ struct AnimationGraphEvaluationResultUVE final {
     }
 };
 
-[[nodiscard]] AnimationGraphValidationResultUVE ValidateAnimationGraphUVE(
-    const AnimationGraphUVE& tree) noexcept;
+[[nodiscard]] PoseGraphValidationResultUVE ValidatePoseGraphUVE(
+    const PoseGraphUVE& tree) noexcept;
 
 /// Evaluates shared objects independently for distinct local times; memoization is keyed by object ID
 /// and exact local evaluation time, while active recursion remains cycle-checked by object ID.
-[[nodiscard]] AnimationGraphEvaluationResultUVE EvaluateAnimationGraphUVE(
-    const AnimationGraphUVE& tree, double timeSeconds, const std::vector<AnimationGraphParameterUVE>& parameters = {});
+[[nodiscard]] PoseGraphEvaluationResultUVE EvaluatePoseGraphUVE(
+    const PoseGraphUVE& tree, double timeSeconds, const std::vector<PoseGraphParameterUVE>& parameters = {});
 
 } // namespace UVE::Core
