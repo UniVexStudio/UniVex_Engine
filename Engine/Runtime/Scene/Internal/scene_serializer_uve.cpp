@@ -500,13 +500,23 @@ namespace {
             {"airControl", component.airControl},
             {"coyoteTimeSeconds", component.coyoteTimeSeconds},
             {"jumpBufferSeconds", component.jumpBufferSeconds},
+            {"floorMaxAngleDegrees", component.floorMaxAngleDegrees},
+            {"wallMinSlideAngleDegrees", component.wallMinSlideAngleDegrees},
+            {"safeMargin", component.safeMargin},
+            {"floorStopOnSlope", component.floorStopOnSlope},
+            {"floorConstantSpeed", component.floorConstantSpeed},
             {"floorSnapLength", component.floorSnapLength},
             {"maxStepHeight", component.maxStepHeight},
+            {"minStepWidth", component.minStepWidth},
             {"slideOnCeiling", component.slideOnCeiling},
+            {"floorBlockOnWall", component.floorBlockOnWall},
+            {"platformOnLeave", static_cast<std::uint8_t>(component.platformOnLeave)},
+            {"maximumPlatformSpeed", component.maximumPlatformSpeed},
             {"pushRigidBodies", component.pushRigidBodies},
             {"pushStrength", component.pushStrength},
             {"maxPushSpeed", component.maxPushSpeed},
             {"maxSlides", component.maxSlides},
+            {"maximumContacts", component.maximumContacts},
             {"velocity", ToJsonUVE(component.velocity)},
             {"grounded", component.grounded},
             {"isOnCeiling", component.isOnCeiling},
@@ -1884,13 +1894,27 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                           c.airControl = json.value("airControl", c.airControl);
                           c.coyoteTimeSeconds = json.value("coyoteTimeSeconds", c.coyoteTimeSeconds);
                           c.jumpBufferSeconds = json.value("jumpBufferSeconds", c.jumpBufferSeconds);
+                          c.floorMaxAngleDegrees =
+                              json.value("floorMaxAngleDegrees", c.floorMaxAngleDegrees);
+                          c.wallMinSlideAngleDegrees =
+                              json.value("wallMinSlideAngleDegrees", c.wallMinSlideAngleDegrees);
+                          c.safeMargin = json.value("safeMargin", c.safeMargin);
+                          c.floorStopOnSlope = json.value("floorStopOnSlope", c.floorStopOnSlope);
+                          c.floorConstantSpeed = json.value("floorConstantSpeed", c.floorConstantSpeed);
                           c.floorSnapLength = json.value("floorSnapLength", c.floorSnapLength);
                           c.maxStepHeight = json.value("maxStepHeight", c.maxStepHeight);
+                          c.minStepWidth = json.value("minStepWidth", c.minStepWidth);
                           c.slideOnCeiling = json.value("slideOnCeiling", c.slideOnCeiling);
+                          c.floorBlockOnWall = json.value("floorBlockOnWall", c.floorBlockOnWall);
+                          c.platformOnLeave = static_cast<CharacterPlatformLeaveModeUVE>(
+                              json.value("platformOnLeave", static_cast<std::uint8_t>(c.platformOnLeave)));
+                          c.maximumPlatformSpeed =
+                              json.value("maximumPlatformSpeed", c.maximumPlatformSpeed);
                           c.pushRigidBodies = json.value("pushRigidBodies", c.pushRigidBodies);
                           c.pushStrength = json.value("pushStrength", c.pushStrength);
                           c.maxPushSpeed = json.value("maxPushSpeed", c.maxPushSpeed);
                           c.maxSlides = json.value("maxSlides", c.maxSlides);
+                          c.maximumContacts = json.value("maximumContacts", c.maximumContacts);
                           // Before velocity was a vector, only its vertical part was kept.
                           c.velocity = json.contains("velocity")
                                            ? Vector3FromJsonUVE(json.at("velocity"))
