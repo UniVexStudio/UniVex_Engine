@@ -14,6 +14,8 @@
 #include "uve/platform/platform_uve.h"
 #include "uve/physics/collision_system_uve.h"
 #include "uve/component/collider_component_uve.h"
+#include "uve/component/physics_object_component_uve.h"
+#include "uve/component/process_component_uve.h"
 #include "uve/component/rigid_3d_component_uve.h"
 #include "uve/component/transform_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
@@ -465,6 +467,146 @@ TEST_F(PhysicsSystemUVETest, StepUVE_InvalidRigid3DParameters_FailsClosedWithout
               beforeBody.velocity);
 }
 #endif
+
+// =================================================================================================
+// What the abstract physics object state does to the simulation: a stopped body is taken out of
+// the world, kept as an obstacle, or left simulating, and collision priority decides how much of
+// an overlap each side of a contact takes.
+// =================================================================================================
+
+TEST_F(PhysicsSystemUVETest, StepUVE_AStoppedBodyWithRemoveIsNotInTheWorldAtAll) {
+    // Gravity, so "nothing moved it" means something.
+    PhysicsSystemUVE physicsSystem(collisionSystem, Math::Vector3UVE{0.0F, -10.0F, 0.0F});
+    // The floor's top is at y = 0 and the body starts a quarter of a metre *inside* it. A live
+    // body in that position would be pushed out on the first step; this one is taken out of the
+    // world entirely, so nothing collides with it and the simulation does not move it either.
+    const Scene::EntityUVE ground = MakeStaticColliderEntityUVE({0.0F, -0.5F, 0.0F}, {10.0F, 0.5F, 10.0F});
+    Scene::Rigid3DComponentUVE rigid;
+    const Scene::EntityUVE body =
+        MakeBodyEntityUVE({0.0F, 0.25F, 0.0F}, rigid, Math::Vector3UVE{0.5F, 0.5F, 0.5F});
+
+    Scene::ProcessComponentUVE stopped{};
+    stopped.mode = Scene::TickModeUVE::Never;
+    entityManager.AddComponentUVE<Scene::ProcessComponentUVE>(body, stopped);
+    Scene::PhysicsObjectComponentUVE object{};
+    object.disableMode = Scene::PhysicsObjectDisableModeUVE::Remove;
+    entityManager.AddComponentUVE<Scene::PhysicsObjectComponentUVE>(body, object);
+
+    // The same body, the same overlap, still running: this is the control that says the test is
+    // about the state and not about bodies in general.
+    const Scene::EntityUVE live =
+        MakeBodyEntityUVE({0.0F, 0.25F, 0.0F}, Scene::Rigid3DComponentUVE{}, Math::Vector3UVE{0.5F, 0.5F, 0.5F});
+    sceneGraph.UpdateUVE(entityManager);
+
+    const float removedStartY = GetWorldPositionUVE(body).y;
+    const float liveStartY = GetWorldPositionUVE(live).y;
+    RunStepsUVE(physicsSystem, entityManager, sceneGraph, 60, 1.0F / 60.0F);
+
+    // The live one was pushed out of the floor and left standing on it...
+    EXPECT_GT(GetWorldPositionUVE(live).y, liveStartY + 0.2F);
+    // ...and the removed one is exactly where it was authored, still inside the floor.
+    EXPECT_FLOAT_EQ(GetWorldPositionUVE(body).y, removedStartY);
+    for (const CollisionPairUVE& pair : collisionSystem.DetectCollisionsUVE(entityManager)) {
+        EXPECT_NE(pair.first, body);
+        EXPECT_NE(pair.second, body);
+    }
+    static_cast<void>(ground);
+}
+
+TEST_F(PhysicsSystemUVETest, StepUVE_AStoppedBodyWithMakeStaticBecomesAnObstacleNothingMoves) {
+    PhysicsSystemUVE physicsSystem(collisionSystem, Math::Vector3UVE{0.0F, -10.0F, 0.0F});
+    // Stopped mid-air with MakeStatic: it hangs exactly where it is, and a falling body lands on
+    // it. This is the middle answer - out of the simulation, still in the world.
+    const Scene::EntityUVE shelf =
+        MakeBodyEntityUVE({0.0F, 2.0F, 0.0F}, Scene::Rigid3DComponentUVE{}, Math::Vector3UVE{1.0F, 0.25F, 1.0F});
+    Scene::ProcessComponentUVE stopped{};
+    stopped.mode = Scene::TickModeUVE::Never;
+    entityManager.AddComponentUVE<Scene::ProcessComponentUVE>(shelf, stopped);
+    Scene::PhysicsObjectComponentUVE object{};
+    object.disableMode = Scene::PhysicsObjectDisableModeUVE::MakeStatic;
+    entityManager.AddComponentUVE<Scene::PhysicsObjectComponentUVE>(shelf, object);
+
+    const Scene::EntityUVE body =
+        MakeBodyEntityUVE({0.0F, 4.0F, 0.0F}, Scene::Rigid3DComponentUVE{}, Math::Vector3UVE{0.5F, 0.5F, 0.5F});
+    sceneGraph.UpdateUVE(entityManager);
+
+    RunStepsUVE(physicsSystem, entityManager, sceneGraph, 240, 1.0F / 60.0F);
+
+    // Not a millimetre of gravity or of contact correction reached the shelf.
+    EXPECT_NEAR(GetWorldPositionUVE(shelf).y, 2.0F, 1.0e-4F);
+    // The shelf's top is at 2.25 and the body's own half height is 0.5: it rests at 2.75.
+    EXPECT_NEAR(GetWorldPositionUVE(body).y, 2.75F, 2.0e-2F);
+}
+
+TEST_F(PhysicsSystemUVETest, StepUVE_CollisionPriorityDecidesHowMuchOfAnOverlapEachSideTakes) {
+    PhysicsSystemUVE physicsSystem(collisionSystem, Math::Vector3UVE{});
+    // Two equal bodies overlapping by 0.2 along x. The masses are equal, so with the default
+    // priorities the correction would be half each; giving the left one a priority of 3 makes it
+    // yield a quarter of it instead. The total correction is unchanged - only the shares move.
+    const Scene::EntityUVE lighter =
+        MakeBodyEntityUVE({-0.4F, 10.0F, 0.0F}, Scene::Rigid3DComponentUVE{}, Math::Vector3UVE{0.5F, 0.5F, 0.5F});
+    const Scene::EntityUVE heavier =
+        MakeBodyEntityUVE({0.4F, 10.0F, 0.0F}, Scene::Rigid3DComponentUVE{}, Math::Vector3UVE{0.5F, 0.5F, 0.5F});
+    Scene::PhysicsObjectComponentUVE lighterObject{};
+    lighterObject.collisionPriority = 3.0F;
+    entityManager.AddComponentUVE<Scene::PhysicsObjectComponentUVE>(lighter, lighterObject);
+    entityManager.AddComponentUVE<Scene::PhysicsObjectComponentUVE>(heavier, Scene::PhysicsObjectComponentUVE{});
+    sceneGraph.UpdateUVE(entityManager);
+
+    const float lighterBefore = GetWorldPositionUVE(lighter).x;
+    const float heavierBefore = GetWorldPositionUVE(heavier).x;
+    physicsSystem.StepUVE(entityManager, sceneGraph, 1.0F / 60.0F);
+    const float lighterMoved = std::abs(GetWorldPositionUVE(lighter).x - lighterBefore);
+    const float heavierMoved = std::abs(GetWorldPositionUVE(heavier).x - heavierBefore);
+
+    ASSERT_GT(lighterMoved + heavierMoved, 0.15F);
+    EXPECT_LT(lighterMoved, heavierMoved);
+    EXPECT_NEAR(lighterMoved / (lighterMoved + heavierMoved), 0.25F, 5.0e-2F);
+    // A priority is a share, not a multiplier: the two of them together still separate by the
+    // overlap they started with.
+    EXPECT_NEAR(lighterMoved + heavierMoved, 0.2F, 1.0e-2F);
+}
+
+TEST_F(PhysicsSystemUVETest, StepUVE_APriorityOfZeroIsPinnedInPlaceAndTheOtherSideTakesItAll) {
+    PhysicsSystemUVE physicsSystem(collisionSystem, Math::Vector3UVE{});
+    const Scene::EntityUVE pinned =
+        MakeBodyEntityUVE({-0.4F, 20.0F, 0.0F}, Scene::Rigid3DComponentUVE{}, Math::Vector3UVE{0.5F, 0.5F, 0.5F});
+    const Scene::EntityUVE walker =
+        MakeBodyEntityUVE({0.4F, 20.0F, 0.0F}, Scene::Rigid3DComponentUVE{}, Math::Vector3UVE{0.5F, 0.5F, 0.5F});
+    Scene::PhysicsObjectComponentUVE pinnedObject{};
+    pinnedObject.collisionPriority = 0.0F;
+    entityManager.AddComponentUVE<Scene::PhysicsObjectComponentUVE>(pinned, pinnedObject);
+    entityManager.AddComponentUVE<Scene::PhysicsObjectComponentUVE>(walker, Scene::PhysicsObjectComponentUVE{});
+    sceneGraph.UpdateUVE(entityManager);
+
+    const float pinnedBefore = GetWorldPositionUVE(pinned).x;
+    const float walkerBefore = GetWorldPositionUVE(walker).x;
+    physicsSystem.StepUVE(entityManager, sceneGraph, 1.0F / 60.0F);
+
+    EXPECT_NEAR(GetWorldPositionUVE(pinned).x, pinnedBefore, 1.0e-4F);
+    // The whole 0.2 of overlap is resolved on the body that is willing to move.
+    EXPECT_NEAR(std::abs(GetWorldPositionUVE(walker).x - walkerBefore), 0.2F, 1.0e-2F);
+}
+
+TEST_F(PhysicsSystemUVETest, StepUVE_AnObjectThatIsNotAPhysicsObjectStillSplitsByMass) {
+    PhysicsSystemUVE physicsSystem(collisionSystem, Math::Vector3UVE{});
+    // The priority path must not have changed the plain case: two hand-made bodies with no
+    // PhysicsObject component at all still separate half each, exactly as before.
+    const Scene::EntityUVE first =
+        MakeBodyEntityUVE({-0.4F, 30.0F, 0.0F}, Scene::Rigid3DComponentUVE{}, Math::Vector3UVE{0.5F, 0.5F, 0.5F});
+    const Scene::EntityUVE second =
+        MakeBodyEntityUVE({0.4F, 30.0F, 0.0F}, Scene::Rigid3DComponentUVE{}, Math::Vector3UVE{0.5F, 0.5F, 0.5F});
+    sceneGraph.UpdateUVE(entityManager);
+
+    const float firstBefore = GetWorldPositionUVE(first).x;
+    const float secondBefore = GetWorldPositionUVE(second).x;
+    physicsSystem.StepUVE(entityManager, sceneGraph, 1.0F / 60.0F);
+    const float firstMoved = std::abs(GetWorldPositionUVE(first).x - firstBefore);
+    const float secondMoved = std::abs(GetWorldPositionUVE(second).x - secondBefore);
+
+    EXPECT_NEAR(firstMoved, 0.1F, 1.0e-2F);
+    EXPECT_NEAR(secondMoved, 0.1F, 1.0e-2F);
+}
 
 } // namespace
 } // namespace UVE::Physics::Tests

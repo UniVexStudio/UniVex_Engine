@@ -20,6 +20,8 @@
 
 #include "uve/component/collider_component_uve.h"
 #include "uve/component/character_controller_component_uve.h"
+#include "uve/component/physics_object_component_uve.h"
+#include "uve/component/process_component_uve.h"
 #include "uve/component/rigid_3d_component_uve.h"
 #include "uve/component/solid_body_component_uve.h"
 #include "uve/component/transform_component_uve.h"
@@ -1617,6 +1619,61 @@ TEST_F(Character3DStepUVETest, OneBodyIsPushedOncePerStepAndUnmovableBodiesAreNo
     EXPECT_EQ(entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(weightlessBody).velocity.x, 0.0F);
 }
 
+TEST_F(Character3DStepUVETest, ABodyThatIsNotBeingSimulatedIsNotPushedByAWalkIntoIt) {
+    const Scene::EntityUVE floor = MakeFloorUVE(0.0F);
+    static_cast<void>(floor);
+    // Two bodies in the character's path. One is stopped with MakeStatic and one is taken out of
+    // the world entirely; a walk into either must leave its velocity alone, whatever the push
+    // policy says - a push is something the simulation does to a body it is simulating.
+    const Scene::EntityUVE parked = MakeBoxUVE({2.0F, 0.5F, 0.0F}, {0.5F, 0.5F, 0.5F});
+    entityManager.AddComponentUVE<Scene::Rigid3DComponentUVE>(parked, Scene::Rigid3DComponentUVE{});
+    Scene::ProcessComponentUVE stopped{};
+    stopped.mode = Scene::TickModeUVE::Never;
+    entityManager.AddComponentUVE<Scene::ProcessComponentUVE>(parked, stopped);
+    Scene::PhysicsObjectComponentUVE parkedObject{};
+    parkedObject.disableMode = Scene::PhysicsObjectDisableModeUVE::MakeStatic;
+    entityManager.AddComponentUVE<Scene::PhysicsObjectComponentUVE>(parked, parkedObject);
+
+    const Scene::EntityUVE gone = MakeBoxUVE({2.0F, 1.5F, 0.0F}, {0.5F, 0.5F, 0.5F});
+    entityManager.AddComponentUVE<Scene::Rigid3DComponentUVE>(gone, Scene::Rigid3DComponentUVE{});
+    entityManager.AddComponentUVE<Scene::ProcessComponentUVE>(gone, stopped);
+    Scene::PhysicsObjectComponentUVE goneObject{};
+    goneObject.disableMode = Scene::PhysicsObjectDisableModeUVE::Remove;
+    entityManager.AddComponentUVE<Scene::PhysicsObjectComponentUVE>(gone, goneObject);
+
+    // Both get contacts handed straight to the push, as if the mover had reported them.
+    const Math::Vector3UVE intoThem{3.0F, 0.0F, 0.0F};
+    std::vector<Scene::CharacterSlideCollisionUVE> contacts;
+    for (const Scene::EntityUVE entity : {parked, gone}) {
+        Scene::CharacterSlideCollisionUVE contact;
+        contact.entity = entity;
+        contact.normal = Math::Vector3UVE{-1.0F, 0.0F, 0.0F};
+        contact.motion = intoThem;
+        contacts.push_back(contact);
+    }
+    sceneGraph.UpdateUVE(entityManager);
+
+    EXPECT_EQ(PushBodiesFromCharacterMoveUVE(
+                  entityManager, contacts,
+                  Physics::CharacterDynamicPushPolicyUVE{true, 1.0F, 5.0F, kDeltaTimeUVE}),
+              0U);
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(parked).velocity.x, 0.0F);
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(gone).velocity.x, 0.0F);
+
+    // And the same contacts against a body that is being simulated still push, so the test is
+    // about the state and not about the contact list.
+    const Scene::EntityUVE live = MakeBoxUVE({2.0F, 2.5F, 0.0F}, {0.5F, 0.5F, 0.5F});
+    entityManager.AddComponentUVE<Scene::Rigid3DComponentUVE>(live, Scene::Rigid3DComponentUVE{});
+    Scene::CharacterSlideCollisionUVE liveContact;
+    liveContact.entity = live;
+    liveContact.normal = Math::Vector3UVE{-1.0F, 0.0F, 0.0F};
+    liveContact.motion = intoThem;
+    EXPECT_EQ(PushBodiesFromCharacterMoveUVE(
+                  entityManager, std::vector<Scene::CharacterSlideCollisionUVE>{liveContact},
+                  Physics::CharacterDynamicPushPolicyUVE{true, 1.0F, 5.0F, kDeltaTimeUVE}),
+              1U);
+    EXPECT_NEAR(entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(live).velocity.x, 5.0F, 1.0e-3F);
+}
 TEST_F(Character3DStepUVETest, APushPolicyThatIsOffOrNonsenseLeavesEveryBodyAlone) {
     const Scene::EntityUVE floor = MakeFloorUVE(0.0F);
     static_cast<void>(floor);
