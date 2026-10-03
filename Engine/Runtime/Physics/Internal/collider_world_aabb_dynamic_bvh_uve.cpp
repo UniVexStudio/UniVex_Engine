@@ -25,7 +25,7 @@ constexpr std::size_t kBvhMaximumTraversalStackUVE = 128U;
 
 DynamicAabbBvhUVE::DynamicAabbBvhUVE(std::vector<ColliderWorldAabbUVE> colliders)
     : m_colliders(std::move(colliders)), m_indices(m_colliders.size()),
-      m_leafNodeByCacheIndex(m_colliders.size(), kInvalidNodeIndexUVE) {
+      m_leafObjectByCacheIndex(m_colliders.size(), kInvalidObjectIndexUVE) {
     if (m_colliders.size() > kMaximumProxiesUVE ||
         !std::all_of(m_colliders.begin(), m_colliders.end(), [](const ColliderWorldAabbUVE& collider) {
             return collider.entity != Scene::kInvalidEntityUVE && IsValidAabbUVE(collider.worldAabb);
@@ -43,32 +43,32 @@ DynamicAabbBvhUVE::DynamicAabbBvhUVE(std::vector<ColliderWorldAabbUVE> colliders
     }
     std::iota(m_indices.begin(), m_indices.end(), 0U);
     if (!m_indices.empty()) {
-        m_nodes.reserve(m_indices.size() * 2U);
-        m_root = BuildNodeUVE(0U, m_indices.size(), kInvalidNodeIndexUVE);
+        m_objects.reserve(m_indices.size() * 2U);
+        m_root = BuildObjectUVE(0U, m_indices.size(), kInvalidObjectIndexUVE);
     }
 }
 
-std::size_t DynamicAabbBvhUVE::BuildNodeUVE(const std::size_t begin, const std::size_t end,
+std::size_t DynamicAabbBvhUVE::BuildObjectUVE(const std::size_t begin, const std::size_t end,
                                             const std::size_t parent) {
-    const std::size_t nodeIndex = m_nodes.size();
-    m_nodes.push_back(NodeUVE{});
+    const std::size_t objectIndex = m_objects.size();
+    m_objects.push_back(ObjectUVE{});
 
     Math::AabbUVE bounds = m_colliders[m_indices[begin]].worldAabb;
     for (std::size_t index = begin + 1U; index < end; ++index) {
         bounds = bounds.UnionUVE(m_colliders[m_indices[index]].worldAabb);
     }
 
-    NodeUVE& node = m_nodes[nodeIndex];
-    node.bounds = bounds;
-    node.begin = begin;
-    node.end = end;
-    node.parent = parent;
+    ObjectUVE& object = m_objects[objectIndex];
+    object.bounds = bounds;
+    object.begin = begin;
+    object.end = end;
+    object.parent = parent;
     if (end - begin <= kBvhLeafSizeUVE) {
-        node.isLeaf = true;
+        object.isLeaf = true;
         for (std::size_t index = begin; index < end; ++index) {
-            m_leafNodeByCacheIndex[m_indices[index]] = nodeIndex;
+            m_leafObjectByCacheIndex[m_indices[index]] = objectIndex;
         }
-        return nodeIndex;
+        return objectIndex;
     }
 
     const Math::Vector3UVE extents = bounds.GetExtentsUVE();
@@ -92,26 +92,26 @@ std::size_t DynamicAabbBvhUVE::BuildNodeUVE(const std::size_t begin, const std::
                      });
 
     const std::size_t middle = begin + (end - begin) / 2U;
-    const std::size_t left = BuildNodeUVE(begin, middle, nodeIndex);
-    const std::size_t right = BuildNodeUVE(middle, end, nodeIndex);
-    m_nodes[nodeIndex].left = left;
-    m_nodes[nodeIndex].right = right;
-    return nodeIndex;
+    const std::size_t left = BuildObjectUVE(begin, middle, objectIndex);
+    const std::size_t right = BuildObjectUVE(middle, end, objectIndex);
+    m_objects[objectIndex].left = left;
+    m_objects[objectIndex].right = right;
+    return objectIndex;
 }
 
-void DynamicAabbBvhUVE::RefitFromLeafUVE(const std::size_t leafNodeIndex) noexcept {
-    std::size_t nodeIndex = leafNodeIndex;
-    while (nodeIndex != kInvalidNodeIndexUVE) {
-        NodeUVE& node = m_nodes[nodeIndex];
-        if (node.isLeaf) {
-            node.bounds = m_colliders[m_indices[node.begin]].worldAabb;
-            for (std::size_t index = node.begin + 1U; index < node.end; ++index) {
-                node.bounds = node.bounds.UnionUVE(m_colliders[m_indices[index]].worldAabb);
+void DynamicAabbBvhUVE::RefitFromLeafUVE(const std::size_t leafObjectIndex) noexcept {
+    std::size_t objectIndex = leafObjectIndex;
+    while (objectIndex != kInvalidObjectIndexUVE) {
+        ObjectUVE& object = m_objects[objectIndex];
+        if (object.isLeaf) {
+            object.bounds = m_colliders[m_indices[object.begin]].worldAabb;
+            for (std::size_t index = object.begin + 1U; index < object.end; ++index) {
+                object.bounds = object.bounds.UnionUVE(m_colliders[m_indices[index]].worldAabb);
             }
         } else {
-            node.bounds = m_nodes[node.left].bounds.UnionUVE(m_nodes[node.right].bounds);
+            object.bounds = m_objects[object.left].bounds.UnionUVE(m_objects[object.right].bounds);
         }
-        nodeIndex = node.parent;
+        objectIndex = object.parent;
     }
 }
 
@@ -146,7 +146,7 @@ DynamicColliderWorldAabbUpdateResultUVE DynamicAabbBvhUVE::UpdateAabbUVE(
 
     const std::size_t cacheIndex = static_cast<std::size_t>(iterator - m_colliders.begin());
     iterator->worldAabb = worldAabb;
-    RefitFromLeafUVE(m_leafNodeByCacheIndex[cacheIndex]);
+    RefitFromLeafUVE(m_leafObjectByCacheIndex[cacheIndex]);
     return {DynamicColliderWorldAabbUpdateCodeUVE::Applied, "Dynamic BVH AABB update applied."};
 }
 
@@ -164,20 +164,20 @@ bool DynamicAabbBvhUVE::QueryUVE(const Math::AabbUVE& bounds,
     std::size_t stackSize = 0U;
     stack[stackSize++] = m_root;
     while (stackSize > 0U) {
-        const NodeUVE& node = m_nodes[stack[--stackSize]];
-        if (!bounds.IntersectsUVE(node.bounds)) {
+        const ObjectUVE& object = m_objects[stack[--stackSize]];
+        if (!bounds.IntersectsUVE(object.bounds)) {
             continue;
         }
-        if (node.isLeaf) {
-            candidates.insert(candidates.end(), m_indices.begin() + static_cast<std::ptrdiff_t>(node.begin),
-                              m_indices.begin() + static_cast<std::ptrdiff_t>(node.end));
+        if (object.isLeaf) {
+            candidates.insert(candidates.end(), m_indices.begin() + static_cast<std::ptrdiff_t>(object.begin),
+                              m_indices.begin() + static_cast<std::ptrdiff_t>(object.end));
             continue;
         }
         if (stackSize + 2U > stack.size()) {
             return false;
         }
-        stack[stackSize++] = node.right;
-        stack[stackSize++] = node.left;
+        stack[stackSize++] = object.right;
+        stack[stackSize++] = object.left;
     }
     return true;
 }

@@ -38,7 +38,7 @@ namespace {
     if (word == "str") return TypeUVE::StrUVE();
     if (word == "vec3") return TypeUVE::Vec3UVE();
     if (word == "none") return TypeUVE::NoneUVE();
-    if (IsNameUVE(word) && word.find('.') == std::string_view::npos) return TypeUVE::NodeUVE(std::string{word});
+    if (IsNameUVE(word) && word.find('.') == std::string_view::npos) return TypeUVE::ObjectUVE(std::string{word});
     return std::nullopt;
 }
 

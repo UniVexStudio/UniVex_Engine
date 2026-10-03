@@ -98,7 +98,7 @@ TEST(FbxMeshConverterUVETest, AZUpCentimetreFileArrivesInMetresStandingOnY) {
     }
 }
 
-TEST(FbxMeshConverterUVETest, EveryInstanceIsMergedWhereItsNodePlacesItAndAMirroredOneStaysFacingOut) {
+TEST(FbxMeshConverterUVETest, EveryInstanceIsMergedWhereItsObjectPlacesItAndAMirroredOneStaysFacingOut) {
     const std::string objects = std::string(kFloorGeometryUVE) + R"(	Model: 2001, "Model::Mirrored", "Mesh" {
 		Version: 232
 		Properties70:  {
@@ -352,7 +352,7 @@ TEST(FbxMeshConverterUVETest, EveryTakeBecomesASkeletalClipOnTheSkeletonsBones) 
 	}
 	AnimationLayer: 5100, "AnimLayer::Base", "" {
 	}
-	AnimationCurveNode: 6000, "AnimCurveNode::T", "" {
+	AnimationCurveNode: 6000, "AnimCurveObject::T", "" {
 		Properties70:  {
 			P: "d|X", "Number", "", "A",0
 			P: "d|Y", "Number", "", "A",0

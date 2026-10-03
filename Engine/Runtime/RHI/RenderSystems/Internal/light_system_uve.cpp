@@ -14,7 +14,7 @@
 #include "uve/math/quaternion_uve.h"
 #include "uve/component/light_component_uve.h"
 #include "uve/component/light_emitter_component_uve.h"
-#include "uve/nodes/3d/directional_light_3d_uve.h"
+#include "uve/objects/3d/directional_light_3d_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 
 namespace UVE::Render {

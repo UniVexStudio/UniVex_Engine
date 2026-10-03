@@ -17,10 +17,10 @@
 #include "uve/render_systems/mesh_render_eligibility_uve.h"
 #include "uve/component/mesh_component_uve.h"
 #include "uve/component/physics_interpolation_component_uve.h"
-#include "uve/nodes/3d/lod_group_3d_uve.h"
-#include "uve/nodes/3d/occluder_3d_uve.h"
-#include "uve/nodes/3d/visibility_region_3d_uve.h"
-#include "uve/nodes/3d/world_partition_3d_uve.h"
+#include "uve/objects/3d/lod_group_3d_uve.h"
+#include "uve/objects/3d/occluder_3d_uve.h"
+#include "uve/objects/3d/visibility_region_3d_uve.h"
+#include "uve/objects/3d/world_partition_3d_uve.h"
 #include "uve/component/visibility_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 
@@ -182,17 +182,17 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
     std::unordered_map<AssetPairKeyUVE, std::size_t, AssetPairKeyHashUVE> assetPairSlots;
 
     // Occluder snapshot, captured once per build: hiding is a per-FRAME verdict against the
-    // live camera, never persisted state, so the walk re-derives it from the authored nodes as
-    // they exist right now. Disabled or transform-less occluder nodes simply do not cover
+    // live camera, never persisted state, so the walk re-derives it from the authored objects as
+    // they exist right now. Disabled or transform-less occluder objects simply do not cover
     // anything - fail open on every honest ambiguity, by the resolver's own contract.
     struct OccluderSnapshotUVE final {
-        Scene::Occluder3DNodeComponentUVE config;
+        Scene::Occluder3DComponentUVE config;
         Math::Vector3UVE worldPosition;
     };
     std::vector<OccluderSnapshotUVE> occluders;
-    entityManager.ForEachUVE<Scene::Occluder3DNodeComponentUVE>(
+    entityManager.ForEachUVE<Scene::Occluder3DComponentUVE>(
         [&occluders, &entityManager](const Scene::EntityUVE entity,
-                                     const Scene::Occluder3DNodeComponentUVE& config) {
+                                     const Scene::Occluder3DComponentUVE& config) {
             if (!config.enabled ||
                 !entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(entity)) {
                 return;
@@ -230,9 +230,9 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
             // The level is resolved even for entities that are NOT culled, because currentLevel is
             // what a future mesh swap indexes by and the Inspector shows. Resolving it only on the
             // cull path would make the field correct exactly when nobody can see the object.
-            if (entityManager.HasComponentUVE<Scene::LodGroup3DNodeComponentUVE>(entity)) {
-                Scene::LodGroup3DNodeComponentUVE& lodGroup =
-                    entityManager.GetComponentUVE<Scene::LodGroup3DNodeComponentUVE>(entity);
+            if (entityManager.HasComponentUVE<Scene::LodGroup3DComponentUVE>(entity)) {
+                Scene::LodGroup3DComponentUVE& lodGroup =
+                    entityManager.GetComponentUVE<Scene::LodGroup3DComponentUVE>(entity);
                 const Math::Vector3UVE toCamera =
                     worldTransform.worldPosition - outVisibilitySet.cameraWorldPosition;
                 Scene::ResolveLodGroup3DLevelUVE(lodGroup, Math::LengthUVE(toCamera));
@@ -253,7 +253,7 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
                 const bool ownerAlive =
                     membership.partition != Scene::kInvalidEntityUVE &&
                     entityManager.IsAliveUVE(membership.partition) &&
-                    entityManager.HasComponentUVE<Scene::WorldPartition3DNodeComponentUVE>(
+                    entityManager.HasComponentUVE<Scene::WorldPartition3DComponentUVE>(
                         membership.partition);
                 if (!Scene::ResolveWorldPartition3DMembershipLiveUVE(ownerAlive,
                                                                      membership.live)) {
@@ -272,7 +272,7 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
                 const bool ownerAlive =
                     membership.region != Scene::kInvalidEntityUVE &&
                     entityManager.IsAliveUVE(membership.region) &&
-                    entityManager.HasComponentUVE<Scene::VisibilityRegion3DNodeComponentUVE>(
+                    entityManager.HasComponentUVE<Scene::VisibilityRegion3DComponentUVE>(
                         membership.region);
                 if (!Scene::ResolveVisibilityRegion3DMembershipLiveUVE(ownerAlive,
                                                                        membership.live)) {

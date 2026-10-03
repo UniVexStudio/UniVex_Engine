@@ -12,7 +12,7 @@ The comparison point is GDScript (Godot 4.x). The weaknesses that shaped UVScrip
 |---|---|
 | Typing is optional. Untyped code is slow, because every operation resolves the type at run time. | Every value has a static type. It is inferred when left out (`let n = 3`), and checked before the game runs. |
 | Interpreted. Hot loops are about half the speed of C#. | Compiled: a bytecode VM in the editor (instant reload), and C++23 generated from the same bytecode for release builds. |
-| No tuples, and no generics on user types. | Tuples (`let (a, b) = pair()`) and typed collections (`list[int]`, `map[str, Node3D]`). |
+| No tuples, and no generics on user types. | Tuples (`let (a, b) = pair()`) and typed collections (`list[int]`, `map[str, Object3D]`). |
 | Signals are connected by name as strings; typos show up at run time. | Events are blocks (`on body_entered(other):`). The compiler checks the name and the parameters against the node kind. |
 | `await` needs a signal or a timer object. | `wait 0.5 s`, `wait until is_on_floor`, `wait next_frame`. The node pauses; nothing is allocated. |
 | Numbers carry no units, so seconds vs frames and degrees vs radians get mixed up. | Unit literals (`2 s`, `150 ms`, `90 deg`, `3 m`). Angles are converted to radians at compile time. |
@@ -21,7 +21,7 @@ The comparison point is GDScript (Godot 4.x). The weaknesses that shaped UVScrip
 ## A script
 
 ```
-entity Player : CharacterBody3D
+entity Player : Character3D
 
 export speed: float = 6.0
 export jump_height = 1.2 m
@@ -37,7 +37,7 @@ on tick(dt):
         velocity.y = sqrt(2.0 * gravity * jump_height)
         jumps += 1
 
-on body_entered(other: Node3D):
+on body_entered(other: Object3D):
     wait 0.5 s
     other.hide()
 

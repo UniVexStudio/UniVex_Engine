@@ -38,8 +38,8 @@ inline constexpr std::string_view kSelectionOutlineVisibleUVE = "editor.viewport
 /// A colour, so its channels sit at `.r`, `.g` and `.b` beneath this id.
 inline constexpr std::string_view kSelectionOutlineColorUVE = "editor.viewport.selectionOutline";
 inline constexpr std::string_view kSelectionOutlineThicknessUVE = "editor.viewport.selectionOutline.thickness";
-inline constexpr std::string_view kNewNodesUnderSelectionUVE = "editor.nodes.addUnderSelection";
-inline constexpr std::string_view kNewNodePlacementUVE = "editor.nodes.placement";
+inline constexpr std::string_view kNewObjectsUnderSelectionUVE = "editor.objects.addUnderSelection";
+inline constexpr std::string_view kNewObjectPlacementUVE = "editor.objects.placement";
 inline constexpr std::string_view kPlayPauseOnStartUVE = "editor.play.pauseOnStart";
 inline constexpr std::string_view kPlaySaveSceneFirstUVE = "editor.play.saveSceneFirst";
 inline constexpr std::string_view kPlaySwitchToGameUVE = "editor.play.switchToGame";
@@ -55,6 +55,22 @@ inline constexpr std::string_view kHierarchyDragToReparentUVE = "editor.hierarch
 inline constexpr std::string_view kHierarchyTreeLinesUVE = "editor.hierarchy.treeLines";
 inline constexpr std::string_view kHierarchyIndentWidthUVE = "editor.hierarchy.indentWidth";
 } // namespace EditorSettingIdUVE
+
+/// One setting id that was renamed, and the id it now has. A settings file written before the
+/// rename still carries the old key; the editor moves its value across once at load, so the
+/// author keeps their choice (see the flag descriptions on the alias descriptors in
+/// RegisterEditorSettingsUVE and MigrateRenamedSettingIdsUVE).
+struct RenamedSettingIdUVE final {
+    std::string_view oldId;
+    std::string_view newId;
+};
+
+/// The renames so far. `editor.nodes.*` became `editor.objects.*` when the engine's word for a
+/// scene node became object.
+inline constexpr RenamedSettingIdUVE kRenamedSettingIdsUVE[] = {
+    {"editor.nodes.addUnderSelection", EditorSettingIdUVE::kNewObjectsUnderSelectionUVE},
+    {"editor.nodes.placement", EditorSettingIdUVE::kNewObjectPlacementUVE},
+};
 
 /// Declares every editor setting in `registry`, with defaults and legal ranges taken from the
 /// editor's own defaults and setters, so a stored value the registry accepts is one the editor
@@ -72,11 +88,11 @@ inline constexpr std::string_view kHierarchyIndentWidthUVE = "editor.hierarchy.i
 /// ignoring case, in the setting's name, category, id or tooltip. An empty query matches all.
 [[nodiscard]] bool MatchesSettingSearchUVE(const Config::SettingDescriptorUVE& descriptor, std::string_view query);
 
-/// Whether a setting in `category` sits at or beneath the category tree node `path`.
+/// Whether a setting in `category` sits at or beneath the category tree object `path`.
 [[nodiscard]] bool IsInSettingCategoryUVE(std::string_view category, std::string_view path) noexcept;
 
-/// One node of the category tree: "Editor/Viewport/Grid" is `name` "Grid" at `depth` 2.
-struct SettingCategoryNodeUVE final {
+/// One object of the category tree: "Editor/Viewport/Grid" is `name` "Grid" at `depth` 2.
+struct SettingCategoryObjectUVE final {
     std::string path;
     std::string name;
     int depth = 0;
@@ -84,7 +100,7 @@ struct SettingCategoryNodeUVE final {
 
 /// The category tree of `descriptors`, every ancestor included, flattened depth first: a parent
 /// always comes right before its children, and siblings keep the order they first appear in.
-[[nodiscard]] std::vector<SettingCategoryNodeUVE> BuildSettingCategoryTreeUVE(
+[[nodiscard]] std::vector<SettingCategoryObjectUVE> BuildSettingCategoryTreeUVE(
     const std::vector<const Config::SettingDescriptorUVE*>& descriptors);
 
 /// `value` as a person reads it: On or Off, a number without trailing zeros, an enum entry's

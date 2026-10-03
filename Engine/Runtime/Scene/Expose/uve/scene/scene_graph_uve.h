@@ -10,7 +10,7 @@
 #include "uve/component/transform_component_uve.h"
 #include "uve/component/physics_interpolation_component_uve.h"
 #include "uve/component/auto_translate_component_uve.h"
-#include "uve/component/node_metadata_component_uve.h"
+#include "uve/component/object_metadata_component_uve.h"
 #include "uve/component/process_component_uve.h"
 #include "uve/component/thread_group_component_uve.h"
 #include "uve/component/visibility_component_uve.h"
@@ -50,7 +50,7 @@ public:
                                           std::size_t index) override;
     /// Answered from the pass state UpdateUVE() leaves behind, which is retained until the next
     /// update clears it - so this costs one hash lookup and adds no storage or pass of its own.
-    [[nodiscard]] std::optional<ResolvedNodeModesUVE> TryGetResolvedNodeModesUVE(
+    [[nodiscard]] std::optional<ResolvedObjectModesUVE> TryGetResolvedObjectModesUVE(
         EntityUVE entity) const override;
 
 private:
@@ -79,9 +79,9 @@ private:
         /// Seeding the defaults here instead would make every root look like a child of something
         /// that had already chosen - which a thread group treats as a constraint, so a root could
         /// then never opt into a worker at all.
-        /// False for a pure Node, which is in the hierarchy but has no transform. A child never
+        /// False for a pure Object, which is in the hierarchy but has no transform. A child never
         /// composes its world transform from a non-spatial parent; it starts a new transform chain
-        /// there, the way a Node3D under a plain Node does.
+        /// there, the way a Object3D under a plain Object does.
         bool spatial = true;
 
         ProcessModeUVE processModeInHierarchy = ProcessModeUVE::Inherit;
@@ -136,7 +136,7 @@ private:
     /// already knows a world transform has just been finalised - the physics system writes LOCAL
     /// transforms and would have to wait for this sweep anyway.
     /// The Inherit/On/Off rule alone, published to the component when there is one. Shared by the
-    /// spatial path (which also records poses) and the pure-Node path (which has no pose).
+    /// spatial path (which also records poses) and the pure-Object path (which has no pose).
     static bool ResolveInterpolationModeUVE(const PendingEntityUVE& item, bool parentInterpolated) noexcept;
 
     static bool ResolveInterpolationUVE(const PendingEntityUVE& item, bool parentInterpolated,

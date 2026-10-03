@@ -13,10 +13,10 @@
 
 namespace UVE::Threading {
 
-using JobGraphNodeHandleUVE = std::size_t;
+using JobGraphObjectHandleUVE = std::size_t;
 
-inline constexpr JobGraphNodeHandleUVE kInvalidJobGraphNodeHandleUVE =
-    static_cast<JobGraphNodeHandleUVE>(-1);
+inline constexpr JobGraphObjectHandleUVE kInvalidJobGraphObjectHandleUVE =
+    static_cast<JobGraphObjectHandleUVE>(-1);
 
 /// JobGraphUVE is a dependency-scheduled task graph built on top of IThreadPoolUVE/JobCounterUVE:
 /// unlike submitting a batch of independent jobs against one JobCounterUVE (the pool's own
@@ -48,16 +48,16 @@ public:
     JobGraphUVE& operator=(JobGraphUVE&&) = delete;
 
     /// Adds one job to the graph and returns a handle identifying it, for use with
-    /// AddDependencyUVE(). No-op (returns kInvalidJobGraphNodeHandleUVE, logs an error) if called
+    /// AddDependencyUVE(). No-op (returns kInvalidJobGraphObjectHandleUVE, logs an error) if called
     /// after ExecuteUVE().
-    [[nodiscard]] JobGraphNodeHandleUVE AddJobUVE(JobUVE job);
+    [[nodiscard]] JobGraphObjectHandleUVE AddJobUVE(JobUVE job);
 
     /// Declares that `dependent` must not start running until `dependency` has finished. Returns
     /// false and changes nothing if either handle is invalid/unknown, `dependent == dependency`,
     /// adding this edge would create a cycle, or the graph has already been executed - a
     /// programming error the caller should treat as such (e.g. via an assert at the call site),
     /// not a condition JobGraphUVE recovers from silently.
-    [[nodiscard]] bool AddDependencyUVE(JobGraphNodeHandleUVE dependent, JobGraphNodeHandleUVE dependency);
+    [[nodiscard]] bool AddDependencyUVE(JobGraphObjectHandleUVE dependent, JobGraphObjectHandleUVE dependency);
 
     /// Submits every job with no unmet dependencies to `pool`; each job's completion decrements
     /// its dependents' remaining-dependency counts and submits any that reach zero, cascading
@@ -71,16 +71,16 @@ public:
     void WaitUVE();
 
 private:
-    struct NodeUVE {
+    struct ObjectUVE {
         JobUVE job;
-        std::vector<JobGraphNodeHandleUVE> successors;
+        std::vector<JobGraphObjectHandleUVE> successors;
         std::atomic<int> remainingDependencies{0};
     };
 
-    [[nodiscard]] bool CanReachUVE(JobGraphNodeHandleUVE from, JobGraphNodeHandleUVE to) const;
-    void SubmitNodeUVE(IThreadPoolUVE& pool, JobGraphNodeHandleUVE index);
+    [[nodiscard]] bool CanReachUVE(JobGraphObjectHandleUVE from, JobGraphObjectHandleUVE to) const;
+    void SubmitObjectUVE(IThreadPoolUVE& pool, JobGraphObjectHandleUVE index);
 
-    std::vector<std::unique_ptr<NodeUVE>> m_nodes;
+    std::vector<std::unique_ptr<ObjectUVE>> m_objects;
     JobCounterUVE m_completionCounter;
     bool m_executed = false;
 };

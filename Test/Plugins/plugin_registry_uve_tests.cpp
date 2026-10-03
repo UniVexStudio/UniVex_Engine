@@ -8,11 +8,11 @@ namespace UVE::Plugins::Tests {
 
 TEST(NativePluginManifestValidationUVETest, ValidateNativePluginManifestUVE_ReportsBoundedStructuredDiagnostics) {
     NativePluginManifestUVE valid{"uve.valid", "Valid", {1U, 0U, 0U},
-                                 kNativePluginProtocolVersionUVE, {"node.types", "editor.window"}};
+                                 kNativePluginProtocolVersionUVE, {"object.types", "editor.window"}};
     EXPECT_TRUE(ValidateNativePluginManifestUVE(valid).IsValidUVE());
 
     NativePluginManifestUVE duplicate = valid;
-    duplicate.capabilityIds = {"node.types", "node.types"};
+    duplicate.capabilityIds = {"object.types", "object.types"};
     const NativePluginManifestValidationResultUVE duplicateResult = ValidateNativePluginManifestUVE(duplicate);
     ASSERT_FALSE(duplicateResult.IsValidUVE());
     ASSERT_EQ(duplicateResult.diagnostics.size(), 1U);
@@ -57,11 +57,11 @@ TEST(NativePluginManifestValidationUVETest, NegotiateNativePluginAbiUVE_ReportsC
 
 TEST(NativePluginManifestValidationUVETest, ValidateNativePluginManifestUVE_AppliesExplicitCapabilityPolicy) {
     const NativePluginManifestUVE manifest{"uve.policy", "Policy", {1U, 0U, 0U},
-                                           kNativePluginProtocolVersionUVE, {"node.types", "editor.window"}};
-    const NativePluginCapabilityPolicyUVE allowPolicy{false, {"node.types", "editor.window"}};
+                                           kNativePluginProtocolVersionUVE, {"object.types", "editor.window"}};
+    const NativePluginCapabilityPolicyUVE allowPolicy{false, {"object.types", "editor.window"}};
     EXPECT_TRUE(ValidateNativePluginManifestUVE(manifest, allowPolicy).IsValidUVE());
 
-    const NativePluginCapabilityPolicyUVE denyPolicy{false, {"node.types"}};
+    const NativePluginCapabilityPolicyUVE denyPolicy{false, {"object.types"}};
     const NativePluginManifestValidationResultUVE denied =
         ValidateNativePluginManifestUVE(manifest, denyPolicy);
     ASSERT_FALSE(denied.IsValidUVE());
@@ -69,7 +69,7 @@ TEST(NativePluginManifestValidationUVETest, ValidateNativePluginManifestUVE_Appl
     EXPECT_EQ(denied.diagnostics[0].code, NativePluginManifestValidationCodeUVE::CapabilityNotAllowed);
     EXPECT_EQ(denied.diagnostics[0].capabilityIndex, 1U);
 
-    const NativePluginCapabilityPolicyUVE duplicatePolicy{false, {"node.types", "node.types"}};
+    const NativePluginCapabilityPolicyUVE duplicatePolicy{false, {"object.types", "object.types"}};
     const NativePluginManifestValidationResultUVE duplicate =
         ValidateNativePluginManifestUVE(manifest, duplicatePolicy);
     ASSERT_FALSE(duplicate.IsValidUVE());
@@ -87,15 +87,15 @@ TEST(NativePluginManifestValidationUVETest, ValidateNativePluginManifestUVE_Appl
 TEST(NativePluginRegistryUVETest, RegisterManifestUVE_ExplicitPolicyRejectsBeforeMutation) {
     NativePluginRegistryUVE registry;
     const NativePluginManifestUVE manifest{"uve.restricted", "Restricted", {1U, 0U, 0U},
-                                           kNativePluginProtocolVersionUVE, {"node.types", "filesystem.read"}};
-    const NativePluginCapabilityPolicyUVE policy{false, {"node.types"}};
+                                           kNativePluginProtocolVersionUVE, {"object.types", "filesystem.read"}};
+    const NativePluginCapabilityPolicyUVE policy{false, {"object.types"}};
     const NativePluginRegistryResultUVE rejected = registry.RegisterManifestUVE(manifest, policy);
     EXPECT_FALSE(rejected.IsAcceptedUVE());
     EXPECT_EQ(registry.GetManifestCountUVE(), 0U);
     EXPECT_EQ(registry.GetOpenScopeCountUVE(), 0U);
     EXPECT_EQ(registry.FindManifestUVE("uve.restricted"), nullptr);
 
-    const NativePluginCapabilityPolicyUVE allowPolicy{false, {"node.types", "filesystem.read"}};
+    const NativePluginCapabilityPolicyUVE allowPolicy{false, {"object.types", "filesystem.read"}};
     const NativePluginRegistryResultUVE accepted = registry.RegisterManifestUVE(manifest, allowPolicy);
     ASSERT_TRUE(accepted.IsAcceptedUVE()) << accepted.message;
     EXPECT_EQ(registry.GetManifestCountUVE(), 1U);
@@ -105,7 +105,7 @@ TEST(NativePluginRegistryUVETest, RegisterManifestUVE_ExplicitPolicyRejectsBefor
 TEST(NativePluginRegistryUVETest, RegisterManifestUVE_ValidatesIdentityProtocolAndCapabilities) {
     NativePluginRegistryUVE registry;
     NativePluginManifestUVE manifest{"uve.terrain", "Terrain", {1U, 2U, 0U},
-                                     kNativePluginProtocolVersionUVE, {"node.types", "editor.window"}};
+                                     kNativePluginProtocolVersionUVE, {"object.types", "editor.window"}};
     const NativePluginRegistryResultUVE registered = registry.RegisterManifestUVE(manifest);
     ASSERT_TRUE(registered.IsAcceptedUVE()) << registered.message;
     EXPECT_EQ(registry.GetManifestCountUVE(), 1U);

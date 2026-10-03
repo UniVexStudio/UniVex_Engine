@@ -112,8 +112,8 @@ foreach(_font_pair IN ITEMS
 endforeach()
 
 file(GLOB _uve_editor_icon_pngs CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/assets/icons/nodes/*.png"
-    "${CMAKE_CURRENT_SOURCE_DIR}/assets/icons/node_categories/*.png"
+    "${CMAKE_CURRENT_SOURCE_DIR}/assets/icons/objects/*.png"
+    "${CMAKE_CURRENT_SOURCE_DIR}/assets/icons/object_categories/*.png"
     "${CMAKE_CURRENT_SOURCE_DIR}/assets/icons/content_types/*.png")
 list(SORT _uve_editor_icon_pngs)
 add_custom_command(
@@ -157,7 +157,7 @@ add_library(uve_editor STATIC
     Internal/editor_panel_inspector_metadata_uve.cpp
     Internal/editor_panel_inspector_uve.cpp
     Internal/editor_panel_inspector_animation_graph_uve.cpp
-    Internal/editor_panel_inspector_node_metadata_uve.cpp
+    Internal/editor_panel_inspector_object_metadata_uve.cpp
     Internal/editor_script_slot_uve.cpp
     Internal/editor_uvscript_editor_uve.cpp
     Internal/editor_uvscript_highlight_uve.cpp

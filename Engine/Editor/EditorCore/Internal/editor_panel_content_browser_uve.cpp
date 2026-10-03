@@ -36,7 +36,7 @@
 #include "uve/editor/editor_content_browser_model_uve.h"
 
 #include "editor_chrome_layout_uve.h"
-#include "editor_node_icons_uve.h"
+#include "editor_object_icons_uve.h"
 
 namespace UVE::Editor {
 namespace {
@@ -803,7 +803,7 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
             std::string removeShelf;
             std::string toggleShared;
             bool listChanged = false;
-            const std::uintptr_t teamIcon = m_uiAssets.GetNodeCategoryIconTextureIdUVE("world");
+            const std::uintptr_t teamIcon = m_uiAssets.GetObjectCategoryIconTextureIdUVE("world");
             const std::uintptr_t personalIcon = m_uiAssets.GetContentTypeIconTextureIdUVE("Bundle");
             for (const bool teamPass : {true, false}) {
                 for (const ContentShelfUVE& shelf : m_contentShelves.GetAllUVE()) {

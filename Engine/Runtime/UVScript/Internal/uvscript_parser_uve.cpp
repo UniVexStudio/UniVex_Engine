@@ -411,8 +411,8 @@ private:
         HeaderUVE header;
         header.at = Take().at;
         header.name = ExpectName("the entity's name after 'entity'");
-        Expect(":", "':' and the node kind it drives, as in 'entity Player : CharacterBody3D'");
-        header.baseKind = ExpectName("a node kind such as CharacterBody3D");
+        Expect(":", "':' and the object kind it drives, as in 'entity Player : Character3D'");
+        header.baseKind = ExpectName("an object kind such as Character3D");
         ExpectNewline();
         return header;
     }
@@ -489,7 +489,7 @@ private:
     TypeRefUVE ParseType() {
         TypeRefUVE type;
         type.at = Current().at;
-        type.name = ExpectName("a type such as int, float or Node3D");
+        type.name = ExpectName("a type such as int, float or Object3D");
         if (Accept("[")) {
             do {
                 type.arguments.push_back(ParseType());

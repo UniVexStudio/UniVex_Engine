@@ -73,27 +73,27 @@ public:
     [[nodiscard]] bool QueryUVE(const Math::AabbUVE& bounds, std::vector<std::size_t>& candidates) const;
 
 private:
-    static constexpr std::size_t kInvalidNodeIndexUVE = static_cast<std::size_t>(-1);
+    static constexpr std::size_t kInvalidObjectIndexUVE = static_cast<std::size_t>(-1);
 
-    struct NodeUVE final {
+    struct ObjectUVE final {
         Math::AabbUVE bounds;
         std::size_t begin = 0U;
         std::size_t end = 0U;
-        std::size_t left = kInvalidNodeIndexUVE;
-        std::size_t right = kInvalidNodeIndexUVE;
-        std::size_t parent = kInvalidNodeIndexUVE;
+        std::size_t left = kInvalidObjectIndexUVE;
+        std::size_t right = kInvalidObjectIndexUVE;
+        std::size_t parent = kInvalidObjectIndexUVE;
         bool isLeaf = false;
     };
 
-    [[nodiscard]] std::size_t BuildNodeUVE(std::size_t begin, std::size_t end,
+    [[nodiscard]] std::size_t BuildObjectUVE(std::size_t begin, std::size_t end,
                                             std::size_t parent);
-    void RefitFromLeafUVE(std::size_t leafNodeIndex) noexcept;
+    void RefitFromLeafUVE(std::size_t leafObjectIndex) noexcept;
 
     std::vector<ColliderWorldAabbUVE> m_colliders;
     std::vector<std::size_t> m_indices;
-    std::vector<std::size_t> m_leafNodeByCacheIndex;
-    std::vector<NodeUVE> m_nodes;
-    std::size_t m_root = kInvalidNodeIndexUVE;
+    std::vector<std::size_t> m_leafObjectByCacheIndex;
+    std::vector<ObjectUVE> m_objects;
+    std::size_t m_root = kInvalidObjectIndexUVE;
     bool m_isValid = true;
 };
 

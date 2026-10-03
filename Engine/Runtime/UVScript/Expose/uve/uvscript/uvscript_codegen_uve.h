@@ -10,7 +10,7 @@
 namespace UVE::UVScript {
 
 /// C++23 source for `program`, to be compiled into a release build. The file registers itself
-/// under the program's fingerprint, so once it is linked in every node running that exact program
+/// under the program's fingerprint, so once it is linked in every object running that exact program
 /// runs this code instead of the interpreter - with the same results, errors and `wait` behaviour.
 /// `origin` (usually the script's path) only goes into a comment.
 [[nodiscard]] std::string GenerateUVScriptNativeCppUVE(const ProgramUVE& program, std::string_view origin);

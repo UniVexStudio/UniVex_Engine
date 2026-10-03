@@ -34,7 +34,7 @@ add_library(uve_core STATIC
     Internal/engine_core_uve.cpp
     Internal/engine_project_settings_uve.cpp
     Internal/input_map_document_uve.cpp
-    Internal/uvscript_node_host_uve.cpp
+    Internal/uvscript_object_host_uve.cpp
 )
 target_include_directories(uve_core PUBLIC Expose)
 target_link_libraries(uve_core

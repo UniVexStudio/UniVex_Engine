@@ -12,7 +12,7 @@ bool IsProcessComponentValidUVE(const ProcessComponentUVE&) noexcept {
 }
 
 ProcessModeUVE ResolveProcessModeUVE(const ProcessModeUVE mode, const ProcessModeUVE parentMode) noexcept {
-    // Inherit passes the parent's answer through. An intermediate node that never opted in must not
+    // Inherit passes the parent's answer through. An intermediate object that never opted in must not
     // break a subtree's chain - the same rule visibility and physics interpolation already follow.
     if (mode == ProcessModeUVE::Inherit) {
         // A parent that is itself unresolved (only possible at a root, or after a cycle fallback)

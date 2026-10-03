@@ -7,7 +7,7 @@
 
 namespace UVE::Physics {
 
-/// One fixed step's player intent for a CharacterBody3D's built-in movement.
+/// One fixed step's player intent for a Character3D's built-in movement.
 struct CharacterMotionInputUVE final {
     /// Horizontal steering on X and Z, each in [-1, 1], at most unit length.
     Math::Vector3UVE move{};
@@ -17,7 +17,7 @@ struct CharacterMotionInputUVE final {
     bool jumpPressed = false;
 };
 
-/// The part of a CharacterBody3D's step that decides where it wants to go, before any collision:
+/// The part of a Character3D's step that decides where it wants to go, before any collision:
 /// steering (full on the floor or while floating, Air Control of it in the air), jumping (with the
 /// Jump Buffer and Coyote Time windows) and gravity. Updates `c.velocity`, the buffer and the
 /// coyote clock; returns true when it jumped this step. `gravityY` is the world's gravity along Y,

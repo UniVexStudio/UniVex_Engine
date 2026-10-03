@@ -165,7 +165,7 @@ target_include_directories(uve_core_tests PRIVATE ${CMAKE_SOURCE_DIR}/Engine/Run
 # The UVScript native tests run each script both interpreted and as C++ that uvsc generated from it
 # at build time, and compare the two.
 uve_add_uvscript_native(uve_core_tests
-    HOST UVScript/native/fake_node.uvhost
+    HOST UVScript/native/fake_object.uvhost
     SCRIPTS UVScript/native/player.uvs UVScript/native/math.uvs UVScript/native/waits.uvs
             UVScript/native/errors.uvs)
 target_compile_definitions(uve_core_tests PRIVATE
@@ -182,25 +182,25 @@ gtest_discover_tests(uve_core_tests)
 
 add_executable(uve_integration_tests
     Support/test_scratch_uve.cpp
-    Nodes/3D/nodes_3d_uve_tests.cpp
-    Nodes/3D/node_definitions_3d_uve_tests.cpp
-    Nodes/3D/animation_nodes_uve_tests.cpp
-    Nodes/3D/conformed_playback_uve_tests.cpp
-    Nodes/CanvasLayer/node_definitions_canvas_layer_uve_tests.cpp
+    Objects/3D/objects_3d_uve_tests.cpp
+    Objects/3D/object_definitions_3d_uve_tests.cpp
+    Objects/3D/animation_objects_uve_tests.cpp
+    Objects/3D/conformed_playback_uve_tests.cpp
+    Objects/UI/object_definitions_canvas_layer_uve_tests.cpp
     Integration/Entity/archetype_uve_tests.cpp
     Integration/Entity/chunk_uve_tests.cpp
     Integration/Entity/entity_manager_uve_tests.cpp
     Integration/Localization/localization_uve_tests.cpp
     Integration/Scene/scene_graph_uve_tests.cpp
-    Integration/Scene/node_common_components_uve_tests.cpp
+    Integration/Scene/object_common_components_uve_tests.cpp
     Integration/Scene/scene_component_metadata_uve_tests.cpp
     Integration/Scene/scene_serializer_uve_tests.cpp
-    Integration/Scene/scene_node_type_uve_tests.cpp
+    Integration/Scene/scene_object_type_uve_tests.cpp
     Integration/Scene/prefab_system_uve_tests.cpp
     Integration/Scene/prefab_maturity_uve_tests.cpp
     Integration/Scene/prefab_revision_policy_uve_tests.cpp
     Integration/Scene/particle_runtime_uve_tests.cpp
-    Integration/Scene/scene_node_registry_uve_tests.cpp
+    Integration/Scene/scene_object_registry_uve_tests.cpp
     Integration/Animation/time_pose_contract_uve_tests.cpp
     Integration/Animation/animation_clip_uve_tests.cpp
     Integration/Animation/animation_tree_uve_tests.cpp
@@ -399,7 +399,7 @@ add_executable(uve_editor_tests
     Editor/animation_clip_editing_uve_tests.cpp
     Editor/animation_graph_editing_uve_tests.cpp
     Editor/scene_component_authoring_uve_tests.cpp
-    Editor/scene_node_editor_uve_tests.cpp
+    Editor/scene_object_editor_uve_tests.cpp
 )
 target_link_libraries(uve_editor_tests PRIVATE
     nlohmann_json::nlohmann_json

@@ -38,7 +38,7 @@
 #include "uve/math/matrix4x4_uve.h"
 #include "uve/math/quaternion_uve.h"
 #include "uve/math/vector3_uve.h"
-#include "uve/nodes/3d/all_nodes_3d_uve.h"
+#include "uve/objects/3d/all_objects_3d_uve.h"
 #include "uve/render_systems/i_light_system_uve.h"
 #include "uve/render_systems/particle_draw_command_uve.h"
 #include "uve/render_systems/particle_render_bridge_uve.h"
@@ -584,10 +584,10 @@ constexpr std::array<std::uint8_t, 4> kFlatNormalPixelUVE{0x80, 0x80, 0xFF, 0xFF
     Scene::IEntityManagerUVE& entityManager, const Math::Vector3UVE fallbackAmbient) noexcept {
     Math::Vector3UVE ambient = fallbackAmbient;
     bool environmentFound = false;
-    entityManager.ForEachUVE<Scene::WorldEnvironment3DNodeComponentUVE>(
+    entityManager.ForEachUVE<Scene::WorldEnvironment3DComponentUVE>(
         [&ambient, &environmentFound](Scene::EntityUVE,
-                                      const Scene::WorldEnvironment3DNodeComponentUVE& environment) {
-            if (environmentFound || !Scene::IsWorldEnvironment3DNodeComponentValidUVE(environment)) {
+                                      const Scene::WorldEnvironment3DComponentUVE& environment) {
+            if (environmentFound || !Scene::IsWorldEnvironment3DObjectComponentValidUVE(environment)) {
                 return;
             }
             const Math::Vector3UVE resolved{environment.ambientColor.x * environment.ambientEnergy,
@@ -1458,11 +1458,11 @@ struct Renderer3DUVE::ImplUVE {
                                                               const Scene::EntityUVE entity,
                                                               const Asset::AssetGuidUVE guid,
                                                               const Asset::MeshAssetUVE& mesh, Math::AabbUVE& outBounds) {
-        const Scene::Skeleton3DNodeComponentUVE* skeleton = nullptr;
+        const Scene::Skeleton3DComponentUVE* skeleton = nullptr;
         Scene::EntityUVE cursor = entity;
         for (std::size_t depth = 0U; depth < 256U && cursor != Scene::kInvalidEntityUVE; ++depth) {
-            if (entityManager.HasComponentUVE<Scene::Skeleton3DNodeComponentUVE>(cursor)) {
-                skeleton = &entityManager.GetComponentUVE<Scene::Skeleton3DNodeComponentUVE>(cursor);
+            if (entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(cursor)) {
+                skeleton = &entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(cursor);
                 break;
             }
             cursor = entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(cursor)

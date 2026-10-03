@@ -32,7 +32,7 @@
 
 #include "editor_chrome_layout_uve.h"
 #include "editor_fonts_uve.h"
-#include "editor_node_icons_uve.h"
+#include "editor_object_icons_uve.h"
 
 #include "uve/component/script_component_uve.h"
 

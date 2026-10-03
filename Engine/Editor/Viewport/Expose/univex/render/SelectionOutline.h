@@ -4,7 +4,7 @@
 // so the host can build it and the tests can check it without a context.
 //
 // The outline is drawn from the selected meshes' own triangles, in world
-// space, each vertex carrying how strongly it is selected: the active node
+// space, each vertex carrying how strongly it is selected: the active object
 // at full strength, the rest of a multi-selection dimmer. SelectionOutline-
 // Renderer turns that into a band of colour just outside the silhouette.
 // -----------------------------------------------------------------------

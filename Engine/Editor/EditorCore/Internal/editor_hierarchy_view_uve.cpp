@@ -5,12 +5,12 @@
 namespace UVE::Editor {
 
 bool ShouldDrawHierarchyEyeUVE(const HierarchyVisibilityColumnUVE mode, const bool rowHovered,
-                               const bool nodeVisible) noexcept {
+                               const bool objectVisible) noexcept {
     switch (mode) {
         case HierarchyVisibilityColumnUVE::Always:
             return true;
         case HierarchyVisibilityColumnUVE::OnHover:
-            return rowHovered || !nodeVisible;
+            return rowHovered || !objectVisible;
         case HierarchyVisibilityColumnUVE::Hidden:
             return false;
     }

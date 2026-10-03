@@ -3,7 +3,7 @@
 // Skeleton3D in the Inspector: where its bones come from, and what they are.
 //
 // Bones are authored where they belong - an armature in Blender or any DCC tool - and arrive with
-// the model exported from it. This node never invents a bone; a new Skeleton3D is empty until it
+// the model exported from it. This object never invents a bone; a new Skeleton3D is empty until it
 // is pointed at a rigged model, and pointing it again (Reload) picks up an edited rig.
 
 #include "uve/editor/editor_uve.h"
@@ -38,11 +38,11 @@
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/math/matrix4x4_uve.h"
 #include "uve/math/quaternion_uve.h"
-#include "uve/nodes/3d/animation_player_uve.h"
-#include "uve/nodes/3d/mesh_instance_3d_uve.h"
-#include "uve/nodes/3d/node_3d_uve.h"
-#include "uve/nodes/3d/skeleton_3d_uve.h"
-#include "uve/scene/nodes/scene_node_type_uve.h"
+#include "uve/objects/3d/animation_sequencer_uve.h"
+#include "uve/objects/3d/mesh_instance_3d_uve.h"
+#include "uve/objects/3d/object_3d_uve.h"
+#include "uve/objects/3d/skeleton_3d_uve.h"
+#include "uve/scene/objects/scene_object_type_uve.h"
 #include "uve/scene/scene_component_metadata_uve.h"
 
 namespace UVE::Editor {
@@ -156,20 +156,20 @@ Scene::EntityUVE EditorUVE::PlaceModelSourceUVE(const std::filesystem::path& rel
     }
 
     if (parent == Scene::kInvalidEntityUVE || !IsDocumentEntityUVE(parent)) {
-        parent = ResolveNewNodeParentUVE();
+        parent = ResolveNewObjectParentUVE();
     }
     const EditorSelectionSnapshotUVE selectionBefore = CaptureSelectionSnapshotUVE();
     const bool dirtyBefore = m_sceneDirty;
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
     Scene::ISceneGraphUVE& sceneGraph = m_services->GetSceneGraphUVE();
     const std::string stem = relativeSource.stem().string();
-    using Kind = Scene::Nodes::SceneNodeKindUVE;
+    using Kind = Scene::Objects::SceneObjectKindUVE;
     const auto make = [&](const std::string& name, const Kind kind, const auto& definition, const auto& apply,
                           const Scene::EntityUVE under) {
         const Scene::EntityUVE entity = CreateDocumentEntityShellInternalUVE(MakeUniqueDocumentEntityNameUVE(name));
         if (entity != Scene::kInvalidEntityUVE) {
             apply(entityManager, entity, definition);
-            Scene::SetSceneNodeKindUVE(entityManager, entity, kind);
+            Scene::SetSceneObjectKindUVE(entityManager, entity, kind);
             if (under != Scene::kInvalidEntityUVE) {
                 sceneGraph.SetParentUVE(entityManager, entity, under);
             }
@@ -180,42 +180,42 @@ Scene::EntityUVE EditorUVE::PlaceModelSourceUVE(const std::filesystem::path& rel
         hasMesh ? m_services->GetAssetDatabaseUVE().RegisterUVE(importedModel) : Asset::kInvalidAssetGuidUVE;
     Scene::EntityUVE root = Scene::kInvalidEntityUVE;
     if (!skeleton.has_value()) {
-        Scene::MeshInstance3DNodeDefinitionUVE definition;
+        Scene::MeshInstance3DObjectDefinitionUVE definition;
         definition.mesh.meshGuid = meshGuid;
-        root = make(stem, Kind::MeshInstance3D, definition, Scene::ApplyMeshInstance3DNodeDefinitionUVE, parent);
+        root = make(stem, Kind::MeshInstance3D, definition, Scene::ApplyMeshInstance3DObjectDefinitionUVE, parent);
     } else {
-        root = make(stem, Kind::Node3D, Scene::Node3DNodeDefinitionUVE{}, Scene::ApplyNode3DNodeDefinitionUVE, parent);
+        root = make(stem, Kind::Object3D, Scene::Object3DObjectDefinitionUVE{}, Scene::ApplyObject3DObjectDefinitionUVE, parent);
         const Scene::EntityUVE armature =
-            make("Armature", Kind::Node3D, Scene::Node3DNodeDefinitionUVE{}, Scene::ApplyNode3DNodeDefinitionUVE, root);
-        Scene::Skeleton3DNodeDefinitionUVE skeletonDefinition;
+            make("Armature", Kind::Object3D, Scene::Object3DObjectDefinitionUVE{}, Scene::ApplyObject3DObjectDefinitionUVE, root);
+        Scene::Skeleton3DObjectDefinitionUVE skeletonDefinition;
         skeletonDefinition.skeleton.skeletonAssetPath = relativeSource.generic_string();
         for (const Asset::GltfJointUVE& joint : skeleton->joints) {
             skeletonDefinition.skeleton.bones.push_back(
                 Scene::SkeletonBoneUVE{joint.name, joint.parentIndex, joint.translation, joint.rotation, joint.scale});
         }
         const Scene::EntityUVE skeletonEntity =
-            make("Skeleton3D", Kind::Skeleton3D, skeletonDefinition, Scene::ApplySkeleton3DNodeDefinitionUVE, armature);
+            make("Skeleton3D", Kind::Skeleton3D, skeletonDefinition, Scene::ApplySkeleton3DObjectDefinitionUVE, armature);
         if (hasMesh) {
-            Scene::MeshInstance3DNodeDefinitionUVE mesh;
+            Scene::MeshInstance3DObjectDefinitionUVE mesh;
             mesh.mesh.meshGuid = meshGuid;
-            static_cast<void>(make(stem + " Mesh", Kind::MeshInstance3D, mesh, Scene::ApplyMeshInstance3DNodeDefinitionUVE, skeletonEntity));
+            static_cast<void>(make(stem + " Mesh", Kind::MeshInstance3D, mesh, Scene::ApplyMeshInstance3DObjectDefinitionUVE, skeletonEntity));
         }
         if (!clips.empty()) {
-            Scene::AnimationPlayerNodeDefinitionUVE player;
+            Scene::AnimationSequencerObjectDefinitionUVE player;
             // Every take of the file is the player's; the first one plays.
             for (const std::filesystem::path& clipPath : clips) {
                 player.player.library.push_back(m_services->GetAssetDatabaseUVE().RegisterUVE(clipPath));
             }
             player.player.clip = player.player.library.front();
             player.player.loopMode = Scene::AnimationLoopModeUVE::Loop;
-            static_cast<void>(make("AnimationPlayer", Kind::AnimationPlayer, player, Scene::ApplyAnimationPlayerNodeDefinitionUVE, root));
+            static_cast<void>(make("AnimationSequencer", Kind::AnimationSequencer, player, Scene::ApplyAnimationSequencerObjectDefinitionUVE, root));
         }
     }
     if (root == Scene::kInvalidEntityUVE) {
         return Scene::kInvalidEntityUVE;
     }
     InvalidateHierarchyFilterCacheUVE();
-    PlaceNewDocumentNodeUVE(root);
+    PlaceNewDocumentObjectUVE(root);
     const std::optional<Scene::SceneSnapshotUVE> snapshot = CaptureSubtreeUVE(root);
     if (!snapshot.has_value()) {
         DestroyDocumentSubtreeUVE(root);
@@ -225,7 +225,7 @@ Scene::EntityUVE EditorUVE::PlaceModelSourceUVE(const std::filesystem::path& rel
     }
     SelectEntityUVE(root);
     m_sceneDirty = true;
-    RecordHistoryUVE(SceneNodeCreationHistoryEntryUVE{*snapshot, Scene::ResolveSceneNodeKindUVE(entityManager, root),
+    RecordHistoryUVE(SceneObjectCreationHistoryEntryUVE{*snapshot, Scene::ResolveSceneObjectKindUVE(entityManager, root),
                                                       root, selectionBefore, CaptureSelectionSnapshotUVE(),
                                                       dirtyBefore, true, parent});
     return root;
@@ -233,14 +233,14 @@ Scene::EntityUVE EditorUVE::PlaceModelSourceUVE(const std::filesystem::path& rel
 
 bool EditorUVE::BindSelectedSkeletonSourceUVE(const std::filesystem::path& relativeSource) {
     const Core::TypeMetadataEntryUVE* const entry =
-        Scene::FindSceneComponentMetadataUVE(std::type_index(typeid(Scene::Skeleton3DNodeComponentUVE)));
+        Scene::FindSceneComponentMetadataUVE(std::type_index(typeid(Scene::Skeleton3DComponentUVE)));
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
     if (entry == nullptr || !IsDocumentEntityUVE(m_selectedEntity) ||
-        !entityManager.HasComponentUVE<Scene::Skeleton3DNodeComponentUVE>(m_selectedEntity)) {
+        !entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(m_selectedEntity)) {
         return false;
     }
-    Scene::Skeleton3DNodeComponentUVE next =
-        entityManager.GetComponentUVE<Scene::Skeleton3DNodeComponentUVE>(m_selectedEntity);
+    Scene::Skeleton3DComponentUVE next =
+        entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(m_selectedEntity);
     next.skeletonAssetPath = relativeSource.generic_string();
     next.bones.clear();
     if (!relativeSource.empty()) {
@@ -264,7 +264,7 @@ bool EditorUVE::BindSelectedSkeletonSourceUVE(const std::filesystem::path& relat
 
 void EditorUVE::DrawSkeletonSourcePropertyUVE(const Core::TypeMetadataEntryUVE& entry,
                                               const Core::TypeMetadataPropertyUVE& property, const void* const instance) {
-    const auto& skeleton = *static_cast<const Scene::Skeleton3DNodeComponentUVE*>(instance);
+    const auto& skeleton = *static_cast<const Scene::Skeleton3DComponentUVE*>(instance);
     const bool writable = property.IsAuthoringWritableUVE() && IsAuthoringCommandAllowedUVE();
     if (!BeginSkeletonRowsUVE("##skeleton-source")) {
         return;
@@ -313,7 +313,7 @@ void EditorUVE::DrawSkeletonSourcePropertyUVE(const Core::TypeMetadataEntryUVE& 
     ImGui::EndDisabled();
     ImGui::EndTable();
 
-    // Reload re-reads the same file, for a rig edited and re-exported; Clear empties the node.
+    // Reload re-reads the same file, for a rig edited and re-exported; Clear empties the object.
     if (!skeleton.skeletonAssetPath.empty()) {
         ImGui::BeginDisabled(!writable);
         if (ImGui::SmallButton("Reload Bones")) {
@@ -343,7 +343,7 @@ void EditorUVE::DrawSkeletonSourcePropertyUVE(const Core::TypeMetadataEntryUVE& 
 
 void EditorUVE::DrawSkeletonBonesPropertyUVE(const Core::TypeMetadataEntryUVE&,
                                              const Core::TypeMetadataPropertyUVE&, const void* const instance) {
-    const auto& skeleton = *static_cast<const Scene::Skeleton3DNodeComponentUVE*>(instance);
+    const auto& skeleton = *static_cast<const Scene::Skeleton3DComponentUVE*>(instance);
     const std::string header = "Bones (" + std::to_string(skeleton.bones.size()) + ")##skeleton-bones";
     constexpr ImGuiTreeNodeFlags kGroupFlags = ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_FramePadding;
     if (!DrawInspectorFoldUVE(header.c_str(), "group:skeleton-bones", true, false, kGroupFlags)) {
@@ -437,8 +437,8 @@ void EditorUVE::BuildSkeletonOverlayUVE(std::vector<ViewportBoneUVE>& outBones) 
         return Math::Vector3UVE{a.x - b.x, a.y - b.y, a.z - b.z};
     };
     const auto length = [](const Math::Vector3UVE& a) { return std::sqrt(a.x * a.x + a.y * a.y + a.z * a.z); };
-    entityManager.ForEachUVE<Scene::Skeleton3DNodeComponentUVE, Scene::WorldTransformComponentUVE>(
-        [&](const Scene::EntityUVE entity, const Scene::Skeleton3DNodeComponentUVE& skeleton,
+    entityManager.ForEachUVE<Scene::Skeleton3DComponentUVE, Scene::WorldTransformComponentUVE>(
+        [&](const Scene::EntityUVE entity, const Scene::Skeleton3DComponentUVE& skeleton,
             const Scene::WorldTransformComponentUVE& world) {
             if (!skeleton.enabled || skeleton.bones.empty() || !IsDocumentEntityUVE(entity)) {
                 return;

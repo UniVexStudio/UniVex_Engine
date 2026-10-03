@@ -35,9 +35,9 @@ struct GltfSkeletonUVE final {
     std::size_t skinCount = 0U;
 };
 
-/// Reads the skeleton from glTF JSON. Only node names, hierarchy and TRS (or a decomposed
+/// Reads the skeleton from glTF JSON. Only object names, hierarchy and TRS (or a decomposed
 /// `matrix`) are used, so no binary buffer is needed. Returns std::nullopt for malformed JSON, a
-/// file with no skin, a joint list over `maximumJoints`, or a joint referencing a missing node.
+/// file with no skin, a joint list over `maximumJoints`, or a joint referencing a missing object.
 [[nodiscard]] std::optional<GltfSkeletonUVE> ParseGltfSkeletonUVE(std::string_view json, std::size_t maximumJoints);
 
 /// Reads the skeleton from a .gltf or .glb file. For a .glb only the header and JSON chunk are

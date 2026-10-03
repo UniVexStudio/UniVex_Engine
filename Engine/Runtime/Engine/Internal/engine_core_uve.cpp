@@ -71,19 +71,19 @@
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/mesh_component_uve.h"
 #include "uve/component/process_component_uve.h"
-#include "uve/nodes/3d/animation_player_uve.h"
-#include "uve/nodes/3d/skeleton_3d_uve.h"
-#include "uve/nodes/3d/animation_tree_uve.h"
-#include "uve/nodes/3d/hitbox_3d_uve.h"
-#include "uve/nodes/3d/hurtbox_3d_uve.h"
-#include "uve/nodes/3d/interaction_area_3d_uve.h"
-#include "uve/nodes/3d/level_streamer_3d_uve.h"
-#include "uve/nodes/3d/projectile_3d_uve.h"
-#include "uve/nodes/3d/reflection_probe_3d_uve.h"
-#include "uve/nodes/3d/ray_cast_3d_uve.h"
-#include "uve/nodes/3d/spring_arm_3d_uve.h"
-#include "uve/nodes/3d/visibility_region_3d_uve.h"
-#include "uve/nodes/3d/world_partition_3d_uve.h"
+#include "uve/objects/3d/animation_sequencer_uve.h"
+#include "uve/objects/3d/skeleton_3d_uve.h"
+#include "uve/objects/3d/animation_graph_uve.h"
+#include "uve/objects/3d/hitbox_3d_uve.h"
+#include "uve/objects/3d/hurtbox_3d_uve.h"
+#include "uve/objects/3d/interaction_area_3d_uve.h"
+#include "uve/objects/3d/level_streamer_3d_uve.h"
+#include "uve/objects/3d/projectile_3d_uve.h"
+#include "uve/objects/3d/reflection_probe_3d_uve.h"
+#include "uve/objects/3d/ray_cast_3d_uve.h"
+#include "uve/objects/3d/spring_arm_3d_uve.h"
+#include "uve/objects/3d/visibility_region_3d_uve.h"
+#include "uve/objects/3d/world_partition_3d_uve.h"
 #include "uve/physics/detail/shape_narrow_phase_uve.h"
 #include "uve/physics/character_body_motion_uve.h"
 #include "uve/physics/character_controller_uve.h"
@@ -139,12 +139,12 @@ constexpr Window::AdaptiveRenderResolutionLimitsUVE kAdaptiveRenderResolutionLim
 #endif
 
 /// The process mode the scene graph resolved for `entity` on its last update, or the hierarchy
-/// default for an entity it has not seen yet (created since, or not a scene-graph node). Asking the
+/// default for an entity it has not seen yet (created since, or not a scene-graph object). Asking the
 /// scene graph rather than the entity's own ProcessComponentUVE is what makes an entity with no
 /// component inherit its ancestors' answer instead of silently ignoring it.
 [[nodiscard]] Scene::ProcessModeUVE ResolvedProcessModeUVE(const Scene::ISceneGraphUVE& sceneGraph,
                                                            const Scene::EntityUVE entity) {
-    const std::optional<Scene::ResolvedNodeModesUVE> modes = sceneGraph.TryGetResolvedNodeModesUVE(entity);
+    const std::optional<Scene::ResolvedObjectModesUVE> modes = sceneGraph.TryGetResolvedObjectModesUVE(entity);
     return modes.has_value() ? modes->process : Scene::ProcessModeUVE::Pausable;
 }
 
@@ -462,7 +462,7 @@ void EngineCoreUVE::Init() {
     // NullRenderDeviceUVE) and windowed mode (against GlRenderDeviceUVE).
     m_fileSystem->MountDirectoryUVE(m_config.shaderSourceMountPrefixUVE, m_config.shaderSourceRealDirectoryUVE, 0);
     // The project itself, beneath everything else: without it no project-relative asset path -
-    // a node's script above all - could be read at runtime, so scripts were saved but never ran.
+    // an object's script above all - could be read at runtime, so scripts were saved but never ran.
     if (!m_config.projectRootDirectoryUVE.empty()) {
         m_fileSystem->MountDirectoryUVE("", m_config.projectRootDirectoryUVE, -100);
     }
@@ -677,7 +677,7 @@ void EngineCoreUVE::SyncParticleRuntimeUVE() {
             // Thread Group: only an emitter resolved to Sub Thread is simulated on a worker. The
             // default is Main Thread, so nothing leaves the main thread unless an author put it
             // there - and a Main Thread ancestor keeps its whole subtree here.
-            const std::optional<Scene::ResolvedNodeModesUVE> modes = m_sceneGraph->TryGetResolvedNodeModesUVE(entity);
+            const std::optional<Scene::ResolvedObjectModesUVE> modes = m_sceneGraph->TryGetResolvedObjectModesUVE(entity);
             static_cast<void>(m_particleRuntime->SetWorkerEligibleDetailedUVE(
                 entity, modes.has_value() && modes->threadGroup == Scene::ThreadGroupModeUVE::SubThread));
         });
@@ -705,7 +705,7 @@ void EngineCoreUVE::SyncUIRuntimeUVE() {
     // has not resolved yet takes the hierarchy default, Always.
     const UI::UITextLocalizationUVE localization{
         &m_localizationService, [this](const Scene::EntityUVE entity) {
-            const std::optional<Scene::ResolvedNodeModesUVE> modes = m_sceneGraph->TryGetResolvedNodeModesUVE(entity);
+            const std::optional<Scene::ResolvedObjectModesUVE> modes = m_sceneGraph->TryGetResolvedObjectModesUVE(entity);
             return !modes.has_value() || modes->autoTranslate == Scene::AutoTranslateModeUVE::Always;
         }};
     m_uiRuntime.TickUVE(*m_entityManager, *m_inputSystem, localization);
@@ -750,7 +750,7 @@ void EngineCoreUVE::SyncUVScriptsUVE(const bool simulationPaused) {
         });
     }
 
-    // Drop instances whose node is gone, lost its script, or now points at another file.
+    // Drop instances whose object is gone, lost its script, or now points at another file.
     std::erase_if(m_uvScripts, [this](const auto& entry) {
         const Scene::EntityUVE entity = entry.first;
         return !m_entityManager->IsAliveUVE(entity) ||
@@ -764,7 +764,7 @@ void EngineCoreUVE::SyncUVScriptsUVE(const bool simulationPaused) {
     m_entityManager->ForEachUVE<Scene::ScriptComponentUVE>(
         [this, &order](const Scene::EntityUVE entity, const Scene::ScriptComponentUVE& component) {
             if (!IsUVScriptPathUVE(component.scriptAssetPath)) {
-                // Node-graph scripts were removed; say so once per node rather than run nothing
+                // Object-graph scripts were removed; say so once per object rather than run nothing
                 // silently.
                 const auto reported = m_scriptReconcileFailedEntities.find(entity);
                 if (!component.scriptAssetPath.empty() && (reported == m_scriptReconcileFailedEntities.end() ||
@@ -797,7 +797,7 @@ void EngineCoreUVE::SyncUVScriptsUVE(const bool simulationPaused) {
                 return;
             }
             const std::string source(reinterpret_cast<const char*>(bytes->data()), bytes->size());
-            auto host = std::make_unique<UVScriptNodeHostUVE>(*m_entityManager, m_inputSystem.get(), entity);
+            auto host = std::make_unique<UVScriptObjectHostUVE>(*m_entityManager, m_inputSystem.get(), entity);
             const UVScript::CompileResultUVE compiled = UVScript::CompileUVScriptSourceUVE(source, *host);
             if (!compiled.IsSuccessUVE()) {
                 for (const UVScript::DiagnosticUVE& diagnostic : compiled.diagnostics) {
@@ -813,7 +813,7 @@ void EngineCoreUVE::SyncUVScriptsUVE(const bool simulationPaused) {
             slot.source = source;
             slot.program = compiled.program;
             slot.instance = std::make_unique<UVScript::ScriptInstanceUVE>(compiled.program, *host);
-            // The node's own values for the script's exports, before `ready` sees them. A value
+            // The object's own values for the script's exports, before `ready` sees them. A value
             // for a field the script no longer exports, or of the wrong type, is skipped.
             slot.exportValues = component.exportValues;
             for (const UVScript::FieldInfoUVE& field : UVScript::GetProgramFieldsUVE(*compiled.program)) {
@@ -895,8 +895,8 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
         }
         return it->second.TryGetUVE();
     };
-    // The node an animation moves: its target when that is a live node with a transform, otherwise
-    // its parent when that has one. A pure Node parent (the scene root) gives nothing to move.
+    // The object an animation moves: its target when that is a live object with a transform, otherwise
+    // its parent when that has one. A pure Object parent (the scene root) gives nothing to move.
     const auto resolveTarget = [this](const Scene::EntityUVE self,
                                       const Scene::EntityUVE target) -> Scene::TransformComponentUVE* {
         Scene::EntityUVE chosen = target;
@@ -929,7 +929,7 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
         std::vector<Scene::EntityUVE> queue{root};
         for (std::size_t next = 0U; next < queue.size() && next < 4096U; ++next) {
             const Scene::EntityUVE candidate = queue[next];
-            if (m_entityManager->HasComponentUVE<Scene::Skeleton3DNodeComponentUVE>(candidate)) {
+            if (m_entityManager->HasComponentUVE<Scene::Skeleton3DComponentUVE>(candidate)) {
                 return candidate;
             }
             const std::vector<Scene::EntityUVE> children = m_sceneGraph->GetChildrenUVE(*m_entityManager, candidate);
@@ -940,7 +940,7 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
     // Root motion is measured in the skeleton's space; the target moves in its parent's. Both go
     // through world space, composed from the local transforms up the hierarchy so a transform
     // edited this frame (not yet propagated to the world transform) still counts.
-    // A CharacterBody3D is driven by velocity, so collisions still apply.
+    // A Character3D is driven by velocity, so collisions still apply.
     struct FrameUVE {
         Math::QuaternionUVE rotation{};
         Math::Vector3UVE scale{1.0F, 1.0F, 1.0F};
@@ -1043,14 +1043,14 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
             continue; // not set, still loading, or failed - the player waits
         }
         // A skeletal clip poses a skeleton: the target when it is one, else the first Skeleton3D
-        // under it (a character's AnimationPlayer targets the character; its skeleton is inside).
+        // under it (a character's AnimationSequencer targets the character; its skeleton is inside).
         if (clip->IsSkeletalUVE()) {
             const Scene::EntityUVE skeletonEntity = resolveSkeleton(entity, mixer.target);
             if (skeletonEntity == Scene::kInvalidEntityUVE) {
                 continue;
             }
-            Scene::Skeleton3DNodeComponentUVE& skeleton =
-                m_entityManager->GetComponentUVE<Scene::Skeleton3DNodeComponentUVE>(skeletonEntity);
+            Scene::Skeleton3DComponentUVE& skeleton =
+                m_entityManager->GetComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity);
             if (!player.hasStartPose && player.autoplay) {
                 Scene::PlayAnimationPlayerUVE(player, Scene::TransformComponentUVE{}, clip->durationSeconds);
             } else if (player.isPlaying && player.playingClip != player.clip) {
@@ -1087,11 +1087,11 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
         }
         Scene::AnimationTreeComponentUVE& tree = m_entityManager->GetComponentUVE<Scene::AnimationTreeComponentUVE>(entity);
         // A character's tree poses its skeleton, bone by bone; with no skeleton under the target it
-        // animates the target node itself.
+        // animates the target object itself.
         const Scene::EntityUVE skeletonEntity = resolveSkeleton(entity, mixer.target);
         if (skeletonEntity != Scene::kInvalidEntityUVE) {
-            Scene::Skeleton3DNodeComponentUVE& skeleton =
-                m_entityManager->GetComponentUVE<Scene::Skeleton3DNodeComponentUVE>(skeletonEntity);
+            Scene::Skeleton3DComponentUVE& skeleton =
+                m_entityManager->GetComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity);
             const bool posed = Scene::StepSkeletalAnimationTreeUVE(tree, clipFor, deltaSeconds * mixer.speedScale,
                                                                    skeleton, mixer);
             raiseAnimationEvents(entity, mixer.target, tree.firedEvents);
@@ -1118,8 +1118,8 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
             });
         m_entityManager->ForEachUVE<Scene::AnimationTreeComponentUVE>(
             [&referenced](const Scene::EntityUVE, const Scene::AnimationTreeComponentUVE& tree) {
-                for (const Scene::AnimationGraphNodeUVE& node : tree.nodes) {
-                    referenced.insert(node.clip.value);
+                for (const Scene::AnimationGraphObjectUVE& object : tree.objects) {
+                    referenced.insert(object.clip.value);
                 }
             });
         std::erase_if(m_animationClips, [&referenced](const auto& entry) { return !referenced.contains(entry.first); });
@@ -1239,15 +1239,15 @@ void EngineCoreUVE::SyncCharacterControllersUVE(const float fixedDeltaTimeSecond
     }
 }
 
-void EngineCoreUVE::SyncProjectile3DNodesUVE(const float fixedDeltaTimeSeconds) {
+void EngineCoreUVE::SyncProjectile3DObjectsUVE(const float fixedDeltaTimeSeconds) {
     if (fixedDeltaTimeSeconds <= 0.0F) {
         return;
     }
 
     for (const Scene::EntityUVE entity :
-         CollectFixedStepOrderUVE<Scene::Projectile3DNodeComponentUVE>(*m_entityManager, *m_sceneGraph)) {
-        Scene::Projectile3DNodeComponentUVE& projectile =
-            m_entityManager->GetComponentUVE<Scene::Projectile3DNodeComponentUVE>(entity);
+         CollectFixedStepOrderUVE<Scene::Projectile3DComponentUVE>(*m_entityManager, *m_sceneGraph)) {
+        Scene::Projectile3DComponentUVE& projectile =
+            m_entityManager->GetComponentUVE<Scene::Projectile3DComponentUVE>(entity);
         if (!projectile.active || !m_entityManager->HasComponentUVE<Scene::TransformComponentUVE>(entity)) {
             continue;
         }
@@ -1272,9 +1272,9 @@ void EngineCoreUVE::SyncCollisionLifecycleUVE() {
     m_collisionLifecycleReport = m_collisionLifecycleTracker.UpdateUVE(pairs);
 }
 
-void EngineCoreUVE::SyncRayCast3DNodesUVE() {
-    m_entityManager->ForEachUVE<Scene::RayCast3DNodeComponentUVE>(
-        [this](const Scene::EntityUVE entity, Scene::RayCast3DNodeComponentUVE& rayCast) {
+void EngineCoreUVE::SyncRayCast3DObjectsUVE() {
+    m_entityManager->ForEachUVE<Scene::RayCast3DComponentUVE>(
+        [this](const Scene::EntityUVE entity, Scene::RayCast3DComponentUVE& rayCast) {
             if (!rayCast.enabled || !m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(entity)) {
                 rayCast.hit = false;
                 return;
@@ -1301,12 +1301,12 @@ void EngineCoreUVE::SyncRayCast3DNodesUVE() {
         });
 }
 
-void EngineCoreUVE::SyncSpringArm3DNodesUVE(const float fixedDeltaTimeSeconds) {
+void EngineCoreUVE::SyncSpringArm3DObjectsUVE(const float fixedDeltaTimeSeconds) {
     for (const Scene::EntityUVE entity :
-         CollectFixedStepOrderUVE<Scene::SpringArm3DNodeComponentUVE>(*m_entityManager, *m_sceneGraph)) {
-        Scene::SpringArm3DNodeComponentUVE& springArm =
-            m_entityManager->GetComponentUVE<Scene::SpringArm3DNodeComponentUVE>(entity);
-        if (!springArm.enabled || !Scene::IsSpringArm3DNodeComponentValidUVE(springArm) ||
+         CollectFixedStepOrderUVE<Scene::SpringArm3DComponentUVE>(*m_entityManager, *m_sceneGraph)) {
+        Scene::SpringArm3DComponentUVE& springArm =
+            m_entityManager->GetComponentUVE<Scene::SpringArm3DComponentUVE>(entity);
+        if (!springArm.enabled || !Scene::IsSpringArm3DObjectComponentValidUVE(springArm) ||
             !m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(entity)) {
             continue;
         }
@@ -1316,7 +1316,7 @@ void EngineCoreUVE::SyncSpringArm3DNodesUVE(const float fixedDeltaTimeSeconds) {
         Physics::RaycastQueryUVE query{};
         query.ray.origin = worldTransform.worldPosition;
         // The arm extends along the pivot's local +Z - behind it, since the camera
-        // convention looks down -Z (same convention SyncRayCast3DNodesUVE applies to the
+        // convention looks down -Z (same convention SyncRayCast3DObjectsUVE applies to the
         // authored ray direction).
         query.ray.direction =
             Math::RotateVectorUVE(worldTransform.worldRotation, {0.0F, 0.0F, 1.0F});
@@ -1357,7 +1357,7 @@ void EngineCoreUVE::SyncSpringArm3DNodesUVE(const float fixedDeltaTimeSeconds) {
 namespace {
 
 /// Snapshot of one hurtbox's world-space strike volume, taken once per frame by
-/// EngineCoreUVE::SyncHitbox3DNodesUVE() pass 1.
+/// EngineCoreUVE::SyncHitbox3DObjectsUVE() pass 1.
 struct HurtboxCandidateUVE final {
     Scene::EntityUVE entity;
     Math::Vector3UVE center;
@@ -1369,7 +1369,7 @@ struct HurtboxCandidateUVE final {
 };
 
 /// Snapshot of one character-controller interactor's overlap volume, taken once per frame by
-/// EngineCoreUVE::SyncInteractionArea3DNodesUVE() pass 1: world pose plus broad-phase half
+/// EngineCoreUVE::SyncInteractionArea3DObjectsUVE() pass 1: world pose plus broad-phase half
 /// extents and layer/mask from the entity's own ColliderComponentUVE.
 struct InteractionInteractorCandidateUVE final {
     Scene::EntityUVE entity;
@@ -1382,17 +1382,17 @@ struct InteractionInteractorCandidateUVE final {
 
 } // namespace
 
-void EngineCoreUVE::SyncHitbox3DNodesUVE() {
+void EngineCoreUVE::SyncHitbox3DObjectsUVE() {
     // Pass 1 (read-only): snapshot every enabled, valid hurtbox that has a world transform, so
     // the mutation pass can evaluate every hitbox against a stable candidate set without
     // holding ECS iteration open across a second ForEachUVE. The candidate set is deliberately
     // unbounded - capping it would mean silently pretending hurtboxes beyond the cap do not
     // exist; only the per-hitbox strike LIST is bounded, and it reports its own overflow.
     std::vector<HurtboxCandidateUVE> candidates;
-    m_entityManager->ForEachUVE<Scene::WorldTransformComponentUVE, Scene::Hurtbox3DNodeComponentUVE>(
+    m_entityManager->ForEachUVE<Scene::WorldTransformComponentUVE, Scene::Hurtbox3DComponentUVE>(
         [&candidates](const Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE& worldTransform,
-                      const Scene::Hurtbox3DNodeComponentUVE& hurtbox) {
-            if (!hurtbox.enabled || !Scene::IsHurtbox3DNodeComponentValidUVE(hurtbox)) {
+                      const Scene::Hurtbox3DComponentUVE& hurtbox) {
+            if (!hurtbox.enabled || !Scene::IsHurtbox3DObjectComponentValidUVE(hurtbox)) {
                 return;
             }
             HurtboxCandidateUVE candidate;
@@ -1409,11 +1409,11 @@ void EngineCoreUVE::SyncHitbox3DNodesUVE() {
         });
 
     // Pass 2: refresh every hitbox's runtime strike state against that snapshot.
-    m_entityManager->ForEachUVE<Scene::Hitbox3DNodeComponentUVE>(
-        [this, &candidates](const Scene::EntityUVE entity, Scene::Hitbox3DNodeComponentUVE& hitbox) {
+    m_entityManager->ForEachUVE<Scene::Hitbox3DComponentUVE>(
+        [this, &candidates](const Scene::EntityUVE entity, Scene::Hitbox3DComponentUVE& hitbox) {
             hitbox.strikeCount = 0U;
             hitbox.strikesTruncated = false;
-            if (!hitbox.enabled || !Scene::IsHitbox3DNodeComponentValidUVE(hitbox) ||
+            if (!hitbox.enabled || !Scene::IsHitbox3DObjectComponentValidUVE(hitbox) ||
                 !m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(entity)) {
                 return;
             }
@@ -1454,11 +1454,11 @@ void EngineCoreUVE::SyncHitbox3DNodesUVE() {
         });
 }
 
-void EngineCoreUVE::SyncInteractionArea3DNodesUVE() {
+void EngineCoreUVE::SyncInteractionArea3DObjectsUVE() {
     // Pass 1 (read-only): snapshot every interactor - a character controller carrying a valid
     // collider and a world transform - so the mutation pass evaluates every area against a
     // stable set without holding ECS iteration open across a second ForEachUVE. The set is
-    // deliberately unbounded (same call SyncHitbox3DNodesUVE() made for hurtboxes): capping it
+    // deliberately unbounded (same call SyncHitbox3DObjectsUVE() made for hurtboxes): capping it
     // would silently pretend interactors beyond the cap do not exist; only each area's stored
     // list is bounded, and it reports its own overflow.
     std::vector<InteractionInteractorCandidateUVE> interactors;
@@ -1495,13 +1495,13 @@ void EngineCoreUVE::SyncInteractionArea3DNodesUVE() {
     // area participating this frame clears its runtime state in full, never leaving a stale
     // interactor list or focus flag behind.
     std::vector<Scene::InteractionFocusCandidateUVE> focusCandidates;
-    m_entityManager->ForEachUVE<Scene::InteractionArea3DNodeComponentUVE>(
+    m_entityManager->ForEachUVE<Scene::InteractionArea3DComponentUVE>(
         [this, &interactors, primaryEntity, &focusCandidates](
-            const Scene::EntityUVE entity, Scene::InteractionArea3DNodeComponentUVE& area) {
+            const Scene::EntityUVE entity, Scene::InteractionArea3DComponentUVE& area) {
             area.interactorCount = 0U;
             area.interactorsTruncated = false;
             area.focusedByPrimaryInteractor = false;
-            if (!area.enabled || !Scene::IsInteractionArea3DNodeComponentValidUVE(area) ||
+            if (!area.enabled || !Scene::IsInteractionArea3DObjectComponentValidUVE(area) ||
                 !m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(entity)) {
                 return;
             }
@@ -1553,13 +1553,13 @@ void EngineCoreUVE::SyncInteractionArea3DNodesUVE() {
     const std::optional<Scene::EntityUVE> focusedArea =
         Scene::ResolveInteractionFocusUVE(focusCandidates);
     if (focusedArea.has_value() &&
-        m_entityManager->HasComponentUVE<Scene::InteractionArea3DNodeComponentUVE>(*focusedArea)) {
-            m_entityManager->GetComponentUVE<Scene::InteractionArea3DNodeComponentUVE>(*focusedArea)
+        m_entityManager->HasComponentUVE<Scene::InteractionArea3DComponentUVE>(*focusedArea)) {
+            m_entityManager->GetComponentUVE<Scene::InteractionArea3DComponentUVE>(*focusedArea)
             .focusedByPrimaryInteractor = true;
     }
 }
 
-void EngineCoreUVE::SyncLevelStreamer3DNodesUVE() {
+void EngineCoreUVE::SyncLevelStreamer3DObjectsUVE() {
     // Bookkeeping hygiene first: Play/Stop rebuilds every document handle, so a streamer entity
     // that no longer exists must drop its remembered roots AND its failure latch before anything
     // else looks at them - subsequent detection is always through IsAliveUVE(), never blind
@@ -1609,9 +1609,9 @@ void EngineCoreUVE::SyncLevelStreamer3DNodesUVE() {
     };
     std::vector<StreamerSnapshotUVE> streamers;
     m_entityManager->ForEachUVE<Scene::WorldTransformComponentUVE,
-                                Scene::LevelStreamer3DNodeComponentUVE>(
+                                Scene::LevelStreamer3DComponentUVE>(
         [&streamers](const Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE& world,
-                     const Scene::LevelStreamer3DNodeComponentUVE&) {
+                     const Scene::LevelStreamer3DComponentUVE&) {
             if (world.dirty) {
                 return; // a streamer whose world pose is out of date must never fake distance math
             }
@@ -1624,12 +1624,12 @@ void EngineCoreUVE::SyncLevelStreamer3DNodesUVE() {
     std::size_t loadsIssuedThisTick = 0U;
     for (const StreamerSnapshotUVE& snapshot : streamers) {
         if (!m_entityManager->IsAliveUVE(snapshot.entity) ||
-            !m_entityManager->HasComponentUVE<Scene::LevelStreamer3DNodeComponentUVE>(snapshot.entity)) {
+            !m_entityManager->HasComponentUVE<Scene::LevelStreamer3DComponentUVE>(snapshot.entity)) {
             continue; // died inside this very pass (unloaded as part of a parent streamer's subtree)
         }
-        Scene::LevelStreamer3DNodeComponentUVE& streamer =
-            m_entityManager->GetComponentUVE<Scene::LevelStreamer3DNodeComponentUVE>(snapshot.entity);
-        if (!Scene::IsLevelStreamer3DNodeComponentValidUVE(streamer)) {
+        Scene::LevelStreamer3DComponentUVE& streamer =
+            m_entityManager->GetComponentUVE<Scene::LevelStreamer3DComponentUVE>(snapshot.entity);
+        if (!Scene::IsLevelStreamer3DObjectComponentValidUVE(streamer)) {
             continue; // an invalid authoring piece never decides anything
         }
 
@@ -1705,7 +1705,7 @@ void EngineCoreUVE::SyncLevelStreamer3DNodesUVE() {
     }
 }
 
-void EngineCoreUVE::SyncReflectionProbe3DNodesUVE() {
+void EngineCoreUVE::SyncReflectionProbe3DObjectsUVE() {
     // Pass 1 (read-only): the eye position for this tick. Reflections only exist for the camera.
     std::optional<Math::Vector3UVE> cameraPosition;
     if (m_activeCamera != Scene::kInvalidEntityUVE &&
@@ -1728,9 +1728,9 @@ void EngineCoreUVE::SyncReflectionProbe3DNodesUVE() {
     };
     std::vector<ProbeSnapshotUVE> probes;
     m_entityManager->ForEachUVE<Scene::WorldTransformComponentUVE,
-                                Scene::ReflectionProbe3DNodeComponentUVE>(
+                                Scene::ReflectionProbe3DComponentUVE>(
         [&probes](const Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE& world,
-                  const Scene::ReflectionProbe3DNodeComponentUVE&) {
+                  const Scene::ReflectionProbe3DComponentUVE&) {
             if (world.dirty) {
                 return; // a stale world pose must never fake influence math
             }
@@ -1750,10 +1750,10 @@ void EngineCoreUVE::SyncReflectionProbe3DNodesUVE() {
     };
     std::vector<CaptureCandidateUVE> candidates;
     for (const ProbeSnapshotUVE& snapshot : probes) {
-        Scene::ReflectionProbe3DNodeComponentUVE& probe =
-            m_entityManager->GetComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(
+        Scene::ReflectionProbe3DComponentUVE& probe =
+            m_entityManager->GetComponentUVE<Scene::ReflectionProbe3DComponentUVE>(
                 snapshot.entity);
-        if (!Scene::IsReflectionProbe3DNodeComponentValidUVE(probe)) {
+        if (!Scene::IsReflectionProbe3DObjectComponentValidUVE(probe)) {
             probe.cameraInfluenceWeight = 0.0F;
             continue; // invalid authoring never influences, never captures
         }
@@ -1799,8 +1799,8 @@ void EngineCoreUVE::SyncReflectionProbe3DNodesUVE() {
     std::vector<RankedCandidateUVE> ranked;
     ranked.reserve(candidates.size());
     for (const CaptureCandidateUVE& candidate : candidates) {
-        const Scene::ReflectionProbe3DNodeComponentUVE& waiting =
-            m_entityManager->GetComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(
+        const Scene::ReflectionProbe3DComponentUVE& waiting =
+            m_entityManager->GetComponentUVE<Scene::ReflectionProbe3DComponentUVE>(
                 candidate.entity);
         ranked.push_back(
             RankedCandidateUVE{candidate.entity, candidate.cameraDistanceSquared, waiting.captureWaitTicks});
@@ -1824,8 +1824,8 @@ void EngineCoreUVE::SyncReflectionProbe3DNodesUVE() {
     const std::size_t servicedCount =
         std::min(ranked.size(), Scene::kMaximumReflectionProbeCapturesPerTickUVE);
     for (std::size_t i = 0; i < ranked.size(); ++i) {
-        Scene::ReflectionProbe3DNodeComponentUVE& probe =
-            m_entityManager->GetComponentUVE<Scene::ReflectionProbe3DNodeComponentUVE>(
+        Scene::ReflectionProbe3DComponentUVE& probe =
+            m_entityManager->GetComponentUVE<Scene::ReflectionProbe3DComponentUVE>(
                 ranked[i].entity);
         if (i < servicedCount) {
             probe.capturedOnce = true;
@@ -1838,7 +1838,7 @@ void EngineCoreUVE::SyncReflectionProbe3DNodesUVE() {
     }
 }
 
-void EngineCoreUVE::SyncWorldPartition3DNodesUVE() {
+void EngineCoreUVE::SyncWorldPartition3DObjectsUVE() {
     // The viewer cloud is identical to the streamer's: the eye plus every character controller,
     // finite poses only. Rebuild it here instead of sharing scratch so the two syncs stay
     // symmetric with each other while remaining readable one after the other in LateUpdate.
@@ -1857,8 +1857,8 @@ void EngineCoreUVE::SyncWorldPartition3DNodesUVE() {
         });
 
     std::vector<Scene::EntityUVE> partitions;
-    m_entityManager->ForEachUVE<Scene::WorldPartition3DNodeComponentUVE>(
-        [&partitions](const Scene::EntityUVE entity, const Scene::WorldPartition3DNodeComponentUVE&) {
+    m_entityManager->ForEachUVE<Scene::WorldPartition3DComponentUVE>(
+        [&partitions](const Scene::EntityUVE entity, const Scene::WorldPartition3DComponentUVE&) {
             partitions.push_back(entity);
         });
 
@@ -1866,12 +1866,12 @@ void EngineCoreUVE::SyncWorldPartition3DNodesUVE() {
         // The whole partition is rebuilt every tick from its live subtree, so nothing can point
         // at a stale member: components are mutable only through this one place per tick.
         if (!m_entityManager->IsAliveUVE(partition) ||
-            !m_entityManager->HasComponentUVE<Scene::WorldPartition3DNodeComponentUVE>(partition)) {
+            !m_entityManager->HasComponentUVE<Scene::WorldPartition3DComponentUVE>(partition)) {
             continue; // Play/Stop mid-walk tore the world down under our feet - stay out of it
         }
-        Scene::WorldPartition3DNodeComponentUVE& config =
-            m_entityManager->GetComponentUVE<Scene::WorldPartition3DNodeComponentUVE>(partition);
-        if (!Scene::IsWorldPartition3DNodeComponentValidUVE(config) ||
+        Scene::WorldPartition3DComponentUVE& config =
+            m_entityManager->GetComponentUVE<Scene::WorldPartition3DComponentUVE>(partition);
+        if (!Scene::IsWorldPartition3DObjectComponentValidUVE(config) ||
             !m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(partition)) {
             continue; // an invalid partition configures nothing
         }
@@ -1902,7 +1902,7 @@ void EngineCoreUVE::SyncWorldPartition3DNodesUVE() {
                 if (!m_entityManager->IsAliveUVE(child)) {
                     continue;
                 }
-                if (m_entityManager->HasComponentUVE<Scene::WorldPartition3DNodeComponentUVE>(
+                if (m_entityManager->HasComponentUVE<Scene::WorldPartition3DComponentUVE>(
                         child)) {
                     continue; // closest-ancestor-wins: the inner partition claims its subtree
                 }
@@ -2012,7 +2012,7 @@ void EngineCoreUVE::SyncWorldPartition3DNodesUVE() {
     }
 }
 
-void EngineCoreUVE::SyncVisibilityRegion3DNodesUVE() {
+void EngineCoreUVE::SyncVisibilityRegion3DObjectsUVE() {
     // The viewer cloud is identical to the streamer's and the world partition's: the eye plus
     // every character controller, finite poses only. Regions activate on ANY viewer inside.
     std::vector<Math::Vector3UVE> viewerPositions;
@@ -2034,9 +2034,9 @@ void EngineCoreUVE::SyncVisibilityRegion3DNodesUVE() {
         Math::Vector3UVE origin;
     };
     std::vector<RegionSnapshotUVE> regions;
-    m_entityManager->ForEachUVE<Scene::VisibilityRegion3DNodeComponentUVE>(
+    m_entityManager->ForEachUVE<Scene::VisibilityRegion3DComponentUVE>(
         [this, &regions](const Scene::EntityUVE entity,
-                         Scene::VisibilityRegion3DNodeComponentUVE&) {
+                         Scene::VisibilityRegion3DComponentUVE&) {
             regions.push_back(RegionSnapshotUVE{
                 entity,
                 m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(entity)
@@ -2054,7 +2054,7 @@ void EngineCoreUVE::SyncVisibilityRegion3DNodesUVE() {
     // at all means fail-open-active: an empty play-in-editor world shows everything.
     for (const RegionSnapshotUVE& region : regions) {
         auto& config =
-            m_entityManager->GetComponentUVE<Scene::VisibilityRegion3DNodeComponentUVE>(
+            m_entityManager->GetComponentUVE<Scene::VisibilityRegion3DComponentUVE>(
                 region.entity);
         config.active =
             viewerPositions.empty() ||
@@ -2084,7 +2084,7 @@ void EngineCoreUVE::SyncVisibilityRegion3DNodesUVE() {
         const bool ownerAlive =
             member.region != Scene::kInvalidEntityUVE &&
             m_entityManager->IsAliveUVE(member.region) &&
-            m_entityManager->HasComponentUVE<Scene::VisibilityRegion3DNodeComponentUVE>(
+            m_entityManager->HasComponentUVE<Scene::VisibilityRegion3DComponentUVE>(
                 member.region);
         if (!ownerAlive) {
             // The owner is gone or disowned its component: rebrand so Pass 2 can rehome the mesh
@@ -2093,8 +2093,8 @@ void EngineCoreUVE::SyncVisibilityRegion3DNodesUVE() {
             membership.live = true;
             continue;
         }
-        const Scene::VisibilityRegion3DNodeComponentUVE& ownerConfig =
-            m_entityManager->GetComponentUVE<Scene::VisibilityRegion3DNodeComponentUVE>(
+        const Scene::VisibilityRegion3DComponentUVE& ownerConfig =
+            m_entityManager->GetComponentUVE<Scene::VisibilityRegion3DComponentUVE>(
                 member.region);
         const Math::Vector3UVE ownerOrigin =
             m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(member.region)
@@ -2102,7 +2102,7 @@ void EngineCoreUVE::SyncVisibilityRegion3DNodesUVE() {
                       .worldPosition
                 : Math::Vector3UVE{};
         const bool stillManaged =
-            ownerConfig.enabled && Scene::IsVisibilityRegion3DNodeComponentValidUVE(ownerConfig) &&
+            ownerConfig.enabled && Scene::IsVisibilityRegion3DObjectComponentValidUVE(ownerConfig) &&
             m_entityManager->HasComponentUVE<Scene::MeshComponentUVE>(member.entity) &&
             m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(member.entity) &&
             Scene::ResolveVisibilityRegion3DLayerGateUVE(
@@ -2146,10 +2146,10 @@ void EngineCoreUVE::SyncVisibilityRegion3DNodesUVE() {
         float bestDistanceSquared = std::numeric_limits<float>::max();
         Scene::EntityUVE bestRegion = Scene::kInvalidEntityUVE;
         for (const RegionSnapshotUVE& region : regions) {
-            const Scene::VisibilityRegion3DNodeComponentUVE& config =
-                m_entityManager->GetComponentUVE<Scene::VisibilityRegion3DNodeComponentUVE>(
+            const Scene::VisibilityRegion3DComponentUVE& config =
+                m_entityManager->GetComponentUVE<Scene::VisibilityRegion3DComponentUVE>(
                     region.entity);
-            if (!config.enabled || !Scene::IsVisibilityRegion3DNodeComponentValidUVE(config) ||
+            if (!config.enabled || !Scene::IsVisibilityRegion3DObjectComponentValidUVE(config) ||
                 !Scene::ResolveVisibilityRegion3DLayerGateUVE(config.visibilityLayers,
                                                               meshLayers) ||
                 !Scene::ResolveVisibilityRegion3DContainsPointUVE(config, region.origin,
@@ -2169,7 +2169,7 @@ void EngineCoreUVE::SyncVisibilityRegion3DNodesUVE() {
             continue; // outside every region: the mesh stays unmanaged and renders as ever
         }
         const bool activeNow =
-            m_entityManager->GetComponentUVE<Scene::VisibilityRegion3DNodeComponentUVE>(bestRegion)
+            m_entityManager->GetComponentUVE<Scene::VisibilityRegion3DComponentUVE>(bestRegion)
                 .active;
         if (!m_entityManager->HasComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
                 mesh)) {
@@ -2271,8 +2271,8 @@ void EngineCoreUVE::Update() {
         m_physicsSystem->StepUVE(*m_entityManager, *m_sceneGraph, fixedDeltaTimeSeconds);
         SyncCharacterControllersUVE(fixedDeltaTimeSeconds);
         SyncAnimationUVE(fixedDeltaTimeSeconds, /*physicsStep=*/true);
-        SyncProjectile3DNodesUVE(fixedDeltaTimeSeconds);
-        SyncSpringArm3DNodesUVE(fixedDeltaTimeSeconds);
+        SyncProjectile3DObjectsUVE(fixedDeltaTimeSeconds);
+        SyncSpringArm3DObjectsUVE(fixedDeltaTimeSeconds);
     }
 
     if (m_simulationExecutionMode == SimulationExecutionModeUVE::Running) {
@@ -2288,13 +2288,13 @@ void EngineCoreUVE::Update() {
     SyncParticleRuntimeUVE();
     SyncUIRuntimeUVE();
     SyncCollisionLifecycleUVE();
-    SyncRayCast3DNodesUVE();
-    SyncHitbox3DNodesUVE();
-    SyncInteractionArea3DNodesUVE();
-    SyncLevelStreamer3DNodesUVE();
-    SyncReflectionProbe3DNodesUVE();
-    SyncWorldPartition3DNodesUVE();
-    SyncVisibilityRegion3DNodesUVE();
+    SyncRayCast3DObjectsUVE();
+    SyncHitbox3DObjectsUVE();
+    SyncInteractionArea3DObjectsUVE();
+    SyncLevelStreamer3DObjectsUVE();
+    SyncReflectionProbe3DObjectsUVE();
+    SyncWorldPartition3DObjectsUVE();
+    SyncVisibilityRegion3DObjectsUVE();
     SyncScriptRuntimeUVE();
 
     if (m_config.hotReloadEnabledUVE) {

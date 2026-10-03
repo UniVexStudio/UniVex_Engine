@@ -39,7 +39,7 @@ enum class StatusUVE : std::uint8_t {
     Waiting,
 };
 
-/// What a running chunk may touch: the instance's fields and the node's host. It also carries the
+/// What a running chunk may touch: the instance's fields and the object's host. It also carries the
 /// instruction budget and the current source line, for the same errors the interpreter reports.
 struct ContextUVE final {
     std::vector<ValueUVE>& fields;

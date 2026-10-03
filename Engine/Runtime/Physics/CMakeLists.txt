@@ -3,8 +3,8 @@
 #
 # Backend-agnostic collision/narrow-phase over the ECS (AABB, box/sphere TOI, character
 # controller, constraints, raycasts) ported from the reference engine's Physics module.
-# Closes the CharacterBody3D gap left open when Engine/Runtime/Scene was ported - see
-# nodes/scene_node_uve.h's restore note, which this module unblocks.
+# Closes the Character3D gap left open when Engine/Runtime/Scene was ported - see
+# objects/scene_object_uve.h's restore note, which this module unblocks.
 
 add_library(uve_physics STATIC
     Internal/area_overlap_lifecycle_tracker_uve.cpp
