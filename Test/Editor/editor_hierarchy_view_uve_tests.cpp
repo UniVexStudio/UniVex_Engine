@@ -7,7 +7,7 @@
 namespace UVE::Editor::Tests {
 namespace {
 
-TEST(EditorHierarchyViewUVETest, EyeIsDrawnPerModeAndAlwaysOnAHiddenNodeWhenOnHover) {
+TEST(EditorHierarchyViewUVETest, EyeIsDrawnPerModeAndAlwaysOnAHiddenObjectWhenOnHover) {
     using Mode = HierarchyVisibilityColumnUVE;
     for (const bool hovered : {false, true}) {
         for (const bool visible : {false, true}) {
@@ -17,12 +17,12 @@ TEST(EditorHierarchyViewUVETest, EyeIsDrawnPerModeAndAlwaysOnAHiddenNodeWhenOnHo
     }
     EXPECT_FALSE(ShouldDrawHierarchyEyeUVE(Mode::OnHover, false, true));
     EXPECT_TRUE(ShouldDrawHierarchyEyeUVE(Mode::OnHover, true, true));
-    // A hidden node keeps its closed eye, so it never looks like a shown one.
+    // A hidden object keeps its closed eye, so it never looks like a shown one.
     EXPECT_TRUE(ShouldDrawHierarchyEyeUVE(Mode::OnHover, false, false));
 }
 
 TEST(EditorHierarchyViewUVETest, TypeHintIsLeftOutWhenItWouldOnlyRepeatTheName) {
-    EXPECT_EQ(GetHierarchyTypeHintUVE("Player", "CharacterBody3D"), "CharacterBody3D");
+    EXPECT_EQ(GetHierarchyTypeHintUVE("Player", "Character3D"), "Character3D");
     EXPECT_EQ(GetHierarchyTypeHintUVE("BoxMesh3D", "BoxMesh3D"), "");
     EXPECT_EQ(GetHierarchyTypeHintUVE("Player", ""), "");
     // Only an exact repeat is left out; a name that differs only in case still shows the type.
@@ -33,7 +33,7 @@ TEST(EditorHierarchyViewUVETest, DefaultsAreThePanelsBehaviourBeforeItHadPrefere
     const HierarchyViewSettingsUVE view{};
     EXPECT_TRUE(view.revealSelection);
     EXPECT_TRUE(view.showIcons);
-    EXPECT_TRUE(view.showTypeName); // new with node types, and on
+    EXPECT_TRUE(view.showTypeName); // new with object types, and on
     EXPECT_EQ(view.visibilityColumn, HierarchyVisibilityColumnUVE::Always);
     EXPECT_EQ(view.doubleClick, HierarchyDoubleClickUVE::Rename);
     EXPECT_TRUE(view.dragToReparent);

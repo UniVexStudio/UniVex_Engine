@@ -21,7 +21,7 @@ namespace UVE::Scene {
 ///
 /// `siblingOrder` places the entity among its parent's children: lower first. Only the
 /// comparison matters, never the number. A new link takes the next order, so it lands after the
-/// siblings already there, and SceneGraphUVE gives a moved node a fresh one. The number is never
+/// siblings already there, and SceneGraphUVE gives a moved object a fresh one. The number is never
 /// saved: a scene file lists siblings in order, and loading hands out orders in that sequence.
 struct HierarchyComponentUVE final {
     EntityUVE parent = kInvalidEntityUVE;

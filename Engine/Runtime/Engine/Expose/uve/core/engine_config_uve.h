@@ -211,7 +211,7 @@ struct EngineConfigUVE {
     std::uint32_t shadowPcfKernelRadius = 1;
 
     /// Acceleration PhysicsSystemUVE (see Physics::PhysicsSystemUVE) applies to every
-    /// non-kinematic RigidBodyComponentUVE each fixed step, scaled by its own gravityScale.
+    /// non-kinematic Rigid3DComponentUVE each fixed step, scaled by its own gravityScale.
     /// Earth-like default, Y-up (matching this engine's convention throughout).
     Math::Vector3UVE gravity{0.0F, -9.81F, 0.0F};
 

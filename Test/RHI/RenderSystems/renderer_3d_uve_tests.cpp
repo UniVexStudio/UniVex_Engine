@@ -29,6 +29,7 @@
 #include "uve/asset/mesh_asset_uve.h"
 #include "uve/asset/shader_asset_uve.h"
 #include "uve/asset/texture_asset_uve.h"
+#include "uve/asset/texture_compression_uve.h"
 #include "uve/events/event_system_uve.h"
 #include "uve/input/input_system_uve.h"
 #include "uve/memory/memory_manager_uve.h"
@@ -47,7 +48,7 @@
 #include "uve/component/ui_button_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/entity/entity_manager_uve.h"
-#include "uve/nodes/3d/skeleton_3d_uve.h"
+#include "uve/objects/3d/skeleton_3d_uve.h"
 #include "uve/scene/scene_graph_uve.h"
 #include "uve/threading/thread_pool_uve.h"
 #include "uve/ui/ui_runtime_uve.h"
@@ -142,7 +143,7 @@ protected:
             [](const std::filesystem::path&, Asset::TextureAssetUVE& texture) {
                 texture.width = 2;
                 texture.height = 2;
-                texture.format = Asset::TextureFormatUVE::RGBA8Unorm;
+                texture.format = Asset::TextureAssetFormatUVE::RGBA8Unorm;
                 texture.pixels.assign(2U * 2U * 4U, std::byte{0xAB});
                 return true;
             });
@@ -781,7 +782,7 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_InvalidReadyTexturePayloadUsesFallbackI
         [](const std::filesystem::path&, Asset::TextureAssetUVE& texture) {
             texture.width = 0U;
             texture.height = 0U;
-            texture.format = Asset::TextureFormatUVE::RGBA8Unorm;
+            texture.format = Asset::TextureAssetFormatUVE::RGBA8Unorm;
             texture.pixels.clear();
             return true;
         });
@@ -858,6 +859,76 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_MaterialWithAlbedoTexture_UploadsAndBin
     EXPECT_EQ(renderDevice.GetLiveResourceCountUVE(), liveResourcesAfterFirstFrame);
 }
 
+TEST_F(Renderer3DUVETest, RenderFrameUVE_SrgbAlbedoMetadataReachesRhiDescriptor) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_srgb_mesh.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_srgb_material.uvmat");
+    const Asset::AssetGuidUVE textureGuid = assetDatabase.RegisterUVE("renderer3d_tests_srgb_albedo.uvtex");
+    UseAlbedoTextureInMaterialUVE(textureGuid);
+    assetManager.RegisterLoaderUVE<Asset::TextureAssetUVE>(
+        [](const std::filesystem::path&, Asset::TextureAssetUVE& texture) {
+            texture.width = 2U;
+            texture.height = 2U;
+            texture.format = Asset::TextureAssetFormatUVE::RGBA8Unorm;
+            texture.colorSpace = Asset::TextureAssetColorSpaceUVE::Srgb;
+            texture.usage = Asset::TextureUsageUVE::Color;
+            texture.pixels.assign(2U * 2U * 4U, std::byte{0x7F});
+            texture.mipLevels.push_back(Asset::TextureMipLevelUVE{
+                1U, 1U, std::vector<std::byte>(4U, std::byte{0x3F})});
+            return true;
+        });
+
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+    WaitUntilTextureReadyUVE(textureGuid);
+    PrimeMaterialProgramUVE(*renderer3D, cameraEntity);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+
+    const std::vector<TextureDescUVE> liveTextureDescs = renderDevice.GetLiveTextureDescsUVE();
+    EXPECT_TRUE(std::any_of(liveTextureDescs.cbegin(), liveTextureDescs.cend(), [](const TextureDescUVE& desc) {
+        return desc.format == TextureFormatUVE::RGBA8Unorm && desc.colorSpace == TextureColorSpaceUVE::Srgb &&
+               desc.mipLevels == 2U;
+    }));
+}
+
+#if defined(UVE_HAS_BASIS_ENCODER) && UVE_HAS_BASIS_ENCODER
+TEST_F(Renderer3DUVETest, RenderFrameUVE_BasisTextureFallsBackToRgbaOnNullDevice) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_basis_mesh.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_basis_material.uvmat");
+    const Asset::AssetGuidUVE textureGuid = assetDatabase.RegisterUVE("renderer3d_tests_basis_albedo.uvtex");
+    UseAlbedoTextureInMaterialUVE(textureGuid);
+
+    Asset::TextureAssetUVE basisTexture;
+    basisTexture.width = 4U;
+    basisTexture.height = 4U;
+    basisTexture.format = Asset::TextureAssetFormatUVE::RGBA8Unorm;
+    basisTexture.colorSpace = Asset::TextureAssetColorSpaceUVE::Srgb;
+    basisTexture.usage = Asset::TextureUsageUVE::Color;
+    basisTexture.pixels.resize(4U * 4U * 4U, std::byte{0xFF});
+    ASSERT_TRUE(Asset::CompressTextureAssetWithBasisUVE(
+        basisTexture, Asset::TextureCompressionModeUVE::BasisUASTC, 60U, 1U));
+    assetManager.RegisterLoaderUVE<Asset::TextureAssetUVE>(
+        [basisTexture](const std::filesystem::path&, Asset::TextureAssetUVE& texture) {
+            texture = basisTexture;
+            return true;
+        });
+
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+    WaitUntilTextureReadyUVE(textureGuid);
+    PrimeMaterialProgramUVE(*renderer3D, cameraEntity);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+
+    EXPECT_FALSE(renderDevice.SupportsTextureFormatUVE(TextureFormatUVE::BC7RGBA));
+    const std::vector<TextureDescUVE> liveTextureDescs = renderDevice.GetLiveTextureDescsUVE();
+    EXPECT_TRUE(std::any_of(liveTextureDescs.cbegin(), liveTextureDescs.cend(), [](const TextureDescUVE& desc) {
+        return desc.format == TextureFormatUVE::RGBA8Unorm && desc.colorSpace == TextureColorSpaceUVE::Srgb &&
+               desc.mipLevels == 1U;
+    }));
+}
+#endif
+
 TEST_F(Renderer3DUVETest, RenderFrameUVE_Rgba16FloatAlbedoTexture_UploadsSuccessfully) {
     const std::size_t baselineLiveResources = renderDevice.GetLiveResourceCountUVE();
 
@@ -870,7 +941,7 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_Rgba16FloatAlbedoTexture_UploadsSuccess
         [](const std::filesystem::path&, Asset::TextureAssetUVE& texture) {
             texture.width = 2;
             texture.height = 2;
-            texture.format = Asset::TextureFormatUVE::RGBA16Float;
+            texture.format = Asset::TextureAssetFormatUVE::RGBA16Float;
             texture.pixels.assign(2U * 2U * 8U, std::byte{0});
             return true;
         });
@@ -923,19 +994,19 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_FailedTextureUsesFallbackAndReportsDiag
     EXPECT_EQ(afterMaterialEviction.textureFallbacks, 1U);
 }
 
-TEST_F(Renderer3DUVETest, RenderFrameUVE_FailedTextureUploadIsMemoizedUntilTextureReload) {
+TEST_F(Renderer3DUVETest, RenderFrameUVE_InvalidTexturePayloadIsRejectedAndMemoizedUntilReload) {
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
-    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_upload_failure_mesh.uvmodel");
-    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_upload_failure_material.uvmat");
-    const Asset::AssetGuidUVE textureGuid = assetDatabase.RegisterUVE("renderer3d_tests_upload_failure.uvtex");
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_invalid_texture_mesh.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_invalid_texture_material.uvmat");
+    const Asset::AssetGuidUVE textureGuid = assetDatabase.RegisterUVE("renderer3d_tests_invalid_texture.uvtex");
     UseAlbedoTextureInMaterialUVE(textureGuid);
     assetManager.RegisterLoaderUVE<Asset::TextureAssetUVE>(
         [](const std::filesystem::path&, Asset::TextureAssetUVE& texture) {
-            // The custom loader returns a ready CPU asset, but the renderer's shared texture
-            // validator rejects zero dimensions before any backend allocation.
+            // The custom loader returns a ready CPU asset with invalid dimensions. The renderer
+            // must reject it before making a backend allocation attempt.
             texture.width = 0U;
             texture.height = 2U;
-            texture.format = Asset::TextureFormatUVE::RGBA8Unorm;
+            texture.format = Asset::TextureAssetFormatUVE::RGBA8Unorm;
             texture.pixels.clear();
             return true;
         });
@@ -945,17 +1016,21 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_FailedTextureUploadIsMemoizedUntilTextu
 
     const std::uint64_t initialTextureAttempts = renderDevice.GetTextureCreateAttemptCountUVE();
     renderer3D->RenderFrameUVE(entityManager, cameraEntity);
-    EXPECT_EQ(renderDevice.GetTextureCreateAttemptCountUVE(), initialTextureAttempts + 1U);
+    EXPECT_EQ(renderDevice.GetTextureCreateAttemptCountUVE(), initialTextureAttempts);
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().textureFallbacks, 1U);
 
-    // Material cache invalidation must not retry the same permanently rejected GPU upload.
+    // Material cache invalidation must not send the same invalid asset to the backend.
     eventSystem.Publish(Asset::AssetReloadedEventUVE{materialGuid});
     renderer3D->RenderFrameUVE(entityManager, cameraEntity);
-    EXPECT_EQ(renderDevice.GetTextureCreateAttemptCountUVE(), initialTextureAttempts + 1U);
+    EXPECT_EQ(renderDevice.GetTextureCreateAttemptCountUVE(), initialTextureAttempts);
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().textureFallbacks, 1U);
 
-    // An explicit texture reload clears the memo and permits a deliberate retry.
+    // An explicit texture reload clears the failure memo. The asset is still invalid in this test,
+    // so it is revalidated and safely falls back without reaching the render device.
     eventSystem.Publish(Asset::AssetReloadedEventUVE{textureGuid});
     renderer3D->RenderFrameUVE(entityManager, cameraEntity);
-    EXPECT_EQ(renderDevice.GetTextureCreateAttemptCountUVE(), initialTextureAttempts + 2U);
+    EXPECT_EQ(renderDevice.GetTextureCreateAttemptCountUVE(), initialTextureAttempts);
+    EXPECT_EQ(renderer3D->GetLastFrameDiagnosticsUVE().textureFallbacks, 1U);
 }
 
 TEST_F(Renderer3DUVETest, RenderFrameUVE_TextureAssetNotYetReady_SkipsItemUntilLoaded) {
@@ -973,7 +1048,7 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_TextureAssetNotYetReady_SkipsItemUntilL
             }
             texture.width = 2;
             texture.height = 2;
-            texture.format = Asset::TextureFormatUVE::RGBA8Unorm;
+            texture.format = Asset::TextureAssetFormatUVE::RGBA8Unorm;
             texture.pixels.assign(2U * 2U * 4U, std::byte{0xCD});
             return true;
         });
@@ -2024,12 +2099,12 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_ASkinnedMeshUnderASkeletonIsDrawnInTheS
     Scene::TransformComponentUVE skeletonTransform;
     skeletonTransform.localPosition = Math::Vector3UVE{0.0F, 0.0F, -10.0F};
     sceneGraph.AttachTransformUVE(entityManager, skeletonEntity, skeletonTransform);
-    Scene::Skeleton3DNodeComponentUVE skeleton;
+    Scene::Skeleton3DComponentUVE skeleton;
     skeleton.skeletonAssetPath = "Hero.fbx";
     Scene::SkeletonBoneUVE bone;
     bone.name = "Hips";
     skeleton.bones = {bone};
-    entityManager.AddComponentUVE<Scene::Skeleton3DNodeComponentUVE>(skeletonEntity, skeleton);
+    entityManager.AddComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity, skeleton);
     const Scene::EntityUVE meshEntity = entityManager.CreateEntityUVE();
     sceneGraph.AttachTransformUVE(entityManager, meshEntity, Scene::TransformComponentUVE{});
     sceneGraph.SetParentUVE(entityManager, meshEntity, skeletonEntity);
@@ -2069,7 +2144,7 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_ASkinnedMeshUnderASkeletonIsDrawnInTheS
     EXPECT_NEAR(vertices[2].position.y, 1.0F, 1e-5F);
 
     // Posing the bone moves the triangle with it.
-    entityManager.GetComponentUVE<Scene::Skeleton3DNodeComponentUVE>(skeletonEntity).pose = {
+    entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity).pose = {
         Scene::SkeletonBonePoseUVE{Math::Vector3UVE{0.0F, 2.0F, 0.0F}, Math::QuaternionUVE{},
                                    Math::Vector3UVE{1.0F, 1.0F, 1.0F}}};
     renderer3D->RenderFrameUVE(entityManager, cameraEntity);

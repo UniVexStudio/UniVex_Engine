@@ -1,9 +1,9 @@
-# Scene Nodes Roadmap
+# Scene Objects Roadmap
 
 A detailed, node-by-node checklist of every placeable scene node / UI element / AI element this
 engine should eventually offer, grouped by domain (3D, 2D, CanvasLayer/UI, AI). This is a companion
 to the top-level `ROADMAP.md` — that file tracks whole engine systems; this file tracks individual
-node types specifically, since "the node exists in the Add-Node list" and "the node actually does
+node types specifically, since "the object exists in the Add-Object list" and "the object actually does
 something at runtime" are two different, easily-confused claims.
 
 No third-party engine or product name appears anywhere in this document — node names below are
@@ -37,7 +37,7 @@ worse than no checklist.
 
 ---
 
-## 3D Nodes
+## 3D Objects
 
 ### Working today
 
@@ -53,9 +53,9 @@ worse than no checklist.
 - [x] BoxMesh3D / SphereMesh3D / PlaneMesh3D — primitive mesh shapes, real rendering.
 - [x] Light3D (Directional / Point / Spot) — real, shades meshes.
 - [x] Collider3D — real collision shape, used by the physics/collision systems.
-- [x] StaticBody3D — real, non-moving collidable body.
-- [x] RigidBody3D — real, physics-simulated body (gravity, collision response).
-- [x] CharacterBody3D — real kinematic character controller (move/jump/ground state).
+- [x] Static3D — real, non-moving collidable body.
+- [x] Rigid3D — real, physics-simulated body (gravity, collision response).
+- [x] Character3D — real kinematic character controller (move/jump/ground state).
 - [x] AudioSource3D — real, plays positional audio.
 - [x] ParticleEmitter3D — real, ticked particle simulation.
 - [x] Area3D — real overlap-detection trigger volume.
@@ -122,7 +122,7 @@ worse than no checklist.
 
 ### Authored data only, not yet wired to a system
 
-- [~] AnimatableBody3D — target-velocity fields exist, no system drives a kinematic body from them.
+- [~] Kinematic3D — target-velocity fields exist, no system drives a kinematic body from them.
 - [~] NavigationRegion3D — bounds + navmesh path fields exist, no navmesh baking/pathfinding system exists yet.
 - [~] NavigationAgent3D — target/path fields exist, no pathfinding/steering system exists yet.
 - [~] Skeleton3D — bone hierarchy data exists, no skinning/animation system reads it.
@@ -144,8 +144,8 @@ worse than no checklist.
 - [~] Decal3D — material/size/lifetime fields exist, no decal-projection rendering exists.
 - [~] LODGroup3D — distance-threshold fields exist, no LOD-switching system exists.
 - [~] SpawnPoint3D — tag/one-shot fields exist, no spawn system reads it.
-- [~] AnimationPlayer — clip/speed/loop fields exist, nothing decodes a clip or evaluates a pose (see `ROADMAP.md`'s Animation section for the real gap: no skeleton/skinning/clip-sampling pipeline exists).
-- [~] AnimationTree — not even creatable yet in the editor (registry marks it `libraryCreatable = false`); depends on the same missing animation pipeline as AnimationPlayer.
+- [~] AnimationSequencer — clip/speed/loop fields exist, nothing decodes a clip or evaluates a pose (see `ROADMAP.md`'s Animation section for the real gap: no skeleton/skinning/clip-sampling pipeline exists).
+- [~] AnimationGraph — not even creatable yet in the editor (registry marks it `libraryCreatable = false`); depends on the same missing animation pipeline as AnimationSequencer.
 
 ### Missing entirely
 
@@ -174,7 +174,7 @@ worse than no checklist.
 
 ---
 
-## 2D Nodes
+## 2D Objects
 
 Nothing in this section exists yet — this engine currently has no 2D rendering/physics/nav
 pipeline at all.
@@ -209,7 +209,7 @@ pipeline at all.
 
 ---
 
-## CanvasLayer / UI Nodes
+## CanvasLayer / UI Objects
 
 ### Working today (Inspector-addable components, not yet promoted to the Scene node registry)
 
@@ -236,7 +236,7 @@ point.
 
 ---
 
-## AI Nodes / Components
+## AI Objects / Components
 
 Nothing placeable exists yet. `NavigationAgent3D`/`NavigationRegion3D` (listed above, 3D section)
 are the closest existing pieces, and they are themselves still data-only stubs with no pathfinding
@@ -255,33 +255,31 @@ system behind them.
 
 ## Suggested near-term order
 
-1. **Done**: every 3D node's data definition now has its own real `.h`+`.cpp` under
-   `Engine/Runtime/Nodes/3D` (moved out of one shared header; the old thin compatibility-alias
-   facade layer in `Engine/Runtime/Scene` was also removed once confirmed nothing used it) — so
-   future systems have a clean, discoverable home to attach real behavior to. This was purely a
-   structural move: no `[~]` entry above changed status from it, since organizing where a stub's
-   data lives is not the same as giving it a real backing system. Follow-up, also done: the 17
-   kinds whose authored data already lives in a shared component (Empty, Camera3D, Light3D, the
-   three primitive meshes, the physics bodies, Area3D, AudioSource3D, ParticleEmitter3D, Script,
-   AnimationPlayer, AnimationTree) each got their own `NodeDefinition` `.h`+`.cpp` in the same
-   folder — the kind's creation recipe (components to attach, authored defaults, default entity
-   name) — and the editor's creation switch now sources every one of those recipes from those
-   files instead of hardcoding them inline. Still purely structural: no `[~]` entry changed
-   status, and the save format is untouched (a definition is a recipe, never a serialized
-   component).
+1. **Done**: every scene-node kind has its own `.h`+`.cpp` home under `Engine/Runtime/Objects`,
+   grouped by domain: general 3D nodes under `3D`, physics-dependent 3D nodes under `3D/Physics`,
+   AI/navigation nodes under `AI/3D`, and animation nodes under `Animation`. This grew out of
+   splitting one shared node header; the old thin compatibility-alias facade layer in
+   `Engine/Runtime/Scene` was also removed once confirmed nothing used it. This is purely
+   structural: no `[~]` entry above changed status, since organizing a stub's data is not giving it
+   a backing system. The 17 kinds whose authored data already lives in a shared component (Empty,
+   Camera3D, Light3D, the three primitive meshes, physics bodies, Area3D, AudioSource3D,
+   ParticleEmitter3D, Script, AnimationSequencer, AnimationGraph) each have their own `*ObjectDefinitionUVE`
+   recipe in the owning folder, and the editor's creation switch sources those recipes instead of
+   hardcoding them. The save format is untouched: a definition is a recipe, never a serialized
+   component.
 2. **RayCast3D, Projectile3D, and Hitbox3D/Hurtbox3D done** (real per-frame raycast against the
    actual query system with correct self-exclusion; real kinematic integration + lifetime expiry
    for projectiles; real per-frame hitbox-vs-hurtbox strike pairing — see the entries above for
    their stated, honest follow-up gaps). Wire up the remaining highest-value already-authored 3D
-   stubs next: Skeleton3D + AnimationPlayer + AnimationTree (blocked on the same missing
+   stubs next: Skeleton3D + AnimationSequencer + AnimationGraph (blocked on the same missing
    skinning/clip-sampling pipeline — see `ROADMAP.md`), NavigationRegion3D/NavigationAgent3D
    (needed for any AI movement).
 3. Only after 3D nodes are in good shape, start a real 2D pipeline (rendering + physics + nav) —
    right now 2D is 100% unstarted, not partially built.
 4. **Done**: Canvas/UI Text/UI Image/UI Button are promoted into the Scene node registry
-   (`canvas`/`ui_text`/`ui_image`/`ui_button`, category "UI"), each with a NodeDefinition
-   `.h`+`.cpp` in `Engine/Runtime/Nodes/CanvasLayer` following the Nodes/3D convention — 2D/UI
-   authoring now has the same single Add-Node entry point, and the Add-Component path still
+   (`canvas`/`ui_text`/`ui_image`/`ui_button`, category "UI"), each with a `*ObjectDefinitionUVE`
+   `.h`+`.cpp` in `Engine/Runtime/Objects/UI` following the Objects/3D convention — 2D/UI
+   authoring now has the same single Add-Object entry point, and the Add-Component path still
    works for adding these components to existing entities.
 5. AI nodes come last — they need real navigation (item 2/3) and real gameplay systems to act on
    before a behavior tree/blackboard has anything meaningful to drive.

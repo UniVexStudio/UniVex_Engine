@@ -9,8 +9,10 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstddef>
 #include <cstring>
 #include <limits>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>

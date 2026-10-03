@@ -24,6 +24,7 @@
 #include "uve/asset/mesh_skinning_uve.h"
 #include "uve/asset/shader_asset_uve.h"
 #include "uve/asset/texture_asset_uve.h"
+#include "uve/asset/texture_compression_uve.h"
 #include "uve/component/camera_component_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/mesh_component_uve.h"
@@ -37,7 +38,7 @@
 #include "uve/math/matrix4x4_uve.h"
 #include "uve/math/quaternion_uve.h"
 #include "uve/math/vector3_uve.h"
-#include "uve/nodes/3d/all_nodes_3d_uve.h"
+#include "uve/objects/3d/all_objects_3d_uve.h"
 #include "uve/render_systems/i_light_system_uve.h"
 #include "uve/render_systems/particle_draw_command_uve.h"
 #include "uve/render_systems/particle_render_bridge_uve.h"
@@ -433,18 +434,136 @@ constexpr std::array<std::uint8_t, 4> kWhitePixelUVE{0xFF, 0xFF, 0xFF, 0xFF};
 constexpr std::array<std::uint8_t, 4> kFlatNormalPixelUVE{0x80, 0x80, 0xFF, 0xFF};
 
 /// Translates a loaded TextureAssetUVE's format into the RHI's own TextureFormatUVE (a
-/// deliberately separate enum — see Asset::TextureFormatUVE's own doc comment for why). Asset
+/// deliberately separate enum — see Asset::TextureAssetFormatUVE's own doc comment for why). Asset
 /// textures never use Depth32Float (that's only ever created directly as a GPU render target), so
-/// this mapping is exhaustive over Asset::TextureFormatUVE's two enumerators.
-[[nodiscard]] TextureFormatUVE ToRenderTextureFormatUVE(Asset::TextureFormatUVE format) noexcept {
+/// this mapping is exhaustive over Asset::TextureAssetFormatUVE's two enumerators.
+[[nodiscard]] TextureFormatUVE ToRenderTextureFormatUVE(Asset::TextureAssetFormatUVE format) noexcept {
     switch (format) {
-        case Asset::TextureFormatUVE::RGBA8Unorm:
+        case Asset::TextureAssetFormatUVE::RGBA8Unorm:
             return TextureFormatUVE::RGBA8Unorm;
-        case Asset::TextureFormatUVE::RGBA16Float:
+        case Asset::TextureAssetFormatUVE::RGBA16Float:
             return TextureFormatUVE::RGBA16Float;
     }
-    UVE_ASSERT(false && "Unhandled Asset::TextureFormatUVE");
+    UVE_ASSERT(false && "Unhandled Asset::TextureAssetFormatUVE");
     return TextureFormatUVE::RGBA8Unorm;
+}
+
+[[nodiscard]] TextureColorSpaceUVE ToRenderTextureColorSpaceUVE(
+    Asset::TextureAssetColorSpaceUVE colorSpace) noexcept {
+    switch (colorSpace) {
+        case Asset::TextureAssetColorSpaceUVE::Linear:
+            return TextureColorSpaceUVE::Linear;
+        case Asset::TextureAssetColorSpaceUVE::Srgb:
+            return TextureColorSpaceUVE::Srgb;
+    }
+    UVE_ASSERT(false && "Unhandled Asset::TextureAssetColorSpaceUVE");
+    return TextureColorSpaceUVE::Linear;
+}
+
+[[nodiscard]] std::optional<TextureFormatUVE> ToRenderTranscodeFormatUVE(
+    const Asset::TextureTranscodeTargetUVE target) noexcept {
+    switch (target) {
+        case Asset::TextureTranscodeTargetUVE::Rgba8Unorm:
+            return TextureFormatUVE::RGBA8Unorm;
+        case Asset::TextureTranscodeTargetUVE::Bc1Rgb:
+            return TextureFormatUVE::BC1RGB;
+        case Asset::TextureTranscodeTargetUVE::Bc3Rgba:
+            return TextureFormatUVE::BC3RGBA;
+        case Asset::TextureTranscodeTargetUVE::Bc7Rgba:
+            return TextureFormatUVE::BC7RGBA;
+        case Asset::TextureTranscodeTargetUVE::Etc2Rgb:
+            return TextureFormatUVE::ETC2RGB8;
+        case Asset::TextureTranscodeTargetUVE::Etc2Rgba:
+            return TextureFormatUVE::ETC2RGBA8;
+        case Asset::TextureTranscodeTargetUVE::Astc4x4Rgba:
+            return TextureFormatUVE::ASTC4x4RGBA;
+    }
+    return std::nullopt;
+}
+
+[[nodiscard]] bool BuildTextureAssetUploadUVE(const Asset::TextureAssetUVE& textureAsset,
+                                               IRenderDeviceUVE& renderDevice,
+                                               TextureDescUVE& outDesc,
+                                               std::vector<std::byte>& outUploadData) {
+    const TextureColorSpaceUVE colorSpace = ToRenderTextureColorSpaceUVE(textureAsset.colorSpace);
+    if (textureAsset.payloadEncoding == Asset::TexturePayloadEncodingUVE::RawPixels) {
+        std::size_t uploadByteCount = textureAsset.pixels.size();
+        const std::size_t maximumUploadBytes = std::vector<std::byte>{}.max_size();
+        for (const Asset::TextureMipLevelUVE& mipLevel : textureAsset.mipLevels) {
+            if (mipLevel.pixels.size() > maximumUploadBytes - uploadByteCount) {
+                return false;
+            }
+            uploadByteCount += mipLevel.pixels.size();
+        }
+        std::vector<std::byte> uploadData;
+        uploadData.reserve(uploadByteCount);
+        uploadData.insert(uploadData.end(), textureAsset.pixels.begin(), textureAsset.pixels.end());
+        for (const Asset::TextureMipLevelUVE& mipLevel : textureAsset.mipLevels) {
+            uploadData.insert(uploadData.end(), mipLevel.pixels.begin(), mipLevel.pixels.end());
+        }
+        const TextureDescUVE desc{textureAsset.width, textureAsset.height,
+                                  ToRenderTextureFormatUVE(textureAsset.format),
+                                  static_cast<std::uint32_t>(textureAsset.mipLevels.size() + 1U), colorSpace};
+        if (!ValidateTextureUploadUVE(desc, uploadData)) {
+            return false;
+        }
+        outDesc = desc;
+        outUploadData = std::move(uploadData);
+        return true;
+    }
+    if (textureAsset.payloadEncoding != Asset::TexturePayloadEncodingUVE::BasisUniversalKtx2) {
+        return false;
+    }
+
+    Asset::TextureCompressionInfoUVE compressionInfo;
+    if (!Asset::GetTextureCompressionInfoUVE(textureAsset, compressionInfo)) {
+        return false;
+    }
+    const std::array<Asset::TextureTranscodeTargetUVE, 5U> opaqueTargets{
+        Asset::TextureTranscodeTargetUVE::Bc7Rgba,
+        Asset::TextureTranscodeTargetUVE::Bc1Rgb,
+        Asset::TextureTranscodeTargetUVE::Bc3Rgba,
+        Asset::TextureTranscodeTargetUVE::Etc2Rgb,
+        Asset::TextureTranscodeTargetUVE::Astc4x4Rgba};
+    const std::array<Asset::TextureTranscodeTargetUVE, 4U> alphaTargets{
+        Asset::TextureTranscodeTargetUVE::Bc7Rgba,
+        Asset::TextureTranscodeTargetUVE::Bc3Rgba,
+        Asset::TextureTranscodeTargetUVE::Astc4x4Rgba,
+        Asset::TextureTranscodeTargetUVE::Etc2Rgba};
+    const auto tryTarget = [&](const Asset::TextureTranscodeTargetUVE target) {
+        const std::optional<TextureFormatUVE> format = ToRenderTranscodeFormatUVE(target);
+        if (!format.has_value() || !renderDevice.SupportsTextureFormatUVE(*format, colorSpace)) {
+            return false;
+        }
+        Asset::TextureTranscodedMipChainUVE transcoded;
+        if (!Asset::TranscodeTextureAssetUVE(textureAsset, target, transcoded)) {
+            return false;
+        }
+        const TextureDescUVE desc{transcoded.width, transcoded.height, *format, transcoded.mipLevels, colorSpace};
+        if (!ValidateTextureUploadUVE(desc, transcoded.pixels)) {
+            return false;
+        }
+        outDesc = desc;
+        outUploadData = std::move(transcoded.pixels);
+        return true;
+    };
+    if (compressionInfo.hasAlpha) {
+        for (const Asset::TextureTranscodeTargetUVE target : alphaTargets) {
+            if (tryTarget(target)) {
+                return true;
+            }
+        }
+    } else {
+        for (const Asset::TextureTranscodeTargetUVE target : opaqueTargets) {
+            if (tryTarget(target)) {
+                return true;
+            }
+        }
+    }
+
+    // Portable data is useful on every backend, even when that backend has no block-compressed
+    // target. Keep all KTX2 mip levels and let the regular RGBA upload path provide the fallback.
+    return tryTarget(Asset::TextureTranscodeTargetUVE::Rgba8Unorm);
 }
 
 /// Finds the first active Directional light in `lights` for the shadow depth pre-pass (Increment
@@ -465,10 +584,10 @@ constexpr std::array<std::uint8_t, 4> kFlatNormalPixelUVE{0x80, 0x80, 0xFF, 0xFF
     Scene::IEntityManagerUVE& entityManager, const Math::Vector3UVE fallbackAmbient) noexcept {
     Math::Vector3UVE ambient = fallbackAmbient;
     bool environmentFound = false;
-    entityManager.ForEachUVE<Scene::WorldEnvironment3DNodeComponentUVE>(
+    entityManager.ForEachUVE<Scene::WorldEnvironment3DComponentUVE>(
         [&ambient, &environmentFound](Scene::EntityUVE,
-                                      const Scene::WorldEnvironment3DNodeComponentUVE& environment) {
-            if (environmentFound || !Scene::IsWorldEnvironment3DNodeComponentValidUVE(environment)) {
+                                      const Scene::WorldEnvironment3DComponentUVE& environment) {
+            if (environmentFound || !Scene::IsWorldEnvironment3DObjectComponentValidUVE(environment)) {
                 return;
             }
             const Math::Vector3UVE resolved{environment.ambientColor.x * environment.ambientEnergy,
@@ -1123,19 +1242,28 @@ struct Renderer3DUVE::ImplUVE {
             UVE_ERROR("Renderer3DUVE: ready texture handle has no payload - falling back to the default texture");
             return fallbackHandle;
         }
-        const bool textureFormatValid = textureAsset->format == Asset::TextureFormatUVE::RGBA8Unorm ||
-                                        textureAsset->format == Asset::TextureFormatUVE::RGBA16Float;
-        UVE_ASSERT(textureFormatValid);
-        if (!textureFormatValid) {
+        // Asset payloads can come from disk, custom loaders, or hot reload. Treat malformed texture
+        // contents as a recoverable load/upload failure rather than an assertion on a render thread.
+        const bool textureAssetValid = Asset::IsTextureAssetValidUVE(*textureAsset);
+        if (!textureAssetValid) {
             failedTextureGuids.insert(textureGuid);
             ++lastFrameDiagnostics.textureFallbacks;
-            UVE_ERROR("Renderer3DUVE: ready texture payload has an unknown format - falling back to the default texture");
+            UVE_ERROR("Renderer3DUVE: ready texture payload has an invalid format, sampling metadata, "
+                      "base image, or mip chain - falling back to the default texture");
             return fallbackHandle;
         }
-        const TextureDescUVE desc{textureAsset->width, textureAsset->height,
-                                   ToRenderTextureFormatUVE(textureAsset->format), 1};
+
+        TextureDescUVE desc;
+        std::vector<std::byte> uploadData;
+        if (!BuildTextureAssetUploadUVE(*textureAsset, renderDevice, desc, uploadData)) {
+            failedTextureGuids.insert(textureGuid);
+            ++lastFrameDiagnostics.textureFallbacks;
+            UVE_ERROR("Renderer3DUVE: texture could not be staged or transcoded for this device - "
+                      "falling back to the default texture");
+            return fallbackHandle;
+        }
         const TextureHandleUVE handle =
-            renderDevice.CreateTextureUVE(desc, std::as_bytes(std::span(textureAsset->pixels)));
+            renderDevice.CreateTextureUVE(desc, std::span<const std::byte>(uploadData));
         if (handle == kInvalidTextureHandleUVE) {
             failedTextureGuids.insert(textureGuid);
             ++lastFrameDiagnostics.textureFallbacks;
@@ -1330,11 +1458,11 @@ struct Renderer3DUVE::ImplUVE {
                                                               const Scene::EntityUVE entity,
                                                               const Asset::AssetGuidUVE guid,
                                                               const Asset::MeshAssetUVE& mesh, Math::AabbUVE& outBounds) {
-        const Scene::Skeleton3DNodeComponentUVE* skeleton = nullptr;
+        const Scene::Skeleton3DComponentUVE* skeleton = nullptr;
         Scene::EntityUVE cursor = entity;
         for (std::size_t depth = 0U; depth < 256U && cursor != Scene::kInvalidEntityUVE; ++depth) {
-            if (entityManager.HasComponentUVE<Scene::Skeleton3DNodeComponentUVE>(cursor)) {
-                skeleton = &entityManager.GetComponentUVE<Scene::Skeleton3DNodeComponentUVE>(cursor);
+            if (entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(cursor)) {
+                skeleton = &entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(cursor);
                 break;
             }
             cursor = entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(cursor)

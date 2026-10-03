@@ -8,7 +8,7 @@
 
 #include <imgui.h>
 
-#include "uve/component/animation_tree_component_uve.h"
+#include "uve/component/animation_graph_component_uve.h"
 
 namespace UVE::Editor {
 
@@ -69,7 +69,7 @@ struct TransitionEditUVE final {
 /// state must play first, where the next state starts, the fade and its curve, and whether it can
 /// be interrupted or is switched off. From and To are the caller's: a list picks them, a view draws
 /// them. Edits `transition` in place.
-TransitionEditUVE DrawAnimationTransitionUVE(Scene::AnimationTransitionUVE& transition,
+TransitionEditUVE DrawAnimationTransitionUVE(Scene::AnimationGraphTransitionUVE& transition,
                                              const std::vector<Scene::AnimationParameterUVE>& parameters);
 
 } // namespace UVE::Editor

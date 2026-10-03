@@ -8,7 +8,7 @@
 #include <limits>
 #include <utility>
 
-#include "uve/component/rigid_body_component_uve.h"
+#include "uve/component/rigid_3d_component_uve.h"
 #include "uve/component/transform_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/math/vector3_uve.h"
@@ -54,12 +54,12 @@ void ApplyLocalDeltaUVE(Scene::IEntityManagerUVE& entityManager, Scene::ISceneGr
 
 [[nodiscard]] float InverseMassUVE(Scene::IEntityManagerUVE& entityManager,
                                    Scene::EntityUVE entity) noexcept {
-    if (!entityManager.HasComponentUVE<Scene::RigidBodyComponentUVE>(entity)) {
+    if (!entityManager.HasComponentUVE<Scene::Rigid3DComponentUVE>(entity)) {
         return 0.0F;
     }
-    const Scene::RigidBodyComponentUVE& rigidBody =
-        entityManager.GetComponentUVE<Scene::RigidBodyComponentUVE>(entity);
-    if (!Scene::IsRigidBodyComponentValidUVE(rigidBody) || rigidBody.isKinematic || rigidBody.mass <= 0.0F) {
+    const Scene::Rigid3DComponentUVE& rigidBody =
+        entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(entity);
+    if (!Scene::IsRigid3DComponentValidUVE(rigidBody) || rigidBody.isKinematic || rigidBody.mass <= 0.0F) {
         return 0.0F;
     }
     return 1.0F / rigidBody.mass;

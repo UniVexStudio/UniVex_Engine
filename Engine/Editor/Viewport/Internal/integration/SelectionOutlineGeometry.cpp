@@ -25,8 +25,8 @@ std::vector<univex::render::SelectionOutlineVertex> CollectSelectionOutlineTrian
         return triangles;
     }
 
-    // Parent -> children from one pass over the hierarchy, so walking below each selected node does
-    // not rescan the scene per node.
+    // Parent -> children from one pass over the hierarchy, so walking below each selected object does
+    // not rescan the scene per object.
     std::vector<std::pair<EntityUVE, EntityUVE>> links;
     entityManager.ForEachUVE<UVE::Scene::HierarchyComponentUVE>(
         [&links](const EntityUVE child, const UVE::Scene::HierarchyComponentUVE& hierarchy) {
@@ -39,7 +39,7 @@ std::vector<univex::render::SelectionOutlineVertex> CollectSelectionOutlineTrian
         }
     }
 
-    // How strongly each node is selected: its own selection, or the strongest selected ancestor.
+    // How strongly each object is selected: its own selection, or the strongest selected ancestor.
     std::unordered_map<EntityUVE, float> weights;
     for (const EntityUVE selected : selection) {
         if (!entityManager.IsAliveUVE(selected)) {

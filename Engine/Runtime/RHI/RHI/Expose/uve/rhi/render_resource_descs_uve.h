@@ -88,48 +88,200 @@ struct BufferDescUVE {
 }
 
 /// Pixel formats an IRenderDeviceUVE texture can use. `Depth32Float` exists here (even though no
-/// loadable asset ever uses it — see the deliberately separate Asset::TextureFormatUVE) because
-/// depth render targets are created directly through this RHI, never loaded from disk.
-enum class TextureFormatUVE : std::uint8_t { RGBA8Unorm, RGBA16Float, Depth32Float };
+/// loadable asset ever uses it — see the deliberately separate Asset::TextureAssetFormatUVE) because
+/// depth render targets are created directly through this RHI, never loaded from disk. Compressed
+/// formats are sampled resources only: they cannot be framebuffer attachments or storage images.
+enum class TextureFormatUVE : std::uint8_t {
+    RGBA8Unorm = 0,
+    RGBA16Float = 1,
+    Depth32Float = 2,
+    BC1RGB = 3,
+    BC3RGBA = 4,
+    BC7RGBA = 5,
+    ETC2RGB8 = 6,
+    ETC2RGBA8 = 7,
+    ASTC4x4RGBA = 8,
+};
 
-/// Describes a GPU texture to create via IRenderDeviceUVE::CreateTextureUVE().
+/// Sampled interpretation of normalized color-channel values. This is separate from the stored
+/// pixel layout; supported RGBA8 and compressed color formats can use sRGB decoding.
+enum class TextureColorSpaceUVE : std::uint8_t {
+    Linear = 0,
+    Srgb = 1,
+};
+
+/// Pixel/block geometry for one mip level. All currently supported block-compressed formats use
+/// 4x4 texel blocks; edge blocks are allocated in full.
+struct TextureFormatBlockInfoUVE {
+    std::uint32_t width = 0U;
+    std::uint32_t height = 0U;
+    std::uint32_t bytes = 0U;
+    bool compressed = false;
+};
+
+[[nodiscard]] inline constexpr TextureFormatBlockInfoUVE GetTextureFormatBlockInfoUVE(
+    const TextureFormatUVE format) noexcept {
+    switch (format) {
+        case TextureFormatUVE::RGBA8Unorm:
+        case TextureFormatUVE::Depth32Float:
+            return {1U, 1U, 4U, false};
+        case TextureFormatUVE::RGBA16Float:
+            return {1U, 1U, 8U, false};
+        case TextureFormatUVE::BC1RGB:
+        case TextureFormatUVE::ETC2RGB8:
+            return {4U, 4U, 8U, true};
+        case TextureFormatUVE::BC3RGBA:
+        case TextureFormatUVE::BC7RGBA:
+        case TextureFormatUVE::ETC2RGBA8:
+        case TextureFormatUVE::ASTC4x4RGBA:
+            return {4U, 4U, 16U, true};
+    }
+    return {};
+}
+
+[[nodiscard]] inline constexpr bool IsTextureFormatCompressedUVE(const TextureFormatUVE format) noexcept {
+    return GetTextureFormatBlockInfoUVE(format).compressed;
+}
+
+[[nodiscard]] inline constexpr bool IsTextureFormatSrgbCapableUVE(const TextureFormatUVE format) noexcept {
+    switch (format) {
+        case TextureFormatUVE::RGBA8Unorm:
+        case TextureFormatUVE::BC1RGB:
+        case TextureFormatUVE::BC3RGBA:
+        case TextureFormatUVE::BC7RGBA:
+        case TextureFormatUVE::ETC2RGB8:
+        case TextureFormatUVE::ETC2RGBA8:
+        case TextureFormatUVE::ASTC4x4RGBA:
+            return true;
+        case TextureFormatUVE::RGBA16Float:
+        case TextureFormatUVE::Depth32Float:
+            return false;
+    }
+    return false;
+}
+
+/// Describes a GPU texture to create via IRenderDeviceUVE::CreateTextureUVE(). `mipLevels` is
+/// the total number of levels including level 0; it must not exceed the complete chain for the
+/// base dimensions. Color assets may provide tightly concatenated texel or block bytes for every level.
 struct TextureDescUVE {
     std::uint32_t width = 0;
     std::uint32_t height = 0;
     TextureFormatUVE format = TextureFormatUVE::RGBA8Unorm;
     std::uint32_t mipLevels = 1;
+    // Appended after existing members to preserve aggregate initialization of legacy descriptors.
+    TextureColorSpaceUVE colorSpace = TextureColorSpaceUVE::Linear;
 };
 
-/// Validates one texture descriptor and optional level-0 upload before a backend allocates a GPU
-/// resource. Positive dimensions and a nonzero mip level count are required; empty initial data is
-/// allowed for render targets, while a non-empty level-0 upload must exactly match
-/// width*height*bytes-per-pixel. The
-/// helper performs no allocation, backend calls, or ownership transfer.
+struct TextureMipExtentUVE {
+    std::uint32_t width = 0U;
+    std::uint32_t height = 0U;
+};
+
+[[nodiscard]] inline constexpr std::uint64_t TextureFormatBytesPerPixelUVE(
+    const TextureFormatUVE format) noexcept {
+    const TextureFormatBlockInfoUVE block = GetTextureFormatBlockInfoUVE(format);
+    return !block.compressed && block.width == 1U && block.height == 1U ? block.bytes : 0U;
+}
+
+[[nodiscard]] inline bool CalculateTextureMipByteCountUVE(const TextureFormatUVE format,
+                                                           const std::uint32_t width,
+                                                           const std::uint32_t height,
+                                                           std::uint64_t& outBytes) noexcept {
+    const TextureFormatBlockInfoUVE block = GetTextureFormatBlockInfoUVE(format);
+    if (width == 0U || height == 0U || block.width == 0U || block.height == 0U || block.bytes == 0U) {
+        return false;
+    }
+    const std::uint64_t blocksX = (static_cast<std::uint64_t>(width) + block.width - 1U) / block.width;
+    const std::uint64_t blocksY = (static_cast<std::uint64_t>(height) + block.height - 1U) / block.height;
+    if (blocksX > std::numeric_limits<std::uint64_t>::max() / blocksY) {
+        return false;
+    }
+    const std::uint64_t blockCount = blocksX * blocksY;
+    if (blockCount > std::numeric_limits<std::uint64_t>::max() / block.bytes) {
+        return false;
+    }
+    outBytes = blockCount * block.bytes;
+    return outBytes <= std::numeric_limits<std::size_t>::max();
+}
+
+[[nodiscard]] inline constexpr TextureMipExtentUVE GetTextureMipExtentUVE(
+    std::uint32_t width, std::uint32_t height, std::uint32_t level) noexcept {
+    while (level > 0U && (width > 1U || height > 1U)) {
+        width = width > 1U ? width / 2U : 1U;
+        height = height > 1U ? height / 2U : 1U;
+        --level;
+    }
+    return {width, height};
+}
+
+[[nodiscard]] inline constexpr std::uint32_t MaximumTextureMipLevelCountUVE(
+    std::uint32_t width, std::uint32_t height) noexcept {
+    if (width == 0U || height == 0U) {
+        return 0U;
+    }
+    std::uint32_t count = 1U;
+    while (width > 1U || height > 1U) {
+        width = width > 1U ? width / 2U : 1U;
+        height = height > 1U ? height / 2U : 1U;
+        ++count;
+    }
+    return count;
+}
+
+/// Computes the byte count for a tightly packed level-0..N upload. The output is unchanged on
+/// failure; mips beyond the complete dimension-derived chain and multi-level depth textures are
+/// rejected because this slice does not expose depth-mip attachment selection.
+[[nodiscard]] inline bool CalculateTextureUploadByteCountUVE(const TextureDescUVE& desc,
+                                                              std::uint64_t& outBytes) noexcept {
+    const TextureFormatBlockInfoUVE block = GetTextureFormatBlockInfoUVE(desc.format);
+    if (desc.width == 0U || desc.height == 0U || desc.mipLevels == 0U || block.bytes == 0U ||
+        desc.mipLevels > MaximumTextureMipLevelCountUVE(desc.width, desc.height) ||
+        (desc.format == TextureFormatUVE::Depth32Float && desc.mipLevels > 1U)) {
+        return false;
+    }
+
+    std::uint64_t totalBytes = 0U;
+    TextureMipExtentUVE extent{desc.width, desc.height};
+    for (std::uint32_t level = 0U; level < desc.mipLevels; ++level) {
+        std::uint64_t levelBytes = 0U;
+        if (!CalculateTextureMipByteCountUVE(desc.format, extent.width, extent.height, levelBytes) ||
+            levelBytes > std::numeric_limits<std::uint64_t>::max() - totalBytes) {
+            return false;
+        }
+        totalBytes += levelBytes;
+        extent.width = extent.width > 1U ? extent.width / 2U : 1U;
+        extent.height = extent.height > 1U ? extent.height / 2U : 1U;
+    }
+    if (totalBytes > std::numeric_limits<std::size_t>::max()) {
+        return false;
+    }
+    outBytes = totalBytes;
+    return true;
+}
+
+/// Validates a descriptor and optional tightly concatenated upload before a backend allocates a
+/// GPU resource. Empty data is legal only for one-level render targets; a non-empty upload must
+/// exactly match the sum of all declared levels. The helper performs no allocation or backend calls.
 [[nodiscard]] inline bool ValidateTextureUploadUVE(const TextureDescUVE& desc,
                                                     const std::span<const std::byte> initialData) noexcept {
     if (desc.width == 0U || desc.height == 0U || desc.mipLevels == 0U) {
         return false;
     }
-    std::uint64_t bytesPerPixel = 0U;
-    switch (desc.format) {
-        case TextureFormatUVE::RGBA8Unorm:
-            bytesPerPixel = 4U;
+    switch (desc.colorSpace) {
+        case TextureColorSpaceUVE::Linear:
             break;
-        case TextureFormatUVE::RGBA16Float:
-            bytesPerPixel = 8U;
-            break;
-        case TextureFormatUVE::Depth32Float:
-            bytesPerPixel = 4U;
+        case TextureColorSpaceUVE::Srgb:
+            if (!IsTextureFormatSrgbCapableUVE(desc.format)) {
+                return false;
+            }
             break;
         default:
             return false;
     }
-    const std::uint64_t pixelCount = static_cast<std::uint64_t>(desc.width) * desc.height;
-    if (pixelCount > std::numeric_limits<std::uint64_t>::max() / bytesPerPixel) {
-        return false;
-    }
-    const std::uint64_t expectedBytes = pixelCount * bytesPerPixel;
-    if (expectedBytes > std::numeric_limits<std::size_t>::max()) {
+    std::uint64_t expectedBytes = 0U;
+    if (!CalculateTextureUploadByteCountUVE(desc, expectedBytes) ||
+        (initialData.empty() &&
+         (desc.mipLevels > 1U || IsTextureFormatCompressedUVE(desc.format)))) {
         return false;
     }
     return initialData.empty() || initialData.size() == static_cast<std::size_t>(expectedBytes);

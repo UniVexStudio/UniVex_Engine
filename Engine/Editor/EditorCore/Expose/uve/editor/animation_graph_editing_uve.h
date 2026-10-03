@@ -8,18 +8,18 @@
 #include <string>
 #include <vector>
 
-#include "uve/component/animation_tree_component_uve.h"
+#include "uve/component/animation_graph_component_uve.h"
 
 namespace UVE::Editor {
 
-/// The Anim Graph's editing operations on an AnimationTree's nodes, as pure functions so they are
+/// The Anim Graph's editing operations on an AnimationGraph's nodes, as pure functions so they are
 /// testable without a window. Every one leaves a valid graph valid: it refuses what would break it
 /// (a cycle, a second Output, deleting the Output) rather than repairing afterwards.
 
 /// What a kind is called in the editor ("Blend Space" for BlendSpace1D...).
 [[nodiscard]] const char* AnimationGraphKindLabelUVE(Scene::AnimationGraphNodeKindUVE kind) noexcept;
 
-/// One line on what a kind does, for tooltips and the Add Node search.
+/// One line on what a kind does, for tooltips and the Add Object search.
 [[nodiscard]] const char* AnimationGraphKindHelpUVE(Scene::AnimationGraphNodeKindUVE kind) noexcept;
 
 /// What input `slot` of a kind means: "A"/"B", "Base"/"Layer", "State 2"...
@@ -95,7 +95,7 @@ bool MoveAnimationTransitionUVE(std::vector<Scene::AnimationGraphNodeUVE>& nodes
 
 /// One line on what a transition waits for: "speed > 0.5 and grounded", "state finished, after 75%",
 /// "always". "(off)" when it is switched off.
-[[nodiscard]] std::string DescribeAnimationTransitionUVE(const Scene::AnimationTransitionUVE& transition);
+[[nodiscard]] std::string DescribeAnimationTransitionUVE(const Scene::AnimationGraphTransitionUVE& transition);
 
 // ---- Blend Spaces hold their animations as points, not graph inputs ----------------------------
 

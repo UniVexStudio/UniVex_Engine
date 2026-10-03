@@ -2,7 +2,7 @@
 
 #
 # The real OpenGL 3.3+ Core Profile backend for uve_rhi's IRenderDeviceUVE/ICommandBufferUVE -
-# GlRenderDeviceUVE, GlCommandBufferUVE (module-private, matching ChunkUVE/ArchetypeUVE's
+# GlRenderDeviceUVE, GlCommandBufferUVE (module-private, matching ArchetypeChunkUVE/ArchetypeUVE's
 # private-header precedent), and the raw-GL-call helpers (GlFunctionsUVE, GlErrorCheckUVE) both
 # rely on. GlRenderDeviceUVE's constructor takes a Window::IWindowManagerUVE& (it assumes a
 # current GL context already exists - see i_window_manager_uve.h's own contract) and calls

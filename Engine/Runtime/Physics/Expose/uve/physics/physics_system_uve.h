@@ -17,7 +17,7 @@ namespace UVE::Physics {
 /// Composes an ICollisionSystemUVE& (dependency injection, matching Renderer3DUVE's precedent
 /// for a service that needs a constructor-injected collaborator) and holds one small piece of
 /// genuinely-owned config (gravity) — no per-entity state, which is what all persists in
-/// RigidBodyComponentUVE::velocity instead, so PhysicsSystemUVE stays trivially testable in
+/// Rigid3DComponentUVE::velocity instead, so PhysicsSystemUVE stays trivially testable in
 /// isolation despite not being fully stateless like CameraSystemUVE/MeshRendererUVE.
 class PhysicsSystemUVE final : public IPhysicsSystemUVE {
 public:

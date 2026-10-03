@@ -21,12 +21,13 @@
 namespace UVE::UVScript::Tests {
 namespace {
 
-/// A CharacterBody3D-like node: a velocity, a read-only floor flag, input, and three events.
+/// A Character3D-like object: a velocity, a read-only floor flag, input, and three events.
 class FakeHostUVE final : public UVScriptHostUVE {
 public:
     std::optional<HostPropertyUVE> DescribePropertyUVE(const std::string_view name) const override {
         if (name == "velocity") return HostPropertyUVE{TypeUVE::Vec3UVE(), true};
-        if (name == "is_on_floor") return HostPropertyUVE{TypeUVE::BoolUVE(), false};
+        // Mirrors UVScriptObjectHostUVE: "grounded" is the name, "is_on_floor" still reads.
+        if (name == "grounded" || name == "is_on_floor") return HostPropertyUVE{TypeUVE::BoolUVE(), false};
         if (name == "health") return HostPropertyUVE{TypeUVE::IntUVE(), true};
         return std::nullopt;
     }
@@ -37,12 +38,12 @@ public:
     std::optional<std::vector<TypeUVE>> DescribeEventUVE(const std::string_view event) const override {
         if (event == "ready") return std::vector<TypeUVE>{};
         if (event == "tick") return std::vector<TypeUVE>{TypeUVE::FloatUVE()};
-        if (event == "body_entered") return std::vector<TypeUVE>{TypeUVE::NodeUVE("Node3D")};
+        if (event == "body_entered") return std::vector<TypeUVE>{TypeUVE::ObjectUVE("Object3D")};
         return std::nullopt;
     }
     ValueUVE GetPropertyUVE(const std::string_view name) override {
         if (name == "velocity") return velocity;
-        if (name == "is_on_floor") return onFloor;
+        if (name == "grounded" || name == "is_on_floor") return onFloor;
         return health;
     }
     void SetPropertyUVE(const std::string_view name, const ValueUVE& value) override {
@@ -82,7 +83,7 @@ public:
 
 TEST(UVScriptVmUVETest, RunsAPlayerController) {
     FakeHostUVE host;
-    const auto program = CompileOrFailUVE(R"(entity Player : CharacterBody3D
+    const auto program = CompileOrFailUVE(R"(entity Player : Character3D
 export speed: float = 6.0
 export jump = 2.0 m
 var jumps = 0
@@ -92,7 +93,7 @@ on ready:
 
 on tick(dt):
     velocity.x = input.axis("left", "right") * speed
-    if is_on_floor:
+    if grounded:
         velocity.y = sqrt(2.0 * 9.8 * jump)
         jumps += 1
 )", host);
@@ -180,11 +181,15 @@ TEST(UVScriptVmUVETest, ReportsTypeErrorsBeforeRunning) {
     EXPECT_EQ(ErrorsOfUVE("on ready:\n    let a = 1\n    a = \"text\"\n"),
               (std::vector<std::string>{"3: this assignment needs int but this is str"}));
     EXPECT_EQ(ErrorsOfUVE("on ready:\n    print(nope)\n"), (std::vector<std::string>{"2: nothing is called 'nope' here"}));
+    EXPECT_EQ(ErrorsOfUVE("on ready:\n    grounded = true\n"),
+              (std::vector<std::string>{"2: 'grounded' can be read but not changed"}));
+    // The name this property had before still reads, so a script written against it keeps working -
+    // and it is still read-only, because an alias is a second spelling, not a second property.
     EXPECT_EQ(ErrorsOfUVE("on ready:\n    is_on_floor = true\n"),
               (std::vector<std::string>{"2: 'is_on_floor' can be read but not changed"}));
     EXPECT_EQ(ErrorsOfUVE("const A = 1\non ready:\n    A = 2\n"),
               (std::vector<std::string>{"3: 'A' is a const and cannot change"}));
-    EXPECT_EQ(ErrorsOfUVE("on jump:\n    pass\n"), (std::vector<std::string>{"1: this node has no event 'jump'"}));
+    EXPECT_EQ(ErrorsOfUVE("on jump:\n    pass\n"), (std::vector<std::string>{"1: this object has no event 'jump'"}));
     EXPECT_EQ(ErrorsOfUVE("fn f() -> int:\n    pass\n"),
               (std::vector<std::string>{"1: 'f' can reach its end without returning a int"}));
     EXPECT_EQ(ErrorsOfUVE("fn f():\n    wait 1 s\n"), (std::vector<std::string>{"2: 'wait' only works inside an 'on' block"}));
@@ -306,7 +311,7 @@ void ExpectNativeMatchesInterpreterUVE(const std::string& name, const RunFn& run
     const TranscriptUVE interpreted = RunScriptUVE(name, ExecutionUVE::Interpreted, interpretedNative, run);
     const TranscriptUVE compiled = RunScriptUVE(name, ExecutionUVE::Auto, native, run);
     EXPECT_FALSE(interpretedNative) << name;
-    EXPECT_TRUE(native) << name << " has no native code linked in - is fake_node.uvhost in step with FakeHostUVE?";
+    EXPECT_TRUE(native) << name << " has no native code linked in - is fake_object.uvhost in step with FakeHostUVE?";
     EXPECT_EQ(compiled.printed, interpreted.printed) << name;
     EXPECT_EQ(compiled.calls, interpreted.calls) << name;
     EXPECT_EQ(compiled.velocity, interpreted.velocity) << name;
@@ -444,12 +449,15 @@ TEST(UVScriptNativeUVETest, ReportsNativeAndInterpretedTimeForFib) {
 
 TEST(UVScriptNativeUVETest, HostDescriptionsParseAndReportTheirMistakes) {
     std::string error;
-    const std::optional<DescribedHostUVE> host = DescribedHostUVE::ParseUVE(ReadNativeScriptUVE("fake_node.uvhost"), error);
+    const std::optional<DescribedHostUVE> host = DescribedHostUVE::ParseUVE(ReadNativeScriptUVE("fake_object.uvhost"), error);
     ASSERT_TRUE(host.has_value()) << error;
     EXPECT_EQ(host->DescribePropertyUVE("velocity")->type, TypeUVE::Vec3UVE());
-    EXPECT_FALSE(host->DescribePropertyUVE("is_on_floor")->writable);
+    EXPECT_FALSE(host->DescribePropertyUVE("grounded")->writable);
+    // A described host answers only to what its file declares - the retired-name alias lives in the
+    // C++ hosts, which is where a Character3D script's property actually comes from.
+    EXPECT_FALSE(host->DescribePropertyUVE("is_on_floor").has_value());
     EXPECT_EQ(host->DescribeFunctionUVE("input.axis")->params.size(), 2U);
-    EXPECT_EQ(host->DescribeEventUVE("body_entered")->front(), TypeUVE::NodeUVE("Node3D"));
+    EXPECT_EQ(host->DescribeEventUVE("body_entered")->front(), TypeUVE::ObjectUVE("Object3D"));
     EXPECT_FALSE(host->DescribePropertyUVE("missing").has_value());
     // A script compiled against the description is the program the FakeHost gives: same fingerprint.
     FakeHostUVE fake;

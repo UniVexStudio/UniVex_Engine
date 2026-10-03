@@ -9,7 +9,7 @@
 namespace UVE::Editor {
 
 /// Case-insensitive substring test, used by every filter box in the editor - the hierarchy
-/// filter, the content browser's search, the script-canvas node search.
+/// filter, the content browser's search, the script-canvas object search.
 ///
 /// Shared rather than copied because those filters must behave identically: a user who learns
 /// that typing "cam" finds Camera in the outliner expects the same in the asset grid, and two

@@ -24,7 +24,7 @@ public:
     virtual ~IPhysicsSystemUVE() = default;
 
     /// Runs exactly one fixed-size simulation step: integrates every non-kinematic
-    /// `RigidBodyComponentUVE` (gravity * gravityScale, semi-implicit Euler, linear drag),
+    /// `Rigid3DComponentUVE` (gravity * gravityScale, semi-implicit Euler, linear drag),
     /// calls `sceneGraph.UpdateUVE()` so `WorldTransformComponentUVE` reflects this step's new
     /// positions, detects collisions among every `ColliderComponentUVE` entity, resolves
     /// overlaps with mass-weighted positional correction and into-surface-only velocity removal

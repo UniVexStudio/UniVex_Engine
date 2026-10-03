@@ -8,7 +8,7 @@
 
 namespace UVE::Scene {
 
-/// How a CharacterBody3D reads the world around it.
+/// How a Character3D reads the world around it.
 enum class CharacterMotionModeUVE : std::uint8_t {
     /// Walks: gravity pulls it down, it stands on floors, climbs steps and slides off walls.
     Grounded = 0,
@@ -16,7 +16,7 @@ enum class CharacterMotionModeUVE : std::uint8_t {
     Floating,
 };
 
-/// CharacterBody3D's own state: a body moved by its code (or by the built-in movement below)
+/// Character3D's own state: a body moved by its code (or by the built-in movement below)
 /// rather than by forces, driven every fixed step by `EngineCoreUVE::SyncCharacterControllersUVE()`
 /// through `Physics::CharacterControllerUVE::MoveWithToIUVE`. Its shape is the entity's collider.
 ///
@@ -72,7 +72,7 @@ struct CharacterControllerComponentUVE final {
     /// Metres per second. With built-in movement off, set this and the body goes there, sliding
     /// along walls. With it on and Floating, Space rises and Left Ctrl sinks.
     Math::Vector3UVE velocity{};
-    bool isOnFloor = false;
+    bool grounded = false;
     bool isOnCeiling = false;
     /// The floor's normal while on it; straight up otherwise.
     Math::Vector3UVE floorNormal{0.0F, 1.0F, 0.0F};

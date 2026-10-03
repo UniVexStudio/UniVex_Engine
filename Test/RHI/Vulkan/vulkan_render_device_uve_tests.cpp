@@ -608,17 +608,38 @@ TEST_F(VulkanRenderDeviceUVETest, TextureCreationValidationAndLifecycleAreReal) 
     EXPECT_NE(device->CreateTextureUVE(validF16), kInvalidTextureHandleUVE)
         << "R16G16B16A16_SFLOAT sampled+transfer-dst is a mandatory format feature set";
 
+    TextureDescUVE validSrgb{};
+    validSrgb.width = 2U;
+    validSrgb.height = 2U;
+    validSrgb.colorSpace = TextureColorSpaceUVE::Srgb;
+    const std::array<std::byte, 16U> srgbPixels{};
+    const TextureHandleUVE srgbTexture = device->CreateTextureUVE(validSrgb, srgbPixels);
+    ASSERT_NE(srgbTexture, kInvalidTextureHandleUVE)
+        << "RGBA8 sRGB sampled views must be supported for imported color textures";
+
+    device->DestroyTextureUVE(srgbTexture);
     device->DestroyTextureUVE(colorTex);
     device->DestroyTextureUVE(colorTex); // already destroyed: safe no-op, per interface contract
     device->DestroyTextureUVE(kInvalidTextureHandleUVE); // never valid: safe no-op too
+}
+
+TEST_F(VulkanRenderDeviceUVETest, CompressedSrgbTextureUploadsEveryBlockMipWhenAvailable) {
+    if (!device->SupportsTextureFormatUVE(TextureFormatUVE::ETC2RGBA8, TextureColorSpaceUVE::Srgb)) {
+        GTEST_SKIP() << "physical device does not support ETC2 sRGB sampled images";
+    }
+    TextureDescUVE desc{7U, 5U, TextureFormatUVE::ETC2RGBA8, 2U, TextureColorSpaceUVE::Srgb};
+    std::array<std::byte, 80U> blocks{}; // 4 base blocks + one 3x2 mip block, 16 bytes each
+    const TextureHandleUVE texture = device->CreateTextureUVE(desc, blocks);
+    ASSERT_NE(texture, kInvalidTextureHandleUVE);
+    device->DestroyTextureUVE(texture);
 }
 
 TEST_F(VulkanRenderDeviceUVETest, TexturedQuadRendersUploadedPixelsAndUnboundFallback) {
     // The M2c pixel proof, three frames against one pipeline:
     //   frame 1 - NO BindTextureUVE: every sampled fragment must be the fallback texture's
     //             opaque white (deterministic unbound-slot contract, not undefined content).
-    //   frame 2 - checker texture bound at slot 0: the four quadrants must read back the
-    //             exact uploaded texel colors - staging upload, sampler, and the per-tuple
+    //   frame 2 - sRGB checker texture bound at slot 0: the four quadrants must read back the
+    //             uploaded texel colors - sRGB sampled view, staging upload, and per-tuple
     //             descriptor set all proven by pixels.
     //   frame 3 - texture destroyed after recording the SAME bind: the destroyed handle can
     //             no longer resolve, so the draw degrades to the fallback (white) instead of
@@ -672,6 +693,7 @@ TEST_F(VulkanRenderDeviceUVETest, TexturedQuadRendersUploadedPixelsAndUnboundFal
     TextureDescUVE checkerDesc{};
     checkerDesc.width = 2U;
     checkerDesc.height = 2U;
+    checkerDesc.colorSpace = TextureColorSpaceUVE::Srgb;
     const TextureHandleUVE checkerTexture = device->CreateTextureUVE(checkerDesc,
         std::span<const std::byte>(reinterpret_cast<const std::byte*>(checkerData), sizeof(checkerData)));
     ASSERT_NE(checkerTexture, kInvalidTextureHandleUVE);
@@ -844,6 +866,92 @@ TEST_F(VulkanRenderDeviceUVETest, TexturedQuadRendersUploadedPixelsAndUnboundFal
     pipelineDesc.depthTestEnabled = false;
     pipelineDesc.depthWriteEnabled = false;
     return device.CreatePipelineUVE(pipelineDesc);
+}
+
+TEST_F(VulkanRenderDeviceUVETest, TextureMipChainIsUploadedAndSampledDuringMinification) {
+    // The image is red at level 0 and green at every lower level. Spanning 16 UV units
+    // across the swapchain forces implicit minification on both the 64x64 window and the
+    // larger headless swapchain; the center pixel therefore proves a real nonzero mip is
+    // initialized, visible through the sampled view, and reachable through the sampler LOD.
+    constexpr std::uint32_t baseSize = 256U;
+    constexpr std::uint32_t mipLevelCount = 9U; // 256 -> 128 -> ... -> 1
+    std::vector<std::byte> mipPixels;
+    std::uint32_t mipWidth = baseSize;
+    std::uint32_t mipHeight = baseSize;
+    for (std::uint32_t level = 0U; level < mipLevelCount; ++level) {
+        const std::array<std::byte, 4U> color = level == 0U
+            ? std::array<std::byte, 4U>{std::byte{0xFF}, std::byte{0}, std::byte{0}, std::byte{0xFF}}
+            : std::array<std::byte, 4U>{std::byte{0}, std::byte{0xFF}, std::byte{0}, std::byte{0xFF}};
+        const std::size_t texelCount = static_cast<std::size_t>(mipWidth) * mipHeight;
+        mipPixels.reserve(mipPixels.size() + texelCount * color.size());
+        for (std::size_t texel = 0U; texel < texelCount; ++texel) {
+            mipPixels.insert(mipPixels.end(), color.begin(), color.end());
+        }
+        mipWidth = mipWidth > 1U ? mipWidth / 2U : 1U;
+        mipHeight = mipHeight > 1U ? mipHeight / 2U : 1U;
+    }
+
+    ShaderHandleUVE vertexShader{};
+    ShaderHandleUVE fragmentShader{};
+    const PipelineHandleUVE pipeline = CreateTexturedPipelineUVE(*device, &vertexShader, &fragmentShader);
+    ASSERT_NE(pipeline, kInvalidPipelineHandleUVE);
+    TextureDescUVE textureDesc{};
+    textureDesc.width = baseSize;
+    textureDesc.height = baseSize;
+    textureDesc.mipLevels = mipLevelCount;
+    const TextureHandleUVE texture = device->CreateTextureUVE(
+        textureDesc, std::span<const std::byte>(mipPixels));
+    ASSERT_NE(texture, kInvalidTextureHandleUVE);
+
+    constexpr float uvScale = 16.0F;
+    const float quadVertices[30] = {
+        -1.0F, -1.0F, 0.0F,  0.0F,     0.0F,
+         1.0F, -1.0F, 0.0F,  uvScale,  0.0F,
+        -1.0F,  1.0F, 0.0F,  0.0F,     uvScale,
+         1.0F, -1.0F, 0.0F,  uvScale,  0.0F,
+         1.0F,  1.0F, 0.0F,  uvScale,  uvScale,
+        -1.0F,  1.0F, 0.0F,  0.0F,     uvScale,
+    };
+    const BufferHandleUVE vertexBuffer = device->CreateBufferUVE(
+        BufferDescUVE{sizeof(quadVertices), BufferUsageUVE::Vertex},
+        std::span<const std::byte>(reinterpret_cast<const std::byte*>(quadVertices),
+                                   sizeof(quadVertices)));
+    ASSERT_NE(vertexBuffer, kInvalidBufferHandleUVE);
+
+    auto commandBuffer = device->CreateCommandBufferUVE();
+    ASSERT_NE(commandBuffer, nullptr);
+    RenderPassDescUVE passDesc{};
+    passDesc.colorLoadOp = LoadOpUVE::Clear;
+    passDesc.clearColor = {0.0F, 0.0F, 0.0F, 1.0F};
+    passDesc.depthLoadOp = LoadOpUVE::Clear;
+    passDesc.clearDepth = 1.0F;
+    commandBuffer->BeginRenderPassUVE(passDesc);
+    commandBuffer->BindPipelineUVE(pipeline);
+    commandBuffer->BindVertexBufferUVE(vertexBuffer);
+    commandBuffer->BindTextureUVE(texture, 0U);
+    commandBuffer->DrawUVE(6U);
+    commandBuffer->EndRenderPassUVE();
+    device->SubmitUVE(std::move(commandBuffer));
+    device->PresentUVE();
+    ASSERT_TRUE(device->IsUsableUVE());
+
+    std::uint32_t width = 0U;
+    std::uint32_t height = 0U;
+    EXPECT_FALSE(device->ReadbackLatestPresentedImageUVE({}, width, height)); // extent query
+    ASSERT_GT(width, 0U);
+    ASSERT_GT(height, 0U);
+    std::vector<std::byte> pixels(static_cast<std::size_t>(width) * height * 4U);
+    ASSERT_TRUE(device->ReadbackLatestPresentedImageUVE(pixels, width, height));
+    const auto center = ChannelAtNdcUVE(pixels, width, height, 0.0F, 0.0F);
+    EXPECT_LT(center[0], 60) << "minified sample must not use level 0 (red)";
+    EXPECT_GT(center[1], 200) << "a populated lower mip must supply the sampled green value";
+    EXPECT_LT(center[2], 60);
+
+    device->DestroyBufferUVE(vertexBuffer);
+    device->DestroyTextureUVE(texture);
+    device->DestroyPipelineUVE(pipeline);
+    device->DestroyShaderUVE(fragmentShader);
+    device->DestroyShaderUVE(vertexShader);
 }
 
 TEST_F(VulkanRenderDeviceUVETest, OffscreenColorPassRendersIntoTheTextureForSampling) {
@@ -3315,8 +3423,8 @@ TEST_F(VulkanRenderDeviceUVETest, DispatchAndDrawMisuseWithWrongPipelineKindDegr
 }
 
 TEST_F(VulkanRenderDeviceUVETest, ComputeImageStoreFillsTextureProvingRealStorageImages) {
-    // The M5b compute-side pixel proof — two frames against ONE zero-initialized 4x4 RGBA8
-    // texture, exactly the M5a control pattern:
+    // The M5b compute-side pixel proof — two frames against ONE zero-initialized 4x4 sRGB RGBA8
+    // texture, exercising both its UNORM storage alias and hardware-decoding sampled view:
     //   frame 1 (control): no dispatch. The M2c combined-sampler quad samples the untouched
     //     texture — the center must be BLACK, proving the texture starts zeroed.
     //   frame 2: the image-fill compute pipeline is bound OUTSIDE the pass markers,
@@ -3353,6 +3461,7 @@ TEST_F(VulkanRenderDeviceUVETest, ComputeImageStoreFillsTextureProvingRealStorag
     TextureDescUVE targetDesc{};
     targetDesc.width = 4U;
     targetDesc.height = 4U;
+    targetDesc.colorSpace = TextureColorSpaceUVE::Srgb;
     const TextureHandleUVE targetTexture = device->CreateTextureUVE(
         targetDesc,
         std::span<const std::byte>(reinterpret_cast<const std::byte*>(zeroPixels),

@@ -12,16 +12,16 @@ The comparison point is GDScript (Godot 4.x). The weaknesses that shaped UVScrip
 |---|---|
 | Typing is optional. Untyped code is slow, because every operation resolves the type at run time. | Every value has a static type. It is inferred when left out (`let n = 3`), and checked before the game runs. |
 | Interpreted. Hot loops are about half the speed of C#. | Compiled: a bytecode VM in the editor (instant reload), and C++23 generated from the same bytecode for release builds. |
-| No tuples, and no generics on user types. | Tuples (`let (a, b) = pair()`) and typed collections (`list[int]`, `map[str, Node3D]`). |
+| No tuples, and no generics on user types. | Tuples (`let (a, b) = pair()`) and typed collections (`list[int]`, `map[str, Object3D]`). |
 | Signals are connected by name as strings; typos show up at run time. | Events are blocks (`on body_entered(other):`). The compiler checks the name and the parameters against the node kind. |
-| `await` needs a signal or a timer object. | `wait 0.5 s`, `wait until is_on_floor`, `wait next_frame`. The node pauses; nothing is allocated. |
+| `await` needs a signal or a timer object. | `wait 0.5 s`, `wait until grounded`, `wait next_frame`. The node pauses; nothing is allocated. |
 | Numbers carry no units, so seconds vs frames and degrees vs radians get mixed up. | Unit literals (`2 s`, `150 ms`, `90 deg`, `3 m`). Angles are converted to radians at compile time. |
 | The built-in editor has no rename refactoring. | Every symbol resolves to one declaration, so the editor can rename safely. The node's own name is a symbol too. |
 
 ## A script
 
 ```
-entity Player : CharacterBody3D
+entity Player : Character3D
 
 export speed: float = 6.0
 export jump_height = 1.2 m
@@ -33,11 +33,11 @@ on ready:
 on tick(dt):
     let move = input.axis("left", "right")
     velocity.x = move * speed
-    if is_on_floor and input.pressed("jump"):
+    if grounded and input.pressed("jump"):
         velocity.y = sqrt(2.0 * gravity * jump_height)
         jumps += 1
 
-on body_entered(other: Node3D):
+on body_entered(other: Object3D):
     wait 0.5 s
     other.hide()
 
@@ -47,7 +47,7 @@ fn heal(amount: int) -> bool:
 ```
 
 - **`entity Name : Kind`** is the first line. It says which node kind the script drives. Its
-  properties (`velocity`, `is_on_floor`, ...) are in scope without `self.`.
+  properties (`velocity`, `grounded`, ...) are in scope without `self.`.
 - **`export`** shows a field in the Inspector. **`var`** keeps a value between frames. **`let`**
   is a local. **`const`** is fixed at compile time.
 - **`on <event>`** runs when the event happens. **`fn`** declares a function.
@@ -119,7 +119,7 @@ primary     := NUMBER UNIT? | STRING | 'true' | 'false' | 'none' | IDENT | '(' e
    - `ready` runs once, then `tick(dt)` every frame, in process-priority order, and paused with the
      rest of the simulation;
    - the host gives `name`, `position`, `scale`, and on a character body `velocity` and
-     `is_on_floor`, plus `input.pressed/held/released/axis`.
+     `grounded`, plus `input.pressed/held/released/axis`.
    - a saved edit restarts the script within half a second, and fixing a broken file is enough
      for it to be retried.
 4. **Editor.** The Inspector's script slot has **New UVScript**: it writes `scripts/<node>.uvs`

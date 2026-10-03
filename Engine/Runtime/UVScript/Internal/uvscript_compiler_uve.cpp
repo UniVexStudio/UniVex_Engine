@@ -119,9 +119,9 @@ private:
         if (ref.name == "str") return TypeUVE::StrUVE();
         if (ref.name == "vec3") return TypeUVE::Vec3UVE();
         if (!ref.name.empty() && std::isupper(static_cast<unsigned char>(ref.name.front())) != 0) {
-            return TypeUVE::NodeUVE(ref.name);
+            return TypeUVE::ObjectUVE(ref.name);
         }
-        Error(ref.at, "'" + ref.name + "' is not a type - use int, float, bool, str, vec3 or a node kind");
+        Error(ref.at, "'" + ref.name + "' is not a type - use int, float, bool, str, vec3 or an object kind");
         return std::nullopt;
     }
 
@@ -174,7 +174,7 @@ private:
             case Kind::Float: return 0.0;
             case Kind::Str: return std::string{};
             case Kind::Vec3: return Vec3ValueUVE{};
-            case Kind::Node: return NodeRefUVE{};
+            case Kind::Object: return ObjectRefUVE{};
             default: return std::monostate{};
         }
     }
@@ -185,7 +185,7 @@ private:
         for (const FieldUVE& field : file.fields) {
             if (m_fields.contains(field.name) || m_host.DescribePropertyUVE(field.name).has_value()) {
                 Error(field.at, "'" + field.name + "' is already declared" +
-                                    (m_fields.contains(field.name) ? "" : " - the node has a property by that name"));
+                                    (m_fields.contains(field.name) ? "" : " - the object has a property by that name"));
                 continue;
             }
             TypeUVE type = TypeUVE::ErrorUVE();
@@ -325,7 +325,7 @@ private:
     void CompileHandler(const HandlerUVE& handler) {
         const std::optional<std::vector<TypeUVE>> params = m_host.DescribeEventUVE(handler.event);
         if (!params.has_value()) {
-            Error(handler.at, "this node has no event '" + handler.event + "'");
+            Error(handler.at, "this object has no event '" + handler.event + "'");
             return;
         }
         if (std::ranges::any_of(m_program.handlers, [&](const auto& h) { return h.first == handler.event; })) {
@@ -1010,7 +1010,7 @@ std::uint64_t ComputeProgramFingerprintUVE(const ProgramUVE& program) {
     };
     const auto type = [&number, &text](const TypeUVE& value) {
         number(static_cast<std::uint64_t>(value.kind));
-        text(value.node);
+        text(value.object);
     };
     const auto chunk = [&](const ChunkUVE& value) {
         text(value.name);

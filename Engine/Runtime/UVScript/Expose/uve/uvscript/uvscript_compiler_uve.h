@@ -15,7 +15,7 @@
 namespace UVE::UVScript {
 
 /// A compiled script: bytecode for every handler and function, and the field layout. Immutable and
-/// shareable - every node running the same script uses one program.
+/// shareable - every object running the same script uses one program.
 struct ProgramUVE;
 
 /// A field as the Inspector sees it.
