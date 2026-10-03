@@ -695,7 +695,7 @@ void DeclareAnimationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                                                          "AnimationParameterList"),
                                                "animation-parameters"),
                            "Parameters"),
-                InGroupUVE(WithCustomDrawerUVE(DeclareUVE<&T::objects>("nodes", "Graph", "AnimationGraphObjectList"),
+                InGroupUVE(WithCustomDrawerUVE(DeclareUVE<&T::objects>("objects", "Graph", "AnimationGraphObjectList"),
                                                "animation-graph"),
                            "Graph"),
                 InGroupUVE(DeclareRuntimeStateUVE<&T::activeStates>("activeStates", "Active States",
