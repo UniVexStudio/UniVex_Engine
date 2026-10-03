@@ -1898,7 +1898,7 @@ TEST_F(SceneSerializerUVETest, CaptureRestoreUVE_KeepsSiblingOrder) {
 TEST_F(SceneSerializerUVETest, SaveLoadUVE_VisibilityRoundTripsTheAuthoredFlagOnly) {
     // Hiding an object has to survive a save. It also has to survive WITHOUT carrying the derived
     // field across: visibleInHierarchy depends on the entity's ancestors, so persisting it would
-    // store an answer that is wrong the moment a object is saved under one parent and loaded under
+    // store an answer that is wrong the moment an object is saved under one parent and loaded under
     // another.
     SceneGraphUVE sceneGraph;
     const EntityUVE source = entityManager.CreateEntityUVE();

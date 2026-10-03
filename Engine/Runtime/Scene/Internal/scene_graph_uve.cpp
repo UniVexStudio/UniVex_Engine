@@ -406,7 +406,7 @@ void SceneGraphUVE::UpdateUVE(IEntityManagerUVE& entityManager) {
 
             if (item.world == nullptr) {
                 // A pure Object. Visibility and the modes pass through it exactly as they would
-                // through a object without those components; its interpolation answer is resolved
+                // through an object without those components; its interpolation answer is resolved
                 // without a pose, because it has none to record.
                 const WorldTransformPassStateUVE parentState =
                     hasParent ? parentIt->second : WorldTransformPassStateUVE{};
@@ -533,7 +533,7 @@ void SceneGraphUVE::UpdateUVE(IEntityManagerUVE& entityManager) {
 
 std::vector<EntityUVE> SceneGraphUVE::GetChildrenUVE(IEntityManagerUVE& entityManager, EntityUVE parent) {
     // Sorted, because the ECS visits entities in storage order, which moves whenever a component
-    // is added or removed: without it, giving a object a script could reorder its siblings.
+    // is added or removed: without it, giving an object a script could reorder its siblings.
     std::vector<std::pair<std::int64_t, EntityUVE>> ordered;
     entityManager.ForEachUVE<HierarchyComponentUVE>(
         [&ordered, parent](EntityUVE entity, HierarchyComponentUVE& hierarchy) {

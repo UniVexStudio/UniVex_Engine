@@ -30,7 +30,7 @@ TEST(VariantUVETest, MakeDefaultUVE_StoresTheTypeItWasAskedForWithAMatchingValue
         EXPECT_EQ(value.GetTypeUVE(), type) << GetVariantTypeNameUVE(type);
         EXPECT_TRUE(IsVariantWithinBoundsUVE(value));
     }
-    // Types that share a representation stay distinct: a object reference is not a plain string.
+    // Types that share a representation stay distinct: an object reference is not a plain string.
     EXPECT_NE(VariantUVE::MakeTextUVE(VariantTypeUVE::Object, "Player"),
               VariantUVE::MakeTextUVE(VariantTypeUVE::String, "Player"));
     EXPECT_EQ(VariantUVE::MakeDefaultUVE(VariantTypeUVE::Quaternion).TryGetUVE<Math::QuaternionUVE>()->w, 1.0F);

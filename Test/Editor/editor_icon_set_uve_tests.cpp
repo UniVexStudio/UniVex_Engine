@@ -43,7 +43,7 @@ TEST(EditorIconSetUVETest, AnOpenFolderHasItsOwnIcon) {
 }
 
 TEST(EditorIconSetUVETest, LookupIsPerGroupAndIgnoresOnlyCase) {
-    // "script" is both a object and a content type; the group decides which picture comes back.
+    // "script" is both an object and a content type; the group decides which picture comes back.
     const EditorIconSourceUVE* const object = FindEditorIconSourceUVE(EditorIconGroupUVE::Object, "script");
     const EditorIconSourceUVE* const file = FindEditorIconSourceUVE(EditorIconGroupUVE::ContentType, "Script");
     ASSERT_NE(object, nullptr);

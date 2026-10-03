@@ -78,7 +78,7 @@ struct SceneObjectDescriptorUVE final {
 
 inline constexpr std::size_t kMaximumSceneObjectDescriptorsUVE = 64U;
 
-/// Where a object kind belongs. The world holds the level itself - meshes, lights, cameras,
+/// Where an object kind belongs. The world holds the level itself - meshes, lights, cameras,
 /// environment, volumes - and is what the Scene panel's "+" offers first. An Entity object is part of
 /// something that lives in the world: a character's body, its animation, its hitboxes. Those are
 /// built inside an Entity asset and brought into the level whole.

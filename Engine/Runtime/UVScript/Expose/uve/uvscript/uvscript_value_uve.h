@@ -50,7 +50,7 @@ struct Vec3ValueUVE final {
     bool operator==(const Vec3ValueUVE&) const = default;
 };
 
-/// A handle to a object the host knows; 0 is no object.
+/// A handle to an object the host knows; 0 is no object.
 struct ObjectRefUVE final {
     std::uint64_t id = 0U;
 

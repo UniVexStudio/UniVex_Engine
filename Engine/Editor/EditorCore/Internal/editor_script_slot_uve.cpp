@@ -1,9 +1,9 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-// The Scripting slot: the Inspector row that says which script a object runs, and the commands
+// The Scripting slot: the Inspector row that says which script an object runs, and the commands
 // behind its actions - New UVScript, Open, Quick Load, Load and Clear.
 //
-// A object's script is one `.uvs` file, the asset its Script component names. New UVScript writes
+// An object's script is one `.uvs` file, the asset its Script component names. New UVScript writes
 // that file with a header naming the object and its kind and opens it in the text editor; Quick
 // Load and Load point the object at a script that already exists.
 
@@ -33,7 +33,7 @@ namespace {
 constexpr std::string_view kScriptFolderUVE = "scripts";
 constexpr std::string_view kUVScriptExtensionUVE = ".uvs";
 
-/// A file stem from a object name: letters, digits, '-' and '_' kept, anything else an underscore,
+/// A file stem from an object name: letters, digits, '-' and '_' kept, anything else an underscore,
 /// runs of underscores collapsed. "Main Menu (old)" becomes "Main_Menu_old".
 [[nodiscard]] std::string ScriptFileStemUVE(const std::string& name) {
     std::string stem;

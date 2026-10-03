@@ -157,7 +157,7 @@ enum class EditorNewObjectPlacementUVE {
     ViewFocus,
 };
 
-/// Where a object moves among its siblings: one place up or down, or to either end.
+/// Where an object moves among its siblings: one place up or down, or to either end.
 enum class EditorSiblingMoveUVE {
     Up,
     Down,
@@ -389,7 +389,7 @@ public:
         // so picking the same view twice still re-snaps, and nothing has to be "consumed".
         ViewportViewUVE view = ViewportViewUVE::User;
         std::uint32_t viewRequestSerial = 0U;
-        // A request to bring a object into view (F over the viewport, or Focus in Viewport on a
+        // A request to bring an object into view (F over the viewport, or Focus in Viewport on a
         // hierarchy row), applied by the host when the counter changes, like the view request.
         Scene::EntityUVE focusEntity = Scene::kInvalidEntityUVE;
         std::uint32_t focusRequestSerial = 0U;
@@ -576,7 +576,7 @@ public:
     [[nodiscard]] const std::vector<EntityCompileProblemUVE>& GetEntityEditorProblemsUVE() const noexcept;
     /// False until Compile has run for this session (so "no problems" means something).
     [[nodiscard]] bool HasEntityEditorCompiledUVE() const noexcept;
-    /// One `on <event>` handler in a object's script: what the object answers to.
+    /// One `on <event>` handler in an object's script: what the object answers to.
     struct EntitySignalRowUVE final {
         Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
         std::string objectName;
@@ -695,7 +695,7 @@ public:
     /// request until it is next drawn, so reopening the branch later shows it closed. Returns
     /// false for anything that is not a document entity.
     [[nodiscard]] bool SetHierarchyBranchOpenUVE(Scene::EntityUVE entity, bool open);
-    /// The display name of `entity`'s object type ("Static3D"): its stored type, or for a object
+    /// The display name of `entity`'s object type ("Static3D"): its stored type, or for an object
     /// saved before types were stored, the best reading of its components
     /// (Scene::ResolveSceneObjectKindUVE). Empty for anything that is not a document entity.
     [[nodiscard]] std::string_view GetObjectTypeNameUVE(Scene::EntityUVE entity) const;
@@ -1565,10 +1565,10 @@ private:
     /// Returns whether `entity` carries the scene-root marker. The root is never deletable,
     /// re-parentable, or duplicable - every one of those commands checks this first.
     [[nodiscard]] bool IsSceneRootEntityUVE(Scene::EntityUVE entity) const;
-    /// A object the tree is built on and that cannot be deleted, duplicated or moved: the scene
+    /// An object the tree is built on and that cannot be deleted, duplicated or moved: the scene
     /// root, and while the Entity Editor is open, the entity's own root.
     [[nodiscard]] bool IsStructuralRootUVE(Scene::EntityUVE entity);
-    /// Gives a object the recipe parts it was saved without - Visibility for a spatial object and the
+    /// Gives an object the recipe parts it was saved without - Visibility for a spatial object and the
     /// common Object section - so its Inspector always shows the full recipe.
     void RepairInspectorRecipeUVE(Scene::EntityUVE entity);
     /// Registers the hand-drawn Transform section; called at Transform's place in section order.
@@ -2225,7 +2225,7 @@ private:
         bool snap = true;
         float snapStep = 0.1F;
         int pickClipForSlot = -1;
-        /// An inline value on a object being dragged: the tree before it, for one undo step.
+        /// An inline value on an object being dragged: the tree before it, for one undo step.
         bool inlineEditing = false;
         Scene::AnimationTreeComponentUVE inlineBefore;
         /// Clip file names by guid, for labels.
@@ -2327,7 +2327,7 @@ private:
     // True while the orthographic projection came from a named view rather than an explicit choice.
     bool m_viewportOrthographicIsAutomatic = false;
     // Reveal-on-select: when the active selection changes, the hierarchy opens the rows above it
-    // and scrolls it into view once, so a object picked in the viewport or just added is never
+    // and scrolls it into view once, so an object picked in the viewport or just added is never
     // hidden in a collapsed branch. Once shown, the user is free to collapse it again.
     Scene::EntityUVE m_hierarchyRevealedEntity = Scene::kInvalidEntityUVE;
     std::vector<Scene::EntityUVE> m_hierarchyRevealAncestors;

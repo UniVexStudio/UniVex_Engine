@@ -18,7 +18,7 @@ enum class FogVolumeShapeUVE : std::uint8_t {
     Cone,
     Cylinder,
     Box,
-    /// Fills the whole world, ignoring the size - a global fog layer with a object you can place.
+    /// Fills the whole world, ignoring the size - a global fog layer with an object you can place.
     World,
 };
 

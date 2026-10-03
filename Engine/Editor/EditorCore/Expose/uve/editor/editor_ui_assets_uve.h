@@ -28,7 +28,7 @@ public:
     [[nodiscard]] std::uintptr_t GetGeneralIconTextureIdUVE(std::string_view iconId) const noexcept;
     /// The icon of a scene object type. Every object type has one; 0 only before InitializeUVE().
     [[nodiscard]] std::uintptr_t GetObjectIconTextureIdUVE(Scene::Objects::SceneObjectKindUVE kind) const noexcept;
-    /// The icon of a object palette category, by its display name ("Physics"). 0 when unknown.
+    /// The icon of an object palette category, by its display name ("Physics"). 0 when unknown.
     [[nodiscard]] std::uintptr_t GetObjectCategoryIconTextureIdUVE(std::string_view category) const noexcept;
     /// The icon of a Content Browser type, by its ContentBrowserItemTypeUVE label (editor_uve.h),
     /// e.g. "Mesh" or "Folder", or "folder_open" for an expanded folder. 0 when unknown.

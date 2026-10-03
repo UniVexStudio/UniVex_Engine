@@ -462,7 +462,7 @@ void EngineCoreUVE::Init() {
     // NullRenderDeviceUVE) and windowed mode (against GlRenderDeviceUVE).
     m_fileSystem->MountDirectoryUVE(m_config.shaderSourceMountPrefixUVE, m_config.shaderSourceRealDirectoryUVE, 0);
     // The project itself, beneath everything else: without it no project-relative asset path -
-    // a object's script above all - could be read at runtime, so scripts were saved but never ran.
+    // an object's script above all - could be read at runtime, so scripts were saved but never ran.
     if (!m_config.projectRootDirectoryUVE.empty()) {
         m_fileSystem->MountDirectoryUVE("", m_config.projectRootDirectoryUVE, -100);
     }

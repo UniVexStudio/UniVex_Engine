@@ -352,7 +352,7 @@ TEST(SceneObjectEditorUVETest, OutlinerLayoutUVE_LevelTopIsViewportSunAndEnviron
         EXPECT_FALSE(editor.ReparentSelectedEntityUVE(sun));
         EXPECT_TRUE(editor.ReparentSelectedEntityUVE(props));
         EXPECT_EQ(parentOf(mesh), props);
-        // "Move to top" keeps a object in a folder, and a folder in the Viewport.
+        // "Move to top" keeps an object in a folder, and a folder in the Viewport.
         EXPECT_TRUE(editor.ReparentSelectedEntityUVE(Scene::kInvalidEntityUVE));
         EXPECT_TRUE(entityManager.HasComponentUVE<Scene::FolderComponentUVE>(parentOf(mesh)));
         editor.SelectEntityUVE(props);

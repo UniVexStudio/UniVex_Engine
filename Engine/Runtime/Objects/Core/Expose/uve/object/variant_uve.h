@@ -20,7 +20,7 @@ namespace UVE::Core {
 
 /// Every value type a VariantUVE can hold. The engine had three partial versions of this - the
 /// data table's (bool/int/double/string), and two in scripting (floats, vectors, entity handles) -
-/// none of which could carry a object path, a colour with alpha, an array or a packed array. This is
+/// none of which could carry an object path, a colour with alpha, an array or a packed array. This is
 /// the one that can, so authored per-instance data does not have to be squeezed into a string.
 ///
 /// The order is the order the type picker shows within each category. Values are persisted by
@@ -85,7 +85,7 @@ struct VariantDictionaryEntryUVE; // Defined after VariantUVE, which it holds by
 ///
 /// The type is stored explicitly, not inferred from the storage, because several types share a
 /// representation and must stay distinct: String, StringName, ObjectPath and Object are all text; an
-/// Int and a Resource are both integers. Losing that distinction would turn a object reference into
+/// Int and a Resource are both integers. Losing that distinction would turn an object reference into
 /// an ordinary string the moment it was saved.
 ///
 /// Built only through MakeDefaultUVE or the typed Make* helpers below, so the type and the storage
@@ -181,7 +181,7 @@ struct VariantConversionUVE final {
 /// Converts `value` to `target`, keeping as much as the target can represent: numbers among
 /// themselves and to and from text, text types among themselves, vectors between sizes and to and
 /// from colours and quaternions, and arrays to and from packed arrays element by element. Returns
-/// nothing when there is no meaningful conversion (a colour to a object path); the editor then offers
+/// nothing when there is no meaningful conversion (a colour to an object path); the editor then offers
 /// the target type's default instead, and says so.
 [[nodiscard]] std::optional<VariantConversionUVE> TryConvertVariantUVE(const VariantUVE& value,
                                                                        VariantTypeUVE target);

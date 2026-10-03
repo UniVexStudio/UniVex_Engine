@@ -25,7 +25,7 @@ namespace UVE::Editor {
 /// What input `slot` of a kind means: "A"/"B", "Base"/"Layer", "State 2"...
 [[nodiscard]] std::string AnimationGraphSlotLabelUVE(Scene::AnimationGraphObjectKindUVE kind, std::size_t slot);
 
-/// Adds a object of `kind` at `position` with the empty input slots the kind needs (two for Blend,
+/// Adds an object of `kind` at `position` with the empty input slots the kind needs (two for Blend,
 /// Additive, One Shot, Select and Layered Blend; one for Time Scale, Time Seek and State Machine).
 /// A Blend Space starts with no points and no inputs: its editor adds them. Returns its id, or 0
 /// for Output (a graph has exactly one) or a full graph.
@@ -38,7 +38,7 @@ std::uint32_t AddAnimationGraphObjectUVE(std::vector<Scene::AnimationGraphObject
 [[nodiscard]] bool CanConnectAnimationGraphObjectsUVE(const std::vector<Scene::AnimationGraphObjectUVE>& objects,
                                                     std::uint32_t target, std::size_t slot, std::uint32_t source);
 
-/// Wires `source` into input `slot` of `target`. A object feeds one slot only, so a source already
+/// Wires `source` into input `slot` of `target`. An object feeds one slot only, so a source already
 /// wired elsewhere moves here. Returns false, changing nothing, when CanConnect says no.
 bool ConnectAnimationGraphObjectsUVE(std::vector<Scene::AnimationGraphObjectUVE>& objects, std::uint32_t target,
                                    std::size_t slot, std::uint32_t source);
@@ -52,7 +52,7 @@ std::size_t DeleteAnimationGraphObjectsUVE(std::vector<Scene::AnimationGraphObje
                                          const std::vector<std::uint32_t>& ids);
 
 /// Copies the objects (never the Output) with new ids, offset by `offset`. Wires between copied
-/// objects follow the copies; wires to objects outside the set are left empty, since a object feeds one
+/// objects follow the copies; wires to objects outside the set are left empty, since an object feeds one
 /// slot only. Returns the new ids, in the order given.
 std::vector<std::uint32_t> DuplicateAnimationGraphObjectsUVE(std::vector<Scene::AnimationGraphObjectUVE>& objects,
                                                            const std::vector<std::uint32_t>& ids,

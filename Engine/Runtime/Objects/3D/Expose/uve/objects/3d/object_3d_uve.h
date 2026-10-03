@@ -53,7 +53,7 @@ void ApplyObject3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUV
 void EnsureObject3DBaselineUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
                              std::string_view nameFallback);
 
-/// The recipe of a pure Object - a object with no transform, such as the scene root or an
+/// The recipe of a pure Object - an object with no transform, such as the scene root or an
 /// AnimationSequencer: in the hierarchy, named, carrying the common Object section and nothing spatial.
 /// Any Transform/WorldTransform/Visibility present is removed; an existing transform is first
 /// folded into the children so nothing moves on screen. Idempotent, and refuses a dead entity.

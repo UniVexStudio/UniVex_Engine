@@ -31,7 +31,7 @@ using PoseUVE = Core::TransformPoseUVE;
 /// One pose per channel: every bone of the skeleton, or the one object transform.
 using ChannelsUVE = std::vector<PoseUVE>;
 
-/// What a object hands its parent: a pose when it has one (a clip may still be loading); whether its
+/// What an object hands its parent: a pose when it has one (a clip may still be loading); whether its
 /// animation reached its end this step (what AtEnd transitions and one-shots wait for); the root
 /// bone's ground travel this step; and where its leading clip is, 0..1, for syncing.
 struct ResultUVE final {

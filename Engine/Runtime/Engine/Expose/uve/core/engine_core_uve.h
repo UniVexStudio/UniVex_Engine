@@ -474,7 +474,7 @@ private:
     /// resource is touched here - rendering that batch is a later phase.
     void SyncUIRuntimeUVE();
 
-    /// Runs every object's `.uvs` script for this frame (see SyncUVScriptsUVE). A object whose script
+    /// Runs every object's `.uvs` script for this frame (see SyncUVScriptsUVE). An object whose script
     /// path is not a `.uvs` file is reported once in m_scriptReconcileFailedEntities and skipped.
     void SyncScriptRuntimeUVE();
     /// Compiles each object's text script once, drops the
@@ -754,7 +754,7 @@ private:
     std::unique_ptr<Audio::IAudioSystemUVE> m_audioSystem;
     std::unique_ptr<Audio::IAudioSourceSystemUVE> m_audioSourceSystem;
     std::unordered_map<Scene::EntityUVE, std::string> m_scriptReconcileFailedEntities;
-    /// A object running a `.uvs` script: the path it was compiled from, so a changed path recompiles.
+    /// An object running a `.uvs` script: the path it was compiled from, so a changed path recompiles.
     struct UVScriptSlotUVE final {
         std::string path;
         /// The text it was compiled from; a file that now reads differently is recompiled.

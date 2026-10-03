@@ -260,7 +260,7 @@ void EditorUVE::RegisterTransformInspectorDrawerUVE() {
 }
 
 void EditorUVE::RepairInspectorRecipeUVE(const Scene::EntityUVE entity) {
-    // A object saved before its recipe included Visibility and the Object section is given them here,
+    // An object saved before its recipe included Visibility and the Object section is given them here,
     // where they are first needed. Every default is Inherit or empty, so this changes nothing
     // about how the scene runs.
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();

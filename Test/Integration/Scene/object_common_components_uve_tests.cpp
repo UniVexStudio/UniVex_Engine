@@ -18,7 +18,7 @@ namespace {
 // straight through - and each differs from the others in exactly one way that is worth locking.
 
 TEST(ProcessComponentUVETest, ResolveProcessModeUVE_InheritPassesThroughAndAnythingElseOverrides) {
-    // A object that never opted in must not break the chain for the objects beneath it.
+    // An object that never opted in must not break the chain for the objects beneath it.
     EXPECT_EQ(ResolveProcessModeUVE(ProcessModeUVE::Inherit, ProcessModeUVE::Always), ProcessModeUVE::Always);
     EXPECT_EQ(ResolveProcessModeUVE(ProcessModeUVE::Inherit, ProcessModeUVE::Disabled),
               ProcessModeUVE::Disabled);

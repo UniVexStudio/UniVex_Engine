@@ -102,7 +102,7 @@ void UVScriptObjectHostUVE::SetPropertyUVE(const std::string_view name, const Va
         Scene::TransformComponentUVE& transform = m_entityManager.GetComponentUVE<Scene::TransformComponentUVE>(m_entity);
         (name == "position" ? transform.localPosition : transform.localScale) = ToEngineUVE(value);
         // Marked stale so the scene graph recomputes the world transform. Not through
-        // SetLocalTransformUVE: that ignores a object that has no world transform yet.
+        // SetLocalTransformUVE: that ignores an object that has no world transform yet.
         if (m_entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(m_entity)) {
             m_entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(m_entity).dirty = true;
         }

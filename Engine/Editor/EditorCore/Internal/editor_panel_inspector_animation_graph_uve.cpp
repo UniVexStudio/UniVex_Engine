@@ -455,7 +455,7 @@ void EditorUVE::DrawAnimationGraphPropertyUVE(const Core::TypeMetadataEntryUVE& 
                         break;
                 }
 
-                // Inputs: each slot picks a object that nothing else uses yet.
+                // Inputs: each slot picks an object that nothing else uses yet.
                 for (std::size_t slot = 0U; slot < object.inputs.size(); ++slot) {
                     ImGui::PushID(static_cast<int>(slot) + 1000);
                     std::string slotLabel = SlotLabelUVE(object.kind, slot);

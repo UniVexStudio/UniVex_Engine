@@ -222,7 +222,7 @@ struct AnimationGraphObjectUVE final {
     [[nodiscard]] bool operator==(const AnimationGraphObjectUVE&) const = default;
 };
 
-/// What a object remembers between steps. Kept beside the graph, index for index, and rebuilt
+/// What an object remembers between steps. Kept beside the graph, index for index, and rebuilt
 /// whenever the graph's shape changes; never saved.
 struct AnimationGraphObjectStateUVE final {
     /// Clip: seconds into the clip.

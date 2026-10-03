@@ -3006,7 +3006,7 @@ Scene::EntityUVE EditorUVE::CreateDocumentEntityInternalUVE(
 }
 
 Scene::EntityUVE EditorUVE::ResolveNewObjectParentUVE() {
-    // In the level, a object always lives in a folder: under the selection when it is in one, else in
+    // In the level, an object always lives in a folder: under the selection when it is in one, else in
     // the folder new objects go to.
     if (IsOutlinerLayoutActiveUVE() && GetDocumentViewportUVE() != Scene::kInvalidEntityUVE) {
         Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
@@ -3586,7 +3586,7 @@ std::vector<Scene::EntityUVE> EditorUVE::GetDocumentRootsUVE() {
                                }),
                roots.end());
     // The scene root leads. The entity manager iterates in archetype order, which it documents as
-    // unspecified and which moves whenever a object's component set changes; without this the root
+    // unspecified and which moves whenever an object's component set changes; without this the root
     // could sit anywhere among stray top-level entities, in the outliner, in the reparent list, and
     // in the order a Play-mode snapshot is captured and restored.
     std::stable_partition(roots.begin(), roots.end(), [&entityManager](const Scene::EntityUVE entity) {
