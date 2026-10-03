@@ -52,7 +52,7 @@ constexpr Tree<1> kParticles = kOne(Kind::ParticleEmitter3D);
 constexpr Tree<1> kCanvas = kOne(Kind::Canvas);
 constexpr Tree<1> kLevelStreamer = kOne(Kind::LevelStreamer3D);
 constexpr Tree<1> kWorldPartition = kOne(Kind::WorldPartition3D);
-constexpr Tree<1> kNavigation = kOne(Kind::NavigationRegion3D);
+constexpr Tree<1> kNavigation = kOne(Kind::NavMeshVolume3D);
 constexpr Tree<1> kOccluder = kOne(Kind::Occluder3D);
 
 constexpr std::array<std::string_view, 9> kGroups{"Basic",     "Entity",    "Shapes",     "Lighting", "Camera",

@@ -48,8 +48,8 @@ TEST(SceneObjectRegistryUVETest, RealObjectTypesUVE_AreReachableFromTheAggregate
     static_assert(std::is_class_v<RayCast3DComponentUVE>);                 // RayCast3D
     static_assert(std::is_class_v<ColliderComponentUVE>);                      // Static3D, Collider3D
     static_assert(std::is_class_v<Kinematic3DComponentUVE>);          // Kinematic3D
-    static_assert(std::is_class_v<NavigationRegion3DComponentUVE>);        // NavigationRegion3D
-    static_assert(std::is_class_v<NavigationAgent3DComponentUVE>);         // NavigationAgent3D
+    static_assert(std::is_class_v<NavMeshVolume3DComponentUVE>);        // NavMeshVolume3D
+    static_assert(std::is_class_v<NavSeeker3DComponentUVE>);         // NavSeeker3D
     static_assert(std::is_class_v<Skeleton3DComponentUVE>);                // Skeleton3D
     static_assert(std::is_class_v<BoneAttachment3DComponentUVE>);          // BoneAttachment3D
     static_assert(std::is_class_v<SpringArm3DComponentUVE>);               // SpringArm3D

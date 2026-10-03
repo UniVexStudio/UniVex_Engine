@@ -454,6 +454,59 @@ alias names". The module is still built and still linked by `uve_scene` and `uve
 compiles and its tests pass, but nothing in the engine calls into it. That is a decision about whether
 to wire it up or delete it, not a rename, so it is reported rather than acted on.
 
+### Phase 7, first pass — Finding D, and the criterion that decides what actually gets renamed
+
+Cross-referencing all 44 kind display names against the 879-class Godot list (`comm -12`) gives 16
+exact matches:
+
+`Area3D`, `BoneAttachment3D`, `Camera3D`, `DirectionalLight3D`, `Light3D`, `Marker3D`, `MeshInstance3D`,
+`NavigationAgent3D`, `NavigationRegion3D`, `Occluder3D`, `RayCast3D`, `Script`, `Skeleton3D`,
+`SpringArm3D`, `Viewport`, `WorldEnvironment`
+
+**Matching the list is not by itself a reason to rename**, and treating it as one is how a rename pass
+ends up trading one borrowed name for another. Two checks were applied to every candidate before
+touching it:
+
+- *Is the replacement someone else's word?* `MeshRenderer3D` is Unity's `MeshRenderer`; `BoneSocket3D`
+  is Unreal's skeletal-mesh socket; `SpringArm` is Unreal's `USpringArmComponent` as well as Godot's.
+  An earlier draft of this plan proposed exactly those, so none of them is used here.
+- *Is the replacement actually more descriptive?* A lateral move — `WorldEnvironment3D` →
+  `Environment3D`, `MeshInstance3D` → `Mesh3D` — churns every document and test that names the kind
+  and leaves the reader no better off. Those are not done either.
+
+Both navigation kinds clear both checks, so they are the ones renamed in this pass:
+
+| Was | Now | typeId (persisted) | Why |
+|---|---|---|---|
+| `NavigationRegion3D` | `NavMeshVolume3D` | `navigation_region_3d` → `nav_mesh_volume_3d` | says what it holds — a navmesh volume — where "region" said nothing |
+| `NavigationAgent3D` | `NavSeeker3D` | `navigation_agent_3d` → `nav_seeker_3d` | says what it does — seeks a path — where "agent" is a placeholder |
+
+17 files, and the rename had to be **scoped by symbol, not by word**. Bare `Navigation` is legitimate
+elsewhere in the tree: `ContentNavigationHistoryUVE` is the content browser's back/forward stack and
+`DeveloperConsoleHistoryNavigationCodeUVE` is the console's. A `Navigation` → `Nav` replace would have
+hit both. Only `NavigationRegion3D`, `NavigationAgent3D`, `NavigationRegionContracts` and
+`NavigationAgentContracts` were touched, and the two unrelated families were verified intact after.
+
+Both old typeIds went into `FindSceneObjectDescriptorUVE`'s legacy list and both old component names
+into `CanonicalComponentNameUVE`, so documents written before this load unchanged. The existing
+`SceneObjectTypeUVETest.UnknownAndLegacyIdsLoadWithoutFailingTheScene` table gained the two rows;
+deleting the `navigation_agent_3d` alias makes it fail, so the rows have teeth.
+
+**The remaining 14 exact matches are a decision, not an oversight.** By the criterion above:
+
+| Kind | Verdict | Reason |
+|---|---|---|
+| `Camera3D`, `Skeleton3D`, `Light3D`, `DirectionalLight3D`, `Occluder3D`, `RayCast3D` | keep | generic CG words wearing UniVex's own `3D` suffix; no clearer name exists |
+| `Script`, `Viewport` | keep | single generic words, both universal |
+| `SpringArm3D` | keep | shared with Unreal's `USpringArmComponent`, so renaming it would not increase independence |
+| `Area3D` | candidate | `OverlapVolume3D` is more descriptive and collision-free — needs your go |
+| `Marker3D` | candidate | `Anchor3D` is more descriptive and collision-free — needs your go |
+| `BoneAttachment3D` | candidate | `BoneAnchor3D` is collision-free but arguably lateral — needs your go |
+| `MeshInstance3D`, `WorldEnvironment` | keep | every alternative tried is either another engine's word or lateral |
+
+All four candidate names were collision-checked `FREE`; none is executed here because each is a
+judgement call and two naming calls in this pass's own history were wrong.
+
 ### Verification actually run
 
 ```
@@ -463,7 +516,7 @@ cmake --build /tmp/sbuild --target uve_audit_subset_tests -j 2      # 0 errors
 [  PASSED  ] 264 tests.
 
 python3 Engine/Tools/check_math_boundary.py         → math boundary check passed   (exit 0)
-python3 Engine/Tools/check_engine_vocabulary.py     → 33 retired names + 5 stems, 0 reintroductions (exit 0)
+python3 Engine/Tools/check_engine_vocabulary.py     → 35 retired names + 5 stems, 0 reintroductions (exit 0)
 bash    Engine/Tools/check_panel_includes.sh        → include audit: clean         (exit 0)
 ```
 
@@ -494,7 +547,7 @@ left.
 | ~~**4**~~ | ~~4 component renames that just catch up to existing kind names~~ | ~~64~~ | ~~low~~ | **DONE, see §5b** |
 | ~~**5**~~ | ~~`Packed*Array` + `StringName` (§3 option A)~~ | ~~5~~ | ~~low~~ | **DONE, see §5b** |
 | ~~**6**~~ | ~~`AnimationMixerComponentUVE` — the one needing a new coinage~~ | ~~20~~ | ~~low~~ | **DONE, see §5b** |
-| **7** | 8 kind renames + label fixes (§3) | large | low | `SceneObjectRegistryUVETest` + **CI** for editor |
+| **7** | Kind renames (§3) — **navigation pair DONE, see §5b**; 3 candidates await a decision, 11 deliberately kept with reasons | 17 so far | low | `SceneObjectTypeUVETest` + **CI** for editor |
 | **8** | `is_on_floor` → `grounded` + script alias | ~12 | breaks `.uvs` without alias | `uvscript_vm_uve_tests` |
 | ~~**9**~~ | ~~`check_engine_vocabulary.py` + CI step~~ | ~~2~~ | — | **DONE, see §5b** |
 | ~~**10**~~ | ~~Triage the 26 `check_panel_includes.sh` violations, then wire that script into CI~~ | ~~13~~ | ~~none~~ | **DONE, see §5b** |

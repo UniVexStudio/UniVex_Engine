@@ -16,7 +16,7 @@ enum class NavigationAgentPathStatusUVE : std::uint8_t {
     Failed,
 };
 
-struct NavigationAgent3DComponentUVE final {
+struct NavSeeker3DComponentUVE final {
     Math::Vector3UVE targetPosition{};
     Math::Vector3UVE nextPathPosition{};
     Math::Vector3UVE desiredVelocity{};
@@ -32,6 +32,6 @@ struct NavigationAgent3DComponentUVE final {
     bool targetReached = false;
 };
 
-[[nodiscard]] bool IsNavigationAgent3DObjectComponentValidUVE(const NavigationAgent3DComponentUVE& value) noexcept;
+[[nodiscard]] bool IsNavSeeker3DObjectComponentValidUVE(const NavSeeker3DComponentUVE& value) noexcept;
 
 } // namespace UVE::Scene
