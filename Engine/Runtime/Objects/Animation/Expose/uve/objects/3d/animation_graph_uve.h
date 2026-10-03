@@ -8,7 +8,7 @@
 #include <vector>
 
 #include "uve/asset/asset_guid_uve.h"
-#include "uve/component/animation_mixer_component_uve.h"
+#include "uve/component/animated_object_component_uve.h"
 #include "uve/component/animation_graph_component_uve.h"
 #include "uve/component/entity_uve.h"
 
@@ -23,18 +23,18 @@ struct TransformComponentUVE;
 struct Skeleton3DComponentUVE;
 
 /// Authoring definition for the AnimationGraph object: a pure Object - no transform, no visibility -
-/// whose Inspector is its own section, its AnimationMixer base, then the Object section. It evaluates
+/// whose Inspector is its own section, its AnimatedObject base, then the Object section. It evaluates
 /// an animation graph onto the mixer's target (or its parent).
 struct AnimationGraphObjectDefinitionUVE final {
     static constexpr std::string_view defaultName = "AnimationGraph";
 
     AnimationGraphComponentUVE tree{};
-    AnimationMixerComponentUVE mixer{};
+    AnimatedObjectComponentUVE mixer{};
 };
 
 [[nodiscard]] bool IsAnimationGraphObjectDefinitionValidUVE(const AnimationGraphObjectDefinitionUVE& value);
 
-/// Applies the AnimationMixer base (ApplyAnimationMixerBaseUVE) and adds the tree when it is missing.
+/// Applies the AnimatedObject base (ApplyAnimatedObjectBaseUVE) and adds the tree when it is missing.
 void ApplyAnimationGraphObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
                                          const AnimationGraphObjectDefinitionUVE& value);
 
@@ -48,7 +48,7 @@ using AnimationClipResolverUVE = std::function<const Asset::AnimationClipAssetUV
 /// whose clips are all missing writes nothing.
 [[nodiscard]] bool StepAnimationGraphUVE(AnimationGraphComponentUVE& tree, const AnimationClipResolverUVE& clips,
                                         float deltaSeconds, TransformComponentUVE& target,
-                                        const AnimationMixerComponentUVE& mixer = {});
+                                        const AnimatedObjectComponentUVE& mixer = {});
 
 /// Advances the graph by `deltaSeconds` and writes the Output object's pose into `skeleton.pose`: every
 /// bone takes its track in each clip (its rest pose where a clip has none), and the graph's blends,
@@ -62,7 +62,7 @@ using AnimationClipResolverUVE = std::function<const Asset::AnimationClipAssetUV
 /// with no bones, or a graph none of whose clips is loaded.
 [[nodiscard]] bool StepSkeletalAnimationGraphUVE(AnimationGraphComponentUVE& tree, const AnimationClipResolverUVE& clips,
                                                 float deltaSeconds, Skeleton3DComponentUVE& skeleton,
-                                                const AnimationMixerComponentUVE& mixer = {});
+                                                const AnimatedObjectComponentUVE& mixer = {});
 
 /// A Blend Space 1D's weight for each of its (rising) points at `at`: the two either side share it
 /// by distance; before the first or past the last, that end takes everything.

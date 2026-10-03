@@ -77,7 +77,7 @@ using PoseUVE = Core::TransformPoseUVE;
     return result;
 }
 
-void WritePoseUVE(const AnimationMixerComponentUVE& mixer, const PoseUVE& pose, TransformComponentUVE& target) noexcept {
+void WritePoseUVE(const AnimatedObjectComponentUVE& mixer, const PoseUVE& pose, TransformComponentUVE& target) noexcept {
     WriteAnimatedPoseUVE(pose, mixer.animatePosition, mixer.animateRotation, mixer.animateScale, target);
 }
 
@@ -180,16 +180,16 @@ void WriteAnimatedPoseUVE(const Core::TransformPoseUVE& pose, const bool positio
 }
 
 bool IsAnimationSequencerObjectDefinitionValidUVE(const AnimationSequencerObjectDefinitionUVE& value) noexcept {
-    return IsAnimationSequencerComponentValidUVE(value.player) && IsAnimationMixerComponentValidUVE(value.mixer);
+    return IsAnimationSequencerComponentValidUVE(value.player) && IsAnimatedObjectComponentValidUVE(value.mixer);
 }
 
 void ApplyAnimationSequencerObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
                                            const AnimationSequencerObjectDefinitionUVE& value) {
     // The definition's mixer settings win over the base's defaults: added first, kept by the base.
-    if (entityManager.IsAliveUVE(entity) && !entityManager.HasComponentUVE<AnimationMixerComponentUVE>(entity)) {
-        entityManager.AddComponentUVE<AnimationMixerComponentUVE>(entity, value.mixer);
+    if (entityManager.IsAliveUVE(entity) && !entityManager.HasComponentUVE<AnimatedObjectComponentUVE>(entity)) {
+        entityManager.AddComponentUVE<AnimatedObjectComponentUVE>(entity, value.mixer);
     }
-    ApplyAnimationMixerBaseUVE(entityManager, entity, AnimationSequencerObjectDefinitionUVE::defaultName);
+    ApplyAnimatedObjectBaseUVE(entityManager, entity, AnimationSequencerObjectDefinitionUVE::defaultName);
     if (entityManager.IsAliveUVE(entity) && !entityManager.HasComponentUVE<AnimationSequencerComponentUVE>(entity)) {
         entityManager.AddComponentUVE<AnimationSequencerComponentUVE>(entity, value.player);
     }
@@ -221,7 +221,7 @@ void StopAnimationSequencerUVE(AnimationSequencerComponentUVE& player) noexcept 
 
 bool StepAnimationSequencerUVE(AnimationSequencerComponentUVE& player, const Asset::AnimationClipAssetUVE& clip,
                             const float deltaSeconds, TransformComponentUVE& target,
-                            const AnimationMixerComponentUVE& mixer) noexcept {
+                            const AnimatedObjectComponentUVE& mixer) noexcept {
     if (!player.isPlaying) {
         return false;
     }
@@ -268,7 +268,7 @@ bool StepAnimationSequencerUVE(AnimationSequencerComponentUVE& player, const Ass
 
 bool StepSkeletalAnimationSequencerUVE(AnimationSequencerComponentUVE& player, const Asset::AnimationClipAssetUVE& clip,
                                     const float deltaSeconds, Skeleton3DComponentUVE& skeleton,
-                                    const AnimationMixerComponentUVE& mixer) {
+                                    const AnimatedObjectComponentUVE& mixer) {
     if (!player.isPlaying) {
         return false;
     }
@@ -447,7 +447,7 @@ std::optional<std::size_t> ResolveRootMotionBoneUVE(const Skeleton3DComponentUVE
 }
 
 bool PoseSkeletonAtTimeUVE(const Asset::AnimationClipAssetUVE& clip, const double timeSeconds,
-                           Skeleton3DComponentUVE& skeleton, const AnimationMixerComponentUVE& mixer) {
+                           Skeleton3DComponentUVE& skeleton, const AnimatedObjectComponentUVE& mixer) {
     if (!clip.IsSkeletalUVE() || skeleton.bones.empty() || !std::isfinite(timeSeconds)) {
         return false;
     }

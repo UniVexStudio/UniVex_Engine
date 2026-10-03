@@ -87,6 +87,13 @@ RETIRED_STEMS = {
     "AnimationPlayer": "AnimationSequencer",
     "RigidBody": "Rigid3D",
     "AnimatableBody": "Kinematic",
+    # The mixer pass (GODOT_STYLE_AUDIT.md Finding B, last of the four). It never mixed anything: it
+    # is the base AnimationSequencer and AnimationGraph share. The engine's other base components are
+    # named for what they make an object - PhysicsObject3D, RenderInstance3D, LightEmitter3D - so this
+    # one follows them rather than borrowing another engine's class name. A stem, because the family
+    # spans AnimationMixerComponentUVE, AnimationMixerObjectDefinitionUVE, ApplyAnimationMixerBaseUVE
+    # and AnimationMixerFromJsonUVE.
+    "AnimationMixer": "AnimatedObject",
 }
 
 # The three legacy-alias tables MUST keep the old strings forever, because a saved document written
@@ -105,7 +112,6 @@ ALLOWED_PREFIXES = (
 # Other engines' class names that still occur in the tree. Reported, not enforced - see the module
 # docstring for why. Kept here so the count is honest rather than invented at review time.
 FOREIGN_CLASS_NAMES = (
-    "AnimationMixerComponentUVE",
     "MeshInstance3D",
     "SpringArm3D",
     "BoneAttachment3D",

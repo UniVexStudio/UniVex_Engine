@@ -31,7 +31,7 @@
 #include "uve/math/quaternion_uve.h"
 #include "uve/math/vector2_uve.h"
 #include "uve/math/vector3_uve.h"
-#include "uve/component/animation_mixer_component_uve.h"
+#include "uve/component/animated_object_component_uve.h"
 #include "uve/component/animation_sequencer_component_uve.h"
 #include "uve/component/animation_graph_component_uve.h"
 #include "uve/component/area_component_uve.h"
@@ -170,7 +170,7 @@ namespace {
 }
 
 // The target is written beside these as targetLocalId, like the players' used to be.
-[[nodiscard]] nlohmann::json ToJsonUVE(const AnimationMixerComponentUVE& component) {
+[[nodiscard]] nlohmann::json ToJsonUVE(const AnimatedObjectComponentUVE& component) {
     return {{"active", component.active},
             {"speedScale", component.speedScale},
             {"processCallback", static_cast<std::uint8_t>(component.processCallback)},
@@ -182,10 +182,10 @@ namespace {
             {"rootMotionBone", component.rootMotionBone}};
 }
 
-/// A mixer from its own payload, or - for a player or tree saved before AnimationMixer existed -
+/// A mixer from its own payload, or - for a player or tree saved before AnimatedObject existed -
 /// from the same keys on that component's payload. The target is resolved by the caller.
-[[nodiscard]] AnimationMixerComponentUVE AnimationMixerFromJsonUVE(const nlohmann::json& json) {
-    AnimationMixerComponentUVE mixer;
+[[nodiscard]] AnimatedObjectComponentUVE AnimatedObjectFromJsonUVE(const nlohmann::json& json) {
+    AnimatedObjectComponentUVE mixer;
     mixer.active = json.value("active", true);
     mixer.speedScale = json.value("speedScale", 1.0F);
     mixer.processCallback = static_cast<AnimationProcessCallbackUVE>(json.value("processCallback", std::uint8_t{0}));
@@ -1439,6 +1439,11 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
         {"AnimationPlayerComponentUVE", "AnimationSequencerComponentUVE"},
         {"RigidBodyComponentUVE", "Rigid3DComponentUVE"},
         {"AnimatableBody3DComponentUVE", "Kinematic3DComponentUVE"},
+        // The mixer pass: it never mixed anything, it is the base AnimationSequencer and
+        // AnimationGraph share - what they move, which channels, on which clock, how fast. The
+        // engine's other base components are named for what they make an object (PhysicsObject3D,
+        // RenderInstance3D, LightEmitter3D), so this one follows them instead of borrowing a name.
+        {"AnimationMixerComponentUVE", "AnimatedObjectComponentUVE"},
     };
     const auto it = kLegacyNames.find(name);
     return it != kLegacyNames.end() ? it->second : name;
@@ -1512,14 +1517,14 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                           }
                           return animation;
                       }, IsAnimationSequencerComponentValidUVE));
-        table.emplace("AnimationMixerComponentUVE",
-                      MakeRegistrationUVE<AnimationMixerComponentUVE>([](const nlohmann::json& json) {
-                          const AnimationMixerComponentUVE mixer = AnimationMixerFromJsonUVE(json);
-                          if (!IsAnimationMixerComponentValidUVE(mixer)) {
-                              throw std::runtime_error("Invalid AnimationMixerComponentUVE payload");
+        table.emplace("AnimatedObjectComponentUVE",
+                      MakeRegistrationUVE<AnimatedObjectComponentUVE>([](const nlohmann::json& json) {
+                          const AnimatedObjectComponentUVE mixer = AnimatedObjectFromJsonUVE(json);
+                          if (!IsAnimatedObjectComponentValidUVE(mixer)) {
+                              throw std::runtime_error("Invalid AnimatedObjectComponentUVE payload");
                           }
                           return mixer;
-                      }, IsAnimationMixerComponentValidUVE));
+                      }, IsAnimatedObjectComponentValidUVE));
         table.emplace("AnimationGraphComponentUVE",
                       MakeRegistrationUVE<AnimationGraphComponentUVE>([](const nlohmann::json& json) {
                           AnimationGraphComponentUVE tree = AnimationGraphFromJsonUVE(json);
@@ -2279,8 +2284,8 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                 }
                 componentsJson[*name]["targetLocalId"] = targetLocalId;
             };
-            if (type == std::type_index(typeid(AnimationMixerComponentUVE))) {
-                writeTarget(entityManager.GetComponentUVE<AnimationMixerComponentUVE>(entity).target);
+            if (type == std::type_index(typeid(AnimatedObjectComponentUVE))) {
+                writeTarget(entityManager.GetComponentUVE<AnimatedObjectComponentUVE>(entity).target);
             }
         }
         entitiesJson.push_back({{"localId", entityToLocalId.at(entity)}, {"components", std::move(componentsJson)}});
@@ -2458,11 +2463,11 @@ void RollbackRestoredEntitiesUVE(IEntityManagerUVE& entityManager, std::vector<E
             const nlohmann::json& componentsJson = entityJson.at("components");
             // Whether this entity's own document carries a mixer, read before the loop so the
             // legacy-migration branch below cannot depend on key order. It used to: "AnimationMixer"
-            // sorted ahead of "AnimationPlayer" and "AnimationTree", so a saved mixer was always
-            // visited first. Renaming those two to AnimationSequencer and AnimationGraph moved
-            // AnimationGraph AHEAD of the mixer, and a graph then synthesized a throwaway mixer that
-            // the real one collided with.
-            const bool documentHasMixer = componentsJson.contains("AnimationMixerComponentUVE");
+            // (the name AnimatedObjectComponentUVE had then) sorted ahead of "AnimationPlayer" and
+            // "AnimationTree", so a saved mixer was always visited first. Renaming those two to
+            // AnimationSequencer and AnimationGraph moved AnimationGraph AHEAD of the mixer, and a
+            // graph then synthesized a throwaway mixer that the real one collided with.
+            const bool documentHasMixer = componentsJson.contains("AnimatedObjectComponentUVE");
             for (const auto& [componentName, componentJson] : componentsJson.items()) {
                 if (componentName == "VisibilityComponentUVE") {
                     VisibilityComponentUVE visibility;
@@ -2507,7 +2512,7 @@ void RollbackRestoredEntitiesUVE(IEntityManagerUVE& entityManager, std::vector<E
                 }
                 registrationIt->second.fromJson(entityManager, entity, componentJson);
                 hasTransform = hasTransform || componentName == "TransformComponentUVE";
-                const bool isMixer = componentName == "AnimationMixerComponentUVE";
+                const bool isMixer = componentName == "AnimatedObjectComponentUVE";
                 const bool isMixerChild =
                     componentName == "AnimationSequencerComponentUVE" || componentName == "AnimationGraphComponentUVE";
                 if (isMixer || isMixerChild) {
@@ -2521,20 +2526,20 @@ void RollbackRestoredEntitiesUVE(IEntityManagerUVE& entityManager, std::vector<E
                             target = targetIt->second;
                         }
                     }
-                    // A sequencer or graph from before AnimationMixer existed brings its old settings
+                    // A sequencer or graph from before AnimatedObject existed brings its old settings
                     // into a new one. Only when the document has no mixer of its own: otherwise the
                     // real one, already added by its registration, is the truth and synthesizing a
                     // second one would collide with it.
                     if (isMixerChild && !documentHasMixer &&
-                        !entityManager.HasComponentUVE<AnimationMixerComponentUVE>(entity)) {
-                        AnimationMixerComponentUVE legacy = AnimationMixerFromJsonUVE(componentJson);
-                        if (!IsAnimationMixerComponentValidUVE(legacy)) {
-                            legacy = AnimationMixerComponentUVE{};
+                        !entityManager.HasComponentUVE<AnimatedObjectComponentUVE>(entity)) {
+                        AnimatedObjectComponentUVE legacy = AnimatedObjectFromJsonUVE(componentJson);
+                        if (!IsAnimatedObjectComponentValidUVE(legacy)) {
+                            legacy = AnimatedObjectComponentUVE{};
                         }
                         legacy.target = target;
-                        entityManager.AddComponentUVE<AnimationMixerComponentUVE>(entity, legacy);
-                    } else if (isMixer && entityManager.HasComponentUVE<AnimationMixerComponentUVE>(entity)) {
-                        entityManager.GetComponentUVE<AnimationMixerComponentUVE>(entity).target = target;
+                        entityManager.AddComponentUVE<AnimatedObjectComponentUVE>(entity, legacy);
+                    } else if (isMixer && entityManager.HasComponentUVE<AnimatedObjectComponentUVE>(entity)) {
+                        entityManager.GetComponentUVE<AnimatedObjectComponentUVE>(entity).target = target;
                     }
                 }
             }

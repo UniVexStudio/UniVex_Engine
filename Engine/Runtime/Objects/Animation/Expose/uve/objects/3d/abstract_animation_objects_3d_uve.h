@@ -16,15 +16,15 @@ struct BoneModifier3DObjectDefinitionUVE final {
 };
 
 /// Pure-Object animation base shared by AnimationSequencer and AnimationGraph (no transform or visibility).
-struct AnimationMixerObjectDefinitionUVE final {
-    static constexpr std::string_view typeName = "AnimationMixer";
+struct AnimatedObject3DObjectDefinitionUVE final {
+    static constexpr std::string_view typeName = "AnimatedObject3D";
 };
 
 /// Applies the Object3D recipe and BoneModifier component where missing.
 void ApplyBoneModifier3DBaseUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
                                 std::string_view nameFallback);
-/// Applies the pure Object baseline and AnimationMixer component where missing.
-void ApplyAnimationMixerBaseUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
+/// Applies the pure Object baseline and AnimatedObject component where missing.
+void ApplyAnimatedObjectBaseUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
                                 std::string_view nameFallback);
 
 } // namespace UVE::Scene

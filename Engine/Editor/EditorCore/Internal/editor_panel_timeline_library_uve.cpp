@@ -21,7 +21,7 @@
 #include <imgui.h>
 
 #include "uve/asset/animation_clip_asset_uve.h"
-#include "uve/component/animation_mixer_component_uve.h"
+#include "uve/component/animated_object_component_uve.h"
 #include "uve/component/animation_sequencer_component_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/name_component_uve.h"

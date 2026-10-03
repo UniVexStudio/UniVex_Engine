@@ -453,7 +453,7 @@ TEST(EditorUVETest, InspectorDrawerRegistrationUVE_IncludesStableHierarchyDrawer
         // 27 before the three abstract 3D bases, each of which brings one section; 30 before the
         // old Name and Hierarchy drawers were removed and SurfaceInstance3D, LightEmitter3D,
         // Decal3D and FogVolume3D each brought one.
-        // 33 with Skeleton3D's own section; 34 with SolidBody3D's; 36 with AnimationMixer's; 37 with
+        // 33 with Skeleton3D's own section; 34 with SolidBody3D's; 36 with AnimatedObject's; 37 with
         // DirectionalLight3D's.
         EXPECT_EQ(EditorUVEAccessUVE::GetInspectorDrawerCountUVE(editor), 37U);
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "directional-light-3d"));
@@ -5349,7 +5349,7 @@ TEST(EditorUVETest, AnimationObjectsUVE_InspectorIsTheirOwnSectionThenTheObjectS
         const Scene::EntityUVE tree = editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::AnimationGraph);
         ASSERT_NE(player, Scene::kInvalidEntityUVE);
         ASSERT_NE(tree, Scene::kInvalidEntityUVE);
-        // AnimationSequencer > AnimationMixer > Object: a pure Object, no Transform, no Visibility.
+        // AnimationSequencer > AnimatedObject > Object: a pure Object, no Transform, no Visibility.
         const std::vector<std::string> objectSection{"animation-mixer", "process", "physics-interpolation",
                                                    "auto-translate", "editor-description", "script", "object-metadata"};
         std::vector<std::string> expected{"animation-player"};

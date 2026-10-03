@@ -1001,9 +1001,9 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
     };
     // A player or tree loaded without its mixer (an older save) runs with the mixer's defaults.
     const auto mixerOf = [this](const Scene::EntityUVE entity) {
-        return m_entityManager->HasComponentUVE<Scene::AnimationMixerComponentUVE>(entity)
-                   ? m_entityManager->GetComponentUVE<Scene::AnimationMixerComponentUVE>(entity)
-                   : Scene::AnimationMixerComponentUVE{};
+        return m_entityManager->HasComponentUVE<Scene::AnimatedObjectComponentUVE>(entity)
+                   ? m_entityManager->GetComponentUVE<Scene::AnimatedObjectComponentUVE>(entity)
+                   : Scene::AnimatedObjectComponentUVE{};
     };
     const Scene::AnimationProcessCallbackUVE callback =
         physicsStep ? Scene::AnimationProcessCallbackUVE::Physics : Scene::AnimationProcessCallbackUVE::Frame;
@@ -1034,7 +1034,7 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
          CollectFixedStepOrderUVE<Scene::AnimationSequencerComponentUVE>(*m_entityManager, *m_sceneGraph)) {
         Scene::AnimationSequencerComponentUVE& player =
             m_entityManager->GetComponentUVE<Scene::AnimationSequencerComponentUVE>(entity);
-        const Scene::AnimationMixerComponentUVE mixer = mixerOf(entity);
+        const Scene::AnimatedObjectComponentUVE mixer = mixerOf(entity);
         if (!mixer.active || mixer.processCallback != callback) {
             continue;
         }
@@ -1081,7 +1081,7 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
 
     for (const Scene::EntityUVE entity :
          CollectFixedStepOrderUVE<Scene::AnimationGraphComponentUVE>(*m_entityManager, *m_sceneGraph)) {
-        const Scene::AnimationMixerComponentUVE mixer = mixerOf(entity);
+        const Scene::AnimatedObjectComponentUVE mixer = mixerOf(entity);
         if (mixer.processCallback != callback) {
             continue;
         }
