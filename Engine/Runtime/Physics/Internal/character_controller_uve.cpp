@@ -7,7 +7,7 @@
 #include <optional>
 
 #include "uve/component/collider_component_uve.h"
-#include "uve/component/rigid_body_component_uve.h"
+#include "uve/component/rigid_3d_component_uve.h"
 #include "uve/component/transform_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/math/vector3_uve.h"
@@ -60,10 +60,10 @@ bool ValidateControllerInputUVE(Scene::IEntityManagerUVE& entityManager,
         result.code = CharacterControllerMoveCodeUVE::InvalidInput;
         return false;
     }
-    if (entityManager.HasComponentUVE<Scene::RigidBodyComponentUVE>(input.entity)) {
-        const Scene::RigidBodyComponentUVE& rigidBody =
-            entityManager.GetComponentUVE<Scene::RigidBodyComponentUVE>(input.entity);
-        if (!Scene::IsRigidBodyComponentValidUVE(rigidBody)) {
+    if (entityManager.HasComponentUVE<Scene::Rigid3DComponentUVE>(input.entity)) {
+        const Scene::Rigid3DComponentUVE& rigidBody =
+            entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(input.entity);
+        if (!Scene::IsRigid3DComponentValidUVE(rigidBody)) {
             result.code = CharacterControllerMoveCodeUVE::InvalidInput;
             return false;
         }
@@ -166,7 +166,7 @@ struct DynamicBodyPushPolicyUVE final {
     if (!policy.enabled || policy.strength <= 0.0F || !std::isfinite(policy.maximumSpeed) ||
         policy.maximumSpeed <= 0.0F || !std::isfinite(policy.deltaTimeSeconds) ||
         policy.deltaTimeSeconds <= 0.0F || !entityManager.IsAliveUVE(targetEntity) ||
-        !entityManager.HasComponentUVE<Scene::RigidBodyComponentUVE>(targetEntity)) {
+        !entityManager.HasComponentUVE<Scene::Rigid3DComponentUVE>(targetEntity)) {
         return false;
     }
     const float normalLengthSquared = Math::LengthSquaredUVE(contactNormal);
@@ -180,9 +180,9 @@ struct DynamicBodyPushPolicyUVE final {
         return false;
     }
 
-    Scene::RigidBodyComponentUVE& rigidBody =
-        entityManager.GetComponentUVE<Scene::RigidBodyComponentUVE>(targetEntity);
-    if (!Scene::IsRigidBodyComponentValidUVE(rigidBody) || rigidBody.isKinematic ||
+    Scene::Rigid3DComponentUVE& rigidBody =
+        entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(targetEntity);
+    if (!Scene::IsRigid3DComponentValidUVE(rigidBody) || rigidBody.isKinematic ||
         rigidBody.mass <= 0.0F) {
         return false;
     }

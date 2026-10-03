@@ -14,7 +14,7 @@ class IEntityManagerUVE;
 /// Authoring definition for the Static3D scene object: the component set and defaults a
 /// freshly created Static3D entity attaches. The recipe itself is a plain default collider —
 /// identical today to Collider3D's, because a collider-only entity (ColliderComponentUVE with no
-/// RigidBodyComponentUVE) is exactly how this engine represents non-moving world geometry. The
+/// Rigid3DComponentUVE) is exactly how this engine represents non-moving world geometry. The
 /// kinds stay separate because their *intent* differs (a static body vs a bare shape), and when
 /// static-body-specific defaults emerge, this file is their one home. The recipe used to be
 /// hardcoded inline in EditorUVE's creation switch; per Engine/Runtime/Scene/README.md's

@@ -14,7 +14,7 @@
 #include "uve/asset/animation_clip_asset_uve.h"
 #include "uve/component/name_component_uve.h"
 #include "uve/objects/3d/skeleton_3d_uve.h"
-#include "uve/component/animation_player_component_uve.h"
+#include "uve/component/animation_sequencer_component_uve.h"
 #include "uve/component/prefab_instance_component_uve.h"
 #include "uve/component/transform_component_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
@@ -530,9 +530,9 @@ Connections:  {
         EXPECT_EQ(skeleton.bones[0].name, "Hips");
         EXPECT_TRUE(services.GetSceneGraphUVE().GetChildrenUVE(entityManager, skeletons[0]).empty())
             << "an animation file has no mesh";
-        ASSERT_TRUE(entityManager.HasComponentUVE<Scene::AnimationPlayerComponentUVE>(children[1]));
-        const Scene::AnimationPlayerComponentUVE& player =
-            entityManager.GetComponentUVE<Scene::AnimationPlayerComponentUVE>(children[1]);
+        ASSERT_TRUE(entityManager.HasComponentUVE<Scene::AnimationSequencerComponentUVE>(children[1]));
+        const Scene::AnimationSequencerComponentUVE& player =
+            entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(children[1]);
         EXPECT_NE(player.clip, Asset::kInvalidAssetGuidUVE);
         EXPECT_EQ(player.loopMode, Scene::AnimationLoopModeUVE::Loop);
         EXPECT_TRUE(std::filesystem::exists(content / "Anims" / "Hero.uvanim")) << "one take: named after its file";
@@ -548,15 +548,15 @@ Connections:  {
         walk.bones = {Asset::AnimationAssetBoneTrackUVE{"Hips", {Asset::AnimationAssetSampleUVE{}}}};
         ASSERT_TRUE(Asset::SaveAnimationClipAssetUVE(walk, content / "Anims" / "Walk.uvanim"));
         const Asset::AssetGuidUVE run = player.clip;
-        ASSERT_TRUE(editor.AddClipToAnimationPlayerUVE(children[1], content / "Anims" / "Walk.uvanim"));
+        ASSERT_TRUE(editor.AddClipToAnimationSequencerUVE(children[1], content / "Anims" / "Walk.uvanim"));
         ASSERT_EQ(player.library.size(), 2U);
         EXPECT_EQ(player.library[0], run);
         EXPECT_EQ(player.clip, player.library[1]) << "the added clip plays";
-        EXPECT_FALSE(editor.AddClipToAnimationPlayerUVE(children[1], content / "Anims" / "Hero.FBX"))
+        EXPECT_FALSE(editor.AddClipToAnimationSequencerUVE(children[1], content / "Anims" / "Hero.FBX"))
             << "only an animation can join";
         ASSERT_TRUE(editor.UndoUVE());
-        EXPECT_EQ(entityManager.GetComponentUVE<Scene::AnimationPlayerComponentUVE>(children[1]).library.size(), 1U);
-        EXPECT_EQ(entityManager.GetComponentUVE<Scene::AnimationPlayerComponentUVE>(children[1]).clip, run);
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(children[1]).library.size(), 1U);
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(children[1]).clip, run);
 
         // One undo removes the whole placement.
         ASSERT_TRUE(editor.UndoUVE());

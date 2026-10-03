@@ -147,7 +147,7 @@ const std::vector<EditorSettingBindingUVE>& EditorUVE::GetSettingBindingsUVE() {
         {HiddenUVE(Config::MakeEnumSettingUVE(
              IdUVE(Id::kActiveRightPanelTabUVE), static_cast<std::int64_t>(RightTab::Inspector),
              {EntryUVE(RightTab::Inspector, "Inspector"), EntryUVE(RightTab::Import, "Import"),
-              EntryUVE(RightTab::Signals, "Signals")},
+              EntryUVE(RightTab::Events, "Events")},
              "Right Panel Tab", kSessionCategoryUVE)),
          [](const EditorUVE& editor) -> SettingValueUVE {
              return static_cast<std::int64_t>(editor.m_activeRightPanelTab);

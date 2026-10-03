@@ -270,9 +270,9 @@ struct AnimationGraphObjectStateUVE final {
     [[nodiscard]] bool operator==(const AnimationGraphObjectStateUVE&) const = default;
 };
 
-/// AnimationTree's own state: an animation graph evaluated every frame. What it moves, which
+/// AnimationGraph's own state: an animation graph evaluated every frame. What it moves, which
 /// channels and whether it runs live in its AnimationMixer base (AnimationMixerComponentUVE).
-struct AnimationTreeComponentUVE final {
+struct AnimationGraphComponentUVE final {
     std::vector<AnimationParameterUVE> parameters;
     /// A new tree starts as Output fed by one Clip, so picking a clip is all it takes to play.
     std::vector<AnimationGraphObjectUVE> objects = MakeDefaultAnimationGraphUVE();
@@ -301,11 +301,11 @@ struct AnimationTreeComponentUVE final {
     }
 
     /// Authored data only: runtime state is ignored.
-    [[nodiscard]] bool HasSameSettingsUVE(const AnimationTreeComponentUVE& other) const {
+    [[nodiscard]] bool HasSameSettingsUVE(const AnimationGraphComponentUVE& other) const {
         return parameters == other.parameters && objects == other.objects;
     }
 
-    [[nodiscard]] bool operator==(const AnimationTreeComponentUVE&) const = default;
+    [[nodiscard]] bool operator==(const AnimationGraphComponentUVE&) const = default;
 };
 
 /// Why a graph is malformed, or empty when it is not: exactly one Output, unique non-zero ids, every
@@ -313,10 +313,10 @@ struct AnimationTreeComponentUVE final {
 /// counts, ascending blend-space points, transitions between real states, unique parameter names,
 /// and everything within its bounds. An empty slot or a parameter name nobody declared is allowed -
 /// a graph half-built in the editor is still a graph - and simply reads as no pose / its default.
-[[nodiscard]] std::string DescribeAnimationGraphProblemUVE(const AnimationTreeComponentUVE& component);
+[[nodiscard]] std::string DescribeAnimationGraphProblemUVE(const AnimationGraphComponentUVE& component);
 
 /// DescribeAnimationGraphProblemUVE finds nothing. False, too, if checking runs out of memory.
-[[nodiscard]] bool IsAnimationTreeComponentValidUVE(const AnimationTreeComponentUVE& component) noexcept;
+[[nodiscard]] bool IsAnimationGraphComponentValidUVE(const AnimationGraphComponentUVE& component) noexcept;
 
 /// Older graphs fed a Blend Space's points through input slots. Moves each Clip on such a slot into
 /// the space's own points (its clip, speed and loop) and removes the Clip object; any other object on a

@@ -9,6 +9,8 @@
 #include <algorithm>
 #include <array>
 #include <cfloat>
+#include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <functional>
@@ -16,13 +18,14 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include <imgui.h>
 
 #include "editor_animation_graph_widgets_uve.h"
 
-#include "uve/component/animation_tree_component_uve.h"
+#include "uve/component/animation_graph_component_uve.h"
 #include "uve/editor/animation_graph_editing_uve.h"
 
 namespace UVE::Editor {
@@ -77,7 +80,7 @@ void RowUVE(const char* const label) {
 void EditorUVE::DrawAnimationParametersPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
                                                    const Core::TypeMetadataPropertyUVE& property,
                                                    const void* const instance) {
-    const auto& tree = *static_cast<const Scene::AnimationTreeComponentUVE*>(instance);
+    const auto& tree = *static_cast<const Scene::AnimationGraphComponentUVE*>(instance);
     const bool writable = IsAuthoringCommandAllowedUVE();
     ImGui::BeginDisabled(!writable);
     std::vector<AnimationParameterUVE> parameters = tree.parameters;
@@ -172,7 +175,7 @@ void EditorUVE::RenameAnimationParameterReferencesUVE(const std::string& from, c
 void EditorUVE::DrawAnimationGraphPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
                                               const Core::TypeMetadataPropertyUVE& property,
                                               const void* const instance) {
-    const auto& tree = *static_cast<const Scene::AnimationTreeComponentUVE*>(instance);
+    const auto& tree = *static_cast<const Scene::AnimationGraphComponentUVE*>(instance);
     const bool writable = IsAuthoringCommandAllowedUVE();
     std::vector<AnimationGraphObjectUVE> objects = tree.objects;
     bool changed = false;

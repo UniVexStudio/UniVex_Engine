@@ -114,7 +114,7 @@ struct ResultUVE final {
 class EvaluatorUVE final {
 public:
     /// `skeleton` null: the graph animates one object, its clips' own object track.
-    EvaluatorUVE(AnimationTreeComponentUVE& tree, const AnimationClipResolverUVE& clips,
+    EvaluatorUVE(AnimationGraphComponentUVE& tree, const AnimationClipResolverUVE& clips,
                  const Skeleton3DComponentUVE* const skeleton, const AnimationMixerComponentUVE& mixer)
         : m_tree(tree), m_clips(clips), m_skeleton(skeleton), m_mixer(mixer) {
         for (std::size_t index = 0U; index < tree.objects.size(); ++index) {
@@ -882,7 +882,7 @@ private:
         return EvaluateInputUVE(object, 0U, deltaSeconds, weight, phase);
     }
 
-    AnimationTreeComponentUVE& m_tree;
+    AnimationGraphComponentUVE& m_tree;
     const AnimationClipResolverUVE& m_clips;
     const Skeleton3DComponentUVE* m_skeleton = nullptr;
     const AnimationMixerComponentUVE& m_mixer;
@@ -895,7 +895,7 @@ private:
 };
 
 /// Runs one step: shape check, evaluation, and the tree's per-step outputs. The pose, or nothing.
-[[nodiscard]] std::optional<ChannelsUVE> RunTreeUVE(AnimationTreeComponentUVE& tree, const AnimationClipResolverUVE& clips,
+[[nodiscard]] std::optional<ChannelsUVE> RunTreeUVE(AnimationGraphComponentUVE& tree, const AnimationClipResolverUVE& clips,
                                                     const float deltaSeconds, const Skeleton3DComponentUVE* skeleton,
                                                     const AnimationMixerComponentUVE& mixer) {
     tree.rootMotionDelta = Math::Vector3UVE{};
@@ -905,10 +905,10 @@ private:
     }
     if (tree.objectStates.size() != tree.objects.size()) {
         // A new or reshaped graph: checked once here rather than every frame, then started over.
-        if (!IsAnimationTreeComponentValidUVE(tree)) {
+        if (!IsAnimationGraphComponentValidUVE(tree)) {
             return std::nullopt;
         }
-        ResetAnimationTreeUVE(tree);
+        ResetAnimationGraphUVE(tree);
     }
     for (AnimationGraphObjectStateUVE& state : tree.objectStates) {
         state.weight = 0.0F;
@@ -928,7 +928,7 @@ private:
 } // namespace
 
 bool IsAnimationGraphObjectDefinitionValidUVE(const AnimationGraphObjectDefinitionUVE& value) {
-    return IsAnimationTreeComponentValidUVE(value.tree) && IsAnimationMixerComponentValidUVE(value.mixer);
+    return IsAnimationGraphComponentValidUVE(value.tree) && IsAnimationMixerComponentValidUVE(value.mixer);
 }
 
 void ApplyAnimationGraphObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
@@ -938,12 +938,12 @@ void ApplyAnimationGraphObjectDefinitionUVE(IEntityManagerUVE& entityManager, co
         entityManager.AddComponentUVE<AnimationMixerComponentUVE>(entity, value.mixer);
     }
     ApplyAnimationMixerBaseUVE(entityManager, entity, AnimationGraphObjectDefinitionUVE::defaultName);
-    if (entityManager.IsAliveUVE(entity) && !entityManager.HasComponentUVE<AnimationTreeComponentUVE>(entity)) {
-        entityManager.AddComponentUVE<AnimationTreeComponentUVE>(entity, value.tree);
+    if (entityManager.IsAliveUVE(entity) && !entityManager.HasComponentUVE<AnimationGraphComponentUVE>(entity)) {
+        entityManager.AddComponentUVE<AnimationGraphComponentUVE>(entity, value.tree);
     }
 }
 
-void ResetAnimationTreeUVE(AnimationTreeComponentUVE& tree) {
+void ResetAnimationGraphUVE(AnimationGraphComponentUVE& tree) {
     tree.objectStates.assign(tree.objects.size(), AnimationGraphObjectStateUVE{});
     for (std::size_t index = 0U; index < tree.objects.size(); ++index) {
         tree.objectStates[index].activeState = tree.objects[index].entryState;
@@ -951,7 +951,7 @@ void ResetAnimationTreeUVE(AnimationTreeComponentUVE& tree) {
     tree.activeStates.clear();
 }
 
-bool SetAnimationTreeParameterUVE(AnimationTreeComponentUVE& tree, const std::string_view name, const float value) {
+bool SetAnimationGraphParameterUVE(AnimationGraphComponentUVE& tree, const std::string_view name, const float value) {
     const auto found = std::find_if(tree.parameters.begin(), tree.parameters.end(),
                                     [name](const AnimationParameterUVE& parameter) { return parameter.name == name; });
     if (found == tree.parameters.end() || !std::isfinite(value)) {
@@ -961,7 +961,7 @@ bool SetAnimationTreeParameterUVE(AnimationTreeComponentUVE& tree, const std::st
     return true;
 }
 
-bool StepAnimationTreeUVE(AnimationTreeComponentUVE& tree, const AnimationClipResolverUVE& clips,
+bool StepAnimationGraphUVE(AnimationGraphComponentUVE& tree, const AnimationClipResolverUVE& clips,
                           const float deltaSeconds, TransformComponentUVE& target,
                           const AnimationMixerComponentUVE& mixer) {
     const std::optional<ChannelsUVE> pose = RunTreeUVE(tree, clips, deltaSeconds, nullptr, mixer);
@@ -972,7 +972,7 @@ bool StepAnimationTreeUVE(AnimationTreeComponentUVE& tree, const AnimationClipRe
     return true;
 }
 
-bool StepSkeletalAnimationTreeUVE(AnimationTreeComponentUVE& tree, const AnimationClipResolverUVE& clips,
+bool StepSkeletalAnimationGraphUVE(AnimationGraphComponentUVE& tree, const AnimationClipResolverUVE& clips,
                                   const float deltaSeconds, Skeleton3DComponentUVE& skeleton,
                                   const AnimationMixerComponentUVE& mixer) {
     if (skeleton.bones.empty()) {

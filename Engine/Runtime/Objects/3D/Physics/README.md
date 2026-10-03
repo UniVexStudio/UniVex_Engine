@@ -5,8 +5,8 @@ This folder owns the Object3D authoring data and creation recipes that directly 
 and spring arms. Their public headers are under `Expose/` and their implementations are under
 `Internal/`.
 
-These files remain part of the `uve_nodes_3d` library; this is an organizational subfolder, not a
-new physics backend or a separate CMake target. `uve_nodes_3d` exports both `Expose/` and
+These files remain part of the `uve_objects_3d` library; this is an organizational subfolder, not a
+new physics backend or a separate CMake target. `uve_objects_3d` exports both `Expose/` and
 `Physics/Expose/`, so the existing public include paths (`uve/objects/3d/...`) remain stable.
 
 Physics simulation systems, collision solving, and queries remain in

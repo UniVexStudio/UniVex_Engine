@@ -15,7 +15,7 @@ namespace {
 TEST(Expanded3DObjectComponentsUVETest, DefaultContractsAreValid) {
     EXPECT_TRUE(IsAreaComponentValidUVE(AreaComponentUVE{}));
     EXPECT_TRUE(IsRayCast3DObjectComponentValidUVE(RayCast3DComponentUVE{}));
-    EXPECT_TRUE(IsAnimatableBody3DObjectComponentValidUVE(AnimatableBody3DComponentUVE{}));
+    EXPECT_TRUE(IsKinematic3DObjectComponentValidUVE(Kinematic3DComponentUVE{}));
     EXPECT_TRUE(IsNavigationRegion3DObjectComponentValidUVE(NavigationRegion3DComponentUVE{}));
     EXPECT_TRUE(IsNavigationAgent3DObjectComponentValidUVE(NavigationAgent3DComponentUVE{}));
     EXPECT_TRUE(IsSkeleton3DObjectComponentValidUVE(Skeleton3DComponentUVE{}));

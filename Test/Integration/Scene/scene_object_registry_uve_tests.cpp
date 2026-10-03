@@ -47,7 +47,7 @@ TEST(SceneObjectRegistryUVETest, RealObjectTypesUVE_AreReachableFromTheAggregate
     static_assert(std::is_class_v<AreaComponentUVE>);                          // Area3D
     static_assert(std::is_class_v<RayCast3DComponentUVE>);                 // RayCast3D
     static_assert(std::is_class_v<ColliderComponentUVE>);                      // Static3D, Collider3D
-    static_assert(std::is_class_v<AnimatableBody3DComponentUVE>);          // Kinematic3D
+    static_assert(std::is_class_v<Kinematic3DComponentUVE>);          // Kinematic3D
     static_assert(std::is_class_v<NavigationRegion3DComponentUVE>);        // NavigationRegion3D
     static_assert(std::is_class_v<NavigationAgent3DComponentUVE>);         // NavigationAgent3D
     static_assert(std::is_class_v<Skeleton3DComponentUVE>);                // Skeleton3D
@@ -67,14 +67,14 @@ TEST(SceneObjectRegistryUVETest, RealObjectTypesUVE_AreReachableFromTheAggregate
     static_assert(std::is_class_v<SpawnPoint3DComponentUVE>);              // SpawnPoint3D
     static_assert(std::is_class_v<LevelStreamer3DComponentUVE>);           // LevelStreamer3D
     static_assert(std::is_class_v<WorldPartition3DComponentUVE>);          // WorldPartition3D
-    static_assert(std::is_class_v<Core::AnimationTreeUVE>);                    // AnimationGraph
-    static_assert(std::is_class_v<AnimationPlayerComponentUVE>);               // AnimationSequencer
+    static_assert(std::is_class_v<Core::AnimationGraphUVE>);                    // AnimationGraph
+    static_assert(std::is_class_v<AnimationSequencerComponentUVE>);               // AnimationSequencer
     static_assert(std::is_class_v<Physics::CharacterControllerInputUVE>);      // Character3D
     static_assert(std::is_class_v<CameraComponentUVE>);                       // Camera3D
     static_assert(std::is_class_v<MeshComponentUVE>);                         // MeshInstance3D
     static_assert(std::is_class_v<PrimitiveMeshComponentUVE>);                // BoxMesh3D, SphereMesh3D, PlaneMesh3D
     static_assert(std::is_class_v<LightComponentUVE>);                        // Light3D
-    static_assert(std::is_class_v<RigidBodyComponentUVE>);                    // Rigid3D
+    static_assert(std::is_class_v<Rigid3DComponentUVE>);                    // Rigid3D
     static_assert(std::is_class_v<AudioSourceComponentUVE>);                  // AudioSource3D
     static_assert(std::is_class_v<ParticleEmitterComponentUVE>);              // ParticleEmitter3D
     static_assert(std::is_class_v<ScriptComponentUVE>);                       // Script

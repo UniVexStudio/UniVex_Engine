@@ -9,7 +9,7 @@
 #include <vector>
 
 #include "uve/animation/time_pose_contract_uve.h"
-#include "uve/component/animation_player_component_uve.h"
+#include "uve/component/animation_sequencer_component_uve.h"
 #include "uve/component/entity_uve.h"
 
 namespace UVE::Asset {
@@ -31,7 +31,7 @@ struct Skeleton3DComponentUVE;
 struct AnimationSequencerObjectDefinitionUVE final {
     static constexpr std::string_view defaultName = "AnimationSequencer";
 
-    AnimationPlayerComponentUVE player{};
+    AnimationSequencerComponentUVE player{};
     AnimationMixerComponentUVE mixer{};
 };
 
@@ -43,20 +43,20 @@ void ApplyAnimationSequencerObjectDefinitionUVE(IEntityManagerUVE& entityManager
 
 // ---- Playback ------------------------------------------------------------------------------------
 // Pure functions over the component, the clip and the target's transform, so the whole behaviour
-// is testable without an engine. EngineCoreUVE::SyncAnimationPlayersUVE drives them.
+// is testable without an engine. EngineCoreUVE::SyncAnimationSequencersUVE drives them.
 
 /// Starts playback from `startOffsetSeconds` (from the end when speed is negative), remembering
 /// the target's current pose for the blend-in, relative playback and Return To Start.
-void PlayAnimationPlayerUVE(AnimationPlayerComponentUVE& player, const TransformComponentUVE& targetNow,
+void PlayAnimationSequencerUVE(AnimationSequencerComponentUVE& player, const TransformComponentUVE& targetNow,
                             double clipDurationSeconds) noexcept;
 
 /// Stops playback where it is. The target keeps its current pose.
-void StopAnimationPlayerUVE(AnimationPlayerComponentUVE& player) noexcept;
+void StopAnimationSequencerUVE(AnimationSequencerComponentUVE& player) noexcept;
 
 /// Advances a playing player by `deltaSeconds` and writes the clip's pose into `target`, through the
 /// mixer's channel masks, the blend-in and relative mode. Returns true when `target` was written. A
 /// clip that is empty or invalid stops the player and writes nothing.
-[[nodiscard]] bool StepAnimationPlayerUVE(AnimationPlayerComponentUVE& player, const Asset::AnimationClipAssetUVE& clip,
+[[nodiscard]] bool StepAnimationSequencerUVE(AnimationSequencerComponentUVE& player, const Asset::AnimationClipAssetUVE& clip,
                                           float deltaSeconds, TransformComponentUVE& target,
                                           const AnimationMixerComponentUVE& mixer = {}) noexcept;
 
@@ -65,7 +65,7 @@ void StopAnimationPlayerUVE(AnimationPlayerComponentUVE& player) noexcept;
 /// keeps its rest pose. The loop mode, speed and On Finish work as for an object; Blend In eases from
 /// the pose the skeleton had; Relative does not apply. Returns true when the pose was written. A
 /// clip without bone tracks stops the player and writes nothing.
-[[nodiscard]] bool StepSkeletalAnimationPlayerUVE(AnimationPlayerComponentUVE& player,
+[[nodiscard]] bool StepSkeletalAnimationSequencerUVE(AnimationSequencerComponentUVE& player,
                                                   const Asset::AnimationClipAssetUVE& clip, float deltaSeconds,
                                                   Skeleton3DComponentUVE& skeleton,
                                                   const AnimationMixerComponentUVE& mixer = {});
@@ -79,7 +79,7 @@ void StopAnimationPlayerUVE(AnimationPlayerComponentUVE& player) noexcept;
 
 /// The bone whose ground travel is root motion: `boneName` when it names a bone with a track, else
 /// (empty name) the first bone, parents first, whose track moves over 1 cm across the ground.
-/// nullopt when there is none. With a root motion mode on, StepSkeletalAnimationPlayerUVE keeps
+/// nullopt when there is none. With a root motion mode on, StepSkeletalAnimationSequencerUVE keeps
 /// that bone over its first frame's ground position and reports its travel in rootMotionDelta.
 [[nodiscard]] std::optional<std::size_t> ResolveRootMotionBoneUVE(const Skeleton3DComponentUVE& skeleton,
                                                                   const Asset::AnimationClipAssetUVE& clip,

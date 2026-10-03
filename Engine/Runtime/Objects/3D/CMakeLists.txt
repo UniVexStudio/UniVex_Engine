@@ -9,11 +9,11 @@
 # node kind has its own discoverable, customizable home rather than one shared header or one
 # editor-side switch. Physics-specific Object3D kinds live under Physics/{Expose,Internal}, AI
 # navigation nodes under ../AI/3D, and animation nodes under ../Animation. They remain part of
-# this one uve_nodes_3d library. uve_component supplies the component structs + EntityUVE,
+# this one uve_objects_3d library. uve_component supplies the component structs + EntityUVE,
 # uve_entity supplies IEntityManagerUVE for the definition Apply functions, and uve_animation
 # supplies the runtime animation types.
 
-add_library(uve_nodes_3d STATIC
+add_library(uve_objects_3d STATIC
     Internal/object_3d_common_uve.cpp
     Internal/abstract_objects_3d_uve.cpp
     ../Animation/Internal/abstract_animation_objects_3d_uve.cpp
@@ -59,8 +59,8 @@ add_library(uve_nodes_3d STATIC
     Internal/particle_emitter_3d_uve.cpp
     Internal/script_uve.cpp
 )
-target_include_directories(uve_nodes_3d PUBLIC Expose Physics/Expose ../AI/3D/Expose ../Animation/Expose)
-target_link_libraries(uve_nodes_3d PUBLIC uve_math uve_component uve_entity uve_animation PRIVATE uve_retarget)
-target_include_directories(uve_nodes_3d PRIVATE Internal Physics/Internal ../AI/3D/Internal ../Animation/Internal)
-target_compile_features(uve_nodes_3d PUBLIC cxx_std_23)
-uve_set_warnings(uve_nodes_3d)
+target_include_directories(uve_objects_3d PUBLIC Expose Physics/Expose ../AI/3D/Expose ../Animation/Expose)
+target_link_libraries(uve_objects_3d PUBLIC uve_math uve_component uve_entity uve_animation PRIVATE uve_retarget)
+target_include_directories(uve_objects_3d PRIVATE Internal Physics/Internal ../AI/3D/Internal ../Animation/Internal)
+target_compile_features(uve_objects_3d PUBLIC cxx_std_23)
+uve_set_warnings(uve_objects_3d)

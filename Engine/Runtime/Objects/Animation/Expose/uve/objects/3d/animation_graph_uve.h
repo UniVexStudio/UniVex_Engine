@@ -9,7 +9,7 @@
 
 #include "uve/asset/asset_guid_uve.h"
 #include "uve/component/animation_mixer_component_uve.h"
-#include "uve/component/animation_tree_component_uve.h"
+#include "uve/component/animation_graph_component_uve.h"
 #include "uve/component/entity_uve.h"
 
 namespace UVE::Asset {
@@ -28,7 +28,7 @@ struct Skeleton3DComponentUVE;
 struct AnimationGraphObjectDefinitionUVE final {
     static constexpr std::string_view defaultName = "AnimationGraph";
 
-    AnimationTreeComponentUVE tree{};
+    AnimationGraphComponentUVE tree{};
     AnimationMixerComponentUVE mixer{};
 };
 
@@ -46,7 +46,7 @@ using AnimationClipResolverUVE = std::function<const Asset::AnimationClipAssetUV
 /// start) whenever the graph's shape changes. Triggers are consumed by the object or transition that
 /// uses them. Returns true when `target` was written: an inactive tree, an invalid graph, or one
 /// whose clips are all missing writes nothing.
-[[nodiscard]] bool StepAnimationTreeUVE(AnimationTreeComponentUVE& tree, const AnimationClipResolverUVE& clips,
+[[nodiscard]] bool StepAnimationGraphUVE(AnimationGraphComponentUVE& tree, const AnimationClipResolverUVE& clips,
                                         float deltaSeconds, TransformComponentUVE& target,
                                         const AnimationMixerComponentUVE& mixer = {});
 
@@ -60,7 +60,7 @@ using AnimationClipResolverUVE = std::function<const Asset::AnimationClipAssetUV
 /// - Clip events passed by the clips that count at least half go to `tree.firedEvents`.
 /// Returns true when the pose was written; false for an inactive tree, an invalid graph, a skeleton
 /// with no bones, or a graph none of whose clips is loaded.
-[[nodiscard]] bool StepSkeletalAnimationTreeUVE(AnimationTreeComponentUVE& tree, const AnimationClipResolverUVE& clips,
+[[nodiscard]] bool StepSkeletalAnimationGraphUVE(AnimationGraphComponentUVE& tree, const AnimationClipResolverUVE& clips,
                                                 float deltaSeconds, Skeleton3DComponentUVE& skeleton,
                                                 const AnimationMixerComponentUVE& mixer = {});
 
@@ -91,9 +91,9 @@ void SmoothBlendPositionUVE(Math::Vector2UVE& value, Math::Vector2UVE& velocity,
 [[nodiscard]] float AnimationTransitionCurveWeightUVE(AnimationTransitionCurveUVE curve, float progress) noexcept;
 
 /// Puts every object back to its start: clips at 0, state machines in their entry state.
-void ResetAnimationTreeUVE(AnimationTreeComponentUVE& tree);
+void ResetAnimationGraphUVE(AnimationGraphComponentUVE& tree);
 
 /// Sets a parameter by name. Returns false when the tree has none by that name.
-[[nodiscard]] bool SetAnimationTreeParameterUVE(AnimationTreeComponentUVE& tree, std::string_view name, float value);
+[[nodiscard]] bool SetAnimationGraphParameterUVE(AnimationGraphComponentUVE& tree, std::string_view name, float value);
 
 } // namespace UVE::Scene

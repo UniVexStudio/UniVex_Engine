@@ -11,7 +11,7 @@
 
 namespace UVE::Core {
 
-enum class AnimationTreeObjectKindUVE : std::uint8_t {
+enum class AnimationGraphObjectKindUVE : std::uint8_t {
     ClipPlayer = 0,
     Blend,
     Parameter,
@@ -25,9 +25,9 @@ enum class AnimationTreeObjectKindUVE : std::uint8_t {
     OutputPose,
 };
 
-struct AnimationTreeObjectUVE final {
+struct AnimationGraphObjectUVE final {
     std::uint32_t id = 0U;
-    AnimationTreeObjectKindUVE kind = AnimationTreeObjectKindUVE::OutputPose;
+    AnimationGraphObjectKindUVE kind = AnimationGraphObjectKindUVE::OutputPose;
     std::string name;
     std::string clipId;
     std::string parameterId;
@@ -38,15 +38,15 @@ struct AnimationTreeObjectUVE final {
     bool enabled = true;
 };
 
-struct AnimationTreeUVE final {
+struct AnimationGraphUVE final {
     static constexpr std::size_t kMaximumObjectsUVE = 512U;
     static constexpr std::size_t kMaximumParametersUVE = 128U;
 
-    std::vector<AnimationTreeObjectUVE> objects;
+    std::vector<AnimationGraphObjectUVE> objects;
     std::vector<AnimationClipUVE> clips;
 };
 
-enum class AnimationTreeValidationCodeUVE : std::uint8_t {
+enum class AnimationGraphValidationCodeUVE : std::uint8_t {
     Valid = 0,
     EmptyTree,
     CapacityExceeded,
@@ -60,22 +60,22 @@ enum class AnimationTreeValidationCodeUVE : std::uint8_t {
     MissingOutput,
 };
 
-struct AnimationTreeValidationResultUVE final {
-    AnimationTreeValidationCodeUVE code = AnimationTreeValidationCodeUVE::EmptyTree;
+struct AnimationGraphValidationResultUVE final {
+    AnimationGraphValidationCodeUVE code = AnimationGraphValidationCodeUVE::EmptyTree;
     std::uint32_t objectId = 0U;
     std::string message;
 
     [[nodiscard]] bool IsValidUVE() const noexcept {
-        return code == AnimationTreeValidationCodeUVE::Valid;
+        return code == AnimationGraphValidationCodeUVE::Valid;
     }
 };
 
-struct AnimationTreeParameterUVE final {
+struct AnimationGraphParameterUVE final {
     std::string parameterId;
     float value = 0.0F;
 };
 
-struct AnimationTreeEvaluationResultUVE final {
+struct AnimationGraphEvaluationResultUVE final {
     TransformPoseUVE pose;
     bool usedOutputObject = false;
     std::size_t evaluatedObjectCount = 0U;
@@ -86,12 +86,12 @@ struct AnimationTreeEvaluationResultUVE final {
     }
 };
 
-[[nodiscard]] AnimationTreeValidationResultUVE ValidateAnimationTreeUVE(
-    const AnimationTreeUVE& tree) noexcept;
+[[nodiscard]] AnimationGraphValidationResultUVE ValidateAnimationGraphUVE(
+    const AnimationGraphUVE& tree) noexcept;
 
 /// Evaluates shared objects independently for distinct local times; memoization is keyed by object ID
 /// and exact local evaluation time, while active recursion remains cycle-checked by object ID.
-[[nodiscard]] AnimationTreeEvaluationResultUVE EvaluateAnimationTreeUVE(
-    const AnimationTreeUVE& tree, double timeSeconds, const std::vector<AnimationTreeParameterUVE>& parameters = {});
+[[nodiscard]] AnimationGraphEvaluationResultUVE EvaluateAnimationGraphUVE(
+    const AnimationGraphUVE& tree, double timeSeconds, const std::vector<AnimationGraphParameterUVE>& parameters = {});
 
 } // namespace UVE::Core

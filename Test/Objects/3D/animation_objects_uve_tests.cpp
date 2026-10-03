@@ -9,8 +9,8 @@
 #include <gtest/gtest.h>
 
 #include "uve/asset/animation_clip_asset_uve.h"
-#include "uve/component/animation_player_component_uve.h"
-#include "uve/component/animation_tree_component_uve.h"
+#include "uve/component/animation_sequencer_component_uve.h"
+#include "uve/component/animation_graph_component_uve.h"
 #include "uve/component/transform_component_uve.h"
 #include "uve/objects/3d/animation_sequencer_uve.h"
 #include "uve/objects/3d/animation_graph_uve.h"
@@ -34,128 +34,128 @@ namespace {
     return clip;
 }
 
-[[nodiscard]] AnimationPlayerComponentUVE StartedUVE(AnimationPlayerComponentUVE player,
+[[nodiscard]] AnimationSequencerComponentUVE StartedUVE(AnimationSequencerComponentUVE player,
                                                      const TransformComponentUVE& target,
                                                      const Asset::AnimationClipAssetUVE& clip) {
-    PlayAnimationPlayerUVE(player, target, clip.durationSeconds);
+    PlayAnimationSequencerUVE(player, target, clip.durationSeconds);
     return player;
 }
 
-TEST(AnimationPlayerUVETest, LoopWrapsBackToTheStart) {
+TEST(AnimationSequencerUVETest, LoopWrapsBackToTheStart) {
     const Asset::AnimationClipAssetUVE clip = MakeSlideClipUVE();
     TransformComponentUVE target;
-    AnimationPlayerComponentUVE player = StartedUVE(AnimationPlayerComponentUVE{}, target, clip);
-    ASSERT_TRUE(StepAnimationPlayerUVE(player, clip, 0.5F, target));
+    AnimationSequencerComponentUVE player = StartedUVE(AnimationSequencerComponentUVE{}, target, clip);
+    ASSERT_TRUE(StepAnimationSequencerUVE(player, clip, 0.5F, target));
     EXPECT_NEAR(target.localPosition.x, 5.0F, 1e-4F);
-    ASSERT_TRUE(StepAnimationPlayerUVE(player, clip, 0.75F, target));
+    ASSERT_TRUE(StepAnimationSequencerUVE(player, clip, 0.75F, target));
     EXPECT_NEAR(player.currentTimeSeconds, 0.25F, 1e-4F);
     EXPECT_NEAR(target.localPosition.x, 2.5F, 1e-4F);
     EXPECT_TRUE(player.isPlaying);
 }
 
-TEST(AnimationPlayerUVETest, PingPongTurnsRoundAtEachEnd) {
+TEST(AnimationSequencerUVETest, PingPongTurnsRoundAtEachEnd) {
     const Asset::AnimationClipAssetUVE clip = MakeSlideClipUVE();
     TransformComponentUVE target;
-    AnimationPlayerComponentUVE settings;
+    AnimationSequencerComponentUVE settings;
     settings.loopMode = AnimationLoopModeUVE::PingPong;
-    AnimationPlayerComponentUVE player = StartedUVE(settings, target, clip);
-    ASSERT_TRUE(StepAnimationPlayerUVE(player, clip, 1.25F, target));
+    AnimationSequencerComponentUVE player = StartedUVE(settings, target, clip);
+    ASSERT_TRUE(StepAnimationSequencerUVE(player, clip, 1.25F, target));
     EXPECT_NEAR(player.currentTimeSeconds, 0.75F, 1e-4F);
     EXPECT_EQ(player.direction, -1.0F);
-    ASSERT_TRUE(StepAnimationPlayerUVE(player, clip, 1.0F, target));
+    ASSERT_TRUE(StepAnimationSequencerUVE(player, clip, 1.0F, target));
     EXPECT_NEAR(player.currentTimeSeconds, 0.25F, 1e-4F);
     EXPECT_EQ(player.direction, 1.0F);
 }
 
-TEST(AnimationPlayerUVETest, OnceStopsAtTheEndAndCanReturnToStart) {
+TEST(AnimationSequencerUVETest, OnceStopsAtTheEndAndCanReturnToStart) {
     const Asset::AnimationClipAssetUVE clip = MakeSlideClipUVE();
     TransformComponentUVE target;
     target.localPosition = Math::Vector3UVE{-3.0F, 1.0F, 0.0F};
-    AnimationPlayerComponentUVE settings;
+    AnimationSequencerComponentUVE settings;
     settings.loopMode = AnimationLoopModeUVE::Once;
-    AnimationPlayerComponentUVE hold = StartedUVE(settings, target, clip);
+    AnimationSequencerComponentUVE hold = StartedUVE(settings, target, clip);
     TransformComponentUVE held = target;
-    ASSERT_TRUE(StepAnimationPlayerUVE(hold, clip, 2.0F, held));
+    ASSERT_TRUE(StepAnimationSequencerUVE(hold, clip, 2.0F, held));
     EXPECT_FALSE(hold.isPlaying);
     EXPECT_TRUE(hold.finished);
     EXPECT_NEAR(held.localPosition.x, 10.0F, 1e-4F);
-    EXPECT_FALSE(StepAnimationPlayerUVE(hold, clip, 0.1F, held)); // stopped: nothing more written
+    EXPECT_FALSE(StepAnimationSequencerUVE(hold, clip, 0.1F, held)); // stopped: nothing more written
 
     settings.onFinish = AnimationFinishActionUVE::ReturnToStart;
-    AnimationPlayerComponentUVE back = StartedUVE(settings, target, clip);
+    AnimationSequencerComponentUVE back = StartedUVE(settings, target, clip);
     TransformComponentUVE returned = target;
-    ASSERT_TRUE(StepAnimationPlayerUVE(back, clip, 2.0F, returned));
+    ASSERT_TRUE(StepAnimationSequencerUVE(back, clip, 2.0F, returned));
     EXPECT_EQ(returned.localPosition, target.localPosition);
 }
 
-TEST(AnimationPlayerUVETest, NegativeSpeedPlaysBackwardsFromTheEnd) {
+TEST(AnimationSequencerUVETest, NegativeSpeedPlaysBackwardsFromTheEnd) {
     const Asset::AnimationClipAssetUVE clip = MakeSlideClipUVE();
     TransformComponentUVE target;
-    AnimationPlayerComponentUVE settings;
+    AnimationSequencerComponentUVE settings;
     settings.speed = -1.0F;
-    AnimationPlayerComponentUVE player = StartedUVE(settings, target, clip);
+    AnimationSequencerComponentUVE player = StartedUVE(settings, target, clip);
     EXPECT_NEAR(player.currentTimeSeconds, 1.0F, 1e-6F);
-    ASSERT_TRUE(StepAnimationPlayerUVE(player, clip, 0.25F, target));
+    ASSERT_TRUE(StepAnimationSequencerUVE(player, clip, 0.25F, target));
     EXPECT_NEAR(target.localPosition.x, 7.5F, 1e-4F);
 }
 
-TEST(AnimationPlayerUVETest, BlendInEasesFromWhereTheTargetWas) {
+TEST(AnimationSequencerUVETest, BlendInEasesFromWhereTheTargetWas) {
     const Asset::AnimationClipAssetUVE clip = MakeSlideClipUVE(10.0F, 10.0);
     TransformComponentUVE target;
     target.localPosition = Math::Vector3UVE{0.0F, 4.0F, 0.0F};
-    AnimationPlayerComponentUVE settings;
+    AnimationSequencerComponentUVE settings;
     settings.blendInSeconds = 1.0F;
     settings.startOffsetSeconds = 5.0F; // the clip is at x=5, y=0 there
-    AnimationPlayerComponentUVE player = StartedUVE(settings, target, clip);
-    ASSERT_TRUE(StepAnimationPlayerUVE(player, clip, 0.5F, target));
+    AnimationSequencerComponentUVE player = StartedUVE(settings, target, clip);
+    ASSERT_TRUE(StepAnimationSequencerUVE(player, clip, 0.5F, target));
     // Halfway through the blend: halfway between the start (0,4) and the clip (5.5,0).
     EXPECT_NEAR(target.localPosition.x, 2.75F, 1e-3F);
     EXPECT_NEAR(target.localPosition.y, 2.0F, 1e-3F);
-    ASSERT_TRUE(StepAnimationPlayerUVE(player, clip, 1.0F, target));
+    ASSERT_TRUE(StepAnimationSequencerUVE(player, clip, 1.0F, target));
     EXPECT_NEAR(target.localPosition.x, 6.5F, 1e-3F);
     EXPECT_NEAR(target.localPosition.y, 0.0F, 1e-3F);
 }
 
-TEST(AnimationPlayerUVETest, RelativeLaysTheMotionOnTopOfTheStartPose) {
+TEST(AnimationSequencerUVETest, RelativeLaysTheMotionOnTopOfTheStartPose) {
     const Asset::AnimationClipAssetUVE clip = MakeSlideClipUVE();
     TransformComponentUVE target;
     target.localPosition = Math::Vector3UVE{100.0F, 0.0F, 7.0F};
-    AnimationPlayerComponentUVE settings;
+    AnimationSequencerComponentUVE settings;
     settings.relative = true;
-    AnimationPlayerComponentUVE player = StartedUVE(settings, target, clip);
-    ASSERT_TRUE(StepAnimationPlayerUVE(player, clip, 0.5F, target));
+    AnimationSequencerComponentUVE player = StartedUVE(settings, target, clip);
+    ASSERT_TRUE(StepAnimationSequencerUVE(player, clip, 0.5F, target));
     EXPECT_NEAR(target.localPosition.x, 105.0F, 1e-3F);
     EXPECT_NEAR(target.localPosition.z, 7.0F, 1e-3F);
 }
 
-TEST(AnimationPlayerUVETest, ChannelMasksLeaveTheOtherChannelsAlone) {
+TEST(AnimationSequencerUVETest, ChannelMasksLeaveTheOtherChannelsAlone) {
     const Asset::AnimationClipAssetUVE clip = MakeSlideClipUVE();
     TransformComponentUVE target;
     target.localPosition = Math::Vector3UVE{-1.0F, -1.0F, -1.0F};
     AnimationMixerComponentUVE mixer;
     mixer.animatePosition = false;
-    AnimationPlayerComponentUVE player = StartedUVE(AnimationPlayerComponentUVE{}, target, clip);
-    ASSERT_TRUE(StepAnimationPlayerUVE(player, clip, 0.5F, target, mixer));
+    AnimationSequencerComponentUVE player = StartedUVE(AnimationSequencerComponentUVE{}, target, clip);
+    ASSERT_TRUE(StepAnimationSequencerUVE(player, clip, 0.5F, target, mixer));
     EXPECT_EQ(target.localPosition, (Math::Vector3UVE{-1.0F, -1.0F, -1.0F}));
     EXPECT_NEAR(target.localScale.x, 1.5F, 1e-4F);
 }
 
-TEST(AnimationPlayerUVETest, AnEmptyClipStopsWithoutWriting) {
+TEST(AnimationSequencerUVETest, AnEmptyClipStopsWithoutWriting) {
     Asset::AnimationClipAssetUVE empty;
     TransformComponentUVE target;
-    AnimationPlayerComponentUVE player = StartedUVE(AnimationPlayerComponentUVE{}, target, empty);
-    EXPECT_FALSE(StepAnimationPlayerUVE(player, empty, 0.1F, target));
+    AnimationSequencerComponentUVE player = StartedUVE(AnimationSequencerComponentUVE{}, target, empty);
+    EXPECT_FALSE(StepAnimationSequencerUVE(player, empty, 0.1F, target));
     EXPECT_FALSE(player.isPlaying);
 }
 
-TEST(AnimationPlayerUVETest, ValidationRejectsBadSettings) {
-    AnimationPlayerComponentUVE player;
-    EXPECT_TRUE(IsAnimationPlayerComponentValidUVE(player));
+TEST(AnimationSequencerUVETest, ValidationRejectsBadSettings) {
+    AnimationSequencerComponentUVE player;
+    EXPECT_TRUE(IsAnimationSequencerComponentValidUVE(player));
     player.blendInSeconds = -1.0F;
-    EXPECT_FALSE(IsAnimationPlayerComponentValidUVE(player));
-    player = AnimationPlayerComponentUVE{};
+    EXPECT_FALSE(IsAnimationSequencerComponentValidUVE(player));
+    player = AnimationSequencerComponentUVE{};
     player.loopMode = static_cast<AnimationLoopModeUVE>(9);
-    EXPECT_FALSE(IsAnimationPlayerComponentValidUVE(player));
+    EXPECT_FALSE(IsAnimationSequencerComponentValidUVE(player));
 }
 
 // ---- AnimationGraph graph ------------------------------------------------------------------------
@@ -194,9 +194,9 @@ public:
         return object;
     }
 
-    [[nodiscard]] float StepUVE(AnimationTreeComponentUVE& tree, const float seconds) {
-        EXPECT_TRUE(IsAnimationTreeComponentValidUVE(tree)) << DescribeAnimationGraphProblemUVE(tree);
-        EXPECT_TRUE(StepAnimationTreeUVE(tree, ResolverUVE(), seconds, m_target, mixer));
+    [[nodiscard]] float StepUVE(AnimationGraphComponentUVE& tree, const float seconds) {
+        EXPECT_TRUE(IsAnimationGraphComponentValidUVE(tree)) << DescribeAnimationGraphProblemUVE(tree);
+        EXPECT_TRUE(StepAnimationGraphUVE(tree, ResolverUVE(), seconds, m_target, mixer));
         return m_target.localPosition.x;
     }
 
@@ -216,17 +216,17 @@ private:
 
 using Kind = AnimationGraphObjectKindUVE;
 
-TEST(AnimationTreeUVETest, TheDefaultGraphPlaysItsClip) {
+TEST(AnimationGraphUVETest, TheDefaultGraphPlaysItsClip) {
     GraphFixtureUVE fixture;
-    AnimationTreeComponentUVE tree;
-    ASSERT_TRUE(IsAnimationTreeComponentValidUVE(tree));
+    AnimationGraphComponentUVE tree;
+    ASSERT_TRUE(IsAnimationGraphComponentValidUVE(tree));
     tree.objects[1].clip = fixture.AddClipUVE(10.0F);
     EXPECT_NEAR(fixture.StepUVE(tree, 0.5F), 5.0F, 1e-4F);
 }
 
-TEST(AnimationTreeUVETest, BlendMixesByItsParameter) {
+TEST(AnimationGraphUVETest, BlendMixesByItsParameter) {
     GraphFixtureUVE fixture;
-    AnimationTreeComponentUVE tree;
+    AnimationGraphComponentUVE tree;
     tree.parameters = {AnimationParameterUVE{"blend", AnimationParameterTypeUVE::Float, 0.5F}};
     AnimationGraphObjectUVE blend = GraphFixtureUVE::ObjectUVE(2U, Kind::Blend2, {3U, 4U});
     blend.parameter = "blend";
@@ -234,14 +234,14 @@ TEST(AnimationTreeUVETest, BlendMixesByItsParameter) {
                   GraphFixtureUVE::ClipObjectUVE(3U, fixture.AddClipUVE(10.0F)),
                   GraphFixtureUVE::ClipObjectUVE(4U, fixture.AddClipUVE(20.0F))};
     EXPECT_NEAR(fixture.StepUVE(tree, 0.5F), 7.5F, 1e-4F);
-    ASSERT_TRUE(SetAnimationTreeParameterUVE(tree, "blend", 1.0F));
+    ASSERT_TRUE(SetAnimationGraphParameterUVE(tree, "blend", 1.0F));
     EXPECT_NEAR(fixture.StepUVE(tree, 0.25F), 15.0F, 1e-4F);
-    EXPECT_FALSE(SetAnimationTreeParameterUVE(tree, "missing", 1.0F));
+    EXPECT_FALSE(SetAnimationGraphParameterUVE(tree, "missing", 1.0F));
 }
 
-TEST(AnimationTreeUVETest, BlendSpaceMixesTheTwoPointsAroundItsValue) {
+TEST(AnimationGraphUVETest, BlendSpaceMixesTheTwoPointsAroundItsValue) {
     GraphFixtureUVE fixture;
-    AnimationTreeComponentUVE tree;
+    AnimationGraphComponentUVE tree;
     tree.parameters = {AnimationParameterUVE{"speed", AnimationParameterTypeUVE::Float, 1.5F}};
     AnimationGraphObjectUVE space = GraphFixtureUVE::ObjectUVE(2U, Kind::BlendSpace1D);
     space.parameter = "speed";
@@ -254,9 +254,9 @@ TEST(AnimationTreeUVETest, BlendSpaceMixesTheTwoPointsAroundItsValue) {
     EXPECT_NEAR(fixture.StepUVE(tree, 0.5F), 12.5F, 1e-4F);
 }
 
-TEST(AnimationTreeUVETest, StateMachineMovesOnConditionsAndConsumesTriggers) {
+TEST(AnimationGraphUVETest, StateMachineMovesOnConditionsAndConsumesTriggers) {
     GraphFixtureUVE fixture;
-    AnimationTreeComponentUVE tree;
+    AnimationGraphComponentUVE tree;
     tree.parameters = {AnimationParameterUVE{"speed", AnimationParameterTypeUVE::Float, 0.0F},
                        AnimationParameterUVE{"stop", AnimationParameterTypeUVE::Trigger, 0.0F}};
     AnimationGraphObjectUVE machine = GraphFixtureUVE::ObjectUVE(2U, Kind::StateMachine, {3U, 4U});
@@ -277,20 +277,20 @@ TEST(AnimationTreeUVETest, StateMachineMovesOnConditionsAndConsumesTriggers) {
 
     EXPECT_NEAR(fixture.StepUVE(tree, 0.5F), 0.5F, 1e-4F);
     EXPECT_EQ(tree.activeStates, "Idle");
-    ASSERT_TRUE(SetAnimationTreeParameterUVE(tree, "speed", 1.0F));
+    ASSERT_TRUE(SetAnimationGraphParameterUVE(tree, "speed", 1.0F));
     static_cast<void>(fixture.StepUVE(tree, 0.1F)); // the move happens on this step
     EXPECT_EQ(tree.activeStates, "Run");
     EXPECT_NEAR(fixture.StepUVE(tree, 0.5F), 5.0F, 1e-4F); // Run started from its beginning
 
-    ASSERT_TRUE(SetAnimationTreeParameterUVE(tree, "stop", 1.0F));
+    ASSERT_TRUE(SetAnimationGraphParameterUVE(tree, "stop", 1.0F));
     static_cast<void>(fixture.StepUVE(tree, 0.1F));
     EXPECT_EQ(tree.activeStates, "Idle");
     EXPECT_EQ(tree.parameters[1].value, 0.0F); // the trigger was used up
 }
 
-TEST(AnimationTreeUVETest, StateMachineCrossfadesAndCanWaitForTheEnd) {
+TEST(AnimationGraphUVETest, StateMachineCrossfadesAndCanWaitForTheEnd) {
     GraphFixtureUVE fixture;
-    AnimationTreeComponentUVE tree;
+    AnimationGraphComponentUVE tree;
     AnimationGraphObjectUVE machine = GraphFixtureUVE::ObjectUVE(2U, Kind::StateMachine, {3U, 4U});
     AnimationTransitionUVE atEnd;
     atEnd.fromState = 0U;
@@ -312,9 +312,9 @@ TEST(AnimationTreeUVETest, StateMachineCrossfadesAndCanWaitForTheEnd) {
     EXPECT_NEAR(fixture.StepUVE(tree, 0.25F), 13.75F, 1e-3F);
 }
 
-TEST(AnimationTreeUVETest, StateMachineInertializesByDefault) {
+TEST(AnimationGraphUVETest, StateMachineInertializesByDefault) {
     GraphFixtureUVE fixture;
-    AnimationTreeComponentUVE tree;
+    AnimationGraphComponentUVE tree;
     AnimationGraphObjectUVE machine = GraphFixtureUVE::ObjectUVE(2U, Kind::StateMachine, {3U, 4U});
     AnimationTransitionUVE atEnd;
     atEnd.fromState = 0U;
@@ -336,9 +336,9 @@ TEST(AnimationTreeUVETest, StateMachineInertializesByDefault) {
 }
 
 /// Idle (0 m) and Run (10 m per second) as a two-state machine from Idle to Run, crossfading.
-[[nodiscard]] AnimationTreeComponentUVE TwoStateMachineUVE(GraphFixtureUVE& fixture, const AnimationTransitionUVE& transition,
+[[nodiscard]] AnimationGraphComponentUVE TwoStateMachineUVE(GraphFixtureUVE& fixture, const AnimationTransitionUVE& transition,
                                                           const double runSeconds = 1.0) {
-    AnimationTreeComponentUVE tree;
+    AnimationGraphComponentUVE tree;
     tree.parameters = {AnimationParameterUVE{"speed", AnimationParameterTypeUVE::Float, 0.0F},
                        AnimationParameterUVE{"grounded", AnimationParameterTypeUVE::Bool, 0.0F},
                        AnimationParameterUVE{"jump", AnimationParameterTypeUVE::Trigger, 0.0F}};
@@ -351,7 +351,7 @@ TEST(AnimationTreeUVETest, StateMachineInertializesByDefault) {
     return tree;
 }
 
-TEST(AnimationTreeUVETest, TransitionsNeedAllTheirConditionsAndKeepTheTriggerUntilTaken) {
+TEST(AnimationGraphUVETest, TransitionsNeedAllTheirConditionsAndKeepTheTriggerUntilTaken) {
     GraphFixtureUVE fixture;
     AnimationTransitionUVE go;
     go.fromState = 0U;
@@ -359,38 +359,38 @@ TEST(AnimationTreeUVETest, TransitionsNeedAllTheirConditionsAndKeepTheTriggerUnt
     go.fadeSeconds = 0.0F;
     go.conditions = {AnimationTransitionConditionUVE{AnimationConditionUVE::Triggered, "jump", 0.0F},
                      AnimationTransitionConditionUVE{AnimationConditionUVE::ParameterTrue, "grounded", 0.0F}};
-    AnimationTreeComponentUVE tree = TwoStateMachineUVE(fixture, go);
-    ASSERT_TRUE(SetAnimationTreeParameterUVE(tree, "jump", 1.0F));
+    AnimationGraphComponentUVE tree = TwoStateMachineUVE(fixture, go);
+    ASSERT_TRUE(SetAnimationGraphParameterUVE(tree, "jump", 1.0F));
     static_cast<void>(fixture.StepUVE(tree, 0.1F));
     EXPECT_EQ(tree.activeStates, "Idle") << "not grounded: the other condition fails";
     EXPECT_EQ(tree.parameters[2].value, 1.0F) << "so the trigger is still waiting";
-    ASSERT_TRUE(SetAnimationTreeParameterUVE(tree, "grounded", 1.0F));
+    ASSERT_TRUE(SetAnimationGraphParameterUVE(tree, "grounded", 1.0F));
     static_cast<void>(fixture.StepUVE(tree, 0.1F));
     EXPECT_EQ(tree.activeStates, "Run");
     EXPECT_EQ(tree.parameters[2].value, 0.0F) << "used up by the transition taken";
     EXPECT_EQ(tree.objectStates[1].lastTransition, 0U);
 }
 
-TEST(AnimationTreeUVETest, AnOffTransitionIsNeverTaken) {
+TEST(AnimationGraphUVETest, AnOffTransitionIsNeverTaken) {
     GraphFixtureUVE fixture;
     AnimationTransitionUVE go;
     go.fromState = 0U;
     go.toState = 1U;
     go.enabled = false;
-    AnimationTreeComponentUVE tree = TwoStateMachineUVE(fixture, go);
+    AnimationGraphComponentUVE tree = TwoStateMachineUVE(fixture, go);
     static_cast<void>(fixture.StepUVE(tree, 0.1F));
     static_cast<void>(fixture.StepUVE(tree, 0.1F));
     EXPECT_EQ(tree.activeStates, "Idle");
 }
 
-TEST(AnimationTreeUVETest, LeaveAfterWaitsForThePhase) {
+TEST(AnimationGraphUVETest, LeaveAfterWaitsForThePhase) {
     GraphFixtureUVE fixture;
     AnimationTransitionUVE go;
     go.fromState = 1U; // Run to Idle, once Run is three quarters through
     go.toState = 0U;
     go.fadeSeconds = 0.0F;
     go.exitPhase = 0.75F;
-    AnimationTreeComponentUVE tree = TwoStateMachineUVE(fixture, go);
+    AnimationGraphComponentUVE tree = TwoStateMachineUVE(fixture, go);
     tree.objects[1].entryState = 1U;
     static_cast<void>(fixture.StepUVE(tree, 0.5F));
     EXPECT_EQ(tree.activeStates, "Run") << "half way: not yet";
@@ -398,7 +398,7 @@ TEST(AnimationTreeUVETest, LeaveAfterWaitsForThePhase) {
     EXPECT_EQ(tree.activeStates, "Idle") << "past 75%: taken";
 }
 
-TEST(AnimationTreeUVETest, InStepStartsTheNextStateAtThePhaseLeft) {
+TEST(AnimationGraphUVETest, InStepStartsTheNextStateAtThePhaseLeft) {
     GraphFixtureUVE fixture;
     AnimationTransitionUVE go;
     go.fromState = 0U;
@@ -406,15 +406,15 @@ TEST(AnimationTreeUVETest, InStepStartsTheNextStateAtThePhaseLeft) {
     go.fadeSeconds = 0.0F;
     go.start = AnimationTransitionStartUVE::InStep;
     go.conditions = {AnimationTransitionConditionUVE{AnimationConditionUVE::ParameterGreater, "speed", 0.5F}};
-    AnimationTreeComponentUVE tree = TwoStateMachineUVE(fixture, go, 2.0);
+    AnimationGraphComponentUVE tree = TwoStateMachineUVE(fixture, go, 2.0);
     static_cast<void>(fixture.StepUVE(tree, 0.25F)); // Idle a quarter through its 1 s
-    ASSERT_TRUE(SetAnimationTreeParameterUVE(tree, "speed", 1.0F));
+    ASSERT_TRUE(SetAnimationGraphParameterUVE(tree, "speed", 1.0F));
     static_cast<void>(fixture.StepUVE(tree, 0.0F));
     ASSERT_EQ(tree.activeStates, "Run");
     EXPECT_NEAR(tree.objectStates[3].timeSeconds, 0.5, 1e-6) << "a quarter through Run's 2 s";
 }
 
-TEST(AnimationTreeUVETest, ContinuePicksUpWhereTheStateWasLeft) {
+TEST(AnimationGraphUVETest, ContinuePicksUpWhereTheStateWasLeft) {
     GraphFixtureUVE fixture;
     AnimationTransitionUVE back;
     back.fromState = 1U;
@@ -427,21 +427,21 @@ TEST(AnimationTreeUVETest, ContinuePicksUpWhereTheStateWasLeft) {
     go.fadeSeconds = 0.0F;
     go.start = AnimationTransitionStartUVE::Continue;
     go.conditions = {AnimationTransitionConditionUVE{AnimationConditionUVE::ParameterGreater, "speed", 0.5F}};
-    AnimationTreeComponentUVE tree = TwoStateMachineUVE(fixture, back, 4.0);
+    AnimationGraphComponentUVE tree = TwoStateMachineUVE(fixture, back, 4.0);
     tree.objects[1].transitions.push_back(go);
     tree.objects[1].entryState = 1U;
-    ASSERT_TRUE(SetAnimationTreeParameterUVE(tree, "speed", 1.0F));
+    ASSERT_TRUE(SetAnimationGraphParameterUVE(tree, "speed", 1.0F));
     static_cast<void>(fixture.StepUVE(tree, 0.5F)); // Run at 0.5 s
-    ASSERT_TRUE(SetAnimationTreeParameterUVE(tree, "speed", 0.0F));
+    ASSERT_TRUE(SetAnimationGraphParameterUVE(tree, "speed", 0.0F));
     static_cast<void>(fixture.StepUVE(tree, 0.0F));
     ASSERT_EQ(tree.activeStates, "Idle");
-    ASSERT_TRUE(SetAnimationTreeParameterUVE(tree, "speed", 1.0F));
+    ASSERT_TRUE(SetAnimationGraphParameterUVE(tree, "speed", 1.0F));
     static_cast<void>(fixture.StepUVE(tree, 0.0F));
     ASSERT_EQ(tree.activeStates, "Run");
     EXPECT_NEAR(tree.objectStates[3].timeSeconds, 0.5, 1e-6) << "Run carries on from 0.5 s";
 }
 
-TEST(AnimationTreeUVETest, AFadeThatCannotBeInterruptedHoldsTheMachine) {
+TEST(AnimationGraphUVETest, AFadeThatCannotBeInterruptedHoldsTheMachine) {
     GraphFixtureUVE fixture;
     AnimationTransitionUVE go;
     go.fromState = 0U;
@@ -453,19 +453,19 @@ TEST(AnimationTreeUVETest, AFadeThatCannotBeInterruptedHoldsTheMachine) {
     back.fromState = 1U;
     back.toState = 0U;
     back.conditions = {AnimationTransitionConditionUVE{AnimationConditionUVE::ParameterLess, "speed", 0.5F}};
-    AnimationTreeComponentUVE tree = TwoStateMachineUVE(fixture, go);
+    AnimationGraphComponentUVE tree = TwoStateMachineUVE(fixture, go);
     tree.objects[1].transitions.push_back(back);
-    ASSERT_TRUE(SetAnimationTreeParameterUVE(tree, "speed", 1.0F));
+    ASSERT_TRUE(SetAnimationGraphParameterUVE(tree, "speed", 1.0F));
     static_cast<void>(fixture.StepUVE(tree, 0.1F));
     ASSERT_EQ(tree.activeStates, "Run");
-    ASSERT_TRUE(SetAnimationTreeParameterUVE(tree, "speed", 0.0F));
+    ASSERT_TRUE(SetAnimationGraphParameterUVE(tree, "speed", 0.0F));
     static_cast<void>(fixture.StepUVE(tree, 0.4F));
     EXPECT_EQ(tree.activeStates, "Run") << "the fade is under way and may not be interrupted";
     static_cast<void>(fixture.StepUVE(tree, 0.7F));
     EXPECT_EQ(tree.activeStates, "Idle") << "once it is over, the next one is taken";
 }
 
-TEST(AnimationTreeUVETest, CrossfadeCurvesShapeTheWeight) {
+TEST(AnimationGraphUVETest, CrossfadeCurvesShapeTheWeight) {
     EXPECT_FLOAT_EQ(AnimationTransitionCurveWeightUVE(AnimationTransitionCurveUVE::Linear, 0.25F), 0.25F);
     EXPECT_FLOAT_EQ(AnimationTransitionCurveWeightUVE(AnimationTransitionCurveUVE::EaseIn, 0.5F), 0.25F);
     EXPECT_FLOAT_EQ(AnimationTransitionCurveWeightUVE(AnimationTransitionCurveUVE::EaseOut, 0.5F), 0.75F);
@@ -478,9 +478,9 @@ TEST(AnimationTreeUVETest, CrossfadeCurvesShapeTheWeight) {
     }
 }
 
-TEST(AnimationTreeUVETest, OneShotPlaysOverTheBaseAndHandsBack) {
+TEST(AnimationGraphUVETest, OneShotPlaysOverTheBaseAndHandsBack) {
     GraphFixtureUVE fixture;
-    AnimationTreeComponentUVE tree;
+    AnimationGraphComponentUVE tree;
     tree.parameters = {AnimationParameterUVE{"attack", AnimationParameterTypeUVE::Trigger, 0.0F}};
     AnimationGraphObjectUVE shot = GraphFixtureUVE::ObjectUVE(2U, Kind::OneShot, {3U, 4U});
     shot.parameter = "attack";
@@ -489,16 +489,16 @@ TEST(AnimationTreeUVETest, OneShotPlaysOverTheBaseAndHandsBack) {
                   GraphFixtureUVE::ClipObjectUVE(3U, fixture.AddClipUVE(10.0F)),
                   GraphFixtureUVE::ClipObjectUVE(4U, fixture.AddClipUVE(100.0F), false)};
     EXPECT_NEAR(fixture.StepUVE(tree, 0.25F), 2.5F, 1e-4F);
-    ASSERT_TRUE(SetAnimationTreeParameterUVE(tree, "attack", 1.0F));
+    ASSERT_TRUE(SetAnimationGraphParameterUVE(tree, "attack", 1.0F));
     EXPECT_NEAR(fixture.StepUVE(tree, 0.5F), 50.0F, 1e-4F);
     EXPECT_EQ(tree.parameters[0].value, 0.0F);
     static_cast<void>(fixture.StepUVE(tree, 0.6F)); // the shot ends here
     EXPECT_NEAR(fixture.StepUVE(tree, 0.1F), 4.5F, 1e-3F); // base alone again (1.45 s wrapped)
 }
 
-TEST(AnimationTreeUVETest, AdditiveLayersAndTimeScaleRescales) {
+TEST(AnimationGraphUVETest, AdditiveLayersAndTimeScaleRescales) {
     GraphFixtureUVE fixture;
-    AnimationTreeComponentUVE tree;
+    AnimationGraphComponentUVE tree;
     AnimationGraphObjectUVE additive = GraphFixtureUVE::ObjectUVE(3U, Kind::Additive, {4U, 5U});
     additive.value = 0.5F;
     AnimationGraphObjectUVE scale = GraphFixtureUVE::ObjectUVE(2U, Kind::TimeScale, {3U});
@@ -510,31 +510,31 @@ TEST(AnimationTreeUVETest, AdditiveLayersAndTimeScaleRescales) {
     EXPECT_NEAR(fixture.StepUVE(tree, 0.25F), 5.5F, 1e-4F);
 }
 
-TEST(AnimationTreeUVETest, ValidationCatchesMalformedGraphsButAllowsEmptySlots) {
-    AnimationTreeComponentUVE tree;
+TEST(AnimationGraphUVETest, ValidationCatchesMalformedGraphsButAllowsEmptySlots) {
+    AnimationGraphComponentUVE tree;
     tree.objects = {GraphFixtureUVE::ObjectUVE(1U, Kind::Output, {0U})};
-    EXPECT_TRUE(IsAnimationTreeComponentValidUVE(tree)); // being built: nothing wired yet
+    EXPECT_TRUE(IsAnimationGraphComponentValidUVE(tree)); // being built: nothing wired yet
 
     tree.objects.push_back(GraphFixtureUVE::ObjectUVE(2U, Kind::Output, {0U}));
-    EXPECT_FALSE(IsAnimationTreeComponentValidUVE(tree)); // two outputs
+    EXPECT_FALSE(IsAnimationGraphComponentValidUVE(tree)); // two outputs
 
     tree.objects = {GraphFixtureUVE::ObjectUVE(1U, Kind::Output, {2U}), GraphFixtureUVE::ObjectUVE(2U, Kind::Blend2, {3U, 3U}),
                   GraphFixtureUVE::ObjectUVE(3U, Kind::Clip)};
-    EXPECT_FALSE(IsAnimationTreeComponentValidUVE(tree)); // one object feeding two inputs
+    EXPECT_FALSE(IsAnimationGraphComponentValidUVE(tree)); // one object feeding two inputs
 
     tree.objects = {GraphFixtureUVE::ObjectUVE(1U, Kind::Output, {2U}), GraphFixtureUVE::ObjectUVE(2U, Kind::TimeScale, {3U}),
                   GraphFixtureUVE::ObjectUVE(3U, Kind::TimeScale, {2U})};
-    EXPECT_FALSE(IsAnimationTreeComponentValidUVE(tree)); // a loop
+    EXPECT_FALSE(IsAnimationGraphComponentValidUVE(tree)); // a loop
 
     AnimationGraphObjectUVE space = GraphFixtureUVE::ObjectUVE(2U, Kind::BlendSpace1D);
     space.blendPoints = {AnimationBlendPointUVE{{1.0F, 0.0F}}, AnimationBlendPointUVE{{0.0F, 0.0F}}};
     tree.objects = {GraphFixtureUVE::ObjectUVE(1U, Kind::Output, {2U}), space};
-    EXPECT_FALSE(IsAnimationTreeComponentValidUVE(tree)); // points going backwards
+    EXPECT_FALSE(IsAnimationGraphComponentValidUVE(tree)); // points going backwards
 
-    tree = AnimationTreeComponentUVE{};
+    tree = AnimationGraphComponentUVE{};
     tree.parameters = {AnimationParameterUVE{"a", AnimationParameterTypeUVE::Float, 0.0F},
                        AnimationParameterUVE{"a", AnimationParameterTypeUVE::Bool, 0.0F}};
-    EXPECT_FALSE(IsAnimationTreeComponentValidUVE(tree)); // two parameters with one name
+    EXPECT_FALSE(IsAnimationGraphComponentValidUVE(tree)); // two parameters with one name
 }
 
 // ---- Skeletal clips ---------------------------------------------------------------------------
@@ -568,59 +568,59 @@ TEST(AnimationTreeUVETest, ValidationCatchesMalformedGraphsButAllowsEmptySlots) 
     return clip;
 }
 
-TEST(AnimationPlayerUVETest, ASkeletalClipPosesEachBoneByName) {
+TEST(AnimationSequencerUVETest, ASkeletalClipPosesEachBoneByName) {
     const Asset::AnimationClipAssetUVE clip = MakeLiftClipUVE(1.0F);
     Skeleton3DComponentUVE skeleton = MakeTwoBoneSkeletonUVE();
     EXPECT_EQ(GetSkeletonCurrentPoseUVE(skeleton).size(), 2U) << "no pose yet means the rest pose";
-    AnimationPlayerComponentUVE settings;
+    AnimationSequencerComponentUVE settings;
     settings.loopMode = AnimationLoopModeUVE::Once;
-    AnimationPlayerComponentUVE player = StartedUVE(settings, TransformComponentUVE{}, clip);
-    ASSERT_TRUE(StepSkeletalAnimationPlayerUVE(player, clip, 0.5F, skeleton));
+    AnimationSequencerComponentUVE player = StartedUVE(settings, TransformComponentUVE{}, clip);
+    ASSERT_TRUE(StepSkeletalAnimationSequencerUVE(player, clip, 0.5F, skeleton));
     ASSERT_EQ(skeleton.pose.size(), 2U);
     EXPECT_NEAR(skeleton.pose[0].position.y, 1.5F, 1e-4F) << "halfway up";
     EXPECT_NEAR(skeleton.pose[1].position.y, 0.3F, 1e-4F) << "no track: the rest pose";
     EXPECT_EQ(skeleton, MakeTwoBoneSkeletonUVE()) << "the pose is runtime state, not an edit";
 
     // The end of a Once clip holds its last pose.
-    ASSERT_TRUE(StepSkeletalAnimationPlayerUVE(player, clip, 1.0F, skeleton));
+    ASSERT_TRUE(StepSkeletalAnimationSequencerUVE(player, clip, 1.0F, skeleton));
     EXPECT_FALSE(player.isPlaying);
     EXPECT_TRUE(player.finished);
     EXPECT_NEAR(skeleton.pose[0].position.y, 2.0F, 1e-4F);
 }
 
-TEST(AnimationPlayerUVETest, ASkeletalClipBlendsInReturnsToRestAndHonoursTheMixer) {
+TEST(AnimationSequencerUVETest, ASkeletalClipBlendsInReturnsToRestAndHonoursTheMixer) {
     const Asset::AnimationClipAssetUVE clip = MakeLiftClipUVE(2.0F);
     // Blend In: half the blend time in, the pose is halfway from rest to the clip.
     Skeleton3DComponentUVE skeleton = MakeTwoBoneSkeletonUVE();
-    AnimationPlayerComponentUVE settings;
+    AnimationSequencerComponentUVE settings;
     settings.blendInSeconds = 1.0F;
     settings.startOffsetSeconds = 1.0F; // the clip holds y = 3 from here on
     settings.loopMode = AnimationLoopModeUVE::Once;
-    AnimationPlayerComponentUVE player = StartedUVE(settings, TransformComponentUVE{}, clip);
-    ASSERT_TRUE(StepSkeletalAnimationPlayerUVE(player, clip, 0.5F, skeleton));
+    AnimationSequencerComponentUVE player = StartedUVE(settings, TransformComponentUVE{}, clip);
+    ASSERT_TRUE(StepSkeletalAnimationSequencerUVE(player, clip, 0.5F, skeleton));
     EXPECT_NEAR(skeleton.pose[0].position.y, 2.0F, 1e-4F);
 
     // Return To Start puts every bone back at rest when the clip ends.
     Skeleton3DComponentUVE back = MakeTwoBoneSkeletonUVE();
-    settings = AnimationPlayerComponentUVE{};
+    settings = AnimationSequencerComponentUVE{};
     settings.loopMode = AnimationLoopModeUVE::Once;
     settings.onFinish = AnimationFinishActionUVE::ReturnToStart;
     player = StartedUVE(settings, TransformComponentUVE{}, clip);
-    ASSERT_TRUE(StepSkeletalAnimationPlayerUVE(player, clip, 2.0F, back));
+    ASSERT_TRUE(StepSkeletalAnimationSequencerUVE(player, clip, 2.0F, back));
     EXPECT_NEAR(back.pose[0].position.y, 1.0F, 1e-4F);
 
     // A mixer that leaves position alone leaves it at rest.
     Skeleton3DComponentUVE masked = MakeTwoBoneSkeletonUVE();
     AnimationMixerComponentUVE mixer;
     mixer.animatePosition = false;
-    player = StartedUVE(AnimationPlayerComponentUVE{}, TransformComponentUVE{}, clip);
-    ASSERT_TRUE(StepSkeletalAnimationPlayerUVE(player, clip, 0.5F, masked, mixer));
+    player = StartedUVE(AnimationSequencerComponentUVE{}, TransformComponentUVE{}, clip);
+    ASSERT_TRUE(StepSkeletalAnimationSequencerUVE(player, clip, 0.5F, masked, mixer));
     EXPECT_NEAR(masked.pose[0].position.y, 1.0F, 1e-4F);
 
     // A clip with no bone tracks cannot pose a skeleton.
     Asset::AnimationClipAssetUVE objectClip = MakeSlideClipUVE();
-    player = StartedUVE(AnimationPlayerComponentUVE{}, TransformComponentUVE{}, objectClip);
-    EXPECT_FALSE(StepSkeletalAnimationPlayerUVE(player, objectClip, 0.1F, masked));
+    player = StartedUVE(AnimationSequencerComponentUVE{}, TransformComponentUVE{}, objectClip);
+    EXPECT_FALSE(StepSkeletalAnimationSequencerUVE(player, objectClip, 0.1F, masked));
     EXPECT_FALSE(player.isPlaying);
 }
 
@@ -641,7 +641,7 @@ TEST(AnimationPlayerUVETest, ASkeletalClipBlendsInReturnsToRestAndHonoursTheMixe
     return clip;
 }
 
-TEST(AnimationPlayerUVETest, RootMotionPicksTheTravellingBone) {
+TEST(AnimationSequencerUVETest, RootMotionPicksTheTravellingBone) {
     const Asset::AnimationClipAssetUVE clip = MakeRunClipUVE();
     const Skeleton3DComponentUVE skeleton = MakeTwoBoneSkeletonUVE();
     EXPECT_EQ(ResolveRootMotionBoneUVE(skeleton, clip, ""), std::optional<std::size_t>{0U});
@@ -651,34 +651,34 @@ TEST(AnimationPlayerUVETest, RootMotionPicksTheTravellingBone) {
         << "moving only up is not ground travel";
 }
 
-TEST(AnimationPlayerUVETest, RootMotionKeepsThePoseInPlaceAndReportsTravelAcrossTheLoop) {
+TEST(AnimationSequencerUVETest, RootMotionKeepsThePoseInPlaceAndReportsTravelAcrossTheLoop) {
     const Asset::AnimationClipAssetUVE clip = MakeRunClipUVE();
     Skeleton3DComponentUVE skeleton = MakeTwoBoneSkeletonUVE();
     AnimationMixerComponentUVE mixer;
     mixer.rootMotion = AnimationRootMotionModeUVE::ApplyToTarget;
-    AnimationPlayerComponentUVE player = StartedUVE(AnimationPlayerComponentUVE{}, TransformComponentUVE{}, clip);
+    AnimationSequencerComponentUVE player = StartedUVE(AnimationSequencerComponentUVE{}, TransformComponentUVE{}, clip);
 
-    ASSERT_TRUE(StepSkeletalAnimationPlayerUVE(player, clip, 0.25F, skeleton, mixer));
+    ASSERT_TRUE(StepSkeletalAnimationSequencerUVE(player, clip, 0.25F, skeleton, mixer));
     EXPECT_NEAR(player.rootMotionDelta.z, 0.5F, 1e-4F);
     EXPECT_NEAR(skeleton.pose[0].position.z, 0.0F, 1e-4F) << "the travel is taken out of the pose";
     EXPECT_NEAR(skeleton.pose[0].position.y, 1.0F, 1e-4F) << "height stays in the pose";
 
     // 0.25 -> 0.85 is 1.2 m; 0.85 wraps to 0.1: 0.3 m to the end plus 0.2 m from the start.
-    ASSERT_TRUE(StepSkeletalAnimationPlayerUVE(player, clip, 0.6F, skeleton, mixer));
+    ASSERT_TRUE(StepSkeletalAnimationSequencerUVE(player, clip, 0.6F, skeleton, mixer));
     EXPECT_NEAR(player.rootMotionDelta.z, 1.2F, 1e-4F);
-    ASSERT_TRUE(StepSkeletalAnimationPlayerUVE(player, clip, 0.25F, skeleton, mixer));
+    ASSERT_TRUE(StepSkeletalAnimationSequencerUVE(player, clip, 0.25F, skeleton, mixer));
     EXPECT_NEAR(player.currentTimeSeconds, 0.1F, 1e-4F);
     EXPECT_NEAR(player.rootMotionDelta.z, 0.5F, 1e-4F) << "never a jump back at the wrap";
 
     // Off: the bone travels in the pose and nothing is reported.
     Skeleton3DComponentUVE authored = MakeTwoBoneSkeletonUVE();
-    player = StartedUVE(AnimationPlayerComponentUVE{}, TransformComponentUVE{}, clip);
-    ASSERT_TRUE(StepSkeletalAnimationPlayerUVE(player, clip, 0.25F, authored));
+    player = StartedUVE(AnimationSequencerComponentUVE{}, TransformComponentUVE{}, clip);
+    ASSERT_TRUE(StepSkeletalAnimationSequencerUVE(player, clip, 0.25F, authored));
     EXPECT_NEAR(authored.pose[0].position.z, 0.5F, 1e-4F);
     EXPECT_NEAR(player.rootMotionDelta.z, 0.0F, 1e-6F);
 }
 
-TEST(AnimationPlayerUVETest, ScrubbingPosesTheSkeletonAtATimeWithoutAPlayer) {
+TEST(AnimationSequencerUVETest, ScrubbingPosesTheSkeletonAtATimeWithoutAPlayer) {
     const Asset::AnimationClipAssetUVE clip = MakeRunClipUVE();
     Skeleton3DComponentUVE skeleton = MakeTwoBoneSkeletonUVE();
     ASSERT_TRUE(PoseSkeletonAtTimeUVE(clip, 0.5, skeleton));
@@ -701,7 +701,7 @@ TEST(AnimationPlayerUVETest, ScrubbingPosesTheSkeletonAtATimeWithoutAPlayer) {
     EXPECT_TRUE(untouched.pose.empty());
 }
 
-TEST(AnimationPlayerUVETest, CollectsTheEventsThePlayheadPasses) {
+TEST(AnimationSequencerUVETest, CollectsTheEventsThePlayheadPasses) {
     const std::vector<Asset::AnimationAssetEventUVE> events = {
         {0.75, "right"}, {0.0, "start"}, {0.25, "left"}};
     using List = std::vector<std::string>;
@@ -716,7 +716,7 @@ TEST(AnimationPlayerUVETest, CollectsTheEventsThePlayheadPasses) {
         << "backwards, in the order passed";
 }
 
-TEST(AnimationPlayerUVETest, InertializationCarriesTheOldPoseAndFadesItOutSmoothly) {
+TEST(AnimationSequencerUVETest, InertializationCarriesTheOldPoseAndFadesItOutSmoothly) {
     // A clip that holds the hips still at z = 0; the skeleton was left at z = 5 by the last clip.
     Asset::AnimationClipAssetUVE clip;
     clip.clipId = "idle";
@@ -728,15 +728,15 @@ TEST(AnimationPlayerUVETest, InertializationCarriesTheOldPoseAndFadesItOutSmooth
     skeleton.pose = GetSkeletonCurrentPoseUVE(skeleton);
     skeleton.pose[0].position = Math::Vector3UVE{0.0F, 1.0F, 5.0F};
 
-    AnimationPlayerComponentUVE settings;
+    AnimationSequencerComponentUVE settings;
     settings.blendInSeconds = 1.0F;
-    AnimationPlayerComponentUVE player = StartedUVE(settings, TransformComponentUVE{}, clip);
+    AnimationSequencerComponentUVE player = StartedUVE(settings, TransformComponentUVE{}, clip);
     AnimationMixerComponentUVE mixer; // Inertialize is the default
-    ASSERT_TRUE(StepSkeletalAnimationPlayerUVE(player, clip, 0.001F, skeleton, mixer));
+    ASSERT_TRUE(StepSkeletalAnimationSequencerUVE(player, clip, 0.001F, skeleton, mixer));
     EXPECT_NEAR(skeleton.pose[0].position.z, 5.0F, 1e-3F) << "no pop: it starts where it was";
-    ASSERT_TRUE(StepSkeletalAnimationPlayerUVE(player, clip, 0.499F, skeleton, mixer));
+    ASSERT_TRUE(StepSkeletalAnimationSequencerUVE(player, clip, 0.499F, skeleton, mixer));
     EXPECT_NEAR(skeleton.pose[0].position.z, 2.5F, 1e-3F) << "halfway through the fade, half the difference";
-    ASSERT_TRUE(StepSkeletalAnimationPlayerUVE(player, clip, 0.5F, skeleton, mixer));
+    ASSERT_TRUE(StepSkeletalAnimationSequencerUVE(player, clip, 0.5F, skeleton, mixer));
     EXPECT_NEAR(skeleton.pose[0].position.z, 0.0F, 1e-4F) << "the new clip, exactly, when the blend ends";
     EXPECT_TRUE(player.inertialPosition.empty()) << "the carried difference is dropped once it has faded";
 }
@@ -791,9 +791,9 @@ struct SkeletalGraphUVE {
         return guid;
     }
 
-    bool StepUVE(AnimationTreeComponentUVE& tree, const float seconds) {
-        EXPECT_TRUE(IsAnimationTreeComponentValidUVE(tree)) << DescribeAnimationGraphProblemUVE(tree);
-        return StepSkeletalAnimationTreeUVE(
+    bool StepUVE(AnimationGraphComponentUVE& tree, const float seconds) {
+        EXPECT_TRUE(IsAnimationGraphComponentValidUVE(tree)) << DescribeAnimationGraphProblemUVE(tree);
+        return StepSkeletalAnimationGraphUVE(
             tree,
             [this](const Asset::AssetGuidUVE guid) -> const Asset::AnimationClipAssetUVE* {
                 const auto found = clips.find(guid.value);
@@ -803,9 +803,9 @@ struct SkeletalGraphUVE {
     }
 };
 
-TEST(AnimationTreeUVETest, ASkeletalTreeBlendsBoneByBoneAndKeepsUntrackedBonesAtRest) {
+TEST(AnimationGraphUVETest, ASkeletalTreeBlendsBoneByBoneAndKeepsUntrackedBonesAtRest) {
     SkeletalGraphUVE graph;
-    AnimationTreeComponentUVE tree;
+    AnimationGraphComponentUVE tree;
     AnimationGraphObjectUVE blend = TreeObjectUVE(2U, AnimationGraphObjectKindUVE::Blend2, {3U, 4U});
     blend.value = 0.5F;
     tree.objects = {TreeObjectUVE(1U, AnimationGraphObjectKindUVE::Output, {2U}), blend,
@@ -818,10 +818,10 @@ TEST(AnimationTreeUVETest, ASkeletalTreeBlendsBoneByBoneAndKeepsUntrackedBonesAt
     EXPECT_NEAR(tree.objectStates[2].weight, 0.5F, 1e-6F) << "each clip counted half";
 }
 
-TEST(AnimationTreeUVETest, ASkeletalTreeHandsOverRootMotion) {
+TEST(AnimationGraphUVETest, ASkeletalTreeHandsOverRootMotion) {
     SkeletalGraphUVE graph;
     graph.mixer.rootMotion = AnimationRootMotionModeUVE::InPlace;
-    AnimationTreeComponentUVE tree;
+    AnimationGraphComponentUVE tree;
     tree.objects[1].clip = graph.AddUVE(MakeWalkClipUVE(2.0F));
     ASSERT_TRUE(graph.StepUVE(tree, 0.0F));
     ASSERT_TRUE(graph.StepUVE(tree, 0.25F));
@@ -832,9 +832,9 @@ TEST(AnimationTreeUVETest, ASkeletalTreeHandsOverRootMotion) {
     EXPECT_NEAR(tree.rootMotionDelta.x, 1.8F, 1e-3F) << "the travel carries across the wrap";
 }
 
-TEST(AnimationTreeUVETest, SyncedBlendKeepsItsInputsInStep) {
+TEST(AnimationGraphUVETest, SyncedBlendKeepsItsInputsInStep) {
     SkeletalGraphUVE graph;
-    AnimationTreeComponentUVE tree;
+    AnimationGraphComponentUVE tree;
     AnimationGraphObjectUVE blend = TreeObjectUVE(2U, AnimationGraphObjectKindUVE::Blend2, {3U, 4U});
     blend.value = 0.25F;
     blend.sync = true;
@@ -852,13 +852,13 @@ TEST(AnimationTreeUVETest, SyncedBlendKeepsItsInputsInStep) {
     EXPECT_NEAR(tree.objectStates[3].timeSeconds, 0.4, 1e-6) << "unsynced, each runs on its own clock";
 }
 
-TEST(AnimationTreeUVETest, EventsComeFromTheClipsThatCount) {
+TEST(AnimationGraphUVETest, EventsComeFromTheClipsThatCount) {
     SkeletalGraphUVE graph;
     Asset::AnimationClipAssetUVE step = MakeWalkClipUVE(1.0F);
     step.events = {Asset::AnimationAssetEventUVE{0.5, "footstep"}};
     Asset::AnimationClipAssetUVE wave = MakeWalkClipUVE(1.0F);
     wave.events = {Asset::AnimationAssetEventUVE{0.5, "wave"}};
-    AnimationTreeComponentUVE tree;
+    AnimationGraphComponentUVE tree;
     AnimationGraphObjectUVE blend = TreeObjectUVE(2U, AnimationGraphObjectKindUVE::Blend2, {3U, 4U});
     blend.value = 0.2F;
     tree.objects = {TreeObjectUVE(1U, AnimationGraphObjectKindUVE::Output, {2U}), blend, TreeClipUVE(3U, graph.AddUVE(step)),
@@ -869,10 +869,10 @@ TEST(AnimationTreeUVETest, EventsComeFromTheClipsThatCount) {
     EXPECT_EQ(tree.firedEvents, (std::vector<std::string>{"footstep"})) << "the 20% clip's event is not raised";
 }
 
-TEST(AnimationTreeUVETest, ASkeletalTreeWritesOnlyTheMixersChannels) {
+TEST(AnimationGraphUVETest, ASkeletalTreeWritesOnlyTheMixersChannels) {
     SkeletalGraphUVE graph;
     graph.mixer.animatePosition = false;
-    AnimationTreeComponentUVE tree;
+    AnimationGraphComponentUVE tree;
     tree.objects[1].clip = graph.AddUVE(MakeLiftClipUVE(1.0F));
     ASSERT_TRUE(graph.StepUVE(tree, 0.5F));
     EXPECT_NEAR(graph.skeleton.pose[0].position.y, 1.0F, 1e-6F) << "position is not animated";
@@ -888,7 +888,7 @@ namespace {
 
 // ---- New objects: Blend Space 2D, Select, Layered Blend, Time Seek -------------------------------
 
-TEST(AnimationTreeUVETest, BlendSpace2DTriangulatesItsPoints) {
+TEST(AnimationGraphUVETest, BlendSpace2DTriangulatesItsPoints) {
     EXPECT_TRUE(TriangulateBlendSpaceUVE({{0.0F, 0.0F}, {1.0F, 0.0F}}).empty()) << "two points make no triangle";
     EXPECT_TRUE(TriangulateBlendSpaceUVE({{0.0F, 0.0F}, {1.0F, 0.0F}, {2.0F, 0.0F}, {3.0F, 0.0F}}).empty())
         << "points on one line make none";
@@ -906,7 +906,7 @@ TEST(AnimationTreeUVETest, BlendSpace2DTriangulatesItsPoints) {
     EXPECT_EQ(TriangulateBlendSpaceUVE(cross), fan) << "the same points give the same triangles";
 }
 
-TEST(AnimationTreeUVETest, BlendSpace2DWeightsAreTheTrianglesCorners) {
+TEST(AnimationGraphUVETest, BlendSpace2DWeightsAreTheTrianglesCorners) {
     const std::vector<Math::Vector2UVE> points{{0.0F, 0.0F}, {1.0F, 0.0F}, {0.0F, 1.0F}};
     const auto triangles = TriangulateBlendSpaceUVE(points);
     const std::vector<float> onPoint = AnimationBlendSpace2DWeightsUVE(points, triangles, Math::Vector2UVE{1.0F, 0.0F});
@@ -924,9 +924,9 @@ TEST(AnimationTreeUVETest, BlendSpace2DWeightsAreTheTrianglesCorners) {
     EXPECT_EQ(none, (std::vector<float>{0.0F, 0.0F, 0.0F})) << "no triangles, no blend";
 }
 
-TEST(AnimationTreeUVETest, BlendSpace2DMixesInsideItsTriangleAndNeedsOne) {
+TEST(AnimationGraphUVETest, BlendSpace2DMixesInsideItsTriangleAndNeedsOne) {
     GraphFixtureUVE fixture;
-    AnimationTreeComponentUVE tree;
+    AnimationGraphComponentUVE tree;
     tree.parameters = {AnimationParameterUVE{"x", AnimationParameterTypeUVE::Float, 0.25F}};
     AnimationGraphObjectUVE space = GraphFixtureUVE::ObjectUVE(2U, Kind::BlendSpace2D);
     space.blendPoints = {AnimationBlendPointUVE{{0.0F, 0.0F}, fixture.AddClipUVE(0.0F)},
@@ -934,7 +934,7 @@ TEST(AnimationTreeUVETest, BlendSpace2DMixesInsideItsTriangleAndNeedsOne) {
     space.parameter = "x";
     tree.objects = {GraphFixtureUVE::ObjectUVE(1U, Kind::Output, {2U}), space};
     TransformComponentUVE target;
-    EXPECT_FALSE(StepAnimationTreeUVE(tree, fixture.ResolverUVE(), 0.5F, target, fixture.mixer))
+    EXPECT_FALSE(StepAnimationGraphUVE(tree, fixture.ResolverUVE(), 0.5F, target, fixture.mixer))
         << "two points are a line, not a plane: nothing plays";
     tree.objects[1].blendPoints.push_back(AnimationBlendPointUVE{{0.0F, 1.0F}, fixture.AddClipUVE(0.0F)});
     tree.objectStates.clear();
@@ -944,7 +944,7 @@ TEST(AnimationTreeUVETest, BlendSpace2DMixesInsideItsTriangleAndNeedsOne) {
     EXPECT_NEAR(tree.objectStates[1].pointWeights[1], 0.25F, 1e-5F);
 }
 
-TEST(AnimationTreeUVETest, SmoothingEasesThePositionWithoutOvershoot) {
+TEST(AnimationGraphUVETest, SmoothingEasesThePositionWithoutOvershoot) {
     Math::Vector2UVE at{};
     Math::Vector2UVE velocity{};
     SmoothBlendPositionUVE(at, velocity, Math::Vector2UVE{1.0F, 2.0F}, 0.5F, 0.5F);
@@ -969,9 +969,9 @@ TEST(AnimationTreeUVETest, SmoothingEasesThePositionWithoutOvershoot) {
     EXPECT_EQ(instantVelocity, (Math::Vector2UVE{}));
 }
 
-TEST(AnimationTreeUVETest, SmoothedBlendSpaceFollowsItsParameterOverTime) {
+TEST(AnimationGraphUVETest, SmoothedBlendSpaceFollowsItsParameterOverTime) {
     GraphFixtureUVE fixture;
-    AnimationTreeComponentUVE tree;
+    AnimationGraphComponentUVE tree;
     tree.parameters = {AnimationParameterUVE{"speed", AnimationParameterTypeUVE::Float, 0.0F}};
     AnimationGraphObjectUVE space = GraphFixtureUVE::ObjectUVE(2U, Kind::BlendSpace1D);
     space.parameter = "speed";
@@ -981,16 +981,16 @@ TEST(AnimationTreeUVETest, SmoothedBlendSpaceFollowsItsParameterOverTime) {
     tree.objects = {GraphFixtureUVE::ObjectUVE(1U, Kind::Output, {2U}), space};
     static_cast<void>(fixture.StepUVE(tree, 0.0F));
     EXPECT_EQ(tree.objectStates[1].blendAt.x, 0.0F) << "starts where its parameter is";
-    ASSERT_TRUE(SetAnimationTreeParameterUVE(tree, "speed", 1.0F));
+    ASSERT_TRUE(SetAnimationGraphParameterUVE(tree, "speed", 1.0F));
     static_cast<void>(fixture.StepUVE(tree, 0.25F));
     EXPECT_NEAR(tree.objectStates[1].blendAt.x, 0.5F, 1e-3F) << "halfway after one half-life";
     EXPECT_NEAR(tree.objectStates[1].pointWeights[1], 0.5F, 1e-3F);
 }
 
-TEST(AnimationTreeUVETest, NearestPlaysOnePointAndSwitchesOnlyWhenClearlyNearer) {
+TEST(AnimationGraphUVETest, NearestPlaysOnePointAndSwitchesOnlyWhenClearlyNearer) {
     GraphFixtureUVE fixture;
     fixture.mixer.transition = AnimationTransitionModeUVE::Crossfade;
-    AnimationTreeComponentUVE tree;
+    AnimationGraphComponentUVE tree;
     tree.parameters = {AnimationParameterUVE{"speed", AnimationParameterTypeUVE::Float, 0.2F}};
     AnimationGraphObjectUVE space = GraphFixtureUVE::ObjectUVE(2U, Kind::BlendSpace1D);
     space.parameter = "speed";
@@ -1000,19 +1000,19 @@ TEST(AnimationTreeUVETest, NearestPlaysOnePointAndSwitchesOnlyWhenClearlyNearer)
                          AnimationBlendPointUVE{{1.0F, 0.0F}, fixture.AddClipUVE(20.0F)}};
     tree.objects = {GraphFixtureUVE::ObjectUVE(1U, Kind::Output, {2U}), space};
     EXPECT_NEAR(fixture.StepUVE(tree, 0.5F), 5.0F, 1e-4F) << "the near point alone, not a mix";
-    ASSERT_TRUE(SetAnimationTreeParameterUVE(tree, "speed", 0.52F));
+    ASSERT_TRUE(SetAnimationGraphParameterUVE(tree, "speed", 0.52F));
     static_cast<void>(fixture.StepUVE(tree, 0.1F));
     EXPECT_EQ(tree.objectStates[1].nearestPoint, 0U) << "just past halfway is not clearly nearer: no flicker";
-    ASSERT_TRUE(SetAnimationTreeParameterUVE(tree, "speed", 0.9F));
+    ASSERT_TRUE(SetAnimationGraphParameterUVE(tree, "speed", 0.9F));
     static_cast<void>(fixture.StepUVE(tree, 0.1F));
     EXPECT_EQ(tree.objectStates[1].nearestPoint, 1U);
     EXPECT_NEAR(fixture.StepUVE(tree, 0.25F), 5.0F, 1e-4F) << "the new point starts from its beginning: 20 m at 0.25";
 }
 
-TEST(AnimationTreeUVETest, NearestInStepCarriesThePhaseAcross) {
+TEST(AnimationGraphUVETest, NearestInStepCarriesThePhaseAcross) {
     GraphFixtureUVE fixture;
     fixture.mixer.transition = AnimationTransitionModeUVE::Crossfade;
-    AnimationTreeComponentUVE tree;
+    AnimationGraphComponentUVE tree;
     tree.parameters = {AnimationParameterUVE{"speed", AnimationParameterTypeUVE::Float, 0.0F}};
     AnimationGraphObjectUVE space = GraphFixtureUVE::ObjectUVE(2U, Kind::BlendSpace1D);
     space.parameter = "speed";
@@ -1022,15 +1022,15 @@ TEST(AnimationTreeUVETest, NearestInStepCarriesThePhaseAcross) {
                          AnimationBlendPointUVE{{1.0F, 0.0F}, fixture.AddClipUVE(10.0F, 2.0)}};
     tree.objects = {GraphFixtureUVE::ObjectUVE(1U, Kind::Output, {2U}), space};
     static_cast<void>(fixture.StepUVE(tree, 0.25F)); // a quarter through the 1 s cycle
-    ASSERT_TRUE(SetAnimationTreeParameterUVE(tree, "speed", 1.0F));
+    ASSERT_TRUE(SetAnimationGraphParameterUVE(tree, "speed", 1.0F));
     static_cast<void>(fixture.StepUVE(tree, 0.0F));
     EXPECT_EQ(tree.objectStates[1].nearestPoint, 1U);
     EXPECT_NEAR(tree.objectStates[1].pointTimes[1], 0.5, 1e-6) << "a quarter through the 2 s cycle too";
 }
 
-TEST(AnimationTreeUVETest, NearestInertializesTheSwitchSoThereIsNoPop) {
+TEST(AnimationGraphUVETest, NearestInertializesTheSwitchSoThereIsNoPop) {
     GraphFixtureUVE fixture; // the mixer inertializes by default
-    AnimationTreeComponentUVE tree;
+    AnimationGraphComponentUVE tree;
     tree.parameters = {AnimationParameterUVE{"speed", AnimationParameterTypeUVE::Float, 0.0F}};
     AnimationGraphObjectUVE space = GraphFixtureUVE::ObjectUVE(2U, Kind::BlendSpace1D);
     space.parameter = "speed";
@@ -1040,7 +1040,7 @@ TEST(AnimationTreeUVETest, NearestInertializesTheSwitchSoThereIsNoPop) {
                          AnimationBlendPointUVE{{1.0F, 0.0F}, fixture.AddClipUVE(-10.0F)}};
     tree.objects = {GraphFixtureUVE::ObjectUVE(1U, Kind::Output, {2U}), space};
     const float before = fixture.StepUVE(tree, 0.5F); // 5 m along the first clip
-    ASSERT_TRUE(SetAnimationTreeParameterUVE(tree, "speed", 1.0F));
+    ASSERT_TRUE(SetAnimationGraphParameterUVE(tree, "speed", 1.0F));
     static_cast<void>(fixture.StepUVE(tree, 0.0F)); // the switch is seen here
     const float right = fixture.StepUVE(tree, 0.01F);
     EXPECT_NEAR(right, before, 0.5F) << "just after the switch the pose is still where it was";
@@ -1048,10 +1048,10 @@ TEST(AnimationTreeUVETest, NearestInertializesTheSwitchSoThereIsNoPop) {
     EXPECT_NEAR(settled, -6.1F, 1e-3F) << "and once the hand-over ends, the new point alone";
 }
 
-TEST(AnimationTreeUVETest, SelectPlaysThePickedInputAndFadesOnChange) {
+TEST(AnimationGraphUVETest, SelectPlaysThePickedInputAndFadesOnChange) {
     GraphFixtureUVE fixture;
     fixture.mixer.transition = AnimationTransitionModeUVE::Crossfade;
-    AnimationTreeComponentUVE tree;
+    AnimationGraphComponentUVE tree;
     tree.parameters = {AnimationParameterUVE{"armed", AnimationParameterTypeUVE::Bool, 0.0F}};
     AnimationGraphObjectUVE select = GraphFixtureUVE::ObjectUVE(2U, Kind::Select, {3U, 4U});
     select.parameter = "armed";
@@ -1060,14 +1060,14 @@ TEST(AnimationTreeUVETest, SelectPlaysThePickedInputAndFadesOnChange) {
                   GraphFixtureUVE::ClipObjectUVE(3U, fixture.AddClipUVE(10.0F)),
                   GraphFixtureUVE::ClipObjectUVE(4U, fixture.AddClipUVE(20.0F))};
     EXPECT_NEAR(fixture.StepUVE(tree, 0.5F), 5.0F, 1e-4F) << "option 0";
-    ASSERT_TRUE(SetAnimationTreeParameterUVE(tree, "armed", 1.0F));
+    ASSERT_TRUE(SetAnimationGraphParameterUVE(tree, "armed", 1.0F));
     static_cast<void>(fixture.StepUVE(tree, 0.0F)); // the pick is seen; option 1 restarts
     // Half a second into a one-second fade: option 0 at 1.0 s wraps to 0 -> 0, option 1 at 0.5 -> 10.
     EXPECT_NEAR(fixture.StepUVE(tree, 0.5F), 5.0F, 1e-3F);
     EXPECT_NEAR(fixture.StepUVE(tree, 0.5F), 0.0F, 1e-3F) << "fade done: option 1 alone, wrapped to 0";
 }
 
-TEST(AnimationTreeUVETest, LayeredBlendTouchesOnlyTheChosenBranch) {
+TEST(AnimationGraphUVETest, LayeredBlendTouchesOnlyTheChosenBranch) {
     SkeletalGraphUVE graph;
     // Three bones: Hips > Spine > Head. The layer lifts every bone; only Spine's branch takes it.
     SkeletonBoneUVE head;
@@ -1083,7 +1083,7 @@ TEST(AnimationTreeUVETest, LayeredBlendTouchesOnlyTheChosenBranch) {
         sample.pose.position = Math::Vector3UVE{0.0F, y, 0.0F};
         lifted.bones.push_back(Asset::AnimationAssetBoneTrackUVE{bone, {sample}});
     }
-    AnimationTreeComponentUVE tree;
+    AnimationGraphComponentUVE tree;
     AnimationGraphObjectUVE layered = TreeObjectUVE(2U, AnimationGraphObjectKindUVE::LayeredBlend, {3U, 4U});
     layered.value = 1.0F;
     layered.bones = {"Spine"};
@@ -1095,9 +1095,9 @@ TEST(AnimationTreeUVETest, LayeredBlendTouchesOnlyTheChosenBranch) {
     EXPECT_NEAR(graph.skeleton.pose[2].position.y, 1.2F, 1e-5F) << "Head, under Spine: the layer";
 }
 
-TEST(AnimationTreeUVETest, TimeSeekJumpsWhenItsTriggerFires) {
+TEST(AnimationGraphUVETest, TimeSeekJumpsWhenItsTriggerFires) {
     GraphFixtureUVE fixture;
-    AnimationTreeComponentUVE tree;
+    AnimationGraphComponentUVE tree;
     tree.parameters = {AnimationParameterUVE{"rewind", AnimationParameterTypeUVE::Trigger, 0.0F}};
     AnimationGraphObjectUVE seek = GraphFixtureUVE::ObjectUVE(2U, Kind::TimeSeek, {3U});
     seek.parameter = "rewind";
@@ -1105,14 +1105,14 @@ TEST(AnimationTreeUVETest, TimeSeekJumpsWhenItsTriggerFires) {
     tree.objects = {GraphFixtureUVE::ObjectUVE(1U, Kind::Output, {2U}), seek,
                   GraphFixtureUVE::ClipObjectUVE(3U, fixture.AddClipUVE(10.0F))};
     EXPECT_NEAR(fixture.StepUVE(tree, 0.75F), 7.5F, 1e-4F);
-    ASSERT_TRUE(SetAnimationTreeParameterUVE(tree, "rewind", 1.0F));
+    ASSERT_TRUE(SetAnimationGraphParameterUVE(tree, "rewind", 1.0F));
     EXPECT_NEAR(fixture.StepUVE(tree, 0.1F), 2.5F, 1e-4F) << "at the seek point this step";
     EXPECT_EQ(tree.parameters[0].value, 0.0F) << "the trigger was used";
     EXPECT_NEAR(fixture.StepUVE(tree, 0.1F), 3.5F, 1e-4F) << "and plays on from there";
 }
 
-TEST(AnimationTreeUVETest, TheNewKindsAreValidatedToo) {
-    AnimationTreeComponentUVE tree;
+TEST(AnimationGraphUVETest, TheNewKindsAreValidatedToo) {
+    AnimationGraphComponentUVE tree;
     AnimationGraphObjectUVE space;
     space.id = 3U;
     space.kind = AnimationGraphObjectKindUVE::BlendSpace2D;
@@ -1142,9 +1142,9 @@ TEST(AnimationTreeUVETest, TheNewKindsAreValidatedToo) {
 namespace UVE::Scene {
 namespace {
 
-TEST(AnimationTreeUVETest, SyncedBlendSpacePointsKeepInStep) {
+TEST(AnimationGraphUVETest, SyncedBlendSpacePointsKeepInStep) {
     GraphFixtureUVE fixture;
-    AnimationTreeComponentUVE tree;
+    AnimationGraphComponentUVE tree;
     AnimationGraphObjectUVE space = GraphFixtureUVE::ObjectUVE(2U, Kind::BlendSpace1D);
     space.value = 0.25F;
     space.sync = true;
@@ -1157,8 +1157,8 @@ TEST(AnimationTreeUVETest, SyncedBlendSpacePointsKeepInStep) {
     EXPECT_NEAR(tree.objectStates[1].pointTimes[1], 0.8, 1e-6) << "the 2 s one follows at the same phase";
 }
 
-TEST(AnimationTreeUVETest, OldBlendSpaceInputsFoldIntoTheirPoints) {
-    std::vector<AnimationGraphObjectUVE> objects = AnimationTreeComponentUVE::MakeDefaultAnimationGraphUVE();
+TEST(AnimationGraphUVETest, OldBlendSpaceInputsFoldIntoTheirPoints) {
+    std::vector<AnimationGraphObjectUVE> objects = AnimationGraphComponentUVE::MakeDefaultAnimationGraphUVE();
     AnimationGraphObjectUVE space;
     space.id = 3U;
     space.kind = AnimationGraphObjectKindUVE::BlendSpace1D;
@@ -1185,7 +1185,7 @@ TEST(AnimationTreeUVETest, OldBlendSpaceInputsFoldIntoTheirPoints) {
     EXPECT_EQ(folded->blendPoints[2].position.x, 2.0F);
     EXPECT_EQ(std::ranges::find(objects, 2U, &AnimationGraphObjectUVE::id), objects.end()) << "the folded Clip is gone";
     EXPECT_NE(std::ranges::find(objects, 4U, &AnimationGraphObjectUVE::id), objects.end()) << "the Time Scale stays";
-    AnimationTreeComponentUVE tree;
+    AnimationGraphComponentUVE tree;
     tree.objects = objects;
     EXPECT_TRUE(DescribeAnimationGraphProblemUVE(tree).empty()) << DescribeAnimationGraphProblemUVE(tree);
 }

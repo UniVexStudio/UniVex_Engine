@@ -570,7 +570,7 @@ TEST_F(SceneGraphUVETest, UpdateUVE_AnEntityWithoutTheComponentPassesVisibilityT
         << "an object without the component must pass its parent's state through, not reset it";
 }
 
-TEST_F(SceneGraphUVETest, UpdateUVE_ResolvesProcessModeThroughAObjectThatDoesNotCarryTheComponent) {
+TEST_F(SceneGraphUVETest, UpdateUVE_ResolvesTickModeThroughAObjectThatDoesNotCarryTheComponent) {
     // Same rule visibility follows: an intermediate object that never opted in must pass its
     // parent's answer through rather than resetting the chain.
     const EntityUVE root = entityManager.CreateEntityUVE();
@@ -584,23 +584,23 @@ TEST_F(SceneGraphUVETest, UpdateUVE_ResolvesProcessModeThroughAObjectThatDoesNot
     sceneGraph.SetParentUVE(entityManager, middle, root);
     sceneGraph.SetParentUVE(entityManager, leaf, middle);
 
-    entityManager.GetComponentUVE<ProcessComponentUVE>(root).mode = ProcessModeUVE::Disabled;
+    entityManager.GetComponentUVE<ProcessComponentUVE>(root).mode = TickModeUVE::Never;
     sceneGraph.UpdateUVE(entityManager);
 
     EXPECT_EQ(entityManager.GetComponentUVE<ProcessComponentUVE>(leaf).resolvedModeInHierarchy,
-              ProcessModeUVE::Disabled);
-    EXPECT_FALSE(IsProcessingUVE(
+              TickModeUVE::Never);
+    EXPECT_FALSE(IsTickingUVE(
         entityManager.GetComponentUVE<ProcessComponentUVE>(leaf).resolvedModeInHierarchy,
         /*simulationPaused=*/false));
 
-    // A pause menu under a Pausable parent has to be able to say Always and be believed, which is
+    // A pause menu under a Running parent has to be able to say Always and be believed, which is
     // the whole reason the mode is authored per entity.
-    entityManager.GetComponentUVE<ProcessComponentUVE>(root).mode = ProcessModeUVE::Pausable;
-    entityManager.GetComponentUVE<ProcessComponentUVE>(leaf).mode = ProcessModeUVE::Always;
+    entityManager.GetComponentUVE<ProcessComponentUVE>(root).mode = TickModeUVE::Running;
+    entityManager.GetComponentUVE<ProcessComponentUVE>(leaf).mode = TickModeUVE::Always;
     sceneGraph.UpdateUVE(entityManager);
     EXPECT_EQ(entityManager.GetComponentUVE<ProcessComponentUVE>(leaf).resolvedModeInHierarchy,
-              ProcessModeUVE::Always);
-    EXPECT_TRUE(IsProcessingUVE(
+              TickModeUVE::Always);
+    EXPECT_TRUE(IsTickingUVE(
         entityManager.GetComponentUVE<ProcessComponentUVE>(leaf).resolvedModeInHierarchy,
         /*simulationPaused=*/true));
 }
@@ -642,14 +642,14 @@ TEST_F(SceneGraphUVETest, UpdateUVE_TopLevelStillInheritsTheCommonObjectModes) {
     sceneGraph.SetParentUVE(entityManager, child, root);
     entityManager.GetComponentUVE<TransformComponentUVE>(child).topLevel = true;
 
-    entityManager.GetComponentUVE<ProcessComponentUVE>(root).mode = ProcessModeUVE::WhenPaused;
-    entityManager.GetComponentUVE<AutoTranslateComponentUVE>(root).mode = AutoTranslateModeUVE::Disabled;
+    entityManager.GetComponentUVE<ProcessComponentUVE>(root).mode = TickModeUVE::PausedOnly;
+    entityManager.GetComponentUVE<AutoTranslateComponentUVE>(root).mode = LocalizeModeUVE::Literal;
     sceneGraph.UpdateUVE(entityManager);
 
     EXPECT_EQ(entityManager.GetComponentUVE<ProcessComponentUVE>(child).resolvedModeInHierarchy,
-              ProcessModeUVE::WhenPaused);
+              TickModeUVE::PausedOnly);
     EXPECT_EQ(entityManager.GetComponentUVE<AutoTranslateComponentUVE>(child).resolvedModeInHierarchy,
-              AutoTranslateModeUVE::Disabled);
+              LocalizeModeUVE::Literal);
 }
 
 TEST_F(SceneGraphUVETest, UpdateUVE_ARootWithNoAncestorsResolvesToTheHierarchyDefaults) {
@@ -663,11 +663,11 @@ TEST_F(SceneGraphUVETest, UpdateUVE_ARootWithNoAncestorsResolvesToTheHierarchyDe
 
     // Inherit at the top of a hierarchy means the default, not "unanswered".
     EXPECT_EQ(entityManager.GetComponentUVE<ProcessComponentUVE>(root).resolvedModeInHierarchy,
-              ProcessModeUVE::Pausable);
+              TickModeUVE::Running);
     EXPECT_EQ(entityManager.GetComponentUVE<ThreadGroupComponentUVE>(root).resolvedModeInHierarchy,
               ThreadGroupModeUVE::MainThread);
     EXPECT_EQ(entityManager.GetComponentUVE<AutoTranslateComponentUVE>(root).resolvedModeInHierarchy,
-              AutoTranslateModeUVE::Always);
+              LocalizeModeUVE::Localized);
 }
 
 TEST_F(SceneGraphUVETest, TryGetResolvedObjectModesUVE_AnswersForAObjectThatCarriesNoComponent) {
@@ -681,10 +681,10 @@ TEST_F(SceneGraphUVETest, TryGetResolvedObjectModesUVE_AnswersForAObjectThatCarr
     }
     sceneGraph.SetParentUVE(entityManager, label, menu);
     AutoTranslateComponentUVE disabled{};
-    disabled.mode = AutoTranslateModeUVE::Disabled;
+    disabled.mode = LocalizeModeUVE::Literal;
     entityManager.AddComponentUVE<AutoTranslateComponentUVE>(menu, disabled);
     ProcessComponentUVE always{};
-    always.mode = ProcessModeUVE::Always;
+    always.mode = TickModeUVE::Always;
     entityManager.AddComponentUVE<ProcessComponentUVE>(menu, always);
 
     sceneGraph.UpdateUVE(entityManager);
@@ -692,8 +692,8 @@ TEST_F(SceneGraphUVETest, TryGetResolvedObjectModesUVE_AnswersForAObjectThatCarr
     ASSERT_FALSE(entityManager.HasComponentUVE<AutoTranslateComponentUVE>(label));
     const std::optional<ResolvedObjectModesUVE> resolved = sceneGraph.TryGetResolvedObjectModesUVE(label);
     ASSERT_TRUE(resolved.has_value());
-    EXPECT_EQ(resolved->autoTranslate, AutoTranslateModeUVE::Disabled);
-    EXPECT_EQ(resolved->process, ProcessModeUVE::Always);
+    EXPECT_EQ(resolved->autoTranslate, LocalizeModeUVE::Literal);
+    EXPECT_EQ(resolved->process, TickModeUVE::Always);
     EXPECT_EQ(resolved->threadGroup, ThreadGroupModeUVE::MainThread);
 }
 
@@ -751,7 +751,7 @@ TEST_F(SceneGraphUVETest, UpdateUVE_APureObjectBetweenSpatialObjectsCutsTheChain
     moved.localPosition = Math::Vector3UVE{100.0F, 0.0F, 0.0F};
     sceneGraph.AttachTransformUVE(entityManager, grandparent, moved);
     ProcessComponentUVE always{};
-    always.mode = ProcessModeUVE::Always;
+    always.mode = TickModeUVE::Always;
     entityManager.AddComponentUVE<ProcessComponentUVE>(grandparent, always);
     VisibilityComponentUVE hidden{};
     hidden.visible = false;
@@ -761,7 +761,7 @@ TEST_F(SceneGraphUVETest, UpdateUVE_APureObjectBetweenSpatialObjectsCutsTheChain
     // SetParentUVE is for spatial children; a pure Object's parent is authored directly.
     entityManager.GetComponentUVE<HierarchyComponentUVE>(object).parent = grandparent;
     AutoTranslateComponentUVE disabled{};
-    disabled.mode = AutoTranslateModeUVE::Disabled;
+    disabled.mode = LocalizeModeUVE::Literal;
     entityManager.AddComponentUVE<AutoTranslateComponentUVE>(object, disabled);
 
     const EntityUVE grandchild = entityManager.CreateEntityUVE();
@@ -779,8 +779,8 @@ TEST_F(SceneGraphUVETest, UpdateUVE_APureObjectBetweenSpatialObjectsCutsTheChain
 
     const std::optional<ResolvedObjectModesUVE> resolved = sceneGraph.TryGetResolvedObjectModesUVE(grandchild);
     ASSERT_TRUE(resolved.has_value());
-    EXPECT_EQ(resolved->process, ProcessModeUVE::Always);
-    EXPECT_EQ(resolved->autoTranslate, AutoTranslateModeUVE::Disabled);
+    EXPECT_EQ(resolved->process, TickModeUVE::Always);
+    EXPECT_EQ(resolved->autoTranslate, LocalizeModeUVE::Literal);
 }
 
 TEST_F(SceneGraphUVETest, TryGetResolvedObjectModesUVE_AnswersForThePureObjectItself) {
@@ -788,7 +788,7 @@ TEST_F(SceneGraphUVETest, TryGetResolvedObjectModesUVE_AnswersForThePureObjectIt
     // the pure Object carrying them must have an answer of its own, published to its components.
     const EntityUVE root = CreatePureObjectUVE(entityManager);
     ProcessComponentUVE whenPaused{};
-    whenPaused.mode = ProcessModeUVE::WhenPaused;
+    whenPaused.mode = TickModeUVE::PausedOnly;
     entityManager.AddComponentUVE<ProcessComponentUVE>(root, whenPaused);
     ThreadGroupComponentUVE subThread{};
     subThread.mode = ThreadGroupModeUVE::SubThread;
@@ -802,14 +802,14 @@ TEST_F(SceneGraphUVETest, TryGetResolvedObjectModesUVE_AnswersForThePureObjectIt
 
     const std::optional<ResolvedObjectModesUVE> own = sceneGraph.TryGetResolvedObjectModesUVE(root);
     ASSERT_TRUE(own.has_value());
-    EXPECT_EQ(own->process, ProcessModeUVE::WhenPaused);
+    EXPECT_EQ(own->process, TickModeUVE::PausedOnly);
     EXPECT_EQ(own->threadGroup, ThreadGroupModeUVE::SubThread);
     EXPECT_EQ(entityManager.GetComponentUVE<ProcessComponentUVE>(root).resolvedModeInHierarchy,
-              ProcessModeUVE::WhenPaused);
+              TickModeUVE::PausedOnly);
 
     const std::optional<ResolvedObjectModesUVE> inherited = sceneGraph.TryGetResolvedObjectModesUVE(child);
     ASSERT_TRUE(inherited.has_value());
-    EXPECT_EQ(inherited->process, ProcessModeUVE::WhenPaused);
+    EXPECT_EQ(inherited->process, TickModeUVE::PausedOnly);
     EXPECT_EQ(inherited->threadGroup, ThreadGroupModeUVE::SubThread);
 }
 
@@ -1376,9 +1376,9 @@ TEST_F(SceneGraphUVETest, UpdateUVE_InterpolationModeOffIsHonouredAndInherited) 
     sceneGraph.SetParentUVE(entityManager, explicitlyOff, parent);
 
     entityManager.GetComponentUVE<PhysicsInterpolationComponentUVE>(parent).mode =
-        PhysicsInterpolationModeUVE::Off;
+        PoseSmoothingUVE::Exact;
     entityManager.GetComponentUVE<PhysicsInterpolationComponentUVE>(explicitlyOff).mode =
-        PhysicsInterpolationModeUVE::On;
+        PoseSmoothingUVE::Blended;
     sceneGraph.UpdateUVE(entityManager);
 
     EXPECT_FALSE(entityManager.GetComponentUVE<PhysicsInterpolationComponentUVE>(parent).interpolatedInHierarchy);
@@ -1405,7 +1405,7 @@ TEST_F(SceneGraphUVETest, UpdateUVE_AnEntityWithoutTheComponentPassesInterpolati
     sceneGraph.SetParentUVE(entityManager, grandchild, middle);
 
     entityManager.GetComponentUVE<PhysicsInterpolationComponentUVE>(grandparent).mode =
-        PhysicsInterpolationModeUVE::Off;
+        PoseSmoothingUVE::Exact;
     sceneGraph.UpdateUVE(entityManager);
 
     EXPECT_FALSE(
