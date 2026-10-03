@@ -1211,13 +1211,23 @@ TEST_F(SceneSerializerUVETest, SaveThenLoad_CharacterControllerComponentUVE_Roun
     characterController.airControl = 0.25F;
     characterController.coyoteTimeSeconds = 0.2F;
     characterController.jumpBufferSeconds = 0.15F;
+    characterController.floorMaxAngleDegrees = 55.0F;
+    characterController.wallMinSlideAngleDegrees = 20.0F;
+    characterController.safeMargin = 0.004F;
+    characterController.floorStopOnSlope = false;
+    characterController.floorConstantSpeed = true;
     characterController.floorSnapLength = 0.3F;
     characterController.maxStepHeight = 0.45F;
+    characterController.minStepWidth = 0.05F;
+    characterController.floorBlockOnWall = true;
+    characterController.platformOnLeave = CharacterPlatformLeaveModeUVE::AddUpwardVelocity;
+    characterController.maximumPlatformSpeed = 12.0F;
     characterController.slideOnCeiling = false;
     characterController.pushRigidBodies = true;
     characterController.pushStrength = 2.0F;
     characterController.maxPushSpeed = 7.0F;
     characterController.maxSlides = 12U;
+    characterController.maximumContacts = 24U;
     characterController.velocity = Math::Vector3UVE{1.0F, -3.0F, 2.0F};
     characterController.grounded = true;
     entityManager.AddComponentUVE<CharacterControllerComponentUVE>(entity, characterController);
@@ -1241,13 +1251,23 @@ TEST_F(SceneSerializerUVETest, SaveThenLoad_CharacterControllerComponentUVE_Roun
     EXPECT_FLOAT_EQ(loadedController.airControl, 0.25F);
     EXPECT_FLOAT_EQ(loadedController.coyoteTimeSeconds, 0.2F);
     EXPECT_FLOAT_EQ(loadedController.jumpBufferSeconds, 0.15F);
+    EXPECT_FLOAT_EQ(loadedController.floorMaxAngleDegrees, 55.0F);
+    EXPECT_FLOAT_EQ(loadedController.wallMinSlideAngleDegrees, 20.0F);
+    EXPECT_FLOAT_EQ(loadedController.safeMargin, 0.004F);
+    EXPECT_FALSE(loadedController.floorStopOnSlope);
+    EXPECT_TRUE(loadedController.floorConstantSpeed);
     EXPECT_FLOAT_EQ(loadedController.floorSnapLength, 0.3F);
     EXPECT_FLOAT_EQ(loadedController.maxStepHeight, 0.45F);
+    EXPECT_FLOAT_EQ(loadedController.minStepWidth, 0.05F);
+    EXPECT_TRUE(loadedController.floorBlockOnWall);
+    EXPECT_EQ(loadedController.platformOnLeave, CharacterPlatformLeaveModeUVE::AddUpwardVelocity);
+    EXPECT_FLOAT_EQ(loadedController.maximumPlatformSpeed, 12.0F);
     EXPECT_FALSE(loadedController.slideOnCeiling);
     EXPECT_TRUE(loadedController.pushRigidBodies);
     EXPECT_FLOAT_EQ(loadedController.pushStrength, 2.0F);
     EXPECT_FLOAT_EQ(loadedController.maxPushSpeed, 7.0F);
     EXPECT_EQ(loadedController.maxSlides, 12U);
+    EXPECT_EQ(loadedController.maximumContacts, 24U);
     EXPECT_EQ(loadedController.velocity, (Math::Vector3UVE{1.0F, -3.0F, 2.0F}));
     EXPECT_TRUE(loadedController.grounded);
 
@@ -1276,7 +1296,12 @@ TEST_F(SceneSerializerUVETest, Load_OlderCharacterControllerPayloadKeepsItsValue
     EXPECT_EQ(loaded.motionMode, defaults.motionMode);
     EXPECT_EQ(loaded.builtInMovement, defaults.builtInMovement);
     EXPECT_FLOAT_EQ(loaded.maxStepHeight, defaults.maxStepHeight);
+    EXPECT_FLOAT_EQ(loaded.floorMaxAngleDegrees, defaults.floorMaxAngleDegrees);
+    EXPECT_FLOAT_EQ(loaded.safeMargin, defaults.safeMargin);
+    EXPECT_FLOAT_EQ(loaded.minStepWidth, defaults.minStepWidth);
+    EXPECT_EQ(loaded.platformOnLeave, defaults.platformOnLeave);
     EXPECT_EQ(loaded.maxSlides, defaults.maxSlides);
+    EXPECT_EQ(loaded.maximumContacts, defaults.maximumContacts);
 }
 
 TEST_F(SceneSerializerUVETest, SaveThenLoad_UIComponentsUVE_RoundTripExactly) {
