@@ -10,7 +10,7 @@
 namespace UVE::Asset {
 
 /// Which programmable stage a ShaderAssetUVE belongs to. Deliberately a separate type from
-/// `Render::ShaderStageUVE` (engine/render, Increment 10) — see `Asset::TextureFormatUVE`'s doc
+/// `Render::ShaderStageUVE` (engine/render, Increment 10) — see `Asset::TextureAssetFormatUVE`'s doc
 /// comment for why: avoiding a dependency cycle, since engine/render already depends on
 /// engine/asset. `Compute` is reserved for the future `ComputeSystemUVE` (Part 7.2) — unused by
 /// anything built so far.

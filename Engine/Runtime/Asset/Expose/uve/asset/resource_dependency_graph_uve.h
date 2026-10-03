@@ -11,16 +11,16 @@
 
 namespace UVE::Asset {
 
-struct ResourceHandleUVE final {
+struct ResourceDependencyHandleUVE final {
     AssetGuidUVE guid;
     std::uint64_t generation = 0U;
 
-    [[nodiscard]] bool operator==(const ResourceHandleUVE&) const noexcept = default;
+    [[nodiscard]] bool operator==(const ResourceDependencyHandleUVE&) const noexcept = default;
 };
 
 struct ResourceDependencyEntryUVE final {
-    ResourceHandleUVE handle;
-    std::vector<ResourceHandleUVE> dependencies;
+    ResourceDependencyHandleUVE handle;
+    std::vector<ResourceDependencyHandleUVE> dependencies;
 
     [[nodiscard]] bool operator==(const ResourceDependencyEntryUVE&) const = default;
 };
@@ -66,9 +66,9 @@ struct ResourceDependencyInvalidationPlanUVE final {
     ResourceDependencyCodeUVE code = ResourceDependencyCodeUVE::InvalidHandle;
     std::string message;
     std::uint64_t graphGeneration = 0U;
-    ResourceHandleUVE root{};
+    ResourceDependencyHandleUVE root{};
     bool dependentsTruncated = false;
-    std::vector<ResourceHandleUVE> dependents;
+    std::vector<ResourceDependencyHandleUVE> dependents;
 
     [[nodiscard]] bool IsReadyUVE() const noexcept {
         return code == ResourceDependencyCodeUVE::DependentClosureReady;
@@ -84,29 +84,29 @@ public:
     ResourceDependencyGraphUVE(const ResourceDependencyGraphUVE&) = delete;
     ResourceDependencyGraphUVE& operator=(const ResourceDependencyGraphUVE&) = delete;
 
-    [[nodiscard]] ResourceDependencyResultUVE RegisterResourceUVE(ResourceHandleUVE handle);
+    [[nodiscard]] ResourceDependencyResultUVE RegisterResourceUVE(ResourceDependencyHandleUVE handle);
     [[nodiscard]] ResourceDependencyResultUVE SetDependenciesUVE(
-        ResourceHandleUVE handle, std::vector<ResourceHandleUVE> dependencies);
-    [[nodiscard]] ResourceDependencyResultUVE RemoveResourceUVE(ResourceHandleUVE handle);
+        ResourceDependencyHandleUVE handle, std::vector<ResourceDependencyHandleUVE> dependencies);
+    [[nodiscard]] ResourceDependencyResultUVE RemoveResourceUVE(ResourceDependencyHandleUVE handle);
     /// Returns a copied breadth-first reverse-dependent closure. `maximumDependents` bounds the
     /// result; a true `dependentsTruncated` flag means additional dependents exist beyond the copy.
     [[nodiscard]] ResourceDependencyInvalidationPlanUVE GetDependentClosureUVE(
-        ResourceHandleUVE root, std::size_t maximumDependents = kMaximumResourcesUVE) const;
-    [[nodiscard]] bool HasResourceUVE(ResourceHandleUVE handle) const noexcept;
+        ResourceDependencyHandleUVE root, std::size_t maximumDependents = kMaximumResourcesUVE) const;
+    [[nodiscard]] bool HasResourceUVE(ResourceDependencyHandleUVE handle) const noexcept;
     [[nodiscard]] ResourceDependencySnapshotUVE GetSnapshotUVE() const;
 
 private:
     struct EntryUVE final {
-        ResourceHandleUVE handle;
-        std::vector<ResourceHandleUVE> dependencies;
+        ResourceDependencyHandleUVE handle;
+        std::vector<ResourceDependencyHandleUVE> dependencies;
     };
 
-    [[nodiscard]] EntryUVE* FindExactUVE(ResourceHandleUVE handle) noexcept;
-    [[nodiscard]] const EntryUVE* FindExactUVE(ResourceHandleUVE handle) const noexcept;
+    [[nodiscard]] EntryUVE* FindExactUVE(ResourceDependencyHandleUVE handle) noexcept;
+    [[nodiscard]] const EntryUVE* FindExactUVE(ResourceDependencyHandleUVE handle) const noexcept;
     [[nodiscard]] const EntryUVE* FindGuidUVE(AssetGuidUVE guid) const noexcept;
-    [[nodiscard]] bool ReachesUVE(ResourceHandleUVE start, ResourceHandleUVE target,
-                                  std::vector<ResourceHandleUVE>& visited) const noexcept;
-    [[nodiscard]] ResourceDependencyResultUVE ValidateHandleUVE(ResourceHandleUVE handle) const noexcept;
+    [[nodiscard]] bool ReachesUVE(ResourceDependencyHandleUVE start, ResourceDependencyHandleUVE target,
+                                  std::vector<ResourceDependencyHandleUVE>& visited) const noexcept;
+    [[nodiscard]] ResourceDependencyResultUVE ValidateHandleUVE(ResourceDependencyHandleUVE handle) const noexcept;
     void BumpGenerationUVE() noexcept;
 
     std::vector<EntryUVE> m_entries;

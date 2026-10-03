@@ -32,7 +32,7 @@ bool CompressTextureAssetWithBasisUVE(TextureAssetUVE& texture, const TextureCom
     }
     if ((mode != TextureCompressionModeUVE::BasisETC1S && mode != TextureCompressionModeUVE::BasisUASTC) ||
         quality > 100U || effort > 10U || texture.payloadEncoding != TexturePayloadEncodingUVE::RawPixels ||
-        texture.format != TextureFormatUVE::RGBA8Unorm || !IsTextureAssetValidUVE(texture) ||
+        texture.format != TextureAssetFormatUVE::RGBA8Unorm || !IsTextureAssetValidUVE(texture) ||
         texture.width > basist::BASISU_MAX_SUPPORTED_TEXTURE_DIMENSION ||
         texture.height > basist::BASISU_MAX_SUPPORTED_TEXTURE_DIMENSION ||
         !Detail::EnsureBasisUniversalInitializedUVE()) {
@@ -54,7 +54,7 @@ bool CompressTextureAssetWithBasisUVE(TextureAssetUVE& texture, const TextureCom
             mode == TextureCompressionModeUVE::BasisETC1S ? basist::basis_tex_format::cETC1S
                                                            : basist::basis_tex_format::cUASTC_LDR_4x4;
         std::uint32_t flags = basisu::cFlagKTX2;
-        if (texture.colorSpace == TextureColorSpaceUVE::Srgb) {
+        if (texture.colorSpace == TextureAssetColorSpaceUVE::Srgb) {
             flags |= basisu::cFlagSRGB;
         }
         std::size_t compressedSize = 0U;

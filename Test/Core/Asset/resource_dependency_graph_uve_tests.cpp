@@ -7,17 +7,17 @@
 namespace UVE::Asset {
 namespace {
 
-ResourceHandleUVE HandleUVE(const std::uint64_t guid, const std::uint64_t generation = 1U) {
-    return ResourceHandleUVE{AssetGuidUVE{guid}, generation};
+ResourceDependencyHandleUVE HandleUVE(const std::uint64_t guid, const std::uint64_t generation = 1U) {
+    return ResourceDependencyHandleUVE{AssetGuidUVE{guid}, generation};
 }
 
 } // namespace
 
 TEST(ResourceDependencyGraphUVETest, RegisterAndSetDependenciesUVE_ProducesSortedCopiedSnapshot) {
     ResourceDependencyGraphUVE graph;
-    const ResourceHandleUVE a = HandleUVE(30U);
-    const ResourceHandleUVE b = HandleUVE(10U);
-    const ResourceHandleUVE c = HandleUVE(20U);
+    const ResourceDependencyHandleUVE a = HandleUVE(30U);
+    const ResourceDependencyHandleUVE b = HandleUVE(10U);
+    const ResourceDependencyHandleUVE c = HandleUVE(20U);
     ASSERT_TRUE(graph.RegisterResourceUVE(a).IsAppliedUVE());
     ASSERT_TRUE(graph.RegisterResourceUVE(b).IsAppliedUVE());
     ASSERT_TRUE(graph.RegisterResourceUVE(c).IsAppliedUVE());
@@ -36,16 +36,16 @@ TEST(ResourceDependencyGraphUVETest, RegisterAndSetDependenciesUVE_ProducesSorte
 
 TEST(ResourceDependencyGraphUVETest, SetDependenciesUVE_RejectsStaleUnknownDuplicateAndCycleReferences) {
     ResourceDependencyGraphUVE graph;
-    const ResourceHandleUVE a = HandleUVE(1U, 4U);
-    const ResourceHandleUVE b = HandleUVE(2U, 1U);
-    const ResourceHandleUVE c = HandleUVE(3U, 1U);
+    const ResourceDependencyHandleUVE a = HandleUVE(1U, 4U);
+    const ResourceDependencyHandleUVE b = HandleUVE(2U, 1U);
+    const ResourceDependencyHandleUVE c = HandleUVE(3U, 1U);
     ASSERT_TRUE(graph.RegisterResourceUVE(a).IsAppliedUVE());
     ASSERT_TRUE(graph.RegisterResourceUVE(b).IsAppliedUVE());
     ASSERT_TRUE(graph.RegisterResourceUVE(c).IsAppliedUVE());
     ASSERT_TRUE(graph.SetDependenciesUVE(a, {b}).IsAppliedUVE());
     ASSERT_TRUE(graph.SetDependenciesUVE(b, {c}).IsAppliedUVE());
 
-    EXPECT_EQ(graph.SetDependenciesUVE(ResourceHandleUVE{a.guid, 3U}, {b}).code,
+    EXPECT_EQ(graph.SetDependenciesUVE(ResourceDependencyHandleUVE{a.guid, 3U}, {b}).code,
               ResourceDependencyCodeUVE::StaleGeneration);
     EXPECT_EQ(graph.SetDependenciesUVE(a, {HandleUVE(99U)}).code,
               ResourceDependencyCodeUVE::UnknownDependency);
@@ -57,14 +57,14 @@ TEST(ResourceDependencyGraphUVETest, SetDependenciesUVE_RejectsStaleUnknownDupli
 
 TEST(ResourceDependencyGraphUVETest, RemoveResourceUVE_BlocksDependentsAndAcceptsExactGenerationAfterDetach) {
     ResourceDependencyGraphUVE graph;
-    const ResourceHandleUVE parent = HandleUVE(100U, 2U);
-    const ResourceHandleUVE child = HandleUVE(200U, 1U);
+    const ResourceDependencyHandleUVE parent = HandleUVE(100U, 2U);
+    const ResourceDependencyHandleUVE child = HandleUVE(200U, 1U);
     ASSERT_TRUE(graph.RegisterResourceUVE(parent).IsAppliedUVE());
     ASSERT_TRUE(graph.RegisterResourceUVE(child).IsAppliedUVE());
     ASSERT_TRUE(graph.SetDependenciesUVE(child, {parent}).IsAppliedUVE());
 
     EXPECT_EQ(graph.RemoveResourceUVE(parent).code, ResourceDependencyCodeUVE::HasDependents);
-    EXPECT_EQ(graph.RemoveResourceUVE(ResourceHandleUVE{parent.guid, 1U}).code,
+    EXPECT_EQ(graph.RemoveResourceUVE(ResourceDependencyHandleUVE{parent.guid, 1U}).code,
               ResourceDependencyCodeUVE::StaleGeneration);
     ASSERT_TRUE(graph.SetDependenciesUVE(child, {}).IsAppliedUVE());
     EXPECT_EQ(graph.RemoveResourceUVE(parent).code, ResourceDependencyCodeUVE::Removed);
@@ -73,12 +73,12 @@ TEST(ResourceDependencyGraphUVETest, RemoveResourceUVE_BlocksDependentsAndAccept
 
 TEST(ResourceDependencyGraphUVETest, GetDependentClosureUVE_ReturnsDeterministicTransitivePlan) {
     ResourceDependencyGraphUVE graph;
-    const ResourceHandleUVE root = HandleUVE(10U);
-    const ResourceHandleUVE directA = HandleUVE(20U);
-    const ResourceHandleUVE directB = HandleUVE(30U);
-    const ResourceHandleUVE transitiveA = HandleUVE(40U);
-    const ResourceHandleUVE transitiveB = HandleUVE(50U);
-    for (const ResourceHandleUVE handle : {transitiveB, directB, root, transitiveA, directA}) {
+    const ResourceDependencyHandleUVE root = HandleUVE(10U);
+    const ResourceDependencyHandleUVE directA = HandleUVE(20U);
+    const ResourceDependencyHandleUVE directB = HandleUVE(30U);
+    const ResourceDependencyHandleUVE transitiveA = HandleUVE(40U);
+    const ResourceDependencyHandleUVE transitiveB = HandleUVE(50U);
+    for (const ResourceDependencyHandleUVE handle : {transitiveB, directB, root, transitiveA, directA}) {
         ASSERT_TRUE(graph.RegisterResourceUVE(handle).IsAppliedUVE());
     }
     ASSERT_TRUE(graph.SetDependenciesUVE(directA, {root}).IsAppliedUVE());
@@ -102,9 +102,9 @@ TEST(ResourceDependencyGraphUVETest, GetDependentClosureUVE_ReturnsDeterministic
 
 TEST(ResourceDependencyGraphUVETest, GetDependentClosureUVE_BoundsResultAndClassifiesRoot) {
     ResourceDependencyGraphUVE graph;
-    const ResourceHandleUVE root = HandleUVE(1U, 3U);
-    const ResourceHandleUVE dependentA = HandleUVE(2U);
-    const ResourceHandleUVE dependentB = HandleUVE(3U);
+    const ResourceDependencyHandleUVE root = HandleUVE(1U, 3U);
+    const ResourceDependencyHandleUVE dependentA = HandleUVE(2U);
+    const ResourceDependencyHandleUVE dependentB = HandleUVE(3U);
     ASSERT_TRUE(graph.RegisterResourceUVE(root).IsAppliedUVE());
     ASSERT_TRUE(graph.RegisterResourceUVE(dependentA).IsAppliedUVE());
     ASSERT_TRUE(graph.RegisterResourceUVE(dependentB).IsAppliedUVE());
@@ -116,11 +116,11 @@ TEST(ResourceDependencyGraphUVETest, GetDependentClosureUVE_BoundsResultAndClass
     EXPECT_TRUE(bounded.dependentsTruncated);
     ASSERT_EQ(bounded.dependents.size(), 1U);
     EXPECT_EQ(bounded.dependents.front(), dependentA);
-    EXPECT_EQ(graph.GetDependentClosureUVE(ResourceHandleUVE{root.guid, 2U}).code,
+    EXPECT_EQ(graph.GetDependentClosureUVE(ResourceDependencyHandleUVE{root.guid, 2U}).code,
               ResourceDependencyCodeUVE::StaleGeneration);
     EXPECT_EQ(graph.GetDependentClosureUVE(HandleUVE(99U)).code,
               ResourceDependencyCodeUVE::UnknownDependency);
-    EXPECT_EQ(graph.GetDependentClosureUVE(ResourceHandleUVE{}).code,
+    EXPECT_EQ(graph.GetDependentClosureUVE(ResourceDependencyHandleUVE{}).code,
               ResourceDependencyCodeUVE::InvalidHandle);
 }
 
