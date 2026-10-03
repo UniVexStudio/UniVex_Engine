@@ -4877,7 +4877,7 @@ std::uintptr_t EditorUVE::GetTextureThumbnailUVE(const std::filesystem::path& re
     std::uintptr_t textureId = 0U;
     Asset::TextureAssetUVE texture;
     if (Asset::LoadTextureAssetUVE(absolutePath, texture) && texture.width > 0U && texture.height > 0U &&
-        texture.format == Asset::TextureFormatUVE::RGBA8Unorm) {
+        texture.format == Asset::TextureAssetFormatUVE::RGBA8Unorm) {
         textureId = EditorUiAssetsUVE::UploadDynamicTextureUVE(reinterpret_cast<const std::uint8_t*>(texture.pixels.data()),
                                                                 static_cast<int>(texture.width),
                                                                 static_cast<int>(texture.height));

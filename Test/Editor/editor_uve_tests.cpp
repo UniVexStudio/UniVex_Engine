@@ -816,8 +816,8 @@ TEST(EditorUVETest, TextureThumbnailUVE_GracefullyReturnsZeroForMissingCorruptOr
         Asset::TextureAssetUVE unsupported;
         unsupported.width = 1U;
         unsupported.height = 1U;
-        unsupported.format = Asset::TextureFormatUVE::RGBA16Float;
-        unsupported.pixels.resize(Asset::BytesPerPixelUVE(Asset::TextureFormatUVE::RGBA16Float));
+        unsupported.format = Asset::TextureAssetFormatUVE::RGBA16Float;
+        unsupported.pixels.resize(Asset::BytesPerPixelUVE(Asset::TextureAssetFormatUVE::RGBA16Float));
         ASSERT_TRUE(Asset::SaveTextureAssetUVE(unsupported, root / "unsupported.uvtex"));
     }
 

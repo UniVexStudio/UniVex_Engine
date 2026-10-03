@@ -44,7 +44,7 @@ constexpr std::string_view kBmpTemporarySuffixUVE = ".uve_bmp_tmp";
     TextureAssetUVE texture;
     texture.width = decoded.width;
     texture.height = decoded.height;
-    texture.format = TextureFormatUVE::RGBA8Unorm;
+    texture.format = TextureAssetFormatUVE::RGBA8Unorm;
     const TextureImportSettingsUVE importSettings = ResolveTextureImportSettingsUVE(settings);
     texture.colorSpace = importSettings.colorSpace;
     texture.usage = importSettings.usage;

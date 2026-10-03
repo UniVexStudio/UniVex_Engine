@@ -28,10 +28,10 @@ constexpr std::uint32_t kTexturePayloadMetadataVersionUVE = 1U;
 constexpr std::uint32_t kTexturePayloadMipmapVersionUVE = 2U;
 constexpr std::uint32_t kTexturePayloadVersionUVE = 3U;
 
-[[nodiscard]] bool IsTextureColorSpaceValidUVE(const TextureColorSpaceUVE colorSpace) noexcept {
+[[nodiscard]] bool IsTextureColorSpaceValidUVE(const TextureAssetColorSpaceUVE colorSpace) noexcept {
     switch (colorSpace) {
-        case TextureColorSpaceUVE::Linear:
-        case TextureColorSpaceUVE::Srgb:
+        case TextureAssetColorSpaceUVE::Linear:
+        case TextureAssetColorSpaceUVE::Srgb:
             return true;
     }
     return false;
@@ -64,7 +64,7 @@ constexpr std::uint32_t kTexturePayloadVersionUVE = 3U;
 }
 
 [[nodiscard]] bool CalculateExpectedPixelBytesUVE(const std::uint32_t width, const std::uint32_t height,
-                                                   const TextureFormatUVE format,
+                                                   const TextureAssetFormatUVE format,
                                                    std::uint64_t& outExpectedBytes) noexcept {
     if (width == 0U || height == 0U) {
         return false;
@@ -185,11 +185,11 @@ constexpr std::uint32_t kTexturePayloadVersionUVE = 3U;
 
 } // namespace
 
-std::uint32_t BytesPerPixelUVE(const TextureFormatUVE format) noexcept {
+std::uint32_t BytesPerPixelUVE(const TextureAssetFormatUVE format) noexcept {
     switch (format) {
-        case TextureFormatUVE::RGBA8Unorm:
+        case TextureAssetFormatUVE::RGBA8Unorm:
             return 4U;
-        case TextureFormatUVE::RGBA16Float:
+        case TextureAssetFormatUVE::RGBA16Float:
             return 8U;
     }
     return 0U;
@@ -198,8 +198,8 @@ std::uint32_t BytesPerPixelUVE(const TextureFormatUVE format) noexcept {
 bool IsTextureAssetMetadataValidUVE(const TextureAssetUVE& texture) noexcept {
     return BytesPerPixelUVE(texture.format) != 0U && IsTextureColorSpaceValidUVE(texture.colorSpace) &&
            IsTextureUsageValidUVE(texture.usage) &&
-           (texture.colorSpace != TextureColorSpaceUVE::Srgb ||
-            texture.format == TextureFormatUVE::RGBA8Unorm);
+           (texture.colorSpace != TextureAssetColorSpaceUVE::Srgb ||
+            texture.format == TextureAssetFormatUVE::RGBA8Unorm);
 }
 
 bool IsTextureAssetValidUVE(const TextureAssetUVE& texture) noexcept {
@@ -207,7 +207,7 @@ bool IsTextureAssetValidUVE(const TextureAssetUVE& texture) noexcept {
         return false;
     }
     if (texture.payloadEncoding == TexturePayloadEncodingUVE::BasisUniversalKtx2) {
-        return texture.format == TextureFormatUVE::RGBA8Unorm && texture.pixels.empty() &&
+        return texture.format == TextureAssetFormatUVE::RGBA8Unorm && texture.pixels.empty() &&
                texture.mipLevels.empty() && IsBasisKtx2PayloadStructurallyValidUVE(texture);
     }
     if (!texture.basisKtx2Data.empty()) {
@@ -273,7 +273,7 @@ bool LoadTextureAssetUVE(const std::filesystem::path& path, TextureAssetUVE& out
     std::uint32_t width = 0U;
     std::uint32_t height = 0U;
     std::uint32_t formatValue = 0U;
-    std::uint32_t colorSpaceValue = static_cast<std::uint32_t>(TextureColorSpaceUVE::Linear);
+    std::uint32_t colorSpaceValue = static_cast<std::uint32_t>(TextureAssetColorSpaceUVE::Linear);
     std::uint32_t usageValue = static_cast<std::uint32_t>(TextureUsageUVE::Generic);
     std::uint32_t encodingValue = static_cast<std::uint32_t>(TexturePayloadEncodingUVE::RawPixels);
     if (!Utilities::ReadUint32FromBufferUVE(payload, offset, width) ||
@@ -294,8 +294,8 @@ bool LoadTextureAssetUVE(const std::filesystem::path& path, TextureAssetUVE& out
         return false;
     }
 
-    const auto format = static_cast<TextureFormatUVE>(formatValue);
-    const auto colorSpace = static_cast<TextureColorSpaceUVE>(colorSpaceValue);
+    const auto format = static_cast<TextureAssetFormatUVE>(formatValue);
+    const auto colorSpace = static_cast<TextureAssetColorSpaceUVE>(colorSpaceValue);
     const auto usage = static_cast<TextureUsageUVE>(usageValue);
     const auto payloadEncoding = static_cast<TexturePayloadEncodingUVE>(encodingValue);
     if (BytesPerPixelUVE(format) == 0U || !IsTextureColorSpaceValidUVE(colorSpace) ||
@@ -304,7 +304,7 @@ bool LoadTextureAssetUVE(const std::filesystem::path& path, TextureAssetUVE& out
                   path.string());
         return false;
     }
-    if (colorSpace == TextureColorSpaceUVE::Srgb && format != TextureFormatUVE::RGBA8Unorm) {
+    if (colorSpace == TextureAssetColorSpaceUVE::Srgb && format != TextureAssetFormatUVE::RGBA8Unorm) {
         UVE_ERROR("TextureAssetUVE: \"{}\" uses sRGB color space with an unsupported pixel format", path.string());
         return false;
     }

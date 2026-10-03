@@ -88,7 +88,7 @@ struct BufferDescUVE {
 }
 
 /// Pixel formats an IRenderDeviceUVE texture can use. `Depth32Float` exists here (even though no
-/// loadable asset ever uses it — see the deliberately separate Asset::TextureFormatUVE) because
+/// loadable asset ever uses it — see the deliberately separate Asset::TextureAssetFormatUVE) because
 /// depth render targets are created directly through this RHI, never loaded from disk. Compressed
 /// formats are sampled resources only: they cannot be framebuffer attachments or storage images.
 enum class TextureFormatUVE : std::uint8_t {

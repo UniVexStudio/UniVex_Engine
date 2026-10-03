@@ -143,7 +143,7 @@ protected:
             [](const std::filesystem::path&, Asset::TextureAssetUVE& texture) {
                 texture.width = 2;
                 texture.height = 2;
-                texture.format = Asset::TextureFormatUVE::RGBA8Unorm;
+                texture.format = Asset::TextureAssetFormatUVE::RGBA8Unorm;
                 texture.pixels.assign(2U * 2U * 4U, std::byte{0xAB});
                 return true;
             });
@@ -782,7 +782,7 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_InvalidReadyTexturePayloadUsesFallbackI
         [](const std::filesystem::path&, Asset::TextureAssetUVE& texture) {
             texture.width = 0U;
             texture.height = 0U;
-            texture.format = Asset::TextureFormatUVE::RGBA8Unorm;
+            texture.format = Asset::TextureAssetFormatUVE::RGBA8Unorm;
             texture.pixels.clear();
             return true;
         });
@@ -869,8 +869,8 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_SrgbAlbedoMetadataReachesRhiDescriptor)
         [](const std::filesystem::path&, Asset::TextureAssetUVE& texture) {
             texture.width = 2U;
             texture.height = 2U;
-            texture.format = Asset::TextureFormatUVE::RGBA8Unorm;
-            texture.colorSpace = Asset::TextureColorSpaceUVE::Srgb;
+            texture.format = Asset::TextureAssetFormatUVE::RGBA8Unorm;
+            texture.colorSpace = Asset::TextureAssetColorSpaceUVE::Srgb;
             texture.usage = Asset::TextureUsageUVE::Color;
             texture.pixels.assign(2U * 2U * 4U, std::byte{0x7F});
             texture.mipLevels.push_back(Asset::TextureMipLevelUVE{
@@ -902,8 +902,8 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_BasisTextureFallsBackToRgbaOnNullDevice
     Asset::TextureAssetUVE basisTexture;
     basisTexture.width = 4U;
     basisTexture.height = 4U;
-    basisTexture.format = Asset::TextureFormatUVE::RGBA8Unorm;
-    basisTexture.colorSpace = Asset::TextureColorSpaceUVE::Srgb;
+    basisTexture.format = Asset::TextureAssetFormatUVE::RGBA8Unorm;
+    basisTexture.colorSpace = Asset::TextureAssetColorSpaceUVE::Srgb;
     basisTexture.usage = Asset::TextureUsageUVE::Color;
     basisTexture.pixels.resize(4U * 4U * 4U, std::byte{0xFF});
     ASSERT_TRUE(Asset::CompressTextureAssetWithBasisUVE(
@@ -941,7 +941,7 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_Rgba16FloatAlbedoTexture_UploadsSuccess
         [](const std::filesystem::path&, Asset::TextureAssetUVE& texture) {
             texture.width = 2;
             texture.height = 2;
-            texture.format = Asset::TextureFormatUVE::RGBA16Float;
+            texture.format = Asset::TextureAssetFormatUVE::RGBA16Float;
             texture.pixels.assign(2U * 2U * 8U, std::byte{0});
             return true;
         });
@@ -1006,7 +1006,7 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_InvalidTexturePayloadIsRejectedAndMemoi
             // must reject it before making a backend allocation attempt.
             texture.width = 0U;
             texture.height = 2U;
-            texture.format = Asset::TextureFormatUVE::RGBA8Unorm;
+            texture.format = Asset::TextureAssetFormatUVE::RGBA8Unorm;
             texture.pixels.clear();
             return true;
         });
@@ -1048,7 +1048,7 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_TextureAssetNotYetReady_SkipsItemUntilL
             }
             texture.width = 2;
             texture.height = 2;
-            texture.format = Asset::TextureFormatUVE::RGBA8Unorm;
+            texture.format = Asset::TextureAssetFormatUVE::RGBA8Unorm;
             texture.pixels.assign(2U * 2U * 4U, std::byte{0xCD});
             return true;
         });

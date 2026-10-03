@@ -14,14 +14,14 @@ namespace UVE::Asset {
 /// `Render::TextureFormatUVE`: the renderer translates asset formats to the RHI without creating
 /// an Asset-to-RHI dependency cycle. Depth formats remain GPU render-target resources, not
 /// imported texture-asset formats.
-enum class TextureFormatUVE : std::uint8_t {
+enum class TextureAssetFormatUVE : std::uint8_t {
     RGBA8Unorm = 0,
     RGBA16Float = 1,
 };
 
 /// Interpretation of color channels when a texture is sampled. The renderer maps this metadata to
 /// the RHI's sampled color-space view; it does not change the stored pixel bytes.
-enum class TextureColorSpaceUVE : std::uint8_t {
+enum class TextureAssetColorSpaceUVE : std::uint8_t {
     Linear = 0,
     Srgb = 1,
 };
@@ -59,11 +59,11 @@ struct TextureMipLevelUVE {
 struct TextureAssetUVE {
     std::uint32_t width = 0;
     std::uint32_t height = 0;
-    TextureFormatUVE format = TextureFormatUVE::RGBA8Unorm;
+    TextureAssetFormatUVE format = TextureAssetFormatUVE::RGBA8Unorm;
     std::vector<std::byte> pixels;
     // Appended after the legacy members so existing aggregate initialization of the first four
     // fields remains source-compatible.
-    TextureColorSpaceUVE colorSpace = TextureColorSpaceUVE::Linear;
+    TextureAssetColorSpaceUVE colorSpace = TextureAssetColorSpaceUVE::Linear;
     TextureUsageUVE usage = TextureUsageUVE::Generic;
     // Additional mip levels only; level 0 remains in the legacy `pixels` member above.
     std::vector<TextureMipLevelUVE> mipLevels;
@@ -76,7 +76,7 @@ struct TextureAssetUVE {
 
 /// The exact byte size of one pixel in `format` (4 for RGBA8Unorm, 8 for RGBA16Float). Returns
 /// zero for an unsupported enumerator.
-[[nodiscard]] std::uint32_t BytesPerPixelUVE(TextureFormatUVE format) noexcept;
+[[nodiscard]] std::uint32_t BytesPerPixelUVE(TextureAssetFormatUVE format) noexcept;
 
 /// Validates the format/color-space/usage combination without inspecting dimensions or pixel bytes.
 [[nodiscard]] bool IsTextureAssetMetadataValidUVE(const TextureAssetUVE& texture) noexcept;

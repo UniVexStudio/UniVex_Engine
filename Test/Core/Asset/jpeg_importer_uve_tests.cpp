@@ -78,8 +78,8 @@ TEST(JpegImporterUVETest, ImportUVE_ValidJpgPublishesUveTexAndRegistersGuid) {
     ASSERT_TRUE(LoadTextureAssetUVE(destinationPath, texture));
     EXPECT_EQ(texture.width, 1U);
     EXPECT_EQ(texture.height, 1U);
-    EXPECT_EQ(texture.format, TextureFormatUVE::RGBA8Unorm);
-    EXPECT_EQ(texture.colorSpace, TextureColorSpaceUVE::Srgb);
+    EXPECT_EQ(texture.format, TextureAssetFormatUVE::RGBA8Unorm);
+    EXPECT_EQ(texture.colorSpace, TextureAssetColorSpaceUVE::Srgb);
     EXPECT_EQ(texture.usage, TextureUsageUVE::Color);
     ASSERT_EQ(texture.pixels.size(), 4U);
     EXPECT_GT(std::to_integer<unsigned int>(texture.pixels[0]), 200U);
@@ -117,7 +117,7 @@ TEST(JpegImporterUVETest, ImportUVE_InvalidJpegPreservesExistingDestinationAndDo
     TextureAssetUVE original;
     original.width = 1U;
     original.height = 1U;
-    original.format = TextureFormatUVE::RGBA8Unorm;
+    original.format = TextureAssetFormatUVE::RGBA8Unorm;
     original.pixels = {std::byte{0x11}, std::byte{0x22}, std::byte{0x33}, std::byte{0xFF}};
     ASSERT_TRUE(SaveTextureAssetUVE(original, destinationPath));
 

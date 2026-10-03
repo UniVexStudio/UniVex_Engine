@@ -9,18 +9,18 @@
 namespace UVE::Asset {
 namespace {
 
-[[nodiscard]] bool IsValidHandleUVE(const ResourceHandleUVE handle) noexcept {
+[[nodiscard]] bool IsValidHandleUVE(const ResourceDependencyHandleUVE handle) noexcept {
     return handle.guid != kInvalidAssetGuidUVE && handle.generation != 0U;
 }
 
-[[nodiscard]] bool ContainsHandleUVE(const std::vector<ResourceHandleUVE>& handles,
-                                     const ResourceHandleUVE handle) noexcept {
+[[nodiscard]] bool ContainsHandleUVE(const std::vector<ResourceDependencyHandleUVE>& handles,
+                                     const ResourceDependencyHandleUVE handle) noexcept {
     return std::find(handles.begin(), handles.end(), handle) != handles.end();
 }
 
 } // namespace
 
-ResourceDependencyResultUVE ResourceDependencyGraphUVE::RegisterResourceUVE(const ResourceHandleUVE handle) {
+ResourceDependencyResultUVE ResourceDependencyGraphUVE::RegisterResourceUVE(const ResourceDependencyHandleUVE handle) {
     if (!IsValidHandleUVE(handle)) {
         return {ResourceDependencyCodeUVE::InvalidHandle,
                 "Resource registration requires a non-zero GUID and generation."};
@@ -43,7 +43,7 @@ ResourceDependencyResultUVE ResourceDependencyGraphUVE::RegisterResourceUVE(cons
 }
 
 ResourceDependencyResultUVE ResourceDependencyGraphUVE::SetDependenciesUVE(
-    const ResourceHandleUVE handle, std::vector<ResourceHandleUVE> dependencies) {
+    const ResourceDependencyHandleUVE handle, std::vector<ResourceDependencyHandleUVE> dependencies) {
     if (!IsValidHandleUVE(handle)) {
         return {ResourceDependencyCodeUVE::InvalidHandle,
                 "Dependency updates require a non-zero GUID and generation."};
@@ -61,7 +61,7 @@ ResourceDependencyResultUVE ResourceDependencyGraphUVE::SetDependenciesUVE(
                 "Resource dependency count exceeds the bounded per-resource limit."};
     }
     for (std::size_t index = 0U; index < dependencies.size(); ++index) {
-        const ResourceHandleUVE dependency = dependencies[index];
+        const ResourceDependencyHandleUVE dependency = dependencies[index];
         if (!IsValidHandleUVE(dependency) || dependency == handle) {
             return {ResourceDependencyCodeUVE::InvalidHandle,
                     "Dependency updates reject invalid or self-referencing handles."};
@@ -78,7 +78,7 @@ ResourceDependencyResultUVE ResourceDependencyGraphUVE::SetDependenciesUVE(
                 : ResourceDependencyResultUVE{ResourceDependencyCodeUVE::StaleGeneration,
                                               "Dependency update referenced a stale dependency generation."};
         }
-        std::vector<ResourceHandleUVE> visited;
+        std::vector<ResourceDependencyHandleUVE> visited;
         if (ReachesUVE(dependency, handle, visited)) {
             return {ResourceDependencyCodeUVE::CycleDetected,
                     "Dependency update would introduce a resource dependency cycle."};
@@ -93,7 +93,7 @@ ResourceDependencyResultUVE ResourceDependencyGraphUVE::SetDependenciesUVE(
 }
 
 ResourceDependencyInvalidationPlanUVE ResourceDependencyGraphUVE::GetDependentClosureUVE(
-    const ResourceHandleUVE root, const std::size_t maximumDependents) const {
+    const ResourceDependencyHandleUVE root, const std::size_t maximumDependents) const {
     ResourceDependencyInvalidationPlanUVE plan;
     plan.graphGeneration = m_graphGeneration;
     plan.root = root;
@@ -111,11 +111,11 @@ ResourceDependencyInvalidationPlanUVE ResourceDependencyGraphUVE::GetDependentCl
         return plan;
     }
 
-    std::vector<ResourceHandleUVE> frontier{root};
-    std::vector<ResourceHandleUVE> discovered;
+    std::vector<ResourceDependencyHandleUVE> frontier{root};
+    std::vector<ResourceDependencyHandleUVE> discovered;
     while (!frontier.empty()) {
-        std::vector<ResourceHandleUVE> nextFrontier;
-        for (const ResourceHandleUVE current : frontier) {
+        std::vector<ResourceDependencyHandleUVE> nextFrontier;
+        for (const ResourceDependencyHandleUVE current : frontier) {
             for (const EntryUVE& entry : m_entries) {
                 if (!ContainsHandleUVE(entry.dependencies, current) ||
                     ContainsHandleUVE(discovered, entry.handle) || ContainsHandleUVE(nextFrontier, entry.handle) ||
@@ -125,8 +125,8 @@ ResourceDependencyInvalidationPlanUVE ResourceDependencyGraphUVE::GetDependentCl
                 nextFrontier.push_back(entry.handle);
             }
         }
-        std::sort(nextFrontier.begin(), nextFrontier.end(), [](const ResourceHandleUVE left,
-                                                                const ResourceHandleUVE right) {
+        std::sort(nextFrontier.begin(), nextFrontier.end(), [](const ResourceDependencyHandleUVE left,
+                                                                const ResourceDependencyHandleUVE right) {
             if (left.guid.value != right.guid.value) {
                 return left.guid.value < right.guid.value;
             }
@@ -147,7 +147,7 @@ ResourceDependencyInvalidationPlanUVE ResourceDependencyGraphUVE::GetDependentCl
     return plan;
 }
 
-ResourceDependencyResultUVE ResourceDependencyGraphUVE::RemoveResourceUVE(const ResourceHandleUVE handle) {
+ResourceDependencyResultUVE ResourceDependencyGraphUVE::RemoveResourceUVE(const ResourceDependencyHandleUVE handle) {
     EntryUVE* entry = FindExactUVE(handle);
     if (entry == nullptr) {
         return FindGuidUVE(handle.guid) == nullptr
@@ -170,7 +170,7 @@ ResourceDependencyResultUVE ResourceDependencyGraphUVE::RemoveResourceUVE(const 
     return {ResourceDependencyCodeUVE::Removed, "Resource handle was removed."};
 }
 
-bool ResourceDependencyGraphUVE::HasResourceUVE(const ResourceHandleUVE handle) const noexcept {
+bool ResourceDependencyGraphUVE::HasResourceUVE(const ResourceDependencyHandleUVE handle) const noexcept {
     return FindExactUVE(handle) != nullptr;
 }
 
@@ -190,7 +190,7 @@ ResourceDependencySnapshotUVE ResourceDependencyGraphUVE::GetSnapshotUVE() const
     return snapshot;
 }
 
-ResourceDependencyGraphUVE::EntryUVE* ResourceDependencyGraphUVE::FindExactUVE(const ResourceHandleUVE handle) noexcept {
+ResourceDependencyGraphUVE::EntryUVE* ResourceDependencyGraphUVE::FindExactUVE(const ResourceDependencyHandleUVE handle) noexcept {
     const auto iterator = std::find_if(m_entries.begin(), m_entries.end(), [handle](const EntryUVE& entry) {
         return entry.handle == handle;
     });
@@ -198,7 +198,7 @@ ResourceDependencyGraphUVE::EntryUVE* ResourceDependencyGraphUVE::FindExactUVE(c
 }
 
 const ResourceDependencyGraphUVE::EntryUVE* ResourceDependencyGraphUVE::FindExactUVE(
-    const ResourceHandleUVE handle) const noexcept {
+    const ResourceDependencyHandleUVE handle) const noexcept {
     const auto iterator = std::find_if(m_entries.cbegin(), m_entries.cend(), [handle](const EntryUVE& entry) {
         return entry.handle == handle;
     });
@@ -213,8 +213,8 @@ const ResourceDependencyGraphUVE::EntryUVE* ResourceDependencyGraphUVE::FindGuid
     return iterator == m_entries.cend() ? nullptr : &*iterator;
 }
 
-bool ResourceDependencyGraphUVE::ReachesUVE(const ResourceHandleUVE start, const ResourceHandleUVE target,
-                                            std::vector<ResourceHandleUVE>& visited) const noexcept {
+bool ResourceDependencyGraphUVE::ReachesUVE(const ResourceDependencyHandleUVE start, const ResourceDependencyHandleUVE target,
+                                            std::vector<ResourceDependencyHandleUVE>& visited) const noexcept {
     if (start == target) {
         return true;
     }
@@ -227,12 +227,12 @@ bool ResourceDependencyGraphUVE::ReachesUVE(const ResourceHandleUVE start, const
         return false;
     }
     return std::any_of(entry->dependencies.begin(), entry->dependencies.end(),
-                       [this, target, &visited](const ResourceHandleUVE dependency) {
+                       [this, target, &visited](const ResourceDependencyHandleUVE dependency) {
                            return ReachesUVE(dependency, target, visited);
                        });
 }
 
-ResourceDependencyResultUVE ResourceDependencyGraphUVE::ValidateHandleUVE(const ResourceHandleUVE handle) const noexcept {
+ResourceDependencyResultUVE ResourceDependencyGraphUVE::ValidateHandleUVE(const ResourceDependencyHandleUVE handle) const noexcept {
     if (!IsValidHandleUVE(handle)) {
         return {ResourceDependencyCodeUVE::InvalidHandle, "Resource handle is invalid."};
     }
