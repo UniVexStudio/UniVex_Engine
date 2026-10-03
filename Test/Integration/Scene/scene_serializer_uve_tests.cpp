@@ -755,7 +755,7 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_TwoClipAnimationTreeBecomesABlendGraph
 TEST_F(SceneSerializerUVETest, RestoreUVE_OldBlendSpaceInputsBecomeItsOwnPoints) {
     // Saved before blend spaces held their animations: Clips wired into slots, placed by "points".
     const std::string payloadText =
-        R"({"entities":[{"localId":0,"components":{"AnimationTreeComponentUVE":{"parameters":[],"objects":[)"
+        R"({"entities":[{"localId":0,"components":{"AnimationTreeComponentUVE":{"parameters":[],"nodes":[)"
         R"({"id":1,"kind":0,"inputs":[2]},)"
         R"({"id":2,"kind":3,"inputs":[3,4],"points":[1.0,6.0],"parameter":"speed"},)"
         R"({"id":3,"kind":1,"clip":31,"speed":1.25,"loop":true},)"
@@ -784,7 +784,7 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_OldBlendSpaceInputsBecomeItsOwnPoints)
 TEST_F(SceneSerializerUVETest, RestoreUVE_OldSingleConditionTransitionsBecomeAList) {
     // Saved when a transition had one condition in its own fields.
     const std::string payloadText =
-        R"({"entities":[{"localId":0,"components":{"AnimationTreeComponentUVE":{"parameters":[],"objects":[)"
+        R"({"entities":[{"localId":0,"components":{"AnimationTreeComponentUVE":{"parameters":[],"nodes":[)"
         R"({"id":1,"kind":0,"inputs":[2]},)"
         R"({"id":2,"kind":7,"inputs":[0,0],"transitions":[)"
         R"({"from":0,"to":1,"condition":2,"parameter":"speed","threshold":0.5,"fadeSeconds":0.3},)"
