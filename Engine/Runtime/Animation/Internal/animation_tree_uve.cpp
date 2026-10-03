@@ -82,11 +82,11 @@ struct AnimationTreeCacheKeyHashUVE final {
 
 AnimationTreeValidationResultUVE ValidateAnimationTreeUVE(const AnimationTreeUVE& tree) noexcept {
     if (tree.objects.empty()) {
-        return {AnimationTreeValidationCodeUVE::EmptyTree, 0U, "AnimationTree requires at least one node."};
+        return {AnimationTreeValidationCodeUVE::EmptyTree, 0U, "AnimationTree requires at least one object."};
     }
     if (tree.objects.size() > AnimationTreeUVE::kMaximumObjectsUVE) {
         return {AnimationTreeValidationCodeUVE::CapacityExceeded, 0U,
-                "AnimationTree node count exceeds the bounded limit."};
+                "AnimationTree object count exceeds the bounded limit."};
     }
     std::unordered_set<std::uint32_t> objectIds;
     objectIds.reserve(tree.objects.size());
@@ -95,11 +95,11 @@ AnimationTreeValidationResultUVE ValidateAnimationTreeUVE(const AnimationTreeUVE
             !std::isfinite(object.weight) || object.weight < 0.0F || object.weight > 1.0F ||
             !std::isfinite(object.timeScale) || object.timeScale < 0.0F) {
             return {AnimationTreeValidationCodeUVE::InvalidObject, object.id,
-                    "AnimationTree node identity or bounded numeric configuration is invalid."};
+                    "AnimationTree object identity or bounded numeric configuration is invalid."};
         }
         if (!objectIds.insert(object.id).second) {
             return {AnimationTreeValidationCodeUVE::DuplicateObject, object.id,
-                    "AnimationTree node identifiers must be unique."};
+                    "AnimationTree object identifiers must be unique."};
         }
     }
     for (const AnimationClipUVE& clip : tree.clips) {
@@ -126,24 +126,24 @@ AnimationTreeValidationResultUVE ValidateAnimationTreeUVE(const AnimationTreeUVE
         }
         if (UsesInputAUVE(object.kind) && object.inputA == 0U) {
             return {AnimationTreeValidationCodeUVE::InvalidObject, object.id,
-                    "AnimationTree node requires inputA."};
+                    "AnimationTree object requires inputA."};
         }
         if (UsesInputBUVE(object.kind) && object.inputB == 0U) {
             return {AnimationTreeValidationCodeUVE::InvalidObject, object.id,
-                    "AnimationTree node requires inputB."};
+                    "AnimationTree object requires inputB."};
         }
         if (object.inputA != 0U && FindObjectUVE(tree, object.inputA) == nullptr) {
             return {AnimationTreeValidationCodeUVE::UnknownInput, object.id,
-                    "AnimationTree inputA references an unknown node."};
+                    "AnimationTree inputA references an unknown object."};
         }
         if (object.inputB != 0U && FindObjectUVE(tree, object.inputB) == nullptr) {
             return {AnimationTreeValidationCodeUVE::UnknownInput, object.id,
-                    "AnimationTree inputB references an unknown node."};
+                    "AnimationTree inputB references an unknown object."};
         }
     }
     if (outputCount == 0U) {
         return {AnimationTreeValidationCodeUVE::MissingOutput, 0U,
-                "AnimationTree requires an OutputPose node."};
+                "AnimationTree requires an OutputPose object."};
     }
 
     std::unordered_map<std::uint32_t, std::uint8_t> visitState;
@@ -167,7 +167,7 @@ AnimationTreeValidationResultUVE ValidateAnimationTreeUVE(const AnimationTreeUVE
     for (const AnimationTreeObjectUVE& object : tree.objects) {
         if (!visit(object)) {
             return {AnimationTreeValidationCodeUVE::CycleDetected, object.id,
-                    "AnimationTree node inputs must be acyclic."};
+                    "AnimationTree object inputs must be acyclic."};
         }
     }
     return {AnimationTreeValidationCodeUVE::Valid, 0U, "AnimationTree is valid."};
@@ -185,7 +185,7 @@ AnimationTreeEvaluationResultUVE EvaluateAnimationTreeUVE(
         return object.kind == AnimationTreeObjectKindUVE::OutputPose;
     });
     if (output == tree.objects.cend()) {
-        result.message = "AnimationTree has no output node.";
+        result.message = "AnimationTree has no output object.";
         return result;
     }
     std::unordered_map<AnimationTreeCacheKeyUVE, TransformPoseUVE, AnimationTreeCacheKeyHashUVE> cache;

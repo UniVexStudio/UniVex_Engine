@@ -41,7 +41,7 @@ TEST(AnimationGraphEditingUVETest, ConnectsMovesAndRefusesCycles) {
     const std::uint32_t blend = AddAnimationGraphObjectUVE(objects, Kind::Blend2, {});
     ASSERT_TRUE(ConnectAnimationGraphObjectsUVE(objects, blend, 0U, 2U));
     EXPECT_EQ(ObjectUVE(objects, blend).inputs[0], 2U);
-    EXPECT_EQ(ObjectUVE(objects, 1U).inputs[0], 0U) << "a node feeds one slot: the clip moved";
+    EXPECT_EQ(ObjectUVE(objects, 1U).inputs[0], 0U) << "an object feeds one slot: the clip moved";
 
     ASSERT_TRUE(ConnectAnimationGraphObjectsUVE(objects, 1U, 0U, blend));
     const std::uint32_t scale = AddAnimationGraphObjectUVE(objects, Kind::TimeScale, {});
@@ -122,7 +122,7 @@ TEST(AnimationGraphEditingUVETest, BlendSpacePointsHoldTheirOwnAnimation) {
     ASSERT_EQ(AddBlendSpacePointUVE(objects, line, {1.0F, 0.0F}, Asset::AssetGuidUVE{6U}), std::optional<std::size_t>{1U});
     EXPECT_EQ(AddBlendSpacePointUVE(objects, line, {0.5F, 3.0F}, Asset::AssetGuidUVE{7U}), std::optional<std::size_t>{1U})
         << "a line keeps its points rising: 0.5 lands between, y ignored";
-    EXPECT_EQ(objects.size(), before) << "no Clip nodes made: the point holds its animation";
+    EXPECT_EQ(objects.size(), before) << "no Clip objects made: the point holds its animation";
     const auto& points = ObjectUVE(objects, line).blendPoints;
     ASSERT_EQ(points.size(), 3U);
     EXPECT_EQ(points[1].clip, Asset::AssetGuidUVE{7U});

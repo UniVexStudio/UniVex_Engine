@@ -34,6 +34,12 @@ Section 8 lists the fixes that *would* change behavior, each with its blast radi
 > stayed the same, because includes resolve through each library's `Expose/` directory. The paths
 > quoted in this audit are the paths as they were when it was written; for the current tree, read
 > `Nodes/` as `Objects/`. The counts and the findings are unaffected.
+>
+> **Note 2 (same day, after the second pass):** the engine now names the base object `Object3D`
+> (`typeId` `"object_3d"`, with `"node_3d"` and `"empty"` still resolving to it) and the word
+> "Node" is gone from the engine's own code, folders, files, labels and error messages. All the
+> `Node` vocabulary in this document that describes *Godot* - its `Node` class, its 241
+> descendants, `*Node` type names - stays as written, because that is what the audit is about.
 
 ---
 
@@ -242,11 +248,11 @@ So a user adding "Light3D" from the library and a user adding "DirectionalLight3
 two different names. This is a naming problem on top of a real design question (Gap in
 `SCENE_NODES_ROADMAP.md`? — not currently listed there).
 
-### 5.5 🟡 `LODGroup3D` vs `LodGroup3DNodeComponentUVE`
+### 5.5 🟡 `LODGroup3D` vs `LodGroup3DComponentUVE`
 
 The kind, typeId, label and icon all say **LOD**; the component struct, its validity function and
 its free function say **Lod** (`lod_group_3d_uve.h:27,61,63`), and the registry's contract string
-is `"LodGroup3DNodeComponentUVE"` (`scene_object_registry_uve.cpp:35`). Harmless to the build, but it
+is `"LodGroup3DComponentUVE"` (`scene_object_registry_uve.cpp:35`). Harmless to the build, but it
 is the one acronym in the node set that is not spelled the same way twice. Note the struct name is
 also a **saved component key** (Section 4), so renaming it needs an alias.
 
@@ -302,7 +308,7 @@ object is called "Cube".
 "CharacterBody3D", `component.skeleton_3d` → "Skeleton3D", `component.particle_emitter` →
 "ParticleEmitter3D", `component.script` → "Script". A reader inspecting a `StaticBody3D` sees a
 component literally called "MeshInstance3D". Naming the component after its node kind is exactly
-the confusion the registry was introduced to end (see `SceneNodeTypeComponentUVE`'s own comment,
+the confusion the registry was introduced to end (see `SceneObjectTypeComponentUVE`'s own comment,
 `scene_object_type_uve.h:9-17`).
 
 ### 5.10 🟢 Verified consistent (no action)
@@ -338,7 +344,7 @@ the confusion the registry was introduced to end (see `SceneNodeTypeComponentUVE
 ### Level B — renames `typeId` (needs a legacy alias, or old scenes lose their node type)
 
 Follow the `"empty"` → `Object3D` pattern (`scene_object_registry_uve.cpp:119-126`): add
-`if (typeId == "<old id>") return FindSceneNodeDescriptorUVE(SceneNodeKindUVE::<Kind>);` before the
+`if (typeId == "<old id>") return FindSceneObjectDescriptorUVE(SceneNodeKindUVE::<Kind>);` before the
 lookup loop, keep the icon file renamed to match, and add a test that loads a document written with
 the old id. Candidate id renames, if strict Godot spelling is wanted:
 `world_environment_3d`, `reflection_probe_3d`, `decal_3d`, `fog_volume_3d` → drop the `3d`.
