@@ -412,7 +412,7 @@ private:
         header.at = Take().at;
         header.name = ExpectName("the entity's name after 'entity'");
         Expect(":", "':' and the object kind it drives, as in 'entity Player : Character3D'");
-        header.baseKind = ExpectName("a object kind such as Character3D");
+        header.baseKind = ExpectName("an object kind such as Character3D");
         ExpectNewline();
         return header;
     }

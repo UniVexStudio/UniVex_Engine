@@ -331,7 +331,7 @@ void EditorUVE::DrawHierarchyObjectUVE(const Scene::EntityUVE entity) {
     const bool nameTruncated = shownName.size() != fullName.size();
     const std::string visibleLabel = renaming ? "" : std::string(gapSpaces, ' ') + shownName;
     // "###" keys the row on the entity alone. With "##" the visible text was part of the ID, so
-    // renaming a object, or narrowing the panel until its name was cut short, gave the row a new
+    // renaming an object, or narrowing the panel until its name was cut short, gave the row a new
     // ID and it forgot it was open.
     const std::string objectLabel = visibleLabel + "###entity-" + std::to_string(entity.index) + ":" +
                                   std::to_string(entity.generation);
@@ -675,7 +675,7 @@ void EditorUVE::DrawHierarchyVisibilityToggleUVE(const Scene::EntityUVE entity, 
     const ImVec2 min = ImGui::GetItemRectMin();
     const ImVec2 max = ImGui::GetItemRectMax();
     // Bright when shown, dim when hidden, and dimmer still when shown but hidden by a parent - so
-    // a object that is invisible only because of its parent does not look like it was switched off.
+    // an object that is invisible only because of its parent does not look like it was switched off.
     ImU32 color = ImGui::GetColorU32(ImGuiCol_Text);
     if (!visibility.visible) {
         color = ImGui::GetColorU32(ImGuiCol_TextDisabled);

@@ -1182,7 +1182,7 @@ private:
             camera_.SetDistance(bookmark->distance);
         }
         // Goes through the editor like the hierarchy's Focus in Viewport, so both share
-        // FocusCameraOnEntityUVE() and the key does nothing for a object that cannot be focused.
+        // FocusCameraOnEntityUVE() and the key does nothing for an object that cannot be focused.
         if (ImGui::IsKeyPressed(ImGuiKey_F, false) && !io.KeyCtrl) {
             static_cast<void>(editor_.RequestViewportFocusUVE(editor_.GetSelectedEntityUVE()));
         }

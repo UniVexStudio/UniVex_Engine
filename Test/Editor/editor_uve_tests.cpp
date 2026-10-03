@@ -624,7 +624,7 @@ TEST(EditorUVETest, OutlinerContextUVE_AncestryAndEligibleParentsExcludeSelected
                   (std::vector<Scene::EntityUVE>{editor.GetDocumentSceneRootUVE(),
                                                  EditorUVEAccessUVE::GetViewportUVE(editor),
                                                  folder, parent, selected}));
-        // A object may only move inside a folder: the folder leads, then its objects in order. The
+        // An object may only move inside a folder: the folder leads, then its objects in order. The
         // scene root and the Viewport are not offered.
         EXPECT_EQ(EditorUVEAccessUVE::GetEligibleReparentParentsUVE(editor, selected),
                   (std::vector<Scene::EntityUVE>{folder, rootA, parent, rootB}));
@@ -1324,7 +1324,7 @@ TEST(EditorUVETest, EditorCommandsUVE_RunOnlyWhenAvailableAndKeepRebindsAcrossSe
             }
         }
 
-        // Undo is unavailable with nothing done; after creating a object it runs.
+        // Undo is unavailable with nothing done; after creating an object it runs.
         EXPECT_FALSE(editor.RunEditorCommandUVE("edit.undo"));
         ASSERT_TRUE(editor.RunEditorCommandUVE("create.empty"));
         EXPECT_TRUE(editor.CanUndoUVE());
@@ -2352,7 +2352,7 @@ TEST(EditorUVETest, InspectorClipboardUVE_CopyPasteResetComponentsAndTransformUn
         EXPECT_EQ(entityManager.GetComponentUVE<Scene::TransformComponentUVE>(source).localScale,
                   (Math::Vector3UVE{1.0F, 1.0F, 1.0F}));
 
-        // A object without the component cannot be copied from.
+        // An object without the component cannot be copied from.
         editor.ClearSelectionUVE();
         EXPECT_FALSE(editor.CopySelectedComponentUVE(*primitive));
         EXPECT_FALSE(editor.CopySelectedTransformUVE());
@@ -2394,7 +2394,7 @@ TEST(EditorUVETest, SetEntityVisibleUVE_TogglesAnyRowUndoablyWithoutTouchingSele
         ASSERT_TRUE(editor.RedoUVE());
         EXPECT_FALSE(entityManager.GetComponentUVE<Scene::VisibilityComponentUVE>(shown).visible);
 
-        // A object without a Visibility component has no eye to toggle.
+        // An object without a Visibility component has no eye to toggle.
         EXPECT_FALSE(entityManager.HasComponentUVE<Scene::VisibilityComponentUVE>(other));
         EXPECT_FALSE(editor.SetEntityVisibleUVE(other, false));
         EXPECT_FALSE(editor.SetEntityVisibleUVE(Scene::kInvalidEntityUVE, false));
@@ -3176,7 +3176,7 @@ TEST(EditorUVETest, EditorHistoryUVE_RedoOfMoveToDocumentRootLandsUnderTheSceneR
         editor.InitUVE();
         Core::EngineServicesUVE& services = engine.GetServicesUVE();
         Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
-        // In a level, "the top" for a object is its folder.
+        // In a level, "the top" for an object is its folder.
         const Scene::EntityUVE sceneRoot = EditorUVEAccessUVE::GetObjectFolderUVE(editor);
         const Scene::EntityUVE parent = entityManager.CreateEntityUVE();
         AttachRootUVE(engine, parent, Scene::TransformComponentUVE{});
@@ -4863,7 +4863,7 @@ TEST(EditorUVETest, SceneRootInspectorUVE_ShowsExactlyTheObjectSectionInOrder) {
                   (std::vector<std::string>{"process", "physics-interpolation", "auto-translate",
                                             "editor-description", "script", "object-metadata"}));
 
-        // On a object without Process, Thread Group still has a section of its own.
+        // On an object without Process, Thread Group still has a section of its own.
         Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
         const Scene::EntityUVE object = entityManager.CreateEntityUVE();
         AttachRootUVE(engine, object, Scene::TransformComponentUVE{});

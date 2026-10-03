@@ -28,7 +28,7 @@ struct ObjectMetadataEntryUVE final {
 /// value smuggled into the entity's name. Both are worse than a property bag.
 ///
 /// WHY TYPED. Values are VariantUVE rather than strings, so "charges" is an int a script can do
-/// arithmetic on, "spawn_offset" is a Vector3 the inspector edits with three fields, and a object
+/// arithmetic on, "spawn_offset" is a Vector3 the inspector edits with three fields, and an object
 /// reference is a ObjectPath the editor can resolve - instead of text every reader has to parse and
 /// every writer can get wrong.
 struct ObjectMetadataComponentUVE final {

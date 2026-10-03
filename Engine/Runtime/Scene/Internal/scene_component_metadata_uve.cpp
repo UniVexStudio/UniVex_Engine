@@ -572,11 +572,11 @@ void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
 
 void DeclareAnimationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     // AnimationSequencer's own section. Its target is an entity reference: flagged so the serializer
-    // remaps it, and drawn as a object picker. Empty means the player's parent, which is the common
+    // remaps it, and drawn as an object picker. Empty means the player's parent, which is the common
     // case and needs no picking at all.
     // AnimationMixer: the base AnimationSequencer and AnimationGraph share, shown between their own
     // section and the Object section. Its target is an entity reference: flagged so the serializer
-    // remaps it, and drawn as a object picker. Empty means the parent, the common case.
+    // remaps it, and drawn as an object picker. Empty means the parent, the common case.
     using M = AnimationMixerComponentUVE;
     TypeMetadataPropertyUVE mixerTarget = WithTooltipUVE(
         DeclareUVE<&M::target>("target", "Target", kPropertyTypeEntityUVE),

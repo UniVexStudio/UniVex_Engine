@@ -39,7 +39,7 @@ enum class AnimationTransitionModeUVE : std::uint8_t {
 };
 
 /// AnimationMixer: the abstract base AnimationSequencer and AnimationGraph share - what they move, which
-/// channels, on which clock and how fast. Not a object of its own; the section both show between
+/// channels, on which clock and how fast. Not an object of its own; the section both show between
 /// their own and the Object section.
 struct AnimationMixerComponentUVE final {
     /// Off, nothing is evaluated or written: the target is left alone.

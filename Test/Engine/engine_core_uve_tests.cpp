@@ -1207,7 +1207,7 @@ TEST(EngineCoreUVETest, UVScriptEntity_CompilesOnceRaisesReadyThenTicksEveryFram
         EXPECT_EQ(files, 1U);
     }
 
-    // A object with a transform moves itself through `position`.
+    // An object with a transform moves itself through `position`.
     write("mover.uvs", "on tick(dt):\n    position.x += 2.0\n");
     const Scene::EntityUVE mover = entityManager.CreateEntityUVE();
     entityManager.AddComponentUVE<Scene::TransformComponentUVE>(mover, Scene::TransformComponentUVE{});
@@ -1222,7 +1222,7 @@ TEST(EngineCoreUVETest, UVScriptEntity_CompilesOnceRaisesReadyThenTicksEveryFram
 }
 
 TEST(EngineCoreUVETest, ScriptComponentEntity_FindsAProjectScriptOnceItIsWritten) {
-    // No manual mount: the project directory itself is mounted at the VFS root, so a object's
+    // No manual mount: the project directory itself is mounted at the VFS root, so an object's
     // project-relative script path resolves to the file the editor wrote beside the scene.
     const std::filesystem::path projectRoot = "uve_engine_core_tests_project_root";
     std::filesystem::remove_all(projectRoot);
@@ -1235,7 +1235,7 @@ TEST(EngineCoreUVETest, ScriptComponentEntity_FindsAProjectScriptOnceItIsWritten
 
     Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
     const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-    // A object-graph script no longer runs at all.
+    // An object-graph script no longer runs at all.
     entityManager.AddComponentUVE<Scene::ScriptComponentUVE>(entity, Scene::ScriptComponentUVE{"scripts/old.uvscript"});
     engine.TickFrameUVE();
     EXPECT_EQ(engine.GetActiveScriptInstanceCountUVE(), 0U);

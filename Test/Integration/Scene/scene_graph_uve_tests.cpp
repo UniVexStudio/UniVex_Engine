@@ -698,7 +698,7 @@ TEST_F(SceneGraphUVETest, TryGetResolvedObjectModesUVE_AnswersForAObjectThatCarr
 }
 
 TEST_F(SceneGraphUVETest, TryGetResolvedObjectModesUVE_IsEmptyForAnEntityTheUpdateNeverSaw) {
-    // Not a scene-graph object at all, and a object created after the last update: in both cases
+    // Not a scene-graph object at all, and an object created after the last update: in both cases
     // there is no answer yet, and saying so is better than inventing the default.
     const EntityUVE bare = entityManager.CreateEntityUVE();
     sceneGraph.UpdateUVE(entityManager);
@@ -814,7 +814,7 @@ TEST_F(SceneGraphUVETest, TryGetResolvedObjectModesUVE_AnswersForThePureObjectIt
 }
 
 TEST_F(SceneGraphUVETest, UpdateUVE_ReparentingRecomputesInheritedVisibility) {
-    // Moving a object between a hidden and a visible parent has to change its answer. Nothing else
+    // Moving an object between a hidden and a visible parent has to change its answer. Nothing else
     // in the sweep is keyed on the old parent, so a cached result would survive the move.
     const EntityUVE hiddenParent = entityManager.CreateEntityUVE();
     const EntityUVE shownParent = entityManager.CreateEntityUVE();

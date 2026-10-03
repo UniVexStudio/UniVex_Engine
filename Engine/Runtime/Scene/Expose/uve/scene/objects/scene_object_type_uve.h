@@ -9,12 +9,12 @@ namespace UVE::Scene {
 
 class IEntityManagerUVE;
 
-/// The object type an entity was created as. Stamped when a object is made, saved with the scene by
+/// The object type an entity was created as. Stamped when an object is made, saved with the scene by
 /// its stable type id, and copied with the rest of the object by duplicate, undo and prefabs.
 ///
 /// It exists because the type cannot be read back from components alone: a Static3D and a
 /// Collider3D carry the same collider, and a Object3D, a BoxMesh3D and a SphereMesh3D share every
-/// component but one. Without it, anything that wants to say what a object is guesses, and the
+/// component but one. Without it, anything that wants to say what an object is guesses, and the
 /// guesses disagree.
 struct SceneObjectTypeComponentUVE final {
     Objects::SceneObjectKindUVE kind = Objects::SceneObjectKindUVE::Object3D;

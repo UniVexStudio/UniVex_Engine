@@ -86,7 +86,7 @@ paths inside `Objects/3D/CMakeLists.txt` stay valid, 31 doc/comment paths update
 so `#include "uve/objects/3d/camera_3d_uve.h"` keeps working while the physical folder is renamed.
 That makes Option A safe with zero compile risk; the virtual path is renamed separately in Phase 3.
 
-### Option B — one tree (what the request literally described: "ilagay na lang sa object folder")
+### Option B — one tree (what the request literally described: "ilagay na lang san object folder")
 
 ```
 Engine/Runtime/Objects/

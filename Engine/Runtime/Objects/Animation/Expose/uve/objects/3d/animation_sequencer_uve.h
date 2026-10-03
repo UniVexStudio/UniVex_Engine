@@ -61,8 +61,8 @@ void StopAnimationPlayerUVE(AnimationPlayerComponentUVE& player) noexcept;
                                           const AnimationMixerComponentUVE& mixer = {}) noexcept;
 
 /// Advances a playing player by `deltaSeconds` and writes a skeletal clip's pose into `skeleton`:
-/// each bone takes the track of the same name, sampled like a object track; a bone with no track
-/// keeps its rest pose. The loop mode, speed and On Finish work as for a object; Blend In eases from
+/// each bone takes the track of the same name, sampled like an object track; a bone with no track
+/// keeps its rest pose. The loop mode, speed and On Finish work as for an object; Blend In eases from
 /// the pose the skeleton had; Relative does not apply. Returns true when the pose was written. A
 /// clip without bone tracks stops the player and writes nothing.
 [[nodiscard]] bool StepSkeletalAnimationPlayerUVE(AnimationPlayerComponentUVE& player,

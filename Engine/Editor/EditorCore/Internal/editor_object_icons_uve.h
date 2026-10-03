@@ -58,7 +58,7 @@ inline void DrawMoveIconUVE(ImDrawList& drawList, const ImVec2 center, const flo
     }
 }
 
-/// A object icon at the start of a menu line, sized and centred like a Scene row's, followed on the
+/// An object icon at the start of a menu line, sized and centred like a Scene row's, followed on the
 /// same line by whatever the caller draws next (the Scene "+" and the Content "+ Add" menus).
 /// Nothing when the texture is missing.
 inline void DrawObjectPickerIconUVE(const std::uintptr_t textureId) {

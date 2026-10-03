@@ -287,7 +287,7 @@ TEST(ContentCatalogueEditorUVETest, EntityEditorEditsTheAssetAloneAndGivesTheSce
         EXPECT_FLOAT_EQ(positionY(editor.GetEntityEditorRootUVE()), 2.0F);
         EXPECT_FALSE(editor.UndoUVE());
 
-        // One root only: a object beside the root is refused on save.
+        // One root only: an object beside the root is refused on save.
         const Scene::EntityUVE sceneRoot = editor.GetDocumentSceneRootUVE();
         const Scene::EntityUVE stray = entityManager.CreateEntityUVE();
         entityManager.AddComponentUVE<Scene::TransformComponentUVE>(stray, Scene::TransformComponentUVE{});

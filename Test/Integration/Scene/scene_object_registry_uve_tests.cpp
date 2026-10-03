@@ -24,7 +24,7 @@ TEST(SceneObjectRegistryUVETest, BuiltInDescriptorsUVE_AreStableUniqueAndRuntime
         EXPECT_FALSE(descriptor.category.empty());
         EXPECT_FALSE(descriptor.runtimeOwner.empty());
         EXPECT_LE(descriptor.authoredContracts.size(), 8U);
-        // Structure the document creates itself; never offered in a object list.
+        // Structure the document creates itself; never offered in an object list.
         if (descriptor.kind == SceneObjectKindUVE::SceneRoot || descriptor.kind == SceneObjectKindUVE::Viewport) {
             EXPECT_FALSE(descriptor.libraryCreatable);
         } else {

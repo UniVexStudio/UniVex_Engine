@@ -54,7 +54,7 @@ TEST(GltfSkeletonUVETest, ParseGltfSkeletonUVE_MakesDuplicateBoneNamesUnique) {
 TEST(GltfSkeletonUVETest, ParseGltfSkeletonUVE_RejectsWhatItCannotRepresent) {
     // No skin: a static mesh has no skeleton.
     EXPECT_FALSE(ParseGltfSkeletonUVE(R"({"asset":{"version":"2.0"},"nodes":[{}]})", 256U).has_value());
-    // A joint naming a object that does not exist.
+    // A joint naming an object that does not exist.
     EXPECT_FALSE(ParseGltfSkeletonUVE(R"({"asset":{"version":"2.0"},"nodes":[{}],"skins":[{"joints":[4]}]})", 256U)
                      .has_value());
     // Over the bone budget.

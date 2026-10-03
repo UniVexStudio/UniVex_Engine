@@ -21,7 +21,7 @@ inline constexpr std::size_t kMaximumLodLevelsUVE = 8U;
 ///
 /// WHAT IT IS READY FOR. `currentLevel` is the index a mesh swap would use. MeshComponentUVE
 /// holds a single mesh GUID today, so there is nothing to swap TO - adding LOD meshes is an asset
-/// pipeline job (import, generation, storage), not a object's. The level is computed and published
+/// pipeline job (import, generation, storage), not an object's. The level is computed and published
 /// now so that work lands as a consumer rather than a redesign, and so the Inspector can show
 /// which level an object is on before any of it exists.
 struct LodGroup3DComponentUVE final {

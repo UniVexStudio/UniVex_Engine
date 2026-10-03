@@ -700,7 +700,7 @@ TEST_F(Object3DDefinitionsUVETest, SceneRootMigrationBakesAnOldRootTransformInto
 
 TEST_F(Object3DDefinitionsUVETest, SpringArm3DIsRegisteredCreatableAsACameraObject) {
     // The registry row and the editor switch must keep agreeing about this kind: the registry
-    // advertises it as a creatable camera object, and the switch now creates it from the same
+    // advertises it as a creatable cameran object, and the switch now creates it from the same
     // definition this test file pins.
     const Objects::SceneObjectDescriptorUVE* descriptor =
         Objects::FindSceneObjectDescriptorUVE(Objects::SceneObjectKindUVE::SpringArm3D);
