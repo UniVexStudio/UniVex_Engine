@@ -234,6 +234,7 @@ void EditorUVE::DrawViewportImageUVE() {
     if (m_viewportPanelRenderer && availableRegion.x > 0.0F && availableRegion.y > 0.0F) {
         m_viewportOverlayState.gameWorkspaceActive = m_activeWorkspace == EditorWorkspaceUVE::Game;
         m_viewportOverlayState.studioView = m_retargetPreview.has_value();
+        m_viewportOverlayState.entityEditActive = m_entityEditSession.has_value();
         m_viewportOverlayState.bones.clear();
         if (!m_viewportOverlayState.gameWorkspaceActive) {
             BuildSkeletonOverlayUVE(m_viewportOverlayState.bones);
