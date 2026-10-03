@@ -87,6 +87,7 @@
 #include "uve/physics/detail/shape_narrow_phase_uve.h"
 #include "uve/physics/character_body_motion_uve.h"
 #include "uve/physics/character_controller_uve.h"
+#include "uve/physics/character_world_query_uve.h"
 #include "uve/physics/collision_system_uve.h"
 #include "uve/physics/physics_system_uve.h"
 #include "uve/physics/raycast_system_uve.h"
@@ -1154,88 +1155,35 @@ void EngineCoreUVE::SyncCharacterControllersUVE(const float fixedDeltaTimeSecond
     const bool jumpPressed = m_inputSystem->WasKeyPressedThisFrameUVE(Input::KeyCodeUVE::Space);
     const float riseInput = (m_inputSystem->IsKeyDownUVE(Input::KeyCodeUVE::Space) ? 1.0F : 0.0F) -
                             (m_inputSystem->IsKeyDownUVE(Input::KeyCodeUVE::LeftCtrl) ? 1.0F : 0.0F);
-    // How far below its feet a body looks for the floor when Snap Length is 0: just enough that
-    // resting on the floor keeps registering as resting on it from one step to the next.
-    constexpr float kMinimumFloorProbeUVE = 0.01F;
-    constexpr float kCeilingToleranceUVE = 1.0e-4F;
-
-    // Collected and ordered rather than iterated in place: controllers push against each other
-    // through MoveWithToIUVE, so which one moves first changes the outcome, and physicsPriority is
-    // how an author decides that instead of archetype storage order deciding it for them.
+    // Collected and ordered rather than iterated in place: two characters can push the same body,
+    // and the order they meet it in changes the outcome, so physicsPriority is how an author
+    // decides that instead of archetype storage order deciding it for them.
     for (const Scene::EntityUVE entity :
          CollectFixedStepOrderUVE<Scene::CharacterControllerComponentUVE>(*m_entityManager, *m_sceneGraph)) {
-        if (!m_entityManager->HasComponentUVE<Scene::ColliderComponentUVE>(entity) ||
-            !m_entityManager->HasComponentUVE<Scene::TransformComponentUVE>(entity)) {
-            continue;
-        }
-        if (m_entityManager->HasComponentUVE<Scene::Rigid3DComponentUVE>(entity) &&
-            !m_entityManager->GetComponentUVE<Scene::Rigid3DComponentUVE>(entity).isKinematic) {
-            continue;
-        }
-        // Copied, worked on, and written back at the end: the moves below can add components
-        // elsewhere, which may move this one in storage.
-        Scene::CharacterControllerComponentUVE c =
-            m_entityManager->GetComponentUVE<Scene::CharacterControllerComponentUVE>(entity);
-        const bool floating = c.motionMode == Scene::CharacterMotionModeUVE::Floating;
-        const bool jumped = Physics::StepCharacterIntentUVE(
-            c, Physics::CharacterMotionInputUVE{horizontalInput, riseInput, jumpPressed}, m_config.gravity.y,
+        // One call takes the body from intent to moved-and-written-back: built-in movement (or,
+        // with that off, the velocity a script set), gravity, the move through the world with its
+        // step-up, floor snap and platform carry, and the state the next step reads. The bridge
+        // refuses a body it cannot step rather than half-moving it, so a refusal is simply a body
+        // that stays where it is.
+        const Physics::Character3DStepResultUVE report = Physics::StepCharacter3DUVE(
+            *m_entityManager, *m_sceneGraph, *m_collisionSystem, entity,
+            Physics::CharacterMotionInputUVE{horizontalInput, riseInput, jumpPressed}, m_config.gravity.y,
             fixedDeltaTimeSeconds);
-
-        // SolidBody3D's motion locks: along a locked axis the body neither moves nor keeps speed.
-        const Scene::SolidBodyComponentUVE locks =
-            m_entityManager->HasComponentUVE<Scene::SolidBodyComponentUVE>(entity)
-                ? m_entityManager->GetComponentUVE<Scene::SolidBodyComponentUVE>(entity)
-                : Scene::SolidBodyComponentUVE{};
-        c.velocity.x = locks.lockMotionX ? 0.0F : c.velocity.x;
-        c.velocity.y = locks.lockMotionY ? 0.0F : c.velocity.y;
-        c.velocity.z = locks.lockMotionZ ? 0.0F : c.velocity.z;
-        const Math::Vector3UVE displacement = c.velocity * fixedDeltaTimeSeconds;
-
-        Physics::CharacterControllerInputUVE controllerInput{};
-        controllerInput.entity = entity;
-        controllerInput.desiredDisplacement = displacement;
-        controllerInput.maximumSubsteps = c.maxSlides;
-        controllerInput.maximumStepHeight = floating ? 0.0F : c.maxStepHeight;
-        controllerInput.pushDynamicBodies = c.pushRigidBodies;
-        controllerInput.dynamicBodyPushStrength = c.pushStrength;
-        controllerInput.maximumDynamicBodyPushSpeed = c.maxPushSpeed;
-        controllerInput.dynamicBodyPushDeltaTimeSeconds = fixedDeltaTimeSeconds;
-        const Physics::CharacterControllerMoveResultUVE result = Physics::CharacterControllerUVE::MoveWithToIUVE(
-            *m_entityManager, *m_sceneGraph, *m_collisionSystem, controllerInput);
-        if (!result.IsAcceptedUVE()) {
+        if (!report.stepped) {
             continue;
         }
 
-        // Rising and stopped short above: a ceiling.
-        const bool hitCeiling =
-            displacement.y > 0.0F && result.appliedDisplacement.y < displacement.y - kCeilingToleranceUVE;
-
-        // ---- Floor: found by the move, or by snapping down to it ----------------------------------
-        bool onFloor = !floating && result.grounded;
-        Math::Vector3UVE floorNormal = result.groundNormal;
-        const bool falling = c.velocity.y <= 0.0F && !hitCeiling;
-        if (!floating && !onFloor && !jumped && falling && c.grounded && !locks.lockMotionY) {
-            // Only a body that was just on the floor snaps, and only as far as Snap Length: it
-            // follows a step down instead of launching off it. Nothing found, and it is put back
-            // exactly where it was, to fall normally.
-            const Scene::TransformComponentUVE before = m_entityManager->GetComponentUVE<Scene::TransformComponentUVE>(entity);
-            Physics::CharacterControllerInputUVE snapInput = controllerInput;
-            snapInput.desiredDisplacement = Math::Vector3UVE{0.0F, -std::max(c.floorSnapLength, kMinimumFloorProbeUVE), 0.0F};
-            snapInput.maximumStepHeight = 0.0F;
-            snapInput.pushDynamicBodies = false;
-            const Physics::CharacterControllerMoveResultUVE snap = Physics::CharacterControllerUVE::MoveWithToIUVE(
-                *m_entityManager, *m_sceneGraph, *m_collisionSystem, snapInput);
-            if (snap.IsAcceptedUVE() && snap.grounded) {
-                onFloor = true;
-                floorNormal = snap.groundNormal;
-            } else {
-                m_sceneGraph->SetLocalTransformUVE(*m_entityManager, entity, before);
-            }
+        // Pushing is the one thing a character does to *other* bodies, so it stays out of the mover
+        // and off the read-only world seam: the contacts the move reported are handed to the rigid
+        // bodies that were in the way.
+        const Scene::CharacterControllerComponentUVE& settings =
+            m_entityManager->GetComponentUVE<Scene::CharacterControllerComponentUVE>(entity);
+        if (settings.pushRigidBodies) {
+            static_cast<void>(Physics::PushBodiesFromCharacterMoveUVE(
+                *m_entityManager, report.motion.collisions,
+                Physics::CharacterDynamicPushPolicyUVE{true, settings.pushStrength, settings.maxPushSpeed,
+                                                       fixedDeltaTimeSeconds}));
         }
-
-        Physics::FinishCharacterStepUVE(c, Physics::CharacterMoveOutcomeUVE{onFloor, floorNormal, hitCeiling}, jumped,
-                                        fixedDeltaTimeSeconds);
-        m_entityManager->GetComponentUVE<Scene::CharacterControllerComponentUVE>(entity) = c;
     }
 }
 
