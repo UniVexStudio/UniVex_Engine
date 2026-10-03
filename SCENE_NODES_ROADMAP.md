@@ -1,9 +1,9 @@
-# Scene Nodes Roadmap
+# Scene Objects Roadmap
 
 A detailed, node-by-node checklist of every placeable scene node / UI element / AI element this
 engine should eventually offer, grouped by domain (3D, 2D, CanvasLayer/UI, AI). This is a companion
 to the top-level `ROADMAP.md` — that file tracks whole engine systems; this file tracks individual
-node types specifically, since "the node exists in the Add-Node list" and "the node actually does
+node types specifically, since "the object exists in the Add-Object list" and "the object actually does
 something at runtime" are two different, easily-confused claims.
 
 No third-party engine or product name appears anywhere in this document — node names below are
@@ -37,7 +37,7 @@ worse than no checklist.
 
 ---
 
-## 3D Nodes
+## 3D Objects
 
 ### Working today
 
@@ -174,7 +174,7 @@ worse than no checklist.
 
 ---
 
-## 2D Nodes
+## 2D Objects
 
 Nothing in this section exists yet — this engine currently has no 2D rendering/physics/nav
 pipeline at all.
@@ -209,7 +209,7 @@ pipeline at all.
 
 ---
 
-## CanvasLayer / UI Nodes
+## CanvasLayer / UI Objects
 
 ### Working today (Inspector-addable components, not yet promoted to the Scene node registry)
 
@@ -236,7 +236,7 @@ point.
 
 ---
 
-## AI Nodes / Components
+## AI Objects / Components
 
 Nothing placeable exists yet. `NavigationAgent3D`/`NavigationRegion3D` (listed above, 3D section)
 are the closest existing pieces, and they are themselves still data-only stubs with no pathfinding
@@ -263,7 +263,7 @@ system behind them.
    structural: no `[~]` entry above changed status, since organizing a stub's data is not giving it
    a backing system. The 17 kinds whose authored data already lives in a shared component (Empty,
    Camera3D, Light3D, the three primitive meshes, physics bodies, Area3D, AudioSource3D,
-   ParticleEmitter3D, Script, AnimationSequencer, AnimationGraph) each have their own `NodeDefinition`
+   ParticleEmitter3D, Script, AnimationSequencer, AnimationGraph) each have their own `*ObjectDefinitionUVE`
    recipe in the owning folder, and the editor's creation switch sources those recipes instead of
    hardcoding them. The save format is untouched: a definition is a recipe, never a serialized
    component.
@@ -277,9 +277,9 @@ system behind them.
 3. Only after 3D nodes are in good shape, start a real 2D pipeline (rendering + physics + nav) —
    right now 2D is 100% unstarted, not partially built.
 4. **Done**: Canvas/UI Text/UI Image/UI Button are promoted into the Scene node registry
-   (`canvas`/`ui_text`/`ui_image`/`ui_button`, category "UI"), each with a NodeDefinition
+   (`canvas`/`ui_text`/`ui_image`/`ui_button`, category "UI"), each with a `*ObjectDefinitionUVE`
    `.h`+`.cpp` in `Engine/Runtime/Objects/UI` following the Objects/3D convention — 2D/UI
-   authoring now has the same single Add-Node entry point, and the Add-Component path still
+   authoring now has the same single Add-Object entry point, and the Add-Component path still
    works for adding these components to existing entities.
 5. AI nodes come last — they need real navigation (item 2/3) and real gameplay systems to act on
    before a behavior tree/blackboard has anything meaningful to drive.

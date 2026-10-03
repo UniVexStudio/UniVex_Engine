@@ -74,7 +74,7 @@ struct InputRuleUVE final {
 std::string DescribeAnimationGraphProblemUVE(const AnimationTreeComponentUVE& component) {
     const std::vector<AnimationGraphObjectUVE>& objects = component.objects;
     if (objects.size() > kMaximumAnimationGraphObjectsUVE) {
-        return "too many nodes";
+        return "too many objects";
     }
     if (component.parameters.size() > kMaximumAnimationParametersUVE) {
         return "too many parameters";
@@ -98,15 +98,15 @@ std::string DescribeAnimationGraphProblemUVE(const AnimationTreeComponentUVE& co
     for (std::size_t index = 0U; index < objects.size(); ++index) {
         const AnimationGraphObjectUVE& object = objects[index];
         if (object.id == 0U || !indexById.emplace(object.id, index).second) {
-            return "node ids must be unique and non-zero";
+            return "object ids must be unique and non-zero";
         }
         if (object.kind > Kind::TimeSeek || !IsNameValidUVE(object.name)) {
-            return "a node has an invalid kind or name";
+            return "an object has an invalid kind or name";
         }
         outputs += object.kind == Kind::Output ? 1U : 0U;
     }
     if (outputs != 1U) {
-        return "a graph needs exactly one Output node";
+        return "a graph needs exactly one Output object";
     }
 
     std::unordered_set<std::uint32_t> used;
@@ -123,13 +123,13 @@ std::string DescribeAnimationGraphProblemUVE(const AnimationTreeComponentUVE& co
             }
             const auto found = indexById.find(input);
             if (found == indexById.end()) {
-                return label + ": an input is not connected to a node";
+                return label + ": an input is not connected to an object";
             }
             if (objects[found->second].kind == Kind::Output) {
-                return label + ": the Output node cannot feed another node";
+                return label + ": the Output object cannot feed another object";
             }
             if (!used.insert(input).second) {
-                return label + ": a node feeds more than one input";
+                return label + ": an object feeds more than one input";
             }
         }
         if (!std::isfinite(object.position.x) || !std::isfinite(object.position.y) || !std::isfinite(object.speed) ||

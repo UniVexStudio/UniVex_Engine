@@ -773,14 +773,14 @@ void EditorUVE::DrawStateMachineSelectionUVE(const Scene::EntityUVE tree, const 
                     editChild([loop](AnimationGraphObjectUVE& n) { n.loop = loop; });
                 }
             } else {
-                ImGui::TextDisabled("Its settings are on its node in the tree.");
+                ImGui::TextDisabled("Its settings are on its object in the tree.");
             }
             if (ImGui::Button("Show in Tree", ImVec2{-FLT_MIN, 0.0F})) {
                 view.focus = 0U;
                 view.selected = {childId};
             }
         } else {
-            ImGui::TextDisabled("Nothing plays in this state: wire a node into it in the tree.");
+            ImGui::TextDisabled("Nothing plays in this state: wire an object into it in the tree.");
         }
         label("Start here");
         bool entry = machine.entryState == slot;

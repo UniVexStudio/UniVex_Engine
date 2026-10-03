@@ -56,9 +56,9 @@ Godot derivative whatever the licence says. The plan below removes that reading.
 | Test folder | `Test/Nodes/` — 5 test files | ✅ **done** — moved to `Test/Objects/` |
 | Registry folder | `Engine/Runtime/Scene/.../objects/`, `Engine/Runtime/Scene/Internal/objects/` | ✅ **done** — path references updated |
 | Virtual include path | `uve/objects/...` — **239** include lines across **110** files | optional Phase 3 (make includes match the `Objects/` folder) |
-| The word "Node" in code | **2,734** occurrences, **238** distinct identifiers, **217** files | **dropped** — not requested |
+| The word "Node" in code | **2,734** occurrences, **238** distinct identifiers, **217** files | ✅ **done in the second pass** — see "Second pass" below |
 | User-visible object names | 47 labels + 47 default names + 47 `typeId`s + 47 icon files | **only 6 change** — Section 4 |
-| Docs / comments | 31 path references to `Runtime/Nodes`, plus `SCENE_NODES_ROADMAP.md` (285 lines), `STUB_IMPLEMENTATION_ROADMAP.md`, `AUDIT.md` | follow the renames |
+| Docs / comments | 31 path references to `Runtime/Nodes`, plus `SCENE_NODES_ROADMAP.md` (285 lines), `STUB_IMPLEMENTATION_ROADMAP.md`, `AUDIT.md` | ✅ **done** — stale identifiers updated; Godot vocabulary in the audit stays as written |
 
 Phases are ordered so that each one is a small, reviewable change that builds and passes on its own.
 
@@ -147,7 +147,7 @@ What these four actually are in this engine (so the new word describes them corr
 | `StaticBody3D` | `ColliderComponentUVE` only | never moves; world geometry |
 | `RigidBody3D` | `RigidBodyComponentUVE` | gravity + collision response |
 | `CharacterBody3D` | `ColliderComponentUVE` + `CharacterControllerComponentUVE` | kinematic move/jump/ground |
-| `AnimatableBody3D` | `ColliderComponentUVE` + `RigidBodyComponentUVE` + `AnimatableBody3DNodeComponentUVE` | moved by animation/script, pushes others |
+| `AnimatableBody3D` | `ColliderComponentUVE` + `RigidBodyComponentUVE` + `AnimatableBody3DComponentUVE` | moved by animation/script, pushes others |
 
 The engine's own internal vocabulary for them is already `PhysicsObject3DNodeDefinitionUVE` (all
 four) and `SolidBody3DNodeDefinitionUVE` (static + animatable) — so a "Solid" family would match the
@@ -169,7 +169,7 @@ machine, root motion) onto the same targets. The graph word is the natural repla
 | Touch point | Where | Count |
 |---|---|---|
 | Saved `typeId` + label | `Engine/Runtime/Scene/Internal/objects/scene_object_registry_uve.cpp` (rows 55, 62, 70, 73, 77-78, 81) | 6 rows + 6 legacy aliases |
-| Legacy alias block | same file, `FindSceneNodeDescriptorUVE(std::string_view)` | 1 spot |
+| Legacy alias block | same file, `FindSceneObjectDescriptorUVE(std::string_view)` | 1 spot |
 | Default Outliner name | the 6 per-kind headers (`defaultName`) | 6 lines |
 | Icons | `assets/icons/objects/{static_body,rigid_body,character_body,animatable_body,animation_player,animation_tree}_3d?.{png,svg}` | 6 icon-file pairs (rename; filename **is** the lookup key) |
 | C++ kind enum | `scene_object_registry_uve.h` (`SceneNodeKindUVE::StaticBody3D` …) | 6 constants |
@@ -182,7 +182,7 @@ machine, root motion) onto the same targets. The graph word is the natural repla
 
 **Not touched on purpose:** the component structs (`RigidBodyComponentUVE`,
 `CharacterControllerComponentUVE`, `AnimationPlayerComponentUVE`, `AnimationTreeComponentUVE`,
-`AnimatableBody3DNodeComponentUVE`, `ColliderComponentUVE`) — those names are saved as component
+`AnimatableBody3DComponentUVE`, `ColliderComponentUVE`) — those names are saved as component
 JSON keys (`scene_serializer_uve.cpp:1403+`), so renaming them would need a save-format migration
 for zero user-visible gain. The node's user-facing name is what changes.
 
@@ -196,7 +196,7 @@ kind, with one test per alias.
 ## 5. Migration mechanics (so nothing breaks)
 
 1. **Saved scenes.** Only `typeId` is written into a document. Each renamed `typeId` gets a legacy
-   alias in `FindSceneNodeDescriptorUVE(std::string_view)`
+   alias in `FindSceneObjectDescriptorUVE(std::string_view)`
    (`Engine/Runtime/Scene/Internal/objects/scene_object_registry_uve.cpp:119-126`), exactly like the
    existing `"empty"` and `"node_3d"` → `object_3d` rows. Old `.uvscene`/prefab files keep opening with the right kind.
    One test per alias: write a document with the old id, load it, assert the new kind.
@@ -238,9 +238,32 @@ file says "Godot-style one-root scene". The claim or the line has to go.
 ## 7. Open points
 
 1. **The 6 new strings** (Section 4a/4b) — applied. A later change of mind costs another legacy
-   alias in `FindSceneNodeDescriptorUVE`, nothing else.
+   alias in `FindSceneObjectDescriptorUVE`, nothing else.
 2. **File/struct renaming depth:** rename only the user-facing strings, or also the C++ enum
    constants and `*NodeDefinitionUVE` structs + the six `*_3d_uve.h` filenames so the code reads like
    the UI? The plan assumes yes for enum/definition/file names, no for `*ComponentUVE` structs.
 3. **`3D` suffix:** the six new names keep the `3D` suffix (they are spatial objects). Dropping it is
    a one-line change per name.
+
+---
+
+## Second pass — the executed de-Node rename
+
+After Phase 1 the target changed: the file/struct layer was renamed too, and the word "Node" was
+dropped from the engine's own vocabulary, code included. What that pass did, so nothing here reads
+as a guess:
+
+| Surface | Before | After |
+|---|---|---|
+| The 3D base object | `Node3D` / `node_3d` | `Object3D` / `object_3d` (the old `typeId`s stay readable) |
+| Scene component names | `SceneObjectTypeComponentUVE`, `ObjectMetadataComponentUVE` | `SceneObjectTypeComponentUVE`, `ObjectMetadataComponentUVE` |
+| The 22 `*3DNodeComponentUVE` components | e.g. `RayCast3DComponentUVE` | `RayCast3DComponentUVE` — every retired name reads back through `CanonicalComponentNameUVE` |
+| Folders | `Scene/.../nodes/`, `Objects/**/Expose/uve/nodes/` | `.../objects/` |
+| C++ identifiers | `SceneObjectDescriptorUVE`, `FbxBoneNodeUVE`, `FbxBoneNodeUVE`-style names, `uvscript_node_host_uve.*` | `SceneObjectDescriptorUVE`, `FbxBoneObjectUVE`, `uvscript_object_host_uve.*` |
+| Registry metadata | `authoredContracts` naming `...NodeComponentUVE` | the component names that exist, e.g. `Scene/AnimatableBody3DComponentUVE` |
+| Strings, labels, ids | hierarchy/inspector/settings labels, `node-metadata` drawer id, `editor.nodes.*` settings ids, UVScript messages | object wording; settings and drawer ids renamed, variant type names get read aliases |
+| Variant names in saved documents | `NodePath`, `Node` | `ObjectPath`, `Object` — `TryParseVariantTypeNameUVE` still reads the two retired names |
+
+What did not change: third-party names (`ImGui::TreeNodeEx`, `ufbx_node`, `stbrp_node`), glTF's own
+`"nodes"` keys, the animation graph's persisted `"nodes"` JSON key, and every legacy read alias
+(`"empty"`, `"node_3d"`, the `kLegacyNames` map).

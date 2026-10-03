@@ -2050,7 +2050,7 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
                     view.focus = id;
                 }
                 if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Its states and transitions, drawn and edited (or double-click the node).");
+                    ImGui::SetTooltip("Its states and transitions, drawn and edited (or double-click the object).");
                 }
                 break;
             }
@@ -2085,7 +2085,7 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
         const std::string name = entityManager.HasComponentUVE<Scene::NameComponentUVE>(tree)
                                      ? entityManager.GetComponentUVE<Scene::NameComponentUVE>(tree).name
                                      : std::string{"AnimationGraph"};
-        ImGui::TextDisabled("%s  -  %zu nodes, %zu parameters%s%s", name.c_str(), objects.size(), component.parameters.size(),
+        ImGui::TextDisabled("%s  -  %zu objects, %zu parameters%s%s", name.c_str(), objects.size(), component.parameters.size(),
                             component.activeStates.empty() ? "" : "  -  ", component.activeStates.c_str());
     }
     const float right = ImGui::GetContentRegionMax().x;

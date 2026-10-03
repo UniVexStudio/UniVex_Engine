@@ -141,7 +141,7 @@ void EditorUVE::DrawAnimationParametersPropertyUVE(const Core::TypeMetadataEntry
         }
         ImGui::EndTable();
     } else if (parameters.empty()) {
-        ImGui::TextDisabled("No parameters. Add one for a node or transition to read.");
+        ImGui::TextDisabled("No parameters. Add one for an object or transition to read.");
     }
     if (removeIndex.has_value()) {
         parameters.erase(parameters.begin() + static_cast<std::ptrdiff_t>(*removeIndex));
@@ -254,7 +254,7 @@ void EditorUVE::DrawAnimationGraphPropertyUVE(const Core::TypeMetadataEntryUVE& 
         AnimationGraphObjectUVE& object = objects[index];
         ImGui::PushID(static_cast<int>(object.id));
         ImGui::Indent(static_cast<float>(depth) * 12.0F + 0.001F);
-        const bool open = ImGui::TreeNodeEx("##node", ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_FramePadding,
+        const bool open = ImGui::TreeNodeEx("##object", ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_FramePadding,
                                             "%s  %s", KindLabelUVE(object.kind),
                                             object.name.empty() || object.name == KindLabelUVE(object.kind)
                                                 ? ("#" + std::to_string(object.id)).c_str()
@@ -262,7 +262,7 @@ void EditorUVE::DrawAnimationGraphPropertyUVE(const Core::TypeMetadataEntryUVE& 
         if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip("%s", KindHelpUVE(object.kind));
         }
-        if (object.kind != Kind::Output && ImGui::BeginPopupContextItem("##node-menu")) {
+        if (object.kind != Kind::Output && ImGui::BeginPopupContextItem("##object-menu")) {
             if (ImGui::MenuItem("Delete")) {
                 removeId = object.id;
             }
@@ -687,10 +687,10 @@ void EditorUVE::DrawAnimationGraphPropertyUVE(const Core::TypeMetadataEntryUVE& 
     }
 
     ImGui::Spacing();
-    if (ImGui::Button("+ Node")) {
-        ImGui::OpenPopup("##add-node");
+    if (ImGui::Button("+ Object")) {
+        ImGui::OpenPopup("##add-object");
     }
-    if (ImGui::BeginPopup("##add-node")) {
+    if (ImGui::BeginPopup("##add-object")) {
         for (const Kind kind : kAddableKindsUVE) {
             if (ImGui::MenuItem(KindLabelUVE(kind)) &&
                 AddAnimationGraphObjectUVE(objects, kind, Math::Vector2UVE{}) != 0U) {
