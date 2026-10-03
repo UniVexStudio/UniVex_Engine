@@ -649,12 +649,12 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_AnimationTargetsRemapToTheRestoredEnti
     entityManager.AddComponentUVE<HierarchyComponentUVE>(door, HierarchyComponentUVE{});
     const EntityUVE player = entityManager.CreateEntityUVE();
     entityManager.AddComponentUVE<HierarchyComponentUVE>(player, HierarchyComponentUVE{door});
-    AnimatedObjectComponentUVE mixer;
+    AnimationDriverComponentUVE mixer;
     mixer.target = door;
     mixer.speedScale = 0.5F;
     mixer.animateScale = false;
     mixer.processCallback = AnimationProcessCallbackUVE::Physics;
-    entityManager.AddComponentUVE<AnimatedObjectComponentUVE>(player, mixer);
+    entityManager.AddComponentUVE<AnimationDriverComponentUVE>(player, mixer);
     AnimationSequencerComponentUVE animations;
     animations.clip = Asset::AssetGuidUVE{21U};
     animations.library = {Asset::AssetGuidUVE{20U}, Asset::AssetGuidUVE{21U}, Asset::AssetGuidUVE{22U}};
@@ -720,9 +720,9 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_AnimationTargetsRemapToTheRestoredEnti
     restoredManager.ForEachUVE<AnimationSequencerComponentUVE>(
         [&restoredPlayer](const EntityUVE entity, const AnimationSequencerComponentUVE&) { restoredPlayer = entity; });
     ASSERT_NE(restoredPlayer, kInvalidEntityUVE);
-    AnimatedObjectComponentUVE expectedMixer = mixer;
+    AnimationDriverComponentUVE expectedMixer = mixer;
     expectedMixer.target = restoredDoor; // the one authored field that is remapped
-    EXPECT_EQ(restoredManager.GetComponentUVE<AnimatedObjectComponentUVE>(restoredPlayer), expectedMixer);
+    EXPECT_EQ(restoredManager.GetComponentUVE<AnimationDriverComponentUVE>(restoredPlayer), expectedMixer);
     EXPECT_TRUE(restoredManager.GetComponentUVE<AnimationSequencerComponentUVE>(restoredPlayer).HasSameSettingsUVE(animations))
         << "the clip and the player's whole animation list, in order";
     EXPECT_TRUE(restoredManager.GetComponentUVE<AnimationGraphComponentUVE>(restoredPlayer).HasSameSettingsUVE(blend));
@@ -826,11 +826,11 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_LegacyAnimationSequencerFieldsCarryOve
     EXPECT_EQ(loaded.loopMode, AnimationLoopModeUVE::Once);
     EXPECT_FALSE(loaded.autoplay); // it was disabled
     EXPECT_EQ(loaded.clip, Asset::kInvalidAssetGuidUVE);
-    ASSERT_TRUE(entityManager.HasComponentUVE<AnimatedObjectComponentUVE>(roots[0])) << "an old player gains its base";
-    EXPECT_EQ(entityManager.GetComponentUVE<AnimatedObjectComponentUVE>(roots[0]).target, kInvalidEntityUVE);
+    ASSERT_TRUE(entityManager.HasComponentUVE<AnimationDriverComponentUVE>(roots[0])) << "an old player gains its base";
+    EXPECT_EQ(entityManager.GetComponentUVE<AnimationDriverComponentUVE>(roots[0]).target, kInvalidEntityUVE);
 }
 
-TEST_F(SceneSerializerUVETest, RestoreUVE_SequencerSavedBeforeTheAnimatedObjectBaseMovesItsSettingsIntoOne) {
+TEST_F(SceneSerializerUVETest, RestoreUVE_SequencerSavedBeforeTheAnimationDriverBaseMovesItsSettingsIntoOne) {
     // A door and a player aimed at it, saved when target, masks and clock lived on the player.
     const std::string payloadText =
         R"({"entities":[{"localId":0,"components":{"HierarchyComponentUVE":{"parentLocalId":-1}}},)"
@@ -847,8 +847,8 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_SequencerSavedBeforeTheAnimatedObjectB
     entityManager.ForEachUVE<AnimationSequencerComponentUVE>(
         [&player](const EntityUVE entity, const AnimationSequencerComponentUVE&) { player = entity; });
     ASSERT_NE(player, kInvalidEntityUVE);
-    ASSERT_TRUE(entityManager.HasComponentUVE<AnimatedObjectComponentUVE>(player));
-    const AnimatedObjectComponentUVE& mixer = entityManager.GetComponentUVE<AnimatedObjectComponentUVE>(player);
+    ASSERT_TRUE(entityManager.HasComponentUVE<AnimationDriverComponentUVE>(player));
+    const AnimationDriverComponentUVE& mixer = entityManager.GetComponentUVE<AnimationDriverComponentUVE>(player);
     EXPECT_EQ(mixer.target, roots[0]);
     EXPECT_FALSE(mixer.animateScale);
     EXPECT_TRUE(mixer.animatePosition);

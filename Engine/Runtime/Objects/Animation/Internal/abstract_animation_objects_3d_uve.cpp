@@ -2,7 +2,7 @@
 
 #include "uve/objects/3d/abstract_animation_objects_3d_uve.h"
 
-#include "uve/component/animated_object_component_uve.h"
+#include "uve/component/animation_driver_component_uve.h"
 #include "uve/component/bone_modifier_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
 #include "uve/objects/3d/abstract_objects_3d_uve.h"
@@ -21,11 +21,11 @@ void ApplyBoneModifier3DBaseUVE(IEntityManagerUVE& entityManager, const EntityUV
     }
 }
 
-void ApplyAnimatedObjectBaseUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
+void ApplyAnimationDriverBaseUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
                                 const std::string_view nameFallback) {
     EnsureObjectBaselineUVE(entityManager, entity, nameFallback);
-    if (entityManager.IsAliveUVE(entity) && !entityManager.HasComponentUVE<AnimatedObjectComponentUVE>(entity)) {
-        entityManager.AddComponentUVE<AnimatedObjectComponentUVE>(entity, AnimatedObjectComponentUVE{});
+    if (entityManager.IsAliveUVE(entity) && !entityManager.HasComponentUVE<AnimationDriverComponentUVE>(entity)) {
+        entityManager.AddComponentUVE<AnimationDriverComponentUVE>(entity, AnimationDriverComponentUVE{});
     }
 }
 

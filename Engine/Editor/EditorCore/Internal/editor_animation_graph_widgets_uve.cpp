@@ -219,7 +219,7 @@ TransitionEditUVE DrawAnimationTransitionUVE(Scene::AnimationTransitionUVE& tran
     }
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-        ImGui::SetTooltip("The crossfade's shape. An inertialized mixer blends out the difference instead.");
+        ImGui::SetTooltip("The crossfade's shape. An inertialized driver blends out the difference instead.");
     }
 
     LabelUVE("Options");

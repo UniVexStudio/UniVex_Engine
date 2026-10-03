@@ -115,7 +115,7 @@ class EvaluatorUVE final {
 public:
     /// `skeleton` null: the graph animates one object, its clips' own object track.
     EvaluatorUVE(AnimationGraphComponentUVE& tree, const AnimationClipResolverUVE& clips,
-                 const Skeleton3DComponentUVE* const skeleton, const AnimatedObjectComponentUVE& mixer)
+                 const Skeleton3DComponentUVE* const skeleton, const AnimationDriverComponentUVE& mixer)
         : m_tree(tree), m_clips(clips), m_skeleton(skeleton), m_mixer(mixer) {
         for (std::size_t index = 0U; index < tree.objects.size(); ++index) {
             m_indexById.emplace(tree.objects[index].id, index);
@@ -885,7 +885,7 @@ private:
     AnimationGraphComponentUVE& m_tree;
     const AnimationClipResolverUVE& m_clips;
     const Skeleton3DComponentUVE* m_skeleton = nullptr;
-    const AnimatedObjectComponentUVE& m_mixer;
+    const AnimationDriverComponentUVE& m_mixer;
     std::unordered_map<std::uint32_t, std::size_t> m_indexById;
     std::unordered_map<const Asset::AnimationClipAssetUVE*,
                        std::unordered_map<std::string_view, const Asset::AnimationAssetBoneTrackUVE*>>
@@ -897,7 +897,7 @@ private:
 /// Runs one step: shape check, evaluation, and the tree's per-step outputs. The pose, or nothing.
 [[nodiscard]] std::optional<ChannelsUVE> RunTreeUVE(AnimationGraphComponentUVE& tree, const AnimationClipResolverUVE& clips,
                                                     const float deltaSeconds, const Skeleton3DComponentUVE* skeleton,
-                                                    const AnimatedObjectComponentUVE& mixer) {
+                                                    const AnimationDriverComponentUVE& mixer) {
     tree.rootMotionDelta = Math::Vector3UVE{};
     tree.firedEvents.clear();
     if (!mixer.active || !std::isfinite(deltaSeconds) || deltaSeconds < 0.0F) {
@@ -928,16 +928,16 @@ private:
 } // namespace
 
 bool IsAnimationGraphObjectDefinitionValidUVE(const AnimationGraphObjectDefinitionUVE& value) {
-    return IsAnimationGraphComponentValidUVE(value.tree) && IsAnimatedObjectComponentValidUVE(value.mixer);
+    return IsAnimationGraphComponentValidUVE(value.tree) && IsAnimationDriverComponentValidUVE(value.mixer);
 }
 
 void ApplyAnimationGraphObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
                                          const AnimationGraphObjectDefinitionUVE& value) {
     // The definition's mixer settings win over the base's defaults: added first, kept by the base.
-    if (entityManager.IsAliveUVE(entity) && !entityManager.HasComponentUVE<AnimatedObjectComponentUVE>(entity)) {
-        entityManager.AddComponentUVE<AnimatedObjectComponentUVE>(entity, value.mixer);
+    if (entityManager.IsAliveUVE(entity) && !entityManager.HasComponentUVE<AnimationDriverComponentUVE>(entity)) {
+        entityManager.AddComponentUVE<AnimationDriverComponentUVE>(entity, value.mixer);
     }
-    ApplyAnimatedObjectBaseUVE(entityManager, entity, AnimationGraphObjectDefinitionUVE::defaultName);
+    ApplyAnimationDriverBaseUVE(entityManager, entity, AnimationGraphObjectDefinitionUVE::defaultName);
     if (entityManager.IsAliveUVE(entity) && !entityManager.HasComponentUVE<AnimationGraphComponentUVE>(entity)) {
         entityManager.AddComponentUVE<AnimationGraphComponentUVE>(entity, value.tree);
     }
@@ -963,7 +963,7 @@ bool SetAnimationGraphParameterUVE(AnimationGraphComponentUVE& tree, const std::
 
 bool StepAnimationGraphUVE(AnimationGraphComponentUVE& tree, const AnimationClipResolverUVE& clips,
                           const float deltaSeconds, TransformComponentUVE& target,
-                          const AnimatedObjectComponentUVE& mixer) {
+                          const AnimationDriverComponentUVE& mixer) {
     const std::optional<ChannelsUVE> pose = RunTreeUVE(tree, clips, deltaSeconds, nullptr, mixer);
     if (!pose.has_value() || pose->empty()) {
         return false;
@@ -974,7 +974,7 @@ bool StepAnimationGraphUVE(AnimationGraphComponentUVE& tree, const AnimationClip
 
 bool StepSkeletalAnimationGraphUVE(AnimationGraphComponentUVE& tree, const AnimationClipResolverUVE& clips,
                                   const float deltaSeconds, Skeleton3DComponentUVE& skeleton,
-                                  const AnimatedObjectComponentUVE& mixer) {
+                                  const AnimationDriverComponentUVE& mixer) {
     if (skeleton.bones.empty()) {
         return false;
     }
