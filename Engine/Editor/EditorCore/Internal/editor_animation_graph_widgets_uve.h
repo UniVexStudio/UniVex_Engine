@@ -8,7 +8,7 @@
 
 #include <imgui.h>
 
-#include "uve/component/animation_tree_component_uve.h"
+#include "uve/component/animation_graph_component_uve.h"
 
 namespace UVE::Editor {
 
@@ -28,8 +28,8 @@ inline constexpr ImU32 kTextDimUVE = IM_COL32(150, 156, 166, 255);
 inline constexpr ImU32 kActiveUVE = IM_COL32(110, 210, 140, 255);
 
 /// A header colour per kind, so the graph reads at a glance: sources, mixers, control.
-[[nodiscard]] inline ImU32 KindColourUVE(const Scene::AnimationGraphObjectKindUVE kind) noexcept {
-    using Kind = Scene::AnimationGraphObjectKindUVE;
+[[nodiscard]] inline ImU32 KindColourUVE(const Scene::AnimationGraphNodeKindUVE kind) noexcept {
+    using Kind = Scene::AnimationGraphNodeKindUVE;
     switch (kind) {
         case Kind::Output: return IM_COL32(170, 72, 72, 255);
         case Kind::Clip: return IM_COL32(58, 110, 170, 255);
@@ -69,7 +69,7 @@ struct TransitionEditUVE final {
 /// state must play first, where the next state starts, the fade and its curve, and whether it can
 /// be interrupted or is switched off. From and To are the caller's: a list picks them, a view draws
 /// them. Edits `transition` in place.
-TransitionEditUVE DrawAnimationTransitionUVE(Scene::AnimationTransitionUVE& transition,
+TransitionEditUVE DrawAnimationTransitionUVE(Scene::AnimationGraphTransitionUVE& transition,
                                              const std::vector<Scene::AnimationParameterUVE>& parameters);
 
 } // namespace UVE::Editor

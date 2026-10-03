@@ -10,46 +10,46 @@
 namespace UVE::Editor {
 namespace {
 
-using Kind = Scene::AnimationGraphObjectKindUVE;
+using Kind = Scene::AnimationGraphNodeKindUVE;
 
-[[nodiscard]] Scene::AnimationTreeComponentUVE TreeOfUVE(const std::vector<Scene::AnimationGraphObjectUVE>& objects) {
-    Scene::AnimationTreeComponentUVE tree;
-    tree.objects = objects;
+[[nodiscard]] Scene::AnimationGraphComponentUVE TreeOfUVE(const std::vector<Scene::AnimationGraphNodeUVE>& objects) {
+    Scene::AnimationGraphComponentUVE tree;
+    tree.nodes = objects;
     return tree;
 }
 
-[[nodiscard]] const Scene::AnimationGraphObjectUVE& ObjectUVE(const std::vector<Scene::AnimationGraphObjectUVE>& objects,
+[[nodiscard]] const Scene::AnimationGraphNodeUVE& ObjectUVE(const std::vector<Scene::AnimationGraphNodeUVE>& objects,
                                                           const std::uint32_t id) {
-    return *std::ranges::find(objects, id, &Scene::AnimationGraphObjectUVE::id);
+    return *std::ranges::find(objects, id, &Scene::AnimationGraphNodeUVE::id);
 }
 
 TEST(AnimationGraphEditingUVETest, AddsObjectsWithTheSlotsTheirKindNeeds) {
-    auto objects = Scene::AnimationTreeComponentUVE::MakeDefaultAnimationGraphUVE();
-    const std::uint32_t blend = AddAnimationGraphObjectUVE(objects, Kind::Blend2, {10.0F, 20.0F});
+    auto objects = Scene::AnimationGraphComponentUVE::MakeDefaultAnimationGraphUVE();
+    const std::uint32_t blend = AddAnimationGraphNodeUVE(objects, Kind::Blend2, {10.0F, 20.0F});
     ASSERT_NE(blend, 0U);
     EXPECT_EQ(ObjectUVE(objects, blend).inputs.size(), 2U);
     EXPECT_EQ(ObjectUVE(objects, blend).position.x, 10.0F);
-    const std::uint32_t space = AddAnimationGraphObjectUVE(objects, Kind::BlendSpace1D, {});
+    const std::uint32_t space = AddAnimationGraphNodeUVE(objects, Kind::BlendSpace1D, {});
     EXPECT_TRUE(ObjectUVE(objects, space).inputs.empty()) << "a blend space has no inputs";
     EXPECT_TRUE(ObjectUVE(objects, space).blendPoints.empty()) << "its points are added in its editor";
-    EXPECT_EQ(AddAnimationGraphObjectUVE(objects, Kind::Output, {}), 0U) << "one Output per graph";
+    EXPECT_EQ(AddAnimationGraphNodeUVE(objects, Kind::Output, {}), 0U) << "one Output per graph";
     EXPECT_TRUE(Scene::DescribeAnimationGraphProblemUVE(TreeOfUVE(objects)).empty());
 }
 
 TEST(AnimationGraphEditingUVETest, ConnectsMovesAndRefusesCycles) {
-    auto objects = Scene::AnimationTreeComponentUVE::MakeDefaultAnimationGraphUVE(); // Output(1) <- Clip(2)
-    const std::uint32_t blend = AddAnimationGraphObjectUVE(objects, Kind::Blend2, {});
-    ASSERT_TRUE(ConnectAnimationGraphObjectsUVE(objects, blend, 0U, 2U));
+    auto objects = Scene::AnimationGraphComponentUVE::MakeDefaultAnimationGraphUVE(); // Output(1) <- Clip(2)
+    const std::uint32_t blend = AddAnimationGraphNodeUVE(objects, Kind::Blend2, {});
+    ASSERT_TRUE(ConnectAnimationGraphNodesUVE(objects, blend, 0U, 2U));
     EXPECT_EQ(ObjectUVE(objects, blend).inputs[0], 2U);
     EXPECT_EQ(ObjectUVE(objects, 1U).inputs[0], 0U) << "an object feeds one slot: the clip moved";
 
-    ASSERT_TRUE(ConnectAnimationGraphObjectsUVE(objects, 1U, 0U, blend));
-    const std::uint32_t scale = AddAnimationGraphObjectUVE(objects, Kind::TimeScale, {});
-    ASSERT_TRUE(ConnectAnimationGraphObjectsUVE(objects, blend, 1U, scale));
-    EXPECT_FALSE(ConnectAnimationGraphObjectsUVE(objects, scale, 0U, blend)) << "blend already feeds from scale";
-    EXPECT_FALSE(ConnectAnimationGraphObjectsUVE(objects, scale, 0U, scale)) << "not itself";
-    EXPECT_FALSE(ConnectAnimationGraphObjectsUVE(objects, blend, 0U, 1U)) << "the Output feeds nothing";
-    EXPECT_FALSE(ConnectAnimationGraphObjectsUVE(objects, blend, 5U, 2U)) << "no such slot";
+    ASSERT_TRUE(ConnectAnimationGraphNodesUVE(objects, 1U, 0U, blend));
+    const std::uint32_t scale = AddAnimationGraphNodeUVE(objects, Kind::TimeScale, {});
+    ASSERT_TRUE(ConnectAnimationGraphNodesUVE(objects, blend, 1U, scale));
+    EXPECT_FALSE(ConnectAnimationGraphNodesUVE(objects, scale, 0U, blend)) << "blend already feeds from scale";
+    EXPECT_FALSE(ConnectAnimationGraphNodesUVE(objects, scale, 0U, scale)) << "not itself";
+    EXPECT_FALSE(ConnectAnimationGraphNodesUVE(objects, blend, 0U, 1U)) << "the Output feeds nothing";
+    EXPECT_FALSE(ConnectAnimationGraphNodesUVE(objects, blend, 5U, 2U)) << "no such slot";
     EXPECT_TRUE(Scene::DescribeAnimationGraphProblemUVE(TreeOfUVE(objects)).empty());
 
     EXPECT_TRUE(DisconnectAnimationGraphInputUVE(objects, blend, 1U));
@@ -57,8 +57,8 @@ TEST(AnimationGraphEditingUVETest, ConnectsMovesAndRefusesCycles) {
 }
 
 TEST(AnimationGraphEditingUVETest, DeletesObjectsButNeverTheOutput) {
-    auto objects = Scene::AnimationTreeComponentUVE::MakeDefaultAnimationGraphUVE();
-    EXPECT_EQ(DeleteAnimationGraphObjectsUVE(objects, {1U, 2U}), 1U);
+    auto objects = Scene::AnimationGraphComponentUVE::MakeDefaultAnimationGraphUVE();
+    EXPECT_EQ(DeleteAnimationGraphNodesUVE(objects, {1U, 2U}), 1U);
     ASSERT_EQ(objects.size(), 1U);
     EXPECT_EQ(objects[0].kind, Kind::Output);
     EXPECT_EQ(objects[0].inputs[0], 0U) << "the slot that read the clip is empty";
@@ -66,10 +66,10 @@ TEST(AnimationGraphEditingUVETest, DeletesObjectsButNeverTheOutput) {
 }
 
 TEST(AnimationGraphEditingUVETest, DuplicatesKeepingWiresInsideTheCopy) {
-    auto objects = Scene::AnimationTreeComponentUVE::MakeDefaultAnimationGraphUVE();
-    const std::uint32_t blend = AddAnimationGraphObjectUVE(objects, Kind::Blend2, {});
-    ASSERT_TRUE(ConnectAnimationGraphObjectsUVE(objects, blend, 0U, 2U));
-    const std::vector<std::uint32_t> copies = DuplicateAnimationGraphObjectsUVE(objects, {blend, 2U, 1U}, {40.0F, 0.0F});
+    auto objects = Scene::AnimationGraphComponentUVE::MakeDefaultAnimationGraphUVE();
+    const std::uint32_t blend = AddAnimationGraphNodeUVE(objects, Kind::Blend2, {});
+    ASSERT_TRUE(ConnectAnimationGraphNodesUVE(objects, blend, 0U, 2U));
+    const std::vector<std::uint32_t> copies = DuplicateAnimationGraphNodesUVE(objects, {blend, 2U, 1U}, {40.0F, 0.0F});
     ASSERT_EQ(copies.size(), 2U) << "not the Output";
     EXPECT_EQ(ObjectUVE(objects, copies[0]).inputs[0], copies[1]) << "the copied blend reads the copied clip";
     EXPECT_EQ(ObjectUVE(objects, copies[1]).position.x, 40.0F);
@@ -77,14 +77,14 @@ TEST(AnimationGraphEditingUVETest, DuplicatesKeepingWiresInsideTheCopy) {
 }
 
 TEST(AnimationGraphEditingUVETest, RemovingAStateFixesItsTransitions) {
-    auto objects = Scene::AnimationTreeComponentUVE::MakeDefaultAnimationGraphUVE();
-    const std::uint32_t machine = AddAnimationGraphObjectUVE(objects, Kind::StateMachine, {});
+    auto objects = Scene::AnimationGraphComponentUVE::MakeDefaultAnimationGraphUVE();
+    const std::uint32_t machine = AddAnimationGraphNodeUVE(objects, Kind::StateMachine, {});
     ASSERT_TRUE(AddAnimationGraphInputSlotUVE(objects, machine));
     ASSERT_TRUE(AddAnimationGraphInputSlotUVE(objects, machine));
-    auto& object = *std::ranges::find(objects, machine, &Scene::AnimationGraphObjectUVE::id);
+    auto& object = *std::ranges::find(objects, machine, &Scene::AnimationGraphNodeUVE::id);
     object.entryState = 2U;
     const auto move = [](const std::uint32_t from, const std::uint32_t to) {
-        Scene::AnimationTransitionUVE transition;
+        Scene::AnimationGraphTransitionUVE transition;
         transition.fromState = from;
         transition.toState = to;
         return transition;
@@ -100,24 +100,24 @@ TEST(AnimationGraphEditingUVETest, RemovingAStateFixesItsTransitions) {
 }
 
 TEST(AnimationGraphEditingUVETest, TheNewKindsStartReadyToWire) {
-    auto objects = Scene::AnimationTreeComponentUVE::MakeDefaultAnimationGraphUVE();
-    const std::uint32_t space = AddAnimationGraphObjectUVE(objects, Kind::BlendSpace2D, {});
+    auto objects = Scene::AnimationGraphComponentUVE::MakeDefaultAnimationGraphUVE();
+    const std::uint32_t space = AddAnimationGraphNodeUVE(objects, Kind::BlendSpace2D, {});
     EXPECT_TRUE(ObjectUVE(objects, space).inputs.empty());
     EXPECT_FALSE(AddAnimationGraphInputSlotUVE(objects, space)) << "points, not slots";
     EXPECT_LT(ObjectUVE(objects, space).areaMin.x, ObjectUVE(objects, space).areaMax.x);
-    const std::uint32_t select = AddAnimationGraphObjectUVE(objects, Kind::Select, {});
+    const std::uint32_t select = AddAnimationGraphNodeUVE(objects, Kind::Select, {});
     EXPECT_TRUE(AddAnimationGraphInputSlotUVE(objects, select));
     EXPECT_EQ(AnimationGraphSlotLabelUVE(Kind::Select, 2U), "Option 2");
-    static_cast<void>(AddAnimationGraphObjectUVE(objects, Kind::LayeredBlend, {}));
-    static_cast<void>(AddAnimationGraphObjectUVE(objects, Kind::TimeSeek, {}));
+    static_cast<void>(AddAnimationGraphNodeUVE(objects, Kind::LayeredBlend, {}));
+    static_cast<void>(AddAnimationGraphNodeUVE(objects, Kind::TimeSeek, {}));
     EXPECT_TRUE(Scene::DescribeAnimationGraphProblemUVE(TreeOfUVE(objects)).empty())
         << Scene::DescribeAnimationGraphProblemUVE(TreeOfUVE(objects));
 }
 
 TEST(AnimationGraphEditingUVETest, BlendSpacePointsHoldTheirOwnAnimation) {
-    auto objects = Scene::AnimationTreeComponentUVE::MakeDefaultAnimationGraphUVE();
+    auto objects = Scene::AnimationGraphComponentUVE::MakeDefaultAnimationGraphUVE();
     const std::size_t before = objects.size() + 1U;
-    const std::uint32_t line = AddAnimationGraphObjectUVE(objects, Kind::BlendSpace1D, {});
+    const std::uint32_t line = AddAnimationGraphNodeUVE(objects, Kind::BlendSpace1D, {});
     ASSERT_EQ(AddBlendSpacePointUVE(objects, line, {0.0F, 0.0F}, Asset::AssetGuidUVE{5U}), std::optional<std::size_t>{0U});
     ASSERT_EQ(AddBlendSpacePointUVE(objects, line, {1.0F, 0.0F}, Asset::AssetGuidUVE{6U}), std::optional<std::size_t>{1U});
     EXPECT_EQ(AddBlendSpacePointUVE(objects, line, {0.5F, 3.0F}, Asset::AssetGuidUVE{7U}), std::optional<std::size_t>{1U})
@@ -135,7 +135,7 @@ TEST(AnimationGraphEditingUVETest, BlendSpacePointsHoldTheirOwnAnimation) {
     EXPECT_EQ(ObjectUVE(objects, line).blendPoints.size(), 2U);
     EXPECT_FALSE(RemoveBlendSpacePointUVE(objects, line, 9U));
 
-    const std::uint32_t plane = AddAnimationGraphObjectUVE(objects, Kind::BlendSpace2D, {});
+    const std::uint32_t plane = AddAnimationGraphNodeUVE(objects, Kind::BlendSpace2D, {});
     ASSERT_TRUE(AddBlendSpacePointUVE(objects, plane, {0.0F, 0.0F}, {}).has_value());
     ASSERT_EQ(AddBlendSpacePointUVE(objects, plane, {-1.0F, 0.5F}, {}), std::optional<std::size_t>{1U}) << "a plane appends";
     EXPECT_FALSE(MoveBlendSpacePointUVE(objects, plane, 1U, {0.0F, 0.0F})) << "onto another point";
@@ -145,8 +145,8 @@ TEST(AnimationGraphEditingUVETest, BlendSpacePointsHoldTheirOwnAnimation) {
 }
 
 TEST(AnimationGraphEditingUVETest, StatesAreAddedWithAClipAndKeepTheirPlaces) {
-    auto objects = Scene::AnimationTreeComponentUVE::MakeDefaultAnimationGraphUVE();
-    const std::uint32_t machine = AddAnimationGraphObjectUVE(objects, Kind::StateMachine, {400.0F, 0.0F});
+    auto objects = Scene::AnimationGraphComponentUVE::MakeDefaultAnimationGraphUVE();
+    const std::uint32_t machine = AddAnimationGraphNodeUVE(objects, Kind::StateMachine, {400.0F, 0.0F});
     const std::size_t before = objects.size();
     ASSERT_EQ(AddAnimationStateUVE(objects, machine, {10.0F, 20.0F}), std::optional<std::size_t>{0U})
         << "a new machine's empty first state is used";
@@ -168,8 +168,8 @@ TEST(AnimationGraphEditingUVETest, StatesAreAddedWithAClipAndKeepTheirPlaces) {
 }
 
 TEST(AnimationGraphEditingUVETest, TransitionsAreAddedReorderedAndDescribed) {
-    auto objects = Scene::AnimationTreeComponentUVE::MakeDefaultAnimationGraphUVE();
-    const std::uint32_t machine = AddAnimationGraphObjectUVE(objects, Kind::StateMachine, {});
+    auto objects = Scene::AnimationGraphComponentUVE::MakeDefaultAnimationGraphUVE();
+    const std::uint32_t machine = AddAnimationGraphNodeUVE(objects, Kind::StateMachine, {});
     static_cast<void>(AddAnimationStateUVE(objects, machine, {}));
     static_cast<void>(AddAnimationStateUVE(objects, machine, {200.0F, 0.0F}));
     EXPECT_FALSE(AddAnimationTransitionUVE(objects, machine, 1U, 1U).has_value()) << "not a state to itself";
@@ -182,7 +182,7 @@ TEST(AnimationGraphEditingUVETest, TransitionsAreAddedReorderedAndDescribed) {
     ASSERT_TRUE(RemoveAnimationTransitionUVE(objects, machine, 0U));
     EXPECT_EQ(ObjectUVE(objects, machine).transitions.size(), 1U);
 
-    Scene::AnimationTransitionUVE transition;
+    Scene::AnimationGraphTransitionUVE transition;
     EXPECT_EQ(DescribeAnimationTransitionUVE(transition), "always");
     transition.conditions = {{Scene::AnimationConditionUVE::ParameterGreater, "speed", 0.5F},
                              {Scene::AnimationConditionUVE::ParameterFalse, "crouched", 0.0F}};

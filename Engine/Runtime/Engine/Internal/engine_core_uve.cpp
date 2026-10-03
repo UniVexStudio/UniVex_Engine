@@ -106,7 +106,7 @@
 #include "uve/component/character_controller_component_uve.h"
 #include "uve/component/collider_component_uve.h"
 #include "uve/component/particle_emitter_component_uve.h"
-#include "uve/component/rigid_body_component_uve.h"
+#include "uve/component/rigid_3d_component_uve.h"
 #include "uve/component/solid_body_component_uve.h"
 #include "uve/component/script_component_uve.h"
 #include "uve/component/transform_component_uve.h"
@@ -142,10 +142,10 @@ constexpr Window::AdaptiveRenderResolutionLimitsUVE kAdaptiveRenderResolutionLim
 /// default for an entity it has not seen yet (created since, or not a scene-graph object). Asking the
 /// scene graph rather than the entity's own ProcessComponentUVE is what makes an entity with no
 /// component inherit its ancestors' answer instead of silently ignoring it.
-[[nodiscard]] Scene::ProcessModeUVE ResolvedProcessModeUVE(const Scene::ISceneGraphUVE& sceneGraph,
+[[nodiscard]] Scene::TickModeUVE ResolvedTickModeUVE(const Scene::ISceneGraphUVE& sceneGraph,
                                                            const Scene::EntityUVE entity) {
     const std::optional<Scene::ResolvedObjectModesUVE> modes = sceneGraph.TryGetResolvedObjectModesUVE(entity);
-    return modes.has_value() ? modes->process : Scene::ProcessModeUVE::Pausable;
+    return modes.has_value() ? modes->process : Scene::TickModeUVE::Running;
 }
 
 /// An entity's own ordering key, or 0 when it carries no ProcessComponentUVE. Priorities are
@@ -162,7 +162,7 @@ constexpr Window::AdaptiveRenderResolutionLimitsUVE kAdaptiveRenderResolutionLim
 ///
 /// A fixed step is evaluated as "not paused" whichever way it came about - normal running, or the
 /// single step the editor requests while paused - because either way it IS the simulation
-/// advancing. So a fixed step skips only Disabled and WhenPaused entities; the latter never advance
+/// advancing. So a fixed step skips only Disabled and PausedOnly entities; the latter never advance
 /// physics, because physics does not step while paused.
 ///
 /// Ties keep the ECS iteration order these systems used before priority existed (stable_sort over
@@ -172,7 +172,7 @@ template <typename ComponentT>
                                                                      const Scene::ISceneGraphUVE& sceneGraph) {
     std::vector<std::pair<std::int32_t, Scene::EntityUVE>> ordered;
     entityManager.ForEachUVE<ComponentT>([&](const Scene::EntityUVE entity, ComponentT&) {
-        if (!Scene::IsProcessingUVE(ResolvedProcessModeUVE(sceneGraph, entity), /*simulationPaused=*/false)) {
+        if (!Scene::IsTickingUVE(ResolvedTickModeUVE(sceneGraph, entity), /*simulationPaused=*/false)) {
             return;
         }
         ordered.emplace_back(ProcessSettingsUVE(entityManager, entity).physicsPriority, entity);
@@ -670,10 +670,10 @@ void EngineCoreUVE::SyncParticleRuntimeUVE() {
                 static_cast<void>(m_particleRuntime->DetachDetailedUVE(entity));
                 static_cast<void>(m_particleRuntime->AttachDetailedUVE(entity, component));
             }
-            // Same rule as scripts: a Pausable emitter freezes mid-flight while the simulation is
+            // Same rule as scripts: a Running emitter freezes mid-flight while the simulation is
             // paused, rather than continuing to integrate behind a paused game.
             static_cast<void>(m_particleRuntime->SetEnabledDetailedUVE(
-                entity, Scene::IsProcessingUVE(ResolvedProcessModeUVE(*m_sceneGraph, entity), simulationPaused)));
+                entity, Scene::IsTickingUVE(ResolvedTickModeUVE(*m_sceneGraph, entity), simulationPaused)));
             // Thread Group: only an emitter resolved to Sub Thread is simulated on a worker. The
             // default is Main Thread, so nothing leaves the main thread unless an author put it
             // there - and a Main Thread ancestor keeps its whole subtree here.
@@ -706,7 +706,7 @@ void EngineCoreUVE::SyncUIRuntimeUVE() {
     const UI::UITextLocalizationUVE localization{
         &m_localizationService, [this](const Scene::EntityUVE entity) {
             const std::optional<Scene::ResolvedObjectModesUVE> modes = m_sceneGraph->TryGetResolvedObjectModesUVE(entity);
-            return !modes.has_value() || modes->autoTranslate == Scene::AutoTranslateModeUVE::Always;
+            return !modes.has_value() || modes->autoTranslate == Scene::LocalizeModeUVE::Localized;
         }};
     m_uiRuntime.TickUVE(*m_entityManager, *m_inputSystem, localization);
 }
@@ -719,7 +719,7 @@ namespace {
 
 void EngineCoreUVE::SyncScriptRuntimeUVE() {
     // Process mode decides which scripts run this frame, and priority decides their order.
-    // Pausable - the default - stops while the simulation is paused; WhenPaused and Always are
+    // Running - the default - stops while the simulation is paused; PausedOnly and Always are
     // how a pause menu keeps working over a stopped world.
     SyncUVScriptsUVE(m_simulationExecutionMode == SimulationExecutionModeUVE::Paused);
 }
@@ -836,7 +836,7 @@ void EngineCoreUVE::SyncUVScriptsUVE(const bool simulationPaused) {
     for (const Scene::EntityUVE entity : order) {
         const auto it = m_uvScripts.find(entity);
         if (it == m_uvScripts.end() ||
-            !Scene::IsProcessingUVE(ResolvedProcessModeUVE(*m_sceneGraph, entity), simulationPaused)) {
+            !Scene::IsTickingUVE(ResolvedTickModeUVE(*m_sceneGraph, entity), simulationPaused)) {
             continue;
         }
         UVScript::ScriptInstanceUVE& instance = *it->second.instance;
@@ -1001,9 +1001,9 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
     };
     // A player or tree loaded without its mixer (an older save) runs with the mixer's defaults.
     const auto mixerOf = [this](const Scene::EntityUVE entity) {
-        return m_entityManager->HasComponentUVE<Scene::AnimationMixerComponentUVE>(entity)
-                   ? m_entityManager->GetComponentUVE<Scene::AnimationMixerComponentUVE>(entity)
-                   : Scene::AnimationMixerComponentUVE{};
+        return m_entityManager->HasComponentUVE<Scene::AnimationDriverComponentUVE>(entity)
+                   ? m_entityManager->GetComponentUVE<Scene::AnimationDriverComponentUVE>(entity)
+                   : Scene::AnimationDriverComponentUVE{};
     };
     const Scene::AnimationProcessCallbackUVE callback =
         physicsStep ? Scene::AnimationProcessCallbackUVE::Physics : Scene::AnimationProcessCallbackUVE::Frame;
@@ -1031,10 +1031,10 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
     };
 
     for (const Scene::EntityUVE entity :
-         CollectFixedStepOrderUVE<Scene::AnimationPlayerComponentUVE>(*m_entityManager, *m_sceneGraph)) {
-        Scene::AnimationPlayerComponentUVE& player =
-            m_entityManager->GetComponentUVE<Scene::AnimationPlayerComponentUVE>(entity);
-        const Scene::AnimationMixerComponentUVE mixer = mixerOf(entity);
+         CollectFixedStepOrderUVE<Scene::AnimationSequencerComponentUVE>(*m_entityManager, *m_sceneGraph)) {
+        Scene::AnimationSequencerComponentUVE& player =
+            m_entityManager->GetComponentUVE<Scene::AnimationSequencerComponentUVE>(entity);
+        const Scene::AnimationDriverComponentUVE mixer = mixerOf(entity);
         if (!mixer.active || mixer.processCallback != callback) {
             continue;
         }
@@ -1052,13 +1052,13 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
             Scene::Skeleton3DComponentUVE& skeleton =
                 m_entityManager->GetComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity);
             if (!player.hasStartPose && player.autoplay) {
-                Scene::PlayAnimationPlayerUVE(player, Scene::TransformComponentUVE{}, clip->durationSeconds);
+                Scene::PlayAnimationSequencerUVE(player, Scene::TransformComponentUVE{}, clip->durationSeconds);
             } else if (player.isPlaying && player.playingClip != player.clip) {
                 // Switched mid-play (a script, a state change): the new clip takes over from the
                 // pose that is there, through the mixer's transition.
-                Scene::PlayAnimationPlayerUVE(player, Scene::TransformComponentUVE{}, clip->durationSeconds);
+                Scene::PlayAnimationSequencerUVE(player, Scene::TransformComponentUVE{}, clip->durationSeconds);
             }
-            const bool posed = Scene::StepSkeletalAnimationPlayerUVE(player, *clip, deltaSeconds * mixer.speedScale,
+            const bool posed = Scene::StepSkeletalAnimationSequencerUVE(player, *clip, deltaSeconds * mixer.speedScale,
                                                                      skeleton, mixer);
             raiseAnimationEvents(entity, mixer.target, player.firedEvents);
             if (posed && mixer.rootMotion == Scene::AnimationRootMotionModeUVE::ApplyToTarget) {
@@ -1072,27 +1072,27 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
             continue;
         }
         if (!player.hasStartPose && player.autoplay) {
-            Scene::PlayAnimationPlayerUVE(player, *target, clip->durationSeconds);
+            Scene::PlayAnimationSequencerUVE(player, *target, clip->durationSeconds);
         }
         static_cast<void>(
-            Scene::StepAnimationPlayerUVE(player, *clip, deltaSeconds * mixer.speedScale, *target, mixer));
+            Scene::StepAnimationSequencerUVE(player, *clip, deltaSeconds * mixer.speedScale, *target, mixer));
         raiseAnimationEvents(entity, mixer.target, player.firedEvents);
     }
 
     for (const Scene::EntityUVE entity :
-         CollectFixedStepOrderUVE<Scene::AnimationTreeComponentUVE>(*m_entityManager, *m_sceneGraph)) {
-        const Scene::AnimationMixerComponentUVE mixer = mixerOf(entity);
+         CollectFixedStepOrderUVE<Scene::AnimationGraphComponentUVE>(*m_entityManager, *m_sceneGraph)) {
+        const Scene::AnimationDriverComponentUVE mixer = mixerOf(entity);
         if (mixer.processCallback != callback) {
             continue;
         }
-        Scene::AnimationTreeComponentUVE& tree = m_entityManager->GetComponentUVE<Scene::AnimationTreeComponentUVE>(entity);
+        Scene::AnimationGraphComponentUVE& tree = m_entityManager->GetComponentUVE<Scene::AnimationGraphComponentUVE>(entity);
         // A character's tree poses its skeleton, bone by bone; with no skeleton under the target it
         // animates the target object itself.
         const Scene::EntityUVE skeletonEntity = resolveSkeleton(entity, mixer.target);
         if (skeletonEntity != Scene::kInvalidEntityUVE) {
             Scene::Skeleton3DComponentUVE& skeleton =
                 m_entityManager->GetComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity);
-            const bool posed = Scene::StepSkeletalAnimationTreeUVE(tree, clipFor, deltaSeconds * mixer.speedScale,
+            const bool posed = Scene::StepSkeletalAnimationGraphUVE(tree, clipFor, deltaSeconds * mixer.speedScale,
                                                                    skeleton, mixer);
             raiseAnimationEvents(entity, mixer.target, tree.firedEvents);
             if (posed && mixer.rootMotion == Scene::AnimationRootMotionModeUVE::ApplyToTarget) {
@@ -1103,7 +1103,7 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
         Scene::TransformComponentUVE* const target = resolveTarget(entity, mixer.target);
         if (target != nullptr) {
             static_cast<void>(
-                Scene::StepAnimationTreeUVE(tree, clipFor, deltaSeconds * mixer.speedScale, *target, mixer));
+                Scene::StepAnimationGraphUVE(tree, clipFor, deltaSeconds * mixer.speedScale, *target, mixer));
             raiseAnimationEvents(entity, mixer.target, tree.firedEvents);
         }
     }
@@ -1112,14 +1112,14 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
 
         // Drop clips nothing references any more, so a swapped clip does not stay loaded.
         std::unordered_set<std::uint64_t> referenced;
-        m_entityManager->ForEachUVE<Scene::AnimationPlayerComponentUVE>(
-            [&referenced](const Scene::EntityUVE, const Scene::AnimationPlayerComponentUVE& player) {
+        m_entityManager->ForEachUVE<Scene::AnimationSequencerComponentUVE>(
+            [&referenced](const Scene::EntityUVE, const Scene::AnimationSequencerComponentUVE& player) {
                 referenced.insert(player.clip.value);
             });
-        m_entityManager->ForEachUVE<Scene::AnimationTreeComponentUVE>(
-            [&referenced](const Scene::EntityUVE, const Scene::AnimationTreeComponentUVE& tree) {
-                for (const Scene::AnimationGraphObjectUVE& object : tree.objects) {
-                    referenced.insert(object.clip.value);
+        m_entityManager->ForEachUVE<Scene::AnimationGraphComponentUVE>(
+            [&referenced](const Scene::EntityUVE, const Scene::AnimationGraphComponentUVE& tree) {
+                for (const Scene::AnimationGraphNodeUVE& node : tree.nodes) {
+                    referenced.insert(node.clip.value);
                 }
             });
         std::erase_if(m_animationClips, [&referenced](const auto& entry) { return !referenced.contains(entry.first); });
@@ -1168,8 +1168,8 @@ void EngineCoreUVE::SyncCharacterControllersUVE(const float fixedDeltaTimeSecond
             !m_entityManager->HasComponentUVE<Scene::TransformComponentUVE>(entity)) {
             continue;
         }
-        if (m_entityManager->HasComponentUVE<Scene::RigidBodyComponentUVE>(entity) &&
-            !m_entityManager->GetComponentUVE<Scene::RigidBodyComponentUVE>(entity).isKinematic) {
+        if (m_entityManager->HasComponentUVE<Scene::Rigid3DComponentUVE>(entity) &&
+            !m_entityManager->GetComponentUVE<Scene::Rigid3DComponentUVE>(entity).isKinematic) {
             continue;
         }
         // Copied, worked on, and written back at the end: the moves below can add components
@@ -1214,7 +1214,7 @@ void EngineCoreUVE::SyncCharacterControllersUVE(const float fixedDeltaTimeSecond
         bool onFloor = !floating && result.grounded;
         Math::Vector3UVE floorNormal = result.groundNormal;
         const bool falling = c.velocity.y <= 0.0F && !hitCeiling;
-        if (!floating && !onFloor && !jumped && falling && c.isOnFloor && !locks.lockMotionY) {
+        if (!floating && !onFloor && !jumped && falling && c.grounded && !locks.lockMotionY) {
             // Only a body that was just on the floor snaps, and only as far as Snap Length: it
             // follows a step down instead of launching off it. Nothing found, and it is put back
             // exactly where it was, to fall normally.

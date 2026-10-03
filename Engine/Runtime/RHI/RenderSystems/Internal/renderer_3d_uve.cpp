@@ -434,29 +434,29 @@ constexpr std::array<std::uint8_t, 4> kWhitePixelUVE{0xFF, 0xFF, 0xFF, 0xFF};
 constexpr std::array<std::uint8_t, 4> kFlatNormalPixelUVE{0x80, 0x80, 0xFF, 0xFF};
 
 /// Translates a loaded TextureAssetUVE's format into the RHI's own TextureFormatUVE (a
-/// deliberately separate enum — see Asset::TextureFormatUVE's own doc comment for why). Asset
+/// deliberately separate enum — see Asset::TextureAssetFormatUVE's own doc comment for why). Asset
 /// textures never use Depth32Float (that's only ever created directly as a GPU render target), so
-/// this mapping is exhaustive over Asset::TextureFormatUVE's two enumerators.
-[[nodiscard]] TextureFormatUVE ToRenderTextureFormatUVE(Asset::TextureFormatUVE format) noexcept {
+/// this mapping is exhaustive over Asset::TextureAssetFormatUVE's two enumerators.
+[[nodiscard]] TextureFormatUVE ToRenderTextureFormatUVE(Asset::TextureAssetFormatUVE format) noexcept {
     switch (format) {
-        case Asset::TextureFormatUVE::RGBA8Unorm:
+        case Asset::TextureAssetFormatUVE::RGBA8Unorm:
             return TextureFormatUVE::RGBA8Unorm;
-        case Asset::TextureFormatUVE::RGBA16Float:
+        case Asset::TextureAssetFormatUVE::RGBA16Float:
             return TextureFormatUVE::RGBA16Float;
     }
-    UVE_ASSERT(false && "Unhandled Asset::TextureFormatUVE");
+    UVE_ASSERT(false && "Unhandled Asset::TextureAssetFormatUVE");
     return TextureFormatUVE::RGBA8Unorm;
 }
 
 [[nodiscard]] TextureColorSpaceUVE ToRenderTextureColorSpaceUVE(
-    Asset::TextureColorSpaceUVE colorSpace) noexcept {
+    Asset::TextureAssetColorSpaceUVE colorSpace) noexcept {
     switch (colorSpace) {
-        case Asset::TextureColorSpaceUVE::Linear:
+        case Asset::TextureAssetColorSpaceUVE::Linear:
             return TextureColorSpaceUVE::Linear;
-        case Asset::TextureColorSpaceUVE::Srgb:
+        case Asset::TextureAssetColorSpaceUVE::Srgb:
             return TextureColorSpaceUVE::Srgb;
     }
-    UVE_ASSERT(false && "Unhandled Asset::TextureColorSpaceUVE");
+    UVE_ASSERT(false && "Unhandled Asset::TextureAssetColorSpaceUVE");
     return TextureColorSpaceUVE::Linear;
 }
 

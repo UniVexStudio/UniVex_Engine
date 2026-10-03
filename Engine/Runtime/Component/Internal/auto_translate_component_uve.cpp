@@ -8,10 +8,10 @@ bool IsAutoTranslateComponentValidUVE(const AutoTranslateComponentUVE&) noexcept
     return true;
 }
 
-AutoTranslateModeUVE ResolveAutoTranslateModeUVE(const AutoTranslateModeUVE mode,
-                                                 const AutoTranslateModeUVE parentMode) noexcept {
-    if (mode == AutoTranslateModeUVE::Inherit) {
-        return parentMode == AutoTranslateModeUVE::Inherit ? AutoTranslateModeUVE::Always : parentMode;
+LocalizeModeUVE ResolveLocalizeModeUVE(const LocalizeModeUVE mode,
+                                                 const LocalizeModeUVE parentMode) noexcept {
+    if (mode == LocalizeModeUVE::Inherit) {
+        return parentMode == LocalizeModeUVE::Inherit ? LocalizeModeUVE::Localized : parentMode;
     }
     return mode;
 }

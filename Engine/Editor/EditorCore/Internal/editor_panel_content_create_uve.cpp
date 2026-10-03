@@ -10,8 +10,10 @@
 #include <array>
 #include <cctype>
 #include <cfloat>
+#include <cstddef>
 #include <cstring>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <system_error>

@@ -1,12 +1,12 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-#include "uve/component/rigid_body_component_uve.h"
+#include "uve/component/rigid_3d_component_uve.h"
 
 #include <cmath>
 
 namespace UVE::Scene {
 
-[[nodiscard]] bool IsRigidBodyComponentValidUVE(const RigidBodyComponentUVE& rigidBody) noexcept {
+[[nodiscard]] bool IsRigid3DComponentValidUVE(const Rigid3DComponentUVE& rigidBody) noexcept {
     return std::isfinite(rigidBody.mass) && rigidBody.mass >= 0.0F && std::isfinite(rigidBody.velocity.x) &&
            std::isfinite(rigidBody.velocity.y) && std::isfinite(rigidBody.velocity.z) &&
            std::isfinite(rigidBody.angularVelocity.x) && std::isfinite(rigidBody.angularVelocity.y) &&

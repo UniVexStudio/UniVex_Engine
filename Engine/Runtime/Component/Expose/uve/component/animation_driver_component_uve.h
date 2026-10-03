@@ -38,15 +38,15 @@ enum class AnimationTransitionModeUVE : std::uint8_t {
     Crossfade,
 };
 
-/// AnimationMixer: the abstract base AnimationSequencer and AnimationGraph share - what they move, which
+/// AnimationDriver: the abstract base AnimationSequencer and AnimationGraph share - what they move, which
 /// channels, on which clock and how fast. Not an object of its own; the section both show between
 /// their own and the Object section.
-struct AnimationMixerComponentUVE final {
+struct AnimationDriverComponentUVE final {
     /// Off, nothing is evaluated or written: the target is left alone.
     bool active = true;
-    /// The object that is moved. Invalid means the mixer's parent.
+    /// The object that is moved. Invalid means the driver's parent.
     EntityUVE target = kInvalidEntityUVE;
-    /// Multiplies every clock under this mixer: 0.5 is slow motion, 0 freezes.
+    /// Multiplies every clock under this driver: 0.5 is slow motion, 0 freezes.
     float speedScale = 1.0F;
     AnimationProcessCallbackUVE processCallback = AnimationProcessCallbackUVE::Frame;
     /// Per-channel masks: rotation alone can be animated while physics or a script owns position.
@@ -61,10 +61,10 @@ struct AnimationMixerComponentUVE final {
     /// whose track travels across the ground (usually the root or the hips).
     std::string rootMotionBone;
 
-    [[nodiscard]] bool operator==(const AnimationMixerComponentUVE&) const = default;
+    [[nodiscard]] bool operator==(const AnimationDriverComponentUVE&) const = default;
 };
 
 /// A finite, non-negative speed scale and a known clock.
-[[nodiscard]] bool IsAnimationMixerComponentValidUVE(const AnimationMixerComponentUVE& component) noexcept;
+[[nodiscard]] bool IsAnimationDriverComponentValidUVE(const AnimationDriverComponentUVE& component) noexcept;
 
 } // namespace UVE::Scene

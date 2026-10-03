@@ -6,20 +6,20 @@
 
 #include "uve/component/collider_component_uve.h"
 #include "uve/component/entity_uve.h"
-#include "uve/component/rigid_body_component_uve.h"
+#include "uve/component/rigid_3d_component_uve.h"
 #include "uve/objects/3d/object_3d_common_uve.h"
 
 namespace UVE::Scene {
 
 class IEntityManagerUVE;
 
-struct AnimatableBody3DComponentUVE final {
+struct Kinematic3DComponentUVE final {
     Math::Vector3UVE targetVelocity{};
     float interpolation = 1.0F;
     bool active = true;
 };
 
-[[nodiscard]] bool IsAnimatableBody3DObjectComponentValidUVE(const AnimatableBody3DComponentUVE& value) noexcept;
+[[nodiscard]] bool IsKinematic3DObjectComponentValidUVE(const Kinematic3DComponentUVE& value) noexcept;
 
 /// Authoring definition for the Kinematic3D scene object: the component set and defaults a
 /// freshly created Kinematic3D entity attaches — a collider, a kinematic rigid body (so
@@ -37,12 +37,12 @@ struct Kinematic3DObjectDefinitionUVE final {
     ColliderComponentUVE collider{};
     /// Kinematic by contract — the authored target velocity drives the body, never gravity
     /// (mirrors Character3DObjectDefinitionUVE's own kinematic contract).
-    RigidBodyComponentUVE body = MakeDefaultBodyUVE();
+    Rigid3DComponentUVE body = MakeDefaultBodyUVE();
     /// The animatable body's own authored defaults (zero target velocity, full interpolation).
-    AnimatableBody3DComponentUVE animatableBody{};
+    Kinematic3DComponentUVE animatableBody{};
 
-    [[nodiscard]] static RigidBodyComponentUVE MakeDefaultBodyUVE() noexcept {
-        RigidBodyComponentUVE body{};
+    [[nodiscard]] static Rigid3DComponentUVE MakeDefaultBodyUVE() noexcept {
+        Rigid3DComponentUVE body{};
         body.isKinematic = true;
         return body;
     }

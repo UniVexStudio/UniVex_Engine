@@ -14,7 +14,7 @@
 
 namespace UVE::Scene::Detail {
 
-/// Fixed capacity of every ChunkUVE — a simple, documented, testable policy (not the
+/// Fixed capacity of every ArchetypeChunkUVE — a simple, documented, testable policy (not the
 /// byte-budget-driven variable capacity real DOTS chunks use; that's a documented future
 /// optimization, not needed for correctness now).
 inline constexpr std::size_t kChunkCapacityUVE = 512;
@@ -23,7 +23,7 @@ inline constexpr std::size_t kChunkCapacityUVE = 512;
 /// no valid row is ever this value, since row indices are always < kChunkCapacityUVE).
 inline constexpr std::size_t kInvalidRowUVE = static_cast<std::size_t>(-1);
 
-/// ChunkUVE is one fixed-capacity (kChunkCapacityUVE-entity) block of an ArchetypeUVE's row
+/// ArchetypeChunkUVE is one fixed-capacity (kChunkCapacityUVE-entity) block of an ArchetypeUVE's row
 /// storage. Each component type in the owning archetype's signature gets its own separately-
 /// allocated array of `size * kChunkCapacityUVE` bytes (simpler than interleaving multiple
 /// component arrays into one single allocation with computed offsets/padding — a documented
@@ -42,16 +42,16 @@ inline constexpr std::size_t kInvalidRowUVE = static_cast<std::size_t>(-1);
 /// destroyed by the caller.
 /// Thread-safety: not thread-safe — owned entirely by its ArchetypeUVE, which is owned by
 /// IEntityManagerUVE, which documents the same main/scene-thread-only contract.
-class ChunkUVE final {
+class ArchetypeChunkUVE final {
 public:
-    ChunkUVE(Memory::IAllocatorUVE& allocator, const std::vector<std::type_index>& componentTypes,
+    ArchetypeChunkUVE(Memory::IAllocatorUVE& allocator, const std::vector<std::type_index>& componentTypes,
              const std::unordered_map<std::type_index, ComponentTypeInfoUVE>& typeInfos);
-    ~ChunkUVE();
+    ~ArchetypeChunkUVE();
 
-    ChunkUVE(const ChunkUVE&) = delete;
-    ChunkUVE& operator=(const ChunkUVE&) = delete;
-    ChunkUVE(ChunkUVE&&) = delete;
-    ChunkUVE& operator=(ChunkUVE&&) = delete;
+    ArchetypeChunkUVE(const ArchetypeChunkUVE&) = delete;
+    ArchetypeChunkUVE& operator=(const ArchetypeChunkUVE&) = delete;
+    ArchetypeChunkUVE(ArchetypeChunkUVE&&) = delete;
+    ArchetypeChunkUVE& operator=(ArchetypeChunkUVE&&) = delete;
 
     [[nodiscard]] bool IsFullUVE() const noexcept;
     [[nodiscard]] std::size_t GetCountUVE() const noexcept;
@@ -108,7 +108,7 @@ public:
     /// Moves `componentType`'s data from this chunk's `sourceRow` into `destination`'s
     /// `destinationRow` (which must be raw/unconstructed for that column) — used by ArchetypeUVE
     /// during add/remove-component migrations.
-    void MoveComponentIntoUVE(std::type_index componentType, std::size_t sourceRow, ChunkUVE& destination,
+    void MoveComponentIntoUVE(std::type_index componentType, std::size_t sourceRow, ArchetypeChunkUVE& destination,
                                std::size_t destinationRow) const;
 
 private:

@@ -79,8 +79,8 @@ TEST(PngImporterUVETest, ImportUVE_DecodesPngToTextureEnvelopeAndRegistersGuid) 
     ASSERT_TRUE(LoadTextureAssetUVE(destinationPath, texture));
     EXPECT_EQ(texture.width, 2U);
     EXPECT_EQ(texture.height, 1U);
-    EXPECT_EQ(texture.format, TextureFormatUVE::RGBA8Unorm);
-    EXPECT_EQ(texture.colorSpace, TextureColorSpaceUVE::Srgb);
+    EXPECT_EQ(texture.format, TextureAssetFormatUVE::RGBA8Unorm);
+    EXPECT_EQ(texture.colorSpace, TextureAssetColorSpaceUVE::Srgb);
     EXPECT_EQ(texture.usage, TextureUsageUVE::Color);
     ASSERT_EQ(texture.mipLevels.size(), 1U);
     EXPECT_EQ(texture.mipLevels[0].width, 1U);
@@ -100,7 +100,7 @@ TEST(PngImporterUVETest, ImportUVE_TextureSettingsOverrideSrgbColorDefault) {
     WriteBytesUVE(sourcePath, MakePngTwoByOneRgba8UVE());
 
     TextureImportSettingsUVE settings;
-    settings.colorSpace = TextureColorSpaceUVE::Linear;
+    settings.colorSpace = TextureAssetColorSpaceUVE::Linear;
     settings.usage = TextureUsageUVE::Normal;
     settings.generateMipmaps = false;
 
@@ -111,7 +111,7 @@ TEST(PngImporterUVETest, ImportUVE_TextureSettingsOverrideSrgbColorDefault) {
 
     TextureAssetUVE texture;
     ASSERT_TRUE(LoadTextureAssetUVE(destinationPath, texture));
-    EXPECT_EQ(texture.colorSpace, TextureColorSpaceUVE::Linear);
+    EXPECT_EQ(texture.colorSpace, TextureAssetColorSpaceUVE::Linear);
     EXPECT_EQ(texture.usage, TextureUsageUVE::Normal);
     EXPECT_TRUE(texture.mipLevels.empty());
     EXPECT_EQ(texture.pixels.size(), 8U);
@@ -142,7 +142,7 @@ TEST(PngImporterUVETest, ImportUVE_CompressesDecodedMipChainToPortableBasisKtx2)
     EXPECT_EQ(texture.payloadEncoding, TexturePayloadEncodingUVE::BasisUniversalKtx2);
     EXPECT_TRUE(texture.pixels.empty());
     EXPECT_TRUE(texture.mipLevels.empty());
-    EXPECT_EQ(texture.colorSpace, TextureColorSpaceUVE::Srgb);
+    EXPECT_EQ(texture.colorSpace, TextureAssetColorSpaceUVE::Srgb);
     EXPECT_EQ(texture.usage, TextureUsageUVE::Color);
     TextureCompressionInfoUVE info;
     ASSERT_TRUE(GetTextureCompressionInfoUVE(texture, info));

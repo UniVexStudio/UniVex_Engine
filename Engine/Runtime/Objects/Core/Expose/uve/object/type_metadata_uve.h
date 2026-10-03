@@ -113,7 +113,7 @@ struct TypeMetadataPropertyUVE final {
     std::string customDrawerId;
     /// Names the sibling property holding what this authored value resolves to once inheritance is
     /// applied - `mode` resolves to `resolvedModeInHierarchy`. An inspector shows the answer beside
-    /// the choice ("Inherit (Pausable)") instead of as a second row that repeats the same dropdown.
+    /// the choice ("Inherit (Running)") instead of as a second row that repeats the same dropdown.
     /// Must name another property of the same type; the registry rejects anything else.
     std::string resolvedByProperty;
     /// Conditional visibility. Null means always visible; otherwise the inspector calls it with a

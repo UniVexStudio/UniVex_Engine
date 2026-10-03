@@ -14,10 +14,12 @@
 #include <array>
 #include <cctype>
 #include <cfloat>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <typeindex>
 #include <utility>
 #include <vector>

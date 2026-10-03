@@ -9,7 +9,7 @@
 
 #include "archetype_signature_uve.h"
 #include "archetype_uve.h"
-#include "chunk_uve.h"
+#include "archetype_chunk_uve.h"
 #include "uve/logging/assert_uve.h"
 #include "uve/entity/entity_lifecycle_events_uve.h"
 
@@ -141,8 +141,8 @@ void* EntityManagerUVE::AddComponentErased(EntityUVE entity, std::type_index com
 
     const Detail::ArchetypeUVE::LocationUVE oldLocation{record.chunkIndex, record.row};
     const Detail::ArchetypeUVE::LocationUVE newLocation = newArchetype.ReserveEntityUVE(entity);
-    Detail::ChunkUVE& oldChunk = oldArchetype.GetChunkUVE(oldLocation.chunkIndex);
-    Detail::ChunkUVE& newChunk = newArchetype.GetChunkUVE(newLocation.chunkIndex);
+    Detail::ArchetypeChunkUVE& oldChunk = oldArchetype.GetChunkUVE(oldLocation.chunkIndex);
+    Detail::ArchetypeChunkUVE& newChunk = newArchetype.GetChunkUVE(newLocation.chunkIndex);
 
     for (const std::type_index& type : oldArchetype.GetSignatureUVE().GetTypesUVE()) {
         oldChunk.MoveComponentIntoUVE(type, oldLocation.row, newChunk, newLocation.row);
@@ -177,8 +177,8 @@ void EntityManagerUVE::RemoveComponentErased(EntityUVE entity, std::type_index c
 
     const Detail::ArchetypeUVE::LocationUVE oldLocation{record.chunkIndex, record.row};
     const Detail::ArchetypeUVE::LocationUVE newLocation = newArchetype.ReserveEntityUVE(entity);
-    Detail::ChunkUVE& oldChunk = oldArchetype.GetChunkUVE(oldLocation.chunkIndex);
-    Detail::ChunkUVE& newChunk = newArchetype.GetChunkUVE(newLocation.chunkIndex);
+    Detail::ArchetypeChunkUVE& oldChunk = oldArchetype.GetChunkUVE(oldLocation.chunkIndex);
+    Detail::ArchetypeChunkUVE& newChunk = newArchetype.GetChunkUVE(newLocation.chunkIndex);
 
     for (const std::type_index& type : newSignature.GetTypesUVE()) {
         oldChunk.MoveComponentIntoUVE(type, oldLocation.row, newChunk, newLocation.row);
@@ -224,7 +224,7 @@ void EntityManagerUVE::ForEachErased(
     //
     // Declared outside the archetype loop so their capacity survives from one chunk to the next;
     // the callback only ever sees `pointers`, whose size and order are unchanged.
-    std::vector<Detail::ChunkUVE::ColumnViewUVE> columnViews;
+    std::vector<Detail::ArchetypeChunkUVE::ColumnViewUVE> columnViews;
     std::vector<void*> pointers;
     columnViews.reserve(componentTypes.size());
     pointers.resize(componentTypes.size());
@@ -234,7 +234,7 @@ void EntityManagerUVE::ForEachErased(
             continue;
         }
         archetype->ForEachChunkUVE([&componentTypes, &callback, &columnViews, &pointers](
-                                       Detail::ChunkUVE& chunk, std::size_t count) {
+                                       Detail::ArchetypeChunkUVE& chunk, std::size_t count) {
             // Resolved ONCE per chunk. This is the whole optimization: the hash lookups move from
             // per-row to per-chunk, and with kChunkCapacityUVE at 512 that is up to 512 rows
             // sharing one resolution.

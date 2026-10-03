@@ -11,7 +11,7 @@ namespace UVE::Scene {
 
 class IEntityManagerUVE;
 
-/// Authoring definition for the Canvas scene object (CanvasLayer family): the component set and
+/// Authoring definition for the Canvas scene object (Canvas family): the component set and
 /// defaults a freshly created Canvas entity attaches. Until now Canvas was reachable only through
 /// the Inspector's "Add Component" list; promoting it to the Scene object registry gives UI
 /// authoring the same one-entry-point Add-Object list every 3D kind has. Per

@@ -14,7 +14,7 @@
 #include "uve/platform/platform_uve.h"
 #include "uve/physics/collision_system_uve.h"
 #include "uve/component/collider_component_uve.h"
-#include "uve/component/rigid_body_component_uve.h"
+#include "uve/component/rigid_3d_component_uve.h"
 #include "uve/component/transform_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/entity/entity_manager_uve.h"
@@ -33,14 +33,14 @@ protected:
     Scene::SceneGraphUVE sceneGraph;
     CollisionSystemUVE collisionSystem;
 
-    Scene::EntityUVE MakeBodyEntityUVE(Math::Vector3UVE position, Scene::RigidBodyComponentUVE rigidBody,
+    Scene::EntityUVE MakeBodyEntityUVE(Math::Vector3UVE position, Scene::Rigid3DComponentUVE rigidBody,
                                         std::optional<Math::Vector3UVE> colliderHalfExtents = std::nullopt) {
         const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
         Scene::TransformComponentUVE local;
         local.localPosition = position;
         sceneGraph.AttachTransformUVE(entityManager, entity, local);
         sceneGraph.UpdateUVE(entityManager);
-        entityManager.AddComponentUVE<Scene::RigidBodyComponentUVE>(entity, rigidBody);
+        entityManager.AddComponentUVE<Scene::Rigid3DComponentUVE>(entity, rigidBody);
         if (colliderHalfExtents.has_value()) {
             entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(entity,
                                                                         Scene::ColliderComponentUVE{*colliderHalfExtents});
@@ -70,42 +70,42 @@ protected:
     }
 };
 
-TEST(RigidBodyComponentUVETest, IsRigidBodyComponentValidUVE_RejectsUnsafeValuesAndPreservesZeroMass) {
-    EXPECT_TRUE(Scene::IsRigidBodyComponentValidUVE(Scene::RigidBodyComponentUVE{}));
+TEST(Rigid3DComponentUVETest, IsRigid3DComponentValidUVE_RejectsUnsafeValuesAndPreservesZeroMass) {
+    EXPECT_TRUE(Scene::IsRigid3DComponentValidUVE(Scene::Rigid3DComponentUVE{}));
 
-    Scene::RigidBodyComponentUVE zeroMass = {};
+    Scene::Rigid3DComponentUVE zeroMass = {};
     zeroMass.mass = 0.0F;
-    EXPECT_TRUE(Scene::IsRigidBodyComponentValidUVE(zeroMass));
+    EXPECT_TRUE(Scene::IsRigid3DComponentValidUVE(zeroMass));
 
-    Scene::RigidBodyComponentUVE invalid = {};
+    Scene::Rigid3DComponentUVE invalid = {};
     invalid.mass = -1.0F;
-    EXPECT_FALSE(Scene::IsRigidBodyComponentValidUVE(invalid));
+    EXPECT_FALSE(Scene::IsRigid3DComponentValidUVE(invalid));
     invalid = {};
     invalid.velocity.x = std::numeric_limits<float>::quiet_NaN();
-    EXPECT_FALSE(Scene::IsRigidBodyComponentValidUVE(invalid));
+    EXPECT_FALSE(Scene::IsRigid3DComponentValidUVE(invalid));
     invalid = {};
     invalid.drag = -0.1F;
-    EXPECT_FALSE(Scene::IsRigidBodyComponentValidUVE(invalid));
+    EXPECT_FALSE(Scene::IsRigid3DComponentValidUVE(invalid));
     invalid = {};
     invalid.gravityScale = std::numeric_limits<float>::infinity();
-    EXPECT_FALSE(Scene::IsRigidBodyComponentValidUVE(invalid));
+    EXPECT_FALSE(Scene::IsRigid3DComponentValidUVE(invalid));
     invalid = {};
     invalid.gravityScale = -1.0F;
-    EXPECT_FALSE(Scene::IsRigidBodyComponentValidUVE(invalid));
+    EXPECT_FALSE(Scene::IsRigid3DComponentValidUVE(invalid));
     invalid = {};
     invalid.angularVelocity.x = std::numeric_limits<float>::quiet_NaN();
-    EXPECT_FALSE(Scene::IsRigidBodyComponentValidUVE(invalid));
+    EXPECT_FALSE(Scene::IsRigid3DComponentValidUVE(invalid));
     invalid = {};
     invalid.torque.y = std::numeric_limits<float>::infinity();
-    EXPECT_FALSE(Scene::IsRigidBodyComponentValidUVE(invalid));
+    EXPECT_FALSE(Scene::IsRigid3DComponentValidUVE(invalid));
     invalid = {};
     invalid.inverseInertia.z = -0.1F;
-    EXPECT_FALSE(Scene::IsRigidBodyComponentValidUVE(invalid));
+    EXPECT_FALSE(Scene::IsRigid3DComponentValidUVE(invalid));
 }
 
 TEST_F(PhysicsSystemUVETest, StepUVE_AngularStateIntegratesTorqueAndAdvancesLocalRotation) {
     PhysicsSystemUVE physicsSystem(collisionSystem, Math::Vector3UVE{});
-    Scene::RigidBodyComponentUVE rigidBody;
+    Scene::Rigid3DComponentUVE rigidBody;
     rigidBody.angularVelocity = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
     rigidBody.torque = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
     rigidBody.inverseInertia = Math::Vector3UVE{0.0F, 0.5F, 0.0F};
@@ -113,8 +113,8 @@ TEST_F(PhysicsSystemUVETest, StepUVE_AngularStateIntegratesTorqueAndAdvancesLoca
 
     physicsSystem.StepUVE(entityManager, sceneGraph, 0.5F);
 
-    const Scene::RigidBodyComponentUVE& updated =
-        entityManager.GetComponentUVE<Scene::RigidBodyComponentUVE>(body);
+    const Scene::Rigid3DComponentUVE& updated =
+        entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(body);
     EXPECT_NEAR(updated.angularVelocity.y, 1.25F, kEpsilon);
     const float angle = 0.625F;
     const Math::QuaternionUVE rotation =
@@ -127,15 +127,15 @@ TEST_F(PhysicsSystemUVETest, StepUVE_AngularStateIntegratesTorqueAndAdvancesLoca
 
 TEST_F(PhysicsSystemUVETest, StepUVE_AppliesGyroscopicTorqueToAngularVelocity) {
     PhysicsSystemUVE physicsSystem(collisionSystem, Math::Vector3UVE{});
-    Scene::RigidBodyComponentUVE rigidBody;
+    Scene::Rigid3DComponentUVE rigidBody;
     rigidBody.angularVelocity = Math::Vector3UVE{1.0F, 2.0F, 0.0F};
     rigidBody.inverseInertia = Math::Vector3UVE{2.0F, 3.0F, 4.0F};
     const Scene::EntityUVE body = MakeBodyEntityUVE(Math::Vector3UVE{}, rigidBody);
 
     physicsSystem.StepUVE(entityManager, sceneGraph, 0.1F);
 
-    const Scene::RigidBodyComponentUVE& updated =
-        entityManager.GetComponentUVE<Scene::RigidBodyComponentUVE>(body);
+    const Scene::Rigid3DComponentUVE& updated =
+        entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(body);
     EXPECT_NEAR(updated.angularVelocity.x, 1.0F, kEpsilon);
     EXPECT_NEAR(updated.angularVelocity.y, 2.0F, kEpsilon);
     EXPECT_NEAR(updated.angularVelocity.z, 0.13333333F, kEpsilon);
@@ -144,7 +144,7 @@ TEST_F(PhysicsSystemUVETest, StepUVE_AppliesGyroscopicTorqueToAngularVelocity) {
 TEST_F(PhysicsSystemUVETest, StepUVE_ZeroAngularDefaultsPreserveIdentityRotation) {
     PhysicsSystemUVE physicsSystem(collisionSystem, Math::Vector3UVE{});
     const Scene::EntityUVE body = MakeBodyEntityUVE(
-        Math::Vector3UVE{}, Scene::RigidBodyComponentUVE{});
+        Math::Vector3UVE{}, Scene::Rigid3DComponentUVE{});
 
     RunStepsUVE(physicsSystem, entityManager, sceneGraph, 3, 0.1F);
 
@@ -154,32 +154,32 @@ TEST_F(PhysicsSystemUVETest, StepUVE_ZeroAngularDefaultsPreserveIdentityRotation
 
 TEST_F(PhysicsSystemUVETest, StepUVE_DynamicBodyUnderGravity_MatchesHandComputedSemiImplicitEuler) {
     PhysicsSystemUVE physicsSystem(collisionSystem, Math::Vector3UVE{0.0F, -10.0F, 0.0F});
-    const Scene::EntityUVE body = MakeBodyEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Scene::RigidBodyComponentUVE{});
+    const Scene::EntityUVE body = MakeBodyEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Scene::Rigid3DComponentUVE{});
 
     RunStepsUVE(physicsSystem, entityManager, sceneGraph, 3, 0.1F);
 
     // Semi-implicit Euler, v0=0, g=-10, dt=0.1: v_n = g*dt*n; pos_n = g*dt^2*n(n+1)/2.
     // n=3: pos = -10 * 0.01 * 6 = -0.6.
     EXPECT_NEAR(GetWorldPositionUVE(body).y, -0.6F, kEpsilon);
-    EXPECT_NEAR(entityManager.GetComponentUVE<Scene::RigidBodyComponentUVE>(body).velocity.y, -3.0F, kEpsilon);
+    EXPECT_NEAR(entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(body).velocity.y, -3.0F, kEpsilon);
 }
 
 TEST_F(PhysicsSystemUVETest, StepUVE_InvalidGravityOrDeltaPreservesBodyState) {
-    Scene::RigidBodyComponentUVE rigidBody;
+    Scene::Rigid3DComponentUVE rigidBody;
     rigidBody.velocity = Math::Vector3UVE{1.0F, 2.0F, 3.0F};
     const Scene::EntityUVE body = MakeBodyEntityUVE(Math::Vector3UVE{4.0F, 5.0F, 6.0F}, rigidBody);
     const Scene::TransformComponentUVE originalTransform =
         entityManager.GetComponentUVE<Scene::TransformComponentUVE>(body);
     const Math::Vector3UVE originalVelocity =
-        entityManager.GetComponentUVE<Scene::RigidBodyComponentUVE>(body).velocity;
+        entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(body).velocity;
 
     PhysicsSystemUVE nonFiniteGravitySystem(
         collisionSystem, Math::Vector3UVE{std::numeric_limits<float>::quiet_NaN(), 0.0F, 0.0F});
     nonFiniteGravitySystem.StepUVE(entityManager, sceneGraph, 0.1F);
     const Scene::TransformComponentUVE& afterNonFiniteGravity =
         entityManager.GetComponentUVE<Scene::TransformComponentUVE>(body);
-    const Scene::RigidBodyComponentUVE& bodyAfterNonFiniteGravity =
-        entityManager.GetComponentUVE<Scene::RigidBodyComponentUVE>(body);
+    const Scene::Rigid3DComponentUVE& bodyAfterNonFiniteGravity =
+        entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(body);
     EXPECT_FLOAT_EQ(afterNonFiniteGravity.localPosition.x, originalTransform.localPosition.x);
     EXPECT_FLOAT_EQ(afterNonFiniteGravity.localPosition.y, originalTransform.localPosition.y);
     EXPECT_FLOAT_EQ(afterNonFiniteGravity.localPosition.z, originalTransform.localPosition.z);
@@ -191,8 +191,8 @@ TEST_F(PhysicsSystemUVETest, StepUVE_InvalidGravityOrDeltaPreservesBodyState) {
     validGravitySystem.StepUVE(entityManager, sceneGraph, -0.1F);
     const Scene::TransformComponentUVE& afterInvalidDelta =
         entityManager.GetComponentUVE<Scene::TransformComponentUVE>(body);
-    const Scene::RigidBodyComponentUVE& bodyAfterInvalidDelta =
-        entityManager.GetComponentUVE<Scene::RigidBodyComponentUVE>(body);
+    const Scene::Rigid3DComponentUVE& bodyAfterInvalidDelta =
+        entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(body);
     EXPECT_FLOAT_EQ(afterInvalidDelta.localPosition.x, originalTransform.localPosition.x);
     EXPECT_FLOAT_EQ(afterInvalidDelta.localPosition.y, originalTransform.localPosition.y);
     EXPECT_FLOAT_EQ(afterInvalidDelta.localPosition.z, originalTransform.localPosition.z);
@@ -202,31 +202,31 @@ TEST_F(PhysicsSystemUVETest, StepUVE_InvalidGravityOrDeltaPreservesBodyState) {
 }
 
 TEST_F(PhysicsSystemUVETest, StepUVE_DerivedOverflowFailsClosedWithoutPublishingNonFiniteState) {
-    Scene::RigidBodyComponentUVE velocityOverflowBody;
+    Scene::Rigid3DComponentUVE velocityOverflowBody;
     velocityOverflowBody.velocity = Math::Vector3UVE{std::numeric_limits<float>::max(), 0.0F, 0.0F};
     const Scene::EntityUVE velocityBody = MakeBodyEntityUVE(Math::Vector3UVE{4.0F, 5.0F, 6.0F}, velocityOverflowBody);
     PhysicsSystemUVE velocityOverflowSystem(collisionSystem, Math::Vector3UVE{std::numeric_limits<float>::max(), 0.0F, 0.0F});
 
     velocityOverflowSystem.StepUVE(entityManager, sceneGraph, 1.0F);
 
-    const Scene::RigidBodyComponentUVE& velocityAfter =
-        entityManager.GetComponentUVE<Scene::RigidBodyComponentUVE>(velocityBody);
+    const Scene::Rigid3DComponentUVE& velocityAfter =
+        entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(velocityBody);
     EXPECT_FLOAT_EQ(velocityAfter.velocity.x, std::numeric_limits<float>::max());
     EXPECT_EQ(GetWorldPositionUVE(velocityBody), (Math::Vector3UVE{4.0F, 5.0F, 6.0F}));
 
-    Scene::RigidBodyComponentUVE positionOverflowBody;
+    Scene::Rigid3DComponentUVE positionOverflowBody;
     positionOverflowBody.velocity = Math::Vector3UVE{std::numeric_limits<float>::max(), 0.0F, 0.0F};
     const Scene::EntityUVE positionBody = MakeBodyEntityUVE(Math::Vector3UVE{0.0F, 1.0F, 2.0F}, positionOverflowBody);
     PhysicsSystemUVE positionOverflowSystem(collisionSystem, Math::Vector3UVE{});
 
     positionOverflowSystem.StepUVE(entityManager, sceneGraph, 2.0F);
 
-    const Scene::RigidBodyComponentUVE& positionAfter =
-        entityManager.GetComponentUVE<Scene::RigidBodyComponentUVE>(positionBody);
+    const Scene::Rigid3DComponentUVE& positionAfter =
+        entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(positionBody);
     EXPECT_FLOAT_EQ(positionAfter.velocity.x, std::numeric_limits<float>::max());
     EXPECT_EQ(GetWorldPositionUVE(positionBody), (Math::Vector3UVE{0.0F, 1.0F, 2.0F}));
 
-    Scene::RigidBodyComponentUVE angularOverflowBody;
+    Scene::Rigid3DComponentUVE angularOverflowBody;
     angularOverflowBody.angularVelocity = Math::Vector3UVE{std::numeric_limits<float>::max(), 0.0F, 0.0F};
     angularOverflowBody.torque = Math::Vector3UVE{std::numeric_limits<float>::max(), 0.0F, 0.0F};
     angularOverflowBody.inverseInertia = Math::Vector3UVE{1.0F, 0.0F, 0.0F};
@@ -235,14 +235,14 @@ TEST_F(PhysicsSystemUVETest, StepUVE_DerivedOverflowFailsClosedWithoutPublishing
 
     angularOverflowSystem.StepUVE(entityManager, sceneGraph, 1.0F);
 
-    const Scene::RigidBodyComponentUVE& angularAfter =
-        entityManager.GetComponentUVE<Scene::RigidBodyComponentUVE>(angularBody);
+    const Scene::Rigid3DComponentUVE& angularAfter =
+        entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(angularBody);
     EXPECT_FLOAT_EQ(angularAfter.angularVelocity.x, std::numeric_limits<float>::max());
     EXPECT_EQ(GetWorldPositionUVE(angularBody), (Math::Vector3UVE{2.0F, 3.0F, 4.0F}));
 }
 
 TEST_F(PhysicsSystemUVETest, StepUVE_FinitePositionCancellation_PreservesRepresentableResult) {
-    Scene::RigidBodyComponentUVE rigidBody;
+    Scene::Rigid3DComponentUVE rigidBody;
     rigidBody.velocity = Math::Vector3UVE{std::numeric_limits<float>::max(), 0.0F, 0.0F};
     const Scene::EntityUVE body = MakeBodyEntityUVE(
         Math::Vector3UVE{-std::numeric_limits<float>::max(), 2.0F, 3.0F}, rigidBody);
@@ -252,8 +252,8 @@ TEST_F(PhysicsSystemUVETest, StepUVE_FinitePositionCancellation_PreservesReprese
 
     const Scene::TransformComponentUVE& transform =
         entityManager.GetComponentUVE<Scene::TransformComponentUVE>(body);
-    const Scene::RigidBodyComponentUVE& bodyAfter =
-        entityManager.GetComponentUVE<Scene::RigidBodyComponentUVE>(body);
+    const Scene::Rigid3DComponentUVE& bodyAfter =
+        entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(body);
     EXPECT_FLOAT_EQ(transform.localPosition.x, std::numeric_limits<float>::max());
     EXPECT_FLOAT_EQ(transform.localPosition.y, 2.0F);
     EXPECT_FLOAT_EQ(transform.localPosition.z, 3.0F);
@@ -262,9 +262,9 @@ TEST_F(PhysicsSystemUVETest, StepUVE_FinitePositionCancellation_PreservesReprese
 
 TEST_F(PhysicsSystemUVETest, StepUVE_GravityScaleDouble_FallsExactlyTwiceAsFar) {
     PhysicsSystemUVE physicsSystem(collisionSystem, Math::Vector3UVE{0.0F, -10.0F, 0.0F});
-    Scene::RigidBodyComponentUVE normalScale;
+    Scene::Rigid3DComponentUVE normalScale;
     normalScale.gravityScale = 1.0F;
-    Scene::RigidBodyComponentUVE doubleScale;
+    Scene::Rigid3DComponentUVE doubleScale;
     doubleScale.gravityScale = 2.0F;
     const Scene::EntityUVE normalBody = MakeBodyEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, normalScale);
     const Scene::EntityUVE fastBody = MakeBodyEntityUVE(Math::Vector3UVE{100.0F, 0.0F, 0.0F}, doubleScale);
@@ -279,7 +279,7 @@ TEST_F(PhysicsSystemUVETest, StepUVE_GravityScaleDouble_FallsExactlyTwiceAsFar) 
 
 TEST_F(PhysicsSystemUVETest, StepUVE_KinematicBody_NeverMoves) {
     PhysicsSystemUVE physicsSystem(collisionSystem);
-    Scene::RigidBodyComponentUVE rigidBody;
+    Scene::Rigid3DComponentUVE rigidBody;
     rigidBody.isKinematic = true;
     rigidBody.velocity = Math::Vector3UVE{5.0F, 5.0F, 5.0F};
     const Scene::EntityUVE body = MakeBodyEntityUVE(Math::Vector3UVE{1.0F, 2.0F, 3.0F}, rigidBody);
@@ -291,7 +291,7 @@ TEST_F(PhysicsSystemUVETest, StepUVE_KinematicBody_NeverMoves) {
 
 TEST_F(PhysicsSystemUVETest, StepUVE_Drag_DampsVelocityEachStep) {
     PhysicsSystemUVE physicsSystem(collisionSystem, Math::Vector3UVE{0.0F, 0.0F, 0.0F}); // isolate drag from gravity
-    Scene::RigidBodyComponentUVE rigidBody;
+    Scene::Rigid3DComponentUVE rigidBody;
     rigidBody.velocity = Math::Vector3UVE{10.0F, 0.0F, 0.0F};
     rigidBody.drag = 0.5F;
     const Scene::EntityUVE body = MakeBodyEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, rigidBody);
@@ -299,14 +299,14 @@ TEST_F(PhysicsSystemUVETest, StepUVE_Drag_DampsVelocityEachStep) {
     physicsSystem.StepUVE(entityManager, sceneGraph, 0.1F);
 
     // velocity *= max(0, 1 - drag*dt) = 1 - 0.05 = 0.95.
-    EXPECT_NEAR(entityManager.GetComponentUVE<Scene::RigidBodyComponentUVE>(body).velocity.x, 9.5F, kEpsilon);
+    EXPECT_NEAR(entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(body).velocity.x, 9.5F, kEpsilon);
 }
 
 TEST_F(PhysicsSystemUVETest, StepUVE_DynamicBodyFallingOntoStaticGround_StopsAtRestingHeight) {
     PhysicsSystemUVE physicsSystem(collisionSystem, Math::Vector3UVE{0.0F, -9.81F, 0.0F});
     MakeStaticColliderEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{5.0F, 0.5F, 5.0F}); // top at y=0.5
     const Scene::EntityUVE body =
-        MakeBodyEntityUVE(Math::Vector3UVE{0.0F, 3.0F, 0.0F}, Scene::RigidBodyComponentUVE{}, Math::Vector3UVE{0.5F, 0.5F, 0.5F});
+        MakeBodyEntityUVE(Math::Vector3UVE{0.0F, 3.0F, 0.0F}, Scene::Rigid3DComponentUVE{}, Math::Vector3UVE{0.5F, 0.5F, 0.5F});
 
     RunStepsUVE(physicsSystem, entityManager, sceneGraph, 300, 1.0F / 60.0F);
 
@@ -318,14 +318,14 @@ TEST_F(PhysicsSystemUVETest, StepUVE_DynamicBodyFallingOntoStaticGround_StopsAtR
 TEST_F(PhysicsSystemUVETest, StepUVE_SlidingIntoWall_PreservesTangentialVelocity) {
     PhysicsSystemUVE physicsSystem(collisionSystem, Math::Vector3UVE{0.0F, 0.0F, 0.0F}); // isolate collision response
     MakeStaticColliderEntityUVE(Math::Vector3UVE{2.0F, 0.0F, 0.0F}, Math::Vector3UVE{0.5F, 10.0F, 10.0F}); // wall
-    Scene::RigidBodyComponentUVE rigidBody;
+    Scene::Rigid3DComponentUVE rigidBody;
     rigidBody.velocity = Math::Vector3UVE{5.0F, 3.0F, 0.0F}; // moving into the wall (+x) and sliding (+y)
     const Scene::EntityUVE body =
         MakeBodyEntityUVE(Math::Vector3UVE{1.6F, 0.0F, 0.0F}, rigidBody, Math::Vector3UVE{0.5F, 0.5F, 0.5F});
 
     physicsSystem.StepUVE(entityManager, sceneGraph, 0.01F);
 
-    const Math::Vector3UVE finalVelocity = entityManager.GetComponentUVE<Scene::RigidBodyComponentUVE>(body).velocity;
+    const Math::Vector3UVE finalVelocity = entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(body).velocity;
     EXPECT_NEAR(finalVelocity.x, 0.0F, kEpsilon);  // into-wall component removed
     EXPECT_NEAR(finalVelocity.y, 3.0F, kEpsilon);  // tangential (sliding) component untouched
 }
@@ -352,7 +352,7 @@ TEST_F(PhysicsSystemUVETest, StepUVE_SameScenarioTwice_ProducesDeterministicResu
         bodyTransform.localPosition = Math::Vector3UVE{0.0F, 3.0F, 0.0F};
         localSceneGraph.AttachTransformUVE(localEntityManager, bodyEntity, bodyTransform);
         localSceneGraph.UpdateUVE(localEntityManager);
-        localEntityManager.AddComponentUVE<Scene::RigidBodyComponentUVE>(bodyEntity, Scene::RigidBodyComponentUVE{});
+        localEntityManager.AddComponentUVE<Scene::Rigid3DComponentUVE>(bodyEntity, Scene::Rigid3DComponentUVE{});
         localEntityManager.AddComponentUVE<Scene::ColliderComponentUVE>(
             bodyEntity, Scene::ColliderComponentUVE{Math::Vector3UVE{0.5F, 0.5F, 0.5F}});
 
@@ -372,9 +372,9 @@ TEST_F(PhysicsSystemUVETest, StepUVE_StackedDynamicBoxesOnStaticGround_SettleToF
     PhysicsSystemUVE physicsSystem(collisionSystem, Math::Vector3UVE{0.0F, -9.81F, 0.0F});
     MakeStaticColliderEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{5.0F, 0.5F, 5.0F}); // top at y=0.5
     const Scene::EntityUVE lower =
-        MakeBodyEntityUVE(Math::Vector3UVE{0.0F, 2.0F, 0.0F}, Scene::RigidBodyComponentUVE{}, Math::Vector3UVE{0.5F, 0.5F, 0.5F});
+        MakeBodyEntityUVE(Math::Vector3UVE{0.0F, 2.0F, 0.0F}, Scene::Rigid3DComponentUVE{}, Math::Vector3UVE{0.5F, 0.5F, 0.5F});
     const Scene::EntityUVE upper =
-        MakeBodyEntityUVE(Math::Vector3UVE{0.05F, 4.0F, 0.0F}, Scene::RigidBodyComponentUVE{}, Math::Vector3UVE{0.5F, 0.5F, 0.5F});
+        MakeBodyEntityUVE(Math::Vector3UVE{0.05F, 4.0F, 0.0F}, Scene::Rigid3DComponentUVE{}, Math::Vector3UVE{0.5F, 0.5F, 0.5F});
 
     RunStepsUVE(physicsSystem, entityManager, sceneGraph, 400, 1.0F / 60.0F);
 
@@ -391,7 +391,7 @@ TEST_F(PhysicsSystemUVETest, StepUVE_RestitutionHalf_ReflectsAndScalesNormalVelo
     PhysicsSystemUVE physicsSystem(collisionSystem, Math::Vector3UVE{0.0F, 0.0F, 0.0F}); // isolate collision response
     const Scene::EntityUVE ground = MakeStaticColliderEntityUVE(Math::Vector3UVE{2.0F, 0.0F, 0.0F}, Math::Vector3UVE{0.5F, 10.0F, 10.0F});
     entityManager.GetComponentUVE<Scene::ColliderComponentUVE>(ground).restitution = 0.5F;
-    Scene::RigidBodyComponentUVE rigidBody;
+    Scene::Rigid3DComponentUVE rigidBody;
     rigidBody.velocity = Math::Vector3UVE{5.0F, 0.0F, 0.0F}; // moving straight into the wall (+x)
     const Scene::EntityUVE body =
         MakeBodyEntityUVE(Math::Vector3UVE{1.6F, 0.0F, 0.0F}, rigidBody, Math::Vector3UVE{0.5F, 0.5F, 0.5F});
@@ -401,7 +401,7 @@ TEST_F(PhysicsSystemUVETest, StepUVE_RestitutionHalf_ReflectsAndScalesNormalVelo
 
     // Combined restitution = average(0.5, 0.5) = 0.5. New normal velocity = -restitution *
     // intoSurface = -0.5 * 5.0 = -2.5 (reflected, scaled — not simply zeroed).
-    const float finalVelocityX = entityManager.GetComponentUVE<Scene::RigidBodyComponentUVE>(body).velocity.x;
+    const float finalVelocityX = entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(body).velocity.x;
     EXPECT_NEAR(finalVelocityX, -2.5F, kEpsilon);
 }
 
@@ -409,7 +409,7 @@ TEST_F(PhysicsSystemUVETest, StepUVE_FrictionOne_FullyDampsTangentialVelocity) {
     PhysicsSystemUVE physicsSystem(collisionSystem, Math::Vector3UVE{0.0F, 0.0F, 0.0F}); // isolate collision response
     const Scene::EntityUVE ground = MakeStaticColliderEntityUVE(Math::Vector3UVE{2.0F, 0.0F, 0.0F}, Math::Vector3UVE{0.5F, 10.0F, 10.0F});
     entityManager.GetComponentUVE<Scene::ColliderComponentUVE>(ground).friction = 1.0F;
-    Scene::RigidBodyComponentUVE rigidBody;
+    Scene::Rigid3DComponentUVE rigidBody;
     rigidBody.velocity = Math::Vector3UVE{5.0F, 3.0F, 0.0F}; // moving into the wall (+x) and sliding (+y)
     const Scene::EntityUVE body =
         MakeBodyEntityUVE(Math::Vector3UVE{1.6F, 0.0F, 0.0F}, rigidBody, Math::Vector3UVE{0.5F, 0.5F, 0.5F});
@@ -418,7 +418,7 @@ TEST_F(PhysicsSystemUVETest, StepUVE_FrictionOne_FullyDampsTangentialVelocity) {
     physicsSystem.StepUVE(entityManager, sceneGraph, 0.01F);
 
     // Combined friction = average(1.0, 1.0) = 1.0 -> frictionFactor = 0 -> tangential fully damped.
-    const Math::Vector3UVE finalVelocity = entityManager.GetComponentUVE<Scene::RigidBodyComponentUVE>(body).velocity;
+    const Math::Vector3UVE finalVelocity = entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(body).velocity;
     EXPECT_NEAR(finalVelocity.x, 0.0F, kEpsilon);
     EXPECT_NEAR(finalVelocity.y, 0.0F, kEpsilon);
 }
@@ -435,8 +435,8 @@ TEST_F(PhysicsSystemUVETest, StepUVE_StaticVsStaticOverlap_NeitherMovesAndNoDivi
 }
 
 #if UVE_DEBUG
-TEST_F(PhysicsSystemUVETest, StepUVE_InvalidRigidBodyParameters_Asserts) {
-    Scene::RigidBodyComponentUVE invalid = {};
+TEST_F(PhysicsSystemUVETest, StepUVE_InvalidRigid3DParameters_Asserts) {
+    Scene::Rigid3DComponentUVE invalid = {};
     invalid.drag = -1.0F;
     const Scene::EntityUVE body = MakeBodyEntityUVE(Math::Vector3UVE{}, invalid);
     PhysicsSystemUVE physicsSystem(collisionSystem);
@@ -445,8 +445,8 @@ TEST_F(PhysicsSystemUVETest, StepUVE_InvalidRigidBodyParameters_Asserts) {
     EXPECT_DEATH({ physicsSystem.StepUVE(entityManager, sceneGraph, 1.0F / 60.0F); }, "");
 }
 #else
-TEST_F(PhysicsSystemUVETest, StepUVE_InvalidRigidBodyParameters_FailsClosedWithoutIntegration) {
-    Scene::RigidBodyComponentUVE invalid = {};
+TEST_F(PhysicsSystemUVETest, StepUVE_InvalidRigid3DParameters_FailsClosedWithoutIntegration) {
+    Scene::Rigid3DComponentUVE invalid = {};
     invalid.drag = -1.0F;
     invalid.velocity = Math::Vector3UVE{3.0F, 4.0F, 5.0F};
     const Scene::EntityUVE body = MakeBodyEntityUVE(Math::Vector3UVE{}, invalid);
@@ -455,13 +455,13 @@ TEST_F(PhysicsSystemUVETest, StepUVE_InvalidRigidBodyParameters_FailsClosedWitho
     ASSERT_NE(body, Scene::kInvalidEntityUVE);
     const Scene::TransformComponentUVE beforeTransform =
         entityManager.GetComponentUVE<Scene::TransformComponentUVE>(body);
-    const Scene::RigidBodyComponentUVE beforeBody =
-        entityManager.GetComponentUVE<Scene::RigidBodyComponentUVE>(body);
+    const Scene::Rigid3DComponentUVE beforeBody =
+        entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(body);
     physicsSystem.StepUVE(entityManager, sceneGraph, 1.0F / 60.0F);
 
     EXPECT_EQ(entityManager.GetComponentUVE<Scene::TransformComponentUVE>(body).localPosition,
               beforeTransform.localPosition);
-    EXPECT_EQ(entityManager.GetComponentUVE<Scene::RigidBodyComponentUVE>(body).velocity,
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(body).velocity,
               beforeBody.velocity);
 }
 #endif

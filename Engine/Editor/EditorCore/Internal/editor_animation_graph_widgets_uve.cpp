@@ -76,7 +76,7 @@ bool PickParameterUVE(const char* const id, const std::vector<Scene::AnimationPa
     return changed;
 }
 
-TransitionEditUVE DrawAnimationTransitionUVE(Scene::AnimationTransitionUVE& transition,
+TransitionEditUVE DrawAnimationTransitionUVE(Scene::AnimationGraphTransitionUVE& transition,
                                              const std::vector<Scene::AnimationParameterUVE>& parameters) {
     TransitionEditUVE edit;
     const auto track = [&edit]() {
@@ -219,7 +219,7 @@ TransitionEditUVE DrawAnimationTransitionUVE(Scene::AnimationTransitionUVE& tran
     }
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-        ImGui::SetTooltip("The crossfade's shape. An inertialized mixer blends out the difference instead.");
+        ImGui::SetTooltip("The crossfade's shape. An inertialized driver blends out the difference instead.");
     }
 
     LabelUVE("Options");

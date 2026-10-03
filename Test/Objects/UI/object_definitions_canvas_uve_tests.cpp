@@ -12,14 +12,14 @@
 #include "uve/entity/entity_manager_uve.h"
 #include "uve/events/event_system_uve.h"
 #include "uve/memory/memory_manager_uve.h"
-#include "uve/objects/canvas_layer/all_objects_canvas_layer_uve.h"
+#include "uve/objects/canvas/all_objects_canvas_uve.h"
 #include "uve/scene/objects/scene_object_registry_uve.h"
 
 namespace UVE::Scene::Tests {
 namespace {
 
 // All four promoted UI kinds' definitions are reachable from the aggregate header, mirroring
-// the registry test's guarantee: no CanvasLayer kind's home file can be silently dropped.
+// the registry test's guarantee: no Canvas kind's home file can be silently dropped.
 static_assert(std::is_class_v<CanvasObjectDefinitionUVE>);   // Canvas
 static_assert(std::is_class_v<UITextObjectDefinitionUVE>);   // UIText
 static_assert(std::is_class_v<UIImageObjectDefinitionUVE>);  // UIImage
@@ -32,7 +32,7 @@ static_assert(UITextObjectDefinitionUVE::defaultName == "UI Text");
 static_assert(UIImageObjectDefinitionUVE::defaultName == "UI Image");
 static_assert(UIButtonObjectDefinitionUVE::defaultName == "UI Button");
 
-class CanvasLayerObjectDefinitionsUVETest : public ::testing::Test {
+class CanvasObjectDefinitionsUVETest : public ::testing::Test {
 protected:
     Memory::MemoryManagerUVE memoryManager;
     Events::EventSystemUVE eventSystem;
@@ -43,14 +43,14 @@ protected:
     }
 };
 
-TEST_F(CanvasLayerObjectDefinitionsUVETest, AllDefinitionDefaultsAreValid) {
+TEST_F(CanvasObjectDefinitionsUVETest, AllDefinitionDefaultsAreValid) {
     EXPECT_TRUE(IsCanvasObjectDefinitionValidUVE(CanvasObjectDefinitionUVE{}));
     EXPECT_TRUE(IsUITextObjectDefinitionValidUVE(UITextObjectDefinitionUVE{}));
     EXPECT_TRUE(IsUIImageObjectDefinitionValidUVE(UIImageObjectDefinitionUVE{}));
     EXPECT_TRUE(IsUIButtonObjectDefinitionValidUVE(UIButtonObjectDefinitionUVE{}));
 }
 
-TEST_F(CanvasLayerObjectDefinitionsUVETest, ApplyAttachesEachKindsExactComponentRecipe) {
+TEST_F(CanvasObjectDefinitionsUVETest, ApplyAttachesEachKindsExactComponentRecipe) {
     {
         const EntityUVE entity = CreateEntityUVE();
         ApplyCanvasObjectDefinitionUVE(entityManager, entity, CanvasObjectDefinitionUVE{});
@@ -73,7 +73,7 @@ TEST_F(CanvasLayerObjectDefinitionsUVETest, ApplyAttachesEachKindsExactComponent
     }
 }
 
-TEST_F(CanvasLayerObjectDefinitionsUVETest, PromotedKindsAreRegisteredAndLibraryCreatable) {
+TEST_F(CanvasObjectDefinitionsUVETest, PromotedKindsAreRegisteredAndLibraryCreatable) {
     // The whole point of the promotion: these kinds must now appear in the Add-Object list's
     // backing registry, creatable like every other library kind.
     for (const std::string_view typeId : {"canvas", "ui_text", "ui_image", "ui_button"}) {

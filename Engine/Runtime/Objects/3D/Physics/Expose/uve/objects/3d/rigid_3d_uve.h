@@ -5,7 +5,7 @@
 #include <string_view>
 
 #include "uve/component/entity_uve.h"
-#include "uve/component/rigid_body_component_uve.h"
+#include "uve/component/rigid_3d_component_uve.h"
 
 namespace UVE::Scene {
 
@@ -17,14 +17,14 @@ class IEntityManagerUVE;
 /// hardcoded inline in EditorUVE's creation switch; it now has the same per-file home every
 /// other object kind has. Per Engine/Runtime/Scene/README.md's "one truth per concept" rule this
 /// holds the *recipe*, not a second copy of component storage: body state itself still lives
-/// only in RigidBodyComponentUVE.
+/// only in Rigid3DComponentUVE.
 struct Rigid3DObjectDefinitionUVE final {
     /// Default document-entity name for a freshly created object of this kind. (Previously the
     /// generic "Empty" — the editor created Rigid3D as a bare entity plus one component.)
     static constexpr std::string_view defaultName = "Rigid3D";
 
     /// Simulated-body authored defaults; the entity's transform is attached by the creation shell.
-    RigidBodyComponentUVE body{};
+    Rigid3DComponentUVE body{};
 };
 
 [[nodiscard]] bool IsRigid3DObjectDefinitionValidUVE(const Rigid3DObjectDefinitionUVE& value) noexcept;

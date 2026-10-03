@@ -13,21 +13,21 @@ namespace UVE::Scene {
 /// effect stops the world and not the camera; a death cam keeps running after the player's own
 /// controller has been disabled. With only a global flag, every one of those needs its own
 /// hand-written "am I allowed to run right now" check, and each one gets it slightly wrong.
-enum class ProcessModeUVE : std::uint8_t {
-    /// Take the parent's answer, or Pausable at the top of the hierarchy. The default, so a whole
+enum class TickModeUVE : std::uint8_t {
+    /// Take the parent's answer, or Running at the top of the hierarchy. The default, so a whole
     /// subtree is switched by its root rather than object by object.
     Inherit = 0,
     /// Runs while the simulation is running, stops while it is paused. What almost everything in a
     /// level wants.
-    Pausable,
+    Running,
     /// Runs only while paused. A pause menu, a confirmation dialog, an inspector overlay.
-    WhenPaused,
+    PausedOnly,
     /// Runs regardless. Anything that must survive a pause: the pause controller itself, a
     /// networking heartbeat, a telemetry sampler.
     Always,
     /// Never runs, paused or not, without being detached or destroyed. The reversible way to take
     /// something out of the simulation while keeping it authored, selected and inspectable.
-    Disabled,
+    Never,
 };
 
 /// Whether an entity's work runs this frame, and in what order relative to its siblings.
@@ -36,7 +36,7 @@ enum class ProcessModeUVE : std::uint8_t {
 /// entity's work happen - and separating them would make an author set two components to describe
 /// one intent. Lower values run first, which matches how every other priority in the engine reads.
 struct ProcessComponentUVE final {
-    ProcessModeUVE mode = ProcessModeUVE::Inherit;
+    TickModeUVE mode = TickModeUVE::Inherit;
 
     /// Frame-update order. Ties are broken by hierarchy order, so an unset priority never makes
     /// execution order arbitrary.
@@ -51,12 +51,12 @@ struct ProcessComponentUVE final {
     /// now" for the current simulation state. Written only by SceneGraphUVE::UpdateUVE, exactly
     /// like VisibilityComponentUVE::visibleInHierarchy - authoring it would be overwritten on the
     /// next update, and persisting it would restore an answer computed for a different state.
-    ProcessModeUVE resolvedModeInHierarchy = ProcessModeUVE::Pausable;
+    TickModeUVE resolvedModeInHierarchy = TickModeUVE::Running;
 
     // There is deliberately no cached "is it running right now" field. That answer depends on the
     // simulation's paused state, which changes without the hierarchy changing, so a cached copy
     // would be stale exactly when it matters and would force the scene graph to know about
-    // pausing. Consumers call IsProcessingUVE(resolvedModeInHierarchy, paused) instead - one
+    // pausing. Consumers call IsTickingUVE(resolvedModeInHierarchy, paused) instead - one
     // function, no stale state, and the rule still exists in only one place.
 };
 
@@ -67,9 +67,9 @@ struct ProcessComponentUVE final {
 /// Resolves `mode` against the answer already resolved for the parent. Inherit passes the parent's
 /// answer through unchanged; anything else replaces it. Shared by the scene graph and its tests so
 /// the rule exists once.
-[[nodiscard]] ProcessModeUVE ResolveProcessModeUVE(ProcessModeUVE mode, ProcessModeUVE parentMode) noexcept;
+[[nodiscard]] TickModeUVE ResolveTickModeUVE(TickModeUVE mode, TickModeUVE parentMode) noexcept;
 
 /// Whether a resolved mode runs while the simulation is in the given state.
-[[nodiscard]] bool IsProcessingUVE(ProcessModeUVE resolvedMode, bool simulationPaused) noexcept;
+[[nodiscard]] bool IsTickingUVE(TickModeUVE resolvedMode, bool simulationPaused) noexcept;
 
 } // namespace UVE::Scene

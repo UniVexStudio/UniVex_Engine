@@ -7,7 +7,7 @@
 #include <gtest/gtest.h>
 
 #include "uve/asset/animation_clip_asset_uve.h"
-#include "uve/component/animation_player_component_uve.h"
+#include "uve/component/animation_sequencer_component_uve.h"
 #include "uve/objects/3d/animation_sequencer_uve.h"
 #include "uve/objects/3d/skeleton_3d_uve.h"
 #include "uve/retarget/retarget_humanoid_uve.h"
@@ -82,10 +82,10 @@ using Math::Vector3UVE;
 }
 
 [[nodiscard]] Skeleton3DComponentUVE PlayUVE(Skeleton3DComponentUVE skeleton, const Asset::AnimationClipAssetUVE& clip) {
-    AnimationPlayerComponentUVE player;
+    AnimationSequencerComponentUVE player;
     player.loopMode = AnimationLoopModeUVE::Once;
     player.isPlaying = true;
-    EXPECT_TRUE(StepSkeletalAnimationPlayerUVE(player, clip, 1.0F, skeleton));
+    EXPECT_TRUE(StepSkeletalAnimationSequencerUVE(player, clip, 1.0F, skeleton));
     return skeleton;
 }
 

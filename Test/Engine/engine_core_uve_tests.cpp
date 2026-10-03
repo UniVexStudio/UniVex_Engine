@@ -89,7 +89,7 @@
 #include "uve/component/mesh_component_uve.h"
 #include "uve/component/particle_emitter_component_uve.h"
 #include "uve/component/primitive_mesh_component_uve.h"
-#include "uve/component/rigid_body_component_uve.h"
+#include "uve/component/rigid_3d_component_uve.h"
 #include "uve/component/script_component_uve.h"
 #include "uve/component/transform_component_uve.h"
 #include "uve/component/ui_button_component_uve.h"
@@ -229,7 +229,7 @@ TEST(EngineCoreUVETest, ParticleEmitterComponents_ReconcileWithRuntimeAcrossFram
     EXPECT_EQ(engine.GetParticleRuntimeSnapshotUVE().instanceCount, 0U);
 }
 
-TEST(EngineCoreUVETest, ProcessMode_GatesParticleEmittersAgainstThePausedState) {
+TEST(EngineCoreUVETest, TickMode_GatesParticleEmittersAgainstThePausedState) {
     EngineCoreUVE engine(MakeTestConfigUVE());
     engine.Init();
     ASSERT_TRUE(engine.Load());
@@ -237,7 +237,7 @@ TEST(EngineCoreUVETest, ProcessMode_GatesParticleEmittersAgainstThePausedState) 
     Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
     Scene::ISceneGraphUVE& sceneGraph = services.GetSceneGraphUVE();
 
-    const auto makeEmitter = [&](const std::optional<Scene::ProcessModeUVE> mode) {
+    const auto makeEmitter = [&](const std::optional<Scene::TickModeUVE> mode) {
         const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
         sceneGraph.AttachTransformUVE(entityManager, entity, Scene::TransformComponentUVE{});
         entityManager.AddComponentUVE<Scene::ParticleEmitterComponentUVE>(entity,
@@ -250,9 +250,9 @@ TEST(EngineCoreUVETest, ProcessMode_GatesParticleEmittersAgainstThePausedState) 
         return entity;
     };
     const Scene::EntityUVE pausable = makeEmitter(std::nullopt); // No component: the default.
-    const Scene::EntityUVE always = makeEmitter(Scene::ProcessModeUVE::Always);
-    const Scene::EntityUVE whenPaused = makeEmitter(Scene::ProcessModeUVE::WhenPaused);
-    const Scene::EntityUVE disabled = makeEmitter(Scene::ProcessModeUVE::Disabled);
+    const Scene::EntityUVE always = makeEmitter(Scene::TickModeUVE::Always);
+    const Scene::EntityUVE whenPaused = makeEmitter(Scene::TickModeUVE::PausedOnly);
+    const Scene::EntityUVE disabled = makeEmitter(Scene::TickModeUVE::Never);
 
     const auto isEnabled = [&engine](const Scene::EntityUVE entity) {
         for (const Scene::ParticleRuntimeInstanceSnapshotUVE& instance :
@@ -282,7 +282,7 @@ TEST(EngineCoreUVETest, ProcessMode_GatesParticleEmittersAgainstThePausedState) 
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, ProcessMode_DisabledInheritsToAChildWithoutTheComponent) {
+TEST(EngineCoreUVETest, TickMode_NeverInheritsToAChildWithoutTheComponent) {
     // The inheritance the scene-graph query exists for: the child carries no ProcessComponentUVE,
     // and must still stop because its parent was disabled.
     EngineCoreUVE engine(MakeTestConfigUVE());
@@ -299,7 +299,7 @@ TEST(EngineCoreUVETest, ProcessMode_DisabledInheritsToAChildWithoutTheComponent)
     }
     sceneGraph.SetParentUVE(entityManager, child, parent);
     Scene::ProcessComponentUVE disabled{};
-    disabled.mode = Scene::ProcessModeUVE::Disabled;
+    disabled.mode = Scene::TickModeUVE::Never;
     entityManager.AddComponentUVE<Scene::ProcessComponentUVE>(parent, disabled);
     entityManager.AddComponentUVE<Scene::ParticleEmitterComponentUVE>(child, Scene::ParticleEmitterComponentUVE{8U});
 
@@ -311,7 +311,7 @@ TEST(EngineCoreUVETest, ProcessMode_DisabledInheritsToAChildWithoutTheComponent)
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, ProcessMode_ADisabledProjectileDoesNotAdvanceOnAFixedStep) {
+TEST(EngineCoreUVETest, TickMode_ANeverTickedProjectileDoesNotAdvanceOnAFixedStep) {
     EngineCoreUVE engine(MakeTestConfigUVE());
     engine.Init();
     ASSERT_TRUE(engine.Load());
@@ -319,7 +319,7 @@ TEST(EngineCoreUVETest, ProcessMode_ADisabledProjectileDoesNotAdvanceOnAFixedSte
     Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
     Scene::ISceneGraphUVE& sceneGraph = services.GetSceneGraphUVE();
 
-    const auto makeProjectile = [&](const Scene::ProcessModeUVE mode) {
+    const auto makeProjectile = [&](const Scene::TickModeUVE mode) {
         const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
         sceneGraph.AttachTransformUVE(entityManager, entity, Scene::TransformComponentUVE{});
         Scene::Projectile3DComponentUVE projectile{};
@@ -330,11 +330,11 @@ TEST(EngineCoreUVETest, ProcessMode_ADisabledProjectileDoesNotAdvanceOnAFixedSte
         entityManager.AddComponentUVE<Scene::ProcessComponentUVE>(entity, process);
         return entity;
     };
-    const Scene::EntityUVE moving = makeProjectile(Scene::ProcessModeUVE::Pausable);
-    const Scene::EntityUVE frozen = makeProjectile(Scene::ProcessModeUVE::Disabled);
+    const Scene::EntityUVE moving = makeProjectile(Scene::TickModeUVE::Running);
+    const Scene::EntityUVE frozen = makeProjectile(Scene::TickModeUVE::Never);
 
     // One frame so the scene graph resolves the modes, then one explicitly requested fixed step:
-    // a single step is the simulation advancing, so Pausable moves even though play is paused.
+    // a single step is the simulation advancing, so Running moves even though play is paused.
     engine.TickFrameUVE();
     ASSERT_TRUE(engine.SetSimulationExecutionModeUVE(SimulationExecutionModeUVE::Paused));
     const float movingBefore = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(moving).localPosition.x;
@@ -370,7 +370,7 @@ TEST(EngineCoreUVETest, AutoTranslate_ALabelInheritsItsMenusOptOutWithoutACompon
     }
     sceneGraph.SetParentUVE(entityManager, label, menu);
     Scene::AutoTranslateComponentUVE optOut{};
-    optOut.mode = Scene::AutoTranslateModeUVE::Disabled;
+    optOut.mode = Scene::LocalizeModeUVE::Literal;
     entityManager.AddComponentUVE<Scene::AutoTranslateComponentUVE>(menu, optOut);
     Scene::UITextComponentUVE text{};
     text.text = "Play";
@@ -387,7 +387,7 @@ TEST(EngineCoreUVETest, AutoTranslate_ALabelInheritsItsMenusOptOutWithoutACompon
     EXPECT_EQ(glyphCount(), 4) << "the label inherits Disabled, so it draws \"Play\" untranslated";
 
     // Let the menu translate again, and the same label - still without a component - follows.
-    entityManager.GetComponentUVE<Scene::AutoTranslateComponentUVE>(menu).mode = Scene::AutoTranslateModeUVE::Always;
+    entityManager.GetComponentUVE<Scene::AutoTranslateComponentUVE>(menu).mode = Scene::LocalizeModeUVE::Localized;
     engine.TickFrameUVE();
     EXPECT_EQ(glyphCount(), 7) << "\"Maglaro\"";
 
@@ -1427,7 +1427,7 @@ TEST(EngineCoreUVETest, PhysicsSystemAndCollisionSystem_ReachableAndFunctionalAf
     Scene::TransformComponentUVE local;
     local.localPosition = Math::Vector3UVE{0.0F, 10.0F, 0.0F};
     sceneGraph.AttachTransformUVE(entityManager, entity, local);
-    entityManager.AddComponentUVE<Scene::RigidBodyComponentUVE>(entity);
+    entityManager.AddComponentUVE<Scene::Rigid3DComponentUVE>(entity);
     sceneGraph.UpdateUVE(entityManager);
 
     physicsSystem.StepUVE(entityManager, sceneGraph, 1.0F / 60.0F);
@@ -1456,8 +1456,8 @@ TEST(EngineCoreUVETest, PhysicsConstraints_ComposedAndSolvedThroughNormalFixedSt
         transform.localPosition = position;
         sceneGraph.AttachTransformUVE(entityManager, entity, transform);
         sceneGraph.UpdateUVE(entityManager);
-        entityManager.AddComponentUVE<Scene::RigidBodyComponentUVE>(entity,
-                                                                      Scene::RigidBodyComponentUVE{1.0F, false});
+        entityManager.AddComponentUVE<Scene::Rigid3DComponentUVE>(entity,
+                                                                      Scene::Rigid3DComponentUVE{1.0F, false});
         return entity;
     };
 
@@ -1639,7 +1639,7 @@ TEST(EngineCoreUVETest, AudioListener_TracksActiveCameraWorldPosition) {
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, FallingRigidBody_TickFrameUVEDrivenPhysicsStep_MovesEntityDownward) {
+TEST(EngineCoreUVETest, FallingRigid3D_TickFrameUVEDrivenPhysicsStep_MovesEntityDownward) {
     // A 1kHz fixed-update rate (1ms fixed step) paired with a short real sleep before each
     // TickFrameUVE() call guarantees the ITimerUVE accumulator crosses at least one fixed step
     // almost every frame — an excessively high fixedUpdateFps would trigger steps just as
@@ -1661,7 +1661,7 @@ TEST(EngineCoreUVETest, FallingRigidBody_TickFrameUVEDrivenPhysicsStep_MovesEnti
     Scene::TransformComponentUVE local;
     local.localPosition = Math::Vector3UVE{0.0F, 10.0F, 0.0F};
     sceneGraph.AttachTransformUVE(entityManager, entity, local);
-    entityManager.AddComponentUVE<Scene::RigidBodyComponentUVE>(entity);
+    entityManager.AddComponentUVE<Scene::Rigid3DComponentUVE>(entity);
 
     for (int frame = 0; frame < 30; ++frame) {
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
@@ -1676,7 +1676,7 @@ TEST(EngineCoreUVETest, FallingRigidBody_TickFrameUVEDrivenPhysicsStep_MovesEnti
 }
 
 TEST(EngineCoreUVETest, CharacterController_FallsUnderGravityLandsOnGroundThenJumpsOnSpace) {
-    // Same 1kHz fixed-update / short real-sleep discipline as FallingRigidBody_* above, so
+    // Same 1kHz fixed-update / short real-sleep discipline as FallingRigid3D_* above, so
     // EngineCoreUVE::Update()'s new SyncCharacterControllersUVE() wiring gets exercised end-to-end
     // (gravity accumulation -> Physics::CharacterControllerUVE::MoveWithToIUVE -> ground contact),
     // not just PhysicsSystemUVE's own already-covered per-step math.
@@ -1689,7 +1689,7 @@ TEST(EngineCoreUVETest, CharacterController_FallsUnderGravityLandsOnGroundThenJu
     Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
     Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
 
-    // Static ground: a flat box collider with no RigidBodyComponentUVE, top surface at y=0.5.
+    // Static ground: a flat box collider with no Rigid3DComponentUVE, top surface at y=0.5.
     const Scene::EntityUVE ground = entityManager.CreateEntityUVE();
     sceneGraph.AttachTransformUVE(entityManager, ground, Scene::TransformComponentUVE{});
     entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(
@@ -1711,7 +1711,7 @@ TEST(EngineCoreUVETest, CharacterController_FallsUnderGravityLandsOnGroundThenJu
 
     const Scene::CharacterControllerComponentUVE& afterFall =
         entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(entity);
-    EXPECT_TRUE(afterFall.isOnFloor);
+    EXPECT_TRUE(afterFall.grounded);
     const Scene::WorldTransformComponentUVE& worldAfterFall =
         entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
     EXPECT_NEAR(worldAfterFall.worldPosition.y, 1.0F, 0.35F);
@@ -1724,7 +1724,7 @@ TEST(EngineCoreUVETest, CharacterController_FallsUnderGravityLandsOnGroundThenJu
     const Scene::CharacterControllerComponentUVE& afterJump =
         entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(entity);
     EXPECT_GT(afterJump.velocity.y, 0.0F);
-    EXPECT_FALSE(afterJump.isOnFloor);
+    EXPECT_FALSE(afterJump.grounded);
 
     engine.Shutdown();
 }
@@ -1777,13 +1777,13 @@ bool LeavesTheFloorWalkingDownAStepUVE(const float floorSnapLength) {
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
         engine.TickFrameUVE();
     }
-    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(walker).isOnFloor);
+    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(walker).grounded);
     bool leftTheFloor = false;
     for (int frame = 0; frame < 700; ++frame) {
         entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(walker).velocity.x = 2.0F;
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
         engine.TickFrameUVE();
-        leftTheFloor = leftTheFloor || !entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(walker).isOnFloor;
+        leftTheFloor = leftTheFloor || !entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(walker).grounded;
     }
     const float x = entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(walker).worldPosition.x;
     const float y = entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(walker).worldPosition.y;
@@ -1862,12 +1862,12 @@ TEST(EngineCoreUVETest, AnimationSequencer_PlaysItsClipOnItsParentObject) {
 
     const auto startedAt = std::chrono::steady_clock::now();
     while (std::chrono::steady_clock::now() - startedAt < std::chrono::seconds(10) &&
-           !entityManager.GetComponentUVE<Scene::AnimationPlayerComponentUVE>(player).finished) {
+           !entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(player).finished) {
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
         engine.TickFrameUVE();
     }
-    const Scene::AnimationPlayerComponentUVE& played =
-        entityManager.GetComponentUVE<Scene::AnimationPlayerComponentUVE>(player);
+    const Scene::AnimationSequencerComponentUVE& played =
+        entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(player);
     EXPECT_TRUE(played.finished);
     EXPECT_FALSE(played.isPlaying);
     // A Once clip holds its last pose, and the world transform followed.
@@ -1924,11 +1924,11 @@ TEST(EngineCoreUVETest, AnimationSequencer_PosesTheSkeletonInsideTheCharacterWit
 
     const auto startedAt = std::chrono::steady_clock::now();
     while (std::chrono::steady_clock::now() - startedAt < std::chrono::seconds(10) &&
-           !entityManager.GetComponentUVE<Scene::AnimationPlayerComponentUVE>(player).finished) {
+           !entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(player).finished) {
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
         engine.TickFrameUVE();
     }
-    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::AnimationPlayerComponentUVE>(player).finished);
+    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(player).finished);
     const Scene::Skeleton3DComponentUVE& posed =
         entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity);
     ASSERT_EQ(posed.pose.size(), 1U);
@@ -1988,11 +1988,11 @@ TEST(EngineCoreUVETest, AnimationSequencer_RootMotionMovesTheCharacterThroughThe
 
     const auto startedAt = std::chrono::steady_clock::now();
     while (std::chrono::steady_clock::now() - startedAt < std::chrono::seconds(10) &&
-           !entityManager.GetComponentUVE<Scene::AnimationPlayerComponentUVE>(player).finished) {
+           !entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(player).finished) {
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
         engine.TickFrameUVE();
     }
-    ASSERT_TRUE(entityManager.GetComponentUVE<Scene::AnimationPlayerComponentUVE>(player).finished);
+    ASSERT_TRUE(entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(player).finished);
     const Math::Vector3UVE moved = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(character).localPosition;
     EXPECT_NEAR(moved.x, 2.0F, 1e-3F) << "the clip's 2 m, turned into the world by the skeleton";
     EXPECT_NEAR(moved.z, 0.0F, 1e-3F);
@@ -2050,11 +2050,11 @@ TEST(EngineCoreUVETest, AnimationSequencer_SendsClipEventsToTheScriptOfTheObject
 
     const auto startedAt = std::chrono::steady_clock::now();
     while (std::chrono::steady_clock::now() - startedAt < std::chrono::seconds(10) &&
-           !entityManager.GetComponentUVE<Scene::AnimationPlayerComponentUVE>(player).finished) {
+           !entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(player).finished) {
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
         engine.TickFrameUVE();
     }
-    ASSERT_TRUE(entityManager.GetComponentUVE<Scene::AnimationPlayerComponentUVE>(player).finished);
+    ASSERT_TRUE(entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(player).finished);
     UVScript::ScriptInstanceUVE* const instance = engine.FindUVScriptInstanceUVE(character);
     ASSERT_NE(instance, nullptr);
     EXPECT_EQ(instance->GetFieldUVE("steps"), UVScript::ValueUVE{std::int64_t{2}}) << "each footstep once";

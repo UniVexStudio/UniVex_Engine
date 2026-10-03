@@ -19,8 +19,8 @@
 
 #include <imgui.h>
 
-#include "uve/component/animation_player_component_uve.h"
-#include "uve/component/animation_tree_component_uve.h"
+#include "uve/component/animation_sequencer_component_uve.h"
+#include "uve/component/animation_graph_component_uve.h"
 #include "uve/component/prefab_instance_component_uve.h"
 #include "uve/component/script_component_uve.h"
 #include "uve/core/uvscript_object_host_uve.h"
@@ -451,7 +451,7 @@ void EditorUVE::DrawEntityEditorMiddleUVE(EntityEditSessionUVE& session) {
             DrawEntityEditorScriptingTabUVE();
             ImGui::EndTabItem();
         }
-        if (tab("Signals", EntityEditorTabUVE::Signals)) {
+        if (tab("Events", EntityEditorTabUVE::Events)) {
             DrawEntityEditorSignalsTabUVE();
             ImGui::EndTabItem();
         }
@@ -516,8 +516,8 @@ void EditorUVE::DrawEntityEditorDockUVE(EntityEditSessionUVE& session) {
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
     const Scene::EntityUVE selected = m_selectedEntity;
     const bool selectedAlive = selected != Scene::kInvalidEntityUVE && entityManager.IsAliveUVE(selected);
-    const bool hasPlayer = selectedAlive && entityManager.HasComponentUVE<Scene::AnimationPlayerComponentUVE>(selected);
-    const bool hasTree = selectedAlive && entityManager.HasComponentUVE<Scene::AnimationTreeComponentUVE>(selected);
+    const bool hasPlayer = selectedAlive && entityManager.HasComponentUVE<Scene::AnimationSequencerComponentUVE>(selected);
+    const bool hasTree = selectedAlive && entityManager.HasComponentUVE<Scene::AnimationGraphComponentUVE>(selected);
     // Selecting one opens its tab once; after that the tab is the user's choice.
     std::optional<EntityEditorDockTabUVE> follow;
     if (selected != session.dockFollowed) {
@@ -767,7 +767,7 @@ void EditorUVE::DrawEntityEditorWindowUVE() {
     }
     ImGui::Separator();
 
-    // Scene tree | Viewport, Scripting, Signals | Inspector, with Compile's problems under the
+    // Scene tree | Viewport, Scripting, Events | Inspector, with Compile's problems under the
     // middle once it has found any.
     // The dock (Content, Timeline, Anim Graph) takes the bottom, resized by the bar above it.
     constexpr float kSplitterUVE = 6.0F;

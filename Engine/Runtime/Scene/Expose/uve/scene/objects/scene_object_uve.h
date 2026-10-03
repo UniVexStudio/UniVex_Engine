@@ -9,9 +9,9 @@
 // Light3DObjectUVE). Keeping this single aggregate header instead - it documents which real type
 // backs every UVE::Scene::Objects::SceneObjectKindUVE, matching scene_object_registry_uve.cpp's own
 // runtimeOwner field, without inventing a second name for anything.
-#include "uve/animation/animation_tree_uve.h"
 #include "uve/physics/character_controller_uve.h"
-#include "uve/component/animation_player_component_uve.h"
+#include "uve/component/animation_graph_component_uve.h"
+#include "uve/component/animation_sequencer_component_uve.h"
 #include "uve/component/area_component_uve.h"
 #include "uve/component/audio_source_component_uve.h"
 #include "uve/component/camera_component_uve.h"
@@ -20,7 +20,7 @@
 #include "uve/component/mesh_component_uve.h"
 #include "uve/component/particle_emitter_component_uve.h"
 #include "uve/component/primitive_mesh_component_uve.h"
-#include "uve/component/rigid_body_component_uve.h"
+#include "uve/component/rigid_3d_component_uve.h"
 #include "uve/component/script_component_uve.h"
 #include "uve/component/transform_component_uve.h"
 #include "uve/component/entity_uve.h"
@@ -33,4 +33,4 @@
 // authored defaults, default entity name), so no object kind's behavior is buried in one shared
 // header or in the editor's creation switch.
 #include "uve/objects/3d/all_objects_3d_uve.h"
-#include "uve/objects/canvas_layer/all_objects_canvas_layer_uve.h"
+#include "uve/objects/canvas/all_objects_canvas_uve.h"
