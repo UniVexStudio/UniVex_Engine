@@ -48,17 +48,8 @@ jobs:
       - name: Configure
         run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DUVE_BUILD_TESTS=ON
 
-      # TEMPORARY DEBUG (remove before merge): the job log cannot be fetched from this sandbox,
-      # so compiler errors are surfaced as check-run annotations instead.
       - name: Build
-        run: |
-          # set -o pipefail: without it the tee pipeline reports success even when the build fails
-          # (the implicit shell is bash -e, not bash -eo pipefail), which is what hid the errors so far.
-          set -o pipefail
-          if ! cmake --build build --parallel "$(nproc)" 2>&1 | tee /tmp/build.log; then
-            grep -E "error:|FAILED:" /tmp/build.log | head -60 | sed 's/^/::error::/'
-            exit 1
-          fi
+        run: cmake --build build --parallel "$(nproc)"
 
       - name: Test
         # Parallel, and both things that blocked it are fixed: every test process gets its own
@@ -66,27 +57,6 @@ jobs:
         # a job's captured state before signalling completion, so a drained WaitUVE() no longer
         # leaves a worker holding the last reference to something it is about to outlive.
         run: xvfb-run -a ctest --test-dir build --output-on-failure -j"$(nproc)"
-
-      # TEMPORARY DEBUG (remove before merge): the job log cannot be fetched from this sandbox, so
-      # the failing test names are surfaced as check-run annotations instead.
-      - name: Report failing tests
-        if: failure()
-        run: |
-          python3 - <<'PY'
-          import os
-          paths = ["build/Testing/Temporary/LastTestsFailed.log",
-                   "build/Testing/Temporary/LastTest.log"]
-          for path in paths:
-              if not os.path.exists(path):
-                  print(f"::warning::missing {path}")
-                  continue
-              for line in open(path, errors="replace").read().splitlines():
-                  line = line.strip()
-                  if path.endswith("LastTestsFailed.log") and line:
-                      print(f"::error::FAILED {line[:200]}")
-                  elif line.startswith("[  FAILED  ]"):
-                      print(f"::warning::{line[:200]}")
-          PY
 
       - name: Verify the Vulkan device tests actually ran
         # These cases skip themselves when no Vulkan device is present, which would leave
