@@ -7,7 +7,7 @@
 #include <vector>
 
 #include "uve/asset/asset_guid_uve.h"
-#include "uve/component/animated_object_component_uve.h"
+#include "uve/component/animation_driver_component_uve.h"
 #include "uve/component/entity_uve.h"
 #include "uve/math/quaternion_uve.h"
 #include "uve/math/vector3_uve.h"
@@ -33,7 +33,7 @@ enum class AnimationFinishActionUVE : std::uint8_t {
 };
 
 /// AnimationSequencer's own state: plays a `.uvanim` clip on a target object's transform. What it moves,
-/// which channels and on which clock live in its AnimatedObject base (AnimatedObjectComponentUVE).
+/// which channels and on which clock live in its AnimationDriver base (AnimationDriverComponentUVE).
 ///
 /// Authored settings first; the runtime state the player writes back each step comes last and is
 /// shown in the Inspector only while playing, never saved.

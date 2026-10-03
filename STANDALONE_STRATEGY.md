@@ -359,52 +359,63 @@ deleting the `PackedVector3Array` row makes it fail at `variant_uve_tests.cpp:49
 relying on a transitive include, the same failure mode as the 26 panel headers in Phase 10, in a
 non-panel TU again.
 
-### Phase 6 — Finding B's last component, named by the engine's own convention
+### Phase 6 — Finding B's last component: `AnimationMixerComponentUVE` → `AnimationDriverComponentUVE`
 
-`AnimationMixerComponentUVE` was the one component that needed a coinage rather than a catch-up, so
-it got one from the tree instead of from a guess. It sits in the Inspector's `kSectionOrderObjectBaseUVE`
-group, and every other member of that group is a base component named for what it makes an object:
+The last of the four needed a coinage rather than a catch-up. It landed as:
 
-| Type | Inspector label |
-|---|---|
-| `PhysicsObjectComponentUVE` | `PhysicsObject3D` |
-| `SolidBody…` | `SolidBody3D` |
-| `RenderInstance…` | `RenderInstance3D` |
-| `SurfaceInstance…` | `SurfaceInstance3D` |
-| `LightEmitter…` | `LightEmitter3D` |
-| `BoneModifier…` | `BoneModifier3D` |
-| ~~`AnimationMixerComponentUVE`~~ | ~~`AnimationMixer`~~ ← the only one breaking the pattern, and a verbatim foreign class |
+| | Was | Now |
+|---|---|---|
+| Type | `AnimationMixerComponentUVE` | `AnimationDriverComponentUVE` |
+| Inspector label | `"AnimationMixer"` | `"AnimationDriver"` |
+| `typeName` | `"AnimationMixer"` | `"AnimationDriver"` |
+| Apply function | `ApplyAnimationMixerBaseUVE` | `ApplyAnimationDriverBaseUVE` |
+| ObjectDefinition | `AnimationMixerObjectDefinitionUVE` | `AnimationDriverObjectDefinitionUVE` |
 
-The component's own doc comment already said what it is: *"the abstract base AnimationSequencer and
-AnimationGraph share — what they move, which channels, on which clock and how fast."* It never mixed
-anything; the name was borrowed. It is now `AnimatedObjectComponentUVE` with the label
-`"AnimatedObject3D"`, which follows the group exactly, and `ApplyAnimationMixerBaseUVE` became
-`ApplyAnimatedObjectBaseUVE` — the word "base" was already in the function's name.
+It never mixed anything. Its own doc comment says what it is: *"the abstract base AnimationSequencer
+and AnimationGraph share — what they move, which channels, on which clock and how fast."* Two further
+facts from the tree settled the name:
 
-20 files, ~113 occurrences (`AnimationMixerComponentUVE` 78, bare `AnimationMixer` 16,
-`IsAnimationMixerComponentValidUVE` 8, `ApplyAnimationMixerBaseUVE` 6, `AnimationMixerFromJsonUVE` 3,
-plus the ObjectDefinition and one test name). Four spots needed handling by hand rather than by `sed`:
+- It lives on a **pure Object with no transform and no visibility** (`animation_sequencer_uve.h:27`,
+  `animation_graph_uve.h:25`) and writes poses into a separate `EntityUVE target`
+  (`animation_driver_component_uve.h:48`). It is a driver aimed at something else, not an object.
+- **"Mixer" was already the Audio module's word** — `audio_mixer_group_uve.h`, "mixer routing",
+  "mixer groups". The borrowed name was colliding with a real UniVex concept, which made it doubly
+  wrong. The audio usages are untouched; so is `"sources, mixers, control"` in
+  `editor_animation_graph_widgets_uve.h:30`, where "mixers" correctly means the graph node kinds
+  (`Blend2`, `Additive`) that genuinely mix two poses.
 
-- `AnimatedObject3DObjectDefinitionUVE`, not `AnimatedObjectObjectDefinitionUVE` — the ObjectDefinition
-  structs are named after the *label*, matching `BoneModifier3DObjectDefinitionUVE`.
-- `typeName` and the Inspector label both take the `3D` suffix; a blanket replace would have left them
-  `"AnimatedObject"` and out of step with the group.
-- `RestoreUVE_PlayerSavedBeforeAnimationMixerMovesItsSettingsIntoTheMixer` became
-  `RestoreUVE_SequencerSavedBeforeTheAnimatedObjectBaseMovesItsSettingsIntoOne` — the old name was a
-  sentence with two occurrences of the word, and a blind replace made it unreadable.
+20 files, ~113 occurrences. Spots that needed handling by hand rather than by `sed`:
+
+- `AnimationDriverObjectDefinitionUVE`, not `AnimationDriverObjectObjectDefinitionUVE`.
+- The test `RestoreUVE_PlayerSavedBeforeAnimationMixerMovesItsSettingsIntoTheMixer` — a sentence with
+  two occurrences of the word — became
+  `RestoreUVE_SequencerSavedBeforeTheAnimationDriverBaseMovesItsSettingsIntoOne`.
 - The Phase 4 comment in `RestoreUVE` that explains the ordering bug names `"AnimationMixer"`
   **on purpose**: that is the name the code actually had when the bug existed, so it stays.
+- Every lowercase `mixer` in animation contexts (local variables in the serializer and the two
+  animation editor panels, and prose in the component header) became `driver`, because a word with no
+  type behind it any more is a word a reader cannot look up.
 
 `component.animation_mixer` — the drawer id — was left alone, like every other drawer id in this work:
 it is persisted in editor layout. `AnimationMixerComponentUVE` went into `CanonicalComponentNameUVE`,
 so documents written before this load unchanged.
 
-**A first proposal for this was wrong and was rejected.** `AnimationPlaybackComponentUVE` was proposed
-before reading `animation_sequencer_uve.h`, which already uses "Playback" as the section heading for
-`PlayAnimationSequencerUVE` / `StopAnimationSequencerUVE` / `StepAnimationSequencerUVE`. Two different
-things sharing one word is precisely the confusion this whole pass exists to remove. The lesson is
-recorded here because it is the mechanism, not the slip: a coinage has to be checked against the
-vocabulary already in the tree before it is offered, the same way a rename target is.
+**Two proposals for this name were wrong before the right one, and both are recorded because the
+mechanism matters more than the slip.**
+
+1. `AnimationPlaybackComponentUVE` — proposed before reading `animation_sequencer_uve.h`, which already
+   uses "Playback" as the section heading for `PlayAnimationSequencerUVE` /
+   `StopAnimationSequencerUVE` / `StepAnimationSequencerUVE`. Two different things sharing one word is
+   exactly the confusion this pass exists to remove.
+2. `AnimatedObjectComponentUVE` / `"AnimatedObject3D"` — proposed by copying the naming pattern of the
+   `kSectionOrderObjectBaseUVE` group (`PhysicsObject3D`, `RenderInstance3D`, `LightEmitter3D`) without
+   checking that the *shape* matched. It does not: those bases sit on the object itself and that object
+   has a transform. This one sits on a transform-less controller aimed at another entity. The `3D`
+   claimed spatial presence it does not have, and "AnimatedObject" claimed the entity was the thing
+   being animated when it is the thing doing the animating. It was committed and then renamed.
+
+The rule both broke is the same one a rename target needs: a name has to be checked against the
+vocabulary already in the tree *and* against what the thing actually is, before it is offered.
 
 ### Verification actually run
 

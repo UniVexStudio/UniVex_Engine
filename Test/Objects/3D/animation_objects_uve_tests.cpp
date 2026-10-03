@@ -132,7 +132,7 @@ TEST(AnimationSequencerUVETest, ChannelMasksLeaveTheOtherChannelsAlone) {
     const Asset::AnimationClipAssetUVE clip = MakeSlideClipUVE();
     TransformComponentUVE target;
     target.localPosition = Math::Vector3UVE{-1.0F, -1.0F, -1.0F};
-    AnimatedObjectComponentUVE mixer;
+    AnimationDriverComponentUVE mixer;
     mixer.animatePosition = false;
     AnimationSequencerComponentUVE player = StartedUVE(AnimationSequencerComponentUVE{}, target, clip);
     ASSERT_TRUE(StepAnimationSequencerUVE(player, clip, 0.5F, target, mixer));
@@ -207,7 +207,7 @@ public:
         return guid;
     }
 
-    AnimatedObjectComponentUVE mixer;
+    AnimationDriverComponentUVE mixer;
 
 private:
     std::unordered_map<std::uint64_t, Asset::AnimationClipAssetUVE> m_clips;
@@ -611,7 +611,7 @@ TEST(AnimationSequencerUVETest, ASkeletalClipBlendsInReturnsToRestAndHonoursTheM
 
     // A mixer that leaves position alone leaves it at rest.
     Skeleton3DComponentUVE masked = MakeTwoBoneSkeletonUVE();
-    AnimatedObjectComponentUVE mixer;
+    AnimationDriverComponentUVE mixer;
     mixer.animatePosition = false;
     player = StartedUVE(AnimationSequencerComponentUVE{}, TransformComponentUVE{}, clip);
     ASSERT_TRUE(StepSkeletalAnimationSequencerUVE(player, clip, 0.5F, masked, mixer));
@@ -654,7 +654,7 @@ TEST(AnimationSequencerUVETest, RootMotionPicksTheTravellingBone) {
 TEST(AnimationSequencerUVETest, RootMotionKeepsThePoseInPlaceAndReportsTravelAcrossTheLoop) {
     const Asset::AnimationClipAssetUVE clip = MakeRunClipUVE();
     Skeleton3DComponentUVE skeleton = MakeTwoBoneSkeletonUVE();
-    AnimatedObjectComponentUVE mixer;
+    AnimationDriverComponentUVE mixer;
     mixer.rootMotion = AnimationRootMotionModeUVE::ApplyToTarget;
     AnimationSequencerComponentUVE player = StartedUVE(AnimationSequencerComponentUVE{}, TransformComponentUVE{}, clip);
 
@@ -689,7 +689,7 @@ TEST(AnimationSequencerUVETest, ScrubbingPosesTheSkeletonAtATimeWithoutAPlayer) 
     EXPECT_NEAR(skeleton.pose[0].position.z, 2.0F, 1e-4F);
 
     // With root motion on, the scrubbed pose runs in place like the played one.
-    AnimatedObjectComponentUVE mixer;
+    AnimationDriverComponentUVE mixer;
     mixer.rootMotion = AnimationRootMotionModeUVE::InPlace;
     ASSERT_TRUE(PoseSkeletonAtTimeUVE(clip, 0.5, skeleton, mixer));
     EXPECT_NEAR(skeleton.pose[0].position.z, 0.0F, 1e-4F);
@@ -731,7 +731,7 @@ TEST(AnimationSequencerUVETest, InertializationCarriesTheOldPoseAndFadesItOutSmo
     AnimationSequencerComponentUVE settings;
     settings.blendInSeconds = 1.0F;
     AnimationSequencerComponentUVE player = StartedUVE(settings, TransformComponentUVE{}, clip);
-    AnimatedObjectComponentUVE mixer; // Inertialize is the default
+    AnimationDriverComponentUVE mixer; // Inertialize is the default
     ASSERT_TRUE(StepSkeletalAnimationSequencerUVE(player, clip, 0.001F, skeleton, mixer));
     EXPECT_NEAR(skeleton.pose[0].position.z, 5.0F, 1e-3F) << "no pop: it starts where it was";
     ASSERT_TRUE(StepSkeletalAnimationSequencerUVE(player, clip, 0.499F, skeleton, mixer));
@@ -783,7 +783,7 @@ namespace {
 struct SkeletalGraphUVE {
     std::unordered_map<std::uint64_t, Asset::AnimationClipAssetUVE> clips;
     Skeleton3DComponentUVE skeleton = MakeTwoBoneSkeletonUVE();
-    AnimatedObjectComponentUVE mixer;
+    AnimationDriverComponentUVE mixer;
 
     Asset::AssetGuidUVE AddUVE(Asset::AnimationClipAssetUVE clip) {
         const Asset::AssetGuidUVE guid{clips.size() + 500U};

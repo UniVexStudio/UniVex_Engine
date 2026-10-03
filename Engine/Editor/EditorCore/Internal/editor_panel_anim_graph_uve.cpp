@@ -32,7 +32,7 @@
 #include "editor_animation_graph_widgets_uve.h"
 
 #include "uve/asset/animation_clip_asset_uve.h"
-#include "uve/component/animated_object_component_uve.h"
+#include "uve/component/animation_driver_component_uve.h"
 #include "uve/component/animation_graph_component_uve.h"
 #include "uve/component/hierarchy_component_uve.h"
 #include "uve/component/name_component_uve.h"
@@ -203,7 +203,7 @@ void DrawBlendSpaceSettingsUVE(const AnimationGraphObjectUVE& object,
             edit([value](AnimationGraphObjectUVE& n) { n.fadeSeconds = value; });
         }
         if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("How long one point hands over to the next: inertialized or crossfaded, as the mixer's\n"
+            ImGui::SetTooltip("How long one point hands over to the next: inertialized or crossfaded, as the driver's\n"
                               "transitions are set.");
         }
     }
@@ -853,14 +853,14 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
         ImGui::TextDisabled("This entity has no AnimationGraph.");
         return;
     }
-    // ---- Preview: the tree runs on the entity's skeleton, the mixer's target or else the tree's
+    // ---- Preview: the tree runs on the entity's skeleton, the driver's target or else the tree's
     // parent, searched down. Only the skeleton's runtime pose changes; nothing is saved.
     Scene::EntityUVE skeletonEntity = Scene::kInvalidEntityUVE;
-    const Scene::AnimatedObjectComponentUVE mixer = entityManager.HasComponentUVE<Scene::AnimatedObjectComponentUVE>(tree)
-                                                        ? entityManager.GetComponentUVE<Scene::AnimatedObjectComponentUVE>(tree)
-                                                        : Scene::AnimatedObjectComponentUVE{};
+    const Scene::AnimationDriverComponentUVE driver = entityManager.HasComponentUVE<Scene::AnimationDriverComponentUVE>(tree)
+                                                        ? entityManager.GetComponentUVE<Scene::AnimationDriverComponentUVE>(tree)
+                                                        : Scene::AnimationDriverComponentUVE{};
     {
-        Scene::EntityUVE root = mixer.target;
+        Scene::EntityUVE root = driver.target;
         if (root == Scene::kInvalidEntityUVE || !entityManager.IsAliveUVE(root)) {
             root = entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(tree)
                        ? entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(tree).parent
@@ -902,14 +902,14 @@ void EditorUVE::DrawAnimationGraphCanvasUVE() {
         }
         auto& live = entityManager.GetComponentUVE<Scene::AnimationGraphComponentUVE>(tree);
         auto& skeleton = entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity);
-        Scene::AnimatedObjectComponentUVE previewMixer = mixer;
+        Scene::AnimationDriverComponentUVE previewMixer = driver;
         previewMixer.active = true;
         // Held: only a frame asked for moves it, and then by one sixtieth of a second.
         const float frame = view.previewPaused ? (view.previewStepOnce ? 1.0F / 60.0F : 0.0F)
                                                : std::clamp(ImGui::GetIO().DeltaTime, 0.0F, 0.1F) * view.previewRate;
         view.previewStepOnce = false;
         if (frame > 0.0F) {
-            const float step = frame * mixer.speedScale;
+            const float step = frame * driver.speedScale;
             static_cast<void>(Scene::StepSkeletalAnimationGraphUVE(live, clipFor, step, skeleton, previewMixer));
             view.previewClock += static_cast<double>(frame);
             RecordAnimationGraphPreviewUVE(live);
