@@ -7,6 +7,7 @@
 #include <cmath>
 #include <limits>
 #include <system_error>
+#include <utility>
 
 namespace UVE::Core {
 namespace {
@@ -24,7 +25,7 @@ constexpr std::array<VariantTypeInfoUVE, kVariantTypeCountUVE> kVariantTypeInfoU
     {VariantTypeUVE::Int, "int", "Basic"},
     {VariantTypeUVE::Float, "float", "Basic"},
     {VariantTypeUVE::String, "String", "Basic"},
-    {VariantTypeUVE::StringName, "StringName", "Basic"},
+    {VariantTypeUVE::InternedString, "InternedString", "Basic"},
     {VariantTypeUVE::ObjectPath, "ObjectPath", "Basic"},
     {VariantTypeUVE::Vector2, "Vector2", "Math"},
     {VariantTypeUVE::Vector3, "Vector3", "Math"},
@@ -35,15 +36,15 @@ constexpr std::array<VariantTypeInfoUVE, kVariantTypeCountUVE> kVariantTypeInfoU
     {VariantTypeUVE::Object, "Object", "Reference"},
     {VariantTypeUVE::Array, "Array", "Collection"},
     {VariantTypeUVE::Dictionary, "Dictionary", "Collection"},
-    {VariantTypeUVE::PackedByteArray, "PackedByteArray", "Packed Array"},
-    {VariantTypeUVE::PackedInt32Array, "PackedInt32Array", "Packed Array"},
-    {VariantTypeUVE::PackedInt64Array, "PackedInt64Array", "Packed Array"},
-    {VariantTypeUVE::PackedFloat32Array, "PackedFloat32Array", "Packed Array"},
-    {VariantTypeUVE::PackedFloat64Array, "PackedFloat64Array", "Packed Array"},
-    {VariantTypeUVE::PackedStringArray, "PackedStringArray", "Packed Array"},
-    {VariantTypeUVE::PackedVector2Array, "PackedVector2Array", "Packed Array"},
-    {VariantTypeUVE::PackedVector3Array, "PackedVector3Array", "Packed Array"},
-    {VariantTypeUVE::PackedColorArray, "PackedColorArray", "Packed Array"},
+    {VariantTypeUVE::ByteArray, "ByteArray", "Typed Array"},
+    {VariantTypeUVE::Int32Array, "Int32Array", "Typed Array"},
+    {VariantTypeUVE::Int64Array, "Int64Array", "Typed Array"},
+    {VariantTypeUVE::Float32Array, "Float32Array", "Typed Array"},
+    {VariantTypeUVE::Float64Array, "Float64Array", "Typed Array"},
+    {VariantTypeUVE::StringArray, "StringArray", "Typed Array"},
+    {VariantTypeUVE::Vector2Array, "Vector2Array", "Typed Array"},
+    {VariantTypeUVE::Vector3Array, "Vector3Array", "Typed Array"},
+    {VariantTypeUVE::ColorArray, "ColorArray", "Typed Array"},
 }};
 
 [[nodiscard]] constexpr bool IsTableInEnumeratorOrderUVE() noexcept {
@@ -57,7 +58,7 @@ constexpr std::array<VariantTypeInfoUVE, kVariantTypeCountUVE> kVariantTypeInfoU
 static_assert(IsTableInEnumeratorOrderUVE(), "kVariantTypeInfoUVE must list every type in enumerator order.");
 
 [[nodiscard]] bool IsTextTypeUVE(const VariantTypeUVE type) noexcept {
-    return type == VariantTypeUVE::String || type == VariantTypeUVE::StringName ||
+    return type == VariantTypeUVE::String || type == VariantTypeUVE::InternedString ||
            type == VariantTypeUVE::ObjectPath || type == VariantTypeUVE::Object;
 }
 
@@ -219,46 +220,46 @@ struct ComponentsUVE final {
     switch (value.GetTypeUVE()) {
         case VariantTypeUVE::Array:
             return *value.TryGetUVE<std::vector<VariantUVE>>();
-        case VariantTypeUVE::PackedByteArray:
+        case VariantTypeUVE::ByteArray:
             append(*value.TryGetUVE<std::vector<std::uint8_t>>(),
                    [](const std::uint8_t byte) { return VariantUVE::MakeIntUVE(byte); });
             return elements;
-        case VariantTypeUVE::PackedInt32Array:
+        case VariantTypeUVE::Int32Array:
             append(*value.TryGetUVE<std::vector<std::int32_t>>(),
                    [](const std::int32_t integer) { return VariantUVE::MakeIntUVE(integer); });
             return elements;
-        case VariantTypeUVE::PackedInt64Array:
+        case VariantTypeUVE::Int64Array:
             append(*value.TryGetUVE<std::vector<std::int64_t>>(),
                    [](const std::int64_t integer) { return VariantUVE::MakeIntUVE(integer); });
             return elements;
-        case VariantTypeUVE::PackedFloat32Array:
+        case VariantTypeUVE::Float32Array:
             append(*value.TryGetUVE<std::vector<float>>(),
                    [](const float real) { return VariantUVE::MakeFloatUVE(static_cast<double>(real)); });
             return elements;
-        case VariantTypeUVE::PackedFloat64Array:
+        case VariantTypeUVE::Float64Array:
             append(*value.TryGetUVE<std::vector<double>>(),
                    [](const double real) { return VariantUVE::MakeFloatUVE(real); });
             return elements;
-        case VariantTypeUVE::PackedStringArray:
+        case VariantTypeUVE::StringArray:
             append(*value.TryGetUVE<std::vector<std::string>>(), [](const std::string& text) {
                 return VariantUVE::MakeTextUVE(VariantTypeUVE::String, text);
             });
             return elements;
-        case VariantTypeUVE::PackedVector2Array:
+        case VariantTypeUVE::Vector2Array:
             append(*value.TryGetUVE<std::vector<Math::Vector2UVE>>(), [](const Math::Vector2UVE& vector) {
                 VariantUVE element = VariantUVE::MakeDefaultUVE(VariantTypeUVE::Vector2);
                 *element.TryGetMutableUVE<Math::Vector2UVE>() = vector;
                 return element;
             });
             return elements;
-        case VariantTypeUVE::PackedVector3Array:
+        case VariantTypeUVE::Vector3Array:
             append(*value.TryGetUVE<std::vector<Math::Vector3UVE>>(), [](const Math::Vector3UVE& vector) {
                 VariantUVE element = VariantUVE::MakeDefaultUVE(VariantTypeUVE::Vector3);
                 *element.TryGetMutableUVE<Math::Vector3UVE>() = vector;
                 return element;
             });
             return elements;
-        case VariantTypeUVE::PackedColorArray:
+        case VariantTypeUVE::ColorArray:
             append(*value.TryGetUVE<std::vector<VariantColorUVE>>(), [](const VariantColorUVE& colour) {
                 VariantUVE element = VariantUVE::MakeDefaultUVE(VariantTypeUVE::Color);
                 *element.TryGetMutableUVE<VariantColorUVE>() = colour;
@@ -273,20 +274,20 @@ struct ComponentsUVE final {
 /// The element type a packed array holds, or nothing for a type that is not a packed array.
 [[nodiscard]] std::optional<VariantTypeUVE> PackedElementTypeUVE(const VariantTypeUVE type) noexcept {
     switch (type) {
-        case VariantTypeUVE::PackedByteArray:
-        case VariantTypeUVE::PackedInt32Array:
-        case VariantTypeUVE::PackedInt64Array:
+        case VariantTypeUVE::ByteArray:
+        case VariantTypeUVE::Int32Array:
+        case VariantTypeUVE::Int64Array:
             return VariantTypeUVE::Int;
-        case VariantTypeUVE::PackedFloat32Array:
-        case VariantTypeUVE::PackedFloat64Array:
+        case VariantTypeUVE::Float32Array:
+        case VariantTypeUVE::Float64Array:
             return VariantTypeUVE::Float;
-        case VariantTypeUVE::PackedStringArray:
+        case VariantTypeUVE::StringArray:
             return VariantTypeUVE::String;
-        case VariantTypeUVE::PackedVector2Array:
+        case VariantTypeUVE::Vector2Array:
             return VariantTypeUVE::Vector2;
-        case VariantTypeUVE::PackedVector3Array:
+        case VariantTypeUVE::Vector3Array:
             return VariantTypeUVE::Vector3;
-        case VariantTypeUVE::PackedColorArray:
+        case VariantTypeUVE::ColorArray:
             return VariantTypeUVE::Color;
         default:
             return std::nullopt;
@@ -315,14 +316,14 @@ struct ComponentsUVE final {
         lossless = lossless && converted->lossless;
         const VariantUVE& item = converted->value;
         switch (target) {
-            case VariantTypeUVE::PackedByteArray: {
+            case VariantTypeUVE::ByteArray: {
                 const std::int64_t integer = *item.TryGetUVE<std::int64_t>();
                 lossless = lossless && integer >= 0 && integer <= 255;
                 result.TryGetMutableUVE<std::vector<std::uint8_t>>()->push_back(
                     static_cast<std::uint8_t>(integer < 0 ? 0 : (integer > 255 ? 255 : integer)));
                 break;
             }
-            case VariantTypeUVE::PackedInt32Array: {
+            case VariantTypeUVE::Int32Array: {
                 const std::int64_t integer = *item.TryGetUVE<std::int64_t>();
                 const bool fits = integer >= std::numeric_limits<std::int32_t>::min() &&
                                   integer <= std::numeric_limits<std::int32_t>::max();
@@ -331,31 +332,31 @@ struct ComponentsUVE final {
                     fits ? static_cast<std::int32_t>(integer) : 0);
                 break;
             }
-            case VariantTypeUVE::PackedInt64Array:
+            case VariantTypeUVE::Int64Array:
                 result.TryGetMutableUVE<std::vector<std::int64_t>>()->push_back(*item.TryGetUVE<std::int64_t>());
                 break;
-            case VariantTypeUVE::PackedFloat32Array: {
+            case VariantTypeUVE::Float32Array: {
                 const double real = *item.TryGetUVE<double>();
                 const auto narrowed = static_cast<float>(real);
                 lossless = lossless && static_cast<double>(narrowed) == real;
                 result.TryGetMutableUVE<std::vector<float>>()->push_back(narrowed);
                 break;
             }
-            case VariantTypeUVE::PackedFloat64Array:
+            case VariantTypeUVE::Float64Array:
                 result.TryGetMutableUVE<std::vector<double>>()->push_back(*item.TryGetUVE<double>());
                 break;
-            case VariantTypeUVE::PackedStringArray:
+            case VariantTypeUVE::StringArray:
                 result.TryGetMutableUVE<std::vector<std::string>>()->push_back(*item.TryGetUVE<std::string>());
                 break;
-            case VariantTypeUVE::PackedVector2Array:
+            case VariantTypeUVE::Vector2Array:
                 result.TryGetMutableUVE<std::vector<Math::Vector2UVE>>()->push_back(
                     *item.TryGetUVE<Math::Vector2UVE>());
                 break;
-            case VariantTypeUVE::PackedVector3Array:
+            case VariantTypeUVE::Vector3Array:
                 result.TryGetMutableUVE<std::vector<Math::Vector3UVE>>()->push_back(
                     *item.TryGetUVE<Math::Vector3UVE>());
                 break;
-            case VariantTypeUVE::PackedColorArray:
+            case VariantTypeUVE::ColorArray:
                 result.TryGetMutableUVE<std::vector<VariantColorUVE>>()->push_back(*item.TryGetUVE<VariantColorUVE>());
                 break;
             default:
@@ -438,7 +439,7 @@ VariantUVE VariantUVE::MakeDefaultUVE(const VariantTypeUVE type) {
         case VariantTypeUVE::Int: return VariantUVE{type, std::int64_t{0}};
         case VariantTypeUVE::Float: return VariantUVE{type, 0.0};
         case VariantTypeUVE::String:
-        case VariantTypeUVE::StringName:
+        case VariantTypeUVE::InternedString:
         case VariantTypeUVE::ObjectPath:
         case VariantTypeUVE::Object: return VariantUVE{type, std::string{}};
         case VariantTypeUVE::Vector2: return VariantUVE{type, Math::Vector2UVE{}};
@@ -449,15 +450,15 @@ VariantUVE VariantUVE::MakeDefaultUVE(const VariantTypeUVE type) {
         case VariantTypeUVE::Resource: return VariantUVE{type, std::uint64_t{0}};
         case VariantTypeUVE::Array: return VariantUVE{type, std::vector<VariantUVE>{}};
         case VariantTypeUVE::Dictionary: return VariantUVE{type, std::vector<VariantDictionaryEntryUVE>{}};
-        case VariantTypeUVE::PackedByteArray: return VariantUVE{type, std::vector<std::uint8_t>{}};
-        case VariantTypeUVE::PackedInt32Array: return VariantUVE{type, std::vector<std::int32_t>{}};
-        case VariantTypeUVE::PackedInt64Array: return VariantUVE{type, std::vector<std::int64_t>{}};
-        case VariantTypeUVE::PackedFloat32Array: return VariantUVE{type, std::vector<float>{}};
-        case VariantTypeUVE::PackedFloat64Array: return VariantUVE{type, std::vector<double>{}};
-        case VariantTypeUVE::PackedStringArray: return VariantUVE{type, std::vector<std::string>{}};
-        case VariantTypeUVE::PackedVector2Array: return VariantUVE{type, std::vector<Math::Vector2UVE>{}};
-        case VariantTypeUVE::PackedVector3Array: return VariantUVE{type, std::vector<Math::Vector3UVE>{}};
-        case VariantTypeUVE::PackedColorArray: return VariantUVE{type, std::vector<VariantColorUVE>{}};
+        case VariantTypeUVE::ByteArray: return VariantUVE{type, std::vector<std::uint8_t>{}};
+        case VariantTypeUVE::Int32Array: return VariantUVE{type, std::vector<std::int32_t>{}};
+        case VariantTypeUVE::Int64Array: return VariantUVE{type, std::vector<std::int64_t>{}};
+        case VariantTypeUVE::Float32Array: return VariantUVE{type, std::vector<float>{}};
+        case VariantTypeUVE::Float64Array: return VariantUVE{type, std::vector<double>{}};
+        case VariantTypeUVE::StringArray: return VariantUVE{type, std::vector<std::string>{}};
+        case VariantTypeUVE::Vector2Array: return VariantUVE{type, std::vector<Math::Vector2UVE>{}};
+        case VariantTypeUVE::Vector3Array: return VariantUVE{type, std::vector<Math::Vector3UVE>{}};
+        case VariantTypeUVE::ColorArray: return VariantUVE{type, std::vector<VariantColorUVE>{}};
     }
     return VariantUVE{};
 }
@@ -491,14 +492,31 @@ std::string_view GetVariantTypeNameUVE(const VariantTypeUVE type) noexcept {
 }
 
 std::optional<VariantTypeUVE> TryParseVariantTypeNameUVE(const std::string_view name) noexcept {
-    // A saved document names a variant's type (see GetVariantTypeNameUVE), so the two names this
-    // vocabulary retired stay readable: "NodePath" and "Node" are what ObjectPath and Object were
-    // called before the object pass. Writing always uses the current name.
-    if (name == "NodePath") {
-        return VariantTypeUVE::ObjectPath;
-    }
-    if (name == "Node") {
-        return VariantTypeUVE::Object;
+    // A saved document names a variant's type (see GetVariantTypeNameUVE), so every name this
+    // vocabulary has retired stays readable. Writing always uses the current name; this table is
+    // read-only history, and it only ever grows.
+    constexpr std::array<std::pair<std::string_view, VariantTypeUVE>, 12U> kRetiredNames{{
+        // The object pass: the word "Node" left the engine's own types.
+        {"NodePath", VariantTypeUVE::ObjectPath},
+        {"Node", VariantTypeUVE::Object},
+        // The variant pass: "Packed*Array" is another engine's family verbatim, all nine of it,
+        // and "StringName" is its name for an interned string. The element type carries the
+        // meaning on its own - ByteArray next to Array says what it holds without a prefix.
+        {"PackedByteArray", VariantTypeUVE::ByteArray},
+        {"PackedInt32Array", VariantTypeUVE::Int32Array},
+        {"PackedInt64Array", VariantTypeUVE::Int64Array},
+        {"PackedFloat32Array", VariantTypeUVE::Float32Array},
+        {"PackedFloat64Array", VariantTypeUVE::Float64Array},
+        {"PackedStringArray", VariantTypeUVE::StringArray},
+        {"PackedVector2Array", VariantTypeUVE::Vector2Array},
+        {"PackedVector3Array", VariantTypeUVE::Vector3Array},
+        {"PackedColorArray", VariantTypeUVE::ColorArray},
+        {"StringName", VariantTypeUVE::InternedString},
+    }};
+    for (const auto& [retired, type] : kRetiredNames) {
+        if (retired == name) {
+            return type;
+        }
     }
     for (const VariantTypeInfoUVE& info : kVariantTypeInfoUVE) {
         if (info.name == name) {

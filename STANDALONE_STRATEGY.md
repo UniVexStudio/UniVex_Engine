@@ -320,16 +320,55 @@ so one entry retires a whole family instead of listing forty symbols. Proven to 
 removing them returns to exit 0. The four component names also left `FOREIGN_CLASS_NAMES`, which is
 why the reported foreign count fell from 1017 to 532: they are enforced now, not merely counted.
 
+### Phase 5 — Finding C, the `Packed*Array` family and `StringName`
+
+This was the strongest fingerprint in the engine: all nine `Packed*Array` names present, in Godot's
+own order, minus `PACKED_VECTOR4_ARRAY` — plus `StringName`. No other engine names a contiguous typed
+array this way (Unreal: `TArray<T>`, Unity: `List<T>`). They are now named for what they hold, and
+the element type carries the meaning without a prefix:
+
+| Was | Now | | Was | Now |
+|---|---|---|---|---|
+| `PackedByteArray` | `ByteArray` | | `PackedStringArray` | `StringArray` |
+| `PackedInt32Array` | `Int32Array` | | `PackedVector2Array` | `Vector2Array` |
+| `PackedInt64Array` | `Int64Array` | | `PackedVector3Array` | `Vector3Array` |
+| `PackedFloat32Array` | `Float32Array` | | `PackedColorArray` | `ColorArray` |
+| `PackedFloat64Array` | `Float64Array` | | `StringName` | `InternedString` |
+
+The picker category `"Packed Array"` became `"Typed Array"`, which says what actually distinguishes
+them from `Array` — homogeneous and typed, not heap-boxed — without borrowing the other engine's word.
+
+**Variant types are persisted by name, so this is the highest format-risk phase so far, and it is
+handled the way the two earlier renames were.** `TryParseVariantTypeNameUVE` already carried
+`NodePath`→`ObjectPath` and `Node`→`Object` as `if` statements; those two plus the ten new pairs are
+now one `constexpr` table, because a list that grows one branch per rename stops being readable.
+Reading accepts every retired name; writing only ever emits the current one.
+
+The header used to claim a type name "once shipped, is never changed". That was already false the
+moment `NodePath` became `ObjectPath`, so the comment now states the actual invariant: a rename is a
+load-time alias, never a silent break.
+
+**The alias guarantee was untested, and now is not.** No existing test called
+`TryParseVariantTypeNameUVE` with a retired name — including the two that had shipped that way.
+`VariantUVETest.RetiredTypeNamesStillParseButAreNeverWritten` covers all twelve pairs and asserts
+both directions: the old name parses to the type it always meant, *and* `GetVariantTypeNameUVE` never
+hands the old name back, so the alias cannot quietly become load-bearing again. Proven to have teeth —
+deleting the `PackedVector3Array` row makes it fail at `variant_uve_tests.cpp:49`.
+
+`variant_uve.cpp` gained the `#include <utility>` its new `std::pair` table needs; it had been
+relying on a transitive include, the same failure mode as the 26 panel headers in Phase 10, in a
+non-panel TU again.
+
 ### Verification actually run
 
 ```
 cmake --build /tmp/sbuild --target uve_audit_subset_tests -j 2      # 0 errors
 ./uve_audit_subset_tests
-[==========] 263 tests from 38 test suites ran.
-[  PASSED  ] 263 tests.
+[==========] 264 tests from 38 test suites ran.
+[  PASSED  ] 264 tests.
 
 python3 Engine/Tools/check_math_boundary.py         → math boundary check passed   (exit 0)
-python3 Engine/Tools/check_engine_vocabulary.py     → 15 retired names + 4 stems, 0 reintroductions (exit 0)
+python3 Engine/Tools/check_engine_vocabulary.py     → 25 retired names + 4 stems, 0 reintroductions (exit 0)
 bash    Engine/Tools/check_panel_includes.sh        → include audit: clean         (exit 0)
 ```
 
@@ -348,7 +387,7 @@ here, but the test itself first executes on CI.**
 
 ## 6. Sequencing
 
-Remaining phases, after §5b. **0, 1, 2, 3, 4, 9 and 10 are already landed** — this table is what is
+Remaining phases, after §5b. **0, 1, 2, 3, 4, 5, 9 and 10 are already landed** — this table is what is
 left.
 
 | Phase | Content | Files | Format risk | Guard |
@@ -358,7 +397,7 @@ left.
 | ~~**2**~~ | ~~`canvas_layer/` folder → `canvas/`, plus the `uve_nodes_*` target names~~ | ~~6~~ | — | **DONE, see §5b** |
 | ~~**3**~~ | ~~Fix the 16 kinds whose Outliner name is `"Object3D"`~~ | ~~2~~ | ~~none~~ | **DONE, see §5b** |
 | ~~**4**~~ | ~~4 component renames that just catch up to existing kind names~~ | ~~64~~ | ~~low~~ | **DONE, see §5b** |
-| **5** | `Packed*Array` + `StringName` (§3 option A) | 4 | low | `VariantUVETest` |
+| ~~**5**~~ | ~~`Packed*Array` + `StringName` (§3 option A)~~ | ~~5~~ | ~~low~~ | **DONE, see §5b** |
 | **6** | `AnimationMixerComponentUVE` — the one needing a new coinage | ~13 | low | `AnimationGraphUVETest` |
 | **7** | 8 kind renames + label fixes (§3) | large | low | `SceneObjectRegistryUVETest` + **CI** for editor |
 | **8** | `is_on_floor` → `grounded` + script alias | ~12 | breaks `.uvs` without alias | `uvscript_vm_uve_tests` |
@@ -370,7 +409,7 @@ Rules for every phase: add the legacy alias in the **same commit**; never reorde
 per commit; update `NODE_NAMING_AUDIT.md` and `SCENE_NODES_ROADMAP.md` in the same commit (the first
 is already stale).
 
-**Baseline each phase must land on:** the 263-test subset documented in §5b (it was 192 before
+**Baseline each phase must land on:** the 264-test subset documented in §5b (it was 192 before
 Phases 3–4 added their own coverage), plus full CI for anything touching `Engine/Editor/**` or RHI
 (those suites cannot run in this sandbox — no GLFW/Vulkan/GLEW/X11 headers and no apt network).
 

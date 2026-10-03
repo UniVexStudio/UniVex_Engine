@@ -53,6 +53,20 @@ RETIRED = {
     "IsProcessingUVE": "IsTickingUVE",
     "ResolveProcessModeUVE": "ResolveTickModeUVE",
     "ResolveAutoTranslateModeUVE": "ResolveLocalizeModeUVE",
+    # The variant pass (GODOT_STYLE_AUDIT.md Finding C). "Packed*Array" is another engine's family
+    # verbatim - all nine members, same order, minus one - and "StringName" is its name for an
+    # interned string. Variant types are persisted BY NAME, so each of these is a load-time alias
+    # in TryParseVariantTypeNameUVE, never a silent break.
+    "PackedByteArray": "ByteArray",
+    "PackedInt32Array": "Int32Array",
+    "PackedInt64Array": "Int64Array",
+    "PackedFloat32Array": "Float32Array",
+    "PackedFloat64Array": "Float64Array",
+    "PackedStringArray": "StringArray",
+    "PackedVector2Array": "Vector2Array",
+    "PackedVector3Array": "Vector3Array",
+    "PackedColorArray": "ColorArray",
+    "StringName": "InternedString",
     # The Godot class name used as a folder and library name (Finding F).
     "CanvasLayer": "Canvas (folder Engine/Runtime/Objects/UI/Expose/uve/objects/canvas)",
     "all_objects_canvas_layer_uve.h": "all_objects_canvas_uve.h",
@@ -82,6 +96,8 @@ ALLOWED_PREFIXES = (
     "Engine/Runtime/Scene/Internal/scene_serializer_uve.cpp",
     "Engine/Runtime/Objects/Core/Internal/variant_uve.cpp",
     "Engine/Runtime/Scene/Internal/objects/scene_object_registry_uve.cpp",
+    # The test that proves those aliases work has to name what it is proving.
+    "Test/Integration/Object/variant_uve_tests.cpp",
     # This tool's own denylist obviously names what it forbids.
     "Engine/Tools/check_engine_vocabulary.py",
 )
@@ -103,16 +119,6 @@ FOREIGN_CLASS_NAMES = (
     "Camera3D",
     "DirectionalLight3D",
     "Viewport",
-    "PackedByteArray",
-    "PackedInt32Array",
-    "PackedInt64Array",
-    "PackedFloat32Array",
-    "PackedFloat64Array",
-    "PackedStringArray",
-    "PackedVector2Array",
-    "PackedVector3Array",
-    "PackedColorArray",
-    "StringName",
     "is_on_floor",
 )
 
