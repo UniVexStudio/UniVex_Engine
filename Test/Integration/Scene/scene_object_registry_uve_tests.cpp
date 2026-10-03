@@ -82,7 +82,7 @@ TEST(SceneObjectRegistryUVETest, RealObjectTypesUVE_AreReachableFromTheAggregate
 }
 
 TEST(SceneObjectRegistryUVETest, UnknownLookupUVE_ReturnsEmptyOrNull) {
-    EXPECT_EQ(FindSceneObjectDescriptorUVE(std::string_view{"missing_node"}), nullptr);
+    EXPECT_EQ(FindSceneObjectDescriptorUVE(std::string_view{"missing_object"}), nullptr);
     EXPECT_EQ(GetSceneObjectTypeIdUVE(static_cast<SceneObjectKindUVE>(255U)), std::string_view{});
 }
 

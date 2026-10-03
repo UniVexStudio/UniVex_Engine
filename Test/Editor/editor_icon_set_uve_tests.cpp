@@ -18,7 +18,7 @@ namespace {
 TEST(EditorIconSetUVETest, EveryObjectTypeHasItsOwnIcon) {
     for (const Scene::Objects::SceneObjectDescriptorUVE& descriptor : Scene::Objects::GetSceneObjectDescriptorsUVE()) {
         EXPECT_NE(FindEditorIconSourceUVE(EditorIconGroupUVE::Object, descriptor.typeId), nullptr)
-            << "no icon for node type " << descriptor.typeId;
+            << "no icon for object type " << descriptor.typeId;
     }
 }
 

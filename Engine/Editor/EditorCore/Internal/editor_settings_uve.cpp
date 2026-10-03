@@ -27,7 +27,7 @@ constexpr const char* kSessionCategoryUVE = "Editor/Session";
 constexpr const char* kSnappingCategoryUVE = "Editor/Viewport/Snapping";
 constexpr const char* kGridCategoryUVE = "Editor/Viewport/Grid";
 constexpr const char* kOutlineCategoryUVE = "Editor/Viewport/Selection Outline";
-constexpr const char* kObjectsCategoryUVE = "Editor/Nodes";
+constexpr const char* kObjectsCategoryUVE = "Editor/Objects";
 constexpr const char* kPlayCategoryUVE = "Editor/Play Mode";
 constexpr const char* kHierarchyCategoryUVE = "Editor/Hierarchy";
 
@@ -288,7 +288,7 @@ const std::vector<EditorSettingBindingUVE>& EditorUVE::GetSettingBindingsUVE() {
         // New objects.
         {Config::MakeBoolSettingUVE(IdUVE(Id::kNewObjectsUnderSelectionUVE), true, "Add Under Selection",
                                     kObjectsCategoryUVE,
-                                    "A new node goes under the selected node. Off, it always goes under the scene root."),
+                                    "A new object goes under the selected object. Off, it always goes under the scene root."),
          [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_newObjectsUnderSelection; },
          [](EditorUVE& editor, const SettingValueUVE& value) {
              editor.m_newObjectsUnderSelection = std::get<bool>(value);
@@ -299,7 +299,7 @@ const std::vector<EditorSettingBindingUVE>& EditorUVE::GetSettingBindingsUVE() {
                                     {EntryUVE(EditorNewObjectPlacementUVE::ParentOrigin, "Parent's Origin"),
                                      EntryUVE(EditorNewObjectPlacementUVE::ViewFocus, "View Focus")},
                                     "Placement", kObjectsCategoryUVE,
-                                    "Where a new 3D node appears: at its parent's origin, or at the point the "
+                                    "Where a new 3D object appears: at its parent's origin, or at the point the "
                                     "viewport camera orbits - where you are looking."),
          [](const EditorUVE& editor) -> SettingValueUVE {
              return static_cast<std::int64_t>(editor.m_newObjectPlacement);
@@ -371,16 +371,16 @@ const std::vector<EditorSettingBindingUVE>& EditorUVE::GetSettingBindingsUVE() {
              editor.m_hierarchyView.revealSelection = std::get<bool>(value);
              return true;
          }},
-        {Config::MakeBoolSettingUVE(IdUVE(Id::kHierarchyShowIconsUVE), hierarchy.showIcons, "Node Icons",
-                                    kHierarchyCategoryUVE, "Draw each node's type icon before its name."),
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kHierarchyShowIconsUVE), hierarchy.showIcons, "Object Icons",
+                                    kHierarchyCategoryUVE, "Draw each object's type icon before its name."),
          [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_hierarchyView.showIcons; },
          [](EditorUVE& editor, const SettingValueUVE& value) {
              editor.m_hierarchyView.showIcons = std::get<bool>(value);
              return true;
          }},
-        {Config::MakeBoolSettingUVE(IdUVE(Id::kHierarchyShowTypeNameUVE), hierarchy.showTypeName, "Node Type Names",
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kHierarchyShowTypeNameUVE), hierarchy.showTypeName, "Object Type Names",
                                     kHierarchyCategoryUVE,
-                                    "Write each node's type after its name, dimmed, when the name is not already the "
+                                    "Write each object's type after its name, dimmed, when the name is not already the "
                                     "type and there is room."),
          [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_hierarchyView.showTypeName; },
          [](EditorUVE& editor, const SettingValueUVE& value) {
@@ -393,8 +393,8 @@ const std::vector<EditorSettingBindingUVE>& EditorUVE::GetSettingBindingsUVE() {
                                      EntryUVE(HierarchyVisibilityColumnUVE::OnHover, "On Hover"),
                                      EntryUVE(HierarchyVisibilityColumnUVE::Hidden, "Hidden")},
                                     "Visibility Toggles", kHierarchyCategoryUVE,
-                                    "When a row shows its eye. On Hover still shows it on every hidden node, so a "
-                                    "hidden node never looks shown."),
+                                    "When a row shows its eye. On Hover still shows it on every hidden object, so a "
+                                    "hidden object never looks shown."),
          [](const EditorUVE& editor) -> SettingValueUVE {
              return static_cast<std::int64_t>(editor.m_hierarchyView.visibilityColumn);
          },
@@ -418,7 +418,7 @@ const std::vector<EditorSettingBindingUVE>& EditorUVE::GetSettingBindingsUVE() {
          }},
         {Config::MakeBoolSettingUVE(IdUVE(Id::kHierarchyDragToReparentUVE), hierarchy.dragToReparent,
                                     "Drag to Reparent", kHierarchyCategoryUVE,
-                                    "Drag a row onto another to move it under that node. Off, rows stay put when "
+                                    "Drag a row onto another to move it under that object. Off, rows stay put when "
                                     "dragged."),
          [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_hierarchyView.dragToReparent; },
          [](EditorUVE& editor, const SettingValueUVE& value) {

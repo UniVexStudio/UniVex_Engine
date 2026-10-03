@@ -127,7 +127,7 @@ TEST(EditorBridgeStdioUVETest, ServeUVE_HandshakesAndRoutesExistingBridgeDispatc
         EXPECT_EQ(handshakeSnapshot.at("inspector").at("attachedComponentIds"),
                   (JsonUVE{"mesh", "surface-instance", "render-instance", "visibility", "process",
                            "physics-interpolation", "auto-translate", "editor-description", "script",
-                           "node-metadata"}));
+                           "object-metadata"}));
         ASSERT_TRUE(handshakeSnapshot.at("inspector").at("assetBinding").is_object());
         EXPECT_EQ(handshakeSnapshot.at("inspector").at("assetBinding").at("meshGuid").get<std::uint64_t>(), 0x3333U);
         EXPECT_EQ(handshakeSnapshot.at("inspector").at("assetBinding").at("materialGuid").get<std::uint64_t>(), 0x4444U);

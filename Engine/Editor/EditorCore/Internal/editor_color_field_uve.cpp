@@ -452,7 +452,7 @@ PickerBodyResultUVE DrawPickerBodyUVE(const char* title, ColorFieldSessionUVE& s
     // Advanced: every channel as a number, and hex.
     ImGui::Spacing();
     ImGui::SetNextItemOpen(preferences.advancedOpen, ImGuiCond_Always);
-    preferences.advancedOpen = ImGui::TreeObjectEx("Advanced", ImGuiTreeNodeFlags_NoTreePushOnOpen);
+    preferences.advancedOpen = ImGui::TreeNodeEx("Advanced", ImGuiTreeNodeFlags_NoTreePushOnOpen);
     if (preferences.advancedOpen) {
         const float column = (width - (spacing * 2.0F)) * 0.5F;
         const EditorColorUVE c = session.working;

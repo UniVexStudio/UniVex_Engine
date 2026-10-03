@@ -38,8 +38,8 @@ inline constexpr std::string_view kSelectionOutlineVisibleUVE = "editor.viewport
 /// A colour, so its channels sit at `.r`, `.g` and `.b` beneath this id.
 inline constexpr std::string_view kSelectionOutlineColorUVE = "editor.viewport.selectionOutline";
 inline constexpr std::string_view kSelectionOutlineThicknessUVE = "editor.viewport.selectionOutline.thickness";
-inline constexpr std::string_view kNewObjectsUnderSelectionUVE = "editor.nodes.addUnderSelection";
-inline constexpr std::string_view kNewObjectPlacementUVE = "editor.nodes.placement";
+inline constexpr std::string_view kNewObjectsUnderSelectionUVE = "editor.objects.addUnderSelection";
+inline constexpr std::string_view kNewObjectPlacementUVE = "editor.objects.placement";
 inline constexpr std::string_view kPlayPauseOnStartUVE = "editor.play.pauseOnStart";
 inline constexpr std::string_view kPlaySaveSceneFirstUVE = "editor.play.saveSceneFirst";
 inline constexpr std::string_view kPlaySwitchToGameUVE = "editor.play.switchToGame";

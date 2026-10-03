@@ -580,7 +580,7 @@ void DeclareAnimationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     using M = AnimationMixerComponentUVE;
     TypeMetadataPropertyUVE mixerTarget = WithTooltipUVE(
         DeclareUVE<&M::target>("target", "Target", kPropertyTypeEntityUVE),
-        "The node that is moved. Empty means this node's parent.");
+        "The object that is moved. Empty means this object's parent.");
     mixerTarget.flags = TypeMetadataPropertyFlagsUVE::EntityReference;
     AddValidatedUVE<AnimationMixerComponentUVE, &IsAnimationMixerComponentValidUVE>(
         entries,
@@ -674,7 +674,7 @@ void DeclareAnimationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                            "Blending"),
                 InGroupUVE(WithTooltipUVE(DeclareUVE<&P::relative>("relative", "Relative", kPropertyTypeBoolUVE),
                                           "Plays the clip's motion on top of where the target already is, so one "
-                                          "clip works on any node wherever it was placed."),
+                                          "clip works on any object wherever it was placed."),
                            "Blending"),
                 InGroupUVE(DeclareRuntimeStateUVE<&P::isPlaying>("isPlaying", "Playing", kPropertyTypeBoolUVE), "State"),
                 InGroupUVE(DeclareRuntimeStateUVE<&P::currentTimeSeconds>("currentTimeSeconds", "Time",

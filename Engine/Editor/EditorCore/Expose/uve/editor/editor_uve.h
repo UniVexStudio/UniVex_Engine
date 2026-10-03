@@ -2321,7 +2321,7 @@ private:
     bool m_hierarchyFilterCacheDirty = true;
     bool m_hierarchyRenameFocusRequested = false;
     // The Add Object picker: a small floating box with a search field, opened from the Scene panel's
-    // + button and from a row's "Add Child Node". The request is a flag so either caller can ask
+    // + button and from a row's "Add Child Object". The request is a flag so either caller can ask
     // for it from inside its own popup and the picker still opens in the panel's ID scope.
     bool m_objectPickerOpenRequested = false;
     // True while the orthographic projection came from a named view rather than an explicit choice.

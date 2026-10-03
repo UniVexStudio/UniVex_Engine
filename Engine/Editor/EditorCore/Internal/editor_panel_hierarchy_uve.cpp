@@ -173,21 +173,21 @@ void EditorUVE::DrawHierarchyBodyUVE() {
     m_hierarchyFilter.copy(filterBuffer.data(), filterBuffer.size() - 1U);
     const float addObjectButtonWidth = ImGui::GetFrameHeight();
     const bool canCreateObject = IsAuthoringCommandAllowedUVE();
-    ImGui::PushID("scene-add-node");
+    ImGui::PushID("scene-add-object");
     ImGui::BeginDisabled(!canCreateObject);
     if (ImGui::Button("+", ImVec2{addObjectButtonWidth, addObjectButtonWidth})) {
         m_objectPickerOpenRequested = true;
     }
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
-        ImGui::SetTooltip("Add Node");
+        ImGui::SetTooltip("Add Object");
     }
     ImGui::PopID();
     ImGui::SameLine(0.0F, ImGui::GetStyle().ItemSpacing.x);
     // No "Script" shortcut button here anymore - it duplicated the already-existing Scripting
     // workspace tab (Scene / Scripting / Game) and only added clutter/clipping risk to this row.
     ImGui::SetNextItemWidth(-1.0F);
-    if (ImGui::InputTextWithHint("##hierarchy-filter", "Search Nodes", filterBuffer.data(), filterBuffer.size())) {
+    if (ImGui::InputTextWithHint("##hierarchy-filter", "Search Objects", filterBuffer.data(), filterBuffer.size())) {
         m_hierarchyFilter = filterBuffer.data();
         InvalidateHierarchyFilterCacheUVE();
     }
@@ -297,7 +297,7 @@ void EditorUVE::DrawHierarchyObjectUVE(const Scene::EntityUVE entity) {
 
     const bool renaming = entity == m_hierarchyRenameEntity;
     // Just enough leading space for the object icon drawn into it (see below) plus
-    // a small gap - was 4 spaces, which (combined with TreeObjectEx's own arrow-toggle spacing that
+    // a small gap - was 4 spaces, which (combined with TreeNodeEx's own arrow-toggle spacing that
     // every row reserves, leaf or not) pushed the icon+name noticeably right of the panel's left
     // edge instead of hugging it.
     // The gap is measured, not guessed: as many spaces as it takes to clear the icon plus a gap,
@@ -323,7 +323,7 @@ void EditorUVE::DrawHierarchyObjectUVE(const Scene::EntityUVE entity) {
         usedColumns = eyeColumns + 2.0F;
     }
     const std::string fullName = GetEntityDisplayLabelUVE(entity);
-    const float labelStart = ImGui::GetCursorPosX() + ImGui::GetTreeObjectToLabelSpacing() +
+    const float labelStart = ImGui::GetCursorPosX() + ImGui::GetTreeNodeToLabelSpacing() +
                              (static_cast<float>(gapSpaces) * spaceWidth);
     const float labelLimit = ImGui::GetWindowContentRegionMax().x - (usedColumns * ImGui::GetFrameHeight()) -
                              ImGui::GetStyle().ItemSpacing.x;
@@ -340,7 +340,7 @@ void EditorUVE::DrawHierarchyObjectUVE(const Scene::EntityUVE entity) {
         ImGui::PushStyleColor(ImGuiCol_HeaderActive, IM_COL32(101, 130, 154, 245));
         ImGui::PushStyleColor(ImGuiCol_HeaderHovered, IM_COL32(88, 112, 133, 240));
     }
-    const bool open = ImGui::TreeObjectEx(objectLabel.c_str(), flags);
+    const bool open = ImGui::TreeNodeEx(objectLabel.c_str(), flags);
     if (active) {
         ImGui::PopStyleColor(3);
     }
@@ -367,7 +367,7 @@ void EditorUVE::DrawHierarchyObjectUVE(const Scene::EntityUVE entity) {
     bool typeHintShown = false;
     if (!renaming && m_hierarchyView.showTypeName && !nameTruncated && !typeHint.empty()) {
         const std::string hint(typeHint);
-        const float hintStart = rowMin.x + ImGui::GetTreeObjectToLabelSpacing() +
+        const float hintStart = rowMin.x + ImGui::GetTreeNodeToLabelSpacing() +
                                 ImGui::CalcTextSize(visibleLabel.c_str()).x + ImGui::GetStyle().ItemSpacing.x;
         const float hintLimit = ImGui::GetWindowPos().x - ImGui::GetScrollX() + labelLimit;
         if (ImGui::CalcTextSize(hint.c_str()).x <= hintLimit - hintStart) {
@@ -383,7 +383,7 @@ void EditorUVE::DrawHierarchyObjectUVE(const Scene::EntityUVE entity) {
         const std::uintptr_t icon =
             m_uiAssets.GetObjectIconTextureIdUVE(Scene::ResolveSceneObjectKindUVE(entityManager, entity));
         if (icon != 0U) {
-            const ImVec2 iconMin{std::floor(rowMin.x + ImGui::GetTreeObjectToLabelSpacing()),
+            const ImVec2 iconMin{std::floor(rowMin.x + ImGui::GetTreeNodeToLabelSpacing()),
                                  std::floor(((rowMin.y + rowMax.y) - kHierarchyObjectIconSizeUVE) * 0.5F)};
             ImGui::GetWindowDrawList()->AddImage(
                 static_cast<ImTextureID>(icon), iconMin,
@@ -471,7 +471,7 @@ void EditorUVE::DrawHierarchyObjectContextMenuUVE(const Scene::EntityUVE entity)
     if (ImGui::IsItemClicked(ImGuiMouseButton_Right) && !IsEntitySelectedUVE(entity)) {
         SelectEntityUVE(entity);
     }
-    if (!ImGui::BeginPopupContextItem("##hierarchy-node-context")) {
+    if (!ImGui::BeginPopupContextItem("##hierarchy-object-context")) {
         return;
     }
     const bool authoring = IsAuthoringCommandAllowedUVE();
@@ -484,7 +484,7 @@ void EditorUVE::DrawHierarchyObjectContextMenuUVE(const Scene::EntityUVE entity)
     ImGui::BeginDisabled(!authoring || !single);
     // Opens the same searchable picker as the + button. New objects go under the single selection,
     // which the right-click has just made this row.
-    if (ImGui::MenuItem("Add Child Node...")) {
+    if (ImGui::MenuItem("Add Child Object...")) {
         m_objectPickerOpenRequested = true;
     }
     if (ImGui::MenuItem("Rename", "F2")) {
@@ -499,7 +499,7 @@ void EditorUVE::DrawHierarchyObjectContextMenuUVE(const Scene::EntityUVE entity)
         static_cast<void>(RequestViewportFocusUVE(entity));
     }
     if (!focusable && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-        ImGui::SetTooltip("This node has no position in the scene to look at.");
+        ImGui::SetTooltip("This object has no position in the scene to look at.");
     }
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
     const bool hideable = entityManager.HasComponentUVE<Scene::VisibilityComponentUVE>(entity);
@@ -509,7 +509,7 @@ void EditorUVE::DrawHierarchyObjectContextMenuUVE(const Scene::EntityUVE entity)
         static_cast<void>(SetEntityVisibleUVE(entity, !visible));
     }
     if (!hideable && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-        ImGui::SetTooltip("This node draws nothing, so there is nothing to hide.");
+        ImGui::SetTooltip("This object draws nothing, so there is nothing to hide.");
     }
     ImGui::Separator();
     const std::vector<Scene::EntityUVE> children = m_services->GetSceneGraphUVE().GetChildrenUVE(entityManager, entity);
@@ -596,7 +596,7 @@ void EditorUVE::DrawObjectPickerUVE() {
     // The Scene panel's "+" is small on purpose: the level's own furniture - a folder to organise it,
     // the sun and the sky. Everything else is made in the Content Browser ("+ Add" or right-click)
     // and dragged into the level, so the world is built from assets instead of loose objects.
-    constexpr const char* kPopupId = "##node-picker";
+    constexpr const char* kPopupId = "##object-picker";
     if (m_objectPickerOpenRequested) {
         m_objectPickerOpenRequested = false;
         ImGui::OpenPopup(kPopupId);
@@ -632,7 +632,7 @@ void EditorUVE::DrawObjectPickerUVE() {
         return picked;
     };
     if (item(Scene::Objects::SceneObjectKindUVE::Folder, folderLabel.c_str(), nullptr,
-             "Groups nodes in this panel. It has no position, so nothing moves in the world.")) {
+             "Groups objects in this panel. It has no position, so nothing moves in the world.")) {
         static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Folder));
     }
     ImGui::Separator();
@@ -689,7 +689,7 @@ void EditorUVE::DrawHierarchyVisibilityToggleUVE(const Scene::EntityUVE entity, 
                     ImGui::GetTextLineHeight(), visibility.visible, color);
     if (hovered) {
         ImGui::SetTooltip(!visibility.visible            ? "Hidden - click to show"
-                          : !visibility.visibleInHierarchy ? "Hidden by a parent - click to hide this node too"
+                          : !visibility.visibleInHierarchy ? "Hidden by a parent - click to hide this object too"
                                                            : "Visible - click to hide");
     }
     if (clicked) {

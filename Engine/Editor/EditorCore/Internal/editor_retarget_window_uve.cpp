@@ -110,7 +110,7 @@ void DrawBoneUVE(const RetargetPlanUVE& plan, const std::int32_t bone, const std
         ImGui::SetNextItemOpen(true, ImGuiCond_Once);
     }
     ImGui::PushID(bone);
-    const bool open = ImGui::TreeObjectEx("##bone", flags);
+    const bool open = ImGui::TreeNodeEx("##bone", flags);
     ImGui::SameLine(0.0F, 4.0F);
     DotUVE(ColourOfUVE(row.status));
     ImGui::TextUnformatted(reference.skeleton.bones[index].name.c_str());

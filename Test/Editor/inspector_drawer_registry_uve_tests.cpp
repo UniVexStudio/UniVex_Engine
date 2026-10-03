@@ -145,17 +145,17 @@ TEST(InspectorDrawerRegistryUVETest, GroupHeadersAreDrawnOncePerRunOfEligibleDra
     add("metadata", true);
     EXPECT_TRUE(registry.SetDrawerGroupUVE("transform", "Object3D"));
     EXPECT_TRUE(registry.SetDrawerGroupUVE("visibility", "Object3D"));
-    EXPECT_TRUE(registry.SetDrawerGroupUVE("process", "Node"));
-    EXPECT_TRUE(registry.SetDrawerGroupUVE("script", "Node"));
-    EXPECT_TRUE(registry.SetDrawerGroupUVE("metadata", "Node"));
-    EXPECT_FALSE(registry.SetDrawerGroupUVE("missing", "Node"));
+    EXPECT_TRUE(registry.SetDrawerGroupUVE("process", "Object"));
+    EXPECT_TRUE(registry.SetDrawerGroupUVE("script", "Object"));
+    EXPECT_TRUE(registry.SetDrawerGroupUVE("metadata", "Object"));
+    EXPECT_FALSE(registry.SetDrawerGroupUVE("missing", "Object"));
     registry.SetGroupHeaderDrawerUVE([&drawn](const std::string& label) { drawn.push_back("[" + label + "]"); });
 
     const Scene::EntityUVE entity{1U, 0U};
     registry.DrawEligibleUVE(entity);
-    EXPECT_EQ(drawn, (std::vector<std::string>{"own", "[Object3D]", "transform", "visibility", "[Node]", "process",
+    EXPECT_EQ(drawn, (std::vector<std::string>{"own", "[Object3D]", "transform", "visibility", "[Object]", "process",
                                                "metadata"}));
-    EXPECT_EQ(registry.GetEligibleGroupHeadersUVE(entity), (std::vector<std::string>{"Object3D", "Node"}));
+    EXPECT_EQ(registry.GetEligibleGroupHeadersUVE(entity), (std::vector<std::string>{"Object3D", "Object"}));
 }
 
 } // namespace

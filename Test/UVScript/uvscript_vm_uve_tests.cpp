@@ -184,7 +184,7 @@ TEST(UVScriptVmUVETest, ReportsTypeErrorsBeforeRunning) {
               (std::vector<std::string>{"2: 'is_on_floor' can be read but not changed"}));
     EXPECT_EQ(ErrorsOfUVE("const A = 1\non ready:\n    A = 2\n"),
               (std::vector<std::string>{"3: 'A' is a const and cannot change"}));
-    EXPECT_EQ(ErrorsOfUVE("on jump:\n    pass\n"), (std::vector<std::string>{"1: this node has no event 'jump'"}));
+    EXPECT_EQ(ErrorsOfUVE("on jump:\n    pass\n"), (std::vector<std::string>{"1: this object has no event 'jump'"}));
     EXPECT_EQ(ErrorsOfUVE("fn f() -> int:\n    pass\n"),
               (std::vector<std::string>{"1: 'f' can reach its end without returning a int"}));
     EXPECT_EQ(ErrorsOfUVE("fn f():\n    wait 1 s\n"), (std::vector<std::string>{"2: 'wait' only works inside an 'on' block"}));
@@ -306,7 +306,7 @@ void ExpectNativeMatchesInterpreterUVE(const std::string& name, const RunFn& run
     const TranscriptUVE interpreted = RunScriptUVE(name, ExecutionUVE::Interpreted, interpretedNative, run);
     const TranscriptUVE compiled = RunScriptUVE(name, ExecutionUVE::Auto, native, run);
     EXPECT_FALSE(interpretedNative) << name;
-    EXPECT_TRUE(native) << name << " has no native code linked in - is fake_node.uvhost in step with FakeHostUVE?";
+    EXPECT_TRUE(native) << name << " has no native code linked in - is fake_object.uvhost in step with FakeHostUVE?";
     EXPECT_EQ(compiled.printed, interpreted.printed) << name;
     EXPECT_EQ(compiled.calls, interpreted.calls) << name;
     EXPECT_EQ(compiled.velocity, interpreted.velocity) << name;
@@ -444,7 +444,7 @@ TEST(UVScriptNativeUVETest, ReportsNativeAndInterpretedTimeForFib) {
 
 TEST(UVScriptNativeUVETest, HostDescriptionsParseAndReportTheirMistakes) {
     std::string error;
-    const std::optional<DescribedHostUVE> host = DescribedHostUVE::ParseUVE(ReadNativeScriptUVE("fake_node.uvhost"), error);
+    const std::optional<DescribedHostUVE> host = DescribedHostUVE::ParseUVE(ReadNativeScriptUVE("fake_object.uvhost"), error);
     ASSERT_TRUE(host.has_value()) << error;
     EXPECT_EQ(host->DescribePropertyUVE("velocity")->type, TypeUVE::Vec3UVE());
     EXPECT_FALSE(host->DescribePropertyUVE("is_on_floor")->writable);

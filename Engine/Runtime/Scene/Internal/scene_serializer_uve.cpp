@@ -830,7 +830,7 @@ template <typename VectorT>
     value.enabled = json.value("enabled", true);
     const nlohmann::json exclusions = json.value("exclusions", nlohmann::json::array());
     if (!exclusions.is_array() || exclusions.size() > kMaximumRayCastExclusionsUVE) {
-        throw std::runtime_error("RayCast3DNodeComponentUVE exclusions must be a bounded array");
+        throw std::runtime_error("RayCast3DComponentUVE exclusions must be a bounded array");
     }
     value.exclusionCount = static_cast<std::uint8_t>(exclusions.size());
     for (std::size_t index = 0U; index < exclusions.size(); ++index) {
@@ -907,7 +907,7 @@ template <typename VectorT>
     value.skeletonAssetPath = json.value("skeletonAssetPath", std::string{});
     const nlohmann::json bones = json.value("bones", nlohmann::json::array());
     if (!bones.is_array() || bones.size() > kMaximumSkeletonBonesUVE) {
-        throw std::runtime_error("Skeleton3DNodeComponentUVE bones must be a bounded array");
+        throw std::runtime_error("Skeleton3DComponentUVE bones must be a bounded array");
     }
     value.bones.reserve(bones.size());
     for (const nlohmann::json& boneJson : bones) {
@@ -1248,7 +1248,7 @@ template <typename VectorT>
     LodGroup3DComponentUVE value;
     const nlohmann::json thresholds = json.value("distanceThresholds", nlohmann::json::array());
     if (!thresholds.is_array() || thresholds.empty() || thresholds.size() > kMaximumLodLevelsUVE) {
-        throw std::runtime_error("LodGroup3DNodeComponentUVE thresholds must be a bounded non-empty array");
+        throw std::runtime_error("LodGroup3DComponentUVE thresholds must be a bounded non-empty array");
     }
     value.levelCount = static_cast<std::uint8_t>(thresholds.size());
     for (std::size_t index = 0U; index < thresholds.size(); ++index) {
@@ -1324,7 +1324,7 @@ template <typename VectorT>
     value.cellSize = json.value("cellSize", 128.0F);
     const nlohmann::json counts = json.value("cellCounts", nlohmann::json::array({16U, 1U, 16U}));
     if (!counts.is_array() || counts.size() != 3U) {
-        throw std::runtime_error("WorldPartition3DNodeComponentUVE cellCounts must contain three values");
+        throw std::runtime_error("WorldPartition3DComponentUVE cellCounts must contain three values");
     }
     for (std::size_t index = 0U; index < value.cellCounts.size(); ++index) {
         value.cellCounts[index] = counts.at(index).get<std::uint32_t>();
@@ -1605,7 +1605,7 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
             [](const nlohmann::json& json) {
                 const RayCast3DComponentUVE value = RayCast3DObjectFromJsonUVE(json);
                 if (!IsRayCast3DObjectComponentValidUVE(value)) {
-                    throw std::runtime_error("Invalid RayCast3DNodeComponentUVE payload");
+                    throw std::runtime_error("Invalid RayCast3DComponentUVE payload");
                 }
                 return value;
             }, IsRayCast3DObjectComponentValidUVE));
@@ -1613,7 +1613,7 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
             [](const nlohmann::json& json) {
                 const AnimatableBody3DComponentUVE value = AnimatableBody3DObjectFromJsonUVE(json);
                 if (!IsAnimatableBody3DObjectComponentValidUVE(value)) {
-                    throw std::runtime_error("Invalid AnimatableBody3DNodeComponentUVE payload");
+                    throw std::runtime_error("Invalid AnimatableBody3DComponentUVE payload");
                 }
                 return value;
             }, IsAnimatableBody3DObjectComponentValidUVE));
@@ -1621,7 +1621,7 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
             [](const nlohmann::json& json) {
                 const NavigationRegion3DComponentUVE value = NavigationRegion3DObjectFromJsonUVE(json);
                 if (!IsNavigationRegion3DObjectComponentValidUVE(value)) {
-                    throw std::runtime_error("Invalid NavigationRegion3DNodeComponentUVE payload");
+                    throw std::runtime_error("Invalid NavigationRegion3DComponentUVE payload");
                 }
                 return value;
             }, IsNavigationRegion3DObjectComponentValidUVE));
@@ -1629,7 +1629,7 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
             [](const nlohmann::json& json) {
                 const NavigationAgent3DComponentUVE value = NavigationAgent3DObjectFromJsonUVE(json);
                 if (!IsNavigationAgent3DObjectComponentValidUVE(value)) {
-                    throw std::runtime_error("Invalid NavigationAgent3DNodeComponentUVE payload");
+                    throw std::runtime_error("Invalid NavigationAgent3DComponentUVE payload");
                 }
                 return value;
             }, IsNavigationAgent3DObjectComponentValidUVE));
@@ -1637,7 +1637,7 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
             [](const nlohmann::json& json) {
                 const Skeleton3DComponentUVE value = Skeleton3DObjectFromJsonUVE(json);
                 if (!IsSkeleton3DObjectComponentValidUVE(value)) {
-                    throw std::runtime_error("Invalid Skeleton3DNodeComponentUVE payload");
+                    throw std::runtime_error("Invalid Skeleton3DComponentUVE payload");
                 }
                 return value;
             }, IsSkeleton3DObjectComponentValidUVE));
@@ -1645,7 +1645,7 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
             [](const nlohmann::json& json) {
                 const BoneAttachment3DComponentUVE value = BoneAttachment3DObjectFromJsonUVE(json);
                 if (!IsBoneAttachment3DObjectComponentValidUVE(value)) {
-                    throw std::runtime_error("Invalid BoneAttachment3DNodeComponentUVE payload");
+                    throw std::runtime_error("Invalid BoneAttachment3DComponentUVE payload");
                 }
                 return value;
             }, IsBoneAttachment3DObjectComponentValidUVE));
@@ -1653,7 +1653,7 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
             [](const nlohmann::json& json) {
                 const SpringArm3DComponentUVE value = SpringArm3DObjectFromJsonUVE(json);
                 if (!IsSpringArm3DObjectComponentValidUVE(value)) {
-                    throw std::runtime_error("Invalid SpringArm3DNodeComponentUVE payload");
+                    throw std::runtime_error("Invalid SpringArm3DComponentUVE payload");
                 }
                 return value;
             }, IsSpringArm3DObjectComponentValidUVE));
@@ -1661,7 +1661,7 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
             [](const nlohmann::json& json) {
                 const Marker3DComponentUVE value = Marker3DObjectFromJsonUVE(json);
                 if (!IsMarker3DObjectComponentValidUVE(value)) {
-                    throw std::runtime_error("Invalid Marker3DNodeComponentUVE payload");
+                    throw std::runtime_error("Invalid Marker3DComponentUVE payload");
                 }
                 return value;
             }, IsMarker3DObjectComponentValidUVE));
@@ -1703,7 +1703,7 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
             [](const nlohmann::json& json) {
                 const Hitbox3DComponentUVE value = Hitbox3DObjectFromJsonUVE(json);
                 if (!IsHitbox3DObjectComponentValidUVE(value)) {
-                    throw std::runtime_error("Invalid Hitbox3DNodeComponentUVE payload");
+                    throw std::runtime_error("Invalid Hitbox3DComponentUVE payload");
                 }
                 return value;
             }, IsHitbox3DObjectComponentValidUVE));
@@ -1711,7 +1711,7 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
             [](const nlohmann::json& json) {
                 const Hurtbox3DComponentUVE value = Hurtbox3DObjectFromJsonUVE(json);
                 if (!IsHurtbox3DObjectComponentValidUVE(value)) {
-                    throw std::runtime_error("Invalid Hurtbox3DNodeComponentUVE payload");
+                    throw std::runtime_error("Invalid Hurtbox3DComponentUVE payload");
                 }
                 return value;
             }, IsHurtbox3DObjectComponentValidUVE));
@@ -1719,7 +1719,7 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
             [](const nlohmann::json& json) {
                 const Projectile3DComponentUVE value = Projectile3DObjectFromJsonUVE(json);
                 if (!IsProjectile3DObjectComponentValidUVE(value)) {
-                    throw std::runtime_error("Invalid Projectile3DNodeComponentUVE payload");
+                    throw std::runtime_error("Invalid Projectile3DComponentUVE payload");
                 }
                 return value;
             }, IsProjectile3DObjectComponentValidUVE));
@@ -1727,7 +1727,7 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
             [](const nlohmann::json& json) {
                 const InteractionArea3DComponentUVE value = InteractionArea3DObjectFromJsonUVE(json);
                 if (!IsInteractionArea3DObjectComponentValidUVE(value)) {
-                    throw std::runtime_error("Invalid InteractionArea3DNodeComponentUVE payload");
+                    throw std::runtime_error("Invalid InteractionArea3DComponentUVE payload");
                 }
                 return value;
             }, IsInteractionArea3DObjectComponentValidUVE));
@@ -1735,7 +1735,7 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
             [](const nlohmann::json& json) {
                 const WorldEnvironment3DComponentUVE value = WorldEnvironment3DObjectFromJsonUVE(json);
                 if (!IsWorldEnvironment3DObjectComponentValidUVE(value)) {
-                    throw std::runtime_error("Invalid WorldEnvironment3DNodeComponentUVE payload");
+                    throw std::runtime_error("Invalid WorldEnvironment3DComponentUVE payload");
                 }
                 return value;
             }, IsWorldEnvironment3DObjectComponentValidUVE));
@@ -1743,7 +1743,7 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
             [](const nlohmann::json& json) {
                 const ReflectionProbe3DComponentUVE value = ReflectionProbe3DObjectFromJsonUVE(json);
                 if (!IsReflectionProbe3DObjectComponentValidUVE(value)) {
-                    throw std::runtime_error("Invalid ReflectionProbe3DNodeComponentUVE payload");
+                    throw std::runtime_error("Invalid ReflectionProbe3DComponentUVE payload");
                 }
                 return value;
             }, IsReflectionProbe3DObjectComponentValidUVE));
@@ -1751,7 +1751,7 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
             [](const nlohmann::json& json) {
                 const FogVolume3DComponentUVE value = FogVolume3DObjectFromJsonUVE(json);
                 if (!IsFogVolume3DObjectComponentValidUVE(value)) {
-                    throw std::runtime_error("Invalid FogVolume3DNodeComponentUVE payload");
+                    throw std::runtime_error("Invalid FogVolume3DComponentUVE payload");
                 }
                 return value;
             }, IsFogVolume3DObjectComponentValidUVE));
@@ -1775,7 +1775,7 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
             [](const nlohmann::json& json) {
                 const Decal3DComponentUVE value = Decal3DObjectFromJsonUVE(json);
                 if (!IsDecal3DObjectComponentValidUVE(value)) {
-                    throw std::runtime_error("Invalid Decal3DNodeComponentUVE payload");
+                    throw std::runtime_error("Invalid Decal3DComponentUVE payload");
                 }
                 return value;
             }, IsDecal3DObjectComponentValidUVE));
@@ -1791,7 +1791,7 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
             [](const nlohmann::json& json) {
                 const LodGroup3DComponentUVE value = LodGroup3DObjectFromJsonUVE(json);
                 if (!IsLodGroup3DObjectComponentValidUVE(value)) {
-                    throw std::runtime_error("Invalid LodGroup3DNodeComponentUVE payload");
+                    throw std::runtime_error("Invalid LodGroup3DComponentUVE payload");
                 }
                 return value;
             }, IsLodGroup3DObjectComponentValidUVE));
@@ -1799,7 +1799,7 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
             [](const nlohmann::json& json) {
                 const Occluder3DComponentUVE value = Occluder3DObjectFromJsonUVE(json);
                 if (!IsOccluder3DObjectComponentValidUVE(value)) {
-                    throw std::runtime_error("Invalid Occluder3DNodeComponentUVE payload");
+                    throw std::runtime_error("Invalid Occluder3DComponentUVE payload");
                 }
                 return value;
             }, IsOccluder3DObjectComponentValidUVE));
@@ -1807,7 +1807,7 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
             [](const nlohmann::json& json) {
                 const VisibilityRegion3DComponentUVE value = VisibilityRegion3DObjectFromJsonUVE(json);
                 if (!IsVisibilityRegion3DObjectComponentValidUVE(value)) {
-                    throw std::runtime_error("Invalid VisibilityRegion3DNodeComponentUVE payload");
+                    throw std::runtime_error("Invalid VisibilityRegion3DComponentUVE payload");
                 }
                 return value;
             }, IsVisibilityRegion3DObjectComponentValidUVE));
@@ -1815,7 +1815,7 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
             [](const nlohmann::json& json) {
                 const SpawnPoint3DComponentUVE value = SpawnPoint3DObjectFromJsonUVE(json);
                 if (!IsSpawnPoint3DObjectComponentValidUVE(value)) {
-                    throw std::runtime_error("Invalid SpawnPoint3DNodeComponentUVE payload");
+                    throw std::runtime_error("Invalid SpawnPoint3DComponentUVE payload");
                 }
                 return value;
             }, IsSpawnPoint3DObjectComponentValidUVE));
@@ -1823,7 +1823,7 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
             [](const nlohmann::json& json) {
                 const LevelStreamer3DComponentUVE value = LevelStreamer3DObjectFromJsonUVE(json);
                 if (!IsLevelStreamer3DObjectComponentValidUVE(value)) {
-                    throw std::runtime_error("Invalid LevelStreamer3DNodeComponentUVE payload");
+                    throw std::runtime_error("Invalid LevelStreamer3DComponentUVE payload");
                 }
                 return value;
             }, IsLevelStreamer3DObjectComponentValidUVE));
@@ -1831,7 +1831,7 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
             [](const nlohmann::json& json) {
                 const WorldPartition3DComponentUVE value = WorldPartition3DObjectFromJsonUVE(json);
                 if (!IsWorldPartition3DObjectComponentValidUVE(value)) {
-                    throw std::runtime_error("Invalid WorldPartition3DNodeComponentUVE payload");
+                    throw std::runtime_error("Invalid WorldPartition3DComponentUVE payload");
                 }
                 return value;
             }, IsWorldPartition3DObjectComponentValidUVE));

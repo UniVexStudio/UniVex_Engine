@@ -31,7 +31,7 @@ namespace {
 }
 
 int UsageUVE() {
-    std::cerr << "usage: uvsc --host <node.uvhost> --out <script.uvs.cpp> <script.uvs>\n";
+    std::cerr << "usage: uvsc --host <object.uvhost> --out <script.uvs.cpp> <script.uvs>\n";
     return 2;
 }
 

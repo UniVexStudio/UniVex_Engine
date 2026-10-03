@@ -5123,7 +5123,7 @@ void EditorUVE::DrawScriptingWorkspaceUVE() {
         ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoTitleBar;
     if (ImGui::Begin("Scripting Workspace##uve", nullptr, windowFlags)) {
         ImGui::TextDisabled("No script is open.");
-        ImGui::TextDisabled("Select a node, then use its Script slot in the Inspector: New UVScript, or Open.");
+        ImGui::TextDisabled("Select an object, then use its Script slot in the Inspector: New UVScript, or Open.");
         if (ImGui::SmallButton("Back to the scene")) {
             m_activeWorkspace = EditorWorkspaceUVE::Library;
         }

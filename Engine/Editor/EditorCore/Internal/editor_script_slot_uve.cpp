@@ -207,8 +207,8 @@ bool EditorUVE::CreateUVScriptForSelectedEntityUVE() {
     // The header names the object and the kind it drives; the two handlers every script starts from.
     const Scene::Objects::SceneObjectDescriptorUVE* const descriptor =
         Scene::Objects::FindSceneObjectDescriptorUVE(Scene::ResolveSceneObjectKindUVE(entityManager, entity));
-    const std::string kind = ScriptIdentifierUVE(descriptor != nullptr ? descriptor->displayName : "Node", "Node");
-    const std::string text = "entity " + ScriptIdentifierUVE(label, "Node_") + " : " + kind +
+    const std::string kind = ScriptIdentifierUVE(descriptor != nullptr ? descriptor->displayName : "Object", "Object");
+    const std::string text = "entity " + ScriptIdentifierUVE(label, "Object_") + " : " + kind +
                              "\n\non ready:\n    print(\"{name} is ready\")\n\non tick(dt):\n    pass\n";
     // The file first: if it cannot be written, nothing about the object has changed yet.
     if (!WriteProjectTextFileUVE(path, text) || !SetSelectedComponentPropertyUVE(*target.entry, *target.property, &path)) {
@@ -290,10 +290,10 @@ void EditorUVE::DrawScriptSlotPropertyUVE(const Core::TypeMetadataEntryUVE& entr
         return pressed;
     };
     if (path.empty()) {
-        if (action("New UVScript", "Create a text script (.uvs) for this node and open it.")) {
+        if (action("New UVScript", "Create a text script (.uvs) for this object and open it.")) {
             closeMenu = CreateUVScriptForSelectedEntityUVE();
         }
-    } else if (action("Open", "Open this node's script in Scripting.")) {
+    } else if (action("Open", "Open this object's script in Scripting.")) {
         closeMenu = OpenScriptGraphForEntityUVE(entity);
     }
     if (action("Quick Load", "Pick one of this project's scripts.")) {
@@ -308,7 +308,7 @@ void EditorUVE::DrawScriptSlotPropertyUVE(const Core::TypeMetadataEntryUVE& entr
     }
     if (!path.empty()) {
         ImGui::Separator();
-        if (action("Clear", "Detach the script from this node. Undo brings it back.")) {
+        if (action("Clear", "Detach the script from this object. Undo brings it back.")) {
             closeMenu = AssignScriptToSelectedEntityUVE({});
         }
     }

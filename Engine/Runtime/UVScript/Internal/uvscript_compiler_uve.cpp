@@ -121,7 +121,7 @@ private:
         if (!ref.name.empty() && std::isupper(static_cast<unsigned char>(ref.name.front())) != 0) {
             return TypeUVE::ObjectUVE(ref.name);
         }
-        Error(ref.at, "'" + ref.name + "' is not a type - use int, float, bool, str, vec3 or a node kind");
+        Error(ref.at, "'" + ref.name + "' is not a type - use int, float, bool, str, vec3 or an object kind");
         return std::nullopt;
     }
 
@@ -185,7 +185,7 @@ private:
         for (const FieldUVE& field : file.fields) {
             if (m_fields.contains(field.name) || m_host.DescribePropertyUVE(field.name).has_value()) {
                 Error(field.at, "'" + field.name + "' is already declared" +
-                                    (m_fields.contains(field.name) ? "" : " - the node has a property by that name"));
+                                    (m_fields.contains(field.name) ? "" : " - the object has a property by that name"));
                 continue;
             }
             TypeUVE type = TypeUVE::ErrorUVE();
@@ -325,7 +325,7 @@ private:
     void CompileHandler(const HandlerUVE& handler) {
         const std::optional<std::vector<TypeUVE>> params = m_host.DescribeEventUVE(handler.event);
         if (!params.has_value()) {
-            Error(handler.at, "this node has no event '" + handler.event + "'");
+            Error(handler.at, "this object has no event '" + handler.event + "'");
             return;
         }
         if (std::ranges::any_of(m_program.handlers, [&](const auto& h) { return h.first == handler.event; })) {

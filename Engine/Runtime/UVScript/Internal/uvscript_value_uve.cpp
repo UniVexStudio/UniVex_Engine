@@ -107,7 +107,7 @@ std::string TypeUVE::NameUVE() const {
         case KindUVE::Float: return "float";
         case KindUVE::Str: return "str";
         case KindUVE::Vec3: return "vec3";
-        case KindUVE::Object: return object.empty() ? std::string{"Node"} : object;
+        case KindUVE::Object: return object.empty() ? std::string{"Object"} : object;
         case KindUVE::Error: return "?";
     }
     return "?";
@@ -130,7 +130,7 @@ std::string FormatValueUVE(const ValueUVE& value) {
             } else if constexpr (std::is_same_v<T, Vec3ValueUVE>) {
                 return "(" + FormatNumberUVE(v.x) + ", " + FormatNumberUVE(v.y) + ", " + FormatNumberUVE(v.z) + ")";
             } else {
-                return "node#" + std::to_string(v.id);
+                return "object#" + std::to_string(v.id);
             }
         },
         value);
