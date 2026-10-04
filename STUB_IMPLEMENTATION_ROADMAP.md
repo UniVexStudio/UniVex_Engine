@@ -569,26 +569,69 @@ this too). **Size: L.**
 
 ### 14. Skeleton3D + BoneAttachment3D + AnimationSequencer + AnimationGraph — the animation pipeline (paired)
 
-- [ ] Clip sampling: decode `AnimationClipAssetUVE` tracks into bone-local pose over time
-- [ ] Skeleton pose: evaluate `bones` hierarchy into per-bone world transforms
-- [ ] Skinning: renderer consumes the posed skeleton for mesh deformation
-- [ ] AnimationSequencer: `clipAssetPath`/`playbackSpeed`/`looping`/`playOnAwake` drive the
+- [x] Clip sampling: decode `AnimationClipAssetUVE` tracks into bone-local pose over time
+- [x] Skeleton pose: evaluate `bones` hierarchy into per-bone world transforms
+- [x] Skinning: renderer consumes the posed skeleton for mesh deformation
+- [x] AnimationSequencer: `clipAssetPath`/`playbackSpeed`/`looping`/`playOnAwake` drive the
       sampler (data lives in the shared `AnimationPlayerComponentUVE`; the Objects/3D file holds
       its `*ObjectDefinitionUVE` recipe)
-- [ ] BoneAttachment3D: `boneIndex`/`boneName` resolve against a posed skeleton and the
+- [x] BoneAttachment3D: `boneIndex`/`boneName` resolve against a posed skeleton and the
       entity follows the bone transform
-- [ ] AnimationGraph: becomes editor-creatable once the pipeline exists
-      (`libraryCreatable = false` today, honestly)
-- [ ] Tests lock each layer
-- [ ] `SCENE_NODES_ROADMAP.md` `[~]` → `[x]` (all four entries)
+- [x] AnimationGraph: becomes editor-creatable once the pipeline exists
+      (`libraryCreatable` is true, and the graph panel authors states, transitions and blend spaces)
+- [x] Tests lock each layer
+- [x] `SCENE_NODES_ROADMAP.md` `[~]` → `[x]` (all four entries)
+
+**Landed, in three modules plus the engine seam:**
+1. **Clip sampling.** `.uvanim` assets load through the asset manager into `AnimationClipAssetUVE`;
+   `SampleAnimationClipAssetUVE` answers one track at a time (linear position and scale, spherical
+   rotation between the samples around the time, clamped to the ends) and `TrySampleAnimationClipUVE`
+   answers the whole clip's tracks. A skeletal clip names its tracks after the skeleton's bones, so
+   `StepSkeletalAnimationSequencerUVE` gives each bone the track of the same name and a bone with no
+   track keeps its rest pose.
+2. **Skeleton pose.** `Skeleton3DComponentUVE::pose` holds one local pose per bone while something
+   animates the skeleton, and an empty pose means the rest pose; `GetSkeletonCurrentPoseUVE` reads
+   the posed value where it exists and the rest pose elsewhere. `Asset::TryResolvePoseUVE` composes
+   the hierarchy root-down into the skinning matrices, and `Scene::TryResolveSkeletonBoneWorldFrameUVE`
+   exposes the same walk as a world-frame resolver, which is what attachments read.
+3. **Skinning.** `Asset::TrySkinMeshUVE` is linear blend skinning over those matrices, with
+   `MeshSkinComputeUVE` as the GPU twin built on the same `TryResolvePoseUVE` authority, so CPU and
+   GPU results cannot drift apart. The renderer poses a skinned mesh against the nearest Skeleton3D
+   above it and re-uploads that entity's own vertex buffer when its skeleton was posed.
+4. **AnimationSequencer.** `StepAnimationSequencerUVE` plays an object clip (Once/Loop/Ping-Pong,
+   blend-in from the target's current pose, relative mode, start offset, negative speed playing
+   backwards, per-channel masks leaving the channels an author did not ask for alone) and
+   `StepSkeletalAnimationSequencerUVE` poses a skeleton the same way; `PoseSkeletonAtTimeUVE` is
+   scrubbing without a player. `CollectPassedAnimationEventsUVE` collects the events the playhead
+   passed, forwards or backwards across a loop's wrap, and they reach the animated object's script.
+   Root motion (`AnimationRootMotionModeUVE`: Off, In Place, Apply To Target) resolves the root bone
+   by name or by the first bone whose track moves over a centimetre, keeps it over its first frame's
+   ground position, and applies its travel to the target as velocity when that target is a
+   Character3D, so collision still applies.
+5. **BoneAttachment3D.** `Scene::SyncBoneAttachment3DObjectsUVE()` runs every frame after the
+   animation step and before world-transform propagation, so the attachment is on the bone in the
+   frame the pose arrives. It resolves the bone by index when that names a real bone and by exact
+   name otherwise, composes the bone's world frame with the authored local TRS, and writes a local
+   transform so the scene graph's own propagation lands the object exactly on the bone - parents
+   first, so an attachment riding another attachment is composed after the one it hangs off.
+6. **AnimationGraph.** The registry descriptor's `libraryCreatable` is true, so the object is
+   creatable from the editor and the graph panel authors states, transitions, blend trees, 1D and 2D
+   blend spaces, additive layers, one-shots and time scaling; `EngineCoreUVE::SyncAnimationUVE()`
+   evaluates it with the rest of the animation step.
+7. **Tests lock each layer:** 51 animation-object cases (16 sequencer + 35 graph), 30 in
+   `Test/Integration/Animation` (clip, state machine, pose graph, time/pose contract), 17
+   mesh-skinning and 8 GPU skin-compute cases, 16 editor authoring cases, 7 bone-attachment pass
+   cases, and 6 engine-core cases that run the pipeline end to end on the fixed step - a clip posing
+   a skeleton inside a character, an attachment riding the posed bone, root motion moving the
+   character through it, and clip events reaching the target's script.
 
 **Components:** `Skeleton3DComponentUVE` (fields: `skeletonAssetPath`,
-**`bones` vector** — the authored bone hierarchy array — and `enabled`),
-`BoneAttachment3DComponentUVE` (`skeletonLocalId`, `boneIndex`, `boneName`, authored
-local TRS, `enabled`), `AnimationPlayerComponentUVE` (shared component), and
+**`bones` vector** — the authored bone hierarchy array — and `enabled`; runtime `pose`,
+never saved), `BoneAttachment3DComponentUVE` (`skeletonLocalId`, `boneIndex`, `boneName`,
+authored local TRS, `enabled`), `AnimationPlayerComponentUVE` (shared component), and
 `AnimationTreeUVE` (Core/Animation module).
-**Depends on:** the missing skinning/clip-sampling pipeline — `ROADMAP.md`'s Animation
-section owns that gap. **Size: L** (largest item here).
+**Deliberately not part of this block:** inverse kinematics is its own `ROADMAP.md` §4 bullet;
+nothing in the pipeline waits on it. **Size: L** (largest item here).
 
 ### 15. LevelStreamer3D + WorldPartition3D — streaming + cell partitioning (paired) — DONE
 
