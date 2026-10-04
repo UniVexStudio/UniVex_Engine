@@ -77,8 +77,14 @@ TEST_F(SceneObjectTypeUVETest, InferenceReadsEveryKindThatHasComponentsOfItsOwn)
         EXPECT_EQ(InferSceneObjectKindUVE(entityManager, MakeWithUVE(mesh, ColliderComponentUVE{})), kind);
     }
 
-    // Bodies are read from what they combine; an Kinematic3D's own component outranks both.
+    // Bodies are read from what they combine; an Kinematic3D's own component outranks both. A
+    // collider on a body is a shape on a Rigid3D - what makes a character a character is its
+    // CharacterControllerComponentUVE, which is one of the own-components checked above.
     EXPECT_EQ(InferSceneObjectKindUVE(entityManager, MakeWithUVE(ColliderComponentUVE{}, Rigid3DComponentUVE{})),
+              Kind::Rigid3D);
+    EXPECT_EQ(InferSceneObjectKindUVE(entityManager,
+                                      MakeWithUVE(ColliderComponentUVE{}, Rigid3DComponentUVE{},
+                                                  CharacterControllerComponentUVE{})),
               Kind::Character3D);
     EXPECT_EQ(InferSceneObjectKindUVE(entityManager, MakeWithUVE(Rigid3DComponentUVE{})), Kind::Rigid3D);
     EXPECT_EQ(InferSceneObjectKindUVE(entityManager, MakeWithUVE(ColliderComponentUVE{})), Kind::Collider3D);

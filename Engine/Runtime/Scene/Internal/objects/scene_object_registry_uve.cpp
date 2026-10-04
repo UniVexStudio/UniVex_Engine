@@ -38,7 +38,7 @@ constexpr std::array<std::string_view, 1U> kVisibilityContracts{"VisibilityRegio
 constexpr std::array<std::string_view, 1U> kSpawnContracts{"SpawnPoint3DComponentUVE"};
 constexpr std::array<std::string_view, 1U> kStreamerContracts{"LevelStreamer3DComponentUVE"};
 constexpr std::array<std::string_view, 1U> kPartitionContracts{"WorldPartition3DComponentUVE"};
-constexpr std::array<std::string_view, 1U> kRigid3DContracts{"Rigid3DComponentUVE"};
+constexpr std::array<std::string_view, 2U> kRigid3DContracts{"Rigid3DComponentUVE", "ColliderComponentUVE"};
 constexpr std::array<std::string_view, 1U> kAudioContracts{"AudioSourceComponentUVE"};
 constexpr std::array<std::string_view, 1U> kParticleContracts{"ParticleEmitterComponentUVE"};
 constexpr std::array<std::string_view, 1U> kScriptContracts{"ScriptComponentUVE"};

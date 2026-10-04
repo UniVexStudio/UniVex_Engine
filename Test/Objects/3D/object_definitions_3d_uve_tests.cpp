@@ -39,6 +39,7 @@
 #include "uve/memory/memory_manager_uve.h"
 #include "uve/objects/3d/all_objects_3d_uve.h"
 #include "uve/scene/objects/scene_object_registry_uve.h"
+#include "uve/scene/objects/scene_object_type_uve.h"
 #include "uve/scene/objects/scene_root_uve.h"
 #include "uve/scene/scene_graph_uve.h"
 
@@ -209,6 +210,13 @@ TEST_F(Object3DDefinitionsUVETest, ApplyAttachesEachKindsExactComponentRecipe) {
         ApplyRigid3DObjectDefinitionUVE(entityManager, entity, Rigid3DObjectDefinitionUVE{});
         ExpectObject3DBaselineUVE(entityManager, entity, Rigid3DObjectDefinitionUVE::defaultName);
         EXPECT_TRUE(entityManager.HasComponentUVE<Rigid3DComponentUVE>(entity));
+        // Object3D > PhysicsObject3D > Rigid3D: a simulated body is a physics object, so it is the
+        // component that decides what its disabled state means and how it yields in a contact.
+        EXPECT_TRUE(entityManager.HasComponentUVE<PhysicsObjectComponentUVE>(entity));
+        // A simulated body without a shape is a body nothing can hit: the kind carries a collider
+        // the same way Static3D and Kinematic3D do, and its own definition validates it.
+        EXPECT_TRUE(entityManager.HasComponentUVE<ColliderComponentUVE>(entity));
+        EXPECT_TRUE(IsColliderComponentValidUVE(entityManager.GetComponentUVE<ColliderComponentUVE>(entity)));
     }
     {
         const EntityUVE entity = CreateEntityUVE();
@@ -1088,6 +1096,69 @@ protected:
         return entity;
     }
 };
+
+TEST_F(Object3DDefinitionsUVETest, ARigid3DBodyKeepsAColliderItWasGivenAndGetsOneWhenItHasNone) {
+    // The recipe only fills in what is missing, so a body whose collider was authored - a layer, a
+    // capsule, half extents - keeps every value when the definition is applied over it.
+    const EntityUVE authored = entityManager.CreateEntityUVE();
+    ColliderComponentUVE shape{};
+    shape.shapeType = ColliderShapeTypeUVE::Capsule;
+    shape.radius = 0.25F;
+    shape.height = 1.0F;
+    shape.collisionLayer = 4U;
+    entityManager.AddComponentUVE<ColliderComponentUVE>(authored, shape);
+    ApplyRigid3DObjectDefinitionUVE(entityManager, authored, Rigid3DObjectDefinitionUVE{});
+    const ColliderComponentUVE& kept = entityManager.GetComponentUVE<ColliderComponentUVE>(authored);
+    EXPECT_EQ(kept.shapeType, ColliderShapeTypeUVE::Capsule);
+    EXPECT_FLOAT_EQ(kept.radius, 0.25F);
+    EXPECT_EQ(kept.collisionLayer, 4U);
+
+    // A wrong collider is a wrong definition: the validator refuses it rather than letting the
+    // edit create a body that can never be collided with.
+    Rigid3DObjectDefinitionUVE invalid{};
+    invalid.collider.collisionLayer = 0U;
+    EXPECT_FALSE(IsRigid3DObjectDefinitionValidUVE(invalid));
+}
+
+TEST_F(Object3DDefinitionsUVETest, AFrozenRigid3DIsOutOfTheSimulationWithoutBeingDeleted) {
+    // The reason a Rigid3D carries the physics object base: its Process mode and disable mode
+    // answer the question a game keeps asking - "stop this body, but keep it in the scene".
+    const EntityUVE entity = CreateEntityUVE();
+    ApplyRigid3DObjectDefinitionUVE(entityManager, entity, Rigid3DObjectDefinitionUVE{});
+
+    // Running (the default) - simulated, in the world, and colliding like anything else.
+    EXPECT_TRUE(IsPhysicsObjectSimulatedUVE(entityManager, entity));
+    EXPECT_TRUE(IsPhysicsObjectInWorldUVE(entityManager, entity));
+
+    // The Object3D baseline already attached the Process component: the object's schedule is
+    // authored on it, not re-added on top of it.
+    ASSERT_TRUE(entityManager.HasComponentUVE<ProcessComponentUVE>(entity));
+    entityManager.GetComponentUVE<ProcessComponentUVE>(entity).mode = TickModeUVE::Never;
+    sceneGraph.UpdateUVE(entityManager);
+
+    // Default disable mode is Remove: out of the world entirely, which the collider cache, every
+    // query and the simulation all honour through the one rule.
+    EXPECT_FALSE(IsPhysicsObjectSimulatedUVE(entityManager, entity));
+    EXPECT_FALSE(IsPhysicsObjectInWorldUVE(entityManager, entity));
+
+    // Authored as MakeStatic instead, it stays in the world as an obstacle nothing can move.
+    entityManager.GetComponentUVE<PhysicsObjectComponentUVE>(entity).disableMode =
+        PhysicsObjectDisableModeUVE::MakeStatic;
+    EXPECT_FALSE(IsPhysicsObjectSimulatedUVE(entityManager, entity));
+    EXPECT_TRUE(IsPhysicsObjectInWorldUVE(entityManager, entity));
+}
+TEST_F(Object3DDefinitionsUVETest, BodyKindsWithShapesAreToldApartByTheirControllerNotTheirCollider) {
+    // A Rigid3D and a Character3D are both a collider plus a body. The type has to come from the
+    // controller: a body with a shape and no controller is a Rigid3D, and one with it is a
+    // character.
+    const EntityUVE rigid = entityManager.CreateEntityUVE();
+    ApplyRigid3DObjectDefinitionUVE(entityManager, rigid, Rigid3DObjectDefinitionUVE{});
+    EXPECT_EQ(ResolveSceneObjectKindUVE(entityManager, rigid), Objects::SceneObjectKindUVE::Rigid3D);
+
+    const EntityUVE character = entityManager.CreateEntityUVE();
+    ApplyCharacter3DObjectDefinitionUVE(entityManager, character, Character3DObjectDefinitionUVE{});
+    EXPECT_EQ(ResolveSceneObjectKindUVE(entityManager, character), Objects::SceneObjectKindUVE::Character3D);
+}
 
 TEST_F(PhysicsObjectParticipationUVETest, AnEntityThatIsNotAPhysicsObjectIsLeftAlone) {
     // Nothing here says it should stop, and a body assembled by hand must not be quietly taken out
