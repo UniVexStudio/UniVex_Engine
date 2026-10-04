@@ -398,6 +398,84 @@ TEST_F(SceneSerializerUVETest, SpringArmAuthoredFieldsRoundTripAndRuntimeTruthIs
         << "runtime truth is re-derived by the next step, so a load must not restore a stale one";
 }
 
+TEST_F(SceneSerializerUVETest, Projectile3DAuthoredHitContractRoundTripsAndTheRuntimeResultIsNotSaved) {
+    // The authored half of the hit contract - the policy and the two coefficients - is scene data
+    // and must survive a save. The runtime half is not: where this projectile last landed and how
+    // many times it bounced are facts about the session that saved the scene, and a restored
+    // projectile starts its life unspent.
+    const EntityUVE source = entityManager.CreateEntityUVE();
+    Projectile3DComponentUVE projectile;
+    projectile.velocity = Math::Vector3UVE{0.0F, 2.0F, 20.0F};
+    projectile.acceleration = Math::Vector3UVE{0.0F, -9.81F, 0.0F};
+    projectile.radius = 0.25F;
+    projectile.maxLifetime = 4.0F;
+    projectile.collisionMask = 0x03U;
+    projectile.active = false;
+    projectile.hitPolicy = Projectile3DHitPolicyUVE::Bounce;
+    projectile.restitution = 0.75F;
+    projectile.friction = 0.1F;
+    // Runtime truth, at save time.
+    projectile.remainingLifetime = 1.5F;
+    projectile.hit = true;
+    projectile.hitEntity = EntityUVE{7U, 1U};
+    projectile.hitPosition = Math::Vector3UVE{1.0F, 2.0F, 3.0F};
+    projectile.hitNormal = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+    projectile.impactSpeed = 12.0F;
+    projectile.bounceCount = 3U;
+    entityManager.AddComponentUVE<Projectile3DComponentUVE>(source, projectile);
+
+    const std::optional<SceneSnapshotUVE> snapshot =
+        serializer.CaptureUVE(entityManager, {source}, SceneAssetTypeUVE::Scene);
+    ASSERT_TRUE(snapshot.has_value());
+    const std::vector<EntityUVE> restoredRoots = serializer.RestoreUVE(entityManager, *snapshot);
+    ASSERT_EQ(restoredRoots.size(), 1U);
+
+    const Projectile3DComponentUVE restored =
+        entityManager.GetComponentUVE<Projectile3DComponentUVE>(restoredRoots.front());
+    EXPECT_EQ(restored.velocity, projectile.velocity);
+    EXPECT_EQ(restored.acceleration, projectile.acceleration);
+    EXPECT_FLOAT_EQ(restored.radius, 0.25F);
+    EXPECT_FLOAT_EQ(restored.maxLifetime, 4.0F);
+    EXPECT_EQ(restored.collisionMask, 0x03U);
+    EXPECT_FALSE(restored.active);
+    EXPECT_EQ(restored.hitPolicy, Projectile3DHitPolicyUVE::Bounce);
+    EXPECT_FLOAT_EQ(restored.restitution, 0.75F);
+    EXPECT_FLOAT_EQ(restored.friction, 0.1F);
+    EXPECT_FLOAT_EQ(restored.remainingLifetime, restored.maxLifetime)
+        << "the countdown is re-armed from the authored lifetime, not restored stale";
+    EXPECT_FALSE(restored.hit);
+    EXPECT_EQ(restored.hitEntity, kInvalidEntityUVE);
+    EXPECT_EQ(restored.hitPosition, Math::Vector3UVE{});
+    EXPECT_EQ(restored.bounceCount, 0U);
+}
+
+TEST_F(SceneSerializerUVETest, LoadUVE_AProjectileFromBeforeTheHitContractLoadsWithAuthoredDefaults) {
+    // A file written before the hit contract existed has no policy and no coefficients, so the
+    // component lands on the authored defaults - Stop, 0.5 and 0.2 - rather than on whatever a
+    // zero-initialized enum happens to mean.
+    const std::string payloadText =
+        R"({"entities":[{"localId":0,"components":{"Projectile3DComponentUVE":{"velocity":[0.0,0.0,20.0],"acceleration":[0.0,-9.81,0.0],"radius":0.25,"maxLifetime":4.0,"collisionMask":4294967295,"active":true}}}]})";
+    const auto* const payloadBytesPtr = reinterpret_cast<const std::byte*>(payloadText.data());
+    const std::vector<std::byte> payloadBytes(payloadBytesPtr, payloadBytesPtr + payloadText.size());
+
+    const std::filesystem::path path = "uve_scene_serializer_tests_projectile_legacy_contract.uvscene";
+    std::filesystem::remove(path);
+    ASSERT_TRUE(Asset::WriteUveFileUVE(path, SceneAssetTypeUVE::Scene, payloadBytes));
+
+    const std::vector<EntityUVE> roots = serializer.LoadUVE(entityManager, path);
+    ASSERT_EQ(roots.size(), 1U);
+    const Projectile3DComponentUVE& loaded =
+        entityManager.GetComponentUVE<Projectile3DComponentUVE>(roots[0]);
+    EXPECT_FLOAT_EQ(loaded.radius, 0.25F);
+    EXPECT_FLOAT_EQ(loaded.maxLifetime, 4.0F);
+    EXPECT_EQ(loaded.hitPolicy, Projectile3DHitPolicyUVE::Stop);
+    EXPECT_FLOAT_EQ(loaded.restitution, 0.5F);
+    EXPECT_FLOAT_EQ(loaded.friction, 0.2F);
+    EXPECT_TRUE(loaded.active);
+
+    std::filesystem::remove(path);
+}
+
 TEST_F(SceneSerializerUVETest, SaveUVE_InvalidAuthoredTransformFailsBeforeDestinationPublication) {
     const EntityUVE entity = entityManager.CreateEntityUVE();
     TransformComponentUVE transform;

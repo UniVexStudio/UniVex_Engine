@@ -86,13 +86,16 @@ worse than no checklist.
   the same object after a save/load, and dropped rather than renumbered when the object is not in
   the file - and handed to the query every tick, where they are checked before the layer mask, so
   no layer can bring an excluded object back.
-- [x] Projectile3D — real per-fixed-step kinematic integration: `velocity` accumulates
-  `acceleration`, the entity's authored local position advances by `velocity`, and
-  `remainingLifetime` counts down to zero, clearing `active`. Two authored fields are still not
-  honored: `radius` and `collisionMask` — this component has no hit-result field of its own (unlike
-  RayCast3D), so resolving what a projectile hits and what should happen (stop, bounce, apply
-  damage, spawn an effect) needs real gameplay decisions this struct doesn't specify. Real,
-  separate follow-up.
+- [x] Projectile3D — real per-fixed-step kinematic integration *and* real hit resolution. The
+  engine sweeps the authored `radius` along each step's motion against the layers `collisionMask`
+  accepts (never the projectile's own entity) and resolves the contact through an authored
+  `hitPolicy`: Stop halts it at the contact and clears `active`, Bounce reflects it through
+  `restitution`/`friction`. Every authored field is honored, the last contact lands in the
+  component's runtime hit fields (`hitEntity`/`hitPosition`/`hitNormal`/`impactSpeed`/`bounceCount`),
+  `remainingLifetime` still counts down to clear `active`, and every resolved contact is queued as
+  a typed `Physics::Projectile3DHitEventUVE` - damage, effects and despawning stay with gameplay,
+  which is what the event is for. An overlap the step begins inside is not a contact: a projectile
+  fired from inside a launcher's own volume is allowed to leave.
 - [x] LevelStreamer3D — real per-frame system (`EngineCoreUVE::SyncLevelStreamer3DNodesUVE()`):
   `loadDistance`/`unloadDistance` against the nearest viewer drive `loaded` through a hysteresis
   band, `loadRequested` forces a manual load, a failed load latches closed and never retries in
@@ -289,10 +292,11 @@ system behind them.
    hardcoding them. The save format is untouched: a definition is a recipe, never a serialized
    component.
 2. **RayCast3D, Projectile3D, and Hitbox3D/Hurtbox3D done** (real per-frame raycast against the
-   actual query system with correct self-exclusion; real kinematic integration + lifetime expiry
-   for projectiles; real per-frame hitbox-vs-hurtbox strike pairing — RayCast3D's exclusions gap
-   is now closed too, and the entries above state what Projectile3D and Hitbox3D/Hurtbox3D are
-   still honestly missing). Wire up the remaining highest-value already-authored 3D
+   actual query system with correct self-exclusion and authored exclusions; real kinematic
+   integration, lifetime expiry *and* swept-sphere hit resolution with an authored stop/bounce
+   motion policy for projectiles; real per-frame hitbox-vs-hurtbox strike pairing — the entries
+   above state what Hitbox3D/Hurtbox3D are still honestly missing: nothing consumes `strikes`).
+   Wire up the remaining highest-value already-authored 3D
    stubs next: Skeleton3D + AnimationSequencer + AnimationGraph (blocked on the same missing
    skinning/clip-sampling pipeline — see `ROADMAP.md`), NavigationRegion3D/NavigationAgent3D
    (needed for any AI movement).

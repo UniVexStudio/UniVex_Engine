@@ -55,6 +55,7 @@
 #include "uve/physics/i_collision_system_uve.h"
 #include "uve/physics/i_physics_system_uve.h"
 #include "uve/physics/physics_constraint_system_uve.h"
+#include "uve/physics/projectile_3d_step_uve.h"
 #include "uve/physics/i_raycast_system_uve.h"
 #include "uve/platform/platform_uve.h"
 #include "uve/render_systems/i_camera_system_uve.h"
@@ -2486,6 +2487,123 @@ TEST(EngineCoreUVETest, Hitbox3DObject_HurtboxRotationIsHonoredByExactObbOverlap
         EXPECT_EQ(afterStrike.strikes[0U].hurtboxEntity, victim);
         EXPECT_NEAR(afterStrike.strikes[0U].penetrationDepth, 0.2F, 0.01F);
     }
+
+    engine.Shutdown();
+}
+
+TEST(EngineCoreUVETest, Projectile3DObject_StopsOnAWallAndQueuesTheHitAsATypedEvent) {
+    // The engine's half of the hit decision, end to end: the swept sphere finds the wall, the
+    // authored Stop policy halts the projectile at the contact, and the contact is delivered as a
+    // typed event the gameplay side can subscribe to - nothing here decides what a hit *means*.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    config.fixedUpdateFps = 1000.0;
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    auto& services = engine.GetServicesUVE();
+    auto& entityManager = services.GetEntityManagerUVE();
+    auto& sceneGraph = services.GetSceneGraphUVE();
+
+    // The wall's near face is at x = 0.5, so a 0.1m sphere touches it when its centre reaches
+    // x = 0.4. The projectile starts 5mm short of that, so the first fixed step is the step that
+    // resolves the contact.
+    const Scene::EntityUVE wall = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE wallTransform;
+    wallTransform.localPosition = Math::Vector3UVE{1.0F, 0.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, wall, wallTransform);
+    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(
+        wall, Scene::ColliderComponentUVE{Math::Vector3UVE{0.5F, 0.5F, 0.5F}});
+
+    const Scene::EntityUVE bullet = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE bulletTransform;
+    bulletTransform.localPosition = Math::Vector3UVE{0.395F, 0.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, bullet, bulletTransform);
+    Scene::Projectile3DComponentUVE projectile;
+    projectile.velocity = Math::Vector3UVE{6.0F, 0.0F, 0.0F};
+    projectile.radius = 0.1F;
+    entityManager.AddComponentUVE<Scene::Projectile3DComponentUVE>(bullet, projectile);
+    sceneGraph.UpdateUVE(entityManager);
+
+    std::vector<Physics::Projectile3DHitEventUVE> hits;
+    services.GetEventSystemUVE().Subscribe<Physics::Projectile3DHitEventUVE>(
+        [&hits](const Physics::Projectile3DHitEventUVE& event) { hits.push_back(event); });
+
+    for (int frame = 0; frame < 4; ++frame) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(3));
+        engine.TickFrameUVE();
+    }
+
+    const Scene::Projectile3DComponentUVE& after =
+        entityManager.GetComponentUVE<Scene::Projectile3DComponentUVE>(bullet);
+    EXPECT_FALSE(after.active);
+    EXPECT_NEAR(after.velocity.x, 0.0F, 1.0e-4F);
+    EXPECT_TRUE(after.hit);
+    EXPECT_EQ(after.hitEntity, wall);
+    EXPECT_NEAR(after.impactSpeed, 6.0F, 1.0e-2F);
+    EXPECT_NEAR(after.hitPosition.x, 0.5F, 1.0e-2F);
+
+    ASSERT_FALSE(hits.empty()) << "the contact has to reach gameplay as an event, not only as state";
+    EXPECT_EQ(hits.front().projectile, bullet);
+    EXPECT_EQ(hits.front().hitEntity, wall);
+    EXPECT_EQ(hits.front().policy, Scene::Projectile3DHitPolicyUVE::Stop);
+    EXPECT_TRUE(hits.front().stopped);
+    EXPECT_NEAR(hits.front().impactSpeed, 6.0F, 1.0e-2F);
+
+    engine.Shutdown();
+}
+
+TEST(EngineCoreUVETest, Projectile3DObject_BouncesOffAWallAndReportsThatItSurvivedTheHit) {
+    EngineConfigUVE config = MakeTestConfigUVE();
+    config.fixedUpdateFps = 1000.0;
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    auto& services = engine.GetServicesUVE();
+    auto& entityManager = services.GetEntityManagerUVE();
+    auto& sceneGraph = services.GetSceneGraphUVE();
+
+    const Scene::EntityUVE wall = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE wallTransform;
+    wallTransform.localPosition = Math::Vector3UVE{1.0F, 0.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, wall, wallTransform);
+    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(
+        wall, Scene::ColliderComponentUVE{Math::Vector3UVE{0.5F, 0.5F, 0.5F}});
+
+    const Scene::EntityUVE ball = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE ballTransform;
+    ballTransform.localPosition = Math::Vector3UVE{0.395F, 0.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, ball, ballTransform);
+    Scene::Projectile3DComponentUVE projectile;
+    projectile.velocity = Math::Vector3UVE{6.0F, 0.0F, 0.0F};
+    projectile.radius = 0.1F;
+    projectile.hitPolicy = Scene::Projectile3DHitPolicyUVE::Bounce;
+    projectile.restitution = 1.0F;
+    projectile.friction = 0.0F;
+    entityManager.AddComponentUVE<Scene::Projectile3DComponentUVE>(ball, projectile);
+    sceneGraph.UpdateUVE(entityManager);
+
+    std::vector<Physics::Projectile3DHitEventUVE> hits;
+    services.GetEventSystemUVE().Subscribe<Physics::Projectile3DHitEventUVE>(
+        [&hits](const Physics::Projectile3DHitEventUVE& event) { hits.push_back(event); });
+
+    for (int frame = 0; frame < 4; ++frame) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(3));
+        engine.TickFrameUVE();
+    }
+
+    const Scene::Projectile3DComponentUVE& after =
+        entityManager.GetComponentUVE<Scene::Projectile3DComponentUVE>(ball);
+    EXPECT_TRUE(after.active) << "a bounce keeps flying";
+    EXPECT_EQ(after.bounceCount, 1U);
+    EXPECT_NEAR(after.velocity.x, -6.0F, 1.0e-2F);
+    EXPECT_LT(entityManager.GetComponentUVE<Scene::TransformComponentUVE>(ball).localPosition.x, 0.4F);
+
+    ASSERT_FALSE(hits.empty());
+    EXPECT_EQ(hits.front().policy, Scene::Projectile3DHitPolicyUVE::Bounce);
+    EXPECT_FALSE(hits.front().stopped);
+    EXPECT_EQ(hits.front().bounceCount, 1U);
 
     engine.Shutdown();
 }

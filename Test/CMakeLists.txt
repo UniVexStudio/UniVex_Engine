@@ -228,6 +228,7 @@ add_executable(uve_integration_tests
     Physics/physics_query_system_uve_tests.cpp
     Physics/physics_system_uve_tests.cpp
     Physics/raycast_system_uve_tests.cpp
+    Physics/projectile_3d_step_uve_tests.cpp
     Physics/shape_cast_system_uve_tests.cpp
     Physics/spring_arm_uve_tests.cpp
     Save/checkpoint_manager_uve_tests.cpp
