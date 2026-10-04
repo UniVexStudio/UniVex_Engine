@@ -13,8 +13,10 @@ add_library(uve_navigation STATIC
     Internal/navmesh_uve.cpp
     Internal/navmesh_bake_uve.cpp
     Internal/nav_path_uve.cpp
+    Internal/navmesh_agent_uve.cpp
+    Internal/navigation_runtime_uve.cpp
 )
 target_include_directories(uve_navigation PUBLIC Expose)
-target_link_libraries(uve_navigation PUBLIC uve_platform uve_logging uve_math uve_scene uve_physics)
+target_link_libraries(uve_navigation PUBLIC uve_platform uve_logging uve_math uve_scene uve_physics uve_objects_3d)
 target_compile_features(uve_navigation PUBLIC cxx_std_23)
 uve_set_warnings(uve_navigation)

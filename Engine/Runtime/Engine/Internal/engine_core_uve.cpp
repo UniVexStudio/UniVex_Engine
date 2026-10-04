@@ -80,6 +80,8 @@
 #include "uve/objects/3d/animation_graph_uve.h"
 #include "uve/objects/3d/decal_3d_events_uve.h"
 #include "uve/objects/3d/decal_3d_uve.h"
+#include "uve/objects/3d/nav_mesh_volume_3d_uve.h"
+#include "uve/objects/3d/nav_seeker_3d_uve.h"
 #include "uve/objects/3d/hitbox_3d_uve.h"
 #include "uve/objects/3d/hurtbox_3d_uve.h"
 #include "uve/objects/3d/interaction_area_3d_uve.h"
@@ -559,6 +561,10 @@ void EngineCoreUVE::Init() {
     // ParticleRuntime fifteenth: owns only bounded authored-emitter runtime state; ECS remains
     // authoritative and EngineCore reconciles it before simulation/render extraction.
     m_particleRuntime = std::make_unique<Scene::ParticleRuntimeUVE>();
+
+    // NavigationRuntime: owns the baked navmesh per region entity and one steering state per agent
+    // entity. Nothing else in the engine keeps a navmesh, so a rebuild is this object's business.
+    m_navigationRuntime = std::make_unique<Navigation::NavigationRuntimeUVE>();
 
     // GamepadInputSystem thirtieth: owns only bounded injectable current/previous snapshots.
     m_gamepadInputSystem = std::make_unique<Input::GamepadInputSystemUVE>();
@@ -1339,6 +1345,25 @@ void EngineCoreUVE::SyncSpringArm3DObjectsUVE(const float fixedDeltaTimeSeconds)
     }
 }
 
+void EngineCoreUVE::SyncNavigationUVE(const float fixedDeltaTimeSeconds) {
+    if (m_navigationRuntime == nullptr) {
+        return;
+    }
+    // The listing is this function's job because the ORDER is a frame decision: agents are movers,
+    // so they are gathered and sorted by Process physicsPriority exactly like the character,
+    // kinematic and spring-arm steps above, and the same tick-mode gates apply.
+    const std::vector<Scene::EntityUVE> agents =
+        CollectFixedStepOrderUVE<Scene::NavSeeker3DComponentUVE>(*m_entityManager, *m_sceneGraph);
+    const Navigation::NavigationSyncReportUVE report =
+        m_navigationRuntime->SyncUVE(*m_entityManager, *m_raycastSystem, agents, fixedDeltaTimeSeconds);
+    // A bake is hundreds of rays, so it is worth a log line: a region that re-rasterizes every frame
+    // (a moving volume, or a request nobody clears) is otherwise only visible as a frame-time cliff.
+    if (report.bakes > 0U) {
+        UVE_TRACE("Navigation: {} region mesh(es) baked, {} refused, {} agent(s) stepped, {} without a mesh",
+                  report.bakes, report.bakeRefusals, report.agents, report.agentsWithoutMesh);
+    }
+}
+
 void EngineCoreUVE::SyncHitbox3DObjectsUVE() {
     // The scan itself is Physics::SyncHitboxes3DUVE(): the hurtbox snapshot, every fail-closed
     // gate, the symmetric layer/mask acceptance, the damage-channel equality, the exact
@@ -2087,6 +2112,7 @@ void EngineCoreUVE::Update() {
         SyncAnimationUVE(fixedDeltaTimeSeconds, /*physicsStep=*/true);
         SyncProjectile3DObjectsUVE(fixedDeltaTimeSeconds);
         SyncSpringArm3DObjectsUVE(fixedDeltaTimeSeconds);
+        SyncNavigationUVE(fixedDeltaTimeSeconds);
     }
 
     if (m_simulationExecutionMode == SimulationExecutionModeUVE::Running) {
@@ -2362,6 +2388,7 @@ void EngineCoreUVE::Shutdown() {
     m_mobileGestureSystem.reset();
     m_mobileInputSystem.reset();
     m_gamepadInputSystem.reset();
+    m_navigationRuntime.reset();
     m_raycastSystem.reset();
     m_physicsQuerySystem.reset();
     m_physicsSystem.reset();

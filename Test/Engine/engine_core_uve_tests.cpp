@@ -84,6 +84,8 @@
 #include "uve/objects/3d/hurtbox_3d_uve.h"
 #include "uve/objects/3d/decal_3d_events_uve.h"
 #include "uve/objects/3d/decal_3d_uve.h"
+#include "uve/objects/3d/nav_mesh_volume_3d_uve.h"
+#include "uve/objects/3d/nav_seeker_3d_uve.h"
 #include "uve/objects/3d/interaction_area_3d_uve.h"
 #include "uve/objects/3d/level_streamer_3d_uve.h"
 #include "uve/objects/3d/reflection_probe_3d_uve.h"
@@ -619,6 +621,79 @@ TEST(EngineCoreUVETest, Decal3DObject_LifetimeRunsOutOnSimulatedTimeAndReportsTh
     EXPECT_EQ(expired[0].decal, fading);
     EXPECT_EQ(expired[0].materialAssetPath, "materials/scorch.uemat")
         << "the material travels with the event: a pooled system may not get a second lookup";
+
+    engine.Shutdown();
+}
+
+TEST(EngineCoreUVETest, NavigationRegion_BakesFromItsVolumeAndDrivesASeekerOnTheFixedStep) {
+    // EngineCoreUVE::SyncNavigationUVE() is the wiring that makes NavMeshVolume3D and NavSeeker3D
+    // real: before it, both were authored data with nothing reading them. This runs the whole path
+    // end-to-end on the simulated clock - a region rasterized from its own world volume through the
+    // engine's real raycast system, and an agent stepped against the mesh that came out - because a
+    // unit test can prove the pieces and only this can prove the engine drives them.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    config.fixedUpdateFps = 1000.0;
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    // Static ground: a box under the origin, top surface at y = 0.
+    const Scene::EntityUVE ground = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE groundTransform;
+    groundTransform.localPosition = Math::Vector3UVE{0.0F, -0.5F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, ground, groundTransform);
+    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(
+        ground, Scene::ColliderComponentUVE{Math::Vector3UVE{10.0F, 0.5F, 10.0F}});
+
+    // The region: a volume over the floor with 3 m of headroom under its own roof.
+    const Scene::EntityUVE region = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE regionTransform;
+    regionTransform.localPosition = Math::Vector3UVE{0.0F, 0.5F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, region, regionTransform);
+    Scene::NavMeshVolume3DComponentUVE regionComponent;
+    regionComponent.boundsHalfExtents = Math::Vector3UVE{8.0F, 2.5F, 8.0F};
+    entityManager.AddComponentUVE<Scene::NavMeshVolume3DComponentUVE>(region, regionComponent);
+
+    // The agent: standing on the floor, asked to walk 5 m along +X. Nothing moves its body here -
+    // what the engine has to prove is that it publishes a velocity for whatever would.
+    const Scene::EntityUVE agent = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, agent, Scene::TransformComponentUVE{});
+    Scene::NavSeeker3DComponentUVE seeker;
+    seeker.targetPosition = Math::Vector3UVE{5.0F, 0.0F, 0.0F};
+    // No velocity ramp: the ramp is the module suite's own subject, and here it would only mean
+    // simulating the four tenths of a second it takes to walk the velocity from +4 to -4.
+    seeker.acceleration = 0.0F;
+    entityManager.AddComponentUVE<Scene::NavSeeker3DComponentUVE>(agent, seeker);
+
+    for (int frame = 0; frame < 40; ++frame) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        engine.TickFrameUVE();
+    }
+
+    const Scene::NavSeeker3DComponentUVE& walking =
+        entityManager.GetComponentUVE<Scene::NavSeeker3DComponentUVE>(agent);
+    EXPECT_EQ(walking.pathStatus, Scene::NavigationAgentPathStatusUVE::Following)
+        << "the region baked, the agent found a route on it and is walking that route";
+    EXPECT_GT(walking.desiredVelocity.x, 0.0F) << "the target is straight ahead";
+    EXPECT_NEAR(walking.desiredVelocity.y, 0.0F, 1e-3F) << "steering stays in the plane it walks on";
+    EXPECT_NEAR(walking.nextPathPosition.x, 5.0F, 0.5F);
+    EXPECT_FALSE(walking.targetReached) << "the body has not been moved to the target, only asked to";
+
+    // A new target is a new order: the component is the only thing that has to change, and the next
+    // steps route the other way.
+    entityManager.GetComponentUVE<Scene::NavSeeker3DComponentUVE>(agent).targetPosition =
+        Math::Vector3UVE{-5.0F, 0.0F, 0.0F};
+    for (int frame = 0; frame < 10; ++frame) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        engine.TickFrameUVE();
+    }
+    const Scene::NavSeeker3DComponentUVE& returning =
+        entityManager.GetComponentUVE<Scene::NavSeeker3DComponentUVE>(agent);
+    EXPECT_LT(returning.desiredVelocity.x, 0.0F) << "the agent turned around";
+    EXPECT_NEAR(returning.nextPathPosition.x, -5.0F, 0.5F);
 
     engine.Shutdown();
 }
