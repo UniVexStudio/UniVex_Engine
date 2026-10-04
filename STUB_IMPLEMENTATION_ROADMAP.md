@@ -46,7 +46,7 @@ tests. An item's row here is retired to "Done" (bottom of file) only once it rea
 
 | # | Object | Status | Component | Arrays to give work | The work | Depends on | Size |
 |---|------|--------|-----------|---------------------|----------|------------|------|
-| 1 | SpringArm3D | `[/]` | `SpringArm3DComponentUVE` | — | camera-boom raycast clamp — **implemented**, needs behavior tests | RaycastSystemUVE (exists) | S |
+| 1 | SpringArm3D | `[x]` | `SpringArm3DComponentUVE` | — | camera-boom raycast clamp — **done**, 17 dedicated step tests (plus the 7 resolver cases that already pinned the motion law) | RaycastSystemUVE (exists) | S |
 | 2 | Kinematic3D | `[x]` | `Kinematic3DComponentUVE` | — | target-velocity kinematic mover — **done**, 29 dedicated tests | physics kinematic move (exists) | S |
 | 3 | SpawnPoint3D | `[~]` | `SpawnPoint3DComponentUVE` | — | tag-based spawn query + one-shot | — | S |
 | 4 | InteractionArea3D | `[/]` | `InteractionArea3DComponentUVE` | candidate list (new, bounded by `maximumCandidates`) | per-frame interactable candidate tracking — **implemented**, one test exists, edge cases not separately locked | AreaOverlapSystemUVE (exists) | M |
@@ -67,24 +67,46 @@ tests. An item's row here is retired to "Done" (bottom of file) only once it rea
 
 ## S-tier — one engine-core sync each (start here)
 
-### 1. SpringArm3D — camera-boom raycast clamp
+### 1. SpringArm3D — camera-boom raycast clamp — DONE
 
-- [x] Implement — `EngineCoreUVE::SyncSpringArm3DNodesUVE()` exists and is called every fixed
-      tick; raycasts from the arm's origin, clamps `currentLength` to hit-distance minus
-      `margin`, applies `smoothing`.
-- [ ] Tests lock it (arm shortens behind geometry, margin honored, smoothing converges,
-      mask filters, disabled = full length) — none of these cases has a dedicated test yet;
-      existing coverage only touches construction and scene-serialization round-trips of
-      `currentLength`.
-- [ ] `SCENE_NODES_ROADMAP.md` `[/]` → `[x]` (once the tests above land)
+- [x] Implement — `EngineCoreUVE::SyncSpringArm3DObjectsUVE()` calls
+      `Physics::StepSpringArm3DUVE()` (`Engine/Runtime/Physics/Internal/spring_arm_uve.cpp`) once
+      per arm per fixed step, in fixed-step order. The step is where the behaviour lives, so it can
+      be tested against the real raycast system and the real scene graph: it casts from the pivot
+      along the arm's own local +Z (the camera convention looks down -Z, so this is behind the
+      pivot), resolves the target through `Scene::ResolveSpringArm3DTargetUVE` (full reach when
+      clear, hit distance minus `margin` when not, clamped to the authored envelope), commits it
+      through `Scene::ResolveSpringArm3DLengthUVE` (retraction snaps so a camera never clips for one
+      smooth frame's sake; extension springs back at `smoothing`/s; `smoothing = 0` reproduces
+      Godot's snap-both-ways exactly), and shifts every direct child by the change in length along
+      the arm's own Z. Two things changed while extracting it: a step duration the arm cannot honour
+      is refused instead of half-run, and an arm that is switched off now hands its length back
+      rather than freezing wherever it happened to be - disabling a boom must not strand a camera
+      inside a wall.
+- [x] Tests lock it — 17 dedicated step tests in `Test/Physics/spring_arm_uve_tests.cpp`: shortens
+      behind geometry by the margin, never past zero at the pivot, mask filters, never hits itself,
+      casts along its own axis rather than the world's, disabled stops casting and comes home (in one
+      step at `smoothing = 0`), every direct child rides the delta, a child with no pose is skipped,
+      obstruct-then-clear restores the authored pose, retraction snaps while extension springs back
+      as a function of elapsed time and not of frame rate, and the refusal matrix (non-finite or
+      non-positive dt, unknown entity, not an arm, no world transform, malformed component). The
+      seven resolver cases and the arm's runtime-truth reseeding on load are pinned in the
+      object-definition and serializer suites.
+- [x] `SCENE_NODES_ROADMAP.md` `[/]` → `[x]` — done.
 
 **Component:** `SpringArm3DComponentUVE` — `Engine/Runtime/Objects/3D` (own file pair).
 **Fields to give work:** `armLength`, `margin`, `smoothing`, `collisionMask`, `enabled`;
-runtime result `currentLength` (today a dead copy of the default).
-**The work:** an engine-core sync (RayCast3D precedent) that raycasts from the arm's origin
-along its axis every frame, clamps `currentLength` to the hit distance minus `margin`, applies
-`smoothing` as an exponential approach, and positions the attached child (the camera) at the
-clamped distance. Needs a child-resolution rule (nearest Camera3D child, or explicit socket).
+runtime result `currentLength` (seeded to `armLength`, re-derived every step, never serialized).
+**The work:** an engine-core sync that casts from the arm's origin along its own axis every fixed
+step, clamps `currentLength` to the hit distance minus `margin`, applies `smoothing` as an
+exponential approach, and moves the children that ride it.
+**The child-resolution question, answered:** there is no socket and no "nearest camera" search -
+every direct child rides the change in length, so the author parents whatever the arm carries
+(camera, lamp, an entire rig) exactly where they want it, and because the shift is a delta the
+authored pose comes back exactly when the way clears. A child that is a pure object with no pose of
+its own is skipped. The cast ignores the arm's own entity; what else it may meet is the authored
+`collisionMask`, the same layer contract every other physics object uses - which is how a
+character's rig keeps the camera off the character.
 **Depends on:** RaycastSystemUVE — already real. **Size: S.**
 
 ### 2. Kinematic3D — target-velocity kinematic mover — DONE

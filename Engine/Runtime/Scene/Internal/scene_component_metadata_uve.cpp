@@ -48,6 +48,7 @@
 #include "uve/objects/3d/fog_volume_3d_uve.h"
 #include "uve/objects/3d/kinematic_3d_uve.h"
 #include "uve/objects/3d/skeleton_3d_uve.h"
+#include "uve/objects/3d/spring_arm_3d_uve.h"
 #include "uve/objects/3d/world_environment_3d_uve.h"
 #include "uve/math/quaternion_uve.h"
 
@@ -485,6 +486,51 @@ void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                                                            kPropertyTypeBoolUVE),
                                "Off leaves the body where it is and stops it dead, including for "
                                "anything standing on it."),
+            }));
+
+    // SpringArm3D's own section: the third-person camera boom. The authored half is what the arm
+    // reaches and what it collides with, and it is grouped behind the switch the rest of it depends
+    // on; the runtime half is the one number the arm derives every step.
+    AddValidatedUVE<SpringArm3DComponentUVE, &IsSpringArm3DObjectComponentValidUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.spring_arm", "SpringArm3D", kSectionOrderTypeSpecificUVE,
+            {
+                WithTooltipUVE(DeclareUVE<&SpringArm3DComponentUVE::enabled>("enabled", "Enabled",
+                                                                             kPropertyTypeBoolUVE),
+                               "Off, the arm casts nothing and hands its length back, so whatever it "
+                               "carries returns to the pose it was authored with."),
+                WhenOnUVE<&SpringArm3DComponentUVE::enabled>(WithRangeUVE(
+                    WithTooltipUVE(DeclareUVE<&SpringArm3DComponentUVE::armLength>(
+                                       "armLength", "Arm Length", kPropertyTypeFloatUVE),
+                                   "How far the arm reaches along its own local +Z, in metres. The "
+                                   "arm casts this far every fixed step and shortens to whatever it "
+                                   "finds, minus the margin."),
+                    0.0, 10000.0, 0.01)),
+                WhenOnUVE<&SpringArm3DComponentUVE::enabled>(WithRangeUVE(
+                    WithTooltipUVE(DeclareUVE<&SpringArm3DComponentUVE::margin>("margin", "Margin",
+                                                                                kPropertyTypeFloatUVE),
+                                   "How far the arm keeps the thing it carries off the surface it "
+                                   "hit, in metres. This is the camera's skin."),
+                    0.0, 10000.0, 0.01)),
+                WhenOnUVE<&SpringArm3DComponentUVE::enabled>(WithRangeUVE(
+                    WithTooltipUVE(DeclareUVE<&SpringArm3DComponentUVE::smoothing>("smoothing",
+                                                                                   "Smoothing",
+                                                                                   kPropertyTypeFloatUVE),
+                                   "How fast the arm springs back out once the way is clear, per "
+                                   "second: 0 pops out exactly like Godot's SpringArm3D, higher "
+                                   "values rise sooner. Shortening always snaps - a camera is never "
+                                   "allowed to clip through a wall."),
+                    0.0, 1000.0, 0.1)),
+                WhenOnUVE<&SpringArm3DComponentUVE::enabled>(WithCustomDrawerUVE(
+                    WithTooltipUVE(DeclareUVE<&SpringArm3DComponentUVE::collisionMask>(
+                                       "collisionMask", "Mask", kPropertyTypeBitMask32UVE),
+                                   "What the arm collides with. Leave the layer the rig is on out of "
+                                   "it, or the camera will sit on the character it belongs to."),
+                    std::string(kLayerMaskDrawerPhysicsUVE))),
+                InGroupUVE(DeclareRuntimeStateUVE<&SpringArm3DComponentUVE::currentLength>(
+                               "currentLength", "Current Length", kPropertyTypeFloatUVE),
+                           "State"),
             }));
 
     // Character3D's own section. Grouped by what an author is thinking about - how it moves,

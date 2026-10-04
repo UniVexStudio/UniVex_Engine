@@ -56,6 +56,15 @@ worse than no checklist.
 - [x] Static3D — real, non-moving collidable body.
 - [x] Rigid3D — real, physics-simulated body (gravity, collision response).
 - [x] Character3D — real kinematic character controller (move/jump/ground state).
+- [x] SpringArm3D — real camera-boom behaviour (`EngineCoreUVE::SyncSpringArm3DObjectsUVE()` →
+  `Physics::StepSpringArm3DUVE()`): a ray per arm per fixed step along the arm's own local +Z, the
+  target length under the authored `margin`, and a motion law where retraction snaps (a camera never
+  clips through a wall for one smooth frame's sake) while extension springs back at `smoothing`/s
+  and `smoothing = 0` reproduces Godot's snap-both-ways. Every direct child rides the change in
+  length, so obstruct-then-clear restores the authored pose exactly; the arm is switched off by
+  handing its length back rather than freezing in a wall. Locked by 17 dedicated step tests
+  (`Test/Physics/spring_arm_uve_tests.cpp`) plus the seven resolver cases and the runtime-truth
+  round-trip rule.
 - [x] Kinematic3D — real kinematic body driver (`EngineCoreUVE::SyncKinematic3DObjectsUVE()`, run
   before the character step): every Kinematic3D moves by its authored `targetVelocity`, eased by
   `interpolation` on a per-second curve, through the same swept kinematic move the character
@@ -110,12 +119,6 @@ worse than no checklist.
 
 ### Wired to a real system, not yet verified by dedicated tests
 
-- [/] SpringArm3D — `EngineCoreUVE::SyncSpringArm3DNodesUVE()` raycasts from the arm's origin every
-  fixed tick, clamps `currentLength` to the hit distance minus `margin`, and applies `smoothing`
-  as an exponential approach — confirmed by reading the sync function, called every fixed tick
-  from the main loop. No test exercises the raycast-clamp/smoothing/mask behavior yet (existing
-  tests only cover construction and scene-serialization round-trips of `currentLength`), so this
-  stays short of `[x]` until one does.
 - [/] InteractionArea3D — `EngineCoreUVE::SyncInteractionArea3DNodesUVE()` refreshes a bounded
   candidate list every frame from real overlap queries, gated by tag and symmetric layer/mask, and
   focuses the nearest candidate. One dedicated test exists

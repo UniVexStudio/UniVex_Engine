@@ -89,6 +89,7 @@
 #include "uve/physics/character_controller_uve.h"
 #include "uve/physics/character_world_query_uve.h"
 #include "uve/physics/kinematic_body_uve.h"
+#include "uve/physics/spring_arm_uve.h"
 #include "uve/physics/collision_system_uve.h"
 #include "uve/physics/physics_system_uve.h"
 #include "uve/physics/raycast_system_uve.h"
@@ -1273,55 +1274,17 @@ void EngineCoreUVE::SyncRayCast3DObjectsUVE() {
 }
 
 void EngineCoreUVE::SyncSpringArm3DObjectsUVE(const float fixedDeltaTimeSeconds) {
+    // Collected and ordered rather than iterated in place, for the same reason the other movers
+    // are: two arms on one rig have an order, and Process physicsPriority is how an author decides
+    // it instead of archetype storage order deciding it for them.
     for (const Scene::EntityUVE entity :
          CollectFixedStepOrderUVE<Scene::SpringArm3DComponentUVE>(*m_entityManager, *m_sceneGraph)) {
-        Scene::SpringArm3DComponentUVE& springArm =
-            m_entityManager->GetComponentUVE<Scene::SpringArm3DComponentUVE>(entity);
-        if (!springArm.enabled || !Scene::IsSpringArm3DObjectComponentValidUVE(springArm) ||
-            !m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(entity)) {
-            continue;
-        }
-
-        const auto& worldTransform =
-            m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
-        Physics::RaycastQueryUVE query{};
-        query.ray.origin = worldTransform.worldPosition;
-        // The arm extends along the pivot's local +Z - behind it, since the camera
-        // convention looks down -Z (same convention SyncRayCast3DObjectsUVE applies to the
-        // authored ray direction).
-        query.ray.direction =
-            Math::RotateVectorUVE(worldTransform.worldRotation, {0.0F, 0.0F, 1.0F});
-        query.maxDistance = springArm.armLength;
-        query.layerMask = springArm.collisionMask;
-        query.ignoreEntity = entity;
-
-        const std::optional<Physics::RaycastHitUVE> result =
-            m_raycastSystem->RaycastUVE(*m_entityManager, query);
-        const float targetLength = Scene::ResolveSpringArm3DTargetUVE(
-            result.has_value() ? std::optional<float>{result->distance} : std::nullopt,
-            springArm.margin, springArm.armLength);
-
-        const float previousLength = springArm.currentLength;
-        springArm.currentLength = Scene::ResolveSpringArm3DLengthUVE(
-            previousLength, targetLength, springArm.smoothing, fixedDeltaTimeSeconds);
-        const float lengthDelta = springArm.currentLength - previousLength;
-        if (lengthDelta == 0.0F || !m_entityManager->HasComponentUVE<Scene::TransformComponentUVE>(entity)) {
-            continue;
-        }
-
-        // Every direct child rides the delta along the arm's local Z; because the shift is
-        // the change in length and not an absolute rewrite, authored child offsets survive
-        // and an unobstructed arm restores the authored pose exactly.
-        for (const Scene::EntityUVE child :
-             m_sceneGraph->GetChildrenUVE(*m_entityManager, entity)) {
-            if (!m_entityManager->HasComponentUVE<Scene::TransformComponentUVE>(child)) {
-                continue;
-            }
-            Scene::TransformComponentUVE childTransform =
-                m_entityManager->GetComponentUVE<Scene::TransformComponentUVE>(child);
-            childTransform.localPosition.z += lengthDelta;
-            m_sceneGraph->SetLocalTransformUVE(*m_entityManager, child, childTransform);
-        }
+        // One call takes the arm from its authored state to cast-and-committed: the ray along its
+        // own axis, the target length under the margin, the motion law (retraction snaps, extension
+        // springs, a disabled arm hands its length back), and every direct child riding the delta.
+        // An arm the step refuses keeps the length it had.
+        static_cast<void>(Physics::StepSpringArm3DUVE(*m_entityManager, *m_sceneGraph, *m_raycastSystem,
+                                                      entity, fixedDeltaTimeSeconds));
     }
 }
 
