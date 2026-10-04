@@ -160,5 +160,42 @@ TEST(EditorRenderStatsUVETest, AssetFailuresAreAlwaysFlagged) {
     EXPECT_TRUE(invalid.value().isConcerning);
 }
 
+TEST(EditorRenderStatsUVETest, ADecalFrameReportsWhatThePassBuiltAndFlagsOnlyWhatLandedOnNothing) {
+    // The decal pass counts what it considered, what it drew, what those draws cost in polygons, and
+    // how many decals reached receivers but landed on none of them. A decal that projected onto
+    // nothing is worth a look - it is authored, enabled, in range and still costs the walk - while
+    // the polygon counts are just numbers.
+    Render::Renderer3DFrameDiagnosticsUVE diagnostics{};
+    diagnostics.decalsConsidered = 4U;
+    diagnostics.decalDrawsExtracted = 3U;
+    diagnostics.decalPatchesExtracted = 5U;
+    diagnostics.decalTrianglesExtracted = 9U;
+    diagnostics.decalsWithoutReceivers = 1U;
+    const std::vector<EditorRenderStatRowUVE> rows = BuildEditorRenderStatRowsUVE(diagnostics);
+
+    const std::optional<EditorRenderStatRowUVE> considered = FindRowUVE(rows, "Decals considered");
+    ASSERT_TRUE(considered.has_value());
+    EXPECT_EQ(considered.value().value, "4");
+    EXPECT_FALSE(considered.value().isConcerning);
+
+    const std::optional<EditorRenderStatRowUVE> draws = FindRowUVE(rows, "Decal draws");
+    ASSERT_TRUE(draws.has_value());
+    EXPECT_EQ(draws.value().value, "3");
+    EXPECT_FALSE(draws.value().isConcerning) << "a decal that drew is not a problem to report";
+
+    const std::optional<EditorRenderStatRowUVE> patches = FindRowUVE(rows, "Decal patches");
+    ASSERT_TRUE(patches.has_value());
+    EXPECT_EQ(patches.value().value, "5");
+
+    const std::optional<EditorRenderStatRowUVE> triangles = FindRowUVE(rows, "Decal triangles");
+    ASSERT_TRUE(triangles.has_value());
+    EXPECT_EQ(triangles.value().value, "9");
+
+    const std::optional<EditorRenderStatRowUVE> nothing = FindRowUVE(rows, "Decals on nothing");
+    ASSERT_TRUE(nothing.has_value());
+    EXPECT_EQ(nothing.value().value, "1");
+    EXPECT_TRUE(nothing.value().isConcerning) << "a decal that projected onto nothing is worth a look";
+}
+
 } // namespace
 } // namespace UVE::Editor::Tests
