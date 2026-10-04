@@ -468,12 +468,17 @@ TEST(EditorUVETest, InspectorDrawerRegistrationUVE_IncludesStableHierarchyDrawer
         // count its own scan resolved; 45 with LODGroup3D's, the first section whose shape is a
         // prefix of two parallel arrays - a threshold chain and a mesh per level - so it needed two
         // list drawers rather than typed rows, and the level count that decides the prefix is a
-        // field of the section itself.
-        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorDrawerCountUVE(editor), 45U);
+        // field of the section itself; 46 with BoneAttachment3D's, whose section is the part of that
+        // component that had been missing rather than the part that was merely unauthorable - its
+        // fields were serialized, validated and named in the registry from the start, but nothing in
+        // the engine read them, so the section arrives together with the system that resolves a bone
+        // and writes the transform.
+        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorDrawerCountUVE(editor), 46U);
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "directional-light-3d"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "animation-mixer"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "solid-body"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "animation-tree"));
+        EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "bone-attachment"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "skeleton-3d"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "surface-instance"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "light-emitter"));
