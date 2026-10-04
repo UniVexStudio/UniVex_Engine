@@ -79,9 +79,18 @@ jobs:
           if [ "$status" -eq 0 ]; then
             exit 0
           fi
-          grep -E '\*\*\*Failed' build/ctest-output.txt \
-            | sed -E 's/^[[:space:]]*[0-9]+\/[0-9]+[[:space:]]+Test[[:space:]]+#[0-9]+:[[:space:]]*//; s/[[:space:]]*\*\*\*Failed.*$//; s/[.]+$//; s/[[:space:]]+$//' \
-            | sort -u > build/failed-tests.txt || true
+          # The summary block is the reliable source: it lists every failing case whatever the
+          # failure mode (Failed, Timeout, Exception, Subprocess aborted). The progress-line
+          # markers are the fallback for a run that never reached the summary.
+          awk '/^The following tests FAILED:/{flag=1; next} flag && /^[[:space:]]*[0-9]+ - /{print}' \
+            build/ctest-output.txt \
+            | sed -E 's/^[[:space:]]*[0-9]+ - //; s/[[:space:]]*\([^()]*\)[[:space:]]*$//' > build/failed-tests.txt
+          if [ ! -s build/failed-tests.txt ]; then
+            grep -E '\*\*\*(Failed|Timeout|Exception|Subprocess aborted)' build/ctest-output.txt \
+              | sed -E 's/^[[:space:]]*[0-9]+\/[0-9]+[[:space:]]+Test[[:space:]]+#[0-9]+:[[:space:]]*//; s/[[:space:]]*\*\*\*.*$//; s/[.]+$//; s/[[:space:]]+$//' \
+              > build/failed-tests.txt || true
+          fi
+          sort -u -o build/failed-tests.txt build/failed-tests.txt
           count=$(( $(wc -l < build/failed-tests.txt) + 0 ))
           summary=$(paste -sd'; ' build/failed-tests.txt | cut -c1-900)
           if [ "$count" -eq 0 ]; then
