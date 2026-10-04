@@ -2116,6 +2116,94 @@ TEST(EngineCoreUVETest, RayCast3DObject_HitsRealGroundColliderExcludesItselfAndM
     engine.Shutdown();
 }
 
+TEST(EngineCoreUVETest, RayCast3DObject_ExclusionsReachTheQueryAndAnInvalidListClearsTheWholeResult) {
+    // The authored exclusions are not decoration: SyncRayCast3DObjectsUVE hands the component's live
+    // prefix to the query as Physics::RaycastQueryUVE::excludedEntities, so naming an object really
+    // does take it out of the cast. A list the component's own rule refuses (a live reference behind
+    // an empty slot) is a gate like any other, and every gate clears the WHOLE result - a consumer
+    // that reads hitEntity without checking hit must never see last frame's object.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+    // Two flat blockers under the caster, the nearer one first: tops at y=4.5 and y=3.5.
+    const Scene::EntityUVE nearer = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE nearerTransform;
+    nearerTransform.localPosition = Math::Vector3UVE{0.0F, 4.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, nearer, nearerTransform);
+    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(
+        nearer, Scene::ColliderComponentUVE{Math::Vector3UVE{10.0F, 0.5F, 10.0F}});
+
+    const Scene::EntityUVE farther = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE fartherTransform;
+    fartherTransform.localPosition = Math::Vector3UVE{0.0F, 3.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, farther, fartherTransform);
+    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(
+        farther, Scene::ColliderComponentUVE{Math::Vector3UVE{10.0F, 0.5F, 10.0F}});
+
+    const Scene::EntityUVE caster = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE casterTransform;
+    casterTransform.localPosition = Math::Vector3UVE{0.0F, 5.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, caster, casterTransform);
+    Scene::RayCast3DComponentUVE rayCast;
+    rayCast.direction = Math::Vector3UVE{0.0F, -1.0F, 0.0F};
+    rayCast.length = 10.0F;
+    entityManager.AddComponentUVE<Scene::RayCast3DComponentUVE>(caster, rayCast);
+
+    engine.TickFrameUVE();
+    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::RayCast3DComponentUVE>(caster).hit);
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::RayCast3DComponentUVE>(caster).hitEntity, nearer);
+
+    // Naming the nearest blocker moves the ray onto the next one - and the exclusions array is a
+    // prefix, so one live slot is exactly one exclusion.
+    Scene::RayCast3DComponentUVE& live =
+        entityManager.GetComponentUVE<Scene::RayCast3DComponentUVE>(caster);
+    live.exclusions[0] = nearer;
+    engine.TickFrameUVE();
+    const Scene::RayCast3DComponentUVE& skippingNearest =
+        entityManager.GetComponentUVE<Scene::RayCast3DComponentUVE>(caster);
+    EXPECT_TRUE(skippingNearest.hit);
+    EXPECT_EQ(skippingNearest.hitEntity, farther);
+    EXPECT_NEAR(skippingNearest.hitPosition.y, 3.5F, 0.01F);
+
+    // Both named: nothing is left in the ray's path.
+    live.exclusions[1] = farther;
+    engine.TickFrameUVE();
+    EXPECT_FALSE(entityManager.GetComponentUVE<Scene::RayCast3DComponentUVE>(caster).hit);
+
+    // A hole in the list is refused by the component's validator, which is a gate like any other:
+    // the stale hit is cleared rather than kept.
+    live.exclusions[0] = Scene::kInvalidEntityUVE;
+    engine.TickFrameUVE();
+    const Scene::RayCast3DComponentUVE& invalidList =
+        entityManager.GetComponentUVE<Scene::RayCast3DComponentUVE>(caster);
+    EXPECT_FALSE(invalidList.hit);
+    EXPECT_EQ(invalidList.hitEntity, Scene::kInvalidEntityUVE);
+    EXPECT_EQ(invalidList.hitPosition, Math::Vector3UVE{});
+
+    // Switching the ray off clears the whole result too - no hit, no point, no normal, no entity.
+    live.exclusions = Scene::MakeEmptyEntityReferencesUVE<Scene::kMaximumRayCastExclusionsUVE>();
+    live.enabled = false;
+    engine.TickFrameUVE();
+    const Scene::RayCast3DComponentUVE& disabled =
+        entityManager.GetComponentUVE<Scene::RayCast3DComponentUVE>(caster);
+    EXPECT_FALSE(disabled.hit);
+    EXPECT_EQ(disabled.hitEntity, Scene::kInvalidEntityUVE);
+    EXPECT_EQ(disabled.hitNormal, Math::Vector3UVE{});
+
+    // And nothing is sticky: an enabled ray with a cleared list finds the nearest blocker again.
+    live.enabled = true;
+    engine.TickFrameUVE();
+    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::RayCast3DComponentUVE>(caster).hit);
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::RayCast3DComponentUVE>(caster).hitEntity, nearer);
+
+    engine.Shutdown();
+}
+
 TEST(EngineCoreUVETest, Hitbox3DObject_StrikesOverlappingHurtboxAndClearsWhenGatedOrApart) {
     // EngineCoreUVE::SyncHitbox3DObjectsUVE() is new wiring: previously Hitbox3DComponentUVE
     // and Hurtbox3DComponentUVE were pure authored data with nothing evaluating them. This

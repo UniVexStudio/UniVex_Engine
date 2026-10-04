@@ -217,8 +217,6 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
     entityManager.AddComponentUVE<AreaComponentUVE>(source, area);
     RayCast3DComponentUVE ray;
     ray.length = 42.0F;
-    ray.exclusions[0] = 7U;
-    ray.exclusionCount = 1U;
     entityManager.AddComponentUVE<RayCast3DComponentUVE>(source, ray);
     entityManager.AddComponentUVE<Kinematic3DComponentUVE>(
         source, Kinematic3DComponentUVE{Math::Vector3UVE{1.0F, 0.0F, 0.0F}, 0.75F, true});
@@ -339,7 +337,10 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
     EXPECT_FALSE(entityManager.GetComponentUVE<AreaComponentUVE>(restored).monitoring);
     EXPECT_FALSE(entityManager.GetComponentUVE<AreaComponentUVE>(restored).monitorable);
     EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<RayCast3DComponentUVE>(restored).length, 42.0F);
-    EXPECT_EQ(entityManager.GetComponentUVE<RayCast3DComponentUVE>(restored).exclusions[0], 7U);
+    // Exclusions are entity references and are round-tripped by the tests below, which save the
+    // objects they name alongside the ray. Here the point is that an unauthored list comes back
+    // empty - eight empty slots - rather than as index 0 written out eight times.
+    EXPECT_EQ(CountRayCast3DExclusionsUVE(entityManager.GetComponentUVE<RayCast3DComponentUVE>(restored)), 0U);
     EXPECT_EQ(entityManager.GetComponentUVE<NavMeshVolume3DComponentUVE>(restored).navigationMeshAssetPath,
               "navigation/courtyard.uvnav");
     EXPECT_EQ(entityManager.GetComponentUVE<Skeleton3DComponentUVE>(restored).bones.size(), 1U);
@@ -759,6 +760,116 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_AnimationTargetsRemapToTheRestoredEnti
     EXPECT_TRUE(restoredManager.GetComponentUVE<AnimationGraphComponentUVE>(restoredPlayer).HasSameSettingsUVE(blend));
     // A pure Object stays one: no transform appears on the way through the file.
     EXPECT_FALSE(restoredManager.HasComponentUVE<TransformComponentUVE>(restoredPlayer));
+}
+
+TEST_F(SceneSerializerUVETest, CaptureThenRestoreUVE_RayCastExclusionsFollowTheObjectsTheyName) {
+    // Two objects in one file: the ray names the other in its exclusions. After the round trip the
+    // reference must point at the RESTORED object, not at a raw index that may now belong to
+    // something else entirely - which is exactly what a saved handle would have meant.
+    const EntityUVE target = entityManager.CreateEntityUVE();
+    entityManager.AddComponentUVE<TransformComponentUVE>(target, TransformComponentUVE{});
+    entityManager.AddComponentUVE<HierarchyComponentUVE>(target, HierarchyComponentUVE{});
+    const EntityUVE rayEntity = entityManager.CreateEntityUVE();
+    entityManager.AddComponentUVE<TransformComponentUVE>(rayEntity, TransformComponentUVE{});
+    entityManager.AddComponentUVE<HierarchyComponentUVE>(rayEntity, HierarchyComponentUVE{});
+    RayCast3DComponentUVE ray;
+    ray.length = 12.0F;
+    ray.exclusions[0] = target;
+    entityManager.AddComponentUVE<RayCast3DComponentUVE>(rayEntity, ray);
+
+    const std::optional<SceneSnapshotUVE> snapshot =
+        serializer.CaptureUVE(entityManager, {rayEntity, target}, SceneAssetTypeUVE::Scene);
+    ASSERT_TRUE(snapshot.has_value());
+    EntityManagerUVE restoredManager(memoryManager.GetDefaultAllocatorUVE(), eventSystem);
+    const std::vector<EntityUVE> roots = serializer.RestoreUVE(restoredManager, *snapshot);
+    ASSERT_EQ(roots.size(), 2U);
+    const EntityUVE restoredRay = roots[0];
+    const EntityUVE restoredTarget = roots[1];
+    ASSERT_NE(restoredTarget, target);
+    ASSERT_TRUE(restoredManager.HasComponentUVE<RayCast3DComponentUVE>(restoredRay));
+    const RayCast3DComponentUVE& restored =
+        restoredManager.GetComponentUVE<RayCast3DComponentUVE>(restoredRay);
+    EXPECT_FLOAT_EQ(restored.length, 12.0F);
+    EXPECT_EQ(CountRayCast3DExclusionsUVE(restored), 1U);
+    EXPECT_EQ(restored.exclusions[0], restoredTarget);
+
+    // Saving the restored pair again reproduces the same reference, so the remap is stable rather
+    // than correct only once.
+    const std::optional<SceneSnapshotUVE> second =
+        serializer.CaptureUVE(restoredManager, {restoredRay, restoredTarget}, SceneAssetTypeUVE::Scene);
+    ASSERT_TRUE(second.has_value());
+    EntityManagerUVE secondManager(memoryManager.GetDefaultAllocatorUVE(), eventSystem);
+    const std::vector<EntityUVE> secondRoots = serializer.RestoreUVE(secondManager, *second);
+    ASSERT_EQ(secondRoots.size(), 2U);
+    const RayCast3DComponentUVE& secondRay =
+        secondManager.GetComponentUVE<RayCast3DComponentUVE>(secondRoots[0]);
+    EXPECT_EQ(CountRayCast3DExclusionsUVE(secondRay), 1U);
+    EXPECT_EQ(secondRay.exclusions[0], secondRoots[1]);
+}
+
+TEST_F(SceneSerializerUVETest, CaptureThenRestoreUVE_AnExclusionOutsideTheSavedSetIsDroppedRatherThanRenumbered) {
+    // The excluded object lives in another part of the level, so this file does not contain it.
+    // Writing its handle out would be writing a number the next load reads as whatever entity
+    // happens to occupy that slot - so the reference is dropped instead, and the ray still loads
+    // with everything else it owns.
+    const EntityUVE outsider = entityManager.CreateEntityUVE();
+    entityManager.AddComponentUVE<TransformComponentUVE>(outsider, TransformComponentUVE{});
+    entityManager.AddComponentUVE<HierarchyComponentUVE>(outsider, HierarchyComponentUVE{});
+    const EntityUVE rayEntity = entityManager.CreateEntityUVE();
+    entityManager.AddComponentUVE<TransformComponentUVE>(rayEntity, TransformComponentUVE{});
+    entityManager.AddComponentUVE<HierarchyComponentUVE>(rayEntity, HierarchyComponentUVE{});
+    RayCast3DComponentUVE ray;
+    ray.length = 12.0F;
+    ray.exclusions[0] = outsider;
+    entityManager.AddComponentUVE<RayCast3DComponentUVE>(rayEntity, ray);
+
+    const std::optional<SceneSnapshotUVE> snapshot =
+        serializer.CaptureUVE(entityManager, {rayEntity}, SceneAssetTypeUVE::Scene);
+    ASSERT_TRUE(snapshot.has_value());
+    EntityManagerUVE restoredManager(memoryManager.GetDefaultAllocatorUVE(), eventSystem);
+    const std::vector<EntityUVE> roots = serializer.RestoreUVE(restoredManager, *snapshot);
+    ASSERT_EQ(roots.size(), 1U);
+    const RayCast3DComponentUVE& restored =
+        restoredManager.GetComponentUVE<RayCast3DComponentUVE>(roots[0]);
+    EXPECT_FLOAT_EQ(restored.length, 12.0F);
+    EXPECT_EQ(CountRayCast3DExclusionsUVE(restored), 0U);
+
+    // Dropped once means dropped for good: a second save of what was restored cannot resurrect a
+    // reference the file never held.
+    const std::optional<SceneSnapshotUVE> second =
+        serializer.CaptureUVE(restoredManager, {roots[0]}, SceneAssetTypeUVE::Scene);
+    ASSERT_TRUE(second.has_value());
+    EntityManagerUVE secondManager(memoryManager.GetDefaultAllocatorUVE(), eventSystem);
+    const std::vector<EntityUVE> secondRoots = serializer.RestoreUVE(secondManager, *second);
+    ASSERT_EQ(secondRoots.size(), 1U);
+    EXPECT_EQ(CountRayCast3DExclusionsUVE(
+                  secondManager.GetComponentUVE<RayCast3DComponentUVE>(secondRoots[0])),
+              0U);
+}
+
+TEST_F(SceneSerializerUVETest, LoadUVE_ALegacyRawExclusionListIsDroppedRatherThanMisread) {
+    // Files written while `exclusions` held raw entity indices are still readable - the component
+    // loads with every real field - but the numbers are NOT revived as handles: they were indices
+    // into a pool that no longer exists, and guessing at them would aim a ray at a stranger.
+    const std::string payloadText =
+        R"({"entities":[{"localId":0,"components":{"RayCast3DComponentUVE":{"direction":[0.0,-1.0,0.0],"length":8.0,"collisionMask":4294967295,"enabled":true,"exclusions":[3]}}}]})";
+    const auto* const payloadBytesPtr = reinterpret_cast<const std::byte*>(payloadText.data());
+    const std::vector<std::byte> payloadBytes(payloadBytesPtr, payloadBytesPtr + payloadText.size());
+
+    const std::filesystem::path path = "uve_scene_serializer_tests_raycast_legacy_exclusions.uvscene";
+    std::filesystem::remove(path);
+    ASSERT_TRUE(Asset::WriteUveFileUVE(path, SceneAssetTypeUVE::Scene, payloadBytes));
+
+    const std::vector<EntityUVE> roots = serializer.LoadUVE(entityManager, path);
+    ASSERT_EQ(roots.size(), 1U);
+    const RayCast3DComponentUVE& loaded =
+        entityManager.GetComponentUVE<RayCast3DComponentUVE>(roots[0]);
+    EXPECT_FLOAT_EQ(loaded.length, 8.0F);
+    EXPECT_TRUE(loaded.enabled);
+    EXPECT_EQ(loaded.collisionMask, 0xFFFFFFFFU);
+    EXPECT_EQ(CountRayCast3DExclusionsUVE(loaded), 0U);
+
+    std::filesystem::remove(path);
 }
 
 TEST_F(SceneSerializerUVETest, RestoreUVE_TwoClipAnimationGraphBecomesABlendGraph) {

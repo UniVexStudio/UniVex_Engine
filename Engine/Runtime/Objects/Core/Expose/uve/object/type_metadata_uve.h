@@ -108,6 +108,10 @@ struct TypeMetadataPropertyUVE final {
     TypeMetadataNumericRangeUVE range;
     std::vector<TypeMetadataEnumEntryUVE> enumEntries;
     std::string tooltip;
+    /// How many elements a fixed-capacity list value holds (kPropertyTypeEntityListUVE); zero for
+    /// every value that is not a list. The accessor reads and writes the whole list, so a consumer
+    /// needs the length to size its buffer - the value type's own size says nothing about it.
+    std::size_t elementCount = 0U;
     /// Opt-in escape hatch: names a registered custom drawer for the cases a generic editor cannot
     /// serve correctly (a transform that must round-trip through euler sync, an entity picker).
     std::string customDrawerId;

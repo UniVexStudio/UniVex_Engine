@@ -27,7 +27,8 @@ public:
 
     /// Returns the closest hit within `[0, query.maxDistance]`, or std::nullopt if nothing was
     /// hit. Only entities with both WorldTransformComponentUVE and ColliderComponentUVE are
-    /// considered; `query.ignoreEntity` is excluded outright, `query.layerMask` filters via
+    /// considered; `query.ignoreEntity` and every entity in `query.excludedEntities` are excluded
+    /// outright (before the mask, so no layer can bring one back), `query.layerMask` filters via
     /// `(collider.collisionLayer & layerMask) != 0`. Ties (multiple entities at exactly the same
     /// distance) are broken deterministically: whichever entity ForEachUVE's own deterministic
     /// chunk-order iteration encounters first wins — the same same-platform/same-build/

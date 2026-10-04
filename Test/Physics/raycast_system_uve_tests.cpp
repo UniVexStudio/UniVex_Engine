@@ -3,9 +3,11 @@
 
 #include "uve/physics/raycast_system_uve.h"
 
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <optional>
+#include <span>
 
 #include <gtest/gtest.h>
 
@@ -171,6 +173,101 @@ TEST_F(RaycastSystemUVETest, RaycastUVE_IgnoreEntity_ExcludesSpecificCollider) {
     query.ignoreEntity = entity;
 
     EXPECT_FALSE(raycastSystem.RaycastUVE(entityManager, query).has_value());
+}
+
+TEST_F(RaycastSystemUVETest, RaycastUVE_ExcludedEntities_SkipEveryNamedCollider) {
+    // Three colliders on the ray, nearest first: -8, -4, then 0. Every exclusion is a real entity
+    // reference, so each call must land on the next collider the list did not name.
+    const Scene::EntityUVE nearest =
+        MakeColliderEntityUVE(Math::Vector3UVE{-8.0F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 1.0F});
+    const Scene::EntityUVE middle =
+        MakeColliderEntityUVE(Math::Vector3UVE{-4.0F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 1.0F});
+    const Scene::EntityUVE farthest =
+        MakeColliderEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 1.0F});
+
+    const std::array<Scene::EntityUVE, 1U> skipNearest{nearest};
+    RaycastQueryUVE query = MakeXAxisQueryUVE(-10.0F);
+    query.excludedEntities = skipNearest;
+    std::optional<RaycastHitUVE> hit = raycastSystem.RaycastUVE(entityManager, query);
+    ASSERT_TRUE(hit.has_value());
+    EXPECT_EQ(hit->entity, middle);
+
+    const std::array<Scene::EntityUVE, 2U> skipFirstTwo{nearest, middle};
+    query.excludedEntities = skipFirstTwo;
+    hit = raycastSystem.RaycastUVE(entityManager, query);
+    ASSERT_TRUE(hit.has_value());
+    EXPECT_EQ(hit->entity, farthest);
+
+    const std::array<Scene::EntityUVE, 3U> skipAll{nearest, middle, farthest};
+    query.excludedEntities = skipAll;
+    EXPECT_FALSE(raycastSystem.RaycastUVE(entityManager, query).has_value());
+}
+
+TEST_F(RaycastSystemUVETest, RaycastUVE_AnExclusionIsNotAMask_ItSkipsEvenWhereTheMaskWouldAccept) {
+    // The collider is on layer 2 and the query's mask accepts layer 2, so the mask alone would let
+    // it through - the exclusion is what has to stop it. Skipping is decided before the mask, so no
+    // layer can bring an excluded object back.
+    const Scene::EntityUVE entity = MakeColliderEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F},
+                                                          Math::Vector3UVE{1.0F, 1.0F, 1.0F}, 2U);
+    RaycastQueryUVE query = MakeXAxisQueryUVE(-5.0F);
+    query.layerMask = 0x2U;
+    ASSERT_TRUE(raycastSystem.RaycastUVE(entityManager, query).has_value());
+
+    const std::array<Scene::EntityUVE, 1U> skip{entity};
+    query.excludedEntities = skip;
+    EXPECT_FALSE(raycastSystem.RaycastUVE(entityManager, query).has_value());
+}
+
+TEST_F(RaycastSystemUVETest, RaycastUVE_IgnoreEntityAndExclusionsAreBothHonoured) {
+    const Scene::EntityUVE origin =
+        MakeColliderEntityUVE(Math::Vector3UVE{-9.0F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 1.0F});
+    const Scene::EntityUVE second =
+        MakeColliderEntityUVE(Math::Vector3UVE{-6.0F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 1.0F});
+    const Scene::EntityUVE third =
+        MakeColliderEntityUVE(Math::Vector3UVE{-2.0F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 1.0F});
+
+    // The ray's own entity comes in through `ignoreEntity`; the authored exclusions through the
+    // span. A query that carries both must skip both, and still see the one nobody named.
+    const std::array<Scene::EntityUVE, 1U> skipSecond{second};
+    RaycastQueryUVE query = MakeXAxisQueryUVE(-10.0F);
+    query.ignoreEntity = origin;
+    query.excludedEntities = skipSecond;
+    std::optional<RaycastHitUVE> hit = raycastSystem.RaycastUVE(entityManager, query);
+    ASSERT_TRUE(hit.has_value());
+    EXPECT_EQ(hit->entity, third);
+
+    query.ignoreEntity = Scene::kInvalidEntityUVE;
+    hit = raycastSystem.RaycastUVE(entityManager, query);
+    ASSERT_TRUE(hit.has_value());
+    EXPECT_EQ(hit->entity, origin);
+}
+
+TEST_F(RaycastSystemUVETest, RaycastUVE_AnEmptyExclusionListIsTheUnchangedQuery) {
+    const Scene::EntityUVE entity =
+        MakeColliderEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 1.0F});
+    const RaycastQueryUVE query = MakeXAxisQueryUVE(-5.0F);
+
+    ASSERT_EQ(query.excludedEntities.size(), 0U);
+    const std::optional<RaycastHitUVE> hit = raycastSystem.RaycastUVE(entityManager, query);
+    ASSERT_TRUE(hit.has_value());
+    EXPECT_EQ(hit->entity, entity);
+    EXPECT_NEAR(hit->distance, 4.0F, kEpsilon);
+}
+
+TEST_F(RaycastSystemUVETest, RaycastUVE_AnEmptySpanSlotMatchesNoEntity) {
+    // The engine hands over the authored prefix of a fixed-capacity array, so a caller that passes
+    // the whole array with its tail still empty must not accidentally exclude anything: an empty
+    // slot is kInvalidEntityUVE, which no live entity ever compares equal to.
+    const Scene::EntityUVE entity =
+        MakeColliderEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 1.0F});
+    const std::array<Scene::EntityUVE, 4U> slots{Scene::kInvalidEntityUVE, Scene::kInvalidEntityUVE,
+                                                Scene::kInvalidEntityUVE, Scene::kInvalidEntityUVE};
+    RaycastQueryUVE query = MakeXAxisQueryUVE(-5.0F);
+    query.excludedEntities = std::span<const Scene::EntityUVE>(slots);
+
+    const std::optional<RaycastHitUVE> hit = raycastSystem.RaycastUVE(entityManager, query);
+    ASSERT_TRUE(hit.has_value());
+    EXPECT_EQ(hit->entity, entity);
 }
 
 TEST_F(RaycastSystemUVETest, RaycastUVE_EqualDistanceHits_ResolveDeterministically) {

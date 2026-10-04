@@ -8,11 +8,13 @@ node (four levels — see that file's "How to read" section for why `[/]` exists
 step short of `[x]`); THIS file is the per-item implementation checklist we tick off as
 each one gets built.
 
-Scope: the 11 authored-data-only 3D stubs still at `[~]`, the 3 real-but-unverified items
-at `[/]` (still tracked here until their sync functions earn dedicated tests), + the 4
-declared gaps of working nodes (2D/UI/AI nodes have no files yet, so they have nothing to
-track here — they stay in
-`SCENE_NODES_ROADMAP.md`'s missing-entirely sections until they exist).
+Scope: the 3D nodes still at `[~]` (LODGroup3D, Decal3D, the Navigation pair, the
+Skeleton/animation group), the declared gaps of working nodes (Projectile3D,
+Hitbox3D/Hurtbox3D), and the one item that is explicitly half-open (ReflectionProbe3D — its
+sync half is done, the renderer-side sampling is not). 2D/UI/AI nodes have no files yet, so
+they have nothing to track here — they stay in `SCENE_NODES_ROADMAP.md`'s missing-entirely
+sections until they exist. An item that reaches `[x]` with every box ticked is retired to the
+Done section at the bottom, row and all.
 
 ## How to read this file
 
@@ -46,16 +48,14 @@ tests. An item's row here is retired to "Done" (bottom of file) only once it rea
 
 | # | Object | Status | Component | Arrays to give work | The work | Depends on | Size |
 |---|------|--------|-----------|---------------------|----------|------------|------|
-| 5 | RayCast3D gap | `[~]` | `RayCast3DComponentUVE` | `exclusions[8]` + `exclusionCount` | multi-entity exclusion queries | query API + stable entity refs | M |
+| — | *done items* | — | — | — | rows retired to the Done section at the bottom: 1–5, 9, 10, 15 (12 stays — the renderer-side half is still open). Their numbered write-ups stay below as the audit trail. | — | — |
 | 6 | Projectile3D gap | `[~]` | `Projectile3DComponentUVE` | — (`radius`, `collisionMask` scalars) | swept-sphere hit resolution | hit-decision contract | M |
 | 7 | Hitbox3D/Hurtbox3D gap | `[~]` | `Hitbox3DComponentUVE` / `Hurtbox3DComponentUVE` | `strikes[16]` + `strikeCount` | strike consequences (events first) | gameplay/event contract | M |
 | 8 | LODGroup3D | `[~]` | `LodGroup3DComponentUVE` | `distanceThresholds[8]` | camera-distance LOD switching | multi-level mesh source | M |
-| 10 | VisibilityRegion3D | `[x]` | `VisibilityRegion3DComponentUVE` | — | layer-gated visibility culling — **done**, four dedicated tests | render queue integration | M |
 | 11 | Decal3D | `[~]` | `Decal3DComponentUVE` | — | decal-projection rendering | renderer (big) | L |
 | 12 | ReflectionProbe3D | `[x]` (sync half) | `ReflectionProbe3DComponentUVE` | — | probe capture scheduling — **done**, five dedicated tests; renderer-side sampling still `[~]` | renderer (big) | L |
 | 13 | NavigationRegion3D + NavigationAgent3D | `[~]` | `NavigationRegion3DComponentUVE` / `NavigationAgent3DComponentUVE` | — | navmesh bake + pathfind + steer | new Navigation subsystem | L |
 | 14 | Skeleton3D + BoneAttachment3D + AnimationSequencer + AnimationGraph | `[~]` | `Skeleton3DComponentUVE`, `BoneAttachment3DComponentUVE`, `AnimationPlayerComponentUVE`, `AnimationTreeUVE` | `bones` vector | clip sampling → bone pose → skinning | new Animation pipeline | L |
-| 15 | LevelStreamer3D + WorldPartition3D | `[x]` | `LevelStreamer3DComponentUVE` / `WorldPartition3DComponentUVE` | `cellCounts[3]` | streaming + cell grid load/unload — **done**, five + five dedicated tests each | external-scene lifecycle | L |
 | — | Marker3D | — | `Marker3DComponentUVE` | — | **none, by design** — read by tools/scripts, never ticked | — | — |
 
 ---
@@ -222,19 +222,42 @@ that did not fit); and `interactionTag` is carried, not filtered - tag gating be
 gameplay layer that acts on the focus.
 **Depends on:** AreaOverlapSystemUVE — already real. **Size: M.**
 
-### 5. RayCast3D — honor the `exclusions` array (declared gap of a working node)
+### 5. RayCast3D — honor the `exclusions` array (declared gap of a working node) — DONE
 
-- [ ] Extend the raycast query API past one ignored entity
-- [ ] Define the save/load-stable entity reference (the real blocker — a raw `EntityUVE`
-      handle is runtime-only)
-- [ ] Tests lock it (excluded entity is skipped, list bound respected)
-- [ ] `SCENE_NODES_ROADMAP.md` gap note removed
+- [x] Extend the raycast query API past one ignored entity —
+      `Physics::RaycastQueryUVE::excludedEntities` (a `std::span<const Scene::EntityUVE>` the caller
+      owns, so a query stays a cheap value and unused slots are never read). `RaycastSystemUVE`
+      checks it together with `ignoreEntity` BEFORE the layer mask: an exclusion is not a mask, so
+      no layer can bring an excluded object back.
+- [x] Define the save/load-stable entity reference (the real blocker — a raw `EntityUVE`
+      handle is runtime-only) — `exclusions` is now `std::array<Scene::EntityUVE, 8>`: real
+      references, remapped through the scene file's local-id table exactly like the visibility
+      parent, the hierarchy parent and an animation target, written as `exclusionsLocalIds`. A
+      reference the file does not contain is DROPPED, never renumbered into a stranger; a file
+      written while the field held raw indices still loads, with those numbers ignored.
+      `exclusionCount` is gone: with real references in the slots the array already says how many
+      there are (a dense prefix ended by `kInvalidEntityUVE`), and the validator refuses a live
+      reference behind an empty slot.
+- [x] Tests lock it (excluded entity is skipped, list bound respected) — five physics cases
+      (`Test/Physics/raycast_system_uve_tests.cpp`: every named collider skipped, an exclusion
+      beating a matching layer mask, `ignoreEntity` + exclusions together, an empty span, an empty
+      slot matching nothing), the validator/prefix cases in `Test/Objects/3D/objects_3d_uve_tests.cpp`,
+      three serializer cases (the reference follows the object across a save/load, one outside the
+      saved set is dropped for good, a legacy raw list is ignored), the RayCast3D metadata section
+      test, and the engine-core end-to-end case that drives exclusions through a real
+      `EngineCoreUVE` tick.
+- [x] `SCENE_NODES_ROADMAP.md` gap note removed — done.
 
 **Component:** `RayCast3DComponentUVE` — own file pair.
-**Arrays to give work:** `exclusions[8]` (`kMaximumRayCastExclusionsUVE`) + `exclusionCount`.
-Today `SyncRayCast3DNodesUVE()` spends the query API's single ignore-slot on self-exclusion
-and silently ignores the rest.
-**Depends on:** `Physics::RaycastQueryUVE` accepting multiple ignores + a persistent node
+**Arrays to give work:** `exclusions[8]` (`kMaximumRayCastExclusionsUVE`).
+`EngineCoreUVE::SyncRayCast3DObjectsUVE()` hands the component's live prefix to the query as
+`excludedEntities`, alongside `ignoreEntity` (which stays spent on self-exclusion — a ray never
+hits the collider it starts inside).
+**Two contract decisions, kept here because they are the item's real answer:** the query takes a
+span rather than owning a list (the caller keeps its storage; the query stays a value), and the
+component stores a dense prefix of references instead of an array plus a count (one authored
+value, one thing to keep in sync, and the Inspector's list control writes it in one edit).
+**Depends on:** `Physics::RaycastQueryUVE` accepting multiple ignores + a persistent entity
 reference scheme. **Size: M.**
 
 ### 6. Projectile3D — honor `radius` + `collisionMask` (declared gap of a working node)
@@ -432,4 +455,7 @@ correctly stays unticked. Listed here so the audit trail shows it was considered
 ### Kinematic3D — target-velocity kinematic mover over the swept kinematic move — done in 7758f3e
 ### InteractionArea3D — the interaction scan extracted into `Physics::SyncInteractionAreasUVE()`, locked by 16 dedicated tests — done in the change that moved it out of the engine-core tick
 ### Occluder3D — render-queue occlusion culling, locked by four `MeshRendererUVETest` integration cases (stale roadmap row; verified green here) — done in the change that corrected the row
+### VisibilityRegion3D — layer-gated visibility culling, four dedicated EngineCoreUVE cases — done in the change that added `SyncVisibilityRegion3DNodesUVE()` (stale row; retired here)
+### LevelStreamer3D + WorldPartition3D — streaming and the cell grid, five dedicated tests each — done in the change that added their syncs (stale rows; retired here)
+### RayCast3D — `exclusions` honored: multi-entity exclusions with save/load-stable references, locked by 5 physics + 3 serializer + 2 metadata/validator + 1 engine-core test — done in the change that gave the array real references
 ### SpawnPoint3D — the spawn query seam (`Scene::QuerySpawnPointsUVE`, `Scene::ConsumeSpawnPointUVE`) — done in the change that rewired the editor's play-entry spawn onto it (12 dedicated tests in `Test/Integration/Scene/spawn_point_query_uve_tests.cpp`)

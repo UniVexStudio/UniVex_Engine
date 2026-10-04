@@ -821,30 +821,62 @@ template <typename VectorT>
 }
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const RayCast3DComponentUVE& value) {
-    nlohmann::json exclusions = nlohmann::json::array();
-    for (std::size_t index = 0U; index < value.exclusionCount; ++index) {
-        exclusions.push_back(value.exclusions[index]);
-    }
+    // `exclusions` is deliberately absent: it holds entity references, and only the entity-aware
+    // encoder below knows which file-local id each referenced entity has. Writing the raw handles
+    // here is what the old format did, and a raw handle is meaningless in the next session - the
+    // pool is free to hand that index to anything.
     return {{"direction", ToJsonUVE(value.direction)},
             {"length", value.length},
             {"collisionMask", value.collisionMask},
-            {"enabled", value.enabled},
-            {"exclusions", std::move(exclusions)}};
+            {"enabled", value.enabled}};
 }
 
 [[nodiscard]] RayCast3DComponentUVE RayCast3DObjectFromJsonUVE(const nlohmann::json& json) {
+    // The registration reader is used everywhere a RayCast3D payload is validated WITHOUT an entity
+    // id table - including the scene decoder's validation pass, which only needs to know the
+    // payload is well-formed. Entity references are resolved by the entity-aware restore path
+    // below, which is the only code that knows which file-local id maps to which restored entity;
+    // a legacy `exclusions` array of raw handles is tolerated and dropped, because a raw handle
+    // cannot be mapped to anything meaningful.
     RayCast3DComponentUVE value;
     value.direction = Vector3FromJsonUVE(json.at("direction"));
     value.length = json.value("length", 100.0F);
     value.collisionMask = json.value("collisionMask", std::uint32_t{0xFFFFFFFFU});
     value.enabled = json.value("enabled", true);
-    const nlohmann::json exclusions = json.value("exclusions", nlohmann::json::array());
-    if (!exclusions.is_array() || exclusions.size() > kMaximumRayCastExclusionsUVE) {
-        throw std::runtime_error("RayCast3DComponentUVE exclusions must be a bounded array");
+    return value;
+}
+
+/// The entity-aware half of reading a RayCast3D: its exclusions are entity references, so only the
+/// caller that owns the file's local-id table can resolve them. A reference the file does not
+/// contain is DROPPED rather than turned back into a raw handle - the same rule the animation
+/// target and the visibility parent follow - and the exclusions that did resolve keep their order,
+/// so a scene that lost one still loads with the rest instead of losing the whole component.
+[[nodiscard]] RayCast3DComponentUVE RayCast3DComponentWithResolvedExclusionsUVE(
+    const nlohmann::json& json,
+    const std::unordered_map<std::uint32_t, EntityUVE>& localIdToEntity) {
+    RayCast3DComponentUVE value = RayCast3DObjectFromJsonUVE(json);
+    const nlohmann::json exclusionIds = json.value("exclusionsLocalIds", nlohmann::json::array());
+    if (!exclusionIds.is_array() || exclusionIds.size() > kMaximumRayCastExclusionsUVE) {
+        throw std::runtime_error("RayCast3DComponentUVE exclusionsLocalIds must be a bounded array");
     }
-    value.exclusionCount = static_cast<std::uint8_t>(exclusions.size());
-    for (std::size_t index = 0U; index < exclusions.size(); ++index) {
-        value.exclusions[index] = exclusions.at(index).get<std::uint32_t>();
+    std::size_t resolvedCount = 0U;
+    for (const auto& exclusionId : exclusionIds) {
+        const std::int64_t localId = exclusionId.get<std::int64_t>();
+        if (localId < 0 || static_cast<std::uint64_t>(localId) > std::numeric_limits<std::uint32_t>::max()) {
+            throw std::runtime_error("RayCast3DComponentUVE exclusion local ID is outside the uint32 range");
+        }
+        const auto targetIt = localIdToEntity.find(static_cast<std::uint32_t>(localId));
+        if (targetIt == localIdToEntity.end()) {
+            continue; // outside what this file contains: dropped, not guessed at
+        }
+        // Dropped references are compacted away, not left as holes: the list is a prefix, and a
+        // hole would make the component fail its own validator (a live reference behind an empty
+        // slot) and take the whole ray down with it.
+        value.exclusions[resolvedCount] = targetIt->second;
+        ++resolvedCount;
+    }
+    if (!IsRayCast3DObjectComponentValidUVE(value)) {
+        throw std::runtime_error("Invalid RayCast3DComponentUVE payload");
     }
     return value;
 }
@@ -2320,6 +2352,23 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
             if (type == std::type_index(typeid(AnimationDriverComponentUVE))) {
                 writeTarget(entityManager.GetComponentUVE<AnimationDriverComponentUVE>(entity).target);
             }
+            if (type == std::type_index(typeid(RayCast3DComponentUVE))) {
+                // The ray's exclusions are entity references too: written as file-local ids, with
+                // targets outside the saved set dropped exactly like an animation target. The
+                // registration's own toJson JSON deliberately carries no exclusions key at all, so
+                // there is only ever one place a reader can find them.
+                const RayCast3DComponentUVE& rayCast =
+                    entityManager.GetComponentUVE<RayCast3DComponentUVE>(entity);
+                nlohmann::json exclusionLocalIds = nlohmann::json::array();
+                const std::size_t exclusionCount = CountRayCast3DExclusionsUVE(rayCast);
+                for (std::size_t index = 0U; index < exclusionCount; ++index) {
+                    const auto targetIt = entityToLocalId.find(rayCast.exclusions[index]);
+                    if (targetIt != entityToLocalId.end()) {
+                        exclusionLocalIds.push_back(targetIt->second);
+                    }
+                }
+                componentsJson[*name]["exclusionsLocalIds"] = std::move(exclusionLocalIds);
+            }
         }
         entitiesJson.push_back({{"localId", entityToLocalId.at(entity)}, {"components", std::move(componentsJson)}});
     }
@@ -2401,6 +2450,40 @@ void RollbackRestoredEntitiesUVE(IEntityManagerUVE& entityManager, std::vector<E
                         UVE_ERROR("SceneSerializerUVE: hierarchy parent local ID is outside the uint32 range in \"{}\"",
                                   sourceDescription);
                         return std::nullopt;
+                    }
+                    continue;
+                }
+                if (CanonicalComponentNameUVE(componentName) == "RayCast3DComponentUVE") {
+                    // Validated here and restored by the entity-aware path below, never through the
+                    // registration table: the exclusions are local ids only this function's table
+                    // can resolve. The remaining fields are the table reader's business, checked
+                    // during restore.
+                    if (!componentJson.is_object()) {
+                        UVE_ERROR("SceneSerializerUVE: malformed ray cast data in \"{}\"", sourceDescription);
+                        return std::nullopt;
+                    }
+                    const nlohmann::json exclusionIds =
+                        componentJson.value("exclusionsLocalIds", nlohmann::json::array());
+                    if (!exclusionIds.is_array() || exclusionIds.size() > kMaximumRayCastExclusionsUVE) {
+                        UVE_ERROR("SceneSerializerUVE: malformed ray cast exclusions in \"{}\"",
+                                  sourceDescription);
+                        return std::nullopt;
+                    }
+                    for (const auto& exclusionId : exclusionIds) {
+                        if (!exclusionId.is_number_integer()) {
+                            UVE_ERROR("SceneSerializerUVE: malformed ray cast exclusion id in \"{}\"",
+                                      sourceDescription);
+                            return std::nullopt;
+                        }
+                        const std::int64_t exclusionLocalId = exclusionId.get<std::int64_t>();
+                        if (exclusionLocalId < 0 ||
+                            static_cast<std::uint64_t>(exclusionLocalId) >
+                                std::numeric_limits<std::uint32_t>::max()) {
+                            UVE_ERROR("SceneSerializerUVE: ray cast exclusion id is outside the uint32 "
+                                      "range in \"{}\"",
+                                      sourceDescription);
+                            return std::nullopt;
+                        }
                     }
                     continue;
                 }
@@ -2522,6 +2605,11 @@ void RollbackRestoredEntitiesUVE(IEntityManagerUVE& entityManager, std::vector<E
                         // resolver uses for a dangling reference at runtime.
                     }
                     entityManager.AddComponentUVE<VisibilityComponentUVE>(entity, visibility);
+                    continue;
+                }
+                if (CanonicalComponentNameUVE(componentName) == "RayCast3DComponentUVE") {
+                    entityManager.AddComponentUVE<RayCast3DComponentUVE>(
+                        entity, RayCast3DComponentWithResolvedExclusionsUVE(componentJson, localIdToEntity));
                     continue;
                 }
                 if (componentName == "HierarchyComponentUVE") {

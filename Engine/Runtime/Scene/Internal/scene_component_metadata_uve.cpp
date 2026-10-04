@@ -47,6 +47,7 @@
 #include "uve/objects/3d/directional_light_3d_uve.h"
 #include "uve/objects/3d/fog_volume_3d_uve.h"
 #include "uve/objects/3d/kinematic_3d_uve.h"
+#include "uve/objects/3d/ray_cast_3d_uve.h"
 #include "uve/objects/3d/skeleton_3d_uve.h"
 #include "uve/objects/3d/spring_arm_3d_uve.h"
 #include "uve/objects/3d/spawn_point_3d_uve.h"
@@ -124,6 +125,14 @@ template <auto MemberPointer>
 [[nodiscard]] TypeMetadataPropertyUVE WithCustomDrawerUVE(TypeMetadataPropertyUVE property,
                                                           std::string drawerId) {
     property.customDrawerId = std::move(drawerId);
+    return property;
+}
+
+/// States how many elements a fixed-capacity list value holds, for the type that has no other way
+/// to say it (see kPropertyTypeEntityListUVE).
+[[nodiscard]] TypeMetadataPropertyUVE WithElementCountUVE(TypeMetadataPropertyUVE property,
+                                                          const std::size_t elementCount) {
+    property.elementCount = elementCount;
     return property;
 }
 
@@ -707,6 +716,66 @@ void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                            "State"),
                 InGroupUVE(DeclareRuntimeStateUVE<&C::floorNormal>("floorNormal", "Floor Normal", kPropertyTypeVector3UVE),
                            "State"),
+            }));
+}
+
+/// RayCast3D's own section: what the ray is, what it refuses to hit, and what it found. The
+/// exclusions are entity references, so they are drawn by the reference-list drawer and remapped by
+/// the scene serializer like every other reference an author can pick; the result rows are runtime
+/// state, shown so an author can see the answer the engine computed rather than guessing at it.
+void DeclareRayCastUVE(std::vector<TypeMetadataEntryUVE>& entries) {
+    AddValidatedUVE<RayCast3DComponentUVE, &IsRayCast3DObjectComponentValidUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.ray_cast_3d", "RayCast3D", kSectionOrderTypeSpecificUVE,
+            {
+                WithTooltipUVE(
+                    DeclareUVE<&RayCast3DComponentUVE::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
+                    "Off, the ray casts nothing and clears its result - no hit, no point, no "
+                    "normal, no entity."),
+                WithTooltipUVE(
+                    DeclareUVE<&RayCast3DComponentUVE::direction>("direction", "Direction",
+                                                                  kPropertyTypeVector3UVE),
+                    "Which way the ray points in this object's own space, rotated by its world "
+                    "rotation every step. Any non-zero length is fine; it is a direction, not a "
+                    "distance - the Length below is the distance."),
+                WithRangeUVE(
+                    WithTooltipUVE(DeclareUVE<&RayCast3DComponentUVE::length>("length", "Length",
+                                                                             kPropertyTypeFloatUVE),
+                                   "How far the ray reaches along its direction, in metres. It "
+                                   "reports the closest collider it meets inside that distance and "
+                                   "nothing past it."),
+                    0.0, 100000.0, 0.1),
+                WithCustomDrawerUVE(
+                    WithTooltipUVE(
+                        DeclareUVE<&RayCast3DComponentUVE::collisionMask>("collisionMask", "Mask",
+                                                                          kPropertyTypeBitMask32UVE),
+                        "Which collision layers the ray is allowed to hit, on the same layer drawer "
+                        "every other physics object uses."),
+                    std::string(kLayerMaskDrawerPhysicsUVE)),
+                WithTooltipUVE(
+                    WithCustomDrawerUVE(
+                        WithElementCountUVE(
+                            DeclareUVE<&RayCast3DComponentUVE::exclusions>("exclusions", "Exclusions",
+                                                                           kPropertyTypeEntityListUVE),
+                            kMaximumRayCastExclusionsUVE),
+                        "entity-reference-list"),
+                    "Objects this ray refuses to hit, on top of its own object - a ray never hits "
+                    "the collider it starts inside. An exclusion is not a mask: no layer can bring "
+                    "one back. The ray's own object is always excluded, so listing it changes "
+                    "nothing."),
+                InGroupUVE(DeclareRuntimeStateUVE<&RayCast3DComponentUVE::hit>("hit", "Hit",
+                                                                               kPropertyTypeBoolUVE),
+                           "Result"),
+                InGroupUVE(DeclareRuntimeStateUVE<&RayCast3DComponentUVE::hitEntity>(
+                               "hitEntity", "Hit Entity", kPropertyTypeEntityUVE),
+                           "Result"),
+                InGroupUVE(DeclareRuntimeStateUVE<&RayCast3DComponentUVE::hitPosition>(
+                               "hitPosition", "Hit Position", kPropertyTypeVector3UVE),
+                           "Result"),
+                InGroupUVE(DeclareRuntimeStateUVE<&RayCast3DComponentUVE::hitNormal>(
+                               "hitNormal", "Hit Normal", kPropertyTypeVector3UVE),
+                           "Result"),
             }));
 }
 
@@ -1510,6 +1579,7 @@ void DeclareObjectCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     DeclareIdentityAndTransformUVE(entries);
     DeclareRenderingUVE(entries);
     DeclarePhysicsUVE(entries);
+    DeclareRayCastUVE(entries);
     DeclareMediaAndUIUVE(entries);
     DeclareGameplayUVE(entries);
     DeclareObjectBasesUVE(entries);

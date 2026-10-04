@@ -523,11 +523,20 @@ private:
     /// hit/hitPosition/hitNormal/hitEntity - previously this object type existed only as authored
     /// data with nothing evaluating it. The authored `direction` is treated as local-space and
     /// rotated by the entity's world rotation (Math::RotateVectorUVE), matching
-    /// LightSystemUVE's own local-to-world direction convention. `exclusions` is intentionally not
-    /// consumed yet: IRaycastSystemUVE::RaycastUVE() only supports ignoring one entity per query
-    /// (already spent on the ray's own origin entity), and this engine has no persistent,
-    /// save/load-stable way to reference another object yet - a real, separate follow-up, not
-    /// silently faked here.
+    /// LightSystemUVE's own local-to-world direction convention.
+    ///
+    /// Every gate fails closed and clears the WHOLE result, not just the flag: a disabled,
+    /// malformed or unswept ray has no hit, no point, no normal and no entity, so a consumer that
+    /// reads hitEntity without checking hit first can never act on last frame's hit. Malformed
+    /// means the component fails its own validator (a degenerate direction, a non-positive length,
+    /// an exclusion slot that names nothing, a duplicated exclusion).
+    ///
+    /// `exclusions` is consumed: the declared prefix of the authored entity references is handed to
+    /// IRaycastSystemUVE as Physics::RaycastQueryUVE::excludedEntities, where it is checked before
+    /// the layer mask - an exclusion is not a mask, so no layer can bring an excluded entity back.
+    /// Those references are remapped through the scene file's local-id table on load (like the
+    /// visibility parent and hierarchy parent), which is what makes them authored data rather than
+    /// a runtime handle that would mean something else after the next load.
     void SyncRayCast3DObjectsUVE();
 
     /// Simulates every live, enabled, valid SpringArm3D object, one ray per arm per fixed step,
