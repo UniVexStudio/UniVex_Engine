@@ -366,6 +366,37 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
     EXPECT_TRUE(entityManager.HasComponentUVE<WorldTransformComponentUVE>(restored));
 }
 
+TEST_F(SceneSerializerUVETest, SpringArmAuthoredFieldsRoundTripAndRuntimeTruthIsReseeded) {
+    // The arm's authored half is saved; its runtime half is not, and must not be: where the boom
+    // happens to be pointing right now is a fact about the frame that saved the scene, not about
+    // the scene. A restored arm starts at its authored reach and the first step resolves the truth.
+    const EntityUVE source = entityManager.CreateEntityUVE();
+    SpringArm3DComponentUVE springArm;
+    springArm.armLength = 6.0F;
+    springArm.margin = 0.25F;
+    springArm.smoothing = 12.0F;
+    springArm.collisionMask = 0x0FU;
+    springArm.currentLength = 2.0F; // retracted against something, at save time
+    springArm.enabled = false;
+    entityManager.AddComponentUVE<SpringArm3DComponentUVE>(source, springArm);
+
+    const std::optional<SceneSnapshotUVE> snapshot =
+        serializer.CaptureUVE(entityManager, {source}, SceneAssetTypeUVE::Scene);
+    ASSERT_TRUE(snapshot.has_value());
+    const std::vector<EntityUVE> restoredRoots = serializer.RestoreUVE(entityManager, *snapshot);
+    ASSERT_EQ(restoredRoots.size(), 1U);
+
+    const SpringArm3DComponentUVE restored =
+        entityManager.GetComponentUVE<SpringArm3DComponentUVE>(restoredRoots.front());
+    EXPECT_FLOAT_EQ(restored.armLength, 6.0F);
+    EXPECT_FLOAT_EQ(restored.margin, 0.25F);
+    EXPECT_FLOAT_EQ(restored.smoothing, 12.0F);
+    EXPECT_EQ(restored.collisionMask, 0x0FU);
+    EXPECT_FALSE(restored.enabled);
+    EXPECT_FLOAT_EQ(restored.currentLength, restored.armLength)
+        << "runtime truth is re-derived by the next step, so a load must not restore a stale one";
+}
+
 TEST_F(SceneSerializerUVETest, SaveUVE_InvalidAuthoredTransformFailsBeforeDestinationPublication) {
     const EntityUVE entity = entityManager.CreateEntityUVE();
     TransformComponentUVE transform;

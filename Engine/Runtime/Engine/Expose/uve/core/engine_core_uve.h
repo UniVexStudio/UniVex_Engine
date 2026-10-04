@@ -530,23 +530,18 @@ private:
     /// silently faked here.
     void SyncRayCast3DObjectsUVE();
 
-    /// Simulates every live, enabled, valid SpringArm3D object, one ray per arm per fixed step:
-    /// casts along the arm's local +Z (behind the pivot - the camera convention looks down -Z)
-    /// with the arm's own mask, resolves the target through Scene::ResolveSpringArm3DTargetUVE
-    /// (full length when unobstructed, hit-distance minus margin otherwise, clamped), and steps
-    /// currentLength through Scene::ResolveSpringArm3DLengthUVE - retraction snaps so a camera
-    /// never clips for one smooth frame's sake, extension blends at the authored `smoothing`
-    /// per second so the camera springs back instead of popping the way Godot's SpringArm3D
-    /// does (Godot ships no smoothing member; `smoothing = 0` restores that exact behaviour).
-    /// Direct children are then shifted along the arm's local Z by the CHANGE in length, so an
-    /// unobstructed arm hands back everything it borrowed and authored poses round-trip without
-    /// drift; children without transforms are skipped, and rotation stays the developer's to
-    /// own, as in the original design. Runs inside the fixed-step loop (with character
-    /// controllers and projectiles) because extension is dt-dependent and the raycast must see
-    /// the same simulated collider poses the physics step just produced. Like the other syncs
-    /// this lives in the engine core tick, not the object module - the Objects/3D layer holds pure
-    /// authoring data plus the two dependency-free resolvers the tests pin directly; the Physics
-    /// include is not part of that layer.
+    /// Simulates every live, enabled, valid SpringArm3D object, one ray per arm per fixed step,
+    /// through Physics::StepSpringArm3DUVE - where the cast along the arm's local +Z, the target
+    /// under its margin, the motion law (retraction snaps so a camera never clips for one smooth
+    /// frame's sake; extension blends at the authored `smoothing` per second so the camera springs
+    /// back instead of popping the way Godot's SpringArm3D does; a disabled arm hands its length
+    /// back) and the children riding the delta all live, together, and are pinned by their own
+    /// tests. This tick only decides which arms run, in what order, and that an arm the step
+    /// refuses keeps the length it had.
+    ///
+    /// Runs inside the fixed-step loop (with character controllers and projectiles) because
+    /// extension is dt-dependent and the raycast must see the same simulated collider poses the
+    /// physics step just produced.
     void SyncSpringArm3DObjectsUVE(float fixedDeltaTimeSeconds);
 
     /// The combat pairing, new wiring for previously unconsumed authored data: refreshes every

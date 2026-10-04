@@ -64,7 +64,7 @@ constexpr std::array<SceneObjectDescriptorUVE, 47U> kDescriptors{
     SceneObjectDescriptorUVE{SceneObjectKindUVE::NavSeeker3D, "nav_seeker_3d", "NavSeeker3D", "Navigation", "Scene/NavSeeker3DComponentUVE", kNavSeekerContracts, true},
     SceneObjectDescriptorUVE{SceneObjectKindUVE::Skeleton3D, "skeleton_3d", "Skeleton3D", "Animation", "Scene/Skeleton3DComponentUVE", kSkeletonContracts, true},
     SceneObjectDescriptorUVE{SceneObjectKindUVE::BoneAttachment3D, "bone_attachment_3d", "BoneAttachment3D", "Animation", "Scene/BoneAttachment3DComponentUVE", kBoneAttachmentContracts, true},
-    SceneObjectDescriptorUVE{SceneObjectKindUVE::SpringArm3D, "spring_arm_3d", "SpringArm3D", "Camera", "Physics/RaycastSystemUVE", kSpringArmContracts, true},
+    SceneObjectDescriptorUVE{SceneObjectKindUVE::SpringArm3D, "spring_arm_3d", "SpringArm3D", "Camera", "Physics/SpringArmUVE", kSpringArmContracts, true},
     SceneObjectDescriptorUVE{SceneObjectKindUVE::Marker3D, "marker_3d", "Marker3D", "Scene", "Scene/Marker3DComponentUVE", kMarkerContracts, true},
     SceneObjectDescriptorUVE{SceneObjectKindUVE::Hitbox3D, "hitbox_3d", "Hitbox3D", "Combat", "Physics/Hitbox3DComponentUVE", kHitboxContracts, true},
     SceneObjectDescriptorUVE{SceneObjectKindUVE::Hurtbox3D, "hurtbox_3d", "Hurtbox3D", "Combat", "Physics/Hurtbox3DComponentUVE", kHurtboxContracts, true},

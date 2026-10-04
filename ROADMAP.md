@@ -331,6 +331,10 @@ separately in `SETTINGS_ROADMAP.md`, which follows the same status legend.
   thin wall at speed, they push the rigid bodies they meet with the character's own push policy, and
   the velocity they actually achieved is what carries a character standing on them
 - [x] Configurable per-surface physics materials (friction/restitution)
+- [x] A third-person camera boom (SpringArm3D) that casts along its own axis every fixed step,
+  snaps in behind geometry so a camera never clips through a wall, springs back out at an authored
+  rate once the way is clear, and carries its children by the change in length so authored poses
+  round-trip without drift
 - [ ] Soft-body / cloth simulation
 - [ ] Vehicle physics (wheeled at minimum)
 - [ ] Ragdoll physics (driven skeletal bodies + constraints layered over an animated
