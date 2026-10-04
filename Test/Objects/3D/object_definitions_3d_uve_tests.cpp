@@ -39,6 +39,7 @@
 #include "uve/memory/memory_manager_uve.h"
 #include "uve/objects/3d/all_objects_3d_uve.h"
 #include "uve/scene/objects/scene_object_registry_uve.h"
+#include "uve/scene/objects/scene_object_type_uve.h"
 #include "uve/scene/objects/scene_root_uve.h"
 #include "uve/scene/scene_graph_uve.h"
 
@@ -209,6 +210,13 @@ TEST_F(Object3DDefinitionsUVETest, ApplyAttachesEachKindsExactComponentRecipe) {
         ApplyRigid3DObjectDefinitionUVE(entityManager, entity, Rigid3DObjectDefinitionUVE{});
         ExpectObject3DBaselineUVE(entityManager, entity, Rigid3DObjectDefinitionUVE::defaultName);
         EXPECT_TRUE(entityManager.HasComponentUVE<Rigid3DComponentUVE>(entity));
+        // Object3D > PhysicsObject3D > Rigid3D: a simulated body is a physics object, so it is the
+        // component that decides what its disabled state means and how it yields in a contact.
+        EXPECT_TRUE(entityManager.HasComponentUVE<PhysicsObjectComponentUVE>(entity));
+        // A simulated body without a shape is a body nothing can hit: the kind carries a collider
+        // the same way Static3D and Kinematic3D do, and its own definition validates it.
+        EXPECT_TRUE(entityManager.HasComponentUVE<ColliderComponentUVE>(entity));
+        EXPECT_TRUE(IsColliderComponentValidUVE(entityManager.GetComponentUVE<ColliderComponentUVE>(entity)));
     }
     {
         const EntityUVE entity = CreateEntityUVE();
@@ -349,6 +357,9 @@ TEST_F(Object3DDefinitionsUVETest, KinematicRecipeMatchesTheFormerInlineEditorRe
     // collider + kinematic body + the animatable body's own component, in that spirit unchanged.
     const EntityUVE entity = CreateEntityUVE();
     ApplyKinematic3DObjectDefinitionUVE(entityManager, entity, Kinematic3DObjectDefinitionUVE{});
+    // Object3D > PhysicsObject3D > Kinematic3D, so a platform that is stopped can be kept as an
+    // immovable obstacle or taken out of the world rather than only deleted.
+    EXPECT_TRUE(entityManager.HasComponentUVE<PhysicsObjectComponentUVE>(entity));
     ASSERT_TRUE(entityManager.HasComponentUVE<ColliderComponentUVE>(entity));
     ASSERT_TRUE(entityManager.HasComponentUVE<Rigid3DComponentUVE>(entity));
     ASSERT_TRUE(entityManager.HasComponentUVE<Kinematic3DComponentUVE>(entity));
@@ -809,6 +820,14 @@ TEST_F(Object3DDefinitionsUVETest, SpawnPointSelectionIsDeterministicContentOrde
     // No candidates, no spawn.
     EXPECT_EQ(ResolveSpawnPoint3DSelectionUVE(std::span<const SpawnPoint3DCandidateUVE>{}),
               std::nullopt);
+
+    // The predicate the resolver and the spawn query's result order both read: ascending
+    // (index, generation), strictly, so equal handles never re-order each other.
+    EXPECT_TRUE(SortsBeforeSpawnPointUVE(EntityUVE{1U, 0U}, EntityUVE{2U, 0U}));
+    EXPECT_TRUE(SortsBeforeSpawnPointUVE(EntityUVE{1U, 0U}, EntityUVE{1U, 1U}));
+    EXPECT_FALSE(SortsBeforeSpawnPointUVE(EntityUVE{1U, 1U}, EntityUVE{1U, 0U}));
+    EXPECT_FALSE(SortsBeforeSpawnPointUVE(EntityUVE{2U, 0U}, EntityUVE{1U, 9U}));
+    EXPECT_FALSE(SortsBeforeSpawnPointUVE(EntityUVE{3U, 2U}, EntityUVE{3U, 2U}));
     // Sentinels are filtered again at this seam too: a caller bug must not become the spawn.
     const SpawnPoint3DCandidateUVE sentinel{kInvalidEntityUVE, false};
     {
@@ -1060,6 +1079,202 @@ TEST_F(Object3DDefinitionsUVETest, AnimationGraphIsCreatableAndValidatesItsBlend
 }
 
 } // namespace
+// =================================================================================================
+// Participation: what a PhysicsObject3D's Process mode and disable mode mean to the physics world.
+// =================================================================================================
+
+class PhysicsObjectParticipationUVETest : public ::testing::Test {
+protected:
+    Memory::MemoryManagerUVE memoryManager;
+    Events::EventSystemUVE eventSystem;
+    EntityManagerUVE entityManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
+    SceneGraphUVE sceneGraph;
+
+    /// A body-shaped entity with a transform, a PhysicsObject component and a Process component
+    /// whose mode the scene graph resolves the way the engine resolves it every frame.
+    [[nodiscard]] Scene::EntityUVE MakeObjectUVE(const Scene::TickModeUVE mode,
+                                                 const PhysicsObjectDisableModeUVE disableMode) {
+        const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
+        sceneGraph.AttachTransformUVE(entityManager, entity, Scene::TransformComponentUVE{});
+        sceneGraph.UpdateUVE(entityManager);
+        Scene::ProcessComponentUVE process{};
+        process.mode = mode;
+        entityManager.AddComponentUVE<Scene::ProcessComponentUVE>(entity, process);
+        PhysicsObjectComponentUVE object{};
+        object.disableMode = disableMode;
+        entityManager.AddComponentUVE<PhysicsObjectComponentUVE>(entity, object);
+        sceneGraph.UpdateUVE(entityManager);
+        return entity;
+    }
+};
+
+TEST_F(Object3DDefinitionsUVETest, ARigid3DBodyKeepsAColliderItWasGivenAndGetsOneWhenItHasNone) {
+    // The recipe only fills in what is missing, so a body whose collider was authored - a layer, a
+    // capsule, half extents - keeps every value when the definition is applied over it.
+    const EntityUVE authored = entityManager.CreateEntityUVE();
+    ColliderComponentUVE shape{};
+    shape.shapeType = ColliderShapeTypeUVE::Capsule;
+    shape.radius = 0.25F;
+    shape.height = 1.0F;
+    shape.collisionLayer = 4U;
+    entityManager.AddComponentUVE<ColliderComponentUVE>(authored, shape);
+    ApplyRigid3DObjectDefinitionUVE(entityManager, authored, Rigid3DObjectDefinitionUVE{});
+    const ColliderComponentUVE& kept = entityManager.GetComponentUVE<ColliderComponentUVE>(authored);
+    EXPECT_EQ(kept.shapeType, ColliderShapeTypeUVE::Capsule);
+    EXPECT_FLOAT_EQ(kept.radius, 0.25F);
+    EXPECT_EQ(kept.collisionLayer, 4U);
+
+    // A wrong collider is a wrong definition: the validator refuses it rather than letting the
+    // edit create a body that can never be collided with.
+    Rigid3DObjectDefinitionUVE invalid{};
+    invalid.collider.collisionLayer = 0U;
+    EXPECT_FALSE(IsRigid3DObjectDefinitionValidUVE(invalid));
+}
+
+TEST_F(Object3DDefinitionsUVETest, AFrozenRigid3DIsOutOfTheSimulationWithoutBeingDeleted) {
+    // The reason a Rigid3D carries the physics object base: its Process mode and disable mode
+    // answer the question a game keeps asking - "stop this body, but keep it in the scene".
+    const EntityUVE entity = CreateEntityUVE();
+    ApplyRigid3DObjectDefinitionUVE(entityManager, entity, Rigid3DObjectDefinitionUVE{});
+
+    // Running (the default) - simulated, in the world, and colliding like anything else.
+    EXPECT_TRUE(IsPhysicsObjectSimulatedUVE(entityManager, entity));
+    EXPECT_TRUE(IsPhysicsObjectInWorldUVE(entityManager, entity));
+
+    // The Object3D baseline already attached the Process component: the object's schedule is
+    // authored on it, not re-added on top of it.
+    ASSERT_TRUE(entityManager.HasComponentUVE<ProcessComponentUVE>(entity));
+    entityManager.GetComponentUVE<ProcessComponentUVE>(entity).mode = TickModeUVE::Never;
+    sceneGraph.UpdateUVE(entityManager);
+
+    // Default disable mode is Remove: out of the world entirely, which the collider cache, every
+    // query and the simulation all honour through the one rule.
+    EXPECT_FALSE(IsPhysicsObjectSimulatedUVE(entityManager, entity));
+    EXPECT_FALSE(IsPhysicsObjectInWorldUVE(entityManager, entity));
+
+    // Authored as MakeStatic instead, it stays in the world as an obstacle nothing can move.
+    entityManager.GetComponentUVE<PhysicsObjectComponentUVE>(entity).disableMode =
+        PhysicsObjectDisableModeUVE::MakeStatic;
+    EXPECT_FALSE(IsPhysicsObjectSimulatedUVE(entityManager, entity));
+    EXPECT_TRUE(IsPhysicsObjectInWorldUVE(entityManager, entity));
+}
+TEST_F(Object3DDefinitionsUVETest, BodyKindsWithShapesAreToldApartByTheirControllerNotTheirCollider) {
+    // A Rigid3D and a Character3D are both a collider plus a body. The type has to come from the
+    // controller: a body with a shape and no controller is a Rigid3D, and one with it is a
+    // character.
+    const EntityUVE rigid = entityManager.CreateEntityUVE();
+    ApplyRigid3DObjectDefinitionUVE(entityManager, rigid, Rigid3DObjectDefinitionUVE{});
+    EXPECT_EQ(ResolveSceneObjectKindUVE(entityManager, rigid), Objects::SceneObjectKindUVE::Rigid3D);
+
+    const EntityUVE character = entityManager.CreateEntityUVE();
+    ApplyCharacter3DObjectDefinitionUVE(entityManager, character, Character3DObjectDefinitionUVE{});
+    EXPECT_EQ(ResolveSceneObjectKindUVE(entityManager, character), Objects::SceneObjectKindUVE::Character3D);
+}
+
+TEST_F(PhysicsObjectParticipationUVETest, AnEntityThatIsNotAPhysicsObjectIsLeftAlone) {
+    // Nothing here says it should stop, and a body assembled by hand must not be quietly taken out
+    // of the world by a system that was looking for a component that is not there.
+    const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
+    Scene::ProcessComponentUVE never{};
+    never.mode = Scene::TickModeUVE::Never;
+    entityManager.AddComponentUVE<Scene::ProcessComponentUVE>(entity, never);
+
+    EXPECT_EQ(ResolvePhysicsObjectParticipationUVE(entityManager, entity, false),
+              PhysicsObjectParticipationUVE::Active);
+    EXPECT_TRUE(IsPhysicsObjectInWorldUVE(entityManager, entity));
+    EXPECT_TRUE(IsPhysicsObjectSimulatedUVE(entityManager, entity));
+}
+
+TEST_F(PhysicsObjectParticipationUVETest, ARunningObjectParticipatesWhateverItsDisableModeSays) {
+    // The disable mode is what happens while it is *not* running; an object that is running is
+    // running, and authoring KeepActive must not make it immortal either.
+    for (const PhysicsObjectDisableModeUVE disableMode :
+         {PhysicsObjectDisableModeUVE::Remove, PhysicsObjectDisableModeUVE::MakeStatic,
+          PhysicsObjectDisableModeUVE::KeepActive}) {
+        const Scene::EntityUVE entity = MakeObjectUVE(Scene::TickModeUVE::Running, disableMode);
+        EXPECT_EQ(ResolvePhysicsObjectParticipationUVE(entityManager, entity, false),
+                  PhysicsObjectParticipationUVE::Active);
+    }
+}
+
+TEST_F(PhysicsObjectParticipationUVETest, AStoppedObjectIsTakenOutKeptAsAStaticOrLeftRunning) {
+    const Scene::EntityUVE removed = MakeObjectUVE(Scene::TickModeUVE::Never, PhysicsObjectDisableModeUVE::Remove);
+    EXPECT_EQ(ResolvePhysicsObjectParticipationUVE(entityManager, removed, false),
+              PhysicsObjectParticipationUVE::Removed);
+    EXPECT_FALSE(IsPhysicsObjectInWorldUVE(entityManager, removed));
+    EXPECT_FALSE(IsPhysicsObjectSimulatedUVE(entityManager, removed));
+
+    // Kept in the world as an immovable obstacle: still found, still in the way, never moved.
+    const Scene::EntityUVE kept =
+        MakeObjectUVE(Scene::TickModeUVE::Never, PhysicsObjectDisableModeUVE::MakeStatic);
+    EXPECT_EQ(ResolvePhysicsObjectParticipationUVE(entityManager, kept, false),
+              PhysicsObjectParticipationUVE::StaticOnly);
+    EXPECT_TRUE(IsPhysicsObjectInWorldUVE(entityManager, kept));
+    EXPECT_FALSE(IsPhysicsObjectSimulatedUVE(entityManager, kept));
+
+    // KeepActive is the author saying "this one keeps simulating while it is stopped" - the mode
+    // exists so a scripted body can outlive its own schedule.
+    const Scene::EntityUVE active =
+        MakeObjectUVE(Scene::TickModeUVE::Never, PhysicsObjectDisableModeUVE::KeepActive);
+    EXPECT_EQ(ResolvePhysicsObjectParticipationUVE(entityManager, active, false),
+              PhysicsObjectParticipationUVE::Active);
+}
+
+TEST_F(PhysicsObjectParticipationUVETest, ThePauseAnswerIsTheCallersAndTheFixedStepAsksWithFalse) {
+    // A pause-only object is out of the world for the fixed step, which does not run while the
+    // simulation is paused, and in it for anything asking on behalf of a paused world.
+    const Scene::EntityUVE entity =
+        MakeObjectUVE(Scene::TickModeUVE::PausedOnly, PhysicsObjectDisableModeUVE::Remove);
+
+    EXPECT_EQ(ResolvePhysicsObjectParticipationUVE(entityManager, entity, /*simulationPaused=*/true),
+              PhysicsObjectParticipationUVE::Active);
+    EXPECT_EQ(ResolvePhysicsObjectParticipationUVE(entityManager, entity, /*simulationPaused=*/false),
+              PhysicsObjectParticipationUVE::Removed);
+
+    // The two convenience questions always speak for the physics step, so a paused body is not
+    // simulated by it either way.
+    EXPECT_FALSE(IsPhysicsObjectInWorldUVE(entityManager, entity));
+    EXPECT_FALSE(IsPhysicsObjectSimulatedUVE(entityManager, entity));
+}
+
+TEST_F(PhysicsObjectParticipationUVETest, CollisionPriorityDefaultsToOneAndZeroMeansNeverYields) {
+    const Scene::EntityUVE plain = entityManager.CreateEntityUVE();
+    // No component at all is the neutral answer, not an error: everything that is not a physics
+    // object weighs exactly as much as one authored with the defaults.
+    EXPECT_FLOAT_EQ(GetPhysicsObjectCollisionPriorityUVE(entityManager, plain), 1.0F);
+    EXPECT_FLOAT_EQ(GetPhysicsObjectYieldWeightUVE(entityManager, plain, 0.5F), 0.5F);
+
+    const Scene::EntityUVE heavy = MakeObjectUVE(Scene::TickModeUVE::Running, PhysicsObjectDisableModeUVE::Remove);
+    entityManager.GetComponentUVE<PhysicsObjectComponentUVE>(heavy).collisionPriority = 2.0F;
+    // Twice the priority yields half as much of the same overlap.
+    EXPECT_FLOAT_EQ(GetPhysicsObjectCollisionPriorityUVE(entityManager, heavy), 2.0F);
+    EXPECT_FLOAT_EQ(GetPhysicsObjectYieldWeightUVE(entityManager, heavy, 0.5F), 0.25F);
+
+    // Zero is the authored "pinned in place": legal, and worth exactly no correction.
+    entityManager.GetComponentUVE<PhysicsObjectComponentUVE>(heavy).collisionPriority = 0.0F;
+    EXPECT_FLOAT_EQ(GetPhysicsObjectYieldWeightUVE(entityManager, heavy, 0.5F), 0.0F);
+
+    // A nonsense priority falls back to the neutral one rather than to something the solver would
+    // have to special-case, and a body with no mass to give way with yields nothing whatever its
+    // priority says.
+    entityManager.GetComponentUVE<PhysicsObjectComponentUVE>(heavy).collisionPriority = -4.0F;
+    EXPECT_FLOAT_EQ(GetPhysicsObjectCollisionPriorityUVE(entityManager, heavy), 1.0F);
+    EXPECT_FLOAT_EQ(GetPhysicsObjectYieldWeightUVE(entityManager, heavy, 0.0F), 0.0F);
+    EXPECT_FLOAT_EQ(GetPhysicsObjectYieldWeightUVE(entityManager, heavy, -1.0F), 0.0F);
+}
+
+TEST_F(PhysicsObjectParticipationUVETest, TheAbstractObjectDefinitionsStillAttachTheirComponents) {
+    // The recipes and the rule live in one file, and the rule must not have replaced the recipes:
+    // SolidBody3D is still the recipe that gives a body its physics object base, and an entity
+    // built from it is Active until something says otherwise.
+    const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
+    ApplySolidBody3DBaseUVE(entityManager, entity, "SolidBody3D");
+    EXPECT_TRUE(entityManager.HasComponentUVE<PhysicsObjectComponentUVE>(entity));
+    EXPECT_TRUE(entityManager.HasComponentUVE<SolidBodyComponentUVE>(entity));
+    EXPECT_EQ(ResolvePhysicsObjectParticipationUVE(entityManager, entity, false),
+              PhysicsObjectParticipationUVE::Active);
+}
+
 TEST(ObjectDefinitions3DUVETest, PrimitiveCollidersMatchTheKindTheyBelongTo) {
     // The editor converts a primitive in place (Cube -> Plane and so on) and refreshes the
     // collider to match the new kind. It reads these same definitions to do it, so this pins the

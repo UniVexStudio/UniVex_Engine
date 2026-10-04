@@ -890,6 +890,12 @@ public:
 
     [[nodiscard]] std::vector<Scene::EntityUVE> GetDocumentRootsUVE();
 
+    /// The objects an entity reference may name, in Outliner order: every document object with a
+    /// transform, minus the selection itself (a reference an object makes to itself resolves to
+    /// nothing an author could act on). Shared by the single-reference picker and the
+    /// reference-list drawer, so both offer exactly the same choices in the same order.
+    [[nodiscard]] std::vector<Scene::EntityUVE> GetEntityReferenceCandidatesUVE();
+
     /// The document's single scene-root entity (the top of the hierarchy), or invalid when the
     /// document somehow has none. Structural only by design: name + identity transform.
     [[nodiscard]] Scene::EntityUVE GetDocumentSceneRootUVE();
@@ -1761,6 +1767,21 @@ private:
     /// Skeleton3D's bone hierarchy, read-only: bones are authored in the DCC tool, not here.
     void DrawSkeletonBonesPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
                                       const Core::TypeMetadataPropertyUVE& property, const void* instance);
+    /// A fixed-capacity list of entity references (RayCast3D's exclusions): one object picker per
+    /// slot, plus the add/remove rows. Every edit writes the whole list back through
+    /// SetSelectedComponentPropertyUVE, so it is one undo step and the component's own rule
+    /// (dense, no duplicates) is enforced before the write lands.
+    void DrawEntityReferenceListPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
+                                            const Core::TypeMetadataPropertyUVE& property, const void* instance);
+    /// LODGroup3D's distance chain: one threshold row per level in use, plus the distance the
+    /// object is culled past, which is the rule those thresholds add up to. One write for the whole
+    /// array, so an edit is one undo step.
+    void DrawLodGroupThresholdsPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
+                                           const Core::TypeMetadataPropertyUVE& property, const void* instance);
+    /// LODGroup3D's per-level meshes: one mesh picker per level in use. An unassigned level draws
+    /// the object's own Mesh component mesh, which is what the row shows until it is overridden.
+    void DrawLodGroupMeshesPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
+                                       const Core::TypeMetadataPropertyUVE& property, const void* instance);
     /// Points the selected Skeleton3D at the model source `relativeSource` (content-relative) and
     /// loads its bones; an empty path clears both. One undo step. False, with the reason in
     /// m_skeletonSourceStatus, when the file has no readable skeleton.

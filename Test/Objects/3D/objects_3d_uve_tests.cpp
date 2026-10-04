@@ -7,6 +7,7 @@
 #include <gtest/gtest.h>
 
 #include "uve/objects/3d/all_objects_3d_uve.h"
+#include "uve/objects/3d/bone_attachment_3d_uve.h"
 #include "uve/component/area_component_uve.h"
 
 namespace UVE::Scene::Tests {
@@ -79,12 +80,162 @@ TEST(Expanded3DObjectComponentsUVETest, ExplicitSkeletonAssetBindingHydratesOnly
 
 TEST(Expanded3DObjectComponentsUVETest, BoneAttachmentBecomesResolvableOnlyWithExplicitReferences) {
     BoneAttachment3DComponentUVE attachment;
-    attachment.skeletonLocalId = 7U;
+    attachment.skeleton = EntityUVE{7U, 1U};
     attachment.boneName = "hand";
 
     EXPECT_TRUE(IsBoneAttachment3DObjectComponentResolvableUVE(attachment));
     attachment.enabled = false;
     EXPECT_FALSE(IsBoneAttachment3DObjectComponentResolvableUVE(attachment));
+
+    // A bone reference is a name or an index, and the index alone is enough: a rig whose bones are
+    // addressed by number needs no name at all.
+    attachment.enabled = true;
+    attachment.boneName.clear();
+    EXPECT_FALSE(IsBoneAttachment3DObjectComponentResolvableUVE(attachment));
+    attachment.boneIndex = 0U;
+    EXPECT_TRUE(IsBoneAttachment3DObjectComponentResolvableUVE(attachment));
+
+    // The skeleton reference is not decoration: without one the attachment is inert whatever else it
+    // names, and a default-constructed component points at nothing.
+    attachment.skeleton = kInvalidEntityUVE;
+    EXPECT_FALSE(IsBoneAttachment3DObjectComponentResolvableUVE(attachment));
+}
+
+/// A two-bone rig: a root at the skeleton's origin and a hand half a metre along the root's X.
+[[nodiscard]] Skeleton3DComponentUVE TwoBoneRigUVE() {
+    Skeleton3DComponentUVE skeleton;
+    skeleton.skeletonAssetPath = "assets/character.uvskel";
+    skeleton.bones = {SkeletonBoneUVE{"root", -1, {}, {}, {1.0F, 1.0F, 1.0F}},
+                      SkeletonBoneUVE{"hand", 0, {0.5F, 0.0F, 0.0F}, {}, {1.0F, 1.0F, 1.0F}}};
+    return skeleton;
+}
+
+TEST(Expanded3DObjectComponentsUVETest, BoneAttachmentResolverComposesTheBoneChainInPoseOrder) {
+    const Skeleton3DComponentUVE skeleton = TwoBoneRigUVE();
+    ObjectWorldFrameUVE frame{};
+    ASSERT_TRUE(TryResolveSkeletonBoneWorldFrameUVE(skeleton, 1U, ObjectWorldFrameUVE{}, frame));
+    EXPECT_NEAR(frame.position.x, 0.5F, 1e-5F) << "rest pose: half a metre along the skeleton's X";
+
+    // The runtime pose is per bone and only covers the bones something animates. Posing the ROOT
+    // moves the hand with it, because the hand's own transform is relative to the ROOT BONE - a
+    // resolver that composed every bone against the skeleton's frame would leave the hand behind.
+    Skeleton3DComponentUVE posed = skeleton;
+    posed.pose = {SkeletonBonePoseUVE{{1.0F, 2.0F, 0.0F}, {}, {2.0F, 2.0F, 2.0F}}};
+    ASSERT_TRUE(TryResolveSkeletonBoneWorldFrameUVE(posed, 1U, ObjectWorldFrameUVE{}, frame));
+    EXPECT_NEAR(frame.position.x, 2.0F, 1e-5F) << "the posed root's 1 m, plus its 2x scale on the hand's 0.5 m";
+    EXPECT_NEAR(frame.position.y, 2.0F, 1e-5F);
+    EXPECT_NEAR(frame.scale.x, 2.0F, 1e-5F) << "the root's scale carries down the chain";
+
+    // Rotation composes down the chain the same way: a quarter turn on the root takes the hand's +X
+    // to the world's -Z.
+    Skeleton3DComponentUVE turned = skeleton;
+    turned.pose = {SkeletonBonePoseUVE{{0.0F, 0.0F, 0.0F},
+                                       Math::QuaternionUVE{0.0F, 0.70710678F, 0.0F, 0.70710678F},
+                                       {1.0F, 1.0F, 1.0F}}};
+    ASSERT_TRUE(TryResolveSkeletonBoneWorldFrameUVE(turned, 1U, ObjectWorldFrameUVE{}, frame));
+    EXPECT_NEAR(frame.position.x, 0.0F, 1e-5F);
+    EXPECT_NEAR(frame.position.z, -0.5F, 1e-5F) << "+90 degrees about Y takes +X to -Z";
+
+    // A skeleton that stands somewhere else carries its bones with it, and a bone's chain is composed
+    // inside that frame rather than beside it.
+    ASSERT_TRUE(TryResolveSkeletonBoneWorldFrameUVE(
+        skeleton, 1U, ObjectWorldFrameUVE{{10.0F, 0.0F, 0.0F}, {}, {1.0F, 1.0F, 1.0F}}, frame));
+    EXPECT_NEAR(frame.position.x, 10.5F, 1e-5F);
+}
+
+TEST(Expanded3DObjectComponentsUVETest, BoneAttachmentResolverRefusesMalformedChainsAndUnknownBones) {
+    const Skeleton3DComponentUVE skeleton = TwoBoneRigUVE();
+    ObjectWorldFrameUVE frame{};
+    EXPECT_FALSE(TryResolveSkeletonBoneWorldFrameUVE(skeleton, 2U, ObjectWorldFrameUVE{}, frame));
+    EXPECT_FALSE(TryResolveSkeletonBoneWorldFrameUVE(Skeleton3DComponentUVE{}, 0U, ObjectWorldFrameUVE{}, frame));
+
+    // A parent index outside the array is a corrupt asset, not a bone without a parent.
+    Skeleton3DComponentUVE stray = skeleton;
+    stray.bones[1].parentIndex = 9;
+    EXPECT_FALSE(TryResolveSkeletonBoneWorldFrameUVE(stray, 1U, ObjectWorldFrameUVE{}, frame));
+
+    // A cycle has no root to compose from, so the walk refuses instead of running forever.
+    Skeleton3DComponentUVE cyclic = skeleton;
+    cyclic.bones[0].parentIndex = 1;
+    EXPECT_FALSE(TryResolveSkeletonBoneWorldFrameUVE(cyclic, 0U, ObjectWorldFrameUVE{}, frame));
+
+    // A non-finite skeleton frame would poison every bone under it.
+    EXPECT_FALSE(TryResolveSkeletonBoneWorldFrameUVE(
+        skeleton, 1U,
+        ObjectWorldFrameUVE{{std::numeric_limits<float>::quiet_NaN(), 0.0F, 0.0F}, {}, {1.0F, 1.0F, 1.0F}}, frame));
+
+    std::uint32_t index = 0U;
+    EXPECT_TRUE(TryFindSkeletonBoneIndexUVE(skeleton, "hand", index));
+    EXPECT_EQ(index, 1U);
+    EXPECT_FALSE(TryFindSkeletonBoneIndexUVE(skeleton, "Hand", index)) << "names are exact, not case-insensitive";
+    EXPECT_FALSE(TryFindSkeletonBoneIndexUVE(skeleton, "", index));
+    EXPECT_FALSE(TryFindSkeletonBoneIndexUVE(skeleton, "tail", index));
+}
+
+TEST(Expanded3DObjectComponentsUVETest, BoneAttachmentComposesItsAuthoredOffsetInTheBonesOwnSpace) {
+    const ObjectWorldFrameUVE bone{{0.0F, 1.0F, 0.0F},
+                                   Math::QuaternionUVE{0.0F, 0.70710678F, 0.0F, 0.70710678F},
+                                   {1.0F, 1.0F, 1.0F}};
+    // 10 cm along the BONE's X: the bone is turned a quarter turn, so that comes out along the
+    // world's -Z. An attachment authored in world units would land at +X and stay there while the
+    // arm swings, which is exactly what the frame of reference has to prevent.
+    const ObjectWorldFrameUVE attachment =
+        ComposeBoneAttachmentWorldFrameUVE(bone, {0.1F, 0.0F, 0.0F}, {}, {1.0F, 1.0F, 1.0F});
+    EXPECT_NEAR(attachment.position.x, 0.0F, 1e-5F);
+    EXPECT_NEAR(attachment.position.y, 1.0F, 1e-5F);
+    EXPECT_NEAR(attachment.position.z, -0.1F, 1e-5F);
+
+    // The attachment's own rotation composes onto the bone's, and its scale onto the chain's, so a
+    // scaled rig scales what it carries.
+    const ObjectWorldFrameUVE scaled =
+        ComposeBoneAttachmentWorldFrameUVE(bone, {}, {}, {2.0F, 1.0F, 1.0F});
+    EXPECT_NEAR(scaled.scale.x, 2.0F, 1e-5F);
+    EXPECT_NEAR(scaled.scale.y, 1.0F, 1e-5F);
+}
+
+TEST(Expanded3DObjectComponentsUVETest, BoneAttachmentLocalTransformInvertsWhatTheSceneGraphComposes) {
+    // The scene graph composes world = parent then local (scale, then rotate, then translate). An
+    // attachment has to be written in that same space, or its parent would move it a second time
+    // during propagation - so what the resolver writes has to compose back out to the frame the bone
+    // is in. Recomposed here exactly as SceneGraphUVE::UpdateUVE() does it.
+    const ObjectWorldFrameUVE parent{{5.0F, 2.0F, -1.0F},
+                                     Math::QuaternionUVE{0.0F, 0.70710678F, 0.0F, 0.70710678F},
+                                     {2.0F, 2.0F, 2.0F}};
+    const ObjectWorldFrameUVE wanted{{7.0F, 3.0F, -3.0F},
+                                     Math::QuaternionUVE{0.0F, 0.0F, 0.38268343F, 0.92387953F},
+                                     {4.0F, 4.0F, 4.0F}};
+    Math::Vector3UVE localPosition{};
+    Math::QuaternionUVE localRotation{};
+    Math::Vector3UVE localScale{};
+    ASSERT_TRUE(TryMakeBoneAttachmentLocalTransformUVE(wanted, parent, localPosition, localRotation, localScale));
+
+    const Math::Vector3UVE recomposedPosition =
+        parent.position +
+        Math::RotateVectorUVE(parent.rotation, Math::Vector3UVE{localPosition.x * parent.scale.x,
+                                                                localPosition.y * parent.scale.y,
+                                                                localPosition.z * parent.scale.z});
+    EXPECT_NEAR(recomposedPosition.x, wanted.position.x, 1e-4F);
+    EXPECT_NEAR(recomposedPosition.y, wanted.position.y, 1e-4F);
+    EXPECT_NEAR(recomposedPosition.z, wanted.position.z, 1e-4F);
+    // Rotation is compared through a vector, because q and -q are the same rotation and comparing
+    // components would fail on a sign the engine is right to allow.
+    const Math::Vector3UVE axis{0.3F, -0.6F, 0.2F};
+    const Math::Vector3UVE throughLocal =
+        Math::RotateVectorUVE(Math::MultiplyUVE(parent.rotation, localRotation), axis);
+    const Math::Vector3UVE throughWanted = Math::RotateVectorUVE(wanted.rotation, axis);
+    EXPECT_NEAR(throughLocal.x, throughWanted.x, 1e-4F);
+    EXPECT_NEAR(throughLocal.y, throughWanted.y, 1e-4F);
+    EXPECT_NEAR(throughLocal.z, throughWanted.z, 1e-4F);
+    EXPECT_NEAR(localScale.x * parent.scale.x, wanted.scale.x, 1e-4F);
+    EXPECT_NEAR(localScale.y * parent.scale.y, wanted.scale.y, 1e-4F);
+    EXPECT_NEAR(localScale.z * parent.scale.z, wanted.scale.z, 1e-4F);
+
+    // A parent flattened by a zero scale cannot be inverted: the arithmetic would divide by it and
+    // hand the renderer an infinity. Refusing keeps the last good transform instead.
+    const ObjectWorldFrameUVE flattened{{0.0F, 0.0F, 0.0F}, {}, {1.0F, 0.0F, 1.0F}};
+    EXPECT_FALSE(TryMakeBoneAttachmentLocalTransformUVE(wanted, flattened, localPosition, localRotation, localScale));
+    const ObjectWorldFrameUVE infinite{{std::numeric_limits<float>::infinity(), 0.0F, 0.0F}, {}, {1.0F, 1.0F, 1.0F}};
+    EXPECT_FALSE(TryMakeBoneAttachmentLocalTransformUVE(infinite, parent, localPosition, localRotation, localScale));
 }
 
 TEST(Expanded3DObjectComponentsUVETest, Hitbox3DStrikeStateIsRuntimeOnlyAndNeverAuthored) {
@@ -100,10 +251,168 @@ TEST(Expanded3DObjectComponentsUVETest, Hitbox3DStrikeStateIsRuntimeOnlyAndNever
     EXPECT_TRUE(IsHitbox3DObjectComponentValidUVE(hitbox));
 }
 
+TEST(Expanded3DObjectComponentsUVETest, RayCast3DExclusionListIsAPrefixOfRealReferences) {
+    // A freshly authored ray excludes nobody: every slot is the empty sentinel, never index 0 of a
+    // pool that may already hold a live entity - a default EntityUVE is a real handle.
+    RayCast3DComponentUVE ray;
+    EXPECT_EQ(CountRayCast3DExclusionsUVE(ray), 0U);
+    for (const EntityUVE& exclusion : ray.exclusions) {
+        EXPECT_EQ(exclusion, kInvalidEntityUVE);
+    }
+    EXPECT_TRUE(IsRayCast3DObjectComponentValidUVE(ray));
+
+    // Live references count as themselves, in the order they were authored.
+    ray.exclusions[0] = EntityUVE{3U, 1U};
+    ray.exclusions[1] = EntityUVE{7U, 2U};
+    EXPECT_EQ(CountRayCast3DExclusionsUVE(ray), 2U);
+    EXPECT_TRUE(IsRayCast3DObjectComponentValidUVE(ray));
+
+    // The list is a prefix, so a live reference behind an empty slot is refused: no query would
+    // ever reach it, and a ray that silently ignores an authored exclusion is worse than one that
+    // refuses to load. The same rule makes the trailing slots the only place a hole may be.
+    RayCast3DComponentUVE holed = ray;
+    holed.exclusions[0] = kInvalidEntityUVE;
+    EXPECT_EQ(CountRayCast3DExclusionsUVE(holed), 0U);
+    EXPECT_FALSE(IsRayCast3DObjectComponentValidUVE(holed));
+
+    // Duplicates are refused rather than collapsed: two identical slots are an authoring mistake,
+    // and dropping one silently would hide which of the two was meant.
+    RayCast3DComponentUVE duplicated = ray;
+    duplicated.exclusions[1] = duplicated.exclusions[0];
+    EXPECT_FALSE(IsRayCast3DObjectComponentValidUVE(duplicated));
+
+    // All eight slots can be real. The bound is the array, so "the ninth exclusion" is not a value
+    // this component can hold at all.
+    RayCast3DComponentUVE full;
+    for (std::size_t index = 0U; index < kMaximumRayCastExclusionsUVE; ++index) {
+        full.exclusions[index] = EntityUVE{static_cast<std::uint32_t>(index), 1U};
+    }
+    EXPECT_EQ(CountRayCast3DExclusionsUVE(full), kMaximumRayCastExclusionsUVE);
+    EXPECT_TRUE(IsRayCast3DObjectComponentValidUVE(full));
+}
+
+TEST(Expanded3DObjectComponentsUVETest, Projectile3DHitContractRejectsWhatItCannotHonor) {
+    // The authored defaults are a valid projectile: a sphere that flies, stops on a hit and lives
+    // ten seconds.
+    Projectile3DComponentUVE projectile;
+    EXPECT_TRUE(IsProjectile3DObjectComponentValidUVE(projectile));
+    EXPECT_TRUE(IsKnownProjectile3DHitPolicyUVE(projectile.hitPolicy));
+
+    // A policy outside the enum is a malformed component, not a policy to guess at.
+    Projectile3DComponentUVE policy = projectile;
+    policy.hitPolicy = static_cast<Projectile3DHitPolicyUVE>(7U);
+    EXPECT_FALSE(IsKnownProjectile3DHitPolicyUVE(policy.hitPolicy));
+    EXPECT_FALSE(IsProjectile3DObjectComponentValidUVE(policy));
+
+    // The bounce coefficients live inside 0..1 and nowhere else.
+    Projectile3DComponentUVE coefficient = projectile;
+    coefficient.restitution = -0.1F;
+    EXPECT_FALSE(IsProjectile3DObjectComponentValidUVE(coefficient));
+    coefficient.restitution = 1.1F;
+    EXPECT_FALSE(IsProjectile3DObjectComponentValidUVE(coefficient));
+    coefficient.restitution = std::numeric_limits<float>::quiet_NaN();
+    EXPECT_FALSE(IsProjectile3DObjectComponentValidUVE(coefficient));
+    coefficient.restitution = 0.0F;
+    coefficient.friction = 1.0F;
+    EXPECT_TRUE(IsProjectile3DObjectComponentValidUVE(coefficient));
+    coefficient.friction = -0.01F;
+    EXPECT_FALSE(IsProjectile3DObjectComponentValidUVE(coefficient));
+    coefficient.friction = 1.01F;
+    EXPECT_FALSE(IsProjectile3DObjectComponentValidUVE(coefficient));
+
+    // A sphere has to have a size, and a lifetime has to be reachable.
+    Projectile3DComponentUVE bounds = projectile;
+    bounds.radius = 0.0F;
+    EXPECT_FALSE(IsProjectile3DObjectComponentValidUVE(bounds));
+    bounds = projectile;
+    bounds.maxLifetime = 0.0F;
+    EXPECT_FALSE(IsProjectile3DObjectComponentValidUVE(bounds));
+    bounds = projectile;
+    bounds.remainingLifetime = projectile.maxLifetime + 1.0F;
+    EXPECT_FALSE(IsProjectile3DObjectComponentValidUVE(bounds));
+    bounds = projectile;
+    bounds.velocity.x = std::numeric_limits<float>::infinity();
+    EXPECT_FALSE(IsProjectile3DObjectComponentValidUVE(bounds));
+
+    // Runtime result state has to stay readable: a claimed hit names its entity and carries finite
+    // numbers, so a consumer that trusts `hit` can never act on a hit that points nowhere.
+    Projectile3DComponentUVE hit = projectile;
+    hit.hit = true;
+    EXPECT_FALSE(IsProjectile3DObjectComponentValidUVE(hit));
+    hit.hitEntity = EntityUVE{4U, 1U};
+    hit.hitPosition = Math::Vector3UVE{1.0F, 2.0F, 3.0F};
+    hit.hitNormal = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+    hit.impactSpeed = 12.0F;
+    EXPECT_TRUE(IsProjectile3DObjectComponentValidUVE(hit));
+    hit.impactSpeed = -1.0F;
+    EXPECT_FALSE(IsProjectile3DObjectComponentValidUVE(hit));
+    hit.impactSpeed = 12.0F;
+    hit.hitNormal.y = std::numeric_limits<float>::quiet_NaN();
+    EXPECT_FALSE(IsProjectile3DObjectComponentValidUVE(hit));
+}
+
+TEST(Expanded3DObjectComponentsUVETest, Projectile3DBounceReflectsAndNeverAddsEnergy) {
+    const Math::Vector3UVE intoTheWall{6.0F, 0.0F, 0.0F};
+    const Math::Vector3UVE wallNormal{-1.0F, 0.0F, 0.0F};
+
+    // Head-on: the speed into the surface comes back at the restitution, and nothing else is left.
+    const Math::Vector3UVE bounced =
+        ResolveProjectile3DBounceVelocityUVE(intoTheWall, wallNormal, 0.5F, 0.0F);
+    EXPECT_NEAR(bounced.x, -3.0F, 1.0e-5F);
+    EXPECT_NEAR(bounced.y, 0.0F, 1.0e-5F);
+    EXPECT_NEAR(bounced.z, 0.0F, 1.0e-5F);
+
+    // Grazing: the component into the floor comes back at the restitution, the component along it
+    // loses the friction, and the two do not mix.
+    const Math::Vector3UVE grazing =
+        ResolveProjectile3DBounceVelocityUVE(Math::Vector3UVE{2.0F, -4.0F, 0.0F}, Math::Vector3UVE{0.0F, 1.0F, 0.0F},
+                                             0.5F, 0.25F);
+    EXPECT_NEAR(grazing.x, 1.5F, 1.0e-5F);
+    EXPECT_NEAR(grazing.y, 2.0F, 1.0e-5F);
+
+    // Coefficients are clamped: 5 is 1, and 1 is the most a bounce can return.
+    const Math::Vector3UVE clamped =
+        ResolveProjectile3DBounceVelocityUVE(intoTheWall, wallNormal, 5.0F, 0.0F);
+    EXPECT_NEAR(Math::LengthUVE(clamped), 6.0F, 1.0e-4F);
+    const Math::Vector3UVE slick =
+        ResolveProjectile3DBounceVelocityUVE(Math::Vector3UVE{2.0F, -4.0F, 0.0F}, Math::Vector3UVE{0.0F, 1.0F, 0.0F},
+                                             1.0F, 5.0F);
+    EXPECT_NEAR(slick.x, 0.0F, 1.0e-5F);
+    EXPECT_NEAR(slick.y, 4.0F, 1.0e-5F);
+
+    // The normal is a direction, not a distance: a longer one reflects the same motion as a unit
+    // one, so nothing downstream has to remember to normalize before calling this.
+    const Math::Vector3UVE alongZ{0.0F, 0.0F, 6.0F};
+    const Math::Vector3UVE unitNormal{0.0F, 0.0F, -1.0F};
+    const Math::Vector3UVE longNormal{0.0F, 0.0F, -4.0F};
+    const Math::Vector3UVE scaled = ResolveProjectile3DBounceVelocityUVE(alongZ, longNormal, 1.0F, 0.0F);
+    EXPECT_EQ(scaled, ResolveProjectile3DBounceVelocityUVE(alongZ, unitNormal, 1.0F, 0.0F));
+    EXPECT_NEAR(scaled.z, -6.0F, 1.0e-5F);
+
+    // Nothing to reflect about, or nothing finite to reflect: the motion is handed back unchanged
+    // rather than replaced with a NaN.
+    const Math::Vector3UVE noNormal{};
+    EXPECT_EQ(ResolveProjectile3DBounceVelocityUVE(intoTheWall, noNormal, 1.0F, 0.0F), intoTheWall);
+    const Math::Vector3UVE nanNormal{std::numeric_limits<float>::quiet_NaN(), 0.0F, 0.0F};
+    EXPECT_EQ(ResolveProjectile3DBounceVelocityUVE(intoTheWall, nanNormal, 1.0F, 0.0F), intoTheWall);
+    const Math::Vector3UVE infiniteVelocity{std::numeric_limits<float>::infinity(), 0.0F, 0.0F};
+    EXPECT_EQ(ResolveProjectile3DBounceVelocityUVE(infiniteVelocity, wallNormal, 1.0F, 0.0F), infiniteVelocity);
+}
+
 TEST(Expanded3DObjectComponentsUVETest, BoundedContractsRejectUnsafeValues) {
     RayCast3DComponentUVE ray;
-    ray.exclusionCount = static_cast<std::uint8_t>(kMaximumRayCastExclusionsUVE + 1U);
+    // A ray with no usable direction, no reach, or a length nobody can cast is refused outright.
+    ray.direction = Math::Vector3UVE{};
     EXPECT_FALSE(IsRayCast3DObjectComponentValidUVE(ray));
+    ray.direction = Math::Vector3UVE{0.0F, -1.0F, 0.0F};
+    ray.length = 0.0F;
+    EXPECT_FALSE(IsRayCast3DObjectComponentValidUVE(ray));
+    ray.length = -1.0F;
+    EXPECT_FALSE(IsRayCast3DObjectComponentValidUVE(ray));
+    ray.length = std::numeric_limits<float>::quiet_NaN();
+    EXPECT_FALSE(IsRayCast3DObjectComponentValidUVE(ray));
+    ray.length = 1.0F;
+    EXPECT_TRUE(IsRayCast3DObjectComponentValidUVE(ray));
 
     Skeleton3DComponentUVE skeleton;
     skeleton.bones.push_back(SkeletonBoneUVE{"root", -1, {}, {}, {1.0F, 1.0F, 1.0F}});
@@ -122,6 +431,23 @@ TEST(Expanded3DObjectComponentsUVETest, BoundedContractsRejectUnsafeValues) {
     WorldPartition3DComponentUVE partition;
     partition.cellCounts[1] = 0U;
     EXPECT_FALSE(IsWorldPartition3DObjectComponentValidUVE(partition));
+
+    Kinematic3DComponentUVE kinematic;
+    kinematic.interpolation = 1.5F;
+    EXPECT_FALSE(IsKinematic3DObjectComponentValidUVE(kinematic));
+    kinematic.interpolation = -0.5F;
+    EXPECT_FALSE(IsKinematic3DObjectComponentValidUVE(kinematic));
+    // Both ends of the authored range are real: 1 is "at speed this step", 0 is "never ease on its
+    // own" - a body a script drives by writing its velocity.
+    kinematic.interpolation = 1.0F;
+    EXPECT_TRUE(IsKinematic3DObjectComponentValidUVE(kinematic));
+    kinematic.interpolation = 0.0F;
+    EXPECT_TRUE(IsKinematic3DObjectComponentValidUVE(kinematic));
+    // A body switched off is authored data, not something to reject: `active` is the reversible
+    // "stop where you are" the mover honours.
+    kinematic.interpolation = 0.5F;
+    kinematic.active = false;
+    EXPECT_TRUE(IsKinematic3DObjectComponentValidUVE(kinematic));
 }
 
 TEST(Expanded3DObjectComponentsUVETest, FiniteAndBoundedValuesRejectNonFinitePayloads) {
@@ -132,6 +458,12 @@ TEST(Expanded3DObjectComponentsUVETest, FiniteAndBoundedValuesRejectNonFinitePay
     SpringArm3DComponentUVE springArm;
     springArm.currentLength = std::numeric_limits<float>::infinity();
     EXPECT_FALSE(IsSpringArm3DObjectComponentValidUVE(springArm));
+
+    // A target velocity that is not a number is not a body going nowhere: it is a malformed
+    // component, refused here so the mover never has to guess (it drops one written at runtime).
+    Kinematic3DComponentUVE kinematic;
+    kinematic.targetVelocity.x = std::numeric_limits<float>::quiet_NaN();
+    EXPECT_FALSE(IsKinematic3DObjectComponentValidUVE(kinematic));
 }
 
 } // namespace
@@ -220,6 +552,467 @@ TEST(LodGroup3DResolveUVETest, ResolvingLeavesTheComponentValid) {
         ResolveLodGroup3DLevelUVE(group, distance);
         EXPECT_TRUE(IsLodGroup3DObjectComponentValidUVE(group)) << "after resolving at " << distance;
     }
+}
+
+TEST(LodGroup3DResolveUVETest, HysteresisKeepsALevelUntilTheDistanceIsWellPastItsThreshold) {
+    // The whole point of the band: an object drifting across a threshold must not swap meshes on
+    // alternate frames. With a 10% band on a 10 m threshold, the level is entered past 11 m and
+    // only left under 9 m - and everything between those two points keeps whatever it had.
+    LodGroup3DComponentUVE group;
+    group.levelCount = 4U;
+    group.hysteresis = 0.1F;
+
+    ResolveLodGroup3DLevelUVE(group, 9.0F);
+    EXPECT_EQ(group.currentLevel, 0U);
+
+    // Past the threshold, but inside the entry band: the old level is kept, which is the whole
+    // difference from the stateless rule.
+    ResolveLodGroup3DLevelUVE(group, 10.5F);
+    EXPECT_EQ(group.currentLevel, 0U) << "10.5 m is not past 11 m, so the band holds level 0";
+
+    ResolveLodGroup3DLevelUVE(group, 11.5F);
+    EXPECT_EQ(group.currentLevel, 1U) << "11.5 m is past the entry point";
+
+    // Back inside the threshold, but not under the exit point: still level 1.
+    ResolveLodGroup3DLevelUVE(group, 10.5F);
+    EXPECT_EQ(group.currentLevel, 1U) << "hysteresis means the way back is not the way in";
+
+    ResolveLodGroup3DLevelUVE(group, 8.5F);
+    EXPECT_EQ(group.currentLevel, 0U) << "8.5 m is under the exit point";
+}
+
+TEST(LodGroup3DResolveUVETest, EveryThresholdCarriesItsOwnBand) {
+    // The band is relative to each threshold, not one global distance, so a chain of thresholds an
+    // order of magnitude apart still has a useful band at both ends.
+    LodGroup3DComponentUVE group;
+    group.levelCount = 4U;
+    group.hysteresis = 0.1F;
+
+    ResolveLodGroup3DLevelUVE(group, 20.0F);
+    ASSERT_EQ(group.currentLevel, 1U);
+
+    ResolveLodGroup3DLevelUVE(group, 26.0F);
+    EXPECT_EQ(group.currentLevel, 1U) << "25 m's entry point is 27.5 m";
+
+    ResolveLodGroup3DLevelUVE(group, 28.0F);
+    EXPECT_EQ(group.currentLevel, 2U);
+
+    ResolveLodGroup3DLevelUVE(group, 24.0F);
+    EXPECT_EQ(group.currentLevel, 2U) << "25 m's exit point is 22.5 m";
+
+    ResolveLodGroup3DLevelUVE(group, 22.0F);
+    EXPECT_EQ(group.currentLevel, 1U);
+
+    // The same rule at the far end of the chain: 60 m is entered past 66 m and left under 54 m.
+    ResolveLodGroup3DLevelUVE(group, 70.0F);
+    EXPECT_EQ(group.currentLevel, 3U);
+    ResolveLodGroup3DLevelUVE(group, 61.0F);
+    EXPECT_EQ(group.currentLevel, 3U);
+    ResolveLodGroup3DLevelUVE(group, 53.0F);
+    EXPECT_EQ(group.currentLevel, 2U);
+}
+
+TEST(LodGroup3DResolveUVETest, ACulledObjectStaysCulledInsideTheBandAndReturnsOnce) {
+    // Culling is the level past the end of the chain, so it has a band too. Without one, an object
+    // hovering on the last threshold would pop in and out of the visibility set every frame - and
+    // every pop is a full asset resolution and placement, not just a draw.
+    LodGroup3DComponentUVE group;
+    group.levelCount = 4U;
+    group.hysteresis = 0.1F;
+
+    ResolveLodGroup3DLevelUVE(group, 200.0F);
+    EXPECT_TRUE(group.culledByDistance);
+    EXPECT_EQ(group.currentLevel, 3U) << "a culled object still names its last real level";
+
+    ResolveLodGroup3DLevelUVE(group, 125.0F);
+    EXPECT_TRUE(group.culledByDistance) << "125 m is inside 120 m's 12 m band, so it stays culled";
+
+    ResolveLodGroup3DLevelUVE(group, 100.0F);
+    EXPECT_FALSE(group.culledByDistance) << "100 m is under the 108 m return point";
+    EXPECT_EQ(group.currentLevel, 3U) << "and lands on the level its distance is actually in";
+}
+
+TEST(LodGroup3DResolveUVETest, HysteresisZeroIsTheStatelessRuleItReplaced) {
+    // An object that never opts into a band must resolve exactly as it did before hysteresis
+    // existed - including through jumps in both directions, which is where a rule that remembered
+    // anything would diverge.
+    LodGroup3DComponentUVE group;
+    group.levelCount = 4U;
+    ASSERT_FLOAT_EQ(group.hysteresis, 0.0F);
+
+    const std::array<std::pair<float, std::uint8_t>, 9U> cases{{
+        {5.0F, 0U}, {200.0F, 3U}, {30.0F, 2U}, {12.0F, 1U}, {1000.0F, 3U},
+        {60.0F, 2U}, {25.0F, 1U}, {10.0F, 0U}, {119.0F, 3U}}};
+    for (const auto& [distance, expectedLevel] : cases) {
+        ResolveLodGroup3DLevelUVE(group, distance);
+        EXPECT_EQ(group.currentLevel, expectedLevel) << "at distance " << distance;
+    }
+    ResolveLodGroup3DLevelUVE(group, 500.0F);
+    EXPECT_TRUE(group.culledByDistance);
+}
+
+TEST(LodGroup3DResolveUVETest, ATeleportAcrossSeveralLevelsLandsOnTheLevelItsDistanceIsIn) {
+    // A teleported object crosses several thresholds in one frame. The step-by-step walk still ends
+    // where the distance says it should, and the cull state follows the same banded rule.
+    LodGroup3DComponentUVE group;
+    group.levelCount = 4U;
+    group.hysteresis = 0.1F;
+
+    ResolveLodGroup3DLevelUVE(group, 5.0F);
+    ASSERT_EQ(group.currentLevel, 0U);
+
+    ResolveLodGroup3DLevelUVE(group, 500.0F);
+    EXPECT_TRUE(group.culledByDistance);
+    EXPECT_EQ(group.currentLevel, 3U);
+
+    // Coming back from far away is one decision: un-cull and drop to the level the distance is in,
+    // rather than spending a frame visible at the coarsest level.
+    ResolveLodGroup3DLevelUVE(group, 5.0F);
+    EXPECT_FALSE(group.culledByDistance);
+    EXPECT_EQ(group.currentLevel, 0U);
+}
+
+TEST(LodGroup3DResolveUVETest, AnOutOfRangeHysteresisResolvesAsNoBandInsteadOfRefusing) {
+    // Authoring rejects an out-of-range band, so this is a value that reached the resolver anyway -
+    // a hand-edited file, a script writing the component. It must still resolve to something
+    // sensible rather than produce an arbitrary band, so it clamps to the maximum.
+    LodGroup3DComponentUVE group;
+    group.levelCount = 4U;
+    group.hysteresis = 10.0F;
+
+    // Clamped to 0.5, so the 10 m threshold is entered strictly past 15 m - the same rule the
+    // maximum band would give, not a 10-second-wide band nobody could author.
+    ResolveLodGroup3DLevelUVE(group, 15.0F);
+    EXPECT_EQ(group.currentLevel, 0U) << "15 m is the entry point, and entry is strict";
+
+    ResolveLodGroup3DLevelUVE(group, 16.0F);
+    EXPECT_EQ(group.currentLevel, 1U);
+    EXPECT_FALSE(group.culledByDistance);
+}
+
+TEST(LodGroup3DMeshUVETest, EachLevelDrawsItsOwnMeshAndEmptySlotsFallBackToTheBaseMesh) {
+    // The swapping rule, in one place: the level names a mesh, and a level that names none draws
+    // the entity's own MeshComponentUVE mesh. That is what lets an author fill in levels 1..N and
+    // leave level 0 - the full-detail mesh they already authored - alone.
+    const Asset::AssetGuidUVE baseMesh{7U};
+    LodGroup3DComponentUVE group;
+    group.levelCount = 3U;
+    group.lodMeshGuids[1] = Asset::AssetGuidUVE{42U};
+
+    ResolveLodGroup3DLevelUVE(group, 5.0F);
+    ASSERT_EQ(group.currentLevel, 0U);
+    EXPECT_EQ(ResolveLodGroup3DMeshGuidUVE(group, baseMesh), baseMesh)
+        << "an unset level 0 draws the component's own mesh";
+
+    ResolveLodGroup3DLevelUVE(group, 20.0F);
+    ASSERT_EQ(group.currentLevel, 1U);
+    EXPECT_EQ(ResolveLodGroup3DMeshGuidUVE(group, baseMesh), Asset::AssetGuidUVE{42U});
+
+    ResolveLodGroup3DLevelUVE(group, 70.0F);
+    ASSERT_EQ(group.currentLevel, 2U);
+    EXPECT_EQ(ResolveLodGroup3DMeshGuidUVE(group, baseMesh), baseMesh)
+        << "level 2 overrides nothing, so it falls back too - not only level 0";
+}
+
+TEST(LodGroup3DMeshUVETest, ACulledGroupStillAnswersWithItsLastLevelsMesh) {
+    // The renderer returns before asking - a culled object is not drawn at all - but the resolver
+    // must not read out of range for a consumer that asks anyway, and it must not answer with a
+    // mesh from a level the object is not on.
+    const Asset::AssetGuidUVE baseMesh{7U};
+    LodGroup3DComponentUVE group;
+    group.levelCount = 2U;
+    group.lodMeshGuids[0] = Asset::AssetGuidUVE{11U};
+    group.lodMeshGuids[1] = Asset::AssetGuidUVE{22U};
+
+    ResolveLodGroup3DLevelUVE(group, 500.0F);
+    ASSERT_TRUE(group.culledByDistance);
+    ASSERT_EQ(group.currentLevel, 1U);
+    EXPECT_EQ(ResolveLodGroup3DMeshGuidUVE(group, baseMesh), Asset::AssetGuidUVE{22U});
+
+    // A level outside the chain (a hand-written component) falls back rather than reading past the
+    // authored levels.
+    group.currentLevel = 9U;
+    EXPECT_EQ(ResolveLodGroup3DMeshGuidUVE(group, baseMesh), baseMesh);
+}
+
+TEST(LodGroup3DResolveUVETest, TheValidatorRejectsABandOutsideTheAuthoredRange) {
+    LodGroup3DComponentUVE group;
+    ASSERT_TRUE(IsLodGroup3DObjectComponentValidUVE(group));
+
+    group.hysteresis = -0.1F;
+    EXPECT_FALSE(IsLodGroup3DObjectComponentValidUVE(group));
+
+    group.hysteresis = kMaximumLodHysteresisUVE;
+    EXPECT_TRUE(IsLodGroup3DObjectComponentValidUVE(group)) << "the maximum is a real band, not a refusal";
+
+    group.hysteresis = kMaximumLodHysteresisUVE + 0.01F;
+    EXPECT_FALSE(IsLodGroup3DObjectComponentValidUVE(group));
+
+    group.hysteresis = std::numeric_limits<float>::quiet_NaN();
+    EXPECT_FALSE(IsLodGroup3DObjectComponentValidUVE(group));
+}
+
+TEST(Decal3DProjectionTest, APointInsideTheVolumeIsPaintedAndOneOutsideIsNot) {
+    // The projection turns "where is this surface point relative to the decal" into the volume's
+    // own unit coordinates: 0 at the centre, 1 at the surface, whatever `size` happens to be. That
+    // is the whole reason the box and the cylinder share one footprint test.
+    Decal3DComponentUVE decal;
+    decal.size = Math::Vector3UVE{2.0F, 2.0F, 2.0F};
+    Decal3DProjectionUVE projection{};
+    ASSERT_TRUE(TryMakeDecal3DProjectionUVE(decal, Math::Vector3UVE{}, Math::QuaternionUVE{},
+                                            Math::Vector3UVE{1.0F, 1.0F, 1.0F}, projection));
+
+    const Decal3DSampleUVE centre =
+        SampleDecal3DUVE(projection, Math::Vector3UVE{}, Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 0.0F);
+    EXPECT_TRUE(centre.insideVolume);
+    EXPECT_TRUE(centre.PaintsUVE());
+    EXPECT_NEAR(centre.local.x, 0.0F, 1.0e-5F);
+    EXPECT_FLOAT_EQ(centre.combinedWeight, 1.0F);
+
+    const Decal3DSampleUVE inner = SampleDecal3DUVE(projection, Math::Vector3UVE{0.5F, 0.5F, 0.5F},
+                                                    Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 0.0F);
+    EXPECT_TRUE(inner.PaintsUVE());
+    EXPECT_NEAR(inner.local.x, 0.5F, 1.0e-5F) << "half of the way to the surface, in unit coordinates";
+
+    const Decal3DSampleUVE outside = SampleDecal3DUVE(projection, Math::Vector3UVE{1.5F, 0.0F, 0.0F},
+                                                      Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 0.0F);
+    EXPECT_FALSE(outside.insideVolume);
+    EXPECT_FALSE(outside.PaintsUVE());
+    EXPECT_FLOAT_EQ(outside.combinedWeight, 0.0F) << "outside the volume, nothing paints";
+}
+
+TEST(Decal3DProjectionTest, ScaleGrowsTheVolumeAndRotationTurnsItsAxis) {
+    Decal3DComponentUVE decal;
+    decal.size = Math::Vector3UVE{2.0F, 2.0F, 2.0F};
+
+    // The volume follows the object's world scale - a scaled decal paints a bigger area, which is
+    // what every other size in the engine does.
+    Decal3DProjectionUVE scaled{};
+    ASSERT_TRUE(TryMakeDecal3DProjectionUVE(decal, Math::Vector3UVE{}, Math::QuaternionUVE{},
+                                            Math::Vector3UVE{2.0F, 1.0F, 1.0F}, scaled));
+    EXPECT_TRUE(SampleDecal3DUVE(scaled, Math::Vector3UVE{1.5F, 0.0F, 0.0F},
+                                 Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 0.0F)
+                    .PaintsUVE())
+        << "1.5 is inside a half-extent of 2";
+    EXPECT_FALSE(SampleDecal3DUVE(scaled, Math::Vector3UVE{0.0F, 0.0F, 1.5F},
+                                  Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 0.0F)
+                     .PaintsUVE())
+        << "but outside the unscaled axes";
+
+    // +90 degrees about Y maps the local +X axis to world -Z, so a point half a metre below in
+    // world -Z comes back as local +X - the projection is not a world-axis-aligned box.
+    const Math::QuaternionUVE quarterTurnAboutY{0.0F, 0.70710678F, 0.0F, 0.70710678F};
+    Decal3DProjectionUVE rotated{};
+    ASSERT_TRUE(TryMakeDecal3DProjectionUVE(decal, Math::Vector3UVE{}, quarterTurnAboutY,
+                                            Math::Vector3UVE{1.0F, 1.0F, 1.0F}, rotated));
+    const Decal3DSampleUVE below = SampleDecal3DUVE(rotated, Math::Vector3UVE{0.0F, 0.0F, -0.5F},
+                                                    Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 0.0F);
+    EXPECT_TRUE(below.insideVolume);
+    EXPECT_NEAR(below.local.x, 0.5F, 1.0e-4F);
+    EXPECT_NEAR(below.local.z, 0.0F, 1.0e-4F);
+    EXPECT_FALSE(SampleDecal3DUVE(rotated, Math::Vector3UVE{1.5F, 0.0F, 0.0F},
+                                  Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 0.0F)
+                     .PaintsUVE())
+        << "world +X is the rotated volume's local -Z: 1.5 there is outside";
+}
+
+TEST(Decal3DProjectionTest, ACylinderFootprintIsRadialNotSquare) {
+    Decal3DComponentUVE decal;
+    decal.size = Math::Vector3UVE{2.0F, 2.0F, 2.0F};
+    decal.projection = DecalProjectionModeUVE::Cylinder;
+    Decal3DProjectionUVE projection{};
+    ASSERT_TRUE(TryMakeDecal3DProjectionUVE(decal, Math::Vector3UVE{}, Math::QuaternionUVE{},
+                                            Math::Vector3UVE{1.0F, 1.0F, 1.0F}, projection));
+
+    // The corner of the box is inside the box and outside the cylinder - the one case that tells
+    // the two footprints apart.
+    EXPECT_FALSE(SampleDecal3DUVE(projection, Math::Vector3UVE{0.9F, 0.0F, 0.9F},
+                                  Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 0.0F)
+                     .PaintsUVE())
+        << "0.9 squared twice is more than the unit radius";
+    EXPECT_TRUE(SampleDecal3DUVE(projection, Math::Vector3UVE{0.5F, 0.0F, 0.6F},
+                                 Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 0.0F)
+                    .PaintsUVE());
+
+    // The axis is still bounded the same way: the cylinder gets no taller than the box.
+    EXPECT_FALSE(SampleDecal3DUVE(projection, Math::Vector3UVE{0.0F, 1.5F, 0.0F},
+                                  Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 0.0F)
+                     .PaintsUVE());
+}
+
+TEST(Decal3DProjectionTest, NormalFadeTurnsFacingIntoWeight) {
+    // normalFade 0 paints any facing; 1 paints only surfaces turned back towards the decal. The
+    // volume projects along -Y, so "towards the decal" is a +Y normal.
+    Decal3DComponentUVE decal;
+    Decal3DProjectionUVE projection{};
+    ASSERT_TRUE(TryMakeDecal3DProjectionUVE(decal, Math::Vector3UVE{}, Math::QuaternionUVE{},
+                                            Math::Vector3UVE{1.0F, 1.0F, 1.0F}, projection));
+
+    const Math::Vector3UVE sideways{1.0F, 0.0F, 0.0F};
+    EXPECT_FLOAT_EQ(SampleDecal3DUVE(projection, Math::Vector3UVE{}, sideways, 0.0F).combinedWeight, 1.0F)
+        << "with no fade declared, a sideways surface is painted at full weight";
+
+    Decal3DComponentUVE strict = decal;
+    strict.normalFade = 1.0F;
+    Decal3DProjectionUVE strictProjection{};
+    ASSERT_TRUE(TryMakeDecal3DProjectionUVE(strict, Math::Vector3UVE{}, Math::QuaternionUVE{},
+                                            Math::Vector3UVE{1.0F, 1.0F, 1.0F}, strictProjection));
+    EXPECT_FLOAT_EQ(SampleDecal3DUVE(strictProjection, Math::Vector3UVE{},
+                                     Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 0.0F)
+                        .combinedWeight,
+                    1.0F);
+    EXPECT_FLOAT_EQ(SampleDecal3DUVE(strictProjection, Math::Vector3UVE{}, sideways, 0.0F).combinedWeight,
+                    0.0F)
+        << "a surface at a right angle faces away from the projection";
+    EXPECT_FLOAT_EQ(SampleDecal3DUVE(strictProjection, Math::Vector3UVE{},
+                                     Math::Vector3UVE{0.0F, -1.0F, 0.0F}, 0.0F)
+                        .combinedWeight,
+                    0.0F)
+        << "a backface is not painted";
+
+    Decal3DComponentUVE halfFade = decal;
+    halfFade.normalFade = 0.5F;
+    Decal3DProjectionUVE halfProjection{};
+    ASSERT_TRUE(TryMakeDecal3DProjectionUVE(halfFade, Math::Vector3UVE{}, Math::QuaternionUVE{},
+                                            Math::Vector3UVE{1.0F, 1.0F, 1.0F}, halfProjection));
+    EXPECT_FLOAT_EQ(SampleDecal3DUVE(halfProjection, Math::Vector3UVE{}, sideways, 0.0F).combinedWeight,
+                    0.5F);
+}
+
+TEST(Decal3DProjectionTest, TheVerticalFadesCutTheEndsOfTheVolumeAndDistanceFadeCutsItsFarSide) {
+    Decal3DComponentUVE decal;
+    decal.size = Math::Vector3UVE{2.0F, 2.0F, 2.0F};
+    decal.upperFade = 0.5F;
+    decal.lowerFade = 0.5F;
+    decal.distanceFadeEnabled = true;
+    decal.distanceFadeBegin = 40.0F;
+    decal.distanceFadeLength = 10.0F;
+    Decal3DProjectionUVE projection{};
+    ASSERT_TRUE(TryMakeDecal3DProjectionUVE(decal, Math::Vector3UVE{}, Math::QuaternionUVE{},
+                                            Math::Vector3UVE{1.0F, 1.0F, 1.0F}, projection));
+
+    // Middle of the volume, at the camera: nothing fades.
+    EXPECT_FLOAT_EQ(SampleDecal3DUVE(projection, Math::Vector3UVE{}, Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 10.0F)
+                        .combinedWeight,
+                    1.0F);
+
+    // Nine tenths of the way up: inside the top band, three fifths of the way through it.
+    const Decal3DSampleUVE nearTop = SampleDecal3DUVE(
+        projection, Math::Vector3UVE{0.0F, 0.9F, 0.0F}, Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 10.0F);
+    EXPECT_TRUE(nearTop.insideVolume);
+    EXPECT_NEAR(nearTop.combinedWeight, 0.2F, 1.0e-4F) << "(0.9 - 0.5) / 0.5 leaves a fifth";
+
+    // The same at the bottom, which uses the lower band rather than the upper one.
+    const Decal3DSampleUVE nearBottom = SampleDecal3DUVE(
+        projection, Math::Vector3UVE{0.0F, -0.9F, 0.0F}, Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 10.0F);
+    EXPECT_NEAR(nearBottom.combinedWeight, 0.2F, 1.0e-4F);
+    // The fades stay apart so a caller can say WHICH one removed a sample: the top point's loss is
+    // entirely the vertical fade, not the normal one.
+    EXPECT_FLOAT_EQ(nearTop.normalFadeWeight, 1.0F);
+    EXPECT_NEAR(nearTop.depthFadeWeight, 0.2F, 1.0e-4F);
+    EXPECT_FLOAT_EQ(nearTop.distanceFadeWeight, 1.0F);
+
+    // Distance: full until the band begins, half way through it, gone past its end.
+    EXPECT_FLOAT_EQ(SampleDecal3DUVE(projection, Math::Vector3UVE{}, Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 35.0F)
+                        .combinedWeight,
+                    1.0F);
+    EXPECT_FLOAT_EQ(SampleDecal3DUVE(projection, Math::Vector3UVE{}, Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 45.0F)
+                        .combinedWeight,
+                    0.5F);
+    EXPECT_FLOAT_EQ(SampleDecal3DUVE(projection, Math::Vector3UVE{}, Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 60.0F)
+                        .combinedWeight,
+                    0.0F);
+
+    // A zero-length band is a hard cut at `begin`, not a division by zero.
+    Decal3DComponentUVE hardCut = decal;
+    hardCut.distanceFadeLength = 0.0F;
+    Decal3DProjectionUVE hardCutProjection{};
+    ASSERT_TRUE(TryMakeDecal3DProjectionUVE(hardCut, Math::Vector3UVE{}, Math::QuaternionUVE{},
+                                            Math::Vector3UVE{1.0F, 1.0F, 1.0F}, hardCutProjection));
+    EXPECT_FLOAT_EQ(SampleDecal3DUVE(hardCutProjection, Math::Vector3UVE{},
+                                     Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 39.0F)
+                        .combinedWeight,
+                    1.0F);
+    EXPECT_FLOAT_EQ(SampleDecal3DUVE(hardCutProjection, Math::Vector3UVE{},
+                                     Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 41.0F)
+                        .combinedWeight,
+                    0.0F);
+}
+
+TEST(Decal3DProjectionTest, ADegeneratePoseOrSizePaintsNothingRatherThanASmear) {
+    Decal3DComponentUVE decal;
+    Decal3DProjectionUVE projection{};
+
+    Decal3DComponentUVE zeroSize = decal;
+    zeroSize.size = Math::Vector3UVE{0.0F, 1.0F, 1.0F};
+    EXPECT_FALSE(TryMakeDecal3DProjectionUVE(zeroSize, Math::Vector3UVE{}, Math::QuaternionUVE{},
+                                             Math::Vector3UVE{1.0F, 1.0F, 1.0F}, projection));
+    EXPECT_FALSE(TryMakeDecal3DProjectionUVE(decal, Math::Vector3UVE{std::numeric_limits<float>::quiet_NaN(), 0.0F, 0.0F},
+                                             Math::QuaternionUVE{}, Math::Vector3UVE{1.0F, 1.0F, 1.0F}, projection));
+    EXPECT_FALSE(TryMakeDecal3DProjectionUVE(decal, Math::Vector3UVE{}, Math::QuaternionUVE{},
+                                             Math::Vector3UVE{1.0F, 0.0F, 1.0F}, projection))
+        << "a zero world-scale axis has no volume to project";
+    EXPECT_FALSE(TryMakeDecal3DProjectionUVE(decal, Math::Vector3UVE{}, Math::QuaternionUVE{0.0F, 0.0F, 0.0F, 0.0F},
+                                             Math::Vector3UVE{1.0F, 1.0F, 1.0F}, projection))
+        << "a rotation that cannot be inverted has no volume frame";
+
+    // A non-finite sample is refused too: a NaN weight would spread through the blend.
+    ASSERT_TRUE(TryMakeDecal3DProjectionUVE(decal, Math::Vector3UVE{}, Math::QuaternionUVE{},
+                                            Math::Vector3UVE{1.0F, 1.0F, 1.0F}, projection));
+    const Decal3DSampleUVE nanPoint =
+        SampleDecal3DUVE(projection, Math::Vector3UVE{std::numeric_limits<float>::quiet_NaN(), 0.0F, 0.0F},
+                         Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 0.0F);
+    EXPECT_FALSE(nanPoint.PaintsUVE());
+    EXPECT_FLOAT_EQ(nanPoint.combinedWeight, 0.0F);
+}
+
+TEST(Decal3DLifetimeTest, ALifetimeCountsDownOnSimulatedSecondsAndExpiresExactlyOnce) {
+    Decal3DComponentUVE decal;
+    decal.lifetime = 2.0F;
+
+    // The first advance arms the countdown from the authored lifetime: a decal that just appeared
+    // must not expire because its remaining time started at zero.
+    EXPECT_FALSE(AdvanceDecal3DLifetimeUVE(decal, 0.5F));
+    EXPECT_NEAR(decal.remainingLifetime, 1.5F, 1.0e-5F);
+    EXPECT_FALSE(decal.expired);
+
+    EXPECT_FALSE(AdvanceDecal3DLifetimeUVE(decal, 1.4F));
+    EXPECT_NEAR(decal.remainingLifetime, 0.1F, 1.0e-5F);
+
+    // The crossing is reported once, and only once: every later advance is a no-op.
+    EXPECT_TRUE(AdvanceDecal3DLifetimeUVE(decal, 0.2F));
+    EXPECT_FLOAT_EQ(decal.remainingLifetime, 0.0F);
+    EXPECT_TRUE(decal.expired);
+    EXPECT_FALSE(AdvanceDecal3DLifetimeUVE(decal, 10.0F));
+    EXPECT_FALSE(AdvanceDecal3DLifetimeUVE(decal, 10.0F));
+}
+
+TEST(Decal3DLifetimeTest, APermanentDecalNeverExpiresAndABadClockChangesNothing) {
+    Decal3DComponentUVE permanent;
+    permanent.lifetime = 0.0F;
+    EXPECT_FALSE(AdvanceDecal3DLifetimeUVE(permanent, 100000.0F));
+    EXPECT_FALSE(permanent.expired) << "lifetime 0 keeps a decal forever";
+    EXPECT_FLOAT_EQ(permanent.remainingLifetime, 0.0F);
+
+    Decal3DComponentUVE timed;
+    timed.lifetime = 5.0F;
+    ASSERT_FALSE(AdvanceDecal3DLifetimeUVE(timed, 1.0F));
+    const float before = timed.remainingLifetime;
+    EXPECT_FALSE(AdvanceDecal3DLifetimeUVE(timed, std::numeric_limits<float>::quiet_NaN()));
+    EXPECT_FALSE(AdvanceDecal3DLifetimeUVE(timed, -1.0F));
+    EXPECT_FALSE(AdvanceDecal3DLifetimeUVE(timed, 0.0F));
+    EXPECT_FLOAT_EQ(timed.remainingLifetime, before) << "a broken or paused clock must not age it";
+
+    // What the renderer asks before touching any geometry.
+    EXPECT_TRUE(IsDecal3DPaintingUVE(timed));
+    timed.enabled = false;
+    EXPECT_FALSE(IsDecal3DPaintingUVE(timed));
+    timed.enabled = true;
+    timed.expired = true;
+    EXPECT_FALSE(IsDecal3DPaintingUVE(timed));
+    timed.expired = false;
+    timed.size = Math::Vector3UVE{0.0F, 1.0F, 1.0F};
+    EXPECT_FALSE(IsDecal3DPaintingUVE(timed));
 }
 
 TEST(LevelStreamer3DNearestViewerUVETest, EmptyViewerListMeansNoDistanceAtAll) {

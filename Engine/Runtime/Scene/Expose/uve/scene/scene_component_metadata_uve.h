@@ -21,6 +21,10 @@ inline constexpr std::string_view kPropertyTypeBoolUVE = "Bool";
 inline constexpr std::string_view kPropertyTypeFloatUVE = "Float";
 inline constexpr std::string_view kPropertyTypeInt32UVE = "Int32";
 inline constexpr std::string_view kPropertyTypeUInt32UVE = "UInt32";
+/// A byte-sized count. Its own type rather than UInt32 because the accessors are bound to the
+/// member's real type: a generic consumer switching on the declared type would otherwise read four
+/// bytes where the component stores one. Hitbox3D's strike count is the first user.
+inline constexpr std::string_view kPropertyTypeUInt8UVE = "UInt8";
 /// A 32-bit value authored as independent bits (a collision layer/mask), not as a number.
 inline constexpr std::string_view kPropertyTypeBitMask32UVE = "BitMask32";
 /// Custom drawer ids naming which set of layers a BitMask32 picks from, so the inspector can show
@@ -35,7 +39,20 @@ inline constexpr std::string_view kPropertyTypeColorUVE = "Color";
 inline constexpr std::string_view kPropertyTypeQuaternionUVE = "Quaternion";
 inline constexpr std::string_view kPropertyTypeEnumUVE = "Enum";
 inline constexpr std::string_view kPropertyTypeEntityUVE = "Entity";
+/// A fixed-capacity list of entity references (RayCast3D's exclusions today). Declared with
+/// TypeMetadataPropertyUVE::elementCount telling a consumer how many slots the value holds; the
+/// accessor reads and writes the whole array at once, so one edit is one write and one history
+/// entry. Drawn by a custom drawer - a list is not one of the scalar row widgets.
+inline constexpr std::string_view kPropertyTypeEntityListUVE = "EntityList";
 inline constexpr std::string_view kPropertyTypeAssetGuidUVE = "AssetGuid";
+/// A fixed-capacity list of asset references, declared with TypeMetadataPropertyUVE::elementCount
+/// like the entity list. The accessor reads and writes the whole array at once, so one edit is one
+/// write and one history entry. LODGroup3D's per-level meshes are the first user.
+inline constexpr std::string_view kPropertyTypeAssetGuidListUVE = "AssetGuidList";
+/// A fixed-capacity list of floats - a chain of distance thresholds today, a curve's keys later.
+/// Same whole-array accessor contract as the other list types, and the same elementCount
+/// declaration. LODGroup3D's thresholds are the first user.
+inline constexpr std::string_view kPropertyTypeFloatListUVE = "FloatList";
 
 /// Section sort keys. A component's own section sorts by TypeMetadataEntryUVE::order. The order
 /// follows the object's class chain from most to least derived: what the concrete object brings, then

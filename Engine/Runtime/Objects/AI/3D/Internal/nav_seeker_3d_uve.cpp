@@ -9,8 +9,12 @@ bool IsNavSeeker3DObjectComponentValidUVE(const NavSeeker3DComponentUVE& value) 
            IsFinite3DObjectVectorUVE(value.desiredVelocity) && std::isfinite(value.radius) && value.radius > 0.0F &&
            std::isfinite(value.height) && value.height >= value.radius * 2.0F && std::isfinite(value.maxSpeed) &&
            value.maxSpeed > 0.0F && std::isfinite(value.pathUpdateInterval) && value.pathUpdateInterval > 0.0F &&
-           value.pathUpdateInterval <= 10.0F && value.navigationLayers != 0U &&
-           value.pathStatus <= NavigationAgentPathStatusUVE::Failed;
+           value.pathUpdateInterval <= 10.0F && std::isfinite(value.acceleration) &&
+           value.acceleration >= 0.0F && std::isfinite(value.waypointRadius) && value.waypointRadius >= 0.0F &&
+           std::isfinite(value.targetTolerance) && value.targetTolerance >= 0.0F &&
+           std::isfinite(value.slowDownRadius) && value.slowDownRadius >= 0.0F &&
+           std::isfinite(value.avoidanceRadius) && value.avoidanceRadius >= 0.0F &&
+           value.navigationLayers != 0U && value.pathStatus <= NavigationAgentPathStatusUVE::Failed;
 }
 
 } // namespace UVE::Scene

@@ -48,6 +48,7 @@
 #include "uve/component/ui_button_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/entity/entity_manager_uve.h"
+#include "uve/objects/3d/decal_3d_uve.h"
 #include "uve/objects/3d/skeleton_3d_uve.h"
 #include "uve/scene/scene_graph_uve.h"
 #include "uve/threading/thread_pool_uve.h"
@@ -290,6 +291,110 @@ protected:
         ASSERT_TRUE(probe->IsValidUVE());
     }
 };
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_ADecalOnAMeshIsProjectedAndReportedInTheFrameDiagnostics) {
+    // The decal pass end to end through the frame the renderer actually builds: the wall's assets
+    // are registered the way every other mesh in these tests registers them, the decal authors the
+    // same material by PATH (which is what a Decal3D stores), and the numbers below are read from
+    // the frame diagnostics the renderer publishes rather than from the pass directly. If the pass
+    // were not wired into RenderFrameUVE(), every one of these would be zero.
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_decal_wall.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_decal_scorch.uvmat");
+    const Scene::EntityUVE camera = MakeCameraEntityUVE();
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -5.0F}, meshGuid, materialGuid);
+
+    const Scene::EntityUVE decalEntity = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE decalLocal;
+    // The mesh is a unit cube; a 1 m decal 0.4 in front of it reaches its camera-facing face.
+    decalLocal.localPosition = Math::Vector3UVE{0.0F, 0.0F, -4.4F};
+    sceneGraph.AttachTransformUVE(entityManager, decalEntity, decalLocal);
+    Scene::Decal3DComponentUVE decal;
+    decal.materialAssetPath = "renderer3d_tests_decal_scorch.uvmat";
+    decal.size = Math::Vector3UVE{1.0F, 1.0F, 1.0F};
+    entityManager.AddComponentUVE<Scene::Decal3DComponentUVE>(decalEntity, decal);
+    sceneGraph.UpdateUVE(entityManager);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    renderer3D->RenderFrameUVE(entityManager, camera);
+
+    const Renderer3DFrameDiagnosticsUVE diagnostics = renderer3D->GetLastFrameDiagnosticsUVE();
+    EXPECT_EQ(diagnostics.decalsConsidered, 1U);
+    EXPECT_EQ(diagnostics.decalDrawsExtracted, 1U) << "the decal reached the mesh standing in front of it";
+    EXPECT_EQ(diagnostics.decalPatchesExtracted, 1U) << "one face of the cube is inside the volume";
+    EXPECT_EQ(diagnostics.decalTrianglesExtracted, 2U);
+    EXPECT_EQ(diagnostics.decalsWithoutReceivers, 0U);
+}
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_ADecalIsHandedToTheGpuRatherThanOnlyCounted) {
+    // The diagnostics above prove the projection pass found geometry. This proves the other half of
+    // the item: that the geometry reaches the GPU - a bind of the decal's own vertex and index
+    // buffers, the volume's units matrix as a uniform, and one indexed draw of the patch's two
+    // triangles. Until this existed a decal was extracted, counted, and never seen.
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_decal_wall.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_decal_scorch.uvmat");
+    const Scene::EntityUVE camera = MakeCameraEntityUVE();
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -5.0F}, meshGuid, materialGuid);
+
+    const Scene::EntityUVE decalEntity = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE decalLocal;
+    decalLocal.localPosition = Math::Vector3UVE{0.0F, 0.0F, -4.4F};
+    sceneGraph.AttachTransformUVE(entityManager, decalEntity, decalLocal);
+    Scene::Decal3DComponentUVE decal;
+    decal.materialAssetPath = "renderer3d_tests_decal_scorch.uvmat";
+    decal.size = Math::Vector3UVE{1.0F, 1.0F, 1.0F};
+    entityManager.AddComponentUVE<Scene::Decal3DComponentUVE>(decalEntity, decal);
+    sceneGraph.UpdateUVE(entityManager);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    // The built-in decal program links asynchronously, like every other built-in: the first frame
+    // extracts and queues it, the drain finishes the link, the next frame can draw with it.
+    renderer3D->RenderFrameUVE(entityManager, camera);
+    for (int iteration = 0; iteration < kMaxPollIterationsUVE; ++iteration) {
+        shaderManager.UpdateUVE(0.0);
+        if (shaderManager.GetPendingJobCountUVE() == 0U) {
+            break;
+        }
+        std::this_thread::yield();
+    }
+    ASSERT_EQ(shaderManager.GetPendingJobCountUVE(), 0U);
+
+    renderer3D->RenderFrameUVE(entityManager, camera);
+
+    const Renderer3DFrameDiagnosticsUVE diagnostics = renderer3D->GetLastFrameDiagnosticsUVE();
+    EXPECT_EQ(diagnostics.decalDrawsExtracted, 1U);
+    EXPECT_EQ(diagnostics.decalDrawCallsRecorded, 1U) << "an extracted decal must reach the GPU";
+    EXPECT_EQ(diagnostics.decalDrawsDropped, 0U);
+
+    const std::vector<RecordedCommandUVE>& commands = renderDevice.GetLastSubmittedCommandsUVE();
+    const auto decalDraw = std::find_if(commands.cbegin(), commands.cend(), [](const RecordedCommandUVE& command) {
+        // A quad patch fans into two triangles, so six indices - and the meshes in this scene draw
+        // with their own index counts, which is what makes six the decal's alone.
+        return std::holds_alternative<DrawIndexedCommandUVE>(command) &&
+               std::get<DrawIndexedCommandUVE>(command).indexCount == 6U;
+    });
+    ASSERT_NE(decalDraw, commands.cend()) << "no six-index draw was recorded";
+    EXPECT_TRUE(std::find_if(commands.cbegin(), commands.cend(), [](const RecordedCommandUVE& command) {
+                    return std::holds_alternative<BindVertexBufferCommandUVE>(command);
+                }) != commands.cend())
+        << "the decal's own vertex buffer was never bound";
+    const auto worldToUnit = std::find_if(commands.cbegin(), commands.cend(), [](const RecordedCommandUVE& command) {
+        return std::holds_alternative<SetUniformMatrix4x4CommandUVE>(command) &&
+               std::get<SetUniformMatrix4x4CommandUVE>(command).name == "uWorldToUnit";
+    });
+    ASSERT_NE(worldToUnit, commands.cend())
+        << "the volume's coordinate space must reach the shader, or the fades are evaluated in the "
+           "wrong space";
+    // The decal program samples its material's albedo from the renderer's albedo slot (0, the same
+    // one the mesh materials bind to); this material has no texture, so what is bound there is the
+    // white fallback, and the flat colour and full alpha it leaves behind are the point - an
+    // untextured decal still paints.
+    const auto albedoSampler = std::find_if(commands.cbegin(), commands.cend(), [](const RecordedCommandUVE& command) {
+        return std::holds_alternative<SetUniformIntCommandUVE>(command) &&
+               std::get<SetUniformIntCommandUVE>(command).name == "uAlbedoTexture" &&
+               std::get<SetUniformIntCommandUVE>(command).value == 0;
+    });
+    EXPECT_NE(albedoSampler, commands.cend()) << "the decal program must be told where its texture is";
+}
 
 TEST_F(Renderer3DUVETest, RenderFrameUVE_EmptyScene_MainPassBeginsAndEndsWithNoDraws) {
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();

@@ -95,6 +95,7 @@ Objects::SceneObjectKindUVE InferSceneObjectKindUVE(const IEntityManagerUVE& ent
                            OwnComponentUVE<NavSeeker3DComponentUVE>{Kind::NavSeeker3D},
                            OwnComponentUVE<Skeleton3DComponentUVE>{Kind::Skeleton3D},
                            OwnComponentUVE<BoneAttachment3DComponentUVE>{Kind::BoneAttachment3D},
+                           OwnComponentUVE<TwoBoneIK3DComponentUVE>{Kind::TwoBoneIK3D},
                            OwnComponentUVE<SpringArm3DComponentUVE>{Kind::SpringArm3D},
                            OwnComponentUVE<Marker3DComponentUVE>{Kind::Marker3D},
                            OwnComponentUVE<Hitbox3DComponentUVE>{Kind::Hitbox3D},
@@ -128,14 +129,13 @@ Objects::SceneObjectKindUVE InferSceneObjectKindUVE(const IEntityManagerUVE& ent
         return kind;
     }
 
-    // The bodies are told apart by what they combine. A collider with a body is how a
-    // Character3D is built; a collider alone is either a Collider3D or a Static3D, which are
-    // built identically, and reads as Collider3D, the older of the two.
+    // The bodies are told apart by what they combine. What makes a character a character is its
+    // controller, and that was already checked above - so a collider with a body and no
+    // controller is a Rigid3D with a shape, which is what the Rigid3D recipe itself creates.
+    // A collider alone is either a Collider3D or a Static3D, which are built identically and read
+    // as Collider3D, the older of the two.
     const bool collider = entityManager.HasComponentUVE<ColliderComponentUVE>(entity);
     const bool body = entityManager.HasComponentUVE<Rigid3DComponentUVE>(entity);
-    if (collider && body) {
-        return Kind::Character3D;
-    }
     if (body) {
         return Kind::Rigid3D;
     }

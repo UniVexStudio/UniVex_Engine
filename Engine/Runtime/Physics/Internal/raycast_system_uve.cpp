@@ -11,13 +11,32 @@
 
 namespace UVE::Physics {
 
+namespace {
+
+/// Whether the caller's exclusion list names this entity. Linear over a list that is bounded by
+/// the component that authored it (8), on a path that is already O(colliders); a hash set would
+/// cost a lookup per collider to save at most seven integer compares.
+[[nodiscard]] bool IsExcludedEntityUVE(const RaycastQueryUVE& query,
+                                       const Scene::EntityUVE entity) noexcept {
+    for (const Scene::EntityUVE excluded : query.excludedEntities) {
+        if (excluded == entity) {
+            return true;
+        }
+    }
+    return false;
+}
+
+} // namespace
+
 std::optional<RaycastHitUVE> RaycastSystemUVE::RaycastUVE(Scene::IEntityManagerUVE& entityManager,
                                                             const RaycastQueryUVE& query) const {
     const std::vector<Detail::ColliderWorldAabbUVE> colliders = Detail::BuildColliderWorldAabbCacheUVE(entityManager);
 
     std::optional<RaycastHitUVE> closestHit;
     for (const Detail::ColliderWorldAabbUVE& collider : colliders) {
-        if (collider.entity == query.ignoreEntity) {
+        // Exclusions come first and win over every other filter: a caller that named this entity
+        // does not want it back no matter which layer it is on or how close it is.
+        if (collider.entity == query.ignoreEntity || IsExcludedEntityUVE(query, collider.entity)) {
             continue;
         }
         if ((collider.collisionLayer & query.layerMask) == 0) {

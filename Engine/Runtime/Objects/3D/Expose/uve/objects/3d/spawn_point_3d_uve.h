@@ -46,6 +46,14 @@ struct SpawnPoint3DCandidateUVE final {
     bool oneShot = false;
 };
 
+/// The one ordering rule spawn points are ever ranked by: (index, generation) lexicographic -
+/// pool iteration order and creation timestamps are both wrong answers on purpose, because a saved
+/// scene must spawn the same way every time on every machine. Declared once here because it has
+/// two consumers that must never disagree: the selection resolver below, and the result order of
+/// the spawn query (uve/scene/spawn_point_query_uve.h), where "the first spawn point" is read
+/// straight off the returned list.
+[[nodiscard]] bool SortsBeforeSpawnPointUVE(EntityUVE lhs, EntityUVE rhs) noexcept;
+
 /// Deterministic play-entry selection: the enabled candidate that sorts FIRST in stable content
 /// order ((index, generation) lexicographic - pool iteration order and creation timestamps are
 /// both wrong answers on purpose, because a saved scene must spawn the same way every time on

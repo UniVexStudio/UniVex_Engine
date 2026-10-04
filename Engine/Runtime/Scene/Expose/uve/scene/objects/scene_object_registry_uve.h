@@ -64,6 +64,8 @@ enum class SceneObjectKindUVE : std::uint8_t {
     DirectionalLight3D,
     /// The level at the top of the Outliner; its folders hold the level's objects.
     Viewport,
+    /// A limb solved back from a target rather than forward from its joints.
+    TwoBoneIK3D,
 };
 
 struct SceneObjectDescriptorUVE final {

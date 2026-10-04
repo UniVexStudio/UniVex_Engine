@@ -454,12 +454,39 @@ TEST(EditorUVETest, InspectorDrawerRegistrationUVE_IncludesStableHierarchyDrawer
         // old Name and Hierarchy drawers were removed and SurfaceInstance3D, LightEmitter3D,
         // Decal3D and FogVolume3D each brought one.
         // 33 with Skeleton3D's own section; 34 with SolidBody3D's; 36 with AnimationDriver's; 37 with
-        // DirectionalLight3D's.
-        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorDrawerCountUVE(editor), 37U);
+        // DirectionalLight3D's; 38 with Kinematic3D's - the only section that needed a real engine
+        // mover behind it, so its drawers describe a body that actually moves; 39 with SpringArm3D's,
+        // whose authored fields were serialized and validated for as long as they have existed but
+        // had no drawer to reach them from; 40 with SpawnPoint3D's, the first gameplay-owned
+        // section - its fields were also serialized and validated with nothing to author them;
+        // 41 with RayCast3D's, whose exclusions are entity references and needed the reference-list
+        // drawer rather than a typed row; 42 with Projectile3D's, whose authored fields (including
+        // the hit policy and its two bounce coefficients) had the same problem - serialized and
+        // validated with no drawer to reach them from; 44 with Hitbox3D's and Hurtbox3D's, the two
+        // halves of a strike, which have to be authorable together or neither is authorable at all:
+        // the pair is what the engine's scan reads, and the hitbox additionally shows the strike
+        // count its own scan resolved; 45 with LODGroup3D's, the first section whose shape is a
+        // prefix of two parallel arrays - a threshold chain and a mesh per level - so it needed two
+        // list drawers rather than typed rows, and the level count that decides the prefix is a
+        // field of the section itself; 46 with BoneAttachment3D's, whose section is the part of that
+        // component that had been missing rather than the part that was merely unauthorable - its
+        // fields were serialized, validated and named in the registry from the start, but nothing in
+        // the engine read them, so the section arrives together with the system that resolves a bone
+        // and writes the transform; 48 with NavMeshVolume3D's and NavSeeker3D's, the navigation
+        // pair - the region's bake settings and the agent's schedule had been serialized and
+        // validated with nothing to author them from, and the route the step publishes is declared
+        // as runtime-only state, so the Inspector shows where an agent is going while playing
+        // without ever offering to save it; 49 with TwoBoneIK3D's, the chain's three bone
+        // references, its target and pole, and the answers one solve writes back.
+        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorDrawerCountUVE(editor), 49U);
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "directional-light-3d"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "animation-mixer"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "solid-body"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "animation-tree"));
+        EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "bone-attachment-3d"));
+        EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "two-bone-ik-3d"));
+        EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "nav-mesh-volume-3d"));
+        EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "nav-seeker-3d"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "skeleton-3d"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "surface-instance"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "light-emitter"));
@@ -477,6 +504,14 @@ TEST(EditorUVETest, InspectorDrawerRegistrationUVE_IncludesStableHierarchyDrawer
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "light"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "collider"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "rigid-body"));
+        EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "kinematic-3d"));
+        EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "spring-arm"));
+        EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "spawn-point"));
+        EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "ray-cast-3d"));
+        EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "projectile-3d"));
+        EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "hitbox-3d"));
+        EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "hurtbox-3d"));
+        EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "lod-group-3d"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "audio-source"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "particle-emitter"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "script"));
