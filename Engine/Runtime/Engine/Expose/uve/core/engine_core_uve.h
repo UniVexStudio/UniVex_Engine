@@ -507,6 +507,16 @@ private:
     /// asynchronously; until one is ready its player waits. Runs only while the simulation runs.
     void SyncAnimationUVE(float deltaSeconds, bool physicsStep);
 
+    /// Puts every ticking BoneAttachment3D on its bone, through
+    /// Scene::SyncBoneAttachment3DObjectsUVE() - that function owns the resolution rules (which
+    /// bone, in whose frame, refused when what) and reports what it did.
+    ///
+    /// This seam owns the order the call is made in: after the animation step that posed the
+    /// skeleton, before SceneGraphUVE::UpdateUVE() propagates world transforms, so an attachment
+    /// lands on the bone in the same frame the pose arrives instead of a frame behind its own
+    /// animation.
+    void SyncBoneAttachment3DObjectsUVE();
+
     /// Steps every live Projectile3DComponentUVE entity (that also has a transform): the motion is
     /// `Physics::StepProjectile3DUVE()` - `velocity` accumulates `acceleration * dt`, the sphere of
     /// `radius` is swept along that step in world space against the layers `collisionMask` accepts

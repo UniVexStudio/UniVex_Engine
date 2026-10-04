@@ -7,6 +7,7 @@
 #include <gtest/gtest.h>
 
 #include "uve/objects/3d/all_objects_3d_uve.h"
+#include "uve/objects/3d/bone_attachment_3d_uve.h"
 #include "uve/component/area_component_uve.h"
 
 namespace UVE::Scene::Tests {
@@ -79,12 +80,162 @@ TEST(Expanded3DObjectComponentsUVETest, ExplicitSkeletonAssetBindingHydratesOnly
 
 TEST(Expanded3DObjectComponentsUVETest, BoneAttachmentBecomesResolvableOnlyWithExplicitReferences) {
     BoneAttachment3DComponentUVE attachment;
-    attachment.skeletonLocalId = 7U;
+    attachment.skeleton = EntityUVE{7U, 1U};
     attachment.boneName = "hand";
 
     EXPECT_TRUE(IsBoneAttachment3DObjectComponentResolvableUVE(attachment));
     attachment.enabled = false;
     EXPECT_FALSE(IsBoneAttachment3DObjectComponentResolvableUVE(attachment));
+
+    // A bone reference is a name or an index, and the index alone is enough: a rig whose bones are
+    // addressed by number needs no name at all.
+    attachment.enabled = true;
+    attachment.boneName.clear();
+    EXPECT_FALSE(IsBoneAttachment3DObjectComponentResolvableUVE(attachment));
+    attachment.boneIndex = 0U;
+    EXPECT_TRUE(IsBoneAttachment3DObjectComponentResolvableUVE(attachment));
+
+    // The skeleton reference is not decoration: without one the attachment is inert whatever else it
+    // names, and a default-constructed component points at nothing.
+    attachment.skeleton = kInvalidEntityUVE;
+    EXPECT_FALSE(IsBoneAttachment3DObjectComponentResolvableUVE(attachment));
+}
+
+/// A two-bone rig: a root at the skeleton's origin and a hand half a metre along the root's X.
+[[nodiscard]] Skeleton3DComponentUVE TwoBoneRigUVE() {
+    Skeleton3DComponentUVE skeleton;
+    skeleton.skeletonAssetPath = "assets/character.uvskel";
+    skeleton.bones = {SkeletonBoneUVE{"root", -1, {}, {}, {1.0F, 1.0F, 1.0F}},
+                      SkeletonBoneUVE{"hand", 0, {0.5F, 0.0F, 0.0F}, {}, {1.0F, 1.0F, 1.0F}}};
+    return skeleton;
+}
+
+TEST(Expanded3DObjectComponentsUVETest, BoneAttachmentResolverComposesTheBoneChainInPoseOrder) {
+    const Skeleton3DComponentUVE skeleton = TwoBoneRigUVE();
+    ObjectWorldFrameUVE frame{};
+    ASSERT_TRUE(TryResolveSkeletonBoneWorldFrameUVE(skeleton, 1U, ObjectWorldFrameUVE{}, frame));
+    EXPECT_NEAR(frame.position.x, 0.5F, 1e-5F) << "rest pose: half a metre along the skeleton's X";
+
+    // The runtime pose is per bone and only covers the bones something animates. Posing the ROOT
+    // moves the hand with it, because the hand's own transform is relative to the ROOT BONE - a
+    // resolver that composed every bone against the skeleton's frame would leave the hand behind.
+    Skeleton3DComponentUVE posed = skeleton;
+    posed.pose = {SkeletonBonePoseUVE{{1.0F, 2.0F, 0.0F}, {}, {2.0F, 2.0F, 2.0F}}};
+    ASSERT_TRUE(TryResolveSkeletonBoneWorldFrameUVE(posed, 1U, ObjectWorldFrameUVE{}, frame));
+    EXPECT_NEAR(frame.position.x, 2.0F, 1e-5F) << "the posed root's 1 m, plus its 2x scale on the hand's 0.5 m";
+    EXPECT_NEAR(frame.position.y, 2.0F, 1e-5F);
+    EXPECT_NEAR(frame.scale.x, 2.0F, 1e-5F) << "the root's scale carries down the chain";
+
+    // Rotation composes down the chain the same way: a quarter turn on the root takes the hand's +X
+    // to the world's -Z.
+    Skeleton3DComponentUVE turned = skeleton;
+    turned.pose = {SkeletonBonePoseUVE{{0.0F, 0.0F, 0.0F},
+                                       Math::QuaternionUVE{0.0F, 0.70710678F, 0.0F, 0.70710678F},
+                                       {1.0F, 1.0F, 1.0F}}};
+    ASSERT_TRUE(TryResolveSkeletonBoneWorldFrameUVE(turned, 1U, ObjectWorldFrameUVE{}, frame));
+    EXPECT_NEAR(frame.position.x, 0.0F, 1e-5F);
+    EXPECT_NEAR(frame.position.z, -0.5F, 1e-5F) << "+90 degrees about Y takes +X to -Z";
+
+    // A skeleton that stands somewhere else carries its bones with it, and a bone's chain is composed
+    // inside that frame rather than beside it.
+    ASSERT_TRUE(TryResolveSkeletonBoneWorldFrameUVE(
+        skeleton, 1U, ObjectWorldFrameUVE{{10.0F, 0.0F, 0.0F}, {}, {1.0F, 1.0F, 1.0F}}, frame));
+    EXPECT_NEAR(frame.position.x, 10.5F, 1e-5F);
+}
+
+TEST(Expanded3DObjectComponentsUVETest, BoneAttachmentResolverRefusesMalformedChainsAndUnknownBones) {
+    const Skeleton3DComponentUVE skeleton = TwoBoneRigUVE();
+    ObjectWorldFrameUVE frame{};
+    EXPECT_FALSE(TryResolveSkeletonBoneWorldFrameUVE(skeleton, 2U, ObjectWorldFrameUVE{}, frame));
+    EXPECT_FALSE(TryResolveSkeletonBoneWorldFrameUVE(Skeleton3DComponentUVE{}, 0U, ObjectWorldFrameUVE{}, frame));
+
+    // A parent index outside the array is a corrupt asset, not a bone without a parent.
+    Skeleton3DComponentUVE stray = skeleton;
+    stray.bones[1].parentIndex = 9;
+    EXPECT_FALSE(TryResolveSkeletonBoneWorldFrameUVE(stray, 1U, ObjectWorldFrameUVE{}, frame));
+
+    // A cycle has no root to compose from, so the walk refuses instead of running forever.
+    Skeleton3DComponentUVE cyclic = skeleton;
+    cyclic.bones[0].parentIndex = 1;
+    EXPECT_FALSE(TryResolveSkeletonBoneWorldFrameUVE(cyclic, 0U, ObjectWorldFrameUVE{}, frame));
+
+    // A non-finite skeleton frame would poison every bone under it.
+    EXPECT_FALSE(TryResolveSkeletonBoneWorldFrameUVE(
+        skeleton, 1U,
+        ObjectWorldFrameUVE{{std::numeric_limits<float>::quiet_NaN(), 0.0F, 0.0F}, {}, {1.0F, 1.0F, 1.0F}}, frame));
+
+    std::uint32_t index = 0U;
+    EXPECT_TRUE(TryFindSkeletonBoneIndexUVE(skeleton, "hand", index));
+    EXPECT_EQ(index, 1U);
+    EXPECT_FALSE(TryFindSkeletonBoneIndexUVE(skeleton, "Hand", index)) << "names are exact, not case-insensitive";
+    EXPECT_FALSE(TryFindSkeletonBoneIndexUVE(skeleton, "", index));
+    EXPECT_FALSE(TryFindSkeletonBoneIndexUVE(skeleton, "tail", index));
+}
+
+TEST(Expanded3DObjectComponentsUVETest, BoneAttachmentComposesItsAuthoredOffsetInTheBonesOwnSpace) {
+    const ObjectWorldFrameUVE bone{{0.0F, 1.0F, 0.0F},
+                                   Math::QuaternionUVE{0.0F, 0.70710678F, 0.0F, 0.70710678F},
+                                   {1.0F, 1.0F, 1.0F}};
+    // 10 cm along the BONE's X: the bone is turned a quarter turn, so that comes out along the
+    // world's -Z. An attachment authored in world units would land at +X and stay there while the
+    // arm swings, which is exactly what the frame of reference has to prevent.
+    const ObjectWorldFrameUVE attachment =
+        ComposeBoneAttachmentWorldFrameUVE(bone, {0.1F, 0.0F, 0.0F}, {}, {1.0F, 1.0F, 1.0F});
+    EXPECT_NEAR(attachment.position.x, 0.0F, 1e-5F);
+    EXPECT_NEAR(attachment.position.y, 1.0F, 1e-5F);
+    EXPECT_NEAR(attachment.position.z, -0.1F, 1e-5F);
+
+    // The attachment's own rotation composes onto the bone's, and its scale onto the chain's, so a
+    // scaled rig scales what it carries.
+    const ObjectWorldFrameUVE scaled =
+        ComposeBoneAttachmentWorldFrameUVE(bone, {}, {}, {2.0F, 1.0F, 1.0F});
+    EXPECT_NEAR(scaled.scale.x, 2.0F, 1e-5F);
+    EXPECT_NEAR(scaled.scale.y, 1.0F, 1e-5F);
+}
+
+TEST(Expanded3DObjectComponentsUVETest, BoneAttachmentLocalTransformInvertsWhatTheSceneGraphComposes) {
+    // The scene graph composes world = parent then local (scale, then rotate, then translate). An
+    // attachment has to be written in that same space, or its parent would move it a second time
+    // during propagation - so what the resolver writes has to compose back out to the frame the bone
+    // is in. Recomposed here exactly as SceneGraphUVE::UpdateUVE() does it.
+    const ObjectWorldFrameUVE parent{{5.0F, 2.0F, -1.0F},
+                                     Math::QuaternionUVE{0.0F, 0.70710678F, 0.0F, 0.70710678F},
+                                     {2.0F, 2.0F, 2.0F}};
+    const ObjectWorldFrameUVE wanted{{7.0F, 3.0F, -3.0F},
+                                     Math::QuaternionUVE{0.0F, 0.0F, 0.38268343F, 0.92387953F},
+                                     {4.0F, 4.0F, 4.0F}};
+    Math::Vector3UVE localPosition{};
+    Math::QuaternionUVE localRotation{};
+    Math::Vector3UVE localScale{};
+    ASSERT_TRUE(TryMakeBoneAttachmentLocalTransformUVE(wanted, parent, localPosition, localRotation, localScale));
+
+    const Math::Vector3UVE recomposedPosition =
+        parent.position +
+        Math::RotateVectorUVE(parent.rotation, Math::Vector3UVE{localPosition.x * parent.scale.x,
+                                                                localPosition.y * parent.scale.y,
+                                                                localPosition.z * parent.scale.z});
+    EXPECT_NEAR(recomposedPosition.x, wanted.position.x, 1e-4F);
+    EXPECT_NEAR(recomposedPosition.y, wanted.position.y, 1e-4F);
+    EXPECT_NEAR(recomposedPosition.z, wanted.position.z, 1e-4F);
+    // Rotation is compared through a vector, because q and -q are the same rotation and comparing
+    // components would fail on a sign the engine is right to allow.
+    const Math::Vector3UVE axis{0.3F, -0.6F, 0.2F};
+    const Math::Vector3UVE throughLocal =
+        Math::RotateVectorUVE(Math::MultiplyUVE(parent.rotation, localRotation), axis);
+    const Math::Vector3UVE throughWanted = Math::RotateVectorUVE(wanted.rotation, axis);
+    EXPECT_NEAR(throughLocal.x, throughWanted.x, 1e-4F);
+    EXPECT_NEAR(throughLocal.y, throughWanted.y, 1e-4F);
+    EXPECT_NEAR(throughLocal.z, throughWanted.z, 1e-4F);
+    EXPECT_NEAR(localScale.x * parent.scale.x, wanted.scale.x, 1e-4F);
+    EXPECT_NEAR(localScale.y * parent.scale.y, wanted.scale.y, 1e-4F);
+    EXPECT_NEAR(localScale.z * parent.scale.z, wanted.scale.z, 1e-4F);
+
+    // A parent flattened by a zero scale cannot be inverted: the arithmetic would divide by it and
+    // hand the renderer an infinity. Refusing keeps the last good transform instead.
+    const ObjectWorldFrameUVE flattened{{0.0F, 0.0F, 0.0F}, {}, {1.0F, 0.0F, 1.0F}};
+    EXPECT_FALSE(TryMakeBoneAttachmentLocalTransformUVE(wanted, flattened, localPosition, localRotation, localScale));
+    const ObjectWorldFrameUVE infinite{{std::numeric_limits<float>::infinity(), 0.0F, 0.0F}, {}, {1.0F, 1.0F, 1.0F}};
+    EXPECT_FALSE(TryMakeBoneAttachmentLocalTransformUVE(infinite, parent, localPosition, localRotation, localScale));
 }
 
 TEST(Expanded3DObjectComponentsUVETest, Hitbox3DStrikeStateIsRuntimeOnlyAndNeverAuthored) {

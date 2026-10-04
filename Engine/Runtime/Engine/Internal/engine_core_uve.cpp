@@ -127,6 +127,7 @@
 #include "uve/component/transform_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/entity/entity_manager_uve.h"
+#include "uve/scene/bone_attachment_pass_uve.h"
 #include "uve/scene/prefab_system_uve.h"
 #include "uve/scene/scene_graph_uve.h"
 #include "uve/scene/scene_serializer_uve.h"
@@ -1156,6 +1157,16 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
     }
 }
 
+void EngineCoreUVE::SyncBoneAttachment3DObjectsUVE() {
+    // The resolution rules live with the scene they act on (Scene::SyncBoneAttachment3DObjectsUVE).
+    // What this seam is for is the ORDER: called after the animation step that posed the skeleton and
+    // before the graph propagates world transforms, so an attachment lands on the bone in the frame
+    // the pose arrives instead of a frame behind its own animation. The report is discarded on
+    // purpose - an attachment that could not resolve recorded why in its own runtime fields, which is
+    // what the Inspector reads and what a test can pin.
+    static_cast<void>(Scene::SyncBoneAttachment3DObjectsUVE(*m_entityManager, *m_sceneGraph));
+}
+
 void EngineCoreUVE::SyncKinematic3DObjectsUVE(const float fixedDeltaTimeSeconds) {
     if (fixedDeltaTimeSeconds <= 0.0F) {
         return;
@@ -2081,6 +2092,10 @@ void EngineCoreUVE::Update() {
     if (m_simulationExecutionMode == SimulationExecutionModeUVE::Running) {
         SyncAnimationUVE(static_cast<float>(m_timer->GetDeltaTimeUVE()), /*physicsStep=*/false);
     }
+    // Bone attachments follow the pose that was just evaluated, and do it before the graph
+    // propagates world transforms: a weapon on a hand is on the hand in the same frame the hand
+    // moved, rather than a frame behind the animation that owns it.
+    SyncBoneAttachment3DObjectsUVE();
     m_sceneGraph->UpdateUVE(*m_entityManager);
     // The fraction of a fixed step already elapsed, handed to the renderer so it can draw between
     // the last two simulated poses instead of snapping to the newest one. Measured on a 144 Hz

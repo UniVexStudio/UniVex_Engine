@@ -79,6 +79,7 @@
 #include "uve/scene/scene_serializer_uve.h"
 #include "uve/objects/3d/animation_sequencer_uve.h"
 #include "uve/objects/3d/skeleton_3d_uve.h"
+#include "uve/objects/3d/bone_attachment_3d_uve.h"
 #include "uve/objects/3d/hitbox_3d_uve.h"
 #include "uve/objects/3d/hurtbox_3d_uve.h"
 #include "uve/objects/3d/decal_3d_events_uve.h"
@@ -1987,6 +1988,103 @@ TEST(EngineCoreUVETest, AnimationSequencer_PosesTheSkeletonInsideTheCharacterWit
     EXPECT_NEAR(posed.pose[0].position.y, 2.0F, 1e-4F);
     // The character itself was not moved: a skeletal clip poses bones, not objects.
     EXPECT_NEAR(entityManager.GetComponentUVE<Scene::TransformComponentUVE>(character).localPosition.y, 0.0F, 1e-6F);
+
+    std::filesystem::remove(clipPath);
+    std::filesystem::remove(MakeTestConfigUVE().assetDatabaseFilePath);
+    engine.Shutdown();
+}
+
+TEST(EngineCoreUVETest, BoneAttachment3D_RidesThePosedBoneInTheFrameThePoseArrives) {
+    EngineCoreUVE engine(MakeTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+    Asset::IAssetDatabaseUVE& assetDatabase = engine.GetServicesUVE().GetAssetDatabaseUVE();
+
+    // A one-second clip raising "Hand" from the shoulder to a metre above it.
+    Asset::AnimationClipAssetUVE clip;
+    clip.clipId = "salute";
+    clip.durationSeconds = 1.0;
+    Asset::AnimationAssetSampleUVE start;
+    start.pose.position = Math::Vector3UVE{0.5F, 1.0F, 0.0F};
+    Asset::AnimationAssetSampleUVE end;
+    end.timeSeconds = 1.0;
+    end.pose.position = Math::Vector3UVE{0.5F, 2.0F, 0.0F};
+    clip.bones = {Asset::AnimationAssetBoneTrackUVE{"Hand", {start, end}}};
+    const std::filesystem::path clipPath = "uve_engine_core_tests_salute.uvanim";
+    ASSERT_TRUE(Asset::SaveAnimationClipAssetUVE(clip, clipPath));
+    const Asset::AssetGuidUVE guid = assetDatabase.RegisterUVE(clipPath);
+    ASSERT_NE(guid, Asset::kInvalidAssetGuidUVE);
+
+    // A character at x=10 holding a skeleton, a player that poses it, and an attachment that rides the
+    // hand. The attachment is an ordinary child of the CHARACTER, not of the skeleton: being driven by
+    // a bone must not cost it its place in the hierarchy, or the character could not carry it around.
+    const Scene::EntityUVE character = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE characterTransform;
+    characterTransform.localPosition = Math::Vector3UVE{10.0F, 0.0F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, character, characterTransform);
+    const Scene::EntityUVE skeletonEntity = entityManager.CreateEntityUVE();
+    Scene::Skeleton3DObjectDefinitionUVE skeletonDefinition;
+    skeletonDefinition.skeleton.skeletonAssetPath = "Hero.fbx";
+    Scene::SkeletonBoneUVE hips;
+    hips.name = "Hips";
+    Scene::SkeletonBoneUVE hand;
+    hand.name = "Hand";
+    hand.parentIndex = 0;
+    hand.localPosition = Math::Vector3UVE{0.5F, 1.0F, 0.0F};
+    skeletonDefinition.skeleton.bones = {hips, hand};
+    Scene::ApplySkeleton3DObjectDefinitionUVE(entityManager, skeletonEntity, skeletonDefinition);
+    sceneGraph.SetParentUVE(entityManager, skeletonEntity, character);
+    const Scene::EntityUVE player = entityManager.CreateEntityUVE();
+    Scene::AnimationSequencerObjectDefinitionUVE definition;
+    definition.player.clip = guid;
+    definition.player.loopMode = Scene::AnimationLoopModeUVE::Once;
+    Scene::ApplyAnimationSequencerObjectDefinitionUVE(entityManager, player, definition);
+    sceneGraph.SetParentUVE(entityManager, player, character);
+    const Scene::EntityUVE attachment = entityManager.CreateEntityUVE();
+    Scene::BoneAttachment3DComponentUVE attachmentComponent;
+    attachmentComponent.skeleton = skeletonEntity;
+    attachmentComponent.boneName = "Hand";
+    attachmentComponent.localPosition = Math::Vector3UVE{0.0F, 0.1F, 0.0F};
+    entityManager.AddComponentUVE<Scene::BoneAttachment3DComponentUVE>(attachment, attachmentComponent);
+    sceneGraph.AttachTransformUVE(entityManager, attachment, Scene::TransformComponentUVE{});
+    sceneGraph.SetParentUVE(entityManager, attachment, character);
+
+    const auto startedAt = std::chrono::steady_clock::now();
+    while (std::chrono::steady_clock::now() - startedAt < std::chrono::seconds(10) &&
+           !entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(player).finished) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        engine.TickFrameUVE();
+    }
+    ASSERT_TRUE(entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(player).finished);
+
+    const Scene::BoneAttachment3DComponentUVE& resolved =
+        entityManager.GetComponentUVE<Scene::BoneAttachment3DComponentUVE>(attachment);
+    EXPECT_TRUE(resolved.bound);
+    EXPECT_EQ(resolved.resolvedBoneIndex, 1U) << "bound by name to the hand";
+
+    // The clip's last pose leaves the hand at (0.5, 2, 0) in the character's frame, which is at x=10,
+    // and the attachment sits 10 cm along the bone's own up axis. Asserted on the frame the pose
+    // finished in: the attachment pass runs after the pose and before propagation, so it is on the
+    // bone in that same frame rather than a frame behind its own animation.
+    const Scene::TransformComponentUVE& local = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(attachment);
+    EXPECT_NEAR(local.localPosition.x, 0.5F, 1e-3F) << "the transform written is parent-relative";
+    EXPECT_NEAR(local.localPosition.y, 2.1F, 1e-3F);
+    const Math::Vector3UVE world =
+        entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(attachment).worldPosition;
+    EXPECT_NEAR(world.x, 10.5F, 1e-3F);
+    EXPECT_NEAR(world.y, 2.1F, 1e-3F);
+    EXPECT_NEAR(world.z, 0.0F, 1e-3F);
+
+    // Switching the attachment off leaves it where it was: an attachment that is not bound keeps the
+    // transform it had, so turning one off is not a teleport.
+    entityManager.GetComponentUVE<Scene::BoneAttachment3DComponentUVE>(attachment).enabled = false;
+    engine.TickFrameUVE();
+    EXPECT_FALSE(entityManager.GetComponentUVE<Scene::BoneAttachment3DComponentUVE>(attachment).bound);
+    const Math::Vector3UVE stayed =
+        entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(attachment).worldPosition;
+    EXPECT_NEAR(stayed.y, 2.1F, 1e-3F);
 
     std::filesystem::remove(clipPath);
     std::filesystem::remove(MakeTestConfigUVE().assetDatabaseFilePath);

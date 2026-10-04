@@ -17,6 +17,7 @@
 #include "uve/component/physics_interpolation_component_uve.h"
 #include "uve/component/transform_component_uve.h"
 #include "uve/component/visibility_component_uve.h"
+#include "uve/objects/3d/bone_attachment_3d_uve.h"
 #include "uve/objects/3d/hitbox_3d_uve.h"
 #include "uve/objects/3d/hurtbox_3d_uve.h"
 #include "uve/objects/3d/decal_3d_uve.h"
@@ -364,6 +365,59 @@ TEST(SceneComponentMetadataUVETest, TheLodGroupSectionCarriesTheChainTheMeshesAn
     outOfRange.hysteresis = kMaximumLodHysteresisUVE + 0.1F;
     EXPECT_FALSE(lod->isInstanceValid(&outOfRange));
     EXPECT_TRUE(lod->isInstanceValid(&component));
+}
+
+TEST(SceneComponentMetadataUVETest, TheBoneAttachmentSectionDeclaresTheReferenceTheBoneAndTheAnswer) {
+    // The skeleton is an entity reference, which a text field cannot author and which the serializer
+    // has to remap through its file-local id table - the same contract the mixer's target and the
+    // visibility parent carry. The two runtime answers the pass writes back each frame are declared
+    // as runtime state, so a generic writer cannot author them and the Inspector still shows them.
+    const TypeMetadataEntryUVE* entry =
+        FindSceneComponentMetadataUVE(std::type_index(typeid(BoneAttachment3DComponentUVE)));
+    ASSERT_NE(entry, nullptr);
+    EXPECT_EQ(entry->typeId, "component.bone_attachment_3d");
+    EXPECT_EQ(entry->displayName, "BoneAttachment3D");
+
+    const TypeMetadataPropertyUVE* skeleton = FindPropertyUVE(*entry, "skeleton");
+    ASSERT_NE(skeleton, nullptr);
+    EXPECT_TRUE(HasPropertyFlagUVE(skeleton->flags, TypeMetadataPropertyFlagsUVE::EntityReference));
+    EXPECT_EQ(skeleton->typeId, kPropertyTypeEntityUVE);
+    EXPECT_FALSE(HasPropertyFlagUVE(skeleton->flags, TypeMetadataPropertyFlagsUVE::RuntimeState));
+
+    const char* const kAuthored[] = {"enabled",     "boneName",      "boneIndex",
+                                     "localPosition", "localRotation", "localScale"};
+    for (const char* const name : kAuthored) {
+        const TypeMetadataPropertyUVE* property = FindPropertyUVE(*entry, name);
+        ASSERT_NE(property, nullptr) << name;
+        EXPECT_FALSE(HasPropertyFlagUVE(property->flags, TypeMetadataPropertyFlagsUVE::RuntimeState)) << name;
+    }
+    for (const char* const name : {"bound", "resolvedBoneIndex"}) {
+        const TypeMetadataPropertyUVE* property = FindPropertyUVE(*entry, name);
+        ASSERT_NE(property, nullptr) << name;
+        EXPECT_TRUE(HasPropertyFlagUVE(property->flags, TypeMetadataPropertyFlagsUVE::RuntimeState)) << name;
+    }
+
+    // The bone index defaults to "ask the name": that is the sentinel the pass reads, so a component
+    // nobody has edited binds by name instead of silently to bone zero.
+    const Core::TypeInstanceUVE defaults = Core::TypeInstanceUVE::MakeDefaultUVE(*entry);
+    ASSERT_TRUE(defaults.IsValidUVE());
+    std::uint32_t boneIndex = 0U;
+    const TypeMetadataPropertyUVE* indexProperty = FindPropertyUVE(*entry, "boneIndex");
+    ASSERT_NE(indexProperty, nullptr);
+    indexProperty->getValue(defaults.GetUVE(), &boneIndex);
+    EXPECT_EQ(boneIndex, kInvalidSkeletonBoneIndexUVE);
+
+    // The component's own validity rule travels with the declaration, so a generic writer cannot
+    // author a flattened or non-finite offset and have it accepted.
+    ASSERT_NE(entry->isInstanceValid, nullptr);
+    const BoneAttachment3DComponentUVE valid{};
+    EXPECT_TRUE(entry->isInstanceValid(&valid));
+    BoneAttachment3DComponentUVE flattened = valid;
+    flattened.localScale.y = 0.0F;
+    EXPECT_FALSE(entry->isInstanceValid(&flattened));
+    BoneAttachment3DComponentUVE notFinite = valid;
+    notFinite.localPosition.x = std::numeric_limits<float>::infinity();
+    EXPECT_FALSE(entry->isInstanceValid(&notFinite));
 }
 
 TEST(SceneComponentMetadataUVETest, TheDecalResultSectionShowsTheCountdownWithoutLettingAuthoringWriteIt) {

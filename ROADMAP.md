@@ -375,15 +375,22 @@ and one of the highest-priority areas below.
 
 - [x] Animation clips, an animation state machine, and a blend-tree style animation graph
 - [x] A shared time/pose data contract used across the animation stack
-- [ ] A real skeletal mesh + bone hierarchy + GPU skinning system (the `skeleton` and `bone
-  attachment` scene-node kinds already exist as descriptors; no skinning/rig runtime backs
-  them yet)
+- [x] A real skeletal mesh + bone hierarchy + GPU skinning system. Bones are imported from a rigged
+  model (glTF/FBX skeleton readers), the clip pipeline poses them every step, the renderer poses a
+  skinned mesh against the nearest Skeleton3D above it and re-uploads that entity's own vertex buffer
+  every frame (`MeshSkinComputeUVE`), and a BoneAttachment3D object rides a bone through the ordinary
+  transform path (`Scene::SyncBoneAttachment3DObjectsUVE()`). Locked by 17 skinning cases, the
+  resolver cases, 7 pass tests and the serializer's reference round trip.
 - [ ] Inverse kinematics (two-bone IK for limbs at minimum; full-body IK as a stretch goal)
-- [ ] Root motion extraction and application
-- [ ] Animation retargeting done properly, as its own scoped system with real bone-mapping
-  validation (a prior, non-functional retargeting attempt was deliberately removed from
-  this codebase rather than kept half-working — see the project's own change history; this
-  is the "do it right" follow-up). Decided shape, to start only when asked:
+- [x] Root motion extraction and application - `AnimationRootMotionModeUVE`: Off, In Place (the root
+  bone's ground travel is taken out of the pose) and Apply To Target (the target is moved by it, as
+  velocity when it is a Character3D so collision still applies). Locked by the sequencer's travel
+  cases and the engine-core test that runs a character through its skeleton's frame.
+- [x] Animation retargeting done properly, as its own scoped system with real bone-mapping
+  validation. It landed as its own module, `Engine/Runtime/Retarget` - a humanoid reference, bone-name
+  matching, joint checks, A-pose conforming for both the skeleton and the mesh, a playback plan, and
+  the editor's Retarget window on top - locked by the plan, conform and playback tests. The shape it
+  was built to, kept here as the record:
   - The base is a skeleton read from an imported rig (FBX or glTF, through `ReadFbxSkeletonUVE` /
     `ReadGltfSkeletonUVE`), IK bones included - `ik_*` chains are kept, not stripped.
   - When the target rig has no IK bones of its own, they are generated automatically from its
@@ -392,9 +399,12 @@ and one of the highest-priority areas below.
     target authored in different rest poses (A vs T) still line up.
   - Needs a multi-track (per-bone) clip format first: `.uvanim` holds one track today.
 - [ ] Animation compression (both curve compression and a runtime decompression path)
-- [ ] Additive animation layers (e.g. aim offsets, lean, breathing) on top of a base pose
-- [ ] Blend spaces (1D and 2D) for locomotion blending, distinct from the existing blend
-  tree
+- [x] Additive animation layers (e.g. aim offsets, lean, breathing) on top of a base pose - an
+  Additive graph node adds its clip's pose over the base at the parameter's weight, locked by the
+  layer cases in the graph suite.
+- [x] Blend spaces (1D and 2D) for locomotion blending, distinct from the existing blend
+  tree - `AnimationBlendSpace1DWeightsUVE()` / `AnimationBlendSpace2DWeightsUVE()` place the clips
+  around the parameter, with synced points and time scaling locked by their own cases.
 - [ ] Facial animation / morph targets (blend shapes)
 - [ ] Physically-simulated secondary motion (cloth bones, jiggle, spring bones)
 - [ ] A dedicated animation-authoring/preview tool in the editor (a timeline/sequencer for

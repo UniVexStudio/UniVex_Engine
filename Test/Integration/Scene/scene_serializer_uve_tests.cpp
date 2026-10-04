@@ -367,6 +367,104 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
     EXPECT_TRUE(entityManager.HasComponentUVE<WorldTransformComponentUVE>(restored));
 }
 
+TEST_F(SceneSerializerUVETest, BoneAttachmentSkeletonReferenceRoundTripsThroughTheFileLocalId) {
+    // The skeleton is a real entity reference in the component, and a file has no entities - only
+    // file-local ids. Saved, it goes out as an id and comes back as the RESTORED skeleton, not as the
+    // handle it held when the scene was written, which names a slot in a manager that no longer holds
+    // that entity.
+    const EntityUVE skeletonEntity = entityManager.CreateEntityUVE();
+    Skeleton3DComponentUVE skeleton;
+    skeleton.skeletonAssetPath = "assets/character.uvskel";
+    skeleton.bones.push_back(SkeletonBoneUVE{"root", -1, {}, {}, {1.0F, 1.0F, 1.0F}});
+    entityManager.AddComponentUVE<Skeleton3DComponentUVE>(skeletonEntity, skeleton);
+    const EntityUVE attachmentEntity = entityManager.CreateEntityUVE();
+    BoneAttachment3DComponentUVE attachment;
+    attachment.skeleton = skeletonEntity;
+    attachment.boneName = "root";
+    attachment.localPosition = Math::Vector3UVE{0.0F, 0.25F, 0.0F};
+    entityManager.AddComponentUVE<BoneAttachment3DComponentUVE>(attachmentEntity, attachment);
+
+    const std::optional<SceneSnapshotUVE> snapshot =
+        serializer.CaptureUVE(entityManager, {skeletonEntity, attachmentEntity}, SceneAssetTypeUVE::Scene);
+    ASSERT_TRUE(snapshot.has_value());
+    EntityManagerUVE fresh{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
+    const std::vector<EntityUVE> restoredRoots = serializer.RestoreUVE(fresh, *snapshot);
+    ASSERT_EQ(restoredRoots.size(), 2U);
+
+    EntityUVE restoredSkeleton = kInvalidEntityUVE;
+    EntityUVE restoredAttachment = kInvalidEntityUVE;
+    for (const EntityUVE entity : restoredRoots) {
+        if (fresh.HasComponentUVE<Skeleton3DComponentUVE>(entity)) {
+            restoredSkeleton = entity;
+        }
+        if (fresh.HasComponentUVE<BoneAttachment3DComponentUVE>(entity)) {
+            restoredAttachment = entity;
+        }
+    }
+    ASSERT_NE(restoredSkeleton, kInvalidEntityUVE);
+    ASSERT_NE(restoredAttachment, kInvalidEntityUVE);
+    const BoneAttachment3DComponentUVE restored =
+        fresh.GetComponentUVE<BoneAttachment3DComponentUVE>(restoredAttachment);
+    EXPECT_EQ(restored.skeleton, restoredSkeleton) << "the id in the file is remapped to the restored skeleton";
+    EXPECT_TRUE(fresh.IsAliveUVE(restored.skeleton))
+        << "what the load left behind is a reference that resolves in the loaded scene, not a stale handle";
+    EXPECT_EQ(restored.boneName, "root");
+    EXPECT_FLOAT_EQ(restored.localPosition.y, 0.25F);
+}
+
+TEST_F(SceneSerializerUVETest, BoneAttachmentPointingOutsideTheSavedSetLoadsInert) {
+    // The skeleton was not part of what was saved, so there is no id for it in the file. The
+    // attachment must load pointing at nothing rather than at whichever entity happens to share the
+    // slot it used to occupy.
+    const EntityUVE skeletonEntity = entityManager.CreateEntityUVE();
+    entityManager.AddComponentUVE<Skeleton3DComponentUVE>(skeletonEntity, Skeleton3DComponentUVE{});
+    const EntityUVE attachmentEntity = entityManager.CreateEntityUVE();
+    BoneAttachment3DComponentUVE attachment;
+    attachment.skeleton = skeletonEntity;
+    attachment.boneName = "root";
+    entityManager.AddComponentUVE<BoneAttachment3DComponentUVE>(attachmentEntity, attachment);
+
+    const std::optional<SceneSnapshotUVE> snapshot =
+        serializer.CaptureUVE(entityManager, {attachmentEntity}, SceneAssetTypeUVE::Scene);
+    ASSERT_TRUE(snapshot.has_value());
+    EntityManagerUVE fresh{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
+    const std::vector<EntityUVE> restoredRoots = serializer.RestoreUVE(fresh, *snapshot);
+    ASSERT_EQ(restoredRoots.size(), 1U);
+    const BoneAttachment3DComponentUVE restored =
+        fresh.GetComponentUVE<BoneAttachment3DComponentUVE>(restoredRoots.front());
+    EXPECT_EQ(restored.skeleton, kInvalidEntityUVE);
+    EXPECT_EQ(restored.boneName, "root");
+    EXPECT_FALSE(IsBoneAttachment3DObjectComponentResolvableUVE(restored))
+        << "an attachment with nowhere to bind is inert, which is what keeps it from teleporting";
+}
+
+TEST_F(SceneSerializerUVETest, LoadUVE_ABoneAttachmentFromBeforeTheReferenceLoadsInertOrBound) {
+    // Documents written while the skeleton was still a bare numeric id keep that key. An id this file
+    // does not contain leaves the attachment inert; one it does contain binds it. Neither may read
+    // the number as an entity slot.
+    const std::string payloadText =
+        R"({"entities":[{"localId":0,"components":{"Skeleton3DComponentUVE":{"skeletonAssetPath":"Hero.fbx","bones":[{"name":"root","parentIndex":-1,"localPosition":[0.0,0.0,0.0],"localRotation":[0.0,0.0,0.0,1.0],"localScale":[1.0,1.0,1.0]}],"enabled":true}}},{"localId":1,"components":{"BoneAttachment3DComponentUVE":{"skeletonLocalId":0,"boneIndex":4294967295,"boneName":"root","localPosition":[0.0,0.1,0.0],"localRotation":[0.0,0.0,0.0,1.0],"localScale":[1.0,1.0,1.0],"enabled":true}}},{"localId":2,"components":{"BoneAttachment3DComponentUVE":{"skeletonLocalId":7,"boneName":"root","localPosition":[0.0,0.0,0.0],"localRotation":[0.0,0.0,0.0,1.0],"localScale":[1.0,1.0,1.0],"enabled":true}}}]})";
+    const auto* const payloadBytesPtr = reinterpret_cast<const std::byte*>(payloadText.data());
+    const std::vector<std::byte> payloadBytes(payloadBytesPtr, payloadBytesPtr + payloadText.size());
+
+    const std::filesystem::path path = "uve_scene_serializer_tests_bone_attachment_legacy_reference.uvscene";
+    std::filesystem::remove(path);
+    ASSERT_TRUE(Asset::WriteUveFileUVE(path, SceneAssetTypeUVE::Scene, payloadBytes));
+
+    const std::vector<EntityUVE> roots = serializer.LoadUVE(entityManager, path);
+    ASSERT_EQ(roots.size(), 3U);
+    const EntityUVE skeletonEntity = roots[0];
+    const BoneAttachment3DComponentUVE bound =
+        entityManager.GetComponentUVE<BoneAttachment3DComponentUVE>(roots[1]);
+    EXPECT_EQ(bound.skeleton, skeletonEntity) << "id 0 names the skeleton saved alongside it";
+    EXPECT_EQ(bound.boneName, "root");
+    const BoneAttachment3DComponentUVE dangling =
+        entityManager.GetComponentUVE<BoneAttachment3DComponentUVE>(roots[2]);
+    EXPECT_EQ(dangling.skeleton, kInvalidEntityUVE) << "id 7 names nothing in this file";
+
+    std::filesystem::remove(path);
+}
+
 TEST_F(SceneSerializerUVETest, SpringArmAuthoredFieldsRoundTripAndRuntimeTruthIsReseeded) {
     // The arm's authored half is saved; its runtime half is not, and must not be: where the boom
     // happens to be pointing right now is a fact about the frame that saved the scene, not about
