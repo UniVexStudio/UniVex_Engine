@@ -1773,6 +1773,15 @@ private:
     /// (dense, no duplicates) is enforced before the write lands.
     void DrawEntityReferenceListPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
                                             const Core::TypeMetadataPropertyUVE& property, const void* instance);
+    /// LODGroup3D's distance chain: one threshold row per level in use, plus the distance the
+    /// object is culled past, which is the rule those thresholds add up to. One write for the whole
+    /// array, so an edit is one undo step.
+    void DrawLodGroupThresholdsPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
+                                           const Core::TypeMetadataPropertyUVE& property, const void* instance);
+    /// LODGroup3D's per-level meshes: one mesh picker per level in use. An unassigned level draws
+    /// the object's own Mesh component mesh, which is what the row shows until it is overridden.
+    void DrawLodGroupMeshesPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
+                                       const Core::TypeMetadataPropertyUVE& property, const void* instance);
     /// Points the selected Skeleton3D at the model source `relativeSource` (content-relative) and
     /// loads its bones; an empty path clears both. One undo step. False, with the reason in
     /// m_skeletonSourceStatus, when the file has no readable skeleton.

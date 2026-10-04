@@ -47,6 +47,7 @@
 #include "uve/objects/3d/directional_light_3d_uve.h"
 #include "uve/objects/3d/fog_volume_3d_uve.h"
 #include "uve/objects/3d/kinematic_3d_uve.h"
+#include "uve/objects/3d/lod_group_3d_uve.h"
 #include "uve/objects/3d/projectile_3d_uve.h"
 #include "uve/objects/3d/hitbox_3d_uve.h"
 #include "uve/objects/3d/hurtbox_3d_uve.h"
@@ -383,6 +384,60 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                               {WithRangeUVE(DeclareUVE<&ParticleEmitterComponentUVE::maxParticles>(
                                                 "maxParticles", "Max Particles", kPropertyTypeUInt32UVE),
                                             0.0, 1000000.0, 1.0)}));
+
+    // LODGroup3D's own section. The chain is declared as a prefix: `levelCount` says how many of
+    // the two lists below are in use, and both lists are drawn by a block drawer that shows exactly
+    // those - a threshold past the last level is a number that does nothing, and an array of eight
+    // rows where three matter reads as eight settings. The resolved level and the cull verdict are
+    // runtime state: they describe the frame the renderer last ran, not the scene.
+    AddValidatedUVE<LodGroup3DComponentUVE, &IsLodGroup3DObjectComponentValidUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.lod_group_3d", "LODGroup3D", kSectionOrderTypeSpecificUVE,
+            {
+                WithTooltipUVE(DeclareUVE<&LodGroup3DComponentUVE::enabled>("enabled", "Enabled",
+                                                                            kPropertyTypeBoolUVE),
+                               "Off, the object draws at level 0 and is never distance-culled - what "
+                               "an author wants while placing it."),
+                WithRangeUVE(
+                    WithTooltipUVE(DeclareUVE<&LodGroup3DComponentUVE::levelCount>("levelCount", "Levels",
+                                                                                   kPropertyTypeUInt8UVE),
+                                   "How many levels of the chain are in use. Thresholds and level "
+                                   "meshes past this are ignored, so a chain can be shortened "
+                                   "without rewriting the numbers."),
+                    1.0, 8.0, 1.0),
+                WithRangeUVE(
+                    WithTooltipUVE(DeclareUVE<&LodGroup3DComponentUVE::hysteresis>("hysteresis", "Hysteresis",
+                                                                                  kPropertyTypeFloatUVE),
+                                   "How far past a threshold the object must go before it swaps, as a "
+                                   "fraction of that threshold; it comes back at the same fraction "
+                                   "under. Zero is the plain threshold rule."),
+                    0.0, 0.5, 0.01),
+                WithTooltipUVE(
+                    WithCustomDrawerUVE(
+                        WithElementCountUVE(
+                            DeclareUVE<&LodGroup3DComponentUVE::distanceThresholds>(
+                                "distanceThresholds", "Thresholds", kPropertyTypeFloatListUVE),
+                            kMaximumLodLevelsUVE),
+                        "lod-group-thresholds"),
+                    "The distance each level takes over at, nearest first. Past the last one the "
+                    "object is not drawn at all."),
+                WithTooltipUVE(
+                    WithCustomDrawerUVE(
+                        WithElementCountUVE(
+                            DeclareUVE<&LodGroup3DComponentUVE::lodMeshGuids>("lodMeshGuids", "Level Meshes",
+                                                                              kPropertyTypeAssetGuidListUVE),
+                            kMaximumLodLevelsUVE),
+                        "lod-group-meshes"),
+                    "The mesh drawn at each level. A level with no mesh draws the object's own Mesh "
+                    "component mesh."),
+                InGroupUVE(DeclareRuntimeStateUVE<&LodGroup3DComponentUVE::currentLevel>(
+                               "currentLevel", "Current Level", kPropertyTypeUInt8UVE),
+                           "Result"),
+                InGroupUVE(DeclareRuntimeStateUVE<&LodGroup3DComponentUVE::culledByDistance>(
+                               "culledByDistance", "Distance Culled", kPropertyTypeBoolUVE),
+                           "Result"),
+            }));
 }
 
 void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {

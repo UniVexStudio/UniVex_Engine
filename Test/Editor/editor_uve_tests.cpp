@@ -465,8 +465,11 @@ TEST(EditorUVETest, InspectorDrawerRegistrationUVE_IncludesStableHierarchyDrawer
         // validated with no drawer to reach them from; 44 with Hitbox3D's and Hurtbox3D's, the two
         // halves of a strike, which have to be authorable together or neither is authorable at all:
         // the pair is what the engine's scan reads, and the hitbox additionally shows the strike
-        // count its own scan resolved.
-        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorDrawerCountUVE(editor), 44U);
+        // count its own scan resolved; 45 with LODGroup3D's, the first section whose shape is a
+        // prefix of two parallel arrays - a threshold chain and a mesh per level - so it needed two
+        // list drawers rather than typed rows, and the level count that decides the prefix is a
+        // field of the section itself.
+        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorDrawerCountUVE(editor), 45U);
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "directional-light-3d"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "animation-mixer"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "solid-body"));
@@ -495,6 +498,7 @@ TEST(EditorUVETest, InspectorDrawerRegistrationUVE_IncludesStableHierarchyDrawer
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "projectile-3d"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "hitbox-3d"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "hurtbox-3d"));
+        EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "lod-group-3d"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "audio-source"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "particle-emitter"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "script"));

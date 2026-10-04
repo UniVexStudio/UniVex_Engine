@@ -129,8 +129,12 @@ separately in `SETTINGS_ROADMAP.md`, which follows the same status legend.
   would only speed up the cull, which measurement puts at roughly a third of the extraction cost,
   so the honest next win is skipping entities entirely rather than culling them faster.
 - [ ] Occlusion culling (the `occluder` scene-node kind exists as a descriptor only)
-- [ ] Level-of-detail switching (the `LOD group` scene-node kind exists as a descriptor
-  only; no runtime LOD selection system exists)
+- [x] Level-of-detail switching (LODGroup3D): the chain resolves from the camera distance with a
+  hysteresis band (entered past a threshold, left under it, the previous level kept between), the
+  renderer culls past the last threshold, and each level draws its own mesh — `lodMeshGuids[level]`,
+  falling back to the object's own `MeshComponentUVE` mesh for a level that overrides nothing. The
+  whole chain is authored in the Inspector, which also shows the resolved level and the cull verdict
+  during Play.
 - [ ] A world-partition / large-world streaming system (the scene-node kind exists as a
   descriptor only; no streaming, no grid/cell system, no origin rebasing for large worlds)
 - [ ] A terrain system (heightfield or mesh-based, sculpting, texture splatting, LOD)
