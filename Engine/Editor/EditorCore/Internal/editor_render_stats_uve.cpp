@@ -60,6 +60,13 @@ std::vector<EditorRenderStatRowUVE> BuildEditorRenderStatRowsUVE(
     rows.push_back({kSectionSceneUVE, "Mesh items", FormatCountUVE(diagnostics.meshItemsExtracted), false});
     rows.push_back({kSectionSceneUVE, "Primitive items", FormatCountUVE(diagnostics.primitiveItemsExtracted), false});
     rows.push_back({kSectionSceneUVE, "Particle items", FormatCountUVE(diagnostics.particleItemsExtracted), false});
+    rows.push_back({kSectionSceneUVE, "Decals considered", FormatCountUVE(diagnostics.decalsConsidered), false});
+    rows.push_back({kSectionSceneUVE, "Decal draws", FormatCountUVE(diagnostics.decalDrawsExtracted), false});
+    rows.push_back({kSectionSceneUVE, "Decal patches", FormatCountUVE(diagnostics.decalPatchesExtracted), false});
+    rows.push_back({kSectionSceneUVE, "Decal triangles", FormatCountUVE(diagnostics.decalTrianglesExtracted),
+                    false});
+    rows.push_back({kSectionSceneUVE, "Decals on nothing", FormatCountUVE(diagnostics.decalsWithoutReceivers),
+                    diagnostics.decalsWithoutReceivers > 0U});
 
     // Clustering. The rejected count is the whole return on building clusters at all: a rejected
     // cluster skips a plane test for every candidate inside it. Flagged when clusters exist and
@@ -88,13 +95,6 @@ std::vector<EditorRenderStatRowUVE> BuildEditorRenderStatRowsUVE(
                         : std::string{"unused"},
                     primitiveLookups > 0U && diagnostics.primitivePlacementCacheHits == 0U});
 
-    rows.push_back({kSectionSceneUVE, "Decals considered", FormatCountUVE(diagnostics.decalsConsidered), false});
-    rows.push_back({kSectionSceneUVE, "Decal draws", FormatCountUVE(diagnostics.decalDrawsExtracted), false});
-    rows.push_back({kSectionSceneUVE, "Decal patches", FormatCountUVE(diagnostics.decalPatchesExtracted), false});
-    rows.push_back({kSectionSceneUVE, "Decal triangles", FormatCountUVE(diagnostics.decalTrianglesExtracted),
-                    false});
-    rows.push_back({kSectionSceneUVE, "Decals on nothing", FormatCountUVE(diagnostics.decalsWithoutReceivers),
-                    diagnostics.decalsWithoutReceivers > 0U});
     rows.push_back({kSectionSubmissionUVE, "Mesh draws", FormatCountUVE(diagnostics.meshDrawCallsRecorded), false});
     rows.push_back({kSectionSubmissionUVE, "Instanced draws",
                     FormatCountUVE(diagnostics.instancedDrawCallsRecorded) + " covering " +
