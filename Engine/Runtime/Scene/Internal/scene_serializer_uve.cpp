@@ -1291,11 +1291,21 @@ template <typename VectorT>
 }
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const LodGroup3DComponentUVE& value) {
+    // Both level-indexed arrays are written as the authored prefix, len == levelCount: one array
+    // of thresholds and one of the per-level mesh guids, index for index. An unset level writes the
+    // invalid GUID rather than being skipped, so the two arrays can never drift out of alignment by
+    // a scene file being hand-edited or written by an older build.
     nlohmann::json thresholds = nlohmann::json::array();
+    nlohmann::json lodMeshes = nlohmann::json::array();
     for (std::size_t index = 0U; index < value.levelCount; ++index) {
         thresholds.push_back(value.distanceThresholds[index]);
+        lodMeshes.push_back(value.lodMeshGuids[index].value);
     }
-    return {{"distanceThresholds", std::move(thresholds)}, {"levelCount", value.levelCount}, {"enabled", value.enabled}};
+    return {{"distanceThresholds", std::move(thresholds)},
+            {"lodMeshGuids", std::move(lodMeshes)},
+            {"levelCount", value.levelCount},
+            {"hysteresis", value.hysteresis},
+            {"enabled", value.enabled}};
 }
 
 [[nodiscard]] LodGroup3DComponentUVE LodGroup3DObjectFromJsonUVE(const nlohmann::json& json) {
@@ -1308,6 +1318,17 @@ template <typename VectorT>
     for (std::size_t index = 0U; index < thresholds.size(); ++index) {
         value.distanceThresholds[index] = thresholds.at(index).get<float>();
     }
+    // A level mesh array is optional - a group that overrides no levels writes none - but it is
+    // bounded when present, and shorter than levelCount simply leaves the remaining levels on the
+    // MeshComponentUVE fallback.
+    const nlohmann::json lodMeshes = json.value("lodMeshGuids", nlohmann::json::array());
+    if (!lodMeshes.is_array() || lodMeshes.size() > kMaximumLodLevelsUVE) {
+        throw std::runtime_error("LodGroup3DComponentUVE lodMeshGuids must be a bounded array");
+    }
+    for (std::size_t index = 0U; index < lodMeshes.size(); ++index) {
+        value.lodMeshGuids[index] = Asset::AssetGuidUVE{lodMeshes.at(index).get<std::uint64_t>()};
+    }
+    value.hysteresis = json.value("hysteresis", 0.0F);
     value.enabled = json.value("enabled", true);
     return value;
 }

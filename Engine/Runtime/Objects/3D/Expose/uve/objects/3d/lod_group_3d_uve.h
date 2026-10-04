@@ -6,24 +6,33 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "uve/asset/asset_guid_uve.h"
 #include "uve/objects/3d/object_3d_common_uve.h"
 
 namespace UVE::Scene {
 
 inline constexpr std::size_t kMaximumLodLevelsUVE = 8U;
 
+/// The largest hysteresis band an author can ask for, as a fraction of a threshold. At 0.5 a
+/// level's entry point is half again its exit point, which is already a very wide band; anything
+/// more would start to overlap the neighbouring level's band.
+inline constexpr float kMaximumLodHysteresisUVE = 0.5F;
+
 /// Distance-based detail selection for one entity.
 ///
-/// WHAT IT DOES TODAY. The renderer resolves `currentLevel` from the camera distance every frame,
-/// and skips the entity entirely once it is past the last threshold. That culling is the part
-/// that pays immediately: a culled object costs no placement, no plane test and no draw call.
-/// Measured on a 2000-object, 200 m scene - 74% culled at a 50 m draw distance, 50% at 100 m.
+/// WHAT IT DOES. The renderer resolves `currentLevel` from the camera distance every frame, draws
+/// that level's mesh, and skips the entity entirely once it is past the last threshold. The level
+/// is resolved with a hysteresis band so an object drifting across a threshold does not swap meshes
+/// on alternate frames - the band is what makes the switch a decision instead of a coin flip.
 ///
-/// WHAT IT IS READY FOR. `currentLevel` is the index a mesh swap would use. MeshComponentUVE
-/// holds a single mesh GUID today, so there is nothing to swap TO - adding LOD meshes is an asset
-/// pipeline job (import, generation, storage), not an object's. The level is computed and published
-/// now so that work lands as a consumer rather than a redesign, and so the Inspector can show
-/// which level an object is on before any of it exists.
+/// WHICH MESH. `lodMeshGuids[level]` names the mesh to draw at that level; an empty slot falls back
+/// to the entity's own MeshComponentUVE mesh, which is why an author who assigns only levels 1..N
+/// still gets the full-detail mesh at level 0. The renderer reads the resolved GUID through
+/// ResolveLodGroup3DMeshGuidUVE(): one call, so the "which mesh" rule has one home and cannot drift
+/// between the extraction walk and anything else that draws.
+///
+/// The resolved fields are derived, not authored: writing `currentLevel`, `culledByDistance` or the
+/// mesh choice by hand has no effect, because the next extraction overwrites them.
 struct LodGroup3DComponentUVE final {
     /// Distance at which each level takes over, nearest first. An entity beyond
     /// `distanceThresholds[levelCount - 1]` is not drawn at all.
@@ -33,9 +42,21 @@ struct LodGroup3DComponentUVE final {
     /// hottest loop in the renderer.
     std::array<float, kMaximumLodLevelsUVE> distanceThresholds{10.0F, 25.0F, 60.0F, 120.0F, 240.0F, 480.0F, 960.0F, 1920.0F};
 
-    /// How many entries of `distanceThresholds` are in use. Levels beyond this are ignored, so an
-    /// author can shorten a chain without having to rewrite the distances.
+    /// The mesh drawn at each level, index for index with `distanceThresholds`. An invalid GUID
+    /// means "draw the entity's MeshComponentUVE mesh at this level", so a group only has to name
+    /// the levels it actually replaces detail on.
+    std::array<Asset::AssetGuidUVE, kMaximumLodLevelsUVE> lodMeshGuids{};
+
+    /// How many entries of `distanceThresholds` and `lodMeshGuids` are in use. Levels beyond this
+    /// are ignored, so an author can shorten a chain without having to rewrite the distances.
     std::uint8_t levelCount = 4U;
+
+    /// Relative width of the band around every threshold, as a fraction of that threshold. A level
+    /// is entered at `threshold * (1 + hysteresis)` and left at `threshold * (1 - hysteresis)`;
+    /// between the two the previous level is kept, which is what stops a mesh swap from chattering
+    /// while an object hovers on a boundary. Zero is the stateless rule - the level a distance
+    /// maps to, with no memory - and is the default, so an author opts in per object.
+    float hysteresis = 0.0F;
 
     /// Resolved each frame from the camera distance. Derived, not authored: writing it by hand has
     /// no effect, because the next extraction overwrites it.
@@ -58,7 +79,20 @@ struct LodGroup3DComponentUVE final {
 /// level 0 and not-culled for a disabled group, a zero-length chain, or a non-finite distance -
 /// every degenerate case draws the object at full detail rather than hiding it, because a
 /// configuration mistake should be visible, not invisible.
+///
+/// The component's own `currentLevel`/`culledByDistance` are the previous answer and the only state
+/// the rule has: hysteresis needs to know where the object is coming from, and reading it from the
+/// value being resolved keeps the call site a single statement. A `hysteresis` of 0 is the
+/// stateless rule an object resolved by before the field existed - the level a distance maps to,
+/// with no memory - so opting in is the only way to get a band, and nothing changes for anyone who
+/// does not.
 void ResolveLodGroup3DLevelUVE(LodGroup3DComponentUVE& value, float distanceToCamera) noexcept;
+
+/// The mesh to draw for the level `value` currently resolves to. `baseMeshGuid` is the entity's
+/// MeshComponentUVE mesh, used for every level the group does not override - including every level
+/// when it overrides none - so the fallback is one rule rather than a special first level.
+[[nodiscard]] Asset::AssetGuidUVE ResolveLodGroup3DMeshGuidUVE(
+    const LodGroup3DComponentUVE& value, const Asset::AssetGuidUVE& baseMeshGuid) noexcept;
 
 [[nodiscard]] bool IsLodGroup3DObjectComponentValidUVE(const LodGroup3DComponentUVE& value) noexcept;
 
