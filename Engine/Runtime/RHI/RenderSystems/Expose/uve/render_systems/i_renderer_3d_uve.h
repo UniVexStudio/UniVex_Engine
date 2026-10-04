@@ -59,6 +59,13 @@ struct Renderer3DFrameDiagnosticsUVE final {
     std::size_t decalPatchesExtracted = 0U;
     std::size_t decalTrianglesExtracted = 0U;
     std::size_t decalsWithoutReceivers = 0U;
+    /// Decal draw calls the main pass actually recorded, and the draws the plan refused. The two
+    /// together answer the question the extraction counters above cannot: a decal whose geometry was
+    /// extracted and whose draw never reached the GPU (its material was collected between the two,
+    /// the frame's decal budget ran out, the volume had no invertible world-to-unit map) shows up
+    /// here and nowhere else.
+    std::size_t decalDrawCallsRecorded = 0U;
+    std::size_t decalDrawsDropped = 0U;
     /// Skinned meshes posed by a skeleton and drawn from their own vertex buffer this frame.
     std::size_t skinnedMeshesDrawn = 0U;
     std::size_t meshDrawCallsRecorded = 0U;

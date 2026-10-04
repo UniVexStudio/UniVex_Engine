@@ -13,6 +13,7 @@
 #include "uve/component/entity_uve.h"
 #include "uve/math/vector2_uve.h"
 #include "uve/math/vector3_uve.h"
+#include "uve/objects/3d/decal_3d_uve.h"
 
 namespace UVE::Render {
 
@@ -49,6 +50,14 @@ struct DecalPatchUVE final {
     [[nodiscard]] bool IsValidUVE() const noexcept { return vertexCount >= 3U && weight > 0.0F; }
 };
 
+/// Appends one patch to a canonical MeshVertexUVE/index stream as a triangle fan. The single place
+/// a patch becomes GPU vertices: the draw list's whole-frame stream and the per-decal draw plan both
+/// go through it, so a patch cannot be laid out one way for one consumer and another way for the
+/// next.
+void AppendDecalPatchUVE(const DecalPatchUVE& patch, const Math::Vector3UVE& projectionDirection,
+                         std::vector<Asset::MeshVertexUVE>& outVertices,
+                         std::vector<std::uint32_t>& outIndices);
+
 /// One visible decal this frame: the material to paint with, the volume's world transform for the
 /// shader's own use (origin and projection direction), and the patches it lands on.
 struct DecalDrawUVE final {
@@ -59,9 +68,20 @@ struct DecalDrawUVE final {
     /// times over. The list holds one reference per distinct material, which is what keeps the
     /// material alive across AssetManagerUVE::CollectGarbageUVE().
     std::size_t materialIndex = 0U;
-    /// Unit direction the decal projects along - the patch tangent, so a shader can tell which way
-    /// the decal is looking without a second uniform.
-    Math::Vector3UVE projectionDirection{};
+    /// The volume this decal projects, resolved against its world pose. The pass needs it to clip
+    /// in unit space; the draw command needs it again to hand the shader the same frame the CPU
+    /// clipped in, so it travels with the draw rather than being rebuilt from the patches.
+    Scene::Decal3DProjectionUVE projection{};
+    /// The authored look the material is painted with: `modulate` tints the material's albedo,
+    /// `emissionEnergy` scales its emissive, `albedoMix` is how much of the receiving surface's own
+    /// colour the decal replaces (the blend's alpha, in a forward alpha-blended pass).
+    Math::Vector3UVE modulate{1.0F, 1.0F, 1.0F};
+    float emissionEnergy = 1.0F;
+    float albedoMix = 1.0F;
+    /// Distance from the camera to the decal's own origin: what the distance fade is evaluated
+    /// against. The back-to-front order is decided by the nearest patch instead, because a decal
+    /// projecting along a wall has its origin beside that wall rather than on it - see
+    /// DecalDrawListUVE::SortBackToFrontUVE.
     float sortDepth = 0.0F;
     std::vector<DecalPatchUVE> patches;
 };

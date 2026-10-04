@@ -193,7 +193,15 @@ there).
   its rules, and it is locked by 12 dedicated query tests plus the editor's own play-mode cases.
   Acting on a spawn (respawn flow, teams, per-player tags) is still the gameplay layer no system
   owns yet - the tag is carried precisely so that layer has something to ask with.
-- [~] Decal3D — the lifetime runtime and the projected-geometry pass exist (countdown + expiry event, unit-space volume, patch clipping on receiving surfaces, frame diagnostics); the remaining gap is the decal DRAW: no program binds the patch stream yet, so nothing is visible on screen.
+- [x] Decal3D — it draws. The lifetime runtime counts down and reports the expiry, the pass clips
+  the receiving surfaces against the box or cylinder volume and publishes the surviving polygons, and
+  the frame now paints them: `decal.glsl` (a built-in program) projects each patch, evaluates the
+  authored fades per pixel against the SAME world-to-unit matrix the CPU clipped in, and blends the
+  material's albedo texture and colour - tinted by `modulate`, plus its emissive scaled by
+  `emissionEnergy`, with the texture's alpha joining `albedoMix` - over the surface, back to front. Each decal draws from its own vertex/index buffers, created
+  the first frame it paints and released once it stops - the same lifetime rule the skinned-mesh
+  buffers follow - and the F1 panel reports both the draws extracted and the draw calls recorded, so
+  a decal whose geometry never reaches the GPU is visible as its own failure.
 - [x] LODGroup3D — the chain is real: `Scene::ResolveLodGroup3DLevelUVE()` selects the level from the camera distance with a configurable hysteresis band (entered past a threshold, left under it, the previous level kept in the band), the renderer culls past the last threshold and draws `lodMeshGuids[level]` — falling back to the object's own `MeshComponentUVE` mesh for a level that overrides nothing — and a scene written before per-level meshes still loads unchanged. The Inspector authors the chain (levels, thresholds, band, per-level meshes) and shows the resolved level during Play.
 - [x] AnimationSequencer — clips really decode and play: `.uvanim` assets load through the asset
   manager, `StepAnimationSequencerUVE()` samples a clip at the playhead with Once/Loop/Ping-Pong,

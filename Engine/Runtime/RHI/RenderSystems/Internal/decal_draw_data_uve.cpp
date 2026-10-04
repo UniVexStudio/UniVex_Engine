@@ -73,32 +73,38 @@ std::size_t DecalDrawListUVE::GetTriangleCountUVE() const noexcept {
     return triangles;
 }
 
+void AppendDecalPatchUVE(const DecalPatchUVE& patch, const Math::Vector3UVE& projectionDirection,
+                         std::vector<Asset::MeshVertexUVE>& outVertices,
+                         std::vector<std::uint32_t>& outIndices) {
+    if (!patch.IsValidUVE()) {
+        return;
+    }
+    const std::uint32_t base = static_cast<std::uint32_t>(outVertices.size());
+    for (std::size_t vertexIndex = 0; vertexIndex < patch.vertexCount; ++vertexIndex) {
+        Asset::MeshVertexUVE vertex{};
+        vertex.position = patch.worldPositions[vertexIndex];
+        vertex.normal = patch.normal;
+        // The volume's unit coordinates, remapped from [-1, 1] to the [0, 1] a texture is sampled
+        // with. A material authored for a decal can therefore treat (0.5, 0.5) as the centre of the
+        // projection without knowing the decal's size or mode.
+        vertex.u = patch.unitCoords[vertexIndex].x * 0.5F + 0.5F;
+        vertex.v = patch.unitCoords[vertexIndex].y * 0.5F + 0.5F;
+        vertex.tangent = projectionDirection;
+        vertex.tangentHandedness = 1.0F;
+        outVertices.push_back(vertex);
+    }
+    for (std::size_t fanIndex = 1U; fanIndex + 1U < patch.vertexCount; ++fanIndex) {
+        outIndices.push_back(base);
+        outIndices.push_back(base + static_cast<std::uint32_t>(fanIndex));
+        outIndices.push_back(base + static_cast<std::uint32_t>(fanIndex) + 1U);
+    }
+}
+
 void DecalDrawListUVE::AppendVertexStreamUVE(std::vector<Asset::MeshVertexUVE>& outVertices,
                                              std::vector<std::uint32_t>& outIndices) const {
     for (const DecalDrawUVE& draw : draws) {
         for (const DecalPatchUVE& patch : draw.patches) {
-            if (!patch.IsValidUVE()) {
-                continue;
-            }
-            const std::uint32_t base = static_cast<std::uint32_t>(outVertices.size());
-            for (std::size_t vertexIndex = 0; vertexIndex < patch.vertexCount; ++vertexIndex) {
-                Asset::MeshVertexUVE vertex{};
-                vertex.position = patch.worldPositions[vertexIndex];
-                vertex.normal = patch.normal;
-                // The volume's unit coordinates, remapped from [-1, 1] to the [0, 1] a texture is
-                // sampled with. A material authored for a decal can therefore treat (0.5, 0.5) as
-                // the centre of the projection without knowing the decal's size or mode.
-                vertex.u = patch.unitCoords[vertexIndex].x * 0.5F + 0.5F;
-                vertex.v = patch.unitCoords[vertexIndex].y * 0.5F + 0.5F;
-                vertex.tangent = draw.projectionDirection;
-                vertex.tangentHandedness = 1.0F;
-                outVertices.push_back(vertex);
-            }
-            for (std::size_t fanIndex = 1U; fanIndex + 1U < patch.vertexCount; ++fanIndex) {
-                outIndices.push_back(base);
-                outIndices.push_back(base + static_cast<std::uint32_t>(fanIndex));
-                outIndices.push_back(base + static_cast<std::uint32_t>(fanIndex) + 1U);
-            }
+            AppendDecalPatchUVE(patch, draw.projection.projectionDirection, outVertices, outIndices);
         }
     }
 }

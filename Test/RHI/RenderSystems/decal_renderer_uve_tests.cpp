@@ -25,6 +25,7 @@
 #include "uve/memory/memory_manager_uve.h"
 #include "uve/objects/3d/decal_3d_uve.h"
 #include "uve/entity/entity_manager_uve.h"
+#include "uve/render_systems/decal_draw_command_uve.h"
 #include "uve/render_systems/decal_draw_data_uve.h"
 #include "uve/render_systems/mesh_renderer_uve.h"
 #include "uve/render_systems/mesh_visibility_set_uve.h"
@@ -57,6 +58,8 @@ protected:
     /// than a cube, which is what makes a patch's extent mean something.
     Math::Vector3UVE meshHalfExtents{0.5F, 0.5F, 0.5F};
     bool materialIsTransparent = false;
+    Math::Vector3UVE materialAlbedo{1.0F, 1.0F, 1.0F};
+    Math::Vector3UVE materialEmissive{0.0F, 0.0F, 0.0F};
 
     void RegisterImmediateLoadersUVE() {
         assetManager.RegisterLoaderUVE<Asset::MeshAssetUVE>(
@@ -67,6 +70,8 @@ protected:
         assetManager.RegisterLoaderUVE<Asset::MaterialAssetUVE>(
             [this](const std::filesystem::path&, Asset::MaterialAssetUVE& material) {
                 material.isTransparent = materialIsTransparent;
+                material.albedoColor = materialAlbedo;
+                material.emissiveColor = materialEmissive;
                 return true;
             });
     }
@@ -160,6 +165,58 @@ protected:
         Scene::EntityUVE decal = Scene::kInvalidEntityUVE;
     };
 
+    /// A plan for whatever the last BuildFrameUVE() extracted.
+    [[nodiscard]] DecalDrawPlanUVE MakePlanUVE(
+        const std::size_t maximumCommands = kMaximumDecalDrawCommandsUVE,
+        const std::size_t maximumVertices = kMaximumDecalVerticesUVE) {
+        DecalDrawPlanUVE plan;
+        BuildDecalDrawPlanUVE(drawList, plan, maximumCommands, maximumVertices);
+        return plan;
+    }
+
+    /// A unit quad patch standing in for one receiving face, with the volume's own unit coordinates
+    /// at its corners - the shape the projection pass hands the plan.
+    [[nodiscard]] static DecalPatchUVE MakeQuadPatchUVE(const float z) {
+        constexpr std::array<float, 4U> kX{-0.5F, 0.5F, 0.5F, -0.5F};
+        constexpr std::array<float, 4U> kY{-0.5F, -0.5F, 0.5F, 0.5F};
+        DecalPatchUVE patch{};
+        patch.vertexCount = 4U;
+        patch.normal = Math::Vector3UVE{0.0F, 0.0F, 1.0F};
+        patch.weight = 1.0F;
+        for (std::size_t corner = 0U; corner < 4U; ++corner) {
+            patch.worldPositions[corner] = Math::Vector3UVE{kX[corner], kY[corner], z};
+            patch.unitCoords[corner] = Math::Vector2UVE{kX[corner], kY[corner]};
+        }
+        return patch;
+    }
+
+    /// A draw with one quad patch and a unit box volume at the origin, for the plan's own tests -
+    /// they are about what the plan does with a list, not about whether the pass builds one.
+    [[nodiscard]] DecalDrawUVE MakeSyntheticDrawUVE(const Scene::EntityUVE entity,
+                                                    const std::size_t materialIndex) {
+        DecalDrawUVE draw{};
+        draw.decal = entity;
+        draw.materialIndex = materialIndex;
+        draw.projection.worldPosition = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+        draw.projection.worldRotation = Math::QuaternionUVE{};
+        draw.projection.inverseWorldRotation = Math::QuaternionUVE{};
+        draw.projection.halfExtents = Math::Vector3UVE{1.0F, 1.0F, 1.0F};
+        draw.projection.projectionDirection = Math::Vector3UVE{0.0F, 0.0F, -1.0F};
+        draw.patches.push_back(MakeQuadPatchUVE(0.0F));
+        return draw;
+    }
+
+    /// Loads one decal material through the real asset manager and hands back the handle a draw list
+    /// holds - the plan resolves its colours through exactly this handle.
+    Asset::AssetHandleUVE<Asset::MaterialAssetUVE> LoadDecalMaterialHandleUVE(const std::string& path) {
+        const Asset::AssetGuidUVE guid = assetDatabase.RegisterUVE(path);
+        RegisterImmediateLoadersUVE();
+        Asset::AssetHandleUVE<Asset::MaterialAssetUVE> handle =
+            assetManager.LoadUVE<Asset::MaterialAssetUVE>(guid, assetDatabase);
+        WaitUntilAssetsReadyUVE({guid});
+        return handle;
+    }
+
     WallAndDecalUVE MakeWallAndDecalUVE(const Math::Vector3UVE& decalOffset = Math::Vector3UVE{}) {
         meshHalfExtents = Math::Vector3UVE{2.0F, 2.0F, 0.05F};
         const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("decal_renderer_tests_wall.uvmodel");
@@ -187,7 +244,7 @@ TEST_F(DecalRendererUVETest, BuildDrawListUVE_ADecalOnAFlatWallProducesAPatchWit
     EXPECT_EQ(draw.decal, scene.decal);
     // The decal projects along its local -Y: with no rotation that is straight down, and the patch
     // carries it as the tangent so the shader knows which way the decal is looking.
-    EXPECT_FLOAT_EQ(draw.projectionDirection.y, -1.0F);
+    EXPECT_FLOAT_EQ(draw.projection.projectionDirection.y, -1.0F);
 
     ASSERT_EQ(draw.patches.size(), 1U) << "a thin wall crossed once, by its camera-facing face";
     const DecalPatchUVE& patch = draw.patches.front();
@@ -405,7 +462,7 @@ TEST_F(DecalRendererUVETest, AppendVertexStreamUVE_PatchesBecomeTheCanonicalMesh
         EXPECT_EQ(vertex.normal, draw.patches.front().normal);
         EXPECT_NEAR(vertex.u, draw.patches.front().unitCoords[patchVertexIndex].x * 0.5F + 0.5F, 1.0e-6F);
         EXPECT_NEAR(vertex.v, draw.patches.front().unitCoords[patchVertexIndex].y * 0.5F + 0.5F, 1.0e-6F);
-        EXPECT_EQ(vertex.tangent, draw.projectionDirection);
+        EXPECT_EQ(vertex.tangent, draw.projection.projectionDirection);
         EXPECT_FLOAT_EQ(vertex.tangentHandedness, 1.0F);
         EXPECT_LT(indices[vertexIndex], vertices.size());
     }
@@ -425,8 +482,8 @@ TEST_F(DecalRendererUVETest, BuildDrawListUVE_ADecalRotatedAQuarterTurnProjectsS
     ASSERT_EQ(drawList.draws.size(), 2U);
     bool sawSidewaysProjection = false;
     for (const DecalDrawUVE& draw : drawList.draws) {
-        EXPECT_NEAR(std::fabs(draw.projectionDirection.x) + std::fabs(draw.projectionDirection.y), 1.0F, 1.0e-4F);
-        if (std::fabs(draw.projectionDirection.x) < 0.99F) {
+        EXPECT_NEAR(std::fabs(draw.projection.projectionDirection.x) + std::fabs(draw.projection.projectionDirection.y), 1.0F, 1.0e-4F);
+        if (std::fabs(draw.projection.projectionDirection.x) < 0.99F) {
             continue;
         }
         sawSidewaysProjection = true;
@@ -480,6 +537,209 @@ TEST_F(DecalRendererUVETest, BuildDrawListUVE_RebuildingTheFrameReplacesTheLastO
     EXPECT_EQ(drawList.GetPatchCountUVE(), firstPatchCount);
     EXPECT_EQ(drawList.materialHandles.size(), 1U);
     EXPECT_EQ(drawList.decalsConsidered, 1U) << "the counters describe this frame alone";
+}
+
+// ---------------------------------------------------------------------------
+// The draw plan: the step between "the pass found geometry" and "the GPU is handed it".
+// ---------------------------------------------------------------------------
+
+TEST_F(DecalRendererUVETest, BuildDecalDrawPlanUVE_WorldToUnitIsTheSpaceTheCpuClippedIn) {
+    // The plan hands the fragment program one matrix instead of re-deriving the volume's frame in
+    // GLSL, so this is the invariant that keeps the two halves of the decal pass in one coordinate
+    // space: the matrix must map a world point to exactly what the CPU sampler's own transform
+    // gives for the same point. Asserted at the patch's own vertices, which are the points the
+    // clipping arithmetic actually produced.
+    const WallAndDecalUVE scene = MakeWallAndDecalUVE();
+    BuildFrameUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F});
+    ASSERT_EQ(drawList.draws.size(), 1U);
+
+    const DecalDrawPlanUVE plan = MakePlanUVE();
+    ASSERT_EQ(plan.commands.size(), 1U);
+    EXPECT_EQ(plan.commands.front().decal, scene.decal);
+
+    const Scene::Decal3DProjectionUVE& projection = drawList.draws.front().projection;
+    std::size_t checked = 0U;
+    for (const DecalPatchUVE& patch : drawList.draws.front().patches) {
+        for (std::size_t vertexIndex = 0U; vertexIndex < patch.vertexCount; ++vertexIndex) {
+            const Math::Vector3UVE world = patch.worldPositions[vertexIndex];
+            const Math::Vector3UVE viaMatrix = Math::TransformPointUVE(plan.commands.front().worldToUnit, world);
+            const Math::Vector3UVE viaSampler = Scene::Decal3DWorldToUnitUVE(projection, world);
+            EXPECT_NEAR(viaMatrix.x, viaSampler.x, 1.0e-4F);
+            EXPECT_NEAR(viaMatrix.y, viaSampler.y, 1.0e-4F);
+            EXPECT_NEAR(viaMatrix.z, viaSampler.z, 1.0e-4F);
+            ++checked;
+        }
+    }
+    EXPECT_GE(checked, 3U) << "a plan with no patch vertices would pass this test without testing it";
+}
+
+TEST_F(DecalRendererUVETest, BuildDecalDrawPlanUVE_CarriesTheAuthoredLookIntoTheDrawUniforms) {
+    // Every uniform the fragment program reads has to come from somewhere the author can reach:
+    // the material's albedo and emissive, and the decal's own modulate/emissionEnergy/albedoMix and
+    // fades. This pins the wiring between the two, which is the difference between an authored
+    // field and a field that does nothing.
+    materialAlbedo = Math::Vector3UVE{0.8F, 0.1F, 0.1F};
+    materialEmissive = Math::Vector3UVE{0.2F, 0.0F, 0.0F};
+    const WallAndDecalUVE scene = MakeWallAndDecalUVE();
+
+    Scene::Decal3DComponentUVE& authored = entityManager.GetComponentUVE<Scene::Decal3DComponentUVE>(scene.decal);
+    authored.modulate = Math::Vector3UVE{0.5F, 2.0F, 1.0F};
+    authored.emissionEnergy = 3.0F;
+    authored.albedoMix = 0.25F;
+    authored.normalFade = 0.75F;
+    authored.upperFade = 0.4F;
+    authored.lowerFade = 0.2F;
+    authored.distanceFadeEnabled = true;
+    authored.distanceFadeBegin = 12.0F;
+    authored.distanceFadeLength = 8.0F;
+
+    BuildFrameUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F});
+    const DecalDrawPlanUVE plan = MakePlanUVE();
+    ASSERT_EQ(plan.commands.size(), 1U);
+
+    const DecalDrawCommandUVE& command = plan.commands.front();
+    EXPECT_EQ(command.decal, scene.decal);
+    EXPECT_FLOAT_EQ(command.baseColor.x, 0.8F * 0.5F);
+    EXPECT_FLOAT_EQ(command.baseColor.y, 0.1F * 2.0F);
+    EXPECT_FLOAT_EQ(command.baseColor.z, 0.1F * 1.0F);
+    EXPECT_FLOAT_EQ(command.emissionColor.x, 0.2F * 3.0F);
+    EXPECT_FLOAT_EQ(command.alphaScale, 0.25F);
+    EXPECT_FLOAT_EQ(command.normalFade, 0.75F);
+    EXPECT_FLOAT_EQ(command.upperFade, 0.4F);
+    EXPECT_FLOAT_EQ(command.lowerFade, 0.2F);
+    EXPECT_TRUE(command.distanceFadeEnabled);
+    EXPECT_FLOAT_EQ(command.distanceFadeBegin, 12.0F);
+    EXPECT_FLOAT_EQ(command.distanceFadeLength, 8.0F);
+    EXPECT_FLOAT_EQ(command.projectionDirection.y, -1.0F);
+    EXPECT_EQ(command.albedoTextureGuid, Asset::kInvalidAssetGuidUVE)
+        << "this material leaves its texture unset, and the decal must say so rather than invent one";
+}
+
+TEST_F(DecalRendererUVETest, BuildDecalDrawPlanUVE_EveryCommandWindowStaysInsideTheStreamsItPointsAt) {
+    // The plan's streams are shared by every decal in the frame, and each command names its own
+    // window into them. A window that overruns the stream - or an index that reaches outside its
+    // command's own vertices - would draw one decal with another decal's geometry, which is the
+    // kind of bug that shows up as a smear rather than as a crash.
+    const WallAndDecalUVE scene = MakeWallAndDecalUVE();
+    BuildFrameUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F});
+    const DecalDrawPlanUVE plan = MakePlanUVE();
+    ASSERT_FALSE(plan.commands.empty());
+    EXPECT_EQ(plan.commands.front().decal, scene.decal);
+
+    for (const DecalDrawCommandUVE& command : plan.commands) {
+        const std::size_t firstVertex = command.firstVertex;
+        const std::size_t lastVertex = firstVertex + command.vertexCount;
+        const std::size_t firstIndex = command.firstIndex;
+        const std::size_t lastIndex = firstIndex + command.indexCount;
+        EXPECT_LE(lastVertex, plan.vertices.size());
+        EXPECT_LE(lastIndex, plan.indices.size());
+        EXPECT_GE(command.vertexCount, 3U);
+        EXPECT_GE(command.indexCount, 3U);
+        for (std::size_t index = firstIndex; index < lastIndex; ++index) {
+            EXPECT_GE(plan.indices[index], firstVertex);
+            EXPECT_LT(plan.indices[index], lastVertex);
+        }
+    }
+}
+
+TEST_F(DecalRendererUVETest, BuildDecalDrawPlanUVE_KeepsThePassesBackToFrontOrder) {
+    // Blending order is the whole reason the list is sorted: a decal nearer the camera must be
+    // recorded after the one behind it, and the plan is the last place that order can be lost.
+    const WallAndDecalUVE scene = MakeWallAndDecalUVE();
+    // A second decal of the same material beside the first, both landing on the same wall: the pass
+    // sorts them back to front, and the plan must not be the step that loses that order.
+    Scene::Decal3DComponentUVE beside = MakeScorchDecalUVE();
+    beside.size = Math::Vector3UVE{0.5F, 0.5F, 0.5F};
+    const Scene::EntityUVE second =
+        MakeDecalUVE(Math::Vector3UVE{1.0F, 0.0F, -4.8F}, Math::QuaternionUVE{}, beside);
+
+    BuildFrameUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F});
+    ASSERT_EQ(drawList.draws.size(), 2U);
+    const DecalDrawPlanUVE plan = MakePlanUVE();
+    ASSERT_EQ(plan.commands.size(), 2U);
+    EXPECT_EQ(plan.commands[0].decal, drawList.draws[0].decal);
+    EXPECT_EQ(plan.commands[1].decal, drawList.draws[1].decal);
+    EXPECT_NE(plan.commands[0].decal, plan.commands[1].decal) << "two draws, not one recorded twice";
+    EXPECT_TRUE((plan.commands[0].decal == scene.decal && plan.commands[1].decal == second) ||
+                (plan.commands[0].decal == second && plan.commands[1].decal == scene.decal))
+        << "the plan's draws are the frame's decals, and nothing else";
+    EXPECT_NE(plan.commands[1].worldToUnit.m[0][3], plan.commands[0].worldToUnit.m[0][3])
+        << "a command must carry its own volume, not the previous decal's";
+}
+
+TEST_F(DecalRendererUVETest, BuildDecalDrawPlanUVE_ADrawWhoseMaterialIsGoneIsCountedAndTheRestStillDraw) {
+    const Asset::AssetHandleUVE<Asset::MaterialAssetUVE> material =
+        LoadDecalMaterialHandleUVE(kDecalMaterialPathUVE);
+    DecalDrawListUVE synthetic{};
+    synthetic.materialHandles.push_back(material);
+    const Scene::EntityUVE painted = entityManager.CreateEntityUVE();
+    synthetic.draws.push_back(MakeSyntheticDrawUVE(painted, 0U));
+    synthetic.draws.push_back(MakeSyntheticDrawUVE(entityManager.CreateEntityUVE(), 7U));
+
+    DecalDrawPlanUVE plan;
+    BuildDecalDrawPlanUVE(synthetic, plan);
+    ASSERT_EQ(plan.commands.size(), 1U);
+    EXPECT_EQ(plan.commands.front().decal, painted);
+    EXPECT_EQ(plan.drawsWithoutMaterial, 1U);
+    EXPECT_EQ(plan.indices.size(), 6U) << "one quad, and nothing left behind by the draw that was "
+                                          "refused for naming a material the list does not hold";
+    EXPECT_EQ(plan.vertices.size(), 4U);
+}
+
+TEST_F(DecalRendererUVETest, BuildDecalDrawPlanUVE_ADecalThatReplacesNothingPaintsNothing) {
+    const Asset::AssetHandleUVE<Asset::MaterialAssetUVE> material =
+        LoadDecalMaterialHandleUVE(kDecalMaterialPathUVE);
+    DecalDrawListUVE synthetic{};
+    synthetic.materialHandles.push_back(material);
+    DecalDrawUVE draw = MakeSyntheticDrawUVE(entityManager.CreateEntityUVE(), 0U);
+    draw.albedoMix = 0.0F;
+    synthetic.draws.push_back(draw);
+
+    DecalDrawPlanUVE plan;
+    BuildDecalDrawPlanUVE(synthetic, plan);
+    EXPECT_TRUE(plan.commands.empty());
+    EXPECT_EQ(plan.drawsWithoutPaint, 1U);
+    EXPECT_TRUE(plan.vertices.empty());
+}
+
+TEST_F(DecalRendererUVETest, BuildDecalDrawPlanUVE_TheCapsRefuseAWholeDrawRatherThanHalfOfOne) {
+    const Asset::AssetHandleUVE<Asset::MaterialAssetUVE> material =
+        LoadDecalMaterialHandleUVE(kDecalMaterialPathUVE);
+    DecalDrawListUVE synthetic{};
+    synthetic.materialHandles.push_back(material);
+    synthetic.draws.push_back(MakeSyntheticDrawUVE(entityManager.CreateEntityUVE(), 0U));
+    synthetic.draws.push_back(MakeSyntheticDrawUVE(entityManager.CreateEntityUVE(), 0U));
+
+    // The command cap: one draw records, the second is counted rather than half-appended.
+    DecalDrawPlanUVE byCommand;
+    BuildDecalDrawPlanUVE(synthetic, byCommand, 1U, kMaximumDecalVerticesUVE);
+    EXPECT_EQ(byCommand.commands.size(), 1U);
+    EXPECT_EQ(byCommand.drawsTruncated, 1U);
+    EXPECT_EQ(byCommand.vertices.size(), 4U);
+    EXPECT_EQ(byCommand.indices.size(), 6U);
+
+    // The vertex cap: a draw whose geometry does not fit is refused whole, so the stream never
+    // holds vertices no command points at.
+    DecalDrawPlanUVE byVertex;
+    BuildDecalDrawPlanUVE(synthetic, byVertex, kMaximumDecalDrawCommandsUVE, 6U);
+    EXPECT_EQ(byVertex.commands.size(), 1U);
+    EXPECT_EQ(byVertex.drawsTruncated, 1U);
+    EXPECT_EQ(byVertex.vertices.size(), 4U);
+}
+
+TEST_F(DecalRendererUVETest, BuildDecalDrawPlanUVE_RebuildingAFrameReplacesTheLastOne) {
+    const Asset::AssetHandleUVE<Asset::MaterialAssetUVE> material =
+        LoadDecalMaterialHandleUVE(kDecalMaterialPathUVE);
+    DecalDrawListUVE synthetic{};
+    synthetic.materialHandles.push_back(material);
+    synthetic.draws.push_back(MakeSyntheticDrawUVE(entityManager.CreateEntityUVE(), 0U));
+
+    DecalDrawPlanUVE plan;
+    BuildDecalDrawPlanUVE(synthetic, plan);
+    BuildDecalDrawPlanUVE(synthetic, plan);
+    EXPECT_EQ(plan.commands.size(), 1U) << "an existing plan must be cleared, not appended to";
+    EXPECT_EQ(plan.vertices.size(), 4U);
+    EXPECT_EQ(plan.indices.size(), 6U);
 }
 
 } // namespace

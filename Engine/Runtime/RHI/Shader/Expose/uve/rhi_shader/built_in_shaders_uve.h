@@ -42,6 +42,11 @@ extern const std::string_view kLitPrimitive3DSource;
 inline constexpr std::string_view kParticleVirtualPath = "shaders/particle.glsl";
 extern const std::string_view kParticleSource;
 
+/// Decal3D's paint pass: world-space, CPU-clipped patches projected through uViewProjection, with
+/// the authored fades evaluated per pixel from the same unit-space matrix the CPU clipped in.
+inline constexpr std::string_view kDecalVirtualPath = "shaders/decal.glsl";
+extern const std::string_view kDecalSource;
+
 /// The compute kernel Render::ParticleComputeSimulationUVE dispatches (CS4) - the GPU twin of
 /// Scene::ParticleRuntimeUVE's per-particle integration. Unlike every other entry here this file
 /// holds a single COMPUTE stage, so it carries no VERTEX_SHADER/FRAGMENT_SHADER split and is
