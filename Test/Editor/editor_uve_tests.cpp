@@ -472,13 +472,19 @@ TEST(EditorUVETest, InspectorDrawerRegistrationUVE_IncludesStableHierarchyDrawer
         // component that had been missing rather than the part that was merely unauthorable - its
         // fields were serialized, validated and named in the registry from the start, but nothing in
         // the engine read them, so the section arrives together with the system that resolves a bone
-        // and writes the transform.
-        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorDrawerCountUVE(editor), 46U);
+        // and writes the transform; 48 with NavMeshVolume3D's and NavSeeker3D's, the navigation
+        // pair - the region's bake settings and the agent's schedule had been serialized and
+        // validated with nothing to author them from, and the route the step publishes is declared
+        // as runtime-only state, so the Inspector shows where an agent is going while playing
+        // without ever offering to save it.
+        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorDrawerCountUVE(editor), 48U);
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "directional-light-3d"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "animation-mixer"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "solid-body"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "animation-tree"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "bone-attachment-3d"));
+        EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "nav-mesh-volume-3d"));
+        EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "nav-seeker-3d"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "skeleton-3d"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "surface-instance"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "light-emitter"));
