@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <limits>
 #include <string>
 #include <typeindex>
 #include <vector>
@@ -15,6 +16,7 @@
 #include "uve/component/physics_interpolation_component_uve.h"
 #include "uve/component/transform_component_uve.h"
 #include "uve/component/visibility_component_uve.h"
+#include "uve/objects/3d/spawn_point_3d_uve.h"
 #include "uve/math/vector3_uve.h"
 
 namespace UVE::Scene::Tests {
@@ -72,8 +74,11 @@ TEST(SceneComponentMetadataUVETest, EveryLayerMaskNamesTheLayersItPicksFrom) {
             render += isRender ? 1U : 0U;
         }
     }
-    EXPECT_EQ(physics, 2U); // the collider's layer and mask - the one place a physics object keeps them
-    EXPECT_EQ(render, 4U);  // mesh, render instance, light and decal
+    // The collider's layer and mask, plus SpringArm3D's collisionMask - the boom casts on the same
+    // layer contract every other physics object uses, so its mask belongs to the same drawer set
+    // rather than a second, hand-drawn one.
+    EXPECT_EQ(physics, 3U);
+    EXPECT_EQ(render, 4U); // mesh, render instance, light and decal
 }
 
 TEST(SceneComponentMetadataUVETest, FindSceneComponentMetadataUVE_ResolvesALiveComponentType) {
@@ -226,6 +231,48 @@ TEST(SceneComponentMetadataUVETest, TheFactoryAnswersWhatAPropertysDefaultValueI
     float defaultDensity = 0.0F;
     density->getValue(defaults.GetUVE(), &defaultDensity);
     EXPECT_FLOAT_EQ(defaultDensity, ColliderComponentUVE{}.density);
+}
+
+TEST(SceneComponentMetadataUVETest, TheSpawnPointSectionCarriesTheWholeAuthoredContract) {
+    // A SpawnPoint3D is authored data with no runtime half: everything it owns is what the query
+    // reads, and the generic editor must be able to author all of it.
+    const TypeMetadataEntryUVE* spawn =
+        FindSceneComponentMetadataUVE(std::type_index(typeid(SpawnPoint3DComponentUVE)));
+    ASSERT_NE(spawn, nullptr);
+    EXPECT_EQ(spawn->typeId, "component.spawn_point");
+    EXPECT_EQ(spawn->displayName, "SpawnPoint3D");
+
+    const char* const kAuthored[] = {"spawnTag", "localPosition", "localRotation", "enabled",
+                                     "oneShot"};
+    for (const char* const name : kAuthored) {
+        const TypeMetadataPropertyUVE* property = FindPropertyUVE(*spawn, name);
+        ASSERT_NE(property, nullptr) << name;
+        EXPECT_FALSE(HasPropertyFlagUVE(property->flags, TypeMetadataPropertyFlagsUVE::RuntimeState))
+            << name;
+    }
+
+    // The offsets are the point's own, not a second transform: their declared labels say so, and
+    // the values default to a point that spawns exactly where it sits.
+    const TypeMetadataPropertyUVE* offset = FindPropertyUVE(*spawn, "localPosition");
+    ASSERT_NE(offset, nullptr);
+    EXPECT_EQ(offset->displayName, "Offset Position");
+    const Core::TypeInstanceUVE defaults = Core::TypeInstanceUVE::MakeDefaultUVE(*spawn);
+    ASSERT_TRUE(defaults.IsValidUVE());
+    Math::Vector3UVE position{1.0F, 1.0F, 1.0F};
+    offset->getValue(defaults.GetUVE(), &position);
+    EXPECT_EQ(position, SpawnPoint3DComponentUVE{}.localPosition);
+
+    // The component's own rule travels with the declaration, so a generic writer cannot author an
+    // empty tag or a non-finite offset and have it accepted.
+    ASSERT_NE(spawn->isInstanceValid, nullptr);
+    const SpawnPoint3DComponentUVE valid{};
+    EXPECT_TRUE(spawn->isInstanceValid(&valid));
+    SpawnPoint3DComponentUVE noTag = valid;
+    noTag.spawnTag.clear();
+    EXPECT_FALSE(spawn->isInstanceValid(&noTag));
+    SpawnPoint3DComponentUVE notFinite = valid;
+    notFinite.localPosition.z = std::numeric_limits<float>::infinity();
+    EXPECT_FALSE(spawn->isInstanceValid(&notFinite));
 }
 
 } // namespace

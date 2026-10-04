@@ -63,6 +63,7 @@
 #include "uve/objects/3d/all_objects_3d_uve.h"
 #include "uve/objects/canvas/all_objects_canvas_uve.h"
 #include "uve/scene/objects/scene_object_type_uve.h"
+#include "uve/scene/spawn_point_query_uve.h"
 #include "uve/editor/editor_content_catalogue_uve.h"
 #include "uve/core/engine_project_settings_uve.h"
 #include "uve/scene/objects/scene_folder_uve.h"
@@ -434,33 +435,18 @@ bool EditorUVE::ApplyPlayEntrySpawnUVE() {
         return false;
     }
 
-    // The candidates: enabled, valid spawn points whose world pose is knowable. Filtering is
-    // the resolver's contract; the resolver itself stays a pure ranking over what survives.
-    std::vector<Scene::SpawnPoint3DCandidateUVE> candidates;
-    entityManager.ForEachUVE<Scene::SpawnPoint3DComponentUVE>(
-        [&entityManager, &candidates](const Scene::EntityUVE entity,
-                                      Scene::SpawnPoint3DComponentUVE& spawnPoint) {
-            if (spawnPoint.enabled && Scene::IsSpawnPoint3DObjectComponentValidUVE(spawnPoint) &&
-                entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(entity)) {
-                candidates.push_back(Scene::SpawnPoint3DCandidateUVE{entity, spawnPoint.oneShot});
-            }
-        });
-    const std::optional<Scene::EntityUVE> selection =
-        Scene::ResolveSpawnPoint3DSelectionUVE(candidates);
-    if (!selection.has_value()) {
+    // The candidates come from the shared spawn query - enabled, valid, world-posed, in stable
+    // content order - rather than from a second copy of those rules living here. The tag is left
+    // empty (a scene's play entry takes the first live spawn point whatever it is called), and
+    // consumption is deliberately NOT asked for: a one-shot point is only spent once the player
+    // has actually been moved, below, so a refused teleport leaves its checkpoint intact.
+    const Scene::SpawnPoint3DQueryResultsUVE spawns =
+        Scene::QuerySpawnPointsUVE(entityManager, Scene::SpawnPoint3DQueryUVE{});
+    if (!spawns.HasAnyUVE()) {
         return false;
     }
-
-    const Scene::SpawnPoint3DComponentUVE& spawnPoint =
-        entityManager.GetComponentUVE<Scene::SpawnPoint3DComponentUVE>(*selection);
-    const Scene::WorldTransformComponentUVE& spawnWorld =
-        entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(*selection);
-    const std::optional<Scene::SpawnPoint3DPoseUVE> spawnPose = Scene::ComposeSpawnPointPoseUVE(
-        spawnWorld.worldPosition, spawnWorld.worldRotation, spawnPoint.localPosition,
-        spawnPoint.localRotation);
-    if (!spawnPose.has_value()) {
-        return false;
-    }
+    const Scene::SpawnPoint3DQueryResultUVE& spawnPoint = spawns.results[0];
+    const std::optional<Scene::SpawnPoint3DPoseUVE> spawnPose{spawnPoint.pose};
 
     // World-space spawn pose -> the player's LOCAL pose under its own parent, via the sweep's
     // exact inverse. A root-level player passes identity TRS and the pose falls straight
@@ -493,9 +479,8 @@ bool EditorUVE::ApplyPlayEntrySpawnUVE() {
     playerTransform.rotationEditMode = Scene::RotationEditModeUVE::Quaternion;
     m_services->GetSceneGraphUVE().SetLocalTransformUVE(entityManager, player, playerTransform);
 
-    if (spawnPoint.oneShot) {
-        entityManager.GetComponentUVE<Scene::SpawnPoint3DComponentUVE>(*selection).enabled = false;
-    }
+    // The teleport succeeded, so a one-shot point is spent now - never before.
+    static_cast<void>(Scene::ConsumeSpawnPointUVE(entityManager, spawnPoint.entity));
     return true;
 }
 

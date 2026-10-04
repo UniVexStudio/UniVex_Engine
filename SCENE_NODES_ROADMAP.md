@@ -151,9 +151,16 @@ worse than no checklist.
   genuinely gate which hitboxes can strike it every frame (locked by engine-core tests on both
   sides of every gate); consequences of being struck are the same gameplay follow-up as
   Hitbox3D's.
+- [x] SpawnPoint3D — the real thing: `Scene::QuerySpawnPointsUVE()` (bounded, overflow-flagged
+  result list in (index, generation) order) filters by enabled/validator/world-transform/tag,
+  composes each point's world pose with its authored offset, and spends one-shot points only when
+  asked (`query.consumeOneShot`, or `Scene::ConsumeSpawnPointUVE` for a single point after a spawn
+  that succeeded). The editor's play-entry spawn is now a caller of it rather than a second copy of
+  its rules, and it is locked by 12 dedicated query tests plus the editor's own play-mode cases.
+  Acting on a spawn (respawn flow, teams, per-player tags) is still the gameplay layer no system
+  owns yet - the tag is carried precisely so that layer has something to ask with.
 - [~] Decal3D — material/size/lifetime fields exist, no decal-projection rendering exists.
 - [~] LODGroup3D — distance-threshold fields exist, no LOD-switching system exists.
-- [~] SpawnPoint3D — tag/one-shot fields exist, no spawn system reads it.
 - [~] AnimationSequencer — clip/speed/loop fields exist, nothing decodes a clip or evaluates a pose (see `ROADMAP.md`'s Animation section for the real gap: no skeleton/skinning/clip-sampling pipeline exists).
 - [~] AnimationGraph — not even creatable yet in the editor (registry marks it `libraryCreatable = false`); depends on the same missing animation pipeline as AnimationSequencer.
 

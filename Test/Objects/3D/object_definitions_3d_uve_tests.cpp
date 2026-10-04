@@ -820,6 +820,14 @@ TEST_F(Object3DDefinitionsUVETest, SpawnPointSelectionIsDeterministicContentOrde
     // No candidates, no spawn.
     EXPECT_EQ(ResolveSpawnPoint3DSelectionUVE(std::span<const SpawnPoint3DCandidateUVE>{}),
               std::nullopt);
+
+    // The predicate the resolver and the spawn query's result order both read: ascending
+    // (index, generation), strictly, so equal handles never re-order each other.
+    EXPECT_TRUE(SortsBeforeSpawnPointUVE(EntityUVE{1U, 0U}, EntityUVE{2U, 0U}));
+    EXPECT_TRUE(SortsBeforeSpawnPointUVE(EntityUVE{1U, 0U}, EntityUVE{1U, 1U}));
+    EXPECT_FALSE(SortsBeforeSpawnPointUVE(EntityUVE{1U, 1U}, EntityUVE{1U, 0U}));
+    EXPECT_FALSE(SortsBeforeSpawnPointUVE(EntityUVE{2U, 0U}, EntityUVE{1U, 9U}));
+    EXPECT_FALSE(SortsBeforeSpawnPointUVE(EntityUVE{3U, 2U}, EntityUVE{3U, 2U}));
     // Sentinels are filtered again at this seam too: a caller bug must not become the spawn.
     const SpawnPoint3DCandidateUVE sentinel{kInvalidEntityUVE, false};
     {
