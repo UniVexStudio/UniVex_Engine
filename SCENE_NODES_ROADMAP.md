@@ -354,10 +354,8 @@ system behind them.
    motion policy for projectiles; real per-frame hitbox-vs-hurtbox strike pairing whose every
    start and end now leaves the engine as one typed edge event, so gameplay acts on the strike
    rather than re-deriving it from the per-frame list).
-   Wire up the remaining highest-value already-authored 3D
-   stubs next: Skeleton3D + AnimationSequencer + AnimationGraph (blocked on the same missing
-   skinning/clip-sampling pipeline — see `ROADMAP.md`), NavigationRegion3D/NavigationAgent3D
-   (needed for any AI movement).
+   Both pairs this step named have since landed: the animation pipeline
+   (Skeleton3D + AnimationSequencer + AnimationGraph) and NavigationRegion3D/NavigationAgent3D.
 3. Only after 3D nodes are in good shape, start a real 2D pipeline (rendering + physics + nav) —
    right now 2D is 100% unstarted, not partially built.
 4. **Done**: Canvas/UI Text/UI Image/UI Button are promoted into the Scene node registry
