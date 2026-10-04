@@ -403,6 +403,204 @@ TEST(LodGroup3DResolveUVETest, ResolvingLeavesTheComponentValid) {
     }
 }
 
+TEST(LodGroup3DResolveUVETest, HysteresisKeepsALevelUntilTheDistanceIsWellPastItsThreshold) {
+    // The whole point of the band: an object drifting across a threshold must not swap meshes on
+    // alternate frames. With a 10% band on a 10 m threshold, the level is entered past 11 m and
+    // only left under 9 m - and everything between those two points keeps whatever it had.
+    LodGroup3DComponentUVE group;
+    group.levelCount = 4U;
+    group.hysteresis = 0.1F;
+
+    ResolveLodGroup3DLevelUVE(group, 9.0F);
+    EXPECT_EQ(group.currentLevel, 0U);
+
+    // Past the threshold, but inside the entry band: the old level is kept, which is the whole
+    // difference from the stateless rule.
+    ResolveLodGroup3DLevelUVE(group, 10.5F);
+    EXPECT_EQ(group.currentLevel, 0U) << "10.5 m is not past 11 m, so the band holds level 0";
+
+    ResolveLodGroup3DLevelUVE(group, 11.5F);
+    EXPECT_EQ(group.currentLevel, 1U) << "11.5 m is past the entry point";
+
+    // Back inside the threshold, but not under the exit point: still level 1.
+    ResolveLodGroup3DLevelUVE(group, 10.5F);
+    EXPECT_EQ(group.currentLevel, 1U) << "hysteresis means the way back is not the way in";
+
+    ResolveLodGroup3DLevelUVE(group, 8.5F);
+    EXPECT_EQ(group.currentLevel, 0U) << "8.5 m is under the exit point";
+}
+
+TEST(LodGroup3DResolveUVETest, EveryThresholdCarriesItsOwnBand) {
+    // The band is relative to each threshold, not one global distance, so a chain of thresholds an
+    // order of magnitude apart still has a useful band at both ends.
+    LodGroup3DComponentUVE group;
+    group.levelCount = 4U;
+    group.hysteresis = 0.1F;
+
+    ResolveLodGroup3DLevelUVE(group, 20.0F);
+    ASSERT_EQ(group.currentLevel, 1U);
+
+    ResolveLodGroup3DLevelUVE(group, 26.0F);
+    EXPECT_EQ(group.currentLevel, 1U) << "25 m's entry point is 27.5 m";
+
+    ResolveLodGroup3DLevelUVE(group, 28.0F);
+    EXPECT_EQ(group.currentLevel, 2U);
+
+    ResolveLodGroup3DLevelUVE(group, 24.0F);
+    EXPECT_EQ(group.currentLevel, 2U) << "25 m's exit point is 22.5 m";
+
+    ResolveLodGroup3DLevelUVE(group, 22.0F);
+    EXPECT_EQ(group.currentLevel, 1U);
+
+    // The same rule at the far end of the chain: 60 m is entered past 66 m and left under 54 m.
+    ResolveLodGroup3DLevelUVE(group, 70.0F);
+    EXPECT_EQ(group.currentLevel, 3U);
+    ResolveLodGroup3DLevelUVE(group, 61.0F);
+    EXPECT_EQ(group.currentLevel, 3U);
+    ResolveLodGroup3DLevelUVE(group, 53.0F);
+    EXPECT_EQ(group.currentLevel, 2U);
+}
+
+TEST(LodGroup3DResolveUVETest, ACulledObjectStaysCulledInsideTheBandAndReturnsOnce) {
+    // Culling is the level past the end of the chain, so it has a band too. Without one, an object
+    // hovering on the last threshold would pop in and out of the visibility set every frame - and
+    // every pop is a full asset resolution and placement, not just a draw.
+    LodGroup3DComponentUVE group;
+    group.levelCount = 4U;
+    group.hysteresis = 0.1F;
+
+    ResolveLodGroup3DLevelUVE(group, 200.0F);
+    EXPECT_TRUE(group.culledByDistance);
+    EXPECT_EQ(group.currentLevel, 3U) << "a culled object still names its last real level";
+
+    ResolveLodGroup3DLevelUVE(group, 125.0F);
+    EXPECT_TRUE(group.culledByDistance) << "125 m is inside 120 m's 12 m band, so it stays culled";
+
+    ResolveLodGroup3DLevelUVE(group, 100.0F);
+    EXPECT_FALSE(group.culledByDistance) << "100 m is under the 108 m return point";
+    EXPECT_EQ(group.currentLevel, 3U) << "and lands on the level its distance is actually in";
+}
+
+TEST(LodGroup3DResolveUVETest, HysteresisZeroIsTheStatelessRuleItReplaced) {
+    // An object that never opts into a band must resolve exactly as it did before hysteresis
+    // existed - including through jumps in both directions, which is where a rule that remembered
+    // anything would diverge.
+    LodGroup3DComponentUVE group;
+    group.levelCount = 4U;
+    ASSERT_FLOAT_EQ(group.hysteresis, 0.0F);
+
+    const std::array<std::pair<float, std::uint8_t>, 9U> cases{{
+        {5.0F, 0U}, {200.0F, 3U}, {30.0F, 2U}, {12.0F, 1U}, {1000.0F, 3U},
+        {60.0F, 2U}, {25.0F, 1U}, {10.0F, 0U}, {119.0F, 3U}}};
+    for (const auto& [distance, expectedLevel] : cases) {
+        ResolveLodGroup3DLevelUVE(group, distance);
+        EXPECT_EQ(group.currentLevel, expectedLevel) << "at distance " << distance;
+    }
+    ResolveLodGroup3DLevelUVE(group, 500.0F);
+    EXPECT_TRUE(group.culledByDistance);
+}
+
+TEST(LodGroup3DResolveUVETest, ATeleportAcrossSeveralLevelsLandsOnTheLevelItsDistanceIsIn) {
+    // A teleported object crosses several thresholds in one frame. The step-by-step walk still ends
+    // where the distance says it should, and the cull state follows the same banded rule.
+    LodGroup3DComponentUVE group;
+    group.levelCount = 4U;
+    group.hysteresis = 0.1F;
+
+    ResolveLodGroup3DLevelUVE(group, 5.0F);
+    ASSERT_EQ(group.currentLevel, 0U);
+
+    ResolveLodGroup3DLevelUVE(group, 500.0F);
+    EXPECT_TRUE(group.culledByDistance);
+    EXPECT_EQ(group.currentLevel, 3U);
+
+    // Coming back from far away is one decision: un-cull and drop to the level the distance is in,
+    // rather than spending a frame visible at the coarsest level.
+    ResolveLodGroup3DLevelUVE(group, 5.0F);
+    EXPECT_FALSE(group.culledByDistance);
+    EXPECT_EQ(group.currentLevel, 0U);
+}
+
+TEST(LodGroup3DResolveUVETest, AnOutOfRangeHysteresisResolvesAsNoBandInsteadOfRefusing) {
+    // Authoring rejects an out-of-range band, so this is a value that reached the resolver anyway -
+    // a hand-edited file, a script writing the component. It must still resolve to something
+    // sensible rather than produce an arbitrary band, so it clamps to the maximum.
+    LodGroup3DComponentUVE group;
+    group.levelCount = 4U;
+    group.hysteresis = 10.0F;
+
+    // Clamped to 0.5, so the 10 m threshold is entered strictly past 15 m - the same rule the
+    // maximum band would give, not a 10-second-wide band nobody could author.
+    ResolveLodGroup3DLevelUVE(group, 15.0F);
+    EXPECT_EQ(group.currentLevel, 0U) << "15 m is the entry point, and entry is strict";
+
+    ResolveLodGroup3DLevelUVE(group, 16.0F);
+    EXPECT_EQ(group.currentLevel, 1U);
+    EXPECT_FALSE(group.culledByDistance);
+}
+
+TEST(LodGroup3DMeshUVETest, EachLevelDrawsItsOwnMeshAndEmptySlotsFallBackToTheBaseMesh) {
+    // The swapping rule, in one place: the level names a mesh, and a level that names none draws
+    // the entity's own MeshComponentUVE mesh. That is what lets an author fill in levels 1..N and
+    // leave level 0 - the full-detail mesh they already authored - alone.
+    const Asset::AssetGuidUVE baseMesh{7U};
+    LodGroup3DComponentUVE group;
+    group.levelCount = 3U;
+    group.lodMeshGuids[1] = Asset::AssetGuidUVE{42U};
+
+    ResolveLodGroup3DLevelUVE(group, 5.0F);
+    ASSERT_EQ(group.currentLevel, 0U);
+    EXPECT_EQ(ResolveLodGroup3DMeshGuidUVE(group, baseMesh), baseMesh)
+        << "an unset level 0 draws the component's own mesh";
+
+    ResolveLodGroup3DLevelUVE(group, 20.0F);
+    ASSERT_EQ(group.currentLevel, 1U);
+    EXPECT_EQ(ResolveLodGroup3DMeshGuidUVE(group, baseMesh), Asset::AssetGuidUVE{42U});
+
+    ResolveLodGroup3DLevelUVE(group, 70.0F);
+    ASSERT_EQ(group.currentLevel, 2U);
+    EXPECT_EQ(ResolveLodGroup3DMeshGuidUVE(group, baseMesh), baseMesh)
+        << "level 2 overrides nothing, so it falls back too - not only level 0";
+}
+
+TEST(LodGroup3DMeshUVETest, ACulledGroupStillAnswersWithItsLastLevelsMesh) {
+    // The renderer returns before asking - a culled object is not drawn at all - but the resolver
+    // must not read out of range for a consumer that asks anyway, and it must not answer with a
+    // mesh from a level the object is not on.
+    const Asset::AssetGuidUVE baseMesh{7U};
+    LodGroup3DComponentUVE group;
+    group.levelCount = 2U;
+    group.lodMeshGuids[0] = Asset::AssetGuidUVE{11U};
+    group.lodMeshGuids[1] = Asset::AssetGuidUVE{22U};
+
+    ResolveLodGroup3DLevelUVE(group, 500.0F);
+    ASSERT_TRUE(group.culledByDistance);
+    ASSERT_EQ(group.currentLevel, 1U);
+    EXPECT_EQ(ResolveLodGroup3DMeshGuidUVE(group, baseMesh), Asset::AssetGuidUVE{22U});
+
+    // A level outside the chain (a hand-written component) falls back rather than reading past the
+    // authored levels.
+    group.currentLevel = 9U;
+    EXPECT_EQ(ResolveLodGroup3DMeshGuidUVE(group, baseMesh), baseMesh);
+}
+
+TEST(LodGroup3DResolveUVETest, TheValidatorRejectsABandOutsideTheAuthoredRange) {
+    LodGroup3DComponentUVE group;
+    ASSERT_TRUE(IsLodGroup3DObjectComponentValidUVE(group));
+
+    group.hysteresis = -0.1F;
+    EXPECT_FALSE(IsLodGroup3DObjectComponentValidUVE(group));
+
+    group.hysteresis = kMaximumLodHysteresisUVE;
+    EXPECT_TRUE(IsLodGroup3DObjectComponentValidUVE(group)) << "the maximum is a real band, not a refusal";
+
+    group.hysteresis = kMaximumLodHysteresisUVE + 0.01F;
+    EXPECT_FALSE(IsLodGroup3DObjectComponentValidUVE(group));
+
+    group.hysteresis = std::numeric_limits<float>::quiet_NaN();
+    EXPECT_FALSE(IsLodGroup3DObjectComponentValidUVE(group));
+}
+
 TEST(LevelStreamer3DNearestViewerUVETest, EmptyViewerListMeansNoDistanceAtAll) {
     // A streamer with no valid viewers must report "no distance"; the verdict function relies on
     // that absence to never load or unload on a viewerless tick.

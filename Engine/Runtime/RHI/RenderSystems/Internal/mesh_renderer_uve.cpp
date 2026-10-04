@@ -230,6 +230,13 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
             // The level is resolved even for entities that are NOT culled, because currentLevel is
             // what a future mesh swap indexes by and the Inspector shows. Resolving it only on the
             // cull path would make the field correct exactly when nobody can see the object.
+            // The mesh this entity draws with is the level the group resolved to, not necessarily
+            // the MeshComponentUVE mesh: a level the group overrides names its own asset, and every
+            // other level falls back to the component's own mesh. Resolved once here so the
+            // diagnostics, the asset resolution, the placement cache key and the asset-pair bucket
+            // below all speak about the mesh that was actually chosen - a shared resolution would
+            // otherwise be reused under the identity of the wrong asset.
+            Asset::AssetGuidUVE effectiveMeshGuid = meshComponent.meshGuid;
             if (entityManager.HasComponentUVE<Scene::LodGroup3DComponentUVE>(entity)) {
                 Scene::LodGroup3DComponentUVE& lodGroup =
                     entityManager.GetComponentUVE<Scene::LodGroup3DComponentUVE>(entity);
@@ -240,6 +247,7 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
                     ++outVisibilitySet.distanceCulledEntities;
                     return;
                 }
+                effectiveMeshGuid = Scene::ResolveLodGroup3DMeshGuidUVE(lodGroup, meshComponent.meshGuid);
             }
 
             // World partition, in the same cheap-before-expensive order as the gates above. A
@@ -300,23 +308,23 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
                 }
             }
 
-            if (meshComponent.meshGuid == Asset::kInvalidAssetGuidUVE) {
+            if (effectiveMeshGuid == Asset::kInvalidAssetGuidUVE) {
                 ++outVisibilitySet.invalidAssetReferences;
             }
             // A mesh with no material is not a broken reference: the renderer draws it with the
             // built-in lit shader (Renderer3DUVE's unmaterialed path), so only an unassigned pair
             // counts its material as missing.
             if (meshComponent.materialGuid == Asset::kInvalidAssetGuidUVE &&
-                meshComponent.meshGuid == Asset::kInvalidAssetGuidUVE) {
+                effectiveMeshGuid == Asset::kInvalidAssetGuidUVE) {
                 ++outVisibilitySet.invalidAssetReferences;
             }
-            if (meshComponent.meshGuid == Asset::kInvalidAssetGuidUVE ||
+            if (effectiveMeshGuid == Asset::kInvalidAssetGuidUVE ||
                 meshComponent.materialGuid == Asset::kInvalidAssetGuidUVE) {
                 return;
             }
 
             const ResolvedAssetUVE<Asset::MeshAssetUVE>& resolvedMesh =
-                ResolveOnceUVE(resolvedMeshes, meshComponent.meshGuid, assetManager, assetDatabase);
+                ResolveOnceUVE(resolvedMeshes, effectiveMeshGuid, assetManager, assetDatabase);
             const ResolvedAssetUVE<Asset::MaterialAssetUVE>& resolvedMaterial =
                 ResolveOnceUVE(resolvedMaterials, meshComponent.materialGuid, assetManager, assetDatabase);
 
@@ -340,7 +348,7 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
             // the price of comparing this key and reusing the answer - and most objects in most
             // scenes do not move, so most of that cost is recomputing last frame's answer.
             const MeshPlacementKeyUVE key{worldTransform.worldPosition, worldTransform.worldRotation,
-                                          worldTransform.worldScale, meshComponent.meshGuid, mesh->localBounds};
+                                          worldTransform.worldScale, effectiveMeshGuid, mesh->localBounds};
 
             MeshPlacementCacheEntryUVE& cacheEntry = outVisibilitySet.placementCache[entity];
             const bool reusable = cacheEntry.lastSeenFrame != 0U && cacheEntry.key.MatchesUVE(key);
@@ -373,7 +381,7 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
             // frame; a reference per entity would be the same two records counted thousands of
             // times, at a mutex and a hash each way.
             const std::size_t assetPairIndex = ResolveAssetPairIndexUVE(
-                assetPairSlots, outVisibilitySet.assetPairs, meshComponent.meshGuid,
+                assetPairSlots, outVisibilitySet.assetPairs, effectiveMeshGuid,
                 meshComponent.materialGuid, resolvedMesh.handle, resolvedMaterial.handle);
             // Physics interpolation, applied to the CANDIDATE rather than to the cached placement.
             //

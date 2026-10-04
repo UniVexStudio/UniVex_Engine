@@ -476,6 +476,75 @@ TEST_F(SceneSerializerUVETest, LoadUVE_AProjectileFromBeforeTheHitContractLoadsW
     std::filesystem::remove(path);
 }
 
+TEST_F(SceneSerializerUVETest, LodGroup3DAuthoredLevelsAndBandRoundTripAndTheResolvedAnswerIsNotSaved) {
+    // What the author decided - the thresholds, the per-level meshes and the band - is scene data.
+    // What the renderer resolved from it on the frame that saved the scene is not: currentLevel and
+    // culledByDistance describe where the camera was, and a restored scene resolves them itself.
+    const EntityUVE source = entityManager.CreateEntityUVE();
+    LodGroup3DComponentUVE lod;
+    lod.levelCount = 3U;
+    lod.distanceThresholds[0] = 12.0F;
+    lod.distanceThresholds[1] = 40.0F;
+    lod.distanceThresholds[2] = 90.0F;
+    lod.lodMeshGuids[1] = Asset::AssetGuidUVE{77U};
+    lod.lodMeshGuids[2] = Asset::AssetGuidUVE{88U};
+    lod.hysteresis = 0.15F;
+    // Runtime truth at save time, which must not come back.
+    lod.currentLevel = 2U;
+    lod.culledByDistance = true;
+    entityManager.AddComponentUVE<LodGroup3DComponentUVE>(source, lod);
+
+    const std::optional<SceneSnapshotUVE> snapshot =
+        serializer.CaptureUVE(entityManager, {source}, SceneAssetTypeUVE::Scene);
+    ASSERT_TRUE(snapshot.has_value());
+    const std::vector<EntityUVE> restoredRoots = serializer.RestoreUVE(entityManager, *snapshot);
+    ASSERT_EQ(restoredRoots.size(), 1U);
+
+    const LodGroup3DComponentUVE restored =
+        entityManager.GetComponentUVE<LodGroup3DComponentUVE>(restoredRoots.front());
+    EXPECT_EQ(restored.levelCount, 3U);
+    EXPECT_FLOAT_EQ(restored.distanceThresholds[0], 12.0F);
+    EXPECT_FLOAT_EQ(restored.distanceThresholds[1], 40.0F);
+    EXPECT_FLOAT_EQ(restored.distanceThresholds[2], 90.0F);
+    EXPECT_FLOAT_EQ(restored.hysteresis, 0.15F) << "the band is authored data";
+    EXPECT_EQ(restored.lodMeshGuids[0], Asset::kInvalidAssetGuidUVE)
+        << "level 0 was never overridden, and must come back unassigned rather than pointing "
+           "anywhere";
+    EXPECT_EQ(restored.lodMeshGuids[1], Asset::AssetGuidUVE{77U});
+    EXPECT_EQ(restored.lodMeshGuids[2], Asset::AssetGuidUVE{88U});
+    EXPECT_EQ(restored.currentLevel, 0U) << "the resolved level is re-derived, not restored";
+    EXPECT_FALSE(restored.culledByDistance);
+}
+
+TEST_F(SceneSerializerUVETest, LoadUVE_AnLodGroupFromBeforePerLevelMeshesLoadsWithNoOverridesAndNoBand) {
+    // A file written before levels could name their own meshes has neither array nor band. It must
+    // load as a group that overrides nothing and bands nothing - exactly what it meant when it was
+    // written - rather than failing validation or inventing a band.
+    const std::string payloadText =
+        R"({"entities":[{"localId":0,"components":{"LodGroup3DComponentUVE":{"distanceThresholds":[12.0,40.0],"levelCount":2,"enabled":true}}}]})";
+    const auto* const payloadBytesPtr = reinterpret_cast<const std::byte*>(payloadText.data());
+    const std::vector<std::byte> payloadBytes(payloadBytesPtr, payloadBytesPtr + payloadText.size());
+
+    const std::filesystem::path path = "uve_scene_serializer_tests_lod_legacy_levels.uvscene";
+    std::filesystem::remove(path);
+    ASSERT_TRUE(Asset::WriteUveFileUVE(path, SceneAssetTypeUVE::Scene, payloadBytes));
+
+    const std::vector<EntityUVE> roots = serializer.LoadUVE(entityManager, path);
+    ASSERT_EQ(roots.size(), 1U);
+    const LodGroup3DComponentUVE& loaded =
+        entityManager.GetComponentUVE<LodGroup3DComponentUVE>(roots[0]);
+    EXPECT_EQ(loaded.levelCount, 2U);
+    EXPECT_FLOAT_EQ(loaded.distanceThresholds[0], 12.0F);
+    EXPECT_FLOAT_EQ(loaded.distanceThresholds[1], 40.0F);
+    EXPECT_FLOAT_EQ(loaded.hysteresis, 0.0F);
+    for (std::size_t index = 0U; index < kMaximumLodLevelsUVE; ++index) {
+        EXPECT_EQ(loaded.lodMeshGuids[index], Asset::kInvalidAssetGuidUVE);
+    }
+    EXPECT_TRUE(IsLodGroup3DObjectComponentValidUVE(loaded));
+
+    std::filesystem::remove(path);
+}
+
 TEST_F(SceneSerializerUVETest, SaveUVE_InvalidAuthoredTransformFailsBeforeDestinationPublication) {
     const EntityUVE entity = entityManager.CreateEntityUVE();
     TransformComponentUVE transform;
