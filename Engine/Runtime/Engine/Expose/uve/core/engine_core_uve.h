@@ -584,10 +584,16 @@ private:
     /// focusedByPrimaryInteractor. Runtime state is never serialized. Acting on the focus
     /// (prompt UI, an "interact" binding, focus enter/exit events) is deliberately not done
     /// here - the gameplay layer no system owns yet; the authored interactionTag is carried
-    /// for that follow-up and intentionally does not filter anything today. Like
-    /// SyncHitbox3DObjectsUVE() this lives in the engine core tick, not the object module: the
-    /// Objects/3D layer holds pure authoring data plus the three dependency-free resolvers the
-    /// tests pin directly.
+    /// for that follow-up and intentionally does not filter anything today.
+    ///
+    /// The contract above is implemented in Physics::SyncInteractionAreasUVE(), which this calls:
+    /// the tick owns WHEN the scan runs (it is in the fixed-step order), the seam owns what the
+    /// scan means - which is what makes every clause of the contract testable without standing up
+    /// an EngineCoreUVE. The Objects/3D layer keeps holding pure authoring data plus the
+    /// dependency-free resolvers; the Physics include the exact overlap test needs never leaks
+    /// into it. The returned InteractionAreaScanResultUVE carries the frame's accounting
+    /// (interactors, areas visited/refreshed/truncated, primary interactor, focused area) for
+    /// callers and tests that want the numbers rather than the area components.
     void SyncInteractionArea3DObjectsUVE();
 
     /// The LevelStreamer3D consumer: pure per-tick streaming verdicts on LevelStreamer3D objects

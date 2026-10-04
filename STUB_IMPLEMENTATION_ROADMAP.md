@@ -46,12 +46,10 @@ tests. An item's row here is retired to "Done" (bottom of file) only once it rea
 
 | # | Object | Status | Component | Arrays to give work | The work | Depends on | Size |
 |---|------|--------|-----------|---------------------|----------|------------|------|
-| 4 | InteractionArea3D | `[/]` | `InteractionArea3DComponentUVE` | candidate list (new, bounded by `maximumCandidates`) | per-frame interactable candidate tracking — **implemented**, one test exists, edge cases not separately locked | AreaOverlapSystemUVE (exists) | M |
 | 5 | RayCast3D gap | `[~]` | `RayCast3DComponentUVE` | `exclusions[8]` + `exclusionCount` | multi-entity exclusion queries | query API + stable entity refs | M |
 | 6 | Projectile3D gap | `[~]` | `Projectile3DComponentUVE` | — (`radius`, `collisionMask` scalars) | swept-sphere hit resolution | hit-decision contract | M |
 | 7 | Hitbox3D/Hurtbox3D gap | `[~]` | `Hitbox3DComponentUVE` / `Hurtbox3DComponentUVE` | `strikes[16]` + `strikeCount` | strike consequences (events first) | gameplay/event contract | M |
 | 8 | LODGroup3D | `[~]` | `LodGroup3DComponentUVE` | `distanceThresholds[8]` | camera-distance LOD switching | multi-level mesh source | M |
-| 9 | Occluder3D | `[/]` | `Occluder3DComponentUVE` | — | conservative-box occlusion culling — **implemented** in the render queue, pure logic tested, render-queue integration untested | render queue integration | M |
 | 10 | VisibilityRegion3D | `[x]` | `VisibilityRegion3DComponentUVE` | — | layer-gated visibility culling — **done**, four dedicated tests | render queue integration | M |
 | 11 | Decal3D | `[~]` | `Decal3DComponentUVE` | — | decal-projection rendering | renderer (big) | L |
 | 12 | ReflectionProbe3D | `[x]` (sync half) | `ReflectionProbe3DComponentUVE` | — | probe capture scheduling — **done**, five dedicated tests; renderer-side sampling still `[~]` | renderer (big) | L |
@@ -64,8 +62,10 @@ tests. An item's row here is retired to "Done" (bottom of file) only once it rea
 
 ## S-tier — one engine-core sync each (start here)
 
-Items 1-3 have reached `[x]` and their rows are retired to the Done section at the bottom; the
-numbered write-ups below remain as the audit trail of what was actually built.
+Items 1-4 and 9 have reached `[x]` with every box ticked, so their rows are retired to the Done
+section at the bottom; the numbered write-ups below remain as the audit trail of what was actually
+built. Rows 10, 12 and 15 were already `[x]` when this file's retirement rule was last applied and
+are left in place here rather than re-litigated in an unrelated change.
 
 ### 1. SpringArm3D — camera-boom raycast clamp — DONE
 
@@ -184,15 +184,28 @@ is why this is a return-by-value list and not a component field.
 
 ## M-tier — cross-system integration
 
-### 4. InteractionArea3D — per-frame interactable candidate tracking
+### 4. InteractionArea3D — per-frame interactable candidate tracking — DONE
 
-- [x] Implement — `EngineCoreUVE::SyncInteractionArea3DNodesUVE()` exists and is called every
-      frame; real overlap queries, tag/layer/mask gating, nearest-candidate focus.
-- [~] Tests lock it — one dedicated test exists
-      (`InteractionArea3DNode_TracksInteractorsFocusesTheNearestAndClearsWhenGated`) but the
-      cases this checklist calls out (bound respected + overflow flagged, disabled clears
-      stale candidates) aren't separately locked.
-- [ ] `SCENE_NODES_ROADMAP.md` `[/]` → `[x]` (once the remaining cases are separately tested)
+- [x] Implement — the per-frame contract now lives in `Physics::SyncInteractionAreasUVE()`
+      (`Engine/Runtime/Physics/{Expose/uve/physics,Internal}/interaction_area_uve.h/.cpp`), and
+      `EngineCoreUVE::SyncInteractionArea3DObjectsUVE()` is the tick that calls it. Three passes:
+      snapshot every interactor (character controller + valid collider + world pose) once, refresh
+      every area against that snapshot, then mark the single focused area. Extracting it was the
+      point: the same three passes used to live inside `engine_core_uve.cpp`, reachable only by
+      standing up an EngineCoreUVE, which is exactly why the edge cases below had no tests.
+- [x] Tests lock it — 16 dedicated cases (`Test/Physics/interaction_area_uve_tests.cpp`):
+      every overlapping interactor tracked in content order and cleared when they leave, the
+      authored `maximumCandidates` budget respected with `interactorsTruncated` reported (and
+      `truncatedAreaCount`), the cap bounding the stored list but never the focus, a disabled /
+      invalid / unswept area cleared in full and coming back when re-enabled, symmetric layer/mask
+      acceptance in both directions, an area never listing the interactor on its own entity, only
+      controllers with a usable collider ever interacting (capsule half extents are shape-aware),
+      touching boundaries not counting, focus belonging to the primary interactor alone and moving
+      when it moves, equal distances tying on (index, generation), no-interactor and no-area scenes,
+      degenerate world rotations falling back to identity, and the scan writing only the runtime
+      half of the area. The engine-core tick test still covers the same contract through a real
+      `EngineCoreUVE`.
+- [x] `SCENE_NODES_ROADMAP.md` `[/]` → `[x]` — done.
 
 **Component:** `InteractionArea3DComponentUVE` — own file pair.
 **Fields to give work:** `halfExtents`, `collisionLayer`, `collisionMask`, `interactionTag`,
@@ -201,6 +214,12 @@ is why this is a return-by-value list and not a component field.
 array (size `kMaximum...` capped by the authored `maximumCandidates`) refreshed every frame
 from real overlap queries against other InteractionArea3D volumes, filtered by tag and
 symmetric layer/mask. Prompt/UI consumption stays gameplay-side.
+**What the tests clarified, kept here because it is a contract:** an authored
+`maximumCandidates` of 0 fails the component validator, so it is an invalid area (cleared), not
+an area that tracks nobody - that is what `enabled = false` is for; the cap bounds only the stored
+list, never focus (the primary interactor still earns the area a focus when it is the candidate
+that did not fit); and `interactionTag` is carried, not filtered - tag gating belongs to the
+gameplay layer that acts on the focus.
 **Depends on:** AreaOverlapSystemUVE — already real. **Size: M.**
 
 ### 5. RayCast3D — honor the `exclusions` array (declared gap of a working node)
@@ -260,18 +279,30 @@ gameplay decision of what a hit does — the honest part this engine must decide
 runtime result `currentLevel` (today a dead copy of the default).
 **Depends on:** multi-level mesh source + renderer cooperation. **Size: M.**
 
-### 9. Occluder3D — conservative-box occlusion culling
+### 9. Occluder3D — conservative-box occlusion culling — DONE
 
-- [x] Implement — wired into the render queue's mesh-culling pass, which calls
-      `ResolveOccluder3DFullyHiddenUVE()` against every occluder every frame.
-- [~] Tests lock it — the pure geometry function is thoroughly tested (occluded mesh culled,
-      edge cases fail open, degenerate box, never false-culls), but no test exercises the
-      render-queue integration end to end.
-- [ ] `SCENE_NODES_ROADMAP.md` `[/]` → `[x]` (once an integration test covers the render-queue wiring)
+- [x] Implement — wired into the render queue's visibility build: `MeshRendererUVE` asks
+      `Scene::ResolveOccluder3DFullyHiddenUVE()` against every occluder for every candidate (a plain
+      OR over the frame's occluder snapshot - any strict cover hides the candidate) and counts what
+      it hides in `occlusionCulledEntities`.
+- [x] Tests lock it — the pure geometry has its own suite (fully hidden, edge cases fail open,
+      degenerate box, never false-culls), and the render-queue integration was already locked by
+      four `MeshRendererUVETest.BuildVisibilitySetUVE_*` cases: a mesh behind an occluder is culled
+      in its own counter while its off-silhouette twin still draws, moving the camera re-answers
+      with no state at all, a disabled occluder covers nothing, and any of several walls hides once.
+      Those tests had landed in the base commit while this row still said "no test exercises the
+      render-queue integration" - the row was stale, not the wiring. Verified by running the whole
+      `MeshRendererUVETest` suite headlessly in this checkout (56/56 green, `uve_rhi_null`).
+- [x] `SCENE_NODES_ROADMAP.md` `[/]` → `[x]` — done.
 
 **Component:** `Occluder3DComponentUVE` — own file pair.
-**Fields to give work:** `halfExtents`, `mode` (`ConservativeBox` first — sphere mode after),
+**Fields to give work:** `halfExtents`, `mode` (`ConservativeBox` first - sphere mode after),
 `enabled`.
+**The cost note, kept:** `mesh_render_eligibility_uve.h` carries a measurement of what occluder
+count costs the CPU cull; it is why the count stays an authored decision (the curve flattens hard
+after about 16). The payoff of the shipped wiring is the draw calls and GPU work never submitted,
+which a null-RHI test run cannot measure - the counters report what it did, and a GPU timing path
+is what would let anyone tune the count against the number that matters.
 **Depends on:** render queue integration. **Size: M.**
 
 ### 10. VisibilityRegion3D — layer-gated visibility culling — DONE
@@ -399,4 +430,6 @@ correctly stays unticked. Listed here so the audit trail shows it was considered
 
 ### SpringArm3D — the camera boom, tested against the world it casts into — done in 0992c86
 ### Kinematic3D — target-velocity kinematic mover over the swept kinematic move — done in 7758f3e
+### InteractionArea3D — the interaction scan extracted into `Physics::SyncInteractionAreasUVE()`, locked by 16 dedicated tests — done in the change that moved it out of the engine-core tick
+### Occluder3D — render-queue occlusion culling, locked by four `MeshRendererUVETest` integration cases (stale roadmap row; verified green here) — done in the change that corrected the row
 ### SpawnPoint3D — the spawn query seam (`Scene::QuerySpawnPointsUVE`, `Scene::ConsumeSpawnPointUVE`) — done in the change that rewired the editor's play-entry spawn onto it (12 dedicated tests in `Test/Integration/Scene/spawn_point_query_uve_tests.cpp`)

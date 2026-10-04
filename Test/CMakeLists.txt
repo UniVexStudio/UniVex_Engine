@@ -221,6 +221,7 @@ add_executable(uve_integration_tests
     Physics/collision_lifecycle_tracker_uve_tests.cpp
     Physics/collision_system_uve_tests.cpp
     Physics/hinge_motor_limit_uve_tests.cpp
+    Physics/interaction_area_uve_tests.cpp
     Physics/kinematic_body_uve_tests.cpp
     Physics/physics_constraint_system_uve_tests.cpp
     Physics/physics_material_uve_tests.cpp
