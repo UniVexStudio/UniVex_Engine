@@ -19,6 +19,7 @@
 #include "uve/component/visibility_component_uve.h"
 #include "uve/objects/3d/hitbox_3d_uve.h"
 #include "uve/objects/3d/hurtbox_3d_uve.h"
+#include "uve/objects/3d/lod_group_3d_uve.h"
 #include "uve/objects/3d/projectile_3d_uve.h"
 #include "uve/objects/3d/ray_cast_3d_uve.h"
 #include "uve/objects/3d/spawn_point_3d_uve.h"
@@ -281,6 +282,88 @@ TEST(SceneComponentMetadataUVETest, TheSpawnPointSectionCarriesTheWholeAuthoredC
     EXPECT_FALSE(spawn->isInstanceValid(&notFinite));
 }
 
+
+TEST(SceneComponentMetadataUVETest, TheLodGroupSectionCarriesTheChainTheMeshesAndTheResolvedAnswer) {
+    // A LODGroup3D is a list component: the levels are a prefix of two parallel arrays, and the
+    // count that decides the prefix is a field of the same component. All three have to reach the
+    // Inspector for the chain to be authorable at all - an array no one can fill in is the same as
+    // no LOD.
+    const TypeMetadataEntryUVE* lod =
+        FindSceneComponentMetadataUVE(std::type_index(typeid(LodGroup3DComponentUVE)));
+    ASSERT_NE(lod, nullptr);
+    EXPECT_EQ(lod->typeId, "component.lod_group_3d");
+    EXPECT_EQ(lod->displayName, "LODGroup3D");
+
+    for (const char* const name :
+         {"enabled", "levelCount", "hysteresis", "distanceThresholds", "lodMeshGuids"}) {
+        const TypeMetadataPropertyUVE* property = FindPropertyUVE(*lod, name);
+        ASSERT_NE(property, nullptr) << name;
+        EXPECT_FALSE(HasPropertyFlagUVE(property->flags, TypeMetadataPropertyFlagsUVE::RuntimeState))
+            << name;
+        EXPECT_TRUE(property->IsAuthoringWritableUVE()) << name;
+    }
+
+    const TypeMetadataPropertyUVE* levels = FindPropertyUVE(*lod, "levelCount");
+    ASSERT_NE(levels, nullptr);
+    EXPECT_EQ(levels->typeId, kPropertyTypeUInt8UVE);
+    ASSERT_TRUE(levels->range.enabled);
+    EXPECT_DOUBLE_EQ(levels->range.minimum, 1.0);
+    EXPECT_DOUBLE_EQ(levels->range.maximum, static_cast<double>(kMaximumLodLevelsUVE));
+
+    const TypeMetadataPropertyUVE* hysteresis = FindPropertyUVE(*lod, "hysteresis");
+    ASSERT_NE(hysteresis, nullptr);
+    EXPECT_EQ(hysteresis->typeId, kPropertyTypeFloatUVE);
+    ASSERT_TRUE(hysteresis->range.enabled);
+    EXPECT_DOUBLE_EQ(hysteresis->range.minimum, 0.0);
+    EXPECT_DOUBLE_EQ(hysteresis->range.maximum, static_cast<double>(kMaximumLodHysteresisUVE));
+
+    // The two lists: a float chain and one mesh per level, both bounded by the same capacity and
+    // both drawn by the section's own drawer rather than a typed row.
+    const TypeMetadataPropertyUVE* thresholds = FindPropertyUVE(*lod, "distanceThresholds");
+    ASSERT_NE(thresholds, nullptr);
+    EXPECT_EQ(thresholds->typeId, kPropertyTypeFloatListUVE);
+    EXPECT_EQ(thresholds->customDrawerId, "lod-group-thresholds");
+    EXPECT_EQ(thresholds->elementCount, kMaximumLodLevelsUVE);
+
+    const TypeMetadataPropertyUVE* meshes = FindPropertyUVE(*lod, "lodMeshGuids");
+    ASSERT_NE(meshes, nullptr);
+    EXPECT_EQ(meshes->typeId, kPropertyTypeAssetGuidListUVE);
+    EXPECT_EQ(meshes->customDrawerId, "lod-group-meshes");
+    EXPECT_EQ(meshes->elementCount, kMaximumLodLevelsUVE);
+
+    // Whole-array accessors, like every other list property: one read, one write, one history
+    // entry. A named alias, because the comma in the template argument list would otherwise split
+    // the EXPECT_EQ macro's own argument list.
+    using MeshListUVE = std::array<Asset::AssetGuidUVE, kMaximumLodLevelsUVE>;
+    LodGroup3DComponentUVE component;
+    MeshListUVE guids{};
+    guids[1] = Asset::AssetGuidUVE{42U};
+    SetPropertyValueUVE(*meshes, component, guids);
+    EXPECT_EQ(component.lodMeshGuids[1], Asset::AssetGuidUVE{42U});
+    EXPECT_EQ(GetPropertyValueUVE<MeshListUVE>(*meshes, component), guids);
+
+    // The resolved answer is runtime state: the renderer owns it, so authoring must not offer to
+    // write it and saving must not persist it. It still has to be READABLE, or the Inspector shows
+    // nothing where the answer belongs.
+    for (const char* const name : {"currentLevel", "culledByDistance"}) {
+        const TypeMetadataPropertyUVE* property = FindPropertyUVE(*lod, name);
+        ASSERT_NE(property, nullptr) << name;
+        EXPECT_TRUE(HasPropertyFlagUVE(property->flags, TypeMetadataPropertyFlagsUVE::RuntimeState))
+            << name;
+        EXPECT_FALSE(property->IsAuthoringWritableUVE()) << name;
+        EXPECT_FALSE(property->IsSerializedUVE()) << name;
+        EXPECT_NE(property->getValue, nullptr) << name;
+        EXPECT_EQ(property->section, "Result") << name;
+    }
+
+    // The component's own rule travels with the declaration, so a band no level chain can honour is
+    // refused at the same validator the engine reads.
+    ASSERT_NE(lod->isInstanceValid, nullptr);
+    LodGroup3DComponentUVE outOfRange;
+    outOfRange.hysteresis = kMaximumLodHysteresisUVE + 0.1F;
+    EXPECT_FALSE(lod->isInstanceValid(&outOfRange));
+    EXPECT_TRUE(lod->isInstanceValid(&component));
+}
 
 TEST(SceneComponentMetadataUVETest, TheRayCastSectionCarriesWhatTheRayIsAndWhatItFound) {
     // A RayCast3D is both authored data (what it is, what it refuses to hit) and runtime state (what

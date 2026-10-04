@@ -173,7 +173,7 @@ worse than no checklist.
   Acting on a spawn (respawn flow, teams, per-player tags) is still the gameplay layer no system
   owns yet - the tag is carried precisely so that layer has something to ask with.
 - [~] Decal3D — material/size/lifetime fields exist, no decal-projection rendering exists.
-- [~] LODGroup3D — distance-threshold fields exist, no LOD-switching system exists.
+- [x] LODGroup3D — the chain is real: `Scene::ResolveLodGroup3DLevelUVE()` selects the level from the camera distance with a configurable hysteresis band (entered past a threshold, left under it, the previous level kept in the band), the renderer culls past the last threshold and draws `lodMeshGuids[level]` — falling back to the object's own `MeshComponentUVE` mesh for a level that overrides nothing — and a scene written before per-level meshes still loads unchanged. The Inspector authors the chain (levels, thresholds, band, per-level meshes) and shows the resolved level during Play.
 - [~] AnimationSequencer — clip/speed/loop fields exist, nothing decodes a clip or evaluates a pose (see `ROADMAP.md`'s Animation section for the real gap: no skeleton/skinning/clip-sampling pipeline exists).
 - [~] AnimationGraph — not even creatable yet in the editor (registry marks it `libraryCreatable = false`); depends on the same missing animation pipeline as AnimationSequencer.
 

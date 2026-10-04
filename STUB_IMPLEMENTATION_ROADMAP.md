@@ -8,7 +8,7 @@ node (four levels — see that file's "How to read" section for why `[/]` exists
 step short of `[x]`); THIS file is the per-item implementation checklist we tick off as
 each one gets built.
 
-Scope: the 3D nodes still at `[~]` (LODGroup3D, Decal3D, the Navigation pair, the
+Scope: the 3D nodes still at `[~]` (Decal3D, the Navigation pair, the
 Skeleton/animation group), and the one item that is explicitly half-open (ReflectionProbe3D — its
 sync half is done, the renderer-side sampling is not). 2D/UI/AI nodes have no files yet, so
 they have nothing to track here — they stay in `SCENE_NODES_ROADMAP.md`'s missing-entirely
@@ -47,8 +47,7 @@ tests. An item's row here is retired to "Done" (bottom of file) only once it rea
 
 | # | Object | Status | Component | Arrays to give work | The work | Depends on | Size |
 |---|------|--------|-----------|---------------------|----------|------------|------|
-| — | *done items* | — | — | — | rows retired to the Done section at the bottom: 1–7, 9, 10, 15 (12 stays — the renderer-side half is still open). Their numbered write-ups stay below as the audit trail. | — | — |
-| 8 | LODGroup3D | `[~]` | `LodGroup3DComponentUVE` | `distanceThresholds[8]` | camera-distance LOD switching | multi-level mesh source | M |
+| — | *done items* | — | — | — | rows retired to the Done section at the bottom: 1–8, 9, 10, 15 (12 stays — the renderer-side half is still open). Their numbered write-ups stay below as the audit trail. | — | — |
 | 11 | Decal3D | `[~]` | `Decal3DComponentUVE` | — | decal-projection rendering | renderer (big) | L |
 | 12 | ReflectionProbe3D | `[x]` (sync half) | `ReflectionProbe3DComponentUVE` | — | probe capture scheduling — **done**, five dedicated tests; renderer-side sampling still `[~]` | renderer (big) | L |
 | 13 | NavigationRegion3D + NavigationAgent3D | `[~]` | `NavigationRegion3DComponentUVE` / `NavigationAgent3DComponentUVE` | — | navmesh bake + pathfind + steer | new Navigation subsystem | L |
@@ -350,19 +349,52 @@ only true if the engine owns the baseline), and an exit is a real event when a *
 only when the boxes separate - the alternative is a live strike that nothing can ever end.
 **Depends on:** event/consequence contract decision. **Size: M.**
 
-### 8. LODGroup3D — camera-distance LOD switching
+### 8. LODGroup3D — camera-distance LOD switching — DONE
 
-- [ ] Define the multi-level mesh source (LOD slots on the mesh component, or child-mesh
-      convention — must be decided, not assumed)
-- [ ] Implement level selection (camera distance vs `distanceThresholds`, hysteresis to stop
-      level-flapping at thresholds)
-- [ ] Tests lock it (levels switch at thresholds, renderer respects the active level)
-- [ ] `SCENE_NODES_ROADMAP.md` `[~]` → `[x]`
+- [x] Define the multi-level mesh source — a per-level mesh array on the component itself:
+      `lodMeshGuids[8]`, index for index with `distanceThresholds`, an invalid GUID meaning "draw the
+      object's own `MeshComponentUVE` mesh at this level". The alternatives were considered and
+      rejected: child mesh entities make the chain an authoring *convention* the renderer has to
+      trust, and per-level slots on `MeshComponentUVE` grow a component every object carries with
+      fields only LOD objects use. The published rule is one function,
+      `Scene::ResolveLodGroup3DMeshGuidUVE()`, so "which mesh" cannot drift between the extraction
+      walk and anything else that draws.
+- [x] Implement level selection (camera distance vs `distanceThresholds`, hysteresis to stop
+      level-flapping at thresholds) — `Scene::ResolveLodGroup3DLevelUVE()` now resolves with
+      hysteresis: a level is entered at `threshold * (1 + hysteresis)` and left at
+      `threshold * (1 - hysteresis)`, with the previous level kept in between, and culling has the
+      same band at the end of the chain (an object stays culled until it is clearly back inside).
+      The band defaults to 0, which takes the stateless path the renderer always used, so nothing
+      changes for an object that never opts in; authoring caps it at `kMaximumLodHysteresisUVE`
+      (0.5) so neighbouring bands cannot overlap. The previous answer is read from the component's
+      own `currentLevel`/`culledByDistance` - the only state the rule carries - which keeps the call
+      site a single statement, and the degenerate cases (disabled, empty chain, non-finite distance)
+      still resolve to full detail rather than hiding geometry.
+- [x] Tests lock it (levels switch at thresholds, renderer respects the active level) — 12 resolver
+      cases + 2 mesh-fetch cases in `Test/Objects/3D/objects_3d_uve_tests.cpp`: each threshold picks
+      its own level with inclusive boundaries, past the end clamps to the last level and culls,
+      `levelCount` shortens the chain, every degenerate case draws at full detail, resolving never
+      invalidates the component, the band holds a level across every crossing, each threshold
+      carries its own band, a culled object stays culled inside the band and returns once,
+      hysteresis 0 reproduces the stateless scan through jumps in both directions, a teleport across
+      several levels lands on the level its distance is in, an out-of-range band clamps, per-level
+      meshes fall back to the component's own mesh, and the validator bounds the band. The renderer
+      swap is locked end to end in `Test/RHI/RenderSystems/mesh_renderer_uve_tests.cpp`: the same
+      entity draws its own mesh at level 0 and its level-1 override at 40 m, and the placement cache
+      misses across the change rather than reusing bounds from the wrong mesh. Two serializer cases
+      in `Test/Integration/Scene/scene_serializer_uve_tests.cpp` cover the authored half round-
+      tripping while the resolved answer is reseeded, and a file written before per-level meshes
+      loading with no overrides and no band. One metadata case locks the declaration (both lists,
+      their drawers and capacities, the ranges, and the runtime-state flags on the resolved answer).
+- [x] `SCENE_NODES_ROADMAP.md` `[~]` → `[x]` — done.
 
 **Component:** `LodGroup3DComponentUVE` — own file pair.
-**Arrays to give work:** `distanceThresholds[8]` (`kMaximumLodLevelsUVE`) + `levelCount`;
-runtime result `currentLevel` (today a dead copy of the default).
-**Depends on:** multi-level mesh source + renderer cooperation. **Size: M.**
+**Arrays to give work:** `distanceThresholds[8]` (`kMaximumLodLevelsUVE`) plus the new
+`lodMeshGuids[8]`, with `levelCount` and `hysteresis` deciding what they mean; runtime result
+`currentLevel` is no longer a dead copy of the default - the renderer writes it every frame and now
+draws with it - and `culledByDistance` is what its name says. The Inspector authors the chain
+(levels, thresholds, band) and shows the resolved level and the cull verdict during Play.
+**Depends on:** the mesh swap the renderer now performs. **Size: M.**
 
 ### 9. Occluder3D — conservative-box occlusion culling — DONE
 
@@ -512,6 +544,8 @@ correctly stays unticked. Listed here so the audit trail shows it was considered
 ---
 
 ## Done (moved here when the last box ticks)
+
+### LODGroup3D — the resolved level draws its own mesh: per-level `lodMeshGuids` with the object's own mesh as the fallback, a hysteresis band on every threshold and on the cull point, locked by 12 resolver + 2 mesh-fetch + 1 renderer-swap + 2 serializer + 1 metadata case — done in the change that gave `distanceThresholds` something to draw (drawer census 44 → 45)
 
 ### SpringArm3D — the camera boom, tested against the world it casts into — done in 0992c86
 ### Kinematic3D — target-velocity kinematic mover over the swept kinematic move — done in 7758f3e

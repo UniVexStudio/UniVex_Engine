@@ -45,6 +45,14 @@ inline constexpr std::string_view kPropertyTypeEntityUVE = "Entity";
 /// entry. Drawn by a custom drawer - a list is not one of the scalar row widgets.
 inline constexpr std::string_view kPropertyTypeEntityListUVE = "EntityList";
 inline constexpr std::string_view kPropertyTypeAssetGuidUVE = "AssetGuid";
+/// A fixed-capacity list of asset references, declared with TypeMetadataPropertyUVE::elementCount
+/// like the entity list. The accessor reads and writes the whole array at once, so one edit is one
+/// write and one history entry. LODGroup3D's per-level meshes are the first user.
+inline constexpr std::string_view kPropertyTypeAssetGuidListUVE = "AssetGuidList";
+/// A fixed-capacity list of floats - a chain of distance thresholds today, a curve's keys later.
+/// Same whole-array accessor contract as the other list types, and the same elementCount
+/// declaration. LODGroup3D's thresholds are the first user.
+inline constexpr std::string_view kPropertyTypeFloatListUVE = "FloatList";
 
 /// Section sort keys. A component's own section sorts by TypeMetadataEntryUVE::order. The order
 /// follows the object's class chain from most to least derived: what the concrete object brings, then

@@ -53,6 +53,7 @@
 #include "uve/entity/i_entity_manager_uve.h"
 #include "uve/math/vector2_uve.h"
 #include "uve/math/vector3_uve.h"
+#include "uve/objects/3d/lod_group_3d_uve.h"
 
 namespace UVE::Editor {
 namespace {
@@ -135,7 +136,7 @@ void DrawTooltipUVE(const TypeMetadataPropertyUVE& property) {
 /// Custom drawers that lay out their own rows - a multi-line box, a slot with an action strip, a
 /// list with an add button - rather than filling a value cell. Any other id falls back to the
 /// generic editor for its value type, which is where the rotation and entity-picker ids still go.
-constexpr std::array<std::string_view, 9> kBlockPropertyDrawerIdsUVE{
+constexpr std::array<std::string_view, 11> kBlockPropertyDrawerIdsUVE{
     "animation-parameters",
     "animation-graph",
     "multiline-text",
@@ -145,6 +146,8 @@ constexpr std::array<std::string_view, 9> kBlockPropertyDrawerIdsUVE{
     "skeleton-source",
     "skeleton-bones",
     "entity-reference-list",
+    "lod-group-thresholds",
+    "lod-group-meshes",
 };
 
 [[nodiscard]] bool IsBlockPropertyDrawerUVE(const std::string& drawerId) noexcept {
@@ -811,6 +814,14 @@ bool EditorUVE::DrawCustomPropertyUVE(const TypeMetadataEntryUVE& entry, const T
         DrawEntityReferenceListPropertyUVE(entry, property, instance);
         return true;
     }
+    if (property.customDrawerId == "lod-group-thresholds") {
+        DrawLodGroupThresholdsPropertyUVE(entry, property, instance);
+        return true;
+    }
+    if (property.customDrawerId == "lod-group-meshes") {
+        DrawLodGroupMeshesPropertyUVE(entry, property, instance);
+        return true;
+    }
     return false;
 }
 
@@ -1406,6 +1417,129 @@ void EditorUVE::DrawEntityReferenceListPropertyUVE(const TypeMetadataEntryUVE& e
         }
     }
     static_cast<void>(SetSelectedComponentPropertyUVE(entry, property, written.data()));
+}
+
+void EditorUVE::DrawLodGroupThresholdsPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
+                                                  const Core::TypeMetadataPropertyUVE& property,
+                                                  const void* const instance) {
+    if (property.typeId != Scene::kPropertyTypeFloatListUVE || property.getValue == nullptr ||
+        instance == nullptr || property.elementCount == 0U) {
+        return;
+    }
+
+    // Only the levels in use are shown. `levelCount` is the authority and it is read from the
+    // component itself, so the list can never disagree with the switch that decides it - and the
+    // rows past it, which would do nothing when edited, are simply not offered.
+    const auto* const group = static_cast<const Scene::LodGroup3DComponentUVE*>(instance);
+    std::size_t levelCount = group->levelCount;
+    if (levelCount == 0U || levelCount > property.elementCount) {
+        levelCount = 1U; // A hand-edited component; the validator refuses the write that made it.
+    }
+    std::array<float, Scene::kMaximumLodLevelsUVE> thresholds{};
+    property.getValue(instance, thresholds.data());
+
+    const bool writable = property.IsAuthoringWritableUVE() && IsAuthoringCommandAllowedUVE();
+    bool edited = false;
+    ImGui::BeginDisabled(!writable);
+    if (BeginPropertyRowsUVE("##lod-thresholds")) {
+        const float step = RangeStepUVE(property, 0.5F);
+        const float minimum = RangeMinimumUVE(property);
+        const float maximum = RangeMaximumUVE(property);
+        for (std::size_t level = 0U; level < levelCount; ++level) {
+            ImGui::PushID(static_cast<int>(level));
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::AlignTextToFramePadding();
+            const std::string label = "Level " + std::to_string(level + 1U);
+            ImGui::TextUnformatted(label.c_str());
+            if (ImGui::IsItemHovered()) {
+                DrawTooltipUVE(property);
+            }
+            ImGui::TableSetColumnIndex(1);
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            edited |= ImGui::DragFloat("##threshold", &thresholds[level], step, minimum, maximum, "%.2f m");
+            ImGui::PopID();
+        }
+
+        // The rule the thresholds add up to, stated where they are authored: past the last one the
+        // object is not drawn at all, and the hysteresis band moves that point out by the same
+        // fraction the levels use.
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        ImGui::TextDisabled("Culled past");
+        ImGui::TableSetColumnIndex(1);
+        if (!group->enabled) {
+            ImGui::TextDisabled("Never - the group is disabled");
+        } else {
+            const float hysteresis = group->hysteresis > 0.0F ? group->hysteresis : 0.0F;
+            ImGui::Text("%.2f m", thresholds[levelCount - 1U] * (1.0F + hysteresis));
+        }
+        ImGui::EndTable();
+    }
+    ImGui::EndDisabled();
+
+    if (edited) {
+        static_cast<void>(SetSelectedComponentPropertyUVE(entry, property, thresholds.data()));
+    }
+}
+
+void EditorUVE::DrawLodGroupMeshesPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
+                                              const Core::TypeMetadataPropertyUVE& property,
+                                              const void* const instance) {
+    if (property.typeId != Scene::kPropertyTypeAssetGuidListUVE || property.getValue == nullptr ||
+        instance == nullptr || property.elementCount == 0U) {
+        return;
+    }
+
+    const auto* const group = static_cast<const Scene::LodGroup3DComponentUVE*>(instance);
+    std::size_t levelCount = group->levelCount;
+    if (levelCount == 0U || levelCount > property.elementCount) {
+        levelCount = 1U;
+    }
+    std::array<Asset::AssetGuidUVE, Scene::kMaximumLodLevelsUVE> meshes{};
+    property.getValue(instance, meshes.data());
+
+    const bool writable = property.IsAuthoringWritableUVE() && IsAuthoringCommandAllowedUVE();
+    std::optional<Asset::AssetGuidUVE> picked;
+    std::size_t pickedLevel = 0U;
+    bool cleared = false;
+    ImGui::BeginDisabled(!writable);
+    if (BeginPropertyRowsUVE("##lod-meshes")) {
+        for (std::size_t level = 0U; level < levelCount; ++level) {
+            ImGui::PushID(static_cast<int>(level));
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::AlignTextToFramePadding();
+            const std::string label = "Level " + std::to_string(level + 1U);
+            ImGui::TextUnformatted(label.c_str());
+            if (ImGui::IsItemHovered()) {
+                DrawTooltipUVE(property);
+            }
+            ImGui::TableSetColumnIndex(1);
+            if (const std::optional<Asset::AssetGuidUVE> chosen =
+                    DrawAssetPickerUVE("##level", meshes[level], ".uvmodel")) {
+                if (*chosen == Asset::kInvalidAssetGuidUVE) {
+                    cleared = true;
+                    pickedLevel = level;
+                } else {
+                    picked = chosen;
+                    pickedLevel = level;
+                }
+            }
+            ImGui::PopID();
+        }
+        ImGui::EndTable();
+    }
+    ImGui::EndDisabled();
+
+    if (!cleared && !picked.has_value()) {
+        return;
+    }
+    // The whole array is written back either way, so a cleared level and an assigned one are the
+    // same kind of edit: one property write, one undo entry, and the component's own validity rule
+    // as the last word.
+    meshes[pickedLevel] = cleared ? Asset::kInvalidAssetGuidUVE : *picked;
+    static_cast<void>(SetSelectedComponentPropertyUVE(entry, property, meshes.data()));
 }
 
 bool EditorUVE::ResetSelectedComponentPropertyUVE(const TypeMetadataEntryUVE& entry,
