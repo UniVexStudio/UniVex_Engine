@@ -468,6 +468,10 @@ private:
     /// Reconciles authored ParticleEmitterComponentUVE values with the existing bounded particle
     /// runtime, simulates one frame under configured gravity, and leaves renderer extraction read-only.
     void SyncParticleRuntimeUVE();
+    /// Ages every decal by the step's simulated seconds and queues one Decal3DExpiredEventUVE per
+    /// decal that runs out. Lifetime is simulation time, so a paused game freezes decals and the
+    /// same scene expires the same decals on the same step.
+    void SyncDecal3DObjectsUVE(float simulatedDeltaSeconds);
 
     /// Ticks UIRuntimeUVE once per real frame (not the fixed-step loop, so UI responsiveness tracks
     /// real input latency): hit-tests every live UIButtonComponentUVE against the real

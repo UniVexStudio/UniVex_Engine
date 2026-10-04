@@ -81,6 +81,8 @@
 #include "uve/objects/3d/skeleton_3d_uve.h"
 #include "uve/objects/3d/hitbox_3d_uve.h"
 #include "uve/objects/3d/hurtbox_3d_uve.h"
+#include "uve/objects/3d/decal_3d_events_uve.h"
+#include "uve/objects/3d/decal_3d_uve.h"
 #include "uve/objects/3d/interaction_area_3d_uve.h"
 #include "uve/objects/3d/level_streamer_3d_uve.h"
 #include "uve/objects/3d/reflection_probe_3d_uve.h"
@@ -568,6 +570,54 @@ TEST(EngineCoreUVETest, AreaOverlapLifecycle_QueuesEnteredAndExitedEvents) {
     ASSERT_EQ(exited.size(), 1U);
     EXPECT_EQ(exited.front().area, area);
     EXPECT_EQ(exited.front().other, collider);
+
+    engine.Shutdown();
+}
+
+TEST(EngineCoreUVETest, Decal3DObject_LifetimeRunsOutOnSimulatedTimeAndReportsTheEdgeOnce) {
+    // The same 1 kHz fixed-update / short real-sleep discipline the physics end-to-end cases use,
+    // because a decal ages on the SIMULATED clock: the test has to actually run simulation time for
+    // a lifetime to be spent, and a test that ran no fixed step would prove nothing about it.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    config.fixedUpdateFps = 1000.0;
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    auto& services = engine.GetServicesUVE();
+    auto& entityManager = services.GetEntityManagerUVE();
+
+    const Scene::EntityUVE fading = entityManager.CreateEntityUVE();
+    Scene::Decal3DComponentUVE decal;
+    decal.materialAssetPath = "materials/scorch.uemat";
+    decal.lifetime = 0.02F; // 20 ms: a few frames of simulated time
+    entityManager.AddComponentUVE<Scene::Decal3DComponentUVE>(fading, decal);
+
+    // A permanent decal beside it, which must outlive every frame of this test.
+    const Scene::EntityUVE permanent = entityManager.CreateEntityUVE();
+    entityManager.AddComponentUVE<Scene::Decal3DComponentUVE>(permanent, Scene::Decal3DComponentUVE{});
+
+    std::vector<Scene::Decal3DExpiredEventUVE> expired;
+    services.GetEventSystemUVE().Subscribe<Scene::Decal3DExpiredEventUVE>(
+        [&expired](const Scene::Decal3DExpiredEventUVE& event) { expired.push_back(event); });
+
+    for (int frame = 0; frame < 30; ++frame) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        engine.TickFrameUVE();
+    }
+
+    const Scene::Decal3DComponentUVE& faded =
+        entityManager.GetComponentUVE<Scene::Decal3DComponentUVE>(fading);
+    EXPECT_TRUE(faded.expired) << "20 ms of simulated time has certainly passed";
+    EXPECT_FLOAT_EQ(faded.remainingLifetime, 0.0F);
+    EXPECT_FALSE(IsDecal3DPaintingUVE(faded)) << "an expired decal stops painting";
+    EXPECT_FALSE(entityManager.GetComponentUVE<Scene::Decal3DComponentUVE>(permanent).expired)
+        << "lifetime 0 is permanent, whatever the clock says";
+
+    ASSERT_EQ(expired.size(), 1U) << "one edge per lifetime, not one per frame";
+    EXPECT_EQ(expired[0].decal, fading);
+    EXPECT_EQ(expired[0].materialAssetPath, "materials/scorch.uemat")
+        << "the material travels with the event: a pooled system may not get a second lookup";
 
     engine.Shutdown();
 }

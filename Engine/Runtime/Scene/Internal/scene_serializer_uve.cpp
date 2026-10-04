@@ -1174,6 +1174,11 @@ template <typename VectorT>
     value.distanceFadeBegin = json.value("distanceFadeBegin", defaults.distanceFadeBegin);
     value.distanceFadeLength = json.value("distanceFadeLength", defaults.distanceFadeLength);
     value.cullMask = json.value("cullMask", defaults.cullMask);
+    // The countdown is re-armed from the authored lifetime rather than restored: how much of a
+    // decal's life was left when the scene was saved is a fact about that session, and a restored
+    // decal starts its life whole - the same rule a restored projectile's remaining flight follows.
+    value.remainingLifetime = value.lifetime;
+    value.expired = false;
     return value;
 }
 

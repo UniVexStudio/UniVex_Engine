@@ -19,6 +19,7 @@
 #include "uve/component/visibility_component_uve.h"
 #include "uve/objects/3d/hitbox_3d_uve.h"
 #include "uve/objects/3d/hurtbox_3d_uve.h"
+#include "uve/objects/3d/decal_3d_uve.h"
 #include "uve/objects/3d/lod_group_3d_uve.h"
 #include "uve/objects/3d/projectile_3d_uve.h"
 #include "uve/objects/3d/ray_cast_3d_uve.h"
@@ -363,6 +364,32 @@ TEST(SceneComponentMetadataUVETest, TheLodGroupSectionCarriesTheChainTheMeshesAn
     outOfRange.hysteresis = kMaximumLodHysteresisUVE + 0.1F;
     EXPECT_FALSE(lod->isInstanceValid(&outOfRange));
     EXPECT_TRUE(lod->isInstanceValid(&component));
+}
+
+TEST(SceneComponentMetadataUVETest, TheDecalResultSectionShowsTheCountdownWithoutLettingAuthoringWriteIt) {
+    // A decal's authored half is the projection; its runtime half is where the lifetime has got to.
+    // The countdown has to be READABLE - an author watching Play wants to see it age - and it must
+    // be neither writable nor saved, because the renderer owns the number and a restored decal
+    // re-arms it. The same treatment Projectile3D's remaining flight gets, for the same reason.
+    const TypeMetadataEntryUVE* decal =
+        FindSceneComponentMetadataUVE(std::type_index(typeid(Decal3DComponentUVE)));
+    ASSERT_NE(decal, nullptr);
+    for (const char* const name : {"remainingLifetime", "expired"}) {
+        const TypeMetadataPropertyUVE* property = FindPropertyUVE(*decal, name);
+        ASSERT_NE(property, nullptr) << name;
+        EXPECT_TRUE(HasPropertyFlagUVE(property->flags, TypeMetadataPropertyFlagsUVE::RuntimeState))
+            << name;
+        EXPECT_FALSE(property->IsAuthoringWritableUVE()) << name;
+        EXPECT_FALSE(property->IsSerializedUVE()) << name;
+        EXPECT_NE(property->getValue, nullptr) << name;
+        EXPECT_EQ(property->section, "Result") << name;
+    }
+
+    // The authored half stays authoring's: the lifetime is the input the countdown is derived from.
+    const TypeMetadataPropertyUVE* lifetime = FindPropertyUVE(*decal, "lifetime");
+    ASSERT_NE(lifetime, nullptr);
+    EXPECT_FALSE(HasPropertyFlagUVE(lifetime->flags, TypeMetadataPropertyFlagsUVE::RuntimeState));
+    EXPECT_TRUE(lifetime->IsAuthoringWritableUVE());
 }
 
 TEST(SceneComponentMetadataUVETest, TheRayCastSectionCarriesWhatTheRayIsAndWhatItFound) {

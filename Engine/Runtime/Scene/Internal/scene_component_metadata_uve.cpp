@@ -1645,6 +1645,15 @@ void DeclareRenderInstanceObjectsUVE(std::vector<TypeMetadataEntryUVE>& entries)
                                                                   kPropertyTypeFloatUVE),
                                0.0, 1000000.0, 0.1)),
                            "Distance Fade"),
+                // The runtime half: how much of the lifetime is left, and whether it has run out.
+                // Shown during Play so an author can watch a decal age, never written by authoring
+                // and never saved - the same treatment Projectile3D's countdown gets, because it is
+                // the same kind of fact.
+                InGroupUVE(DeclareRuntimeStateUVE<&D::remainingLifetime>("remainingLifetime", "Remaining",
+                                                                         kPropertyTypeFloatUVE),
+                           "Result"),
+                InGroupUVE(DeclareRuntimeStateUVE<&D::expired>("expired", "Expired", kPropertyTypeBoolUVE),
+                           "Result"),
             }));
 
     using F = FogVolume3DComponentUVE;
