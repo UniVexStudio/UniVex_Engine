@@ -1,0 +1,52 @@
+# Copyright (c) 2026 UniVex Studios. All Rights Reserved.
+#
+# TEMPORARY: one-shot cleanup requested by the maintainer.
+#
+# The ten CI runs below are the red runs from the commit range 7758f3e..167345f,
+# every one of them superseded by the fix commits f7dd145 (missing include) and
+# 9425bb2 (hitbox strike test model) that are in the branch today. Deleting the
+# runs does not touch any commit: the code and the fix history stay in Git.
+#
+# This file is removed again in the next commit that touches the branch.
+
+name: Cleanup superseded red runs
+
+on:
+  push:
+    paths:
+      - .github/workflows/cleanup-superseded-red-runs.yml
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  delete-runs:
+    name: Delete the ten superseded red runs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete the runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_IDS: >-
+            37165209105 37165701967 37166099978 37166961104 37168931658
+            37170838662 37172516856 37173355137 37173883421 37174397568
+        run: |
+          set -u
+          failed=0
+          for id in $RUN_IDS; do
+            code=$(curl -s -o /tmp/body -w '%{http_code}' \
+              -X DELETE \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/repos/$REPO/actions/runs/$id")
+            echo "run $id -> HTTP $code $(head -c 300 /tmp/body)"
+            if [ "$code" != "204" ]; then
+              failed=$((failed + 1))
+            fi
+          done
+          echo "deleted or already gone: $(( 10 - failed )) of 10"
+          exit $failed
