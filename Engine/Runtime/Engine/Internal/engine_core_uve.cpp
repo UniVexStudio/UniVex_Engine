@@ -78,6 +78,8 @@
 #include "uve/objects/3d/animation_sequencer_uve.h"
 #include "uve/objects/3d/skeleton_3d_uve.h"
 #include "uve/objects/3d/animation_graph_uve.h"
+#include "uve/objects/3d/decal_3d_events_uve.h"
+#include "uve/objects/3d/decal_3d_uve.h"
 #include "uve/objects/3d/hitbox_3d_uve.h"
 #include "uve/objects/3d/hurtbox_3d_uve.h"
 #include "uve/objects/3d/interaction_area_3d_uve.h"
@@ -656,6 +658,21 @@ void EngineCoreUVE::BeginFrame() {
     m_frameStats.deltaTimeSeconds = m_timer->GetDeltaTimeUVE();
     m_frameStats.totalTimeSeconds = m_timer->GetTotalTimeUVE();
     UVE_TRACE("BeginFrame {}", m_frameStats.frameNumber);
+}
+
+void EngineCoreUVE::SyncDecal3DObjectsUVE(const float simulatedDeltaSeconds) {
+    // One pass, one edge per decal that runs out. The component keeps the flag (so the renderer
+    // skips it before touching any geometry) and the event is queued once, because
+    // AdvanceDecal3DLifetimeUVE reports the crossing rather than the state - a decal that is
+    // already expired returns false forever after, so a listener cannot see the same expiry twice.
+    m_entityManager->ForEachUVE<Scene::Decal3DComponentUVE>(
+        [this, simulatedDeltaSeconds](const Scene::EntityUVE entity, Scene::Decal3DComponentUVE& decal) {
+            // The walk hands out the live component, so the countdown is written in place: no
+            // second lookup that could disagree with what the walk just decided to visit.
+            if (Scene::AdvanceDecal3DLifetimeUVE(decal, simulatedDeltaSeconds)) {
+                m_eventSystem->QueueEvent(Scene::Decal3DExpiredEventUVE{entity, decal.materialAssetPath});
+            }
+        });
 }
 
 void EngineCoreUVE::SyncParticleRuntimeUVE() {
@@ -2073,6 +2090,9 @@ void EngineCoreUVE::Update() {
     m_renderer3D->SetPhysicsInterpolationAlphaUVE(static_cast<float>(fixedStep.alpha));
     SyncParticleRuntimeUVE();
     SyncUIRuntimeUVE();
+    // Decals age on the SIMULATED clock - the fixed step times the steps that actually ran - so a
+    // frame that ran no step does not shorten a decal's life, and a paused simulation freezes it.
+    SyncDecal3DObjectsUVE(fixedDeltaTimeSeconds * static_cast<float>(fixedStep.stepsToRun));
     SyncCollisionLifecycleUVE();
     SyncRayCast3DObjectsUVE();
     SyncHitbox3DObjectsUVE();

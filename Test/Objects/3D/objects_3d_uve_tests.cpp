@@ -601,6 +601,269 @@ TEST(LodGroup3DResolveUVETest, TheValidatorRejectsABandOutsideTheAuthoredRange) 
     EXPECT_FALSE(IsLodGroup3DObjectComponentValidUVE(group));
 }
 
+TEST(Decal3DProjectionTest, APointInsideTheVolumeIsPaintedAndOneOutsideIsNot) {
+    // The projection turns "where is this surface point relative to the decal" into the volume's
+    // own unit coordinates: 0 at the centre, 1 at the surface, whatever `size` happens to be. That
+    // is the whole reason the box and the cylinder share one footprint test.
+    Decal3DComponentUVE decal;
+    decal.size = Math::Vector3UVE{2.0F, 2.0F, 2.0F};
+    Decal3DProjectionUVE projection{};
+    ASSERT_TRUE(TryMakeDecal3DProjectionUVE(decal, Math::Vector3UVE{}, Math::QuaternionUVE{},
+                                            Math::Vector3UVE{1.0F, 1.0F, 1.0F}, projection));
+
+    const Decal3DSampleUVE centre =
+        SampleDecal3DUVE(projection, Math::Vector3UVE{}, Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 0.0F);
+    EXPECT_TRUE(centre.insideVolume);
+    EXPECT_TRUE(centre.PaintsUVE());
+    EXPECT_NEAR(centre.local.x, 0.0F, 1.0e-5F);
+    EXPECT_FLOAT_EQ(centre.combinedWeight, 1.0F);
+
+    const Decal3DSampleUVE inner = SampleDecal3DUVE(projection, Math::Vector3UVE{0.5F, 0.5F, 0.5F},
+                                                    Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 0.0F);
+    EXPECT_TRUE(inner.PaintsUVE());
+    EXPECT_NEAR(inner.local.x, 0.5F, 1.0e-5F) << "half of the way to the surface, in unit coordinates";
+
+    const Decal3DSampleUVE outside = SampleDecal3DUVE(projection, Math::Vector3UVE{1.5F, 0.0F, 0.0F},
+                                                      Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 0.0F);
+    EXPECT_FALSE(outside.insideVolume);
+    EXPECT_FALSE(outside.PaintsUVE());
+    EXPECT_FLOAT_EQ(outside.combinedWeight, 0.0F) << "outside the volume, nothing paints";
+}
+
+TEST(Decal3DProjectionTest, ScaleGrowsTheVolumeAndRotationTurnsItsAxis) {
+    Decal3DComponentUVE decal;
+    decal.size = Math::Vector3UVE{2.0F, 2.0F, 2.0F};
+
+    // The volume follows the object's world scale - a scaled decal paints a bigger area, which is
+    // what every other size in the engine does.
+    Decal3DProjectionUVE scaled{};
+    ASSERT_TRUE(TryMakeDecal3DProjectionUVE(decal, Math::Vector3UVE{}, Math::QuaternionUVE{},
+                                            Math::Vector3UVE{2.0F, 1.0F, 1.0F}, scaled));
+    EXPECT_TRUE(SampleDecal3DUVE(scaled, Math::Vector3UVE{1.5F, 0.0F, 0.0F},
+                                 Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 0.0F)
+                    .PaintsUVE())
+        << "1.5 is inside a half-extent of 2";
+    EXPECT_FALSE(SampleDecal3DUVE(scaled, Math::Vector3UVE{0.0F, 0.0F, 1.5F},
+                                  Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 0.0F)
+                     .PaintsUVE())
+        << "but outside the unscaled axes";
+
+    // +90 degrees about Y maps the local +X axis to world -Z, so a point half a metre below in
+    // world -Z comes back as local +X - the projection is not a world-axis-aligned box.
+    const Math::QuaternionUVE quarterTurnAboutY{0.0F, 0.70710678F, 0.0F, 0.70710678F};
+    Decal3DProjectionUVE rotated{};
+    ASSERT_TRUE(TryMakeDecal3DProjectionUVE(decal, Math::Vector3UVE{}, quarterTurnAboutY,
+                                            Math::Vector3UVE{1.0F, 1.0F, 1.0F}, rotated));
+    const Decal3DSampleUVE below = SampleDecal3DUVE(rotated, Math::Vector3UVE{0.0F, 0.0F, -0.5F},
+                                                    Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 0.0F);
+    EXPECT_TRUE(below.insideVolume);
+    EXPECT_NEAR(below.local.x, 0.5F, 1.0e-4F);
+    EXPECT_NEAR(below.local.z, 0.0F, 1.0e-4F);
+    EXPECT_FALSE(SampleDecal3DUVE(rotated, Math::Vector3UVE{1.5F, 0.0F, 0.0F},
+                                  Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 0.0F)
+                     .PaintsUVE())
+        << "world +X is the rotated volume's local -Z: 1.5 there is outside";
+}
+
+TEST(Decal3DProjectionTest, ACylinderFootprintIsRadialNotSquare) {
+    Decal3DComponentUVE decal;
+    decal.size = Math::Vector3UVE{2.0F, 2.0F, 2.0F};
+    decal.projection = DecalProjectionModeUVE::Cylinder;
+    Decal3DProjectionUVE projection{};
+    ASSERT_TRUE(TryMakeDecal3DProjectionUVE(decal, Math::Vector3UVE{}, Math::QuaternionUVE{},
+                                            Math::Vector3UVE{1.0F, 1.0F, 1.0F}, projection));
+
+    // The corner of the box is inside the box and outside the cylinder - the one case that tells
+    // the two footprints apart.
+    EXPECT_FALSE(SampleDecal3DUVE(projection, Math::Vector3UVE{0.9F, 0.0F, 0.9F},
+                                  Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 0.0F)
+                     .PaintsUVE())
+        << "0.9 squared twice is more than the unit radius";
+    EXPECT_TRUE(SampleDecal3DUVE(projection, Math::Vector3UVE{0.5F, 0.0F, 0.6F},
+                                 Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 0.0F)
+                    .PaintsUVE());
+
+    // The axis is still bounded the same way: the cylinder gets no taller than the box.
+    EXPECT_FALSE(SampleDecal3DUVE(projection, Math::Vector3UVE{0.0F, 1.5F, 0.0F},
+                                  Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 0.0F)
+                     .PaintsUVE());
+}
+
+TEST(Decal3DProjectionTest, NormalFadeTurnsFacingIntoWeight) {
+    // normalFade 0 paints any facing; 1 paints only surfaces turned back towards the decal. The
+    // volume projects along -Y, so "towards the decal" is a +Y normal.
+    Decal3DComponentUVE decal;
+    Decal3DProjectionUVE projection{};
+    ASSERT_TRUE(TryMakeDecal3DProjectionUVE(decal, Math::Vector3UVE{}, Math::QuaternionUVE{},
+                                            Math::Vector3UVE{1.0F, 1.0F, 1.0F}, projection));
+
+    const Math::Vector3UVE sideways{1.0F, 0.0F, 0.0F};
+    EXPECT_FLOAT_EQ(SampleDecal3DUVE(projection, Math::Vector3UVE{}, sideways, 0.0F).combinedWeight, 1.0F)
+        << "with no fade declared, a sideways surface is painted at full weight";
+
+    Decal3DComponentUVE strict = decal;
+    strict.normalFade = 1.0F;
+    Decal3DProjectionUVE strictProjection{};
+    ASSERT_TRUE(TryMakeDecal3DProjectionUVE(strict, Math::Vector3UVE{}, Math::QuaternionUVE{},
+                                            Math::Vector3UVE{1.0F, 1.0F, 1.0F}, strictProjection));
+    EXPECT_FLOAT_EQ(SampleDecal3DUVE(strictProjection, Math::Vector3UVE{},
+                                     Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 0.0F)
+                        .combinedWeight,
+                    1.0F);
+    EXPECT_FLOAT_EQ(SampleDecal3DUVE(strictProjection, Math::Vector3UVE{}, sideways, 0.0F).combinedWeight,
+                    0.0F)
+        << "a surface at a right angle faces away from the projection";
+    EXPECT_FLOAT_EQ(SampleDecal3DUVE(strictProjection, Math::Vector3UVE{},
+                                     Math::Vector3UVE{0.0F, -1.0F, 0.0F}, 0.0F)
+                        .combinedWeight,
+                    0.0F)
+        << "a backface is not painted";
+
+    Decal3DComponentUVE halfFade = decal;
+    halfFade.normalFade = 0.5F;
+    Decal3DProjectionUVE halfProjection{};
+    ASSERT_TRUE(TryMakeDecal3DProjectionUVE(halfFade, Math::Vector3UVE{}, Math::QuaternionUVE{},
+                                            Math::Vector3UVE{1.0F, 1.0F, 1.0F}, halfProjection));
+    EXPECT_FLOAT_EQ(SampleDecal3DUVE(halfProjection, Math::Vector3UVE{}, sideways, 0.0F).combinedWeight,
+                    0.5F);
+}
+
+TEST(Decal3DProjectionTest, TheVerticalFadesCutTheEndsOfTheVolumeAndDistanceFadeCutsItsFarSide) {
+    Decal3DComponentUVE decal;
+    decal.size = Math::Vector3UVE{2.0F, 2.0F, 2.0F};
+    decal.upperFade = 0.5F;
+    decal.lowerFade = 0.5F;
+    decal.distanceFadeEnabled = true;
+    decal.distanceFadeBegin = 40.0F;
+    decal.distanceFadeLength = 10.0F;
+    Decal3DProjectionUVE projection{};
+    ASSERT_TRUE(TryMakeDecal3DProjectionUVE(decal, Math::Vector3UVE{}, Math::QuaternionUVE{},
+                                            Math::Vector3UVE{1.0F, 1.0F, 1.0F}, projection));
+
+    // Middle of the volume, at the camera: nothing fades.
+    EXPECT_FLOAT_EQ(SampleDecal3DUVE(projection, Math::Vector3UVE{}, Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 10.0F)
+                        .combinedWeight,
+                    1.0F);
+
+    // Nine tenths of the way up: inside the top band, three fifths of the way through it.
+    const Decal3DSampleUVE nearTop = SampleDecal3DUVE(
+        projection, Math::Vector3UVE{0.0F, 0.9F, 0.0F}, Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 10.0F);
+    EXPECT_TRUE(nearTop.insideVolume);
+    EXPECT_NEAR(nearTop.combinedWeight, 0.2F, 1.0e-4F) << "(0.9 - 0.5) / 0.5 leaves a fifth";
+
+    // The same at the bottom, which uses the lower band rather than the upper one.
+    const Decal3DSampleUVE nearBottom = SampleDecal3DUVE(
+        projection, Math::Vector3UVE{0.0F, -0.9F, 0.0F}, Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 10.0F);
+    EXPECT_NEAR(nearBottom.combinedWeight, 0.2F, 1.0e-4F);
+    // The fades stay apart so a caller can say WHICH one removed a sample: the top point's loss is
+    // entirely the vertical fade, not the normal one.
+    EXPECT_FLOAT_EQ(nearTop.normalFadeWeight, 1.0F);
+    EXPECT_NEAR(nearTop.depthFadeWeight, 0.2F, 1.0e-4F);
+    EXPECT_FLOAT_EQ(nearTop.distanceFadeWeight, 1.0F);
+
+    // Distance: full until the band begins, half way through it, gone past its end.
+    EXPECT_FLOAT_EQ(SampleDecal3DUVE(projection, Math::Vector3UVE{}, Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 35.0F)
+                        .combinedWeight,
+                    1.0F);
+    EXPECT_FLOAT_EQ(SampleDecal3DUVE(projection, Math::Vector3UVE{}, Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 45.0F)
+                        .combinedWeight,
+                    0.5F);
+    EXPECT_FLOAT_EQ(SampleDecal3DUVE(projection, Math::Vector3UVE{}, Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 60.0F)
+                        .combinedWeight,
+                    0.0F);
+
+    // A zero-length band is a hard cut at `begin`, not a division by zero.
+    Decal3DComponentUVE hardCut = decal;
+    hardCut.distanceFadeLength = 0.0F;
+    Decal3DProjectionUVE hardCutProjection{};
+    ASSERT_TRUE(TryMakeDecal3DProjectionUVE(hardCut, Math::Vector3UVE{}, Math::QuaternionUVE{},
+                                            Math::Vector3UVE{1.0F, 1.0F, 1.0F}, hardCutProjection));
+    EXPECT_FLOAT_EQ(SampleDecal3DUVE(hardCutProjection, Math::Vector3UVE{},
+                                     Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 39.0F)
+                        .combinedWeight,
+                    1.0F);
+    EXPECT_FLOAT_EQ(SampleDecal3DUVE(hardCutProjection, Math::Vector3UVE{},
+                                     Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 41.0F)
+                        .combinedWeight,
+                    0.0F);
+}
+
+TEST(Decal3DProjectionTest, ADegeneratePoseOrSizePaintsNothingRatherThanASmear) {
+    Decal3DComponentUVE decal;
+    Decal3DProjectionUVE projection{};
+
+    Decal3DComponentUVE zeroSize = decal;
+    zeroSize.size = Math::Vector3UVE{0.0F, 1.0F, 1.0F};
+    EXPECT_FALSE(TryMakeDecal3DProjectionUVE(zeroSize, Math::Vector3UVE{}, Math::QuaternionUVE{},
+                                             Math::Vector3UVE{1.0F, 1.0F, 1.0F}, projection));
+    EXPECT_FALSE(TryMakeDecal3DProjectionUVE(decal, Math::Vector3UVE{std::numeric_limits<float>::quiet_NaN(), 0.0F, 0.0F},
+                                             Math::QuaternionUVE{}, Math::Vector3UVE{1.0F, 1.0F, 1.0F}, projection));
+    EXPECT_FALSE(TryMakeDecal3DProjectionUVE(decal, Math::Vector3UVE{}, Math::QuaternionUVE{},
+                                             Math::Vector3UVE{1.0F, 0.0F, 1.0F}, projection))
+        << "a zero world-scale axis has no volume to project";
+    EXPECT_FALSE(TryMakeDecal3DProjectionUVE(decal, Math::Vector3UVE{}, Math::QuaternionUVE{0.0F, 0.0F, 0.0F, 0.0F},
+                                             Math::Vector3UVE{1.0F, 1.0F, 1.0F}, projection))
+        << "a rotation that cannot be inverted has no volume frame";
+
+    // A non-finite sample is refused too: a NaN weight would spread through the blend.
+    ASSERT_TRUE(TryMakeDecal3DProjectionUVE(decal, Math::Vector3UVE{}, Math::QuaternionUVE{},
+                                            Math::Vector3UVE{1.0F, 1.0F, 1.0F}, projection));
+    const Decal3DSampleUVE nanPoint =
+        SampleDecal3DUVE(projection, Math::Vector3UVE{std::numeric_limits<float>::quiet_NaN(), 0.0F, 0.0F},
+                         Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 0.0F);
+    EXPECT_FALSE(nanPoint.PaintsUVE());
+    EXPECT_FLOAT_EQ(nanPoint.combinedWeight, 0.0F);
+}
+
+TEST(Decal3DLifetimeTest, ALifetimeCountsDownOnSimulatedSecondsAndExpiresExactlyOnce) {
+    Decal3DComponentUVE decal;
+    decal.lifetime = 2.0F;
+
+    // The first advance arms the countdown from the authored lifetime: a decal that just appeared
+    // must not expire because its remaining time started at zero.
+    EXPECT_FALSE(AdvanceDecal3DLifetimeUVE(decal, 0.5F));
+    EXPECT_NEAR(decal.remainingLifetime, 1.5F, 1.0e-5F);
+    EXPECT_FALSE(decal.expired);
+
+    EXPECT_FALSE(AdvanceDecal3DLifetimeUVE(decal, 1.4F));
+    EXPECT_NEAR(decal.remainingLifetime, 0.1F, 1.0e-5F);
+
+    // The crossing is reported once, and only once: every later advance is a no-op.
+    EXPECT_TRUE(AdvanceDecal3DLifetimeUVE(decal, 0.2F));
+    EXPECT_FLOAT_EQ(decal.remainingLifetime, 0.0F);
+    EXPECT_TRUE(decal.expired);
+    EXPECT_FALSE(AdvanceDecal3DLifetimeUVE(decal, 10.0F));
+    EXPECT_FALSE(AdvanceDecal3DLifetimeUVE(decal, 10.0F));
+}
+
+TEST(Decal3DLifetimeTest, APermanentDecalNeverExpiresAndABadClockChangesNothing) {
+    Decal3DComponentUVE permanent;
+    permanent.lifetime = 0.0F;
+    EXPECT_FALSE(AdvanceDecal3DLifetimeUVE(permanent, 100000.0F));
+    EXPECT_FALSE(permanent.expired) << "lifetime 0 keeps a decal forever";
+    EXPECT_FLOAT_EQ(permanent.remainingLifetime, 0.0F);
+
+    Decal3DComponentUVE timed;
+    timed.lifetime = 5.0F;
+    ASSERT_FALSE(AdvanceDecal3DLifetimeUVE(timed, 1.0F));
+    const float before = timed.remainingLifetime;
+    EXPECT_FALSE(AdvanceDecal3DLifetimeUVE(timed, std::numeric_limits<float>::quiet_NaN()));
+    EXPECT_FALSE(AdvanceDecal3DLifetimeUVE(timed, -1.0F));
+    EXPECT_FALSE(AdvanceDecal3DLifetimeUVE(timed, 0.0F));
+    EXPECT_FLOAT_EQ(timed.remainingLifetime, before) << "a broken or paused clock must not age it";
+
+    // What the renderer asks before touching any geometry.
+    EXPECT_TRUE(IsDecal3DPaintingUVE(timed));
+    timed.enabled = false;
+    EXPECT_FALSE(IsDecal3DPaintingUVE(timed));
+    timed.enabled = true;
+    timed.expired = true;
+    EXPECT_FALSE(IsDecal3DPaintingUVE(timed));
+    timed.expired = false;
+    timed.size = Math::Vector3UVE{0.0F, 1.0F, 1.0F};
+    EXPECT_FALSE(IsDecal3DPaintingUVE(timed));
+}
+
 TEST(LevelStreamer3DNearestViewerUVETest, EmptyViewerListMeansNoDistanceAtAll) {
     // A streamer with no valid viewers must report "no distance"; the verdict function relies on
     // that absence to never load or unload on a viewerless tick.

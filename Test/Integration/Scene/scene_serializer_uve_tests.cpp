@@ -1320,6 +1320,60 @@ TEST_F(SceneSerializerUVETest, RoundTripUVE_RenderInstanceFamilyKeepsEveryField)
     EXPECT_EQ(entityManager.GetComponentUVE<FogVolume3DComponentUVE>(roots.front()), fog);
 }
 
+TEST_F(SceneSerializerUVETest, Decal3DLifetimeIsReArmedOnLoadAndTheCountdownIsNotSaved) {
+    // The authored lifetime is scene data. The countdown that was left of it - and the fact that it
+    // had already run out - are facts about the session that saved the scene, so a restored decal
+    // starts its life whole rather than resuming a life that was nearly over. The same rule a
+    // restored projectile's remaining flight follows.
+    const EntityUVE source = entityManager.CreateEntityUVE();
+    Decal3DComponentUVE decal{};
+    decal.materialAssetPath = "materials/scorch.uemat";
+    decal.size = Math::Vector3UVE{2.0F, 2.0F, 2.0F};
+    decal.lifetime = 3.0F;
+    // Runtime truth at save time.
+    decal.remainingLifetime = 0.25F;
+    decal.expired = true;
+    entityManager.AddComponentUVE<Decal3DComponentUVE>(source, decal);
+
+    const std::optional<SceneSnapshotUVE> snapshot =
+        serializer.CaptureUVE(entityManager, {source}, SceneAssetTypeUVE::Scene);
+    ASSERT_TRUE(snapshot.has_value());
+    const std::vector<EntityUVE> restoredRoots = serializer.RestoreUVE(entityManager, *snapshot);
+    ASSERT_EQ(restoredRoots.size(), 1U);
+
+    const Decal3DComponentUVE restored =
+        entityManager.GetComponentUVE<Decal3DComponentUVE>(restoredRoots.front());
+    EXPECT_EQ(restored.materialAssetPath, "materials/scorch.uemat");
+    EXPECT_EQ(restored.size, (Math::Vector3UVE{2.0F, 2.0F, 2.0F}));
+    EXPECT_FLOAT_EQ(restored.lifetime, 3.0F);
+    EXPECT_FLOAT_EQ(restored.remainingLifetime, 3.0F) << "a restored decal starts its life whole";
+    EXPECT_FALSE(restored.expired) << "a saved countdown that had run out does not come back spent";
+}
+
+TEST_F(SceneSerializerUVETest, LoadUVE_ADecalFromBeforeTheCountdownLoadsPermanentAndAlive) {
+    // A decal saved before the runtime countdown existed has no lifetime at all, which means the
+    // default: permanent. It must load alive and unarmed rather than expired.
+    const std::string payloadText =
+        R"({"entities":[{"localId":0,"components":{"Decal3DComponentUVE":{"materialAssetPath":"materials/old_mark.uemat","size":[1.0,1.0,1.0],"projection":0}}}]})";
+    const auto* const payloadBytesPtr = reinterpret_cast<const std::byte*>(payloadText.data());
+    const std::vector<std::byte> payloadBytes(payloadBytesPtr, payloadBytesPtr + payloadText.size());
+
+    const std::filesystem::path path = "uve_scene_serializer_tests_decal_legacy_countdown.uvscene";
+    std::filesystem::remove(path);
+    ASSERT_TRUE(Asset::WriteUveFileUVE(path, SceneAssetTypeUVE::Scene, payloadBytes));
+
+    const std::vector<EntityUVE> roots = serializer.LoadUVE(entityManager, path);
+    ASSERT_EQ(roots.size(), 1U);
+    const Decal3DComponentUVE& loaded = entityManager.GetComponentUVE<Decal3DComponentUVE>(roots[0]);
+    EXPECT_FLOAT_EQ(loaded.lifetime, 0.0F) << "the default is permanent";
+    EXPECT_FLOAT_EQ(loaded.remainingLifetime, 0.0F);
+    EXPECT_FALSE(loaded.expired);
+    EXPECT_TRUE(IsDecal3DPaintingUVE(loaded));
+    EXPECT_TRUE(IsDecal3DObjectComponentValidUVE(loaded));
+
+    std::filesystem::remove(path);
+}
+
 TEST_F(SceneSerializerUVETest, RestoreUVE_DecalSavedBeforeItsNewFieldsLoadsWithDefaults) {
     const std::string payloadText =
         R"({"entities":[{"localId":0,"components":{"Decal3DComponentUVE":)"
@@ -1336,7 +1390,14 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_DecalSavedBeforeItsNewFieldsLoadsWithD
     expected.size = {2.0F, 1.0F, 2.0F};
     expected.projection = DecalProjectionModeUVE::Cylinder;
     expected.lifetime = 5.0F;
-    EXPECT_EQ(entityManager.GetComponentUVE<Decal3DComponentUVE>(roots.front()), expected);
+    // Loading re-arms the runtime countdown from the authored lifetime, so the whole-component
+    // comparison has to expect a life about to start rather than a life at zero - which is exactly
+    // what a decal that has just been authored or loaded should be.
+    expected.remainingLifetime = 5.0F;
+    EXPECT_FALSE(expected.expired);
+    const Decal3DComponentUVE& restored = entityManager.GetComponentUVE<Decal3DComponentUVE>(roots.front());
+    EXPECT_FLOAT_EQ(restored.remainingLifetime, 5.0F);
+    EXPECT_EQ(restored, expected);
 }
 
 TEST_F(SceneSerializerUVETest, RestoreUVE_MetadataSavedAsPlainStringsLoadsAsStringValues) {
