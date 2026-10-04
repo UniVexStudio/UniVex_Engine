@@ -13,6 +13,8 @@ add_library(uve_physics STATIC
     Internal/character_world_query_uve.cpp
     Internal/kinematic_body_uve.cpp
     Internal/interaction_area_uve.cpp
+    Internal/hitbox_strike_uve.cpp
+    Internal/hitbox_strike_lifecycle_tracker_uve.cpp
     Internal/spring_arm_uve.cpp
     Internal/projectile_3d_step_uve.cpp
     Internal/area_overlap_system_uve.cpp

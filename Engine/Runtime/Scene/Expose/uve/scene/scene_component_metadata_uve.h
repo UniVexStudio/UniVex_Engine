@@ -21,6 +21,10 @@ inline constexpr std::string_view kPropertyTypeBoolUVE = "Bool";
 inline constexpr std::string_view kPropertyTypeFloatUVE = "Float";
 inline constexpr std::string_view kPropertyTypeInt32UVE = "Int32";
 inline constexpr std::string_view kPropertyTypeUInt32UVE = "UInt32";
+/// A byte-sized count. Its own type rather than UInt32 because the accessors are bound to the
+/// member's real type: a generic consumer switching on the declared type would otherwise read four
+/// bytes where the component stores one. Hitbox3D's strike count is the first user.
+inline constexpr std::string_view kPropertyTypeUInt8UVE = "UInt8";
 /// A 32-bit value authored as independent bits (a collision layer/mask), not as a number.
 inline constexpr std::string_view kPropertyTypeBitMask32UVE = "BitMask32";
 /// Custom drawer ids naming which set of layers a BitMask32 picks from, so the inspector can show

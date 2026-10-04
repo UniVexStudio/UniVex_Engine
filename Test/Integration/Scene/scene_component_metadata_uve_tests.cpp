@@ -17,6 +17,8 @@
 #include "uve/component/physics_interpolation_component_uve.h"
 #include "uve/component/transform_component_uve.h"
 #include "uve/component/visibility_component_uve.h"
+#include "uve/objects/3d/hitbox_3d_uve.h"
+#include "uve/objects/3d/hurtbox_3d_uve.h"
 #include "uve/objects/3d/projectile_3d_uve.h"
 #include "uve/objects/3d/ray_cast_3d_uve.h"
 #include "uve/objects/3d/spawn_point_3d_uve.h"
@@ -77,11 +79,11 @@ TEST(SceneComponentMetadataUVETest, EveryLayerMaskNamesTheLayersItPicksFrom) {
             render += isRender ? 1U : 0U;
         }
     }
-    // The collider's layer and mask, SpringArm3D's collisionMask, RayCast3D's collisionMask and
-    // Projectile3D's collisionMask - every cast and every swept body in the engine filters on the
-    // same layer contract, so they all belong to the same drawer set rather than a second,
-    // hand-drawn one.
-    EXPECT_EQ(physics, 5U);
+    // The collider's layer and mask, SpringArm3D's collisionMask, RayCast3D's collisionMask,
+    // Projectile3D's collisionMask, and Hitbox3D/Hurtbox3D's layer and mask - every cast, every
+    // swept body and every strike in the engine filters on the same layer contract, so they all
+    // belong to the same drawer set rather than a second, hand-drawn one.
+    EXPECT_EQ(physics, 9U);
     EXPECT_EQ(render, 4U); // mesh, render instance, light and decal
 }
 
@@ -421,6 +423,85 @@ TEST(SceneComponentMetadataUVETest, TheProjectileSectionCarriesItsHitContractAnd
     Projectile3DComponentUVE outOfRange;
     outOfRange.restitution = 1.5F;
     EXPECT_FALSE(projectile->isInstanceValid(&outOfRange));
+}
+
+TEST(SceneComponentMetadataUVETest, TheCombatSectionsCarryTheStrikeContractAndItsRuntimeResult) {
+    // A strike is authored by two components that have to agree, so both declarations have to
+    // reach the Inspector together: what the box is (half extents), who may hit whom (layer and
+    // mask on each side), and what kind of hit it is (the damage channel). The result of the
+    // engine's own scan is visible on the hitbox - the side that does the striking - and is
+    // runtime-owned like every other resolved result in this engine.
+    const TypeMetadataEntryUVE* hitbox =
+        FindSceneComponentMetadataUVE(std::type_index(typeid(Hitbox3DComponentUVE)));
+    ASSERT_NE(hitbox, nullptr);
+    EXPECT_EQ(hitbox->typeId, "component.hitbox_3d");
+    EXPECT_EQ(hitbox->displayName, "Hitbox3D");
+    const TypeMetadataEntryUVE* hurtbox =
+        FindSceneComponentMetadataUVE(std::type_index(typeid(Hurtbox3DComponentUVE)));
+    ASSERT_NE(hurtbox, nullptr);
+    EXPECT_EQ(hurtbox->typeId, "component.hurtbox_3d");
+    EXPECT_EQ(hurtbox->displayName, "Hurtbox3D");
+
+    for (const char* const name : {"enabled", "halfExtents", "damageChannel"}) {
+        for (const TypeMetadataEntryUVE* const entry : {hitbox, hurtbox}) {
+            const TypeMetadataPropertyUVE* property = FindPropertyUVE(*entry, name);
+            ASSERT_NE(property, nullptr) << entry->typeId << "." << name;
+            EXPECT_FALSE(HasPropertyFlagUVE(property->flags, TypeMetadataPropertyFlagsUVE::RuntimeState))
+                << name;
+            EXPECT_TRUE(property->IsAuthoringWritableUVE()) << name;
+        }
+    }
+    for (const TypeMetadataEntryUVE* const entry : {hitbox, hurtbox}) {
+        for (const char* const name : {"collisionLayer", "collisionMask"}) {
+            const TypeMetadataPropertyUVE* property = FindPropertyUVE(*entry, name);
+            ASSERT_NE(property, nullptr) << entry->typeId << "." << name;
+            EXPECT_EQ(property->typeId, kPropertyTypeBitMask32UVE) << name;
+            EXPECT_EQ(property->customDrawerId, kLayerMaskDrawerPhysicsUVE) << name;
+        }
+    }
+
+    // The result of the strike scan lives on the hitbox only: a hurtbox has no strike list of its
+    // own, so declaring one there would draw a field nothing ever writes.
+    const TypeMetadataPropertyUVE* count = FindPropertyUVE(*hitbox, "strikeCount");
+    ASSERT_NE(count, nullptr);
+    EXPECT_EQ(count->typeId, kPropertyTypeUInt8UVE);
+    EXPECT_EQ(count->section, "Result");
+    const TypeMetadataPropertyUVE* truncated = FindPropertyUVE(*hitbox, "strikesTruncated");
+    ASSERT_NE(truncated, nullptr);
+    EXPECT_EQ(truncated->typeId, kPropertyTypeBoolUVE);
+    EXPECT_EQ(truncated->section, "Result");
+    for (const TypeMetadataPropertyUVE& property : hitbox->properties) {
+        if (property.name == "strikeCount" || property.name == "strikesTruncated") {
+            EXPECT_TRUE(HasPropertyFlagUVE(property.flags, TypeMetadataPropertyFlagsUVE::RuntimeState))
+                << property.name;
+            EXPECT_FALSE(property.IsAuthoringWritableUVE()) << property.name;
+            EXPECT_FALSE(property.IsSerializedUVE()) << property.name;
+        }
+    }
+    EXPECT_EQ(FindPropertyUVE(*hurtbox, "strikeCount"), nullptr);
+    EXPECT_EQ(FindPropertyUVE(*hurtbox, "strikesTruncated"), nullptr);
+
+    // The one-byte count is declared as one byte wide, and the component's own rule travels with
+    // both declarations so no generic edit can author a box that cannot strike or receive.
+    static_assert(sizeof(Hitbox3DComponentUVE::strikeCount) == 1U,
+                  "strikeCount is declared UInt8, so its storage must be one byte wide");
+    Hitbox3DComponentUVE hitboxValue;
+    EXPECT_EQ(hitboxValue.strikeCount, 0U);
+    EXPECT_FALSE(hitboxValue.strikesTruncated);
+    ASSERT_NE(hitbox->isInstanceValid, nullptr);
+    ASSERT_NE(hurtbox->isInstanceValid, nullptr);
+    EXPECT_TRUE(hitbox->isInstanceValid(&hitboxValue));
+    Hurtbox3DComponentUVE hurtboxValue;
+    EXPECT_TRUE(hurtbox->isInstanceValid(&hurtboxValue));
+    Hitbox3DComponentUVE degenerate;
+    degenerate.halfExtents = {0.0F, 1.0F, 1.0F};
+    EXPECT_FALSE(hitbox->isInstanceValid(&degenerate));
+    Hurtbox3DComponentUVE layerless;
+    layerless.collisionLayer = 0U;
+    EXPECT_FALSE(hurtbox->isInstanceValid(&layerless));
+    Hurtbox3DComponentUVE overlongChannel;
+    overlongChannel.damageChannel = std::string(300U, 'x');
+    EXPECT_FALSE(hurtbox->isInstanceValid(&overlongChannel));
 }
 
 } // namespace

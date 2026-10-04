@@ -48,6 +48,8 @@
 #include "uve/objects/3d/fog_volume_3d_uve.h"
 #include "uve/objects/3d/kinematic_3d_uve.h"
 #include "uve/objects/3d/projectile_3d_uve.h"
+#include "uve/objects/3d/hitbox_3d_uve.h"
+#include "uve/objects/3d/hurtbox_3d_uve.h"
 #include "uve/objects/3d/ray_cast_3d_uve.h"
 #include "uve/objects/3d/skeleton_3d_uve.h"
 #include "uve/objects/3d/spring_arm_3d_uve.h"
@@ -885,6 +887,93 @@ void DeclareProjectileUVE(std::vector<TypeMetadataEntryUVE>& entries) {
             }));
 }
 
+void DeclareCombatUVE(std::vector<TypeMetadataEntryUVE>& entries) {
+    // Hitbox3D and Hurtbox3D, declared together because they are one conversation: a strike needs
+    // both sides to agree about the layer, the mask and the damage channel, and the Inspector is
+    // where that agreement is authored. The world-shape rule both state in their tooltips - exact
+    // oriented box, world position/rotation plus authored half-extents, world SCALE deliberately
+    // not applied - is the same contract ColliderComponentUVE and AreaComponentUVE follow, and it
+    // is said out loud here because a scaled parent silently not scaling a hurtbox is exactly the
+    // kind of thing an author has to know before they debug it.
+    AddValidatedUVE<Hitbox3DComponentUVE, &IsHitbox3DObjectComponentValidUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.hitbox_3d", "Hitbox3D", kSectionOrderTypeSpecificUVE,
+            {
+                WithTooltipUVE(
+                    DeclareUVE<&Hitbox3DComponentUVE::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
+                    "Off, the hitbox strikes nothing and ends every strike it was in: the engine "
+                    "reports the exit, it does not wait for the boxes to separate."),
+                WithTooltipUVE(
+                    DeclareUVE<&Hitbox3DComponentUVE::halfExtents>("halfExtents", "Half Extents",
+                                                                   kPropertyTypeVector3UVE),
+                    "The exact oriented box this hitbox strikes with: world position and "
+                    "rotation plus these half-extents, with the object's world SCALE deliberately "
+                    "not applied - the collider/area convention, so a scaled art pivot never "
+                    "re-sizes a hurt volume."),
+                WithTooltipUVE(
+                    DeclareUVE<&Hitbox3DComponentUVE::damageChannel>("damageChannel", "Channel",
+                                                                     kPropertyTypeStringUVE),
+                    "What this hitbox is. It only ever strikes a hurtbox authored with the same "
+                    "channel, which is how one character carries a sword hitbox and a punch hitbox "
+                    "without either firing the other's reactions. Up to 256 bytes."),
+                WithCustomDrawerUVE(
+                    WithTooltipUVE(DeclareUVE<&Hitbox3DComponentUVE::collisionLayer>(
+                                       "collisionLayer", "Layer", kPropertyTypeBitMask32UVE),
+                                   "The layers this hitbox is on - what a hurtbox has to be "
+                                   "looking for."),
+                    std::string(kLayerMaskDrawerPhysicsUVE)),
+                WithCustomDrawerUVE(
+                    WithTooltipUVE(DeclareUVE<&Hitbox3DComponentUVE::collisionMask>(
+                                       "collisionMask", "Mask", kPropertyTypeBitMask32UVE),
+                                   "The layers this hitbox strikes. A strike needs BOTH sides to "
+                                   "accept the other, so a hurtbox can refuse a whole class of "
+                                   "attackers on its own."),
+                    std::string(kLayerMaskDrawerPhysicsUVE)),
+                InGroupUVE(DeclareRuntimeStateUVE<&Hitbox3DComponentUVE::strikeCount>(
+                               "strikeCount", "Strikes", kPropertyTypeUInt8UVE),
+                           "Result"),
+                InGroupUVE(DeclareRuntimeStateUVE<&Hitbox3DComponentUVE::strikesTruncated>(
+                               "strikesTruncated", "Truncated", kPropertyTypeBoolUVE),
+                           "Result"),
+            }));
+
+    AddValidatedUVE<Hurtbox3DComponentUVE, &IsHurtbox3DObjectComponentValidUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.hurtbox_3d", "Hurtbox3D", kSectionOrderTypeSpecificUVE,
+            {
+                WithTooltipUVE(
+                    DeclareUVE<&Hurtbox3DComponentUVE::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
+                    "Off, nothing can strike this hurtbox: it is not even a candidate, so every "
+                    "strike it was in ends on this tick's report."),
+                WithTooltipUVE(
+                    DeclareUVE<&Hurtbox3DComponentUVE::halfExtents>("halfExtents", "Half Extents",
+                                                                    kPropertyTypeVector3UVE),
+                    "The exact oriented box this hurtbox is struck on, in world metres: world "
+                    "position and rotation plus these half-extents, with the object's world SCALE "
+                    "deliberately not applied - the collider/area convention."),
+                WithTooltipUVE(
+                    DeclareUVE<&Hurtbox3DComponentUVE::damageChannel>("damageChannel", "Channel",
+                                                                      kPropertyTypeStringUVE),
+                    "What this hurtbox receives. Only a hitbox authored with the same channel can "
+                    "strike it. Up to 256 bytes."),
+                WithCustomDrawerUVE(
+                    WithTooltipUVE(DeclareUVE<&Hurtbox3DComponentUVE::collisionLayer>(
+                                       "collisionLayer", "Layer", kPropertyTypeBitMask32UVE),
+                                   "The layers this hurtbox is on - what a hitbox has to be looking "
+                                   "for."),
+                    std::string(kLayerMaskDrawerPhysicsUVE)),
+                WithCustomDrawerUVE(
+                    WithTooltipUVE(DeclareUVE<&Hurtbox3DComponentUVE::collisionMask>(
+                                       "collisionMask", "Mask", kPropertyTypeBitMask32UVE),
+                                   "The layers this hurtbox accepts strikes from. A strike needs "
+                                   "BOTH sides to accept the other, which is how a hurtbox refuses "
+                                   "a whole class of attackers without touching any of them."),
+                    std::string(kLayerMaskDrawerPhysicsUVE)),
+            }));
+}
+
 void DeclareAnimationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     // AnimationSequencer's own section. Its target is an entity reference: flagged so the serializer
     // remaps it, and drawn as an object picker. Empty means the player's parent, which is the common
@@ -1687,6 +1776,7 @@ void DeclareObjectCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     DeclarePhysicsUVE(entries);
     DeclareRayCastUVE(entries);
     DeclareProjectileUVE(entries);
+    DeclareCombatUVE(entries);
     DeclareMediaAndUIUVE(entries);
     DeclareGameplayUVE(entries);
     DeclareObjectBasesUVE(entries);
