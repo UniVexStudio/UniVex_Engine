@@ -56,6 +56,14 @@ worse than no checklist.
 - [x] Static3D — real, non-moving collidable body.
 - [x] Rigid3D — real, physics-simulated body (gravity, collision response).
 - [x] Character3D — real kinematic character controller (move/jump/ground state).
+- [x] Kinematic3D — real kinematic body driver (`EngineCoreUVE::SyncKinematic3DObjectsUVE()`, run
+  before the character step): every Kinematic3D moves by its authored `targetVelocity`, eased by
+  `interpolation` on a per-second curve, through the same swept kinematic move the character
+  controller uses — a wall stops it, a thin wall cannot be tunnelled through, and the rigid bodies
+  it walks into are pushed with the character's own push policy. The velocity it actually achieved
+  is written back to its body, which is what a rider standing on it reads; `active` and the
+  object's PhysicsObject3D participation leave it exactly where it is, with no velocity to hand
+  anyone. Locked by 29 dedicated tests (`Test/Physics/kinematic_body_uve_tests.cpp`).
 - [x] AudioSource3D — real, plays positional audio.
 - [x] ParticleEmitter3D — real, ticked particle simulation.
 - [x] Area3D — real overlap-detection trigger volume.
@@ -122,7 +130,6 @@ worse than no checklist.
 
 ### Authored data only, not yet wired to a system
 
-- [~] Kinematic3D — target-velocity fields exist, no system drives a kinematic body from them.
 - [~] NavigationRegion3D — bounds + navmesh path fields exist, no navmesh baking/pathfinding system exists yet.
 - [~] NavigationAgent3D — target/path fields exist, no pathfinding/steering system exists yet.
 - [~] Skeleton3D — bone hierarchy data exists, no skinning/animation system reads it.

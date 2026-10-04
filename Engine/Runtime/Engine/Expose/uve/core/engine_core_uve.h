@@ -490,6 +490,11 @@ private:
     /// Rigid3DComponentUVE isn't kinematic, is skipped - this function never adds or removes
     /// components.
     void SyncCharacterControllersUVE(float fixedDeltaTimeSeconds);
+    /// Moves every Kinematic3D object by its authored target velocity - eased by its interpolation,
+    /// through the world rather than around it, pushing the rigid bodies it walks into. Runs before
+    /// the character step, so a character standing on a platform is carried the same step the
+    /// platform moves.
+    void SyncKinematic3DObjectsUVE(float fixedDeltaTimeSeconds);
 
     /// Plays every AnimationSequencer and evaluates every AnimationGraph whose update runs on this clock
     /// (`physicsStep` true: the fixed step; false: once per frame), writing into each one's target

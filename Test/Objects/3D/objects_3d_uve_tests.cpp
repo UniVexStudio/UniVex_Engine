@@ -122,6 +122,23 @@ TEST(Expanded3DObjectComponentsUVETest, BoundedContractsRejectUnsafeValues) {
     WorldPartition3DComponentUVE partition;
     partition.cellCounts[1] = 0U;
     EXPECT_FALSE(IsWorldPartition3DObjectComponentValidUVE(partition));
+
+    Kinematic3DComponentUVE kinematic;
+    kinematic.interpolation = 1.5F;
+    EXPECT_FALSE(IsKinematic3DObjectComponentValidUVE(kinematic));
+    kinematic.interpolation = -0.5F;
+    EXPECT_FALSE(IsKinematic3DObjectComponentValidUVE(kinematic));
+    // Both ends of the authored range are real: 1 is "at speed this step", 0 is "never ease on its
+    // own" - a body a script drives by writing its velocity.
+    kinematic.interpolation = 1.0F;
+    EXPECT_TRUE(IsKinematic3DObjectComponentValidUVE(kinematic));
+    kinematic.interpolation = 0.0F;
+    EXPECT_TRUE(IsKinematic3DObjectComponentValidUVE(kinematic));
+    // A body switched off is authored data, not something to reject: `active` is the reversible
+    // "stop where you are" the mover honours.
+    kinematic.interpolation = 0.5F;
+    kinematic.active = false;
+    EXPECT_TRUE(IsKinematic3DObjectComponentValidUVE(kinematic));
 }
 
 TEST(Expanded3DObjectComponentsUVETest, FiniteAndBoundedValuesRejectNonFinitePayloads) {
@@ -132,6 +149,12 @@ TEST(Expanded3DObjectComponentsUVETest, FiniteAndBoundedValuesRejectNonFinitePay
     SpringArm3DComponentUVE springArm;
     springArm.currentLength = std::numeric_limits<float>::infinity();
     EXPECT_FALSE(IsSpringArm3DObjectComponentValidUVE(springArm));
+
+    // A target velocity that is not a number is not a body going nowhere: it is a malformed
+    // component, refused here so the mover never has to guess (it drops one written at runtime).
+    Kinematic3DComponentUVE kinematic;
+    kinematic.targetVelocity.x = std::numeric_limits<float>::quiet_NaN();
+    EXPECT_FALSE(IsKinematic3DObjectComponentValidUVE(kinematic));
 }
 
 } // namespace

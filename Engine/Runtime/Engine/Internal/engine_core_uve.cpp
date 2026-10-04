@@ -88,6 +88,7 @@
 #include "uve/physics/character_body_motion_uve.h"
 #include "uve/physics/character_controller_uve.h"
 #include "uve/physics/character_world_query_uve.h"
+#include "uve/physics/kinematic_body_uve.h"
 #include "uve/physics/collision_system_uve.h"
 #include "uve/physics/physics_system_uve.h"
 #include "uve/physics/raycast_system_uve.h"
@@ -1124,6 +1125,28 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
                 }
             });
         std::erase_if(m_animationClips, [&referenced](const auto& entry) { return !referenced.contains(entry.first); });
+    }
+}
+
+void EngineCoreUVE::SyncKinematic3DObjectsUVE(const float fixedDeltaTimeSeconds) {
+    if (fixedDeltaTimeSeconds <= 0.0F) {
+        return;
+    }
+
+    // Platforms move before the characters that ride them. A character measures how far its platform
+    // travelled since the last step, so the platform's move for this step has to already be in the
+    // world when the character asks - otherwise the rider follows one step behind, forever.
+    //
+    // Collected and ordered rather than iterated in place: two platforms can shove the same crate,
+    // and the order they meet it in changes the outcome, so physicsPriority is how an author decides
+    // that instead of archetype storage order deciding it for them.
+    for (const Scene::EntityUVE entity :
+         CollectFixedStepOrderUVE<Scene::Kinematic3DComponentUVE>(*m_entityManager, *m_sceneGraph)) {
+        // One call takes the body from its authored target velocity to moved-and-written-back: the
+        // easing, the swept move through the world, the push into whatever it walked into, and the
+        // velocity it actually ended up with. A body the mover refuses stays exactly where it is.
+        static_cast<void>(Physics::StepKinematicBodyUVE(*m_entityManager, *m_sceneGraph, *m_collisionSystem,
+                                                        entity, fixedDeltaTimeSeconds));
     }
 }
 
@@ -2217,6 +2240,7 @@ void EngineCoreUVE::Update() {
         m_config.fixedUpdateFps > 0.0 ? static_cast<float>(1.0 / m_config.fixedUpdateFps) : 0.0F;
     for (int step = 0; step < fixedStep.stepsToRun; ++step) {
         m_physicsSystem->StepUVE(*m_entityManager, *m_sceneGraph, fixedDeltaTimeSeconds);
+        SyncKinematic3DObjectsUVE(fixedDeltaTimeSeconds);
         SyncCharacterControllersUVE(fixedDeltaTimeSeconds);
         SyncAnimationUVE(fixedDeltaTimeSeconds, /*physicsStep=*/true);
         SyncProjectile3DObjectsUVE(fixedDeltaTimeSeconds);

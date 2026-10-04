@@ -47,7 +47,7 @@ tests. An item's row here is retired to "Done" (bottom of file) only once it rea
 | # | Object | Status | Component | Arrays to give work | The work | Depends on | Size |
 |---|------|--------|-----------|---------------------|----------|------------|------|
 | 1 | SpringArm3D | `[/]` | `SpringArm3DComponentUVE` | — | camera-boom raycast clamp — **implemented**, needs behavior tests | RaycastSystemUVE (exists) | S |
-| 2 | Kinematic3D | `[~]` | `AnimatableBody3DComponentUVE` | — | target-velocity kinematic mover | physics kinematic move (exists) | S |
+| 2 | Kinematic3D | `[x]` | `Kinematic3DComponentUVE` | — | target-velocity kinematic mover — **done**, 29 dedicated tests | physics kinematic move (exists) | S |
 | 3 | SpawnPoint3D | `[~]` | `SpawnPoint3DComponentUVE` | — | tag-based spawn query + one-shot | — | S |
 | 4 | InteractionArea3D | `[/]` | `InteractionArea3DComponentUVE` | candidate list (new, bounded by `maximumCandidates`) | per-frame interactable candidate tracking — **implemented**, one test exists, edge cases not separately locked | AreaOverlapSystemUVE (exists) | M |
 | 5 | RayCast3D gap | `[~]` | `RayCast3DComponentUVE` | `exclusions[8]` + `exclusionCount` | multi-entity exclusion queries | query API + stable entity refs | M |
@@ -87,15 +87,28 @@ along its axis every frame, clamps `currentLength` to the hit distance minus `ma
 clamped distance. Needs a child-resolution rule (nearest Camera3D child, or explicit socket).
 **Depends on:** RaycastSystemUVE — already real. **Size: S.**
 
-### 2. Kinematic3D — target-velocity kinematic mover
+### 2. Kinematic3D — target-velocity kinematic mover — DONE
 
-- [ ] Implement
-- [ ] Tests lock it (moves at targetVelocity, interpolation eases, inactive = stays put,
-      pushes bodies per the kinematic contract)
-- [ ] `SCENE_NODES_ROADMAP.md` `[~]` → `[x]`
+- [x] Implement — `Physics::StepKinematicBodyUVE()`
+      (`Engine/Runtime/Physics/Internal/kinematic_body_uve.cpp`) does the whole move in one call:
+      it refuses a body it cannot drive, eases the body's velocity toward the authored
+      `targetVelocity` on a per-second curve, moves it through the world with the character
+      controller's own swept kinematic move (so a wall stops it, a thin wall cannot be tunnelled
+      through, and the rigid bodies it walks into are pushed with the character's push policy), and
+      writes back the velocity that actually happened. `EngineCoreUVE::SyncKinematic3DObjectsUVE()`
+      runs it for every ticking Kinematic3D in fixed-step order (Process `physicsPriority`, ties by hierarchy order) before `SyncCharacterControllersUVE()`, so a
+      character standing on a platform is carried by the move the platform made this step.
+      `active` and the object's PhysicsObject3D participation both leave the body exactly where it is
+      with no velocity to hand anyone.
+- [x] Tests lock it — 29 dedicated tests in `Test/Physics/kinematic_body_uve_tests.cpp`: the drive
+      and its write-back, the ease curve (including frame-rate independence and the non-finite
+      values it refuses), walls/floors/thin geometry (no tunnelling at 60 m/s), `active` and
+      participation as separate switches, the refusal matrix, the authored component left untouched,
+      the crate a platform shoves, and the rider carried the same step the platform moves.
+- [x] `SCENE_NODES_ROADMAP.md` `[~]` → `[x]` — done.
 
-**Component:** `AnimatableBody3DComponentUVE` — own file pair; recipe attaches a collider +
-kinematic rigid body.
+**Component:** `Kinematic3DComponentUVE` — own file pair; the recipe now attaches the
+PhysicsObject3D base, a collider and a kinematic rigid body.
 **Fields to give work:** `targetVelocity`, `interpolation`, `active`.
 **The work:** a fixed-step engine-core sync that displaces the entity kinematically by
 `targetVelocity` (eased by `interpolation`) using the same kinematic move machinery the

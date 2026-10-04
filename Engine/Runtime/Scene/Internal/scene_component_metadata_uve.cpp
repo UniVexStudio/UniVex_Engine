@@ -46,6 +46,7 @@
 #include "uve/objects/3d/decal_3d_uve.h"
 #include "uve/objects/3d/directional_light_3d_uve.h"
 #include "uve/objects/3d/fog_volume_3d_uve.h"
+#include "uve/objects/3d/kinematic_3d_uve.h"
 #include "uve/objects/3d/skeleton_3d_uve.h"
 #include "uve/objects/3d/world_environment_3d_uve.h"
 #include "uve/math/quaternion_uve.h"
@@ -456,6 +457,34 @@ void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                 DeclareUVE<&Rigid3DComponentUVE::torque>("torque", "Torque", kPropertyTypeVector3UVE),
                 DeclareUVE<&Rigid3DComponentUVE::inverseInertia>("inverseInertia", "Inverse Inertia",
                                                                    kPropertyTypeVector3UVE),
+            }));
+
+    // Kinematic3D's own section. A platform is authored with two decisions - where it is going, and
+    // how quickly it gets there - so the drawer stays short and honest, and says in the property
+    // help what the mover does with them.
+    // Declared with its own rule: the Inspector refuses an edit that would leave the component past
+    // its contract (a non-finite target, an interpolation outside 0..1) and keeps the last accepted
+    // value, so the mover never has to guess at a value nobody could have meant.
+    AddValidatedUVE<Kinematic3DComponentUVE, &IsKinematic3DObjectComponentValidUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.kinematic_3d", "Kinematic Body", kSectionOrderTypeSpecificUVE,
+            {
+                WithTooltipUVE(DeclareUVE<&Kinematic3DComponentUVE::targetVelocity>(
+                                   "targetVelocity", "Target Velocity", kPropertyTypeVector3UVE),
+                               "Where the body is going, in metres per second. The body is driven at "
+                               "this velocity every fixed step - through the world, not around it, so "
+                               "geometry stops it and the bodies it meets get pushed."),
+                WithRangeUVE(WithTooltipUVE(DeclareUVE<&Kinematic3DComponentUVE::interpolation>(
+                                                "interpolation", "Interpolation", kPropertyTypeFloatUVE),
+                                            "How quickly the body gets up to speed: 1 is at speed on "
+                                            "the first step, lower values ease in over about a second, "
+                                            "0 never eases on its own (a script drives the body)."),
+                             0.0, 1.0, 0.01),
+                WithTooltipUVE(DeclareUVE<&Kinematic3DComponentUVE::active>("active", "Active",
+                                                                           kPropertyTypeBoolUVE),
+                               "Off leaves the body where it is and stops it dead, including for "
+                               "anything standing on it."),
             }));
 
     // Character3D's own section. Grouped by what an author is thinking about - how it moves,
