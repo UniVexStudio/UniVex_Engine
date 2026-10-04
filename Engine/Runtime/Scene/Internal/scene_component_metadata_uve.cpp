@@ -54,6 +54,8 @@
 #include "uve/objects/3d/hurtbox_3d_uve.h"
 #include "uve/objects/3d/ray_cast_3d_uve.h"
 #include "uve/objects/3d/skeleton_3d_uve.h"
+#include "uve/objects/3d/nav_mesh_volume_3d_uve.h"
+#include "uve/objects/3d/nav_seeker_3d_uve.h"
 #include "uve/objects/3d/spring_arm_3d_uve.h"
 #include "uve/objects/3d/spawn_point_3d_uve.h"
 #include "uve/objects/3d/world_environment_3d_uve.h"
@@ -1340,6 +1342,186 @@ void DeclareGameplayUVE(std::vector<TypeMetadataEntryUVE>& entries) {
             }));
 }
 
+/// The two AI navigation objects: the region that bakes into a navmesh, and the agent that walks it.
+///
+/// A region's properties are the bake's own inputs - the volume, the agent it is baked FOR, and the
+/// layers its polygons carry - because a mesh eroded for one width is not the mesh a wider agent
+/// needs. An agent's are its own measurements plus the route it last published, and the route is
+/// declared as runtime state: written by the navigation step, never authored, never saved, and shown
+/// while the game runs because that is the only time it describes something real.
+void DeclareNavigationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
+    using R = NavMeshVolume3DComponentUVE;
+    AddValidatedUVE<NavMeshVolume3DComponentUVE, &IsNavMeshVolume3DObjectComponentValidUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.nav_mesh_volume_3d", "NavMeshVolume3D", kSectionOrderTypeSpecificUVE,
+            {
+                WithTooltipUVE(DeclareUVE<&R::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
+                               "Off, the region has no mesh at all: an agent standing on it fails "
+                               "rather than walks ground the author just took away."),
+                WithTooltipUVE(
+                    WithRangeUVE(DeclareUVE<&R::boundsHalfExtents>("boundsHalfExtents", "Size",
+                                                                   kPropertyTypeVector3UVE),
+                                 0.001, 100000.0, 0.01),
+                    "The volume baked into a navmesh, centred on the object and aligned to the world "
+                    "axes - the bake's grid is built on the world axes, so where the object is "
+                    "rotated, its unrotated volume is what gets rasterized."),
+                WithTooltipUVE(
+                    WithRangeUVE(DeclareUVE<&R::cellSize>("cellSize", "Cell Size", kPropertyTypeFloatUVE),
+                                 0.05, 10.0, 0.05),
+                    "The rasterization grid, in metres. Finer follows geometry more closely and costs "
+                    "more rays; a grid too large for the bake's cell budget is made coarser and says "
+                    "so in the bake's report."),
+                WithTooltipUVE(
+                    WithRangeUVE(DeclareUVE<&R::agentRadius>("agentRadius", "Agent Radius",
+                                                             kPropertyTypeFloatUVE),
+                                 0.0, 100.0, 0.01),
+                    "Ground closer than this to a wall, a ledge or the region's edge is eroded away: "
+                    "an agent of this width cannot stand there with its body on the mesh."),
+                WithTooltipUVE(
+                    WithRangeUVE(DeclareUVE<&R::agentHeight>("agentHeight", "Agent Height",
+                                                             kPropertyTypeFloatUVE),
+                                 0.01, 1000.0, 0.01),
+                    "How much headroom the ground needs to be walkable. A region shorter than this "
+                    "bakes nothing, which is the honest answer for a crawlspace no agent fits in."),
+                WithTooltipUVE(
+                    WithRangeUVE(DeclareUVE<&R::maximumSlopeDegrees>("maximumSlopeDegrees", "Max Slope",
+                                                                     kPropertyTypeFloatUVE),
+                                 0.1, 89.9, 0.1),
+                    "The steepest surface that still counts as ground, in degrees from up. Anything "
+                    "steeper is a wall as far as this navmesh is concerned."),
+                WithTooltipUVE(
+                    WithRangeUVE(DeclareUVE<&R::maximumStepHeight>("maximumStepHeight", "Max Step",
+                                                                   kPropertyTypeFloatUVE),
+                                 0.0, 1000.0, 0.01),
+                    "The tallest rise between neighbouring cells that may still be walked, in "
+                    "metres. Taller than this and they are two floors rather than one step."),
+                WithCustomDrawerUVE(
+                    WithTooltipUVE(DeclareUVE<&R::navigationLayers>("navigationLayers", "Layers",
+                                                                    kPropertyTypeBitMask32UVE),
+                                   "The layers written into the baked polygons, matched against an "
+                                   "agent's own mask: a path may only use polygons whose layers "
+                                   "intersect it."),
+                    std::string(kLayerMaskDrawerPhysicsUVE)),
+                WithTooltipUVE(
+                    DeclareUVE<&R::rebuildRequested>("rebuildRequested", "Rebuild", kPropertyTypeBoolUVE),
+                    "Raise it to re-rasterize a region whose volume did not move but whose "
+                    "surroundings did. The navigation step bakes and then clears it."),
+            }));
+
+    using S = NavSeeker3DComponentUVE;
+    AddValidatedUVE<NavSeeker3DComponentUVE, &IsNavSeeker3DObjectComponentValidUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.nav_seeker_3d", "NavSeeker3D", kSectionOrderTypeSpecificUVE,
+            {
+                WithTooltipUVE(DeclareUVE<&S::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
+                               "Off, the agent publishes nothing - no velocity, no route - and "
+                               "forgets the route it had."),
+                WithTooltipUVE(DeclareUVE<&S::targetPosition>("targetPosition", "Target",
+                                                              kPropertyTypeVector3UVE),
+                               "Where the agent is walking to, in world space. Changing it drops "
+                               "the current route and searches on the next step, whatever the "
+                               "update interval says."),
+                WithTooltipUVE(
+                    DeclareUVE<&S::avoidanceEnabled>("avoidanceEnabled", "Avoidance",
+                                                     kPropertyTypeBoolUVE),
+                    "On, other agents inside the avoidance radius push this one aside so two "
+                    "agents on one route end up beside each other rather than inside each other."),
+                WhenOnUVE<&S::avoidanceEnabled>(WithRangeUVE(
+                    WithTooltipUVE(DeclareUVE<&S::avoidanceRadius>("avoidanceRadius", "Avoid Radius",
+                                                                   kPropertyTypeFloatUVE),
+                                   "How close another agent's centre may come before it pushes, in "
+                                   "metres. 0 is the same as switching avoidance off."),
+                    0.0, 1000.0, 0.01)),
+                InGroupUVE(WithRangeUVE(DeclareUVE<&S::radius>("radius", "Radius", kPropertyTypeFloatUVE),
+                                        0.01, 1000.0, 0.01),
+                           "Agent"),
+                InGroupUVE(WithRangeUVE(DeclareUVE<&S::height>("height", "Height", kPropertyTypeFloatUVE),
+                                        0.02, 1000.0, 0.01),
+                           "Agent"),
+                InGroupUVE(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&S::maxSpeed>("maxSpeed", "Max Speed",
+                                                                     kPropertyTypeFloatUVE),
+                                            0.0, 10000.0, 0.1),
+                               "Top speed on a straight leg, in metres per second. What actually "
+                               "moves the body is the mover or script reading this agent's "
+                               "desiredVelocity."),
+                           "Agent"),
+                InGroupUVE(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&S::acceleration>("acceleration", "Acceleration",
+                                                                         kPropertyTypeFloatUVE),
+                                            0.0, 10000.0, 0.1),
+                               "How hard desiredVelocity may change per second. The velocity is what "
+                               "a mover is handed, and an unbounded step change is a jolt; 0 "
+                               "publishes the wanted velocity immediately."),
+                           "Agent"),
+                InGroupUVE(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&S::targetTolerance>("targetTolerance", "Target "
+                                                                                           "Tolerance",
+                                                                            kPropertyTypeFloatUVE),
+                                            0.0, 1000.0, 0.01),
+                               "How close to the target counts as arrived. Larger than the waypoint "
+                               "radius on purpose: an agent that had to stop within a metre of a "
+                               "moving target would hunt for it."),
+                           "Agent"),
+                InGroupUVE(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&S::waypointRadius>("waypointRadius", "Waypoint "
+                                                                                           "Radius",
+                                                                           kPropertyTypeFloatUVE),
+                                            0.0, 1000.0, 0.01),
+                               "How close to a waypoint counts as reached, so the agent turns to the "
+                               "next one instead of walking back for it."),
+                           "Agent"),
+                InGroupUVE(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&S::slowDownRadius>("slowDownRadius", "Slow Down "
+                                                                                           "Radius",
+                                                                           kPropertyTypeFloatUVE),
+                                            0.0, 1000.0, 0.01),
+                               "Inside this distance from the target the speed is scaled down, so the "
+                               "agent arrives rather than overshoots. 0 keeps full speed until the "
+                               "tolerance stops it."),
+                           "Agent"),
+                InGroupUVE(WithCustomDrawerUVE(
+                               WithTooltipUVE(DeclareUVE<&S::navigationLayers>("navigationLayers",
+                                                                               "Layers",
+                                                                               kPropertyTypeBitMask32UVE),
+                                              "Which polygons this agent may walk: a path may only "
+                                              "cross ground whose layers intersect this mask."),
+                               std::string(kLayerMaskDrawerPhysicsUVE)),
+                           "Agent"),
+                InGroupUVE(WithTooltipUVE(
+                               WithRangeUVE(DeclareUVE<&S::pathUpdateInterval>("pathUpdateInterval",
+                                                                               "Update Interval",
+                                                                               kPropertyTypeFloatUVE),
+                                            0.01, 10.0, 0.01),
+                               "How often the route is reconsidered, in seconds. Replanning every "
+                               "frame would be correct and wasteful; replanning rarely leaves an "
+                               "agent walking into a door that closed behind it."),
+                           "Route"),
+                // The route the last step produced. Runtime state: written by the navigation step,
+                // never authored, never saved - a loaded agent finds its own way from its target.
+                InGroupUVE(DeclareRuntimeStateUVE<&S::nextPathPosition>("nextPathPosition",
+                                                                        "Next Waypoint",
+                                                                        kPropertyTypeVector3UVE),
+                           "Route"),
+                InGroupUVE(DeclareRuntimeStateUVE<&S::desiredVelocity>("desiredVelocity",
+                                                                       "Desired Velocity",
+                                                                       kPropertyTypeVector3UVE),
+                           "Route"),
+                InGroupUVE(DeclareRuntimeStateEnumUVE<&S::pathStatus>(
+                               "pathStatus", "Status",
+                               {{0, "Idle"}, {1, "Following"}, {2, "Finished"}, {3, "Failed"}}),
+                           "Route"),
+                InGroupUVE(DeclareRuntimeStateUVE<&S::pathChanged>("pathChanged", "Path Changed",
+                                                                   kPropertyTypeBoolUVE),
+                           "Route"),
+                InGroupUVE(DeclareRuntimeStateUVE<&S::targetReached>("targetReached", "Target Reached",
+                                                                     kPropertyTypeBoolUVE),
+                           "Route"),
+            }));
+}
+
 void DeclareObjectBasesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     AddUVE<BoneModifierComponentUVE>(
         entries,
@@ -1892,6 +2074,7 @@ void DeclareObjectCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     DeclareCombatUVE(entries);
     DeclareMediaAndUIUVE(entries);
     DeclareGameplayUVE(entries);
+    DeclareNavigationUVE(entries);
     DeclareObjectBasesUVE(entries);
     DeclareRenderInstanceObjectsUVE(entries);
     DeclareSkeletonUVE(entries);

@@ -83,10 +83,11 @@ TEST(SceneComponentMetadataUVETest, EveryLayerMaskNamesTheLayersItPicksFrom) {
         }
     }
     // The collider's layer and mask, SpringArm3D's collisionMask, RayCast3D's collisionMask,
-    // Projectile3D's collisionMask, and Hitbox3D/Hurtbox3D's layer and mask - every cast, every
-    // swept body and every strike in the engine filters on the same layer contract, so they all
-    // belong to the same drawer set rather than a second, hand-drawn one.
-    EXPECT_EQ(physics, 9U);
+    // Projectile3D's collisionMask, Hitbox3D/Hurtbox3D's layer and mask, and the navigation
+    // region/agent layers - every cast, every swept body, every strike and every path in the engine
+    // filters on the same layer contract, so they all belong to the same drawer set rather than a
+    // second, hand-drawn one.
+    EXPECT_EQ(physics, 11U);
     EXPECT_EQ(render, 4U); // mesh, render instance, light and decal
 }
 

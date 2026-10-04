@@ -15,7 +15,8 @@ disagree with the first.
 | `navmesh_uve.h` | The mesh itself: convex polygons in the XZ plane, the portals between them, and the queries a path request asks (which polygon is this point on, project it, how big is the walkable area). |
 | `navmesh_bake_uve.h` | Rasterizing a region's volume into that mesh: ground rays, slope and headroom tests, clearance erosion, merging cells into polygons, and the portals across the borders between them. |
 | `nav_path_uve.h` | A* across the polygons honouring each request's navigation layers, then string-pulling the polygon chain into the corners a body actually walks. |
-| `navmesh_agent_uve.h` | One agent's steering state: when to re-plan, which waypoint it is walking to, and the velocity it publishes this step. |
+| `navmesh_agent_uve.h` | One agent's steering state: when to re-plan, which waypoint it is walking to, the velocity it publishes this step, and the separation push it applies to the agents around it. |
+| `navigation_runtime_uve.h` | The ECS seam: one cached mesh per `NavMeshVolume3D` (baked when it is first seen, or when its volume, settings or `rebuildRequested` say so), one `NavAgentUVE` per `NavSeeker3D`, and the write-back of the published route into the component. The engine core decides WHEN it runs and which agents are ticking; this class decides what a step means. |
 
 ## Conventions that hold across the module
 

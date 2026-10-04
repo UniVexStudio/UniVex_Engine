@@ -893,9 +893,16 @@ template <typename VectorT>
 }
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const NavMeshVolume3DComponentUVE& value) {
+    // `rebuildRequested` is a request to the running navigation runtime, not a fact about the level:
+    // a scene reloaded tomorrow has nothing to rebuild, so it is not written.
     return {{"boundsHalfExtents", ToJsonUVE(value.boundsHalfExtents)},
             {"navigationMeshAssetPath", value.navigationMeshAssetPath},
             {"navigationLayers", value.navigationLayers},
+            {"cellSize", value.cellSize},
+            {"agentRadius", value.agentRadius},
+            {"agentHeight", value.agentHeight},
+            {"maximumSlopeDegrees", value.maximumSlopeDegrees},
+            {"maximumStepHeight", value.maximumStepHeight},
             {"enabled", value.enabled}};
 }
 
@@ -904,16 +911,29 @@ template <typename VectorT>
     value.boundsHalfExtents = Vector3FromJsonUVE(json.at("boundsHalfExtents"));
     value.navigationMeshAssetPath = json.value("navigationMeshAssetPath", std::string{});
     value.navigationLayers = json.value("navigationLayers", std::uint32_t{1});
+    value.cellSize = json.value("cellSize", 0.5F);
+    value.agentRadius = json.value("agentRadius", 0.5F);
+    value.agentHeight = json.value("agentHeight", 1.8F);
+    value.maximumSlopeDegrees = json.value("maximumSlopeDegrees", 45.0F);
+    value.maximumStepHeight = json.value("maximumStepHeight", 0.4F);
     value.enabled = json.value("enabled", true);
     return value;
 }
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const NavSeeker3DComponentUVE& value) {
+    // The route and its state - nextPathPosition, desiredVelocity, pathStatus, pathChanged,
+    // targetReached - are what the last step computed, not what an author set, so they are not
+    // written: a loaded agent finds its own route from `targetPosition` on the first step.
     return {{"targetPosition", ToJsonUVE(value.targetPosition)},
             {"radius", value.radius},
             {"height", value.height},
             {"maxSpeed", value.maxSpeed},
+            {"acceleration", value.acceleration},
             {"pathUpdateInterval", value.pathUpdateInterval},
+            {"waypointRadius", value.waypointRadius},
+            {"targetTolerance", value.targetTolerance},
+            {"slowDownRadius", value.slowDownRadius},
+            {"avoidanceRadius", value.avoidanceRadius},
             {"navigationLayers", value.navigationLayers},
             {"avoidanceEnabled", value.avoidanceEnabled},
             {"enabled", value.enabled}};
@@ -925,7 +945,12 @@ template <typename VectorT>
     value.radius = json.value("radius", 0.5F);
     value.height = json.value("height", 1.8F);
     value.maxSpeed = json.value("maxSpeed", 4.0F);
+    value.acceleration = json.value("acceleration", 20.0F);
     value.pathUpdateInterval = json.value("pathUpdateInterval", 0.1F);
+    value.waypointRadius = json.value("waypointRadius", 0.4F);
+    value.targetTolerance = json.value("targetTolerance", 1.0F);
+    value.slowDownRadius = json.value("slowDownRadius", 1.5F);
+    value.avoidanceRadius = json.value("avoidanceRadius", 2.0F);
     value.navigationLayers = json.value("navigationLayers", std::uint32_t{1});
     value.avoidanceEnabled = json.value("avoidanceEnabled", true);
     value.enabled = json.value("enabled", true);

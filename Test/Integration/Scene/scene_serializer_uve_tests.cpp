@@ -222,9 +222,34 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
         source, Kinematic3DComponentUVE{Math::Vector3UVE{1.0F, 0.0F, 0.0F}, 0.75F, true});
     NavMeshVolume3DComponentUVE navigationRegion;
     navigationRegion.navigationMeshAssetPath = "navigation/courtyard.uvnav";
+    navigationRegion.boundsHalfExtents = Math::Vector3UVE{12.0F, 3.0F, 9.0F};
+    navigationRegion.navigationLayers = 0x5U;
+    navigationRegion.cellSize = 0.25F;
+    navigationRegion.agentRadius = 0.35F;
+    navigationRegion.agentHeight = 1.6F;
+    navigationRegion.maximumSlopeDegrees = 38.0F;
+    navigationRegion.maximumStepHeight = 0.3F;
     entityManager.AddComponentUVE<NavMeshVolume3DComponentUVE>(source, navigationRegion);
     NavSeeker3DComponentUVE navigationAgent;
     navigationAgent.targetPosition = Math::Vector3UVE{8.0F, 0.0F, -4.0F};
+    navigationAgent.radius = 0.35F;
+    navigationAgent.height = 1.6F;
+    navigationAgent.maxSpeed = 5.5F;
+    navigationAgent.acceleration = 12.0F;
+    navigationAgent.pathUpdateInterval = 0.25F;
+    navigationAgent.waypointRadius = 0.6F;
+    navigationAgent.targetTolerance = 1.2F;
+    navigationAgent.slowDownRadius = 2.5F;
+    navigationAgent.avoidanceRadius = 3.5F;
+    navigationAgent.avoidanceEnabled = false;
+    navigationAgent.navigationLayers = 0x5U;
+    // The route state is deliberately left at values the step would never produce: none of it may
+    // reach the file, so what a load brings back has to be the defaults, not these.
+    navigationAgent.nextPathPosition = Math::Vector3UVE{-1.0F, -2.0F, -3.0F};
+    navigationAgent.desiredVelocity = Math::Vector3UVE{7.0F, 7.0F, 7.0F};
+    navigationAgent.pathStatus = NavigationAgentPathStatusUVE::Finished;
+    navigationAgent.pathChanged = true;
+    navigationAgent.targetReached = true;
     entityManager.AddComponentUVE<NavSeeker3DComponentUVE>(source, navigationAgent);
     Skeleton3DComponentUVE skeleton;
     skeleton.bones.push_back(SkeletonBoneUVE{"root", -1, {}, {}, {1.0F, 1.0F, 1.0F}});
@@ -341,8 +366,38 @@ TEST_F(SceneSerializerUVETest, CaptureThenRestore_AllRegisteredComponentTypes_Ro
     // objects they name alongside the ray. Here the point is that an unauthored list comes back
     // empty - eight empty slots - rather than as index 0 written out eight times.
     EXPECT_EQ(CountRayCast3DExclusionsUVE(entityManager.GetComponentUVE<RayCast3DComponentUVE>(restored)), 0U);
-    EXPECT_EQ(entityManager.GetComponentUVE<NavMeshVolume3DComponentUVE>(restored).navigationMeshAssetPath,
-              "navigation/courtyard.uvnav");
+    // Both navigation objects come back whole: the region's bake settings and layers are authored
+    // data, and the agent's are the measurements and schedule the step reads.
+    const NavMeshVolume3DComponentUVE& restoredRegion =
+        entityManager.GetComponentUVE<NavMeshVolume3DComponentUVE>(restored);
+    EXPECT_EQ(restoredRegion.navigationMeshAssetPath, "navigation/courtyard.uvnav");
+    EXPECT_EQ(restoredRegion.boundsHalfExtents, (Math::Vector3UVE{12.0F, 3.0F, 9.0F}));
+    EXPECT_EQ(restoredRegion.navigationLayers, 0x5U);
+    EXPECT_FLOAT_EQ(restoredRegion.cellSize, 0.25F);
+    EXPECT_FLOAT_EQ(restoredRegion.agentRadius, 0.35F);
+    EXPECT_FLOAT_EQ(restoredRegion.agentHeight, 1.6F);
+    EXPECT_FLOAT_EQ(restoredRegion.maximumSlopeDegrees, 38.0F);
+    EXPECT_FLOAT_EQ(restoredRegion.maximumStepHeight, 0.3F);
+    const NavSeeker3DComponentUVE& restoredAgent = entityManager.GetComponentUVE<NavSeeker3DComponentUVE>(restored);
+    EXPECT_EQ(restoredAgent.targetPosition, (Math::Vector3UVE{8.0F, 0.0F, -4.0F}));
+    EXPECT_FLOAT_EQ(restoredAgent.radius, 0.35F);
+    EXPECT_FLOAT_EQ(restoredAgent.height, 1.6F);
+    EXPECT_FLOAT_EQ(restoredAgent.maxSpeed, 5.5F);
+    EXPECT_FLOAT_EQ(restoredAgent.acceleration, 12.0F);
+    EXPECT_FLOAT_EQ(restoredAgent.pathUpdateInterval, 0.25F);
+    EXPECT_FLOAT_EQ(restoredAgent.waypointRadius, 0.6F);
+    EXPECT_FLOAT_EQ(restoredAgent.targetTolerance, 1.2F);
+    EXPECT_FLOAT_EQ(restoredAgent.slowDownRadius, 2.5F);
+    EXPECT_FLOAT_EQ(restoredAgent.avoidanceRadius, 3.5F);
+    EXPECT_FALSE(restoredAgent.avoidanceEnabled);
+    EXPECT_EQ(restoredAgent.navigationLayers, 0x5U);
+    // ...and the route does not: it is what the last step computed, so a load starts from scratch and
+    // the agent finds its own way from its target.
+    EXPECT_TRUE(restoredAgent.nextPathPosition == Math::Vector3UVE{});
+    EXPECT_TRUE(restoredAgent.desiredVelocity == Math::Vector3UVE{});
+    EXPECT_EQ(restoredAgent.pathStatus, NavigationAgentPathStatusUVE::Idle);
+    EXPECT_FALSE(restoredAgent.pathChanged);
+    EXPECT_FALSE(restoredAgent.targetReached);
     EXPECT_EQ(entityManager.GetComponentUVE<Skeleton3DComponentUVE>(restored).bones.size(), 1U);
     EXPECT_EQ(entityManager.GetComponentUVE<Hitbox3DComponentUVE>(restored).damageChannel, "melee");
     EXPECT_EQ(entityManager.GetComponentUVE<InteractionArea3DComponentUVE>(restored).interactionTag, "door");

@@ -145,8 +145,21 @@ that consumes the object exists and is tested, `[~]` means it is still authored 
 Several rows below were corrected in BOTH directions once the systems landed (or were found already
 there).
 
-- [~] NavigationRegion3D — bounds + navmesh path fields exist, no navmesh baking/pathfinding system exists yet.
-- [~] NavigationAgent3D — target/path fields exist, no pathfinding/steering system exists yet.
+- [x] NavigationRegion3D — it bakes. `Navigation::BakeNavmeshUVE()` rasterizes the region's own world
+  volume through `IRaycastSystemUVE` - ground rays, slope and headroom gates, agent-radius erosion,
+  merged polygons and the shared-edge portals between them - so what the navmesh believes is walkable
+  is exactly what a body standing there collides with. `NavigationRuntimeUVE` keeps one mesh per
+  region and re-bakes it on first sight, after a moved or resized volume, after changed bake
+  settings, or when `rebuildRequested` asks; the request is cleared once the bake has run. The mesh
+  records the agent it was baked for, so an agent wider than that radius is visibly a different
+  question rather than a silent one.
+- [x] NavigationAgent3D — it walks. `Navigation::FindNavPathUVE()` A*s the polygon graph under the
+  request's `navigationLayers` and string-pulls the chain into the corners a body actually walks;
+  `NavAgentUVE` follows that route, skipping waypoints it has passed, easing the published velocity
+  through its acceleration limit, slowing into the target and pushing aside the agents inside its
+  avoidance radius. `EngineCoreUVE::SyncNavigationUVE()` drives it on the fixed step and writes
+  `desiredVelocity`, `nextPathPosition`, `pathStatus`, `pathChanged` and `targetReached` back into
+  `NavSeeker3DComponentUVE` on that agent's own `pathUpdateInterval`.
 - [x] Skeleton3D — real bones, posed and skinned. A rigged model's hierarchy is imported (glTF/FBX
   skeleton readers, with their own tests), the clip pipeline writes the runtime `pose` per bone every
   step, and the renderer poses a skinned mesh against the nearest Skeleton3D above it and re-uploads

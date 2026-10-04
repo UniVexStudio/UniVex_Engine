@@ -519,19 +519,51 @@ sampling. Also a rendering-lane feature.
 
 ### 13. NavigationRegion3D + NavigationAgent3D — navmesh, pathfinding, steering (paired)
 
-- [ ] Navigation subsystem: navmesh representation + baking from region bounds
-- [ ] Pathfinding: region → agent path requests honoring `navigationLayers`
-- [ ] Agent steering: `desiredVelocity`/`nextPathPosition`/`pathStatus`/`targetReached`
+- [x] Navigation subsystem: navmesh representation + baking from region bounds
+- [x] Pathfinding: region → agent path requests honoring `navigationLayers`
+- [x] Agent steering: `desiredVelocity`/`nextPathPosition`/`pathStatus`/`targetReached`
       refreshed on `pathUpdateInterval`, `pathChanged` on reroute
-- [ ] Tests lock each layer
-- [ ] `SCENE_NODES_ROADMAP.md` `[~]` → `[x]` (both entries)
+- [x] Tests lock each layer
+- [x] `SCENE_NODES_ROADMAP.md` `[~]` → `[x]` (both entries)
 
-**Components:** `NavigationRegion3DComponentUVE` (fields: `boundsHalfExtents`,
-`navigationMeshAssetPath`, `navigationLayers`, `enabled`, `rebuildRequested`) and
-`NavigationAgent3DComponentUVE` (fields: `targetPosition`, `nextPathPosition`,
+**Components:** `NavMeshVolume3DComponentUVE` (fields: `boundsHalfExtents`,
+`navigationMeshAssetPath`, `navigationLayers`, `enabled`, `rebuildRequested`, plus the bake's own
+`cellSize`/`agentRadius`/`agentHeight`/`maximumSlopeDegrees`/`maximumStepHeight`) and
+`NavSeeker3DComponentUVE` (fields: `targetPosition`, `nextPathPosition`,
 `desiredVelocity`, `radius`, `height`, `maxSpeed`, `pathUpdateInterval`, `navigationLayers`,
-`pathStatus`, `avoidanceEnabled`, `enabled`, `pathChanged`, `targetReached`) — both own file
-pairs. Nothing between them runs: there is no navmesh, no pathfinder, no steering.
+`pathStatus`, `avoidanceEnabled`, `enabled`, `pathChanged`, `targetReached`, plus
+`acceleration`/`waypointRadius`/`targetTolerance`/`slowDownRadius`/`avoidanceRadius`) — both own
+file pairs.
+**Landed, in one module plus its engine seam:**
+1. **The navmesh and the bake.** `Navigation::NavmeshUVE` is convex polygons in the XZ plane with
+   per-corner heights and a window of portals per polygon; `BakeNavmeshUVE()` rasterizes a world
+   volume on a grid (coarsened to fit its cell budget, and reported when it is), gaps the columns
+   through ground rays, refuses steep surfaces and columns without `agentHeight` of headroom, erodes
+   by the agent's radius on a padded chamfer grid, merges cells that agree on height into rectangles
+   and writes one portal per shared cell edge within the step height, both directions, each carrying
+   the edge's own left and right. Every layer keeps its own case counts in the report, so a bake that
+   found nothing says which gate removed what.
+2. **Pathfinding.** `FindNavPathUVE()` is A* over polygons - cost through the portals actually used,
+   straight-line heuristic - restricted to the layers the request allows, then a string-pull that
+   reduces the chain to the corners a body walks. A goal on an unreachable island or one whose own
+   polygon the mask forbids answers with a partial path that ends as close as the mesh allows,
+   rather than a refusal or a path from somewhere the caller did not ask about.
+3. **Steering and the ECS runtime.** `NavAgentUVE` re-plans on the interval (or immediately when the
+   target changes), walks its waypoints, skips the ones it has passed, ramps its published velocity
+   through an acceleration limit, slows into the target, reports `pathChanged` on a reroute and
+   `targetReached` on arrival, and pushes aside other agents inside its avoidance radius - separation
+   steering, documented as exactly that. `NavigationRuntimeUVE` owns the baked mesh per region and
+   one steering state per agent, decides which region an agent is on, and writes every published
+   field back into the component; `EngineCoreUVE::SyncNavigationUVE()` collects the ticking seekers in
+   `physicsPriority` order and runs it once per fixed step.
+4. **Tests lock each layer:** 46 `Nav*` cases - mesh queries, bake gates and the report, pathfinding
+   with layers/partials/corners, steering (interval, ramp, arrival, layers, avoidance), the runtime's
+   bake caching and per-agent write-back against the real `RaycastSystemUVE` - plus one engine-core
+   case that bakes a region from its volume and drives a seeker end-to-end on the fixed step.
+
+**Still open, deliberately:** `navigationMeshAssetPath` is serialized and unused. A pre-baked mesh
+asset (save/load/import) is its own feature; today a region always bakes from its volume, and the
+Inspector says nothing about a path it does not yet load.
 **Depends on:** a whole new Navigation subsystem (AI nodes in `SCENE_NODES_ROADMAP.md` wait on
 this too). **Size: L.**
 

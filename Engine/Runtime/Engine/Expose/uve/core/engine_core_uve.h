@@ -56,6 +56,7 @@
 #include "uve/input/i_mobile_gesture_system_uve.h"
 #include "uve/input/i_mobile_input_system_uve.h"
 #include "uve/memory/i_memory_manager_uve.h"
+#include "uve/navigation/navigation_runtime_uve.h"
 #include "uve/physics/area_overlap_lifecycle_tracker_uve.h"
 #include "uve/physics/hitbox_strike_lifecycle_tracker_uve.h"
 #include "uve/physics/collision_lifecycle_tracker_uve.h"
@@ -569,6 +570,23 @@ private:
     /// physics step just produced.
     void SyncSpringArm3DObjectsUVE(float fixedDeltaTimeSeconds);
 
+    /// Bakes each enabled NavMeshVolume3D's volume into a cached navmesh and steps every ticking
+    /// NavSeeker3D against the mesh under it, once per fixed step.
+    ///
+    /// The tick owns WHAT and WHEN, the runtime owns the rules: which region an agent is standing on
+    /// (its own volume first, else the nearest within the agent's off-mesh tolerance), when a region
+    /// is rasterized or re-rasterized (first sight, a moved or resized volume, changed bake
+    /// settings, or `rebuildRequested`), and every field the agent publishes back into its
+    /// component - `desiredVelocity`, `nextPathPosition`, `pathStatus`, `pathChanged`,
+    /// `targetReached`. That is Navigation::NavigationRuntimeUVE::SyncUVE()'s job, not this
+    /// function's, which is what makes the whole navigation step testable without an EngineCoreUVE.
+    ///
+    /// Runs after the movers in the fixed step, so an agent plans from where the bodies actually are
+    /// this step; the velocity it publishes is what a mover or a script applies on the next one. The
+    /// same Process physicsPriority ordering the other movers use decides which agent steers first,
+    /// and an agent the step skips (Disabled, PausedOnly, no transform) is left exactly as authored.
+    void SyncNavigationUVE(float fixedDeltaTimeSeconds);
+
     /// The combat pairing, every frame: the scan itself is Physics::SyncHitboxes3DUVE() (the
     /// hurtbox snapshot and every gate it enforces are documented there and testable on their own),
     /// and what the tick adds is the consequence contract - the report is diffed against the
@@ -768,6 +786,11 @@ private:
     std::unique_ptr<Physics::IPhysicsQuerySystemUVE> m_physicsQuerySystem;
     std::unique_ptr<Physics::IRaycastSystemUVE> m_raycastSystem;
     std::unique_ptr<Scene::ParticleRuntimeUVE> m_particleRuntime;
+
+    /// Baked navmeshes by region entity, and one steering state per agent entity. Owned here so the
+    /// caches live exactly as long as the session that built them; a scene teardown clears them
+    /// through the same object.
+    std::unique_ptr<Navigation::NavigationRuntimeUVE> m_navigationRuntime;
     UI::UIRuntimeUVE m_uiRuntime;
     Localization::LocalizationServiceUVE m_localizationService;
     Physics::AreaOverlapLifecycleTrackerUVE m_areaOverlapLifecycleTracker;
