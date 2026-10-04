@@ -1,8 +1,8 @@
 # Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 #
-# Navigation: the navmesh a NavigationRegion3D bakes, the pathfinder that answers a
-# NavigationAgent3D, and the steering step that turns a path into the velocity the agent publishes.
+# Navigation: the navmesh a NavMeshVolume3D bakes, the pathfinder that answers a
+# NavSeeker3D, and the steering step that turns a path into the velocity the agent publishes.
 #
 # It sits above Physics on purpose. The bake samples the world through IRaycastSystemUVE rather than
 # reading colliders itself, so what the navmesh believes is walkable is exactly what a body standing
