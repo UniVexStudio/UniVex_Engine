@@ -963,9 +963,11 @@ template <typename VectorT>
     return value;
 }
 
+/// The `skeletonLocalId` key is deliberately NOT written here: the skeleton is an entity reference,
+/// and only the save pass can turn one into a file-local id (see the reference pass in SaveUVE,
+/// which writes that key from the component's resolved reference for every saved attachment).
 [[nodiscard]] nlohmann::json ToJsonUVE(const BoneAttachment3DComponentUVE& value) {
-    return {{"skeletonLocalId", value.skeletonLocalId},
-            {"boneIndex", value.boneIndex},
+    return {{"boneIndex", value.boneIndex},
             {"boneName", value.boneName},
             {"localPosition", ToJsonUVE(value.localPosition)},
             {"localRotation", ToJsonUVE(value.localRotation)},
@@ -974,13 +976,28 @@ template <typename VectorT>
 }
 
 [[nodiscard]] BoneAttachment3DComponentUVE BoneAttachment3DObjectFromJsonUVE(const nlohmann::json& json) {
-    return BoneAttachment3DComponentUVE{json.value("skeletonLocalId", std::numeric_limits<std::uint32_t>::max()),
-                                            json.value("boneIndex", std::numeric_limits<std::uint32_t>::max()),
-                                            json.value("boneName", std::string{}),
-                                            Vector3FromJsonUVE(json.at("localPosition")),
-                                            QuaternionFromJsonUVE(json.at("localRotation")),
-                                            Vector3FromJsonUVE(json.at("localScale")),
-                                            json.value("enabled", true)};
+    BoneAttachment3DComponentUVE value;
+    // The skeleton reference itself is left unset here: it is a file-local id in the document, and
+    // the load pass below is what turns it into an entity. An id this file does not contain leaves
+    // the attachment inert rather than binding it to whatever entity shares that id elsewhere.
+    value.boneIndex = json.value("boneIndex", kInvalidSkeletonBoneIndexUVE);
+    value.boneName = json.value("boneName", std::string{});
+    value.localPosition = Vector3FromJsonUVE(json.at("localPosition"));
+    value.localRotation = QuaternionFromJsonUVE(json.at("localRotation"));
+    value.localScale = Vector3FromJsonUVE(json.at("localScale"));
+    value.enabled = json.value("enabled", true);
+    return value;
+}
+
+/// The load-side half of the reference: the authored file-local id becomes the entity it names.
+[[nodiscard]] BoneAttachment3DComponentUVE BoneAttachment3DComponentWithResolvedSkeletonUVE(
+    const nlohmann::json& json, const std::unordered_map<std::uint32_t, EntityUVE>& localIdToEntity) {
+    BoneAttachment3DComponentUVE value = BoneAttachment3DObjectFromJsonUVE(json);
+    const std::uint32_t skeletonLocalId =
+        json.value("skeletonLocalId", std::numeric_limits<std::uint32_t>::max());
+    const auto skeletonIt = localIdToEntity.find(skeletonLocalId);
+    value.skeleton = skeletonIt != localIdToEntity.end() ? skeletonIt->second : kInvalidEntityUVE;
+    return value;
 }
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const SpringArm3DComponentUVE& value) {
@@ -2375,8 +2392,9 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                 return std::nullopt;
             }
             componentsJson[*name] = registration.toJson(entityManager, entity);
-            // Animation targets are entity references: remapped to file-local ids like the
-            // visibility parent, and dropped when the target is outside what is being saved.
+            // Animation targets and bone attachments are entity references: remapped to file-local
+            // ids like the visibility parent, and dropped when the target is outside what is being
+            // saved.
             const auto writeTarget = [&](const EntityUVE target) {
                 std::int64_t targetLocalId = -1;
                 if (target != kInvalidEntityUVE) {
@@ -2389,6 +2407,20 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
             };
             if (type == std::type_index(typeid(AnimationDriverComponentUVE))) {
                 writeTarget(entityManager.GetComponentUVE<AnimationDriverComponentUVE>(entity).target);
+            }
+            if (type == std::type_index(typeid(BoneAttachment3DComponentUVE))) {
+                // A bone attachment's skeleton is an entity reference too, written under the id key
+                // this component has always used so documents saved before it resolved still load.
+                const EntityUVE skeleton =
+                    entityManager.GetComponentUVE<BoneAttachment3DComponentUVE>(entity).skeleton;
+                std::uint32_t skeletonLocalId = std::numeric_limits<std::uint32_t>::max();
+                if (skeleton != kInvalidEntityUVE) {
+                    const auto skeletonIt = entityToLocalId.find(skeleton);
+                    if (skeletonIt != entityToLocalId.end()) {
+                        skeletonLocalId = skeletonIt->second;
+                    }
+                }
+                componentsJson[*name]["skeletonLocalId"] = skeletonLocalId;
             }
             if (type == std::type_index(typeid(RayCast3DComponentUVE))) {
                 // The ray's exclusions are entity references too: written as file-local ids, with
@@ -2648,6 +2680,11 @@ void RollbackRestoredEntitiesUVE(IEntityManagerUVE& entityManager, std::vector<E
                 if (CanonicalComponentNameUVE(componentName) == "RayCast3DComponentUVE") {
                     entityManager.AddComponentUVE<RayCast3DComponentUVE>(
                         entity, RayCast3DComponentWithResolvedExclusionsUVE(componentJson, localIdToEntity));
+                    continue;
+                }
+                if (CanonicalComponentNameUVE(componentName) == "BoneAttachment3DComponentUVE") {
+                    entityManager.AddComponentUVE<BoneAttachment3DComponentUVE>(
+                        entity, BoneAttachment3DComponentWithResolvedSkeletonUVE(componentJson, localIdToEntity));
                     continue;
                 }
                 if (componentName == "HierarchyComponentUVE") {

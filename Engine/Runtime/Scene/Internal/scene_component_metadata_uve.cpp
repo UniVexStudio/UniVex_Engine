@@ -43,6 +43,7 @@
 #include "uve/objects/3d/abstract_animation_objects_3d_uve.h"
 #include "uve/objects/3d/abstract_objects_3d_uve.h"
 #include "uve/objects/3d/abstract_physics_objects_3d_uve.h"
+#include "uve/objects/3d/bone_attachment_3d_uve.h"
 #include "uve/objects/3d/decal_3d_uve.h"
 #include "uve/objects/3d/directional_light_3d_uve.h"
 #include "uve/objects/3d/fog_volume_3d_uve.h"
@@ -1567,6 +1568,54 @@ void DeclareSkeletonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                      }));
 }
 
+/// BoneAttachment3D: a scene object that rides a bone of another object's skeleton instead of the
+/// hierarchy. The skeleton is an entity reference - flagged so the serializer remaps it through its
+/// file-local id table, exactly like the mixer's target and the visibility parent - and the two
+/// runtime answers the engine writes back each frame are declared as runtime state, so an author
+/// can see whether the attachment is on its bone without a debugger.
+void DeclareBoneAttachmentUVE(std::vector<TypeMetadataEntryUVE>& entries) {
+    using A = BoneAttachment3DComponentUVE;
+    TypeMetadataPropertyUVE skeleton =
+        WithTooltipUVE(DeclareUVE<&A::skeleton>("skeleton", "Skeleton", kPropertyTypeEntityUVE),
+                       "The object whose skeleton this attachment rides. Empty leaves the object where it "
+                       "was authored.");
+    skeleton.flags = TypeMetadataPropertyFlagsUVE::EntityReference;
+    AddValidatedUVE<BoneAttachment3DComponentUVE, &IsBoneAttachment3DObjectComponentValidUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.bone_attachment_3d", "BoneAttachment3D", kSectionOrderTypeSpecificUVE,
+            {
+                std::move(skeleton),
+                WithTooltipUVE(DeclareUVE<&A::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
+                               "Off stops following the bone without removing the object - it keeps the "
+                               "transform it has."),
+                WithTooltipUVE(DeclareUVE<&A::boneName>("boneName", "Bone", kPropertyTypeStringUVE),
+                               "The bone to ride, by the name the skeleton asset gives it. Exact and "
+                               "case-sensitive: renaming a bone in the source loses this attachment "
+                               "instead of binding it to whichever bone took the name."),
+                WithTooltipUVE(DeclareUVE<&A::boneIndex>("boneIndex", "Bone Index",
+                                                         kPropertyTypeUInt32UVE),
+                               "The bone's index in the skeleton. 4294967295 means \"bind by the name "
+                               "above\"; any other value wins over the name when it names a real bone."),
+                WithTooltipUVE(DeclareUVE<&A::localPosition>("localPosition", "Position",
+                                                             kPropertyTypeVector3UVE),
+                               "Where the object sits on the bone, in the BONE's own space: 0.1 on Y is "
+                               "10 cm along the bone's up axis, not the world's."),
+                WithTooltipUVE(DeclareUVE<&A::localRotation>("localRotation", "Rotation",
+                                                             kPropertyTypeQuaternionUVE),
+                               "How the object is turned on the bone, applied after the bone's own "
+                               "rotation - so it stays gripped when the arm swings."),
+                WithTooltipUVE(DeclareUVE<&A::localScale>("localScale", "Scale", kPropertyTypeVector3UVE),
+                               "The object's scale on top of the bone chain's, so a scaled rig scales "
+                               "what it carries."),
+                InGroupUVE(DeclareRuntimeStateUVE<&A::bound>("bound", "Bound", kPropertyTypeBoolUVE),
+                           "State"),
+                InGroupUVE(DeclareRuntimeStateUVE<&A::resolvedBoneIndex>("resolvedBoneIndex", "Resolved Bone",
+                                                                         kPropertyTypeUInt32UVE),
+                           "State"),
+            }));
+}
+
 /// Concrete RenderInstance3D children. Each brings exactly its own section; everything above it
 /// comes from the bases.
 void DeclareRenderInstanceObjectsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
@@ -1846,6 +1895,7 @@ void DeclareObjectCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     DeclareObjectBasesUVE(entries);
     DeclareRenderInstanceObjectsUVE(entries);
     DeclareSkeletonUVE(entries);
+    DeclareBoneAttachmentUVE(entries);
     DeclareObjectCommonUVE(entries);
 
     TypeMetadataRegistryUVE registry;

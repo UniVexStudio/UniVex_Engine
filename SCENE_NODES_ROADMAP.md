@@ -140,10 +140,31 @@ worse than no checklist.
 
 ### Authored data only, not yet wired to a system
 
+A row's marker is the verdict, checked against the code rather than inherited: `[x]` means the system
+that consumes the object exists and is tested, `[~]` means it is still authored data waiting for one.
+Several rows below were corrected in BOTH directions once the systems landed (or were found already
+there).
+
 - [~] NavigationRegion3D — bounds + navmesh path fields exist, no navmesh baking/pathfinding system exists yet.
 - [~] NavigationAgent3D — target/path fields exist, no pathfinding/steering system exists yet.
-- [~] Skeleton3D — bone hierarchy data exists, no skinning/animation system reads it.
-- [~] BoneAttachment3D — attach-to-bone fields exist, nothing resolves/follows a bone transform.
+- [x] Skeleton3D — real bones, posed and skinned. A rigged model's hierarchy is imported (glTF/FBX
+  skeleton readers, with their own tests), the clip pipeline writes the runtime `pose` per bone every
+  step, and the renderer poses a skinned mesh against the nearest Skeleton3D above it and re-uploads
+  that entity's own vertex buffer every frame (`MeshSkinComputeUVE`, locked by 17 skinning cases).
+  Reading a bone's world frame is a public resolver (`Scene::TryResolveSkeletonBoneWorldFrameUVE()`,
+  chain composed root-down, posed value where the runtime has one and the rest pose otherwise).
+- [x] BoneAttachment3D — the real thing: `Scene::SyncBoneAttachment3DObjectsUVE()` runs every frame
+  after the animation step that posed the skeleton and before world-transform propagation, so an
+  attachment is on the bone in the same frame the pose arrives. It resolves the skeleton entity
+  reference, the bone (by index when that names a real bone, else by exact name), the bone's world
+  frame and writes the object's LOCAL transform so the scene graph's own propagation lands it exactly
+  on the bone - parents-first, so an attachment riding another attachment is composed after the one
+  it hangs off, and tick modes are respected like every other system. A reference that names nothing,
+  a bone the skeleton no longer has, a skeleton switched off or a parent frame that cannot be
+  inverted leaves the object where it was authored and records itself unbound (`bound` and
+  `resolvedBoneIndex`, runtime-only, both shown in the Inspector). Locked by 7 pass tests on a real
+  entity manager + scene graph, 5 resolver cases, the serializer's reference round trip (including
+  documents written while the skeleton was still a bare numeric id) and an engine-core tick test.
 - [~] Marker3D — a plain position/orientation hint, has no behavior by design (this one may never need a "system" — it's meant to be read by other tools/scripts, not ticked itself).
 - [x] Hitbox3D — real per-frame strike detection: `EngineCoreUVE::SyncHitbox3DObjectsUVE()`
   (the same engine-core home the RayCast3D/Projectile3D syncs use) pairs every enabled hitbox
@@ -174,8 +195,17 @@ worse than no checklist.
   owns yet - the tag is carried precisely so that layer has something to ask with.
 - [~] Decal3D — the lifetime runtime and the projected-geometry pass exist (countdown + expiry event, unit-space volume, patch clipping on receiving surfaces, frame diagnostics); the remaining gap is the decal DRAW: no program binds the patch stream yet, so nothing is visible on screen.
 - [x] LODGroup3D — the chain is real: `Scene::ResolveLodGroup3DLevelUVE()` selects the level from the camera distance with a configurable hysteresis band (entered past a threshold, left under it, the previous level kept in the band), the renderer culls past the last threshold and draws `lodMeshGuids[level]` — falling back to the object's own `MeshComponentUVE` mesh for a level that overrides nothing — and a scene written before per-level meshes still loads unchanged. The Inspector authors the chain (levels, thresholds, band, per-level meshes) and shows the resolved level during Play.
-- [~] AnimationSequencer — clip/speed/loop fields exist, nothing decodes a clip or evaluates a pose (see `ROADMAP.md`'s Animation section for the real gap: no skeleton/skinning/clip-sampling pipeline exists).
-- [~] AnimationGraph — not even creatable yet in the editor (registry marks it `libraryCreatable = false`); depends on the same missing animation pipeline as AnimationSequencer.
+- [x] AnimationSequencer — clips really decode and play: `.uvanim` assets load through the asset
+  manager, `StepAnimationSequencerUVE()` samples a clip at the playhead with Once/Loop/Ping-Pong,
+  blend-in, relative mode, start offset and speed (negative plays backwards), per-channel masks leave
+  the channels an author did not ask for alone, skeletal clips pose the skeleton's bones by name,
+  clip events reach the target's script, and root motion can be left out, kept in place, or applied
+  to the target - as velocity when the target is a Character3D, so walls still stop it.
+- [x] AnimationGraph — creatable in the editor (the registry descriptor's `libraryCreatable` is true
+  and the graph panel authors states, transitions and blend spaces) and evaluated every fixed step by
+  `EngineCoreUVE::SyncAnimationUVE()`: state machine with conditions/triggers/leave-after, blend tree,
+  1D and 2D blend spaces, additive layers, one-shots and time scaling, all locked by the pose-graph
+  and state-machine suites.
 
 ### Missing entirely
 
