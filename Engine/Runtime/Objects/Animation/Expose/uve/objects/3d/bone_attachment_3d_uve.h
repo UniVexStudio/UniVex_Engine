@@ -3,7 +3,6 @@
 #pragma once
 
 #include <cstdint>
-#include <limits>
 #include <string>
 #include <string_view>
 
@@ -11,15 +10,9 @@
 #include "uve/math/quaternion_uve.h"
 #include "uve/math/vector3_uve.h"
 #include "uve/objects/3d/object_3d_common_uve.h"
+#include "uve/objects/3d/skeleton_3d_uve.h"
 
 namespace UVE::Scene {
-
-struct Skeleton3DComponentUVE;
-
-/// The sentinel bone index: "no bone named or resolved". Kept as a named constant because the
-/// component carries two of these (the authored request and the runtime answer) and a bare
-/// `UINT32_MAX` in either place reads as an accident.
-inline constexpr std::uint32_t kInvalidSkeletonBoneIndexUVE = std::numeric_limits<std::uint32_t>::max();
 
 /// BoneAttachment3D: an object that rides a bone of a skeleton instead of the hierarchy.
 ///
@@ -85,42 +78,6 @@ struct BoneAttachment3DComponentUVE final {
     const bool hasBoneReference = value.boneIndex != kInvalidSkeletonBoneIndexUVE || !value.boneName.empty();
     return value.enabled && hasSkeletonReference && hasBoneReference;
 }
-
-/// A world-space TRS frame: the same {position, rotation, scale} a TransformComponentUVE carries,
-/// but composed all the way down a chain rather than authored on one object.
-///
-/// It is named for the shape, not for the owner, because three of them meet in one resolution - the
-/// bone's, the attachment's parent's, and the attachment's own - and they are interchangeable
-/// values. The scene graph composes local transforms into exactly these; the resolver composes a
-/// bone chain into one; TryMakeBoneAttachmentLocalTransformUVE() inverts the scene graph's own
-/// arithmetic to go back the other way.
-struct ObjectWorldFrameUVE final {
-    Math::Vector3UVE position{};
-    Math::QuaternionUVE rotation{};
-    Math::Vector3UVE scale{1.0F, 1.0F, 1.0F};
-};
-
-/// Finds a bone by name, writing its index to `outIndex`. Exact, case-sensitive match; the first
-/// bone with that name wins (duplicate names in one skeleton are an asset defect, and picking the
-/// first is the only answer that does not depend on iteration order).
-[[nodiscard]] bool TryFindSkeletonBoneIndexUVE(const Skeleton3DComponentUVE& skeleton,
-                                               std::string_view boneName,
-                                               std::uint32_t& outIndex) noexcept;
-
-/// The world frame of one bone, given the skeleton object's own world frame.
-///
-/// Walks the bone's parent chain from the root down - the bone chain's own order, not the
-/// skeleton's storage order, because a bone's local transform is relative to its PARENT BONE - and
-/// composes each step: the posed local transform when the runtime pose covers that bone, else the
-/// rest pose the skeleton was imported with. A chain that loops, leaves the bone array, or is
-/// deeper than the bone limit is refused rather than walked forever.
-/// The skeleton's own world frame is passed as a frame rather than as three loose values on
-/// purpose: an empty `{}` for a scale would silently mean zero and collapse every bone to a point,
-/// while an empty ObjectWorldFrameUVE means the identity - the frame a skeleton at the origin is in.
-[[nodiscard]] bool TryResolveSkeletonBoneWorldFrameUVE(const Skeleton3DComponentUVE& skeleton,
-                                                       std::uint32_t boneIndex,
-                                                       const ObjectWorldFrameUVE& skeletonWorldFrame,
-                                                       ObjectWorldFrameUVE& outFrame) noexcept;
 
 /// Composes an attachment's authored local transform onto a bone's world frame: the world frame the
 /// attachment object should take this frame.

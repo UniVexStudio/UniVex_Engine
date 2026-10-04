@@ -1025,6 +1025,56 @@ template <typename VectorT>
     return value;
 }
 
+/// The three `*LocalId` keys are deliberately NOT written here - they are entity references, and
+/// only the save pass can turn one into a file-local id (see the reference pass in SaveUVE, which
+/// writes them from the component's resolved references for every saved chain).
+[[nodiscard]] nlohmann::json ToJsonUVE(const TwoBoneIK3DComponentUVE& value) {
+    return {{"rootBoneIndex", value.rootBoneIndex},
+            {"rootBoneName", value.rootBoneName},
+            {"middleBoneIndex", value.middleBoneIndex},
+            {"middleBoneName", value.middleBoneName},
+            {"endBoneIndex", value.endBoneIndex},
+            {"endBoneName", value.endBoneName},
+            {"targetPosition", ToJsonUVE(value.targetPosition)},
+            {"poleDirection", ToJsonUVE(value.poleDirection)},
+            {"enabled", value.enabled}};
+}
+
+[[nodiscard]] TwoBoneIK3DComponentUVE TwoBoneIK3DObjectFromJsonUVE(const nlohmann::json& json) {
+    TwoBoneIK3DComponentUVE value;
+    // The references themselves are left unset here: they are file-local ids in the document, and
+    // the load pass below turns them into entities. An id this file does not contain leaves that
+    // reference inert rather than pointing at whatever entity shares the id elsewhere.
+    value.rootBoneIndex = json.value("rootBoneIndex", kInvalidSkeletonBoneIndexUVE);
+    value.rootBoneName = json.value("rootBoneName", std::string{});
+    value.middleBoneIndex = json.value("middleBoneIndex", kInvalidSkeletonBoneIndexUVE);
+    value.middleBoneName = json.value("middleBoneName", std::string{});
+    value.endBoneIndex = json.value("endBoneIndex", kInvalidSkeletonBoneIndexUVE);
+    value.endBoneName = json.value("endBoneName", std::string{});
+    value.targetPosition = Vector3FromJsonUVE(json.at("targetPosition"));
+    value.poleDirection = Vector3FromJsonUVE(json.at("poleDirection"));
+    value.enabled = json.value("enabled", true);
+    return value;
+}
+
+/// The load-side half of every reference a chain has: an authored file-local id becomes the entity
+/// it names, and one that names nothing in this file stays the sentinel - which the solver reads as
+/// "the authored target position is what I solve toward".
+[[nodiscard]] TwoBoneIK3DComponentUVE TwoBoneIK3DComponentWithResolvedReferencesUVE(
+    const nlohmann::json& json, const std::unordered_map<std::uint32_t, EntityUVE>& localIdToEntity) {
+    TwoBoneIK3DComponentUVE value = TwoBoneIK3DObjectFromJsonUVE(json);
+    const auto resolve = [&json, &localIdToEntity](const char* key) {
+        const std::uint32_t localId =
+            json.value(key, std::numeric_limits<std::uint32_t>::max());
+        const auto found = localIdToEntity.find(localId);
+        return found != localIdToEntity.end() ? found->second : kInvalidEntityUVE;
+    };
+    value.skeleton = resolve("skeletonLocalId");
+    value.target = resolve("targetLocalId");
+    value.poleTarget = resolve("poleLocalId");
+    return value;
+}
+
 [[nodiscard]] nlohmann::json ToJsonUVE(const SpringArm3DComponentUVE& value) {
     return {{"armLength", value.armLength},
             {"margin", value.margin},
@@ -1788,6 +1838,14 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                 }
                 return value;
             }, IsBoneAttachment3DObjectComponentValidUVE));
+        table.emplace("TwoBoneIK3DComponentUVE", MakeRegistrationUVE<TwoBoneIK3DComponentUVE>(
+            [](const nlohmann::json& json) {
+                const TwoBoneIK3DComponentUVE value = TwoBoneIK3DObjectFromJsonUVE(json);
+                if (!IsTwoBoneIK3DObjectComponentValidUVE(value)) {
+                    throw std::runtime_error("Invalid TwoBoneIK3DComponentUVE payload");
+                }
+                return value;
+            }, IsTwoBoneIK3DObjectComponentValidUVE));
         table.emplace("SpringArm3DComponentUVE", MakeRegistrationUVE<SpringArm3DComponentUVE>(
             [](const nlohmann::json& json) {
                 const SpringArm3DComponentUVE value = SpringArm3DObjectFromJsonUVE(json);
@@ -2447,6 +2505,25 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
                 }
                 componentsJson[*name]["skeletonLocalId"] = skeletonLocalId;
             }
+            if (type == std::type_index(typeid(TwoBoneIK3DComponentUVE))) {
+                // A chain's skeleton, target and pole are entity references like an attachment's
+                // skeleton, written as file-local ids and resolved back on load.
+                const TwoBoneIK3DComponentUVE& chain =
+                    entityManager.GetComponentUVE<TwoBoneIK3DComponentUVE>(entity);
+                const auto localIdOfUVE = [&entityToLocalId](const EntityUVE referenced) {
+                    std::uint32_t localId = std::numeric_limits<std::uint32_t>::max();
+                    if (referenced != kInvalidEntityUVE) {
+                        const auto found = entityToLocalId.find(referenced);
+                        if (found != entityToLocalId.end()) {
+                            localId = found->second;
+                        }
+                    }
+                    return localId;
+                };
+                componentsJson[*name]["skeletonLocalId"] = localIdOfUVE(chain.skeleton);
+                componentsJson[*name]["targetLocalId"] = localIdOfUVE(chain.target);
+                componentsJson[*name]["poleLocalId"] = localIdOfUVE(chain.poleTarget);
+            }
             if (type == std::type_index(typeid(RayCast3DComponentUVE))) {
                 // The ray's exclusions are entity references too: written as file-local ids, with
                 // targets outside the saved set dropped exactly like an animation target. The
@@ -2710,6 +2787,11 @@ void RollbackRestoredEntitiesUVE(IEntityManagerUVE& entityManager, std::vector<E
                 if (CanonicalComponentNameUVE(componentName) == "BoneAttachment3DComponentUVE") {
                     entityManager.AddComponentUVE<BoneAttachment3DComponentUVE>(
                         entity, BoneAttachment3DComponentWithResolvedSkeletonUVE(componentJson, localIdToEntity));
+                    continue;
+                }
+                if (CanonicalComponentNameUVE(componentName) == "TwoBoneIK3DComponentUVE") {
+                    entityManager.AddComponentUVE<TwoBoneIK3DComponentUVE>(
+                        entity, TwoBoneIK3DComponentWithResolvedReferencesUVE(componentJson, localIdToEntity));
                     continue;
                 }
                 if (componentName == "HierarchyComponentUVE") {

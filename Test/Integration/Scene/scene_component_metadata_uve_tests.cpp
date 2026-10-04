@@ -25,6 +25,7 @@
 #include "uve/objects/3d/projectile_3d_uve.h"
 #include "uve/objects/3d/ray_cast_3d_uve.h"
 #include "uve/objects/3d/spawn_point_3d_uve.h"
+#include "uve/objects/3d/two_bone_ik_3d_uve.h"
 #include "uve/math/vector3_uve.h"
 
 namespace UVE::Scene::Tests {
@@ -418,6 +419,65 @@ TEST(SceneComponentMetadataUVETest, TheBoneAttachmentSectionDeclaresTheReference
     EXPECT_FALSE(entry->isInstanceValid(&flattened));
     BoneAttachment3DComponentUVE notFinite = valid;
     notFinite.localPosition.x = std::numeric_limits<float>::infinity();
+    EXPECT_FALSE(entry->isInstanceValid(&notFinite));
+}
+
+TEST(SceneComponentMetadataUVETest, TheTwoBoneIKSectionDeclaresThreeReferencesTheChainAndTheAnswer) {
+    // Three entity references - the skeleton, the object it reaches for, and the pole that picks which
+    // way the joint bends - each carrying the flag the serializer reads to remap it through its
+    // file-local id table, exactly like the attachment's skeleton. The answers one solve writes back
+    // are runtime state, so authoring cannot write them and the Inspector still shows them.
+    const TypeMetadataEntryUVE* entry =
+        FindSceneComponentMetadataUVE(std::type_index(typeid(TwoBoneIK3DComponentUVE)));
+    ASSERT_NE(entry, nullptr);
+    EXPECT_EQ(entry->typeId, "component.two_bone_ik_3d");
+    EXPECT_EQ(entry->displayName, "TwoBoneIK3D");
+
+    for (const char* const name : {"skeleton", "target", "poleTarget"}) {
+        const TypeMetadataPropertyUVE* reference = FindPropertyUVE(*entry, name);
+        ASSERT_NE(reference, nullptr) << name;
+        EXPECT_TRUE(HasPropertyFlagUVE(reference->flags, TypeMetadataPropertyFlagsUVE::EntityReference)) << name;
+        EXPECT_EQ(reference->typeId, kPropertyTypeEntityUVE) << name;
+        EXPECT_FALSE(HasPropertyFlagUVE(reference->flags, TypeMetadataPropertyFlagsUVE::RuntimeState)) << name;
+    }
+
+    const char* const kAuthored[] = {"enabled",         "rootBoneName",    "rootBoneIndex",
+                                     "middleBoneName",  "middleBoneIndex", "endBoneName",
+                                     "endBoneIndex",    "targetPosition",  "poleDirection"};
+    for (const char* const name : kAuthored) {
+        const TypeMetadataPropertyUVE* property = FindPropertyUVE(*entry, name);
+        ASSERT_NE(property, nullptr) << name;
+        EXPECT_FALSE(HasPropertyFlagUVE(property->flags, TypeMetadataPropertyFlagsUVE::RuntimeState)) << name;
+    }
+    for (const char* const name : {"solved", "reached", "endToTargetDistanceMetres", "resolvedRootBoneIndex",
+                                   "resolvedMiddleBoneIndex", "resolvedEndBoneIndex"}) {
+        const TypeMetadataPropertyUVE* property = FindPropertyUVE(*entry, name);
+        ASSERT_NE(property, nullptr) << name;
+        EXPECT_TRUE(HasPropertyFlagUVE(property->flags, TypeMetadataPropertyFlagsUVE::RuntimeState)) << name;
+    }
+
+    // Every bone index defaults to "ask the name": the sentinel the pass reads, so a chain nobody has
+    // edited binds by name instead of silently to bone zero.
+    const Core::TypeInstanceUVE defaults = Core::TypeInstanceUVE::MakeDefaultUVE(*entry);
+    ASSERT_TRUE(defaults.IsValidUVE());
+    for (const char* const name : {"rootBoneIndex", "middleBoneIndex", "endBoneIndex"}) {
+        const TypeMetadataPropertyUVE* index = FindPropertyUVE(*entry, name);
+        ASSERT_NE(index, nullptr) << name;
+        std::uint32_t value = 0U;
+        index->getValue(defaults.GetUVE(), &value);
+        EXPECT_EQ(value, kInvalidSkeletonBoneIndexUVE) << name;
+    }
+
+    // The component's own validity rule travels with the declaration, so a generic writer cannot author
+    // a name with a byte in it or a non-finite target point and have it accepted.
+    ASSERT_NE(entry->isInstanceValid, nullptr);
+    const TwoBoneIK3DComponentUVE valid{};
+    EXPECT_TRUE(entry->isInstanceValid(&valid));
+    TwoBoneIK3DComponentUVE forgedName = valid;
+    forgedName.middleBoneName = std::string("elbow\0", 6U);
+    EXPECT_FALSE(entry->isInstanceValid(&forgedName));
+    TwoBoneIK3DComponentUVE notFinite = valid;
+    notFinite.targetPosition.z = std::numeric_limits<float>::infinity();
     EXPECT_FALSE(entry->isInstanceValid(&notFinite));
 }
 

@@ -178,6 +178,18 @@ there).
   `resolvedBoneIndex`, runtime-only, both shown in the Inspector). Locked by 7 pass tests on a real
   entity manager + scene graph, 5 resolver cases, the serializer's reference round trip (including
   documents written while the skeleton was still a bare numeric id) and an engine-core tick test.
+- [x] TwoBoneIK3D — a limb solved back from where it should end, which is what foot planting and hand
+  placement actually are: `Scene::SyncTwoBoneIK3DObjectsUVE()` runs inside the animation step after the
+  drivers pose a skeleton and before the attachment pass, so a weapon in a hand follows the hand the IK
+  moved in the same frame. The chain is three successive bones and the END bone's own origin is the
+  effector; the solve is analytic (the intersection of two circles in the plane the pole defines), so
+  it costs no iterations and returns the same answer every time, the pole is another object's position
+  seen from the chain's root or an authored direction in the skeleton's space, and a target beyond the
+  chain's own length leaves the limb straight and aimed rather than stretched. Influence comes from the
+  shared `BoneModifierComponentUVE`, so an arm can ease onto a prop instead of snapping to it; the
+  answers (`solved`, `reached`, `endToTargetDistanceMetres`, the resolved indices) are runtime-only and
+  shown in the Inspector. Locked by 9 solver cases, 8 pass cases, the serializer's reference round trip
+  and an engine-core tick test.
 - [~] Marker3D — a plain position/orientation hint, has no behavior by design (this one may never need a "system" — it's meant to be read by other tools/scripts, not ticked itself).
 - [x] Hitbox3D — real per-frame strike detection: `EngineCoreUVE::SyncHitbox3DObjectsUVE()`
   (the same engine-core home the RayCast3D/Projectile3D syncs use) pairs every enabled hitbox

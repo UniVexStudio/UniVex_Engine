@@ -14,7 +14,7 @@ namespace {
 
 TEST(SceneObjectRegistryUVETest, BuiltInDescriptorsUVE_AreStableUniqueAndRuntimeBound) {
     const std::span<const SceneObjectDescriptorUVE> descriptors = GetSceneObjectDescriptorsUVE();
-    ASSERT_EQ(descriptors.size(), 47U);
+    ASSERT_EQ(descriptors.size(), 48U);
 
     std::unordered_set<std::string_view> ids;
     for (const SceneObjectDescriptorUVE& descriptor : descriptors) {
@@ -36,7 +36,7 @@ TEST(SceneObjectRegistryUVETest, BuiltInDescriptorsUVE_AreStableUniqueAndRuntime
     }
 }
 
-// Every one of the 38 registered SceneObjectKindUVE values has a real backing type, reachable
+// Every one of the 39 registered SceneObjectKindUVE values has a real backing type, reachable
 // directly from scene_object_uve.h's one aggregate include - no compatibility-alias facade layer
 // exists anymore (it was removed once confirmed nothing in the codebase used the alias names;
 // every real consumer already reaches for the component/type name directly). This test just
@@ -52,6 +52,7 @@ TEST(SceneObjectRegistryUVETest, RealObjectTypesUVE_AreReachableFromTheAggregate
     static_assert(std::is_class_v<NavSeeker3DComponentUVE>);         // NavSeeker3D
     static_assert(std::is_class_v<Skeleton3DComponentUVE>);                // Skeleton3D
     static_assert(std::is_class_v<BoneAttachment3DComponentUVE>);          // BoneAttachment3D
+    static_assert(std::is_class_v<TwoBoneIK3DComponentUVE>);              // TwoBoneIK3D
     static_assert(std::is_class_v<SpringArm3DComponentUVE>);               // SpringArm3D
     static_assert(std::is_class_v<Marker3DComponentUVE>);                  // Marker3D
     static_assert(std::is_class_v<Hitbox3DComponentUVE>);                  // Hitbox3D

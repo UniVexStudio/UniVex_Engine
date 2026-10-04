@@ -384,7 +384,24 @@ and one of the highest-priority areas below.
   every frame (`MeshSkinComputeUVE`), and a BoneAttachment3D object rides a bone through the ordinary
   transform path (`Scene::SyncBoneAttachment3DObjectsUVE()`). Locked by 17 skinning cases, the
   resolver cases, 7 pass tests and the serializer's reference round trip.
-- [ ] Inverse kinematics (two-bone IK for limbs at minimum; full-body IK as a stretch goal)
+- [x] Two-bone inverse kinematics: `TwoBoneIK3D` is a real scene object - an analytic two-circle
+  solve (no iteration, so a limb cannot shiver between two nearly-equal answers) over a
+  root/middle/end bone chain. The target is another object's world position or a point authored in
+  the skeleton's own space; the pole that picks which of the joint's circle of answers is used is
+  either another object or a direction in the skeleton's space, and with neither the chain keeps the
+  bend the pose already has. Reach is respected rather than exceeded - a target out of reach leaves
+  the limb straight, aimed and short, with `reached` false - influence blends the solve over the
+  animation through the shared `BoneModifierComponentUVE`, and the resolved bone indices plus
+  `solved`/`reached`/`endToTargetDistanceMetres` are declared runtime-only so the Inspector shows
+  what a solve did while nothing can save a stale answer.
+  `Scene::SyncTwoBoneIK3DObjectsUVE()` runs inside the animation step, after the drivers that pose
+  skeletons and before the attachment pass, and is gated on the skeletons those drivers posed this
+  pass so a solve is never blended twice. Locked by 9 solver cases (geometry, reach, folding,
+  refusals, blending), 8 pass cases on a real entity manager + scene graph (target/pole resolution,
+  the gate, influence, refusals, index-beats-name, priority ordering), the serializer's
+  three-reference round trip with documents whose ids name nothing, the section's metadata case, and
+  an engine-core tick test that ends with an attachment on the wrist the IK moved.
+- [ ] Full-body IK, as a stretch goal beyond the two-bone object above
 - [x] Root motion extraction and application - `AnimationRootMotionModeUVE`: Off, In Place (the root
   bone's ground travel is taken out of the pose) and Apply To Target (the target is moved by it, as
   velocity when it is a Character3D so collision still applies). Locked by the sequencer's travel

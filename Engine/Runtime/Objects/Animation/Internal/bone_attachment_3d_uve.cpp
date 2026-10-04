@@ -4,106 +4,13 @@
 
 #include <cmath>
 #include <cstddef>
-#include <vector>
-
-#include "uve/objects/3d/skeleton_3d_uve.h"
 
 namespace UVE::Scene {
-
-namespace {
-
-/// One bone's local frame for this frame: its pose when the runtime has one, else its rest pose.
-/// Reading `pose` here rather than through GetSkeletonCurrentPoseUVE() keeps this allocation-free -
-/// that helper builds a whole copy of the pose for callers that need every bone, and this needs one.
-void GetBoneLocalTRSUVE(const Skeleton3DComponentUVE& skeleton, const std::size_t boneIndex,
-                        Math::Vector3UVE& outPosition, Math::QuaternionUVE& outRotation,
-                        Math::Vector3UVE& outScale) noexcept {
-    const SkeletonBoneUVE& rest = skeleton.bones[boneIndex];
-    if (boneIndex < skeleton.pose.size()) {
-        outPosition = skeleton.pose[boneIndex].position;
-        outRotation = skeleton.pose[boneIndex].rotation;
-        outScale = skeleton.pose[boneIndex].scale;
-        return;
-    }
-    outPosition = rest.localPosition;
-    outRotation = rest.localRotation;
-    outScale = rest.localScale;
-}
-
-} // namespace
 
 bool IsBoneAttachment3DObjectComponentValidUVE(const BoneAttachment3DComponentUVE& value) noexcept {
     return IsBounded3DObjectStringUVE(value.boneName) && IsFinite3DObjectVectorUVE(value.localPosition) &&
            IsFinite3DObjectQuaternionUVE(value.localRotation) && IsFinite3DObjectVectorUVE(value.localScale) &&
            value.localScale.x > 0.0F && value.localScale.y > 0.0F && value.localScale.z > 0.0F;
-}
-
-bool TryFindSkeletonBoneIndexUVE(const Skeleton3DComponentUVE& skeleton, const std::string_view boneName,
-                                 std::uint32_t& outIndex) noexcept {
-    if (boneName.empty()) {
-        return false;
-    }
-    for (std::size_t index = 0U; index < skeleton.bones.size(); ++index) {
-        if (skeleton.bones[index].name == boneName) {
-            outIndex = static_cast<std::uint32_t>(index);
-            return true;
-        }
-    }
-    return false;
-}
-
-bool TryResolveSkeletonBoneWorldFrameUVE(const Skeleton3DComponentUVE& skeleton, const std::uint32_t boneIndex,
-                                         const ObjectWorldFrameUVE& skeletonWorldFrame,
-                                         ObjectWorldFrameUVE& outFrame) noexcept {
-    outFrame = ObjectWorldFrameUVE{};
-    if (skeleton.bones.empty() || boneIndex >= skeleton.bones.size()) {
-        return false;
-    }
-    if (!IsFinite3DObjectVectorUVE(skeletonWorldFrame.position) ||
-        !IsFinite3DObjectVectorUVE(skeletonWorldFrame.scale)) {
-        return false;
-    }
-
-    // Collected root-first, then composed downwards: a bone's local transform is relative to its
-    // parent BONE, so the chain has to be walked from the root no matter which bone was asked for.
-    std::vector<std::uint32_t> chain;
-    chain.reserve(skeleton.bones.size());
-    std::uint32_t current = boneIndex;
-    for (std::size_t depth = 0U; depth < skeleton.bones.size() + 1U; ++depth) {
-        chain.push_back(current);
-        const Scene::SkeletonBoneUVE& bone = skeleton.bones[current];
-        if (bone.parentIndex < 0) {
-            break;
-        }
-        const auto parent = static_cast<std::uint32_t>(bone.parentIndex);
-        if (parent >= skeleton.bones.size()) {
-            // A parent index outside the array is a malformed skeleton; refusing here is what keeps
-            // a corrupt asset from turning into an out-of-bounds read every frame.
-            return false;
-        }
-        if (chain.size() > skeleton.bones.size()) {
-            return false;
-        }
-        current = parent;
-    }
-    outFrame = skeletonWorldFrame;
-    for (std::size_t index = chain.size(); index > 0U; --index) {
-        const std::uint32_t bone = chain[index - 1U];
-        Math::Vector3UVE localPosition{};
-        Math::QuaternionUVE localRotation{};
-        Math::Vector3UVE localScale{};
-        GetBoneLocalTRSUVE(skeleton, bone, localPosition, localRotation, localScale);
-
-        // Scale, then rotate, then translate - the order every TRS compose in this engine uses, so a
-        // bone's own scale stretches the bones under it rather than the space it sits in.
-        const Math::Vector3UVE scaled{localPosition.x * outFrame.scale.x, localPosition.y * outFrame.scale.y,
-                                      localPosition.z * outFrame.scale.z};
-        outFrame.position = outFrame.position + Math::RotateVectorUVE(outFrame.rotation, scaled);
-        outFrame.rotation = Math::MultiplyUVE(outFrame.rotation, localRotation);
-        outFrame.scale = Math::Vector3UVE{outFrame.scale.x * localScale.x, outFrame.scale.y * localScale.y,
-                                          outFrame.scale.z * localScale.z};
-    }
-    return true;
 }
 
 ObjectWorldFrameUVE ComposeBoneAttachmentWorldFrameUVE(const ObjectWorldFrameUVE& boneFrame,

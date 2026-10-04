@@ -13,6 +13,8 @@ add_library(uve_scene STATIC
     Internal/prefab_revision_policy_uve.cpp
     Internal/scene_graph_uve.cpp
     Internal/bone_attachment_pass_uve.cpp
+    Internal/scene_world_frame_uve.cpp
+    Internal/two_bone_ik_pass_uve.cpp
     Internal/spawn_point_query_uve.cpp
     Internal/scene_component_metadata_uve.cpp
     Internal/scene_serializer_uve.cpp

@@ -58,6 +58,7 @@
 #include "uve/objects/3d/nav_seeker_3d_uve.h"
 #include "uve/objects/3d/spring_arm_3d_uve.h"
 #include "uve/objects/3d/spawn_point_3d_uve.h"
+#include "uve/objects/3d/two_bone_ik_3d_uve.h"
 #include "uve/objects/3d/world_environment_3d_uve.h"
 #include "uve/math/quaternion_uve.h"
 
@@ -1798,6 +1799,103 @@ void DeclareBoneAttachmentUVE(std::vector<TypeMetadataEntryUVE>& entries) {
             }));
 }
 
+/// TwoBoneIK3D: a limb solved back from a target instead of forward from its joints. The three bone
+/// references are index-or-name pairs - the index is the reference that cannot go stale, the name
+/// the one an author can read in a DCC tool - and the skeleton, target and pole are entity
+/// references, flagged so the serializer remaps them through its file-local id table. The answers
+/// the solver writes back each pass are declared as runtime state, so an author can see whether a
+/// hand actually reached what it was aimed at without a debugger.
+void DeclareTwoBoneIKUVE(std::vector<TypeMetadataEntryUVE>& entries) {
+    using A = TwoBoneIK3DComponentUVE;
+    const auto entityReference = [](TypeMetadataPropertyUVE property) {
+        property.flags = TypeMetadataPropertyFlagsUVE::EntityReference;
+        return property;
+    };
+    AddValidatedUVE<TwoBoneIK3DComponentUVE, &IsTwoBoneIK3DObjectComponentValidUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.two_bone_ik_3d", "TwoBoneIK3D", kSectionOrderTypeSpecificUVE,
+            {
+                entityReference(WithTooltipUVE(DeclareUVE<&A::skeleton>("skeleton", "Skeleton",
+                                                                         kPropertyTypeEntityUVE),
+                                               "The object whose skeleton this chain solves. Empty leaves "
+                                               "the pose exactly as the animation wrote it.")),
+                WithTooltipUVE(DeclareUVE<&A::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
+                               "Off stops solving without removing the object."),
+                InGroupUVE(WithTooltipUVE(DeclareUVE<&A::rootBoneName>("rootBoneName", "Root Bone",
+                                                                        kPropertyTypeStringUVE),
+                                          "The chain's first bone - the shoulder, the hip. Exact and "
+                                          "case-sensitive; renaming a bone in the source loses the chain "
+                                          "instead of driving a different limb."),
+                           "Chain"),
+                InGroupUVE(WithTooltipUVE(DeclareUVE<&A::rootBoneIndex>("rootBoneIndex", "Root Index",
+                                                                        kPropertyTypeUInt32UVE),
+                                          "The bone's index in the skeleton. 4294967295 means \"ask the name\"; "
+                                          "any other value wins over it when it names a real bone."),
+                           "Chain"),
+                InGroupUVE(WithTooltipUVE(DeclareUVE<&A::middleBoneName>("middleBoneName", "Middle Bone",
+                                                                          kPropertyTypeStringUVE),
+                                          "The bone the chain bends at - the elbow, the knee. Must be a child "
+                                          "of the root bone."),
+                           "Chain"),
+                InGroupUVE(WithTooltipUVE(DeclareUVE<&A::middleBoneIndex>("middleBoneIndex", "Middle Index",
+                                                                          kPropertyTypeUInt32UVE),
+                                          "The bend bone by index; the name above is the fallback."),
+                           "Chain"),
+                InGroupUVE(WithTooltipUVE(DeclareUVE<&A::endBoneName>("endBoneName", "End Bone",
+                                                                       kPropertyTypeStringUVE),
+                                          "The bone whose origin reaches the target - the wrist, the ankle. "
+                                          "Must be a child of the middle bone; its own rotation is left alone."),
+                           "Chain"),
+                InGroupUVE(WithTooltipUVE(DeclareUVE<&A::endBoneIndex>("endBoneIndex", "End Index",
+                                                                       kPropertyTypeUInt32UVE),
+                                          "The effector bone by index; the name above is the fallback."),
+                           "Chain"),
+                InGroupUVE(entityReference(WithTooltipUVE(DeclareUVE<&A::target>("target", "Target",
+                                                                                 kPropertyTypeEntityUVE),
+                                                          "The object whose world position the limb "
+                                                          "reaches for. Empty uses the point below.")),
+                           "Target"),
+                InGroupUVE(WithTooltipUVE(DeclareUVE<&A::targetPosition>("targetPosition", "Target Point",
+                                                                         kPropertyTypeVector3UVE),
+                                          "Where the limb should end, in the SKELETON's own space - "
+                                          "scaled and rotated with it. Ignored while a target object "
+                                          "above is set."),
+                           "Target"),
+                InGroupUVE(entityReference(WithTooltipUVE(DeclareUVE<&A::poleTarget>("poleTarget", "Pole",
+                                                                                     kPropertyTypeEntityUVE),
+                                                          "A point the joint bends toward. An elbow has a "
+                                                          "circle of positions that all reach the target; "
+                                                          "this picks one.")),
+                           "Target"),
+                InGroupUVE(WithTooltipUVE(DeclareUVE<&A::poleDirection>("poleDirection", "Pole Direction",
+                                                                        kPropertyTypeVector3UVE),
+                                          "The bend direction when no pole object is set, in the "
+                                          "skeleton's own space. Zero keeps the plane the pose is "
+                                          "already in."),
+                           "Target"),
+                InGroupUVE(DeclareRuntimeStateUVE<&A::solved>("solved", "Solved", kPropertyTypeBoolUVE), "State"),
+                InGroupUVE(DeclareRuntimeStateUVE<&A::reached>("reached", "Reached", kPropertyTypeBoolUVE),
+                           "State"),
+                InGroupUVE(DeclareRuntimeStateUVE<&A::endToTargetDistanceMetres>("endToTargetDistanceMetres",
+                                                                                 "Distance To Target",
+                                                                                 kPropertyTypeFloatUVE),
+                           "State"),
+                InGroupUVE(DeclareRuntimeStateUVE<&A::resolvedRootBoneIndex>("resolvedRootBoneIndex",
+                                                                             "Resolved Root",
+                                                                             kPropertyTypeUInt32UVE),
+                           "State"),
+                InGroupUVE(DeclareRuntimeStateUVE<&A::resolvedMiddleBoneIndex>("resolvedMiddleBoneIndex",
+                                                                               "Resolved Middle",
+                                                                               kPropertyTypeUInt32UVE),
+                           "State"),
+                InGroupUVE(DeclareRuntimeStateUVE<&A::resolvedEndBoneIndex>("resolvedEndBoneIndex",
+                                                                            "Resolved End",
+                                                                            kPropertyTypeUInt32UVE),
+                           "State"),
+            }));
+}
+
 /// Concrete RenderInstance3D children. Each brings exactly its own section; everything above it
 /// comes from the bases.
 void DeclareRenderInstanceObjectsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
@@ -2079,6 +2177,7 @@ void DeclareObjectCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     DeclareRenderInstanceObjectsUVE(entries);
     DeclareSkeletonUVE(entries);
     DeclareBoneAttachmentUVE(entries);
+    DeclareTwoBoneIKUVE(entries);
     DeclareObjectCommonUVE(entries);
 
     TypeMetadataRegistryUVE registry;
