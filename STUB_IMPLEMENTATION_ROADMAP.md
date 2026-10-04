@@ -440,16 +440,48 @@ is what would let anyone tune the count against the number that matters.
 
 ### 11. Decal3D — decal-projection rendering
 
-- [ ] Implement
-- [ ] Tests lock it
-- [ ] `SCENE_NODES_ROADMAP.md` `[~]` → `[x]`
+- [x] Implement the lifetime runtime and the projected-geometry pass (the sub-boxes below say
+      exactly what landed).
+- [x] Tests lock it — 8 object cases (projection, fades, expiry), a serializer re-arm case, a
+      metadata case, an engine-core expiry case, 14 pass cases and one end-to-end frame case.
+- [ ] `SCENE_NODES_ROADMAP.md` `[~]` → `[x]` — **stays `[~]` until the pass draws.** The geometry is
+      built, clipped and handed to the frame in the canonical vertex layout, and the frame reports
+      it; no decal program binds that stream yet, so a decal is still not visible on screen. That
+      one piece is what this box is waiting for.
 
 **Component:** `Decal3DComponentUVE` — own file pair.
-**Fields to give work:** `materialAssetPath`, `size`, `projection` (`Box` first),
-`lifetime` (0 = permanent; > 0 = expires), `enabled`.
+**Fields to give work:** `materialAssetPath`, `size`, `projection`, `lifetime` (0 = permanent;
+> 0 = expires), `enabled`, `cullMask`, the fade bands — all of them now have a consumer.
 **The work:** real projected-decal rendering (project the box/`size` volume onto receiving
 geometry with the material, expire by `lifetime`). A rendering-lane feature — likely lands
 with/beside the renderer's own roadmap, not alone.
+**Landed, in three commits:**
+
+1. **Lifetime runtime.** `remainingLifetime` / `expired` are runtime-only fields (never saved);
+   `AdvanceDecal3DLifetimeUVE` advances on simulated seconds, arms itself from the authored
+   `lifetime` on the first advance, treats lifetime 0 as permanent, and reports the crossing exactly
+   once; `Decal3DExpiredEventUVE` carries the entity and the material path; `SyncDecal3DObjectsUVE`
+   runs it from `EngineCoreUVE::Update()` on the fixed-step clock (so a paused simulation freezes
+   decals rather than aging them behind the pause); the serializer re-arms the countdown on load and
+   a scene saved before the countdown existed loads permanent and alive; the inspector shows the
+   countdown under a Result group, readable but never writable.
+2. **Projection.** `Decal3DProjectionUVE` is the per-frame world-space volume and
+   `Decal3DSampleUVE` the answer to "is this surface point painted, and how strongly" — box and
+   cylinder share one unit-space footprint test, `normalFade` turns the surface facing into weight,
+   the upper/lower bands fade the ends of the volume, the distance band fades it with camera
+   distance, and each weight is kept separately so a caller can say which fade removed a sample.
+   `Decal3DWorldToUnitUVE` / `Decal3DUnitToWorldUVE` are the round trip the pass clips in.
+3. **The pass.** `DecalRendererUVE::BuildDrawListUVE` walks the decals once per frame, gates each
+   through `IsDecal3DPaintingUVE`, culls by `cullMask` against both the view mask and each receiver's
+   `RenderInstanceComponentUVE::renderLayers` (the first consumer that field has had), rejects what
+   the frustum or the distance band removes, then clips the receiving bounds' camera-facing faces
+   against the volume in unit space and emits world-space patches with the decal's unit coordinates
+   per vertex, weighted at the patch centre and sorted back to front. `AppendVertexStreamUVE`
+   publishes them in the canonical `MeshVertexUVE` layout an asset-backed mesh already uses, and the
+   frame reports draws, patches and triangles through the renderer diagnostics and the F1 panel.
+
+**What remains:** a decal program (vertex + fragment shader, pipeline state, the draw submission
+that binds the patch stream with the decal's material).
 **Depends on:** renderer decal pass. **Size: L.**
 
 ### 12. ReflectionProbe3D — probe capture scheduling (done) + sampling (still open)

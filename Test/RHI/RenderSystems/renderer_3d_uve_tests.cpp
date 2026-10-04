@@ -48,6 +48,7 @@
 #include "uve/component/ui_button_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/entity/entity_manager_uve.h"
+#include "uve/objects/3d/decal_3d_uve.h"
 #include "uve/objects/3d/skeleton_3d_uve.h"
 #include "uve/scene/scene_graph_uve.h"
 #include "uve/threading/thread_pool_uve.h"
@@ -290,6 +291,39 @@ protected:
         ASSERT_TRUE(probe->IsValidUVE());
     }
 };
+
+TEST_F(Renderer3DUVETest, RenderFrameUVE_ADecalOnAMeshIsProjectedAndReportedInTheFrameDiagnostics) {
+    // The decal pass end to end through the frame the renderer actually builds: the wall's assets
+    // are registered the way every other mesh in these tests registers them, the decal authors the
+    // same material by PATH (which is what a Decal3D stores), and the numbers below are read from
+    // the frame diagnostics the renderer publishes rather than from the pass directly. If the pass
+    // were not wired into RenderFrameUVE(), every one of these would be zero.
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_decal_wall.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_decal_scorch.uvmat");
+    const Scene::EntityUVE camera = MakeCameraEntityUVE();
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -5.0F}, meshGuid, materialGuid);
+
+    const Scene::EntityUVE decalEntity = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE decalLocal;
+    // The mesh is a unit cube; a 1 m decal 0.4 in front of it reaches its camera-facing face.
+    decalLocal.localPosition = Math::Vector3UVE{0.0F, 0.0F, -4.4F};
+    sceneGraph.AttachTransformUVE(entityManager, decalEntity, decalLocal);
+    Scene::Decal3DComponentUVE decal;
+    decal.materialAssetPath = "renderer3d_tests_decal_scorch.uvmat";
+    decal.size = Math::Vector3UVE{1.0F, 1.0F, 1.0F};
+    entityManager.AddComponentUVE<Scene::Decal3DComponentUVE>(decalEntity, decal);
+    sceneGraph.UpdateUVE(entityManager);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    renderer3D->RenderFrameUVE(entityManager, camera);
+
+    const Renderer3DFrameDiagnosticsUVE diagnostics = renderer3D->GetLastFrameDiagnosticsUVE();
+    EXPECT_EQ(diagnostics.decalsConsidered, 1U);
+    EXPECT_EQ(diagnostics.decalDrawsExtracted, 1U) << "the decal reached the mesh standing in front of it";
+    EXPECT_EQ(diagnostics.decalPatchesExtracted, 1U) << "one face of the cube is inside the volume";
+    EXPECT_EQ(diagnostics.decalTrianglesExtracted, 2U);
+    EXPECT_EQ(diagnostics.decalsWithoutReceivers, 0U);
+}
 
 TEST_F(Renderer3DUVETest, RenderFrameUVE_EmptyScene_MainPassBeginsAndEndsWithNoDraws) {
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();

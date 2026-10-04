@@ -49,6 +49,16 @@ struct Renderer3DFrameDiagnosticsUVE final {
     std::size_t primitivePlacementCacheHits = 0U;
     std::size_t primitivePlacementCacheMisses = 0U;
     std::size_t primitiveItemsExtracted = 0U;
+    /// This frame's projected decals: how many decals were considered, how many produced a draw,
+    /// and what those draws cost in polygons. Counted here rather than left to the pass's own
+    /// struct because a decal that paints nothing has several entirely different causes - it
+    /// expired, its layers matched no receiver, its volume reached no surface, its material has not
+    /// loaded - and a single "decals drawn" number cannot tell them apart.
+    std::size_t decalsConsidered = 0U;
+    std::size_t decalDrawsExtracted = 0U;
+    std::size_t decalPatchesExtracted = 0U;
+    std::size_t decalTrianglesExtracted = 0U;
+    std::size_t decalsWithoutReceivers = 0U;
     /// Skinned meshes posed by a skeleton and drawn from their own vertex buffer this frame.
     std::size_t skinnedMeshesDrawn = 0U;
     std::size_t meshDrawCallsRecorded = 0U;

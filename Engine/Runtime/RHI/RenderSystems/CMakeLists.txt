@@ -30,6 +30,8 @@ add_library(uve_render_systems STATIC
     Internal/particle_render_bridge_uve.cpp
     Internal/particle_draw_command_uve.cpp
     Internal/mesh_visibility_set_uve.cpp
+    Internal/decal_draw_data_uve.cpp
+    Internal/decal_renderer_uve.cpp
     Internal/mesh_renderer_uve.cpp
     Internal/mesh_render_eligibility_uve.cpp
     Internal/primitive_geometry_uve.cpp

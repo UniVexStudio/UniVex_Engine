@@ -78,6 +78,7 @@ bool TryMakeDecal3DProjectionUVE(const Decal3DComponentUVE& value, const Math::V
     }
 
     outProjection.worldPosition = worldPosition;
+    outProjection.worldRotation = worldRotation;
     outProjection.inverseWorldRotation = inverseRotation;
     outProjection.halfExtents = Math::Vector3UVE{value.size.x * worldScale.x, value.size.y * worldScale.y,
                                                  value.size.z * worldScale.z} *
@@ -96,6 +97,22 @@ bool TryMakeDecal3DProjectionUVE(const Decal3DComponentUVE& value, const Math::V
     return true;
 }
 
+Math::Vector3UVE Decal3DWorldToUnitUVE(const Decal3DProjectionUVE& projection,
+                                       const Math::Vector3UVE& worldPoint) noexcept {
+    const Math::Vector3UVE offset = worldPoint - projection.worldPosition;
+    const Math::Vector3UVE local = Math::RotateVectorUVE(projection.inverseWorldRotation, offset);
+    return Math::Vector3UVE{local.x / projection.halfExtents.x, local.y / projection.halfExtents.y,
+                            local.z / projection.halfExtents.z};
+}
+
+Math::Vector3UVE Decal3DUnitToWorldUVE(const Decal3DProjectionUVE& projection,
+                                       const Math::Vector3UVE& unitPoint) noexcept {
+    const Math::Vector3UVE local{unitPoint.x * projection.halfExtents.x,
+                                 unitPoint.y * projection.halfExtents.y,
+                                 unitPoint.z * projection.halfExtents.z};
+    return projection.worldPosition + Math::RotateVectorUVE(projection.worldRotation, local);
+}
+
 Decal3DSampleUVE SampleDecal3DUVE(const Decal3DProjectionUVE& projection, const Math::Vector3UVE& worldPoint,
                                   const Math::Vector3UVE& worldNormal, const float distanceToCamera) noexcept {
     Decal3DSampleUVE sample{};
@@ -111,10 +128,7 @@ Decal3DSampleUVE SampleDecal3DUVE(const Decal3DProjectionUVE& projection, const 
     // Unit coordinates: the world offset rotated into the volume's frame, divided by the half
     // extents, so "inside" is |component| <= 1 for every mode and the box-to-cylinder difference
     // is one footprint test rather than two coordinate systems.
-    const Math::Vector3UVE offset = worldPoint - projection.worldPosition;
-    const Math::Vector3UVE local = Math::RotateVectorUVE(projection.inverseWorldRotation, offset);
-    sample.local = Math::Vector3UVE{local.x / projection.halfExtents.x, local.y / projection.halfExtents.y,
-                                    local.z / projection.halfExtents.z};
+    sample.local = Decal3DWorldToUnitUVE(projection, worldPoint);
 
     switch (projection.mode) {
         case DecalProjectionModeUVE::Cylinder:
@@ -134,7 +148,6 @@ Decal3DSampleUVE SampleDecal3DUVE(const Decal3DProjectionUVE& projection, const 
     // replaces. The surface's normal pointing back UP the projection direction is "fully facing";
     // 0 on the authored field paints every facing inside the volume and 1 paints only those facing
     // back at the decal.
-    // "Facing" is the surface normal pointing back up the projection direction, which is what a
     // surface squarely under the decal does; a backface or an edge-on sliver scores zero.
     const float facingTowardsDecal = ClampUnitUVE(Math::DotUVE(worldNormal, -projection.projectionDirection));
     sample.normalFadeWeight = 1.0F - ClampUnitUVE(projection.normalFade) * (1.0F - facingTowardsDecal);

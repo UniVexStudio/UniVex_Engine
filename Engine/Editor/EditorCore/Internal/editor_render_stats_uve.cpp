@@ -88,6 +88,13 @@ std::vector<EditorRenderStatRowUVE> BuildEditorRenderStatRowsUVE(
                         : std::string{"unused"},
                     primitiveLookups > 0U && diagnostics.primitivePlacementCacheHits == 0U});
 
+    rows.push_back({kSectionSceneUVE, "Decals considered", FormatCountUVE(diagnostics.decalsConsidered), false});
+    rows.push_back({kSectionSceneUVE, "Decal draws", FormatCountUVE(diagnostics.decalDrawsExtracted), false});
+    rows.push_back({kSectionSceneUVE, "Decal patches", FormatCountUVE(diagnostics.decalPatchesExtracted), false});
+    rows.push_back({kSectionSceneUVE, "Decal triangles", FormatCountUVE(diagnostics.decalTrianglesExtracted),
+                    false});
+    rows.push_back({kSectionSceneUVE, "Decals on nothing", FormatCountUVE(diagnostics.decalsWithoutReceivers),
+                    diagnostics.decalsWithoutReceivers > 0U});
     rows.push_back({kSectionSubmissionUVE, "Mesh draws", FormatCountUVE(diagnostics.meshDrawCallsRecorded), false});
     rows.push_back({kSectionSubmissionUVE, "Instanced draws",
                     FormatCountUVE(diagnostics.instancedDrawCallsRecorded) + " covering " +

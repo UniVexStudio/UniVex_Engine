@@ -397,8 +397,8 @@ void MeshRendererUVE::BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityMana
                                          *mesh, candidatePlacement)) {
                 ++outVisibilitySet.interpolatedCandidates;
             }
-            outVisibilitySet.candidates.push_back(
-                MeshVisibilityCandidateUVE{assetPairIndex, candidatePlacement, material->isTransparent});
+            outVisibilitySet.candidates.push_back(MeshVisibilityCandidateUVE{
+                assetPairIndex, candidatePlacement, material->isTransparent, entity});
         });
 
     // Bound the cache. Without this it retains an entry for every entity the scene has ever had,
