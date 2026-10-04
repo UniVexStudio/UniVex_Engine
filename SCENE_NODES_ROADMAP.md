@@ -117,19 +117,22 @@ worse than no checklist.
   dedicated tests. The renderer-side sampling half of this feature (feeding the captured cubemap
   into ambient/reflection shading) is a separate, real gap — see `ROADMAP.md`.
 
-### Wired to a real system, not yet verified by dedicated tests
-
-- [/] InteractionArea3D — `EngineCoreUVE::SyncInteractionArea3DNodesUVE()` refreshes a bounded
-  candidate list every frame from real overlap queries, gated by tag and symmetric layer/mask, and
-  focuses the nearest candidate. One dedicated test exists
-  (`InteractionArea3DNode_TracksInteractorsFocusesTheNearestAndClearsWhenGated`) but the edge
-  cases `STUB_IMPLEMENTATION_ROADMAP.md` calls out (bound-respected + overflow-flagged,
-  disabled-clears-stale-candidates as separate cases) aren't separately locked yet.
-- [/] Occluder3D — wired into the render queue (`RHI::RenderSystems`'s mesh-culling pass calls
-  `ResolveOccluder3DFullyHiddenUVE()` against every occluder every frame). The pure geometry
-  function itself is thoroughly tested (13+ cases: fully hidden, edge cases fail open, degenerate
-  box, never false-culls), but no test exercises the render-queue integration end to end, so the
-  wiring itself is unverified.
+- [x] InteractionArea3D — the whole per-frame contract now lives in one callable seam,
+  `Physics::SyncInteractionAreasUVE()`, which the tick calls: interactor snapshot (character
+  controllers with a valid collider and a world pose), per-area refresh behind every fail-closed
+  gate, symmetric layer/mask acceptance, the exact oriented-box overlap (touching boundaries do not
+  count), a bounded candidate list that reports its own overflow, and exactly one focused area -
+  nearest to the PRIMARY interactor, ties by (index, generation). Locked by 16 dedicated tests
+  (`Test/Physics/interaction_area_uve_tests.cpp`) plus the engine-core tick test, and by the
+  contract an authored `maximumCandidates` of 0 is refused as an invalid component rather than read
+  as a zero budget.
+- [x] Occluder3D — wired into the render queue's visibility build (`MeshRendererUVE` asks
+  `ResolveOccluder3DFullyHiddenUVE()` against every occluder for every candidate and counts what it
+  hides in `occlusionCulledEntities`). The pure geometry is covered by its own suite (13+ cases:
+  fully hidden, edge cases fail open, degenerate box, never false-culls) and the render-queue
+  integration by four `MeshRendererUVETest.BuildVisibilitySetUVE_*` cases - hidden-behind-a-wall,
+  camera-move-re-answers (no state), disabled occluder covers nothing, and any-of-several-walls
+  hides once. All 56 tests in that suite were run headlessly against the null RHI for this entry.
 
 ### Authored data only, not yet wired to a system
 

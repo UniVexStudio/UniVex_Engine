@@ -12,6 +12,7 @@ add_library(uve_physics STATIC
     Internal/character_body_motion_uve.cpp
     Internal/character_world_query_uve.cpp
     Internal/kinematic_body_uve.cpp
+    Internal/interaction_area_uve.cpp
     Internal/spring_arm_uve.cpp
     Internal/area_overlap_system_uve.cpp
     Internal/angular_dynamics_uve.cpp
