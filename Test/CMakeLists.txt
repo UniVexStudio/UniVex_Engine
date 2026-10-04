@@ -233,6 +233,9 @@ add_executable(uve_integration_tests
     Physics/projectile_3d_step_uve_tests.cpp
     Physics/shape_cast_system_uve_tests.cpp
     Physics/spring_arm_uve_tests.cpp
+    Navigation/navmesh_uve_tests.cpp
+    Navigation/navmesh_bake_uve_tests.cpp
+    Navigation/nav_path_uve_tests.cpp
     Save/checkpoint_manager_uve_tests.cpp
     Save/save_game_system_uve_tests.cpp
     Save/save_payload_compression_uve_tests.cpp
@@ -274,6 +277,7 @@ add_executable(uve_integration_tests
 )
 target_link_libraries(uve_integration_tests PRIVATE
     uve_retarget
+    uve_navigation
     uve_localization
     nlohmann_json::nlohmann_json
     uve_component
