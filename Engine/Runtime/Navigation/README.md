@@ -1,6 +1,6 @@
 # Navigation
 
-The navmesh a `NavigationRegion3D` bakes, the pathfinder that answers a `NavigationAgent3D`, and the
+The navmesh a `NavMeshVolume3D` bakes, the pathfinder that answers a `NavSeeker3D`, and the
 steering step that turns a path into the velocity the agent publishes.
 
 It sits above Physics on purpose. The bake samples the world through `IRaycastSystemUVE` rather than

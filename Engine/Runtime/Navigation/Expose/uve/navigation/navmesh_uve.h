@@ -60,7 +60,7 @@ struct NavmeshPortalUVE final {
     Math::Vector3UVE right{};
 };
 
-/// A baked, walkable representation of one NavigationRegion3D's volume.
+/// A baked, walkable representation of one NavMeshVolume3D's volume.
 ///
 /// It is world-space and static: polygons and portals are answers to "where can an agent of this
 /// size stand and how do I walk between those places", baked once from the collision world that
