@@ -91,6 +91,7 @@
 #include "uve/physics/character_world_query_uve.h"
 #include "uve/physics/interaction_area_uve.h"
 #include "uve/physics/kinematic_body_uve.h"
+#include "uve/physics/projectile_3d_step_uve.h"
 #include "uve/physics/spring_arm_uve.h"
 #include "uve/physics/collision_system_uve.h"
 #include "uve/physics/physics_system_uve.h"
@@ -1220,24 +1221,21 @@ void EngineCoreUVE::SyncProjectile3DObjectsUVE(const float fixedDeltaTimeSeconds
 
     for (const Scene::EntityUVE entity :
          CollectFixedStepOrderUVE<Scene::Projectile3DComponentUVE>(*m_entityManager, *m_sceneGraph)) {
-        Scene::Projectile3DComponentUVE& projectile =
-            m_entityManager->GetComponentUVE<Scene::Projectile3DComponentUVE>(entity);
-        if (!projectile.active || !m_entityManager->HasComponentUVE<Scene::TransformComponentUVE>(entity)) {
+        // One step is one answer: the seam integrates, sweeps the sphere the projectile actually
+        // is, resolves the contact through the authored policy and writes the result back. The
+        // engine core's job is what happens next - telling the rest of the game that it hit
+        // something.
+        const Physics::Projectile3DStepResultUVE result =
+            Physics::StepProjectile3DUVE(*m_entityManager, *m_sceneGraph, entity, fixedDeltaTimeSeconds);
+        if (!result.hasHit) {
             continue;
         }
-
-        projectile.velocity += projectile.acceleration * fixedDeltaTimeSeconds;
-
-        Scene::TransformComponentUVE localTransform =
-            m_entityManager->GetComponentUVE<Scene::TransformComponentUVE>(entity);
-        localTransform.localPosition += projectile.velocity * fixedDeltaTimeSeconds;
-        m_sceneGraph->SetLocalTransformUVE(*m_entityManager, entity, localTransform);
-
-        projectile.remainingLifetime -= fixedDeltaTimeSeconds;
-        if (projectile.remainingLifetime <= 0.0F) {
-            projectile.remainingLifetime = 0.0F;
-            projectile.active = false;
-        }
+        // The engine decided the motion; gameplay decides what it means. The contact is queued
+        // with its evidence - what was hit, where, how hard, and whether the projectile survived
+        // it - on the same bus the area-overlap transitions use.
+        m_eventSystem->QueueEvent(Physics::Projectile3DHitEventUVE{
+            entity, result.hitEntity, result.hitPosition, result.hitNormal, result.impactSpeed,
+            result.appliedPolicy, result.stoppedOnHit, result.bounceCount});
     }
 }
 

@@ -17,6 +17,7 @@
 #include "uve/component/physics_interpolation_component_uve.h"
 #include "uve/component/transform_component_uve.h"
 #include "uve/component/visibility_component_uve.h"
+#include "uve/objects/3d/projectile_3d_uve.h"
 #include "uve/objects/3d/ray_cast_3d_uve.h"
 #include "uve/objects/3d/spawn_point_3d_uve.h"
 #include "uve/math/vector3_uve.h"
@@ -76,10 +77,11 @@ TEST(SceneComponentMetadataUVETest, EveryLayerMaskNamesTheLayersItPicksFrom) {
             render += isRender ? 1U : 0U;
         }
     }
-    // The collider's layer and mask, SpringArm3D's collisionMask and RayCast3D's collisionMask -
-    // every cast in the engine filters on the same layer contract, so they all belong to the same
-    // drawer set rather than a second, hand-drawn one.
-    EXPECT_EQ(physics, 4U);
+    // The collider's layer and mask, SpringArm3D's collisionMask, RayCast3D's collisionMask and
+    // Projectile3D's collisionMask - every cast and every swept body in the engine filters on the
+    // same layer contract, so they all belong to the same drawer set rather than a second,
+    // hand-drawn one.
+    EXPECT_EQ(physics, 5U);
     EXPECT_EQ(render, 4U); // mesh, render instance, light and decal
 }
 
@@ -340,5 +342,86 @@ TEST(SceneComponentMetadataUVETest, TheRayCastSectionCarriesWhatTheRayIsAndWhatI
         EXPECT_FALSE(property->IsSerializedUVE()) << name;
     }
 }
+TEST(SceneComponentMetadataUVETest, TheProjectileSectionCarriesItsHitContractAndItsLastContact) {
+    // A Projectile3D is the one physics object whose *hit response* is authored: the engine owns
+    // the motion, so the policy and the two coefficients have to reach the Inspector, and the
+    // contact the engine resolved has to be visible without being authorable or persisted.
+    const TypeMetadataEntryUVE* projectile =
+        FindSceneComponentMetadataUVE(std::type_index(typeid(Projectile3DComponentUVE)));
+    ASSERT_NE(projectile, nullptr);
+    EXPECT_EQ(projectile->typeId, "component.projectile_3d");
+    EXPECT_EQ(projectile->displayName, "Projectile3D");
+
+    for (const char* const name :
+         {"active", "velocity", "acceleration", "radius", "maxLifetime", "collisionMask", "hitPolicy",
+          "restitution", "friction"}) {
+        const TypeMetadataPropertyUVE* property = FindPropertyUVE(*projectile, name);
+        ASSERT_NE(property, nullptr) << name;
+        EXPECT_FALSE(HasPropertyFlagUVE(property->flags, TypeMetadataPropertyFlagsUVE::RuntimeState))
+            << name;
+        EXPECT_TRUE(property->IsAuthoringWritableUVE()) << name;
+    }
+
+    const TypeMetadataPropertyUVE* mask = FindPropertyUVE(*projectile, "collisionMask");
+    ASSERT_NE(mask, nullptr);
+    EXPECT_EQ(mask->typeId, kPropertyTypeBitMask32UVE);
+    EXPECT_EQ(mask->customDrawerId, kLayerMaskDrawerPhysicsUVE);
+
+    // The policy is an enum with exactly the two motions the engine can execute, and a generic
+    // consumer authors it the way it authors LightTypeUVE - through int64, never the enum type.
+    const TypeMetadataPropertyUVE* policy = FindPropertyUVE(*projectile, "hitPolicy");
+    ASSERT_NE(policy, nullptr);
+    ASSERT_EQ(policy->enumEntries.size(), 2U);
+    EXPECT_EQ(policy->enumEntries[0].label, "Stop");
+    EXPECT_EQ(policy->enumEntries[1].label, "Bounce");
+    Projectile3DComponentUVE component;
+    SetPropertyValueUVE(*policy, component, policy->enumEntries[1].value);
+    EXPECT_EQ(component.hitPolicy, Projectile3DHitPolicyUVE::Bounce);
+    EXPECT_EQ(GetPropertyValueUVE<std::int64_t>(*policy, component), 1);
+
+    // The coefficients are bounded to 0..1 by the declaration's own range, and they are shown only
+    // while the policy actually uses them: a restitution row under "Stop" is a lie.
+    for (const char* const name : {"restitution", "friction"}) {
+        const TypeMetadataPropertyUVE* property = FindPropertyUVE(*projectile, name);
+        ASSERT_NE(property, nullptr) << name;
+        EXPECT_EQ(property->typeId, kPropertyTypeFloatUVE);
+        ASSERT_TRUE(property->range.enabled) << name;
+        EXPECT_DOUBLE_EQ(property->range.minimum, 0.0) << name;
+        EXPECT_DOUBLE_EQ(property->range.maximum, 1.0) << name;
+        ASSERT_NE(property->isVisible, nullptr) << name;
+        Projectile3DComponentUVE stopped;
+        EXPECT_FALSE(property->isVisible(&stopped)) << name;
+        Projectile3DComponentUVE bouncing;
+        bouncing.hitPolicy = Projectile3DHitPolicyUVE::Bounce;
+        EXPECT_TRUE(property->isVisible(&bouncing)) << name;
+    }
+
+    // The runtime half: the countdown and the last resolved contact. Runtime-owned, readable, and
+    // never persisted - saving where this projectile last landed would restore a stale contact
+    // onto a projectile that has not flown yet.
+    for (const char* const name :
+         {"remainingLifetime", "hit", "hitEntity", "hitPosition", "hitNormal", "impactSpeed", "bounceCount"}) {
+        const TypeMetadataPropertyUVE* property = FindPropertyUVE(*projectile, name);
+        ASSERT_NE(property, nullptr) << name;
+        EXPECT_TRUE(HasPropertyFlagUVE(property->flags, TypeMetadataPropertyFlagsUVE::RuntimeState))
+            << name;
+        EXPECT_FALSE(property->IsAuthoringWritableUVE()) << name;
+        EXPECT_FALSE(property->IsSerializedUVE()) << name;
+    }
+    EXPECT_EQ(FindPropertyUVE(*projectile, "remainingLifetime")->section, "State");
+    EXPECT_EQ(FindPropertyUVE(*projectile, "impactSpeed")->section, "Result");
+
+    // The component's own rule travels with the declaration, so no generic edit can author an
+    // unknown policy or a coefficient outside the range the step would refuse.
+    ASSERT_NE(projectile->isInstanceValid, nullptr);
+    EXPECT_TRUE(projectile->isInstanceValid(&component));
+    Projectile3DComponentUVE unknownPolicy;
+    unknownPolicy.hitPolicy = static_cast<Projectile3DHitPolicyUVE>(9U);
+    EXPECT_FALSE(projectile->isInstanceValid(&unknownPolicy));
+    Projectile3DComponentUVE outOfRange;
+    outOfRange.restitution = 1.5F;
+    EXPECT_FALSE(projectile->isInstanceValid(&outOfRange));
+}
+
 } // namespace
 } // namespace UVE::Scene::Tests

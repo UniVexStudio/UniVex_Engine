@@ -502,14 +502,15 @@ private:
     /// asynchronously; until one is ready its player waits. Runs only while the simulation runs.
     void SyncAnimationUVE(float deltaSeconds, bool physicsStep);
 
-    /// Simple kinematic integration for every active Projectile3DComponentUVE entity (that
-    /// also has a TransformComponentUVE): accumulates `velocity` by `acceleration * dt`, moves the
-    /// entity's authored local position by `velocity * dt` via SceneGraphUVE::SetLocalTransformUVE
-    /// (so world-transform propagation stays correct), and counts `remainingLifetime` down to zero,
-    /// clearing `active` once it expires. Deliberately does not perform collision detection or
-    /// destroy the entity itself - `collisionMask` and `radius` are authored but not yet consumed
-    /// by anything, since resolving a projectile hit needs real gameplay decisions (does it stop,
-    /// bounce, apply damage, spawn an effect) this component's own fields don't specify.
+    /// Steps every live Projectile3DComponentUVE entity (that also has a transform): the motion is
+    /// `Physics::StepProjectile3DUVE()` - `velocity` accumulates `acceleration * dt`, the sphere of
+    /// `radius` is swept along that step in world space against the layers `collisionMask` accepts
+    /// (never its own entity), the contact is resolved through the component's authored `hitPolicy`
+    /// (Stop halts it, Bounce reflects it through `restitution`/`friction`), and `remainingLifetime`
+    /// counts down to clear `active`. The contact is written back into the component's runtime hit
+    /// fields, and every resolved contact is queued as a `Physics::Projectile3DHitEventUVE` with its
+    /// evidence - damage, effects and despawning are gameplay's, and it decides them from that. The
+    /// engine never destroys the entity itself.
     void SyncProjectile3DObjectsUVE(float fixedDeltaTimeSeconds);
 
     /// Diffs a fresh Physics::ICollisionSystemUVE::DetectCollisionsUVE() snapshot against the

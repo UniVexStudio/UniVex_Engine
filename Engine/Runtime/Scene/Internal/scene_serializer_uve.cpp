@@ -1049,12 +1049,18 @@ template <typename VectorT>
 }
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const Projectile3DComponentUVE& value) {
+    // `remainingLifetime` and the runtime hit result are state, not authored data: the countdown
+    // is re-armed from `maxLifetime` on load, and where this projectile last landed says nothing
+    // about the one a freshly loaded scene creates.
     return {{"velocity", ToJsonUVE(value.velocity)},
             {"acceleration", ToJsonUVE(value.acceleration)},
             {"radius", value.radius},
             {"maxLifetime", value.maxLifetime},
             {"collisionMask", value.collisionMask},
-            {"active", value.active}};
+            {"active", value.active},
+            {"hitPolicy", static_cast<std::uint32_t>(value.hitPolicy)},
+            {"restitution", value.restitution},
+            {"friction", value.friction}};
 }
 
 [[nodiscard]] Projectile3DComponentUVE Projectile3DObjectFromJsonUVE(const nlohmann::json& json) {
@@ -1066,6 +1072,12 @@ template <typename VectorT>
     value.remainingLifetime = value.maxLifetime;
     value.collisionMask = json.value("collisionMask", std::uint32_t{0xFFFFFFFFU});
     value.active = json.value("active", true);
+    // A file written before these fields existed loads with the authored defaults; an unknown
+    // policy is left as it decoded and then refused by the component's validator, never guessed
+    // at, so a hand-edited file cannot make a projectile behave like a policy that is not a policy.
+    value.hitPolicy = static_cast<Projectile3DHitPolicyUVE>(json.value("hitPolicy", std::uint32_t{0}));
+    value.restitution = json.value("restitution", 0.5F);
+    value.friction = json.value("friction", 0.2F);
     return value;
 }
 

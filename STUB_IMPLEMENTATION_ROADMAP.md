@@ -9,9 +9,10 @@ step short of `[x]`); THIS file is the per-item implementation checklist we tick
 each one gets built.
 
 Scope: the 3D nodes still at `[~]` (LODGroup3D, Decal3D, the Navigation pair, the
-Skeleton/animation group), the declared gaps of working nodes (Projectile3D,
-Hitbox3D/Hurtbox3D), and the one item that is explicitly half-open (ReflectionProbe3D — its
-sync half is done, the renderer-side sampling is not). 2D/UI/AI nodes have no files yet, so
+Skeleton/animation group), the declared gap of the one working node pair that still has one
+(Hitbox3D/Hurtbox3D — nothing consumes the strikes they pair every frame), and the one item that
+is explicitly half-open (ReflectionProbe3D — its sync half is done, the renderer-side sampling is
+not). 2D/UI/AI nodes have no files yet, so
 they have nothing to track here — they stay in `SCENE_NODES_ROADMAP.md`'s missing-entirely
 sections until they exist. An item that reaches `[x]` with every box ticked is retired to the
 Done section at the bottom, row and all.
@@ -48,8 +49,7 @@ tests. An item's row here is retired to "Done" (bottom of file) only once it rea
 
 | # | Object | Status | Component | Arrays to give work | The work | Depends on | Size |
 |---|------|--------|-----------|---------------------|----------|------------|------|
-| — | *done items* | — | — | — | rows retired to the Done section at the bottom: 1–5, 9, 10, 15 (12 stays — the renderer-side half is still open). Their numbered write-ups stay below as the audit trail. | — | — |
-| 6 | Projectile3D gap | `[~]` | `Projectile3DComponentUVE` | — (`radius`, `collisionMask` scalars) | swept-sphere hit resolution | hit-decision contract | M |
+| — | *done items* | — | — | — | rows retired to the Done section at the bottom: 1–6, 9, 10, 15 (12 stays — the renderer-side half is still open). Their numbered write-ups stay below as the audit trail. | — | — |
 | 7 | Hitbox3D/Hurtbox3D gap | `[~]` | `Hitbox3DComponentUVE` / `Hurtbox3DComponentUVE` | `strikes[16]` + `strikeCount` | strike consequences (events first) | gameplay/event contract | M |
 | 8 | LODGroup3D | `[~]` | `LodGroup3DComponentUVE` | `distanceThresholds[8]` | camera-distance LOD switching | multi-level mesh source | M |
 | 11 | Decal3D | `[~]` | `Decal3DComponentUVE` | — | decal-projection rendering | renderer (big) | L |
@@ -260,19 +260,48 @@ value, one thing to keep in sync, and the Inspector's list control writes it in 
 **Depends on:** `Physics::RaycastQueryUVE` accepting multiple ignores + a persistent entity
 reference scheme. **Size: M.**
 
-### 6. Projectile3D — honor `radius` + `collisionMask` (declared gap of a working node)
+### 6. Projectile3D — honor `radius` + `collisionMask` (declared gap of a working node) — DONE
 
-- [ ] Define the hit-decision contract (stop / bounce / event / all three, and who owns it)
-- [ ] Implement swept-sphere overlap vs colliders by mask
-- [ ] Tests lock it (radius actually gates hits, mask filters layers, hit result written)
-- [ ] `SCENE_NODES_ROADMAP.md` gap note removed
+- [x] Define the hit-decision contract (stop / bounce / event / all three, and who owns it) — the
+      engine owns the **motion**, gameplay owns the **consequences**. The motion is an authored
+      `hitPolicy` (`Stop`, the default, or `Bounce` with `restitution`/`friction`), executed by
+      `Physics::StepProjectile3DUVE()`; the consequences are nobody's business but gameplay's, and
+      the engine hands it the evidence: the last contact is written into the component's runtime
+      hit fields, and every resolved contact is queued as a typed
+      `Physics::Projectile3DHitEventUVE` (which projectile, what it hit, where, the normal, the
+      speed into the surface, what the policy did, how many bounces it has taken). The engine never
+      destroys the entity and never decides what a hit *means*.
+- [x] Implement swept-sphere overlap vs colliders by mask — `EngineCoreUVE::SyncProjectile3DObjectsUVE()`
+      now hands every live projectile to `Physics::StepProjectile3DUVE()`, which integrates
+      `velocity += acceleration * dt`, sweeps the sphere of `radius` along that step with
+      `ShapeCastSystemUVE::SphereCastUVE()` (world space, layer mask vs the obstacle's own layer,
+      its own entity ignored), and resolves the contact through the policy. A sweep that *starts*
+      overlapping reports no normal and is not a contact, so a projectile fired from inside a
+      launcher volume is allowed to leave; a bounce leaves one contact-skin off the surface so the
+      next sweep starts outside it; a bounce that leaves no motion at all is a stop.
+- [x] Tests lock it (radius actually gates hits, mask filters layers, hit result written) — 16 cases
+      in `Test/Physics/projectile_3d_step_uve_tests.cpp` (full step, integration order, stop at the
+      contact with the whole result written, the radius - not a ray - deciding the hit, mask
+      filtering, self-exclusion, bounce reflection, bounce friction, bounce-that-is-a-stop,
+      overlap-at-step-start not being a contact, lifetime expiry, expiry + bounce in one step, every
+      refusal code leaving the entity untouched, disabled, world-rotation sweep, and the contact
+      normal being reflected back into the object's own axes), plus the component's validator and
+      bounce math in `Test/Objects/3D/objects_3d_uve_tests.cpp`, two serializer cases (the authored
+      contract round-trips while the runtime result does not, and a file from before the contract
+      loads on the authored defaults), the metadata section case, and two engine-core end-to-end
+      cases (stop + typed event, bounce + `stopped == false`).
+- [x] `SCENE_NODES_ROADMAP.md` gap note removed — done.
 
 **Component:** `Projectile3DComponentUVE` — own file pair.
-**Fields to give work:** `radius`, `collisionMask`. The node already integrates velocity and
-expires, but a projectile today flies through everything.
-**The work:** a real hit test (sphere sweep of `radius` against colliders accepted by
-`collisionMask`) writing a hit result (entity/point/normal) into runtime-only fields, plus the
-gameplay decision of what a hit does — the honest part this engine must decide, not fake.
+**Fields to give work:** `radius` and `collisionMask`, plus the authored half of the hit contract
+the item had to decide (`hitPolicy`, `restitution`, `friction`) and the runtime result it writes
+(`hit`, `hitEntity`, `hitPosition`, `hitNormal`, `impactSpeed`, `bounceCount`).
+**Two contract decisions, kept here because they are the item's real answer:** the projectile's hit
+result is *sticky* where RayCast3D's is per-frame (a ray answers "what is in front of me now", a
+projectile's last hit is a terminal fact gameplay reads after the fact), and the bounce
+coefficients are the **projectile's own**, not blended with the surface's - this engine's colliders
+default to a restitution of 0, so blending would silently delete every default bounce, while the
+surface's material still travels with the contact for gameplay to react to.
 **Depends on:** the hit-decision contract. **Size: M.**
 
 ### 7. Hitbox3D/Hurtbox3D — strike consequences (declared gap of working nodes)
@@ -457,5 +486,6 @@ correctly stays unticked. Listed here so the audit trail shows it was considered
 ### Occluder3D — render-queue occlusion culling, locked by four `MeshRendererUVETest` integration cases (stale roadmap row; verified green here) — done in the change that corrected the row
 ### VisibilityRegion3D — layer-gated visibility culling, four dedicated EngineCoreUVE cases — done in the change that added `SyncVisibilityRegion3DNodesUVE()` (stale row; retired here)
 ### LevelStreamer3D + WorldPartition3D — streaming and the cell grid, five dedicated tests each — done in the change that added their syncs (stale rows; retired here)
+### Projectile3D — swept-sphere hit resolution with an authored stop/bounce motion policy and a typed hit event — done in the change that gave `radius` and `collisionMask` something to do (16 dedicated step cases, 2 engine-core end-to-end cases)
 ### RayCast3D — `exclusions` honored: multi-entity exclusions with save/load-stable references, locked by 5 physics + 3 serializer + 2 metadata/validator + 1 engine-core test — done in the change that gave the array real references
 ### SpawnPoint3D — the spawn query seam (`Scene::QuerySpawnPointsUVE`, `Scene::ConsumeSpawnPointUVE`) — done in the change that rewired the editor's play-entry spawn onto it (12 dedicated tests in `Test/Integration/Scene/spawn_point_query_uve_tests.cpp`)

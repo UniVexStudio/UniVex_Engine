@@ -47,6 +47,7 @@
 #include "uve/objects/3d/directional_light_3d_uve.h"
 #include "uve/objects/3d/fog_volume_3d_uve.h"
 #include "uve/objects/3d/kinematic_3d_uve.h"
+#include "uve/objects/3d/projectile_3d_uve.h"
 #include "uve/objects/3d/ray_cast_3d_uve.h"
 #include "uve/objects/3d/skeleton_3d_uve.h"
 #include "uve/objects/3d/spring_arm_3d_uve.h"
@@ -775,6 +776,111 @@ void DeclareRayCastUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                            "Result"),
                 InGroupUVE(DeclareRuntimeStateUVE<&RayCast3DComponentUVE::hitNormal>(
                                "hitNormal", "Hit Normal", kPropertyTypeVector3UVE),
+                           "Result"),
+            }));
+}
+
+void DeclareProjectileUVE(std::vector<TypeMetadataEntryUVE>& entries) {
+    // Projectile3D's own section. The authored half is the whole flight - where it goes, how fat
+    // it is, how long it lives, what it may hit and what its motion does when it does. The two
+    // bounce coefficients appear only once the policy actually uses them, and the runtime half is
+    // last, under the groups its state and its last contact belong to.
+    // Declared with its own rule for the same reason Kinematic3D's is: the Inspector refuses an
+    // edit that would leave the component past its contract (a policy this engine cannot execute,
+    // a coefficient outside 0..1) and keeps the last accepted value, so the step never has to
+    // guess at a value nobody could have meant.
+    const auto whenBouncing = [](TypeMetadataPropertyUVE property) {
+        property.isVisible = +[](const void* instance) {
+            return static_cast<const Projectile3DComponentUVE*>(instance)->hitPolicy ==
+                   Projectile3DHitPolicyUVE::Bounce;
+        };
+        return property;
+    };
+    AddValidatedUVE<Projectile3DComponentUVE, &IsProjectile3DObjectComponentValidUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.projectile_3d", "Projectile3D", kSectionOrderTypeSpecificUVE,
+            {
+                WithTooltipUVE(
+                    DeclareUVE<&Projectile3DComponentUVE::active>("active", "Active", kPropertyTypeBoolUVE),
+                    "Off stops everything: no motion, no sweep, no countdown. The engine also "
+                    "clears it when the projectile stops on a hit or runs out of lifetime."),
+                WithTooltipUVE(
+                    DeclareUVE<&Projectile3DComponentUVE::velocity>("velocity", "Velocity",
+                                                                    kPropertyTypeVector3UVE),
+                    "Where the projectile is going, in metres per second, in its own axes. It "
+                    "is the state that accumulates Acceleration, so this is the launch velocity "
+                    "and the fixed step keeps it honest."),
+                WithTooltipUVE(
+                    DeclareUVE<&Projectile3DComponentUVE::acceleration>("acceleration", "Acceleration",
+                                                                        kPropertyTypeVector3UVE),
+                    "Added to Velocity every step, in metres per second squared: gravity, drag, a "
+                    "wind volume. Gravity is not implied - a projectile only falls if something "
+                    "here says so."),
+                WithRangeUVE(
+                    WithTooltipUVE(DeclareUVE<&Projectile3DComponentUVE::radius>("radius", "Radius",
+                                                                                 kPropertyTypeFloatUVE),
+                                   "The sphere the projectile sweeps, in world metres. It is the "
+                                   "size that decides whether it fits through a gap and how far "
+                                   "its centre is held off a surface - a ray is infinitely thin "
+                                   "and misses the hits a fat projectile must not miss."),
+                    0.001, 1000.0, 0.01),
+                WithRangeUVE(
+                    WithTooltipUVE(DeclareUVE<&Projectile3DComponentUVE::maxLifetime>(
+                                       "maxLifetime", "Max Lifetime", kPropertyTypeFloatUVE),
+                                   "Seconds of flight before the engine clears Active. A bouncing "
+                                   "projectile has no other end, so this is the clock that always "
+                                   "ends one."),
+                    0.01, 3600.0, 0.1),
+                WithCustomDrawerUVE(
+                    WithTooltipUVE(DeclareUVE<&Projectile3DComponentUVE::collisionMask>(
+                                       "collisionMask", "Mask", kPropertyTypeBitMask32UVE),
+                                   "Which collision layers this projectile may hit, on the same "
+                                   "layer drawer every other physics object uses."),
+                    std::string(kLayerMaskDrawerPhysicsUVE)),
+                WithTooltipUVE(
+                    DeclareEnumUVE<&Projectile3DComponentUVE::hitPolicy>("hitPolicy", "On Hit",
+                                                                         {{0, "Stop"}, {1, "Bounce"}}),
+                    "What this projectile's own motion does when it hits something. The engine "
+                    "owns the motion - Stop halts it at the contact, Bounce reflects it - and "
+                    "gameplay owns the consequences: damage, effects and despawning read the hit "
+                    "event or these result fields."),
+                whenBouncing(WithRangeUVE(
+                    WithTooltipUVE(DeclareUVE<&Projectile3DComponentUVE::restitution>(
+                                       "restitution", "Restitution", kPropertyTypeFloatUVE),
+                                   "How much of the speed into a surface comes back out of it: 1 "
+                                   "leaves as fast as it arrived, 0 arrives and slides. This is "
+                                   "the projectile's own coefficient - the surface's is reported "
+                                   "with the contact for gameplay to react to."),
+                    0.0, 1.0, 0.01)),
+                whenBouncing(WithRangeUVE(
+                    WithTooltipUVE(DeclareUVE<&Projectile3DComponentUVE::friction>("friction",
+                                                                                   "Bounce Friction",
+                                                                                   kPropertyTypeFloatUVE),
+                                   "How much of the speed along the surface is lost on each "
+                                   "bounce: 0 keeps all of its sideways motion, 1 keeps none. A "
+                                   "bounce that leaves no motion at all is a stop."),
+                    0.0, 1.0, 0.01)),
+                InGroupUVE(DeclareRuntimeStateUVE<&Projectile3DComponentUVE::remainingLifetime>(
+                               "remainingLifetime", "Remaining Lifetime", kPropertyTypeFloatUVE),
+                           "State"),
+                InGroupUVE(DeclareRuntimeStateUVE<&Projectile3DComponentUVE::hit>("hit", "Hit",
+                                                                                  kPropertyTypeBoolUVE),
+                           "Result"),
+                InGroupUVE(DeclareRuntimeStateUVE<&Projectile3DComponentUVE::hitEntity>(
+                               "hitEntity", "Hit Entity", kPropertyTypeEntityUVE),
+                           "Result"),
+                InGroupUVE(DeclareRuntimeStateUVE<&Projectile3DComponentUVE::hitPosition>(
+                               "hitPosition", "Hit Position", kPropertyTypeVector3UVE),
+                           "Result"),
+                InGroupUVE(DeclareRuntimeStateUVE<&Projectile3DComponentUVE::hitNormal>(
+                               "hitNormal", "Hit Normal", kPropertyTypeVector3UVE),
+                           "Result"),
+                InGroupUVE(DeclareRuntimeStateUVE<&Projectile3DComponentUVE::impactSpeed>(
+                               "impactSpeed", "Impact Speed", kPropertyTypeFloatUVE),
+                           "Result"),
+                InGroupUVE(DeclareRuntimeStateUVE<&Projectile3DComponentUVE::bounceCount>(
+                               "bounceCount", "Bounces", kPropertyTypeUInt32UVE),
                            "Result"),
             }));
 }
@@ -1580,6 +1686,7 @@ void DeclareObjectCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     DeclareRenderingUVE(entries);
     DeclarePhysicsUVE(entries);
     DeclareRayCastUVE(entries);
+    DeclareProjectileUVE(entries);
     DeclareMediaAndUIUVE(entries);
     DeclareGameplayUVE(entries);
     DeclareObjectBasesUVE(entries);

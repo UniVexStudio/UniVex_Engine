@@ -140,6 +140,114 @@ TEST(Expanded3DObjectComponentsUVETest, RayCast3DExclusionListIsAPrefixOfRealRef
     EXPECT_TRUE(IsRayCast3DObjectComponentValidUVE(full));
 }
 
+TEST(Expanded3DObjectComponentsUVETest, Projectile3DHitContractRejectsWhatItCannotHonor) {
+    // The authored defaults are a valid projectile: a sphere that flies, stops on a hit and lives
+    // ten seconds.
+    Projectile3DComponentUVE projectile;
+    EXPECT_TRUE(IsProjectile3DObjectComponentValidUVE(projectile));
+    EXPECT_TRUE(IsKnownProjectile3DHitPolicyUVE(projectile.hitPolicy));
+
+    // A policy outside the enum is a malformed component, not a policy to guess at.
+    Projectile3DComponentUVE policy = projectile;
+    policy.hitPolicy = static_cast<Projectile3DHitPolicyUVE>(7U);
+    EXPECT_FALSE(IsKnownProjectile3DHitPolicyUVE(policy.hitPolicy));
+    EXPECT_FALSE(IsProjectile3DObjectComponentValidUVE(policy));
+
+    // The bounce coefficients live inside 0..1 and nowhere else.
+    Projectile3DComponentUVE coefficient = projectile;
+    coefficient.restitution = -0.1F;
+    EXPECT_FALSE(IsProjectile3DObjectComponentValidUVE(coefficient));
+    coefficient.restitution = 1.1F;
+    EXPECT_FALSE(IsProjectile3DObjectComponentValidUVE(coefficient));
+    coefficient.restitution = std::numeric_limits<float>::quiet_NaN();
+    EXPECT_FALSE(IsProjectile3DObjectComponentValidUVE(coefficient));
+    coefficient.restitution = 0.0F;
+    coefficient.friction = 1.0F;
+    EXPECT_TRUE(IsProjectile3DObjectComponentValidUVE(coefficient));
+    coefficient.friction = -0.01F;
+    EXPECT_FALSE(IsProjectile3DObjectComponentValidUVE(coefficient));
+    coefficient.friction = 1.01F;
+    EXPECT_FALSE(IsProjectile3DObjectComponentValidUVE(coefficient));
+
+    // A sphere has to have a size, and a lifetime has to be reachable.
+    Projectile3DComponentUVE bounds = projectile;
+    bounds.radius = 0.0F;
+    EXPECT_FALSE(IsProjectile3DObjectComponentValidUVE(bounds));
+    bounds = projectile;
+    bounds.maxLifetime = 0.0F;
+    EXPECT_FALSE(IsProjectile3DObjectComponentValidUVE(bounds));
+    bounds = projectile;
+    bounds.remainingLifetime = projectile.maxLifetime + 1.0F;
+    EXPECT_FALSE(IsProjectile3DObjectComponentValidUVE(bounds));
+    bounds = projectile;
+    bounds.velocity.x = std::numeric_limits<float>::infinity();
+    EXPECT_FALSE(IsProjectile3DObjectComponentValidUVE(bounds));
+
+    // Runtime result state has to stay readable: a claimed hit names its entity and carries finite
+    // numbers, so a consumer that trusts `hit` can never act on a hit that points nowhere.
+    Projectile3DComponentUVE hit = projectile;
+    hit.hit = true;
+    EXPECT_FALSE(IsProjectile3DObjectComponentValidUVE(hit));
+    hit.hitEntity = EntityUVE{4U, 1U};
+    hit.hitPosition = Math::Vector3UVE{1.0F, 2.0F, 3.0F};
+    hit.hitNormal = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+    hit.impactSpeed = 12.0F;
+    EXPECT_TRUE(IsProjectile3DObjectComponentValidUVE(hit));
+    hit.impactSpeed = -1.0F;
+    EXPECT_FALSE(IsProjectile3DObjectComponentValidUVE(hit));
+    hit.impactSpeed = 12.0F;
+    hit.hitNormal.y = std::numeric_limits<float>::quiet_NaN();
+    EXPECT_FALSE(IsProjectile3DObjectComponentValidUVE(hit));
+}
+
+TEST(Expanded3DObjectComponentsUVETest, Projectile3DBounceReflectsAndNeverAddsEnergy) {
+    const Math::Vector3UVE intoTheWall{6.0F, 0.0F, 0.0F};
+    const Math::Vector3UVE wallNormal{-1.0F, 0.0F, 0.0F};
+
+    // Head-on: the speed into the surface comes back at the restitution, and nothing else is left.
+    const Math::Vector3UVE bounced =
+        ResolveProjectile3DBounceVelocityUVE(intoTheWall, wallNormal, 0.5F, 0.0F);
+    EXPECT_NEAR(bounced.x, -3.0F, 1.0e-5F);
+    EXPECT_NEAR(bounced.y, 0.0F, 1.0e-5F);
+    EXPECT_NEAR(bounced.z, 0.0F, 1.0e-5F);
+
+    // Grazing: the component into the floor comes back at the restitution, the component along it
+    // loses the friction, and the two do not mix.
+    const Math::Vector3UVE grazing =
+        ResolveProjectile3DBounceVelocityUVE(Math::Vector3UVE{2.0F, -4.0F, 0.0F}, Math::Vector3UVE{0.0F, 1.0F, 0.0F},
+                                             0.5F, 0.25F);
+    EXPECT_NEAR(grazing.x, 1.5F, 1.0e-5F);
+    EXPECT_NEAR(grazing.y, 2.0F, 1.0e-5F);
+
+    // Coefficients are clamped: 5 is 1, and 1 is the most a bounce can return.
+    const Math::Vector3UVE clamped =
+        ResolveProjectile3DBounceVelocityUVE(intoTheWall, wallNormal, 5.0F, 0.0F);
+    EXPECT_NEAR(Math::LengthUVE(clamped), 6.0F, 1.0e-4F);
+    const Math::Vector3UVE slick =
+        ResolveProjectile3DBounceVelocityUVE(Math::Vector3UVE{2.0F, -4.0F, 0.0F}, Math::Vector3UVE{0.0F, 1.0F, 0.0F},
+                                             1.0F, 5.0F);
+    EXPECT_NEAR(slick.x, 0.0F, 1.0e-5F);
+    EXPECT_NEAR(slick.y, 4.0F, 1.0e-5F);
+
+    // The normal is a direction, not a distance: a longer one reflects the same motion as a unit
+    // one, so nothing downstream has to remember to normalize before calling this.
+    const Math::Vector3UVE alongZ{0.0F, 0.0F, 6.0F};
+    const Math::Vector3UVE unitNormal{0.0F, 0.0F, -1.0F};
+    const Math::Vector3UVE longNormal{0.0F, 0.0F, -4.0F};
+    const Math::Vector3UVE scaled = ResolveProjectile3DBounceVelocityUVE(alongZ, longNormal, 1.0F, 0.0F);
+    EXPECT_EQ(scaled, ResolveProjectile3DBounceVelocityUVE(alongZ, unitNormal, 1.0F, 0.0F));
+    EXPECT_NEAR(scaled.z, -6.0F, 1.0e-5F);
+
+    // Nothing to reflect about, or nothing finite to reflect: the motion is handed back unchanged
+    // rather than replaced with a NaN.
+    const Math::Vector3UVE noNormal{};
+    EXPECT_EQ(ResolveProjectile3DBounceVelocityUVE(intoTheWall, noNormal, 1.0F, 0.0F), intoTheWall);
+    const Math::Vector3UVE nanNormal{std::numeric_limits<float>::quiet_NaN(), 0.0F, 0.0F};
+    EXPECT_EQ(ResolveProjectile3DBounceVelocityUVE(intoTheWall, nanNormal, 1.0F, 0.0F), intoTheWall);
+    const Math::Vector3UVE infiniteVelocity{std::numeric_limits<float>::infinity(), 0.0F, 0.0F};
+    EXPECT_EQ(ResolveProjectile3DBounceVelocityUVE(infiniteVelocity, wallNormal, 1.0F, 0.0F), infiniteVelocity);
+}
+
 TEST(Expanded3DObjectComponentsUVETest, BoundedContractsRejectUnsafeValues) {
     RayCast3DComponentUVE ray;
     // A ray with no usable direction, no reach, or a length nobody can cast is refused outright.

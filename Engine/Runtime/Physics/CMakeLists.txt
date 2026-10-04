@@ -14,6 +14,7 @@ add_library(uve_physics STATIC
     Internal/kinematic_body_uve.cpp
     Internal/interaction_area_uve.cpp
     Internal/spring_arm_uve.cpp
+    Internal/projectile_3d_step_uve.cpp
     Internal/area_overlap_system_uve.cpp
     Internal/angular_dynamics_uve.cpp
     Internal/collider_world_aabb_cache_uve.cpp
