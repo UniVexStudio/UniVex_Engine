@@ -259,7 +259,7 @@ TEST(NavPathUVETest, FindNavPathUVE_WalksAZigzagWithoutEverLeavingTheMesh) {
     const NavPathUVE path = FindNavPathUVE(mesh, request);
 
     ASSERT_EQ(path.status, NavPathStatusUVE::Found);
-    EXPECT_EQ(path.expandedPolygons, 4U) << "all four rooms are on the way";
+    EXPECT_EQ(path.expandedNodes, 4U) << "every doorway on the way is opened once";
     ASSERT_FALSE(path.waypoints.empty());
     EXPECT_EQ(path.waypoints.back(), request.target);
     ExpectPathStaysOnMeshUVE(mesh, path, request.start);
@@ -362,17 +362,17 @@ TEST(NavPathUVETest, FindNavPathUVE_StopsAtItsOwnExpansionBudgetAndSaysSo) {
     NavPathRequestUVE request{};
     request.start = Math::Vector3UVE{1.0F, 0.0F, 1.0F};
     request.target = Math::Vector3UVE{15.0F, 0.0F, 1.0F};
-    request.maximumExpandedPolygons = 1U;
+    request.maximumExpandedNodes = 1U;
     const NavPathUVE budgeted = FindNavPathUVE(mesh, request);
     EXPECT_EQ(budgeted.status, NavPathStatusUVE::Partial);
-    EXPECT_EQ(budgeted.expandedPolygons, 1U);
+    EXPECT_EQ(budgeted.expandedNodes, 1U);
 
     // The same request without the budget walks the whole strip.
     NavPathRequestUVE unbudgeted = request;
-    unbudgeted.maximumExpandedPolygons = 4096U;
+    unbudgeted.maximumExpandedNodes = 4096U;
     const NavPathUVE complete = FindNavPathUVE(mesh, unbudgeted);
     EXPECT_EQ(complete.status, NavPathStatusUVE::Found);
-    EXPECT_EQ(complete.expandedPolygons, 8U) << "every room on the way is expanded once";
+    EXPECT_EQ(complete.expandedNodes, 8U) << "every doorway on the way is opened once";
     ASSERT_FALSE(complete.waypoints.empty());
     EXPECT_EQ(complete.waypoints.back(), unbudgeted.target);
 }

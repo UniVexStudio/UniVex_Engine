@@ -236,6 +236,7 @@ add_executable(uve_integration_tests
     Navigation/navmesh_uve_tests.cpp
     Navigation/navmesh_bake_uve_tests.cpp
     Navigation/nav_path_uve_tests.cpp
+    Navigation/nav_path_quality_uve_tests.cpp
     Navigation/navmesh_agent_uve_tests.cpp
     Navigation/navigation_runtime_uve_tests.cpp
     Save/checkpoint_manager_uve_tests.cpp

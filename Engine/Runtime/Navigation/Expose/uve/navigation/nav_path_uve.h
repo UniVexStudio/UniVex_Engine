@@ -41,11 +41,12 @@ struct NavPathRequestUVE final {
     /// this exists for; past it, the request is refused rather than answered with a path from
     /// somewhere the caller did not ask about.
     float offMeshToleranceMetres = 2.0F;
-    /// The most polygons one search may expand before it gives up and answers with a partial path.
-    /// A* over a bounded mesh terminates anyway; this is the bound that keeps one pathological
-    /// request from spending a frame's whole budget, and it is reported back so a caller can tell a
-    /// complete path from a truncated search.
-    std::size_t maximumExpandedPolygons = 4096U;
+    /// The most search nodes one request may expand before it gives up and answers with a partial
+    /// path. A node is one doorway a chain stepped through, so a room entered twice is two of them;
+    /// A* over a bounded mesh terminates anyway, and this is the bound that keeps one pathological
+    /// request from spending a frame's whole budget - reported back, so a caller can tell a complete
+    /// path from a truncated search.
+    std::size_t maximumExpandedNodes = 4096U;
 };
 
 struct NavPathUVE final {
@@ -55,8 +56,9 @@ struct NavPathUVE final {
     std::vector<Math::Vector3UVE> waypoints;
     /// Length of the waypoint polyline, measured from the start's own point on the mesh to the goal.
     float lengthMetres = 0.0F;
-    /// Polygons the search took off its open list. Reported so a truncated search is visible as one.
-    std::size_t expandedPolygons = 0U;
+    /// Search nodes the request took off its open list, one per doorway the chain stepped through.
+    /// Reported so a truncated search is visible as one.
+    std::size_t expandedNodes = 0U;
     NavPathStatusUVE status = NavPathStatusUVE::NoMesh;
 
     [[nodiscard]] bool IsUsableUVE() const noexcept {
