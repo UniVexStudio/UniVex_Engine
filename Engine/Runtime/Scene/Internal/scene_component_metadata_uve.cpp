@@ -49,6 +49,7 @@
 #include "uve/objects/3d/kinematic_3d_uve.h"
 #include "uve/objects/3d/skeleton_3d_uve.h"
 #include "uve/objects/3d/spring_arm_3d_uve.h"
+#include "uve/objects/3d/spawn_point_3d_uve.h"
 #include "uve/objects/3d/world_environment_3d_uve.h"
 #include "uve/math/quaternion_uve.h"
 
@@ -978,6 +979,47 @@ void DeclareMediaAndUIUVE(std::vector<TypeMetadataEntryUVE>& entries) {
 /// among themselves, because an author finds a setting by where it was last time.
 /// The abstract 3D bases. Their sections appear on every concrete child, between what the child
 /// itself brings and the common Object section.
+// The gameplay-owned authored data: what the scene means to a game rather than to the renderer or
+// the solver. SpawnPoint3D is the first citizen here (Unreal's PlayerStart role - Godot ships no
+// built-in counterpart), and the section is deliberately declarative: the query that consumes it
+// lives in uve_scene, and nothing in this file decides when a point fires.
+void DeclareGameplayUVE(std::vector<TypeMetadataEntryUVE>& entries) {
+    AddValidatedUVE<SpawnPoint3DComponentUVE, &IsSpawnPoint3DObjectComponentValidUVE>(
+        entries,
+        MakeEntryUVE(
+            "component.spawn_point", "SpawnPoint3D", kSectionOrderTypeSpecificUVE,
+            {
+                WithTooltipUVE(
+                    DeclareUVE<&SpawnPoint3DComponentUVE::spawnTag>("spawnTag", "Tag",
+                                                                    kPropertyTypeStringUVE),
+                    "What this point is for. An empty-tag query takes the first live point whatever "
+                    "it is called; a respawn screen asks for \"checkpoint\" and a second level "
+                    "entry asks for \"level start\"."),
+                WithTooltipUVE(
+                    DeclareUVE<&SpawnPoint3DComponentUVE::localPosition>(
+                        "localPosition", "Offset Position", kPropertyTypeVector3UVE),
+                    "Where the actor appears relative to this point's own pose, in metres: rotated "
+                    "by the point's rotation, deliberately NOT scaled by its scale - an offset is a "
+                    "distance, not a volume. A point can sit on a floor seam with its actor a step "
+                    "above."),
+                WithTooltipUVE(
+                    DeclareUVE<&SpawnPoint3DComponentUVE::localRotation>(
+                        "localRotation", "Offset Rotation", kPropertyTypeQuaternionUVE),
+                    "Which way the actor faces when it appears, composed onto this point's own "
+                    "rotation."),
+                WithTooltipUVE(DeclareUVE<&SpawnPoint3DComponentUVE::enabled>("enabled", "Enabled",
+                                                                             kPropertyTypeBoolUVE),
+                               "Off, the point is invisible to every spawn query - which is also "
+                               "the state a spent one-shot point is left in."),
+                WithTooltipUVE(
+                    DeclareUVE<&SpawnPoint3DComponentUVE::oneShot>("oneShot", "One Shot",
+                                                                   kPropertyTypeBoolUVE),
+                    "A checkpoint: the first caller that actually spawns from this point spends "
+                    "it, and no later query can use it again this session. The authored value "
+                    "comes back when Play is left, like every other sandboxed edit."),
+            }));
+}
+
 void DeclareObjectBasesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     AddUVE<BoneModifierComponentUVE>(
         entries,
@@ -1469,6 +1511,7 @@ void DeclareObjectCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     DeclareRenderingUVE(entries);
     DeclarePhysicsUVE(entries);
     DeclareMediaAndUIUVE(entries);
+    DeclareGameplayUVE(entries);
     DeclareObjectBasesUVE(entries);
     DeclareRenderInstanceObjectsUVE(entries);
     DeclareSkeletonUVE(entries);

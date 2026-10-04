@@ -25,6 +25,10 @@ bool IsSpawnPoint3DObjectComponentValidUVE(const SpawnPoint3DComponentUVE& value
            IsFinite3DObjectQuaternionUVE(value.localRotation);
 }
 
+bool SortsBeforeSpawnPointUVE(const EntityUVE lhs, const EntityUVE rhs) noexcept {
+    return lhs.index < rhs.index || (lhs.index == rhs.index && lhs.generation < rhs.generation);
+}
+
 std::optional<EntityUVE> ResolveSpawnPoint3DSelectionUVE(
     const std::span<const SpawnPoint3DCandidateUVE> candidates) noexcept {
     std::optional<EntityUVE> best;
@@ -32,8 +36,7 @@ std::optional<EntityUVE> ResolveSpawnPoint3DSelectionUVE(
         if (candidate.entity == kInvalidEntityUVE) {
             continue;
         }
-        if (!best.has_value() || candidate.entity.index < best->index ||
-            (candidate.entity.index == best->index && candidate.entity.generation < best->generation)) {
+        if (!best.has_value() || SortsBeforeSpawnPointUVE(candidate.entity, *best)) {
             best = candidate.entity;
         }
     }

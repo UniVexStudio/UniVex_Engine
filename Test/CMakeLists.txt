@@ -201,6 +201,7 @@ add_executable(uve_integration_tests
     Integration/Scene/prefab_revision_policy_uve_tests.cpp
     Integration/Scene/particle_runtime_uve_tests.cpp
     Integration/Scene/scene_object_registry_uve_tests.cpp
+    Integration/Scene/spawn_point_query_uve_tests.cpp
     Integration/Animation/time_pose_contract_uve_tests.cpp
     Integration/Animation/animation_clip_uve_tests.cpp
     Integration/Animation/pose_graph_uve_tests.cpp
@@ -220,12 +221,14 @@ add_executable(uve_integration_tests
     Physics/collision_lifecycle_tracker_uve_tests.cpp
     Physics/collision_system_uve_tests.cpp
     Physics/hinge_motor_limit_uve_tests.cpp
+    Physics/kinematic_body_uve_tests.cpp
     Physics/physics_constraint_system_uve_tests.cpp
     Physics/physics_material_uve_tests.cpp
     Physics/physics_query_system_uve_tests.cpp
     Physics/physics_system_uve_tests.cpp
     Physics/raycast_system_uve_tests.cpp
     Physics/shape_cast_system_uve_tests.cpp
+    Physics/spring_arm_uve_tests.cpp
     Save/checkpoint_manager_uve_tests.cpp
     Save/save_game_system_uve_tests.cpp
     Save/save_payload_compression_uve_tests.cpp

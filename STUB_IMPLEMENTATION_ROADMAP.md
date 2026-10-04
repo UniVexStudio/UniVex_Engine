@@ -46,9 +46,6 @@ tests. An item's row here is retired to "Done" (bottom of file) only once it rea
 
 | # | Object | Status | Component | Arrays to give work | The work | Depends on | Size |
 |---|------|--------|-----------|---------------------|----------|------------|------|
-| 1 | SpringArm3D | `[x]` | `SpringArm3DComponentUVE` | — | camera-boom raycast clamp — **done**, 17 dedicated step tests (plus the 7 resolver cases that already pinned the motion law) | RaycastSystemUVE (exists) | S |
-| 2 | Kinematic3D | `[x]` | `Kinematic3DComponentUVE` | — | target-velocity kinematic mover — **done**, 29 dedicated tests | physics kinematic move (exists) | S |
-| 3 | SpawnPoint3D | `[~]` | `SpawnPoint3DComponentUVE` | — | tag-based spawn query + one-shot | — | S |
 | 4 | InteractionArea3D | `[/]` | `InteractionArea3DComponentUVE` | candidate list (new, bounded by `maximumCandidates`) | per-frame interactable candidate tracking — **implemented**, one test exists, edge cases not separately locked | AreaOverlapSystemUVE (exists) | M |
 | 5 | RayCast3D gap | `[~]` | `RayCast3DComponentUVE` | `exclusions[8]` + `exclusionCount` | multi-entity exclusion queries | query API + stable entity refs | M |
 | 6 | Projectile3D gap | `[~]` | `Projectile3DComponentUVE` | — (`radius`, `collisionMask` scalars) | swept-sphere hit resolution | hit-decision contract | M |
@@ -66,6 +63,9 @@ tests. An item's row here is retired to "Done" (bottom of file) only once it rea
 ---
 
 ## S-tier — one engine-core sync each (start here)
+
+Items 1-3 have reached `[x]` and their rows are retired to the Done section at the bottom; the
+numbered write-ups below remain as the audit trail of what was actually built.
 
 ### 1. SpringArm3D — camera-boom raycast clamp — DONE
 
@@ -137,12 +137,30 @@ PhysicsObject3D base, a collider and a kinematic rigid body.
 character controller already exercises, so rigid bodies it touches respond honestly.
 **Depends on:** existing physics kinematic move. **Size: S.**
 
-### 3. SpawnPoint3D — tag-based spawn query
+### 3. SpawnPoint3D — tag-based spawn query — DONE
 
-- [ ] Implement
-- [ ] Tests lock it (find by tag, returns authored transform, one-shot consumption,
-      disabled points are skipped)
-- [ ] `SCENE_NODES_ROADMAP.md` `[~]` → `[x]`
+- [x] Implement — the query seam lives in `Engine/Runtime/Scene/{Expose/uve/scene,Internal}`:
+      `Scene::QuerySpawnPointsUVE(entityManager, query)` returns a bounded, overflow-flagged list
+      of every spawn point that is enabled, passes its own validator, carries a swept world
+      transform, matches the query's tag (empty = any) and composes to a finite pose, in
+      (index, generation) order; `Scene::ConsumeSpawnPointUVE` spends a single one-shot point, and
+      `query.consumeOneShot` spends the batch it hands out. The point itself stays unticked - it
+      is a query, not a system, and it never runs without being asked. Extracting it fixed a
+      second copy of the participation rules: the editor's play-entry spawn had hand-rolled the
+      enabled/valid/world-posed filter and the first-in-content-order pick, and now calls the
+      query and keeps only its own two decisions (which entity is the player, and that a
+      checkpoint is spent after the teleport succeeds rather than before).
+- [x] Tests lock it — 12 dedicated cases
+      (`Test/Integration/Scene/spawn_point_query_uve_tests.cpp`): find every live point in stable
+      content order, tag select / empty tag = all / a tag that matches nothing, the pose is the
+      object's world pose composed with the authored offset (rotation included), disabled /
+      invalid / unswept / degenerate points are skipped individually rather than hiding the rest,
+      one-shot consumption (batch and single-point, spent only after it is handed out, reusable
+      points never spent, a spent point refuses a second consume), the bound keeps the FIRST
+      points in content order and reports overflow, and the point that overflowed is not spent
+      because it was never handed out. `SortsBeforeSpawnPointUVE` - the ordering rule the resolver
+      and the query now share - is pinned in the object-definition suite.
+- [x] `SCENE_NODES_ROADMAP.md` `[~]` → `[x]` — done.
 
 **Component:** `SpawnPoint3DComponentUVE` — own file pair.
 **Fields to give work:** `spawnTag`, `localPosition`, `localRotation`, `enabled`, `oneShot`.
@@ -150,6 +168,16 @@ character controller already exercises, so rigid bodies it touches respond hones
 tag, resolve each one's world transform (own local fields composed with the entity's world
 transform), hand them to the caller, and consume one-shot points so they can't spawn twice.
 This is a query others call — the point itself stays unticked, by design.
+**The child-resolution question, answered:** the query resolves a POSE, not an entity to write:
+the object's world position/rotation composed with the authored offset (rotated, never scaled -
+an offset is a distance, not a volume), and `ResolveSpawnPointPlayerLocalUVE` turns that world
+pose into whatever local pose a caller's actor needs under its own parent. So a spawn point on a
+moving platform, under a scaled group, or in a rotating prefab all answer correctly without the
+query knowing what an actor is.
+**A note on the list bound:** 32 points with `overflowed` reported, and the bound keeps the first
+points in content order rather than dropping whatever the pool happened to reach last, so paging
+through results is stable and repeatable. Nothing about a spawn point is per-frame state, which
+is why this is a return-by-value list and not a component field.
 **Depends on:** nothing new. **Size: S.**
 
 ---
@@ -369,6 +397,6 @@ correctly stays unticked. Listed here so the audit trail shows it was considered
 
 ## Done (moved here when the last box ticks)
 
-<!-- Move completed items here with their commit hash, e.g.:
-### Hitbox3D/Hurtbox3D — real per-frame strike pairing — done in b72a062/5d07fd7
--->
+### SpringArm3D — the camera boom, tested against the world it casts into — done in 0992c86
+### Kinematic3D — target-velocity kinematic mover over the swept kinematic move — done in 7758f3e
+### SpawnPoint3D — the spawn query seam (`Scene::QuerySpawnPointsUVE`, `Scene::ConsumeSpawnPointUVE`) — done in the change that rewired the editor's play-entry spawn onto it (12 dedicated tests in `Test/Integration/Scene/spawn_point_query_uve_tests.cpp`)

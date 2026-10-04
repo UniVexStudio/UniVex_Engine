@@ -77,7 +77,7 @@ constexpr std::array<SceneObjectDescriptorUVE, 47U> kDescriptors{
     SceneObjectDescriptorUVE{SceneObjectKindUVE::LODGroup3D, "lod_group_3d", "LODGroup3D", "Optimization", "Render/LodGroup3DComponentUVE", kLodContracts, true},
     SceneObjectDescriptorUVE{SceneObjectKindUVE::Occluder3D, "occluder_3d", "Occluder3D", "Optimization", "Render/Occluder3DComponentUVE", kOccluderContracts, true},
     SceneObjectDescriptorUVE{SceneObjectKindUVE::VisibilityRegion3D, "visibility_region_3d", "VisibilityRegion3D", "Optimization", "Render/VisibilityRegion3DComponentUVE", kVisibilityContracts, true},
-    SceneObjectDescriptorUVE{SceneObjectKindUVE::SpawnPoint3D, "spawn_point_3d", "SpawnPoint3D", "Gameplay", "Scene/SpawnPoint3DComponentUVE", kSpawnContracts, true},
+    SceneObjectDescriptorUVE{SceneObjectKindUVE::SpawnPoint3D, "spawn_point_3d", "SpawnPoint3D", "Gameplay", "Scene/SpawnPointQueryUVE", kSpawnContracts, true},
     SceneObjectDescriptorUVE{SceneObjectKindUVE::LevelStreamer3D, "level_streamer_3d", "LevelStreamer3D", "World", "Scene/LevelStreamer3DComponentUVE", kStreamerContracts, true},
     SceneObjectDescriptorUVE{SceneObjectKindUVE::WorldPartition3D, "world_partition_3d", "WorldPartition3D", "World", "Scene/WorldPartition3DComponentUVE", kPartitionContracts, true},
     SceneObjectDescriptorUVE{SceneObjectKindUVE::AnimationGraph, "animation_graph", "AnimationGraph", "Animation", "Scene/AnimationGraphComponentUVE", kAnimationGraphContracts, true},
