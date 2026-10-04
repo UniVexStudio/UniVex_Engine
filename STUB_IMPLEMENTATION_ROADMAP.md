@@ -9,10 +9,8 @@ step short of `[x]`); THIS file is the per-item implementation checklist we tick
 each one gets built.
 
 Scope: the 3D nodes still at `[~]` (LODGroup3D, Decal3D, the Navigation pair, the
-Skeleton/animation group), the declared gap of the one working node pair that still has one
-(Hitbox3D/Hurtbox3D — nothing consumes the strikes they pair every frame), and the one item that
-is explicitly half-open (ReflectionProbe3D — its sync half is done, the renderer-side sampling is
-not). 2D/UI/AI nodes have no files yet, so
+Skeleton/animation group), and the one item that is explicitly half-open (ReflectionProbe3D — its
+sync half is done, the renderer-side sampling is not). 2D/UI/AI nodes have no files yet, so
 they have nothing to track here — they stay in `SCENE_NODES_ROADMAP.md`'s missing-entirely
 sections until they exist. An item that reaches `[x]` with every box ticked is retired to the
 Done section at the bottom, row and all.
@@ -49,8 +47,7 @@ tests. An item's row here is retired to "Done" (bottom of file) only once it rea
 
 | # | Object | Status | Component | Arrays to give work | The work | Depends on | Size |
 |---|------|--------|-----------|---------------------|----------|------------|------|
-| — | *done items* | — | — | — | rows retired to the Done section at the bottom: 1–6, 9, 10, 15 (12 stays — the renderer-side half is still open). Their numbered write-ups stay below as the audit trail. | — | — |
-| 7 | Hitbox3D/Hurtbox3D gap | `[~]` | `Hitbox3DComponentUVE` / `Hurtbox3DComponentUVE` | `strikes[16]` + `strikeCount` | strike consequences (events first) | gameplay/event contract | M |
+| — | *done items* | — | — | — | rows retired to the Done section at the bottom: 1–7, 9, 10, 15 (12 stays — the renderer-side half is still open). Their numbered write-ups stay below as the audit trail. | — | — |
 | 8 | LODGroup3D | `[~]` | `LodGroup3DComponentUVE` | `distanceThresholds[8]` | camera-distance LOD switching | multi-level mesh source | M |
 | 11 | Decal3D | `[~]` | `Decal3DComponentUVE` | — | decal-projection rendering | renderer (big) | L |
 | 12 | ReflectionProbe3D | `[x]` (sync half) | `ReflectionProbe3DComponentUVE` | — | probe capture scheduling — **done**, five dedicated tests; renderer-side sampling still `[~]` | renderer (big) | L |
@@ -304,17 +301,53 @@ default to a restitution of 0, so blending would silently delete every default b
 surface's material still travels with the contact for gameplay to react to.
 **Depends on:** the hit-decision contract. **Size: M.**
 
-### 7. Hitbox3D/Hurtbox3D — strike consequences (declared gap of working nodes)
+### 7. Hitbox3D/Hurtbox3D — strike consequences (declared gap of working nodes) — DONE
 
-- [ ] Define the consequence contract (typed strike event first; damage numbers are gameplay)
-- [ ] Implement the consumer
-- [ ] Tests lock it (strike → event carries hitbox/hurtbox/depth/channel)
-- [ ] `SCENE_NODES_ROADMAP.md` gap note removed
+- [x] Define the consequence contract (typed strike event first; damage numbers are gameplay) —
+      the engine owns the **pairing and the edge**, gameplay owns **what being struck means**. The
+      pairing itself was already real; what did not exist was any consequence of it, because a
+      per-frame list is not something gameplay can act on without re-implementing the diff. So the
+      pairing moved into `Physics::SyncHitboxes3DUVE()` and is diffed by
+      `Physics::Hitbox3DStrikeLifecycleTrackerUVE` into exactly one typed edge per change:
+      `Physics::Hitbox3DStrikeEnteredEventUVE` when a hitbox starts striking a hurtbox,
+      `Physics::Hitbox3DStrikeExitedEventUVE` when it stops - whether the boxes moved apart or a
+      gate closed (a disabled box, an authored layer/mask or channel change, a destroyed entity).
+      Each event carries the pair, its penetration depth, the minimum-translation axis (hitbox to
+      hurtbox, the direction a shove needs) and the authored damage channel. Damage numbers,
+      knockback, i-frames and hit reactions stay gameplay's; the engine never destroys anything and
+      never decides what a hit *means*.
+- [x] Implement the consumer — `EngineCoreUVE::SyncHitbox3DObjectsUVE()` is now the seam call plus
+      the tracker plus one queued event per transition (the tracker is reset at teardown beside the
+      area-overlap tracker). Two decisions worth recording: identity is the (hitbox, hurtbox) pair
+      **only**, so a strike that merely gets deeper is the same strike rather than a second one;
+      and a truncated input report keeps the previous baseline instead of inferring exits, so an
+      overflowing frame can never fabricate a hit-ended event.
+- [x] Tests lock it (strike → event carries hitbox/hurtbox/depth/channel) — 18 cases in
+      `Test/Physics/hitbox_strike_uve_tests.cpp` covering the report and the tracker (overlap with
+      depth and axis, axis direction from both sides, self-exclusion, symmetric masks, channel
+      equality, touching-is-not-overlapping, the bounded result plus its overflow flag, authored
+      half-extents with world scale deliberately not applied, a rotated oriented box swept as
+      itself rather than as its axis-aligned bounds, enter-once, no re-enter when the strike only
+      deepens, exit-on-separation, disable-ends-strike, destroy-ends-strike, truncated input
+      inventing no exits, reset, deterministic order, and the event carrying the pair by value),
+      plus the combat metadata case, an engine-core end-to-end case (one Entered on the first
+      overlapping tick, no second Entered while it holds, Exited on the tick a side is disabled
+      with nothing moving, and a fresh Entered when it is switched back on), and the editor's
+      drawer census moved 42 → 44 for the two new sections.
+- [x] `SCENE_NODES_ROADMAP.md` gap note removed — done.
 
 **Components:** `Hitbox3DComponentUVE` / `Hurtbox3DComponentUVE` — own file pairs.
 **Arrays to give work:** `strikes[16]` (`kMaximumHitbox3DStrikesUVE`) + `strikeCount` +
-`strikesTruncated`. The strike list is written every frame by
-`EngineCoreUVE::SyncHitbox3DNodesUVE()` — nothing reads it yet.
+`strikesTruncated`. The per-hitbox list is still refreshed every frame by
+`EngineCoreUVE::SyncHitbox3DObjectsUVE()` (now through `Physics::SyncHitboxes3DUVE()`), and a
+strike record gained `axis` beside the depth so a consequence that pushes never has to recompute
+the direction from poses that have already moved on by the time it reads the record. The bounded
+report (`kMaximumHitbox3DStrikeResultsUVE`) is what the tracker diffs; the per-hitbox list keeps
+recording past that bound, so a truncated report is a property of the report, not of the pairing.
+**Two contract decisions, kept here because they are the item's real answer:** the edge, not the
+state, is the deliverable (damage-on-Entered fires once per hit instead of once per frame, which is
+only true if the engine owns the baseline), and an exit is a real event when a *gate* closes, not
+only when the boxes separate - the alternative is a live strike that nothing can ever end.
 **Depends on:** event/consequence contract decision. **Size: M.**
 
 ### 8. LODGroup3D — camera-distance LOD switching
@@ -486,6 +519,7 @@ correctly stays unticked. Listed here so the audit trail shows it was considered
 ### Occluder3D — render-queue occlusion culling, locked by four `MeshRendererUVETest` integration cases (stale roadmap row; verified green here) — done in the change that corrected the row
 ### VisibilityRegion3D — layer-gated visibility culling, four dedicated EngineCoreUVE cases — done in the change that added `SyncVisibilityRegion3DNodesUVE()` (stale row; retired here)
 ### LevelStreamer3D + WorldPartition3D — streaming and the cell grid, five dedicated tests each — done in the change that added their syncs (stale rows; retired here)
+### Hitbox3D/Hurtbox3D — the strike consequence contract: one typed edge event per strike start/end, diffed from the per-frame pairing — done in the change that gave `strikes` something to mean (18 dedicated strike/tracker cases, 1 engine-core edge case, combat metadata + drawer sections)
 ### Projectile3D — swept-sphere hit resolution with an authored stop/bounce motion policy and a typed hit event — done in the change that gave `radius` and `collisionMask` something to do (16 dedicated step cases, 2 engine-core end-to-end cases)
 ### RayCast3D — `exclusions` honored: multi-entity exclusions with save/load-stable references, locked by 5 physics + 3 serializer + 2 metadata/validator + 1 engine-core test — done in the change that gave the array real references
 ### SpawnPoint3D — the spawn query seam (`Scene::QuerySpawnPointsUVE`, `Scene::ConsumeSpawnPointUVE`) — done in the change that rewired the editor's play-entry spawn onto it (12 dedicated tests in `Test/Integration/Scene/spawn_point_query_uve_tests.cpp`)

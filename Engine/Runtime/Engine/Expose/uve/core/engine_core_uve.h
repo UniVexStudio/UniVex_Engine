@@ -57,6 +57,7 @@
 #include "uve/input/i_mobile_input_system_uve.h"
 #include "uve/memory/i_memory_manager_uve.h"
 #include "uve/physics/area_overlap_lifecycle_tracker_uve.h"
+#include "uve/physics/hitbox_strike_lifecycle_tracker_uve.h"
 #include "uve/physics/collision_lifecycle_tracker_uve.h"
 #include "uve/physics/i_collision_system_uve.h"
 #include "uve/physics/i_physics_system_uve.h"
@@ -554,22 +555,18 @@ private:
     /// physics step just produced.
     void SyncSpringArm3DObjectsUVE(float fixedDeltaTimeSeconds);
 
-    /// The combat pairing, new wiring for previously unconsumed authored data: refreshes every
-    /// Hitbox3D object's runtime strike list against every Hurtbox3D object, every frame. The full
-    /// contract: only enabled, valid hitboxes and hurtboxes participate (everything else fails
-    /// closed - a disabled or invalid hitbox ends the frame with zero strikes, never stale
-    /// ones); both volumes are exact oriented boxes (world position/rotation + authored
-    /// halfExtents, world scale intentionally not applied - the ColliderComponentUVE/
-    /// AreaComponentUVE world-shape convention - degenerate rotations fall back to identity);
-    /// a strike requires symmetric layer/mask acceptance (AreaOverlapSystemUVE's rule) and
-    /// equal damage channels; a hitbox never strikes a hurtbox on its own entity; overlap is
-    /// the exact 15-axis oriented-box test from Physics::Detail, and touching boundaries are
-    /// not strikes. Like SyncRayCast3DObjectsUVE()/SyncProjectile3DObjectsUVE(), this lives in the
-    /// engine core tick rather than the object module so objects stay pure authoring data (the
-    /// Physics include the exact test needs is not part of the Objects/3D layer). The bounded
-    /// result list (kMaximumHitbox3DStrikesUVE, deterministic entity order, overflow flagged)
-    /// is runtime-only, never serialized. Applying what a strike means (damage, knockback,
-    /// events) is deliberately not done here - gameplay code no system owns yet.
+    /// The combat pairing, every frame: the scan itself is Physics::SyncHitboxes3DUVE() (the
+    /// hurtbox snapshot and every gate it enforces are documented there and testable on their own),
+    /// and what the tick adds is the consequence contract - the report is diffed against the
+    /// previous tick's through m_hitboxStrikeLifecycleTracker, and each enter/exit transition is
+    /// queued as a typed Physics::Hitbox3DStrikeEnteredEventUVE / Hitbox3DStrikeExitedEventUVE.
+    ///
+    /// So there are two answers, and they are different questions: the per-hitbox strike list is
+    /// STATE ("I am touching these right now" - runtime-only, never serialized, refreshed every
+    /// frame), and the events are the EDGE ("this hit started", "this hit ended"). Damage,
+    /// knockback, i-frames and hit reactions are gameplay's - it decides them from the events, which
+    /// carry what struck what, how deeply, along which axis and on which channel. The engine never
+    /// applies a consequence of its own.
     void SyncHitbox3DObjectsUVE();
 
     /// The interaction scan, new wiring for previously unconsumed authored data (the
@@ -760,6 +757,7 @@ private:
     UI::UIRuntimeUVE m_uiRuntime;
     Localization::LocalizationServiceUVE m_localizationService;
     Physics::AreaOverlapLifecycleTrackerUVE m_areaOverlapLifecycleTracker;
+    Physics::Hitbox3DStrikeLifecycleTrackerUVE m_hitboxStrikeLifecycleTracker;
     Physics::CollisionLifecycleTrackerUVE m_collisionLifecycleTracker;
     Physics::CollisionLifecycleReportUVE m_collisionLifecycleReport;
     std::unique_ptr<Input::IInputSystemUVE> m_inputSystem;

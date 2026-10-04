@@ -56,6 +56,7 @@
 #include "uve/physics/i_physics_system_uve.h"
 #include "uve/physics/physics_constraint_system_uve.h"
 #include "uve/physics/projectile_3d_step_uve.h"
+#include "uve/physics/hitbox_strike_events_uve.h"
 #include "uve/physics/i_raycast_system_uve.h"
 #include "uve/platform/platform_uve.h"
 #include "uve/render_systems/i_camera_system_uve.h"
@@ -2287,6 +2288,73 @@ TEST(EngineCoreUVETest, Hitbox3DObject_StrikesOverlappingHurtboxAndClearsWhenGat
         ASSERT_EQ(afterStrike.strikeCount, 1U);
         EXPECT_EQ(afterStrike.strikes[0U].hurtboxEntity, victim);
     }
+
+    engine.Shutdown();
+}
+
+TEST(EngineCoreUVETest, Hitbox3DObject_StrikeEdgesReachTheEventSystemOnceAndEndWhenGated) {
+    // The component pair above proves the state - "this hitbox is touching this hurtbox right now".
+    // What a gameplay system can actually act on is the edge: this strike started, this strike
+    // ended. The engine owns the diff and queues one typed event per edge, so damage-on-Entered
+    // fires once per hit instead of once per frame, and an exit is reported even when the reason is
+    // a gate rather than the boxes moving apart.
+    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    auto& services = engine.GetServicesUVE();
+    auto& entityManager = services.GetEntityManagerUVE();
+    auto& sceneGraph = services.GetSceneGraphUVE();
+
+    const Scene::EntityUVE blade = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, blade, Scene::TransformComponentUVE{});
+    entityManager.AddComponentUVE<Scene::Hitbox3DComponentUVE>(
+        blade, Scene::Hitbox3DComponentUVE{Math::Vector3UVE{1.0F, 1.0F, 1.0F}});
+
+    const Scene::EntityUVE victim = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, victim, Scene::TransformComponentUVE{});
+    entityManager.AddComponentUVE<Scene::Hurtbox3DComponentUVE>(
+        victim, Scene::Hurtbox3DComponentUVE{Math::Vector3UVE{1.0F, 1.0F, 1.0F}});
+
+    std::vector<Physics::Hitbox3DStrikeEnteredEventUVE> entered;
+    std::vector<Physics::Hitbox3DStrikeExitedEventUVE> exited;
+    services.GetEventSystemUVE().Subscribe<Physics::Hitbox3DStrikeEnteredEventUVE>(
+        [&entered](const Physics::Hitbox3DStrikeEnteredEventUVE& event) { entered.push_back(event); });
+    services.GetEventSystemUVE().Subscribe<Physics::Hitbox3DStrikeExitedEventUVE>(
+        [&exited](const Physics::Hitbox3DStrikeExitedEventUVE& event) { exited.push_back(event); });
+
+    engine.TickFrameUVE();
+    ASSERT_EQ(entered.size(), 1U) << "the boxes start exactly on top of each other";
+    EXPECT_EQ(entered[0].strike.hitbox, blade);
+    EXPECT_EQ(entered[0].strike.hurtbox, victim);
+    EXPECT_NEAR(entered[0].strike.penetrationDepth, 1.0F, 1.0e-4F);
+    EXPECT_NEAR(entered[0].strike.axis.x, 1.0F, 1.0e-4F)
+        << "a consequence that pushes needs the direction, not only the fact";
+    EXPECT_TRUE(exited.empty());
+
+    // Still overlapping on the next tick: same pair, no second edge. This is the whole reason the
+    // engine keeps a baseline instead of firing on every scan.
+    engine.TickFrameUVE();
+    EXPECT_EQ(entered.size(), 1U);
+    EXPECT_TRUE(exited.empty());
+
+    // The hurtbox is switched off without moving: the strike ends because the gate closed, and the
+    // exit is reported on that very tick while the volumes still overlap geometrically.
+    entityManager.GetComponentUVE<Scene::Hurtbox3DComponentUVE>(victim).enabled = false;
+    engine.TickFrameUVE();
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::Hitbox3DComponentUVE>(blade).strikeCount, 0U);
+    ASSERT_EQ(exited.size(), 1U);
+    EXPECT_EQ(exited[0].strike.hitbox, blade);
+    EXPECT_EQ(exited[0].strike.hurtbox, victim);
+
+    // Switched back on while still overlapping: a fresh strike with a fresh edge, because the
+    // previous one was ended by the gate rather than paused by it.
+    entityManager.GetComponentUVE<Scene::Hurtbox3DComponentUVE>(victim).enabled = true;
+    engine.TickFrameUVE();
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::Hitbox3DComponentUVE>(blade).strikeCount, 1U);
+    EXPECT_EQ(entered.size(), 2U);
+    EXPECT_EQ(exited.size(), 1U);
 
     engine.Shutdown();
 }

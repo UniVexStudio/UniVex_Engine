@@ -331,6 +331,12 @@ separately in `SETTINGS_ROADMAP.md`, which follows the same status legend.
   authored motion policy — Stop halts it at the contact, Bounce reflects it through
   `restitution`/`friction` — writing the last contact into runtime hit fields and queueing a typed
   `Projectile3DHitEventUVE`; the engine owns the motion, gameplay owns what a hit means
+- [x] Hitbox/hurtbox strike consequences (Hitbox3D/Hurtbox3D): the pairing the engine already
+  resolved every frame is diffed into real edges — one typed `Hitbox3DStrikeEnteredEventUVE` when a
+  hitbox starts striking a hurtbox and one `Hitbox3DStrikeExitedEventUVE` when it stops, whether by
+  separation or by an authored gate (a disabled box, a layer/mask or channel change, a destroyed
+  entity); each event carries the pair, the penetration depth, the minimum-translation axis and the
+  damage channel, and damage/knockback/i-frames stay gameplay's
 - [x] Trigger volumes with enter/exit lifecycle tracking
 - [x] A constraint system with hinge motors and limits
 - [x] A kinematic character controller with slide/step-up sweep behavior, exposed as a

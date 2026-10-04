@@ -92,6 +92,9 @@
 #include "uve/physics/interaction_area_uve.h"
 #include "uve/physics/kinematic_body_uve.h"
 #include "uve/physics/projectile_3d_step_uve.h"
+#include "uve/physics/hitbox_strike_events_uve.h"
+#include "uve/physics/hitbox_strike_uve.h"
+#include "uve/physics/hitbox_strike_lifecycle_tracker_uve.h"
 #include "uve/physics/spring_arm_uve.h"
 #include "uve/physics/collision_system_uve.h"
 #include "uve/physics/physics_system_uve.h"
@@ -1304,92 +1307,26 @@ void EngineCoreUVE::SyncSpringArm3DObjectsUVE(const float fixedDeltaTimeSeconds)
     }
 }
 
-namespace {
-
-/// Snapshot of one hurtbox's world-space strike volume, taken once per frame by
-/// EngineCoreUVE::SyncHitbox3DObjectsUVE() pass 1.
-struct HurtboxCandidateUVE final {
-    Scene::EntityUVE entity;
-    Math::Vector3UVE center;
-    Math::Vector3UVE halfExtents;
-    Math::QuaternionUVE rotation;
-    std::uint32_t collisionLayer = 1U;
-    std::uint32_t collisionMask = 0xFFFFFFFFU;
-    std::string damageChannel;
-};
-
-} // namespace
-
 void EngineCoreUVE::SyncHitbox3DObjectsUVE() {
-    // Pass 1 (read-only): snapshot every enabled, valid hurtbox that has a world transform, so
-    // the mutation pass can evaluate every hitbox against a stable candidate set without
-    // holding ECS iteration open across a second ForEachUVE. The candidate set is deliberately
-    // unbounded - capping it would mean silently pretending hurtboxes beyond the cap do not
-    // exist; only the per-hitbox strike LIST is bounded, and it reports its own overflow.
-    std::vector<HurtboxCandidateUVE> candidates;
-    m_entityManager->ForEachUVE<Scene::WorldTransformComponentUVE, Scene::Hurtbox3DComponentUVE>(
-        [&candidates](const Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE& worldTransform,
-                      const Scene::Hurtbox3DComponentUVE& hurtbox) {
-            if (!hurtbox.enabled || !Scene::IsHurtbox3DObjectComponentValidUVE(hurtbox)) {
-                return;
-            }
-            HurtboxCandidateUVE candidate;
-            candidate.entity = entity;
-            candidate.center = worldTransform.worldPosition;
-            candidate.halfExtents = hurtbox.halfExtents;
-            if (!Math::TryNormalizeUVE(worldTransform.worldRotation, candidate.rotation)) {
-                candidate.rotation = {}; // degenerate rotation falls back to identity
-            }
-            candidate.collisionLayer = hurtbox.collisionLayer;
-            candidate.collisionMask = hurtbox.collisionMask;
-            candidate.damageChannel = hurtbox.damageChannel;
-            candidates.push_back(std::move(candidate));
-        });
+    // The scan itself is Physics::SyncHitboxes3DUVE(): the hurtbox snapshot, every fail-closed
+    // gate, the symmetric layer/mask acceptance, the damage-channel equality, the exact
+    // oriented-box overlap and the bounded per-hitbox strike list. The tick owns WHEN this runs,
+    // not what the rules are - and the rules are what needed to be testable on their own.
+    const Physics::Hitbox3DSyncReportUVE report = Physics::SyncHitboxes3DUVE(*m_entityManager);
 
-    // Pass 2: refresh every hitbox's runtime strike state against that snapshot.
-    m_entityManager->ForEachUVE<Scene::Hitbox3DComponentUVE>(
-        [this, &candidates](const Scene::EntityUVE entity, Scene::Hitbox3DComponentUVE& hitbox) {
-            hitbox.strikeCount = 0U;
-            hitbox.strikesTruncated = false;
-            if (!hitbox.enabled || !Scene::IsHitbox3DObjectComponentValidUVE(hitbox) ||
-                !m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(entity)) {
-                return;
-            }
-
-            const Scene::WorldTransformComponentUVE& worldTransform =
-                m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
-            Math::QuaternionUVE hitboxRotation{};
-            if (!Math::TryNormalizeUVE(worldTransform.worldRotation, hitboxRotation)) {
-                hitboxRotation = {}; // degenerate rotation falls back to identity
-            }
-
-            for (const HurtboxCandidateUVE& candidate : candidates) {
-                if (candidate.entity == entity) {
-                    continue; // a hitbox never strikes a hurtbox on its own entity
-                }
-                if ((candidate.collisionLayer & hitbox.collisionMask) == 0U ||
-                    (hitbox.collisionLayer & candidate.collisionMask) == 0U) {
-                    continue; // symmetric layer/mask acceptance, AreaOverlapSystemUVE-style
-                }
-                if (candidate.damageChannel != hitbox.damageChannel) {
-                    continue; // a strike requires matching damage channels
-                }
-                const std::optional<Math::PenetrationUVE> penetration =
-                    Physics::Detail::ComputeOrientedBoxOrientedBoxPenetrationUVE(
-                        worldTransform.worldPosition, hitbox.halfExtents, hitboxRotation,
-                        candidate.center, candidate.halfExtents, candidate.rotation);
-                if (!penetration.has_value()) {
-                    continue; // no overlap (touching boundaries are not strikes either)
-                }
-                if (hitbox.strikeCount >= Scene::kMaximumHitbox3DStrikesUVE) {
-                    hitbox.strikesTruncated = true;
-                    break;
-                }
-                hitbox.strikes[hitbox.strikeCount] =
-                    Scene::Hitbox3DStrikeUVE{candidate.entity, penetration->depth};
-                ++hitbox.strikeCount;
-            }
-        });
+    // The per-hitbox strike list says "I am touching these right now". What a consequence cares
+    // about is the edge - this hit started, this hit ended - so the report is diffed against the
+    // previous tick's, and the transitions become the typed events gameplay subscribes to. Damage,
+    // knockback and i-frames stay gameplay's: the engine resolves the pairing and says so once.
+    const Physics::Hitbox3DStrikeLifecycleReportUVE lifecycle =
+        m_hitboxStrikeLifecycleTracker.UpdateUVE(report);
+    for (const Physics::Hitbox3DStrikeTransitionUVE& transition : lifecycle.transitions) {
+        if (transition.kind == Physics::Hitbox3DStrikeTransitionKindUVE::Entered) {
+            m_eventSystem->QueueEvent(Physics::Hitbox3DStrikeEnteredEventUVE{transition.strike});
+        } else {
+            m_eventSystem->QueueEvent(Physics::Hitbox3DStrikeExitedEventUVE{transition.strike});
+        }
+    }
 }
 
 void EngineCoreUVE::SyncInteractionArea3DObjectsUVE() {
@@ -2392,6 +2329,7 @@ void EngineCoreUVE::Shutdown() {
     m_physicsConstraintSystem.reset();
     m_collisionSystem.reset();
     m_areaOverlapLifecycleTracker.ResetUVE();
+    m_hitboxStrikeLifecycleTracker.ResetUVE();
     m_renderer3D.reset();
     m_lightSystem.reset();
     m_meshRenderer.reset();

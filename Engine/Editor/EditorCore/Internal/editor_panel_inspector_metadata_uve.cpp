@@ -588,6 +588,17 @@ void EditorUVE::DrawMetadataPropertyRowUVE(const TypeMetadataEntryUVE& entry,
         const bool changed = ImGui::DragInt("##value", &shown, RangeStepUVE(property, 1.0F), minimum, maximum);
         value = static_cast<std::uint32_t>(std::max(0, shown));
         edited = ApplyContinuousPropertyEditUVE(entry, property, changed, &value) || edited;
+    } else if (property.typeId == Scene::kPropertyTypeUInt8UVE) {
+        // Dragged as a signed int (what ImGui offers) and clamped back into a byte, so an author
+        // can never wrap a count past 255 or below zero.
+        std::uint8_t value = 0U;
+        property.getValue(instance, &value);
+        int shown = value;
+        const int minimum = property.range.enabled ? std::max(0, static_cast<int>(property.range.minimum)) : 0;
+        const int maximum = property.range.enabled ? std::min(255, static_cast<int>(property.range.maximum)) : 255;
+        const bool changed = ImGui::DragInt("##value", &shown, RangeStepUVE(property, 1.0F), minimum, maximum);
+        value = static_cast<std::uint8_t>(std::clamp(shown, 0, 255));
+        edited = ApplyContinuousPropertyEditUVE(entry, property, changed, &value) || edited;
     } else if (property.typeId == Scene::kPropertyTypeBitMask32UVE) {
         std::uint32_t value = 0U;
         property.getValue(instance, &value);
@@ -1431,6 +1442,7 @@ bool EditorUVE::ResetSelectedComponentPropertyUVE(const TypeMetadataEntryUVE& en
                          property.typeId == Scene::kPropertyTypeFloatUVE ||
                          property.typeId == Scene::kPropertyTypeInt32UVE ||
                          property.typeId == Scene::kPropertyTypeUInt32UVE ||
+                         property.typeId == Scene::kPropertyTypeUInt8UVE ||
                          property.typeId == Scene::kPropertyTypeBitMask32UVE ||
                          property.typeId == Scene::kPropertyTypeVector2UVE ||
                          property.typeId == Scene::kPropertyTypeVector3UVE ||

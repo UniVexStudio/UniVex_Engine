@@ -145,19 +145,25 @@ worse than no checklist.
 - [~] Skeleton3D — bone hierarchy data exists, no skinning/animation system reads it.
 - [~] BoneAttachment3D — attach-to-bone fields exist, nothing resolves/follows a bone transform.
 - [~] Marker3D — a plain position/orientation hint, has no behavior by design (this one may never need a "system" — it's meant to be read by other tools/scripts, not ticked itself).
-- [x] Hitbox3D — real per-frame strike detection: `EngineCoreUVE::SyncHitbox3DNodesUVE()`
+- [x] Hitbox3D — real per-frame strike detection: `EngineCoreUVE::SyncHitbox3DObjectsUVE()`
   (the same engine-core home the RayCast3D/Projectile3D syncs use) pairs every enabled hitbox
   against every enabled Hurtbox3D with an exact 15-axis oriented-box-vs-oriented-box test (the
   same public Physics::Detail helper AreaOverlapSystemUVE uses), symmetric layer/mask
   acceptance, damage-channel equality, and self-exclusion, writing a bounded runtime-only
-  strike list (hurtbox entity + penetration depth, overflow flagged) back into the component
-  every frame.
-  One honest gap remains by design: applying what a strike *means* (damage, knockback,
-  i-frames, events) is gameplay code no system owns yet — real, separate follow-up.
+  strike list (hurtbox entity + penetration depth + minimum-translation axis, overflow flagged)
+  back into the component every frame.
+  The consequence contract is real too: `Physics::SyncHitboxes3DUVE()` owns the scan and
+  `Physics::Hitbox3DStrikeLifecycleTrackerUVE` diffs it against the previous report, so a strike
+  start and a strike end each reach gameplay as one typed event
+  (`Hitbox3DStrikeEnteredEventUVE` / `Hitbox3DStrikeExitedEventUVE`, carrying the pair, the depth,
+  the axis and the damage channel) - including the exit an authored gate causes, not only the one
+  separation causes. What a strike *means* (damage numbers, knockback, i-frames, hit reactions)
+  stays gameplay code by design; the engine reports the edge and never invents the consequence.
 - [x] Hurtbox3D — the receiving side of that same pairing: its extents/layer/mask/channel
   genuinely gate which hitboxes can strike it every frame (locked by engine-core tests on both
-  sides of every gate); consequences of being struck are the same gameplay follow-up as
-  Hitbox3D's.
+  sides of every gate), and switching it off now ends every live strike on that tick with a real
+  exit event instead of leaving a strike nothing can end. What being struck *means* is the same
+  gameplay-owned consequence as Hitbox3D's.
 - [x] SpawnPoint3D — the real thing: `Scene::QuerySpawnPointsUVE()` (bounded, overflow-flagged
   result list in (index, generation) order) filters by enabled/validator/world-transform/tag,
   composes each point's world pose with its authored offset, and spends one-shot points only when
@@ -294,8 +300,9 @@ system behind them.
 2. **RayCast3D, Projectile3D, and Hitbox3D/Hurtbox3D done** (real per-frame raycast against the
    actual query system with correct self-exclusion and authored exclusions; real kinematic
    integration, lifetime expiry *and* swept-sphere hit resolution with an authored stop/bounce
-   motion policy for projectiles; real per-frame hitbox-vs-hurtbox strike pairing — the entries
-   above state what Hitbox3D/Hurtbox3D are still honestly missing: nothing consumes `strikes`).
+   motion policy for projectiles; real per-frame hitbox-vs-hurtbox strike pairing whose every
+   start and end now leaves the engine as one typed edge event, so gameplay acts on the strike
+   rather than re-deriving it from the per-frame list).
    Wire up the remaining highest-value already-authored 3D
    stubs next: Skeleton3D + AnimationSequencer + AnimationGraph (blocked on the same missing
    skinning/clip-sampling pipeline — see `ROADMAP.md`), NavigationRegion3D/NavigationAgent3D

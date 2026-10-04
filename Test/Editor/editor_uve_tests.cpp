@@ -462,8 +462,11 @@ TEST(EditorUVETest, InspectorDrawerRegistrationUVE_IncludesStableHierarchyDrawer
         // 41 with RayCast3D's, whose exclusions are entity references and needed the reference-list
         // drawer rather than a typed row; 42 with Projectile3D's, whose authored fields (including
         // the hit policy and its two bounce coefficients) had the same problem - serialized and
-        // validated with no drawer to reach them from.
-        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorDrawerCountUVE(editor), 42U);
+        // validated with no drawer to reach them from; 44 with Hitbox3D's and Hurtbox3D's, the two
+        // halves of a strike, which have to be authorable together or neither is authorable at all:
+        // the pair is what the engine's scan reads, and the hitbox additionally shows the strike
+        // count its own scan resolved.
+        EXPECT_EQ(EditorUVEAccessUVE::GetInspectorDrawerCountUVE(editor), 44U);
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "directional-light-3d"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "animation-mixer"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "solid-body"));
@@ -490,6 +493,8 @@ TEST(EditorUVETest, InspectorDrawerRegistrationUVE_IncludesStableHierarchyDrawer
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "spawn-point"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "ray-cast-3d"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "projectile-3d"));
+        EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "hitbox-3d"));
+        EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "hurtbox-3d"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "audio-source"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "particle-emitter"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "script"));
