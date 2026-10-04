@@ -2298,6 +2298,11 @@ TEST(EngineCoreUVETest, Hitbox3DObject_StrikeEdgesReachTheEventSystemOnceAndEndW
     // ended. The engine owns the diff and queues one typed event per edge, so damage-on-Entered
     // fires once per hit instead of once per frame, and an exit is reported even when the reason is
     // a gate rather than the boxes moving apart.
+    //
+    // Queued events surface one TickFrameUVE() later, the same contract
+    // AreaOverlapLifecycle_QueuesEnteredAndExitedEvents locks: QueueEvent()'d events are not
+    // drained until the next frame's DispatchQueuedUVE(). Every observation below therefore
+    // happens on the tick AFTER the one that caused it - which is the contract, not a quirk.
     EngineConfigUVE config = MakeTestConfigUVE();
     EngineCoreUVE engine(config);
     engine.Init();
@@ -2313,8 +2318,8 @@ TEST(EngineCoreUVETest, Hitbox3DObject_StrikeEdgesReachTheEventSystemOnceAndEndW
         blade, Scene::Hitbox3DComponentUVE{Math::Vector3UVE{1.0F, 1.0F, 1.0F}});
 
     // 1.5 m apart, so the two 1 m half-extent boxes overlap by exactly 0.5 m along X and the
-    // minimum-translation axis is unambiguous - coincident boxes would tie on all three axes and
-    // the depth would be the full 2 m, which is a much weaker thing to assert.
+    // minimum-translation axis is unambiguous - coincident boxes tie on all three axes and their
+    // minimum translation is the full 2 m, which is a much weaker thing to assert.
     const Scene::EntityUVE victim = entityManager.CreateEntityUVE();
     Scene::TransformComponentUVE victimTransform;
     victimTransform.localPosition = Math::Vector3UVE{1.5F, 0.0F, 0.0F};
@@ -2330,6 +2335,12 @@ TEST(EngineCoreUVETest, Hitbox3DObject_StrikeEdgesReachTheEventSystemOnceAndEndW
         [&exited](const Physics::Hitbox3DStrikeExitedEventUVE& event) { exited.push_back(event); });
 
     engine.TickFrameUVE();
+    // The pairing is real on this tick and the edge is queued - but not delivered yet.
+    EXPECT_EQ(entityManager.GetComponentUVE<Scene::Hitbox3DComponentUVE>(blade).strikeCount, 1U);
+    EXPECT_TRUE(entered.empty());
+    EXPECT_TRUE(exited.empty());
+
+    engine.TickFrameUVE();
     ASSERT_EQ(entered.size(), 1U) << "a 1 m box and a 1 m box 1.5 m apart overlap by 0.5 m";
     EXPECT_EQ(entered[0].strike.hitbox, blade);
     EXPECT_EQ(entered[0].strike.hurtbox, victim);
@@ -2338,26 +2349,29 @@ TEST(EngineCoreUVETest, Hitbox3DObject_StrikeEdgesReachTheEventSystemOnceAndEndW
         << "a consequence that pushes needs the direction, not only the fact";
     EXPECT_TRUE(exited.empty());
 
-    // Still overlapping on the next tick: same pair, no second edge. This is the whole reason the
-    // engine keeps a baseline instead of firing on every scan.
+    // Still overlapping on the next tick: same pair, no second edge, and nothing to deliver.
     engine.TickFrameUVE();
     EXPECT_EQ(entered.size(), 1U);
     EXPECT_TRUE(exited.empty());
 
     // The hurtbox is switched off without moving: the strike ends because the gate closed, and the
-    // exit is reported on that very tick while the volumes still overlap geometrically.
+    // exit is queued on that tick while the volumes still overlap geometrically.
     entityManager.GetComponentUVE<Scene::Hurtbox3DComponentUVE>(victim).enabled = false;
     engine.TickFrameUVE();
     EXPECT_EQ(entityManager.GetComponentUVE<Scene::Hitbox3DComponentUVE>(blade).strikeCount, 0U);
+    EXPECT_TRUE(exited.empty());
+    engine.TickFrameUVE();
     ASSERT_EQ(exited.size(), 1U);
     EXPECT_EQ(exited[0].strike.hitbox, blade);
     EXPECT_EQ(exited[0].strike.hurtbox, victim);
+    EXPECT_EQ(entered.size(), 1U);
 
     // Switched back on while still overlapping: a fresh strike with a fresh edge, because the
     // previous one was ended by the gate rather than paused by it.
     entityManager.GetComponentUVE<Scene::Hurtbox3DComponentUVE>(victim).enabled = true;
     engine.TickFrameUVE();
     EXPECT_EQ(entityManager.GetComponentUVE<Scene::Hitbox3DComponentUVE>(blade).strikeCount, 1U);
+    engine.TickFrameUVE();
     EXPECT_EQ(entered.size(), 2U);
     EXPECT_EQ(exited.size(), 1U);
 
