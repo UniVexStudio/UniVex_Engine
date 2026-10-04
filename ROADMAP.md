@@ -83,9 +83,12 @@ separately in `SETTINGS_ROADMAP.md`, which follows the same status legend.
 - [ ] Temporal anti-aliasing (and/or a modern upscaling technique)
 - [ ] HDR display output and a real color-grading / LUT pipeline
 - [ ] Order-independent or improved transparency sorting
-- [~] Decal rendering (the `decal` scene-node kind already exists as a descriptor; the lifetime
-  runtime and the projected-geometry pass now exist and the frame reports their draws, patches and
-  triangles — what remains is the decal program that draws those patches)
+- [x] Decal rendering — the `decal` scene-node kind is real end to end: the lifetime runtime counts
+  down and reports the expiry, the projected-geometry pass clips the receiving surfaces against the
+  box or cylinder volume, and the built-in `decal.glsl` program paints the surviving patches with the
+  material's albedo texture and colour (tinted by `modulate`, plus emissive scaled by
+  `emissionEnergy`, with the texture's alpha joining `albedoMix`) evaluating the authored fades per
+  pixel, back to front
 - [ ] Ray-traced reflections/shadows/GI as an optional high-end path (long-term)
 
 ### 1.2 Scene scale & performance

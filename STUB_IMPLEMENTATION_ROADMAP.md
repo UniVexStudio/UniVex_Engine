@@ -47,8 +47,7 @@ tests. An item's row here is retired to "Done" (bottom of file) only once it rea
 
 | # | Object | Status | Component | Arrays to give work | The work | Depends on | Size |
 |---|------|--------|-----------|---------------------|----------|------------|------|
-| — | *done items* | — | — | — | rows retired to the Done section at the bottom: 1–8, 9, 10, 15 (12 stays — the renderer-side half is still open). Their numbered write-ups stay below as the audit trail. | — | — |
-| 11 | Decal3D | `[~]` | `Decal3DComponentUVE` | — | decal-projection rendering | renderer (big) | L |
+| — | *done items* | — | — | — | rows retired to the Done section at the bottom: 1–11, 15 (12 stays — the renderer-side half is still open). Their numbered write-ups stay below as the audit trail. | — | — |
 | 12 | ReflectionProbe3D | `[x]` (sync half) | `ReflectionProbe3DComponentUVE` | — | probe capture scheduling — **done**, five dedicated tests; renderer-side sampling still `[~]` | renderer (big) | L |
 | 13 | NavigationRegion3D + NavigationAgent3D | `[~]` | `NavigationRegion3DComponentUVE` / `NavigationAgent3DComponentUVE` | — | navmesh bake + pathfind + steer | new Navigation subsystem | L |
 | 14 | Skeleton3D + BoneAttachment3D + AnimationSequencer + AnimationGraph | `[~]` | `Skeleton3DComponentUVE`, `BoneAttachment3DComponentUVE`, `AnimationPlayerComponentUVE`, `AnimationTreeUVE` | `bones` vector | clip sampling → bone pose → skinning | new Animation pipeline | L |
@@ -444,10 +443,9 @@ is what would let anyone tune the count against the number that matters.
       exactly what landed).
 - [x] Tests lock it — 8 object cases (projection, fades, expiry), a serializer re-arm case, a
       metadata case, an engine-core expiry case, 14 pass cases and one end-to-end frame case.
-- [ ] `SCENE_NODES_ROADMAP.md` `[~]` → `[x]` — **stays `[~]` until the pass draws.** The geometry is
-      built, clipped and handed to the frame in the canonical vertex layout, and the frame reports
-      it; no decal program binds that stream yet, so a decal is still not visible on screen. That
-      one piece is what this box is waiting for.
+- [x] `SCENE_NODES_ROADMAP.md` `[~]` → `[x]` — the draw landed: `decal.glsl` projects the patches,
+      evaluates the authored fades per pixel against the CPU's own world-to-unit matrix, and blends
+      the material over the surface, so a decal is visible on screen and the row is `[x]`.
 
 **Component:** `Decal3DComponentUVE` — own file pair.
 **Fields to give work:** `materialAssetPath`, `size`, `projection`, `lifetime` (0 = permanent;
@@ -480,8 +478,26 @@ with/beside the renderer's own roadmap, not alone.
    publishes them in the canonical `MeshVertexUVE` layout an asset-backed mesh already uses, and the
    frame reports draws, patches and triangles through the renderer diagnostics and the F1 panel.
 
-**What remains:** a decal program (vertex + fragment shader, pipeline state, the draw submission
-that binds the patch stream with the decal's material).
+4. **The draw.** `DecalDrawPlanUVE` (built by `BuildDecalDrawPlanUVE`) turns the pass's draw list
+   into GPU work: per decal, the volume's world-to-unit matrix (the inverse of
+   `ComposeTrsUVE(position, rotation, halfExtents)` - the same transform `Decal3DWorldToUnitUVE()`
+   applies, so the CPU's clipping space and the shader's coordinate space are one space), the
+   material's albedo texture - sampled with the patch's unit coordinates, which is the [0, 1] range
+   a texture is sampled with and what makes a decal the shape the artist drew rather than the
+   rectangle it was clipped to - its albedo colour tinted by `modulate`, its emissive scaled by
+   `emissionEnergy`, `albedoMix` as the blend's alpha scale, and the authored fades. `decal.glsl` is
+   the program: world-space
+   patches through `uViewProjection`, depth-tested but not depth-written, blended `SourceAlphaOver`,
+   the texture resolved by the same GUID-to-handle path the mesh materials use, with the same white
+   fallback that leaves a flat-coloured decal intact. The fades are re-evaluated per pixel (a patch is
+   one receiving face,
+   and a wall's face spans the whole volume - a weight flat across it would end in the hard
+   rectangle the authored fade exists to avoid). Each decal is drawn from its own vertex/index
+   buffers, created on the first frame it paints and released once the plan stops naming it, because
+   this engine's `DrawIndexedUVE` has no first-index offset - the same reason a skinned mesh owns
+   its vertex buffer. The plan is bounded (command and vertex caps) and reports what it refused, and
+   the F1 panel now shows the recorded draw calls beside the extracted draws.
+
 **Depends on:** renderer decal pass. **Size: L.**
 
 ### 12. ReflectionProbe3D — probe capture scheduling (done) + sampling (still open)
@@ -577,6 +593,7 @@ correctly stays unticked. Listed here so the audit trail shows it was considered
 
 ## Done (moved here when the last box ticks)
 
+### Decal3D — the projected patches are painted: `decal.glsl` evaluates the authored fades per pixel against the CPU's own world-to-unit matrix, each decal draws from its own buffers, and the plan's caps/refusals are reported — done in the change that gave the patch stream a program to bind (8 plan cases, 1 end-to-end frame case that asserts the recorded draw, 2 F1 rows with their own case)
 ### LODGroup3D — the resolved level draws its own mesh: per-level `lodMeshGuids` with the object's own mesh as the fallback, a hysteresis band on every threshold and on the cull point, locked by 12 resolver + 2 mesh-fetch + 1 renderer-swap + 2 serializer + 1 metadata case — done in the change that gave `distanceThresholds` something to draw (drawer census 44 → 45)
 
 ### SpringArm3D — the camera boom, tested against the world it casts into — done in 0992c86

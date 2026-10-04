@@ -67,6 +67,14 @@ std::vector<EditorRenderStatRowUVE> BuildEditorRenderStatRowsUVE(
                     false});
     rows.push_back({kSectionSceneUVE, "Decals on nothing", FormatCountUVE(diagnostics.decalsWithoutReceivers),
                     diagnostics.decalsWithoutReceivers > 0U});
+    // Extracted and recorded are different numbers on purpose: the first says the projection pass
+    // found geometry, the second says the GPU was actually handed it. A frame whose decals extract
+    // but never record is the shape of a decal nobody can see, which is the bug this pair exists to
+    // make visible.
+    rows.push_back({kSectionSceneUVE, "Decal draw calls", FormatCountUVE(diagnostics.decalDrawCallsRecorded),
+                    diagnostics.decalDrawsExtracted > 0U && diagnostics.decalDrawCallsRecorded == 0U});
+    rows.push_back({kSectionSceneUVE, "Decal draws dropped", FormatCountUVE(diagnostics.decalDrawsDropped),
+                    diagnostics.decalDrawsDropped > 0U});
 
     // Clustering. The rejected count is the whole return on building clusters at all: a rejected
     // cluster skips a plane test for every candidate inside it. Flagged when clusters exist and

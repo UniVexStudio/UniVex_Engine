@@ -39,6 +39,7 @@
 #include "uve/math/quaternion_uve.h"
 #include "uve/math/vector3_uve.h"
 #include "uve/objects/3d/all_objects_3d_uve.h"
+#include "uve/render_systems/decal_draw_command_uve.h"
 #include "uve/render_systems/decal_renderer_uve.h"
 #include "uve/render_systems/i_light_system_uve.h"
 #include "uve/render_systems/particle_draw_command_uve.h"
@@ -867,6 +868,25 @@ struct Renderer3DUVE::ImplUVE {
     /// top of every build rather than making the allocator do it.
     DecalRendererUVE decalRenderer;
     DecalDrawListUVE decalDraws;
+    /// This frame's decal geometry and the commands that draw it, built from decalDraws in the same
+    /// frame step and consumed by the MainColor pass.
+    DecalDrawPlanUVE decalPlan;
+    /// The program Decal3D's patches are painted with - unlit paint blended over the shaded surface,
+    /// so a decal needs no material shader to be visible.
+    std::shared_ptr<Shader::ShaderProgramUVE> decalProgram;
+    /// Per-decal vertex and index buffers, re-uploaded every frame because the patches are rebuilt
+    /// every frame - a receiver can move, and so can the decal. Mirrors skinnedMeshCache below it:
+    /// keyed by entity, sized to the geometry it currently holds, and entries no plan touched are
+    /// released at the next one.
+    struct DecalGpuUVE final {
+        BufferHandleUVE vertexBuffer = kInvalidBufferHandleUVE;
+        BufferHandleUVE indexBuffer = kInvalidBufferHandleUVE;
+        std::size_t vertexBytes = 0U;
+        std::size_t indexBytes = 0U;
+        std::uint64_t frame = 0U;
+    };
+    std::unordered_map<std::uint64_t, DecalGpuUVE> decalBuffers;
+    std::uint64_t decalFrame = 0U;
     std::array<RenderQueueUVE, kShadowCascadeCountUVE> shadowQueues;
     std::vector<PrimitiveRenderItemUVE> primitiveItems;
 
@@ -1963,6 +1983,98 @@ struct Renderer3DUVE::ImplUVE {
         return drawCalls;
     }
 
+    /// Uploads one decal command's window of the plan into that decal's own buffers, creating them
+    /// the first time it paints and re-uploading afterwards. Returns nullptr when the device refuses
+    /// the upload, in which case the decal is skipped rather than drawn from stale geometry.
+    [[nodiscard]] const DecalGpuUVE* UploadDecalGeometryUVE(const DecalDrawCommandUVE& command,
+                                                            const std::span<const Asset::MeshVertexUVE> vertices,
+                                                            const std::span<const std::uint32_t> indices) {
+        const std::uint64_t key = (static_cast<std::uint64_t>(command.decal.generation) << 32U) |
+                                  static_cast<std::uint64_t>(command.decal.index);
+        DecalGpuUVE& entry = decalBuffers[key];
+        const std::span<const std::byte> vertexBytes = std::as_bytes(vertices);
+        const std::span<const std::byte> indexBytes = std::as_bytes(indices);
+
+        if (entry.vertexBuffer == kInvalidBufferHandleUVE || entry.vertexBytes != vertexBytes.size()) {
+            DestroyBufferIfValidUVE(renderDevice, entry.vertexBuffer);
+            entry.vertexBuffer = renderDevice.CreateBufferUVE(
+                BufferDescUVE{vertexBytes.size(), BufferUsageUVE::Vertex}, vertexBytes);
+            entry.vertexBytes = vertexBytes.size();
+        } else if (!renderDevice.UpdateBufferUVE(entry.vertexBuffer, vertexBytes)) {
+            return nullptr;
+        }
+        if (entry.indexBuffer == kInvalidBufferHandleUVE || entry.indexBytes != indexBytes.size()) {
+            DestroyBufferIfValidUVE(renderDevice, entry.indexBuffer);
+            entry.indexBuffer = renderDevice.CreateBufferUVE(
+                BufferDescUVE{indexBytes.size(), BufferUsageUVE::Index}, indexBytes);
+            entry.indexBytes = indexBytes.size();
+        } else if (!renderDevice.UpdateBufferUVE(entry.indexBuffer, indexBytes)) {
+            return nullptr;
+        }
+        if (entry.vertexBuffer == kInvalidBufferHandleUVE || entry.indexBuffer == kInvalidBufferHandleUVE) {
+            return nullptr;
+        }
+        entry.frame = decalFrame;
+        return &entry;
+    }
+
+    /// Records this frame's decal patches, one draw per decal, in the plan's own (back-to-front)
+    /// order so overlapping decals blend in the order the artist sees them. Returns the number of
+    /// draw calls recorded.
+    ///
+    /// The pass runs inside the main color pass, after the meshes it paints over and before the
+    /// effects that sit on top of them: a decal is blended into the shaded surface it landed on, so
+    /// it has to be recorded once that surface exists.
+    [[nodiscard]] std::size_t RecordDecalItemsUVE(const DecalDrawPlanUVE& plan,
+                                                  const FrameUniformsUVE& frameUniforms,
+                                                  ICommandBufferUVE& commandBuffer) {
+        if (!decalProgram->IsValidUVE() || plan.commands.empty()) {
+            return 0U;
+        }
+        // Frame constants once: the per-decal values below overwrite only their own names, and
+        // ApplyToUVE() flushes the whole pending set on every draw.
+        decalProgram->SetMatrix4x4UVE("uViewProjection", frameUniforms.viewProjection);
+        decalProgram->SetVector3UVE("uViewPosition", frameUniforms.viewPosition);
+
+        std::size_t drawCalls = 0U;
+        for (const DecalDrawCommandUVE& command : plan.commands) {
+            const std::span<const Asset::MeshVertexUVE> vertices(plan.vertices.data() + command.firstVertex,
+                                                                 command.vertexCount);
+            const std::span<const std::uint32_t> indices(plan.indices.data() + command.firstIndex,
+                                                         command.indexCount);
+            const DecalGpuUVE* const geometry = UploadDecalGeometryUVE(command, vertices, indices);
+            if (geometry == nullptr) {
+                continue;
+            }
+
+            // The material's texture, resolved exactly as the mesh path resolves one: a GUID that
+            // is unset, still loading or failed gets the 1x1 white fallback, which leaves the flat
+            // colour and the full alpha intact rather than dropping the decal for the frame.
+            const TextureHandleUVE albedoTexture =
+                ResolveTextureGpuHandleUVE(command.albedoTextureGuid, fallbackWhiteTexture)
+                    .value_or(fallbackWhiteTexture);
+            decalProgram->SetIntUVE("uAlbedoTexture", static_cast<std::int32_t>(kAlbedoTextureSlotUVE));
+            decalProgram->SetMatrix4x4UVE("uWorldToUnit", command.worldToUnit);
+            decalProgram->SetVector3UVE("uProjectionDirection", command.projectionDirection);
+            decalProgram->SetVector3UVE("uBaseColor", command.baseColor);
+            decalProgram->SetVector3UVE("uEmissionColor", command.emissionColor);
+            decalProgram->SetFloatUVE("uAlphaScale", command.alphaScale);
+            decalProgram->SetFloatUVE("uNormalFade", command.normalFade);
+            decalProgram->SetFloatUVE("uUpperFade", command.upperFade);
+            decalProgram->SetFloatUVE("uLowerFade", command.lowerFade);
+            decalProgram->SetFloatUVE("uDistanceFadeEnabled", command.distanceFadeEnabled ? 1.0F : 0.0F);
+            decalProgram->SetFloatUVE("uDistanceFadeBegin", command.distanceFadeBegin);
+            decalProgram->SetFloatUVE("uDistanceFadeLength", command.distanceFadeLength);
+            decalProgram->ApplyToUVE(commandBuffer);
+            commandBuffer.BindTextureUVE(albedoTexture, kAlbedoTextureSlotUVE);
+            commandBuffer.BindVertexBufferUVE(geometry->vertexBuffer);
+            commandBuffer.BindIndexBufferUVE(geometry->indexBuffer);
+            commandBuffer.DrawIndexedUVE(command.indexCount);
+            ++drawCalls;
+        }
+        return drawCalls;
+    }
+
     [[nodiscard]] std::size_t RecordParticleItemsUVE(const ParticleDrawRecordingUVE& recording,
                                                        const FrameUniformsUVE& frameUniforms,
                                                        ICommandBufferUVE& commandBuffer) {
@@ -2227,6 +2339,20 @@ Renderer3DUVE::Renderer3DUVE(IRenderDeviceUVE& renderDevice, IRenderSystemUVE& r
         BufferDescUVE{sizeof(ParticleVertexUVE) * kMaximumParticleGpuDrawCommandsUVE * kParticleVerticesPerCommandUVE,
                       BufferUsageUVE::Vertex});
 
+    Shader::ShaderProgramDescUVE decalProgramDesc;
+    decalProgramDesc.virtualFilePath = std::string(Shader::BuiltIn::kDecalVirtualPath);
+    decalProgramDesc.embeddedFallbackSourceCode = std::string(Shader::BuiltIn::kDecalSource);
+    decalProgramDesc.vertexLayout = MeshVertexLayoutUVE();
+    decalProgramDesc.vertexStride = static_cast<std::uint32_t>(sizeof(Asset::MeshVertexUVE));
+    decalProgramDesc.depthTestEnabled = true;
+    // Paint, not geometry: a decal is blended into the surface it landed on, so it must not stop the
+    // surface behind it from being drawn - and it must not write depth either, or the next decal in
+    // the same frame would be depth-rejected by one that is merely in front of it.
+    decalProgramDesc.depthWriteEnabled = false;
+    decalProgramDesc.blendMode = PipelineBlendModeUVE::SourceAlphaOver;
+    decalProgramDesc.debugNameUVE = "Decal";
+    m_impl->decalProgram = shaderManager.CreateProgramUVE(decalProgramDesc);
+
     Shader::ShaderProgramDescUVE primitiveProgramDesc;
     primitiveProgramDesc.virtualFilePath = std::string(Shader::BuiltIn::kLitPrimitive3DVirtualPath);
     primitiveProgramDesc.embeddedFallbackSourceCode = std::string(Shader::BuiltIn::kLitPrimitive3DSource);
@@ -2272,6 +2398,11 @@ Renderer3DUVE::~Renderer3DUVE() {
     for (const auto& [kind, meshResources] : m_impl->primitiveMeshCache) {
         DestroyBufferIfValidUVE(m_impl->renderDevice, meshResources.vertexBuffer);
         DestroyBufferIfValidUVE(m_impl->renderDevice, meshResources.indexBuffer);
+    }
+    for (const auto& [key, decalResources] : m_impl->decalBuffers) {
+        static_cast<void>(key);
+        DestroyBufferIfValidUVE(m_impl->renderDevice, decalResources.vertexBuffer);
+        DestroyBufferIfValidUVE(m_impl->renderDevice, decalResources.indexBuffer);
     }
     // MaterialGpuResourcesUVE holds shared ShaderProgramUVE references only. Releasing the cache
     // lets ShaderManagerUVE-owned program deleters retire their pipelines exactly once.
@@ -2486,11 +2617,29 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     m_impl->decalRenderer.BuildDrawListUVE(entityManager, m_impl->assetManager, m_impl->assetDatabase,
                                             m_impl->visibilitySet, viewPosition, frustum,
                                             kMainViewReceiverLayerMaskUVE, m_impl->decalDraws);
+    BuildDecalDrawPlanUVE(m_impl->decalDraws, m_impl->decalPlan);
+    // A decal buffer the plan did not touch this frame belongs to a decal that is gone, hidden or
+    // no longer painting - the same lifetime rule the skinned-mesh cache applies to its own.
+    for (auto it = m_impl->decalBuffers.begin(); it != m_impl->decalBuffers.end();) {
+        if (it->second.frame != m_impl->decalFrame) {
+            DestroyBufferIfValidUVE(m_impl->renderDevice, it->second.vertexBuffer);
+            DestroyBufferIfValidUVE(m_impl->renderDevice, it->second.indexBuffer);
+            it = m_impl->decalBuffers.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    ++m_impl->decalFrame;
     m_impl->lastFrameDiagnostics.decalsConsidered = m_impl->decalDraws.decalsConsidered;
     m_impl->lastFrameDiagnostics.decalDrawsExtracted = m_impl->decalDraws.draws.size();
     m_impl->lastFrameDiagnostics.decalPatchesExtracted = m_impl->decalDraws.GetPatchCountUVE();
     m_impl->lastFrameDiagnostics.decalTrianglesExtracted = m_impl->decalDraws.GetTriangleCountUVE();
     m_impl->lastFrameDiagnostics.decalsWithoutReceivers = m_impl->decalDraws.decalsWithoutReceivers;
+    m_impl->lastFrameDiagnostics.decalDrawsDropped = m_impl->decalPlan.drawsTruncated +
+                                                     m_impl->decalPlan.drawsWithoutMaterial +
+                                                     m_impl->decalPlan.drawsWithoutGeometry +
+                                                     m_impl->decalPlan.drawsWithoutInverse +
+                                                     m_impl->decalPlan.drawsWithoutPaint;
     if (m_impl->particleRuntimeForFrame != nullptr) {
         const ParticleRenderSnapshotUVE particleSnapshot =
             ParticleRenderBridgeUVE::ExtractUVE(*m_impl->particleRuntimeForFrame);
@@ -2575,6 +2724,8 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             m_impl->lastFrameDiagnostics.instancedObjectsRecorded = m_impl->instancedObjectsThisFrame;
             m_impl->lastFrameDiagnostics.shadowInstancedDrawCallsRecorded =
                 m_impl->shadowInstancedDrawCallsThisFrame;
+            m_impl->lastFrameDiagnostics.decalDrawCallsRecorded =
+                m_impl->RecordDecalItemsUVE(m_impl->decalPlan, frameUniforms, commandBuffer);
             m_impl->lastFrameDiagnostics.particleDrawCommandsSubmitted =
                 m_impl->RecordParticleItemsUVE(m_impl->particleDrawRecording, frameUniforms, commandBuffer);
             m_impl->lastFrameDiagnostics.particleDrawCallsRecorded =
@@ -2585,7 +2736,8 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                 m_impl->lastFrameDiagnostics.glDrawCallsIssued =
                     m_impl->lastFrameDiagnostics.meshDrawCallsRecorded +
                     m_impl->lastFrameDiagnostics.primitiveDrawCallsRecorded +
-                    m_impl->lastFrameDiagnostics.particleDrawCallsRecorded;
+                    m_impl->lastFrameDiagnostics.particleDrawCallsRecorded +
+                    m_impl->lastFrameDiagnostics.decalDrawCallsRecorded;
             }
             commandBuffer.EndRenderPassUVE();
         });

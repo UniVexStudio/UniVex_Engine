@@ -354,7 +354,10 @@ void DecalRendererUVE::BuildDrawListUVE(Scene::IEntityManagerUVE& entityManager,
             draw.decal = entity;
             draw.materialIndex = ResolveMaterialIndexUVE(materialSlots, outDrawList.materialHandles,
                                                           materialGuid, materialHandle);
-            draw.projectionDirection = projection.projectionDirection;
+            draw.projection = projection;
+            draw.modulate = decal.modulate;
+            draw.emissionEnergy = decal.emissionEnergy;
+            draw.albedoMix = decal.albedoMix;
             draw.sortDepth = distanceToCamera;
 
             for (const DecalReceiverUVE& receiver : receivers) {
