@@ -357,6 +357,9 @@ TEST_F(Object3DDefinitionsUVETest, KinematicRecipeMatchesTheFormerInlineEditorRe
     // collider + kinematic body + the animatable body's own component, in that spirit unchanged.
     const EntityUVE entity = CreateEntityUVE();
     ApplyKinematic3DObjectDefinitionUVE(entityManager, entity, Kinematic3DObjectDefinitionUVE{});
+    // Object3D > PhysicsObject3D > Kinematic3D, so a platform that is stopped can be kept as an
+    // immovable obstacle or taken out of the world rather than only deleted.
+    EXPECT_TRUE(entityManager.HasComponentUVE<PhysicsObjectComponentUVE>(entity));
     ASSERT_TRUE(entityManager.HasComponentUVE<ColliderComponentUVE>(entity));
     ASSERT_TRUE(entityManager.HasComponentUVE<Rigid3DComponentUVE>(entity));
     ASSERT_TRUE(entityManager.HasComponentUVE<Kinematic3DComponentUVE>(entity));

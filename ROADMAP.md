@@ -326,6 +326,10 @@ separately in `SETTINGS_ROADMAP.md`, which follows the same status legend.
 - [x] A constraint system with hinge motors and limits
 - [x] A kinematic character controller with slide/step-up sweep behavior, exposed as a
   real, addable component with gravity/jump/ground-state handling
+- [x] Kinematic bodies driven by an authored target velocity — moving platforms, lifts and doors
+  that go through the world instead of around it: geometry stops them, they cannot tunnel through a
+  thin wall at speed, they push the rigid bodies they meet with the character's own push policy, and
+  the velocity they actually achieved is what carries a character standing on them
 - [x] Configurable per-surface physics materials (friction/restitution)
 - [ ] Soft-body / cloth simulation
 - [ ] Vehicle physics (wheeled at minimum)

@@ -14,18 +14,25 @@ namespace UVE::Scene {
 class IEntityManagerUVE;
 
 struct Kinematic3DComponentUVE final {
+    /// Where the body is going, in metres per second, in the entity's own local axes. The mover
+    /// drives the body at this velocity every fixed step (see Physics/kinematic_body_uve.h).
     Math::Vector3UVE targetVelocity{};
+    /// How quickly the body reaches `targetVelocity`: 1 (the authored default) is at speed on the
+    /// first step, lower values ease in over roughly a second, and 0 never eases on its own -
+    /// which is how a script drives the body by writing its velocity instead. The curve is
+    /// per-second, so a lift eases the same at any fixed rate.
     float interpolation = 1.0F;
+    /// Off leaves the body exactly where it is, with no velocity left to hand a rider.
     bool active = true;
 };
 
 [[nodiscard]] bool IsKinematic3DObjectComponentValidUVE(const Kinematic3DComponentUVE& value) noexcept;
 
 /// Authoring definition for the Kinematic3D scene object: the component set and defaults a
-/// freshly created Kinematic3D entity attaches — a collider, a kinematic rigid body (so
-/// physics never fights the authored target-velocity motion), and the animatable body's own object
-/// component. This recipe used to be the one remaining inline multi-component recipe hardcoded
-/// in EditorUVE's creation switch; it now lives in the kind's own home file like every other
+/// freshly created Kinematic3D entity attaches — the PhysicsObject3D base, a collider, a kinematic
+/// rigid body (so physics never fights the authored target-velocity motion), and the animatable
+/// body's own object component. This recipe used to be the one remaining inline multi-component
+/// recipe hardcoded in EditorUVE's creation switch; it now lives in the kind's own home file like every other
 /// kind. Per Engine/Runtime/Scene/README.md's "one truth per concept" rule this holds the
 /// *recipe*, not a second copy of component storage.
 struct Kinematic3DObjectDefinitionUVE final {

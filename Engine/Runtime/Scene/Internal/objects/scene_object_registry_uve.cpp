@@ -16,7 +16,8 @@ constexpr std::array<std::string_view, 1U> kLightContracts{"LightComponentUVE"};
 constexpr std::array<std::string_view, 1U> kColliderContracts{"ColliderComponentUVE"};
 constexpr std::array<std::string_view, 1U> kAreaContracts{"AreaComponentUVE"};
 constexpr std::array<std::string_view, 1U> kRayCastContracts{"RayCast3DComponentUVE"};
-constexpr std::array<std::string_view, 1U> kKinematicContracts{"Kinematic3DComponentUVE"};
+constexpr std::array<std::string_view, 3U> kKinematicContracts{
+    "Kinematic3DComponentUVE", "Rigid3DComponentUVE", "ColliderComponentUVE"};
 constexpr std::array<std::string_view, 1U> kNavMeshVolumeContracts{"NavMeshVolume3DComponentUVE"};
 constexpr std::array<std::string_view, 1U> kNavSeekerContracts{"NavSeeker3DComponentUVE"};
 constexpr std::array<std::string_view, 1U> kSkeletonContracts{"Skeleton3DComponentUVE"};
@@ -58,7 +59,7 @@ constexpr std::array<SceneObjectDescriptorUVE, 47U> kDescriptors{
     SceneObjectDescriptorUVE{SceneObjectKindUVE::Area3D, "area_3d", "Area3D", "Physics", "Physics/AreaOverlapSystemUVE", kAreaContracts, true},
     SceneObjectDescriptorUVE{SceneObjectKindUVE::RayCast3D, "ray_cast_3d", "RayCast3D", "Physics", "Physics/RaycastSystemUVE", kRayCastContracts, true},
     SceneObjectDescriptorUVE{SceneObjectKindUVE::Static3D, "static_3d", "Static3D", "Physics", "Physics/CollisionSystemUVE", kColliderContracts, true},
-    SceneObjectDescriptorUVE{SceneObjectKindUVE::Kinematic3D, "kinematic_3d", "Kinematic3D", "Physics", "Scene/Kinematic3DComponentUVE", kKinematicContracts, true},
+    SceneObjectDescriptorUVE{SceneObjectKindUVE::Kinematic3D, "kinematic_3d", "Kinematic3D", "Physics", "Physics/KinematicBodyUVE", kKinematicContracts, true},
     SceneObjectDescriptorUVE{SceneObjectKindUVE::NavMeshVolume3D, "nav_mesh_volume_3d", "NavMeshVolume3D", "Navigation", "Scene/NavMeshVolume3DComponentUVE", kNavMeshVolumeContracts, true},
     SceneObjectDescriptorUVE{SceneObjectKindUVE::NavSeeker3D, "nav_seeker_3d", "NavSeeker3D", "Navigation", "Scene/NavSeeker3DComponentUVE", kNavSeekerContracts, true},
     SceneObjectDescriptorUVE{SceneObjectKindUVE::Skeleton3D, "skeleton_3d", "Skeleton3D", "Animation", "Scene/Skeleton3DComponentUVE", kSkeletonContracts, true},
