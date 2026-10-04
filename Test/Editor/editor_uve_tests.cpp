@@ -478,7 +478,7 @@ TEST(EditorUVETest, InspectorDrawerRegistrationUVE_IncludesStableHierarchyDrawer
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "animation-mixer"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "solid-body"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "animation-tree"));
-        EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "bone-attachment"));
+        EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "bone-attachment-3d"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "skeleton-3d"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "surface-instance"));
         EXPECT_TRUE(EditorUVEAccessUVE::HasInspectorDrawerUVE(editor, "light-emitter"));
