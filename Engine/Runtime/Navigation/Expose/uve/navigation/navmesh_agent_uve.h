@@ -66,7 +66,8 @@ struct NavAgentSettingsUVE final {
     /// agent whether or not the caller passes neighbours.
     float avoidanceRadiusMetres = 2.0F;
     /// The search budget one replan gets, reported back so a truncated search is visible as one.
-    std::size_t maximumExpandedPolygons = 4096U;
+    /// One node is one doorway the chain stepped through; see NavPathRequestUVE.
+    std::size_t maximumExpandedNodes = 4096U;
 };
 
 /// Another agent, as this one's steering sees it: where it is and how wide it is. A caller that

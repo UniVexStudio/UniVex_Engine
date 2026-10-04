@@ -194,7 +194,7 @@ void NavAgentUVE::ReplanUVE(const NavmeshUVE& mesh) noexcept {
     request.target = m_target;
     request.navigationLayers = m_settings.navigationLayers;
     request.offMeshToleranceMetres = m_settings.offMeshToleranceMetres;
-    request.maximumExpandedPolygons = m_settings.maximumExpandedPolygons;
+    request.maximumExpandedNodes = m_settings.maximumExpandedNodes;
     const NavPathUVE path = FindNavPathUVE(mesh, request);
     m_replanRequested = false;
 

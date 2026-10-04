@@ -27,3 +27,10 @@ disagree with the first.
   heights, which is what keeps two polygons meeting exactly.
 * **Layers.** A polygon carries the collision layer of the surface it came from, and a path request
   carries the layers its agent may use. Nothing walks a polygon its request's mask does not intersect.
+* **Pricing.** A chain is priced by the funnel it pulls taut over its windows, never by the distance
+  between portal centres: the search grows one state per door *and* wedge - the corner the apex
+  stands on and the corner each side runs through - so two chains that crossed the same door but
+  look out at the rest of the level differently both survive to be measured. That is what makes the
+  returned path the cheapest walk the mesh can express rather than the first one that reaches the
+  goal; `Test/Navigation/nav_path_quality_uve_tests.cpp` measures it against the shortest walk the
+  region admits at all.
